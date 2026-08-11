@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from datetime import datetime, UTC
 import logging
+import os
+import time
 from typing import Any
 
 from app.core.celery_app import celery_available, get_celery_runtime_details
@@ -20,10 +22,13 @@ from shared.contracts.api_contracts import (
     BackendServiceStatus,
     FrontendCommandRequest,
     FrontendCommandResponse,
+    ProcessResourceSnapshot,
+    ResourceUsageResponse,
     RuntimeConfigUpdateRequest,
     RuntimeConfigUpdateResponse,
     RuntimeStatusResponse,
     ServiceHealth,
+    SystemResourceSnapshot,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,6 +39,10 @@ _HEALTH_RANK = {
     ServiceHealth.degraded: 2,
     ServiceHealth.offline: 3,
 }
+
+# 资源采集 TTL：避免 /runtime/resources 高频轮询时反复执行 psutil 采样
+_RESOURCE_TTL_SECONDS = 5
+_resource_cache: dict[str, Any] = {}
 
 
 def _rollup_overall_health(
@@ -264,6 +273,96 @@ class RuntimeStatusService:
             config_snapshot=self._repository.get_config_snapshot(),
             services=services,
         )
+
+    def get_resource_usage(self) -> ResourceUsageResponse:
+        """采集后端进程与宿主系统资源占用（psutil 轻量采样，TTL 缓存）。
+
+        cpu_percent 使用非阻塞一次采样：首次调用返回 0.0（psutil 语义），
+        第二次调用起返回与上次采样间隔内的均值。TTL 5s 内直接返回缓存。
+        """
+        now = datetime.now(UTC)
+        cached = _resource_cache.get("payload")
+        cached_at = _resource_cache.get("at", 0.0)
+        if (
+            cached is not None
+            and (time.monotonic() - cached_at) < _RESOURCE_TTL_SECONDS
+        ):
+            return cached
+        try:
+            import psutil
+        except ImportError:
+            payload = ResourceUsageResponse(updated_at=now)
+            _resource_cache.update({"payload": payload, "at": time.monotonic()})
+            return payload
+
+        system: SystemResourceSnapshot | None = None
+        processes: list[ProcessResourceSnapshot] = []
+        worker_count: int | None = None
+        try:
+            vm = psutil.virtual_memory()
+            try:
+                disk_path = settings.data_root or os.getcwd()
+                disk = psutil.disk_usage(disk_path)
+                disk_total_mb = round(disk.total / (1024 * 1024), 1)
+                disk_used_mb = round(disk.used / (1024 * 1024), 1)
+                disk_percent = round(disk.percent, 1)
+            except Exception:
+                disk_total_mb = disk_used_mb = disk_percent = None
+            system = SystemResourceSnapshot(
+                cpu_percent=round(psutil.cpu_percent(interval=None) or 0.0, 1),
+                memory_total_mb=round(vm.total / (1024 * 1024), 1),
+                memory_used_mb=round(vm.used / (1024 * 1024), 1),
+                memory_percent=round(vm.percent, 1),
+                disk_total_mb=disk_total_mb,
+                disk_used_mb=disk_used_mb,
+                disk_percent=disk_percent,
+            )
+            current_pid = os.getpid()
+            seen_pids: set[int] = set()
+            for proc in psutil.process_iter(
+                ["pid", "name", "cpu_percent", "memory_info", "num_threads", "status"]
+            ):
+                try:
+                    info = proc.info
+                    pid = info.get("pid")
+                    if pid is None or pid in seen_pids:
+                        continue
+                    seen_pids.add(pid)
+                    # 仅收集后端相关进程：当前进程、celery worker、uvicorn 主进程
+                    name = (info.get("name") or "").lower()
+                    is_backend = (
+                        pid == current_pid or "celery" in name or "uvicorn" in name
+                    )
+                    if not is_backend:
+                        continue
+                    mem = info.get("memory_info")
+                    rss_mb = round(mem.rss / (1024 * 1024), 1) if mem else None
+                    processes.append(
+                        ProcessResourceSnapshot(
+                            pid=pid,
+                            name=info.get("name") or str(pid),
+                            cpu_percent=round(info.get("cpu_percent") or 0.0, 1),
+                            memory_rss_mb=rss_mb,
+                            threads=info.get("num_threads"),
+                            status=info.get("status"),
+                        )
+                    )
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            processes.sort(key=lambda p: p.pid)
+            if use_celery_executor():
+                celery_details = get_celery_runtime_details()
+                worker_count = int(celery_details.get("worker_count") or 0)
+        except Exception as exc:  # pragma: no cover - 防御性兜底
+            logger.warning("Resource usage collection failed: %s", exc)
+        payload = ResourceUsageResponse(
+            updated_at=now,
+            system=system,
+            processes=processes,
+            worker_count=worker_count,
+        )
+        _resource_cache.update({"payload": payload, "at": time.monotonic()})
+        return payload
 
     def update_runtime_config(
         self, payload: RuntimeConfigUpdateRequest

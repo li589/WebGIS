@@ -8,7 +8,7 @@ type MapInstance = import('maplibre-gl').Map
 type MapControl = import('maplibre-gl').IControl
 
 interface MapControlConstructors {
-  NavigationControl?: new (options: { visualizePitch?: boolean; onLocate?: unknown }) => MapControl
+  NavigationControl?: new (options?: Record<string, unknown>) => MapControl
   ScaleControl?: new (options: { unit: 'metric' }) => MapControl
 }
 

@@ -163,3 +163,8 @@ deliverables/
 
 # Windows NUL redirect artifact
 nul
+
+# Local pipeline-health/stub inventory dry-run outputs + stray home-dir cache (never commit)
+_pipeline_health_static.json
+_stub_inventory.json
+~/.cache/

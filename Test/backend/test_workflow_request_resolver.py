@@ -4,6 +4,7 @@ import unittest
 from datetime import datetime
 from unittest.mock import patch
 
+from app.services.workflow.submission_service import WorkflowSubmissionService
 from app.services.workflow_request_resolver import (
     describe_layer_run_readiness,
     normalize_workflow_submit_request,
@@ -131,6 +132,28 @@ class WorkflowRequestResolverTests(unittest.TestCase):
         algo = normalized.algorithm_request or {}
         self.assertIsInstance(algo.get("workflow_definition"), dict)
         self.assertNotIn("module_name", algo)
+
+    def test_fy_single_descriptor_uses_accepted_fy_dataset_keys(self) -> None:
+        """method-fy-omega-doy-dynamic 不得注入模板不接受的 fy_folder。"""
+        payload = WorkflowSubmitRequest(
+            command_type=WorkflowCommandType.analysis,
+            command_label="run FY SF",
+            layer_id="method-fy-omega-doy-dynamic",
+            map_context=RuntimeMapContext(
+                active_layer_id="method-fy-omega-doy-dynamic"
+            ),
+            requested_outputs=["json", "map_layer"],
+        )
+        normalized = normalize_workflow_submit_request(payload)
+        algo = normalized.algorithm_request or {}
+        self.assertEqual(algo.get("module_name"), "omega_sf_fenkuai")
+        ds = algo.get("datasource_selection") or {}
+        data_access = ds.get("_data_access_requests") or {}
+        self.assertNotIn("fy_folder", data_access)
+        self.assertIn("fy3d_folder", data_access)
+        self.assertIn("fy3b_folder", data_access)
+        # 提交期模板校验应通过（此前因 fy_folder 直接 422）
+        WorkflowSubmissionService()._validate_request_params(normalized)
 
 
 if __name__ == "__main__":

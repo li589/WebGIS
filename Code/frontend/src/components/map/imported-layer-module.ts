@@ -1,5 +1,11 @@
 import type { ImportedGeometryType } from '../../stores/layers/imported-vector'
-import { Popup, type MapLayerMouseEvent } from 'maplibre-gl'
+import {
+  Popup,
+  type ExpressionSpecification,
+  type GeoJSONSourceSpecification,
+  type LayerSpecification,
+  type MapLayerMouseEvent,
+} from 'maplibre-gl'
 import {
   dataWorkspaceHighlight,
   dataWorkspaceLayerId,
@@ -133,7 +139,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
       data: geojson,
       // 供点选时用 feature.id 作为要素绝对索引，联动属性表行
       generateId: true,
-    } as any)
+    } as GeoJSONSourceSpecification)
 
     const beforeAdmin = options.map.getLayer('admin-fill') ? 'admin-fill' : undefined
 
@@ -209,7 +215,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
           source: sourceId,
           filter: ['==', '$type', 'Point'],
           layout: {
-            'text-field': ['get', 'name'] as any,
+            'text-field': ['get', 'name'] as ExpressionSpecification,
             'text-size': 10,
             'text-offset': [0, 1.2],
             'text-allow-overlap': false,
@@ -336,7 +342,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
     const info = loaded.get(id)
     if (!info) return
     for (const layerId of info.layerIds) {
-      const layer = options.map.getLayer(layerId) as any
+      const layer = options.map.getLayer(layerId) as LayerSpecification | undefined
       if (!layer) continue
       if (layer.type === 'fill') {
         options.map.setPaintProperty(layerId, 'fill-opacity', 0.25 * opacity)
@@ -356,7 +362,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
     const radius = style.radius ?? 4
     const fillOpacity = (style.fillOpacity ?? 0.25) * baseOpacity
     for (const layerId of info.layerIds) {
-      const layer = options.map.getLayer(layerId) as any
+      const layer = options.map.getLayer(layerId) as LayerSpecification | undefined
       if (!layer) continue
       if (layer.type === 'fill') {
         options.map.setPaintProperty(layerId, 'fill-color', color)
@@ -404,7 +410,10 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
 
     clearHl()
     const fc: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [feature] }
-    options.map.addSource(hlSource, { type: 'geojson', data: fc } as any)
+    options.map.addSource(hlSource, {
+      type: 'geojson',
+      data: fc,
+    } as GeoJSONSourceSpecification)
     options.map.addLayer({
       id: hlLine,
       type: 'line',

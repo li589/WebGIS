@@ -393,7 +393,7 @@ onMounted(async () => {
     createMapCanvasLifecycleBinder({
       map: mapInstance,
       controls: {
-        NavigationControl: MapChromeNavigationControl as any,
+        NavigationControl: MapChromeNavigationControl,
       },
       onLocate: handleLocateMe,
       onMapError: (event) => {
@@ -990,12 +990,16 @@ async function handleLocateMe() {
   opacity: 0.2;
 }
 
-/* 无可见数据图层或设置关闭：任意缩放下关闭氛围遮罩 */
+/* 无可见数据图层或设置关闭：任意缩放下关闭氛围遮罩，并去掉舞台雾感底 */
+.map-stage.map-stage-chrome-off {
+  background: #07111e;
+}
 .map-stage.map-stage-chrome-off .map-fog,
 .map-stage.map-stage-chrome-off .time-sheen,
 .map-stage.map-stage-chrome-off .time-band,
 .map-stage.map-stage-chrome-off .weather-overlay,
-.map-stage.map-stage-chrome-off .grid-overlay {
+.map-stage.map-stage-chrome-off .grid-overlay,
+.map-stage.map-stage-chrome-off .basemap-transition-mask {
   opacity: 0 !important;
   pointer-events: none;
 }

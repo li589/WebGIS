@@ -58,6 +58,7 @@ class WorkflowExecutor:
                     workflow.inputs,
                     node_outputs,
                     workflow.edges,
+                    node_map,
                 )
                 node = node_cls(node_spec, context)
                 result = node.execute(inputs)
@@ -123,10 +124,13 @@ class WorkflowExecutor:
         global_inputs,
         node_outputs,
         edges,
+        node_map,
     ):
         """根据边和全局输入，解析节点的输入值。
 
         优先级：上游边输出 > 全局输入 > 节点 params 默认值。
+        上游输出缺失时：仅当源端口 required（或未知）时报错；
+        源端口 required=False（optional）则跳过该边，不阻断执行。
         """
         inputs: dict[str, Any] = {}
         missing_upstream_outputs: list[str] = []
@@ -137,14 +141,16 @@ class WorkflowExecutor:
                 if edge.source_port in source_outputs:
                     inputs[edge.target_port] = source_outputs[edge.source_port]
                 else:
-                    # C7：审查 M4 — 上游输出缺失时收集错误，而非静默放行（下游带缺输入
-                    # 可能产出垃圾或运行时才炸）。
-                    missing_upstream_outputs.append(
-                        f"{edge.source_node_id}.{edge.source_port} -> {edge.target_port}"
-                    )
+                    # 源端口为 optional 时缺失属正常（跳过）；required/未知按错误处理
+                    if self._is_port_required(
+                        node_map, edge.source_node_id, edge.source_port
+                    ):
+                        missing_upstream_outputs.append(
+                            f"{edge.source_node_id}.{edge.source_port} -> {edge.target_port}"
+                        )
         if missing_upstream_outputs:
             raise KeyError(
-                f"Node {node_spec.node_id} missing upstream outputs: "
+                f"Node {node_spec.node_id} missing required upstream outputs: "
                 + ", ".join(missing_upstream_outputs)
             )
         # 处理全局输入覆盖（如果该端口未被上游赋值）
@@ -154,6 +160,25 @@ class WorkflowExecutor:
         # 合并节点自身参数中的默认输入（最低优先级）
         inputs = {**node_spec.params, **inputs}
         return inputs
+
+    def _is_port_required(
+        self, node_map, source_node_id: str, source_port: str
+    ) -> bool:
+        """判断源端口是否 required。端口未声明或节点未知时保守视为 required。"""
+        source_spec = node_map.get(source_node_id)
+        output_ports = source_spec.output_ports if source_spec is not None else []
+        # spec 未显式声明端口时，回退到节点类 build_spec() 的规范规格
+        if not output_ports and source_spec is not None:
+            try:
+                node_cls = self._registry.get(source_spec.node_type)
+                canonical = node_cls.build_spec()
+                output_ports = canonical.output_ports
+            except (AttributeError, TypeError):
+                output_ports = []
+        for port in output_ports:
+            if port.name == source_port:
+                return port.required
+        return True
 
     def _collect_global_outputs(
         self, node_outputs: dict[str, dict[str, Any]]

@@ -502,6 +502,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runtime/resources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Runtime Resources
+         * @description 返回后端进程与宿主系统资源占用（CPU / 内存 / 磁盘）。
+         *
+         *     数据经 psutil 轻量采样（TTL 5s 缓存），前端资源面板低频轮询即可。
+         */
+        get: operations["get_runtime_resources_runtime_resources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runtime/metrics": {
         parameters: {
             query?: never;
@@ -4839,6 +4861,24 @@ export interface components {
                 [key: string]: components["schemas"]["PortalCredentialPublic"];
             };
         };
+        /**
+         * ProcessResourceSnapshot
+         * @description 单个后端进程资源快照。
+         */
+        ProcessResourceSnapshot: {
+            /** Pid */
+            pid: number;
+            /** Name */
+            name: string;
+            /** Cpu Percent */
+            cpu_percent?: number | null;
+            /** Memory Rss Mb */
+            memory_rss_mb?: number | null;
+            /** Threads */
+            threads?: number | null;
+            /** Status */
+            status?: string | null;
+        };
         /** RasterCommitBody */
         RasterCommitBody: {
             /** Upload Id */
@@ -5117,6 +5157,22 @@ export interface components {
             enabled?: boolean | null;
         };
         /**
+         * ResourceUsageResponse
+         * @description GET /runtime/resources — 后端进程与宿主系统资源占用。
+         */
+        ResourceUsageResponse: {
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            system?: components["schemas"]["SystemResourceSnapshot"] | null;
+            /** Processes */
+            processes?: components["schemas"]["ProcessResourceSnapshot"][];
+            /** Worker Count */
+            worker_count?: number | null;
+        };
+        /**
          * ResultKind
          * @enum {string}
          */
@@ -5318,6 +5374,26 @@ export interface components {
             backend?: string | null;
             /** Base Path */
             base_path?: string | null;
+        };
+        /**
+         * SystemResourceSnapshot
+         * @description 系统级资源快照（psutil 采集，轻量非阻塞）。
+         */
+        SystemResourceSnapshot: {
+            /** Cpu Percent */
+            cpu_percent?: number | null;
+            /** Memory Total Mb */
+            memory_total_mb?: number | null;
+            /** Memory Used Mb */
+            memory_used_mb?: number | null;
+            /** Memory Percent */
+            memory_percent?: number | null;
+            /** Disk Total Mb */
+            disk_total_mb?: number | null;
+            /** Disk Used Mb */
+            disk_used_mb?: number | null;
+            /** Disk Percent */
+            disk_percent?: number | null;
         };
         /**
          * TableSpec
@@ -7416,6 +7492,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RuntimeStatusResponse"];
+                };
+            };
+        };
+    };
+    get_runtime_resources_runtime_resources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceUsageResponse"];
                 };
             };
         };

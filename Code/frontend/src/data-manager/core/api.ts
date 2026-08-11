@@ -510,15 +510,44 @@ export async function importBatch(
   return resp.json() as Promise<{ batch_id: string; job_ids: string[] }>
 }
 
+export type ExportBBoxPayload = {
+  west: number
+  south: number
+  east: number
+  north: number
+  crs?: string
+}
+
+export type ExportRequestOptions = {
+  encoding?: string
+  time?: string | null
+  times?: string[] | null
+  bbox?: ExportBBoxPayload | null
+  outputCrs?: string | null
+  fields?: string[] | null
+}
+
 export async function exportBatchLayers(
   layerIds: string[],
   format: string,
-  encoding: string = 'auto',
+  encodingOrOpts: string | ExportRequestOptions = 'auto',
 ): Promise<{ job_id?: string; blob?: Blob }> {
+  const opts: ExportRequestOptions =
+    typeof encodingOrOpts === 'string' ? { encoding: encodingOrOpts } : encodingOrOpts
+  const payload: Record<string, unknown> = {
+    layer_ids: layerIds,
+    format,
+    encoding: opts.encoding || 'auto',
+  }
+  if (opts.times?.length) payload.times = opts.times
+  else if (opts.time) payload.time = opts.time
+  if (opts.bbox) payload.bbox = { crs: 'EPSG:4326', ...opts.bbox }
+  if (opts.outputCrs) payload.output_crs = opts.outputCrs
+  if (opts.fields?.length) payload.fields = opts.fields
   const resp = await writeFetch('/export/batch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ layer_ids: layerIds, format, encoding }),
+    body: JSON.stringify(payload),
   })
   if (!resp.ok) throw new Error(parseErrorDetail(resp.status, await resp.text()))
   const ct = resp.headers.get('content-type') || ''
@@ -768,20 +797,25 @@ export async function commitDocumentSession(params: {
 export async function exportImportedLayer(
   layerId: string,
   format: string,
-  encoding: string = 'auto',
+  encodingOrOpts: string | ExportRequestOptions = 'auto',
   time?: string | null,
   times?: string[] | null,
 ): Promise<Blob> {
+  const opts: ExportRequestOptions =
+    typeof encodingOrOpts === 'string' ? { encoding: encodingOrOpts, time, times } : encodingOrOpts
   const payload: Record<string, unknown> = {
     layer_id: layerId,
     format,
-    encoding,
+    encoding: opts.encoding || 'auto',
   }
-  if (times?.length) {
-    payload.times = times
-  } else if (time) {
-    payload.time = time
+  if (opts.times?.length) {
+    payload.times = opts.times
+  } else if (opts.time) {
+    payload.time = opts.time
   }
+  if (opts.bbox) payload.bbox = { crs: 'EPSG:4326', ...opts.bbox }
+  if (opts.outputCrs) payload.output_crs = opts.outputCrs
+  if (opts.fields?.length) payload.fields = opts.fields
   const resp = await writeFetch('/export/layer', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

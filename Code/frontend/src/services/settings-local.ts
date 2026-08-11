@@ -146,8 +146,10 @@ export function loadSettingsUiLocal(): SettingsUiLocal {
   }
 }
 
+/** 合并写入 settings UI 偏好，避免切 Tab 等场景冲掉其它字段（如 mapDistributionChrome）。 */
 export function saveSettingsUiLocal(ui: SettingsUiLocal): void {
-  safeSet(localStorage, SETTINGS_UI, JSON.stringify(ui))
+  const merged: SettingsUiLocal = { ...loadSettingsUiLocal(), ...ui }
+  safeSet(localStorage, SETTINGS_UI, JSON.stringify(merged))
 }
 
 /** 地图分布淡底默认开启；显式 false 时关闭。 */

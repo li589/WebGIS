@@ -509,7 +509,38 @@ async function exportImportedCsv() {
   }
 }
 
-async function exportImportedRaster(format: 'png' | 'tif') {
+async function exportImportedShp() {
+  const id = displayLayer.value.instanceId
+  if (!id) return
+  const active = layersStore.activeLayers.find((l) => l.instanceId === id)
+  if (!active) return
+  try {
+    await exportLayer(active, 'shp-zip')
+    flashImportHint('已导出 SHP')
+    logStore.logOperation('export-shp', `导出 SHP：${displayLayer.value.name || id}`)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    flashImportHint(`导出失败：${msg}`)
+    logStore.logOperation('export-fail', '分析框导出 SHP 失败', msg)
+  }
+}
+
+function openExportPanelForDisplay() {
+  const id = displayLayer.value.instanceId
+  if (!id) return
+  const active = layersStore.activeLayers.find((l) => l.instanceId === id)
+  if (!active) return
+  const times = active.importedRaster?.timeList ?? []
+  let time: string | null = null
+  if (times.length) {
+    const eff = active.importedRaster?.effectiveTimeLabel
+    time =
+      (eff && times.find((t) => eff === t || eff.startsWith(t))) || times[times.length - 1] || null
+  }
+  openDatedExportForLayer(id, time)
+}
+
+async function exportImportedRaster(format: 'png' | 'tif' | 'nc' | 'mat') {
   const id = displayLayer.value.instanceId
   if (!id) return
   const active = layersStore.activeLayers.find((l) => l.instanceId === id)
@@ -1388,6 +1419,12 @@ onBeforeUnmount(() => {
               <button class="imported-export-btn" type="button" @click="exportImportedCsv">
                 {{ LAYERS_COPY.exportCsv }}
               </button>
+              <button class="imported-export-btn" type="button" @click="exportImportedShp">
+                {{ LAYERS_COPY.exportShp }}
+              </button>
+              <button class="imported-export-btn" type="button" @click="openExportPanelForDisplay">
+                {{ LAYERS_COPY.openExportPanel }}
+              </button>
             </div>
             <div v-else-if="displayLayer.isImportedRaster" class="imported-export-row">
               <button
@@ -1405,16 +1442,29 @@ onBeforeUnmount(() => {
               <button
                 class="imported-export-btn"
                 type="button"
-                @click="exportImportedRaster('png')"
+                @click="exportImportedRaster('tif')"
               >
-                {{ LAYERS_COPY.exportPng }}
+                {{ LAYERS_COPY.exportTif }}
+              </button>
+              <button class="imported-export-btn" type="button" @click="exportImportedRaster('nc')">
+                {{ LAYERS_COPY.exportNc }}
               </button>
               <button
                 class="imported-export-btn"
                 type="button"
-                @click="exportImportedRaster('tif')"
+                @click="exportImportedRaster('mat')"
               >
-                {{ LAYERS_COPY.exportTif }}
+                {{ LAYERS_COPY.exportMat }}
+              </button>
+              <button
+                class="imported-export-btn"
+                type="button"
+                @click="exportImportedRaster('png')"
+              >
+                {{ LAYERS_COPY.exportPng }}
+              </button>
+              <button class="imported-export-btn" type="button" @click="openExportPanelForDisplay">
+                {{ LAYERS_COPY.openExportPanel }}
               </button>
             </div>
             <p

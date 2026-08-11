@@ -132,7 +132,8 @@ onMounted(async () => {
 })
 
 watch(activeTab, (tab) => {
-  saveSettingsUiLocal({ activeTab: tab })
+  // merge 写入：勿整表替换，否则会丢掉 mapDistributionChrome 等偏好
+  saveSettingsUiLocal({ ...loadSettingsUiLocal(), activeTab: tab })
   if (tab === 'api-keys' && settingsStore.apiKeys.length === 0) {
     void settingsStore.loadApiKeys()
   } else if (tab === 'gee-accounts' && settingsStore.geeAccounts.length === 0) {

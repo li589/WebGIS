@@ -247,6 +247,9 @@ function removeLayer() {
           <button v-if="!isVector" class="ghost-btn" type="button" @click="exportFmt('geotiff')">
             GeoTIFF
           </button>
+          <button v-if="!isVector" class="ghost-btn" type="button" @click="exportFmt('mat')">
+            MAT
+          </button>
           <button class="danger-btn" type="button" @click="removeLayer">
             {{ DATA_COPY.deleteLayer }}
           </button>

@@ -9,6 +9,7 @@ from app.services.workflow.service_container import runtime_status_service
 from shared.contracts.api_contracts import (
     FrontendCommandRequest,
     FrontendCommandResponse,
+    ResourceUsageResponse,
     RuntimeConfigSnapshotResponse,
     RuntimeConfigUpdateRequest,
     RuntimeConfigUpdateResponse,
@@ -56,6 +57,20 @@ def get_runtime_config() -> RuntimeConfigSnapshotResponse:
 )
 def get_runtime_status() -> RuntimeStatusResponse:
     return runtime_status_service.get_runtime_status()
+
+
+@router.get(
+    "/runtime/resources",
+    tags=["runtime"],
+    response_model=ResourceUsageResponse,
+    dependencies=[Depends(require_config_read_access)],
+)
+def get_runtime_resources() -> ResourceUsageResponse:
+    """返回后端进程与宿主系统资源占用（CPU / 内存 / 磁盘）。
+
+    数据经 psutil 轻量采样（TTL 5s 缓存），前端资源面板低频轮询即可。
+    """
+    return runtime_status_service.get_resource_usage()
 
 
 @router.get(

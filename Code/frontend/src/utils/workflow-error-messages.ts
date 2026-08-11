@@ -1,5 +1,10 @@
 /** Map backend error_code / diagnostic tokens to user-facing Chinese messages. */
 
+export type WorkflowValidationIssueLike = {
+  field?: string
+  message?: string
+}
+
 const ERROR_CODE_MESSAGES: Record<string, string> = {
   workflow_cancelled_by_user: '工作流已被用户取消。',
   workflow_capacity_reached: '工作流并发数已达上限，请稍后重试。',
@@ -50,4 +55,26 @@ export function localizeWorkflowErrorMessage(message: string): string {
 export function localizeWorkflowDiagnostics(lines: string[] | undefined): string[] {
   if (!lines?.length) return []
   return lines.map((line) => localizeWorkflowDiagnostic(line)).filter(Boolean)
+}
+
+/** 把提交期 422 issues 拼成状态面板可读文案（通用句 + 字段明细）。 */
+export function formatWorkflowValidationError(
+  message: string,
+  issues: WorkflowValidationIssueLike[] | undefined,
+): { summary: string; notes: string[] } {
+  const base = localizeWorkflowErrorMessage(message || '请求参数未通过业务校验，请检查表单字段。')
+  const notes: string[] = []
+  for (const issue of issues ?? []) {
+    const field = (issue.field || '').trim()
+    const msg = (issue.message || '').trim()
+    if (!msg) continue
+    const line = field ? `[${field}] ${msg}` : msg
+    notes.push(localizeWorkflowErrorMessage(line))
+  }
+  if (!notes.length) {
+    return { summary: base, notes: [base] }
+  }
+  const detail = notes.slice(0, 3).join('；')
+  const summary = base.includes(detail) ? base : `${base} ${detail}`
+  return { summary, notes: [base, ...notes].slice(0, 8) }
 }

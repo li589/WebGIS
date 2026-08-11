@@ -606,11 +606,20 @@ const contextMenuGroups = computed(() => {
     !layer.isImportedRaster &&
     !layer.isAdminBoundary &&
     layersStore.canRunCatalog(layer.catalogId)
+  const raw = layersStore.activeLayers.find((l) => l.instanceId === layer.instanceId)
+  const isExportPending = Boolean(
+    raw?.runGroupId &&
+    !raw.importedRaster?.overlayLayerId &&
+    !raw.importedVector?.backendLayerId &&
+    !layer.isImported &&
+    !layer.isImportedRaster,
+  )
   return buildLayerContextMenu({
     visible: layer.visible,
     isAdminBoundary: layer.isAdminBoundary,
     isImported: layer.isImported,
     isImportedRaster: layer.isImportedRaster,
+    isExportPending,
     hasJobReport: Boolean(layer.jobLayer?.reportSummary),
     canRunWorkflow: canRun,
     canDissolveGroup: Boolean(
@@ -638,7 +647,29 @@ function openStyleInAnalysis() {
   closeContextMenu()
 }
 
-async function exportActiveFromMenu(format: 'geojson' | 'csv' | 'png' | 'tif') {
+function openExportPanelForActive() {
+  if (!contextMenu.value?.instanceId) return
+  const active = layersStore.activeLayers.find(
+    (l) => l.instanceId === contextMenu.value?.instanceId,
+  )
+  if (!active) {
+    closeContextMenu()
+    return
+  }
+  const times = active.importedRaster?.timeList ?? []
+  let time: string | null = null
+  if (times.length) {
+    const eff = active.importedRaster?.effectiveTimeLabel
+    time =
+      (eff && times.find((t) => eff === t || eff.startsWith(t))) || times[times.length - 1] || null
+  }
+  openDatedExportForLayer(active.instanceId, time)
+  closeContextMenu()
+}
+
+async function exportActiveFromMenu(
+  format: 'geojson' | 'csv' | 'shp-zip' | 'png' | 'tif' | 'nc' | 'mat',
+) {
   if (!contextMenu.value) return
   const active = layersStore.activeLayers.find(
     (l) => l.instanceId === contextMenu.value?.instanceId,
@@ -647,19 +678,12 @@ async function exportActiveFromMenu(format: 'geojson' | 'csv' | 'png' | 'tif') {
     closeContextMenu()
     return
   }
-  // 栅格 GeoTIFF/PNG：汇合到数据导出框（带日期时刻选择）
-  if ((format === 'tif' || format === 'png') && active.importedRaster) {
-    const times = active.importedRaster.timeList ?? []
-    let time: string | null = null
-    if (times.length) {
-      const eff = active.importedRaster.effectiveTimeLabel
-      time =
-        (eff && times.find((t) => eff === t || eff.startsWith(t))) ||
-        times[times.length - 1] ||
-        null
-    }
-    openDatedExportForLayer(active.instanceId, time)
-    closeContextMenu()
+  // 栅格：打开导出面板（时刻 / 裁剪 / CRS）；矢量直接导出
+  if (
+    active.importedRaster &&
+    (format === 'tif' || format === 'png' || format === 'nc' || format === 'mat')
+  ) {
+    openExportPanelForActive()
     return
   }
   try {
@@ -695,6 +719,10 @@ function renameLayerFromMenu() {
 }
 
 function handleContextAction(action: LayerContextActionId) {
+  if (action === 'exportPending') {
+    closeContextMenu()
+    return
+  }
   if (!contextMenu.value) return
   const groupId = contextMenu.value.groupId
   if (groupId) {
@@ -780,11 +808,23 @@ function handleContextAction(action: LayerContextActionId) {
     case 'exportCsv':
       void exportActiveFromMenu('csv')
       return
+    case 'exportShp':
+      void exportActiveFromMenu('shp-zip')
+      return
     case 'exportPng':
       void exportActiveFromMenu('png')
       return
     case 'exportTif':
       void exportActiveFromMenu('tif')
+      return
+    case 'exportNc':
+      void exportActiveFromMenu('nc')
+      return
+    case 'exportMat':
+      void exportActiveFromMenu('mat')
+      return
+    case 'openExportPanel':
+      openExportPanelForActive()
       return
     case 'viewReport':
       openJobReport(id)

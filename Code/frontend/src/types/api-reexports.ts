@@ -178,6 +178,9 @@ export type RuntimeConfigUpdateResponse = Schema<'RuntimeConfigUpdateResponse'>
 export type RuntimeConfigSnapshotResponse = Schema<'RuntimeConfigSnapshotResponse'>
 export type RuntimeStatusResponse = Schema<'RuntimeStatusResponse'>
 export type BackendServiceStatus = Schema<'BackendServiceStatus'>
+export type ResourceUsageResponse = Schema<'ResourceUsageResponse'>
+export type SystemResourceSnapshot = Schema<'SystemResourceSnapshot'>
+export type ProcessResourceSnapshot = Schema<'ProcessResourceSnapshot'>
 
 /** OpenAPI 为 plain string；UI 侧已知取值（与后端 weather provider 注册一致）。 */
 export type WeatherProviderType = 'free_api' | 'commercial_api' | 'local_data'

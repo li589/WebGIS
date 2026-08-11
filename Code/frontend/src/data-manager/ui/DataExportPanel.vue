@@ -1,12 +1,22 @@
 ﻿<script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { DATA_COPY } from '../../ui-copy'
-import { exportLayer, type ExportFormat } from '../adapters/export'
-import { fetchExportEncodings, type ExportEncodingOption } from '../core/api'
+import {
+  exportLayer,
+  exportLayersBatch,
+  type ExportFormat,
+  type ExportOptions,
+} from '../adapters/export'
+import {
+  fetchExportEncodings,
+  fetchImportedLayerGeojson,
+  type ExportEncodingOption,
+} from '../core/api'
 import { dataWorkspaceExportTime, dataWorkspaceLayerId } from '../core/workspace-store'
 import { useLayersStore } from '../../stores/layers'
 import { useLogStore } from '../../stores/log'
 import type { ActiveLayer } from '../../stores/layers/types'
+import { resolveExportBasename } from '../../stores/layers/layer-naming'
 
 defineProps<{
   /** 嵌入数据工作台时不渲染全屏遮罩 */
@@ -26,6 +36,9 @@ const selectedTimes = ref<string[]>([])
 const vectorFormat = ref('geojson')
 const rasterFormat = ref('geotiff')
 const textEncoding = ref('auto')
+const clipToMap = ref(false)
+const outputCrs = ref('')
+const selectedFields = ref<string[]>([])
 const encodingOptions = ref<ExportEncodingOption[]>([
   { id: 'auto', label: '自动（跟导入源编码）' },
   { id: 'utf-8', label: 'UTF-8' },
@@ -54,17 +67,59 @@ const needsTextEncoding = computed(
   () => hasVector.value && (vectorFormat.value === 'csv' || vectorFormat.value === 'shp-zip'),
 )
 
+function machineIdOf(layer: ActiveLayer): string {
+  return (
+    resolveExportBasename({
+      catalogId: layer.catalogId,
+      overlayLayerId: layer.importedRaster?.overlayLayerId,
+      backendLayerId: layer.importedVector?.backendLayerId,
+      sourceFilename: layer.importedVector?.fileName ?? layer.importedRaster?.fileName,
+      displayName: layer.name,
+    }) ||
+    layer.catalogId ||
+    layer.instanceId
+  )
+}
+
+function isWorkflowProduct(layer: ActiveLayer): boolean {
+  return Boolean(layer.importedRaster && layer.runGroupProductTag)
+}
+
 function timeListOf(layer: ActiveLayer | undefined): string[] {
   return layer?.importedRaster?.timeList?.filter(Boolean) ?? []
 }
 
-/** 单选栅格且有 time_list 时展示时刻选择 */
+/** 多选栅格的公共 time_list；单选则用该层全部时刻 */
 const availableTimes = computed(() => {
-  if (selectedLayers.value.length !== 1) return [] as string[]
-  return timeListOf(selectedLayers.value[0])
+  const rasters = selectedLayers.value.filter((l) => l.importedRaster)
+  if (!rasters.length) return [] as string[]
+  if (rasters.length === 1) return timeListOf(rasters[0])
+  let common: string[] | null = null
+  for (const layer of rasters) {
+    const times = timeListOf(layer)
+    if (!times.length) return []
+    common = common == null ? [...times] : common.filter((t) => times.includes(t))
+  }
+  return common ?? []
 })
 
 const showTimePicker = computed(() => availableTimes.value.length > 0)
+
+const availableFields = computed(() => {
+  const names = new Set<string>()
+  for (const layer of selectedLayers.value) {
+    const feats = layer.importedVector?.geojson?.features
+    if (!feats?.length) continue
+    const sample = feats.slice(0, 40)
+    for (const f of sample) {
+      const props = f.properties || {}
+      for (const k of Object.keys(props)) names.add(k)
+    }
+  }
+  return [...names].sort((a, b) => a.localeCompare(b))
+})
+
+const showFieldPicker = computed(() => hasVector.value && availableFields.value.length > 0)
 
 function defaultTimeForLayer(layer: ActiveLayer | undefined): string {
   const times = timeListOf(layer)
@@ -106,8 +161,14 @@ watch(
 watch(
   [selectedLayers, dataWorkspaceExportTime, availableTimes],
   () => {
-    if (selectedLayers.value.length === 1) {
-      const def = defaultTimeForLayer(selectedLayers.value[0])
+    if (availableTimes.value.length) {
+      const preferred = dataWorkspaceExportTime.value
+      const def =
+        (preferred && availableTimes.value.includes(preferred)
+          ? preferred
+          : selectedLayers.value.length === 1
+            ? defaultTimeForLayer(selectedLayers.value[0])
+            : availableTimes.value[availableTimes.value.length - 1]) || ''
       selectedTime.value = def
       if (!selectedTimes.value.length && def) {
         selectedTimes.value = [def]
@@ -123,6 +184,11 @@ watch(
   },
   { immediate: true },
 )
+
+watch(availableFields, (fields) => {
+  const allow = new Set(fields)
+  selectedFields.value = selectedFields.value.filter((f) => allow.has(f))
+})
 
 function toggle(id: string) {
   if (selectedIds.value.includes(id)) {
@@ -156,28 +222,80 @@ function clearExportTimes() {
   selectedTimes.value = []
 }
 
-function exportOptsFor(layer: ActiveLayer) {
-  const encoding = textEncoding.value || 'auto'
-  const times = timeListOf(layer)
-  if (!times.length) return { encoding, time: null as string | null }
-
-  if (
-    selectedLayers.value.length === 1 &&
-    timeExportMode.value === 'multi' &&
-    selectedTimes.value.length > 0
-  ) {
-    const picked = selectedTimes.value.filter((t) => times.includes(t))
-    if (picked.length > 1) return { encoding, time: null as string | null, times: picked }
-    if (picked.length === 1) return { encoding, time: picked[0]! }
-  }
-
-  let time: string | null
-  if (selectedLayers.value.length === 1 && selectedTime.value) {
-    time = selectedTime.value
+function toggleField(name: string) {
+  if (selectedFields.value.includes(name)) {
+    selectedFields.value = selectedFields.value.filter((x) => x !== name)
   } else {
-    time = defaultTimeForLayer(layer) || times[times.length - 1] || null
+    selectedFields.value = [...selectedFields.value, name]
   }
-  return { encoding, time }
+}
+
+function selectAllFields() {
+  selectedFields.value = [...availableFields.value]
+}
+
+function clearFields() {
+  selectedFields.value = []
+}
+
+function buildSharedExportOptions(): ExportOptions {
+  const encoding = textEncoding.value || 'auto'
+  const opts: ExportOptions = { encoding }
+  if (showTimePicker.value) {
+    if (timeExportMode.value === 'multi' && selectedTimes.value.length > 0) {
+      const picked = selectedTimes.value.filter((t) => availableTimes.value.includes(t))
+      if (picked.length > 1) {
+        opts.times = picked
+        opts.time = null
+      } else if (picked.length === 1) {
+        opts.time = picked[0]!
+      }
+    } else if (selectedTime.value) {
+      opts.time = selectedTime.value
+    }
+  }
+  if (clipToMap.value) {
+    const bbox = layersStore.currentMapBBox
+    if (bbox && Number.isFinite(bbox.west) && Number.isFinite(bbox.south)) {
+      opts.bbox = {
+        west: bbox.west,
+        south: bbox.south,
+        east: bbox.east,
+        north: bbox.north,
+        crs: bbox.crs || 'EPSG:4326',
+      }
+    }
+  }
+  if (outputCrs.value.trim()) {
+    opts.outputCrs = outputCrs.value.trim()
+  }
+  if (hasVector.value && selectedFields.value.length) {
+    opts.fields = [...selectedFields.value]
+  }
+  return opts
+}
+
+function exportOptsFor(layer: ActiveLayer): ExportOptions {
+  const shared = buildSharedExportOptions()
+  const times = timeListOf(layer)
+  if (!times.length) return shared
+  if (shared.times?.length || shared.time) return shared
+  return {
+    ...shared,
+    time: defaultTimeForLayer(layer) || times[times.length - 1] || null,
+  }
+}
+
+async function ensureFullVectorData(layers: ActiveLayer[]): Promise<void> {
+  for (const layer of layers) {
+    if (!layer.importedVector?.truncated || !layer.importedVector.backendLayerId) continue
+    msg.value = DATA_COPY.exportLoadFullFirst
+    const gj = await fetchImportedLayerGeojson(layer.importedVector.backendLayerId, false)
+    layersStore.updateImportedVectorGeojson(layer.instanceId, gj, {
+      featureCount: gj.features.length,
+      truncated: false,
+    })
+  }
 }
 
 async function doExport() {
@@ -193,34 +311,80 @@ async function doExport() {
     err.value = '请至少选择一个导出时刻'
     return
   }
+  if (clipToMap.value && !layersStore.currentMapBBox) {
+    err.value = '当前无地图范围，无法裁剪'
+    return
+  }
   busy.value = true
   progress.value = 0
   msg.value = DATA_COPY.processing
   err.value = ''
   try {
     const list = selectedLayers.value
+    await ensureFullVectorData(list.filter((l) => l.importedVector))
     const allVector = list.every((l) => l.importedVector)
     const allRaster = list.every((l) => l.importedRaster)
+    const shared = buildSharedExportOptions()
+
     if (list.length >= 2 && (allVector || allRaster)) {
       const raw = allRaster ? rasterFormat.value : vectorFormat.value
-      const format = (raw === 'geotiff' ? 'tif' : raw === 'netcdf' ? 'nc' : raw) as ExportFormat
-      // 批导出：逐层带各自最新/生效时刻（后端 batch 暂不传统一 time）
-      for (let i = 0; i < list.length; i++) {
-        const layer = list[i]!
-        await exportLayer(layer, format, exportOptsFor(layer))
-        progress.value = (i + 1) / list.length
-        msg.value = `已导出 ${i + 1}/${list.length}`
+      const format = (
+        raw === 'geotiff' ? 'tif' : raw === 'netcdf' ? 'nc' : raw === 'matlab' ? 'mat' : raw
+      ) as ExportFormat
+      try {
+        await exportLayersBatch(
+          list,
+          format,
+          (p, m) => {
+            progress.value = p
+            msg.value = m
+          },
+          shared,
+        )
+        msg.value = `已导出 ${list.length} 个图层`
+        logStore.logOperation('export-batch', `批导出 ${list.length} 层`, format)
+        return
+      } catch (batchErr) {
+        // 批失败则逐层并汇总错误
+        const errors: string[] = []
+        let ok = 0
+        for (let i = 0; i < list.length; i++) {
+          const layer = list[i]!
+          try {
+            await exportLayer(layer, format, exportOptsFor(layer))
+            ok += 1
+          } catch (e) {
+            errors.push(`${layer.name}: ${e instanceof Error ? e.message : String(e)}`)
+          }
+          progress.value = (i + 1) / list.length
+        }
+        if (ok && !errors.length) {
+          msg.value = `已导出 ${ok} 个图层`
+        } else if (ok) {
+          msg.value = `成功 ${ok} 个`
+          err.value = `失败 ${errors.length}：${errors[0]}`
+        } else {
+          err.value = errors[0] || (batchErr instanceof Error ? batchErr.message : String(batchErr))
+          msg.value = ''
+        }
+        return
       }
-      msg.value = `已导出 ${list.length} 个图层`
-      logStore.logOperation('export-batch', `逐层导出 ${list.length} 层`, format)
-      return
     }
+
     let ok = 0
     const errors: string[] = []
     for (let i = 0; i < list.length; i++) {
       const layer = list[i]!
       const format = (
-        layer.importedRaster ? rasterFormat.value : vectorFormat.value
+        layer.importedRaster
+          ? rasterFormat.value === 'geotiff'
+            ? 'tif'
+            : rasterFormat.value === 'netcdf'
+              ? 'nc'
+              : rasterFormat.value === 'matlab'
+                ? 'mat'
+                : rasterFormat.value
+          : vectorFormat.value
       ) as ExportFormat
       const opts = exportOptsFor(layer)
       try {
@@ -240,6 +404,7 @@ async function doExport() {
         errors.push(`${layer.name}: ${e instanceof Error ? e.message : String(e)}`)
       }
       progress.value = (i + 1) / list.length
+      msg.value = `已处理 ${i + 1}/${list.length}`
     }
     if (ok && !errors.length) {
       const stamp =
@@ -251,9 +416,9 @@ async function doExport() {
       msg.value = `已导出 ${ok} 个图层${stamp}`
     } else if (ok) {
       msg.value = `成功 ${ok} 个`
-      err.value = `失败 ${errors.length}：${errors[0]}`
+      err.value = `失败 ${errors.length}：${errors.join('；')}`
     } else {
-      err.value = errors[0] || '导出失败'
+      err.value = errors.join('；') || '导出失败'
       msg.value = ''
     }
   } catch (e) {
@@ -306,8 +471,16 @@ async function doExport() {
                   :checked="selectedIds.includes(l.instanceId)"
                   @change="toggle(l.instanceId)"
                 />
-                <span>{{ l.name }}</span>
+                <span class="layer-main">
+                  <span class="layer-name">{{ l.name }}</span>
+                  <span class="layer-id"
+                    >{{ DATA_COPY.exportMachineId }}: {{ machineIdOf(l) }}</span
+                  >
+                </span>
                 <em>
+                  <template v-if="isWorkflowProduct(l)"
+                    >{{ DATA_COPY.exportWorkflowProduct }} ·
+                  </template>
                   {{ l.importedRaster ? '栅格' : '矢量'
                   }}{{
                     l.importedRaster?.timeList?.length
@@ -329,13 +502,16 @@ async function doExport() {
           <label v-if="hasRaster">
             栅格 {{ DATA_COPY.exportFormat }}
             <select v-model="rasterFormat">
-              <option value="geotiff">GeoTIFF</option>
-              <option value="netcdf">NetCDF</option>
-              <option value="png">预览 PNG</option>
+              <option value="geotiff">{{ DATA_COPY.exportRasterGeotiff }}</option>
+              <option value="mat">{{ DATA_COPY.exportRasterMat }}</option>
+              <option value="netcdf">{{ DATA_COPY.exportRasterNc }}</option>
+              <option value="png">{{ DATA_COPY.exportRasterPng }}</option>
             </select>
           </label>
           <fieldset v-if="showTimePicker" class="time-export">
-            <legend>{{ DATA_COPY.exportTime }}</legend>
+            <legend>
+              {{ selectedLayers.length > 1 ? DATA_COPY.exportTimeCommon : DATA_COPY.exportTime }}
+            </legend>
             <div class="time-mode-row">
               <label class="radio-row">
                 <input v-model="timeExportMode" type="radio" value="single" />
@@ -373,6 +549,43 @@ async function doExport() {
               </ul>
             </template>
             <p class="enc-hint">{{ DATA_COPY.exportTimeHint }}</p>
+          </fieldset>
+          <label class="check-inline">
+            <input v-model="clipToMap" type="checkbox" />
+            {{ DATA_COPY.exportClipMap }}
+          </label>
+          <label>
+            {{ DATA_COPY.exportOutputCrs }}
+            <select v-model="outputCrs">
+              <option value="">{{ DATA_COPY.exportOutputCrsSource }}</option>
+              <option value="EPSG:4326">EPSG:4326 (WGS84)</option>
+              <option value="EPSG:3857">EPSG:3857 (Web Mercator)</option>
+            </select>
+          </label>
+          <fieldset v-if="showFieldPicker" class="time-export">
+            <legend>{{ DATA_COPY.exportFields }}</legend>
+            <div class="sel-actions">
+              <button type="button" class="link-btn" @click="selectAllFields">
+                {{ DATA_COPY.exportFieldsAll }}
+              </button>
+              <button type="button" class="link-btn" @click="clearFields">
+                {{ DATA_COPY.exportFieldsClear }}
+              </button>
+              <span class="sel-count">已选 {{ selectedFields.length || '全部' }}</span>
+            </div>
+            <ul class="time-list">
+              <li v-for="f in availableFields" :key="f">
+                <label class="check-row">
+                  <input
+                    type="checkbox"
+                    :checked="selectedFields.includes(f)"
+                    @change="toggleField(f)"
+                  />
+                  <span>{{ f }}</span>
+                </label>
+              </li>
+            </ul>
+            <p class="enc-hint">{{ DATA_COPY.exportFieldsHint }}</p>
           </fieldset>
           <label v-if="needsTextEncoding">
             {{ DATA_COPY.exportEncoding }}
@@ -438,7 +651,7 @@ async function doExport() {
 }
 .data-panel {
   width: min(28rem, calc(100vw - 2rem));
-  max-height: min(70vh, 32rem);
+  max-height: min(78vh, 40rem);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -552,6 +765,15 @@ async function doExport() {
   color: #d8e6f5;
   cursor: pointer;
 }
+.check-inline {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.4rem !important;
+  font-size: 0.56rem !important;
+  color: #d8e6f5 !important;
+  cursor: pointer;
+}
 .time-list {
   margin: 0;
   padding: 0;
@@ -582,13 +804,28 @@ async function doExport() {
 .check-row:hover {
   background: rgba(10, 132, 255, 0.08);
 }
+.layer-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+  min-width: 0;
+}
+.layer-name {
+  font-size: 0.58rem;
+}
+.layer-id {
+  font-size: 0.46rem;
+  color: #6a8094;
+  word-break: break-all;
+}
 .check-row em {
   margin-left: auto;
   font-style: normal;
   color: #6a8094;
   font-size: 0.5rem;
+  flex-shrink: 0;
 }
-label:not(.check-row) {
+label:not(.check-row):not(.radio-row):not(.check-inline) {
   display: flex;
   flex-direction: column;
   gap: 0.18rem;

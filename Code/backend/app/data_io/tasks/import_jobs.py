@@ -73,6 +73,11 @@ def _dispatch(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
             payload.get("layer_ids") or [],
             format=payload.get("format") or "geojson",
             encoding=payload.get("encoding") or "auto",
+            time=payload.get("time"),
+            times=payload.get("times"),
+            bbox=payload.get("bbox"),
+            output_crs=payload.get("output_crs"),
+            fields=payload.get("fields"),
         )
     raise ValueError(f"未知导入任务类型: {kind}")
 

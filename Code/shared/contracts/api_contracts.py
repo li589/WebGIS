@@ -700,6 +700,38 @@ class RuntimeStatusResponse(BaseModel):
     services: list[BackendServiceStatus] = Field(default_factory=list)
 
 
+class SystemResourceSnapshot(BaseModel):
+    """系统级资源快照（psutil 采集，轻量非阻塞）。"""
+
+    cpu_percent: float | None = None
+    memory_total_mb: float | None = None
+    memory_used_mb: float | None = None
+    memory_percent: float | None = None
+    disk_total_mb: float | None = None
+    disk_used_mb: float | None = None
+    disk_percent: float | None = None
+
+
+class ProcessResourceSnapshot(BaseModel):
+    """单个后端进程资源快照。"""
+
+    pid: int
+    name: str
+    cpu_percent: float | None = None
+    memory_rss_mb: float | None = None
+    threads: int | None = None
+    status: str | None = None
+
+
+class ResourceUsageResponse(BaseModel):
+    """GET /runtime/resources — 后端进程与宿主系统资源占用。"""
+
+    updated_at: datetime
+    system: SystemResourceSnapshot | None = None
+    processes: list[ProcessResourceSnapshot] = Field(default_factory=list)
+    worker_count: int | None = None
+
+
 class FrontendCommandRequest(BaseModel):
     command_type: FrontendCommandType
     target: str | None = None

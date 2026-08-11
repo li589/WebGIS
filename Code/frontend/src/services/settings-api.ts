@@ -55,6 +55,7 @@ export type {
   RemoteStorageToggleRequest,
   RemoteStorageToggleResponse,
   RemoteStorageUpsertRequest,
+  ResourceUsageResponse,
   RuntimeConfigPatch,
   RuntimeConfigScope,
   RuntimeConfigSnapshotResponse,
@@ -131,6 +132,7 @@ import type {
   RemoteStorageToggleRequest,
   RemoteStorageToggleResponse,
   RemoteStorageUpsertRequest,
+  ResourceUsageResponse,
   RuntimeConfigPatch,
   RuntimeConfigSnapshotResponse,
   RuntimeConfigUpdateRequest,
@@ -565,6 +567,10 @@ export function fetchRuntimeConfig(): Promise<RuntimeConfigSnapshotResponse> {
 
 export function fetchRuntimeStatus(): Promise<RuntimeStatusResponse> {
   return settingsFetch('/runtime/status')
+}
+
+export function fetchRuntimeResources(): Promise<ResourceUsageResponse> {
+  return settingsFetch('/runtime/resources')
 }
 
 export async function updateRuntimeConfig(

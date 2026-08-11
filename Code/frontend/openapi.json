@@ -1570,6 +1570,33 @@
         ]
       }
     },
+    "/runtime/resources": {
+      "get": {
+        "tags": [
+          "runtime"
+        ],
+        "summary": "Get Runtime Resources",
+        "description": "返回后端进程与宿主系统资源占用（CPU / 内存 / 磁盘）。\n\n数据经 psutil 轻量采样（TTL 5s 缓存），前端资源面板低频轮询即可。",
+        "operationId": "get_runtime_resources_runtime_resources_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceUsageResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
     "/runtime/metrics": {
       "get": {
         "tags": [
@@ -12898,6 +12925,69 @@
         ],
         "title": "PortalCredentialsMapResponse"
       },
+      "ProcessResourceSnapshot": {
+        "properties": {
+          "pid": {
+            "type": "integer",
+            "title": "Pid"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "cpu_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Percent"
+          },
+          "memory_rss_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Rss Mb"
+          },
+          "threads": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threads"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pid",
+          "name"
+        ],
+        "title": "ProcessResourceSnapshot",
+        "description": "单个后端进程资源快照。"
+      },
       "RasterCommitBody": {
         "properties": {
           "upload_id": {
@@ -13592,6 +13682,49 @@
         ],
         "title": "RemoteStorageUpsertRequest"
       },
+      "ResourceUsageResponse": {
+        "properties": {
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "system": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SystemResourceSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "processes": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessResourceSnapshot"
+            },
+            "type": "array",
+            "title": "Processes"
+          },
+          "worker_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "updated_at"
+        ],
+        "title": "ResourceUsageResponse",
+        "description": "GET /runtime/resources — 后端进程与宿主系统资源占用。"
+      },
       "ResultKind": {
         "type": "string",
         "enum": [
@@ -14048,6 +14181,90 @@
         },
         "type": "object",
         "title": "StoragePolicy"
+      },
+      "SystemResourceSnapshot": {
+        "properties": {
+          "cpu_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Percent"
+          },
+          "memory_total_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Total Mb"
+          },
+          "memory_used_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Used Mb"
+          },
+          "memory_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Percent"
+          },
+          "disk_total_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disk Total Mb"
+          },
+          "disk_used_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disk Used Mb"
+          },
+          "disk_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disk Percent"
+          }
+        },
+        "type": "object",
+        "title": "SystemResourceSnapshot",
+        "description": "系统级资源快照（psutil 采集，轻量非阻塞）。"
       },
       "TableSpec": {
         "properties": {

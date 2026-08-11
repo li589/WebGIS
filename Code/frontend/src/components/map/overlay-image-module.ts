@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { showToast } from '../../data-manager/core/workspace-store'
 import { overlaySafeWgs84Bounds } from '../../services/geo-math'
 import { buildOverlayStyleQuery } from './layer-symbology'
+import type { ImageSourceSpecification } from 'maplibre-gl'
 
 type MapInstance = import('maplibre-gl').Map
 
@@ -512,7 +513,7 @@ export function createOverlayImageModule(
         [bounds[2], bounds[1]],
         [bounds[0], bounds[1]],
       ],
-    } as any)
+    } as ImageSourceSpecification)
   }
 
   function _addXyzSource(sourceId: string, tileTemplate: string, maxZoom = DEFAULT_TILE_MAX_ZOOM) {

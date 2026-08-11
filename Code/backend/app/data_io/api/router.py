@@ -173,6 +173,14 @@ class FieldAddBody(BaseModel):
     default: Any = ""
 
 
+class ExportBBox(BaseModel):
+    west: float
+    south: float
+    east: float
+    north: float
+    crs: str = "EPSG:4326"
+
+
 class ExportBody(BaseModel):
     layer_id: str
     format: str = "geojson"
@@ -182,6 +190,12 @@ class ExportBody(BaseModel):
     time: str | None = None
     # 多时刻列表；长度>1 时打成 zip。与 time 二选一优先 times
     times: list[str] | None = None
+    # 裁剪到地图/指定范围
+    bbox: ExportBBox | None = None
+    # 输出坐标系，如 EPSG:4326 / EPSG:3857；缺省保持源
+    output_crs: str | None = None
+    # 矢量属性字段子集
+    fields: list[str] | None = None
 
 
 class ExportBatchBody(BaseModel):
@@ -190,6 +204,10 @@ class ExportBatchBody(BaseModel):
     encoding: str | None = "auto"
     async_mode: bool = False
     time: str | None = None
+    times: list[str] | None = None
+    bbox: ExportBBox | None = None
+    output_crs: str | None = None
+    fields: list[str] | None = None
 
 
 class BatchGroupBody(BaseModel):
@@ -884,6 +902,9 @@ async def export_layer_endpoint(body: ExportBody) -> Response:
             encoding=body.encoding,
             time=body.time,
             times=body.times,
+            bbox=body.bbox.model_dump() if body.bbox else None,
+            output_crs=body.output_crs,
+            fields=body.fields,
         )
     except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
@@ -899,6 +920,7 @@ async def export_batch_endpoint(body: ExportBatchBody) -> Response:
     if not body.layer_ids:
         raise HTTPException(status_code=400, detail="layer_ids 不能为空")
     force_async = body.async_mode or len(body.layer_ids) > 2
+    bbox_payload = body.bbox.model_dump() if body.bbox else None
     try:
         if force_async:
             job = enqueue_job(
@@ -907,6 +929,11 @@ async def export_batch_endpoint(body: ExportBatchBody) -> Response:
                     "layer_ids": body.layer_ids,
                     "format": body.format,
                     "encoding": body.encoding,
+                    "time": body.time,
+                    "times": body.times,
+                    "bbox": bbox_payload,
+                    "output_crs": body.output_crs,
+                    "fields": body.fields,
                 },
                 force_async=True,
             )
@@ -921,12 +948,23 @@ async def export_batch_endpoint(body: ExportBatchBody) -> Response:
             body.layer_ids,
             format=body.format,
             encoding=body.encoding,
+            time=body.time,
+            times=body.times,
+            bbox=bbox_payload,
+            output_crs=body.output_crs,
+            fields=body.fields,
         )
         path = Path(str(result["download_path"]))
+        fname = str(result.get("filename") or path.name)
+        media = (
+            "application/x-matlab-data"
+            if fname.lower().endswith(".mat")
+            else "application/zip"
+        )
         return FileResponse(
             path,
-            media_type="application/zip",
-            filename=str(result.get("filename") or path.name),
+            media_type=media,
+            filename=fname,
         )
     except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc

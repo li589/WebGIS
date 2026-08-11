@@ -245,6 +245,122 @@ def test_workflow_engine_dag() -> None:
     )
 
 
+def test_workflow_engine_optional_edge() -> None:
+    """optional 源端口缺失时跳过该边；required/未知端口缺失仍被标记 failed。"""
+    import pytest
+
+    from app.workflow_engine import (
+        BaseNode,
+        NodeRegistry,
+        WorkflowExecutor,
+        WorkflowDefinition,
+        NodeSpec,
+        EdgeSpec,
+        PortSpec,
+        ExecutionContext,
+    )
+    from app.workflow_engine.enums import RunStatus
+    from app.workflow_engine.models import NodeExecutionResult
+
+    class OptOutNode(BaseNode):
+        node_type = "test_opt_out"
+
+        def execute(self, inputs):
+            # 故意不产出 optional 端口 `optional_result`
+            return NodeExecutionResult(
+                node_id=self.spec.node_id,
+                status=RunStatus.completed,
+                outputs={"must": 42},
+            )
+
+        @staticmethod
+        def build_spec():
+            return NodeSpec(
+                node_id="test_opt_out",
+                node_type="test_opt_out",
+                output_ports=[
+                    PortSpec(name="must"),
+                    PortSpec(name="optional_result", required=False),
+                ],
+            )
+
+    class MulNode(BaseNode):
+        node_type = "test_opt_mul"
+
+        def execute(self, inputs):
+            result = inputs.get("result", 0)
+            factor = inputs.get("factor", 2)
+            return NodeExecutionResult(
+                node_id=self.spec.node_id,
+                status=RunStatus.completed,
+                outputs={"final": result * factor},
+            )
+
+        @staticmethod
+        def build_spec():
+            return NodeSpec(
+                node_id="test_opt_mul",
+                node_type="test_opt_mul",
+                input_ports=[
+                    PortSpec(name="result"),
+                    PortSpec(name="factor", required=False),
+                ],
+                output_ports=[PortSpec(name="final")],
+            )
+
+    registry = NodeRegistry()
+    registry.register(OptOutNode)
+    registry.register(MulNode)
+    executor = WorkflowExecutor(registry)
+
+    # 1e. optional 源端口缺失 → 跳过该边，不抛 KeyError
+    wf_opt = WorkflowDefinition(
+        workflow_id="test-optional-edge",
+        nodes=[
+            NodeSpec(node_id="src", node_type="test_opt_out"),
+            NodeSpec(node_id="dst", node_type="test_opt_mul", params={"factor": 2}),
+        ],
+        edges=[
+            EdgeSpec(
+                source_node_id="src",
+                source_port="optional_result",
+                target_node_id="dst",
+                target_port="result",
+            ),
+        ],
+    )
+    result_opt = executor.execute(wf_opt, ExecutionContext(workflow_id="test-optional-edge"))
+    assert result_opt.status == RunStatus.completed, f"status={result_opt.status}"
+    # 下游因缺输入回退 params/默认值 → factor=2, result=0 → final=0
+    assert result_opt.outputs.get("dst.final") == 0, f"outputs={result_opt.outputs}"
+
+    # 1f. required/未知端口缺失 → 仍被标记 failed（execute 内捕获为节点失败，行为保持）
+    wf_required = WorkflowDefinition(
+        workflow_id="test-required-edge",
+        nodes=[
+            NodeSpec(node_id="src", node_type="test_opt_out"),
+            NodeSpec(node_id="dst", node_type="test_opt_mul", params={"factor": 2}),
+        ],
+        edges=[
+            EdgeSpec(
+                source_node_id="src",
+                source_port="ghost_port",  # spec 未声明 → 保守视为 required
+                target_node_id="dst",
+                target_port="result",
+            ),
+        ],
+    )
+    result_required = executor.execute(
+        wf_required, ExecutionContext(workflow_id="test-required-edge")
+    )
+    assert result_required.status == RunStatus.failed, (
+        f"status={result_required.status} outputs={result_required.outputs}"
+    )
+    assert any(
+        "missing required upstream outputs" in (w or "") for w in result_required.node_results[1].warnings
+    ), f"warnings={result_required.node_results}"
+
+
 # ============================================================
 # 2. 天气工作流端到端执行
 # ============================================================

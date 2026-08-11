@@ -20,6 +20,7 @@ import {
 } from './weather-overlay-maplibre'
 import type { WeatherOverlayState } from './weather-overlay-registry'
 import type { WindGeoJSON } from './types'
+import type { GeoJSONSourceSpecification } from 'maplibre-gl'
 
 type MapInstance = import('maplibre-gl').Map
 type GeoJsonSourceSpecification = import('maplibre-gl').GeoJSONSourceSpecification
@@ -279,7 +280,7 @@ export function syncWeatherGridFillOverlay(map: MapInstance, overlayState: Weath
       data: geojsonSource,
     } as GeoJsonSourceSpecification)
   } else {
-    existingSource.setData(geojsonSource as any)
+    existingSource.setData(geojsonSource as GeoJSONSourceSpecification['data'])
   }
 
   if (!map.getLayer(ids.fillLayerId)) {
@@ -389,7 +390,7 @@ export function syncWeatherPointOverlay(map: MapInstance, overlayState: WeatherO
     return
   }
 
-  existingSource.setData(geojsonSource as any)
+  existingSource.setData(geojsonSource as GeoJSONSourceSpecification['data'])
   if (map.getLayer(ids.pointLayerId)) {
     map.setPaintProperty(ids.pointLayerId, 'circle-radius', pointRadius)
     map.setPaintProperty(ids.pointLayerId, 'circle-color', pointColor)

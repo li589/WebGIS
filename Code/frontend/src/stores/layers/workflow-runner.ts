@@ -29,7 +29,11 @@ import { getCatalogDisplayName, isTerminalStatus } from './catalog-builders'
 import { normalizeWorkflowProgress } from './workflow-progress'
 import { resolveRestoreWorkflowBridge as resolveRestoreWorkflowBridgeFromCatalog } from './restore-workflow-bridge'
 import { claimOrphanWorkflowRun, isSubmitTimeoutError } from '../../utils/workflow-submit-reconcile'
-import { localizeWorkflowErrorMessage } from '../../utils/workflow-error-messages'
+import {
+  formatWorkflowValidationError,
+  localizeWorkflowErrorMessage,
+} from '../../utils/workflow-error-messages'
+import { WorkflowValidationError } from '../../services/_http'
 import { productTagLabel } from '../../utils/workflow-expected-outputs'
 import { debugLog as probeDebugLog } from '../../utils/perf-probe'
 import { WORKFLOW_COPY } from '../../ui-copy/workflow'
@@ -1006,8 +1010,14 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         })
         scheduleWorkflowRetry(catalogId)
       } else {
-        const localized = localizeWorkflowErrorMessage(errMsg)
-        deps.setWorkflowError(localized)
+        const formatted =
+          error instanceof WorkflowValidationError
+            ? formatWorkflowValidationError(error.message, error.issues)
+            : {
+                summary: localizeWorkflowErrorMessage(errMsg),
+                notes: [localizeWorkflowErrorMessage(errMsg)],
+              }
+        deps.setWorkflowError(formatted.summary)
         deps.upsertJobLayer(catalogId, {
           jobId: submitJobId,
           catalogId,
@@ -1017,10 +1027,10 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           progress: 0,
           createdAt: submitStartedAt,
           updatedAt: new Date().toISOString(),
-          message: localized,
+          message: formatted.summary,
           metrics: [],
-          reportSummary: localized,
-          diagnosticNotes: [localized],
+          reportSummary: formatted.summary,
+          diagnosticNotes: formatted.notes,
           resultUrl: undefined,
         })
       }

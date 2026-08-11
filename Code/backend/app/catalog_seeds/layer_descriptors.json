@@ -1198,8 +1198,10 @@
         "ndvi_clim_dir",
         "Ecological_Vegetation/NDVI/climatology"
       ],
-      "fy_folder": [
-        "Soil_Moisture/FY3D",
+      "fy3d_folder": [
+        "Soil_Moisture/FY3D"
+      ],
+      "fy3b_folder": [
         "Soil_Moisture/FY3B"
       ]
     },

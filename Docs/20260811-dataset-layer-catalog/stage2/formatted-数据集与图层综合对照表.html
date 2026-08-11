@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="docx-page-size" content="A4">
+<title>CGDA 数据集与图层综合对照表</title>
+<style>
+/* --- CSS @page 页面模型：封面无页脚，正文页脚居中页码 --- */
+@page { @bottom-center { content: counter(page); } }
+@page cover { @bottom-center { content: none; } }
+section[role="cover"] { page: cover; }
+
+:root {
+  /* typography */
+  --typography-fontFamily-heading: "微软雅黑", "Microsoft YaHei", "PingFang SC";
+  --typography-fontFamily-body: "微软雅黑", "Microsoft YaHei", "PingFang SC";
+  --typography-fontFamily-bodyLatin: "Calibri", "Helvetica Neue", sans-serif;
+  --typography-fontFamily-data: "DIN Next", "Arial", sans-serif;
+  --typography-fontFamily-code: "Consolas", "Source Code Pro", monospace;
+  --typography-fontSize-title: 28pt;
+  --typography-fontSize-subtitle: 18pt;
+  --typography-fontSize-h1: 20pt;
+  --typography-fontSize-coverTitle: 22pt;
+  --typography-fontSize-coverCategory: 14pt;
+  --typography-fontSize-sectionHeader: 13pt;
+  --typography-fontSize-h2: 11pt;
+  --typography-fontSize-h3: 10pt;
+  --typography-fontSize-body: 9pt;
+  --typography-fontSize-small: 8pt;
+  --typography-fontSize-tiny: 7pt;
+  --typography-lineHeight-body: 1.6;
+  --typography-fontWeight-heading: 600;
+  --typography-fontWeight-body: 400;
+  --typography-fontWeight-emphasis: 500;
+  /* color */
+  --color-primary: #1565C0;
+  --color-secondary: #0288D1;
+  --color-accent: #00897B;
+  --color-text: #212121;
+  --color-textSecondary: #616161;
+  --color-heading: #1A237E;
+  --color-divider: #E0E0E0;
+  --color-background: #FFFFFF;
+  --color-surface: #F5F7FA;
+  --color-danger: #C62828;
+  --color-success: #2E7D32;
+  --color-emphasis: var(--color-danger);
+  /* spacing */
+  --spacing-paragraph: 0.75em;
+  --spacing-paragraphAfter: 0.75em;
+  --spacing-sectionGap: 2.5em;
+  --spacing-cardPadding: 1.5em;
+  /* layout */
+  --layout-marginTop: 2.5cm;
+  --layout-marginBottom: 2.0cm;
+  --layout-marginLeft: 2.5cm;
+  --layout-marginRight: 2.5cm;
+  --layout-maxContentWidth: 160mm;
+  /* derived semantic vars */
+  --fs-h1: var(--typography-fontSize-h1);
+  --fs-h2: var(--typography-fontSize-h2);
+  --fs-h3: var(--typography-fontSize-h3);
+  --fs-body: var(--typography-fontSize-body);
+  --fs-small: var(--typography-fontSize-small);
+  --fs-tiny: var(--typography-fontSize-tiny);
+  --ff-heading: var(--typography-fontFamily-heading);
+  --ff-body: var(--typography-fontFamily-body);
+  --ff-code: var(--typography-fontFamily-code);
+  --lh-body: var(--typography-lineHeight-body);
+  --fw-bold: var(--typography-fontWeight-heading);
+  --color-muted: var(--color-textSecondary);
+  --color-border: var(--color-divider);
+  --color-highlight: var(--color-surface);
+  --color-summary-bg: var(--color-surface);
+  --color-summary-border: var(--color-primary);
+  --summary-border-width: 4px;
+  --radius-card: 8px;
+  --color-row-alt: #FBFCFE;
+  --margin-page: var(--layout-marginLeft);
+  --page-content-width: var(--layout-maxContentWidth);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--ff-body); font-size: var(--fs-body); line-height: var(--lh-body); color: var(--color-text); background: var(--color-background); max-width: var(--page-content-width); margin-left: auto; margin-right: auto; }
+
+/* ---------- 封面 ---------- */
+section[role="cover"] { min-height: 55vh; padding: 40px var(--margin-page); background: var(--color-highlight); }
+.cover-eyebrow { font-size: var(--typography-fontSize-coverCategory); color: var(--color-secondary); font-weight: var(--fw-bold); text-align: center; margin-bottom: 18px; letter-spacing: 2px; }
+.cover-title { font-size: var(--typography-fontSize-coverTitle); font-family: var(--ff-heading); font-weight: var(--fw-bold); color: var(--color-primary); text-align: center; margin-bottom: 14px; }
+.cover-subtitle { font-size: var(--typography-fontSize-subtitle); color: var(--color-muted); text-align: center; margin-bottom: 40px; }
+.cover-meta { font-size: var(--fs-small); color: var(--color-muted); text-align: center; }
+.cover-note { font-size: var(--fs-tiny); color: var(--color-muted); text-align: center; margin-top: 28px; }
+
+/* ---------- 正文 ---------- */
+.report-body { padding: 20px var(--margin-page) 0 var(--margin-page); }
+.report-body h2 { font-size: var(--fs-h1); font-family: var(--ff-heading); font-weight: var(--fw-bold); color: var(--color-heading); border-left: 4px solid var(--color-primary); padding-left: 10px; margin-top: 26px; margin-bottom: 10px; }
+.report-body h3 { font-size: var(--fs-h2); font-family: var(--ff-heading); font-weight: var(--fw-bold); color: var(--color-primary); margin-top: 16px; margin-bottom: 8px; }
+.report-body p { margin-bottom: var(--spacing-paragraphAfter); font-size: var(--fs-body); line-height: var(--lh-body); }
+.report-body ul, .report-body ol { margin: 0 0 var(--spacing-paragraphAfter) 1.6em; }
+.report-body li { margin-bottom: 0.35em; font-size: var(--fs-body); }
+
+/* 引用/说明块 */
+.blockquote-note { border-left: 3px solid var(--color-primary); background: var(--color-highlight); padding: 8px 10px; margin: 10px 0; font-size: var(--fs-small); color: var(--color-text); }
+
+/* 关键数据强调 */
+.data-emphasis { color: var(--color-emphasis); font-weight: var(--fw-bold); }
+
+/* 代码/ID 样式 */
+.layer-id { font-family: var(--ff-code); font-size: var(--fs-small); color: var(--color-primary); }
+
+/* ---------- 表格 ---------- */
+table.tbl { width: 100%; border-collapse: collapse; margin: 8px 0 14px 0; }
+table.tbl th, table.tbl td { border: 1px solid var(--color-border); padding: 4px 6px; font-size: var(--fs-small); line-height: 1.45; vertical-align: top; }
+table.tbl th { background: var(--color-highlight); font-weight: var(--fw-bold); color: var(--color-heading); text-align: left; }
+table.tbl td.center { text-align: center; }
+table.tbl tr:nth-child(even) td { background: var(--color-row-alt); }
+
+/* 摘要数据卡（用表格承载，docx 无 grid） */
+table.summary-card { width: 100%; border-collapse: collapse; margin: 10px 0 14px 0; }
+table.summary-card td { border: 1px solid var(--color-border); background: var(--color-highlight); padding: 10px; width: 25%; vertical-align: top; }
+.summary-label { font-size: var(--fs-tiny); color: var(--color-muted); display: block; margin-bottom: 4px; }
+.summary-value { font-size: var(--typography-fontSize-h2); font-family: var(--ff-heading); font-weight: var(--fw-bold); color: var(--color-primary); display: block; }
+.summary-unit { font-size: var(--fs-tiny); color: var(--color-muted); display: block; margin-top: 2px; }
+
+/* 状态徽标 */
+.status-ok { color: var(--color-success); font-weight: var(--fw-bold); }
+.status-warn { color: #E65100; font-weight: var(--fw-bold); }
+
+/* 脚注 */
+.footnote { font-size: var(--fs-tiny); color: var(--color-muted); margin-top: 20px; padding-top: 8px; border-top: 1px solid var(--color-border); }
+</style>
+</head>
+<body>
+
+<!-- ==================== 封面 ==================== -->
+<section role="cover">
+  <p class="cover-eyebrow">CGDA · 综合地理数据分析系统</p>
+  <h1 class="cover-title">数据集与图层综合对照表</h1>
+  <p class="cover-subtitle">面向导师交付的项目数据能力总览</p>
+  <div class="cover-meta">
+    <p>编制日期：2026 年 8 月 11 日 ｜ 版本：v1.0 ｜ 事实来源：系统图层目录与项目文档</p>
+  </div>
+  <p class="cover-note">本报告由系统图层目录（catalog_seeds）自动核对生成，含全部 41 个目录图层的内部 ID、图层名称、数据集名称与内部分类，并附完整说明。</p>
+</section>
+
+<!-- ==================== 正文 ==================== -->
+<section role="body" data-page-restart="1">
+<div class="report-body">
+
+<h2>一、报告概述（结论先行）</h2>
+<p>CGDA（综合地理数据分析系统）是面向课题组与大气研究院研究员的科研数据分析平台，以 MapLibre 2D 地图为主链，统一承载多源数据接入（本地 / GEE / Open-Meteo / 商业天气源）、动态时空结果展示与工作流算法编排。</p>
+<p>本报告围绕「图层」与「数据集」两大核心概念，交付以下内容：</p>
+<ol>
+  <li><strong>一张综合对照表</strong>：将系统当前全部 <span class="data-emphasis">41 个目录图层</span>的图层名称、数据集名称、内部分类、内部 ID 一一对应列出，按 6 大类组织，可直接用于验收与汇报；</li>
+  <li><strong>一套命名与分类规则</strong>：解释内部 ID（layer_id）前缀、数据集标识（dataset_key）与分类体系（category）的设计逻辑；</li>
+  <li><strong>一组说明解释</strong>：覆盖数据来源（星 / 地 / 气 / 辅 / 开放）、算法引擎、就绪状态与扩展方式，帮助快速理解平台的数据能力。</li>
+</ol>
+<p><strong>关键数字速览</strong></p>
+<table class="summary-card">
+  <tr>
+    <td><span class="summary-label">目录图层总数</span><span class="summary-value">41 个</span><span class="summary-unit">17 在线天气 + 24 科研/静态产品</span></td>
+    <td><span class="summary-label">内部分类</span><span class="summary-value">6 大类</span><span class="summary-unit">天气/课题组/气候灾害/植被/土地利用/地形</span></td>
+    <td><span class="summary-label">课题组子分类</span><span class="summary-value">3 类</span><span class="summary-unit">模型输入 / 模型输出 / 辅助数据</span></td>
+    <td><span class="summary-label">系统工作流种子</span><span class="summary-value">33 个</span><span class="summary-unit">下载/预处理/GIS/反演/统计全覆盖</span></td>
+  </tr>
+</table>
+
+<h2>二、四个核心字段的含义</h2>
+<p>在进入综合表格之前，先明确「图层名称、数据集名称、内部分类、内部 ID」四个字段在系统中的准确定义——它们分别对应图层目录（layer_catalog）中的 <span class="layer-id">display_name</span>、<span class="layer-id">dataset_key</span>、<span class="layer-id">category</span>、<span class="layer-id">layer_id</span>。</p>
+<table class="tbl">
+  <tr><th style="width:16%">字段</th><th style="width:20%">系统标识</th><th style="width:40%">通俗含义</th><th style="width:24%">示例</th></tr>
+  <tr><td><strong>图层名称</strong></td><td><span class="layer-id">display_name</span></td><td>地图图层面板上展示给用户的中文名，面向地理工作者，允许重复</td><td>SMAP L3 土壤水分</td></tr>
+  <tr><td><strong>数据集名称</strong></td><td><span class="layer-id">dataset_key</span></td><td>图层背后绑定的数据集标识；同一数据集可多次导入/产出，靠实例 ID 区分</td><td><span class="layer-id">smap_sm_ts_dec2025</span></td></tr>
+  <tr><td><strong>内部分类</strong></td><td><span class="layer-id">category</span></td><td>图层所属大类（英文 ID 与前端对齐）；课题组数据另有子分类</td><td>research-group → 模型输入</td></tr>
+  <tr><td><strong>内部 ID</strong></td><td><span class="layer-id">layer_id</span></td><td>全系统唯一、稳定不变的图层主键，绑定瓦片 URL、工作流关联与导出文件名</td><td><span class="layer-id">ref-smap-sm-202512-l3</span></td></tr>
+</table>
+<p><strong>内部 ID 的前缀规则</strong>（新增图层必须遵守）：</p>
+<table class="tbl">
+  <tr><th style="width:14%">前缀</th><th style="width:34%">语义</th><th style="width:52%">示例</th></tr>
+  <tr><td><span class="layer-id">ref-</span></td><td>参考数据（官方产品 / 课题组参考序列）</td><td><span class="layer-id">ref-smap-sm-202512-l3</span></td></tr>
+  <tr><td><span class="layer-id">prod-</span></td><td>生产融合产品</td><td><span class="layer-id">prod-fy_smap_station-sm_vod_omega-202512-fusion</span></td></tr>
+  <tr><td><span class="layer-id">method-</span></td><td>算法方法产出（可运行工作流）</td><td><span class="layer-id">method-smap-omega-doy-avg</span></td></tr>
+  <tr><td><span class="layer-id">obs-</span></td><td>站点观测</td><td><span class="layer-id">obs-station-sm-daily</span></td></tr>
+  <tr><td><span class="layer-id">imported-</span></td><td>本地导入 / 工作流运行产物</td><td><span class="layer-id">imported-{hex}</span></td></tr>
+</table>
+<div class="blockquote-note">&nbsp;&nbsp;约定：layer_id 一旦发布即为稳定目录键，不批量改名（已绑定瓦片 URL、工作流 linked_layer_id 与工作区快照）；重命名只改显示名，永不改内部 ID。</div>
+
+<h2>三、图层与数据集综合对照表（核心交付）</h2>
+<p>下表为系统图层目录的权威快照（2026-08-11）。表格字段：内部 ID（layer_id）｜ 图层名称（display_name）｜ 数据集名称（dataset_key）｜ 内部分类（category / 子分类）｜ 时间粒度 ｜ 状态。</p>
+
+<h3>3.1 在线天气图层（17 个 · 分类：weather）</h3>
+<p>实时气象数据，由天气引擎（Open-Meteo 在线/本地、可选 WeatherAPI / OpenWeather）按地图视口临时取数、切成瓦片显示；时间粒度以小时计，可随时间轴联动。</p>
+<table class="tbl">
+  <tr><th style="width:22%">内部 ID</th><th style="width:18%">图层名称</th><th style="width:22%">数据集名称</th><th style="width:14%">内部分类</th><th style="width:10%">时间粒度</th><th style="width:14%">状态</th></tr>
+  <tr><td class="layer-id">wind-field</td><td>风场（10m）</td><td class="layer-id">wind_field</td><td>weather</td><td class="center">小时</td><td class="status-ok">可用（默认显示）</td></tr>
+  <tr><td class="layer-id">wind-field-80m</td><td>风场（80m）</td><td class="layer-id">wind_field_80m</td><td>weather</td><td class="center">小时</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">wind-field-120m</td><td>风场（120m）</td><td class="layer-id">wind_field_120m</td><td>weather</td><td class="center">小时</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">wind-field-180m</td><td>风场（180m）</td><td class="layer-id">wind_field_180m</td><td>weather</td><td class="center">小时</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">wind-field-850hPa</td><td>风场（850hPa）</td><td class="layer-id">wind_field_850hpa</td><td>weather</td><td class="center">小时</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">wind-field-500hPa</td><td>风场（500hPa）</td><td class="layer-id">wind_field_500hpa</td><td>weather</td><td class="center">小时</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">wind-field-200hPa</td><td>风场（200hPa）</td><td class="layer-id">wind_field_200hpa</td><td>weather</td><td class="center">小时</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">precipitation</td><td>降水量</td><td class="layer-id">precipitation</td><td>weather</td><td class="center">小时</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">temperature</td><td>气温（2m）</td><td class="layer-id">temperature</td><td>weather</td><td class="center">小时</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">temperature-80m</td><td>气温（80m）</td><td class="layer-id">temperature_80m</td><td>weather</td><td class="center">小时</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">temperature-120m</td><td>气温（120m）</td><td class="layer-id">temperature_120m</td><td>weather</td><td class="center">小时</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">temperature-180m</td><td>气温（180m）</td><td class="layer-id">temperature_180m</td><td>weather</td><td class="center">小时</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">pressure</td><td>海平面气压</td><td class="layer-id">pressure</td><td>weather</td><td class="center">小时</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">humidity</td><td>相对湿度</td><td class="layer-id">humidity</td><td>weather</td><td class="center">小时</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">visibility</td><td>能见度</td><td class="layer-id">visibility</td><td>weather</td><td class="center">小时</td><td class="status-ok">可用（GFS 模型）</td></tr>
+  <tr><td class="layer-id">cloud-cover</td><td>云量</td><td class="layer-id">cloud-cover</td><td>weather</td><td class="center">小时</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">dewpoint</td><td>露点温度</td><td class="layer-id">dewpoint</td><td>weather</td><td class="center">小时</td><td class="status-ok">可用</td></tr>
+</table>
+
+<h3>3.2 课题组数据图层（11 个 · 分类：research-group）</h3>
+<p>课题组的科研核心图层，涵盖土壤水分反演主链（SMAP / FY-3）、站点观测与辅助数据集，按「模型输入 / 模型输出 / 辅助数据」三个子分类组织。</p>
+<table class="tbl">
+  <tr><th style="width:26%">内部 ID</th><th style="width:17%">图层名称</th><th style="width:21%">数据集名称</th><th style="width:16%">内部分类（子分类）</th><th style="width:8%">时间粒度</th><th style="width:12%">状态</th></tr>
+  <tr><td class="layer-id">ref-smap-sm-202512-l3</td><td>SMAP L3 土壤水分</td><td class="layer-id">smap_sm_ts_dec2025</td><td>research-group（模型输入）</td><td class="center">日</td><td class="status-ok">可用（默认显示）</td></tr>
+  <tr><td class="layer-id">prod-fy_smap_station-sm_vod_omega-202512-fusion</td><td>多源融合土壤水分</td><td class="layer-id">sm_multisource_dec2025</td><td>research-group（模型输入）</td><td class="center">日</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">ref-fy-tb-202512-mwri</td><td>FY-3 MWRI 亮温</td><td class="layer-id">fy_mwri</td><td>research-group（模型输入）</td><td class="center">日</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">obs-station-sm-daily</td><td>站点土壤水分</td><td class="layer-id">ismn_casmos</td><td>research-group（模型输入）</td><td class="center">日</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">ref-ddca-sm-201504-202512</td><td>DDCA 土壤水分</td><td class="layer-id">soil_moisture_ddca</td><td>research-group（辅助数据）</td><td class="center">日</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">forest-ratio</td><td>森林覆盖率</td><td class="layer-id">forest_cover_ratio_9km</td><td>research-group（辅助数据）</td><td class="center">静态</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">landscape-metrics-9km</td><td>景观多样性 SHDI</td><td class="layer-id">landscape_metrics_9km</td><td>research-group（辅助数据）</td><td class="center">静态</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">method-smap-omega-doy-dynamic</td><td>SMAP 动态 ω 反演</td><td class="layer-id">omega_sf_fenkuai_smap</td><td>research-group（模型输出）</td><td class="center">日</td><td class="status-ok">可用（需先跑工作流）</td></tr>
+  <tr><td class="layer-id">method-fy-omega-doy-dynamic</td><td>FY 动态 ω 反演</td><td class="layer-id">omega_sf_fenkuai_fy</td><td>research-group（模型输出）</td><td class="center">日</td><td class="status-ok">可用（需先跑工作流）</td></tr>
+  <tr><td class="layer-id">method-smap-omega-doy-avg</td><td>SMAP 日均 ω 反演</td><td class="layer-id">omega_avg_daily_smap</td><td>research-group（模型输出）</td><td class="center">日</td><td class="status-ok">可用（需先跑工作流）</td></tr>
+  <tr><td class="layer-id">method-fy-omega-doy-avg</td><td>FY 日均 ω 反演</td><td class="layer-id">omega_avg_daily_fy</td><td>research-group（模型输出）</td><td class="center">日</td><td class="status-ok">可用（需先跑工作流）</td></tr>
+</table>
+
+<h3>3.3 气候与灾害图层（6 个 · 分类：climate）</h3>
+<p>历史气候、热浪灾害、CO₂ 与干旱指标等离线静态/时间序列产品。</p>
+<table class="tbl">
+  <tr><th style="width:24%">内部 ID</th><th style="width:20%">图层名称</th><th style="width:24%">数据集名称</th><th style="width:14%">内部分类</th><th style="width:10%">时间粒度</th><th style="width:8%">状态</th></tr>
+  <tr><td class="layer-id">aridity-cn</td><td>干旱指数 AI</td><td class="layer-id">aridity_index_cn</td><td>climate</td><td class="center">静态</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">gpcp-precip-ts</td><td>GPCP 月降水</td><td class="layer-id">gpcp_v32_monthly</td><td>climate</td><td class="center">月</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">cmfd-precip-cn</td><td>CMFD 区域降水</td><td class="layer-id">cmfd_precip_cn</td><td>climate</td><td class="center">静态</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">era5-dwaa-cn</td><td>ERA5 白天热浪</td><td class="layer-id">era5_dwaa_smci_2020</td><td>climate</td><td class="center">静态</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">era5-wdaa-cn</td><td>ERA5 夜间热浪</td><td class="layer-id">era5_wdaa_smci_2020</td><td>climate</td><td class="center">静态</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">co2-cn</td><td>GOSAT CO₂ 柱浓度</td><td class="layer-id">gosat_midlayer_co2</td><td>climate</td><td class="center">静态</td><td class="status-ok">可用</td></tr>
+</table>
+
+<h3>3.4 植被相关图层（2 个 · 分类：vegetation）</h3>
+<table class="tbl">
+  <tr><th style="width:24%">内部 ID</th><th style="width:20%">图层名称</th><th style="width:24%">数据集名称</th><th style="width:14%">内部分类</th><th style="width:10%">时间粒度</th><th style="width:8%">状态</th></tr>
+  <tr><td class="layer-id">ndvi</td><td>植被指数 NDVI</td><td class="layer-id">ndvi_viirs_9km</td><td>vegetation</td><td class="center">月</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">biomass-cn</td><td>地上生物量 AGB</td><td class="layer-id">agb_china_30m</td><td>vegetation</td><td class="center">静态</td><td class="status-ok">可用</td></tr>
+</table>
+
+<h3>3.5 土地利用图层（3 个 · 分类：landcover）</h3>
+<table class="tbl">
+  <tr><th style="width:24%">内部 ID</th><th style="width:20%">图层名称</th><th style="width:24%">数据集名称</th><th style="width:14%">内部分类</th><th style="width:10%">时间粒度</th><th style="width:8%">状态</th></tr>
+  <tr><td class="layer-id">landcover-cn</td><td>MODIS 土地覆盖</td><td class="layer-id">mcd12q1_cn</td><td>landcover</td><td class="center">年</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">clcd-cn</td><td>CLCD 土地利用</td><td class="layer-id">clcd_30m</td><td>landcover</td><td class="center">年</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">hfp-cn</td><td>人类足迹指数 HFP</td><td class="layer-id">human_footprint_cn</td><td>landcover</td><td class="center">静态</td><td class="status-ok">可用</td></tr>
+</table>
+
+<h3>3.6 地形数据图层（2 个 · 分类：terrain）</h3>
+<table class="tbl">
+  <tr><th style="width:24%">内部 ID</th><th style="width:20%">图层名称</th><th style="width:24%">数据集名称</th><th style="width:14%">内部分类</th><th style="width:10%">时间粒度</th><th style="width:8%">状态</th></tr>
+  <tr><td class="layer-id">dem-etopo</td><td>ETOPO 地形高程</td><td class="layer-id">etopo_1</td><td>terrain</td><td class="center">静态</td><td class="status-ok">可用</td></tr>
+  <tr><td class="layer-id">gebco-dem-cn</td><td>GEBCO 海底地形</td><td class="layer-id">gebco_2023</td><td>terrain</td><td class="center">静态</td><td class="status-ok">可用</td></tr>
+</table>
+
+<h3>3.7 本地导入图层（动态 · 分类：imported）</h3>
+<p>除上述 41 个目录图层外，系统支持将<strong>本地文件或工作流运行产物</strong>导入为临时图层，内部 ID 采用 <span class="layer-id">imported-{hex}</span> 形式（如 <span class="layer-id">imported-1cb4e9591f39</span>）。当前导入实例多为：</p>
+<ul>
+  <li>工作流运行输出的栅格产品（如 <span class="layer-id">run-{id}_OMEGA_omega_pix_map.tif</span>、<span class="layer-id">OMEGA_BLOCK_OMEGA.tif</span>）；</li>
+  <li>时间序列导入层（category = time-series）；</li>
+  <li>用户上传的矢量 / 栅格文件（GeoJSON / GeoTIFF / SHP 等）。</li>
+</ul>
+<p>导入层可重命名显示名（不改内部 ID），其数据集标识、文件源名（stem）作为导出文件名回退依据。</p>
+
+<h2>四、数据来源体系（星 / 地 / 气 / 辅 / 开放）</h2>
+<p>系统数据根目录由 BACKEND_DATA_ROOT 指定（联调示例 I:\Geograph_DataSet），原始数据按语义目录组织。按「星、地、气、辅、开放」五大类梳理如下：</p>
+<table class="tbl">
+  <tr><th style="width:14%">大类</th><th style="width:30%">代表数据源</th><th style="width:26%">典型工作流 / 引擎</th><th style="width:30%">典型图层产出</th></tr>
+  <tr><td><strong>星（卫星遥感）</strong></td><td>SMAP L3、FY-3 MWRI、VIIRS/MODIS NDVI、Sentinel-2（GEE）、GOSAT、ESA BIOMASS、GPCP</td><td>smap_daily / fy_daily / ndvi_daily / GEE bridge / 本地产品直接叠图</td><td>土壤湿度、亮温、NDVI、VOD/Omega、生物量、CO₂、月降水</td></tr>
+  <tr><td><strong>地（地面站点）</strong></td><td>ISMN、CASMOS、中国生态站网</td><td>station_daily（日值处理与验证）</td><td>站点土壤湿度序列、订正/验证报告</td></tr>
+  <tr><td><strong>气（气象）</strong></td><td>Open-Meteo 多模型、可选商业天气 API；ERA5 灾害指标产品</td><td>天气引擎实时瓦片 / 本地灾害栅格叠图</td><td>风、温、湿、压、云、降水、能见度；热浪事件图</td></tr>
+  <tr><td><strong>辅（地形/覆盖等）</strong></td><td>ETOPO、GEBCO、MCD12Q1、CLCD、HFP、干旱指数、森林比例、景观指数</td><td>多为直接展示（overlay_registry）</td><td>地形、土地覆盖、人类足迹、干旱、森林/景观指标</td></tr>
+  <tr><td><strong>开放（门户临时下载）</strong></td><td>NOAA（NOMADS/GOES/Earthdata）、NSIDC、ESA Copernicus 预设</td><td>画布「门户数据下载」→ 解压 → 读变量 → 转格式 → 上图</td><td>用户指定文件对应的中间/最终图层</td></tr>
+</table>
+<p><strong>Open-Meteo 常用预报模型白名单</strong>：ECMWF IFS（0.25°，约 15 天）、GFS（0.25°，约 16 天）、ICON（0.25°，约 7.5 天）、ICON-EU（约 6–7 km 区域）等；天气瓦片按当前视口（z/x/y）临时取数，不做全球全时段落盘。</p>
+<p><strong>远程数据接入</strong>：支持 smb://、sftp://、ftp(s)://、gs://、s3:// 等协议（只读），可通过设置页凭证或环境变量把远程 URI 注入到图层数据源候选最前端（BACKEND_REMOTE_LAYER_DATA_URIS），本地路径作回退。联调环境已接入两台远程 FileBrowser 服务器（Win11 电脑、NAS 课题组成员数据盘）。</p>
+
+<h2>五、算法引擎与渲染方式</h2>
+<p>系统图层按「能否运行算法」分为两类引擎，这是理解图层行为的关键：</p>
+<table class="tbl">
+  <tr><th style="width:18%">引擎</th><th style="width:42%">含义</th><th style="width:40%">覆盖图层</th></tr>
+  <tr><td><span class="layer-id">python_provider</span></td><td>可提交分析工作流：后端调度 Python 算法包模块（如 smap_daily、omega_sf_fenkuai、ndvi_daily）生成结果再上图</td><td>NDVI、SMAP L3、FY 亮温、4 个 method-* 反演图层</td></tr>
+  <tr><td><span class="layer-id">overlay_registry</span></td><td>静态/产品叠加层：读取本地已就绪的栅格/PNG 直接展示，不从图层面板提交分析</td><td>地形、土地覆盖、气候灾害、辅助数据等绝大多数产品层</td></tr>
+  <tr><td><span class="layer-id">weather_tile</span></td><td>在线天气引擎：按视口实时取数渲染标准 z/x/y 瓦片</td><td>全部 17 个天气图层</td></tr>
+</table>
+<p><strong>已注册算法模块（节选）</strong>：smap_daily、ndvi_daily、fy_daily、station_daily、daily_bundle、timeseries_bundle、inversion_daily、block_inversion、omega_block、omega_avg_daily、omega_sf_fenkuai、statistics、fitting、export 等。</p>
+<p><strong>图层与工作流的绑定</strong>：4 个 method-* 反演图层通过 linked_layer_id / workflow_id 与系统工作流种子绑定（如 method-smap-omega-doy-avg ↔ omega_avg_daily_smap_single）；运行产出经 wf-run-{groupId}-{sm|vod|omega} 形式的运行时 ID 上图。</p>
+
+<h2>六、就绪状态与样例说明</h2>
+<ol>
+  <li><strong>「可用」≠「全球全历史都已下载」</strong>：多数科研图层当前是有限天数/月份的样例（如 SMAP L3 为 2025-12 全月 31 天、GPCP 展示采样 24 个月、DDCA 展示采样 60 天），便于演示与联调；扩库需按同一目录规范继续放数据。</li>
+  <li><strong>「待下载」数据</strong>：NDVI 原始合成（VIIRS 750 m / MODIS 250 m）、FY MWRI 原始轨道、ISMN/CASMOS 站点文件等：算法与界面已接好，本机缺原始文件时不能出正式结果（图层状态仍标记为可用，运行前会给出就绪提示）。</li>
+  <li><strong>实时天气 vs 课题产品</strong>：实时天气随视口临时取数，适合态势浏览；课题产品依赖本地库或 GEE/画布流水线，适合科研分析与出图存档。</li>
+  <li><strong>默认研究框</strong>：华南框（约 109.6°E–117.4°E，20.1°N–25.6°N）为部分算法图层默认范围；中国区域框（73°E–137°E，15°N–59°N）用于多数静态产品。</li>
+</ol>
+
+<h2>七、扩展新数据的标准流程</h2>
+<p>若课题组后续新增数据集，按以下步骤接入（无需改代码即可上图的部分由运维配置完成）：</p>
+<ol>
+  <li>数据落盘到 BACKEND_DATA_ROOT/{Category}/ 对应子目录（新数据集用英文目录名）；</li>
+  <li>在算法包 dataset_config.py 的 DATASET_REGISTRY 注册元信息（名称 / 逻辑名 / 相对路径 / 格式 / 变量 / 时间范围 / 分辨率 / CRS / 标签）；</li>
+  <li>可选：在图层目录（catalog_seeds）新增 LayerDescriptor，声明 layer_id / display_name / category / default_data_access_sources / capabilities；</li>
+  <li>可选：在 overlay_registry 配置 PNG 叠加；</li>
+  <li>python launch.py restart backend 重启后端，前端图层库即时可见。</li>
+</ol>
+<p><strong>提供新数据时建议写清</strong>：数据名称与来源机构、文件格式、空间范围、时间范围、物理量名称与单位、空间/时间分辨率、质量标记（如站点 quality_flag）。</p>
+
+<h2>八、阅读指南与验证方式</h2>
+<ul>
+  <li><strong>图层目录真源</strong>：Code/backend/app/catalog_seeds/（layer_descriptors.json + weather_descriptors.json + layer_categories.json），前端 check:catalog 校验前后端对齐；</li>
+  <li><strong>数据源与工作流对照</strong>：.ai/docs/specs/数据源与工作流对照说明-2026-07-21.md、.ai/docs/specs/当前数据源与产出一览.md；</li>
+  <li><strong>命名规范</strong>：.ai/docs/specs/layer-naming.md；</li>
+  <li><strong>联调入口</strong>：FastAPI http://127.0.0.1:8000（/docs）、前端 http://localhost:5175、天气瓦片 /weather/tiles/{layer_id}/{z}/{x}/{y}、底图 /unified-tiles。</li>
+</ul>
+
+<p class="footnote">本报告由系统图层目录与项目文档自动核对生成，供导师验收与后续数据规划使用。编制：2026-08-11 ｜ CGDA 项目组</p>
+
+</div>
+</section>
+
+</body>
+</html>
