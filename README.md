@@ -35,7 +35,6 @@ Comprehensive Geographic Data Analysis system/
 ├─ Env/Python312/  # 【本地联调唯一 Python 运行时】勿用系统 PATH 的 python
 ├─ Code/           # 实际工程代码（含 backend/vendor 等运行时第三方二进制）
 ├─ Tools/          # 主线外辅助：外部/临时工具、下载校验脚本（禁止放主体运行模块）
-├─ Example/        # 外部参考材料（如 Windy）
 ├─ launch.py       # 跨平台一键启动（会优先切换到 Env/Python312）
 ├─ start.bat / start.sh   # 推荐入口（强制 Env/Python312）
 ├─ stop.bat / stop.sh

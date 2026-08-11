@@ -1,5 +1,5 @@
 /**
- * 图层 ID / 显示名约定（与 .ai/docs/specs/layer-naming.md 对齐）。
+ * 图层 ID / 显示名约定（与 Docs/03-规范协议/layer-naming.md 对齐）。
  * 稳定目录 layer_id 不在此重命名；仅提供前缀判断与显示名规范化。
  */
 
@@ -99,7 +99,7 @@ export function collectLayerDisplayNameKeys(layer: {
 
 /**
  * UI 显示名回退链：显式名 → 持久化 → 目录名 → dataset_key → layer_id → 未命名。
- * 见 .ai/docs/specs/layer-naming.md
+ * 见 Docs/03-规范协议/layer-naming.md
  */
 export function resolveLayerDisplayLabel(options: {
   name?: string | null

@@ -1,7 +1,7 @@
 /**
  * 图层显示名持久化。
  * 新写入优先 instanceId（+ 导入 backend/overlay id）；读路径仍兼容旧 catalogId 键。
- * 见 .ai/docs/specs/layer-naming.md
+ * 见 Docs/03-规范协议/layer-naming.md
  */
 const STORAGE_KEY = 'geo:layer-display-names:v1'
 

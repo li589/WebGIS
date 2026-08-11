@@ -16,8 +16,8 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | `Code/shared/` | 前后端共享协议与公共契约 | `contracts/` |
 | `Code/infra/data-sync/` | 数据面 compose（Open-Meteo 同步，与运行栈隔离） | `docker-compose.yml`、`sync.sh` / `sync.ps1` |
 | `Code/infra/gateway/` | 可选 Nginx 同域入口（静态 dist + 反代 FastAPI `:8000`） | `docker-compose.yml`、`nginx.conf`、`README.md` |
-| `.ai/` | **AI 工作区（本地专用，不上传 GitHub）**：技能 / 规则 / 计划 / 进度 / 记忆 / 文档 | `rules/`、`skills/`、`plans/`、`progress/`、`memory/`、`docs/` |
-| `Doc/` | **（已并入 `.ai/docs/`）** 原方案、技术栈、规范与协作文档 | 见 `.ai/docs/{design,specs,reference}/` |
+| `Docs/` | **公开文档仓库**：架构设计 / 规范协议 / 专题研究 / 代码审查 / 结题材料 / HTML 报告 | 见 `Docs/README.md` 索引 |
+| `.ai/` | **AI 工作区（本地专用，不上传 GitHub）**：技能 / 规则 / 计划 / 进度 / 记忆 | `rules/`、`skills/`、`plans/`、`progress/`、`memory/` |
 | `Tools/` | 主线外辅助（下载/校验/一次性脚本）；**禁止**放主体功能与运行时模块，见 `Tools/README.md` | — |
 | `Test/` | **测试集中地**（仓库根，不在任何 `Code/` 子树下）：后端 `Test/backend/`、前端 `Test/frontend/`（保留 `src/` 目录结构，相对导入已改写为 `@/`）、算法 `Test/algorithms/`、独立/调试/报告 `Test/{standalone,debug,reports,tools}/` | 运行：`Env/Python312/python.exe -m pytest Test/backend`（后端/算法）；`cd Code/frontend && npm run test`（前端） |
 | `Env/Python312/` | **本地联调唯一 Python 运行时**（Windows: `python.exe`） | 依赖与后端/Worker 必须与此一致 |
@@ -73,7 +73,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 
 5. **Open-Meteo volume**：named volume `backend_open-meteo-data`（名可经 `Code/infra/data-sync/.env` 的 `OPEN_METEO_DATA_VOLUME` 覆盖），落在 Docker Desktop VHDX 内（`I:\Docker\DockerDesktop`）。**勿用 Windows 路径 bind mount** 替代。API 在 backend 运行栈（容器 `cgda-open-meteo`）；同步在 `Code/infra/data-sync`（`-p data-sync`）。两栈共享同一 volume 但 compose project 不同，改动 compose 时勿混用 project 名。
 
-6. **生产禁止演示开关**：勿开启 `BACKEND_DEMO_SOURCES_ENABLED` / `BACKEND_NODE_STUBS_VISIBLE`；机构交付核对见 `.ai/docs/reference/delivery-checklist.md`。
+6. **生产禁止演示开关**：勿开启 `BACKEND_DEMO_SOURCES_ENABLED` / `BACKEND_NODE_STUBS_VISIBLE`；机构交付核对见 `Docs/04-执行部署/delivery-checklist.md`。
 
 7. **地理数据根**：`BACKEND_DATA_ROOT`（及 `BACKEND_OUTPUT_ROOT`）为算法 / overlay / 图层 readiness 真源；**禁止**代码静默回退盘符。production 空根拒启。前端设置 → 数据源可改并调度 `restart backend`。
 
@@ -96,7 +96,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | overlay 本地图 | `overlay_registry.py`、`Tools/audit_overlay_assets.py` | `python Tools/audit_overlay_assets.py` |
 | D2 / A1A2 NDVI | `modules/omega_avg_daily.py`、`ingest/ndvi_hdf_preprocess.py` | `Env/Python312/python.exe -m pytest Test/backend/test_omega_avg_algorithm.py Test/backend/test_omega_avg_daily_module.py -q`；`Env/Python312/python.exe -m pytest Test/algorithms/test_ndvi_hdf_preprocess.py -q` |
 | 前端任意改动 | `Code/frontend/src/`（测试在 `Test/frontend/`） | `cd Code/frontend && npm run test && npm run lint && npm run build` |
-| 图层工作区持久化 | `stores/layers/workspace-persist.ts`、`stores/layers/index.ts`；说明见 `.ai/docs/design/图层持久化说明.md`；命名见 `.ai/docs/specs/layer-naming.md` | `cd Code/frontend && npm run test -- workspace-persist` |
+| 图层工作区持久化 | `stores/layers/workspace-persist.ts`、`stores/layers/index.ts`；说明见 `Docs/02-架构设计/图层持久化说明.md`；命名见 `Docs/03-规范协议/layer-naming.md` | `cd Code/frontend && npm run test -- workspace-persist` |
 | 图层命名 / 重命名 | `stores/layers/layer-naming.ts`、`layer-display-names.ts`、`active-layers.ts`（`setLayerDisplayName`） | `cd Code/frontend && npm run test -- layer-naming layer-display-names setLayerDisplayName`；`npm run check:catalog` |
 | 天气瓦片 FE 调度 / 图例 | `weather-tile-manager.ts`、`weather-tile-banner.ts`、`effective-layer-symbology.ts` | `cd Code/frontend && npm run test -- weather-tile weather-tile-banner effective-layer-symbology` |
 | 前后端契约 / OpenAPI | `Code/frontend/openapi.json`、`Code/shared/contracts/` | `cd Code/frontend && npm run check:openapi` |
@@ -137,17 +137,16 @@ CODEBUDDY_SESSION_ID= CLAUDE_SESSION_ID= CODEBUDDY_SAFE_DELETE_SANDBOX= Env/Pyth
 - **客户端日志**：工具栏「日志」支持仅错误筛选与 JSON 导出；badge 显示 `errorCount`。
 - **系统状态**：设置 → 系统状态（`GET /runtime/status`）。
 - **Gateway 代理**：与 `vite.config.ts` 对齐（含 `/auth`、`/overlay-tiles`、`/health`）。
-- 运维排障：`.ai/docs/reference/error-handling-and-observability.md`。
+- 运维排障：`Docs/07-工程保障/error-handling-and-observability.md`。
 
 ## AI 知识库（`.ai/`，本地专用，不上传 GitHub）
 
-所有 AI 提示 / 技能 / 计划 / 进度 / 记忆 / 文档集中在仓库根 **`.ai/`**，根目录表面仅保留 `AGENTS.md`、`CLAUDE.md`、`README.md` 三份文档。
+所有 AI 提示 / 技能 / 计划 / 进度 / 记忆集中在仓库根 **`.ai/`**，根目录表面仅保留 `AGENTS.md`、`CLAUDE.md`、`README.md` 三份文档，公开文档在 `Docs/`。
 
 - `.ai/rules/` —— **约定单一真源**：`project-conventions.md`（运行时/launch/改X则跑Y/高风险区/命名/提交）、`qingtian-decision-policy.md`（QingTian 决策策略）、`git-commit-message.md`（Conventional Commits）。各 AI 工具（Cursor/Trae/Copilot）的规则文件仅作指针，指向此处。
 - `.ai/skills/` —— 可复用技能：`workflow-design`（种子命名/分类/标记与定时器）、`omega-sf-inversion`（FY/SMAP 反演+Matlab 一致性校验）、`multi-source-data-ingestion`（校园SSH/NAS/NSIDC/Earthdata）、`runtime-and-verify`（运行时与验证命令）、`contract-openapi-drift`（契约/OpenAPI 漂移防护）。
 - `.ai/plans/` —— 计划。
 - `.ai/progress/` —— 进度 / 验证追踪（FY-SMAP 系列、`ui-verification-steps.md`）。
-- `.ai/memory/` —— AI 记忆 / 历史上下文（`archive/` 含 ~72 份历史计划与对话）。
-- `.ai/docs/` —— 项目文档（原 `Doc/` 整体迁入：`design/` 架构设计、`specs/` 规范 spec、`reference/` 任务记录与验证报告）。
+- `.ai/memory/` —— AI 记忆 / 历史上下文（`archive/` 含历史计划与对话）。
 
-> 改代码前读 `.ai/rules/project-conventions.md`；做反演 / 数据接入 / **工作流种子与定时器**读 `.ai/skills/` 对应技能。
+> 改代码前读 `.ai/rules/project-conventions.md`；做反演 / 数据接入 / **工作流种子与定时器**读 `.ai/skills/` 对应技能。公开文档（架构、规范、审查、结题等）见 `Docs/`。

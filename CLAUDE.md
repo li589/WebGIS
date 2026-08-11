@@ -2,7 +2,7 @@
 
 > CGDA（综合地理数据分析系统）给 Claude Code / 通用 AI 工具的入口说明。
 > 完整架构、目录路由与「改 X 则跑 Y」映射见 **`AGENTS.md`**；项目说明与本地环境见 **`README.md`**。
-> 所有 AI 提示 / 技能 / 计划 / 进度 / 记忆 / 文档集中在仓库根 **`.ai/`**（本地专用，不上传 GitHub）。
+> 所有 AI 提示 / 技能 / 计划 / 进度 / 记忆集中在仓库根 **`.ai/`**（本地专用，不上传 GitHub）；公开文档见 **`Docs/`**。
 
 ## 硬约定速览（详情见 `.ai/rules/project-conventions.md`）
 
@@ -47,6 +47,5 @@
 - `.ai/plans/` —— 计划
 - `.ai/progress/` —— 进度/验证追踪（FY-SMAP 系列、UI 验证步骤）
 - `.ai/memory/` —— AI 记忆 / 历史上下文（archive/）
-- `.ai/docs/` —— 项目文档（design / specs / reference；含 `specs/workflow_seed_conventions.md`）
 
-> 本仓库根仅保留 `AGENTS.md`、`CLAUDE.md`、`README.md` 三份文档；其余 AI 上下文均在 `.ai/`。
+> 本仓库根仅保留 `AGENTS.md`、`CLAUDE.md`、`README.md` 三份文档；公开文档在 `Docs/`，其余 AI 上下文均在 `.ai/`。

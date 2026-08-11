@@ -78,7 +78,7 @@ export function defaultProductLayerNames(
 /**
  * 产品标签 → TOC 短显示名（单一事实来源）。
  * 内部 productTag 仍用 SM/VOD/OMEGA 原文；全称见 PRODUCT_TAG_DESCRIPTIONS。
- * 见 .ai/docs/specs/layer-naming.md
+ * 见 Docs/03-规范协议/layer-naming.md
  */
 export const PRODUCT_TAG_LABELS: Record<string, string> = {
   SM: 'SM',
