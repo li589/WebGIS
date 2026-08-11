@@ -744,9 +744,12 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     // 清空全部会取消其他活跃图层的 429/timeout 重试，导致视口空洞。
     activityVersion.value += 1
     layerStates.delete(layerId)
-    // 仅清理当前图层的合并缓存，保留其他图层的缓存
+    // 清理当前图层的合并缓存与软重拉计数，保留其他图层的缓存
     for (const key of Array.from(mergeCache.keys())) {
       if (key.startsWith(`${layerId}:`)) mergeCache.delete(key)
+    }
+    for (const key of Array.from(softRequeueCounts.keys())) {
+      if (key.startsWith(`${layerId}:`)) softRequeueCounts.delete(key)
     }
     debugLog('clearLayer', layerId)
   }
