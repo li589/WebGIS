@@ -1,6 +1,21 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import {
+  Settings,
+  ScrollText,
+  Camera,
+  Workflow,
+  Move,
+  Crosshair,
+  Ruler,
+  Trash2,
+  Satellite,
+  Map,
+  Moon,
+  Mountain,
+  Globe,
+} from 'lucide-vue-next'
 
 import {
   TILE_SOURCES,
@@ -28,7 +43,6 @@ import {
   basemapProviderShort,
   WORKFLOW_COPY,
   SETTINGS_COPY,
-  LAYERS_COPY,
 } from '../ui-copy'
 import WorkflowStatusButton from './workflow/WorkflowStatusButton.vue'
 import DataImportMenu from '../data-manager/ui/DataImportMenu.vue'
@@ -54,7 +68,6 @@ onMounted(() => {
   void weatherSyncStatus.refreshOverview()
 })
 
-/** 合并业务 job + 天气瓦片合成态（含 data-empty → 失败/等待重试） */
 const mergedWorkflowSummary = computed(() => {
   void activityVersion.value
   void statusVersion.value
@@ -91,39 +104,36 @@ const activeStyle = computed<BasemapStyle>(() => {
   return cfg?.style ?? 'street'
 })
 
+const styleMeta: Record<BasemapStyle, { icon: typeof Map }> = {
+  none: { icon: Globe },
+  satellite: { icon: Satellite },
+  street: { icon: Map },
+  dark: { icon: Moon },
+  terrain: { icon: Mountain },
+}
+
 const sourcesByStyle = computed(() => {
   const result: Array<{
     style: BasemapStyle
     label: string
-    icon: string
+    icon: typeof Map
     sources: TileSourceConfig[]
   }> = []
-  const styleMeta: Record<BasemapStyle, { icon: string }> = {
-    none: { icon: '◇' },
-    satellite: { icon: '◆' },
-    street: { icon: '▦' },
-    dark: { icon: '◑' },
-    terrain: { icon: '⛰' },
-  }
-
   for (const [style, sources] of TILE_SOURCES_BY_STYLE) {
     const standard = sources.filter((s) => s.isStandard)
-    // Keep key-locked sources visible but marked unusable so users know to configure keys
     if (standard.some((s) => s.isStandard)) {
       result.push({
         style,
         label: basemapStyleLabel(style),
-        icon: styleMeta[style]?.icon ?? '▦',
+        icon: styleMeta[style]?.icon ?? Map,
         sources: standard,
       })
     }
   }
-
   return result
 })
 
 const currentTileConfig = computed(() => TILE_SOURCES.find((s) => s.id === props.tileSourceId))
-
 const currentSourceLocked = computed(() => {
   const cfg = currentTileConfig.value
   if (!cfg) return false
@@ -184,22 +194,24 @@ function sourcePillLabel(source: TileSourceConfig): string {
 </script>
 
 <template>
-  <header class="toolbar">
-    <!-- 左侧：主工具栏 -->
-    <div class="toolbar-primary">
+  <header class="mode-toolbar">
+    <!-- 左侧：品牌 + 主工具 -->
+    <div class="toolbar-left">
       <div class="brand">
-        <div class="brand-mark"></div>
+        <div class="brand-mark" />
         <div class="brand-copy">
-          <p class="eyebrow">{{ BRAND.eyebrow }}</p>
-          <h1>{{ BRAND.shortName }}</h1>
+          <p class="brand-eyebrow">{{ BRAND.eyebrow }}</p>
+          <h1 class="brand-name">{{ BRAND.shortName }}</h1>
         </div>
       </div>
 
-      <div class="primary-tools">
-        <!-- 数据导入 / 导出 -->
+      <div class="toolbar-divider" />
+
+      <div class="toolbar-tools">
+        <!-- 数据导入/导出 -->
         <DataImportMenu />
 
-        <!-- 移动 / 选择 模式 -->
+        <!-- 交互模式：移动/选择/测量 -->
         <div class="mode-group">
           <button
             class="mode-btn"
@@ -208,23 +220,7 @@ function sourcePillLabel(source: TileSourceConfig): string {
             title="移动模式（拖动平移地图）"
             @click="setInteractionMode('move')"
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <polyline points="5 9 2 12 5 15" />
-              <polyline points="9 5 12 2 15 5" />
-              <polyline points="15 19 12 22 9 19" />
-              <polyline points="19 9 22 12 19 15" />
-              <line x1="2" y1="12" x2="22" y2="12" />
-              <line x1="12" y1="2" x2="12" y2="22" />
-            </svg>
+            <Move :size="14" />
           </button>
           <button
             class="mode-btn"
@@ -233,80 +229,43 @@ function sourcePillLabel(source: TileSourceConfig): string {
             title="点查模式（点击查询）"
             @click="setInteractionMode('select')"
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
-            </svg>
+            <Crosshair :size="14" />
           </button>
           <button
             class="mode-btn"
             :class="{ active: uiStore.interactionMode === 'measure' }"
             type="button"
-            title="测量模式（点击打点，双击完成，右键撤销）"
+            title="测量模式（点击打点，双击完成）"
             @click="setInteractionMode('measure')"
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M21 3L3 21" />
-              <circle cx="21" cy="3" r="2" fill="currentColor" />
-              <circle cx="3" cy="21" r="2" fill="currentColor" />
-            </svg>
+            <Ruler :size="14" />
           </button>
           <button
             v-if="uiStore.interactionMode === 'measure' && uiStore.measureState.points.length > 0"
-            class="mode-btn clear-btn"
+            class="mode-btn mode-btn--clear"
             type="button"
             title="清除测量路径"
             @click="clearMeasure"
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M3 6h18" />
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-            </svg>
+            <Trash2 :size="14" />
           </button>
         </div>
 
         <!-- 截图 -->
         <button class="tool-btn" type="button" title="导出截图" @click="handleScreenshot">
-          <span class="btn-icon" aria-hidden="true">◫</span>
-          <span class="btn-label">截图</span>
+          <Camera :size="14" />
+          <span class="tool-btn-label">截图</span>
         </button>
 
-        <!-- 工作流 -->
+        <!-- 工作流编辑器 -->
         <button
           class="tool-btn"
           type="button"
           :title="WORKFLOW_COPY.entryTitle"
           @click="handleWorkflowEditor"
         >
-          <span class="btn-icon" aria-hidden="true">⬡</span>
-          <span class="btn-label">{{ WORKFLOW_COPY.entry }}</span>
+          <Workflow :size="14" />
+          <span class="tool-btn-label">{{ WORKFLOW_COPY.entry }}</span>
         </button>
 
         <!-- 设置 -->
@@ -316,60 +275,29 @@ function sourcePillLabel(source: TileSourceConfig): string {
           :title="SETTINGS_COPY.panelTitle"
           @click="handleSettings"
         >
-          <span class="btn-icon" aria-hidden="true">⚙</span>
-          <span class="btn-label">{{ SETTINGS_COPY.panelTitle }}</span>
+          <Settings :size="14" />
+          <span class="tool-btn-label">{{ SETTINGS_COPY.panelTitle }}</span>
         </button>
 
         <!-- 日志 -->
         <button class="tool-btn" type="button" title="系统日志" @click="emit('openLog')">
-          <span class="btn-icon" aria-hidden="true">📋</span>
-          <span class="btn-label">日志</span>
-          <span v-if="logStore.errorCount > 0" class="log-badge">{{ logStore.errorCount }}</span>
+          <ScrollText :size="14" />
+          <span class="tool-btn-label">日志</span>
+          <span
+            v-if="logStore.errorCount > 0"
+            class="log-badge"
+            :title="`${logStore.errorCount} 个错误`"
+          >
+            {{ logStore.errorCount >= 100 ? '99+' : logStore.errorCount }}
+          </span>
         </button>
       </div>
     </div>
 
-    <!-- 右侧：保留元素 -->
-    <div class="toolbar-main">
-      <!-- Row 1: style tabs + workflow status + availability + 2D -->
-      <div class="toolbar-strip">
-        <div class="style-tabs" role="tablist" aria-label="底图风格">
-          <button
-            v-for="group in sourcesByStyle"
-            :key="group.style"
-            class="style-tab"
-            :class="{ active: activeStyle === group.style }"
-            role="tab"
-            :aria-selected="activeStyle === group.style"
-            @click="selectSource(group.sources.find((s) => sourceUsable(s)) ?? group.sources[0])"
-          >
-            <span class="style-icon" aria-hidden="true">{{ group.icon }}</span>
-            <span>{{ group.label }}</span>
-          </button>
-        </div>
-
-        <!-- Workflow status -->
-        <WorkflowStatusButton
-          :summary="mergedWorkflowSummary"
-          @click="emit('openWorkflowStatus')"
-        />
-
-        <!-- Availability status chip -->
-        <div
-          v-if="activeLayerCount > 0"
-          class="status-chip"
-          :class="`availability-${activeLayer.availabilityState}`"
-          :title="activeLayer.availabilityDescription"
-        >
-          {{ activeLayer.availabilityLabel }}
-        </div>
-
-        <!-- 2D/3D dimension indicator -->
-        <div class="status-chip dim-mode">2D</div>
-      </div>
-
-      <!-- Row 2: source selector + time + layer info -->
-      <div class="toolbar-strip">
+    <!-- 右侧：状态集群 -->
+    <div class="toolbar-right">
+      <div class="status-cluster">
+        <!-- 来源选择器 -->
         <div v-if="activeStyle !== 'none'" class="source-pill">
           <button
             v-for="source in sourcesByStyle.find((g) => g.style === activeStyle)?.sources ?? []"
@@ -382,7 +310,7 @@ function sourcePillLabel(source: TileSourceConfig): string {
             :title="
               sourceUsable(source)
                 ? `${source.provider} · ${source.label}`
-                : `${source.label}（需配置 API Key：${source.secretRef?.key ?? ''}，点击打开设置）`
+                : `${source.label}（需配置 API Key，点击打开设置）`
             "
             @click="selectSource(source)"
           >
@@ -390,60 +318,111 @@ function sourcePillLabel(source: TileSourceConfig): string {
           </button>
         </div>
 
-        <div class="time-chip">{{ hourLabel }}</div>
-
-        <div v-if="activeLayerCount > 0" class="status-chip">{{ activeLayer.name }}</div>
-        <div v-else class="status-chip">{{ LAYERS_COPY.emptyTitle }}</div>
-        <div v-if="activeLayerCount > 0" class="status-chip">{{ activeLayerCount }} 个图层</div>
-        <div v-if="currentSourceLocked" class="status-chip warning">
-          {{ BASEMAP_COPY.needApiKey }}
+        <!-- 底图风格 -->
+        <div class="style-group" role="tablist" aria-label="底图风格">
+          <button
+            v-for="group in sourcesByStyle"
+            :key="group.style"
+            class="style-btn"
+            :class="{ active: activeStyle === group.style }"
+            role="tab"
+            :aria-selected="activeStyle === group.style"
+            @click="selectSource(group.sources.find((s) => sourceUsable(s)) ?? group.sources[0])"
+          >
+            <component :is="group.icon" :size="12" class="style-icon" />
+            <span>{{ group.label }}</span>
+          </button>
         </div>
+
+        <!-- 工作流状态 -->
+        <WorkflowStatusButton
+          :summary="mergedWorkflowSummary"
+          @click="emit('openWorkflowStatus')"
+        />
+
+        <!-- 时间标签 -->
+        <span class="chip time-chip">{{ hourLabel }}</span>
+
+        <!-- 图层可用性 -->
+        <span
+          v-if="activeLayerCount > 0"
+          class="chip"
+          :class="`availability-${activeLayer.availabilityState}`"
+          :title="activeLayer.availabilityDescription"
+        >
+          {{ activeLayer.availabilityLabel }}
+        </span>
+
+        <!-- 图层名 -->
+        <span v-if="activeLayerCount > 0" class="chip chip--layer">
+          {{ activeLayer.name }}
+        </span>
+
+        <!-- 图层计数 -->
+        <span v-if="activeLayerCount > 0" class="chip chip--count"
+          >{{ activeLayerCount }} 个图层</span
+        >
+
+        <!-- 2D/3D 视图切换 -->
+        <button
+          class="dim-toggle"
+          :class="{ 'dim-toggle--3d': uiStore.viewMode === '3d' }"
+          type="button"
+          :title="uiStore.viewMode === '2d' ? '切换到3D地球视图' : '切换到2D平面视图'"
+          @click="uiStore.toggleViewMode()"
+        >
+          <component :is="uiStore.viewMode === '2d' ? Map : Globe" :size="12" class="dim-icon" />
+          <span>{{ uiStore.viewMode === '2d' ? '2D' : '3D' }}</span>
+        </button>
+
+        <!-- API Key 锁定警告 -->
+        <span v-if="currentSourceLocked" class="chip chip--warning">{{
+          BASEMAP_COPY.needApiKey
+        }}</span>
       </div>
     </div>
   </header>
 </template>
 
 <style scoped>
-.toolbar {
+.mode-toolbar {
   display: flex;
   justify-content: space-between;
-  gap: 0.8rem;
   align-items: center;
-  padding: 0.48rem 0.7rem;
-  border: 1px solid rgba(145, 197, 255, 0.14);
-  border-radius: 1rem;
-  background:
-    linear-gradient(180deg, rgba(8, 17, 31, 0.52), rgba(7, 15, 28, 0.44)), rgba(8, 18, 33, 0.42);
-  backdrop-filter: blur(18px);
-  box-shadow:
-    0 18px 42px rgba(1, 8, 16, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: rgba(8, 20, 36, 0.72);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--elevation-2);
+  min-height: 48px;
 }
 
-/* ── 左侧主工具栏 ─────────────────────────────────────────────────── */
-.toolbar-primary {
+/* 左侧 */
+.toolbar-left {
   display: flex;
   align-items: center;
-  gap: 0.62rem;
+  gap: var(--space-3);
   min-width: 0;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 0.58rem;
-  min-width: 0;
+  gap: var(--space-2);
   flex: none;
 }
 
 .brand-mark {
-  width: 1.9rem;
-  height: 1.9rem;
+  width: 32px;
+  height: 32px;
   flex: none;
-  border-radius: 0.72rem;
+  border-radius: var(--radius-md);
   background:
     radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.32), transparent 42%),
-    linear-gradient(135deg, #5ad5ff, #2f7eff 58%, #7d7dff);
+    linear-gradient(135deg, var(--accent), #2f7eff 58%, var(--accent-strong));
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.06),
     0 12px 30px rgba(47, 126, 255, 0.28);
@@ -453,348 +432,414 @@ function sourcePillLabel(source: TileSourceConfig): string {
   min-width: 0;
 }
 
-.eyebrow {
-  margin: 0 0 0.08rem;
-  color: #88dfff;
-  font-size: 0.62rem;
+.brand-eyebrow {
+  margin: 0 0 2px;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  line-height: 1;
 }
 
-h1 {
+.brand-name {
   margin: 0;
-  font-size: clamp(0.9rem, 1.5vw, 1.18rem);
-  color: #f5fbff;
+  font-size: clamp(0.9rem, 1.2vw, 1.1rem);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-strong);
   white-space: nowrap;
 }
 
-.primary-tools {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding-left: 0.62rem;
-  border-left: 1px solid rgba(136, 192, 255, 0.1);
+.toolbar-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border-subtle);
+  flex: none;
 }
 
-/* 统一工具按钮样式 */
+.toolbar-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* 统一工具按钮 */
 .tool-btn {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.24rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
-  border-radius: 0.5rem;
-  padding: 0.3rem 0.46rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #9fb6cc;
+  gap: var(--space-2);
+  height: 30px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
   cursor: pointer;
-  font: inherit;
-  font-size: 0.62rem;
-  font-weight: 500;
+  font-family: inherit;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
   white-space: nowrap;
   transition:
-    border-color 0.18s ease,
-    color 0.18s ease,
-    background 0.18s ease;
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 
 .tool-btn:hover {
-  border-color: rgba(90, 213, 255, 0.3);
-  color: #5ad5ff;
-  background: rgba(10, 132, 255, 0.12);
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+  color: var(--accent);
+  box-shadow: var(--elevation-1);
 }
 
-.tool-btn.active {
-  border-color: rgba(90, 213, 255, 0.4);
-  color: #5ad5ff;
-  background: rgba(10, 132, 255, 0.2);
-  box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.16);
+.tool-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-.btn-icon {
-  font-size: 0.72rem;
-  opacity: 0.9;
-}
-.btn-label {
-  font-size: 0.6rem;
+.tool-btn-label {
+  font-size: var(--font-size-caption);
+  line-height: 1;
 }
 
-.log-badge {
-  position: absolute;
-  top: -0.36rem;
-  right: -0.36rem;
-  min-width: 0.82rem;
-  height: 0.82rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 0.18rem;
-  border-radius: 999px;
-  background: rgba(10, 132, 255, 0.8);
-  color: #fff;
-  font-size: 0.48rem;
-  font-weight: 700;
-}
-
-/* 移动 / 选择 模式按钮组 */
+/* 模式按钮组 */
 .mode-group {
   display: inline-flex;
-  gap: 0.12rem;
-  padding: 0.16rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
-  border-radius: 0.5rem;
-  background: rgba(4, 12, 23, 0.6);
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
 }
 
 .mode-btn {
-  width: 1.56rem;
-  height: 1.56rem;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 28px;
+  height: 28px;
   border: 1px solid transparent;
-  border-radius: 0.36rem;
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: #6e8ba0;
+  color: var(--text-muted);
   cursor: pointer;
   transition:
-    background 0.16s ease,
-    color 0.16s ease,
-    border-color 0.16s ease;
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
 }
 
 .mode-btn:hover {
-  background: rgba(136, 192, 255, 0.1);
-  color: #c8dff0;
+  background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
 .mode-btn.active {
-  background: rgba(60, 120, 200, 0.32);
-  border-color: rgba(136, 192, 255, 0.38);
-  color: #f4fbff;
+  background: var(--accent-surface);
+  border-color: var(--border-accent);
+  color: var(--text-strong);
 }
 
-/* 清除测量路径按钮（仅在 measure 模式且有路径时显示） */
-.mode-btn.clear-btn {
-  background: rgba(180, 60, 60, 0.18);
-  border-color: rgba(255, 120, 120, 0.32);
-  color: #ff9a9a;
+.mode-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-.mode-btn.clear-btn:hover {
-  background: rgba(220, 80, 80, 0.28);
-  color: #ffb0b0;
+.mode-btn--clear {
+  background: var(--danger-surface);
+  border-color: var(--danger-border);
+  color: var(--danger);
 }
 
-/* ── 右侧保留区 ───────────────────────────────────────────────────── */
-.toolbar-main {
+.mode-btn--clear:hover {
+  background: var(--danger-surface);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* 日志徽章 - 仅显示错误数，小字号，99+ 截断 */
+.log-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 16px;
+  height: 16px;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.38rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: var(--font-weight-bold);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px rgba(8, 20, 36, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* 右侧 */
+.toolbar-right {
+  display: flex;
+  align-items: center;
   flex: none;
 }
 
-.toolbar-strip {
+.status-cluster {
   display: flex;
   align-items: center;
-  gap: 0.42rem;
+  gap: var(--space-2);
   flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
-.toolbar-strip:last-child {
-  flex-wrap: nowrap;
-  overflow: hidden;
-  min-width: 0;
-}
-
-/* Style tabs */
-.style-tabs {
+/* 底图风格组 */
+.style-group {
   display: inline-flex;
-  gap: 0.18rem;
-  padding: 0.16rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
-  border-radius: 999px;
-  background: rgba(4, 12, 23, 0.82);
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
 }
 
-.style-tab {
+.style-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.28rem;
+  gap: var(--space-1);
+  height: 26px;
+  padding: 0 var(--space-3);
   border: none;
-  border-radius: 999px;
-  padding: 0.26rem 0.52rem;
+  border-radius: var(--radius-pill);
   background: transparent;
-  color: #8aa8bf;
+  color: var(--text-muted);
   cursor: pointer;
-  font: inherit;
-  font-size: 0.64rem;
-  transition:
-    background-color 0.2s ease,
-    color 0.2s ease,
-    transform 0.2s ease;
+  font-family: inherit;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
   white-space: nowrap;
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 
-.style-tab:hover {
-  color: #f0f8ff;
-  background: rgba(136, 192, 255, 0.1);
-  transform: translateY(-1px);
+.style-btn:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
 }
 
-.style-tab.active {
-  background: rgba(10, 132, 255, 0.5);
-  color: #f0faff;
-  font-weight: 600;
-  box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.2);
+.style-btn.active {
+  background: var(--accent-surface);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--border-accent);
+}
+
+.style-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .style-icon {
-  font-size: 0.7rem;
-  opacity: 0.7;
+  flex: none;
 }
 
-.style-tab.active .style-icon {
-  opacity: 1;
-}
-
-/* Source buttons */
+/* 来源选择器 */
 .source-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.14rem;
-  padding: 0.16rem 0.22rem 0.16rem 0.3rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
-  border-radius: 999px;
-  background: rgba(4, 12, 23, 0.6);
+  gap: 2px;
+  padding: 2px 4px 2px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
 }
 
 .source-btn {
-  min-width: 1.8rem;
-  height: 1.38rem;
+  min-width: 30px;
+  height: 24px;
   border: none;
-  border-radius: 0.4rem;
-  padding: 0 0.28rem;
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-2);
   background: transparent;
-  color: #6e8ba0;
+  color: var(--text-muted);
   cursor: pointer;
-  font: inherit;
-  font-size: 0.58rem;
-  font-weight: 600;
+  font-family: inherit;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
   letter-spacing: 0.01em;
   white-space: nowrap;
   transition:
-    background 0.16s ease,
-    color 0.16s ease,
-    transform 0.16s ease;
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
 }
 
 .source-btn:hover {
-  background: rgba(136, 192, 255, 0.1);
-  color: #c8dff0;
-  transform: scale(1.06);
+  background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
 .source-btn.active {
-  background: rgba(10, 132, 255, 0.22);
-  color: #5ad5ff;
-  box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.3);
+  background: var(--accent-surface);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--border-accent);
 }
 
 .source-btn.locked {
   opacity: 0.42;
-  color: #8a6a6a;
+  color: var(--text-disabled);
   text-decoration: line-through;
 }
 
 .source-btn.locked:hover {
-  background: rgba(255, 140, 100, 0.12);
-  color: #ffb090;
+  background: var(--danger-surface);
+  color: var(--danger);
 }
 
-/* Status chips */
-.status-chip {
+.source-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 通用 Chip */
+.chip {
   display: inline-flex;
   align-items: center;
-  max-width: 8rem;
-  padding: 0.24rem 0.46rem;
-  border-radius: 999px;
-  background: rgba(4, 12, 23, 0.42);
-  border: 1px solid rgba(136, 192, 255, 0.1);
-  color: #d8e6f5;
-  font-size: 0.6rem;
+  height: 24px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-regular);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 120px;
 }
 
-.availability-ready {
-  color: #9ff8cf;
-  border-color: rgba(114, 255, 207, 0.18);
-  background: rgba(114, 255, 207, 0.1);
-}
-.availability-partial {
-  color: #ffd38a;
-  border-color: rgba(255, 196, 120, 0.18);
-  background: rgba(255, 196, 120, 0.08);
-}
-.availability-empty {
-  color: #d7c1ff;
-  border-color: rgba(187, 137, 255, 0.2);
-  background: rgba(187, 137, 255, 0.1);
-}
-.status-chip.warning {
-  color: #ffc878;
-  border-color: rgba(255, 180, 80, 0.2);
-  background: rgba(255, 160, 60, 0.1);
-}
-.status-chip.dim-mode {
-  color: #5ad5ff;
-  border-color: rgba(90, 213, 255, 0.24);
-  background: rgba(10, 132, 255, 0.12);
-  font-weight: 600;
+.chip--layer {
+  max-width: 140px;
 }
 
-/* Time chip */
-.time-chip {
+.chip--count {
+  background: var(--surface-2);
+  border-color: var(--border-default);
+  color: var(--text-secondary);
+}
+
+/* 2D/3D 切换按钮 */
+.dim-toggle {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-width: 3.2rem;
-  padding: 0.24rem 0.56rem;
-  border-radius: 999px;
-  background: rgba(4, 12, 23, 0.42);
-  border: 1px solid rgba(136, 192, 255, 0.12);
-  color: #eff8ff;
-  font-size: 0.66rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
-  text-align: center;
+  gap: var(--space-1);
+  height: 24px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-accent);
+  background: var(--accent-surface);
+  color: var(--accent);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
+  font-family: inherit;
+  cursor: pointer;
   white-space: nowrap;
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 
+.dim-toggle:hover {
+  background: var(--accent);
+  color: var(--surface-base);
+  box-shadow: var(--elevation-1);
+}
+
+.dim-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.dim-toggle--3d {
+  color: var(--accent-warm);
+  border-color: rgba(255, 200, 120, 0.35);
+  background: rgba(255, 200, 120, 0.12);
+}
+
+.dim-toggle--3d:hover {
+  background: var(--accent-warm);
+  color: var(--surface-base);
+}
+
+.dim-icon {
+  flex: none;
+  line-height: 1;
+}
+
+.chip--warning {
+  color: var(--warning);
+  border-color: var(--warning-border);
+  background: var(--warning-surface);
+}
+
+.time-chip {
+  min-width: 56px;
+  justify-content: center;
+  color: var(--text-strong);
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+/* 可用性 */
+.availability-ready {
+  color: var(--success);
+  border-color: var(--success-border);
+  background: var(--success-surface);
+}
+
+.availability-partial {
+  color: var(--warning);
+  border-color: var(--warning-border);
+  background: var(--warning-surface);
+}
+
+.availability-empty {
+  color: var(--text-faint);
+  border-color: var(--border-subtle);
+  background: var(--surface-sunken);
+}
+
+/* 响应式 */
 @media (max-width: 1100px) {
-  .toolbar {
+  .mode-toolbar {
     flex-direction: column;
     align-items: stretch;
-    gap: 0.48rem;
+    gap: var(--space-3);
   }
-
-  .toolbar-primary {
+  .toolbar-left {
     flex-wrap: wrap;
-    gap: 0.42rem;
   }
-  .toolbar-main {
-    align-items: stretch;
+  .toolbar-right {
+    width: 100%;
   }
-  .toolbar-strip {
+  .status-cluster {
     justify-content: flex-start;
   }
-  .style-tabs {
-    align-self: flex-start;
-    flex-wrap: wrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-btn,
+  .mode-btn,
+  .style-btn,
+  .source-btn,
+  .dim-toggle {
+    transition: none;
   }
 }
 </style>

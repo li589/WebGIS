@@ -99,6 +99,11 @@ class WeatherApiProvider(WeatherProvider):
     def requires_api_key(self) -> bool:
         return True
 
+    @property
+    def grid_density(self) -> str:
+        """X2: 商业源稀疏网格——点采样不适合瓦片渲染。"""
+        return "sparse"
+
     def get_config_schema(self) -> list[ConfigFieldSchema]:
         return [
             ConfigFieldSchema(

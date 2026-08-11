@@ -4,6 +4,8 @@ from concurrent.futures import (
     TimeoutError as FuturesTimeoutError,
 )
 import logging
+import time
+from threading import Lock
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
@@ -11,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 from app.core.config import settings
 from app.services.crs import crs_transformer
 from app.services.crs.crs_registry import normalize_crs_code
-from app.services.layer_catalog import get_layer_catalog
+from app.services.layer_catalog import get_layer_catalog, get_layer_category_response
 from app.services.overlay_registry import (
     get_overlay_spec,
     list_overlay_ids,
@@ -20,6 +22,7 @@ from app.services.overlay_registry import (
 from app.services.workflow_request_resolver import describe_layer_run_readiness
 from shared.contracts.api_contracts import (
     LayerCatalogResponse,
+    LayerCategoryResponse,
 )
 
 _logger = logging.getLogger(__name__)
@@ -27,6 +30,12 @@ _logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _READINESS_TIMEOUT = 8.0  # 单图层就绪检查最大耗时（秒）
+
+# G1-06: 模块级共享 executor + 就绪结果短缓存，避免每请求新建线程池
+_readiness_executor = ThreadPoolExecutor(max_workers=8)
+_READINESS_CACHE_TTL = 30.0  # 秒
+_readiness_cache: dict[str, tuple[dict, float]] = {}
+_readiness_cache_lock = Lock()
 
 
 def _catalog_items_for_environment(items: list) -> list:
@@ -47,26 +56,38 @@ def list_layers() -> LayerCatalogResponse:
         return item.layer_id, readiness
 
     layer_readiness: dict[str, dict[str, Any]] = {}
-    executor = ThreadPoolExecutor(max_workers=8)
-    try:
+    now = time.time()
+
+    # G1-06: 先查缓存，只对未命中/过期的图层执行就绪检查
+    items_to_check = []
+    for desc in visible_items:
+        cached = _readiness_cache.get(desc.layer_id)
+        if cached and now - cached[1] < _READINESS_CACHE_TTL:
+            layer_readiness[desc.layer_id] = cached[0]
+        else:
+            items_to_check.append(desc)
+
+    if items_to_check:
         futures = {
-            executor.submit(_check_readiness, desc): desc for desc in visible_items
+            _readiness_executor.submit(_check_readiness, desc): desc
+            for desc in items_to_check
         }
-        for future in as_completed(futures, timeout=_READINESS_TIMEOUT):
-            try:
-                layer_id, readiness = future.result(timeout=_READINESS_TIMEOUT)
-                layer_readiness[layer_id] = readiness
-            except FuturesTimeoutError:
-                _logger.warning("Layer readiness check timed out")
-            except Exception:
-                _logger.warning("Layer readiness check failed", exc_info=True)
-    except FuturesTimeoutError:
-        # as_completed 整体超时：未完成的 future 直接跳过
-        _logger.warning(
-            "Layer readiness batch timed out after %.1fs", _READINESS_TIMEOUT
-        )
-    finally:
-        executor.shutdown(wait=False, cancel_futures=True)
+        try:
+            for future in as_completed(futures, timeout=_READINESS_TIMEOUT):
+                try:
+                    layer_id, readiness = future.result(timeout=_READINESS_TIMEOUT)
+                    layer_readiness[layer_id] = readiness
+                    with _readiness_cache_lock:
+                        _readiness_cache[layer_id] = (readiness, time.time())
+                except FuturesTimeoutError:
+                    _logger.warning("Layer readiness check timed out")
+                except Exception:
+                    _logger.warning("Layer readiness check failed", exc_info=True)
+        except FuturesTimeoutError:
+            # as_completed 整体超时：未完成的 future 直接跳过
+            _logger.warning(
+                "Layer readiness batch timed out after %.1fs", _READINESS_TIMEOUT
+            )
 
     items = []
     for descriptor in visible_items:
@@ -87,6 +108,18 @@ def list_layers() -> LayerCatalogResponse:
             )
         )
     return LayerCatalogResponse(items=items)
+
+
+@router.get(
+    "/layers/categories", tags=["catalog"], response_model=LayerCategoryResponse
+)
+def list_layer_categories() -> LayerCategoryResponse:
+    """X1: 后端下发图层分类定义（id / name / icon / accent_color / chip_tone）。
+
+    前端运行时消费此端点获取分类样式，消除前后端分类定义双写。
+    前端 ``LAYER_CATEGORIES`` 静态表仅在 API 不可用时作离线兜底。
+    """
+    return get_layer_category_response()
 
 
 @router.get("/geo/transform", tags=["geo"])

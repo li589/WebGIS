@@ -19,7 +19,7 @@ body,
   line-height: 1.5;
   font-weight: 400;
   font-size: 15px;
-  color: #d9e6f2;
+  color: var(--text-primary);
   background:
     radial-gradient(circle at top, rgba(17, 94, 160, 0.24), transparent 30rem),
     linear-gradient(180deg, #020814 0%, #071120 45%, #091425 100%);
@@ -27,6 +27,14 @@ body,
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* 浅色主题：暖白底背景 */
+[data-theme='light'] {
+  color: var(--text-primary);
+  background:
+    radial-gradient(circle at top, rgba(10, 143, 196, 0.08), transparent 30rem),
+    linear-gradient(180deg, #eef2f7 0%, #e6ecf3 45%, #dde5ee 100%);
 }
 
 html,

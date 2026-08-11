@@ -76,44 +76,53 @@ const showCancelledBadge = computed(
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
-  border-radius: 999px;
-  padding: 0.26rem 0.52rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #6e8ba0;
+  gap: var(--space-2);
+  height: 30px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  color: var(--text-faint);
   cursor: pointer;
-  font: inherit;
-  font-size: 0.62rem;
-  font-weight: 500;
+  font-family: inherit;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
   transition:
-    border-color 0.22s ease,
-    color 0.22s ease,
-    background 0.22s ease,
-    box-shadow 0.22s ease;
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
   white-space: nowrap;
   overflow: hidden;
 }
 
 .wf-status-btn:hover {
-  border-color: rgba(90, 213, 255, 0.3);
-  background: rgba(10, 132, 255, 0.12);
+  border-color: var(--border-accent);
+  background: var(--accent-surface);
+  color: var(--accent);
+  box-shadow: var(--elevation-1);
+}
+
+.wf-status-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .wf-dot {
-  width: 0.5rem;
-  height: 0.5rem;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex: none;
   background: currentColor;
   transition:
-    background 0.2s ease,
-    box-shadow 0.2s ease;
+    background var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 
 .wf-label {
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   letter-spacing: 0.01em;
+  line-height: 1;
 }
 
 /* ── Mini count badges ──────────────────────────────────────────────────── */
@@ -121,70 +130,70 @@ const showCancelledBadge = computed(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 0.9rem;
-  height: 0.9rem;
-  padding: 0 0.22rem;
-  border-radius: 999px;
-  font-size: 0.5rem;
-  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
   letter-spacing: 0;
   line-height: 1;
 }
 
 .badge-running {
-  background: rgba(90, 213, 255, 0.22);
-  color: #5ad5ff;
-  border: 1px solid rgba(90, 213, 255, 0.3);
+  background: var(--accent-surface);
+  color: var(--accent);
+  border: 1px solid var(--border-accent);
 }
 
 .badge-queued {
-  background: rgba(136, 223, 255, 0.18);
-  color: #88dfff;
-  border: 1px solid rgba(136, 223, 255, 0.28);
+  background: rgba(136, 223, 255, 0.12);
+  color: var(--accent-strong);
+  border: 1px solid rgba(136, 223, 255, 0.25);
 }
 
 .badge-retry {
-  background: rgba(255, 211, 138, 0.18);
-  color: #ffd38a;
-  border: 1px solid rgba(255, 196, 120, 0.28);
+  background: var(--warning-surface);
+  color: var(--warning);
+  border: 1px solid var(--warning-border);
 }
 
 .badge-failed {
-  background: rgba(255, 138, 138, 0.2);
-  color: #ff8a8a;
-  border: 1px solid rgba(255, 138, 138, 0.3);
+  background: var(--danger-surface);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
 }
 
 .badge-done {
-  background: rgba(159, 248, 207, 0.16);
-  color: #9ff8cf;
-  border: 1px solid rgba(114, 255, 207, 0.24);
+  background: var(--success-surface);
+  color: var(--success);
+  border: 1px solid var(--success-border);
 }
 
 .badge-cancelled {
-  background: rgba(138, 168, 191, 0.16);
-  color: #8aa8bf;
-  border: 1px solid rgba(138, 168, 191, 0.28);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
 }
 
 /* ── Tone: idle ─────────────────────────────────────────────────────────── */
 .tone-idle {
-  color: #6e8ba0;
+  color: var(--text-faint);
 }
 .tone-idle .wf-dot {
-  background: #6e8ba0;
+  background: var(--text-faint);
 }
 
 /* ── Tone: active (running) — pulsing glow + rotating shimmer ───────────── */
 .tone-active {
-  color: #5ad5ff;
-  border-color: rgba(90, 213, 255, 0.28);
-  background: rgba(10, 132, 255, 0.1);
+  color: var(--accent);
+  border-color: var(--border-accent);
+  background: var(--accent-surface);
   box-shadow: 0 0 12px rgba(90, 213, 255, 0.15);
 }
 
 .tone-active .wf-dot {
-  background: #5ad5ff;
+  background: var(--accent);
   box-shadow: 0 0 0 0 rgba(90, 213, 255, 0.6);
   animation: wf-pulse-active 1.6s ease-in-out infinite;
 }
@@ -229,54 +238,66 @@ const showCancelledBadge = computed(
 
 /* ── Tone: success ──────────────────────────────────────────────────────── */
 .tone-success {
-  color: #9ff8cf;
-  border-color: rgba(114, 255, 207, 0.2);
-  background: rgba(114, 255, 207, 0.06);
+  color: var(--success);
+  border-color: var(--success-border);
+  background: var(--success-surface);
 }
 
 .tone-success .wf-dot {
-  background: #9ff8cf;
+  background: var(--success);
   box-shadow: 0 0 8px rgba(159, 248, 207, 0.3);
 }
 
 /* ── Tone: warning ──────────────────────────────────────────────────────── */
 .tone-warning {
-  color: #ffd38a;
-  border-color: rgba(255, 196, 120, 0.2);
-  background: rgba(255, 196, 120, 0.06);
+  color: var(--warning);
+  border-color: var(--warning-border);
+  background: var(--warning-surface);
 }
 
 .tone-warning .wf-dot {
-  background: #ffd38a;
-  box-shadow: 0 0 8px rgba(255, 211, 138, 0.25);
+  background: var(--warning);
+  box-shadow: 0 0 8px rgba(255, 176, 112, 0.25);
 }
 
 /* ── Tone: error — fast pulse + red glow ────────────────────────────────── */
 .tone-error {
-  color: #ff8a8a;
-  border-color: rgba(255, 138, 138, 0.28);
-  background: rgba(255, 138, 138, 0.08);
-  box-shadow: 0 0 12px rgba(255, 138, 138, 0.12);
+  color: var(--danger);
+  border-color: var(--danger-border);
+  background: var(--danger-surface);
+  box-shadow: 0 0 12px rgba(255, 140, 100, 0.12);
 }
 
 .tone-error .wf-dot {
-  background: #ff8a8a;
-  box-shadow: 0 0 0 0 rgba(255, 138, 138, 0.6);
+  background: var(--danger);
+  box-shadow: 0 0 0 0 rgba(255, 140, 100, 0.6);
   animation: wf-pulse-error 1.2s ease-in-out infinite;
 }
 
 @keyframes wf-pulse-error {
   0% {
-    box-shadow: 0 0 0 0 rgba(255, 138, 138, 0.6);
+    box-shadow: 0 0 0 0 rgba(255, 140, 100, 0.6);
     opacity: 1;
   }
   50% {
-    box-shadow: 0 0 0 4px rgba(255, 138, 138, 0.06);
+    box-shadow: 0 0 0 4px rgba(255, 140, 100, 0.06);
     opacity: 0.6;
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(255, 138, 138, 0);
+    box-shadow: 0 0 0 0 rgba(255, 140, 100, 0);
     opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wf-status-btn,
+  .wf-dot {
+    transition: none;
+  }
+  .tone-active .wf-dot,
+  .tone-error .wf-dot,
+  .tone-active::after {
+    animation: none;
   }
 }
 </style>

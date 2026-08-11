@@ -129,7 +129,7 @@ class JobRequestValidationTests(unittest.TestCase):
         request.module_name = "smap_daily"
         request.datasource_selection = {
             "_data_access_requests": {
-                "SMAP_SPL3SMP_E": {
+                "SMAP_L3_DEC2025": {
                     "selector": {"uris": ["D:/prepared/smap"]},
                 }
             }

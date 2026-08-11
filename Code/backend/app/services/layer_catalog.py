@@ -10,6 +10,8 @@ from app.weatherengine.constants import WEATHER_LAYER_SPECS
 from shared.contracts.api_contracts import (
     LayerCapabilities,
     LayerCatalogResponse,
+    LayerCategoryDef,
+    LayerCategoryResponse,
     LayerDescriptor,
     LayerSourceType,
 )
@@ -331,6 +333,18 @@ def get_layer_categories() -> list[dict[str, Any]]:
             "Failed to load category seeds from %s: %s", categories_file, exc
         )
         return []
+
+
+def get_layer_category_response() -> LayerCategoryResponse:
+    """X1: 返回 LayerCategoryResponse（Pydantic 模型），供 /layers/categories 端点使用。"""
+    raw = get_layer_categories()
+    items: list[LayerCategoryDef] = []
+    for cat in raw:
+        try:
+            items.append(LayerCategoryDef.model_validate(cat))
+        except Exception as exc:
+            logger.warning("Skipping invalid category entry %s: %s", cat.get("id"), exc)
+    return LayerCategoryResponse(items=items)
 
 
 def get_layer_catalog() -> LayerCatalogResponse:

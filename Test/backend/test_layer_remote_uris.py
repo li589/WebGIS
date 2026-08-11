@@ -36,15 +36,15 @@ def test_get_max_remote_bytes_from_env(monkeypatch):
 def test_merge_remote_data_access_candidates_prepends_and_dedupes():
     from app.services.layer_catalog import merge_remote_data_access_candidates
 
-    local = {"SMAP_SPL3SMP_E": ["SMAP_L3", "smap"]}
+    local = {"SMAP_L3_DEC2025": ["SMAP_L3", "smap"]}
     remote = {
-        "SMAP_SPL3SMP_E": [
+        "SMAP_L3_DEC2025": [
             "smb://nas/share/a.h5?cred=nas-lab",
             "SMAP_L3",  # already local — should not duplicate at end
         ]
     }
     merged = merge_remote_data_access_candidates(local, remote)
-    assert merged["SMAP_SPL3SMP_E"] == [
+    assert merged["SMAP_L3_DEC2025"] == [
         "smb://nas/share/a.h5?cred=nas-lab",
         "SMAP_L3",
         "smap",
@@ -55,13 +55,13 @@ def test_parse_remote_layer_data_uris_db_overrides_env(monkeypatch):
     from app.services import layer_catalog
 
     env_payload = {
-        "smap-soil": {
-            "SMAP_SPL3SMP_E": ["smb://env-nas/share/a.h5?cred=env"],
+        "ref-smap-sm-202512-l3": {
+            "SMAP_L3_DEC2025": ["smb://env-nas/share/a.h5?cred=env"],
         }
     }
     db_payload = {
-        "smap-soil": {
-            "SMAP_SPL3SMP_E": ["smb://db-nas/share/b.h5?cred=db"],
+        "ref-smap-sm-202512-l3": {
+            "SMAP_L3_DEC2025": ["smb://db-nas/share/b.h5?cred=db"],
         }
     }
     monkeypatch.setattr(
@@ -72,7 +72,7 @@ def test_parse_remote_layer_data_uris_db_overrides_env(monkeypatch):
         layer_catalog, "_load_db_remote_layer_data_uris", lambda: db_payload
     )
     merged = layer_catalog._parse_remote_layer_data_uris()
-    assert merged["smap-soil"]["SMAP_SPL3SMP_E"] == ["smb://db-nas/share/b.h5?cred=db"]
+    assert merged["ref-smap-sm-202512-l3"]["SMAP_L3_DEC2025"] == ["smb://db-nas/share/b.h5?cred=db"]
 
 
 def test_apply_remote_layer_data_uris_injects_smap(monkeypatch):

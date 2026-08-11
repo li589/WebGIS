@@ -864,16 +864,16 @@ onBeforeUnmount(() => {
 .online-list {
   margin: 0;
   padding-left: 1.1rem;
-  color: #8aa8bf;
-  font-size: 0.58rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   line-height: 1.55;
 }
 
 .sync-domains-hint {
   margin: 4px 0 10px;
-  font-size: 11px;
+  font-size: var(--font-size-caption);
   line-height: 1.4;
-  color: var(--text-muted, #8a8578);
+  color: var(--text-muted);
 }
 .sync-domains-override {
   margin-bottom: 10px;

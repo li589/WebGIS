@@ -1,556 +1,168 @@
-import { computed, ref, watch } from 'vue'
+/**
+ * D2: Layer store composition root.
+ *
+ * Previously a 556-line god store; now a thin wiring layer that creates three
+ * domain modules and merges their public APIs for backward compatibility.
+ *
+ * Domain modules:
+ * - ``workspace-domain.ts``: shared state + activeLayers + catalogRuntime
+ * - ``viewport-domain.ts``: weatherViewport + weatherReconcile
+ * - ``workflow-run-domain.ts``: runLayers + pointWeather + workflowPoller
+ *   + workflowRunner + workspaceHydrate
+ *
+ * Cross-domain circular dependencies are resolved via ``CrossDomainBindings``
+ * (a shared mutable object populated after all domains are created).
+ *
+ * Selector composables for narrower consumer APIs:
+ * - ``useLayerWorkspace()`` — workspace domain only
+ * - ``useLayerViewport()`` — viewport domain only
+ * - ``useWorkflowRun()`` — workflow-run domain only
+ * (see ``./selectors.ts``)
+ */
+import { watch } from 'vue'
 import { defineStore } from 'pinia'
 
-import { useWeatherTileManager } from '../weather-tile-manager'
-import { debugLog as probeDebugLog } from '../../utils/perf-probe'
 import { LAYER_CATEGORIES } from './catalog'
-import { createActiveLayersSlice } from './active-layers'
-import { createCatalogRuntimeSlice, type CatalogRuntimeSlice } from './catalog-runtime'
-import { createRunLayersSlice } from './run-layers'
-import { createWeatherViewportSlice } from './weather-viewport'
-import { createPointWeatherSlice } from './point-weather'
-import { createWorkflowPoller } from './workflow-poller'
-import { createWorkflowRunner, saveTrackedWorkflowRuns } from './workflow-runner'
-import { buildJobLayer } from './result-adapter'
-import { createWorkspaceHydrateSlice } from './workspace-hydrate'
-import { createWeatherReconcileSlice, type WeatherReconcileSlice } from './weather-reconcile'
-import { isRunDismissed } from './workspace-persist'
-import type { JobLayerItem } from './types'
-
-function debugLog(module: string, ...args: unknown[]) {
-  probeDebugLog(`[${performance.now().toFixed(1)}ms] [LayersStore:${module}]`, ...args)
-}
-
-// ─── Store ───────────────────────────────────────────────────────────────────
+import { createCrossDomainBindings } from './bindings'
+import { createWorkspaceDomain } from './workspace-domain'
+import { createViewportDomain } from './viewport-domain'
+import { createWorkflowRunDomain } from './workflow-run-domain'
 
 export const useLayersStore = defineStore('layers', () => {
-  const weatherTileManager = useWeatherTileManager()
+  // ── Cross-domain bindings (populated by domain modules) ──
+  const bindings = createCrossDomainBindings()
 
-  // ── Current hour (用于工作流提交与时间轴状态展示) ─────────────────────────────
-  const currentHour = ref(12)
-  const activeWorkflowCatalogIds = new Set<string>()
-  const submittingCatalogIds = new Set<string>()
-  const isSubmitting = computed(() => submittingCatalogIds.size > 0)
+  // ── 1. Workspace domain (shared state + activeLayers + catalog) ──
+  const workspace = createWorkspaceDomain(bindings)
 
-  // ── 429 容量限制自动重试（业务 workflow 池）────────────────────────────
-  const workflowRetryTimers = new Map<string, number>()
-  const workflowRetryCounts = new Map<string, number>()
-
-  function isLocalSubmitJobId(jobId: string | null | undefined): boolean {
-    return Boolean(jobId && String(jobId).startsWith('local-submit-'))
-  }
-
-  // Late-bound deps (poller / runner / viewport / persist / catalog / weather reconcile)
-  // catalog is assigned after active/run slices; deps close over the binding.
-  // eslint-disable-next-line prefer-const -- late-bound across slice init order
-  let catalog!: CatalogRuntimeSlice
-  // eslint-disable-next-line prefer-const -- late-bound across slice init order
-  let weatherReconcile!: WeatherReconcileSlice
-  let scheduleWorkspacePersist = () => {}
-  let flushWorkspacePersistNow = () => {}
-  let stopWorkflowPollingFn: (jobId: string) => void = () => {}
-  let forgetTrackedWorkflowRunFn: (runId: string) => void = () => {}
-  let rememberTrackedWorkflowRunFn: (catalogId: string, jobLayer: JobLayerItem) => void = () => {}
-  let enableParticleIfUnsetFn: (catalogId: string) => void = () => {}
-  let clearWindForCatalogFn: (catalogId: string) => void = () => {}
-  let getParticleFlowCatalogId: () => string | null = () => null
-  let getMapCenter: () => { lng: number; lat: number } = () => ({ lng: 0, lat: 0 })
-  let getMapZoom: () => number = () => 0
-  let getMapBBox: () => import('../../services/runtime-api').BoundingBox | null = () => null
-
-  // Active CRUD / display：见 active-layers.ts
-  const activeLayersSlice = createActiveLayersSlice({
-    getLayerLibraryMap: () => catalog.layerLibraryMap.value,
-    getRuntimeLayerCatalog: () => catalog.runtimeLayerCatalog.value,
-    getRunLayerGroups: () => runLayerGroups.value,
-    setRunLayerGroups: (groups) => {
-      runLayerGroups.value = groups
-    },
-    getJobLayers: () => jobLayers.value,
-    isWeatherEngineLayer: (catalogId) => catalog.isWeatherEngineLayer(catalogId),
-    supportsParticleFlow: (catalogId) => catalog.supportsParticleFlow(catalogId),
-    weatherProviderArg: (catalogId) => weatherReconcile.weatherProviderArg(catalogId),
-    getMapCenter: () => getMapCenter(),
-    getMapZoom: () => getMapZoom(),
-    getMapBBox: () => getMapBBox(),
-    getCurrentHour: () => currentHour.value,
-    getParticleFlowCatalogId: () => getParticleFlowCatalogId(),
-    enableParticleIfUnset: (catalogId) => enableParticleIfUnsetFn(catalogId),
-    clearWindForCatalog: (catalogId) => clearWindForCatalogFn(catalogId),
-    stopWorkflowPolling: (jobId) => stopWorkflowPollingFn(jobId),
-    forgetTrackedWorkflowRun: (runId) => forgetTrackedWorkflowRunFn(runId),
-    saveTrackedWorkflowRuns: (runs) => saveTrackedWorkflowRuns(runs as never),
-    getWorkflowRetryTimers: () => workflowRetryTimers,
-    getWorkflowRetryCounts: () => workflowRetryCounts,
-    getActiveWorkflowCatalogIds: () => activeWorkflowCatalogIds,
-    isLocalSubmitJobId,
-    scheduleWorkspacePersist: () => scheduleWorkspacePersist(),
-    flushWorkspacePersistNow: () => flushWorkspacePersistNow(),
-    debugLog,
+  // ── 2. Viewport domain (weatherViewport + weatherReconcile) ──
+  // Created after workspace; populates viewport-side bindings.
+  const viewport = createViewportDomain(bindings, {
+    getCurrentHour: () => workspace.currentHour.value,
+    getActiveLayers: () => workspace.activeLayers.value,
+    isLocalImport: workspace.isLocalImport,
+    isWeatherEngineLayer: (catalogId) => workspace.isWeatherEngineLayer(catalogId),
+    supportsViewportDrivenRefresh: (catalogId) =>
+      workspace.supportsViewportDrivenRefresh(catalogId),
+    supportsParticleFlow: (catalogId) => workspace.supportsParticleFlow(catalogId),
   })
-  const {
-    activeLayers,
-    sidebarView,
-    selectedInstanceId,
-    activeLayersDisplay,
-    selectedLayerDisplay,
-    activeLayerCount,
-    sidebarViewLabel,
-    assignLayerAccent,
-    addLayer,
-    addImportedVectorLayer,
-    getImportedVectorGeojson,
-    updateImportedVectorGeojson,
-    setImportedVectorStyle,
-    addImportedRasterLayer,
-    removeLayer,
-    toggleLayerVisibility,
-    setAllLayerVisibility,
-    removeAllLayers,
-    setLayerOpacity,
-    setLayerPaletteOverride,
-    setLayerRangeOverride,
-    setLayerNodataDisplay,
-    setLayerOrder,
-    setLayerDisplayName,
-    bringLayerToFront,
-    sendLayerToBack,
-    selectLayer,
-    setSidebarView,
-    isLocalImport,
-    genInstanceId,
-  } = activeLayersSlice
 
-  // Job / materialize / run groups：见 run-layers.ts
-  const runLayersSlice = createRunLayersSlice({
-    getActiveLayers: () => activeLayers.value,
-    addLayer: (catalogId, isAdminBoundary, jobLayer) =>
-      addLayer(catalogId, isAdminBoundary, jobLayer),
-    removeLayer: (instanceId) => removeLayer(instanceId),
-    assignLayerAccent: (preferred) => assignLayerAccent(preferred),
-    setSelectedInstanceId: (id) => {
-      selectedInstanceId.value = id
-    },
-    getSidebarView: () => sidebarView.value,
-    setSidebarView: (view) => setSidebarView(view),
-    getMapCenter: () => getMapCenter(),
-    getCurrentHour: () => currentHour.value,
-    forgetTrackedWorkflowRun: (runId) => forgetTrackedWorkflowRunFn(runId),
-    rememberTrackedWorkflowRun: (catalogId, jobLayer) =>
-      rememberTrackedWorkflowRunFn(catalogId, jobLayer),
-    isLocalSubmitJobId,
-    scheduleWorkspacePersist: () => scheduleWorkspacePersist(),
-    genInstanceId,
-    addImportedRasterLayer,
-  })
-  const {
-    jobLayers,
-    runLayerGroups,
-    workflowError,
-    workflowProgressTimeSeek,
-    workflowSummary,
-    emitWorkflowProgressTimeSeek,
-    removeJobLayerById,
-    setJobLayers,
-    upsertJobLayer,
-    buildWorkflowPayloadForCatalog,
-    syncProgressiveBlockOverlays,
-    attachAlgorithmProductOverlays,
-    reconcileOmegaBlockLayers,
-    reorderLayers,
-    createRunLayerGroup,
-    bindRunIdToGroup,
-    cleanupUnproducedRunLayers,
-    refreshRunGroupDissolvable,
-    updateRunGroupFromJob,
-    dissolveRunGroup,
-    reorderWithinRunGroup,
-    moveRunGroupBlock,
-    findRunGroupByMember,
-    findRunGroupById,
-  } = runLayersSlice
+  // ── 3. Workflow-run domain (runLayers + pointWeather + poller + runner + hydrate) ──
+  // Created after workspace + viewport; populates workflow-run-side bindings.
+  const workflowRun = createWorkflowRunDomain(bindings, workspace, viewport)
 
-  // Runtime catalog / library / readiness：见 catalog-runtime.ts
-  catalog = createCatalogRuntimeSlice({
-    getActiveLayers: () => activeLayers.value,
-    getRunLayerGroups: () => runLayerGroups.value,
-    getJobLayers: () => jobLayers.value,
-    onCatalogLoaded: () => weatherReconcile.reconcileActiveWeatherLayers(),
-  })
-  const {
-    runtimeLayerCatalog,
-    runtimeLayerCatalogLoading,
-    layerLibrary,
-    layerLibraryMap,
-    catalogJobStatus,
-    catalogRunReadiness,
-    ensureRuntimeLayerCatalog,
-    resolveBackendLayerId,
-    resolveEffectiveDescriptor,
-    supportsAnalysisWorkflow,
-    getCatalogRunBlockReason,
-    canRunCatalog,
-    isWeatherEngineLayer,
-    supportsMapLayerResult,
-    supportsViewportDrivenRefresh,
-    supportsParticleFlow,
-    getLayerPrimaryMetric,
-  } = catalog
-
-  // 风场三态 + 地图视口 + 双 debounce：见 weather-viewport.ts
-  const weatherViewport = createWeatherViewportSlice({
-    getActiveLayers: () => activeLayers.value,
-    isWeatherEngineLayer: (catalogId) => isWeatherEngineLayer(catalogId),
-    supportsViewportDrivenRefresh: (catalogId) => supportsViewportDrivenRefresh(catalogId),
-    getCurrentHour: () => currentHour.value,
-    weatherProviderArg: (catalogId) => weatherReconcile.weatherProviderArg(catalogId),
-    setWeatherTileViewport: (catalogId, center, zoom, hour, model, bbox, provider) => {
-      weatherTileManager.setViewport(catalogId, center, zoom, hour, model, bbox, provider)
-    },
-    onWorkflowViewportRefresh: (epoch) => {
-      void refreshActiveWeatherWorkflows(epoch)
-    },
-    debugLog,
-  })
-  const {
-    particleFlowCatalogId,
-    windDisplayMode,
-    currentMapCenter,
-    currentMapBBox,
-    currentMapZoom,
-    smoothRendering,
-    setWindDisplayMode,
-    toggleParticleFlow,
-    setParticleFlow,
-    clearWindForCatalog,
-    enableParticleIfUnset,
-    setSmoothRendering,
-    isViewportRefreshStale,
-    getViewportRefreshEpoch,
-    handleViewportChange,
-    setMapViewport,
-    flushWeatherTileViewports,
-  } = weatherViewport
-
-  // 点天气查询（单工作流管理）：见 point-weather.ts
-  const pointWeatherSlice = createPointWeatherSlice({
-    getCurrentHour: () => currentHour.value,
-    isWeatherEngineLayer: (catalogId) => isWeatherEngineLayer(catalogId),
-    weatherProviderQuery: (catalogId) => weatherReconcile.weatherProviderQuery(catalogId),
-  })
-  const {
-    pointWeather,
-    pointWeatherLoading,
-    pointWeatherError,
-    lastPointWeatherQuery,
-    clearPointWeather,
-    fetchPointWeather,
-  } = pointWeatherSlice
-
-  // 天气瓦片 reconcile / provider：见 weather-reconcile.ts
-  weatherReconcile = createWeatherReconcileSlice({
-    getActiveLayers: () => activeLayers.value,
-    isLocalImport,
-    isWeatherEngineLayer: (catalogId) => isWeatherEngineLayer(catalogId),
-    supportsParticleFlow: (catalogId) => supportsParticleFlow(catalogId),
-    enableParticleIfUnset: (catalogId) => enableParticleIfUnset(catalogId),
-    getMapCenter: () => currentMapCenter.value,
-    getMapZoom: () => currentMapZoom.value,
-    getMapBBox: () => currentMapBBox.value,
-    getCurrentHour: () => currentHour.value,
-    getLastPointWeatherQuery: () => lastPointWeatherQuery.value,
-    fetchPointWeather: (lng, lat, catalogId) => fetchPointWeather(lng, lat, catalogId),
-    clearPointWeather,
-    hasPointWeather: () => Boolean(pointWeather.value),
-  })
-  const { applyWeatherProviderPreference, activateWeatherTileViewport } = weatherReconcile
-
-  // 工作流轮询（事件增量 + 快照同步）：见 workflow-poller.ts
-  const workflowPoller = createWorkflowPoller({
-    getJobLayer: (jobId) => jobLayers.value.find((item) => item.jobId === jobId),
-    isViewportRefreshStale: (epoch) => isViewportRefreshStale(epoch),
-    isRunDismissed: (runId) => isRunDismissed(runId),
-    getParticleFlowCatalogId: () => particleFlowCatalogId.value,
-    supportsParticleFlow: (catalogId) => supportsParticleFlow(catalogId),
-    upsertJobLayer: (catalogId, jobLayer) => upsertJobLayer(catalogId, jobLayer),
-    setWorkflowError: (msg) => {
-      workflowError.value = msg
-    },
-    removeActiveCatalog: (catalogId) => activeWorkflowCatalogIds.delete(catalogId),
-    syncProgressiveBlockOverlays: (runId, catalogId) =>
-      void syncProgressiveBlockOverlays(runId, catalogId),
-    emitWorkflowProgressTimeSeek: (jobLayer, status, detail) =>
-      emitWorkflowProgressTimeSeek(jobLayer, status, detail),
-    attachAlgorithmProductOverlays: (refs, catalogId, runId) =>
-      attachAlgorithmProductOverlays(refs as never, catalogId, runId),
-    clearWindForCatalog: (catalogId) => clearWindForCatalog(catalogId),
-    enableParticleIfUnset: (catalogId) => enableParticleIfUnset(catalogId),
-    buildJobLayer: (run, catalogId, opts) => buildJobLayer(run as never, catalogId, opts),
-  })
-  const { stopWorkflowPolling } = workflowPoller
-
-  // Bind viewport helpers used by active/run slices (created above as late lets).
-  getParticleFlowCatalogId = () => particleFlowCatalogId.value
-  enableParticleIfUnsetFn = enableParticleIfUnset
-  clearWindForCatalogFn = clearWindForCatalog
-  getMapCenter = () => currentMapCenter.value
-  getMapZoom = () => currentMapZoom.value
-  getMapBBox = () => currentMapBBox.value
-  stopWorkflowPollingFn = workflowPoller.stopWorkflowPolling
-
-  function setCurrentHour(hour: number) {
-    currentHour.value = hour
-  }
-
-  // Workspace persist / hydrate：见 workspace-hydrate.ts
-  // Created after viewport bind so getMap* late lets are populated.
-  const workspaceHydrate = createWorkspaceHydrateSlice({
-    getActiveLayers: () => activeLayers.value,
-    getRunLayerGroups: () => runLayerGroups.value,
-    getSidebarView: () => sidebarView.value,
-    setSidebarView: (view) => setSidebarView(view),
-    getLayerLibraryMap: () => layerLibraryMap.value,
-    assignLayerAccent: (preferred) => assignLayerAccent(preferred),
-    genInstanceId,
-    isLocalImport,
-    isWeatherEngineLayer: (catalogId) => isWeatherEngineLayer(catalogId),
-    weatherProviderArg: (catalogId) => weatherReconcile.weatherProviderArg(catalogId),
-    getMapCenter: () => getMapCenter(),
-    getMapZoom: () => getMapZoom(),
-    getMapBBox: () => getMapBBox(),
-    getCurrentHour: () => currentHour.value,
-    bindPersistFns: (fns) => {
-      scheduleWorkspacePersist = fns.scheduleWorkspacePersist
-      flushWorkspacePersistNow = fns.flushWorkspacePersistNow
-    },
-  })
-  const { hydrateWorkspaceFromSnapshot, hydrateVectorLayersFromSnapshot } = workspaceHydrate
-
-  // isWeatherEngineLayer / supports* / getLayerPrimaryMetric：见 catalog-runtime.ts
-
-  /** 刷新所有活跃的地图型工作流图层（视口变化时调用），天气图层由 tile manager 处理，不在此处刷新 */
-  async function refreshActiveWeatherWorkflows(expectedViewportEpoch?: number) {
-    const epoch = expectedViewportEpoch ?? getViewportRefreshEpoch()
-    const activeMapLayers = activeLayers.value.filter(
-      (layer) =>
-        layer.visible &&
-        supportsViewportDrivenRefresh(layer.catalogId) &&
-        !isWeatherEngineLayer(layer.catalogId) &&
-        layer.jobLayer,
-    )
-    debugLog(
-      'refreshActive',
-      'layers',
-      activeMapLayers.map((l) => l.catalogId),
-      'bbox',
-      currentMapBBox.value,
-      'epoch',
-      epoch,
-    )
-
-    for (const layer of activeMapLayers) {
-      if (isViewportRefreshStale(epoch)) {
-        debugLog('refreshActive', 'abort stale epoch', epoch, 'current', getViewportRefreshEpoch())
-        return
-      }
-      if (!canRunCatalog(layer.catalogId)) continue
-      try {
-        await runWorkflowForCatalog(layer.catalogId, { expectedViewportEpoch: epoch })
-      } catch (error) {
-        // 单个图层失败不影响其他图层
-        console.warn(`[LayersStore] Failed to refresh map workflow for ${layer.catalogId}:`, error)
-      }
-    }
-  }
-
-  // 时间轴小时变化时，通知 tile manager 刷新所有可见天气图层。
+  // ── Watch: currentHour → flush weather tile viewports ──
   // 小时变化是离散用户操作，需立即执行；取消挂起的视口防抖，避免用旧 hour 覆盖。
-  watch(currentHour, (hour) => {
-    flushWeatherTileViewports(hour)
+  watch(workspace.currentHour, (hour) => {
+    viewport.flushWeatherTileViewports(hour)
   })
 
-  // catalogJobStatus / catalogRunReadiness：见 catalog-runtime.ts
-
-  // 工作流提交/取消/重试 + 恢复编排：见 workflow-runner.ts（阶段三B）
-  // 实例化必须位于 workflowPoller 之后、return 之前（deps 引用的函数声明均有提升，
-  // 但 slice 解构成员/箭头函数需在其实例化之后才能安全引用）。
-  const workflowRunner = createWorkflowRunner({
-    // ── poller（三A 产物）──
-    startPolling: (jobId, catalogId, epoch) => workflowPoller.startPolling(jobId, catalogId, epoch),
-    stopWorkflowPolling: (jobId) => workflowPoller.stopWorkflowPolling(jobId),
-    isPolling: (jobId) => workflowPoller.isPolling(jobId),
-    syncWorkflowRunSnapshot: (jobId, catalogId, force, epoch) =>
-      workflowPoller.syncWorkflowRunSnapshot(jobId, catalogId, force, epoch),
-    applyWorkflowEventsToJobLayer: (jobLayer, events) =>
-      workflowPoller.applyWorkflowEventsToJobLayer(jobLayer, events),
-    // ── 状态读 ──
-    getActiveLayers: () => activeLayers.value,
-    getJobLayers: () => jobLayers.value,
-    getRunLayerGroups: () => runLayerGroups.value,
-    getRuntimeLayerCatalog: () => runtimeLayerCatalog.value,
-    getLayerLibrary: () => layerLibrary.value,
-    getMapBBox: () => currentMapBBox.value,
-    activeWorkflowCatalogIds,
-    submittingCatalogIds,
-    workflowRetryTimers,
-    workflowRetryCounts,
-    // ── 状态写 ──
-    setRunLayerGroups: (groups) => {
-      runLayerGroups.value = groups
-    },
-    upsertJobLayer: (catalogId, jobLayer) => upsertJobLayer(catalogId, jobLayer),
-    removeJobLayerById: (jobId) => removeJobLayerById(jobId),
-    setWorkflowError: (msg) => {
-      workflowError.value = msg
-    },
-    scheduleWorkspacePersist: () => scheduleWorkspacePersist(),
-    cleanupUnproducedRunLayers: (runId) => cleanupUnproducedRunLayers(runId),
-    createRunLayerGroup: (options) => createRunLayerGroup(options),
-    bindRunIdToGroup: (groupId, runId) => bindRunIdToGroup(groupId, runId),
-    attachAlgorithmProductOverlays: (refs, catalogId, runId, opts) =>
-      attachAlgorithmProductOverlays(refs as never, catalogId, runId, opts),
-    // ── 业务判定 / 载荷构建 ──
-    isLocalSubmitJobId: (jobId) => isLocalSubmitJobId(jobId),
-    isViewportRefreshStale: (epoch) => isViewportRefreshStale(epoch),
-    isWeatherEngineLayer: (catalogId) => isWeatherEngineLayer(catalogId),
-    resolveBackendLayerId: (catalogId) => resolveBackendLayerId(catalogId),
-    ensureRuntimeLayerCatalog: (force) => ensureRuntimeLayerCatalog(force),
-    getCatalogRunBlockReason: (catalogId) => getCatalogRunBlockReason(catalogId),
-    supportsAnalysisWorkflow: (catalogId) => supportsAnalysisWorkflow(catalogId),
-    supportsMapLayerResult: (catalogId) => supportsMapLayerResult(catalogId),
-    buildWorkflowPayloadForCatalog: (
-      catalogId,
-      catalogName,
-      requestedOutputs,
-      requestBBox,
-      backendLayerId,
-      algorithmRequest,
-      weatherRequest,
-    ) =>
-      buildWorkflowPayloadForCatalog(
-        catalogId,
-        catalogName,
-        requestedOutputs,
-        requestBBox,
-        backendLayerId,
-        algorithmRequest,
-        weatherRequest,
-      ),
-    activateWeatherTileViewport: (catalogId) => activateWeatherTileViewport(catalogId),
-    // ── 快照恢复 ──
-    hydrateWorkspaceFromSnapshot: () => hydrateWorkspaceFromSnapshot(),
-    hydrateVectorLayersFromSnapshot: (instanceIdMap) =>
-      hydrateVectorLayersFromSnapshot(instanceIdMap),
-    reconcileOmegaBlockLayers: () => reconcileOmegaBlockLayers(),
-  })
-  const {
-    restoreActiveWorkflows,
-    registerExternalWorkflowRun,
-    runWorkflowForCatalog,
-    cancelWorkflowRunForJob,
-    retryWorkflowRunForJob,
-    rememberTrackedWorkflowRun: rememberTrackedWorkflowRunImpl,
-    forgetTrackedWorkflowRun: forgetTrackedWorkflowRunImpl,
-  } = workflowRunner
-  rememberTrackedWorkflowRunFn = rememberTrackedWorkflowRunImpl
-  forgetTrackedWorkflowRunFn = forgetTrackedWorkflowRunImpl
-
+  // ── Backward-compatible flat return ──
+  // All 84+ members from the three domains are exposed through the single
+  // store. Consumers can migrate to selector composables (./selectors.ts)
+  // for a narrower API.
   return {
-    // State
-    activeLayers,
-    runLayerGroups,
-    sidebarView,
-    selectedInstanceId,
-    jobLayers,
-    currentHour,
-    workflowError,
-    workflowProgressTimeSeek,
-    isSubmitting,
-    workflowSummary,
-    runtimeLayerCatalogLoading,
-    particleFlowCatalogId,
-    windDisplayMode,
-    currentMapCenter,
-    currentMapBBox,
-    currentMapZoom,
-    smoothRendering,
-    // Computed
-    activeLayersDisplay,
-    selectedLayerDisplay,
-    activeLayerCount,
-    sidebarViewLabel,
-    catalogJobStatus,
-    catalogRunReadiness,
-    // Data
-    layerLibrary,
+    // ── State ──
+    activeLayers: workspace.activeLayers,
+    runLayerGroups: workflowRun.runLayerGroups,
+    sidebarView: workspace.sidebarView,
+    selectedInstanceId: workspace.selectedInstanceId,
+    jobLayers: workflowRun.jobLayers,
+    currentHour: workspace.currentHour,
+    workflowError: workflowRun.workflowError,
+    workflowProgressTimeSeek: workflowRun.workflowProgressTimeSeek,
+    isSubmitting: workspace.isSubmitting,
+    workflowSummary: workflowRun.workflowSummary,
+    runtimeLayerCatalogLoading: workspace.runtimeLayerCatalogLoading,
+    particleFlowCatalogId: viewport.particleFlowCatalogId,
+    windDisplayMode: viewport.windDisplayMode,
+    currentMapCenter: viewport.currentMapCenter,
+    currentMapBBox: viewport.currentMapBBox,
+    currentMapZoom: viewport.currentMapZoom,
+    smoothRendering: viewport.smoothRendering,
+    // ── Computed ──
+    activeLayersDisplay: workspace.activeLayersDisplay,
+    selectedLayerDisplay: workspace.selectedLayerDisplay,
+    activeLayerCount: workspace.activeLayerCount,
+    sidebarViewLabel: workspace.sidebarViewLabel,
+    catalogJobStatus: workspace.catalogJobStatus,
+    catalogRunReadiness: workspace.catalogRunReadiness,
+    // ── Data ──
+    layerLibrary: workspace.layerLibrary,
     layerCategories: LAYER_CATEGORIES,
-    // Actions
-    addLayer,
-    addImportedVectorLayer,
-    addImportedRasterLayer,
-    getImportedVectorGeojson,
-    updateImportedVectorGeojson,
-    setImportedVectorStyle,
-    removeLayer,
-    toggleLayerVisibility,
-    setAllLayerVisibility,
-    removeAllLayers,
-    setLayerOpacity,
-    setLayerPaletteOverride,
-    setLayerRangeOverride,
-    setLayerNodataDisplay,
-    setLayerOrder,
-    setLayerDisplayName,
-    bringLayerToFront,
-    sendLayerToBack,
-    selectLayer,
-    setSidebarView,
-    setCurrentHour,
-    setJobLayers,
-    ensureRuntimeLayerCatalog,
-    reorderLayers,
-    createRunLayerGroup,
-    bindRunIdToGroup,
-    dissolveRunGroup,
-    reorderWithinRunGroup,
-    moveRunGroupBlock,
-    findRunGroupByMember,
-    findRunGroupById,
-    refreshRunGroupDissolvable,
-    updateRunGroupFromJob,
-    runWorkflowForCatalog,
-    cancelWorkflowRunForJob,
-    retryWorkflowRunForJob,
-    stopWorkflowPolling,
-    getCatalogRunBlockReason,
-    canRunCatalog,
-    supportsAnalysisWorkflow,
-    isWeatherEngineLayer,
-    supportsMapLayerResult,
-    supportsViewportDrivenRefresh,
-    supportsParticleFlow,
-    getLayerPrimaryMetric,
-    setWindDisplayMode,
-    toggleParticleFlow,
-    setParticleFlow,
-    setSmoothRendering,
-    resolveBackendLayerId,
-    resolveEffectiveDescriptor,
-    applyWeatherProviderPreference,
-    // 点天气查询（单工作流管理）
-    pointWeather,
-    pointWeatherLoading,
-    pointWeatherError,
-    fetchPointWeather,
-    clearPointWeather,
-    setMapViewport,
-    handleViewportChange,
-    flushWeatherTileViewports,
-    refreshActiveWeatherWorkflows,
-    cleanupUnproducedRunLayers,
-    scheduleWorkspacePersist,
-    // 外部工作流跟踪与恢复
-    registerExternalWorkflowRun,
-    restoreActiveWorkflows,
+    // ── Actions: workspace ──
+    addLayer: workspace.addLayer,
+    addImportedVectorLayer: workspace.addImportedVectorLayer,
+    addImportedRasterLayer: workspace.addImportedRasterLayer,
+    getImportedVectorGeojson: workspace.getImportedVectorGeojson,
+    updateImportedVectorGeojson: workspace.updateImportedVectorGeojson,
+    setImportedVectorStyle: workspace.setImportedVectorStyle,
+    removeLayer: workspace.removeLayer,
+    toggleLayerVisibility: workspace.toggleLayerVisibility,
+    setAllLayerVisibility: workspace.setAllLayerVisibility,
+    removeAllLayers: workspace.removeAllLayers,
+    setLayerOpacity: workspace.setLayerOpacity,
+    setLayerPaletteOverride: workspace.setLayerPaletteOverride,
+    setLayerRangeOverride: workspace.setLayerRangeOverride,
+    setLayerNodataDisplay: workspace.setLayerNodataDisplay,
+    setLayerOrder: workspace.setLayerOrder,
+    setLayerDisplayName: workspace.setLayerDisplayName,
+    bringLayerToFront: workspace.bringLayerToFront,
+    sendLayerToBack: workspace.sendLayerToBack,
+    selectLayer: workspace.selectLayer,
+    setSidebarView: workspace.setSidebarView,
+    setCurrentHour: workspace.setCurrentHour,
+    // ── Actions: catalog ──
+    setJobLayers: workflowRun.setJobLayers,
+    ensureRuntimeLayerCatalog: workspace.ensureRuntimeLayerCatalog,
+    // ── Actions: run layers ──
+    reorderLayers: workflowRun.reorderLayers,
+    createRunLayerGroup: workflowRun.createRunLayerGroup,
+    bindRunIdToGroup: workflowRun.bindRunIdToGroup,
+    dissolveRunGroup: workflowRun.dissolveRunGroup,
+    reorderWithinRunGroup: workflowRun.reorderWithinRunGroup,
+    moveRunGroupBlock: workflowRun.moveRunGroupBlock,
+    findRunGroupByMember: workflowRun.findRunGroupByMember,
+    findRunGroupById: workflowRun.findRunGroupById,
+    refreshRunGroupDissolvable: workflowRun.refreshRunGroupDissolvable,
+    updateRunGroupFromJob: workflowRun.updateRunGroupFromJob,
+    // ── Actions: workflow ──
+    runWorkflowForCatalog: workflowRun.runWorkflowForCatalog,
+    cancelWorkflowRunForJob: workflowRun.cancelWorkflowRunForJob,
+    retryWorkflowRunForJob: workflowRun.retryWorkflowRunForJob,
+    stopWorkflowPolling: workflowRun.stopWorkflowPolling,
+    getCatalogRunBlockReason: workspace.getCatalogRunBlockReason,
+    canRunCatalog: workspace.canRunCatalog,
+    supportsAnalysisWorkflow: workspace.supportsAnalysisWorkflow,
+    isWeatherEngineLayer: workspace.isWeatherEngineLayer,
+    supportsMapLayerResult: workspace.supportsMapLayerResult,
+    supportsViewportDrivenRefresh: workspace.supportsViewportDrivenRefresh,
+    supportsParticleFlow: workspace.supportsParticleFlow,
+    getLayerPrimaryMetric: workspace.getLayerPrimaryMetric,
+    // ── Actions: viewport ──
+    setWindDisplayMode: viewport.setWindDisplayMode,
+    toggleParticleFlow: viewport.toggleParticleFlow,
+    setParticleFlow: viewport.setParticleFlow,
+    setSmoothRendering: viewport.setSmoothRendering,
+    resolveBackendLayerId: workspace.resolveBackendLayerId,
+    resolveEffectiveDescriptor: workspace.resolveEffectiveDescriptor,
+    applyWeatherProviderPreference: viewport.applyWeatherProviderPreference,
+    // ── Point weather ──
+    pointWeather: workflowRun.pointWeather,
+    pointWeatherLoading: workflowRun.pointWeatherLoading,
+    pointWeatherError: workflowRun.pointWeatherError,
+    fetchPointWeather: workflowRun.fetchPointWeather,
+    clearPointWeather: workflowRun.clearPointWeather,
+    // ── Map viewport ──
+    setMapViewport: viewport.setMapViewport,
+    handleViewportChange: viewport.handleViewportChange,
+    flushWeatherTileViewports: viewport.flushWeatherTileViewports,
+    // ── Workflow lifecycle ──
+    refreshActiveWeatherWorkflows: workflowRun.refreshActiveWeatherWorkflows,
+    cleanupUnproducedRunLayers: workflowRun.cleanupUnproducedRunLayers,
+    scheduleWorkspacePersist: () => bindings.scheduleWorkspacePersist(),
+    // ── External workflow tracking ──
+    registerExternalWorkflowRun: workflowRun.registerExternalWorkflowRun,
+    restoreActiveWorkflows: workflowRun.restoreActiveWorkflows,
   }
 })

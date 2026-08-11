@@ -1517,7 +1517,7 @@ onBeforeUnmount(() => {
 .node-progress-message {
   display: block;
   margin-top: 4px;
-  font-size: 11px;
+  font-size: var(--font-size-caption);
   opacity: 0.75;
   word-break: break-word;
 }
@@ -1530,17 +1530,17 @@ onBeforeUnmount(() => {
 }
 
 .node-artifact-link {
-  font-size: 11px;
+  font-size: var(--font-size-caption);
   padding: 2px 8px;
-  border-radius: 4px;
-  background: rgba(88, 166, 255, 0.12);
-  color: #58a6ff;
+  border-radius: var(--radius-sm);
+  background: var(--accent-surface);
+  color: var(--accent);
   text-decoration: none;
   word-break: break-all;
 }
 
 .node-artifact-link:hover {
-  background: rgba(88, 166, 255, 0.24);
+  background: var(--accent-surface);
   text-decoration: underline;
 }
 
@@ -1549,14 +1549,14 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 4px;
-  font-size: 11px;
+  font-size: var(--font-size-caption);
   opacity: 0.8;
 }
 
 .wf-item-message {
   margin: 0.35rem 0 0;
-  color: #a8c4d8;
-  font-size: 0.6rem;
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
   line-height: 1.4;
 }
 

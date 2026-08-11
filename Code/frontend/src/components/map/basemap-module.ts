@@ -10,6 +10,8 @@ const TILE_OVERLAY_SOURCE_ID = 'tile-base-overlay'
 const TILE_OVERLAY_LAYER_ID = 'tile-base-overlay-raster'
 const TILE_ERROR_WINDOW_MS = 5000
 const TILE_ERROR_THRESHOLD = 15
+/** 熔断触发后自动恢复重试的延迟（毫秒） */
+const AUTO_RECOVERY_DELAY_MS = 15000
 
 export interface BasemapModule {
   ensureInitialLayer: (sourceId: TileSourceId) => void
@@ -45,6 +47,10 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
   let switchTileToken = 0
   let sourceTransitionTimer: ReturnType<typeof setTimeout> | null = null
   let tileSourceDebounceHandle: ReturnType<typeof setTimeout> | null = null
+  /** 熔断后自动恢复重试定时器 */
+  let autoRecoveryTimer: ReturnType<typeof setTimeout> | null = null
+  /** 标记当前是否处于熔断状态 */
+  let isCircuitBroken = false
 
   function hideOverlay() {
     if (options.map.getLayer(TILE_OVERLAY_LAYER_ID)) {
@@ -155,6 +161,24 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     options.setTileLoadFailed(false)
     options.setTileFailedProvider(null)
     tileErrorTimestamps.length = 0
+    isCircuitBroken = false
+    if (autoRecoveryTimer !== null) {
+      clearTimeoutImpl(autoRecoveryTimer)
+      autoRecoveryTimer = null
+    }
+  }
+
+  /** 调度自动恢复：熔断后一段时间自动重试一次 */
+  function scheduleAutoRecovery() {
+    if (autoRecoveryTimer !== null) {
+      clearTimeoutImpl(autoRecoveryTimer)
+    }
+    autoRecoveryTimer = setTimeoutImpl(() => {
+      autoRecoveryTimer = null
+      if (isCircuitBroken) {
+        retryTileLoad()
+      }
+    }, AUTO_RECOVERY_DELAY_MS)
   }
 
   function switchTileSource(sourceId: TileSourceId) {
@@ -239,12 +263,14 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     tileErrorTimestamps.push(now)
 
     if (tileErrorTimestamps.length > TILE_ERROR_THRESHOLD) {
+      isCircuitBroken = true
       options.setTileLoadFailed(true)
       options.setTileFailedProvider(failedProvider ?? currentProvider)
       if (options.map.getLayer(TILE_LAYER_ID)) {
         options.map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'none')
       }
       hideOverlay()
+      scheduleAutoRecovery()
     }
   }
 
@@ -307,6 +333,13 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
       clearTimeoutImpl(tileSourceDebounceHandle)
       tileSourceDebounceHandle = null
     }
+    if (autoRecoveryTimer !== null) {
+      clearTimeoutImpl(autoRecoveryTimer)
+      autoRecoveryTimer = null
+    }
+    // 清理错误时间戳数组，避免内存泄漏
+    tileErrorTimestamps.length = 0
+    isCircuitBroken = false
   }
 
   return {

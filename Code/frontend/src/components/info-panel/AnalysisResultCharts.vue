@@ -152,7 +152,7 @@ function cellText(value: unknown): string {
   margin-bottom: 12px;
 }
 .section-kicker {
-  font-size: 11px;
+  font-size: var(--font-size-caption);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   opacity: 0.65;
@@ -190,7 +190,7 @@ function cellText(value: unknown): string {
 }
 .analysis-table-more {
   margin: 6px 0 0;
-  font-size: 11px;
+  font-size: var(--font-size-caption);
   opacity: 0.7;
 }
 </style>

@@ -97,7 +97,7 @@ def test_omega_sf_map_layers_skip_static_omega_when_block_series_exists() -> Non
         def _build_product_map_layer_ref(self, **kwargs):
             return kwargs["product"]["type"]
 
-    refs = CapturingBuilder()._build_product_map_layer_refs(
+    refs = CapturingBuilder().build_product_map_layer_refs(
         run_id="run-omega-three-layers",
         requested_at=datetime.now(timezone.utc),
         payload=WorkflowSubmitRequest(command_type=WorkflowCommandType.analysis),

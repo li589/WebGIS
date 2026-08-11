@@ -9,6 +9,7 @@ import type {
   WorkflowRunStatusResponse,
   WorkflowRunViewResponse,
   RuntimeLayerCatalogResponse,
+  LayerCategoryResponse,
   WeatherPointResponse,
   WorkflowSubmitRequest,
 } from '../types/api-reexports'
@@ -29,6 +30,13 @@ export function submitWorkflow(payload: WorkflowSubmitRequest) {
 export function fetchLayerCatalog() {
   return requestJson<RuntimeLayerCatalogResponse>('/layers', {
     timeoutMs: 120000,
+  })
+}
+
+/** X1: 从后端获取图层分类定义（含 UI 样式 accentColor / chipTone）。 */
+export function fetchLayerCategories() {
+  return requestJson<LayerCategoryResponse>('/layers/categories', {
+    timeoutMs: 30000,
   })
 }
 

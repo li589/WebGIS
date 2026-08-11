@@ -63,6 +63,46 @@ class LayerCapabilities(BaseModel):
     result_interfaces: list[str] = Field(default_factory=list)
 
 
+class LayerPresentation(BaseModel):
+    """X1: 图层 UI 呈现元数据 — 后端下发，前端消费的唯一真源。
+
+    将原前端 ``LAYER_LIBRARY`` 中的 UI 样式字段（accentColor / accentGlow /
+    chipTone / metricLabel / metricUnit / metricPrecision / updateLabel /
+    sourceLabel）迁移到后端种子 JSON，经 ``GET /layers`` 下发。
+    前端 ``LAYER_LIBRARY`` 仅在 API 不可用时作离线兜底。
+    """
+    accent_color: str | None = None
+    """UI 强调色（hex），如 '#67d4ff'。"""
+    accent_glow: str | None = None
+    """UI 辉光色（rgba），如 'rgba(103, 212, 255, 0.34)'。"""
+    chip_tone: str | None = None
+    """UI 标签底色（rgba），如 'rgba(103, 212, 255, 0.18)'。"""
+    metric_label: str | None = None
+    """指标标签，如 '风速' / 'NDVI'。"""
+    metric_unit: str | None = None
+    """指标单位，如 'm/s' / ''。"""
+    metric_precision: int | None = None
+    """指标小数精度，如 1。"""
+    update_label: str | None = None
+    """更新频率文案，如 '每小时更新' / '按时间维度'。"""
+    source_label: str | None = None
+    """数据源文案，如 '天气引擎（多源）'。"""
+
+
+class LayerCategoryDef(BaseModel):
+    """X1: 图层分类定义 — 后端下发，消除前后端分类双写。"""
+    id: str
+    name: str
+    icon: str | None = None
+    accent_color: str | None = None
+    chip_tone: str | None = None
+    sub_categories: list[str] = Field(default_factory=list)
+
+
+class LayerCategoryResponse(BaseModel):
+    items: list[LayerCategoryDef]
+
+
 class LayerDescriptor(BaseModel):
     layer_id: str
     dataset_key: str
@@ -108,6 +148,9 @@ class LayerDescriptor(BaseModel):
     """
     sub_category: str | None = None
     """课题组数据二级分类：'模型输入' | '模型输出' | '辅助数据'；其它分类可留空。"""
+    presentation: LayerPresentation = Field(default_factory=LayerPresentation)
+    """X1: UI 呈现元数据（accentColor / metricLabel / sourceLabel 等）。
+    后端种子 JSON 提供，前端 ``LAYER_LIBRARY`` 仅在 API 不可用时作离线兜底。"""
 
 
 class LayerCatalogResponse(BaseModel):

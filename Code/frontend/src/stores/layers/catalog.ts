@@ -803,7 +803,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     chipTone: 'rgba(78, 205, 196, 0.16)',
     sources: [SOURCE_SMAP_TS],
     dataOwner: 'Lab',
-    temporalCoverage: '2023-01 (13 days)',
+    temporalCoverage: '2025-12-01 to 2025-12-31 (31 days)',
     sourceReference: 'https://nsidc.org/data/SPL3SMP',
   },
   {

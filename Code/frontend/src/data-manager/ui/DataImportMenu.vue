@@ -174,46 +174,62 @@ const progressLabel = computed(() =>
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.24rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
-  border-radius: 0.5rem;
-  padding: 0.3rem 0.46rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #9fb6cc;
+  gap: var(--space-2);
+  height: 30px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
   cursor: pointer;
-  font: inherit;
-  font-size: 0.62rem;
-  font-weight: 500;
+  font-family: inherit;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
   white-space: nowrap;
   transition:
-    border-color 0.18s ease,
-    color 0.18s ease,
-    background 0.18s ease;
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 
-.import-trigger:hover {
-  border-color: rgba(90, 213, 255, 0.3);
-  color: #5ad5ff;
-  background: rgba(10, 132, 255, 0.12);
+.import-trigger:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+  color: var(--accent);
+  box-shadow: var(--elevation-1);
 }
 
 .import-trigger.active {
-  border-color: rgba(90, 213, 255, 0.4);
-  color: #5ad5ff;
-  background: rgba(10, 132, 255, 0.2);
-  box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.16);
+  background: var(--accent-surface);
+  border-color: var(--border-accent);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--border-accent);
+}
+
+.import-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.import-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .btn-icon {
-  font-size: 0.72rem;
+  font-size: 14px;
   opacity: 0.9;
+  line-height: 1;
 }
 .btn-label {
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
+  line-height: 1;
 }
 .caret {
-  font-size: 0.52rem;
+  font-size: 10px;
   opacity: 0.6;
+  line-height: 1;
 }
 
 .import-spinner {
@@ -245,8 +261,8 @@ const progressLabel = computed(() =>
 }
 
 .progress-text {
-  font-size: 0.68rem;
-  color: #a8e8ff;
+  font-size: var(--font-size-caption);
+  color: var(--accent);
 }
 
 @keyframes spin {
@@ -257,91 +273,100 @@ const progressLabel = computed(() =>
 </style>
 
 <style>
-/* Teleport 到 body，不能用 scoped */
+/* Teleport 到 body，不能用 scoped，使用设计 token 保持一致性 */
 .import-dropdown {
   position: fixed;
   z-index: 9999;
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
-  padding: 0.3rem;
-  border-radius: 0.6rem;
-  background: rgba(8, 18, 33, 0.96);
-  border: 1px solid rgba(136, 192, 255, 0.16);
-  box-shadow: 0 12px 36px rgba(1, 8, 16, 0.4);
-  min-width: 12.5rem;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 10px;
+  background: rgba(8, 18, 33, 0.97);
+  border: 1px solid rgba(90, 213, 255, 0.15);
+  box-shadow: 0 12px 36px rgba(1, 8, 16, 0.45);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  min-width: 14rem;
 }
 
 .import-dropdown .dropdown-item {
   display: flex;
   align-items: center;
-  gap: 0.42rem;
-  padding: 0.42rem 0.5rem;
+  gap: 8px;
+  padding: 8px 12px;
   border: none;
-  border-radius: 0.42rem;
+  border-radius: 6px;
   background: transparent;
   color: #9fb6cc;
   cursor: pointer;
   font: inherit;
   text-align: left;
   transition:
-    background 0.16s ease,
-    color 0.16s ease;
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .import-dropdown .dropdown-item:hover {
-  background: rgba(136, 192, 255, 0.1);
+  background: rgba(90, 213, 255, 0.12);
   color: #d8e6f5;
 }
 
 .import-dropdown .item-icon {
-  font-size: 0.8rem;
+  font-size: 14px;
+  color: #5ad5ff;
   flex: none;
+  opacity: 0.8;
 }
 .import-dropdown .item-body {
   display: flex;
   flex-direction: column;
-  gap: 0.08rem;
+  gap: 2px;
   min-width: 0;
 }
 .import-dropdown .item-title {
-  font-size: 0.62rem;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 600;
+  color: #d8e6f5;
 }
 .import-dropdown .item-desc {
-  font-size: 0.52rem;
-  color: #5a7080;
+  font-size: 12px;
+  color: #8aa8bf;
+  line-height: 1.4;
 }
 .import-dropdown .dropdown-hint {
-  margin: 0.2rem 0.35rem 0.15rem;
-  padding-top: 0.28rem;
-  border-top: 1px solid rgba(136, 192, 255, 0.1);
-  font-size: 0.5rem;
-  color: #5a7080;
-  line-height: 1.35;
+  margin: 4px 8px 2px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(90, 213, 255, 0.08);
+  font-size: 12px;
+  color: #6e8ba0;
+  line-height: 1.4;
 }
 
 .import-toast {
   position: fixed;
-  top: 4.2rem;
+  top: 4.5rem;
   left: 50%;
   transform: translateX(-50%);
   z-index: 10020;
   max-width: min(36rem, calc(100vw - 2rem));
-  padding: 0.42rem 0.72rem;
-  border-radius: 0.48rem;
-  background: rgba(10, 132, 255, 0.22);
-  border: 1px solid rgba(90, 213, 255, 0.35);
-  color: #a8e8ff;
-  font-size: 0.62rem;
+  padding: 8px 16px;
+  border-radius: 6px;
+  background: rgba(90, 213, 255, 0.12);
+  border: 1px solid rgba(90, 213, 255, 0.3);
+  color: #5ad5ff;
+  font-size: 12px;
+  font-weight: 500;
   line-height: 1.4;
   pointer-events: none;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .import-toast.error {
-  background: rgba(255, 77, 77, 0.18);
-  border-color: rgba(255, 100, 100, 0.35);
-  color: #ffb0b0;
+  background: rgba(255, 140, 100, 0.12);
+  border-color: rgba(255, 140, 100, 0.3);
+  color: #ff8c64;
 }
 </style>

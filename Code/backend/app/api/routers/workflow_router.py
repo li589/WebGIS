@@ -238,19 +238,11 @@ def retry_workflow_run(run_id: str) -> WorkflowAcceptedResponse:
 def materialize_workflow_map_layers(run_id: str) -> dict:
     """Publish algorithm science products as imported overlays for map display.
 
-    Used when a run completed with file-only product refs (no map_layer), or to
-    re-publish after code updates without re-running the inversion.
-    Also allowed while ``running`` so block mats can progressively appear.
+    L2: 业务逻辑已下沉到 python_provider_result_builder.materialize_map_layers。
     """
-    from datetime import datetime
-    from pathlib import Path
-
-    from app.core.config import settings
-    from app.data_io.services.raster_timeseries import upsert_block_dir_timeseries
     from app.services.python_provider_result_builder import (
         python_provider_result_builder,
     )
-    from shared.contracts.api_contracts import WorkflowSubmitRequest
 
     run_status = submission_service.get_workflow_run(run_id)
     if run_status is None:
@@ -258,166 +250,10 @@ def materialize_workflow_map_layers(run_id: str) -> dict:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Workflow run not found: {run_id}",
         )
-    if run_status.status not in {"succeeded", "running", "accepted", "queued"}:
+    try:
+        return python_provider_result_builder.materialize_map_layers(run_id, run_status)
+    except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Workflow run cannot materialize overlays: {run_status.status}",
-        )
-
-    result_dto: dict = {}
-    if run_status.result_dto is not None:
-        raw = run_status.result_dto
-        result_dto = (
-            raw.model_dump(mode="json") if hasattr(raw, "model_dump") else dict(raw)
-        )
-
-    if not result_dto.get("products"):
-        for ref in run_status.result_refs or []:
-            if ref.result_kind.value != "json":
-                continue
-            inline = ref.inline_data or {}
-            nested = inline.get("result_dto")
-            if isinstance(nested, dict) and nested.get("products"):
-                result_dto = nested
-                break
-
-    layers: list[dict] = []
-    time_start: str | None = None
-    time_end: str | None = None
-    tr = run_status.time_range
-    if tr is not None:
-        start_at = getattr(tr, "start_at", None) or (
-            tr.get("start_at") if isinstance(tr, dict) else None
-        )
-        end_at = getattr(tr, "end_at", None) or (
-            tr.get("end_at") if isinstance(tr, dict) else None
-        )
-        if start_at is not None:
-            time_start = str(start_at).replace("-", "")[:8]
-        if end_at is not None:
-            time_end = str(end_at).replace("-", "")[:8]
-
-    # Prefer explicit products when present
-    if result_dto.get("products"):
-        payload = WorkflowSubmitRequest(
-            command_type=run_status.command_type,
-            command_label=f"materialize map layers {run_id}",
-            layer_id=run_status.layer_id,
-            requested_outputs=["map_layer"],
-        )
-        refs = python_provider_result_builder._build_product_map_layer_refs(
-            run_id=run_id,
-            requested_at=datetime.now(UTC),
-            payload=payload,
-            result_dto=result_dto,
-            time_start=time_start,
-            time_end=time_end,
-            canonical_viirs8_only=(
-                run_status.status == "succeeded"
-                and "omega-doy-dynamic" in str(run_status.layer_id or "")
-            ),
-        )
-        for ref in refs:
-            assets = (ref.inline_data or {}).get("layer_assets") or {}
-            overlay_id = assets.get("overlay_layer_id")
-            if not overlay_id:
-                continue
-            bbox = assets.get("cog_bbox") or {}
-            layers.append(
-                {
-                    "overlay_layer_id": overlay_id,
-                    "title": ref.title,
-                    "product_tag": assets.get("product_tag"),
-                    "bounds": [
-                        bbox.get("west"),
-                        bbox.get("south"),
-                        bbox.get("east"),
-                        bbox.get("north"),
-                    ]
-                    if isinstance(bbox, dict) and bbox.get("west") is not None
-                    else None,
-                    "source_crs": bbox.get("crs") if isinstance(bbox, dict) else None,
-                    "cog_preview_url": assets.get("cog_preview_url"),
-                    "time_list": assets.get("time_list") or [],
-                    "default_time": assets.get("default_time"),
-                    "native_step": assets.get("native_step"),
-                }
-            )
-
-    # Running / partial: sync block dir on disk even without result_dto products
-    if not layers or run_status.status == "running":
-        candidates: list[Path] = []
-        for product in result_dto.get("products") or []:
-            if not isinstance(product, dict):
-                continue
-            if "block" not in str(product.get("type") or "").lower():
-                continue
-            uri = str(product.get("uri") or product.get("download_url") or "").strip()
-            if uri:
-                candidates.append(
-                    Path(uri.replace("file:///", "").replace("file://", ""))
-                )
-        data_root = Path(getattr(settings, "data_root", "") or "")
-        workspace = Path(getattr(settings, "python_provider_workspace", "") or "")
-        runtime_candidates: list[Path] = []
-        if workspace.parts:
-            runtime_candidates.append(workspace / "products" / "omega_sf_fenkuai")
-        if data_root.parts:
-            runtime_candidates.append(
-                data_root
-                / "_runtime"
-                / "python_provider"
-                / "products"
-                / "omega_sf_fenkuai"
-            )
-        for path in [*candidates, *runtime_candidates]:
-            if path.is_dir() and any(path.glob("????????_????????.mat")):
-                for variable, label, palette in (
-                    ("SM", "SM", "ylgnbu"),
-                    ("VOD", "VOD", "viridis"),
-                    ("OMEGA", "OMEGA", "cividis"),
-                ):
-                    try:
-                        synced = upsert_block_dir_timeseries(
-                            path,
-                            variable_id=variable,
-                            label=label,
-                            run_id=run_id,
-                            palette=palette,
-                            native_step="8d",
-                            time_start=time_start,
-                            time_end=time_end,
-                            canonical_viirs8_only=(
-                                run_status.status == "succeeded"
-                                and "omega-doy-dynamic"
-                                in str(run_status.layer_id or "")
-                            ),
-                        )
-                    except Exception:
-                        continue
-                    # de-dupe by overlay id
-                    if any(
-                        layer.get("overlay_layer_id") == synced["layer_id"]
-                        for layer in layers
-                    ):
-                        for layer in layers:
-                            if layer.get("overlay_layer_id") == synced["layer_id"]:
-                                layer["time_list"] = synced.get("time_list") or []
-                                layer["default_time"] = synced.get("default_time")
-                        continue
-                    layers.append(
-                        {
-                            "overlay_layer_id": synced["layer_id"],
-                            "title": synced.get("title"),
-                            "product_tag": synced.get("product_tag"),
-                            "bounds": synced.get("bounds"),
-                            "source_crs": synced.get("source_crs"),
-                            "cog_preview_url": synced.get("cog_preview_url"),
-                            "time_list": synced.get("time_list") or [],
-                            "default_time": synced.get("default_time"),
-                            "native_step": synced.get("native_step"),
-                        }
-                    )
-                break
-
-    return {"run_id": run_id, "layers": layers, "count": len(layers)}
+            detail=str(exc),
+        ) from exc

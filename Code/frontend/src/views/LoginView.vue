@@ -53,16 +53,202 @@ async function submit() {
 <template>
   <div class="login-page">
     <div class="login-backdrop" aria-hidden="true">
-      <div class="grid-lines"></div>
+      <!-- 星点（最底层） -->
+      <div class="stars"></div>
+      <!-- 光晕 -->
       <div class="glow glow-a"></div>
       <div class="glow glow-b"></div>
+      <div class="glow glow-c"></div>
+      <!-- 等高线装饰 -->
+      <div class="contour-lines"></div>
+      <!-- SVG 地球经纬网格背景 -->
+      <svg class="bg-globe" viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <radialGradient id="globeGrad" cx="400" cy="400" r="380" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="rgba(90,213,255,0.1)" />
+            <stop offset="40%" stop-color="rgba(90,213,255,0.05)" />
+            <stop offset="100%" stop-color="rgba(90,213,255,0)" />
+          </radialGradient>
+          <radialGradient id="atmosGrad" cx="400" cy="400" r="400" gradientUnits="userSpaceOnUse">
+            <stop offset="82%" stop-color="rgba(10,132,255,0)" />
+            <stop offset="93%" stop-color="rgba(10,132,255,0.1)" />
+            <stop offset="100%" stop-color="rgba(90,213,255,0.2)" />
+          </radialGradient>
+          <linearGradient id="gridFade" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="rgba(90,213,255,0.1)" />
+            <stop offset="100%" stop-color="rgba(90,213,255,0)" />
+          </linearGradient>
+        </defs>
+        <!-- 大气层光晕 -->
+        <circle cx="400" cy="400" r="400" fill="url(#atmosGrad)" />
+        <!-- 地球主体 -->
+        <circle
+          cx="400"
+          cy="400"
+          r="300"
+          fill="url(#globeGrad)"
+          stroke="rgba(90,213,255,0.18)"
+          stroke-width="1.2"
+        />
+        <!-- 纬线（水平椭圆） -->
+        <ellipse
+          v-for="lat in [-60, -45, -30, -15, 0, 15, 30, 45, 60]"
+          :key="'lat' + lat"
+          cx="400"
+          cy="400"
+          :rx="300 * Math.cos((lat * Math.PI) / 180)"
+          :ry="Math.max(300 * Math.cos((lat * Math.PI) / 180) * 0.3, 15)"
+          fill="none"
+          stroke="rgba(90,213,255,0.08)"
+          stroke-width="0.7"
+          :transform="`translate(0, ${300 * Math.sin((lat * Math.PI) / 180) * 0.3})`"
+        />
+        <!-- 赤道（高亮） -->
+        <ellipse
+          cx="400"
+          cy="400"
+          rx="300"
+          ry="90"
+          fill="none"
+          stroke="rgba(90,213,255,0.15)"
+          stroke-width="1.2"
+        />
+        <!-- 经线（垂直椭圆旋转） -->
+        <ellipse
+          v-for="lon in [0, 20, 40, 60, 80, 100, 120, 140, 160]"
+          :key="'lon' + lon"
+          cx="400"
+          cy="400"
+          rx="300"
+          ry="300"
+          fill="none"
+          stroke="rgba(90,213,255,0.06)"
+          stroke-width="0.7"
+          :transform="`rotate(${lon} 400 400) scale(1, 0.3)`"
+        />
+        <!-- 本初子午线（高亮） -->
+        <ellipse
+          cx="400"
+          cy="400"
+          rx="300"
+          ry="300"
+          fill="none"
+          stroke="rgba(90,213,255,0.12)"
+          stroke-width="1"
+          transform="rotate(0 400 400) scale(1, 0.3)"
+        />
+        <!-- 点阵装饰（数据节点感） -->
+        <g fill="rgba(90,213,255,0.2)">
+          <circle
+            v-for="(p, i) in [
+              [280, 280],
+              [340, 320],
+              [420, 300],
+              [480, 350],
+              [520, 420],
+              [380, 450],
+              [300, 400],
+              [460, 270],
+              [350, 500],
+              [500, 480],
+              [260, 350],
+              [540, 380],
+              [320, 240],
+              [440, 480],
+              [250, 440],
+              [490, 250],
+            ]"
+            :key="i"
+            :cx="p[0] + 100"
+            :cy="p[1] + 50"
+            r="1.8"
+          />
+        </g>
+        <!-- 连线装饰（数据网络感） -->
+        <g stroke="rgba(90,213,255,0.08)" stroke-width="0.5" fill="none">
+          <line x1="380" y1="330" x2="420" y2="350" />
+          <line x1="420" y1="350" x2="480" y2="400" />
+          <line x1="480" y1="400" x2="520" y2="470" />
+          <line x1="380" y1="330" x2="340" y2="370" />
+          <line x1="340" y1="370" x2="300" y2="450" />
+          <line x1="560" y1="330" x2="520" y2="370" />
+        </g>
+      </svg>
+      <!-- 网格地面（透视网格） -->
+      <div class="grid-lines"></div>
+      <!-- 扫描线效果 -->
+      <div class="scan-line"></div>
     </div>
 
     <div class="login-card">
       <div class="brand-block">
         <div class="brand-mark" aria-hidden="true">
+          <!-- SVG 地球 Logo 替换 Unicode 字符 -->
+          <svg class="mark-svg" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+            <circle
+              cx="24"
+              cy="24"
+              r="20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              opacity="0.6"
+            />
+            <ellipse
+              cx="24"
+              cy="24"
+              rx="20"
+              ry="6"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1"
+              opacity="0.4"
+            />
+            <ellipse
+              cx="24"
+              cy="16"
+              rx="17"
+              ry="5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="0.8"
+              opacity="0.3"
+            />
+            <ellipse
+              cx="24"
+              cy="32"
+              rx="17"
+              ry="5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="0.8"
+              opacity="0.3"
+            />
+            <ellipse
+              cx="24"
+              cy="24"
+              rx="6"
+              ry="20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="0.8"
+              opacity="0.3"
+            />
+            <ellipse
+              cx="24"
+              cy="24"
+              rx="20"
+              ry="20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="0.5"
+              opacity="0.2"
+              transform="rotate(30 24 24) scale(1, 0.3)"
+            />
+            <circle cx="24" cy="24" r="3" fill="currentColor" opacity="0.8" />
+          </svg>
           <span class="mark-ring"></span>
-          <span class="mark-core">◎</span>
+          <span class="mark-ring-outer"></span>
         </div>
         <div class="brand-copy">
           <p class="eyebrow">{{ BRAND.eyebrow }}</p>
@@ -121,17 +307,52 @@ async function submit() {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 1.5rem;
+  padding: var(--space-4);
   position: relative;
   overflow: hidden;
-  background: #030912;
-  color: #e8f3fc;
+  background:
+    radial-gradient(ellipse at 20% 20%, rgba(10, 132, 255, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 80%, rgba(90, 213, 255, 0.06) 0%, transparent 50%),
+    linear-gradient(180deg, #02060d 0%, #040d1a 50%, #030912 100%);
+  color: var(--text-strong);
 }
 
+/* ═══ 背景层 ═══ */
 .login-backdrop {
   position: absolute;
   inset: 0;
   pointer-events: none;
+}
+
+.bg-globe {
+  position: absolute;
+  width: min(950px, 95vw);
+  height: min(950px, 95vw);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -48%);
+  opacity: 0.95;
+  animation: globe-float 25s ease-in-out infinite;
+}
+
+@keyframes globe-float {
+  0%,
+  100% {
+    transform: translate(-50%, -48%) scale(1);
+  }
+  50% {
+    transform: translate(-50%, -52%) scale(1.02);
+  }
+}
+
+/* 增加等高线装饰 */
+.contour-lines {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(ellipse 800px 400px at 50% 120%, rgba(90, 213, 255, 0.04) 0%, transparent 70%),
+    radial-gradient(ellipse 600px 300px at 50% 115%, rgba(90, 213, 255, 0.03) 0%, transparent 70%),
+    radial-gradient(ellipse 400px 200px at 50% 110%, rgba(90, 213, 255, 0.02) 0%, transparent 70%);
 }
 
 .grid-lines {
@@ -141,232 +362,507 @@ async function submit() {
     linear-gradient(rgba(90, 213, 255, 0.04) 1px, transparent 1px),
     linear-gradient(90deg, rgba(90, 213, 255, 0.04) 1px, transparent 1px);
   background-size: 48px 48px;
-  transform: perspective(600px) rotateX(58deg) translateY(-8%);
-  opacity: 0.55;
+  transform: perspective(800px) rotateX(65deg) translateY(5%);
+  opacity: 0.5;
+  mask-image: linear-gradient(to top, black 0%, transparent 65%);
+  -webkit-mask-image: linear-gradient(to top, black 0%, transparent 65%);
+}
+
+/* 增加扫描线效果 */
+.scan-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(90, 213, 255, 0.15), transparent);
+  animation: scan-move 8s linear infinite;
+  opacity: 0.6;
+}
+
+@keyframes scan-move {
+  0% {
+    top: -5%;
+  }
+  100% {
+    top: 105%;
+  }
 }
 
 .glow {
   position: absolute;
   border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.35;
+  filter: blur(120px);
 }
 
 .glow-a {
-  width: 420px;
-  height: 420px;
-  top: -120px;
-  left: -80px;
-  background: rgba(10, 132, 255, 0.35);
+  width: 560px;
+  height: 560px;
+  top: -200px;
+  left: -120px;
+  background: radial-gradient(
+    circle,
+    rgba(10, 132, 255, 0.25) 0%,
+    rgba(10, 132, 255, 0.08) 50%,
+    transparent 70%
+  );
+  opacity: 0.7;
+  animation: glow-pulse-a 12s ease-in-out infinite;
 }
 
 .glow-b {
+  width: 480px;
+  height: 480px;
+  bottom: -160px;
+  right: -100px;
+  background: radial-gradient(
+    circle,
+    rgba(90, 213, 255, 0.2) 0%,
+    rgba(90, 213, 255, 0.06) 50%,
+    transparent 70%
+  );
+  opacity: 0.6;
+  animation: glow-pulse-b 15s ease-in-out infinite reverse;
+}
+
+.glow-c {
   width: 360px;
   height: 360px;
-  bottom: -100px;
-  right: -60px;
-  background: rgba(90, 213, 255, 0.2);
+  top: 35%;
+  right: 15%;
+  background: radial-gradient(circle, rgba(255, 200, 120, 0.08) 0%, transparent 70%);
+  opacity: 0.5;
 }
 
+@keyframes glow-pulse-a {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
+}
+
+@keyframes glow-pulse-b {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.05);
+  }
+}
+
+.stars {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 10% 20%, rgba(255, 255, 255, 0.2) 0%, transparent 100%),
+    radial-gradient(1px 1px at 30% 70%, rgba(255, 255, 255, 0.15) 0%, transparent 100%),
+    radial-gradient(2px 2px at 50% 10%, rgba(200, 240, 255, 0.2) 0%, transparent 100%),
+    radial-gradient(1px 1px at 70% 40%, rgba(255, 255, 255, 0.12) 0%, transparent 100%),
+    radial-gradient(1px 1px at 85% 80%, rgba(255, 255, 255, 0.15) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 15% 85%, rgba(200, 240, 255, 0.12) 0%, transparent 100%),
+    radial-gradient(1px 1px at 90% 25%, rgba(255, 255, 255, 0.18) 0%, transparent 100%),
+    radial-gradient(1px 1px at 45% 55%, rgba(255, 255, 255, 0.1) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 25% 35%, rgba(255, 255, 255, 0.1) 0%, transparent 100%),
+    radial-gradient(1px 1px at 65% 15%, rgba(255, 255, 255, 0.08) 0%, transparent 100%),
+    radial-gradient(1px 1px at 5% 50%, rgba(255, 255, 255, 0.12) 0%, transparent 100%),
+    radial-gradient(2px 2px at 95% 60%, rgba(200, 240, 255, 0.1) 0%, transparent 100%);
+  animation: stars-twinkle 8s ease-in-out infinite alternate;
+}
+
+@keyframes stars-twinkle {
+  0% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* ═══ 登录卡片 ═══ */
 .login-card {
   position: relative;
-  width: min(26rem, 100%);
-  padding: 1.6rem 1.45rem 1.35rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
-  border-radius: 1rem;
-  background: linear-gradient(165deg, rgba(10, 22, 40, 0.96), rgba(6, 14, 26, 0.92));
+  width: min(28rem, 100%);
+  padding: var(--space-7) var(--space-6) var(--space-6);
+  border: 1px solid rgba(90, 213, 255, 0.15);
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(165deg, rgba(12, 26, 48, 0.88), rgba(6, 14, 26, 0.82)),
+    linear-gradient(180deg, rgba(90, 213, 255, 0.03) 0%, transparent 40%);
+  backdrop-filter: blur(32px) saturate(1.2);
+  -webkit-backdrop-filter: blur(32px) saturate(1.2);
   box-shadow:
-    0 24px 64px rgba(1, 8, 16, 0.55),
-    inset 0 1px 0 rgba(136, 192, 255, 0.08);
+    0 40px 100px rgba(1, 8, 16, 0.7),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 1px 0 rgba(136, 223, 255, 0.15) inset,
+    0 0 60px rgba(10, 132, 255, 0.08);
+  animation: card-enter 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* 卡片边框光效 */
+.login-card::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(90, 213, 255, 0.3),
+    transparent 40%,
+    transparent 60%,
+    rgba(255, 200, 120, 0.15)
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+/* 卡片顶部高光 */
+.login-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 15%;
+  right: 15%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(136, 223, 255, 0.4), transparent);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+@keyframes card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ═══ 品牌区域 ═══ */
 .brand-block {
   display: flex;
-  gap: 0.85rem;
+  gap: var(--space-4);
   align-items: center;
-  margin-bottom: 1.35rem;
+  margin-bottom: var(--space-6);
 }
 
 .brand-mark {
   position: relative;
-  width: 2.6rem;
-  height: 2.6rem;
+  width: 56px;
+  height: 56px;
   display: grid;
   place-items: center;
+  color: var(--accent);
+  flex-shrink: 0;
+  background: radial-gradient(circle at 30% 30%, rgba(90, 213, 255, 0.15), transparent 60%);
+  border-radius: var(--radius-lg);
+}
+
+.mark-svg {
+  width: 44px;
+  height: 44px;
+  animation: mark-spin 50s linear infinite;
+  filter: drop-shadow(0 0 8px rgba(90, 213, 255, 0.3));
+}
+
+@keyframes mark-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .mark-ring {
   position: absolute;
-  inset: 0;
+  inset: 2px;
   border-radius: 50%;
-  border: 1px solid rgba(90, 213, 255, 0.35);
-  box-shadow: 0 0 24px rgba(10, 132, 255, 0.2);
+  border: 1px solid rgba(90, 213, 255, 0.25);
+  box-shadow:
+    0 0 24px rgba(10, 132, 255, 0.12),
+    inset 0 0 12px rgba(90, 213, 255, 0.05);
 }
 
-.mark-core {
-  font-size: 1.1rem;
-  color: #5ad5ff;
+.mark-ring-outer {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1px solid rgba(90, 213, 255, 0.1);
+  animation: ring-pulse 4s ease-in-out infinite;
+}
+
+@keyframes ring-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.06);
+  }
 }
 
 .brand-copy .eyebrow {
   margin: 0;
-  font-size: 0.58rem;
-  letter-spacing: 0.14em;
+  font-size: var(--font-size-caption);
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #6e8ba0;
+  color: var(--accent);
+  font-weight: var(--font-weight-semibold);
+  text-shadow: 0 0 20px rgba(90, 213, 255, 0.3);
 }
 
 .brand-copy h1 {
-  margin: 0.15rem 0 0;
-  font-size: 1.15rem;
-  font-weight: 700;
+  margin: 6px 0 0;
+  font-size: 1.6rem;
+  font-weight: var(--font-weight-bold);
   letter-spacing: 0.02em;
+  color: var(--text-strong);
+  background: linear-gradient(135deg, var(--text-strong) 0%, var(--accent-strong) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .subtitle {
-  margin: 0.35rem 0 0;
-  font-size: 0.68rem;
-  line-height: 1.45;
-  color: #8aa8bf;
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-body-sm, 0.875rem);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  opacity: 0.9;
 }
 
+/* ═══ 表单 ═══ */
 .login-form {
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: var(--space-4);
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 0.32rem;
+  gap: var(--space-2);
 }
 
 .field-label {
-  font-size: 0.62rem;
-  color: #8aa8bf;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
 }
 
 .field input {
-  padding: 0.62rem 0.72rem;
-  border: 1px solid rgba(136, 192, 255, 0.16);
-  border-radius: 0.55rem;
-  background: rgba(4, 10, 18, 0.9);
-  color: #e8f3fc;
-  font: inherit;
-  font-size: 0.72rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid rgba(90, 213, 255, 0.12);
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, rgba(4, 12, 22, 0.8), rgba(6, 14, 26, 0.6));
+  color: var(--text-strong);
+  font-family: inherit;
+  font-size: var(--font-size-body);
   transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
+    border-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
 }
 
 .field input::placeholder {
-  color: #5a7080;
+  color: var(--text-disabled);
+}
+
+.field input:hover {
+  border-color: rgba(90, 213, 255, 0.25);
+  background: linear-gradient(180deg, rgba(6, 14, 26, 0.9), rgba(8, 18, 32, 0.7));
 }
 
 .field input:focus {
   outline: none;
-  border-color: rgba(90, 213, 255, 0.45);
-  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.12);
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 3px rgba(10, 132, 255, 0.12),
+    0 0 20px rgba(90, 213, 255, 0.08),
+    inset 0 1px 0 rgba(136, 223, 255, 0.1);
+  background: linear-gradient(180deg, rgba(6, 14, 26, 0.95), rgba(8, 18, 32, 0.8));
 }
 
 .dev-hint {
   margin: 0;
-  font-size: 0.58rem;
-  line-height: 1.45;
-  color: #7a94a8;
+  font-size: var(--font-size-caption);
+  line-height: 1.5;
+  color: var(--text-faint);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-sunken);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
 }
 
 .banner {
-  margin: 0 0 0.75rem;
-  padding: 0.5rem 0.65rem;
-  border-radius: 0.5rem;
-  font-size: 0.62rem;
-  line-height: 1.45;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-caption);
+  line-height: 1.5;
 }
 
 .banner-warn {
-  border: 1px solid rgba(255, 180, 120, 0.28);
-  background: rgba(120, 48, 24, 0.35);
-  color: #ffc8b0;
+  border: 1px solid var(--warning-border);
+  background: var(--warning-surface);
+  color: var(--warning);
 }
 
 .banner-error {
-  border: 1px solid rgba(255, 120, 90, 0.28);
-  background: rgba(90, 24, 16, 0.4);
-  color: #ffb4a8;
+  border: 1px solid var(--danger-border);
+  background: var(--danger-surface);
+  color: var(--danger);
 }
 
 .inline-link {
-  margin-left: 0.35rem;
+  margin-left: var(--space-2);
   padding: 0;
   border: none;
   background: none;
-  color: #ffd8c8;
+  color: inherit;
   font: inherit;
   font-size: inherit;
   cursor: pointer;
   text-decoration: underline;
+  opacity: 0.85;
+  transition: opacity var(--motion-fast) ease;
+}
+
+.inline-link:hover:not(:disabled) {
+  opacity: 1;
 }
 
 .inline-link:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: wait;
 }
 
 .submit-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.45rem;
-  margin-top: 0.15rem;
-  padding: 0.68rem 0.9rem;
-  border: 1px solid rgba(90, 213, 255, 0.4);
-  border-radius: 0.55rem;
-  background: linear-gradient(180deg, rgba(10, 132, 255, 0.28), rgba(10, 132, 255, 0.16));
-  color: #dff6ff;
-  font: inherit;
-  font-size: 0.72rem;
-  font-weight: 600;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: 0.85rem var(--space-4);
+  border: 1px solid rgba(90, 213, 255, 0.35);
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, rgba(10, 132, 255, 0.45), rgba(10, 132, 255, 0.25));
+  color: var(--text-strong);
+  font-family: inherit;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.03em;
   cursor: pointer;
+  overflow: hidden;
   transition:
-    background 0.15s ease,
-    transform 0.1s ease;
+    background-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) ease;
+  box-shadow:
+    0 4px 16px rgba(10, 132, 255, 0.2),
+    inset 0 1px 0 rgba(136, 223, 255, 0.2);
+}
+
+.submit-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  transition: left 0.5s ease;
 }
 
 .submit-btn:hover:not(:disabled) {
-  background: linear-gradient(180deg, rgba(10, 132, 255, 0.38), rgba(10, 132, 255, 0.22));
+  background: linear-gradient(180deg, rgba(10, 132, 255, 0.6), rgba(10, 132, 255, 0.35));
+  border-color: rgba(90, 213, 255, 0.5);
+  box-shadow:
+    0 8px 28px rgba(10, 132, 255, 0.3),
+    inset 0 1px 0 rgba(136, 223, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.submit-btn:hover:not(:disabled)::before {
+  left: 100%;
 }
 
 .submit-btn:active:not(:disabled) {
   transform: translateY(1px);
+  box-shadow:
+    0 2px 8px rgba(10, 132, 255, 0.2),
+    inset 0 1px 0 rgba(136, 223, 255, 0.1);
 }
 
 .submit-btn:disabled {
-  opacity: 0.65;
+  opacity: 0.5;
   cursor: wait;
+  transform: none;
 }
 
 .btn-spinner {
-  width: 0.75rem;
-  height: 0.75rem;
-  border: 2px solid rgba(223, 246, 255, 0.25);
-  border-top-color: #dff6ff;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(223, 246, 255, 0.2);
+  border-top-color: var(--text-strong);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
 
 .footer-note {
-  margin: 1rem 0 0;
-  font-size: 0.56rem;
-  line-height: 1.4;
-  color: #5a7080;
+  margin: var(--space-4) 0 0;
+  font-size: var(--font-size-caption);
+  line-height: 1.5;
+  color: var(--text-faint);
   text-align: center;
 }
 
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* 减弱动画偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .bg-globe,
+  .stars,
+  .mark-svg,
+  .mark-ring-outer,
+  .login-card,
+  .glow-a,
+  .glow-b,
+  .scan-line,
+  .submit-btn::before {
+    animation: none !important;
+    transition: none !important;
+  }
+  .login-card {
+    opacity: 1;
+    transform: none;
+  }
+  .submit-btn:hover:not(:disabled) {
+    transform: none;
   }
 }
 </style>

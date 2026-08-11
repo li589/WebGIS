@@ -1,57 +1,189 @@
-/* 设计令牌层（发布就绪 P1-10 最小止血）。
+/**
+ * CGDA 前端设计系统 Token 层（发布就绪 V1.0 — 商业级升级）
  *
- * 现状问题：main.css 此前 0 个 CSS 变量，各 .vue 内联 hex 共 229 个唯一值，
- * 主题无法统一调整。本文件建立设计令牌（颜色/圆角/间距/字号）单一真源，
- * 后续组件逐步迁移到 var(--*) 引用。
+ * 单一真源：所有颜色/间距/字号/动效/层级 token 定义于此，禁止组件内联 hex 或硬编码值。
+ * 迁移策略：229 个内联 hex → 统一 token 引用，分阶段组件改造（S1 token → S2 基础组件 → S3 迁移）。
  *
- * 说明：字号下限（正文 ≥12px）涉及全局密排暗色 UI 的视觉回归，需视觉 QA 后
- * 再统一抬升——此处先定义令牌刻度（含 floor），不在本次盲改各组件字号。
+ * 颜色主题：深空蓝青（品牌 #5ad5ff）+ 低透明黑玻璃层级 + WCAG AA 对比度。
+ * 排版基线：root=15px；正文 floor ≥12px（商业化可读下限）；仅 400/500 两字重。
+ * 动效哲学：克制（120–320ms）、缓出、有物理感（translateY / shadow 不用 scale）。
  */
 
 :root {
-  /* ── 颜色：文本 ── */
-  --text-strong: #f0faff;
-  --text-primary: #d8e6f5;
-  --text-secondary: #9fb6cc;
-  --text-muted: #8aa8bf;
-  --text-faint: #6e8ba0;
-  --text-disabled: #5a7080;
+  /* ═══ 颜色：文本分层 ═══ */
+  --text-strong: #f0faff; /* 最亮，标题 / 强调 */
+  --text-primary: #d8e6f5; /* 正文 / 默认 */
+  --text-secondary: #9fb6cc; /* 辅助文本 */
+  --text-muted: #8aa8bf; /* 第三层 */
+  --text-faint: #6e8ba0; /* 极淡，很少用 */
+  --text-disabled: #5a7080; /* 禁用态文本 */
 
-  /* ── 颜色：强调 / 状态 ── */
-  --accent: #5ad5ff;
-  --accent-strong: #88dfff;
-  --accent-warm: #ffc878;
+  /* ═══ 颜色：品牌 / 强调 ═══ */
+  --accent: #5ad5ff; /* 主品牌色（亮青） */
+  --accent-strong: #88dfff; /* 强调色（更亮） */
+  --accent-warm: #ffc878; /* 暖强调（橙） */
+
+  /* ═══ 颜色：语义三件套（文字 + 表面 + 边框）═══ */
+  /* Success */
   --success: #9ff8cf;
+  --success-surface: rgba(159, 248, 207, 0.12);
+  --success-border: rgba(159, 248, 207, 0.3);
+
+  /* Warning */
   --warning: #ffb070;
+  --warning-surface: rgba(255, 176, 112, 0.12);
+  --warning-border: rgba(255, 176, 112, 0.3);
+
+  /* Danger / Error */
   --danger: #ff8c64;
+  --danger-surface: rgba(255, 140, 100, 0.12);
+  --danger-border: rgba(255, 140, 100, 0.3);
 
-  /* ── 颜色：表面 / 边框（深色 GIS 主题）── */
-  --surface-base: #020814;
-  --surface-panel: rgba(8, 17, 31, 0.96);
-  --surface-raised: rgba(4, 12, 23, 0.6);
-  --surface-sunken: rgba(4, 12, 23, 0.5);
-  --border-subtle: rgba(136, 192, 255, 0.08);
-  --border-default: rgba(136, 192, 255, 0.16);
-  --border-strong: rgba(90, 213, 255, 0.36);
-  --border-accent: rgba(90, 213, 255, 0.28);
+  /* Info (= accent) */
+  --info: var(--accent);
+  --info-surface: rgba(90, 213, 255, 0.12);
+  --info-border: rgba(90, 213, 255, 0.3);
 
-  /* ── 圆角 ── */
-  --radius-sm: 0.32rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 1rem;
-  --radius-pill: 999px;
+  /* Accent surface/border */
+  --accent-surface: rgba(90, 213, 255, 0.12);
+  --accent-border: rgba(90, 213, 255, 0.3);
 
-  /* ── 间距基数 ── */
-  --space-1: 0.22rem;
-  --space-2: 0.32rem;
-  --space-3: 0.52rem;
-  --space-4: 0.72rem;
-  --space-5: 1.2rem;
+  /* ═══ 颜色：表面层级（暗色。越上层越不透明） ═══ */
+  --surface-base: #020814; /* 最底，背景 */
+  --surface-sunken: rgba(4, 12, 23, 0.5); /* 低 / 凹陷容器 */
+  --surface-1: rgba(8, 17, 31, 0.86); /* 浮层底（保证地图强数据时可读） */
+  --surface-2: rgba(13, 23, 39, 0.92); /* 面板壳 / 对话框 */
+  --surface-3: rgba(18, 30, 48, 0.96); /* 最高 / Tooltip */
+  --surface-hover: rgba(20, 40, 66, 0.98); /* 交互态 / Hover */
+  --surface-panel: rgba(8, 17, 31, 0.96); /* 兼容旧名，等同 surface-1 级别 */
+  --surface-raised: rgba(4, 12, 23, 0.6); /* 兼容旧名 */
 
-  /* ── 字号刻度（root=15px）。floor 令牌定义商业化可读下限，应用需视觉 QA ── */
-  --font-size-micro: 0.58rem; /* 8.7px —— 当前最小，待视觉 QA 后收敛 */
-  --font-size-caption: 0.62rem; /* 9.3px */
-  --font-size-body: 0.72rem; /* 10.8px */
-  --font-size-title: 0.8rem; /* 12px —— 商业化可读下限（floor） */
-  --font-size-floor: 0.8rem; /* = 12px，正文/标签的最低字号目标 */
+  /* ═══ 颜色：边框四级 ═══ */
+  --border-subtle: rgba(136, 192, 255, 0.08); /* 极淡（divider / optional） */
+  --border-default: rgba(136, 192, 255, 0.16); /* 默认 */
+  --border-strong: rgba(90, 213, 255, 0.36); /* 重 / 聚焦 */
+  --border-accent: rgba(90, 213, 255, 0.28); /* 强调 */
+
+  /* ═══ 圆角 ═══ */
+  --radius-sm: 0.32rem; /* 6px — 小控件 */
+  --radius-md: 0.5rem; /* 8px — 按钮 / 输入框 */
+  --radius-lg: 1rem; /* 16px — 卡片 / 面板（推荐） */
+  --radius-xl: 1.4rem; /* 21px — 大面板 / 对话框 */
+  --radius-pill: 999px; /* 全圆 — 芯片 / 徽章 */
+
+  /* ═══ 间距（4px 基数） ═══ */
+  --space-1: 0.22rem; /* 3.3px — 极紧 */
+  --space-2: 0.32rem; /* 4.8px — 紧凑 */
+  --space-3: 0.52rem; /* 7.8px — 标准 */
+  --space-4: 0.72rem; /* 10.8px — 宽 */
+  --space-5: 1.2rem; /* 18px — 很宽 */
+  --space-6: 1.6rem; /* 24px — 极宽 */
+  --space-7: 2.4rem; /* 36px — 分组间 */
+
+  /* ═══ 字号（root=15px，正文 floor ≥12px） ═══ */
+  --font-size-caption: 0.8rem; /* 12px — floor，标签 / 辅助 */
+  --font-size-body: 0.87rem; /* 13px — 正文 */
+  --font-size-title: 0.93rem; /* 14px — 小标题 / 面板标题 */
+  --font-size-subtitle: 1.07rem; /* 16px — 区块标题 */
+  --font-size-h2: 1.33rem; /* 20px — 次级大标题 */
+  --font-size-h1: 1.6rem; /* 24px — 主标题 */
+
+  /* ═══ 字重（仅两档：克制） ═══ */
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+
+  /* ═══ Elevation（暗色实现：低透明阴影 + 内高光） ═══ */
+  --glass-blur: 16px; /* 统一玻璃模糊 */
+
+  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+
+  --elevation-2: 0 6px 16px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+  --elevation-3: 0 16px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+  --elevation-modal: 0 30px 70px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+
+  /* ═══ 动效（克制 + 物理感） ═══ */
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --motion-slow: 320ms;
+
+  /* 缓动函数 */
+  --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1); /* 标准出 */
+  --ease-emphasized: cubic-bezier(0.3, 0, 0.2, 1); /* 强调 */
+  --ease-decelerate: cubic-bezier(0, 0, 0.2, 1); /* 减速 */
+
+  /* ═══ z-index 层级 ═══ */
+  --z-map: 0; /* 地图基底 */
+  --z-overlay: 20; /* 地图浮层 / 信息窗 */
+  --z-panel: 24; /* 浮层面板 dock */
+  --z-popover: 60; /* 下拉菜单 / 气泡 / Tooltip */
+  --z-modal: 80; /* 模态对话框 */
+  --z-toast: 100; /* 消息提示 / 通知 */
+  --z-debug: 999; /* 调试工具（最高） */
+
+  /* ═══ 响应式断点（约定值，供 JS/组件统一参考） ═══ */
+  --bp-sm: 640px;
+  --bp-md: 768px;
+  --bp-lg: 1024px;
+  --bp-xl: 1280px;
+
+  /* ═══ 触控目标最小值 ═══ */
+  --touch-min: 36px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ * 浅色主题覆盖（data-theme="light"）
+ * 仅覆盖颜色 token；间距/字号/动效/圆角/z-index 复用 :root
+ * 设计：暖白底 + 深蓝灰文字 + 品牌青强调，WCAG AA 对比度
+ * ═══════════════════════════════════════════════════════════════════ */
+[data-theme='light'] {
+  /* 文本（深色，保证在浅底上可读） */
+  --text-strong: #0a1626;
+  --text-primary: #1a2b42;
+  --text-secondary: #4a6076;
+  --text-muted: #6b8094;
+  --text-faint: #8a9db0;
+  --text-disabled: #b0bccc;
+
+  /* 品牌 / 强调（加深以保证浅底对比度） */
+  --accent: #0a8fc4;
+  --accent-strong: #00709e;
+  --accent-warm: #c97a14;
+
+  /* 语义三件套（浅底版本：文字色加深，表面更淡） */
+  --success: #0a7a4e;
+  --success-surface: rgba(10, 122, 78, 0.1);
+  --success-border: rgba(10, 122, 78, 0.3);
+
+  --warning: #a55a08;
+  --warning-surface: rgba(165, 90, 8, 0.1);
+  --warning-border: rgba(165, 90, 8, 0.3);
+
+  --danger: #b8311a;
+  --danger-surface: rgba(184, 49, 26, 0.1);
+  --danger-border: rgba(184, 49, 26, 0.3);
+
+  --info: var(--accent);
+  --info-surface: rgba(10, 143, 196, 0.1);
+  --info-border: rgba(10, 143, 196, 0.3);
+
+  --accent-surface: rgba(10, 143, 196, 0.1);
+  --accent-border: rgba(10, 143, 196, 0.3);
+
+  /* 表面层级（浅色：越上层越白） */
+  --surface-base: #eef2f7;
+  --surface-sunken: rgba(255, 255, 255, 0.6);
+  --surface-1: rgba(255, 255, 255, 0.82);
+  --surface-2: rgba(255, 255, 255, 0.92);
+  --surface-3: rgba(255, 255, 255, 0.98);
+  --surface-hover: rgba(240, 245, 252, 0.98);
+  --surface-panel: rgba(255, 255, 255, 0.92);
+  --surface-raised: rgba(255, 255, 255, 0.7);
+
+  /* 边框（浅色：深蓝灰） */
+  --border-subtle: rgba(30, 60, 100, 0.08);
+  --border-default: rgba(30, 60, 100, 0.16);
+  --border-strong: rgba(10, 143, 196, 0.4);
+  --border-accent: rgba(10, 143, 196, 0.3);
 }

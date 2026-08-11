@@ -28,6 +28,7 @@ r"""SF 块反演算法核心逻辑（从 Matlab ``omega_sf_fenkuai.m`` 迁移）
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import re
@@ -1479,7 +1480,49 @@ def _check_cancel_requested(cancel_flag_path: str | Path | None) -> None:
 
 
 def _checkpoint_path(output_dir: str | Path) -> Path:
-    return Path(output_dir) / ".omega_sf_chunk_checkpoint.pkl"
+    # G4-02: pickle.load → safe deserialization 防 RCE
+    # 扩展名由 .pkl 改为 .json，旧 .pkl 检查点将被忽略（安全降级，非数据丢失）。
+    return Path(output_dir) / ".omega_sf_chunk_checkpoint.json"
+
+
+def _assert_checkpoint_path_safe(path: Path, output_dir: str | Path) -> Path:
+    """G4-02: 校验检查点路径归属，防止路径遍历导致加载外部恶意文件。
+
+    确保解析后的 ``path`` 严格位于 ``output_dir`` 目录内（或等于该目录本身）。
+    """
+    base = Path(output_dir).resolve()
+    resolved = path.resolve()
+    if resolved != base and base not in resolved.parents:
+        raise ValueError(f"Checkpoint path {resolved} is outside output_dir {base}")
+    return resolved
+
+
+def _pixel_result_to_jsonable(r: PixelResult) -> dict[str, Any]:
+    """将 PixelResult 转为 JSON 可序列化的纯字典。"""
+    return {
+        "iy": int(r.iy),
+        "ix": int(r.ix),
+        "class_id": int(r.class_id),
+        "omega": np.asarray(r.omega, dtype=np.float64).tolist(),
+        "sm": np.asarray(r.sm, dtype=np.float64).tolist(),
+        "vod": np.asarray(r.vod, dtype=np.float64).tolist(),
+        "h_star": float(r.h_star),
+        "alpha_star": float(r.alpha_star),
+    }
+
+
+def _jsonable_to_pixel_result(d: dict[str, Any]) -> PixelResult:
+    """从 JSON 字典重建 PixelResult。"""
+    return PixelResult(
+        iy=int(d["iy"]),
+        ix=int(d["ix"]),
+        class_id=int(d["class_id"]),
+        omega=np.asarray(d.get("omega") or [], dtype=np.float64),
+        sm=np.asarray(d.get("sm") or [], dtype=np.float64),
+        vod=np.asarray(d.get("vod") or [], dtype=np.float64),
+        h_star=float(d.get("h_star", float("nan"))),
+        alpha_star=float(d.get("alpha_star", float("nan"))),
+    )
 
 
 def _load_chunk_checkpoint(
@@ -1490,23 +1533,30 @@ def _load_chunk_checkpoint(
 ) -> tuple[set[int], list[Any]] | None:
     """加载块/chunk 检查点；日期范围不一致则忽略。
 
-    Security: pickle 仅用于本地可信检查点文件（BACKEND_OUTPUT_ROOT 下），
-    不接受外部输入。文件大小超过 200MB 视为异常并拒绝加载。
+    G4-02: pickle.load → safe deserialization 防 RCE
+    使用 json.load 替代 pickle.load，JSON 无法携带可执行代码，
+    从根本上消除反序列化 RCE 风险。同时校验路径归属，防止路径遍历。
+    文件大小超过 500MB 视为异常并拒绝加载（JSON 文本格式较 pickle 二进制更大）。
     """
     path = _checkpoint_path(output_dir)
     if not path.exists():
         return None
+    # G4-02: 路径归属校验 — 确保检查点文件在 output_dir 内
+    try:
+        _assert_checkpoint_path_safe(path, output_dir)
+    except ValueError:
+        logger.warning("[CHECKPOINT] 路径归属校验失败，跳过加载: %s", path)
+        return None
     # Guard against abnormally large checkpoint files (possible corruption/DoS)
-    if path.stat().st_size > 200 * 1024 * 1024:
+    if path.stat().st_size > 500 * 1024 * 1024:
         logger.warning(
             "[CHECKPOINT] 检查点文件异常过大（%d bytes），跳过加载", path.stat().st_size
         )
         return None
     try:
-        import pickle
-
-        with path.open("rb") as fh:
-            payload = pickle.load(fh)
+        # G4-02: pickle.load → json.load，消除反序列化 RCE 风险
+        with path.open("r", encoding="utf-8") as fh:
+            payload = json.load(fh)
         if not isinstance(payload, dict):
             return None
         if (
@@ -1515,7 +1565,11 @@ def _load_chunk_checkpoint(
         ):
             return None
         done = {int(i) for i in (payload.get("completed_chunks") or [])}
-        results = list(payload.get("all_results") or [])
+        raw_results = payload.get("all_results") or []
+        results: list[Any] = [
+            _jsonable_to_pixel_result(r) if isinstance(r, dict) else r
+            for r in raw_results
+        ]
         return done, results
     except Exception:
         logger.warning("[CHECKPOINT] 加载失败，忽略: %s", path, exc_info=True)
@@ -1531,21 +1585,26 @@ def _save_chunk_checkpoint(
     all_results: list[Any],
 ) -> None:
     path = _checkpoint_path(output_dir)
+    # G4-02: 路径归属校验 — 确保检查点文件在 output_dir 内
     try:
-        import pickle
-
+        _assert_checkpoint_path_safe(path, output_dir)
+    except ValueError:
+        logger.warning("[CHECKPOINT] 路径归属校验失败，跳过写入: %s", path)
+        return
+    try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("wb") as fh:
-            pickle.dump(
-                {
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "completed_chunks": sorted(completed_chunks),
-                    "all_results": all_results,
-                },
-                fh,
-                protocol=pickle.HIGHEST_PROTOCOL,
-            )
+        # G4-02: pickle.dump → json.dump，消除反序列化 RCE 风险
+        payload = {
+            "start_date": start_date,
+            "end_date": end_date,
+            "completed_chunks": sorted(completed_chunks),
+            "all_results": [
+                _pixel_result_to_jsonable(r) if isinstance(r, PixelResult) else r
+                for r in all_results
+            ],
+        }
+        with path.open("w", encoding="utf-8") as fh:
+            json.dump(payload, fh, allow_nan=True)
     except Exception:
         logger.warning("[CHECKPOINT] 写入失败: %s", path, exc_info=True)
 

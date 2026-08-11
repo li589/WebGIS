@@ -375,9 +375,10 @@ async function capture() {
         @click.prevent="capture"
       >
         <span v-if="!isCapturing && !captureMsg" class="btn-icon" aria-hidden="true">▼</span>
-        <span v-else-if="captureMsg" class="btn-msg">{{ captureMsg }}</span>
-        <span v-else class="btn-icon spinning" aria-hidden="true">↻</span>
-        <span>{{ isCapturing ? captureMsg || '处理中...' : '导出' }}</span>
+        <span v-else-if="isCapturing && !captureMsg" class="btn-icon spinning" aria-hidden="true"
+          >↻</span
+        >
+        <span class="btn-text">{{ captureMsg || (isCapturing ? '处理中...' : '导出') }}</span>
       </button>
 
       <a
@@ -405,38 +406,43 @@ async function capture() {
   display: flex;
   align-items: flex-start;
   justify-content: flex-end;
-  padding: 5.5rem 0.8rem 0;
-  background: rgba(4, 10, 18, 0.52);
+  padding: 5.5rem var(--space-3) 0;
+  background: rgba(4, 10, 18, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .screenshot-panel {
-  width: 17rem;
+  width: 20rem;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  padding: 0.78rem 0.82rem;
-  border-radius: 1rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
-  background: rgba(8, 17, 31, 0.96);
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+  border: 1px solid rgba(90, 213, 255, 0.15);
+  background: linear-gradient(165deg, rgba(10, 22, 40, 0.97), rgba(6, 14, 26, 0.95));
+  backdrop-filter: blur(24px) saturate(1.1);
+  -webkit-backdrop-filter: blur(24px) saturate(1.1);
   box-shadow:
-    0 24px 60px rgba(1, 8, 16, 0.48),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    0 24px 60px rgba(1, 8, 16, 0.5),
+    0 1px 0 rgba(136, 223, 255, 0.1) inset;
 }
 
 .panel-header {
   display: flex;
   align-items: center;
-  gap: 0.38rem;
-  padding-bottom: 0.48rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.1);
-  color: #e8f3fc;
-  font-size: 0.72rem;
-  font-weight: 600;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-strong);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
 }
 
 .panel-icon {
-  font-size: 0.8rem;
-  color: #5ad5ff;
+  font-size: var(--font-size-body);
+  color: var(--accent);
+  line-height: 1;
 }
 
 .close-btn {
@@ -444,91 +450,95 @@ async function capture() {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 1.4rem;
-  height: 1.4rem;
+  width: 28px;
+  height: 28px;
   border: none;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-md);
   background: transparent;
-  color: #6e8ba0;
+  color: var(--text-faint);
   cursor: pointer;
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
   transition:
-    background 0.18s ease,
-    color 0.18s ease;
+    background-color var(--motion-fast) ease,
+    color var(--motion-fast) ease;
 }
 
 .close-btn:hover {
-  background: rgba(136, 192, 255, 0.1);
-  color: #d8e6f5;
+  background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
 .section-label {
-  color: #5a7080;
-  font-size: 0.58rem;
+  color: var(--text-faint);
+  font-size: var(--font-size-caption);
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  font-weight: var(--font-weight-medium);
 }
 
 .mode-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.38rem;
+  gap: var(--space-2);
 }
 
 .mode-btn {
   display: grid;
   grid-template-rows: auto auto auto;
   align-items: center;
-  gap: 0.1rem;
-  padding: 0.48rem 0.42rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
-  border-radius: 0.68rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #8aa8bf;
+  gap: 2px;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
   cursor: pointer;
-  font: inherit;
+  font-family: inherit;
   text-align: left;
   transition:
-    border-color 0.18s ease,
-    background 0.18s ease,
-    color 0.18s ease;
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
 }
 
 .mode-btn:hover {
-  border-color: rgba(136, 192, 255, 0.24);
-  background: rgba(136, 192, 255, 0.08);
-  color: #d8e6f5;
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
 .mode-btn.active {
-  border-color: rgba(90, 213, 255, 0.36);
-  background: rgba(10, 132, 255, 0.14);
-  color: #5ad5ff;
+  border-color: var(--border-accent);
+  background: var(--accent-surface);
+  color: var(--accent);
 }
 
 .mode-icon {
-  font-size: 0.82rem;
+  font-size: var(--font-size-h3);
   color: inherit;
+  line-height: 1.2;
 }
 
 .mode-label {
-  font-size: 0.64rem;
-  font-weight: 600;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
 }
 
 .mode-desc {
-  font-size: 0.52rem;
-  color: #5a7080;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   line-height: 1.3;
+  opacity: 0.8;
 }
 
 .mode-btn.active .mode-desc {
-  color: #4a8090;
+  color: var(--text-muted);
+  opacity: 1;
 }
 
 .format-row {
   display: flex;
-  gap: 0.38rem;
+  gap: var(--space-2);
 }
 
 .format-btn {
@@ -536,76 +546,112 @@ async function capture() {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.32rem;
-  padding: 0.44rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
-  border-radius: 0.68rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #8aa8bf;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
   cursor: pointer;
-  font: inherit;
-  font-size: 0.64rem;
-  font-weight: 500;
+  font-family: inherit;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
   transition:
-    border-color 0.18s ease,
-    background 0.18s ease,
-    color 0.18s ease;
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
 }
 
 .format-btn:hover {
-  border-color: rgba(136, 192, 255, 0.24);
-  color: #d8e6f5;
-  background: rgba(136, 192, 255, 0.08);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  background: var(--surface-hover);
 }
 
 .format-btn.active {
-  border-color: rgba(90, 213, 255, 0.36);
-  background: rgba(10, 132, 255, 0.14);
-  color: #5ad5ff;
+  border-color: var(--border-accent);
+  background: var(--accent-surface);
+  color: var(--accent);
 }
 
 .capture-btn {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.42rem;
+  gap: var(--space-2);
   width: 100%;
-  padding: 0.54rem;
-  border: 1px solid rgba(90, 213, 255, 0.3);
-  border-radius: 0.8rem;
-  background: rgba(10, 132, 255, 0.28);
-  color: #a8e8ff;
+  padding: 0.75rem var(--space-3);
+  border: 1px solid rgba(90, 213, 255, 0.35);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, rgba(10, 132, 255, 0.4), rgba(10, 132, 255, 0.22));
+  color: var(--text-strong);
   cursor: pointer;
-  font: inherit;
-  font-size: 0.7rem;
-  font-weight: 600;
-  box-shadow: 0 8px 24px rgba(10, 132, 255, 0.18);
+  font-family: inherit;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  box-shadow:
+    0 6px 20px rgba(10, 132, 255, 0.2),
+    inset 0 1px 0 rgba(136, 223, 255, 0.2);
   transition:
-    background 0.2s ease,
-    color 0.2s ease,
-    transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-    box-shadow 0.2s ease;
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) ease,
+    box-shadow var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
+}
+
+.capture-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+  transition: left 0.5s ease;
 }
 
 .capture-btn:hover:not(:disabled) {
-  background: rgba(10, 132, 255, 0.48);
-  color: #d0f0ff;
+  background: linear-gradient(180deg, rgba(10, 132, 255, 0.55), rgba(10, 132, 255, 0.32));
+  border-color: rgba(90, 213, 255, 0.5);
+  box-shadow:
+    0 10px 32px rgba(10, 132, 255, 0.3),
+    inset 0 1px 0 rgba(136, 223, 255, 0.25);
   transform: translateY(-1px);
-  box-shadow: 0 10px 30px rgba(10, 132, 255, 0.28);
+}
+
+.capture-btn:hover:not(:disabled)::before {
+  left: 100%;
+}
+
+.capture-btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow:
+    0 3px 10px rgba(10, 132, 255, 0.2),
+    inset 0 1px 0 rgba(136, 223, 255, 0.1);
 }
 
 .capture-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
 }
 
 .capture-btn.capturing {
-  border-color: rgba(90, 213, 255, 0.2);
-  background: rgba(10, 132, 255, 0.16);
+  border-color: rgba(90, 213, 255, 0.4);
+  background: linear-gradient(180deg, rgba(10, 132, 255, 0.3), rgba(10, 132, 255, 0.15));
 }
 
 .btn-icon {
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
+  line-height: 1;
+}
+
+.btn-text {
+  line-height: 1;
 }
 
 .spinning {
@@ -622,35 +668,53 @@ async function capture() {
 .success-hint {
   margin: 0;
   text-align: center;
-  color: #7ddfbb;
-  font-size: 0.58rem;
+  color: var(--success);
+  font-size: var(--font-size-caption);
 }
 
 .manual-download {
   display: block;
-  margin: 0.15rem 0 0;
-  padding: 0.45rem 0.55rem;
-  border-radius: 0.55rem;
-  border: 1px solid rgba(90, 213, 255, 0.28);
-  background: rgba(10, 132, 255, 0.12);
-  color: #9ee7ff;
-  font-size: 0.62rem;
+  margin: var(--space-1) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-accent);
+  background: var(--accent-surface);
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   text-align: center;
   text-decoration: none;
   word-break: break-all;
   transition:
-    background 0.15s ease,
-    border-color 0.15s ease;
+    background-color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
 }
 
 .manual-download:hover {
-  border-color: rgba(90, 213, 255, 0.5);
+  border-color: var(--accent);
   background: rgba(10, 132, 255, 0.22);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinning {
+    animation: none;
+  }
+  .capture-btn,
+  .mode-btn,
+  .format-btn,
+  .close-btn {
+    transition: none;
+  }
+  .capture-btn::before {
+    display: none;
+  }
+  .capture-btn:hover:not(:disabled) {
+    transform: none;
+  }
 }
 
 @media (max-width: 600px) {
   .screenshot-overlay {
-    padding: 5rem 0.5rem 0;
+    padding: 5rem var(--space-2) 0;
     align-items: flex-start;
   }
 

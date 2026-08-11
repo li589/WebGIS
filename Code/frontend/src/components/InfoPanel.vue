@@ -3809,13 +3809,13 @@ onBeforeUnmount(() => {
 .job-node-progress-message,
 .job-node-progress-detail {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--font-size-caption);
   opacity: 0.75;
 }
 .job-message {
   margin: 0;
-  color: #c8dff0;
-  font-size: 0.58rem;
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
   line-height: 1.4;
 }
 .job-diagnostic-list {

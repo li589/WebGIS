@@ -11,9 +11,12 @@ from datetime import datetime, UTC
 import logging
 from uuid import uuid4
 
-from app.services.workflow_repository import SQLiteWorkflowRepository
+from app.services.workflow_repository import (
+    SQLiteWorkflowRepository,
+)
 from shared.contracts.api_contracts import (
     EventChannel,
+    ExecutionStatus,
     LogLevel,
     WorkflowEvent,
     WorkflowRunStatusResponse,
@@ -42,6 +45,28 @@ class WorkflowPersistenceService:
     ) -> None:
         self._repository.save_run(
             run_status,
+            request_json=request_json,
+            run_class=run_class,
+            result_dto_override=result_dto_override,
+        )
+
+    def save_run_status_cas(
+        self,
+        *,
+        run_status: WorkflowRunStatusResponse,
+        expected_status: ExecutionStatus | str,
+        request_json: str | None = None,
+        run_class: str | None = None,
+        result_dto_override: dict[str, object] | None = None,
+    ) -> bool:
+        """CAS-protected status update.
+
+        Delegates to repository.save_run_cas with optimistic locking.
+        Raises ConcurrentModificationError on persistent conflict.
+        """
+        return self._repository.save_run_cas(
+            run_status,
+            expected_status=expected_status,
             request_json=request_json,
             run_class=run_class,
             result_dto_override=result_dto_override,

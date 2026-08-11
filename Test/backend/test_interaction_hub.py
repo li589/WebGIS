@@ -262,14 +262,8 @@ class WorkflowServicesTests(unittest.TestCase):
                     "app.services.workflow.submission_service.execute_workflow_task",
                     return_value=WorkflowExecutionResult(message="ok"),
                 ) as execute_mock,
-                # catalog 演进后 ref-smap-sm-202512-l3 的 dataset 名 (SMAP_L3_DEC2025) 与
-                # smap_daily 模块模板期望的 SMAP_SPL3SMP_E 不一致，提交期模板校验
-                # 会拒绝。本测试关注 normalization 行为（auto-populate defaults），
-                # 非模板校验逻辑，故跳过提交期预校验（与同文件其他测试一致）。
-                patch(
-                    "app.services.workflow.submission_service.WorkflowSubmissionService._validate_request_params",
-                    lambda self, payload: None,
-                ),
+                # SMAP DEC2025 迁移后算法模板 dataset key (SMAP_L3_DEC2025) 与 catalog 一致，
+                # 提交期模板校验通过，无需跳过。
             ):
                 for layer_id in expected_layers:
                     submission.submit_workflow(

@@ -397,6 +397,28 @@
         }
       }
     },
+    "/layers/categories": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "List Layer Categories",
+        "description": "X1: 后端下发图层分类定义（id / name / icon / accent_color / chip_tone）。\n\n前端运行时消费此端点获取分类样式，消除前后端分类定义双写。\n前端 ``LAYER_CATEGORIES`` 静态表仅在 API 不可用时作离线兜底。",
+        "operationId": "list_layer_categories_layers_categories_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerCategoryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/geo/transform": {
       "get": {
         "tags": [
@@ -1429,7 +1451,7 @@
           "workflow"
         ],
         "summary": "Materialize Workflow Map Layers",
-        "description": "Publish algorithm science products as imported overlays for map display.\n\nUsed when a run completed with file-only product refs (no map_layer), or to\nre-publish after code updates without re-running the inversion.\nAlso allowed while ``running`` so block mats can progressively appear.",
+        "description": "Publish algorithm science products as imported overlays for map display.\n\nL2: 业务逻辑已下沉到 python_provider_result_builder.materialize_map_layers。",
         "operationId": "materialize_workflow_map_layers_workflow_runs__run_id__materialize_map_layers_post",
         "security": [
           {
@@ -2193,7 +2215,7 @@
           "weather"
         ],
         "summary": "Trigger Open Meteo Sync",
-        "description": "手动触发 Open-Meteo 数据同步。\n\n优先 Celery 异步派发；broker 卡住/超时时降级为本地后台线程。\n可选 body.domains 临时覆盖同步域（白名单校验，不改环境变量）。\nDocker/compose 不可用时返回 503 sync_unavailable。",
+        "description": "手动触发 Open-Meteo 数据同步（L1: 业务逻辑已抽取到 weather_sync_service）。",
         "operationId": "trigger_open_meteo_sync_weather_sync_trigger_post",
         "requestBody": {
           "content": {
@@ -10650,6 +10672,39 @@
         ],
         "title": "ExecutionStatus"
       },
+      "ExportBBox": {
+        "properties": {
+          "west": {
+            "type": "number",
+            "title": "West"
+          },
+          "south": {
+            "type": "number",
+            "title": "South"
+          },
+          "east": {
+            "type": "number",
+            "title": "East"
+          },
+          "north": {
+            "type": "number",
+            "title": "North"
+          },
+          "crs": {
+            "type": "string",
+            "title": "Crs",
+            "default": "EPSG:4326"
+          }
+        },
+        "type": "object",
+        "required": [
+          "west",
+          "south",
+          "east",
+          "north"
+        ],
+        "title": "ExportBBox"
+      },
       "ExportBatchBody": {
         "properties": {
           "layer_ids": {
@@ -10691,6 +10746,55 @@
               }
             ],
             "title": "Time"
+          },
+          "times": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Times"
+          },
+          "bbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportBBox"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "output_crs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Crs"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields"
           }
         },
         "type": "object",
@@ -10743,6 +10847,41 @@
               }
             ],
             "title": "Times"
+          },
+          "bbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportBBox"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "output_crs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Crs"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields"
           }
         },
         "type": "object",
@@ -11967,6 +12106,81 @@
         ],
         "title": "LayerCatalogResponse"
       },
+      "LayerCategoryDef": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "accent_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Color"
+          },
+          "chip_tone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chip Tone"
+          },
+          "sub_categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sub Categories"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "LayerCategoryDef",
+        "description": "X1: 图层分类定义 — 后端下发，消除前后端分类双写。"
+      },
+      "LayerCategoryResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LayerCategoryDef"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "LayerCategoryResponse"
+      },
       "LayerDescriptor": {
         "properties": {
           "layer_id": {
@@ -12202,6 +12416,9 @@
               }
             ],
             "title": "Sub Category"
+          },
+          "presentation": {
+            "$ref": "#/components/schemas/LayerPresentation"
           }
         },
         "type": "object",
@@ -12232,6 +12449,101 @@
           "display_name"
         ],
         "title": "LayerDisplayNameBody"
+      },
+      "LayerPresentation": {
+        "properties": {
+          "accent_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Color"
+          },
+          "accent_glow": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Glow"
+          },
+          "chip_tone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chip Tone"
+          },
+          "metric_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Label"
+          },
+          "metric_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Unit"
+          },
+          "metric_precision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Precision"
+          },
+          "update_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Update Label"
+          },
+          "source_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Label"
+          }
+        },
+        "type": "object",
+        "title": "LayerPresentation",
+        "description": "X1: 图层 UI 呈现元数据 — 后端下发，前端消费的唯一真源。\n\n将原前端 ``LAYER_LIBRARY`` 中的 UI 样式字段（accentColor / accentGlow /\nchipTone / metricLabel / metricUnit / metricPrecision / updateLabel /\nsourceLabel）迁移到后端种子 JSON，经 ``GET /layers`` 下发。\n前端 ``LAYER_LIBRARY`` 仅在 API 不可用时作离线兜底。"
       },
       "LayerRenderType": {
         "type": "string",

@@ -4485,6 +4485,39 @@ export interface components {
             /** Items */
             items: components["schemas"]["LayerDescriptor"][];
         };
+        /** LayerCategoryDef */
+        LayerCategoryDef: {
+            id: string;
+            name: string;
+            icon?: string | null;
+            accent_color?: string | null;
+            chip_tone?: string | null;
+            sub_categories?: string[];
+        };
+        /** LayerCategoryResponse */
+        LayerCategoryResponse: {
+            /** Items */
+            items: components["schemas"]["LayerCategoryDef"][];
+        };
+        /** LayerPresentation */
+        LayerPresentation: {
+            /** Accent Color */
+            accent_color?: string | null;
+            /** Accent Glow */
+            accent_glow?: string | null;
+            /** Chip Tone */
+            chip_tone?: string | null;
+            /** Metric Label */
+            metric_label?: string | null;
+            /** Metric Unit */
+            metric_unit?: string | null;
+            /** Metric Precision */
+            metric_precision?: number | null;
+            /** Update Label */
+            update_label?: string | null;
+            /** Source Label */
+            source_label?: string | null;
+        };
         /** LayerDescriptor */
         LayerDescriptor: {
             /** Layer Id */
@@ -4564,6 +4597,7 @@ export interface components {
             source_reference?: string | null;
             /** Sub Category */
             sub_category?: string | null;
+            presentation?: components["schemas"]["LayerPresentation"];
         };
         /** LayerDisplayNameBody */
         LayerDisplayNameBody: {

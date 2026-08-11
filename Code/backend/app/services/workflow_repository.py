@@ -63,6 +63,16 @@ SCHEMA_CHANGES: list[tuple[int, str]] = [
 ]
 
 
+class ConcurrentModificationError(Exception):
+    """Raised when a CAS (Compare-And-Swap) status update fails due to concurrent modification.
+
+    The run's status was changed by another writer between the read and the write,
+    and all retry attempts were exhausted.
+    """
+
+    pass
+
+
 class SQLiteWorkflowRepository:
     def __init__(self, state_dir: str | Path | None = None) -> None:
         self._state_dir = Path(state_dir or settings.workflow_state_dir)
@@ -382,6 +392,96 @@ class SQLiteWorkflowRepository:
                     run_class or "business",
                 ),
             )
+
+    def save_run_cas(
+        self,
+        run_status: WorkflowRunStatusResponse,
+        *,
+        expected_status: ExecutionStatus | str,
+        request_json: str | None = None,
+        run_class: str | None = None,
+        result_dto_override: dict[str, Any] | None = None,
+        max_retries: int = 3,
+    ) -> bool:
+        """Compare-And-Swap status update with retry.
+
+        Atomically updates run status only if the current DB status matches
+        ``expected_status``. If the status changed, re-reads the current status:
+        - Terminal states (succeeded/failed/cancelled) → raise immediately.
+        - Non-terminal but different → retry with updated expected_status.
+
+        Closes the TOCTOU window in lifecycle_service._is_protected_terminal.
+
+        Returns:
+            True on success.
+
+        Raises:
+            ConcurrentModificationError: if all retries exhausted or run is terminal.
+        """
+        expected = (
+            expected_status.value
+            if isinstance(expected_status, ExecutionStatus)
+            else str(expected_status)
+        )
+        payload = self._serialize_run_payload(
+            run_status, result_dto_override=result_dto_override
+        )
+
+        for attempt in range(max_retries):
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    """
+                    UPDATE workflow_runs SET
+                        status = ?,
+                        updated_at = ?,
+                        payload_json = ?,
+                        request_json = COALESCE(?, request_json),
+                        run_class = COALESCE(?, run_class)
+                    WHERE run_id = ? AND status = ?
+                    """,
+                    (
+                        run_status.status.value,
+                        run_status.updated_at.isoformat(),
+                        payload,
+                        request_json,
+                        run_class or "business",
+                        run_status.run_id,
+                        expected,
+                    ),
+                )
+                if cursor.rowcount > 0:
+                    return True
+
+            # CAS failed — re-read current status to decide next action
+            current = self.get_run(run_status.run_id)
+            if current is None:
+                raise ConcurrentModificationError(
+                    f"CAS failed: run {run_status.run_id} not found"
+                )
+            if current.status in (
+                ExecutionStatus.succeeded,
+                ExecutionStatus.failed,
+                ExecutionStatus.cancelled,
+            ):
+                raise ConcurrentModificationError(
+                    f"CAS failed: run {run_status.run_id} is in terminal state "
+                    f"{current.status.value}, expected {expected}"
+                )
+            # Non-terminal conflict — update expected and retry
+            logger.debug(
+                "CAS retry %d/%d for run %s: status changed from %s to %s",
+                attempt + 1,
+                max_retries,
+                run_status.run_id,
+                expected,
+                current.status.value,
+            )
+            expected = current.status.value
+
+        raise ConcurrentModificationError(
+            f"CAS failed after {max_retries} retries: run {run_status.run_id} "
+            f"expected {expected_status} but status kept changing"
+        )
 
     def cleanup_old_runs(
         self,

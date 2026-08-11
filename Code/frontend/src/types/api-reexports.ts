@@ -70,7 +70,10 @@ export type WorkflowRunViewResponse = Schema<'WorkflowRunViewResponse'>
 export type LayerDescriptor = Schema<'LayerDescriptor'>
 export type LayerCapabilities = Schema<'LayerCapabilities'>
 export type LayerStyleHint = Schema<'LayerStyleHint'>
+export type LayerPresentation = Schema<'LayerPresentation'>
 export type LayerCatalogResponse = Schema<'LayerCatalogResponse'>
+export type LayerCategoryDef = Schema<'LayerCategoryDef'>
+export type LayerCategoryResponse = Schema<'LayerCategoryResponse'>
 
 /** @deprecated 请使用 `LayerDescriptor`。保留别名以兼容现有导入。 */
 export type RuntimeLayerDescriptor = LayerDescriptor

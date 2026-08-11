@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 from typing import Any
 from collections.abc import Callable
 
@@ -21,6 +22,10 @@ _NO_BRIDGE_MESSAGE = (
     "No workflow bridge matched this payload. "
     "Provide gee_request, weather_request, algorithm_request, or provider_request."
 )
+
+# G1-07: 模块级共享 executor，用于 Celery apply_async 限时派发
+# 避免每次 dispatch_workflow_task 新建/销毁 ThreadPoolExecutor
+_dispatch_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
 # m22 修复：统一的 bridge-channel 映射表
 # 顺序即优先级，与 resolve_workflow_channel 共享同一数据源
@@ -248,11 +253,9 @@ def dispatch_workflow_task(
         apply_async_kwargs["countdown"] = countdown
 
     # Broker 挂起时 apply_async 会拖死 HTTP 提交；限时派发，超时则让提交失败可重试。
-    import concurrent.futures
-
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    # G1-07: 使用模块级共享 executor，避免每次 dispatch 新建/销毁线程池
     try:
-        fut = pool.submit(
+        fut = _dispatch_executor.submit(
             lambda: process_workflow_run_task.apply_async(**apply_async_kwargs)
         )
         async_result = fut.result(timeout=8)
@@ -260,6 +263,4 @@ def dispatch_workflow_task(
         raise RuntimeError(
             "Celery broker timeout while dispatching workflow (apply_async > 8s)"
         ) from exc
-    finally:
-        pool.shutdown(wait=False, cancel_futures=True)
     return async_result.id

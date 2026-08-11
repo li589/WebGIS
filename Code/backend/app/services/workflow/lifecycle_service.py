@@ -21,7 +21,10 @@ from app.services.workflow.cancel_paths import (
 )
 from app.services.failure_classifier import FailureClassifier
 from app.services.result_storage import result_storage_service
-from app.services.workflow_repository import SQLiteWorkflowRepository
+from app.services.workflow_repository import (
+    SQLiteWorkflowRepository,
+    ConcurrentModificationError,
+)
 from app.services.workflow.persistence_service import WorkflowPersistenceService
 from app.services.workflow.transition_builder import (
     WorkflowTransitionBuilder,
@@ -96,41 +99,64 @@ class WorkflowLifecycleService:
             if task_id:
                 revoke_task(task_id, terminate=True)
 
-        self._persistence.save_run_status(
-            run_status=self._transitions.build_execution_transition(
-                run_id=run_id,
-                payload=WorkflowSubmitRequest(
-                    command_type=current_run.command_type,
-                    command_label=current_run.command_label,
-                    priority=current_run.priority,
-                    resource_profile=current_run.resource_profile,
-                    realtime_preferred=current_run.realtime_preferred,
-                    queue_tag=current_run.queue_tag,
-                    spatial_filter=current_run.spatial_filter,
-                    time_range=current_run.time_range,
-                    requested_outputs=current_run.requested_outputs,
-                    client=current_run.client,
-                    map_context=current_run.map_context,
-                    config_overrides=current_run.config_overrides,
+        try:
+            self._persistence.save_run_status_cas(
+                run_status=self._transitions.build_execution_transition(
+                    run_id=run_id,
+                    payload=WorkflowSubmitRequest(
+                        command_type=current_run.command_type,
+                        command_label=current_run.command_label,
+                        priority=current_run.priority,
+                        resource_profile=current_run.resource_profile,
+                        realtime_preferred=current_run.realtime_preferred,
+                        queue_tag=current_run.queue_tag,
+                        spatial_filter=current_run.spatial_filter,
+                        time_range=current_run.time_range,
+                        requested_outputs=current_run.requested_outputs,
+                        client=current_run.client,
+                        map_context=current_run.map_context,
+                        config_overrides=current_run.config_overrides,
+                    ),
+                    status=ExecutionStatus.cancelled,
+                    progress=100,
+                    message="工作流已被用户取消。",
+                    created_at=current_run.created_at,
+                    updated_at=now,
+                    result_refs=current_run.result_refs,
+                    result_dto=current_run.result_dto,
+                    diagnostics=[
+                        "工作流已被取消。",
+                        "error_code=workflow_cancelled_by_user",
+                    ],
+                    executor_metadata={
+                        **meta,
+                        "cancelled_at": now.isoformat(),
+                        "cancelled_by": "user",
+                    },
                 ),
-                status=ExecutionStatus.cancelled,
-                progress=100,
-                message="工作流已被用户取消。",
-                created_at=current_run.created_at,
-                updated_at=now,
-                result_refs=current_run.result_refs,
-                result_dto=current_run.result_dto,
-                diagnostics=[
-                    "工作流已被取消。",
-                    "error_code=workflow_cancelled_by_user",
-                ],
-                executor_metadata={
-                    **meta,
-                    "cancelled_at": now.isoformat(),
-                    "cancelled_by": "user",
-                },
+                expected_status=current_run.status,
             )
-        )
+        except ConcurrentModificationError:
+            logger.warning(
+                "CAS conflict in cancel_workflow_run for %s: "
+                "run status changed by concurrent writer",
+                run_id,
+            )
+            # Re-check if it's already terminal
+            updated = self._repository.get_run(run_id)
+            if updated and updated.status in (
+                ExecutionStatus.succeeded,
+                ExecutionStatus.failed,
+                ExecutionStatus.cancelled,
+            ):
+                raise ValueError(
+                    f"Cannot cancel workflow in terminal state: {updated.status.value}"
+                )
+            # If non-terminal but changed, retry the whole cancel
+            raise ValueError(
+                "Workflow status changed concurrently during cancel attempt. "
+                "Please retry."
+            )
         self._persistence.record_event(
             run_id=run_id,
             channel=EventChannel.status,
@@ -223,20 +249,29 @@ class WorkflowLifecycleService:
             return
 
         retry_at = datetime.now(UTC)
-        self._persistence.save_run_status(
-            run_status=self._transitions.build_retry_pending_transition(
-                run_id=run_id,
-                payload=payload,
-                created_at=created_at,
-                updated_at=retry_at,
-                status_url=self._transitions.workflow_status_url(run_id),
-                events_url=self._transitions.workflow_events_url(run_id),
-                category=category,
-                current_attempt=current_attempt,
-                next_attempt=next_attempt,
-                backoff_seconds=backoff_seconds,
+        try:
+            self._persistence.save_run_status_cas(
+                run_status=self._transitions.build_retry_pending_transition(
+                    run_id=run_id,
+                    payload=payload,
+                    created_at=created_at,
+                    updated_at=retry_at,
+                    status_url=self._transitions.workflow_status_url(run_id),
+                    events_url=self._transitions.workflow_events_url(run_id),
+                    category=category,
+                    current_attempt=current_attempt,
+                    next_attempt=next_attempt,
+                    backoff_seconds=backoff_seconds,
+                ),
+                expected_status=ExecutionStatus.running,
             )
-        )
+        except ConcurrentModificationError:
+            logger.warning(
+                "CAS conflict in finalize_workflow_retry for %s: "
+                "run status changed by concurrent writer, skipping",
+                run_id,
+            )
+            return
         self._persistence.record_event(
             run_id=run_id,
             channel=EventChannel.log,
@@ -364,21 +399,32 @@ class WorkflowLifecycleService:
             spill_diagnostics_count=len(spill_diagnostics),
         )
         completed_at = datetime.now(UTC)
-        self._persistence.save_run_status(
-            run_status=self._transitions.build_succeeded_transition(
-                run_id=run_id,
-                payload=payload,
-                message=execution.message,
-                created_at=requested_at,
-                updated_at=completed_at,
-                status_url=self._transitions.workflow_status_url(run_id),
-                events_url=self._transitions.workflow_events_url(run_id),
-                result_refs=result_refs,
-                result_dto=result_dto,
-                diagnostics=diagnostics,
-            ),
-            result_dto_override=result_dto if isinstance(result_dto, dict) else None,
-        )
+        try:
+            self._persistence.save_run_status_cas(
+                run_status=self._transitions.build_succeeded_transition(
+                    run_id=run_id,
+                    payload=payload,
+                    message=execution.message,
+                    created_at=requested_at,
+                    updated_at=completed_at,
+                    status_url=self._transitions.workflow_status_url(run_id),
+                    events_url=self._transitions.workflow_events_url(run_id),
+                    result_refs=result_refs,
+                    result_dto=result_dto,
+                    diagnostics=diagnostics,
+                ),
+                expected_status=ExecutionStatus.running,
+                result_dto_override=result_dto
+                if isinstance(result_dto, dict)
+                else None,
+            )
+        except ConcurrentModificationError:
+            logger.warning(
+                "CAS conflict in finalize_workflow_success for %s: "
+                "run status changed by concurrent writer, skipping",
+                run_id,
+            )
+            return
         # Mid-run event_factory 已即时落库；禁止在收尾再 INSERT 同批 event_id。
         # （旧 worker 若仍执行「整表重写」会撞 UNIQUE 并把已成功的算法 run 标成 failed。）
         if spill_diagnostics:
@@ -446,18 +492,27 @@ class WorkflowLifecycleService:
         if exc is not None and category == FailureCategory.validation_error:
             failure_message = f"工作流校验失败：{str(exc)[:180]}"
 
-        self._persistence.save_run_status(
-            run_status=self._transitions.build_failed_transition(
-                run_id=run_id,
-                payload=payload,
-                message=failure_message,
-                created_at=created_at,
-                updated_at=failed_at,
-                status_url=self._transitions.workflow_status_url(run_id),
-                events_url=self._transitions.workflow_events_url(run_id),
-                diagnostics=diagnostics,
+        try:
+            self._persistence.save_run_status_cas(
+                run_status=self._transitions.build_failed_transition(
+                    run_id=run_id,
+                    payload=payload,
+                    message=failure_message,
+                    created_at=created_at,
+                    updated_at=failed_at,
+                    status_url=self._transitions.workflow_status_url(run_id),
+                    events_url=self._transitions.workflow_events_url(run_id),
+                    diagnostics=diagnostics,
+                ),
+                expected_status=ExecutionStatus.running,
             )
-        )
+        except ConcurrentModificationError:
+            logger.warning(
+                "CAS conflict in finalize_workflow_failure for %s: "
+                "run status changed by concurrent writer, skipping",
+                run_id,
+            )
+            return
         self._persistence.record_event(
             run_id=run_id,
             channel=EventChannel.log,

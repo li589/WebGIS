@@ -270,14 +270,14 @@ onMounted(() => {
 }
 
 .nc-item-files {
-  font-size: 11px;
-  color: #8aa2bd;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 
 .nc-item-path {
-  font-size: 11px;
-  color: #5f7895;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

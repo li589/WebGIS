@@ -31,6 +31,7 @@
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "litegraph.js": "^0.7.18",
+    "lucide-vue-next": "^0.577.0",
     "maplibre-gl": "^5.24.0",
     "papaparse": "^5.5.4",
     "pinia": "^3.0.4",

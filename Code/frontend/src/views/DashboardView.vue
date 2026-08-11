@@ -1279,13 +1279,15 @@ watch(tileForecastHour, () => {
     <section
       ref="mapShellRef"
       class="map-shell"
-      :class="{ 'drop-active': dropActive }"
+      :class="{ 'drop-active': dropActive, 'map-shell--3d': uiStore.viewMode === '3d' }"
       @dragenter="onMapShellDragEnter"
       @dragover="onMapShellDragOver"
       @dragleave="onMapShellDragLeave"
       @drop="onMapShellDrop"
     >
+      <!-- 2D 地图 -->
       <MapCanvas
+        v-if="uiStore.viewMode === '2d'"
         ref="mapCanvasRef"
         :tile-source-id="tileSourceId"
         :current-hour="currentHour"
@@ -1296,6 +1298,16 @@ watch(tileForecastHour, () => {
         @map-point-select="handleMapPointSelect"
         @overlay-time-update="handleOverlayTimeUpdate"
       />
+
+      <!-- 3D 占位视图（功能尚未实现） -->
+      <div v-else class="view-placeholder-3d">
+        <div class="placeholder-3d-inner">
+          <div class="placeholder-3d-icon">🌐</div>
+          <h2 class="placeholder-3d-title">3D 地球视图</h2>
+          <p class="placeholder-3d-desc">该功能尚未实现</p>
+          <p class="placeholder-3d-hint">点击顶栏「3D」按钮可返回 2D 平面地图</p>
+        </div>
+      </div>
 
       <div v-if="dropActive" class="import-drop-overlay" aria-hidden="true">
         <div class="import-drop-card">
@@ -1463,6 +1475,52 @@ watch(tileForecastHour, () => {
 .map-shell.drop-active {
   outline: 2px solid rgba(90, 213, 255, 0.55);
   outline-offset: -2px;
+}
+
+/* 3D 占位视图 */
+.view-placeholder-3d {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, #0a1a2e 0%, #050d18 100%);
+}
+
+.placeholder-3d-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-10);
+  text-align: center;
+}
+
+.placeholder-3d-icon {
+  font-size: 4rem;
+  line-height: 1;
+  opacity: 0.6;
+  filter: grayscale(0.3);
+}
+
+.placeholder-3d-title {
+  margin: 0;
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.placeholder-3d-desc {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--text-muted);
+}
+
+.placeholder-3d-hint {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
 }
 
 .import-drop-overlay {

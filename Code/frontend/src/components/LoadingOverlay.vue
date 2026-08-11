@@ -91,11 +91,16 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   flex-direction: column;
   align-items: center;
   gap: 1.1rem;
-  padding: 1.6rem 2rem 1.4rem;
-  border-radius: 1rem;
-  background: rgba(8, 18, 34, 0.78);
-  border: 1px solid rgba(90, 213, 255, 0.18);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  padding: 2rem 2.4rem 1.6rem;
+  border-radius: var(--radius-xl);
+  background: linear-gradient(165deg, rgba(10, 22, 42, 0.92), rgba(6, 14, 28, 0.88));
+  border: 1px solid rgba(90, 213, 255, 0.2);
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.55),
+    0 0 60px rgba(10, 132, 255, 0.1),
+    inset 0 1px 0 rgba(136, 223, 255, 0.12);
+  backdrop-filter: blur(24px) saturate(1.1);
+  -webkit-backdrop-filter: blur(24px) saturate(1.1);
 }
 
 .orbit-stage {
@@ -278,9 +283,9 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
 }
 
 .loading-message {
-  color: #c5dceb;
-  font-size: 0.8rem;
-  font-weight: 500;
+  color: var(--text-primary);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-medium);
   letter-spacing: 0.04em;
   text-align: center;
   min-height: 1.2em;
@@ -350,15 +355,15 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
 
 .compact-msg {
   align-self: center;
-  margin-top: 0.35rem;
-  padding: 0.18rem 0.55rem;
-  border-radius: 999px;
+  margin-top: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
   background: rgba(8, 18, 34, 0.82);
-  border: 1px solid rgba(90, 213, 255, 0.2);
-  color: #a8c4d8;
-  font-size: 0.58rem;
+  border: 1px solid var(--border-accent);
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
   letter-spacing: 0.03em;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  box-shadow: var(--elevation-2);
 }
 
 .compact-msg::after {
@@ -453,5 +458,19 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
 .loading-fade-enter-from,
 .loading-fade-leave-to {
   opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stars,
+  .earth-sphere,
+  .sat-orbit,
+  .earth-glow,
+  .sat-beam,
+  .loading-progress-glow,
+  .compact-glow,
+  .loading-message::after,
+  .compact-msg::after {
+    animation: none;
+  }
 }
 </style>

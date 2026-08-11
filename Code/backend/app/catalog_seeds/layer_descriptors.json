@@ -57,7 +57,17 @@
     ],
     "data_owner": "NOAA/NESDIS",
     "temporal_coverage": "2000-01 to 2025-06 (Monthly)",
-    "source_reference": "https://www.star.nesdis.noaa.gov/smcd/emb/vci/VH/vh_browse.php"
+    "source_reference": "https://www.star.nesdis.noaa.gov/smcd/emb/vci/VH/vh_browse.php",
+    "presentation": {
+      "accent_color": "#7fd99a",
+      "accent_glow": "rgba(127, 217, 154, 0.3)",
+      "chip_tone": "rgba(127, 217, 154, 0.16)",
+      "metric_label": "植被指数",
+      "metric_unit": "",
+      "metric_precision": 2,
+      "update_label": "每日更新",
+      "source_label": "Landsat / Sentinel-2"
+    }
   },
   {
     "layer_id": "biomass-cn",
@@ -115,7 +125,17 @@
     ],
     "data_owner": "CAS",
     "temporal_coverage": "2020 Baseline",
-    "source_reference": "National Earth System Science Data Center"
+    "source_reference": "National Earth System Science Data Center",
+    "presentation": {
+      "accent_color": "#4daf4a",
+      "accent_glow": "rgba(77, 175, 74, 0.3)",
+      "chip_tone": "rgba(77, 175, 74, 0.16)",
+      "metric_label": "地上生物量",
+      "metric_unit": "Mg/ha",
+      "metric_precision": 1,
+      "update_label": "静态数据",
+      "source_label": "ESA CCI BIOMASS 2020"
+    }
   },
   {
     "layer_id": "landcover-cn",
@@ -173,7 +193,17 @@
     ],
     "data_owner": "NASA LP DAAC",
     "temporal_coverage": "2001 to 2022 (Annual)",
-    "source_reference": "https://lpdaac.usgs.gov/products/mcd12q1v061/"
+    "source_reference": "https://lpdaac.usgs.gov/products/mcd12q1v061/",
+    "presentation": {
+      "accent_color": "#7fd99a",
+      "accent_glow": "rgba(127, 217, 154, 0.3)",
+      "chip_tone": "rgba(127, 217, 154, 0.16)",
+      "metric_label": "IGBP 分类",
+      "metric_unit": "",
+      "metric_precision": 0,
+      "update_label": "静态数据",
+      "source_label": "MODIS MCD12Q1"
+    }
   },
   {
     "layer_id": "clcd-cn",
@@ -230,7 +260,17 @@
     ],
     "data_owner": "Wuhan University",
     "temporal_coverage": "1985 to 2022 (Annual)",
-    "source_reference": "https://zenodo.org/record/4417810"
+    "source_reference": "https://zenodo.org/record/4417810",
+    "presentation": {
+      "accent_color": "#7fc97f",
+      "accent_glow": "rgba(127, 201, 127, 0.3)",
+      "chip_tone": "rgba(127, 201, 127, 0.16)",
+      "metric_label": "土地覆盖",
+      "metric_unit": "class",
+      "metric_precision": 0,
+      "update_label": "静态数据",
+      "source_label": "CLCD 1997"
+    }
   },
   {
     "layer_id": "hfp-cn",
@@ -286,7 +326,17 @@
     ],
     "data_owner": "WCS / SEDAC",
     "temporal_coverage": "2020 Global HFP Release",
-    "source_reference": "https://sedac.ciesin.columbia.edu/"
+    "source_reference": "https://sedac.ciesin.columbia.edu/",
+    "presentation": {
+      "accent_color": "#ff8c42",
+      "accent_glow": "rgba(255, 140, 66, 0.3)",
+      "chip_tone": "rgba(255, 140, 66, 0.16)",
+      "metric_label": "HFP",
+      "metric_unit": "",
+      "metric_precision": 1,
+      "update_label": "静态数据",
+      "source_label": "HFP 2018"
+    }
   },
   {
     "layer_id": "dem-etopo",
@@ -344,7 +394,17 @@
     ],
     "data_owner": "NOAA NCEI",
     "temporal_coverage": "Static Topography Baseline",
-    "source_reference": "https://www.ncei.noaa.gov/products/etopo-global-relief-model"
+    "source_reference": "https://www.ncei.noaa.gov/products/etopo-global-relief-model",
+    "presentation": {
+      "accent_color": "#eab308",
+      "accent_glow": "rgba(234, 179, 8, 0.3)",
+      "chip_tone": "rgba(234, 179, 8, 0.16)",
+      "metric_label": "高程",
+      "metric_unit": "m",
+      "metric_precision": 0,
+      "update_label": "静态数据",
+      "source_label": "NOAA ETOPO 2022"
+    }
   },
   {
     "layer_id": "gebco-dem-cn",
@@ -402,7 +462,17 @@
     ],
     "data_owner": "GEBCO Consortium",
     "temporal_coverage": "2023 Release",
-    "source_reference": "https://www.gebco.net/data_and_products/gridded_bathymetry_data/"
+    "source_reference": "https://www.gebco.net/data_and_products/gridded_bathymetry_data/",
+    "presentation": {
+      "accent_color": "#6b8e9c",
+      "accent_glow": "rgba(107, 142, 156, 0.3)",
+      "chip_tone": "rgba(107, 142, 156, 0.16)",
+      "metric_label": "高程",
+      "metric_unit": "m",
+      "metric_precision": 0,
+      "update_label": "静态数据",
+      "source_label": "GEBCO 2024"
+    }
   },
   {
     "layer_id": "ref-smap-sm-202512-l3",
@@ -462,7 +532,17 @@
     ],
     "data_owner": "Lab",
     "temporal_coverage": "2025-12-01 to 2025-12-31 (31 days)",
-    "source_reference": "https://nsidc.org/data/SPL3SMP"
+    "source_reference": "https://nsidc.org/data/SPL3SMP",
+    "presentation": {
+      "accent_color": "#4ecdc4",
+      "accent_glow": "rgba(78, 205, 196, 0.3)",
+      "chip_tone": "rgba(78, 205, 196, 0.16)",
+      "metric_label": "土壤湿度",
+      "metric_unit": "m³/m³",
+      "metric_precision": 3,
+      "update_label": "每日更新",
+      "source_label": "SMAP L3 (2025-12)"
+    }
   },
   {
     "layer_id": "prod-fy_smap_station-sm_vod_omega-202512-fusion",
@@ -519,7 +599,17 @@
       "数据源优先: Soil_Moisture/SMAP_Soil_VOD_SM（融合 SM/VOD mat）"
     ],
     "data_owner": "Lab",
-    "temporal_coverage": "2025-12-01 to 2025-12-31 (31 days)"
+    "temporal_coverage": "2025-12-01 to 2025-12-31 (31 days)",
+    "presentation": {
+      "accent_color": "#66c2a5",
+      "accent_glow": "rgba(102, 194, 165, 0.3)",
+      "chip_tone": "rgba(102, 194, 165, 0.16)",
+      "metric_label": "土壤湿度",
+      "metric_unit": "m³/m³",
+      "metric_precision": 3,
+      "update_label": "每日更新",
+      "source_label": "SMAP/FY/站点融合 (v7.3)"
+    }
   },
   {
     "layer_id": "ref-fy-tb-202512-mwri",
@@ -578,7 +668,17 @@
     "run_readiness_summary": "待确认 FY MWRI 原始数据是否齐全",
     "run_readiness_notes": [
       "数据源: 风云三号 MWRI 亮温原始数据"
-    ]
+    ],
+    "presentation": {
+      "accent_color": "#e6a85c",
+      "accent_glow": "rgba(230, 168, 92, 0.3)",
+      "chip_tone": "rgba(230, 168, 92, 0.16)",
+      "metric_label": "亮温",
+      "metric_unit": "K",
+      "metric_precision": 1,
+      "update_label": "每日更新",
+      "source_label": "FY-3 MWRI"
+    }
   },
   {
     "layer_id": "obs-station-sm-daily",
@@ -634,7 +734,17 @@
     "run_readiness_notes": [
       "原 module_name=station_validation 未注册；已取消图层面板 Run，避免校验/执行失败",
       "数据源: ISMN/CASMOS 站点观测"
-    ]
+    ],
+    "presentation": {
+      "accent_color": "#6bbf59",
+      "accent_glow": "rgba(107, 191, 89, 0.3)",
+      "chip_tone": "rgba(107, 191, 89, 0.16)",
+      "metric_label": "土壤湿度",
+      "metric_unit": "m³/m³",
+      "metric_precision": 3,
+      "update_label": "每日更新",
+      "source_label": "ISMN/CASMOS"
+    }
   },
   {
     "layer_id": "ref-ddca-sm-201504-202512",
@@ -695,7 +805,17 @@
       "数据源: DDCA 双通道反演校验数据"
     ],
     "data_owner": "Lab",
-    "temporal_coverage": "2023-01 to Present"
+    "temporal_coverage": "2023-01 to Present",
+    "presentation": {
+      "accent_color": "#5e4fa2",
+      "accent_glow": "rgba(94, 79, 162, 0.3)",
+      "chip_tone": "rgba(94, 79, 162, 0.16)",
+      "metric_label": "DH",
+      "metric_unit": "",
+      "metric_precision": 2,
+      "update_label": "按时间维度",
+      "source_label": "Soil DDCA 2015-04 to 2025-12 (sampled 60)"
+    }
   },
   {
     "layer_id": "forest-ratio",
@@ -752,7 +872,17 @@
       "数据源: 全球 9km 森林覆盖比例（2020）"
     ],
     "data_owner": "Lab",
-    "temporal_coverage": "Static Auxiliary Baseline"
+    "temporal_coverage": "Static Auxiliary Baseline",
+    "presentation": {
+      "accent_color": "#1b9e77",
+      "accent_glow": "rgba(27, 158, 119, 0.3)",
+      "chip_tone": "rgba(27, 158, 119, 0.16)",
+      "metric_label": "森林比例",
+      "metric_unit": "ratio",
+      "metric_precision": 2,
+      "update_label": "静态数据",
+      "source_label": "Forest_Ratio_9KM_2020"
+    }
   },
   {
     "layer_id": "landscape-metrics-9km",
@@ -809,7 +939,17 @@
       "数据源: 景观多样性指数 SHDI（9km，2020）"
     ],
     "data_owner": "Lab",
-    "temporal_coverage": "Static Auxiliary Baseline"
+    "temporal_coverage": "Static Auxiliary Baseline",
+    "presentation": {
+      "accent_color": "#8c6bb1",
+      "accent_glow": "rgba(140, 107, 177, 0.3)",
+      "chip_tone": "rgba(140, 107, 177, 0.16)",
+      "metric_label": "SHDI",
+      "metric_unit": "",
+      "metric_precision": 2,
+      "update_label": "静态数据",
+      "source_label": "Landscape_Metrics_LandOnly_9KM_2020"
+    }
   },
   {
     "layer_id": "aridity-cn",
@@ -852,7 +992,17 @@
     ],
     "engine": "overlay_registry",
     "run_readiness_summary": "干旱指数 AI 叠加层已注册",
-    "temporal_coverage": "Static Climate Product"
+    "temporal_coverage": "Static Climate Product",
+    "presentation": {
+      "accent_color": "#c4a35a",
+      "accent_glow": "rgba(196, 163, 90, 0.3)",
+      "chip_tone": "rgba(196, 163, 90, 0.16)",
+      "metric_label": "AI（P/PET）",
+      "metric_unit": "",
+      "metric_precision": 2,
+      "update_label": "静态数据",
+      "source_label": "P/PET（降水/蒸散比）"
+    }
   },
   {
     "layer_id": "gpcp-precip-ts",
@@ -896,7 +1046,17 @@
     ],
     "engine": "overlay_registry",
     "run_readiness_summary": "GPCP 月降水时间序列已注册",
-    "temporal_coverage": "Monthly sample series"
+    "temporal_coverage": "Monthly sample series",
+    "presentation": {
+      "accent_color": "#5b8def",
+      "accent_glow": "rgba(91, 141, 239, 0.3)",
+      "chip_tone": "rgba(91, 141, 239, 0.16)",
+      "metric_label": "降水",
+      "metric_unit": "mm/month",
+      "metric_precision": 1,
+      "update_label": "月度更新",
+      "source_label": "GPCP V3.2"
+    }
   },
   {
     "layer_id": "cmfd-precip-cn",
@@ -939,7 +1099,17 @@
     ],
     "engine": "overlay_registry",
     "run_readiness_summary": "CMFD 降水叠加层已注册",
-    "temporal_coverage": "2002-01 sample"
+    "temporal_coverage": "2002-01 sample",
+    "presentation": {
+      "accent_color": "#3a9bd9",
+      "accent_glow": "rgba(58, 155, 217, 0.3)",
+      "chip_tone": "rgba(58, 155, 217, 0.16)",
+      "metric_label": "降水",
+      "metric_unit": "mm",
+      "metric_precision": 1,
+      "update_label": "静态数据",
+      "source_label": "CMFD 2002-01"
+    }
   },
   {
     "layer_id": "era5-dwaa-cn",
@@ -983,7 +1153,17 @@
     ],
     "engine": "overlay_registry",
     "run_readiness_summary": "ERA5 白天热浪叠加层已注册",
-    "temporal_coverage": "2020"
+    "temporal_coverage": "2020",
+    "presentation": {
+      "accent_color": "#e08214",
+      "accent_glow": "rgba(224, 130, 20, 0.3)",
+      "chip_tone": "rgba(224, 130, 20, 0.16)",
+      "metric_label": "事件次数",
+      "metric_unit": "events",
+      "metric_precision": 0,
+      "update_label": "静态数据",
+      "source_label": "ERA5 DWAA SMCI 2020"
+    }
   },
   {
     "layer_id": "era5-wdaa-cn",
@@ -1027,7 +1207,17 @@
     ],
     "engine": "overlay_registry",
     "run_readiness_summary": "ERA5 夜间热浪叠加层已注册",
-    "temporal_coverage": "2020"
+    "temporal_coverage": "2020",
+    "presentation": {
+      "accent_color": "#8073ac",
+      "accent_glow": "rgba(128, 115, 172, 0.3)",
+      "chip_tone": "rgba(128, 115, 172, 0.16)",
+      "metric_label": "事件次数",
+      "metric_unit": "events",
+      "metric_precision": 0,
+      "update_label": "静态数据",
+      "source_label": "ERA5 WDAA SMCI 2020"
+    }
   },
   {
     "layer_id": "co2-cn",
@@ -1070,7 +1260,17 @@
     ],
     "engine": "overlay_registry",
     "run_readiness_summary": "CO₂ 柱浓度叠加层已注册",
-    "temporal_coverage": "Static Mean Product"
+    "temporal_coverage": "Static Mean Product",
+    "presentation": {
+      "accent_color": "#d6604d",
+      "accent_glow": "rgba(214, 96, 77, 0.3)",
+      "chip_tone": "rgba(214, 96, 77, 0.16)",
+      "metric_label": "CO₂",
+      "metric_unit": "ppm",
+      "metric_precision": 2,
+      "update_label": "静态数据",
+      "source_label": "GOSAT MeanCarbonDioxide"
+    }
   },
   {
     "layer_id": "method-smap-omega-doy-dynamic",

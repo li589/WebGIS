@@ -217,20 +217,42 @@ export function buildRuntimeLayerLibraryItem(
   const subCategory =
     (descriptorSub as RuntimeLayerLibraryItem['subCategory'] | undefined) ?? fallback?.subCategory
 
+  // X1: 优先使用后端 presentation 下发的 UI 呈现字段，静态 LAYER_LIBRARY 仅作兜底
+  const pres = descriptor.presentation
+  const hasPres = pres && typeof pres === 'object'
+  const presValue = <T>(v: T | null | undefined): T | undefined => (v != null ? v : undefined)
+
   return {
     catalogId: descriptor.layer_id,
     name: descriptor.display_name,
     category,
     subCategory,
     description: descriptor.description,
-    metricLabel: fallback?.metricLabel ?? '主指标',
-    metricUnit: fallback?.metricUnit ?? '',
-    metricPrecision: fallback?.metricPrecision ?? 1,
-    updateLabel: buildUpdateLabel(descriptor, fallback ?? null),
-    sourceLabel: buildSourceLabel(descriptor, fallback ?? null),
-    accentColor: fallback?.accentColor ?? categoryMeta?.accentColor ?? '#67d4ff',
-    accentGlow: fallback?.accentGlow ?? 'rgba(103, 212, 255, 0.28)',
-    chipTone: fallback?.chipTone ?? categoryMeta?.chipTone ?? 'rgba(103, 212, 255, 0.16)',
+    metricLabel:
+      (hasPres ? presValue(pres.metric_label) : undefined) ?? fallback?.metricLabel ?? '主指标',
+    metricUnit: (hasPres ? presValue(pres.metric_unit) : undefined) ?? fallback?.metricUnit ?? '',
+    metricPrecision:
+      (hasPres ? presValue(pres.metric_precision) : undefined) ?? fallback?.metricPrecision ?? 1,
+    updateLabel:
+      (hasPres ? presValue(pres.update_label) : undefined) ??
+      buildUpdateLabel(descriptor, fallback ?? null),
+    sourceLabel:
+      (hasPres ? presValue(pres.source_label) : undefined) ??
+      buildSourceLabel(descriptor, fallback ?? null),
+    accentColor:
+      (hasPres ? presValue(pres.accent_color) : undefined) ??
+      fallback?.accentColor ??
+      categoryMeta?.accentColor ??
+      '#67d4ff',
+    accentGlow:
+      (hasPres ? presValue(pres.accent_glow) : undefined) ??
+      fallback?.accentGlow ??
+      'rgba(103, 212, 255, 0.28)',
+    chipTone:
+      (hasPres ? presValue(pres.chip_tone) : undefined) ??
+      fallback?.chipTone ??
+      categoryMeta?.chipTone ??
+      'rgba(103, 212, 255, 0.16)',
     sources: fallback?.sources ?? [],
     isAdminBoundary: fallback?.isAdminBoundary,
     engine: descriptor.engine,
