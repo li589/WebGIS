@@ -888,6 +888,8 @@ def _geotiff_bytes_to_mat(
 
 
 def _geotiff_bytes_to_netcdf(tif_bytes: bytes, *, time_key: str) -> bytes:
+    import uuid
+
     import numpy as np
     from netCDF4 import Dataset  # type: ignore
     from rasterio.io import MemoryFile
@@ -896,9 +898,11 @@ def _geotiff_bytes_to_netcdf(tif_bytes: bytes, *, time_key: str) -> bytes:
         with mem.open() as ds:
             arr = ds.read(1)
     # netCDF4 needs a real path; use temp under IMPORTS_DIR/_exports
+    # 临时文件名须唯一：并发/同批多图层导出会同时落到同一目录，固定名会互相
+    # 覆盖或误删（finally unlink 可能删掉其它请求仍在使用中的文件）。
     exports_dir = IMPORTS_DIR / "_exports"
     exports_dir.mkdir(parents=True, exist_ok=True)
-    buf_path = exports_dir / f"_export_tmp_{time_key or 'static'}.nc"
+    buf_path = exports_dir / f"_export_tmp_{uuid.uuid4().hex}.nc"
     try:
         with Dataset(str(buf_path), "w", format="NETCDF4") as nc:
             nc.createDimension("y", arr.shape[0])
@@ -910,6 +914,31 @@ def _geotiff_bytes_to_netcdf(tif_bytes: bytes, *, time_key: str) -> bytes:
         return buf_path.read_bytes()
     finally:
         buf_path.unlink(missing_ok=True)
+
+
+# 批导出产物（zip / 合并 mat）在 _exports 下的保留时长；超过即惰性清理，防磁盘泄漏
+_EXPORTS_MAX_AGE_SECONDS = 24 * 3600
+
+
+def _cleanup_exports_dir(
+    exports_dir: Path, max_age_seconds: int = _EXPORTS_MAX_AGE_SECONDS
+) -> None:
+    """惰性清理 _exports 目录中超过 max_age_seconds 的过期产物。
+
+    导出链路每次写入新产物前调用；删除失败（文件正被占用等）时静默跳过。
+    """
+    import time as time_mod
+
+    try:
+        deadline = time_mod.time() - max_age_seconds
+        for child in exports_dir.iterdir():
+            try:
+                if child.is_file() and child.stat().st_mtime < deadline:
+                    child.unlink(missing_ok=True)
+            except OSError:
+                continue
+    except OSError:
+        return
 
 
 def _try_export_layers_batch_mat(
@@ -1044,6 +1073,7 @@ def export_layers_batch_zip(
 
     exports_dir = IMPORTS_DIR / "_exports"
     exports_dir.mkdir(parents=True, exist_ok=True)
+    _cleanup_exports_dir(exports_dir)
 
     fmt = (format or "").lower().strip()
     if fmt in {"mat", "matlab"} and len(layer_ids) >= 2:

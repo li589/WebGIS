@@ -318,9 +318,23 @@ class RuntimeStatusService:
                 disk_percent=disk_percent,
             )
             current_pid = os.getpid()
+            parent_pid: int | None = None
+            try:
+                parent_pid = psutil.Process(current_pid).ppid()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
             seen_pids: set[int] = set()
             for proc in psutil.process_iter(
-                ["pid", "name", "cpu_percent", "memory_info", "num_threads", "status"]
+                [
+                    "pid",
+                    "ppid",
+                    "name",
+                    "cmdline",
+                    "cpu_percent",
+                    "memory_info",
+                    "num_threads",
+                    "status",
+                ]
             ):
                 try:
                     info = proc.info
@@ -328,10 +342,20 @@ class RuntimeStatusService:
                     if pid is None or pid in seen_pids:
                         continue
                     seen_pids.add(pid)
-                    # 仅收集后端相关进程：当前进程、celery worker、uvicorn 主进程
+                    # 仅收集后端相关进程：当前进程及其父进程、celery worker、uvicorn。
+                    # Windows 下 worker/uvicorn 进程名常为 python.exe，仅靠 name 匹配会漏，
+                    # 需同时匹配 cmdline（如 python -m celery -A app ... worker）。
                     name = (info.get("name") or "").lower()
+                    cmdline = " ".join(
+                        str(part) for part in (info.get("cmdline") or [])
+                    ).lower()
                     is_backend = (
-                        pid == current_pid or "celery" in name or "uvicorn" in name
+                        pid == current_pid
+                        or pid == parent_pid
+                        or "celery" in name
+                        or "uvicorn" in name
+                        or "celery" in cmdline
+                        or "uvicorn" in cmdline
                     )
                     if not is_backend:
                         continue

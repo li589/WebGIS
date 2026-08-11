@@ -10,11 +10,19 @@ from app.workflow_engine.schema import CURRENT_SCHEMA_VERSION
 
 
 class PortSpec(BaseModel):
-    """节点端口规格定义。"""
+    """节点端口规格定义。
+
+    ``required``：输入端口语义——该端口必须被提供（缺失视为错误）。
+    ``optional_output``：仅对**输出端口**有效——声明为 True 表示该输出
+    ``可能不产生结果``（如条件分支/空数据集），下游缺失该输出时跳过该边、
+    不阻断执行；缺省 False（输出缺失仍按错误处理）。与 ``required`` 相互独立，
+    语义比复用 ``required=False`` 表达"输出可缺失"更清晰。
+    """
 
     name: str
     kind: PortKind = PortKind.value
     required: bool = True
+    optional_output: bool = False
     description: str | None = None
 
 

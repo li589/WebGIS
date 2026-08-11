@@ -361,6 +361,90 @@ def test_workflow_engine_optional_edge() -> None:
     ), f"warnings={result_required.node_results}"
 
 
+def test_workflow_engine_optional_output_flag() -> None:
+    """输出端口以 optional_output=True（而非 required=False）声明时，缺失可跳过该边。"""
+    from app.workflow_engine import (
+        BaseNode,
+        NodeRegistry,
+        WorkflowExecutor,
+        WorkflowDefinition,
+        NodeSpec,
+        EdgeSpec,
+        PortSpec,
+        ExecutionContext,
+    )
+    from app.workflow_engine.enums import RunStatus
+    from app.workflow_engine.models import NodeExecutionResult
+
+    class OptFlagOut(BaseNode):
+        node_type = "test_opt_flag_out"
+
+        def execute(self, inputs):
+            return NodeExecutionResult(
+                node_id=self.spec.node_id,
+                status=RunStatus.completed,
+                outputs={"must": 7},
+            )
+
+        @staticmethod
+        def build_spec():
+            return NodeSpec(
+                node_id="test_opt_flag_out",
+                node_type="test_opt_flag_out",
+                output_ports=[
+                    PortSpec(name="must"),
+                    # required 保持默认 True，仅用 optional_output 表达"可能缺失"
+                    PortSpec(name="maybe", optional_output=True),
+                ],
+            )
+
+    class CollectNode(BaseNode):
+        node_type = "test_opt_flag_collect"
+
+        def execute(self, inputs):
+            return NodeExecutionResult(
+                node_id=self.spec.node_id,
+                status=RunStatus.completed,
+                outputs={"got": inputs.get("maybe")},
+            )
+
+        @staticmethod
+        def build_spec():
+            return NodeSpec(
+                node_id="test_opt_flag_collect",
+                node_type="test_opt_flag_collect",
+                input_ports=[PortSpec(name="maybe")],
+                output_ports=[PortSpec(name="got")],
+            )
+
+    registry = NodeRegistry()
+    registry.register(OptFlagOut)
+    registry.register(CollectNode)
+    executor = WorkflowExecutor(registry)
+
+    wf = WorkflowDefinition(
+        workflow_id="test-optional-output-flag",
+        nodes=[
+            NodeSpec(node_id="src", node_type="test_opt_flag_out"),
+            NodeSpec(node_id="dst", node_type="test_opt_flag_collect"),
+        ],
+        edges=[
+            EdgeSpec(
+                source_node_id="src",
+                source_port="maybe",
+                target_node_id="dst",
+                target_port="maybe",
+            ),
+        ],
+    )
+    result = executor.execute(
+        wf, ExecutionContext(workflow_id="test-optional-output-flag")
+    )
+    assert result.status == RunStatus.completed, f"status={result.status}"
+    # 边被跳过：dst 未收到 maybe，got 保持 None（而非 KeyError/失败）
+    assert result.outputs.get("dst.got") is None, f"outputs={result.outputs}"
+
+
 # ============================================================
 # 2. 天气工作流端到端执行
 # ============================================================

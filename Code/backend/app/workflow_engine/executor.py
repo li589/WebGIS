@@ -164,7 +164,12 @@ class WorkflowExecutor:
     def _is_port_required(
         self, node_map, source_node_id: str, source_port: str
     ) -> bool:
-        """判断源端口是否 required。端口未声明或节点未知时保守视为 required。"""
+        """判断源端口是否 required。端口未声明或节点未知时保守视为 required。
+
+        输出端口声明 ``optional_output=True`` 表示该输出可能缺失（缺失时跳过边、
+        不阻断下游）；未声明时回退 ``required``（兼容旧节点以
+        ``required=False`` 表达"输出可缺失"的写法）。
+        """
         source_spec = node_map.get(source_node_id)
         output_ports = source_spec.output_ports if source_spec is not None else []
         # spec 未显式声明端口时，回退到节点类 build_spec() 的规范规格
@@ -177,7 +182,7 @@ class WorkflowExecutor:
                 output_ports = []
         for port in output_ports:
             if port.name == source_port:
-                return port.required
+                return not port.optional_output and port.required
         return True
 
     def _collect_global_outputs(
