@@ -384,7 +384,7 @@
     },
     "style": {
       "palette": "orange-red",
-      "unit_label": "degC",
+      "unit_label": "°C",
       "opacity": 0.82
     },
     "tags": [
@@ -427,7 +427,7 @@
     },
     "style": {
       "palette": "orange-red",
-      "unit_label": "degC",
+      "unit_label": "°C",
       "opacity": 0.58
     },
     "tags": [
@@ -472,7 +472,7 @@
     },
     "style": {
       "palette": "orange-red",
-      "unit_label": "degC",
+      "unit_label": "°C",
       "opacity": 0.58
     },
     "tags": [
@@ -517,7 +517,7 @@
     },
     "style": {
       "palette": "orange-red",
-      "unit_label": "degC",
+      "unit_label": "°C",
       "opacity": 0.58
     },
     "tags": [
@@ -738,7 +738,7 @@
     },
     "style": {
       "palette": "thermal-orange",
-      "unit_label": "C",
+      "unit_label": "°C",
       "opacity": 0.78
     },
     "tags": [

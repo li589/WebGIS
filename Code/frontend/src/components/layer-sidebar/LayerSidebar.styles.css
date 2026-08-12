@@ -10,7 +10,7 @@
   padding: 0.46rem;
   border: 1px solid var(--border-default);
   border-radius: 0.88rem;
-  background: linear-gradient(180deg, var(--surface-raised), var(--surface-sunken));
+  background: linear-gradient(180deg, var(--panel-bg-top), var(--panel-bg-bottom));
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   box-shadow:
@@ -1341,7 +1341,10 @@ h2 {
   color: var(--text-secondary);
   font-size: var(--font-size-caption);
   cursor: pointer;
-  transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+  transition:
+    color var(--motion-fast) var(--ease-standard),
+    background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
 }
 
 .sub-pill:hover {

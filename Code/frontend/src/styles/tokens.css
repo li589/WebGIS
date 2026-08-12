@@ -60,7 +60,7 @@
   --accent-border: rgba(90, 213, 255, 0.3);
 
   /* ═══ 颜色：语义化表面色（蓝/紫 tint，用于信息区隔） ═══ */
-  --surface-blue-tint: rgba(90, 162, 255, 0.10);
+  --surface-blue-tint: rgba(90, 162, 255, 0.1);
   --border-blue-tint: rgba(90, 162, 255, 0.16);
   --surface-violet-tint: rgba(126, 168, 255, 0.14);
   --border-violet-tint: rgba(126, 168, 255, 0.18);
@@ -79,6 +79,10 @@
   --surface-hover: rgba(20, 40, 66, 0.98); /* 交互态 / Hover */
   --surface-panel: rgba(8, 17, 31, 0.96); /* 兼容旧名，等同 surface-1 级别 */
   --surface-raised: rgba(4, 12, 23, 0.6); /* 兼容旧名 */
+
+  /* ═══ 颜色：面板专用背景（暗色 — 比全局 surface 更通透） ═══ */
+  --panel-bg-top: rgba(10, 20, 35, 0.75);
+  --panel-bg-bottom: rgba(10, 20, 35, 0.65);
 
   /* ═══ 颜色：边框四级 ═══ */
   --border-subtle: rgba(136, 192, 255, 0.08); /* 极淡（divider / optional） */
@@ -212,16 +216,16 @@
   /* 语义化表面色（浅底加深） */
   --surface-blue-tint: rgba(30, 100, 180, 0.08);
   --border-blue-tint: rgba(30, 100, 180, 0.14);
-  --surface-violet-tint: rgba(100, 80, 200, 0.10);
+  --surface-violet-tint: rgba(100, 80, 200, 0.1);
   --border-violet-tint: rgba(100, 80, 200, 0.16);
 
   /* 氛围色（浅底减淡） */
-  --ambient-blue-glow: rgba(30, 100, 180, 0.10);
+  --ambient-blue-glow: rgba(30, 100, 180, 0.1);
   --ambient-blue-soft: rgba(30, 100, 180, 0.08);
   --ambient-warm-glow: rgba(201, 122, 20, 0.08);
 
   /* 阴影色（浅底用蓝灰影） */
-  --shadow-ambient: rgba(20, 50, 90, 0.10);
+  --shadow-ambient: rgba(20, 50, 90, 0.1);
   --shadow-ambient-strong: rgba(20, 50, 90, 0.18);
 
   /* 表面层级（浅色：近不透明冷白，避免半透明叠地图/外圈发棕褐） */
@@ -233,6 +237,10 @@
   --surface-hover: rgba(236, 244, 252, 0.98);
   --surface-panel: rgba(255, 255, 255, 0.96);
   --surface-raised: rgba(248, 251, 255, 0.88);
+
+  /* 面板专用背景（浅色） */
+  --panel-bg-top: rgba(248, 251, 255, 0.92);
+  --panel-bg-bottom: rgba(240, 246, 252, 0.86);
 
   /* 边框（浅色：深蓝灰） */
   --border-subtle: rgba(30, 60, 100, 0.08);

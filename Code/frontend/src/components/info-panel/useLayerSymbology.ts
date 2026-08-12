@@ -31,6 +31,21 @@ import {
 import { windDisplayModeLabel, type WindDisplayMode } from '../map/wind-display-mode'
 import type { OverlayTimeState } from '../map/overlay-image-module'
 
+/** 单位标签归一化：后端不同来源可能用 degC / C 等，统一为展示符号 */
+const UNIT_NORMALIZE_MAP: Record<string, string> = {
+  degC: '°C',
+  degF: '°F',
+  C: '°C',
+  F: '°F',
+  'm/s2': 'm/s²',
+}
+
+function normalizeUnit(raw: string | null | undefined): string {
+  if (!raw) return ''
+  const trimmed = raw.trim()
+  return UNIT_NORMALIZE_MAP[trimmed] ?? trimmed
+}
+
 export function useLayerSymbology(
   displayLayer: ComputedRef<ActiveLayerDisplay>,
   isRealtimeWeatherLayer: ComputedRef<boolean>,
@@ -127,7 +142,7 @@ export function useLayerSymbology(
       if (meta.vmin != null) vmin = String(meta.vmin)
       if (meta.vmax != null) vmax = String(meta.vmax)
     }
-    const unit = hint?.unit_label || meta?.unit || ''
+    const unit = normalizeUnit(hint?.unit_label || meta?.unit || '')
     const hasRange =
       Boolean(hint) ||
       Boolean(meta?.palette) ||
@@ -291,11 +306,15 @@ export function useLayerSymbology(
       !!displayLayer.value.isImportedRaster,
   )
 
+  /** 图例区域的归一化单位标签 */
+  const normalizedUnitLabel = computed(() => normalizeUnit(styleRenderHint.value?.unit_label))
+
   return {
     weatherRenderHint,
     overlayStyleMeta,
     styleSymbology,
     styleRenderHint,
+    normalizedUnitLabel,
     styleFieldLabel,
     styleRangeMeta,
     weatherLegendStops,

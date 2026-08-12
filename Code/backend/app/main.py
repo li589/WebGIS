@@ -82,6 +82,16 @@ async def lifespan(app: FastAPI):
 
     threading.Thread(target=_warmup, daemon=True, name="provider-warmup").start()
 
+    # 预热 psutil CPU 采样：cpu_percent(interval=None) 首次调用返回 0.0（psutil 语义），
+    # 提前调用一次使后续 get_resource_usage() 能拿到真实值
+    try:
+        import psutil
+
+        psutil.cpu_percent(interval=None)
+        logger.debug("psutil cpu_percent warmup done")
+    except Exception:
+        logger.debug("psutil warmup skipped (import or call failed)")
+
     # 注册默认天气源 Provider 到全局注册表
     # 使 /config/weather/providers 端点能查询到已注册的天气源
     try:

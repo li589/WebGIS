@@ -1,7 +1,7 @@
 /** * InfoPanel 样式 Tab：透明度 / 符号化 / 调色板 / 值域 / 风场 / 天气源。 * * 从 InfoPanel.vue
 模板抽取（原 1836-2245 行）。自包含组件，直接使用 composables。 */
 <script setup lang="ts">
-import { computed, onBeforeUnmount } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import AppButton from '../ui/AppButton.vue'
 import AppSelect from '../ui/AppSelect.vue'
@@ -41,6 +41,7 @@ const pointWeatherRef = computed(() => props.pointWeather)
 const {
   weatherRenderHint,
   styleRenderHint,
+  normalizedUnitLabel,
   styleFieldLabel,
   styleRangeMeta,
   weatherLegendStops,
@@ -84,6 +85,41 @@ const {
 } = useWeatherProviders(displayLayerRef, isRealtimeWeatherLayerRef)
 
 const { importedVectorStyle, patchImportedVectorStyle } = useImportExport(displayLayerRef)
+
+// ── 配色下拉框动态翻转 ──────────────────────────────────────────────
+const paletteDropdownRef = ref<HTMLElement | null>(null)
+const dropdownOpenUp = ref(false)
+
+watch(paletteDropdownOpen, async (open) => {
+  if (!open) {
+    dropdownOpenUp.value = false
+    return
+  }
+  await nextTick()
+  const el = paletteDropdownRef.value
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  const spaceBelow = window.innerHeight - rect.bottom
+  const dropdownH = el.offsetHeight
+  dropdownOpenUp.value = spaceBelow < dropdownH + 8 && rect.top > dropdownH + 8
+})
+
+function closePaletteDropdown() {
+  paletteDropdownOpen.value = false
+}
+
+let scrollContainer: Element | null = null
+onMounted(() => {
+  scrollContainer = document.querySelector('.panel-scroll')
+  if (scrollContainer) {
+    scrollContainer.addEventListener('scroll', closePaletteDropdown, { passive: true })
+  }
+})
+onBeforeUnmount(() => {
+  if (scrollContainer) {
+    scrollContainer.removeEventListener('scroll', closePaletteDropdown)
+  }
+})
 
 const jobLayer = computed(() => props.displayLayer.jobLayer)
 
@@ -339,7 +375,7 @@ onBeforeUnmount(() => {
     <div v-if="styleRenderHint" class="weather-legend-row">
       <span class="weather-legend-label">图例</span>
       <span class="weather-legend-meta">
-        {{ styleRenderHint.primary_metric }} · {{ styleRenderHint.unit_label }}
+        {{ styleRenderHint.primary_metric }} · {{ normalizedUnitLabel }}
       </span>
     </div>
     <div v-if="styleRenderHint && weatherLegendGradient" class="weather-legend-gradient-wrap">
@@ -397,6 +433,7 @@ onBeforeUnmount(() => {
         <span class="style-section-label">无效值 (NaN)</span>
         <AppSelect
           v-model="nodataModeValue"
+          size="sm"
           :options="[
             { label: '透明', value: 'transparent' },
             { label: '固色填充', value: 'solid' },
@@ -449,7 +486,12 @@ onBeforeUnmount(() => {
           >▾</span
         >
       </button>
-      <div v-if="paletteDropdownOpen && canEditPalette" class="palette-dropdown">
+      <div
+        v-if="paletteDropdownOpen && canEditPalette"
+        ref="paletteDropdownRef"
+        class="palette-dropdown"
+        :class="{ 'palette-dropdown--up': dropdownOpenUp }"
+      >
         <button
           v-for="opt in paletteOptions"
           :key="opt.id"

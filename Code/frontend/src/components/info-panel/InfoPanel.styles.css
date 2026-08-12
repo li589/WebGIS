@@ -177,7 +177,7 @@
   padding: 0;
   border-radius: var(--panel-radius);
   border: 1px solid var(--border-default);
-  background: linear-gradient(180deg, var(--surface-raised), var(--surface-sunken));
+  background: linear-gradient(180deg, var(--panel-bg-top), var(--panel-bg-bottom));
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   box-shadow:
@@ -1275,6 +1275,12 @@
   overflow-y: auto;
   display: grid;
   gap: 0.16rem;
+}
+.palette-dropdown--up {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 0.2rem;
 }
 .palette-option {
   display: flex;

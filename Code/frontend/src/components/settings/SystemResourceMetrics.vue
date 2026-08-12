@@ -3,6 +3,9 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { fetchRuntimeResources } from '../../services/settings-api'
 import type { ResourceUsageResponse } from '../../types/api-reexports'
+import GpuPerfTestDialog from './GpuPerfTestDialog.vue'
+
+const gpuPerfDialogOpen = ref(false)
 
 interface FrontendMetrics {
   /** JS 堆占用 MB */
@@ -63,9 +66,7 @@ function collectFrontendMetrics(): FrontendMetrics {
     try {
       const canvas = document.createElement('canvas')
       const gl = (canvas.getContext('webgl2') || canvas.getContext('webgl')) as
-        | WebGLRenderingContext
-        | WebGL2RenderingContext
-        | null
+        WebGLRenderingContext | WebGL2RenderingContext | null
       if (gl) {
         const ext = gl.getExtension('WEBGL_debug_renderer_info')
         const raw =
@@ -79,7 +80,8 @@ function collectFrontendMetrics(): FrontendMetrics {
   // DOM 节点数
   m.domNodes = document.querySelectorAll('*').length
   // 页面加载耗时
-  const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
+  const navEntry = performance.getEntriesByType('navigation')[0] as
+    PerformanceNavigationTiming | undefined
   m.loadTimeMs = navEntry ? Math.round(navEntry.loadEventEnd) : null
   // 网络连接类型
   const conn = (navigator as Navigator & { connection?: { effectiveType?: string } }).connection
@@ -200,7 +202,11 @@ function percentOf(used: number | null | undefined, total: number | null | undef
           <span class="metric-label">加载耗时</span>
           <div class="metric-main">
             <span class="metric-value">
-              {{ frontend.loadTimeMs != null && frontend.loadTimeMs > 0 ? `${frontend.loadTimeMs} ms` : '—' }}
+              {{
+                frontend.loadTimeMs != null && frontend.loadTimeMs > 0
+                  ? `${frontend.loadTimeMs} ms`
+                  : '—'
+              }}
             </span>
           </div>
         </li>
@@ -216,6 +222,14 @@ function percentOf(used: number | null | undefined, total: number | null | undef
             <span class="metric-value gpu-name" :title="frontend.gpu ?? ''">{{
               frontend.gpu || '不可用'
             }}</span>
+            <button
+              class="gpu-perf-btn"
+              type="button"
+              title="GPU 性能检测"
+              @click="gpuPerfDialogOpen = true"
+            >
+              性能检测
+            </button>
           </div>
         </li>
       </ul>
@@ -240,7 +254,11 @@ function percentOf(used: number | null | undefined, total: number | null | undef
                 />
               </div>
               <span class="metric-value">
-                {{ backend.system.cpu_percent != null ? `${backend.system.cpu_percent.toFixed(1)}%` : '—' }}
+                {{
+                  backend.system.cpu_percent != null
+                    ? `${backend.system.cpu_percent.toFixed(1)}%`
+                    : '—'
+                }}
               </span>
             </div>
           </li>
@@ -295,13 +313,17 @@ function percentOf(used: number | null | undefined, total: number | null | undef
           <li v-for="p in backend.processes" :key="p.pid" class="process-row">
             <span class="process-name" :title="p.name">{{ p.name }}</span>
             <span class="process-pid">#{{ p.pid }}</span>
-            <span class="process-cpu">CPU {{ p.cpu_percent != null ? `${p.cpu_percent.toFixed(1)}%` : '—' }}</span>
+            <span class="process-cpu"
+              >CPU {{ p.cpu_percent != null ? `${p.cpu_percent.toFixed(1)}%` : '—' }}</span
+            >
             <span class="process-mem">RAM {{ formatMb(p.memory_rss_mb) }}</span>
           </li>
         </ul>
       </template>
     </div>
   </div>
+
+  <GpuPerfTestDialog :open="gpuPerfDialogOpen" @close="gpuPerfDialogOpen = false" />
 </template>
 
 <style scoped>
@@ -400,6 +422,24 @@ function percentOf(used: number | null | undefined, total: number | null | undef
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 11rem;
+}
+
+.gpu-perf-btn {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-sm);
+  background: var(--accent-surface);
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: var(--font-size-caption);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+
+.gpu-perf-btn:hover {
+  background: var(--surface-hover);
 }
 
 .processes-title {
