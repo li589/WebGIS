@@ -18,6 +18,7 @@ import { Map, X } from 'lucide-vue-next'
 import { listCrs, transformBounds } from '@/services/crs'
 import type { CRSOption } from '@/services/crs'
 import { fetchCrsOptionsExpanded } from '@/services/data-import'
+import AppSelect from '@/components/ui/AppSelect.vue'
 
 interface DetectionResult {
   /** 后端 RasterImportResult 字段均为 optional，dialog 内部已做 fallback */
@@ -228,7 +229,7 @@ watch(
       <div class="panel-header">
         <Map :size="16" class="panel-icon" aria-hidden="true" />
         <span>确认栅格数据坐标系 — {{ fileName }}</span>
-        <button class="close-btn" :disabled="isBusy" title="关闭" @click="handleCancel">
+        <button class="close-btn" :disabled="isBusy" title="关闭" aria-label="关闭" @click="handleCancel">
           <X :size="14" aria-hidden="true" />
         </button>
       </div>
@@ -269,11 +270,10 @@ watch(
             placeholder="搜索 EPSG / 名称（全量 UTM/GK）"
             style="margin-bottom: 0.35rem"
           />
-          <select v-model="selectedCrs" class="col-select">
-            <option v-for="opt in filteredCrsOptions" :key="opt.code" :value="opt.code">
-              {{ opt.code }} — {{ opt.label }}
-            </option>
-          </select>
+          <AppSelect
+            v-model="selectedCrs"
+            :options="filteredCrsOptions.map((opt) => ({ label: `${opt.code} — ${opt.label}`, value: opt.code }))"
+          />
         </label>
       </div>
       <div class="col-row">

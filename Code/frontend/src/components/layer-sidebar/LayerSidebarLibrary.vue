@@ -2,6 +2,7 @@
 import { LAYERS_COPY, INSPECT_COPY } from '../../ui-copy'
 import { Info, Lock, Settings } from 'lucide-vue-next'
 import type { RuntimeLayerLibraryItem } from '../../stores/layers/types'
+import AppSelect from '../ui/AppSelect.vue'
 
 defineProps<{
   searchQuery: string
@@ -160,18 +161,11 @@ const emit = defineEmits<{
                 <div class="source-weather-live">
                   <label class="weather-src-label">
                     <span class="src-dot" :style="{ background: item.accentColor }"></span>
-                    <select
-                      class="weather-src-select"
-                      :value="weatherSourcePrefsValue(item.catalogId)"
+                    <AppSelect
+                      :model-value="weatherSourcePrefsValue(item.catalogId)"
                       :disabled="!!weatherProvidersLoading[item.catalogId]"
                       @focus="emit('ensureWeatherProviders', item.catalogId)"
-                      @change="
-                        emit(
-                          'onWeatherSourceChange',
-                          item.catalogId,
-                          ($event.target as HTMLSelectElement).value,
-                        )
-                      "
+                      @change="(val: string) => emit('onWeatherSourceChange', item.catalogId, val)"
                     >
                       <option value="auto">{{ INSPECT_COPY.providerAuto }}</option>
                       <option
@@ -182,7 +176,7 @@ const emit = defineEmits<{
                       >
                         {{ weatherProviderOptionLabel(p) }}
                       </option>
-                    </select>
+                    </AppSelect>
                   </label>
                   <p v-if="weatherSourceQualityHint(item.catalogId)" class="src-sparse-hint">
                     {{ weatherSourceQualityHint(item.catalogId) }}

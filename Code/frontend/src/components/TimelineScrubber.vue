@@ -463,7 +463,11 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
         <div
           class="date-display"
           :title="isStatic ? '静态数据' : '点击弹出日期/时间选择器'"
+          role="button"
+          tabindex="0"
           @click="triggerDatePicker"
+          @keydown.enter.prevent="triggerDatePicker"
+          @keydown.space.prevent="triggerDatePicker"
         >
           <svg class="calendar-icon" viewBox="0 0 16 16" aria-hidden="true">
             <path

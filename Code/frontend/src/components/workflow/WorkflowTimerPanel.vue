@@ -604,6 +604,7 @@ onUnmounted(() => {
             class="close-btn"
             type="button"
             title="关闭"
+            aria-label="关闭"
             @click="emit('close')"
           >
             <X :size="14" aria-hidden="true" />
@@ -684,6 +685,7 @@ onUnmounted(() => {
                     type="button"
                     :disabled="lastActionTimerId === timer.timer_id"
                     :title="timer.enabled ? '点击禁用' : '点击启用'"
+                    :aria-label="timer.enabled ? '点击禁用' : '点击启用'"
                     @click="timersStore.toggleEnabled(timer)"
                   >
                     <span class="toggle-knob"></span>
@@ -692,11 +694,12 @@ onUnmounted(() => {
                     class="action-btn primary"
                     type="button"
                     :disabled="runningTimerIds.has(timer.timer_id)"
+                    aria-label="运行定时器"
                     @click="runTimer(timer)"
                   >
                     {{ runningTimerIds.has(timer.timer_id) ? '…' : '' }}<Play v-if="!runningTimerIds.has(timer.timer_id)" :size="14" aria-hidden="true" />
                   </button>
-                  <button class="action-btn danger" type="button" @click="askDelete(timer)"><X :size="14" aria-hidden="true" /></button>
+                  <button class="action-btn danger" type="button" aria-label="删除定时器" @click="askDelete(timer)"><X :size="14" aria-hidden="true" /></button>
                 </div>
               </button>
             </div>

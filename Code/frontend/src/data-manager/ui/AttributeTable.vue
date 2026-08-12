@@ -26,6 +26,7 @@ import {
 } from '../core/workspace-store'
 import { useLayersStore } from '../../stores/layers'
 import { DATA_COPY } from '../../ui-copy'
+import AppSelect from '../../components/ui/AppSelect.vue'
 
 const layersStore = useLayersStore()
 
@@ -228,9 +229,8 @@ async function load() {
   }
 }
 
-function onSelectLayer(e: Event) {
-  const v = (e.target as HTMLSelectElement).value
-  dataWorkspaceLayerId.value = v || null
+function onSelectLayer(val: string) {
+  dataWorkspaceLayerId.value = val || null
 }
 
 function prevPage() {
@@ -554,19 +554,21 @@ function toggleSort(field: string) {
     <div class="attr-toolbar">
       <label>
         {{ DATA_COPY.attrLayer }}
-        <select :value="selectedLayer?.instanceId ?? ''" @change="onSelectLayer">
-          <option v-if="!importedVectors.length" value="">{{ DATA_COPY.attrEmpty }}</option>
-          <option v-for="l in importedVectors" :key="l.instanceId" :value="l.instanceId">
-            {{ l.name }}
-          </option>
-        </select>
+        <AppSelect
+          :model-value="selectedLayer?.instanceId ?? ''"
+          :options="[
+            ...(!importedVectors.length ? [{ label: DATA_COPY.attrEmpty, value: '' }] : []),
+            ...importedVectors.map((l) => ({ label: l.name || l.instanceId, value: l.instanceId })),
+          ]"
+          @update:model-value="onSelectLayer"
+        />
       </label>
       <label>
         {{ DATA_COPY.filterField }}
-        <select v-model="filterField">
-          <option value="">—</option>
-          <option v-for="c in columns" :key="c" :value="c">{{ c }}</option>
-        </select>
+        <AppSelect
+          v-model="filterField"
+          :options="[{ label: '—', value: '' }, ...columns.map((c) => ({ label: c, value: c }))]"
+        />
       </label>
       <label>
         {{ DATA_COPY.filterContains }}
@@ -626,10 +628,10 @@ function toggleSort(field: string) {
 
       <label>
         {{ DATA_COPY.renameFrom }}
-        <select v-model="renameFrom">
-          <option value="">—</option>
-          <option v-for="c in columns" :key="c" :value="c">{{ c }}</option>
-        </select>
+        <AppSelect
+          v-model="renameFrom"
+          :options="[{ label: '—', value: '' }, ...columns.map((c) => ({ label: c, value: c }))]"
+        />
       </label>
       <label>
         {{ DATA_COPY.renameTo }}
@@ -671,10 +673,10 @@ function toggleSort(field: string) {
       </button>
       <label>
         {{ DATA_COPY.attrBatchField }}
-        <select v-model="batchField">
-          <option value="">—</option>
-          <option v-for="c in columns" :key="c" :value="c">{{ c }}</option>
-        </select>
+        <AppSelect
+          v-model="batchField"
+          :options="[{ label: '—', value: '' }, ...columns.map((c) => ({ label: c, value: c }))]"
+        />
       </label>
       <label>
         {{ DATA_COPY.attrBatchValue }}
@@ -722,6 +724,7 @@ function toggleSort(field: string) {
                     type="button"
                     class="del-field"
                     :title="DATA_COPY.attrDeleteField"
+                    :aria-label="DATA_COPY.attrDeleteField"
                     @click.stop="doDeleteField(c)"
                   >
                     ×

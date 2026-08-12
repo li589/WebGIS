@@ -1,6 +1,7 @@
 ﻿<script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { DATA_COPY } from '../../ui-copy'
+import AppSelect from '../../components/ui/AppSelect.vue'
 import {
   exportLayer,
   exportLayersBatch,
@@ -493,20 +494,26 @@ async function doExport() {
           </ul>
           <label v-if="hasVector">
             矢量 {{ DATA_COPY.exportFormat }}
-            <select v-model="vectorFormat">
-              <option value="geojson">GeoJSON</option>
-              <option value="csv">CSV</option>
-              <option value="shp-zip">SHP (zip)</option>
-            </select>
+            <AppSelect
+              v-model="vectorFormat"
+              :options="[
+                { label: 'GeoJSON', value: 'geojson' },
+                { label: 'CSV', value: 'csv' },
+                { label: 'SHP (zip)', value: 'shp-zip' },
+              ]"
+            />
           </label>
           <label v-if="hasRaster">
             栅格 {{ DATA_COPY.exportFormat }}
-            <select v-model="rasterFormat">
-              <option value="geotiff">{{ DATA_COPY.exportRasterGeotiff }}</option>
-              <option value="mat">{{ DATA_COPY.exportRasterMat }}</option>
-              <option value="netcdf">{{ DATA_COPY.exportRasterNc }}</option>
-              <option value="png">{{ DATA_COPY.exportRasterPng }}</option>
-            </select>
+            <AppSelect
+              v-model="rasterFormat"
+              :options="[
+                { label: DATA_COPY.exportRasterGeotiff, value: 'geotiff' },
+                { label: DATA_COPY.exportRasterMat, value: 'mat' },
+                { label: DATA_COPY.exportRasterNc, value: 'netcdf' },
+                { label: DATA_COPY.exportRasterPng, value: 'png' },
+              ]"
+            />
           </label>
           <fieldset v-if="showTimePicker" class="time-export">
             <legend>
@@ -522,9 +529,11 @@ async function doExport() {
                 {{ DATA_COPY.exportTimeModeMulti }}
               </label>
             </div>
-            <select v-if="timeExportMode === 'single'" v-model="selectedTime">
-              <option v-for="t in availableTimes" :key="t" :value="t">{{ t }}</option>
-            </select>
+            <AppSelect
+              v-if="timeExportMode === 'single'"
+              v-model="selectedTime"
+              :options="availableTimes.map((t) => ({ label: t, value: t }))"
+            />
             <template v-else>
               <div class="sel-actions">
                 <button type="button" class="link-btn" @click="selectAllExportTimes">
@@ -556,11 +565,14 @@ async function doExport() {
           </label>
           <label>
             {{ DATA_COPY.exportOutputCrs }}
-            <select v-model="outputCrs">
-              <option value="">{{ DATA_COPY.exportOutputCrsSource }}</option>
-              <option value="EPSG:4326">EPSG:4326 (WGS84)</option>
-              <option value="EPSG:3857">EPSG:3857 (Web Mercator)</option>
-            </select>
+            <AppSelect
+              v-model="outputCrs"
+              :options="[
+                { label: DATA_COPY.exportOutputCrsSource, value: '' },
+                { label: 'EPSG:4326 (WGS84)', value: 'EPSG:4326' },
+                { label: 'EPSG:3857 (Web Mercator)', value: 'EPSG:3857' },
+              ]"
+            />
           </label>
           <fieldset v-if="showFieldPicker" class="time-export">
             <legend>{{ DATA_COPY.exportFields }}</legend>
@@ -589,11 +601,10 @@ async function doExport() {
           </fieldset>
           <label v-if="needsTextEncoding">
             {{ DATA_COPY.exportEncoding }}
-            <select v-model="textEncoding">
-              <option v-for="opt in encodingOptions" :key="opt.id" :value="opt.id">
-                {{ opt.label }}
-              </option>
-            </select>
+            <AppSelect
+              v-model="textEncoding"
+              :options="encodingOptions.map((opt) => ({ label: opt.label, value: opt.id }))"
+            />
           </label>
           <p v-if="needsTextEncoding" class="enc-hint">{{ DATA_COPY.exportEncodingHint }}</p>
           <button

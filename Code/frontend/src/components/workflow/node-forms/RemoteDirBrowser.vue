@@ -137,12 +137,13 @@ watch(
             class="path-btn"
             :disabled="currentPath === '/'"
             title="返回上级"
+            aria-label="返回上级"
             @click="goUp"
           >
             ↑
           </button>
           <span class="path-current" :title="currentPath">{{ currentPath }}</span>
-          <button type="button" class="path-btn" title="刷新" @click="loadDir(currentPath)">
+          <button type="button" class="path-btn" title="刷新" aria-label="刷新" @click="loadDir(currentPath)">
             ↻
           </button>
         </div>

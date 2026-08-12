@@ -17,6 +17,7 @@ import {
   type PortalCredentialPublic,
   type PortalCredentialUpsertRequest,
 } from '../../services/settings-api'
+import AppSelect from '../ui/AppSelect.vue'
 
 const settingsStore = useSettingsStore()
 const weatherTileManager = useWeatherTileManager()
@@ -438,11 +439,14 @@ void refreshCache()
         <div class="info-grid">
           <div class="info-row">
             <span class="info-label">鉴权类型</span>
-            <select v-model="portalForms[id].auth_type" class="field">
-              <option value="bearer">Bearer token</option>
-              <option value="basic">Basic 用户名密码</option>
-              <option value="header">自定义 Header</option>
-            </select>
+            <AppSelect
+              v-model="portalForms[id].auth_type"
+              :options="[
+                { label: 'Bearer token', value: 'bearer' },
+                { label: 'Basic 用户名密码', value: 'basic' },
+                { label: '自定义 Header', value: 'header' },
+              ]"
+            />
           </div>
           <div class="info-row">
             <span class="info-label">用户名</span>

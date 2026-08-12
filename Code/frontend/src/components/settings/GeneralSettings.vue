@@ -8,6 +8,7 @@ import {
   isMapDistributionChromeEnabled,
   setMapDistributionChromeEnabled,
 } from '../../services/settings-local'
+import AppSelect from '../ui/AppSelect.vue'
 
 const settingsStore = useSettingsStore()
 const weatherTileManager = useWeatherTileManager()
@@ -462,14 +463,12 @@ const restartParams = computed(() => {
               <span class="param-desc">{{ param.description }}</span>
             </div>
             <div class="runtime-control-group">
-              <select
+              <AppSelect
                 v-if="param.type === 'select'"
                 v-model="runtimeValues[param.key]"
-                class="runtime-select"
                 :disabled="savingKey === param.key"
-              >
-                <option v-for="opt in param.options" :key="opt" :value="opt">{{ opt }}</option>
-              </select>
+                :options="(param.options ?? []).map((opt) => ({ label: opt, value: opt }))"
+              />
               <input
                 v-else
                 v-model.number="runtimeValues[param.key]"

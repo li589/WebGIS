@@ -26,6 +26,7 @@ import {
 } from '../../../composables/system-settings-fill'
 import { fieldMapForNodeType } from '../../../composables/node-form-system-settings-map'
 import { WORKFLOW_COPY } from '../../../ui-copy/workflow'
+import AppSelect from '../../ui/AppSelect.vue'
 
 const NODE_TYPE = 'download/nsidc_smap_download'
 const PATH_FIELD_MAP = fieldMapForNodeType(NODE_TYPE)
@@ -114,11 +115,6 @@ function update(key: string, value: unknown) {
   validateForm()
   emit('update-property', key, value)
 }
-
-function onVersionChange(event: Event) {
-  const raw = (event.target as HTMLSelectElement).value
-  update('version', Number(raw))
-}
 </script>
 
 <template>
@@ -140,15 +136,15 @@ function onVersionChange(event: Event) {
     <!-- 版本 -->
     <div class="form-row">
       <label class="form-label">版本 version</label>
-      <select
-        class="form-input form-select"
-        :value="String(form.version ?? '6')"
+      <AppSelect
+        :model-value="String(form.version ?? '6')"
         :disabled="readonly"
-        @change="onVersionChange"
-      >
-        <option value="5">5</option>
-        <option value="6">6</option>
-      </select>
+        :options="[
+          { label: '5', value: '5' },
+          { label: '6', value: '6' },
+        ]"
+        @change="(val: string) => update('version', Number(val))"
+      />
     </div>
 
     <!-- 日期范围 -->

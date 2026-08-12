@@ -218,6 +218,7 @@ function sourcePillLabel(source: TileSourceConfig): string {
             :class="{ active: uiStore.interactionMode === 'move' }"
             type="button"
             title="移动模式（拖动平移地图）"
+            aria-label="移动模式（拖动平移地图）"
             @click="setInteractionMode('move')"
           >
             <Move :size="14" />
@@ -227,6 +228,7 @@ function sourcePillLabel(source: TileSourceConfig): string {
             :class="{ active: uiStore.interactionMode === 'select' }"
             type="button"
             title="点查模式（点击查询）"
+            aria-label="点查模式（点击查询）"
             @click="setInteractionMode('select')"
           >
             <Crosshair :size="14" />
@@ -236,6 +238,7 @@ function sourcePillLabel(source: TileSourceConfig): string {
             :class="{ active: uiStore.interactionMode === 'measure' }"
             type="button"
             title="测量模式（点击打点，双击完成）"
+            aria-label="测量模式（点击打点，双击完成）"
             @click="setInteractionMode('measure')"
           >
             <Ruler :size="14" />
@@ -245,6 +248,7 @@ function sourcePillLabel(source: TileSourceConfig): string {
             class="mode-btn mode-btn--clear"
             type="button"
             title="清除测量路径"
+            aria-label="清除测量路径"
             @click="clearMeasure"
           >
             <Trash2 :size="14" />

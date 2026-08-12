@@ -6,6 +6,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount } from 'vue'
 
+import AppSelect from '../ui/AppSelect.vue'
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
 import type { WeatherPointResponse } from '../../services/runtime-api'
 import type { OverlayTimeState } from '../map/overlay-image-module'
@@ -290,9 +291,8 @@ onBeforeUnmount(() => {
       </button>
       <label v-if="isRealtimeWeatherLayer" class="weather-provider-row">
         <span class="weather-provider-label">天气数据源</span>
-        <select
+        <AppSelect
           v-model="selectedWeatherProvider"
-          class="weather-provider-select"
           :disabled="weatherProvidersLoading"
           :title="
             weatherProvidersError || '自动按优先级选择已启用源；钉选后瓦片与点查均走该源'
@@ -307,7 +307,7 @@ onBeforeUnmount(() => {
           >
             {{ weatherProviderOptionLabel(opt) }}
           </option>
-        </select>
+        </AppSelect>
       </label>
       <p
         v-if="isRealtimeWeatherLayer && selectedWeatherProviderHint"
@@ -415,10 +415,14 @@ onBeforeUnmount(() => {
       </div>
       <div v-if="canEditPalette" class="style-nodata-row">
         <span class="style-section-label">无效值 (NaN)</span>
-        <select v-model="nodataModeValue" class="style-nodata-select" title="无效像元显示">
-          <option value="transparent">透明</option>
-          <option value="solid">固色填充</option>
-        </select>
+        <AppSelect
+          v-model="nodataModeValue"
+          :options="[
+            { label: '透明', value: 'transparent' },
+            { label: '固色填充', value: 'solid' },
+          ]"
+          title="无效像元显示"
+        />
         <input
           v-if="nodataModeValue === 'solid'"
           v-model="nodataColorValue"

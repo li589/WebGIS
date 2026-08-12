@@ -10,6 +10,7 @@ import {
   type UserRole,
 } from '../../services/auth-api'
 import { useAuthStore } from '../../stores/auth'
+import AppSelect from '../ui/AppSelect.vue'
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -185,11 +186,14 @@ async function removeAccount(userId: number, username: string) {
       <div class="create-form">
         <input v-model="newUsername" type="text" placeholder="新用户名" />
         <input v-model="newPassword" type="password" placeholder="初始密码（≥8位）" />
-        <select v-model="newRole">
-          <option value="admin">管理员</option>
-          <option value="operator">操作员</option>
-          <option value="viewer">只读</option>
-        </select>
+        <AppSelect
+          v-model="newRole"
+          :options="[
+            { label: '管理员', value: 'admin' },
+            { label: '操作员', value: 'operator' },
+            { label: '只读', value: 'viewer' },
+          ]"
+        />
         <button type="button" class="primary-btn" @click="createAccount">创建用户</button>
       </div>
 
@@ -207,15 +211,16 @@ async function removeAccount(userId: number, username: string) {
           <tr v-for="u in auth.users" :key="u.id">
             <td>{{ u.username }}</td>
             <td>
-              <select
-                :value="u.role"
+              <AppSelect
+                :model-value="u.role"
                 :disabled="u.id === auth.user?.id"
-                @change="changeRole(u.id, ($event.target as HTMLSelectElement).value as UserRole)"
-              >
-                <option value="admin">管理员</option>
-                <option value="operator">操作员</option>
-                <option value="viewer">只读</option>
-              </select>
+                :options="[
+                  { label: '管理员', value: 'admin' },
+                  { label: '操作员', value: 'operator' },
+                  { label: '只读', value: 'viewer' },
+                ]"
+                @change="(val) => changeRole(u.id, val as UserRole)"
+              />
             </td>
             <td>
               <label class="enabled-toggle">

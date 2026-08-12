@@ -3,6 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSettingsStore } from '../../stores/settings'
 import type { WeatherProviderItem, WeatherProviderType } from '../../services/settings-api'
+import AppSelect from '../ui/AppSelect.vue'
 
 const settingsStore = useSettingsStore()
 const { weatherProviders, weatherConfig } = storeToRefs(settingsStore)
@@ -462,13 +463,12 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
                   type="checkbox"
                   class="form-checkbox"
                 />
-                <select
+                <AppSelect
                   v-else-if="field.field_type === 'select' && (field.options?.length ?? 0) > 0"
-                  v-model="editingConfig[p.provider_id][field.key]"
-                  class="form-input"
-                >
-                  <option v-for="opt in field.options" :key="opt" :value="opt">{{ opt }}</option>
-                </select>
+                  :model-value="String(editingConfig[p.provider_id][field.key] ?? '')"
+                  :options="(field.options ?? []).map((opt) => ({ label: opt, value: opt }))"
+                  @update:model-value="(val: string) => (editingConfig[p.provider_id][field.key] = val)"
+                />
                 <textarea
                   v-else
                   v-model="editingConfig[p.provider_id][field.key] as string"

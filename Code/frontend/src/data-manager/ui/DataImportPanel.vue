@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { DATA_COPY } from '../../ui-copy'
+import AppSelect from '../../components/ui/AppSelect.vue'
 import {
   applyDocumentOps,
   chunkedUpload,
@@ -982,10 +983,10 @@ async function commitDocument() {
             <div class="ops-grid">
               <label>
                 {{ DATA_COPY.renameFrom }}
-                <select v-model="opRenameFrom">
-                  <option value="">—</option>
-                  <option v-for="c in documentColumns" :key="c" :value="c">{{ c }}</option>
-                </select>
+                <AppSelect
+                  v-model="opRenameFrom"
+                  :options="[{ label: '—', value: '' }, ...documentColumns.map((c) => ({ label: c, value: c }))]"
+                />
               </label>
               <label>
                 {{ DATA_COPY.renameTo }}
@@ -993,10 +994,10 @@ async function commitDocument() {
               </label>
               <label>
                 {{ DATA_COPY.filterField }}
-                <select v-model="opFilterField">
-                  <option value="">—</option>
-                  <option v-for="c in documentColumns" :key="c" :value="c">{{ c }}</option>
-                </select>
+                <AppSelect
+                  v-model="opFilterField"
+                  :options="[{ label: '—', value: '' }, ...documentColumns.map((c) => ({ label: c, value: c }))]"
+                />
               </label>
               <label>
                 {{ DATA_COPY.filterContains }}
@@ -1004,10 +1005,10 @@ async function commitDocument() {
               </label>
               <label>
                 {{ DATA_COPY.findReplaceField }}
-                <select v-model="opFindField">
-                  <option value="">—</option>
-                  <option v-for="c in documentColumns" :key="c" :value="c">{{ c }}</option>
-                </select>
+                <AppSelect
+                  v-model="opFindField"
+                  :options="[{ label: '—', value: '' }, ...documentColumns.map((c) => ({ label: c, value: c }))]"
+                />
               </label>
               <label>
                 {{ DATA_COPY.findText }}
@@ -1019,10 +1020,10 @@ async function commitDocument() {
               </label>
               <label>
                 {{ DATA_COPY.splitField }}
-                <select v-model="opSplitField">
-                  <option value="">—</option>
-                  <option v-for="c in documentColumns" :key="c" :value="c">{{ c }}</option>
-                </select>
+                <AppSelect
+                  v-model="opSplitField"
+                  :options="[{ label: '—', value: '' }, ...documentColumns.map((c) => ({ label: c, value: c }))]"
+                />
               </label>
               <label>
                 {{ DATA_COPY.splitSep }}
@@ -1059,15 +1060,17 @@ async function commitDocument() {
             <div class="commit-row">
               <label>
                 {{ DATA_COPY.xField }}
-                <select v-model="xField">
-                  <option v-for="c in documentColumns" :key="c" :value="c">{{ c }}</option>
-                </select>
+                <AppSelect
+                  v-model="xField"
+                  :options="documentColumns.map((c) => ({ label: c, value: c }))"
+                />
               </label>
               <label>
                 {{ DATA_COPY.yField }}
-                <select v-model="yField">
-                  <option v-for="c in documentColumns" :key="c" :value="c">{{ c }}</option>
-                </select>
+                <AppSelect
+                  v-model="yField"
+                  :options="documentColumns.map((c) => ({ label: c, value: c }))"
+                />
               </label>
               <label>
                 {{ DATA_COPY.sourceCrs }}
@@ -1075,11 +1078,14 @@ async function commitDocument() {
               </label>
               <label>
                 交换 XY
-                <select v-model="docSwapXyMode">
-                  <option value="auto">自动检测</option>
-                  <option value="force">强制交换</option>
-                  <option value="keep">保持不交换</option>
-                </select>
+                <AppSelect
+                  v-model="docSwapXyMode"
+                  :options="[
+                    { label: '自动检测', value: 'auto' },
+                    { label: '强制交换', value: 'force' },
+                    { label: '保持不交换', value: 'keep' },
+                  ]"
+                />
               </label>
               <button class="primary-btn" type="button" :disabled="busy" @click="commitDocument">
                 {{ DATA_COPY.commit }}

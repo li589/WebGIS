@@ -47,6 +47,7 @@ import WorkflowRunDialog, { type WorkflowRunTarget } from './WorkflowRunDialog.v
 import WorkflowTimerPanel from './WorkflowTimerPanel.vue'
 import PipelineLauncher from './PipelineLauncher.vue'
 import NodeCacheDialog from './NodeCacheDialog.vue'
+import AppSelect from '../ui/AppSelect.vue'
 import { WORKFLOW_COPY } from '../../ui-copy'
 import {
   validateWorkflowBeforeRun,
@@ -940,12 +941,15 @@ defineExpose({
           </div>
           <div class="form-row">
             <label class="form-label">引擎</label>
-            <select v-model="newWorkflowEngine" class="form-select">
-              <option value="general">通用</option>
-              <option value="weather">天气引擎</option>
-              <option value="python_provider">Python 处理器</option>
-              <option value="gee">GEE</option>
-            </select>
+            <AppSelect
+              v-model="newWorkflowEngine"
+              :options="[
+                { label: '通用', value: 'general' },
+                { label: '天气引擎', value: 'weather' },
+                { label: 'Python 处理器', value: 'python_provider' },
+                { label: 'GEE', value: 'gee' },
+              ]"
+            />
           </div>
         </div>
         <div class="dialog-actions">

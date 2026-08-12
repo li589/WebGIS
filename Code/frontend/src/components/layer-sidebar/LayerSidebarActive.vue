@@ -143,6 +143,7 @@ const emit = defineEmits<{
               <button
                 class="vis-btn"
                 :title="row.layer.visible ? '隐藏图层' : '显示图层'"
+                :aria-label="row.layer.visible ? '隐藏图层' : '显示图层'"
                 @click="emit('toggleVisibility', row.layer.instanceId, $event)"
               >
                 <CircleDot v-if="row.layer.visible" :size="14" aria-hidden="true" />
@@ -168,6 +169,7 @@ const emit = defineEmits<{
               <button
                 class="del-btn"
                 title="移除图层"
+                aria-label="移除图层"
                 @click="emit('removeItem', row.layer.instanceId, $event)"
               >
                 <X :size="14" aria-hidden="true" />

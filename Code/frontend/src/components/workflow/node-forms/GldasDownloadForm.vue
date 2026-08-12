@@ -20,6 +20,7 @@ import {
 } from '../../../composables/system-settings-fill'
 import { fieldMapForNodeType } from '../../../composables/node-form-system-settings-map'
 import { WORKFLOW_COPY } from '../../../ui-copy/workflow'
+import AppSelect from '../../ui/AppSelect.vue'
 
 const NODE_TYPE = 'download/gldas_download'
 const PATH_FIELD_MAP = fieldMapForNodeType(NODE_TYPE)
@@ -114,14 +115,12 @@ function update(key: string, value: unknown) {
 
     <div class="form-row">
       <label class="form-label">版本 version</label>
-      <select
-        class="form-input form-select"
-        :value="String(form.version ?? '2.1')"
+      <AppSelect
+        :model-value="String(form.version ?? '2.1')"
         :disabled="readonly"
-        @change="update('version', ($event.target as HTMLSelectElement).value)"
-      >
-        <option value="2.1">2.1</option>
-      </select>
+        :options="[{ label: '2.1', value: '2.1' }]"
+        @change="(val: string) => update('version', val)"
+      />
     </div>
 
     <div class="form-row">

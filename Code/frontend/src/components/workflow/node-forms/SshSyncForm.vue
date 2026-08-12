@@ -30,6 +30,7 @@ import {
 } from '../../../composables/system-settings-fill'
 import { fieldMapForNodeType } from '../../../composables/node-form-system-settings-map'
 import { WORKFLOW_COPY } from '../../../ui-copy/workflow'
+import AppSelect from '../../ui/AppSelect.vue'
 
 const NODE_TYPE = 'download/ssh_sync'
 const PATH_FIELD_MAP = fieldMapForNodeType(NODE_TYPE)
@@ -188,16 +189,16 @@ function toggleFilter(ext: string) {
     <!-- 服务器类型 -->
     <div class="form-row">
       <label class="form-label">服务器 server_type</label>
-      <select
-        class="form-input form-select"
-        :value="String(form.server_type ?? 'hpc')"
+      <AppSelect
+        :model-value="String(form.server_type ?? 'hpc')"
         :disabled="readonly"
-        @change="update('server_type', ($event.target as HTMLSelectElement).value)"
-      >
-        <option value="hpc">hpc（SFTP 高性能集群）</option>
-        <option value="win11">win11（FileBrowser）</option>
-        <option value="nas">nas（FileBrowser）</option>
-      </select>
+        :options="[
+          { label: 'hpc（SFTP 高性能集群）', value: 'hpc' },
+          { label: 'win11（FileBrowser）', value: 'win11' },
+          { label: 'nas（FileBrowser）', value: 'nas' },
+        ]"
+        @change="(val: string) => update('server_type', val)"
+      />
       <span v-if="errors.server_type" class="field-error">{{ errors.server_type }}</span>
     </div>
 

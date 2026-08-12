@@ -731,7 +731,7 @@ async function handleLocateMe() {
           <p class="locate-error-msg">{{ locateError.message }}</p>
           <p class="locate-error-hint">{{ locateError.hint }}</p>
         </div>
-        <button class="locate-error-close" @click="locateError = null">×</button>
+        <button class="locate-error-close" aria-label="关闭定位错误提示" @click="locateError = null">×</button>
       </div>
     </Transition>
   </section>

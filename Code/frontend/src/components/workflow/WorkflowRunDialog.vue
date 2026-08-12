@@ -19,6 +19,7 @@ import {
   resolveExpectedOutputTags,
   resolveOutputNamePrefix,
 } from '../../utils/workflow-expected-outputs'
+import AppSelect from '../ui/AppSelect.vue'
 
 export interface WorkflowRunProductTarget {
   name: string
@@ -156,12 +157,15 @@ watch(outputTags, (tags) => {
       <div class="dialog-body">
         <div v-if="!linkedLayerId" class="layer-picker">
           <label class="form-label">选择关联图层 *</label>
-          <select v-model="pickedLayerId" class="form-select">
+          <AppSelect
+            v-model="pickedLayerId"
+            placeholder="请选择图层目录条目"
+          >
             <option value="" disabled>请选择图层目录条目</option>
             <option v-for="opt in catalogOptions" :key="opt.id" :value="opt.id">
               {{ opt.name }}（{{ opt.engine }}）
             </option>
-          </select>
+          </AppSelect>
           <p class="info-hint">当前工作流未绑定图层；选择后将作为本次运行的源图层。</p>
         </div>
 

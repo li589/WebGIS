@@ -14,6 +14,7 @@ import {
   type WeatherSyncOverview,
   type WeatherSyncStatus,
 } from '../../services/runtime-api'
+import AppSelect from '../ui/AppSelect.vue'
 
 const settingsStore = useSettingsStore()
 const weatherSyncStatusStore = useWeatherSyncStatusStore()
@@ -315,17 +316,12 @@ onBeforeUnmount(() => {
       <p class="channel-desc">写入后端 DB，立即影响时间轴覆盖、瓦片与点预报（全局单模型）。</p>
       <div class="setting-row">
         <label class="row-label">模型</label>
-        <select
+        <AppSelect
           v-model="selectedModel"
-          class="model-select"
           :disabled="modelUpdating"
+          :options="modelOptions.map((m) => ({ label: `${m.label}${syncDomains.includes(m.id) ? ' · 已在 sync 域' : ''}`, value: m.id }))"
           @change="onModelChange"
-        >
-          <option v-for="m in modelOptions" :key="m.id" :value="m.id">
-            {{ m.label }}
-            {{ syncDomains.includes(m.id) ? ' · 已在 sync 域' : '' }}
-          </option>
-        </select>
+        />
       </div>
       <div v-if="selectedModelMeta" class="model-meta">
         <span class="meta-chip">区域: {{ selectedModelMeta.region }}</span>

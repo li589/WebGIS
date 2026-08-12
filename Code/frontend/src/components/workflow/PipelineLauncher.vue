@@ -377,7 +377,7 @@ watch(
             <p v-else class="dialog-subtitle">选择一个流水线以启动端到端反演流程</p>
           </div>
         </div>
-        <button class="close-btn" type="button" title="关闭" @click="handleClose">
+        <button class="close-btn" type="button" title="关闭" aria-label="关闭" @click="handleClose">
           <X :size="14" aria-hidden="true" />
         </button>
       </header>

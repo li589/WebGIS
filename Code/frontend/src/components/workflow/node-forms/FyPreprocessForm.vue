@@ -27,6 +27,7 @@ import {
 } from '../../../composables/system-settings-fill'
 import { fieldMapForNodeType } from '../../../composables/node-form-system-settings-map'
 import { WORKFLOW_COPY } from '../../../ui-copy/workflow'
+import AppSelect from '../../ui/AppSelect.vue'
 
 const NODE_TYPE = 'download/fy_preprocess'
 const PATH_FIELD_MAP = fieldMapForNodeType(NODE_TYPE)
@@ -118,46 +119,46 @@ function update(key: string, value: unknown) {
     <!-- 卫星 -->
     <div class="form-row">
       <label class="form-label">卫星 satellite</label>
-      <select
-        class="form-input form-select"
-        :value="String(form.satellite ?? 'FY3D')"
+      <AppSelect
+        :model-value="String(form.satellite ?? 'FY3D')"
         :disabled="readonly"
-        @change="update('satellite', ($event.target as HTMLSelectElement).value)"
-      >
-        <option value="FY3D">FY3D</option>
-        <option value="FY3B">FY3B</option>
-      </select>
+        :options="[
+          { label: 'FY3D', value: 'FY3D' },
+          { label: 'FY3B', value: 'FY3B' },
+        ]"
+        @change="(val: string) => update('satellite', val)"
+      />
       <span v-if="errors.satellite" class="field-error">{{ errors.satellite }}</span>
     </div>
 
     <!-- 轨道模式 -->
     <div class="form-row">
       <label class="form-label">轨道模式 orbit_mode</label>
-      <select
-        class="form-input form-select"
-        :value="String(form.orbit_mode ?? 'MWRID')"
+      <AppSelect
+        :model-value="String(form.orbit_mode ?? 'MWRID')"
         :disabled="readonly"
-        @change="update('orbit_mode', ($event.target as HTMLSelectElement).value)"
-      >
-        <option value="MWRID">MWRID</option>
-        <option value="MWRIA">MWRIA</option>
-        <option value="Both">Both</option>
-      </select>
+        :options="[
+          { label: 'MWRID', value: 'MWRID' },
+          { label: 'MWRIA', value: 'MWRIA' },
+          { label: 'Both', value: 'Both' },
+        ]"
+        @change="(val: string) => update('orbit_mode', val)"
+      />
     </div>
 
     <!-- 输出文件类型 -->
     <div class="form-row">
       <label class="form-label">输出类型 outfile_type</label>
-      <select
-        class="form-input form-select"
-        :value="String(form.outfile_type ?? 'HDF5')"
+      <AppSelect
+        :model-value="String(form.outfile_type ?? 'HDF5')"
         :disabled="readonly"
-        @change="update('outfile_type', ($event.target as HTMLSelectElement).value)"
-      >
-        <option value="HDF5">HDF5</option>
-        <option value="NetCDF">NetCDF</option>
-        <option value="GTiff">GTiff</option>
-      </select>
+        :options="[
+          { label: 'HDF5', value: 'HDF5' },
+          { label: 'NetCDF', value: 'NetCDF' },
+          { label: 'GTiff', value: 'GTiff' },
+        ]"
+        @change="(val: string) => update('outfile_type', val)"
+      />
     </div>
 
     <!-- 输入目录 -->

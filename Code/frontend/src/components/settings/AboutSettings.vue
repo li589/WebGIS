@@ -115,7 +115,11 @@ function selectNode(name: string) {
           <div
             class="arch-node root"
             :class="{ selected: selectedNode === rootNode.name }"
+            role="button"
+            tabindex="0"
             @click="selectNode(rootNode.name)"
+            @keydown.enter.prevent="selectNode(rootNode.name)"
+            @keydown.space.prevent="selectNode(rootNode.name)"
           >
             {{ rootNode.name }}
           </div>
@@ -127,7 +131,11 @@ function selectNode(name: string) {
               <div
                 class="arch-node level-1"
                 :class="{ selected: selectedNode === child.name }"
+                role="button"
+                tabindex="0"
                 @click="selectNode(child.name)"
+                @keydown.enter.prevent="selectNode(child.name)"
+                @keydown.space.prevent="selectNode(child.name)"
               >
                 {{ child.name }}
               </div>
@@ -137,7 +145,11 @@ function selectNode(name: string) {
                   <div
                     class="arch-node level-2"
                     :class="{ selected: selectedNode === leaf.name }"
+                    role="button"
+                    tabindex="0"
                     @click="selectNode(leaf.name)"
+                    @keydown.enter.prevent="selectNode(leaf.name)"
+                    @keydown.space.prevent="selectNode(leaf.name)"
                   >
                     {{ leaf.name }}
                   </div>
@@ -149,7 +161,11 @@ function selectNode(name: string) {
                         :key="nested.name"
                         class="arch-node level-3"
                         :class="{ selected: selectedNode === nested.name }"
+                        role="button"
+                        tabindex="0"
                         @click="selectNode(nested.name)"
+                        @keydown.enter.prevent="selectNode(nested.name)"
+                        @keydown.space.prevent="selectNode(nested.name)"
                       >
                         {{ nested.name }}
                       </div>

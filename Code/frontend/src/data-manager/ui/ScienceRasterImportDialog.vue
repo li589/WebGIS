@@ -9,6 +9,7 @@ import { fetchCrsOptionsExpanded } from '@/services/data-import'
 import type { CRSOption } from '@/services/crs'
 import { detectRasterInvalidValues } from '../core/api'
 import { DATA_COPY } from '../../ui-copy'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import {
   buildImportTemporalPayload,
   guessTimeLabelFromFilename,
@@ -368,9 +369,10 @@ function handleCancel() {
         <div class="grid-2">
           <label>
             网格预设
-            <select v-model="gridPreset">
-              <option v-for="p in gridPresets" :key="p.id" :value="p.id">{{ p.label }}</option>
-            </select>
+            <AppSelect
+              v-model="gridPreset"
+              :options="gridPresets.map((p) => ({ label: p.label, value: p.id }))"
+            />
           </label>
           <label>
             源坐标系
@@ -380,22 +382,24 @@ function handleCancel() {
               placeholder="搜索 EPSG / 名称（全量 UTM/GK）"
               style="margin-bottom: 0.35rem"
             />
-            <select v-model="sourceCrs">
-              <option v-for="c in filteredCrsOptions" :key="c.code" :value="c.code">
-                {{ c.code }} — {{ c.label }}
-              </option>
-            </select>
+            <AppSelect
+              v-model="sourceCrs"
+              :options="filteredCrsOptions.map((c) => ({ label: `${c.code} — ${c.label}`, value: c.code }))"
+            />
           </label>
         </div>
         <p v-if="shapeHint" class="hint">当前选中变量尺寸：{{ shapeHint }}（行×列）</p>
         <p v-if="transposeHint" class="hint">{{ transposeHint }}</p>
         <label>
           轴序（XY）
-          <select v-model="axisOrder">
-            <option value="auto">自动（推荐，按网格预设校正颠倒）</option>
-            <option value="as_is">保持原样</option>
-            <option value="transpose">强制转置（等同 swap_xy）</option>
-          </select>
+          <AppSelect
+            v-model="axisOrder"
+            :options="[
+              { label: '自动（推荐，按网格预设校正颠倒）', value: 'auto' },
+              { label: '保持原样', value: 'as_is' },
+              { label: '强制转置（等同 swap_xy）', value: 'transpose' },
+            ]"
+          />
         </label>
         <p class="hint">轴序与 swap_xy 一致：transpose = 交换行列；EASE 全球图拉伸时优先用自动。</p>
         <div class="grid-4">
@@ -446,11 +450,14 @@ function handleCancel() {
         </label>
         <label>
           同名图层
-          <select v-model="conflictPolicy">
-            <option value="overwrite">覆盖已导入的同名图层（不额外占配额，推荐）</option>
-            <option value="rename">另存为新图层（需有剩余配额）</option>
-            <option value="error">若已存在则报错</option>
-          </select>
+          <AppSelect
+            v-model="conflictPolicy"
+            :options="[
+              { label: '覆盖已导入的同名图层（不额外占配额，推荐）', value: 'overwrite' },
+              { label: '另存为新图层（需有剩余配额）', value: 'rename' },
+              { label: '若已存在则报错', value: 'error' },
+            ]"
+          />
         </label>
       </section>
 

@@ -69,7 +69,7 @@ function handleExport() {
         >
           {{ errorCountDisplay }}
         </span>
-        <button class="close-btn" title="关闭" @click="emit('close')">
+        <button class="close-btn" title="关闭" aria-label="关闭" @click="emit('close')">
           <X :size="14" aria-hidden="true" />
         </button>
       </div>
@@ -120,7 +120,12 @@ function handleExport() {
           :key="entry.id"
           class="log-entry"
           :class="[`cat-${entry.category}`, `sev-${entry.severity}`]"
+          role="button"
+          :tabindex="entry.details ? 0 : -1"
+          :aria-expanded="entry.details ? expandedId === entry.id : undefined"
           @click="toggleExpand(entry.id)"
+          @keydown.enter.prevent="toggleExpand(entry.id)"
+          @keydown.space.prevent="toggleExpand(entry.id)"
         >
           <div class="entry-row">
             <span class="entry-time">{{ formatTime(entry.timestamp) }}</span>

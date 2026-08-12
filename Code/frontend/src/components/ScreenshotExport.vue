@@ -329,7 +329,7 @@ async function capture() {
       <div class="panel-header">
         <Table2 :size="16" class="panel-icon" aria-hidden="true" />
         <span>导出截图</span>
-        <button type="button" class="close-btn" title="关闭" @click.prevent="emit('close')">
+        <button type="button" class="close-btn" title="关闭" aria-label="关闭" @click.prevent="emit('close')">
           <X :size="14" aria-hidden="true" />
         </button>
       </div>

@@ -3,6 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSettingsStore } from '../../stores/settings'
 import type { RemoteStorageProtocol, RemoteStorageUpsertRequest } from '../../services/settings-api'
+import AppSelect from '../ui/AppSelect.vue'
 
 const settingsStore = useSettingsStore()
 const { remoteStorageProfiles, remoteStorageHistory } = storeToRefs(settingsStore)
@@ -212,9 +213,10 @@ async function deleteHistory(profileId: string, historyId: number) {
           </label>
           <label>
             <span>协议</span>
-            <select v-model="form.protocol">
-              <option v-for="p in protocols" :key="p" :value="p">{{ p }}</option>
-            </select>
+            <AppSelect
+              v-model="form.protocol"
+              :options="protocols.map((p) => ({ label: p, value: p }))"
+            />
           </label>
           <label>
             <span>{{ form.protocol === 'gs' ? 'Bucket' : '主机' }}</span>

@@ -165,7 +165,13 @@ onBeforeUnmount(() => {
       <li v-for="svc in orderedServices" :key="svc.service_name" class="service-item">
         <div
           class="service-row"
+          :class="{ clickable: detailEntries(svc).length }"
+          role="button"
+          :tabindex="detailEntries(svc).length ? 0 : -1"
+          :aria-expanded="detailEntries(svc).length ? expanded.has(svc.service_name) : undefined"
           @click="detailEntries(svc).length && toggleExpand(svc.service_name)"
+          @keydown.enter.prevent="detailEntries(svc).length && toggleExpand(svc.service_name)"
+          @keydown.space.prevent="detailEntries(svc).length && toggleExpand(svc.service_name)"
         >
           <span class="service-name">
             {{ svc.service_name }}

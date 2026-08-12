@@ -7,6 +7,7 @@ import { dataWorkspaceLayerId, openDataWorkspace } from '../core/workspace-store
 import { useLayersStore } from '../../stores/layers'
 import { useLogStore } from '../../stores/log'
 import { DATA_COPY } from '../../ui-copy'
+import AppSelect from '../../components/ui/AppSelect.vue'
 
 const layersStore = useLayersStore()
 const logStore = useLogStore()
@@ -67,8 +68,8 @@ async function loadMeta() {
   }
 }
 
-function onSelectLayer(e: Event) {
-  dataWorkspaceLayerId.value = (e.target as HTMLSelectElement).value || null
+function onSelectLayer(val: string) {
+  dataWorkspaceLayerId.value = val || null
 }
 
 function applyStyle() {
@@ -144,12 +145,17 @@ function removeLayer() {
     <div class="row">
       <label>
         {{ DATA_COPY.attrLayer }}
-        <select :value="selectedLayer?.instanceId ?? ''" @change="onSelectLayer">
-          <option v-if="!importedLayers.length" value="">{{ DATA_COPY.emptyExport }}</option>
-          <option v-for="l in importedLayers" :key="l.instanceId" :value="l.instanceId">
-            {{ l.name }} · {{ l.importedRaster ? '栅格' : '矢量' }}
-          </option>
-        </select>
+        <AppSelect
+          :model-value="selectedLayer?.instanceId ?? ''"
+          :options="[
+            ...(!importedLayers.length ? [{ label: DATA_COPY.emptyExport, value: '' }] : []),
+            ...importedLayers.map((l) => ({
+              label: `${l.name} · ${l.importedRaster ? '栅格' : '矢量'}`,
+              value: l.instanceId,
+            })),
+          ]"
+          @update:model-value="onSelectLayer"
+        />
       </label>
     </div>
 

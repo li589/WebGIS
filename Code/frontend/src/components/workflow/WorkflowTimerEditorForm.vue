@@ -4,6 +4,7 @@
  */
 import { DATE_TEMPLATES } from '../../services/workflow-timer-api'
 import type { TriggerType } from '../../services/workflow-timer-api'
+import AppSelect from '../ui/AppSelect.vue'
 
 defineProps<{
   model: {
@@ -47,17 +48,13 @@ function patch(key: string, value: unknown) {
   <div class="timer-editor-form">
     <div class="form-row">
       <label class="form-label">工作流 *</label>
-      <select
-        class="form-input"
-        :value="model.workflow_id"
+      <AppSelect
+        :model-value="model.workflow_id"
         :disabled="workflowLocked"
-        @change="patch('workflow_id', ($event.target as HTMLSelectElement).value)"
-      >
-        <option value="" disabled>请选择工作流</option>
-        <option v-for="s in workflowOptions" :key="s.workflow_id" :value="s.workflow_id">
-          {{ s.name }} ({{ s.workflow_id }})
-        </option>
-      </select>
+        placeholder="请选择工作流"
+        :options="workflowOptions.map((s) => ({ label: `${s.name} (${s.workflow_id})`, value: s.workflow_id }))"
+        @change="(val: string) => patch('workflow_id', val)"
+      />
     </div>
     <div class="form-row">
       <label class="form-label">名称 *</label>

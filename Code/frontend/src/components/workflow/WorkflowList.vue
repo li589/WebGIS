@@ -339,11 +339,12 @@ function formatTime(iso: string | null): string {
                   class="action-btn"
                   type="button"
                   title="复制"
+                  aria-label="复制"
                   @click.stop="handleDuplicate(summary.workflow_id)"
                 >
                   ⧉
                 </button>
-                <button class="action-btn danger" type="button" title="删除" @click.stop="handleDelete(summary.workflow_id)"><X :size="14" aria-hidden="true" /></button>
+                <button class="action-btn danger" type="button" title="删除" aria-label="删除" @click.stop="handleDelete(summary.workflow_id)"><X :size="14" aria-hidden="true" /></button>
               </div>
             </div>
             <div v-if="summary.description" class="item-desc">{{ summary.description }}</div>
