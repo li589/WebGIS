@@ -62,10 +62,7 @@ export async function removeImportedLayer(catalogOrInstanceId: string, backendLa
   const store = useLayersStore()
   store.removeLayer(resolveLayerInstanceId(store, catalogOrInstanceId))
   if (backendLayerId) {
-    try {
-      await deleteImportedLayer(backendLayerId)
-    } catch {
-      /* store 侧可能已清理 */
-    }
+    // 传播错误给调用方，以便向用户展示后端清理失败的信息
+    await deleteImportedLayer(backendLayerId)
   }
 }

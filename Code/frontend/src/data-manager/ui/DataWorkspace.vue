@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import DataImportPanel from './DataImportPanel.vue'
 import DataExportPanel from './DataExportPanel.vue'
 import AttributeTable from './AttributeTable.vue'
@@ -13,8 +13,13 @@ import {
   dataWorkspaceOpen,
   dataWorkspaceSeedFiles,
   dataWorkspaceTab,
+  importQuota,
+  quotaLoading,
+  reclaimQuota,
+  refreshImportQuota,
   type DataWorkspaceTab,
 } from '../core/workspace-store'
+import { formatBytes } from '../core/api'
 import { DATA_COPY } from '../../ui-copy'
 
 const tabs: Array<{ id: DataWorkspaceTab; label: string }> = [
@@ -99,6 +104,38 @@ watch(dataWorkspaceTab, (tab) => {
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKey)
 })
+
+onMounted(() => {
+  void refreshImportQuota()
+})
+
+const quotaPercent = computed(() =>
+  importQuota.value ? Math.min(100, Math.round(importQuota.value.used_ratio * 100)) : 0,
+)
+const quotaWarn = computed(() => (importQuota.value?.used_ratio ?? 0) > 0.85)
+
+const onReclaim = () => {
+  void reclaimQuota()
+}
+
+const dragOver = ref(false)
+
+function onDragOver(e: DragEvent) {
+  if (!e.dataTransfer?.types?.includes('Files')) return
+  e.preventDefault()
+  dragOver.value = true
+}
+
+function onDragLeave(e: DragEvent) {
+  // 只在离开整个面板时才取消高亮
+  const rt = e.currentTarget as HTMLElement
+  if (e.relatedTarget && rt.contains(e.relatedTarget as Node)) return
+  dragOver.value = false
+}
+
+function onDrop(_e: DragEvent) {
+  dragOver.value = false
+}
 </script>
 
 <template>
@@ -106,11 +143,14 @@ onBeforeUnmount(() => {
     <aside
       v-if="dataWorkspaceOpen"
       class="data-workspace"
-      :class="{ maximized: dataWorkspaceMaximized, resizing }"
+      :class="{ maximized: dataWorkspaceMaximized, resizing, 'drag-over': dragOver }"
       :style="panelStyle"
       role="dialog"
       aria-modal="false"
       :aria-label="DATA_COPY.workspaceTitle"
+      @dragover="onDragOver"
+      @dragleave="onDragLeave"
+      @drop="onDrop"
     >
       <div
         class="resize-handle"
@@ -152,6 +192,28 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </header>
+
+      <div v-if="importQuota" class="quota-bar">
+        <div class="quota-track">
+          <div
+            class="quota-fill"
+            :class="{ warn: quotaWarn }"
+            :style="{ width: `${quotaPercent}%` }"
+          />
+        </div>
+        <span class="quota-text">
+          {{ formatBytes(importQuota.used_bytes) }} / {{ formatBytes(importQuota.limit_bytes) }}
+          <button
+            v-if="importQuota.ephemeral_bytes > 0"
+            class="link-btn"
+            type="button"
+            :disabled="quotaLoading"
+            @click="onReclaim"
+          >
+            回收 {{ formatBytes(importQuota.ephemeral_bytes) }}
+          </button>
+        </span>
+      </div>
 
       <div class="ws-body">
         <div v-show="dataWorkspaceTab === 'import'" class="ws-pane">
@@ -197,6 +259,11 @@ onBeforeUnmount(() => {
   box-shadow: 0 18px 48px rgba(1, 8, 16, 0.5);
   color: var(--text-primary);
   overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.data-workspace.drag-over {
+  border-color: var(--accent);
+  box-shadow: 0 18px 48px rgba(1, 8, 16, 0.5), 0 0 0 2px rgba(90, 213, 255, 0.3);
 }
 .data-workspace.maximized {
   top: 0;
@@ -296,6 +363,51 @@ onBeforeUnmount(() => {
   padding: 0.55rem 0.75rem 0.7rem;
   display: flex;
   flex-direction: column;
+}
+.quota-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.7rem;
+  border-bottom: 1px solid rgba(136, 192, 255, 0.08);
+  font-size: var(--font-size-caption);
+  color: #8aa0b4;
+}
+.quota-track {
+  flex: 1;
+  height: 0.24rem;
+  border-radius: 999px;
+  background: rgba(136, 192, 255, 0.12);
+  overflow: hidden;
+}
+.quota-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #0a84ff, var(--accent));
+  transition: width 0.3s ease;
+}
+.quota-fill.warn {
+  background: linear-gradient(90deg, #ff8800, #ffd166);
+}
+.quota-text {
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.link-btn {
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--font-size-caption);
+  cursor: pointer;
+  padding: 0;
+}
+.link-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .ws-pane {
   flex: 1 1 auto;

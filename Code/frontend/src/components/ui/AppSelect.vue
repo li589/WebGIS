@@ -53,8 +53,8 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  'update:modelValue': [value: string | number]
-  change: [value: string | number]
+  'update:modelValue': [value: string]
+  change: [value: string]
   focus: [event: FocusEvent]
   blur: [event: FocusEvent]
 }>()
@@ -79,7 +79,7 @@ function onChange(e: Event) {
   const target = e.target as HTMLSelectElement
   const raw = target.value
   const matched = props.options.find((opt) => String(opt.value) === raw)
-  const next: string | number = matched ? matched.value : raw
+  const next = matched ? String(matched.value) : raw
   emit('update:modelValue', next)
   emit('change', next)
 }

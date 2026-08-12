@@ -241,7 +241,7 @@ const progressLabel = computed(() =>
   align-items: center;
   justify-content: center;
   background: rgba(4, 10, 18, 0.4);
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .spinner-card {

@@ -994,6 +994,32 @@ export async function deleteImportedLayer(layerId: string): Promise<void> {
   }
 }
 
+export interface ImportQuotaInfo {
+  ok: boolean
+  used_bytes: number
+  ephemeral_bytes: number
+  limit_bytes: number
+  free_bytes: number
+  soft_reserve_bytes: number
+  used_ratio: number
+  imports_dir: string
+}
+
+export async function fetchImportQuota(): Promise<ImportQuotaInfo> {
+  const resp = await writeFetch('/import/quota')
+  if (!resp.ok) throw new Error(parseErrorDetail(resp.status, await resp.text()))
+  return resp.json() as Promise<ImportQuotaInfo>
+}
+
+export async function reclaimImportSpace(): Promise<{
+  ok: boolean
+  reclaimed_bytes: number
+}> {
+  const resp = await writeFetch('/import/quota/reclaim', { method: 'POST' })
+  if (!resp.ok) throw new Error(parseErrorDetail(resp.status, await resp.text()))
+  return resp.json()
+}
+
 export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')

@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { fetchImportedLayerGeojson, fetchImportedLayerMeta } from '../core/api'
 import { exportLayer, type ExportFormat } from '../adapters/export'
-import { focusImportedLayer } from '../adapters/layers'
+import { focusImportedLayer, removeImportedLayer } from '../adapters/layers'
 import { dataWorkspaceLayerId, openDataWorkspace } from '../core/workspace-store'
 import { useLayersStore } from '../../stores/layers'
 import { useLogStore } from '../../stores/log'
@@ -131,12 +131,25 @@ function openAttributes() {
   openDataWorkspace({ tab: 'attributes', layerInstanceId: selectedLayer.value.instanceId })
 }
 
-function removeLayer() {
+const removing = ref(false)
+
+async function removeLayer() {
   if (!selectedLayer.value) return
   const id = selectedLayer.value.instanceId
-  layersStore.removeLayer(id)
-  dataWorkspaceLayerId.value = null
-  msg.value = DATA_COPY.layerRemoved
+  const bid = backendId.value ?? undefined
+  removing.value = true
+  try {
+    await removeImportedLayer(id, bid)
+    dataWorkspaceLayerId.value = null
+    msg.value = DATA_COPY.layerRemoved
+  } catch (e) {
+    // 后端清理失败时前端仍已移除，但需告知用户
+    layersStore.removeLayer(id)
+    dataWorkspaceLayerId.value = null
+    error.value = `前端已移除，后端清理失败：${e instanceof Error ? e.message : String(e)}`
+  } finally {
+    removing.value = false
+  }
 }
 </script>
 
@@ -256,8 +269,8 @@ function removeLayer() {
           <button v-if="!isVector" class="ghost-btn" type="button" @click="exportFmt('mat')">
             MAT
           </button>
-          <button class="danger-btn" type="button" @click="removeLayer">
-            {{ DATA_COPY.deleteLayer }}
+          <button class="danger-btn" type="button" :disabled="removing" @click="removeLayer">
+            {{ removing ? '删除中…' : DATA_COPY.deleteLayer }}
           </button>
         </div>
       </section>

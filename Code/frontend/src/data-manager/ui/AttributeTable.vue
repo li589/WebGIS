@@ -21,6 +21,7 @@ import {
   dataWorkspaceLayerId,
   dataWorkspaceMaximized,
   dataWorkspaceSelection,
+  dataWorkspaceZoomRequest,
   openDataWorkspace,
   showToast,
 } from '../core/workspace-store'
@@ -37,6 +38,7 @@ const features = ref<GeoJSON.Feature[]>([])
 const absIndexes = ref<number[]>([])
 const schemaFields = ref<string[]>([])
 const encodingBadge = ref('')
+const metaError = ref('')
 const loading = ref(false)
 const error = ref('')
 const filterField = ref('')
@@ -154,14 +156,16 @@ async function loadMetaAndRows() {
     schemaFields.value = []
     return
   }
+  metaError.value = ''
   try {
     const meta = await fetchImportedLayerMeta(backendId.value)
     if (Array.isArray(meta.fields) && meta.fields.length) {
       schemaFields.value = meta.fields.map(String)
     }
     encodingBadge.value = describeSourceEncoding(meta) || DATA_COPY.attrEncodingUnknown
-  } catch {
+  } catch (e) {
     encodingBadge.value = ''
+    metaError.value = `元数据加载失败：${e instanceof Error ? e.message : String(e)}`
   }
   await load()
 }
@@ -382,16 +386,64 @@ function syncSelectionHighlight(primary?: GeoJSON.Feature) {
   }
 }
 
+function computeFeaturesBbox(feats: GeoJSON.Feature[]): [number, number, number, number] | null {
+  let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity
+  let hasCoords = false
+  for (const feat of feats) {
+    const geom = feat.geometry
+    if (!geom) continue
+    const coords: number[] = []
+    switch (geom.type) {
+      case 'Point':
+        coords.push(...geom.coordinates)
+        break
+      case 'MultiPoint':
+      case 'LineString':
+        for (const c of geom.coordinates) coords.push(...c)
+        break
+      case 'MultiLineString':
+      case 'Polygon':
+        for (const ring of geom.coordinates) for (const c of ring) coords.push(...c)
+        break
+      case 'MultiPolygon':
+        for (const poly of geom.coordinates) for (const ring of poly) for (const c of ring) coords.push(...c)
+        break
+    }
+    for (let i = 0; i < coords.length; i += 2) {
+      const lng = coords[i]!, lat = coords[i + 1]!
+      if (Number.isFinite(lng) && Number.isFinite(lat)) {
+        minLng = Math.min(minLng, lng)
+        maxLng = Math.max(maxLng, lng)
+        minLat = Math.min(minLat, lat)
+        maxLat = Math.max(maxLat, lat)
+        hasCoords = true
+      }
+    }
+  }
+  if (!hasCoords) return null
+  const pad = 0.0001
+  if (maxLng - minLng < pad) { minLng -= pad; maxLng += pad }
+  if (maxLat - minLat < pad) { minLat -= pad; maxLat += pad }
+  return [minLng, minLat, maxLng, maxLat]
+}
+
 function zoomToSelected() {
   if (!selectedLayer.value || !selectedAbs.value.size) return
   const feats = features.value.filter((_, i) => selectedAbs.value.has(absIndexes.value[i] ?? -1))
   if (!feats.length) return
+  const bbox = computeFeaturesBbox(feats)
+  if (bbox) {
+    dataWorkspaceZoomRequest.value = {
+      instanceId: selectedLayer.value.instanceId,
+      bbox,
+    }
+  }
+  // 同时更新高亮（单选时设为首个要素）
   dataWorkspaceHighlight.value = {
     instanceId: selectedLayer.value.instanceId,
     feature: feats[0]!,
     featureIndex: Array.from(selectedAbs.value)[0],
   }
-  // 复用地图高亮；多要素时 fit 由 MapCanvas 对单要素已足够，后续可扩展
   openDataWorkspace({ tab: 'attributes', layerInstanceId: selectedLayer.value.instanceId })
 }
 
@@ -547,6 +599,59 @@ function toggleSort(field: string) {
   offset.value = 0
   void load()
 }
+
+function onTableKeydown(e: KeyboardEvent) {
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+  if (!rows.value.length) return
+  e.preventDefault()
+  const currentIdx = lastClickedAbs.value
+  let targetLocal: number
+  if (currentIdx == null) {
+    targetLocal = 0
+  } else {
+    const currentLocal = absIndexes.value.findIndex((a) => a === currentIdx)
+    if (currentLocal < 0) {
+      targetLocal = 0
+    } else {
+      targetLocal = e.key === 'ArrowDown' ? currentLocal + 1 : currentLocal - 1
+    }
+  }
+  if (targetLocal < 0 || targetLocal >= rows.value.length) return
+  const targetRow = rows.value[targetLocal]!
+  selectedAbs.value = new Set([targetRow.abs])
+  lastClickedAbs.value = targetRow.abs
+  syncSelectionHighlight(targetRow.feat)
+  nextTick(() => {
+    const el = tableBodyEl.value?.querySelector(
+      `tr[data-abs="${targetRow.abs}"]`,
+    ) as HTMLElement | null
+    el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  })
+}
+
+const qualityHints = computed(() => {
+  if (!features.value.length || !columns.value.length) return null
+  const nullCounts: Record<string, number> = {}
+  const totalFeats = features.value.length
+  for (const col of columns.value) {
+    let nulls = 0
+    for (const feat of features.value) {
+      const v = feat.properties?.[col]
+      if (v == null || v === '') nulls++
+    }
+    nullCounts[col] = nulls
+  }
+  const colsWithNulls = Object.entries(nullCounts).filter(([, n]) => n > 0)
+  if (!colsWithNulls.length) return null
+  const worst = colsWithNulls.sort((a, b) => b[1] - a[1])[0]!
+  const worstRatio = (worst[1] / totalFeats * 100).toFixed(0)
+  return {
+    worstCol: worst[0],
+    worstCount: worst[1],
+    worstRatio,
+    totalColsWithNulls: colsWithNulls.length,
+  }
+})
 </script>
 
 <template>
@@ -700,6 +805,7 @@ function toggleSort(field: string) {
     </div>
 
     <p v-if="error" class="err">{{ error }}</p>
+    <p v-else-if="metaError" class="warn">{{ metaError }}</p>
     <p v-else-if="!importedVectors.length" class="empty">{{ DATA_COPY.attrEmpty }}</p>
     <template v-else>
       <p class="sel-hint">
@@ -707,9 +813,19 @@ function toggleSort(field: string) {
         <span v-if="encodingBadge" class="enc-badge" :title="encodingBadge">{{
           encodingBadge
         }}</span>
+        <span v-if="qualityHints" class="quality-hint" :title="`空值最多的字段：${qualityHints.worstCol}（${qualityHints.worstCount}/${features.length}）`">
+          ⚠ {{ qualityHints.totalColsWithNulls }} 个字段有空值（{{ qualityHints.worstCol }}: {{ qualityHints.worstRatio }}%）
+        </span>
       </p>
 
-      <div ref="tableBodyEl" class="table-scroll" @click="ctxMenu = null">
+      <div
+        ref="tableBodyEl"
+        class="table-scroll"
+        tabindex="0"
+        role="grid"
+        @click="ctxMenu = null"
+        @keydown="onTableKeydown"
+      >
         <table>
           <thead>
             <tr>
@@ -901,6 +1017,24 @@ select {
   scrollbar-width: thin;
   scrollbar-color: rgba(90, 213, 255, 0.35) transparent;
 }
+.table-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.quality-hint {
+  display: inline-block;
+  margin-left: 0.45rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 209, 102, 0.3);
+  background: rgba(64, 48, 18, 0.35);
+  color: #ffd166;
+  font-size: var(--font-size-caption);
+  max-width: min(28rem, 55vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
 .table-scroll::-webkit-scrollbar {
   width: 5px;
   height: 5px;
@@ -1060,6 +1194,9 @@ tr.selected td.col-idx {
 }
 .err {
   color: #ffb0b0;
+}
+.warn {
+  color: #ffd166;
 }
 .empty,
 .sel-hint {

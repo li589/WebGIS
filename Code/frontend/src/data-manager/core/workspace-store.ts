@@ -4,6 +4,7 @@
 import { ref, shallowRef } from 'vue'
 import { useLogStore } from '../../stores/log'
 import { classifyDataFile, type DataImportKind } from './api'
+import { fetchImportQuota, reclaimImportSpace, type ImportQuotaInfo } from './api'
 
 const importing = ref(false)
 const importMsg = ref('')
@@ -56,6 +57,37 @@ export const dataWorkspaceSelection = shallowRef<{
   instanceId: string
   featureIds: Array<string | number>
 } | null>(null)
+
+/** 属性表 zoomToSelected → 地图 fitBounds 信号 */
+export const dataWorkspaceZoomRequest = shallowRef<{
+  instanceId: string
+  bbox: [number, number, number, number] // [west, south, east, north]
+} | null>(null)
+
+/** 导入存储配额 */
+export const importQuota = shallowRef<ImportQuotaInfo | null>(null)
+export const quotaLoading = ref(false)
+
+export async function refreshImportQuota() {
+  quotaLoading.value = true
+  try {
+    importQuota.value = await fetchImportQuota()
+  } catch {
+    importQuota.value = null
+  } finally {
+    quotaLoading.value = false
+  }
+}
+
+export async function reclaimQuota() {
+  try {
+    await reclaimImportSpace()
+    await refreshImportQuota()
+    showToast('已回收临时空间')
+  } catch (e) {
+    showToast(`回收失败：${e instanceof Error ? e.message : String(e)}`, true)
+  }
+}
 
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 

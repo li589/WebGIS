@@ -34,7 +34,7 @@ import {
   isMapDistributionChromeEnabled,
   subscribeMapDistributionChrome,
 } from '../services/settings-local'
-import { dataWorkspaceHighlight, showToast } from '../data-manager/core/workspace-store'
+import { dataWorkspaceHighlight, dataWorkspaceZoomRequest, showToast } from '../data-manager/core/workspace-store'
 import { debugLog as probeDebugLog } from '../utils/perf-probe'
 
 const layersStore = useLayersStore()
@@ -386,6 +386,22 @@ onMounted(async () => {
           if (id !== hl.instanceId) mod.setFeatureHighlight(id, null)
         }
         mod.setFeatureHighlight(hl.instanceId, hl.feature)
+      },
+      { deep: false },
+    )
+
+    watch(
+      dataWorkspaceZoomRequest,
+      (req) => {
+        if (!req || !mapInstance) return
+        const [west, south, east, north] = req.bbox
+        mapInstance.fitBounds(
+          [
+            [west, south],
+            [east, north],
+          ],
+          { padding: 80, maxZoom: 14, duration: 600 },
+        )
       },
       { deep: false },
     )

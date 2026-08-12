@@ -11,6 +11,7 @@ import {
 import {
   fetchExportEncodings,
   fetchImportedLayerGeojson,
+  formatBytes,
   type ExportEncodingOption,
 } from '../core/api'
 import { dataWorkspaceExportTime, dataWorkspaceLayerId } from '../core/workspace-store'
@@ -121,6 +122,30 @@ const availableFields = computed(() => {
 })
 
 const showFieldPicker = computed(() => hasVector.value && availableFields.value.length > 0)
+
+const estimatedSize = computed(() => {
+  let total = 0
+  const layers = selectedLayers.value
+  const timeCount =
+    showTimePicker.value && timeExportMode.value === 'multi'
+      ? Math.max(1, selectedTimes.value.length)
+      : 1
+
+  for (const layer of layers) {
+    if (layer.importedVector) {
+      const featCount = layer.importedVector.featureCount || 0
+      const fmt = vectorFormat.value
+      const bytesPerFeat = fmt === 'csv' ? 200 : fmt === 'shp-zip' ? 350 : 600
+      total += featCount * bytesPerFeat
+    } else if (layer.importedRaster) {
+      const tiles = (layer.importedRaster.timeList?.length ?? 1) * timeCount
+      const fmt = rasterFormat.value
+      const bytesPerTile = fmt === 'mat' ? 2_000_000 : fmt === 'netcdf' ? 3_000_000 : 5_000_000
+      total += tiles * bytesPerTile
+    }
+  }
+  return total
+})
 
 function defaultTimeForLayer(layer: ActiveLayer | undefined): string {
   const times = timeListOf(layer)
@@ -607,6 +632,10 @@ async function doExport() {
             />
           </label>
           <p v-if="needsTextEncoding" class="enc-hint">{{ DATA_COPY.exportEncodingHint }}</p>
+          <p v-if="estimatedSize > 0" class="est-size">
+            预估大小：~{{ formatBytes(estimatedSize) }}
+            <span class="est-hint">（仅为粗略估算）</span>
+          </p>
           <button
             class="primary-btn"
             type="button"
@@ -749,6 +778,16 @@ async function doExport() {
   color: #7a91a8;
   line-height: 1.35;
 }
+.est-size {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  color: #9ec4e0;
+  font-weight: 500;
+}
+.est-hint {
+  color: #6a8094;
+  font-weight: 400;
+}
 .time-export {
   margin: 0;
   padding: 0.45rem 0.55rem 0.5rem;
@@ -802,6 +841,10 @@ async function doExport() {
   overflow: auto;
   border: 1px solid rgba(136, 192, 255, 0.1);
   border-radius: 0.4rem;
+}
+.layer-list li {
+  content-visibility: auto;
+  contain-intrinsic-size: 2.4rem;
 }
 .check-row {
   display: flex;
