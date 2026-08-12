@@ -58,14 +58,30 @@ async function logout() {
 async function createAccount() {
   error.value = null
   message.value = null
+  const username = newUsername.value.trim()
+  if (!username) {
+    error.value = '请输入用户名'
+    return
+  }
+  if (newPassword.value.length < 8) {
+    error.value = '密码至少需要 8 位'
+    return
+  }
   try {
-    await auth.addUser(newUsername.value.trim(), newPassword.value, newRole.value)
+    await auth.addUser(username, newPassword.value, newRole.value)
     message.value = '用户已创建'
     newUsername.value = ''
     newPassword.value = ''
     newRole.value = 'operator'
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '创建失败'
+    const msg = err instanceof Error ? err.message : '创建失败'
+    if (msg.includes('username already exists') || msg.includes('已存在')) {
+      error.value = `用户名「${username}」已存在，请换一个`
+    } else if (msg.includes('400')) {
+      error.value = '请求参数有误，请检查用户名和密码格式'
+    } else {
+      error.value = msg
+    }
   }
 }
 
@@ -336,8 +352,9 @@ async function removeAccount(userId: number, username: string) {
 
 .create-form {
   display: grid;
-  grid-template-columns: 1fr 1fr auto auto;
+  grid-template-columns: minmax(8rem, 14rem) minmax(8rem, 14rem) minmax(6rem, 8rem) auto;
   gap: 0.4rem;
+  align-items: center;
 }
 
 .token-form {
@@ -347,6 +364,7 @@ async function removeAccount(userId: number, username: string) {
 .create-form input,
 .create-form select,
 .user-table select {
+  width: 100%;
   padding: 0.38rem 0.45rem;
   border: 1px solid var(--border-default);
   border-radius: 0.35rem;

@@ -584,4 +584,10 @@ function toggleFilter(ext: string) {
   color: var(--danger);
   border-color: rgba(255, 123, 123, 0.22);
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .conn-dot.testing {
+    animation: none;
+  }
+}
 </style>

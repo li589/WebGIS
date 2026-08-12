@@ -15,8 +15,14 @@ interface FrontendMetrics {
   cores: number | null
   /** GPU 型号（WebGL renderer，尽力获取） */
   gpu: string | null
-  /** 主线程 60s 窗口内 longtask 次数（近似忙碌度） */
+  /** 当前窗口内 longtask 次数（每 60s 窗口重置） */
   longTasks: number
+  /** DOM 节点数 */
+  domNodes: number | null
+  /** 页面加载耗时 ms */
+  loadTimeMs: number | null
+  /** 网络连接类型 */
+  connectionType: string | null
 }
 
 const frontend = ref<FrontendMetrics>({
@@ -26,6 +32,9 @@ const frontend = ref<FrontendMetrics>({
   cores: null,
   gpu: null,
   longTasks: 0,
+  domNodes: null,
+  loadTimeMs: null,
+  connectionType: null,
 })
 const backend = ref<ResourceUsageResponse | null>(null)
 const backendError = ref<string | null>(null)
@@ -54,17 +63,27 @@ function collectFrontendMetrics(): FrontendMetrics {
     try {
       const canvas = document.createElement('canvas')
       const gl = (canvas.getContext('webgl2') || canvas.getContext('webgl')) as
-        WebGLRenderingContext | WebGL2RenderingContext | null
+        | WebGLRenderingContext
+        | WebGL2RenderingContext
+        | null
       if (gl) {
         const ext = gl.getExtension('WEBGL_debug_renderer_info')
-        m.gpu =
+        const raw =
           ext && gl.getParameter ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) ?? '') : ''
-        m.gpu = m.gpu.replace(/^ANGLE \(/i, '').slice(0, 60) || null
+        m.gpu = raw.replace(/^ANGLE \(/i, '').slice(0, 60) || null
       }
     } catch {
       m.gpu = null
     }
   }
+  // DOM 节点数
+  m.domNodes = document.querySelectorAll('*').length
+  // 页面加载耗时
+  const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
+  m.loadTimeMs = navEntry ? Math.round(navEntry.loadEventEnd) : null
+  // 网络连接类型
+  const conn = (navigator as Navigator & { connection?: { effectiveType?: string } }).connection
+  m.connectionType = conn?.effectiveType ?? null
   return { ...m }
 }
 
@@ -102,6 +121,8 @@ onMounted(() => {
   timer = setInterval(() => {
     if (!isPageVisible()) return // 页面隐藏时跳过，节省资源
     collectFrontendMetrics()
+    // 重置 longtask 计数器，使其反映当前 60s 窗口
+    frontend.value.longTasks = 0
     void refreshBackend()
   }, 60_000)
 })
@@ -125,10 +146,10 @@ function percentOf(used: number | null | undefined, total: number | null | undef
 
 <template>
   <div class="resource-grid">
-    <!-- ── 前端页面占用 ─────────────────────────────────────────────── -->
+    <!-- ── 前端状态 ─────────────────────────────────────────────── -->
     <div class="resource-card">
       <div class="card-head">
-        <h4 class="card-title">前端页面占用</h4>
+        <h4 class="card-title">前端状态</h4>
         <span class="card-meta">浏览器 · 每 60s 刷新</span>
       </div>
       <ul class="metric-list">
@@ -160,13 +181,33 @@ function percentOf(used: number | null | undefined, total: number | null | undef
         <li class="metric-row">
           <span class="metric-label">逻辑核心</span>
           <div class="metric-main">
-            <span class="metric-value">{{ frontend.cores ?? '—' }}</span>
+            <span class="metric-value">{{ frontend.cores ?? '—' }} 核</span>
           </div>
         </li>
         <li class="metric-row">
           <span class="metric-label">主线程忙碌</span>
           <div class="metric-main">
-            <span class="metric-value">{{ frontend.longTasks }} 次长任务</span>
+            <span class="metric-value">{{ frontend.longTasks }} 次长任务（60s 窗口）</span>
+          </div>
+        </li>
+        <li class="metric-row">
+          <span class="metric-label">DOM 节点</span>
+          <div class="metric-main">
+            <span class="metric-value">{{ frontend.domNodes ?? '—' }}</span>
+          </div>
+        </li>
+        <li class="metric-row">
+          <span class="metric-label">加载耗时</span>
+          <div class="metric-main">
+            <span class="metric-value">
+              {{ frontend.loadTimeMs != null && frontend.loadTimeMs > 0 ? `${frontend.loadTimeMs} ms` : '—' }}
+            </span>
+          </div>
+        </li>
+        <li class="metric-row">
+          <span class="metric-label">网络</span>
+          <div class="metric-main">
+            <span class="metric-value">{{ frontend.connectionType ?? '—' }}</span>
           </div>
         </li>
         <li class="metric-row">
@@ -180,10 +221,10 @@ function percentOf(used: number | null | undefined, total: number | null | undef
       </ul>
     </div>
 
-    <!-- ── 后端占用 ─────────────────────────────────────────────────── -->
+    <!-- ── 后端状态 ─────────────────────────────────────────────────── -->
     <div class="resource-card">
       <div class="card-head">
-        <h4 class="card-title">后端占用</h4>
+        <h4 class="card-title">后端状态</h4>
         <span class="card-meta">服务器 · {{ backend?.worker_count ?? '—' }} worker 在线</span>
       </div>
       <p v-if="backendError" class="error">{{ backendError }}</p>
@@ -193,9 +234,14 @@ function percentOf(used: number | null | undefined, total: number | null | undef
             <span class="metric-label">系统 CPU</span>
             <div class="metric-main">
               <div class="bar">
-                <div class="bar-fill" :style="{ width: `${backend.system.cpu_percent ?? 0}%` }" />
+                <div
+                  class="bar-fill bar-fill--accent"
+                  :style="{ width: `${backend.system.cpu_percent ?? 0}%` }"
+                />
               </div>
-              <span class="metric-value">{{ backend.system.cpu_percent ?? '—' }}%</span>
+              <span class="metric-value">
+                {{ backend.system.cpu_percent != null ? `${backend.system.cpu_percent.toFixed(1)}%` : '—' }}
+              </span>
             </div>
           </li>
           <li class="metric-row">
@@ -203,7 +249,7 @@ function percentOf(used: number | null | undefined, total: number | null | undef
             <div class="metric-main">
               <div class="bar">
                 <div
-                  class="bar-fill"
+                  class="bar-fill bar-fill--accent"
                   :style="{ width: `${backend.system.memory_percent ?? 0}%` }"
                 />
               </div>
@@ -222,7 +268,10 @@ function percentOf(used: number | null | undefined, total: number | null | undef
             <span class="metric-label">数据盘</span>
             <div class="metric-main">
               <div class="bar">
-                <div class="bar-fill" :style="{ width: `${backend.system.disk_percent ?? 0}%` }" />
+                <div
+                  class="bar-fill bar-fill--accent"
+                  :style="{ width: `${backend.system.disk_percent ?? 0}%` }"
+                />
               </div>
               <span class="metric-value">
                 {{ formatMb(backend.system.disk_used_mb) }}
@@ -246,7 +295,7 @@ function percentOf(used: number | null | undefined, total: number | null | undef
           <li v-for="p in backend.processes" :key="p.pid" class="process-row">
             <span class="process-name" :title="p.name">{{ p.name }}</span>
             <span class="process-pid">#{{ p.pid }}</span>
-            <span class="process-cpu">CPU {{ p.cpu_percent ?? '—' }}%</span>
+            <span class="process-cpu">CPU {{ p.cpu_percent != null ? `${p.cpu_percent.toFixed(1)}%` : '—' }}</span>
             <span class="process-mem">RAM {{ formatMb(p.memory_rss_mb) }}</span>
           </li>
         </ul>
@@ -333,6 +382,10 @@ function percentOf(used: number | null | undefined, total: number | null | undef
   border-radius: 999px;
   background: linear-gradient(90deg, var(--border-strong), var(--border-strong));
   transition: width 0.4s ease;
+}
+
+.bar-fill--accent {
+  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
 }
 
 .metric-value {

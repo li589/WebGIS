@@ -335,19 +335,19 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
 }
 
 .compact-track {
-  height: 2px;
+  height: 3px;
   background: var(--accent-surface);
   overflow: hidden;
 }
 
 .compact-glow {
   height: 100%;
-  width: 28%;
+  width: 32%;
   background: linear-gradient(
     90deg,
     transparent,
-    var(--border-strong),
-    var(--warning-border),
+    var(--accent),
+    var(--warning),
     transparent
   );
   animation: progress-slide 1.1s ease-in-out infinite;
@@ -460,17 +460,24 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   opacity: 0;
 }
 
+/* 系统「减少动效」：放慢加载反馈，但不要完全静止（否则像卡死） */
 @media (prefers-reduced-motion: reduce) {
-  .stars,
-  .earth-sphere,
-  .sat-orbit,
+  .stars {
+    animation-duration: 6s;
+  }
+  .earth-sphere {
+    animation-duration: 24s;
+  }
+  .sat-orbit {
+    animation-duration: 8s;
+  }
   .earth-glow,
-  .sat-beam,
+  .sat-beam {
+    animation-duration: 3s;
+  }
   .loading-progress-glow,
-  .compact-glow,
-  .loading-message::after,
-  .compact-msg::after {
-    animation: none;
+  .compact-glow {
+    animation-duration: 2.4s;
   }
 }
 </style>

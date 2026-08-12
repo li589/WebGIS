@@ -1,4 +1,9 @@
 <script setup lang="ts">
+/**
+ * Legacy BufferAnalysisTool — superseded by InfoPanelToolsTab GIS panel.
+ * Kept as a thin compatibility stub so older imports do not break.
+ * Prefer the panel `gis.buffer` tool which submits a real workflow-run.
+ */
 import { computed, ref } from 'vue'
 
 const props = defineProps<{
@@ -26,9 +31,11 @@ const centerValueLabel = computed(() => {
 <template>
   <div class="buffer-tool-card">
     <div class="tool-head">
-      <span class="tool-kicker">轻量分析工具</span>
+      <span class="tool-kicker">已迁移</span>
       <h4>辐射缓冲区</h4>
-      <p class="tool-note">仅计算几何覆盖面积（πr²），非栅格区域采样。</p>
+      <p class="tool-note">
+        请使用上方「缓冲区」分析工具提交真实 GIS 缓冲；此处仅保留 πr² 面积提示。
+      </p>
     </div>
 
     <div class="radius-control">
@@ -44,11 +51,6 @@ const centerValueLabel = computed(() => {
         step="1"
         class="radius-slider"
       />
-      <div class="radius-ticks">
-        <span>1 km</span>
-        <span>25 km</span>
-        <span>50 km</span>
-      </div>
     </div>
 
     <div class="stats-grid">
@@ -81,97 +83,58 @@ const centerValueLabel = computed(() => {
   border: 1px solid var(--border-default);
   background: var(--surface-raised);
 }
-
 .tool-head {
   display: grid;
   gap: 0.15rem;
   margin-bottom: 0.45rem;
 }
-
 .tool-kicker {
   font-size: var(--font-size-caption);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-secondary);
 }
-
 .tool-head h4 {
   margin: 0;
   font-size: var(--font-size-caption);
-  color: var(--text-primary);
 }
-
 .tool-note {
   margin: 0;
   font-size: var(--font-size-caption);
   color: var(--text-secondary);
-  line-height: 1.35;
 }
-
 .radius-control {
-  display: grid;
-  gap: 0.28rem;
+  margin: 0.4rem 0;
 }
-
 .radius-label-row {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
   font-size: var(--font-size-caption);
-  color: var(--text-secondary);
 }
-
-.radius-label-row strong {
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-}
-
 .radius-slider {
   width: 100%;
-  accent-color: var(--accent);
 }
-
-.radius-ticks {
-  display: flex;
-  justify-content: space-between;
-  font-size: var(--font-size-caption);
-  color: var(--text-secondary);
-}
-
 .stats-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 0.35rem;
-  margin-top: 0.5rem;
 }
-
 .stat-box {
-  padding: 0.35rem 0.4rem;
+  padding: 0.35rem 0.45rem;
   border-radius: 0.45rem;
-  background: var(--surface-raised);
-  border: 1px solid var(--border-subtle);
-  display: grid;
-  gap: 0.12rem;
+  border: 1px solid var(--border-default);
 }
-
 .stat-box--wide {
   grid-column: 1 / -1;
 }
-
 .stat-lbl {
+  display: block;
   font-size: var(--font-size-caption);
   color: var(--text-secondary);
 }
-
 .stat-val {
-  font-size: var(--font-size-caption);
-  color: var(--text-strong);
-  font-weight: 600;
+  font-size: var(--font-size-body);
 }
-
-.stat-val.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: var(--font-size-caption);
-  font-weight: 500;
+.mono {
+  font-variant-numeric: tabular-nums;
 }
 </style>

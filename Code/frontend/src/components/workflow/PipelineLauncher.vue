@@ -371,6 +371,7 @@ watch(
 </script>
 
 <template>
+  <Transition name="pipeline-fade">
   <div v-if="visible" class="pipeline-overlay" @click.self="handleClose">
     <div class="pipeline-dialog">
       <header class="pipeline-header">
@@ -538,6 +539,7 @@ watch(
       </footer>
     </div>
   </div>
+  </Transition>
 </template>
 
 <style scoped>
@@ -604,6 +606,9 @@ watch(
 }
 
 .close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0.32rem 0.46rem;
   border: 1px solid var(--border-default);
   border-radius: 0.42rem;
@@ -1022,5 +1027,42 @@ watch(
   border-radius: 0.5rem;
   border: 1px solid rgba(255, 123, 123, 0.25);
   background: rgba(255, 123, 123, 0.08);
+}
+
+/* ── 对话框出入场动画 ──────────────────────────────────────── */
+.pipeline-fade-enter-active {
+  transition: opacity 0.2s ease;
+}
+.pipeline-fade-enter-active .pipeline-dialog {
+  transition:
+    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.2s ease;
+}
+.pipeline-fade-leave-active {
+  transition: opacity 0.16s ease;
+}
+.pipeline-fade-leave-active .pipeline-dialog {
+  transition:
+    transform 0.16s ease,
+    opacity 0.16s ease;
+}
+.pipeline-fade-enter-from,
+.pipeline-fade-leave-to {
+  opacity: 0;
+}
+.pipeline-fade-enter-from .pipeline-dialog {
+  transform: scale(0.96) translateY(8px);
+  opacity: 0;
+}
+.pipeline-fade-leave-to .pipeline-dialog {
+  transform: scale(0.98);
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pipeline-fade-enter-active,
+  .pipeline-fade-leave-active {
+    transition: opacity 0.01s ease;
+  }
 }
 </style>

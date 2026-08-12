@@ -1,0 +1,170 @@
+[
+  {
+    "tool_id": "gis.buffer",
+    "title": "缓冲区",
+    "description": "对点/线/面要素做缓冲，产出 GeoJSON 与属性表。",
+    "category": "gis",
+    "input_kinds": ["vector", "point"],
+    "param_schema": [
+      {
+        "key": "distance",
+        "type": "number",
+        "title": "缓冲距离",
+        "default": 500,
+        "min": 1,
+        "unit": "m"
+      },
+      {
+        "key": "distance_unit",
+        "type": "enum",
+        "title": "单位",
+        "default": "meters",
+        "options": ["meters", "kilometers"]
+      },
+      {
+        "key": "segments",
+        "type": "integer",
+        "title": "圆弧分段",
+        "default": 16,
+        "min": 4,
+        "max": 64
+      }
+    ],
+    "workflow_template_id": "analysis_buffer",
+    "outputs": ["table", "file"],
+    "resource_profile": "standard",
+    "concurrency_key": "layer_tool"
+  },
+  {
+    "tool_id": "gis.zonal_stats",
+    "title": "分区统计",
+    "description": "按分区矢量对值栅格计算 mean/min/max 等统计，产出表与柱状图。",
+    "category": "gis",
+    "input_kinds": ["raster"],
+    "param_schema": [
+      {
+        "key": "statistic",
+        "type": "enum",
+        "title": "统计量",
+        "default": "mean",
+        "options": ["mean", "median", "sum", "min", "max", "count"]
+      },
+      {
+        "key": "zones_overlay_layer_id",
+        "type": "string",
+        "title": "分区图层 overlay id",
+        "default": "",
+        "description": "矢量导入层的 overlay/catalog id；缺省时用模板 zones 路径"
+      },
+      {
+        "key": "band",
+        "type": "integer",
+        "title": "波段",
+        "default": 0,
+        "min": 0
+      }
+    ],
+    "workflow_template_id": "analysis_zonal_stats",
+    "outputs": ["table", "chart", "file"],
+    "resource_profile": "standard",
+    "concurrency_key": "layer_tool"
+  },
+  {
+    "tool_id": "gis.clip",
+    "title": "栅格裁剪",
+    "description": "按 bbox（默认当前视口）裁剪栅格并发布为新 overlay 图层。",
+    "category": "gis",
+    "input_kinds": ["raster"],
+    "param_schema": [
+      {
+        "key": "west",
+        "type": "number",
+        "title": "West",
+        "default": null
+      },
+      {
+        "key": "south",
+        "type": "number",
+        "title": "South",
+        "default": null
+      },
+      {
+        "key": "east",
+        "type": "number",
+        "title": "East",
+        "default": null
+      },
+      {
+        "key": "north",
+        "type": "number",
+        "title": "North",
+        "default": null
+      },
+      {
+        "key": "buffer_meters",
+        "type": "number",
+        "title": "缓冲(m)",
+        "default": 0,
+        "min": 0
+      }
+    ],
+    "workflow_template_id": "analysis_clip",
+    "outputs": ["map_layer", "file"],
+    "resource_profile": "heavy",
+    "concurrency_key": "layer_tool"
+  },
+  {
+    "tool_id": "stats.histogram",
+    "title": "直方图",
+    "description": "计算栅格像元直方图并在分析面板展示图表。",
+    "category": "stats",
+    "input_kinds": ["raster"],
+    "param_schema": [
+      {
+        "key": "bins",
+        "type": "integer",
+        "title": "分箱数",
+        "default": 50,
+        "min": 5,
+        "max": 256
+      },
+      {
+        "key": "band",
+        "type": "integer",
+        "title": "波段",
+        "default": 0,
+        "min": 0
+      }
+    ],
+    "workflow_template_id": "analysis_histogram",
+    "outputs": ["chart", "table"],
+    "resource_profile": "standard",
+    "concurrency_key": "layer_tool"
+  },
+  {
+    "tool_id": "gis.reclassify",
+    "title": "栅格重分类",
+    "description": "按 remap 表重分类栅格并发布为新 overlay。",
+    "category": "gis",
+    "input_kinds": ["raster"],
+    "param_schema": [
+      {
+        "key": "remap_table",
+        "type": "string",
+        "title": "分级表",
+        "default": "0-10:1,10-100:2,100-1000:3",
+        "description": "格式 min-max:class，逗号分隔"
+      },
+      {
+        "key": "nodata_value",
+        "type": "number",
+        "title": "NoData",
+        "default": -9999
+      }
+    ],
+    "workflow_template_id": "analysis_reclassify",
+    "outputs": ["map_layer", "file"],
+    "resource_profile": "standard",
+    "concurrency_key": "layer_tool"
+  }
+]

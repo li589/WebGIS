@@ -152,6 +152,8 @@ class WorkflowSubmissionService:
 
         # Upgrade standard → heavy when seed meta or heavy modules are present
         apply_resource_profile_to_payload(payload)
+        # Same layer+tool analysis: cancel prior non-terminal run before accept.
+        cancelled_prior = self._cancel_exclusive_analysis_runs(payload)
         now = datetime.now(UTC)
         run_id = f"run-{uuid4().hex[:12]}"
         status_url = self._transitions.workflow_status_url(run_id)
@@ -161,7 +163,11 @@ class WorkflowSubmissionService:
         with log_context(run_id=run_id):
             self._validate_requested_outputs(payload)
             self._validate_request_params(payload)
-            logger.info("Workflow accepted run_class=%s", run_class)
+            logger.info(
+                "Workflow accepted run_class=%s exclusivity_cancelled=%s",
+                run_class,
+                cancelled_prior,
+            )
             accepted_at = now
             queued_at = datetime.now(UTC)
             submission_transitions = self._transitions.build_submission_transitions(
@@ -197,14 +203,82 @@ class WorkflowSubmissionService:
             else:
                 self.process_workflow_run(run_id, payload)
 
+            message = "工作流已提交，可轮询状态、事件与结果引用。"
+            if cancelled_prior:
+                message = (
+                    f"工作流已提交（已取代 {cancelled_prior} 个同工具先前分析）。"
+                    "可轮询状态、事件与结果引用。"
+                )
             return WorkflowAcceptedResponse(
                 run_id=run_id,
                 status=ExecutionStatus.accepted,
                 status_url=status_url,
                 events_url=events_url,
                 created_at=now,
-                message="工作流已提交，可轮询状态、事件与结果引用。",
+                message=message,
             )
+
+    @staticmethod
+    def _analysis_exclusivity_key(payload: WorkflowSubmitRequest) -> str | None:
+        params = payload.parameters if isinstance(payload.parameters, dict) else {}
+        key = str(params.get("analysis_exclusivity_key") or "").strip()
+        return key or None
+
+    def _cancel_exclusive_analysis_runs(self, payload: WorkflowSubmitRequest) -> int:
+        """Cancel non-terminal runs sharing ``analysis_exclusivity_key``.
+
+        Returns the number of runs cancelled (best-effort; race-safe via lifecycle CAS).
+        """
+        key = self._analysis_exclusivity_key(payload)
+        if not key:
+            return 0
+        terminal = {
+            ExecutionStatus.succeeded,
+            ExecutionStatus.failed,
+            ExecutionStatus.cancelled,
+        }
+        cancelled = 0
+        for run in self._repository.list_runs():
+            if run.status in terminal:
+                continue
+            meta = dict(run.executor_metadata or {})
+            if str(meta.get("analysis_exclusivity_key") or "").strip() == key:
+                try:
+                    self.lifecycle.cancel_workflow_run(run.run_id)
+                    cancelled += 1
+                    continue
+                except Exception:
+                    logger.warning(
+                        "Failed to cancel exclusive analysis run %s key=%s",
+                        run.run_id,
+                        key,
+                        exc_info=True,
+                    )
+            raw = self._repository.get_run_request_json(run.run_id)
+            if not raw:
+                continue
+            try:
+                req = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(req, dict):
+                continue
+            req_params = (
+                req.get("parameters") if isinstance(req.get("parameters"), dict) else {}
+            )
+            if str(req_params.get("analysis_exclusivity_key") or "").strip() != key:
+                continue
+            try:
+                self.lifecycle.cancel_workflow_run(run.run_id)
+                cancelled += 1
+            except Exception:
+                logger.warning(
+                    "Failed to cancel exclusive analysis run %s key=%s",
+                    run.run_id,
+                    key,
+                    exc_info=True,
+                )
+        return cancelled
 
     def process_workflow_run(self, run_id: str, payload: WorkflowSubmitRequest) -> None:
         current_run = self._repository.get_run(run_id)

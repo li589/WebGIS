@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers import (
     algorithm_router,
+    analysis_router,
     artifact_router,
     data_io_router,
     health_router,
@@ -270,6 +271,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(layer_router)
     app.include_router(workflow_router)
+    app.include_router(analysis_router)
     app.include_router(runtime_router)
     app.include_router(algorithm_router)
     app.include_router(weather_router)

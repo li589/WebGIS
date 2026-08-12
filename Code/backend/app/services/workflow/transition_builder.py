@@ -96,6 +96,7 @@ class WorkflowTransitionBuilder:
                 "executor": get_task_executor(),
                 "dispatch_channel": resolve_workflow_channel(payload),
                 "queue_name": resolve_workflow_queue(payload),
+                **self._analysis_exclusivity_meta(payload),
             },
         )
         return [
@@ -145,6 +146,15 @@ class WorkflowTransitionBuilder:
                 ],
             ),
         ]
+
+    @staticmethod
+    def _analysis_exclusivity_meta(payload: WorkflowSubmitRequest) -> dict:
+        """Extract analysis_exclusivity_key from payload parameters if present."""
+        params = payload.parameters
+        if not isinstance(params, dict):
+            return {}
+        key = str(params.get("analysis_exclusivity_key") or "").strip()
+        return {"analysis_exclusivity_key": key} if key else {}
 
     def build_execution_transition(
         self,

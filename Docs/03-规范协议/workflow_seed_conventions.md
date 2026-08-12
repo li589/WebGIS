@@ -51,7 +51,7 @@
 
 现有词汇（新增须先改本文再改 seed）：
 
-`pipeline` · `omega_avg` · `omega_block` · `sf_inversion` · `d1` · `demo` · `sample` · `download` · `local` · `gldas_online` · `weather` · `analysis` · `statistics` · `histogram` · `timeseries` · `chart` · `raster` · `zonal` · `preprocess` · `gis` · `fusion` · `report` · `stub_v1`
+`pipeline` · `omega_avg` · `omega_block` · `sf_inversion` · `d1` · `demo` · `sample` · `download` · `local` · `gldas_online` · `weather` · `analysis` · `statistics` · `histogram` · `timeseries` · `chart` · `raster` · `zonal` · `preprocess` · `gis` · `fusion` · `report` · `stub_v1` · `ui-panel` · `buffer`
 
 约定：
 
@@ -61,7 +61,8 @@
 - 算法族用稳定前缀（`omega_*`、`sf_*`）。
 - `stub_v1`：2026-08 新启用的预处理 / GIS / 统计 / 融合样例种子。
 - `preprocess` / `gis` / `fusion` / `report`：功能域标记（可与 `analysis` category 并存）。
-
+- `ui-panel`：InfoPanel 分析面板固化模板（`analysis_*.json`），勿强制 `pipeline`。
+- `buffer`：缓冲分析相关。
 ### `_meta.resource_profile`（可选）
 
 | 值 | 说明 |

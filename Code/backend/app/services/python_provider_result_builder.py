@@ -625,6 +625,17 @@ class PythonProviderResultBuilder:
         product_type = str(product.get("type") or "")
         config = _MAPPABLE_PRODUCTS.get(product_type)
         if config is None:
+            # Generic GIS / preprocess GeoTIFF products (native CRS/bounds).
+            if product_type in {"raster", "map_layer"} or str(
+                as_dict(product.get("tags")).get("kind") or ""
+            ).lower() in {"raster", "cog"}:
+                return self._build_generic_raster_map_layer_ref(
+                    run_id=run_id,
+                    requested_at=requested_at,
+                    payload=payload,
+                    product=product,
+                    index=index,
+                )
             return None
 
         uri = str(
@@ -798,6 +809,129 @@ class PythonProviderResultBuilder:
                     "cog_bbox": cog_bbox,
                     "product_tag": layer_tag,
                     "source_path": str(source_path),
+                },
+            },
+            updated_at=requested_at,
+        )
+
+    def _build_generic_raster_map_layer_ref(
+        self,
+        *,
+        run_id: str,
+        requested_at: datetime,
+        payload: WorkflowSubmitRequest,
+        product: dict[str, Any],
+        index: int,
+    ) -> WorkflowResultReference | None:
+        """Register a GeoTIFF product using native CRS/bounds (no ease2 preset)."""
+        uri = str(
+            product.get("download_url")
+            or product.get("preview_url")
+            or product.get("uri")
+            or ""
+        ).strip()
+        local_path = self._uri_to_local_path(uri) if uri else None
+        if local_path is None or not local_path.is_file():
+            return None
+        suffix = local_path.suffix.lower()
+        if suffix not in {".tif", ".tiff", ".geotiff", ".cog"}:
+            return None
+
+        tags = as_dict(product.get("tags"))
+        variable = str(product.get("variable") or tags.get("variable") or "raster")
+        label = str(
+            tags.get("layer") or product.get("name") or local_path.stem or "GIS"
+        )[:64]
+        try:
+            from app.data_io.services.raster_register import (
+                confirm_imported_raster_crs,
+                register_geotiff_as_imported,
+            )
+
+            registered = register_geotiff_as_imported(
+                local_path,
+                source_filename=f"{run_id[-8:]}_{local_path.name}",
+                layer_id=f"imported-gis-{run_id[-8:]}-{index:02d}",
+                replace_existing=True,
+                extra_meta={
+                    "analysis_product": True,
+                    "variable_id": variable,
+                    "science_source": local_path.name,
+                    "module": str(tags.get("module") or ""),
+                },
+            )
+            crs_for_confirm = str(registered.get("source_crs") or "").strip()
+            if crs_for_confirm and (
+                registered.get("needs_confirm")
+                or crs_for_confirm not in {"EPSG:4326", "EPSG:4490"}
+            ):
+                try:
+                    confirmed = confirm_imported_raster_crs(
+                        str(registered["layer_id"]),
+                        source_crs=crs_for_confirm,
+                    )
+                    registered = {**registered, **confirmed, "needs_confirm": False}
+                except Exception as exc:
+                    registered["auto_confirm_error"] = str(exc)
+                    logger.warning(
+                        "Generic raster auto-confirm failed overlay=%s crs=%s: %s",
+                        registered.get("layer_id"),
+                        crs_for_confirm,
+                        exc,
+                    )
+        except Exception:
+            logger.exception(
+                "Failed to publish generic raster map_layer path=%s",
+                local_path,
+            )
+            return None
+
+        overlay_id = str(registered.get("layer_id") or "").strip()
+        if not overlay_id:
+            return None
+
+        bounds = registered.get("bounds")
+        cog_bbox = None
+        if (
+            isinstance(bounds, (list, tuple))
+            and len(bounds) == 4
+            and all(isinstance(v, (int, float)) for v in bounds)
+        ):
+            cog_bbox = {
+                "west": float(bounds[0]),
+                "south": float(bounds[1]),
+                "east": float(bounds[2]),
+                "north": float(bounds[3]),
+                "crs": "EPSG:4326",
+            }
+
+        render_hint = WeatherLayerRenderHint(
+            layer_id=payload.layer_id or overlay_id,
+            paint_mode="grid_fill",
+            palette="viridis",
+            primary_metric=variable,
+            unit_label=label,
+            opacity=0.8,
+            notes=[
+                f"product={product.get('type') or 'raster'}",
+                f"overlay={overlay_id}",
+                "native_crs",
+            ],
+        )
+        return WorkflowResultReference(
+            result_id=f"algorithm-map-{index}-{run_id[-8:]}",
+            result_kind=ResultKind.map_layer,
+            title=f"Algorithm Map Layer: {label}",
+            mime_type="application/json",
+            inline_data={
+                "render_hint": render_hint.model_dump(mode="json"),
+                "layer_assets": {
+                    "overlay_layer_id": overlay_id,
+                    "cog_url": f"/overlay-preview/{overlay_id}",
+                    "cog_preview_url": f"/overlay-preview/{overlay_id}",
+                    "cog_bbox": cog_bbox,
+                    "product_tag": label,
+                    "source_path": str(local_path),
                 },
             },
             updated_at=requested_at,

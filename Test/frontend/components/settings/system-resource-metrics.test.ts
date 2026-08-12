@@ -48,8 +48,8 @@ describe('SystemResourceMetrics 资源面板', () => {
 
     expect(mockFetch).toHaveBeenCalledTimes(1)
     const text = wrapper.text()
-    expect(text).toContain('前端页面占用')
-    expect(text).toContain('后端占用')
+    expect(text).toContain('前端状态')
+    expect(text).toContain('后端状态')
     expect(text).toContain('7 worker 在线')
     expect(text).toContain('22.3%') // 系统 CPU
     expect(text).toContain('60%') // 内存占比（Math.round(59.7)）

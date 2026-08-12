@@ -12,6 +12,16 @@
 export type ScreenshotMode = 'shell' | 'bare' | 'clean' | 'pure'
 export type ScreenshotFormat = 'png' | 'pdf'
 
+/**
+ * 将 CSS 自定义属性（如 var(--surface-1)）解析为字面量颜色值。
+ * Canvas 2D Context 的 fillStyle 不支持 CSS 变量，必须传入实际颜色。
+ */
+function resolveCssColor(varName: string, fallback = '#0b1a2a'): string {
+  if (typeof document === 'undefined') return fallback
+  const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim()
+  return value || fallback
+}
+
 export const MAP_CANVAS_SELECTORS = [
   '.maplibregl-canvas-container',
   '.maplibregl-canvas',
@@ -524,14 +534,14 @@ export function buildMapSnapshotLayout(
 
 /**
  * Composite map snapshot underneath UI controls in three forward layers:
- * 1. Base dark background fill (var(--surface-1))
+ * 1. Base background fill (resolved from --surface-1)
  * 2. Map Snapshot (Basemap + weather layers + scalar fields + vector lines + particles)
  * 3. UI Canvas (transparent HTML controls, panels, toolbar) on top!
  */
 export async function compositeMapUnderUi(
   uiCanvas: HTMLCanvasElement,
   mapSnapshot: MapSnapshot | null,
-  fillColor = 'var(--surface-1)',
+  fillColor?: string,
 ): Promise<HTMLCanvasElement> {
   const composed = document.createElement('canvas')
   composed.width = uiCanvas.width
@@ -539,8 +549,8 @@ export async function compositeMapUnderUi(
   const ctx = composed.getContext('2d')
   if (!ctx) return uiCanvas
 
-  // Layer 1: Fill solid background
-  ctx.fillStyle = fillColor
+  // Layer 1: Fill solid background (resolve CSS variable to literal color)
+  ctx.fillStyle = fillColor || resolveCssColor('--surface-1', '#0b1a2a')
   ctx.fillRect(0, 0, composed.width, composed.height)
 
   // Layer 2: Draw map snapshot (basemap + layers)

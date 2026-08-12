@@ -25,6 +25,8 @@ export interface SettingsUiLocal {
    * 关闭或无可见数据图层时不盖雾/淡白层。
    */
   mapDistributionChrome?: boolean
+  /** 设置侧栏宽度（px）；未设则用默认 38rem */
+  panelWidthPx?: number
 }
 
 function safeGet(storage: Storage, key: string): string | null {

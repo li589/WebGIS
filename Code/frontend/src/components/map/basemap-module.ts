@@ -112,7 +112,10 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
 
   function ensureTileLayer(sourceId: TileSourceId) {
     const cfg = options.getTileConfig(sourceId)
-    if (!cfg) return
+    if (!cfg) {
+      console.warn(`[basemap] getTileConfig returned undefined for sourceId="${sourceId}"`)
+      return
+    }
 
     if (!options.map.getSource(TILE_SOURCE_ID)) {
       options.map.addSource(TILE_SOURCE_ID, {
@@ -193,7 +196,10 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     }
 
     const cfg = options.getTileConfig(sourceId)
-    if (!cfg) return
+    if (!cfg) {
+      console.warn(`[basemap] switchTileSource: getTileConfig returned undefined for sourceId="${sourceId}"`)
+      return
+    }
 
     const existingSource = options.map.getSource(TILE_SOURCE_ID) as RasterTileSource | undefined
     if (existingSource && existingSource.type === 'raster') {
@@ -297,6 +303,7 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
       status !== 0 &&
       status !== 403 &&
       status !== 404 &&
+      status !== 502 &&
       status !== 503
     ) {
       return

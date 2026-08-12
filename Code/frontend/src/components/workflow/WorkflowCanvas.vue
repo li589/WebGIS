@@ -43,6 +43,15 @@ import type {
   NodeTemplate,
 } from '../../services/workflow-definition-api'
 import { buildPortTooltip, type PortTooltipModel } from './port-tooltip'
+import {
+  resolveCanvasColor,
+  getGridColors,
+  getMinimapColors,
+  getLiteGraphColors,
+  getCanvasClearColor,
+  invalidateCanvasThemeCache,
+} from './canvas-theme'
+import { useThemeStore } from '../../stores/theme'
 
 const props = defineProps<{
   /** 当前加载的工作流定义 */
@@ -94,6 +103,41 @@ const portTooltip = ref<{
 let _portTooltipKey = ''
 /** 独立 mousemove 监听（LiteGraph 可能 bind 了 processMouseMove，覆写方法不可靠） */
 let _portMousemoveHandlerRef: ((e: MouseEvent) => void) | null = null
+
+// ─── 主题切换：刷新 Canvas 颜色缓存并重绘 ──────────────────────────────────
+const themeStore = useThemeStore()
+
+function applyLiteGraphThemeColors(canvas?: LGraphCanvasClass | null) {
+  invalidateCanvasThemeCache()
+  const clearColor = getCanvasClearColor()
+  if (canvas) {
+    ;(canvas as unknown as { clear_background_color: string }).clear_background_color = clearColor
+  }
+  if (LiteGraph) {
+    const lg = liteGraphTheme()
+    const c = getLiteGraphColors()
+    LiteGraph.NODE_DEFAULT_COLOR = c.nodeBg
+    LiteGraph.NODE_DEFAULT_BGCOLOR = c.nodeBg
+    LiteGraph.NODE_DEFAULT_BOXCOLOR = c.nodeBox
+    LiteGraph.NODE_TITLE_COLOR = c.nodeTitle
+    LiteGraph.NODE_TEXT_COLOR = c.nodeText
+    lg.NODE_SELECTED_TITLE_COLOR = c.selectedTitle
+    lg.NODE_BOX_OUTLINE_COLOR = c.boxOutline
+    LiteGraph.LINK_COLOR = c.link
+    LiteGraph.CONNECTING_LINK_COLOR = c.connectingLink
+    LiteGraph.EVENT_LINK_COLOR = c.eventLink
+    lg.LINK_HOVER_COLOR = c.linkHover
+  }
+}
+
+watch(
+  () => themeStore.mode,
+  () => {
+    applyLiteGraphThemeColors(canvasInstance.value)
+    // 触发画布重绘（背景清屏色随主题切换）
+    canvasInstance.value?.setDirty(true, true)
+  },
+)
 
 const portTooltipStyle = computed(() => {
   // fixed 定位到视口，避开父级 overflow:hidden / 层叠裁剪
@@ -306,6 +350,9 @@ function configureCanvas(canvas: LGraphCanvasClass) {
   // 基本配置：关闭点阵图，改由 onDrawBackground 绘制可缩放吸附网格
   canvas.background_image = ''
   canvas.clear_background = true
+  // LiteGraph 默认 clear_background_color="#222"，不跟主题 → 浅色下工作区「卡住」不变
+  ;(canvas as unknown as { clear_background_color: string }).clear_background_color =
+    getCanvasClearColor()
   canvas.allow_searchbox = true
   // 交互核心：允许拖动节点、允许交互（选中/缩放/连接）、允许拖动画布
   // read_only 必须为 false，否则所有节点交互（拖动/选中/缩放/连接）都会被 LiteGraph 拦截
@@ -326,31 +373,18 @@ function configureCanvas(canvas: LGraphCanvasClass) {
     }
   }
 
-  // 主题色适配深色 UI
+  // 主题色适配：Canvas 2D 不支持 var()，需解析为字面量颜色
+  applyLiteGraphThemeColors(canvas)
   if (LiteGraph) {
     const lg = liteGraphTheme()
-    // 节点默认颜色
-    LiteGraph.NODE_DEFAULT_COLOR = 'var(--surface-2)'
-    LiteGraph.NODE_DEFAULT_BGCOLOR = 'var(--surface-2)'
-    LiteGraph.NODE_DEFAULT_BOXCOLOR = 'var(--accent)'
-    LiteGraph.NODE_DEFAULT_SHAPE = 'round'
-    LiteGraph.NODE_TITLE_COLOR = 'var(--text-primary)'
-    LiteGraph.NODE_TEXT_COLOR = 'var(--text-secondary)'
-    lg.NODE_SELECTED_TITLE_COLOR = 'var(--warning)'
-    lg.NODE_BOX_OUTLINE_COLOR = 'var(--accent)'
-    // 连线颜色 — 不同数据类型不同颜色
-    LiteGraph.LINK_COLOR = 'var(--accent)' // 默认（青色）
-    LiteGraph.CONNECTING_LINK_COLOR = 'var(--warning)' // 正在连接（橙色）
-    LiteGraph.EVENT_LINK_COLOR = 'var(--success)' // 事件类型（绿色）
     // 标题栏高度 / 槽位 / 字号（与节点默认尺寸联动，避免溢出）
+    LiteGraph.NODE_DEFAULT_SHAPE = 'round'
     LiteGraph.NODE_TITLE_HEIGHT = 24
     LiteGraph.NODE_SLOT_HEIGHT = 22
     LiteGraph.NODE_WIDGET_HEIGHT = 22
     LiteGraph.NODE_TEXT_SIZE = 15
     // 连线宽度
     lg.LINK_WIDTH = 2.2
-    // 鼠标悬停连接线时的高亮颜色（降级方案：依赖 LiteGraph 内置 hover 绘制）
-    lg.LINK_HOVER_COLOR = 'var(--accent-warm)'
   }
 
   // 选区回调
@@ -501,7 +535,7 @@ function configureCanvas(canvas: LGraphCanvasClass) {
     if (origOnNodeMoved) origOnNodeMoved(node)
   }
 
-  // 网格背景：在 graph 坐标系中绘制，缩放后位置始终正确
+  // 网格背景：先铺主题清屏色，再在 graph 坐标系中绘制网格
   canvasAny.onDrawBackground = (ctx: CanvasRenderingContext2D) => {
     const area = canvasAny.ds?.visible_area
     if (!area) return
@@ -510,12 +544,16 @@ function configureCanvas(canvas: LGraphCanvasClass) {
     const width = Number(area[2])
     const height = Number(area[3])
     const scale = canvasAny.ds?.scale ?? 1
+    ctx.save()
+    // 保证浅/深主题背景真正切换（不只依赖 LiteGraph clear）
+    ctx.fillStyle = getCanvasClearColor()
+    ctx.fillRect(left - 2, top - 2, width + 4, height + 4)
     // 缩放很小时降采样网格密度，避免线条过密
     const step = scale < 0.5 ? SNAP_GRID_SIZE * 2 : SNAP_GRID_SIZE
     const startX = Math.floor(left / step) * step
     const startY = Math.floor(top / step) * step
-    ctx.save()
-    ctx.strokeStyle = 'var(--accent-surface)'
+    const gridColors = getGridColors()
+    ctx.strokeStyle = gridColors.minor
     ctx.lineWidth = 1 / Math.max(scale, 0.01)
     ctx.beginPath()
     for (let x = startX; x <= left + width; x += step) {
@@ -531,7 +569,7 @@ function configureCanvas(canvas: LGraphCanvasClass) {
     const major = step * 5
     const majorStartX = Math.floor(left / major) * major
     const majorStartY = Math.floor(top / major) * major
-    ctx.strokeStyle = 'var(--accent-surface)'
+    ctx.strokeStyle = gridColors.major
     ctx.beginPath()
     for (let x = majorStartX; x <= left + width; x += major) {
       ctx.moveTo(x, top)
@@ -559,7 +597,8 @@ function configureCanvas(canvas: LGraphCanvasClass) {
       return [(x + ds.offset[0]) * ds.scale, (y + ds.offset[1]) * ds.scale]
     }
     ctx.save()
-    ctx.strokeStyle = 'rgba(160, 200, 230, 0.32)'
+    ctx.strokeStyle = resolveCanvasColor('--accent', '#5ad5ff')
+    ctx.globalAlpha = 0.5
     ctx.lineWidth = 1
     ctx.setLineDash([4, 6])
     for (const g of alignmentGuides.value) {
@@ -667,19 +706,19 @@ function configureCanvas(canvas: LGraphCanvasClass) {
 }
 
 /**
- * 启用画布交互（标准 ComfyUI 风格）：
+ * 启用画布交互（ComfyUI 风格改进版）：
  *   - 左键空白区域拖动 → 框选多节点
- *   - 右键空白区域拖动 → 平移视角
+ *   - 中键拖动 → 平移视角
+ *   - 右键空白区域拖动 → 平移视角（备选）
  *   - 右键节点 → 显示上下文菜单（LiteGraph 原生 processContextMenu，含 Remove 等）
- *   - 中键拖动 → 平移视角（LiteGraph 原生）
  *   - 左键节点 → 选中/拖动节点（LiteGraph 原生）
  *   - 多选后拖动任一节点 → 整体移动（LiteGraph 原生）
  *
  * 实现方式：monkey-patch LGraphCanvas._mousedown_callback
- *   1. 左键空白：将 e.ctrlKey 强制设为 true，让 LiteGraph 原生框选逻辑生效（L5998-L6006）
- *   2. 右键空白：origCallback 执行后强制设置 dragging_canvas=true，
- *      LiteGraph 原生 mousemove（L6497-L6502）会处理平移，
- *      mouseup（L6964-L6968）会自动清理 dragging_canvas
+ *   1. 保持 allow_dragcanvas=true（LiteGraph processMouseWheel 依赖此属性，设 false 会禁用滚轮缩放）
+ *   2. 左键空白：强制 ctrlKey=true 让 LiteGraph 进入 dragging_rectangle 框选模式（skip_action 阻止平移）
+ *   3. 中键空白：preventDefault + 强制 dragging_canvas=true 启动平移
+ *   4. 右键空白：origCallback 后强制 dragging_canvas=true 启动平移
  */
 function clearAlignmentGuides(canvas?: LGraphCanvasClass | null) {
   if (!alignmentGuides.value.length) return
@@ -692,19 +731,36 @@ function enableCanvasInteractions(canvas: LGraphCanvasClass) {
   const canvasAny = canvas as unknown as {
     _mousedown_callback?: (e: MouseEvent) => void
     dragging_canvas?: boolean
+    dragging_rectangle?: number[] | null
+    allow_dragcanvas?: boolean
   }
+
+  // 注意：不禁用 allow_dragcanvas，因为 LiteGraph 的 processMouseWheel 依赖此属性，
+  // 设为 false 会导致滚轮缩放失效。左键平移已通过 ctrlKey hack 阻止（框选模式 skip_action）。
+
   const origCallback = canvasAny._mousedown_callback
   if (!origCallback || !canvasRef.value) return
 
   const wrappedCallback = (e: MouseEvent) => {
     const isLeftClick = e.button === 0
+    const isMiddleClick = e.button === 1
     const isRightClick = e.button === 2
     const onEmpty = isPointOnEmptyArea(e, canvas)
 
-    // 点击空白：立即清除对齐辅助线（左键/右键空白都清）
+    // 点击空白：立即清除对齐辅助线
     if (onEmpty) {
       clearAlignmentGuides(canvas)
       hidePortTooltip()
+    }
+
+    // 中键：阻止浏览器自动滚动，启动平移
+    if (isMiddleClick) {
+      e.preventDefault()
+      if (onEmpty) {
+        origCallback(e)
+        canvasAny.dragging_canvas = true
+        return
+      }
     }
 
     // 左键空白 → 框选：让 LiteGraph 进入 dragging_rectangle 模式
@@ -712,16 +768,22 @@ function enableCanvasInteractions(canvas: LGraphCanvasClass) {
       try {
         Object.defineProperty(e, 'ctrlKey', { get: () => true, configurable: true })
       } catch {
-        // 修改失败时退化为原生行为（用户仍可手动按 Ctrl 框选）
+        // monkey-patch 失败时，手动初始化框选矩形
+        const rect = canvasRef.value?.getBoundingClientRect()
+        if (rect) {
+          const ds = (canvas as unknown as { ds?: { offset: [number, number]; scale: number } }).ds
+          if (ds) {
+            const cx = (e.clientX - rect.left) / ds.scale - ds.offset[0]
+            const cy = (e.clientY - rect.top) / ds.scale - ds.offset[1]
+            canvasAny.dragging_rectangle = [cx, cy, 0, 0]
+          }
+        }
       }
     }
 
     const result = origCallback(e)
 
-    // 右键空白 → 平移视角：origCallback 中 LiteGraph 的右键分支在 node=null 时什么都不做
-    // （L6362-L6384：node 为 null 时跳过 processContextMenu），所以这里强制启动平移
-    // mousemove 中 dragging_canvas=true 会更新 offset（L6497-L6502）
-    // mouseup 中 which==3 会自动清理 dragging_canvas=false（L6964-L6968）
+    // 右键空白 → 平移视角
     if (isRightClick && shouldTriggerPanOnRightClick(e, canvas)) {
       canvasAny.dragging_canvas = true
     }
@@ -739,7 +801,7 @@ function enableCanvasInteractions(canvas: LGraphCanvasClass) {
   if (container) {
     const onPointerDownCapture = (e: Event) => {
       const me = e as MouseEvent
-      if (me.button != null && me.button !== 0 && me.button !== 2) return
+      if (me.button != null && me.button !== 0 && me.button !== 1 && me.button !== 2) return
       // 点在 minimap 上不处理
       const target = e.target as HTMLElement | null
       if (target?.closest?.('.workflow-minimap')) return
@@ -832,7 +894,8 @@ function drawMinimap() {
   const W = mm.width
   const H = mm.height
   ctx.clearRect(0, 0, W, H)
-  ctx.fillStyle = 'var(--surface-1)'
+  const mmColors = getMinimapColors()
+  ctx.fillStyle = mmColors.bg
   ctx.fillRect(0, 0, W, H)
 
   const nodes = getGraphNodes(graph)
@@ -880,10 +943,10 @@ function drawMinimap() {
     const nh = Math.max(2, h * scale)
     // 按引擎类型着色（module/* 属于 python_provider）
     const t = n.type ?? ''
-    let color = 'var(--accent-strong)'
-    if (t.startsWith('weather/')) color = 'var(--warning)'
-    else if (t.startsWith('module/') || t.startsWith('python_provider/')) color = 'var(--success)'
-    else if (t.startsWith('gee/')) color = 'var(--accent)'
+    let color = mmColors.default
+    if (t.startsWith('weather/')) color = mmColors.weather
+    else if (t.startsWith('module/') || t.startsWith('python_provider/')) color = mmColors.pythonProvider
+    else if (t.startsWith('gee/')) color = mmColors.gee
     ctx.fillStyle = color
     ctx.globalAlpha = n.selected ? 1.0 : 0.7
     ctx.fillRect(x, y, nw, nh)
@@ -903,7 +966,7 @@ function drawMinimap() {
     const vy = toMy(viewTop)
     const vw = viewW * scale
     const vh = viewH * scale
-    ctx.strokeStyle = 'var(--warning-border)'
+    ctx.strokeStyle = mmColors.viewport
     ctx.lineWidth = 1
     ctx.setLineDash([3, 3])
     ctx.strokeRect(vx, vy, vw, vh)
@@ -1897,9 +1960,12 @@ watch(
   gap: 0.6rem;
   color: var(--text-muted);
   font-size: var(--font-size-caption);
-  background: var(--surface-2);
+  background: color-mix(in srgb, var(--surface-2) 82%, transparent);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  /* 加载态挡交互；就绪后节点卸载，不会残留 */
+  pointer-events: auto;
+  z-index: 2;
 }
 
 .canvas-error {
@@ -2011,5 +2077,23 @@ watch(
   pointer-events: auto;
   cursor: pointer;
   z-index: 5;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    opacity 0.2s ease;
+  opacity: 0.78;
+}
+
+.workflow-minimap:hover {
+  border-color: var(--border-accent);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workflow-minimap {
+    transition: none;
+    opacity: 1;
+  }
 }
 </style>

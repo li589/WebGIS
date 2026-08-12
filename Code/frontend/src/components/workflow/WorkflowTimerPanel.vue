@@ -562,7 +562,7 @@ onUnmounted(() => {
 
 <template>
   <div
-    :class="embedded ? 'timer-embedded' : 'timer-overlay'"
+    :class="[embedded ? 'timer-embedded' : 'timer-overlay', !embedded && 'timer-overlay-anim']"
     @click.self="!embedded && emit('close')"
   >
     <div class="timer-panel" :class="{ 'timer-panel--embedded': embedded }">
@@ -905,7 +905,7 @@ onUnmounted(() => {
   margin-right: auto;
   font-size: var(--font-size-caption);
   font-weight: 500;
-  color: rgba(160, 200, 240, 0.72);
+  color: var(--text-muted);
   border: 1px solid var(--border-strong);
   border-radius: 0.25rem;
   padding: 0.1rem 0.35rem;
@@ -931,8 +931,8 @@ onUnmounted(() => {
 
 .header-btn.primary {
   border-color: var(--border-strong);
-  background: rgba(24, 70, 105, 0.85);
-  color: var(--text-strong);
+  background: var(--accent-blue-deep, #1a5fcc);
+  color: #fff;
 }
 
 .header-btn:disabled {
@@ -970,9 +970,9 @@ onUnmounted(() => {
 }
 
 .error-banner {
-  background: rgba(120, 30, 40, 0.35);
+  background: var(--danger-surface);
   color: var(--danger);
-  border: 1px solid rgba(255, 120, 120, 0.25);
+  border: 1px solid var(--danger-border);
 }
 
 .info-banner {
@@ -1153,8 +1153,8 @@ onUnmounted(() => {
 }
 
 .toggle-switch.on {
-  background: rgba(40, 120, 90, 0.75);
-  border-color: rgba(90, 220, 160, 0.45);
+  background: var(--success);
+  border-color: var(--success-border);
 }
 
 .toggle-knob {
@@ -1363,8 +1363,56 @@ onUnmounted(() => {
 }
 
 .dialog-btn.danger {
-  border-color: rgba(255, 120, 120, 0.4);
+  border-color: var(--danger-border);
   color: var(--danger);
-  background: rgba(80, 24, 32, 0.75);
+  background: var(--danger-surface);
+}
+
+/* ── 定时器面板滑入动画（overlay 模式） ──────────────────────── */
+.timer-overlay-anim {
+  animation: timer-overlay-fade 0.2s ease;
+}
+.timer-overlay-anim .timer-panel {
+  animation: timer-panel-slide-in 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes timer-overlay-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes timer-panel-slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+/* ── 确认/事件对话框动画 ────────────────────────────────────── */
+.dialog-overlay {
+  animation: dialog-fade-in 0.18s ease;
+}
+.dialog {
+  animation: dialog-pop-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes dialog-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes dialog-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timer-overlay-anim,
+  .timer-overlay-anim .timer-panel,
+  .dialog-overlay,
+  .dialog {
+    animation: none;
+    transition: opacity 0.01s ease;
+  }
 }
 </style>

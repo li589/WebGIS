@@ -56,7 +56,7 @@
   font-size: var(--font-size-caption);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--border-strong);
+  color: var(--text-muted);
 }
 
 .analysis-idle-title {
@@ -72,7 +72,7 @@
   max-width: 16rem;
   font-size: var(--font-size-caption);
   line-height: 1.5;
-  color: var(--border-strong);
+  color: var(--text-secondary);
 }
 
 .analysis-idle-steps {
@@ -89,11 +89,11 @@
   position: relative;
   padding: 0.38rem 0.55rem 0.38rem 1.55rem;
   border-radius: 0.5rem;
-  background: var(--border-subtle);
-  border: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
   font-size: var(--font-size-caption);
   line-height: 1.4;
-  color: rgba(203, 213, 225, 0.88);
+  color: var(--text-secondary);
 }
 
 .analysis-idle-steps li::before {
@@ -105,7 +105,34 @@
   height: 0.35rem;
   border-radius: 50%;
   transform: translateY(-50%);
-  background: rgba(125, 211, 252, 0.55);
+  background: var(--accent);
+  opacity: 0.75;
+}
+
+/* 浅色：加强 orb 对比，避免青白糊成一片 */
+:global([data-theme='light']) .analysis-idle-orb {
+  background:
+    radial-gradient(circle at 35% 30%, rgba(10, 143, 196, 0.28), transparent 55%),
+    radial-gradient(circle at 70% 65%, rgba(26, 95, 204, 0.14), transparent 60%),
+    rgba(220, 232, 244, 0.95);
+  border-color: rgba(10, 143, 196, 0.35);
+  box-shadow:
+    inset 0 0 20px rgba(10, 143, 196, 0.12),
+    0 2px 10px rgba(30, 60, 100, 0.08);
+}
+
+:global([data-theme='light']) .analysis-idle-kicker {
+  color: var(--text-muted);
+}
+
+:global([data-theme='light']) .analysis-idle-lead,
+:global([data-theme='light']) .analysis-idle-steps li {
+  color: var(--text-secondary);
+}
+
+:global([data-theme='light']) .analysis-idle-steps li {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: var(--border-default);
 }
 
 .analysis-sparse-card {
@@ -150,7 +177,9 @@
   padding: 0;
   border-radius: var(--panel-radius);
   border: 1px solid var(--border-default);
-  background: linear-gradient(180deg, var(--surface-1), var(--surface-1));
+  background: linear-gradient(180deg, var(--surface-raised), var(--surface-sunken));
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   box-shadow:
     inset 0 1px 0 var(--surface-hover),
     0 12px 26px rgba(1, 8, 16, 0.14);

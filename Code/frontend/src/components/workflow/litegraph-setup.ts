@@ -7,6 +7,7 @@
 import 'litegraph.js/css/litegraph.css'
 import './litegraph-ui-overrides.css'
 import * as litegraphCore from 'litegraph.js/build/litegraph.core.js'
+import { getPortColors } from './canvas-theme'
 
 // 类型导入（仅用于类型检查，不参与运行时）
 import type {
@@ -410,19 +411,21 @@ export function checkConnectionValid(inputType: string, outputType: string): boo
 
 /**
  * 按端口类型返回颜色（用于 slot 渲染）。
+ * 注意：Canvas 2D 不支持 CSS 变量，使用 getPortColors() 解析为字面量值。
  */
 export function getPortColor(type: string): string {
-  if (type === 'data' || type === 'data:source') return 'var(--accent)' // 青色
-  if (type === 'data:mat') return 'var(--warning)' // 橙色
-  if (type === 'data:raster') return 'var(--accent)' // 蓝色
-  if (type === 'data:geojson') return 'var(--success)' // 绿色
-  if (type === 'data:timeseries') return '#c084fc' // 紫色
+  const c = getPortColors()
+  if (type === 'data' || type === 'data:source') return c.data // 青色
+  if (type === 'data:mat') return c.dataMat // 橙色
+  if (type === 'data:raster') return c.dataRaster // 蓝色
+  if (type === 'data:geojson') return c.dataGeojson // 绿色
+  if (type === 'data:timeseries') return '#c084fc' // 紫色（无对应 token，保留 hex）
   if (type === 'value:number') return '#ffd5a8' // 浅黄
   if (type === 'value:string') return '#ffe08a' // 金黄
   if (type === 'value:boolean') return '#9ae6b4' // 浅绿
   if (type === 'value:time_range') return '#ff8fb1' // 粉色
-  if (type === 'geometry:bbox') return 'var(--danger)' // 红色
-  return 'var(--text-faint)' // 默认灰
+  if (type === 'geometry:bbox') return c.bbox // 红色
+  return c.default // 默认灰
 }
 
 /** 端口类型中文说明（检查器/面板用） */

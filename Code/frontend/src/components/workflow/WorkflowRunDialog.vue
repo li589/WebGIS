@@ -146,6 +146,7 @@ watch(outputTags, (tags) => {
 </script>
 
 <template>
+  <Transition name="run-dialog-fade">
   <div v-if="visible" class="run-dialog-overlay" @click.self="handleCancel">
     <div class="run-dialog">
       <header class="dialog-header">
@@ -247,6 +248,7 @@ watch(outputTags, (tags) => {
       </footer>
     </div>
   </div>
+  </Transition>
 </template>
 
 <style scoped>
@@ -541,5 +543,42 @@ watch(outputTags, (tags) => {
 .action-btn.confirm:disabled {
   opacity: 0.42;
   cursor: not-allowed;
+}
+
+/* ── 对话框出入场动画 ──────────────────────────────────────── */
+.run-dialog-fade-enter-active {
+  transition: opacity 0.2s ease;
+}
+.run-dialog-fade-enter-active .run-dialog {
+  transition:
+    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.2s ease;
+}
+.run-dialog-fade-leave-active {
+  transition: opacity 0.16s ease;
+}
+.run-dialog-fade-leave-active .run-dialog {
+  transition:
+    transform 0.16s ease,
+    opacity 0.16s ease;
+}
+.run-dialog-fade-enter-from,
+.run-dialog-fade-leave-to {
+  opacity: 0;
+}
+.run-dialog-fade-enter-from .run-dialog {
+  transform: scale(0.96) translateY(8px);
+  opacity: 0;
+}
+.run-dialog-fade-leave-to .run-dialog {
+  transform: scale(0.98);
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-dialog-fade-enter-active,
+  .run-dialog-fade-leave-active {
+    transition: opacity 0.01s ease;
+  }
 }
 </style>

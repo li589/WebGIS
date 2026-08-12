@@ -36,6 +36,8 @@ import {
   isMapDistributionChromeEnabled,
   subscribeMapDistributionChrome,
 } from '../services/settings-local'
+import { useThemeStore } from '../stores/theme'
+import { resolveSurfaceColor } from './map/map-canvas-map-options'
 import {
   dataWorkspaceHighlight,
   dataWorkspaceZoomRequest,
@@ -262,6 +264,18 @@ const unsubscribeMapChrome = subscribeMapDistributionChrome(() => {
   mapDistributionChromeEnabled.value = isMapDistributionChromeEnabled()
 })
 
+// ─── 主题切换时更新 MapLibre 背景色 ──────────────────────────────────────────
+const themeStore = useThemeStore()
+watch(
+  () => themeStore.mode,
+  () => {
+    const map = state.resources.map
+    if (map && mapReady.value) {
+      map.setPaintProperty('background', 'background-color', resolveSurfaceColor())
+    }
+  },
+)
+
 const stageAppearanceModel = computed(() =>
   buildMapStageAppearanceModel({
     basemapStyle: currentTileConfig.value.style,
@@ -285,6 +299,8 @@ const timeVisualState = computed(() => buildMapStageTimeVisualState(props.curren
 
 // ─── Map init ────────────────────────────────────────────────────────────────
 
+let _isUnmounted = false
+
 onMounted(async () => {
   if (!mapContainer.value) return
 
@@ -304,8 +320,10 @@ onMounted(async () => {
     })
     state.resources.mapStagePresentationModule = presentationModule
     await presentationModule.prepareMount()
+    if (_isUnmounted) return
 
     const { default: maplibregl } = await import('maplibre-gl')
+    if (_isUnmounted) return
 
     const mapInstance = new maplibregl.Map(
       createMapCanvasMapOptions({
@@ -453,6 +471,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  _isUnmounted = true
   unsubscribeMapChrome()
   teardownBinder.dispose()
   overlayImageModule = null
@@ -469,7 +488,6 @@ const isLocating = ref(false)
 const locateError = ref<{ message: string; hint: string } | null>(null)
 let locationMarkerCleanup: (() => void) | null = null
 let locateErrorTimer: ReturnType<typeof setTimeout> | null = null
-let locationMarkerTimer: ReturnType<typeof setTimeout> | null = null
 
 function _showLocateError(message: string, hint: string) {
   locateError.value = { message, hint }
@@ -480,10 +498,6 @@ function _showLocateError(message: string, hint: string) {
 }
 
 function _clearLocationMarker() {
-  if (locationMarkerTimer) {
-    clearTimeout(locationMarkerTimer)
-    locationMarkerTimer = null
-  }
   if (locationMarkerCleanup) {
     locationMarkerCleanup()
     locationMarkerCleanup = null
@@ -507,7 +521,7 @@ async function _syncInspectMarker(point: { lng: number; lat: number } | null | u
   }
   _clearInspectMarker()
   const { default: maplibregl } = await import('maplibre-gl')
-  if (!state.resources.map) return
+  if (_isUnmounted || !state.resources.map) return
   const el = document.createElement('div')
   el.className = 'inspect-point-marker'
   el.innerHTML = '<div class="inspect-dot"></div>'
@@ -563,12 +577,16 @@ async function handleLocateMe() {
       // 添加定位标记 (持续保留在地图上，直至再次点击消除)
       _clearLocationMarker()
       const { default: maplibregl } = await import('maplibre-gl')
+      if (_isUnmounted || !state.resources.map) {
+        isLocating.value = false
+        return
+      }
       const el = document.createElement('div')
       el.className = 'geolocation-marker'
       el.innerHTML = '<div class="geo-pulse"></div><div class="geo-dot"></div>'
       const marker = new maplibregl.Marker({ element: el })
         .setLngLat([longitude, latitude])
-        .addTo(mapInstance)
+        .addTo(state.resources.map)
       locationMarkerCleanup = () => marker.remove()
 
       isLocating.value = false

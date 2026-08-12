@@ -146,6 +146,21 @@
   transition: opacity 0.35s ease;
 }
 
+/* 浅色：氛围光改冷青，避免暖橙光透过圆角渗到外壳边缘看起来像黄边 */
+:global([data-theme='light']) .time-sheen {
+  background:
+    radial-gradient(
+      circle at var(--horizon-position) 18%,
+      rgba(90, 170, 230, calc(var(--time-glow-opacity) * 0.85)),
+      transparent 20rem
+    ),
+    linear-gradient(
+      180deg,
+      rgba(140, 190, 235, calc(var(--time-glow-opacity) * 0.28)) 0%,
+      transparent 38%
+    );
+}
+
 .time-band {
   position: absolute;
   inset: 0;
@@ -404,7 +419,7 @@
   width: 0.74rem;
   height: 0.74rem;
   border-radius: 999px;
-  background: var(--accent-color);
+  background: var(--accent);
   transform: translateZ(0) scale(var(--hotspot-scale));
   box-shadow:
     0 0 0 0 var(--surface-hover),
@@ -449,8 +464,19 @@
   width: 0.48rem;
   height: 0.48rem;
   border-radius: 999px;
-  background: var(--accent-color);
+  background: var(--accent);
   box-shadow: 0 0 0 6px rgba(90, 106, 128, 0.13);
+  animation: loading-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes loading-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .tile-load-error {
@@ -682,21 +708,6 @@
   color: var(--accent);
 }
 
-.locate-spinner {
-  width: 1rem;
-  height: 1rem;
-  border: 2px solid var(--accent-border);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: locate-spin 0.8s linear infinite;
-}
-
-@keyframes locate-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 /* ── 定位失败提示 ─────────────────────────────────────────────────────── */
 .locate-error-tip {
   position: absolute;
@@ -786,9 +797,17 @@
   width: 0.75rem;
   height: 0.75rem;
   border-radius: 50%;
-  background: var(--warning);
-  border: 2px solid var(--text-strong);
+  /* 深色模式：浅橙填充 + 浅色描边 */
+  background: #ffb070;
+  border: 2px solid #f0faff;
   box-shadow: 0 0 8px rgba(255, 184, 77, 0.75);
+}
+
+/* 浅色模式：更深填充，仍用浅色边缘（与深色模式一致） */
+:global([data-theme='light']) :deep(.inspect-dot) {
+  background: #c45a0a;
+  border-color: #f0faff;
+  box-shadow: 0 0 8px rgba(196, 90, 10, 0.55);
 }
 :deep(.geo-dot) {
   position: absolute;
@@ -823,5 +842,19 @@
   100% {
     transform: translate(-50%, -50%) scale(2.5);
     opacity: 0;
+  }
+}
+
+/* ── 无障碍：减少动效 ─────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-sweep,
+  .loading-dot,
+  .weather-loading-dot,
+  :deep(.geo-pulse) {
+    animation: none !important;
+  }
+
+  .map-skeleton {
+    transition: none;
   }
 }

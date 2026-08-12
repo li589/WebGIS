@@ -261,7 +261,11 @@ async function capture() {
       fallback.height = mapH
       const ctx = fallback.getContext('2d')
       if (!ctx) throw uiErr
-      ctx.fillStyle = 'var(--surface-1)'
+      // Canvas 2D 不支持 CSS 变量，需解析为字面量颜色值
+      const bgColor = getComputedStyle(document.documentElement)
+        .getPropertyValue('--surface-1')
+        .trim() || '#0b1a2a'
+      ctx.fillStyle = bgColor
       ctx.fillRect(0, 0, mapW, mapH)
       const img = await new Promise<HTMLImageElement>((resolve, reject) => {
         const image = new Image()

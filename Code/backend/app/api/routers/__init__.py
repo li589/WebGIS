@@ -22,6 +22,7 @@ from app.api.routers.artifact_router import router as artifact_router
 from app.api.routers.import_router import router as import_router
 from app.data_io.api.router import router as data_io_router
 from app.api.routers.remote_browser_router import router as remote_browser_router
+from app.api.routers.analysis_router import router as analysis_router
 
 __all__ = [
     "health_router",
@@ -35,4 +36,5 @@ __all__ = [
     "import_router",
     "data_io_router",
     "remote_browser_router",
+    "analysis_router",
 ]

@@ -1,0 +1,54 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "Analysis: zonal statistics",
+    "description": "InfoPanel zonal stats. Inject value raster path and zones GeoJSON path.",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": null,
+    "tags": ["analysis", "gis", "ui-panel", "zonal"],
+    "category": "analysis",
+    "resource_profile": "standard"
+  },
+  "workflow_id": "analysis_zonal_stats",
+  "name": "Analysis: zonal statistics",
+  "description": "raster + zones → gis/zonal_statistics",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "data/source",
+      "pos": [60, 80],
+      "properties": {
+        "path": "{DATA_ROOT}/_runtime/smoke_stub.tif",
+        "dataset_key": "input_path",
+        "notes": "Value raster"
+      }
+    },
+    {
+      "id": 2,
+      "type": "data/source",
+      "pos": [60, 240],
+      "properties": {
+        "path": "{DATA_ROOT}/_runtime/smoke_zones.geojson",
+        "dataset_key": "zones_path",
+        "notes": "Zones GeoJSON"
+      }
+    },
+    {
+      "id": 3,
+      "type": "gis/zonal_statistics",
+      "pos": [380, 140],
+      "properties": {
+        "statistic": "mean",
+        "band": 0,
+        "all_touched": false
+      }
+    }
+  ],
+  "links": [
+    [1, 1, 2, 3, 1],
+    [2, 2, 2, 3, 2]
+  ]
+}

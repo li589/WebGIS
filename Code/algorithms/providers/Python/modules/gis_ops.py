@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
 
+from contracts.product import ProductRef
 from modules.base import BaseModule
 from modules.registry import register_module_decorator
 from modules._raster_ops import (
@@ -189,7 +191,82 @@ class GisZonalStatisticsModule(BaseModule):
             )
 
         out_gj = {"type": "FeatureCollection", "features": features_out}
-        path = _out(ctx, "zonal") / "zonal_stats.geojson"
+        out_dir = _out(ctx, "zonal")
+        path = out_dir / "zonal_stats.geojson"
+
+        # Analysis panel: structured table (+ optional bar chart) for InfoPanel.
+        columns = ["zone_index", "stat_value", "stat_count", "statistic"]
+        rows: list[list[object]] = []
+        for feat in features_out:
+            props = dict(feat.get("properties") or {})
+            rows.append(
+                [
+                    props.get("zone_index"),
+                    props.get("stat_value"),
+                    props.get("stat_count"),
+                    props.get("statistic") or statistic,
+                ]
+            )
+        table = {
+            "schema_version": "1",
+            "title": f"Zonal {statistic}",
+            "columns": columns,
+            "rows": rows,
+            "units": {},
+            "dtypes": {
+                "zone_index": "int64",
+                "stat_value": "float64",
+                "stat_count": "int64",
+                "statistic": "string",
+            },
+        }
+        table_path = out_dir / "zonal_stats.table.json"
+        table_path.write_text(json.dumps(table, ensure_ascii=True), encoding="utf-8")
+        chart = {
+            "schema_version": "1",
+            "chart_type": "bar",
+            "title": f"Zonal {statistic}",
+            "x_label": "zone",
+            "y_label": statistic,
+            "unit": "",
+            "series": [
+                {
+                    "name": statistic,
+                    "x": [str(r[0]) for r in rows],
+                    "y": [
+                        float(r[1]) if isinstance(r[1], (int, float)) else None
+                        for r in rows
+                    ],
+                }
+            ],
+            "x": [str(r[0]) for r in rows],
+            "y": [
+                float(r[1]) if isinstance(r[1], (int, float)) else None for r in rows
+            ],
+            "series_name": statistic,
+        }
+        chart_path = out_dir / "zonal_stats.chart.json"
+        chart_path.write_text(json.dumps(chart, ensure_ascii=True), encoding="utf-8")
+        extra_products = [
+            ProductRef(
+                name="zonal_stats_table",
+                type="table_spec",
+                uri=str(table_path),
+                variable=statistic,
+                tags={"kind": "table", "module": self.name},
+            ),
+            ProductRef(
+                name="zonal_stats_chart",
+                type="chart_spec",
+                uri=str(chart_path),
+                variable=statistic,
+                tags={
+                    "kind": "chart",
+                    "chart_type": "bar",
+                    "module": self.name,
+                },
+            ),
+        ]
         return store_geojson_manifest(
             ctx,
             module_name=self.name,
@@ -197,6 +274,8 @@ class GisZonalStatisticsModule(BaseModule):
             output_path=path,
             port_name="stats",
             extra={"statistic": statistic, "zone_count": len(features_out)},
+            extra_products=extra_products,
+            table_uris=[str(table_path)],
         )
 
 

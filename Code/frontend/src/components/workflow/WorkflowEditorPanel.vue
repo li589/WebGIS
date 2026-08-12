@@ -99,7 +99,6 @@ const dirty = ref(false)
 const running = ref(false)
 const runStatus = ref<'idle' | 'submitting' | 'submitted' | 'error'>('idle')
 // 运行按钮状态恢复定时器（组件销毁时需清理，避免修改已卸载组件的 ref）
-let _runStatusTimer1: ReturnType<typeof setTimeout> | null = null
 let _runStatusTimer2: ReturnType<typeof setTimeout> | null = null
 
 // 运行对话框
@@ -239,11 +238,16 @@ onBeforeUnmount(() => {
 
 // ─── 事件处理 ───────────────────────────────────────────────────────────────
 
+// 工作流选择序列号：防止快速切换时旧请求覆盖新请求
+let _selectSeq = 0
+
 async function handleSelectWorkflow(workflowId: string) {
+  const seq = ++_selectSeq
   selectedNode.value = null
   dirty.value = false
   saveError.value = null
   const def = await store.loadDefinition(workflowId)
+  if (seq !== _selectSeq) return // 已有更新的选择请求
   if (def?.nodes?.length) {
     currentGraphData.value = {
       nodes: def.nodes as WorkflowDefinitionNode[],
@@ -525,10 +529,6 @@ function notifyRunOutcome(ok: boolean, message?: string) {
 }
 
 function clearRunStatusTimers() {
-  if (_runStatusTimer1 !== null) {
-    clearTimeout(_runStatusTimer1)
-    _runStatusTimer1 = null
-  }
   if (_runStatusTimer2 !== null) {
     clearTimeout(_runStatusTimer2)
     _runStatusTimer2 = null
@@ -798,6 +798,7 @@ defineExpose({
       </header>
 
       <!-- 错误提示 -->
+      <Transition name="error-slide">
       <div v-if="error || saveError" class="editor-error-bar">
         <AlertTriangle :size="14" class="error-icon" aria-hidden="true" />
         <span class="error-text">{{ saveError ?? error }}</span>
@@ -805,8 +806,10 @@ defineExpose({
           <X :size="14" aria-hidden="true" />
         </button>
       </div>
+      </Transition>
 
       <!-- 校验结果面板 -->
+      <Transition name="panel-slide-down">
       <div v-if="showValidationPanel && validationResult" class="validation-panel">
         <div class="validation-header">
           <span class="validation-title">
@@ -854,6 +857,7 @@ defineExpose({
         </div>
         <div v-else class="validation-empty">所有节点参数校验通过</div>
       </div>
+      </Transition>
 
       <!-- 主体三栏布局 -->
       <div class="editor-body">
@@ -920,6 +924,7 @@ defineExpose({
     />
 
     <!-- 新建工作流对话框 -->
+    <Transition name="dialog-fade">
     <div v-if="showCreateDialog" class="create-dialog-overlay" @click.self="cancelCreateWorkflow">
       <div class="create-dialog">
         <h3 class="dialog-title">新建工作流</h3>
@@ -979,6 +984,7 @@ defineExpose({
         </div>
       </div>
     </div>
+    </Transition>
 
     <!-- 流水线启动器对话框 -->
     <PipelineLauncher
@@ -989,6 +995,7 @@ defineExpose({
 
     <!-- 工作流属性编辑对话框（名称/描述） -->
     <Teleport to="body">
+      <Transition name="dialog-fade">
       <div v-if="showPropsDialog" class="props-mask" @click.self="showPropsDialog = false">
         <div class="props-dialog" role="dialog" aria-label="工作流属性">
           <div class="props-header">
@@ -1032,6 +1039,7 @@ defineExpose({
           </div>
         </div>
       </div>
+      </Transition>
     </Teleport>
 
     <NodeCacheDialog :open="nodeCacheDialogOpen" @close="nodeCacheDialogOpen = false" />
@@ -1300,6 +1308,12 @@ defineExpose({
   opacity: 0.3;
   display: block;
   margin-bottom: 0.72rem;
+  animation: placeholder-float 3s ease-in-out infinite;
+}
+
+@keyframes placeholder-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
 }
 
 .placeholder-title {
@@ -1646,5 +1660,97 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header-btn.run.submitting span:first-child,
+  .header-btn.run.submitted span:first-child,
+  .placeholder-icon {
+    animation: none;
+  }
+  .error-slide-enter-active,
+  .error-slide-leave-active,
+  .panel-slide-down-enter-active,
+  .panel-slide-down-leave-active,
+  .dialog-fade-enter-active,
+  .dialog-fade-leave-active {
+    transition: opacity 0.01s ease;
+  }
+}
+
+/* ── 动画：错误条滑入 ──────────────────────────────────────── */
+.error-slide-enter-active {
+  transition:
+    opacity 0.2s ease,
+    max-height 0.24s ease,
+    margin 0.24s ease;
+  overflow: hidden;
+}
+.error-slide-leave-active {
+  transition:
+    opacity 0.16s ease,
+    max-height 0.2s ease,
+    margin 0.2s ease;
+  overflow: hidden;
+}
+.error-slide-enter-from,
+.error-slide-leave-to {
+  opacity: 0;
+  max-height: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* ── 动画：校验面板下滑展开 ────────────────────────────────── */
+.panel-slide-down-enter-active {
+  transition:
+    opacity 0.2s ease,
+    max-height 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  overflow: hidden;
+}
+.panel-slide-down-leave-active {
+  transition:
+    opacity 0.16s ease,
+    max-height 0.2s ease;
+  overflow: hidden;
+}
+.panel-slide-down-enter-from,
+.panel-slide-down-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
+
+/* ── 动画：对话框淡入缩放 ──────────────────────────────────── */
+.dialog-fade-enter-active {
+  transition: opacity 0.2s ease;
+}
+.dialog-fade-enter-active .create-dialog,
+.dialog-fade-enter-active .props-dialog {
+  transition:
+    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.2s ease;
+}
+.dialog-fade-leave-active {
+  transition: opacity 0.16s ease;
+}
+.dialog-fade-leave-active .create-dialog,
+.dialog-fade-leave-active .props-dialog {
+  transition:
+    transform 0.16s ease,
+    opacity 0.16s ease;
+}
+.dialog-fade-enter-from,
+.dialog-fade-leave-to {
+  opacity: 0;
+}
+.dialog-fade-enter-from .create-dialog,
+.dialog-fade-enter-from .props-dialog {
+  transform: scale(0.96) translateY(8px);
+  opacity: 0;
+}
+.dialog-fade-leave-to .create-dialog,
+.dialog-fade-leave-to .props-dialog {
+  transform: scale(0.98);
+  opacity: 0;
 }
 </style>

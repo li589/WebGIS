@@ -790,3 +790,57 @@ class FrontendCommandResponse(BaseModel):
     created_at: datetime
     message: str
     next_action: str | None = None
+
+
+# ─── InfoPanel GIS analysis tools ─────────────────────────────────────────────
+
+
+class AnalysisToolParamField(BaseModel):
+    key: str
+    type: str = "string"
+    title: str = ""
+    description: str | None = None
+    default: Any = None
+    min: float | None = None
+    max: float | None = None
+    unit: str | None = None
+    options: list[str] | None = None
+
+
+class AnalysisToolDescriptor(BaseModel):
+    tool_id: str
+    title: str
+    description: str = ""
+    category: str = "analysis"
+    input_kinds: list[str] = Field(default_factory=list)
+    param_schema: list[AnalysisToolParamField] = Field(default_factory=list)
+    workflow_template_id: str
+    outputs: list[str] = Field(default_factory=list)
+    resource_profile: str = "standard"
+    concurrency_key: str = "layer_tool"
+    enabled: bool = True
+    disabled_reason: str | None = None
+
+
+class AnalysisToolListResponse(BaseModel):
+    layer_id: str | None = None
+    layer_kind: str = "any"
+    items: list[AnalysisToolDescriptor] = Field(default_factory=list)
+
+
+class AnalysisMapPoint(BaseModel):
+    lng: float
+    lat: float
+
+
+class AnalysisRunRequest(BaseModel):
+    tool_id: str
+    layer_id: str
+    overlay_layer_id: str | None = None
+    zones_overlay_layer_id: str | None = None
+    zones_geojson_path: str | None = None
+    geojson_path: str | None = None
+    map_point: AnalysisMapPoint | None = None
+    bbox: BoundingBox | None = None
+    params: dict[str, Any] = Field(default_factory=dict)
+    show_on_map: bool = True

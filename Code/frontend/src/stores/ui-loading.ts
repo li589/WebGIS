@@ -9,7 +9,7 @@
  * 组件内局部等待请用 InlineLoader，不要走本 store。
  */
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, onScopeDispose } from 'vue'
 
 export type UiLoadingMode = 'hero' | 'compact'
 
@@ -95,6 +95,14 @@ export const useUiLoadingStore = defineStore('ui-loading', () => {
     mode.value = 'compact'
     _pendingMode = 'compact'
   }
+
+  // 在 store 的 effect scope 销毁时清理 timer（HMR / 测试场景）
+  onScopeDispose(() => {
+    if (_showTimer !== null) {
+      clearTimeout(_showTimer)
+      _showTimer = null
+    }
+  })
 
   return {
     isVisible,

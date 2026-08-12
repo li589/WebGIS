@@ -13,6 +13,7 @@ import {
   Satellite,
   Map,
   Moon,
+  Sun,
   Mountain,
   Globe,
 } from './ui/icons'
@@ -39,6 +40,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useAuthStore } from '../stores/auth'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import { useWeatherSyncStatusStore } from '../stores/weather-sync-status'
+import { useThemeStore } from '../stores/theme'
 import { useBreakpoint } from '../composables/useBreakpoint'
 import { mergeWorkflowSummaryWithWeather } from '../utils/workflow-status-merge'
 import {
@@ -58,6 +60,7 @@ const settingsStore = useSettingsStore()
 const authStore = useAuthStore()
 const weatherTileManager = useWeatherTileManager()
 const weatherSyncStatus = useWeatherSyncStatusStore()
+const themeStore = useThemeStore()
 const { isMobile } = useBreakpoint()
 const { workflowSummary } = useWorkflowRun()
 const { activityVersion, statusVersion } = storeToRefs(weatherTileManager)
@@ -384,6 +387,21 @@ function sourcePillLabel(source: TileSourceConfig): string {
         >
           <component :is="uiStore.viewMode === '2d' ? Map : Globe" :size="12" class="dim-icon" />
           <span>{{ uiStore.viewMode === '2d' ? '2D' : '3D' }}</span>
+        </button>
+
+        <!-- 主题切换 -->
+        <button
+          class="dim-toggle"
+          type="button"
+          :title="themeStore.mode === 'dark' ? '切换到浅色模式' : '切换到深色模式'"
+          @click="themeStore.toggle()"
+        >
+          <component
+            :is="themeStore.mode === 'dark' ? Sun : Moon"
+            :size="12"
+            class="dim-icon"
+          />
+          <span>{{ themeStore.mode === 'dark' ? '浅色' : '深色' }}</span>
         </button>
 
         <!-- API Key 锁定警告 -->

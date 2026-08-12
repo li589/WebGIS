@@ -271,6 +271,12 @@ const progressLabel = computed(() =>
     transform: rotate(360deg);
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .spinning-icon {
+    animation: none;
+  }
+}
 </style>
 
 <style>

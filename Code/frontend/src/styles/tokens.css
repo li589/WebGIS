@@ -146,7 +146,7 @@
 /* ═══════════════════════════════════════════════════════════════════
  * 浅色主题覆盖（data-theme="light"）
  * 仅覆盖颜色 token；间距/字号/动效/圆角/z-index 复用 :root
- * 设计：暖白底 + 深蓝灰文字 + 品牌青强调，WCAG AA 对比度
+ * 设计：冷白面板 + 青蓝外壳雾 + 深蓝灰文字 + 品牌青强调（禁止暖米黄底）
  * ═══════════════════════════════════════════════════════════════════ */
 [data-theme='light'] {
   /* 文本（深色，保证在浅底上可读） */
@@ -193,19 +193,25 @@
   --accent-surface: rgba(10, 143, 196, 0.1);
   --accent-border: rgba(10, 143, 196, 0.3);
 
-  /* 表面层级（浅色：越上层越白） */
-  --surface-base: #eef2f7;
-  --surface-sunken: rgba(255, 255, 255, 0.6);
-  --surface-1: rgba(255, 255, 255, 0.82);
-  --surface-2: rgba(255, 255, 255, 0.92);
-  --surface-3: rgba(255, 255, 255, 0.98);
-  --surface-hover: rgba(240, 245, 252, 0.98);
-  --surface-panel: rgba(255, 255, 255, 0.92);
-  --surface-raised: rgba(255, 255, 255, 0.7);
+  /* 表面层级（浅色：近不透明冷白，避免半透明叠地图/外圈发棕褐） */
+  --surface-base: #e8eef5;
+  --surface-sunken: rgba(255, 255, 255, 0.72);
+  --surface-1: rgba(255, 255, 255, 0.9);
+  --surface-2: rgba(255, 255, 255, 0.96);
+  --surface-3: #ffffff;
+  --surface-hover: rgba(236, 244, 252, 0.98);
+  --surface-panel: rgba(255, 255, 255, 0.96);
+  --surface-raised: rgba(248, 251, 255, 0.88);
 
   /* 边框（浅色：深蓝灰） */
   --border-subtle: rgba(30, 60, 100, 0.08);
   --border-default: rgba(30, 60, 100, 0.16);
   --border-strong: rgba(10, 143, 196, 0.4);
   --border-accent: rgba(10, 143, 196, 0.3);
+
+  /* Elevation：浅色用淡蓝灰影，不用深色主题那套重黑影（否则面板发脏褐） */
+  --elevation-1: 0 1px 2px rgba(20, 50, 90, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  --elevation-2: 0 6px 18px rgba(20, 50, 90, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  --elevation-3: 0 16px 40px rgba(20, 50, 90, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.98);
+  --elevation-modal: 0 28px 64px rgba(20, 50, 90, 0.16), inset 0 1px 0 rgba(255, 255, 255, 1);
 }

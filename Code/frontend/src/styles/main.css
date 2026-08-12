@@ -1,5 +1,6 @@
 @import 'maplibre-gl/dist/maplibre-gl.css';
 @import './tokens.css';
+
 html,
 body,
 #app {
@@ -20,31 +21,34 @@ body,
   font-weight: 400;
   font-size: 15px;
   color: var(--text-primary);
-  background:
-    radial-gradient(circle at top, rgba(17, 94, 160, 0.24), transparent 30rem),
-    linear-gradient(
-      180deg,
-      var(--surface-base) 0%,
-      var(--surface-base) 45%,
-      var(--surface-sunken) 100%
-    );
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* 浅色主题：暖白底背景 */
-[data-theme='light'] {
+/*
+ * App 外圈底色（#app padding 露出的一周）：冷青蓝雾，禁止用文字色做渐变终点。
+ * 旧浅色曾写成 surface-base → text-primary → text-secondary，等于把深蓝字色当底，
+ * 视觉上像「蓝色反转成脏橙褐」。必须写死冷色 hex，并只用 html[data-theme] 选择器。
+ */
+html {
+  color-scheme: dark;
+  background:
+    radial-gradient(ellipse 90% 60% at 12% -10%, rgba(90, 180, 255, 0.22), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 92% 110%, rgba(56, 130, 220, 0.16), transparent 50%),
+    radial-gradient(ellipse 50% 40% at 50% 40%, rgba(20, 40, 70, 0.35), transparent 70%),
+    linear-gradient(165deg, #07101c 0%, #0a1524 48%, #08111c 100%);
+}
+
+html[data-theme='light'] {
+  color-scheme: light;
   color: var(--text-primary);
   background:
-    radial-gradient(circle at top, rgba(10, 143, 196, 0.08), transparent 30rem),
-    linear-gradient(
-      180deg,
-      var(--surface-base) 0%,
-      var(--text-primary) 45%,
-      var(--text-secondary) 100%
-    );
+    radial-gradient(ellipse 90% 60% at 10% -8%, rgba(80, 160, 235, 0.38), transparent 56%),
+    radial-gradient(ellipse 70% 50% at 94% 108%, rgba(60, 130, 200, 0.26), transparent 52%),
+    radial-gradient(ellipse 55% 45% at 48% 42%, rgba(190, 220, 245, 0.7), transparent 72%),
+    linear-gradient(165deg, #b9d0e8 0%, #cfe0f2 46%, #bfd4ea 100%);
 }
 
 html,
@@ -55,6 +59,8 @@ body,
 
 body {
   margin: 0;
+  background: transparent;
+  color: var(--text-primary);
 }
 
 button,
@@ -87,9 +93,29 @@ a {
 #app {
   min-height: 100vh;
   padding: 0.75rem;
+  background: transparent;
 }
 
 .page-shell {
   max-width: none;
   margin: 0;
+  min-height: calc(100vh - 1.5rem);
+  /* 外圈氛围由 html 渐变提供；内容区各自用面板玻璃，避免登录页被二次磨砂压暗 */
+  background: transparent;
+}
+
+/* ── 全局减少动效（仅手动开关 .reduce-motion） ─────────────────────────── */
+/* 不再用 @media (prefers-reduced-motion) 全局掐死一切动画——
+ * Windows「减少动画」开启时会让地球卫星 / 顶栏进度条静止，看起来像卡死。
+ * 各组件自行用 @media 降级装饰动效；加载指示器必须保持可动。 */
+.reduce-motion
+  *:not(.loading-overlay):not(.loading-overlay *):not(.loading-compact):not(.loading-compact *),
+.reduce-motion
+  *:not(.loading-overlay):not(.loading-overlay *):not(.loading-compact):not(.loading-compact *)::before,
+.reduce-motion
+  *:not(.loading-overlay):not(.loading-overlay *):not(.loading-compact):not(.loading-compact *)::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }

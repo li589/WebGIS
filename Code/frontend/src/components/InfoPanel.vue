@@ -303,6 +303,7 @@ function queryDefaultOverlaySeries() {
               :point-weather-primary-value="weatherPoint.pointWeatherPrimaryValue.value"
               :point-weather-numeric-value="weatherPoint.pointWeatherNumericValue.value"
               :interaction-mode="uiStore.interactionMode"
+              :is-realtime-weather-layer="isRealtimeWeatherLayer"
               @enter-select-mode="emit('enterSelectMode')"
               @clear-map-point="emit('clearMapPoint')"
             />

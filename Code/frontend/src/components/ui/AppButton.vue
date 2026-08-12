@@ -253,5 +253,8 @@ const iconSize = computed(() => {
   .app-btn:hover:not(:disabled) {
     transform: none;
   }
+  .app-btn-spinner {
+    animation: none;
+  }
 }
 </style>

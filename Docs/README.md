@@ -35,10 +35,11 @@
 2. `Code/README.md` → `Code/backend/README.md` → `Code/frontend/README.md`
 3. `Docs/01-协作规范/文档治理说明.md`
 4. `Docs/02-架构设计/工程决策纪要-配置瓦片与契约.md`（瓦片双入口 / 配置投影 / 契约 CI）
-5. `Docs/02-架构设计/后端架构设计.md`
-6. `Docs/03-规范协议/双通道接口设计总结.md`、`规范文档.md`
-7. `Code/shared/contracts/README.md` + `Code/algorithms/providers/Python/README.md`
-8. 按需：`05-专题研究/`、`04-执行部署/本地联调环境说明.md`
+5. `Docs/02-架构设计/图层分析面板.md`（InfoPanel GIS 五工具 + 产物闭环）
+6. `Docs/02-架构设计/后端架构设计.md`
+7. `Docs/03-规范协议/双通道接口设计总结.md`、`规范文档.md`
+8. `Code/shared/contracts/README.md` + `Code/algorithms/providers/Python/README.md`
+9. 按需：`05-专题研究/`、`04-执行部署/本地联调环境说明.md`
 
 ## HTML 报告（可更新）
 

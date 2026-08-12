@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef, watch, type Component } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch, type Component } from 'vue'
 import {
   Settings,
   User,
@@ -12,6 +12,7 @@ import {
   Server,
   Database,
   Info,
+  Palette,
 } from '../ui/icons'
 
 import { useAuthStore } from '../../stores/auth'
@@ -19,6 +20,7 @@ import { useSettingsStore } from '../../stores/settings'
 import { useUiLoadingStore } from '../../stores/ui-loading'
 import { loadSettingsUiLocal, saveSettingsUiLocal } from '../../services/settings-local'
 import GeneralSettings from './GeneralSettings.vue'
+import AppearanceSettings from './AppearanceSettings.vue'
 import ApiKeySettings from './ApiKeySettings.vue'
 import GeeAccountSettings from './GeeAccountSettings.vue'
 import WeatherProviderSettings from './WeatherProviderSettings.vue'
@@ -38,6 +40,7 @@ const authStore = useAuthStore()
 
 type SettingsTab =
   | 'general'
+  | 'appearance'
   | 'accounts'
   | 'api-keys'
   | 'gee-accounts'
@@ -49,6 +52,7 @@ type SettingsTab =
 
 const TAB_IDS: SettingsTab[] = [
   'general',
+  'appearance',
   'accounts',
   'api-keys',
   'gee-accounts',
@@ -69,6 +73,7 @@ const activeTab = ref<SettingsTab>(savedTab && TAB_IDS.includes(savedTab) ? save
 
 const tabComponents = shallowRef<Record<SettingsTab, Component>>({
   general: GeneralSettings,
+  appearance: AppearanceSettings,
   accounts: UserAccountSettings,
   'api-keys': ApiKeySettings,
   'gee-accounts': GeeAccountSettings,
@@ -81,6 +86,7 @@ const tabComponents = shallowRef<Record<SettingsTab, Component>>({
 
 const ALL_TABS: Array<{ id: SettingsTab; label: string; icon: Component }> = [
   { id: 'general', label: SETTINGS_COPY.tabGeneral, icon: LayoutGrid },
+  { id: 'appearance', label: SETTINGS_COPY.tabAppearance, icon: Palette },
   { id: 'accounts', label: '账户', icon: User },
   { id: 'api-keys', label: SETTINGS_COPY.tabApiKeys, icon: Key },
   { id: 'gee-accounts', label: SETTINGS_COPY.tabGee, icon: Globe },
@@ -133,6 +139,7 @@ if (!tabs.value.some((t) => t.id === activeTab.value)) {
 }
 
 onMounted(async () => {
+  window.addEventListener('resize', onWindowResize)
   const loading = useUiLoadingStore()
   // 面板异步 chunk 已挂上：立刻关掉全屏 hero。
   // 配置拉取用面板内 spinner；否则 9 路 /config 全完（甚至重试）才关全屏，看起来像「设置已出来但还在转」。
@@ -157,11 +164,84 @@ watch(activeTab, (tab) => {
     void settingsStore.loadRemoteStorageProfiles()
   }
 })
+
+/** 设置侧栏：左缘拖动加宽（面板贴右，向左拖 = 变宽） */
+const PANEL_WIDTH_DEFAULT_PX = Math.round(38 * 16)
+const PANEL_WIDTH_MIN_PX = Math.round(32 * 16)
+const PANEL_WIDTH_MAX_CAP_PX = Math.round(56 * 16)
+
+function clampPanelWidth(px: number): number {
+  const maxByViewport = Math.floor(window.innerWidth * 0.92)
+  const max = Math.min(PANEL_WIDTH_MAX_CAP_PX, Math.max(PANEL_WIDTH_MIN_PX, maxByViewport))
+  return Math.min(max, Math.max(PANEL_WIDTH_MIN_PX, Math.round(px)))
+}
+
+const savedWidth = loadSettingsUiLocal().panelWidthPx
+const panelWidthPx = ref(
+  clampPanelWidth(
+    typeof savedWidth === 'number' && Number.isFinite(savedWidth)
+      ? savedWidth
+      : PANEL_WIDTH_DEFAULT_PX,
+  ),
+)
+const panelStyle = computed(() => ({ width: `${panelWidthPx.value}px` }))
+
+let resizeStartX = 0
+let resizeStartWidth = 0
+const isResizing = ref(false)
+
+function onResizePointerMove(event: PointerEvent) {
+  if (!isResizing.value) return
+  // 向左拖 → clientX 变小 → 宽度增加
+  const next = resizeStartWidth + (resizeStartX - event.clientX)
+  panelWidthPx.value = clampPanelWidth(next)
+}
+
+function stopResize() {
+  if (!isResizing.value) return
+  isResizing.value = false
+  window.removeEventListener('pointermove', onResizePointerMove)
+  window.removeEventListener('pointerup', stopResize)
+  window.removeEventListener('pointercancel', stopResize)
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  saveSettingsUiLocal({ ...loadSettingsUiLocal(), panelWidthPx: panelWidthPx.value })
+}
+
+function onResizePointerDown(event: PointerEvent) {
+  if (event.button !== 0) return
+  event.preventDefault()
+  isResizing.value = true
+  resizeStartX = event.clientX
+  resizeStartWidth = panelWidthPx.value
+  document.body.style.cursor = 'ew-resize'
+  document.body.style.userSelect = 'none'
+  window.addEventListener('pointermove', onResizePointerMove)
+  window.addEventListener('pointerup', stopResize)
+  window.addEventListener('pointercancel', stopResize)
+}
+
+function onWindowResize() {
+  panelWidthPx.value = clampPanelWidth(panelWidthPx.value)
+}
+
+onUnmounted(() => {
+  stopResize()
+  window.removeEventListener('resize', onWindowResize)
+})
 </script>
 
 <template>
   <div class="settings-overlay" @click.self="emit('close')">
-    <div class="settings-panel">
+    <div class="settings-panel" :class="{ 'settings-panel--resizing': isResizing }" :style="panelStyle">
+      <div
+        class="settings-resize-handle"
+        title="向左拖动加宽"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整设置面板宽度"
+        @pointerdown="onResizePointerDown"
+      />
       <div class="settings-header">
         <Settings :size="18" class="header-icon" aria-hidden="true" />
         <span class="header-title">{{ SETTINGS_COPY.panelTitle }}</span>
@@ -232,6 +312,7 @@ watch(activeTab, (tab) => {
 }
 
 .settings-panel {
+  position: relative;
   width: 38rem;
   max-width: 92vw;
   height: 100vh;
@@ -240,6 +321,42 @@ watch(activeTab, (tab) => {
   background: var(--surface-2);
   border-left: 1px solid var(--border-default);
   box-shadow: -12px 0 36px rgba(1, 8, 16, 0.32);
+}
+
+.settings-panel--resizing {
+  transition: none;
+}
+
+.settings-resize-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0.4rem;
+  transform: translateX(-50%);
+  cursor: ew-resize;
+  z-index: 2;
+  touch-action: none;
+}
+
+.settings-resize-handle::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.18rem;
+  height: 2.4rem;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: var(--border-default);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.settings-panel:hover .settings-resize-handle::after,
+.settings-panel--resizing .settings-resize-handle::after {
+  opacity: 0.9;
+  background: var(--accent);
 }
 
 .settings-header {
@@ -444,8 +561,12 @@ watch(activeTab, (tab) => {
 
 @media (max-width: 640px) {
   .settings-panel {
-    width: 100vw;
+    width: 100vw !important;
     max-width: 100vw;
+  }
+
+  .settings-resize-handle {
+    display: none;
   }
 
   .settings-body {
@@ -465,6 +586,12 @@ watch(activeTab, (tab) => {
 
   .nav-item {
     flex: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-spinner {
+    animation: none;
   }
 }
 </style>
