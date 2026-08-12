@@ -48,17 +48,15 @@ export const PURE_IGNORE_SELECTORS = [
 /** Container panel cards whose computed paint is copied to the clone. (Inner flex items are omitted to prevent duplication). */
 export const STYLE_BAKE_SELECTORS = [
   '.toolbar',
-  '.base-panel',
-  '.control-panel',
+  '.panel-dock__frame',
   '.panel-anchor',
-  '.timeline-panel',
   '.info-panel',
   '.layer-sidebar',
 ] as const
 
 /** Elements that use transform / centered absolute layout and break html2canvas. */
 export const PIN_OVERLAY_SELECTORS = ['.overlay'] as const
-export const PIN_PANEL_SELECTORS = ['.control-panel', '.panel-anchor'] as const
+export const PIN_PANEL_SELECTORS = ['.panel-dock__frame', '.panel-anchor'] as const
 
 export type MapSnapshot = {
   dataUrl: string

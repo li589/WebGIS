@@ -195,7 +195,7 @@ onBeforeUnmount(() => {
   background: rgba(8, 17, 31, 0.97);
   border: 1px solid rgba(136, 192, 255, 0.18);
   box-shadow: 0 18px 48px rgba(1, 8, 16, 0.5);
-  color: #d8e6f5;
+  color: var(--text-primary);
   overflow: hidden;
 }
 .data-workspace.maximized {
@@ -227,11 +227,11 @@ onBeforeUnmount(() => {
   min-width: 5.5rem;
 }
 .ws-title {
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 .ws-sub {
-  font-size: 0.5rem;
+  font-size: var(--font-size-caption);
   color: #6a8094;
 }
 .ws-tabs {
@@ -254,15 +254,15 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(136, 192, 255, 0.12);
   border-radius: 0.4rem;
   padding: 0.28rem 0.58rem;
-  background: rgba(4, 12, 23, 0.5);
-  color: #9fb6cc;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   white-space: nowrap;
 }
 .ws-tab.active {
-  color: #5ad5ff;
+  color: var(--accent);
   border-color: rgba(90, 213, 255, 0.35);
   background: rgba(10, 132, 255, 0.16);
 }
@@ -280,14 +280,14 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(136, 192, 255, 0.2);
   border-radius: 0.36rem;
   background: rgba(4, 12, 23, 0.7);
-  color: #d8e6f5;
+  color: var(--text-primary);
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   line-height: 1;
 }
 .icon-btn:hover {
   border-color: rgba(90, 213, 255, 0.4);
-  color: #5ad5ff;
+  color: var(--accent);
 }
 .ws-body {
   flex: 1 1 auto;

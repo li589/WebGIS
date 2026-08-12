@@ -55,7 +55,7 @@ const workflowItems = computed(() => {
       return {
         catalogId: catId,
         name: meta?.name ?? job.name,
-        accentColor: meta?.accentColor ?? cat?.accentColor ?? '#5a7080',
+        accentColor: meta?.accentColor ?? cat?.accentColor ?? 'var(--text-disabled)',
         category: meta?.category ?? 'research-group',
         jobLayer: job,
         synthetic: false as const,
@@ -88,7 +88,7 @@ const weatherSyntheticItems = computed(() => {
     return {
       catalogId: item.catalogId,
       name: active?.name ?? meta?.name ?? item.catalogId,
-      accentColor: active?.accentColor ?? meta?.accentColor ?? '#5ad5ff',
+      accentColor: active?.accentColor ?? meta?.accentColor ?? 'var(--accent)',
       category: active?.category ?? meta?.category ?? 'weather',
       status: item.status,
       message: item.message,
@@ -139,11 +139,11 @@ const tileErrorLabel: Record<string, string> = {
 }
 
 const weatherStatusMeta: Record<string, { label: string; color: string; bg: string }> = {
-  running: { label: '运行中', color: '#5ad5ff', bg: 'rgba(90, 213, 255, 0.12)' },
-  queued: { label: '排队中', color: '#88dfff', bg: 'rgba(136, 223, 255, 0.1)' },
-  succeeded: { label: '已完成', color: '#9ff8cf', bg: 'rgba(159, 248, 207, 0.1)' },
+  running: { label: '运行中', color: 'var(--accent)', bg: 'var(--accent-surface)' },
+  queued: { label: '排队中', color: 'var(--accent-strong)', bg: 'rgba(136, 223, 255, 0.1)' },
+  succeeded: { label: '已完成', color: 'var(--success)', bg: 'rgba(159, 248, 207, 0.1)' },
   failed: { label: '失败', color: '#ff8a8a', bg: 'rgba(255, 138, 138, 0.1)' },
-  cancelled: { label: '已取消', color: '#8aa8bf', bg: 'rgba(138, 168, 191, 0.1)' },
+  cancelled: { label: '已取消', color: 'var(--text-muted)', bg: 'rgba(138, 168, 191, 0.1)' },
   retry_pending: { label: '等待重试', color: '#ffd38a', bg: 'rgba(255, 211, 138, 0.1)' },
 }
 
@@ -173,11 +173,11 @@ const categoryBreakdown = computed(() => {
 })
 
 const statusMeta: Record<JobStatus, { label: string; color: string; bg: string }> = {
-  running: { label: '运行中', color: '#5ad5ff', bg: 'rgba(90, 213, 255, 0.12)' },
-  queued: { label: '排队中', color: '#88dfff', bg: 'rgba(136, 223, 255, 0.1)' },
-  succeeded: { label: '已完成', color: '#9ff8cf', bg: 'rgba(159, 248, 207, 0.1)' },
+  running: { label: '运行中', color: 'var(--accent)', bg: 'var(--accent-surface)' },
+  queued: { label: '排队中', color: 'var(--accent-strong)', bg: 'rgba(136, 223, 255, 0.1)' },
+  succeeded: { label: '已完成', color: 'var(--success)', bg: 'rgba(159, 248, 207, 0.1)' },
   failed: { label: '失败', color: '#ff8a8a', bg: 'rgba(255, 138, 138, 0.1)' },
-  cancelled: { label: '已取消', color: '#8aa8bf', bg: 'rgba(138, 168, 191, 0.1)' },
+  cancelled: { label: '已取消', color: 'var(--text-muted)', bg: 'rgba(138, 168, 191, 0.1)' },
   retry_pending: { label: '等待重试', color: '#ffd38a', bg: 'rgba(255, 211, 138, 0.1)' },
 }
 
@@ -234,16 +234,16 @@ const summaryCards = computed(() => {
       key: 'running',
       label: '运行中',
       count: s.running,
-      color: '#5ad5ff',
+      color: 'var(--accent)',
       sub: tilePending > 0 ? `含瓦片 ${tilePending}` : '',
     },
-    { key: 'queued', label: '排队中', count: s.queued, color: '#88dfff', sub: '' },
+    { key: 'queued', label: '排队中', count: s.queued, color: 'var(--accent-strong)', sub: '' },
     { key: 'retryPending', label: '等待重试', count: s.retryPending, color: '#ffd38a', sub: '' },
     {
       key: 'succeeded',
       label: '已完成',
       count: s.succeeded,
-      color: '#9ff8cf',
+      color: 'var(--success)',
       sub:
         tileCached > 0
           ? tileViewport > 0
@@ -252,7 +252,7 @@ const summaryCards = computed(() => {
           : '',
     },
     { key: 'failed', label: '失败', count: s.failed, color: '#ff8a8a', sub: '' },
-    { key: 'cancelled', label: '已取消', count: s.cancelled, color: '#8aa8bf', sub: '' },
+    { key: 'cancelled', label: '已取消', count: s.cancelled, color: 'var(--text-muted)', sub: '' },
   ] as const
 })
 
@@ -433,7 +433,7 @@ onBeforeUnmount(() => {
             <span class="wf-header-stat-label">总计</span>
           </span>
           <span v-if="derivedStats.active > 0" class="wf-header-stat">
-            <span class="wf-header-stat-value" style="color: #5ad5ff">{{
+            <span class="wf-header-stat-value" style="color: var(--accent)">{{
               derivedStats.active
             }}</span>
             <span class="wf-header-stat-label">活跃</span>
@@ -447,7 +447,7 @@ onBeforeUnmount(() => {
               :style="{
                 color:
                   derivedStats.successRate >= 80
-                    ? '#9ff8cf'
+                    ? 'var(--success)'
                     : derivedStats.successRate >= 50
                       ? '#ffd38a'
                       : '#ff8a8a',
@@ -559,10 +559,10 @@ onBeforeUnmount(() => {
         <div v-for="cat in categoryBreakdown" :key="cat.category" class="wf-category-stat-item">
           <span class="wf-category-stat-name">{{ getCategoryName(cat.category) }}</span>
           <span class="wf-category-stat-counts">
-            <span v-if="cat.running > 0" class="wf-cat-count" style="color: #5ad5ff">{{
+            <span v-if="cat.running > 0" class="wf-cat-count" style="color: var(--accent)">{{
               cat.running
             }}</span>
-            <span v-if="cat.succeeded > 0" class="wf-cat-count" style="color: #9ff8cf">{{
+            <span v-if="cat.succeeded > 0" class="wf-cat-count" style="color: var(--success)">{{
               cat.succeeded
             }}</span>
             <span v-if="cat.failed > 0" class="wf-cat-count" style="color: #ff8a8a">{{
@@ -928,7 +928,7 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(145, 197, 255, 0.16);
   border-radius: 1.2rem;
   background:
-    linear-gradient(180deg, rgba(8, 17, 31, 0.92), rgba(7, 15, 28, 0.88)), rgba(8, 18, 33, 0.9);
+    linear-gradient(180deg, var(--surface-1), rgba(7, 15, 28, 0.88)), rgba(8, 18, 33, 0.9);
   box-shadow: 0 24px 60px rgba(1, 8, 16, 0.5);
   overflow: hidden;
 }
@@ -944,8 +944,8 @@ onBeforeUnmount(() => {
 
 .wf-panel-eyebrow {
   margin: 0 0 0.2rem;
-  color: #88dfff;
-  font-size: 0.55rem;
+  color: var(--accent-strong);
+  font-size: var(--font-size-caption);
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -974,19 +974,19 @@ onBeforeUnmount(() => {
   font-size: 0.95rem;
   font-weight: 700;
   line-height: 1;
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 
 .wf-header-stat-label {
-  color: #5a7080;
-  font-size: 0.5rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   letter-spacing: 0.04em;
 }
 
 .wf-close-btn {
   border: none;
-  background: rgba(136, 192, 255, 0.08);
-  color: #8aa8bf;
+  background: var(--border-subtle);
+  color: var(--text-muted);
   font-size: 1.2rem;
   width: 1.8rem;
   height: 1.8rem;
@@ -1016,7 +1016,7 @@ onBeforeUnmount(() => {
   border-radius: 0.6rem;
   background: rgba(255, 138, 138, 0.08);
   color: #ff8a8a;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
 }
 
 .wf-error-icon {
@@ -1036,20 +1036,20 @@ onBeforeUnmount(() => {
   flex: 1;
   height: 4px;
   border-radius: 999px;
-  background: rgba(136, 192, 255, 0.08);
+  background: var(--border-subtle);
   overflow: hidden;
 }
 
 .wf-overall-progress-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #5ad5ff, #9ff8cf);
+  background: linear-gradient(90deg, var(--accent), var(--success));
   transition: width 0.4s ease;
 }
 
 .wf-overall-progress-text {
   color: #7f96ab;
-  font-size: 0.55rem;
+  font-size: var(--font-size-caption);
   white-space: nowrap;
 }
 
@@ -1072,24 +1072,24 @@ onBeforeUnmount(() => {
 }
 
 .wf-tile-icon {
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
   flex: none;
 }
 
 .wf-tile-text {
   color: #c8dff0;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 
 .wf-tile-text strong {
-  color: #5ad5ff;
+  color: var(--accent);
   font-weight: 700;
 }
 
 .wf-tile-hint {
   margin-left: auto;
-  color: #5a7080;
-  font-size: 0.52rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
 }
 
 /* 全局缓存进度 */
@@ -1098,14 +1098,14 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 0.4rem;
   padding: 0.3rem 0.7rem;
-  border: 1px solid rgba(136, 192, 255, 0.08);
+  border: 1px solid var(--border-subtle);
   border-radius: 0.5rem;
   background: rgba(4, 12, 23, 0.42);
 }
 
 .wf-tile-cache-label {
   color: #7f96ab;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   flex: none;
 }
 
@@ -1113,25 +1113,25 @@ onBeforeUnmount(() => {
   flex: 1;
   height: 3px;
   border-radius: 999px;
-  background: rgba(136, 192, 255, 0.08);
+  background: var(--border-subtle);
   overflow: hidden;
 }
 
 .wf-tile-cache-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #5ad5ff, #2f7eff);
+  background: linear-gradient(90deg, var(--accent), #2f7eff);
   transition: width 0.4s ease;
 }
 
 .wf-tile-cache-text {
   color: #c8dff0;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   white-space: nowrap;
 }
 
 .wf-tile-cache-text strong {
-  color: #5ad5ff;
+  color: var(--accent);
   font-weight: 700;
 }
 
@@ -1147,7 +1147,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
 }
 
 .wf-tile-layer-dot {
@@ -1172,7 +1172,7 @@ onBeforeUnmount(() => {
 
 .wf-tile-layer-error {
   color: #ff8a8a;
-  font-size: 0.5rem;
+  font-size: var(--font-size-caption);
   padding: 0 0.3rem;
   border: 1px solid rgba(255, 138, 138, 0.2);
   border-radius: 999px;
@@ -1180,8 +1180,8 @@ onBeforeUnmount(() => {
 }
 
 .wf-tile-layer-gap {
-  color: #9ff8cf;
-  font-size: 0.5rem;
+  color: var(--success);
+  font-size: var(--font-size-caption);
   padding: 0 0.3rem;
   border: 1px solid rgba(159, 248, 207, 0.28);
   border-radius: 999px;
@@ -1201,14 +1201,14 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 0.3rem;
   padding: 0.2rem 0.5rem;
-  border: 1px solid rgba(136, 192, 255, 0.08);
+  border: 1px solid var(--border-subtle);
   border-radius: 999px;
   background: rgba(4, 12, 23, 0.42);
 }
 
 .wf-category-stat-name {
   color: #7f96ab;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
 }
 
 .wf-category-stat-counts {
@@ -1218,13 +1218,13 @@ onBeforeUnmount(() => {
 }
 
 .wf-cat-count {
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   font-weight: 700;
 }
 
 .wf-cat-count-total {
-  color: #5a7080;
-  font-size: 0.5rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   margin-left: 0.15rem;
 }
 
@@ -1236,7 +1236,7 @@ onBeforeUnmount(() => {
   padding: 0.8rem 1.2rem 0.4rem;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 768px) {
   .wf-summary-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -1250,7 +1250,7 @@ onBeforeUnmount(() => {
   gap: 0.18rem;
   min-width: 0;
   padding: 0.48rem 0.28rem;
-  border: 1px solid rgba(136, 192, 255, 0.08);
+  border: 1px solid var(--border-subtle);
   border-radius: 0.6rem;
   background: rgba(4, 12, 23, 0.42);
   transition:
@@ -1273,12 +1273,12 @@ onBeforeUnmount(() => {
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-  color: #5a7080;
+  color: var(--text-disabled);
 }
 
 .wf-summary-label {
   color: #7f96ab;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   letter-spacing: 0.04em;
   text-align: center;
   white-space: nowrap;
@@ -1291,7 +1291,7 @@ onBeforeUnmount(() => {
   display: block;
   margin-top: 1px;
   color: #5a7a90;
-  font-size: 0.48rem;
+  font-size: var(--font-size-caption);
   letter-spacing: 0.02em;
   text-align: center;
   white-space: nowrap;
@@ -1318,7 +1318,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   color: rgba(200, 220, 235, 0.78);
 }
 
@@ -1329,12 +1329,12 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(136, 192, 255, 0.2);
   background: rgba(8, 18, 28, 0.55);
   color: #d7ecf8;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
 }
 
 .wf-item-retry-of {
   color: rgba(255, 211, 138, 0.9);
-  font-size: 0.55rem;
+  font-size: var(--font-size-caption);
 }
 
 .wf-empty {
@@ -1344,7 +1344,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 0.4rem;
   padding: 3rem 1rem;
-  color: #6e8ba0;
+  color: var(--text-faint);
   text-align: center;
 }
 
@@ -1355,11 +1355,11 @@ onBeforeUnmount(() => {
 
 .wf-empty p {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
 }
 .wf-empty-hint {
-  font-size: 0.6rem;
-  color: #5a7080;
+  font-size: var(--font-size-caption);
+  color: var(--text-disabled);
 }
 
 .wf-list {
@@ -1370,7 +1370,7 @@ onBeforeUnmount(() => {
 
 .wf-item {
   padding: 0.6rem 0.7rem;
-  border: 1px solid rgba(136, 192, 255, 0.08);
+  border: 1px solid var(--border-subtle);
   border-radius: 0.7rem;
   background: rgba(4, 12, 23, 0.42);
 }
@@ -1397,8 +1397,8 @@ onBeforeUnmount(() => {
 }
 
 .wf-item-title {
-  color: #d8e6f5;
-  font-size: 0.7rem;
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1406,8 +1406,8 @@ onBeforeUnmount(() => {
 }
 
 .wf-item-cmd {
-  color: #5a7080;
-  font-size: 0.5rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   padding: 0.05rem 0.3rem;
   border: 1px solid rgba(136, 192, 255, 0.1);
   border-radius: 999px;
@@ -1421,7 +1421,7 @@ onBeforeUnmount(() => {
   gap: 0.2rem;
   padding: 0.16rem 0.4rem;
   border-radius: 999px;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   white-space: nowrap;
   flex: none;
@@ -1431,14 +1431,14 @@ onBeforeUnmount(() => {
   margin-top: 0.4rem;
   height: 3px;
   border-radius: 999px;
-  background: rgba(136, 192, 255, 0.08);
+  background: var(--border-subtle);
   overflow: hidden;
 }
 
 .wf-progress-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #5ad5ff, #2f7eff);
+  background: linear-gradient(90deg, var(--accent), #2f7eff);
   transition: width 0.3s ease;
 }
 
@@ -1456,8 +1456,8 @@ onBeforeUnmount(() => {
 
 .progress-section-title {
   margin: 0;
-  color: #88dfff;
-  font-size: 0.55rem;
+  color: var(--accent-strong);
+  font-size: var(--font-size-caption);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1476,7 +1476,7 @@ onBeforeUnmount(() => {
 }
 
 .node-stage-icon {
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   flex: none;
   line-height: 1;
 }
@@ -1485,7 +1485,7 @@ onBeforeUnmount(() => {
   flex: 1;
   min-width: 0;
   color: #c8dff0;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1493,8 +1493,8 @@ onBeforeUnmount(() => {
 }
 
 .node-progress-value {
-  color: #5ad5ff;
-  font-size: 0.55rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   flex: none;
@@ -1503,14 +1503,14 @@ onBeforeUnmount(() => {
 .node-progress-bar {
   height: 4px;
   border-radius: 999px;
-  background: rgba(136, 192, 255, 0.08);
+  background: var(--border-subtle);
   overflow: hidden;
 }
 
 .node-progress-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #5ad5ff, #2f7eff);
+  background: linear-gradient(90deg, var(--accent), #2f7eff);
   transition: width 0.3s ease;
 }
 
@@ -1574,7 +1574,7 @@ onBeforeUnmount(() => {
 .wf-item-summary {
   margin: 0.25rem 0 0;
   color: #d5e6f5;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
@@ -1599,13 +1599,13 @@ onBeforeUnmount(() => {
 }
 
 .wf-metric-label {
-  color: #5a7080;
-  font-size: 0.5rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
 }
 
 .wf-metric-value {
   color: #c8dff0;
-  font-size: 0.55rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -1619,8 +1619,8 @@ onBeforeUnmount(() => {
 
 .wf-item-notes li,
 .wf-item-events li {
-  color: #8aa8bf;
-  font-size: 0.55rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
@@ -1636,8 +1636,8 @@ onBeforeUnmount(() => {
   margin-top: 0.2rem;
   border: none;
   background: none;
-  color: #5ad5ff;
-  font-size: 0.5rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   cursor: pointer;
   padding: 0;
   text-decoration: underline;
@@ -1645,7 +1645,7 @@ onBeforeUnmount(() => {
 }
 
 .wf-expand-btn:hover {
-  color: #88dfff;
+  color: var(--accent-strong);
 }
 
 .wf-item-footer {
@@ -1660,8 +1660,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 0.15rem;
-  color: #5a7080;
-  font-size: 0.52rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   font-variant-numeric: tabular-nums;
   min-width: 0;
   overflow: hidden;
@@ -1676,7 +1676,7 @@ onBeforeUnmount(() => {
 }
 
 .wf-item-result-link a {
-  color: #5ad5ff;
+  color: var(--accent);
   text-decoration: none;
 }
 
@@ -1691,10 +1691,10 @@ onBeforeUnmount(() => {
 }
 
 .wf-action-btn {
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  border: 1px solid var(--border-default);
   border-radius: 0.3rem;
   padding: 0.15rem 0.5rem;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   cursor: pointer;
   transition:
@@ -1713,7 +1713,7 @@ onBeforeUnmount(() => {
 }
 
 .wf-action-btn.retry {
-  color: #5ad5ff;
+  color: var(--accent);
   border-color: rgba(90, 213, 255, 0.2);
   background: rgba(90, 213, 255, 0.06);
 }

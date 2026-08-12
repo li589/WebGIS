@@ -1,8 +1,9 @@
 # 底图显示与缓存泄漏专项检查报告
 
 - 检查日期：2026-08-11
+- **状态更新（2026-08-12）**：下文 P2 `softRequeueCounts` 泄漏已在 `dev` 提交 `2d71f3f` 修复；天地图街道现行为 **vec 底 + cva overlay**，服务端 UA=`CGDA-Backend/1.0`（见 `Docs/07-工程保障/UI优化与底图模块修复-2026-08-12.md`）。本文其余条目仍为当日静态审查快照，**不**自动代表当前代码。
 - 范围：前端底图显示链路 + 瓦片/图层缓存
-- 方式：仅静态代码审查，**未修改任何代码**
+- 方式：仅静态代码审查，**未修改任何代码**（检查当日）
 - 关键文件：
   - `Code/frontend/src/components/map/basemap-module.ts`（底图源/层管理、切换、错误熔断）
   - `Code/frontend/src/components/MapCanvas.vue`（地图实例生命周期、onMapLoad 初始化）

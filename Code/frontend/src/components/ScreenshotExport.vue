@@ -7,6 +7,7 @@
  * itself is loaded via defineAsyncComponent, so the cost is deferred until open.
  */
 import { computed, onBeforeUnmount, ref } from 'vue'
+import { Table2, X, ChevronDown } from 'lucide-vue-next'
 import html2canvas from 'html2canvas'
 import { jsPDF } from 'jspdf'
 import { LAYERS_COPY } from '../ui-copy'
@@ -326,10 +327,10 @@ async function capture() {
   <div class="screenshot-overlay" @click.self="emit('close')">
     <div class="screenshot-panel">
       <div class="panel-header">
-        <span class="panel-icon" aria-hidden="true">◫</span>
+        <Table2 :size="16" class="panel-icon" aria-hidden="true" />
         <span>导出截图</span>
         <button type="button" class="close-btn" title="关闭" @click.prevent="emit('close')">
-          <span aria-hidden="true">✕</span>
+          <X :size="14" aria-hidden="true" />
         </button>
       </div>
 
@@ -374,7 +375,7 @@ async function capture() {
         :disabled="!canCapture"
         @click.prevent="capture"
       >
-        <span v-if="!isCapturing && !captureMsg" class="btn-icon" aria-hidden="true">▼</span>
+        <ChevronDown v-if="!isCapturing && !captureMsg" :size="16" class="btn-icon" aria-hidden="true" />
         <span v-else-if="isCapturing && !captureMsg" class="btn-icon spinning" aria-hidden="true"
           >↻</span
         >
@@ -712,7 +713,7 @@ async function capture() {
   }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 640px) {
   .screenshot-overlay {
     padding: 5rem var(--space-2) 0;
     align-items: flex-start;

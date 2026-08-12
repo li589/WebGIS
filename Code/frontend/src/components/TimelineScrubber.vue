@@ -811,7 +811,7 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
   background: rgba(18, 30, 52, 0.72);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  border: 1px solid var(--border-default);
   border-radius: 0.85rem;
   padding: 0.48rem 0.75rem;
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
@@ -875,7 +875,7 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
 
 .date-text {
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Roboto, monospace;
-  font-size: 0.78rem;
+  font-size: var(--font-size-caption);
   color: #38bdf8;
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -892,14 +892,14 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
 }
 
 .date-weekday {
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   color: #94a3b8;
   flex-shrink: 0;
   white-space: nowrap;
 }
 
 .date-today-badge {
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   background: rgba(56, 189, 248, 0.2);
   color: #38bdf8;
   border: 1px solid rgba(56, 189, 248, 0.3);
@@ -934,7 +934,7 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
     'JetBrains Mono', ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
   font-style: normal;
   font-weight: 600;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   letter-spacing: 0.08em;
   line-height: 1;
   text-transform: uppercase;
@@ -972,7 +972,7 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
 }
 
 .active-layer-tag {
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   color: #f8fafc;
   background: rgba(30, 41, 59, 0.7);
@@ -989,7 +989,7 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
 }
 
 .granularity-badge {
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   padding: 0.12rem 0.4rem;
   border-radius: 0.3rem;
   border: 1px solid rgba(56, 189, 248, 0.3);
@@ -1039,7 +1039,7 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
   background: transparent;
   color: #94a3b8;
   cursor: pointer;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   transition: all 0.15s ease;
 }
 
@@ -1109,7 +1109,7 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   column-gap: 0.4rem;
-  font-size: 0.65rem;
+  font-size: var(--font-size-caption);
   color: #94a3b8;
   min-height: 1rem;
 }
@@ -1232,7 +1232,7 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
   background: transparent;
   color: #64748b;
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Roboto, monospace;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   padding: 0;
   border-radius: 0.2rem;
   cursor: pointer;
@@ -1299,7 +1299,7 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
 /* 单位指示标签 */
 .tick-unit-badge {
   flex: none;
-  font-size: 0.55rem;
+  font-size: var(--font-size-caption);
   color: #64748b;
   background: rgba(30, 41, 59, 0.6);
   border: 1px solid rgba(100, 116, 139, 0.2);
@@ -1315,7 +1315,7 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   color: #64748b;
   margin-top: 0.22rem;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
@@ -1344,7 +1344,7 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
 
 .play-interval-menu-title {
   padding: 0.2rem 0.45rem 0.35rem;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   color: #94a3b8;
   letter-spacing: 0.04em;
 }
@@ -1359,7 +1359,7 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
   background: transparent;
   color: #cbd5e1;
   font: inherit;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   padding: 0.32rem 0.45rem;
   cursor: pointer;
   text-align: left;
@@ -1378,7 +1378,7 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
 .play-interval-check {
   width: 0.85rem;
   text-align: center;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   opacity: 0.9;
 }
 </style>

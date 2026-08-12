@@ -219,8 +219,8 @@ onBeforeUnmount(() => {
 
 .section-hint {
   margin: 0;
-  font-size: 0.68rem;
-  color: #8aa8bf;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 
 .refresh-btn {
@@ -228,10 +228,10 @@ onBeforeUnmount(() => {
   border-radius: 0.45rem;
   padding: 0.3rem 0.6rem;
   background: rgba(10, 132, 255, 0.12);
-  color: #5ad5ff;
+  color: var(--accent);
   cursor: pointer;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 
 .refresh-btn:disabled {
@@ -242,7 +242,7 @@ onBeforeUnmount(() => {
 .error {
   margin: 0;
   color: #ffb4a8;
-  font-size: 0.65rem;
+  font-size: var(--font-size-caption);
 }
 
 /* ── 总体健康 ────────────────────────────────────────────────────── */
@@ -268,7 +268,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   padding: 0.2rem 0.55rem;
   border-radius: 999px;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   gap: 0.35rem;
   align-items: center;
@@ -278,8 +278,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 0.65rem;
-  color: #9fb6cc;
-  font-size: 0.6rem;
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
 }
 
 .health-strip {
@@ -294,7 +294,7 @@ onBeforeUnmount(() => {
   gap: 0.25rem;
   padding: 0.12rem 0.45rem;
   border-radius: 999px;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   border: 1px solid transparent;
 }
 
@@ -325,8 +325,8 @@ onBeforeUnmount(() => {
 }
 
 .service-name {
-  font-size: 0.72rem;
-  color: #d8e6f5;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
   font-weight: 600;
   display: inline-flex;
   align-items: center;
@@ -335,8 +335,8 @@ onBeforeUnmount(() => {
 
 .expand-hint {
   display: inline-block;
-  font-size: 0.56rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   transition: transform 0.15s ease;
 }
 
@@ -356,22 +356,22 @@ onBeforeUnmount(() => {
   min-width: 1.35rem;
   padding: 0.15rem 0.35rem;
   border-radius: 999px;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   line-height: 1;
 }
 
 .health-symbol {
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   line-height: 1;
 }
 
 .health-label {
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 
 .health-ok {
   background: rgba(114, 255, 207, 0.12);
-  color: #9ff8cf;
+  color: var(--success);
   border-color: rgba(114, 255, 207, 0.2);
 }
 
@@ -383,7 +383,7 @@ onBeforeUnmount(() => {
 
 .health-degraded {
   background: rgba(255, 180, 80, 0.12);
-  color: #ffc878;
+  color: var(--accent-warm);
   border-color: rgba(255, 160, 60, 0.2);
 }
 
@@ -395,14 +395,14 @@ onBeforeUnmount(() => {
 
 .service-message {
   margin: 0.25rem 0 0;
-  font-size: 0.62rem;
-  color: #9fb6cc;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
 }
 
 .service-time {
   margin: 0.15rem 0 0;
-  font-size: 0.56rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
 }
 
 /* ── 详情（点击展开） ────────────────────────────────────────────── */
@@ -419,12 +419,12 @@ onBeforeUnmount(() => {
 .detail-row {
   display: flex;
   gap: 0.5rem;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
 }
 
 .detail-key {
   flex: 0 0 8.5rem;
-  color: #8aa8bf;
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -217,7 +217,7 @@ function selectNode(name: string) {
 .section-title {
   margin: 0 0 0.32rem;
   color: #e8f3fc;
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
@@ -234,26 +234,26 @@ function selectNode(name: string) {
   gap: 0.62rem;
   padding: 0.36rem 0.52rem;
   border-radius: 0.4rem;
-  background: rgba(4, 12, 23, 0.5);
+  background: var(--surface-sunken);
   border: 1px solid rgba(136, 192, 255, 0.06);
 }
 
 .info-label {
-  color: #8aa8bf;
-  font-size: 0.6rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   flex: none;
 }
 
 .info-value {
-  color: #d8e6f5;
-  font-size: 0.6rem;
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
   text-align: right;
   flex: 1;
 }
 
 .loading-hint {
-  color: #5a7080;
-  font-size: 0.6rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
 }
 
 /* 技术栈标签云 */
@@ -268,8 +268,8 @@ function selectNode(name: string) {
   border-radius: 999px;
   background: rgba(10, 132, 255, 0.14);
   border: 1px solid rgba(90, 213, 255, 0.18);
-  color: #5ad5ff;
-  font-size: 0.56rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   font-weight: 500;
 }
 
@@ -277,8 +277,8 @@ function selectNode(name: string) {
 .arch-diagram {
   padding: 0.62rem;
   border-radius: 0.52rem;
-  background: rgba(4, 12, 23, 0.6);
-  border: 1px solid rgba(136, 192, 255, 0.08);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
   overflow-x: auto;
 }
 
@@ -293,7 +293,7 @@ function selectNode(name: string) {
   padding: 0.32rem 0.72rem;
   border-radius: 0.4rem;
   cursor: pointer;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   font-weight: 500;
   transition: all 0.16s ease;
   white-space: nowrap;
@@ -302,28 +302,28 @@ function selectNode(name: string) {
 .arch-node.root {
   background: linear-gradient(135deg, rgba(10, 132, 255, 0.3), rgba(125, 125, 255, 0.2));
   border: 1px solid rgba(90, 213, 255, 0.4);
-  color: #f0faff;
-  font-size: 0.64rem;
+  color: var(--text-strong);
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
 .arch-node.level-1 {
   background: rgba(10, 132, 255, 0.16);
   border: 1px solid rgba(90, 213, 255, 0.22);
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .arch-node.level-2 {
-  background: rgba(4, 12, 23, 0.6);
+  background: var(--surface-raised);
   border: 1px solid rgba(136, 192, 255, 0.1);
-  color: #8aa8bf;
+  color: var(--text-muted);
 }
 
 .arch-node.level-3 {
   background: rgba(4, 12, 23, 0.45);
   border: 1px dashed rgba(136, 192, 255, 0.14);
   color: #7a96ad;
-  font-size: 0.54rem;
+  font-size: var(--font-size-caption);
 }
 
 .arch-node:hover {
@@ -396,26 +396,26 @@ function selectNode(name: string) {
   gap: 0.16rem;
   padding: 0.42rem 0.62rem;
   border-radius: 0.4rem;
-  background: rgba(4, 12, 23, 0.5);
+  background: var(--surface-sunken);
   border: 1px solid rgba(136, 192, 255, 0.06);
 }
 
 .module-name {
-  color: #5ad5ff;
-  font-size: 0.62rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
 .module-desc {
-  color: #8aa8bf;
-  font-size: 0.56rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   line-height: 1.4;
 }
 
 .arch-summary {
   margin: 0;
-  color: #9fb6cc;
-  font-size: 0.58rem;
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
   line-height: 1.6;
 }
 
@@ -432,7 +432,7 @@ function selectNode(name: string) {
   gap: 0.16rem;
   padding: 0.42rem 0.72rem;
   border-radius: 0.4rem;
-  background: rgba(4, 12, 23, 0.5);
+  background: var(--surface-sunken);
   border: 1px solid rgba(136, 192, 255, 0.1);
   opacity: 0.6;
 }
@@ -444,17 +444,17 @@ function selectNode(name: string) {
 }
 
 .engine-name {
-  color: #d8e6f5;
-  font-size: 0.62rem;
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
 .engine-state {
-  color: #8aa8bf;
-  font-size: 0.54rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
 }
 
 .engine-card.active .engine-state {
-  color: #9ff8cf;
+  color: var(--success);
 }
 </style>

@@ -19,11 +19,10 @@ Code/
 ├─ backend/    # FastAPI + Celery：workflow 编排、weatherengine、统一瓦片、GEE
 ├─ algorithms/ # Python 算法包、数据接入、工作流与产品输出
 ├─ shared/     # 前后端共享协议与公共契约
-├─ infra/      # 数据面 compose（data-sync；与运行栈隔离）
-└─ docs/       # 面向实现与协作的补充文档
+└─ infra/      # data-sync（气象同步）+ gateway（可选 Nginx 同域入口）
 ```
 
-说明：早期草案中的 `scripts/` 目录当前不在 `Code/` 下。运行栈见 `backend/docker-compose.yml`；数据同步见 `infra/data-sync/`；一键启停在仓库根目录 `launch.py`。
+说明：公开文档在仓库根 **`Docs/`**（编号目录）；AI 本地工作区在 **`.ai/`**。测试在仓库根 **`Test/`**。运行栈见 `backend/docker-compose.yml`；一键启停在仓库根 `launch.py`（`Env/Python312`）。
 
 ## 目录职责
 
@@ -76,20 +75,23 @@ Code/
 
 共享协议负责统一前后端与算法之间的字段、对象和约定。前端可通过 `openapi-typescript` 从后端 OpenAPI 生成 `src/types/api-contracts.ts`。
 
-### `docs`
+### 文档与测试（不在 `Code/` 内）
 
-面向实现与协作的补充文档，例如双通道接口说明、协作说明、带日期的代码事实快照等。带日期文档作历史参考；日常以本 README 与各子工程 README 为准。
+- **`Docs/`**：人类可读正式文档（协作 / 架构 / 规范 / 专题 / 审查 / 结题）
+- **`.ai/`**：AI 技能、规则、计划、进度（本地，不上传）
+- **`Test/`**：后端 / 前端 / 算法测试集中地（见 `AGENTS.md`）
+- **`AGENTS.md`**：命令指针、「改 X 则跑 Y」、高风险区
 
 ## 当前开发优先级
 
-近期排期以仓库根 `.ai/progress/2026-08-04-pending-tasks-audit.md` 与 `.ai/docs/reference/工程收口仪表盘.md` 为准：
+近期排期以仓库根 `.ai/progress/` 与 `Docs/01-协作规范/工程收口仪表盘.md` 为准（`.ai/` 为本地进度真源时可优先）。
 
 1. **P0**：FY/SMAP UI 人工闭环（更大样本条带上图 + `.ai/progress/ui-verification-steps.md`）
 2. **P0**：Open-Meteo Phase B（tile-manager / coverage 与 settings `default_model` 贯通）
-3. **P1**：真实课题组数据 e2e / NAS 绿测；工作流调度 P1（见 `docs` 与审计报告）
-4. **P2–P3**：Layers store 继续拆分；按需推进 PostGIS、TiTiler/Martin、Cesium 主链（可选 Nginx：`launch.py start gateway`）
+3. **P1**：真实课题组数据 e2e / NAS 绿测；工作流调度（见 `Docs/05-专题研究/` 与审查报告）
+4. **P2–P3**：Layers store 域拆分已落地（bindings / selectors / *-domain）；按需推进 PostGIS、TiTiler/Martin、Cesium 主链（可选 Nginx：`launch.py start gateway`）
 
-画布编译执行 + 下载/解压/变量提取节点已落地，见 `docs/课题组数据全链路-2026-07-21.md`。保持 `workflow-runs` / `unified-tiles` / artifact 契约清晰。
+画布编译执行 + 下载/解压/变量提取节点已落地，见 `Docs/05-专题研究/其它专题/课题组数据全链路-2026-07-21.md`。保持 `workflow-runs` / `unified-tiles` / artifact 契约清晰。
 
 ## 需要避免的做法
 
@@ -101,12 +103,13 @@ Code/
 
 ## 推荐阅读顺序
 
-1. 仓库根 `README.md`
+1. 仓库根 `README.md` → `AGENTS.md`
 2. `Code/README.md`
 3. `Code/backend/README.md`
 4. `Code/frontend/README.md`
 5. `Code/shared/contracts/README.md`
-6. `Docs/03-规范协议/双通道接口设计总结.md`
-7. `Code/algorithms/providers/Python/README.md`
-8. `Code/algorithms/providers/docs/detailed_design.md`
-9. `Docs/05-专题研究/其它专题/课题组数据全链路-2026-07-21.md`（画布编译 + 数据获取节点）
+6. `Docs/README.md` → `Docs/02-架构设计/工程决策纪要-配置瓦片与契约.md`
+7. `Docs/03-规范协议/双通道接口设计总结.md`
+8. `Code/algorithms/providers/Python/README.md`
+9. `Code/algorithms/providers/docs/detailed_design.md`
+10. `Docs/05-专题研究/其它专题/课题组数据全链路-2026-07-21.md`（画布编译 + 数据获取节点）

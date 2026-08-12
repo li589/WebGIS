@@ -13,6 +13,7 @@
  * - 高级参数类型提示
  */
 import { computed, ref, watch } from 'vue'
+import { Rocket, X, Check, AlertTriangle, Settings, ArrowRight, ChevronDown, Play } from 'lucide-vue-next'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import { fetchWorkflowDefinition } from '../../services/workflow-definition-api'
 import type { WorkflowDefinition } from '../../services/workflow-definition-api'
@@ -365,7 +366,7 @@ watch(
     <div class="pipeline-dialog">
       <header class="pipeline-header">
         <div class="header-left">
-          <span class="header-icon" aria-hidden="true">🚀</span>
+          <Rocket :size="18" class="header-icon" aria-hidden="true" />
           <div class="header-titles">
             <h3 class="dialog-title">
               {{ showParams ? '配置流水线参数' : '端到端流水线' }}
@@ -377,7 +378,7 @@ watch(
           </div>
         </div>
         <button class="close-btn" type="button" title="关闭" @click="handleClose">
-          <span aria-hidden="true">✕</span>
+          <X :size="14" aria-hidden="true" />
         </button>
       </header>
 
@@ -387,7 +388,8 @@ watch(
         class="launch-banner"
         :class="launchResult.success ? 'success' : 'error'"
       >
-        <span aria-hidden="true">{{ launchResult.success ? '✓' : '✕' }}</span>
+        <Check v-if="launchResult.success" :size="14" aria-hidden="true" />
+        <X v-else :size="14" aria-hidden="true" />
         <span>{{ launchResult.message }}</span>
       </div>
 
@@ -403,7 +405,7 @@ watch(
       <!-- 加载错误 -->
       <div v-else-if="loadError" class="pipeline-body wf-scroll">
         <div class="error-hint">
-          <span aria-hidden="true">⚠</span>
+          <AlertTriangle :size="14" aria-hidden="true" />
           <span>加载失败: {{ loadError }}</span>
         </div>
       </div>
@@ -428,7 +430,7 @@ watch(
 
         <div v-for="card in filteredPipelines" :key="card.workflowId" class="pipeline-card">
           <div class="card-header">
-            <span class="card-icon" aria-hidden="true">⚙</span>
+            <Settings :size="14" class="card-icon" aria-hidden="true" />
             <h4 class="card-title">{{ card.name }}</h4>
           </div>
           <p class="card-desc">{{ card.description }}</p>
@@ -448,7 +450,7 @@ watch(
             </button>
             <button class="launch-btn" type="button" @click="handleLaunchClick(card)">
               <span>配置并启动</span>
-              <span aria-hidden="true">→</span>
+              <ArrowRight :size="14" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -483,7 +485,7 @@ watch(
               <label class="form-label">开始日期</label>
               <input v-model="startDate" type="date" class="form-input date-input" />
             </div>
-            <span class="date-separator">→</span>
+            <ArrowRight :size="14" class="date-separator" aria-hidden="true" />
             <div class="form-row">
               <label class="form-label">结束日期</label>
               <input v-model="endDate" type="date" class="form-input date-input" />
@@ -498,7 +500,8 @@ watch(
           <!-- 高级参数可折叠区域 -->
           <div v-if="advancedParams.length > 0" class="advanced-section">
             <button class="advanced-toggle" type="button" @click="showAdvanced = !showAdvanced">
-              <span aria-hidden="true">{{ showAdvanced ? '▼' : '▶' }}</span>
+              <ChevronDown v-if="showAdvanced" :size="14" aria-hidden="true" />
+              <Play v-else :size="14" aria-hidden="true" />
               <span>高级参数 ({{ advancedParams.length }})</span>
             </button>
             <p class="override-tip">启动器参数优先覆盖节点 algorithm_params 中的同名键</p>
@@ -587,7 +590,7 @@ watch(
 
 .dialog-subtitle {
   margin: 0;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   color: #7f93a9;
 }
 
@@ -596,10 +599,10 @@ watch(
   border: 1px solid rgba(136, 192, 255, 0.14);
   border-radius: 0.42rem;
   background: transparent;
-  color: #6e8ba0;
+  color: var(--text-faint);
   cursor: pointer;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   transition: all 0.16s ease;
 }
 
@@ -614,13 +617,13 @@ watch(
   align-items: center;
   gap: 0.4rem;
   padding: 0.5rem 0.86rem;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   font-weight: 500;
 }
 
 .launch-banner.success {
   background: rgba(40, 180, 90, 0.12);
-  color: #9ff8cf;
+  color: var(--success);
   border-bottom: 1px solid rgba(40, 180, 90, 0.25);
 }
 
@@ -645,7 +648,7 @@ watch(
 .error-hint {
   text-align: center;
   padding: 2rem 1rem;
-  font-size: 0.66rem;
+  font-size: var(--font-size-caption);
   color: #7f93a9;
 }
 
@@ -673,7 +676,7 @@ watch(
   background: rgba(8, 18, 33, 0.6);
   color: #eaf3fb;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   outline: none;
   transition: border-color 0.18s ease;
 }
@@ -687,8 +690,8 @@ watch(
 }
 
 .search-count {
-  font-size: 0.56rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   flex: none;
 }
 
@@ -716,20 +719,20 @@ watch(
 }
 
 .card-icon {
-  font-size: 0.72rem;
-  color: #5ad5ff;
+  font-size: var(--font-size-caption);
+  color: var(--accent);
 }
 
 .card-title {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   color: #eaf3fb;
   font-weight: 600;
 }
 
 .card-desc {
   margin: 0 0 0.52rem;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   color: #8aa0b6;
   line-height: 1.5;
 }
@@ -746,8 +749,8 @@ watch(
   border-radius: 0.32rem;
   border: 1px solid rgba(120, 255, 160, 0.3);
   background: rgba(40, 180, 90, 0.12);
-  color: #9ff8cf;
-  font-size: 0.56rem;
+  color: var(--success);
+  font-size: var(--font-size-caption);
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -765,7 +768,7 @@ watch(
   background: rgba(8, 18, 33, 0.6);
   color: #bfd3e6;
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   transition:
     border-color 0.18s ease,
@@ -789,7 +792,7 @@ watch(
   background: rgba(255, 184, 77, 0.14);
   color: #ffd38a;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   font-weight: 500;
   cursor: pointer;
   transition:
@@ -819,8 +822,8 @@ watch(
 }
 
 .preset-label {
-  font-size: 0.58rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   flex: none;
 }
 
@@ -835,9 +838,9 @@ watch(
   border-radius: 999px;
   border: 1px solid rgba(90, 213, 255, 0.25);
   background: rgba(10, 132, 255, 0.08);
-  color: #5ad5ff;
+  color: var(--accent);
   font: inherit;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   transition:
     border-color 0.16s ease,
@@ -861,8 +864,8 @@ watch(
 }
 
 .date-separator {
-  font-size: 0.72rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   padding-bottom: 0.4rem;
   flex: none;
 }
@@ -878,7 +881,7 @@ watch(
 }
 
 .form-label {
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   color: #9eb3c8;
   font-weight: 500;
 }
@@ -890,7 +893,7 @@ watch(
   background: rgba(8, 18, 33, 0.6);
   color: #eaf3fb;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   outline: none;
   transition: border-color 0.18s ease;
 }
@@ -908,8 +911,8 @@ watch(
 }
 
 .format-hint {
-  font-size: 0.52rem;
-  color: #5a7080;
+  font-size: var(--font-size-caption);
+  color: var(--text-disabled);
   margin-top: -0.2rem;
 }
 
@@ -922,7 +925,7 @@ watch(
 
 .override-tip {
   margin: 0.28rem 0 0.2rem;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   color: rgba(200, 220, 235, 0.72);
   line-height: 1.35;
 }
@@ -936,7 +939,7 @@ watch(
   background: transparent;
   color: #8aa0b6;
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   transition: color 0.16s ease;
 }
@@ -953,7 +956,7 @@ watch(
   padding: 0.52rem;
   border-radius: 0.52rem;
   background: rgba(4, 12, 23, 0.4);
-  border: 1px solid rgba(136, 192, 255, 0.08);
+  border: 1px solid var(--border-subtle);
 }
 
 /* ── 底部操作栏 ────────────────────────────────────────────── */
@@ -972,7 +975,7 @@ watch(
   background: rgba(8, 18, 33, 0.6);
   color: #bfd3e6;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   transition:
     border-color 0.18s ease,
@@ -1004,7 +1007,7 @@ watch(
 
 /* 日期范围校验错误提示 */
 .date-error {
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   color: #ff7b7b;
   padding: 0.3rem 0.52rem;
   border-radius: 0.5rem;

@@ -128,7 +128,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   position: absolute;
   width: 132px;
   height: 132px;
-  border: 1px dashed rgba(90, 213, 255, 0.28);
+  border: 1px dashed var(--border-accent);
   border-radius: 50%;
   transform: rotateX(58deg) scale(1.05);
 }
@@ -151,7 +151,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   position: absolute;
   inset: -10px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(90, 213, 255, 0.28) 0%, transparent 68%);
+  background: radial-gradient(circle, var(--border-accent) 0%, transparent 68%);
   animation: pulse-glow 2.4s ease-in-out infinite;
 }
 
@@ -303,7 +303,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   position: relative;
   width: 148px;
   height: 2px;
-  background: rgba(90, 213, 255, 0.12);
+  background: var(--accent-surface);
   border-radius: 1px;
   overflow: hidden;
 }
@@ -336,7 +336,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
 
 .compact-track {
   height: 2px;
-  background: rgba(90, 213, 255, 0.12);
+  background: var(--accent-surface);
   overflow: hidden;
 }
 

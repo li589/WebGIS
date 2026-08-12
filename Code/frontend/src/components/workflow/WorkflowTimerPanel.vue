@@ -7,6 +7,7 @@
  */
 import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { AlarmClock, X, CircleSlash, Timer, Play } from 'lucide-vue-next'
 
 import { useWorkflowTimersStore } from '../../stores/workflow-timers'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
@@ -566,7 +567,7 @@ onUnmounted(() => {
   >
     <div class="timer-panel" :class="{ 'timer-panel--embedded': embedded }">
       <div class="panel-header">
-        <span class="header-icon" aria-hidden="true">⏰</span>
+        <AlarmClock :size="18" class="header-icon" aria-hidden="true" />
         <span class="header-title">{{ contextTitle }}</span>
         <span class="header-tz-hint" title="Cron 与日期模板按 Asia/Shanghai 解释；存储为 UTC ISO"
           >北京时间</span
@@ -605,7 +606,7 @@ onUnmounted(() => {
             title="关闭"
             @click="emit('close')"
           >
-            <span aria-hidden="true">✕</span>
+            <X :size="14" aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -646,7 +647,7 @@ onUnmounted(() => {
             </div>
 
             <div v-if="!loading && filteredTimers.length === 0" class="empty-state compact">
-              <span class="empty-icon" aria-hidden="true">∅</span>
+              <CircleSlash :size="20" class="empty-icon" aria-hidden="true" />
               <span>暂无定时器</span>
               <span class="empty-hint">为当前工作流创建调度任务</span>
               <button class="header-btn primary" type="button" @click="openCreate">
@@ -693,11 +694,9 @@ onUnmounted(() => {
                     :disabled="runningTimerIds.has(timer.timer_id)"
                     @click="runTimer(timer)"
                   >
-                    {{ runningTimerIds.has(timer.timer_id) ? '…' : '▶' }}
+                    {{ runningTimerIds.has(timer.timer_id) ? '…' : '' }}<Play v-if="!runningTimerIds.has(timer.timer_id)" :size="14" aria-hidden="true" />
                   </button>
-                  <button class="action-btn danger" type="button" @click="askDelete(timer)">
-                    ✕
-                  </button>
+                  <button class="action-btn danger" type="button" @click="askDelete(timer)"><X :size="14" aria-hidden="true" /></button>
                 </div>
               </button>
             </div>
@@ -747,7 +746,7 @@ onUnmounted(() => {
               />
             </div>
             <div v-else class="detail-empty">
-              <span class="empty-icon" aria-hidden="true">⏱</span>
+              <Timer :size="20" class="empty-icon" aria-hidden="true" />
               <h3>选择左侧定时器</h3>
               <p>查看详情、编辑触发规则，或新建调度任务。</p>
               <button class="header-btn primary" type="button" @click="openCreate">
@@ -875,7 +874,7 @@ onUnmounted(() => {
 
 .header-icon {
   font-size: 0.95rem;
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .header-title {
@@ -889,7 +888,7 @@ onUnmounted(() => {
 .header-tz-hint {
   margin-left: 0.5rem;
   margin-right: auto;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   font-weight: 500;
   color: rgba(160, 200, 240, 0.72);
   border: 1px solid rgba(136, 192, 255, 0.22);
@@ -907,11 +906,11 @@ onUnmounted(() => {
 
 .header-btn {
   padding: 0.36rem 0.68rem;
-  border: 1px solid rgba(90, 213, 255, 0.3);
+  border: 1px solid var(--accent-border);
   border-radius: 0.35rem;
   background: rgba(12, 28, 48, 0.75);
   color: #c5d8ea;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 
@@ -929,7 +928,7 @@ onUnmounted(() => {
 .close-btn {
   border: none;
   background: transparent;
-  color: #8aa8bf;
+  color: var(--text-muted);
   cursor: pointer;
   font-size: 0.85rem;
 }
@@ -951,7 +950,7 @@ onUnmounted(() => {
   margin: 0.5rem 0.72rem 0;
   padding: 0.45rem 0.62rem;
   border-radius: 0.35rem;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   flex: none;
 }
 
@@ -1022,15 +1021,15 @@ onUnmounted(() => {
   border: 1px solid rgba(136, 192, 255, 0.18);
   background: rgba(4, 12, 22, 0.65);
   color: #e8f3fc;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
 }
 
 .link-btn {
   align-self: flex-start;
   border: none;
   background: transparent;
-  color: #5ad5ff;
-  font-size: 0.62rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   cursor: pointer;
   padding: 0;
 }
@@ -1084,14 +1083,14 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   color: #e8f3fc;
 }
 
 .type-badge {
   flex: none;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   padding: 0.08rem 0.32rem;
   border-radius: 0.25rem;
   background: rgba(60, 120, 180, 0.35);
@@ -1112,8 +1111,8 @@ onUnmounted(() => {
 }
 
 .meta-line {
-  font-size: 0.62rem;
-  color: #8aa8bf;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 
 .mono {
@@ -1150,7 +1149,7 @@ onUnmounted(() => {
   width: 0.7rem;
   height: 0.7rem;
   border-radius: 50%;
-  background: #d8e6f5;
+  background: var(--text-primary);
   transition: left 0.15s ease;
 }
 
@@ -1164,7 +1163,7 @@ onUnmounted(() => {
   border: 1px solid rgba(136, 192, 255, 0.22);
   background: rgba(12, 24, 42, 0.8);
   color: #c5d8ea;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 
@@ -1184,8 +1183,8 @@ onUnmounted(() => {
   justify-content: center;
   gap: 0.45rem;
   padding: 1.5rem 1rem;
-  color: #8aa8bf;
-  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   text-align: center;
 }
 
@@ -1199,8 +1198,8 @@ onUnmounted(() => {
 }
 
 .empty-hint {
-  font-size: 0.65rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
 }
 
 .detail-empty {
@@ -1211,19 +1210,19 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  color: #8aa8bf;
+  color: var(--text-muted);
   text-align: center;
 }
 
 .detail-empty h3 {
   margin: 0;
   font-size: 0.95rem;
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 
 .detail-empty p {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   max-width: 22rem;
 }
 
@@ -1239,7 +1238,7 @@ onUnmounted(() => {
 
 .detail-sub {
   margin: 0 0 0.55rem;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   color: #7a96ad;
 }
 
@@ -1248,8 +1247,8 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 0.55rem 0.9rem;
   margin-bottom: 0.85rem;
-  font-size: 0.65rem;
-  color: #9fb6cc;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
 }
 
 .detail-stats .err {
@@ -1285,8 +1284,8 @@ onUnmounted(() => {
 
 .dialog-text {
   margin: 0 0 0.75rem;
-  font-size: 0.72rem;
-  color: #9fb6cc;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
 }
 
 .dialog-form {
@@ -1302,7 +1301,7 @@ onUnmounted(() => {
 }
 
 .form-label {
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
   color: #c5d8ea;
 }
 
@@ -1312,7 +1311,7 @@ onUnmounted(() => {
   border: 1px solid rgba(136, 192, 255, 0.2);
   background: rgba(4, 12, 22, 0.7);
   color: #e8f3fc;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
 }
 
 .form-input.textarea {
@@ -1322,7 +1321,7 @@ onUnmounted(() => {
 
 .dialog-info {
   margin: 0.55rem 0;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   color: #b8d4ec;
 }
 
@@ -1339,7 +1338,7 @@ onUnmounted(() => {
   border: 1px solid rgba(136, 192, 255, 0.22);
   background: rgba(12, 24, 42, 0.9);
   color: #c5d8ea;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 

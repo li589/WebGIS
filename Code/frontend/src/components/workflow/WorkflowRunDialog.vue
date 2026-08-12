@@ -8,6 +8,7 @@
  * 两种模式共用「预期产出」命名面板（组标题 + 每产品图层名）。
  */
 import { computed, ref, watch } from 'vue'
+import { Info } from 'lucide-vue-next'
 import { useWorkflowOutputLayersStore } from '../../stores/workflow-output-layers'
 import { useLayersStore } from '../../stores/layers'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
@@ -193,7 +194,7 @@ watch(outputTags, (tags) => {
 
         <div class="products-form">
           <div class="multi-info-bar">
-            <span class="info-icon" aria-hidden="true">ℹ</span>
+            <Info :size="14" class="info-icon" aria-hidden="true" />
             <span class="info-text">
               将创建计算组，含 {{ productNames.length }} 个图层：{{
                 outputTags.map(productTagLabel).join(' / ')
@@ -281,12 +282,12 @@ watch(outputTags, (tags) => {
 }
 .dialog-subtitle {
   margin: 0.18rem 0 0;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   color: #7f93a9;
 }
 .dialog-description {
   margin: 0.3rem 0 0;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   line-height: 1.5;
   color: #8aa0b6;
   white-space: pre-line;
@@ -353,12 +354,12 @@ watch(outputTags, (tags) => {
   min-width: 0;
 }
 .mode-name {
-  font-size: 0.66rem;
+  font-size: var(--font-size-caption);
   color: #eaf3fb;
   font-weight: 600;
 }
 .mode-desc {
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   color: #8aa0b6;
   line-height: 1.4;
 }
@@ -366,12 +367,12 @@ watch(outputTags, (tags) => {
   padding: 0.4rem 0.5rem;
   border-radius: 0.52rem;
   background: rgba(8, 18, 33, 0.4);
-  border: 1px solid rgba(136, 192, 255, 0.08);
+  border: 1px solid var(--border-subtle);
 }
 .info-label,
 .info-hint {
   margin: 0;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   color: #8aa0b6;
   line-height: 1.5;
 }
@@ -391,7 +392,7 @@ watch(outputTags, (tags) => {
 .output-item {
   display: flex;
   gap: 0.32rem;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
 }
 .output-name {
   color: #bfd3e6;
@@ -410,7 +411,7 @@ watch(outputTags, (tags) => {
   gap: 0.22rem;
 }
 .form-label {
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   color: #9eb3c8;
 }
 .form-input,
@@ -420,7 +421,7 @@ watch(outputTags, (tags) => {
   border: 1px solid rgba(136, 192, 255, 0.18);
   background: rgba(8, 18, 33, 0.6);
   color: #eaf3fb;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   font-family: inherit;
   outline: none;
   transition: border-color 0.18s ease;
@@ -449,7 +450,7 @@ watch(outputTags, (tags) => {
   border: 1px solid rgba(136, 192, 255, 0.18);
   background: rgba(12, 24, 42, 0.6);
   color: #ffd38a;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   white-space: nowrap;
   transition: border-color 0.18s ease;
@@ -467,12 +468,12 @@ watch(outputTags, (tags) => {
   border: 1px solid rgba(120, 255, 160, 0.18);
 }
 .multi-info-bar .info-icon {
-  font-size: 0.72rem;
-  color: #9ff8cf;
+  font-size: var(--font-size-caption);
+  color: var(--success);
 }
 .multi-info-bar .info-text {
-  font-size: 0.56rem;
-  color: #9ff8cf;
+  font-size: var(--font-size-caption);
+  color: var(--success);
   line-height: 1.4;
 }
 .multi-name-list {
@@ -491,8 +492,8 @@ watch(outputTags, (tags) => {
   border-radius: 0.32rem;
   border: 1px solid rgba(120, 255, 160, 0.3);
   background: rgba(40, 180, 90, 0.12);
-  color: #9ff8cf;
-  font-size: 0.54rem;
+  color: var(--success);
+  font-size: var(--font-size-caption);
   font-weight: 600;
   letter-spacing: 0.02em;
   min-width: 3rem;
@@ -515,7 +516,7 @@ watch(outputTags, (tags) => {
   border: 1px solid rgba(136, 192, 255, 0.2);
   background: rgba(8, 18, 33, 0.6);
   color: #bfd3e6;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   transition:
     border-color 0.18s ease,

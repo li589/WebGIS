@@ -270,7 +270,7 @@ async function removeAccount(userId: number, username: string) {
   place-items: center;
   font-size: 0.9rem;
   font-weight: 700;
-  color: #9ff8cf;
+  color: var(--success);
   background: rgba(114, 255, 207, 0.12);
   border: 1px solid rgba(114, 255, 207, 0.25);
   flex: none;
@@ -283,15 +283,15 @@ async function removeAccount(userId: number, username: string) {
 
 .account-name {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   color: #e8f3fc;
 }
 
 .account-role {
   margin: 0.12rem 0 0;
-  font-size: 0.58rem;
-  color: #8aa8bf;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 
 .logout-btn {
@@ -302,7 +302,7 @@ async function removeAccount(userId: number, username: string) {
   background: rgba(120, 30, 20, 0.35);
   color: #ffb4a8;
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 
@@ -318,15 +318,15 @@ async function removeAccount(userId: number, username: string) {
 
 .section-title {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   color: #e8f3fc;
 }
 
 .section-hint {
   margin: 0;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   line-height: 1.45;
-  color: #8aa8bf;
+  color: var(--text-muted);
 }
 
 .create-form {
@@ -348,7 +348,7 @@ async function removeAccount(userId: number, username: string) {
   background: rgba(4, 10, 18, 0.85);
   color: #e8f3fc;
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
 }
 
 .primary-btn,
@@ -356,11 +356,11 @@ async function removeAccount(userId: number, username: string) {
 .danger-btn {
   padding: 0.38rem 0.55rem;
   border-radius: 0.35rem;
-  border: 1px solid rgba(90, 213, 255, 0.28);
+  border: 1px solid var(--border-accent);
   background: rgba(10, 132, 255, 0.14);
-  color: #5ad5ff;
+  color: var(--accent);
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 
@@ -377,14 +377,14 @@ async function removeAccount(userId: number, username: string) {
 .user-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.58rem;
-  color: #d8e6f5;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
 }
 
 .user-table th,
 .user-table td {
   padding: 0.35rem 0.3rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.08);
+  border-bottom: 1px solid var(--border-subtle);
   text-align: left;
 }
 
@@ -397,7 +397,7 @@ async function removeAccount(userId: number, username: string) {
 .ok {
   margin: 0;
   color: #9dffc8;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
 }
 
 .token-plain {
@@ -407,15 +407,15 @@ async function removeAccount(userId: number, username: string) {
 .err {
   margin: 0;
   color: #ffb4a8;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
 }
 
 .loading {
-  font-size: 0.58rem;
-  color: #8aa8bf;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 
-@media (max-width: 700px) {
+@media (max-width: 768px) {
   .create-form {
     grid-template-columns: 1fr;
   }

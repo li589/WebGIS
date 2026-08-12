@@ -36,7 +36,7 @@ function reloadPage() {
   place-items: center;
   padding: 2rem;
   background: #060d18;
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 
 .error-card {
@@ -60,8 +60,8 @@ p {
 
 .detail {
   font-family: ui-monospace, monospace;
-  font-size: 0.78rem;
-  color: #9fb6cc;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
   word-break: break-word;
 }
 
@@ -70,7 +70,7 @@ p {
   border: 1px solid rgba(255, 140, 100, 0.35);
   border-radius: 0.5rem;
   padding: 0.5rem 1rem;
-  background: rgba(255, 140, 100, 0.12);
+  background: var(--danger-surface);
   color: #ffc8b0;
   cursor: pointer;
   font: inherit;

@@ -89,7 +89,7 @@ const centerValueLabel = computed(() => {
 }
 
 .tool-kicker {
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #94a3b8;
@@ -97,13 +97,13 @@ const centerValueLabel = computed(() => {
 
 .tool-head h4 {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: var(--font-size-caption);
   color: #e2e8f0;
 }
 
 .tool-note {
   margin: 0;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   color: #64748b;
   line-height: 1.35;
 }
@@ -117,7 +117,7 @@ const centerValueLabel = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   color: #94a3b8;
 }
 
@@ -134,7 +134,7 @@ const centerValueLabel = computed(() => {
 .radius-ticks {
   display: flex;
   justify-content: space-between;
-  font-size: 0.55rem;
+  font-size: var(--font-size-caption);
   color: #64748b;
 }
 
@@ -159,19 +159,19 @@ const centerValueLabel = computed(() => {
 }
 
 .stat-lbl {
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   color: #94a3b8;
 }
 
 .stat-val {
-  font-size: 0.78rem;
+  font-size: var(--font-size-caption);
   color: #f1f5f9;
   font-weight: 600;
 }
 
 .stat-val.mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   font-weight: 500;
 }
 </style>

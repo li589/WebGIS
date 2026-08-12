@@ -129,7 +129,7 @@ function handleRemove(e: MouseEvent) {
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.1);
   color: inherit;
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   transition: background-color var(--motion-fast);
   opacity: 0.7;

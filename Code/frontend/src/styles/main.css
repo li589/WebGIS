@@ -22,7 +22,7 @@ body,
   color: var(--text-primary);
   background:
     radial-gradient(circle at top, rgba(17, 94, 160, 0.24), transparent 30rem),
-    linear-gradient(180deg, #020814 0%, #071120 45%, #091425 100%);
+    linear-gradient(180deg, var(--surface-base) 0%, #071120 45%, #091425 100%);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;

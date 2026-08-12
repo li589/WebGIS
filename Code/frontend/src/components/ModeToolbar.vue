@@ -572,7 +572,7 @@ function sourcePillLabel(source: TileSourceConfig): string {
   border-radius: var(--radius-pill);
   background: var(--danger);
   color: #fff;
-  font-size: 10px;
+  font-size: var(--font-size-caption);
   font-weight: var(--font-weight-bold);
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -816,7 +816,7 @@ function sourcePillLabel(source: TileSourceConfig): string {
 }
 
 /* 响应式 */
-@media (max-width: 1100px) {
+@media (max-width: 1024px) {
   .mode-toolbar {
     flex-direction: column;
     align-items: stretch;

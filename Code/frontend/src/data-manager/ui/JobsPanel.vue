@@ -134,7 +134,7 @@ onUnmounted(() => {
   gap: 0.5rem;
 }
 .hint {
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   color: #8aa0b4;
 }
 .ghost-btn {
@@ -144,7 +144,7 @@ onUnmounted(() => {
   background: rgba(4, 12, 23, 0.55);
   color: #c5d8ea;
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 .job-list {
@@ -167,10 +167,10 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 0.4rem;
   align-items: center;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
 }
 .kind {
-  color: #5ad5ff;
+  color: var(--accent);
   font-weight: 600;
 }
 .id {
@@ -206,18 +206,18 @@ onUnmounted(() => {
 .bar i {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, #0a84ff, #5ad5ff);
+  background: linear-gradient(90deg, #0a84ff, var(--accent));
 }
 .pct {
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   color: #8aa0b4;
   min-width: 2.2rem;
   text-align: right;
 }
 .msg {
   margin: 0.28rem 0 0;
-  font-size: 0.55rem;
-  color: #9fb6cc;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
 }
 .job-actions {
   margin-top: 0.35rem;
@@ -227,7 +227,7 @@ onUnmounted(() => {
 .empty,
 .err {
   margin: 0;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 .err {
   color: #ffb0b0;

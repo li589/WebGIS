@@ -845,19 +845,19 @@ label {
   display: flex;
   flex-direction: column;
   gap: 0.14rem;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   letter-spacing: 0.02em;
   color: #8aa0b4;
 }
 input,
 select {
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  border: 1px solid var(--border-default);
   border-radius: 0.34rem;
   padding: 0.28rem 0.4rem;
   background: rgba(4, 12, 23, 0.72);
-  color: #d8e6f5;
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   min-width: 6.2rem;
 }
 .ghost-btn {
@@ -867,7 +867,7 @@ select {
   background: rgba(4, 12, 23, 0.55);
   color: #c5d8ea;
   font: inherit;
-  font-size: 0.66rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   transition:
     background 0.15s ease,
@@ -911,7 +911,7 @@ table {
   border-spacing: 0;
   width: max-content;
   min-width: 100%;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   font-family:
     'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans CJK SC',
     'Noto Sans SC', 'Source Han Sans SC', 'WenQuanYi Micro Hei', system-ui, sans-serif;
@@ -947,7 +947,7 @@ th {
   background: linear-gradient(180deg, rgba(16, 34, 54, 0.98), rgba(10, 22, 38, 0.96));
   color: #9ec4e0;
   z-index: 3;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   letter-spacing: 0.01em;
   border-bottom: 1px solid rgba(136, 192, 255, 0.18);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
@@ -971,10 +971,10 @@ th.col-idx {
   margin-left: 0.45rem;
   padding: 0.1rem 0.4rem;
   border-radius: 999px;
-  border: 1px solid rgba(90, 213, 255, 0.28);
+  border: 1px solid var(--border-accent);
   background: rgba(10, 40, 64, 0.65);
   color: #9fd8ff;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   max-width: min(28rem, 55vw);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -994,7 +994,7 @@ th.col-idx {
   background: transparent;
   color: #6a8094;
   cursor: pointer;
-  font-size: 0.78rem;
+  font-size: var(--font-size-caption);
   line-height: 1;
   opacity: 0.55;
 }
@@ -1046,14 +1046,14 @@ tr.selected td.col-idx {
 }
 .pager {
   justify-content: space-between;
-  font-size: 0.64rem;
+  font-size: var(--font-size-caption);
   color: #8aa0b4;
 }
 .sel-hint,
 .empty,
 .err {
   margin: 0;
-  font-size: 0.66rem;
+  font-size: var(--font-size-caption);
 }
 .err {
   color: #ffb0b0;
@@ -1082,7 +1082,7 @@ tr.selected td.col-idx {
   background: transparent;
   color: #d0e4f6;
   font: inherit;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   text-align: left;
   cursor: pointer;
 }

@@ -281,13 +281,13 @@ function percentOf(used: number | null | undefined, total: number | null | undef
 
 .card-title {
   margin: 0;
-  font-size: 0.78rem;
-  color: #d8e6f5;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
 }
 
 .card-meta {
-  font-size: 0.56rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
 }
 
 .metric-list {
@@ -308,8 +308,8 @@ function percentOf(used: number | null | undefined, total: number | null | undef
 
 .metric-label {
   flex: 0 0 4.6rem;
-  font-size: 0.62rem;
-  color: #9fb6cc;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
 }
 
 .metric-main {
@@ -337,8 +337,8 @@ function percentOf(used: number | null | undefined, total: number | null | undef
 
 .metric-value {
   flex: 0 0 auto;
-  font-size: 0.6rem;
-  color: #d8e6f5;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -351,8 +351,8 @@ function percentOf(used: number | null | undefined, total: number | null | undef
 
 .processes-title {
   margin: 0.2rem 0 0;
-  font-size: 0.6rem;
-  color: #8aa8bf;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 
 .process-list {
@@ -370,8 +370,8 @@ function percentOf(used: number | null | undefined, total: number | null | undef
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.58rem;
-  color: #9fb6cc;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
 }
 
 .process-name {
@@ -383,7 +383,7 @@ function percentOf(used: number | null | undefined, total: number | null | undef
 }
 
 .process-pid {
-  color: #6e8ba0;
+  color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
 
@@ -396,12 +396,12 @@ function percentOf(used: number | null | undefined, total: number | null | undef
 .error {
   margin: 0;
   color: #ffb4a8;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 
 .empty {
   margin: 0;
-  color: #6e8ba0;
-  font-size: 0.62rem;
+  color: var(--text-faint);
+  font-size: var(--font-size-caption);
 }
 </style>

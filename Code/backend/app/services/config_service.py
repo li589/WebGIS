@@ -6,13 +6,60 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
+from app.services.config_api_keys import (  # noqa: F401
+    _annotate_key_entry,
+    _env_api_key_value,
+    _get_api_keys_repository,
+    _get_effective_api_key_cached,
+    _sync_api_config_manager_key,
+    clear_api_key_history,
+    delete_api_key,
+    delete_api_key_history_entry,
+    get_effective_api_key,
+    has_api_key_db_row,
+    is_basemap_key_available,
+    list_api_key_history,
+    list_api_keys,
+    restore_api_key_history,
+    test_api_key,
+    toggle_api_key,
+    upsert_api_key,
+)
+from app.services.config_gee_accounts import (  # noqa: F401
+    _get_gee_credentials_repository,
+    add_gee_account,
+    delete_gee_account,
+    list_gee_accounts,
+    reload_gee_account_pool,
+    test_gee_account,
+    toggle_gee_account,
+)
+from app.services.config_remote_storage import (  # noqa: F401
+    _get_remote_storage_repository,
+    clear_remote_storage_history,
+    delete_remote_storage_history_entry,
+    delete_remote_storage_profile,
+    list_remote_storage_history,
+    list_remote_storage_profiles,
+    restore_remote_storage_history,
+    test_remote_storage_profile,
+    toggle_remote_storage_profile,
+    upsert_remote_storage_profile,
+)
+from app.services.config_weather_providers import (  # noqa: F401
+    _ensure_weather_providers_registered,
+    _get_weather_providers_repository,
+    apply_persisted_provider_overrides,
+    delete_weather_provider,
+    get_weather_provider,
+    list_weather_providers,
+    set_weather_provider_priority,
+    test_weather_provider,
+    toggle_weather_provider,
+    update_weather_provider,
+)
 
 logger = logging.getLogger(__name__)
-
-
-# ── API Key 管理（L3: 已抽取到 config_api_keys）──
-
-# ── GEE 账户管理（L3: 已抽取到 config_gee_accounts）──
 
 
 # ── 常规配置 ──────────────────────────────────────────────────────────────────
@@ -516,9 +563,3 @@ def get_about_info() -> dict[str, Any]:
             "数据层支持本地文件系统、MinIO 对象存储和远程 FileBrowser 服务器。"
         ),
     }
-
-
-# ── 天气源 Provider 管理（L3: 已抽取到 config_weather_providers）──
-
-
-# ── 远程存储凭证（L3: 已抽取到 config_remote_storage）──

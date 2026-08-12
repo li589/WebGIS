@@ -11,7 +11,7 @@
  * 已接入：WorkflowLeftSidebar / WorkflowRightSidebar / WorkflowTimerPanel /
  * PipelineLauncher（`.pipeline-body`）/ NodeCacheDialog（`.nc-list`）。
  *
- * 工作流编辑器外的面板可参考 ControlPanel 的 `--panel-scrollbar-*` 变量，
+ * 工作流编辑器外的面板可参考 PanelDock 的 `--panel-scrollbar-*` 变量，
  * 或复用本文件的色值 `rgba(90, 180, 255, 0.26~0.45)` 以保持视觉一致。
  */
 .wf-scroll {

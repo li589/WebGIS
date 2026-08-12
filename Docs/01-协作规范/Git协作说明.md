@@ -274,7 +274,7 @@ git pull origin dev
 git checkout dev
 git fetch origin
 git restore --source origin/dev -- Code/backend Code/algorithms
-git restore --source origin/dev -- Code/shared Docs README.md Code/README.md
+git restore --source origin/dev -- Code/shared Docs README.md AGENTS.md Code/README.md
 ```
 
 这样做的效果是：
@@ -320,7 +320,7 @@ git stash pop
 git checkout dev
 git fetch origin
 git restore --source origin/dev -- Code/backend Code/algorithms
-git restore --source origin/dev -- Code/shared Docs README.md Code/README.md
+git restore --source origin/dev -- Code/shared Docs README.md AGENTS.md Code/README.md
 ```
 
 然后我在 `Code/frontend` 中开发。
@@ -423,7 +423,7 @@ git pull origin dev
 git checkout dev
 git fetch origin
 git restore --source origin/dev -- Code/frontend
-git restore --source origin/dev -- Code/shared Docs README.md Code/README.md
+git restore --source origin/dev -- Code/shared Docs README.md AGENTS.md Code/README.md
 ```
 
 这样做的效果是：
@@ -469,7 +469,7 @@ git stash pop
 git checkout dev
 git fetch origin
 git restore --source origin/dev -- Code/frontend
-git restore --source origin/dev -- Code/shared Docs README.md Code/README.md
+git restore --source origin/dev -- Code/shared Docs README.md AGENTS.md Code/README.md
 ```
 
 然后我在 `Code/backend`、`Code/algorithms` 中开发。
@@ -592,7 +592,7 @@ git restore --source origin/dev -- Code/backend
 
 ```bash
 git fetch origin
-git restore --source origin/dev -- Code/shared Docs README.md Code/README.md
+git restore --source origin/dev -- Code/shared Docs README.md AGENTS.md Code/README.md
 ```
 
 ## 最后一句话

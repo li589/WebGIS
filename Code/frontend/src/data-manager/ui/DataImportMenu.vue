@@ -1,5 +1,6 @@
 ﻿<script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { Table2, ChevronDown, ChevronUp, Menu, Info, RefreshCw } from 'lucide-vue-next'
 import DataWorkspace from './DataWorkspace.vue'
 import {
   dataWorkspaceOpen,
@@ -102,9 +103,9 @@ const progressLabel = computed(() =>
       :title="authStore.canWrite ? DATA_COPY.menuTitle : '只读账户无法导入/导出数据'"
       @click="toggleMenu"
     >
-      <span class="btn-icon" aria-hidden="true">◫</span>
+      <Table2 :size="14" class="btn-icon" aria-hidden="true" />
       <span class="btn-label">{{ DATA_COPY.menuLabel }}</span>
-      <span class="caret" aria-hidden="true">▾</span>
+      <ChevronDown :size="14" class="caret" aria-hidden="true" />
     </button>
 
     <Teleport to="body">
@@ -115,28 +116,28 @@ const progressLabel = computed(() =>
         @click.stop
       >
         <button class="dropdown-item" type="button" @click="openImport('vector')">
-          <span class="item-icon" aria-hidden="true">⬆</span>
+          <ChevronUp :size="14" class="item-icon" aria-hidden="true" />
           <span class="item-body">
             <span class="item-title">{{ DATA_COPY.import }}</span>
             <span class="item-desc">矢量 / 栅格 / 文档 · 后端统一解析</span>
           </span>
         </button>
         <button class="dropdown-item" type="button" @click="openExport">
-          <span class="item-icon" aria-hidden="true">⬇</span>
+          <ChevronDown :size="14" class="item-icon" aria-hidden="true" />
           <span class="item-body">
             <span class="item-title">{{ DATA_COPY.export }}</span>
             <span class="item-desc">导出已导入图层</span>
           </span>
         </button>
         <button class="dropdown-item" type="button" @click="openAttributesWorkspace">
-          <span class="item-icon" aria-hidden="true">☰</span>
+          <Menu :size="14" class="item-icon" aria-hidden="true" />
           <span class="item-body">
             <span class="item-title">{{ DATA_COPY.wsAttributes }}</span>
             <span class="item-desc">分页浏览与字段重命名</span>
           </span>
         </button>
         <button class="dropdown-item" type="button" @click="openDetailsWorkspace">
-          <span class="item-icon" aria-hidden="true">ℹ</span>
+          <Info :size="14" class="item-icon" aria-hidden="true" />
           <span class="item-body">
             <span class="item-title">{{ DATA_COPY.wsDetails }}</span>
             <span class="item-desc">元数据 · 样式 · 删除</span>
@@ -154,7 +155,7 @@ const progressLabel = computed(() =>
 
     <div v-if="importing" class="import-spinner">
       <div class="spinner-card">
-        <span class="spinning-icon" aria-hidden="true">↻</span>
+        <RefreshCw :size="20" class="spinning-icon" aria-hidden="true" />
         <span v-if="progressLabel" class="progress-text">{{ progressLabel }}</span>
       </div>
     </div>
@@ -227,7 +228,7 @@ const progressLabel = computed(() =>
   line-height: 1;
 }
 .caret {
-  font-size: 10px;
+  font-size: var(--font-size-caption);
   opacity: 0.6;
   line-height: 1;
 }
@@ -256,7 +257,7 @@ const progressLabel = computed(() =>
 
 .spinning-icon {
   font-size: 1.6rem;
-  color: #5ad5ff;
+  color: var(--accent);
   animation: spin 0.8s linear infinite;
 }
 
@@ -298,7 +299,7 @@ const progressLabel = computed(() =>
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #9fb6cc;
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
   text-align: left;
@@ -308,13 +309,13 @@ const progressLabel = computed(() =>
 }
 
 .import-dropdown .dropdown-item:hover {
-  background: rgba(90, 213, 255, 0.12);
-  color: #d8e6f5;
+  background: var(--accent-surface);
+  color: var(--text-primary);
 }
 
 .import-dropdown .item-icon {
   font-size: 14px;
-  color: #5ad5ff;
+  color: var(--accent);
   flex: none;
   opacity: 0.8;
 }
@@ -327,11 +328,11 @@ const progressLabel = computed(() =>
 .import-dropdown .item-title {
   font-size: 12px;
   font-weight: 600;
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 .import-dropdown .item-desc {
   font-size: 12px;
-  color: #8aa8bf;
+  color: var(--text-muted);
   line-height: 1.4;
 }
 .import-dropdown .dropdown-hint {
@@ -339,7 +340,7 @@ const progressLabel = computed(() =>
   padding-top: 8px;
   border-top: 1px solid rgba(90, 213, 255, 0.08);
   font-size: 12px;
-  color: #6e8ba0;
+  color: var(--text-faint);
   line-height: 1.4;
 }
 
@@ -352,9 +353,9 @@ const progressLabel = computed(() =>
   max-width: min(36rem, calc(100vw - 2rem));
   padding: 8px 16px;
   border-radius: 6px;
-  background: rgba(90, 213, 255, 0.12);
-  border: 1px solid rgba(90, 213, 255, 0.3);
-  color: #5ad5ff;
+  background: var(--accent-surface);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.4;
@@ -365,8 +366,8 @@ const progressLabel = computed(() =>
 }
 
 .import-toast.error {
-  background: rgba(255, 140, 100, 0.12);
-  border-color: rgba(255, 140, 100, 0.3);
-  color: #ff8c64;
+  background: var(--danger-surface);
+  border-color: var(--danger-border);
+  color: var(--danger);
 }
 </style>

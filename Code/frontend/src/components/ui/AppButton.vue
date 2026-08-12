@@ -11,7 +11,7 @@ import { computed } from 'vue'
 
 const props = withDefaults(
   defineProps<{
-    variant?: 'primary' | 'secondary' | 'ghost'
+    variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
     size?: 'xs' | 'sm' | 'md' | 'lg'
     /** 禁用态（pointer-events none + 禁用文字色） */
     disabled?: boolean
@@ -173,6 +173,23 @@ const label = computed(() => props.ariaLabel || undefined)
   color: var(--text-strong);
 }
 .app-btn--ghost:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* 变体：danger */
+.app-btn--danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #06121f;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.app-btn--danger:hover:not(:disabled) {
+  background: var(--warning);
+  border-color: var(--warning);
+  transform: translateY(-1px);
+  box-shadow: var(--elevation-1);
+}
+.app-btn--danger:active:not(:disabled) {
   transform: translateY(0);
 }
 

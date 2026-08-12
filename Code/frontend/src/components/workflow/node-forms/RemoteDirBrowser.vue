@@ -201,9 +201,9 @@ watch(
   flex-direction: column;
   width: min(540px, 92vw);
   max-height: 78vh;
-  border: 1px solid rgba(90, 213, 255, 0.28);
+  border: 1px solid var(--border-accent);
   border-radius: 0.5rem;
-  background: rgba(8, 17, 31, 0.96);
+  background: var(--surface-1);
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
   color: #c4d6e8;
   overflow: hidden;
@@ -218,9 +218,9 @@ watch(
 }
 
 .dialog-title {
-  font-size: 0.66rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 
 .dialog-close {
@@ -232,7 +232,7 @@ watch(
   border: none;
   border-radius: 0.28rem;
   background: transparent;
-  color: #8aa8bf;
+  color: var(--text-muted);
   cursor: pointer;
   font-size: 0.9rem;
   line-height: 1;
@@ -248,7 +248,7 @@ watch(
   align-items: center;
   gap: 0.32rem;
   padding: 0.4rem 0.62rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.08);
+  border-bottom: 1px solid var(--border-subtle);
   background: rgba(4, 12, 23, 0.4);
 }
 
@@ -262,14 +262,14 @@ watch(
   border: 1px solid rgba(136, 192, 255, 0.18);
   border-radius: 0.32rem;
   background: rgba(10, 132, 255, 0.08);
-  color: #8aa8bf;
+  color: var(--text-muted);
   cursor: pointer;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
 }
 
 .path-btn:hover:not(:disabled) {
   background: rgba(10, 132, 255, 0.2);
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .path-btn:disabled {
@@ -283,9 +283,9 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   font-family: 'Consolas', 'Monaco', monospace;
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .dialog-body {
@@ -297,8 +297,8 @@ watch(
 .dialog-state {
   padding: 1.4rem 0.62rem;
   text-align: center;
-  font-size: 0.58rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
 }
 
 .dialog-state.error {
@@ -317,8 +317,8 @@ watch(
   gap: 0.36rem;
   padding: 0.3rem 0.42rem;
   border-radius: 0.3rem;
-  font-size: 0.58rem;
-  color: #d8e6f5;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
   cursor: pointer;
   user-select: none;
 }
@@ -332,7 +332,7 @@ watch(
 }
 
 .dir-item.dir .item-name {
-  color: #9ff8cf;
+  color: var(--success);
   font-weight: 500;
 }
 
@@ -340,12 +340,12 @@ watch(
   flex: none;
   width: 0.8rem;
   text-align: center;
-  color: #6e8ba0;
-  font-size: 0.62rem;
+  color: var(--text-faint);
+  font-size: var(--font-size-caption);
 }
 
 .item-icon.dir {
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .item-name {
@@ -358,8 +358,8 @@ watch(
 
 .item-size {
   flex: none;
-  font-size: 0.5rem;
-  color: #5a7080;
+  font-size: var(--font-size-caption);
+  color: var(--text-disabled);
   font-family: 'Consolas', 'Monaco', monospace;
 }
 
@@ -374,8 +374,8 @@ watch(
 }
 
 .footer-hint {
-  font-size: 0.52rem;
-  color: #5a7080;
+  font-size: var(--font-size-caption);
+  color: var(--text-disabled);
 }
 
 .footer-actions {
@@ -390,24 +390,24 @@ watch(
   background: transparent;
   color: #c4d6e8;
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   transition: all 0.16s ease;
 }
 
 .dialog-btn:hover {
   background: rgba(10, 132, 255, 0.16);
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 
 .dialog-btn.primary {
   border-color: rgba(90, 213, 255, 0.5);
   background: rgba(90, 213, 255, 0.2);
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .dialog-btn.primary:hover {
   background: rgba(90, 213, 255, 0.32);
-  color: #9ff8cf;
+  color: var(--success);
 }
 </style>

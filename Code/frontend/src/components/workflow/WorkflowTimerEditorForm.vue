@@ -237,7 +237,7 @@ function patch(key: string, value: unknown) {
 }
 
 .form-label {
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   color: #c5d8ea;
   font-weight: 500;
 }
@@ -245,7 +245,7 @@ function patch(key: string, value: unknown) {
 .form-hint {
   font-weight: 400;
   color: #7a96ad;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 
 .form-input {
@@ -254,7 +254,7 @@ function patch(key: string, value: unknown) {
   border: 1px solid rgba(136, 192, 255, 0.2);
   background: rgba(4, 12, 22, 0.7);
   color: #e8f3fc;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
 }
 
 .form-input.mono,
@@ -277,7 +277,7 @@ function patch(key: string, value: unknown) {
   display: flex;
   align-items: center;
   gap: 0.28rem;
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
   color: #c5d8ea;
   cursor: pointer;
 }
@@ -291,10 +291,10 @@ function patch(key: string, value: unknown) {
 .cron-preset-btn {
   padding: 0.22rem 0.45rem;
   border-radius: 0.28rem;
-  border: 1px solid rgba(90, 213, 255, 0.28);
+  border: 1px solid var(--border-accent);
   background: rgba(12, 28, 48, 0.7);
   color: #9ec9e8;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 
@@ -311,8 +311,8 @@ function patch(key: string, value: unknown) {
 }
 
 .cron-preview-label {
-  font-size: 0.62rem;
-  color: #8aa8bf;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 
 .cron-preview-times {
@@ -322,12 +322,12 @@ function patch(key: string, value: unknown) {
 }
 
 .cron-time-item {
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   color: #b8d4ec;
 }
 
 .cron-preview-error {
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   color: #ff9b9b;
 }
 
@@ -341,8 +341,8 @@ function patch(key: string, value: unknown) {
   align-self: flex-start;
   border: none;
   background: transparent;
-  color: #5ad5ff;
-  font-size: 0.62rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   cursor: pointer;
   padding: 0;
 }
@@ -359,13 +359,13 @@ function patch(key: string, value: unknown) {
   border: 1px solid rgba(136, 192, 255, 0.22);
   background: rgba(8, 20, 36, 0.8);
   color: #9ec9e8;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 
 .dialog-error {
   color: #ff9b9b;
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
 }
 
 .dialog-actions {
@@ -381,7 +381,7 @@ function patch(key: string, value: unknown) {
   border: 1px solid rgba(136, 192, 255, 0.22);
   background: rgba(12, 24, 42, 0.9);
   color: #c5d8ea;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 

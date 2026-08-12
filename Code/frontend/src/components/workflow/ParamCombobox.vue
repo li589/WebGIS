@@ -286,7 +286,7 @@ onBeforeUnmount(() => bindOutside(false))
   background: transparent;
   color: #e8f3fc;
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   padding: 0.28rem 0.4rem;
   outline: none;
 }
@@ -296,15 +296,15 @@ onBeforeUnmount(() => bindOutside(false))
   border: none;
   border-left: 1px solid rgba(136, 192, 255, 0.15);
   background: rgba(10, 132, 255, 0.08);
-  color: #8aa8bf;
+  color: var(--text-muted);
   cursor: pointer;
-  font-size: 0.55rem;
+  font-size: var(--font-size-caption);
   padding: 0;
 }
 
 .combo-toggle:hover {
   background: rgba(10, 132, 255, 0.18);
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .chevron {
@@ -333,7 +333,7 @@ onBeforeUnmount(() => bindOutside(false))
 
 .param-combo-option {
   padding: 0.22rem 0.5rem;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   line-height: 1.35;
   color: #d5e6f5;
   cursor: pointer;
@@ -349,18 +349,18 @@ onBeforeUnmount(() => bindOutside(false))
 }
 
 .param-combo-option.selected {
-  color: #9ff8cf;
+  color: var(--success);
 }
 
 .param-combo-option.custom {
   border-top: 1px solid rgba(136, 192, 255, 0.12);
-  color: #5ad5ff;
+  color: var(--accent);
   font-style: italic;
 }
 
 .param-combo-empty {
   padding: 0.35rem 0.5rem;
-  font-size: 0.55rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
 }
 </style>

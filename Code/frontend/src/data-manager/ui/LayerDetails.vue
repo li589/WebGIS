@@ -275,18 +275,18 @@ label {
   display: flex;
   flex-direction: column;
   gap: 0.16rem;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   color: #8aa0b4;
 }
 input,
 select {
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  border: 1px solid var(--border-default);
   border-radius: 0.34rem;
   padding: 0.28rem 0.4rem;
   background: rgba(4, 12, 23, 0.72);
-  color: #d8e6f5;
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 input[type='color'] {
   width: 3rem;
@@ -301,7 +301,7 @@ input[type='color'] {
 }
 .card h3 {
   margin: 0 0 0.4rem;
-  font-size: 0.66rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   color: #9ec4e0;
 }
@@ -314,18 +314,18 @@ dl > div {
   display: grid;
   grid-template-columns: 4.5rem 1fr;
   gap: 0.4rem;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
 }
 dt {
   color: #6a8094;
 }
 dd {
   margin: 0;
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 .mono {
   font-family: ui-monospace, monospace;
-  font-size: 0.54rem;
+  font-size: var(--font-size-caption);
   word-break: break-all;
 }
 .warn {
@@ -348,7 +348,7 @@ dd {
   border-radius: 0.38rem;
   padding: 0.3rem 0.55rem;
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 .ghost-btn {
@@ -370,7 +370,7 @@ dd {
 .err,
 .ok {
   margin: 0;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 .empty {
   color: #8aa0b4;

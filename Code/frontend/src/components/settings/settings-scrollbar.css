@@ -42,7 +42,7 @@
 .settings-panel .code-block::-webkit-scrollbar-thumb,
 .settings-panel .table-wrap::-webkit-scrollbar-thumb,
 .settings-panel .history-list::-webkit-scrollbar-thumb {
-  background: rgba(90, 213, 255, 0.28);
+  background: var(--border-accent);
   border-radius: 4px;
   border: 1px solid transparent;
   background-clip: padding-box;

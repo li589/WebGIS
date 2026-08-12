@@ -222,7 +222,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
             visibility: 'visible',
           },
           paint: {
-            'text-color': '#d8e6f5',
+            'text-color': 'var(--text-primary)',
             'text-halo-color': '#0a1a2a',
             'text-halo-width': 1.5,
           },

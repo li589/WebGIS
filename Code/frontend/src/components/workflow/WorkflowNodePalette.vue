@@ -7,6 +7,7 @@
  */
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { storeToRefs } from 'pinia'
+import { Star, Clock, X, ChevronDown } from 'lucide-vue-next'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import type { NodeTemplate } from '../../services/workflow-definition-api'
 
@@ -110,11 +111,11 @@ onBeforeUnmount(() => {
 
 // ─── 引擎过滤工具 ────────────────────────────────────────────────────────────
 const ENGINE_FILTERS: Array<{ key: string; label: string; color: string }> = [
-  { key: 'all', label: '全部', color: '#88dfff' },
+  { key: 'all', label: '全部', color: 'var(--accent-strong)' },
   { key: 'weather', label: '天气', color: '#ffb84d' },
   { key: 'python_provider', label: 'Python', color: '#78ffa0' },
-  { key: 'gee', label: 'GEE', color: '#5ad5ff' },
-  { key: 'common', label: '通用', color: '#88dfff' },
+  { key: 'gee', label: 'GEE', color: 'var(--accent)' },
+  { key: 'common', label: '通用', color: 'var(--accent-strong)' },
 ]
 
 const PORT_LEGEND = [
@@ -122,7 +123,7 @@ const PORT_LEGEND = [
   { color: '#ff6b6b', label: '空间范围' },
   { color: '#ffd5a8', label: '数值' },
   { color: '#ffe08a', label: '文本' },
-  { color: '#5ad5ff', label: '数据流' },
+  { color: 'var(--accent)', label: '数据流' },
 ]
 
 function getEngineOfNode(type: string, templateEngine?: string | null): string {
@@ -138,7 +139,7 @@ function getEngineOfNode(type: string, templateEngine?: string | null): string {
 function getEngineAccentColor(nodeType: string, templateEngine?: string | null): string {
   const engine = getEngineOfNode(nodeType, templateEngine)
   const found = ENGINE_FILTERS.find((f) => f.key === engine)
-  return found?.color ?? '#88dfff'
+  return found?.color ?? 'var(--accent-strong)'
 }
 
 // ─── 过滤后的模板（按引擎 + 搜索关键词） ────────────────────────────────────
@@ -288,7 +289,7 @@ function isFavorite(type: string): boolean {
         placeholder="搜索节点..."
         aria-label="搜索节点"
       />
-      <span v-if="searchQuery" class="search-clear" @click="searchQuery = ''">✕</span>
+      <X v-if="searchQuery" :size="14" class="search-clear" @click="searchQuery = ''" />
     </div>
 
     <label v-if="stubCount > 0" class="stub-toggle" title="未实现模块不可加入画布，默认隐藏">
@@ -330,14 +331,14 @@ function isFavorite(type: string): boolean {
         class="category-group favorites-group"
       >
         <button class="category-header" type="button" @click="toggleCategory('__favorites__')">
-          <span class="category-icon" aria-hidden="true">★</span>
+          <Star :size="14" class="category-icon" aria-hidden="true" />
           <span class="category-label">收藏</span>
           <span class="category-count">{{ favoriteTemplates.length }}</span>
-          <span
+          <ChevronDown
+            :size="14"
             class="category-toggle"
             :class="{ collapsed: collapsedCategories.has('__favorites__') }"
-            >▾</span
-          >
+          />
         </button>
         <div v-if="!collapsedCategories.has('__favorites__')" class="category-items">
           <button
@@ -354,12 +355,13 @@ function isFavorite(type: string): boolean {
             <div class="node-item-header">
               <span class="node-item-title">{{ tpl.title }}</span>
               <span v-if="isStub(tpl)" class="node-item-stub-badge">未实现</span>
-              <span
-                class="node-item-favorite-btn favorited"
-                title="取消收藏"
-                @click.stop="toggleFavorite(tpl.type)"
-                >★</span
-              >
+              <Star
+            :size="14"
+            class="node-item-favorite-btn favorited"
+            title="取消收藏"
+            fill="currentColor"
+            @click.stop="toggleFavorite(tpl.type)"
+          />
             </div>
             <div v-if="tpl.description" class="node-item-desc">{{ tpl.description }}</div>
             <div class="node-item-ports">
@@ -378,14 +380,14 @@ function isFavorite(type: string): boolean {
         class="category-group recent-group"
       >
         <button class="category-header" type="button" @click="toggleCategory('__recent__')">
-          <span class="category-icon" aria-hidden="true">🕐</span>
+          <Clock :size="14" class="category-icon" aria-hidden="true" />
           <span class="category-label">最近使用</span>
           <span class="category-count">{{ recentTemplates.length }}</span>
-          <span
+          <ChevronDown
+            :size="14"
             class="category-toggle"
             :class="{ collapsed: collapsedCategories.has('__recent__') }"
-            >▾</span
-          >
+          />
         </button>
         <div v-if="!collapsedCategories.has('__recent__')" class="category-items">
           <button
@@ -402,13 +404,14 @@ function isFavorite(type: string): boolean {
             <div class="node-item-header">
               <span class="node-item-title">{{ tpl.title }}</span>
               <span v-if="isStub(tpl)" class="node-item-stub-badge">未实现</span>
-              <span
+              <Star
+                :size="14"
                 class="node-item-favorite-btn"
                 :class="{ favorited: isFavorite(tpl.type) }"
+                :fill="isFavorite(tpl.type) ? 'currentColor' : 'none'"
                 :title="isFavorite(tpl.type) ? '取消收藏' : '加入收藏'"
                 @click.stop="toggleFavorite(tpl.type)"
-                >{{ isFavorite(tpl.type) ? '★' : '☆' }}</span
-              >
+              />
             </div>
             <div v-if="tpl.description" class="node-item-desc">{{ tpl.description }}</div>
             <div class="node-item-ports">
@@ -437,11 +440,11 @@ function isFavorite(type: string): boolean {
           }}</span>
           <span class="category-label">{{ getCategoryLabel(String(category)) }}</span>
           <span class="category-count">{{ templates.length }}</span>
-          <span
+          <ChevronDown
+            :size="14"
             class="category-toggle"
             :class="{ collapsed: collapsedCategories.has(String(category)) }"
-            >▾</span
-          >
+          />
         </button>
 
         <div v-if="!collapsedCategories.has(String(category))" class="category-items">
@@ -459,13 +462,14 @@ function isFavorite(type: string): boolean {
             <div class="node-item-header">
               <span class="node-item-title">{{ tpl.title }}</span>
               <span v-if="isStub(tpl)" class="node-item-stub-badge">未实现</span>
-              <span
+              <Star
+                :size="14"
                 class="node-item-favorite-btn"
                 :class="{ favorited: isFavorite(tpl.type) }"
+                :fill="isFavorite(tpl.type) ? 'currentColor' : 'none'"
                 :title="isFavorite(tpl.type) ? '取消收藏' : '加入收藏'"
                 @click.stop="toggleFavorite(tpl.type)"
-                >{{ isFavorite(tpl.type) ? '★' : '☆' }}</span
-              >
+              />
             </div>
             <div class="node-item-type">{{ tpl.type }}</div>
             <div v-if="tpl.description" class="node-item-desc">{{ tpl.description }}</div>
@@ -497,17 +501,17 @@ function isFavorite(type: string): boolean {
   justify-content: space-between;
   padding: 0.62rem 0.72rem;
   border-bottom: 1px solid rgba(136, 192, 255, 0.1);
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 
 .header-count {
   padding: 0.1rem 0.42rem;
   border-radius: 999px;
   background: rgba(10, 132, 255, 0.18);
-  color: #5ad5ff;
-  font-size: 0.58rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   font-weight: 700;
 }
 
@@ -522,14 +526,14 @@ function isFavorite(type: string): boolean {
   padding: 0.36rem 0.52rem;
   border: 1px solid rgba(136, 192, 255, 0.14);
   border-radius: 0.42rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #d8e6f5;
+  background: var(--surface-raised);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
 }
 
 .search-input::placeholder {
-  color: #5a7080;
+  color: var(--text-disabled);
 }
 
 .search-input:focus {
@@ -542,9 +546,9 @@ function isFavorite(type: string): boolean {
   right: 0.92rem;
   top: 50%;
   transform: translateY(-50%);
-  color: #5a7080;
+  color: var(--text-disabled);
   cursor: pointer;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   line-height: 1;
 }
 
@@ -568,7 +572,7 @@ function isFavorite(type: string): boolean {
   display: inline-flex;
   align-items: center;
   gap: 0.22rem;
-  font-size: 0.5rem;
+  font-size: var(--font-size-caption);
   color: #7f96ad;
 }
 
@@ -582,7 +586,7 @@ function isFavorite(type: string): boolean {
 .flow-tip {
   margin: 0;
   padding: 0.1rem 0.62rem 0.35rem;
-  font-size: 0.5rem;
+  font-size: var(--font-size-caption);
   color: #ffb84d;
   border-bottom: 1px solid rgba(136, 192, 255, 0.06);
 }
@@ -592,17 +596,17 @@ function isFavorite(type: string): boolean {
   border: 1px solid rgba(136, 192, 255, 0.14);
   border-radius: 0.32rem;
   background: transparent;
-  color: #6e8ba0;
+  color: var(--text-faint);
   cursor: pointer;
   font: inherit;
-  font-size: 0.54rem;
+  font-size: var(--font-size-caption);
   font-weight: 500;
   transition: all 0.16s ease;
 }
 
 .engine-filter-btn:hover {
   border-color: rgba(136, 192, 255, 0.32);
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 
 .engine-filter-btn.active {
@@ -640,7 +644,7 @@ function isFavorite(type: string): boolean {
   gap: 0.32rem;
   padding: 0.22rem 0.62rem;
   border-bottom: 1px solid rgba(136, 192, 255, 0.06);
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   color: #7f96ad;
   cursor: pointer;
   user-select: none;
@@ -653,8 +657,8 @@ function isFavorite(type: string): boolean {
 .empty-hint {
   padding: 1.4rem 0.8rem;
   text-align: center;
-  color: #5a7080;
-  font-size: 0.62rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
 }
 
 .category-group {
@@ -677,10 +681,10 @@ function isFavorite(type: string): boolean {
   padding: 0.36rem 0.72rem;
   border: none;
   background: transparent;
-  color: #8aa8bf;
+  color: var(--text-muted);
   cursor: pointer;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   text-align: left;
   transition:
@@ -690,11 +694,11 @@ function isFavorite(type: string): boolean {
 
 .category-header:hover {
   background: rgba(136, 192, 255, 0.06);
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 
 .category-icon {
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   opacity: 0.8;
 }
 
@@ -705,14 +709,14 @@ function isFavorite(type: string): boolean {
 .category-count {
   padding: 0.04rem 0.32rem;
   border-radius: 999px;
-  background: rgba(136, 192, 255, 0.08);
-  color: #6e8ba0;
-  font-size: 0.52rem;
+  background: var(--border-subtle);
+  color: var(--text-faint);
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
 .category-toggle {
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   transition: transform 0.18s ease;
 }
 
@@ -731,8 +735,8 @@ function isFavorite(type: string): boolean {
   width: 100%;
   margin-bottom: 0.18rem;
   padding: 0.36rem 0.46rem;
-  border: 1px solid rgba(136, 192, 255, 0.08);
-  border-left: 3px solid #88dfff;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent-strong);
   border-radius: 0.42rem;
   background: rgba(4, 12, 23, 0.4);
   color: #c4d6e8;
@@ -760,7 +764,7 @@ function isFavorite(type: string): boolean {
 
 .node-item.stub:hover,
 .node-item:disabled:hover {
-  border-color: rgba(136, 192, 255, 0.08);
+  border-color: var(--border-subtle);
   background: rgba(4, 12, 23, 0.4);
   transform: none;
 }
@@ -771,7 +775,7 @@ function isFavorite(type: string): boolean {
   border-radius: 0.25rem;
   background: rgba(120, 120, 120, 0.35);
   color: #9aa8b5;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -789,9 +793,9 @@ function isFavorite(type: string): boolean {
 
 .node-item-title {
   flex: 1;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 
 .node-item-favorite-btn {
@@ -803,9 +807,9 @@ function isFavorite(type: string): boolean {
   justify-content: center;
   border: none;
   background: transparent;
-  color: #5a7080;
+  color: var(--text-disabled);
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   line-height: 1;
   transition:
     color 0.16s ease,
@@ -821,14 +825,14 @@ function isFavorite(type: string): boolean {
 }
 
 .node-item-type {
-  font-size: 0.52rem;
-  color: #5a7080;
+  font-size: var(--font-size-caption);
+  color: var(--text-disabled);
   font-family: 'Consolas', 'Monaco', monospace;
 }
 
 .node-item-desc {
-  font-size: 0.56rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   line-height: 1.3;
   overflow: hidden;
   display: -webkit-box;
@@ -839,14 +843,14 @@ function isFavorite(type: string): boolean {
 .node-item-ports {
   display: flex;
   gap: 0.32rem;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
 }
 
 .port-count {
   padding: 0.04rem 0.28rem;
   border-radius: 0.24rem;
   background: rgba(136, 192, 255, 0.06);
-  color: #6e8ba0;
+  color: var(--text-faint);
 }
 
 .port-count.in {

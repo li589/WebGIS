@@ -541,7 +541,7 @@ function handleCancel() {
 }
 .sub {
   margin: 0.2rem 0 0;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   color: #8aa0b4;
 }
 .x-btn {
@@ -562,7 +562,7 @@ function handleCancel() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.74rem;
+  font-size: var(--font-size-caption);
   color: #9ec4e0;
   margin-bottom: 0.5rem;
 }
@@ -575,7 +575,7 @@ function handleCancel() {
   background: transparent;
   color: #7ee0a8;
   cursor: pointer;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
 }
 .var-list {
   list-style: none;
@@ -591,19 +591,19 @@ function handleCancel() {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  font-size: 0.74rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 .var-list .meta {
   color: #8aa0b4;
-  font-size: 0.66rem;
+  font-size: var(--font-size-caption);
 }
 .temporal-modes {
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem 0.9rem;
   margin-bottom: 0.45rem;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   color: #c5d7ea;
 }
 .temporal-modes label {
@@ -612,7 +612,7 @@ function handleCancel() {
   align-items: center;
   gap: 0.28rem;
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   color: #c5d7ea;
 }
 .grid-2,
@@ -631,7 +631,7 @@ label {
   display: flex;
   flex-direction: column;
   gap: 0.18rem;
-  font-size: 0.64rem;
+  font-size: var(--font-size-caption);
   color: #8aa0b4;
 }
 input,
@@ -640,13 +640,13 @@ select {
   border-radius: 0.34rem;
   padding: 0.3rem 0.4rem;
   background: rgba(4, 12, 23, 0.75);
-  color: #d8e6f5;
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
 }
 .hint {
   margin: 0.4rem 0 0;
-  font-size: 0.64rem;
+  font-size: var(--font-size-caption);
   color: #8aa0b4;
 }
 .detect-row {
@@ -671,7 +671,7 @@ select {
   flex-direction: row;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
   color: #c5d8ea;
 }
 .sci-foot {
@@ -685,7 +685,7 @@ select {
   border-radius: 0.4rem;
   padding: 0.42rem 0.85rem;
   font: inherit;
-  font-size: 0.74rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 .ghost {

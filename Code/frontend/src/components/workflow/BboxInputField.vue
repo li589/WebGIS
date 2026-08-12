@@ -196,7 +196,7 @@ const isValid = computed(() => {
 }
 
 .bbox-label {
-  font-size: 0.48rem;
+  font-size: var(--font-size-caption);
   color: #6a8aa0;
   font-weight: 500;
 }
@@ -209,7 +209,7 @@ const isValid = computed(() => {
   background: rgba(8, 17, 31, 0.55);
   color: #e8f3fc;
   font: inherit;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
 }
 
 .bbox-input:focus {
@@ -233,19 +233,19 @@ const isValid = computed(() => {
   border-radius: 0.28rem;
   background: rgba(90, 213, 255, 0.08);
   color: #8ab4d0;
-  font-size: 0.5rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .preset-btn:hover {
   background: rgba(90, 213, 255, 0.18);
-  color: #5ad5ff;
+  color: var(--accent);
   border-color: rgba(90, 213, 255, 0.4);
 }
 
 .bbox-warn {
-  font-size: 0.48rem;
+  font-size: var(--font-size-caption);
   color: #e0a030;
 }
 </style>

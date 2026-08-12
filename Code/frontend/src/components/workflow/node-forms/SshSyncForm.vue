@@ -356,8 +356,8 @@ function toggleFilter(ext: string) {
 }
 
 .form-label {
-  font-size: 0.56rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   font-weight: 500;
   display: flex;
   align-items: center;
@@ -371,8 +371,8 @@ function toggleFilter(ext: string) {
   border-radius: 0.28rem;
   border: 1px solid rgba(90, 213, 255, 0.35);
   background: rgba(90, 213, 255, 0.1);
-  color: #5ad5ff;
-  font-size: 0.5rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 
@@ -385,10 +385,10 @@ function toggleFilter(ext: string) {
   padding: 0.32rem 0.42rem;
   border: 1px solid rgba(136, 192, 255, 0.14);
   border-radius: 0.36rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #d8e6f5;
+  background: var(--surface-raised);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   box-sizing: border-box;
 }
 
@@ -399,7 +399,7 @@ function toggleFilter(ext: string) {
 
 .form-input:read-only {
   background: rgba(4, 12, 23, 0.3);
-  color: #6e8ba0;
+  color: var(--text-faint);
   cursor: default;
 }
 
@@ -407,8 +407,8 @@ function toggleFilter(ext: string) {
   appearance: none;
   cursor: pointer;
   background-image:
-    linear-gradient(45deg, transparent 50%, #6e8ba0 50%),
-    linear-gradient(135deg, #6e8ba0 50%, transparent 50%);
+    linear-gradient(45deg, transparent 50%, var(--text-faint) 50%),
+    linear-gradient(135deg, var(--text-faint) 50%, transparent 50%);
   background-position:
     calc(100% - 0.8rem) center,
     calc(100% - 0.5rem) center;
@@ -440,9 +440,9 @@ function toggleFilter(ext: string) {
   border: 1px solid rgba(90, 213, 255, 0.35);
   border-radius: 0.32rem;
   background: rgba(10, 132, 255, 0.12);
-  color: #5ad5ff;
+  color: var(--accent);
   font: inherit;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   transition: all 0.16s ease;
   white-space: nowrap;
@@ -451,7 +451,7 @@ function toggleFilter(ext: string) {
 .browse-btn:hover:not(:disabled),
 .mini-btn:hover:not(:disabled) {
   background: rgba(10, 132, 255, 0.24);
-  color: #9ff8cf;
+  color: var(--success);
 }
 
 .browse-btn:disabled,
@@ -504,8 +504,8 @@ function toggleFilter(ext: string) {
 
 .conn-text {
   flex: 1;
-  font-size: 0.56rem;
-  color: #8aa8bf;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -523,10 +523,10 @@ function toggleFilter(ext: string) {
   padding: 0.18rem 0.48rem;
   border: 1px solid rgba(136, 192, 255, 0.18);
   border-radius: 0.28rem;
-  background: rgba(4, 12, 23, 0.5);
-  color: #8aa8bf;
+  background: var(--surface-sunken);
+  color: var(--text-muted);
   font: inherit;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   font-family: 'Consolas', 'Monaco', monospace;
   cursor: pointer;
   user-select: none;
@@ -541,7 +541,7 @@ function toggleFilter(ext: string) {
 .filter-tag.active {
   background: rgba(90, 213, 255, 0.22);
   border-color: rgba(90, 213, 255, 0.55);
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .filter-tag:disabled {
@@ -551,7 +551,7 @@ function toggleFilter(ext: string) {
 
 /* 字段错误提示 */
 .field-error {
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   color: #ff7b7b;
   margin-top: 0.06rem;
   line-height: 1.3;
@@ -562,7 +562,7 @@ function toggleFilter(ext: string) {
   margin-top: 0.32rem;
   padding: 0.3rem 0.52rem;
   border-radius: 0.36rem;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   text-align: center;
   border: 1px solid transparent;
 }

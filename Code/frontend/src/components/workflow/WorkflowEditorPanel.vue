@@ -16,6 +16,25 @@
  */
 import { onMounted, onBeforeUnmount, ref, shallowRef, computed, nextTick } from 'vue'
 import { storeToRefs } from 'pinia'
+import {
+  Hexagon,
+  Settings,
+  LayoutGrid,
+  Square,
+  Ban,
+  ChevronDown,
+  ChevronUp,
+  AlarmClock,
+  Trash2,
+  LoaderCircle,
+  Save,
+  AlertTriangle,
+  AlertCircle,
+  Check,
+  Rocket,
+  Play,
+  X,
+} from 'lucide-vue-next'
 
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import { useUiLoadingStore } from '../../stores/ui-loading'
@@ -605,7 +624,7 @@ defineExpose({
       <!-- 顶部工具栏 -->
       <header class="editor-header">
         <div class="header-left">
-          <span class="header-icon" aria-hidden="true">⬡</span>
+          <Hexagon :size="18" class="header-icon" aria-hidden="true" />
           <span class="header-title">{{ WORKFLOW_COPY.editorTitle }}</span>
           <span v-if="currentDefinition" class="header-sep">/</span>
           <span v-if="currentDefinition" class="header-workflow-name">{{
@@ -622,7 +641,7 @@ defineExpose({
             title="编辑工作流名称与说明描述"
             @click="openPropsDialog"
           >
-            <span aria-hidden="true">⚙</span>
+            <Settings :size="14" aria-hidden="true" />
             <span>属性</span>
           </button>
         </div>
@@ -635,7 +654,7 @@ defineExpose({
             title="自动排列节点"
             @click="handleArrange"
           >
-            <span aria-hidden="true">⊞</span>
+            <LayoutGrid :size="14" aria-hidden="true" />
             <span>排列</span>
           </button>
           <button
@@ -645,7 +664,7 @@ defineExpose({
             title="适配视图"
             @click="handleFitView"
           >
-            <span aria-hidden="true">⊡</span>
+            <Square :size="14" aria-hidden="true" />
             <span>适配</span>
           </button>
           <button
@@ -655,7 +674,7 @@ defineExpose({
             title="清空画布"
             @click="handleClear"
           >
-            <span aria-hidden="true">⊘</span>
+            <Ban :size="14" aria-hidden="true" />
             <span>清空</span>
           </button>
           <span class="action-divider"></span>
@@ -666,11 +685,11 @@ defineExpose({
             title="导出为 JSON"
             @click="handleExport"
           >
-            <span aria-hidden="true">⬇</span>
+            <ChevronDown :size="14" aria-hidden="true" />
             <span>导出</span>
           </button>
           <button class="header-btn" type="button" title="从 JSON 导入" @click="handleImportClick">
-            <span aria-hidden="true">⬆</span>
+            <ChevronUp :size="14" aria-hidden="true" />
             <span>导入</span>
           </button>
           <input
@@ -688,7 +707,7 @@ defineExpose({
             title="工作流定时器（Cron / 间隔 / 事件）。侧栏边缘可拖拽调宽。"
             @click="editorView = editorView === 'timers' ? 'canvas' : 'timers'"
           >
-            <span aria-hidden="true">⏰</span>
+            <AlarmClock :size="14" aria-hidden="true" />
             <span>{{ editorView === 'timers' ? '返回画布' : '定时器' }}</span>
           </button>
           <span class="action-divider"></span>
@@ -698,12 +717,13 @@ defineExpose({
             title="节点缓存管理（查看/清理算法模块产物缓存）"
             @click="nodeCacheDialogOpen = true"
           >
-            <span aria-hidden="true">🗑</span>
+            <Trash2 :size="14" aria-hidden="true" />
             <span>缓存</span>
           </button>
           <span class="action-divider"></span>
           <button class="header-btn primary" type="button" :disabled="!canSave" @click="handleSave">
-            <span aria-hidden="true">{{ saving ? '◌' : '💾' }}</span>
+            <LoaderCircle v-if="saving" :size="14" class="animate-spin" aria-hidden="true" />
+            <Save v-else :size="14" aria-hidden="true" />
             <span>{{ saving ? '保存中...' : '保存' }}</span>
           </button>
           <!-- 校验状态指示器 -->
@@ -719,9 +739,9 @@ defineExpose({
             :title="formatValidationSummary(validationResult)"
             @click="showValidationPanel = !showValidationPanel"
           >
-            <span aria-hidden="true">{{
-              validationResult.hasErrors ? '⚠' : validationResult.hasWarnings ? '◐' : '✓'
-            }}</span>
+            <AlertTriangle v-if="validationResult.hasErrors" :size="14" aria-hidden="true" />
+            <AlertCircle v-else-if="validationResult.hasWarnings" :size="14" aria-hidden="true" />
+            <Check v-else :size="14" aria-hidden="true" />
             <span v-if="validationResult.errorCount > 0">{{ validationResult.errorCount }}</span>
             <span v-else-if="validationResult.warningCount > 0">{{
               validationResult.warningCount
@@ -733,7 +753,7 @@ defineExpose({
             title="端到端流水线"
             @click="showPipelineLauncher = true"
           >
-            <span aria-hidden="true">🚀</span>
+            <Rocket :size="14" aria-hidden="true" />
             <span>流水线</span>
           </button>
           <button
@@ -753,9 +773,9 @@ defineExpose({
             "
             @click="handleRun"
           >
-            <span aria-hidden="true">{{
-              runStatus === 'submitting' ? '◌' : runStatus === 'submitted' ? '✓' : '▶'
-            }}</span>
+            <LoaderCircle v-if="runStatus === 'submitting'" :size="14" class="animate-spin" aria-hidden="true" />
+            <Check v-else-if="runStatus === 'submitted'" :size="14" aria-hidden="true" />
+            <Play v-else :size="14" aria-hidden="true" />
             <span>{{
               runStatus === 'submitting'
                 ? '提交中...'
@@ -766,25 +786,25 @@ defineExpose({
           </button>
           <span class="action-divider"></span>
           <button class="header-btn close" type="button" title="关闭" @click="handleClose">
-            <span aria-hidden="true">✕</span>
+            <X :size="14" aria-hidden="true" />
           </button>
         </div>
       </header>
 
       <!-- 错误提示 -->
       <div v-if="error || saveError" class="editor-error-bar">
-        <span class="error-icon" aria-hidden="true">⚠</span>
+        <AlertTriangle :size="14" class="error-icon" aria-hidden="true" />
         <span class="error-text">{{ saveError ?? error }}</span>
-        <button class="error-dismiss" type="button" @click="saveError = null">✕</button>
+        <button class="error-dismiss" type="button" @click="saveError = null"><X :size="14" aria-hidden="true" /></button>
       </div>
 
       <!-- 校验结果面板 -->
       <div v-if="showValidationPanel && validationResult" class="validation-panel">
         <div class="validation-header">
           <span class="validation-title">
-            <span aria-hidden="true">{{
-              validationResult.hasErrors ? '⚠' : validationResult.hasWarnings ? '◐' : '✓'
-            }}</span>
+            <AlertTriangle v-if="validationResult.hasErrors" :size="14" aria-hidden="true" />
+            <AlertCircle v-else-if="validationResult.hasWarnings" :size="14" aria-hidden="true" />
+            <Check v-else :size="14" aria-hidden="true" />
             <span>运行前校验：{{ formatValidationSummary(validationResult) }}</span>
           </span>
           <div class="validation-actions">
@@ -812,9 +832,8 @@ defineExpose({
             class="validation-item"
             :class="{ error: issue.severity === 'error', warning: issue.severity === 'warning' }"
           >
-            <span class="validation-icon" aria-hidden="true">{{
-              issue.severity === 'error' ? '✕' : '⚠'
-            }}</span>
+            <X v-if="issue.severity === 'error'" :size="14" class="validation-icon" aria-hidden="true" />
+            <AlertTriangle v-else :size="14" class="validation-icon" aria-hidden="true" />
             <span class="validation-node">{{ issue.nodeTitle || '全局' }}</span>
             <span v-if="issue.field" class="validation-field">{{ issue.field }}</span>
             <span class="validation-message">{{ issue.message }}</span>
@@ -842,7 +861,7 @@ defineExpose({
         <main v-else class="editor-canvas-area">
           <div v-if="!hasDefinition" class="canvas-placeholder">
             <div class="placeholder-content">
-              <span class="placeholder-icon" aria-hidden="true">⬡</span>
+              <Hexagon :size="48" class="placeholder-icon" aria-hidden="true" />
               <h2 class="placeholder-title">工作流编辑器</h2>
               <p class="placeholder-text">从左侧选择工作流或范例，也可点击「新建」创建空白流</p>
               <p class="placeholder-hint">
@@ -1046,7 +1065,7 @@ defineExpose({
 
 .header-icon {
   font-size: 0.92rem;
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .header-title {
@@ -1060,8 +1079,8 @@ defineExpose({
 }
 
 .header-workflow-name {
-  font-size: 0.7rem;
-  color: #88dfff;
+  font-size: var(--font-size-caption);
+  color: var(--accent-strong);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1072,7 +1091,7 @@ defineExpose({
 .dirty-badge {
   padding: 0.08rem 0.42rem;
   border-radius: 0.32rem;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
@@ -1101,18 +1120,18 @@ defineExpose({
   padding: 0.32rem 0.56rem;
   border: 1px solid rgba(136, 192, 255, 0.14);
   border-radius: 0.42rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #9fb6cc;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   font-weight: 500;
   transition: all 0.16s ease;
 }
 
 .header-btn:hover:not(:disabled) {
   border-color: rgba(90, 213, 255, 0.32);
-  color: #5ad5ff;
+  color: var(--accent);
   background: rgba(10, 132, 255, 0.12);
 }
 
@@ -1124,7 +1143,7 @@ defineExpose({
 .header-btn.primary {
   border-color: rgba(90, 213, 255, 0.4);
   background: rgba(10, 132, 255, 0.2);
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .header-btn.primary:hover:not(:disabled) {
@@ -1134,7 +1153,7 @@ defineExpose({
 .header-btn.run {
   border-color: rgba(120, 255, 160, 0.3);
   background: rgba(40, 180, 90, 0.16);
-  color: #9ff8cf;
+  color: var(--success);
 }
 
 .header-btn.run:hover:not(:disabled) {
@@ -1177,7 +1196,7 @@ defineExpose({
 
 .header-btn.close {
   padding: 0.32rem 0.46rem;
-  color: #6e8ba0;
+  color: var(--text-faint);
 }
 
 .action-divider {
@@ -1196,11 +1215,11 @@ defineExpose({
   border-bottom: 1px solid rgba(255, 120, 120, 0.2);
   background: rgba(90, 30, 30, 0.18);
   color: #ff9b9b;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
 }
 
 .error-icon {
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
 }
 
 .error-text {
@@ -1213,7 +1232,7 @@ defineExpose({
   color: #ff9b9b;
   cursor: pointer;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 
 /* ── 主体三栏 ───────────────────────────────────────────────────── */
@@ -1243,7 +1262,7 @@ defineExpose({
 
 .header-btn.active {
   border-color: rgba(90, 213, 255, 0.4);
-  color: #5ad5ff;
+  color: var(--accent);
   background: rgba(10, 132, 255, 0.16);
 }
 
@@ -1257,7 +1276,7 @@ defineExpose({
 
 .placeholder-content {
   text-align: center;
-  color: #5a7080;
+  color: var(--text-disabled);
 }
 
 .placeholder-icon {
@@ -1271,18 +1290,18 @@ defineExpose({
   margin: 0 0 0.42rem;
   font-size: 1.1rem;
   font-weight: 600;
-  color: #6e8ba0;
+  color: var(--text-faint);
 }
 
 .placeholder-text {
   margin: 0 0 0.22rem;
-  font-size: 0.72rem;
-  color: #5a7080;
+  font-size: var(--font-size-caption);
+  color: var(--text-disabled);
 }
 
 .placeholder-hint {
   margin: 0;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   color: #4a5a6a;
 }
 
@@ -1313,7 +1332,7 @@ defineExpose({
   margin: 0 0 0.82rem;
   font-size: 0.82rem;
   font-weight: 600;
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 
 .dialog-form {
@@ -1328,8 +1347,8 @@ defineExpose({
 }
 
 .form-label {
-  font-size: 0.58rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   font-weight: 500;
 }
 
@@ -1339,10 +1358,10 @@ defineExpose({
   padding: 0.4rem 0.52rem;
   border: 1px solid rgba(136, 192, 255, 0.14);
   border-radius: 0.42rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #d8e6f5;
+  background: var(--surface-raised);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 
 .form-textarea {
@@ -1376,7 +1395,7 @@ defineExpose({
   color: #c4d6e8;
   cursor: pointer;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   font-weight: 500;
   transition: all 0.16s ease;
 }
@@ -1393,7 +1412,7 @@ defineExpose({
 .dialog-btn.primary {
   border-color: rgba(90, 213, 255, 0.4);
   background: rgba(10, 132, 255, 0.2);
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .dialog-btn.primary:hover:not(:disabled) {
@@ -1401,7 +1420,7 @@ defineExpose({
 }
 
 /* ── 响应式 ──────────────────────────────────────────────────────── */
-@media (max-width: 800px) {
+@media (max-width: 768px) {
   .editor-body {
     flex-direction: column;
   }
@@ -1442,7 +1461,7 @@ defineExpose({
   align-items: center;
   justify-content: space-between;
   padding: 0.52rem 0.86rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.08);
+  border-bottom: 1px solid var(--border-subtle);
   position: sticky;
   top: 0;
   background: rgba(8, 16, 30, 0.96);
@@ -1453,7 +1472,7 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   color: #c4d6e8;
   font-weight: 500;
 }
@@ -1470,7 +1489,7 @@ defineExpose({
   background: transparent;
   color: #8aa0b6;
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   transition: all 0.16s ease;
 }
@@ -1500,7 +1519,7 @@ defineExpose({
   align-items: center;
   gap: 0.4rem;
   padding: 0.36rem 0.86rem;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   border-bottom: 1px solid rgba(136, 192, 255, 0.04);
   transition: background 0.12s ease;
 }
@@ -1519,7 +1538,7 @@ defineExpose({
 
 .validation-icon {
   flex-shrink: 0;
-  font-size: 0.64rem;
+  font-size: var(--font-size-caption);
 }
 
 .validation-node {
@@ -1538,7 +1557,7 @@ defineExpose({
   border-radius: 0.24rem;
   background: rgba(136, 192, 255, 0.1);
   color: #8aa0b6;
-  font-size: 0.54rem;
+  font-size: var(--font-size-caption);
   font-family: var(--font-mono, monospace);
   max-width: 140px;
   overflow: hidden;
@@ -1557,7 +1576,7 @@ defineExpose({
 .validation-empty {
   padding: 1rem;
   text-align: center;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   color: #6ee7b7;
 }
 

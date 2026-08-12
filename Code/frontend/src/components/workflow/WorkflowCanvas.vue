@@ -14,6 +14,7 @@
  *   />
  */
 import { computed, onMounted, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { AlertTriangle } from 'lucide-vue-next'
 import InlineLoader from '../common/InlineLoader.vue'
 import {
   LGraph,
@@ -89,7 +90,7 @@ const portTooltip = ref<{
   y: number
   model: PortTooltipModel | null
   accent: string
-}>({ visible: false, x: 0, y: 0, model: null, accent: '#5ad5ff' })
+}>({ visible: false, x: 0, y: 0, model: null, accent: 'var(--accent)' })
 let _portTooltipKey = ''
 /** 独立 mousemove 监听（LiteGraph 可能 bind 了 processMouseMove，覆写方法不可靠） */
 let _portMousemoveHandlerRef: ((e: MouseEvent) => void) | null = null
@@ -331,14 +332,14 @@ function configureCanvas(canvas: LGraphCanvasClass) {
     // 节点默认颜色
     LiteGraph.NODE_DEFAULT_COLOR = '#1a2740'
     LiteGraph.NODE_DEFAULT_BGCOLOR = '#0f1828'
-    LiteGraph.NODE_DEFAULT_BOXCOLOR = '#5ad5ff'
+    LiteGraph.NODE_DEFAULT_BOXCOLOR = 'var(--accent)'
     LiteGraph.NODE_DEFAULT_SHAPE = 'round'
-    LiteGraph.NODE_TITLE_COLOR = '#d8e6f5'
+    LiteGraph.NODE_TITLE_COLOR = 'var(--text-primary)'
     LiteGraph.NODE_TEXT_COLOR = '#c4d6e8'
     lg.NODE_SELECTED_TITLE_COLOR = '#ffb84d'
-    lg.NODE_BOX_OUTLINE_COLOR = '#5ad5ff'
+    lg.NODE_BOX_OUTLINE_COLOR = 'var(--accent)'
     // 连线颜色 — 不同数据类型不同颜色
-    LiteGraph.LINK_COLOR = '#5ad5ff' // 默认（青色）
+    LiteGraph.LINK_COLOR = 'var(--accent)' // 默认（青色）
     LiteGraph.CONNECTING_LINK_COLOR = '#ffb84d' // 正在连接（橙色）
     LiteGraph.EVENT_LINK_COLOR = '#78ffa0' // 事件类型（绿色）
     // 标题栏高度 / 槽位 / 字号（与节点默认尺寸联动，避免溢出）
@@ -879,10 +880,10 @@ function drawMinimap() {
     const nh = Math.max(2, h * scale)
     // 按引擎类型着色（module/* 属于 python_provider）
     const t = n.type ?? ''
-    let color = '#88dfff'
+    let color = 'var(--accent-strong)'
     if (t.startsWith('weather/')) color = '#ffb84d'
     else if (t.startsWith('module/') || t.startsWith('python_provider/')) color = '#78ffa0'
-    else if (t.startsWith('gee/')) color = '#5ad5ff'
+    else if (t.startsWith('gee/')) color = 'var(--accent)'
     ctx.fillStyle = color
     ctx.globalAlpha = n.selected ? 1.0 : 0.7
     ctx.fillRect(x, y, nw, nh)
@@ -994,7 +995,7 @@ function syncMinimapToViewport(e: MouseEvent) {
 
 function hidePortTooltip() {
   if (!portTooltip.value.visible) return
-  portTooltip.value = { visible: false, x: 0, y: 0, model: null, accent: '#5ad5ff' }
+  portTooltip.value = { visible: false, x: 0, y: 0, model: null, accent: 'var(--accent)' }
   _portTooltipKey = ''
 }
 
@@ -1828,7 +1829,7 @@ watch(
   <div ref="canvasContainerRef" class="workflow-canvas-container">
     <canvas ref="canvasRef" class="workflow-canvas" tabindex="-1" />
     <div v-if="errorMsg" class="canvas-error">
-      <span class="error-icon" aria-hidden="true">⚠</span>
+      <AlertTriangle :size="14" class="error-icon" aria-hidden="true" />
       <span class="error-text">画布初始化失败：{{ errorMsg }}</span>
     </div>
     <div v-else-if="!isReady" class="canvas-loading">
@@ -1894,8 +1895,8 @@ watch(
   align-items: center;
   justify-content: center;
   gap: 0.6rem;
-  color: #8aa8bf;
-  font-size: 0.74rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   background: rgba(8, 15, 28, 0.92);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -1939,17 +1940,17 @@ watch(
   flex-shrink: 0;
   padding: 0.08rem 0.32rem;
   border-radius: 0.28rem;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   letter-spacing: 0.02em;
   color: #0b1220;
-  background: var(--tip-accent, #5ad5ff);
+  background: var(--tip-accent, var(--accent));
 }
 
 :global(.wf-port-tooltip .port-tip-title) {
   flex: 1;
   min-width: 0;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   font-weight: 650;
   color: #eef6ff;
   overflow: hidden;
@@ -1959,13 +1960,13 @@ watch(
 
 :global(.wf-port-tooltip .port-tip-type) {
   flex-shrink: 0;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   color: #c8f0ff;
 }
 
 :global(.wf-port-tooltip .port-tip-body) {
   margin: 0 0 0.35rem;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   line-height: 1.45;
   color: #b7c9db;
   white-space: pre-wrap;
@@ -1980,7 +1981,7 @@ watch(
 
 :global(.wf-port-tooltip .port-tip-tips li) {
   margin: 0.12rem 0;
-  font-size: 0.55rem;
+  font-size: var(--font-size-caption);
   line-height: 1.4;
   color: #9eb4c9;
 }

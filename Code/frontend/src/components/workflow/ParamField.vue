@@ -266,7 +266,7 @@ function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
   background: rgba(8, 17, 31, 0.55);
   color: #e8f3fc;
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
 }
 
 .form-input:focus {
@@ -314,18 +314,18 @@ function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
   width: 0.72rem;
   left: 0.14rem;
   bottom: 0.14rem;
-  background: #6e8ba0;
+  background: var(--text-faint);
   border-radius: 50%;
   transition: 0.2s;
 }
 
 .toggle-switch input:checked + .toggle-slider {
-  background: rgba(90, 213, 255, 0.3);
+  background: var(--accent-border);
 }
 
 .toggle-switch input:checked + .toggle-slider::before {
   transform: translateX(1rem);
-  background: #5ad5ff;
+  background: var(--accent);
 }
 
 .toggle-switch.disabled {
@@ -340,7 +340,7 @@ function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
   padding: 0.32rem 0.42rem;
   border: 1px solid rgba(136, 192, 255, 0.14);
   border-radius: 0.36rem;
-  background: rgba(4, 12, 23, 0.6);
+  background: var(--surface-raised);
   min-height: 2rem;
   align-items: center;
 }
@@ -352,8 +352,8 @@ function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
   padding: 0.16rem 0.36rem;
   border-radius: 0.28rem;
   background: rgba(90, 213, 255, 0.18);
-  color: #5ad5ff;
-  font-size: 0.54rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   font-weight: 500;
 }
 
@@ -365,9 +365,9 @@ function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
   justify-content: center;
   border: none;
   background: transparent;
-  color: #5ad5ff;
+  color: var(--accent);
   cursor: pointer;
-  font-size: 0.5rem;
+  font-size: var(--font-size-caption);
   line-height: 1;
   padding: 0;
 }
@@ -381,14 +381,14 @@ function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
   min-width: 6rem;
   border: none;
   background: transparent;
-  color: #d8e6f5;
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   outline: none;
 }
 
 .array-input::placeholder {
-  color: #5a7080;
+  color: var(--text-disabled);
 }
 
 .path-input-wrapper {
@@ -407,7 +407,7 @@ function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
 
 .path-icon {
   flex-shrink: 0;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   opacity: 0.7;
 }
 
@@ -417,7 +417,7 @@ function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
   background: transparent;
   padding: 0.28rem 0;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
 }
 
 .path-input:focus {
@@ -432,6 +432,6 @@ function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
 
 .coord-input {
   text-align: center;
-  font-size: 0.54rem;
+  font-size: var(--font-size-caption);
 }
 </style>

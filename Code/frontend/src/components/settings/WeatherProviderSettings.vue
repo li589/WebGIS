@@ -541,7 +541,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 .section-title {
   margin: 0;
   color: #e8f3fc;
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -552,8 +552,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   padding: 0.08rem 0.36rem;
   border-radius: 999px;
   background: rgba(10, 132, 255, 0.2);
-  color: #5ad5ff;
-  font-size: 0.52rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
@@ -564,8 +564,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
 .section-hint {
   margin: 0;
-  color: #5a7080;
-  font-size: 0.56rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
@@ -583,19 +583,19 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   gap: 0.62rem;
   padding: 0.36rem 0.52rem;
   border-radius: 0.4rem;
-  background: rgba(4, 12, 23, 0.5);
+  background: var(--surface-sunken);
   border: 1px solid rgba(136, 192, 255, 0.06);
 }
 
 .info-label {
-  color: #8aa8bf;
-  font-size: 0.6rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   flex: none;
 }
 
 .info-value {
-  color: #d8e6f5;
-  font-size: 0.6rem;
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
   text-align: right;
 }
 
@@ -606,8 +606,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   align-items: center;
   gap: 0.52rem;
   padding: 2rem 1rem;
-  color: #5a7080;
-  font-size: 0.6rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
 }
 
 .empty-icon {
@@ -625,7 +625,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 .provider-card {
   padding: 0.72rem 0.82rem;
   border-radius: 0.52rem;
-  background: rgba(4, 12, 23, 0.5);
+  background: var(--surface-sunken);
   border: 1px solid rgba(136, 192, 255, 0.1);
   transition:
     opacity 0.2s ease,
@@ -637,7 +637,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .provider-card.expanded {
-  border-color: rgba(90, 213, 255, 0.3);
+  border-color: var(--accent-border);
 }
 
 .provider-header {
@@ -665,7 +665,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
 .provider-name {
   color: #e8f3fc;
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
@@ -677,22 +677,22 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .provider-id {
-  color: #5a7080;
-  font-size: 0.54rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   font-family: 'SF Mono', 'Consolas', monospace;
 }
 
 .provider-version {
-  color: #5a7080;
-  font-size: 0.52rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   padding: 0.04rem 0.26rem;
   border-radius: 0.2rem;
-  background: rgba(136, 192, 255, 0.08);
+  background: var(--border-subtle);
 }
 
 .provider-link {
-  color: #5ad5ff;
-  font-size: 0.54rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   text-decoration: none;
 }
 
@@ -702,8 +702,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
 .provider-desc {
   margin: 0.18rem 0 0 0;
-  color: #8aa8bf;
-  font-size: 0.56rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
@@ -730,13 +730,13 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .meta-label {
-  color: #5a7080;
-  font-size: 0.52rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
 }
 
 .meta-value {
-  color: #d8e6f5;
-  font-size: 0.58rem;
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
   font-family: 'SF Mono', 'Consolas', monospace;
 }
 
@@ -756,8 +756,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .runtime-label {
-  color: #8aa8bf;
-  font-size: 0.56rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   flex: none;
 }
 
@@ -788,8 +788,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .runtime-text {
-  color: #d8e6f5;
-  font-size: 0.54rem;
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
   font-family: 'SF Mono', 'Consolas', monospace;
   flex: none;
 }
@@ -806,14 +806,14 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   margin-top: 0.62rem;
   padding: 0.62rem;
   border-radius: 0.4rem;
-  background: rgba(4, 12, 23, 0.6);
+  background: var(--surface-raised);
   border: 1px solid rgba(90, 213, 255, 0.16);
 }
 
 .config-title {
   margin: 0 0 0.52rem 0;
-  color: #5ad5ff;
-  font-size: 0.62rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
@@ -825,8 +825,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .form-label {
-  color: #8aa8bf;
-  font-size: 0.58rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   display: flex;
   align-items: center;
   gap: 0.16rem;
@@ -841,8 +841,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   border-radius: 0.36rem;
   background: rgba(4, 12, 23, 0.8);
   border: 1px solid rgba(136, 192, 255, 0.14);
-  color: #d8e6f5;
-  font-size: 0.6rem;
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
   font-family: 'SF Mono', 'Consolas', monospace;
   outline: none;
 }
@@ -862,8 +862,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .saving-hint {
-  color: #5ad5ff;
-  font-size: 0.54rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
 }
 
 .form-textarea {
@@ -871,8 +871,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   border-radius: 0.36rem;
   background: rgba(4, 12, 23, 0.8);
   border: 1px solid rgba(136, 192, 255, 0.14);
-  color: #d8e6f5;
-  font-size: 0.56rem;
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
   font-family: 'SF Mono', 'Consolas', monospace;
   outline: none;
   resize: vertical;
@@ -882,20 +882,20 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 .form-checkbox {
   width: 1rem;
   height: 1rem;
-  accent-color: #5ad5ff;
+  accent-color: var(--accent);
 }
 
 .form-hint {
   margin: 0;
-  color: #5a7080;
-  font-size: 0.52rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   line-height: 1.4;
 }
 
 .no-config {
   padding: 0.52rem;
-  color: #5a7080;
-  font-size: 0.56rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   text-align: center;
 }
 
@@ -916,7 +916,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   background: rgba(255, 100, 100, 0.08);
   border: 1px solid rgba(255, 100, 100, 0.2);
   color: #ffcccc;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   flex-wrap: wrap;
 }
 
@@ -924,13 +924,13 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 .type-badge {
   padding: 0.08rem 0.32rem;
   border-radius: 0.2rem;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
 .type-free {
   background: rgba(114, 255, 207, 0.12);
-  color: #9ff8cf;
+  color: var(--success);
 }
 
 .type-commercial {
@@ -945,13 +945,13 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
 .type-unknown {
   background: rgba(136, 192, 255, 0.12);
-  color: #8aa8bf;
+  color: var(--text-muted);
 }
 
 .channel-badge {
   padding: 0.1rem 0.36rem;
   border-radius: 0.26rem;
-  font-size: 0.5rem;
+  font-size: var(--font-size-caption);
   font-weight: 700;
   letter-spacing: 0.03em;
   white-space: nowrap;
@@ -959,7 +959,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
 .channel-local {
   background: rgba(90, 213, 255, 0.14);
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .channel-online {
@@ -976,14 +976,14 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 .key-badge {
   padding: 0.1rem 0.36rem;
   border-radius: 0.26rem;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   white-space: nowrap;
 }
 
 .badge-ok {
   background: rgba(114, 255, 207, 0.14);
-  color: #9ff8cf;
+  color: var(--success);
 }
 
 .badge-fail {
@@ -998,7 +998,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
 .badge-disabled {
   background: rgba(90, 106, 128, 0.2);
-  color: #8aa8bf;
+  color: var(--text-muted);
 }
 
 .badge-unknown {
@@ -1009,20 +1009,20 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 /* 按钮 */
 .action-btn {
   padding: 0.26rem 0.62rem;
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  border: 1px solid var(--border-default);
   border-radius: 0.36rem;
   background: transparent;
-  color: #8aa8bf;
+  color: var(--text-muted);
   cursor: pointer;
   font: inherit;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   transition: all 0.16s ease;
   white-space: nowrap;
 }
 
 .action-btn:hover:not(:disabled) {
-  border-color: rgba(90, 213, 255, 0.3);
-  color: #5ad5ff;
+  border-color: var(--accent-border);
+  color: var(--accent);
   background: rgba(10, 132, 255, 0.1);
 }
 
@@ -1033,7 +1033,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
 .action-btn.test {
   border-color: rgba(90, 213, 255, 0.24);
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .action-btn.config {
@@ -1043,7 +1043,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
 .action-btn.save {
   border-color: rgba(114, 255, 207, 0.24);
-  color: #9ff8cf;
+  color: var(--success);
 }
 
 .action-btn.save:hover:not(:disabled) {
@@ -1076,7 +1076,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   position: relative;
   width: 2rem;
   height: 1.06rem;
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  border: 1px solid var(--border-default);
   border-radius: 999px;
   background: rgba(4, 12, 23, 0.8);
   cursor: pointer;
@@ -1104,7 +1104,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   width: 0.72rem;
   height: 0.72rem;
   border-radius: 50%;
-  background: #8aa8bf;
+  background: var(--text-muted);
   transform: translateY(-50%);
   transition:
     left 0.2s ease,
@@ -1113,7 +1113,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
 .toggle-switch.on .toggle-knob {
   left: calc(100% - 0.88rem);
-  background: #5ad5ff;
+  background: var(--accent);
 }
 
 /* 测试结果 */
@@ -1121,14 +1121,14 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   margin-top: 0.42rem;
   padding: 0.42rem 0.52rem;
   border-radius: 0.36rem;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   line-height: 1.4;
 }
 
 .test-result.success {
   background: rgba(114, 255, 207, 0.08);
   border: 1px solid rgba(114, 255, 207, 0.16);
-  color: #9ff8cf;
+  color: var(--success);
 }
 
 .test-result.fail {
@@ -1139,18 +1139,18 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
 .test-time {
   margin-top: 0.16rem;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   opacity: 0.7;
 }
 
 .last-test {
   margin-top: 0.32rem;
-  color: #5a7080;
-  font-size: 0.52rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
 }
 
 .text-ok {
-  color: #9ff8cf;
+  color: var(--success);
 }
 
 .text-fail {
@@ -1164,7 +1164,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   background: rgba(255, 100, 100, 0.08);
   border: 1px solid rgba(255, 100, 100, 0.16);
   color: #ff9999;
-  font-size: 0.54rem;
+  font-size: var(--font-size-caption);
   line-height: 1.4;
 }
 

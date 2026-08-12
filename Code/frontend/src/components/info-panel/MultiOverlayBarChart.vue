@@ -72,13 +72,13 @@ const maxNumeric = computed(() => {
 }
 
 .chart-title {
-  font-size: 0.78rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   color: rgba(255, 255, 255, 0.9);
 }
 
 .chart-badge {
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   background: rgba(79, 195, 247, 0.15);
   color: #4fc3f7;
   padding: 0.15rem 0.45rem;
@@ -106,7 +106,7 @@ const maxNumeric = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.74rem;
+  font-size: var(--font-size-caption);
 }
 
 .bar-name {

@@ -206,11 +206,11 @@ function toggleCollapsed() {
   z-index: 10;
   width: 1.2rem;
   height: 1.6rem;
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  border: 1px solid var(--border-default);
   border-radius: 0.32rem;
   background: rgba(12, 24, 42, 0.88);
-  color: #8aa8bf;
-  font-size: 0.62rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -312,7 +312,7 @@ function toggleCollapsed() {
   background: rgba(90, 180, 255, 0.45);
 }
 
-@media (max-width: 800px) {
+@media (max-width: 768px) {
   .editor-sidebar.right {
     width: 100% !important;
     height: 12rem;

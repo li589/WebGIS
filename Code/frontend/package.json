@@ -20,7 +20,9 @@
     "lint:strict": "eslint src --max-warnings=0",
     "lint:fix": "eslint src --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,vue,js,jsx,css,scss}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,vue,js,jsx,css,scss}\""
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,vue,js,jsx,css,scss}\"",
+    "audit:tokens": "node scripts/audit-ui-tokens.mjs",
+    "audit:tokens:baseline": "node scripts/audit-ui-tokens.mjs --baseline"
   },
   "dependencies": {
     "@datapool/guangdong.geojson": "1.0.1",

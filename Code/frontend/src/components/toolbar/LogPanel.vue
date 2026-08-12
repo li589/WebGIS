@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { ClipboardList, X } from 'lucide-vue-next'
 import { useLogStore, type LogCategory } from '../../stores/log'
 
 const emit = defineEmits<{
@@ -58,7 +59,7 @@ function handleExport() {
   <div class="log-panel-overlay" @click.self="emit('close')">
     <div class="log-panel">
       <div class="panel-header">
-        <span class="panel-icon" aria-hidden="true">📋</span>
+        <ClipboardList :size="16" class="panel-icon" aria-hidden="true" />
         <span class="panel-title">系统日志</span>
         <!-- 仅显示错误数量，无错误时不显示 -->
         <span
@@ -69,7 +70,7 @@ function handleExport() {
           {{ errorCountDisplay }}
         </span>
         <button class="close-btn" title="关闭" @click="emit('close')">
-          <span aria-hidden="true">✕</span>
+          <X :size="14" aria-hidden="true" />
         </button>
       </div>
 
@@ -161,7 +162,7 @@ function handleExport() {
   display: flex;
   flex-direction: column;
   background: linear-gradient(180deg, rgba(10, 22, 40, 0.98), rgba(6, 14, 26, 0.97));
-  border-left: 1px solid rgba(90, 213, 255, 0.12);
+  border-left: 1px solid var(--accent-surface);
   box-shadow:
     -16px 0 48px rgba(1, 8, 16, 0.4),
     inset 1px 0 0 rgba(136, 223, 255, 0.06);

@@ -206,13 +206,13 @@ function update(key: string, value: unknown) {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.56rem;
-  color: #d8e6f5;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
 }
 
 .form-label {
-  font-size: 0.56rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   font-weight: 500;
 }
 
@@ -221,10 +221,10 @@ function update(key: string, value: unknown) {
   padding: 0.32rem 0.42rem;
   border: 1px solid rgba(136, 192, 255, 0.14);
   border-radius: 0.36rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #d8e6f5;
+  background: var(--surface-raised);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   box-sizing: border-box;
 }
 
@@ -235,12 +235,12 @@ function update(key: string, value: unknown) {
 
 .form-input:read-only {
   background: rgba(4, 12, 23, 0.3);
-  color: #6e8ba0;
+  color: var(--text-faint);
   cursor: default;
 }
 
 .field-error {
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   color: #ff7b7b;
   margin-top: 0.06rem;
   line-height: 1.3;
@@ -250,7 +250,7 @@ function update(key: string, value: unknown) {
   margin-top: 0.32rem;
   padding: 0.3rem 0.52rem;
   border-radius: 0.36rem;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   text-align: center;
   border: 1px solid transparent;
 }

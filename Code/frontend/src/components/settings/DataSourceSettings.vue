@@ -595,7 +595,7 @@ void refreshCache()
 .section-title {
   margin: 0 0 0.32rem;
   color: #e8f3fc;
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
@@ -609,7 +609,7 @@ void refreshCache()
   display: grid;
   grid-template-columns: 8.5rem 1fr;
   gap: 0.5rem;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   align-items: center;
 }
 
@@ -627,7 +627,7 @@ void refreshCache()
 .section-hint {
   margin: 0;
   color: #8aa0b5;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   line-height: 1.45;
 }
 
@@ -635,13 +635,13 @@ void refreshCache()
   margin: 0;
   padding-left: 1.1rem;
   color: #d7e6f5;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
 }
 
 .muted {
   display: block;
   color: #8aa0b5;
-  font-size: 0.65rem;
+  font-size: var(--font-size-caption);
 }
 
 .portal-card {
@@ -659,7 +659,7 @@ void refreshCache()
   justify-content: space-between;
   gap: 0.5rem;
   color: #e8f3fc;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
 }
 
 .check-row {
@@ -667,7 +667,7 @@ void refreshCache()
   align-items: center;
   gap: 0.4rem;
   color: #c5d6e8;
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
 }
 
 .field {
@@ -677,7 +677,7 @@ void refreshCache()
   border-radius: 4px;
   background: #0a121a;
   color: #d7e6f5;
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
   padding: 0.28rem 0.4rem;
 }
 
@@ -689,7 +689,7 @@ void refreshCache()
   background: #0d1620;
   color: #d7e6f5;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   padding: 0.5rem;
 }
 
@@ -704,7 +704,7 @@ void refreshCache()
   color: #e8f3fc;
   border-radius: 6px;
   padding: 0.35rem 0.7rem;
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 
@@ -730,6 +730,6 @@ void refreshCache()
 .status-msg {
   margin: 0;
   color: #9fd0a8;
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
 }
 </style>

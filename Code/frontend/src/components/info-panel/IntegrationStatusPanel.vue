@@ -270,7 +270,7 @@ onMounted(() => {
 
 .integration-head h3 {
   margin: 0.08rem 0 0;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   color: #f0f7ff;
 }
 
@@ -288,13 +288,13 @@ onMounted(() => {
   border-radius: 999px;
   background: rgba(148, 163, 184, 0.12);
   color: #bfd3e6;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
 }
 
 .integration-source.runtime,
 .status-pill.ok {
   background: rgba(114, 255, 207, 0.12);
-  color: #9ff8cf;
+  color: var(--success);
 }
 
 .refresh-btn {
@@ -302,7 +302,7 @@ onMounted(() => {
   border-radius: 999px;
   background: rgba(29, 78, 216, 0.16);
   color: #d8f3ff;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   padding: 0.22rem 0.56rem;
   cursor: pointer;
 }
@@ -316,7 +316,7 @@ onMounted(() => {
 .gee-note {
   margin: 0;
   color: #9eb3c8;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   line-height: 1.45;
 }
 
@@ -326,7 +326,7 @@ onMounted(() => {
   background: rgba(255, 80, 80, 0.1);
   border: 1px solid rgba(255, 80, 80, 0.16);
   color: #ffb3b3;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
 }
 
 .integration-grid {
@@ -340,7 +340,7 @@ onMounted(() => {
   padding: 0.38rem 0.42rem;
   border-radius: 0.72rem;
   background: rgba(8, 18, 33, 0.5);
-  border: 1px solid rgba(136, 192, 255, 0.08);
+  border: 1px solid var(--border-subtle);
 }
 
 .block-head {
@@ -352,12 +352,12 @@ onMounted(() => {
 
 .block-head strong {
   color: #edf6ff;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
 }
 
 .block-head span {
   color: #7f93a9;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
 }
 
 .status-list {
@@ -386,7 +386,7 @@ onMounted(() => {
 
 .status-main strong {
   color: #eaf3fb;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
 }
 
 .status-meta {
@@ -394,7 +394,7 @@ onMounted(() => {
   gap: 0.32rem;
   flex-wrap: wrap;
   color: #8ea3b8;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
 }
 
 .gee-block {
@@ -414,12 +414,12 @@ onMounted(() => {
 
 .gee-grid span {
   color: #7f93a9;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
 }
 
 .gee-grid strong {
   color: #edf6ff;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   word-break: break-word;
 }
 </style>

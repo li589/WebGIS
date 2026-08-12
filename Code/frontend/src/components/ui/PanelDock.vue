@@ -1,178 +1,382 @@
 <script setup lang="ts">
 /**
- * PanelDock — 浮层面板壳（设计系统 §3.1，演进 ControlPanel）
+ * PanelDock — 统一浮层面板壳（设计系统 §3.1）
  *
- * 玻璃 + elevation-2；统一标题栏/折叠/复位/隐藏三件套。
- * 用于左侧图层抽屉、右侧分析 dock 等浮层容器。
+ * 合并原 ControlPanel + BasePanel + CompositePanel 的全部能力：
+ * 拖拽、缩放、折叠、隐藏/恢复（胶囊）、复位、localStorage 持久化。
+ * 所有颜色/间距/字号引用 tokens.css，禁止内联 hex。
  *
- * 用法：
- *   <PanelDock title="图层" :collapsed.sync="collapsed" @close="...">
+ * 用法（兼容原 ControlPanel API）：
+ *   <PanelDock
+ *     panel-label="图层"
+ *     panel-key="layers"
+ *     handle-position="bottom-right"
+ *     :default-width="320"
+ *     :min-width="240"
+ *   >
  *     ...内容...
  *   </PanelDock>
  */
-import { computed, ref, watch } from 'vue'
+
+import { computed } from 'vue'
+import { usePanelDragResize } from './usePanelDragResize'
 
 const props = withDefaults(
   defineProps<{
-    title: string
+    /** 面板标题 */
+    panelLabel: string
+    /** 面板唯一标识（用于 localStorage 持久化） */
+    panelKey?: string
+    /** 是否可拖拽 */
+    draggable?: boolean
     /** 是否可折叠 */
     collapsible?: boolean
-    /** 是否可关闭（显示 X 按钮） */
-    closable?: boolean
-    /** 是否可复位（显示复位按钮） */
-    resettable?: boolean
-    /** 初始折叠状态 */
+    /** 默认折叠状态 */
     defaultCollapsed?: boolean
-    /** 宽度（CSS 值，如 '320px'） */
-    width?: string
-    /** 位置 */
+    /** 最大水平偏移（px） */
+    maxOffsetX?: number
+    /** 最大垂直偏移（px） */
+    maxOffsetY?: number
+    /** 默认宽度（px，0 = 自适应） */
+    defaultWidth?: number
+    /** 默认高度（px，0 = 自适应） */
+    defaultHeight?: number
+    /** 最小宽度（px） */
+    minWidth?: number
+    /** 最小高度（px） */
+    minHeight?: number
+    /** 最大宽度（px） */
+    maxWidth?: number
+    /** 最大高度（px） */
+    maxHeight?: number
+    /** 是否可缩放 */
+    resizable?: boolean
+    /** 缩放手柄位置 */
+    handlePosition?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
+    /** 是否显示缩放手柄 */
+    showResizeHandle?: boolean
+    /** 内容区溢出策略 */
+    bodyOverflow?: 'auto' | 'hidden'
+    /** 布局位置提示（影响圆角裁剪） */
     position?: 'left' | 'right' | 'bottom' | 'float'
   }>(),
   {
+    draggable: true,
     collapsible: true,
-    closable: false,
-    resettable: false,
     defaultCollapsed: false,
-    width: '320px',
-    position: 'left',
+    maxOffsetX: 120,
+    maxOffsetY: 100,
+    defaultWidth: 0,
+    defaultHeight: 0,
+    minWidth: 200,
+    minHeight: 80,
+    maxWidth: 600,
+    maxHeight: 800,
+    resizable: true,
+    handlePosition: 'bottom-right',
+    showResizeHandle: true,
+    bodyOverflow: 'auto',
+    position: 'float',
   },
 )
 
 const emit = defineEmits<{
   'update:collapsed': [value: boolean]
-  close: []
-  reset: []
 }>()
 
-const collapsed = ref(props.defaultCollapsed)
+const {
+  visible,
+  collapsed,
+  dragging,
+  resizeEnabled,
+  frameStyle,
+  panelSizeStyle,
+  anchorClass,
+  startDragging,
+  startPillDragging,
+  startResizing,
+  toggleCollapsed,
+  hidePanel,
+  showPanel,
+  resetPanel,
+} = usePanelDragResize({
+  panelKey: props.panelKey,
+  draggable: props.draggable,
+  collapsible: props.collapsible,
+  defaultCollapsed: props.defaultCollapsed,
+  maxOffsetX: props.maxOffsetX,
+  maxOffsetY: props.maxOffsetY,
+  defaultWidth: props.defaultWidth,
+  defaultHeight: props.defaultHeight,
+  minWidth: props.minWidth,
+  minHeight: props.minHeight,
+  maxWidth: props.maxWidth,
+  maxHeight: props.maxHeight,
+  resizable: props.resizable,
+  handlePosition: props.handlePosition,
+  showResizeHandle: props.showResizeHandle,
+})
 
-// 支持外部 v-model:collapsed 控制
-watch(
-  () => props.defaultCollapsed,
-  (val) => {
-    collapsed.value = val
-  },
-)
+const isMobile = computed(() => typeof window !== 'undefined' && window.innerWidth < 820)
 
-const cls = computed(() => [
+const dockClass = computed(() => [
   'panel-dock',
   `panel-dock--${props.position}`,
-  { 'panel-dock--collapsed': collapsed.value },
+  {
+    'panel-dock--collapsed': collapsed.value,
+    'panel-dock--mobile': isMobile.value,
+    'panel-dock--timeline': props.panelKey === 'timeline',
+  },
 ])
 
-function toggleCollapse() {
-  collapsed.value = !collapsed.value
+const resizeHandleClass = computed(() => [
+  'resize-handle',
+  `resize-handle--${props.handlePosition}`,
+  `resize-handle--${props.panelKey ?? 'generic'}`,
+])
+
+const bodyClass = computed(() => [
+  'panel-dock__body',
+  {
+    'panel-dock__body--mobile': isMobile.value,
+    'panel-dock__body--hidden': props.bodyOverflow === 'hidden',
+  },
+])
+
+function handleToggleCollapsed() {
+  toggleCollapsed()
   emit('update:collapsed', collapsed.value)
 }
 
-function handleClose() {
-  emit('close')
-}
-
-function handleReset() {
-  emit('reset')
-}
+defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 </script>
 
 <template>
-  <div :class="cls" :style="{ width }" data-ui="panel-dock">
-    <header class="panel-dock__head">
-      <div class="panel-dock__title-wrap">
-        <button
-          v-if="collapsible"
-          class="panel-dock__collapse"
-          type="button"
-          :aria-expanded="!collapsed"
-          :aria-label="collapsed ? '展开面板' : '折叠面板'"
-          @click="toggleCollapse"
-        >
-          <svg
-            class="panel-dock__chevron"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="m6 9 6 6 6-6" />
-          </svg>
-        </button>
-        <h3 class="panel-dock__title">{{ title }}</h3>
-      </div>
-      <div class="panel-dock__actions">
-        <button
-          v-if="resettable"
-          class="panel-dock__action"
-          type="button"
-          aria-label="复位"
-          title="复位"
-          @click="handleReset"
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-            <path d="M3 3v5h5" />
-          </svg>
-        </button>
-        <button
-          v-if="closable"
-          class="panel-dock__action"
-          type="button"
-          aria-label="关闭面板"
-          title="关闭"
-          @click="handleClose"
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M18 6 6 18" />
-            <path d="m6 6 12 12" />
-          </svg>
-        </button>
-      </div>
-    </header>
+  <div class="panel-anchor" :class="anchorClass" :style="frameStyle">
+    <!-- 隐藏态：恢复胶囊 -->
+    <button
+      v-if="!visible"
+      class="restore-pill"
+      type="button"
+      :class="{ 'restore-pill--dragging': dragging }"
+      :title="`${panelLabel} · 拖动自由移动 / 点击展开并恢复原布局`"
+      @pointerdown="startPillDragging"
+      @click.prevent
+    >
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path
+          d="M2 8s2.2-3.5 6-3.5S14 8 14 8s-2.2 3.5-6 3.5S2 8 2 8Zm6 1.8A1.8 1.8 0 1 0 8 6.2a1.8 1.8 0 0 0 0 3.6Z"
+        />
+      </svg>
+      <span>{{ panelLabel }}</span>
+    </button>
 
-    <transition name="panel-body">
-      <div v-show="!collapsed" class="panel-dock__body">
+    <!-- 显示态：面板壳 -->
+    <section v-else class="panel-dock__frame" :class="dockClass" :style="panelSizeStyle">
+      <!-- 标题栏 -->
+      <header class="panel-dock__head" :class="{ 'panel-dock__head--dragging': dragging }">
+        <button
+          v-if="draggable"
+          class="panel-dock__grip"
+          type="button"
+          title="拖动"
+          aria-label="拖动面板"
+          @pointerdown.prevent="startDragging"
+        >
+          <span></span><span></span><span></span>
+        </button>
+        <span class="panel-dock__label">{{ panelLabel }}</span>
+        <div class="panel-dock__actions">
+          <button
+            v-if="collapsible"
+            class="panel-dock__btn"
+            type="button"
+            :title="collapsed ? '展开' : '收起'"
+            :aria-label="collapsed ? '展开面板' : '折叠面板'"
+            :aria-expanded="!collapsed"
+            @click="handleToggleCollapsed"
+          >
+            <svg v-if="collapsed" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 8h10M8 3l5 5-5 5" />
+            </svg>
+            <svg v-else viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 8h10M8 13 3 8l5-5" />
+            </svg>
+          </button>
+          <button
+            class="panel-dock__btn"
+            type="button"
+            title="复位"
+            aria-label="复位面板位置与尺寸"
+            @click="resetPanel"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 8a5 5 0 1 0 1.5-3.6M3 3v3.4h3.4" />
+            </svg>
+          </button>
+          <button
+            class="panel-dock__btn"
+            type="button"
+            title="隐藏"
+            aria-label="隐藏面板"
+            @click="hidePanel"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="m2.4 2.4 11.2 11.2M6.2 6.2A2.6 2.6 0 0 0 10 9.8M3 8s2.2-3.5 5-3.5c.8 0 1.5.1 2.2.4M13 8s-1.1 1.8-3 2.8"
+              />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- 内容区 -->
+      <div v-show="!collapsed" :class="bodyClass">
         <slot />
       </div>
-    </transition>
+
+      <!-- 缩放手柄 -->
+      <button
+        v-if="resizeEnabled"
+        :class="resizeHandleClass"
+        type="button"
+        title="拖动调整尺寸 · 双击恢复默认"
+        aria-label="调整面板尺寸"
+        @pointerdown.prevent="startResizing"
+        @dblclick="resetPanel"
+      >
+        <span class="resize-corner resize-corner--one"></span>
+        <span class="resize-corner resize-corner--two"></span>
+      </button>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.panel-dock {
+/* ═══ 面板级 CSS 变量（从 tokens 派生） ═══ */
+.panel-anchor {
+  --panel-title-height: 2.35rem;
+  --panel-padding: 0.4rem;
+  --panel-body-padding: 0.45rem;
+  --panel-collapsed-height: 2.9rem;
+  --panel-scrollbar-track: rgba(255, 255, 255, 0.05);
+  --panel-scrollbar-thumb: rgba(136, 192, 255, 0.22);
+  --panel-backdrop-blur: 12px;
+
+  position: relative;
+  pointer-events: auto;
+  will-change: transform;
+  transition: transform var(--motion-base) var(--ease-standard);
+  width: fit-content;
+  height: fit-content;
+  max-width: 100%;
+  display: block;
+  min-width: 200px;
+}
+
+.panel-anchor--dock-right {
+  max-width: calc(100vw - 1.6rem);
+  margin-inline-start: auto;
+}
+
+.panel-anchor--dock-right :deep(.panel-dock__frame) {
+  margin-inline-start: auto;
+}
+
+.panel-anchor--interacting {
+  transition: none;
+}
+
+/* ═══ 恢复胶囊 ═══ */
+.restore-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius-pill);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  cursor: grab;
+  font: inherit;
+  font-size: var(--font-size-caption);
+  box-shadow: var(--elevation-2);
+  opacity: 0.72;
+  backdrop-filter: blur(var(--panel-backdrop-blur));
+  -webkit-backdrop-filter: blur(var(--panel-backdrop-blur));
+  user-select: none;
+  touch-action: none;
+  transition:
+    opacity var(--motion-base) var(--ease-standard),
+    border-color var(--motion-base) var(--ease-standard),
+    box-shadow var(--motion-base) var(--ease-standard);
+}
+
+.restore-pill:hover {
+  opacity: 1;
+  border-color: var(--border-strong);
+  box-shadow:
+    var(--elevation-3),
+    0 0 12px var(--accent-surface);
+}
+
+.restore-pill--dragging {
+  cursor: grabbing;
+  opacity: 1;
+}
+
+.restore-pill svg {
+  width: 0.86rem;
+  height: 0.86rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ═══ 面板壳 ═══ */
+.panel-dock__frame {
+  position: relative;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  border-radius: var(--radius-lg);
-  background: var(--surface-2);
-  border: 1px solid var(--border-default);
-  box-shadow: var(--elevation-2);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  overflow: hidden;
-  min-width: 0;
   transition:
-    width var(--motion-base) var(--ease-standard),
-    box-shadow var(--motion-base) var(--ease-standard);
+    opacity var(--motion-slow) var(--ease-decelerate),
+    transform var(--motion-slow) var(--ease-standard),
+    box-shadow var(--motion-slow) var(--ease-standard);
+  overflow: visible;
+  min-height: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(180deg, var(--surface-2), var(--surface-1)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.06), transparent 34%),
+    radial-gradient(circle at bottom right, var(--accent-surface), transparent 42%);
+  box-shadow: var(--elevation-2);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.08);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.08);
+  contain: layout paint;
+}
+
+.panel-dock__frame:hover {
+  box-shadow: var(--elevation-3);
+}
+
+/* 折叠态 */
+.panel-dock__frame.panel-dock--collapsed {
+  opacity: 0.55;
+  background: var(--surface-1);
+  box-shadow: var(--elevation-1);
+}
+
+.panel-dock__frame.panel-dock--collapsed:hover {
+  opacity: 1;
+  transform: translateY(-2px);
+  border-color: var(--border-strong);
+  box-shadow:
+    var(--elevation-3),
+    0 0 14px var(--accent-surface);
 }
 
 /* 位置修饰 */
@@ -189,156 +393,331 @@ function handleReset() {
 .panel-dock--bottom {
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
+}
+
+.panel-dock--mobile {
   width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
 }
 
-.panel-dock--float {
-  position: absolute;
-  z-index: var(--z-panel);
+.panel-dock--timeline {
+  max-width: none;
 }
 
-/* 标题栏 */
-.panel-dock__head {
-  display: flex;
-  align-items: center;
+.panel-dock--timeline .panel-dock__head {
   justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
-  flex: 0 0 auto;
-  min-height: 44px;
 }
 
-.panel-dock__title-wrap {
+.panel-dock--timeline .panel-dock__body {
+  overflow: hidden;
+}
+
+/* ═══ 标题栏 ═══ */
+.panel-dock__head {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-width: 0;
+  padding: var(--space-2) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-bottom-color: var(--border-subtle);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
+  min-height: var(--panel-title-height);
+  backdrop-filter: blur(var(--panel-backdrop-blur)) saturate(1.08);
+  -webkit-backdrop-filter: blur(var(--panel-backdrop-blur)) saturate(1.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    var(--elevation-1);
 }
 
-.panel-dock__collapse {
-  display: flex;
+.panel-dock__head--dragging {
+  cursor: grabbing;
+}
+
+/* 拖拽手柄 */
+.panel-dock__grip {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
+  gap: 0.16rem;
+  padding: 0.38rem 0.46rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
   color: var(--text-secondary);
-  cursor: pointer;
+  cursor: grab;
+  font: inherit;
+  touch-action: none;
+  flex: 0 0 auto;
   transition:
-    background-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard),
-    transform var(--motion-fast) var(--ease-standard);
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
 }
 
-.panel-dock__collapse:hover {
-  background: var(--surface-sunken);
+.panel-dock__grip:hover {
+  border-color: var(--border-default);
   color: var(--text-strong);
 }
 
-.panel-dock__collapse:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+.panel-dock__grip span {
+  width: 0.2rem;
+  height: 0.2rem;
+  border-radius: var(--radius-pill);
+  background: var(--text-secondary);
 }
 
-.panel-dock__chevron {
-  transition: transform var(--motion-fast) var(--ease-standard);
-}
-
-.panel-dock--collapsed .panel-dock__chevron {
-  transform: rotate(-90deg);
-}
-
-.panel-dock__title {
-  margin: 0;
-  font-size: var(--font-size-title);
-  font-weight: var(--font-weight-medium);
+/* 标题文本 */
+.panel-dock__label {
+  min-width: 0;
+  margin-right: 0;
   color: var(--text-primary);
-  letter-spacing: 0.01em;
+  font-size: var(--font-size-caption);
+  letter-spacing: 0.04em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* 操作按钮组 */
 .panel-dock__actions {
   display: inline-flex;
-  align-items: center;
   gap: var(--space-1);
+  margin-left: auto;
   flex: 0 0 auto;
 }
 
-.panel-dock__action {
-  display: flex;
+.panel-dock__btn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 1.95rem;
+  height: 1.95rem;
   padding: 0;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition:
-    background-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard);
-}
-
-.panel-dock__action:hover {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
   background: var(--surface-sunken);
-  color: var(--text-strong);
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-caption);
+  flex: 0 0 auto;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard);
 }
 
-.panel-dock__action:focus-visible {
+.panel-dock__btn:hover {
+  border-color: var(--border-default);
+  color: var(--text-strong);
+  background: var(--surface-hover);
+}
+
+.panel-dock__btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-/* 折叠态：仅显示头部 rail */
-.panel-dock--collapsed {
-  width: 48px !important;
+.panel-dock__btn svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.panel-dock--collapsed .panel-dock__title,
-.panel-dock--collapsed .panel-dock__actions {
-  display: none;
-}
-
-.panel-dock--collapsed .panel-dock__head {
-  justify-content: center;
-  padding: var(--space-3);
-  border-bottom: none;
-}
-
-/* 内容区 */
+/* ═══ 内容区 ═══ */
 .panel-dock__body {
+  margin-top: 0;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-4);
+  position: relative;
+  z-index: 1;
+  padding: var(--panel-body-padding) calc(var(--panel-body-padding) - 0.07rem) var(--panel-body-padding);
+  border: 1px solid var(--border-subtle);
+  border-top: 0;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: linear-gradient(180deg, var(--accent-surface), transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.02),
+    var(--elevation-1);
+  scrollbar-width: thin;
+  scrollbar-color: var(--panel-scrollbar-thumb) var(--panel-scrollbar-track);
 }
 
-/* 内容区过渡 */
-.panel-body-enter-active,
-.panel-body-leave-active {
-  transition: opacity var(--motion-base) var(--ease-standard);
+.panel-dock__body::-webkit-scrollbar {
+  width: 4px;
 }
 
-.panel-body-enter-from,
-.panel-body-leave-to {
+.panel-dock__body::-webkit-scrollbar-track {
+  background: var(--panel-scrollbar-track);
+}
+
+.panel-dock__body::-webkit-scrollbar-thumb {
+  background: var(--panel-scrollbar-thumb);
+  border-radius: var(--radius-pill);
+}
+
+.panel-dock__body--mobile {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.panel-dock__body--hidden {
+  overflow: hidden;
+}
+
+/* ═══ 缩放手柄 ═══ */
+.resize-handle {
+  position: absolute;
+  width: 1rem;
+  height: 1rem;
+  border: none;
+  background: transparent;
   opacity: 0;
+  transition:
+    opacity var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
+  z-index: 10;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  cursor: nwse-resize;
 }
 
+.panel-dock__frame:hover .resize-handle,
+.panel-anchor:focus-within .resize-handle {
+  opacity: 0.86;
+}
+
+.resize-handle--bottom-right {
+  right: -0.02rem;
+  bottom: -0.02rem;
+}
+
+.resize-handle--bottom-left {
+  left: -0.02rem;
+  bottom: -0.02rem;
+  cursor: nesw-resize;
+}
+
+.resize-handle--top-right {
+  right: -0.02rem;
+  top: -0.02rem;
+  cursor: nesw-resize;
+  transform: rotate(180deg);
+}
+
+.resize-handle--top-left {
+  left: -0.02rem;
+  top: -0.02rem;
+  cursor: nwse-resize;
+}
+
+/* 面板特定缩放手柄装饰 */
+.resize-handle--layers .resize-corner--one {
+  right: 0.04rem;
+  bottom: 0.18rem;
+  width: 0.66rem;
+  height: 2px;
+  transform: rotate(45deg);
+  transform-origin: right bottom;
+}
+
+.resize-handle--layers .resize-corner--two {
+  right: 0.18rem;
+  bottom: 0.04rem;
+  width: 2px;
+  height: 0.66rem;
+  transform: rotate(45deg);
+  transform-origin: right bottom;
+}
+
+.resize-handle--analysis .resize-corner--one {
+  left: 0.04rem;
+  bottom: 0.18rem;
+  width: 0.66rem;
+  height: 2px;
+  transform: rotate(-45deg);
+  transform-origin: left bottom;
+}
+
+.resize-handle--analysis .resize-corner--two {
+  left: 0.18rem;
+  bottom: 0.04rem;
+  width: 2px;
+  height: 0.66rem;
+  transform: rotate(-45deg);
+  transform-origin: left bottom;
+}
+
+.resize-corner {
+  position: absolute;
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.resize-corner--one {
+  right: 0.12rem;
+  bottom: 0.24rem;
+  width: 0.42rem;
+  height: 2px;
+}
+
+.resize-corner--two {
+  right: 0.24rem;
+  bottom: 0.12rem;
+  width: 2px;
+  height: 0.42rem;
+}
+
+.panel-anchor:hover .resize-handle {
+  transform: scale(1.02);
+}
+
+/* ═══ 响应式：移动端禁用拖拽/缩放 ═══ */
+@media (max-width: 768px) {
+  .panel-anchor {
+    transform: none !important;
+  }
+
+  .panel-dock__grip {
+    display: none;
+  }
+
+  .panel-dock__head {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .panel-dock__body {
+    padding: var(--space-3);
+  }
+
+  .resize-handle {
+    display: none;
+  }
+}
+
+/* ═══ 减弱动效 ═══ */
 @media (prefers-reduced-motion: reduce) {
-  .panel-dock,
-  .panel-dock__collapse,
-  .panel-dock__chevron,
-  .panel-body-enter-active,
-  .panel-body-leave-active {
+  .panel-anchor,
+  .panel-dock__frame,
+  .panel-dock__grip,
+  .panel-dock__btn,
+  .restore-pill,
+  .resize-handle {
     transition: none;
+  }
+
+  .panel-dock__frame {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 }
 </style>

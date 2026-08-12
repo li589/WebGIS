@@ -71,10 +71,7 @@
 - `GET /workflow-definitions/node-templates`
 - `POST /workflow-definitions/compile`：LiteGraph 画布 → Python `workflow_definition`（编辑器 Run 主路径）
 
-详见 `Docs/课题组数据全链路-2026-07-21.md`。
-
-**安全（2026-07-16）**：所有 `/config/*` 写操作与 `POST /import/raster` 需 `X-API-Key`（development 且未启用 keys 时可旁路）。  
-鉴权密钥 = `backend_auth` DB 覆盖 env（`effective_config`）。非 development 必须配置 `BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY`。
+**安全**：`/config/*` 写操作与敏感读需有效凭据（会话 Cookie、用户 API Token 或 `backend_auth` 服务密钥 `X-API-Key`）。RBAC：`viewer` 只读。development 且未启用 keys 时仅 **loopback** 可旁路。非 development 必须配置 `BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY`（共享加密主密钥）。详见 `AGENTS.md` 高风险区。
 
 ### 算法 / Provider / Artifact / 导入 / GEE
 
@@ -115,21 +112,25 @@
 backend/
 ├─ app/
 │  ├─ api/                 # REST 路由（按域拆分）
-│  │  ├─ routers/          # health / workflow / runtime / layer / weather / …
+│  │  ├─ routers/          # health / workflow / runtime / layer / weather / auth / …
 │  │  ├─ tile_routes.py
 │  │  ├─ weather_tile_routes.py
+│  │  ├─ config_routes.py
 │  │  └─ gee_config_routes.py
 │  ├─ core/                # 配置、Celery、日志、Redis
 │  ├─ services/            # 业务服务、桥接、目录、瓦片、存储
-│  │  └─ workflow/         # submission / lifecycle / runtime / persistence …
+│  │  ├─ workflow/         # submission / lifecycle / runtime / persistence …
+│  │  ├─ config_service.py # 配置门面（再导出 L3 模块）
+│  │  ├─ config_api_keys.py / config_gee_accounts.py / …
+│  │  └─ tile_proxy_service.py  # 含天地图服务端 UA
 │  ├─ tasks/               # Celery 任务
-│  ├─ weatherengine/       # 点查、网格、瓦片、天气 DAG 节点
+│  ├─ weatherengine/       # 点查、网格、瓦片、天气 DAG；render/value 可拆分子模块
 │  ├─ workflow_engine/     # 通用 DAG 执行器
 │  ├─ gee/                 # Earth Engine 嵌入模块
 │  └─ main.py
 ├─ docker-compose.yml      # Redis + MinIO；Open-Meteo（--profile open-meteo）
 ├─ requirements.txt
-└─ tests/
+└─ （单测集中在仓库根 Test/backend/，勿在此目录新建 tests/）
 ```
 
 ## 当前核心模块
@@ -165,7 +166,8 @@ backend/
 
 - `python_provider_bridge_service.py` / `weather_bridge_service.py` / `gee_bridge_service.py`
 - `source_fetcher.py`、`download_service.py`、`cache_service.py`
-- `tile_provider_registry.py`、`tile_proxy_service.py`
+- `tile_provider_registry.py`、`tile_proxy_service.py`（天地图必须用服务端 UA `CGDA-Backend/1.0`；街道底图由前端叠 `tianditu-vec`+`tianditu-cva`）
+- `config_service.py`：**门面**；实现在 `config_api_keys` / `config_gee_accounts` / `config_weather_providers` / `config_remote_storage`，经本模块再导出供 lifespan 与路由使用
 - `result_storage.py`、`result_view_service.py`、`object_store.py`
 - `layer_catalog.py`、`overlay_registry.py`
 
@@ -215,9 +217,11 @@ backend/
 
 1. `Code/backend/README.md`
 2. `Code/shared/contracts/README.md`
-3. `Docs/双通道接口设计总结.md`
-4. `Code/algorithms/providers/Python/README.md`
-5. `Code/algorithms/providers/docs/backend_integration_contract.md`
+3. `Docs/03-规范协议/双通道接口设计总结.md`
+4. `Docs/02-架构设计/工程决策纪要-配置瓦片与契约.md`
+5. `Code/algorithms/providers/Python/README.md`
+6. `Code/algorithms/providers/docs/backend_integration_contract.md`
+7. `Docs/05-专题研究/其它专题/课题组数据全链路-2026-07-21.md`（画布编译链路）
 
 ## 说明
 

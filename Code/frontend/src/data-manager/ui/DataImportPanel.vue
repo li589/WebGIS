@@ -1189,9 +1189,9 @@ async function commitDocument() {
   overflow: hidden;
   border-radius: 0.7rem;
   background: rgba(8, 17, 31, 0.98);
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  border: 1px solid var(--border-default);
   box-shadow: 0 18px 48px rgba(1, 8, 16, 0.45);
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 .data-panel-header {
   display: flex;
@@ -1203,7 +1203,7 @@ async function commitDocument() {
   border-bottom: 1px solid rgba(136, 192, 255, 0.1);
 }
 .header-title {
-  font-size: 0.76rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 .close-btn {
@@ -1216,14 +1216,14 @@ async function commitDocument() {
   border: 1px solid rgba(136, 192, 255, 0.22);
   border-radius: 0.38rem;
   background: rgba(4, 12, 23, 0.72);
-  color: #d8e6f5;
+  color: var(--text-primary);
   cursor: pointer;
-  font-size: 0.78rem;
+  font-size: var(--font-size-caption);
   line-height: 1;
 }
 .close-btn:hover {
   border-color: rgba(90, 213, 255, 0.4);
-  color: #5ad5ff;
+  color: var(--accent);
 }
 .data-tabs {
   display: flex;
@@ -1235,21 +1235,21 @@ async function commitDocument() {
   border: 1px solid rgba(136, 192, 255, 0.12);
   border-radius: 0.42rem;
   padding: 0.28rem 0.62rem;
-  background: rgba(4, 12, 23, 0.5);
-  color: #9fb6cc;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 .data-tab.active {
-  color: #5ad5ff;
+  color: var(--accent);
   border-color: rgba(90, 213, 255, 0.35);
   background: rgba(10, 132, 255, 0.16);
 }
 .tab-hint {
   flex-shrink: 0;
   margin: 0.36rem 0.8rem 0;
-  font-size: 0.54rem;
+  font-size: var(--font-size-caption);
   color: #6a8094;
   line-height: 1.4;
 }
@@ -1268,7 +1268,7 @@ async function commitDocument() {
 .file-line,
 .table-meta {
   margin: 0;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   color: #8aa0b4;
 }
 .file-btn,
@@ -1281,7 +1281,7 @@ async function commitDocument() {
   border-radius: 0.42rem;
   padding: 0.36rem 0.72rem;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 .file-btn,
@@ -1303,7 +1303,7 @@ async function commitDocument() {
 .file-list {
   margin: 0;
   padding-left: 1rem;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   color: #b7c9da;
 }
 .temporal-block {
@@ -1318,7 +1318,7 @@ async function commitDocument() {
   flex-wrap: wrap;
   gap: 0.45rem 0.8rem;
   margin: 0.3rem 0 0.35rem;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   color: #c5d7ea;
 }
 .temporal-modes label {
@@ -1336,21 +1336,21 @@ async function commitDocument() {
   display: flex;
   flex-direction: column;
   gap: 0.18rem;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   color: #8aa0b4;
 }
 .temporal-fields input {
   border: 1px solid rgba(136, 192, 255, 0.18);
   border-radius: 0.35rem;
   background: rgba(2, 10, 18, 0.7);
-  color: #d8e6f5;
+  color: var(--text-primary);
   padding: 0.26rem 0.38rem;
   font: inherit;
-  font-size: 0.66rem;
+  font-size: var(--font-size-caption);
 }
 .temporal-preview {
   margin: 0.35rem 0 0;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   color: #7eb8e0;
 }
 .sidecar-status {
@@ -1360,7 +1360,7 @@ async function commitDocument() {
   border: 1px solid rgba(136, 192, 255, 0.12);
   border-radius: 0.4rem;
   background: rgba(4, 12, 23, 0.45);
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   color: #9ec4e0;
   font-family: ui-monospace, Consolas, monospace;
 }
@@ -1369,7 +1369,7 @@ async function commitDocument() {
 }
 .sidecar-warn {
   margin: 0;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   color: #ffd166;
   line-height: 1.35;
 }
@@ -1384,7 +1384,7 @@ label {
   display: flex;
   flex-direction: column;
   gap: 0.18rem;
-  font-size: 0.54rem;
+  font-size: var(--font-size-caption);
   color: #8aa0b4;
 }
 input,
@@ -1393,9 +1393,9 @@ select {
   border-radius: 0.34rem;
   padding: 0.28rem 0.4rem;
   background: rgba(4, 12, 23, 0.7);
-  color: #d8e6f5;
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
 }
 .table-wrap {
   overflow: auto;
@@ -1407,11 +1407,11 @@ table {
   border-collapse: collapse;
   width: max-content;
   min-width: 100%;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
 }
 th,
 td {
-  border-bottom: 1px solid rgba(136, 192, 255, 0.08);
+  border-bottom: 1px solid var(--border-subtle);
   padding: 0.22rem 0.4rem;
   text-align: left;
   white-space: nowrap;
@@ -1436,11 +1436,11 @@ th {
 }
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #0a84ff, #5ad5ff);
+  background: linear-gradient(90deg, #0a84ff, var(--accent));
 }
 .msg {
   margin: 0;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   color: #9ec4e0;
 }
 .msg.error {

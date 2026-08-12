@@ -361,9 +361,9 @@ function getEngineColor(nodeType: string, templateEngine?: string | null): Engin
     return { nodeBg: '#1a2a1e', nodeHeader: '#2a4a38', accent: '#78ffa0' }
   }
   if (engine === 'gee') {
-    return { nodeBg: '#1a2030', nodeHeader: '#3a2e5a', accent: '#5ad5ff' }
+    return { nodeBg: '#1a2030', nodeHeader: '#3a2e5a', accent: 'var(--accent)' }
   }
-  return { nodeBg: '#1a2740', nodeHeader: '#1a2540', accent: '#88dfff' }
+  return { nodeBg: '#1a2740', nodeHeader: '#1a2540', accent: 'var(--accent-strong)' }
 }
 
 function mapParamTypeToWidget(paramType: string, options?: string[]): string {
@@ -412,9 +412,9 @@ export function checkConnectionValid(inputType: string, outputType: string): boo
  * 按端口类型返回颜色（用于 slot 渲染）。
  */
 export function getPortColor(type: string): string {
-  if (type === 'data' || type === 'data:source') return '#5ad5ff' // 青色
+  if (type === 'data' || type === 'data:source') return 'var(--accent)' // 青色
   if (type === 'data:mat') return '#ffb84d' // 橙色
-  if (type === 'data:raster') return '#5ad5ff' // 蓝色
+  if (type === 'data:raster') return 'var(--accent)' // 蓝色
   if (type === 'data:geojson') return '#78ffa0' // 绿色
   if (type === 'data:timeseries') return '#c084fc' // 紫色
   if (type === 'value:number') return '#ffd5a8' // 浅黄
@@ -422,7 +422,7 @@ export function getPortColor(type: string): string {
   if (type === 'value:boolean') return '#9ae6b4' // 浅绿
   if (type === 'value:time_range') return '#ff8fb1' // 粉色
   if (type === 'geometry:bbox') return '#ff6b6b' // 红色
-  return '#6e8ba0' // 默认灰
+  return 'var(--text-faint)' // 默认灰
 }
 
 /** 端口类型中文说明（检查器/面板用） */

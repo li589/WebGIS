@@ -575,9 +575,9 @@ onBeforeUnmount(() => {
 
 .section-desc {
   margin: 0;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   line-height: 1.5;
-  color: #8aa8bf;
+  color: var(--text-muted);
 }
 
 .channel-card {
@@ -596,26 +596,26 @@ onBeforeUnmount(() => {
 
 .channel-head h3 {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   color: #e8f3fc;
 }
 
 .channel-badge {
   padding: 0.12rem 0.4rem;
   border-radius: 999px;
-  font-size: 0.5rem;
+  font-size: var(--font-size-caption);
   font-weight: 700;
   letter-spacing: 0.04em;
 }
 
 .badge-global {
   background: rgba(159, 248, 207, 0.14);
-  color: #9ff8cf;
+  color: var(--success);
 }
 
 .badge-local {
   background: rgba(90, 213, 255, 0.14);
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .badge-online {
@@ -625,15 +625,15 @@ onBeforeUnmount(() => {
 
 .channel-desc {
   margin: 0 0 0.55rem;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   line-height: 1.5;
-  color: #8aa8bf;
+  color: var(--text-muted);
 }
 
 .channel-desc code,
 .sync-hint code,
 .section-desc code {
-  font-size: 0.54rem;
+  font-size: var(--font-size-caption);
   color: #b7d4ea;
 }
 
@@ -644,7 +644,7 @@ onBeforeUnmount(() => {
 }
 
 .row-label {
-  font-size: 0.64rem;
+  font-size: var(--font-size-caption);
   color: #b8cce0;
 }
 
@@ -655,7 +655,7 @@ onBeforeUnmount(() => {
   background: rgba(8, 17, 31, 0.6);
   color: #e8f3fc;
   font: inherit;
-  font-size: 0.66rem;
+  font-size: var(--font-size-caption);
 }
 
 .model-select:focus {
@@ -674,13 +674,13 @@ onBeforeUnmount(() => {
   padding: 0.18rem 0.5rem;
   border-radius: 0.32rem;
   background: rgba(10, 132, 255, 0.1);
-  color: #5ad5ff;
-  font-size: 0.56rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
 }
 
 .meta-chip.ok {
   background: rgba(114, 255, 207, 0.12);
-  color: #9ff8cf;
+  color: var(--success);
 }
 
 .meta-chip.warn {
@@ -695,7 +695,7 @@ onBeforeUnmount(() => {
   border-radius: 0.42rem;
   background: rgba(90, 60, 20, 0.2);
   color: #ffd9a8;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
@@ -710,11 +710,11 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   gap: 0.4rem;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
 }
 
 .info-label {
-  color: #8aa8bf;
+  color: var(--text-muted);
 }
 .info-value {
   color: #e8f3fc;
@@ -723,7 +723,7 @@ onBeforeUnmount(() => {
 
 .setting-block {
   padding: 0.55rem 0 0;
-  border-top: 1px solid rgba(136, 192, 255, 0.08);
+  border-top: 1px solid var(--border-subtle);
   margin-top: 0.45rem;
 }
 
@@ -732,20 +732,20 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 0.42rem;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   color: #b8cce0;
   font-weight: 600;
 }
 
 .refresh-btn {
   padding: 0.2rem 0.55rem;
-  border: 1px solid rgba(90, 213, 255, 0.3);
+  border: 1px solid var(--accent-border);
   border-radius: 0.32rem;
   background: rgba(10, 132, 255, 0.1);
-  color: #5ad5ff;
+  color: var(--accent);
   cursor: pointer;
   font: inherit;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
 }
 
 .refresh-btn:hover:not(:disabled) {
@@ -762,14 +762,14 @@ onBeforeUnmount(() => {
   border-radius: 0.42rem;
   background: rgba(90, 20, 20, 0.2);
   color: #ffb0b0;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
 }
 
 .coverage-hint {
   display: block;
   margin-top: 0.25rem;
   color: #7f96ab;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
 }
 
 .meta-hint {
@@ -794,19 +794,19 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 
 .coverage-label {
-  color: #8aa8bf;
+  color: var(--text-muted);
 }
 .coverage-value {
   color: #e8f3fc;
   font-family: monospace;
 }
 .coverage-loading {
-  font-size: 0.6rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
 }
 
 .sync-control {
@@ -820,10 +820,10 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(114, 255, 207, 0.3);
   border-radius: 0.42rem;
   background: rgba(114, 255, 207, 0.1);
-  color: #9ff8cf;
+  color: var(--success);
   cursor: pointer;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 
 .sync-btn:disabled {
@@ -835,13 +835,13 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
 }
 .sync-state {
   color: #b8cce0;
 }
 .state-success {
-  color: #9ff8cf;
+  color: var(--success);
 }
 .state-failure {
   color: #ff8a8a;
@@ -849,15 +849,15 @@ onBeforeUnmount(() => {
 .state-started,
 .state-pending,
 .state-retry {
-  color: #5ad5ff;
+  color: var(--accent);
 }
 .sync-error {
   color: #ffb0b0;
 }
 .sync-hint {
   margin: 0.45rem 0 0;
-  font-size: 0.54rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   line-height: 1.45;
 }
 

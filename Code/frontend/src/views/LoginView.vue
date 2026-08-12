@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { safeRedirect } from '../app/router'
 import { useAuthStore } from '../stores/auth'
 import { BRAND } from '../ui-copy'
+import AppButton from '../components/ui/AppButton.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -133,7 +134,7 @@ async function submit() {
           rx="300"
           ry="300"
           fill="none"
-          stroke="rgba(90,213,255,0.12)"
+          stroke="var(--accent-surface)"
           stroke-width="1"
           transform="rotate(0 400 400) scale(1, 0.3)"
         />
@@ -259,9 +260,9 @@ async function submit() {
 
       <p v-if="auth.bootstrapError" class="banner banner-warn">
         {{ auth.bootstrapError }}
-        <button type="button" class="inline-link" :disabled="retrying" @click="retryBootstrap">
+        <AppButton variant="ghost" size="sm" :disabled="retrying" @click="retryBootstrap">
           {{ retrying ? '重试中…' : '重试连接' }}
-        </button>
+        </AppButton>
       </p>
 
       <form class="login-form" @submit.prevent="submit">
@@ -291,10 +292,9 @@ async function submit() {
         </p>
         <p v-if="error" class="banner banner-error">{{ error }}</p>
 
-        <button class="submit-btn" type="submit" :disabled="submitting">
-          <span v-if="submitting" class="btn-spinner" aria-hidden="true"></span>
+        <AppButton variant="primary" type="submit" :loading="submitting" :disabled="submitting" block>
           {{ submitting ? '登录中…' : '进入系统' }}
-        </button>
+        </AppButton>
       </form>
 
       <p class="footer-note">会话通过安全 Cookie 维持，请勿在公共设备保持登录。</p>
@@ -514,7 +514,7 @@ async function submit() {
   padding: 1px;
   background: linear-gradient(
     135deg,
-    rgba(90, 213, 255, 0.3),
+    var(--accent-border),
     transparent 40%,
     transparent 60%,
     rgba(255, 200, 120, 0.15)
@@ -579,7 +579,7 @@ async function submit() {
   width: 44px;
   height: 44px;
   animation: mark-spin 50s linear infinite;
-  filter: drop-shadow(0 0 8px rgba(90, 213, 255, 0.3));
+  filter: drop-shadow(0 0 8px var(--accent-border));
 }
 
 @keyframes mark-spin {
@@ -625,7 +625,7 @@ async function submit() {
   text-transform: uppercase;
   color: var(--accent);
   font-weight: var(--font-weight-semibold);
-  text-shadow: 0 0 20px rgba(90, 213, 255, 0.3);
+  text-shadow: 0 0 20px var(--accent-border);
 }
 
 .brand-copy h1 {
@@ -669,7 +669,7 @@ async function submit() {
 
 .field input {
   padding: 0.8rem 1rem;
-  border: 1px solid rgba(90, 213, 255, 0.12);
+  border: 1px solid var(--accent-surface);
   border-radius: var(--radius-md);
   background: linear-gradient(180deg, rgba(4, 12, 22, 0.8), rgba(6, 14, 26, 0.6));
   color: var(--text-strong);
@@ -732,103 +732,6 @@ async function submit() {
   color: var(--danger);
 }
 
-.inline-link {
-  margin-left: var(--space-2);
-  padding: 0;
-  border: none;
-  background: none;
-  color: inherit;
-  font: inherit;
-  font-size: inherit;
-  cursor: pointer;
-  text-decoration: underline;
-  opacity: 0.85;
-  transition: opacity var(--motion-fast) ease;
-}
-
-.inline-link:hover:not(:disabled) {
-  opacity: 1;
-}
-
-.inline-link:disabled {
-  opacity: 0.5;
-  cursor: wait;
-}
-
-.submit-btn {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-  padding: 0.85rem var(--space-4);
-  border: 1px solid rgba(90, 213, 255, 0.35);
-  border-radius: var(--radius-md);
-  background: linear-gradient(180deg, rgba(10, 132, 255, 0.45), rgba(10, 132, 255, 0.25));
-  color: var(--text-strong);
-  font-family: inherit;
-  font-size: var(--font-size-body);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.03em;
-  cursor: pointer;
-  overflow: hidden;
-  transition:
-    background-color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard),
-    border-color var(--motion-fast) var(--ease-standard),
-    transform var(--motion-fast) ease;
-  box-shadow:
-    0 4px 16px rgba(10, 132, 255, 0.2),
-    inset 0 1px 0 rgba(136, 223, 255, 0.2);
-}
-
-.submit-btn::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
-  transition: left 0.5s ease;
-}
-
-.submit-btn:hover:not(:disabled) {
-  background: linear-gradient(180deg, rgba(10, 132, 255, 0.6), rgba(10, 132, 255, 0.35));
-  border-color: rgba(90, 213, 255, 0.5);
-  box-shadow:
-    0 8px 28px rgba(10, 132, 255, 0.3),
-    inset 0 1px 0 rgba(136, 223, 255, 0.3);
-  transform: translateY(-1px);
-}
-
-.submit-btn:hover:not(:disabled)::before {
-  left: 100%;
-}
-
-.submit-btn:active:not(:disabled) {
-  transform: translateY(1px);
-  box-shadow:
-    0 2px 8px rgba(10, 132, 255, 0.2),
-    inset 0 1px 0 rgba(136, 223, 255, 0.1);
-}
-
-.submit-btn:disabled {
-  opacity: 0.5;
-  cursor: wait;
-  transform: none;
-}
-
-.btn-spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(223, 246, 255, 0.2);
-  border-top-color: var(--text-strong);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-
 .footer-note {
   margin: var(--space-4) 0 0;
   font-size: var(--font-size-caption);
@@ -852,16 +755,12 @@ async function submit() {
   .login-card,
   .glow-a,
   .glow-b,
-  .scan-line,
-  .submit-btn::before {
+  .scan-line {
     animation: none !important;
     transition: none !important;
   }
   .login-card {
     opacity: 1;
-    transform: none;
-  }
-  .submit-btn:hover:not(:disabled) {
     transform: none;
   }
 }

@@ -178,13 +178,13 @@ const activePoint = computed(() => {
 }
 
 .chart-title {
-  font-size: 0.78rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   color: rgba(255, 255, 255, 0.9);
 }
 
 .chart-unit {
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
   color: rgba(255, 255, 255, 0.45);
 }
 
@@ -217,7 +217,7 @@ const activePoint = computed(() => {
 }
 
 .tooltip-time {
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   color: rgba(255, 255, 255, 0.65);
 }
 

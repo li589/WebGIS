@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, shallowRef, watch, type Component } from 'vue'
+import { Settings, User, X } from 'lucide-vue-next'
 
 import { useAuthStore } from '../../stores/auth'
 import { useSettingsStore } from '../../stores/settings'
@@ -150,7 +151,7 @@ watch(activeTab, (tab) => {
   <div class="settings-overlay" @click.self="emit('close')">
     <div class="settings-panel">
       <div class="settings-header">
-        <span class="header-icon" aria-hidden="true">⚙</span>
+        <Settings :size="18" class="header-icon" aria-hidden="true" />
         <span class="header-title">{{ SETTINGS_COPY.panelTitle }}</span>
         <button
           v-if="sessionLabel"
@@ -159,11 +160,11 @@ watch(activeTab, (tab) => {
           title="账户与登录"
           @click="openAccountsTab"
         >
-          <span class="session-avatar" aria-hidden="true">👤</span>
+          <User :size="14" class="session-avatar" aria-hidden="true" />
           <span class="session-text">{{ sessionLabel }}</span>
         </button>
         <button class="close-btn" title="关闭" @click="emit('close')">
-          <span aria-hidden="true">✕</span>
+          <X :size="14" aria-hidden="true" />
         </button>
       </div>
 
@@ -236,14 +237,14 @@ watch(activeTab, (tab) => {
   padding: 0.72rem 0.82rem;
   border-bottom: 1px solid rgba(136, 192, 255, 0.1);
   color: #e8f3fc;
-  font-size: 0.74rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   flex: none;
 }
 
 .header-icon {
   font-size: 0.82rem;
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .header-title {
@@ -260,10 +261,10 @@ watch(activeTab, (tab) => {
   border: 1px solid rgba(114, 255, 207, 0.22);
   border-radius: 999px;
   background: rgba(114, 255, 207, 0.08);
-  color: #9ff8cf;
+  color: var(--success);
   cursor: pointer;
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
 }
 
 .session-chip:hover {
@@ -272,7 +273,7 @@ watch(activeTab, (tab) => {
 }
 
 .session-avatar {
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   line-height: 1;
 }
 
@@ -288,14 +289,14 @@ watch(activeTab, (tab) => {
   border: none;
   border-radius: 0.5rem;
   background: transparent;
-  color: #6e8ba0;
+  color: var(--text-faint);
   cursor: pointer;
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
 }
 
 .close-btn:hover {
   background: rgba(136, 192, 255, 0.1);
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 
 .settings-body {
@@ -311,7 +312,7 @@ watch(activeTab, (tab) => {
   flex-direction: column;
   gap: 0.12rem;
   padding: 0.52rem 0.32rem;
-  border-right: 1px solid rgba(136, 192, 255, 0.08);
+  border-right: 1px solid var(--border-subtle);
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -326,28 +327,28 @@ watch(activeTab, (tab) => {
   border: 1px solid transparent;
   border-radius: 0.5rem;
   background: transparent;
-  color: #8aa8bf;
+  color: var(--text-muted);
   cursor: pointer;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   text-align: left;
   transition: all 0.16s ease;
 }
 
 .nav-item:hover {
   background: rgba(136, 192, 255, 0.06);
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 
 .nav-item.active {
-  border-color: rgba(90, 213, 255, 0.3);
+  border-color: var(--accent-border);
   background: rgba(10, 132, 255, 0.14);
-  color: #5ad5ff;
+  color: var(--accent);
   font-weight: 600;
 }
 
 .nav-icon {
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   opacity: 0.8;
   flex: none;
 }
@@ -380,8 +381,8 @@ watch(activeTab, (tab) => {
   justify-content: center;
   gap: 0.62rem;
   padding: 3rem 1rem;
-  color: #5a7080;
-  font-size: 0.62rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
 }
 
 .content-partial-error {
@@ -395,7 +396,7 @@ watch(activeTab, (tab) => {
   border-radius: 0.45rem;
   background: rgba(90, 60, 20, 0.28);
   color: #ffd9a8;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   line-height: 1.4;
 }
 
@@ -403,7 +404,7 @@ watch(activeTab, (tab) => {
   width: 1.6rem;
   height: 1.6rem;
   border: 2px solid rgba(90, 213, 255, 0.2);
-  border-top-color: #5ad5ff;
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -416,20 +417,20 @@ watch(activeTab, (tab) => {
 
 .retry-btn {
   padding: 0.26rem 0.72rem;
-  border: 1px solid rgba(90, 213, 255, 0.3);
+  border: 1px solid var(--accent-border);
   border-radius: 0.4rem;
   background: rgba(10, 132, 255, 0.12);
-  color: #5ad5ff;
+  color: var(--accent);
   cursor: pointer;
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
 }
 
 .retry-btn:hover {
   background: rgba(10, 132, 255, 0.22);
 }
 
-@media (max-width: 600px) {
+@media (max-width: 640px) {
   .settings-panel {
     width: 100vw;
     max-width: 100vw;
@@ -443,7 +444,7 @@ watch(activeTab, (tab) => {
     width: 100%;
     flex-direction: row;
     border-right: none;
-    border-bottom: 1px solid rgba(136, 192, 255, 0.08);
+    border-bottom: 1px solid var(--border-subtle);
     overflow-x: auto;
     overflow-y: hidden;
     padding: 0.32rem;

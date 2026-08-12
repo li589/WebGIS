@@ -658,9 +658,9 @@ async function doExport() {
   overflow: hidden;
   border-radius: 0.7rem;
   background: rgba(8, 17, 31, 0.98);
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  border: 1px solid var(--border-default);
   box-shadow: 0 18px 48px rgba(1, 8, 16, 0.45);
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 .data-panel-header {
   display: flex;
@@ -672,7 +672,7 @@ async function doExport() {
   border-bottom: 1px solid rgba(136, 192, 255, 0.1);
 }
 .header-title {
-  font-size: 0.76rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 .close-btn {
@@ -685,18 +685,18 @@ async function doExport() {
   border: 1px solid rgba(136, 192, 255, 0.22);
   border-radius: 0.38rem;
   background: rgba(4, 12, 23, 0.72);
-  color: #d8e6f5;
+  color: var(--text-primary);
   cursor: pointer;
-  font-size: 0.78rem;
+  font-size: var(--font-size-caption);
   line-height: 1;
 }
 .close-btn:hover {
   border-color: rgba(90, 213, 255, 0.4);
-  color: #5ad5ff;
+  color: var(--accent);
 }
 .tab-hint {
   margin: 0.5rem 0.9rem 0;
-  font-size: 0.54rem;
+  font-size: var(--font-size-caption);
   color: #6a8094;
   line-height: 1.4;
 }
@@ -710,7 +710,7 @@ async function doExport() {
 }
 .empty {
   margin: 0;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   color: #8aa0b4;
 }
 .sel-actions {
@@ -721,20 +721,20 @@ async function doExport() {
 .link-btn {
   border: none;
   background: transparent;
-  color: #5ad5ff;
+  color: var(--accent);
   font: inherit;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   padding: 0;
 }
 .sel-count {
   margin-left: auto;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   color: #6a8094;
 }
 .enc-hint {
   margin: -0.15rem 0 0;
-  font-size: 0.5rem;
+  font-size: var(--font-size-caption);
   color: #7a91a8;
   line-height: 1.35;
 }
@@ -749,7 +749,7 @@ async function doExport() {
 }
 .time-export legend {
   padding: 0 0.25rem;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   color: #9bb4c8;
 }
 .time-mode-row {
@@ -761,17 +761,17 @@ async function doExport() {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  font-size: 0.56rem;
-  color: #d8e6f5;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
   cursor: pointer;
 }
 .check-inline {
-  display: flex !important;
-  flex-direction: row !important;
+  display: flex;
+  flex-direction: row;
   align-items: center;
-  gap: 0.4rem !important;
-  font-size: 0.56rem !important;
-  color: #d8e6f5 !important;
+  gap: 0.4rem;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
   cursor: pointer;
 }
 .time-list {
@@ -797,8 +797,8 @@ async function doExport() {
   align-items: center;
   gap: 0.4rem;
   padding: 0.32rem 0.5rem;
-  font-size: 0.58rem;
-  color: #d8e6f5;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
   cursor: pointer;
 }
 .check-row:hover {
@@ -811,10 +811,10 @@ async function doExport() {
   min-width: 0;
 }
 .layer-name {
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
 }
 .layer-id {
-  font-size: 0.46rem;
+  font-size: var(--font-size-caption);
   color: #6a8094;
   word-break: break-all;
 }
@@ -822,14 +822,14 @@ async function doExport() {
   margin-left: auto;
   font-style: normal;
   color: #6a8094;
-  font-size: 0.5rem;
+  font-size: var(--font-size-caption);
   flex-shrink: 0;
 }
 label:not(.check-row):not(.radio-row):not(.check-inline) {
   display: flex;
   flex-direction: column;
   gap: 0.18rem;
-  font-size: 0.54rem;
+  font-size: var(--font-size-caption);
   color: #8aa0b4;
 }
 select {
@@ -837,9 +837,9 @@ select {
   border-radius: 0.34rem;
   padding: 0.32rem 0.4rem;
   background: rgba(4, 12, 23, 0.7);
-  color: #d8e6f5;
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
 }
 .primary-btn {
   width: fit-content;
@@ -849,7 +849,7 @@ select {
   background: rgba(10, 132, 255, 0.22);
   color: #a8e8ff;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 .primary-btn:disabled {
@@ -869,11 +869,11 @@ select {
 }
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #0a84ff, #5ad5ff);
+  background: linear-gradient(90deg, #0a84ff, var(--accent));
 }
 .msg {
   margin: 0;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   color: #9ec4e0;
 }
 .msg.error {

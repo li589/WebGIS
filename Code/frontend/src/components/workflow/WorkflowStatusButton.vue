@@ -203,7 +203,7 @@ const showCancelledBadge = computed(
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(90deg, transparent, rgba(90, 213, 255, 0.12), transparent);
+  background: linear-gradient(90deg, transparent, var(--accent-surface), transparent);
   transform: translateX(-100%);
   animation: wf-shimmer 2.8s ease-in-out infinite;
   pointer-events: none;
@@ -245,7 +245,7 @@ const showCancelledBadge = computed(
 
 .tone-success .wf-dot {
   background: var(--success);
-  box-shadow: 0 0 8px rgba(159, 248, 207, 0.3);
+  box-shadow: 0 0 8px var(--success-border);
 }
 
 /* ── Tone: warning ──────────────────────────────────────────────────────── */
@@ -265,7 +265,7 @@ const showCancelledBadge = computed(
   color: var(--danger);
   border-color: var(--danger-border);
   background: var(--danger-surface);
-  box-shadow: 0 0 12px rgba(255, 140, 100, 0.12);
+  box-shadow: 0 0 12px var(--danger-surface);
 }
 
 .tone-error .wf-dot {

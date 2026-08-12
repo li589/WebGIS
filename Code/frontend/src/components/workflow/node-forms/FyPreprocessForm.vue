@@ -246,8 +246,8 @@ function update(key: string, value: unknown) {
 }
 
 .form-label {
-  font-size: 0.56rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   font-weight: 500;
 }
 
@@ -256,10 +256,10 @@ function update(key: string, value: unknown) {
   padding: 0.32rem 0.42rem;
   border: 1px solid rgba(136, 192, 255, 0.14);
   border-radius: 0.36rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #d8e6f5;
+  background: var(--surface-raised);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   box-sizing: border-box;
 }
 
@@ -270,7 +270,7 @@ function update(key: string, value: unknown) {
 
 .form-input:read-only {
   background: rgba(4, 12, 23, 0.3);
-  color: #6e8ba0;
+  color: var(--text-faint);
   cursor: default;
 }
 
@@ -278,8 +278,8 @@ function update(key: string, value: unknown) {
   appearance: none;
   cursor: pointer;
   background-image:
-    linear-gradient(45deg, transparent 50%, #6e8ba0 50%),
-    linear-gradient(135deg, #6e8ba0 50%, transparent 50%);
+    linear-gradient(45deg, transparent 50%, var(--text-faint) 50%),
+    linear-gradient(135deg, var(--text-faint) 50%, transparent 50%);
   background-position:
     calc(100% - 0.8rem) center,
     calc(100% - 0.5rem) center;
@@ -297,7 +297,7 @@ function update(key: string, value: unknown) {
 
 /* 字段错误提示 */
 .field-error {
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   color: #ff7b7b;
   margin-top: 0.06rem;
   line-height: 1.3;
@@ -308,7 +308,7 @@ function update(key: string, value: unknown) {
   margin-top: 0.32rem;
   padding: 0.3rem 0.52rem;
   border-radius: 0.36rem;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   text-align: center;
   border: 1px solid transparent;
 }
@@ -327,12 +327,12 @@ function update(key: string, value: unknown) {
 
 .sys-fill-btn {
   margin-left: 0.4rem;
-  font-size: 0.5rem;
+  font-size: var(--font-size-caption);
   padding: 0.1rem 0.35rem;
   border-radius: 0.25rem;
   border: 1px solid rgba(90, 213, 255, 0.35);
   background: rgba(90, 213, 255, 0.08);
-  color: #88dfff;
+  color: var(--accent-strong);
   cursor: pointer;
 }
 </style>

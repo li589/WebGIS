@@ -534,7 +534,7 @@ const restartParams = computed(() => {
 .section-title {
   margin: 0 0 0.32rem;
   color: #e8f3fc;
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -544,14 +544,14 @@ const restartParams = computed(() => {
   gap: 0.48rem;
   padding: 0.42rem 0.56rem;
   border-radius: 0.4rem;
-  background: rgba(4, 12, 23, 0.5);
-  border: 1px solid rgba(136, 192, 255, 0.08);
-  color: #d8e6f5;
-  font-size: 0.62rem;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 .toggle-row input {
-  accent-color: #5ad5ff;
+  accent-color: var(--accent);
 }
 .info-grid {
   display: flex;
@@ -565,18 +565,18 @@ const restartParams = computed(() => {
   gap: 0.62rem;
   padding: 0.36rem 0.52rem;
   border-radius: 0.4rem;
-  background: rgba(4, 12, 23, 0.5);
+  background: var(--surface-sunken);
   border: 1px solid rgba(136, 192, 255, 0.06);
 }
 .info-label {
-  color: #8aa8bf;
-  font-size: 0.6rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   flex: none;
   white-space: nowrap;
 }
 .info-value {
-  color: #d8e6f5;
-  font-size: 0.6rem;
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
   font-family: 'SF Mono', 'Consolas', monospace;
   text-align: right;
   overflow: hidden;
@@ -587,15 +587,15 @@ const restartParams = computed(() => {
 }
 .section-hint {
   margin: 0;
-  color: #5a7080;
-  font-size: 0.54rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 .section-hint code {
   background: rgba(136, 192, 255, 0.1);
   padding: 0 0.2rem;
   border-radius: 0.2rem;
-  font-size: 0.5rem;
+  font-size: var(--font-size-caption);
 }
 .param-group {
   display: flex;
@@ -606,7 +606,7 @@ const restartParams = computed(() => {
 .group-title {
   margin: 0 0 0.2rem;
   color: #6a8aa0;
-  font-size: 0.54rem;
+  font-size: var(--font-size-caption);
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -623,7 +623,7 @@ const restartParams = computed(() => {
   gap: 0.62rem;
   padding: 0.36rem 0.52rem;
   border-radius: 0.4rem;
-  background: rgba(4, 12, 23, 0.5);
+  background: var(--surface-sunken);
   border: 1px solid rgba(136, 192, 255, 0.06);
 }
 .runtime-label-group {
@@ -634,8 +634,8 @@ const restartParams = computed(() => {
   min-width: 0;
 }
 .param-desc {
-  color: #5a7080;
-  font-size: 0.5rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   line-height: 1.3;
 }
 .runtime-control-group {
@@ -649,8 +649,8 @@ const restartParams = computed(() => {
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(136, 192, 255, 0.15);
   border-radius: 0.3rem;
-  color: #d8e6f5;
-  font-size: 0.58rem;
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
   font-family: 'SF Mono', 'Consolas', monospace;
   padding: 0.22rem 0.36rem;
   width: 5.5rem;
@@ -667,8 +667,8 @@ const restartParams = computed(() => {
   cursor: not-allowed;
 }
 .param-unit {
-  color: #5a7080;
-  font-size: 0.52rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   flex: none;
 }
 .save-btn {
@@ -676,7 +676,7 @@ const restartParams = computed(() => {
   border: 1px solid rgba(136, 192, 255, 0.2);
   border-radius: 0.3rem;
   color: #c8e0f5;
-  font-size: 0.54rem;
+  font-size: var(--font-size-caption);
   padding: 0.22rem 0.48rem;
   cursor: pointer;
   transition: background 0.15s;
@@ -694,7 +694,7 @@ const restartParams = computed(() => {
   border: 1px solid rgba(100, 200, 120, 0.2);
   border-radius: 0.3rem;
   color: #c8f0d5;
-  font-size: 0.54rem;
+  font-size: var(--font-size-caption);
   padding: 0.22rem 0.6rem;
   cursor: pointer;
   transition: background 0.15s;
@@ -715,17 +715,17 @@ const restartParams = computed(() => {
 }
 .param-hint {
   color: #4a6070;
-  font-size: 0.46rem;
+  font-size: var(--font-size-caption);
   line-height: 1.3;
 }
 .error-msg {
   margin: 0;
   color: #ff7a6a;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
 }
 .success-msg {
   margin: 0;
   color: #5acf8a;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
 }
 </style>

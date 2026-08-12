@@ -743,7 +743,7 @@ async function handleLocateMe() {
   min-height: calc(100vh - 1.5rem);
   overflow: hidden;
   border-radius: 1.4rem;
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  border: 1px solid var(--border-default);
   background:
     radial-gradient(circle at top, rgba(66, 130, 255, 0.14), transparent 28rem),
     linear-gradient(180deg, rgba(6, 14, 26, 0.98), rgba(10, 19, 35, 0.94));
@@ -1042,7 +1042,7 @@ async function handleLocateMe() {
   background: rgba(8, 18, 33, 0.52);
   border: 1px solid rgba(136, 192, 255, 0.12);
   color: #eff7ff;
-  font-size: 0.64rem;
+  font-size: var(--font-size-caption);
 }
 
 .chip.secondary {
@@ -1052,7 +1052,7 @@ async function handleLocateMe() {
 }
 
 .chip-ready {
-  color: #9ff8cf;
+  color: var(--success);
   border-color: rgba(114, 255, 207, 0.2);
   background: rgba(114, 255, 207, 0.08);
 }
@@ -1083,18 +1083,18 @@ async function handleLocateMe() {
 
 .map-note h2 {
   margin: 0;
-  font-size: 0.76rem;
+  font-size: var(--font-size-caption);
   color: #f3fbff;
 }
 .map-note p {
   margin: 0;
   color: #96a8bb;
-  font-size: 0.64rem;
+  font-size: var(--font-size-caption);
   line-height: 1.32;
 }
 .map-note-meta {
   color: #bfd3e6;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   letter-spacing: 0.02em;
 }
 
@@ -1185,9 +1185,9 @@ async function handleLocateMe() {
   padding: 0.5rem 0.72rem;
   border-radius: 999px;
   background: rgba(8, 18, 33, 0.88);
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  border: 1px solid var(--border-default);
   color: #dfeefd;
-  font-size: 0.74rem;
+  font-size: var(--font-size-caption);
 }
 
 .loading-dot {
@@ -1212,7 +1212,7 @@ async function handleLocateMe() {
   background: rgba(8, 18, 33, 0.92);
   border: 1px solid rgba(255, 100, 100, 0.28);
   color: #ffb3b3;
-  font-size: 0.64rem;
+  font-size: var(--font-size-caption);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
 }
 
@@ -1229,7 +1229,7 @@ async function handleLocateMe() {
   border: 1px solid rgba(255, 140, 140, 0.3);
   background: rgba(255, 80, 80, 0.12);
   color: #ffc0c0;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   font-family: inherit;
   cursor: pointer;
   transition:
@@ -1257,7 +1257,7 @@ async function handleLocateMe() {
   background: rgba(8, 18, 33, 0.88);
   border: 1px solid rgba(100, 160, 255, 0.25);
   color: #a8c8ff;
-  font-size: 0.64rem;
+  font-size: var(--font-size-caption);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
 }
 
@@ -1295,7 +1295,7 @@ async function handleLocateMe() {
   background: rgba(18, 28, 22, 0.9);
   border: 1px solid rgba(120, 200, 160, 0.28);
   color: #b8e6c8;
-  font-size: 0.64rem;
+  font-size: var(--font-size-caption);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
 }
 
@@ -1314,7 +1314,7 @@ async function handleLocateMe() {
   background: rgba(33, 22, 8, 0.92);
   border: 1px solid rgba(255, 180, 60, 0.3);
   color: #ffcb80;
-  font-size: 0.64rem;
+  font-size: var(--font-size-caption);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
   max-width: min(80%, 36rem);
   max-height: 2.6rem;
@@ -1340,12 +1340,12 @@ async function handleLocateMe() {
   display: block;
 }
 .hotspot-label strong {
-  font-size: 0.64rem;
+  font-size: var(--font-size-caption);
 }
 .hotspot-label span {
   margin-top: 0.15rem;
   color: #99afc3;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
 }
 
 :deep(.maplibregl-ctrl-attrib) {
@@ -1358,7 +1358,7 @@ async function handleLocateMe() {
   }
 }
 
-@media (max-width: 820px) {
+@media (max-width: 768px) {
   .map-stage {
     min-height: calc(100vh - 1rem);
   }
@@ -1400,7 +1400,7 @@ async function handleLocateMe() {
   background: rgba(4, 12, 23, 0.55);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  color: #9fb6cc;
+  color: var(--text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1414,7 +1414,7 @@ async function handleLocateMe() {
 
 .locate-me-btn:hover:not(:disabled) {
   border-color: rgba(90, 213, 255, 0.4);
-  color: #5ad5ff;
+  color: var(--accent);
   background: rgba(10, 132, 255, 0.15);
 }
 
@@ -1423,15 +1423,15 @@ async function handleLocateMe() {
 }
 
 .locate-me-btn.locating {
-  border-color: rgba(90, 213, 255, 0.3);
-  color: #5ad5ff;
+  border-color: var(--accent-border);
+  color: var(--accent);
 }
 
 .locate-spinner {
   width: 1rem;
   height: 1rem;
   border: 2px solid rgba(90, 213, 255, 0.2);
-  border-top-color: #5ad5ff;
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: locate-spin 0.8s linear infinite;
 }
@@ -1477,7 +1477,7 @@ async function handleLocateMe() {
 .locate-error-msg {
   margin: 0;
   color: #ffb0b0;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   line-height: 1.3;
 }
@@ -1485,7 +1485,7 @@ async function handleLocateMe() {
 .locate-error-hint {
   margin: 0.15rem 0 0;
   color: #c8a0a0;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   line-height: 1.4;
 }
 
@@ -1543,7 +1543,7 @@ async function handleLocateMe() {
   width: 0.7rem;
   height: 0.7rem;
   border-radius: 50%;
-  background: #5ad5ff;
+  background: var(--accent);
   border: 2px solid #fff;
   box-shadow: 0 0 6px rgba(90, 213, 255, 0.6);
 }

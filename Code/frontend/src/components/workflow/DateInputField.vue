@@ -100,7 +100,7 @@ function onInput(event: Event) {
   background: rgba(8, 17, 31, 0.55);
   color: #e8f3fc;
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   color-scheme: dark;
 }
 
@@ -115,8 +115,8 @@ function onInput(event: Event) {
 
 .date-raw-hint {
   flex-shrink: 0;
-  font-size: 0.48rem;
-  color: #5a7080;
+  font-size: var(--font-size-caption);
+  color: var(--text-disabled);
   font-family: 'Consolas', 'Monaco', monospace;
   white-space: nowrap;
 }
