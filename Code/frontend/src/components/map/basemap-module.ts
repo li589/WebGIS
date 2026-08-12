@@ -137,7 +137,7 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
           source: TILE_SOURCE_ID,
           layout: { visibility: 'none' },
           paint: {
-            'raster-opacity': 0.88,
+            'raster-opacity': 1,
             'raster-saturation': cfg.saturation,
             'raster-brightness-max': Math.min(1.0, 1.0 + cfg.brightness),
             'raster-brightness-min': Math.max(0.0, Math.min(1.0, cfg.brightness)),
@@ -211,7 +211,7 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
 
     if (options.map.getLayer(TILE_LAYER_ID)) {
       options.map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'visible')
-      options.map.setPaintProperty(TILE_LAYER_ID, 'raster-opacity', 0.88)
+      options.map.setPaintProperty(TILE_LAYER_ID, 'raster-opacity', 1)
       options.map.setPaintProperty(TILE_LAYER_ID, 'raster-saturation', cfg.saturation)
       options.map.setPaintProperty(
         TILE_LAYER_ID,

@@ -77,7 +77,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
 .loading-overlay.hero {
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  z-index: var(--z-loading);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -96,9 +96,9 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   background: linear-gradient(165deg, var(--surface-2), var(--surface-1));
   border: 1px solid var(--accent-border);
   box-shadow:
-    0 24px 80px rgba(0, 0, 0, 0.55),
+    0 24px 80px var(--shadow-ambient-strong),
     0 0 60px var(--accent-surface),
-    inset 0 1px 0 rgba(136, 223, 255, 0.12);
+    inset 0 1px 0 var(--accent-surface);
   backdrop-filter: blur(24px) saturate(1.1);
   -webkit-backdrop-filter: blur(24px) saturate(1.1);
 }
@@ -251,7 +251,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   width: 6px;
   height: 6px;
   border-radius: 1px;
-  background: linear-gradient(135deg, var(--warning), var(--warning));
+  background: linear-gradient(135deg, var(--warning), var(--accent-warm));
   box-shadow: 0 0 8px rgba(255, 184, 77, 0.7);
 }
 
@@ -327,7 +327,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   top: 0;
   left: 0;
   right: 0;
-  z-index: 9998;
+  z-index: calc(var(--z-loading) - 1);
   pointer-events: none;
   display: flex;
   flex-direction: column;
@@ -452,7 +452,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
 
 .loading-fade-enter-active,
 .loading-fade-leave-active {
-  transition: opacity 0.22s ease;
+  transition: opacity var(--motion-base) var(--ease-standard);
 }
 
 .loading-fade-enter-from,

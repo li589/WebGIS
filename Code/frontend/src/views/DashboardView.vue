@@ -70,7 +70,7 @@ const {
   playIntervalMs,
   unifiedTimeLock,
 } = storeToRefs(uiStore)
-const { selectedLayerDisplay, activeLayerCount, isSubmitting, selectedInstanceId } = workspace
+const { selectedLayerDisplay, isSubmitting, selectedInstanceId } = workspace
 const {
   workflowError,
   workflowProgressTimeSeek,
@@ -306,9 +306,7 @@ function handleSetLayerOpacity(payload: { instanceId: string; opacity: number })
       <div class="overlay overlay-top">
         <ModeToolbar
           :tile-source-id="tileSourceId"
-          :active-layer="activeLayer"
           :hour-label="hourLabel"
-          :active-layer-count="activeLayerCount"
           @change-tile-source="handleTileSourceChange"
           @open-screenshot="handleOpenScreenshot"
           @open-settings="handleOpenSettings"

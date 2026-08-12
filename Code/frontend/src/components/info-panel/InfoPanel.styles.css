@@ -182,7 +182,7 @@
   -webkit-backdrop-filter: blur(18px);
   box-shadow:
     inset 0 1px 0 var(--surface-hover),
-    0 12px 26px rgba(1, 8, 16, 0.14);
+    0 12px 26px var(--shadow-ambient);
   overflow: hidden;
   contain: layout style;
 }
@@ -322,12 +322,12 @@
   min-width: 0;
   font-size: 0.8rem;
   font-weight: 600;
-  color: rgba(226, 232, 240, 0.92);
+  color: var(--text-secondary);
 }
 .readiness {
   padding: 0.16rem 0.36rem;
   border-radius: 999px;
-  background: rgba(90, 162, 255, 0.16);
+  background: var(--border-blue-tint);
   color: var(--text-primary);
   font-size: var(--font-size-caption);
   flex: 0 1 auto;
@@ -351,7 +351,7 @@
   margin: 0;
   font-size: var(--font-size-caption);
   line-height: 1.45;
-  color: rgba(203, 213, 225, 0.92);
+  color: var(--text-secondary);
 }
 
 .analysis-empty-hints {
@@ -412,7 +412,7 @@
   color: var(--danger);
 }
 .stage-pill.submitting {
-  background: rgba(255, 196, 120, 0.12);
+  background: var(--warning-surface);
   color: var(--accent-warm);
 }
 .stage-copy {
@@ -435,7 +435,7 @@
 .wf-engine-label {
   padding: 0.1rem 0.36rem;
   border-radius: 999px;
-  background: rgba(90, 162, 255, 0.14);
+  background: var(--surface-blue-tint);
   color: var(--accent-strong);
   font-size: var(--font-size-caption);
 }
@@ -458,7 +458,7 @@
   position: absolute;
   inset: 0 auto 0 0;
   border-radius: 999px;
-  transition: width 0.45s ease;
+  transition: width var(--motion-slow) var(--ease-standard);
   background: var(--border-strong);
 }
 .wf-progress-fill.running,
@@ -551,24 +551,24 @@
 }
 .analysis-section--overview {
   background: linear-gradient(180deg, var(--surface-1), var(--surface-1));
-  border-color: rgba(103, 212, 255, 0.16);
+  border-color: var(--border-blue-tint);
 }
 .analysis-section--layer {
   border-color: var(--border-default);
 }
 .analysis-section--weather {
-  border-color: rgba(103, 212, 255, 0.18);
+  border-color: var(--border-blue-tint);
   background: linear-gradient(180deg, var(--surface-1), var(--surface-1));
 }
 .analysis-section--hotspots {
   border-color: var(--success-surface);
 }
 .analysis-section--report {
-  border-color: rgba(126, 168, 255, 0.18);
+  border-color: var(--border-violet-tint);
   background: linear-gradient(180deg, var(--surface-1), var(--surface-1));
 }
 .analysis-section--result {
-  border-color: rgba(126, 168, 255, 0.16);
+  border-color: var(--border-violet-tint);
 }
 .report-section-head {
   display: flex;
@@ -583,7 +583,7 @@
 .report-block {
   margin-top: 0.75rem;
   padding-top: 0.55rem;
-  border-top: 1px solid rgba(120, 160, 190, 0.18);
+  border-top: 1px solid var(--border-default);
 }
 .report-block h4 {
   margin: 0 0 0.35rem;
@@ -628,7 +628,7 @@
 .analysis-chip {
   padding: 0.14rem 0.36rem;
   border-radius: 999px;
-  background: rgba(90, 162, 255, 0.14);
+  background: var(--surface-blue-tint);
   color: var(--text-strong);
   font-size: var(--font-size-caption);
 }
@@ -648,8 +648,8 @@
   margin-top: 0.34rem;
   padding: 0.4rem 0.44rem;
   border-radius: 0.7rem;
-  background: rgba(90, 162, 255, 0.1);
-  border: 1px solid rgba(90, 162, 255, 0.16);
+  background: var(--surface-blue-tint);
+  border: 1px solid var(--border-blue-tint);
 }
 .weather-primary-card span {
   color: var(--accent);
@@ -714,7 +714,9 @@
   cursor: pointer;
 }
 .weather-mini-btn:hover {
-  border-color: var(--border-strong);
+  border-color: var(--accent-border);
+  background: var(--accent-surface);
+  color: var(--accent);
 }
 .weather-mini-meta {
   color: var(--text-muted);
@@ -722,9 +724,6 @@
 }
 .hotspot-list li {
   cursor: pointer;
-}
-.hotspot-list li:focus-visible {
-  outline: 1px solid var(--border-strong);
 }
 .weather-hourly-card span {
   color: var(--text-muted);
@@ -741,9 +740,9 @@
   font-size: var(--font-size-caption);
 }
 .weather-state-loading {
-  background: rgba(90, 162, 255, 0.1);
+  background: var(--surface-blue-tint);
   color: var(--text-primary);
-  border: 1px solid rgba(90, 162, 255, 0.14);
+  border: 1px solid var(--surface-blue-tint);
 }
 .weather-state-error {
   background: var(--danger-surface);
@@ -783,14 +782,14 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
   min-height: 1.78rem;
-  border: 1px solid rgba(103, 212, 255, 0.28);
+  border: 1px solid var(--border-accent);
   border-radius: 999px;
   overflow: hidden;
   background: var(--surface-sunken);
 }
 .wind-mode-seg-btn {
   border: none;
-  border-right: 1px solid rgba(103, 212, 255, 0.16);
+  border-right: 1px solid var(--border-blue-tint);
   background: transparent;
   color: var(--text-muted);
   font: inherit;
@@ -802,15 +801,15 @@
   min-width: 0;
   white-space: nowrap;
   transition:
-    background 0.16s ease,
-    color 0.16s ease,
-    box-shadow 0.16s ease;
+    background var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 .wind-mode-seg-btn:last-child {
   border-right: none;
 }
 .wind-mode-seg-btn:hover:not(:disabled):not(.active) {
-  background: rgba(29, 78, 216, 0.14);
+  background: var(--surface-blue-tint);
   color: var(--text-strong);
 }
 .wind-mode-seg-btn:disabled {
@@ -833,9 +832,9 @@
   box-sizing: border-box;
   width: 100%;
   min-height: 1.78rem;
-  border: 1px solid rgba(103, 212, 255, 0.22);
+  border: 1px solid var(--border-accent);
   border-radius: 999px;
-  background: rgba(29, 78, 216, 0.14);
+  background: var(--surface-blue-tint);
   color: var(--accent-strong);
   font: inherit;
   font-size: var(--font-size-caption);
@@ -851,18 +850,18 @@
   min-width: 0;
   white-space: nowrap;
   transition:
-    border-color 0.18s ease,
-    background 0.18s ease,
-    color 0.18s ease,
-    box-shadow 0.18s ease;
+    border-color var(--motion-base) var(--ease-standard),
+    background var(--motion-base) var(--ease-standard),
+    color var(--motion-base) var(--ease-standard),
+    box-shadow var(--motion-base) var(--ease-standard);
 }
 .weather-layer-btn-text {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .weather-visibility-btn:hover {
-  border-color: rgba(103, 212, 255, 0.42);
-  background: rgba(29, 78, 216, 0.22);
+  border-color: var(--border-strong);
+  background: var(--border-blue-tint);
   color: var(--text-strong);
 }
 .weather-provider-row {
@@ -879,7 +878,7 @@
 }
 .weather-provider-select {
   min-width: 0;
-  border: 1px solid rgba(103, 212, 255, 0.22);
+  border: 1px solid var(--border-accent);
   border-radius: 0.48rem;
   background: var(--surface-1);
   color: var(--text-primary);
@@ -910,13 +909,13 @@
   position: relative;
   width: 2rem;
   height: 1.1rem;
-  border: 1px solid rgba(103, 212, 255, 0.28);
+  border: 1px solid var(--border-accent);
   border-radius: 999px;
   background: var(--surface-1);
   cursor: pointer;
   transition:
-    background 0.2s ease,
-    border-color 0.2s ease;
+    background var(--motion-base) var(--ease-standard),
+    border-color var(--motion-base) var(--ease-standard);
   flex: none;
 }
 .smooth-toggle-switch.active {
@@ -932,8 +931,8 @@
   border-radius: 50%;
   background: var(--text-muted);
   transition:
-    transform 0.18s ease,
-    background 0.18s ease;
+    transform var(--motion-base) var(--ease-standard),
+    background var(--motion-base) var(--ease-standard);
 }
 .smooth-toggle-switch.active .smooth-toggle-knob {
   transform: translateX(0.9rem);
@@ -1097,7 +1096,7 @@
   background: var(--accent-color, var(--accent));
   box-shadow: 0 0 6px var(--accent-color, var(--accent));
   cursor: pointer;
-  transition: transform 0.14s ease;
+  transition: transform var(--motion-fast) var(--ease-standard);
 }
 .layer-opacity-slider::-webkit-slider-thumb:hover {
   transform: scale(1.15);
@@ -1133,7 +1132,7 @@
   height: 0.72rem;
   border-radius: 0.28rem;
   border: 1px solid var(--surface-hover);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+  box-shadow: inset 0 0 0 1px var(--shadow-ambient);
 }
 .weather-legend-gradient-ticks {
   display: flex;
@@ -1254,7 +1253,7 @@
 .palette-trigger-arrow {
   font-size: var(--font-size-caption);
   color: var(--text-muted);
-  transition: transform 0.2s ease;
+  transition: transform var(--motion-base) var(--ease-standard);
 }
 .palette-trigger-arrow.open {
   transform: rotate(180deg);
@@ -1291,8 +1290,8 @@
   cursor: pointer;
   text-align: left;
   transition:
-    background 0.14s ease,
-    border-color 0.14s ease;
+    background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
 }
 .palette-option:hover {
   background: var(--border-subtle);
@@ -1588,7 +1587,7 @@
   color: var(--success);
 }
 .info-card-tag.trend {
-  background: rgba(126, 168, 255, 0.14);
+  background: var(--surface-violet-tint);
   color: var(--text-primary);
 }
 
@@ -1616,7 +1615,7 @@
 
 /* 历史趋势卡片 */
 .trend-card {
-  border-color: rgba(126, 168, 255, 0.18);
+  border-color: var(--border-violet-tint);
   background: linear-gradient(180deg, var(--surface-1), var(--surface-1));
 }
 .trend-body {
@@ -1714,7 +1713,7 @@
 .overlay-palette-tag {
   padding: 0.04rem 0.22rem;
   border-radius: 0.28rem;
-  background: rgba(126, 168, 255, 0.14);
+  background: var(--surface-violet-tint);
   color: var(--text-primary);
   font-size: var(--font-size-caption);
 }
@@ -1746,7 +1745,7 @@
   color: var(--success);
 }
 .overlay-state.state-partial {
-  background: rgba(255, 196, 120, 0.12);
+  background: var(--warning-surface);
   color: var(--accent-warm);
 }
 .overlay-state.state-empty {
@@ -1759,7 +1758,7 @@
   font-variant-numeric: tabular-nums;
   padding: 0.06rem 0.24rem;
   border-radius: 0.32rem;
-  background: rgba(90, 162, 255, 0.12);
+  background: var(--surface-blue-tint);
 }
 .overlay-point-value.na {
   color: var(--text-muted);
@@ -1823,15 +1822,15 @@
   background: transparent;
   border: none;
   border-right: 1px solid var(--border-subtle);
-  color: rgba(226, 232, 240, 0.72);
+  color: var(--text-secondary);
   font-size: var(--font-size-caption);
   font-weight: 500;
   padding: 0.42rem 0.2rem;
   border-radius: 0;
   cursor: pointer;
   transition:
-    color 0.15s ease,
-    background 0.15s ease;
+    color var(--motion-fast) var(--ease-standard),
+    background var(--motion-fast) var(--ease-standard);
   text-align: center;
   white-space: nowrap;
   line-height: 1.25;
@@ -1856,7 +1855,7 @@
 
 .dash-tab.active {
   color: var(--accent);
-  background: rgba(56, 189, 248, 0.14);
+  background: var(--accent-surface);
   font-weight: 600;
   box-shadow: inset 0 -2px 0 var(--accent);
 }
@@ -1867,6 +1866,27 @@
   align-self: flex-end;
   padding: 0.12rem 0.32rem;
   font-size: var(--font-size-caption);
+}
+
+/* ── 无障碍：键盘焦点 ── */
+.weather-mini-btn:focus-visible,
+.palette-trigger:focus-visible,
+.palette-option:focus-visible,
+.dash-tab:focus-visible,
+.hotspot-list li:focus-visible,
+.job-result-link:focus-visible,
+.imported-export-btn:focus-visible,
+.weather-layer-btn:focus-visible,
+.wind-mode-seg-btn:focus-visible,
+.smooth-toggle-switch:focus-visible,
+.layer-opacity-slider:focus-visible,
+.style-range-input:focus-visible,
+.style-nodata-select:focus-visible,
+.weather-provider-select:focus-visible,
+.style-nodata-color:focus-visible,
+.layer-style-row input[type='color']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 @media (max-width: 640px) {
@@ -1886,5 +1906,27 @@
   .trend-body {
     grid-template-columns: minmax(0, 1fr);
     display: grid;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wf-progress-fill,
+  .wind-mode-seg-btn,
+  .weather-layer-btn,
+  .smooth-toggle-switch,
+  .smooth-toggle-knob,
+  .layer-opacity-slider::-webkit-slider-thumb,
+  .palette-trigger-arrow,
+  .palette-option,
+  .dash-tab {
+    transition: none;
+  }
+
+  .layer-opacity-slider::-webkit-slider-thumb:hover {
+    transform: none;
+  }
+
+  .palette-trigger-arrow.open {
+    transform: none;
   }
 }

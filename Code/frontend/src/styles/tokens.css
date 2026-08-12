@@ -59,6 +59,17 @@
   --accent-surface: rgba(90, 213, 255, 0.12);
   --accent-border: rgba(90, 213, 255, 0.3);
 
+  /* ═══ 颜色：语义化表面色（蓝/紫 tint，用于信息区隔） ═══ */
+  --surface-blue-tint: rgba(90, 162, 255, 0.10);
+  --border-blue-tint: rgba(90, 162, 255, 0.16);
+  --surface-violet-tint: rgba(126, 168, 255, 0.14);
+  --border-violet-tint: rgba(126, 168, 255, 0.18);
+
+  /* ═══ 颜色：氛围色（地图/Loading 渐变用） ═══ */
+  --ambient-blue-glow: rgba(66, 130, 255, 0.14);
+  --ambient-blue-soft: rgba(82, 134, 255, 0.12);
+  --ambient-warm-glow: rgba(255, 196, 120, 0.12);
+
   /* ═══ 颜色：表面层级（暗色。越上层越不透明） ═══ */
   --surface-base: #020814; /* 最底，背景 */
   --surface-sunken: rgba(4, 12, 23, 0.5); /* 低 / 凹陷容器 */
@@ -82,8 +93,8 @@
   --radius-xl: 1.4rem; /* 21px — 大面板 / 对话框 */
   --radius-pill: 999px; /* 全圆 — 芯片 / 徽章 */
 
-  /* ═══ 间距（4px 基数） ═══ */
-  --space-1: 0.22rem; /* 3.3px — 极紧 */
+  /* ═══ 间距（近似 4px 基数，经光学微调） ═══ */
+  --space-1: 0.22rem; /* 3.3px — 极紧（光学微调） */
   --space-2: 0.32rem; /* 4.8px — 紧凑 */
   --space-3: 0.52rem; /* 7.8px — 标准 */
   --space-4: 0.72rem; /* 10.8px — 宽 */
@@ -114,6 +125,10 @@
 
   --elevation-modal: 0 30px 70px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.07);
 
+  /* ═══ 阴影色（独立于 elevation，用于 box-shadow / inset-shadow 组合） ═══ */
+  --shadow-ambient: rgba(1, 8, 16, 0.14);
+  --shadow-ambient-strong: rgba(0, 0, 0, 0.24);
+
   /* ═══ 动效（克制 + 物理感） ═══ */
   --motion-fast: 120ms;
   --motion-base: 200ms;
@@ -131,6 +146,7 @@
   --z-popover: 60; /* 下拉菜单 / 气泡 / Tooltip */
   --z-modal: 80; /* 模态对话框 */
   --z-toast: 100; /* 消息提示 / 通知 */
+  --z-loading: 200; /* 全局加载遮罩 */
   --z-debug: 999; /* 调试工具（最高） */
 
   /* ═══ 响应式断点（约定值，供 JS/组件统一参考） ═══ */
@@ -192,6 +208,21 @@
 
   --accent-surface: rgba(10, 143, 196, 0.1);
   --accent-border: rgba(10, 143, 196, 0.3);
+
+  /* 语义化表面色（浅底加深） */
+  --surface-blue-tint: rgba(30, 100, 180, 0.08);
+  --border-blue-tint: rgba(30, 100, 180, 0.14);
+  --surface-violet-tint: rgba(100, 80, 200, 0.10);
+  --border-violet-tint: rgba(100, 80, 200, 0.16);
+
+  /* 氛围色（浅底减淡） */
+  --ambient-blue-glow: rgba(30, 100, 180, 0.10);
+  --ambient-blue-soft: rgba(30, 100, 180, 0.08);
+  --ambient-warm-glow: rgba(201, 122, 20, 0.08);
+
+  /* 阴影色（浅底用蓝灰影） */
+  --shadow-ambient: rgba(20, 50, 90, 0.10);
+  --shadow-ambient-strong: rgba(20, 50, 90, 0.18);
 
   /* 表面层级（浅色：近不透明冷白，避免半透明叠地图/外圈发棕褐） */
   --surface-base: #e8eef5;

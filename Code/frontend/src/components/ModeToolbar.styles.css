@@ -257,16 +257,6 @@
   max-width: none;
 }
 
-:deep(.chip--layer) {
-  max-width: 140px;
-}
-
-:deep(.chip--count) {
-  background: var(--surface-2);
-  border-color: var(--border-default);
-  color: var(--text-secondary);
-}
-
 /* 响应式 */
 @media (max-width: 1024px) {
   .mode-toolbar {

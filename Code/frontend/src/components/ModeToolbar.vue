@@ -13,7 +13,6 @@ import {
   Satellite,
   Map,
   Moon,
-  Sun,
   Mountain,
   Globe,
 } from './ui/icons'
@@ -32,7 +31,6 @@ import {
   type TileSourceConfig,
   type TileSourceId,
 } from '../services/api-config'
-import type { ActiveLayerDisplay } from '../stores/layers/types'
 import { useWorkflowRun } from '../stores/layers/selectors'
 import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
@@ -40,7 +38,6 @@ import { useSettingsStore } from '../stores/settings'
 import { useAuthStore } from '../stores/auth'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import { useWeatherSyncStatusStore } from '../stores/weather-sync-status'
-import { useThemeStore } from '../stores/theme'
 import { useBreakpoint } from '../composables/useBreakpoint'
 import { mergeWorkflowSummaryWithWeather } from '../utils/workflow-status-merge'
 import {
@@ -60,7 +57,6 @@ const settingsStore = useSettingsStore()
 const authStore = useAuthStore()
 const weatherTileManager = useWeatherTileManager()
 const weatherSyncStatus = useWeatherSyncStatusStore()
-const themeStore = useThemeStore()
 const { isMobile } = useBreakpoint()
 const { workflowSummary } = useWorkflowRun()
 const { activityVersion, statusVersion } = storeToRefs(weatherTileManager)
@@ -88,9 +84,7 @@ const mergedWorkflowSummary = computed(() => {
 
 const props = defineProps<{
   tileSourceId: TileSourceId
-  activeLayer: ActiveLayerDisplay
   hourLabel: string
-  activeLayerCount: number
 }>()
 
 const emit = defineEmits<{
@@ -150,13 +144,6 @@ const currentSourceLocked = computed(() => {
   const cfg = currentTileConfig.value
   if (!cfg) return false
   return tileSourceRequiresApiKey(cfg) && !sourceUsable(cfg)
-})
-
-const availabilityVariant = computed<'success' | 'warning' | 'muted'>(() => {
-  const state = props.activeLayer.availabilityState
-  if (state === 'ready') return 'success'
-  if (state === 'partial') return 'warning'
-  return 'muted'
 })
 
 watch(
@@ -360,23 +347,6 @@ function sourcePillLabel(source: TileSourceConfig): string {
         <!-- 时间标签 -->
         <Chip class="time-chip">{{ hourLabel }}</Chip>
 
-        <!-- 图层可用性 -->
-        <Chip
-          v-if="activeLayerCount > 0"
-          :variant="availabilityVariant"
-          :title="activeLayer.availabilityDescription"
-        >
-          {{ activeLayer.availabilityLabel }}
-        </Chip>
-
-        <!-- 图层名 -->
-        <Chip v-if="activeLayerCount > 0" class="chip--layer">
-          {{ activeLayer.name }}
-        </Chip>
-
-        <!-- 图层计数 -->
-        <Chip v-if="activeLayerCount > 0" class="chip--count"> {{ activeLayerCount }} 个图层 </Chip>
-
         <!-- 2D/3D 视图切换 -->
         <button
           class="dim-toggle"
@@ -387,21 +357,6 @@ function sourcePillLabel(source: TileSourceConfig): string {
         >
           <component :is="uiStore.viewMode === '2d' ? Map : Globe" :size="12" class="dim-icon" />
           <span>{{ uiStore.viewMode === '2d' ? '2D' : '3D' }}</span>
-        </button>
-
-        <!-- 主题切换 -->
-        <button
-          class="dim-toggle"
-          type="button"
-          :title="themeStore.mode === 'dark' ? '切换到浅色模式' : '切换到深色模式'"
-          @click="themeStore.toggle()"
-        >
-          <component
-            :is="themeStore.mode === 'dark' ? Sun : Moon"
-            :size="12"
-            class="dim-icon"
-          />
-          <span>{{ themeStore.mode === 'dark' ? '浅色' : '深色' }}</span>
         </button>
 
         <!-- API Key 锁定警告 -->

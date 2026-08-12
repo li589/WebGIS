@@ -360,7 +360,7 @@ function isFavorite(type: string): boolean {
             :class="{ collapsed: collapsedCategories.has('__favorites__') }"
           />
         </button>
-        <div v-if="!collapsedCategories.has('__favorites__')" class="category-items">
+        <div class="category-items" :class="{ collapsed: collapsedCategories.has('__favorites__') }">
           <button
             v-for="tpl in favoriteTemplates"
             :key="tpl.type"
@@ -409,7 +409,7 @@ function isFavorite(type: string): boolean {
             :class="{ collapsed: collapsedCategories.has('__recent__') }"
           />
         </button>
-        <div v-if="!collapsedCategories.has('__recent__')" class="category-items">
+        <div class="category-items" :class="{ collapsed: collapsedCategories.has('__recent__') }">
           <button
             v-for="tpl in recentTemplates"
             :key="tpl.type"
@@ -467,7 +467,7 @@ function isFavorite(type: string): boolean {
           />
         </button>
 
-        <div v-if="!collapsedCategories.has(String(category))" class="category-items">
+        <div class="category-items" :class="{ collapsed: collapsedCategories.has(String(category)) }">
           <button
             v-for="tpl in templates"
             :key="tpl.type"
@@ -745,7 +745,18 @@ function isFavorite(type: string): boolean {
 }
 
 .category-items {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--motion-base) var(--ease-standard),
+              opacity var(--motion-base) var(--ease-standard);
+  overflow: hidden;
   padding: 0.16rem 0.42rem;
+}
+
+.category-items.collapsed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  padding: 0;
 }
 
 .node-item {
@@ -879,5 +890,24 @@ function isFavorite(type: string): boolean {
 
 .port-count.out {
   border-left: 2px solid var(--success-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .engine-filter-btn,
+  .category-header,
+  .category-toggle,
+  .node-item,
+  .node-item-favorite-btn {
+    transition: none;
+  }
+  .node-item:hover {
+    transform: none;
+  }
+  .node-item-favorite-btn:hover {
+    transform: none;
+  }
+  .category-items {
+    transition: none;
+  }
 }
 </style>

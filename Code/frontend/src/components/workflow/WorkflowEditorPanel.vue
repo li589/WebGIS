@@ -1150,7 +1150,7 @@ defineExpose({
   font: inherit;
   font-size: var(--font-size-caption);
   font-weight: 500;
-  transition: all 0.16s ease;
+  transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
 }
 
 .header-btn:hover:not(:disabled) {
@@ -1427,7 +1427,7 @@ defineExpose({
   font: inherit;
   font-size: var(--font-size-caption);
   font-weight: 500;
-  transition: all 0.16s ease;
+  transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
 }
 
 .dialog-btn:disabled {
@@ -1521,7 +1521,7 @@ defineExpose({
   font: inherit;
   font-size: var(--font-size-caption);
   cursor: pointer;
-  transition: all 0.16s ease;
+  transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
 }
 
 .validation-action-btn.proceed {
@@ -1551,7 +1551,7 @@ defineExpose({
   padding: 0.36rem 0.86rem;
   font-size: var(--font-size-caption);
   border-bottom: 1px solid var(--border-subtle);
-  transition: background 0.12s ease;
+  transition: background var(--motion-fast) var(--ease-standard);
 }
 
 .validation-item:hover {
@@ -1662,11 +1662,24 @@ defineExpose({
   gap: 0.7rem;
 }
 
+/* ── 按钮按压反馈 ─────────────────────────────────────────── */
+.header-btn:active,
+.dialog-btn:active,
+.validation-action-btn:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 3px var(--shadow-ambient);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .header-btn.run.submitting span:first-child,
   .header-btn.run.submitted span:first-child,
   .placeholder-icon {
     animation: none;
+  }
+  .header-btn:active,
+  .dialog-btn:active,
+  .validation-action-btn:active {
+    transform: none;
   }
   .error-slide-enter-active,
   .error-slide-leave-active,
@@ -1681,16 +1694,16 @@ defineExpose({
 /* ── 动画：错误条滑入 ──────────────────────────────────────── */
 .error-slide-enter-active {
   transition:
-    opacity 0.2s ease,
-    max-height 0.24s ease,
-    margin 0.24s ease;
+    opacity var(--motion-base) var(--ease-standard),
+    max-height var(--motion-slow) var(--ease-standard),
+    margin var(--motion-slow) var(--ease-standard);
   overflow: hidden;
 }
 .error-slide-leave-active {
   transition:
-    opacity 0.16s ease,
-    max-height 0.2s ease,
-    margin 0.2s ease;
+    opacity var(--motion-fast) var(--ease-standard),
+    max-height var(--motion-base) var(--ease-standard),
+    margin var(--motion-base) var(--ease-standard);
   overflow: hidden;
 }
 .error-slide-enter-from,
@@ -1704,14 +1717,14 @@ defineExpose({
 /* ── 动画：校验面板下滑展开 ────────────────────────────────── */
 .panel-slide-down-enter-active {
   transition:
-    opacity 0.2s ease,
-    max-height 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+    opacity var(--motion-base) var(--ease-standard),
+    max-height var(--motion-slow) var(--ease-emphasized);
   overflow: hidden;
 }
 .panel-slide-down-leave-active {
   transition:
-    opacity 0.16s ease,
-    max-height 0.2s ease;
+    opacity var(--motion-fast) var(--ease-standard),
+    max-height var(--motion-base) var(--ease-standard);
   overflow: hidden;
 }
 .panel-slide-down-enter-from,
@@ -1722,22 +1735,22 @@ defineExpose({
 
 /* ── 动画：对话框淡入缩放 ──────────────────────────────────── */
 .dialog-fade-enter-active {
-  transition: opacity 0.2s ease;
+  transition: opacity var(--motion-base) var(--ease-standard);
 }
 .dialog-fade-enter-active .create-dialog,
 .dialog-fade-enter-active .props-dialog {
   transition:
-    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 0.2s ease;
+    transform var(--motion-slow) var(--ease-emphasized),
+    opacity var(--motion-base) var(--ease-standard);
 }
 .dialog-fade-leave-active {
-  transition: opacity 0.16s ease;
+  transition: opacity var(--motion-fast) var(--ease-standard);
 }
 .dialog-fade-leave-active .create-dialog,
 .dialog-fade-leave-active .props-dialog {
   transition:
-    transform 0.16s ease,
-    opacity 0.16s ease;
+    transform var(--motion-fast) var(--ease-standard),
+    opacity var(--motion-fast) var(--ease-standard);
 }
 .dialog-fade-enter-from,
 .dialog-fade-leave-to {

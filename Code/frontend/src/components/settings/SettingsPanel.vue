@@ -397,7 +397,7 @@ onUnmounted(() => {
 }
 
 .session-chip:hover {
-  border-color: var(--success-border);
+  border-color: var(--success);
   background: var(--success-surface);
 }
 
@@ -557,6 +557,15 @@ onUnmounted(() => {
 
 .retry-btn:hover {
   background: var(--accent-border);
+}
+
+/* 键盘焦点可达性：统一交互元素 focus-visible 轮廓 */
+.session-chip:focus-visible,
+.close-btn:focus-visible,
+.nav-item:focus-visible,
+.retry-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 @media (max-width: 640px) {

@@ -5,7 +5,7 @@
   border-radius: 1.4rem;
   border: 1px solid var(--border-default);
   background:
-    radial-gradient(circle at top, rgba(66, 130, 255, 0.14), transparent 28rem),
+    radial-gradient(circle at top, var(--ambient-blue-glow), transparent 28rem),
     linear-gradient(180deg, var(--surface-2), var(--surface-2));
   /* 性能优化：contained paint layer */
   contain: layout style paint;
@@ -23,7 +23,7 @@
 .map-host {
   z-index: 0;
   opacity: 0.01;
-  transition: opacity 0.45s ease;
+  transition: opacity var(--motion-slow) var(--ease-standard);
 }
 
 .map-host.visible {
@@ -36,10 +36,10 @@
   z-index: 0;
   overflow: hidden;
   background:
-    radial-gradient(circle at 28% 36%, rgba(87, 166, 255, 0.18), transparent 16rem),
+    radial-gradient(circle at 28% 36%, var(--ambient-blue-glow), transparent 16rem),
     linear-gradient(180deg, var(--surface-2), var(--surface-2));
   opacity: 1;
-  transition: opacity 0.35s ease;
+  transition: opacity var(--motion-slow) var(--ease-standard);
 }
 
 .map-skeleton.hidden {
@@ -72,7 +72,7 @@
   height: 0.9rem;
   border-radius: 999px;
   background: var(--border-strong);
-  box-shadow: 0 0 0 10px rgba(82, 134, 255, 0.08);
+  box-shadow: 0 0 0 10px var(--ambient-blue-soft);
 }
 
 .skeleton-node-a {
@@ -121,7 +121,7 @@
   /* 性能优化：GPU 加速，仅 opacity 使用过渡 */
   transform: translateZ(0);
   will-change: opacity;
-  transition: opacity 0.22s ease;
+  transition: opacity var(--motion-base) var(--ease-standard);
 }
 
 .time-sheen {
@@ -143,7 +143,7 @@
   /* 性能优化：GPU 加速，仅 opacity 使用过渡 */
   transform: translateZ(0);
   will-change: opacity;
-  transition: opacity 0.35s ease;
+  transition: opacity var(--motion-slow) var(--ease-standard);
 }
 
 /* 浅色：氛围光改冷青，避免暖橙光透过圆角渗到外壳边缘看起来像黄边 */
@@ -181,7 +181,7 @@
   transform: translateZ(0);
   will-change: opacity;
   opacity: 0.92;
-  transition: opacity 0.35s ease;
+  transition: opacity var(--motion-slow) var(--ease-standard);
 }
 
 .weather-overlay {
@@ -189,8 +189,8 @@
   pointer-events: none;
   opacity: 0.24;
   background:
-    radial-gradient(circle at 18% 30%, rgba(82, 134, 255, 0.12), transparent 18rem),
-    radial-gradient(circle at 78% 24%, rgba(82, 134, 255, 0.12), transparent 20rem),
+    radial-gradient(circle at 18% 30%, var(--ambient-blue-soft), transparent 18rem),
+    radial-gradient(circle at 78% 24%, var(--ambient-blue-soft), transparent 20rem),
     radial-gradient(circle at 52% 72%, var(--surface-hover), transparent 16rem);
   /* 性能优化：移除 filter blur，改用背景渐变透明度，GPU 加速 */
   transform: translateZ(0);
@@ -260,9 +260,9 @@
   opacity: 0.2;
 }
 
-/* 无可见数据图层或设置关闭：任意缩放下关闭氛围遮罩，并去掉舞台雾感底 */
+/* 无可见数据图层或设置关闭：隐藏氛围遮罩；舞台底透明，避免浅色底板透过底图 */
 .map-stage.map-stage-chrome-off {
-  background: var(--surface-1);
+  background: transparent;
 }
 .map-stage.map-stage-chrome-off .map-fog,
 .map-stage.map-stage-chrome-off .time-sheen,
@@ -270,17 +270,14 @@
 .map-stage.map-stage-chrome-off .weather-overlay,
 .map-stage.map-stage-chrome-off .grid-overlay,
 .map-stage.map-stage-chrome-off .basemap-transition-mask {
-  opacity: 0;
+  opacity: 0 !important;
   pointer-events: none;
 }
 
-/* 全球视口淡底：仅在有可见数据图层时启用，纯底图时保持清晰 */
-.map-stage.map-stage-global-view:not(.map-stage-distribution) .map-fog,
-.map-stage.map-stage-global-view:not(.map-stage-distribution) .time-sheen,
-.map-stage.map-stage-global-view:not(.map-stage-distribution) .time-band,
-.map-stage.map-stage-global-view:not(.map-stage-distribution) .weather-overlay,
-.map-stage.map-stage-global-view:not(.map-stage-distribution) .grid-overlay {
-  opacity: 0;
+/* 全球视口且未进入分布淡底：同样清掉氛围层，保证纯底图清晰 */
+.map-stage.map-stage-global-view:not(.map-stage-distribution)
+  :is(.map-fog, .time-sheen, .time-band, .weather-overlay, .grid-overlay) {
+  opacity: 0 !important;
 }
 
 /* 空状态不再额外加暗（无图层时由 chrome-off 清底图） */
@@ -317,7 +314,7 @@
 
 .chip.secondary {
   color: var(--text-strong);
-  border-color: rgba(90, 162, 255, 0.36);
+  border-color: var(--border-strong);
   background: rgba(36, 90, 170, 0.16);
 }
 
@@ -328,13 +325,13 @@
 }
 .chip-partial {
   color: var(--accent-warm);
-  border-color: rgba(255, 196, 120, 0.18);
-  background: rgba(255, 196, 120, 0.08);
+  border-color: var(--warning-border);
+  background: var(--warning-surface);
 }
 .chip-empty {
   color: var(--accent-strong);
-  border-color: rgba(187, 137, 255, 0.18);
-  background: rgba(187, 137, 255, 0.08);
+  border-color: var(--border-violet-tint);
+  background: var(--surface-violet-tint);
 }
 
 .map-note {
@@ -348,7 +345,7 @@
   padding: 0.46rem 0.54rem;
   border-radius: 0.82rem;
   background: var(--surface-1);
-  border: 1px solid rgba(90, 162, 255, 0.12);
+  border: 1px solid var(--surface-blue-tint);
 }
 
 .map-note h2 {
@@ -412,7 +409,7 @@
   cursor: pointer;
   /* 性能优化：GPU 加速，仅 opacity 使用过渡 */
   will-change: opacity;
-  transition: opacity 0.28s ease;
+  transition: opacity var(--motion-slow) var(--ease-standard);
 }
 
 .hotspot-core {
@@ -426,8 +423,8 @@
     0 0 0 var(--hotspot-halo-size) rgba(90, 106, 128, 0.3);
   /* 性能优化：仅 GPU 属性过渡 */
   transition:
-    transform 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-    box-shadow 0.28s ease;
+    transform var(--motion-slow) var(--ease-standard),
+    box-shadow var(--motion-slow) var(--ease-standard);
 }
 
 .hotspot-label {
@@ -438,10 +435,10 @@
   border: 1px solid var(--border-default);
   color: var(--text-strong);
   white-space: nowrap;
-  box-shadow: 0 10px 18px rgba(1, 8, 16, 0.18);
+  box-shadow: 0 10px 18px var(--shadow-ambient);
   opacity: var(--hotspot-label-opacity);
   will-change: opacity;
-  transition: opacity 0.28s ease;
+  transition: opacity var(--motion-slow) var(--ease-standard);
   transform: translateZ(0);
 }
 
@@ -494,7 +491,7 @@
   border: 1px solid var(--danger-border);
   color: var(--danger);
   font-size: var(--font-size-caption);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 4px 16px var(--shadow-ambient-strong);
 }
 
 .tile-error-icon {
@@ -507,15 +504,15 @@
   margin-left: 0.18rem;
   padding: 0.18rem 0.46rem;
   border-radius: 999px;
-  border: 1px solid rgba(255, 140, 140, 0.3);
+  border: 1px solid var(--danger-border);
   background: var(--danger-surface);
   color: var(--danger);
   font-size: var(--font-size-caption);
   font-family: inherit;
   cursor: pointer;
   transition:
-    background 0.18s ease,
-    color 0.18s ease;
+    background var(--motion-base) var(--ease-standard),
+    color var(--motion-base) var(--ease-standard);
 }
 
 .tile-retry-btn:hover {
@@ -536,10 +533,10 @@
   padding: 0.38rem 0.7rem;
   border-radius: 999px;
   background: var(--surface-1);
-  border: 1px solid rgba(100, 160, 255, 0.25);
+  border: 1px solid var(--border-accent);
   color: var(--accent);
   font-size: var(--font-size-caption);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 4px 16px var(--shadow-ambient-strong);
 }
 
 .weather-loading-dot {
@@ -547,7 +544,7 @@
   height: 0.48rem;
   border-radius: 999px;
   background: var(--accent-strong);
-  box-shadow: 0 0 0 6px rgba(100, 160, 255, 0.12);
+  box-shadow: 0 0 0 6px var(--surface-blue-tint);
   animation: weather-pulse 1.2s ease-in-out infinite;
 }
 
@@ -574,10 +571,10 @@
   padding: 0.38rem 0.7rem;
   border-radius: 999px;
   background: var(--surface-2);
-  border: 1px solid rgba(120, 200, 160, 0.28);
+  border: 1px solid var(--success-border);
   color: var(--success);
   font-size: var(--font-size-caption);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 4px 16px var(--shadow-ambient-strong);
 }
 
 /* 天气瓦片错误横幅 */
@@ -596,7 +593,7 @@
   border: 1px solid var(--warning-border);
   color: var(--warning);
   font-size: var(--font-size-caption);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 4px 16px var(--shadow-ambient-strong);
   max-width: min(80%, 36rem);
   max-height: 2.6rem;
   overflow: hidden;
@@ -687,9 +684,9 @@
   align-items: center;
   justify-content: center;
   transition:
-    border-color 0.2s ease,
-    color 0.2s ease,
-    background 0.2s ease;
+    border-color var(--motion-base) var(--ease-standard),
+    color var(--motion-base) var(--ease-standard),
+    background var(--motion-base) var(--ease-standard);
   pointer-events: auto;
 }
 
@@ -719,7 +716,7 @@
   gap: 0.5rem;
   max-width: 18rem;
   padding: 0.55rem 0.7rem;
-  border: 1px solid rgba(255, 138, 138, 0.28);
+  border: 1px solid var(--danger-border);
   border-radius: 0.6rem;
   background: var(--surface-2);
   backdrop-filter: blur(10px);
@@ -768,14 +765,19 @@
 }
 
 .locate-error-close:hover {
-  color: var(--danger);
+  color: var(--accent-strong);
+  transform: translateY(-1px);
+}
+
+.locate-error-close:active {
+  transform: translateY(0);
 }
 
 .locate-error-enter-active,
 .locate-error-leave-active {
   transition:
-    opacity 0.25s ease,
-    transform 0.25s ease;
+    opacity var(--motion-base) var(--ease-standard),
+    transform var(--motion-base) var(--ease-standard);
 }
 
 .locate-error-enter-from,
@@ -843,6 +845,14 @@
     transform: translate(-50%, -50%) scale(2.5);
     opacity: 0;
   }
+}
+
+/* ── 无障碍：键盘焦点 ── */
+.locate-me-btn:focus-visible,
+.tile-retry-btn:focus-visible,
+.hotspot-pin:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ── 无障碍：减少动效 ─────────────────────────────────────────────────── */
