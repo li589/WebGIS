@@ -14,7 +14,7 @@
  * col-row / col-field / col-select / action-row / cancel-btn / confirm-btn）。
  */
 import { computed, nextTick, ref, watch } from 'vue'
-import { Map, X } from 'lucide-vue-next'
+import { Map, X, AlertTriangle } from '../../components/ui/icons'
 import { listCrs, transformBounds } from '@/services/crs'
 import type { CRSOption } from '@/services/crs'
 import { fetchCrsOptionsExpanded } from '@/services/data-import'
@@ -314,7 +314,9 @@ watch(
       <div class="preview-block" :class="{ invalid: !previewValid }">
         <div class="preview-label">
           转换后 WGS84 bounds
-          <span v-if="!previewValid" class="preview-warn">⚠ 转换失败或越界</span>
+          <span v-if="!previewValid" class="preview-warn"
+            ><AlertTriangle :size="14" aria-hidden="true" /> 转换失败或越界</span
+          >
         </div>
         <div class="preview-value mono">{{ formatBounds(previewBounds) }}</div>
         <div class="preview-hint">
@@ -345,7 +347,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 10, 18, 0.52);
+  background: var(--surface-raised);
 }
 
 .csv-dialog-panel {
@@ -358,7 +360,7 @@ watch(
   gap: 0.6rem;
   padding: 0.82rem;
   border-radius: 1rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   background: var(--surface-1);
   box-shadow: 0 24px 60px rgba(1, 8, 16, 0.48);
 }
@@ -368,8 +370,8 @@ watch(
   align-items: center;
   gap: 0.38rem;
   padding-bottom: 0.48rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.1);
-  color: #e8f3fc;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-strong);
   font-size: var(--font-size-caption);
   font-weight: 600;
 }
@@ -391,7 +393,7 @@ watch(
   font-size: var(--font-size-caption);
 }
 .close-btn:hover:not(:disabled) {
-  background: rgba(136, 192, 255, 0.1);
+  background: var(--border-subtle);
   color: var(--text-primary);
 }
 .close-btn:disabled {
@@ -453,7 +455,7 @@ watch(
   display: inline-block;
   padding: 0.12rem 0.42rem;
   border-radius: 0.32rem;
-  background: rgba(90, 213, 255, 0.14);
+  background: var(--accent-surface);
   border: 1px solid var(--border-accent);
   color: var(--accent);
   font-weight: 600;
@@ -510,13 +512,13 @@ watch(
 .preview-block {
   padding: 0.52rem;
   border-radius: 0.5rem;
-  border: 1px solid rgba(90, 213, 255, 0.18);
-  background: rgba(10, 132, 255, 0.06);
+  border: 1px solid var(--accent-surface);
+  background: var(--accent-surface);
 }
 
 .preview-block.invalid {
-  border-color: rgba(255, 140, 100, 0.32);
-  background: rgba(255, 100, 77, 0.06);
+  border-color: var(--danger-border);
+  background: var(--danger-surface);
 }
 
 .preview-label {
@@ -595,17 +597,17 @@ watch(
 }
 .skip-btn:hover:not(:disabled) {
   background: rgba(255, 200, 120, 0.14);
-  color: #ffe0a8;
+  color: var(--warning);
 }
 
 .confirm-btn {
   border: 1px solid var(--accent-border);
-  background: rgba(10, 132, 255, 0.28);
-  color: #a8e8ff;
+  background: var(--border-accent);
+  color: var(--accent-strong);
   font-weight: 600;
 }
 .confirm-btn:hover:not(:disabled) {
-  background: rgba(10, 132, 255, 0.48);
-  color: #d0f0ff;
+  background: var(--border-strong);
+  color: var(--text-primary);
 }
 </style>

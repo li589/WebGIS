@@ -159,8 +159,8 @@ function cellText(value: unknown): string {
 }
 .analysis-chart-card,
 .analysis-table-card {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--surface-hover);
+  border: 1px solid var(--surface-hover);
   border-radius: 8px;
   padding: 10px 12px;
 }
@@ -183,7 +183,7 @@ function cellText(value: unknown): string {
 }
 .analysis-table-card th,
 .analysis-table-card td {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--surface-hover);
   padding: 4px 6px;
   text-align: left;
   white-space: nowrap;

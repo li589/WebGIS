@@ -8,7 +8,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch, type ComputedRef, typ
 import { getWeatherCoverage, type WeatherCoverage } from '../../services/runtime-api'
 import type { useWeatherEngineStore } from '../../stores/weather-engine'
 import type { useWeatherSyncStatusStore } from '../../stores/weather-sync-status'
-import type { useLayersStore } from '../../stores/layers'
+import { useLayerViewport } from '../../stores/layers/selectors'
 
 interface ActiveLayerLike {
   name?: string
@@ -18,11 +18,11 @@ interface ActiveLayerLike {
 export function useWeatherCoverage(
   weatherEngine: ReturnType<typeof useWeatherEngineStore>,
   weatherSyncStatus: ReturnType<typeof useWeatherSyncStatusStore>,
-  layersStore: ReturnType<typeof useLayersStore>,
   selectedLayerDisplay: Ref<{ catalogId?: string } | null | undefined>,
   unifiedTimeLock: Ref<boolean>,
   activeLayer: ComputedRef<ActiveLayerLike>,
 ) {
+  const viewport = useLayerViewport()
   const weatherCoverage = ref<WeatherCoverage | null>(null)
   let coverageAbort: AbortController | null = null
 
@@ -60,7 +60,7 @@ export function useWeatherCoverage(
     () => weatherEngine.defaultModel,
     () => {
       void refreshWeatherCoverage()
-      layersStore.flushWeatherTileViewports()
+      viewport.flushWeatherTileViewports()
     },
   )
 

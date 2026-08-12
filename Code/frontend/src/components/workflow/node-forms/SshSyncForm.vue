@@ -13,6 +13,7 @@
  *   - 连接状态指示器（GET /api/remote/test?server=...）
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { Check, AlertTriangle } from '../../ui/icons'
 import type { LGraphNodeClass } from '../litegraph-setup'
 import { requestJson } from '../../../services/_http'
 import RemoteDirBrowser from './RemoteDirBrowser.vue'
@@ -327,8 +328,12 @@ function toggleFilter(ext: string) {
 
     <!-- 校验状态摘要 -->
     <div class="form-summary" :class="{ valid: errorCount === 0, invalid: errorCount > 0 }">
-      <template v-if="errorCount === 0">✓ 表单校验通过</template>
-      <template v-else>⚠ 请修正 {{ errorCount }} 处错误</template>
+      <template v-if="errorCount === 0"
+        ><Check :size="14" aria-hidden="true" /> 表单校验通过</template
+      >
+      <template v-else
+        ><AlertTriangle :size="14" aria-hidden="true" /> 请修正 {{ errorCount }} 处错误</template
+      >
     </div>
 
     <!-- 远程目录浏览对话框 -->
@@ -370,21 +375,21 @@ function toggleFilter(ext: string) {
   margin-left: auto;
   padding: 0.12rem 0.36rem;
   border-radius: 0.28rem;
-  border: 1px solid rgba(90, 213, 255, 0.35);
-  background: rgba(90, 213, 255, 0.1);
+  border: 1px solid var(--border-strong);
+  background: var(--accent-surface);
   color: var(--accent);
   font-size: var(--font-size-caption);
   cursor: pointer;
 }
 
 .sys-fill-btn:hover {
-  background: rgba(90, 213, 255, 0.2);
+  background: var(--accent-border);
 }
 
 .form-input {
   width: 100%;
   padding: 0.32rem 0.42rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.36rem;
   background: var(--surface-raised);
   color: var(--text-primary);
@@ -395,11 +400,11 @@ function toggleFilter(ext: string) {
 
 .form-input:focus {
   outline: none;
-  border-color: rgba(90, 213, 255, 0.4);
+  border-color: var(--border-strong);
 }
 
 .form-input:read-only {
-  background: rgba(4, 12, 23, 0.3);
+  background: var(--surface-sunken);
   color: var(--text-faint);
   cursor: default;
 }
@@ -438,9 +443,9 @@ function toggleFilter(ext: string) {
 .mini-btn {
   flex: none;
   padding: 0.3rem 0.52rem;
-  border: 1px solid rgba(90, 213, 255, 0.35);
+  border: 1px solid var(--border-strong);
   border-radius: 0.32rem;
-  background: rgba(10, 132, 255, 0.12);
+  background: var(--accent-surface);
   color: var(--accent);
   font: inherit;
   font-size: var(--font-size-caption);
@@ -451,7 +456,7 @@ function toggleFilter(ext: string) {
 
 .browse-btn:hover:not(:disabled),
 .mini-btn:hover:not(:disabled) {
-  background: rgba(10, 132, 255, 0.24);
+  background: var(--accent-border);
   color: var(--success);
 }
 
@@ -473,24 +478,24 @@ function toggleFilter(ext: string) {
   width: 0.56rem;
   height: 0.56rem;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--surface-3);
 }
 
 .conn-dot.idle {
-  background: #4a5a6a;
+  background: var(--text-disabled);
 }
 
 .conn-dot.testing {
-  background: #ffd38a;
+  background: var(--accent-warm);
   animation: pulse 1s ease-in-out infinite;
 }
 
 .conn-dot.ok {
-  background: #72ffcf;
+  background: var(--success);
 }
 
 .conn-dot.fail {
-  background: #ff8a8a;
+  background: var(--danger);
 }
 
 @keyframes pulse {
@@ -522,7 +527,7 @@ function toggleFilter(ext: string) {
 
 .filter-tag {
   padding: 0.18rem 0.48rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  border: 1px solid var(--border-default);
   border-radius: 0.28rem;
   background: var(--surface-sunken);
   color: var(--text-muted);
@@ -535,13 +540,13 @@ function toggleFilter(ext: string) {
 }
 
 .filter-tag:hover:not(:disabled) {
-  border-color: rgba(90, 213, 255, 0.4);
-  color: #c4d6e8;
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
 }
 
 .filter-tag.active {
-  background: rgba(90, 213, 255, 0.22);
-  border-color: rgba(90, 213, 255, 0.55);
+  background: var(--accent-border);
+  border-color: var(--border-strong);
   color: var(--accent);
 }
 
@@ -553,7 +558,7 @@ function toggleFilter(ext: string) {
 /* 字段错误提示 */
 .field-error {
   font-size: var(--font-size-caption);
-  color: #ff7b7b;
+  color: var(--danger);
   margin-top: 0.06rem;
   line-height: 1.3;
 }
@@ -569,14 +574,14 @@ function toggleFilter(ext: string) {
 }
 
 .form-summary.valid {
-  background: rgba(114, 255, 207, 0.08);
-  color: #72ffcf;
-  border-color: rgba(114, 255, 207, 0.22);
+  background: var(--success-surface);
+  color: var(--success);
+  border-color: var(--success-border);
 }
 
 .form-summary.invalid {
   background: rgba(255, 123, 123, 0.08);
-  color: #ff7b7b;
+  color: var(--danger);
   border-color: rgba(255, 123, 123, 0.22);
 }
 </style>

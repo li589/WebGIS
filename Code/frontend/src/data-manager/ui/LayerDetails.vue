@@ -4,12 +4,12 @@ import { fetchImportedLayerGeojson, fetchImportedLayerMeta } from '../core/api'
 import { exportLayer, type ExportFormat } from '../adapters/export'
 import { focusImportedLayer, removeImportedLayer } from '../adapters/layers'
 import { dataWorkspaceLayerId, openDataWorkspace } from '../core/workspace-store'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { useLogStore } from '../../stores/log'
 import { DATA_COPY } from '../../ui-copy'
 import AppSelect from '../../components/ui/AppSelect.vue'
 
-const layersStore = useLayersStore()
+const workspace = useLayerWorkspace()
 const logStore = useLogStore()
 
 const meta = ref<Record<string, unknown> | null>(null)
@@ -18,7 +18,7 @@ const error = ref('')
 const msg = ref('')
 
 const importedLayers = computed(() =>
-  layersStore.activeLayers.filter((l) => l.importedVector || l.importedRaster),
+  workspace.activeLayers.value.filter((l) => l.importedVector || l.importedRaster),
 )
 
 const selectedLayer = computed(() => {
@@ -35,7 +35,7 @@ const backendId = computed(() => {
 
 const isVector = computed(() => Boolean(selectedLayer.value?.importedVector))
 
-const styleColor = ref('#7ee0a8')
+const styleColor = ref('var(--success)')
 const styleWidth = ref(2)
 const styleRadius = ref(4)
 const styleFillOpacity = ref(0.25)
@@ -45,7 +45,7 @@ watch(
   (id) => {
     if (id) dataWorkspaceLayerId.value = id
     const st = selectedLayer.value?.importedVector?.style
-    styleColor.value = st?.color ?? '#7ee0a8'
+    styleColor.value = st?.color ?? 'var(--success)'
     styleWidth.value = st?.width ?? 2
     styleRadius.value = st?.radius ?? 4
     styleFillOpacity.value = st?.fillOpacity ?? 0.25
@@ -74,7 +74,7 @@ function onSelectLayer(val: string) {
 
 function applyStyle() {
   if (!selectedLayer.value?.importedVector) return
-  layersStore.setImportedVectorStyle(selectedLayer.value.instanceId, {
+  workspace.setImportedVectorStyle(selectedLayer.value.instanceId, {
     color: styleColor.value,
     width: styleWidth.value,
     radius: styleRadius.value,
@@ -89,7 +89,7 @@ async function loadFullGeojson() {
   error.value = ''
   try {
     const gj = await fetchImportedLayerGeojson(backendId.value, false)
-    layersStore.updateImportedVectorGeojson(selectedLayer.value.instanceId, gj, {
+    workspace.updateImportedVectorGeojson(selectedLayer.value.instanceId, gj, {
       featureCount: gj.features.length,
       truncated: false,
     })
@@ -144,7 +144,7 @@ async function removeLayer() {
     msg.value = DATA_COPY.layerRemoved
   } catch (e) {
     // 后端清理失败时前端仍已移除，但需告知用户
-    layersStore.removeLayer(id)
+    workspace.removeLayer(id)
     dataWorkspaceLayerId.value = null
     error.value = `前端已移除，后端清理失败：${e instanceof Error ? e.message : String(e)}`
   } finally {
@@ -295,14 +295,14 @@ label {
   flex-direction: column;
   gap: 0.16rem;
   font-size: var(--font-size-caption);
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 input,
 select {
   border: 1px solid var(--border-default);
   border-radius: 0.34rem;
   padding: 0.28rem 0.4rem;
-  background: rgba(4, 12, 23, 0.72);
+  background: var(--surface-1);
   color: var(--text-primary);
   font: inherit;
   font-size: var(--font-size-caption);
@@ -313,16 +313,16 @@ input[type='color'] {
   padding: 0.1rem;
 }
 .card {
-  border: 1px solid rgba(136, 192, 255, 0.12);
+  border: 1px solid var(--border-default);
   border-radius: 0.48rem;
   padding: 0.55rem 0.65rem;
-  background: rgba(4, 12, 23, 0.35);
+  background: var(--surface-sunken);
 }
 .card h3 {
   margin: 0 0 0.4rem;
   font-size: var(--font-size-caption);
   font-weight: 600;
-  color: #9ec4e0;
+  color: var(--text-secondary);
 }
 dl {
   margin: 0;
@@ -336,7 +336,7 @@ dl > div {
   font-size: var(--font-size-caption);
 }
 dt {
-  color: #6a8094;
+  color: var(--text-faint);
 }
 dd {
   margin: 0;
@@ -348,7 +348,7 @@ dd {
   word-break: break-all;
 }
 .warn {
-  color: #ffd166;
+  color: var(--warning);
 }
 .style-grid {
   display: grid;
@@ -371,19 +371,19 @@ dd {
   cursor: pointer;
 }
 .ghost-btn {
-  border: 1px solid rgba(136, 192, 255, 0.2);
-  background: rgba(4, 12, 23, 0.55);
-  color: #c5d8ea;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--text-primary);
 }
 .primary-btn {
-  border: 1px solid rgba(90, 213, 255, 0.35);
-  background: rgba(10, 132, 255, 0.22);
-  color: #a8e8ff;
+  border: 1px solid var(--border-strong);
+  background: var(--accent-border);
+  color: var(--accent-strong);
 }
 .danger-btn {
   border: 1px solid rgba(255, 120, 120, 0.35);
   background: rgba(120, 20, 20, 0.25);
-  color: #ffb0b0;
+  color: var(--danger);
 }
 .empty,
 .err,
@@ -392,12 +392,12 @@ dd {
   font-size: var(--font-size-caption);
 }
 .empty {
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 .err {
-  color: #ffb0b0;
+  color: var(--danger);
 }
 .ok {
-  color: #9ec4e0;
+  color: var(--text-secondary);
 }
 </style>

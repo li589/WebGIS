@@ -24,28 +24,28 @@ const __dirname = dirname(__filename)
 const FRONTEND_ROOT = join(__dirname, '..')
 const SRC_ROOT = join(FRONTEND_ROOT, 'src')
 
-// ═══ 豁免清单 ═══
-const EXEMPT_PATHS = [
-  'src/components/map/weather-render.ts',
-  'src/components/map/layer-symbology.ts',
-  'src/components/map/wind-particle-webgl-shaders.ts',
-  'src/components/map/scalar-field-webgl-shaders.ts',
-  'src/components/map/wind-particle-webgl-texture.ts',
-  'src/components/map/scalar-field-webgl-texture.ts',
-  'src/components/map/scalar-field-webgl-renderer.ts',
-  'src/components/map/scalar-field-webgl-controller.ts',
-  'src/components/workflow/litegraph-ui-overrides.css',
-  'src/styles/tokens.css',
-  'src/styles/token-map.ts',
-]
+// ═══ 豁免清单（从 token-map.ts 单一真源动态读取）═══
+function loadExemptPaths() {
+  const tokenMapPath = join(SRC_ROOT, 'styles', 'token-map.ts')
+  const content = readFileSync(tokenMapPath, 'utf-8')
+  const match = content.match(/export const EXEMPT_PATHS = \[([\s\S]*?)\]/)
+  if (!match) throw new Error('无法从 token-map.ts 解析 EXEMPT_PATHS')
+  const paths = match[1].match(/'([^']+)'/g)
+  if (!paths) throw new Error('EXEMPT_PATHS 为空或格式异常')
+  return paths.map((s) => s.slice(1, -1))
+}
+
+// 审计脚本自身额外豁免（token-map.ts 自身文件）
+const SELF_EXEMPT = ['src/styles/token-map.ts']
+const EXEMPT_PATHS = [...loadExemptPaths(), ...SELF_EXEMPT]
 
 // ═══ hex → token 映射 ═══
 const HEX_TOKEN_MAP = {
-  'f0faff': '--text-strong',
-  'd8e6f5': '--text-primary',
-  'dfeefe': '--text-primary',
-  'd5e5f5': '--text-primary',
-  'd9ebfb': '--text-primary',
+  f0faff: '--text-strong',
+  d8e6f5: '--text-primary',
+  dfeefe: '--text-primary',
+  d5e5f5: '--text-primary',
+  d9ebfb: '--text-primary',
   '9fb6cc': '--text-secondary',
   '8aa8bf': '--text-muted',
   '8cb5d9': '--text-muted',
@@ -53,16 +53,21 @@ const HEX_TOKEN_MAP = {
   '5a7080': '--text-disabled',
   '5ad5ff': '--accent',
   '88dfff': '--accent-strong',
-  'ffc878': '--accent-warm',
+  ffc878: '--accent-warm',
   '9ff8cf': '--success',
-  'ffb070': '--warning',
-  'ff8c64': '--danger',
+  ffb070: '--warning',
+  ff8c64: '--danger',
   '020814': '--surface-base',
   '040c17': '--surface-sunken',
   '08111f': '--surface-1',
   '0d1727': '--surface-2',
   '121e30': '--surface-3',
-  '142842': '--surface-hover',
+  142842: '--surface-hover',
+  // 工作流端口语义色
+  ff8fb1: '--port-time',
+  ffd5a8: '--port-numeric',
+  ffe08a: '--port-text',
+  c084fc: '--recent-accent',
 }
 
 // ═══ 工具函数 ═══
@@ -71,7 +76,10 @@ function normalizeHex(input) {
   const cleaned = input.replace(/^#/, '').toLowerCase()
   if (/^[0-9a-f]{6}$/.test(cleaned)) return cleaned
   if (/^[0-9a-f]{3}$/.test(cleaned)) {
-    return cleaned.split('').map(c => c + c).join('')
+    return cleaned
+      .split('')
+      .map((c) => c + c)
+      .join('')
   }
   if (/^[0-9a-f]{8}$/.test(cleaned)) return cleaned.slice(0, 6)
   return null
@@ -79,7 +87,7 @@ function normalizeHex(input) {
 
 function isExempt(filePath) {
   const normalized = filePath.replace(/\\/g, '/')
-  return EXEMPT_PATHS.some(p => normalized.endsWith(p))
+  return EXEMPT_PATHS.some((p) => normalized.endsWith(p))
 }
 
 function findFiles(dir, exts, results = []) {
@@ -92,7 +100,7 @@ function findFiles(dir, exts, results = []) {
       if (entry === 'node_modules' || entry === 'dist' || entry === '.git') continue
       findFiles(fullPath, exts, results)
     } else {
-      if (exts.some(ext => entry.endsWith(ext))) {
+      if (exts.some((ext) => entry.endsWith(ext))) {
         results.push(fullPath)
       }
     }
@@ -109,7 +117,8 @@ function auditHexColors(filePath, lines) {
 
   lines.forEach((line, idx) => {
     // 跳过注释行
-    if (line.trim().startsWith('//') || line.trim().startsWith('*') || line.trim().startsWith('/*')) return
+    if (line.trim().startsWith('//') || line.trim().startsWith('*') || line.trim().startsWith('/*'))
+      return
 
     // hex 匹配
     let match
@@ -117,6 +126,10 @@ function auditHexColors(filePath, lines) {
       const fullMatch = match[0]
       const hex = normalizeHex(fullMatch)
       if (!hex) continue
+      // 跳过 CSS var fallback: var(--token, #hex)
+      const beforeMatch = line.slice(0, match.index)
+      const afterMatch = line.slice(match.index + fullMatch.length)
+      if (/var\([^)]+,\s*$/.test(beforeMatch) && /^\s*\)/.test(afterMatch)) continue
       const token = HEX_TOKEN_MAP[hex]
       findings.push({
         file: relative(FRONTEND_ROOT, filePath),
@@ -154,7 +167,8 @@ function auditFontSize(filePath, lines) {
   const fontRegex = /font-size:\s*(0?\.[0-7]\d*rem|0\.79\d*rem|10px|11px)/gi
 
   lines.forEach((line, idx) => {
-    if (line.trim().startsWith('//') || line.trim().startsWith('*') || line.trim().startsWith('/*')) return
+    if (line.trim().startsWith('//') || line.trim().startsWith('*') || line.trim().startsWith('/*'))
+      return
     let match
     while ((match = fontRegex.exec(line)) !== null) {
       findings.push({
@@ -226,7 +240,7 @@ function main() {
   // 去重（同文件同行同值只算一次）
   const dedupe = (arr) => {
     const seen = new Set()
-    return arr.filter(f => {
+    return arr.filter((f) => {
       const key = `${f.file}:${f.line}:${f.value}`
       if (seen.has(key)) return false
       seen.add(key)
@@ -241,15 +255,23 @@ function main() {
   if (baselineMode) {
     // 基线模式：仅输出计数摘要
     console.log('═══ UI Token 审计基线 ═══')
-    console.log(`硬编码 hex（排除豁免）: ${hexFindings.length} 处 / ${new Set(hexFindings.map(f => f.file)).size} 文件`)
-    console.log(`低于 12px font-size: ${fontFindings.length} 处 / ${new Set(fontFindings.map(f => f.file)).size} 文件`)
+    console.log(
+      `硬编码 hex（排除豁免）: ${hexFindings.length} 处 / ${new Set(hexFindings.map((f) => f.file)).size} 文件`,
+    )
+    console.log(
+      `低于 12px font-size: ${fontFindings.length} 处 / ${new Set(fontFindings.map((f) => f.file)).size} 文件`,
+    )
     console.log(`非标断点: ${bpFindings.length} 处`)
     console.log('')
 
     // hex 按文件分布 Top 10
     const hexByFile = {}
-    hexFindings.forEach(f => { hexByFile[f.file] = (hexByFile[f.file] || 0) + 1 })
-    const sorted = Object.entries(hexByFile).sort((a, b) => b[1] - a[1]).slice(0, 10)
+    hexFindings.forEach((f) => {
+      hexByFile[f.file] = (hexByFile[f.file] || 0) + 1
+    })
+    const sorted = Object.entries(hexByFile)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
     console.log('hex 分布 Top 10:')
     sorted.forEach(([file, count]) => console.log(`  ${file}: ${count}`))
     return
@@ -261,7 +283,7 @@ function main() {
     if (hexFindings.length === 0) {
       console.log('  (无)')
     } else {
-      hexFindings.forEach(f => {
+      hexFindings.forEach((f) => {
         console.log(`  ${f.file}:${f.line}  ${f.value}  → ${f.suggestion}`)
       })
     }
@@ -271,7 +293,7 @@ function main() {
     if (bpFindings.length === 0) {
       console.log('  (无)')
     } else {
-      bpFindings.forEach(f => {
+      bpFindings.forEach((f) => {
         console.log(`  ${f.file}:${f.line}  ${f.value}  → ${f.suggestion}`)
       })
     }
@@ -283,21 +305,25 @@ function main() {
     console.log('  (无)')
   } else {
     const byFile = {}
-    fontFindings.forEach(f => {
+    fontFindings.forEach((f) => {
       if (!byFile[f.file]) byFile[f.file] = []
       byFile[f.file].push(f)
     })
     for (const [file, findings] of Object.entries(byFile)) {
       console.log(`  ${file} (${findings.length} 处):`)
-      findings.forEach(f => console.log(`    L${f.line}: ${f.value}  → ${f.suggestion}`))
+      findings.forEach((f) => console.log(`    L${f.line}: ${f.value}  → ${f.suggestion}`))
     }
   }
   console.log(`  总计: ${fontFindings.length} 处\n`)
 
   // 摘要
   console.log('═══ 摘要 ═══')
-  console.log(`硬编码 hex: ${hexFindings.length} 处 / ${new Set(hexFindings.map(f => f.file)).size} 文件`)
-  console.log(`低于 12px font-size: ${fontFindings.length} 处 / ${new Set(fontFindings.map(f => f.file)).size} 文件`)
+  console.log(
+    `硬编码 hex: ${hexFindings.length} 处 / ${new Set(hexFindings.map((f) => f.file)).size} 文件`,
+  )
+  console.log(
+    `低于 12px font-size: ${fontFindings.length} 处 / ${new Set(fontFindings.map((f) => f.file)).size} 文件`,
+  )
   console.log(`非标断点: ${bpFindings.length} 处`)
 }
 

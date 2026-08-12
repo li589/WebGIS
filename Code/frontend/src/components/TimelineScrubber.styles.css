@@ -1,0 +1,521 @@
+.timeline {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-1);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-default);
+  border-radius: 0.85rem;
+  padding: 0.48rem 0.75rem;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+  color: var(--text-primary);
+  user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  transition: all 0.2s ease;
+}
+
+.timeline-top {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+  min-height: 2rem;
+}
+
+.date-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  justify-self: start;
+  flex-shrink: 0;
+  min-width: max-content;
+  z-index: 2;
+}
+
+.calendar-icon {
+  width: 0.85rem;
+  height: 0.85rem;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.date-display {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.55rem;
+  background: var(--surface-1);
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-strong);
+  cursor: pointer;
+  flex-shrink: 0;
+  max-width: none;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.date-display:hover {
+  border-color: rgba(56, 189, 248, 0.45);
+  background: var(--surface-1);
+}
+
+.date-text {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Roboto, monospace;
+  font-size: var(--font-size-caption);
+  color: var(--accent);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.date-picker-hidden {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.date-weekday {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.date-today-badge {
+  font-size: var(--font-size-caption);
+  background: rgba(56, 189, 248, 0.2);
+  color: var(--accent);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 0 0.25rem;
+  border-radius: 0.2rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.nav-btn--now {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.18rem 0.38rem;
+  border-radius: 0.35rem;
+  border: 1px solid var(--surface-hover);
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.nav-btn--now:hover {
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--text-strong);
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.now-label {
+  font-family:
+    'JetBrains Mono', ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
+  font-style: normal;
+  font-weight: 600;
+  font-size: var(--font-size-caption);
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.time-heading {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: min(42%, 280px);
+  z-index: 1;
+  pointer-events: none;
+  text-align: center;
+}
+
+.time-heading .active-layer-tag,
+.time-heading .granularity-badge {
+  pointer-events: auto;
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  z-index: 2;
+  margin-left: auto;
+}
+
+.active-layer-tag {
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  color: var(--surface-base);
+  background: var(--surface-1);
+  border: 1px solid var(--surface-hover);
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.35rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  max-width: min(100%, 220px);
+  flex: 1 1 auto;
+  cursor: default;
+}
+
+.granularity-badge {
+  font-size: var(--font-size-caption);
+  padding: 0.12rem 0.4rem;
+  border-radius: 0.3rem;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--accent);
+  font-weight: 500;
+  flex: none;
+}
+
+.granularity-static {
+  border-color: var(--border-strong);
+  background: var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.granularity-month {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+}
+
+.divider {
+  width: 1px;
+  height: 1rem;
+  background: var(--surface-hover);
+  margin: 0 0.1rem;
+}
+
+.step-group {
+  display: flex;
+  align-items: center;
+  background: var(--surface-1);
+  border: 1px solid var(--surface-hover);
+  border-radius: 0.45rem;
+  padding: 0.1rem;
+  gap: 0.1rem;
+}
+
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.45rem;
+  padding: 0 0.4rem;
+  border-radius: 0.35rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: var(--font-size-caption);
+  transition: all 0.15s ease;
+}
+
+.action-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--surface-base);
+}
+
+.action-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.action-btn svg {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.play-btn {
+  color: var(--accent);
+}
+
+.play-btn--playing {
+  color: var(--warning);
+  background: rgba(245, 158, 11, 0.15);
+}
+
+.play-btn--menu-open {
+  border-color: rgba(56, 189, 248, 0.45);
+  color: var(--accent);
+}
+
+.lock-btn {
+  width: 1.45rem;
+  padding: 0;
+  border: 1px solid var(--surface-hover);
+  background: var(--surface-sunken);
+}
+
+.lock-btn--locked {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.18);
+  color: var(--warning);
+}
+
+.sync-btn {
+  width: 1.45rem;
+  padding: 0;
+  border: 1px solid var(--surface-hover);
+  background: var(--surface-sunken);
+}
+
+.sync-btn--on {
+  border-color: rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--accent);
+}
+
+.timeline-track {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.availability-caption {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 0.4rem;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  min-height: 1rem;
+}
+
+.availability-caption-side {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.availability-caption-main {
+  justify-self: start;
+  text-align: left;
+}
+
+.availability-caption-status {
+  justify-self: center;
+  text-align: center;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  padding: 0 0.15rem;
+}
+
+.availability-live {
+  justify-self: end;
+  text-align: right;
+}
+
+.availability-strip {
+  display: flex;
+  height: 4px;
+  gap: 2px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+
+.availability-segment {
+  flex: 1;
+  border-radius: 1px;
+  transition: opacity 0.15s ease;
+}
+
+.availability-ready {
+  background: var(--success);
+}
+
+.availability-partial {
+  background: var(--warning);
+}
+
+/* 高质感无数据标灰切片 */
+.availability-empty {
+  background: var(--border-strong);
+}
+
+.availability-error {
+  background: var(--danger);
+}
+
+.availability-static {
+  background: rgba(100, 116, 139, 0.2);
+}
+
+.track-interactive {
+  position: relative;
+  height: 1rem;
+  display: flex;
+  align-items: center;
+}
+
+.track-interactive.disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.track-shell {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0.35rem;
+  background: var(--surface-hover);
+  border: 1px solid var(--surface-hover);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.track-fill {
+  height: 100%;
+  width: var(--track-progress);
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.4), var(--accent-color, var(--accent)));
+  border-radius: 999px;
+}
+
+.slider {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+  height: 100%;
+  margin: 0;
+}
+
+.timeline-ticks {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  overflow: hidden;
+  position: relative;
+}
+
+.tick-button {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Roboto, monospace;
+  font-size: var(--font-size-caption);
+  padding: 0;
+  border-radius: 0.2rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.35rem;
+}
+
+.tick-label {
+  display: block;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* 次要刻度：不显示文字，仅显示细竖线 */
+.tick-button.tick-minor {
+  max-width: 6px;
+  flex: 0.4;
+}
+
+.tick-bar {
+  display: block;
+  width: 1px;
+  height: 0.5rem;
+  background: var(--border-strong);
+  border-radius: 1px;
+}
+
+.tick-button.tick-minor:hover .tick-bar {
+  background: var(--border-strong);
+  height: 0.65rem;
+}
+
+.tick-button.active,
+.tick-button:hover {
+  color: var(--surface-base);
+  background: var(--surface-hover);
+}
+
+.tick-button.active {
+  color: var(--accent);
+  font-weight: 600;
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.tick-button.tick-minor.active .tick-bar,
+.tick-button.tick-minor.active:hover .tick-bar {
+  background: var(--accent);
+  width: 2px;
+  height: 0.7rem;
+}
+
+/* 空数据刻度弱化 */
+.tick-button.tick-empty {
+  opacity: 0.4;
+}
+
+.tick-button.tick-error {
+  color: var(--danger);
+}
+
+/* 单位指示标签 */
+.tick-unit-badge {
+  flex: none;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  background: var(--surface-1);
+  border: 1px solid rgba(100, 116, 139, 0.2);
+  padding: 0.08rem 0.3rem;
+  border-radius: 0.22rem;
+  margin-left: 0.2rem;
+  align-self: center;
+  white-space: nowrap;
+  letter-spacing: 0.04em;
+}
+
+.timeline-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  margin-top: 0.22rem;
+  border-top: 1px solid var(--surface-hover);
+  padding-top: 0.2rem;
+}
+
+.meta-text strong {
+  color: var(--text-secondary);
+  font-weight: 500;
+}

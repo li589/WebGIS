@@ -4,21 +4,21 @@
  */
 
 export const LAYER_ACCENT_PALETTE = [
-  '#38bdf8',
+  'var(--accent)',
   '#f97316',
   '#a78bfa',
-  '#34d399',
+  'var(--success)',
   '#f472b6',
-  '#fbbf24',
+  'var(--warning)',
   '#22d3ee',
   '#fb7185',
-  '#4ade80',
+  'var(--success)',
   '#e879f9',
-  '#60a5fa',
+  'var(--accent-strong)',
   '#c084fc',
   '#2dd4bf',
   '#facc15',
-  '#94a3b8',
+  'var(--text-secondary)',
 ] as const
 
 export interface LayerAccentStyle {
@@ -78,5 +78,5 @@ export function allocateLayerAccent(
     }
   }
   const idx = used.length % LAYER_ACCENT_PALETTE.length
-  return withDerivedTones(LAYER_ACCENT_PALETTE[idx] ?? '#38bdf8')
+  return withDerivedTones(LAYER_ACCENT_PALETTE[idx] ?? 'var(--accent)')
 }

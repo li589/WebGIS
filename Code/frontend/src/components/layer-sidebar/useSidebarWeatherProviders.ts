@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerViewport } from '../../stores/layers/selectors'
 import { useLogStore } from '../../stores/log'
 import { useWeatherSourcePrefsStore } from '../../stores/weather-source-prefs'
 import {
@@ -15,7 +15,7 @@ import {
  * for the UI to display alongside provider selectors.
  */
 export function useSidebarWeatherProviders() {
-  const layersStore = useLayersStore()
+  const viewport = useLayerViewport()
   const logStore = useLogStore()
   const weatherSourcePrefs = useWeatherSourcePrefsStore()
 
@@ -37,7 +37,7 @@ export function useSidebarWeatherProviders() {
       if (pref && pref !== 'auto') {
         const match = providers.find((p) => p.provider_id === pref)
         if (!match || !match.enabled) {
-          layersStore.applyWeatherProviderPreference(catalogId, 'auto')
+          viewport.applyWeatherProviderPreference(catalogId, 'auto')
         }
       }
     } catch (error) {
@@ -56,7 +56,7 @@ export function useSidebarWeatherProviders() {
   }
 
   function onWeatherSourceChange(catalogId: string, value: string) {
-    layersStore.applyWeatherProviderPreference(catalogId, value || 'auto')
+    viewport.applyWeatherProviderPreference(catalogId, value || 'auto')
   }
 
   function weatherSourceSparseHint(catalogId: string): boolean {

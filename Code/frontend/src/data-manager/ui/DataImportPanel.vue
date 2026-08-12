@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { X } from '../../components/ui/icons'
 import { DATA_COPY } from '../../ui-copy'
 import AppSelect from '../../components/ui/AppSelect.vue'
 import {
@@ -24,7 +25,7 @@ import {
   registerImportedRasterLayer,
   registerImportedVectorLayer,
 } from '../adapters/layers'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { useLogStore } from '../../stores/log'
 import RasterImportConfirmDialog from './RasterImportConfirmDialog.vue'
 import ScienceRasterImportDialog, {
@@ -50,7 +51,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ close: [] }>()
 
-const layersStore = useLayersStore()
+const workspace = useLayerWorkspace()
 const logStore = useLogStore()
 
 const activeTab = ref<'vector' | 'raster' | 'document'>(props.initialTab ?? 'vector')
@@ -315,7 +316,7 @@ async function runVectorImport() {
     if (ok && !errors.length) {
       setStatus(`已导入 ${ok} 个矢量图层`)
       vectorFiles.value = []
-      const last = [...layersStore.activeLayers].reverse().find((l) => l.importedVector)
+      const last = [...workspace.activeLayers.value].reverse().find((l) => l.importedVector)
       if (last) {
         focusImportedLayer(last.instanceId)
         openDataWorkspace({ tab: 'attributes', layerInstanceId: last.instanceId })
@@ -820,7 +821,7 @@ async function commitDocument() {
       <header v-if="!embedded" class="data-panel-header">
         <span class="header-title">{{ DATA_COPY.importTitle }}</span>
         <button class="close-btn" type="button" :title="DATA_COPY.close" @click="emit('close')">
-          ✕
+          <X :size="14" aria-hidden="true" />
         </button>
       </header>
 
@@ -1196,7 +1197,7 @@ async function commitDocument() {
   justify-content: center;
   padding: 3.5vh 1rem 2vh;
   overflow: auto;
-  background: rgba(4, 10, 18, 0.55);
+  background: var(--surface-raised);
 }
 .data-panel {
   width: min(42rem, calc(100vw - 2rem));
@@ -1206,7 +1207,7 @@ async function commitDocument() {
   min-height: 0;
   overflow: hidden;
   border-radius: 0.7rem;
-  background: rgba(8, 17, 31, 0.98);
+  background: var(--surface-2);
   border: 1px solid var(--border-default);
   box-shadow: 0 18px 48px rgba(1, 8, 16, 0.45);
   color: var(--text-primary);
@@ -1218,7 +1219,7 @@ async function commitDocument() {
   gap: 0.6rem;
   flex-shrink: 0;
   padding: 0.62rem 0.8rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.1);
+  border-bottom: 1px solid var(--border-subtle);
 }
 .header-title {
   font-size: var(--font-size-caption);
@@ -1231,16 +1232,16 @@ async function commitDocument() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(136, 192, 255, 0.22);
+  border: 1px solid var(--border-strong);
   border-radius: 0.38rem;
-  background: rgba(4, 12, 23, 0.72);
+  background: var(--surface-1);
   color: var(--text-primary);
   cursor: pointer;
   font-size: var(--font-size-caption);
   line-height: 1;
 }
 .close-btn:hover {
-  border-color: rgba(90, 213, 255, 0.4);
+  border-color: var(--border-strong);
   color: var(--accent);
 }
 .data-tabs {
@@ -1250,7 +1251,7 @@ async function commitDocument() {
   padding: 0.48rem 0.8rem 0;
 }
 .data-tab {
-  border: 1px solid rgba(136, 192, 255, 0.12);
+  border: 1px solid var(--border-default);
   border-radius: 0.42rem;
   padding: 0.28rem 0.62rem;
   background: var(--surface-sunken);
@@ -1261,14 +1262,14 @@ async function commitDocument() {
 }
 .data-tab.active {
   color: var(--accent);
-  border-color: rgba(90, 213, 255, 0.35);
-  background: rgba(10, 132, 255, 0.16);
+  border-color: var(--border-strong);
+  background: var(--accent-surface);
 }
 .tab-hint {
   flex-shrink: 0;
   margin: 0.36rem 0.8rem 0;
   font-size: var(--font-size-caption);
-  color: #6a8094;
+  color: var(--text-faint);
   line-height: 1.4;
 }
 .data-panel-body {
@@ -1287,7 +1288,7 @@ async function commitDocument() {
 .table-meta {
   margin: 0;
   font-size: var(--font-size-caption);
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 .file-btn,
 .primary-btn,
@@ -1304,14 +1305,14 @@ async function commitDocument() {
 }
 .file-btn,
 .secondary-btn {
-  border: 1px solid rgba(136, 192, 255, 0.18);
-  background: rgba(4, 12, 23, 0.55);
-  color: #c5d8ea;
+  border: 1px solid var(--border-default);
+  background: var(--surface-raised);
+  color: var(--text-primary);
 }
 .primary-btn {
-  border: 1px solid rgba(90, 213, 255, 0.35);
-  background: rgba(10, 132, 255, 0.22);
-  color: #a8e8ff;
+  border: 1px solid var(--border-strong);
+  background: var(--accent-border);
+  color: var(--accent-strong);
 }
 .primary-btn:disabled,
 .secondary-btn:disabled {
@@ -1322,14 +1323,14 @@ async function commitDocument() {
   margin: 0;
   padding-left: 1rem;
   font-size: var(--font-size-caption);
-  color: #b7c9da;
+  color: var(--text-muted);
 }
 .temporal-block {
   margin: 0.45rem 0 0.55rem;
   padding: 0.5rem 0.55rem;
   border-radius: 0.42rem;
-  border: 1px solid rgba(136, 192, 255, 0.12);
-  background: rgba(4, 12, 23, 0.42);
+  border: 1px solid var(--border-default);
+  background: var(--surface-raised);
 }
 .temporal-modes {
   display: flex;
@@ -1337,7 +1338,7 @@ async function commitDocument() {
   gap: 0.45rem 0.8rem;
   margin: 0.3rem 0 0.35rem;
   font-size: var(--font-size-caption);
-  color: #c5d7ea;
+  color: var(--text-primary);
 }
 .temporal-modes label {
   display: inline-flex;
@@ -1355,12 +1356,12 @@ async function commitDocument() {
   flex-direction: column;
   gap: 0.18rem;
   font-size: var(--font-size-caption);
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 .temporal-fields input {
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  border: 1px solid var(--border-default);
   border-radius: 0.35rem;
-  background: rgba(2, 10, 18, 0.7);
+  background: var(--surface-1);
   color: var(--text-primary);
   padding: 0.26rem 0.38rem;
   font: inherit;
@@ -1369,26 +1370,26 @@ async function commitDocument() {
 .temporal-preview {
   margin: 0.35rem 0 0;
   font-size: var(--font-size-caption);
-  color: #7eb8e0;
+  color: var(--accent);
 }
 .sidecar-status {
   margin: 0;
   padding: 0.35rem 0.55rem;
   list-style: none;
-  border: 1px solid rgba(136, 192, 255, 0.12);
+  border: 1px solid var(--border-default);
   border-radius: 0.4rem;
-  background: rgba(4, 12, 23, 0.45);
+  background: var(--surface-raised);
   font-size: var(--font-size-caption);
-  color: #9ec4e0;
+  color: var(--text-secondary);
   font-family: ui-monospace, Consolas, monospace;
 }
 .sidecar-status .bad {
-  color: #ffb0b0;
+  color: var(--danger);
 }
 .sidecar-warn {
   margin: 0;
   font-size: var(--font-size-caption);
-  color: #ffd166;
+  color: var(--warning);
   line-height: 1.35;
 }
 .ops-grid,
@@ -1403,14 +1404,14 @@ label {
   flex-direction: column;
   gap: 0.18rem;
   font-size: var(--font-size-caption);
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 input,
 select {
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.34rem;
   padding: 0.28rem 0.4rem;
-  background: rgba(4, 12, 23, 0.7);
+  background: var(--surface-1);
   color: var(--text-primary);
   font: inherit;
   font-size: var(--font-size-caption);
@@ -1418,7 +1419,7 @@ select {
 .table-wrap {
   overflow: auto;
   max-height: 10rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
+  border: 1px solid var(--border-subtle);
   border-radius: 0.4rem;
 }
 table {
@@ -1437,31 +1438,31 @@ td {
 th {
   position: sticky;
   top: 0;
-  background: rgba(10, 20, 34, 0.98);
-  color: #9ec4e0;
+  background: var(--surface-2);
+  color: var(--text-secondary);
 }
 .data-panel-footer {
   flex-shrink: 0;
   padding: 0.45rem 0.8rem 0.6rem;
-  border-top: 1px solid rgba(136, 192, 255, 0.1);
+  border-top: 1px solid var(--border-subtle);
 }
 .progress-bar {
   height: 0.28rem;
   border-radius: 999px;
-  background: rgba(136, 192, 255, 0.12);
+  background: var(--border-default);
   overflow: hidden;
   margin-bottom: 0.35rem;
 }
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #0a84ff, var(--accent));
+  background: linear-gradient(90deg, var(--accent), var(--accent));
 }
 .msg {
   margin: 0;
   font-size: var(--font-size-caption);
-  color: #9ec4e0;
+  color: var(--text-secondary);
 }
 .msg.error {
-  color: #ffb0b0;
+  color: var(--danger);
 }
 </style>

@@ -4,7 +4,7 @@
  *
  * 工作流编辑器右侧面板：收起/展开 + 可向外拖拽调整宽度 + 节点库/属性分割。
  */
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import WorkflowNodePalette from './WorkflowNodePalette.vue'
 import WorkflowInspector from './WorkflowInspector.vue'
@@ -55,7 +55,17 @@ const resizingRightSplit = ref(false)
 let _resizeStartY = 0
 let _resizeStartHeight = 0
 
-const sidebarStyle = computed(() => (props.collapsed ? undefined : { width: `${widthPx.value}px` }))
+const _vw = ref(typeof window !== 'undefined' ? window.innerWidth : 1280)
+function _onResize() {
+  _vw.value = window.innerWidth
+}
+onMounted(() => window.addEventListener('resize', _onResize, { passive: true }))
+onBeforeUnmount(() => window.removeEventListener('resize', _onResize))
+
+const sidebarStyle = computed(() => {
+  if (props.collapsed || _vw.value < 768) return undefined
+  return { width: `${widthPx.value}px` }
+})
 
 function startWidthResize(event: MouseEvent) {
   if (props.collapsed) return
@@ -193,7 +203,7 @@ function toggleCollapsed() {
 
 .editor-sidebar.right {
   width: 16rem;
-  border-left: 1px solid rgba(136, 192, 255, 0.1);
+  border-left: 1px solid var(--border-subtle);
 }
 
 .editor-sidebar.right.collapsed {
@@ -208,7 +218,7 @@ function toggleCollapsed() {
   height: 1.6rem;
   border: 1px solid var(--border-default);
   border-radius: 0.32rem;
-  background: rgba(12, 24, 42, 0.88);
+  background: var(--surface-1);
   color: var(--text-muted);
   font-size: var(--font-size-caption);
   cursor: pointer;
@@ -222,9 +232,9 @@ function toggleCollapsed() {
 }
 
 .sidebar-toggle:hover {
-  color: #ffd38a;
-  border-color: rgba(255, 184, 77, 0.36);
-  background: rgba(20, 34, 56, 0.92);
+  color: var(--accent-warm);
+  border-color: var(--warning-border);
+  background: var(--surface-2);
 }
 
 .right-toggle {
@@ -250,9 +260,9 @@ function toggleCollapsed() {
   flex: none;
   height: 5px;
   cursor: ns-resize;
-  background: rgba(136, 192, 255, 0.06);
-  border-top: 1px solid rgba(136, 192, 255, 0.1);
-  border-bottom: 1px solid rgba(136, 192, 255, 0.1);
+  background: var(--border-subtle);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -263,20 +273,20 @@ function toggleCollapsed() {
 
 .sidebar-resizer:hover,
 .sidebar-resizer.active {
-  background: rgba(90, 213, 255, 0.18);
+  background: var(--accent-surface);
 }
 
 .resizer-handle {
   width: 28px;
   height: 2px;
   border-radius: 1px;
-  background: rgba(136, 192, 255, 0.28);
+  background: var(--border-strong);
   transition: background 0.16s ease;
 }
 
 .sidebar-resizer:hover .resizer-handle,
 .sidebar-resizer.active .resizer-handle {
-  background: rgba(90, 213, 255, 0.7);
+  background: var(--border-strong);
 }
 
 .sidebar-inspector {
@@ -288,7 +298,7 @@ function toggleCollapsed() {
 .editor-sidebar.right :deep(.palette-content),
 .editor-sidebar.right :deep(.inspector-content) {
   scrollbar-width: thin;
-  scrollbar-color: rgba(90, 180, 255, 0.28) transparent;
+  scrollbar-color: var(--border-accent) transparent;
 }
 
 .editor-sidebar.right :deep(.palette-content)::-webkit-scrollbar,
@@ -303,24 +313,24 @@ function toggleCollapsed() {
 
 .editor-sidebar.right :deep(.palette-content)::-webkit-scrollbar-thumb,
 .editor-sidebar.right :deep(.inspector-content)::-webkit-scrollbar-thumb {
-  background: rgba(90, 180, 255, 0.26);
+  background: var(--border-accent);
   border-radius: 3px;
 }
 
 .editor-sidebar.right :deep(.palette-content)::-webkit-scrollbar-thumb:hover,
 .editor-sidebar.right :deep(.inspector-content)::-webkit-scrollbar-thumb:hover {
-  background: rgba(90, 180, 255, 0.45);
+  background: var(--border-strong);
 }
 
 @media (max-width: 768px) {
   .editor-sidebar.right {
-    width: 100% !important;
+    width: 100%;
     height: 12rem;
     border-left: none;
-    border-top: 1px solid rgba(136, 192, 255, 0.1);
+    border-top: 1px solid var(--border-subtle);
   }
   .editor-sidebar.right.collapsed {
-    width: 100% !important;
+    width: 100%;
     height: 1.6rem;
   }
   .wf-sidebar-resizer {

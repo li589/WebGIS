@@ -13,7 +13,9 @@ export function createMapCanvasMapOptions(options: CreateMapCanvasMapOptionsOpti
     style: {
       version: 8,
       sources: {},
-      layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#07111e' } }],
+      layers: [
+        { id: 'background', type: 'background', paint: { 'background-color': 'var(--surface-1)' } },
+      ],
     } as StyleSpecification,
     center: [mapDefaults.longitude, mapDefaults.latitude],
     zoom: mapDefaults.zoom,

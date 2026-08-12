@@ -5,7 +5,7 @@
  * 不依赖 store 闭包，仅依赖 catalog 静态表与类型定义。
  * index.ts 经 re-export 保持既有引用兼容。
  */
-import type { RuntimeLayerDescriptor, WorkflowEvent } from '../../services/runtime-api'
+import type { LayerDescriptor, WorkflowEvent } from '../../services/runtime-api'
 import { formatWorkflowEventLine } from '../../utils/workflow-event-label'
 import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
 import type {
@@ -173,7 +173,7 @@ const CATEGORY_ALIASES: Record<string, string> = {
   气候产品: 'climate',
 }
 
-export function resolveCategory(descriptor: RuntimeLayerDescriptor, fallbackCategory?: string) {
+export function resolveCategory(descriptor: LayerDescriptor, fallbackCategory?: string) {
   const raw = descriptor.category || fallbackCategory
   const category = raw ? (CATEGORY_ALIASES[raw] ?? raw) : undefined
   if (category && CATEGORY_INDEX_BY_ID.has(category)) {
@@ -183,7 +183,7 @@ export function resolveCategory(descriptor: RuntimeLayerDescriptor, fallbackCate
 }
 
 export function buildUpdateLabel(
-  descriptor: RuntimeLayerDescriptor,
+  descriptor: LayerDescriptor,
   fallback?: Pick<LayerCatalogItem, 'updateLabel'> | null,
 ) {
   if (fallback?.updateLabel) return fallback.updateLabel
@@ -195,7 +195,7 @@ export function buildUpdateLabel(
 }
 
 export function buildSourceLabel(
-  descriptor: RuntimeLayerDescriptor,
+  descriptor: LayerDescriptor,
   fallback?: Pick<LayerCatalogItem, 'sourceLabel'> | null,
 ) {
   if (fallback?.sourceLabel) return fallback.sourceLabel
@@ -204,9 +204,7 @@ export function buildSourceLabel(
   return `${sourceType}${engine}`
 }
 
-export function buildRuntimeLayerLibraryItem(
-  descriptor: RuntimeLayerDescriptor,
-): RuntimeLayerLibraryItem {
+export function buildRuntimeLayerLibraryItem(descriptor: LayerDescriptor): RuntimeLayerLibraryItem {
   const fallback = getStaticLayerLibraryItem(descriptor.layer_id)
   const category = resolveCategory(descriptor, fallback?.category)
   const categoryMeta = LAYER_CATEGORIES.find((item) => item.id === category)

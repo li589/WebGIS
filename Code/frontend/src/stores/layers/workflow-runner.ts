@@ -21,7 +21,7 @@ import {
   retryWorkflowRun,
   submitWorkflow,
 } from '../../services/runtime-api'
-import type { BoundingBox, RuntimeLayerDescriptor, WorkflowEvent } from '../../services/runtime-api'
+import type { BoundingBox, LayerDescriptor, WorkflowEvent } from '../../services/runtime-api'
 import { useWorkflowOutputLayersStore } from '../workflow-output-layers'
 import { buildJobLayer } from './result-adapter'
 import { forgetDismissedLayer, isRunDismissed } from './workspace-persist'
@@ -103,7 +103,7 @@ export interface WorkflowRunnerDeps {
   getActiveLayers: () => ActiveLayer[]
   getJobLayers: () => JobLayerItem[]
   getRunLayerGroups: () => ActiveRunLayerGroup[]
-  getRuntimeLayerCatalog: () => Record<string, RuntimeLayerDescriptor>
+  getRuntimeLayerCatalog: () => Record<string, LayerDescriptor>
   getLayerLibrary: () => RuntimeLayerLibraryItem[]
   getMapBBox: () => BoundingBox | null
   activeWorkflowCatalogIds: Set<string>

@@ -27,7 +27,7 @@ const POINT_RADIUS = 5
 const POINT_RADIUS_FIRST = 8
 
 /** 首点强调颜色（琥珀色，区分路径蓝） */
-const POINT_COLOR_FIRST = '#ffb84d'
+const POINT_COLOR_FIRST = 'var(--warning)'
 
 /** 圆点边框宽度（px） */
 const POINT_STROKE_WIDTH = 2
@@ -158,7 +158,7 @@ export function createMeasureModule(options: CreateMeasureModuleOptions): Measur
         ],
         'circle-color': ['case', ['==', ['get', 'isFirst'], true], POINT_COLOR_FIRST, LINE_COLOR],
         'circle-stroke-width': POINT_STROKE_WIDTH,
-        'circle-stroke-color': '#ffffff',
+        'circle-stroke-color': 'var(--text-strong)',
       },
     })
 

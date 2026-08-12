@@ -45,7 +45,7 @@ const maxNumeric = computed(() => {
                 item.numericValue !== null
                   ? `${Math.min(100, Math.max(5, (Math.abs(item.numericValue) / maxNumeric) * 100))}%`
                   : '0%',
-              backgroundColor: item.accentColor || '#4fc3f7',
+              backgroundColor: item.accentColor || 'var(--accent)',
             }"
           ></div>
         </div>
@@ -56,9 +56,9 @@ const maxNumeric = computed(() => {
 
 <style scoped>
 .multi-overlay-chart-card {
-  background: rgba(15, 23, 42, 0.65);
+  background: var(--surface-1);
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--surface-hover);
   border-radius: 10px;
   padding: 0.8rem;
   margin-top: 0.6rem;
@@ -74,13 +74,13 @@ const maxNumeric = computed(() => {
 .chart-title {
   font-size: var(--font-size-caption);
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-strong);
 }
 
 .chart-badge {
   font-size: var(--font-size-caption);
   background: rgba(79, 195, 247, 0.15);
-  color: #4fc3f7;
+  color: var(--accent);
   padding: 0.15rem 0.45rem;
   border-radius: 4px;
 
@@ -110,25 +110,25 @@ const maxNumeric = computed(() => {
 }
 
 .bar-name {
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--text-primary);
   font-weight: 500;
 }
 
 .bar-val {
-  color: #64ffda;
+  color: var(--success);
   font-weight: 600;
 
   font-family: ui-monospace, monospace;
 }
 
 .bar-val.na {
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-muted);
 }
 
 .bar-track {
   width: 100%;
   height: 6px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-hover);
   border-radius: 3px;
   overflow: hidden;
 }

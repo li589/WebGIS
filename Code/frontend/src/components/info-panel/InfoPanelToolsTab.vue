@@ -3,6 +3,7 @@
 <script setup lang="ts">
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
 import { ANALYSIS_COPY } from '../../ui-copy'
+import AppButton from '../ui/AppButton.vue'
 import BufferAnalysisTool from './BufferAnalysisTool.vue'
 
 defineProps<{
@@ -25,22 +26,22 @@ const emit = defineEmits<{
     <div class="section-kicker">工具</div>
     <h3>分析工具</h3>
     <div class="weather-layer-btn-row" style="margin-bottom: 0.55rem; gap: 0.4rem">
-      <button
+      <AppButton
         v-if="interactionMode !== 'select'"
-        type="button"
-        class="weather-mini-btn"
+        size="xs"
+        variant="secondary"
         @click="emit('enterSelectMode')"
       >
         进入选择模式
-      </button>
-      <button
+      </AppButton>
+      <AppButton
         v-if="selectedMapPoint || pointWeather"
-        type="button"
-        class="weather-mini-btn"
+        size="xs"
+        variant="secondary"
         @click="emit('clearMapPoint')"
       >
         清除选点
-      </button>
+      </AppButton>
       <span v-if="selectedMapPoint" class="weather-mini-meta">
         {{ selectedMapPoint.lng.toFixed(3) }}, {{ selectedMapPoint.lat.toFixed(3) }}
       </span>

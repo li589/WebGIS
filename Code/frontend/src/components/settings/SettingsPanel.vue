@@ -1,6 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, shallowRef, watch, type Component } from 'vue'
-import { Settings, User, X } from 'lucide-vue-next'
+import {
+  Settings,
+  User,
+  X,
+  LayoutGrid,
+  Key,
+  Globe,
+  CloudSun,
+  CloudLightning,
+  Server,
+  Database,
+  Info,
+} from '../ui/icons'
 
 import { useAuthStore } from '../../stores/auth'
 import { useSettingsStore } from '../../stores/settings'
@@ -67,20 +79,20 @@ const tabComponents = shallowRef<Record<SettingsTab, Component>>({
   about: AboutSettings,
 })
 
-const ALL_TABS: Array<{ id: SettingsTab; label: string; icon: string }> = [
-  { id: 'general', label: SETTINGS_COPY.tabGeneral, icon: '▣' },
-  { id: 'accounts', label: '账户', icon: '👤' },
-  { id: 'api-keys', label: SETTINGS_COPY.tabApiKeys, icon: '🔑' },
-  { id: 'gee-accounts', label: SETTINGS_COPY.tabGee, icon: '🌍' },
-  { id: 'weather-providers', label: SETTINGS_COPY.tabWeather, icon: '🌦' },
-  { id: 'open-meteo-sync', label: SETTINGS_COPY.tabOpenMeteo, icon: '🌩' },
-  { id: 'remote-storage', label: '远程存储', icon: '🖧' },
-  { id: 'data-source', label: SETTINGS_COPY.tabDataSource, icon: '⚱' },
-  { id: 'about', label: '系统与关于', icon: 'ⓘ' },
+const ALL_TABS: Array<{ id: SettingsTab; label: string; icon: Component }> = [
+  { id: 'general', label: SETTINGS_COPY.tabGeneral, icon: LayoutGrid },
+  { id: 'accounts', label: '账户', icon: User },
+  { id: 'api-keys', label: SETTINGS_COPY.tabApiKeys, icon: Key },
+  { id: 'gee-accounts', label: SETTINGS_COPY.tabGee, icon: Globe },
+  { id: 'weather-providers', label: SETTINGS_COPY.tabWeather, icon: CloudSun },
+  { id: 'open-meteo-sync', label: SETTINGS_COPY.tabOpenMeteo, icon: CloudLightning },
+  { id: 'remote-storage', label: '远程存储', icon: Server },
+  { id: 'data-source', label: SETTINGS_COPY.tabDataSource, icon: Database },
+  { id: 'about', label: '系统与关于', icon: Info },
 ]
 
 /** VITE_SETTINGS_TABS=comma ids 白名单；未配置则全开（兼容现网） */
-function resolveVisibleSettingsTabs(): Array<{ id: SettingsTab; label: string; icon: string }> {
+function resolveVisibleSettingsTabs(): Array<{ id: SettingsTab; label: string; icon: Component }> {
   const raw = String((import.meta.env as Record<string, unknown>).VITE_SETTINGS_TABS ?? '').trim()
   if (!raw) return ALL_TABS
   const allowed = new Set(
@@ -177,7 +189,7 @@ watch(activeTab, (tab) => {
             :class="{ active: activeTab === tab.id }"
             @click="activeTab = tab.id"
           >
-            <span class="nav-icon" aria-hidden="true">{{ tab.icon }}</span>
+            <span class="nav-icon" aria-hidden="true"><component :is="tab.icon" :size="16" /></span>
             <span class="nav-label">{{ tab.label }}</span>
           </button>
         </nav>
@@ -216,7 +228,7 @@ watch(activeTab, (tab) => {
   z-index: 998;
   display: flex;
   justify-content: flex-end;
-  background: rgba(4, 10, 18, 0.4);
+  background: var(--surface-raised);
 }
 
 .settings-panel {
@@ -225,8 +237,8 @@ watch(activeTab, (tab) => {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: rgba(8, 17, 31, 0.98);
-  border-left: 1px solid rgba(136, 192, 255, 0.14);
+  background: var(--surface-2);
+  border-left: 1px solid var(--border-default);
   box-shadow: -12px 0 36px rgba(1, 8, 16, 0.32);
 }
 
@@ -235,8 +247,8 @@ watch(activeTab, (tab) => {
   align-items: center;
   gap: 0.38rem;
   padding: 0.72rem 0.82rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.1);
-  color: #e8f3fc;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-strong);
   font-size: var(--font-size-caption);
   font-weight: 600;
   flex: none;
@@ -258,9 +270,9 @@ watch(activeTab, (tab) => {
   gap: 0.35rem;
   max-width: 9rem;
   padding: 0.22rem 0.45rem;
-  border: 1px solid rgba(114, 255, 207, 0.22);
+  border: 1px solid var(--success-border);
   border-radius: 999px;
-  background: rgba(114, 255, 207, 0.08);
+  background: var(--success-surface);
   color: var(--success);
   cursor: pointer;
   font: inherit;
@@ -268,8 +280,8 @@ watch(activeTab, (tab) => {
 }
 
 .session-chip:hover {
-  border-color: rgba(114, 255, 207, 0.38);
-  background: rgba(114, 255, 207, 0.14);
+  border-color: var(--success-border);
+  background: var(--success-surface);
 }
 
 .session-avatar {
@@ -295,7 +307,7 @@ watch(activeTab, (tab) => {
 }
 
 .close-btn:hover {
-  background: rgba(136, 192, 255, 0.1);
+  background: var(--border-subtle);
   color: var(--text-primary);
 }
 
@@ -336,13 +348,13 @@ watch(activeTab, (tab) => {
 }
 
 .nav-item:hover {
-  background: rgba(136, 192, 255, 0.06);
+  background: var(--border-subtle);
   color: var(--text-primary);
 }
 
 .nav-item.active {
   border-color: var(--accent-border);
-  background: rgba(10, 132, 255, 0.14);
+  background: var(--accent-surface);
   color: var(--accent);
   font-weight: 600;
 }
@@ -392,10 +404,10 @@ watch(activeTab, (tab) => {
   gap: 0.6rem;
   margin-bottom: 0.55rem;
   padding: 0.42rem 0.55rem;
-  border: 1px solid rgba(255, 180, 90, 0.28);
+  border: 1px solid var(--warning-border);
   border-radius: 0.45rem;
   background: rgba(90, 60, 20, 0.28);
-  color: #ffd9a8;
+  color: var(--accent-warm);
   font-size: var(--font-size-caption);
   line-height: 1.4;
 }
@@ -403,7 +415,7 @@ watch(activeTab, (tab) => {
 .loading-spinner {
   width: 1.6rem;
   height: 1.6rem;
-  border: 2px solid rgba(90, 213, 255, 0.2);
+  border: 2px solid var(--accent-border);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -419,7 +431,7 @@ watch(activeTab, (tab) => {
   padding: 0.26rem 0.72rem;
   border: 1px solid var(--accent-border);
   border-radius: 0.4rem;
-  background: rgba(10, 132, 255, 0.12);
+  background: var(--accent-surface);
   color: var(--accent);
   cursor: pointer;
   font: inherit;
@@ -427,7 +439,7 @@ watch(activeTab, (tab) => {
 }
 
 .retry-btn:hover {
-  background: rgba(10, 132, 255, 0.22);
+  background: var(--accent-border);
 }
 
 @media (max-width: 640px) {

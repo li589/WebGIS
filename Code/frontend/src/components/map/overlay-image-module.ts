@@ -375,7 +375,7 @@ export function createOverlayImageModule(
           source: footprintSourceId,
           layout: { visibility: visible ? 'visible' : 'none' },
           paint: {
-            'line-color': 'rgba(90, 213, 255, 0.55)',
+            'line-color': 'var(--border-strong)',
             'line-width': 1.25,
             'line-opacity': 0.85,
           },

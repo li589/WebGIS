@@ -34,7 +34,7 @@ import {
   Rocket,
   Play,
   X,
-} from 'lucide-vue-next'
+} from '../ui/icons'
 
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import { useUiLoadingStore } from '../../stores/ui-loading'
@@ -1046,7 +1046,7 @@ defineExpose({
   display: flex;
   align-items: stretch;
   justify-content: stretch;
-  background: rgba(4, 10, 18, 0.85);
+  background: var(--surface-1);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
@@ -1056,7 +1056,7 @@ defineExpose({
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background: rgba(6, 13, 24, 0.98);
+  background: var(--surface-2);
   /* 局部抬高 rem 基准（全局 :root 仍为 15px），改善导师反馈的「字太小」 */
   font-size: 19px;
 }
@@ -1067,8 +1067,8 @@ defineExpose({
   align-items: center;
   justify-content: space-between;
   padding: 0.52rem 0.72rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.14);
-  background: rgba(8, 17, 31, 0.9);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--surface-1);
   flex: none;
 }
 
@@ -1087,11 +1087,11 @@ defineExpose({
 .header-title {
   font-size: 0.9rem;
   font-weight: 600;
-  color: #e8f3fc;
+  color: var(--text-strong);
 }
 
 .header-sep {
-  color: #4a5a6a;
+  color: var(--text-disabled);
 }
 
 .header-workflow-name {
@@ -1112,14 +1112,14 @@ defineExpose({
 }
 
 .readonly-badge {
-  background: rgba(255, 180, 90, 0.18);
-  color: #ffd9a8;
-  border: 1px solid rgba(255, 180, 90, 0.2);
+  background: var(--warning-border);
+  color: var(--accent-warm);
+  border: 1px solid var(--warning-border);
 }
 
 .dirty-badge {
   background: rgba(255, 220, 120, 0.18);
-  color: #ffe89a;
+  color: var(--warning);
   border: 1px solid rgba(255, 220, 120, 0.2);
 }
 
@@ -1134,7 +1134,7 @@ defineExpose({
   align-items: center;
   gap: 0.22rem;
   padding: 0.32rem 0.56rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.42rem;
   background: var(--surface-raised);
   color: var(--text-secondary);
@@ -1146,9 +1146,9 @@ defineExpose({
 }
 
 .header-btn:hover:not(:disabled) {
-  border-color: rgba(90, 213, 255, 0.32);
+  border-color: var(--border-accent);
   color: var(--accent);
-  background: rgba(10, 132, 255, 0.12);
+  background: var(--accent-surface);
 }
 
 .header-btn:disabled {
@@ -1157,13 +1157,13 @@ defineExpose({
 }
 
 .header-btn.primary {
-  border-color: rgba(90, 213, 255, 0.4);
-  background: rgba(10, 132, 255, 0.2);
+  border-color: var(--border-strong);
+  background: var(--accent-border);
   color: var(--accent);
 }
 
 .header-btn.primary:hover:not(:disabled) {
-  background: rgba(10, 132, 255, 0.32);
+  background: var(--border-strong);
 }
 
 .header-btn.run {
@@ -1177,16 +1177,16 @@ defineExpose({
 }
 
 .header-btn.run.submitting {
-  border-color: rgba(255, 184, 77, 0.4);
+  border-color: var(--warning-border);
   background: rgba(180, 130, 40, 0.2);
-  color: #ffb84d;
+  color: var(--warning);
   pointer-events: none;
 }
 
 .header-btn.run.submitted {
   border-color: rgba(120, 255, 160, 0.5);
   background: rgba(40, 180, 90, 0.28);
-  color: #78ffa0;
+  color: var(--success);
 }
 
 .header-btn.run.submitting span:first-child,
@@ -1199,15 +1199,15 @@ defineExpose({
 }
 
 .header-btn.pipeline {
-  border-color: rgba(255, 184, 77, 0.3);
+  border-color: var(--warning-border);
   background: rgba(180, 130, 40, 0.14);
-  color: #ffd38a;
+  color: var(--accent-warm);
 }
 
 .header-btn.pipeline:hover:not(:disabled) {
-  border-color: rgba(255, 184, 77, 0.5);
+  border-color: var(--warning-border);
   background: rgba(180, 130, 40, 0.24);
-  color: #fff0d4;
+  color: var(--accent-warm);
 }
 
 .header-btn.close {
@@ -1218,7 +1218,7 @@ defineExpose({
 .action-divider {
   width: 1px;
   height: 1rem;
-  background: rgba(136, 192, 255, 0.14);
+  background: var(--border-default);
   margin: 0 0.18rem;
 }
 
@@ -1230,7 +1230,7 @@ defineExpose({
   padding: 0.36rem 0.72rem;
   border-bottom: 1px solid rgba(255, 120, 120, 0.2);
   background: rgba(90, 30, 30, 0.18);
-  color: #ff9b9b;
+  color: var(--danger);
   font-size: var(--font-size-caption);
 }
 
@@ -1245,7 +1245,7 @@ defineExpose({
 .error-dismiss {
   border: none;
   background: transparent;
-  color: #ff9b9b;
+  color: var(--danger);
   cursor: pointer;
   font: inherit;
   font-size: var(--font-size-caption);
@@ -1262,7 +1262,7 @@ defineExpose({
   flex: 1;
   position: relative;
   overflow: hidden;
-  background: #0a0f1c;
+  background: var(--surface-base);
   min-width: 0;
 }
 
@@ -1273,13 +1273,13 @@ defineExpose({
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background: rgba(4, 12, 23, 0.28);
+  background: var(--surface-sunken);
 }
 
 .header-btn.active {
-  border-color: rgba(90, 213, 255, 0.4);
+  border-color: var(--border-strong);
   color: var(--accent);
-  background: rgba(10, 132, 255, 0.16);
+  background: var(--accent-surface);
 }
 
 .canvas-placeholder {
@@ -1318,7 +1318,7 @@ defineExpose({
 .placeholder-hint {
   margin: 0;
   font-size: var(--font-size-caption);
-  color: #4a5a6a;
+  color: var(--text-disabled);
 }
 
 /* ── 新建对话框 ──────────────────────────────────────────────────── */
@@ -1329,7 +1329,7 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 10, 18, 0.6);
+  background: var(--surface-1);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
@@ -1338,9 +1338,9 @@ defineExpose({
   width: 24rem;
   max-width: 92vw;
   padding: 1.1rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  border: 1px solid var(--border-default);
   border-radius: 0.72rem;
-  background: rgba(8, 17, 31, 0.98);
+  background: var(--surface-2);
   box-shadow: 0 18px 48px rgba(1, 8, 16, 0.4);
 }
 
@@ -1372,7 +1372,7 @@ defineExpose({
 .form-select,
 .form-textarea {
   padding: 0.4rem 0.52rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.42rem;
   background: var(--surface-raised);
   color: var(--text-primary);
@@ -1390,7 +1390,7 @@ defineExpose({
 .form-select:focus,
 .form-textarea:focus {
   outline: none;
-  border-color: rgba(90, 213, 255, 0.4);
+  border-color: var(--border-strong);
 }
 
 .form-select {
@@ -1405,10 +1405,10 @@ defineExpose({
 
 .dialog-btn {
   padding: 0.4rem 0.92rem;
-  border: 1px solid rgba(136, 192, 255, 0.2);
+  border: 1px solid var(--border-strong);
   border-radius: 0.42rem;
   background: transparent;
-  color: #c4d6e8;
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
   font-size: var(--font-size-caption);
@@ -1422,17 +1422,17 @@ defineExpose({
 }
 
 .dialog-btn.cancel:hover {
-  background: rgba(136, 192, 255, 0.06);
+  background: var(--border-subtle);
 }
 
 .dialog-btn.primary {
-  border-color: rgba(90, 213, 255, 0.4);
-  background: rgba(10, 132, 255, 0.2);
+  border-color: var(--border-strong);
+  background: var(--accent-border);
   color: var(--accent);
 }
 
 .dialog-btn.primary:hover:not(:disabled) {
-  background: rgba(10, 132, 255, 0.32);
+  background: var(--border-strong);
 }
 
 /* ── 响应式 ──────────────────────────────────────────────────────── */
@@ -1452,22 +1452,22 @@ defineExpose({
 .validation-btn.has-errors {
   border-color: rgba(232, 70, 58, 0.4);
   background: rgba(232, 70, 58, 0.14);
-  color: #ff9b9b;
+  color: var(--danger);
 }
 .validation-btn.has-warnings {
   border-color: rgba(239, 170, 23, 0.36);
   background: rgba(239, 170, 23, 0.12);
-  color: #ffd38a;
+  color: var(--accent-warm);
 }
 .validation-btn.all-good {
   border-color: rgba(29, 201, 129, 0.3);
   background: rgba(29, 201, 129, 0.08);
-  color: #6ee7b7;
+  color: var(--success);
 }
 
 .validation-panel {
-  border-bottom: 1px solid rgba(136, 192, 255, 0.12);
-  background: rgba(8, 16, 30, 0.88);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--surface-1);
   max-height: 280px;
   overflow-y: auto;
 }
@@ -1480,7 +1480,7 @@ defineExpose({
   border-bottom: 1px solid var(--border-subtle);
   position: sticky;
   top: 0;
-  background: rgba(8, 16, 30, 0.96);
+  background: var(--surface-2);
   z-index: 1;
 }
 
@@ -1489,7 +1489,7 @@ defineExpose({
   align-items: center;
   gap: 0.4rem;
   font-size: var(--font-size-caption);
-  color: #c4d6e8;
+  color: var(--text-secondary);
   font-weight: 500;
 }
 
@@ -1501,9 +1501,9 @@ defineExpose({
 .validation-action-btn {
   padding: 0.24rem 0.62rem;
   border-radius: 0.32rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  border: 1px solid var(--border-default);
   background: transparent;
-  color: #8aa0b6;
+  color: var(--text-muted);
   font: inherit;
   font-size: var(--font-size-caption);
   cursor: pointer;
@@ -1513,7 +1513,7 @@ defineExpose({
 .validation-action-btn.proceed {
   border-color: rgba(29, 201, 129, 0.36);
   background: rgba(29, 201, 129, 0.1);
-  color: #6ee7b7;
+  color: var(--success);
 }
 
 .validation-action-btn.proceed:hover {
@@ -1522,8 +1522,8 @@ defineExpose({
 }
 
 .validation-action-btn.close:hover {
-  border-color: rgba(136, 192, 255, 0.36);
-  color: #c4d6e8;
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
 }
 
 .validation-list {
@@ -1536,20 +1536,20 @@ defineExpose({
   gap: 0.4rem;
   padding: 0.36rem 0.86rem;
   font-size: var(--font-size-caption);
-  border-bottom: 1px solid rgba(136, 192, 255, 0.04);
+  border-bottom: 1px solid var(--border-subtle);
   transition: background 0.12s ease;
 }
 
 .validation-item:hover {
-  background: rgba(136, 192, 255, 0.04);
+  background: var(--border-subtle);
 }
 
 .validation-item.error .validation-icon {
-  color: #ff7b7b;
+  color: var(--danger);
 }
 
 .validation-item.warning .validation-icon {
-  color: #ffd38a;
+  color: var(--accent-warm);
 }
 
 .validation-icon {
@@ -1559,7 +1559,7 @@ defineExpose({
 
 .validation-node {
   flex-shrink: 0;
-  color: #a0b8d0;
+  color: var(--text-secondary);
   font-weight: 500;
   max-width: 120px;
   overflow: hidden;
@@ -1571,8 +1571,8 @@ defineExpose({
   flex-shrink: 0;
   padding: 0.08rem 0.36rem;
   border-radius: 0.24rem;
-  background: rgba(136, 192, 255, 0.1);
-  color: #8aa0b6;
+  background: var(--border-subtle);
+  color: var(--text-muted);
   font-size: var(--font-size-caption);
   font-family: var(--font-mono, monospace);
   max-width: 140px;
@@ -1583,7 +1583,7 @@ defineExpose({
 
 .validation-message {
   flex: 1;
-  color: #8aa0b6;
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1593,7 +1593,7 @@ defineExpose({
   padding: 1rem;
   text-align: center;
   font-size: var(--font-size-caption);
-  color: #6ee7b7;
+  color: var(--success);
 }
 
 /* ── 工作流属性对话框 ──────────────────────────────────────────────────── */
@@ -1604,16 +1604,16 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(3, 8, 16, 0.6);
+  background: var(--surface-1);
   backdrop-filter: blur(4px);
 }
 
 .props-dialog {
   width: min(460px, 90vw);
   border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: #0c1524;
-  color: #dbe7f5;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-1);
+  color: var(--text-primary);
   box-shadow: 0 20px 44px rgba(0, 0, 0, 0.45);
   overflow: hidden;
 }
@@ -1623,19 +1623,19 @@ defineExpose({
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .props-title {
   font-size: 14px;
   font-weight: 500;
-  color: #f1f7ff;
+  color: var(--text-strong);
 }
 
 .props-close {
   border: none;
   background: transparent;
-  color: #8aa2bd;
+  color: var(--text-muted);
   font-size: 19px;
   line-height: 1;
   cursor: pointer;

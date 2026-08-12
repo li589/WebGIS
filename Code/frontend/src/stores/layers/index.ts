@@ -61,6 +61,11 @@ export const useLayersStore = defineStore('layers', () => {
   // All 84+ members from the three domains are exposed through the single
   // store. Consumers can migrate to selector composables (./selectors.ts)
   // for a narrower API.
+  /**
+   * @deprecated 逐步迁移到 selector composables（`./selectors.ts`）。
+   * 新代码请使用 useLayerWorkspace() / useLayerViewport() / useWorkflowRun()。
+   * 响应式 state 通过 selector 返回的 Refs 访问。
+   */
   return {
     // ── State ──
     activeLayers: workspace.activeLayers,

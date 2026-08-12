@@ -257,7 +257,7 @@ onMounted(() => {
   gap: 0.38rem;
   padding: 0.46rem 0.5rem;
   border-radius: 0.82rem;
-  background: linear-gradient(180deg, rgba(10, 24, 42, 0.72), rgba(8, 18, 33, 0.58));
+  background: linear-gradient(180deg, var(--surface-1), var(--surface-raised));
   border: 1px solid rgba(103, 212, 255, 0.14);
 }
 
@@ -271,7 +271,7 @@ onMounted(() => {
 .integration-head h3 {
   margin: 0.08rem 0 0;
   font-size: var(--font-size-caption);
-  color: #f0f7ff;
+  color: var(--text-strong);
 }
 
 .integration-actions {
@@ -286,14 +286,14 @@ onMounted(() => {
 .status-pill {
   padding: 0.12rem 0.34rem;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.12);
-  color: #bfd3e6;
+  background: var(--border-default);
+  color: var(--text-secondary);
   font-size: var(--font-size-caption);
 }
 
 .integration-source.runtime,
 .status-pill.ok {
-  background: rgba(114, 255, 207, 0.12);
+  background: var(--success-surface);
   color: var(--success);
 }
 
@@ -301,7 +301,7 @@ onMounted(() => {
   border: 1px solid rgba(103, 212, 255, 0.2);
   border-radius: 999px;
   background: rgba(29, 78, 216, 0.16);
-  color: #d8f3ff;
+  color: var(--accent-strong);
   font-size: var(--font-size-caption);
   padding: 0.22rem 0.56rem;
   cursor: pointer;
@@ -315,7 +315,7 @@ onMounted(() => {
 .integration-summary,
 .gee-note {
   margin: 0;
-  color: #9eb3c8;
+  color: var(--text-muted);
   font-size: var(--font-size-caption);
   line-height: 1.45;
 }
@@ -323,9 +323,9 @@ onMounted(() => {
 .integration-error {
   padding: 0.34rem 0.42rem;
   border-radius: 0.62rem;
-  background: rgba(255, 80, 80, 0.1);
-  border: 1px solid rgba(255, 80, 80, 0.16);
-  color: #ffb3b3;
+  background: var(--danger-surface);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
   font-size: var(--font-size-caption);
 }
 
@@ -339,7 +339,7 @@ onMounted(() => {
   gap: 0.24rem;
   padding: 0.38rem 0.42rem;
   border-radius: 0.72rem;
-  background: rgba(8, 18, 33, 0.5);
+  background: var(--surface-sunken);
   border: 1px solid var(--border-subtle);
 }
 
@@ -351,12 +351,12 @@ onMounted(() => {
 }
 
 .block-head strong {
-  color: #edf6ff;
+  color: var(--text-strong);
   font-size: var(--font-size-caption);
 }
 
 .block-head span {
-  color: #7f93a9;
+  color: var(--text-muted);
   font-size: var(--font-size-caption);
 }
 
@@ -373,8 +373,8 @@ onMounted(() => {
   gap: 0.12rem;
   padding: 0.26rem 0.3rem;
   border-radius: 0.56rem;
-  background: rgba(148, 163, 184, 0.05);
-  border: 1px solid rgba(148, 163, 184, 0.08);
+  background: var(--border-subtle);
+  border: 1px solid var(--border-subtle);
 }
 
 .status-main {
@@ -385,7 +385,7 @@ onMounted(() => {
 }
 
 .status-main strong {
-  color: #eaf3fb;
+  color: var(--text-primary);
   font-size: var(--font-size-caption);
 }
 
@@ -393,12 +393,12 @@ onMounted(() => {
   display: flex;
   gap: 0.32rem;
   flex-wrap: wrap;
-  color: #8ea3b8;
+  color: var(--text-muted);
   font-size: var(--font-size-caption);
 }
 
 .gee-block {
-  border-color: rgba(114, 255, 207, 0.12);
+  border-color: var(--success-surface);
 }
 
 .gee-grid {
@@ -413,12 +413,12 @@ onMounted(() => {
 }
 
 .gee-grid span {
-  color: #7f93a9;
+  color: var(--text-muted);
   font-size: var(--font-size-caption);
 }
 
 .gee-grid strong {
-  color: #edf6ff;
+  color: var(--text-strong);
   font-size: var(--font-size-caption);
   word-break: break-word;
 }

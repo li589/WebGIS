@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { LAYERS_COPY, INSPECT_COPY } from '../../ui-copy'
-import { Info, Lock, Settings } from 'lucide-vue-next'
+import { Info, Lock, Settings, Check } from '../ui/icons'
 import type { RuntimeLayerLibraryItem } from '../../stores/layers/types'
 import AppSelect from '../ui/AppSelect.vue'
 
@@ -57,7 +57,9 @@ const emit = defineEmits<{
     <div v-for="group in filteredLibraryByCategory" :key="group.category.id" class="category-group">
       <div
         class="category-header-row"
-        :style="{ '--cat-color': getCategoryMeta(group.category.id)?.accentColor ?? '#88d8ff' }"
+        :style="{
+          '--cat-color': getCategoryMeta(group.category.id)?.accentColor ?? 'var(--accent)',
+        }"
       >
         <button
           class="category-header"
@@ -137,7 +139,7 @@ const emit = defineEmits<{
                 <span
                   v-if="item.subCategory"
                   class="card-chip subcategory-chip"
-                  style="background: rgba(255, 255, 255, 0.08); margin-left: 4px; color: #a4caf6"
+                  style="background: var(--surface-hover); margin-left: 4px; color: var(--accent)"
                   >{{ item.subCategory }}</span
                 >
               </div>
@@ -277,7 +279,7 @@ const emit = defineEmits<{
               v-else-if="getCatalogJobStatus(item.catalogId) === 'succeeded'"
               class="job-status-chip job-status-succeeded"
             >
-              已就绪 ✓
+              已就绪 <Check :size="14" aria-hidden="true" />
             </span>
             <span
               v-else-if="getCatalogJobStatus(item.catalogId) === 'failed'"
@@ -291,7 +293,7 @@ const emit = defineEmits<{
             >
               已取消
             </span>
-            <span v-else class="added-label">已添加 ✓</span>
+            <span v-else class="added-label">已添加 <Check :size="14" aria-hidden="true" /></span>
           </div>
           <div
             v-if="getCatalogSemanticNote(item.catalogId)"

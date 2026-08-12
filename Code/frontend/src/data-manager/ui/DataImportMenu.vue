@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { Table2, ChevronDown, ChevronUp, Menu, Info, RefreshCw } from 'lucide-vue-next'
+import { Table2, ChevronDown, ChevronUp, Menu, Info, RefreshCw } from '../../components/ui/icons'
 import DataWorkspace from './DataWorkspace.vue'
 import {
   dataWorkspaceOpen,
@@ -240,7 +240,7 @@ const progressLabel = computed(() =>
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 10, 18, 0.4);
+  background: var(--surface-raised);
   pointer-events: auto;
 }
 
@@ -251,8 +251,8 @@ const progressLabel = computed(() =>
   gap: 0.4rem;
   padding: 0.8rem 1rem;
   border-radius: 0.6rem;
-  background: rgba(8, 18, 33, 0.92);
-  border: 1px solid rgba(90, 213, 255, 0.25);
+  background: var(--surface-1);
+  border: 1px solid var(--border-accent);
 }
 
 .spinning-icon {
@@ -283,8 +283,8 @@ const progressLabel = computed(() =>
   gap: 2px;
   padding: 6px;
   border-radius: 10px;
-  background: rgba(8, 18, 33, 0.97);
-  border: 1px solid rgba(90, 213, 255, 0.15);
+  background: var(--surface-2);
+  border: 1px solid var(--accent-surface);
   box-shadow: 0 12px 36px rgba(1, 8, 16, 0.45);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -338,7 +338,7 @@ const progressLabel = computed(() =>
 .import-dropdown .dropdown-hint {
   margin: 4px 8px 2px;
   padding-top: 8px;
-  border-top: 1px solid rgba(90, 213, 255, 0.08);
+  border-top: 1px solid var(--accent-surface);
   font-size: 12px;
   color: var(--text-faint);
   line-height: 1.4;
@@ -360,7 +360,7 @@ const progressLabel = computed(() =>
   font-weight: 500;
   line-height: 1.4;
   pointer-events: none;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 8px 24px var(--surface-sunken);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }

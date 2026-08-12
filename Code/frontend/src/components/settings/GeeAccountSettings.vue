@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { storeToRefs } from 'pinia'
+import { Globe } from '../ui/icons'
 import { useSettingsStore } from '../../stores/settings'
 import type { GeeAccountItem } from '../../services/settings-api'
 
@@ -256,7 +257,7 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 
       <!-- 账户列表 -->
       <div v-if="geeAccounts.length === 0 && !showAddForm" class="empty-state">
-        <span class="empty-icon">🌍</span>
+        <span class="empty-icon"><Globe :size="48" aria-hidden="true" /></span>
         <span>暂无 GEE 账户，点击"添加账户"开始配置</span>
       </div>
 
@@ -360,7 +361,7 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 
 .section-title {
   margin: 0;
-  color: #e8f3fc;
+  color: var(--text-strong);
   font-size: var(--font-size-caption);
   font-weight: 600;
   display: flex;
@@ -371,7 +372,7 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 .count-badge {
   padding: 0.08rem 0.36rem;
   border-radius: 999px;
-  background: rgba(10, 132, 255, 0.2);
+  background: var(--accent-border);
   color: var(--accent);
   font-size: var(--font-size-caption);
   font-weight: 600;
@@ -398,7 +399,7 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
   padding: 0.36rem 0.52rem;
   border-radius: 0.4rem;
   background: var(--surface-sunken);
-  border: 1px solid rgba(136, 192, 255, 0.06);
+  border: 1px solid var(--border-subtle);
 }
 
 .info-label {
@@ -425,7 +426,7 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
   padding: 0.72rem;
   border-radius: 0.52rem;
   background: var(--surface-raised);
-  border: 1px solid rgba(90, 213, 255, 0.16);
+  border: 1px solid var(--accent-surface);
 }
 
 .form-row {
@@ -442,8 +443,8 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 .form-input {
   padding: 0.36rem 0.52rem;
   border-radius: 0.36rem;
-  background: rgba(4, 12, 23, 0.8);
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
   color: var(--text-primary);
   font-size: var(--font-size-caption);
   font-family: 'SF Mono', 'Consolas', monospace;
@@ -451,14 +452,14 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 }
 
 .form-input:focus {
-  border-color: rgba(90, 213, 255, 0.4);
+  border-color: var(--border-strong);
 }
 
 .form-textarea {
   padding: 0.36rem 0.52rem;
   border-radius: 0.36rem;
-  background: rgba(4, 12, 23, 0.8);
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
   color: var(--text-primary);
   font-size: var(--font-size-caption);
   font-family: 'SF Mono', 'Consolas', monospace;
@@ -468,7 +469,7 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 }
 
 .form-textarea:focus {
-  border-color: rgba(90, 213, 255, 0.4);
+  border-color: var(--border-strong);
 }
 
 .form-file {
@@ -479,9 +480,9 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 .form-error {
   padding: 0.32rem 0.52rem;
   border-radius: 0.36rem;
-  background: rgba(255, 100, 100, 0.08);
-  border: 1px solid rgba(255, 100, 100, 0.16);
-  color: #ff9999;
+  background: var(--danger-surface);
+  border: 1px solid var(--danger-surface);
+  color: var(--danger);
   font-size: var(--font-size-caption);
 }
 
@@ -517,7 +518,7 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
   padding: 0.62rem 0.72rem;
   border-radius: 0.52rem;
   background: var(--surface-sunken);
-  border: 1px solid rgba(136, 192, 255, 0.1);
+  border: 1px solid var(--border-subtle);
   transition: opacity 0.2s ease;
 }
 
@@ -542,7 +543,7 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 }
 
 .account-id {
-  color: #e8f3fc;
+  color: var(--text-strong);
   font-size: var(--font-size-caption);
   font-weight: 600;
   overflow: hidden;
@@ -594,13 +595,13 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 }
 
 .badge-ok {
-  background: rgba(114, 255, 207, 0.14);
+  background: var(--success-surface);
   color: var(--success);
 }
 
 .badge-fail {
-  background: rgba(255, 100, 100, 0.14);
-  color: #ff9999;
+  background: var(--danger-surface);
+  color: var(--danger);
 }
 
 .badge-disabled {
@@ -610,7 +611,7 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 
 .badge-unknown {
   background: rgba(201, 163, 255, 0.14);
-  color: #c9a3ff;
+  color: var(--accent-strong);
 }
 
 /* 按钮 */
@@ -630,7 +631,7 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 .action-btn:hover:not(:disabled) {
   border-color: var(--accent-border);
   color: var(--accent);
-  background: rgba(10, 132, 255, 0.1);
+  background: var(--accent-surface);
 }
 
 .action-btn:disabled {
@@ -641,37 +642,37 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 .action-btn.add {
   border-color: var(--accent-border);
   color: var(--accent);
-  background: rgba(10, 132, 255, 0.12);
+  background: var(--accent-surface);
 }
 
 .action-btn.save {
-  border-color: rgba(114, 255, 207, 0.24);
+  border-color: var(--success-border);
   color: var(--success);
 }
 
 .action-btn.save:hover:not(:disabled) {
-  background: rgba(114, 255, 207, 0.1);
+  background: var(--success-surface);
 }
 
 .action-btn.cancel {
-  border-color: rgba(255, 100, 100, 0.16);
-  color: #ff9999;
+  border-color: var(--danger-surface);
+  color: var(--danger);
 }
 
 .action-btn.delete {
-  border-color: rgba(255, 100, 100, 0.16);
-  color: #ff9999;
+  border-color: var(--danger-surface);
+  color: var(--danger);
 }
 
 .action-btn.confirm-delete {
-  border-color: rgba(255, 77, 77, 0.4);
-  color: #ffcccc;
-  background: rgba(255, 77, 77, 0.12);
+  border-color: var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-surface);
 }
 
 .action-btn.reload {
   border-color: rgba(201, 163, 255, 0.2);
-  color: #c9a3ff;
+  color: var(--accent-strong);
 }
 
 /* 切换开关 */
@@ -681,7 +682,7 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
   height: 1.06rem;
   border: 1px solid var(--border-default);
   border-radius: 999px;
-  background: rgba(4, 12, 23, 0.8);
+  background: var(--surface-1);
   cursor: pointer;
   padding: 0;
   transition:
@@ -691,8 +692,8 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 }
 
 .toggle-switch.on {
-  background: rgba(10, 132, 255, 0.4);
-  border-color: rgba(90, 213, 255, 0.4);
+  background: var(--border-strong);
+  border-color: var(--border-strong);
 }
 
 .toggle-knob {
@@ -724,14 +725,14 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 }
 
 .test-result.success {
-  background: rgba(114, 255, 207, 0.08);
-  border: 1px solid rgba(114, 255, 207, 0.16);
+  background: var(--success-surface);
+  border: 1px solid var(--success-surface);
   color: var(--success);
 }
 
 .test-result.fail {
-  background: rgba(255, 100, 100, 0.08);
-  border: 1px solid rgba(255, 100, 100, 0.16);
-  color: #ff9999;
+  background: var(--danger-surface);
+  border: 1px solid var(--danger-surface);
+  color: var(--danger);
 }
 </style>

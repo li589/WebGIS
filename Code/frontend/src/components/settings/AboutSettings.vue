@@ -232,7 +232,7 @@ function selectNode(name: string) {
 
 .section-title {
   margin: 0 0 0.32rem;
-  color: #e8f3fc;
+  color: var(--text-strong);
   font-size: var(--font-size-caption);
   font-weight: 600;
 }
@@ -251,7 +251,7 @@ function selectNode(name: string) {
   padding: 0.36rem 0.52rem;
   border-radius: 0.4rem;
   background: var(--surface-sunken);
-  border: 1px solid rgba(136, 192, 255, 0.06);
+  border: 1px solid var(--border-subtle);
 }
 
 .info-label {
@@ -282,8 +282,8 @@ function selectNode(name: string) {
 .tech-tag {
   padding: 0.22rem 0.52rem;
   border-radius: 999px;
-  background: rgba(10, 132, 255, 0.14);
-  border: 1px solid rgba(90, 213, 255, 0.18);
+  background: var(--accent-surface);
+  border: 1px solid var(--accent-surface);
   color: var(--accent);
   font-size: var(--font-size-caption);
   font-weight: 500;
@@ -316,29 +316,29 @@ function selectNode(name: string) {
 }
 
 .arch-node.root {
-  background: linear-gradient(135deg, rgba(10, 132, 255, 0.3), rgba(125, 125, 255, 0.2));
-  border: 1px solid rgba(90, 213, 255, 0.4);
+  background: linear-gradient(135deg, var(--accent-border), rgba(125, 125, 255, 0.2));
+  border: 1px solid var(--border-strong);
   color: var(--text-strong);
   font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
 .arch-node.level-1 {
-  background: rgba(10, 132, 255, 0.16);
-  border: 1px solid rgba(90, 213, 255, 0.22);
+  background: var(--accent-surface);
+  border: 1px solid var(--accent-border);
   color: var(--accent);
 }
 
 .arch-node.level-2 {
   background: var(--surface-raised);
-  border: 1px solid rgba(136, 192, 255, 0.1);
+  border: 1px solid var(--border-subtle);
   color: var(--text-muted);
 }
 
 .arch-node.level-3 {
-  background: rgba(4, 12, 23, 0.45);
-  border: 1px dashed rgba(136, 192, 255, 0.14);
-  color: #7a96ad;
+  background: var(--surface-raised);
+  border: 1px dashed var(--border-default);
+  color: var(--text-muted);
   font-size: var(--font-size-caption);
 }
 
@@ -348,14 +348,14 @@ function selectNode(name: string) {
 }
 
 .arch-node.selected {
-  border-color: rgba(90, 213, 255, 0.6);
-  box-shadow: 0 0 0 2px rgba(90, 213, 255, 0.2);
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 2px var(--accent-border);
 }
 
 .arch-connector {
   width: 1px;
   height: 0.72rem;
-  background: rgba(136, 192, 255, 0.2);
+  background: var(--border-strong);
 }
 
 .arch-connector.sub {
@@ -413,7 +413,7 @@ function selectNode(name: string) {
   padding: 0.42rem 0.62rem;
   border-radius: 0.4rem;
   background: var(--surface-sunken);
-  border: 1px solid rgba(136, 192, 255, 0.06);
+  border: 1px solid var(--border-subtle);
 }
 
 .module-name {
@@ -449,14 +449,14 @@ function selectNode(name: string) {
   padding: 0.42rem 0.72rem;
   border-radius: 0.4rem;
   background: var(--surface-sunken);
-  border: 1px solid rgba(136, 192, 255, 0.1);
+  border: 1px solid var(--border-subtle);
   opacity: 0.6;
 }
 
 .engine-card.active {
   opacity: 1;
-  border-color: rgba(114, 255, 207, 0.2);
-  background: rgba(114, 255, 207, 0.06);
+  border-color: var(--success-border);
+  background: var(--success-surface);
 }
 
 .engine-name {

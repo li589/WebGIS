@@ -40,7 +40,7 @@ function goHome() {
   place-items: center;
   padding: 2rem;
   background:
-    radial-gradient(ellipse at 50% 0%, rgba(10, 132, 255, 0.12), transparent 55%), #060d18;
+    radial-gradient(ellipse at 50% 0%, var(--accent-surface), transparent 55%), var(--surface-base);
   color: var(--text-primary);
 }
 
@@ -48,8 +48,8 @@ function goHome() {
   width: min(28rem, 100%);
   padding: 2rem 1.75rem;
   border-radius: 1rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
-  background: rgba(4, 12, 23, 0.82);
+  border: 1px solid var(--border-default);
+  background: var(--surface-1);
   text-align: center;
 }
 
@@ -76,8 +76,8 @@ h1 {
   margin: 1rem 0 1.25rem;
   padding: 0.5rem 0.75rem;
   border-radius: 0.5rem;
-  background: rgba(136, 192, 255, 0.06);
-  color: #c8dff0;
+  background: var(--border-subtle);
+  color: var(--text-primary);
   font-family: ui-monospace, monospace;
   font-size: 0.82rem;
   word-break: break-all;

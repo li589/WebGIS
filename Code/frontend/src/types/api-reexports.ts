@@ -4,7 +4,6 @@
  * 设计意图：
  *  - 消除前端手写 interface 与后端 Pydantic 模型的重复维护。
  *  - 保留现有导入路径兼容：消费方仍可从 `services/runtime-api` 或本文件导入同名类型。
- *  - 历史 `Runtime*` 前缀名通过别名映射到后端真实 schema 名（如 `RuntimeLayerDescriptor` → `LayerDescriptor`）。
  *
  * 注意：自动生成的字段可选性与手写版本可能不同（Pydantic 默认值字段在 OpenAPI 中会标记为可选）。
  *       消费方在访问这些字段时需进行 null/undefined 检查。
@@ -65,7 +64,6 @@ export type WorkflowRunViewSummaryRow = Schema<'WorkflowRunViewSummaryRow'>
 export type WorkflowRunViewResponse = Schema<'WorkflowRunViewResponse'>
 
 // ── Layer catalog 相关 ────────────────────────────────────────────────────
-// 历史 `Runtime*` 前缀名通过别名映射到后端真实 schema 名，保持向后兼容。
 
 export type LayerDescriptor = Schema<'LayerDescriptor'>
 export type LayerCapabilities = Schema<'LayerCapabilities'>
@@ -74,15 +72,6 @@ export type LayerPresentation = Schema<'LayerPresentation'>
 export type LayerCatalogResponse = Schema<'LayerCatalogResponse'>
 export type LayerCategoryDef = Schema<'LayerCategoryDef'>
 export type LayerCategoryResponse = Schema<'LayerCategoryResponse'>
-
-/** @deprecated 请使用 `LayerDescriptor`。保留别名以兼容现有导入。 */
-export type RuntimeLayerDescriptor = LayerDescriptor
-/** @deprecated 请使用 `LayerCapabilities`。保留别名以兼容现有导入。 */
-export type RuntimeLayerCapabilities = LayerCapabilities
-/** @deprecated 请使用 `LayerStyleHint`。保留别名以兼容现有导入。 */
-export type RuntimeLayerStyleHint = LayerStyleHint
-/** @deprecated 请使用 `LayerCatalogResponse`。保留别名以兼容现有导入。 */
-export type RuntimeLayerCatalogResponse = LayerCatalogResponse
 
 // ── Weather 相关 ──────────────────────────────────────────────────────────
 
@@ -117,13 +106,9 @@ export type WeatherSupportedModel = Schema<'WeatherSupportedModel'>
 export type WeatherModelUpdateRequest = Schema<'WeatherModelUpdateRequest'>
 export type WeatherProviderStatus = Schema<'WeatherProviderStatus'>
 export type WeatherProviderConfigField = Schema<'WeatherProviderConfigField'>
-/** @deprecated Prefer WeatherProviderConfigField (OpenAPI name). */
-export type WeatherProviderConfigSchema = WeatherProviderConfigField
 export type WeatherProviderItem = Schema<'WeatherProviderItem'>
 export type WeatherProviderUpdateRequest = Schema<'WeatherProviderUpdateRequest'>
 export type WeatherProviderTestResponse = Schema<'WeatherProviderTestResponse'>
-/** @deprecated Prefer WeatherProviderTestResponse. */
-export type WeatherProviderTestResult = WeatherProviderTestResponse
 export type WeatherProviderToggleRequest = Schema<'WeatherProviderToggleRequest'>
 export type WeatherProviderPriorityRequest = Schema<'WeatherProviderPriorityRequest'>
 export type WeatherProviderToggleResponse = Schema<'WeatherProviderToggleResponse'>
@@ -155,17 +140,11 @@ export type AboutInfo = Schema<'AboutInfo'>
 export type AboutModule = Schema<'AboutModule'>
 
 export type TestResultResponse = Schema<'TestResultResponse'>
-/** @deprecated Prefer TestResultResponse. */
-export type TestResult = TestResultResponse
 export type ReloadResultResponse = Schema<'ReloadResultResponse'>
-/** @deprecated Prefer ReloadResultResponse. */
-export type ReloadResult = ReloadResultResponse
 
 export type RemoteStorageProfile = Schema<'RemoteStorageProfile'>
 export type RemoteStorageUpsertRequest = Schema<'RemoteStorageUpsertRequest'>
 export type RemoteStorageTestResponse = Schema<'RemoteStorageTestResponse'>
-/** @deprecated Prefer RemoteStorageTestResponse. */
-export type RemoteStorageTestResult = RemoteStorageTestResponse
 export type RemoteStorageHistoryItem = Schema<'RemoteStorageHistoryItem'>
 export type RemoteStorageHistoryClearResponse = Schema<'RemoteStorageHistoryClearResponse'>
 export type RemoteStorageHistoryDeletedResponse = Schema<'RemoteStorageHistoryDeletedResponse'>

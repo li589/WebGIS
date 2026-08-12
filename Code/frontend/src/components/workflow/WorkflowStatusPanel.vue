@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, watch, type Component } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useLayersStore } from '../../stores/layers'
+import { Download, Settings, Microscope, Package, Circle, AlertTriangle, Cloud } from '../ui/icons'
+import { useLayerWorkspace, useWorkflowRun } from '../../stores/layers/selectors'
 import { useWeatherTileManager } from '../../stores/weather-tile-manager'
 import { useWeatherSyncStatusStore } from '../../stores/weather-sync-status'
 import { mergeWorkflowSummaryWithWeather } from '../../utils/workflow-status-merge'
 import type { JobStatus } from '../../stores/layers/types'
 import { WORKFLOW_COPY } from '../../ui-copy'
 
-const layersStore = useLayersStore()
+const workspace = useLayerWorkspace()
+const workflowRun = useWorkflowRun()
+const { workflowError } = workflowRun
 const weatherTileManager = useWeatherTileManager()
 const weatherSyncStatus = useWeatherSyncStatusStore()
 const { activityVersion, statusVersion } = storeToRefs(weatherTileManager)
@@ -33,7 +36,7 @@ const weatherContribution = computed(() => {
 
 // 从 activeLayersDisplay 中提取有 jobLayer 的条目，并合并 jobLayers 中的孤儿工作流
 const workflowItems = computed(() => {
-  const fromActive = layersStore.activeLayersDisplay
+  const fromActive = workspace.activeLayersDisplay.value
     .filter((layer) => layer.jobLayer)
     .map((layer) => ({
       catalogId: layer.catalogId,
@@ -45,13 +48,13 @@ const workflowItems = computed(() => {
     }))
 
   const activeJobIds = new Set(fromActive.map((item) => item.jobLayer.jobId))
-  const catalogMeta = new Map(layersStore.layerLibrary.map((item) => [item.catalogId, item]))
-  const fromOrphan = layersStore.jobLayers
+  const catalogMeta = new Map(workspace.layerLibrary.value.map((item) => [item.catalogId, item]))
+  const fromOrphan = workflowRun.jobLayers.value
     .filter((job) => !activeJobIds.has(job.jobId))
     .map((job) => {
       const catId = job.catalogId ?? ''
       const meta = catalogMeta.get(catId)
-      const cat = layersStore.layerCategories.find((c) => c.id === meta?.category)
+      const cat = workspace.layerCategories.find((c) => c.id === meta?.category)
       return {
         catalogId: catId,
         name: meta?.name ?? job.name,
@@ -79,10 +82,10 @@ const workflowItems = computed(() => {
 
 /** 天气瓦片合成行（非 workflow-runs） */
 const weatherSyntheticItems = computed(() => {
-  const catalogMeta = new Map(layersStore.layerLibrary.map((item) => [item.catalogId, item]))
+  const catalogMeta = new Map(workspace.layerLibrary.value.map((item) => [item.catalogId, item]))
   return weatherContribution.value.items.map((item) => {
     const meta = catalogMeta.get(item.catalogId)
-    const active = layersStore.activeLayersDisplay.find((l) => l.catalogId === item.catalogId)
+    const active = workspace.activeLayersDisplay.value.find((l) => l.catalogId === item.catalogId)
     const fillPercent =
       item.viewportTotal > 0 ? Math.round((item.cachedInViewport / item.viewportTotal) * 100) : 0
     return {
@@ -103,7 +106,7 @@ const weatherSyntheticItems = computed(() => {
 })
 
 /** 纯业务工作流摘要（不含天气瓦片） */
-const jobSummary = computed(() => layersStore.workflowSummary)
+const jobSummary = computed(() => workflowRun.workflowSummary.value)
 
 /** 与 ModeToolbar 口径一致：合并天气合成六态 */
 const summary = computed(() => {
@@ -141,10 +144,10 @@ const tileErrorLabel: Record<string, string> = {
 const weatherStatusMeta: Record<string, { label: string; color: string; bg: string }> = {
   running: { label: '运行中', color: 'var(--accent)', bg: 'var(--accent-surface)' },
   queued: { label: '排队中', color: 'var(--accent-strong)', bg: 'rgba(136, 223, 255, 0.1)' },
-  succeeded: { label: '已完成', color: 'var(--success)', bg: 'rgba(159, 248, 207, 0.1)' },
-  failed: { label: '失败', color: '#ff8a8a', bg: 'rgba(255, 138, 138, 0.1)' },
-  cancelled: { label: '已取消', color: 'var(--text-muted)', bg: 'rgba(138, 168, 191, 0.1)' },
-  retry_pending: { label: '等待重试', color: '#ffd38a', bg: 'rgba(255, 211, 138, 0.1)' },
+  succeeded: { label: '已完成', color: 'var(--success)', bg: 'var(--success-surface)' },
+  failed: { label: '失败', color: 'var(--danger)', bg: 'rgba(255, 138, 138, 0.1)' },
+  cancelled: { label: '已取消', color: 'var(--text-muted)', bg: 'var(--border-default)' },
+  retry_pending: { label: '等待重试', color: 'var(--accent-warm)', bg: 'rgba(255, 211, 138, 0.1)' },
 }
 
 /** 按分类分组统计工作流 */
@@ -175,10 +178,10 @@ const categoryBreakdown = computed(() => {
 const statusMeta: Record<JobStatus, { label: string; color: string; bg: string }> = {
   running: { label: '运行中', color: 'var(--accent)', bg: 'var(--accent-surface)' },
   queued: { label: '排队中', color: 'var(--accent-strong)', bg: 'rgba(136, 223, 255, 0.1)' },
-  succeeded: { label: '已完成', color: 'var(--success)', bg: 'rgba(159, 248, 207, 0.1)' },
-  failed: { label: '失败', color: '#ff8a8a', bg: 'rgba(255, 138, 138, 0.1)' },
-  cancelled: { label: '已取消', color: 'var(--text-muted)', bg: 'rgba(138, 168, 191, 0.1)' },
-  retry_pending: { label: '等待重试', color: '#ffd38a', bg: 'rgba(255, 211, 138, 0.1)' },
+  succeeded: { label: '已完成', color: 'var(--success)', bg: 'var(--success-surface)' },
+  failed: { label: '失败', color: 'var(--danger)', bg: 'rgba(255, 138, 138, 0.1)' },
+  cancelled: { label: '已取消', color: 'var(--text-muted)', bg: 'var(--border-default)' },
+  retry_pending: { label: '等待重试', color: 'var(--accent-warm)', bg: 'rgba(255, 211, 138, 0.1)' },
 }
 
 /** 天气瓦片并发状态（自适应调节，仅在活跃时显示） */
@@ -194,8 +197,8 @@ const tileConcurrency = computed(() => {
 const weatherTileLayers = computed(() => {
   void activityVersion.value
   void statusVersion.value
-  return layersStore.activeLayersDisplay
-    .filter((layer) => layer.visible && layersStore.isWeatherEngineLayer(layer.catalogId))
+  return workspace.activeLayersDisplay.value
+    .filter((layer) => layer.visible && workspace.isWeatherEngineLayer(layer.catalogId))
     .map((layer) => {
       const status = weatherTileManager.getLayerStatus(layer.catalogId)
       return {
@@ -238,7 +241,13 @@ const summaryCards = computed(() => {
       sub: tilePending > 0 ? `含瓦片 ${tilePending}` : '',
     },
     { key: 'queued', label: '排队中', count: s.queued, color: 'var(--accent-strong)', sub: '' },
-    { key: 'retryPending', label: '等待重试', count: s.retryPending, color: '#ffd38a', sub: '' },
+    {
+      key: 'retryPending',
+      label: '等待重试',
+      count: s.retryPending,
+      color: 'var(--accent-warm)',
+      sub: '',
+    },
     {
       key: 'succeeded',
       label: '已完成',
@@ -251,7 +260,7 @@ const summaryCards = computed(() => {
             : `含瓦片 ${tileCached}`
           : '',
     },
-    { key: 'failed', label: '失败', count: s.failed, color: '#ff8a8a', sub: '' },
+    { key: 'failed', label: '失败', count: s.failed, color: 'var(--danger)', sub: '' },
     { key: 'cancelled', label: '已取消', count: s.cancelled, color: 'var(--text-muted)', sub: '' },
   ] as const
 })
@@ -306,28 +315,28 @@ function formatDuration(createdAt: string, updatedAt: string, status: JobStatus)
 }
 
 function getCategoryName(categoryId: string): string {
-  const cat = layersStore.layerCategories.find((c) => c.id === categoryId)
+  const cat = workspace.layerCategories.find((c) => c.id === categoryId)
   return cat?.name ?? categoryId
 }
 
 /** 节点阶段图标映射 */
-const STAGE_ICONS: Record<string, string> = {
-  download: '📥',
-  preprocess: '⚙',
-  inversion: '🔬',
-  output: '📦',
+const STAGE_ICONS: Record<string, Component> = {
+  download: Download,
+  preprocess: Settings,
+  inversion: Microscope,
+  output: Package,
 }
 
-function getStageIcon(stage: string): string {
-  return STAGE_ICONS[stage] ?? '•'
+function getStageIcon(stage: string): Component {
+  return STAGE_ICONS[stage] ?? Circle
 }
 
 function handleCancel(jobId: string, catalogId: string) {
-  void layersStore.cancelWorkflowRunForJob(jobId, catalogId)
+  void workflowRun.cancelWorkflowRunForJob(jobId, catalogId)
 }
 
 function handleRetry(jobId: string, catalogId: string) {
-  void layersStore.retryWorkflowRunForJob(jobId, catalogId)
+  void workflowRun.retryWorkflowRunForJob(jobId, catalogId)
 }
 
 function filteredEventMessages(messages: string[] | undefined): string[] {
@@ -449,8 +458,8 @@ onBeforeUnmount(() => {
                   derivedStats.successRate >= 80
                     ? 'var(--success)'
                     : derivedStats.successRate >= 50
-                      ? '#ffd38a'
-                      : '#ff8a8a',
+                      ? 'var(--accent-warm)'
+                      : 'var(--danger)',
               }"
               >{{ derivedStats.successRate }}%</span
             >
@@ -461,9 +470,9 @@ onBeforeUnmount(() => {
       </header>
 
       <!-- 错误提示 -->
-      <div v-if="layersStore.workflowError" class="wf-error-banner">
-        <span class="wf-error-icon">⚠</span>
-        <span>{{ layersStore.workflowError }}</span>
+      <div v-if="workflowError" class="wf-error-banner">
+        <span class="wf-error-icon"><AlertTriangle :size="14" aria-hidden="true" /></span>
+        <span>{{ workflowError }}</span>
       </div>
 
       <!-- 汇总卡片（运行中含天气瓦片在途，与工具栏徽章同色同口径） -->
@@ -498,7 +507,7 @@ onBeforeUnmount(() => {
       <!-- 天气瓦片并发状态（自适应调节） -->
       <div v-if="tileConcurrency" class="wf-tile-section">
         <div class="wf-tile-bar">
-          <span class="wf-tile-icon">🌀</span>
+          <span class="wf-tile-icon"><Cloud :size="14" aria-hidden="true" /></span>
           <span class="wf-tile-text">
             天气瓦片调度 — 在途 <strong>{{ tileConcurrency.active }}</strong> / 并发上限
             <strong>{{ tileConcurrency.max }}</strong>
@@ -565,7 +574,7 @@ onBeforeUnmount(() => {
             <span v-if="cat.succeeded > 0" class="wf-cat-count" style="color: var(--success)">{{
               cat.succeeded
             }}</span>
-            <span v-if="cat.failed > 0" class="wf-cat-count" style="color: #ff8a8a">{{
+            <span v-if="cat.failed > 0" class="wf-cat-count" style="color: var(--danger)">{{
               cat.failed
             }}</span>
             <span class="wf-cat-count-total">{{ cat.total }}</span>
@@ -787,7 +796,9 @@ onBeforeUnmount(() => {
                 class="node-progress-item"
               >
                 <div class="node-progress-header">
-                  <span class="node-stage-icon">{{ getStageIcon(np.stage) }}</span>
+                  <span class="node-stage-icon"
+                    ><component :is="getStageIcon(np.stage)" :size="14"
+                  /></span>
                   <span class="node-label">{{ np.nodeLabel }}</span>
                   <span class="node-progress-value">{{ np.progress }}%</span>
                 </div>
@@ -916,7 +927,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   padding: 2rem;
-  background: rgba(2, 8, 18, 0.72);
+  background: var(--surface-1);
   backdrop-filter: blur(12px);
 }
 
@@ -925,10 +936,9 @@ onBeforeUnmount(() => {
   max-height: min(85vh, 800px);
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(145, 197, 255, 0.16);
+  border: 1px solid var(--border-default);
   border-radius: 1.2rem;
-  background:
-    linear-gradient(180deg, var(--surface-1), rgba(7, 15, 28, 0.88)), rgba(8, 18, 33, 0.9);
+  background: linear-gradient(180deg, var(--surface-1), var(--surface-1)), var(--surface-1);
   box-shadow: 0 24px 60px rgba(1, 8, 16, 0.5);
   overflow: hidden;
 }
@@ -939,7 +949,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 0.6rem;
   padding: 1rem 1.2rem 0.8rem;
-  border-bottom: 1px solid rgba(145, 197, 255, 0.08);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .wf-panel-eyebrow {
@@ -953,7 +963,7 @@ onBeforeUnmount(() => {
 .wf-panel-header h2 {
   margin: 0;
   font-size: 1rem;
-  color: #f5fbff;
+  color: var(--text-strong);
 }
 
 .wf-header-stats {
@@ -1003,7 +1013,7 @@ onBeforeUnmount(() => {
 
 .wf-close-btn:hover {
   background: rgba(255, 138, 138, 0.16);
-  color: #ff8a8a;
+  color: var(--danger);
 }
 
 .wf-error-banner {
@@ -1015,7 +1025,7 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(255, 138, 138, 0.2);
   border-radius: 0.6rem;
   background: rgba(255, 138, 138, 0.08);
-  color: #ff8a8a;
+  color: var(--danger);
   font-size: var(--font-size-caption);
 }
 
@@ -1048,7 +1058,7 @@ onBeforeUnmount(() => {
 }
 
 .wf-overall-progress-text {
-  color: #7f96ab;
+  color: var(--text-muted);
   font-size: var(--font-size-caption);
   white-space: nowrap;
 }
@@ -1066,9 +1076,9 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 0.4rem;
   padding: 0.4rem 0.7rem;
-  border: 1px solid rgba(90, 213, 255, 0.16);
+  border: 1px solid var(--accent-surface);
   border-radius: 0.6rem;
-  background: rgba(10, 40, 60, 0.42);
+  background: var(--surface-raised);
 }
 
 .wf-tile-icon {
@@ -1077,7 +1087,7 @@ onBeforeUnmount(() => {
 }
 
 .wf-tile-text {
-  color: #c8dff0;
+  color: var(--text-primary);
   font-size: var(--font-size-caption);
 }
 
@@ -1100,11 +1110,11 @@ onBeforeUnmount(() => {
   padding: 0.3rem 0.7rem;
   border: 1px solid var(--border-subtle);
   border-radius: 0.5rem;
-  background: rgba(4, 12, 23, 0.42);
+  background: var(--surface-raised);
 }
 
 .wf-tile-cache-label {
-  color: #7f96ab;
+  color: var(--text-muted);
   font-size: var(--font-size-caption);
   flex: none;
 }
@@ -1120,12 +1130,12 @@ onBeforeUnmount(() => {
 .wf-tile-cache-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--accent), #2f7eff);
+  background: linear-gradient(90deg, var(--accent), var(--accent-blue-deep));
   transition: width 0.4s ease;
 }
 
 .wf-tile-cache-text {
-  color: #c8dff0;
+  color: var(--text-primary);
   font-size: var(--font-size-caption);
   white-space: nowrap;
 }
@@ -1158,7 +1168,7 @@ onBeforeUnmount(() => {
 }
 
 .wf-tile-layer-name {
-  color: #a8c4d8;
+  color: var(--text-secondary);
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1166,12 +1176,12 @@ onBeforeUnmount(() => {
 }
 
 .wf-tile-layer-stats {
-  color: #7f96ab;
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .wf-tile-layer-error {
-  color: #ff8a8a;
+  color: var(--danger);
   font-size: var(--font-size-caption);
   padding: 0 0.3rem;
   border: 1px solid rgba(255, 138, 138, 0.2);
@@ -1183,7 +1193,7 @@ onBeforeUnmount(() => {
   color: var(--success);
   font-size: var(--font-size-caption);
   padding: 0 0.3rem;
-  border: 1px solid rgba(159, 248, 207, 0.28);
+  border: 1px solid var(--success-border);
   border-radius: 999px;
   cursor: help;
 }
@@ -1203,11 +1213,11 @@ onBeforeUnmount(() => {
   padding: 0.2rem 0.5rem;
   border: 1px solid var(--border-subtle);
   border-radius: 999px;
-  background: rgba(4, 12, 23, 0.42);
+  background: var(--surface-raised);
 }
 
 .wf-category-stat-name {
-  color: #7f96ab;
+  color: var(--text-muted);
   font-size: var(--font-size-caption);
 }
 
@@ -1252,7 +1262,7 @@ onBeforeUnmount(() => {
   padding: 0.48rem 0.28rem;
   border: 1px solid var(--border-subtle);
   border-radius: 0.6rem;
-  background: rgba(4, 12, 23, 0.42);
+  background: var(--surface-raised);
   transition:
     border-color 0.2s ease,
     background-color 0.2s ease,
@@ -1260,8 +1270,8 @@ onBeforeUnmount(() => {
 }
 
 .wf-summary-card.active {
-  border-color: rgba(136, 192, 255, 0.22);
-  background: rgba(8, 20, 36, 0.55);
+  border-color: var(--border-strong);
+  background: var(--surface-raised);
 }
 
 .wf-summary-card.idle {
@@ -1277,7 +1287,7 @@ onBeforeUnmount(() => {
 }
 
 .wf-summary-label {
-  color: #7f96ab;
+  color: var(--text-muted);
   font-size: var(--font-size-caption);
   letter-spacing: 0.04em;
   text-align: center;
@@ -1290,7 +1300,7 @@ onBeforeUnmount(() => {
 .wf-summary-sub {
   display: block;
   margin-top: 1px;
-  color: #5a7a90;
+  color: var(--text-faint);
   font-size: var(--font-size-caption);
   letter-spacing: 0.02em;
   text-align: center;
@@ -1326,9 +1336,9 @@ onBeforeUnmount(() => {
   min-width: 8rem;
   padding: 0.15rem 0.35rem;
   border-radius: 0.25rem;
-  border: 1px solid rgba(136, 192, 255, 0.2);
-  background: rgba(8, 18, 28, 0.55);
-  color: #d7ecf8;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--text-primary);
   font-size: var(--font-size-caption);
 }
 
@@ -1372,7 +1382,7 @@ onBeforeUnmount(() => {
   padding: 0.6rem 0.7rem;
   border: 1px solid var(--border-subtle);
   border-radius: 0.7rem;
-  background: rgba(4, 12, 23, 0.42);
+  background: var(--surface-raised);
 }
 
 .wf-item-header {
@@ -1409,7 +1419,7 @@ onBeforeUnmount(() => {
   color: var(--text-disabled);
   font-size: var(--font-size-caption);
   padding: 0.05rem 0.3rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
+  border: 1px solid var(--border-subtle);
   border-radius: 999px;
   flex: none;
   white-space: nowrap;
@@ -1438,7 +1448,7 @@ onBeforeUnmount(() => {
 .wf-progress-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--accent), #2f7eff);
+  background: linear-gradient(90deg, var(--accent), var(--accent-blue-deep));
   transition: width 0.3s ease;
 }
 
@@ -1446,9 +1456,9 @@ onBeforeUnmount(() => {
 .node-progress-section {
   margin-top: 0.4rem;
   padding: 0.4rem 0.5rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
+  border: 1px solid var(--border-subtle);
   border-radius: 0.5rem;
-  background: rgba(4, 12, 23, 0.42);
+  background: var(--surface-raised);
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -1484,7 +1494,7 @@ onBeforeUnmount(() => {
 .node-label {
   flex: 1;
   min-width: 0;
-  color: #c8dff0;
+  color: var(--text-primary);
   font-size: var(--font-size-caption);
   font-weight: 500;
   overflow: hidden;
@@ -1510,7 +1520,7 @@ onBeforeUnmount(() => {
 .node-progress-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--accent), #2f7eff);
+  background: linear-gradient(90deg, var(--accent), var(--accent-blue-deep));
   transition: width 0.3s ease;
 }
 
@@ -1561,19 +1571,19 @@ onBeforeUnmount(() => {
 }
 
 .wf-item-progressive-error {
-  color: #f0a8a8;
+  color: var(--danger);
   border-left: 2px solid rgba(220, 80, 80, 0.75);
   padding-left: 0.4rem;
 }
 
 .wf-item-progressive-hint {
-  color: #9ec5e8;
+  color: var(--accent);
   opacity: 0.92;
 }
 
 .wf-item-summary {
   margin: 0.25rem 0 0;
-  color: #d5e6f5;
+  color: var(--text-primary);
   font-size: var(--font-size-caption);
   line-height: 1.45;
   white-space: pre-wrap;
@@ -1593,9 +1603,9 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 0.2rem;
   padding: 0.1rem 0.35rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
+  border: 1px solid var(--border-subtle);
   border-radius: 0.3rem;
-  background: rgba(10, 30, 50, 0.42);
+  background: var(--surface-raised);
 }
 
 .wf-metric-label {
@@ -1604,7 +1614,7 @@ onBeforeUnmount(() => {
 }
 
 .wf-metric-value {
-  color: #c8dff0;
+  color: var(--text-primary);
   font-size: var(--font-size-caption);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -1625,8 +1635,8 @@ onBeforeUnmount(() => {
 }
 
 .wf-item-events li {
-  color: #7f96ab;
-  border-left: 2px solid rgba(136, 192, 255, 0.12);
+  color: var(--text-muted);
+  border-left: 2px solid var(--border-default);
   padding-left: 0.4rem;
   margin-bottom: 0.15rem;
 }
@@ -1672,7 +1682,7 @@ onBeforeUnmount(() => {
 }
 
 .wf-item-duration {
-  color: #7f96ab;
+  color: var(--text-muted);
 }
 
 .wf-item-result-link a {
@@ -1703,7 +1713,7 @@ onBeforeUnmount(() => {
 }
 
 .wf-action-btn.cancel {
-  color: #ff8a8a;
+  color: var(--danger);
   border-color: rgba(255, 138, 138, 0.2);
   background: rgba(255, 138, 138, 0.06);
 }
@@ -1714,11 +1724,11 @@ onBeforeUnmount(() => {
 
 .wf-action-btn.retry {
   color: var(--accent);
-  border-color: rgba(90, 213, 255, 0.2);
-  background: rgba(90, 213, 255, 0.06);
+  border-color: var(--accent-border);
+  background: var(--accent-surface);
 }
 
 .wf-action-btn.retry:hover {
-  background: rgba(90, 213, 255, 0.14);
+  background: var(--accent-surface);
 }
 </style>

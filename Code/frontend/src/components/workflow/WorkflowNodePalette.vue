@@ -5,9 +5,29 @@
  * 节点面板：显示所有可用的节点模板，支持搜索、引擎过滤、分类折叠、收藏夹、最近使用。
  * 用户可以点击节点添加到画布，或拖拽到画布上。
  */
-import { computed, ref, watch, onBeforeUnmount } from 'vue'
+import { computed, ref, watch, onBeforeUnmount, type Component } from 'vue'
 import { storeToRefs } from 'pinia'
-import { Star, Clock, X, ChevronDown } from 'lucide-vue-next'
+import {
+  Star,
+  Clock,
+  X,
+  ChevronDown,
+  FolderOpen,
+  Wrench,
+  Satellite,
+  Shuffle,
+  Ruler,
+  BarChart3,
+  Link,
+  TrendingUp,
+  Sun,
+  Palette,
+  Settings,
+  Globe,
+  Map,
+  Upload,
+  Diamond,
+} from '../ui/icons'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import type { NodeTemplate } from '../../services/workflow-definition-api'
 
@@ -112,17 +132,17 @@ onBeforeUnmount(() => {
 // ─── 引擎过滤工具 ────────────────────────────────────────────────────────────
 const ENGINE_FILTERS: Array<{ key: string; label: string; color: string }> = [
   { key: 'all', label: '全部', color: 'var(--accent-strong)' },
-  { key: 'weather', label: '天气', color: '#ffb84d' },
-  { key: 'python_provider', label: 'Python', color: '#78ffa0' },
+  { key: 'weather', label: '天气', color: 'var(--warning)' },
+  { key: 'python_provider', label: 'Python', color: 'var(--success)' },
   { key: 'gee', label: 'GEE', color: 'var(--accent)' },
   { key: 'common', label: '通用', color: 'var(--accent-strong)' },
 ]
 
 const PORT_LEGEND = [
-  { color: '#ff8fb1', label: '时间范围' },
-  { color: '#ff6b6b', label: '空间范围' },
-  { color: '#ffd5a8', label: '数值' },
-  { color: '#ffe08a', label: '文本' },
+  { color: 'var(--port-time)', label: '时间范围' },
+  { color: 'var(--danger)', label: '空间范围' },
+  { color: 'var(--port-numeric)', label: '数值' },
+  { color: 'var(--port-text)', label: '文本' },
   { color: 'var(--accent)', label: '数据流' },
 ]
 
@@ -213,26 +233,26 @@ function getCategoryLabel(category: string): string {
 }
 
 // 功能分类图标映射（category 字段已是人类可读中文，无需 label 映射）
-const CATEGORY_ICONS: Record<string, string> = {
-  数据输入: '📂',
-  数据预处理: '🔧',
-  遥感处理: '🛰',
-  合成: '🔀',
-  反演: '📐',
-  统计分析: '📊',
-  数据融合: '🔗',
-  可视化: '📈',
-  '天气-数据抓取': '☀',
-  '天气-渲染': '🎨',
-  '天气-处理': '⚙',
-  'GEE-数据': '🌍',
-  'GEE-处理': '🛠',
-  GIS工具: '🗺',
-  输出: '📤',
+const CATEGORY_ICONS: Record<string, Component> = {
+  数据输入: FolderOpen,
+  数据预处理: Wrench,
+  遥感处理: Satellite,
+  合成: Shuffle,
+  反演: Ruler,
+  统计分析: BarChart3,
+  数据融合: Link,
+  可视化: TrendingUp,
+  '天气-数据抓取': Sun,
+  '天气-渲染': Palette,
+  '天气-处理': Settings,
+  'GEE-数据': Globe,
+  'GEE-处理': Wrench,
+  GIS工具: Map,
+  输出: Upload,
 }
 
-function getCategoryIcon(category: string): string {
-  return CATEGORY_ICONS[category] ?? '◆'
+function getCategoryIcon(category: string): Component {
+  return CATEGORY_ICONS[category] ?? Diamond
 }
 
 function handleAddNode(template: NodeTemplate) {
@@ -435,9 +455,9 @@ function isFavorite(type: string): boolean {
         class="category-group"
       >
         <button class="category-header" type="button" @click="toggleCategory(String(category))">
-          <span class="category-icon" aria-hidden="true">{{
-            getCategoryIcon(String(category))
-          }}</span>
+          <span class="category-icon" aria-hidden="true">
+            <component :is="getCategoryIcon(String(category))" :size="16" />
+          </span>
           <span class="category-label">{{ getCategoryLabel(String(category)) }}</span>
           <span class="category-count">{{ templates.length }}</span>
           <ChevronDown
@@ -491,8 +511,8 @@ function isFavorite(type: string): boolean {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: rgba(8, 17, 31, 0.72);
-  color: #c4d6e8;
+  background: var(--surface-1);
+  color: var(--text-secondary);
 }
 
 .palette-header {
@@ -500,7 +520,7 @@ function isFavorite(type: string): boolean {
   align-items: center;
   justify-content: space-between;
   padding: 0.62rem 0.72rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.1);
+  border-bottom: 1px solid var(--border-subtle);
   font-size: var(--font-size-caption);
   font-weight: 600;
   color: var(--text-primary);
@@ -509,7 +529,7 @@ function isFavorite(type: string): boolean {
 .header-count {
   padding: 0.1rem 0.42rem;
   border-radius: 999px;
-  background: rgba(10, 132, 255, 0.18);
+  background: var(--accent-surface);
   color: var(--accent);
   font-size: var(--font-size-caption);
   font-weight: 700;
@@ -518,13 +538,13 @@ function isFavorite(type: string): boolean {
 .palette-search {
   position: relative;
   padding: 0.42rem 0.62rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.06);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .search-input {
   width: 100%;
   padding: 0.36rem 0.52rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.42rem;
   background: var(--surface-raised);
   color: var(--text-primary);
@@ -538,7 +558,7 @@ function isFavorite(type: string): boolean {
 
 .search-input:focus {
   outline: none;
-  border-color: rgba(90, 213, 255, 0.4);
+  border-color: var(--border-strong);
 }
 
 .search-clear {
@@ -558,7 +578,7 @@ function isFavorite(type: string): boolean {
   flex-wrap: wrap;
   gap: 0.22rem;
   padding: 0.32rem 0.62rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.06);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .port-legend {
@@ -573,7 +593,7 @@ function isFavorite(type: string): boolean {
   align-items: center;
   gap: 0.22rem;
   font-size: var(--font-size-caption);
-  color: #7f96ad;
+  color: var(--text-muted);
 }
 
 .port-legend-dot {
@@ -587,13 +607,13 @@ function isFavorite(type: string): boolean {
   margin: 0;
   padding: 0.1rem 0.62rem 0.35rem;
   font-size: var(--font-size-caption);
-  color: #ffb84d;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.06);
+  color: var(--warning);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .engine-filter-btn {
   padding: 0.16rem 0.42rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.32rem;
   background: transparent;
   color: var(--text-faint);
@@ -605,7 +625,7 @@ function isFavorite(type: string): boolean {
 }
 
 .engine-filter-btn:hover {
-  border-color: rgba(136, 192, 255, 0.32);
+  border-color: var(--border-strong);
   color: var(--text-primary);
 }
 
@@ -618,7 +638,7 @@ function isFavorite(type: string): boolean {
   overflow-y: auto;
   padding: 0.32rem 0;
   scrollbar-width: thin;
-  scrollbar-color: rgba(90, 180, 255, 0.28) transparent;
+  scrollbar-color: var(--border-accent) transparent;
 }
 
 .palette-content::-webkit-scrollbar {
@@ -630,12 +650,12 @@ function isFavorite(type: string): boolean {
 }
 
 .palette-content::-webkit-scrollbar-thumb {
-  background: rgba(90, 180, 255, 0.26);
+  background: var(--border-accent);
   border-radius: 3px;
 }
 
 .palette-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(90, 180, 255, 0.45);
+  background: var(--border-strong);
 }
 
 .stub-toggle {
@@ -643,15 +663,15 @@ function isFavorite(type: string): boolean {
   align-items: center;
   gap: 0.32rem;
   padding: 0.22rem 0.62rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.06);
+  border-bottom: 1px solid var(--border-subtle);
   font-size: var(--font-size-caption);
-  color: #7f96ad;
+  color: var(--text-muted);
   cursor: pointer;
   user-select: none;
 }
 
 .stub-toggle input {
-  accent-color: #ffb84d;
+  accent-color: var(--warning);
 }
 
 .empty-hint {
@@ -666,11 +686,11 @@ function isFavorite(type: string): boolean {
 }
 
 .category-group.favorites-group .category-header {
-  color: #ffd38a;
+  color: var(--accent-warm);
 }
 
 .category-group.recent-group .category-header {
-  color: #c084fc;
+  color: var(--recent-accent);
 }
 
 .category-header {
@@ -693,7 +713,7 @@ function isFavorite(type: string): boolean {
 }
 
 .category-header:hover {
-  background: rgba(136, 192, 255, 0.06);
+  background: var(--border-subtle);
   color: var(--text-primary);
 }
 
@@ -738,8 +758,8 @@ function isFavorite(type: string): boolean {
   border: 1px solid var(--border-subtle);
   border-left: 3px solid var(--accent-strong);
   border-radius: 0.42rem;
-  background: rgba(4, 12, 23, 0.4);
-  color: #c4d6e8;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
   text-align: left;
@@ -750,8 +770,8 @@ function isFavorite(type: string): boolean {
 }
 
 .node-item:hover {
-  border-color: rgba(90, 213, 255, 0.32);
-  background: rgba(10, 132, 255, 0.1);
+  border-color: var(--border-accent);
+  background: var(--accent-surface);
   transform: translateX(2px);
 }
 
@@ -765,7 +785,7 @@ function isFavorite(type: string): boolean {
 .node-item.stub:hover,
 .node-item:disabled:hover {
   border-color: var(--border-subtle);
-  background: rgba(4, 12, 23, 0.4);
+  background: var(--surface-sunken);
   transform: none;
 }
 
@@ -774,7 +794,7 @@ function isFavorite(type: string): boolean {
   padding: 0.05rem 0.32rem;
   border-radius: 0.25rem;
   background: rgba(120, 120, 120, 0.35);
-  color: #9aa8b5;
+  color: var(--text-muted);
   font-size: var(--font-size-caption);
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -821,7 +841,7 @@ function isFavorite(type: string): boolean {
 }
 
 .node-item-favorite-btn.favorited {
-  color: #ffd38a;
+  color: var(--accent-warm);
 }
 
 .node-item-type {
@@ -849,15 +869,15 @@ function isFavorite(type: string): boolean {
 .port-count {
   padding: 0.04rem 0.28rem;
   border-radius: 0.24rem;
-  background: rgba(136, 192, 255, 0.06);
+  background: var(--border-subtle);
   color: var(--text-faint);
 }
 
 .port-count.in {
-  border-left: 2px solid rgba(90, 213, 255, 0.5);
+  border-left: 2px solid var(--border-strong);
 }
 
 .port-count.out {
-  border-left: 2px solid rgba(160, 255, 180, 0.5);
+  border-left: 2px solid var(--success-border);
 }
 </style>

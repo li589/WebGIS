@@ -3,11 +3,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount } from 'vue'
 
+import AppButton from '../ui/AppButton.vue'
 import AppSelect from '../ui/AppSelect.vue'
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
 import type { WeatherPointResponse } from '../../services/runtime-api'
 import type { OverlayTimeState } from '../map/overlay-image-module'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerViewport } from '../../stores/layers/selectors'
 import { windDisplayModeLabel } from '../map/wind-display-mode'
 import { paletteIdsEqual } from '../map/layer-symbology'
 import { ANALYSIS_COPY, INSPECT_COPY, LAYERS_COPY } from '../../ui-copy'
@@ -28,7 +29,8 @@ const emit = defineEmits<{
   setLayerOpacity: [payload: { instanceId: string; opacity: number }]
 }>()
 
-const layersStore = useLayersStore()
+const viewport = useLayerViewport()
+const { smoothRendering, setSmoothRendering } = viewport
 
 // composables 接受 ComputedRef，需从 props 派生
 const displayLayerRef = computed(() => props.displayLayer)
@@ -164,7 +166,7 @@ onBeforeUnmount(() => {
         <span>{{ LAYERS_COPY.vectorColor }}</span>
         <input
           type="color"
-          :value="importedVectorStyle.color || '#4fc3f7'"
+          :value="importedVectorStyle.color || 'var(--accent)'"
           @input="
             patchImportedVectorStyle({
               color: ($event.target as HTMLInputElement).value,
@@ -260,28 +262,30 @@ onBeforeUnmount(() => {
             {{ windDisplayModeLabel(mode) }}
           </button>
         </div>
-        <button
-          class="weather-layer-btn weather-visibility-btn"
-          type="button"
+        <AppButton
+          class="weather-visibility-btn"
+          size="xs"
+          variant="ghost"
           :title="displayLayer.visible ? '隐藏当前图层' : '显示当前图层'"
           @click="handleToggleLayerVisibility"
         >
           <span class="weather-layer-btn-text">{{
             displayLayer.visible ? '隐藏图层' : '显示图层'
           }}</span>
-        </button>
+        </AppButton>
       </div>
-      <button
+      <AppButton
         v-else
-        class="weather-layer-btn weather-visibility-btn"
-        type="button"
+        class="weather-visibility-btn"
+        size="xs"
+        variant="ghost"
         :title="displayLayer.visible ? '隐藏当前图层' : '显示当前图层'"
         @click="handleToggleLayerVisibility"
       >
         <span class="weather-layer-btn-text">{{
           displayLayer.visible ? '隐藏图层' : '显示图层'
         }}</span>
-      </button>
+      </AppButton>
       <label v-if="isRealtimeWeatherLayer" class="weather-provider-row">
         <span class="weather-provider-label">天气数据源</span>
         <AppSelect
@@ -319,18 +323,16 @@ onBeforeUnmount(() => {
         <span class="smooth-render-label">平滑渲染</span>
         <button
           class="smooth-toggle-switch"
-          :class="{ active: layersStore.smoothRendering }"
+          :class="{ active: smoothRendering }"
           type="button"
           role="switch"
-          :aria-checked="layersStore.smoothRendering"
+          :aria-checked="smoothRendering"
           title="开：连续数值面（双线性插值）；关：网格色块"
-          @click="layersStore.setSmoothRendering(!layersStore.smoothRendering)"
+          @click="setSmoothRendering(!smoothRendering)"
         >
           <span class="smooth-toggle-knob"></span>
         </button>
-        <span class="smooth-render-hint">{{
-          layersStore.smoothRendering ? '连续数值面' : '网格色块'
-        }}</span>
+        <span class="smooth-render-hint">{{ smoothRendering ? '连续数值面' : '网格色块' }}</span>
       </div>
     </div>
 

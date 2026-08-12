@@ -12,7 +12,7 @@ import type { ComputedRef } from 'vue'
 
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
 import type { WeatherPointResponse } from '../../services/runtime-api'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerWorkspace, useLayerViewport } from '../../stores/layers/selectors'
 import { useWeatherTileManager } from '../../stores/weather-tile-manager'
 import { useOverlaySymbologyStore } from '../../stores/overlay-symbology'
 import {
@@ -37,7 +37,8 @@ export function useLayerSymbology(
   overlayTimeStates: ComputedRef<OverlayTimeState[]>,
   pointWeather: ComputedRef<WeatherPointResponse | null>,
 ) {
-  const layersStore = useLayersStore()
+  const workspace = useLayerWorkspace()
+  const viewport = useLayerViewport()
   const weatherTileManager = useWeatherTileManager()
   const overlaySymbologyStore = useOverlaySymbologyStore()
 
@@ -169,7 +170,7 @@ export function useLayerSymbology(
     set: (raw: string) => {
       if (!displayLayer.value?.instanceId || !canEditPalette.value) return
       const n = raw.trim() === '' ? null : Number(raw)
-      layersStore.setLayerRangeOverride(displayLayer.value.instanceId, {
+      workspace.setLayerRangeOverride(displayLayer.value.instanceId, {
         vmin: n != null && Number.isFinite(n) ? n : null,
       })
     },
@@ -187,7 +188,7 @@ export function useLayerSymbology(
     set: (raw: string) => {
       if (!displayLayer.value?.instanceId || !canEditPalette.value) return
       const n = raw.trim() === '' ? null : Number(raw)
-      layersStore.setLayerRangeOverride(displayLayer.value.instanceId, {
+      workspace.setLayerRangeOverride(displayLayer.value.instanceId, {
         vmax: n != null && Number.isFinite(n) ? n : null,
       })
     },
@@ -197,7 +198,7 @@ export function useLayerSymbology(
     get: () => displayLayer.value.nodataMode ?? 'transparent',
     set: (mode: 'transparent' | 'solid') => {
       if (!displayLayer.value?.instanceId || !canEditPalette.value) return
-      layersStore.setLayerNodataDisplay(displayLayer.value.instanceId, {
+      workspace.setLayerNodataDisplay(displayLayer.value.instanceId, {
         mode,
         color: mode === 'solid' ? displayLayer.value.nodataColor || '#808080' : null,
       })
@@ -208,7 +209,7 @@ export function useLayerSymbology(
     get: () => displayLayer.value.nodataColor || '#808080',
     set: (color: string) => {
       if (!displayLayer.value?.instanceId || !canEditPalette.value) return
-      layersStore.setLayerNodataDisplay(displayLayer.value.instanceId, {
+      workspace.setLayerNodataDisplay(displayLayer.value.instanceId, {
         mode: 'solid',
         color,
       })
@@ -222,7 +223,7 @@ export function useLayerSymbology(
     )
     const target = paletteIdsEqual(paletteId, defaultId) ? null : paletteId
     if (displayLayer.value?.instanceId) {
-      layersStore.setLayerPaletteOverride(displayLayer.value.instanceId, target)
+      workspace.setLayerPaletteOverride(displayLayer.value.instanceId, target)
     }
     paletteDropdownOpen.value = false
   }
@@ -239,15 +240,15 @@ export function useLayerSymbology(
   })
 
   const canToggleParticleFlow = computed(() =>
-    layersStore.supportsParticleFlow(displayLayer.value.catalogId),
+    workspace.supportsParticleFlow(displayLayer.value.catalogId),
   )
   /** 该层是否持有风场三态控件归属（含「网格」色底态） */
   const ownsWindDisplay = computed(
-    () => layersStore.particleFlowCatalogId === displayLayer.value.catalogId,
+    () => viewport.particleFlowCatalogId.value === displayLayer.value.catalogId,
   )
   const currentWindDisplayMode = computed<WindDisplayMode>(() => {
     if (!ownsWindDisplay.value) return 'off'
-    return layersStore.windDisplayMode
+    return viewport.windDisplayMode.value
   })
   const legendExplainer = computed(() =>
     buildLegendExplainer({
@@ -259,7 +260,7 @@ export function useLayerSymbology(
   function handleSetWindDisplayMode(mode: WindDisplayMode) {
     // 本层已归属时可自由三态切换；其它层需等瓦片就绪才能抢占
     if (mode !== 'off' && particleFlowButtonDisabled.value) return
-    layersStore.setWindDisplayMode(displayLayer.value.catalogId, mode)
+    viewport.setWindDisplayMode(displayLayer.value.catalogId, mode)
   }
   /** 无数据且非本层归属时禁用「粒子流/流量场」；「网格」永远可点 */
   const particleFlowButtonDisabled = computed(() => {

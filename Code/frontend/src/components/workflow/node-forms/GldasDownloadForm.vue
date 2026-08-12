@@ -5,6 +5,7 @@
  * download/gldas_download 节点专用参数表单。
  */
 import { computed, onMounted, reactive, watch } from 'vue'
+import { Check, AlertTriangle } from '../../ui/icons'
 import type { LGraphNodeClass } from '../litegraph-setup'
 import {
   type FormErrors,
@@ -202,8 +203,12 @@ function update(key: string, value: unknown) {
     </div>
 
     <div class="form-summary" :class="{ valid: errorCount === 0, invalid: errorCount > 0 }">
-      <template v-if="errorCount === 0">✓ 表单校验通过</template>
-      <template v-else>⚠ 请修正 {{ errorCount }} 处错误</template>
+      <template v-if="errorCount === 0"
+        ><Check :size="14" aria-hidden="true" /> 表单校验通过</template
+      >
+      <template v-else
+        ><AlertTriangle :size="14" aria-hidden="true" /> 请修正 {{ errorCount }} 处错误</template
+      >
     </div>
   </div>
 </template>
@@ -243,7 +248,7 @@ function update(key: string, value: unknown) {
 .form-input {
   width: 100%;
   padding: 0.32rem 0.42rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.36rem;
   background: var(--surface-raised);
   color: var(--text-primary);
@@ -254,11 +259,11 @@ function update(key: string, value: unknown) {
 
 .form-input:focus {
   outline: none;
-  border-color: rgba(90, 213, 255, 0.4);
+  border-color: var(--border-strong);
 }
 
 .form-input:read-only {
-  background: rgba(4, 12, 23, 0.3);
+  background: var(--surface-sunken);
   color: var(--text-faint);
   cursor: default;
 }
@@ -286,7 +291,7 @@ function update(key: string, value: unknown) {
 
 .field-error {
   font-size: var(--font-size-caption);
-  color: #ff7b7b;
+  color: var(--danger);
   margin-top: 0.06rem;
   line-height: 1.3;
 }
@@ -301,14 +306,14 @@ function update(key: string, value: unknown) {
 }
 
 .form-summary.valid {
-  background: rgba(114, 255, 207, 0.08);
-  color: #72ffcf;
-  border-color: rgba(114, 255, 207, 0.22);
+  background: var(--success-surface);
+  color: var(--success);
+  border-color: var(--success-border);
 }
 
 .form-summary.invalid {
   background: rgba(255, 123, 123, 0.08);
-  color: #ff7b7b;
+  color: var(--danger);
   border-color: rgba(255, 123, 123, 0.22);
 }
 </style>

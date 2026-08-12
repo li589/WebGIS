@@ -22,7 +22,12 @@ body,
   color: var(--text-primary);
   background:
     radial-gradient(circle at top, rgba(17, 94, 160, 0.24), transparent 30rem),
-    linear-gradient(180deg, var(--surface-base) 0%, #071120 45%, #091425 100%);
+    linear-gradient(
+      180deg,
+      var(--surface-base) 0%,
+      var(--surface-base) 45%,
+      var(--surface-sunken) 100%
+    );
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -34,7 +39,12 @@ body,
   color: var(--text-primary);
   background:
     radial-gradient(circle at top, rgba(10, 143, 196, 0.08), transparent 30rem),
-    linear-gradient(180deg, #eef2f7 0%, #e6ecf3 45%, #dde5ee 100%);
+    linear-gradient(
+      180deg,
+      var(--surface-base) 0%,
+      var(--text-primary) 45%,
+      var(--text-secondary) 100%
+    );
 }
 
 html,

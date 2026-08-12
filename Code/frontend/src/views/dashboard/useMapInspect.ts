@@ -9,7 +9,7 @@
  * pointHourRefetchTimer watcher / activeLayer catalogId watcher。
  */
 import { ref, watch, type ComputedRef, type Ref } from 'vue'
-import type { useLayersStore } from '../../stores/layers'
+import { useLayerWorkspace, useWorkflowRun } from '../../stores/layers/selectors'
 import type { useLogStore } from '../../stores/log'
 import type { useUiStore } from '../../stores/ui'
 import type { LayerHotspot } from '../../stores/layers/types'
@@ -26,7 +26,6 @@ interface SelectedLayerLike {
 }
 
 export function useMapInspect(
-  layersStore: ReturnType<typeof useLayersStore>,
   logStore: ReturnType<typeof useLogStore>,
   uiStore: ReturnType<typeof useUiStore>,
   selectedLayerDisplay: Ref<SelectedLayerLike | null | undefined>,
@@ -35,6 +34,8 @@ export function useMapInspect(
   overlayTimeStates: Ref<OverlayTimeState[]>,
   activeLayer: ComputedRef<{ catalogId?: string }>,
 ) {
+  const workspace = useLayerWorkspace()
+  const workflowRun = useWorkflowRun()
   const selectedMapPoint = ref<{ lng: number; lat: number } | null>(null)
   const selectedHotspot = ref<LayerHotspot | null>(null)
   const visibleHotspots = ref<LayerHotspot[]>([])
@@ -46,17 +47,17 @@ export function useMapInspect(
   /** 点查优先当前选中天气层；否则取最顶层可见天气层 */
   function resolveWeatherInspectCatalogId(): string | null {
     const selected = selectedLayerDisplay.value
-    if (selected && layersStore.isWeatherEngineLayer(selected.catalogId!) && selected.visible) {
+    if (selected && workspace.isWeatherEngineLayer(selected.catalogId!) && selected.visible) {
       return selected.catalogId!
     }
-    const topVisible = [...layersStore.activeLayers]
-      .filter((l) => l.visible && layersStore.isWeatherEngineLayer(l.catalogId))
+    const topVisible = [...workspace.activeLayers.value]
+      .filter((l) => l.visible && workspace.isWeatherEngineLayer(l.catalogId))
       .sort((a, b) => b.order - a.order)[0]
     return topVisible?.catalogId ?? null
   }
 
   function requestPointWeather(lng: number, lat: number, catalogId: string) {
-    void layersStore.fetchPointWeather(lng, lat, catalogId, {
+    void workflowRun.fetchPointWeather(lng, lat, catalogId, {
       forecastHours: tileForecastHour.value + 1,
     })
   }
@@ -71,14 +72,14 @@ export function useMapInspect(
     if (catalogId) {
       requestPointWeather(point.lng, point.lat, catalogId)
     } else {
-      layersStore.clearPointWeather()
+      workflowRun.clearPointWeather()
     }
     void fetchOverlayPointValues(point.lng, point.lat)
   }
 
   function clearMapPointInspect() {
     selectedMapPoint.value = null
-    layersStore.clearPointWeather()
+    workflowRun.clearPointWeather()
     overlayPointValues.value = []
     selectedOverlayTimeSeries.value = []
     logStore.logOperation('map-point-clear', '清除地图选点')
@@ -130,7 +131,7 @@ export function useMapInspect(
   }
 
   async function fetchSelectedOverlaySeries(lng: number, lat: number) {
-    const selectedActive = layersStore.activeLayers.find(
+    const selectedActive = workspace.activeLayers.value.find(
       (l) => l.instanceId === selectedLayerDisplay.value?.instanceId,
     )
     const selectedOverlayId =
@@ -165,7 +166,7 @@ export function useMapInspect(
     overlayTimeStates.value = states
     for (const st of states) {
       if (st.category !== 'time-series' || !st.timeList?.length) continue
-      const layer = layersStore.activeLayers.find(
+      const layer = workspace.activeLayers.value.find(
         (l) => l.importedRaster?.overlayLayerId === st.layerId,
       )
       if (!layer?.importedRaster) continue
@@ -207,8 +208,8 @@ export function useMapInspect(
   watch(
     () => activeLayer.value.catalogId,
     (catalogId) => {
-      if (!catalogId || !layersStore.isWeatherEngineLayer(catalogId)) {
-        layersStore.clearPointWeather()
+      if (!catalogId || !workspace.isWeatherEngineLayer(catalogId)) {
+        workflowRun.clearPointWeather()
         return
       }
       if (selectedMapPoint.value) {

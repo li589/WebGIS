@@ -2,12 +2,17 @@
 /**
  * AppButton — 统一按钮（设计系统 §3.1）
  *
- * 变体：primary（品牌实底）/ secondary（表面+边框，默认）/ ghost（透明文字）
+ * 变体：primary（品牌实底）/ secondary（表面+边框，默认）/ ghost（透明文字）/ danger
  * 尺寸：xs / sm / md（默认）/ lg —— 统一 4 档，基于 4px 网格
- *   xs=24px  sm=28px  md=36px  lg=44px
+ *   xs=26px  sm=28px  md=36px  lg=44px
  * 规格：圆角 --radius-md，hover 微抬升 + elevation-1，focus-visible 强调环
+ *
+ * 图标传入方式（二选一）：
+ *   1. #icon slot —— 传入 lucide-vue-next 组件（推荐）
+ *      <AppButton variant="primary"><template #icon><Play :size="14" /></template>运行</AppButton>
+ *   2. icon prop —— 纯文本字符（向后兼容，如 emoji 或单字符）
  */
-import { computed } from 'vue'
+import { computed, useSlots } from 'vue'
 
 const props = withDefaults(
   defineProps<{
@@ -18,7 +23,7 @@ const props = withDefaults(
     /** 块级占满父宽 */
     block?: boolean
     type?: 'button' | 'submit' | 'reset'
-    /** 图标前缀（置于文字前） */
+    /** 图标前缀（纯文本字符，向后兼容；推荐使用 #icon slot 传入 SVG 组件） */
     icon?: string
     /** 是否显示 loading 态（替换图标） */
     loading?: boolean
@@ -36,6 +41,7 @@ const props = withDefaults(
   },
 )
 
+const slots = useSlots()
 const cls = computed(() => [
   `app-btn`,
   `app-btn--${props.variant}`,
@@ -44,10 +50,17 @@ const cls = computed(() => [
     'app-btn--block': props.block,
     'app-btn--loading': props.loading,
     'app-btn--disabled': props.disabled,
+    'app-btn--icon-only': !slots.default && (slots.icon || props.icon),
   },
 ])
 
 const label = computed(() => props.ariaLabel || undefined)
+
+/** Icon size in px, mapped from button size */
+const iconSize = computed(() => {
+  const map = { xs: 13, sm: 14, md: 16, lg: 18 } as const
+  return map[props.size]
+})
 </script>
 
 <template>
@@ -60,6 +73,9 @@ const label = computed(() => props.ariaLabel || undefined)
     data-ui="app-btn"
   >
     <span v-if="loading" class="app-btn-spinner" aria-hidden="true"></span>
+    <span v-else-if="$slots.icon" class="app-btn-icon" aria-hidden="true">
+      <slot name="icon" :size="iconSize" />
+    </span>
     <span v-else-if="icon" class="app-btn-icon" aria-hidden="true">{{ icon }}</span>
     <span v-if="$slots.default" class="app-btn-label"><slot /></span>
   </button>
@@ -124,6 +140,13 @@ const label = computed(() => props.ariaLabel || undefined)
   font-size: var(--font-size-body);
 }
 
+/* 图标-only 按钮（无文字）：正方形 */
+.app-btn--icon-only {
+  padding: 0;
+  aspect-ratio: 1;
+  width: auto;
+}
+
 .app-btn--block {
   width: 100%;
 }
@@ -131,10 +154,10 @@ const label = computed(() => props.ariaLabel || undefined)
 /* 变体：primary */
 .app-btn--primary {
   background: var(--accent);
-  color: #06121f;
+  color: var(--surface-base);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.14) inset,
-    0 1px 2px rgba(0, 0, 0, 0.3);
+    0 1px 2px var(--surface-sunken);
 }
 .app-btn--primary:hover:not(:disabled) {
   background: var(--accent-strong);
@@ -180,8 +203,8 @@ const label = computed(() => props.ariaLabel || undefined)
 .app-btn--danger {
   background: var(--danger);
   border-color: var(--danger);
-  color: #06121f;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  color: var(--surface-base);
+  box-shadow: 0 1px 2px var(--surface-sunken);
 }
 .app-btn--danger:hover:not(:disabled) {
   background: var(--warning);
@@ -198,6 +221,8 @@ const label = computed(() => props.ariaLabel || undefined)
   font-size: 1em;
   line-height: 1;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .app-btn-label {
   display: inline-flex;

@@ -147,7 +147,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(3, 8, 16, 0.62);
+  background: var(--surface-1);
   backdrop-filter: blur(4px);
 }
 
@@ -157,9 +157,9 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   border-radius: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: #0c1524;
-  color: #dbe7f5;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-1);
+  color: var(--text-primary);
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
   overflow: hidden;
 }
@@ -169,19 +169,19 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 0.8rem 1rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .nc-title {
   font-size: 14px;
   font-weight: 500;
-  color: #f1f7ff;
+  color: var(--text-strong);
 }
 
 .nc-close {
   border: none;
   background: transparent;
-  color: #8aa2bd;
+  color: var(--text-muted);
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
@@ -192,12 +192,12 @@ onMounted(() => {
   align-items: center;
   gap: 0.8rem;
   padding: 0.6rem 1rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .nc-summary-item {
   font-size: 12px;
-  color: #8aa2bd;
+  color: var(--text-muted);
 }
 
 .nc-clear-all {
@@ -206,7 +206,7 @@ onMounted(() => {
   border: 1px solid rgba(226, 75, 74, 0.45);
   border-radius: 6px;
   background: rgba(226, 75, 74, 0.14);
-  color: #f7b3b3;
+  color: var(--danger);
   font-size: 12px;
   cursor: pointer;
 }
@@ -221,7 +221,7 @@ onMounted(() => {
   padding: 0.5rem 0.7rem;
   border-radius: 6px;
   background: rgba(226, 75, 74, 0.14);
-  color: #f7b3b3;
+  color: var(--danger);
   font-size: 12px;
 }
 
@@ -230,7 +230,7 @@ onMounted(() => {
   padding: 1.6rem 1rem;
   text-align: center;
   font-size: 13px;
-  color: #8aa2bd;
+  color: var(--text-muted);
 }
 
 .nc-list {
@@ -245,7 +245,7 @@ onMounted(() => {
   align-items: center;
   gap: 0.6rem;
   padding: 0.5rem 0.4rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .nc-item-main {
@@ -259,13 +259,13 @@ onMounted(() => {
 .nc-item-name {
   font-size: 13px;
   font-weight: 500;
-  color: #dbe7f5;
+  color: var(--text-primary);
   flex-shrink: 0;
 }
 
 .nc-item-size {
   font-size: 12px;
-  color: #ffd9a0;
+  color: var(--warning);
   flex-shrink: 0;
 }
 
@@ -287,10 +287,10 @@ onMounted(() => {
 
 .nc-item-clear {
   padding: 0.2rem 0.6rem;
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  border: 1px solid var(--border-strong);
   border-radius: 5px;
   background: transparent;
-  color: #8aa2bd;
+  color: var(--text-muted);
   font-size: 12px;
   cursor: pointer;
   flex-shrink: 0;

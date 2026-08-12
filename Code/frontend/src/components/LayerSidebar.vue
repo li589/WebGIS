@@ -8,9 +8,9 @@
  * 拆分历史：原 2910 行 → CSS 提取(-1357) → composable 提取(-1100) → 子组件提取(-450)
  */
 import { computed, nextTick, ref, watch, onMounted } from 'vue'
-import { storeToRefs } from 'pinia'
-import { Diamond } from 'lucide-vue-next'
+import { Diamond } from './ui/icons'
 
+import { useLayerWorkspace, useWorkflowRun } from '../stores/layers/selectors'
 import { useLayersStore } from '../stores/layers'
 import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
@@ -40,7 +40,9 @@ const emit = defineEmits<{
 }>()
 
 // ── Store 设置 ──────────────────────────────────────────────────────────────
-const layersStore = useLayersStore()
+const workspace = useLayerWorkspace()
+const workflowRun = useWorkflowRun()
+const layersStore = useLayersStore() // 内部 composable 需完整 store 实例
 const uiStore = useUiStore()
 const logStore = useLogStore()
 const overlaySymbologyStore = useOverlaySymbologyStore()
@@ -51,16 +53,17 @@ const orgLabel = ORG_LABEL
 const {
   activeLayers,
   activeLayersDisplay,
-  runLayerGroups,
   selectedInstanceId,
   sidebarView,
   activeLayerCount,
   sidebarViewLabel,
   catalogJobStatus,
   layerLibrary,
-} = storeToRefs(layersStore)
+} = workspace
 
-const layerCategories = layersStore.layerCategories
+const { runLayerGroups } = workflowRun
+
+const layerCategories = workspace.layerCategories
 
 // ── Composable 调用 ──────────────────────────────────────────────────────────
 
@@ -110,7 +113,7 @@ function getCatalogJobStatus(catalogId: string): string | undefined {
 }
 
 function getCatalogRunBlockReason(catalogId: string): string | null {
-  return layersStore.getCatalogRunBlockReason(catalogId)
+  return workspace.getCatalogRunBlockReason(catalogId)
 }
 
 function getCatalogItem(catalogId: string) {
@@ -182,18 +185,18 @@ function availabilityClass(state: string) {
 // ── 基础操作 ─────────────────────────────────────────────────────────────────
 
 function openLibrary() {
-  layersStore.setSidebarView('library')
+  workspace.setSidebarView('library')
   void nextTick(() => scrollSidebarChromeIntoView())
 }
 
 function openActive() {
-  layersStore.setSidebarView('active')
+  workspace.setSidebarView('active')
   void nextTick(() => scrollSidebarChromeIntoView())
 }
 
 function addCatalogItem(catalogId: string, isAdminBoundary = false) {
   if (!isAdminBoundary && isAdded(catalogId)) return
-  layersStore.addLayer(catalogId, isAdminBoundary)
+  workspace.addLayer(catalogId, isAdminBoundary)
   logStore.logOperation(
     'layer-add',
     `添加图层「${catalogId}」`,
@@ -212,26 +215,26 @@ function addAllInCategory(items: { catalogId: string; isAdminBoundary?: boolean 
 }
 
 function showAllLayers() {
-  layersStore.setAllLayerVisibility(true)
+  workspace.setAllLayerVisibility(true)
 }
 
 function hideAllLayers() {
-  layersStore.setAllLayerVisibility(false)
+  workspace.setAllLayerVisibility(false)
 }
 
 function removeAllLayers() {
-  layersStore.removeAllLayers()
+  workspace.removeAllLayers()
 }
 
 function removeItem(instanceId: string, event: MouseEvent) {
   event.stopPropagation()
   const layer = activeLayersDisplay.value.find((l) => l.instanceId === instanceId)
-  layersStore.removeLayer(instanceId)
+  workspace.removeLayer(instanceId)
   logStore.logOperation('layer-remove', `移除图层「${layer?.name ?? instanceId}」`)
 }
 
 function selectItem(instanceId: string) {
-  layersStore.selectLayer(instanceId)
+  workspace.selectLayer(instanceId)
   emit('selectLayer', instanceId)
 }
 
@@ -243,7 +246,7 @@ function zoomToItem(instanceId: string) {
 function toggleVisibility(instanceId: string, event: MouseEvent) {
   event.stopPropagation()
   const layer = activeLayersDisplay.value.find((l) => l.instanceId === instanceId)
-  layersStore.toggleLayerVisibility(instanceId)
+  workspace.toggleLayerVisibility(instanceId)
   logStore.logOperation(
     'layer-visibility',
     `${layer?.visible ? '隐藏' : '显示'}图层「${layer?.name ?? instanceId}」`,

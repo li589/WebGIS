@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, type Component } from 'vue'
 
+import { Circle, CircleDot, AlertTriangle, XCircle } from '../ui/icons'
 import { fetchRuntimeStatus } from '../../services/settings-api'
 import type { BackendServiceStatus, RuntimeStatusResponse } from '../../types/api-reexports'
 import type { components } from '../../types/api-contracts'
@@ -15,11 +16,11 @@ const error = ref<string | null>(null)
 const status = ref<RuntimeStatusResponse | null>(null)
 let timer: ReturnType<typeof setInterval> | null = null
 
-const HEALTH_SYMBOL: Record<ServiceHealth, string> = {
-  ok: '●',
-  busy: '◐',
-  degraded: '▲',
-  offline: '✕',
+const HEALTH_SYMBOL: Record<ServiceHealth, Component> = {
+  ok: Circle,
+  busy: CircleDot,
+  degraded: AlertTriangle,
+  offline: XCircle,
 }
 
 const HEALTH_TITLE: Record<ServiceHealth, string> = {
@@ -130,9 +131,9 @@ onBeforeUnmount(() => {
     <div v-if="status" class="overview-card">
       <div class="overview-row">
         <div class="summary-chip" :class="healthClass(status.overall_health)">
-          <span class="health-symbol" :title="HEALTH_TITLE[status.overall_health]">{{
-            HEALTH_SYMBOL[status.overall_health]
-          }}</span>
+          <span class="health-symbol" :title="HEALTH_TITLE[status.overall_health]">
+            <component :is="HEALTH_SYMBOL[status.overall_health]" :size="14" aria-hidden="true" />
+          </span>
           <span class="health-label">总体 {{ HEALTH_TITLE[status.overall_health] }}</span>
         </div>
         <div class="summary-meta">
@@ -153,7 +154,8 @@ onBeforeUnmount(() => {
           class="strip-chip"
           :class="healthClass(h)"
         >
-          {{ HEALTH_SYMBOL[h] }} {{ HEALTH_TITLE[h] }} ×{{ serviceCount[h] }}
+          <component :is="HEALTH_SYMBOL[h]" :size="14" aria-hidden="true" />
+          {{ HEALTH_TITLE[h] }} ×{{ serviceCount[h] }}
         </span>
       </div>
     </div>
@@ -187,7 +189,7 @@ onBeforeUnmount(() => {
             :class="healthClass(svc.health)"
             :title="HEALTH_TITLE[svc.health]"
           >
-            {{ HEALTH_SYMBOL[svc.health] }}
+            <component :is="HEALTH_SYMBOL[svc.health]" :size="14" aria-hidden="true" />
           </span>
         </div>
         <p class="service-message">{{ svc.message }}</p>
@@ -220,7 +222,7 @@ onBeforeUnmount(() => {
 .section-title {
   margin: 0;
   font-size: 0.9rem;
-  color: #e8f3fc;
+  color: var(--text-strong);
 }
 
 .section-hint {
@@ -230,10 +232,10 @@ onBeforeUnmount(() => {
 }
 
 .refresh-btn {
-  border: 1px solid rgba(90, 213, 255, 0.25);
+  border: 1px solid var(--border-accent);
   border-radius: 0.45rem;
   padding: 0.3rem 0.6rem;
-  background: rgba(10, 132, 255, 0.12);
+  background: var(--accent-surface);
   color: var(--accent);
   cursor: pointer;
   font: inherit;
@@ -247,7 +249,7 @@ onBeforeUnmount(() => {
 
 .error {
   margin: 0;
-  color: #ffb4a8;
+  color: var(--danger);
   font-size: var(--font-size-caption);
 }
 
@@ -258,8 +260,8 @@ onBeforeUnmount(() => {
   gap: 0.5rem;
   padding: 0.65rem 0.75rem;
   border-radius: 0.55rem;
-  border: 1px solid rgba(136, 192, 255, 0.12);
-  background: rgba(4, 12, 23, 0.45);
+  border: 1px solid var(--border-default);
+  background: var(--surface-raised);
 }
 
 .overview-row {
@@ -317,8 +319,8 @@ onBeforeUnmount(() => {
 .service-item {
   padding: 0.6rem 0.75rem;
   border-radius: 0.55rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
-  background: rgba(4, 12, 23, 0.3);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
 }
 
 .service-row {
@@ -376,27 +378,27 @@ onBeforeUnmount(() => {
 }
 
 .health-ok {
-  background: rgba(114, 255, 207, 0.12);
+  background: var(--success-surface);
   color: var(--success);
-  border-color: rgba(114, 255, 207, 0.2);
+  border-color: var(--success-border);
 }
 
 .health-busy {
   background: rgba(255, 211, 138, 0.12);
-  color: #ffd38a;
+  color: var(--accent-warm);
   border-color: rgba(255, 196, 120, 0.2);
 }
 
 .health-degraded {
-  background: rgba(255, 180, 80, 0.12);
+  background: var(--warning-surface);
   color: var(--accent-warm);
-  border-color: rgba(255, 160, 60, 0.2);
+  border-color: var(--warning-border);
 }
 
 .health-offline {
-  background: rgba(255, 120, 100, 0.12);
-  color: #ffb4a8;
-  border-color: rgba(255, 100, 80, 0.25);
+  background: var(--danger-surface);
+  color: var(--danger);
+  border-color: var(--danger-border);
 }
 
 .service-message {
@@ -416,7 +418,7 @@ onBeforeUnmount(() => {
   list-style: none;
   margin: 0.45rem 0 0;
   padding: 0.45rem 0.55rem 0.1rem;
-  border-top: 1px dashed rgba(136, 192, 255, 0.12);
+  border-top: 1px dashed var(--border-default);
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
@@ -438,7 +440,7 @@ onBeforeUnmount(() => {
 
 .detail-value {
   flex: 1;
-  color: #c9dbea;
+  color: var(--text-primary);
   word-break: break-all;
   font-family: 'Cascadia Code', Consolas, monospace;
 }

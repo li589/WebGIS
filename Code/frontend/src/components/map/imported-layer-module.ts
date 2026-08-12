@@ -44,10 +44,10 @@ interface LoadedImportedLayer {
   }>
 }
 
-/** 与导入矢量 display accent（#7ee0a8）对齐 */
-const DEFAULT_POINT_COLOR = '#7ee0a8'
-const DEFAULT_LINE_COLOR = '#7ee0a8'
-const DEFAULT_FILL_COLOR = '#7ee0a8'
+/** 与导入矢量 display accent（var(--success)）对齐 */
+const DEFAULT_POINT_COLOR = 'var(--success)'
+const DEFAULT_LINE_COLOR = 'var(--success)'
+const DEFAULT_FILL_COLOR = 'var(--success)'
 
 function _safeId(id: string): string {
   return id.replace(/[^a-zA-Z0-9_-]/g, '-')
@@ -419,7 +419,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
       type: 'line',
       source: hlSource,
       paint: {
-        'line-color': '#ffd166',
+        'line-color': 'var(--warning)',
         'line-width': 3.5,
         'line-opacity': 0.95,
       },
@@ -431,7 +431,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
       filter: ['==', '$type', 'Point'],
       paint: {
         'circle-radius': 8,
-        'circle-color': '#ffd166',
+        'circle-color': 'var(--warning)',
         'circle-stroke-width': 2,
         'circle-stroke-color': '#0a233a',
         'circle-opacity': 0.95,

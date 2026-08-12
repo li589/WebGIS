@@ -18,7 +18,7 @@
  *   </PanelDock>
  */
 
-import { computed } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { usePanelDragResize } from './usePanelDragResize'
 
 const props = withDefaults(
@@ -117,7 +117,19 @@ const {
   showResizeHandle: props.showResizeHandle,
 })
 
-const isMobile = computed(() => typeof window !== 'undefined' && window.innerWidth < 820)
+const _viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1280)
+const isMobile = computed(() => _viewportWidth.value < 820)
+
+function _onResize() {
+  _viewportWidth.value = window.innerWidth
+}
+onMounted(() => window.addEventListener('resize', _onResize, { passive: true }))
+onUnmounted(() => window.removeEventListener('resize', _onResize))
+
+/** Mobile: suppress inline panel size styles so CSS media-query rules take effect */
+const effectivePanelSizeStyle = computed(() => (isMobile.value ? {} : panelSizeStyle.value))
+/** Mobile: suppress anchor transform so CSS media-query reset takes effect */
+const effectiveFrameStyle = computed(() => (isMobile.value ? {} : frameStyle.value))
 
 const dockClass = computed(() => [
   'panel-dock',
@@ -152,7 +164,7 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 </script>
 
 <template>
-  <div class="panel-anchor" :class="anchorClass" :style="frameStyle">
+  <div class="panel-anchor" :class="anchorClass" :style="effectiveFrameStyle">
     <!-- 隐藏态：恢复胶囊 -->
     <button
       v-if="!visible"
@@ -172,7 +184,7 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
     </button>
 
     <!-- 显示态：面板壳 -->
-    <section v-else class="panel-dock__frame" :class="dockClass" :style="panelSizeStyle">
+    <section v-else class="panel-dock__frame" :class="dockClass" :style="effectivePanelSizeStyle">
       <!-- 标题栏 -->
       <header class="panel-dock__head" :class="{ 'panel-dock__head--dragging': dragging }">
         <button
@@ -259,8 +271,8 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   --panel-padding: 0.4rem;
   --panel-body-padding: 0.45rem;
   --panel-collapsed-height: 2.9rem;
-  --panel-scrollbar-track: rgba(255, 255, 255, 0.05);
-  --panel-scrollbar-thumb: rgba(136, 192, 255, 0.22);
+  --panel-scrollbar-track: var(--surface-hover);
+  --panel-scrollbar-thumb: var(--border-strong);
   --panel-backdrop-blur: 12px;
 
   position: relative;
@@ -351,7 +363,7 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   border-radius: var(--radius-lg);
   background:
     linear-gradient(180deg, var(--surface-2), var(--surface-1)),
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.06), transparent 34%),
+    radial-gradient(circle at top left, var(--surface-hover), transparent 34%),
     radial-gradient(circle at bottom right, var(--accent-surface), transparent 42%);
   box-shadow: var(--elevation-2);
   backdrop-filter: blur(var(--glass-blur)) saturate(1.08);
@@ -396,9 +408,9 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 }
 
 .panel-dock--mobile {
-  width: 100% !important;
-  max-width: none !important;
-  min-width: 0 !important;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
 }
 
 .panel-dock--timeline {
@@ -545,7 +557,7 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
   background: linear-gradient(180deg, var(--accent-surface), transparent);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.02),
+    inset 0 1px 0 var(--surface-hover),
     var(--elevation-1);
   scrollbar-width: thin;
   scrollbar-color: var(--panel-scrollbar-thumb) var(--panel-scrollbar-track);
@@ -661,7 +673,7 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   position: absolute;
   background: var(--accent);
   border-radius: var(--radius-pill);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px var(--surface-hover);
 }
 
 .resize-corner--one {
@@ -685,7 +697,7 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 /* ═══ 响应式：移动端禁用拖拽/缩放 ═══ */
 @media (max-width: 768px) {
   .panel-anchor {
-    transform: none !important;
+    transform: none;
   }
 
   .panel-dock__grip {

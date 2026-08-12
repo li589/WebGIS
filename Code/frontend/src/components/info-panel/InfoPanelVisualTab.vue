@@ -5,6 +5,7 @@
 import type { ActiveLayerDisplay, LayerHotspot } from '../../stores/layers/types'
 import type { WeatherPointResponse } from '../../services/runtime-api'
 import { ANALYSIS_COPY, INSPECT_COPY } from '../../ui-copy'
+import AppButton from '../ui/AppButton.vue'
 import PointTimeSeriesChart from './PointTimeSeriesChart.vue'
 import MultiOverlayBarChart from './MultiOverlayBarChart.vue'
 import AnalysisResultCharts from './AnalysisResultCharts.vue'
@@ -165,14 +166,14 @@ function queryDefaultOverlaySeries() {
           : '同一选点在全部可用 8 天时间块上的数值变化；高亮当前时间轴块。'
       }}
     </p>
-    <button
+    <AppButton
       v-if="!selectedOverlayTimeSeriesRows.length"
-      type="button"
-      class="weather-mini-btn"
+      size="xs"
+      variant="secondary"
       @click="queryDefaultOverlaySeries"
     >
       加载当前图层 8 天块时序
-    </button>
+    </AppButton>
     <PointTimeSeriesChart
       v-if="selectedOverlayTimeSeriesRows.length"
       :hourly-rows="selectedOverlayTimeSeriesRows"
@@ -258,17 +259,17 @@ function queryDefaultOverlaySeries() {
     <p class="analysis-sparse-title">{{ ANALYSIS_COPY.sparseVisualTitle }}</p>
     <p>{{ sparseVisualHint }}</p>
     <div v-if="isRealtimeWeatherLayer || canRunWorkflow" class="overview-quick-actions">
-      <button
+      <AppButton
         v-if="isRealtimeWeatherLayer && interactionMode !== 'select'"
-        type="button"
-        class="weather-mini-btn"
+        size="xs"
+        variant="secondary"
         @click="enterInspectTools"
       >
         {{ ANALYSIS_COPY.toolsQuickInspect }}
-      </button>
-      <button type="button" class="weather-mini-btn" @click="emit('setActiveTab', 'style')">
+      </AppButton>
+      <AppButton size="xs" variant="secondary" @click="emit('setActiveTab', 'style')">
         符号样式
-      </button>
+      </AppButton>
     </div>
   </div>
 </template>

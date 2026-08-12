@@ -41,7 +41,7 @@ const EXEMPT_PATHS = [
 
 function isExempt(filePath) {
   const normalized = filePath.replace(/\\/g, '/')
-  return EXEMPT_PATHS.some(p => normalized.endsWith(p))
+  return EXEMPT_PATHS.some((p) => normalized.endsWith(p))
 }
 
 function findFiles(dir, exts, results = []) {
@@ -54,7 +54,7 @@ function findFiles(dir, exts, results = []) {
       if (entry === 'node_modules' || entry === 'dist' || entry === '.git') continue
       findFiles(fullPath, exts, results)
     } else {
-      if (exts.some(ext => entry.endsWith(ext))) {
+      if (exts.some((ext) => entry.endsWith(ext))) {
         results.push(fullPath)
       }
     }
@@ -81,26 +81,20 @@ function migrateFile(filePath) {
 
   // 匹配 font-size: 0.XXrem（其中 0.XX < 0.80）
   // 不匹配已经用 var() 的
-  result = result.replace(
-    /font-size:\s*(0\.\d+rem)/gi,
-    (match, value) => {
-      const num = parseFloat(value)
-      if (num >= 0.8) return match // 在 floor 或以上，不替换
-      replaced++
-      return 'font-size: var(--font-size-caption)'
-    },
-  )
+  result = result.replace(/font-size:\s*(0\.\d+rem)/gi, (match, value) => {
+    const num = parseFloat(value)
+    if (num >= 0.8) return match // 在 floor 或以上，不替换
+    replaced++
+    return 'font-size: var(--font-size-caption)'
+  })
 
   // 匹配 font-size: Npx（其中 N < 12）
-  result = result.replace(
-    /font-size:\s*(\d+)px/gi,
-    (match, value) => {
-      const num = parseInt(value)
-      if (num >= 12) return match // 在 floor 或以上，不替换
-      replaced++
-      return 'font-size: var(--font-size-caption)'
-    },
-  )
+  result = result.replace(/font-size:\s*(\d+)px/gi, (match, value) => {
+    const num = parseInt(value)
+    if (num >= 12) return match // 在 floor 或以上，不替换
+    replaced++
+    return 'font-size: var(--font-size-caption)'
+  })
 
   if (replaced > 0) {
     writeFileSync(filePath, result, 'utf-8')

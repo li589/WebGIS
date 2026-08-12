@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ClipboardList, X } from 'lucide-vue-next'
+import { ClipboardList, X } from '../ui/icons'
 import { useLogStore, type LogCategory } from '../../stores/log'
 
 const emit = defineEmits<{
@@ -155,7 +155,7 @@ function handleExport() {
   z-index: 998;
   display: flex;
   justify-content: flex-end;
-  background: rgba(4, 10, 18, 0.5);
+  background: var(--surface-raised);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
@@ -166,7 +166,7 @@ function handleExport() {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, rgba(10, 22, 40, 0.98), rgba(6, 14, 26, 0.97));
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-2));
   border-left: 1px solid var(--accent-surface);
   box-shadow:
     -16px 0 48px rgba(1, 8, 16, 0.4),
@@ -292,7 +292,7 @@ function handleExport() {
 
 .clear-btn {
   padding: var(--space-1) var(--space-2);
-  border: 1px solid rgba(255, 140, 100, 0.2);
+  border: 1px solid var(--danger-border);
   border-radius: var(--radius-pill);
   background: transparent;
   color: var(--danger);
@@ -378,7 +378,7 @@ function handleExport() {
 
 .cat-badge-workflow {
   background: rgba(201, 163, 255, 0.12);
-  color: #c9a3ff;
+  color: var(--accent-strong);
 }
 
 .entry-type {

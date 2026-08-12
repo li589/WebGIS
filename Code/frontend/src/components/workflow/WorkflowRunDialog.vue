@@ -8,9 +8,9 @@
  * 两种模式共用「预期产出」命名面板（组标题 + 每产品图层名）。
  */
 import { computed, ref, watch } from 'vue'
-import { Info } from 'lucide-vue-next'
+import { Info } from '../ui/icons'
 import { useWorkflowOutputLayersStore } from '../../stores/workflow-output-layers'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import {
   defaultProductLayerNames,
@@ -53,7 +53,7 @@ const emit = defineEmits<{
 }>()
 
 const outputStore = useWorkflowOutputLayersStore()
-const layersStore = useLayersStore()
+const workspace = useLayerWorkspace()
 const workflowDefsStore = useWorkflowDefinitionsStore()
 
 const mode = ref<'default' | 'new'>('default')
@@ -62,7 +62,7 @@ const groupTitle = ref('')
 const productNames = ref<string[]>([])
 
 const catalogOptions = computed(() =>
-  layersStore.layerLibrary
+  workspace.layerLibrary.value
     .filter((l) => Boolean(l.catalogId) && !String(l.catalogId).startsWith('wf-out-'))
     .map((l) => ({
       id: l.catalogId,
@@ -88,7 +88,7 @@ const existingOutputs = computed(() => {
 const sourceLayerName = computed(() => {
   const layerId = effectiveLayerId.value
   if (!layerId) return '未选择图层'
-  const libItem = layersStore.layerLibrary.find((l) => l.catalogId === layerId)
+  const libItem = workspace.layerLibrary.value.find((l) => l.catalogId === layerId)
   return libItem?.name ?? layerId
 })
 
@@ -257,7 +257,7 @@ watch(outputTags, (tags) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(2, 8, 18, 0.62);
+  background: var(--surface-1);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
@@ -268,29 +268,29 @@ watch(outputTags, (tags) => {
   display: flex;
   flex-direction: column;
   border-radius: 0.9rem;
-  border: 1px solid rgba(136, 192, 255, 0.22);
-  background: linear-gradient(180deg, rgba(14, 24, 42, 0.96), rgba(8, 16, 30, 0.96));
+  border: 1px solid var(--border-strong);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-2));
   box-shadow: 0 20px 48px rgba(1, 8, 16, 0.5);
 }
 .dialog-header {
   padding: 0.72rem 0.86rem 0.5rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.12);
+  border-bottom: 1px solid var(--border-default);
 }
 .dialog-title {
   margin: 0;
   font-size: 0.82rem;
-  color: #f0f7ff;
+  color: var(--text-strong);
 }
 .dialog-subtitle {
   margin: 0.18rem 0 0;
   font-size: var(--font-size-caption);
-  color: #7f93a9;
+  color: var(--text-muted);
 }
 .dialog-description {
   margin: 0.3rem 0 0;
   font-size: var(--font-size-caption);
   line-height: 1.5;
-  color: #8aa0b6;
+  color: var(--text-muted);
   white-space: pre-line;
 }
 .dialog-body {
@@ -301,13 +301,13 @@ watch(outputTags, (tags) => {
   flex-direction: column;
   gap: 0.6rem;
   scrollbar-width: thin;
-  scrollbar-color: rgba(90, 180, 255, 0.28) transparent;
+  scrollbar-color: var(--border-accent) transparent;
 }
 .dialog-body::-webkit-scrollbar {
   width: 4px;
 }
 .dialog-body::-webkit-scrollbar-thumb {
-  background: rgba(90, 180, 255, 0.26);
+  background: var(--border-accent);
   border-radius: 3px;
 }
 .layer-picker {
@@ -316,8 +316,8 @@ watch(outputTags, (tags) => {
   gap: 0.28rem;
   padding: 0.4rem 0.5rem;
   border-radius: 0.52rem;
-  background: rgba(255, 184, 77, 0.06);
-  border: 1px solid rgba(255, 184, 77, 0.2);
+  background: var(--warning-surface);
+  border: 1px solid var(--warning-border);
 }
 .mode-selector {
   display: flex;
@@ -330,23 +330,23 @@ watch(outputTags, (tags) => {
   gap: 0.5rem;
   padding: 0.5rem 0.56rem;
   border-radius: 0.62rem;
-  border: 1px solid rgba(136, 192, 255, 0.12);
-  background: rgba(8, 18, 33, 0.5);
+  border: 1px solid var(--border-default);
+  background: var(--surface-sunken);
   cursor: pointer;
   transition:
     border-color 0.18s ease,
     background 0.18s ease;
 }
 .mode-option:hover {
-  border-color: rgba(136, 192, 255, 0.24);
+  border-color: var(--border-strong);
 }
 .mode-option.active {
-  border-color: rgba(255, 184, 77, 0.4);
-  background: rgba(255, 184, 77, 0.08);
+  border-color: var(--warning-border);
+  background: var(--warning-surface);
 }
 .mode-option input[type='radio'] {
   margin-top: 0.16rem;
-  accent-color: #ffb84d;
+  accent-color: var(--warning);
 }
 .mode-label {
   display: flex;
@@ -356,25 +356,25 @@ watch(outputTags, (tags) => {
 }
 .mode-name {
   font-size: var(--font-size-caption);
-  color: #eaf3fb;
+  color: var(--text-primary);
   font-weight: 600;
 }
 .mode-desc {
   font-size: var(--font-size-caption);
-  color: #8aa0b6;
+  color: var(--text-muted);
   line-height: 1.4;
 }
 .default-mode-info {
   padding: 0.4rem 0.5rem;
   border-radius: 0.52rem;
-  background: rgba(8, 18, 33, 0.4);
+  background: var(--surface-sunken);
   border: 1px solid var(--border-subtle);
 }
 .info-label,
 .info-hint {
   margin: 0;
   font-size: var(--font-size-caption);
-  color: #8aa0b6;
+  color: var(--text-muted);
   line-height: 1.5;
 }
 .existing-outputs {
@@ -396,10 +396,10 @@ watch(outputTags, (tags) => {
   font-size: var(--font-size-caption);
 }
 .output-name {
-  color: #bfd3e6;
+  color: var(--text-secondary);
 }
 .output-group {
-  color: #ffb84d;
+  color: var(--warning);
 }
 .products-form {
   display: flex;
@@ -413,15 +413,15 @@ watch(outputTags, (tags) => {
 }
 .form-label {
   font-size: var(--font-size-caption);
-  color: #9eb3c8;
+  color: var(--text-muted);
 }
 .form-input,
 .form-select {
   padding: 0.36rem 0.44rem;
   border-radius: 0.5rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
-  background: rgba(8, 18, 33, 0.6);
-  color: #eaf3fb;
+  border: 1px solid var(--border-default);
+  background: var(--surface-1);
+  color: var(--text-primary);
   font-size: var(--font-size-caption);
   font-family: inherit;
   outline: none;
@@ -429,10 +429,10 @@ watch(outputTags, (tags) => {
 }
 .form-input:focus,
 .form-select:focus {
-  border-color: rgba(255, 184, 77, 0.4);
+  border-color: var(--warning-border);
 }
 .form-input::placeholder {
-  color: #5a6f85;
+  color: var(--text-faint);
 }
 .group-select-row {
   display: flex;
@@ -448,16 +448,16 @@ watch(outputTags, (tags) => {
   flex: 0 0 auto;
   padding: 0.32rem 0.5rem;
   border-radius: 0.5rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
-  background: rgba(12, 24, 42, 0.6);
-  color: #ffd38a;
+  border: 1px solid var(--border-default);
+  background: var(--surface-1);
+  color: var(--accent-warm);
   font-size: var(--font-size-caption);
   cursor: pointer;
   white-space: nowrap;
   transition: border-color 0.18s ease;
 }
 .toggle-group-btn:hover {
-  border-color: rgba(255, 184, 77, 0.4);
+  border-color: var(--warning-border);
 }
 .multi-info-bar {
   display: flex;
@@ -509,14 +509,14 @@ watch(outputTags, (tags) => {
   justify-content: flex-end;
   gap: 0.4rem;
   padding: 0.5rem 0.86rem 0.62rem;
-  border-top: 1px solid rgba(136, 192, 255, 0.12);
+  border-top: 1px solid var(--border-default);
 }
 .action-btn {
   padding: 0.4rem 0.78rem;
   border-radius: 999px;
-  border: 1px solid rgba(136, 192, 255, 0.2);
-  background: rgba(8, 18, 33, 0.6);
-  color: #bfd3e6;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-1);
+  color: var(--text-secondary);
   font-size: var(--font-size-caption);
   cursor: pointer;
   transition:
@@ -525,18 +525,18 @@ watch(outputTags, (tags) => {
     color 0.18s ease;
 }
 .action-btn.cancel:hover {
-  border-color: rgba(136, 192, 255, 0.36);
-  color: #eaf3fb;
+  border-color: var(--border-strong);
+  color: var(--text-primary);
 }
 .action-btn.confirm {
-  border-color: rgba(255, 184, 77, 0.36);
-  background: rgba(255, 184, 77, 0.14);
-  color: #ffd38a;
+  border-color: var(--warning-border);
+  background: var(--warning-surface);
+  color: var(--accent-warm);
 }
 .action-btn.confirm:hover:not(:disabled) {
-  border-color: rgba(255, 184, 77, 0.56);
-  background: rgba(255, 184, 77, 0.22);
-  color: #fff0d4;
+  border-color: var(--warning-border);
+  background: var(--warning-border);
+  color: var(--accent-warm);
 }
 .action-btn.confirm:disabled {
   opacity: 0.42;

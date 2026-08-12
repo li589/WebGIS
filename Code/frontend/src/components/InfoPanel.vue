@@ -9,10 +9,11 @@
  */
 import { computed, ref } from 'vue'
 
+import { AlertTriangle } from './ui/icons'
 import type { ActiveLayerDisplay, LayerHotspot } from '../stores/layers/types'
 import type { WeatherPointResponse } from '../services/runtime-api'
 import type { OverlayTimeState } from './map/overlay-image-module'
-import { useLayersStore } from '../stores/layers'
+import { useLayerWorkspace } from '../stores/layers/selectors'
 import { useUiStore } from '../stores/ui'
 import { ANALYSIS_COPY } from '../ui-copy'
 import { buildResultDisplayModel } from './info-panel/result-adapter'
@@ -33,7 +34,7 @@ import InfoPanelToolsTab from './info-panel/InfoPanelToolsTab.vue'
 import InfoPanelVisualTab from './info-panel/InfoPanelVisualTab.vue'
 import InfoPanelStyleTab from './info-panel/InfoPanelStyleTab.vue'
 
-const layersStore = useLayersStore()
+const workspace = useLayerWorkspace()
 const uiStore = useUiStore()
 
 // ── Props / Emits ─────────────────────────────────────────────────────────
@@ -71,7 +72,7 @@ const displayLayer = computed(() => props.selectedLayer ?? props.activeLayer)
 const jobLayer = computed(() => displayLayer.value?.jobLayer)
 const resultModel = computed(() => buildResultDisplayModel(jobLayer.value?.resultView ?? null))
 const isRealtimeWeatherLayer = computed(() =>
-  layersStore.isWeatherEngineLayer(displayLayer.value.catalogId),
+  workspace.isWeatherEngineLayer(displayLayer.value.catalogId),
 )
 
 const activeTab = ref<AnalysisTabId>('visual')
@@ -122,22 +123,21 @@ const overlay = useOverlayData(
   symbology.overlayStyleMeta,
 )
 
-const wf = useWorkflowState(
+const wf = useWorkflowState({
   displayLayer,
   jobLayer,
   isRealtimeWeatherLayer,
-  symbology.tileStats,
-  isSubmittingRef,
-  symbology.windStyleChipLabel,
-  symbology.canToggleParticleFlow,
-  visibleHotspotsRef,
-  weatherPoint.hasPointWeatherSection,
-  overlay.showMultiOverlayBar,
-  overlay.showSelectedOverlayTimeSeries,
-  overlay.showDemoOverlayTimeSeries,
-  pointWeatherRef,
+  tileStats: symbology.tileStats,
+  isSubmitting: isSubmittingRef,
+  windStyleChipLabel: symbology.windStyleChipLabel,
+  canToggleParticleFlow: symbology.canToggleParticleFlow,
+  visibleHotspots: visibleHotspotsRef,
+  hasPointWeatherSection: weatherPoint.hasPointWeatherSection,
+  showMultiOverlayBar: overlay.showMultiOverlayBar,
+  showSelectedOverlayTimeSeries: overlay.showSelectedOverlayTimeSeries,
+  showDemoOverlayTimeSeries: overlay.showDemoOverlayTimeSeries,
   resultModel,
-)
+})
 
 const impExp = useImportExport(displayLayer)
 
@@ -197,7 +197,7 @@ function queryDefaultOverlaySeries() {
         <!-- 顶摘要行 -->
         <div ref="topSummaryEl" class="panel-topline">
           <div v-if="workflowError" class="workflow-error">
-            <span class="error-icon">⚠️</span>
+            <span class="error-icon"><AlertTriangle :size="14" aria-hidden="true" /></span>
             <span class="error-message">{{ workflowError }}</span>
           </div>
 

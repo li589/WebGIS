@@ -66,18 +66,18 @@ async function submit() {
       <svg class="bg-globe" viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <radialGradient id="globeGrad" cx="400" cy="400" r="380" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stop-color="rgba(90,213,255,0.1)" />
-            <stop offset="40%" stop-color="rgba(90,213,255,0.05)" />
-            <stop offset="100%" stop-color="rgba(90,213,255,0)" />
+            <stop offset="0%" stop-color="var(--accent-surface)" />
+            <stop offset="40%" stop-color="var(--accent-surface)" />
+            <stop offset="100%" stop-color="var(--accent-surface)" />
           </radialGradient>
           <radialGradient id="atmosGrad" cx="400" cy="400" r="400" gradientUnits="userSpaceOnUse">
-            <stop offset="82%" stop-color="rgba(10,132,255,0)" />
-            <stop offset="93%" stop-color="rgba(10,132,255,0.1)" />
-            <stop offset="100%" stop-color="rgba(90,213,255,0.2)" />
+            <stop offset="82%" stop-color="var(--accent-surface)" />
+            <stop offset="93%" stop-color="var(--accent-surface)" />
+            <stop offset="100%" stop-color="var(--accent-border)" />
           </radialGradient>
           <linearGradient id="gridFade" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stop-color="rgba(90,213,255,0.1)" />
-            <stop offset="100%" stop-color="rgba(90,213,255,0)" />
+            <stop offset="0%" stop-color="var(--accent-surface)" />
+            <stop offset="100%" stop-color="var(--accent-surface)" />
           </linearGradient>
         </defs>
         <!-- 大气层光晕 -->
@@ -88,7 +88,7 @@ async function submit() {
           cy="400"
           r="300"
           fill="url(#globeGrad)"
-          stroke="rgba(90,213,255,0.18)"
+          stroke="var(--accent-surface)"
           stroke-width="1.2"
         />
         <!-- 纬线（水平椭圆） -->
@@ -100,7 +100,7 @@ async function submit() {
           :rx="300 * Math.cos((lat * Math.PI) / 180)"
           :ry="Math.max(300 * Math.cos((lat * Math.PI) / 180) * 0.3, 15)"
           fill="none"
-          stroke="rgba(90,213,255,0.08)"
+          stroke="var(--accent-surface)"
           stroke-width="0.7"
           :transform="`translate(0, ${300 * Math.sin((lat * Math.PI) / 180) * 0.3})`"
         />
@@ -111,7 +111,7 @@ async function submit() {
           rx="300"
           ry="90"
           fill="none"
-          stroke="rgba(90,213,255,0.15)"
+          stroke="var(--accent-surface)"
           stroke-width="1.2"
         />
         <!-- 经线（垂直椭圆旋转） -->
@@ -123,7 +123,7 @@ async function submit() {
           rx="300"
           ry="300"
           fill="none"
-          stroke="rgba(90,213,255,0.06)"
+          stroke="var(--accent-surface)"
           stroke-width="0.7"
           :transform="`rotate(${lon} 400 400) scale(1, 0.3)`"
         />
@@ -139,7 +139,7 @@ async function submit() {
           transform="rotate(0 400 400) scale(1, 0.3)"
         />
         <!-- 点阵装饰（数据节点感） -->
-        <g fill="rgba(90,213,255,0.2)">
+        <g fill="var(--accent-border)">
           <circle
             v-for="(p, i) in [
               [280, 280],
@@ -166,7 +166,7 @@ async function submit() {
           />
         </g>
         <!-- 连线装饰（数据网络感） -->
-        <g stroke="rgba(90,213,255,0.08)" stroke-width="0.5" fill="none">
+        <g stroke="var(--accent-surface)" stroke-width="0.5" fill="none">
           <line x1="380" y1="330" x2="420" y2="350" />
           <line x1="420" y1="350" x2="480" y2="400" />
           <line x1="480" y1="400" x2="520" y2="470" />
@@ -317,9 +317,14 @@ async function submit() {
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(ellipse at 20% 20%, rgba(10, 132, 255, 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 80%, rgba(90, 213, 255, 0.06) 0%, transparent 50%),
-    linear-gradient(180deg, #02060d 0%, #040d1a 50%, #030912 100%);
+    radial-gradient(ellipse at 20% 20%, var(--accent-surface) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 80%, var(--accent-surface) 0%, transparent 50%),
+    linear-gradient(
+      180deg,
+      var(--surface-base) 0%,
+      var(--surface-sunken) 50%,
+      var(--surface-base) 100%
+    );
   color: var(--text-strong);
 }
 
@@ -356,17 +361,17 @@ async function submit() {
   position: absolute;
   inset: 0;
   background-image:
-    radial-gradient(ellipse 800px 400px at 50% 120%, rgba(90, 213, 255, 0.04) 0%, transparent 70%),
-    radial-gradient(ellipse 600px 300px at 50% 115%, rgba(90, 213, 255, 0.03) 0%, transparent 70%),
-    radial-gradient(ellipse 400px 200px at 50% 110%, rgba(90, 213, 255, 0.02) 0%, transparent 70%);
+    radial-gradient(ellipse 800px 400px at 50% 120%, var(--accent-surface) 0%, transparent 70%),
+    radial-gradient(ellipse 600px 300px at 50% 115%, var(--accent-surface) 0%, transparent 70%),
+    radial-gradient(ellipse 400px 200px at 50% 110%, var(--accent-surface) 0%, transparent 70%);
 }
 
 .grid-lines {
   position: absolute;
   inset: -20%;
   background-image:
-    linear-gradient(rgba(90, 213, 255, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(90, 213, 255, 0.04) 1px, transparent 1px);
+    linear-gradient(var(--accent-surface) 1px, transparent 1px),
+    linear-gradient(90deg, var(--accent-surface) 1px, transparent 1px);
   background-size: 48px 48px;
   transform: perspective(800px) rotateX(65deg) translateY(5%);
   opacity: 0.5;
@@ -380,7 +385,7 @@ async function submit() {
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(90, 213, 255, 0.15), transparent);
+  background: linear-gradient(90deg, transparent, var(--accent-surface), transparent);
   animation: scan-move 8s linear infinite;
   opacity: 0.6;
 }
@@ -407,8 +412,8 @@ async function submit() {
   left: -120px;
   background: radial-gradient(
     circle,
-    rgba(10, 132, 255, 0.25) 0%,
-    rgba(10, 132, 255, 0.08) 50%,
+    var(--border-accent) 0%,
+    var(--accent-surface) 50%,
     transparent 70%
   );
   opacity: 0.7;
@@ -422,8 +427,8 @@ async function submit() {
   right: -100px;
   background: radial-gradient(
     circle,
-    rgba(90, 213, 255, 0.2) 0%,
-    rgba(90, 213, 255, 0.06) 50%,
+    var(--accent-border) 0%,
+    var(--accent-surface) 50%,
     transparent 70%
   );
   opacity: 0.6;
@@ -467,17 +472,17 @@ async function submit() {
   position: absolute;
   inset: 0;
   background-image:
-    radial-gradient(1px 1px at 10% 20%, rgba(255, 255, 255, 0.2) 0%, transparent 100%),
-    radial-gradient(1px 1px at 30% 70%, rgba(255, 255, 255, 0.15) 0%, transparent 100%),
+    radial-gradient(1px 1px at 10% 20%, var(--surface-3) 0%, transparent 100%),
+    radial-gradient(1px 1px at 30% 70%, var(--surface-3) 0%, transparent 100%),
     radial-gradient(2px 2px at 50% 10%, rgba(200, 240, 255, 0.2) 0%, transparent 100%),
-    radial-gradient(1px 1px at 70% 40%, rgba(255, 255, 255, 0.12) 0%, transparent 100%),
-    radial-gradient(1px 1px at 85% 80%, rgba(255, 255, 255, 0.15) 0%, transparent 100%),
+    radial-gradient(1px 1px at 70% 40%, var(--surface-hover) 0%, transparent 100%),
+    radial-gradient(1px 1px at 85% 80%, var(--surface-3) 0%, transparent 100%),
     radial-gradient(1.5px 1.5px at 15% 85%, rgba(200, 240, 255, 0.12) 0%, transparent 100%),
-    radial-gradient(1px 1px at 90% 25%, rgba(255, 255, 255, 0.18) 0%, transparent 100%),
-    radial-gradient(1px 1px at 45% 55%, rgba(255, 255, 255, 0.1) 0%, transparent 100%),
-    radial-gradient(1.5px 1.5px at 25% 35%, rgba(255, 255, 255, 0.1) 0%, transparent 100%),
-    radial-gradient(1px 1px at 65% 15%, rgba(255, 255, 255, 0.08) 0%, transparent 100%),
-    radial-gradient(1px 1px at 5% 50%, rgba(255, 255, 255, 0.12) 0%, transparent 100%),
+    radial-gradient(1px 1px at 90% 25%, var(--surface-3) 0%, transparent 100%),
+    radial-gradient(1px 1px at 45% 55%, var(--surface-hover) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 25% 35%, var(--surface-hover) 0%, transparent 100%),
+    radial-gradient(1px 1px at 65% 15%, var(--surface-hover) 0%, transparent 100%),
+    radial-gradient(1px 1px at 5% 50%, var(--surface-hover) 0%, transparent 100%),
     radial-gradient(2px 2px at 95% 60%, rgba(200, 240, 255, 0.1) 0%, transparent 100%);
   animation: stars-twinkle 8s ease-in-out infinite alternate;
 }
@@ -496,18 +501,18 @@ async function submit() {
   position: relative;
   width: min(28rem, 100%);
   padding: var(--space-7) var(--space-6) var(--space-6);
-  border: 1px solid rgba(90, 213, 255, 0.15);
+  border: 1px solid var(--accent-surface);
   border-radius: var(--radius-xl);
   background:
-    linear-gradient(165deg, rgba(12, 26, 48, 0.88), rgba(6, 14, 26, 0.82)),
-    linear-gradient(180deg, rgba(90, 213, 255, 0.03) 0%, transparent 40%);
+    linear-gradient(165deg, var(--surface-1), var(--surface-1)),
+    linear-gradient(180deg, var(--accent-surface) 0%, transparent 40%);
   backdrop-filter: blur(32px) saturate(1.2);
   -webkit-backdrop-filter: blur(32px) saturate(1.2);
   box-shadow:
     0 40px 100px rgba(1, 8, 16, 0.7),
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 0 0 1px var(--surface-hover) inset,
     0 1px 0 rgba(136, 223, 255, 0.15) inset,
-    0 0 60px rgba(10, 132, 255, 0.08);
+    0 0 60px var(--accent-surface);
   animation: card-enter 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
@@ -526,11 +531,11 @@ async function submit() {
     rgba(255, 200, 120, 0.15)
   );
   -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
+    linear-gradient(var(--text-strong) 0 0) content-box,
+    linear-gradient(var(--text-strong) 0 0);
   mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
+    linear-gradient(var(--text-strong) 0 0) content-box,
+    linear-gradient(var(--text-strong) 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   pointer-events: none;
@@ -577,7 +582,7 @@ async function submit() {
   place-items: center;
   color: var(--accent);
   flex-shrink: 0;
-  background: radial-gradient(circle at 30% 30%, rgba(90, 213, 255, 0.15), transparent 60%);
+  background: radial-gradient(circle at 30% 30%, var(--accent-surface), transparent 60%);
   border-radius: var(--radius-lg);
 }
 
@@ -598,9 +603,9 @@ async function submit() {
   position: absolute;
   inset: 2px;
   border-radius: 50%;
-  border: 1px solid rgba(90, 213, 255, 0.25);
+  border: 1px solid var(--border-accent);
   box-shadow:
-    0 0 24px rgba(10, 132, 255, 0.12),
+    0 0 24px var(--accent-surface),
     inset 0 0 12px rgba(90, 213, 255, 0.05);
 }
 
@@ -608,7 +613,7 @@ async function submit() {
   position: absolute;
   inset: -3px;
   border-radius: 50%;
-  border: 1px solid rgba(90, 213, 255, 0.1);
+  border: 1px solid var(--accent-surface);
   animation: ring-pulse 4s ease-in-out infinite;
 }
 
@@ -677,7 +682,7 @@ async function submit() {
   padding: 0.8rem 1rem;
   border: 1px solid var(--accent-surface);
   border-radius: var(--radius-md);
-  background: linear-gradient(180deg, rgba(4, 12, 22, 0.8), rgba(6, 14, 26, 0.6));
+  background: linear-gradient(180deg, var(--surface-1), var(--surface-1));
   color: var(--text-strong);
   font-family: inherit;
   font-size: var(--font-size-body);
@@ -693,18 +698,18 @@ async function submit() {
 }
 
 .field input:hover {
-  border-color: rgba(90, 213, 255, 0.25);
-  background: linear-gradient(180deg, rgba(6, 14, 26, 0.9), rgba(8, 18, 32, 0.7));
+  border-color: var(--border-accent);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
 }
 
 .field input:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow:
-    0 0 0 3px rgba(10, 132, 255, 0.12),
-    0 0 20px rgba(90, 213, 255, 0.08),
+    0 0 0 3px var(--accent-surface),
+    0 0 20px var(--accent-surface),
     inset 0 1px 0 rgba(136, 223, 255, 0.1);
-  background: linear-gradient(180deg, rgba(6, 14, 26, 0.95), rgba(8, 18, 32, 0.8));
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
 }
 
 .dev-hint {

@@ -10,6 +10,7 @@ import { computed } from 'vue'
 const props = withDefaults(
   defineProps<{
     size?: 'xs' | 'sm' | 'md'
+    variant?: 'default' | 'danger'
     disabled?: boolean
     active?: boolean
     /** 图标 SVG 路径（单个 <path> 的 d 属性，或完整 SVG 片段） */
@@ -20,6 +21,7 @@ const props = withDefaults(
   }>(),
   {
     size: 'md',
+    variant: 'default',
     disabled: false,
     active: false,
     icon: '',
@@ -31,6 +33,7 @@ const props = withDefaults(
 const cls = computed(() => [
   'icon-btn',
   `icon-btn--${props.size}`,
+  `icon-btn--${props.variant}`,
   {
     'icon-btn--active': props.active,
     'icon-btn--disabled': props.disabled,
@@ -128,12 +131,24 @@ const viewBox = computed(() => `0 0 24 24`)
 }
 
 /* hover / active */
-.icon-btn:hover:not(:disabled) {
-  background: var(--surface-sunken);
+.icon-btn--default:hover:not(:disabled) {
+  background: var(--surface-hover);
   border-color: var(--border-default);
   color: var(--text-strong);
   transform: translateY(-1px);
   box-shadow: var(--elevation-1);
+}
+
+/* danger 变体 */
+.icon-btn--danger {
+  background: var(--danger-surface);
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+.icon-btn--danger:hover:not(:disabled) {
+  background: var(--danger-surface);
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .icon-btn--active {
@@ -152,7 +167,7 @@ const viewBox = computed(() => `0 0 24 24`)
   .icon-btn {
     transition: none;
   }
-  .icon-btn:hover:not(:disabled) {
+  .icon-btn--default:hover:not(:disabled) {
     transform: none;
   }
 }

@@ -1,7 +1,7 @@
 import { computed, type ComputedRef } from 'vue'
 
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { ANALYSIS_COPY } from '../../ui-copy'
 import { resolveWeatherWorkflowStage } from '../../utils/weather-tile-readiness'
 import {
@@ -16,26 +16,40 @@ import {
  * 从 InfoPanel.vue 提取，集中管理工作流运行态、天气瓦片活动、分析阶段
  * 以及顶部摘要文案的计算逻辑。
  */
-export function useWorkflowState(
-  displayLayer: ComputedRef<ActiveLayerDisplay>,
-  jobLayer: ComputedRef<any>,
-  isRealtimeWeatherLayer: ComputedRef<boolean>,
-  tileStats: ComputedRef<any>,
-  isSubmitting: ComputedRef<boolean>,
-  windStyleChipLabel: ComputedRef<string>,
-  canToggleParticleFlow: ComputedRef<boolean>,
-  visibleHotspots: ComputedRef<any[]>,
-  hasPointWeatherSection: ComputedRef<boolean>,
-  showMultiOverlayBar: ComputedRef<boolean>,
-  showSelectedOverlayTimeSeries: ComputedRef<boolean>,
-  showDemoOverlayTimeSeries: ComputedRef<boolean>,
-  pointWeather: ComputedRef<any>,
-  resultModel: ComputedRef<any>,
-) {
-  // pointWeather 由调用方传入以保持 API 对称性；本 composable 不直接使用。
-  void pointWeather
+export interface WorkflowStateOptions {
+  displayLayer: ComputedRef<ActiveLayerDisplay>
+  jobLayer: ComputedRef<any>
+  isRealtimeWeatherLayer: ComputedRef<boolean>
+  tileStats: ComputedRef<any>
+  isSubmitting: ComputedRef<boolean>
+  windStyleChipLabel: ComputedRef<string>
+  canToggleParticleFlow: ComputedRef<boolean>
+  visibleHotspots: ComputedRef<any[]>
+  hasPointWeatherSection: ComputedRef<boolean>
+  showMultiOverlayBar: ComputedRef<boolean>
+  showSelectedOverlayTimeSeries: ComputedRef<boolean>
+  showDemoOverlayTimeSeries: ComputedRef<boolean>
+  resultModel: ComputedRef<any>
+}
 
-  const layersStore = useLayersStore()
+export function useWorkflowState(options: WorkflowStateOptions) {
+  const {
+    displayLayer,
+    jobLayer,
+    isRealtimeWeatherLayer,
+    tileStats,
+    isSubmitting,
+    windStyleChipLabel,
+    canToggleParticleFlow,
+    visibleHotspots,
+    hasPointWeatherSection,
+    showMultiOverlayBar,
+    showSelectedOverlayTimeSeries,
+    showDemoOverlayTimeSeries,
+    resultModel,
+  } = options
+
+  const workspace = useLayerWorkspace()
 
   // ── 分析摘要 ──────────────────────────────────────────────────────────────
 
@@ -98,7 +112,7 @@ export function useWorkflowState(
       !displayLayer.value?.isImported &&
       !displayLayer.value?.isImportedRaster &&
       !isRealtimeWeatherLayer.value &&
-      layersStore.supportsAnalysisWorkflow(displayLayer.value.catalogId),
+      workspace.supportsAnalysisWorkflow(displayLayer.value.catalogId),
   )
 
   const isWorkflowRunning = computed(
@@ -106,7 +120,7 @@ export function useWorkflowState(
   )
 
   const runBlockedReason = computed(() =>
-    layersStore.getCatalogRunBlockReason(displayLayer.value.catalogId),
+    workspace.getCatalogRunBlockReason(displayLayer.value.catalogId),
   )
 
   const workflowStage = computed(() => {
@@ -125,7 +139,7 @@ export function useWorkflowState(
   const workflowMeta = computed(() => {
     const cid = displayLayer.value.catalogId
     if (!cid) return { name: '', engine: '', engineLabel: '', engineIcon: '' }
-    const libItem = layersStore.layerLibrary.find((l) => l.catalogId === cid)
+    const libItem = workspace.layerLibrary.value.find((l) => l.catalogId === cid)
     const engine = libItem?.engine ?? displayLayer.value.engine ?? ''
     const name = libItem?.workflowName ?? ''
     const engineLabel =

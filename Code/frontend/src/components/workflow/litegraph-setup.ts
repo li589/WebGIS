@@ -355,15 +355,15 @@ export function resolveNodeEngine(nodeType: string, templateEngine?: string | nu
 function getEngineColor(nodeType: string, templateEngine?: string | null): EngineColor {
   const engine = resolveNodeEngine(nodeType, templateEngine)
   if (engine === 'weather') {
-    return { nodeBg: '#1a2230', nodeHeader: '#2a4a5a', accent: '#ffb84d' }
+    return { nodeBg: '#1a2230', nodeHeader: '#2a4a5a', accent: 'var(--warning)' }
   }
   if (engine === 'python_provider') {
-    return { nodeBg: '#1a2a1e', nodeHeader: '#2a4a38', accent: '#78ffa0' }
+    return { nodeBg: '#1a2a1e', nodeHeader: '#2a4a38', accent: 'var(--success)' }
   }
   if (engine === 'gee') {
     return { nodeBg: '#1a2030', nodeHeader: '#3a2e5a', accent: 'var(--accent)' }
   }
-  return { nodeBg: '#1a2740', nodeHeader: '#1a2540', accent: 'var(--accent-strong)' }
+  return { nodeBg: 'var(--surface-2)', nodeHeader: '#1a2540', accent: 'var(--accent-strong)' }
 }
 
 function mapParamTypeToWidget(paramType: string, options?: string[]): string {
@@ -413,15 +413,15 @@ export function checkConnectionValid(inputType: string, outputType: string): boo
  */
 export function getPortColor(type: string): string {
   if (type === 'data' || type === 'data:source') return 'var(--accent)' // 青色
-  if (type === 'data:mat') return '#ffb84d' // 橙色
+  if (type === 'data:mat') return 'var(--warning)' // 橙色
   if (type === 'data:raster') return 'var(--accent)' // 蓝色
-  if (type === 'data:geojson') return '#78ffa0' // 绿色
+  if (type === 'data:geojson') return 'var(--success)' // 绿色
   if (type === 'data:timeseries') return '#c084fc' // 紫色
   if (type === 'value:number') return '#ffd5a8' // 浅黄
   if (type === 'value:string') return '#ffe08a' // 金黄
   if (type === 'value:boolean') return '#9ae6b4' // 浅绿
   if (type === 'value:time_range') return '#ff8fb1' // 粉色
-  if (type === 'geometry:bbox') return '#ff6b6b' // 红色
+  if (type === 'geometry:bbox') return 'var(--danger)' // 红色
   return 'var(--text-faint)' // 默认灰
 }
 

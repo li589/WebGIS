@@ -9,6 +9,7 @@
  */
 import { computed, defineAsyncComponent, ref } from 'vue'
 import { storeToRefs } from 'pinia'
+import { Globe } from '../components/ui/icons'
 import { useDataImportFlow } from '../data-manager/core/workspace-store'
 
 import PanelDock from '../components/ui/PanelDock.vue'
@@ -24,7 +25,7 @@ import type { TileSourceId } from '../services/api-config'
 import type { OverlayTimeState } from '../components/map/overlay-image-module'
 import { useUiStore } from '../stores/ui'
 import { useUiLoadingStore } from '../stores/ui-loading'
-import { useLayersStore } from '../stores/layers'
+import { useLayerWorkspace, useWorkflowRun } from '../stores/layers/selectors'
 import { useLogStore } from '../stores/log'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import { useWeatherSyncStatusStore } from '../stores/weather-sync-status'
@@ -47,7 +48,8 @@ import { useWorkflowEditorRun } from './dashboard/useWorkflowEditorRun'
 
 // ── Store 设置 ────────────────────────────────────────────────────────────
 const uiStore = useUiStore()
-const layersStore = useLayersStore()
+const workspace = useLayerWorkspace()
+const workflowRun = useWorkflowRun()
 const logStore = useLogStore()
 const uiLoading = useUiLoadingStore()
 const weatherTileManager = useWeatherTileManager()
@@ -56,8 +58,8 @@ const weatherEngine = useWeatherEngineStore()
 const workflowOutputStore = useWorkflowOutputLayersStore()
 
 uiLoading.showImmediate('初始化地图数据...')
-void layersStore.ensureRuntimeLayerCatalog().finally(() => uiLoading.hideImmediate())
-void layersStore.restoreActiveWorkflows()
+void workspace.ensureRuntimeLayerCatalog().finally(() => uiLoading.hideImmediate())
+void workflowRun.restoreActiveWorkflows()
 
 const {
   tileSourceId,
@@ -68,16 +70,14 @@ const {
   playIntervalMs,
   unifiedTimeLock,
 } = storeToRefs(uiStore)
+const { selectedLayerDisplay, activeLayerCount, isSubmitting, selectedInstanceId } = workspace
 const {
-  selectedLayerDisplay,
-  activeLayerCount,
   workflowError,
   workflowProgressTimeSeek,
-  isSubmitting,
   pointWeather,
   pointWeatherLoading,
   pointWeatherError,
-} = storeToRefs(layersStore)
+} = workflowRun
 const { statusVersion: weatherStatusVersion, activityVersion: weatherActivityVersion } =
   storeToRefs(weatherTileManager)
 
@@ -86,14 +86,14 @@ const activeLayer = computed(() => selectedLayerDisplay.value ?? buildFallbackAc
 const stageLabel = computed(() => {
   const layer = activeLayer.value
   const hasRealSelection = Boolean(layer.instanceId)
-  const isWeather = hasRealSelection && layersStore.isWeatherEngineLayer(layer.catalogId)
+  const isWeather = hasRealSelection && workspace.isWeatherEngineLayer(layer.catalogId)
   const canRun =
     hasRealSelection &&
     !layer.isAdminBoundary &&
     !layer.isImported &&
     !layer.isImportedRaster &&
     !isWeather &&
-    layersStore.supportsAnalysisWorkflow(layer.catalogId)
+    workspace.supportsAnalysisWorkflow(layer.catalogId)
   return resolveAnalysisStageLabel(
     resolveAnalysisStageKind({
       hasRealSelection,
@@ -135,7 +135,6 @@ const {
 const { weatherCoverage, coverageSourceLabel } = useWeatherCoverage(
   weatherEngine,
   weatherSyncStatus,
-  layersStore,
   selectedLayerDisplay,
   unifiedTimeLock,
   activeLayer,
@@ -153,7 +152,6 @@ const {
   timelineSegments,
 } = useTimelineSync(
   uiStore,
-  layersStore,
   logStore,
   weatherTileManager,
   weatherCoverage,
@@ -185,7 +183,6 @@ const {
   handleOverlayTimeUpdate,
   fetchSelectedOverlaySeries,
 } = useMapInspect(
-  layersStore,
   logStore,
   uiStore,
   selectedLayerDisplay,
@@ -218,7 +215,6 @@ const { dropActive, onMapShellDragEnter, onMapShellDragOver, onMapShellDragLeave
   useFileDrop(dataImportFlow, workflowEditorOpen, settingsOpen, mapShellRef)
 
 const { handleRunWorkflowFromEditor } = useWorkflowEditorRun(
-  layersStore,
   logStore,
   workflowOutputStore,
   workflowEditorOpen,
@@ -250,7 +246,7 @@ function handleTileSourceChange(sourceId: TileSourceId) {
   logStore.logOperation('tile-source-change', `切换底图源: ${sourceId}`)
 }
 function handleLayerSelect(layerId: string) {
-  if (layersStore.selectedInstanceId !== layerId) layersStore.selectLayer(layerId)
+  if (selectedInstanceId.value !== layerId) workspace.selectLayer(layerId)
   logStore.logOperation('layer-select', `选中图层: ${layerId}`)
 }
 function handleZoomToLayer(instanceId: string) {
@@ -258,10 +254,10 @@ function handleZoomToLayer(instanceId: string) {
     logStore.logOperation('layer-zoom', `缩放到图层: ${instanceId}`)
 }
 function handleToggleLayerVisibility(instanceId: string) {
-  layersStore.toggleLayerVisibility(instanceId)
+  workspace.toggleLayerVisibility(instanceId)
 }
 function handleSetLayerOpacity(payload: { instanceId: string; opacity: number }) {
-  layersStore.setLayerOpacity(payload.instanceId, payload.opacity)
+  workspace.setLayerOpacity(payload.instanceId, payload.opacity)
 }
 </script>
 
@@ -291,7 +287,7 @@ function handleSetLayerOpacity(payload: { instanceId: string; opacity: number })
 
       <div v-else class="view-placeholder-3d">
         <div class="placeholder-3d-inner">
-          <div class="placeholder-3d-icon">🌐</div>
+          <div class="placeholder-3d-icon"><Globe :size="48" aria-hidden="true" /></div>
           <h2 class="placeholder-3d-title">3D 地球视图</h2>
           <p class="placeholder-3d-desc">该功能尚未实现</p>
           <p class="placeholder-3d-hint">点击顶栏「3D」按钮可返回 2D 平面地图</p>
@@ -402,7 +398,7 @@ function handleSetLayerOpacity(payload: { instanceId: string; opacity: number })
             :current-hour="currentHour"
             :current-date="currentDate"
             :hour-label="hourLabel"
-            :accent-color="hasTimelineLayer ? activeLayer.accentColor : '#64748b'"
+            :accent-color="hasTimelineLayer ? activeLayer.accentColor : 'var(--text-secondary)'"
             :availability-label="timelineAvailabilityLabel"
             :observation-time-label="timelineObservationLabel"
             :timeline-segments="timelineSegments"

@@ -1,5 +1,6 @@
 ﻿<script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { AlertTriangle } from '../../components/ui/icons'
 import {
   addLayerField,
   batchSetFeatureAttribute,
@@ -25,11 +26,12 @@ import {
   openDataWorkspace,
   showToast,
 } from '../core/workspace-store'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { DATA_COPY } from '../../ui-copy'
+import AppButton from '../../components/ui/AppButton.vue'
 import AppSelect from '../../components/ui/AppSelect.vue'
 
-const layersStore = useLayersStore()
+const workspace = useLayerWorkspace()
 
 const pageSize = 80
 const offset = ref(0)
@@ -61,7 +63,7 @@ const ctxMenu = ref<{ x: number; y: number; abs: number; field: string; value: u
 )
 
 const importedVectors = computed(() =>
-  layersStore.activeLayers.filter((l) => l.importedVector?.backendLayerId),
+  workspace.activeLayers.value.filter((l) => l.importedVector?.backendLayerId),
 )
 
 const selectedLayer = computed(() => {
@@ -387,7 +389,10 @@ function syncSelectionHighlight(primary?: GeoJSON.Feature) {
 }
 
 function computeFeaturesBbox(feats: GeoJSON.Feature[]): [number, number, number, number] | null {
-  let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity
+  let minLng = Infinity,
+    minLat = Infinity,
+    maxLng = -Infinity,
+    maxLat = -Infinity
   let hasCoords = false
   for (const feat of feats) {
     const geom = feat.geometry
@@ -406,11 +411,13 @@ function computeFeaturesBbox(feats: GeoJSON.Feature[]): [number, number, number,
         for (const ring of geom.coordinates) for (const c of ring) coords.push(...c)
         break
       case 'MultiPolygon':
-        for (const poly of geom.coordinates) for (const ring of poly) for (const c of ring) coords.push(...c)
+        for (const poly of geom.coordinates)
+          for (const ring of poly) for (const c of ring) coords.push(...c)
         break
     }
     for (let i = 0; i < coords.length; i += 2) {
-      const lng = coords[i]!, lat = coords[i + 1]!
+      const lng = coords[i]!,
+        lat = coords[i + 1]!
       if (Number.isFinite(lng) && Number.isFinite(lat)) {
         minLng = Math.min(minLng, lng)
         maxLng = Math.max(maxLng, lng)
@@ -422,8 +429,14 @@ function computeFeaturesBbox(feats: GeoJSON.Feature[]): [number, number, number,
   }
   if (!hasCoords) return null
   const pad = 0.0001
-  if (maxLng - minLng < pad) { minLng -= pad; maxLng += pad }
-  if (maxLat - minLat < pad) { minLat -= pad; maxLat += pad }
+  if (maxLng - minLng < pad) {
+    minLng -= pad
+    maxLng += pad
+  }
+  if (maxLat - minLat < pad) {
+    minLat -= pad
+    maxLat += pad
+  }
   return [minLng, minLat, maxLng, maxLat]
 }
 
@@ -519,7 +532,7 @@ async function doRename() {
   try {
     const result = await renameImportedLayerField(backendId.value, renameFrom.value, safeTo.value)
     if (result.preview_geojson && selectedLayer.value) {
-      layersStore.updateImportedVectorGeojson(
+      workspace.updateImportedVectorGeojson(
         selectedLayer.value.instanceId,
         result.preview_geojson,
         {
@@ -644,7 +657,7 @@ const qualityHints = computed(() => {
   const colsWithNulls = Object.entries(nullCounts).filter(([, n]) => n > 0)
   if (!colsWithNulls.length) return null
   const worst = colsWithNulls.sort((a, b) => b[1] - a[1])[0]!
-  const worstRatio = (worst[1] / totalFeats * 100).toFixed(0)
+  const worstRatio = ((worst[1] / totalFeats) * 100).toFixed(0)
   return {
     worstCol: worst[0],
     worstCount: worst[1],
@@ -698,36 +711,26 @@ const qualityHints = computed(() => {
           @keydown.enter="applyFilter"
         />
       </label>
-      <button
-        class="ghost-btn"
-        type="button"
-        :disabled="loading || !backendId"
-        @click="applyFilter"
-      >
+      <AppButton size="xs" variant="ghost" :disabled="loading || !backendId" @click="applyFilter">
         {{ DATA_COPY.attrFilter }}
-      </button>
-      <button class="ghost-btn" type="button" :disabled="!selectedAbs.size" @click="zoomToSelected">
+      </AppButton>
+      <AppButton size="xs" variant="ghost" :disabled="!selectedAbs.size" @click="zoomToSelected">
         {{ DATA_COPY.attrZoomSelected }}
-      </button>
-      <button
-        class="ghost-btn"
-        type="button"
-        :disabled="!absIndexes.length"
-        @click="selectAllOnPage"
-      >
+      </AppButton>
+      <AppButton size="xs" variant="ghost" :disabled="!absIndexes.length" @click="selectAllOnPage">
         {{ DATA_COPY.attrSelectPage }}
-      </button>
-      <button class="ghost-btn" type="button" :disabled="!selectedAbs.size" @click="clearSelection">
+      </AppButton>
+      <AppButton size="xs" variant="ghost" :disabled="!selectedAbs.size" @click="clearSelection">
         {{ DATA_COPY.attrClearSel }}
-      </button>
-      <button
-        class="ghost-btn accent-btn"
-        type="button"
+      </AppButton>
+      <AppButton
+        size="xs"
+        variant="secondary"
         :disabled="!selectedAbs.size"
         @click="copySelectedCsv"
       >
         {{ DATA_COPY.attrCopySelected }}
-      </button>
+      </AppButton>
 
       <span class="toolbar-sep" aria-hidden="true" />
 
@@ -749,14 +752,14 @@ const qualityHints = computed(() => {
           @keydown.enter="doRename"
         />
       </label>
-      <button
-        class="ghost-btn"
-        type="button"
+      <AppButton
+        size="xs"
+        variant="ghost"
         :disabled="loading || !renameFrom || !renameTo"
         @click="doRename"
       >
         {{ DATA_COPY.attrRename }}
-      </button>
+      </AppButton>
       <label>
         {{ DATA_COPY.attrAddField }}
         <input
@@ -768,14 +771,9 @@ const qualityHints = computed(() => {
           @keydown.enter="doAddField"
         />
       </label>
-      <button
-        class="ghost-btn"
-        type="button"
-        :disabled="loading || !newFieldName"
-        @click="doAddField"
-      >
+      <AppButton size="xs" variant="ghost" :disabled="loading || !newFieldName" @click="doAddField">
         {{ DATA_COPY.attrAddFieldBtn }}
-      </button>
+      </AppButton>
       <label>
         {{ DATA_COPY.attrBatchField }}
         <AppSelect
@@ -794,14 +792,14 @@ const qualityHints = computed(() => {
           @keydown.enter="applyBatchSet"
         />
       </label>
-      <button
-        class="ghost-btn"
-        type="button"
+      <AppButton
+        size="xs"
+        variant="ghost"
         :disabled="loading || !batchField || !selectedAbs.size"
         @click="applyBatchSet"
       >
         {{ DATA_COPY.attrBatchSet }}
-      </button>
+      </AppButton>
     </div>
 
     <p v-if="error" class="err">{{ error }}</p>
@@ -813,8 +811,14 @@ const qualityHints = computed(() => {
         <span v-if="encodingBadge" class="enc-badge" :title="encodingBadge">{{
           encodingBadge
         }}</span>
-        <span v-if="qualityHints" class="quality-hint" :title="`空值最多的字段：${qualityHints.worstCol}（${qualityHints.worstCount}/${features.length}）`">
-          ⚠ {{ qualityHints.totalColsWithNulls }} 个字段有空值（{{ qualityHints.worstCol }}: {{ qualityHints.worstRatio }}%）
+        <span
+          v-if="qualityHints"
+          class="quality-hint"
+          :title="`空值最多的字段：${qualityHints.worstCol}（${qualityHints.worstCount}/${features.length}）`"
+        >
+          <AlertTriangle :size="14" aria-hidden="true" />
+          {{ qualityHints.totalColsWithNulls }} 个字段有空值（{{ qualityHints.worstCol }}:
+          {{ qualityHints.worstRatio }}%）
         </span>
       </p>
 
@@ -894,23 +898,18 @@ const qualityHints = computed(() => {
       </div>
 
       <div class="pager">
-        <button
-          class="ghost-btn"
-          type="button"
-          :disabled="offset <= 0 || loading"
-          @click="prevPage"
-        >
+        <AppButton size="xs" variant="ghost" :disabled="offset <= 0 || loading" @click="prevPage">
           {{ DATA_COPY.attrPrev }}
-        </button>
+        </AppButton>
         <span>{{ page }} / {{ pageCount }} · {{ total }} {{ DATA_COPY.attrRows }}</span>
-        <button
-          class="ghost-btn"
-          type="button"
+        <AppButton
+          size="xs"
+          variant="ghost"
           :disabled="offset + pageSize >= total || loading"
           @click="nextPage"
         >
           {{ DATA_COPY.attrNext }}
-        </button>
+        </AppButton>
       </div>
     </template>
 
@@ -920,12 +919,12 @@ const qualityHints = computed(() => {
       :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
       @click.stop
     >
-      <button type="button" class="ctx-btn" @click="copyCellFromMenu">
+      <AppButton size="xs" variant="ghost" @click="copyCellFromMenu">
         {{ DATA_COPY.attrCopyCell }}
-      </button>
-      <button type="button" class="ctx-btn" :disabled="!selectedAbs.size" @click="copySelectedCsv">
+      </AppButton>
+      <AppButton size="xs" variant="ghost" :disabled="!selectedAbs.size" @click="copySelectedCsv">
         {{ DATA_COPY.attrCopySelected }}
-      </button>
+      </AppButton>
     </div>
   </div>
 </template>
@@ -958,7 +957,7 @@ const qualityHints = computed(() => {
   width: 1px;
   min-height: 1.8rem;
   margin: 0 0.12rem;
-  background: linear-gradient(180deg, transparent, rgba(136, 192, 255, 0.28), transparent);
+  background: linear-gradient(180deg, transparent, var(--border-strong), transparent);
 }
 label {
   display: flex;
@@ -966,25 +965,25 @@ label {
   gap: 0.14rem;
   font-size: var(--font-size-caption);
   letter-spacing: 0.02em;
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 input,
 select {
   border: 1px solid var(--border-default);
   border-radius: 0.34rem;
   padding: 0.28rem 0.4rem;
-  background: rgba(4, 12, 23, 0.72);
+  background: var(--surface-1);
   color: var(--text-primary);
   font: inherit;
   font-size: var(--font-size-caption);
   min-width: 6.2rem;
 }
 .ghost-btn {
-  border: 1px solid rgba(136, 192, 255, 0.2);
+  border: 1px solid var(--border-strong);
   border-radius: 0.38rem;
   padding: 0.3rem 0.55rem;
-  background: rgba(4, 12, 23, 0.55);
-  color: #c5d8ea;
+  background: var(--surface-raised);
+  color: var(--text-primary);
   font: inherit;
   font-size: var(--font-size-caption);
   cursor: pointer;
@@ -993,8 +992,8 @@ select {
     border-color 0.15s ease;
 }
 .ghost-btn:hover:not(:disabled) {
-  background: rgba(20, 48, 78, 0.72);
-  border-color: rgba(136, 192, 255, 0.35);
+  background: var(--surface-2);
+  border-color: var(--border-strong);
 }
 .ghost-btn:disabled {
   opacity: 0.45;
@@ -1002,20 +1001,20 @@ select {
 }
 .accent-btn {
   border-color: rgba(126, 224, 168, 0.35);
-  color: #b8f0cf;
-  background: rgba(20, 56, 40, 0.45);
+  color: var(--success);
+  background: var(--surface-sunken);
 }
 .table-scroll {
   flex: 1 1 0;
   min-height: 0;
   overflow: auto;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.48rem;
   background:
-    linear-gradient(180deg, rgba(12, 28, 46, 0.55), rgba(6, 14, 24, 0.35)), rgba(4, 10, 18, 0.55);
+    linear-gradient(180deg, var(--surface-raised), var(--surface-sunken)), var(--surface-raised);
   box-shadow: inset 0 1px 0 rgba(160, 210, 255, 0.06);
   scrollbar-width: thin;
-  scrollbar-color: rgba(90, 213, 255, 0.35) transparent;
+  scrollbar-color: var(--border-strong) transparent;
 }
 .table-scroll:focus-visible {
   outline: 2px solid var(--accent);
@@ -1028,7 +1027,7 @@ select {
   border-radius: 999px;
   border: 1px solid rgba(255, 209, 102, 0.3);
   background: rgba(64, 48, 18, 0.35);
-  color: #ffd166;
+  color: var(--warning);
   font-size: var(--font-size-caption);
   max-width: min(28rem, 55vw);
   overflow: hidden;
@@ -1040,7 +1039,7 @@ select {
   height: 5px;
 }
 .table-scroll::-webkit-scrollbar-thumb {
-  background: rgba(90, 213, 255, 0.35);
+  background: var(--border-strong);
   border-radius: 999px;
 }
 table {
@@ -1055,7 +1054,7 @@ table {
 }
 th,
 td {
-  border-bottom: 1px solid rgba(136, 192, 255, 0.07);
+  border-bottom: 1px solid var(--border-subtle);
   padding: 0.32rem 0.55rem;
   text-align: left;
   white-space: nowrap;
@@ -1071,23 +1070,23 @@ td.cell-text {
 td.col-idx,
 th.col-idx {
   max-width: 3.2rem;
-  color: #7a91a8;
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   position: sticky;
   left: 0;
   z-index: 2;
-  background: rgba(10, 20, 34, 0.96);
+  background: var(--surface-2);
 }
 th {
   position: sticky;
   top: 0;
-  background: linear-gradient(180deg, rgba(16, 34, 54, 0.98), rgba(10, 22, 38, 0.96));
-  color: #9ec4e0;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-2));
+  color: var(--text-secondary);
   z-index: 3;
   font-size: var(--font-size-caption);
   letter-spacing: 0.01em;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.18);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+  border-bottom: 1px solid var(--border-default);
+  box-shadow: 0 1px 0 var(--surface-sunken);
 }
 th.col-idx {
   z-index: 4;
@@ -1100,7 +1099,7 @@ th.col-idx {
   padding-right: 0.45rem;
 }
 .sort-mark {
-  color: #7ee0a8;
+  color: var(--success);
   margin-left: 0.12rem;
 }
 .enc-badge {
@@ -1109,8 +1108,8 @@ th.col-idx {
   padding: 0.1rem 0.4rem;
   border-radius: 999px;
   border: 1px solid var(--border-accent);
-  background: rgba(10, 40, 64, 0.65);
-  color: #9fd8ff;
+  background: var(--surface-1);
+  color: var(--accent);
   font-size: var(--font-size-caption);
   max-width: min(28rem, 55vw);
   overflow: hidden;
@@ -1129,7 +1128,7 @@ th.col-idx {
   margin-left: 0.1rem;
   border: 0;
   background: transparent;
-  color: #6a8094;
+  color: var(--text-faint);
   cursor: pointer;
   font-size: var(--font-size-caption);
   line-height: 1;
@@ -1137,7 +1136,7 @@ th.col-idx {
 }
 .del-field:hover {
   opacity: 1;
-  color: #ffb0b0;
+  color: var(--danger);
 }
 .col-resizer {
   position: absolute;
@@ -1149,31 +1148,31 @@ th.col-idx {
   border-radius: 2px;
 }
 .col-resizer:hover {
-  background: rgba(90, 213, 255, 0.35);
+  background: var(--border-strong);
 }
 tr {
   cursor: pointer;
   transition: background 0.12s ease;
 }
 tr.zebra td {
-  background: rgba(255, 255, 255, 0.015);
+  background: var(--surface-hover);
 }
 tr.zebra td.col-idx {
-  background: rgba(12, 24, 40, 0.96);
+  background: var(--surface-2);
 }
 tr:hover td {
-  background: rgba(10, 132, 255, 0.1);
+  background: var(--accent-surface);
 }
 tr:hover td.col-idx {
-  background: rgba(14, 40, 68, 0.96);
+  background: var(--surface-3);
 }
 tr.selected td {
   background: rgba(255, 209, 102, 0.16);
 }
 tr.selected td.col-idx {
   background: rgba(64, 48, 18, 0.92);
-  color: #ffd166;
-  box-shadow: inset 3px 0 0 #ffd166;
+  color: var(--warning);
+  box-shadow: inset 3px 0 0 var(--warning);
 }
 .cell-edit {
   min-width: 4rem;
@@ -1184,7 +1183,7 @@ tr.selected td.col-idx {
 .pager {
   justify-content: space-between;
   font-size: var(--font-size-caption);
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 .sel-hint,
 .empty,
@@ -1193,14 +1192,14 @@ tr.selected td.col-idx {
   font-size: var(--font-size-caption);
 }
 .err {
-  color: #ffb0b0;
+  color: var(--danger);
 }
 .warn {
-  color: #ffd166;
+  color: var(--warning);
 }
 .empty,
 .sel-hint {
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 .cell-ctx {
   position: fixed;
@@ -1208,8 +1207,8 @@ tr.selected td.col-idx {
   min-width: 8.5rem;
   padding: 0.28rem;
   border-radius: 0.42rem;
-  border: 1px solid rgba(136, 192, 255, 0.22);
-  background: rgba(8, 18, 32, 0.96);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
   display: flex;
   flex-direction: column;
@@ -1220,7 +1219,7 @@ tr.selected td.col-idx {
   border-radius: 0.3rem;
   padding: 0.35rem 0.55rem;
   background: transparent;
-  color: #d0e4f6;
+  color: var(--text-primary);
   font: inherit;
   font-size: var(--font-size-caption);
   text-align: left;

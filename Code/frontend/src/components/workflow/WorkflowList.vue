@@ -8,7 +8,7 @@
  */
 import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
-import { ClipboardList, Zap, Settings, Lock, Gem, Diamond, X } from 'lucide-vue-next'
+import { ClipboardList, Zap, Settings, Lock, Gem, Diamond, X } from '../ui/icons'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import type { WorkflowDefinitionSummary } from '../../services/workflow-definition-api'
 import InlineLoader from '../common/InlineLoader.vue'
@@ -30,9 +30,9 @@ const duplicateNewName = ref('')
 /** 分类标签映射：后端 category → 中文显示名 + 颜色 */
 const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
   inversion: { label: '反演', color: 'var(--accent)' },
-  weather: { label: '天气', color: '#ffd38a' },
-  data_access: { label: '数据获取', color: '#a6e3a1' },
-  demo: { label: '演示', color: '#f38ba8' },
+  weather: { label: '天气', color: 'var(--accent-warm)' },
+  data_access: { label: '数据获取', color: 'var(--success)' },
+  demo: { label: '演示', color: 'var(--danger)' },
 }
 
 /** 当前选中的分类过滤器：null = 全部 */
@@ -485,8 +485,8 @@ function formatTime(iso: string | null): string {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: rgba(8, 17, 31, 0.72);
-  color: #c4d6e8;
+  background: var(--surface-1);
+  color: var(--text-secondary);
 }
 
 .list-header {
@@ -494,7 +494,7 @@ function formatTime(iso: string | null): string {
   align-items: center;
   justify-content: space-between;
   padding: 0.62rem 0.72rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.1);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .header-title {
@@ -510,7 +510,7 @@ function formatTime(iso: string | null): string {
   padding: 0.26rem 0.52rem;
   border: 1px solid var(--accent-border);
   border-radius: 0.4rem;
-  background: rgba(10, 132, 255, 0.14);
+  background: var(--accent-surface);
   color: var(--accent);
   cursor: pointer;
   font: inherit;
@@ -520,7 +520,7 @@ function formatTime(iso: string | null): string {
 }
 
 .new-btn:hover {
-  background: rgba(10, 132, 255, 0.24);
+  background: var(--accent-border);
 }
 
 .list-empty {
@@ -545,7 +545,7 @@ function formatTime(iso: string | null): string {
   overflow-y: auto;
   padding: 0.42rem 0;
   scrollbar-width: thin;
-  scrollbar-color: rgba(90, 180, 255, 0.28) transparent;
+  scrollbar-color: var(--border-accent) transparent;
 }
 
 /* ── 分类过滤栏 ──────────────────────────────────────────────────── */
@@ -554,13 +554,13 @@ function formatTime(iso: string | null): string {
   flex-wrap: wrap;
   gap: 0.22rem;
   padding: 0.32rem 0.72rem 0.42rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.06);
+  border-bottom: 1px solid var(--border-subtle);
   margin-bottom: 0.32rem;
 }
 
 .cat-chip {
   padding: 0.16rem 0.46rem;
-  border: 1px solid rgba(136, 192, 255, 0.12);
+  border: 1px solid var(--border-default);
   border-radius: 999px;
   background: transparent;
   color: var(--text-faint);
@@ -573,13 +573,13 @@ function formatTime(iso: string | null): string {
 }
 
 .cat-chip:hover {
-  border-color: rgba(136, 192, 255, 0.3);
-  color: #c4d6e8;
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
 }
 
 .cat-chip.active {
-  border-color: rgba(90, 213, 255, 0.4);
-  background: rgba(10, 132, 255, 0.14);
+  border-color: var(--border-strong);
+  background: var(--accent-surface);
   color: var(--accent);
 }
 
@@ -598,7 +598,7 @@ function formatTime(iso: string | null): string {
   font-size: var(--font-size-caption);
   font-weight: 600;
   letter-spacing: 0.02em;
-  background: rgba(136, 192, 255, 0.04);
+  background: var(--border-subtle);
 }
 
 .list-content::-webkit-scrollbar {
@@ -610,12 +610,12 @@ function formatTime(iso: string | null): string {
 }
 
 .list-content::-webkit-scrollbar-thumb {
-  background: rgba(90, 180, 255, 0.26);
+  background: var(--border-accent);
   border-radius: 3px;
 }
 
 .list-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(90, 180, 255, 0.45);
+  background: var(--border-strong);
 }
 
 .list-section {
@@ -643,7 +643,7 @@ function formatTime(iso: string | null): string {
 .section-count {
   padding: 0.02rem 0.28rem;
   border-radius: 999px;
-  background: rgba(136, 192, 255, 0.06);
+  background: var(--border-subtle);
   color: var(--text-disabled);
   font-size: var(--font-size-caption);
 }
@@ -661,8 +661,8 @@ function formatTime(iso: string | null): string {
   padding: 0.42rem 0.52rem;
   border: 1px solid var(--border-subtle);
   border-radius: 0.42rem;
-  background: rgba(4, 12, 23, 0.4);
-  color: #c4d6e8;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
   text-align: left;
@@ -672,13 +672,13 @@ function formatTime(iso: string | null): string {
 }
 
 .workflow-item:hover {
-  border-color: rgba(90, 213, 255, 0.24);
-  background: rgba(10, 132, 255, 0.08);
+  border-color: var(--accent-border);
+  background: var(--accent-surface);
 }
 
 .workflow-item.active {
-  border-color: rgba(90, 213, 255, 0.4);
-  background: rgba(10, 132, 255, 0.18);
+  border-color: var(--border-strong);
+  background: var(--accent-surface);
   box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.16);
 }
 
@@ -726,7 +726,7 @@ function formatTime(iso: string | null): string {
 }
 
 .action-btn:hover {
-  border-color: rgba(136, 192, 255, 0.2);
+  border-color: var(--border-strong);
   background: var(--border-subtle);
   color: var(--text-primary);
 }
@@ -734,7 +734,7 @@ function formatTime(iso: string | null): string {
 .action-btn.danger:hover {
   border-color: rgba(255, 120, 120, 0.3);
   background: rgba(255, 120, 120, 0.1);
-  color: #ff9b9b;
+  color: var(--danger);
 }
 
 .item-desc {
@@ -758,7 +758,7 @@ function formatTime(iso: string | null): string {
 .meta-engine {
   padding: 0.02rem 0.28rem;
   border-radius: 0.24rem;
-  background: rgba(136, 192, 255, 0.06);
+  background: var(--border-subtle);
   color: var(--accent);
   font-family: 'Consolas', 'Monaco', monospace;
 }
@@ -771,7 +771,7 @@ function formatTime(iso: string | null): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 10, 18, 0.6);
+  background: var(--surface-1);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
@@ -780,9 +780,9 @@ function formatTime(iso: string | null): string {
   width: 22rem;
   max-width: 92vw;
   padding: 1rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  border: 1px solid var(--border-default);
   border-radius: 0.72rem;
-  background: rgba(8, 17, 31, 0.98);
+  background: var(--surface-2);
   box-shadow: 0 18px 48px rgba(1, 8, 16, 0.4);
 }
 
@@ -812,10 +812,10 @@ function formatTime(iso: string | null): string {
 
 .dialog-btn {
   padding: 0.36rem 0.82rem;
-  border: 1px solid rgba(136, 192, 255, 0.2);
+  border: 1px solid var(--border-strong);
   border-radius: 0.42rem;
   background: transparent;
-  color: #c4d6e8;
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
   font-size: var(--font-size-caption);
@@ -829,27 +829,27 @@ function formatTime(iso: string | null): string {
 }
 
 .dialog-btn.cancel:hover {
-  background: rgba(136, 192, 255, 0.06);
+  background: var(--border-subtle);
 }
 
 .dialog-btn.primary {
-  border-color: rgba(90, 213, 255, 0.4);
-  background: rgba(10, 132, 255, 0.2);
+  border-color: var(--border-strong);
+  background: var(--accent-border);
   color: var(--accent);
 }
 
 .dialog-btn.primary:hover:not(:disabled) {
-  background: rgba(10, 132, 255, 0.32);
+  background: var(--border-strong);
 }
 
 .dialog-btn.danger {
   border-color: rgba(255, 120, 120, 0.3);
-  background: rgba(255, 80, 80, 0.14);
-  color: #ff9b9b;
+  background: var(--danger-surface);
+  color: var(--danger);
 }
 
 .dialog-btn.danger:hover {
-  background: rgba(255, 80, 80, 0.24);
+  background: var(--danger-border);
 }
 
 .form-row {
@@ -866,7 +866,7 @@ function formatTime(iso: string | null): string {
 
 .form-input {
   padding: 0.36rem 0.46rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.36rem;
   background: var(--surface-raised);
   color: var(--text-primary);
@@ -876,7 +876,7 @@ function formatTime(iso: string | null): string {
 
 .form-input:focus {
   outline: none;
-  border-color: rgba(90, 213, 255, 0.4);
+  border-color: var(--border-strong);
 }
 
 /* ── 模板项样式 ──────────────────────────────────────────────────── */
@@ -887,8 +887,8 @@ function formatTime(iso: string | null): string {
 .template-badge {
   padding: 0.02rem 0.32rem;
   border-radius: 0.2rem;
-  background: rgba(255, 184, 77, 0.16);
-  color: #ffd38a;
+  background: var(--warning-border);
+  color: var(--accent-warm);
   font-size: var(--font-size-caption);
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -897,10 +897,10 @@ function formatTime(iso: string | null): string {
 .use-template-btn {
   margin-top: 0.32rem;
   padding: 0.28rem 0.5rem;
-  border: 1px dashed rgba(255, 184, 77, 0.4);
+  border: 1px dashed var(--warning-border);
   border-radius: 0.32rem;
-  background: rgba(255, 184, 77, 0.06);
-  color: #ffd38a;
+  background: var(--warning-surface);
+  color: var(--accent-warm);
   cursor: pointer;
   font: inherit;
   font-size: var(--font-size-caption);
@@ -914,7 +914,7 @@ function formatTime(iso: string | null): string {
 }
 
 .use-template-btn:hover {
-  background: rgba(255, 184, 77, 0.16);
-  border-color: rgba(255, 184, 77, 0.6);
+  background: var(--warning-border);
+  border-color: var(--warning-border);
 }
 </style>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { X, Minimize2, Maximize2 } from '../../components/ui/icons'
 import DataImportPanel from './DataImportPanel.vue'
 import DataExportPanel from './DataExportPanel.vue'
 import AttributeTable from './AttributeTable.vue'
@@ -180,7 +181,11 @@ function onDrop(_e: DragEvent) {
         </nav>
         <div class="ws-actions">
           <button class="icon-btn" type="button" :title="DATA_COPY.maximize" @click="toggleMax">
-            {{ dataWorkspaceMaximized ? '❐' : '□' }}
+            <component
+              :is="dataWorkspaceMaximized ? Minimize2 : Maximize2"
+              :size="14"
+              aria-hidden="true"
+            />
           </button>
           <button
             class="icon-btn"
@@ -188,7 +193,7 @@ function onDrop(_e: DragEvent) {
             :title="DATA_COPY.close"
             @click="closeDataWorkspace"
           >
-            ✕
+            <X :size="14" aria-hidden="true" />
           </button>
         </div>
       </header>
@@ -254,16 +259,20 @@ function onDrop(_e: DragEvent) {
   flex-direction: column;
   min-height: 0;
   border-radius: 0.75rem 0.75rem 0.55rem 0.55rem;
-  background: rgba(8, 17, 31, 0.97);
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  background: var(--surface-2);
+  border: 1px solid var(--border-default);
   box-shadow: 0 18px 48px rgba(1, 8, 16, 0.5);
   color: var(--text-primary);
   overflow: hidden;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 .data-workspace.drag-over {
   border-color: var(--accent);
-  box-shadow: 0 18px 48px rgba(1, 8, 16, 0.5), 0 0 0 2px rgba(90, 213, 255, 0.3);
+  box-shadow:
+    0 18px 48px rgba(1, 8, 16, 0.5),
+    0 0 0 2px var(--accent-border);
 }
 .data-workspace.maximized {
   top: 0;
@@ -277,7 +286,7 @@ function onDrop(_e: DragEvent) {
   height: 0.42rem;
   cursor: ns-resize;
   flex: none;
-  background: linear-gradient(180deg, rgba(90, 213, 255, 0.18), transparent);
+  background: linear-gradient(180deg, var(--accent-surface), transparent);
 }
 .ws-header {
   display: flex;
@@ -285,7 +294,7 @@ function onDrop(_e: DragEvent) {
   gap: 0.65rem;
   flex-shrink: 0;
   padding: 0.45rem 0.7rem 0.4rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.1);
+  border-bottom: 1px solid var(--border-subtle);
 }
 .ws-title-block {
   display: flex;
@@ -299,7 +308,7 @@ function onDrop(_e: DragEvent) {
 }
 .ws-sub {
   font-size: var(--font-size-caption);
-  color: #6a8094;
+  color: var(--text-faint);
 }
 .ws-tabs {
   display: flex;
@@ -308,17 +317,17 @@ function onDrop(_e: DragEvent) {
   min-width: 0;
   overflow: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(90, 213, 255, 0.35) transparent;
+  scrollbar-color: var(--border-strong) transparent;
 }
 .ws-tabs::-webkit-scrollbar {
   height: 4px;
 }
 .ws-tabs::-webkit-scrollbar-thumb {
-  background: rgba(90, 213, 255, 0.35);
+  background: var(--border-strong);
   border-radius: 999px;
 }
 .ws-tab {
-  border: 1px solid rgba(136, 192, 255, 0.12);
+  border: 1px solid var(--border-default);
   border-radius: 0.4rem;
   padding: 0.28rem 0.58rem;
   background: var(--surface-sunken);
@@ -330,8 +339,8 @@ function onDrop(_e: DragEvent) {
 }
 .ws-tab.active {
   color: var(--accent);
-  border-color: rgba(90, 213, 255, 0.35);
-  background: rgba(10, 132, 255, 0.16);
+  border-color: var(--border-strong);
+  background: var(--accent-surface);
 }
 .ws-actions {
   display: flex;
@@ -344,16 +353,16 @@ function onDrop(_e: DragEvent) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(136, 192, 255, 0.2);
+  border: 1px solid var(--border-strong);
   border-radius: 0.36rem;
-  background: rgba(4, 12, 23, 0.7);
+  background: var(--surface-1);
   color: var(--text-primary);
   cursor: pointer;
   font-size: var(--font-size-caption);
   line-height: 1;
 }
 .icon-btn:hover {
-  border-color: rgba(90, 213, 255, 0.4);
+  border-color: var(--border-strong);
   color: var(--accent);
 }
 .ws-body {
@@ -370,25 +379,25 @@ function onDrop(_e: DragEvent) {
   align-items: center;
   gap: 0.5rem;
   padding: 0.3rem 0.7rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.08);
+  border-bottom: 1px solid var(--border-subtle);
   font-size: var(--font-size-caption);
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 .quota-track {
   flex: 1;
   height: 0.24rem;
   border-radius: 999px;
-  background: rgba(136, 192, 255, 0.12);
+  background: var(--border-default);
   overflow: hidden;
 }
 .quota-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #0a84ff, var(--accent));
+  background: linear-gradient(90deg, var(--accent), var(--accent));
   transition: width 0.3s ease;
 }
 .quota-fill.warn {
-  background: linear-gradient(90deg, #ff8800, #ffd166);
+  background: linear-gradient(90deg, var(--warning), var(--warning));
 }
 .quota-text {
   white-space: nowrap;
@@ -414,7 +423,7 @@ function onDrop(_e: DragEvent) {
   min-height: 0;
   overflow: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(90, 213, 255, 0.35) transparent;
+  scrollbar-color: var(--border-strong) transparent;
 }
 .ws-pane-fill {
   display: flex;
@@ -430,7 +439,7 @@ function onDrop(_e: DragEvent) {
   height: 4px;
 }
 .ws-pane::-webkit-scrollbar-thumb {
-  background: rgba(90, 213, 255, 0.35);
+  background: var(--border-strong);
   border-radius: 999px;
 }
 </style>

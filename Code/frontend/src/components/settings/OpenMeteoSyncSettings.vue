@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import { useSettingsStore } from '../../stores/settings'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerViewport } from '../../stores/layers/selectors'
 import { useWeatherEngineStore } from '../../stores/weather-engine'
 import { normalizeWeatherModel } from '../../utils/weather-model'
 import { useWeatherSyncStatusStore } from '../../stores/weather-sync-status'
@@ -18,7 +18,7 @@ import AppSelect from '../ui/AppSelect.vue'
 
 const settingsStore = useSettingsStore()
 const weatherSyncStatusStore = useWeatherSyncStatusStore()
-const layersStore = useLayersStore()
+const viewport = useLayerViewport()
 const weatherEngine = useWeatherEngineStore()
 const { weatherConfig } = storeToRefs(settingsStore)
 
@@ -197,7 +197,7 @@ async function onModelChange() {
     }
     await refreshCoverage()
     await refreshOverview()
-    layersStore.flushWeatherTileViewports()
+    viewport.flushWeatherTileViewports()
   } catch (err) {
     modelUpdateMessage.value = (err as Error).message || '保存失败'
   } finally {
@@ -571,7 +571,7 @@ onBeforeUnmount(() => {
 .section-header h2 {
   margin: 0 0 0.4rem;
   font-size: 0.82rem;
-  color: #e8f3fc;
+  color: var(--text-strong);
 }
 
 .section-desc {
@@ -583,9 +583,9 @@ onBeforeUnmount(() => {
 
 .channel-card {
   padding: 0.7rem 0.75rem;
-  border: 1px solid rgba(136, 192, 255, 0.12);
+  border: 1px solid var(--border-default);
   border-radius: 0.7rem;
-  background: rgba(4, 12, 23, 0.35);
+  background: var(--surface-sunken);
 }
 
 .channel-head {
@@ -598,7 +598,7 @@ onBeforeUnmount(() => {
 .channel-head h3 {
   margin: 0;
   font-size: var(--font-size-caption);
-  color: #e8f3fc;
+  color: var(--text-strong);
 }
 
 .channel-badge {
@@ -610,18 +610,18 @@ onBeforeUnmount(() => {
 }
 
 .badge-global {
-  background: rgba(159, 248, 207, 0.14);
+  background: var(--success-surface);
   color: var(--success);
 }
 
 .badge-local {
-  background: rgba(90, 213, 255, 0.14);
+  background: var(--accent-surface);
   color: var(--accent);
 }
 
 .badge-online {
   background: rgba(201, 163, 255, 0.14);
-  color: #c9a3ff;
+  color: var(--accent-strong);
 }
 
 .channel-desc {
@@ -635,7 +635,7 @@ onBeforeUnmount(() => {
 .sync-hint code,
 .section-desc code {
   font-size: var(--font-size-caption);
-  color: #b7d4ea;
+  color: var(--text-muted);
 }
 
 .setting-row {
@@ -646,22 +646,22 @@ onBeforeUnmount(() => {
 
 .row-label {
   font-size: var(--font-size-caption);
-  color: #b8cce0;
+  color: var(--text-secondary);
 }
 
 .model-select {
   padding: 0.42rem 0.55rem;
-  border: 1px solid rgba(136, 192, 255, 0.2);
+  border: 1px solid var(--border-strong);
   border-radius: 0.42rem;
-  background: rgba(8, 17, 31, 0.6);
-  color: #e8f3fc;
+  background: var(--surface-1);
+  color: var(--text-strong);
   font: inherit;
   font-size: var(--font-size-caption);
 }
 
 .model-select:focus {
   outline: none;
-  border-color: rgba(90, 213, 255, 0.5);
+  border-color: var(--border-strong);
 }
 
 .model-meta {
@@ -674,28 +674,28 @@ onBeforeUnmount(() => {
 .meta-chip {
   padding: 0.18rem 0.5rem;
   border-radius: 0.32rem;
-  background: rgba(10, 132, 255, 0.1);
+  background: var(--accent-surface);
   color: var(--accent);
   font-size: var(--font-size-caption);
 }
 
 .meta-chip.ok {
-  background: rgba(114, 255, 207, 0.12);
+  background: var(--success-surface);
   color: var(--success);
 }
 
 .meta-chip.warn {
   background: rgba(255, 196, 120, 0.12);
-  color: #ffd38a;
+  color: var(--accent-warm);
 }
 
 .model-update-hint {
   margin-top: 0.45rem;
   padding: 0.42rem 0.55rem;
-  border: 1px solid rgba(255, 180, 90, 0.28);
+  border: 1px solid var(--warning-border);
   border-radius: 0.42rem;
   background: rgba(90, 60, 20, 0.2);
-  color: #ffd9a8;
+  color: var(--accent-warm);
   font-size: var(--font-size-caption);
   line-height: 1.5;
 }
@@ -718,7 +718,7 @@ onBeforeUnmount(() => {
   color: var(--text-muted);
 }
 .info-value {
-  color: #e8f3fc;
+  color: var(--text-strong);
   font-variant-numeric: tabular-nums;
 }
 
@@ -734,7 +734,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   margin-bottom: 0.42rem;
   font-size: var(--font-size-caption);
-  color: #b8cce0;
+  color: var(--text-secondary);
   font-weight: 600;
 }
 
@@ -742,7 +742,7 @@ onBeforeUnmount(() => {
   padding: 0.2rem 0.55rem;
   border: 1px solid var(--accent-border);
   border-radius: 0.32rem;
-  background: rgba(10, 132, 255, 0.1);
+  background: var(--accent-surface);
   color: var(--accent);
   cursor: pointer;
   font: inherit;
@@ -750,7 +750,7 @@ onBeforeUnmount(() => {
 }
 
 .refresh-btn:hover:not(:disabled) {
-  background: rgba(10, 132, 255, 0.2);
+  background: var(--accent-border);
 }
 .refresh-btn:disabled {
   opacity: 0.5;
@@ -759,17 +759,17 @@ onBeforeUnmount(() => {
 
 .coverage-error {
   padding: 0.42rem 0.55rem;
-  border: 1px solid rgba(255, 100, 100, 0.28);
+  border: 1px solid var(--danger-border);
   border-radius: 0.42rem;
   background: rgba(90, 20, 20, 0.2);
-  color: #ffb0b0;
+  color: var(--danger);
   font-size: var(--font-size-caption);
 }
 
 .coverage-hint {
   display: block;
   margin-top: 0.25rem;
-  color: #7f96ab;
+  color: var(--text-muted);
   font-size: var(--font-size-caption);
 }
 
@@ -802,7 +802,7 @@ onBeforeUnmount(() => {
   color: var(--text-muted);
 }
 .coverage-value {
-  color: #e8f3fc;
+  color: var(--text-strong);
   font-family: monospace;
 }
 .coverage-loading {
@@ -818,9 +818,9 @@ onBeforeUnmount(() => {
 
 .sync-btn {
   padding: 0.36rem 0.75rem;
-  border: 1px solid rgba(114, 255, 207, 0.3);
+  border: 1px solid var(--success-border);
   border-radius: 0.42rem;
-  background: rgba(114, 255, 207, 0.1);
+  background: var(--success-surface);
   color: var(--success);
   cursor: pointer;
   font: inherit;
@@ -839,13 +839,13 @@ onBeforeUnmount(() => {
   font-size: var(--font-size-caption);
 }
 .sync-state {
-  color: #b8cce0;
+  color: var(--text-secondary);
 }
 .state-success {
   color: var(--success);
 }
 .state-failure {
-  color: #ff8a8a;
+  color: var(--danger);
 }
 .state-started,
 .state-pending,
@@ -853,7 +853,7 @@ onBeforeUnmount(() => {
   color: var(--accent);
 }
 .sync-error {
-  color: #ffb0b0;
+  color: var(--danger);
 }
 .sync-hint {
   margin: 0.45rem 0 0;
@@ -890,9 +890,9 @@ onBeforeUnmount(() => {
   line-height: 1.45;
 }
 .coverage-value.ok {
-  color: #6bcf7f;
+  color: var(--success);
 }
 .coverage-value.warn {
-  color: #e0a84a;
+  color: var(--warning);
 }
 </style>

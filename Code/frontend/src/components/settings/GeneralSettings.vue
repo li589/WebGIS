@@ -532,7 +532,7 @@ const restartParams = computed(() => {
 }
 .section-title {
   margin: 0 0 0.32rem;
-  color: #e8f3fc;
+  color: var(--text-strong);
   font-size: var(--font-size-caption);
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -565,7 +565,7 @@ const restartParams = computed(() => {
   padding: 0.36rem 0.52rem;
   border-radius: 0.4rem;
   background: var(--surface-sunken);
-  border: 1px solid rgba(136, 192, 255, 0.06);
+  border: 1px solid var(--border-subtle);
 }
 .info-label {
   color: var(--text-muted);
@@ -591,7 +591,7 @@ const restartParams = computed(() => {
   line-height: 1.5;
 }
 .section-hint code {
-  background: rgba(136, 192, 255, 0.1);
+  background: var(--border-subtle);
   padding: 0 0.2rem;
   border-radius: 0.2rem;
   font-size: var(--font-size-caption);
@@ -604,7 +604,7 @@ const restartParams = computed(() => {
 }
 .group-title {
   margin: 0 0 0.2rem;
-  color: #6a8aa0;
+  color: var(--text-muted);
   font-size: var(--font-size-caption);
   font-weight: 500;
   text-transform: uppercase;
@@ -623,7 +623,7 @@ const restartParams = computed(() => {
   padding: 0.36rem 0.52rem;
   border-radius: 0.4rem;
   background: var(--surface-sunken);
-  border: 1px solid rgba(136, 192, 255, 0.06);
+  border: 1px solid var(--border-subtle);
 }
 .runtime-label-group {
   display: flex;
@@ -645,8 +645,8 @@ const restartParams = computed(() => {
 }
 .runtime-select,
 .runtime-input {
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(136, 192, 255, 0.15);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
   border-radius: 0.3rem;
   color: var(--text-primary);
   font-size: var(--font-size-caption);
@@ -658,7 +658,7 @@ const restartParams = computed(() => {
 }
 .runtime-select:focus,
 .runtime-input:focus {
-  border-color: rgba(100, 180, 255, 0.5);
+  border-color: var(--border-strong);
 }
 .runtime-select:disabled,
 .runtime-input:disabled {
@@ -672,9 +672,9 @@ const restartParams = computed(() => {
 }
 .save-btn {
   background: rgba(40, 80, 130, 0.6);
-  border: 1px solid rgba(136, 192, 255, 0.2);
+  border: 1px solid var(--border-strong);
   border-radius: 0.3rem;
-  color: #c8e0f5;
+  color: var(--text-primary);
   font-size: var(--font-size-caption);
   padding: 0.22rem 0.48rem;
   cursor: pointer;
@@ -692,7 +692,7 @@ const restartParams = computed(() => {
   background: rgba(40, 100, 60, 0.6);
   border: 1px solid rgba(100, 200, 120, 0.2);
   border-radius: 0.3rem;
-  color: #c8f0d5;
+  color: var(--success);
   font-size: var(--font-size-caption);
   padding: 0.22rem 0.6rem;
   cursor: pointer;
@@ -713,18 +713,18 @@ const restartParams = computed(() => {
   min-width: 0;
 }
 .param-hint {
-  color: #4a6070;
+  color: var(--text-disabled);
   font-size: var(--font-size-caption);
   line-height: 1.3;
 }
 .error-msg {
   margin: 0;
-  color: #ff7a6a;
+  color: var(--danger);
   font-size: var(--font-size-caption);
 }
 .success-msg {
   margin: 0;
-  color: #5acf8a;
+  color: var(--success);
   font-size: var(--font-size-caption);
 }
 </style>

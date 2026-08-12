@@ -1,7 +1,7 @@
 import { computed, ref, type ComputedRef } from 'vue'
 
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { useLogStore } from '../../stores/log'
 import { openDatedExportForLayer } from '../../data-manager/core/workspace-store'
 import { exportLayer } from '../../data-manager/adapters/export'
@@ -13,7 +13,7 @@ import { exportLayer } from '../../data-manager/adapters/export'
  * 以及导入矢量样式的 patch 逻辑。
  */
 export function useImportExport(displayLayer: ComputedRef<ActiveLayerDisplay>) {
-  const layersStore = useLayersStore()
+  const workspace = useLayerWorkspace()
   const logStore = useLogStore()
 
   // ── 导入操作提示 ──────────────────────────────────────────────────────────
@@ -35,7 +35,7 @@ export function useImportExport(displayLayer: ComputedRef<ActiveLayerDisplay>) {
   async function exportImportedGeoJson() {
     const id = displayLayer.value.instanceId
     if (!id) return
-    const active = layersStore.activeLayers.find((l) => l.instanceId === id)
+    const active = workspace.activeLayers.value.find((l) => l.instanceId === id)
     if (!active) return
     try {
       await exportLayer(active, 'geojson')
@@ -51,7 +51,7 @@ export function useImportExport(displayLayer: ComputedRef<ActiveLayerDisplay>) {
   async function exportImportedCsv() {
     const id = displayLayer.value.instanceId
     if (!id) return
-    const active = layersStore.activeLayers.find((l) => l.instanceId === id)
+    const active = workspace.activeLayers.value.find((l) => l.instanceId === id)
     if (!active) return
     try {
       await exportLayer(active, 'csv')
@@ -67,7 +67,7 @@ export function useImportExport(displayLayer: ComputedRef<ActiveLayerDisplay>) {
   async function exportImportedShp() {
     const id = displayLayer.value.instanceId
     if (!id) return
-    const active = layersStore.activeLayers.find((l) => l.instanceId === id)
+    const active = workspace.activeLayers.value.find((l) => l.instanceId === id)
     if (!active) return
     try {
       await exportLayer(active, 'shp-zip')
@@ -83,7 +83,7 @@ export function useImportExport(displayLayer: ComputedRef<ActiveLayerDisplay>) {
   function openExportPanelForDisplay() {
     const id = displayLayer.value.instanceId
     if (!id) return
-    const active = layersStore.activeLayers.find((l) => l.instanceId === id)
+    const active = workspace.activeLayers.value.find((l) => l.instanceId === id)
     if (!active) return
     const times = active.importedRaster?.timeList ?? []
     let time: string | null = null
@@ -100,7 +100,7 @@ export function useImportExport(displayLayer: ComputedRef<ActiveLayerDisplay>) {
   async function exportImportedRaster(format: 'png' | 'tif' | 'nc' | 'mat') {
     const id = displayLayer.value.instanceId
     if (!id) return
-    const active = layersStore.activeLayers.find((l) => l.instanceId === id)
+    const active = workspace.activeLayers.value.find((l) => l.instanceId === id)
     if (!active) return
     // 汇合到数据导出框（预选当前生效时刻）
     if (active.importedRaster) {
@@ -141,7 +141,7 @@ export function useImportExport(displayLayer: ComputedRef<ActiveLayerDisplay>) {
   ) {
     const id = displayLayer.value.instanceId
     if (!id || !displayLayer.value.isImported) return
-    layersStore.setImportedVectorStyle(id, patch)
+    workspace.setImportedVectorStyle(id, patch)
   }
 
   const importedVectorStyle = computed(() => displayLayer.value.importedVectorStyle ?? {})

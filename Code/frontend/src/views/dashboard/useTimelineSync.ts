@@ -10,7 +10,7 @@
  */
 import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import type { useUiStore } from '../../stores/ui'
-import type { useLayersStore } from '../../stores/layers'
+import { useLayerWorkspace, useWorkflowRun } from '../../stores/layers/selectors'
 import type { useLogStore } from '../../stores/log'
 import type { useWeatherTileManager } from '../../stores/weather-tile-manager'
 import type { WeatherCoverage } from '../../services/runtime-api'
@@ -69,7 +69,6 @@ interface SelectedLayerLike {
 
 export function useTimelineSync(
   uiStore: ReturnType<typeof useUiStore>,
-  layersStore: ReturnType<typeof useLayersStore>,
   logStore: ReturnType<typeof useLogStore>,
   weatherTileManager: ReturnType<typeof useWeatherTileManager>,
   weatherCoverage: Ref<WeatherCoverage | null>,
@@ -86,6 +85,10 @@ export function useTimelineSync(
   workflowProgressTimeSeek: Ref<unknown>,
   analysisPanelRef: Ref<{ showPanel: () => void } | null>,
 ) {
+  // ── Domain selectors ─────────────────────────────────────────────────
+  const workspace = useLayerWorkspace()
+  const workflowRun = useWorkflowRun()
+
   // ── 基础 computed ─────────────────────────────────────────────────────
 
   /** 瓦片 API 用的预报偏移 */
@@ -96,7 +99,7 @@ export function useTimelineSync(
   watch(
     tileForecastHour,
     (hour) => {
-      layersStore.setCurrentHour(hour)
+      workspace.setCurrentHour(hour)
     },
     { immediate: true },
   )
@@ -125,7 +128,9 @@ export function useTimelineSync(
   let layerTimeTrackingReady = false
 
   function snapTimelineToLatestValid(reason: string) {
-    const selected = layersStore.activeLayers.find((l) => l.catalogId === selectedCatalogId.value)
+    const selected = workspace.activeLayers.value.find(
+      (l) => l.catalogId === selectedCatalogId.value,
+    )
     const scienceSnap = snapTargetFromLayer(selected)
     if (scienceSnap) {
       uiStore.applyDateHour(scienceSnap.date, scienceSnap.hour)
@@ -148,7 +153,7 @@ export function useTimelineSync(
   function snapTimelineToLayerLatest(layerCatalogId: string, reason: string) {
     if (unifiedTimeLock.value) return
     if (uiStore.isLayerTimeLocked(layerCatalogId)) return
-    const layer = layersStore.activeLayers.find((l) => l.catalogId === layerCatalogId)
+    const layer = workspace.activeLayers.value.find((l) => l.catalogId === layerCatalogId)
     const scienceSnap = snapTargetFromLayer(layer)
     if (!scienceSnap) return
     uiStore.applyDateHour(scienceSnap.date, scienceSnap.hour)
@@ -160,7 +165,7 @@ export function useTimelineSync(
   /** 按 T_ref 刷新各导入栅格层的生效时间标签 */
   function refreshImportedRasterEffectiveTimes() {
     const tRef = referenceInstantFromTimeline(currentDate.value, currentHour.value)
-    for (const layer of layersStore.activeLayers) {
+    for (const layer of workspace.activeLayers.value) {
       if (!layer.importedRaster) continue
       if (!layer.importedRaster.timeList?.length) {
         const oid = layer.importedRaster.overlayLayerId
@@ -202,7 +207,7 @@ export function useTimelineSync(
 
   // 新加图层 snap
   watch(
-    () => layersStore.activeLayers.map((l) => l.instanceId),
+    () => workspace.activeLayers.value.map((l) => l.instanceId),
     (ids) => {
       if (!layerTimeTrackingReady) {
         for (const id of ids) knownActiveInstanceIds.add(id)
@@ -218,7 +223,7 @@ export function useTimelineSync(
       if (unifiedTimeLock.value) {
         if (
           added.some(
-            (id) => layersStore.activeLayers.find((l) => l.instanceId === id)?.importedRaster,
+            (id) => workspace.activeLayers.value.find((l) => l.instanceId === id)?.importedRaster,
           )
         ) {
           refreshImportedRasterEffectiveTimes()
@@ -226,14 +231,14 @@ export function useTimelineSync(
         return
       }
       for (const instanceId of added) {
-        const layer = layersStore.activeLayers.find((l) => l.instanceId === instanceId)
+        const layer = workspace.activeLayers.value.find((l) => l.instanceId === instanceId)
         if (!layer) continue
         if (layer.importedRaster?.timeList?.length) {
           pendingSnapCatalogIds.add(layer.catalogId)
           snapTimelineToLayerLatest(layer.catalogId, `新加科学图层 ${layer.catalogId} → 最新切片`)
           break
         }
-        if (!layersStore.isWeatherEngineLayer(layer.catalogId)) continue
+        if (!workspace.isWeatherEngineLayer(layer.catalogId)) continue
         pendingSnapCatalogIds.add(layer.catalogId)
         snapTimelineToLatestValid(`新加图层 ${layer.catalogId} → 最新有效时次`)
         break
@@ -244,7 +249,7 @@ export function useTimelineSync(
 
   // 渐进块：非锁定非统一时，科学层 time_list 增长则跟最新块
   const scienceTimeListSignature = computed(() =>
-    layersStore.activeLayers
+    workspace.activeLayers.value
       .filter((l) => l.importedRaster?.timeList?.length)
       .map(
         (l) =>
@@ -267,7 +272,9 @@ export function useTimelineSync(
     if (unifiedTimeLock.value) return
     if (isPlaying.value) return
 
-    const selected = layersStore.activeLayers.find((l) => l.catalogId === selectedCatalogId.value)
+    const selected = workspace.activeLayers.value.find(
+      (l) => l.catalogId === selectedCatalogId.value,
+    )
     if (!selected?.importedRaster?.timeList?.length) return
     if (uiStore.isLayerTimeLocked(selected.catalogId)) return
 
@@ -301,10 +308,10 @@ export function useTimelineSync(
     uiStore.applyTimelineFromLayerGranularity(target.granularity)
     uiStore.rememberLayerTime(catalogId)
 
-    const layer = layersStore.activeLayers.find((l) => l.catalogId === catalogId)
+    const layer = workspace.activeLayers.value.find((l) => l.catalogId === catalogId)
     const runGroupId = layer?.runGroupId
     const members = runGroupId
-      ? layersStore.activeLayers.filter(
+      ? workspace.activeLayers.value.filter(
           (l) => l.runGroupId === runGroupId && l.importedRaster?.overlayLayerId,
         )
       : layer?.importedRaster?.overlayLayerId
@@ -328,9 +335,9 @@ export function useTimelineSync(
     (hint) => {
       if (!hint) return
       const selected = selectedCatalogId.value
-        ? layersStore.activeLayers.find((l) => l.catalogId === selectedCatalogId.value)
+        ? workspace.activeLayers.value.find((l) => l.catalogId === selectedCatalogId.value)
         : null
-      const hintLayer = layersStore.activeLayers.find(
+      const hintLayer = workspace.activeLayers.value.find(
         (l) => l.catalogId === (hint as { catalogId: string }).catalogId,
       )
       const sameRunGroup =
@@ -357,11 +364,13 @@ export function useTimelineSync(
   // 运行启动：有预期时间段时把轴对齐到 start_at
   watch(
     (): { jobId: string; startAt: string; status: string } | null => {
-      const layer = layersStore.activeLayers.find((l) => l.catalogId === selectedCatalogId.value)
+      const layer = workspace.activeLayers.value.find(
+        (l) => l.catalogId === selectedCatalogId.value,
+      )
       const job = resolveJobLayerForActiveLayer(
         layer,
-        layersStore.jobLayers,
-        layersStore.runLayerGroups,
+        workflowRun.jobLayers.value,
+        workflowRun.runLayerGroups.value,
       )
       const startAt = job?.expectedTimeRange?.start_at
       if (!job || !startAt) return null
@@ -382,7 +391,7 @@ export function useTimelineSync(
   // 切层：记忆恢复
   watch(selectedCatalogId, (catalogId, previous) => {
     if (!catalogId || catalogId === previous) return
-    const layer = layersStore.activeLayers.find((l) => l.catalogId === catalogId)
+    const layer = workspace.activeLayers.value.find((l) => l.catalogId === catalogId)
     const spec = temporalSpecFromActiveLayer(layer)
     if (spec) {
       uiStore.applyTimelineFromLayerGranularity(timeStepToLegacyGranularity(spec.nativeStep))
@@ -433,7 +442,7 @@ export function useTimelineSync(
   // ── 粒度 & 时间轴色段 ─────────────────────────────────────────────────
 
   const selectedActiveLayer = computed(
-    () => layersStore.activeLayers.find((l) => l.catalogId === selectedCatalogId.value) ?? null,
+    () => workspace.activeLayers.value.find((l) => l.catalogId === selectedCatalogId.value) ?? null,
   )
 
   const activeLayerGranularity = computed<TimeGranularity>(() => {
@@ -447,8 +456,8 @@ export function useTimelineSync(
     }
     const catalogId = layer?.catalogId ?? activeLayer.value?.catalogId
     if (!catalogId) return 'hour'
-    if (layersStore.isWeatherEngineLayer(catalogId)) return 'hour'
-    const descriptor = layersStore.resolveEffectiveDescriptor(catalogId)
+    if (workspace.isWeatherEngineLayer(catalogId)) return 'hour'
+    const descriptor = workspace.resolveEffectiveDescriptor(catalogId)
     if (!descriptor) return 'hour'
     const gran =
       (descriptor as { time_granularity?: string }).time_granularity ||
@@ -471,8 +480,8 @@ export function useTimelineSync(
     void weatherCoverage.value
     void overlayTimeStates.value
     void selectedActiveLayer.value?.importedRaster?.timeList
-    void layersStore.jobLayers
-    void layersStore.runLayerGroups
+    void workflowRun.jobLayers.value
+    void workflowRun.runLayerGroups.value
 
     if (!hasTimelineLayer.value) {
       return buildClockDayTimelineSegments({
@@ -499,10 +508,10 @@ export function useTimelineSync(
 
     const jobForTimeline = resolveJobLayerForActiveLayer(
       scienceLayer,
-      layersStore.jobLayers,
-      layersStore.runLayerGroups,
+      workflowRun.jobLayers.value,
+      workflowRun.runLayerGroups.value,
     )
-    const runGroup = resolveRunGroupForActiveLayer(scienceLayer, layersStore.runLayerGroups)
+    const runGroup = resolveRunGroupForActiveLayer(scienceLayer, workflowRun.runLayerGroups.value)
     const expected = jobForTimeline?.expectedTimeRange
     const useExpectedAxis = shouldUseExpectedTimelineAxis({
       expected,
@@ -540,7 +549,7 @@ export function useTimelineSync(
 
     const layer = activeLayer.value
     const catalogId = layer.catalogId
-    const isWeatherLayer = catalogId ? layersStore.isWeatherEngineLayer(catalogId) : false
+    const isWeatherLayer = catalogId ? workspace.isWeatherEngineLayer(catalogId) : false
     if (!isWeatherLayer) {
       return generateTimelineSegments(currentDate.value, 'static')
     }

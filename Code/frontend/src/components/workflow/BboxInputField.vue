@@ -197,24 +197,24 @@ const isValid = computed(() => {
 
 .bbox-label {
   font-size: var(--font-size-caption);
-  color: #6a8aa0;
+  color: var(--text-muted);
   font-weight: 500;
 }
 
 .bbox-input {
   width: 100%;
   padding: 0.22rem 0.36rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  border: 1px solid var(--border-default);
   border-radius: 0.28rem;
-  background: rgba(8, 17, 31, 0.55);
-  color: #e8f3fc;
+  background: var(--surface-raised);
+  color: var(--text-strong);
   font: inherit;
   font-size: var(--font-size-caption);
 }
 
 .bbox-input:focus {
   outline: none;
-  border-color: rgba(90, 213, 255, 0.5);
+  border-color: var(--border-strong);
 }
 
 .bbox-field.error .bbox-input {
@@ -229,23 +229,23 @@ const isValid = computed(() => {
 
 .preset-btn {
   padding: 0.14rem 0.36rem;
-  border: 1px solid rgba(136, 192, 255, 0.2);
+  border: 1px solid var(--border-strong);
   border-radius: 0.28rem;
-  background: rgba(90, 213, 255, 0.08);
-  color: #8ab4d0;
+  background: var(--accent-surface);
+  color: var(--text-secondary);
   font-size: var(--font-size-caption);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .preset-btn:hover {
-  background: rgba(90, 213, 255, 0.18);
+  background: var(--accent-surface);
   color: var(--accent);
-  border-color: rgba(90, 213, 255, 0.4);
+  border-color: var(--border-strong);
 }
 
 .bbox-warn {
   font-size: var(--font-size-caption);
-  color: #e0a030;
+  color: var(--warning);
 }
 </style>

@@ -14,7 +14,7 @@
  *   />
  */
 import { computed, onMounted, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
-import { AlertTriangle } from 'lucide-vue-next'
+import { AlertTriangle } from '../ui/icons'
 import InlineLoader from '../common/InlineLoader.vue'
 import {
   LGraph,
@@ -330,18 +330,18 @@ function configureCanvas(canvas: LGraphCanvasClass) {
   if (LiteGraph) {
     const lg = liteGraphTheme()
     // 节点默认颜色
-    LiteGraph.NODE_DEFAULT_COLOR = '#1a2740'
-    LiteGraph.NODE_DEFAULT_BGCOLOR = '#0f1828'
+    LiteGraph.NODE_DEFAULT_COLOR = 'var(--surface-2)'
+    LiteGraph.NODE_DEFAULT_BGCOLOR = 'var(--surface-2)'
     LiteGraph.NODE_DEFAULT_BOXCOLOR = 'var(--accent)'
     LiteGraph.NODE_DEFAULT_SHAPE = 'round'
     LiteGraph.NODE_TITLE_COLOR = 'var(--text-primary)'
-    LiteGraph.NODE_TEXT_COLOR = '#c4d6e8'
-    lg.NODE_SELECTED_TITLE_COLOR = '#ffb84d'
+    LiteGraph.NODE_TEXT_COLOR = 'var(--text-secondary)'
+    lg.NODE_SELECTED_TITLE_COLOR = 'var(--warning)'
     lg.NODE_BOX_OUTLINE_COLOR = 'var(--accent)'
     // 连线颜色 — 不同数据类型不同颜色
     LiteGraph.LINK_COLOR = 'var(--accent)' // 默认（青色）
-    LiteGraph.CONNECTING_LINK_COLOR = '#ffb84d' // 正在连接（橙色）
-    LiteGraph.EVENT_LINK_COLOR = '#78ffa0' // 事件类型（绿色）
+    LiteGraph.CONNECTING_LINK_COLOR = 'var(--warning)' // 正在连接（橙色）
+    LiteGraph.EVENT_LINK_COLOR = 'var(--success)' // 事件类型（绿色）
     // 标题栏高度 / 槽位 / 字号（与节点默认尺寸联动，避免溢出）
     LiteGraph.NODE_TITLE_HEIGHT = 24
     LiteGraph.NODE_SLOT_HEIGHT = 22
@@ -350,7 +350,7 @@ function configureCanvas(canvas: LGraphCanvasClass) {
     // 连线宽度
     lg.LINK_WIDTH = 2.2
     // 鼠标悬停连接线时的高亮颜色（降级方案：依赖 LiteGraph 内置 hover 绘制）
-    lg.LINK_HOVER_COLOR = '#ffd38a'
+    lg.LINK_HOVER_COLOR = 'var(--accent-warm)'
   }
 
   // 选区回调
@@ -515,7 +515,7 @@ function configureCanvas(canvas: LGraphCanvasClass) {
     const startX = Math.floor(left / step) * step
     const startY = Math.floor(top / step) * step
     ctx.save()
-    ctx.strokeStyle = 'rgba(90, 180, 255, 0.08)'
+    ctx.strokeStyle = 'var(--accent-surface)'
     ctx.lineWidth = 1 / Math.max(scale, 0.01)
     ctx.beginPath()
     for (let x = startX; x <= left + width; x += step) {
@@ -531,7 +531,7 @@ function configureCanvas(canvas: LGraphCanvasClass) {
     const major = step * 5
     const majorStartX = Math.floor(left / major) * major
     const majorStartY = Math.floor(top / major) * major
-    ctx.strokeStyle = 'rgba(90, 180, 255, 0.16)'
+    ctx.strokeStyle = 'var(--accent-surface)'
     ctx.beginPath()
     for (let x = majorStartX; x <= left + width; x += major) {
       ctx.moveTo(x, top)
@@ -832,7 +832,7 @@ function drawMinimap() {
   const W = mm.width
   const H = mm.height
   ctx.clearRect(0, 0, W, H)
-  ctx.fillStyle = 'rgba(8, 15, 28, 0.6)'
+  ctx.fillStyle = 'var(--surface-1)'
   ctx.fillRect(0, 0, W, H)
 
   const nodes = getGraphNodes(graph)
@@ -881,8 +881,8 @@ function drawMinimap() {
     // 按引擎类型着色（module/* 属于 python_provider）
     const t = n.type ?? ''
     let color = 'var(--accent-strong)'
-    if (t.startsWith('weather/')) color = '#ffb84d'
-    else if (t.startsWith('module/') || t.startsWith('python_provider/')) color = '#78ffa0'
+    if (t.startsWith('weather/')) color = 'var(--warning)'
+    else if (t.startsWith('module/') || t.startsWith('python_provider/')) color = 'var(--success)'
     else if (t.startsWith('gee/')) color = 'var(--accent)'
     ctx.fillStyle = color
     ctx.globalAlpha = n.selected ? 1.0 : 0.7
@@ -903,7 +903,7 @@ function drawMinimap() {
     const vy = toMy(viewTop)
     const vw = viewW * scale
     const vh = viewH * scale
-    ctx.strokeStyle = 'rgba(255, 184, 77, 0.9)'
+    ctx.strokeStyle = 'var(--warning-border)'
     ctx.lineWidth = 1
     ctx.setLineDash([3, 3])
     ctx.strokeRect(vx, vy, vw, vh)
@@ -1875,7 +1875,7 @@ watch(
   width: 100%;
   height: 100%;
   min-height: 400px;
-  background: #0a0f1c;
+  background: var(--surface-base);
   overflow: hidden;
 }
 
@@ -1897,18 +1897,18 @@ watch(
   gap: 0.6rem;
   color: var(--text-muted);
   font-size: var(--font-size-caption);
-  background: rgba(8, 15, 28, 0.92);
+  background: var(--surface-2);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
 
 .canvas-error {
-  color: #ff9b9b;
+  color: var(--danger);
 }
 
 .error-icon {
   font-size: 1.6rem;
-  color: #ff6b6b;
+  color: var(--danger);
 }
 
 /* ── 连接点悬停提示（Teleport 到 body，需 :global）──────────────── */
@@ -1920,13 +1920,13 @@ watch(
   overflow: auto;
   padding: 0.55rem 0.65rem 0.6rem;
   border-radius: 0.5rem;
-  border: 1px solid rgba(90, 213, 255, 0.45);
-  background: linear-gradient(165deg, rgba(14, 24, 40, 0.96), rgba(8, 14, 26, 0.94));
+  border: 1px solid var(--border-strong);
+  background: linear-gradient(165deg, var(--surface-2), var(--surface-2));
   box-shadow:
     0 10px 28px rgba(0, 0, 0, 0.45),
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+    0 0 0 1px var(--surface-hover) inset;
   pointer-events: none;
-  color: #d5e4f3;
+  color: var(--text-primary);
 }
 
 :global(.wf-port-tooltip .port-tip-head) {
@@ -1943,7 +1943,7 @@ watch(
   font-size: var(--font-size-caption);
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: #0b1220;
+  color: var(--surface-sunken);
   background: var(--tip-accent, var(--accent));
 }
 
@@ -1952,7 +1952,7 @@ watch(
   min-width: 0;
   font-size: var(--font-size-caption);
   font-weight: 650;
-  color: #eef6ff;
+  color: var(--text-strong);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1961,21 +1961,21 @@ watch(
 :global(.wf-port-tooltip .port-tip-type) {
   flex-shrink: 0;
   font-size: var(--font-size-caption);
-  color: #c8f0ff;
+  color: var(--text-primary);
 }
 
 :global(.wf-port-tooltip .port-tip-body) {
   margin: 0 0 0.35rem;
   font-size: var(--font-size-caption);
   line-height: 1.45;
-  color: #b7c9db;
+  color: var(--text-muted);
   white-space: pre-wrap;
 }
 
 :global(.wf-port-tooltip .port-tip-tips) {
   margin: 0.2rem 0 0;
   padding: 0.35rem 0 0 1rem;
-  border-top: 1px solid rgba(136, 192, 255, 0.12);
+  border-top: 1px solid var(--border-default);
   list-style: disc;
 }
 
@@ -1983,7 +1983,7 @@ watch(
   margin: 0.12rem 0;
   font-size: var(--font-size-caption);
   line-height: 1.4;
-  color: #9eb4c9;
+  color: var(--text-secondary);
 }
 
 :global(.port-tip-enter-active),
@@ -2005,9 +2005,9 @@ watch(
   bottom: 0.6rem;
   width: 160px;
   height: 100px;
-  border: 1px solid rgba(136, 192, 255, 0.2);
+  border: 1px solid var(--border-strong);
   border-radius: 0.32rem;
-  background: rgba(8, 15, 28, 0.85);
+  background: var(--surface-1);
   pointer-events: auto;
   cursor: pointer;
   z-index: 5;

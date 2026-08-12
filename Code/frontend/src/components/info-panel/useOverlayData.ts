@@ -3,7 +3,7 @@ import { computed, type ComputedRef } from 'vue'
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
 import type { OverlayPointValue } from '../../services/runtime-api'
 import type { OverlayTimeState } from '../map/overlay-image-module'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { formatOverlayValue } from './useWeatherPointData'
 
 /**
@@ -23,13 +23,13 @@ export function useOverlayData(
   // overlayStyleMeta 由调用方传入以保持 API 对称性；本 composable 不直接使用。
   void overlayStyleMeta
 
-  const layersStore = useLayersStore()
+  const workspace = useLayerWorkspace()
 
   // ── 叠加图层列表 ──────────────────────────────────────────────────────────
 
   const overlayLayers = computed(() => {
     const timeStateMap = new Map((overlayTimeStates.value ?? []).map((s) => [s.layerId, s]))
-    return layersStore.activeLayersDisplay
+    return workspace.activeLayersDisplay.value
       .filter((l) => l.visible && Boolean(l.importedRasterOverlayLayerId))
       .map((l) => {
         const overlayLayerId = l.importedRasterOverlayLayerId ?? l.catalogId

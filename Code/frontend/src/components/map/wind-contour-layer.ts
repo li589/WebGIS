@@ -419,11 +419,11 @@ export class WindContourLayer {
   ): { value: number; color: string; width: number; label: string }[] {
     // 颜色定义：低级别淡色，高级别亮色
     const colorFor = (v: number) => {
-      if (v <= 2.5) return 'rgba(100, 180, 255, 0.35)'
-      if (v <= 5) return 'rgba(100, 180, 255, 0.5)'
+      if (v <= 2.5) return 'var(--border-strong)'
+      if (v <= 5) return 'var(--border-strong)'
       if (v <= 10) return 'rgba(150, 220, 255, 0.6)'
       if (v <= 15) return 'rgba(200, 240, 255, 0.7)'
-      return 'rgba(240, 250, 255, 0.8)'
+      return 'var(--text-primary)'
     }
     const widthFor = (v: number) => (v <= 5 ? 1.0 : 1.3)
     const make = (v: number) => ({

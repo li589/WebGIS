@@ -268,8 +268,8 @@ function percentOf(used: number | null | undefined, total: number | null | undef
   gap: 0.6rem;
   padding: 0.75rem 0.85rem;
   border-radius: 0.55rem;
-  border: 1px solid rgba(136, 192, 255, 0.12);
-  background: rgba(4, 12, 23, 0.45);
+  border: 1px solid var(--border-default);
+  background: var(--surface-raised);
 }
 
 .card-head {
@@ -324,14 +324,14 @@ function percentOf(used: number | null | undefined, total: number | null | undef
   flex: 1;
   height: 0.4rem;
   border-radius: 999px;
-  background: rgba(136, 192, 255, 0.14);
+  background: var(--border-default);
   overflow: hidden;
 }
 
 .bar-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, rgba(90, 213, 255, 0.7), rgba(90, 213, 255, 1));
+  background: linear-gradient(90deg, var(--border-strong), var(--border-strong));
   transition: width 0.4s ease;
 }
 
@@ -379,7 +379,7 @@ function percentOf(used: number | null | undefined, total: number | null | undef
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #c9dbea;
+  color: var(--text-primary);
 }
 
 .process-pid {
@@ -395,7 +395,7 @@ function percentOf(used: number | null | undefined, total: number | null | undef
 
 .error {
   margin: 0;
-  color: #ffb4a8;
+  color: var(--danger);
   font-size: var(--font-size-caption);
 }
 

@@ -4,7 +4,7 @@
  */
 import { computed, nextTick, ref } from 'vue'
 
-import type { RuntimeLayerDescriptor } from '../../services/runtime-api'
+import type { LayerDescriptor } from '../../services/runtime-api'
 import { deleteImportedRaster } from '../../services/data-import'
 import { useWeatherTileManager } from '../weather-tile-manager'
 import { useUiStore } from '../ui'
@@ -39,7 +39,7 @@ function isLocalImport(layer: ActiveLayer): boolean {
 
 export interface ActiveLayersSliceDeps {
   getLayerLibraryMap: () => Map<string, RuntimeLayerLibraryItem>
-  getRuntimeLayerCatalog: () => Record<string, RuntimeLayerDescriptor>
+  getRuntimeLayerCatalog: () => Record<string, LayerDescriptor>
   getRunLayerGroups: () => ActiveRunLayerGroup[]
   setRunLayerGroups: (groups: ActiveRunLayerGroup[]) => void
   getJobLayers: () => JobLayerItem[]
@@ -200,7 +200,7 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       featureCount: options?.featureCount,
     })
     if (options?.truncated) payload.truncated = true
-    const accent = assignLayerAccent('#7ee0a8')
+    const accent = assignLayerAccent('var(--success)')
     const layer: ActiveLayer = {
       instanceId,
       catalogId,

@@ -12,7 +12,7 @@ import type { ComputedRef } from 'vue'
 
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
 import type { WeatherPointResponse, OverlayPointValue } from '../../services/runtime-api'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { useUiStore } from '../../stores/ui'
 import { INSPECT_COPY } from '../../ui-copy'
 
@@ -97,14 +97,14 @@ export function useWeatherPointData(
   selectedMapPoint: ComputedRef<{ lng: number; lat: number } | null>,
   inspectHour: ComputedRef<number>,
 ) {
-  const layersStore = useLayersStore()
+  const workspace = useLayerWorkspace()
   const uiStore = useUiStore()
 
   const pointWeatherMetric = computed(() => {
     const metricKey =
       pointWeather.value?.render_hint?.primary_metric ??
       weatherRenderHint.value?.primary_metric ??
-      layersStore.getLayerPrimaryMetric(displayLayer.value.catalogId) ??
+      workspace.getLayerPrimaryMetric(displayLayer.value.catalogId) ??
       'temperature_2m'
     const unit =
       pointWeather.value?.render_hint?.unit_label ?? weatherRenderHint.value?.unit_label ?? ''

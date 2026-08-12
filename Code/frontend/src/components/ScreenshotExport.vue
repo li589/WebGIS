@@ -7,7 +7,8 @@
  * itself is loaded via defineAsyncComponent, so the cost is deferred until open.
  */
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { Table2, X, ChevronDown } from 'lucide-vue-next'
+import { Table2, X, ChevronDown } from './ui/icons'
+import IconButton from './ui/IconButton.vue'
 import html2canvas from 'html2canvas'
 import { jsPDF } from 'jspdf'
 import { LAYERS_COPY } from '../ui-copy'
@@ -260,7 +261,7 @@ async function capture() {
       fallback.height = mapH
       const ctx = fallback.getContext('2d')
       if (!ctx) throw uiErr
-      ctx.fillStyle = '#07111e'
+      ctx.fillStyle = 'var(--surface-1)'
       ctx.fillRect(0, 0, mapW, mapH)
       const img = await new Promise<HTMLImageElement>((resolve, reject) => {
         const image = new Image()
@@ -329,15 +330,9 @@ async function capture() {
       <div class="panel-header">
         <Table2 :size="16" class="panel-icon" aria-hidden="true" />
         <span>导出截图</span>
-        <button
-          type="button"
-          class="close-btn"
-          title="关闭"
-          aria-label="关闭"
-          @click.prevent="emit('close')"
-        >
-          <X :size="14" aria-hidden="true" />
-        </button>
+        <IconButton size="sm" label="关闭" class="close-btn-slot" @click="emit('close')">
+          <template #icon><X :size="14" /></template>
+        </IconButton>
       </div>
 
       <!-- Mode selection -->
@@ -419,7 +414,7 @@ async function capture() {
   align-items: flex-start;
   justify-content: flex-end;
   padding: 5.5rem var(--space-3) 0;
-  background: rgba(4, 10, 18, 0.55);
+  background: var(--surface-raised);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
@@ -431,8 +426,8 @@ async function capture() {
   gap: var(--space-3);
   padding: var(--space-5);
   border-radius: var(--radius-xl);
-  border: 1px solid rgba(90, 213, 255, 0.15);
-  background: linear-gradient(165deg, rgba(10, 22, 40, 0.97), rgba(6, 14, 26, 0.95));
+  border: 1px solid var(--accent-surface);
+  background: linear-gradient(165deg, var(--surface-2), var(--surface-2));
   backdrop-filter: blur(24px) saturate(1.1);
   -webkit-backdrop-filter: blur(24px) saturate(1.1);
   box-shadow:
@@ -457,27 +452,8 @@ async function capture() {
   line-height: 1;
 }
 
-.close-btn {
+.close-btn-slot {
   margin-left: auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-faint);
-  cursor: pointer;
-  font-size: var(--font-size-caption);
-  transition:
-    background-color var(--motion-fast) ease,
-    color var(--motion-fast) ease;
-}
-
-.close-btn:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
 }
 
 .section-label {
@@ -594,9 +570,9 @@ async function capture() {
   gap: var(--space-2);
   width: 100%;
   padding: 0.75rem var(--space-3);
-  border: 1px solid rgba(90, 213, 255, 0.35);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
-  background: linear-gradient(180deg, rgba(10, 132, 255, 0.4), rgba(10, 132, 255, 0.22));
+  background: linear-gradient(180deg, var(--border-strong), var(--accent-border));
   color: var(--text-strong);
   cursor: pointer;
   font-family: inherit;
@@ -605,7 +581,7 @@ async function capture() {
   letter-spacing: 0.02em;
   overflow: hidden;
   box-shadow:
-    0 6px 20px rgba(10, 132, 255, 0.2),
+    0 6px 20px var(--accent-border),
     inset 0 1px 0 rgba(136, 223, 255, 0.2);
   transition:
     background-color var(--motion-fast) var(--ease-standard),
@@ -622,13 +598,13 @@ async function capture() {
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+  background: linear-gradient(90deg, transparent, var(--surface-hover), transparent);
   transition: left 0.5s ease;
 }
 
 .capture-btn:hover:not(:disabled) {
-  background: linear-gradient(180deg, rgba(10, 132, 255, 0.55), rgba(10, 132, 255, 0.32));
-  border-color: rgba(90, 213, 255, 0.5);
+  background: linear-gradient(180deg, var(--border-strong), var(--border-strong));
+  border-color: var(--border-strong);
   box-shadow:
     0 10px 32px rgba(10, 132, 255, 0.3),
     inset 0 1px 0 rgba(136, 223, 255, 0.25);
@@ -642,7 +618,7 @@ async function capture() {
 .capture-btn:active:not(:disabled) {
   transform: translateY(1px);
   box-shadow:
-    0 3px 10px rgba(10, 132, 255, 0.2),
+    0 3px 10px var(--accent-border),
     inset 0 1px 0 rgba(136, 223, 255, 0.1);
 }
 
@@ -653,8 +629,8 @@ async function capture() {
 }
 
 .capture-btn.capturing {
-  border-color: rgba(90, 213, 255, 0.4);
-  background: linear-gradient(180deg, rgba(10, 132, 255, 0.3), rgba(10, 132, 255, 0.15));
+  border-color: var(--border-strong);
+  background: linear-gradient(180deg, var(--accent-border), var(--accent-surface));
 }
 
 .btn-icon {
@@ -703,7 +679,7 @@ async function capture() {
 
 .manual-download:hover {
   border-color: var(--accent);
-  background: rgba(10, 132, 255, 0.22);
+  background: var(--accent-border);
 }
 
 @media (prefers-reduced-motion: reduce) {

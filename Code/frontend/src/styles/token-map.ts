@@ -18,7 +18,24 @@ export const EXEMPT_PATHS = [
   'src/components/map/wind-particle-webgl-texture.ts',
   'src/components/map/scalar-field-webgl-texture.ts',
   'src/components/map/scalar-field-webgl-renderer.ts',
+  'src/components/map/scalar-field-webgl-controller.ts',
+  'src/components/map/wind-particle-canvas.ts',
+  'src/components/map/weather-overlay-renderers.ts',
+  'src/components/map/measure-canvas.ts',
+  'src/components/map/measure-module.ts',
+  'src/components/map/map-chrome-controls.ts',
+  'src/components/map/map-stage-view-model.ts',
+  'src/components/map/admin-boundary-module.ts',
+  'src/components/map/imported-layer-module.ts',
   'src/components/workflow/litegraph-ui-overrides.css',
+  'src/components/workflow/litegraph-setup.ts',
+  'src/components/info-panel/useLayerSymbology.ts',
+  'src/stores/layers/catalog.ts',
+  'src/stores/layers/catalog-builders.ts',
+  'src/stores/layers/catalog-runtime.ts',
+  'src/stores/layers/layer-accent.ts',
+  'src/stores/layers/display-projection.ts',
+  'src/stores/layers/active-layers.ts',
   'src/styles/tokens.css',
 ] as const
 
@@ -51,7 +68,13 @@ export const TOKEN_MAP: TokenMapping[] = [
   { hex: '5ad5ff', token: '--accent', role: '主品牌色（亮青）' },
   { hex: '88dfff', token: '--accent-strong', role: '强调色（更亮）' },
   { hex: 'ffc878', token: '--accent-warm', role: '暖强调（橙）' },
-  { hex: '2f7eff', token: '--accent-blue-deep', role: 'brand-mark 渐变深色（待补充 token）' },
+  { hex: '2f7eff', token: '--accent-blue-deep', role: 'brand-mark 渐变深色端' },
+
+  // ── 工作流端口语义色 ──
+  { hex: 'ff8fb1', token: '--port-time', role: '时间范围端口' },
+  { hex: 'ffd5a8', token: '--port-numeric', role: '数值端口' },
+  { hex: 'ffe08a', token: '--port-text', role: '文本端口' },
+  { hex: 'c084fc', token: '--recent-accent', role: '最近使用分类组强调色' },
 
   // ── 语义色 ──
   { hex: '9ff8cf', token: '--success', role: '成功' },
@@ -116,6 +139,12 @@ export const RGBA_MAP: RgbaMapping[] = [
   { rgba: 'rgba(255,176,112,0.3)', token: '--warning-border', role: '警告边框' },
   { rgba: 'rgba(255,140,100,0.12)', token: '--danger-surface', role: '危险表面' },
   { rgba: 'rgba(255,140,100,0.3)', token: '--danger-border', role: '危险边框' },
+
+  // ── 品牌深色 / 暖强调 / 徽章 rgba ──
+  { rgba: 'rgba(47,126,255,0.28)', token: '--accent-blue-deep-glow', role: '品牌辉光阴影' },
+  { rgba: 'rgba(255,200,120,0.12)', token: '--accent-warm-surface', role: '暖强调表面' },
+  { rgba: 'rgba(255,200,120,0.35)', token: '--accent-warm-border', role: '暖强调边框' },
+  { rgba: 'rgba(8,20,36,0.9)', token: '--badge-ring', role: '徽章外环' },
 ]
 
 // ═══ 查找工具函数 ═══

@@ -81,7 +81,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 10, 20, 0.72);
+  background: var(--surface-1);
   backdrop-filter: blur(5px);
   -webkit-backdrop-filter: blur(5px);
 }
@@ -93,11 +93,11 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   gap: 1.1rem;
   padding: 2rem 2.4rem 1.6rem;
   border-radius: var(--radius-xl);
-  background: linear-gradient(165deg, rgba(10, 22, 42, 0.92), rgba(6, 14, 28, 0.88));
-  border: 1px solid rgba(90, 213, 255, 0.2);
+  background: linear-gradient(165deg, var(--surface-2), var(--surface-1));
+  border: 1px solid var(--accent-border);
   box-shadow:
     0 24px 80px rgba(0, 0, 0, 0.55),
-    0 0 60px rgba(10, 132, 255, 0.1),
+    0 0 60px var(--accent-surface),
     inset 0 1px 0 rgba(136, 223, 255, 0.12);
   backdrop-filter: blur(24px) saturate(1.1);
   -webkit-backdrop-filter: blur(24px) saturate(1.1);
@@ -116,10 +116,10 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   inset: 12%;
   border-radius: 50%;
   background:
-    radial-gradient(1px 1px at 20% 30%, rgba(255, 255, 255, 0.7), transparent),
-    radial-gradient(1px 1px at 70% 22%, rgba(255, 255, 255, 0.55), transparent),
+    radial-gradient(1px 1px at 20% 30%, var(--text-primary), transparent),
+    radial-gradient(1px 1px at 70% 22%, var(--text-secondary), transparent),
     radial-gradient(1.5px 1.5px at 40% 70%, rgba(180, 230, 255, 0.65), transparent),
-    radial-gradient(1px 1px at 82% 62%, rgba(255, 255, 255, 0.5), transparent);
+    radial-gradient(1px 1px at 82% 62%, var(--text-secondary), transparent);
   opacity: 0.7;
   animation: twinkle 2.8s ease-in-out infinite;
 }
@@ -136,7 +136,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
 .orbit-ring.ring-2 {
   width: 150px;
   height: 150px;
-  border-color: rgba(255, 184, 77, 0.16);
+  border-color: var(--warning-border);
   transform: rotateX(58deg) rotateZ(25deg) scale(1.02);
 }
 
@@ -162,14 +162,14 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   overflow: hidden;
   background: radial-gradient(
     circle at 32% 28%,
-    #7fd4ff 0%,
-    #2a7fbf 38%,
-    #0d3a62 78%,
-    #071e36 100%
+    var(--accent) 0%,
+    var(--accent-strong) 38%,
+    var(--surface-1) 78%,
+    var(--surface-base) 100%
   );
   box-shadow:
-    inset -10px -6px 18px rgba(0, 0, 0, 0.35),
-    0 0 18px rgba(90, 213, 255, 0.25);
+    inset -10px -6px 18px var(--surface-sunken),
+    0 0 18px var(--border-accent);
   animation: earth-spin 12s linear infinite;
 }
 
@@ -251,7 +251,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   width: 6px;
   height: 6px;
   border-radius: 1px;
-  background: linear-gradient(135deg, #fff6e0, #ffb84d);
+  background: linear-gradient(135deg, var(--warning), var(--warning));
   box-shadow: 0 0 8px rgba(255, 184, 77, 0.7);
 }
 
@@ -260,8 +260,8 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   top: 3px;
   width: 6px;
   height: 4px;
-  background: rgba(90, 213, 255, 0.85);
-  box-shadow: 0 0 6px rgba(90, 213, 255, 0.5);
+  background: var(--border-strong);
+  box-shadow: 0 0 6px var(--border-strong);
 }
 
 .sat-wing.left {
@@ -277,7 +277,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   top: 8px;
   width: 2px;
   height: 14px;
-  background: linear-gradient(180deg, rgba(255, 184, 77, 0.7), transparent);
+  background: linear-gradient(180deg, var(--warning-border), transparent);
   transform-origin: top center;
   animation: beam-pulse 1.2s ease-in-out infinite;
 }
@@ -314,9 +314,9 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   width: 40%;
   background: linear-gradient(
     90deg,
-    rgba(90, 213, 255, 0) 0%,
-    rgba(90, 213, 255, 0.85) 50%,
-    rgba(255, 184, 77, 0) 100%
+    var(--accent-surface) 0%,
+    var(--border-strong) 50%,
+    var(--warning-surface) 100%
   );
   animation: progress-slide 1.6s ease-in-out infinite;
 }
@@ -346,8 +346,8 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(90, 213, 255, 0.95),
-    rgba(255, 184, 77, 0.8),
+    var(--border-strong),
+    var(--warning-border),
     transparent
   );
   animation: progress-slide 1.1s ease-in-out infinite;
@@ -358,7 +358,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   margin-top: var(--space-2);
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-pill);
-  background: rgba(8, 18, 34, 0.82);
+  background: var(--surface-1);
   border: 1px solid var(--border-accent);
   color: var(--text-secondary);
   font-size: var(--font-size-caption);

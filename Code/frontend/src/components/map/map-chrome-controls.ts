@@ -41,24 +41,24 @@ const CHROME_CONTROL_CSS = `
   overflow: hidden;
   box-shadow: 0 10px 28px rgba(3, 10, 20, 0.22);
   transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
-  background: rgba(12, 22, 38, 0.88);
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  color: #e2e8f0;
+  color: var(--text-primary);
 }
 .map-custom-nav-ctrl.map-nav-ctrl--dark,
 .map-stage-dark .map-custom-nav-ctrl {
-  background: rgba(12, 22, 38, 0.88);
-  border-color: rgba(136, 192, 255, 0.18);
-  color: #e2e8f0;
+  background: var(--surface-1);
+  border-color: var(--border-default);
+  color: var(--text-primary);
 }
 .map-custom-nav-ctrl.map-nav-ctrl--light,
 .map-stage-light .map-custom-nav-ctrl {
-  background: rgba(255, 255, 255, 0.92);
-  border-color: rgba(15, 23, 42, 0.15);
+  background: var(--text-strong);
+  border-color: var(--surface-sunken);
   box-shadow: 0 10px 28px rgba(15, 23, 42, 0.15);
-  color: #1e293b;
+  color: var(--surface-2);
 }
 .map-custom-nav-ctrl .map-nav-btn {
   width: 2.15rem;
@@ -75,19 +75,19 @@ const CHROME_CONTROL_CSS = `
   transition: background-color 0.18s ease, color 0.18s ease;
 }
 .map-custom-nav-ctrl .map-nav-btn + .map-nav-btn {
-  border-top: 1px solid rgba(136, 192, 255, 0.12);
+  border-top: 1px solid var(--border-default);
 }
 .map-stage-light .map-custom-nav-ctrl .map-nav-btn + .map-nav-btn,
 .map-custom-nav-ctrl.map-nav-ctrl--light .map-nav-btn + .map-nav-btn {
-  border-top-color: rgba(15, 23, 42, 0.08);
+  border-top-color: var(--surface-sunken);
 }
 .map-custom-nav-ctrl .map-nav-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #38bdf8;
+  background: var(--surface-hover);
+  color: var(--accent);
 }
 .map-stage-light .map-custom-nav-ctrl .map-nav-btn:hover,
 .map-custom-nav-ctrl.map-nav-ctrl--light .map-nav-btn:hover {
-  background: rgba(15, 23, 42, 0.08);
+  background: var(--surface-sunken);
   color: #0284c7;
 }
 .map-custom-nav-ctrl .map-nav-btn--compass {
@@ -111,7 +111,7 @@ const CHROME_CONTROL_CSS = `
   transition: none;
 }
 .map-custom-nav-ctrl .map-nav-btn--rotated {
-  color: #38bdf8;
+  color: var(--accent);
 }
 .map-custom-nav-ctrl .map-nav-btn--loading svg {
   animation: cgda-nav-locate-spin 1s linear infinite;
@@ -203,11 +203,11 @@ export class MapChromeNavigationControl implements IControl {
     compassNeedle.innerHTML = `
       <svg class="compass-dial-svg" viewBox="0 0 32 32" aria-hidden="true" width="22" height="22">
         <circle cx="16" cy="16" r="14.2" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.35" />
-        <polygon points="16,3.5 20,15 16,13 12,15" fill="#ef4444" />
-        <text x="16" y="9.5" font-size="5" font-weight="900" text-anchor="middle" fill="#ffffff" style="user-select:none;">N</text>
-        <polygon points="16,28.5 20,17 16,19 12,17" fill="#64748b" />
-        <text x="16" y="25" font-size="5" font-weight="900" text-anchor="middle" fill="#ffffff" style="user-select:none;">S</text>
-        <circle cx="16" cy="16" r="2" fill="#38bdf8" />
+        <polygon points="16,3.5 20,15 16,13 12,15" fill="var(--danger)" />
+        <text x="16" y="9.5" font-size="5" font-weight="900" text-anchor="middle" fill="var(--text-strong)" style="user-select:none;">N</text>
+        <polygon points="16,28.5 20,17 16,19 12,17" fill="var(--text-secondary)" />
+        <text x="16" y="25" font-size="5" font-weight="900" text-anchor="middle" fill="var(--text-strong)" style="user-select:none;">S</text>
+        <circle cx="16" cy="16" r="2" fill="var(--accent)" />
       </svg>
     `
     this._compassNeedle = compassNeedle
@@ -409,9 +409,6 @@ export class MapChromeNavigationControl implements IControl {
     }
   }
 }
-
-/** @deprecated 使用 MapChromeNavigationControl；保留别名兼容旧导入 */
-export class MapCustomNavigationControl extends MapChromeNavigationControl {}
 
 /** 创建比例尺：沿用 MapLibre 默认朴素样式，不做外观覆盖 */
 export function createMapChromeScaleControl(

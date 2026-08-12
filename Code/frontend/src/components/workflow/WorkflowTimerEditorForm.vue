@@ -4,6 +4,7 @@
  */
 import { DATE_TEMPLATES } from '../../services/workflow-timer-api'
 import type { TriggerType } from '../../services/workflow-timer-api'
+import { AlertTriangle, XCircle } from '../ui/icons'
 import AppSelect from '../ui/AppSelect.vue'
 
 defineProps<{
@@ -129,7 +130,9 @@ function patch(key: string, value: unknown) {
         placeholder="0 8 * * *"
         @input="patch('cron_expr', ($event.target as HTMLInputElement).value)"
       />
-      <div v-if="cronPreviewError" class="cron-preview-error">⚠ {{ cronPreviewError }}</div>
+      <div v-if="cronPreviewError" class="cron-preview-error">
+        <AlertTriangle :size="14" aria-hidden="true" /> {{ cronPreviewError }}
+      </div>
       <div v-else-if="cronPreviewTimes.length > 0" class="cron-preview">
         <span class="cron-preview-label">{{ cronPreviewLoading ? '计算中...' : '下次触发:' }}</span>
         <div class="cron-preview-times">
@@ -209,7 +212,9 @@ function patch(key: string, value: unknown) {
         立即
       </label>
     </div>
-    <div v-if="editorError" class="dialog-error">❌ {{ editorError }}</div>
+    <div v-if="editorError" class="dialog-error">
+      <XCircle :size="14" aria-hidden="true" /> {{ editorError }}
+    </div>
     <div class="dialog-actions">
       <button class="dialog-btn cancel" type="button" @click="emit('cancel')">取消</button>
       <button
@@ -240,22 +245,22 @@ function patch(key: string, value: unknown) {
 
 .form-label {
   font-size: var(--font-size-caption);
-  color: #c5d8ea;
+  color: var(--text-primary);
   font-weight: 500;
 }
 
 .form-hint {
   font-weight: 400;
-  color: #7a96ad;
+  color: var(--text-muted);
   font-size: var(--font-size-caption);
 }
 
 .form-input {
   padding: 0.4rem 0.5rem;
   border-radius: 0.35rem;
-  border: 1px solid rgba(136, 192, 255, 0.2);
-  background: rgba(4, 12, 22, 0.7);
-  color: #e8f3fc;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-1);
+  color: var(--text-strong);
   font-size: var(--font-size-caption);
 }
 
@@ -280,7 +285,7 @@ function patch(key: string, value: unknown) {
   align-items: center;
   gap: 0.28rem;
   font-size: var(--font-size-caption);
-  color: #c5d8ea;
+  color: var(--text-primary);
   cursor: pointer;
 }
 
@@ -294,15 +299,15 @@ function patch(key: string, value: unknown) {
   padding: 0.22rem 0.45rem;
   border-radius: 0.28rem;
   border: 1px solid var(--border-accent);
-  background: rgba(12, 28, 48, 0.7);
-  color: #9ec9e8;
+  background: var(--surface-1);
+  color: var(--accent);
   font-size: var(--font-size-caption);
   cursor: pointer;
 }
 
 .cron-preset-btn:hover {
-  border-color: rgba(90, 213, 255, 0.55);
-  color: #e8f3fc;
+  border-color: var(--border-strong);
+  color: var(--text-strong);
 }
 
 .cron-preview {
@@ -325,12 +330,12 @@ function patch(key: string, value: unknown) {
 
 .cron-time-item {
   font-size: var(--font-size-caption);
-  color: #b8d4ec;
+  color: var(--text-secondary);
 }
 
 .cron-preview-error {
   font-size: var(--font-size-caption);
-  color: #ff9b9b;
+  color: var(--danger);
 }
 
 .date-templates-bar {
@@ -358,15 +363,15 @@ function patch(key: string, value: unknown) {
 .date-template-btn {
   padding: 0.18rem 0.4rem;
   border-radius: 0.25rem;
-  border: 1px solid rgba(136, 192, 255, 0.22);
-  background: rgba(8, 20, 36, 0.8);
-  color: #9ec9e8;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-1);
+  color: var(--accent);
   font-size: var(--font-size-caption);
   cursor: pointer;
 }
 
 .dialog-error {
-  color: #ff9b9b;
+  color: var(--danger);
   font-size: var(--font-size-caption);
 }
 
@@ -380,17 +385,17 @@ function patch(key: string, value: unknown) {
 .dialog-btn {
   padding: 0.38rem 0.72rem;
   border-radius: 0.35rem;
-  border: 1px solid rgba(136, 192, 255, 0.22);
-  background: rgba(12, 24, 42, 0.9);
-  color: #c5d8ea;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-primary);
   font-size: var(--font-size-caption);
   cursor: pointer;
 }
 
 .dialog-btn.primary {
-  border-color: rgba(90, 213, 255, 0.45);
-  background: rgba(20, 60, 90, 0.85);
-  color: #e8f3fc;
+  border-color: var(--border-strong);
+  background: var(--surface-3);
+  color: var(--text-strong);
 }
 
 .dialog-btn.cancel:hover,

@@ -198,7 +198,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(2, 6, 14, 0.62);
+  background: var(--surface-1);
   backdrop-filter: blur(3px);
   z-index: 11000;
 }
@@ -212,7 +212,7 @@ watch(
   border-radius: 0.5rem;
   background: var(--surface-1);
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
-  color: #c4d6e8;
+  color: var(--text-secondary);
   overflow: hidden;
 }
 
@@ -221,7 +221,7 @@ watch(
   align-items: center;
   justify-content: space-between;
   padding: 0.5rem 0.62rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.12);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .dialog-title {
@@ -247,7 +247,7 @@ watch(
 
 .dialog-close:hover {
   background: rgba(255, 138, 138, 0.16);
-  color: #ff8a8a;
+  color: var(--danger);
 }
 
 .dialog-pathbar {
@@ -256,7 +256,7 @@ watch(
   gap: 0.32rem;
   padding: 0.4rem 0.62rem;
   border-bottom: 1px solid var(--border-subtle);
-  background: rgba(4, 12, 23, 0.4);
+  background: var(--surface-sunken);
 }
 
 .path-btn {
@@ -266,16 +266,16 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  border: 1px solid var(--border-default);
   border-radius: 0.32rem;
-  background: rgba(10, 132, 255, 0.08);
+  background: var(--accent-surface);
   color: var(--text-muted);
   cursor: pointer;
   font-size: var(--font-size-caption);
 }
 
 .path-btn:hover:not(:disabled) {
-  background: rgba(10, 132, 255, 0.2);
+  background: var(--accent-border);
   color: var(--accent);
 }
 
@@ -309,7 +309,7 @@ watch(
 }
 
 .dialog-state.error {
-  color: #ff8a8a;
+  color: var(--danger);
 }
 
 .dir-list {
@@ -331,11 +331,11 @@ watch(
 }
 
 .dir-item:hover {
-  background: rgba(10, 132, 255, 0.14);
+  background: var(--accent-surface);
 }
 
 .dir-item.selected {
-  background: rgba(90, 213, 255, 0.2);
+  background: var(--accent-border);
 }
 
 .dir-item.dir .item-name {
@@ -376,8 +376,8 @@ watch(
   justify-content: space-between;
   gap: 0.42rem;
   padding: 0.42rem 0.62rem;
-  border-top: 1px solid rgba(136, 192, 255, 0.12);
-  background: rgba(4, 12, 23, 0.4);
+  border-top: 1px solid var(--border-default);
+  background: var(--surface-sunken);
 }
 
 .footer-hint {
@@ -392,10 +392,10 @@ watch(
 
 .dialog-btn {
   padding: 0.3rem 0.72rem;
-  border: 1px solid rgba(136, 192, 255, 0.22);
+  border: 1px solid var(--border-strong);
   border-radius: 0.32rem;
   background: transparent;
-  color: #c4d6e8;
+  color: var(--text-secondary);
   font: inherit;
   font-size: var(--font-size-caption);
   cursor: pointer;
@@ -403,18 +403,18 @@ watch(
 }
 
 .dialog-btn:hover {
-  background: rgba(10, 132, 255, 0.16);
+  background: var(--accent-surface);
   color: var(--text-primary);
 }
 
 .dialog-btn.primary {
-  border-color: rgba(90, 213, 255, 0.5);
-  background: rgba(90, 213, 255, 0.2);
+  border-color: var(--border-strong);
+  background: var(--accent-border);
   color: var(--accent);
 }
 
 .dialog-btn.primary:hover {
-  background: rgba(90, 213, 255, 0.32);
+  background: var(--border-accent);
   color: var(--success);
 }
 </style>

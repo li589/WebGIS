@@ -4,41 +4,59 @@
  * Provide narrower APIs over ``useLayersStore()`` so consumers can depend on
  * only the domain they need, reducing implicit coupling.
  *
+ * Reactive state (State + Computed) is returned as Refs / ComputedRefs via
+ * ``storeToRefs`` — destructuring in consumers preserves reactivity.
+ * Actions are returned as plain function references (no reactivity needed).
+ *
  * Usage:
  * ```ts
  * import { useLayerWorkspace } from '@/stores/layers/selectors'
  * const workspace = useLayerWorkspace()
- * workspace.addLayer('catalog-id')
- * ```
- *
- * For reactive state, use ``storeToRefs`` on the store directly:
- * ```ts
- * const store = useLayersStore()
- * const { activeLayers } = storeToRefs(store)
+ * const { activeLayers, activeLayerCount } = workspace  // Refs
+ * workspace.addLayer('catalog-id')                       // action
  * ```
  */
+import { storeToRefs } from 'pinia'
 import { useLayersStore } from './index'
 
 /** Workspace domain: layer CRUD, catalog, shared state. */
 export function useLayerWorkspace() {
   const store = useLayersStore()
+  const {
+    // State (as Refs)
+    activeLayers,
+    sidebarView,
+    selectedInstanceId,
+    currentHour,
+    isSubmitting,
+    runtimeLayerCatalogLoading,
+    // Computed (as ComputedRefs)
+    activeLayersDisplay,
+    selectedLayerDisplay,
+    activeLayerCount,
+    sidebarViewLabel,
+    catalogJobStatus,
+    catalogRunReadiness,
+    // Data (as Refs)
+    layerLibrary,
+  } = storeToRefs(store)
+
   return {
-    // State
-    activeLayers: store.activeLayers,
-    sidebarView: store.sidebarView,
-    selectedInstanceId: store.selectedInstanceId,
-    currentHour: store.currentHour,
-    isSubmitting: store.isSubmitting,
-    runtimeLayerCatalogLoading: store.runtimeLayerCatalogLoading,
-    // Computed
-    activeLayersDisplay: store.activeLayersDisplay,
-    selectedLayerDisplay: store.selectedLayerDisplay,
-    activeLayerCount: store.activeLayerCount,
-    sidebarViewLabel: store.sidebarViewLabel,
-    catalogJobStatus: store.catalogJobStatus,
-    catalogRunReadiness: store.catalogRunReadiness,
-    // Data
-    layerLibrary: store.layerLibrary,
+    // Reactive state (Refs / ComputedRefs)
+    activeLayers,
+    sidebarView,
+    selectedInstanceId,
+    currentHour,
+    isSubmitting,
+    runtimeLayerCatalogLoading,
+    activeLayersDisplay,
+    selectedLayerDisplay,
+    activeLayerCount,
+    sidebarViewLabel,
+    catalogJobStatus,
+    catalogRunReadiness,
+    layerLibrary,
+    // Non-reactive static data
     layerCategories: store.layerCategories,
     // Actions
     addLayer: store.addLayer,
@@ -80,14 +98,23 @@ export function useLayerWorkspace() {
 /** Viewport domain: weather viewport, wind display, map state. */
 export function useLayerViewport() {
   const store = useLayersStore()
+  const {
+    particleFlowCatalogId,
+    windDisplayMode,
+    currentMapCenter,
+    currentMapBBox,
+    currentMapZoom,
+    smoothRendering,
+  } = storeToRefs(store)
+
   return {
-    // State
-    particleFlowCatalogId: store.particleFlowCatalogId,
-    windDisplayMode: store.windDisplayMode,
-    currentMapCenter: store.currentMapCenter,
-    currentMapBBox: store.currentMapBBox,
-    currentMapZoom: store.currentMapZoom,
-    smoothRendering: store.smoothRendering,
+    // Reactive state (Refs)
+    particleFlowCatalogId,
+    windDisplayMode,
+    currentMapCenter,
+    currentMapBBox,
+    currentMapZoom,
+    smoothRendering,
     // Actions
     setWindDisplayMode: store.setWindDisplayMode,
     toggleParticleFlow: store.toggleParticleFlow,
@@ -103,17 +130,27 @@ export function useLayerViewport() {
 /** Workflow-run domain: job layers, polling, runner, point weather. */
 export function useWorkflowRun() {
   const store = useLayersStore()
+  const {
+    runLayerGroups,
+    jobLayers,
+    workflowError,
+    workflowProgressTimeSeek,
+    workflowSummary,
+    pointWeather,
+    pointWeatherLoading,
+    pointWeatherError,
+  } = storeToRefs(store)
+
   return {
-    // State
-    runLayerGroups: store.runLayerGroups,
-    jobLayers: store.jobLayers,
-    workflowError: store.workflowError,
-    workflowProgressTimeSeek: store.workflowProgressTimeSeek,
-    workflowSummary: store.workflowSummary,
-    // Point weather
-    pointWeather: store.pointWeather,
-    pointWeatherLoading: store.pointWeatherLoading,
-    pointWeatherError: store.pointWeatherError,
+    // Reactive state (Refs)
+    runLayerGroups,
+    jobLayers,
+    workflowError,
+    workflowProgressTimeSeek,
+    workflowSummary,
+    pointWeather,
+    pointWeatherLoading,
+    pointWeatherError,
     // Actions
     setJobLayers: store.setJobLayers,
     reorderLayers: store.reorderLayers,

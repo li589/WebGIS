@@ -2,6 +2,9 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { DATA_COPY } from '../../ui-copy'
 import AppSelect from '../../components/ui/AppSelect.vue'
+import AppButton from '../../components/ui/AppButton.vue'
+import IconButton from '../../components/ui/IconButton.vue'
+import { X } from '../../components/ui/icons'
 import {
   exportLayer,
   exportLayersBatch,
@@ -15,7 +18,7 @@ import {
   type ExportEncodingOption,
 } from '../core/api'
 import { dataWorkspaceExportTime, dataWorkspaceLayerId } from '../core/workspace-store'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerWorkspace, useLayerViewport } from '../../stores/layers/selectors'
 import { useLogStore } from '../../stores/log'
 import type { ActiveLayer } from '../../stores/layers/types'
 import { resolveExportBasename } from '../../stores/layers/layer-naming'
@@ -27,7 +30,8 @@ defineProps<{
 
 const emit = defineEmits<{ close: [] }>()
 
-const layersStore = useLayersStore()
+const workspace = useLayerWorkspace()
+const viewport = useLayerViewport()
 const logStore = useLogStore()
 
 const selectedIds = ref<string[]>([])
@@ -56,7 +60,7 @@ const msg = ref('')
 const err = ref('')
 
 const importedLayers = computed(() =>
-  layersStore.activeLayers.filter((l) => l.importedVector || l.importedRaster),
+  workspace.activeLayers.value.filter((l) => l.importedVector || l.importedRaster),
 )
 
 const selectedLayers = computed(() =>
@@ -281,7 +285,7 @@ function buildSharedExportOptions(): ExportOptions {
     }
   }
   if (clipToMap.value) {
-    const bbox = layersStore.currentMapBBox
+    const bbox = viewport.currentMapBBox.value
     if (bbox && Number.isFinite(bbox.west) && Number.isFinite(bbox.south)) {
       opts.bbox = {
         west: bbox.west,
@@ -317,7 +321,7 @@ async function ensureFullVectorData(layers: ActiveLayer[]): Promise<void> {
     if (!layer.importedVector?.truncated || !layer.importedVector.backendLayerId) continue
     msg.value = DATA_COPY.exportLoadFullFirst
     const gj = await fetchImportedLayerGeojson(layer.importedVector.backendLayerId, false)
-    layersStore.updateImportedVectorGeojson(layer.instanceId, gj, {
+    workspace.updateImportedVectorGeojson(layer.instanceId, gj, {
       featureCount: gj.features.length,
       truncated: false,
     })
@@ -337,7 +341,7 @@ async function doExport() {
     err.value = '请至少选择一个导出时刻'
     return
   }
-  if (clipToMap.value && !layersStore.currentMapBBox) {
+  if (clipToMap.value && !viewport.currentMapBBox.value) {
     err.value = '当前无地图范围，无法裁剪'
     return
   }
@@ -470,9 +474,9 @@ async function doExport() {
     >
       <header v-if="!embedded" class="data-panel-header">
         <span class="header-title">{{ DATA_COPY.exportTitle }}</span>
-        <button class="close-btn" type="button" :title="DATA_COPY.close" @click="emit('close')">
-          ✕
-        </button>
+        <IconButton size="sm" label="关闭" @click="emit('close')"
+          ><template #icon><X :size="14" /></template
+        ></IconButton>
       </header>
 
       <p class="tab-hint">{{ DATA_COPY.exportHint }}</p>
@@ -481,12 +485,12 @@ async function doExport() {
         <p v-if="!importedLayers.length" class="empty">{{ DATA_COPY.emptyExport }}</p>
         <template v-else>
           <div class="sel-actions">
-            <button type="button" class="link-btn" @click="selectAll">
+            <AppButton size="xs" variant="ghost" @click="selectAll">
               {{ DATA_COPY.selectAll }}
-            </button>
-            <button type="button" class="link-btn" @click="clearSelection">
+            </AppButton>
+            <AppButton size="xs" variant="ghost" @click="clearSelection">
               {{ DATA_COPY.clearSelection }}
-            </button>
+            </AppButton>
             <span class="sel-count">已选 {{ selectedIds.length }}</span>
           </div>
           <ul class="layer-list">
@@ -561,12 +565,12 @@ async function doExport() {
             />
             <template v-else>
               <div class="sel-actions">
-                <button type="button" class="link-btn" @click="selectAllExportTimes">
+                <AppButton size="xs" variant="ghost" @click="selectAllExportTimes">
                   {{ DATA_COPY.exportTimeSelectAll }}
-                </button>
-                <button type="button" class="link-btn" @click="clearExportTimes">
+                </AppButton>
+                <AppButton size="xs" variant="ghost" @click="clearExportTimes">
                   {{ DATA_COPY.exportTimeClear }}
-                </button>
+                </AppButton>
                 <span class="sel-count">已选 {{ selectedTimes.length }}</span>
               </div>
               <ul class="time-list">
@@ -602,12 +606,12 @@ async function doExport() {
           <fieldset v-if="showFieldPicker" class="time-export">
             <legend>{{ DATA_COPY.exportFields }}</legend>
             <div class="sel-actions">
-              <button type="button" class="link-btn" @click="selectAllFields">
+              <AppButton size="xs" variant="ghost" @click="selectAllFields">
                 {{ DATA_COPY.exportFieldsAll }}
-              </button>
-              <button type="button" class="link-btn" @click="clearFields">
+              </AppButton>
+              <AppButton size="xs" variant="ghost" @click="clearFields">
                 {{ DATA_COPY.exportFieldsClear }}
-              </button>
+              </AppButton>
               <span class="sel-count">已选 {{ selectedFields.length || '全部' }}</span>
             </div>
             <ul class="time-list">
@@ -636,9 +640,9 @@ async function doExport() {
             预估大小：~{{ formatBytes(estimatedSize) }}
             <span class="est-hint">（仅为粗略估算）</span>
           </p>
-          <button
-            class="primary-btn"
-            type="button"
+          <AppButton
+            variant="primary"
+            block
             :disabled="
               busy ||
               !selectedIds.length ||
@@ -647,7 +651,7 @@ async function doExport() {
             @click="doExport"
           >
             {{ DATA_COPY.doExport }}
-          </button>
+          </AppButton>
         </template>
       </div>
 
@@ -687,7 +691,7 @@ async function doExport() {
   justify-content: center;
   padding: 3.5vh 1rem 2vh;
   overflow: auto;
-  background: rgba(4, 10, 18, 0.55);
+  background: var(--surface-raised);
 }
 .data-panel {
   width: min(28rem, calc(100vw - 2rem));
@@ -697,7 +701,7 @@ async function doExport() {
   min-height: 0;
   overflow: hidden;
   border-radius: 0.7rem;
-  background: rgba(8, 17, 31, 0.98);
+  background: var(--surface-2);
   border: 1px solid var(--border-default);
   box-shadow: 0 18px 48px rgba(1, 8, 16, 0.45);
   color: var(--text-primary);
@@ -709,35 +713,16 @@ async function doExport() {
   gap: 0.6rem;
   flex-shrink: 0;
   padding: 0.62rem 0.8rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.1);
+  border-bottom: 1px solid var(--border-subtle);
 }
 .header-title {
   font-size: var(--font-size-caption);
   font-weight: 600;
 }
-.close-btn {
-  flex: none;
-  width: 1.7rem;
-  height: 1.7rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(136, 192, 255, 0.22);
-  border-radius: 0.38rem;
-  background: rgba(4, 12, 23, 0.72);
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: var(--font-size-caption);
-  line-height: 1;
-}
-.close-btn:hover {
-  border-color: rgba(90, 213, 255, 0.4);
-  color: var(--accent);
-}
 .tab-hint {
   margin: 0.5rem 0.9rem 0;
   font-size: var(--font-size-caption);
-  color: #6a8094;
+  color: var(--text-faint);
   line-height: 1.4;
 }
 .data-panel-body {
@@ -751,7 +736,7 @@ async function doExport() {
 .empty {
   margin: 0;
   font-size: var(--font-size-caption);
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 .sel-actions {
   display: flex;
@@ -770,28 +755,28 @@ async function doExport() {
 .sel-count {
   margin-left: auto;
   font-size: var(--font-size-caption);
-  color: #6a8094;
+  color: var(--text-faint);
 }
 .enc-hint {
   margin: -0.15rem 0 0;
   font-size: var(--font-size-caption);
-  color: #7a91a8;
+  color: var(--text-muted);
   line-height: 1.35;
 }
 .est-size {
   margin: 0;
   font-size: var(--font-size-caption);
-  color: #9ec4e0;
+  color: var(--text-secondary);
   font-weight: 500;
 }
 .est-hint {
-  color: #6a8094;
+  color: var(--text-faint);
   font-weight: 400;
 }
 .time-export {
   margin: 0;
   padding: 0.45rem 0.55rem 0.5rem;
-  border: 1px solid rgba(136, 192, 255, 0.12);
+  border: 1px solid var(--border-default);
   border-radius: 0.4rem;
   display: flex;
   flex-direction: column;
@@ -800,7 +785,7 @@ async function doExport() {
 .time-export legend {
   padding: 0 0.25rem;
   font-size: var(--font-size-caption);
-  color: #9bb4c8;
+  color: var(--text-secondary);
 }
 .time-mode-row {
   display: flex;
@@ -830,7 +815,7 @@ async function doExport() {
   list-style: none;
   max-height: 8.5rem;
   overflow: auto;
-  border: 1px solid rgba(136, 192, 255, 0.1);
+  border: 1px solid var(--border-subtle);
   border-radius: 0.35rem;
 }
 .layer-list {
@@ -839,7 +824,7 @@ async function doExport() {
   list-style: none;
   max-height: 12rem;
   overflow: auto;
-  border: 1px solid rgba(136, 192, 255, 0.1);
+  border: 1px solid var(--border-subtle);
   border-radius: 0.4rem;
 }
 .layer-list li {
@@ -856,7 +841,7 @@ async function doExport() {
   cursor: pointer;
 }
 .check-row:hover {
-  background: rgba(10, 132, 255, 0.08);
+  background: var(--accent-surface);
 }
 .layer-main {
   display: flex;
@@ -869,13 +854,13 @@ async function doExport() {
 }
 .layer-id {
   font-size: var(--font-size-caption);
-  color: #6a8094;
+  color: var(--text-faint);
   word-break: break-all;
 }
 .check-row em {
   margin-left: auto;
   font-style: normal;
-  color: #6a8094;
+  color: var(--text-faint);
   font-size: var(--font-size-caption);
   flex-shrink: 0;
 }
@@ -884,24 +869,24 @@ label:not(.check-row):not(.radio-row):not(.check-inline) {
   flex-direction: column;
   gap: 0.18rem;
   font-size: var(--font-size-caption);
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 select {
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.34rem;
   padding: 0.32rem 0.4rem;
-  background: rgba(4, 12, 23, 0.7);
+  background: var(--surface-1);
   color: var(--text-primary);
   font: inherit;
   font-size: var(--font-size-caption);
 }
 .primary-btn {
   width: fit-content;
-  border: 1px solid rgba(90, 213, 255, 0.35);
+  border: 1px solid var(--border-strong);
   border-radius: 0.42rem;
   padding: 0.36rem 0.72rem;
-  background: rgba(10, 132, 255, 0.22);
-  color: #a8e8ff;
+  background: var(--accent-border);
+  color: var(--accent-strong);
   font: inherit;
   font-size: var(--font-size-caption);
   cursor: pointer;
@@ -912,25 +897,25 @@ select {
 }
 .data-panel-footer {
   padding: 0.45rem 0.9rem 0.7rem;
-  border-top: 1px solid rgba(136, 192, 255, 0.1);
+  border-top: 1px solid var(--border-subtle);
 }
 .progress-bar {
   height: 0.28rem;
   border-radius: 999px;
-  background: rgba(136, 192, 255, 0.12);
+  background: var(--border-default);
   overflow: hidden;
   margin-bottom: 0.35rem;
 }
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #0a84ff, var(--accent));
+  background: linear-gradient(90deg, var(--accent), var(--accent));
 }
 .msg {
   margin: 0;
   font-size: var(--font-size-caption);
-  color: #9ec4e0;
+  color: var(--text-secondary);
 }
 .msg.error {
-  color: #ffb0b0;
+  color: var(--danger);
 }
 </style>

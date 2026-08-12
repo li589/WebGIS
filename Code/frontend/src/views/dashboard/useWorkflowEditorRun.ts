@@ -4,16 +4,15 @@
  * 从 DashboardView.vue 提取：handleRunWorkflowFromEditor（~200 行编译 + 提交逻辑）。
  */
 import type { Ref } from 'vue'
-import type { useLayersStore } from '../../stores/layers'
 import type { useLogStore } from '../../stores/log'
 import {
   useWorkflowOutputLayersStore,
   WORKFLOW_OUTPUT_SUBCATEGORY,
 } from '../../stores/workflow-output-layers'
 import type { WorkflowRunTarget } from '../../components/workflow/WorkflowRunDialog.vue'
+import { useLayerWorkspace, useLayerViewport, useWorkflowRun } from '../../stores/layers/selectors'
 
 export function useWorkflowEditorRun(
-  layersStore: ReturnType<typeof useLayersStore>,
   logStore: ReturnType<typeof useLogStore>,
   workflowOutputStore: ReturnType<typeof useWorkflowOutputLayersStore>,
   workflowEditorOpen: Ref<boolean>,
@@ -22,6 +21,9 @@ export function useWorkflowEditorRun(
     notifyRunOutcome?: (ok: boolean, message?: string) => void
   } | null>,
 ) {
+  const workspace = useLayerWorkspace()
+  const viewport = useLayerViewport()
+  const workflowRun = useWorkflowRun()
   async function handleRunWorkflowFromEditor(
     workflowId: string,
     linkedLayerId: string | null,
@@ -51,7 +53,7 @@ export function useWorkflowEditorRun(
     let memberCatalogIds: string[] | undefined
     if (target.mode === 'new') {
       const engine =
-        layersStore.layerLibrary.find((l) => l.catalogId === sourceLayerId)?.engine ?? 'general'
+        workspace.layerLibrary.value.find((l) => l.catalogId === sourceLayerId)?.engine ?? 'general'
       const entries = workflowOutputStore.createOutputLayers(
         targets.map((t) => ({ name: t.name, group: WORKFLOW_OUTPUT_SUBCATEGORY })),
         workflowId,
@@ -65,7 +67,7 @@ export function useWorkflowEditorRun(
       )
     }
 
-    const created = layersStore.createRunLayerGroup({
+    const created = workflowRun.createRunLayerGroup({
       title: groupTitle,
       targets,
       sourceLayerId,
@@ -129,8 +131,8 @@ export function useWorkflowEditorRun(
               layer_id: sourceLayerId,
               workflow: def,
               context: {
-                latitude: layersStore.currentMapCenter.lat,
-                longitude: layersStore.currentMapCenter.lng,
+                latitude: viewport.currentMapCenter.value.lat,
+                longitude: viewport.currentMapCenter.value.lng,
               },
               priority: 'viewport',
             }
@@ -189,7 +191,7 @@ export function useWorkflowEditorRun(
           throw error
         }
       }
-      const runId = await layersStore.runWorkflowForCatalog(catalogId, {
+      const runId = await workflowRun.runWorkflowForCatalog(catalogId, {
         algorithmRequest,
         weatherRequest,
         timeRange: topLevelTimeRange,
@@ -197,16 +199,16 @@ export function useWorkflowEditorRun(
         resourceProfile: /omega_sf|omega_block|omega_avg/i.test(workflowId) ? 'heavy' : undefined,
       })
       if (typeof runId === 'string' && runId) {
-        layersStore.bindRunIdToGroup(created.groupId, runId)
+        workflowRun.bindRunIdToGroup(created.groupId, runId)
       }
       workflowEditorRef.value?.notifyRunOutcome?.(true)
     } catch (error) {
-      layersStore.updateRunGroupFromJob('', {
+      workflowRun.updateRunGroupFromJob('', {
         status: 'failed',
         progress: 0,
         message: String(error),
       })
-      const g = layersStore.findRunGroupById(created.groupId)
+      const g = workflowRun.findRunGroupById(created.groupId)
       if (g) {
         g.status = 'failed'
         g.dissolvable = true

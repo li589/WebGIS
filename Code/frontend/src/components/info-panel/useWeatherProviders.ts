@@ -13,14 +13,14 @@ import type { ComputedRef } from 'vue'
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
 import type { WeatherProviderForLayer } from '../../services/runtime-api'
 import { getWeatherProvidersForLayer } from '../../services/runtime-api'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerViewport } from '../../stores/layers/selectors'
 import { useWeatherSourcePrefsStore } from '../../stores/weather-source-prefs'
 
 export function useWeatherProviders(
   displayLayer: ComputedRef<ActiveLayerDisplay>,
   isRealtimeWeatherLayer: ComputedRef<boolean>,
 ) {
-  const layersStore = useLayersStore()
+  const viewport = useLayerViewport()
   const weatherSourcePrefs = useWeatherSourcePrefsStore()
 
   const weatherProviderOptions = ref<WeatherProviderForLayer[]>([])
@@ -31,7 +31,7 @@ export function useWeatherProviders(
   const selectedWeatherProvider = computed({
     get: () => weatherSourcePrefs.getProvider(displayLayer.value.catalogId),
     set: (value: string) => {
-      layersStore.applyWeatherProviderPreference(displayLayer.value.catalogId, value || 'auto')
+      viewport.applyWeatherProviderPreference(displayLayer.value.catalogId, value || 'auto')
     },
   })
 
@@ -84,7 +84,7 @@ export function useWeatherProviders(
         if (pref && pref !== 'auto') {
           const match = providers.find((p) => p.provider_id === pref)
           if (!match || !match.enabled) {
-            layersStore.applyWeatherProviderPreference(catalogId, 'auto')
+            viewport.applyWeatherProviderPreference(catalogId, 'auto')
           }
         }
       } catch (error) {

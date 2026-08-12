@@ -5,7 +5,7 @@
  * 本模块为纯数据 + 纯函数，stores/ 可直接依赖；
  * components/map/weather-render.ts re-export 保持既有组件导入兼容。
  */
-import type { RuntimeLayerDescriptor, WeatherLayerRenderHint } from '../services/runtime-api'
+import type { LayerDescriptor, WeatherLayerRenderHint } from '../services/runtime-api'
 
 export const DEFAULT_LEGEND_TICKS = [0, 1, 2, 3]
 
@@ -185,7 +185,7 @@ export const WEATHER_RENDER_HINTS: Record<string, WeatherLayerRenderHint> = {
 /** 根据 catalogId 构建默认天气渲染提示（tile manager 路径下无 jobLayer 时使用）。 */
 export function buildDefaultWeatherRenderHint(
   layerId?: string | null,
-  descriptor?: RuntimeLayerDescriptor | null,
+  descriptor?: LayerDescriptor | null,
 ): WeatherLayerRenderHint | null {
   if (!layerId) return null
   const local = WEATHER_RENDER_HINTS[layerId] ?? null

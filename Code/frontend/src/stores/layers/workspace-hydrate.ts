@@ -98,8 +98,8 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
     const accent = saved.accentColor
       ? {
           accentColor: saved.accentColor,
-          accentGlow: saved.accentGlow ?? 'rgba(255, 255, 255, 0.2)',
-          chipTone: saved.chipTone ?? 'rgba(255, 255, 255, 0.1)',
+          accentGlow: saved.accentGlow ?? 'var(--surface-3)',
+          chipTone: saved.chipTone ?? 'var(--surface-hover)',
         }
       : deps.assignLayerAccent(libraryItem?.accentColor)
     const instanceId = deps.genInstanceId()
@@ -305,10 +305,10 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
         const accent = saved.accentColor
           ? {
               accentColor: saved.accentColor,
-              accentGlow: saved.accentGlow ?? 'rgba(255, 255, 255, 0.2)',
-              chipTone: saved.chipTone ?? 'rgba(255, 255, 255, 0.1)',
+              accentGlow: saved.accentGlow ?? 'var(--surface-3)',
+              chipTone: saved.chipTone ?? 'var(--surface-hover)',
             }
-          : deps.assignLayerAccent('#7ee0a8')
+          : deps.assignLayerAccent('var(--success)')
 
         activeLayers.push({
           instanceId,

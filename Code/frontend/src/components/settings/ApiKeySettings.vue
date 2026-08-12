@@ -509,7 +509,7 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
 }
 .section-title {
   margin: 0 0 0.32rem;
-  color: #e8f3fc;
+  color: var(--text-strong);
   font-size: var(--font-size-caption);
   font-weight: 600;
 }
@@ -520,7 +520,7 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
   line-height: 1.5;
 }
 .section-hint code {
-  color: #9ec9ff;
+  color: var(--accent-strong);
 }
 .key-card-list {
   display: flex;
@@ -531,14 +531,14 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
   padding: 0.62rem 0.72rem;
   border-radius: 0.52rem;
   background: var(--surface-sunken);
-  border: 1px solid rgba(136, 192, 255, 0.1);
+  border: 1px solid var(--border-subtle);
 }
 .persist-toggle {
   display: flex;
   align-items: flex-start;
   gap: 0.4rem;
   margin-top: 0.5rem;
-  color: #8aa0b4;
+  color: var(--text-muted);
   font-size: var(--font-size-caption);
   line-height: 1.45;
   cursor: pointer;
@@ -557,7 +557,7 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
   margin-bottom: 0.32rem;
 }
 .key-name {
-  color: #e8f3fc;
+  color: var(--text-strong);
   font-size: var(--font-size-caption);
   font-weight: 600;
 }
@@ -573,16 +573,16 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
   font-weight: 600;
 }
 .badge-ok {
-  background: rgba(114, 255, 207, 0.14);
+  background: var(--success-surface);
   color: var(--success);
 }
 .badge-fail {
-  background: rgba(255, 100, 100, 0.14);
-  color: #ff9999;
+  background: var(--danger-surface);
+  color: var(--danger);
 }
 .badge-source {
-  background: rgba(136, 192, 255, 0.12);
-  color: #9ec9ff;
+  background: var(--border-default);
+  color: var(--accent-strong);
 }
 .key-desc {
   margin: 0 0 0.42rem;
@@ -616,8 +616,8 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
   min-width: 7rem;
   padding: 0.32rem 0.52rem;
   border-radius: 0.36rem;
-  background: rgba(4, 12, 23, 0.8);
-  border: 1px solid rgba(90, 213, 255, 0.24);
+  background: var(--surface-1);
+  border: 1px solid var(--accent-border);
   color: var(--text-primary);
   font-size: var(--font-size-caption);
   font-family: 'SF Mono', 'Consolas', monospace;
@@ -643,12 +643,12 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
   cursor: not-allowed;
 }
 .action-btn.save {
-  border-color: rgba(114, 255, 207, 0.24);
+  border-color: var(--success-border);
   color: var(--success);
 }
 .action-btn.cancel {
-  border-color: rgba(255, 100, 100, 0.16);
-  color: #ff9999;
+  border-color: var(--danger-surface);
+  color: var(--danger);
 }
 .toggle-switch {
   position: relative;
@@ -656,13 +656,13 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
   height: 1.06rem;
   border: 1px solid var(--border-default);
   border-radius: 999px;
-  background: rgba(4, 12, 23, 0.8);
+  background: var(--surface-1);
   cursor: pointer;
   padding: 0;
 }
 .toggle-switch.on {
-  background: rgba(10, 132, 255, 0.4);
-  border-color: rgba(90, 213, 255, 0.4);
+  background: var(--border-strong);
+  border-color: var(--border-strong);
 }
 .toggle-switch.locked,
 .toggle-switch:disabled {
@@ -696,7 +696,7 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
   padding: 0.36rem 0.52rem;
   border-radius: 0.4rem;
   background: var(--surface-sunken);
-  border: 1px solid rgba(136, 192, 255, 0.06);
+  border: 1px solid var(--border-subtle);
 }
 .info-label {
   color: var(--text-muted);
@@ -713,17 +713,17 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
   font-size: var(--font-size-caption);
 }
 .test-result.success {
-  background: rgba(114, 255, 207, 0.08);
+  background: var(--success-surface);
   color: var(--success);
 }
 .test-result.fail {
-  background: rgba(255, 100, 100, 0.08);
-  color: #ff9999;
+  background: var(--danger-surface);
+  color: var(--danger);
 }
 .history-panel {
   margin-top: 0.5rem;
   padding-top: 0.45rem;
-  border-top: 1px solid rgba(136, 192, 255, 0.1);
+  border-top: 1px solid var(--border-subtle);
 }
 .history-head {
   display: flex;
@@ -753,17 +753,17 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
   align-items: center;
   padding: 0.36rem 0.42rem;
   border-radius: 0.36rem;
-  background: rgba(2, 8, 16, 0.55);
+  background: var(--surface-raised);
 }
 .history-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 0.36rem;
-  color: #8aa0b4;
+  color: var(--text-muted);
   font-size: var(--font-size-caption);
 }
 .history-meta code {
-  color: #cfe6ff;
+  color: var(--text-primary);
 }
 .history-actions {
   display: flex;

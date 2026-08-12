@@ -1,6 +1,6 @@
 // 所有 API 契约类型从 openapi-typescript 自动生成的 `api-contracts.ts` 中 re-export。
 // 手写 interface 已删除，统一由后端 OpenAPI schema 驱动。
-// 消费方仍可从本模块导入这些类型名（如 `WorkflowSubmitRequest`、`RuntimeLayerDescriptor`）。
+// 消费方仍可从本模块导入这些类型名（如 `WorkflowSubmitRequest`、`LayerDescriptor`）。
 export * from '../types/api-reexports'
 
 import type {
@@ -8,7 +8,7 @@ import type {
   WorkflowEventsResponse,
   WorkflowRunStatusResponse,
   WorkflowRunViewResponse,
-  RuntimeLayerCatalogResponse,
+  LayerCatalogResponse,
   LayerCategoryResponse,
   WeatherPointResponse,
   WorkflowSubmitRequest,
@@ -28,7 +28,7 @@ export function submitWorkflow(payload: WorkflowSubmitRequest) {
 }
 
 export function fetchLayerCatalog() {
-  return requestJson<RuntimeLayerCatalogResponse>('/layers', {
+  return requestJson<LayerCatalogResponse>('/layers', {
     timeoutMs: 120000,
   })
 }

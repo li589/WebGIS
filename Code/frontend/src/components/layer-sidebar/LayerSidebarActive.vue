@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { LAYERS_COPY } from '../../ui-copy'
 import { productTagDescription } from '../../utils/workflow-expected-outputs'
-import { CircleDot, Circle, X, Menu } from 'lucide-vue-next'
+import { CircleDot, Circle, X, Menu } from '../ui/icons'
 
 defineProps<{
   activeLayersDisplay: any[]

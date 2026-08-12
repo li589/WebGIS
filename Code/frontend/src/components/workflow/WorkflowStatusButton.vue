@@ -194,7 +194,7 @@ const showCancelledBadge = computed(
 
 .tone-active .wf-dot {
   background: var(--accent);
-  box-shadow: 0 0 0 0 rgba(90, 213, 255, 0.6);
+  box-shadow: 0 0 0 0 var(--border-strong);
   animation: wf-pulse-active 1.6s ease-in-out infinite;
 }
 
@@ -215,11 +215,11 @@ const showCancelledBadge = computed(
     opacity: 1;
   }
   50% {
-    box-shadow: 0 0 0 4px rgba(90, 213, 255, 0.08);
+    box-shadow: 0 0 0 4px var(--accent-surface);
     opacity: 0.65;
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(90, 213, 255, 0);
+    box-shadow: 0 0 0 0 var(--accent-surface);
     opacity: 1;
   }
 }
@@ -270,21 +270,21 @@ const showCancelledBadge = computed(
 
 .tone-error .wf-dot {
   background: var(--danger);
-  box-shadow: 0 0 0 0 rgba(255, 140, 100, 0.6);
+  box-shadow: 0 0 0 0 var(--danger-border);
   animation: wf-pulse-error 1.2s ease-in-out infinite;
 }
 
 @keyframes wf-pulse-error {
   0% {
-    box-shadow: 0 0 0 0 rgba(255, 140, 100, 0.6);
+    box-shadow: 0 0 0 0 var(--danger-border);
     opacity: 1;
   }
   50% {
-    box-shadow: 0 0 0 4px rgba(255, 140, 100, 0.06);
+    box-shadow: 0 0 0 4px var(--danger-surface);
     opacity: 0.6;
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(255, 140, 100, 0);
+    box-shadow: 0 0 0 0 var(--danger-surface);
     opacity: 1;
   }
 }

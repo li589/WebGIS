@@ -7,10 +7,11 @@
  * 规格：圆角 pill，字号 caption（12px），padding 0.4rem 0.8rem。
  */
 import { computed } from 'vue'
+import { X } from './icons'
 
 const props = withDefaults(
   defineProps<{
-    variant?: 'default' | 'success' | 'warning' | 'danger' | 'info'
+    variant?: 'default' | 'success' | 'warning' | 'danger' | 'info' | 'muted'
     /** 是否可移除 */
     removable?: boolean
     /** 禁用态 */
@@ -52,7 +53,7 @@ function handleRemove(e: MouseEvent) {
       aria-label="移除"
       @click="handleRemove"
     >
-      ✕
+      <X :size="12" aria-hidden="true" />
     </button>
   </span>
 </template>
@@ -111,6 +112,13 @@ function handleRemove(e: MouseEvent) {
   color: var(--info);
 }
 
+/* 变体：muted */
+.chip--muted {
+  background: var(--surface-sunken);
+  border-color: var(--border-subtle);
+  color: var(--text-faint);
+}
+
 .chip--disabled {
   color: var(--text-disabled);
   opacity: 0.6;
@@ -127,7 +135,7 @@ function handleRemove(e: MouseEvent) {
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.1);
+  background: var(--surface-sunken);
   color: inherit;
   font-size: var(--font-size-caption);
   cursor: pointer;
@@ -136,7 +144,7 @@ function handleRemove(e: MouseEvent) {
 }
 
 .chip-remove:hover {
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--surface-sunken);
   opacity: 1;
 }
 

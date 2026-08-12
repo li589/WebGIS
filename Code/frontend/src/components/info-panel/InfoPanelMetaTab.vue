@@ -6,6 +6,7 @@ import { computed } from 'vue'
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
 import { ANALYSIS_COPY, DATA_COPY, LAYERS_COPY } from '../../ui-copy'
 import { openDataWorkspace } from '../../data-manager/core/workspace-store'
+import AppButton from '../ui/AppButton.vue'
 
 const props = defineProps<{
   displayLayer: ActiveLayerDisplay
@@ -94,30 +95,30 @@ function enterInspectTools() {
     </h3>
     <p>{{ analysisSummary }}</p>
     <div class="overview-quick-actions">
-      <button
+      <AppButton
         v-if="isRealtimeWeatherLayer && interactionMode !== 'select'"
-        type="button"
-        class="weather-mini-btn"
+        size="xs"
+        variant="secondary"
         @click="enterInspectTools"
       >
         {{ ANALYSIS_COPY.toolsQuickInspect }}
-      </button>
-      <button
+      </AppButton>
+      <AppButton
         v-if="canRunWorkflow"
-        type="button"
-        class="weather-mini-btn"
+        size="xs"
+        variant="secondary"
         @click="emit('setActiveTab', 'tools')"
       >
         {{ ANALYSIS_COPY.toolsQuickBuffer }}
-      </button>
-      <button
+      </AppButton>
+      <AppButton
         v-if="hasLayerStyleSection"
-        type="button"
-        class="weather-mini-btn"
+        size="xs"
+        variant="secondary"
         @click="emit('setActiveTab', 'style')"
       >
         符号样式
-      </button>
+      </AppButton>
     </div>
   </section>
 
@@ -179,9 +180,9 @@ function enterInspectTools() {
       </div>
     </dl>
     <div v-if="displayLayer.isImported" class="imported-export-row">
-      <button
-        class="imported-export-btn"
-        type="button"
+      <AppButton
+        size="xs"
+        variant="ghost"
         @click="
           openDataWorkspace({
             tab: 'attributes',
@@ -190,10 +191,10 @@ function enterInspectTools() {
         "
       >
         {{ DATA_COPY.openAttrTable }}
-      </button>
-      <button
-        class="imported-export-btn"
-        type="button"
+      </AppButton>
+      <AppButton
+        size="xs"
+        variant="ghost"
         @click="
           openDataWorkspace({
             tab: 'details',
@@ -202,24 +203,24 @@ function enterInspectTools() {
         "
       >
         {{ DATA_COPY.openDetails }}
-      </button>
-      <button class="imported-export-btn" type="button" @click="emit('exportGeoJson')">
+      </AppButton>
+      <AppButton size="xs" variant="ghost" @click="emit('exportGeoJson')">
         {{ LAYERS_COPY.exportGeoJson }}
-      </button>
-      <button class="imported-export-btn" type="button" @click="emit('exportCsv')">
+      </AppButton>
+      <AppButton size="xs" variant="ghost" @click="emit('exportCsv')">
         {{ LAYERS_COPY.exportCsv }}
-      </button>
-      <button class="imported-export-btn" type="button" @click="emit('exportShp')">
+      </AppButton>
+      <AppButton size="xs" variant="ghost" @click="emit('exportShp')">
         {{ LAYERS_COPY.exportShp }}
-      </button>
-      <button class="imported-export-btn" type="button" @click="emit('openExportPanel')">
+      </AppButton>
+      <AppButton size="xs" variant="ghost" @click="emit('openExportPanel')">
         {{ LAYERS_COPY.openExportPanel }}
-      </button>
+      </AppButton>
     </div>
     <div v-else-if="displayLayer.isImportedRaster" class="imported-export-row">
-      <button
-        class="imported-export-btn"
-        type="button"
+      <AppButton
+        size="xs"
+        variant="ghost"
         @click="
           openDataWorkspace({
             tab: 'details',
@@ -228,22 +229,22 @@ function enterInspectTools() {
         "
       >
         {{ DATA_COPY.openDetails }}
-      </button>
-      <button class="imported-export-btn" type="button" @click="emit('exportRaster', 'tif')">
+      </AppButton>
+      <AppButton size="xs" variant="ghost" @click="emit('exportRaster', 'tif')">
         {{ LAYERS_COPY.exportTif }}
-      </button>
-      <button class="imported-export-btn" type="button" @click="emit('exportRaster', 'nc')">
+      </AppButton>
+      <AppButton size="xs" variant="ghost" @click="emit('exportRaster', 'nc')">
         {{ LAYERS_COPY.exportNc }}
-      </button>
-      <button class="imported-export-btn" type="button" @click="emit('exportRaster', 'mat')">
+      </AppButton>
+      <AppButton size="xs" variant="ghost" @click="emit('exportRaster', 'mat')">
         {{ LAYERS_COPY.exportMat }}
-      </button>
-      <button class="imported-export-btn" type="button" @click="emit('exportRaster', 'png')">
+      </AppButton>
+      <AppButton size="xs" variant="ghost" @click="emit('exportRaster', 'png')">
         {{ LAYERS_COPY.exportPng }}
-      </button>
-      <button class="imported-export-btn" type="button" @click="emit('openExportPanel')">
+      </AppButton>
+      <AppButton size="xs" variant="ghost" @click="emit('openExportPanel')">
         {{ LAYERS_COPY.openExportPanel }}
-      </button>
+      </AppButton>
     </div>
     <p
       v-if="importActionHint"
@@ -410,12 +411,12 @@ function enterInspectTools() {
     <div v-if="displayLayer?.isImportedRaster" class="report-block">
       <h4>导出</h4>
       <div class="weather-layer-btn-row" style="gap: 0.4rem">
-        <button type="button" class="weather-mini-btn" @click="emit('exportRaster', 'png')">
+        <AppButton size="xs" variant="secondary" @click="emit('exportRaster', 'png')">
           PNG
-        </button>
-        <button type="button" class="weather-mini-btn" @click="emit('exportRaster', 'tif')">
+        </AppButton>
+        <AppButton size="xs" variant="secondary" @click="emit('exportRaster', 'tif')">
           GeoTIFF
-        </button>
+        </AppButton>
       </div>
     </div>
   </section>

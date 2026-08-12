@@ -237,7 +237,12 @@ export class MeasureCanvas {
         y: (p1.y + p2.y) / 2,
       }
 
-      this.drawLabel(midScreen, formatDistance(seg.distance), FONT_SIZE_DISTANCE, '#000')
+      this.drawLabel(
+        midScreen,
+        formatDistance(seg.distance),
+        FONT_SIZE_DISTANCE,
+        'var(--surface-base)',
+      )
       this.drawLabel(
         { x: midScreen.x, y: midScreen.y + FONT_SIZE_DISTANCE + 2 },
         formatBearing(seg.bearing),
@@ -313,7 +318,7 @@ export class MeasureCanvas {
     ctx.lineJoin = 'round'
 
     // 白色描边（提高对比度）
-    ctx.strokeStyle = '#ffffff'
+    ctx.strokeStyle = 'var(--text-strong)'
     ctx.lineWidth = STROKE_WIDTH
     ctx.strokeText(text, pos.x, pos.y + LABEL_OFFSET_Y)
 

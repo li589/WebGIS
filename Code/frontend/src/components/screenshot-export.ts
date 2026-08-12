@@ -202,10 +202,10 @@ function copyPaintFromComputed(style: CSSStyleDeclaration): Array<[string, strin
   const isClear =
     !safeBg ||
     safeBg === 'transparent' ||
-    safeBg === 'rgba(0, 0, 0, 0)' ||
-    safeBg === 'rgba(0,0,0,0)'
+    safeBg === 'var(--surface-sunken)' ||
+    safeBg === 'var(--surface-sunken)'
   if (isClear && style.backdropFilter && style.backdropFilter !== 'none') {
-    props.push(['background-color', 'rgba(8, 18, 33, 0.92)'])
+    props.push(['background-color', 'var(--surface-1)'])
     props.push(['background-image', 'none'])
   } else if (safeBg) {
     props.push(['background-color', safeBg])
@@ -524,14 +524,14 @@ export function buildMapSnapshotLayout(
 
 /**
  * Composite map snapshot underneath UI controls in three forward layers:
- * 1. Base dark background fill (#07111e)
+ * 1. Base dark background fill (var(--surface-1))
  * 2. Map Snapshot (Basemap + weather layers + scalar fields + vector lines + particles)
  * 3. UI Canvas (transparent HTML controls, panels, toolbar) on top!
  */
 export async function compositeMapUnderUi(
   uiCanvas: HTMLCanvasElement,
   mapSnapshot: MapSnapshot | null,
-  fillColor = '#07111e',
+  fillColor = 'var(--surface-1)',
 ): Promise<HTMLCanvasElement> {
   const composed = document.createElement('canvas')
   composed.width = uiCanvas.width

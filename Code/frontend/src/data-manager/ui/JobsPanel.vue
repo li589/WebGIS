@@ -119,7 +119,9 @@ onUnmounted(() => {
       </button>
     </div>
     <p v-if="error" class="err">{{ error }}</p>
-    <p v-else-if="!filteredItems.length" class="empty">{{ statusFilter === 'all' ? DATA_COPY.jobsEmpty : '无匹配作业' }}</p>
+    <p v-else-if="!filteredItems.length" class="empty">
+      {{ statusFilter === 'all' ? DATA_COPY.jobsEmpty : '无匹配作业' }}
+    </p>
     <ul v-else class="job-list">
       <li v-for="j in filteredItems" :key="j.job_id" class="job-row">
         <div class="job-main">
@@ -177,18 +179,18 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 0.14rem;
   font-size: var(--font-size-caption);
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 .hint {
   font-size: var(--font-size-caption);
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 .ghost-btn {
-  border: 1px solid rgba(136, 192, 255, 0.2);
+  border: 1px solid var(--border-strong);
   border-radius: 0.38rem;
   padding: 0.28rem 0.5rem;
-  background: rgba(4, 12, 23, 0.55);
-  color: #c5d8ea;
+  background: var(--surface-raised);
+  color: var(--text-primary);
   font: inherit;
   font-size: var(--font-size-caption);
   cursor: pointer;
@@ -203,10 +205,10 @@ onUnmounted(() => {
   gap: 0.45rem;
 }
 .job-row {
-  border: 1px solid rgba(136, 192, 255, 0.12);
+  border: 1px solid var(--border-default);
   border-radius: 0.42rem;
   padding: 0.45rem 0.55rem;
-  background: rgba(4, 12, 23, 0.45);
+  background: var(--surface-raised);
 }
 .job-main {
   display: flex;
@@ -220,21 +222,21 @@ onUnmounted(() => {
   font-weight: 600;
 }
 .id {
-  color: #6a8094;
+  color: var(--text-faint);
   max-width: 12rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .status[data-status='succeeded'] {
-  color: #7dffb3;
+  color: var(--success);
 }
 .status[data-status='failed'] {
-  color: #ffb0b0;
+  color: var(--danger);
 }
 .status[data-status='running'],
 .status[data-status='queued'] {
-  color: #ffd166;
+  color: var(--warning);
 }
 .job-progress {
   display: flex;
@@ -246,17 +248,17 @@ onUnmounted(() => {
   flex: 1;
   height: 0.28rem;
   border-radius: 999px;
-  background: rgba(136, 192, 255, 0.12);
+  background: var(--border-default);
   overflow: hidden;
 }
 .bar i {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, #0a84ff, var(--accent));
+  background: linear-gradient(90deg, var(--accent), var(--accent));
 }
 .pct {
   font-size: var(--font-size-caption);
-  color: #8aa0b4;
+  color: var(--text-muted);
   min-width: 2.2rem;
   text-align: right;
 }
@@ -276,9 +278,9 @@ onUnmounted(() => {
   font-size: var(--font-size-caption);
 }
 .err {
-  color: #ffb0b0;
+  color: var(--danger);
 }
 .empty {
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 </style>

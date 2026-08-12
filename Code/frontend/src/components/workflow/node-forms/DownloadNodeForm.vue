@@ -103,8 +103,8 @@ function forward(key: string, value: unknown) {
   margin-bottom: 0.5rem;
   padding: 0.16rem 0.46rem;
   border-radius: 0.28rem;
-  background: rgba(90, 213, 255, 0.16);
-  border: 1px solid rgba(90, 213, 255, 0.32);
+  background: var(--accent-surface);
+  border: 1px solid var(--border-accent);
   color: var(--accent);
   font-size: var(--font-size-caption);
   font-weight: 600;
@@ -117,7 +117,7 @@ function forward(key: string, value: unknown) {
   border: 1px dashed rgba(255, 138, 138, 0.4);
   border-radius: 0.36rem;
   background: rgba(60, 20, 20, 0.2);
-  color: #ff8a8a;
+  color: var(--danger);
   font-size: var(--font-size-caption);
   line-height: 1.5;
 }

@@ -51,7 +51,7 @@ withDefaults(
 
 .inline-spinner {
   flex: 0 0 auto;
-  border: 2px solid rgba(90, 213, 255, 0.18);
+  border: 2px solid var(--accent-surface);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: inline-spin 0.75s linear infinite;

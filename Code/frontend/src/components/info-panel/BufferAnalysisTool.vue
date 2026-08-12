@@ -78,8 +78,8 @@ const centerValueLabel = computed(() => {
   margin-top: 0.55rem;
   padding: 0.55rem 0.6rem;
   border-radius: 0.65rem;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid var(--border-default);
+  background: var(--surface-raised);
 }
 
 .tool-head {
@@ -92,19 +92,19 @@ const centerValueLabel = computed(() => {
   font-size: var(--font-size-caption);
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .tool-head h4 {
   margin: 0;
   font-size: var(--font-size-caption);
-  color: #e2e8f0;
+  color: var(--text-primary);
 }
 
 .tool-note {
   margin: 0;
   font-size: var(--font-size-caption);
-  color: #64748b;
+  color: var(--text-secondary);
   line-height: 1.35;
 }
 
@@ -118,24 +118,24 @@ const centerValueLabel = computed(() => {
   justify-content: space-between;
   align-items: baseline;
   font-size: var(--font-size-caption);
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .radius-label-row strong {
-  color: #38bdf8;
+  color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
 
 .radius-slider {
   width: 100%;
-  accent-color: #38bdf8;
+  accent-color: var(--accent);
 }
 
 .radius-ticks {
   display: flex;
   justify-content: space-between;
   font-size: var(--font-size-caption);
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .stats-grid {
@@ -148,8 +148,8 @@ const centerValueLabel = computed(() => {
 .stat-box {
   padding: 0.35rem 0.4rem;
   border-radius: 0.45rem;
-  background: rgba(8, 15, 28, 0.55);
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
   display: grid;
   gap: 0.12rem;
 }
@@ -160,12 +160,12 @@ const centerValueLabel = computed(() => {
 
 .stat-lbl {
   font-size: var(--font-size-caption);
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 
 .stat-val {
   font-size: var(--font-size-caption);
-  color: #f1f5f9;
+  color: var(--text-strong);
   font-weight: 600;
 }
 

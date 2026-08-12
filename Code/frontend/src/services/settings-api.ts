@@ -39,7 +39,6 @@ export type {
   PortalCredentialPublic,
   PortalCredentialUpsertRequest,
   PortalCredentialsMapResponse,
-  ReloadResult,
   ReloadResultResponse,
   RemoteLayerUrisUpdateRequest,
   RemoteLayerUrisUpdateResponse,
@@ -51,7 +50,6 @@ export type {
   RemoteStorageProtocol,
   RemoteStorageTestRequest,
   RemoteStorageTestResponse,
-  RemoteStorageTestResult,
   RemoteStorageToggleRequest,
   RemoteStorageToggleResponse,
   RemoteStorageUpsertRequest,
@@ -65,20 +63,17 @@ export type {
   ServiceRestartRequest,
   ServiceRestartResponse,
   StaticCacheSummary,
-  TestResult,
   TestResultResponse,
   WeatherCapability,
   WeatherConfig,
   WeatherModelUpdateRequest,
   WeatherProviderConfigField,
-  WeatherProviderConfigSchema,
   WeatherProviderDeletedResponse,
   WeatherProviderItem,
   WeatherProviderPriorityRequest,
   WeatherProviderPriorityResponse,
   WeatherProviderStatus,
   WeatherProviderTestResponse,
-  WeatherProviderTestResult,
   WeatherProviderToggleRequest,
   WeatherProviderToggleResponse,
   WeatherProviderType,
@@ -119,7 +114,7 @@ import type {
   OpenDataPresetsUpdateResponse,
   PortalCredentialUpsertRequest,
   PortalCredentialsMapResponse,
-  ReloadResult,
+  ReloadResultResponse,
   RemoteLayerUrisUpdateRequest,
   RemoteLayerUrisUpdateResponse,
   RemoteStorageDeletedResponse,
@@ -140,7 +135,7 @@ import type {
   RuntimeStatusResponse,
   ServiceRestartRequest,
   ServiceRestartResponse,
-  TestResult,
+  TestResultResponse,
   WeatherConfig,
   WeatherModelUpdateRequest,
   WeatherProviderDeletedResponse,
@@ -249,7 +244,7 @@ export function deleteApiKey(keyName: string): Promise<ApiKeyDeletedResponse> {
   })
 }
 
-export function testApiKey(keyName: string): Promise<TestResult> {
+export function testApiKey(keyName: string): Promise<TestResultResponse> {
   return settingsFetch(`/config/api-keys/${encodeURIComponent(keyName)}/test`, {
     method: 'POST',
   })
@@ -305,7 +300,7 @@ export function deleteGeeAccount(accountId: string): Promise<GeeAccountDeletedRe
   })
 }
 
-export function testGeeAccount(accountId: string): Promise<TestResult> {
+export function testGeeAccount(accountId: string): Promise<TestResultResponse> {
   return settingsFetch(`/config/gee/accounts/${encodeURIComponent(accountId)}/test`, {
     method: 'POST',
   })
@@ -321,7 +316,7 @@ export function toggleGeeAccount(
   })
 }
 
-export function reloadGeeAccounts(): Promise<ReloadResult> {
+export function reloadGeeAccounts(): Promise<ReloadResultResponse> {
   return settingsFetch('/config/gee/accounts/reload', {
     method: 'POST',
   })

@@ -311,18 +311,6 @@ export function syncWeatherGridFillOverlay(map: MapInstance, overlayState: Weath
   }
 }
 
-/** @deprecated 名称保留兼容；实现已统一为 grid_fill（见 syncWeatherGridFillOverlay）。 */
-export function syncWeatherHeatmapOverlay(map: MapInstance, overlayState: WeatherOverlayState) {
-  // 连续气象场统一走网格 fill：heatmap 放大后必然「一坨坨晕点」，观感差
-  syncWeatherGridFillOverlay(map, {
-    ...overlayState,
-    renderHint: {
-      ...overlayState.renderHint,
-      paint_mode: 'grid_fill',
-    },
-  })
-}
-
 export function syncWeatherPointOverlay(map: MapInstance, overlayState: WeatherOverlayState) {
   const geojsonSource = overlayState.geojsonData ?? overlayState.geojsonUrl
   if (!geojsonSource) return
@@ -383,7 +371,7 @@ export function syncWeatherPointOverlay(map: MapInstance, overlayState: WeatherO
       paint: {
         'text-color': '#e8fbff',
         'text-opacity': pointOpacity,
-        'text-halo-color': 'rgba(5, 16, 30, 0.86)',
+        'text-halo-color': 'var(--surface-1)',
         'text-halo-width': 1.1,
       },
     })

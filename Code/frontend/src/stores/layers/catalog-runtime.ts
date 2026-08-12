@@ -4,7 +4,7 @@
  */
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
 
-import { fetchLayerCatalog, type RuntimeLayerDescriptor } from '../../services/runtime-api'
+import { fetchLayerCatalog, type LayerDescriptor } from '../../services/runtime-api'
 import {
   supportsMapLayerCapability,
   supportsParticleFlowCapability,
@@ -40,16 +40,16 @@ export interface CatalogRuntimeSliceDeps {
 }
 
 export interface CatalogRuntimeSlice {
-  runtimeLayerCatalog: Ref<Record<string, RuntimeLayerDescriptor>>
+  runtimeLayerCatalog: Ref<Record<string, LayerDescriptor>>
   runtimeLayerCatalogLoading: Ref<boolean>
   layerLibrary: ComputedRef<RuntimeLayerLibraryItem[]>
   layerLibraryMap: ComputedRef<Map<string, RuntimeLayerLibraryItem>>
   catalogJobStatus: ComputedRef<Map<string, JobStatus>>
   catalogRunReadiness: ComputedRef<Map<string, string>>
   ensureRuntimeLayerCatalog: (force?: boolean) => Promise<void>
-  getRuntimeLayerDescriptor: (catalogId: string) => RuntimeLayerDescriptor | null
+  getRuntimeLayerDescriptor: (catalogId: string) => LayerDescriptor | null
   resolveBackendLayerId: (catalogId: string) => string
-  resolveEffectiveDescriptor: (catalogId: string) => RuntimeLayerDescriptor | null
+  resolveEffectiveDescriptor: (catalogId: string) => LayerDescriptor | null
   getCatalogWorkflowEngine: (catalogId: string) => string | null
   supportsAnalysisWorkflow: (catalogId: string) => boolean
   getCatalogRunBlockReason: (catalogId: string) => string | null
@@ -59,11 +59,11 @@ export interface CatalogRuntimeSlice {
   supportsViewportDrivenRefresh: (catalogId: string) => boolean
   supportsParticleFlow: (catalogId: string) => boolean
   getLayerPrimaryMetric: (catalogId: string) => string | null
-  setRuntimeLayerCatalog: (catalog: Record<string, RuntimeLayerDescriptor>) => void
+  setRuntimeLayerCatalog: (catalog: Record<string, LayerDescriptor>) => void
 }
 
 export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): CatalogRuntimeSlice {
-  const runtimeLayerCatalog = ref<Record<string, RuntimeLayerDescriptor>>({})
+  const runtimeLayerCatalog = ref<Record<string, LayerDescriptor>>({})
   const runtimeLayerCatalogLoading = ref(false)
   let runtimeLayerCatalogRequest: Promise<void> | null = null
 
@@ -170,7 +170,7 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     return catalogId
   }
 
-  function resolveEffectiveDescriptor(catalogId: string): RuntimeLayerDescriptor | null {
+  function resolveEffectiveDescriptor(catalogId: string): LayerDescriptor | null {
     if (catalogId.startsWith('wf-out-') || catalogId.startsWith('wf-run-')) {
       const backendId = resolveBackendLayerId(catalogId)
       return getRuntimeLayerDescriptor(backendId)
@@ -286,7 +286,7 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     return getRuntimeLayerDescriptor(catalogId)?.capabilities?.primary_metric ?? null
   }
 
-  function setRuntimeLayerCatalog(catalog: Record<string, RuntimeLayerDescriptor>) {
+  function setRuntimeLayerCatalog(catalog: Record<string, LayerDescriptor>) {
     runtimeLayerCatalog.value = catalog
   }
 

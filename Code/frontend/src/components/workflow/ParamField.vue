@@ -9,6 +9,7 @@
 import ParamCombobox from './ParamCombobox.vue'
 import DateInputField from './DateInputField.vue'
 import BboxInputField from './BboxInputField.vue'
+import { Folder, X } from '../ui/icons'
 import type { NodeParamSpec } from '../../services/workflow-definition-api'
 
 defineProps<{
@@ -142,7 +143,7 @@ function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
 
   <!-- widget=path：路径输入（等宽字体 + 目录图标） -->
   <div v-else-if="meta?.widget === 'path'" class="path-input-wrapper" :class="{ error }">
-    <span class="path-icon" title="路径">📁</span>
+    <span class="path-icon" title="路径"><Folder :size="14" aria-hidden="true" /></span>
     <input
       type="text"
       class="form-input path-input"
@@ -231,7 +232,7 @@ function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
     >
       {{ item }}
       <button v-if="!readonly" class="chip-remove" type="button" @click="emit('removeArray', idx)">
-        ✕
+        <X :size="12" aria-hidden="true" />
       </button>
     </span>
     <input
@@ -261,17 +262,17 @@ function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
 .form-input {
   width: 100%;
   padding: 0.28rem 0.42rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  border: 1px solid var(--border-default);
   border-radius: 0.32rem;
-  background: rgba(8, 17, 31, 0.55);
-  color: #e8f3fc;
+  background: var(--surface-raised);
+  color: var(--text-strong);
   font: inherit;
   font-size: var(--font-size-caption);
 }
 
 .form-input:focus {
   outline: none;
-  border-color: rgba(90, 213, 255, 0.5);
+  border-color: var(--border-strong);
 }
 
 .form-input.error {
@@ -302,7 +303,7 @@ function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
   position: absolute;
   cursor: pointer;
   inset: 0;
-  background: rgba(136, 192, 255, 0.15);
+  background: var(--border-default);
   border-radius: 1rem;
   transition: 0.2s;
 }
@@ -338,7 +339,7 @@ function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
   flex-wrap: wrap;
   gap: 0.22rem;
   padding: 0.32rem 0.42rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.36rem;
   background: var(--surface-raised);
   min-height: 2rem;
@@ -351,7 +352,7 @@ function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
   gap: 0.18rem;
   padding: 0.16rem 0.36rem;
   border-radius: 0.28rem;
-  background: rgba(90, 213, 255, 0.18);
+  background: var(--accent-surface);
   color: var(--accent);
   font-size: var(--font-size-caption);
   font-weight: 500;
@@ -373,7 +374,7 @@ function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
 }
 
 .chip-remove:hover {
-  color: #ff8a8a;
+  color: var(--danger);
 }
 
 .array-input {
@@ -395,9 +396,9 @@ function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
   display: flex;
   align-items: center;
   gap: 0.28rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  border: 1px solid var(--border-default);
   border-radius: 0.32rem;
-  background: rgba(8, 17, 31, 0.55);
+  background: var(--surface-raised);
   padding: 0 0.42rem;
 }
 

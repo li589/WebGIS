@@ -22,6 +22,17 @@
   --accent: #5ad5ff; /* 主品牌色（亮青） */
   --accent-strong: #88dfff; /* 强调色（更亮） */
   --accent-warm: #ffc878; /* 暖强调（橙） */
+  --accent-blue-deep: #2f7eff; /* 品牌渐变深色端 */
+  --accent-blue-deep-glow: rgba(47, 126, 255, 0.28); /* 品牌辉光阴影 */
+  --accent-warm-surface: rgba(255, 200, 120, 0.12); /* 暖强调表面 */
+  --accent-warm-border: rgba(255, 200, 120, 0.35); /* 暖强调边框 */
+  --badge-ring: rgba(8, 20, 36, 0.9); /* 徽章外环（比 surface-2 更不透明） */
+
+  /* ═══ 颜色：工作流端口语义色 ═══ */
+  --port-time: #ff8fb1; /* 时间范围端口 */
+  --port-numeric: #ffd5a8; /* 数值端口 */
+  --port-text: #ffe08a; /* 文本端口 */
+  --recent-accent: #c084fc; /* 最近使用分类组强调色 */
 
   /* ═══ 颜色：语义三件套（文字 + 表面 + 边框）═══ */
   /* Success */
@@ -150,6 +161,17 @@
   --accent: #0a8fc4;
   --accent-strong: #00709e;
   --accent-warm: #c97a14;
+  --accent-blue-deep: #1a5fcc; /* 浅底加深保证对比度 */
+  --accent-blue-deep-glow: rgba(26, 95, 204, 0.22);
+  --accent-warm-surface: rgba(201, 122, 20, 0.1);
+  --accent-warm-border: rgba(201, 122, 20, 0.3);
+  --badge-ring: rgba(200, 210, 220, 0.9);
+
+  /* 工作流端口语义色（浅底加深） */
+  --port-time: #d4658a;
+  --port-numeric: #c97a14;
+  --port-text: #9a7b1a;
+  --recent-accent: #7c3aed;
 
   /* 语义三件套（浅底版本：文字色加深，表面更淡） */
   --success: #0a7a4e;

@@ -4,7 +4,6 @@
  */
 export {
   MapChromeNavigationControl,
-  MapCustomNavigationControl,
   createMapChromeScaleControl,
   addMapChromeControls,
   ensureMapChromeControlStyles,

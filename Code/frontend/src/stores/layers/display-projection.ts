@@ -1,4 +1,4 @@
-import type { RuntimeLayerDescriptor } from '../../services/runtime-api'
+import type { LayerDescriptor } from '../../services/runtime-api'
 import { buildDefaultWeatherRenderHint } from '../../data/weather-render-hints'
 import { formatClockHourLabel } from '../../utils/weather-timeline'
 import { resolveWeatherTileReadyKind } from '../../utils/weather-tile-readiness'
@@ -26,7 +26,7 @@ export interface WeatherTileDisplayBridge {
 export interface ActiveLayersDisplayContext {
   activeLayers: ActiveLayer[]
   layerLibraryMap: Map<string, RuntimeLayerLibraryItem>
-  runtimeLayerCatalog: Record<string, RuntimeLayerDescriptor | null>
+  runtimeLayerCatalog: Record<string, LayerDescriptor | null>
   currentHour: number
   weatherTileManager: WeatherTileDisplayBridge
   isWeatherEngineLayer: (catalogId: string) => boolean
@@ -85,7 +85,7 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
           updateLabel: '本地文件',
           sourceLabel: payload.fileName ?? '本地导入',
           confidenceLabel: '本地数据',
-          accentColor: layer.accentColor ?? '#7ee0a8',
+          accentColor: layer.accentColor ?? 'var(--success)',
           accentGlow: layer.accentGlow ?? 'rgba(126, 224, 168, 0.28)',
           chipTone: layer.chipTone ?? 'rgba(126, 224, 168, 0.16)',
           availabilityState: 'ready',

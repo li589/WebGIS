@@ -4,6 +4,7 @@
  * 全部配置完成且校验通过后才允许提交导入。
  */
 import { computed, ref, watch } from 'vue'
+import { X } from '../../components/ui/icons'
 import { listCrs } from '@/services/crs'
 import { fetchCrsOptionsExpanded } from '@/services/data-import'
 import type { CRSOption } from '@/services/crs'
@@ -333,7 +334,9 @@ function handleCancel() {
           <h3>科学栅格导入配置</h3>
           <p class="sub">{{ fileName }}{{ format ? ` · ${format}` : '' }}</p>
         </div>
-        <button type="button" class="x-btn" :disabled="importing" @click="handleCancel">✕</button>
+        <button type="button" class="x-btn" :disabled="importing" @click="handleCancel">
+          <X :size="14" aria-hidden="true" />
+        </button>
       </header>
 
       <section class="sci-section">
@@ -520,7 +523,7 @@ function handleCancel() {
   position: fixed;
   inset: 0;
   z-index: 90;
-  background: rgba(2, 8, 16, 0.62);
+  background: var(--surface-1);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -531,11 +534,11 @@ function handleCancel() {
   max-height: min(88vh, 900px);
   overflow: auto;
   border-radius: 0.7rem;
-  border: 1px solid rgba(136, 192, 255, 0.22);
-  background: linear-gradient(180deg, rgba(12, 26, 42, 0.98), rgba(6, 14, 24, 0.98));
+  border: 1px solid var(--border-strong);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-2));
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
   padding: 1rem 1.1rem 0.9rem;
-  color: #d7e6f5;
+  color: var(--text-primary);
 }
 .sci-head {
   display: flex;
@@ -551,12 +554,12 @@ function handleCancel() {
 .sub {
   margin: 0.2rem 0 0;
   font-size: var(--font-size-caption);
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 .x-btn {
   border: 0;
   background: transparent;
-  color: #9ab0c4;
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 1rem;
 }
@@ -564,15 +567,15 @@ function handleCancel() {
   margin-bottom: 0.85rem;
   padding: 0.65rem 0.7rem;
   border-radius: 0.5rem;
-  border: 1px solid rgba(136, 192, 255, 0.12);
-  background: rgba(4, 12, 22, 0.45);
+  border: 1px solid var(--border-default);
+  background: var(--surface-raised);
 }
 .sec-title {
   display: flex;
   justify-content: space-between;
   align-items: center;
   font-size: var(--font-size-caption);
-  color: #9ec4e0;
+  color: var(--text-secondary);
   margin-bottom: 0.5rem;
 }
 .sec-actions {
@@ -582,7 +585,7 @@ function handleCancel() {
 .link-btn {
   border: 0;
   background: transparent;
-  color: #7ee0a8;
+  color: var(--success);
   cursor: pointer;
   font-size: var(--font-size-caption);
 }
@@ -604,7 +607,7 @@ function handleCancel() {
   cursor: pointer;
 }
 .var-list .meta {
-  color: #8aa0b4;
+  color: var(--text-muted);
   font-size: var(--font-size-caption);
 }
 .temporal-modes {
@@ -613,7 +616,7 @@ function handleCancel() {
   gap: 0.55rem 0.9rem;
   margin-bottom: 0.45rem;
   font-size: var(--font-size-caption);
-  color: #c5d7ea;
+  color: var(--text-primary);
 }
 .temporal-modes label {
   display: inline-flex;
@@ -622,7 +625,7 @@ function handleCancel() {
   gap: 0.28rem;
   cursor: pointer;
   font-size: var(--font-size-caption);
-  color: #c5d7ea;
+  color: var(--text-primary);
 }
 .grid-2,
 .grid-4 {
@@ -641,14 +644,14 @@ label {
   flex-direction: column;
   gap: 0.18rem;
   font-size: var(--font-size-caption);
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 input,
 select {
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  border: 1px solid var(--border-default);
   border-radius: 0.34rem;
   padding: 0.3rem 0.4rem;
-  background: rgba(4, 12, 23, 0.75);
+  background: var(--surface-1);
   color: var(--text-primary);
   font: inherit;
   font-size: var(--font-size-caption);
@@ -656,7 +659,7 @@ select {
 .hint {
   margin: 0.4rem 0 0;
   font-size: var(--font-size-caption);
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 .detect-row {
   display: flex;
@@ -669,7 +672,7 @@ select {
   margin: 0;
 }
 .hint.bad {
-  color: #ffb0b0;
+  color: var(--danger);
 }
 .time-row {
   margin-top: 0.45rem;
@@ -681,7 +684,7 @@ select {
   align-items: center;
   gap: 0.4rem;
   font-size: var(--font-size-caption);
-  color: #c5d8ea;
+  color: var(--text-primary);
 }
 .sci-foot {
   display: flex;
@@ -698,14 +701,14 @@ select {
   cursor: pointer;
 }
 .ghost {
-  border: 1px solid rgba(136, 192, 255, 0.22);
+  border: 1px solid var(--border-strong);
   background: transparent;
-  color: #c5d8ea;
+  color: var(--text-primary);
 }
 .primary {
   border: 1px solid rgba(126, 224, 168, 0.4);
-  background: rgba(24, 70, 48, 0.65);
-  color: #d6ffe8;
+  background: var(--surface-1);
+  color: var(--success-surface);
 }
 .primary:disabled,
 .ghost:disabled {
