@@ -685,7 +685,7 @@ onBeforeUnmount(() => {
 }
 
 .meta-chip.warn {
-  background: rgba(255, 196, 120, 0.12);
+  background: var(--warning-surface);
   color: var(--accent-warm);
 }
 
@@ -694,7 +694,7 @@ onBeforeUnmount(() => {
   padding: 0.42rem 0.55rem;
   border: 1px solid var(--warning-border);
   border-radius: 0.42rem;
-  background: rgba(90, 60, 20, 0.2);
+  background: var(--warning-surface);
   color: var(--accent-warm);
   font-size: var(--font-size-caption);
   line-height: 1.5;
@@ -750,7 +750,7 @@ onBeforeUnmount(() => {
 }
 
 .refresh-btn:hover:not(:disabled) {
-  background: var(--accent-border);
+  background: var(--surface-hover);
 }
 .refresh-btn:disabled {
   opacity: 0.5;
@@ -761,7 +761,7 @@ onBeforeUnmount(() => {
   padding: 0.42rem 0.55rem;
   border: 1px solid var(--danger-border);
   border-radius: 0.42rem;
-  background: rgba(90, 20, 20, 0.2);
+  background: var(--danger-surface);
   color: var(--danger);
   font-size: var(--font-size-caption);
 }

@@ -173,10 +173,10 @@
   --text-faint: #8a9db0;
   --text-disabled: #b0bccc;
 
-  /* 品牌 / 强调（加深以保证浅底对比度） */
-  --accent: #0a8fc4;
-  --accent-strong: #00709e;
-  --accent-warm: #c97a14;
+  /* 品牌 / 强调（加深以保证浅底对比度，WCAG AA ≥ 4.5:1） */
+  --accent: #0078a0;
+  --accent-strong: #005a82;
+  --accent-warm: #a5650f;
   --accent-blue-deep: #1a5fcc; /* 浅底加深保证对比度 */
   --accent-blue-deep-glow: rgba(26, 95, 204, 0.22);
   --accent-warm-surface: rgba(201, 122, 20, 0.1);

@@ -642,10 +642,10 @@ const restartParams = computed(() => {
   flex: none;
 }
 .save-btn {
-  background: rgba(40, 80, 130, 0.6);
+  background: var(--accent-surface);
   border: 1px solid var(--border-strong);
   border-radius: 0.3rem;
-  color: var(--text-primary);
+  color: var(--accent-strong);
   font-size: var(--font-size-caption);
   padding: 0.22rem 0.48rem;
   cursor: pointer;
@@ -653,15 +653,15 @@ const restartParams = computed(() => {
   flex: none;
 }
 .save-btn:hover:not(:disabled) {
-  background: rgba(50, 100, 160, 0.7);
+  background: var(--surface-hover);
 }
 .save-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 .save-all-btn {
-  background: rgba(40, 100, 60, 0.6);
-  border: 1px solid rgba(100, 200, 120, 0.2);
+  background: var(--success-surface);
+  border: 1px solid var(--success-border);
   border-radius: 0.3rem;
   color: var(--success);
   font-size: var(--font-size-caption);
@@ -670,7 +670,7 @@ const restartParams = computed(() => {
   transition: background 0.15s;
 }
 .save-all-btn:hover {
-  background: rgba(50, 120, 70, 0.7);
+  background: var(--success-border);
 }
 .restart-row {
   flex-direction: row;

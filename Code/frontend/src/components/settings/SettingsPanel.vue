@@ -523,7 +523,7 @@ onUnmounted(() => {
   padding: 0.42rem 0.55rem;
   border: 1px solid var(--warning-border);
   border-radius: 0.45rem;
-  background: rgba(90, 60, 20, 0.28);
+  background: var(--warning-surface);
   color: var(--accent-warm);
   font-size: var(--font-size-caption);
   line-height: 1.4;
@@ -556,7 +556,7 @@ onUnmounted(() => {
 }
 
 .retry-btn:hover {
-  background: var(--accent-border);
+  background: var(--surface-hover);
 }
 
 /* 键盘焦点可达性：统一交互元素 focus-visible 轮廓 */

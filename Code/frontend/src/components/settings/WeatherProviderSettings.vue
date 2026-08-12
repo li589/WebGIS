@@ -557,8 +557,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 .count-badge {
   padding: 0.08rem 0.36rem;
   border-radius: 999px;
-  background: var(--accent-border);
-  color: var(--accent);
+  background: var(--accent-surface);
+  color: var(--accent-strong);
   font-size: var(--font-size-caption);
   font-weight: 600;
 }
