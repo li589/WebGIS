@@ -316,7 +316,7 @@ function selectNode(name: string) {
 }
 
 .arch-node.root {
-  background: linear-gradient(135deg, var(--accent-border), rgba(125, 125, 255, 0.2));
+  background: linear-gradient(135deg, var(--accent-border), var(--surface-violet-tint));
   border: 1px solid var(--border-strong);
   color: var(--text-strong);
   font-size: var(--font-size-caption);

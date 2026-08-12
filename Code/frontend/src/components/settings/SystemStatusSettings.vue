@@ -384,9 +384,9 @@ onBeforeUnmount(() => {
 }
 
 .health-busy {
-  background: rgba(255, 211, 138, 0.12);
+  background: var(--warning-surface);
   color: var(--accent-warm);
-  border-color: rgba(255, 196, 120, 0.2);
+  border-color: var(--warning-border);
 }
 
 .health-degraded {

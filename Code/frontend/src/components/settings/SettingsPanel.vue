@@ -233,7 +233,11 @@ onUnmounted(() => {
 
 <template>
   <div class="settings-overlay" @click.self="emit('close')">
-    <div class="settings-panel" :class="{ 'settings-panel--resizing': isResizing }" :style="panelStyle">
+    <div
+      class="settings-panel"
+      :class="{ 'settings-panel--resizing': isResizing }"
+      :style="panelStyle"
+    >
       <div
         class="settings-resize-handle"
         title="向左拖动加宽"
@@ -418,7 +422,7 @@ onUnmounted(() => {
   border: none;
   border-radius: 0.5rem;
   background: transparent;
-  color: var(--text-faint);
+  color: var(--text-muted);
   cursor: pointer;
   font-size: var(--font-size-caption);
 }
@@ -456,7 +460,7 @@ onUnmounted(() => {
   border: 1px solid transparent;
   border-radius: 0.5rem;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
   font-size: var(--font-size-caption);
@@ -472,7 +476,7 @@ onUnmounted(() => {
 .nav-item.active {
   border-color: var(--accent-border);
   background: var(--accent-surface);
-  color: var(--accent);
+  color: var(--accent-strong);
   font-weight: 600;
 }
 
@@ -549,7 +553,7 @@ onUnmounted(() => {
   border: 1px solid var(--accent-border);
   border-radius: 0.4rem;
   background: var(--accent-surface);
-  color: var(--accent);
+  color: var(--accent-strong);
   cursor: pointer;
   font: inherit;
   font-size: var(--font-size-caption);

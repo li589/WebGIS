@@ -478,6 +478,7 @@ async function deleteHistory(profileId: string, historyId: number) {
 }
 .btn.danger {
   border-color: var(--danger-border);
+  background: var(--danger-surface);
   color: var(--danger);
 }
 .btn:disabled {

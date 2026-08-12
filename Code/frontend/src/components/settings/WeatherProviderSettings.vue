@@ -790,7 +790,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .runtime-bar-fill.warn {
-  background: linear-gradient(90deg, rgba(255, 204, 102, 0.6), var(--danger-border));
+  background: linear-gradient(90deg, var(--warning), var(--danger-border));
 }
 
 .runtime-text {
@@ -940,18 +940,18 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .type-commercial {
-  background: rgba(255, 204, 102, 0.12);
+  background: var(--warning-surface);
   color: var(--warning);
 }
 
 .type-local {
-  background: rgba(201, 163, 255, 0.12);
+  background: var(--surface-violet-tint);
   color: var(--accent-strong);
 }
 
 .type-unknown {
   background: var(--border-default);
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .channel-badge {
@@ -965,16 +965,16 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
 .channel-local {
   background: var(--accent-surface);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 
 .channel-online {
-  background: rgba(201, 163, 255, 0.14);
+  background: var(--surface-violet-tint);
   color: var(--accent-strong);
 }
 
 .channel-legacy {
-  background: rgba(255, 138, 138, 0.14);
+  background: var(--danger-surface);
   color: var(--danger);
 }
 
@@ -989,26 +989,31 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
 .badge-ok {
   background: var(--success-surface);
+  border: 1px solid var(--success-border);
   color: var(--success);
 }
 
 .badge-fail {
   background: var(--danger-surface);
+  border: 1px solid var(--danger-border);
   color: var(--danger);
 }
 
 .badge-warn {
-  background: rgba(255, 204, 102, 0.14);
+  background: var(--warning-surface);
+  border: 1px solid var(--warning-border);
   color: var(--warning);
 }
 
 .badge-disabled {
-  background: rgba(90, 106, 128, 0.2);
-  color: var(--text-muted);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
 }
 
 .badge-unknown {
-  background: rgba(201, 163, 255, 0.14);
+  background: var(--surface-violet-tint);
+  border: 1px solid var(--border-violet-tint);
   color: var(--accent-strong);
 }
 
@@ -1018,7 +1023,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   border: 1px solid var(--border-default);
   border-radius: 0.36rem;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
   font-size: var(--font-size-caption);
@@ -1028,7 +1033,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
 .action-btn:hover:not(:disabled) {
   border-color: var(--accent-border);
-  color: var(--accent);
+  color: var(--accent-strong);
   background: var(--accent-surface);
 }
 
@@ -1039,11 +1044,11 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
 .action-btn.test {
   border-color: var(--accent-border);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 
 .action-btn.config {
-  border-color: rgba(201, 163, 255, 0.2);
+  border-color: var(--border-violet-tint);
   color: var(--accent-strong);
 }
 
@@ -1057,12 +1062,12 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .action-btn.cancel {
-  border-color: var(--danger-surface);
+  border-color: var(--danger-border);
   color: var(--danger);
 }
 
 .action-btn.delete {
-  border-color: var(--danger-surface);
+  border-color: var(--danger-border);
   color: var(--danger);
 }
 
@@ -1073,7 +1078,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .action-btn.reload {
-  border-color: rgba(201, 163, 255, 0.2);
+  border-color: var(--border-violet-tint);
   color: var(--accent-strong);
 }
 
@@ -1133,13 +1138,13 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
 .test-result.success {
   background: var(--success-surface);
-  border: 1px solid var(--success-surface);
+  border: 1px solid var(--success-border);
   color: var(--success);
 }
 
 .test-result.fail {
   background: var(--danger-surface);
-  border: 1px solid var(--danger-surface);
+  border: 1px solid var(--danger-border);
   color: var(--danger);
 }
 
@@ -1168,7 +1173,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   padding: 0.32rem 0.52rem;
   border-radius: 0.36rem;
   background: var(--danger-surface);
-  border: 1px solid var(--danger-surface);
+  border: 1px solid var(--danger-border);
   color: var(--danger);
   font-size: var(--font-size-caption);
   line-height: 1.4;
@@ -1178,9 +1183,9 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   margin-top: 10px;
   padding: 8px 10px;
   border-radius: 6px;
-  border: 1px solid rgba(200, 140, 40, 0.45);
-  background: rgba(200, 140, 40, 0.12);
-  color: var(--text-secondary, #c9b896);
+  border: 1px solid var(--warning-border);
+  background: var(--warning-surface);
+  color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.45;
 }

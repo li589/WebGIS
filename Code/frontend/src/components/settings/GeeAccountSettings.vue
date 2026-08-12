@@ -481,7 +481,7 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
   padding: 0.32rem 0.52rem;
   border-radius: 0.36rem;
   background: var(--danger-surface);
-  border: 1px solid var(--danger-surface);
+  border: 1px solid var(--danger-border);
   color: var(--danger);
   font-size: var(--font-size-caption);
 }
@@ -596,21 +596,25 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 
 .badge-ok {
   background: var(--success-surface);
+  border: 1px solid var(--success-border);
   color: var(--success);
 }
 
 .badge-fail {
   background: var(--danger-surface);
+  border: 1px solid var(--danger-border);
   color: var(--danger);
 }
 
 .badge-disabled {
-  background: rgba(90, 106, 128, 0.2);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
   color: var(--text-muted);
 }
 
 .badge-unknown {
-  background: rgba(201, 163, 255, 0.14);
+  background: var(--surface-violet-tint);
+  border: 1px solid var(--border-violet-tint);
   color: var(--accent-strong);
 }
 
@@ -620,7 +624,7 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
   border: 1px solid var(--border-default);
   border-radius: 0.36rem;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
   font-size: var(--font-size-caption);
@@ -630,7 +634,7 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 
 .action-btn:hover:not(:disabled) {
   border-color: var(--accent-border);
-  color: var(--accent);
+  color: var(--accent-strong);
   background: var(--accent-surface);
 }
 
@@ -641,7 +645,7 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 
 .action-btn.add {
   border-color: var(--accent-border);
-  color: var(--accent);
+  color: var(--accent-strong);
   background: var(--accent-surface);
 }
 
@@ -655,12 +659,12 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 }
 
 .action-btn.cancel {
-  border-color: var(--danger-surface);
+  border-color: var(--danger-border);
   color: var(--danger);
 }
 
 .action-btn.delete {
-  border-color: var(--danger-surface);
+  border-color: var(--danger-border);
   color: var(--danger);
 }
 
@@ -671,7 +675,7 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 }
 
 .action-btn.reload {
-  border-color: rgba(201, 163, 255, 0.2);
+  border-color: var(--border-violet-tint);
   color: var(--accent-strong);
 }
 
@@ -726,13 +730,13 @@ const enabledCount = computed(() => geeAccounts.value.filter((a) => a.enabled).l
 
 .test-result.success {
   background: var(--success-surface);
-  border: 1px solid var(--success-surface);
+  border: 1px solid var(--success-border);
   color: var(--success);
 }
 
 .test-result.fail {
   background: var(--danger-surface);
-  border: 1px solid var(--danger-surface);
+  border: 1px solid var(--danger-border);
   color: var(--danger);
 }
 </style>

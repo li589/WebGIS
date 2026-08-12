@@ -632,7 +632,7 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
   border: 1px solid var(--border-default);
   border-radius: 0.36rem;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
   font-size: var(--font-size-caption);
@@ -647,7 +647,7 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
   color: var(--success);
 }
 .action-btn.cancel {
-  border-color: var(--danger-surface);
+  border-color: var(--danger-border);
   color: var(--danger);
 }
 .toggle-switch {
@@ -714,10 +714,12 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
 }
 .test-result.success {
   background: var(--success-surface);
+  border: 1px solid var(--success-border);
   color: var(--success);
 }
 .test-result.fail {
   background: var(--danger-surface);
+  border: 1px solid var(--danger-border);
   color: var(--danger);
 }
 .history-panel {

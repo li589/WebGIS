@@ -328,7 +328,7 @@ async function removeAccount(userId: number, username: string) {
 }
 
 .logout-btn:hover {
-  background: var(--danger-border);
+  background: var(--surface-hover);
 }
 
 .settings-section {
@@ -381,7 +381,7 @@ async function removeAccount(userId: number, username: string) {
   border-radius: 0.35rem;
   border: 1px solid var(--border-accent);
   background: var(--accent-surface);
-  color: var(--accent);
+  color: var(--accent-strong);
   font: inherit;
   font-size: var(--font-size-caption);
   cursor: pointer;

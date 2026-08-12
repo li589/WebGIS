@@ -720,6 +720,7 @@ void refreshCache()
 .btn-primary {
   border-color: var(--accent);
   background: var(--accent-surface);
+  color: var(--accent-strong);
 }
 
 .warn {
@@ -729,6 +730,7 @@ void refreshCache()
 .btn.danger {
   border-color: var(--danger-border);
   background: var(--danger-surface);
+  color: var(--danger);
 }
 
 .status-msg {

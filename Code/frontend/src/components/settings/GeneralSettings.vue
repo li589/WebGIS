@@ -670,7 +670,7 @@ const restartParams = computed(() => {
   transition: background 0.15s;
 }
 .save-all-btn:hover {
-  background: var(--success-border);
+  background: var(--surface-hover);
 }
 .restart-row {
   flex-direction: row;

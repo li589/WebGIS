@@ -620,7 +620,7 @@ onBeforeUnmount(() => {
 }
 
 .badge-online {
-  background: rgba(201, 163, 255, 0.14);
+  background: var(--surface-violet-tint);
   color: var(--accent-strong);
 }
 
@@ -883,9 +883,9 @@ onBeforeUnmount(() => {
   margin: 0 0 12px;
   padding: 8px 10px;
   border-radius: 6px;
-  border: 1px solid rgba(200, 80, 60, 0.45);
-  background: rgba(200, 80, 60, 0.12);
-  color: var(--text-secondary, #c9b896);
+  border: 1px solid var(--danger-border);
+  background: var(--danger-surface);
+  color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.45;
 }
