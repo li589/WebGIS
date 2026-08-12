@@ -602,7 +602,11 @@ function handleTitleChange() {
             >
               <label class="form-label">
                 <span class="param-label-text">{{ grp.anchorKey }}</span>
-                <Info :size="14" class="param-info-icon" title="西/南/东/北四至范围，可使用预设快捷选择" />
+                <Info
+                  :size="14"
+                  class="param-info-icon"
+                  title="西/南/东/北四至范围，可使用预设快捷选择"
+                />
               </label>
               <BboxInputField
                 :model-value="getBboxValue(grp.bboxKeys)"

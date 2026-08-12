@@ -13,7 +13,16 @@
  * - 高级参数类型提示
  */
 import { computed, ref, watch } from 'vue'
-import { Rocket, X, Check, AlertTriangle, Settings, ArrowRight, ChevronDown, Play } from 'lucide-vue-next'
+import {
+  Rocket,
+  X,
+  Check,
+  AlertTriangle,
+  Settings,
+  ArrowRight,
+  ChevronDown,
+  Play,
+} from 'lucide-vue-next'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import { fetchWorkflowDefinition } from '../../services/workflow-definition-api'
 import type { WorkflowDefinition } from '../../services/workflow-definition-api'

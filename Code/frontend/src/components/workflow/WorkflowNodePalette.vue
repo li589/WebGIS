@@ -356,12 +356,12 @@ function isFavorite(type: string): boolean {
               <span class="node-item-title">{{ tpl.title }}</span>
               <span v-if="isStub(tpl)" class="node-item-stub-badge">未实现</span>
               <Star
-            :size="14"
-            class="node-item-favorite-btn favorited"
-            title="取消收藏"
-            fill="currentColor"
-            @click.stop="toggleFavorite(tpl.type)"
-          />
+                :size="14"
+                class="node-item-favorite-btn favorited"
+                title="取消收藏"
+                fill="currentColor"
+                @click.stop="toggleFavorite(tpl.type)"
+              />
             </div>
             <div v-if="tpl.description" class="node-item-desc">{{ tpl.description }}</div>
             <div class="node-item-ports">

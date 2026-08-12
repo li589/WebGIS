@@ -1,9 +1,6 @@
-/**
- * InfoPanel 元数据 Tab：总览 / 导入图层 / 任务调度 / 报告 / 选中图层 / 主指标 / 洞察 / 元数据 / 历史对比。
- *
- * 从 InfoPanel.vue 模板抽取（原 1287-1663 行与 2338-2412 行）。纯展示组件，
- * 全部状态由父组件通过 props 传入；交互通过 emit 回传父组件。
- */
+/** * InfoPanel 元数据 Tab：总览 / 导入图层 / 任务调度 / 报告 / 选中图层 / 主指标 / 洞察 / 元数据 /
+历史对比。 * * 从 InfoPanel.vue 模板抽取（原 1287-1663 行与 2338-2412 行）。纯展示组件， *
+全部状态由父组件通过 props 传入；交互通过 emit 回传父组件。 */
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
@@ -90,18 +87,10 @@ function enterInspectTools() {
 
 <template>
   <!-- ── 总览 ─────────────────────────────────────────────────────── -->
-  <section
-    v-show="true"
-    id="global-overview"
-    class="analysis-section analysis-section--overview"
-  >
+  <section v-show="true" id="global-overview" class="analysis-section analysis-section--overview">
     <div class="section-kicker">{{ ANALYSIS_COPY.overviewKicker }}</div>
     <h3>
-      {{
-        showCompactHero
-          ? ANALYSIS_COPY.overviewTitleCompact
-          : ANALYSIS_COPY.overviewTitleFull
-      }}
+      {{ showCompactHero ? ANALYSIS_COPY.overviewTitleCompact : ANALYSIS_COPY.overviewTitleFull }}
     </h3>
     <p>{{ analysisSummary }}</p>
     <div class="overview-quick-actions">
@@ -166,11 +155,7 @@ function enterInspectTools() {
         <dt>{{ ANALYSIS_COPY.metaEffectiveTime }}</dt>
         <dd>{{ displayLayer.importedRasterEffectiveTime }}</dd>
       </div>
-      <div
-        v-if="
-          displayLayer.isImportedRaster && (displayLayer.importedRasterTimeCount ?? 0) > 0
-        "
-      >
+      <div v-if="displayLayer.isImportedRaster && (displayLayer.importedRasterTimeCount ?? 0) > 0">
         <dt>{{ ANALYSIS_COPY.metaTimeSlices }}</dt>
         <dd>{{ displayLayer.importedRasterTimeCount }}</dd>
       </div>
@@ -185,9 +170,7 @@ function enterInspectTools() {
       <div>
         <dt>{{ ANALYSIS_COPY.metaBounds }}</dt>
         <dd>
-          {{
-            formatBounds(displayLayer.importedBounds ?? displayLayer.importedRasterBounds)
-          }}
+          {{ formatBounds(displayLayer.importedBounds ?? displayLayer.importedRasterBounds) }}
         </dd>
       </div>
       <div>
@@ -246,28 +229,16 @@ function enterInspectTools() {
       >
         {{ DATA_COPY.openDetails }}
       </button>
-      <button
-        class="imported-export-btn"
-        type="button"
-        @click="emit('exportRaster', 'tif')"
-      >
+      <button class="imported-export-btn" type="button" @click="emit('exportRaster', 'tif')">
         {{ LAYERS_COPY.exportTif }}
       </button>
       <button class="imported-export-btn" type="button" @click="emit('exportRaster', 'nc')">
         {{ LAYERS_COPY.exportNc }}
       </button>
-      <button
-        class="imported-export-btn"
-        type="button"
-        @click="emit('exportRaster', 'mat')"
-      >
+      <button class="imported-export-btn" type="button" @click="emit('exportRaster', 'mat')">
         {{ LAYERS_COPY.exportMat }}
       </button>
-      <button
-        class="imported-export-btn"
-        type="button"
-        @click="emit('exportRaster', 'png')"
-      >
+      <button class="imported-export-btn" type="button" @click="emit('exportRaster', 'png')">
         {{ LAYERS_COPY.exportPng }}
       </button>
       <button class="imported-export-btn" type="button" @click="emit('openExportPanel')">
@@ -317,11 +288,7 @@ function enterInspectTools() {
       </div>
       <p class="job-message">{{ jobLayer.message || '作业正在处理中...' }}</p>
       <div v-if="jobLayer.nodeProgress?.length" class="job-node-progress-section">
-        <div
-          v-for="np in jobLayer.nodeProgress"
-          :key="np.nodeId"
-          class="job-node-progress-item"
-        >
+        <div v-for="np in jobLayer.nodeProgress" :key="np.nodeId" class="job-node-progress-item">
           <div class="job-node-progress-header">
             <span>{{ np.nodeLabel }}</span>
             <span>{{ np.progress }}%</span>
@@ -463,13 +430,9 @@ function enterInspectTools() {
     <h3>{{ ANALYSIS_COPY.selectedLayerTitle }}</h3>
     <p>
       {{ displayLayer.name }}
-      <span v-if="displayLayer.availabilityLabel">
-        · {{ displayLayer.availabilityLabel }}</span
-      >
+      <span v-if="displayLayer.availabilityLabel"> · {{ displayLayer.availabilityLabel }}</span>
     </p>
-    <p class="tools-empty-hint" style="margin-top: 0.35rem">
-      透明度与符号请到「样式」Tab 调整。
-    </p>
+    <p class="tools-empty-hint" style="margin-top: 0.35rem">透明度与符号请到「样式」Tab 调整。</p>
   </section>
 
   <!-- meta：主指标与洞察（去冗后只在此 Tab） -->
@@ -484,11 +447,7 @@ function enterInspectTools() {
     <p>{{ displayLayer.trendLabel }}</p>
   </section>
 
-  <div
-    v-if="displayLayer.instanceId && !showCompactHero"
-    v-show="true"
-    class="insight-grid"
-  >
+  <div v-if="displayLayer.instanceId && !showCompactHero" v-show="true" class="insight-grid">
     <article class="insight-card">
       <span>更新频率</span>
       <strong>{{ displayLayer.updateLabel }}</strong>

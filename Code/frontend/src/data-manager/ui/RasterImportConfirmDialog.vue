@@ -229,7 +229,13 @@ watch(
       <div class="panel-header">
         <Map :size="16" class="panel-icon" aria-hidden="true" />
         <span>确认栅格数据坐标系 — {{ fileName }}</span>
-        <button class="close-btn" :disabled="isBusy" title="关闭" aria-label="关闭" @click="handleCancel">
+        <button
+          class="close-btn"
+          :disabled="isBusy"
+          title="关闭"
+          aria-label="关闭"
+          @click="handleCancel"
+        >
           <X :size="14" aria-hidden="true" />
         </button>
       </div>
@@ -272,7 +278,12 @@ watch(
           />
           <AppSelect
             v-model="selectedCrs"
-            :options="filteredCrsOptions.map((opt) => ({ label: `${opt.code} — ${opt.label}`, value: opt.code }))"
+            :options="
+              filteredCrsOptions.map((opt) => ({
+                label: `${opt.code} — ${opt.label}`,
+                value: opt.code,
+              }))
+            "
           />
         </label>
       </div>

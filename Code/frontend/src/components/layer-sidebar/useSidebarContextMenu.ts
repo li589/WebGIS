@@ -115,10 +115,10 @@ export function useSidebarContextMenu(
     const raw = layersStore.activeLayers.find((l) => l.instanceId === layer.instanceId)
     const isExportPending = Boolean(
       raw?.runGroupId &&
-        !raw.importedRaster?.overlayLayerId &&
-        !raw.importedVector?.backendLayerId &&
-        !layer.isImported &&
-        !layer.isImportedRaster,
+      !raw.importedRaster?.overlayLayerId &&
+      !raw.importedVector?.backendLayerId &&
+      !layer.isImported &&
+      !layer.isImportedRaster,
     )
     return buildLayerContextMenu({
       visible: layer.visible,
@@ -167,7 +167,9 @@ export function useSidebarContextMenu(
     if (times.length) {
       const eff = active.importedRaster?.effectiveTimeLabel
       time =
-        (eff && times.find((t) => eff === t || eff.startsWith(t))) || times[times.length - 1] || null
+        (eff && times.find((t) => eff === t || eff.startsWith(t))) ||
+        times[times.length - 1] ||
+        null
     }
     openDatedExportForLayer(active.instanceId, time)
     closeContextMenu()

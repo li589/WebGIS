@@ -31,7 +31,10 @@ import { useWeatherSyncStatusStore } from '../stores/weather-sync-status'
 import { useWeatherEngineStore } from '../stores/weather-engine'
 import { useWorkflowOutputLayersStore } from '../stores/workflow-output-layers'
 import { buildFallbackActiveLayerDisplay } from '../components/map/map-stage-view-model'
-import { resolveAnalysisStageKind, resolveAnalysisStageLabel } from '../components/info-panel/analysis-panel-summary'
+import {
+  resolveAnalysisStageKind,
+  resolveAnalysisStageLabel,
+} from '../components/info-panel/analysis-panel-summary'
 
 // ── Composables ──────────────────────────────────────────────────────────
 import { usePanelManager } from './dashboard/usePanelManager'
@@ -57,13 +60,23 @@ void layersStore.ensureRuntimeLayerCatalog().finally(() => uiLoading.hideImmedia
 void layersStore.restoreActiveWorkflows()
 
 const {
-  tileSourceId, currentHour, currentDate, hourLabel,
-  isPlaying, playIntervalMs, unifiedTimeLock,
+  tileSourceId,
+  currentHour,
+  currentDate,
+  hourLabel,
+  isPlaying,
+  playIntervalMs,
+  unifiedTimeLock,
 } = storeToRefs(uiStore)
 const {
-  selectedLayerDisplay, activeLayerCount, workflowError,
-  workflowProgressTimeSeek, isSubmitting,
-  pointWeather, pointWeatherLoading, pointWeatherError,
+  selectedLayerDisplay,
+  activeLayerCount,
+  workflowError,
+  workflowProgressTimeSeek,
+  isSubmitting,
+  pointWeather,
+  pointWeatherLoading,
+  pointWeatherError,
 } = storeToRefs(layersStore)
 const { statusVersion: weatherStatusVersion, activityVersion: weatherActivityVersion } =
   storeToRefs(weatherTileManager)
@@ -74,13 +87,21 @@ const stageLabel = computed(() => {
   const layer = activeLayer.value
   const hasRealSelection = Boolean(layer.instanceId)
   const isWeather = hasRealSelection && layersStore.isWeatherEngineLayer(layer.catalogId)
-  const canRun = hasRealSelection && !layer.isAdminBoundary && !layer.isImported &&
-    !layer.isImportedRaster && !isWeather && layersStore.supportsAnalysisWorkflow(layer.catalogId)
+  const canRun =
+    hasRealSelection &&
+    !layer.isAdminBoundary &&
+    !layer.isImported &&
+    !layer.isImportedRaster &&
+    !isWeather &&
+    layersStore.supportsAnalysisWorkflow(layer.catalogId)
   return resolveAnalysisStageLabel(
     resolveAnalysisStageKind({
-      hasRealSelection, isWeather,
-      isImported: !!layer.isImported, isImportedRaster: !!layer.isImportedRaster,
-      isAdminBoundary: !!layer.isAdminBoundary, canRunWorkflow: canRun,
+      hasRealSelection,
+      isWeather,
+      isImported: !!layer.isImported,
+      isImportedRaster: !!layer.isImportedRaster,
+      isAdminBoundary: !!layer.isAdminBoundary,
+      canRunWorkflow: canRun,
     }),
   )
 })
@@ -94,49 +115,102 @@ const mapCanvasRef = ref<InstanceType<typeof MapCanvas> | null>(null)
 // ── Composable 调用（解构为顶层变量，模板自动解包） ──────────────────────
 
 const {
-  screenshotOpen, workflowStatusOpen, logOpen, settingsOpen,
-  workflowEditorOpen, workflowEditorRef, analysisPanelRef,
-  handleOpenScreenshot, handleCloseScreenshot,
-  handleOpenSettings, handleCloseSettings,
-  handleOpenWorkflowStatus, handleCloseWorkflowStatus,
-  handleOpenWorkflowEditor, handleCloseWorkflowEditor,
+  screenshotOpen,
+  workflowStatusOpen,
+  logOpen,
+  settingsOpen,
+  workflowEditorOpen,
+  workflowEditorRef,
+  analysisPanelRef,
+  handleOpenScreenshot,
+  handleCloseScreenshot,
+  handleOpenSettings,
+  handleCloseSettings,
+  handleOpenWorkflowStatus,
+  handleCloseWorkflowStatus,
+  handleOpenWorkflowEditor,
+  handleCloseWorkflowEditor,
 } = usePanelManager(uiLoading, mapCanvasRef)
 
 const { weatherCoverage, coverageSourceLabel } = useWeatherCoverage(
-  weatherEngine, weatherSyncStatus, layersStore,
-  selectedLayerDisplay, unifiedTimeLock, activeLayer,
+  weatherEngine,
+  weatherSyncStatus,
+  layersStore,
+  selectedLayerDisplay,
+  unifiedTimeLock,
+  activeLayer,
 )
 
 const {
-  tileForecastHour, selectedCatalogId, hasTimelineLayer,
-  timelineLayerName, timelineAvailabilityLabel, timelineObservationLabel,
-  activeLayerGranularity, isLayerLocked, timelineSegments,
+  tileForecastHour,
+  selectedCatalogId,
+  hasTimelineLayer,
+  timelineLayerName,
+  timelineAvailabilityLabel,
+  timelineObservationLabel,
+  activeLayerGranularity,
+  isLayerLocked,
+  timelineSegments,
 } = useTimelineSync(
-  uiStore, layersStore, logStore, weatherTileManager,
-  weatherCoverage, mapCanvasRef, selectedLayerDisplay, activeLayer,
-  overlayTimeStates, currentHour, currentDate, unifiedTimeLock, isPlaying,
-  weatherStatusVersion, weatherActivityVersion, workflowProgressTimeSeek,
+  uiStore,
+  layersStore,
+  logStore,
+  weatherTileManager,
+  weatherCoverage,
+  mapCanvasRef,
+  selectedLayerDisplay,
+  activeLayer,
+  overlayTimeStates,
+  currentHour,
+  currentDate,
+  unifiedTimeLock,
+  isPlaying,
+  weatherStatusVersion,
+  weatherActivityVersion,
+  workflowProgressTimeSeek,
   analysisPanelRef,
 )
 
 const {
-  selectedMapPoint, selectedHotspot, visibleHotspots,
-  overlayPointValues, selectedOverlayTimeSeries,
-  handleMapPointSelect, clearMapPointInspect,
-  handleHotspotSelect, handleHotspotSelectFromPanel,
-  handleVisibleHotspotsChange, handleOverlayTimeUpdate, fetchSelectedOverlaySeries,
+  selectedMapPoint,
+  selectedHotspot,
+  visibleHotspots,
+  overlayPointValues,
+  selectedOverlayTimeSeries,
+  handleMapPointSelect,
+  clearMapPointInspect,
+  handleHotspotSelect,
+  handleHotspotSelectFromPanel,
+  handleVisibleHotspotsChange,
+  handleOverlayTimeUpdate,
+  fetchSelectedOverlaySeries,
 } = useMapInspect(
-  layersStore, logStore, uiStore, selectedLayerDisplay,
-  tileForecastHour, mapCanvasRef, overlayTimeStates, activeLayer,
+  layersStore,
+  logStore,
+  uiStore,
+  selectedLayerDisplay,
+  tileForecastHour,
+  mapCanvasRef,
+  overlayTimeStates,
+  activeLayer,
 )
 
 const {
-  handleTimelineStep, handleTimelineChange, handleTimelineDateChange,
-  handleTimelineTogglePlay, handleTimelinePlayInterval,
-  handleTimelineToggleUnified, handleToggleLayerLock,
+  handleTimelineStep,
+  handleTimelineChange,
+  handleTimelineDateChange,
+  handleTimelineTogglePlay,
+  handleTimelinePlayInterval,
+  handleTimelineToggleUnified,
+  handleToggleLayerLock,
 } = useTimelineControls(
-  uiStore, logStore, selectedCatalogId, activeLayer,
-  hourLabel, unifiedTimeLock, isPlaying,
+  uiStore,
+  logStore,
+  selectedCatalogId,
+  activeLayer,
+  hourLabel,
+  unifiedTimeLock,
+  isPlaying,
 )
 
 const dataImportFlow = useDataImportFlow()
@@ -144,8 +218,12 @@ const { dropActive, onMapShellDragEnter, onMapShellDragOver, onMapShellDragLeave
   useFileDrop(dataImportFlow, workflowEditorOpen, settingsOpen, mapShellRef)
 
 const { handleRunWorkflowFromEditor } = useWorkflowEditorRun(
-  layersStore, logStore, workflowOutputStore,
-  workflowEditorOpen, workflowStatusOpen, workflowEditorRef,
+  layersStore,
+  logStore,
+  workflowOutputStore,
+  workflowEditorOpen,
+  workflowStatusOpen,
+  workflowEditorRef,
 )
 
 // ── 异步组件 ──────────────────────────────────────────────────────────────
@@ -157,7 +235,11 @@ const WorkflowEditorPanel = defineAsyncComponent(
 
 // ── 面板尺寸 ──────────────────────────────────────────────────────────────
 const sidePanelDimensions = Object.freeze({
-  defaultHeight: 372, minHeight: 236, maxHeight: 540, minWidth: 280, maxWidth: 420,
+  defaultHeight: 372,
+  minHeight: 236,
+  maxHeight: 540,
+  minWidth: 280,
+  maxWidth: 420,
 })
 const layerPanelDimensions = Object.freeze({ ...sidePanelDimensions, defaultWidth: 292 })
 const analysisPanelDimensions = Object.freeze({ ...sidePanelDimensions, defaultWidth: 304 })
@@ -219,7 +301,9 @@ function handleSetLayerOpacity(payload: { instanceId: string; opacity: number })
       <div v-if="dropActive" class="import-drop-overlay" aria-hidden="true">
         <div class="import-drop-card">
           <span class="import-drop-title">释放以导入数据</span>
-          <span class="import-drop-desc">SHP(+旁路) / GeoJSON / CSV·Excel·TXT / TIF·NC·HDF·MAT</span>
+          <span class="import-drop-desc"
+            >SHP(+旁路) / GeoJSON / CSV·Excel·TXT / TIF·NC·HDF·MAT</span
+          >
         </div>
       </div>
 
@@ -294,7 +378,9 @@ function handleSetLayerOpacity(payload: { instanceId: string; opacity: number })
             @select-hotspot="handleHotspotSelectFromPanel"
             @clear-map-point="clearMapPointInspect"
             @enter-select-mode="uiStore.setInteractionMode('select')"
-            @query-overlay-series="(p: { lng: number; lat: number }) => fetchSelectedOverlaySeries(p.lng, p.lat)"
+            @query-overlay-series="
+              (p: { lng: number; lat: number }) => fetchSelectedOverlaySeries(p.lng, p.lat)
+            "
           />
         </PanelDock>
       </div>

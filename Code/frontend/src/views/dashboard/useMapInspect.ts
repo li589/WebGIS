@@ -14,10 +14,7 @@ import type { useLogStore } from '../../stores/log'
 import type { useUiStore } from '../../stores/ui'
 import type { LayerHotspot } from '../../stores/layers/types'
 import type { OverlayTimeState } from '../../components/map/overlay-image-module'
-import {
-  getOverlayValue,
-  type OverlayPointValue,
-} from '../../services/runtime-api'
+import { getOverlayValue, type OverlayPointValue } from '../../services/runtime-api'
 import type MapCanvas from '../../components/MapCanvas.vue'
 
 interface SelectedLayerLike {

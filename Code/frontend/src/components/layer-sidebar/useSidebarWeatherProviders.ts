@@ -2,7 +2,10 @@ import { ref } from 'vue'
 import { useLayersStore } from '../../stores/layers'
 import { useLogStore } from '../../stores/log'
 import { useWeatherSourcePrefsStore } from '../../stores/weather-source-prefs'
-import { getWeatherProvidersForLayer, type WeatherProviderForLayer } from '../../services/runtime-api'
+import {
+  getWeatherProvidersForLayer,
+  type WeatherProviderForLayer,
+} from '../../services/runtime-api'
 
 /**
  * Extracts weather provider management logic from LayerSidebar.vue.

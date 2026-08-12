@@ -294,7 +294,9 @@ function formatTime(iso: string | null): string {
                   }"
                   >{{ categoryBadge(summary.category)?.label }}</span
                 >
-                <span v-if="summary.readonly" class="readonly-badge" aria-label="只读"><Lock :size="14" aria-hidden="true" /></span>
+                <span v-if="summary.readonly" class="readonly-badge" aria-label="只读"
+                  ><Lock :size="14" aria-hidden="true"
+                /></span>
               </div>
             </div>
             <div v-if="summary.description" class="item-desc">{{ summary.description }}</div>
@@ -344,7 +346,15 @@ function formatTime(iso: string | null): string {
                 >
                   ⧉
                 </button>
-                <button class="action-btn danger" type="button" title="删除" aria-label="删除" @click.stop="handleDelete(summary.workflow_id)"><X :size="14" aria-hidden="true" /></button>
+                <button
+                  class="action-btn danger"
+                  type="button"
+                  title="删除"
+                  aria-label="删除"
+                  @click.stop="handleDelete(summary.workflow_id)"
+                >
+                  <X :size="14" aria-hidden="true" />
+                </button>
               </div>
             </div>
             <div v-if="summary.description" class="item-desc">{{ summary.description }}</div>

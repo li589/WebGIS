@@ -87,7 +87,8 @@ export function useWorkflowEditorRun(
         const { dryValidateWorkflowGraph } = await import('../../services/workflow-definition-api')
         const { WorkflowValidationError } = await import('../../services/_http')
         const { WORKFLOW_COPY } = await import('../../ui-copy/workflow')
-        const { buildTimeRangeFromProps } = await import('../../components/workflow/dimension-model')
+        const { buildTimeRangeFromProps } =
+          await import('../../components/workflow/dimension-model')
         const graphPayload = {
           workflow_id: workflowId,
           name: workflowId,
@@ -200,7 +201,11 @@ export function useWorkflowEditorRun(
       }
       workflowEditorRef.value?.notifyRunOutcome?.(true)
     } catch (error) {
-      layersStore.updateRunGroupFromJob('', { status: 'failed', progress: 0, message: String(error) })
+      layersStore.updateRunGroupFromJob('', {
+        status: 'failed',
+        progress: 0,
+        message: String(error),
+      })
       const g = layersStore.findRunGroupById(created.groupId)
       if (g) {
         g.status = 'failed'

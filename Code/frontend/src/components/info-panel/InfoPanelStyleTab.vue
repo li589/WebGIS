@@ -1,8 +1,5 @@
-/**
- * InfoPanel 样式 Tab：透明度 / 符号化 / 调色板 / 值域 / 风场 / 天气源。
- *
- * 从 InfoPanel.vue 模板抽取（原 1836-2245 行）。自包含组件，直接使用 composables。
- */
+/** * InfoPanel 样式 Tab：透明度 / 符号化 / 调色板 / 值域 / 风场 / 天气源。 * * 从 InfoPanel.vue
+模板抽取（原 1836-2245 行）。自包含组件，直接使用 composables。 */
 <script setup lang="ts">
 import { computed, onBeforeUnmount } from 'vue'
 
@@ -225,11 +222,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- 导入栅格：CRS + 只读色带提示 -->
-    <dl
-      v-if="displayLayer.isImportedRaster"
-      class="meta-list"
-      style="margin-bottom: 0.55rem"
-    >
+    <dl v-if="displayLayer.isImportedRaster" class="meta-list" style="margin-bottom: 0.55rem">
       <div>
         <dt>{{ ANALYSIS_COPY.metaCrs }}</dt>
         <dd>{{ displayLayer.importedRasterSourceCrs ?? '—' }}</dd>
@@ -294,9 +287,7 @@ onBeforeUnmount(() => {
         <AppSelect
           v-model="selectedWeatherProvider"
           :disabled="weatherProvidersLoading"
-          :title="
-            weatherProvidersError || '自动按优先级选择已启用源；钉选后瓦片与点查均走该源'
-          "
+          :title="weatherProvidersError || '自动按优先级选择已启用源；钉选后瓦片与点查均走该源'"
         >
           <option value="auto">{{ INSPECT_COPY.providerAuto }}</option>
           <option
@@ -321,10 +312,7 @@ onBeforeUnmount(() => {
       >
         点查可用；瓦片将回落 dense 源（Open-Meteo）
       </p>
-      <p
-        v-if="isRealtimeWeatherLayer && weatherProvidersError"
-        class="weather-provider-error"
-      >
+      <p v-if="isRealtimeWeatherLayer && weatherProvidersError" class="weather-provider-error">
         {{ weatherProvidersError }}
       </p>
       <div v-if="isRealtimeWeatherLayer" class="weather-layer-btn-row smooth-render-row">
@@ -352,14 +340,8 @@ onBeforeUnmount(() => {
         {{ styleRenderHint.primary_metric }} · {{ styleRenderHint.unit_label }}
       </span>
     </div>
-    <div
-      v-if="styleRenderHint && weatherLegendGradient"
-      class="weather-legend-gradient-wrap"
-    >
-      <div
-        class="weather-legend-gradient"
-        :style="{ background: weatherLegendGradient }"
-      ></div>
+    <div v-if="styleRenderHint && weatherLegendGradient" class="weather-legend-gradient-wrap">
+      <div class="weather-legend-gradient" :style="{ background: weatherLegendGradient }"></div>
       <div class="weather-legend-gradient-ticks">
         <span
           v-for="stop in weatherLegendStops"
@@ -371,11 +353,7 @@ onBeforeUnmount(() => {
       <p v-if="legendExplainer" class="weather-legend-explainer">{{ legendExplainer }}</p>
     </div>
     <div v-else-if="styleRenderHint" class="weather-legend-strip">
-      <div
-        v-for="stop in weatherLegendStops"
-        :key="`${stop.value}`"
-        class="weather-legend-stop"
-      >
+      <div v-for="stop in weatherLegendStops" :key="`${stop.value}`" class="weather-legend-stop">
         <span class="weather-legend-swatch" :style="{ background: stop.color }"></span>
         <span>{{ stop.label }}</span>
       </div>
@@ -453,8 +431,7 @@ onBeforeUnmount(() => {
         <span class="palette-trigger-label">配色方案</span>
         <span class="palette-trigger-preview">
           <span
-            v-for="(c, i) in paletteOptions.find((p) => p.id === currentPaletteId)
-              ?.colors ?? []"
+            v-for="(c, i) in paletteOptions.find((p) => p.id === currentPaletteId)?.colors ?? []"
             :key="i"
             class="palette-trigger-dot"
             :style="{ background: c }"
@@ -497,9 +474,7 @@ onBeforeUnmount(() => {
           <span class="palette-option-label">恢复默认配色</span>
         </button>
       </div>
-      <p v-if="!canEditPalette" class="palette-readonly-hint">
-        无可读源的预渲染产物，配色只读
-      </p>
+      <p v-if="!canEditPalette" class="palette-readonly-hint">无可读源的预渲染产物，配色只读</p>
     </div>
 
     <div class="weather-style-meta">
@@ -517,11 +492,7 @@ onBeforeUnmount(() => {
     </ul>
   </section>
 
-  <div
-    v-show="true"
-    v-if="!hasLayerStyleSection"
-    class="analysis-sparse-card"
-  >
+  <div v-show="true" v-if="!hasLayerStyleSection" class="analysis-sparse-card">
     <p>{{ ANALYSIS_COPY.styleTabEmpty }}</p>
   </div>
 </template>

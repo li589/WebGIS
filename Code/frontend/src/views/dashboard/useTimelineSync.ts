@@ -337,7 +337,11 @@ export function useTimelineSync(
         Boolean(selected?.runGroupId) &&
         Boolean(hintLayer?.runGroupId) &&
         selected!.runGroupId === hintLayer!.runGroupId
-      if (selected && (hint as { catalogId: string }).catalogId !== selected.catalogId && !sameRunGroup)
+      if (
+        selected &&
+        (hint as { catalogId: string }).catalogId !== selected.catalogId &&
+        !sameRunGroup
+      )
         return
       const h = hint as { catalogId: string; timeKey: string; sliceLabel: string; runId: string }
       seekTimelineToWorkflowProgressTimeKey(

@@ -1,8 +1,5 @@
-/**
- * InfoPanel 工具 Tab：选择模式入口 + 缓冲分析。
- *
- * 从 InfoPanel.vue 模板抽取（原 1665-1706 行）。纯展示组件。
- */
+/** * InfoPanel 工具 Tab：选择模式入口 + 缓冲分析。 * * 从 InfoPanel.vue 模板抽取（原 1665-1706
+行）。纯展示组件。 */
 <script setup lang="ts">
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
 import { ANALYSIS_COPY } from '../../ui-copy'
@@ -24,11 +21,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <section
-    v-show="true"
-    id="analysis-tools"
-    class="analysis-section analysis-section--tools"
-  >
+  <section v-show="true" id="analysis-tools" class="analysis-section analysis-section--tools">
     <div class="section-kicker">工具</div>
     <h3>分析工具</h3>
     <div class="weather-layer-btn-row" style="margin-bottom: 0.55rem; gap: 0.4rem">
@@ -59,9 +52,7 @@ const emit = defineEmits<{
       v-if="selectedMapPoint"
       :point-location="selectedMapPoint"
       :layer-name="displayLayer.name"
-      :current-value-text="
-        pointWeatherPrimaryValue !== '--' ? pointWeatherPrimaryValue : undefined
-      "
+      :current-value-text="pointWeatherPrimaryValue !== '--' ? pointWeatherPrimaryValue : undefined"
       :current-numeric-value="pointWeatherNumericValue"
     />
   </section>

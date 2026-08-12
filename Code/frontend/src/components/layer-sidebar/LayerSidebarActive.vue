@@ -192,9 +192,7 @@ const emit = defineEmits<{
               >
                 {{ row.layer.availabilityLabel }}
               </span>
-              <span v-if="row.layer.isAdminBoundary" class="admin-tip-inline"
-                >边界 · 静态矢量</span
-              >
+              <span v-if="row.layer.isAdminBoundary" class="admin-tip-inline">边界 · 静态矢量</span>
               <span v-else-if="row.layer.isImported" class="admin-tip-inline"
                 >导入 · {{ row.layer.importedGeometryType }} ·
                 {{ row.layer.importedFeatureCount }} 要素</span

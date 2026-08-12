@@ -467,7 +467,9 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
                   v-else-if="field.field_type === 'select' && (field.options?.length ?? 0) > 0"
                   :model-value="String(editingConfig[p.provider_id][field.key] ?? '')"
                   :options="(field.options ?? []).map((opt) => ({ label: opt, value: opt }))"
-                  @update:model-value="(val: string) => (editingConfig[p.provider_id][field.key] = val)"
+                  @update:model-value="
+                    (val: string) => (editingConfig[p.provider_id][field.key] = val)
+                  "
                 />
                 <textarea
                   v-else

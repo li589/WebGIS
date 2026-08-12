@@ -1,9 +1,6 @@
-/**
- * InfoPanel Visual Tab：图表 / 点查 / 叠加时序 / 热点 / 结果 / 空态。
- *
- * 从 InfoPanel.vue 模板抽取（原 1708-1834、2247-2336 行）。纯展示组件，
- * 全部状态经 props 传入，交互经 emit 上抛父组件。
- */
+/** * InfoPanel Visual Tab：图表 / 点查 / 叠加时序 / 热点 / 结果 / 空态。 * * 从 InfoPanel.vue
+模板抽取（原 1708-1834、2247-2336 行）。纯展示组件， * 全部状态经 props 传入，交互经 emit
+上抛父组件。 */
 <script setup lang="ts">
 import type { ActiveLayerDisplay, LayerHotspot } from '../../stores/layers/types'
 import type { WeatherPointResponse } from '../../services/runtime-api'
@@ -34,7 +31,12 @@ defineProps<{
   multiOverlayBarItems: any[]
   showSelectedOverlayTimeSeries: boolean
   showDemoOverlayTimeSeries: boolean
-  selectedOverlayTimeSeriesRows: { time: string; metric: string; numericValue?: number; active: boolean }[]
+  selectedOverlayTimeSeriesRows: {
+    time: string
+    metric: string
+    numericValue?: number
+    active: boolean
+  }[]
   overlayStyleMeta: any
   visibleHotspots: LayerHotspot[]
   selectedHotspot: LayerHotspot | null
@@ -64,12 +66,7 @@ function queryDefaultOverlaySeries() {
 
 <template>
   <!-- ── visual Tab：工作流图表结果 ─────────────────────────────── -->
-  <section
-    v-if="hasAnalysisCharts"
-    v-show="true"
-    id="workflow-charts"
-    class="analysis-section"
-  >
+  <section v-if="hasAnalysisCharts" v-show="true" id="workflow-charts" class="analysis-section">
     <AnalysisResultCharts :charts="analysisCharts" :tables="analysisTables" />
   </section>
 
@@ -95,15 +92,10 @@ function queryDefaultOverlaySeries() {
       </span>
     </div>
 
-    <div
-      v-if="!selectedMapPoint && !pointWeather && !pointWeatherLoading"
-      class="weather-state"
-    >
+    <div v-if="!selectedMapPoint && !pointWeather && !pointWeatherLoading" class="weather-state">
       尚未选点 — 切到「分析工具」进入选择模式后点击地图。
     </div>
-    <div v-if="pointWeatherLoading" class="weather-state weather-state-loading">
-      正在获取点查…
-    </div>
+    <div v-if="pointWeatherLoading" class="weather-state weather-state-loading">正在获取点查…</div>
     <div v-else-if="pointWeatherError" class="weather-state weather-state-error">
       {{ pointWeatherError }}
     </div>
@@ -155,9 +147,7 @@ function queryDefaultOverlaySeries() {
 
   <section
     v-if="
-      showSelectedOverlayTimeSeries ||
-      showDemoOverlayTimeSeries ||
-      displayLayer.isImportedRaster
+      showSelectedOverlayTimeSeries || showDemoOverlayTimeSeries || displayLayer.isImportedRaster
     "
     v-show="true"
     id="overlay-point-series"

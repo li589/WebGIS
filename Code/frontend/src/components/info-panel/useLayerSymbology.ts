@@ -55,7 +55,8 @@ export function useLayerSymbology(
   /** 侧栏同源 overlay meta + 可选 overlayTimeStates 兜底 */
   const overlayStyleMeta = computed(() => {
     void overlaySymbologyStore.version
-    const overlayId = displayLayer.value.importedRasterOverlayLayerId ?? displayLayer.value.catalogId
+    const overlayId =
+      displayLayer.value.importedRasterOverlayLayerId ?? displayLayer.value.catalogId
     const fromStore = overlaySymbologyStore.getMeta(overlayId)
     if (fromStore?.palette) return fromStore
     const states = overlayTimeStates.value ?? []

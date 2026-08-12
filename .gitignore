@@ -112,10 +112,7 @@ Tools/reports/data_production_e2e_*
 /rebuild_env_python.bat
 /wsl_fix_result.log
 .trae/debug-*.png
-.trae/documents/旧对话*.md
-.trae/documents/plan_*.md
-.trae/documents/weather-rendering-*.md
-.trae/documents/windy-style-*.md
+.trae/documents/
 
 # TRAE HTML share packages (temporary export)
 .trae-html-share-packages/
@@ -146,6 +143,9 @@ Doc/一份任务说明-*.txt
 # Local pytest/vitest temp + manual verification logs (generated during dev verification)
 Test/.pytest-*/
 Test/.tmp-*/
+Test/.tmp_*
+Test/pytest-run-tmp/
+Test/pytest-run-tmp2/
 be_run*.log
 be_collect.log
 algo_run*.log

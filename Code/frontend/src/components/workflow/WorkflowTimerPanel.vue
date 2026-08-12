@@ -697,9 +697,21 @@ onUnmounted(() => {
                     aria-label="运行定时器"
                     @click="runTimer(timer)"
                   >
-                    {{ runningTimerIds.has(timer.timer_id) ? '…' : '' }}<Play v-if="!runningTimerIds.has(timer.timer_id)" :size="14" aria-hidden="true" />
+                    {{ runningTimerIds.has(timer.timer_id) ? '…' : ''
+                    }}<Play
+                      v-if="!runningTimerIds.has(timer.timer_id)"
+                      :size="14"
+                      aria-hidden="true"
+                    />
                   </button>
-                  <button class="action-btn danger" type="button" aria-label="删除定时器" @click="askDelete(timer)"><X :size="14" aria-hidden="true" /></button>
+                  <button
+                    class="action-btn danger"
+                    type="button"
+                    aria-label="删除定时器"
+                    @click="askDelete(timer)"
+                  >
+                    <X :size="14" aria-hidden="true" />
+                  </button>
                 </div>
               </button>
             </div>

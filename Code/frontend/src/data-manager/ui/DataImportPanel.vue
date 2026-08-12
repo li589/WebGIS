@@ -985,7 +985,10 @@ async function commitDocument() {
                 {{ DATA_COPY.renameFrom }}
                 <AppSelect
                   v-model="opRenameFrom"
-                  :options="[{ label: '—', value: '' }, ...documentColumns.map((c) => ({ label: c, value: c }))]"
+                  :options="[
+                    { label: '—', value: '' },
+                    ...documentColumns.map((c) => ({ label: c, value: c })),
+                  ]"
                 />
               </label>
               <label>
@@ -996,7 +999,10 @@ async function commitDocument() {
                 {{ DATA_COPY.filterField }}
                 <AppSelect
                   v-model="opFilterField"
-                  :options="[{ label: '—', value: '' }, ...documentColumns.map((c) => ({ label: c, value: c }))]"
+                  :options="[
+                    { label: '—', value: '' },
+                    ...documentColumns.map((c) => ({ label: c, value: c })),
+                  ]"
                 />
               </label>
               <label>
@@ -1007,7 +1013,10 @@ async function commitDocument() {
                 {{ DATA_COPY.findReplaceField }}
                 <AppSelect
                   v-model="opFindField"
-                  :options="[{ label: '—', value: '' }, ...documentColumns.map((c) => ({ label: c, value: c }))]"
+                  :options="[
+                    { label: '—', value: '' },
+                    ...documentColumns.map((c) => ({ label: c, value: c })),
+                  ]"
                 />
               </label>
               <label>
@@ -1022,7 +1031,10 @@ async function commitDocument() {
                 {{ DATA_COPY.splitField }}
                 <AppSelect
                   v-model="opSplitField"
-                  :options="[{ label: '—', value: '' }, ...documentColumns.map((c) => ({ label: c, value: c }))]"
+                  :options="[
+                    { label: '—', value: '' },
+                    ...documentColumns.map((c) => ({ label: c, value: c })),
+                  ]"
                 />
               </label>
               <label>

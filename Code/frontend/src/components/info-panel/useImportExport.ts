@@ -12,9 +12,7 @@ import { exportLayer } from '../../data-manager/adapters/export'
  * 从 InfoPanel.vue 提取，集中管理导入图层的导出（GeoJSON / CSV / SHP / 栅格）
  * 以及导入矢量样式的 patch 逻辑。
  */
-export function useImportExport(
-  displayLayer: ComputedRef<ActiveLayerDisplay>,
-) {
+export function useImportExport(displayLayer: ComputedRef<ActiveLayerDisplay>) {
   const layersStore = useLayersStore()
   const logStore = useLogStore()
 
@@ -92,7 +90,9 @@ export function useImportExport(
     if (times.length) {
       const eff = active.importedRaster?.effectiveTimeLabel
       time =
-        (eff && times.find((t) => eff === t || eff.startsWith(t))) || times[times.length - 1] || null
+        (eff && times.find((t) => eff === t || eff.startsWith(t))) ||
+        times[times.length - 1] ||
+        null
     }
     openDatedExportForLayer(id, time)
   }

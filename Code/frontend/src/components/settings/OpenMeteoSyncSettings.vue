@@ -319,7 +319,12 @@ onBeforeUnmount(() => {
         <AppSelect
           v-model="selectedModel"
           :disabled="modelUpdating"
-          :options="modelOptions.map((m) => ({ label: `${m.label}${syncDomains.includes(m.id) ? ' · 已在 sync 域' : ''}`, value: m.id }))"
+          :options="
+            modelOptions.map((m) => ({
+              label: `${m.label}${syncDomains.includes(m.id) ? ' · 已在 sync 域' : ''}`,
+              value: m.id,
+            }))
+          "
           @change="onModelChange"
         />
       </div>

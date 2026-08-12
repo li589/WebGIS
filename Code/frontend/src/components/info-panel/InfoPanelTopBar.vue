@@ -1,8 +1,5 @@
-/**
- * InfoPanel 顶部 Tab 栏 + 阶段标签。
- *
- * 从 InfoPanel.vue 模板抽取（原 1190-1228 行）。纯展示组件，不持有状态。
- */
+/** * InfoPanel 顶部 Tab 栏 + 阶段标签。 * * 从 InfoPanel.vue 模板抽取（原 1190-1228
+行）。纯展示组件，不持有状态。 */
 <script setup lang="ts">
 import type { AnalysisTabId } from './analysis-tab-focus'
 

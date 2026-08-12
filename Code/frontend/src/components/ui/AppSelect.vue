@@ -53,8 +53,8 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  'update:modelValue': [value: string]
-  change: [value: string]
+  'update:modelValue': [value: string | number]
+  change: [value: string | number]
   focus: [event: FocusEvent]
   blur: [event: FocusEvent]
 }>()
@@ -73,15 +73,15 @@ const cls = computed(() => [
   },
 ])
 
-const selectCls = computed(() => [
-  'app-select-native',
-  `app-select-native--${props.size}`,
-])
+const selectCls = computed(() => ['app-select-native', `app-select-native--${props.size}`])
 
 function onChange(e: Event) {
   const target = e.target as HTMLSelectElement
-  emit('update:modelValue', target.value)
-  emit('change', target.value)
+  const raw = target.value
+  const matched = props.options.find((opt) => String(opt.value) === raw)
+  const next: string | number = matched ? matched.value : raw
+  emit('update:modelValue', next)
+  emit('change', next)
 }
 
 function onFocus(e: FocusEvent) {

@@ -52,7 +52,12 @@ function patch(key: string, value: unknown) {
         :model-value="model.workflow_id"
         :disabled="workflowLocked"
         placeholder="请选择工作流"
-        :options="workflowOptions.map((s) => ({ label: `${s.name} (${s.workflow_id})`, value: s.workflow_id }))"
+        :options="
+          workflowOptions.map((s) => ({
+            label: `${s.name} (${s.workflow_id})`,
+            value: s.workflow_id,
+          }))
+        "
         @change="(val: string) => patch('workflow_id', val)"
       />
     </div>

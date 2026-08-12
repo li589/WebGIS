@@ -538,7 +538,8 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   overflow-y: auto;
   position: relative;
   z-index: 1;
-  padding: var(--panel-body-padding) calc(var(--panel-body-padding) - 0.07rem) var(--panel-body-padding);
+  padding: var(--panel-body-padding) calc(var(--panel-body-padding) - 0.07rem)
+    var(--panel-body-padding);
   border: 1px solid var(--border-subtle);
   border-top: 0;
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);

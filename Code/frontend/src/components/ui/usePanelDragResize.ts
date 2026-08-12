@@ -132,9 +132,7 @@ function readPersistedState(panelKey: string | undefined): PersistedPanelState |
 
 // ── composable ────────────────────────────────────────────────────────
 
-export function usePanelDragResize(
-  options: UsePanelDragResizeOptions,
-): PanelDragResizeReturn {
+export function usePanelDragResize(options: UsePanelDragResizeOptions): PanelDragResizeReturn {
   const {
     panelKey,
     draggable = true,
@@ -212,9 +210,7 @@ export function usePanelDragResize(
   const resolvedMinHeight = computed(() => Math.max(120, minHeight))
   const resolvedMaxWidth = computed(() => Math.max(resolvedMinWidth.value, maxWidth))
   const resolvedMaxHeight = computed(() => Math.max(resolvedMinHeight.value, maxHeight))
-  const resizeEnabled = computed(
-    () => resizable && !collapsed.value && showResizeHandle,
-  )
+  const resizeEnabled = computed(() => resizable && !collapsed.value && showResizeHandle)
   const layoutPinsRightEdge = computed(() => isRightDockedPanel(panelKey))
 
   const frameStyle = computed(() => ({
@@ -415,12 +411,7 @@ export function usePanelDragResize(
     const fromLeft = handlePosition === 'bottom-left' || handlePosition === 'top-left'
     const fromTop = handlePosition === 'top-left' || handlePosition === 'top-right'
     if (fromLeft) {
-      offsetX.value = offsetXToPinRightEdge(
-        baseResizeOffsetX,
-        baseWidth,
-        clampedWidth,
-        maxOffsetX,
-      )
+      offsetX.value = offsetXToPinRightEdge(baseResizeOffsetX, baseWidth, clampedWidth, maxOffsetX)
     }
     if (fromTop) {
       offsetY.value = offsetYToPinBottomEdge(

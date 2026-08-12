@@ -384,7 +384,9 @@ function handleCancel() {
             />
             <AppSelect
               v-model="sourceCrs"
-              :options="filteredCrsOptions.map((c) => ({ label: `${c.code} — ${c.label}`, value: c.code }))"
+              :options="
+                filteredCrsOptions.map((c) => ({ label: `${c.code} — ${c.label}`, value: c.code }))
+              "
             />
           </label>
         </div>

@@ -774,7 +774,12 @@ defineExpose({
             "
             @click="handleRun"
           >
-            <LoaderCircle v-if="runStatus === 'submitting'" :size="14" class="animate-spin" aria-hidden="true" />
+            <LoaderCircle
+              v-if="runStatus === 'submitting'"
+              :size="14"
+              class="animate-spin"
+              aria-hidden="true"
+            />
             <Check v-else-if="runStatus === 'submitted'" :size="14" aria-hidden="true" />
             <Play v-else :size="14" aria-hidden="true" />
             <span>{{
@@ -796,7 +801,9 @@ defineExpose({
       <div v-if="error || saveError" class="editor-error-bar">
         <AlertTriangle :size="14" class="error-icon" aria-hidden="true" />
         <span class="error-text">{{ saveError ?? error }}</span>
-        <button class="error-dismiss" type="button" @click="saveError = null"><X :size="14" aria-hidden="true" /></button>
+        <button class="error-dismiss" type="button" @click="saveError = null">
+          <X :size="14" aria-hidden="true" />
+        </button>
       </div>
 
       <!-- 校验结果面板 -->
@@ -833,7 +840,12 @@ defineExpose({
             class="validation-item"
             :class="{ error: issue.severity === 'error', warning: issue.severity === 'warning' }"
           >
-            <X v-if="issue.severity === 'error'" :size="14" class="validation-icon" aria-hidden="true" />
+            <X
+              v-if="issue.severity === 'error'"
+              :size="14"
+              class="validation-icon"
+              aria-hidden="true"
+            />
             <AlertTriangle v-else :size="14" class="validation-icon" aria-hidden="true" />
             <span class="validation-node">{{ issue.nodeTitle || '全局' }}</span>
             <span v-if="issue.field" class="validation-field">{{ issue.field }}</span>

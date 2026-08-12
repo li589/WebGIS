@@ -5,10 +5,7 @@
  * onMounted 定时刷新 / watch defaultModel / coverageSourceLabel。
  */
 import { ref, computed, onMounted, onBeforeUnmount, watch, type ComputedRef, type Ref } from 'vue'
-import {
-  getWeatherCoverage,
-  type WeatherCoverage,
-} from '../../services/runtime-api'
+import { getWeatherCoverage, type WeatherCoverage } from '../../services/runtime-api'
 import type { useWeatherEngineStore } from '../../stores/weather-engine'
 import type { useWeatherSyncStatusStore } from '../../stores/weather-sync-status'
 import type { useLayersStore } from '../../stores/layers'

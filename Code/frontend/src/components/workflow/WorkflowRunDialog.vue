@@ -157,10 +157,7 @@ watch(outputTags, (tags) => {
       <div class="dialog-body">
         <div v-if="!linkedLayerId" class="layer-picker">
           <label class="form-label">选择关联图层 *</label>
-          <AppSelect
-            v-model="pickedLayerId"
-            placeholder="请选择图层目录条目"
-          >
+          <AppSelect v-model="pickedLayerId" placeholder="请选择图层目录条目">
             <option value="" disabled>请选择图层目录条目</option>
             <option v-for="opt in catalogOptions" :key="opt.id" :value="opt.id">
               {{ opt.name }}（{{ opt.engine }}）

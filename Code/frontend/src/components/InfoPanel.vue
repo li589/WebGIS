@@ -209,7 +209,9 @@ function queryDefaultOverlaySeries() {
           </div>
 
           <div v-else-if="!wf.canRunWorkflow.value" class="analysis-context-card">
-            <p class="analysis-context-line">{{ displayLayer.name }} · {{ wf.staticTopHint.value }}</p>
+            <p class="analysis-context-line">
+              {{ displayLayer.name }} · {{ wf.staticTopHint.value }}
+            </p>
           </div>
 
           <template v-else>
@@ -217,19 +219,28 @@ function queryDefaultOverlaySeries() {
               {{ wf.runBlockedReason.value }}
             </div>
             <div v-if="wf.workflowMeta.value.engineLabel" class="workflow-meta-row">
-              <span class="wf-engine-icon" aria-hidden="true">{{ wf.workflowMeta.value.engineIcon }}</span>
+              <span class="wf-engine-icon" aria-hidden="true">{{
+                wf.workflowMeta.value.engineIcon
+              }}</span>
               <span class="wf-engine-label">{{ wf.workflowMeta.value.engineLabel }}</span>
-              <span v-if="wf.workflowMeta.value.name" class="wf-name">{{ wf.workflowMeta.value.name }}</span>
+              <span v-if="wf.workflowMeta.value.name" class="wf-name">{{
+                wf.workflowMeta.value.name
+              }}</span>
             </div>
           </template>
 
           <div v-if="wf.showWorkflowStageRow.value" class="workflow-stage-row">
-            <span class="stage-pill" :class="wf.workflowStage.value">{{ wf.workflowStage.value }}</span>
+            <span class="stage-pill" :class="wf.workflowStage.value">{{
+              wf.workflowStage.value
+            }}</span>
             <span class="stage-copy">{{ wf.workflowStageCopy.value }}</span>
           </div>
 
           <div
-            v-if="wf.canRunWorkflow.value && (wf.isWorkflowRunning.value || wf.workflowStage.value === 'succeeded')"
+            v-if="
+              wf.canRunWorkflow.value &&
+              (wf.isWorkflowRunning.value || wf.workflowStage.value === 'succeeded')
+            "
             class="wf-progress-bar"
           >
             <div

@@ -292,7 +292,13 @@ async function submit() {
         </p>
         <p v-if="error" class="banner banner-error">{{ error }}</p>
 
-        <AppButton variant="primary" type="submit" :loading="submitting" :disabled="submitting" block>
+        <AppButton
+          variant="primary"
+          type="submit"
+          :loading="submitting"
+          :disabled="submitting"
+          block
+        >
           {{ submitting ? '登录中…' : '进入系统' }}
         </AppButton>
       </form>

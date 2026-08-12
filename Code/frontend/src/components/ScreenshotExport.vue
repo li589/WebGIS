@@ -329,7 +329,13 @@ async function capture() {
       <div class="panel-header">
         <Table2 :size="16" class="panel-icon" aria-hidden="true" />
         <span>导出截图</span>
-        <button type="button" class="close-btn" title="关闭" aria-label="关闭" @click.prevent="emit('close')">
+        <button
+          type="button"
+          class="close-btn"
+          title="关闭"
+          aria-label="关闭"
+          @click.prevent="emit('close')"
+        >
           <X :size="14" aria-hidden="true" />
         </button>
       </div>
@@ -375,7 +381,12 @@ async function capture() {
         :disabled="!canCapture"
         @click.prevent="capture"
       >
-        <ChevronDown v-if="!isCapturing && !captureMsg" :size="16" class="btn-icon" aria-hidden="true" />
+        <ChevronDown
+          v-if="!isCapturing && !captureMsg"
+          :size="16"
+          class="btn-icon"
+          aria-hidden="true"
+        />
         <span v-else-if="isCapturing && !captureMsg" class="btn-icon spinning" aria-hidden="true"
           >↻</span
         >
