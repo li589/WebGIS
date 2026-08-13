@@ -10,6 +10,8 @@ import { useThemeStore, type ThemePreference } from '../../stores/theme'
 import {
   isMapDistributionChromeEnabled,
   setMapDistributionChromeEnabled,
+  isShowAnalysisResultOnMapEnabled,
+  setShowAnalysisResultOnMapEnabled,
 } from '../../services/settings-local'
 import SegmentedControl from '../ui/SegmentedControl.vue'
 
@@ -27,6 +29,14 @@ function onMapDistributionChromeChange(event: Event) {
   const checked = (event.target as HTMLInputElement).checked
   mapDistributionChrome.value = checked
   setMapDistributionChromeEnabled(checked)
+}
+
+const showAnalysisResultOnMap = ref(isShowAnalysisResultOnMapEnabled())
+
+function onShowAnalysisResultOnMapChange(event: Event) {
+  const checked = (event.target as HTMLInputElement).checked
+  showAnalysisResultOnMap.value = checked
+  setShowAnalysisResultOnMapEnabled(checked)
 }
 
 function onThemeChange(value: string | number) {
@@ -96,6 +106,14 @@ if (typeof window !== 'undefined') {
           @change="onMapDistributionChromeChange"
         />
         <span>地图分布淡底 / 氛围遮罩</span>
+      </label>
+      <label class="toggle-row">
+        <input
+          type="checkbox"
+          :checked="showAnalysisResultOnMap"
+          @change="onShowAnalysisResultOnMapChange"
+        />
+        <span>成功后在地图显示分析结果图层（默认开）</span>
       </label>
     </section>
 

@@ -15,6 +15,7 @@ import type {
   JobStatus,
   LayerCatalogItem,
   LayerHotspot,
+  LayerSource,
   RuntimeLayerLibraryItem,
 } from './types'
 
@@ -205,6 +206,36 @@ export function buildSourceLabel(
   return `${sourceType}${engine}`
 }
 
+/**
+ * X1: 将后端 LayerSourceDef 转换为前端 LayerSource。
+ *
+ * 关键映射：``source_id`` → ``id``（X1 字段重命名）。
+ * 运行时字段（runReadiness 等） intentionally omitted — 由 catalog-runtime.ts 注入。
+ */
+function transformBackendSource(src: {
+  source_id: string
+  name: string
+  description: string
+  url_template: string
+  needs_auth: boolean
+  needs_backend_transform: boolean
+  coord_sys: string
+  update_frequency: string
+  attribution?: string | null
+}): LayerSource {
+  return {
+    id: src.source_id,
+    name: src.name,
+    description: src.description,
+    urlTemplate: src.url_template,
+    needsAuth: src.needs_auth,
+    needsBackendTransform: src.needs_backend_transform,
+    coordSys: src.coord_sys as LayerSource['coordSys'],
+    updateFrequency: src.update_frequency,
+    attribution: src.attribution ?? undefined,
+  }
+}
+
 export function buildRuntimeLayerLibraryItem(descriptor: LayerDescriptor): RuntimeLayerLibraryItem {
   const fallback = getStaticLayerLibraryItem(descriptor.layer_id)
   const category = resolveCategory(descriptor, fallback?.category)
@@ -220,6 +251,11 @@ export function buildRuntimeLayerLibraryItem(descriptor: LayerDescriptor): Runti
   const pres = descriptor.presentation
   const hasPres = pres && typeof pres === 'object'
   const presValue = <T>(v: T | null | undefined): T | undefined => (v != null ? v : undefined)
+
+  // X1: sources 优先从后端 descriptor 取，静态 fallback 仅在后端未下发时兜底
+  const backendSources = descriptor.sources?.length
+    ? descriptor.sources.map(transformBackendSource)
+    : undefined
 
   return {
     catalogId: descriptor.layer_id,
@@ -252,8 +288,17 @@ export function buildRuntimeLayerLibraryItem(descriptor: LayerDescriptor): Runti
       fallback?.chipTone ??
       categoryMeta?.chipTone ??
       'rgba(103, 212, 255, 0.16)',
-    sources: fallback?.sources ?? [],
-    isAdminBoundary: fallback?.isAdminBoundary,
+    // X1: sources 从后端 descriptor 派生，fallback 兜底
+    sources: backendSources ?? fallback?.sources ?? [],
+    // X1: 合并组字段从后端 descriptor 派生，fallback 兜底
+    isMergedGroup: descriptor.is_merged_group ?? fallback?.isMergedGroup ?? false,
+    members: descriptor.members ?? fallback?.members,
+    mergedInto: descriptor.merged_into ?? fallback?.mergedInto,
+    isAdminBoundary: descriptor.is_admin_boundary ?? fallback?.isAdminBoundary,
+    // X1: 课题组元数据从后端 descriptor 派生
+    dataOwner: descriptor.data_owner ?? fallback?.dataOwner,
+    temporalCoverage: descriptor.temporal_coverage ?? fallback?.temporalCoverage,
+    sourceReference: descriptor.source_reference ?? fallback?.sourceReference,
     engine: descriptor.engine,
     sourceType: descriptor.source_type,
     renderType: descriptor.render_type,

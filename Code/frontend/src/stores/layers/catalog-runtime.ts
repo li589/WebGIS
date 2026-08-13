@@ -10,13 +10,12 @@ import {
   supportsParticleFlowCapability,
   supportsViewportDrivenRefreshCapability,
 } from '../../services/layer-capabilities'
-import { LAYER_CATEGORIES, LAYER_LIBRARY, MERGED_LAYER_GROUPS, getMergedCatalogId } from './catalog'
+import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
 import {
   buildCatalogFallbackItem,
   buildRuntimeLayerLibraryItem,
   CATEGORY_INDEX_BY_ID,
   getCatalogDisplayName,
-  getStaticLayerLibraryItem,
   isBlockedRunReadiness,
 } from './catalog-builders'
 import {
@@ -75,26 +74,28 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
 
     let items: RuntimeLayerLibraryItem[]
     if (allRuntimeItems.length > 0) {
-      // 分离独立条目与合并源条目
+      // X1: 分离独立条目、合并组虚拟条目与合并源条目（均从后端 descriptor 派生）
       const standaloneItems: RuntimeLayerLibraryItem[] = []
+      const mergedGroupItems: RuntimeLayerLibraryItem[] = []
       const mergedSourceItems = new Map<string, RuntimeLayerLibraryItem>()
 
       for (const item of allRuntimeItems) {
-        const mergedId = getMergedCatalogId(item.catalogId)
-        if (mergedId) {
+        if (item.isMergedGroup) {
+          // X1: 合并组虚拟条目 — 后端 descriptor.is_merged_group=true
+          mergedGroupItems.push(item)
+        } else if (item.mergedInto) {
+          // X1: 合并组成员 — 后端 descriptor.merged_into 指向父条目
           mergedSourceItems.set(item.catalogId, item)
         } else {
           standaloneItems.push(item)
         }
       }
 
-      // 为每个合并组构建 enriched 条目
-      const mergedEntries: RuntimeLayerLibraryItem[] = []
-      for (const [mergedCatalogId, sourceIds] of MERGED_LAYER_GROUPS) {
-        const staticEntry = getStaticLayerLibraryItem(mergedCatalogId)
-        if (!staticEntry) continue
+      // X1: 为每个合并组虚拟条目 enriched sources（注入成员的运行时状态）
+      const mergedEntries: RuntimeLayerLibraryItem[] = mergedGroupItems.map((groupItem) => {
+        const memberIds = groupItem.members ?? []
 
-        const enrichedSources = staticEntry.sources.map((source) => {
+        const enrichedSources = groupItem.sources.map((source) => {
           const rt = mergedSourceItems.get(source.id)
           return {
             ...source,
@@ -107,31 +108,31 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
 
         // 选取第一个 ready 的源作为代表状态
         const representative =
-          sourceIds
+          memberIds
             .map((sid) => mergedSourceItems.get(sid))
             .find((rt) => rt && !isBlockedRunReadiness(rt.runReadiness)) ??
-          mergedSourceItems.get(sourceIds[0])
+          (memberIds.length > 0 ? mergedSourceItems.get(memberIds[0]) : undefined)
 
-        mergedEntries.push({
-          ...staticEntry,
+        return {
+          ...groupItem,
           sources: enrichedSources,
-          description: representative?.description ?? `${staticEntry.name}（多源可选）`,
-          runReadiness: representative?.runReadiness ?? 'ready',
-          runReadinessSummary: representative?.runReadinessSummary ?? null,
-          runReadinessNotes: representative?.runReadinessNotes ?? [],
-          backendStatus: representative?.backendStatus ?? null,
-          supportsTime: representative?.supportsTime ?? false,
-          engine: representative?.engine ?? null,
-          sourceType: representative?.sourceType ?? null,
-          renderType: representative?.renderType ?? null,
-          workflowName: representative?.workflowName ?? null,
-          defaultVisible: representative?.defaultVisible ?? undefined,
-        })
-      }
+          description: representative?.description ?? groupItem.description,
+          runReadiness: representative?.runReadiness ?? groupItem.runReadiness,
+          runReadinessSummary: representative?.runReadinessSummary ?? groupItem.runReadinessSummary,
+          runReadinessNotes: representative?.runReadinessNotes ?? groupItem.runReadinessNotes,
+          backendStatus: representative?.backendStatus ?? groupItem.backendStatus,
+          supportsTime: representative?.supportsTime ?? groupItem.supportsTime,
+          engine: representative?.engine ?? groupItem.engine,
+          sourceType: representative?.sourceType ?? groupItem.sourceType,
+          renderType: representative?.renderType ?? groupItem.renderType,
+          workflowName: representative?.workflowName ?? groupItem.workflowName,
+          defaultVisible: representative?.defaultVisible ?? groupItem.defaultVisible,
+        }
+      })
 
       items = standaloneItems.concat(mergedEntries)
     } else {
-      // 静态兜底：隐藏已合并的独立条目
+      // 静态兜底：显示独立条目和合并组虚拟条目，隐藏合并源成员条目
       items = LAYER_LIBRARY.filter((item) => !item.isAdminBoundary && !item.mergedInto).map(
         (item) => buildCatalogFallbackItem(null, item.catalogId),
       )
@@ -189,9 +190,9 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     for (const item of layerLibrary.value) {
       map.set(item.catalogId, item)
     }
-    // 合并条目的各源 ID 也需可查（addLayer 等通过 source ID 查找 accent 等信息）
+    // X1: 合并条目的各源 ID 也需可查（addLayer 等通过 source ID 查找 accent 等信息）
     for (const descriptor of Object.values(runtimeLayerCatalog.value)) {
-      if (!map.has(descriptor.layer_id) && getMergedCatalogId(descriptor.layer_id)) {
+      if (!map.has(descriptor.layer_id) && descriptor.merged_into) {
         map.set(descriptor.layer_id, buildRuntimeLayerLibraryItem(descriptor))
       }
     }

@@ -738,6 +738,25 @@ _SOIL_DDCA_MAT = _data_join("Soil_Moisture", "DDCA", "DDCA_DH", "H", "20150401.m
 _OMEGA_FY_MAT = _data_join("Inversion_Results", "fy_avg", "doy_025.mat")
 _FOREST_RATIO_MAT = _data_join("Inversion_Results", "Forest_Ratio_9KM_2020.mat")
 
+# ── SMAP 辅助数据（Soil_Moisture/SMAP_Auxiliary_Data，静态参数场）──────────────
+# Albedo/BD/SF/B/CF/H/IGBP 为 EASE-Grid 9km（v7.3 HDF5），shape (3856, 1624)；
+# Koppen 为 0.083° 全球网格，shape (4320, 2160)；VI_v_qa 为 v5 格式，shape (1624, 3856)
+_SMAP_AUX_ALBEDO_MAT = _data_join("Soil_Moisture", "SMAP_Auxiliary_Data", "Albedo.mat")
+_SMAP_AUX_BD_MAT = _data_join("Soil_Moisture", "SMAP_Auxiliary_Data", "BD.mat")
+_SMAP_AUX_SF_MAT = _data_join("Soil_Moisture", "SMAP_Auxiliary_Data", "SF.mat")
+_SMAP_AUX_B_MAT = _data_join("Soil_Moisture", "SMAP_Auxiliary_Data", "B.mat")
+_SMAP_AUX_CF_MAT = _data_join("Soil_Moisture", "SMAP_Auxiliary_Data", "CF.mat")
+_SMAP_AUX_H_MAT = _data_join("Soil_Moisture", "SMAP_Auxiliary_Data", "H.mat")
+_SMAP_AUX_IGBP_MAT = _data_join(
+    "Soil_Moisture", "SMAP_Auxiliary_Data", "IGBP_9km_12.mat"
+)
+_SMAP_AUX_KOPPEN_MAT = _data_join(
+    "Soil_Moisture", "SMAP_Auxiliary_Data", "Koppen_present_083.mat"
+)
+_SMAP_AUX_VI_V_QA_MAT = _data_join(
+    "Soil_Moisture", "SMAP_Auxiliary_Data", "VI_v_qa.mat"
+)
+
 
 # GEBCO 2024 DEM（中国区域）
 register_overlay(
@@ -930,6 +949,183 @@ register_overlay(
         opacity=0.85,
         source_path=_FOREST_RATIO_MAT,
         source_variable="Forest_Ratio",
+        source_reader="mat",
+    )
+)
+
+
+# SMAP 辅助数据（Soil_Moisture/SMAP_Auxiliary_Data，静态参数场）
+# 与 forest-ratio 同属静态图层；按变量分别暴露为独立 overlay，便于点查询与配色。
+# 注意：VI_v_qa.mat 为 v5 格式（scipy 可读），其余为 v7.3 HDF5；reader 统一 "mat"，
+# 由 source_reader 按实际格式自动适配（h5py/scipy）。
+
+# Albedo — 地表反照率（EASE-Grid 9km）
+register_overlay(
+    OverlaySpec(
+        layer_id="smap-aux-albedo",
+        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_albedo",
+        png_filename="smap_aux_albedo_overlay.png",
+        bounds_filename="smap_aux_albedo_overlay_bounds.json",
+        category="static",
+        palette="YlOrRd",
+        vmin=0.0,
+        vmax=0.5,
+        unit="",
+        opacity=0.8,
+        source_path=_SMAP_AUX_ALBEDO_MAT,
+        source_variable="ALBEDO",
+        source_reader="mat",
+    )
+)
+
+# BD — 土壤容重（EASE-Grid 9km）
+register_overlay(
+    OverlaySpec(
+        layer_id="smap-aux-bd",
+        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_bd",
+        png_filename="smap_aux_bd_overlay.png",
+        bounds_filename="smap_aux_bd_overlay_bounds.json",
+        category="static",
+        palette="YlOrBr",
+        vmin=0.8,
+        vmax=1.8,
+        unit="g/cm³",
+        opacity=0.8,
+        source_path=_SMAP_AUX_BD_MAT,
+        source_variable="BD",
+        source_reader="mat",
+    )
+)
+
+# SF — 砂粒分数（EASE-Grid 9km）
+register_overlay(
+    OverlaySpec(
+        layer_id="smap-aux-sf",
+        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_sf",
+        png_filename="smap_aux_sf_overlay.png",
+        bounds_filename="smap_aux_sf_overlay_bounds.json",
+        category="static",
+        palette="YlGn",
+        vmin=0.0,
+        vmax=1.0,
+        unit="fraction",
+        opacity=0.8,
+        source_path=_SMAP_AUX_SF_MAT,
+        source_variable="SF",
+        source_reader="mat",
+    )
+)
+
+# B — B 参数（EASE-Grid 9km）
+register_overlay(
+    OverlaySpec(
+        layer_id="smap-aux-b",
+        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_b",
+        png_filename="smap_aux_b_overlay.png",
+        bounds_filename="smap_aux_b_overlay_bounds.json",
+        category="static",
+        palette="RdBu",
+        vmin=0.0,
+        vmax=10.0,
+        unit="",
+        opacity=0.8,
+        source_path=_SMAP_AUX_B_MAT,
+        source_variable="B",
+        source_reader="mat",
+    )
+)
+
+# CF — 粘粒分数（EASE-Grid 9km）
+register_overlay(
+    OverlaySpec(
+        layer_id="smap-aux-cf",
+        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_cf",
+        png_filename="smap_aux_cf_overlay.png",
+        bounds_filename="smap_aux_cf_overlay_bounds.json",
+        category="static",
+        palette="PuBu",
+        vmin=0.0,
+        vmax=1.0,
+        unit="fraction",
+        opacity=0.8,
+        source_path=_SMAP_AUX_CF_MAT,
+        source_variable="CF",
+        source_reader="mat",
+    )
+)
+
+# H — H 参数（EASE-Grid 9km）
+register_overlay(
+    OverlaySpec(
+        layer_id="smap-aux-h",
+        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_h",
+        png_filename="smap_aux_h_overlay.png",
+        bounds_filename="smap_aux_h_overlay_bounds.json",
+        category="static",
+        palette="Oranges",
+        vmin=0.0,
+        vmax=0.5,
+        unit="",
+        opacity=0.8,
+        source_path=_SMAP_AUX_H_MAT,
+        source_variable="H",
+        source_reader="mat",
+    )
+)
+
+# IGBP 土地覆盖分类（EASE-Grid 9km，1~17 类）
+register_overlay(
+    OverlaySpec(
+        layer_id="smap-aux-igbp",
+        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_igbp",
+        png_filename="smap_aux_igbp_overlay.png",
+        bounds_filename="smap_aux_igbp_overlay_bounds.json",
+        category="static",
+        palette="igbp-landcover-ramp",
+        vmin=1,
+        vmax=17,
+        unit="class",
+        opacity=0.8,
+        source_path=_SMAP_AUX_IGBP_MAT,
+        source_variable="IGBP_9km_12",
+        source_reader="mat",
+    )
+)
+
+# Koppen 气候分类（0.083° 全球网格，1~30 类）
+register_overlay(
+    OverlaySpec(
+        layer_id="smap-aux-koppen",
+        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_koppen",
+        png_filename="smap_aux_koppen_overlay.png",
+        bounds_filename="smap_aux_koppen_overlay_bounds.json",
+        category="static",
+        palette="Set3",
+        vmin=1,
+        vmax=30,
+        unit="class",
+        opacity=0.8,
+        source_path=_SMAP_AUX_KOPPEN_MAT,
+        source_variable="Koppen",
+        source_reader="mat",
+    )
+)
+
+# VI/NDVI 均值（v5 格式，shape (1624, 3856)，注意轴序与 EASE-Grid 9km 其余场相反）
+register_overlay(
+    OverlaySpec(
+        layer_id="smap-aux-vi-qa",
+        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_vi_qa",
+        png_filename="smap_aux_vi_qa_overlay.png",
+        bounds_filename="smap_aux_vi_qa_overlay_bounds.json",
+        category="static",
+        palette="RdYlGn",
+        vmin=0.0,
+        vmax=1.0,
+        unit="",
+        opacity=0.8,
+        source_path=_SMAP_AUX_VI_V_QA_MAT,
+        source_variable="NDVI_v_mean",
         source_reader="mat",
     )
 )

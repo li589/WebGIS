@@ -89,6 +89,25 @@ class LayerPresentation(BaseModel):
     """数据源文案，如 '天气引擎（多源）'。"""
 
 
+class LayerSourceDef(BaseModel):
+    """X1: 图层数据源定义 — 从前端 catalog.ts 迁移到后端 JSON。
+
+    单源图层含 1 项；合并组虚拟条目含多个成员源。
+    前端通过 codegen 或运行时 API 消费，``source_id`` 映射为前端 ``LayerSource.id``。
+    """
+    source_id: str
+    """源标识，与 layer_id 对齐（合并组的成员 layer_id）。"""
+    name: str
+    """源显示名。"""
+    description: str = ""
+    url_template: str = ""
+    needs_auth: bool = False
+    needs_backend_transform: bool = False
+    coord_sys: str = "EPSG:4326"
+    update_frequency: str = ""
+    attribution: str | None = None
+
+
 class LayerCategoryDef(BaseModel):
     """X1: 图层分类定义 — 后端下发，消除前后端分类双写。"""
     id: str
@@ -151,10 +170,23 @@ class LayerDescriptor(BaseModel):
     presentation: LayerPresentation = Field(default_factory=LayerPresentation)
     """X1: UI 呈现元数据（accentColor / metricLabel / sourceLabel 等）。
     后端种子 JSON 提供，前端 ``LAYER_LIBRARY`` 仅在 API 不可用时作离线兜底。"""
+    # ── X1: 数据源与合并组（外部化字段）────────────────────────────────────────
+    sources: list[LayerSourceDef] = Field(default_factory=list)
+    """图层数据源列表（X1）。单源图层含 1 项；合并组含多个成员源。"""
+    merged_into: str | None = None
+    """若此图层已合并到某个多源组，此处记录目标 catalog_id。"""
+    is_merged_group: bool = False
+    """标记此条目为合并组虚拟条目（含 members 列表，自身不对应实际数据）。"""
+    members: list[str] = Field(default_factory=list)
+    """合并组成员的 layer_id 列表（仅 is_merged_group=true 时有效）。"""
+    is_admin_boundary: bool = False
+    """是否为行政区边界图层。"""
 
 
 class LayerCatalogResponse(BaseModel):
     items: list[LayerDescriptor]
+    categories: list[LayerCategoryDef] = Field(default_factory=list)
+    """X1: 类别定义随 catalog 一起下发，前端无需维护静态 LAYER_CATEGORIES。"""
 
 
 class SpatialFilter(BaseModel):

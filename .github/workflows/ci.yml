@@ -173,6 +173,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -255,7 +259,10 @@ jobs:
           ENVIRONMENT: test
         run: npm run check:openapi
 
-  # ── check:catalog：FE LAYER_LIBRARY ⊆ BE catalog seeds ─────────────────────
+  # ── check:catalog：catalog-seeds.generated.json ↔ backend seeds 同步闸门 ────
+  # X1: 重写为 gen:catalog + git diff 模式（与 gen-types 一致），
+  # 闭合「backend JSON → catalog-seeds.generated.json」这一跳，
+  # 捕获所有字段差异（不仅限 ID/name）。
   check-catalog:
     name: check:catalog
     runs-on: ubuntu-latest
@@ -267,9 +274,18 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run check:catalog
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Regenerate catalog-seeds.generated.json and verify in sync
         working-directory: Code/frontend
-        run: npm run check:catalog
+        run: |
+          npm run gen:catalog
+          if ! git diff --exit-code -- src/stores/layers/catalog-seeds.generated.json; then
+            echo "::error::catalog-seeds.generated.json is stale vs backend seeds — run 'npm run gen:catalog' and commit it"
+            exit 1
+          fi
 
   # ── gen-types：前端契约类型与 openapi.json 同步闸门（F14）──────────────────
   # 闭合「openapi.json → api-contracts.ts」这第二跳：check:openapi 只守第一跳

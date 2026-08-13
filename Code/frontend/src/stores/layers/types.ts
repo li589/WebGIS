@@ -55,6 +55,10 @@ export interface LayerCatalogItem {
   isAdminBoundary?: boolean
   /** 若此条目已合并到某个多源条目，此处记录目标 catalogId（运行时目录中隐藏本条目） */
   mergedInto?: string
+  /** X1: 标记此条目为合并组虚拟条目（含 members 列表，自身不对应实际数据） */
+  isMergedGroup?: boolean
+  /** X1: 合并组成员的 catalogId 列表（仅 isMergedGroup=true 时有效） */
+  members?: string[]
   // ── 课题组数据集元数据扩展（Phase 1：扩展和细化）────────────────────────────
   /** 数据归属（课题组成员 / Lab / 留空表示外部公开数据）；与 NAS 顶级目录对齐 */
   dataOwner?: string

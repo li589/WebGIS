@@ -33,6 +33,7 @@ from launch.constants import (
     IS_WINDOWS,
     LOG_DIR,
     PID_FILE,
+    SCRIPT_DIR,
     SNAPSHOT_ROOT,
     TEST_DIR,
     VALID_WORKER_NAMES,
@@ -73,6 +74,39 @@ from launch.subprocess_utils import (
 
 
 # ─── 启动命令 ────────────────────────────────────────────────────────────────
+def _regenerate_catalog_seeds() -> None:
+    """X1 codegen：开启/重启系统时自动刷新前端图层目录。
+
+    后端 ``catalog_seeds/*.json`` 是图层目录唯一真源；每次启动/重启时自动重跑
+    ``Tools/generate_catalog_seeds.py`` 生成 ``catalog-seeds.generated.json``，
+    避免手动执行 ``npm run gen:catalog``，保证前端兜底目录与后端一致。
+    失败仅告警不阻塞启动（前端运行时仍以后端 ``GET /layers`` 为准）。
+    """
+    script = SCRIPT_DIR / "Tools" / "generate_catalog_seeds.py"
+    if not script.is_file():
+        log.warn("Launcher", f"catalog codegen 脚本缺失，跳过: {script}")
+        return
+    try:
+        r = subprocess.run(
+            [sys.executable, str(script)],
+            cwd=str(SCRIPT_DIR),
+            capture_output=True,
+            text=True,
+            timeout=120,
+            **hidden_kwargs(),
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        log.warn("Launcher", f"catalog codegen 执行异常（跳过）: {exc}")
+        return
+    if r.returncode != 0:
+        log.warn(
+            "Launcher",
+            f"catalog codegen 失败（跳过）: {(r.stderr or r.stdout).strip()}",
+        )
+        return
+    log.ok("Launcher", "已自动刷新图层目录 catalog-seeds.generated.json")
+
+
 def cmd_start(args: argparse.Namespace) -> int:
     """启动 CGDA 服务（全部或指定组件）。"""
     if getattr(args, "clean_cache", False):
@@ -90,6 +124,7 @@ def cmd_start(args: argparse.Namespace) -> int:
         component = "frontend"
 
     ensure_project_initialized()
+    _regenerate_catalog_seeds()
 
     if args.debug:
         print_debug_info()
@@ -487,6 +522,7 @@ def cmd_restart(args: argparse.Namespace) -> int:
         log.banner("重启 backend（FastAPI + Worker + Beat）")
         ensure_project_initialized()
         _stop_backend_app_processes()
+        _regenerate_catalog_seeds()
         time.sleep(2)
         return _start_backend_app_processes(args)
 

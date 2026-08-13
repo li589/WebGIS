@@ -41,7 +41,23 @@
       "metric_precision": 1,
       "update_label": "每小时更新",
       "source_label": "天气引擎（多源）"
-    }
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-wind",
+        "name": "天气引擎 · 风场（多模型）",
+        "description": "由后端 weatherengine 多源路由的风场数据，支持钉选 Provider 与多模型。",
+        "url_template": "https://example.com/wind/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "wind-field-80m",
@@ -86,7 +102,23 @@
       "metric_precision": 1,
       "update_label": "每小时更新",
       "source_label": "天气引擎（多源）"
-    }
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-wind-80m",
+        "name": "天气引擎 · 80m 风场",
+        "description": "天气引擎 80 米高度风场，对应现代风机轮毂高度。",
+        "url_template": "https://example.com/wind-80m/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "wind-field-120m",
@@ -131,7 +163,23 @@
       "metric_precision": 1,
       "update_label": "每小时更新",
       "source_label": "天气引擎（多源）"
-    }
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-wind-120m",
+        "name": "天气引擎 · 120m 风场",
+        "description": "天气引擎 120 米高度风场，大型/海上风机轮毂高度参考层。",
+        "url_template": "https://example.com/wind-120m/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "wind-field-180m",
@@ -176,7 +224,23 @@
       "metric_precision": 1,
       "update_label": "每小时更新",
       "source_label": "天气引擎（多源）"
-    }
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-wind-180m",
+        "name": "天气引擎 · 180m 风场",
+        "description": "天气引擎 180 米高度风场，大气边界层顶部参考风场。",
+        "url_template": "https://example.com/wind-180m/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "wind-field-850hPa",
@@ -222,7 +286,23 @@
       "metric_precision": 1,
       "update_label": "每小时更新",
       "source_label": "天气引擎（多源）"
-    }
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-wind-850hPa",
+        "name": "天气引擎 · 850hPa 风场",
+        "description": "天气引擎 850 hPa 气压层风场（约 1.5 km AGL），低空急流与对流 inflow 参考。",
+        "url_template": "https://example.com/wind-850hpa/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "wind-field-500hPa",
@@ -268,7 +348,23 @@
       "metric_precision": 1,
       "update_label": "每小时更新",
       "source_label": "天气引擎（多源）"
-    }
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-wind-500hPa",
+        "name": "天气引擎 · 500hPa 风场",
+        "description": "天气引擎 500 hPa 气压层风场（约 5.5 km AGL），中空天气尺度流场参考。",
+        "url_template": "https://example.com/wind-500hpa/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "wind-field-200hPa",
@@ -314,7 +410,23 @@
       "metric_precision": 1,
       "update_label": "每小时更新",
       "source_label": "天气引擎（多源）"
-    }
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-wind-200hPa",
+        "name": "天气引擎 · 200hPa 风场",
+        "description": "天气引擎 200 hPa 气压层风场（约 12 km AGL），高空急流参考层。",
+        "url_template": "https://example.com/wind-200hpa/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "precipitation",
@@ -357,7 +469,23 @@
       "metric_precision": 0,
       "update_label": "每小时更新",
       "source_label": "天气引擎（多源）"
-    }
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-precipitation",
+        "name": "天气引擎 · 降水量",
+        "description": "由后端 weatherengine 多源路由的降水量数据。",
+        "url_template": "https://example.com/precip/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "temperature",
@@ -400,7 +528,23 @@
       "metric_precision": 1,
       "update_label": "每小时更新",
       "source_label": "天气引擎（多源）"
-    }
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-temperature",
+        "name": "天气引擎 · 气温",
+        "description": "由后端 weatherengine 多源路由的温度数据。",
+        "url_template": "https://example.com/temperature/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "temperature-80m",
@@ -445,7 +589,23 @@
       "metric_precision": 1,
       "update_label": "每小时更新",
       "source_label": "天气引擎（多源）"
-    }
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-temperature-80m",
+        "name": "天气引擎 · 80m 气温",
+        "description": "天气引擎 80 米高度温度，适用于风机结冰与尾流分析。",
+        "url_template": "https://example.com/temperature-80m/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "temperature-120m",
@@ -490,7 +650,23 @@
       "metric_precision": 1,
       "update_label": "每小时更新",
       "source_label": "天气引擎（多源）"
-    }
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-temperature-120m",
+        "name": "天气引擎 · 120m 气温",
+        "description": "天气引擎 120 米高度温度，大型风机轮毂高度热力参考。",
+        "url_template": "https://example.com/temperature-120m/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "temperature-180m",
@@ -535,7 +711,23 @@
       "metric_precision": 1,
       "update_label": "每小时更新",
       "source_label": "天气引擎（多源）"
-    }
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-temperature-180m",
+        "name": "天气引擎 · 180m 气温",
+        "description": "天气引擎 180 米高度温度，大气边界层顶部热力剖面。",
+        "url_template": "https://example.com/temperature-180m/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "pressure",
@@ -579,7 +771,23 @@
       "metric_precision": 1,
       "update_label": "每小时更新",
       "source_label": "天气引擎（多源）"
-    }
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-pressure",
+        "name": "天气引擎 · 海平面气压",
+        "description": "由后端 weatherengine 多源路由的海平面气压数据。",
+        "url_template": "https://example.com/pressure/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "humidity",
@@ -623,7 +831,23 @@
       "metric_precision": 0,
       "update_label": "每小时更新",
       "source_label": "天气引擎（多源）"
-    }
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-humidity",
+        "name": "天气引擎 · 相对湿度",
+        "description": "由后端 weatherengine 多源路由的近地面相对湿度数据。",
+        "url_template": "https://example.com/humidity/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "visibility",
@@ -667,7 +891,23 @@
       "metric_precision": 0,
       "update_label": "每小时更新",
       "source_label": "天气引擎（多源）"
-    }
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-visibility",
+        "name": "天气引擎 · 能见度",
+        "description": "由后端 weatherengine 多源路由的地面能见度数据。",
+        "url_template": "https://example.com/visibility/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "cloud-cover",
@@ -711,7 +951,23 @@
       "metric_precision": 0,
       "update_label": "每小时更新",
       "source_label": "天气引擎（多源）"
-    }
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-cloud-cover",
+        "name": "天气引擎 · 云量",
+        "description": "Open-Meteo online/local 总云量。",
+        "url_template": "https://example.com/cloud-cover/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "dewpoint",
@@ -755,6 +1011,22 @@
       "metric_precision": 1,
       "update_label": "每小时更新",
       "source_label": "天气引擎（多源）"
-    }
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-dewpoint",
+        "name": "天气引擎 · 露点温度",
+        "description": "Open-Meteo online/local 2 米露点温度。",
+        "url_template": "https://example.com/dewpoint/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   }
 ]

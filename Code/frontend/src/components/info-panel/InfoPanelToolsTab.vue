@@ -7,6 +7,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
 import { useAnalysisRunnerStore } from '../../stores/analysis-runner'
 import { useLayersStore } from '../../stores/layers'
+import { isShowAnalysisResultOnMapEnabled } from '../../services/settings-local'
 import type { AnalysisToolDescriptor } from '../../services/analysis-api'
 import { ANALYSIS_COPY } from '../../ui-copy'
 import AppButton from '../ui/AppButton.vue'
@@ -33,7 +34,6 @@ const layers = useLayersStore()
 const selectedToolId = ref<string | null>(null)
 const formValues = reactive<Record<string, unknown>>({})
 const zonesOverlayId = ref('')
-const showOnMap = ref(true)
 
 const tools = computed(() => runner.toolsCache?.items ?? [])
 const selectedTool = computed(
@@ -227,7 +227,7 @@ async function onRun() {
     mapPoint: props.selectedMapPoint ?? null,
     bbox,
     zonesOverlayLayerId: zonesOverlayId.value || null,
-    showOnMap: showOnMap.value,
+    showOnMap: isShowAnalysisResultOnMapEnabled(),
   })
 }
 
@@ -354,11 +354,6 @@ const phaseLabel = computed(() => {
             placeholder="imported-…"
           />
         </label>
-
-        <label class="param-row param-row--check">
-          <input v-model="showOnMap" type="checkbox" />
-          <span>成功后在地图显示新图层（默认开）</span>
-        </label>
       </div>
 
       <div v-if="selectedTool.tool_id === 'gis.buffer' && estimatedAreaKm2" class="stats-grid">
@@ -474,12 +469,6 @@ const phaseLabel = computed(() => {
 .param-row {
   display: grid;
   gap: 0.2rem;
-}
-
-.param-row--check {
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: 0.4rem;
 }
 
 .param-label {

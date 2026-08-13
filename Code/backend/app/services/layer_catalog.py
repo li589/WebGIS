@@ -349,7 +349,17 @@ def get_layer_category_response() -> LayerCategoryResponse:
 
 def get_layer_catalog() -> LayerCatalogResponse:
     items = _load_seed_descriptors()
-    return LayerCatalogResponse(items=_apply_remote_layer_data_uris(items))
+    raw_categories = get_layer_categories()
+    categories: list[LayerCategoryDef] = []
+    for cat in raw_categories:
+        try:
+            categories.append(LayerCategoryDef.model_validate(cat))
+        except Exception as exc:
+            logger.warning("Skipping invalid category entry %s: %s", cat.get("id"), exc)
+    return LayerCatalogResponse(
+        items=_apply_remote_layer_data_uris(items),
+        categories=categories,
+    )
 
 
 def get_layer_descriptor(layer_id: str) -> LayerDescriptor | None:

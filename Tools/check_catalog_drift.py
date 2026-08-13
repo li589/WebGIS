@@ -1,255 +1,195 @@
 #!/usr/bin/env python3
-"""Gate: FE LAYER_LIBRARY catalogId ⊆ BE seeds; shared ids share display_name + presentation.
+"""X1: Verify catalog-seeds.generated.json is in sync with backend JSON.
+
+After X1 externalization, the frontend catalog fallback is generated from
+backend JSON via ``generate_catalog_seeds.py``. This script verifies the
+generated JSON is up-to-date and consistent with the backend seeds —
+replacing the old cross-file text-parsing drift checker.
 
 Usage (repo root or Code/frontend):
     python Tools/check_catalog_drift.py
     npm run check:catalog   # from Code/frontend
 
 Exit 0 when:
-  1. every FE catalogId (except allowlisted FE-only) exists in
-     layer_descriptors.json ∪ weather_descriptors.json;
-  2. for every id present in both FE and BE, FE `name` equals BE `display_name`;
-  3. X1: for every id present in both, FE presentation fields
-     (accentColor / metricLabel / metricUnit / metricPrecision / updateLabel /
-     sourceLabel) match BE `presentation` block;
-  4. X1: FE `LAYER_CATEGORIES` ids ⊆ BE `layer_categories.json` ids,
-     and shared ids have matching `name`.
+  1. catalog-seeds.generated.json exists and is valid JSON;
+  2. generated item count == backend layer + weather descriptor count;
+  3. every generated catalogId exists in backend layer_id set (and vice versa);
+  4. every generated item name matches backend display_name;
+  5. generated category count == backend category count;
+  6. every generated category id exists in backend category set.
 """
 
 from __future__ import annotations
 
 import json
-import re
 import sys
 from pathlib import Path
-
-# FE-only entries not expected in BE seeds (admin chrome / retired shells / FE-only merged groups).
-FE_ONLY_ALLOWLIST = frozenset(
-    {
-        "admin-boundary",
-        "admin-boundary-cn",
-        "soil-moisture",
-    }
-)
-
-# X1: presentation fields to cross-check (FE field name → BE JSON key)
-PRESENTATION_FIELD_MAP = {
-    "accentColor": "accent_color",
-    "metricLabel": "metric_label",
-    "metricUnit": "metric_unit",
-    "updateLabel": "update_label",
-    "sourceLabel": "source_label",
-}
-# numeric fields compared with int() coercion
-PRESENTATION_NUMERIC_FIELDS = {"metricPrecision": "metric_precision"}
+from typing import Any
 
 
 def _repo_root() -> Path:
+    """Resolve repo root from script location or cwd."""
     here = Path(__file__).resolve().parent
     if (here / "Code" / "frontend").is_dir():
         return here
-    # Tools/ → repo root
     if here.name == "Tools":
         return here.parent
-    # Code/frontend/scripts → repo root
     if here.name == "scripts":
         return here.parents[2]
+    cwd = Path.cwd()
+    if (cwd / "Code" / "frontend").is_dir():
+        return cwd
     return here
 
 
-def _fe_catalog_entries(root: Path) -> dict[str, dict[str, str]]:
-    """Parse LAYER_LIBRARY blocks: catalogId → {name, accentColor, metricLabel, ...}."""
-    catalog_ts = root / "Code" / "frontend" / "src" / "stores" / "layers" / "catalog.ts"
-    text = catalog_ts.read_text(encoding="utf-8")
-    # Find the LAYER_LIBRARY array, skipping the type annotation's LayerCatalogItem[]
-    start = text.find("export const LAYER_LIBRARY")
-    eq_bracket = text.find("= [", start)
-    arr_start = text.index("[", eq_bracket)
-    # Find matching close bracket
-    depth = 0
-    end = arr_start
-    for i, ch in enumerate(text[arr_start:], arr_start):
-        if ch == "[":
-            depth += 1
-        elif ch == "]":
-            depth -= 1
-            if depth == 0:
-                end = i + 1
-                break
-    arr_text = text[arr_start:end]
-
-    # Split on block boundaries (compatible with \r\n)
-    blocks = re.split(r"\r?\n  \{\r?\n", arr_text)
-    out: dict[str, dict[str, str]] = {}
-    for block in blocks:
-        m_id = re.search(r"catalogId:\s*'([^']+)'", block)
-        if not m_id:
-            continue
-        cid = m_id.group(1)
-        entry: dict[str, str] = {}
-        for fe_field in (
-            "name",
-            "accentColor",
-            "metricLabel",
-            "metricUnit",
-            "updateLabel",
-            "sourceLabel",
-        ):
-            m = re.search(rf"{fe_field}:\s*'([^']*)'", block)
-            if m:
-                entry[fe_field] = m.group(1)
-        for fe_field in ("metricPrecision",):
-            m = re.search(rf"{fe_field}:\s*(\d+)", block)
-            if m:
-                entry[fe_field] = m.group(1)
-        out[cid] = entry
-    return out
-
-
-def _be_layer_entries(root: Path) -> dict[str, dict[str, object]]:
-    """Load BE seeds: layer_id → {display_name, presentation dict}."""
+def _load_backend_descriptors(root: Path) -> dict[str, dict[str, Any]]:
+    """Load all backend layer + weather descriptors: layer_id → descriptor."""
     seeds_dir = root / "Code" / "backend" / "app" / "catalog_seeds"
-    out: dict[str, dict[str, object]] = {}
+    out: dict[str, dict[str, Any]] = {}
     for name in ("layer_descriptors.json", "weather_descriptors.json"):
         path = seeds_dir / name
+        if not path.exists():
+            print(f"ERROR: Backend seed file not found: {path}", file=sys.stderr)
+            sys.exit(1)
         data = json.loads(path.read_text(encoding="utf-8"))
-        items = data if isinstance(data, list) else data.get("items", data)
+        items = data if isinstance(data, list) else data.get("items", [])
         for item in items:
             lid = item.get("layer_id")
             if isinstance(lid, str) and lid:
-                out[lid] = {
-                    "display_name": item.get("display_name", ""),
-                    "presentation": item.get("presentation") or {},
-                }
+                out[lid] = item
     return out
 
 
-def _fe_categories(root: Path) -> dict[str, str]:
-    """Parse LAYER_CATEGORIES: id → name."""
-    catalog_ts = root / "Code" / "frontend" / "src" / "stores" / "layers" / "catalog.ts"
-    text = catalog_ts.read_text(encoding="utf-8")
-    start = text.find("export const LAYER_CATEGORIES")
-    eq_bracket = text.find("= [", start)
-    arr_start = text.index("[", eq_bracket)
-    depth = 0
-    end = arr_start
-    for i, ch in enumerate(text[arr_start:], arr_start):
-        if ch == "[":
-            depth += 1
-        elif ch == "]":
-            depth -= 1
-            if depth == 0:
-                end = i + 1
-                break
-    arr_text = text[arr_start:end]
-    blocks = re.split(r"\r?\n  \{\r?\n", arr_text)
-    out: dict[str, str] = {}
-    for block in blocks:
-        m_id = re.search(r"id:\s*'([^']+)'", block)
-        m_name = re.search(r"name:\s*'([^']*)'", block)
-        if m_id and m_name:
-            out[m_id.group(1)] = m_name.group(1)
-    return out
-
-
-def _be_categories(root: Path) -> dict[str, str]:
-    """Load BE layer_categories.json: id → name."""
+def _load_backend_categories(root: Path) -> dict[str, dict[str, Any]]:
+    """Load backend layer_categories.json: id → category."""
     cat_path = root / "Code" / "backend" / "app" / "catalog_seeds" / "layer_categories.json"
+    if not cat_path.exists():
+        print(f"ERROR: Backend category file not found: {cat_path}", file=sys.stderr)
+        sys.exit(1)
     data = json.loads(cat_path.read_text(encoding="utf-8"))
-    return {c["id"]: c.get("name", "") for c in data if "id" in c}
+    return {c["id"]: c for c in data if "id" in c}
+
+
+def _load_generated(root: Path) -> dict[str, Any]:
+    """Load catalog-seeds.generated.json."""
+    gen_path = root / "Code" / "frontend" / "src" / "stores" / "layers" / "catalog-seeds.generated.json"
+    if not gen_path.exists():
+        print(
+            "ERROR: catalog-seeds.generated.json not found.\n"
+            "  Run: npm run gen:catalog  (from Code/frontend)\n"
+            "  Or:  python Tools/generate_catalog_seeds.py  (from repo root)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return json.loads(gen_path.read_text(encoding="utf-8"))
 
 
 def main() -> int:
     root = _repo_root()
-    fe = _fe_catalog_entries(root)
-    be = _be_layer_entries(root)
-    fe_ids = set(fe)
-    be_ids = set(be)
 
-    # 1. Missing in BE
-    missing = sorted(fe_ids - be_ids - FE_ONLY_ALLOWLIST)
-    if missing:
-        print("Catalog drift: FE LAYER_LIBRARY catalogId not in BE seeds:")
-        for cid in missing:
-            print(f"  - {cid}")
-        print(f"\nFE={len(fe_ids)} BE={len(be_ids)} missing={len(missing)}")
-        return 1
+    # Load data
+    be_descriptors = _load_backend_descriptors(root)
+    be_categories = _load_backend_categories(root)
+    generated = _load_generated(root)
 
-    # 2. Display name mismatches
-    name_mismatches: list[tuple[str, str, str]] = []
-    for cid in sorted(fe_ids & be_ids):
-        fe_name = fe[cid].get("name", "")
-        be_name = be[cid].get("display_name", "")
-        if fe_name != be_name:
-            name_mismatches.append((cid, fe_name, be_name))
+    gen_items: list[dict[str, Any]] = generated.get("items", [])
+    gen_categories: list[dict[str, Any]] = generated.get("categories", [])
+
+    be_ids = set(be_descriptors)
+    gen_ids = {item["catalogId"] for item in gen_items if "catalogId" in item}
+
+    be_cat_ids = set(be_categories)
+    gen_cat_ids = {c["id"] for c in gen_categories if "id" in c}
+
+    errors: list[str] = []
+
+    # 1. Item count check
+    if len(gen_items) != len(be_descriptors):
+        errors.append(
+            f"Item count mismatch: generated={len(gen_items)} backend={len(be_descriptors)}"
+        )
+
+    # 2. Item ID set check (bidirectional)
+    missing_in_gen = sorted(be_ids - gen_ids)
+    extra_in_gen = sorted(gen_ids - be_ids)
+    if missing_in_gen:
+        errors.append(
+            f"Backend layer_ids missing from generated JSON ({len(missing_in_gen)}): "
+            + ", ".join(missing_in_gen[:10])
+        )
+    if extra_in_gen:
+        errors.append(
+            f"Generated catalogIds not in backend JSON ({len(extra_in_gen)}): "
+            + ", ".join(extra_in_gen[:10])
+        )
+
+    # 3. Display name check
+    name_mismatches: list[str] = []
+    for item in gen_items:
+        cid = item.get("catalogId", "")
+        gen_name = item.get("name", "")
+        be_desc = be_descriptors.get(cid)
+        if be_desc:
+            be_name = be_desc.get("display_name", "")
+            if gen_name != be_name:
+                name_mismatches.append(f"  {cid}: generated={gen_name!r} backend={be_name!r}")
     if name_mismatches:
-        print("Catalog drift: FE name ≠ BE display_name for shared layer_id:")
-        for cid, fe_name, be_name in name_mismatches:
-            print(f"  - {cid}: FE={fe_name!r} BE={be_name!r}")
-        print(f"\nmismatches={len(name_mismatches)}")
-        return 1
+        errors.append(
+            f"Display name mismatches ({len(name_mismatches)}):\n"
+            + "\n".join(name_mismatches[:10])
+        )
 
-    # 3. X1: Presentation field mismatches
-    pres_mismatches: list[str] = []
-    for cid in sorted(fe_ids & be_ids):
-        fe_entry = fe[cid]
-        be_pres = be[cid].get("presentation", {})
-        if not isinstance(be_pres, dict):
-            be_pres = {}
-        for fe_field, be_field in PRESENTATION_FIELD_MAP.items():
-            fe_val = fe_entry.get(fe_field)
-            be_val = be_pres.get(be_field)
-            if fe_val is not None and be_val is not None and fe_val != be_val:
-                pres_mismatches.append(
-                    f"  - {cid}.{fe_field}: FE={fe_val!r} BE={be_val!r}"
+    # 4. Category count check
+    if len(gen_categories) != len(be_categories):
+        errors.append(
+            f"Category count mismatch: generated={len(gen_categories)} backend={len(be_categories)}"
+        )
+
+    # 5. Category ID set check
+    cat_missing = sorted(be_cat_ids - gen_cat_ids)
+    cat_extra = sorted(gen_cat_ids - be_cat_ids)
+    if cat_missing:
+        errors.append(
+            f"Backend category ids missing from generated JSON: {', '.join(cat_missing)}"
+        )
+    if cat_extra:
+        errors.append(
+            f"Generated category ids not in backend JSON: {', '.join(cat_extra)}"
+        )
+
+    # 6. Category name check
+    cat_name_mismatches: list[str] = []
+    for gen_cat in gen_categories:
+        cat_id = gen_cat.get("id", "")
+        be_cat = be_categories.get(cat_id)
+        if be_cat:
+            gen_name = gen_cat.get("name", "")
+            be_name = be_cat.get("name", "")
+            if gen_name != be_name:
+                cat_name_mismatches.append(
+                    f"  {cat_id}: generated={gen_name!r} backend={be_name!r}"
                 )
-            elif fe_val is not None and be_val is None:
-                pres_mismatches.append(
-                    f"  - {cid}.{fe_field}: FE={fe_val!r} BE=missing"
-                )
-        for fe_field, be_field in PRESENTATION_NUMERIC_FIELDS.items():
-            fe_val = fe_entry.get(fe_field)
-            be_val = be_pres.get(be_field)
-            if fe_val is not None and be_val is not None:
-                try:
-                    if int(fe_val) != int(be_val):
-                        pres_mismatches.append(
-                            f"  - {cid}.{fe_field}: FE={fe_val} BE={be_val}"
-                        )
-                except (ValueError, TypeError):
-                    pass
-    if pres_mismatches:
-        print("Catalog drift: FE presentation field ≠ BE presentation for shared layer_id:")
-        for m in pres_mismatches:
-            print(m)
-        print(f"\npresentation_mismatches={len(pres_mismatches)}")
+    if cat_name_mismatches:
+        errors.append(
+            f"Category name mismatches ({len(cat_name_mismatches)}):\n"
+            + "\n".join(cat_name_mismatches)
+        )
+
+    # Report
+    if errors:
+        print("Catalog drift detected:")
+        for err in errors:
+            print(f"  ✗ {err}")
+        print(
+            f"\nGenerated: {len(gen_items)} items, {len(gen_categories)} categories | "
+            f"Backend: {len(be_descriptors)} descriptors, {len(be_categories)} categories"
+        )
+        print("\nFix: run `npm run gen:catalog` (from Code/frontend) to regenerate.")
         return 1
 
-    # 4. X1: Category drift check
-    fe_cats = _fe_categories(root)
-    be_cats = _be_categories(root)
-    cat_missing = sorted(set(fe_cats) - set(be_cats))
-    cat_name_mismatches: list[tuple[str, str, str]] = []
-    for cid in sorted(set(fe_cats) & set(be_cats)):
-        if fe_cats[cid] != be_cats[cid]:
-            cat_name_mismatches.append((cid, fe_cats[cid], be_cats[cid]))
-    if cat_missing or cat_name_mismatches:
-        if cat_missing:
-            print("Category drift: FE LAYER_CATEGORIES id not in BE layer_categories.json:")
-            for cid in cat_missing:
-                print(f"  - {cid}")
-        if cat_name_mismatches:
-            print("Category drift: FE category name ≠ BE category name:")
-            for cid, fe_name, be_name in cat_name_mismatches:
-                print(f"  - {cid}: FE={fe_name!r} BE={be_name!r}")
-        return 1
-
-    orphan_note = sorted(be_ids - fe_ids)
     print(
-        f"Catalog OK: FE catalogIds subset of BE seeds, display names aligned, "
-        f"presentation aligned, categories aligned "
-        f"(FE={len(fe_ids)} BE={len(be_ids)} allowlist={len(FE_ONLY_ALLOWLIST)} "
-        f"BE-only={len(orphan_note)} categories={len(fe_cats)})"
+        f"Catalog OK: {len(gen_items)} items + {len(gen_categories)} categories "
+        f"in sync with backend seeds."
     )
     return 0
 

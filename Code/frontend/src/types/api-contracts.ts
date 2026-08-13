@@ -4772,6 +4772,8 @@ export interface components {
         LayerCatalogResponse: {
             /** Items */
             items: components["schemas"]["LayerDescriptor"][];
+            /** Categories */
+            categories?: components["schemas"]["LayerCategoryDef"][];
         };
         /**
          * LayerCategoryDef
@@ -4876,6 +4878,22 @@ export interface components {
             /** Sub Category */
             sub_category?: string | null;
             presentation?: components["schemas"]["LayerPresentation"];
+            /** Sources */
+            sources?: components["schemas"]["LayerSourceDef"][];
+            /** Merged Into */
+            merged_into?: string | null;
+            /**
+             * Is Merged Group
+             * @default false
+             */
+            is_merged_group: boolean;
+            /** Members */
+            members?: string[];
+            /**
+             * Is Admin Boundary
+             * @default false
+             */
+            is_admin_boundary: boolean;
         };
         /** LayerDisplayNameBody */
         LayerDisplayNameBody: {
@@ -4914,6 +4932,51 @@ export interface components {
          * @enum {string}
          */
         LayerRenderType: "raster" | "vector" | "point" | "heatmap";
+        /**
+         * LayerSourceDef
+         * @description X1: 图层数据源定义 — 从前端 catalog.ts 迁移到后端 JSON。
+         *
+         *     单源图层含 1 项；合并组虚拟条目含多个成员源。
+         *     前端通过 codegen 或运行时 API 消费，``source_id`` 映射为前端 ``LayerSource.id``。
+         */
+        LayerSourceDef: {
+            /** Source Id */
+            source_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Url Template
+             * @default
+             */
+            url_template: string;
+            /**
+             * Needs Auth
+             * @default false
+             */
+            needs_auth: boolean;
+            /**
+             * Needs Backend Transform
+             * @default false
+             */
+            needs_backend_transform: boolean;
+            /**
+             * Coord Sys
+             * @default EPSG:4326
+             */
+            coord_sys: string;
+            /**
+             * Update Frequency
+             * @default
+             */
+            update_frequency: string;
+            /** Attribution */
+            attribution?: string | null;
+        };
         /**
          * LayerSourceType
          * @enum {string}
