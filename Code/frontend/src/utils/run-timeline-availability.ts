@@ -13,7 +13,7 @@ import {
   type TimeStep,
 } from './temporal-interval'
 
-export type RunAvailabilityState = 'empty' | 'partial' | 'ready' | 'error'
+export type RunAvailabilityState = 'empty' | 'partial' | 'ready' | 'error' | 'fetchable'
 
 export type RunTimelineGranularity = Exclude<TimeGranularity, 'static'>
 
@@ -36,9 +36,10 @@ export interface BuildRunTimelineAvailabilityInput {
 
 const STATE_RANK: Record<RunAvailabilityState, number> = {
   empty: 0,
-  partial: 1,
-  ready: 2,
-  error: 3,
+  fetchable: 1,
+  partial: 2,
+  ready: 3,
+  error: 4,
 }
 
 const MAX_EXPECTED_SLOTS = 4000
@@ -276,4 +277,86 @@ export function resolveExpectedNativeStep(options: {
     return '8d'
   }
   return '1d'
+}
+
+// ── Online Temporal 可用性叠加 ───────────────────────────────────────────
+
+/**
+ * 在已有可用性 map 上叠加"可在线获取"状态。
+ *
+ * 对当前窗口内落入 online_temporal.coverage_start ~ coverage_end 范围、
+ * 且当前状态为 'empty' 的槽位，标记为 'fetchable'。
+ * 已有 'ready' / 'partial' / 'error' 状态不受影响（rank 更高）。
+ *
+ * @param map       已由 buildRunTimelineAvailability 或 day/month/year 生成的基础 map
+ * @param windowDate 当前时间轴窗口日期
+ * @param granularity 时间轴粒度
+ * @param coverageStart ISO 日期或 'YYYY-MM'（online_temporal.coverage_start）
+ * @param coverageEnd   ISO 日期或 'YYYY-MM'（online_temporal.coverage_end）
+ * @returns 新 map（不修改输入）
+ */
+export function overlayOnlineTemporalFetchable(
+  map: Record<number, RunAvailabilityState>,
+  windowDate: Date,
+  granularity: RunTimelineGranularity,
+  coverageStart: string | null | undefined,
+  coverageEnd: string | null | undefined,
+): Record<number, RunAvailabilityState> {
+  if (!coverageStart || !coverageEnd) return map
+  const start = parseInstant(coverageStart)
+  const end = parseInstant(coverageEnd)
+  if (!start || !end) return map
+
+  const result: Record<number, RunAvailabilityState> = { ...map }
+
+  if (granularity === 'hour') {
+    // hour 粒度：检查当日每小时是否在覆盖范围内
+    const y = windowDate.getFullYear()
+    const m = windowDate.getMonth()
+    const d = windowDate.getDate()
+    for (let h = 0; h < 24; h++) {
+      if (result[h] !== 'empty') continue
+      const slot = new Date(y, m, d, h)
+      if (slot >= start && slot <= end) {
+        result[h] = 'fetchable'
+      }
+    }
+  } else if (granularity === 'day') {
+    // day 粒度：检查当月每天是否在覆盖范围内
+    const year = windowDate.getFullYear()
+    const month = windowDate.getMonth()
+    const daysInMonth = new Date(year, month + 1, 0).getDate()
+    for (let day = 1; day <= daysInMonth; day++) {
+      if (result[day] !== 'empty') continue
+      const slot = new Date(year, month, day)
+      if (slot >= start && slot <= end) {
+        result[day] = 'fetchable'
+      }
+    }
+  } else if (granularity === 'month') {
+    // month 粒度：检查当年每月是否在覆盖范围内
+    const year = windowDate.getFullYear()
+    for (let mo = 0; mo < 12; mo++) {
+      if (result[mo] !== 'empty') continue
+      const slot = new Date(year, mo, 1)
+      if (slot >= start && slot <= end) {
+        result[mo] = 'fetchable'
+      }
+    }
+  } else if (granularity === 'year') {
+    // year 粒度：检查近 10 年窗口内每年是否在覆盖范围内
+    const currentYear = windowDate.getFullYear()
+    const baseYear = currentYear - 5
+    for (let i = 0; i < 10; i++) {
+      const yr = baseYear + i
+      if (result[yr] !== 'empty' && result[i] !== 'empty') continue
+      const slot = new Date(yr, 0, 1)
+      if (slot >= start && slot <= end) {
+        if (result[yr] === 'empty') result[yr] = 'fetchable'
+        if (result[i] === 'empty') result[i] = 'fetchable'
+      }
+    }
+  }
+
+  return result
 }

@@ -88,6 +88,8 @@ export function useLayerWorkspace() {
     supportsMapLayerResult: store.supportsMapLayerResult,
     supportsViewportDrivenRefresh: store.supportsViewportDrivenRefresh,
     supportsParticleFlow: store.supportsParticleFlow,
+    supportsOnlineTemporal: store.supportsOnlineTemporal,
+    getOnlineTemporalConfig: store.getOnlineTemporalConfig,
     getLayerPrimaryMetric: store.getLayerPrimaryMetric,
     resolveBackendLayerId: store.resolveBackendLayerId,
     resolveEffectiveDescriptor: store.resolveEffectiveDescriptor,

@@ -8,7 +8,7 @@ export type TimeGranularity = 'hour' | 'day' | 'month' | 'year' | 'static'
 export interface TimelineAvailabilitySegment {
   index: number
   label: string
-  state: 'empty' | 'partial' | 'ready' | 'static' | 'error'
+  state: 'empty' | 'partial' | 'ready' | 'static' | 'error' | 'fetchable'
   availabilityLabel: string
   timestamp?: number
 }
@@ -110,7 +110,7 @@ export function shiftTimelineDate(
 export function generateTimelineSegments(
   date: Date,
   granularity: TimeGranularity = 'hour',
-  availabilityMap?: Record<number, 'empty' | 'partial' | 'ready' | 'error'>,
+  availabilityMap?: Record<number, 'empty' | 'partial' | 'ready' | 'error' | 'fetchable'>,
 ): TimelineAvailabilitySegment[] {
   if (granularity === 'static') {
     return [
@@ -123,10 +123,11 @@ export function generateTimelineSegments(
     ]
   }
 
-  const labelFor = (state: 'empty' | 'partial' | 'ready' | 'error') => {
+  const labelFor = (state: 'empty' | 'partial' | 'ready' | 'error' | 'fetchable') => {
     if (state === 'ready') return '数据可用'
     if (state === 'partial') return '部分就绪 / 加载中'
     if (state === 'error') return '产出异常'
+    if (state === 'fetchable') return '可在线获取'
     return '无数据'
   }
 
@@ -162,7 +163,9 @@ export function generateTimelineSegments(
               ? '部分就绪 / 加载中'
               : state === 'error'
                 ? '产出异常'
-                : '无数据',
+                : state === 'fetchable'
+                  ? '可在线获取'
+                  : '无数据',
       })
     }
     return segments
@@ -187,7 +190,9 @@ export function generateTimelineSegments(
               ? '部分就绪 / 加载中'
               : state === 'error'
                 ? '产出异常'
-                : '无数据',
+                : state === 'fetchable'
+                  ? '可在线获取'
+                  : '无数据',
       })
     }
     return segments
@@ -204,7 +209,9 @@ export function generateTimelineSegments(
           ? '降采样中/部分补全'
           : state === 'error'
             ? '产出异常'
-            : '无数据'
+            : state === 'fetchable'
+              ? '可在线获取'
+              : '无数据'
     segments.push({
       index: h,
       label: `${h}`,

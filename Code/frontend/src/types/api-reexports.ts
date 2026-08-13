@@ -67,6 +67,7 @@ export type WorkflowRunViewResponse = Schema<'WorkflowRunViewResponse'>
 
 export type LayerDescriptor = Schema<'LayerDescriptor'>
 export type LayerCapabilities = Schema<'LayerCapabilities'>
+export type OnlineTemporalCapability = Schema<'OnlineTemporalCapability'>
 export type LayerStyleHint = Schema<'LayerStyleHint'>
 export type LayerPresentation = Schema<'LayerPresentation'>
 export type LayerCatalogResponse = Schema<'LayerCatalogResponse'>

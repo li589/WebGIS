@@ -45,6 +45,7 @@ import { useMapInspect } from './dashboard/useMapInspect'
 import { useTimelineControls } from './dashboard/useTimelineControls'
 import { useFileDrop } from './dashboard/useFileDrop'
 import { useWorkflowEditorRun } from './dashboard/useWorkflowEditorRun'
+import { useOnlineTemporalIntegration } from './dashboard/useOnlineTemporalIntegration'
 
 // ── Store 设置 ────────────────────────────────────────────────────────────
 const uiStore = useUiStore()
@@ -174,6 +175,20 @@ const {
   analysisPanelRef,
 )
 
+// ── Online Temporal Integration ──
+// 在线时间获取编排器：当用户选中 fetchable 段时自动触发工作流获取数据
+const onlineTemporal = useOnlineTemporalIntegration({
+  workspace,
+  workflowRun,
+  selectedCatalogId,
+  currentDate,
+  currentHour,
+  activeLayerGranularity,
+  timelineSegments,
+  isPlaying,
+  logOperation: (tag, message) => logStore.logOperation(tag, message),
+})
+
 const {
   selectedMapPoint,
   selectedHotspot,
@@ -263,6 +278,16 @@ function handleToggleLayerVisibility(instanceId: string) {
 }
 function handleSetLayerOpacity(payload: { instanceId: string; opacity: number }) {
   workspace.setLayerOpacity(payload.instanceId, payload.opacity)
+}
+
+/** 用户点击时间轴上的 fetchable 段时，手动触发在线获取 */
+function handleFetchSegment(_segment: { index: number; label: string; state: string }) {
+  const catalogId = selectedCatalogId.value
+  if (!catalogId) return
+  const timeKey = onlineTemporal.orchestrator.currentTimeKey.value
+  if (!timeKey) return
+  void onlineTemporal.orchestrator.triggerOnlineFetch(catalogId, timeKey)
+  logStore.logOperation('online-temporal', `手动触发获取 ${catalogId} @ ${timeKey}`)
 }
 </script>
 
@@ -412,6 +437,10 @@ function handleSetLayerOpacity(payload: { instanceId: string; opacity: number })
             :granularity="hasTimelineLayer ? activeLayerGranularity : 'hour'"
             :active-layer-name="timelineLayerName"
             :is-layer-locked="isLayerLocked"
+            :online-fetch-in-progress="
+              onlineTemporal.orchestrator.currentFetchStatus.value?.status === 'in-flight' ||
+              onlineTemporal.orchestrator.currentFetchStatus.value?.status === 'submitting'
+            "
             @step="handleTimelineStep"
             @change-hour="handleTimelineChange"
             @change-date="handleTimelineDateChange"
@@ -419,6 +448,7 @@ function handleSetLayerOpacity(payload: { instanceId: string; opacity: number })
             @change-play-interval="handleTimelinePlayInterval"
             @toggle-unified-time="handleTimelineToggleUnified"
             @toggle-layer-lock="handleToggleLayerLock"
+            @fetch-segment="handleFetchSegment"
           />
         </TimelinePanel>
       </div>

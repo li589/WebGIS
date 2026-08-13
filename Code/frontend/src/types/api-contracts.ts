@@ -252,6 +252,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/layers/{layer_id}/online-temporal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Layer Online Temporal
+         * @description 返回图层的在线时间获取能力与可获取范围。
+         *
+         *     前端时间轴据此判断哪些时间点可在线获取（标 'fetchable' 段），
+         *     以及获取参数（步长、预取深度、队列标签）。
+         */
+        get: operations["get_layer_online_temporal_layers__layer_id__online_temporal_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/geo/transform": {
         parameters: {
             query?: never;
@@ -4894,6 +4917,7 @@ export interface components {
              * @default false
              */
             is_admin_boundary: boolean;
+            online_temporal?: components["schemas"]["OnlineTemporalCapability"] | null;
         };
         /** LayerDisplayNameBody */
         LayerDisplayNameBody: {
@@ -5133,6 +5157,49 @@ export interface components {
             parameter_aliases?: {
                 [key: string]: string;
             };
+        };
+        /**
+         * OnlineTemporalCapability
+         * @description 在线时间获取能力声明。
+         *
+         *     标记图层支持"用户选时间点 → 自动在线获取 → 动态刷新"流程。
+         *     None 表示该图层不支持在线历史时间获取。
+         */
+        OnlineTemporalCapability: {
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /** Coverage Start */
+            coverage_start?: string | null;
+            /** Coverage End */
+            coverage_end?: string | null;
+            /**
+             * Native Step
+             * @default 1d
+             */
+            native_step: string;
+            /**
+             * Max Batch
+             * @default 12
+             */
+            max_batch: number;
+            /**
+             * Prefetch Depth
+             * @default 1
+             */
+            prefetch_depth: number;
+            /**
+             * Queue Tag
+             * @default temporal-fetch
+             */
+            queue_tag: string;
+            /**
+             * Priority
+             * @default low
+             */
+            priority: string;
         };
         /** OpenDataPresetsUpdateRequest */
         OpenDataPresetsUpdateRequest: {
@@ -7519,6 +7586,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LayerCategoryResponse"];
+                };
+            };
+        };
+    };
+    get_layer_online_temporal_layers__layer_id__online_temporal_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

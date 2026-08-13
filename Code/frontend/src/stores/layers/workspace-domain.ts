@@ -124,6 +124,8 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
     supportsMapLayerResult,
     supportsViewportDrivenRefresh,
     supportsParticleFlow,
+    supportsOnlineTemporal,
+    getOnlineTemporalConfig,
     getLayerPrimaryMetric,
   } = catalog
 
@@ -186,6 +188,8 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
     supportsMapLayerResult,
     supportsViewportDrivenRefresh,
     supportsParticleFlow,
+    supportsOnlineTemporal,
+    getOnlineTemporalConfig,
     getLayerPrimaryMetric,
   }
 }

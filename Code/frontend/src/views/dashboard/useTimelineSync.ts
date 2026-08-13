@@ -36,7 +36,11 @@ import {
   timeStepToLegacyGranularity,
   yearAvailabilityFromTimeList,
 } from '../../utils/temporal-interval'
-import { buildRunTimelineAvailability } from '../../utils/run-timeline-availability'
+import {
+  buildRunTimelineAvailability,
+  overlayOnlineTemporalFetchable,
+  type RunAvailabilityState,
+} from '../../utils/run-timeline-availability'
 import {
   resolveJobLayerForActiveLayer,
   resolveRunGroupForActiveLayer,
@@ -513,8 +517,13 @@ export function useTimelineSync(
     })
 
     if (gran === 'day' || gran === 'month' || gran === 'year') {
+      // 检查当前图层是否支持在线时间获取
+      const onlineCap = selectedCatalogId.value
+        ? workspace.getOnlineTemporalConfig(selectedCatalogId.value)
+        : null
+
       if (useExpectedAxis && expected) {
-        const map = buildRunTimelineAvailability({
+        let map = buildRunTimelineAvailability({
           windowDate: currentDate.value,
           granularity: gran,
           expectedTimeRange: expected,
@@ -528,14 +537,32 @@ export function useTimelineSync(
           failedTimeKeys: jobForTimeline?.failedTimeKeys,
           runFailed: jobForTimeline?.status === 'failed' || runGroup?.status === 'failed',
         })
+        if (onlineCap) {
+          map = overlayOnlineTemporalFetchable(
+            map,
+            currentDate.value,
+            gran,
+            onlineCap.coverage_start,
+            onlineCap.coverage_end,
+          )
+        }
         return generateTimelineSegments(currentDate.value, gran, map)
       }
-      const map =
+      let map: Record<number, RunAvailabilityState> =
         gran === 'day'
           ? dayAvailabilityFromTimeList(currentDate.value, scienceTimes)
           : gran === 'month'
             ? monthAvailabilityFromTimeList(currentDate.value, scienceTimes)
             : yearAvailabilityFromTimeList(currentDate.value, scienceTimes)
+      if (onlineCap) {
+        map = overlayOnlineTemporalFetchable(
+          map,
+          currentDate.value,
+          gran,
+          onlineCap.coverage_start,
+          onlineCap.coverage_end,
+        )
+      }
       return generateTimelineSegments(currentDate.value, gran, map)
     }
 

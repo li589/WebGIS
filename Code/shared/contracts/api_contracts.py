@@ -122,6 +122,30 @@ class LayerCategoryResponse(BaseModel):
     items: list[LayerCategoryDef]
 
 
+class OnlineTemporalCapability(BaseModel):
+    """在线时间获取能力声明。
+
+    标记图层支持"用户选时间点 → 自动在线获取 → 动态刷新"流程。
+    None 表示该图层不支持在线历史时间获取。
+    """
+    enabled: bool = False
+    """是否启用在线时间获取。"""
+    coverage_start: str | None = None
+    """可获取的时间范围起点（ISO 日期或 'YYYY-MM'）。"""
+    coverage_end: str | None = None
+    """可获取的时间范围终点。"""
+    native_step: str = "1d"
+    """原生时间步（'1d' / '8d' / '1M' / '1Y'），与 descriptor 时间粒度对齐。"""
+    max_batch: int = 12
+    """单次批量获取的最大时间点数。"""
+    prefetch_depth: int = 1
+    """预获取相邻时间点深度（前后各 N 步）。"""
+    queue_tag: str = "temporal-fetch"
+    """工作流提交时的 queue_tag，用于与视口驱动工作流区分。"""
+    priority: str = "low"
+    """提交优先级（'low' | 'normal'），预取用 low 避免抢占用户操作。"""
+
+
 class LayerDescriptor(BaseModel):
     layer_id: str
     dataset_key: str
@@ -181,6 +205,8 @@ class LayerDescriptor(BaseModel):
     """合并组成员的 layer_id 列表（仅 is_merged_group=true 时有效）。"""
     is_admin_boundary: bool = False
     """是否为行政区边界图层。"""
+    online_temporal: OnlineTemporalCapability | None = None
+    """在线时间获取能力声明。None 表示该图层不支持在线历史时间获取。"""
 
 
 class LayerCatalogResponse(BaseModel):

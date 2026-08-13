@@ -187,6 +187,8 @@ export const useLayersStore = defineStore('layers', () => {
     supportsMapLayerResult: workspace.supportsMapLayerResult,
     supportsViewportDrivenRefresh: workspace.supportsViewportDrivenRefresh,
     supportsParticleFlow: workspace.supportsParticleFlow,
+    supportsOnlineTemporal: workspace.supportsOnlineTemporal,
+    getOnlineTemporalConfig: workspace.getOnlineTemporalConfig,
     getLayerPrimaryMetric: workspace.getLayerPrimaryMetric,
     // ── Actions: viewport ──
     setWindDisplayMode: viewport.setWindDisplayMode,

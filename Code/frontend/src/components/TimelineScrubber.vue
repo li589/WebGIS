@@ -25,6 +25,8 @@ const props = withDefaults(
     granularity?: TimeGranularity
     activeLayerName?: string
     isLayerLocked?: boolean
+    /** 当前段是否正在在线获取中 */
+    onlineFetchInProgress?: boolean
   }>(),
   {
     granularity: 'hour',
@@ -33,6 +35,7 @@ const props = withDefaults(
     playIntervalMs: DEFAULT_PLAY_INTERVAL_MS,
     isLayerLocked: false,
     activeLayerName: '',
+    onlineFetchInProgress: false,
   },
 )
 
@@ -44,6 +47,8 @@ const emit = defineEmits<{
   toggleUnifiedTime: []
   toggleLayerLock: []
   changePlayInterval: [ms: number]
+  /** 用户点击可在线获取段时触发 */
+  fetchSegment: [segment: TimelineAvailabilitySegment]
 }>()
 
 // ── 日期与粒度格式化 ──────────────────────────────────────────
@@ -192,7 +197,7 @@ function advanceSlice(delta: number) {
   if (props.granularity === 'hour') {
     const segs = props.timelineSegments
     const usable = segs
-      .filter((s) => s.state === 'ready' || s.state === 'partial')
+      .filter((s) => s.state === 'ready' || s.state === 'partial' || s.state === 'fetchable')
       .map((s) => ({ seg: s, value: segmentIndex(s) }))
       .sort((a, b) => a.value - b.value)
 
@@ -667,14 +672,18 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
         <span class="availability-caption-side availability-live">{{ liveLabel }}</span>
       </div>
 
-      <!-- 可用性切片条：包含空数据灰色条指示 -->
-      <div class="availability-strip" aria-hidden="true">
+      <!-- 可用性切片条：fetchable 段可点击触发在线获取 -->
+      <div class="availability-strip">
         <span
           v-for="segment in timelineSegments"
           :key="segment.index"
           class="availability-segment"
-          :class="`availability-${segment.state}`"
+          :class="[
+            `availability-${segment.state}`,
+            { 'availability-fetchable-clickable': segment.state === 'fetchable' },
+          ]"
           :title="`${segment.label} · ${segment.availabilityLabel}`"
+          @click="segment.state === 'fetchable' ? emit('fetchSegment', segment) : undefined"
         ></span>
       </div>
 

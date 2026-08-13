@@ -4,9 +4,15 @@
  */
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
 
-import { fetchLayerCatalog, type LayerDescriptor } from '../../services/runtime-api'
 import {
+  fetchLayerCatalog,
+  type LayerDescriptor,
+  type OnlineTemporalCapability,
+} from '../../services/runtime-api'
+import {
+  getOnlineTemporalConfig,
   supportsMapLayerCapability,
+  supportsOnlineTemporalCapability,
   supportsParticleFlowCapability,
   supportsViewportDrivenRefreshCapability,
 } from '../../services/layer-capabilities'
@@ -58,6 +64,8 @@ export interface CatalogRuntimeSlice {
   supportsMapLayerResult: (catalogId: string) => boolean
   supportsViewportDrivenRefresh: (catalogId: string) => boolean
   supportsParticleFlow: (catalogId: string) => boolean
+  supportsOnlineTemporal: (catalogId: string) => boolean
+  getOnlineTemporalConfig: (catalogId: string) => OnlineTemporalCapability | null
   getLayerPrimaryMetric: (catalogId: string) => string | null
   setRuntimeLayerCatalog: (catalog: Record<string, LayerDescriptor>) => void
 }
@@ -358,6 +366,16 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     return catalogId.startsWith('wind-field')
   }
 
+  function supportsOnlineTemporal(catalogId: string): boolean {
+    const descriptor = resolveEffectiveDescriptor(catalogId)
+    return supportsOnlineTemporalCapability(descriptor)
+  }
+
+  function getOnlineTemporalConfigForCatalog(catalogId: string): OnlineTemporalCapability | null {
+    const descriptor = resolveEffectiveDescriptor(catalogId)
+    return getOnlineTemporalConfig(descriptor)
+  }
+
   function getLayerPrimaryMetric(catalogId: string): string | null {
     return getRuntimeLayerDescriptor(catalogId)?.capabilities?.primary_metric ?? null
   }
@@ -385,6 +403,8 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     supportsMapLayerResult,
     supportsViewportDrivenRefresh,
     supportsParticleFlow,
+    supportsOnlineTemporal,
+    getOnlineTemporalConfig: getOnlineTemporalConfigForCatalog,
     getLayerPrimaryMetric,
     setRuntimeLayerCatalog,
   }

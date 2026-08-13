@@ -83,7 +83,17 @@
     "merged_into": null,
     "is_merged_group": false,
     "members": [],
-    "is_admin_boundary": false
+    "is_admin_boundary": false,
+    "online_temporal": {
+      "enabled": true,
+      "coverage_start": "2000-01",
+      "coverage_end": "2025-06",
+      "native_step": "1M",
+      "max_batch": 12,
+      "prefetch_depth": 1,
+      "queue_tag": "temporal-fetch",
+      "priority": "low"
+    }
   },
   {
     "layer_id": "biomass-cn",

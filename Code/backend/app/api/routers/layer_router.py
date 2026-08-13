@@ -15,7 +15,11 @@ from app.core.config import settings
 from app.api.error_codes import AUTH_ERROR, ApiError
 from app.services.crs import crs_transformer
 from app.services.crs.crs_registry import normalize_crs_code
-from app.services.layer_catalog import get_layer_catalog, get_layer_category_response
+from app.services.layer_catalog import (
+    get_layer_catalog,
+    get_layer_category_response,
+    get_layer_descriptor,
+)
 from app.services.overlay_registry import (
     get_overlay_spec,
     list_overlay_ids,
@@ -152,6 +156,24 @@ def list_layer_categories() -> LayerCategoryResponse:
     前端 ``LAYER_CATEGORIES`` 静态表仅在 API 不可用时作离线兜底。
     """
     return get_layer_category_response()
+
+
+@router.get("/layers/{layer_id}/online-temporal", tags=["catalog"])
+def get_layer_online_temporal(
+    layer_id: str,
+    cred=Depends(get_request_user),
+) -> dict[str, Any]:
+    """返回图层的在线时间获取能力与可获取范围。
+
+    前端时间轴据此判断哪些时间点可在线获取（标 'fetchable' 段），
+    以及获取参数（步长、预取深度、队列标签）。
+    """
+    check_resource_access(cred, "layer", layer_id)
+    descriptor = get_layer_descriptor(layer_id)
+    cap = descriptor.online_temporal if descriptor else None
+    if cap is None or not cap.enabled:
+        return {"layer_id": layer_id, "available": False}
+    return {"layer_id": layer_id, "available": True, **cap.model_dump()}
 
 
 @router.get("/geo/transform", tags=["geo"])
