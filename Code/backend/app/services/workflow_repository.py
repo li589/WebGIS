@@ -28,6 +28,8 @@ DEFAULT_CONFIG_SNAPSHOT: dict[str, dict[str, object]] = {
         if settings.workflow_executor == "celery"
         else "in_memory",
         "demo_snapshot_provider": "local_catalog",
+        "max_concurrent_workflows_standard": settings.max_concurrent_workflows_standard,
+        "max_concurrent_workflows_demo": settings.max_concurrent_workflows_demo,
     },
     "workflow": {
         "default_queue": "demo",
@@ -52,7 +54,7 @@ _DEFAULT_RETENTION_DAYS = 30
 # P2-3：schema 版本跟踪（无 Alembic，用 schema_meta 表记录当前 schema 版本，
 # 发版/升级时可检测代码与 DB 版本是否一致）。每次 schema 变更（加列/加表/加索引）
 # 时递增此值并记录变更说明。
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 SCHEMA_CHANGES: list[tuple[int, str]] = [
     (1, "初始 schema：workflow_runs / workflow_events / runtime_config"),
     (
@@ -60,6 +62,10 @@ SCHEMA_CHANGES: list[tuple[int, str]] = [
         "workflow_runs 加 request_json / run_class 列 + idx_workflow_runs_class_status",
     ),
     (3, "新增 schema_meta 版本跟踪表（P2-3）"),
+    (
+        4,
+        "workflow_runs 加 user_id 列 + idx_workflow_runs_user_status（Phase C 按角色并发控制）",
+    ),
 ]
 
 
@@ -123,6 +129,7 @@ class SQLiteWorkflowRepository:
         run_class: str | None = None,
         *,
         result_dto_override: dict[str, Any] | None = None,
+        user_id: int | None = None,
     ) -> None:
         payload = self._serialize_run_payload(
             run_status, result_dto_override=result_dto_override
@@ -131,14 +138,15 @@ class SQLiteWorkflowRepository:
             if request_json is not None:
                 connection.execute(
                     """
-                    INSERT INTO workflow_runs (run_id, status, updated_at, payload_json, request_json, run_class)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO workflow_runs (run_id, status, updated_at, payload_json, request_json, run_class, user_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(run_id) DO UPDATE SET
                         status = excluded.status,
                         updated_at = excluded.updated_at,
                         payload_json = excluded.payload_json,
                         request_json = COALESCE(excluded.request_json, request_json),
-                        run_class = COALESCE(excluded.run_class, run_class)
+                        run_class = COALESCE(excluded.run_class, run_class),
+                        user_id = COALESCE(excluded.user_id, user_id)
                     """
                     + self._TERMINAL_GUARD_WHERE,
                     (
@@ -148,18 +156,20 @@ class SQLiteWorkflowRepository:
                         payload,
                         request_json,
                         run_class or "business",
+                        user_id,
                     ),
                 )
             else:
                 connection.execute(
                     """
-                    INSERT INTO workflow_runs (run_id, status, updated_at, payload_json, run_class)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO workflow_runs (run_id, status, updated_at, payload_json, run_class, user_id)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     ON CONFLICT(run_id) DO UPDATE SET
                         status = excluded.status,
                         updated_at = excluded.updated_at,
                         payload_json = excluded.payload_json,
-                        run_class = COALESCE(workflow_runs.run_class, excluded.run_class)
+                        run_class = COALESCE(workflow_runs.run_class, excluded.run_class),
+                        user_id = COALESCE(excluded.user_id, user_id)
                     """
                     + self._TERMINAL_GUARD_WHERE,
                     (
@@ -168,6 +178,7 @@ class SQLiteWorkflowRepository:
                         run_status.updated_at.isoformat(),
                         payload,
                         run_class or "business",
+                        user_id,
                     ),
                 )
 
@@ -209,6 +220,28 @@ class SQLiteWorkflowRepository:
         return [
             WorkflowRunStatusResponse.model_validate(json.loads(row[0])) for row in rows
         ]
+
+    def get_run_user_id(self, run_id: str) -> int | None:
+        """Return the owning user_id column for a run (may be unset on legacy rows)."""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT user_id FROM workflow_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+        if row is None or row[0] is None:
+            return None
+        return int(row[0])
+
+    def list_run_user_ids(self) -> dict[str, int | None]:
+        """Map run_id → user_id for ownership filtering."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT run_id, user_id FROM workflow_runs"
+            ).fetchall()
+        out: dict[str, int | None] = {}
+        for row in rows:
+            out[str(row[0])] = int(row[1]) if row[1] is not None else None
+        return out
 
     def append_event(self, event: WorkflowEvent) -> None:
         payload = json.dumps(event.model_dump(mode="json"), ensure_ascii=False)
@@ -332,6 +365,133 @@ class SQLiteWorkflowRepository:
                 ).fetchone()
         return int(row[0]) if row is not None else 0
 
+    def count_active_runs_by_user(
+        self,
+        user_id: int,
+        run_class: str | None = None,
+        *,
+        exclude_queued: bool = False,
+    ) -> int:
+        """Count active (non-terminal) runs for a specific user.
+
+        Phase C: Used by submission_service and queue_dispatch_service to
+        enforce per-user concurrent workflow limits.
+
+        Args:
+            exclude_queued: When True (dispatch wakeup), only count slots that
+                already occupy capacity (accepted/running/retry_pending). Queued
+                rows must not block waking other queued runs when a slot frees.
+        """
+        if exclude_queued:
+            active_statuses = (
+                ExecutionStatus.accepted.value,
+                ExecutionStatus.running.value,
+                ExecutionStatus.retry_pending.value,
+            )
+        else:
+            active_statuses = (
+                ExecutionStatus.accepted.value,
+                ExecutionStatus.queued.value,
+                ExecutionStatus.running.value,
+                ExecutionStatus.retry_pending.value,
+            )
+        placeholders = ", ".join("?" for _ in active_statuses)
+        with self._connect() as connection:
+            if run_class is None:
+                row = connection.execute(
+                    f"""
+                    SELECT COUNT(*)
+                    FROM workflow_runs
+                    WHERE status IN ({placeholders})
+                      AND user_id = ?
+                    """,
+                    (*active_statuses, user_id),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    f"""
+                    SELECT COUNT(*)
+                    FROM workflow_runs
+                    WHERE status IN ({placeholders})
+                      AND COALESCE(run_class, 'business') = ?
+                      AND user_id = ?
+                    """,
+                    (*active_statuses, run_class, user_id),
+                ).fetchone()
+        return int(row[0]) if row is not None else 0
+
+    def get_queued_runs(
+        self, user_id: int | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        """Return queued workflow runs, ordered by ``updated_at`` ascending.
+
+        Phase C: Used by queue_dispatch_service to find workflows that were
+        queued due to user-level capacity limits and can now be dispatched.
+
+        Args:
+            user_id: If provided, only return queued runs for this user.
+            limit: Maximum number of runs to return.
+
+        Returns:
+            List of dicts with keys: run_id, status, updated_at, run_class,
+            user_id, payload_json, request_json.
+        """
+        with self._connect() as connection:
+            if user_id is not None:
+                rows = connection.execute(
+                    """
+                    SELECT run_id, status, updated_at, run_class, user_id,
+                           payload_json, request_json
+                    FROM workflow_runs
+                    WHERE status = ?
+                      AND user_id = ?
+                    ORDER BY updated_at ASC, run_id ASC
+                    LIMIT ?
+                    """,
+                    (ExecutionStatus.queued.value, user_id, limit),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT run_id, status, updated_at, run_class, user_id,
+                           payload_json, request_json
+                    FROM workflow_runs
+                    WHERE status = ?
+                    ORDER BY updated_at ASC, run_id ASC
+                    LIMIT ?
+                    """,
+                    (ExecutionStatus.queued.value, limit),
+                ).fetchall()
+        columns = [
+            "run_id",
+            "status",
+            "updated_at",
+            "run_class",
+            "user_id",
+            "payload_json",
+            "request_json",
+        ]
+        return [dict(zip(columns, row, strict=False)) for row in rows]
+
+    def update_run_status_and_user_id(self, run_id: str, user_id: int | None) -> bool:
+        """Update the ``user_id`` column of a workflow run.
+
+        Phase C: Used by queue_dispatch_service when re-dispatching a queued
+        run to ensure the user_id association is preserved.
+
+        Returns:
+            True if the row was updated, False if the run was not found.
+        """
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE workflow_runs SET user_id = ?
+                WHERE run_id = ?
+                """,
+                (user_id, run_id),
+            )
+            return cursor.rowcount > 0
+
     def save_run_under_capacity(
         self,
         run_status: WorkflowRunStatusResponse,
@@ -340,11 +500,18 @@ class SQLiteWorkflowRepository:
         run_class: str,
         limit: int,
         result_dto_override: dict[str, Any] | None = None,
+        user_id: int | None = None,
+        user_limit: int | None = None,
     ) -> None:
         """Atomically reserve a capacity slot and insert the accepted run.
 
         Uses ``BEGIN IMMEDIATE`` so concurrent submits cannot both pass a
         TOCTOU capacity check. Raises ``ValueError`` when the pool is full.
+
+        Phase C: When ``user_id`` and ``user_limit`` are both provided, an
+        additional per-user active-run check is enforced on top of the global
+        pool limit. The per-user limit is an *additional* constraint — the
+        global pool mechanism remains unchanged.
         """
         payload = self._serialize_run_payload(
             run_status, result_dto_override=result_dto_override
@@ -371,16 +538,35 @@ class SQLiteWorkflowRepository:
                 raise ValueError(
                     f"Workflow capacity reached: active_runs={active}, limit={limit}"
                 )
+            # Phase C：用户级并发限制（在全局容量池之上的额外约束）。
+            if user_id is not None and user_limit is not None:
+                user_row = connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM workflow_runs
+                    WHERE status IN (?, ?, ?, ?)
+                      AND COALESCE(run_class, 'business') = ?
+                      AND user_id = ?
+                    """,
+                    (*active_statuses, run_class or "business", user_id),
+                ).fetchone()
+                user_active = int(user_row[0]) if user_row is not None else 0
+                if user_active >= user_limit:
+                    raise ValueError(
+                        f"User workflow capacity reached: "
+                        f"user_active={user_active}, limit={user_limit}"
+                    )
             connection.execute(
                 """
-                INSERT INTO workflow_runs (run_id, status, updated_at, payload_json, request_json, run_class)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO workflow_runs (run_id, status, updated_at, payload_json, request_json, run_class, user_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(run_id) DO UPDATE SET
                     status = excluded.status,
                     updated_at = excluded.updated_at,
                     payload_json = excluded.payload_json,
                     request_json = COALESCE(excluded.request_json, request_json),
-                    run_class = COALESCE(excluded.run_class, run_class)
+                    run_class = COALESCE(excluded.run_class, run_class),
+                    user_id = COALESCE(excluded.user_id, user_id)
                 """
                 + self._TERMINAL_GUARD_WHERE,
                 (
@@ -390,6 +576,7 @@ class SQLiteWorkflowRepository:
                     payload,
                     request_json,
                     run_class or "business",
+                    user_id,
                 ),
             )
 
@@ -660,8 +847,20 @@ class SQLiteWorkflowRepository:
                 connection.execute(
                     "ALTER TABLE workflow_runs ADD COLUMN run_class TEXT NOT NULL DEFAULT 'business'"
                 )
+            # Phase C：按角色并发控制——workflow_runs 加 user_id 列，用于按用户计数。
+            if "user_id" not in columns:
+                try:
+                    connection.execute(
+                        "ALTER TABLE workflow_runs ADD COLUMN user_id INTEGER"
+                    )
+                except sqlite3.OperationalError:
+                    pass  # 列已存在
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_workflow_runs_class_status ON workflow_runs(run_class, status)"
+            )
+            # Phase C：按 user_id + status 查询活跃工作流数的索引。
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_workflow_runs_user_status ON workflow_runs(user_id, status)"
             )
 
     def _connect(self):

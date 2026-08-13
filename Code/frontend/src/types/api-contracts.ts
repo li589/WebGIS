@@ -343,7 +343,7 @@ export interface paths {
         };
         /**
          * List Overlays
-         * @description 列出所有已注册的叠加图层 ID（供前端发现可用 overlay 图层）。
+         * @description 列出当前用户可访问的叠加图层 ID（供前端发现可用 overlay 图层）。
          */
         get: operations["list_overlays_overlays_get"];
         put?: never;
@@ -363,7 +363,7 @@ export interface paths {
         };
         /**
          * Get Overlays In Viewport
-         * @description 返回与视口相交的 overlay layer_ids（服务端空间索引查询）。
+         * @description 返回与视口相交且当前用户可访问的 overlay layer_ids。
          *
          *     优先用 spatial.sqlite + R*Tree（``ST_Intersects``）；扩展不可用或表空时
          *     回退到逐层读 ``bounds.json`` 做 AABB 相交（与原前端 O(N) 过滤等价）。
@@ -419,6 +419,7 @@ export interface paths {
          *
          *     可选 status 过滤与 limit 取最近 N 条（按创建时间倒序），
          *     供前端启动恢复（含"最近成功 run 产物自动恢复"）与跨会话状态同步使用。
+         *     非 admin 仅可见本人 run（无 user_id 的旧 run 对非 admin 不可见）。
          */
         get: operations["list_workflow_runs_workflow_runs_get"];
         put?: never;
@@ -635,9 +636,9 @@ export interface paths {
         };
         /**
          * Get Runtime Resources
-         * @description 返回后端进程与宿主系统资源占用（CPU / 内存 / 磁盘）。
+         * @description 返回后端进程与各子系统资源占用（CPU / 内存 / 磁盘）。
          *
-         *     数据经 psutil 轻量采样（TTL 5s 缓存），前端资源面板低频轮询即可。
+         *     数据由 psutil 轻量采样（TTL 5s 缓存），前端资源面板低频轮询即可。
          */
         get: operations["get_runtime_resources_runtime_resources_get"];
         put?: never;
@@ -657,7 +658,7 @@ export interface paths {
         };
         /**
          * Get Runtime Metrics
-         * @description 返回各端点的 P50/P95 请求耗时统计（按天聚合，从 Redis 读取）。
+         * @description 返回各节点的 P50/P95 请求耗时统计（按天聚合，从 Redis 读取）。
          *
          *     Query params:
          *         date: YYYY-MM-DD 格式日期，默认当天（UTC）。
@@ -728,7 +729,7 @@ export interface paths {
         /**
          * Update Provider Api Config
          * @deprecated
-         * @description 已移除：运行时密钥/配置请改用 /config/api-keys* 与 /config/weather/providers*。
+         * @description 已移除：运行时密钥配置请改用 /config/api-keys* 与 /config/weather/providers*。
          */
         post: operations["update_provider_api_config_runtime_api_config__provider__post"];
         delete?: never;
@@ -2864,6 +2865,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config/cache/invalidate-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Invalidate Template Caches
+         * @description P1-3：清除 workflow_request_resolver 的 lru_cache（module templates / dataset paths / provider helpers）。
+         *
+         *     在以下场景需调用：
+         *     - 修改了 MODULE_REQUEST_TEMPLATES 后（避免重启 FastAPI）
+         *     - 修改了 provider dataset 配置后
+         *     - admin 主动刷新缓存
+         */
+        post: operations["invalidate_template_caches_config_cache_invalidate_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workflow-definitions/node-templates": {
         parameters: {
             query?: never;
@@ -2940,7 +2966,7 @@ export interface paths {
         };
         /**
          * List Definitions
-         * @description 列出所有工作流定义（system + user）。
+         * @description 列出所有工作流定义（system + user）。鉴权开启时匿名 fail-closed；非 admin 按 ACL 过滤。
          */
         get: operations["list_definitions_workflow_definitions_get"];
         put?: never;
@@ -11946,6 +11972,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AboutInfo"];
+                };
+            };
+        };
+    };
+    invalidate_template_caches_config_cache_invalidate_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

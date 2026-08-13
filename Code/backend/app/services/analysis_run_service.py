@@ -46,6 +46,72 @@ def resolve_overlay_source_path(overlay_layer_id: str) -> Path:
     return path
 
 
+def _assert_path_under_allowed_roots(path_str: str) -> Path:
+    """Reject client path injection outside data / imports / output roots."""
+    from app.core.config import settings
+    from app.data_io.services.paths import IMPORTS_DIR
+
+    candidate = Path(path_str).expanduser()
+    try:
+        resolved = candidate.resolve(strict=False)
+    except OSError as exc:
+        raise AnalysisRunError(f"非法路径: {path_str}") from exc
+
+    roots: list[Path] = []
+    for raw in (
+        settings.data_root,
+        settings.output_root,
+        str(IMPORTS_DIR),
+    ):
+        if not raw:
+            continue
+        p = Path(raw)
+        if not p.is_absolute():
+            p = Path(__file__).resolve().parents[2] / p
+        try:
+            roots.append(p.resolve(strict=False))
+        except OSError:
+            continue
+    if not roots:
+        raise AnalysisRunError("服务器未配置数据根，拒绝路径参数")
+    for root in roots:
+        try:
+            resolved.relative_to(root)
+            return resolved
+        except ValueError:
+            continue
+    raise AnalysisRunError("路径不在允许的数据目录内")
+
+
+def resolve_imported_vector_geojson(backend_layer_id: str) -> Path:
+    from app.data_io.services.paths import IMPORTS_DIR
+
+    layer_id = str(backend_layer_id or "").strip()
+    if not layer_id or "/" in layer_id or "\\" in layer_id or ".." in layer_id:
+        raise AnalysisRunError("非法导入矢量图层 id")
+    path = (IMPORTS_DIR / layer_id / "data.geojson").resolve(strict=False)
+    _assert_path_under_allowed_roots(str(path))
+    if not path.is_file():
+        raise AnalysisRunError(f"导入矢量层无 data.geojson: {layer_id}")
+    return path
+
+
+def _param_or_bbox(
+    params: dict[str, Any],
+    key: str,
+    bbox_value: float | None,
+) -> float | None:
+    raw = params.get(key, bbox_value)
+    if raw is None:
+        return bbox_value
+    if isinstance(raw, str) and not raw.strip():
+        return bbox_value
+    try:
+        return float(raw)
+    except (TypeError, ValueError) as exc:
+        raise AnalysisRunError(f"裁剪参数 {key} 无效: {raw!r}") from exc
+
+
 def _inject_node_path(
     nodes: list[dict[str, Any]], *, dataset_key: str, path: str
 ) -> None:
@@ -127,6 +193,32 @@ def _inject_tool_params(
         elif tool_id == "gis.clip" and ntype == "preprocess/clip":
             if "buffer_meters" in params and params["buffer_meters"] is not None:
                 props["buffer_meters"] = params["buffer_meters"]
+        elif tool_id == "gis.contour" and ntype == "gis/contour":
+            for key in ("interval", "band"):
+                if key in params and params[key] is not None:
+                    props[key] = params[key]
+            if "smoothing" in params and params["smoothing"] is not None:
+                props["smoothing"] = str(params["smoothing"]).lower() == "true"
+        elif tool_id == "gis.slope_aspect" and ntype == "gis/slope_aspect":
+            for key in ("z_unit", "algorithm"):
+                if key in params and params[key] is not None:
+                    props[key] = params[key]
+        elif tool_id == "gis.raster_calc" and ntype == "gis/raster_calculator":
+            for key in ("expression", "nodata_handling"):
+                if key in params and params[key] is not None:
+                    props[key] = params[key]
+        elif tool_id == "gis.vector_to_raster" and ntype == "gis/vector_to_raster":
+            for key in ("attribute_field", "resolution", "fill_value"):
+                if key in params and params[key] is not None:
+                    props[key] = params[key]
+        elif tool_id == "gis.raster_to_vector" and ntype == "gis/raster_to_vector":
+            for key in ("band", "threshold", "simplify_tolerance"):
+                if key in params and params[key] is not None:
+                    props[key] = params[key]
+        elif tool_id == "gis.watershed" and ntype == "gis/watershed":
+            for key in ("fill_threshold", "max_dem_pixels"):
+                if key in params and params[key] is not None:
+                    props[key] = params[key]
 
 
 def _write_point_geojson(lng: float, lat: float) -> str:
@@ -183,11 +275,15 @@ def build_analysis_submit_request(req: AnalysisRunRequest) -> WorkflowSubmitRequ
     if req.overlay_layer_id:
         primary_path = str(resolve_overlay_source_path(req.overlay_layer_id))
     elif params.get("input_path"):
-        primary_path = str(params["input_path"])
+        primary_path = str(_assert_path_under_allowed_roots(str(params["input_path"])))
 
     if tool.tool_id == "gis.buffer":
         if req.geojson_path:
-            primary_path = str(req.geojson_path)
+            primary_path = str(_assert_path_under_allowed_roots(str(req.geojson_path)))
+        elif params.get("imported_vector_layer_id"):
+            primary_path = str(
+                resolve_imported_vector_geojson(str(params["imported_vector_layer_id"]))
+            )
         elif req.map_point is not None:
             primary_path = _write_point_geojson(req.map_point.lng, req.map_point.lat)
         if not primary_path:
@@ -207,17 +303,68 @@ def build_analysis_submit_request(req: AnalysisRunRequest) -> WorkflowSubmitRequ
             _inject_node_path(nodes, dataset_key="zones_path", path=zones_path)
         elif req.zones_geojson_path:
             _inject_node_path(
-                nodes, dataset_key="zones_path", path=str(req.zones_geojson_path)
+                nodes,
+                dataset_key="zones_path",
+                path=str(_assert_path_under_allowed_roots(str(req.zones_geojson_path))),
             )
-    elif tool.tool_id in {"gis.clip", "stats.histogram", "gis.reclassify"}:
+        elif params.get("zones_imported_vector_layer_id"):
+            _inject_node_path(
+                nodes,
+                dataset_key="zones_path",
+                path=str(
+                    resolve_imported_vector_geojson(
+                        str(params["zones_imported_vector_layer_id"])
+                    )
+                ),
+            )
+    elif tool.tool_id == "gis.vector_to_raster":
+        if req.geojson_path:
+            primary_path = str(_assert_path_under_allowed_roots(str(req.geojson_path)))
+        elif params.get("imported_vector_layer_id"):
+            primary_path = str(
+                resolve_imported_vector_geojson(str(params["imported_vector_layer_id"]))
+            )
+        if not primary_path:
+            raise AnalysisRunError(
+                "矢量转栅格需要矢量输入（导入矢量层或 geojson_path）"
+            )
+        _inject_node_path(nodes, dataset_key="input_path", path=primary_path)
+    elif tool.tool_id in {
+        "gis.clip",
+        "stats.histogram",
+        "gis.reclassify",
+        "gis.contour",
+        "gis.slope_aspect",
+        "gis.raster_calc",
+        "gis.raster_to_vector",
+        "gis.watershed",
+    }:
         if not primary_path:
             raise AnalysisRunError(f"{tool.title}需要栅格输入（overlay_layer_id）")
         _inject_node_path(nodes, dataset_key="input_path", path=primary_path)
+        if tool.tool_id == "gis.watershed":
+            pour_path: str | None = None
+            if req.map_point is not None:
+                pour_path = _write_point_geojson(req.map_point.lng, req.map_point.lat)
+            elif params.get("imported_vector_layer_id"):
+                pour_path = str(
+                    resolve_imported_vector_geojson(
+                        str(params["imported_vector_layer_id"])
+                    )
+                )
+            elif req.geojson_path:
+                pour_path = str(_assert_path_under_allowed_roots(str(req.geojson_path)))
+            if pour_path:
+                _inject_node_path(nodes, dataset_key="pour_points_path", path=pour_path)
         if tool.tool_id == "gis.clip":
-            west = params.get("west", req.bbox.west if req.bbox else None)
-            south = params.get("south", req.bbox.south if req.bbox else None)
-            east = params.get("east", req.bbox.east if req.bbox else None)
-            north = params.get("north", req.bbox.north if req.bbox else None)
+            west = _param_or_bbox(params, "west", req.bbox.west if req.bbox else None)
+            south = _param_or_bbox(
+                params, "south", req.bbox.south if req.bbox else None
+            )
+            east = _param_or_bbox(params, "east", req.bbox.east if req.bbox else None)
+            north = _param_or_bbox(
+                params, "north", req.bbox.north if req.bbox else None
+            )
             if None in (west, south, east, north):
                 raise AnalysisRunError(
                     "裁剪需要 bbox（west/south/east/north 或请求 bbox）"
@@ -281,6 +428,11 @@ def build_analysis_submit_request(req: AnalysisRunRequest) -> WorkflowSubmitRequ
     )
 
 
-def submit_analysis_run(req: AnalysisRunRequest) -> WorkflowAcceptedResponse:
+def submit_analysis_run(
+    req: AnalysisRunRequest,
+    *,
+    user_id: int | None = None,
+    role: str | None = None,
+) -> WorkflowAcceptedResponse:
     payload = build_analysis_submit_request(req)
-    return submission_service.submit_workflow(payload)
+    return submission_service.submit_workflow(payload, user_id=user_id, role=role)

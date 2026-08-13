@@ -1,10 +1,18 @@
 import os
 from datetime import datetime, timedelta, UTC
 from threading import Lock
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
-from app.api.deps import require_write_access
+from app.api.deps import (
+    CredentialContext,
+    check_resource_access,
+    get_request_user,
+    require_workflow_run_access,
+)
+from app.api.error_codes import AUTH_ERROR, ApiError
+from app.core import config
 from app.services.result_view_service import result_view_service
 from app.services.workflow.service_container import (
     lifecycle_service,
@@ -27,6 +35,40 @@ _EVENTS_POLL_RATE_LIMIT = int(
     os.getenv("BACKEND_EVENTS_POLL_RATE_LIMIT_PER_MINUTE", "120")
 )
 _EVENTS_POLL_WINDOW = timedelta(minutes=1)
+
+
+def _deny_if_not_run_owner(run_id: str, cred: CredentialContext | None) -> None:
+    """Hide non-owned runs as 404 for non-admin authenticated users.
+
+    When user auth is enabled, anonymous callers fail closed with 401
+    (aligned with ``check_resource_access``). Legacy runs with
+    ``user_id is None`` are admin / service_key / dev_bypass only.
+    """
+    if cred is None:
+        if config.settings.user_auth_enabled:
+            raise ApiError(
+                AUTH_ERROR,
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required.",
+            )
+        return
+    if cred.role == "admin":
+        return
+    if cred.user_id is None:
+        if cred.source in {"service_key", "dev_bypass"}:
+            return
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow run not found: {run_id}",
+        )
+    from app.services.workflow_repository import SQLiteWorkflowRepository
+
+    owner = SQLiteWorkflowRepository().get_run_user_id(run_id)
+    if owner is None or owner != cred.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow run not found: {run_id}",
+        )
 
 
 class EventsPollRateLimiter:
@@ -68,11 +110,25 @@ def _get_client_ip(request: Request) -> str:
     tags=["workflow"],
     response_model=WorkflowAcceptedResponse,
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_write_access)],
 )
-def submit_workflow(payload: WorkflowSubmitRequest) -> WorkflowAcceptedResponse:
+def submit_workflow(
+    payload: WorkflowSubmitRequest,
+    _write_ok: None = Depends(require_workflow_run_access),
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> WorkflowAcceptedResponse:
+    # When called directly (e.g., in tests without FastAPI DI), ``cred`` may
+    # be an unresolved ``Depends`` object — guard with isinstance.
+    _cred = cred if isinstance(cred, CredentialContext) else None
+    # Auth is enforced by require_workflow_run_access; ACL only when a real
+    # credential was resolved (direct unit calls may pass unresolved Depends).
+    if _cred is not None and payload.layer_id:
+        check_resource_access(_cred, "layer", payload.layer_id)
     try:
-        accepted = submission_service.submit_workflow(payload)
+        accepted = submission_service.submit_workflow(
+            payload,
+            user_id=_cred.user_id if _cred else None,
+            role=_cred.role if _cred else None,
+        )
         return accepted
     except WorkflowValidationError as exc:
         # 提交期参数预校验失败：返回 422 + 结构化字段级错误，
@@ -88,14 +144,14 @@ def submit_workflow(payload: WorkflowSubmitRequest) -> WorkflowAcceptedResponse:
         ) from exc
     except ValueError as exc:
         detail = str(exc)
+        # User concurrency queue is returned as a normal WorkflowAcceptedResponse
+        # from submission_service (status=queued). Global capacity → 429.
         status_code = (
             status.HTTP_429_TOO_MANY_REQUESTS
             if "capacity" in detail.lower()
             else status.HTTP_400_BAD_REQUEST
         )
         raise HTTPException(status_code=status_code, detail=detail) from exc
-    except Exception:
-        raise
 
 
 @router.get(
@@ -109,17 +165,33 @@ def list_workflow_runs(
     limit: int | None = Query(
         default=None, ge=1, le=200, description="取最近 N 条（按创建时间倒序）"
     ),
+    cred: CredentialContext | None = Depends(get_request_user),
 ) -> list[WorkflowRunStatusResponse]:
     """列出工作流 run。active_only=true（默认）仅返回非终态 run。
 
     可选 status 过滤与 limit 取最近 N 条（按创建时间倒序），
     供前端启动恢复（含"最近成功 run 产物自动恢复"）与跨会话状态同步使用。
+    非 admin 仅可见本人 run（无 user_id 的旧 run 对非 admin 不可见）。
     """
     from app.services.workflow_repository import SQLiteWorkflowRepository
     from shared.contracts.api_contracts import ExecutionStatus
 
     repo = SQLiteWorkflowRepository()
     all_runs = repo.list_runs()
+    _cred = cred if isinstance(cred, CredentialContext) else None
+    if _cred is None:
+        if config.settings.user_auth_enabled:
+            raise ApiError(
+                AUTH_ERROR,
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required.",
+            )
+    elif _cred.role != "admin":
+        if _cred.user_id is not None:
+            owners = repo.list_run_user_ids()
+            all_runs = [r for r in all_runs if owners.get(r.run_id) == _cred.user_id]
+        elif _cred.source not in {"service_key", "dev_bypass"}:
+            all_runs = []
     if status is not None:
         all_runs = [r for r in all_runs if r.status.value == status]
     if not active_only:
@@ -144,13 +216,18 @@ def list_workflow_runs(
     tags=["workflow"],
     response_model=WorkflowRunStatusResponse,
 )
-def get_workflow_run(run_id: str) -> WorkflowRunStatusResponse:
+def get_workflow_run(
+    run_id: str,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> WorkflowRunStatusResponse:
     run_status = submission_service.get_workflow_run(run_id)
     if run_status is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Workflow run not found: {run_id}",
         )
+    _cred = cred if isinstance(cred, CredentialContext) else None
+    _deny_if_not_run_owner(run_id, _cred)
     return run_status
 
 
@@ -159,13 +236,18 @@ def get_workflow_run(run_id: str) -> WorkflowRunStatusResponse:
     tags=["workflow"],
     response_model=WorkflowRunViewResponse,
 )
-def get_workflow_run_view(run_id: str) -> WorkflowRunViewResponse:
+def get_workflow_run_view(
+    run_id: str,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> WorkflowRunViewResponse:
     run_view = result_view_service.get_workflow_run_view(run_id)
     if run_view is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Workflow run not found: {run_id}",
         )
+    _cred = cred if isinstance(cred, CredentialContext) else None
+    _deny_if_not_run_owner(run_id, _cred)
     return run_view
 
 
@@ -179,6 +261,7 @@ def list_workflow_events(
     run_id: str,
     after_event_id: str | None = None,
     limit: int | None = None,
+    cred: CredentialContext | None = Depends(get_request_user),
 ) -> WorkflowEventsResponse:
     client_ip = _get_client_ip(request)
     if not _events_poll_limiter.check(client_ip):
@@ -189,6 +272,8 @@ def list_workflow_events(
                 f"Limit: {_EVENTS_POLL_RATE_LIMIT} per minute."
             ),
         )
+    _cred = cred if isinstance(cred, CredentialContext) else None
+    _deny_if_not_run_owner(run_id, _cred)
     events = submission_service.list_workflow_events(
         run_id, after_event_id=after_event_id, limit=limit
     )
@@ -204,9 +289,14 @@ def list_workflow_events(
     "/workflow-runs/{run_id}/cancel",
     tags=["workflow"],
     response_model=WorkflowRunStatusResponse,
-    dependencies=[Depends(require_write_access)],
 )
-def cancel_workflow_run(run_id: str) -> WorkflowRunStatusResponse:
+def cancel_workflow_run(
+    run_id: str,
+    _run_ok: None = Depends(require_workflow_run_access),
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> WorkflowRunStatusResponse:
+    _cred = cred if isinstance(cred, CredentialContext) else None
+    _deny_if_not_run_owner(run_id, _cred)
     try:
         return lifecycle_service.cancel_workflow_run(run_id)
     except ValueError as exc:
@@ -219,9 +309,14 @@ def cancel_workflow_run(run_id: str) -> WorkflowRunStatusResponse:
     "/workflow-runs/{run_id}/retry",
     tags=["workflow"],
     response_model=WorkflowAcceptedResponse,
-    dependencies=[Depends(require_write_access)],
 )
-def retry_workflow_run(run_id: str) -> WorkflowAcceptedResponse:
+def retry_workflow_run(
+    run_id: str,
+    _run_ok: None = Depends(require_workflow_run_access),
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> WorkflowAcceptedResponse:
+    _cred = cred if isinstance(cred, CredentialContext) else None
+    _deny_if_not_run_owner(run_id, _cred)
     try:
         return retry_dispatcher.retry_workflow_run(run_id)
     except ValueError as exc:
@@ -233,9 +328,12 @@ def retry_workflow_run(run_id: str) -> WorkflowAcceptedResponse:
 @router.post(
     "/workflow-runs/{run_id}/materialize-map-layers",
     tags=["workflow"],
-    dependencies=[Depends(require_write_access)],
 )
-def materialize_workflow_map_layers(run_id: str) -> dict:
+def materialize_workflow_map_layers(
+    run_id: str,
+    _run_ok: None = Depends(require_workflow_run_access),
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     """Publish algorithm science products as imported overlays for map display.
 
     L2: 业务逻辑已下沉到 python_provider_result_builder.materialize_map_layers。
@@ -244,6 +342,8 @@ def materialize_workflow_map_layers(run_id: str) -> dict:
         python_provider_result_builder,
     )
 
+    _cred = cred if isinstance(cred, CredentialContext) else None
+    _deny_if_not_run_owner(run_id, _cred)
     run_status = submission_service.get_workflow_run(run_id)
     if run_status is None:
         raise HTTPException(

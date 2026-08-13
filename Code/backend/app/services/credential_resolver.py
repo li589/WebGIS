@@ -16,7 +16,11 @@ logger = logging.getLogger(__name__)
 
 CredentialSource = Literal["session", "user_token", "service_key", "dev_bypass"]
 
-_WRITE_ROLES = frozenset({"admin", "operator"})
+_WRITE_ROLES = frozenset({"admin", "standard"})
+_CONFIG_MANAGEMENT_ROLES = frozenset({"admin"})
+_WORKFLOW_CREATE_ROLES = frozenset({"admin", "standard"})
+# demo 可提交/运行工作流（受并发上限约束），不可改配置/创建定义
+_WORKFLOW_RUN_ROLES = frozenset({"admin", "standard", "demo"})
 LOOPBACK_IPS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 
@@ -73,7 +77,7 @@ def resolve_credential(
     if dev_bypass_allowed(request):
         return CredentialContext(
             source="dev_bypass",
-            role="operator",
+            role="standard",
             user_id=None,
             username=None,
         )
@@ -133,9 +137,9 @@ def _resolve_service_key_only(x_api_key: str | None) -> CredentialContext | None
         return None
     if not secrets.compare_digest(x_api_key, configured):
         return None
-    role = (config.settings.api_key_role or "operator").strip().lower()
+    role = (config.settings.api_key_role or "standard").strip().lower()
     if role not in _WRITE_ROLES:
-        role = "operator"
+        role = "standard"
     return CredentialContext(
         source="service_key",
         role=role,
@@ -167,3 +171,35 @@ def allows_write(ctx: CredentialContext | None) -> bool:
 
 def allows_sensitive_read(ctx: CredentialContext | None) -> bool:
     return allows_write(ctx)
+
+
+def can_manage_config(ctx: CredentialContext | None) -> bool:
+    """配置管理权限：仅 admin。"""
+    if ctx is None:
+        return False
+    return ctx.role in _CONFIG_MANAGEMENT_ROLES
+
+
+def can_create_workflow(ctx: CredentialContext | None) -> bool:
+    """工作流定义创建权限：admin + standard。"""
+    if ctx is None:
+        return False
+    return ctx.role in _WORKFLOW_CREATE_ROLES
+
+
+def can_run_workflow(ctx: CredentialContext | None) -> bool:
+    """工作流运行权限：admin + standard + demo。"""
+    if ctx is None:
+        return False
+    return ctx.role in _WORKFLOW_RUN_ROLES
+
+
+def can_data_transfer(ctx: CredentialContext | None) -> bool:
+    """数据上传/下载权限：admin + standard 无限制；demo 受全局开关管控。"""
+    if ctx is None:
+        return False
+    if ctx.role in _WRITE_ROLES:
+        return True
+    if ctx.role == "demo":
+        return config.settings.demo_data_transfer_enabled
+    return False

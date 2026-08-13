@@ -8,9 +8,11 @@ import time
 from threading import Lock
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
+from app.api.deps import check_resource_access, get_request_user
 from app.core.config import settings
+from app.api.error_codes import AUTH_ERROR, ApiError
 from app.services.crs import crs_transformer
 from app.services.crs.crs_registry import normalize_crs_code
 from app.services.layer_catalog import get_layer_catalog, get_layer_category_response
@@ -38,7 +40,31 @@ _readiness_cache: dict[str, tuple[dict, float]] = {}
 _readiness_cache_lock = Lock()
 
 
-def _catalog_items_for_environment(items: list) -> list:
+def _filter_accessible_layer_ids(layer_ids: list[str], cred: Any) -> list[str]:
+    """Apply resource ACL to overlay/layer id lists (fail-closed when auth on)."""
+    _cred = cred if hasattr(cred, "role") else None
+    if _cred is None:
+        if settings.user_auth_enabled:
+            raise ApiError(
+                AUTH_ERROR,
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required.",
+            )
+        return list(layer_ids)
+    if _cred.role == "admin":
+        return list(layer_ids)
+    if _cred.user_id is None:
+        if getattr(_cred, "source", None) in {"service_key", "dev_bypass"}:
+            return list(layer_ids)
+        return []
+    from app.services.permission_repository import get_permission_repository
+
+    return get_permission_repository().batch_filter_accessible(
+        int(_cred.user_id), "layer", layer_ids
+    )
+
+
+def _catalog_items_for_environment(items: list[Any]) -> list[Any]:
     """非 development/test 隐藏 status=placeholder（实验室占位层，机构包可剔除）。"""
     env = (settings.environment or "").strip().lower()
     if env in {"development", "dev", "test", "testing"}:
@@ -47,9 +73,15 @@ def _catalog_items_for_environment(items: list) -> list:
 
 
 @router.get("/layers", tags=["catalog"], response_model=LayerCatalogResponse)
-def list_layers() -> LayerCatalogResponse:
+def list_layers(cred=Depends(get_request_user)) -> LayerCatalogResponse:
     catalog = get_layer_catalog()
     visible_items = _catalog_items_for_environment(catalog.items)
+
+    # Phase B: 资源访问控制——鉴权开启时匿名 fail-closed；非 admin 按 ACL 过滤
+    accessible_ids = set(
+        _filter_accessible_layer_ids([desc.layer_id for desc in visible_items], cred)
+    )
+    visible_items = [d for d in visible_items if d.layer_id in accessible_ids]
 
     def _check_readiness(item) -> tuple[str, dict]:
         readiness = describe_layer_run_readiness(item.layer_id) or {}
@@ -148,6 +180,7 @@ def get_overlay_preview(
     max_value: float | None = Query(default=None),
     nodata_mode: str | None = Query(default=None),
     nodata_color: str | None = Query(default=None),
+    cred=Depends(get_request_user),
 ) -> Response:
     """返回图层的 PNG 预览图（地理配准），供前端 MapLibre image source 使用。
 
@@ -156,6 +189,7 @@ def get_overlay_preview(
 
     有可读源且传入 palette/min/max/nodata 时动态重着色；否则返回烘焙 PNG。
     """
+    check_resource_access(cred, "layer", layer_id)
     from app.services.overlay_recolor import render_overlay_preview_styled
 
     styled = bool(
@@ -174,7 +208,8 @@ def get_overlay_preview(
         nodata_mode=nodata_mode,
         nodata_color=nodata_color,
     )
-    cache = "no-cache, must-revalidate" if styled else "public, max-age=60"
+    # ACL-gated assets must not be shared via public caches.
+    cache = "no-cache, must-revalidate" if styled else "private, max-age=60"
     return Response(
         content=content,
         media_type="image/png",
@@ -194,8 +229,10 @@ def get_overlay_tile(
     max_value: float | None = Query(default=None),
     nodata_mode: str | None = Query(default=None),
     nodata_color: str | None = Query(default=None),
+    cred=Depends(get_request_user),
 ) -> Response:
     """Web Mercator XYZ PNG tile for imported / geotiff-backed overlays."""
+    check_resource_access(cred, "layer", layer_id)
     from app.services.overlay_tile_service import render_overlay_tile
 
     spec = get_overlay_spec(layer_id)
@@ -238,7 +275,7 @@ def get_overlay_tile(
     return Response(
         content=png,
         media_type="image/png",
-        headers={"Cache-Control": "public, max-age=120", "Vary": "Accept-Encoding"},
+        headers={"Cache-Control": "private, max-age=120", "Vary": "Accept-Encoding"},
     )
 
 
@@ -246,15 +283,18 @@ def get_overlay_tile(
 def get_overlay_bounds(
     layer_id: str,
     time: str | None = Query(default=None),
+    cred=Depends(get_request_user),
 ) -> dict[str, Any]:
     """返回图层的地理边界信息 + 元数据，供前端 MapLibre image source 定位与时间控制使用。"""
+    check_resource_access(cred, "layer", layer_id)
     return read_bounds(layer_id, time)
 
 
 @router.get("/overlays", tags=["overlay"])
-def list_overlays() -> dict[str, Any]:
-    """列出所有已注册的叠加图层 ID（供前端发现可用 overlay 图层）。"""
-    return {"overlay_layer_ids": list_overlay_ids()}
+def list_overlays(cred=Depends(get_request_user)) -> dict[str, Any]:
+    """列出当前用户可访问的叠加图层 ID（供前端发现可用 overlay 图层）。"""
+    ids = _filter_accessible_layer_ids(list_overlay_ids(), cred)
+    return {"overlay_layer_ids": ids}
 
 
 @router.get("/overlays/intersect", tags=["overlay"])
@@ -264,8 +304,9 @@ def get_overlays_in_viewport(
     east: float = Query(..., ge=-180, le=360),
     north: float = Query(..., ge=-90, le=90),
     zoom: int | None = Query(default=None, ge=0, le=24),
+    cred=Depends(get_request_user),
 ) -> dict[str, Any]:
-    """返回与视口相交的 overlay layer_ids（服务端空间索引查询）。
+    """返回与视口相交且当前用户可访问的 overlay layer_ids。
 
     优先用 spatial.sqlite + R*Tree（``ST_Intersects``）；扩展不可用或表空时
     回退到逐层读 ``bounds.json`` 做 AABB 相交（与原前端 O(N) 过滤等价）。
@@ -281,7 +322,11 @@ def get_overlays_in_viewport(
     repo = get_spatial_repository()
     if repo.is_spatial_ready():
         hits = repo.query_intersects(west, south, east, north, zoom=zoom)
-        return {"layer_ids": [h["layer_id"] for h in hits], "source": "spatialite"}
+        raw_ids = [h["layer_id"] for h in hits]
+        return {
+            "layer_ids": _filter_accessible_layer_ids(raw_ids, cred),
+            "source": "spatialite",
+        }
 
     # 回退：扫所有 overlay 的 bounds.json 做 AABB 相交（未导入 / 扩展不可用）
     from app.services.geo_math import overlay_safe_wgs84_bounds
@@ -304,7 +349,10 @@ def get_overlays_in_viewport(
                 "overlay %s bounds read failed in fallback", lid, exc_info=True
             )
             continue
-    return {"layer_ids": matched, "source": "fallback_bounds_json"}
+    return {
+        "layer_ids": _filter_accessible_layer_ids(matched, cred),
+        "source": "fallback_bounds_json",
+    }
 
 
 @router.get("/overlay-value/{layer_id}", tags=["overlay"])
@@ -313,12 +361,14 @@ def get_overlay_value(
     lng: float = Query(...),
     lat: float = Query(...),
     time: str | None = Query(default=None),
+    cred=Depends(get_request_user),
 ) -> dict[str, Any]:
     """查询 overlay 图层在指定点 (lng, lat) 的像素值。
 
     对于时间序列图层，可通过 ?time=YYYYMMDD 指定时间标签。
     返回 {"value": float | null, "unit": str, "layer_id": str, ...}。
     """
+    check_resource_access(cred, "layer", layer_id)
     spec = get_overlay_spec(layer_id)
     if spec is None:
         raise HTTPException(status_code=404, detail=f"No overlay for layer: {layer_id}")

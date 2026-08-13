@@ -36,6 +36,7 @@ CRITICAL_PREFIXES: tuple[str, ...] = (
     "/config",
     "/workflow-runs",
     "/workflow-definitions",
+    "/analysis",
     "/import",
     "/layers",
     "/export",

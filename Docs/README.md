@@ -45,6 +45,9 @@
 
 - **`08-HTML报告/project-overview/`** — 项目全景总览
 - **`08-HTML报告/frontend-design-audit/`** — 前端设计审查报告
+- **`08-HTML报告/security-audit-report/`** — 安全审计报告（13 模块审计发现）
+- **`08-HTML报告/security-upgrade-summary/`** — 安全升级总结报告
+- **`08-HTML报告/codebase-health-report/`** — 代码库健康审查报告（Brooks-Lint）
 
 ## 2026-08 代码对齐要点（摘要）
 

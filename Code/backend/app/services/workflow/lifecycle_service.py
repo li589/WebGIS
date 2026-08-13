@@ -31,6 +31,7 @@ from app.services.workflow.transition_builder import (
     use_celery_executor,
 )
 from app.services.workflow.follow_up_dispatch_service import FollowUpDispatchService
+from app.services.workflow.queue_dispatch_service import QueueDispatchService
 from app.tasks.workflow_tasks import dispatch_workflow_task
 from shared.contracts.api_contracts import (
     EventChannel,
@@ -58,6 +59,7 @@ class WorkflowLifecycleService:
         persistence: WorkflowPersistenceService | None = None,
         transitions: WorkflowTransitionBuilder | None = None,
         follow_up: FollowUpDispatchService | None = None,
+        queue_dispatch: QueueDispatchService | None = None,
     ) -> None:
         self._repository = repository or SQLiteWorkflowRepository()
         self._persistence = persistence or WorkflowPersistenceService(self._repository)
@@ -65,6 +67,8 @@ class WorkflowLifecycleService:
         self._follow_up = follow_up or FollowUpDispatchService(
             self._repository, self._persistence, self._transitions
         )
+        # Phase C：队列唤醒服务（可选，测试时可传 None 跳过）
+        self._queue_dispatch = queue_dispatch
 
     def cancel_workflow_run(self, run_id: str) -> WorkflowRunStatusResponse:
         now = datetime.now(UTC)
@@ -165,6 +169,8 @@ class WorkflowLifecycleService:
             payload={"status": ExecutionStatus.cancelled.value},
             created_at=now,
         )
+        # Phase C：取消后触发队列唤醒，让排队中的工作流获得容量
+        self._trigger_queue_dispatch()
         return self._repository.get_run(run_id)
 
     def handle_workflow_timeout(
@@ -454,6 +460,8 @@ class WorkflowLifecycleService:
                 follow_up_tasks=execution.follow_up_tasks,
                 created_at=completed_at,
             )
+        # Phase C：成功完成后触发队列唤醒
+        self._trigger_queue_dispatch()
 
     def finalize_workflow_failure(
         self,
@@ -527,6 +535,23 @@ class WorkflowLifecycleService:
             },
             created_at=failed_at,
         )
+        # Phase C：失败后触发队列唤醒
+        self._trigger_queue_dispatch()
+
+    def _trigger_queue_dispatch(self) -> None:
+        """Phase C: Trigger queue dispatch after a run reaches terminal state.
+
+        Best-effort: failures are logged but never propagated, so they
+        cannot interfere with the normal lifecycle flow.
+        """
+        if self._queue_dispatch is not None:
+            try:
+                self._queue_dispatch.dispatch_queued_workflows()
+            except Exception:
+                logger.warning(
+                    "Queue dispatch failed after workflow terminal state",
+                    exc_info=True,
+                )
 
     def _schedule_retry(
         self,

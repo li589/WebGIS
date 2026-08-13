@@ -112,7 +112,11 @@ def test_source_fetcher_supports_remote_and_s3():
 
 def test_remote_storage_routes_require_write_access():
     from app.api import config_routes
-    from app.api.deps import require_write_access
+    from app.api.deps import require_config_management_access, require_write_access
+
+    # RBAC v2: 高危配置路由可使用 require_config_management_access（admin 级）
+    # 替代 require_write_access，二者均提供写保护。
+    accepted_write_guards = {require_write_access, require_config_management_access}
 
     mutating = [
         route
@@ -128,7 +132,7 @@ def test_remote_storage_routes_require_write_access():
             for d in (route.dependant.dependencies or [])
             if getattr(d, "call", None)
         ]
-        assert require_write_access in calls, route.path
+        assert accepted_write_guards & set(calls), route.path
 
 
 def test_upsert_preserves_secret_extra_enabled(tmp_path, monkeypatch):

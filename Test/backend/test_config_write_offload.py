@@ -17,12 +17,14 @@ from __future__ import annotations
 
 import asyncio
 import time
+from dataclasses import replace
 from typing import Callable
 
 import anyio
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.main import create_app
 from app.services import config_service
 
@@ -32,6 +34,11 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(
         "app.services.effective_config.get_backend_auth_key",
         lambda: "test-key",
+    )
+    # RBAC v2: 配置管理路由需 admin 角色。
+    monkeypatch.setattr(
+        "app.core.config.settings",
+        replace(settings, api_key_role="admin"),
     )
     return TestClient(create_app(), headers={"X-API-Key": "test-key"})
 
@@ -121,6 +128,11 @@ def test_write_request_does_not_block_event_loop(monkeypatch):
     monkeypatch.setattr(
         "app.services.effective_config.get_backend_auth_key",
         lambda: "test-key",
+    )
+    # RBAC v2: 配置管理路由需 admin 角色。
+    monkeypatch.setattr(
+        "app.core.config.settings",
+        replace(settings, api_key_role="admin"),
     )
     import httpx
 

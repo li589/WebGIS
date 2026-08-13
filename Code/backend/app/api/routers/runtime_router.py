@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -66,9 +68,9 @@ def get_runtime_status() -> RuntimeStatusResponse:
     dependencies=[Depends(require_config_read_access)],
 )
 def get_runtime_resources() -> ResourceUsageResponse:
-    """返回后端进程与宿主系统资源占用（CPU / 内存 / 磁盘）。
+    """返回后端进程与各子系统资源占用（CPU / 内存 / 磁盘）。
 
-    数据经 psutil 轻量采样（TTL 5s 缓存），前端资源面板低频轮询即可。
+    数据由 psutil 轻量采样（TTL 5s 缓存），前端资源面板低频轮询即可。
     """
     return runtime_status_service.get_resource_usage()
 
@@ -78,8 +80,8 @@ def get_runtime_resources() -> ResourceUsageResponse:
     tags=["runtime"],
     dependencies=[Depends(require_config_read_access)],
 )
-def get_runtime_metrics(date: str | None = None) -> dict:
-    """返回各端点的 P50/P95 请求耗时统计（按天聚合，从 Redis 读取）。
+def get_runtime_metrics(date: str | None = None) -> dict[str, Any]:
+    """返回各节点的 P50/P95 请求耗时统计（按天聚合，从 Redis 读取）。
 
     Query params:
         date: YYYY-MM-DD 格式日期，默认当天（UTC）。
@@ -153,8 +155,10 @@ def get_provider_api_config(provider: str) -> JSONResponse:
     dependencies=[Depends(require_write_access)],
     deprecated=True,
 )
-def update_provider_api_config(provider: str, config_update: dict) -> JSONResponse:
-    """已移除：运行时密钥/配置请改用 /config/api-keys* 与 /config/weather/providers*。"""
+def update_provider_api_config(
+    provider: str, config_update: dict[str, Any]
+) -> JSONResponse:
+    """已移除：运行时密钥配置请改用 /config/api-keys* 与 /config/weather/providers*。"""
     del provider, config_update
     raise HTTPException(
         status_code=status.HTTP_410_GONE,
@@ -196,7 +200,7 @@ def get_best_available_api(provider: str) -> JSONResponse:
     )
 
 
-# ---------------- 底图瓦片管理（原 /tiles/providers、/tiles/cache/*）----------------
+# ---------------- 底图瓦片管理（原 /tiles/providers、tiles/cache/*）---------------
 
 
 class TileProviderInfo(BaseModel):
@@ -229,7 +233,7 @@ def list_runtime_tile_providers() -> TileProvidersResponse:
     tags=["runtime"],
     dependencies=[Depends(require_config_read_access)],
 )
-def get_runtime_tile_cache_stats() -> dict:
+def get_runtime_tile_cache_stats() -> dict[str, Any]:
     """底图代理进程内缓存统计。"""
     return {
         "cached_tiles": len(tile_proxy_service._cache),
@@ -242,7 +246,7 @@ def get_runtime_tile_cache_stats() -> dict:
     tags=["runtime"],
     dependencies=[Depends(require_write_access)],
 )
-def clear_runtime_tile_cache() -> dict:
+def clear_runtime_tile_cache() -> dict[str, Any]:
     """清空底图代理进程内缓存。"""
     tile_proxy_service.clear_cache()
     return {"message": "Tile cache cleared"}

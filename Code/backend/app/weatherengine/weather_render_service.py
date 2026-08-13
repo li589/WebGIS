@@ -47,17 +47,29 @@ class WeatherRenderMixin:
         self, *, grid_data: dict[str, Any], layer_id: str
     ) -> dict[str, object]:
         if layer_id == "precipitation":
-            return self.build_precipitation_geojson_from_grid(grid_data, layer_id)
+            return self.build_scalar_geojson_from_grid(
+                grid_data, metric_key="precipitation", unit="mm", min_value=0.1
+            )
         if layer_id == "humidity":
-            return self.build_humidity_geojson_from_grid(grid_data, layer_id)
+            return self.build_scalar_geojson_from_grid(
+                grid_data, metric_key="relative_humidity_2m", unit="%"
+            )
         if layer_id == "pressure":
-            return self.build_pressure_geojson_from_grid(grid_data, layer_id)
+            return self.build_scalar_geojson_from_grid(
+                grid_data, metric_key="pressure_msl", unit="hPa"
+            )
         if layer_id == "visibility":
-            return self.build_visibility_geojson_from_grid(grid_data, layer_id)
+            return self.build_scalar_geojson_from_grid(
+                grid_data, metric_key="visibility", unit="m"
+            )
         if layer_id == "cloud-cover":
-            return self.build_cloud_cover_geojson_from_grid(grid_data, layer_id)
+            return self.build_scalar_geojson_from_grid(
+                grid_data, metric_key="cloud_cover", unit="%"
+            )
         if layer_id == "dewpoint":
-            return self.build_dewpoint_geojson_from_grid(grid_data, layer_id)
+            return self.build_scalar_geojson_from_grid(
+                grid_data, metric_key="dew_point_2m", unit="C", skip_none=True
+            )
         if layer_id == "temperature" or layer_id.startswith("temperature-"):
             return self.build_temperature_geojson_from_grid(grid_data, layer_id)
         return self.build_wind_geojson_from_grid(grid_data, layer_id)
@@ -1051,415 +1063,26 @@ class WeatherRenderMixin:
 
         return {"type": "FeatureCollection", "features": features}
 
-    def build_precipitation_geojson_from_grid(
-        self,
-        grid_data: dict[str, Any],
-        layer_id: str,
-    ) -> dict[str, object]:
-        """从真实网格数据构建降水 GeoJSON。
-
-        Args:
-            grid_data: fetch_grid_forecast() 返回的网格数据
-            layer_id: 图层类型（precipitation）
-
-        Returns:
-            GeoJSON FeatureCollection（Polygon 网格，仅降水 > 0.1mm 的区域）
-        """
-        grid = grid_data["grid"]
-        current = grid_data["data"]["current"]
-
-        rows, cols = grid["rows"], grid["cols"]
-        features = []
-
-        # 从 API 响应中提取数据
-        precip_values = current.get("precipitation", [])
-
-        lat_step = (grid["bbox"]["north"] - grid["bbox"]["south"]) / rows
-        lon_step = (grid["bbox"]["east"] - grid["bbox"]["west"]) / cols
-
-        for i in range(rows):
-            for j in range(cols):
-                idx = i * cols + j
-                if idx >= len(precip_values):
-                    continue
-
-                value = precip_values[idx]
-                if value is None or value < 0.1:
-                    continue
-
-                south = grid["bbox"]["south"] + i * lat_step
-                north = south + lat_step
-                west = grid["bbox"]["west"] + j * lon_step
-                east = west + lon_step
-
-                features.append(
-                    {
-                        "type": "Feature",
-                        "geometry": {
-                            "type": "Polygon",
-                            "coordinates": [
-                                [
-                                    [west, south],
-                                    [east, south],
-                                    [east, north],
-                                    [west, north],
-                                    [west, south],
-                                ]
-                            ],
-                        },
-                        "properties": {
-                            "precipitation": round(value, 2),
-                            "unit": "mm",
-                            "row": i,
-                            "col": j,
-                        },
-                    }
-                )
-
-        return {"type": "FeatureCollection", "features": features}
-
-    def build_humidity_geojson_from_grid(
-        self,
-        grid_data: dict[str, Any],
-        layer_id: str,
-    ) -> dict[str, object]:
-        """从真实网格数据构建湿度 GeoJSON。
-
-        Args:
-            grid_data: fetch_grid_forecast() 返回的网格数据
-            layer_id: 图层类型（humidity）
-
-        Returns:
-            GeoJSON FeatureCollection（Polygon 网格）
-        """
-        grid = grid_data["grid"]
-        current = grid_data["data"]["current"]
-
-        rows, cols = grid["rows"], grid["cols"]
-        features = []
-
-        # 从 API 响应中提取数据
-        humidity_values = current.get("relative_humidity_2m", [])
-
-        lat_step = (grid["bbox"]["north"] - grid["bbox"]["south"]) / rows
-        lon_step = (grid["bbox"]["east"] - grid["bbox"]["west"]) / cols
-
-        for i in range(rows):
-            for j in range(cols):
-                idx = i * cols + j
-                if idx >= len(humidity_values):
-                    continue
-
-                value = humidity_values[idx]
-
-                south = grid["bbox"]["south"] + i * lat_step
-                north = south + lat_step
-                west = grid["bbox"]["west"] + j * lon_step
-                east = west + lon_step
-
-                features.append(
-                    {
-                        "type": "Feature",
-                        "geometry": {
-                            "type": "Polygon",
-                            "coordinates": [
-                                [
-                                    [west, south],
-                                    [east, south],
-                                    [east, north],
-                                    [west, north],
-                                    [west, south],
-                                ]
-                            ],
-                        },
-                        "properties": {
-                            "relative_humidity_2m": round(value, 2)
-                            if value is not None
-                            else 0,
-                            "unit": "%",
-                            "row": i,
-                            "col": j,
-                        },
-                    }
-                )
-
-        return {"type": "FeatureCollection", "features": features}
-
-    def build_pressure_geojson_from_grid(
-        self,
-        grid_data: dict[str, Any],
-        layer_id: str,
-    ) -> dict[str, object]:
-        """从真实网格数据构建气压 GeoJSON。
-
-        Args:
-            grid_data: fetch_grid_forecast() 返回的网格数据
-            layer_id: 图层类型（pressure）
-
-        Returns:
-            GeoJSON FeatureCollection（Polygon 网格）
-        """
-        grid = grid_data["grid"]
-        current = grid_data["data"]["current"]
-
-        rows, cols = grid["rows"], grid["cols"]
-        features = []
-
-        # 从 API 响应中提取数据
-        pressure_values = current.get("pressure_msl", [])
-
-        lat_step = (grid["bbox"]["north"] - grid["bbox"]["south"]) / rows
-        lon_step = (grid["bbox"]["east"] - grid["bbox"]["west"]) / cols
-
-        for i in range(rows):
-            for j in range(cols):
-                idx = i * cols + j
-                if idx >= len(pressure_values):
-                    continue
-
-                value = pressure_values[idx]
-
-                south = grid["bbox"]["south"] + i * lat_step
-                north = south + lat_step
-                west = grid["bbox"]["west"] + j * lon_step
-                east = west + lon_step
-
-                features.append(
-                    {
-                        "type": "Feature",
-                        "geometry": {
-                            "type": "Polygon",
-                            "coordinates": [
-                                [
-                                    [west, south],
-                                    [east, south],
-                                    [east, north],
-                                    [west, north],
-                                    [west, south],
-                                ]
-                            ],
-                        },
-                        "properties": {
-                            "pressure_msl": round(value, 2) if value is not None else 0,
-                            "unit": "hPa",
-                            "row": i,
-                            "col": j,
-                        },
-                    }
-                )
-
-        return {"type": "FeatureCollection", "features": features}
-
-    def build_visibility_geojson_from_grid(
-        self,
-        grid_data: dict[str, Any],
-        layer_id: str,
-    ) -> dict[str, object]:
-        """从真实网格数据构建能见度 GeoJSON。
-
-        Args:
-            grid_data: fetch_grid_forecast() 返回的网格数据
-            layer_id: 图层类型（visibility）
-
-        Returns:
-            GeoJSON FeatureCollection（Polygon 网格）
-        """
-        grid = grid_data["grid"]
-        current = grid_data["data"]["current"]
-
-        rows, cols = grid["rows"], grid["cols"]
-        features = []
-
-        # 从 API 响应中提取数据
-        visibility_values = current.get("visibility", [])
-
-        lat_step = (grid["bbox"]["north"] - grid["bbox"]["south"]) / rows
-        lon_step = (grid["bbox"]["east"] - grid["bbox"]["west"]) / cols
-
-        for i in range(rows):
-            for j in range(cols):
-                idx = i * cols + j
-                if idx >= len(visibility_values):
-                    continue
-
-                value = visibility_values[idx]
-
-                south = grid["bbox"]["south"] + i * lat_step
-                north = south + lat_step
-                west = grid["bbox"]["west"] + j * lon_step
-                east = west + lon_step
-
-                features.append(
-                    {
-                        "type": "Feature",
-                        "geometry": {
-                            "type": "Polygon",
-                            "coordinates": [
-                                [
-                                    [west, south],
-                                    [east, south],
-                                    [east, north],
-                                    [west, north],
-                                    [west, south],
-                                ]
-                            ],
-                        },
-                        "properties": {
-                            "visibility": round(value, 2) if value is not None else 0,
-                            "unit": "m",
-                            "row": i,
-                            "col": j,
-                        },
-                    }
-                )
-
-        return {"type": "FeatureCollection", "features": features}
-
-    def build_cloud_cover_geojson_from_grid(
-        self,
-        grid_data: dict[str, Any],
-        layer_id: str,
-    ) -> dict[str, object]:
-        """从真实网格数据构建云量 GeoJSON。
-
-        Args:
-            grid_data: fetch_grid_forecast() 返回的网格数据
-            layer_id: 图层类型（cloud-cover）
-
-        Returns:
-            GeoJSON FeatureCollection（Polygon 网格，0~100%）
-        """
-        grid = grid_data["grid"]
-        current = grid_data["data"]["current"]
-
-        rows, cols = grid["rows"], grid["cols"]
-        features = []
-
-        # 从 API 响应中提取数据
-        cloud_cover_values = current.get("cloud_cover", [])
-
-        lat_step = (grid["bbox"]["north"] - grid["bbox"]["south"]) / rows
-        lon_step = (grid["bbox"]["east"] - grid["bbox"]["west"]) / cols
-
-        for i in range(rows):
-            for j in range(cols):
-                idx = i * cols + j
-                if idx >= len(cloud_cover_values):
-                    continue
-
-                value = cloud_cover_values[idx]
-
-                south = grid["bbox"]["south"] + i * lat_step
-                north = south + lat_step
-                west = grid["bbox"]["west"] + j * lon_step
-                east = west + lon_step
-
-                features.append(
-                    {
-                        "type": "Feature",
-                        "geometry": {
-                            "type": "Polygon",
-                            "coordinates": [
-                                [
-                                    [west, south],
-                                    [east, south],
-                                    [east, north],
-                                    [west, north],
-                                    [west, south],
-                                ]
-                            ],
-                        },
-                        "properties": {
-                            "cloud_cover": round(value, 2) if value is not None else 0,
-                            "unit": "%",
-                            "row": i,
-                            "col": j,
-                        },
-                    }
-                )
-
-        return {"type": "FeatureCollection", "features": features}
-
-    def build_dewpoint_geojson_from_grid(
-        self,
-        grid_data: dict[str, Any],
-        layer_id: str,
-    ) -> dict[str, object]:
-        """从真实网格数据构建露点温度 GeoJSON。
-
-        Args:
-            grid_data: fetch_grid_forecast() 返回的网格数据
-            layer_id: 图层类型（dewpoint）
-
-        Returns:
-            GeoJSON FeatureCollection（Polygon 网格）
-        """
-        grid = grid_data["grid"]
-        current = grid_data["data"]["current"]
-
-        rows, cols = grid["rows"], grid["cols"]
-        features = []
-
-        # 从 API 响应中提取数据
-        dewpoint_values = current.get("dew_point_2m", [])
-
-        lat_step = (grid["bbox"]["north"] - grid["bbox"]["south"]) / rows
-        lon_step = (grid["bbox"]["east"] - grid["bbox"]["west"]) / cols
-
-        for i in range(rows):
-            for j in range(cols):
-                idx = i * cols + j
-                if idx >= len(dewpoint_values):
-                    continue
-
-                value = dewpoint_values[idx]
-                if value is None:
-                    continue
-
-                try:
-                    numeric = float(value)
-                except (TypeError, ValueError):
-                    continue
-
-                south = grid["bbox"]["south"] + i * lat_step
-                north = south + lat_step
-                west = grid["bbox"]["west"] + j * lon_step
-                east = west + lon_step
-
-                features.append(
-                    {
-                        "type": "Feature",
-                        "geometry": {
-                            "type": "Polygon",
-                            "coordinates": [
-                                [
-                                    [west, south],
-                                    [east, south],
-                                    [east, north],
-                                    [west, north],
-                                    [west, south],
-                                ]
-                            ],
-                        },
-                        "properties": {
-                            "dew_point_2m": round(numeric, 2),
-                            "unit": "C",
-                            "row": i,
-                            "col": j,
-                        },
-                    }
-                )
-
-        return {"type": "FeatureCollection", "features": features}
-
     def build_scalar_geojson_from_grid(
         self,
         grid_data: dict[str, Any],
         *,
         metric_key: str,
         unit: str,
+        min_value: float | None = None,
+        skip_none: bool = False,
     ) -> dict[str, object]:
-        """Build polygon GeoJSON from a single current metric on an OM-style grid."""
+        """Build polygon GeoJSON from a single current metric on an OM-style grid.
+
+        P1-4：统一标量场 GeoJSON 构建入口，替代 6 个特化方法。
+
+        Args:
+            grid_data: fetch_grid_forecast() 返回的网格数据
+            metric_key: current 字典中的指标键名（如 temperature_2m, pressure_msl）
+            unit: 显示单位（如 C, hPa, %, mm, m）
+            min_value: 若给定，跳过低于此阈值的值（如降水 0.1mm）
+            skip_none: 若 True，跳过 None 值而非填 0（如露点温度）
+        """
         grid = grid_data["grid"]
         current = grid_data["data"]["current"]
         rows, cols = grid["rows"], grid["cols"]
@@ -1473,6 +1096,12 @@ class WeatherRenderMixin:
                 if idx >= len(values):
                     continue
                 value = values[idx]
+                if value is None:
+                    if skip_none:
+                        continue
+                    value = 0
+                elif min_value is not None and value < min_value:
+                    continue
                 south = grid["bbox"]["south"] + i * lat_step
                 north = south + lat_step
                 west = grid["bbox"]["west"] + j * lon_step

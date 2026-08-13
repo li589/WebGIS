@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import unittest
 from unittest.mock import patch
 
 from app.services.weather_bridge_service import WeatherBridgeService
@@ -73,141 +72,142 @@ class _FakeNodeResult:
         self.warnings = warnings or []
 
 
-class WeatherBridgeServiceTests(unittest.TestCase):
-    def _make_payload(
-        self, weather_request: WeatherWorkflowRequest | dict | None
-    ) -> WorkflowSubmitRequest:
-        return WorkflowSubmitRequest(
-            command_type=WorkflowCommandType.custom,
-            layer_id="wind-field",
-            priority=WorkflowPriority.normal,
-            client=ClientIdentity(client_id="test-client"),
-            map_context=RuntimeMapContext(active_layer_id="wind-field"),
-            weather_request=weather_request,
-        )
+def _make_payload(
+    weather_request: WeatherWorkflowRequest | dict | None
+) -> WorkflowSubmitRequest:
+    return WorkflowSubmitRequest(
+        command_type=WorkflowCommandType.custom,
+        layer_id="wind-field",
+        priority=WorkflowPriority.normal,
+        client=ClientIdentity(client_id="test-client"),
+        map_context=RuntimeMapContext(active_layer_id="wind-field"),
+        weather_request=weather_request,
+    )
 
-    def test_supports_returns_false_when_disabled(self) -> None:
-        with patch("app.services.weather_bridge_service.settings") as mock_settings:
-            mock_settings.weather_workflow_enabled = False
-            service = WeatherBridgeService()
-            payload = self._make_payload(
-                WeatherWorkflowRequest(workflow={"workflow_id": "x", "nodes": []})
-            )
-            self.assertFalse(service.supports(payload))
 
-    def test_supports_returns_false_when_weather_request_none(self) -> None:
+def test_supports_returns_false_when_disabled() -> None:
+    with patch("app.services.weather_bridge_service.settings") as mock_settings:
+        mock_settings.weather_workflow_enabled = False
         service = WeatherBridgeService()
-        payload = self._make_payload(None)
-        self.assertFalse(service.supports(payload))
-
-    def test_supports_returns_true_when_workflow_provided(self) -> None:
-        service = WeatherBridgeService()
-        payload = self._make_payload(
+        payload = _make_payload(
             WeatherWorkflowRequest(workflow={"workflow_id": "x", "nodes": []})
         )
-        self.assertTrue(service.supports(payload))
+        assert not service.supports(payload), 'service.supports(payload) is falsy'
 
-    def test_execute_workflow_returns_mapped_result(self) -> None:
-        service = WeatherBridgeService()
-        fake_result = _FakeRunResult(
-            outputs={
-                "n1.summary": "风速 5.2 m/s",
-                "n1.diagnostics": ["provider=open-meteo-online"],
+
+def test_supports_returns_false_when_weather_request_none() -> None:
+    service = WeatherBridgeService()
+    payload = _make_payload(None)
+    assert not service.supports(payload), 'service.supports(payload) is falsy'
+
+
+def test_supports_returns_true_when_workflow_provided() -> None:
+    service = WeatherBridgeService()
+    payload = _make_payload(
+        WeatherWorkflowRequest(workflow={"workflow_id": "x", "nodes": []})
+    )
+    assert service.supports(payload), 'service.supports(payload) is truthy'
+
+
+def test_execute_workflow_returns_mapped_result() -> None:
+    service = WeatherBridgeService()
+    fake_result = _FakeRunResult(
+        outputs={
+            "n1.summary": "风速 5.2 m/s",
+            "n1.diagnostics": ["provider=open-meteo-online"],
+        },
+        node_results=[
+            _FakeNodeResult(node_id="n1", outputs={"summary": "风速 5.2 m/s"})
+        ],
+    )
+    fake_service = type(
+        "FakeService",
+        (),
+        {
+            "execute_workflow": lambda self, workflow, context: fake_result,
+            "diagnose": lambda self: {
+                "status": "ok",
+                "node_registry": {
+                    "status": "ok",
+                    "supported_node_types": ["weather_forecast_fetch"],
+                },
             },
-            node_results=[
-                _FakeNodeResult(node_id="n1", outputs={"summary": "风速 5.2 m/s"})
-            ],
+        },
+    )()
+    with patch.object(service, "_get_service", return_value=fake_service):
+        payload = _make_payload(
+            WeatherWorkflowRequest(
+                workflow={
+                    "workflow_id": "test-weather-wf",
+                    "nodes": [
+                        {
+                            "node_id": "n1",
+                            "node_type": "weather_summary_generate",
+                            "params": {},
+                        }
+                    ],
+                },
+                workflow_id="test-weather-wf",
+            )
         )
-        fake_service = type(
-            "FakeService",
-            (),
-            {
-                "execute_workflow": lambda self, workflow, context: fake_result,
-                "diagnose": lambda self: {
+        result = service.execute(
+            run_id="run-12345678",
+            payload=payload,
+            requested_at=datetime.now(timezone.utc),
+            event_factory=_make_event,
+        )
+    assert "天气工作流" in result.message, '"天气工作流" in result.message'
+    assert len(result.result_refs) == 1, 'len(result.result_refs) == 1'
+    assert result.result_refs[0].result_kind == ResultKind.json, 'result.result_refs[0].result_kind == ResultKind.json'
+    assert result.result_dto["workflow_entry_name"] == "test-weather-wf", 'result.result_dto["workflow_entry_name"] == "test-weather-wf"'
+    assert any("weather_bridge_service" in d for d in result.diagnostics), 'any("weather_bridge_service" in d for d in result.diagnostics) is truthy'
+    assert len(result.events) == 2, 'len(result.events) == 2'
+
+
+def test_list_workflows_response_returns_node_types() -> None:
+    service = WeatherBridgeService()
+    fake_service = type(
+        "FakeService",
+        (),
+        {
+            "diagnose": lambda self: {
+                "status": "ok",
+                "node_registry": {
                     "status": "ok",
-                    "node_registry": {
-                        "status": "ok",
-                        "supported_node_types": ["weather_forecast_fetch"],
-                    },
+                    "supported_node_types": [
+                        "weather_forecast_fetch",
+                        "weather_point_parse",
+                        "weather_wind_field",
+                    ],
                 },
             },
-        )()
-        with patch.object(service, "_get_service", return_value=fake_service):
-            payload = self._make_payload(
-                WeatherWorkflowRequest(
-                    workflow={
-                        "workflow_id": "test-weather-wf",
-                        "nodes": [
-                            {
-                                "node_id": "n1",
-                                "node_type": "weather_summary_generate",
-                                "params": {},
-                            }
-                        ],
-                    },
-                    workflow_id="test-weather-wf",
-                )
-            )
-            result = service.execute(
-                run_id="run-12345678",
-                payload=payload,
-                requested_at=datetime.now(timezone.utc),
-                event_factory=_make_event,
-            )
-        self.assertIn("天气工作流", result.message)
-        self.assertEqual(len(result.result_refs), 1)
-        self.assertEqual(result.result_refs[0].result_kind, ResultKind.json)
-        self.assertEqual(result.result_dto["workflow_entry_name"], "test-weather-wf")
-        self.assertTrue(any("weather_bridge_service" in d for d in result.diagnostics))
-        self.assertEqual(len(result.events), 2)
+        },
+    )()
+    with patch.object(service, "_get_service", return_value=fake_service):
+        response = service.list_workflows_response()
+    assert response["status_code"] == 200, 'response["status_code"] == 200'
+    assert response["body"]["source"] == "weatherengine", 'response["body"]["source"] == "weatherengine"'
+    assert response["body"]["workflow_count"] == 3, 'response["body"]["workflow_count"] == 3'
+    names = [w["name"] for w in response["body"]["workflows"]]
+    assert "weather_forecast_fetch" in names, '"weather_forecast_fetch" in names'
 
-    def test_list_workflows_response_returns_node_types(self) -> None:
-        service = WeatherBridgeService()
-        fake_service = type(
-            "FakeService",
-            (),
-            {
-                "diagnose": lambda self: {
+
+def test_describe_workflow_returns_404_for_unknown() -> None:
+    service = WeatherBridgeService()
+    fake_service = type(
+        "FakeService",
+        (),
+        {
+            "diagnose": lambda self: {
+                "status": "ok",
+                "node_registry": {
                     "status": "ok",
-                    "node_registry": {
-                        "status": "ok",
-                        "supported_node_types": [
-                            "weather_forecast_fetch",
-                            "weather_point_parse",
-                            "weather_wind_field",
-                        ],
-                    },
+                    "supported_node_types": ["weather_forecast_fetch"],
                 },
             },
-        )()
-        with patch.object(service, "_get_service", return_value=fake_service):
-            response = service.list_workflows_response()
-        self.assertEqual(response["status_code"], 200)
-        self.assertEqual(response["body"]["source"], "weatherengine")
-        self.assertEqual(response["body"]["workflow_count"], 3)
-        names = [w["name"] for w in response["body"]["workflows"]]
-        self.assertIn("weather_forecast_fetch", names)
-
-    def test_describe_workflow_returns_404_for_unknown(self) -> None:
-        service = WeatherBridgeService()
-        fake_service = type(
-            "FakeService",
-            (),
-            {
-                "diagnose": lambda self: {
-                    "status": "ok",
-                    "node_registry": {
-                        "status": "ok",
-                        "supported_node_types": ["weather_forecast_fetch"],
-                    },
-                },
-            },
-        )()
-        with patch.object(service, "_get_service", return_value=fake_service):
-            response = service.describe_workflow_response("nonexistent_node")
-        self.assertEqual(response["status_code"], 404)
-        self.assertEqual(response["body"]["error_code"], "weather_workflow_not_found")
-
-
-if __name__ == "__main__":
-    unittest.main()
+        },
+    )()
+    with patch.object(service, "_get_service", return_value=fake_service):
+        response = service.describe_workflow_response("nonexistent_node")
+    assert response["status_code"] == 404, 'response["status_code"] == 404'
+    assert response["body"]["error_code"] == "weather_workflow_not_found", 'response["body"]["error_code"] == "weather_workflow_not_found"'

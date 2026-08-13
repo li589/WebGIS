@@ -143,7 +143,11 @@ class WorkflowSubmissionService:
         return self._lifecycle
 
     def submit_workflow(
-        self, payload: WorkflowSubmitRequest
+        self,
+        payload: WorkflowSubmitRequest,
+        *,
+        user_id: int | None = None,
+        role: str | None = None,
     ) -> WorkflowAcceptedResponse:
         payload = normalize_workflow_submit_request(payload)
         from app.services.resource_profile_resolver import (
@@ -180,15 +184,43 @@ class WorkflowSubmissionService:
                 make_event_fn=self._persistence.make_event,
             )
             capacity_limit = self._workflow_capacity_limit(run_class)
+            user_limit = self._user_concurrency_limit(user_id, role)
+            user_queued = False
             for transition in submission_transitions:
                 if transition.request_json:
                     # Atomic capacity reservation + first persist (closes TOCTOU).
-                    self._persistence.save_run_under_capacity(
-                        run_status=transition.status,
-                        request_json=request_json,
-                        run_class=run_class,
-                        limit=capacity_limit,
-                    )
+                    try:
+                        self._persistence.save_run_under_capacity(
+                            run_status=transition.status,
+                            request_json=request_json,
+                            run_class=run_class,
+                            limit=capacity_limit,
+                            user_id=user_id,
+                            user_limit=user_limit,
+                        )
+                    except ValueError as exc:
+                        if "User workflow capacity" in str(exc):
+                            # Phase C：用户级并发上限达到——保存为 queued 状态，
+                            # 等待 queue_dispatch_service 在其他工作流完成后唤醒。
+                            # 注意：transition.status 的状态是 accepted，需要覆写为
+                            # queued，否则 dispatch_queued_workflows 无法找到该 run
+                            # （它搜索 status='queued'），且该 run 会被错误计为
+                            # accepted 但不会派发到 Celery，永久卡死。
+                            user_queued = True
+                            queued_run_status = transition.status.model_copy(
+                                update={
+                                    "status": ExecutionStatus.queued,
+                                    "progress": 5,
+                                }
+                            )
+                            self._persistence.save_run_status(
+                                run_status=queued_run_status,
+                                request_json=request_json,
+                                run_class=run_class,
+                                user_id=user_id,
+                            )
+                        else:
+                            raise
                 else:
                     self._persistence.save_run_status(
                         run_status=transition.status,
@@ -197,6 +229,35 @@ class WorkflowSubmissionService:
                     )
                 for event in transition.events:
                     self._persistence.record_event(event=event)
+
+            if user_queued:
+                logger.info(
+                    "Workflow queued due to user concurrency limit: "
+                    "run_id=%s user_id=%s user_limit=%s",
+                    run_id,
+                    user_id,
+                    user_limit,
+                )
+                self._persistence.record_event(
+                    run_id=run_id,
+                    channel=EventChannel.system,
+                    level=LogLevel.warning,
+                    message="用户并发工作流数已达上限，工作流已入队等待调度。",
+                    progress=5,
+                    payload={
+                        "queued_reason": "user_concurrency_limit",
+                        "user_limit": user_limit,
+                    },
+                    created_at=datetime.now(UTC),
+                )
+                return WorkflowAcceptedResponse(
+                    run_id=run_id,
+                    status=ExecutionStatus.queued,
+                    status_url=status_url,
+                    events_url=events_url,
+                    created_at=now,
+                    message="用户并发工作流数已达上限，工作流已入队等待调度。",
+                )
 
             if use_celery_executor():
                 self._dispatch_async_workflow(run_id, payload)
@@ -538,6 +599,46 @@ class WorkflowSubmissionService:
             "max_active_runs",
             settings.max_active_runs,
         )
+
+    def _user_concurrency_limit(
+        self, user_id: int | None, role: str | None
+    ) -> int | None:
+        """Phase C: Compute the per-user concurrent workflow limit.
+
+        Resolution order:
+        1. ``admin`` role → ``None`` (no per-user limit).
+        2. User-specific ``max_concurrent_workflows`` in users table → use it.
+        3. Role-based default from config (``max_concurrent_workflows_standard``
+           or ``max_concurrent_workflows_demo``).
+
+        Returns ``None`` when no limit applies (admin, unknown role, or
+        no user context).
+        """
+        if not user_id or not role:
+            return None
+        if role == "admin":
+            return None  # admin 不受用户级限制
+        # 1. 检查用户独立配置
+        from app.services.user_repository import get_user_repository
+
+        user_repo = get_user_repository()
+        user_limit = user_repo.get_max_concurrent_workflows(user_id)
+        if user_limit is not None:
+            return user_limit
+        # 2. 回退到角色默认值
+        if role == "standard":
+            return self._persistence.get_effective_config_int(
+                "backend",
+                "max_concurrent_workflows_standard",
+                settings.max_concurrent_workflows_standard,
+            )
+        if role == "demo":
+            return self._persistence.get_effective_config_int(
+                "backend",
+                "max_concurrent_workflows_demo",
+                settings.max_concurrent_workflows_demo,
+            )
+        return None
 
     def _assert_workflow_capacity(self, run_class: str = RUN_CLASS_BUSINESS) -> None:
         """Read-only capacity probe (tests / diagnostics). Submit path uses atomic reserve."""

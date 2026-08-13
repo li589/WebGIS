@@ -92,13 +92,13 @@ jobs:
       - name: Generate synthetic data for omega_avg_daily e2e test
         run: python -c "import sys; sys.path.insert(0,'Tools'); from generate_synthetic_test_data import generate_omega_avg_daily_inputs as g; g()"
 
-      # P1-7：去 -x（拿全量失败画像）+ 覆盖率阈值（当前后端 ~54%，先设 50 为不倒退基线；
-      # 若首次 CI 运行因 --cov 目标口径差异误红，微调 --cov 目标即可）
+      # P0-3：覆盖率阈值从 50% 提升至 52%（分阶段提升：52% → 55% → 60% → 70%）
+      # 当前后端覆盖率约 54%（CI Ubuntu 环境），先设 52 作为不倒退基线
       - name: Run pytest
         env:
           REDIS_URL: redis://localhost:6379/0
           ENVIRONMENT: test
-        run: pytest Test/backend/ --tb=short -q --cov=Code/backend/app --cov-report=term --cov-fail-under=50
+        run: pytest Test/backend/ --tb=short -q --cov=Code/backend/app --cov-report=term --cov-fail-under=52
 
   # ── vitest：前端单元测试 ──────────────────────────────────────────────────
   vitest:
@@ -118,9 +118,10 @@ jobs:
         working-directory: Code/frontend
         run: npm ci --prefer-offline
 
-      - name: Run vitest
+      # P0-4：前端覆盖率门禁（起步阈值 = 当前覆盖率基线 lines:22/statements:21/branches:16/functions:19，后续逐步提升至 40%+）
+      - name: Run vitest with coverage
         working-directory: Code/frontend
-        run: npm run test
+        run: npm run test:coverage
 
   # ── pytest-algorithms：算法包测试（P1-7 补入 CI；独立 job 避免与 backend conftest 交互）──
   pytest-algorithms:
@@ -186,12 +187,12 @@ jobs:
         working-directory: Code/frontend
         run: npm run build
 
-  # ── security-scan：依赖漏洞扫描（P1-7；初期非阻塞，避免误拦）───────────────
+  # ── security-scan：依赖漏洞扫描（独立质量门禁，pip-audit/npm audit 失败即 job 失败；
+  #    是否阻塞合并由 GitHub 分支保护 required check 配置决定）───────────────
   security-scan:
     name: security scan
     runs-on: ubuntu-latest
     needs: pre-commit
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -203,7 +204,7 @@ jobs:
         working-directory: Code/backend
         run: |
           pip install pip-audit
-          pip-audit -r requirements.txt || true
+          pip-audit -r requirements.txt
 
       - uses: actions/setup-node@v4
         with:
@@ -211,7 +212,7 @@ jobs:
 
       - name: npm audit (frontend)
         working-directory: Code/frontend
-        run: npm audit --audit-level=high || true
+        run: npm audit --audit-level=high
 
   # ── check:openapi：前后端契约漂移检测 ──────────────────────────────────────
   check-openapi:

@@ -119,7 +119,7 @@ def _ensure_weather_providers_registered() -> None:
         # 启动路径已 apply 过。这里对缺失 provider 的新注册再次 apply 是安全的。
         apply_persisted_provider_overrides()
         _ = get_registry()
-    except Exception:
+    except Exception:  # noqa: BLE001 — best-effort lazy registration, logged
         # 尽力而为：惰性注册失败不应阻塞配置读取
         logger.exception("Lazy weather provider registration failed")
 
@@ -182,7 +182,7 @@ def list_weather_providers(*, include_disabled: bool = True) -> list[dict[str, A
             logger.info(
                 "Migrated/removed legacy weather provider id %s", OPEN_METEO_LEGACY_ID
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — best-effort legacy cleanup, logged
             # 尽力而为：遗留 open-meteo 清理失败不应阻塞列表返回
             logger.warning("Failed to purge legacy open-meteo DB row: %s", exc)
 
@@ -284,7 +284,7 @@ def update_weather_provider(
     if new_config is not None:
         try:
             provider.apply_config(new_config)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — best-effort config apply, logged
             logger.error("Failed to apply config to provider %s: %s", provider_id, e)
 
     return get_weather_provider(provider_id)
@@ -368,7 +368,7 @@ def delete_weather_provider(provider_id: str) -> bool:
             registry.set_priority(provider_id, 100)
             try:
                 provider.apply_config({})
-            except Exception:
+            except Exception:  # noqa: BLE001 — best-effort config reset, logged
                 # 尽力而为：重置 config 失败不应阻塞 DB 删除
                 logger.exception(
                     "Failed to reset provider config after delete: %s", provider_id
@@ -388,7 +388,7 @@ def apply_persisted_provider_overrides() -> None:
 
     try:
         records = repo.list_providers(include_disabled=True)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — best-effort DB read, logged and falls back
         # 尽力而为：DB 读取失败时回退到默认配置
         logger.warning("Failed to load weather provider overrides from DB: %s", e)
         return
@@ -417,7 +417,7 @@ def apply_persisted_provider_overrides() -> None:
             by_id = {r["provider_id"]: r for r in records}
             online_rec = by_id.get(OPEN_METEO_ONLINE_ID)
             local_rec = by_id.get(OPEN_METEO_LOCAL_ID)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — best-effort legacy purge, logged
             # 尽力而为：遗留行清理失败不阻塞覆盖应用
             logger.warning("Failed to purge legacy open-meteo row: %s", e)
 
@@ -448,7 +448,7 @@ def apply_persisted_provider_overrides() -> None:
                 "(open-meteo-local=0, open-meteo-online=1)"
             )
             records = repo.list_providers(include_disabled=True)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — best-effort priority migration, logged
             # 尽力而为：优先级迁移失败不阻塞覆盖应用
             logger.warning(
                 "Failed to migrate open-meteo priorities to local-first: %s", e
@@ -468,7 +468,7 @@ def apply_persisted_provider_overrides() -> None:
             if provider is not None:
                 try:
                     provider.apply_config(config)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 — best-effort per-provider config apply, logged
                     # 尽力而为：单个 provider config 应用失败不阻塞其余
                     logger.warning(
                         "Failed to apply persisted config to provider %s: %s", pid, e

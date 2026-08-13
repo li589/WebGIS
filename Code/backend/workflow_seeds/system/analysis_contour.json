@@ -1,0 +1,42 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "Analysis: contour",
+    "description": "InfoPanel contour. Inject raster path and interval.",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": null,
+    "tags": ["analysis", "gis", "contour", "ui-panel"],
+    "category": "analysis",
+    "resource_profile": "standard"
+  },
+  "workflow_id": "analysis_contour",
+  "name": "Analysis: contour",
+  "description": "data/source → gis/contour",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "data/source",
+      "pos": [60, 120],
+      "properties": {
+        "path": "{DATA_ROOT}/_runtime/smoke_stub.tif",
+        "dataset_key": "input_path"
+      }
+    },
+    {
+      "id": 2,
+      "type": "gis/contour",
+      "pos": [360, 160],
+      "properties": {
+        "interval": 100,
+        "band": 0,
+        "smoothing": true
+      }
+    }
+  ],
+  "links": [
+    [1, 1, 2, 2, 1]
+  ]
+}

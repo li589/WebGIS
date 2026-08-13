@@ -17,7 +17,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.api.deps import require_write_access
+from app.api.deps import require_workflow_run_access, require_write_access
 from app.services import workflow_timer_service as wts
 from app.services.workflow_timer_service import (
     TimerNotFoundError,
@@ -196,7 +196,7 @@ def delete_timer(timer_id: str) -> dict[str, Any]:
 @router.post(
     "/workflow-timers/{timer_id}/run",
     tags=["workflow-timer"],
-    dependencies=[Depends(require_write_access)],
+    dependencies=[Depends(require_workflow_run_access)],
 )
 def run_timer(timer_id: str) -> dict[str, Any]:
     """手动触发一次定时器对应的工作流（不影响 next_fire_at）。"""

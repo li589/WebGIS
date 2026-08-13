@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import pytest
 from datetime import datetime, timezone
-import unittest
 from unittest.mock import patch
 
 from app.services.bridge_protocol import BridgeExecutionError
@@ -50,69 +50,58 @@ class _InvalidValidationJobService:
         )
 
 
-class PythonProviderBridgeServiceTests(unittest.TestCase):
-    def _build_payload(self) -> WorkflowSubmitRequest:
-        return WorkflowSubmitRequest(
-            command_type=WorkflowCommandType.analysis,
-            layer_id="ndvi",
-            priority=WorkflowPriority.normal,
-            requested_outputs=[],
-            client=ClientIdentity(client_id="test-client"),
-            map_context=RuntimeMapContext(active_layer_id="ndvi"),
-            algorithm_request={
-                "module_name": "ndvi_daily",
-                "task_type": "ndvi_daily",
-            },
-        )
-
-    def test_execute_includes_default_data_source_diagnostics_on_validation_failure(
-        self,
-    ) -> None:
-        resolution_diagnostics = {
-            "layer_id": "ndvi",
-            "layer_status": "available",
+def _build_payload() -> WorkflowSubmitRequest:
+    return WorkflowSubmitRequest(
+        command_type=WorkflowCommandType.analysis,
+        layer_id="ndvi",
+        priority=WorkflowPriority.normal,
+        requested_outputs=[],
+        client=ClientIdentity(client_id="test-client"),
+        map_context=RuntimeMapContext(active_layer_id="ndvi"),
+        algorithm_request={
             "module_name": "ndvi_daily",
             "task_type": "ndvi_daily",
-            "unresolved_default_datasets": [
-                {
-                    "dataset_name": "NDVI_16DAY_RASTER",
-                    "candidate_sources": ["NDVI_VIIRS", "NDVI_MODIS", "ndvi"],
-                }
-            ],
-        }
-
-        with (
-            patch.object(
-                python_provider_bridge_service,
-                "_get_job_service",
-                return_value=_InvalidValidationJobService(),
-            ),
-            patch(
-                "app.services.python_provider_bridge_service.describe_python_provider_resolution",
-                return_value=resolution_diagnostics,
-            ),
-        ):
-            with self.assertRaises(BridgeExecutionError) as ctx:
-                python_provider_bridge_service.execute(
-                    run_id="run-bridge-1",
-                    payload=self._build_payload(),
-                    requested_at=datetime.now(timezone.utc),
-                    event_factory=lambda **kwargs: kwargs,
-                )
-
-        error = ctx.exception
-        self.assertEqual(error.category, FailureCategory.validation_error)
-        self.assertIn("Provider template validation failed", str(error))
-        self.assertIn("Default data sources are not ready for layer 'ndvi'", str(error))
-        self.assertIn("NDVI_16DAY_RASTER <= NDVI_VIIRS, NDVI_MODIS, ndvi", str(error))
-        self.assertEqual(
-            error.details["resolution_diagnostics"], resolution_diagnostics
-        )
-        self.assertEqual(
-            error.details["validation_errors"],
-            ["module 'ndvi_daily' requires datasource_selection keys: input_dir"],
-        )
+        },
+    )
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_execute_includes_default_data_source_diagnostics_on_validation_failure() -> None:
+    resolution_diagnostics = {
+        "layer_id": "ndvi",
+        "layer_status": "available",
+        "module_name": "ndvi_daily",
+        "task_type": "ndvi_daily",
+        "unresolved_default_datasets": [
+            {
+                "dataset_name": "NDVI_16DAY_RASTER",
+                "candidate_sources": ["NDVI_VIIRS", "NDVI_MODIS", "ndvi"],
+            }
+        ],
+    }
+
+    with (
+        patch.object(
+            python_provider_bridge_service,
+            "_get_job_service",
+            return_value=_InvalidValidationJobService(),
+        ),
+        patch(
+            "app.services.python_provider_bridge_service.describe_python_provider_resolution",
+            return_value=resolution_diagnostics,
+        ),
+    ):
+        with pytest.raises(BridgeExecutionError) as ctx:
+            python_provider_bridge_service.execute(
+                run_id="run-bridge-1",
+                payload=_build_payload(),
+                requested_at=datetime.now(timezone.utc),
+                event_factory=lambda **kwargs: kwargs,
+            )
+
+    error = ctx.value
+    assert error.category == FailureCategory.validation_error, 'error.category == FailureCategory.validation_error'
+    assert "Provider template validation failed" in str(error), '"Provider template validation failed" in str(error)'
+    assert "Default data sources are not ready for layer 'ndvi'" in str(error), '"Default data sources are not ready for layer \'ndvi\'" in str(error)'
+    assert "NDVI_16DAY_RASTER <= NDVI_VIIRS, NDVI_MODIS, ndvi" in str(error), '"NDVI_16DAY_RASTER <= NDVI_VIIRS, NDVI_MODIS, ndvi" in str(error)'
+    assert error.details["resolution_diagnostics"] == resolution_diagnostics, 'error.details["resolution_diagnostics"] == resolution_diagnostics'
+    assert error.details["validation_errors"] == ["module 'ndvi_daily' requires datasource_selection keys: input_dir"], 'error.details["validation_errors"] == ["module \'ndvi_daily\' requires datasource_selection keys: input_dir"]'

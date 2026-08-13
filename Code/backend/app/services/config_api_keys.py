@@ -186,7 +186,7 @@ def upsert_api_key(
         from app.services.effective_config import hydrate_effective_config
 
         hydrate_effective_config()
-    except Exception:
+    except Exception:  # noqa: BLE001 — best-effort rehydrate, logged
         logger.exception("Failed to rehydrate effective config after api key upsert")
     return _annotate_key_entry(result or {}, source="db")
 
@@ -235,7 +235,7 @@ def delete_api_key(key_name: str) -> bool:
             from app.services.effective_config import hydrate_effective_config
 
             hydrate_effective_config()
-        except Exception:
+        except Exception:  # noqa: BLE001 — best-effort rehydrate, logged
             logger.exception(
                 "Failed to rehydrate effective config after api key delete"
             )
@@ -277,7 +277,7 @@ def toggle_api_key(key_name: str, enabled: bool) -> dict[str, Any]:
         from app.services.effective_config import hydrate_effective_config
 
         hydrate_effective_config()
-    except Exception:
+    except Exception:  # noqa: BLE001 — best-effort rehydrate, logged
         logger.exception("Failed to rehydrate effective config after api key toggle")
 
     info = repo.get_key_info(key_name) or {}
@@ -308,7 +308,7 @@ def _sync_api_config_manager_key(key_name: str, key_value: str) -> None:
             config = api_config_manager.get_config(provider)
             if config is not None:
                 config.api_key = None
-    except Exception:
+    except Exception:  # noqa: BLE001 — best-effort sync, logged
         logger.exception("Failed to sync api_config_manager for key=%s", key_name)
 
 
@@ -431,7 +431,7 @@ async def test_api_key(key_name: str) -> tuple[bool, str]:
             else:
                 repo.update_test_status(key_name, "failed")
                 return False, f"API Key '{key_name}' 为空"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — test failure catch-all, logged
         logger.exception("test_api_key failed for key=%s", key_name)
         repo.update_test_status(key_name, "failed")
         return False, f"测试失败: {e}"

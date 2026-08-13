@@ -53,8 +53,8 @@ class DewpointGridRenderNode(BaseNode):
             weather_engine_service = get_weather_engine_service()
             grid_data = inputs.get("grid_data")
             if grid_data:
-                geojson = weather_engine_service.build_dewpoint_geojson_from_grid(
-                    grid_data, layer_id
+                geojson = weather_engine_service.build_scalar_geojson_from_grid(
+                    grid_data, metric_key="dew_point_2m", unit="C", skip_none=True
                 )
             else:
                 bbox = resolve_bbox(inputs, latitude, longitude)

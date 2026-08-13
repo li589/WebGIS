@@ -21,6 +21,7 @@ venv/
 # Node.js
 node_modules/
 dist/
+coverage/
 .npm/
 .npm-cache/
 

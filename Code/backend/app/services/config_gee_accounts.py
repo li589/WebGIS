@@ -104,7 +104,7 @@ async def test_gee_account(account_id: str) -> tuple[bool, str]:
         # GEE 模块未安装
         repo.update_test_status(account_id, "failed")
         return False, "GEE 模块未安装，无法测试凭证"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — test failure catch-all, logged
         logger.exception("test_gee_account failed for account=%s", account_id)
         repo.update_test_status(account_id, "failed")
         return False, f"测试失败: {e}"
@@ -120,7 +120,7 @@ def _reload_gee_facade() -> None:
 
         reload_gee_facade()
         logger.info("GEE facade reloaded after account change")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — best-effort facade reload, logged
         # 尽力而为：facade 重载失败不影响账户变更已持久化
         logger.warning("Failed to reload GEE facade: %s", e)
 
@@ -132,6 +132,6 @@ def reload_gee_account_pool() -> tuple[bool, int, str]:
         repo = _get_gee_credentials_repository()
         accounts = repo.list_accounts(enabled_only=True)
         return True, len(accounts), f"账户池已重载，共 {len(accounts)} 个启用账户"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — reload failure catch-all, logged
         logger.exception("reload_gee_account_pool failed")
         return False, 0, f"重载失败: {e}"

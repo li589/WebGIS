@@ -58,9 +58,10 @@ class PressureGridRenderNode(BaseNode):
             grid_data = inputs.get("grid_data")
             if grid_data:
                 # 使用真实网格数据构建 GeoJSON
-                geojson = weather_engine_service.build_pressure_geojson_from_grid(
+                geojson = weather_engine_service.build_scalar_geojson_from_grid(
                     grid_data,
-                    layer_id,
+                    metric_key="pressure_msl",
+                    unit="hPa",
                 )
                 logger.info(
                     "[PressureGridRenderNode] Built from grid data: layer=%s features=%d",

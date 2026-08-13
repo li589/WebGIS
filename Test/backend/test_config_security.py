@@ -30,7 +30,11 @@ def _route_dependency_callables(route) -> list:
 
 def test_config_api_key_write_requires_auth_when_enabled():
     from app.api import config_routes
-    from app.api.deps import require_write_access
+    from app.api.deps import require_config_management_access, require_write_access
+
+    # RBAC v2: 高危配置路由可使用 require_config_management_access（admin 级）
+    # 替代 require_write_access，二者均提供写保护。
+    accepted_write_guards = {require_write_access, require_config_management_access}
 
     mutating = [
         route
@@ -40,9 +44,10 @@ def test_config_api_key_write_requires_auth_when_enabled():
     assert mutating, "expected mutating config routes"
     for route in mutating:
         dep_calls = _route_dependency_callables(route)
-        assert (
-            require_write_access in dep_calls
-        ), f"route {route.path} missing require_write_access"
+        assert accepted_write_guards & set(dep_calls), (
+            f"route {route.path} missing require_write_access "
+            f"or require_config_management_access"
+        )
 
 
 def test_sensitive_config_gets_require_read_access():
@@ -78,8 +83,12 @@ def test_sensitive_config_gets_require_read_access():
 
 
 def test_import_raster_requires_write_access():
-    from app.api.deps import require_write_access
+    from app.api.deps import require_data_transfer_access, require_write_access
     from app.api.routers.import_router import router as import_router
+
+    # RBAC v2: 数据导入路由可使用 require_data_transfer_access 替代
+    # require_write_access，二者均提供写保护。
+    accepted_write_guards = {require_write_access, require_data_transfer_access}
 
     routes = [
         r
@@ -89,7 +98,10 @@ def test_import_raster_requires_write_access():
     assert routes
     for route in routes:
         dep_calls = _route_dependency_callables(route)
-        assert require_write_access in dep_calls
+        assert accepted_write_guards & set(dep_calls), (
+            f"route {route.path} missing require_write_access "
+            f"or require_data_transfer_access"
+        )
 
 
 def test_weather_sync_trigger_requires_write_access():

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import unittest
 from unittest.mock import patch
 
 from app.services.gee_bridge_service import GeeBridgeService
@@ -123,165 +122,167 @@ class _FakeFacade:
         return self._export_response
 
 
-class GeeBridgeServiceTests(unittest.TestCase):
-    def _make_payload(
-        self, gee_request: GeeWorkflowRequest | dict | None
-    ) -> WorkflowSubmitRequest:
-        return WorkflowSubmitRequest(
-            command_type=WorkflowCommandType.custom,
-            layer_id="gee-demo",
-            priority=WorkflowPriority.normal,
-            client=ClientIdentity(client_id="test-client"),
-            map_context=RuntimeMapContext(active_layer_id="gee-demo"),
-            gee_request=gee_request,
-        )
+def _make_payload(
+    gee_request: GeeWorkflowRequest | dict | None
+) -> WorkflowSubmitRequest:
+    return WorkflowSubmitRequest(
+        command_type=WorkflowCommandType.custom,
+        layer_id="gee-demo",
+        priority=WorkflowPriority.normal,
+        client=ClientIdentity(client_id="test-client"),
+        map_context=RuntimeMapContext(active_layer_id="gee-demo"),
+        gee_request=gee_request,
+    )
 
-    def test_supports_returns_false_when_gee_disabled(self) -> None:
-        with patch("app.services.gee_bridge_service.settings") as mock_settings:
-            mock_settings.gee_enabled = False
-            service = GeeBridgeService()
-            payload = self._make_payload(
-                GeeWorkflowRequest(workflow={"workflow_id": "x", "nodes": []})
-            )
-            self.assertFalse(service.supports(payload))
 
-    def test_supports_returns_false_when_gee_request_none(self) -> None:
+def test_supports_returns_false_when_gee_disabled() -> None:
+    with patch("app.services.gee_bridge_service.settings") as mock_settings:
+        mock_settings.gee_enabled = False
         service = GeeBridgeService()
-        payload = self._make_payload(None)
-        self.assertFalse(service.supports(payload))
-
-    def test_supports_returns_true_when_workflow_provided(self) -> None:
-        service = GeeBridgeService()
-        payload = self._make_payload(
+        payload = _make_payload(
             GeeWorkflowRequest(workflow={"workflow_id": "x", "nodes": []})
         )
-        self.assertTrue(service.supports(payload))
+        assert not service.supports(payload), 'service.supports(payload) is falsy'
 
-    def test_execute_workflow_returns_mapped_result(self) -> None:
-        service = GeeBridgeService()
-        fake_facade = _FakeFacade(
-            response=_FakeExecutionResponse(
-                artifacts=[_FakeArtifact("a1", "file:///tmp/a1.tif")]
+
+def test_supports_returns_false_when_gee_request_none() -> None:
+    service = GeeBridgeService()
+    payload = _make_payload(None)
+    assert not service.supports(payload), 'service.supports(payload) is falsy'
+
+
+def test_supports_returns_true_when_workflow_provided() -> None:
+    service = GeeBridgeService()
+    payload = _make_payload(
+        GeeWorkflowRequest(workflow={"workflow_id": "x", "nodes": []})
+    )
+    assert service.supports(payload), 'service.supports(payload) is truthy'
+
+
+def test_execute_workflow_returns_mapped_result() -> None:
+    service = GeeBridgeService()
+    fake_facade = _FakeFacade(
+        response=_FakeExecutionResponse(
+            artifacts=[_FakeArtifact("a1", "file:///tmp/a1.tif")]
+        )
+    )
+    with patch.object(service, "_get_facade", return_value=fake_facade):
+        payload = _make_payload(
+            GeeWorkflowRequest(
+                workflow={
+                    "workflow_id": "demo",
+                    "nodes": [
+                        {
+                            "node_id": "n1",
+                            "node_type": "literal",
+                            "params": {"value": "ok"},
+                        }
+                    ],
+                },
             )
         )
-        with patch.object(service, "_get_facade", return_value=fake_facade):
-            payload = self._make_payload(
-                GeeWorkflowRequest(
-                    workflow={
-                        "workflow_id": "demo",
-                        "nodes": [
-                            {
-                                "node_id": "n1",
-                                "node_type": "literal",
-                                "params": {"value": "ok"},
-                            }
-                        ],
-                    },
-                )
-            )
-            result = service.execute(
-                run_id="run-12345678",
-                payload=payload,
-                requested_at=datetime.now(timezone.utc),
-                event_factory=_make_event,
-            )
-        self.assertIn("GEE 工作流", result.message)
-        self.assertEqual(len(result.result_refs), 2)  # 1 json + 1 artifact
-        self.assertEqual(result.result_refs[0].result_kind, ResultKind.json)
-        self.assertEqual(result.result_refs[1].result_kind, ResultKind.file)
-        self.assertEqual(result.result_refs[1].resource_url, "file:///tmp/a1.tif")
-        self.assertEqual(result.result_dto["workflow_entry_name"], "demo-workflow")
-        self.assertEqual(result.result_dto["job_status"], "completed")
-        self.assertTrue(any("gee_bridge_service" in d for d in result.diagnostics))
-        self.assertEqual(len(result.events), 2)
-
-    def test_execute_export_poll_returns_status(self) -> None:
-        service = GeeBridgeService()
-        fake_facade = _FakeFacade(
-            export_response=_FakeExportStatusResponse(status="running", state="RUNNING")
+        result = service.execute(
+            run_id="run-12345678",
+            payload=payload,
+            requested_at=datetime.now(timezone.utc),
+            event_factory=_make_event,
         )
-        with patch.object(service, "_get_facade", return_value=fake_facade):
-            payload = self._make_payload(
-                GeeWorkflowRequest(
-                    manifest_uri="file:///tmp/exports/demo.json", update_manifest=True
-                )
+    assert "GEE 工作流" in result.message, '"GEE 工作流" in result.message'
+    assert len(result.result_refs) == 2, 'len(result.result_refs) == 2'  # 1 json + 1 artifact
+    assert result.result_refs[0].result_kind == ResultKind.json, 'result.result_refs[0].result_kind == ResultKind.json'
+    assert result.result_refs[1].result_kind == ResultKind.file, 'result.result_refs[1].result_kind == ResultKind.file'
+    assert result.result_refs[1].resource_url == "file:///tmp/a1.tif", 'result.result_refs[1].resource_url == "file:///tmp/a1.tif"'
+    assert result.result_dto["workflow_entry_name"] == "demo-workflow", 'result.result_dto["workflow_entry_name"] == "demo-workflow"'
+    assert result.result_dto["job_status"] == "completed", 'result.result_dto["job_status"] == "completed"'
+    assert any("gee_bridge_service" in d for d in result.diagnostics), 'any("gee_bridge_service" in d for d in result.diagnostics) is truthy'
+    assert len(result.events) == 2, 'len(result.events) == 2'
+
+
+def test_execute_export_poll_returns_status() -> None:
+    service = GeeBridgeService()
+    fake_facade = _FakeFacade(
+        export_response=_FakeExportStatusResponse(status="running", state="RUNNING")
+    )
+    with patch.object(service, "_get_facade", return_value=fake_facade):
+        payload = _make_payload(
+            GeeWorkflowRequest(
+                manifest_uri="file:///tmp/exports/demo.json", update_manifest=True
             )
-            result = service.execute(
-                run_id="run-poll1234",
-                payload=payload,
-                requested_at=datetime.now(timezone.utc),
-                event_factory=_make_event,
-            )
-        self.assertIn("GEE 导出状态查询完成", result.message)
-        self.assertEqual(len(result.result_refs), 1)
-        self.assertEqual(result.result_refs[0].inline_data["status"], "running")
-        self.assertEqual(result.result_dto["export_status"], "running")
-        self.assertEqual(result.result_dto["update_manifest"], True)
+        )
+        result = service.execute(
+            run_id="run-poll1234",
+            payload=payload,
+            requested_at=datetime.now(timezone.utc),
+            event_factory=_make_event,
+        )
+    assert "GEE 导出状态查询完成" in result.message, '"GEE 导出状态查询完成" in result.message'
+    assert len(result.result_refs) == 1, 'len(result.result_refs) == 1'
+    assert result.result_refs[0].inline_data["status"] == "running", 'result.result_refs[0].inline_data["status"] == "running"'
+    assert result.result_dto["export_status"] == "running", 'result.result_dto["export_status"] == "running"'
+    assert result.result_dto["update_manifest"] == True, 'result.result_dto["update_manifest"] == True'
 
-    def test_list_workflows_response_returns_node_registry(self) -> None:
-        service = GeeBridgeService()
 
-        class _FakeReport:
-            def __init__(self):
-                self.status = "ok"
-                self.checks = {
-                    "node_registry": {
-                        "status": "ok",
-                        "supported_node_types": [
-                            "literal",
-                            "gee_image",
-                            "gee_export_image",
-                        ],
-                    }
+def test_list_workflows_response_returns_node_registry() -> None:
+    service = GeeBridgeService()
+
+    class _FakeReport:
+        def __init__(self):
+            self.status = "ok"
+            self.checks = {
+                "node_registry": {
+                    "status": "ok",
+                    "supported_node_types": [
+                        "literal",
+                        "gee_image",
+                        "gee_export_image",
+                    ],
                 }
-                self.warnings = []
+            }
+            self.warnings = []
 
-            def model_dump(self, mode: str = "json"):
-                return {
-                    "status": self.status,
-                    "checks": self.checks,
-                    "warnings": self.warnings,
+        def model_dump(self, mode: str = "json"):
+            return {
+                "status": self.status,
+                "checks": self.checks,
+                "warnings": self.warnings,
+            }
+
+    fake_facade = _FakeFacade()
+    fake_facade.diagnose = lambda: _FakeReport()
+    with patch.object(service, "_get_facade", return_value=fake_facade):
+        response = service.list_workflows_response()
+    assert response["status_code"] == 200, 'response["status_code"] == 200'
+    assert response["body"]["source"] == "webgis_gee", 'response["body"]["source"] == "webgis_gee"'
+    assert response["body"]["workflow_count"] == 3, 'response["body"]["workflow_count"] == 3'
+    names = [w["name"] for w in response["body"]["workflows"]]
+    assert "literal" in names, '"literal" in names'
+    assert "gee_image" in names, '"gee_image" in names'
+
+
+def test_describe_workflow_returns_404_for_unknown() -> None:
+    service = GeeBridgeService()
+
+    class _FakeReport:
+        def __init__(self):
+            self.status = "ok"
+            self.checks = {
+                "node_registry": {
+                    "status": "ok",
+                    "supported_node_types": ["literal"],
                 }
+            }
+            self.warnings = []
 
-        fake_facade = _FakeFacade()
-        fake_facade.diagnose = lambda: _FakeReport()
-        with patch.object(service, "_get_facade", return_value=fake_facade):
-            response = service.list_workflows_response()
-        self.assertEqual(response["status_code"], 200)
-        self.assertEqual(response["body"]["source"], "webgis_gee")
-        self.assertEqual(response["body"]["workflow_count"], 3)
-        names = [w["name"] for w in response["body"]["workflows"]]
-        self.assertIn("literal", names)
-        self.assertIn("gee_image", names)
+        def model_dump(self, mode: str = "json"):
+            return {
+                "status": self.status,
+                "checks": self.checks,
+                "warnings": self.warnings,
+            }
 
-    def test_describe_workflow_returns_404_for_unknown(self) -> None:
-        service = GeeBridgeService()
-
-        class _FakeReport:
-            def __init__(self):
-                self.status = "ok"
-                self.checks = {
-                    "node_registry": {
-                        "status": "ok",
-                        "supported_node_types": ["literal"],
-                    }
-                }
-                self.warnings = []
-
-            def model_dump(self, mode: str = "json"):
-                return {
-                    "status": self.status,
-                    "checks": self.checks,
-                    "warnings": self.warnings,
-                }
-
-        fake_facade = _FakeFacade()
-        fake_facade.diagnose = lambda: _FakeReport()
-        with patch.object(service, "_get_facade", return_value=fake_facade):
-            response = service.describe_workflow_response("nonexistent_node")
-        self.assertEqual(response["status_code"], 404)
-        self.assertEqual(response["body"]["error_code"], "gee_workflow_not_found")
-
-
-if __name__ == "__main__":
-    unittest.main()
+    fake_facade = _FakeFacade()
+    fake_facade.diagnose = lambda: _FakeReport()
+    with patch.object(service, "_get_facade", return_value=fake_facade):
+        response = service.describe_workflow_response("nonexistent_node")
+    assert response["status_code"] == 404, 'response["status_code"] == 404'
+    assert response["body"]["error_code"] == "gee_workflow_not_found", 'response["body"]["error_code"] == "gee_workflow_not_found"'

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -20,6 +20,10 @@ from app.services.auth_bootstrap import (
 from app.services.credential_resolver import CredentialContext
 from app.services.user_repository import VALID_ROLES, get_user_repository
 from app.services.user_token_repository import get_user_token_repository
+from app.services.permission_repository import (
+    PermissionInput,
+    get_permission_repository,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -40,19 +44,20 @@ class LoginRequest(BaseModel):
 class UserPublic(BaseModel):
     id: int
     username: str
-    role: Literal["admin", "operator", "viewer"]
+    role: Literal["admin", "standard", "demo"]
     enabled: bool = True
+    permission_mode: str = "open"
 
 
 class CreateUserRequest(BaseModel):
     username: str = Field(min_length=1, max_length=128)
     password: str = Field(min_length=8, max_length=256)
-    role: Literal["admin", "operator", "viewer"] = "operator"
+    role: Literal["admin", "standard", "demo"] = "standard"
 
 
 class UpdateUserRequest(BaseModel):
     password: str | None = Field(default=None, min_length=8, max_length=256)
-    role: Literal["admin", "operator", "viewer"] | None = None
+    role: Literal["admin", "standard", "demo"] | None = None
     enabled: bool | None = None
 
 
@@ -85,6 +90,7 @@ def _public_user(row: dict) -> UserPublic:
         username=str(row["username"]),
         role=str(row["role"]),  # type: ignore[arg-type]
         enabled=bool(row.get("enabled", 1)),
+        permission_mode=str(row.get("permission_mode", "open")),
     )
 
 
@@ -120,7 +126,7 @@ def _ensure_not_last_admin(user_id: int, new_role: str | None, disabling: bool) 
     user = repo.get_by_id(user_id)
     if not user or str(user["role"]) != "admin":
         return
-    if repo.count_admins() <= 1 and (disabling or new_role in {"operator", "viewer"}):
+    if repo.count_admins() <= 1 and (disabling or new_role in {"standard", "demo"}):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot remove or demote the last admin account.",
@@ -263,7 +269,7 @@ def delete_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete your own account.",
         )
-    _ensure_not_last_admin(user_id, "viewer", True)
+    _ensure_not_last_admin(user_id, "demo", True)
     if not get_user_repository().delete_user(user_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found."
@@ -359,3 +365,138 @@ def revoke_token(
             status_code=status.HTTP_404_NOT_FOUND, detail="Token not found."
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# Phase B: Resource permission management (admin-only)
+# ---------------------------------------------------------------------------
+
+
+class PermissionRecord(BaseModel):
+    id: int
+    user_id: int
+    resource_type: str
+    resource_id: str
+    permission: str
+    created_at: str
+    updated_at: str
+
+
+class PermissionItemInput(BaseModel):
+    resource_type: Literal["layer", "workflow", "data_source"]
+    resource_id: str = Field(min_length=1, max_length=512)
+    permission: Literal["allow", "deny"]
+
+
+class SetPermissionsRequest(BaseModel):
+    permissions: list[PermissionItemInput] = Field(default_factory=list, max_length=500)
+
+
+class PermissionModeRequest(BaseModel):
+    mode: Literal["open", "whitelist"]
+
+
+def _ensure_target_user_exists(user_id: int) -> None:
+    if get_user_repository().get_by_id(user_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found."
+        )
+
+
+@router.get(
+    "/users/{user_id}/permissions",
+    response_model=list[PermissionRecord],
+)
+def list_user_permissions(
+    user_id: int,
+    _admin: CredentialContext = Depends(require_admin),
+) -> list[PermissionRecord]:
+    _ensure_target_user_exists(user_id)
+    repo = get_permission_repository()
+    return [
+        PermissionRecord(
+            id=p.id,
+            user_id=p.user_id,
+            resource_type=p.resource_type,
+            resource_id=p.resource_id,
+            permission=p.permission,
+            created_at=p.created_at,
+            updated_at=p.updated_at,
+        )
+        for p in repo.get_user_permissions(user_id)
+    ]
+
+
+@router.put(
+    "/users/{user_id}/permissions",
+    response_model=list[PermissionRecord],
+)
+def set_user_permissions(
+    user_id: int,
+    body: SetPermissionsRequest,
+    _admin: CredentialContext = Depends(require_admin),
+) -> list[PermissionRecord]:
+    _ensure_target_user_exists(user_id)
+    repo = get_permission_repository()
+    try:
+        records = repo.set_user_permissions(
+            user_id,
+            [
+                PermissionInput(
+                    resource_type=p.resource_type,
+                    resource_id=p.resource_id,
+                    permission=p.permission,
+                )
+                for p in body.permissions
+            ],
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    return [
+        PermissionRecord(
+            id=p.id,
+            user_id=p.user_id,
+            resource_type=p.resource_type,
+            resource_id=p.resource_id,
+            permission=p.permission,
+            created_at=p.created_at,
+            updated_at=p.updated_at,
+        )
+        for p in records
+    ]
+
+
+@router.delete(
+    "/users/{user_id}/permissions/{permission_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_permission(
+    user_id: int,
+    permission_id: int,
+    _admin: CredentialContext = Depends(require_admin),
+) -> Response:
+    _ensure_target_user_exists(user_id)
+    repo = get_permission_repository()
+    # Verify the permission belongs to the specified user
+    perms = repo.get_user_permissions(user_id)
+    if not any(p.id == permission_id for p in perms):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Permission record not found for this user.",
+        )
+    repo.delete_permission(permission_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch("/users/{user_id}/permission-mode")
+def update_permission_mode(
+    user_id: int,
+    body: PermissionModeRequest,
+    _admin: CredentialContext = Depends(require_admin),
+) -> dict[str, Any]:
+    _ensure_target_user_exists(user_id)
+    repo = get_permission_repository()
+    repo.set_permission_mode(user_id, body.mode)
+    return {"user_id": user_id, "permission_mode": body.mode}

@@ -1,7 +1,6 @@
 import json
 import logging
 import time
-from contextlib import suppress
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -15,10 +14,15 @@ from app.api.routers._helpers import service_json_response
 from app.core.redis_client import (
     cache_get_json,
     cache_set_json,
-    get_redis_client,
-    scan_keys,
 )
 from app.services.weather_bridge_service import weather_bridge_service
+from app.services.weather_coverage_cache import (
+    COVERAGE_CACHE as _COVERAGE_CACHE,
+    COVERAGE_CACHE_TTL_SECONDS as _COVERAGE_CACHE_TTL_SECONDS,
+    COVERAGE_REDIS_PREFIX as _COVERAGE_REDIS_PREFIX,
+    COVERAGE_REDIS_TTL_SECONDS as _COVERAGE_REDIS_TTL_SECONDS,
+    invalidate_weather_coverage_cache,
+)
 from app.weatherengine.service import weather_engine_service
 from shared.contracts.api_contracts import WeatherPointResponse
 import contextlib
@@ -31,10 +35,7 @@ logger = logging.getLogger(__name__)
 # C2：coverage 缓存落 Redis（TTL 300s），多 worker 共享；
 # 进程内 dict 仅作 Redis 不可用时的降级缓存。
 # L1: sync job 状态已迁移至 weather_sync_service。
-_COVERAGE_CACHE: dict[str, dict] = {}
-_COVERAGE_CACHE_TTL_SECONDS = 600  # 10 分钟
-_COVERAGE_REDIS_PREFIX = "weather:coverage:"
-_COVERAGE_REDIS_TTL_SECONDS = 300
+# P0-2: 缓存状态和失效函数迁移至 weather_coverage_cache 模块，消除反向依赖。
 
 
 def _probe_local_open_meteo_coverage(model: str) -> tuple[dict | None, str | None]:
@@ -111,34 +112,6 @@ def _probe_local_open_meteo_coverage(model: str) -> tuple[dict | None, str | Non
     _COVERAGE_CACHE[cache_key] = {**coverage, "_ts": time.time()}
     cache_set_json(redis_key, coverage, _COVERAGE_REDIS_TTL_SECONDS)
     return coverage, None
-
-
-def invalidate_weather_coverage_cache(model: str | None = None) -> None:
-    """同步成功后清除探针缓存（本地 + Redis）。
-
-    - ``model`` 给定：删该模型的本地/Redis 键。
-    - ``model`` 未给定（无参调用）：清空本地 dict，并按前缀扫描删除全部 Redis coverage 键
-      （R-1 修复：此前无参版只清进程内 dict，而读端 Redis 优先，导致同步后各 worker
-      仍会读到旧 coverage 直到 TTL 过期）。
-    """
-    client = get_redis_client()
-    if model:
-        _COVERAGE_CACHE.pop(f"local:{model}", None)
-        if client is not None:
-            with suppress(Exception):  # noqa: BLE001 - best-effort
-                client.delete(f"{_COVERAGE_REDIS_PREFIX}{model}")
-        return
-    _COVERAGE_CACHE.clear()
-    if client is None:
-        return
-    try:
-        keys = scan_keys(client, f"{_COVERAGE_REDIS_PREFIX}*")
-        if keys:
-            client.delete(*keys)
-    except Exception:  # noqa: BLE001 - best-effort，失效失败由 TTL 兜底
-        logger.debug(
-            "invalidate_weather_coverage_cache scan/delete failed", exc_info=True
-        )
 
 
 @router.get("/weather/coverage", tags=["weather"])

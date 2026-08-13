@@ -71,7 +71,7 @@
 - `GET /workflow-definitions/node-templates`
 - `POST /workflow-definitions/compile`：LiteGraph 画布 → Python `workflow_definition`（编辑器 Run 主路径）
 
-**安全**：`/config/*` 写操作与敏感读需有效凭据（会话 Cookie、用户 API Token 或 `backend_auth` 服务密钥 `X-API-Key`）。RBAC：`viewer` 只读。development 且未启用 keys 时仅 **loopback** 可旁路。非 development 必须配置 `BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY`（共享加密主密钥）。详见 `AGENTS.md` 高风险区。
+**安全**：`/config/*` 写操作与敏感读需有效凭据（会话 Cookie、用户 API Token 或 `backend_auth` 服务密钥 `X-API-Key`）。RBAC：三角色模型——`admin`（全权限）、`standard`（可读写/创建工作流，不可改高危配置）、`demo`（只读 + 受控数据上传）。development 且未启用 keys 时仅 **loopback** 可旁路。非 development 必须配置 `BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY`（共享加密主密钥）。详见 `AGENTS.md` 高风险区。
 
 ### 算法 / Provider / Artifact / 导入 / GEE
 

@@ -226,7 +226,7 @@ def test_remote_storage_profile(
             "message": str(exc),
             "tested_at": datetime.now(UTC).isoformat(),
         }
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — unexpected error catch-all after specific exceptions, logged
         # 意外错误——记录完整堆栈，但仍返回失败元组（形状不变）
         logger.exception(
             "Unexpected error probing remote storage profile %s", profile_id

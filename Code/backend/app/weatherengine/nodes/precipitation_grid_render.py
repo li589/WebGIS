@@ -58,9 +58,11 @@ class PrecipitationGridRenderNode(BaseNode):
             grid_data = inputs.get("grid_data")
             if grid_data:
                 # 使用真实网格数据构建 GeoJSON
-                geojson = weather_engine_service.build_precipitation_geojson_from_grid(
+                geojson = weather_engine_service.build_scalar_geojson_from_grid(
                     grid_data,
-                    layer_id,
+                    metric_key="precipitation",
+                    unit="mm",
+                    min_value=0.1,
                 )
                 logger.info(
                     "[PrecipitationGridRenderNode] Built from grid data: layer=%s features=%d",

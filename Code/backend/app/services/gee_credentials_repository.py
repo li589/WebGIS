@@ -77,8 +77,16 @@ class GeeCredentialsRepository:
         with contextlib.suppress(Exception):
             self._pool.close_all(quiet=True)
 
+    # ── 密钥版本标记 ──────────────────────────────────────────────
+    # 密文格式：新写入为 "v1:{ciphertext_b64}"，旧数据无前缀（v0 兼容）。
+    # 解密时自动检测前缀路由到对应版本；v0 仅 development 允许（明文回退）。
+    _KEY_VERSION_PREFIX = "v1:"
+
     def _encrypt(self, plaintext: str) -> tuple[str, str]:
-        """AES-GCM 加密，返回 (ciphertext_b64, iv_b64)。无 key 时仅 development 允许明文。"""
+        """AES-GCM 加密，返回 (ciphertext_with_version, iv_b64)。
+
+        新密文带 ``v1:`` 版本前缀，支持未来密钥轮换。无 key 时仅 development 允许明文。
+        """
         if not self._encryption_key:
             from app.services.effective_config import secrets_encryption_required
 
@@ -100,9 +108,10 @@ class GeeCredentialsRepository:
             iv = os.urandom(12)
             aesgcm = AESGCM(key_bytes)
             ct = aesgcm.encrypt(iv, plaintext.encode("utf-8"), None)
-            return base64.b64encode(ct).decode("ascii"), base64.b64encode(iv).decode(
-                "ascii"
-            )
+            ct_b64 = base64.b64encode(ct).decode("ascii")
+            iv_b64 = base64.b64encode(iv).decode("ascii")
+            # 版本前缀：v1 表示当前 AES-GCM-256 + 随机 12-byte IV
+            return f"{self._KEY_VERSION_PREFIX}{ct_b64}", iv_b64
         except ImportError:
             from app.services.effective_config import secrets_encryption_required
 
@@ -123,11 +132,17 @@ class GeeCredentialsRepository:
             return plaintext, ""
 
     def _decrypt(self, ciphertext_b64: str, iv_b64: str) -> str:
+        """AES-GCM 解密。自动识别 ``v1:`` 版本前缀；无前缀按 v0 兼容路径处理。"""
         from app.services.effective_config import refuse_empty_iv_outside_development
 
         refuse_empty_iv_outside_development(iv_b64)
         if not self._encryption_key or not iv_b64:
             return ciphertext_b64
+
+        # 版本检测：v1 前缀剥离后走标准 AES-GCM 解密
+        if ciphertext_b64.startswith(self._KEY_VERSION_PREFIX):
+            ciphertext_b64 = ciphertext_b64[len(self._KEY_VERSION_PREFIX) :]
+
         try:
             from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # type: ignore
             import base64

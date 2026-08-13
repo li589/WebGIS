@@ -53,8 +53,8 @@ class CloudCoverGridRenderNode(BaseNode):
             weather_engine_service = get_weather_engine_service()
             grid_data = inputs.get("grid_data")
             if grid_data:
-                geojson = weather_engine_service.build_cloud_cover_geojson_from_grid(
-                    grid_data, layer_id
+                geojson = weather_engine_service.build_scalar_geojson_from_grid(
+                    grid_data, metric_key="cloud_cover", unit="%"
                 )
             else:
                 bbox = resolve_bbox(inputs, latitude, longitude)

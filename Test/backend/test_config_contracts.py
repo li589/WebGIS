@@ -39,9 +39,17 @@ from shared.contracts.config_contracts import (
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     # conftest sets BACKEND_ENV=test; require_write_access/read only bypasses in
     # development, so we must supply a key + header in the test environment.
+    # RBAC v2: 配置管理路由使用 require_config_management_access（仅 admin），
+    # 故需将 service key 的角色设为 admin。
+    from app.core.config import settings
+
     monkeypatch.setattr(
         "app.services.effective_config.get_backend_auth_key",
         lambda: "test-key",
+    )
+    monkeypatch.setattr(
+        "app.core.config.settings",
+        replace(settings, api_key_role="admin"),
     )
     return TestClient(create_app(), headers={"X-API-Key": "test-key"})
 
@@ -333,20 +341,24 @@ def test_runtime_management_reads_require_auth_without_key(anon_client: TestClie
 # save/restore settings 由 monkeypatch 自动保证。
 
 
-def test_dev_lan_bypass_allows_write_without_key(
+def test_dev_lan_bypass_does_not_grant_config_management(
     anon_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ):
+    """RBAC v2: dev bypass 授予 standard 角色，不足以管理配置（仅 admin）。
+
+    此前 dev bypass 可绕过 require_write_access 写配置；RBAC v2 将配置管理
+    路由改用 require_config_management_access（仅 admin），dev bypass 不再放行。
+    """
     monkeypatch.setattr(
         "app.core.config.settings",
         replace(core_settings, environment="development", api_keys_enabled=False),
     )
     monkeypatch.setenv("BACKEND_DEV_AUTH_BYPASS", "true")
-    # TestClient 默认 client.host="testclient"，不在 _LOOPBACK_IPS，属非 loopback
     resp = anon_client.put(
         "/config/data-source/open-data-presets",
         json={"open_data_presets": {"noaa_nomads": "https://nomads.ncep.noaa.gov/"}},
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 403
 
 
 # ── F6-async: 3 个 anyio.to_thread.run_sync 的 api-key 写路由 HTTP 级一致性 ─

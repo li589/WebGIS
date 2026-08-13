@@ -317,19 +317,29 @@ class WeatherTileService:
         if layer_id.startswith("temperature"):
             return self._engine.build_temperature_geojson_from_grid(grid_data, layer_id)
         if layer_id == "precipitation":
-            return self._engine.build_precipitation_geojson_from_grid(
-                grid_data, layer_id
+            return self._engine.build_scalar_geojson_from_grid(
+                grid_data, metric_key="precipitation", unit="mm", min_value=0.1
             )
         if layer_id == "humidity":
-            return self._engine.build_humidity_geojson_from_grid(grid_data, layer_id)
+            return self._engine.build_scalar_geojson_from_grid(
+                grid_data, metric_key="relative_humidity_2m", unit="%"
+            )
         if layer_id == "pressure":
-            return self._engine.build_pressure_geojson_from_grid(grid_data, layer_id)
+            return self._engine.build_scalar_geojson_from_grid(
+                grid_data, metric_key="pressure_msl", unit="hPa"
+            )
         if layer_id == "visibility":
-            return self._engine.build_visibility_geojson_from_grid(grid_data, layer_id)
+            return self._engine.build_scalar_geojson_from_grid(
+                grid_data, metric_key="visibility", unit="m"
+            )
         if layer_id == "cloud-cover":
-            return self._engine.build_cloud_cover_geojson_from_grid(grid_data, layer_id)
+            return self._engine.build_scalar_geojson_from_grid(
+                grid_data, metric_key="cloud_cover", unit="%"
+            )
         if layer_id == "dewpoint":
-            return self._engine.build_dewpoint_geojson_from_grid(grid_data, layer_id)
+            return self._engine.build_scalar_geojson_from_grid(
+                grid_data, metric_key="dew_point_2m", unit="C", skip_none=True
+            )
 
         raise ValueError(f"Unsupported weather tile layer: {layer_id}")
 

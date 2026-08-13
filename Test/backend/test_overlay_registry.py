@@ -10,8 +10,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from fastapi import HTTPException
 
+from app.services.errors import OverlayNotFoundError, OverlayValidationError
 from app.services.overlay_registry import OverlaySpec
 
 
@@ -38,22 +38,18 @@ def _time_series_spec(
     )
 
 
-def _expect_404(exc: HTTPException) -> None:
-    assert exc.status_code == 404
-
-
 def test_resolve_bounds_rejects_traversal(tmp_path: Path) -> None:
     spec = _time_series_spec(tmp_path)
-    with pytest.raises(HTTPException) as ei:
+    with pytest.raises(OverlayNotFoundError) as ei:
         spec.resolve_bounds("../../etc/passwd")
-    _expect_404(ei.value)
+    assert ei.value.status_code == 404
 
 
 def test_resolve_source_path_rejects_traversal(tmp_path: Path) -> None:
     spec = _time_series_spec(tmp_path)
-    with pytest.raises(HTTPException) as ei:
+    with pytest.raises(OverlayNotFoundError) as ei:
         spec.resolve_source_path("../../etc/passwd")
-    _expect_404(ei.value)
+    assert ei.value.status_code == 404
 
 
 def test_resolve_source_path_rejects_glob_traversal(tmp_path: Path) -> None:
@@ -61,30 +57,30 @@ def test_resolve_source_path_rejects_glob_traversal(tmp_path: Path) -> None:
     spec = _time_series_spec(
         tmp_path, source_pattern=str(tmp_path / "overlay" / "src_{time}_*.mat")
     )
-    with pytest.raises(HTTPException) as ei:
+    with pytest.raises(OverlayNotFoundError) as ei:
         spec.resolve_source_path("../../etc/passwd")
-    _expect_404(ei.value)
+    assert ei.value.status_code == 404
 
 
 def test_resolve_png_rejects_traversal(tmp_path: Path) -> None:
     spec = _time_series_spec(tmp_path)
-    with pytest.raises(HTTPException) as ei:
+    with pytest.raises(OverlayNotFoundError) as ei:
         spec.resolve_png("../../etc/passwd")
-    _expect_404(ei.value)
+    assert ei.value.status_code == 404
 
 
 def test_resolve_bounds_rejects_unknown_time(tmp_path: Path) -> None:
     spec = _time_series_spec(tmp_path)
-    with pytest.raises(HTTPException) as ei:
+    with pytest.raises(OverlayNotFoundError) as ei:
         spec.resolve_bounds("19990101")
-    _expect_404(ei.value)
+    assert ei.value.status_code == 404
 
 
 def test_resolve_source_path_rejects_unknown_time(tmp_path: Path) -> None:
     spec = _time_series_spec(tmp_path)
-    with pytest.raises(HTTPException) as ei:
+    with pytest.raises(OverlayNotFoundError) as ei:
         spec.resolve_source_path("19990101")
-    _expect_404(ei.value)
+    assert ei.value.status_code == 404
 
 
 def test_resolve_requires_time_for_time_series(tmp_path: Path) -> None:
@@ -92,7 +88,7 @@ def test_resolve_requires_time_for_time_series(tmp_path: Path) -> None:
     # default_time set → resolves; but a spec without default and without time → 400.
     spec_no_default = _time_series_spec(tmp_path, time_list=["20230101"])
     spec_no_default.default_time = None
-    with pytest.raises(HTTPException) as ei:
+    with pytest.raises(OverlayValidationError) as ei:
         spec_no_default.resolve_bounds(None)
     assert ei.value.status_code == 400
     assert spec.resolve_bounds(None).name == "bounds_20230101.json"
@@ -114,12 +110,12 @@ def test_legit_time_resolves(tmp_path: Path) -> None:
 def test_empty_time_list_still_blocks_traversal(tmp_path: Path) -> None:
     # Defense-in-depth: even when time_list is empty the ``..`` segment is blocked.
     spec = _time_series_spec(tmp_path, time_list=[])
-    with pytest.raises(HTTPException) as ei:
+    with pytest.raises(OverlayNotFoundError) as ei:
         spec.resolve_bounds("../../etc/passwd")
-    _expect_404(ei.value)
-    with pytest.raises(HTTPException) as ei:
+    assert ei.value.status_code == 404
+    with pytest.raises(OverlayNotFoundError) as ei:
         spec.resolve_source_path("../../etc/passwd")
-    _expect_404(ei.value)
+    assert ei.value.status_code == 404
 
 
 def test_static_overlay_unaffected(tmp_path: Path) -> None:

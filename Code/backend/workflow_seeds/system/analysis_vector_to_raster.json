@@ -1,0 +1,42 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "Analysis: vector to raster",
+    "description": "InfoPanel vector_to_raster. Inject vector GeoJSON path.",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": null,
+    "tags": ["analysis", "gis", "vector", "raster", "ui-panel"],
+    "category": "analysis",
+    "resource_profile": "standard"
+  },
+  "workflow_id": "analysis_vector_to_raster",
+  "name": "Analysis: vector to raster",
+  "description": "data/source → gis/vector_to_raster",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "data/source",
+      "pos": [60, 120],
+      "properties": {
+        "path": "{DATA_ROOT}/_runtime/smoke_vector.geojson",
+        "dataset_key": "input_path"
+      }
+    },
+    {
+      "id": 2,
+      "type": "gis/vector_to_raster",
+      "pos": [360, 160],
+      "properties": {
+        "attribute_field": "",
+        "resolution": 0.01,
+        "fill_value": 0
+      }
+    }
+  ],
+  "links": [
+    [1, 1, 2, 2, 1]
+  ]
+}

@@ -193,6 +193,16 @@ if celery_available:
             "schedule": crontab(minute="*/15"),
             "options": {"queue": settings.workflow_queue_batch},
         }
+    # Phase C：排队工作流唤醒调度，每 2 分钟检查是否有排队工作流可以派发。
+    # 兜底机制——主要触发点在 lifecycle_service 的 finalize/failure/cancel，
+    # 此 Beat 任务处理边缘情况（Beat 恢复后补 dispatch、并发窗口在 finalize
+    # 触发时恰好关闭等）。
+    if crontab is not None:
+        beat_schedule["dispatch-queued-workflows"] = {
+            "task": "app.tasks.cleanup_tasks.dispatch_queued_workflows",
+            "schedule": crontab(minute="*/2"),
+            "options": {"queue": settings.workflow_queue_standard},
+        }
     if beat_schedule:
         celery_app.conf.beat_schedule = beat_schedule
 else:  # pragma: no cover - exercised only when Celery is unavailable

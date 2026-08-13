@@ -64,7 +64,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 
 改动以下区域前必须确认鉴权、加密或数据面隔离约束，避免破坏运行态或泄露凭据：
 
-1. **`/config/*` 写操作与敏感读**：`app/api/config_routes.py` + `app/services/config_service.py` / `api_config.py` / `effective_config.py` / `credential_resolver.py`。写操作与敏感 GET 需有效凭据：会话 Cookie、用户 API Token 或 `backend_auth` 服务密钥（`X-API-Key`）。RBAC：`viewer` 只读；`operator`/`admin` 可写。development 且 `api_keys_enabled=false` 时仅 **直连 loopback** 可旁路。`/config/about` 仍公开。`PUT /config/data-source/paths` 写 `.env` 后须重启后端进程组。
+1. **`/config/*` 写操作与敏感读**：`app/api/config_routes.py` + `app/services/config_service.py` / `api_config.py` / `effective_config.py` / `credential_resolver.py`。写操作与敏感 GET 需有效凭据：会话 Cookie、用户 API Token 或 `backend_auth` 服务密钥（`X-API-Key`）。RBAC：三角色模型——`admin`（全权限）、`standard`（可读写/创建工作流，不可改高危配置）、`demo`（只读 + 受控数据传输）。配置管理端点（API Key / GEE / 天气 / 远程存储等）仅 `admin` 可写。development 且 `api_keys_enabled=false` 时仅 **直连 loopback** 可旁路。`/config/about` 仍公开。`PUT /config/data-source/paths` 写 `.env` 后须重启后端进程组。
 2. **用户鉴权**：`app/api/routers/auth_router.py`（`/auth/*` 登录、账户、个人 Token）、`session_service.py`、`user_repository.py`。角色/密码/禁用变更会吊销该用户全部会话与 Token。
 
 3. **GEE / 共享加密主密钥**：`BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY` 须为 **64 hex chars（32-byte）**，启动时校验；同一把 key 加密 GEE SA、API keys、天气 provider、远程存储、门户凭据。非 development 缺 key 拒启；空 IV 明文行在生产拒绝解密。GEE API 账号管理 production 默认关闭。涉及 `/config/gee/accounts*` 与 `/gee/config`。

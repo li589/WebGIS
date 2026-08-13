@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
-
-from contracts.job import JobRequest
-from contracts.runtime import RuntimeContext
+from typing import Any, Protocol, TYPE_CHECKING
 
 
+# ── 所有 dataclass/Protocol 提前定义，contracts 导入置底以打破循环导入 ──────
+# 循环链：workflow.schemas → contracts.__init__ → contracts.api_errors →
+# contracts.validation_feedback → workflow.ui_metadata → workflow.panel_schema →
+# modules.registry → modules.base → workflow.schemas.{NodeExecutionContext,PortSpec}
+# 由于 from __future__ import annotations，类型标注为字符串，运行时无需实际类型。
 @dataclass(slots=True)
 class InputSourceSpec:
     source_type: str
@@ -43,6 +45,20 @@ class ArtifactRef:
     metadata: dict[str, object] = field(default_factory=dict)
 
 
+class ArtifactStoreLike(Protocol):
+    def put(self, artifact: ArtifactRef, payload: object | None = None) -> ArtifactRef:
+        raise NotImplementedError
+
+    def get(self, artifact_id: str) -> ArtifactRef:
+        raise NotImplementedError
+
+    def load(self, artifact_id: str) -> object:
+        raise NotImplementedError
+
+    def exists(self, artifact_id: str) -> bool:
+        raise NotImplementedError
+
+
 @dataclass(slots=True)
 class NodeExecutionContext:
     workflow_id: str
@@ -56,18 +72,9 @@ class NodeExecutionContext:
     product_sink: Any = None
 
 
-class ArtifactStoreLike(Protocol):
-    def put(self, artifact: ArtifactRef, payload: object | None = None) -> ArtifactRef:
-        raise NotImplementedError
-
-    def get(self, artifact_id: str) -> ArtifactRef:
-        raise NotImplementedError
-
-    def load(self, artifact_id: str) -> object:
-        raise NotImplementedError
-
-    def exists(self, artifact_id: str) -> bool:
-        raise NotImplementedError
+if TYPE_CHECKING:
+    from contracts.job import JobRequest  # noqa: E402
+    from contracts.runtime import RuntimeContext  # noqa: E402
 
 
 class NodeExecutor(Protocol):

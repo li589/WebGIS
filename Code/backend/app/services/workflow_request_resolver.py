@@ -1145,6 +1145,22 @@ def warm_provider_helpers() -> bool:
     return True
 
 
+def invalidate_template_cache() -> None:
+    """P1-3：清除所有 lru_cache 缓存，使后续调用重新从磁盘加载。
+
+    在以下场景需手动调用：
+    - 修改了 MODULE_REQUEST_TEMPLATES 后（需 FastAPI 进程重启才能生效，此函数用于不重启时强制刷新）
+    - 修改了 provider dataset 配置后
+    - 修改了 provider dataset helpers 后
+    - admin 通过 API 端点主动刷新
+    """
+    _load_module_template_map.cache_clear()
+    _resolve_provider_dataset_path.cache_clear()
+    _load_provider_dataset_helpers.cache_clear()
+    logger = logging.getLogger(__name__)
+    logger.info("workflow_request_resolver caches invalidated")
+
+
 @contextmanager
 def _python_provider_import_path(provider_root: Path) -> Iterator[None]:
     provider_path = str(provider_root)

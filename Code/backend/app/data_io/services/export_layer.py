@@ -181,7 +181,7 @@ def _export_raster_times_zip(
                     bbox=bbox,
                     output_crs=output_crs,
                 )
-            except Exception as exc:  # noqa: BLE001 — per-slice errors into zip
+            except Exception as exc:  # noqa: BLE001 — 单切片导出可能抛出多种错误（ValueError/OSError/rasterio），收集入 zip
                 errors.append(f"{t}: {exc}")
                 zf.writestr(f"{t}.error.txt", str(exc))
                 continue
@@ -260,6 +260,7 @@ def _clip_features_by_bbox(
 ) -> list[dict[str, Any]]:
     from shapely.geometry import box, mapping, shape
     from shapely.ops import transform as shp_transform
+    from shapely.errors import ShapelyError
 
     west, south, east, north = (
         bbox["west"],
@@ -280,7 +281,7 @@ def _clip_features_by_bbox(
                 return (lng, lat) if z is None else (lng, lat, z)
 
             clip_poly = shp_transform(_xf, clip_poly)
-        except Exception as exc:
+        except (ImportError, RuntimeError, ShapelyError, ValueError) as exc:
             raise ValueError(f"无法将 bbox CRS 转为 EPSG:4326: {exc}") from exc
 
     out: list[dict[str, Any]] = []
@@ -296,7 +297,7 @@ def _clip_features_by_bbox(
             if clipped.is_empty:
                 continue
             out.append({**feat, "geometry": mapping(clipped)})
-        except Exception:
+        except (ShapelyError, ValueError, TypeError):
             continue
     return out
 
@@ -307,6 +308,7 @@ def _reproject_features(
     from pyproj import Transformer
     from shapely.geometry import mapping, shape
     from shapely.ops import transform as shp_transform
+    from shapely.errors import ShapelyError
 
     tf = Transformer.from_crs(src_crs, dst_crs, always_xy=True)
 
@@ -323,7 +325,7 @@ def _reproject_features(
         try:
             g = shp_transform(_xf, shape(geom))
             out.append({**feat, "geometry": mapping(g)})
-        except Exception:
+        except (ShapelyError, ValueError, TypeError, RuntimeError):
             continue
     return out
 
@@ -396,7 +398,7 @@ def _prj_wkt(crs_code: str) -> str:
         from pyproj import CRS
 
         return CRS.from_user_input(code).to_wkt("WKT1_ESRI")
-    except Exception:
+    except (ImportError, RuntimeError):
         return _wgs84_prj()
 
 
@@ -469,7 +471,7 @@ def _export_shp_zip(
                 writer.multipoint(coords)
             else:
                 continue
-        except Exception:
+        except (ValueError, TypeError, IndexError):
             continue
         props = feat.get("properties") or {}
         record = [i] + [
@@ -642,7 +644,7 @@ def _transform_geotiff(
                     bbox["north"],
                     densify_pts=21,
                 )
-            except Exception as exc:
+            except (ValueError, KeyError) as exc:
                 raise ValueError(f"bbox 变换到栅格 CRS 失败: {exc}") from exc
             window = from_bounds(west, south, east, north, transform=src.transform)
             window = window.intersection(Window(0, 0, src.width, src.height))
@@ -658,7 +660,7 @@ def _transform_geotiff(
                 same_crs = CRS.from_user_input(dst_crs_code) == CRS.from_user_input(
                     src_crs
                 )
-            except Exception:
+            except (ImportError, ValueError):
                 same_crs = False
 
         if window is not None and (not dst_crs_code or same_crs):
@@ -991,7 +993,7 @@ def _try_export_layers_batch_mat(
                     var_prefix=prefix,
                 )
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — 单图层 MAT 载荷构建失败，收集错误继续
             errors.append(f"{layer_id}: {exc}")
 
     if len(payloads) < 2:
@@ -1105,7 +1107,7 @@ def export_layers_batch_zip(
                     output_crs=output_crs,
                     fields=fields,
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — 单图层导出失败写入 error.txt 跳过
                 zf.writestr(f"{layer_id}.error.txt", str(exc))
                 continue
             arcname = f"{layer_id}/{filename}"

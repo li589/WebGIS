@@ -166,5 +166,188 @@
     "outputs": ["map_layer", "file"],
     "resource_profile": "standard",
     "concurrency_key": "layer_tool"
+  },
+  {
+    "tool_id": "gis.contour",
+    "title": "等值线",
+    "description": "从栅格表面提取等值线，产出 GeoJSON 线要素。",
+    "category": "gis",
+    "input_kinds": ["raster"],
+    "param_schema": [
+      {
+        "key": "interval",
+        "type": "number",
+        "title": "等值距",
+        "default": 100,
+        "min": 0.01
+      },
+      {
+        "key": "band",
+        "type": "integer",
+        "title": "波段",
+        "default": 0,
+        "min": 0
+      },
+      {
+        "key": "smoothing",
+        "type": "enum",
+        "title": "平滑",
+        "default": "true",
+        "options": ["true", "false"]
+      }
+    ],
+    "workflow_template_id": "analysis_contour",
+    "outputs": ["file"],
+    "resource_profile": "standard",
+    "concurrency_key": "layer_tool"
+  },
+  {
+    "tool_id": "gis.slope_aspect",
+    "title": "坡度坡向",
+    "description": "从 DEM 计算坡度（度）和坡向（度），产出两个 GeoTIFF。",
+    "category": "gis",
+    "input_kinds": ["raster"],
+    "param_schema": [
+      {
+        "key": "z_unit",
+        "type": "enum",
+        "title": "高程单位",
+        "default": "meters",
+        "options": ["meters", "feet"]
+      },
+      {
+        "key": "algorithm",
+        "type": "enum",
+        "title": "算法",
+        "default": "horn",
+        "options": ["horn", "zevenbergen"]
+      }
+    ],
+    "workflow_template_id": "analysis_slope_aspect",
+    "outputs": ["map_layer", "file"],
+    "resource_profile": "standard",
+    "concurrency_key": "layer_tool"
+  },
+  {
+    "tool_id": "gis.raster_calc",
+    "title": "栅格计算器",
+    "description": "对栅格执行表达式运算（支持 A 变量和算术运算），产出新 GeoTIFF。",
+    "category": "gis",
+    "input_kinds": ["raster"],
+    "param_schema": [
+      {
+        "key": "expression",
+        "type": "string",
+        "title": "表达式",
+        "default": "A",
+        "description": "支持 A 变量，如 A*2、(A+1)/2"
+      },
+      {
+        "key": "nodata_handling",
+        "type": "enum",
+        "title": "NoData 处理",
+        "default": "propagate",
+        "options": ["propagate", "zero", "ignore"]
+      }
+    ],
+    "workflow_template_id": "analysis_raster_calc",
+    "outputs": ["map_layer", "file"],
+    "resource_profile": "standard",
+    "concurrency_key": "layer_tool"
+  },
+  {
+    "tool_id": "gis.vector_to_raster",
+    "title": "矢量转栅格",
+    "description": "将矢量要素按属性字段栅格化为 GeoTIFF。",
+    "category": "gis",
+    "input_kinds": ["vector"],
+    "param_schema": [
+      {
+        "key": "attribute_field",
+        "type": "string",
+        "title": "属性字段",
+        "default": "",
+        "description": "留空则燃烧值为 1"
+      },
+      {
+        "key": "resolution",
+        "type": "number",
+        "title": "分辨率",
+        "default": 0.01,
+        "min": 0.0001,
+        "description": "度（地理坐标）或米（投影坐标）"
+      },
+      {
+        "key": "fill_value",
+        "type": "number",
+        "title": "填充值",
+        "default": 0
+      }
+    ],
+    "workflow_template_id": "analysis_vector_to_raster",
+    "outputs": ["map_layer", "file"],
+    "resource_profile": "standard",
+    "concurrency_key": "layer_tool"
+  },
+  {
+    "tool_id": "gis.raster_to_vector",
+    "title": "栅格转矢量",
+    "description": "将栅格像元多边形化为 GeoJSON（阈值以上提取边界）。",
+    "category": "gis",
+    "input_kinds": ["raster"],
+    "param_schema": [
+      {
+        "key": "band",
+        "type": "integer",
+        "title": "波段",
+        "default": 0,
+        "min": 0
+      },
+      {
+        "key": "threshold",
+        "type": "number",
+        "title": "阈值",
+        "default": 0,
+        "description": "仅提取值 > 阈值的像元"
+      },
+      {
+        "key": "simplify_tolerance",
+        "type": "number",
+        "title": "简化容差",
+        "default": 0,
+        "min": 0
+      }
+    ],
+    "workflow_template_id": "analysis_raster_to_vector",
+    "outputs": ["file"],
+    "resource_profile": "standard",
+    "concurrency_key": "layer_tool"
+  },
+  {
+    "tool_id": "gis.watershed",
+    "title": "流域分析",
+    "description": "从 DEM 和地图选点（汇流点）执行 D8 流域划分，产出 GeoJSON。",
+    "category": "gis",
+    "input_kinds": ["raster"],
+    "param_schema": [
+      {
+        "key": "fill_threshold",
+        "type": "number",
+        "title": "洼地填充阈值",
+        "default": 0.01,
+        "min": 0
+      },
+      {
+        "key": "max_dem_pixels",
+        "type": "integer",
+        "title": "最大像元数",
+        "default": 4000000,
+        "min": 100000
+      }
+    ],
+    "workflow_template_id": "analysis_watershed",
+    "outputs": ["file"],
+    "resource_profile": "heavy",
+    "concurrency_key": "layer_tool"
   }
 ]

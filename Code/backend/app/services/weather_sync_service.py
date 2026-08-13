@@ -168,8 +168,10 @@ def trigger_sync(domains_override: str | None) -> dict:
         )
         try:
             result = execute_open_meteo_sync(domains=resolved_override)
-            # 同步成功后失效 coverage 缓存（从 weather_router 导入）
-            from app.api.routers.weather_router import invalidate_weather_coverage_cache
+            # P0-2: 从共享缓存模块导入，消除服务层对路由层的反向依赖
+            from app.services.weather_coverage_cache import (
+                invalidate_weather_coverage_cache,
+            )
 
             invalidate_weather_coverage_cache()
             _record_local_sync_job(

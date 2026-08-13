@@ -17,7 +17,11 @@ from dataclasses import dataclass
 from enum import Enum
 
 import httpx
-from fastapi import HTTPException
+from app.services.errors import (
+    TileProxyConfigError,
+    TileProxyError,
+    TileProxyUpstreamError,
+)
 
 from app.core.config import settings
 from app.services.crs import CoordinatePoint
@@ -370,9 +374,7 @@ class TileProxyService:
         """
         template = TILE_URL_TEMPLATES.get(tile_id)
         if not template:
-            raise HTTPException(
-                status_code=400, detail=f"Unknown tile provider: {tile_id}"
-            )
+            raise TileProxyError(f"Unknown tile provider: {tile_id}")
 
         from app.services.config_service import get_effective_api_key
 
@@ -381,16 +383,14 @@ class TileProxyService:
 
         # 天地图需要 API Key（tk），未配置时返回明确错误
         if template.provider == TileProvider.TIANDITU and not tianditu_key:
-            raise HTTPException(
-                status_code=503,
-                detail="天地图需要配置 API Key（设置页或 BACKEND_TIANDITU_API_KEY）。请从 https://console.tianditu.gov.cn/ 申请 Key。",
+            raise TileProxyConfigError(
+                "天地图需要配置 API Key（设置页或 BACKEND_TIANDITU_API_KEY）。请从 https://console.tianditu.gov.cn/ 申请 Key。",
             )
 
         # 百度需要 API Key（ak），未配置时返回明确错误（否则百度返回空白 tile）
         if template.provider == TileProvider.BAIDU and not baidu_key:
-            raise HTTPException(
-                status_code=503,
-                detail="百度地图需要配置 API Key（设置页或 BACKEND_BAIDU_API_KEY）。请从 https://lbsyun.baidu.com/ 申请 ak。",
+            raise TileProxyConfigError(
+                "百度地图需要配置 API Key（设置页或 BACKEND_BAIDU_API_KEY）。请从 https://lbsyun.baidu.com/ 申请 ak。",
             )
 
         # 坐标转换
@@ -448,16 +448,13 @@ class TileProxyService:
             return data
         except httpx.HTTPStatusError as e:
             # 不暴露上游 URL，仅返回状态码
-            raise HTTPException(
+            raise TileProxyUpstreamError(
+                f"Tile source returned HTTP {e.response.status_code}",
                 status_code=e.response.status_code,
-                detail=f"Tile source returned HTTP {e.response.status_code}",
             )
         except httpx.RequestError:
             # 不暴露上游 URL 或内部错误细节，返回通用错误
-            raise HTTPException(
-                status_code=502,
-                detail="Tile source is temporarily unavailable",
-            )
+            raise TileProxyUpstreamError("Tile source is temporarily unavailable")
 
     def get_available_providers(self) -> list[dict]:
         """获取所有可用的底图提供商列表"""
