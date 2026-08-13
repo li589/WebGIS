@@ -343,13 +343,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
 .compact-glow {
   height: 100%;
   width: 32%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    var(--accent),
-    var(--warning),
-    transparent
-  );
+  background: linear-gradient(90deg, transparent, var(--accent), var(--warning), transparent);
   animation: progress-slide 1.1s ease-in-out infinite;
 }
 

@@ -25,7 +25,11 @@ export function createMapCanvasMapOptions(options: CreateMapCanvasMapOptionsOpti
       version: 8,
       sources: {},
       layers: [
-        { id: 'background', type: 'background', paint: { 'background-color': resolveSurfaceColor() } },
+        {
+          id: 'background',
+          type: 'background',
+          paint: { 'background-color': resolveSurfaceColor() },
+        },
       ],
     } as StyleSpecification,
     center: [mapDefaults.longitude, mapDefaults.latitude],

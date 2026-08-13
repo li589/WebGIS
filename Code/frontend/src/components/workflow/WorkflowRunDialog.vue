@@ -147,107 +147,107 @@ watch(outputTags, (tags) => {
 
 <template>
   <Transition name="run-dialog-fade">
-  <div v-if="visible" class="run-dialog-overlay" @click.self="handleCancel">
-    <div class="run-dialog">
-      <header class="dialog-header">
-        <h3 class="dialog-title">运行工作流</h3>
-        <p class="dialog-subtitle">{{ workflowName }} · 源图层: {{ sourceLayerName }}</p>
-        <p v-if="workflowDescription" class="dialog-description">{{ workflowDescription }}</p>
-      </header>
+    <div v-if="visible" class="run-dialog-overlay" @click.self="handleCancel">
+      <div class="run-dialog">
+        <header class="dialog-header">
+          <h3 class="dialog-title">运行工作流</h3>
+          <p class="dialog-subtitle">{{ workflowName }} · 源图层: {{ sourceLayerName }}</p>
+          <p v-if="workflowDescription" class="dialog-description">{{ workflowDescription }}</p>
+        </header>
 
-      <div class="dialog-body">
-        <div v-if="!linkedLayerId" class="layer-picker">
-          <label class="form-label">选择关联图层 *</label>
-          <AppSelect v-model="pickedLayerId" placeholder="请选择图层目录条目">
-            <option value="" disabled>请选择图层目录条目</option>
-            <option v-for="opt in catalogOptions" :key="opt.id" :value="opt.id">
-              {{ opt.name }}（{{ opt.engine }}）
-            </option>
-          </AppSelect>
-          <p class="info-hint">当前工作流未绑定图层；选择后将作为本次运行的源图层。</p>
-        </div>
-
-        <div class="mode-selector">
-          <label class="mode-option" :class="{ active: mode === 'default' }">
-            <input v-model="mode" type="radio" value="default" />
-            <span class="mode-label">
-              <span class="mode-name">默认图层</span>
-              <span class="mode-desc">在已添加图层中建计算组；不写入目录产出条目</span>
-            </span>
-          </label>
-          <label class="mode-option" :class="{ active: mode === 'new' }">
-            <input v-model="mode" type="radio" value="new" />
-            <span class="mode-label">
-              <span class="mode-name">新建图层</span>
-              <span class="mode-desc">计算组 + 写入「科研数据 → 模型输出」目录条目</span>
-            </span>
-          </label>
-        </div>
-
-        <div v-if="mode === 'default' && existingOutputs.length > 0" class="default-mode-info">
-          <p class="info-label">该源图层已有目录产出条目:</p>
-          <ul class="output-list">
-            <li v-for="output in existingOutputs" :key="output.localId" class="output-item">
-              <span class="output-name">{{ output.name }}</span>
-              <span class="output-group">[{{ output.group }}]</span>
-            </li>
-          </ul>
-        </div>
-
-        <div class="products-form">
-          <div class="multi-info-bar">
-            <Info :size="14" class="info-icon" aria-hidden="true" />
-            <span class="info-text">
-              将创建计算组，含 {{ productNames.length }} 个图层：{{
-                outputTags.map(productTagLabel).join(' / ')
-              }}
-            </span>
+        <div class="dialog-body">
+          <div v-if="!linkedLayerId" class="layer-picker">
+            <label class="form-label">选择关联图层 *</label>
+            <AppSelect v-model="pickedLayerId" placeholder="请选择图层目录条目">
+              <option value="" disabled>请选择图层目录条目</option>
+              <option v-for="opt in catalogOptions" :key="opt.id" :value="opt.id">
+                {{ opt.name }}（{{ opt.engine }}）
+              </option>
+            </AppSelect>
+            <p class="info-hint">当前工作流未绑定图层；选择后将作为本次运行的源图层。</p>
           </div>
 
-          <div class="form-row">
-            <label class="form-label">计算组标题</label>
-            <input
-              v-model="groupTitle"
-              type="text"
-              class="form-input"
-              placeholder="显示在已添加图层中的组名"
-            />
+          <div class="mode-selector">
+            <label class="mode-option" :class="{ active: mode === 'default' }">
+              <input v-model="mode" type="radio" value="default" />
+              <span class="mode-label">
+                <span class="mode-name">默认图层</span>
+                <span class="mode-desc">在已添加图层中建计算组；不写入目录产出条目</span>
+              </span>
+            </label>
+            <label class="mode-option" :class="{ active: mode === 'new' }">
+              <input v-model="mode" type="radio" value="new" />
+              <span class="mode-label">
+                <span class="mode-name">新建图层</span>
+                <span class="mode-desc">计算组 + 写入「科研数据 → 模型输出」目录条目</span>
+              </span>
+            </label>
           </div>
 
-          <div class="form-row">
-            <label class="form-label">图层名称（可编辑）</label>
-            <div class="multi-name-list">
-              <div v-for="(_name, idx) in productNames" :key="idx" class="multi-name-row">
-                <span
-                  class="multi-name-tag"
-                  :title="productTagDescription(outputTags[idx] ?? '')"
-                  >{{ productTagLabel(outputTags[idx]) }}</span
-                >
-                <input
-                  v-model="productNames[idx]"
-                  type="text"
-                  class="form-input"
-                  :placeholder="`${namePrefix}_${outputTags[idx]}`"
-                />
+          <div v-if="mode === 'default' && existingOutputs.length > 0" class="default-mode-info">
+            <p class="info-label">该源图层已有目录产出条目:</p>
+            <ul class="output-list">
+              <li v-for="output in existingOutputs" :key="output.localId" class="output-item">
+                <span class="output-name">{{ output.name }}</span>
+                <span class="output-group">[{{ output.group }}]</span>
+              </li>
+            </ul>
+          </div>
+
+          <div class="products-form">
+            <div class="multi-info-bar">
+              <Info :size="14" class="info-icon" aria-hidden="true" />
+              <span class="info-text">
+                将创建计算组，含 {{ productNames.length }} 个图层：{{
+                  outputTags.map(productTagLabel).join(' / ')
+                }}
+              </span>
+            </div>
+
+            <div class="form-row">
+              <label class="form-label">计算组标题</label>
+              <input
+                v-model="groupTitle"
+                type="text"
+                class="form-input"
+                placeholder="显示在已添加图层中的组名"
+              />
+            </div>
+
+            <div class="form-row">
+              <label class="form-label">图层名称（可编辑）</label>
+              <div class="multi-name-list">
+                <div v-for="(_name, idx) in productNames" :key="idx" class="multi-name-row">
+                  <span
+                    class="multi-name-tag"
+                    :title="productTagDescription(outputTags[idx] ?? '')"
+                    >{{ productTagLabel(outputTags[idx]) }}</span
+                  >
+                  <input
+                    v-model="productNames[idx]"
+                    type="text"
+                    class="form-input"
+                    :placeholder="`${namePrefix}_${outputTags[idx]}`"
+                  />
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <footer class="dialog-actions">
-        <button class="action-btn cancel" type="button" @click="handleCancel">取消</button>
-        <button
-          class="action-btn confirm"
-          type="button"
-          :disabled="!canConfirm"
-          @click="handleConfirm"
-        >
-          {{ mode === 'default' ? '运行' : '创建并运行' }}
-        </button>
-      </footer>
+        <footer class="dialog-actions">
+          <button class="action-btn cancel" type="button" @click="handleCancel">取消</button>
+          <button
+            class="action-btn confirm"
+            type="button"
+            :disabled="!canConfirm"
+            @click="handleConfirm"
+          >
+            {{ mode === 'default' ? '运行' : '创建并运行' }}
+          </button>
+        </footer>
+      </div>
     </div>
-  </div>
   </Transition>
 </template>
 

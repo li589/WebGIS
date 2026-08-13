@@ -1376,12 +1376,20 @@ onUnmounted(() => {
   animation: timer-panel-slide-in 0.26s cubic-bezier(0.22, 1, 0.36, 1);
 }
 @keyframes timer-overlay-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 @keyframes timer-panel-slide-in {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
 }
 
 /* ── 确认/事件对话框动画 ────────────────────────────────────── */
@@ -1392,8 +1400,12 @@ onUnmounted(() => {
   animation: dialog-pop-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 }
 @keyframes dialog-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 @keyframes dialog-pop-in {
   from {

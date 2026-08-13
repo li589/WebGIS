@@ -372,173 +372,184 @@ watch(
 
 <template>
   <Transition name="pipeline-fade">
-  <div v-if="visible" class="pipeline-overlay" @click.self="handleClose">
-    <div class="pipeline-dialog">
-      <header class="pipeline-header">
-        <div class="header-left">
-          <Rocket :size="18" class="header-icon" aria-hidden="true" />
-          <div class="header-titles">
-            <h3 class="dialog-title">
-              {{ showParams ? '配置流水线参数' : '端到端流水线' }}
-            </h3>
-            <p v-if="showParams && selectedPipeline" class="dialog-subtitle">
-              {{ selectedPipeline.name }}
-            </p>
-            <p v-else class="dialog-subtitle">选择一个流水线以启动端到端反演流程</p>
+    <div v-if="visible" class="pipeline-overlay" @click.self="handleClose">
+      <div class="pipeline-dialog">
+        <header class="pipeline-header">
+          <div class="header-left">
+            <Rocket :size="18" class="header-icon" aria-hidden="true" />
+            <div class="header-titles">
+              <h3 class="dialog-title">
+                {{ showParams ? '配置流水线参数' : '端到端流水线' }}
+              </h3>
+              <p v-if="showParams && selectedPipeline" class="dialog-subtitle">
+                {{ selectedPipeline.name }}
+              </p>
+              <p v-else class="dialog-subtitle">选择一个流水线以启动端到端反演流程</p>
+            </div>
           </div>
-        </div>
-        <button class="close-btn" type="button" title="关闭" aria-label="关闭" @click="handleClose">
-          <X :size="14" aria-hidden="true" />
-        </button>
-      </header>
-
-      <!-- 启动反馈横幅 -->
-      <div
-        v-if="launchResult"
-        class="launch-banner"
-        :class="launchResult.success ? 'success' : 'error'"
-      >
-        <Check v-if="launchResult.success" :size="14" aria-hidden="true" />
-        <X v-else :size="14" aria-hidden="true" />
-        <span>{{ launchResult.message }}</span>
-      </div>
-
-      <!-- 加载状态 -->
-      <div v-if="loading" class="pipeline-body wf-scroll">
-        <div class="loading-hint">
-          正在加载流水线列表...<span v-if="loadProgress.total > 0" class="loading-progress"
-            >（{{ loadProgress.done }}/{{ loadProgress.total }}）</span
+          <button
+            class="close-btn"
+            type="button"
+            title="关闭"
+            aria-label="关闭"
+            @click="handleClose"
           >
-        </div>
-      </div>
+            <X :size="14" aria-hidden="true" />
+          </button>
+        </header>
 
-      <!-- 加载错误 -->
-      <div v-else-if="loadError" class="pipeline-body wf-scroll">
-        <div class="error-hint">
-          <AlertTriangle :size="14" aria-hidden="true" />
-          <span>加载失败: {{ loadError }}</span>
-        </div>
-      </div>
-
-      <!-- 空状态 -->
-      <div v-else-if="pipelines.length === 0 && !showParams" class="pipeline-body wf-scroll">
-        <div class="empty-hint">未找到带 "pipeline" 标签的系统工作流</div>
-      </div>
-
-      <!-- 流水线卡片列表 -->
-      <div v-else-if="!showParams" class="pipeline-body wf-scroll">
-        <!-- 搜索栏 -->
-        <div v-if="pipelines.length > 1" class="search-row">
-          <input
-            v-model="searchQuery"
-            type="text"
-            class="search-input"
-            placeholder="搜索流水线名称、描述或 ID..."
-          />
-          <span class="search-count">{{ filteredPipelines.length }}/{{ pipelines.length }}</span>
+        <!-- 启动反馈横幅 -->
+        <div
+          v-if="launchResult"
+          class="launch-banner"
+          :class="launchResult.success ? 'success' : 'error'"
+        >
+          <Check v-if="launchResult.success" :size="14" aria-hidden="true" />
+          <X v-else :size="14" aria-hidden="true" />
+          <span>{{ launchResult.message }}</span>
         </div>
 
-        <div v-for="card in filteredPipelines" :key="card.workflowId" class="pipeline-card">
-          <div class="card-header">
-            <Settings :size="14" class="card-icon" aria-hidden="true" />
-            <h4 class="card-title">{{ card.name }}</h4>
-          </div>
-          <p class="card-desc">{{ card.description }}</p>
-          <div v-if="card.outputs.length > 0" class="card-outputs">
-            <span v-for="output in card.outputs" :key="output" class="output-tag">
-              {{ output }}
-            </span>
-          </div>
-          <div class="card-footer">
-            <button
-              class="quick-btn"
-              type="button"
-              title="使用默认参数快速启动"
-              @click="handleQuickLaunch(card)"
+        <!-- 加载状态 -->
+        <div v-if="loading" class="pipeline-body wf-scroll">
+          <div class="loading-hint">
+            正在加载流水线列表...<span v-if="loadProgress.total > 0" class="loading-progress"
+              >（{{ loadProgress.done }}/{{ loadProgress.total }}）</span
             >
-              快速启动
-            </button>
-            <button class="launch-btn" type="button" @click="handleLaunchClick(card)">
-              <span>配置并启动</span>
-              <ArrowRight :size="14" aria-hidden="true" />
-            </button>
           </div>
         </div>
 
-        <!-- 搜索无结果 -->
-        <div v-if="filteredPipelines.length === 0 && searchQuery" class="empty-hint">
-          未找到匹配 "{{ searchQuery }}" 的流水线
+        <!-- 加载错误 -->
+        <div v-else-if="loadError" class="pipeline-body wf-scroll">
+          <div class="error-hint">
+            <AlertTriangle :size="14" aria-hidden="true" />
+            <span>加载失败: {{ loadError }}</span>
+          </div>
         </div>
-      </div>
 
-      <!-- 参数配置面板 -->
-      <div v-else class="pipeline-body wf-scroll">
-        <div class="param-form">
-          <!-- 日期范围预设 -->
-          <div class="preset-row">
-            <span class="preset-label">快捷选择</span>
-            <div class="preset-buttons">
+        <!-- 空状态 -->
+        <div v-else-if="pipelines.length === 0 && !showParams" class="pipeline-body wf-scroll">
+          <div class="empty-hint">未找到带 "pipeline" 标签的系统工作流</div>
+        </div>
+
+        <!-- 流水线卡片列表 -->
+        <div v-else-if="!showParams" class="pipeline-body wf-scroll">
+          <!-- 搜索栏 -->
+          <div v-if="pipelines.length > 1" class="search-row">
+            <input
+              v-model="searchQuery"
+              type="text"
+              class="search-input"
+              placeholder="搜索流水线名称、描述或 ID..."
+            />
+            <span class="search-count">{{ filteredPipelines.length }}/{{ pipelines.length }}</span>
+          </div>
+
+          <div v-for="card in filteredPipelines" :key="card.workflowId" class="pipeline-card">
+            <div class="card-header">
+              <Settings :size="14" class="card-icon" aria-hidden="true" />
+              <h4 class="card-title">{{ card.name }}</h4>
+            </div>
+            <p class="card-desc">{{ card.description }}</p>
+            <div v-if="card.outputs.length > 0" class="card-outputs">
+              <span v-for="output in card.outputs" :key="output" class="output-tag">
+                {{ output }}
+              </span>
+            </div>
+            <div class="card-footer">
               <button
-                v-for="preset in datePresets"
-                :key="preset.label"
-                class="preset-btn"
+                class="quick-btn"
                 type="button"
-                @click="applyDatePreset(preset)"
+                title="使用默认参数快速启动"
+                @click="handleQuickLaunch(card)"
               >
-                {{ preset.label }}
+                快速启动
+              </button>
+              <button class="launch-btn" type="button" @click="handleLaunchClick(card)">
+                <span>配置并启动</span>
+                <ArrowRight :size="14" aria-hidden="true" />
               </button>
             </div>
           </div>
 
-          <div class="date-row">
-            <div class="form-row">
-              <label class="form-label">开始日期</label>
-              <input v-model="startDate" type="date" class="form-input date-input" />
-            </div>
-            <ArrowRight :size="14" class="date-separator" aria-hidden="true" />
-            <div class="form-row">
-              <label class="form-label">结束日期</label>
-              <input v-model="endDate" type="date" class="form-input date-input" />
-            </div>
+          <!-- 搜索无结果 -->
+          <div v-if="filteredPipelines.length === 0 && searchQuery" class="empty-hint">
+            未找到匹配 "{{ searchQuery }}" 的流水线
           </div>
+        </div>
 
-          <div class="format-hint">格式: YYYYMMDD（自动转换）</div>
+        <!-- 参数配置面板 -->
+        <div v-else class="pipeline-body wf-scroll">
+          <div class="param-form">
+            <!-- 日期范围预设 -->
+            <div class="preset-row">
+              <span class="preset-label">快捷选择</span>
+              <div class="preset-buttons">
+                <button
+                  v-for="preset in datePresets"
+                  :key="preset.label"
+                  class="preset-btn"
+                  type="button"
+                  @click="applyDatePreset(preset)"
+                >
+                  {{ preset.label }}
+                </button>
+              </div>
+            </div>
 
-          <!-- 日期范围校验错误 -->
-          <div v-if="dateError" class="date-error">{{ dateError }}</div>
+            <div class="date-row">
+              <div class="form-row">
+                <label class="form-label">开始日期</label>
+                <input v-model="startDate" type="date" class="form-input date-input" />
+              </div>
+              <ArrowRight :size="14" class="date-separator" aria-hidden="true" />
+              <div class="form-row">
+                <label class="form-label">结束日期</label>
+                <input v-model="endDate" type="date" class="form-input date-input" />
+              </div>
+            </div>
 
-          <!-- 高级参数可折叠区域 -->
-          <div v-if="advancedParams.length > 0" class="advanced-section">
-            <button class="advanced-toggle" type="button" @click="showAdvanced = !showAdvanced">
-              <ChevronDown v-if="showAdvanced" :size="14" aria-hidden="true" />
-              <Play v-else :size="14" aria-hidden="true" />
-              <span>高级参数 ({{ advancedParams.length }})</span>
-            </button>
-            <p class="override-tip">启动器参数优先覆盖节点 algorithm_params 中的同名键</p>
-            <div v-if="showAdvanced" class="advanced-content">
-              <div v-for="(adv, idx) in advancedParams" :key="idx" class="form-row compact">
-                <label class="form-label">{{ adv.key }}</label>
-                <input v-model="adv.value" type="text" class="form-input" :placeholder="adv.key" />
+            <div class="format-hint">格式: YYYYMMDD（自动转换）</div>
+
+            <!-- 日期范围校验错误 -->
+            <div v-if="dateError" class="date-error">{{ dateError }}</div>
+
+            <!-- 高级参数可折叠区域 -->
+            <div v-if="advancedParams.length > 0" class="advanced-section">
+              <button class="advanced-toggle" type="button" @click="showAdvanced = !showAdvanced">
+                <ChevronDown v-if="showAdvanced" :size="14" aria-hidden="true" />
+                <Play v-else :size="14" aria-hidden="true" />
+                <span>高级参数 ({{ advancedParams.length }})</span>
+              </button>
+              <p class="override-tip">启动器参数优先覆盖节点 algorithm_params 中的同名键</p>
+              <div v-if="showAdvanced" class="advanced-content">
+                <div v-for="(adv, idx) in advancedParams" :key="idx" class="form-row compact">
+                  <label class="form-label">{{ adv.key }}</label>
+                  <input
+                    v-model="adv.value"
+                    type="text"
+                    class="form-input"
+                    :placeholder="adv.key"
+                  />
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- 底部操作栏（参数配置步骤） -->
-      <footer v-if="showParams" class="pipeline-footer">
-        <button class="action-btn cancel" type="button" @click="handleBack">返回</button>
-        <button
-          class="action-btn confirm"
-          type="button"
-          :disabled="!startDate || !endDate || !!launchResult"
-          @click="handleConfirmLaunch"
-        >
-          确认启动
-        </button>
-      </footer>
+        <!-- 底部操作栏（参数配置步骤） -->
+        <footer v-if="showParams" class="pipeline-footer">
+          <button class="action-btn cancel" type="button" @click="handleBack">返回</button>
+          <button
+            class="action-btn confirm"
+            type="button"
+            :disabled="!startDate || !endDate || !!launchResult"
+            @click="handleConfirmLaunch"
+          >
+            确认启动
+          </button>
+        </footer>
+      </div>
     </div>
-  </div>
   </Transition>
 </template>
 

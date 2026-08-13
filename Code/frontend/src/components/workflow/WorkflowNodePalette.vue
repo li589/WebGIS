@@ -360,7 +360,10 @@ function isFavorite(type: string): boolean {
             :class="{ collapsed: collapsedCategories.has('__favorites__') }"
           />
         </button>
-        <div class="category-items" :class="{ collapsed: collapsedCategories.has('__favorites__') }">
+        <div
+          class="category-items"
+          :class="{ collapsed: collapsedCategories.has('__favorites__') }"
+        >
           <button
             v-for="tpl in favoriteTemplates"
             :key="tpl.type"
@@ -467,7 +470,10 @@ function isFavorite(type: string): boolean {
           />
         </button>
 
-        <div class="category-items" :class="{ collapsed: collapsedCategories.has(String(category)) }">
+        <div
+          class="category-items"
+          :class="{ collapsed: collapsedCategories.has(String(category)) }"
+        >
           <button
             v-for="tpl in templates"
             :key="tpl.type"
@@ -747,8 +753,9 @@ function isFavorite(type: string): boolean {
 .category-items {
   display: grid;
   grid-template-rows: 1fr;
-  transition: grid-template-rows var(--motion-base) var(--ease-standard),
-              opacity var(--motion-base) var(--ease-standard);
+  transition:
+    grid-template-rows var(--motion-base) var(--ease-standard),
+    opacity var(--motion-base) var(--ease-standard);
   overflow: hidden;
   padding: 0.16rem 0.42rem;
 }

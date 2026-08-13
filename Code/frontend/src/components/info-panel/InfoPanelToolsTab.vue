@@ -281,7 +281,12 @@ const phaseLabel = computed(() => {
 
         <label v-if="selectedTool.tool_id === 'gis.zonal_stats'" class="param-row">
           <span class="param-label">分区矢量 overlay id（可选）</span>
-          <input v-model="zonesOverlayId" type="text" class="param-input" placeholder="imported-…" />
+          <input
+            v-model="zonesOverlayId"
+            type="text"
+            class="param-input"
+            placeholder="imported-…"
+          />
         </label>
 
         <label class="param-row param-row--check">
@@ -298,11 +303,14 @@ const phaseLabel = computed(() => {
       </div>
 
       <div class="run-row">
-        <AppButton size="sm" variant="primary" :disabled="!canRun" @click="onRun">
-          运行
-        </AppButton>
+        <AppButton size="sm" variant="primary" :disabled="!canRun" @click="onRun"> 运行 </AppButton>
         <AppButton
-          v-if="runState && (runState.phase === 'running' || runState.phase === 'submitting' || runState.phase === 'queued')"
+          v-if="
+            runState &&
+            (runState.phase === 'running' ||
+              runState.phase === 'submitting' ||
+              runState.phase === 'queued')
+          "
           size="sm"
           variant="secondary"
           @click="onCancel"

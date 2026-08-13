@@ -945,7 +945,8 @@ function drawMinimap() {
     const t = n.type ?? ''
     let color = mmColors.default
     if (t.startsWith('weather/')) color = mmColors.weather
-    else if (t.startsWith('module/') || t.startsWith('python_provider/')) color = mmColors.pythonProvider
+    else if (t.startsWith('module/') || t.startsWith('python_provider/'))
+      color = mmColors.pythonProvider
     else if (t.startsWith('gee/')) color = mmColors.gee
     ctx.fillStyle = color
     ctx.globalAlpha = n.selected ? 1.0 : 0.7

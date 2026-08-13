@@ -34,8 +34,7 @@ function onThemeChange(value: string | number) {
 }
 
 const prefersReducedMotion = ref(
-  typeof window !== 'undefined' &&
-    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+  typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
 )
 
 function onReducedMotionChange(event: Event) {
@@ -68,9 +67,7 @@ if (typeof window !== 'undefined') {
     <!-- 主题模式 -->
     <section class="settings-section">
       <h3 class="section-title">主题模式</h3>
-      <p class="section-hint">
-        切换深色或浅色外观。选择「跟随系统」将根据操作系统的偏好自动切换。
-      </p>
+      <p class="section-hint">切换深色或浅色外观。选择「跟随系统」将根据操作系统的偏好自动切换。</p>
       <div class="theme-selector">
         <SegmentedControl
           :model-value="themeStore.preference"
@@ -105,11 +102,7 @@ if (typeof window !== 'undefined') {
         开启后将减少界面中的过渡动画和粒子效果，适合低性能设备或对动效敏感的用户。
       </p>
       <label class="toggle-row">
-        <input
-          type="checkbox"
-          :checked="prefersReducedMotion"
-          @change="onReducedMotionChange"
-        />
+        <input type="checkbox" :checked="prefersReducedMotion" @change="onReducedMotionChange" />
         <span>减少动效</span>
       </label>
     </section>

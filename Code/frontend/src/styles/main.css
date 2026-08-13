@@ -111,9 +111,13 @@ a {
 .reduce-motion
   *:not(.loading-overlay):not(.loading-overlay *):not(.loading-compact):not(.loading-compact *),
 .reduce-motion
-  *:not(.loading-overlay):not(.loading-overlay *):not(.loading-compact):not(.loading-compact *)::before,
+  *:not(.loading-overlay):not(.loading-overlay *):not(.loading-compact):not(
+    .loading-compact *
+  )::before,
 .reduce-motion
-  *:not(.loading-overlay):not(.loading-overlay *):not(.loading-compact):not(.loading-compact *)::after {
+  *:not(.loading-overlay):not(.loading-overlay *):not(.loading-compact):not(
+    .loading-compact *
+  )::after {
   animation-duration: 0.01ms !important;
   animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important;

@@ -20,13 +20,7 @@ import { useLayersStore } from './layers'
 import type { ActiveLayerDisplay } from './layers/types'
 
 export type AnalysisRunPhase =
-  | 'idle'
-  | 'queued'
-  | 'submitting'
-  | 'running'
-  | 'succeeded'
-  | 'failed'
-  | 'cancelled'
+  'idle' | 'queued' | 'submitting' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 
 export interface AnalysisActiveRun {
   toolId: string

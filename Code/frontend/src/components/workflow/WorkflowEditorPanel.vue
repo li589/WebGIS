@@ -799,64 +799,64 @@ defineExpose({
 
       <!-- 错误提示 -->
       <Transition name="error-slide">
-      <div v-if="error || saveError" class="editor-error-bar">
-        <AlertTriangle :size="14" class="error-icon" aria-hidden="true" />
-        <span class="error-text">{{ saveError ?? error }}</span>
-        <button class="error-dismiss" type="button" @click="saveError = null">
-          <X :size="14" aria-hidden="true" />
-        </button>
-      </div>
+        <div v-if="error || saveError" class="editor-error-bar">
+          <AlertTriangle :size="14" class="error-icon" aria-hidden="true" />
+          <span class="error-text">{{ saveError ?? error }}</span>
+          <button class="error-dismiss" type="button" @click="saveError = null">
+            <X :size="14" aria-hidden="true" />
+          </button>
+        </div>
       </Transition>
 
       <!-- 校验结果面板 -->
       <Transition name="panel-slide-down">
-      <div v-if="showValidationPanel && validationResult" class="validation-panel">
-        <div class="validation-header">
-          <span class="validation-title">
-            <AlertTriangle v-if="validationResult.hasErrors" :size="14" aria-hidden="true" />
-            <AlertCircle v-else-if="validationResult.hasWarnings" :size="14" aria-hidden="true" />
-            <Check v-else :size="14" aria-hidden="true" />
-            <span>运行前校验：{{ formatValidationSummary(validationResult) }}</span>
-          </span>
-          <div class="validation-actions">
-            <button
-              v-if="!validationResult.hasErrors"
-              class="validation-action-btn proceed"
-              type="button"
-              @click="proceedAfterValidation"
-            >
-              继续运行
-            </button>
-            <button
-              class="validation-action-btn close"
-              type="button"
-              @click="showValidationPanel = false"
-            >
-              关闭
-            </button>
+        <div v-if="showValidationPanel && validationResult" class="validation-panel">
+          <div class="validation-header">
+            <span class="validation-title">
+              <AlertTriangle v-if="validationResult.hasErrors" :size="14" aria-hidden="true" />
+              <AlertCircle v-else-if="validationResult.hasWarnings" :size="14" aria-hidden="true" />
+              <Check v-else :size="14" aria-hidden="true" />
+              <span>运行前校验：{{ formatValidationSummary(validationResult) }}</span>
+            </span>
+            <div class="validation-actions">
+              <button
+                v-if="!validationResult.hasErrors"
+                class="validation-action-btn proceed"
+                type="button"
+                @click="proceedAfterValidation"
+              >
+                继续运行
+              </button>
+              <button
+                class="validation-action-btn close"
+                type="button"
+                @click="showValidationPanel = false"
+              >
+                关闭
+              </button>
+            </div>
           </div>
-        </div>
-        <div v-if="validationResult.issues.length > 0" class="validation-list">
-          <div
-            v-for="(issue, idx) in validationResult.issues"
-            :key="idx"
-            class="validation-item"
-            :class="{ error: issue.severity === 'error', warning: issue.severity === 'warning' }"
-          >
-            <X
-              v-if="issue.severity === 'error'"
-              :size="14"
-              class="validation-icon"
-              aria-hidden="true"
-            />
-            <AlertTriangle v-else :size="14" class="validation-icon" aria-hidden="true" />
-            <span class="validation-node">{{ issue.nodeTitle || '全局' }}</span>
-            <span v-if="issue.field" class="validation-field">{{ issue.field }}</span>
-            <span class="validation-message">{{ issue.message }}</span>
+          <div v-if="validationResult.issues.length > 0" class="validation-list">
+            <div
+              v-for="(issue, idx) in validationResult.issues"
+              :key="idx"
+              class="validation-item"
+              :class="{ error: issue.severity === 'error', warning: issue.severity === 'warning' }"
+            >
+              <X
+                v-if="issue.severity === 'error'"
+                :size="14"
+                class="validation-icon"
+                aria-hidden="true"
+              />
+              <AlertTriangle v-else :size="14" class="validation-icon" aria-hidden="true" />
+              <span class="validation-node">{{ issue.nodeTitle || '全局' }}</span>
+              <span v-if="issue.field" class="validation-field">{{ issue.field }}</span>
+              <span class="validation-message">{{ issue.message }}</span>
+            </div>
           </div>
+          <div v-else class="validation-empty">所有节点参数校验通过</div>
         </div>
-        <div v-else class="validation-empty">所有节点参数校验通过</div>
-      </div>
       </Transition>
 
       <!-- 主体三栏布局 -->
@@ -925,65 +925,65 @@ defineExpose({
 
     <!-- 新建工作流对话框 -->
     <Transition name="dialog-fade">
-    <div v-if="showCreateDialog" class="create-dialog-overlay" @click.self="cancelCreateWorkflow">
-      <div class="create-dialog">
-        <h3 class="dialog-title">新建工作流</h3>
-        <div class="dialog-form">
-          <div class="form-row">
-            <label class="form-label">工作流 ID</label>
-            <input
-              v-model="newWorkflowId"
-              type="text"
-              class="form-input"
-              placeholder="唯一标识符"
-            />
+      <div v-if="showCreateDialog" class="create-dialog-overlay" @click.self="cancelCreateWorkflow">
+        <div class="create-dialog">
+          <h3 class="dialog-title">新建工作流</h3>
+          <div class="dialog-form">
+            <div class="form-row">
+              <label class="form-label">工作流 ID</label>
+              <input
+                v-model="newWorkflowId"
+                type="text"
+                class="form-input"
+                placeholder="唯一标识符"
+              />
+            </div>
+            <div class="form-row">
+              <label class="form-label">名称 *</label>
+              <input
+                v-model="newWorkflowName"
+                type="text"
+                class="form-input"
+                placeholder="显示名称"
+              />
+            </div>
+            <div class="form-row">
+              <label class="form-label">描述</label>
+              <textarea
+                v-model="newWorkflowDescription"
+                class="form-textarea"
+                rows="2"
+                placeholder="可选描述"
+              ></textarea>
+            </div>
+            <div class="form-row">
+              <label class="form-label">引擎</label>
+              <AppSelect
+                v-model="newWorkflowEngine"
+                :options="[
+                  { label: '通用', value: 'general' },
+                  { label: '天气引擎', value: 'weather' },
+                  { label: 'Python 处理器', value: 'python_provider' },
+                  { label: 'GEE', value: 'gee' },
+                ]"
+              />
+            </div>
           </div>
-          <div class="form-row">
-            <label class="form-label">名称 *</label>
-            <input
-              v-model="newWorkflowName"
-              type="text"
-              class="form-input"
-              placeholder="显示名称"
-            />
+          <div class="dialog-actions">
+            <button class="dialog-btn cancel" type="button" @click="cancelCreateWorkflow">
+              取消
+            </button>
+            <button
+              class="dialog-btn primary"
+              type="button"
+              :disabled="!newWorkflowId.trim() || !newWorkflowName.trim()"
+              @click="confirmCreateWorkflow"
+            >
+              创建
+            </button>
           </div>
-          <div class="form-row">
-            <label class="form-label">描述</label>
-            <textarea
-              v-model="newWorkflowDescription"
-              class="form-textarea"
-              rows="2"
-              placeholder="可选描述"
-            ></textarea>
-          </div>
-          <div class="form-row">
-            <label class="form-label">引擎</label>
-            <AppSelect
-              v-model="newWorkflowEngine"
-              :options="[
-                { label: '通用', value: 'general' },
-                { label: '天气引擎', value: 'weather' },
-                { label: 'Python 处理器', value: 'python_provider' },
-                { label: 'GEE', value: 'gee' },
-              ]"
-            />
-          </div>
-        </div>
-        <div class="dialog-actions">
-          <button class="dialog-btn cancel" type="button" @click="cancelCreateWorkflow">
-            取消
-          </button>
-          <button
-            class="dialog-btn primary"
-            type="button"
-            :disabled="!newWorkflowId.trim() || !newWorkflowName.trim()"
-            @click="confirmCreateWorkflow"
-          >
-            创建
-          </button>
         </div>
       </div>
-    </div>
     </Transition>
 
     <!-- 流水线启动器对话框 -->
@@ -996,49 +996,49 @@ defineExpose({
     <!-- 工作流属性编辑对话框（名称/描述） -->
     <Teleport to="body">
       <Transition name="dialog-fade">
-      <div v-if="showPropsDialog" class="props-mask" @click.self="showPropsDialog = false">
-        <div class="props-dialog" role="dialog" aria-label="工作流属性">
-          <div class="props-header">
-            <span class="props-title">工作流属性</span>
-            <button
-              class="props-close"
-              type="button"
-              aria-label="关闭"
-              @click="showPropsDialog = false"
-            >
-              ×
-            </button>
-          </div>
-          <div class="props-body">
-            <div class="form-row">
-              <label class="form-label">名称 *</label>
-              <input v-model="editName" type="text" class="form-input" placeholder="显示名称" />
+        <div v-if="showPropsDialog" class="props-mask" @click.self="showPropsDialog = false">
+          <div class="props-dialog" role="dialog" aria-label="工作流属性">
+            <div class="props-header">
+              <span class="props-title">工作流属性</span>
+              <button
+                class="props-close"
+                type="button"
+                aria-label="关闭"
+                @click="showPropsDialog = false"
+              >
+                ×
+              </button>
             </div>
-            <div class="form-row">
-              <label class="form-label">说明描述</label>
-              <textarea
-                v-model="editDescription"
-                class="form-textarea"
-                rows="3"
-                placeholder="说明该工作流的用途、输入输出与注意事项（运行对话框与列表展示）"
-              ></textarea>
+            <div class="props-body">
+              <div class="form-row">
+                <label class="form-label">名称 *</label>
+                <input v-model="editName" type="text" class="form-input" placeholder="显示名称" />
+              </div>
+              <div class="form-row">
+                <label class="form-label">说明描述</label>
+                <textarea
+                  v-model="editDescription"
+                  class="form-textarea"
+                  rows="3"
+                  placeholder="说明该工作流的用途、输入输出与注意事项（运行对话框与列表展示）"
+                ></textarea>
+              </div>
             </div>
-          </div>
-          <div class="dialog-actions">
-            <button class="dialog-btn cancel" type="button" @click="showPropsDialog = false">
-              取消
-            </button>
-            <button
-              class="dialog-btn primary"
-              type="button"
-              :disabled="!editName.trim()"
-              @click="saveProps"
-            >
-              保存
-            </button>
+            <div class="dialog-actions">
+              <button class="dialog-btn cancel" type="button" @click="showPropsDialog = false">
+                取消
+              </button>
+              <button
+                class="dialog-btn primary"
+                type="button"
+                :disabled="!editName.trim()"
+                @click="saveProps"
+              >
+                保存
+              </button>
+            </div>
           </div>
         </div>
-      </div>
       </Transition>
     </Teleport>
 
@@ -1150,7 +1150,11 @@ defineExpose({
   font: inherit;
   font-size: var(--font-size-caption);
   font-weight: 500;
-  transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
+  transition:
+    color var(--motion-fast) var(--ease-standard),
+    background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 
 .header-btn:hover:not(:disabled) {
@@ -1312,8 +1316,13 @@ defineExpose({
 }
 
 @keyframes placeholder-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-6px); }
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
 }
 
 .placeholder-title {
@@ -1427,7 +1436,11 @@ defineExpose({
   font: inherit;
   font-size: var(--font-size-caption);
   font-weight: 500;
-  transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
+  transition:
+    color var(--motion-fast) var(--ease-standard),
+    background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 
 .dialog-btn:disabled {
@@ -1521,7 +1534,11 @@ defineExpose({
   font: inherit;
   font-size: var(--font-size-caption);
   cursor: pointer;
-  transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
+  transition:
+    color var(--motion-fast) var(--ease-standard),
+    background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 
 .validation-action-btn.proceed {

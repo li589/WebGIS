@@ -197,7 +197,9 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
 
     const cfg = options.getTileConfig(sourceId)
     if (!cfg) {
-      console.warn(`[basemap] switchTileSource: getTileConfig returned undefined for sourceId="${sourceId}"`)
+      console.warn(
+        `[basemap] switchTileSource: getTileConfig returned undefined for sourceId="${sourceId}"`,
+      )
       return
     }
 
