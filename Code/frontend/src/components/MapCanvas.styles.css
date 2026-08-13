@@ -516,8 +516,8 @@
 }
 
 .tile-retry-btn:hover {
-  background: var(--danger-border);
-  color: var(--danger-surface);
+  background: var(--danger);
+  color: #fff8f5;
 }
 
 /* 天气瓦片加载指示器 */
@@ -627,7 +627,7 @@
 }
 
 :deep(.maplibregl-ctrl-attrib) {
-  background: var(--text-primary);
+  background: var(--surface-3);
 }
 
 @keyframes sweep {

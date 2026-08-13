@@ -131,6 +131,7 @@ export const RGBA_MAP: RgbaMapping[] = [
   // ── Accent rgba ──
   { rgba: 'rgba(90,213,255,0.12)', token: '--accent-surface', role: '强调表面' },
   { rgba: 'rgba(90,213,255,0.3)', token: '--accent-border', role: '强调边框' },
+  { rgba: 'rgba(90,213,255,0.1)', token: '--accent-focus-ring', role: '焦点环' },
 
   // ── 语义色 rgba ──
   { rgba: 'rgba(159,248,207,0.12)', token: '--success-surface', role: '成功表面' },

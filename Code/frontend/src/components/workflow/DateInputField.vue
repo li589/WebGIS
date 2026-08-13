@@ -117,7 +117,7 @@ function onInput(event: Event) {
   flex-shrink: 0;
   font-size: var(--font-size-caption);
   color: var(--text-disabled);
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-mono);
   white-space: nowrap;
 }
 </style>

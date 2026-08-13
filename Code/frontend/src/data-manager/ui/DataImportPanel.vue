@@ -1381,7 +1381,7 @@ async function commitDocument() {
   background: var(--surface-raised);
   font-size: var(--font-size-caption);
   color: var(--text-secondary);
-  font-family: ui-monospace, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 .sidecar-status .bad {
   color: var(--danger);

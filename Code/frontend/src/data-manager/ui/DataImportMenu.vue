@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Table2, ChevronDown, ChevronUp, Menu, Info, RefreshCw } from '../../components/ui/icons'
 import DataWorkspace from './DataWorkspace.vue'
@@ -100,7 +100,13 @@ const progressLabel = computed(() =>
       :class="{ active: menuOpen || dataWorkspaceOpen }"
       type="button"
       :disabled="!authStore.canWrite"
-      :title="authStore.canWrite ? DATA_COPY.menuTitle : '只读账户无法导入/导出数据'"
+      :title="
+        authStore.canWrite
+          ? DATA_COPY.menuTitle
+          : authStore.isDemo
+            ? '演示账户数据传输受限，请联系管理员开启'
+            : '只读账户无法导入/导出数据'
+      "
       @click="toggleMenu"
     >
       <Table2 :size="14" class="btn-icon" aria-hidden="true" />
@@ -188,10 +194,10 @@ const progressLabel = computed(() =>
   font-weight: var(--font-weight-medium);
   white-space: nowrap;
   transition:
-    background-color var(--motion-fast) var(--ease-standard),
-    border-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard);
+    background-color var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft),
+    box-shadow var(--motion-fast) var(--ease-soft);
 }
 
 .import-trigger:hover:not(:disabled) {

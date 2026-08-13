@@ -67,7 +67,11 @@ if (typeof window !== 'undefined') {
     <!-- 主题模式 -->
     <section class="settings-section">
       <h3 class="section-title">主题模式</h3>
-      <p class="section-hint">切换深色或浅色外观。选择「跟随系统」将根据操作系统的偏好自动切换。</p>
+      <p class="section-hint">
+        切换深色或浅色外观。选择「跟随系统」将根据操作系统的偏好自动切换。系统已内置完整主题；若安装了
+        Dark Reader 等浏览器扩展，请对本站关闭（页面已声明
+        darkreader-lock，避免叠加深色滤镜导致浅色发褐）。
+      </p>
       <div class="theme-selector">
         <SegmentedControl
           :model-value="themeStore.preference"

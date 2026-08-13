@@ -442,6 +442,6 @@ onBeforeUnmount(() => {
   flex: 1;
   color: var(--text-primary);
   word-break: break-all;
-  font-family: 'Cascadia Code', Consolas, monospace;
+  font-family: var(--font-mono);
 }
 </style>

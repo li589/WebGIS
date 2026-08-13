@@ -4,6 +4,10 @@
 <script setup lang="ts">
 import type { ActiveLayerDisplay, LayerHotspot } from '../../stores/layers/types'
 import type { WeatherPointResponse } from '../../services/runtime-api'
+import type { OverlaySymbologyMeta } from '../../types/overlay-symbology'
+import type { AnalysisChartModel, AnalysisTableModel } from './AnalysisResultCharts.vue'
+import type { OverlayBarItem } from './MultiOverlayBarChart.vue'
+import type { ResultDisplayModel } from './result-adapter'
 import { ANALYSIS_COPY, INSPECT_COPY } from '../../ui-copy'
 import AppButton from '../ui/AppButton.vue'
 import PointTimeSeriesChart from './PointTimeSeriesChart.vue'
@@ -14,8 +18,8 @@ defineProps<{
   displayLayer: ActiveLayerDisplay
   isRealtimeWeatherLayer: boolean
   hasAnalysisCharts: boolean
-  analysisCharts: any[]
-  analysisTables: any[]
+  analysisCharts: AnalysisChartModel[]
+  analysisTables: AnalysisTableModel[]
   hasPointWeatherSection: boolean
   pointWeather: WeatherPointResponse | null
   pointWeatherLoading: boolean
@@ -29,7 +33,7 @@ defineProps<{
   pointWeatherHourlyChartRows: { time: string; metric: string; active: boolean }[]
   pointWeatherMetricLabel: string
   showMultiOverlayBar: boolean
-  multiOverlayBarItems: any[]
+  multiOverlayBarItems: OverlayBarItem[]
   showSelectedOverlayTimeSeries: boolean
   showDemoOverlayTimeSeries: boolean
   selectedOverlayTimeSeriesRows: {
@@ -38,10 +42,10 @@ defineProps<{
     numericValue?: number
     active: boolean
   }[]
-  overlayStyleMeta: any
+  overlayStyleMeta: OverlaySymbologyMeta | null
   visibleHotspots: LayerHotspot[]
   selectedHotspot: LayerHotspot | null
-  resultModel: any
+  resultModel: ResultDisplayModel | null
   hasVisualTabContent: boolean
   sparseVisualHint: string
   canRunWorkflow: boolean

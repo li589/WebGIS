@@ -8,6 +8,7 @@
 import type { LayerDescriptor, WorkflowEvent } from '../../services/runtime-api'
 import { formatWorkflowEventLine } from '../../utils/workflow-event-label'
 import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
+import { isWeatherEngineCatalogId } from './weather-session'
 import type {
   ActiveLayer,
   JobLayerItem,
@@ -367,6 +368,31 @@ export function buildAvailabilityState(
     }
   }
 
+  // 天气瓦片层：不依赖 workflow job，禁止回落到「待运行」
+  if (isWeatherEngineCatalogId(layer.catalogId, null)) {
+    return {
+      state: 'partial' as const,
+      label: '可查看',
+      description: item.runReadinessSummary ?? '天气瓦片层，显示后由 tile manager 加载。',
+    }
+  }
+
+  // 已有真实结果 / 导入产物 / 地图载荷：禁止仍显示「待运行」
+  const hasMapPayload = Boolean(jobLayer?.mapLayerPayload)
+  const hasImportedData =
+    layer.dataState === 'imported' || Boolean(layer.importedRaster) || Boolean(layer.importedVector)
+  if (layer.dataState === 'real' || hasMapPayload || hasImportedData) {
+    return {
+      state: hasImportedData || hasMapPayload ? ('ready' as const) : ('partial' as const),
+      label: hasImportedData || hasMapPayload ? '完整数据' : '等待结果',
+      description:
+        item.runReadinessSummary ??
+        (hasImportedData || hasMapPayload
+          ? '图层数据已就绪。'
+          : '图层已有运行结果，等待刷新或重新运行。'),
+    }
+  }
+
   if (item.backendStatus === 'sample') {
     return {
       state: 'partial' as const,
@@ -387,8 +413,8 @@ export function buildAvailabilityState(
   }
 
   return {
-    state: layer.dataState === 'real' ? ('partial' as const) : ('empty' as const),
-    label: layer.dataState === 'real' ? '等待结果' : '待运行',
+    state: 'empty' as const,
+    label: '待运行',
     description: item.runReadinessSummary ?? '图层已加入工作区，可按需运行工作流。',
   }
 }

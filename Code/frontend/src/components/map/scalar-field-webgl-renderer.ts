@@ -14,42 +14,8 @@ import {
   computeWorldWrapOffsets,
   extractMercatorProjectionMatrix,
 } from './wind-particle-webgl-renderer'
-
-function compileShader(
-  gl: WebGLRenderingContext,
-  type: number,
-  source: string,
-): WebGLShader | null {
-  const shader = gl.createShader(type)
-  if (!shader) return null
-  gl.shaderSource(shader, source)
-  gl.compileShader(shader)
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    console.warn('[ScalarFieldWebGL] shader compile failed', gl.getShaderInfoLog(shader))
-    gl.deleteShader(shader)
-    return null
-  }
-  return shader
-}
-
-function linkProgram(gl: WebGLRenderingContext, vsSrc: string, fsSrc: string): WebGLProgram | null {
-  const vs = compileShader(gl, gl.VERTEX_SHADER, vsSrc)
-  const fs = compileShader(gl, gl.FRAGMENT_SHADER, fsSrc)
-  if (!vs || !fs) return null
-  const prog = gl.createProgram()
-  if (!prog) return null
-  gl.attachShader(prog, vs)
-  gl.attachShader(prog, fs)
-  gl.linkProgram(prog)
-  gl.deleteShader(vs)
-  gl.deleteShader(fs)
-  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-    console.warn('[ScalarFieldWebGL] program link failed', gl.getProgramInfoLog(prog))
-    gl.deleteProgram(prog)
-    return null
-  }
-  return prog
-}
+// P1-7：shader 编译/链接工具函数从共享模块导入
+import { linkProgram } from './webgl-utils'
 
 function uploadRgbaTexture(
   gl: WebGLRenderingContext,
@@ -172,7 +138,12 @@ export class ScalarFieldWebGLLayer {
     gl.enable(gl.BLEND)
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
-    this.program = linkProgram(gl, SCALAR_FIELD_VERTEX_SHADER, SCALAR_FIELD_FRAGMENT_SHADER)
+    this.program = linkProgram(
+      gl,
+      SCALAR_FIELD_VERTEX_SHADER,
+      SCALAR_FIELD_FRAGMENT_SHADER,
+      'ScalarFieldWebGL',
+    )
     if (!this.program) {
       this.initFailed = true
       return

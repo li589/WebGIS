@@ -78,7 +78,7 @@ h1 {
   border-radius: 0.5rem;
   background: var(--border-subtle);
   color: var(--text-primary);
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.82rem;
   word-break: break-all;
 }

@@ -97,12 +97,14 @@ const iconSize = computed(() => {
   cursor: pointer;
   user-select: none;
   flex: 0 0 auto;
+  position: relative;
+  overflow: hidden;
   transition:
-    background-color var(--motion-fast) var(--ease-standard),
-    border-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard),
-    transform var(--motion-fast) var(--ease-standard);
+    background-color var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft),
+    box-shadow var(--motion-fast) var(--ease-soft),
+    transform var(--motion-fast) var(--ease-soft);
 }
 
 .app-btn:focus-visible {
@@ -153,16 +155,38 @@ const iconSize = computed(() => {
 
 /* 变体：primary */
 .app-btn--primary {
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
   color: var(--surface-base);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.14) inset,
-    0 1px 2px var(--surface-sunken);
+    0 1px 0 rgba(255, 255, 255, 0.18) inset,
+    0 1px 2px var(--surface-sunken),
+    0 0 0 1px var(--accent-border);
+}
+.app-btn--primary::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.12) 50%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  background-position: 200% 0;
+  transition: background-position var(--motion-slow) var(--ease-soft);
+  pointer-events: none;
 }
 .app-btn--primary:hover:not(:disabled) {
-  background: var(--accent-strong);
   transform: translateY(-1px);
-  box-shadow: var(--elevation-1);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.22) inset,
+    var(--elevation-2),
+    var(--accent-glow-sm);
+}
+.app-btn--primary:hover:not(:disabled)::after {
+  background-position: -200% 0;
 }
 .app-btn--primary:active:not(:disabled) {
   transform: translateY(0);

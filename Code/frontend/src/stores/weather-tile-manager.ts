@@ -14,12 +14,8 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
 import { useLogStore } from './log'
-import { useSettingsStore } from './settings'
-import { normalizeLngBounds } from '../utils/geo-bounds'
 import {
-  buildTileKey,
   fetchWeatherTile,
-  lngLatToTile,
   sortTilesCenterFirst,
   tileToLngLatBounds,
   tilesInBounds,
@@ -29,10 +25,7 @@ import {
 import {
   buildMergeStats,
   centerInLngBounds,
-  filterGeojsonInsideTileBounds,
-  filterGeojsonOutsideCoverage,
   formatMergeStats,
-  mergeWeatherTiles,
   tileBoundsOverlapViewport,
   type MergedWeatherTile,
 } from '../services/weather-tile-utils'
@@ -54,206 +47,75 @@ import {
   setWeatherTileConcurrencyDebugLog,
 } from './weather-tile-concurrency'
 import { trimWeatherLayerTileCache } from './weather-tile-cache-trim'
-import { normalizeWeatherModel, WEATHER_MODEL_BOOTSTRAP } from '../utils/weather-model'
-import { useWeatherEngineStore } from './weather-engine'
+// P1-1: 从 God Store 拆分的模块
+import {
+  ADJACENT_HOUR_PRIORITY,
+  BACKOFF_429_MS,
+  BACKOFF_503_MS,
+  BACKOFF_TIMEOUT_MS,
+  CHILD_PREFETCH_PENDING_STRESS,
+  DATA_VERSION_COALESCE_MS,
+  DATA_VERSION_ZOOMOUT_COALESCE_MS,
+  GAP_SWEEP_MS,
+  GAP_SWEEP_STRESSED_MS,
+  GAP_SWEEP_ZOOM_CHANGE_MS,
+  HOUR_MAX,
+  HOUR_MIN,
+  MAX_429_RETRIES,
+  MAX_503_RETRIES,
+  MAX_SOFT_REQUEUES,
+  MAX_TIMEOUT_RETRIES,
+  MULTI_LAYER_PREFETCH_THRESHOLD,
+  PREFETCH_NEIGHBOR_DEPTH,
+  PREFETCH_NEIGHBOR_DEPTH_MULTI_LAYER,
+  SOFT_REQUEUE_MS,
+  ZOOM_OUT_TRANSITION_MS,
+  isWeatherLayerUnsupportedByModel,
+  resolveConfiguredWeatherModel,
+  type LayerState,
+  type LayerTileStats,
+  type TileKey,
+  type TileRequest,
+  type WeatherTileErrorType,
+  type WeatherTileLayerStatus,
+  type WeatherWorkflowContribution,
+  type WeatherWorkflowContributionItem,
+  type WeatherWorkflowMappedStatus,
+} from './weather-tile-types'
+import {
+  classifyTileError,
+  isAbortError,
+  parseTileCoordsFromCacheKey,
+  type DebugLogFn,
+} from './weather-tile-errors'
+import {
+  bboxApproxEqual,
+  boundsFromCenter,
+  cancelPendingRequest,
+  isTileFresh,
+  makeTileEntry,
+  resolveTileZoom,
+  tileCoordsToKey,
+  tileKeySetEqual,
+} from './weather-tile-utils-store'
+import {
+  clearMergeCacheForLayer,
+  getMergedGeojsonForViewport as getMergedGeojsonForViewportImpl,
+  type MergeCache,
+} from './weather-tile-merge'
 
-/** 视口外扩预取圈数：同级邻居提前缓存，减少平移空洞 */
-const PREFETCH_NEIGHBOR_DEPTH = 3
-/** 多可见天气层时压缩邻域，把槽位留给各层视口 */
-const PREFETCH_NEIGHBOR_DEPTH_MULTI_LAYER = 1
-/** 邻小时预取优先级（仅 viewport，不扩环） */
-const ADJACENT_HOUR_PRIORITY = 3
-/** 可见竞争层数达到此阈值时抑制邻小时/深邻域预取 */
-const MULTI_LAYER_PREFETCH_THRESHOLD = 2
-/** 预报 hour 合法范围（与后端 Query ge=0,le=47 对齐） */
-const HOUR_MIN = 0
-const HOUR_MAX = 47
-/** 默认与后端 weather_cache_ttl_seconds 一致 */
-const DEFAULT_TILE_TTL_MS = 3600_000
-
-/** 单瓦片缓存条目：SWR 用 fetchedAt，LRU trim 用 lastAccess */
-export interface CachedTileEntry {
-  geojson: WindGeoJSON
-  fetchedAt: number
-  lastAccess: number
-}
-/** 单视口瓦片上限；超出则降 tile z，避免亚洲–太平洋宽视野瞬间打爆上游 */
-const MAX_VIEWPORT_TILES = 36
-/** dataVersion 短窗合并，避免每到一块瓦片就全量重算 */
-const DATA_VERSION_COALESCE_MS = 220
-/** pending 过高时暂停 z+1 child prefetch */
-const CHILD_PREFETCH_PENDING_STRESS = 6
-const BACKOFF_429_MS = 5000
-/** 429 退避后重试的最大次数，避免无限重试 */
-const MAX_429_RETRIES = 3
-/** 503（断路器/服务不可用）退避时间 */
-const BACKOFF_503_MS = 8000
-/** 503 重试最大次数 */
-const MAX_503_RETRIES = 3
-/** 前端 abort 超时后的退避（后端可能仍在生成，稍后重试可命中缓存） */
-const BACKOFF_TIMEOUT_MS = 4000
-/** 超时重试最大次数 */
-const MAX_TIMEOUT_RETRIES = 2
-/** 耗尽重试后的软重拉间隔（给断路器恢复时间，避免立刻再撞 503） */
-const SOFT_REQUEUE_MS = 15_000
-/** 同一瓦片软重拉上限，防止断路器打开时无限「运行中」 */
-const MAX_SOFT_REQUEUES = 3
-/** 视口缺口补洞扫描间隔（秒级，商业观感：缩放后尽快填洞） */
-const GAP_SWEEP_MS = 2_500
-/** 限流/断路压力下的补洞间隔 */
-const GAP_SWEEP_STRESSED_MS = 8_000
-/** Zoom-out 过渡期补洞间隔（更快填洞） */
-const GAP_SWEEP_ZOOM_CHANGE_MS = 1_000
-/** Zoom-out 过渡期 dataVersion 合并窗口（更快触发渲染） */
-const DATA_VERSION_ZOOMOUT_COALESCE_MS = 100
-/** Zoom-out 过渡期时长（ms）：在此期间加速补洞/放宽缓存/缩短合并 */
-const ZOOM_OUT_TRANSITION_MS = 3_000
-
-/** 默认气象模型 bootstrap；正式值由天气引擎配置 / 后端 default_model 覆盖。 */
-export const DEFAULT_WEATHER_MODEL = WEATHER_MODEL_BOOTSTRAP
-
-/** Resolve tile model: explicit override > weather-engine default_model > bootstrap. */
-function resolveConfiguredWeatherModel(override?: string): string {
-  if (override && override.trim()) return normalizeWeatherModel(override)
-  try {
-    return useWeatherEngineStore().defaultModel
-  } catch {
-    return WEATHER_MODEL_BOOTSTRAP
-  }
-}
-
-/**
- * 模型 × 图层 结构性不支持清单：变量在该模型中不存在，数据同步也补不齐
- * （如 ECMWF IFS 不提供 visibility）。与后端 WEATHER_LAYER_SPECS 语义保持一致。
- * 命中时 setViewport 直接短路：不发瓦片请求，按 data-empty 提示。
- */
-const UNSUPPORTED_LAYER_MODELS: Record<string, readonly string[]> = {
-  visibility: ['ecmwf_ifs025'],
-}
-
-/** 图层变量在当前模型下是否结构性不可用（与数据同步状态无关） */
-export function isWeatherLayerUnsupportedByModel(layerId: string, model: string): boolean {
-  const models = UNSUPPORTED_LAYER_MODELS[layerId]
-  return !!models && models.includes(model)
-}
-
-interface TileKey {
-  layerId: string
-  z: number
-  x: number
-  y: number
-  hour: number
-}
-
-interface TileRequest {
-  key: TileKey
-  layerId: string
-  priority: number
-  generation: number
-  sequence: number
-  controller: AbortController
-  /** 是否已被 drainQueue 取出并进入 submitTile；用于取消时区分是否占用并发槽位。 */
-  dispatched?: boolean
-  /** 429 重试计数 */
-  retry429Count?: number
-  /** 503 重试计数 */
-  retry503Count?: number
-  /** 前端超时重试计数 */
-  retryTimeoutCount?: number
-  /** 该瓦片最早可重试的时间戳（ms）。drainQueue/pickNextRequest 会跳过未到期的瓦片，
-   *  确保单个瓦片的退避不被其他 drainQueue 调用绕过。 */
-  retryAfter?: number
-}
-
-interface LayerState {
-  layerId: string
-  generation: number
-  visible: boolean
-  center: { lng: number; lat: number }
-  /** 预算后的瓦片 zoom（入队 / merge 用） */
-  zoom: number
-  /** 地图原始 zoom；用于判断「仅缩放未改瓦片集合」时仍需通知 overlay 重投影 */
-  mapZoom: number
-  hour: number
-  model: string
-  /** Weather provider preference (auto | provider_id); part of tile cache key */
-  provider: string
-  bbox: LngLatBounds | null
-  viewportTiles: WeatherTileCoords[]
-  prefetchRing: WeatherTileCoords[]
-  tiles: Map<string, CachedTileEntry>
-  pending: Map<string, TileRequest>
-  /** 最近一次成功合并的 GeoJSON；视口换小时/缩放时暂无可匹配瓦片则沿用，避免闪空 */
-  lastMergedGeojson: WindGeoJSON | null
-  /** 上一帧合并的 feature 数，用于检测「平移后暂时变稀」并沿用旧帧 */
-  lastMergedFeatureCount: number
-  /** 最近一次错误类型（null = 无错误）。UI 通过 statusVersion 触发响应式更新。 */
-  lastErrorType: WeatherTileErrorType | null
-  /** 错误信息（供 UI 展示） */
-  lastErrorMessage: string | null
-  /**
-   * 「无数据」短路标记：记录最近一次 422（主变量全 null）时的 `${model}|${provider}`。
-   * 命中后该图层在当前 model/provider 下不再发任何瓦片请求（422 表示变量缺失，
-   * 是图层级状态而非单瓦片问题），避免 gap sweep / soft requeue 构成无限重试。
-   * model/provider 变化后 scope 自动失配、恢复请求；图层重新激活时显式清除。
-   */
-  dataEmptyScope: string | null
-  /** 最近一次 zoom 变化的时间戳（ms）；zoom-out 过渡期内加速补洞/放宽缓存/缩短合并窗口 */
-  lastZoomChangedAt: number
-}
-
-export interface LayerTileStats {
-  pending: number
-  cached: number
-  visible: number
-}
-
-/** 天气瓦片图层的运行时状态，供 UI 显示加载/错误反馈 */
-export type WeatherTileErrorType =
-  'circuit-open' | 'rate-limited' | 'workflow-failed' | 'timeout' | 'data-empty' | 'unknown'
-
-export type WeatherWorkflowMappedStatus =
-  'running' | 'queued' | 'retry_pending' | 'failed' | 'cancelled' | 'succeeded'
-
-export interface WeatherWorkflowContributionItem {
-  catalogId: string
-  status: WeatherWorkflowMappedStatus
-  message: string
-  pending: number
-  missingInViewport: number
-  cachedInViewport: number
-  viewportTotal: number
-  errorType: WeatherTileErrorType | null
-}
-
-export interface WeatherWorkflowContribution {
-  running: number
-  queued: number
-  retryPending: number
-  failed: number
-  cancelled: number
-  succeeded: number
-  items: WeatherWorkflowContributionItem[]
-}
-
-export interface WeatherTileLayerStatus {
-  /** 图层是否可见且需要瓦片 */
-  active: boolean
-  /** 视口内已缓存的瓦片数 */
-  cachedInViewport: number
-  /** 视口内瓦片总数 */
-  viewportTotal: number
-  /** 视口内尚未缓存的瓦片数 */
-  missingInViewport: number
-  /** 仍在加载的瓦片数（含退避中；工具栏「运行中」≈ priority=0 pending） */
-  pending: number
-  /** 是否有图层级视口补洞定时器在跑 */
-  gapSweepActive: boolean
-  /** 最近一次错误类型（null = 无错误） */
-  errorType: WeatherTileErrorType | null
-  /** 错误信息（供 UI 展示） */
-  errorMessage: string | null
-}
+// P1-1: 常量 / 类型 / 纯函数已拆至 weather-tile-types.ts、weather-tile-errors.ts、weather-tile-utils-store.ts
+// 此处仅保留 re-export 以维持向后兼容（外部 import 路径不变）
+export { DEFAULT_WEATHER_MODEL, isWeatherLayerUnsupportedByModel } from './weather-tile-types'
+export type {
+  CachedTileEntry,
+  LayerTileStats,
+  WeatherTileErrorType,
+  WeatherTileLayerStatus,
+  WeatherWorkflowContribution,
+  WeatherWorkflowContributionItem,
+  WeatherWorkflowMappedStatus,
+} from './weather-tile-types'
 
 let globalSequence = 0
 let activeFetchCount = 0
@@ -279,121 +141,11 @@ export function __testResetWeatherTileManagerModuleState(): void {
   resetWeatherTileConcurrencyForTests()
 }
 
-function parseTileCoordsFromCacheKey(cacheKey: string): WeatherTileCoords | null {
-  const zMatch = /:z(\d+):/.exec(cacheKey)
-  const xMatch = /:x(\d+):/.exec(cacheKey)
-  const yMatch = /:y(\d+):/.exec(cacheKey)
-  if (!zMatch || !xMatch || !yMatch) return null
-  return {
-    z: Number(zMatch[1]),
-    x: Number(xMatch[1]),
-    y: Number(yMatch[1]),
-  }
-}
-
-/** 轴对齐 bbox 是否与视口相交 — 见 weather-tile-utils.tileBoundsOverlapViewport */
-
-function debugLog(module: string, ...args: unknown[]) {
+// P1-1: debugLog 保留在此处（依赖 probeDebugLog + performance.now）
+const debugLog: DebugLogFn = (module: string, ...args: unknown[]) => {
   probeDebugLog(`[${performance.now().toFixed(1)}ms] [WeatherTileManager:${module}]`, ...args)
 }
 setWeatherTileConcurrencyDebugLog(debugLog)
-
-function classifyTileError(err: unknown): { type: WeatherTileErrorType; message: string } {
-  const raw = String((err as Error)?.message ?? err ?? '天气瓦片加载失败')
-  if (raw.includes('timeout')) {
-    return { type: 'timeout', message: '天气瓦片请求超时，上游可能限流，稍后自动重试' }
-  }
-  if (raw.includes('429')) {
-    return { type: 'rate-limited', message: '天气 API 请求频率超限，请稍后重试' }
-  }
-  if (
-    raw.includes('422') ||
-    /all-null|empty payload|empty grid|model_empty|no usable data|无数据/i.test(raw)
-  ) {
-    return {
-      type: 'data-empty',
-      message: '本地模型无数据，请同步 Open-Meteo',
-    }
-  }
-  if (
-    raw.includes('503') ||
-    raw.includes('502') ||
-    raw.includes('504') ||
-    /Bad gateway/i.test(raw)
-  ) {
-    return {
-      type: 'circuit-open',
-      message: '天气服务暂时不可达（网关/断路器），请稍后重试',
-    }
-  }
-  // 兜底：绝不把 HTML 错误页原文推到地图横幅
-  return { type: 'unknown', message: sanitizeUiErrorMessage(raw) }
-}
-
-/** UI / 日志用：去掉 HTML 并截断，避免 Cloudflare 502 整页污染界面 */
-function sanitizeUiErrorMessage(message: string, maxLen = 180): string {
-  if (
-    /<!DOCTYPE\s+html|<html[\s>]|<head[\s>]|<body[\s>]/i.test(message) ||
-    message.includes('<!DOCTYPE')
-  ) {
-    const statusMatch = /failed:\s*(\d{3})/.exec(message)
-    const status = statusMatch?.[1] ?? '错误'
-    return `天气瓦片请求失败（HTTP ${status}），服务暂时不可达`
-  }
-  const oneLine = message.replace(/\s+/g, ' ').trim()
-  return oneLine.length > maxLen ? `${oneLine.slice(0, maxLen)}…` : oneLine
-}
-
-function tileCoordsToKey(
-  coords: WeatherTileCoords,
-  layerId: string,
-  hour: number,
-  model: string,
-  provider = 'auto',
-): string {
-  return buildTileKey(layerId, coords.z, coords.x, coords.y, hour, model, provider)
-}
-
-function getWeatherTileTtlMs(): number {
-  try {
-    const ttlSec = useSettingsStore().weatherConfig?.cache_ttl_seconds
-    if (typeof ttlSec === 'number' && Number.isFinite(ttlSec) && ttlSec > 0) {
-      return Math.floor(ttlSec * 1000)
-    }
-  } catch {
-    // Pinia 未就绪（单测早期）时回退默认
-  }
-  return DEFAULT_TILE_TTL_MS
-}
-
-function isTileFresh(entry: CachedTileEntry, now = Date.now()): boolean {
-  return now - entry.fetchedAt < getWeatherTileTtlMs()
-}
-
-function touchTileEntry(entry: CachedTileEntry, now = Date.now()): WindGeoJSON {
-  entry.lastAccess = now
-  return entry.geojson
-}
-
-function makeTileEntry(geojson: WindGeoJSON, now = Date.now()): CachedTileEntry {
-  return { geojson, fetchedAt: now, lastAccess: now }
-}
-
-/**
- * 取消单个 pending 请求。
- *
- * 注意：不要在这里递减 activeFetchCount。
- * - 若请求尚未被 drainQueue 调度（dispatched=false），它从未占用槽位。
- * - 若请求已被调度（dispatched=true），submitTile 的 finally 会统一释放槽位。
- * 因此调用方只需 abort controller。
- */
-function cancelPendingRequest(request: TileRequest): void {
-  request.controller.abort()
-}
-
-function isAbortError(err: unknown): boolean {
-  return err instanceof DOMException && err.name === 'AbortError'
-}
 
 export const useWeatherTileManager = defineStore('weatherTileManager', () => {
   // 全局数据版本号：瓦片缓存变化时递增，供组件 watch 触发重渲染
@@ -404,8 +156,8 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
   const activityVersion = ref(0)
   // 图层状态：使用普通 Map，依赖 dataVersion/statusVersion 触发响应式更新
   const layerStates = new Map<string, LayerState>()
-  const MERGE_CACHE_MAX = 8
-  const mergeCache = new Map<string, WindGeoJSON | null>()
+  // P1-1: mergeCache 类型从 weather-tile-merge 导入
+  const mergeCache: MergeCache = new Map<string, WindGeoJSON | null>()
   let dataVersionBumpTimer: ReturnType<typeof setTimeout> | null = null
   /** 视口从有洞到铺满的计时起点（perf） */
   const viewportFillStartedAt = new Map<string, number>()
@@ -634,26 +386,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     return anyLayerUnderWeatherPressure() || countGlobalPending() >= CHILD_PREFETCH_PENDING_STRESS
   }
 
-  function buildMergeCacheKey(
-    layerId: string,
-    state: LayerState,
-    clampedZoom: number,
-    bounds: LngLatBounds,
-    coverageSig: string,
-  ): string {
-    return `${layerId}:${state.generation}:${state.hour}:${clampedZoom}:${bounds.west.toFixed(3)},${bounds.south.toFixed(3)},${bounds.east.toFixed(3)},${bounds.north.toFixed(3)}:c=${coverageSig}`
-  }
-
-  function rememberMergeCache(key: string, value: WindGeoJSON | null): WindGeoJSON | null {
-    mergeCache.set(key, value)
-    if (mergeCache.size > MERGE_CACHE_MAX) {
-      const firstKey = mergeCache.keys().next().value
-      if (firstKey !== undefined) {
-        mergeCache.delete(firstKey)
-      }
-    }
-    return value
-  }
+  // P1-1: buildMergeCacheKey / rememberMergeCache 已拆至 weather-tile-merge.ts
 
   function getOrCreateState(layerId: string): LayerState {
     let state = layerStates.get(layerId)
@@ -745,39 +478,14 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     activityVersion.value += 1
     layerStates.delete(layerId)
     // 清理当前图层的合并缓存与软重拉计数，保留其他图层的缓存
-    for (const key of Array.from(mergeCache.keys())) {
-      if (key.startsWith(`${layerId}:`)) mergeCache.delete(key)
-    }
+    clearMergeCacheForLayer(mergeCache, layerId)
     for (const key of Array.from(softRequeueCounts.keys())) {
       if (key.startsWith(`${layerId}:`)) softRequeueCounts.delete(key)
     }
     debugLog('clearLayer', layerId)
   }
 
-  function bboxApproxEqual(a: LngLatBounds | null, b: LngLatBounds | null, eps = 1e-4): boolean {
-    if (a === b) return true
-    if (!a || !b) return false
-    return (
-      Math.abs(a.west - b.west) < eps &&
-      Math.abs(a.south - b.south) < eps &&
-      Math.abs(a.east - b.east) < eps &&
-      Math.abs(a.north - b.north) < eps
-    )
-  }
-
-  function tileKeySetEqual(a: WeatherTileCoords[], b: WeatherTileCoords[]): boolean {
-    if (a.length !== b.length) return false
-    const keys = new Set(a.map((t) => `${t.z}:${t.x}:${t.y}`))
-    return b.every((t) => keys.has(`${t.z}:${t.x}:${t.y}`))
-  }
-
-  function resolveTileZoom(bounds: LngLatBounds, zoom: number): number {
-    let z = Math.max(0, Math.min(12, Math.round(zoom)))
-    while (z > 1 && tilesInBounds(bounds, z, 0).length > MAX_VIEWPORT_TILES) {
-      z -= 1
-    }
-    return z
-  }
+  // P1-1: bboxApproxEqual / tileKeySetEqual / resolveTileZoom 已拆至 weather-tile-utils-store.ts
 
   function setViewport(
     layerId: string,
@@ -879,9 +587,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
           `mapZ=${zoom.toFixed(2)}`,
           bboxChanged ? 'bbox' : 'zoom',
         )
-        for (const key of Array.from(mergeCache.keys())) {
-          if (key.startsWith(`${layerId}:`)) mergeCache.delete(key)
-        }
+        clearMergeCacheForLayer(mergeCache, layerId)
         scheduleDataVersionBump()
       } else {
         debugLog('setViewport skip-noop', layerId, `z=${clampedZoom}`, `hour=${hour}`)
@@ -912,9 +618,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     state.prefetchRing = prefetchRing
 
     // 视口已变：清 merge 缓存
-    for (const key of Array.from(mergeCache.keys())) {
-      if (key.startsWith(`${layerId}:`)) mergeCache.delete(key)
-    }
+    clearMergeCacheForLayer(mergeCache, layerId)
     // 换 tile zoom：勿清空 lastMerged——缩放瞬间本级瓦片往往为 0，
     // 清空会导致整屏闪空；改由多级缓存垫底 + 渐进合并过渡。
     // 立刻通知 overlay 按新视口重取 merge
@@ -1050,24 +754,7 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     }
   }
 
-  function boundsFromCenter(center: { lng: number; lat: number }, z: number): LngLatBounds {
-    // 无 bbox 时根据中心点和 zoom 估算近似视口；经度走 normalizeLngBounds 以支持长路径/近全球
-    const n = 2 ** z
-    const span = Math.max(1, Math.floor(n / 16))
-    const halfLon = span * (360 / n)
-    const halfLat = span * (170 / n)
-    const { west, east } = normalizeLngBounds(
-      center.lng - halfLon,
-      center.lng + halfLon,
-      center.lng,
-    )
-    return {
-      west,
-      south: Math.max(-85, center.lat - halfLat),
-      east,
-      north: Math.min(85, center.lat + halfLat),
-    }
-  }
+  // P1-1: boundsFromCenter 已拆至 weather-tile-utils-store.ts
 
   /**
    * 为缺失或过期瓦片入队。
@@ -1401,6 +1088,12 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
           classified.type,
           err,
         )
+        useLogStore().logOperation(
+          'weather-tile-error',
+          '天气瓦片请求失败',
+          `layer=${layerId} z=${key.z} x=${key.x} y=${key.y} type=${classified.type} err=${String(err)}`,
+          'error',
+        )
         setLayerError(layerId, classified.type, classified.message)
         if (classified.type === 'data-empty') {
           // 422 = 当前 model/provider 缺该变量（图层级）：标记短路并清掉同图层
@@ -1533,272 +1226,12 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
   }
 
   function getMergedGeojsonForViewport(layerId: string): WindGeoJSON | null {
-    const state = layerStates.get(layerId)
-    if (!state || !state.visible) {
-      debugLog('getMergedGeojson', layerId, 'state=', !!state, 'visible=', state?.visible)
-      return null
-    }
-
-    // 直接使用 setViewport 已计算并存储的 state.zoom，避免重新计算导致 z 不一致
-    const clampedZoom = state.zoom
-    const bounds = state.bbox ?? boundsFromCenter(state.center, clampedZoom)
-    const viewportTiles = tilesInBounds(bounds, clampedZoom, 0)
-    const currentMatched: MergedWeatherTile[] = []
-    const parentMatched: MergedWeatherTile[] = []
-    const nAtZoom = 2 ** clampedZoom
-
-    const cachedKeys = Array.from(state.tiles.keys()).map((k) => {
-      const zMatch = /:z(\d+):/.exec(k)
-      const xMatch = /:x(\d+):/.exec(k)
-      const yMatch = /:y(\d+):/.exec(k)
-      const hMatch = /:h(\d+)/.exec(k)
-      return `z${zMatch?.[1]}:x${xMatch?.[1]}:y${yMatch?.[1]}:h${hMatch?.[1]}`
+    // P1-1: 合并逻辑已拆至 weather-tile-merge.ts
+    return getMergedGeojsonForViewportImpl(layerId, layerStates.get(layerId), {
+      mergeCache,
+      debugLog,
+      countViewportMissing,
     })
-
-    const hitKeys: string[] = []
-    const hitTiles: WeatherTileCoords[] = []
-    for (const tile of viewportTiles) {
-      const key = tileCoordsToKey(tile, layerId, state.hour, state.model, state.provider)
-      const entry = state.tiles.get(key)
-      if (!entry) continue
-      const raw = touchTileEntry(entry)
-      const tileBounds = tileToLngLatBounds(tile.z, tile.x, tile.y)
-      const geojson = filterGeojsonInsideTileBounds(raw, tileBounds, {
-        includeEast: tile.x >= nAtZoom - 1,
-        includeSouth: tile.y >= nAtZoom - 1,
-      })
-      if (!geojson.features?.length) continue
-      // 仅有实际特征的瓦片才计入覆盖率，防止空瓦片膨胀 coverage 导致 underlay 被跳过
-      hitKeys.push(`${tile.x},${tile.y}`)
-      hitTiles.push(tile)
-      currentMatched.push({
-        layerId,
-        z: tile.z,
-        x: tile.x,
-        y: tile.y,
-        hour: state.hour,
-        geojson,
-      })
-    }
-
-    const coverageSig = `${hitKeys.length}/${viewportTiles.length}:${hitKeys.join('|')}`
-    const cacheKey = buildMergeCacheKey(layerId, state, clampedZoom, bounds, coverageSig)
-    const cached = mergeCache.get(cacheKey)
-    if (cached !== undefined) {
-      return cached
-    }
-
-    const currentCoverage = viewportTiles.length > 0 ? hitKeys.length / viewportTiles.length : 0
-
-    // 父级 underlay：本级未齐时用 z-1 填洞
-    const PARENT_UNDERLAY_COVERAGE_MAX = 0.92
-    /** 缩放换 z 后沿用邻近级缓存（含更高 z 旧瓦片），避免「只剩缩放前那一块」 */
-    const NEARBY_Z_UNDERLAY_RADIUS = 4
-    const gapFillMatched: MergedWeatherTile[] = []
-    if (clampedZoom > 0 && currentCoverage < PARENT_UNDERLAY_COVERAGE_MAX) {
-      const coveredBounds = hitTiles.map((tile) => tileToLngLatBounds(tile.z, tile.x, tile.y))
-      const parentZ = clampedZoom - 1
-      const nParent = 2 ** parentZ
-      const parentTiles = tilesInBounds(bounds, parentZ, 0)
-      for (const tile of parentTiles) {
-        const key = tileCoordsToKey(tile, layerId, state.hour, state.model, state.provider)
-        const entry = state.tiles.get(key)
-        if (!entry) continue
-        const raw = touchTileEntry(entry)
-        const tileBounds = tileToLngLatBounds(tile.z, tile.x, tile.y)
-        const clippedToParent = filterGeojsonInsideTileBounds(raw, tileBounds, {
-          includeEast: tile.x >= nParent - 1,
-          includeSouth: tile.y >= nParent - 1,
-        })
-        const geojson =
-          coveredBounds.length > 0
-            ? filterGeojsonOutsideCoverage(clippedToParent, coveredBounds)
-            : clippedToParent
-        if (!geojson.features?.length) continue
-        parentMatched.push({
-          layerId,
-          z: tile.z,
-          x: tile.x,
-          y: tile.y,
-          hour: state.hour,
-          geojson,
-        })
-        coveredBounds.push(tileBounds)
-      }
-
-      // 邻近 z 缓存垫底（尤其 zoom-out 后仍保留的更高 z 瓦片）
-      const nearby: Array<{ z: number; x: number; y: number; raw: WindGeoJSON; dz: number }> = []
-      for (const [cacheKey, entry] of state.tiles.entries()) {
-        if (!cacheKey.startsWith(`${layerId}:`)) continue
-        const coords = parseTileCoordsFromCacheKey(cacheKey)
-        if (!coords) continue
-        const { z, x, y } = coords
-        if (z === clampedZoom || z === parentZ) continue
-        const dz = Math.abs(z - clampedZoom)
-        if (dz < 1 || dz > NEARBY_Z_UNDERLAY_RADIUS) continue
-        // 仅同 hour/model/provider：cacheKey 已含这些字段，layer 前缀匹配即可
-        if (!cacheKey.includes(`:h${state.hour}`)) continue
-        const tileBounds = tileToLngLatBounds(z, x, y)
-        if (!tileBoundsOverlapViewport(tileBounds, bounds)) continue
-        nearby.push({ z, x, y, raw: touchTileEntry(entry), dz })
-      }
-      nearby.sort((a, b) => a.dz - b.dz || a.z - b.z)
-      for (const c of nearby) {
-        const n = 2 ** c.z
-        const tileBounds = tileToLngLatBounds(c.z, c.x, c.y)
-        const clipped = filterGeojsonInsideTileBounds(c.raw, tileBounds, {
-          includeEast: c.x >= n - 1,
-          includeSouth: c.y >= n - 1,
-        })
-        let geojson =
-          coveredBounds.length > 0 ? filterGeojsonOutsideCoverage(clipped, coveredBounds) : clipped
-        geojson = filterGeojsonInsideTileBounds(geojson, bounds, {
-          includeEast: true,
-          includeSouth: true,
-        })
-        if (!geojson.features?.length) continue
-        gapFillMatched.push({
-          layerId,
-          z: c.z,
-          x: c.x,
-          y: c.y,
-          hour: state.hour,
-          geojson,
-        })
-        coveredBounds.push(tileBounds)
-      }
-
-      // 上一帧垫底：边缘本级瓦片先到、父/邻级未齐时，避免「中心空洞、周围有数」
-      if (
-        state.lastMergedGeojson?.features?.length &&
-        (state.pending.size > 0 || hitKeys.length < viewportTiles.length)
-      ) {
-        let swr = filterGeojsonOutsideCoverage(state.lastMergedGeojson, coveredBounds)
-        swr = filterGeojsonInsideTileBounds(swr, bounds, {
-          includeEast: true,
-          includeSouth: true,
-        })
-        if (swr.features?.length) {
-          gapFillMatched.push({
-            layerId,
-            z: clampedZoom,
-            x: -1,
-            y: -1,
-            hour: state.hour,
-            geojson: swr,
-          })
-        }
-      }
-    }
-
-    // 本级优先 → 父级 → 邻近 z / 上一帧垫底
-    const mergedTiles: MergedWeatherTile[] = [
-      ...currentMatched,
-      ...parentMatched,
-      ...gapFillMatched,
-    ]
-
-    if (parentMatched.length > 0 || gapFillMatched.length > 0) {
-      debugLog(
-        'getMergedGeojson',
-        layerId,
-        'multi-z-gap-fill',
-        `needZ=${clampedZoom}`,
-        `current=${currentMatched.length}/${viewportTiles.length}`,
-        `parent=${parentMatched.length}`,
-        `nearby=${gapFillMatched.length}`,
-      )
-    }
-
-    debugLog(
-      'getMergedGeojson',
-      layerId,
-      `gen=${state.generation}`,
-      `zoom=${state.zoom}->${clampedZoom}`,
-      `hour=${state.hour}`,
-      `bbox=${state.bbox ? `${state.bbox.west.toFixed(1)},${state.bbox.south.toFixed(1)},${state.bbox.east.toFixed(1)},${state.bbox.north.toFixed(1)}` : 'null'}`,
-      `viewportTiles=${viewportTiles.map((t) => `${t.x},${t.y}`).join('|')}`,
-      `cached=${state.tiles.size}:[${cachedKeys.join(',')}]`,
-      `matched=${mergedTiles.length}`,
-      `coverage=${currentCoverage.toFixed(2)}`,
-    )
-
-    if (!mergedTiles.length) {
-      // 新瓦片未就绪：用上一帧裁到新视口，避免整屏闪空或粘住旧区域。
-      // 条件放宽到「只要有旧帧就沿用」：即使所有瓦片已缓存但为空（pending=0,
-      // missing=0），旧帧仍能提供流线/粒子数据，避免控制器被 reset 后永久空白。
-      // 新瓦片到达后 dataVersion bump → 新 sync 自然覆盖旧帧。
-      if (state.lastMergedGeojson) {
-        const clipped = filterGeojsonInsideTileBounds(state.lastMergedGeojson, bounds, {
-          includeEast: true,
-          includeSouth: true,
-        })
-        const n = clipped.features?.length ?? 0
-        debugLog(
-          'getMergedGeojson',
-          layerId,
-          'stale-while-revalidate clipped',
-          `pending=${state.pending.size}`,
-          `missing=${countViewportMissing(state)}`,
-          `kept=${n}`,
-        )
-        if (n > 0) return clipped
-        return null
-      }
-      return rememberMergeCache(cacheKey, null)
-    }
-    const merged = mergeWeatherTiles(mergedTiles)
-    const featureCount = Array.isArray(merged.features) ? merged.features.length : 0
-    // 覆盖未齐且新合并明显变稀：仍返回含 underlay/上一帧垫底的合并结果，
-    // 但勿把「边缘已到、中心仍空」的稀缺帧写成 lastMerged 锚点。
-    const sparseWhileLoading =
-      currentCoverage < PARENT_UNDERLAY_COVERAGE_MAX &&
-      state.lastMergedGeojson &&
-      state.lastMergedFeatureCount > 0 &&
-      featureCount < state.lastMergedFeatureCount * 0.7 &&
-      (state.pending.size > 0 || countViewportMissing(state) > 0)
-    if (sparseWhileLoading) {
-      debugLog(
-        'getMergedGeojson',
-        layerId,
-        'stale-while-revalidate sparse keep-anchor',
-        `new=${featureCount}`,
-        `prev=${state.lastMergedFeatureCount}`,
-        `pending=${state.pending.size}`,
-        `coverage=${currentCoverage.toFixed(2)}`,
-      )
-      return rememberMergeCache(cacheKey, merged)
-    }
-    // 本级有命中、邻近垫底或覆盖率足够时更新 stale 锚点
-    // 宽跨度：适中覆盖或已有本级命中即可更新锚点（过严 0.85 会导致半屏 SWR 不稳）
-    const lonSpan = bounds.east - bounds.west
-    const wideSpan = lonSpan > 180
-    const centerTile = lngLatToTile(state.center.lng, state.center.lat, clampedZoom)
-    const centerCached = state.tiles.has(
-      tileCoordsToKey(centerTile, layerId, state.hour, state.model, state.provider),
-    )
-    const coverageGate = wideSpan
-      ? currentCoverage >= 0.65 && (centerCached || currentCoverage >= 0.85)
-      : currentCoverage >= 0.5
-    if (
-      currentMatched.length > 0 ||
-      parentMatched.length > 0 ||
-      gapFillMatched.length > 0 ||
-      coverageGate ||
-      !state.lastMergedGeojson
-    ) {
-      if (
-        !wideSpan ||
-        coverageGate ||
-        currentMatched.length > 0 ||
-        parentMatched.length > 0 ||
-        !state.lastMergedGeojson
-      ) {
-        state.lastMergedGeojson = merged
-        state.lastMergedFeatureCount = featureCount
-      }
-    }
-    return rememberMergeCache(cacheKey, merged)
   }
 
   function getDataVersion(): number {

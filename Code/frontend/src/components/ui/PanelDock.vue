@@ -371,6 +371,20 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   contain: layout paint;
 }
 
+/* 顶部高光条 */
+.panel-dock__frame::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 12%;
+  right: 12%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border-accent), transparent);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 3;
+}
+
 .panel-dock__frame:hover {
   box-shadow: var(--elevation-3);
 }
@@ -380,6 +394,19 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   opacity: 0.55;
   background: var(--surface-1);
   box-shadow: var(--elevation-1);
+}
+
+/* 折叠态：header 继承 frame 圆角，避免底部方角露出 */
+.panel-dock--collapsed .panel-dock__head {
+  border-radius: var(--radius-lg);
+}
+
+.panel-dock--collapsed.panel-dock--left .panel-dock__head {
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+}
+
+.panel-dock--collapsed.panel-dock--right .panel-dock__head {
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
 }
 
 .panel-dock__frame.panel-dock--collapsed:hover {
@@ -415,6 +442,8 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 
 .panel-dock--timeline {
   max-width: none;
+  border-bottom-left-radius: var(--radius-lg);
+  border-bottom-right-radius: var(--radius-lg);
 }
 
 .panel-dock--timeline .panel-dock__head {
@@ -464,12 +493,13 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   touch-action: none;
   flex: 0 0 auto;
   transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard);
+    border-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft);
 }
 
 .panel-dock__grip:hover {
-  border-color: var(--border-default);
+  border-color: var(--border-accent);
+  background: var(--accent-surface);
   color: var(--text-strong);
 }
 
@@ -477,7 +507,11 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   width: 0.2rem;
   height: 0.2rem;
   border-radius: var(--radius-pill);
-  background: var(--text-secondary);
+  background: var(--surface-sunken);
+}
+
+.panel-dock__grip:hover span {
+  background: var(--accent);
 }
 
 /* 标题文本 */
@@ -516,9 +550,9 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   font-size: var(--font-size-caption);
   flex: 0 0 auto;
   transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard);
+    border-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft),
+    background-color var(--motion-fast) var(--ease-soft);
 }
 
 .panel-dock__btn:hover {
@@ -594,8 +628,8 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   background: transparent;
   opacity: 0;
   transition:
-    opacity var(--motion-fast) var(--ease-standard),
-    transform var(--motion-fast) var(--ease-standard);
+    opacity var(--motion-fast) var(--ease-soft),
+    transform var(--motion-fast) var(--ease-soft);
   z-index: 10;
   padding: 0;
   display: grid;

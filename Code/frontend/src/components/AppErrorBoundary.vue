@@ -59,7 +59,7 @@ p {
 }
 
 .detail {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-size-caption);
   color: var(--text-secondary);
   word-break: break-word;

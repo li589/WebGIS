@@ -85,7 +85,19 @@ export function useSidebarSearch(
     }
   }
 
-  watch(filteredLibraryByCategory, () => prefetchVisibleWeatherProviders(), { deep: true })
+  // 仅在天气图层 catalogId 集合变化时触发预取，避免 deep watch 的性能开销
+  const weatherCatalogIds = computed(() => {
+    const ids: string[] = []
+    for (const group of filteredLibraryByCategory.value) {
+      if (group.category.id !== 'weather') continue
+      for (const item of group.items) {
+        ids.push(item.catalogId)
+      }
+    }
+    return ids.join(',')
+  })
+
+  watch(weatherCatalogIds, () => prefetchVisibleWeatherProviders())
 
   return {
     searchQuery,

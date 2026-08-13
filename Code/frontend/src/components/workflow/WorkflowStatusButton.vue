@@ -88,10 +88,10 @@ const showCancelledBadge = computed(
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-medium);
   transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard);
+    border-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft),
+    background-color var(--motion-fast) var(--ease-soft),
+    box-shadow var(--motion-fast) var(--ease-soft);
   white-space: nowrap;
   overflow: hidden;
 }
@@ -115,8 +115,8 @@ const showCancelledBadge = computed(
   flex: none;
   background: currentColor;
   transition:
-    background var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard);
+    background var(--motion-fast) var(--ease-soft),
+    box-shadow var(--motion-fast) var(--ease-soft);
 }
 
 .wf-label {
@@ -181,7 +181,7 @@ const showCancelledBadge = computed(
   color: var(--text-faint);
 }
 .tone-idle .wf-dot {
-  background: var(--text-faint);
+  background: var(--surface-sunken);
 }
 
 /* ── Tone: active (running) — pulsing glow + rotating shimmer ───────────── */

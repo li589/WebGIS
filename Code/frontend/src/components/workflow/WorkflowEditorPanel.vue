@@ -1151,10 +1151,10 @@ defineExpose({
   font-size: var(--font-size-caption);
   font-weight: 500;
   transition:
-    color var(--motion-fast) var(--ease-standard),
-    background var(--motion-fast) var(--ease-standard),
-    border-color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard);
+    color var(--motion-fast) var(--ease-soft),
+    background var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft),
+    box-shadow var(--motion-fast) var(--ease-soft);
 }
 
 .header-btn:hover:not(:disabled) {
@@ -1437,10 +1437,10 @@ defineExpose({
   font-size: var(--font-size-caption);
   font-weight: 500;
   transition:
-    color var(--motion-fast) var(--ease-standard),
-    background var(--motion-fast) var(--ease-standard),
-    border-color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard);
+    color var(--motion-fast) var(--ease-soft),
+    background var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft),
+    box-shadow var(--motion-fast) var(--ease-soft);
 }
 
 .dialog-btn:disabled {
@@ -1535,10 +1535,10 @@ defineExpose({
   font-size: var(--font-size-caption);
   cursor: pointer;
   transition:
-    color var(--motion-fast) var(--ease-standard),
-    background var(--motion-fast) var(--ease-standard),
-    border-color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard);
+    color var(--motion-fast) var(--ease-soft),
+    background var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft),
+    box-shadow var(--motion-fast) var(--ease-soft);
 }
 
 .validation-action-btn.proceed {
@@ -1568,7 +1568,7 @@ defineExpose({
   padding: 0.36rem 0.86rem;
   font-size: var(--font-size-caption);
   border-bottom: 1px solid var(--border-subtle);
-  transition: background var(--motion-fast) var(--ease-standard);
+  transition: background var(--motion-fast) var(--ease-soft);
 }
 
 .validation-item:hover {
@@ -1605,7 +1605,7 @@ defineExpose({
   background: var(--border-subtle);
   color: var(--text-muted);
   font-size: var(--font-size-caption);
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
   max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1718,7 +1718,7 @@ defineExpose({
 }
 .error-slide-leave-active {
   transition:
-    opacity var(--motion-fast) var(--ease-standard),
+    opacity var(--motion-fast) var(--ease-soft),
     max-height var(--motion-base) var(--ease-standard),
     margin var(--motion-base) var(--ease-standard);
   overflow: hidden;
@@ -1740,7 +1740,7 @@ defineExpose({
 }
 .panel-slide-down-leave-active {
   transition:
-    opacity var(--motion-fast) var(--ease-standard),
+    opacity var(--motion-fast) var(--ease-soft),
     max-height var(--motion-base) var(--ease-standard);
   overflow: hidden;
 }
@@ -1761,13 +1761,13 @@ defineExpose({
     opacity var(--motion-base) var(--ease-standard);
 }
 .dialog-fade-leave-active {
-  transition: opacity var(--motion-fast) var(--ease-standard);
+  transition: opacity var(--motion-fast) var(--ease-soft);
 }
 .dialog-fade-leave-active .create-dialog,
 .dialog-fade-leave-active .props-dialog {
   transition:
-    transform var(--motion-fast) var(--ease-standard),
-    opacity var(--motion-fast) var(--ease-standard);
+    transform var(--motion-fast) var(--ease-soft),
+    opacity var(--motion-fast) var(--ease-soft);
 }
 .dialog-fade-enter-from,
 .dialog-fade-leave-to {

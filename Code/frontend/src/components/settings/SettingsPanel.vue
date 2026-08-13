@@ -121,8 +121,8 @@ const tabs = computed(() => {
 
 const ROLE_LABEL: Record<string, string> = {
   admin: '管理员',
-  operator: '操作员',
-  viewer: '只读',
+  standard: '标准用户',
+  demo: '演示',
 }
 
 const sessionLabel = computed(() => {

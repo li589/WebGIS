@@ -547,7 +547,7 @@ const restartParams = computed(() => {
 .info-value {
   color: var(--text-primary);
   font-size: var(--font-size-caption);
-  font-family: 'SF Mono', 'Consolas', monospace;
+  font-family: var(--font-mono);
   text-align: right;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -621,7 +621,7 @@ const restartParams = computed(() => {
   border-radius: 0.3rem;
   color: var(--text-primary);
   font-size: var(--font-size-caption);
-  font-family: 'SF Mono', 'Consolas', monospace;
+  font-family: var(--font-mono);
   padding: 0.22rem 0.36rem;
   width: 5.5rem;
   outline: none;

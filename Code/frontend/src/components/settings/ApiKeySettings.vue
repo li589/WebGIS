@@ -605,7 +605,7 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
   border: 1px solid var(--border-subtle);
   color: var(--text-primary);
   font-size: var(--font-size-caption);
-  font-family: 'SF Mono', 'Consolas', monospace;
+  font-family: var(--font-mono);
 }
 .key-value.empty {
   color: var(--text-disabled);
@@ -620,7 +620,7 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
   border: 1px solid var(--accent-border);
   color: var(--text-primary);
   font-size: var(--font-size-caption);
-  font-family: 'SF Mono', 'Consolas', monospace;
+  font-family: var(--font-mono);
   outline: none;
 }
 .label-input {
@@ -676,7 +676,7 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
   width: 0.72rem;
   height: 0.72rem;
   border-radius: 50%;
-  background: var(--text-muted);
+  background: var(--surface-3);
   transform: translateY(-50%);
   transition: left 0.2s ease;
 }

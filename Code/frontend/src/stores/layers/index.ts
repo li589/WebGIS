@@ -18,6 +18,49 @@
  * - ``useLayerViewport()`` — viewport domain only
  * - ``useWorkflowRun()`` — workflow-run domain only
  * (see ``./selectors.ts``)
+ *
+ * P2-13: Sub-module barrel export inventory (30 files).
+ * Consumers should import from ``./selectors.ts`` or specific sub-modules
+ * rather than reaching into the flat store return.
+ *
+ * ── Domain orchestrators ──
+ * - ``workspace-domain.ts`` — activeLayers state, catalog runtime, layer CRUD
+ * - ``viewport-domain.ts`` — weather viewport, particle flow, map bbox/zoom
+ * - ``workflow-run-domain.ts`` — workflow submission, polling, run layer groups
+ *
+ * ── State & types ──
+ * - ``types.ts`` — ActiveLayer, JobLayerItem, ActiveRunLayerGroup interfaces
+ * - ``catalog.ts`` — LAYER_CATEGORIES, layer library type definitions
+ * - ``bindings.ts`` — CrossDomainBindings shared mutable bridge
+ *
+ * ── Workspace ──
+ * - ``active-layers.ts`` — addLayer/removeLayer/toggleVisibility/setLayerOrder
+ * - ``catalog-runtime.ts`` — ensureRuntimeLayerCatalog, catalog readiness checks
+ * - ``workspace-persist.ts`` — localStorage persistence for active layers
+ * - ``workspace-hydrate.ts`` — restore workspace from snapshot on page reload
+ * - ``layer-naming.ts`` — setLayerDisplayName, name validation
+ * - ``layer-display-names.ts`` — display name resolution for catalog layers
+ * - ``layer-accent.ts`` — accent color for selected layers
+ * - ``imported-vector.ts`` — addImportedVectorLayer, GeoJSON management
+ * - ``imported-raster.ts`` — addImportedRasterLayer, COG preview
+ * - ``materialize-empty.ts`` — materialize empty layer placeholders
+ *
+ * ── Viewport ──
+ * - ``weather-viewport.ts`` — weather tile viewport scheduling, epoch tracking
+ * - ``weather-reconcile.ts`` — reconcile weather layers after viewport change
+ * - ``weather-session.ts`` — weather session lifecycle management
+ * - ``display-projection.ts`` — layer display projection / CRS resolution
+ *
+ * ── Workflow ──
+ * - ``workflow-runner.ts`` — runWorkflowForCatalog, cancel, retry, 429 backoff
+ * - ``workflow-poller.ts`` — startPolling/stopPolling, snapshot sync
+ * - ``workflow-progress.ts`` — normalizeWorkflowProgress, progress display
+ * - ``run-layers.ts`` — run layer group CRUD, dissolve, reorder
+ * - ``result-adapter.ts`` — buildJobLayer from WorkflowRun response
+ * - ``point-weather.ts`` — point weather query, loading/error state
+ * - ``restore-workflow-bridge.ts`` — resolve workflow bridge for restoration
+ * - ``catalog-builders.ts`` — getCatalogDisplayName, isTerminalStatus
+ * - ``selectors.ts`` — useLayerWorkspace / useLayerViewport / useWorkflowRun
  */
 import { watch } from 'vue'
 import { defineStore } from 'pinia'
@@ -135,6 +178,7 @@ export const useLayersStore = defineStore('layers', () => {
     runWorkflowForCatalog: workflowRun.runWorkflowForCatalog,
     cancelWorkflowRunForJob: workflowRun.cancelWorkflowRunForJob,
     retryWorkflowRunForJob: workflowRun.retryWorkflowRunForJob,
+    cleanupAllRetryTimers: workflowRun.cleanupAllRetryTimers,
     stopWorkflowPolling: workflowRun.stopWorkflowPolling,
     getCatalogRunBlockReason: workspace.getCatalogRunBlockReason,
     canRunCatalog: workspace.canRunCatalog,

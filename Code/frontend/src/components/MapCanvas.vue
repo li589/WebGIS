@@ -293,13 +293,57 @@ const stageAppearanceModel = computed(() =>
   }),
 )
 
+// ─── 低缩放纯色底图抑制 ──────────────────────────────────────────────────────
+// 当「分布淡底」关闭 + 无可见数据图层 + 比例尺≥2000km（zoom≤3.5）时，
+// 隐藏纯色底图瓦片层，避免大洲/世界视口下大面积纯色遮挡。
+let _isUnmounted = false
+const BASEMAP_SUPPRESS_ZOOM = 3.5
+
+const shouldSuppressBasemap = computed(() => {
+  if (props.tileSourceId === 'none') return false
+  if (mapDistributionChromeEnabled.value) return false
+  const hasDataLayers = workspace.activeLayers.value.some(
+    (layer) => layer.visible && !layer.isAdminBoundary,
+  )
+  if (hasDataLayers) return false
+  return viewport.currentMapZoom.value <= BASEMAP_SUPPRESS_ZOOM
+})
+
+function applyBasemapSuppression() {
+  if (_isUnmounted) return
+  const map = state.resources.map
+  if (!map || !mapReady.value) return
+  const suppress = shouldSuppressBasemap.value
+  const tileLayer = map.getLayer('tile-base-raster')
+  if (tileLayer) {
+    const target = suppress ? 'none' : 'visible'
+    if (map.getLayoutProperty('tile-base-raster', 'visibility') !== target) {
+      map.setLayoutProperty('tile-base-raster', 'visibility', target)
+    }
+  }
+  const overlayLayer = map.getLayer('tile-base-overlay-raster')
+  if (overlayLayer && suppress) {
+    if (map.getLayoutProperty('tile-base-overlay-raster', 'visibility') !== 'none') {
+      map.setLayoutProperty('tile-base-overlay-raster', 'visibility', 'none')
+    }
+  }
+}
+
+watch(shouldSuppressBasemap, () => applyBasemapSuppression())
+
+// 瓦片源切换（scheduleTileSourceSwitch 有 80ms 防抖）后重新应用抑制
+watch(
+  () => props.tileSourceId,
+  () => {
+    setTimeout(applyBasemapSuppression, 120)
+  },
+)
+
 // ─── Time-of-day visual vars ─────────────────────────────────────────────────
 
 const timeVisualState = computed(() => buildMapStageTimeVisualState(props.currentHour))
 
 // ─── Map init ────────────────────────────────────────────────────────────────
-
-let _isUnmounted = false
 
 onMounted(async () => {
   if (!mapContainer.value) return
@@ -531,12 +575,12 @@ async function _syncInspectMarker(point: { lng: number; lat: number } | null | u
   inspectMarkerCleanup = () => marker.remove()
 }
 
+// inspectPoint 是 {lng, lat} 浅对象，用字符串键浅 watch 替代 deep watch
 watch(
-  () => props.inspectPoint,
-  (point) => {
-    void _syncInspectMarker(point)
+  () => (props.inspectPoint ? `${props.inspectPoint.lng},${props.inspectPoint.lat}` : null),
+  () => {
+    void _syncInspectMarker(props.inspectPoint)
   },
-  { deep: true },
 )
 
 async function handleLocateMe() {

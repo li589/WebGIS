@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import type { LayerContextActionId } from './layer-context-menu'
+import type { LayerContextActionId, LayerContextMenuGroup } from './layer-context-menu'
 
 defineProps<{
   contextMenu: { x: number; y: number; instanceId?: string; groupId?: string } | null
-  contextMenuGroups: any[]
+  contextMenuGroups: LayerContextMenuGroup[]
 }>()
 
 const emit = defineEmits<{

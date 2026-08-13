@@ -172,8 +172,8 @@ function onBlur(e: FocusEvent) {
   border-radius: var(--radius-md);
   background: var(--surface-1);
   transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard);
+    border-color var(--motion-fast) var(--ease-soft),
+    box-shadow var(--motion-fast) var(--ease-soft);
 }
 
 .app-select-wrap:focus-within {
@@ -243,7 +243,7 @@ function onBlur(e: FocusEvent) {
   align-items: center;
   color: var(--text-muted);
   pointer-events: none;
-  transition: color var(--motion-fast) var(--ease-standard);
+  transition: color var(--motion-fast) var(--ease-soft);
 }
 
 .app-select-wrap:focus-within .app-select-chevron {

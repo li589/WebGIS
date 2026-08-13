@@ -356,6 +356,8 @@ export interface ActiveLayerDisplay {
   renderHint?: WeatherLayerRenderHint
   /** 用户自定义配色方案覆盖 */
   paletteOverride?: string | null
+  /** 不含 override 的原始默认配色（用于判断"恢复默认"） */
+  defaultPalette?: string
   vminOverride?: number | null
   vmaxOverride?: number | null
   nodataMode?: 'transparent' | 'solid' | null

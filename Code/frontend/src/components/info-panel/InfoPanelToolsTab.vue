@@ -48,14 +48,37 @@ const runState = computed(() => {
 const canRun = computed(() => {
   const tool = selectedTool.value
   if (!tool || !tool.enabled) return false
-  if (tool.tool_id === 'gis.buffer' && !props.selectedMapPoint && !props.displayLayer.isImported) {
-    return false
+  if (tool.tool_id === 'gis.buffer') {
+    const hasPoint = Boolean(props.selectedMapPoint)
+    const hasVector = Boolean(
+      props.displayLayer.isImported && props.displayLayer.importedVectorBackendLayerId,
+    )
+    if (!hasPoint && !hasVector) return false
+  }
+  if (tool.tool_id === 'gis.vector_to_raster') {
+    const hasVector = Boolean(
+      props.displayLayer.isImported && props.displayLayer.importedVectorBackendLayerId,
+    )
+    if (!hasVector) return false
   }
   if (
-    ['gis.clip', 'stats.histogram', 'gis.reclassify', 'gis.zonal_stats'].includes(tool.tool_id) &&
+    [
+      'gis.clip',
+      'stats.histogram',
+      'gis.reclassify',
+      'gis.zonal_stats',
+      'gis.contour',
+      'gis.slope_aspect',
+      'gis.raster_calc',
+      'gis.raster_to_vector',
+      'gis.watershed',
+    ].includes(tool.tool_id) &&
     !props.displayLayer.isImportedRaster &&
     !props.displayLayer.importedRasterOverlayLayerId
   ) {
+    return false
+  }
+  if (tool.tool_id === 'gis.watershed' && !props.selectedMapPoint) {
     return false
   }
   if (tool.tool_id === 'gis.clip') {
@@ -69,15 +92,42 @@ const runDisabledReason = computed(() => {
   const tool = selectedTool.value
   if (!tool) return '请选择工具'
   if (!tool.enabled) return tool.disabled_reason || '当前图层不可用'
-  if (tool.tool_id === 'gis.buffer' && !props.selectedMapPoint && !props.displayLayer.isImported) {
-    return '请先进入选择模式并在地图选点，或使用导入矢量层'
+  if (tool.tool_id === 'gis.buffer') {
+    const hasPoint = Boolean(props.selectedMapPoint)
+    const hasVector = Boolean(
+      props.displayLayer.isImported && props.displayLayer.importedVectorBackendLayerId,
+    )
+    if (!hasPoint && !hasVector) {
+      return '请先进入选择模式并在地图选点，或使用已导入且带后端 id 的矢量层'
+    }
+  }
+  if (tool.tool_id === 'gis.vector_to_raster') {
+    const hasVector = Boolean(
+      props.displayLayer.isImported && props.displayLayer.importedVectorBackendLayerId,
+    )
+    if (!hasVector) {
+      return '需要已导入的矢量图层'
+    }
   }
   if (
-    ['gis.clip', 'stats.histogram', 'gis.reclassify', 'gis.zonal_stats'].includes(tool.tool_id) &&
+    [
+      'gis.clip',
+      'stats.histogram',
+      'gis.reclassify',
+      'gis.zonal_stats',
+      'gis.contour',
+      'gis.slope_aspect',
+      'gis.raster_calc',
+      'gis.raster_to_vector',
+      'gis.watershed',
+    ].includes(tool.tool_id) &&
     !props.displayLayer.isImportedRaster &&
     !props.displayLayer.importedRasterOverlayLayerId
   ) {
     return '需要已导入的静态栅格图层'
+  }
+  if (tool.tool_id === 'gis.watershed' && !props.selectedMapPoint) {
+    return '请先进入选择模式并在地图选点作为汇流点'
   }
   if (tool.tool_id === 'gis.clip' && !layers.currentMapBBox) {
     return '无法获取当前视口 bbox'
@@ -113,7 +163,9 @@ function initForm(tool: AnalysisToolDescriptor | null) {
   Object.keys(formValues).forEach((k) => delete formValues[k])
   if (!tool) return
   for (const field of tool.param_schema) {
-    formValues[field.key] = field.default ?? ''
+    // Keep null/undefined as absent — do not coerce to '' (clip bbox shadowing)
+    if (field.default === undefined || field.default === null) continue
+    formValues[field.key] = field.default
   }
   if (tool.tool_id === 'gis.buffer' && formValues.distance == null) {
     formValues.distance = 5000
@@ -137,7 +189,11 @@ onMounted(() => {
 async function onRun() {
   const tool = selectedTool.value
   if (!tool || !canRun.value) return
-  const params = { ...formValues }
+  const params: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(formValues)) {
+    if (v === '' || v === null || v === undefined) continue
+    params[k] = v
+  }
   let bbox = null as null | {
     west: number
     south: number
@@ -154,11 +210,21 @@ async function onRun() {
       params.north = cb.north
     }
   }
+  if (
+    tool.tool_id === 'gis.buffer' &&
+    !props.selectedMapPoint &&
+    props.displayLayer.importedVectorBackendLayerId
+  ) {
+    params.imported_vector_layer_id = props.displayLayer.importedVectorBackendLayerId
+  }
+  if (tool.tool_id === 'gis.vector_to_raster' && props.displayLayer.importedVectorBackendLayerId) {
+    params.imported_vector_layer_id = props.displayLayer.importedVectorBackendLayerId
+  }
   await runner.submitTool({
     tool,
     display: props.displayLayer,
     params,
-    mapPoint: props.selectedMapPoint,
+    mapPoint: props.selectedMapPoint ?? null,
     bbox,
     zonesOverlayLayerId: zonesOverlayId.value || null,
     showOnMap: showOnMap.value,

@@ -293,6 +293,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   stopPolling()
+  // 同时清理 store 层的轮询定时器，防止组件卸载后 store 继续每 3s 轮询
+  weatherSyncStatusStore.stopPolling()
 })
 </script>
 
@@ -803,7 +805,7 @@ onBeforeUnmount(() => {
 }
 .coverage-value {
   color: var(--text-strong);
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 .coverage-loading {
   font-size: var(--font-size-caption);

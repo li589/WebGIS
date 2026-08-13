@@ -1,7 +1,7 @@
 /**
  * 后端统一数据导入/导出 API（分块上传 + 矢量/栅格/文档 + 导出）。
  */
-import { getBackendWriteApiKey, withWriteAuthHeaders } from './backend-auth'
+import { withWriteAuthHeaders } from './backend-auth'
 import { applyApiFetchDefaults } from '../../services/http-credentials'
 import { resolveApiUrl } from './_http'
 
@@ -112,10 +112,8 @@ async function writeFetch(path: string, init: RequestInit = {}): Promise<Respons
     { ...(init.headers as Record<string, string> | undefined) },
     method,
   )
-  const key = getBackendWriteApiKey()
-  if (!key && import.meta.env.PROD) {
-    throw new Error('未配置写权限：请登录或联系管理员获取 API Token')
-  }
+  // Session Cookie (credentials:include) is enough for authenticated writes;
+  // local X-Api-Key is optional and attached by withWriteAuthHeaders when present.
   return fetch(resolveApiUrl(path), applyApiFetchDefaults({ ...init, headers }))
 }
 

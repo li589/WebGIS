@@ -63,11 +63,43 @@ const cls = computed(() => [
   border-radius: var(--radius-lg);
   overflow: hidden;
   min-width: 0;
+  position: relative;
+  transition:
+    box-shadow var(--motion-base) var(--ease-standard),
+    transform var(--motion-base) var(--ease-standard);
 }
 
 .app-card--bordered {
   border: 1px solid var(--border-default);
   box-shadow: var(--elevation-1);
+}
+
+.app-card--bordered::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    var(--border-default) 0%,
+    var(--border-subtle) 50%,
+    var(--border-default) 100%
+  );
+  -webkit-mask:
+    linear-gradient(var(--text-strong) 0 0) content-box,
+    linear-gradient(var(--text-strong) 0 0);
+  mask:
+    linear-gradient(var(--text-strong) 0 0) content-box,
+    linear-gradient(var(--text-strong) 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app-card--bordered:hover {
+  box-shadow: var(--elevation-2);
 }
 
 .app-card--block {
@@ -82,12 +114,23 @@ const cls = computed(() => [
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border-subtle);
   flex: 0 0 auto;
+  position: relative;
+}
+
+.app-card__head::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: var(--space-4);
+  right: var(--space-4);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border-default), transparent);
 }
 
 .app-card__title {
   margin: 0;
   font-size: var(--font-size-title);
-  font-weight: var(--font-weight-medium);
+  font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
   letter-spacing: 0.01em;
 }

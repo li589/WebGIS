@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { fetchImportedLayerGeojson, fetchImportedLayerMeta } from '../core/api'
 import { exportLayer, type ExportFormat } from '../adapters/export'
@@ -343,7 +343,7 @@ dd {
   color: var(--text-primary);
 }
 .mono {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-size-caption);
   word-break: break-all;
 }

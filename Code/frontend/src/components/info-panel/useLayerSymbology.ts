@@ -234,7 +234,7 @@ export function useLayerSymbology(
   function handleSelectPalette(paletteId: string) {
     if (!canEditPalette.value) return
     const defaultId = resolveCanonicalPaletteId(
-      weatherRenderHint.value?.palette ?? overlayStyleMeta.value?.palette ?? '',
+      displayLayer.value?.defaultPalette ?? overlayStyleMeta.value?.palette ?? '',
     )
     const target = paletteIdsEqual(paletteId, defaultId) ? null : paletteId
     if (displayLayer.value?.instanceId) {

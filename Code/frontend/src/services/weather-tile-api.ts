@@ -6,6 +6,7 @@
 import type { Map as MaplibreMap } from 'maplibre-gl'
 import type { WindGeoJSON } from '../types/map-geo'
 import { resolveVisibleLngBounds } from '../utils/map-viewport'
+import { applyApiFetchDefaults } from './http-credentials'
 import { resolveApiUrl, submitWorkflow } from './runtime-api'
 import type { WorkflowSubmitRequest } from './runtime-api'
 
@@ -322,7 +323,7 @@ export async function fetchWeatherTile(
   }
 
   try {
-    const response = await fetch(url, { signal: timeoutController.signal })
+    const response = await fetch(url, applyApiFetchDefaults({ signal: timeoutController.signal }))
 
     if (!response.ok) {
       const detail = await response.text().catch(() => '')

@@ -86,7 +86,7 @@ const ctxMenu = useSidebarContextMenu(
   uiStore,
   logStore,
   overlaySymbologyStore,
-  emit as (event: string, ...args: any[]) => void,
+  emit as (event: string, ...args: unknown[]) => void,
   selectItem,
   zoomToItem,
   removeItem,

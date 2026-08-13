@@ -291,7 +291,7 @@ watch(
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--font-size-caption);
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-mono);
   color: var(--accent);
 }
 
@@ -367,7 +367,7 @@ watch(
   flex: none;
   font-size: var(--font-size-caption);
   color: var(--text-disabled);
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-mono);
 }
 
 .dialog-footer {

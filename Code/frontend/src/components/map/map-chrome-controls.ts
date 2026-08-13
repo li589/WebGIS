@@ -55,10 +55,11 @@ const CHROME_CONTROL_CSS = `
 }
 .map-custom-nav-ctrl.map-nav-ctrl--light,
 .map-stage-light .map-custom-nav-ctrl {
-  background: var(--text-strong);
-  border-color: var(--surface-sunken);
+  /* 卫星/地形底图上的导航控件：始终用浅色壳，不依赖 UI 主题 text token */
+  background: rgba(252, 253, 255, 0.94);
+  border-color: rgba(15, 23, 42, 0.14);
   box-shadow: 0 10px 28px rgba(15, 23, 42, 0.15);
-  color: var(--surface-2);
+  color: #0f172a;
 }
 .map-custom-nav-ctrl .map-nav-btn {
   width: 2.15rem;

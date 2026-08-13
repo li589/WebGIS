@@ -1131,7 +1131,7 @@ onUnmounted(() => {
 }
 
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 .card-actions {
@@ -1164,7 +1164,7 @@ onUnmounted(() => {
   width: 0.7rem;
   height: 0.7rem;
   border-radius: 50%;
-  background: var(--text-primary);
+  background: var(--surface-3);
   transition: left 0.15s ease;
 }
 

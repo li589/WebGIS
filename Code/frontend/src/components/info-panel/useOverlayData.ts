@@ -2,6 +2,7 @@ import { computed, type ComputedRef } from 'vue'
 
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
 import type { OverlayPointValue } from '../../services/runtime-api'
+import type { OverlaySymbologyMeta } from '../../types/overlay-symbology'
 import type { OverlayTimeState } from '../map/overlay-image-module'
 import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { formatOverlayValue } from './useWeatherPointData'
@@ -18,7 +19,7 @@ export function useOverlayData(
   overlayPointValues: ComputedRef<OverlayPointValue[]>,
   selectedOverlayTimeSeries: ComputedRef<OverlayPointValue[]>,
   selectedMapPoint: ComputedRef<{ lng: number; lat: number } | null>,
-  overlayStyleMeta: ComputedRef<any>,
+  overlayStyleMeta: ComputedRef<OverlaySymbologyMeta | null>,
 ) {
   // overlayStyleMeta 由调用方传入以保持 API 对称性；本 composable 不直接使用。
   void overlayStyleMeta

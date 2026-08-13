@@ -88,13 +88,14 @@ function select(value: string) {
   font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition:
-    color var(--motion-fast) var(--ease-standard),
-    border-color var(--motion-fast) var(--ease-standard);
+    color var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft);
 }
 
 .tabs--tabs .tabs-item--active {
   color: var(--accent);
   border-bottom-color: var(--accent);
+  text-shadow: 0 0 12px var(--accent-surface);
 }
 
 .tabs--tabs .tabs-item:hover:not(:disabled) {
@@ -120,17 +121,19 @@ function select(value: string) {
   cursor: pointer;
   white-space: nowrap;
   transition:
-    background-color var(--motion-fast) var(--ease-standard),
-    border-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard);
+    background-color var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft),
+    box-shadow var(--motion-fast) var(--ease-soft);
 }
 
 .tabs--segmented .tabs-item--active {
-  background: var(--surface-2);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
   border-color: var(--border-accent);
   color: var(--accent);
-  box-shadow: var(--elevation-1);
+  box-shadow:
+    var(--elevation-1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .tabs--segmented .tabs-item:hover:not(:disabled) {

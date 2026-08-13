@@ -136,6 +136,92 @@
   height: min-content;
 }
 
+/* ═══ 面板入场错开编排 ═══ */
+.overlay-top {
+  animation: panel-enter-down var(--motion-slow) var(--ease-emphasized) both;
+  animation-delay: var(--motion-enter-delay);
+}
+
+.overlay-left {
+  animation: panel-enter-right var(--motion-slow) var(--ease-emphasized) both;
+  animation-delay: calc(var(--motion-enter-delay) + var(--motion-stagger-step));
+}
+
+.overlay-right {
+  animation: panel-enter-left var(--motion-slow) var(--ease-emphasized) both;
+  animation-delay: calc(var(--motion-enter-delay) + var(--motion-stagger-step) * 2);
+}
+
+.overlay-bottom {
+  animation: panel-enter-bottom var(--motion-slow) var(--ease-emphasized) both;
+  animation-delay: calc(var(--motion-enter-delay) + var(--motion-stagger-step) * 3);
+}
+
+@keyframes panel-enter-down {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes panel-enter-right {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes panel-enter-left {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes panel-enter-bottom {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes panel-enter-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay-top,
+  .overlay-left,
+  .overlay-right,
+  .overlay-bottom {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 @media (max-width: 1024px) {
   .overlay-left,
   .overlay-right {
@@ -190,5 +276,7 @@
 
   .overlay-bottom {
     margin: 0.75rem 0.75rem 0;
+    /* 移动端无 translateX(-50%) 居中，覆盖入场动画避免冲突 */
+    animation-name: panel-enter-up;
   }
 }

@@ -10,6 +10,7 @@ import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { ClipboardList, Zap, Settings, Lock, Gem, Diamond, X } from '../ui/icons'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
+import { useLogStore } from '../../stores/log'
 import type { WorkflowDefinitionSummary } from '../../services/workflow-definition-api'
 import InlineLoader from '../common/InlineLoader.vue'
 
@@ -19,6 +20,7 @@ const emit = defineEmits<{
 }>()
 
 const store = useWorkflowDefinitionsStore()
+const logStore = useLogStore()
 const { summaries, systemWorkflows, userWorkflows, currentDefinition, loading } = storeToRefs(store)
 
 const confirmDeleteId = ref<string | null>(null)
@@ -96,6 +98,12 @@ async function confirmUseTemplate() {
     emit('select', created.workflow_id)
   } catch (err) {
     console.error('[WorkflowList] Failed to instantiate template:', err)
+    logStore.logOperation(
+      'workflow-error',
+      '范例实例化失败',
+      err instanceof Error ? err.message : String(err),
+      'error',
+    )
   } finally {
     useTemplateSourceId.value = null
     useTemplateNewId.value = ''
@@ -123,6 +131,12 @@ async function confirmDelete() {
     await store.remove(confirmDeleteId.value)
   } catch (err) {
     console.error('[WorkflowList] Failed to delete workflow:', err)
+    logStore.logOperation(
+      'workflow-error',
+      '删除工作流失败',
+      err instanceof Error ? err.message : String(err),
+      'error',
+    )
   } finally {
     confirmDeleteId.value = null
   }
@@ -149,6 +163,12 @@ async function confirmDuplicate() {
     )
   } catch (err) {
     console.error('[WorkflowList] Failed to duplicate workflow:', err)
+    logStore.logOperation(
+      'workflow-error',
+      '复制工作流失败',
+      err instanceof Error ? err.message : String(err),
+      'error',
+    )
   } finally {
     duplicateSourceId.value = null
     duplicateNewId.value = ''
@@ -760,7 +780,7 @@ function formatTime(iso: string | null): string {
   border-radius: 0.24rem;
   background: var(--border-subtle);
   color: var(--accent);
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-mono);
 }
 
 /* ── 对话框 ──────────────────────────────────────────────────────── */

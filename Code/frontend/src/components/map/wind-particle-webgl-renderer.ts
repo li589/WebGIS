@@ -23,6 +23,8 @@
 import type { CustomRenderMethodInput, Map as MaplibreMap } from 'maplibre-gl'
 import { debugLog } from '../../utils/perf-probe'
 import type { WindGeoJSON } from './types'
+// P1-7：shader 编译/链接工具函数从共享模块导入
+import { linkProgram } from './webgl-utils'
 import {
   WIND_FIELD_FRAGMENT_SHADER,
   WIND_FIELD_VERTEX_SHADER,
@@ -73,59 +75,6 @@ const IDLE_AFTER_MOVE_MS = 1500
 const TRAIL_FADE = 0.975
 /** 连续若干帧拿不到投影矩阵则标记失败，供 controller 回退 Canvas */
 const MATRIX_MISS_FAIL_AFTER = 90
-
-/** 编译单个 shader，失败时输出日志并返回 null（不抛异常，便于降级）。 */
-function compileShader(
-  gl: WebGLRenderingContext,
-  type: number,
-  source: string,
-): WebGLShader | null {
-  const shader = gl.createShader(type)
-  if (!shader) return null
-  gl.shaderSource(shader, source)
-  gl.compileShader(shader)
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    console.error('[WindParticleWebGL] shader compile failed:', gl.getShaderInfoLog(shader))
-    gl.deleteShader(shader)
-    return null
-  }
-  return shader
-}
-
-/** 链接 vertex + fragment 为 program，失败返回 null。 */
-function linkProgram(
-  gl: WebGLRenderingContext,
-  vertexSource: string,
-  fragmentSource: string,
-): WebGLProgram | null {
-  const vs = compileShader(gl, gl.VERTEX_SHADER, vertexSource)
-  const fs = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource)
-  if (!vs || !fs) {
-    if (vs) gl.deleteShader(vs)
-    if (fs) gl.deleteShader(fs)
-    return null
-  }
-  const program = gl.createProgram()
-  if (!program) {
-    gl.deleteShader(vs)
-    gl.deleteShader(fs)
-    return null
-  }
-  gl.attachShader(program, vs)
-  gl.attachShader(program, fs)
-  gl.linkProgram(program)
-  // 链接成功后 detach 并释放 shader 对象，减少 GPU 内存占用
-  gl.detachShader(program, vs)
-  gl.detachShader(program, fs)
-  gl.deleteShader(vs)
-  gl.deleteShader(fs)
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    console.error('[WindParticleWebGL] program link failed:', gl.getProgramInfoLog(program))
-    gl.deleteProgram(program)
-    return null
-  }
-  return program
-}
 
 /** 与 GLSL encodeFloat 等价的 JS 单坐标编码（hi, lo 两个字节）。 */
 function encodeFloatByte(v: number): [number, number] {
@@ -448,7 +397,12 @@ export class WindParticleWebGLLayer {
     gl.disable(gl.DEPTH_TEST)
 
     // B2 风场颜色场
-    this.fieldProgram = linkProgram(gl, WIND_FIELD_VERTEX_SHADER, WIND_FIELD_FRAGMENT_SHADER)
+    this.fieldProgram = linkProgram(
+      gl,
+      WIND_FIELD_VERTEX_SHADER,
+      WIND_FIELD_FRAGMENT_SHADER,
+      'WindParticleWebGL',
+    )
     if (this.fieldProgram) {
       this.fieldAttribLngLat = gl.getAttribLocation(this.fieldProgram, 'a_lnglat')
       this.fieldUniformMatrix = gl.getUniformLocation(this.fieldProgram, 'u_matrix')
@@ -659,6 +613,7 @@ export class WindParticleWebGLLayer {
       gl,
       PARTICLE_UPDATE_VERTEX_SHADER,
       PARTICLE_UPDATE_FRAGMENT_SHADER,
+      'WindParticleWebGL',
     )
     if (this.updateProgram) {
       this.updateAttribPos = gl.getAttribLocation(this.updateProgram, 'a_pos')
@@ -684,6 +639,7 @@ export class WindParticleWebGLLayer {
       gl,
       PARTICLE_DRAW_CLIP_VERTEX_SHADER,
       PARTICLE_DRAW_SOFT_FRAGMENT_SHADER,
+      'WindParticleWebGL',
     )
     if (this.drawProgram) {
       this.drawAttribClipSpeed = gl.getAttribLocation(this.drawProgram, 'a_clipSpeed')
@@ -770,7 +726,12 @@ export class WindParticleWebGLLayer {
 
   private initTrailPrograms(gl: WebGLRenderingContext): void {
     // 衰减 pass 与屏幕合成 pass 均复用全屏 quad 顶点着色器
-    this.fadeProgram = linkProgram(gl, PARTICLE_UPDATE_VERTEX_SHADER, TRAIL_FADE_FRAGMENT_SHADER)
+    this.fadeProgram = linkProgram(
+      gl,
+      PARTICLE_UPDATE_VERTEX_SHADER,
+      TRAIL_FADE_FRAGMENT_SHADER,
+      'WindParticleWebGL',
+    )
     if (this.fadeProgram) {
       this.fadeAttribPos = gl.getAttribLocation(this.fadeProgram, 'a_pos')
       this.fadeUniformTexture = gl.getUniformLocation(this.fadeProgram, 'u_texture')
@@ -780,6 +741,7 @@ export class WindParticleWebGLLayer {
       gl,
       PARTICLE_UPDATE_VERTEX_SHADER,
       TRAIL_SCREEN_FRAGMENT_SHADER,
+      'WindParticleWebGL',
     )
     if (this.screenProgram) {
       this.screenAttribPos = gl.getAttribLocation(this.screenProgram, 'a_pos')

@@ -315,7 +315,7 @@ function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
   width: 0.72rem;
   left: 0.14rem;
   bottom: 0.14rem;
-  background: var(--text-faint);
+  background: var(--surface-3);
   border-radius: 50%;
   transition: 0.2s;
 }
@@ -417,7 +417,7 @@ function updateCoord(v: unknown, field: 'lat' | 'lng', raw: string): string {
   border-radius: 0;
   background: transparent;
   padding: 0.28rem 0;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-size-caption);
 }
 

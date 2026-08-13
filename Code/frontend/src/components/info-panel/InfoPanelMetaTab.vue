@@ -3,7 +3,8 @@
 全部状态由父组件通过 props 传入；交互通过 emit 回传父组件。 */
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ActiveLayerDisplay } from '../../stores/layers/types'
+import type { ActiveLayerDisplay, JobLayerItem } from '../../stores/layers/types'
+import type { ResultDisplayModel } from './result-adapter'
 import { ANALYSIS_COPY, DATA_COPY, LAYERS_COPY } from '../../ui-copy'
 import { openDataWorkspace } from '../../data-manager/core/workspace-store'
 import AppButton from '../ui/AppButton.vue'
@@ -11,8 +12,8 @@ import AppButton from '../ui/AppButton.vue'
 const props = defineProps<{
   displayLayer: ActiveLayerDisplay
   isRealtimeWeatherLayer: boolean
-  jobLayer: any
-  resultModel: any
+  jobLayer: JobLayerItem | undefined
+  resultModel: ResultDisplayModel | null
   analysisSummary: string
   showCompactHero: boolean
   workflowStage: string

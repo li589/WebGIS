@@ -97,7 +97,7 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
           isAdminBoundary: false,
           isImported: true,
           isImportedRaster: false,
-          jobLayer: undefined,
+          jobLayer: layer.jobLayer,
           visible: layer.visible,
           opacity: layer.opacity,
           order: layer.order,
@@ -211,8 +211,7 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
       const descriptor = ctx.runtimeLayerCatalog[layer.catalogId] ?? null
 
       const isWeatherLayer = !layer.isAdminBoundary && ctx.isWeatherEngineLayer(layer.catalogId)
-      const tileStats =
-        isWeatherLayer && layer.visible ? ctx.weatherTileManager.getStats(layer.catalogId) : null
+      const tileStats = layer.visible ? ctx.weatherTileManager.getStats(layer.catalogId) : null
       const baseRenderHint = isWeatherLayer
         ? buildDefaultWeatherRenderHint(layer.catalogId, descriptor)
         : (layer.jobLayer?.mapLayerPayload?.renderHint ?? null)
@@ -221,7 +220,7 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
           ? { ...baseRenderHint, palette: layer.paletteOverride }
           : baseRenderHint
       let finalAvailability = availability
-      if (isWeatherLayer && tileStats) {
+      if (isWeatherLayer) {
         const layerStatus = ctx.weatherTileManager.getLayerStatus(layer.catalogId)
         if (layerStatus.errorType === 'data-empty') {
           finalAvailability = {
@@ -229,7 +228,7 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
             label: '无有效数据',
             description: layerStatus.errorMessage || '本地模型无数据，请同步 Open-Meteo',
           }
-        } else {
+        } else if (tileStats) {
           const readyKind = resolveWeatherTileReadyKind(tileStats)
           if (readyKind === 'ready') {
             finalAvailability = {
@@ -249,6 +248,15 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
               label: '等待瓦片',
               description: '正在等待瓦片调度',
             }
+          }
+        } else {
+          // 无 stats（未显示或尚未调度）：仍勿回落「待运行」
+          finalAvailability = {
+            state: 'partial' as const,
+            label: layer.visible ? '等待瓦片' : '可查看',
+            description: layer.visible
+              ? '正在等待瓦片调度'
+              : '天气瓦片层，显示后由 tile manager 加载。',
           }
         }
       }
@@ -348,6 +356,7 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
         importedRasterEffectiveTime: rasterPayload?.effectiveTimeLabel,
         importedRasterTimeCount: rasterPayload?.timeList?.length ?? 0,
         paletteOverride: layer.paletteOverride ?? null,
+        defaultPalette: baseRenderHint?.palette ?? undefined,
         vminOverride: layer.vminOverride ?? null,
         vmaxOverride: layer.vmaxOverride ?? null,
         nodataMode: layer.nodataMode ?? null,

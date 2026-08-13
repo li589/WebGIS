@@ -78,3 +78,47 @@ export function revokeAuthToken(tokenId: number): Promise<void> {
     allowEmpty: true,
   })
 }
+
+// --- Phase B: Resource permissions ---
+
+export type PermissionRecord = components['schemas']['PermissionRecord']
+export type PermissionItemInput = components['schemas']['PermissionItemInput']
+export type ResourceType = PermissionItemInput['resource_type']
+export type PermissionValue = PermissionItemInput['permission']
+export type PermissionMode = 'open' | 'whitelist'
+
+export function listUserPermissions(userId: number): Promise<PermissionRecord[]> {
+  return requestJson<PermissionRecord[]>(`/auth/users/${userId}/permissions`, {
+    sensitiveGet: true,
+  })
+}
+
+export function setUserPermissions(
+  userId: number,
+  permissions: PermissionItemInput[],
+): Promise<PermissionRecord[]> {
+  return requestJson<PermissionRecord[]>(`/auth/users/${userId}/permissions`, {
+    method: 'PUT',
+    body: JSON.stringify({ permissions }),
+  })
+}
+
+export function deletePermission(userId: number, permissionId: number): Promise<void> {
+  return requestJson<void>(`/auth/users/${userId}/permissions/${permissionId}`, {
+    method: 'DELETE',
+    allowEmpty: true,
+  })
+}
+
+export function updatePermissionMode(
+  userId: number,
+  mode: PermissionMode,
+): Promise<{ user_id: number; permission_mode: string }> {
+  return requestJson<{ user_id: number; permission_mode: string }>(
+    `/auth/users/${userId}/permission-mode`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ mode }),
+    },
+  )
+}

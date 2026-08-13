@@ -482,7 +482,7 @@ function toggleFilter(ext: string) {
 }
 
 .conn-dot.idle {
-  background: var(--text-disabled);
+  background: var(--surface-sunken);
 }
 
 .conn-dot.testing {
@@ -533,7 +533,7 @@ function toggleFilter(ext: string) {
   color: var(--text-muted);
   font: inherit;
   font-size: var(--font-size-caption);
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-mono);
   cursor: pointer;
   user-select: none;
   transition: all 0.14s ease;

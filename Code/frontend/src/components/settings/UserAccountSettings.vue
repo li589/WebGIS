@@ -6,8 +6,17 @@ import {
   createAuthToken,
   listAuthTokens,
   revokeAuthToken,
+  listUserPermissions,
+  setUserPermissions,
+  deletePermission,
+  updatePermissionMode,
   type AuthToken,
   type UserRole,
+  type PermissionRecord,
+  type PermissionItemInput,
+  type ResourceType,
+  type PermissionValue,
+  type PermissionMode,
 } from '../../services/auth-api'
 import { useAuthStore } from '../../stores/auth'
 import AppSelect from '../ui/AppSelect.vue'
@@ -19,7 +28,7 @@ const router = useRouter()
 
 const newUsername = ref('')
 const newPassword = ref('')
-const newRole = ref<UserRole>('operator')
+const newRole = ref<UserRole>('standard')
 const tokenLabel = ref('')
 const tokens = ref<AuthToken[]>([])
 const tokensLoading = ref(false)
@@ -27,10 +36,26 @@ const createdToken = ref<string | null>(null)
 const message = ref<string | null>(null)
 const error = ref<string | null>(null)
 
+// Phase B: Resource permissions state
+const permUserId = ref<number | null>(null)
+const permUsername = ref('')
+const permRecords = ref<PermissionRecord[]>([])
+const permMode = ref<PermissionMode>('open')
+const permLoading = ref(false)
+const newPermType = ref<ResourceType>('layer')
+const newPermId = ref('')
+const newPermValue = ref<PermissionValue>('deny')
+
+const RESOURCE_TYPE_LABELS: Record<string, string> = {
+  layer: '图层',
+  workflow: '工作流',
+  data_source: '数据源',
+}
+
 const ROLE_LABEL: Record<UserRole, string> = {
   admin: '管理员',
-  operator: '操作员',
-  viewer: '只读',
+  standard: '标准用户',
+  demo: '演示',
 }
 
 async function loadTokens() {
@@ -72,7 +97,7 @@ async function createAccount() {
     message.value = '用户已创建'
     newUsername.value = ''
     newPassword.value = ''
-    newRole.value = 'operator'
+    newRole.value = 'standard'
   } catch (err) {
     const msg = err instanceof Error ? err.message : '创建失败'
     if (msg.includes('username already exists') || msg.includes('已存在')) {
@@ -134,8 +159,98 @@ async function removeAccount(userId: number, username: string) {
   try {
     await auth.removeUser(userId)
     message.value = '用户已删除'
+    if (permUserId.value === userId) {
+      permUserId.value = null
+    }
   } catch (err) {
     error.value = err instanceof Error ? err.message : '删除失败'
+  }
+}
+
+// Phase B: Resource permissions management
+async function togglePermPanel(userId: number, username: string) {
+  if (permUserId.value === userId) {
+    permUserId.value = null
+    return
+  }
+  permUserId.value = userId
+  permUsername.value = username
+  error.value = null
+  message.value = null
+  await loadPermissions(userId)
+}
+
+async function loadPermissions(userId: number) {
+  permLoading.value = true
+  try {
+    permRecords.value = await listUserPermissions(userId)
+    // Read permission_mode from the user object (added to UserPublic in Phase B)
+    const user = auth.users.find((u) => u.id === userId)
+    permMode.value = (user?.permission_mode as PermissionMode) || 'open'
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '加载权限失败'
+  } finally {
+    permLoading.value = false
+  }
+}
+
+async function changePermMode(mode: PermissionMode) {
+  if (permUserId.value === null) return
+  error.value = null
+  try {
+    await updatePermissionMode(permUserId.value, mode)
+    permMode.value = mode
+    const idx = auth.users.findIndex((u) => u.id === permUserId.value)
+    if (idx >= 0) {
+      const current = auth.users[idx]
+      auth.users[idx] = { ...current, permission_mode: mode }
+    }
+    message.value =
+      mode === 'whitelist'
+        ? '已切换为白名单模式（仅允许记录可访问）'
+        : '已切换为开放模式（无拒绝记录即可访问）'
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '切换模式失败'
+  }
+}
+
+async function addPermission() {
+  if (permUserId.value === null) return
+  const rid = newPermId.value.trim()
+  if (!rid) {
+    error.value = '请输入资源 ID'
+    return
+  }
+  error.value = null
+  try {
+    const newPerm: PermissionItemInput = {
+      resource_type: newPermType.value,
+      resource_id: rid,
+      permission: newPermValue.value,
+    }
+    const existing = permRecords.value.map((r) => ({
+      resource_type: r.resource_type as ResourceType,
+      resource_id: r.resource_id,
+      permission: r.permission as PermissionValue,
+    }))
+    const result = await setUserPermissions(permUserId.value, [...existing, newPerm])
+    permRecords.value = result
+    newPermId.value = ''
+    message.value = '权限已添加'
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '添加权限失败'
+  }
+}
+
+async function removePermission(permissionId: number) {
+  if (permUserId.value === null) return
+  error.value = null
+  try {
+    await deletePermission(permUserId.value, permissionId)
+    permRecords.value = permRecords.value.filter((r) => r.id !== permissionId)
+    message.value = '权限已删除'
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '删除权限失败'
   }
 }
 </script>
@@ -206,8 +321,8 @@ async function removeAccount(userId: number, username: string) {
           v-model="newRole"
           :options="[
             { label: '管理员', value: 'admin' },
-            { label: '操作员', value: 'operator' },
-            { label: '只读', value: 'viewer' },
+            { label: '标准用户', value: 'standard' },
+            { label: '演示', value: 'demo' },
           ]"
         />
         <button type="button" class="primary-btn" @click="createAccount">创建用户</button>
@@ -232,8 +347,8 @@ async function removeAccount(userId: number, username: string) {
                 :disabled="u.id === auth.user?.id"
                 :options="[
                   { label: '管理员', value: 'admin' },
-                  { label: '操作员', value: 'operator' },
-                  { label: '只读', value: 'viewer' },
+                  { label: '标准用户', value: 'standard' },
+                  { label: '演示', value: 'demo' },
                 ]"
                 @change="(val) => changeRole(u.id, val as UserRole)"
               />
@@ -249,7 +364,16 @@ async function removeAccount(userId: number, username: string) {
                 {{ u.enabled ? '启用' : '禁用' }}
               </label>
             </td>
-            <td>
+            <td class="action-cell">
+              <button
+                v-if="u.role !== 'admin' && u.id !== auth.user?.id"
+                type="button"
+                class="secondary-btn perm-btn"
+                :class="{ active: permUserId === u.id }"
+                @click="togglePermPanel(u.id, u.username)"
+              >
+                权限
+              </button>
               <button
                 v-if="u.id !== auth.user?.id"
                 type="button"
@@ -262,6 +386,79 @@ async function removeAccount(userId: number, username: string) {
           </tr>
         </tbody>
       </table>
+
+      <!-- Phase B: Resource permissions panel -->
+      <div v-if="permUserId !== null" class="perm-panel">
+        <h4 class="perm-panel-title">资源权限 — {{ permUsername }}</h4>
+        <p class="section-hint">
+          黑名单模式（开放）：无拒绝记录即可访问；白名单模式：仅允许记录可访问。
+        </p>
+
+        <div class="perm-mode-row">
+          <span class="perm-mode-label">权限模式：</span>
+          <AppSelect
+            :model-value="permMode"
+            :options="[
+              { label: '开放（黑名单）', value: 'open' },
+              { label: '白名单', value: 'whitelist' },
+            ]"
+            @change="(val) => changePermMode(val as PermissionMode)"
+          />
+        </div>
+
+        <div class="perm-add-form">
+          <AppSelect
+            v-model="newPermType"
+            :options="[
+              { label: '图层', value: 'layer' },
+              { label: '工作流', value: 'workflow' },
+              { label: '数据源', value: 'data_source' },
+            ]"
+          />
+          <input
+            v-model="newPermId"
+            type="text"
+            placeholder="资源 ID（图层 ID / 工作流 ID / 路径）"
+          />
+          <AppSelect
+            v-model="newPermValue"
+            :options="[
+              { label: '允许', value: 'allow' },
+              { label: '拒绝', value: 'deny' },
+            ]"
+          />
+          <button type="button" class="primary-btn" @click="addPermission">添加</button>
+        </div>
+
+        <div v-if="permLoading" class="loading">加载权限…</div>
+        <table v-else-if="permRecords.length" class="user-table perm-table">
+          <thead>
+            <tr>
+              <th>资源类型</th>
+              <th>资源 ID</th>
+              <th>权限</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in permRecords" :key="r.id">
+              <td>{{ RESOURCE_TYPE_LABELS[r.resource_type] || r.resource_type }}</td>
+              <td class="mono">{{ r.resource_id }}</td>
+              <td>
+                <span :class="r.permission === 'allow' ? 'perm-allow' : 'perm-deny'">
+                  {{ r.permission === 'allow' ? '允许' : '拒绝' }}
+                </span>
+              </td>
+              <td>
+                <button type="button" class="danger-btn" @click="removePermission(r.id)">
+                  移除
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p v-else class="section-hint">暂无权限记录</p>
+      </div>
     </section>
   </div>
 </template>
@@ -440,6 +637,88 @@ async function removeAccount(userId: number, username: string) {
 
 @media (max-width: 768px) {
   .create-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Phase B: Resource permissions panel */
+.action-cell {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.perm-btn.active {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+  color: var(--surface-1);
+}
+
+.perm-panel {
+  margin-top: 0.6rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border-default);
+  border-radius: 0.5rem;
+  background: var(--surface-1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.perm-panel-title {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.perm-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.perm-mode-label {
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.perm-add-form {
+  display: grid;
+  grid-template-columns: minmax(5rem, 7rem) 1fr minmax(4rem, 6rem) auto;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.perm-add-form input {
+  width: 100%;
+  padding: 0.38rem 0.45rem;
+  border: 1px solid var(--border-default);
+  border-radius: 0.35rem;
+  background: var(--surface-1);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: var(--font-size-caption);
+}
+
+.perm-table .mono {
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  word-break: break-all;
+}
+
+.perm-allow {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.perm-deny {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .perm-add-form {
     grid-template-columns: 1fr;
   }
 }

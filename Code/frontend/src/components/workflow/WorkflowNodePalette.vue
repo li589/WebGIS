@@ -865,7 +865,7 @@ function isFavorite(type: string): boolean {
 .node-item-type {
   font-size: var(--font-size-caption);
   color: var(--text-disabled);
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-mono);
 }
 
 .node-item-desc {

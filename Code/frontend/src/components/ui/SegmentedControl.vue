@@ -130,8 +130,8 @@ function onKeydown(e: KeyboardEvent) {
   user-select: none;
   white-space: nowrap;
   transition:
-    background-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard);
+    background-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft);
   font-family: inherit;
 }
 
@@ -157,6 +157,19 @@ function onKeydown(e: KeyboardEvent) {
   background: var(--accent-surface);
   color: var(--accent);
   font-weight: var(--font-weight-medium);
+  position: relative;
+}
+
+.seg-ctrl-item.active::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: 25%;
+  right: 25%;
+  height: 2px;
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 0 6px var(--accent-border);
 }
 
 .seg-ctrl-item.active--danger {

@@ -692,7 +692,7 @@ void refreshCache()
   border-radius: 6px;
   background: var(--surface-1);
   color: var(--text-primary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-size-caption);
   padding: 0.5rem;
 }

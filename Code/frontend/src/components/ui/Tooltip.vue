@@ -149,8 +149,8 @@ onUnmounted(() => {
 .tooltip-fade-enter-active,
 .tooltip-fade-leave-active {
   transition:
-    opacity var(--motion-fast) var(--ease-standard),
-    transform var(--motion-fast) var(--ease-standard);
+    opacity var(--motion-fast) var(--ease-soft),
+    transform var(--motion-fast) var(--ease-soft);
 }
 
 .tooltip-fade-enter-from,

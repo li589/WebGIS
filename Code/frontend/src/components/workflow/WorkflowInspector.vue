@@ -871,7 +871,7 @@ function handleTitleChange() {
   font-size: var(--font-size-caption);
   font-weight: 400;
   color: var(--text-disabled);
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-mono);
 }
 
 /* 参数分组标题 */
@@ -1057,7 +1057,7 @@ function handleTitleChange() {
 
 .port-type {
   color: var(--accent);
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-size-caption);
 }
 
@@ -1130,7 +1130,7 @@ function handleTitleChange() {
   width: 0.72rem;
   left: 0.14rem;
   bottom: 0.14rem;
-  background: var(--text-faint);
+  background: var(--surface-3);
   border-radius: 50%;
   transition: 0.2s;
 }

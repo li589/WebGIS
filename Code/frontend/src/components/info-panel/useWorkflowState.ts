@@ -1,6 +1,7 @@
 import { computed, type ComputedRef } from 'vue'
 
-import type { ActiveLayerDisplay } from '../../stores/layers/types'
+import type { ActiveLayerDisplay, JobLayerItem, LayerHotspot } from '../../stores/layers/types'
+import type { LayerTileStats } from '../../stores/weather-tile-types'
 import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { ANALYSIS_COPY } from '../../ui-copy'
 import { resolveWeatherWorkflowStage } from '../../utils/weather-tile-readiness'
@@ -9,6 +10,7 @@ import {
   resolveStaticLayerHint,
   resolveWorkflowStageCopy,
 } from './analysis-panel-summary'
+import type { ResultDisplayModel } from './result-adapter'
 
 /**
  * 工作流状态 / 进度 / 阶段摘要 composable。
@@ -18,18 +20,18 @@ import {
  */
 export interface WorkflowStateOptions {
   displayLayer: ComputedRef<ActiveLayerDisplay>
-  jobLayer: ComputedRef<any>
+  jobLayer: ComputedRef<JobLayerItem | undefined>
   isRealtimeWeatherLayer: ComputedRef<boolean>
-  tileStats: ComputedRef<any>
+  tileStats: ComputedRef<LayerTileStats | null>
   isSubmitting: ComputedRef<boolean>
   windStyleChipLabel: ComputedRef<string>
   canToggleParticleFlow: ComputedRef<boolean>
-  visibleHotspots: ComputedRef<any[]>
+  visibleHotspots: ComputedRef<LayerHotspot[]>
   hasPointWeatherSection: ComputedRef<boolean>
   showMultiOverlayBar: ComputedRef<boolean>
   showSelectedOverlayTimeSeries: ComputedRef<boolean>
   showDemoOverlayTimeSeries: ComputedRef<boolean>
-  resultModel: ComputedRef<any>
+  resultModel: ComputedRef<ResultDisplayModel | null>
 }
 
 export function useWorkflowState(options: WorkflowStateOptions) {

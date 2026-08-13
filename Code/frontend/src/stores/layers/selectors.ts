@@ -166,6 +166,7 @@ export function useWorkflowRun() {
     runWorkflowForCatalog: store.runWorkflowForCatalog,
     cancelWorkflowRunForJob: store.cancelWorkflowRunForJob,
     retryWorkflowRunForJob: store.retryWorkflowRunForJob,
+    cleanupAllRetryTimers: store.cleanupAllRetryTimers,
     stopWorkflowPolling: store.stopWorkflowPolling,
     fetchPointWeather: store.fetchPointWeather,
     clearPointWeather: store.clearPointWeather,

@@ -66,7 +66,7 @@ export function createMapStagePresentationModule(
     if (!navButtons?.length) return
 
     const buttonBackground = options.getUsesLightNavigationTheme()
-      ? 'var(--text-strong)'
+      ? 'rgba(252, 253, 255, 0.94)'
       : 'var(--surface-1)'
 
     navButtons.forEach((button) => {

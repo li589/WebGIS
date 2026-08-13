@@ -118,7 +118,7 @@ const maxNumeric = computed(() => {
   color: var(--success);
   font-weight: 600;
 
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
 }
 
 .bar-val.na {

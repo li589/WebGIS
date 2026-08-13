@@ -22,14 +22,23 @@ import {
 } from '../core/workspace-store'
 import { formatBytes } from '../core/api'
 import { DATA_COPY } from '../../ui-copy'
+import { useAuthStore } from '../../stores/auth'
 
-const tabs: Array<{ id: DataWorkspaceTab; label: string }> = [
-  { id: 'import', label: DATA_COPY.wsImport },
-  { id: 'export', label: DATA_COPY.wsExport },
+const authStore = useAuthStore()
+
+const demoTransferRestricted = computed(() => authStore.isDemo)
+
+const tabs: Array<{ id: DataWorkspaceTab; label: string; restricted?: boolean }> = [
+  { id: 'import', label: DATA_COPY.wsImport, restricted: true },
+  { id: 'export', label: DATA_COPY.wsExport, restricted: true },
   { id: 'attributes', label: DATA_COPY.wsAttributes },
   { id: 'details', label: DATA_COPY.wsDetails },
   { id: 'jobs', label: DATA_COPY.wsJobs },
 ]
+
+function isTabDisabled(tab: { restricted?: boolean }): boolean {
+  return Boolean(tab.restricted && demoTransferRestricted.value)
+}
 
 const mountedTabs = ref<Set<DataWorkspaceTab>>(new Set(['import']))
 
@@ -174,6 +183,8 @@ function onDrop(_e: DragEvent) {
             class="ws-tab"
             :class="{ active: dataWorkspaceTab === t.id }"
             role="tab"
+            :disabled="isTabDisabled(t)"
+            :title="isTabDisabled(t) ? '演示账户数据传输受限' : undefined"
             @click="setTab(t.id)"
           >
             {{ t.label }}
@@ -217,6 +228,13 @@ function onDrop(_e: DragEvent) {
           >
             回收 {{ formatBytes(importQuota.ephemeral_bytes) }}
           </button>
+        </span>
+      </div>
+
+      <div v-if="demoTransferRestricted" class="demo-banner" role="alert">
+        <span class="demo-banner-icon">!</span>
+        <span class="demo-banner-text">
+          演示账户的数据导入/导出功能受限。如需上传或下载数据，请联系管理员开通权限或升级为标准用户。
         </span>
       </div>
 
@@ -341,6 +359,42 @@ function onDrop(_e: DragEvent) {
   color: var(--accent);
   border-color: var(--border-strong);
   background: var(--accent-surface);
+}
+.ws-tab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.ws-tab:disabled:hover {
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  border-color: var(--border-default);
+}
+.demo-banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.7rem;
+  background: var(--warning-surface, rgba(255, 193, 7, 0.12));
+  border-bottom: 1px solid var(--warning-border, rgba(255, 193, 7, 0.3));
+  font-size: var(--font-size-caption);
+  color: var(--warning, #f0a020);
+}
+.demo-banner-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  background: var(--warning, #f0a020);
+  color: var(--surface-1, #fff);
+  font-weight: 700;
+  font-size: 0.7rem;
+  flex: none;
+}
+.demo-banner-text {
+  line-height: 1.4;
 }
 .ws-actions {
   display: flex;

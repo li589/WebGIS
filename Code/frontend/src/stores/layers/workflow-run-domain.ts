@@ -257,6 +257,7 @@ export function createWorkflowRunDomain(
     runWorkflowForCatalog,
     cancelWorkflowRunForJob,
     retryWorkflowRunForJob,
+    cleanupAllRetryTimers,
     rememberTrackedWorkflowRun: rememberTrackedWorkflowRunImpl,
     forgetTrackedWorkflowRun: forgetTrackedWorkflowRunImpl,
   } = workflowRunner
@@ -314,6 +315,7 @@ export function createWorkflowRunDomain(
     runWorkflowForCatalog,
     cancelWorkflowRunForJob,
     retryWorkflowRunForJob,
+    cleanupAllRetryTimers,
     rememberTrackedWorkflowRun: rememberTrackedWorkflowRunImpl,
     forgetTrackedWorkflowRun: forgetTrackedWorkflowRunImpl,
     hydrateWorkspaceFromSnapshot,

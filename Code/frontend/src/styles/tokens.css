@@ -5,7 +5,8 @@
  * 迁移策略：229 个内联 hex → 统一 token 引用，分阶段组件改造（S1 token → S2 基础组件 → S3 迁移）。
  *
  * 颜色主题：深空蓝青（品牌 #5ad5ff）+ 低透明黑玻璃层级 + WCAG AA 对比度。
- * 排版基线：root=15px；正文 floor ≥12px（商业化可读下限）；仅 400/500 两字重。
+ * 排版基线：root=15px；正文 floor ≥12px（商业化可读下限）；五档字重（300/400/500/600/700）。
+ * 字体族：Sora（几何无衬线，技术感）+ IBM Plex Mono（等宽数据）+ 中文回退。
  * 动效哲学：克制（120–320ms）、缓出、有物理感（translateY / shadow 不用 scale）。
  */
 
@@ -105,6 +106,8 @@
   --space-5: 1.2rem; /* 18px — 很宽 */
   --space-6: 1.6rem; /* 24px — 极宽 */
   --space-7: 2.4rem; /* 36px — 分组间 */
+  --space-8: 3.2rem; /* 48px — 大区块 */
+  --space-10: 4.8rem; /* 72px — 英雄区 */
 
   /* ═══ 字号（root=15px，正文 floor ≥12px） ═══ */
   --font-size-caption: 0.8rem; /* 12px — floor，标签 / 辅助 */
@@ -112,11 +115,19 @@
   --font-size-title: 0.93rem; /* 14px — 小标题 / 面板标题 */
   --font-size-subtitle: 1.07rem; /* 16px — 区块标题 */
   --font-size-h2: 1.33rem; /* 20px — 次级大标题 */
+  --font-size-h3: 1.2rem; /* 18px — 第三级标题（兼容旧引用） */
   --font-size-h1: 1.6rem; /* 24px — 主标题 */
 
-  /* ═══ 字重（仅两档：克制） ═══ */
-  --font-weight-regular: 400;
-  --font-weight-medium: 500;
+  /* ═══ 字体族 ═══ */
+  --font-sans: 'Sora', 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Courier New', 'Microsoft YaHei', monospace;
+
+  /* ═══ 字重（五档：建立排版层级；Sora 可变字体 300-700） ═══ */
+  --font-weight-light: 300; /* 大号显示文本 / 辅助标签 */
+  --font-weight-regular: 400; /* 正文 */
+  --font-weight-medium: 500; /* UI 标签 / 按钮 */
+  --font-weight-semibold: 600; /* 区块标题 / 卡片标题 */
+  --font-weight-bold: 700; /* 页面标题 / 强调 */
 
   /* ═══ Elevation（暗色实现：低透明阴影 + 内高光） ═══ */
   --glass-blur: 16px; /* 统一玻璃模糊 */
@@ -134,12 +145,13 @@
   --shadow-ambient-strong: rgba(0, 0, 0, 0.24);
 
   /* ═══ 动效（克制 + 物理感） ═══ */
-  --motion-fast: 120ms;
+  --motion-fast: 150ms;
   --motion-base: 200ms;
   --motion-slow: 320ms;
 
   /* 缓动函数 */
   --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1); /* 标准出 */
+  --ease-soft: cubic-bezier(0.25, 0.1, 0.25, 1); /* 柔和 — 按钮hover/微交互 */
   --ease-emphasized: cubic-bezier(0.3, 0, 0.2, 1); /* 强调 */
   --ease-decelerate: cubic-bezier(0, 0, 0.2, 1); /* 减速 */
 
@@ -148,16 +160,31 @@
   --z-overlay: 20; /* 地图浮层 / 信息窗 */
   --z-panel: 24; /* 浮层面板 dock */
   --z-popover: 60; /* 下拉菜单 / 气泡 / Tooltip */
-  --z-modal: 80; /* 模态对话框 */
+  --z-modal: 80; /* 模态对话框（设计刻度；实际面板可高于此） */
   --z-toast: 100; /* 消息提示 / 通知 */
-  --z-loading: 200; /* 全局加载遮罩 */
-  --z-debug: 999; /* 调试工具（最高） */
+  --z-loading: 10040; /* 全局加载遮罩（须高于设置/工作流面板 ~998–1300） */
+  --z-debug: 12000; /* 调试 / 连通性横幅 */
 
   /* ═══ 响应式断点（约定值，供 JS/组件统一参考） ═══ */
   --bp-sm: 640px;
   --bp-md: 768px;
   --bp-lg: 1024px;
   --bp-xl: 1280px;
+
+  /* ═══ 纹理 / 氛围 ═══ */
+  --noise-opacity-dark: 0.04;
+  --noise-opacity-light: 0.03;
+  --grid-pattern-size: 24px;
+  --dot-pattern-size: 16px;
+
+  /* ═══ 焦点环 / 发光 ═══ */
+  --accent-focus-ring: rgba(90, 213, 255, 0.1);
+  --accent-glow-sm: 0 0 8px var(--accent-surface);
+  --accent-glow-md: 0 0 16px var(--accent-surface);
+
+  /* ═══ 动效（扩展：编排延迟） ═══ */
+  --motion-stagger-step: 30ms;
+  --motion-enter-delay: 100ms;
 
   /* ═══ 触控目标最小值 ═══ */
   --touch-min: 36px;
@@ -253,4 +280,7 @@
   --elevation-2: 0 6px 18px rgba(20, 50, 90, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.95);
   --elevation-3: 0 16px 40px rgba(20, 50, 90, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.98);
   --elevation-modal: 0 28px 64px rgba(20, 50, 90, 0.16), inset 0 1px 0 rgba(255, 255, 255, 1);
+
+  /* 焦点环（浅色版本） */
+  --accent-focus-ring: rgba(10, 143, 196, 0.12);
 }

@@ -160,8 +160,8 @@ function onBlur(e: FocusEvent) {
   border-radius: var(--radius-md);
   background: var(--surface-1);
   transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard);
+    border-color var(--motion-fast) var(--ease-soft),
+    box-shadow var(--motion-fast) var(--ease-soft);
 }
 
 .text-field--md .text-field-input-wrap {
@@ -174,7 +174,7 @@ function onBlur(e: FocusEvent) {
 
 .text-field-input-wrap:focus-within {
   border-color: var(--border-strong);
-  box-shadow: 0 0 0 3px rgba(90, 213, 255, 0.1);
+  box-shadow: 0 0 0 3px var(--accent-focus-ring);
 }
 
 .text-field--error .text-field-input-wrap {
@@ -183,7 +183,11 @@ function onBlur(e: FocusEvent) {
 
 .text-field--error .text-field-input-wrap:focus-within {
   border-color: var(--danger);
-  box-shadow: 0 0 0 3px rgba(255, 140, 100, 0.1);
+  box-shadow: 0 0 0 3px var(--danger-surface);
+}
+
+.text-field-input-wrap:focus-within .text-field-icon {
+  color: var(--accent);
 }
 
 .text-field-input {
@@ -241,8 +245,8 @@ function onBlur(e: FocusEvent) {
   color: var(--text-secondary);
   cursor: pointer;
   transition:
-    background-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard);
+    background-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft);
 }
 
 .text-field-clear:hover {

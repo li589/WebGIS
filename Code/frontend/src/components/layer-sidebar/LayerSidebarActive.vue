@@ -2,20 +2,23 @@
 import { LAYERS_COPY } from '../../ui-copy'
 import { productTagDescription } from '../../utils/workflow-expected-outputs'
 import { CircleDot, Circle, X, Menu } from '../ui/icons'
+import type { ActiveLayerDisplay, ActiveRunLayerGroup } from '../../stores/layers/types'
+import type { ActiveTocRow } from './useSidebarDragReorder'
+import type { ActiveLayerDisplayLike } from './useSidebarSymbology'
 
 defineProps<{
-  activeLayersDisplay: any[]
-  activeTocRows: any[]
+  activeLayersDisplay: ActiveLayerDisplay[]
+  activeTocRows: ActiveTocRow[]
   selectedInstanceId: string | null
   dragOverInstanceId: string | null
   dragOverGroupId: string | null
-  runGroupOf: (groupId: string) => any
+  runGroupOf: (groupId: string) => ActiveRunLayerGroup | null
   groupStatusLabel: (groupId: string) => string
-  hasColorSymbology: (layer: any) => boolean
-  getColorRampStyle: (layer: any) => Record<string, string>
-  getSymbologyUnit: (layer: any) => string
-  getSymbologyVmin: (layer: any) => string
-  getSymbologyVmax: (layer: any) => string
+  hasColorSymbology: (layer: ActiveLayerDisplayLike) => boolean
+  getColorRampStyle: (layer: ActiveLayerDisplayLike) => Record<string, string>
+  getSymbologyUnit: (layer: ActiveLayerDisplayLike) => string
+  getSymbologyVmin: (layer: ActiveLayerDisplayLike) => string
+  getSymbologyVmax: (layer: ActiveLayerDisplayLike) => string
   availabilityClass: (state: string) => string
   getCategoryName: (categoryId: string) => string
 }>()
@@ -216,12 +219,17 @@ const emit = defineEmits<{
                 }}</span
               >
               <template v-if="row.layer.jobLayer">
-                <span class="job-status-badge" :class="`job-${row.layer.jobLayer.status}`">
+                <span
+                  class="job-status-badge"
+                  :class="`job-${row.layer.jobLayer.status}`"
+                  :title="row.layer.jobLayer.message || undefined"
+                >
                   {{
                     row.layer.jobLayer.status === 'running'
-                      ? row.layer.jobLayer.message
-                        ? row.layer.jobLayer.message
-                        : `运行中 ${row.layer.jobLayer.progress}%`
+                      ? typeof row.layer.jobLayer.progress === 'number' &&
+                        row.layer.jobLayer.progress > 0
+                        ? `运行中 ${row.layer.jobLayer.progress}%`
+                        : '运行中'
                       : row.layer.jobLayer.status === 'queued'
                         ? '排队中'
                         : row.layer.jobLayer.status === 'retry_pending'
@@ -241,7 +249,7 @@ const emit = defineEmits<{
                   type="button"
                   @click.stop="emit('openJobReport', row.layer.instanceId)"
                 >
-                  查看报告
+                  {{ LAYERS_COPY.viewReport }}
                 </button>
               </template>
               <span class="order-hint"

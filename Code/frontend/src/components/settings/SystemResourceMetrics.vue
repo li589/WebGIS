@@ -435,7 +435,7 @@ function percentOf(used: number | null | undefined, total: number | null | undef
   font: inherit;
   font-size: var(--font-size-caption);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-standard);
+  transition: background var(--motion-fast) var(--ease-soft);
 }
 
 .gpu-perf-btn:hover {

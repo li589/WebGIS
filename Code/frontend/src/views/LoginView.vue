@@ -645,7 +645,7 @@ async function submit() {
   font-weight: var(--font-weight-bold);
   letter-spacing: 0.02em;
   color: var(--text-strong);
-  background: linear-gradient(135deg, var(--text-strong) 0%, var(--accent-strong) 100%);
+  background: linear-gradient(135deg, var(--surface-3) 0%, var(--accent-strong) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -687,10 +687,10 @@ async function submit() {
   font-family: inherit;
   font-size: var(--font-size-body);
   transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard),
-    transform var(--motion-fast) var(--ease-standard);
+    border-color var(--motion-fast) var(--ease-soft),
+    box-shadow var(--motion-fast) var(--ease-soft),
+    background-color var(--motion-fast) var(--ease-soft),
+    transform var(--motion-fast) var(--ease-soft);
 }
 
 .field input::placeholder {

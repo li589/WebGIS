@@ -10,7 +10,7 @@
 import { computed } from 'vue'
 import type { ComputedRef } from 'vue'
 
-import type { ActiveLayerDisplay } from '../../stores/layers/types'
+import type { ActiveLayerDisplay, WeatherLayerRenderHint } from '../../stores/layers/types'
 import type { WeatherPointResponse, OverlayPointValue } from '../../services/runtime-api'
 import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { useUiStore } from '../../stores/ui'
@@ -90,7 +90,7 @@ function normalizeWeatherUnit(unit: string | null | undefined): string {
 export function useWeatherPointData(
   displayLayer: ComputedRef<ActiveLayerDisplay>,
   isRealtimeWeatherLayer: ComputedRef<boolean>,
-  weatherRenderHint: ComputedRef<any>,
+  weatherRenderHint: ComputedRef<WeatherLayerRenderHint | null>,
   pointWeather: ComputedRef<WeatherPointResponse | null>,
   pointWeatherLoading: ComputedRef<boolean>,
   pointWeatherError: ComputedRef<string | null>,

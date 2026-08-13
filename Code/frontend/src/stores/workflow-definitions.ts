@@ -20,6 +20,7 @@ import {
   type WorkflowDefinitionNode,
   type WorkflowDefinitionLink,
 } from '../services/workflow-definition-api'
+import { useLogStore } from './log'
 
 export const useWorkflowDefinitionsStore = defineStore('workflow-definitions', () => {
   // ─── 状态 ────────────────────────────────────────────────────────────────
@@ -52,6 +53,12 @@ export const useWorkflowDefinitionsStore = defineStore('workflow-definitions', (
       nodeTemplates.value = await fetchNodeTemplates()
     } catch (err) {
       console.error('[workflow-definitions] Failed to load node templates:', err)
+      useLogStore().logOperation(
+        'workflow-error',
+        '加载节点模板失败',
+        err instanceof Error ? err.message : String(err),
+        'error',
+      )
       error.value = err instanceof Error ? err.message : String(err)
     }
   }
@@ -63,6 +70,12 @@ export const useWorkflowDefinitionsStore = defineStore('workflow-definitions', (
       summaries.value = await fetchWorkflowDefinitions()
     } catch (err) {
       console.error('[workflow-definitions] Failed to load summaries:', err)
+      useLogStore().logOperation(
+        'workflow-error',
+        '加载工作流列表失败',
+        err instanceof Error ? err.message : String(err),
+        'error',
+      )
       error.value = err instanceof Error ? err.message : String(err)
     } finally {
       loading.value = false
@@ -77,6 +90,12 @@ export const useWorkflowDefinitionsStore = defineStore('workflow-definitions', (
       return currentDefinition.value
     } catch (err) {
       console.error('[workflow-definitions] Failed to load definition:', err)
+      useLogStore().logOperation(
+        'workflow-error',
+        '加载工作流定义失败',
+        err instanceof Error ? err.message : String(err),
+        'error',
+      )
       error.value = err instanceof Error ? err.message : String(err)
       return null
     } finally {

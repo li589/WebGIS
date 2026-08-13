@@ -830,7 +830,7 @@ export function createOverlayImageModule(
         if (typeof opacityByLayerId?.[layerId] === 'number') {
           setOverlayOpacity(layerId, opacityByLayerId[layerId])
         }
-        if (styleByLayerId?.[layerId] && styleByLayerId[layerId].forceStyle) {
+        if (styleByLayerId?.[layerId]) {
           setOverlayStyle(layerId, styleByLayerId[layerId])
         }
       }

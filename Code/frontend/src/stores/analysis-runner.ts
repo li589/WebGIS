@@ -15,6 +15,7 @@ import {
   type AnalysisToolDescriptor,
   type AnalysisToolListResponse,
 } from '../services/analysis-api'
+import { ApiRequestError } from '../services/http-errors'
 import { cancelWorkflowRun } from '../services/runtime-api'
 import { useLayersStore } from './layers'
 import type { ActiveLayerDisplay } from './layers/types'
@@ -49,6 +50,7 @@ function sleep(ms: number) {
 }
 
 function isCapacityError(err: unknown): boolean {
+  if (err instanceof ApiRequestError && err.status === 429) return true
   const msg = err instanceof Error ? err.message : String(err)
   return /\b429\b/.test(msg) || /capacity|max_active|too many/i.test(msg)
 }
@@ -61,6 +63,8 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
   const activeByKey = ref<Record<string, AnalysisActiveRun>>({})
   const localQueue = ref<AnalysisQueueItem[]>([])
   const lastHint = ref<string | null>(null)
+  /** Bumped on cancel to abort in-flight capacity backoff / submit. */
+  const submitGeneration = ref<Record<string, number>>({})
 
   const activeRuns = computed(() => Object.values(activeByKey.value))
 
@@ -68,12 +72,36 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
     return `${layerId}::${toolId}`
   }
 
+  function bumpGeneration(key: string) {
+    submitGeneration.value = {
+      ...submitGeneration.value,
+      [key]: (submitGeneration.value[key] ?? 0) + 1,
+    }
+    return submitGeneration.value[key]
+  }
+
+  function currentGeneration(key: string) {
+    return submitGeneration.value[key] ?? 0
+  }
+
+  /** In-flight submits/runs only — used by drain so local `queued` can start. */
   function countRunningForLayer(layerId: string) {
     return activeRuns.value.filter(
+      (r) => r.layerId === layerId && (r.phase === 'submitting' || r.phase === 'running'),
+    ).length
+  }
+
+  /** Slots that block starting another tool (in-flight + local queue + capacity backoff). */
+  function countOccupiedSlotsForLayer(layerId: string) {
+    const inFlight = countRunningForLayer(layerId)
+    const localQueued = localQueue.value.filter((q) => q.layerId === layerId).length
+    const capacityBackoff = activeRuns.value.filter(
       (r) =>
         r.layerId === layerId &&
-        (r.phase === 'submitting' || r.phase === 'running' || r.phase === 'queued'),
+        r.phase === 'queued' &&
+        !localQueue.value.some((q) => q.layerId === r.layerId && q.toolId === r.toolId),
     ).length
+    return inFlight + localQueued + capacityBackoff
   }
 
   async function loadToolsForDisplay(display: ActiveLayerDisplay, opts?: { isWeather?: boolean }) {
@@ -106,6 +134,7 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
 
   async function cancelRun(layerId: string, toolId: string) {
     const key = runKey(layerId, toolId)
+    bumpGeneration(key)
     const cur = activeByKey.value[key]
     if (cur?.runId) {
       try {
@@ -148,14 +177,30 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
       show_on_map: args.showOnMap ?? true,
     }
 
-    // Same tool re-submit: mark replaced (backend also cancels)
     const key = runKey(layerId, toolId)
     const prior = activeByKey.value[key]
+
+    // Already occupying a slot as queued: update local-queue payload only.
+    // Capacity-backoff also uses phase `queued` but is not in localQueue — do not
+    // start a second executeSubmit (would double-fire when backoff finishes).
+    if (prior?.phase === 'queued') {
+      const idx = localQueue.value.findIndex((q) => q.layerId === layerId && q.toolId === toolId)
+      if (idx >= 0) {
+        const copy = [...localQueue.value]
+        copy[idx] = { ...copy[idx], body, instanceId: args.display.instanceId }
+        localQueue.value = copy
+        lastHint.value = '已更新排队中的同工具参数'
+        return
+      }
+      lastHint.value = '正在等待业务池重试…'
+      return
+    }
+
     if (prior && (prior.phase === 'running' || prior.phase === 'submitting')) {
       lastHint.value = '已取代先前同工具分析'
     }
 
-    if (countRunningForLayer(layerId) >= MAX_PARALLEL_TOOLS_PER_LAYER && !prior) {
+    if (countOccupiedSlotsForLayer(layerId) >= MAX_PARALLEL_TOOLS_PER_LAYER && !prior) {
       const item: AnalysisQueueItem = {
         id: `${Date.now()}-${toolId}`,
         toolId,
@@ -189,6 +234,7 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
     body: AnalysisRunRequestBody,
     replacedPrior: boolean,
   ) {
+    const gen = bumpGeneration(key)
     activeByKey.value = {
       ...activeByKey.value,
       [key]: {
@@ -204,8 +250,17 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
 
     let attempt = 0
     while (attempt <= MAX_CAPACITY_RETRIES) {
+      if (currentGeneration(key) !== gen) return
       try {
         const accepted = await submitAnalysisRun(body)
+        if (currentGeneration(key) !== gen) {
+          try {
+            await cancelWorkflowRun(accepted.run_id)
+          } catch {
+            /* ignore */
+          }
+          return
+        }
         activeByKey.value = {
           ...activeByKey.value,
           [key]: {
@@ -223,6 +278,7 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
         void watchRun(key, accepted.run_id)
         return
       } catch (err) {
+        if (currentGeneration(key) !== gen) return
         if (isCapacityError(err) && attempt < MAX_CAPACITY_RETRIES) {
           attempt += 1
           const wait = Math.min(8000, 500 * 2 ** attempt)
@@ -248,8 +304,23 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
             message: err instanceof Error ? err.message : String(err),
           },
         }
+        void drainQueue(body.layer_id)
         return
       }
+    }
+    if (currentGeneration(key) === gen) {
+      activeByKey.value = {
+        ...activeByKey.value,
+        [key]: {
+          toolId: body.tool_id,
+          layerId: body.layer_id,
+          instanceId: display.instanceId,
+          runId: '',
+          phase: 'failed',
+          message: '业务池持续繁忙，请稍后重试',
+        },
+      }
+      void drainQueue(body.layer_id)
     }
   }
 

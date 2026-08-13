@@ -47,7 +47,7 @@ export function useSidebarContextMenu(
   uiStore: ReturnType<typeof useUiStore>,
   logStore: ReturnType<typeof useLogStore>,
   overlaySymbologyStore: ReturnType<typeof useOverlaySymbologyStore>,
-  _emit: (event: string, ...args: any[]) => void,
+  _emit: (event: string, ...args: unknown[]) => void,
   selectItem: (instanceId: string) => void,
   zoomToItem: (instanceId: string) => void,
   removeItem: (instanceId: string, event: MouseEvent) => void,

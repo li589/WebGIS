@@ -89,6 +89,9 @@ function handleRemove(e: MouseEvent) {
   background: var(--success-surface);
   border-color: var(--success-border);
   color: var(--success);
+  box-shadow:
+    inset 0 0 0 1px var(--success-border),
+    0 0 8px var(--success-surface);
 }
 
 /* 变体：warning */
@@ -96,6 +99,9 @@ function handleRemove(e: MouseEvent) {
   background: var(--warning-surface);
   border-color: var(--warning-border);
   color: var(--warning);
+  box-shadow:
+    inset 0 0 0 1px var(--warning-border),
+    0 0 8px var(--warning-surface);
 }
 
 /* 变体：danger */
@@ -103,6 +109,9 @@ function handleRemove(e: MouseEvent) {
   background: var(--danger-surface);
   border-color: var(--danger-border);
   color: var(--danger);
+  box-shadow:
+    inset 0 0 0 1px var(--danger-border),
+    0 0 8px var(--danger-surface);
 }
 
 /* 变体：info */
@@ -110,6 +119,9 @@ function handleRemove(e: MouseEvent) {
   background: var(--info-surface);
   border-color: var(--info-border);
   color: var(--info);
+  box-shadow:
+    inset 0 0 0 1px var(--info-border),
+    0 0 8px var(--info-surface);
 }
 
 /* 变体：muted */
@@ -144,8 +156,10 @@ function handleRemove(e: MouseEvent) {
 }
 
 .chip-remove:hover {
-  background: var(--surface-sunken);
+  background: var(--surface-hover);
   opacity: 1;
+  transform: scale(1.1);
+  transition: transform var(--motion-fast) var(--ease-soft);
 }
 
 .chip-remove:focus-visible {

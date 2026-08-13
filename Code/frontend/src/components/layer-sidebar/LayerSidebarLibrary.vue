@@ -1,27 +1,28 @@
 <script setup lang="ts">
 import { LAYERS_COPY, INSPECT_COPY } from '../../ui-copy'
 import { Info, Lock, Settings, Check } from '../ui/icons'
-import type { RuntimeLayerLibraryItem } from '../../stores/layers/types'
+import type { LayerCategory, RuntimeLayerLibraryItem } from '../../stores/layers/types'
+import type { WeatherProviderForLayer } from '../../services/runtime-api'
 import AppSelect from '../ui/AppSelect.vue'
 
 defineProps<{
   searchQuery: string
   selectedSubCategory: string
-  filteredLibraryByCategory: Array<{ category: any; items: RuntimeLayerLibraryItem[] }>
+  filteredLibraryByCategory: Array<{ category: LayerCategory; items: RuntimeLayerLibraryItem[] }>
   researchSubCategoryPills: string[]
   expandedCategories: Set<string>
   isAdded: (catalogId: string) => boolean
   weatherProvidersLoading: Record<string, boolean>
   weatherSourcePrefsValue: (catalogId: string) => string
-  weatherProvidersFor: (catalogId: string) => any[]
-  weatherProviderOptionLabel: (p: any) => string
+  weatherProvidersFor: (catalogId: string) => WeatherProviderForLayer[]
+  weatherProviderOptionLabel: (p: WeatherProviderForLayer) => string
   weatherSourceQualityHint: (catalogId: string) => string | null
   weatherSourceSparseHint: (catalogId: string) => boolean
   getCatalogJobStatus: (catalogId: string) => string | undefined
   getCatalogRunBlockReason: (catalogId: string) => string | null
   getCatalogSemanticNote: (catalogId: string) => string | null
   catalogSemanticNoteClass: (catalogId: string) => string
-  getCategoryMeta: (categoryId: string) => any
+  getCategoryMeta: (categoryId: string) => LayerCategory | undefined
   getCategoryName: (categoryId: string) => string
   getCatalogSourceSummary: (catalogId: string) => string
   getPrimarySourceName: (catalogId: string) => string

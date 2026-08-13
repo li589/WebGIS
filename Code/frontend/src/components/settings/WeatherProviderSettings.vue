@@ -685,7 +685,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 .provider-id {
   color: var(--text-disabled);
   font-size: var(--font-size-caption);
-  font-family: 'SF Mono', 'Consolas', monospace;
+  font-family: var(--font-mono);
 }
 
 .provider-version {
@@ -743,7 +743,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 .meta-value {
   color: var(--text-primary);
   font-size: var(--font-size-caption);
-  font-family: 'SF Mono', 'Consolas', monospace;
+  font-family: var(--font-mono);
 }
 
 .meta-value.warn {
@@ -796,7 +796,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 .runtime-text {
   color: var(--text-primary);
   font-size: var(--font-size-caption);
-  font-family: 'SF Mono', 'Consolas', monospace;
+  font-family: var(--font-mono);
   flex: none;
 }
 
@@ -849,7 +849,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   border: 1px solid var(--border-default);
   color: var(--text-primary);
   font-size: var(--font-size-caption);
-  font-family: 'SF Mono', 'Consolas', monospace;
+  font-family: var(--font-mono);
   outline: none;
 }
 
@@ -879,7 +879,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   border: 1px solid var(--border-default);
   color: var(--text-primary);
   font-size: var(--font-size-caption);
-  font-family: 'SF Mono', 'Consolas', monospace;
+  font-family: var(--font-mono);
   outline: none;
   resize: vertical;
   min-height: 3rem;
@@ -1115,7 +1115,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   width: 0.72rem;
   height: 0.72rem;
   border-radius: 50%;
-  background: var(--text-muted);
+  background: var(--surface-3);
   transform: translateY(-50%);
   transition:
     left 0.2s ease,

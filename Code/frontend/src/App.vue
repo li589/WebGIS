@@ -11,16 +11,24 @@ import AppErrorBoundary from './components/AppErrorBoundary.vue'
 import ServiceConnectivityBanner from './components/ServiceConnectivityBanner.vue'
 import { useThemeStore } from './stores/theme'
 
+// 扩展 Window 接口以暴露主题 store 供调试使用（避免 as any）
+declare global {
+  interface Window {
+    __themeStore?: ReturnType<typeof useThemeStore>
+  }
+}
+
 // 激活主题 store：初始化时读取 localStorage/系统偏好并设置 data-theme
 const themeStore = useThemeStore()
 // 暴露到 window 供调试使用
 if (typeof window !== 'undefined') {
-  ;(window as any).__themeStore = themeStore
+  window.__themeStore = themeStore
 }
 </script>
 
 <template>
   <div class="page-shell">
+    <div class="noise-overlay" aria-hidden="true"></div>
     <ServiceConnectivityBanner />
     <AppErrorBoundary>
       <RouterView />

@@ -23,6 +23,7 @@ import {
 } from '../../services/runtime-api'
 import type { BoundingBox, LayerDescriptor, WorkflowEvent } from '../../services/runtime-api'
 import { useWorkflowOutputLayersStore } from '../workflow-output-layers'
+import { useLogStore } from '../log'
 import { buildJobLayer } from './result-adapter'
 import { forgetDismissedLayer, isRunDismissed } from './workspace-persist'
 import { getCatalogDisplayName, isTerminalStatus } from './catalog-builders'
@@ -46,6 +47,15 @@ import type {
 
 function debugLog(module: string, ...args: unknown[]) {
   probeDebugLog(`[${performance.now().toFixed(1)}ms] [LayersStore:${module}]`, ...args)
+}
+
+/** Safely log to useLogStore; no-ops if Pinia is not active (e.g., in tests) */
+function safeLog(type: string, message: string, details?: string, severity?: string) {
+  try {
+    useLogStore().logOperation(type, message, details, severity as never)
+  } catch {
+    // Pinia not active — console.error above is sufficient
+  }
 }
 
 /** 刷新后恢复用：记住本机跟踪中的 run，避免仅依赖内存态丢失进度。 */
@@ -86,8 +96,15 @@ export function saveTrackedWorkflowRuns(runs: TrackedWorkflowRun[]) {
   }
 }
 
-export interface WorkflowRunnerDeps {
-  // ── poller（三A 产物，store 实例化后传入方法）──
+/**
+ * WorkflowRunnerDeps — 依赖注入接口。
+ *
+ * P1-6：按职责分组为 5 个子接口，便于理解依赖范围。
+ * 后续迭代计划将 30+ 个细粒度方法封装为 5-8 个高层方法。
+ */
+
+/** 轮询器接口：启动/停止/同步工作流运行状态 */
+export interface WorkflowPollerDeps {
   startPolling: (jobId: string, catalogId: string, expectedViewportEpoch?: number) => void
   stopWorkflowPolling: (jobId: string) => void
   isPolling: (jobId: string) => boolean
@@ -98,8 +115,10 @@ export interface WorkflowRunnerDeps {
     expectedViewportEpoch?: number,
   ) => Promise<boolean>
   applyWorkflowEventsToJobLayer: (jobLayer: JobLayerItem, events: WorkflowEvent[]) => JobLayerItem
+}
 
-  // ── 状态读（getter，避免直接持有 ref；Set/Map 传引用）──
+/** 状态读取接口：getter 返回 store 响应式状态的当前快照 */
+export interface WorkflowStateReaderDeps {
   getActiveLayers: () => ActiveLayer[]
   getJobLayers: () => JobLayerItem[]
   getRunLayerGroups: () => ActiveRunLayerGroup[]
@@ -110,8 +129,10 @@ export interface WorkflowRunnerDeps {
   submittingCatalogIds: Set<string>
   workflowRetryTimers: Map<string, number>
   workflowRetryCounts: Map<string, number>
+}
 
-  // ── 状态写（store 写函数注入）──
+/** 状态写入接口：store 写函数注入 */
+export interface WorkflowStateWriterDeps {
   setRunLayerGroups: (groups: ActiveRunLayerGroup[]) => void
   upsertJobLayer: (catalogId: string, jobLayer: JobLayerItem) => void
   removeJobLayerById: (jobId: string) => void
@@ -132,8 +153,10 @@ export interface WorkflowRunnerDeps {
     runId?: string,
     opts?: { forceBind?: boolean },
   ) => Promise<number>
+}
 
-  // ── 业务判定 / 载荷构建（store 内既有函数注入）──
+/** 业务判定 / 载荷构建接口 */
+export interface WorkflowBusinessDeps {
   isLocalSubmitJobId: (jobId: string | null | undefined) => boolean
   isViewportRefreshStale: (epoch?: number) => boolean
   isWeatherEngineLayer: (catalogId: string) => boolean
@@ -151,14 +174,23 @@ export interface WorkflowRunnerDeps {
     algorithmRequest?: Record<string, unknown>,
     weatherRequest?: Record<string, unknown>,
   ) => Record<string, unknown>
-  /** 天气引擎图层：激活瓦片管道并按当前视口刷新（store 侧封装 tile manager 调用） */
   activateWeatherTileViewport: (catalogId: string) => void
+}
 
-  // ── 快照恢复（workspace-persist / 快照水合）──
+/** 快照恢复接口 */
+export interface WorkflowSnapshotDeps {
   hydrateWorkspaceFromSnapshot: () => Map<string, string>
   hydrateVectorLayersFromSnapshot: (instanceIdMap: Map<string, string>) => Promise<void>
   reconcileOmegaBlockLayers: () => void
 }
+
+export interface WorkflowRunnerDeps
+  extends
+    WorkflowPollerDeps,
+    WorkflowStateReaderDeps,
+    WorkflowStateWriterDeps,
+    WorkflowBusinessDeps,
+    WorkflowSnapshotDeps {}
 
 export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
   function rememberTrackedWorkflowRun(catalogId: string, jobLayer: JobLayerItem) {
@@ -214,6 +246,12 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       }
     } catch (err) {
       console.error('[layers] registerExternalWorkflowRun failed:', runId, err)
+      safeLog(
+        'workflow-error',
+        '注册外部工作流运行失败',
+        `runId=${runId} err=${String(err)}`,
+        'error',
+      )
     }
   }
 
@@ -348,6 +386,12 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           run = await getWorkflowRun(candidate.runId)
         } catch (err) {
           console.warn('[layers] restore skip missing run', candidate.runId, err)
+          safeLog(
+            'workflow-error',
+            '恢复时跳过缺失的工作流运行',
+            `runId=${candidate.runId} err=${String(err)}`,
+            'warn',
+          )
           forgetTrackedWorkflowRun(candidate.runId)
           continue
         }
@@ -467,6 +511,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       deps.scheduleWorkspacePersist()
     } catch (err) {
       console.error('[layers] restoreActiveWorkflows failed:', err)
+      safeLog('workflow-error', '恢复活跃工作流失败', String(err), 'error')
     }
   }
 
@@ -779,6 +824,12 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           catalogId,
           error,
         )
+        safeLog(
+          'workflow-error',
+          '运行时图层目录不可用，使用静态回退',
+          `catalogId=${catalogId} err=${String(error)}`,
+          'warn',
+        )
       }
 
       const hasCanvasDefinition = Boolean(
@@ -989,6 +1040,12 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           }
         } catch (reconcileError) {
           console.warn('[LayersStore] submit timeout reconcile failed', catalogId, reconcileError)
+          safeLog(
+            'workflow-error',
+            '提交超时对账失败',
+            `catalogId=${catalogId} err=${String(reconcileError)}`,
+            'warn',
+          )
         }
       }
       if (errMsg.includes('429')) {
@@ -1069,9 +1126,23 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       deps.workflowRetryTimers.delete(catalogId)
       void runWorkflowForCatalog(catalogId).catch((err) => {
         console.warn(`[LayersStore] 429 retry failed for ${catalogId}:`, err)
+        safeLog(
+          'workflow-error',
+          '工作流 429 重试失败',
+          `catalogId=${catalogId} err=${String(err)}`,
+          'warn',
+        )
       })
     }, WORKFLOW_429_RETRY_DELAY_MS)
     deps.workflowRetryTimers.set(catalogId, timer)
+  }
+
+  /** 清理所有待处理的 429 重试定时器，防止组件卸载后已取消的工作流被重新提交 */
+  function cleanupAllRetryTimers() {
+    for (const timer of deps.workflowRetryTimers.values()) {
+      window.clearTimeout(timer)
+    }
+    deps.workflowRetryTimers.clear()
   }
 
   async function cancelWorkflowRunForJob(jobId: string, catalogId: string) {
@@ -1167,6 +1238,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     retryWorkflowRunForJob,
     interruptWorkflowForCatalog,
     scheduleWorkflowRetry,
+    cleanupAllRetryTimers,
     rememberTrackedWorkflowRun,
     forgetTrackedWorkflowRun,
     // 内部辅助不导出：resolveRestoredCatalogId / hydrateJobLayerFromEvents /

@@ -770,7 +770,7 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
         }}</strong>
       </span>
       <span class="meta-text meta-text--center">
-        维度进度: <strong>{{ progressPercent }}</strong>
+        进度: <strong>{{ progressPercent }}</strong>
       </span>
       <span class="meta-text meta-text--right">
         当前观测: <strong>{{ observationTimeLabel || formattedTimeHeader }}</strong>

@@ -1,5 +1,6 @@
 @import 'maplibre-gl/dist/maplibre-gl.css';
 @import './tokens.css';
+@import './textures.css';
 
 html,
 body,
@@ -16,7 +17,7 @@ body,
 }
 
 :root {
-  font-family: Inter, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-family: var(--font-sans);
   line-height: 1.5;
   font-weight: 400;
   font-size: 15px;
@@ -122,4 +123,27 @@ a {
   animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important;
   scroll-behavior: auto !important;
+}
+
+/* ── 交互态微光工具类 ─────────────────────────── */
+.hover-lift {
+  transition:
+    transform var(--motion-fast) var(--ease-soft),
+    box-shadow var(--motion-fast) var(--ease-soft);
+}
+
+.hover-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--elevation-2);
+}
+
+.hover-glow {
+  transition:
+    box-shadow var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft);
+}
+
+.hover-glow:hover {
+  border-color: var(--border-accent);
+  box-shadow: var(--elevation-1), var(--accent-glow-sm);
 }

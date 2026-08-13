@@ -266,7 +266,7 @@ function patch(key: string, value: unknown) {
 
 .form-input.mono,
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 .form-input.textarea {

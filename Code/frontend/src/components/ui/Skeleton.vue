@@ -65,18 +65,22 @@ const computedRadius = computed(() => (props.circle ? '50%' : props.radius))
 }
 
 .skeleton {
-  background: linear-gradient(
-    90deg,
-    var(--surface-1) 25%,
-    var(--surface-2) 50%,
-    var(--surface-1) 75%
-  );
-  background-size: 200% 100%;
+  background: var(--surface-1);
+  position: relative;
+  overflow: hidden;
   border: 1px solid var(--border-subtle);
-  animation: skeleton-sweep 1.5s ease-in-out infinite;
 }
 
-@keyframes skeleton-sweep {
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, var(--surface-hover) 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.8s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
   0% {
     background-position: 200% 0;
   }
@@ -88,7 +92,11 @@ const computedRadius = computed(() => (props.circle ? '50%' : props.radius))
 @media (prefers-reduced-motion: reduce) {
   .skeleton {
     animation: none;
-    background: var(--surface-1);
+  }
+  .skeleton::after {
+    animation: none;
+  }
+  .skeleton {
     opacity: 0.6;
   }
 }

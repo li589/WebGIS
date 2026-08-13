@@ -93,7 +93,7 @@ h2 {
   background: var(--border-blue-tint);
   color: var(--accent);
   /* 勿用 font: inherit，会继承面板大字号把徽标撑爆 */
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-size-caption);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
@@ -307,8 +307,8 @@ h2 {
   font-size: var(--font-size-caption);
   font-weight: 600;
   transition:
-    background var(--motion-fast) var(--ease-standard),
-    transform var(--motion-fast) var(--ease-standard);
+    background var(--motion-fast) var(--ease-soft),
+    transform var(--motion-fast) var(--ease-soft);
   text-align: left;
 }
 
@@ -390,9 +390,9 @@ h2 {
   letter-spacing: 0.02em;
   white-space: nowrap;
   transition:
-    background var(--motion-fast) var(--ease-standard),
-    border-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard);
+    background var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft);
 }
 
 .cat-batch-add:hover {
@@ -427,9 +427,9 @@ h2 {
   font-size: var(--font-size-caption);
   font-weight: 500;
   transition:
-    background var(--motion-fast) var(--ease-standard),
-    border-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard);
+    background var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft);
 }
 
 .batch-btn:hover {
@@ -617,7 +617,7 @@ h2 {
 .src-coord {
   color: var(--text-disabled);
   font-size: var(--font-size-caption);
-  font-family: ui-monospace, 'SF Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 .src-auth,
@@ -740,7 +740,7 @@ h2 {
   transition:
     background var(--motion-base) var(--ease-standard),
     border-color var(--motion-base) var(--ease-standard),
-    transform var(--motion-fast) var(--ease-standard);
+    transform var(--motion-fast) var(--ease-soft);
 }
 
 .add-btn:hover:not(:disabled) {
@@ -836,6 +836,20 @@ h2 {
   text-align: center;
   color: var(--text-muted);
   font-size: var(--font-size-caption);
+  position: relative;
+}
+
+.no-layers::before {
+  content: '';
+  display: block;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 0.2rem;
+  border-radius: var(--radius-lg);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  background-image: radial-gradient(var(--border-subtle) 1px, transparent 1px);
+  background-size: var(--dot-pattern-size) var(--dot-pattern-size);
 }
 
 /* 图层列表：参考 ArcGIS Pro 紧凑设计
@@ -868,12 +882,47 @@ h2 {
   color: var(--text-primary);
   font: inherit;
   font-size: var(--font-size-caption);
+  animation: layer-item-fade-in var(--motion-base) var(--ease-standard) both;
   transition:
     border-color var(--motion-base) var(--ease-standard),
     background-color var(--motion-base) var(--ease-standard),
     box-shadow var(--motion-base) var(--ease-standard),
     opacity var(--motion-base) var(--ease-standard);
   user-select: none;
+}
+
+.layer-item:nth-child(1) {
+  animation-delay: 50ms;
+}
+.layer-item:nth-child(2) {
+  animation-delay: 80ms;
+}
+.layer-item:nth-child(3) {
+  animation-delay: 110ms;
+}
+.layer-item:nth-child(4) {
+  animation-delay: 140ms;
+}
+.layer-item:nth-child(5) {
+  animation-delay: 170ms;
+}
+
+@keyframes layer-item-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .layer-item {
+    animation: none;
+    opacity: 1;
+  }
 }
 
 .layer-item:hover {
@@ -897,8 +946,8 @@ h2 {
   border-color: var(--border-strong);
   background: var(--accent-surface);
   transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard);
+    border-color var(--motion-fast) var(--ease-soft),
+    background-color var(--motion-fast) var(--ease-soft);
 }
 
 .layer-group-header {
@@ -996,7 +1045,7 @@ h2 {
   font-size: var(--font-size-caption);
   cursor: grab;
   flex-shrink: 0;
-  transition: color var(--motion-fast) var(--ease-standard);
+  transition: color var(--motion-fast) var(--ease-soft);
 }
 
 .drag-handle:hover {
@@ -1020,8 +1069,8 @@ h2 {
   font-size: var(--font-size-caption);
   flex-shrink: 0;
   transition:
-    color var(--motion-fast) var(--ease-standard),
-    background var(--motion-fast) var(--ease-standard);
+    color var(--motion-fast) var(--ease-soft),
+    background var(--motion-fast) var(--ease-soft);
   padding: 0;
 }
 
@@ -1070,8 +1119,8 @@ h2 {
   font-size: var(--font-size-caption);
   flex-shrink: 0;
   transition:
-    color var(--motion-fast) var(--ease-standard),
-    background var(--motion-fast) var(--ease-standard);
+    color var(--motion-fast) var(--ease-soft),
+    background var(--motion-fast) var(--ease-soft);
   padding: 0;
 }
 
@@ -1107,7 +1156,7 @@ h2 {
   color: var(--text-muted);
   font-size: var(--font-size-caption);
   font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, 'SF Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 .legend-unit {
@@ -1118,6 +1167,7 @@ h2 {
 
 /* ── Layer row bottom (底行状态信息) ────────────────────────────────────── */
 .layer-row-bottom {
+  --layer-meta-size: 0.72rem;
   display: flex;
   align-items: center;
   gap: 0.3rem;
@@ -1131,7 +1181,7 @@ h2 {
   border-radius: 999px;
   border: 1px solid var(--border-default);
   background: var(--border-subtle);
-  font-size: var(--font-size-caption);
+  font-size: var(--layer-meta-size);
 }
 
 .availability-ready {
@@ -1152,20 +1202,20 @@ h2 {
 
 .order-hint {
   color: var(--text-disabled);
-  font-size: var(--font-size-caption);
+  font-size: var(--layer-meta-size);
   margin-left: auto;
 }
 
 .admin-tip-inline {
   color: var(--accent);
-  font-size: var(--font-size-caption);
+  font-size: var(--layer-meta-size);
 }
 
 /* ── Job badge ─────────────────────────────────────────────────────────── */
 .job-status-badge {
   padding: 0.06rem 0.26rem;
   border-radius: 999px;
-  font-size: var(--font-size-caption);
+  font-size: var(--layer-meta-size);
   font-weight: 600;
 }
 
@@ -1235,12 +1285,50 @@ h2 {
   border: none;
   background: transparent;
   color: var(--accent);
-  font-size: var(--font-size-caption);
+  font-size: var(--layer-meta-size, var(--font-size-caption));
   cursor: pointer;
   text-decoration: underline;
   text-decoration-style: dotted;
   padding: 0;
   white-space: nowrap;
+}
+
+/* 浅色主题：侧栏底行状态文字加深，避免浅底上偏亮难读 */
+:global([data-theme='light']) .availability-partial {
+  color: var(--warning);
+  border-color: var(--warning-border);
+  background: var(--warning-surface);
+}
+:global([data-theme='light']) .availability-empty {
+  color: var(--text-primary);
+  border-color: var(--border-default);
+  background: rgba(26, 43, 66, 0.06);
+}
+:global([data-theme='light']) .admin-tip-inline {
+  color: var(--accent-strong);
+}
+:global([data-theme='light']) .job-running {
+  color: var(--accent-strong);
+  background: rgba(0, 90, 130, 0.1);
+  border-color: rgba(0, 90, 130, 0.28);
+}
+:global([data-theme='light']) .job-queued,
+:global([data-theme='light']) .job-cancelled {
+  color: var(--text-primary);
+  background: rgba(26, 43, 66, 0.06);
+  border-color: var(--border-default);
+}
+:global([data-theme='light']) .job-retry_pending {
+  color: var(--warning);
+  background: var(--warning-surface);
+  border-color: var(--warning-border);
+}
+:global([data-theme='light']) .job-report-hint {
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+:global([data-theme='light']) .order-hint {
+  color: var(--text-muted);
 }
 
 /* ── Footer ─────────────────────────────────────────────────────────────── */
@@ -1295,8 +1383,8 @@ h2 {
   font-size: var(--font-size-caption);
   text-align: left;
   transition:
-    background var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard);
+    background var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft);
 }
 
 .ctx-item:hover {
@@ -1342,9 +1430,9 @@ h2 {
   font-size: var(--font-size-caption);
   cursor: pointer;
   transition:
-    color var(--motion-fast) var(--ease-standard),
-    background var(--motion-fast) var(--ease-standard),
-    border-color var(--motion-fast) var(--ease-standard);
+    color var(--motion-fast) var(--ease-soft),
+    background var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft);
 }
 
 .sub-pill:hover {

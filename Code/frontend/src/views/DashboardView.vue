@@ -7,7 +7,7 @@
  *
  * 拆分历史：原 1659 行 → CSS 提取(-196) → composable 提取(-1050)
  */
-import { computed, defineAsyncComponent, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { Globe } from '../components/ui/icons'
 import { useDataImportFlow } from '../data-manager/core/workspace-store'
@@ -60,6 +60,11 @@ const workflowOutputStore = useWorkflowOutputLayersStore()
 uiLoading.showImmediate('初始化地图数据...')
 void workspace.ensureRuntimeLayerCatalog().finally(() => uiLoading.hideImmediate())
 void workflowRun.restoreActiveWorkflows()
+
+// Dashboard 卸载时清理所有 429 重试定时器，防止已取消的工作流被重新提交
+onBeforeUnmount(() => {
+  workflowRun.cleanupAllRetryTimers()
+})
 
 const {
   tileSourceId,
