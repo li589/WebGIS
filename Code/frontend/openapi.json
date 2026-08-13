@@ -3089,6 +3089,11 @@
         ],
         "summary": "Get Artifact",
         "operationId": "get_artifact_artifacts__artifact_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "artifact_id",
@@ -3129,6 +3134,11 @@
         ],
         "summary": "Get Artifact Preview Png",
         "operationId": "get_artifact_preview_png_artifacts__artifact_id__preview_png_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "artifact_id",

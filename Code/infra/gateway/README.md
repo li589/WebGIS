@@ -35,4 +35,26 @@ docker compose -p gateway down
 
 反代前缀与 [`Code/frontend/vite.config.ts`](../../frontend/vite.config.ts) 的 `server.proxy` 对齐，例如 `/weather`、`/workflow-runs`、`/unified-tiles`、`/config`、`/auth`、`/overlay-tiles`、`/health` 等。
 
-上游 FastAPI 不可用时，API 反代返回 [`html/50x.html`](html/50x.html)（502/503/504）；SPA 路由仍走 `index.html`。
+上游 FastAPI 不可用时，API 反代返回 [`maintenance/html/50x.html`](maintenance/html/50x.html)（502/503/504）；SPA 路由仍走 `index.html`。
+
+## 前台维护模式（升级 / 修 bug）
+
+静态错误页与维护开关统一放在 [`maintenance/`](maintenance/)：
+
+```text
+maintenance/
+  on                 # 开关（gitignore）
+  html/
+    maintenance.html
+    50x.html
+```
+
+升级或紧急修复时，可打开 **纯 HTML 维护页**（不依赖 Vue、不展示源码/堆栈），同时让 API 继续服务后台任务：
+
+| 步骤 | 操作 |
+|------|------|
+| 启用 | 创建空文件 `maintenance/on`，再 `docker exec cgda-gateway-nginx nginx -s reload` |
+| 关闭 | 删除 `maintenance/on`，再 reload |
+| 预览 | 访问 `/maintenance.html` |
+
+详见 [`maintenance/README.md`](maintenance/README.md)。

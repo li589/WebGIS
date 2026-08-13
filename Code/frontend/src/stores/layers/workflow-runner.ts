@@ -236,8 +236,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     try {
       const run = await getWorkflowRun(runId)
       // 推断 catalogId：优先 hint，其次从 run payload 的 layer_id 取
-      const inferredCatalogId =
-        catalogIdHint ?? ((run as Record<string, unknown>).layer_id as string) ?? runId
+      const inferredCatalogId = catalogIdHint ?? run.layer_id ?? runId
       const jobLayer = await buildJobLayer(run, inferredCatalogId, {})
       deps.upsertJobLayer(inferredCatalogId, jobLayer)
       if (!isTerminalStatus(jobLayer.status)) {
@@ -318,10 +317,10 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       const succeededByWorkflow = new Set<string>()
       const seenWorkflowLabels = new Set<string>()
       for (const run of recentSucceeded) {
-        const layerId = String((run as Record<string, unknown>).layer_id || '')
+        const layerId = String(run.layer_id || '')
         // 仅恢复 omega_sf_fenkuai 分块反演等算法产物 run，避免无差别拉起所有历史 run
         if (!/omega[-_]sf[-_]fenkuai|omega_sf_omega_pixel/i.test(layerId)) continue
-        const workflowKey = String((run as Record<string, unknown>).command_label || layerId)
+        const workflowKey = String(run.command_label || layerId)
         succeededByWorkflow.add(workflowKey)
         if (seenWorkflowLabels.has(workflowKey)) continue
         seenWorkflowLabels.add(workflowKey)
@@ -339,16 +338,12 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         // 同一工作流已有成功产物时，不再恢复其 running/queued 占位
         // （worker 重启后僵尸 running run 会永远卡在占位组，展示陈旧中间块）。
         // 但本机 tracked 的进行中 run 必须恢复，否则刷新丢失多图层计算组。
-        const workflowKey = String(
-          (run as Record<string, unknown>).command_label ||
-            (run as Record<string, unknown>).layer_id ||
-            '',
-        )
+        const workflowKey = String(run.command_label || run.layer_id || '')
         const isTrackedActive = tracked.some((t) => t.runId === run.run_id)
         if (workflowKey && succeededByWorkflow.has(workflowKey) && !isTrackedActive) continue
         candidates.push({
           runId: run.run_id,
-          catalogIdHint: ((run as Record<string, unknown>).layer_id as string) || undefined,
+          catalogIdHint: run.layer_id || undefined,
         })
       }
       for (const item of tracked) {
@@ -399,11 +394,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         // 非终态且同工作流已有成功版本 → 跳过（防止僵尸 running 重建占位组）
         // tracked 进行中 run 例外：刷新后必须续接占位组/轮询。
         if (run.status !== 'succeeded') {
-          const workflowKey = String(
-            (run as Record<string, unknown>).command_label ||
-              (run as Record<string, unknown>).layer_id ||
-              '',
-          )
+          const workflowKey = String(run.command_label || run.layer_id || '')
           const isTrackedActive = tracked.some((t) => t.runId === candidate.runId)
           if (workflowKey && succeededByWorkflow.has(workflowKey) && !isTrackedActive) {
             forgetTrackedWorkflowRun(candidate.runId)
@@ -412,7 +403,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         }
 
         const catalogId = resolveRestoredCatalogId(
-          ((run as Record<string, unknown>).layer_id as string) || candidate.catalogIdHint,
+          run.layer_id || candidate.catalogIdHint,
           run.run_id,
         )
         let jobLayer = await buildJobLayer(run, catalogId, {
@@ -447,7 +438,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
 
         if (!isTerminalStatus(jobLayer.status)) {
           const trackedItem = tracked.find((t) => t.runId === run.run_id)
-          const layerId = String((run as Record<string, unknown>).layer_id || catalogId)
+          const layerId = String(run.layer_id || catalogId)
           const bridge = resolveRestoreWorkflowBridge(layerId, catalogId, trackedItem)
           const hasHydratedGroup = deps.getRunLayerGroups().some((g) => g.runId === run.run_id)
           // 有 bridge / tracked 组 / 已水合组 / wf-run 占位时均重建或补全计算组

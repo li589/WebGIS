@@ -18,6 +18,13 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      // 机构演示/临时排障：设 VITE_HIDE_ERROR_OVERLAY=1 关闭红屏叠加层，避免把源码片段打到屏幕上。
+      // 日常本地开发默认保持 overlay，便于立刻看到编译/运行错误。
+      hmr: {
+        overlay: !['1', 'true', 'yes', 'on'].includes(
+          (env.VITE_HIDE_ERROR_OVERLAY || '').trim().toLowerCase(),
+        ),
+      },
       fs: {
         // 允许加载仓库根下的 Test/frontend/（测试已迁出 src/）。
         allow: [path.resolve(__dirname, '../..')],

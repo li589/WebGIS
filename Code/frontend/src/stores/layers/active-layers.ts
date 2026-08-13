@@ -8,6 +8,7 @@ import type { LayerDescriptor } from '../../services/runtime-api'
 import { deleteImportedRaster } from '../../services/data-import'
 import { useWeatherTileManager } from '../weather-tile-manager'
 import { useUiStore } from '../ui'
+import { safeLog } from '../log'
 import { useWorkflowOutputLayersStore } from '../workflow-output-layers'
 import { allocateLayerAccent } from './layer-accent'
 import { buildImportedVectorPayload, computeBounds, inferGeometryType } from './imported-vector'
@@ -20,6 +21,7 @@ import {
 } from './layer-naming'
 import { projectActiveLayersDisplay } from './display-projection'
 import { rememberDismissedLayer } from './workspace-persist'
+import { MERGED_LAYER_GROUPS } from './catalog'
 import type {
   ActiveLayer,
   ActiveLayerDisplay,
@@ -113,6 +115,11 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
   function addLayer(catalogId: string, isAdminBoundary = false, jobLayer?: JobLayerItem) {
     // 行政边界不再作为可添加数据集
     if (isAdminBoundary || catalogId === 'admin-boundary' || catalogId === 'admin-boundary-cn') {
+      return
+    }
+    // FE-only 合并虚拟卡（如 soil-moisture）不可作为后端 layer_id 添加
+    if (MERGED_LAYER_GROUPS.has(catalogId)) {
+      safeLog('warn', 'layer-add', `拒绝添加虚拟合并图层「${catalogId}」，请选择具体数据源`)
       return
     }
 
@@ -358,6 +365,12 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
     if (overlayId) {
       void deleteImportedRaster(overlayId).catch((err) => {
         console.warn('[layers] deleteImportedRaster failed', overlayId, err)
+        safeLog(
+          'client-error',
+          '删除导入栅格失败',
+          `overlay=${overlayId} err=${String(err)}`,
+          'warn',
+        )
       })
     }
     const vecBackendId = layer.importedVector?.backendLayerId
@@ -365,6 +378,12 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       void import('../../services/data-io').then(({ deleteImportedLayer }) =>
         deleteImportedLayer(vecBackendId).catch((err) => {
           console.warn('[layers] deleteImportedLayer failed', vecBackendId, err)
+          safeLog(
+            'client-error',
+            '删除导入矢量失败',
+            `backend=${vecBackendId} err=${String(err)}`,
+            'warn',
+          )
         }),
       )
     }

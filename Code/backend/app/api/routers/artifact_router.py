@@ -1,9 +1,12 @@
 from pathlib import Path
 import tempfile
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import FileResponse
 
+from app.api.deps import CredentialContext, get_request_user
+from app.api.error_codes import AUTH_ERROR, ApiError
+from app.core import config
 from app.services.raster_preview_service import raster_preview_service
 from app.services.result_storage import result_storage_service
 import contextlib
@@ -11,8 +14,21 @@ import contextlib
 router = APIRouter()
 
 
+def _deny_if_unauthenticated(cred: CredentialContext | None) -> None:
+    if cred is None and config.settings.user_auth_enabled:
+        raise ApiError(
+            AUTH_ERROR,
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required.",
+        )
+
+
 @router.get("/artifacts/{artifact_id}", tags=["artifacts"])
-def get_artifact(artifact_id: str):
+def get_artifact(
+    artifact_id: str,
+    cred: CredentialContext | None = Depends(get_request_user),
+):
+    _deny_if_unauthenticated(cred)
     artifact = result_storage_service.get_artifact(artifact_id)
     if artifact is None:
         raise HTTPException(
@@ -43,7 +59,9 @@ def get_artifact_preview_png(
     height: int = 768,
     min_value: float | None = None,
     max_value: float | None = None,
+    cred: CredentialContext | None = Depends(get_request_user),
 ):
+    _deny_if_unauthenticated(cred)
     artifact = result_storage_service.get_artifact(artifact_id)
     if artifact is None:
         raise HTTPException(

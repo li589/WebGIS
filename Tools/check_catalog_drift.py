@@ -23,11 +23,12 @@ import re
 import sys
 from pathlib import Path
 
-# FE-only entries not expected in BE seeds (admin chrome / retired shells).
+# FE-only entries not expected in BE seeds (admin chrome / retired shells / FE-only merged groups).
 FE_ONLY_ALLOWLIST = frozenset(
     {
         "admin-boundary",
         "admin-boundary-cn",
+        "soil-moisture",
     }
 )
 

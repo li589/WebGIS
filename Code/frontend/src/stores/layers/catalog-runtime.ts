@@ -10,12 +10,13 @@ import {
   supportsParticleFlowCapability,
   supportsViewportDrivenRefreshCapability,
 } from '../../services/layer-capabilities'
-import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
+import { LAYER_CATEGORIES, LAYER_LIBRARY, MERGED_LAYER_GROUPS, getMergedCatalogId } from './catalog'
 import {
   buildCatalogFallbackItem,
   buildRuntimeLayerLibraryItem,
   CATEGORY_INDEX_BY_ID,
   getCatalogDisplayName,
+  getStaticLayerLibraryItem,
   isBlockedRunReadiness,
 } from './catalog-builders'
 import {
@@ -68,15 +69,73 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
   let runtimeLayerCatalogRequest: Promise<void> | null = null
 
   const layerLibrary = computed<RuntimeLayerLibraryItem[]>(() => {
-    const runtimeItems = Object.values(runtimeLayerCatalog.value).map((descriptor) =>
+    const allRuntimeItems = Object.values(runtimeLayerCatalog.value).map((descriptor) =>
       buildRuntimeLayerLibraryItem(descriptor),
     )
-    const items =
-      runtimeItems.length > 0
-        ? runtimeItems
-        : LAYER_LIBRARY.filter((item) => !item.isAdminBoundary).map((item) =>
-            buildCatalogFallbackItem(null, item.catalogId),
-          )
+
+    let items: RuntimeLayerLibraryItem[]
+    if (allRuntimeItems.length > 0) {
+      // 分离独立条目与合并源条目
+      const standaloneItems: RuntimeLayerLibraryItem[] = []
+      const mergedSourceItems = new Map<string, RuntimeLayerLibraryItem>()
+
+      for (const item of allRuntimeItems) {
+        const mergedId = getMergedCatalogId(item.catalogId)
+        if (mergedId) {
+          mergedSourceItems.set(item.catalogId, item)
+        } else {
+          standaloneItems.push(item)
+        }
+      }
+
+      // 为每个合并组构建 enriched 条目
+      const mergedEntries: RuntimeLayerLibraryItem[] = []
+      for (const [mergedCatalogId, sourceIds] of MERGED_LAYER_GROUPS) {
+        const staticEntry = getStaticLayerLibraryItem(mergedCatalogId)
+        if (!staticEntry) continue
+
+        const enrichedSources = staticEntry.sources.map((source) => {
+          const rt = mergedSourceItems.get(source.id)
+          return {
+            ...source,
+            runReadiness: rt?.runReadiness,
+            runReadinessSummary: rt?.runReadinessSummary,
+            backendStatus: rt?.backendStatus,
+            supportsTime: rt?.supportsTime,
+          }
+        })
+
+        // 选取第一个 ready 的源作为代表状态
+        const representative =
+          sourceIds
+            .map((sid) => mergedSourceItems.get(sid))
+            .find((rt) => rt && !isBlockedRunReadiness(rt.runReadiness)) ??
+          mergedSourceItems.get(sourceIds[0])
+
+        mergedEntries.push({
+          ...staticEntry,
+          sources: enrichedSources,
+          description: representative?.description ?? `${staticEntry.name}（多源可选）`,
+          runReadiness: representative?.runReadiness ?? 'ready',
+          runReadinessSummary: representative?.runReadinessSummary ?? null,
+          runReadinessNotes: representative?.runReadinessNotes ?? [],
+          backendStatus: representative?.backendStatus ?? null,
+          supportsTime: representative?.supportsTime ?? false,
+          engine: representative?.engine ?? null,
+          sourceType: representative?.sourceType ?? null,
+          renderType: representative?.renderType ?? null,
+          workflowName: representative?.workflowName ?? null,
+          defaultVisible: representative?.defaultVisible ?? undefined,
+        })
+      }
+
+      items = standaloneItems.concat(mergedEntries)
+    } else {
+      // 静态兜底：隐藏已合并的独立条目
+      items = LAYER_LIBRARY.filter((item) => !item.isAdminBoundary && !item.mergedInto).map(
+        (item) => buildCatalogFallbackItem(null, item.catalogId),
+      )
+    }
 
     const outputStore = useWorkflowOutputLayersStore()
     const researchCategory = LAYER_CATEGORIES.find((c) => c.id === 'research-group')
@@ -125,9 +184,25 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
       })
   })
 
-  const layerLibraryMap = computed(
-    () => new Map(layerLibrary.value.map((item) => [item.catalogId, item])),
-  )
+  const layerLibraryMap = computed(() => {
+    const map = new Map<string, RuntimeLayerLibraryItem>()
+    for (const item of layerLibrary.value) {
+      map.set(item.catalogId, item)
+    }
+    // 合并条目的各源 ID 也需可查（addLayer 等通过 source ID 查找 accent 等信息）
+    for (const descriptor of Object.values(runtimeLayerCatalog.value)) {
+      if (!map.has(descriptor.layer_id) && getMergedCatalogId(descriptor.layer_id)) {
+        map.set(descriptor.layer_id, buildRuntimeLayerLibraryItem(descriptor))
+      }
+    }
+    // 静态兜底：后端未返回时也需包含被隐藏的独立源条目
+    for (const item of LAYER_LIBRARY) {
+      if (item.mergedInto && !map.has(item.catalogId)) {
+        map.set(item.catalogId, buildCatalogFallbackItem(null, item.catalogId))
+      }
+    }
+    return map
+  })
 
   const catalogJobStatus = computed(() => {
     const map = new Map<string, JobStatus>()

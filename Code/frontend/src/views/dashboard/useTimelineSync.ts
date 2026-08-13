@@ -46,6 +46,7 @@ import {
 import {
   matchSliceLabelInTimeList,
   timelineTargetFromWorkflowTimeKey,
+  type WorkflowProgressTimeSeekHint,
 } from '../../utils/workflow-timekey-seek'
 import type MapCanvas from '../../components/MapCanvas.vue'
 
@@ -82,7 +83,7 @@ export function useTimelineSync(
   isPlaying: Ref<boolean>,
   weatherStatusVersion: Ref<number>,
   weatherActivityVersion: Ref<number>,
-  workflowProgressTimeSeek: Ref<unknown>,
+  workflowProgressTimeSeek: Ref<WorkflowProgressTimeSeekHint | null>,
   analysisPanelRef: Ref<{ showPanel: () => void } | null>,
 ) {
   // ── Domain selectors ─────────────────────────────────────────────────
@@ -337,25 +338,17 @@ export function useTimelineSync(
       const selected = selectedCatalogId.value
         ? workspace.activeLayers.value.find((l) => l.catalogId === selectedCatalogId.value)
         : null
-      const hintLayer = workspace.activeLayers.value.find(
-        (l) => l.catalogId === (hint as { catalogId: string }).catalogId,
-      )
+      const hintLayer = workspace.activeLayers.value.find((l) => l.catalogId === hint.catalogId)
       const sameRunGroup =
         Boolean(selected?.runGroupId) &&
         Boolean(hintLayer?.runGroupId) &&
         selected!.runGroupId === hintLayer!.runGroupId
-      if (
-        selected &&
-        (hint as { catalogId: string }).catalogId !== selected.catalogId &&
-        !sameRunGroup
-      )
-        return
-      const h = hint as { catalogId: string; timeKey: string; sliceLabel: string; runId: string }
+      if (selected && hint.catalogId !== selected.catalogId && !sameRunGroup) return
       seekTimelineToWorkflowProgressTimeKey(
-        h.catalogId,
-        h.timeKey,
-        h.sliceLabel,
-        `工作流块 ${h.runId.slice(0, 8)}`,
+        hint.catalogId,
+        hint.timeKey,
+        hint.sliceLabel,
+        `工作流块 ${hint.runId.slice(0, 8)}`,
       )
     },
     { deep: true },
@@ -473,10 +466,9 @@ export function useTimelineSync(
   })
 
   const timelineSegments = computed((): TimelineAvailabilitySegment[] => {
+    // Touch reactive sources not accessed in every branch to ensure re-evaluation
     void weatherStatusVersion.value
     void weatherActivityVersion.value
-    void currentHour.value
-    void currentDate.value
     void weatherCoverage.value
     void overlayTimeStates.value
     void selectedActiveLayer.value?.importedRaster?.timeList

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="darkreader-lock" />
+    <title>系统维护中 · CGDA</title>
+    <style>
+      :root {
+        --bg0: #071018;
+        --bg1: #0d1a28;
+        --ink: #e7f0f8;
+        --muted: #9bb0c4;
+        --line: rgba(140, 190, 230, 0.22);
+        --accent: #7eb8e8;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+      body {
+        font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(1000px 520px at 12% -10%, rgba(70, 130, 180, 0.22), transparent 55%),
+          radial-gradient(800px 480px at 90% 0%, rgba(40, 90, 130, 0.18), transparent 50%),
+          linear-gradient(165deg, var(--bg0), var(--bg1) 55%, #08141f);
+      }
+      main {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 2rem 1.25rem;
+      }
+      .card {
+        width: min(34rem, 100%);
+        padding: 2rem 1.75rem 1.75rem;
+        border: 1px solid var(--line);
+        border-radius: 1rem;
+        background: rgba(8, 18, 28, 0.72);
+        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+      }
+      .brand {
+        margin: 0 0 1rem;
+        font-size: 0.8rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+      h1 {
+        margin: 0 0 0.75rem;
+        font-size: 1.45rem;
+        font-weight: 650;
+        line-height: 1.3;
+      }
+      p {
+        margin: 0 0 0.85rem;
+        color: var(--muted);
+        line-height: 1.6;
+        font-size: 0.95rem;
+      }
+      .meta {
+        margin-top: 1.25rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--line);
+        font-size: 0.82rem;
+        color: var(--muted);
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.65rem;
+        margin-top: 1.25rem;
+      }
+      button {
+        appearance: none;
+        border: 1px solid var(--line);
+        border-radius: 0.55rem;
+        background: rgba(126, 184, 232, 0.12);
+        color: var(--ink);
+        padding: 0.55rem 0.95rem;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:hover {
+        background: rgba(126, 184, 232, 0.22);
+      }
+      button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      noscript p {
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="card" aria-labelledby="maint-title">
+        <p class="brand">CGDA · 综合地理数据分析系统</p>
+        <h1 id="maint-title">系统维护中</h1>
+        <p>
+          当前正在进行代码更新、缺陷修复或版本升级。前台页面临时关闭，以避免不完整界面或调试信息外泄。
+        </p>
+        <p>后台任务（如工作流、数据同步）可能仍在运行；请稍后再访问，或联系运维确认恢复时间。</p>
+        <div class="actions">
+          <button type="button" id="retry-btn">重新检查</button>
+        </div>
+        <p class="meta" id="clock">—</p>
+        <noscript>
+          <p class="meta">请启用 JavaScript 后点击浏览器刷新，或稍后再试。</p>
+        </noscript>
+      </section>
+    </main>
+    <script>
+      ;(function () {
+        var clock = document.getElementById('clock')
+        var btn = document.getElementById('retry-btn')
+        function stamp() {
+          if (!clock) return
+          clock.textContent = '本页生成时间：' + new Date().toLocaleString('zh-CN', { hour12: false })
+        }
+        stamp()
+        if (btn) {
+          btn.addEventListener('click', function () {
+            window.location.reload()
+          })
+        }
+      })()
+    </script>
+  </body>
+</html>

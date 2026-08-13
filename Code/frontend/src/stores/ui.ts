@@ -154,17 +154,13 @@ export const useUiStore = defineStore('ui', () => {
     }
   })
 
-  watch(
-    layerTimeMemory,
-    (value) => {
-      try {
-        window.localStorage?.setItem(LAYER_TIME_STORAGE_KEY, JSON.stringify(value))
-      } catch {
-        /* ignore */
-      }
-    },
-    { deep: true },
-  )
+  watch(layerTimeMemory, (value) => {
+    try {
+      window.localStorage?.setItem(LAYER_TIME_STORAGE_KEY, JSON.stringify(value))
+    } catch {
+      /* ignore */
+    }
+  })
 
   function setTileSource(sourceId: TileSourceId) {
     tileSourceId.value = normalizeTileSourceId(sourceId)

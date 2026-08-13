@@ -27,7 +27,7 @@ Windows 联调：Docker Desktop 与终端须**以管理员身份运行**，否�
     Env\\Python312\\python.exe launch.py                     # 等同 start
     Env\\Python312\\python.exe launch.py start [component]
     start.bat / stop.bat                                     # Windows 推荐
-    Env\\Python312\\python.exe launch.py stop|status|restart|logs|flush|sync|reset-db
+    Env\\Python312\\python.exe launch.py stop|status|restart|logs|flush|clean-cache|sync|reset-db
 
 组件 (component):
     (无) 或 all        启动全部服务并进入监控循环（默认）

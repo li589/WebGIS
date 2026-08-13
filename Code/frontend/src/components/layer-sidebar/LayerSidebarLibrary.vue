@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import { LAYERS_COPY, INSPECT_COPY } from '../../ui-copy'
 import { Info, Lock, Settings, Check } from '../ui/icons'
 import type { LayerCategory, RuntimeLayerLibraryItem } from '../../stores/layers/types'
 import type { WeatherProviderForLayer } from '../../services/runtime-api'
 import AppSelect from '../ui/AppSelect.vue'
 
-defineProps<{
+const props = defineProps<{
   searchQuery: string
   selectedSubCategory: string
   filteredLibraryByCategory: Array<{ category: LayerCategory; items: RuntimeLayerLibraryItem[] }>
@@ -38,6 +39,45 @@ const emit = defineEmits<{
   addCatalogItem: [catalogId: string]
   toggleCategory: [categoryId: string]
 }>()
+
+// ── 多源合并条目的源选择状态（禁止在 render 路径里写入）──────────────────────
+const selectedSourceByCatalog = ref<Record<string, string>>({})
+
+watch(
+  () => props.filteredLibraryByCategory,
+  (groups) => {
+    for (const group of groups) {
+      for (const item of group.items) {
+        if (item.sources.length <= 1) continue
+        const stored = selectedSourceByCatalog.value[item.catalogId]
+        if (stored && item.sources.some((s) => s.id === stored)) continue
+        const firstId = item.sources[0]?.id
+        if (firstId) selectedSourceByCatalog.value[item.catalogId] = firstId
+      }
+    }
+  },
+  { immediate: true, deep: true },
+)
+
+function effectiveSourceId(item: RuntimeLayerLibraryItem): string {
+  if (item.sources.length <= 1) return item.catalogId
+  const stored = selectedSourceByCatalog.value[item.catalogId]
+  if (stored && item.sources.some((s) => s.id === stored)) return stored
+  return item.sources[0]?.id ?? item.catalogId
+}
+
+function effectiveSource(item: RuntimeLayerLibraryItem) {
+  const sid = effectiveSourceId(item)
+  return item.sources.find((s) => s.id === sid) ?? item.sources[0]
+}
+
+function selectSource(catalogId: string, sourceId: string) {
+  selectedSourceByCatalog.value[catalogId] = sourceId
+}
+
+function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
+  emit('addCatalogItem', effectiveSourceId(item))
+}
 </script>
 
 <template>
@@ -124,7 +164,7 @@ const emit = defineEmits<{
           v-for="item in group.items"
           :key="item.catalogId"
           class="library-card"
-          :class="{ added: isAdded(item.catalogId) }"
+          :class="{ added: isAdded(effectiveSourceId(item)) }"
           :style="{
             '--accent': item.accentColor,
             '--glow': item.accentGlow,
@@ -220,27 +260,28 @@ const emit = defineEmits<{
                 </div>
               </div>
               <div v-else class="source-multi">
-                <div class="source-summary" :title="getCatalogSourceSummary(item.catalogId)">
-                  <span class="src-dot" :style="{ background: item.accentColor }"></span>
-                  <span class="src-current">{{ getPrimarySourceName(item.catalogId) }}</span>
-                  <span class="src-count">{{ item.sources.length }} 个候选源</span>
+                <div class="source-selector">
+                  <label class="source-selector-label">
+                    <span class="src-dot" :style="{ background: item.accentColor }"></span>
+                    <AppSelect
+                      :model-value="effectiveSourceId(item)"
+                      @change="(val: string) => selectSource(item.catalogId, val)"
+                    >
+                      <option v-for="src in item.sources" :key="src.id" :value="src.id">
+                        {{ src.name }}{{ isAdded(src.id) ? ' ✓' : '' }}
+                      </option>
+                    </AppSelect>
+                  </label>
                 </div>
-                <div class="source-list source-list-static">
-                  <div
-                    v-for="src in item.sources"
-                    :key="src.id"
-                    class="source-option source-option-static"
-                    :title="src.description"
-                  >
-                    <div class="src-opt-top">
-                      <span class="src-name">{{ src.name }}</span>
-                    </div>
-                    <div class="src-meta">
-                      <span class="src-badge">{{ src.updateFrequency }}</span>
-                      <span class="src-coord">{{ src.coordSys }}</span>
-                      <Lock v-if="src.needsAuth" :size="14" class="src-auth" title="需要认证" />
-                    </div>
-                  </div>
+                <div class="src-meta">
+                  <span class="src-badge">{{ effectiveSource(item).updateFrequency }}</span>
+                  <span class="src-coord">{{ effectiveSource(item).coordSys }}</span>
+                  <Lock
+                    v-if="effectiveSource(item).needsAuth"
+                    :size="14"
+                    class="src-auth"
+                    title="需要认证"
+                  />
                 </div>
               </div>
             </template>
@@ -249,47 +290,47 @@ const emit = defineEmits<{
           <div class="card-actions">
             <span class="card-metric">{{ item.metricLabel }}: {{ item.metricUnit }}</span>
             <button
-              v-if="!isAdded(item.catalogId)"
+              v-if="!isAdded(effectiveSourceId(item))"
               class="add-btn"
-              :disabled="isAdded(item.catalogId)"
-              :title="getCatalogRunBlockReason(item.catalogId) ?? ''"
-              @click="emit('addCatalogItem', item.catalogId)"
+              :disabled="isAdded(effectiveSourceId(item))"
+              :title="getCatalogRunBlockReason(effectiveSourceId(item)) ?? ''"
+              @click="addCatalogItemWithSource(item)"
             >
               + 添加
             </button>
             <!-- 已添加：显示工作流状态徽标 -->
             <span
-              v-else-if="getCatalogJobStatus(item.catalogId) === 'running'"
+              v-else-if="getCatalogJobStatus(effectiveSourceId(item)) === 'running'"
               class="job-status-chip job-status-running"
             >
               <span class="spin-dot" aria-hidden="true"></span>运行中
             </span>
             <span
-              v-else-if="getCatalogJobStatus(item.catalogId) === 'queued'"
+              v-else-if="getCatalogJobStatus(effectiveSourceId(item)) === 'queued'"
               class="job-status-chip job-status-queued"
             >
               排队中
             </span>
             <span
-              v-else-if="getCatalogJobStatus(item.catalogId) === 'retry_pending'"
+              v-else-if="getCatalogJobStatus(effectiveSourceId(item)) === 'retry_pending'"
               class="job-status-chip job-status-queued"
             >
               等待重试
             </span>
             <span
-              v-else-if="getCatalogJobStatus(item.catalogId) === 'succeeded'"
+              v-else-if="getCatalogJobStatus(effectiveSourceId(item)) === 'succeeded'"
               class="job-status-chip job-status-succeeded"
             >
               已就绪 <Check :size="14" aria-hidden="true" />
             </span>
             <span
-              v-else-if="getCatalogJobStatus(item.catalogId) === 'failed'"
+              v-else-if="getCatalogJobStatus(effectiveSourceId(item)) === 'failed'"
               class="job-status-chip job-status-failed"
             >
               运行失败
             </span>
             <span
-              v-else-if="getCatalogJobStatus(item.catalogId) === 'cancelled'"
+              v-else-if="getCatalogJobStatus(effectiveSourceId(item)) === 'cancelled'"
               class="job-status-chip job-status-cancelled"
             >
               已取消
@@ -297,11 +338,11 @@ const emit = defineEmits<{
             <span v-else class="added-label">已添加 <Check :size="14" aria-hidden="true" /></span>
           </div>
           <div
-            v-if="getCatalogSemanticNote(item.catalogId)"
+            v-if="getCatalogSemanticNote(effectiveSourceId(item))"
             class="run-block-note"
-            :class="catalogSemanticNoteClass(item.catalogId)"
+            :class="catalogSemanticNoteClass(effectiveSourceId(item))"
           >
-            {{ getCatalogSemanticNote(item.catalogId) }}
+            {{ getCatalogSemanticNote(effectiveSourceId(item)) }}
           </div>
         </div>
       </div>

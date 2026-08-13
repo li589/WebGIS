@@ -805,6 +805,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     dataOwner: 'Lab',
     temporalCoverage: '2025-12-01 to 2025-12-31 (31 days)',
     sourceReference: 'https://nsidc.org/data/SPL3SMP',
+    mergedInto: 'soil-moisture',
   },
   {
     catalogId: 'gpcp-precip-ts',
@@ -934,6 +935,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     sources: [SOURCE_SOIL_DDCA],
     dataOwner: 'Lab',
     temporalCoverage: '2015-04-01 to 2022-12-31 (sampled 60 dates)',
+    mergedInto: 'soil-moisture',
   },
   {
     catalogId: 'forest-ratio',
@@ -986,6 +988,7 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     sources: [SOURCE_SM_DEC2025],
     dataOwner: 'Lab',
     temporalCoverage: '2025-12-01 to 2025-12-31 (31 days)',
+    mergedInto: 'soil-moisture',
   },
   {
     catalogId: 'ref-fy-tb-202512-mwri',
@@ -1016,6 +1019,26 @@ export const LAYER_LIBRARY: LayerCatalogItem[] = [
     accentGlow: 'rgba(107, 191, 89, 0.3)',
     chipTone: 'rgba(107, 191, 89, 0.16)',
     sources: [SOURCE_STATION_SOIL],
+    mergedInto: 'soil-moisture',
+  },
+  // ── 多源合并条目：土壤水分（4 源可选） ──────────────────────────────────────
+  // 各源 catalogId 与后端 overlay layer_id 一致，添加时选定源的 ID 即成为 ActiveLayer.catalogId。
+  // 独立条目标记 mergedInto: 'soil-moisture' 后从图层面板隐藏，但仍保留在 LAYER_LIBRARY 中供
+  // getStaticLayerLibraryItem / buildRuntimeLayerLibraryItem 查找 fallback 数据。
+  {
+    catalogId: 'soil-moisture',
+    name: '土壤水分',
+    category: 'research-group',
+    subCategory: '模型输入',
+    metricLabel: '土壤湿度',
+    metricUnit: 'm³/m³',
+    metricPrecision: 3,
+    updateLabel: '每日更新',
+    sourceLabel: '多源可选',
+    accentColor: '#4ecdc4',
+    accentGlow: 'rgba(78, 205, 196, 0.3)',
+    chipTone: 'rgba(78, 205, 196, 0.16)',
+    sources: [SOURCE_SMAP_TS, SOURCE_SOIL_DDCA, SOURCE_STATION_SOIL, SOURCE_SM_DEC2025],
   },
 ]
 
@@ -1025,6 +1048,33 @@ export const WEATHER_ENGINE_CATALOG_IDS = new Set(
     (item) => item.catalogId,
   ),
 )
+
+// ── 多源合并查找表 ────────────────────────────────────────────────────────────
+
+/** 合并条目 catalogId → 其包含的所有源 catalogId 列表 */
+export const MERGED_LAYER_GROUPS = new Map<string, string[]>(
+  LAYER_LIBRARY.filter((item) => item.sources.length > 1 && !item.mergedInto).map((item) => [
+    item.catalogId,
+    item.sources.map((s) => s.id),
+  ]),
+)
+
+/** 源 catalogId → 所属合并条目 catalogId（反向查找） */
+export const MERGED_LAYER_SOURCES = new Map<string, string>(
+  [...MERGED_LAYER_GROUPS.entries()].flatMap(([mergedId, sourceIds]) =>
+    sourceIds.map((sid) => [sid, mergedId] as [string, string]),
+  ),
+)
+
+/** 返回源 catalogId 所属的合并条目 catalogId，无则 undefined */
+export function getMergedCatalogId(sourceId: string): string | undefined {
+  return MERGED_LAYER_SOURCES.get(sourceId)
+}
+
+/** 返回合并条目的所有源 catalogId 列表，非合并条目返回 undefined */
+export function getMergedSourceIds(mergedCatalogId: string): string[] | undefined {
+  return MERGED_LAYER_GROUPS.get(mergedCatalogId)
+}
 
 export const LAYER_LIBRARY_BY_CATEGORY = (() => {
   const map = new Map<string, LayerCatalogItem[]>()

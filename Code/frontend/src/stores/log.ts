@@ -212,3 +212,11 @@ export const useLogStore = defineStore('log', () => {
     labelFor,
   }
 })
+
+export function safeLog(type: string, message: string, details?: string, severity?: string) {
+  try {
+    useLogStore().logOperation(type, message, details, severity as LogSeverity)
+  } catch {
+    // Pinia not active
+  }
+}

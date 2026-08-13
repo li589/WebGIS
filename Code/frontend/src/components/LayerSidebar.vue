@@ -204,13 +204,17 @@ function addCatalogItem(catalogId: string, isAdminBoundary = false) {
   )
 }
 
-function addAllInCategory(items: { catalogId: string; isAdminBoundary?: boolean }[]) {
+function addAllInCategory(
+  items: { catalogId: string; isAdminBoundary?: boolean; sources?: { id: string }[] }[],
+) {
   const alreadyAdded = new Set(addedCatalogIds.value)
   for (const item of items) {
     if (item.isAdminBoundary) continue
-    if (alreadyAdded.has(item.catalogId)) continue
-    alreadyAdded.add(item.catalogId)
-    addCatalogItem(item.catalogId, false)
+    const effectiveId =
+      item.sources && item.sources.length > 1 ? item.sources[0].id : item.catalogId
+    if (alreadyAdded.has(effectiveId)) continue
+    alreadyAdded.add(effectiveId)
+    addCatalogItem(effectiveId, false)
   }
 }
 

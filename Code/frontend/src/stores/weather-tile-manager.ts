@@ -938,28 +938,30 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
         scheduleDataVersionBump()
       }
 
-      const cachedTiles: MergedWeatherTile[] = Array.from(finalState.tiles.entries()).map(
-        ([k, entry]) => {
-          const zMatch = /:z(\d+):/.exec(k)
-          const xMatch = /:x(\d+):/.exec(k)
-          const yMatch = /:y(\d+):/.exec(k)
-          return {
-            layerId,
-            z: Number(zMatch?.[1] ?? key.z),
-            x: Number(xMatch?.[1] ?? key.x),
-            y: Number(yMatch?.[1] ?? key.y),
-            hour: key.hour,
-            geojson: entry.geojson,
-          }
-        },
-      )
-      const stats = buildMergeStats(cachedTiles)
-      debugLog(
-        'submitTile done',
-        layerId,
-        `z=${key.z} x=${key.x} y=${key.y}`,
-        formatMergeStats(layerId, stats),
-      )
+      if (isPerfEnabled()) {
+        const cachedTiles: MergedWeatherTile[] = Array.from(finalState.tiles.entries()).map(
+          ([k, entry]) => {
+            const zMatch = /:z(\d+):/.exec(k)
+            const xMatch = /:x(\d+):/.exec(k)
+            const yMatch = /:y(\d+):/.exec(k)
+            return {
+              layerId,
+              z: Number(zMatch?.[1] ?? key.z),
+              x: Number(xMatch?.[1] ?? key.x),
+              y: Number(yMatch?.[1] ?? key.y),
+              hour: key.hour,
+              geojson: entry.geojson,
+            }
+          },
+        )
+        const stats = buildMergeStats(cachedTiles)
+        debugLog(
+          'submitTile done',
+          layerId,
+          `z=${key.z} x=${key.x} y=${key.y}`,
+          formatMergeStats(layerId, stats),
+        )
+      }
 
       expandNeighbors(finalState, key, request.generation)
       recordWeatherTileSuccess()
@@ -1083,11 +1085,6 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
       } else {
         recordWeatherTileFailure()
         const classified = classifyTileError(err)
-        console.error(
-          `[WeatherTileManager] submitTile failed ${layerId} z=${key.z} x=${key.x} y=${key.y}:`,
-          classified.type,
-          err,
-        )
         useLogStore().logOperation(
           'weather-tile-error',
           '天气瓦片请求失败',

@@ -9,6 +9,7 @@ import { getWeatherCoverage, type WeatherCoverage } from '../../services/runtime
 import type { useWeatherEngineStore } from '../../stores/weather-engine'
 import type { useWeatherSyncStatusStore } from '../../stores/weather-sync-status'
 import { useLayerViewport } from '../../stores/layers/selectors'
+import { safeLog } from '../../stores/log'
 
 interface ActiveLayerLike {
   name?: string
@@ -36,6 +37,7 @@ export function useWeatherCoverage(
     } catch (err) {
       if (!(err instanceof DOMException && err.name === 'AbortError')) {
         console.warn('[DashboardView] weather coverage probe failed', err)
+        safeLog('client-error', '天气覆盖范围探测失败', String(err), 'warn')
         if (!ac.signal.aborted) weatherCoverage.value = null
       }
     } finally {
@@ -48,10 +50,10 @@ export function useWeatherCoverage(
       await weatherEngine.ensureLoaded()
       await refreshWeatherCoverage()
       await weatherSyncStatus.refreshOverview()
-    })()
+    })().catch(() => {})
     const intervalId = window.setInterval(() => {
-      void refreshWeatherCoverage()
-      void weatherSyncStatus.refreshOverview()
+      void refreshWeatherCoverage().catch(() => {})
+      void weatherSyncStatus.refreshOverview().catch(() => {})
     }, 600_000)
     onBeforeUnmount(() => window.clearInterval(intervalId))
   })

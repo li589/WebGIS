@@ -25,6 +25,11 @@ export interface LayerSource {
   /** 数据更新频率描述 */
   updateFrequency: string
   attribution?: string
+  /** 运行时就绪状态（由 backend descriptor 注入，仅合并条目的源有值） */
+  runReadiness?: string
+  runReadinessSummary?: string | null
+  backendStatus?: string | null
+  supportsTime?: boolean
 }
 
 // ─── Layer catalog item (图层库条目) ─────────────────────────────────────────
@@ -48,6 +53,8 @@ export interface LayerCatalogItem {
   sources: LayerSource[]
   /** 是否内置行政区边界图层 */
   isAdminBoundary?: boolean
+  /** 若此条目已合并到某个多源条目，此处记录目标 catalogId（运行时目录中隐藏本条目） */
+  mergedInto?: string
   // ── 课题组数据集元数据扩展（Phase 1：扩展和细化）────────────────────────────
   /** 数据归属（课题组成员 / Lab / 留空表示外部公开数据）；与 NAS 顶级目录对齐 */
   dataOwner?: string

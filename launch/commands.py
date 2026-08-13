@@ -25,6 +25,7 @@ from datetime import datetime
 from pathlib import Path
 
 from launch.constants import (
+    ALGORITHMS_DIR,
     BACKEND_DIR,
     DATA_SYNC_DIR,
     DEFAULT_FRONTEND_PORT,
@@ -33,7 +34,9 @@ from launch.constants import (
     LOG_DIR,
     PID_FILE,
     SNAPSHOT_ROOT,
+    TEST_DIR,
     VALID_WORKER_NAMES,
+    VITE_CACHE_DIR,
     WEATHER_CACHE_DIR,
     WEATHERENGINE_CACHE_DIR,
     WORKFLOW_DEFINITIONS_DIR,
@@ -72,6 +75,13 @@ from launch.subprocess_utils import (
 # ─── 启动命令 ────────────────────────────────────────────────────────────────
 def cmd_start(args: argparse.Namespace) -> int:
     """启动 CGDA 服务（全部或指定组件）。"""
+    if getattr(args, "clean_cache", False):
+        rc = cmd_clean_cache(
+            argparse.Namespace(all=True, pycache=False, vite=False, dry_run=False)
+        )
+        if rc != 0:
+            return rc
+
     component = args.component
     if component is None:
         component = "all"
@@ -465,6 +475,13 @@ def cmd_restart(args: argparse.Namespace) -> int:
 
     ``backend``：仅重启 FastAPI + Worker + Beat，保留 Docker / Vite。
     """
+    if getattr(args, "clean_cache", False):
+        rc = cmd_clean_cache(
+            argparse.Namespace(all=True, pycache=False, vite=False, dry_run=False)
+        )
+        if rc != 0:
+            return rc
+
     component = getattr(args, "component", None) or "all"
     if component == "backend":
         log.banner("重启 backend（FastAPI + Worker + Beat）")
@@ -476,6 +493,9 @@ def cmd_restart(args: argparse.Namespace) -> int:
     log.banner("重启 CGDA 服务")
     cmd_stop()
     time.sleep(2)
+    # Avoid running clean-cache twice when restart delegates to start.
+    if getattr(args, "clean_cache", False):
+        args.clean_cache = False
     return cmd_start(args)
 
 
@@ -909,6 +929,81 @@ def cmd_reset_db(args: argparse.Namespace) -> int:
         log.error("Reset", "workflow_state 清空不完整，请检查上方错误信息")
         log.info("Reset", f"  可从快照恢复: {SNAPSHOT_ROOT}")
         return 1
+
+
+# ─── 编译 / Vite 缓存清理（与 flush 隔离：不碰 Redis / 天气文件缓存）──────────
+def cmd_clean_cache(args: argparse.Namespace) -> int:
+    """清理本地 ``__pycache__`` / ``*.pyc`` 与 Vite ``node_modules/.vite``。
+
+    与 ``flush`` 不同：本命令**不**清空 Redis，也**不**删除天气文件缓存。
+    适合代码更新、模块导入怪错、Vite 插件状态异常后，在 ``restart`` 前执行。
+    """
+    dry_run = bool(getattr(args, "dry_run", False))
+    do_pycache = bool(getattr(args, "pycache", False))
+    do_vite = bool(getattr(args, "vite", False))
+    do_all = bool(getattr(args, "all", False)) or (not do_pycache and not do_vite)
+    if do_all:
+        do_pycache = True
+        do_vite = True
+
+    log.banner("预览本地编译缓存清理" if dry_run else "清理本地编译缓存")
+
+    removed_dirs = 0
+    removed_files = 0
+
+    if do_pycache:
+        roots = [BACKEND_DIR, ALGORITHMS_DIR, TEST_DIR]
+        for root in roots:
+            if not root.is_dir():
+                log.warn("CleanCache", f"跳过不存在的目录: {root}")
+                continue
+            for dirpath, dirnames, filenames in os.walk(root, topdown=False):
+                base = Path(dirpath)
+                # 跳过虚拟环境与前端 node_modules（算法包下偶发）
+                parts_lower = [p.lower() for p in base.parts]
+                if "node_modules" in parts_lower or ".venv" in parts_lower:
+                    continue
+                if base.name == "__pycache__":
+                    if dry_run:
+                        log.info("CleanCache", f"[dry-run] rmtree {base}")
+                    else:
+                        shutil.rmtree(base, ignore_errors=True)
+                    removed_dirs += 1
+                    continue
+                for name in filenames:
+                    if name.endswith((".pyc", ".pyo")):
+                        target = base / name
+                        if dry_run:
+                            log.info("CleanCache", f"[dry-run] unlink {target}")
+                        else:
+                            try:
+                                target.unlink(missing_ok=True)
+                            except OSError as exc:
+                                log.warn("CleanCache", f"无法删除 {target}: {exc}")
+                        removed_files += 1
+
+    if do_vite:
+        vite_targets = [VITE_CACHE_DIR, FRONTEND_DIR / ".vite"]
+        for cache_dir in vite_targets:
+            if not cache_dir.exists():
+                log.info("CleanCache", f"Vite 缓存不存在（跳过）: {cache_dir}")
+                continue
+            if dry_run:
+                log.info("CleanCache", f"[dry-run] rmtree {cache_dir}")
+            else:
+                shutil.rmtree(cache_dir, ignore_errors=True)
+            removed_dirs += 1
+
+    log.ok(
+        "CleanCache",
+        f"{'将清理' if dry_run else '已清理'} dirs≈{removed_dirs} files≈{removed_files}"
+        f"（pycache={'on' if do_pycache else 'off'}, vite={'on' if do_vite else 'off'}）",
+    )
+    log.info(
+        "CleanCache",
+        "提示: 与 flush 无关。代码更新后建议: launch.py clean-cache && launch.py restart",
+    )
+    return 0
 
 
 # ─── 清空缓存命令 ────────────────────────────────────────────────────────────

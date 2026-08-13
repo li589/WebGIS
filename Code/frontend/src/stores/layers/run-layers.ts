@@ -7,6 +7,7 @@ import { computed, ref } from 'vue'
 import { materializeWorkflowMapLayers } from '../../services/runtime-api'
 import type { BoundingBox } from '../../services/runtime-api'
 import { useWorkflowOutputLayersStore } from '../workflow-output-layers'
+import { safeLog } from '../log'
 import { extractOverlayImportsFromResultRefs, normalizeProductTag } from './result-adapter'
 import { buildImportedRasterPayload } from './imported-raster'
 import { isOverlayDismissed, isRunDismissed } from './workspace-persist'
@@ -368,6 +369,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : WORKFLOW_COPY.progressiveSyncFailed
       console.warn('[layers] progressive block overlay sync failed', runId, error)
+      safeLog('workflow-error', '渐进分块叠加同步失败', `run=${runId} err=${String(error)}`, 'warn')
       const prev = jobLayers.value.find((j) => j.jobId === runId)?.progressiveOverlayCount ?? 0
       applyProgressiveSyncToJob(catalogId, runId, prev, true, errMsg)
     } finally {
@@ -421,6 +423,12 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error)
         console.warn('[layers] materializeWorkflowMapLayers failed', runId, error)
+        safeLog(
+          'workflow-error',
+          '工作流地图图层物化失败',
+          `run=${runId} err=${String(error)}`,
+          'warn',
+        )
         // Failed/cancelled runs correctly get 409 from BE — do not pin a yellow banner.
         const isNonMaterializableConflict =
           /\b409\b/.test(errMsg) ||

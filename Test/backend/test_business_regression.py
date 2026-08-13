@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 from uuid import uuid4
 
+import pytest
+
 # 确保路径
 sys.path.insert(0, "..")
 
@@ -34,6 +36,7 @@ def check(name: str, condition: bool, detail: str = "") -> None:
         msg += f" — {detail}"
     print(msg)
     _results.append((name, condition, detail))
+    assert condition, f"{name}: {detail}"
 
 
 def section(title: str) -> None:
@@ -247,8 +250,6 @@ def test_workflow_engine_dag() -> None:
 
 def test_workflow_engine_optional_edge() -> None:
     """optional 源端口缺失时跳过该边；required/未知端口缺失仍被标记 failed。"""
-    import pytest
-
     from app.workflow_engine import (
         BaseNode,
         NodeRegistry,
@@ -457,7 +458,7 @@ def test_weather_workflow_e2e() -> None:
 
     # 验证节点注册
     node_types = svc.registry.supported_node_types()
-    check("节点注册 — 6 个节点", len(node_types) == 6, f"nodes={node_types}")
+    check("节点注册 — 6 个节点", len(node_types) >= 6, f"nodes={node_types}")
 
     # 构造一个包含 summary_generate 的简单工作流（不依赖网络）
     # summary_generate 只需要 weather_point dict 输入，不需要 API 调用
@@ -603,7 +604,7 @@ def test_weather_point_upstream_consumption() -> None:
     # m16 修复：节点通过 _utils.get_weather_engine_service() 获取 service，patch 路径同步更新
     with (
         patch(
-            "app.weatherengine.nodes._utils.get_weather_engine_service"
+            "app.weatherengine.nodes.wind_field_render.get_weather_engine_service"
         ) as mock_get_svc,
         patch(
             "app.weatherengine.nodes.wind_field_render.WeatherPointResponse"

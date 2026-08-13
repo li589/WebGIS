@@ -7,7 +7,7 @@
  * - Global capacity 429 → exponential backoff retry (capped)
  */
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, onScopeDispose, ref } from 'vue'
 import {
   fetchAnalysisTools,
   submitAnalysisRun,
@@ -49,6 +49,22 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function cancelableSleep(ms: number): { promise: Promise<void>; cancel: () => void } {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let rejectFn!: () => void
+  const promise = new Promise<void>((resolve, reject) => {
+    rejectFn = reject
+    timer = setTimeout(resolve, ms)
+  })
+  return {
+    promise,
+    cancel: () => {
+      if (timer) clearTimeout(timer)
+      rejectFn()
+    },
+  }
+}
+
 function isCapacityError(err: unknown): boolean {
   if (err instanceof ApiRequestError && err.status === 429) return true
   const msg = err instanceof Error ? err.message : String(err)
@@ -65,6 +81,8 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
   const lastHint = ref<string | null>(null)
   /** Bumped on cancel to abort in-flight capacity backoff / submit. */
   const submitGeneration = ref<Record<string, number>>({})
+  /** Active watchRun cancellers — keyed by runKey. */
+  const watcherCancellers = new Map<string, () => void>()
 
   const activeRuns = computed(() => Object.values(activeByKey.value))
 
@@ -83,6 +101,11 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
   function currentGeneration(key: string) {
     return submitGeneration.value[key] ?? 0
   }
+
+  onScopeDispose(() => {
+    for (const cancel of watcherCancellers.values()) cancel()
+    watcherCancellers.clear()
+  })
 
   /** In-flight submits/runs only — used by drain so local `queued` can start. */
   function countRunningForLayer(layerId: string) {
@@ -135,6 +158,8 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
   async function cancelRun(layerId: string, toolId: string) {
     const key = runKey(layerId, toolId)
     bumpGeneration(key)
+    watcherCancellers.get(key)?.()
+    watcherCancellers.delete(key)
     const cur = activeByKey.value[key]
     if (cur?.runId) {
       try {
@@ -326,13 +351,21 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
 
   async function watchRun(key: string, runId: string) {
     const layers = useLayersStore()
-    // Polling is owned by layers store; mirror terminal status from jobLayers.
     const started = Date.now()
     while (Date.now() - started < 30 * 60_000) {
-      await sleep(1500)
+      const sleeper = cancelableSleep(1500)
+      watcherCancellers.set(key, sleeper.cancel)
+      try {
+        await sleeper.promise
+      } catch {
+        return
+      } finally {
+        watcherCancellers.delete(key)
+      }
       const job = layers.jobLayers.find((j) => j.jobId === runId)
       const cur = activeByKey.value[key]
       if (!cur || cur.runId !== runId) return
+      if (cur.phase === 'cancelled') return
       if (!job) continue
       const status = String(job.status || '').toLowerCase()
       if (status === 'succeeded') {

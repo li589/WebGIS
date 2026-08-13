@@ -60,6 +60,7 @@ import {
   type RemoteStorageHistoryItem,
 } from '../services/settings-api'
 import { hydrateMapDefaults } from '../services/map-defaults'
+import { safeLog } from './log'
 
 type LoaderName =
   | 'general'
@@ -93,6 +94,7 @@ async function settled<T>(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.warn(`[settings] load ${name} failed:`, message)
+    safeLog('client-error', `配置加载失败: ${name}`, message, 'warn')
     return { name, error: message }
   }
 }
@@ -361,6 +363,12 @@ export const useSettingsStore = defineStore('settings', () => {
       console.warn(
         '[settings] refresh weather providers failed (operation may have succeeded):',
         err,
+      )
+      safeLog(
+        'client-error',
+        '天气 Provider 刷新失败',
+        err instanceof Error ? err.message : String(err),
+        'warn',
       )
       return false
     }

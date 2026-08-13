@@ -56,6 +56,8 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | `… launch.py status` | 查看服务状态（Docker / FastAPI :8000 / 前端 :5175 / Gateway / Worker PID / volume） |
 | `… launch.py logs [component] [-n N]` | 查看日志 |
 | `… launch.py flush` | 清空 Redis DB + 应用天气文件缓存（**见高风险区**） |
+| `… launch.py clean-cache` | 清理 `__pycache__` / `*.pyc` 与 Vite `node_modules/.vite`（**不**碰 Redis；代码更新后推荐） |
+| `… launch.py start\|restart --clean-cache` | 启动/重启前先执行 `clean-cache` |
 | `… launch.py sync [job]` | 数据面一次性同步（默认 `open-meteo-sync`） |
 
 服务地址：FastAPI `http://127.0.0.1:8000`（docs `/docs`）、前端 `http://localhost:5175`、Open-Meteo API `http://127.0.0.1:8080`、Redis `:6379`、MinIO `:9100`（Console `:9101`）。
@@ -69,7 +71,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 
 3. **GEE / 共享加密主密钥**：`BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY` 须为 **64 hex chars（32-byte）**，启动时校验；同一把 key 加密 GEE SA、API keys、天气 provider、远程存储、门户凭据。非 development 缺 key 拒启；空 IV 明文行在生产拒绝解密。GEE API 账号管理 production 默认关闭。涉及 `/config/gee/accounts*` 与 `/gee/config`。
 
-4. **flush（清缓存）**：`Env\Python312\python.exe launch.py flush` 执行 Redis `FLUSHDB` + 删除 `Code/backend/.data/cache/weather` 与 `weatherengine` 目录。会清空队列、缓存与限流/断路器状态，影响在线服务；**不**删 Open-Meteo Docker volume。仅在排障或强制刷新天气缓存时使用，勿在正常联调中随意执行。
+4. **flush（清缓存）**：`Env\Python312\python.exe launch.py flush` 执行 Redis `FLUSHDB` + 删除 `Code/backend/.data/cache/weather` 与 `weatherengine` 目录。会清空队列、缓存与限流/断路器状态，影响在线服务；**不**删 Open-Meteo Docker volume。仅在排障或强制刷新天气缓存时使用，勿在正常联调中随意执行。代码更新 / 模块导入怪错 / Vite 插件异常请用 **`launch.py clean-cache`**（只清本地 `__pycache__` 与 Vite `.vite`），再 `restart`；两者勿混用。
 
 5. **Open-Meteo volume**：named volume `backend_open-meteo-data`（名可经 `Code/infra/data-sync/.env` 的 `OPEN_METEO_DATA_VOLUME` 覆盖），落在 Docker Desktop VHDX 内（`I:\Docker\DockerDesktop`）。**勿用 Windows 路径 bind mount** 替代。API 在 backend 运行栈（容器 `cgda-open-meteo`）；同步在 `Code/infra/data-sync`（`-p data-sync`）。两栈共享同一 volume 但 compose project 不同，改动 compose 时勿混用 project 名。
 

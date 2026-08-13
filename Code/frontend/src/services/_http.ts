@@ -286,13 +286,6 @@ export async function requestJson<T>(path: string, init?: RequestJsonInit): Prom
       logApiFailure(path, netMsg, err.message, silent)
       throw new Error(netMsg, { cause: err })
     }
-    if (err instanceof DOMException && err.name === 'AbortError' && !restInit.signal?.aborted) {
-      const reason = controller.signal.reason
-      const reasonMsg =
-        reason instanceof DOMException ? reason.message : typeof reason === 'string' ? reason : ''
-      const timeoutMsg = reasonMsg || `请求超时（${effectiveTimeout}ms）：${path}`
-      logApiFailure(path, timeoutMsg, undefined, silent)
-    }
     throw err
   } finally {
     window.clearTimeout(timeoutId)

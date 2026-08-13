@@ -17,6 +17,7 @@ import argparse
 import sys
 
 from launch.commands import (
+    cmd_clean_cache,
     cmd_flush,
     cmd_logs,
     cmd_reset_db,
@@ -74,6 +75,11 @@ def _add_start_restart_args(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="start gateway 时强制 npm run build 再挂载 dist",
     )
+    p.add_argument(
+        "--clean-cache",
+        action="store_true",
+        help="启动/重启前先执行 clean-cache（清 __pycache__ 与 Vite .vite；非 flush）",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -98,6 +104,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  python launch.py flush                      # 清空 Redis + 文件缓存（需确认）\n"
             "  python launch.py flush --dry-run            # 预览将要清空的对象，不执行\n"
             "  python launch.py flush --yes                # 跳过确认直接执行\n"
+            "  python launch.py clean-cache                # 清 __pycache__ + Vite .vite（不碰 Redis）\n"
+            "  python launch.py restart --clean-cache      # 代码更新后推荐：先清本地编译缓存再重启\n"
             "  python launch.py reset-db                   # 清空 workflow_state，自动快照 + 重 seed\n"
             "  python launch.py reset-db --yes             # 跳过确认直接执行\n"
             "  python launch.py reset-db --clear-user      # 同时清空用户自定义工作流\n"
@@ -143,6 +151,32 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="仅预览将要清空的对象，不执行任何删除",
+    )
+
+    # clean-cache（本地编译缓存；与 flush 隔离）
+    p_clean = sub.add_parser(
+        "clean-cache",
+        help="清理 __pycache__ / *.pyc 与 Vite node_modules/.vite（不碰 Redis）",
+    )
+    p_clean.add_argument(
+        "--all",
+        action="store_true",
+        help="清理 pycache + Vite（默认行为）",
+    )
+    p_clean.add_argument(
+        "--pycache",
+        action="store_true",
+        help="仅清理 Code/backend、Code/algorithms、Test 下的 __pycache__ / *.pyc",
+    )
+    p_clean.add_argument(
+        "--vite",
+        action="store_true",
+        help="仅清理 Code/frontend/node_modules/.vite（及 frontend/.vite）",
+    )
+    p_clean.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="仅预览将要删除的路径，不执行",
     )
 
     # reset-db
@@ -204,6 +238,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return cmd_logs(args)
     if command == "flush":
         return cmd_flush(args)
+    if command == "clean-cache":
+        return cmd_clean_cache(args)
     if command == "reset-db":
         return cmd_reset_db(args)
     if command == "sync":

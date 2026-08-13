@@ -161,7 +161,9 @@ Code/
 - `Env\Python312\python.exe launch.py start gateway` — Nginx 同域入口 `:5175`（可选）
 - `Env\Python312\python.exe launch.py restart backend` — 仅重启 FastAPI + Worker + Beat（改数据根后必用；不动 Docker/Vite）
 - `Env\Python312\python.exe launch.py sync` — 数据面 Open-Meteo 同步（`Code/infra/data-sync`）
-- `stop.bat` / `Env\Python312\python.exe launch.py status` / `flush`
+- `stop.bat` / `Env\Python312\python.exe launch.py status` / `flush` / `clean-cache`
+  - `flush`：Redis + 天气文件缓存（高风险，慎用）
+  - `clean-cache`：本地 `__pycache__` + Vite `.vite`（代码更新后推荐；可与 `restart --clean-cache` 组合）
 - 活文档应随代码结构变化同步更新；带日期的记录文档可归档保留
 
 ## 地理数据根（可变）

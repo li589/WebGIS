@@ -160,6 +160,8 @@ interface LoadedOverlay {
   opacity: number
   style: OverlayStyleParams
   styleKey: string
+  /** 注册时从 overlay meta 注入的默认 palette/vmin/vmax，用于"切回默认"时保持动态重着色 */
+  metaDefaults: { palette?: string; vmin?: number; vmax?: number } | null
 }
 
 /** 有 GeoTIFF 时优先瓦片；-1 表示任意缩放都用 XYZ（避免 overview PNG 放大糊/闪没） */
@@ -769,6 +771,13 @@ export function createOverlayImageModule(
         opacity,
         style,
         styleKey: styleKeyOf(style),
+        metaDefaults: meta.supports_recolor
+          ? {
+              palette: meta.palette || undefined,
+              vmin: meta.vmin ?? undefined,
+              vmax: meta.vmax ?? undefined,
+            }
+          : null,
       })
 
       // 更新时间状态
@@ -957,12 +966,30 @@ export function createOverlayImageModule(
   }
 
   function setOverlayStyle(layerId: string, style: OverlayStyleParams) {
-    desiredStyle.set(layerId, style)
     const loaded = loadedOverlays.get(layerId)
-    if (!loaded) return
-    const nextKey = styleKeyOf(style)
+    if (!loaded) {
+      desiredStyle.set(layerId, style)
+      return
+    }
+    // "切回默认"对称修复：当用户清除 override（palette/vmin/vmax 为空）时，
+    // 从 overlay meta 注入的默认值回填，使 URL 与首次加载一致，后端走动态重着色而非烘焙 PNG。
+    const merged: OverlayStyleParams = { ...style }
+    if (loaded.metaDefaults) {
+      if (!merged.palette && loaded.metaDefaults.palette) {
+        merged.palette = loaded.metaDefaults.palette
+        merged.forceStyle = true
+      }
+      if (merged.vmin == null && loaded.metaDefaults.vmin != null) {
+        merged.vmin = loaded.metaDefaults.vmin
+      }
+      if (merged.vmax == null && loaded.metaDefaults.vmax != null) {
+        merged.vmax = loaded.metaDefaults.vmax
+      }
+    }
+    desiredStyle.set(layerId, merged)
+    const nextKey = styleKeyOf(merged)
     if (nextKey === loaded.styleKey) return
-    loaded.style = { ...style }
+    loaded.style = { ...merged }
     loaded.styleKey = nextKey
 
     if (loaded.renderMode === 'raster-xyz' && loaded.tileUrlTemplate) {

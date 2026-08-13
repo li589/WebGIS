@@ -26,8 +26,11 @@ def _artifact_preview_route_tests_env():
         title="Temperature COG",
         content_length=8,
     )
+    auth_patch = patch("app.api.routers.artifact_router._deny_if_unauthenticated")
+    auth_patch.start()
     ns._client = TestClient(create_app())
     yield ns
+    auth_patch.stop()
     Path(ns._temp_file.name).unlink(missing_ok=True)
 
 
