@@ -2,16 +2,20 @@
 模板抽取（原 1708-1834、2247-2336 行）。纯展示组件， * 全部状态经 props 传入，交互经 emit
 上抛父组件。 */
 <script setup lang="ts">
+import { ref } from 'vue'
 import type { ActiveLayerDisplay, LayerHotspot } from '../../stores/layers/types'
 import type { WeatherPointResponse } from '../../services/runtime-api'
 import type { OverlaySymbologyMeta } from '../../types/overlay-symbology'
 import type { AnalysisChartModel, AnalysisTableModel } from './AnalysisResultCharts.vue'
 import type { OverlayBarItem } from './MultiOverlayBarChart.vue'
+import type { MultiLayerSeries } from './MultiLayerTimeSeriesChart.vue'
+import type { UnifiedPointValue, LayerDataCategory } from './useUnifiedChartData'
 import type { ResultDisplayModel } from './result-adapter'
 import { ANALYSIS_COPY, INSPECT_COPY } from '../../ui-copy'
 import AppButton from '../ui/AppButton.vue'
 import PointTimeSeriesChart from './PointTimeSeriesChart.vue'
 import MultiOverlayBarChart from './MultiOverlayBarChart.vue'
+import MultiLayerTimeSeriesChart from './MultiLayerTimeSeriesChart.vue'
 import AnalysisResultCharts from './AnalysisResultCharts.vue'
 
 defineProps<{
@@ -50,6 +54,15 @@ defineProps<{
   sparseVisualHint: string
   canRunWorkflow: boolean
   interactionMode: string
+  // ── 统一多图层分析数据 ──
+  hasUnifiedData: boolean
+  hasPointComparison: boolean
+  hasMultiLayerTimeSeries: boolean
+  unifiedBarItems: OverlayBarItem[]
+  unifiedPointValues: UnifiedPointValue[]
+  allTimeSeries: MultiLayerSeries[]
+  timeSeriesByCategory: Record<LayerDataCategory, MultiLayerSeries[]>
+  pointValuesByCategory: Record<LayerDataCategory, UnifiedPointValue[]>
 }>()
 
 const emit = defineEmits<{
@@ -58,6 +71,9 @@ const emit = defineEmits<{
   enterSelectMode: []
   queryOverlaySeries: [payload: { lng: number; lat: number }]
 }>()
+
+/** 显示模式：combined（组合显示）| categorized（分类显示） */
+const displayMode = ref<'combined' | 'categorized'>('combined')
 
 function enterInspectTools() {
   emit('setActiveTab', 'tools')
@@ -73,6 +89,146 @@ function queryDefaultOverlaySeries() {
   <!-- ── visual Tab：工作流图表结果 ─────────────────────────────── -->
   <section v-if="hasAnalysisCharts" v-show="true" id="workflow-charts" class="analysis-section">
     <AnalysisResultCharts :charts="analysisCharts" :tables="analysisTables" />
+  </section>
+
+  <!-- ── visual Tab：统一多图层分析 ──────────────────────────────── -->
+  <section
+    v-if="hasUnifiedData"
+    v-show="true"
+    id="unified-layer-analysis"
+    class="analysis-section analysis-section--unified"
+  >
+    <div class="section-kicker">图层数据分析</div>
+    <div class="unified-section-head">
+      <div>
+        <h3>选点图层对比</h3>
+        <p>当前选点处所有可见图层的数值对比与时序演变。</p>
+      </div>
+      <div class="display-mode-toggle">
+        <button
+          class="mode-btn"
+          :class="{ active: displayMode === 'combined' }"
+          @click="displayMode = 'combined'"
+        >
+          组合
+        </button>
+        <button
+          class="mode-btn"
+          :class="{ active: displayMode === 'categorized' }"
+          @click="displayMode = 'categorized'"
+        >
+          分类
+        </button>
+      </div>
+    </div>
+
+    <!-- 组合模式：全部图层在同一图表 -->
+    <template v-if="displayMode === 'combined'">
+      <!-- 点值柱状对比 -->
+      <div v-if="hasPointComparison" class="unified-subsection">
+        <h4 class="subsection-title">点值对比</h4>
+        <MultiOverlayBarChart :items="unifiedBarItems" title="全部可见图层点值" />
+      </div>
+
+      <!-- 多图层时序对比 -->
+      <div v-if="hasMultiLayerTimeSeries" class="unified-subsection">
+        <h4 class="subsection-title">时间序列对比</h4>
+        <MultiLayerTimeSeriesChart :series="allTimeSeries" title="全部图层时序" :height="280" />
+      </div>
+    </template>
+
+    <!-- 分类模式：按数据类型分组显示 -->
+    <template v-else>
+      <!-- 天气数据组 -->
+      <div
+        v-if="pointValuesByCategory.weather.length || timeSeriesByCategory.weather.length"
+        class="unified-category-group"
+      >
+        <div class="category-header">
+          <span class="category-badge category-badge--weather">天气数据</span>
+          <span class="category-count">{{ pointValuesByCategory.weather.length }} 个图层</span>
+        </div>
+        <MultiOverlayBarChart
+          v-if="pointValuesByCategory.weather.length"
+          :items="
+            pointValuesByCategory.weather.map((v) => ({
+              layerId: v.layerId,
+              name: v.name,
+              category: v.category,
+              valueText: v.valueText,
+              numericValue: v.value,
+              unit: v.unit,
+              accentColor: v.accentColor,
+            }))
+          "
+          title="天气图层点值"
+        />
+        <MultiLayerTimeSeriesChart
+          v-if="timeSeriesByCategory.weather.length"
+          :series="timeSeriesByCategory.weather"
+          title="天气图层时序"
+          :height="240"
+        />
+      </div>
+
+      <!-- 栅格数据组 -->
+      <div
+        v-if="pointValuesByCategory.raster.length || timeSeriesByCategory.raster.length"
+        class="unified-category-group"
+      >
+        <div class="category-header">
+          <span class="category-badge category-badge--raster">栅格数据</span>
+          <span class="category-count">{{ pointValuesByCategory.raster.length }} 个图层</span>
+        </div>
+        <MultiOverlayBarChart
+          v-if="pointValuesByCategory.raster.length"
+          :items="
+            pointValuesByCategory.raster.map((v) => ({
+              layerId: v.layerId,
+              name: v.name,
+              category: v.category,
+              valueText: v.valueText,
+              numericValue: v.value,
+              unit: v.unit,
+              accentColor: v.accentColor,
+            }))
+          "
+          title="栅格图层点值"
+        />
+        <MultiLayerTimeSeriesChart
+          v-if="timeSeriesByCategory.raster.length"
+          :series="timeSeriesByCategory.raster"
+          title="栅格图层时序"
+          :height="240"
+        />
+      </div>
+
+      <!-- 矢量数据组 -->
+      <div
+        v-if="pointValuesByCategory.vector.length || timeSeriesByCategory.vector.length"
+        class="unified-category-group"
+      >
+        <div class="category-header">
+          <span class="category-badge category-badge--vector">矢量数据</span>
+          <span class="category-count">{{ pointValuesByCategory.vector.length }} 个图层</span>
+        </div>
+        <MultiOverlayBarChart
+          v-if="pointValuesByCategory.vector.length"
+          :items="
+            pointValuesByCategory.vector.map((v) => ({
+              layerId: v.layerId,
+              name: v.name,
+              category: v.category,
+              valueText: v.valueText,
+              numericValue: v.value,
+              unit: v.unit,
+              accentColor: v.accentColor,
+            }))
+          "
+          title="矢量图层点值"
+        />
+      </div>
+    </template>
   </section>
 
   <!-- ── visual Tab：点查图表 ──────────────────────────────────────── -->

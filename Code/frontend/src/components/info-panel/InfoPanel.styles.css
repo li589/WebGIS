@@ -555,6 +555,103 @@
 .analysis-section--result {
   border-color: var(--border-violet-tint);
 }
+
+/* ── 统一多图层分析 ── */
+.analysis-section--unified {
+  border-color: var(--border-blue-tint);
+  background: linear-gradient(180deg, var(--surface-1), var(--surface-1));
+}
+.unified-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+.unified-section-head h3 {
+  margin: 0 0 0.15rem;
+  font-size: 0.92rem;
+}
+.unified-section-head p {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+}
+.display-mode-toggle {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-hover);
+  border-radius: 6px;
+  padding: 2px;
+  flex-shrink: 0;
+}
+.mode-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.mode-btn.active {
+  background: var(--surface-2);
+  color: var(--text-strong);
+  font-weight: 600;
+}
+.mode-btn:not(.active):hover {
+  color: var(--text-primary);
+}
+.unified-subsection {
+  margin-bottom: 0.6rem;
+}
+.subsection-title {
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0 0 0.3rem;
+}
+.unified-category-group {
+  margin-bottom: 0.8rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--surface-hover);
+}
+.unified-category-group:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+.category-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+.category-badge {
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+}
+.category-badge--weather {
+  background: rgba(79, 195, 247, 0.15);
+  color: var(--accent);
+  border: 1px solid rgba(79, 195, 247, 0.25);
+}
+.category-badge--raster {
+  background: rgba(129, 199, 132, 0.15);
+  color: #66bb6a;
+  border: 1px solid rgba(129, 199, 132, 0.25);
+}
+.category-badge--vector {
+  background: rgba(255, 183, 77, 0.15);
+  color: #ffb74d;
+  border: 1px solid rgba(255, 183, 77, 0.25);
+}
+.category-count {
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+}
 .report-section-head {
   display: flex;
   justify-content: space-between;

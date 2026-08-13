@@ -195,6 +195,7 @@ const {
   visibleHotspots,
   overlayPointValues,
   selectedOverlayTimeSeries,
+  allOverlayTimeSeries,
   handleMapPointSelect,
   clearMapPointInspect,
   handleHotspotSelect,
@@ -397,6 +398,7 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
             :overlay-time-states="overlayTimeStates"
             :overlay-point-values="overlayPointValues"
             :selected-overlay-time-series="selectedOverlayTimeSeries"
+            :all-overlay-time-series="allOverlayTimeSeries"
             @toggle-layer-visibility="handleToggleLayerVisibility"
             @set-layer-opacity="handleSetLayerOpacity"
             @select-hotspot="handleHotspotSelectFromPanel"

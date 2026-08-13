@@ -23,6 +23,7 @@ import type { AnalysisTabId } from './info-panel/analysis-tab-focus'
 import { useLayerSymbology } from './info-panel/useLayerSymbology'
 import { useWeatherPointData } from './info-panel/useWeatherPointData'
 import { useOverlayData } from './info-panel/useOverlayData'
+import { useUnifiedChartData } from './info-panel/useUnifiedChartData'
 import { useWorkflowState } from './info-panel/useWorkflowState'
 import { useImportExport } from './info-panel/useImportExport'
 import { usePanelScroll } from './info-panel/usePanelScroll'
@@ -55,6 +56,7 @@ const props = defineProps<{
   overlayTimeStates?: OverlayTimeState[]
   overlayPointValues?: import('../services/runtime-api').OverlayPointValue[]
   selectedOverlayTimeSeries?: import('../services/runtime-api').OverlayPointValue[]
+  allOverlayTimeSeries?: Record<string, import('../services/runtime-api').OverlayPointValue[]>
 }>()
 
 const emit = defineEmits<{
@@ -93,6 +95,7 @@ const visibleHotspotsRef = computed(() => props.visibleHotspots ?? [])
 const selectedHotspotRef = computed(() => props.selectedHotspot ?? null)
 const overlayPointValuesRef = computed(() => props.overlayPointValues ?? [])
 const selectedOverlayTimeSeriesRef = computed(() => props.selectedOverlayTimeSeries ?? [])
+const allOverlayTimeSeriesRef = computed(() => props.allOverlayTimeSeries ?? {})
 
 // ── Composable 调用（按依赖顺序） ────────────────────────────────────────
 
@@ -121,6 +124,14 @@ const overlay = useOverlayData(
   selectedOverlayTimeSeriesRef,
   selectedMapPointRef,
   symbology.overlayStyleMeta,
+)
+
+const unified = useUnifiedChartData(
+  pointWeatherRef,
+  overlayPointValuesRef,
+  allOverlayTimeSeriesRef,
+  overlayTimeStatesRef,
+  selectedMapPointRef,
 )
 
 const wf = useWorkflowState({
@@ -342,6 +353,14 @@ function queryDefaultOverlaySeries() {
               :sparse-visual-hint="wf.sparseVisualHint.value"
               :can-run-workflow="wf.canRunWorkflow.value"
               :interaction-mode="uiStore.interactionMode"
+              :has-unified-data="unified.hasUnifiedData.value"
+              :has-point-comparison="unified.hasPointComparison.value"
+              :has-multi-layer-time-series="unified.hasMultiLayerTimeSeries.value"
+              :unified-bar-items="unified.unifiedBarItems.value"
+              :unified-point-values="unified.unifiedPointValues.value"
+              :all-time-series="unified.allTimeSeries.value"
+              :time-series-by-category="unified.timeSeriesByCategory.value"
+              :point-values-by-category="unified.pointValuesByCategory.value"
               @select-hotspot="emit('selectHotspot', $event)"
               @set-active-tab="setActiveTab"
               @enter-select-mode="enterInspectTools"

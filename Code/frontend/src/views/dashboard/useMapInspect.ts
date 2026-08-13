@@ -41,6 +41,8 @@ export function useMapInspect(
   const visibleHotspots = ref<LayerHotspot[]>([])
   const overlayPointValues = ref<OverlayPointValue[]>([])
   const selectedOverlayTimeSeries = ref<OverlayPointValue[]>([])
+  /** 所有可见 overlay 图层的时序数据：layerId → OverlayPointValue[] */
+  const allOverlayTimeSeries = ref<Record<string, OverlayPointValue[]>>({})
 
   // ── 天气点查 ──────────────────────────────────────────────────────────
 
@@ -82,6 +84,7 @@ export function useMapInspect(
     workflowRun.clearPointWeather()
     overlayPointValues.value = []
     selectedOverlayTimeSeries.value = []
+    allOverlayTimeSeries.value = {}
     logStore.logOperation('map-point-clear', '清除地图选点')
   }
 
@@ -116,6 +119,7 @@ export function useMapInspect(
     if (states.length === 0) {
       overlayPointValues.value = []
       selectedOverlayTimeSeries.value = []
+      allOverlayTimeSeries.value = {}
       return
     }
     const seq = ++overlayPointFetchSeq
@@ -127,7 +131,28 @@ export function useMapInspect(
       .map((r) => (r.status === 'fulfilled' ? r.value : null))
       .filter((v): v is OverlayPointValue => v !== null)
 
-    await fetchSelectedOverlaySeries(lng, lat)
+    // 并行获取所有可见 overlay 图层的时序与选中图层时序
+    await Promise.all([
+      fetchAllOverlaySeries(lng, lat, states),
+      fetchSelectedOverlaySeries(lng, lat),
+    ])
+  }
+
+  /** 获取所有可见 overlay 图层在选点处的完整时序（非仅选中层） */
+  async function fetchAllOverlaySeries(lng: number, lat: number, states: OverlayTimeState[]) {
+    const seriesMap: Record<string, OverlayPointValue[]> = {}
+    const tasks = states
+      .filter((s) => s.category === 'time-series' && s.timeList.length > 0)
+      .map(async (s) => {
+        const results = await Promise.allSettled(
+          s.timeList.map((time) => getOverlayValue(s.layerId, lng, lat, time)),
+        )
+        seriesMap[s.layerId] = results
+          .map((r) => (r.status === 'fulfilled' ? r.value : null))
+          .filter((v): v is OverlayPointValue => v !== null)
+      })
+    await Promise.all(tasks)
+    allOverlayTimeSeries.value = seriesMap
   }
 
   async function fetchSelectedOverlaySeries(lng: number, lat: number) {
@@ -236,6 +261,7 @@ export function useMapInspect(
     visibleHotspots,
     overlayPointValues,
     selectedOverlayTimeSeries,
+    allOverlayTimeSeries,
     handleMapPointSelect,
     clearMapPointInspect,
     handleHotspotSelect,
@@ -243,5 +269,6 @@ export function useMapInspect(
     handleVisibleHotspotsChange,
     handleOverlayTimeUpdate,
     fetchSelectedOverlaySeries,
+    fetchAllOverlaySeries,
   }
 }
