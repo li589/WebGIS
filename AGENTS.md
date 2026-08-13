@@ -15,7 +15,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | `Code/algorithms/` | Python 算法包：contracts / data_access / runner / publish | `providers/Python/`（lint/mypy 覆盖范围） |
 | `Code/shared/` | 前后端共享协议与公共契约 | `contracts/` |
 | `Code/infra/data-sync/` | 数据面 compose（Open-Meteo 同步，与运行栈隔离） | `docker-compose.yml`、`sync.sh` / `sync.ps1` |
-| `Code/infra/gateway/` | 可选 Nginx 同域入口（静态 dist + 反代 FastAPI `:8000`） | `docker-compose.yml`、`nginx.conf`、`README.md` |
+| `Code/infra/gateway/` | **默认** Nginx 同域入口（静态 dist + 反代 FastAPI `:8000`） | `docker-compose.yml`、`nginx.conf`、`maintenance/`、`README.md` |
 | `Docs/` | **公开文档仓库**：架构设计 / 规范协议 / 专题研究 / 代码审查 / 结题材料 / HTML 报告 | 见 `Docs/README.md` 索引 |
 | `.ai/` | **AI 工作区（本地专用，不上传 GitHub）**：技能 / 规则 / 计划 / 进度 / 记忆 | `rules/`、`skills/`、`plans/`、`progress/`、`memory/` |
 | `Tools/` | 主线外辅助（下载/校验/一次性脚本）；**禁止**放主体功能与运行时模块，见 `Tools/README.md` | — |
@@ -39,7 +39,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 - **Docker Desktop 与运行启动命令的终端必须以管理员身份运行。**
 - **否则启动可能会失败**（Docker 未就绪、compose 失败、镜像/volume 访问异常等）。
 - 否则还可能出现：**镜像无法访问/拉取**、named volume 或引擎配置读失败、部分容器起不全。
-- 默认联调**不包含 Nginx**；可选剖面 `launch.py start gateway`（见 `Code/infra/gateway/`），日常入口是 Vite `:5175` + FastAPI `:8000`。
+- 默认联调/演示入口为 **Nginx Gateway** `:5175`（静态 `Code/frontend/dist` + 反代 API）；与 Vite HMR 互斥。本地改前端热更新用 `launch.py start --vite` 或 `start frontend`。
 
 ## 命令指针（launch.py）
 
@@ -47,10 +47,12 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 
 | 命令 | 作用 |
 |------|------|
-| `start.bat` 或 `Env\Python312\python.exe launch.py start` | 启动全部（Docker + FastAPI + 7 Worker + Beat + Vite 前端） |
+| `start.bat` 或 `Env\Python312\python.exe launch.py start` | 启动全部（Docker + FastAPI + 7 Worker + Beat + **Nginx Gateway**） |
+| `Env\Python312\python.exe launch.py start --vite` | 同上，但前台改用 Vite HMR（会停 Gateway） |
 | `Env\Python312\python.exe launch.py start <component>` | 单组件：`docker` / `fastapi` / `beat` / `worker` / `worker:<name>` / `frontend` / `gateway` / `backend` |
-| `Env\Python312\python.exe launch.py start gateway` | Nginx 同域入口 `:5175`（静态 dist + 反代 API；与 Vite 互斥） |
-| `Env\Python312\python.exe launch.py restart backend` | **仅**重启 FastAPI + 全部 Worker + Beat（不动 Docker / Vite）；改 `BACKEND_DATA_ROOT` 后必用 |
+| `Env\Python312\python.exe launch.py start gateway` | 仅 Nginx 同域入口 `:5175`（`--rebuild-frontend` 可强制 rebuild dist） |
+| `Env\Python312\python.exe launch.py restart` | 全量重启（**默认含 Gateway**）；改前端后建议加 `--rebuild-frontend` |
+| `Env\Python312\python.exe launch.py restart backend` | **仅**重启 FastAPI + 全部 Worker + Beat（不动 Docker / Gateway / Vite）；改 `BACKEND_DATA_ROOT` 后必用 |
 | `stop.bat` / `… launch.py stop` | 停止全部服务（含 Docker 与 gateway 容器） |
 | `… launch.py stop gateway` | 仅停 Nginx Gateway |
 | `… launch.py status` | 查看服务状态（Docker / FastAPI :8000 / 前端 :5175 / Gateway / Worker PID / volume） |
@@ -60,7 +62,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | `… launch.py start\|restart --clean-cache` | 启动/重启前先执行 `clean-cache` |
 | `… launch.py sync [job]` | 数据面一次性同步（默认 `open-meteo-sync`） |
 
-服务地址：FastAPI `http://127.0.0.1:8000`（docs `/docs`）、前端 `http://localhost:5175`、Open-Meteo API `http://127.0.0.1:8080`、Redis `:6379`、MinIO `:9100`（Console `:9101`）。
+服务地址：FastAPI `http://127.0.0.1:8000`（docs `/docs`）、前端入口 `http://localhost:5175`（默认 Nginx Gateway；`--vite` 时为 Vite）、Open-Meteo API `http://127.0.0.1:8080`、Redis `:6379`、MinIO `:9100`（Console `:9101`）。
 
 ## 高风险区
 
@@ -135,7 +137,7 @@ CODEBUDDY_SESSION_ID= CLAUDE_SESSION_ID= CODEBUDDY_SAFE_DELETE_SANDBOX= Env/Pyth
 
 - **404**：未知路由 → `NotFoundView`；登录 `?redirect=` 经 `safeRedirect` 防开放重定向。
 - **会话过期**：API 401（非 `/auth/*` bootstrap）→ 自动跳转登录（`session-expired.ts`、`_http.ts`）。
-- **服务不可用**：`ServiceConnectivityBanner` 轮询 `GET /health`；Gateway API 5xx → `Code/infra/gateway/html/50x.html`。
+- **服务不可用**：`ServiceConnectivityBanner` 轮询 `GET /health`；Gateway API 5xx → `Code/infra/gateway/maintenance/html/50x.html`。
 - **客户端日志**：工具栏「日志」支持仅错误筛选与 JSON 导出；badge 显示 `errorCount`。
 - **系统状态**：设置 → 系统状态（`GET /runtime/status`）。
 - **Gateway 代理**：与 `vite.config.ts` 对齐（含 `/auth`、`/overlay-tiles`、`/health`）。

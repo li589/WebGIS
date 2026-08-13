@@ -27,9 +27,12 @@ def _artifact_preview_route_tests_env():
         content_length=8,
     )
     auth_patch = patch("app.api.routers.artifact_router._deny_if_unauthenticated")
+    owner_patch = patch("app.api.routers.artifact_router._deny_if_not_artifact_owner")
     auth_patch.start()
+    owner_patch.start()
     ns._client = TestClient(create_app())
     yield ns
+    owner_patch.stop()
     auth_patch.stop()
     Path(ns._temp_file.name).unlink(missing_ok=True)
 

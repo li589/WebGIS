@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class MapMode(str, Enum):
@@ -35,11 +35,20 @@ class TimeGranularity(str, Enum):
 
 
 class BoundingBox(BaseModel):
-    west: float
-    south: float
-    east: float
-    north: float
+    west: float = Field(ge=-180.0, le=180.0)
+    south: float = Field(ge=-90.0, le=90.0)
+    east: float = Field(ge=-180.0, le=180.0)
+    north: float = Field(ge=-90.0, le=90.0)
     crs: str = "EPSG:4326"
+
+    @model_validator(mode="after")
+    def _validate_bounds_order(self) -> BoundingBox:
+        # south must always be <= north; west <= east is NOT enforced because
+        # antimeridian-crossing bounds (e.g. west=170, east=-170) are valid
+        # and supported by layer_router (ge=-180, le=360) and geo_math.
+        if self.south > self.north:
+            raise ValueError("south must be <= north")
+        return self
 
 
 class LayerStyleHint(BaseModel):
@@ -226,6 +235,12 @@ class TimeRange(BaseModel):
     start_at: datetime
     end_at: datetime
     granularity: TimeGranularity = TimeGranularity.hour
+
+    @model_validator(mode="after")
+    def _validate_time_order(self) -> TimeRange:
+        if self.start_at > self.end_at:
+            raise ValueError("start_at must be <= end_at")
+        return self
 
 
 class ExecutionStatus(str, Enum):

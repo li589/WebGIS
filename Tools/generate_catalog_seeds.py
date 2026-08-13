@@ -240,9 +240,13 @@ def main() -> int:
     # Summary
     merged_count = sum(1 for i in items if i.get("isMergedGroup"))
     multi_source_count = sum(1 for i in items if len(i.get("sources", [])) > 1)
-    print(f"\n✓ Generated {len(items)} items ({merged_count} merged groups, {multi_source_count} multi-source)")
+    # ASCII-only: Windows consoles often use GBK and choke on ✓ / →
+    print(
+        f"\n[OK] Generated {len(items)} items "
+        f"({merged_count} merged groups, {multi_source_count} multi-source)"
+    )
     print(f"  + {len(categories)} categories")
-    print(f"  → {output_path}")
+    print(f"  -> {output_path}")
 
     return 0
 

@@ -572,13 +572,38 @@ async function handleImportFile(event: Event) {
   const input = event.target as HTMLInputElement
   if (!input.files?.length) return
   const file = input.files[0]
+  // File size guard: reject files over 10 MB to prevent DoS
+  const MAX_IMPORT_BYTES = 10 * 1024 * 1024
+  if (file.size > MAX_IMPORT_BYTES) {
+    saveError.value = `导入失败：文件过大（${(file.size / 1024 / 1024).toFixed(1)} MiB），上限 10 MiB`
+    input.value = ''
+    return
+  }
   try {
     const text = await file.text()
     const data = JSON.parse(text)
-    if (!data.nodes || !data.links || !data.workflow_id) {
-      throw new Error('无效的工作流文件格式')
+    if (!data || typeof data !== 'object') {
+      throw new Error('无效的 JSON：根对象不存在')
     }
-    // 创建新工作流（用导入的 ID 或生成新 ID）
+    if (
+      !Array.isArray(data.nodes) ||
+      !Array.isArray(data.links) ||
+      typeof data.workflow_id !== 'string'
+    ) {
+      throw new Error('无效的工作流文件格式：缺少 nodes/links/workflow_id')
+    }
+    // Node count guard: reject workflows with too many nodes
+    const MAX_NODES = 500
+    if (data.nodes.length > MAX_NODES) {
+      throw new Error(`节点数量过多（${data.nodes.length}），上限 ${MAX_NODES}`)
+    }
+    // Basic node structure validation
+    for (const node of data.nodes) {
+      if (!node || typeof node !== 'object' || typeof node.id !== 'string') {
+        throw new Error('工作流节点结构无效：缺少 id')
+      }
+    }
+    // Create new workflow with generated ID (imported ID is not reused)
     const newId = `imported_${Date.now()}`
     const created = await store.createNew({
       workflow_id: newId,

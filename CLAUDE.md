@@ -12,7 +12,8 @@
 
 ## 常用命令
 
-- 全栈启动：`Env\Python312\python.exe launch.py start`
+- 全栈启动：`Env\Python312\python.exe launch.py start`（默认含 Nginx Gateway）
+- Vite HMR：`… launch.py start --vite`
 - 单组件：`… launch.py start <docker|fastapi|beat|worker|worker:<name>|frontend|gateway|backend>`
 - 仅重启后端进程组（改数据根后）：`… launch.py restart backend`
 - 状态/日志：`… launch.py status` / `logs [component] [-n N]`

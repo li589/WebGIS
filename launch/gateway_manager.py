@@ -153,7 +153,7 @@ def start_gateway_infra(*, rebuild_frontend: bool = False) -> bool:
         log.ok("Gateway", f"Nginx 已启动: http://localhost:{GATEWAY_PORT}")
         log.info("Gateway", "  静态: Code/frontend/dist")
         log.info("Gateway", "  反代: host.docker.internal:8000 → FastAPI")
-        log.info("Gateway", "  与 Vite 开发互斥（同端口）；日常开发请用 launch.py start")
+        log.info("Gateway", "  与 Vite 开发互斥（同端口）；本地 HMR 请用 launch.py start --vite")
     return True
 
 

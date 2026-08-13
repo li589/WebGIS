@@ -282,11 +282,24 @@ def _start_all(args: argparse.Namespace) -> int:
         pm.wait_for_fastapi(max_wait=30)
 
     if not args.no_frontend:
-        if gateway_running():
-            log.info("Launcher", "检测到 Nginx Gateway 占用 :5175，先停止 gateway 以启动 Vite")
-            stop_gateway_infra()
-        pm.start_frontend()
-        time.sleep(3)
+        use_vite = bool(getattr(args, "vite", False))
+        if use_vite:
+            if gateway_running():
+                log.info(
+                    "Launcher",
+                    "检测到 Nginx Gateway 占用 :5175，先停止 gateway 以启动 Vite（--vite）",
+                )
+                stop_gateway_infra()
+            pm.start_frontend()
+            time.sleep(3)
+        else:
+            # 上线默认：同域 Nginx Gateway（静态 dist + 反代 API）；与 Vite 互斥
+            if not start_gateway_infra(
+                rebuild_frontend=bool(getattr(args, "rebuild_frontend", False))
+            ):
+                log.error("Launcher", "Nginx Gateway 启动失败，终止")
+                return 1
+            time.sleep(2)
 
     pm.save_pids()
 
@@ -297,7 +310,17 @@ def _start_all(args: argparse.Namespace) -> int:
         log.info("Launcher", "  API Docs:  http://127.0.0.1:8000/docs")
         log.info("Launcher", "  Workers:   7 个 Celery Worker + 1 Beat")
     if not args.no_frontend:
-        log.info("Launcher", f"  Frontend:  http://localhost:{args.frontend_port}")
+        if getattr(args, "vite", False):
+            log.info(
+                "Launcher",
+                f"  Frontend:  http://localhost:{args.frontend_port}  [Vite]",
+            )
+        else:
+            log.info(
+                "Launcher",
+                f"  Frontend:  http://localhost:{GATEWAY_PORT}  [Nginx Gateway]",
+            )
+            log.info("Launcher", "  静态:     Code/frontend/dist（改前端后需 --rebuild-frontend）")
     log.info("Launcher", f"  日志目录:  {LOG_DIR}")
     log.info("Launcher", "  停止方式:  python launch.py stop  或  Ctrl+C")
     log.info("Launcher", "  查看日志:  python launch.py logs [component]")
@@ -508,7 +531,7 @@ def _start_backend_app_processes(args: argparse.Namespace) -> int:
 def cmd_restart(args: argparse.Namespace) -> int:
     """重启 CGDA 服务（全部或指定组件）。
 
-    ``backend``：仅重启 FastAPI + Worker + Beat，保留 Docker / Vite。
+    ``backend``：仅重启 FastAPI + Worker + Beat，保留 Docker / Gateway / Vite。
     """
     if getattr(args, "clean_cache", False):
         rc = cmd_clean_cache(

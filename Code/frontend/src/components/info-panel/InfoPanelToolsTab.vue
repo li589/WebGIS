@@ -33,6 +33,7 @@ const layers = useLayersStore()
 
 const selectedToolId = ref<string | null>(null)
 const formValues = reactive<Record<string, unknown>>({})
+const formErrors = reactive<Record<string, string>>({})
 const zonesOverlayId = ref('')
 
 const tools = computed(() => runner.toolsCache?.items ?? [])
@@ -161,6 +162,7 @@ async function refreshTools() {
 
 function initForm(tool: AnalysisToolDescriptor | null) {
   Object.keys(formValues).forEach((k) => delete formValues[k])
+  Object.keys(formErrors).forEach((k) => delete formErrors[k])
   if (!tool) return
   for (const field of tool.param_schema) {
     // Keep null/undefined as absent — do not coerce to '' (clip bbox shadowing)
@@ -171,6 +173,51 @@ function initForm(tool: AnalysisToolDescriptor | null) {
     formValues.distance = 5000
     formValues.distance_unit = 'meters'
   }
+}
+
+/** Sanitize string param values: trim whitespace and strip angle-bracket tags. */
+function sanitizeString(raw: unknown): string {
+  if (typeof raw !== 'string') return String(raw ?? '')
+  return raw.trim().replace(/[<>]/g, '')
+}
+
+/** Validate form values against the selected tool's param_schema. Returns true if valid. */
+function validateParams(tool: AnalysisToolDescriptor): boolean {
+  Object.keys(formErrors).forEach((k) => delete formErrors[k])
+  let ok = true
+  for (const field of tool.param_schema) {
+    const val = formValues[field.key]
+    if (val === undefined || val === null || val === '') continue
+
+    // Enum / options check
+    if (field.options && field.options.length > 0) {
+      const strVal = String(val)
+      if (!field.options.includes(strVal)) {
+        formErrors[field.key] = `值必须在: ${field.options.join(', ')}`
+        ok = false
+        continue
+      }
+    }
+
+    // Numeric bounds check
+    if (field.type === 'number' || field.type === 'integer') {
+      const num = Number(val)
+      if (!Number.isFinite(num)) {
+        formErrors[field.key] = '请输入有效数字'
+        ok = false
+        continue
+      }
+      if (field.min != null && num < field.min) {
+        formErrors[field.key] = `最小值: ${field.min}`
+        ok = false
+      }
+      if (field.max != null && num > field.max) {
+        formErrors[field.key] = `最大值: ${field.max}`
+        ok = false
+      }
+    }
+  }
+  return ok
 }
 
 watch(selectedTool, (t) => initForm(t), { immediate: true })
@@ -189,10 +236,16 @@ onMounted(() => {
 async function onRun() {
   const tool = selectedTool.value
   if (!tool || !canRun.value) return
+  if (!validateParams(tool)) return
   const params: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(formValues)) {
     if (v === '' || v === null || v === undefined) continue
-    params[k] = v
+    // Sanitize string values to prevent injection
+    if (typeof v === 'string') {
+      params[k] = sanitizeString(v)
+    } else {
+      params[k] = v
+    }
   }
   let bbox = null as null | {
     west: number
@@ -333,6 +386,7 @@ const phaseLabel = computed(() => {
             v-model.number="formValues[field.key]"
             type="number"
             class="param-input"
+            :class="{ 'param-input--error': formErrors[field.key] }"
             :min="field.min ?? undefined"
             :max="field.max ?? undefined"
           />
@@ -341,8 +395,10 @@ const phaseLabel = computed(() => {
             v-model="formValues[field.key]"
             type="text"
             class="param-input"
+            :class="{ 'param-input--error': formErrors[field.key] }"
             :placeholder="field.description || ''"
           />
+          <span v-if="formErrors[field.key]" class="param-error">{{ formErrors[field.key] }}</span>
         </label>
 
         <label v-if="selectedTool.tool_id === 'gis.zonal_stats'" class="param-row">
@@ -483,6 +539,16 @@ const phaseLabel = computed(() => {
   padding: 0.28rem 0.4rem;
   background: var(--surface-base, transparent);
   color: inherit;
+}
+
+.param-input--error {
+  border-color: var(--danger, #b91c1c);
+}
+
+.param-error {
+  font-size: var(--font-size-caption);
+  color: var(--danger, #b91c1c);
+  margin-top: 0.1rem;
 }
 
 .run-row {

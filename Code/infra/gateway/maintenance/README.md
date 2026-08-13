@@ -32,4 +32,4 @@ docker exec cgda-gateway-nginx nginx -s reload
 
 ## 与 Vite 开发剖面
 
-日常 `launch.py start` 走 Vite `:5175`，**不读**本开关。机构交付 / 演示请用 `launch.py start gateway`（静态 dist + 本 Nginx）。开发时若不想看到 Vite 红屏源码叠加层，可设环境变量 `VITE_HIDE_ERROR_OVERLAY=1`。
+日常 `launch.py start` / `restart` **默认走 Gateway**。本地 HMR：`launch.py start --vite`（会停 Gateway）。若在 Vite 下不想看到红屏源码叠加层，可设 `VITE_HIDE_ERROR_OVERLAY=1`。

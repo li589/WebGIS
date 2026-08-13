@@ -25,7 +25,7 @@ CGDA 是**面向课题组与大气研究院研究员**的科研数据分析平�
 - **占位节点**：未实现执行器的节点模板在 production 节点面板默认隐藏（`BACKEND_NODE_STUBS_VISIBLE=true` 可显示）
 - **写接口限流**：`/config`、`/import`、`/workflow-runs` 写方法默认 120 次/分钟/IP；天气瓦片 GET 另有宽松限流（`BACKEND_WEATHER_TILE_RATE_LIMIT_PER_MINUTE`，默认 240）；development/test 旁路
 - **会话过期**：使用中 API 返回 401 时前端自动跳转登录页；工具栏「日志」可导出错误记录（含 `request_id`）
-- **Gateway 模式**：`launch.py start gateway` 时 Nginx 反代须包含 `/auth`、`/overlay-tiles`、`/health`（与 Vite proxy 一致）；见 `Code/infra/gateway/README.md`
+- **Gateway 模式（默认）**：`launch.py start` / `restart` 默认启 Nginx 同域入口 `:5175`（静态 dist + 反代 `/auth`、`/overlay-tiles`、`/health` 等，与 Vite proxy 对齐）。本地 HMR 用 `start --vite`。见 `Code/infra/gateway/README.md`
 
 ## 当前仓库结构
 
@@ -109,7 +109,7 @@ Code/
 1. **P0**：FY/SMAP UI 人工闭环（更大样本条带上图 + `ui-verification-steps.md`）
 2. **P0**：Open-Meteo Phase B（tile-manager / coverage 与 settings `default_model` 贯通）
 3. **P1**：真实课题组数据 e2e / NAS 绿测；工作流调度 P1（dry-validate / progress 选取等）
-4. **P2–P3**：Layers god store 继续拆分；按需推进 PostGIS、TiTiler/Martin、Cesium 主链（Nginx 可选 gateway 已可用：`launch.py start gateway`）
+4. **P2–P3**：Layers god store 继续拆分；按需推进 PostGIS、TiTiler/Martin、Cesium 主链（Nginx Gateway 已为默认入口：`launch.py start`）
 
 契约层面保持 `workflow-runs` / `unified-tiles` / artifact 稳定。
 ## 文档导航
@@ -153,13 +153,15 @@ Code/
 
 详见 [`Doc/本地联调环境说明.md`](Doc/本地联调环境说明.md)。
 
-> 默认联调不启 Nginx。演示/同域入口：`Env\Python312\python.exe launch.py start gateway`（需先有 FastAPI `:8000` 与 `Code/frontend/dist`；与 Vite 互斥，详见 `Code/infra/gateway/README.md`）。
+> 默认入口为 Nginx Gateway `:5175`（静态 `Code/frontend/dist` + 反代 FastAPI）。本地前端热更新：`Env\Python312\python.exe launch.py start --vite`（与 Gateway 互斥，详见 `Code/infra/gateway/README.md`）。
 
 ## 日常联调命令
 
-- `start.bat`（或 `Env\Python312\python.exe launch.py start`）— 运行栈 + FastAPI + Workers + Vite 前端
-- `Env\Python312\python.exe launch.py start gateway` — Nginx 同域入口 `:5175`（可选）
-- `Env\Python312\python.exe launch.py restart backend` — 仅重启 FastAPI + Worker + Beat（改数据根后必用；不动 Docker/Vite）
+- `start.bat`（或 `Env\Python312\python.exe launch.py start`）— 运行栈 + FastAPI + Workers + **Nginx Gateway**
+- `Env\Python312\python.exe launch.py start --vite` — 同上，前台改 Vite HMR
+- `Env\Python312\python.exe launch.py start gateway --rebuild-frontend` — 仅 Gateway，并强制 rebuild dist
+- `Env\Python312\python.exe launch.py restart` — 全量重启（默认含 Gateway）
+- `Env\Python312\python.exe launch.py restart backend` — 仅重启 FastAPI + Worker + Beat（改数据根后必用；不动 Docker/Gateway）
 - `Env\Python312\python.exe launch.py sync` — 数据面 Open-Meteo 同步（`Code/infra/data-sync`）
 - `stop.bat` / `Env\Python312\python.exe launch.py status` / `flush` / `clean-cache`
   - `flush`：Redis + 天气文件缓存（高风险，慎用）

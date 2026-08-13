@@ -44,6 +44,9 @@ Windows 联调：Docker Desktop 与终端须**以管理员身份运行**，否�
     worker:gee          仅启动 gee 队列 Worker
     worker:weather      仅启动 weather 队列 Worker
     frontend            仅启动前端 Vite 开发服务器
+    gateway             仅启动 Nginx 同域入口（静态 dist）
+
+默认 ``start`` / ``restart``（全量）启 **Nginx Gateway**；本地 HMR 用 ``start --vite``。
 
 完整示例见 ``Env\\Python312\\python.exe launch.py --help``。
 Windows: start.bat / stop.bat    Linux/macOS: ./start.sh / ./stop.sh

@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 from app.api.deps import require_data_transfer_access
 from app.services.crs import crs_detector, crs_transformer
@@ -70,23 +70,29 @@ class ConfirmRequest(BaseModel):
 class TransformPointRequest(BaseModel):
     """``POST /import/transform-point`` 请求体。"""
 
-    points: list[tuple[float, float]]
-    """待转换的 (lng, lat) 点列表（源 CRS 下）。"""
+    points: list[tuple[float, float]] = Field(max_length=10000)
+    """待转换的 (lng, lat) 点列表（源 CRS 下），上限 10000 点防滥用。"""
 
-    source_crs: str
-    target_crs: str = "EPSG:4326"
+    source_crs: str = Field(min_length=1, max_length=64)
+    target_crs: str = Field(default="EPSG:4326", min_length=1, max_length=64)
     lng_offset: float = 0.0
     lat_offset: float = 0.0
+
+    @model_validator(mode="after")
+    def _validate_non_empty(self) -> TransformPointRequest:
+        if not self.points:
+            raise ValueError("points must not be empty")
+        return self
 
 
 class TransformBoundsRequest(BaseModel):
     """``POST /import/transform-bounds`` 请求体。"""
 
-    bounds: list[float]
-    """[west, south, east, north]，源 CRS 下。"""
+    bounds: list[float] = Field(min_length=4, max_length=4)
+    """[west, south, east, north]，源 CRS 下，必须恰好 4 个元素。"""
 
-    source_crs: str
-    target_crs: str = "EPSG:4326"
+    source_crs: str = Field(min_length=1, max_length=64)
+    target_crs: str = Field(default="EPSG:4326", min_length=1, max_length=64)
 
 
 # ── CRS 选项端点 ───────────────────────────────────────────────────────

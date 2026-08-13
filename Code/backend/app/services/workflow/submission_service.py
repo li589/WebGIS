@@ -676,7 +676,10 @@ class WorkflowSubmissionService:
         - 无 module_name（workflow_definition / workflow_name 模式，图编译时校验）；
         - python provider root 不存在；
         - 未知 module（无模板）；
-        - 模板导入/校验过程异常（降级跳过，避免阻断提交链路）。
+
+        Fail-closed 条件（阻断提交）：
+        - 已知 module 但模板校验过程异常（非 ImportError）；
+        - 校验返回 errors。
         """
         if payload.command_type != WorkflowCommandType.analysis:
             return
@@ -706,13 +709,28 @@ class WorkflowSubmissionService:
                 _, errors = deriver.validate_request_against_template(
                     request_proxy, template
                 )
-        except Exception:
+        except ImportError:
             logger.debug(
-                "Submission-time template validation skipped for module=%s",
+                "Submission-time template validation skipped for module=%s (import failed)",
                 module_name,
                 exc_info=True,
             )
             return
+        except Exception:
+            # 已知 module 但校验过程异常 → fail-closed，避免绕过校验
+            logger.warning(
+                "Submission-time template validation failed for module=%s",
+                module_name,
+                exc_info=True,
+            )
+            raise WorkflowValidationError(
+                [
+                    {
+                        "field": "algorithm_request",
+                        "message": f"参数校验内部错误，请检查模块 '{module_name}' 的参数配置",
+                    }
+                ]
+            )
         if errors:
             raise WorkflowValidationError(
                 [_template_error_to_issue(msg) for msg in errors]

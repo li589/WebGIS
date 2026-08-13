@@ -251,6 +251,66 @@ def _write_point_geojson(lng: float, lat: float) -> str:
     return str(path)
 
 
+def _validate_tool_params(
+    tool_id: str,
+    param_schema: list[Any],
+    params: dict[str, Any],
+) -> None:
+    """Validate user-supplied params against the tool's declared param_schema.
+
+    Checks ``min`` / ``max`` bounds for numeric fields and ``options``
+    enumeration for fields with a fixed choice set.  Raises
+    :class:`AnalysisRunError` on violation — this is a fail-closed gate
+    before params are injected into the workflow graph.
+    """
+    schema_map: dict[str, Any] = {}
+    for field in param_schema:
+        if hasattr(field, "key"):
+            schema_map[field.key] = field
+        elif isinstance(field, dict):
+            key = field.get("key")
+            if key:
+                schema_map[key] = field
+
+    for key, value in params.items():
+        spec = schema_map.get(key)
+        if spec is None:
+            continue  # unknown keys are ignored — workflow may inject extras
+
+        # Resolve attributes from either a Pydantic model or a plain dict
+        def _get(attr: str) -> Any:
+            if hasattr(spec, attr):
+                return getattr(spec, attr)
+            return spec.get(attr) if isinstance(spec, dict) else None
+
+        field_min = _get("min")
+        field_max = _get("max")
+        field_options = _get("options")
+
+        if value is None:
+            continue
+
+        # Options (enum) check — coerce to str for comparison
+        if field_options:
+            str_value = str(value)
+            if str_value not in [str(o) for o in field_options]:
+                raise AnalysisRunError(
+                    f"参数 '{key}' 的值 '{str_value}' 不在允许选项中: {field_options}"
+                )
+            continue
+
+        # Numeric bounds check (only for int/float values)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            if field_min is not None and value < field_min:
+                raise AnalysisRunError(
+                    f"参数 '{key}' 的值 {value} 小于最小值 {field_min}"
+                )
+            if field_max is not None and value > field_max:
+                raise AnalysisRunError(
+                    f"参数 '{key}' 的值 {value} 大于最大值 {field_max}"
+                )
+
+
 def build_analysis_submit_request(req: AnalysisRunRequest) -> WorkflowSubmitRequest:
     tool = get_tool(req.tool_id)
     if tool is None:
@@ -378,6 +438,7 @@ def build_analysis_submit_request(req: AnalysisRunRequest) -> WorkflowSubmitRequ
                 buffer_meters=float(params.get("buffer_meters") or 0),
             )
 
+    _validate_tool_params(tool.tool_id, tool.param_schema, params)
     _inject_tool_params(nodes, tool_id=tool.tool_id, params=params)
 
     profile = tool.resource_profile

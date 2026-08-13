@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.api.deps import require_data_transfer_access
 from app.data_io.services import paths as import_paths
@@ -98,18 +98,18 @@ class RasterDetectInvalidBody(BaseModel):
 
 
 class RasterCommitBody(BaseModel):
-    upload_id: str
+    upload_id: str = Field(min_length=1, max_length=256)
     variable_id: str | None = None
     """单变量（兼容旧客户端）。与 variable_ids 二选一，优先 variable_ids。"""
-    variable_ids: list[str] = Field(default_factory=list)
-    time_index: int = 0
-    source_name: str | None = None
+    variable_ids: list[str] = Field(default_factory=list, max_length=64)
+    time_index: int = Field(default=0, ge=0)
+    source_name: str | None = Field(default=None, max_length=256)
     async_mode: bool = False
-    source_crs: str | None = None
-    grid_preset: str | None = None
+    source_crs: str | None = Field(default=None, max_length=64)
+    grid_preset: str | None = Field(default=None, max_length=64)
     bounds: list[float] | None = None
     """源 CRS 下 [west, south, east, north]。"""
-    invalid_values: list[float] = Field(default_factory=list)
+    invalid_values: list[float] = Field(default_factory=list, max_length=1024)
     """导入前替换为 nodata 的无效值列表。"""
     nodata: float | None = None
     auto_confirm: bool = True
@@ -125,11 +125,19 @@ class RasterCommitBody(BaseModel):
     """时间语义：auto 从文件名猜测；static 强制无时间；point/range 手动指定。"""
     temporal_mode: str = "auto"
     """时间点 YYYYMMDD，或时间段标签 YYYYMMDD_YYYYMMDD。"""
-    time_label: str | None = None
-    time_start: str | None = None
-    time_end: str | None = None
+    time_label: str | None = Field(default=None, max_length=64)
+    time_start: str | None = Field(default=None, max_length=64)
+    time_end: str | None = Field(default=None, max_length=64)
     """原生时间步，如 1d / 8d / 1m。"""
-    native_step: str | None = None
+    native_step: str | None = Field(default=None, max_length=16)
+
+    @model_validator(mode="after")
+    def _validate_bounds_length(self) -> RasterCommitBody:
+        if self.bounds is not None and len(self.bounds) != 4:
+            raise ValueError(
+                "bounds must have exactly 4 elements [west, south, east, north]"
+            )
+        return self
 
 
 class DocumentOpsBody(BaseModel):
