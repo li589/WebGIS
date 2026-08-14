@@ -85,7 +85,11 @@ export function buildTileKey(
 /** 标准 Web Mercator：经纬度 → z/x/y 瓦片坐标。 */
 export function lngLatToTile(lng: number, lat: number, z: number): WeatherTileCoords {
   const n = 2 ** z
-  const x = Math.floor(((lng + 180) / 360) * n)
+  // 先折进 [-180,180]，避免未 wrap 的 center/lon 把 x 钳到 n-1 造成日界线偏一侧
+  let lon = lng
+  while (lon > 180) lon -= 360
+  while (lon < -180) lon += 360
+  const x = Math.floor(((lon + 180) / 360) * n)
   // 纬度 clamp 到 Web Mercator 有效范围
   const clampedLat = Math.max(-_WEB_MERCATOR_MAX_LAT, Math.min(_WEB_MERCATOR_MAX_LAT, lat))
   const latRad = (clampedLat * Math.PI) / 180

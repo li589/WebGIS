@@ -1,0 +1,15 @@
+# Keep frontend sources LF so Prettier (endOfLine: lf) matches the working tree on Windows.
+Code/frontend/**/*.css text eol=lf
+Code/frontend/**/*.js text eol=lf
+Code/frontend/**/*.jsx text eol=lf
+Code/frontend/**/*.scss text eol=lf
+Code/frontend/**/*.ts text eol=lf
+Code/frontend/**/*.tsx text eol=lf
+Code/frontend/**/*.vue text eol=lf
+Test/frontend/**/*.css text eol=lf
+Test/frontend/**/*.js text eol=lf
+Test/frontend/**/*.jsx text eol=lf
+Test/frontend/**/*.scss text eol=lf
+Test/frontend/**/*.ts text eol=lf
+Test/frontend/**/*.tsx text eol=lf
+Test/frontend/**/*.vue text eol=lf

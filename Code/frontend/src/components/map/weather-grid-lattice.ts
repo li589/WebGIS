@@ -28,7 +28,8 @@ export function pointInTileHalfOpen(
   const includeSouth = options?.includeSouth === true
   let x = lon
   // 视口裁剪：normalizeLngBounds 可能令 east∈(180,540]
-  if (bounds.east > 180 || bounds.east < bounds.west) {
+  // 亦处理 west<-180 的展开弧，保证日界线两侧格点都能命中
+  if (bounds.east > 180 || bounds.west < -180 || bounds.east < bounds.west) {
     while (x < bounds.west) x += 360
     while (x >= bounds.west + 360) x -= 360
   }

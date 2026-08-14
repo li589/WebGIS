@@ -15,6 +15,12 @@ export {
   normalizeLngBounds,
 } from './geo-bounds'
 
+/** MapLibre 默认 tileSize；worldSize ≈ tileSize * 2^zoom */
+export const MAPLIBRE_DEFAULT_TILE_SIZE = 512
+
+/** 距 ±180° 小于此值视为「贴日界线」，需强制双侧取瓦 */
+export const NEAR_ANTIMERIDIAN_LNG_DEG = 150
+
 export interface MapViewportBounds {
   getSouth: () => number
   getNorth: () => number
@@ -32,7 +38,7 @@ export interface MapViewportReader {
   getWorldSizePx?: () => number
   getContainer?: () => { clientWidth: number }
   getCanvas?: () => { width: number; clientWidth?: number }
-  transform?: { worldSize?: number }
+  transform?: { worldSize?: number; tileSize?: number }
 }
 
 export interface MapViewportSnapshot {
@@ -65,8 +71,29 @@ export function estimateLngBoundsFromCenter(
   return normalizeLngBounds(centerLng - halfSpanDeg - pad, centerLng + halfSpanDeg + pad, centerLng)
 }
 
+/**
+ * 相机贴日界线、但 getBounds 仍是单侧短弧时，强制扩到跨 ±180 的连续弧。
+ * 覆盖 worldSize 缺失或估弧仍偏窄的情况（表现为日界线「只亮一半边」）。
+ */
+export function expandLngBoundsIfNearAntimeridian(
+  bounds: { west: number; east: number },
+  centerLng: number,
+  minHalfSpanDeg = 25,
+): { west: number; east: number } {
+  const c = wrapLongitude(centerLng)
+  const nearIdl = Math.abs(c) >= NEAR_ANTIMERIDIAN_LNG_DEG
+  if (!nearIdl) return bounds
+
+  const crosses = bounds.east > 180 || bounds.west < -180 || bounds.east < bounds.west
+  // 已跨日界线：两侧瓦片弧已成立，勿再加宽（避免破坏 170→185 等合法短路径）
+  if (crosses) return bounds
+
+  const half = Math.max(minHalfSpanDeg, (bounds.east - bounds.west) / 2)
+  return normalizeLngBounds(c - half, c + half, c)
+}
+
 function lngBoundsCrossesAntimeridian(b: { west: number; east: number }): boolean {
-  return b.east > 180 || b.west < -180 || (b.east > b.west && b.west > 0 && b.east > 180)
+  return b.east > 180 || b.west < -180 || b.east < b.west
 }
 
 /**
@@ -111,12 +138,28 @@ function readViewportWidthPx(map: MapViewportReader): number | null {
   return null
 }
 
+/** 由 zoom 估算 worldSize（transform 尚未就绪时的回退）。 */
+export function estimateWorldSizePxFromZoom(
+  zoom: number,
+  tileSize = MAPLIBRE_DEFAULT_TILE_SIZE,
+): number | null {
+  if (!Number.isFinite(zoom) || !(tileSize > 0)) return null
+  const size = tileSize * 2 ** zoom
+  return size > 0 && Number.isFinite(size) ? size : null
+}
+
 function readWorldSizePx(map: MapViewportReader): number | null {
   const explicit = map.getWorldSizePx?.()
   if (explicit !== undefined && explicit > 0) return explicit
   const fromTransform = map.transform?.worldSize
   if (fromTransform !== undefined && fromTransform > 0) return fromTransform
-  return null
+  // MapLibre 首帧 / 类型抹掉 transform 时：用 zoom 回退，否则日界线只拉半边瓦片
+  const tileSize = map.transform?.tileSize
+  const zoom = typeof map.getZoom === 'function' ? map.getZoom() : NaN
+  return estimateWorldSizePxFromZoom(
+    zoom,
+    typeof tileSize === 'number' && tileSize > 0 ? tileSize : MAPLIBRE_DEFAULT_TILE_SIZE,
+  )
 }
 
 /**
@@ -129,11 +172,13 @@ export function resolveVisibleLngBounds(map: MapViewportReader): { west: number;
   const fromBounds = normalizeLngBounds(bounds.getWest(), bounds.getEast(), center.lng)
   const widthPx = readViewportWidthPx(map)
   const worldPx = readWorldSizePx(map)
+  let resolved = fromBounds
   if (widthPx !== null && worldPx !== null) {
     const fromCenter = estimateLngBoundsFromCenter(center.lng, widthPx, worldPx)
-    if (fromCenter) return preferVisibleLngBounds(fromBounds, fromCenter)
+    if (fromCenter) resolved = preferVisibleLngBounds(fromBounds, fromCenter)
   }
-  return fromBounds
+  // 贴日界线最终兜底：即使估弧失败/仍偏窄，也强制双侧取数
+  return expandLngBoundsIfNearAntimeridian(resolved, center.lng)
 }
 
 /**

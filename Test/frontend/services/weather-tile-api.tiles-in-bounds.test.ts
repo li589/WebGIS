@@ -70,6 +70,13 @@ describe('sortTilesCenterFirst', () => {
     expect(sorted.map((t) => t.x).slice(0, 3)).toEqual(expect.arrayContaining([0, 1, n - 1]))
     expect(sorted[sorted.length - 1]?.x).toBe(8)
   })
+
+  it('wraps unwrapped longitudes before converting to tile x', () => {
+    const a = lngLatToTile(185, 0, 4)
+    const b = lngLatToTile(-175, 0, 4)
+    expect(a.x).toBe(b.x)
+    expect(a.x).toBeLessThan(16)
+  })
 })
 
 describe('summarizeHttpErrorDetail', () => {

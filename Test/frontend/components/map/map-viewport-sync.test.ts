@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest'
 import {
   buildMapViewportSnapshot,
   estimateLngBoundsFromCenter,
+  expandLngBoundsIfNearAntimeridian,
   normalizeLngBounds,
   preferVisibleLngBounds,
   resolveVisibleLngBounds,
   resolveVisibleViewportBBox,
 } from '@/components/map/map-viewport-sync'
+import { tilesInBounds } from '@/services/weather-tile-api'
 
 describe('normalizeLngBounds', () => {
   it('preserves Asia–Pacific long path when MapLibre already expanded east > 180', () => {
@@ -84,6 +86,19 @@ describe('estimateLngBoundsFromCenter / preferVisibleLngBounds', () => {
     expect(preferVisibleLngBounds({ west: -170, east: 170 }, { west: -90, east: 90 })).toEqual({
       west: -180,
       east: 180,
+    })
+  })
+
+  it('expandLngBoundsIfNearAntimeridian widens Asia-only arc when center hugs IDL', () => {
+    const out = expandLngBoundsIfNearAntimeridian({ west: 100, east: 175 }, 175)
+    expect(out.east).toBeGreaterThan(180)
+    expect(out.west).toBeLessThanOrEqual(150)
+  })
+
+  it('expandLngBoundsIfNearAntimeridian is no-op far from IDL', () => {
+    expect(expandLngBoundsIfNearAntimeridian({ west: 100, east: 120 }, 110)).toEqual({
+      west: 100,
+      east: 120,
     })
   })
 })
@@ -232,5 +247,31 @@ describe('resolveVisibleLngBounds / resolveVisibleViewportBBox', () => {
     expect(resolveVisibleLngBounds(map)).toEqual({ west: -180, east: 180 })
     expect(buildMapViewportSnapshot(map).bbox.west).toBe(-180)
     expect(buildMapViewportSnapshot(map).bbox.east).toBe(180)
+  })
+
+  it('forces both sides of IDL when center is near ±180 even without worldSize', () => {
+    // 回归：renderWorldCopies 下 getBounds 只给亚洲侧，且 transform.worldSize 未就绪
+    // → 旧逻辑只拉半边瓦片，日界线「只亮一半边」
+    const map = {
+      getCenter: () => ({ lng: 175, lat: 10 }),
+      getBounds: () => ({
+        getSouth: () => -20,
+        getNorth: () => 40,
+        getWest: () => 100,
+        getEast: () => 175,
+      }),
+      getZoom: () => 3,
+      getViewportWidthPx: () => 800,
+      // 故意不提供 getWorldSizePx / transform —— 走 zoom 回退 + 贴日界线兜底
+    }
+    const lng = resolveVisibleLngBounds(map)
+    expect(lng.east).toBeGreaterThan(180)
+    expect(lng.west).toBeLessThan(175)
+    const tiles = tilesInBounds({ ...lng, south: -20, north: 40 }, 3, 0)
+    const n = 8
+    const xs = new Set(tiles.map((t) => t.x))
+    // 必须同时覆盖靠近 n-1（+180 西侧）与 0（-180 东侧）
+    expect(xs.has(n - 1) || [...xs].some((x) => x >= n - 2)).toBe(true)
+    expect(xs.has(0) || xs.has(1)).toBe(true)
   })
 })
