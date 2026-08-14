@@ -68,13 +68,29 @@ def _decorate_profile(info: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _invalidate_profile_derived_caches(protocols: set[str]) -> None:
+    """profile 变更后失效派生缓存：auth 解析、FileBrowser token、动态 options。
+
+    filebrowser 涉及凭据/协议变化时必须清 token 缓存：token 以
+    (base_url, username) 为键，换密码或删除重建同键 profile 会复用旧
+    token（最长 45 分钟），造成鉴权材料错配。
+    """
+    from app.services.remote_auth_resolver import clear_remote_auth_cache
+    from app.services.node_template_registry import invalidate_portal_options_cache
+
+    clear_remote_auth_cache()
+    if "filebrowser" in protocols:
+        from app.services.remote_access import clear_filebrowser_token_cache
+
+        clear_filebrowser_token_cache()
+    invalidate_portal_options_cache()
+
+
 def list_remote_storage_history(profile_id: str) -> list[dict[str, Any]]:
     return _get_remote_storage_repository().list_history(profile_id)
 
 
 def restore_remote_storage_history(profile_id: str, history_id: int) -> dict[str, Any]:
-    from app.services.remote_auth_resolver import clear_remote_auth_cache
-
     repo = _get_remote_storage_repository()
     info = repo.get_profile_info(profile_id)
     if info is None:
@@ -95,7 +111,7 @@ def restore_remote_storage_history(profile_id: str, history_id: int) -> dict[str
         display_name=info.get("display_name"),
         enabled=info.get("enabled"),
     )
-    clear_remote_auth_cache()
+    _invalidate_profile_derived_caches({str(info.get("protocol") or "").lower()})
     return _decorate_profile(result)
 
 
@@ -125,29 +141,44 @@ def upsert_remote_storage_profile(
     alt_url: str | None = None,
     fallback_mode: str | None = None,
 ) -> dict[str, Any]:
-    from app.services.remote_auth_resolver import clear_remote_auth_cache
-
     repo = _get_remote_storage_repository()
+    existing_info = repo.get_profile_info(profile_id)
+    prev_extra = dict((existing_info or {}).get("extra") or {})
+    prev_protocol = str((existing_info or {}).get("protocol") or "")
+    protocols = {protocol.lower(), prev_protocol.lower()}
+
+    # extra 合并语义：None 全保留；{} 显式清空协议字段；非空 dict 仅覆盖给定键，
+    # 未提及的既有键（default_share 等未知键）保留，避免前端局部更新丢配置。
+    if extra is None:
+        merged = dict(prev_extra)
+    elif extra:
+        merged = {**prev_extra, **extra}
+    else:
+        merged = {}
+    # failover_state 为运行时状态（browser/test 端点写入），服务端权威：
+    # 编辑不重置，也不接受客户端经 extra 回写
+    merged.pop("failover_state", None)
+    if "failover_state" in prev_extra:
+        merged["failover_state"] = prev_extra["failover_state"]
+
     alt_given = any(v is not None for v in (alt_host, alt_port, alt_url))
     if alt_given or fallback_mode is not None:
-        # 合并语义：extra=None 时以现值为基础，避免丢掉 default_share 等协议字段
-        base = extra
-        if base is None:
-            existing = repo.get_profile_info(profile_id)
-            base = dict((existing or {}).get("extra") or {})
-        merged = dict(base)
         if alt_given:
             alt = dict(merged.get("alt") or {})
             if alt_host is not None:
                 alt["host"] = alt_host
             if alt_port is not None:
-                alt["port"] = alt_port
+                # 0 表示显式清除备用端口（端口不可能为 0）
+                if alt_port > 0:
+                    alt["port"] = alt_port
+                else:
+                    alt.pop("port", None)
             if alt_url is not None:
                 alt["url"] = alt_url
             merged["alt"] = alt
         if fallback_mode is not None:
             merged["fallback_mode"] = fallback_mode
-        extra = merged
+    extra = merged
 
     result = repo.upsert(
         profile_id=profile_id,
@@ -162,25 +193,24 @@ def upsert_remote_storage_profile(
         display_name=display_name,
         enabled=enabled,
     )
-    clear_remote_auth_cache()
+    _invalidate_profile_derived_caches(protocols)
     return _decorate_profile(result)
 
 
 def delete_remote_storage_profile(profile_id: str) -> bool:
-    from app.services.remote_auth_resolver import clear_remote_auth_cache
-
-    deleted = _get_remote_storage_repository().delete(profile_id)
+    repo = _get_remote_storage_repository()
+    prev_protocol = str((repo.get_profile_info(profile_id) or {}).get("protocol") or "")
+    deleted = repo.delete(profile_id)
     if deleted:
-        clear_remote_auth_cache()
+        _invalidate_profile_derived_caches({prev_protocol.lower()})
     return deleted
 
 
 def toggle_remote_storage_profile(profile_id: str, enabled: bool) -> bool:
-    from app.services.remote_auth_resolver import clear_remote_auth_cache
-
     ok = _get_remote_storage_repository().set_enabled(profile_id, enabled)
     if ok:
-        clear_remote_auth_cache()
+        # 启停影响 ssh_servers 动态 options；凭据未变，无需清 filebrowser token
+        _invalidate_profile_derived_caches(set())
     return ok
 
 
@@ -298,10 +328,13 @@ def test_remote_storage_profile(
         except SSRFBlockedError:
             raise
 
-    attempts: list[tuple[str, str, int | None, str]] = [
-        ("primary", info.get("host") or "localhost", info.get("port"), "")
-    ]
-    if alt_valid and fallback_mode == "auto" and uri is None:
+    active = None
+    if isinstance(extra.get("failover_state"), dict):
+        active = str(extra["failover_state"].get("active") or "") or None
+
+    attempts: list[tuple[str, str, int | None, str]] = []
+    if fallback_mode == "manual" and active == "alt" and alt_valid:
+        # manual 钉死备用：仅探测备用路径，且成功后不回写 primary
         attempts.append(
             (
                 "alt",
@@ -312,6 +345,23 @@ def test_remote_storage_profile(
                 str(alt.get("url") or ""),
             )
         )
+    else:
+        attempts.append(
+            ("primary", info.get("host") or "localhost", info.get("port"), "")
+        )
+        if alt_valid and fallback_mode == "auto" and uri is None:
+            attempts.append(
+                (
+                    "alt",
+                    str(alt.get("host") or info.get("host") or "localhost"),
+                    alt.get("port")
+                    if isinstance(alt.get("port"), int)
+                    else info.get("port"),
+                    str(alt.get("url") or ""),
+                )
+            )
+
+    manual_pinned_alt = fallback_mode == "manual" and active == "alt"
 
     last_error = ""
     for which, host, port, url_override in attempts:
@@ -338,9 +388,10 @@ def test_remote_storage_profile(
                 "Unexpected error probing remote storage profile %s", profile_id
             )
             repo.update_test_status(profile_id, "failed")
-            repo.set_failover_state(
-                profile_id, {"active": "primary", "last_error": str(exc)}
-            )
+            if not manual_pinned_alt:
+                repo.set_failover_state(
+                    profile_id, {"active": "primary", "last_error": str(exc)}
+                )
             return {
                 "profile_id": profile_id,
                 "success": False,
@@ -349,7 +400,10 @@ def test_remote_storage_profile(
             }
 
     repo.update_test_status(profile_id, "failed")
-    repo.set_failover_state(profile_id, {"active": "primary", "last_error": last_error})
+    if not manual_pinned_alt:
+        repo.set_failover_state(
+            profile_id, {"active": "primary", "last_error": last_error}
+        )
     label = "主路径与备用路径均不可达" if len(attempts) > 1 else "探测失败"
     return {
         "profile_id": profile_id,

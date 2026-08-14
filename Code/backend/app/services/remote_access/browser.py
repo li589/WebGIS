@@ -590,6 +590,104 @@ def _recursive_search(
     return results
 
 
+def _sftp_items(entries: list[Any]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for entry in entries:
+        mode = entry.st_mode or 0
+        is_dir = stat_module.S_ISDIR(mode)
+        items.append(
+            {
+                "name": entry.filename,
+                "is_dir": is_dir,
+                "size": 0 if is_dir else int(entry.st_size or 0),
+                "mtime": float(entry.st_mtime) if entry.st_mtime else None,
+            }
+        )
+    return items
+
+
+def _search_sftp(
+    bundle: dict[str, Any], target: dict[str, Any], query: str, max_results: int
+) -> list[dict[str, Any]]:
+    """单连接递归搜索：整个搜索复用一次 SSH/SFTP 会话（避免每目录重握手）。"""
+    import paramiko
+
+    host = target["host"]
+    if not host:
+        raise RemoteAccessError("缺少主机地址")
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    kwargs: dict[str, Any] = {
+        "hostname": host,
+        "port": int(target["port"] or 22),
+        "username": bundle.get("username") or "",
+        "timeout": DEFAULT_TIMEOUT,
+        "look_for_keys": False,
+        "allow_agent": False,
+    }
+    pem = bundle.get("private_key_pem")
+    if pem:
+        kwargs["pkey"] = _load_paramiko_pkey(pem)
+    elif bundle.get("secret"):
+        kwargs["password"] = bundle["secret"]
+    try:
+        client.connect(**kwargs)
+        sftp = client.open_sftp()
+        try:
+            return _recursive_search(
+                lambda p: _sftp_items(sftp.listdir_attr(p)), "/", query, max_results
+            )
+        finally:
+            sftp.close()
+    except paramiko.AuthenticationException as exc:
+        raise RemoteAccessAuthError("SSH/SFTP 认证失败") from exc
+    except RemoteAccessError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — 网络/超时类
+        raise RemoteAccessNetworkError(f"SSH/SFTP 连接失败（{host}）") from exc
+    finally:
+        client.close()
+
+
+def _search_ftp(
+    bundle: dict[str, Any],
+    target: dict[str, Any],
+    query: str,
+    max_results: int,
+    scheme: str,
+) -> list[dict[str, Any]]:
+    """单连接递归搜索：整个搜索复用一次 FTP 会话。"""
+
+    def list_fn(path: str) -> list[dict[str, Any]]:
+        try:
+            mlsd = list(ftp.mlsd(path))
+        except ftplib_error_perm() as exc:
+            raise RemoteAccessError(f"FTP 目录不可访问: {exc}") from exc
+        items: list[dict[str, Any]] = []
+        for name, facts in mlsd:
+            if name in {".", ".."}:
+                continue
+            is_dir = facts.get("type") == "dir"
+            items.append(
+                {
+                    "name": name,
+                    "is_dir": is_dir,
+                    "size": 0 if is_dir else int(facts.get("size") or 0),
+                    "mtime": None,
+                }
+            )
+        return items
+
+    ftp = _ftp_connect(bundle, target, scheme)
+    try:
+        return _recursive_search(list_fn, "/", query, max_results)
+    finally:
+        try:
+            ftp.quit()
+        except Exception:  # noqa: BLE001
+            ftp.close()
+
+
 def _search_filebrowser(
     bundle: dict[str, Any], target: dict[str, Any], query: str, max_results: int
 ):
@@ -650,6 +748,7 @@ def _search_local(
     bundle: dict[str, Any], target: dict[str, Any], query: str, max_results: int
 ):
     base = _local_base(bundle, target)
+    base_resolved = base.resolve()
     pattern = query.lower()
     results: list[dict[str, Any]] = []
     stack: list[tuple[Path, int]] = [(base, 0)]
@@ -658,27 +757,35 @@ def _search_local(
         if depth > SEARCH_MAX_DEPTH:
             continue
         try:
+            # resolve 防符号链接逃逸：每层目录必须仍位于挂载根内
+            current_resolved = current.resolve()
+            if base_resolved != current_resolved and (
+                base_resolved not in current_resolved.parents
+            ):
+                continue
             children = list(current.iterdir())
         except OSError:
             continue
         for child in children:
+            try:
+                # 不跟随符号链接判定目录；符号链接目录不入栈（防越根）
+                st = child.stat(follow_symlinks=False)
+            except OSError:
+                continue
             if pattern in child.name.lower():
-                try:
-                    st = child.stat()
-                except OSError:
-                    continue
                 results.append(
                     {
                         "name": child.name,
-                        "is_dir": child.is_dir(),
-                        "size": 0 if child.is_dir() else int(st.st_size),
+                        # lstat 判定目录（Path.is_dir(follow_symlinks=) 需 3.13）
+                        "is_dir": stat_module.S_ISDIR(st.st_mode),
+                        "size": int(st.st_size),
                         "mtime": st.st_mtime,
                         "path": str(child.relative_to(base)).replace("\\", "/"),
                     }
                 )
                 if len(results) >= max_results:
                     break
-            if child.is_dir():
+            if stat_module.S_ISDIR(st.st_mode):
                 stack.append((child, depth + 1))
     return results
 
@@ -742,9 +849,7 @@ def search_profile(
         if protocol == "filebrowser":
             return _search_filebrowser(bundle, target, query, limit)
         if protocol in {"sftp", "ssh"}:
-            return _recursive_search(
-                lambda p: _entries_sftp(bundle, target, p), "/", query, limit
-            )
+            return _search_sftp(bundle, target, query, limit)
         if protocol == "smb":
             share = (bundle.get("extra") or {}).get("default_share") or ""
             if not share:
@@ -753,9 +858,7 @@ def search_profile(
                 lambda p: _entries_smb(bundle, target, p), "/", query, limit
             )
         if protocol in {"ftp", "ftps"}:
-            return _recursive_search(
-                lambda p: _entries_ftp(bundle, target, p, protocol), "/", query, limit
-            )
+            return _search_ftp(bundle, target, query, limit, protocol)
         if protocol == "gs":
             return _search_gs(bundle, target, query, limit)
         if protocol in {"lan", "nfs"}:

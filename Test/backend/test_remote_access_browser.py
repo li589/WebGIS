@@ -225,6 +225,34 @@ def test_search_lan_profile_matches_names(tmp_path, monkeypatch):
     assert "SMAP" not in names
 
 
+def test_search_local_ignores_symlink_escape(tmp_path, monkeypatch):
+    """搜索不得跟随符号链接越出挂载根（防内网路径外泄）。"""
+    outside = tmp_path / "outside"
+    (outside / "FY_secret").mkdir(parents=True)
+    (outside / "FY_secret" / "leak.mat").write_bytes(b"x")
+
+    mount = tmp_path / "mount"
+    (mount / "FY_local").mkdir(parents=True)
+    (mount / "FY_local" / "ok.mat").write_bytes(b"x")
+
+    try:
+        (mount / "FY_escape").symlink_to(outside, target_is_directory=True)
+        (mount / "FY_self").symlink_to(mount / "FY_self", target_is_directory=True)
+    except OSError:
+        pytest.skip("当前平台无符号链接权限")
+
+    repo = FakeRepo(_lan_bundle(mount))
+    browser = _install_repo(monkeypatch, repo)
+    result = browser.search_profile("nas-lan", "fy")
+
+    names = [item["name"] for item in result["items"]]
+    assert "FY_local" in names
+    # 逃逸目标与越根文件不得出现在结果中
+    assert "FY_secret" not in names
+    assert "leak.mat" not in names
+    # 自引用链接不导致死循环（测试能返回即通过）
+
+
 def test_search_rejects_empty_query(tmp_path, monkeypatch):
     repo = FakeRepo(_lan_bundle(tmp_path))
     browser = _install_repo(monkeypatch, repo)
@@ -406,6 +434,131 @@ def test_upsert_service_extra_explicit_clear_then_alt(monkeypatch, tmp_path):
     info = svc.get_remote_storage_profile("p")
     assert "default_share" not in info["extra"]
     assert info["alt_url"] == "https://t.example"
+
+
+def test_upsert_service_preserves_unknown_keys_and_failover_state(monkeypatch, tmp_path):
+    svc, repo = _patch_service_repo(monkeypatch, tmp_path)
+    svc.upsert_remote_storage_profile(
+        "p",
+        protocol="sftp",
+        host="h",
+        extra={"default_share": "d", "custom_key": "keep"},
+    )
+    repo.set_failover_state("p", {"active": "alt", "last_error": "timeout"})
+
+    # 局部更新：未提及的 custom_key 保留；failover_state 服务端权威，不接受回写
+    svc.upsert_remote_storage_profile(
+        "p",
+        protocol="sftp",
+        host="h",
+        extra={
+            "default_share": "d2",
+            "failover_state": {"active": "primary", "last_error": "spoof"},
+        },
+    )
+    info = svc.get_remote_storage_profile("p")
+    assert info["extra"]["custom_key"] == "keep"
+    assert info["extra"]["default_share"] == "d2"
+    assert info["failover_state"]["active"] == "alt"
+    assert info["failover_state"]["last_error"] == "timeout"
+
+
+def test_upsert_service_alt_port_zero_clears(monkeypatch, tmp_path):
+    svc, _ = _patch_service_repo(monkeypatch, tmp_path)
+    svc.upsert_remote_storage_profile(
+        "p", protocol="sftp", host="h", alt_host="t", alt_port=2222
+    )
+    assert svc.get_remote_storage_profile("p")["alt_port"] == 2222
+
+    # 0 = 显式清除备用端口；None 才是保留原值
+    svc.upsert_remote_storage_profile("p", protocol="sftp", host="h", alt_port=0)
+    info = svc.get_remote_storage_profile("p")
+    assert info["alt_port"] is None
+    assert info["alt_host"] == "t"
+
+
+def _patch_probes(monkeypatch, probed: list, fail_hosts: set[str]):
+    import shared.remote_sources.download as download_mod
+    from app.services import remote_auth_resolver
+
+    def fake_probe(uri, auth):  # type: ignore[no-untyped-def]
+        probed.append(uri)
+        if any(h in uri for h in fail_hosts):
+            raise ConnectionError("probe failed")
+        return True
+
+    monkeypatch.setattr(download_mod, "probe_remote_connectivity", fake_probe)
+    monkeypatch.setattr(remote_auth_resolver, "resolve_remote_auth", lambda uri: None)
+
+
+def test_upsert_filebrowser_invalidates_token_and_options_cache(monkeypatch, tmp_path):
+    """filebrowser 凭据变更必须清 token 缓存；profile 变更须失效动态 options 缓存。"""
+    svc, _ = _patch_service_repo(monkeypatch, tmp_path)
+    from app.services import node_template_registry as registry
+    from app.services.remote_access import filebrowser_client
+
+    token_key = ("https://fb.local", "u")
+    filebrowser_client._token_cache[token_key] = ("tok", 1e18)
+    monkeypatch.setattr(registry, "_portal_options_cache", {"ssh_servers": ["stale"]})
+    monkeypatch.setattr(registry, "_portal_options_cached_at", 1e18)
+    try:
+        svc.upsert_remote_storage_profile(
+            "fb",
+            protocol="filebrowser",
+            host="https://fb.local",
+            username="u",
+            secret="p2",
+        )
+        assert token_key not in filebrowser_client._token_cache
+        assert registry._portal_options_cache is None
+        assert registry._portal_options_cached_at == 0.0
+    finally:
+        filebrowser_client._token_cache.pop(token_key, None)
+
+
+def test_test_endpoint_manual_pinned_alt_skips_primary(monkeypatch, tmp_path):
+    """manual 钉死备用：test 端点不得探测主路径，成功后不回写 primary。"""
+    svc, repo = _patch_service_repo(monkeypatch, tmp_path)
+    svc.upsert_remote_storage_profile(
+        "p",
+        protocol="sftp",
+        host="primary.local",
+        alt_host="tunnel.example",
+        fallback_mode="manual",
+    )
+    repo.set_failover_state("p", {"active": "alt"})
+
+    probed: list[str] = []
+    _patch_probes(monkeypatch, probed, fail_hosts={"primary.local"})
+
+    result = svc.test_remote_storage_profile("p")
+    assert result["success"] is True
+    assert probed == ["sftp://tunnel.example/?cred=p"]
+    state = repo.get_profile_info("p")["extra"]["failover_state"]
+    assert state["active"] == "alt"
+
+
+def test_test_endpoint_manual_pinned_failure_keeps_state(monkeypatch, tmp_path):
+    """manual 钉死备用且探测失败：failover_state 不得被重置回 primary。"""
+    svc, repo = _patch_service_repo(monkeypatch, tmp_path)
+    svc.upsert_remote_storage_profile(
+        "p",
+        protocol="sftp",
+        host="primary.local",
+        alt_host="tunnel.example",
+        fallback_mode="manual",
+    )
+    repo.set_failover_state("p", {"active": "alt"})
+
+    probed: list[str] = []
+    _patch_probes(monkeypatch, probed, fail_hosts={"primary.local", "tunnel.example"})
+
+    result = svc.test_remote_storage_profile("p")
+    assert result["success"] is False
+    # 主路径未被探测（仍只有备用一跳）
+    assert probed == ["sftp://tunnel.example/?cred=p"]
+    state = repo.get_profile_info("p")["extra"]["failover_state"]
+    assert state["active"] == "alt"
 
 
 def test_probe_failover_requires_alt(monkeypatch, tmp_path):
