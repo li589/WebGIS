@@ -12,6 +12,7 @@ import type { AnalysisToolDescriptor } from '../../services/analysis-api'
 import { ANALYSIS_COPY } from '../../ui-copy'
 import AppButton from '../ui/AppButton.vue'
 import AnalysisResultCharts from './AnalysisResultCharts.vue'
+import BasemapFeatureExtractCard from './BasemapFeatureExtractCard.vue'
 
 const props = defineProps<{
   displayLayer: ActiveLayerDisplay
@@ -149,6 +150,7 @@ const analysisTables = computed(() => props.displayLayer.jobLayer?.analysisTable
 const hasResults = computed(
   () => analysisCharts.value.length > 0 || analysisTables.value.length > 0,
 )
+const currentMapBBox = computed(() => layers.currentMapBBox)
 
 async function refreshTools() {
   await runner.loadToolsForDisplay(props.displayLayer, {
@@ -447,6 +449,12 @@ const phaseLabel = computed(() => {
       <div class="section-kicker">分析结果</div>
       <AnalysisResultCharts :charts="analysisCharts" :tables="analysisTables" />
     </div>
+
+    <BasemapFeatureExtractCard
+      :selected-map-point="selectedMapPoint"
+      :current-map-b-box="currentMapBBox"
+      @enter-select-mode="emit('enterSelectMode')"
+    />
   </section>
 </template>
 
