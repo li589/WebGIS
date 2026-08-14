@@ -17,7 +17,7 @@
   "nodes": [
     {
       "id": 1,
-      "type": "module/fy_download",
+      "type": "download/fy_download",
       "pos": [80, 140],
       "properties": {
         "satellite": "FY3D",
@@ -28,7 +28,7 @@
     },
     {
       "id": 2,
-      "type": "module/fy_preprocess",
+      "type": "download/fy_preprocess",
       "pos": [420, 140],
       "properties": {
         "satellite": "FY3D",

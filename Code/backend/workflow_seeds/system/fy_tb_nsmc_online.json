@@ -38,7 +38,7 @@
     },
     {
       "id": 3,
-      "type": "module/fy_preprocess",
+      "type": "download/fy_preprocess",
       "pos": [720, 140],
       "properties": {
         "satellite": "FY3d",

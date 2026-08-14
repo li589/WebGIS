@@ -279,3 +279,73 @@ def test_sync_dataset_surfaces_walk_errors(tmp_path, monkeypatch):
     assert result.downloaded == 1
     assert (tmp_path / "ok" / "f.mat").read_bytes() == b"abc"
     assert any("/data/bad" in e for e in result.errors)
+
+
+# ── ssh_sync 模块：file_filter 字符串/列表 双形态解析（模板 vs 表单对齐） ────
+
+
+def _ssh_sync_ctx(workspace: Path):
+    from types import SimpleNamespace
+    from workflow.schemas import NodeExecutionContext
+
+    class _FakeStore:
+        items: dict[str, object] = {}
+
+        def put(self, artifact, payload=None):
+            self.items[artifact.artifact_id] = payload
+            return artifact
+
+    request = SimpleNamespace(
+        job_id="j1", datasource_selection={}, region=None, time_range=None
+    )
+    runtime = SimpleNamespace(run_id="r1", workspace=str(workspace))
+    return NodeExecutionContext(
+        workflow_id="wf",
+        node_id="n1",
+        request=request,  # type: ignore[arg-type]
+        runtime_context=runtime,  # type: ignore[arg-type]
+        workspace=workspace,
+        artifact_store=_FakeStore(),  # type: ignore[arg-type]
+    )
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [".mat,.h5", "mat;h5", ".mat .h5", ["mat", ".h5"]],
+)
+def test_ssh_sync_file_filter_accepts_string_and_list(
+    tmp_path: Path, monkeypatch, raw
+) -> None:
+    import contracts.job  # noqa: F401
+    from modules.download_nodes import SshSyncModule
+
+    captured: dict[str, object] = {}
+
+    def _fake_sync_dataset(**kwargs):
+        captured.update(kwargs)
+        return rs.SyncResult(
+            total_files=1, downloaded=1, local_path=str(kwargs["local_path"])
+        )
+
+    monkeypatch.setattr(
+        "ingest.remote_sync.sync_dataset", lambda **kw: _fake_sync_dataset(**kw)
+    )
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    local_dir = tmp_path / "local"
+    local_dir.mkdir()
+    out = SshSyncModule().execute(
+        inputs={},
+        params={
+            "server_type": "hpc",
+            "host": "hpc",
+            "username": "u",
+            "password": "p",
+            "remote_path": "/data",
+            "local_path": str(local_dir),
+            "file_filter": raw,
+        },
+        ctx=_ssh_sync_ctx(workspace),
+    )
+    assert captured["file_filter"] == frozenset({".mat", ".h5"})
+    assert Path(out["path"]) == local_dir

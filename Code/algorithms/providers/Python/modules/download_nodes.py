@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from contracts.product import ProductManifest, ProductRef
@@ -22,10 +23,16 @@ from modules.registry import register_module_decorator
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
 
 
-def _resolve_earthdata_portal_userpass(
-    datasource_selection: dict[str, object],
-) -> tuple[str, str]:
-    """Resolve earthdata username/password from portal credentials (lazy)."""
+def _resolve_portal_entry(
+    datasource_selection: dict[str, object], portal_key: str
+) -> dict[str, object]:
+    """解析指定门户的凭证 entry（统一入口，供 fy/earthdata/nsmc 等模块复用）。
+
+    优先 ``datasource_selection.portal_credentials``（随作业下发）；
+    为空且 ``portal_credentials_resolve`` 为真时，lazy 回退后端
+    ``config_service.get_portal_credentials_runtime()``（provider 进程内才可用）。
+    返回 entry dict；缺失或 ``enabled is False`` 返回空 dict。
+    """
     portal_creds = datasource_selection.get("portal_credentials")
     if not isinstance(portal_creds, dict):
         portal_creds = {}
@@ -38,10 +45,18 @@ def _resolve_earthdata_portal_userpass(
                 portal_creds = resolved
         except Exception:  # noqa: BLE001
             portal_creds = {}
-    entry = portal_creds.get("earthdata")
-    if not isinstance(entry, dict):
-        return "", ""
-    if entry.get("enabled") is False:
+    entry = portal_creds.get(portal_key)
+    if not isinstance(entry, dict) or entry.get("enabled") is False:
+        return {}
+    return entry
+
+
+def _resolve_earthdata_portal_userpass(
+    datasource_selection: dict[str, object],
+) -> tuple[str, str]:
+    """Resolve earthdata username/password from portal credentials (lazy)."""
+    entry = _resolve_portal_entry(datasource_selection, "earthdata")
+    if not entry:
         return "", ""
     user = str(entry.get("username") or "").strip()
     password = str(entry.get("password") or "").strip()
@@ -256,6 +271,11 @@ class SshSyncModule(BaseModule):
 
         raw_filter = resolved.get("file_filter")
         file_filter: frozenset[str] | None = None
+        if isinstance(raw_filter, str) and raw_filter.strip():
+            # 模板/表单以字符串传入（如 ".mat,.h5"）
+            raw_filter = [
+                tok for tok in re.split(r"[,;\s]+", raw_filter.strip()) if tok
+            ]
         if isinstance(raw_filter, (list, tuple, set, frozenset)) and raw_filter:
             normalized = {
                 (e if str(e).startswith(".") else f".{e}").lower()

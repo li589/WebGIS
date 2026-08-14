@@ -23,6 +23,13 @@ FileBrowser 数据同步函数，供工作流 ``ssh_sync`` 节点调用。
     - 远程数据只读，绝不删除远端文件
     - 增量同步：按文件大小判断，跳过本地已存在且大小一致的文件
     - 断点续传：本地存在但小于远程的文件自动追加续传
+
+连接配置来源（重要）：
+    - 工作流 ``ssh_sync`` 节点的生产路径**不使用**下方工厂方法的默认值——
+      host/user/密钥等经后端「远程与存储」profile（``config_remote_storage``，
+      AESGCM 加密存储）解析后注入 ``ServerConfig`` 字段。
+    - 工厂方法中的 host/username/key 默认值仅为本机实验室内网**兜底/示例**，
+      跨机器部署时一律显式传参或配置 profile，勿依赖默认值。
 """
 
 from __future__ import annotations
@@ -106,7 +113,10 @@ class ServerConfig:
         username: str = "likr6008",
         key_filename: str = "",
     ) -> ServerConfig:
-        """Cloudflare 隧道方式连接 HPC。"""
+        """Cloudflare 隧道方式连接 HPC。
+
+        默认值为本机实验室兜底（可被参数覆盖）；生产走 profile 注入。
+        """
         key = key_filename or str(Path.home() / ".ssh" / "seahpc_key")
         return ServerConfig(
             server_type="hpc",
@@ -123,7 +133,7 @@ class ServerConfig:
         username: str = "likr6008",
         key_filename: str = "",
     ) -> ServerConfig:
-        """校园网内直连 HPC。"""
+        """校园网内直连 HPC（默认值为实验室兜底，可被参数覆盖）。"""
         return ServerConfig(
             server_type="hpc",
             host=host,
@@ -137,7 +147,7 @@ class ServerConfig:
         ssh_alias: str = "win11-lab",
         username: str = "qiujianqiu",
     ) -> ServerConfig:
-        """经 SSH 配置别名连接 Win11 跳板机。"""
+        """经 SSH 配置别名连接 Win11 跳板机（默认值为实验室兜底）。"""
         return ServerConfig(
             server_type="win11",
             host=ssh_alias,
@@ -148,11 +158,20 @@ class ServerConfig:
 
     @staticmethod
     def for_nas(
-        filebrowser_url: str = "https://nasfile.personaltunnel.dpdns.org",
-        username: str = "user",
+        filebrowser_url: str = "",
+        username: str = "",
         password: str = "",
     ) -> ServerConfig:
-        """FileBrowser API 连接 NAS。"""
+        """FileBrowser API 连接 NAS。
+
+        与后端 ``settings.filebrowser_nas_url`` 一致默认为空（功能禁用）：
+        历史 *.personaltunnel.dpdns.org 免费动态 DNS 端点可被第三方注册，
+        已从默认值移除，须显式传入内部地址或经 profile 配置。
+        """
+        if not filebrowser_url:
+            raise ValueError(
+                "for_nas 需要 filebrowser_url（历史外部 DDNS 默认值已按后端安全决策移除）"
+            )
         return ServerConfig(
             server_type="nas",
             host=filebrowser_url,

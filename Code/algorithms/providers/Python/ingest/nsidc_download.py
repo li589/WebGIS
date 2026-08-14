@@ -58,7 +58,14 @@ DOWNLOAD_TIMEOUT = 3600
 MIN_DISK_FREE_GB = 5.0
 PROGRESS_INTERVAL = 2.0
 
-DEFAULT_OUTPUT_DIR = Path(r"I:\Geograph_DataSet\Soil_Moisture\SMAP")
+# 独立运行的兜底目录：经 BACKEND_DATA_ROOT 注入根（未设时退回实验室本机路径）。
+# 工作流路径不使用此默认——nsidc_smap_download 节点显式传 local_dir
+# （节点参数优先，缺省落 ctx.workspace/data_access/smap_download）。
+DEFAULT_OUTPUT_DIR = (
+    Path(os.getenv("BACKEND_DATA_ROOT", r"I:\Geograph_DataSet"))
+    / "Soil_Moisture"
+    / "SMAP"
+)
 
 # 尝试导入 earthaccess
 try:

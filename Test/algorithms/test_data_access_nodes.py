@@ -130,5 +130,45 @@ class DataAccessNodesTests(unittest.TestCase):
             self.assertEqual(out["map_layer"]["layer_id"], "method-smap-omega-doy-dynamic")
 
 
+class TestResolvePortalEntry(unittest.TestCase):
+    """门户凭证统一解析：内联优先、禁用返回空、无回退标记不触达后端。"""
+
+    def test_inline_credentials_win(self) -> None:
+        from modules.download_nodes import _resolve_portal_entry
+
+        entry = _resolve_portal_entry(
+            {"portal_credentials": {"nsmc": {"token": "t1"}}}, "nsmc"
+        )
+        self.assertEqual(entry, {"token": "t1"})
+
+    def test_disabled_entry_returns_empty(self) -> None:
+        from modules.download_nodes import _resolve_portal_entry
+
+        entry = _resolve_portal_entry(
+            {"portal_credentials": {"nsmc": {"token": "t", "enabled": False}}},
+            "nsmc",
+        )
+        self.assertEqual(entry, {})
+
+    def test_missing_key_returns_empty(self) -> None:
+        from modules.download_nodes import _resolve_portal_entry
+
+        self.assertEqual(_resolve_portal_entry({}, "nsmc"), {})
+
+    def test_no_resolve_flag_no_backend_import(self) -> None:
+        import sys
+
+        from modules.download_nodes import _resolve_portal_entry
+
+        # 无 portal_credentials_resolve 标记时不 import app.services（算法包可独立运行）
+        before = set(sys.modules)
+        _resolve_portal_entry({"portal_credentials": {}}, "nsmc")
+        new = set(sys.modules) - before
+        self.assertFalse(
+            [m for m in new if m.startswith("app.")],
+            f"unexpected backend import: {sorted(m for m in new if m.startswith('app.'))}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
