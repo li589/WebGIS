@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+_PYTHON_PROVIDER = _REPO_ROOT / "Code" / "algorithms" / "providers" / "Python"
 for _p in (
+    _PYTHON_PROVIDER,
     _REPO_ROOT / "Code" / "backend",
     _REPO_ROOT / "Code",
-    _REPO_ROOT / "algorithms" / "providers" / "Python",
 ):
     _s = str(_p)
     if _s in sys.path:
@@ -174,3 +176,81 @@ def test_sftp_connect_accepts_private_key_pem(monkeypatch):
         )
     )
     assert connect_kwargs["password"] == "pw"
+
+
+class _FakeArtifactStore:
+    def put(self, artifact, payload=None):
+        return artifact
+
+
+def test_ssh_sync_resolves_start_date_and_file_filter(monkeypatch, tmp_path):
+    """表单 start_date/end_date + file_filter 须传到 sync_dataset（兼容 date_*）。"""
+    from modules.download_nodes import SshSyncModule
+    from workflow.schemas import NodeExecutionContext
+
+    captured: dict = {}
+
+    def _fake_sync(**kwargs):
+        captured.update(kwargs)
+
+        class _R:
+            success = True
+            total_files = 1
+            downloaded = 1
+            skipped = 0
+            failed = 0
+            downloaded_bytes = 10
+            resumed = False
+            errors: list = []
+
+        return _R()
+
+    monkeypatch.setattr("ingest.remote_sync.sync_dataset", _fake_sync)
+
+    request = SimpleNamespace(
+        job_id="j1", datasource_selection={}, region=None, time_range=None
+    )
+    runtime = SimpleNamespace(run_id="r1", workspace=str(tmp_path))
+    ctx = NodeExecutionContext(
+        workflow_id="wf",
+        node_id="n1",
+        request=request,  # type: ignore[arg-type]
+        runtime_context=runtime,  # type: ignore[arg-type]
+        workspace=tmp_path,
+        artifact_store=_FakeArtifactStore(),  # type: ignore[arg-type]
+    )
+    mod = SshSyncModule()
+    mod.execute(
+        inputs={},
+        params={
+            "server_type": "hpc",
+            "host": "h1",
+            "username": "u",
+            "password": "p",
+            "remote_path": "/data",
+            "local_path": str(tmp_path / "out"),
+            "start_date": "20240101",
+            "end_date": "20240131",
+            "file_filter": ["mat", ".h5"],
+        },
+        ctx=ctx,
+    )
+    assert captured["date_range"] == ("20240101", "20240131")
+    assert captured["file_filter"] == frozenset({".mat", ".h5"})
+
+    captured.clear()
+    mod.execute(
+        inputs={},
+        params={
+            "server_type": "hpc",
+            "host": "h1",
+            "username": "u",
+            "password": "p",
+            "remote_path": "/data",
+            "local_path": str(tmp_path / "out2"),
+            "date_start": "20240201",
+            "date_end": "20240228",
+        },
+        ctx=ctx,
+    )
+    assert captured["date_range"] == ("20240201", "20240228")

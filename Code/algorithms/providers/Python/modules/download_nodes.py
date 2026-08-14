@@ -186,8 +186,12 @@ class SshSyncModule(BaseModule):
         "proxy_command": "",
         "remote_path": "",
         "local_path": "",
+        # 与前端 SshSyncForm / 其它下载节点对齐；date_* 为历史别名
+        "start_date": "",
+        "end_date": "",
         "date_start": "",
         "date_end": "",
+        "file_filter": [],
         "dry_run": False,
     }
 
@@ -239,12 +243,27 @@ class SshSyncModule(BaseModule):
         else:
             config = _resolve_profile_server_config(server_type)
 
-        # 日期范围
-        date_start = str(resolved.get("date_start") or "").strip()
-        date_end = str(resolved.get("date_end") or "").strip()
+        # 日期范围：优先 start_date/end_date（表单），兼容 date_start/date_end
+        date_start = str(
+            resolved.get("start_date") or resolved.get("date_start") or ""
+        ).strip()
+        date_end = str(
+            resolved.get("end_date") or resolved.get("date_end") or ""
+        ).strip()
         date_range: tuple[str, str] | None = None
         if date_start and date_end:
             date_range = (date_start, date_end)
+
+        raw_filter = resolved.get("file_filter")
+        file_filter: frozenset[str] | None = None
+        if isinstance(raw_filter, (list, tuple, set, frozenset)) and raw_filter:
+            normalized = {
+                (e if str(e).startswith(".") else f".{e}").lower()
+                for e in raw_filter
+                if str(e).strip()
+            }
+            if normalized:
+                file_filter = frozenset(normalized)
 
         dry_run = bool(resolved.get("dry_run"))
 
@@ -267,6 +286,7 @@ class SshSyncModule(BaseModule):
             remote_path=remote_path,
             local_path=local_path,
             date_range=date_range,
+            file_filter=file_filter,
             progress_callback=_progress_cb,
             dry_run=dry_run,
         )
