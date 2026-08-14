@@ -23,6 +23,7 @@ import {
 import { fieldMapForNodeType } from '../../../composables/node-form-system-settings-map'
 import { WORKFLOW_COPY } from '../../../ui-copy/workflow'
 import AppSelect from '../../ui/AppSelect.vue'
+import PortalCredHint from './PortalCredHint.vue'
 
 const NODE_TYPE = 'download/fy_download'
 const PATH_FIELD_MAP = fieldMapForNodeType(NODE_TYPE)
@@ -100,6 +101,12 @@ function update(key: string, value: unknown) {
 
 <template>
   <div class="node-form">
+    <!-- 门户凭据状态（NSMC 门户下载需要） -->
+    <div class="form-row">
+      <label class="form-label">NSMC 凭据</label>
+      <PortalCredHint cred-key="nsmc" />
+    </div>
+
     <div class="form-row">
       <label class="form-label">卫星 satellite</label>
       <AppSelect

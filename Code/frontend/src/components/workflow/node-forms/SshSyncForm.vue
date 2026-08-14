@@ -5,18 +5,21 @@
  * download/ssh_sync 节点专用参数表单。
  *
  * 字段：
- *   - server_type: hpc / win11 / nas
- *   - remote_path: 远程路径（带"浏览"按钮 → RemoteDirBrowser）
+ *   - server_type: hpc / win11 / nas 遗留内置 + 「远程与存储」profile（ssh/sftp/filebrowser，动态注入）
+ *   - remote_path: 远程路径（带"浏览"按钮 → RemoteDirBrowser；profile 走双路径回退浏览）
  *   - local_path:  本地路径（须填写；相对 BACKEND_DATA_ROOT 或绝对路径）
  *   - start_date / end_date: YYYYMMDD
  *   - file_filter: 多选扩展名标签 (.mat/.h5/.nc/.tif/.txt)
- *   - 连接状态指示器（GET /api/remote/test?server=...）
+ *   - 连接状态指示器（GET /api/remote/test?server=...，legacy 与 profile 均支持）
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { Check, AlertTriangle } from '../../ui/icons'
 import type { LGraphNodeClass } from '../litegraph-setup'
 import { requestJson } from '../../../services/_http'
+import { fetchRemoteStorageProfiles } from '../../../services/settings-api'
+import type { RemoteStorageProfile } from '../../../types/api-reexports'
 import RemoteDirBrowser from './RemoteDirBrowser.vue'
+import ParamCombobox from '../ParamCombobox.vue'
 import {
   type FormErrors,
   isoToYyyymmdd,
@@ -31,10 +34,13 @@ import {
 } from '../../../composables/system-settings-fill'
 import { fieldMapForNodeType } from '../../../composables/node-form-system-settings-map'
 import { WORKFLOW_COPY } from '../../../ui-copy/workflow'
-import AppSelect from '../../ui/AppSelect.vue'
 
 const NODE_TYPE = 'download/ssh_sync'
 const PATH_FIELD_MAP = fieldMapForNodeType(NODE_TYPE)
+
+/** 与后端 _SSH_SYNC_PROFILE_PROTOCOLS 对齐：可直接执行同步的远程存储协议。 */
+const SYNC_PROFILE_PROTOCOLS = new Set(['ssh', 'sftp', 'filebrowser'])
+const LEGACY_SERVERS = ['hpc', 'win11', 'nas']
 
 const props = defineProps<{
   node: LGraphNodeClass | null
@@ -104,6 +110,42 @@ onMounted(async () => {
   } catch {
     /* ignore settings fetch errors */
   }
+  loadSyncProfiles()
+})
+
+// ── 动态服务器选项：遗留内置 + 可同步的远程存储 profile ─────────────────────
+const syncProfiles = ref<RemoteStorageProfile[]>([])
+
+async function loadSyncProfiles() {
+  try {
+    // 仅启用中的 profile；凭据细节不出仓库
+    const profiles = await fetchRemoteStorageProfiles(false)
+    syncProfiles.value = profiles.filter(
+      (p) => p.enabled && SYNC_PROFILE_PROTOCOLS.has(String(p.protocol || '').toLowerCase()),
+    )
+  } catch {
+    syncProfiles.value = []
+  }
+}
+
+const serverOptions = computed(() => [
+  ...LEGACY_SERVERS,
+  ...syncProfiles.value.map((p) => p.profile_id),
+])
+
+const serverHint = computed(() => {
+  const v = String(form.server_type ?? '').trim()
+  if (!v) return ''
+  const profile = syncProfiles.value.find((p) => p.profile_id === v)
+  if (profile) {
+    const via = String(profile.failover_state?.['active'] || '') === 'alt' ? '备用路径' : '主路径'
+    const cred = profile.has_secret || profile.has_private_key ? '凭据已存' : '缺凭据'
+    return `${profile.display_name || profile.profile_id} · ${profile.protocol} · ${via} · ${cred}`
+  }
+  if (v === 'hpc') return 'hpc — 遗留内置 SFTP（环境变量配置）'
+  if (v === 'win11') return 'win11 — 遗留内置 FileBrowser（环境变量配置）'
+  if (v === 'nas') return 'nas — 遗留内置 FileBrowser（环境变量配置）'
+  return '未识别的 server（不在目录中，运行时按远程存储 profile 解析）'
 })
 
 async function applySystemSettings(overwrite = true) {
@@ -138,6 +180,7 @@ function onBrowserSelect(path: string) {
 interface ConnState {
   status: 'idle' | 'testing' | 'ok' | 'fail'
   latency?: number
+  message?: string
   error?: string
 }
 const connState = ref<ConnState>({ status: 'idle' })
@@ -147,13 +190,20 @@ async function testConnection() {
   if (!server || props.readonly) return
   connState.value = { status: 'testing' }
   try {
-    const data = await requestJson<{ ok: boolean; latency_ms?: number; error?: string }>(
-      `/api/remote/test?server=${encodeURIComponent(server)}`,
-      { silent: true, timeoutMs: 20000 },
-    )
-    connState.value = data.ok
-      ? { status: 'ok', latency: data.latency_ms }
-      : { status: 'fail', error: data.error || '连接失败' }
+    const data = await requestJson<{
+      ok: boolean
+      latency_ms?: number
+      error?: string
+      message?: string
+    }>(`/api/remote/test?server=${encodeURIComponent(server)}`, {
+      silent: true,
+      timeoutMs: 30000,
+    })
+    if (data.ok) {
+      connState.value = { status: 'ok', latency: data.latency_ms, message: data.message }
+    } else {
+      connState.value = { status: 'fail', error: data.error || data.message || '连接失败' }
+    }
   } catch (err) {
     connState.value = {
       status: 'fail',
@@ -190,17 +240,16 @@ function toggleFilter(ext: string) {
     <!-- 服务器类型 -->
     <div class="form-row">
       <label class="form-label">服务器 server_type</label>
-      <AppSelect
+      <ParamCombobox
         :model-value="String(form.server_type ?? 'hpc')"
+        :options="serverOptions"
         :disabled="readonly"
-        :options="[
-          { label: 'hpc（SFTP 高性能集群）', value: 'hpc' },
-          { label: 'win11（FileBrowser）', value: 'win11' },
-          { label: 'nas（FileBrowser）', value: 'nas' },
-        ]"
-        @change="(val: string) => update('server_type', val)"
+        :allow-custom="true"
+        placeholder="hpc / win11 / nas 或远程存储 profile id"
+        @update:model-value="(v: string) => update('server_type', v)"
       />
       <span v-if="errors.server_type" class="field-error">{{ errors.server_type }}</span>
+      <span v-else-if="serverHint" class="field-hint">{{ serverHint }}</span>
     </div>
 
     <!-- 连接状态 -->
@@ -220,7 +269,11 @@ function toggleFilter(ext: string) {
           <template v-if="connState.status === 'idle'">未测试</template>
           <template v-else-if="connState.status === 'testing'">测试中…</template>
           <template v-else-if="connState.status === 'ok'">
-            已连接（{{ connState.latency }} ms）
+            {{
+              connState.latency != null
+                ? `已连接（${connState.latency} ms）`
+                : connState.message || '已连接'
+            }}
           </template>
           <template v-else>{{ connState.error || '连接失败' }}</template>
         </span>
@@ -561,6 +614,15 @@ function toggleFilter(ext: string) {
   color: var(--danger);
   margin-top: 0.06rem;
   line-height: 1.3;
+}
+
+.field-hint {
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 校验状态摘要 */

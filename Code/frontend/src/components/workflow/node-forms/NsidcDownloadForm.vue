@@ -28,6 +28,7 @@ import {
 import { fieldMapForNodeType } from '../../../composables/node-form-system-settings-map'
 import { WORKFLOW_COPY } from '../../../ui-copy/workflow'
 import AppSelect from '../../ui/AppSelect.vue'
+import PortalCredHint from './PortalCredHint.vue'
 
 const NODE_TYPE = 'download/nsidc_smap_download'
 const PATH_FIELD_MAP = fieldMapForNodeType(NODE_TYPE)
@@ -120,6 +121,12 @@ function update(key: string, value: unknown) {
 
 <template>
   <div class="node-form">
+    <!-- 门户凭据状态 -->
+    <div class="form-row">
+      <label class="form-label">Earthdata 凭据</label>
+      <PortalCredHint cred-key="earthdata" />
+    </div>
+
     <!-- 数据集短名 -->
     <div class="form-row">
       <label class="form-label">数据集 short_name</label>

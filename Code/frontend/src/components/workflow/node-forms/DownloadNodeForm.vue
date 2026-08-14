@@ -5,6 +5,7 @@
  * 统一下载节点表单入口：根据 node.type 分发到专用子表单。
  *
  *   - download/ssh_sync           → SshSyncForm
+ *   - download/http_open_data     → HttpOpenDataForm
  *   - download/nsidc_smap_download → NsidcDownloadForm
  *   - download/gldas_download      → GldasDownloadForm
  *   - download/gldas_nc4_to_mat    → GldasNc4ToMatForm
@@ -17,6 +18,7 @@
 import { computed } from 'vue'
 import type { LGraphNodeClass } from '../litegraph-setup'
 import SshSyncForm from './SshSyncForm.vue'
+import HttpOpenDataForm from './HttpOpenDataForm.vue'
 import NsidcDownloadForm from './NsidcDownloadForm.vue'
 import GldasDownloadForm from './GldasDownloadForm.vue'
 import GldasNc4ToMatForm from './GldasNc4ToMatForm.vue'
@@ -36,6 +38,7 @@ const nodeType = computed(() => props.node?.type ?? '')
 
 const SUBFORM_LABELS: Record<string, string> = {
   'download/ssh_sync': 'SSH 同步',
+  'download/http_open_data': '门户数据下载',
   'download/nsidc_smap_download': 'NSIDC SMAP 下载',
   'download/gldas_download': 'GLDAS 在线下载',
   'download/gldas_nc4_to_mat': 'GLDAS nc4→mat',
@@ -56,6 +59,13 @@ function forward(key: string, value: unknown) {
 
     <SshSyncForm
       v-if="nodeType === 'download/ssh_sync'"
+      :node="node"
+      :readonly="readonly"
+      @update-property="forward"
+    />
+
+    <HttpOpenDataForm
+      v-else-if="nodeType === 'download/http_open_data'"
       :node="node"
       :readonly="readonly"
       @update-property="forward"
