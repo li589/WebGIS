@@ -6486,7 +6486,7 @@ export interface components {
             alt_host?: string | null;
             /**
              * Alt Port
-             * @description 备用访问路径端口，写入 extra.alt.port
+             * @description 备用访问路径端口，写入 extra.alt.port；0 表示显式清除
              */
             alt_port?: number | null;
             /**
@@ -14260,7 +14260,7 @@ export interface operations {
     list_remote_dir_api_remote_list_get: {
         parameters: {
             query: {
-                /** @description 服务器名称: hpc / win11 / nas */
+                /** @description 服务器名称: hpc / win11 / nas 或远程存储 profile id */
                 server: string;
                 /** @description 远程目录路径 */
                 path?: string;
@@ -14296,7 +14296,7 @@ export interface operations {
     test_remote_connection_api_remote_test_get: {
         parameters: {
             query: {
-                /** @description 服务器名称: hpc / win11 / nas */
+                /** @description 服务器名称: hpc / win11 / nas 或远程存储 profile id */
                 server: string;
             };
             header?: never;

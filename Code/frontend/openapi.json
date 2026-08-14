@@ -10029,10 +10029,10 @@
             "required": true,
             "schema": {
               "type": "string",
-              "description": "服务器名称: hpc / win11 / nas",
+              "description": "服务器名称: hpc / win11 / nas 或远程存储 profile id",
               "title": "Server"
             },
-            "description": "服务器名称: hpc / win11 / nas"
+            "description": "服务器名称: hpc / win11 / nas 或远程存储 profile id"
           },
           {
             "name": "path",
@@ -10093,10 +10093,10 @@
             "required": true,
             "schema": {
               "type": "string",
-              "description": "服务器名称: hpc / win11 / nas",
+              "description": "服务器名称: hpc / win11 / nas 或远程存储 profile id",
               "title": "Server"
             },
-            "description": "服务器名称: hpc / win11 / nas"
+            "description": "服务器名称: hpc / win11 / nas 或远程存储 profile id"
           }
         ],
         "responses": {
@@ -17151,7 +17151,7 @@
               }
             ],
             "title": "Alt Port",
-            "description": "备用访问路径端口，写入 extra.alt.port"
+            "description": "备用访问路径端口，写入 extra.alt.port；0 表示显式清除"
           },
           "alt_url": {
             "anyOf": [

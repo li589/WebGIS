@@ -492,12 +492,13 @@ class RemoteStorageUpsertRequest(BaseModel):
     # None preserves existing enabled flag on update
     enabled: bool | None = None
     # 双路径（合并写入 extra.alt；任一字段非 None 即触发合并，None 的字段保留原值；
-    # 置空字符串可清除对应备用字段）
+    # host/url 置空字符串清除对应备用字段；port 传 0 显式清除备用端口）
     alt_host: str | None = Field(
         default=None, description="备用访问路径主机/URL（隧道），写入 extra.alt.host"
     )
     alt_port: int | None = Field(
-        default=None, description="备用访问路径端口，写入 extra.alt.port"
+        default=None,
+        description="备用访问路径端口，写入 extra.alt.port；0 表示显式清除",
     )
     alt_url: str | None = Field(
         default=None,
