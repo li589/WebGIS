@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -15,6 +16,9 @@ from path_utils import local_path_to_uri
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024  # 512 MiB
+# 下载重试（指数退避 2s/4s；.part 半成品保留供 Range 续传）
+_MAX_DOWNLOAD_ATTEMPTS = 3
+_RETRY_BACKOFF_BASE_SECONDS = 2.0
 # URL path suffixes that are scripts/filters, not payload extensions (NOMADS CGI).
 _OPAQUE_URL_SUFFIXES = frozenset(
     {".pl", ".cgi", ".php", ".asp", ".aspx", ".jsp", ".py", ".exe"}
@@ -310,9 +314,15 @@ class HttpSource:
         except HTTPError as exc:
             if exc.code == 304:
                 return True
+            if exc.code == 429 or exc.code >= 500:
+                raise ConnectionError(
+                    f"HTTP revalidate failed (transient) for {uri}: {exc}"
+                ) from exc
             raise ValueError(f"HTTP revalidate failed for {uri}: {exc}") from exc
         except (URLError, TimeoutError, OSError) as exc:
-            raise ValueError(f"HTTP revalidate failed for {uri}: {exc}") from exc
+            raise ConnectionError(
+                f"HTTP revalidate failed (transient) for {uri}: {exc}"
+            ) from exc
 
     def _download(
         self,
@@ -322,24 +332,92 @@ class HttpSource:
         extra_headers: dict[str, str],
         meta: dict[str, object],
     ) -> None:
-        headers = self._merge_request_headers(extra_headers)
-        req = Request(uri, headers=headers)
+        """带重试与断点续传的下载。
+
+        - 写 ``<name>.part`` 半成品，成功后 ``os.replace`` 原子落盘；
+        - 重试间保留 ``.part``，经 ``Range: bytes=N-`` 续传（服务器返回 206 才追加，
+          否则整体重写）；
+        - 瞬态故障（网络/超时/5xx/429）退避后重试，最终抛 ``ConnectionError``
+          （上游 FailureClassifier 归 transient_network，可重试）；
+        - 终态 4xx 与 max_bytes 超限抛 ``ValueError``（不可重试）。
+        """
         timeout = _timeout_seconds(meta)
-        try:
-            with urlopen(req, timeout=timeout) as resp:
-                self._write_response_body(resp, local_path, meta)
-                self._update_sidecar_from_response(local_path, resp)
-        except (HTTPError, URLError, TimeoutError, OSError) as exc:
-            local_path.unlink(missing_ok=True)
-            _meta_sidecars(local_path).unlink(missing_ok=True)
-            raise ValueError(f"HTTP materialize failed for {uri}: {exc}") from exc
+        part_path = local_path.with_name(local_path.name + ".part")
+        last_exc: Exception | None = None
+
+        for attempt in range(1, _MAX_DOWNLOAD_ATTEMPTS + 1):
+            resume_offset = part_path.stat().st_size if part_path.exists() else 0
+            headers = self._merge_request_headers(extra_headers)
+            if resume_offset > 0:
+                headers["Range"] = f"bytes={resume_offset}-"
+            req = Request(uri, headers=headers)
+            try:
+                with urlopen(req, timeout=timeout) as resp:
+                    status = int(
+                        getattr(resp, "status", None)
+                        or getattr(resp, "getcode", lambda: 0)()
+                        or 0
+                    )
+                    if resume_offset > 0 and status == 206:
+                        mode, start_offset = "ab", resume_offset
+                    else:
+                        # 服务器不支持 Range（返回 200）或全新下载：整体重写
+                        mode, start_offset = "wb", 0
+                    self._write_response_body(
+                        resp, part_path, meta, mode=mode, start_offset=start_offset
+                    )
+                    os.replace(part_path, local_path)
+                    self._update_sidecar_from_response(local_path, resp)
+                    return
+            except ValueError:
+                # max_bytes 超限等业务终态：清半成品，不重试
+                part_path.unlink(missing_ok=True)
+                raise
+            except HTTPError as exc:
+                if exc.code == 416:
+                    # .part 已超过远端大小（远端资源变更）：丢弃半成品整体重下
+                    part_path.unlink(missing_ok=True)
+                    last_exc = exc
+                elif exc.code == 429 or exc.code >= 500:
+                    last_exc = exc
+                else:
+                    part_path.unlink(missing_ok=True)
+                    raise ValueError(
+                        f"HTTP materialize failed for {uri}: {exc}"
+                    ) from exc
+            except (URLError, TimeoutError, OSError) as exc:
+                # 网络向瞬态：保留 .part 供下次续传
+                last_exc = exc
+
+            if attempt >= _MAX_DOWNLOAD_ATTEMPTS:
+                break
+            delay = _RETRY_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1))
+            logger.warning(
+                "HTTP materialize 失败（第 %d/%d 次），%.1fs 后重试（续传偏移 %d）: %s",
+                attempt,
+                _MAX_DOWNLOAD_ATTEMPTS,
+                delay,
+                part_path.stat().st_size if part_path.exists() else 0,
+                uri,
+            )
+            time.sleep(delay)
+
+        raise ConnectionError(
+            f"HTTP materialize failed (transient) for {uri}: {last_exc}"
+        ) from last_exc
 
     def _write_response_body(
-        self, resp, local_path: Path, meta: dict[str, object]
+        self,
+        resp,
+        local_path: Path,
+        meta: dict[str, object],
+        *,
+        mode: str = "wb",
+        start_offset: int = 0,
     ) -> None:
         max_bytes = _max_download_bytes(meta)
-        written = 0
-        with local_path.open("wb") as out:
+        written = start_offset
+        with local_path.open(mode) as out:
             while True:
                 chunk = resp.read(1024 * 1024)
                 if not chunk:
