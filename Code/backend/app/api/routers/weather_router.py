@@ -1,7 +1,9 @@
 import json
 import logging
+import re
 import time
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import urlopen
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -50,6 +52,11 @@ def _probe_local_open_meteo_coverage(model: str) -> tuple[dict | None, str | Non
     - ``times``：原始 hourly.time（供瓦片 hour 索引映射，与 Open-Meteo 对齐）
     - ``valid_times``：temperature 非空的时次（供时间轴绿/紫着色）
     """
+    # 安全：model 来自用户查询参数，先做格式白名单校验（仅允许字母/数字/下划线/连字符）
+    # 必须在缓存查找之前校验，避免无效输入进入缓存键
+    if not re.match(r"^[A-Za-z0-9_-]+$", model):
+        return None, "model_invalid"
+
     cache_key = f"local:{model}"
     # C2：Redis 优先（多 worker 共享），miss 才本地缓存/探针
     redis_key = f"{_COVERAGE_REDIS_PREFIX}{model}"
@@ -63,9 +70,12 @@ def _probe_local_open_meteo_coverage(model: str) -> tuple[dict | None, str | Non
 
     from app.weatherengine.provider_ids import OPEN_METEO_LOCAL_URL
 
+    # 安全：model 已通过白名单校验，URL 编码防止查询参数注入
+    safe_model = quote(model, safe="")
+
     probe_url = (
         f"{OPEN_METEO_LOCAL_URL}?latitude=23.13&longitude=113.26"
-        f"&hourly=temperature_2m&models={model}&forecast_days=16&timezone=Asia%2FShanghai"
+        f"&hourly=temperature_2m&models={safe_model}&forecast_days=16&timezone=Asia%2FShanghai"
     )
     try:
         with urlopen(probe_url, timeout=5) as response:
@@ -127,11 +137,18 @@ def get_weather_coverage(model: str | None = None):
         messages = {
             "local_unreachable": "Local Open-Meteo is unreachable (container may be down).",
             "model_empty": f"No usable data for model={resolved_model} (not synced or empty hourly).",
+            "model_invalid": f"Invalid model name: {resolved_model} (only alphanumeric, underscore and hyphen are allowed).",
             "probe_error": f"Coverage probe failed for model={resolved_model}.",
         }
         code = error_code or "probe_error"
+        # model_invalid 是客户端输入错误，返回 400；其余为服务端问题，返回 503
+        http_status = (
+            status.HTTP_400_BAD_REQUEST
+            if code == "model_invalid"
+            else status.HTTP_503_SERVICE_UNAVAILABLE
+        )
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=http_status,
             detail={
                 "code": code,
                 "message": messages.get(code, messages["probe_error"]),

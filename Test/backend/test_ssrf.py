@@ -256,3 +256,31 @@ def test_is_trusted_open_meteo_local_url() -> None:
         f"{OPEN_METEO_LOCAL_URL}?latitude=0&longitude=0"
     )
     assert not is_trusted_open_meteo_local_url("https://api.open-meteo.com/v1/forecast")
+
+
+def test_validate_url_for_storage_http_only() -> None:
+    from app.core.ssrf import validate_url_for_storage
+
+    assert (
+        validate_url_for_storage("https://nomads.ncep.noaa.gov/")
+        == "https://nomads.ncep.noaa.gov/"
+    )
+    with pytest.raises(ValueError, match="http or https"):
+        validate_url_for_storage("smb://nas/share/a.h5")
+    with pytest.raises(ValueError, match="javascript|http or https"):
+        validate_url_for_storage("javascript:alert(1)")
+
+
+def test_validate_data_source_uri_for_storage_allows_platform_schemes() -> None:
+    from app.core.ssrf import validate_data_source_uri_for_storage
+
+    assert (
+        validate_data_source_uri_for_storage("smb://nas/share/a.h5?cred=nas-lab")
+        == "smb://nas/share/a.h5?cred=nas-lab"
+    )
+    assert (
+        validate_data_source_uri_for_storage("file:///C:/data/x.tif")
+        == "file:///C:/data/x.tif"
+    )
+    with pytest.raises(ValueError, match="scheme"):
+        validate_data_source_uri_for_storage("javascript:alert(1)")

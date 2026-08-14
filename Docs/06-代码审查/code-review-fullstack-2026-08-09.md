@@ -78,7 +78,7 @@
 | **S-P1-5** | 🟠 P1 | `rate_limit.py` L51–52 | 写限流仅 `/config`、`/import`、`/workflow-runs`；缺 `/cleanup`、`/runtime`、`/workflow-timers`、`/weather/sync` | 扩展 `_WRITE_LIMITED_PREFIXES` |
 | **S-P1-6** | 🟠 P1 | `runtime_router.py` L51–115、L188+ | `GET /runtime/status|metrics|api-config|tiles/cache/stats` 无鉴权 | 管理读端点加 `require_config_read_access` 或网络 ACL |
 | **S-P1-7** | 🟠 P1 | `effective_config.py` | 单主密钥加密全部凭据（架构性 blast radius） | 长期 HKDF 分域；短期文档化 |
-| **S-P2-1** | 🟡 P2 | `workflow_timer_router.py` L31+ | `POST /workflow-timers/cron-preview` 无鉴权 | 可选加读鉴权或轻量限流 |
+| **S-P2-1** | 🟡 P2 | `workflow_timer_router.py` | ~~`POST /workflow-timers/cron-preview` 无鉴权~~ **已闭环（2026-08-14）**：列表 / 详情 / cron-preview 均加 `require_write_access` | 保持写鉴权；前端定时器面板须已登录 |
 | **S-P2-2** | 🟡 P2 | `config_routes.py` L5 vs L116 | 模块 doc 写 `/general` 公开，实现已加读鉴权 | 更新 docstring |
 
 **已验证无回归（2026-08 审查修复）**：
@@ -145,7 +145,7 @@
 | FastAPI `:8000` | 就绪 |
 | Frontend Vite `:5175` | 就绪 |
 | Workers ×7 + Beat | 运行中 |
-| Gateway Nginx | 未运行（可选，符合默认联调） |
+| Gateway Nginx | 默认联调入口（`launch.py start` / `restart`）；本地 HMR 用 `start --vite` |
 
 | 探测 | 结果 |
 |------|------|

@@ -738,7 +738,10 @@ async def evict_data_cache(payload: DataCacheEvictRequest | None = None):
 )
 async def update_open_data_presets(payload: OpenDataPresetsUpdateRequest):
     """更新 NOAA/NASA/NSIDC/ESA 开放数据 base URL 预设。"""
-    return config_service.update_open_data_presets(payload.open_data_presets)
+    try:
+        return config_service.update_open_data_presets(payload.open_data_presets)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get(
@@ -785,7 +788,12 @@ async def delete_portal_credential(portal_id: str):
 )
 async def update_remote_layer_uris(payload: RemoteLayerUrisUpdateRequest):
     """更新图层 URI 覆盖（等价 BACKEND_REMOTE_LAYER_DATA_URIS）。"""
-    return config_service.update_remote_layer_data_uris(payload.remote_layer_data_uris)
+    try:
+        return config_service.update_remote_layer_data_uris(
+            payload.remote_layer_data_uris
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 # ── 关于 ──────────────────────────────────────────────────────────────────────

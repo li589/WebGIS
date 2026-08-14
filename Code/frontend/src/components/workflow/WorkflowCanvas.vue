@@ -716,17 +716,16 @@ function configureCanvas(canvas: LGraphCanvasClass) {
 /**
  * 启用画布交互（ComfyUI 风格改进版）：
  *   - 左键空白区域拖动 → 框选多节点
+ *   - 左键节点 → 选中/拖动节点
  *   - 中键拖动 → 平移视角
- *   - 右键空白区域拖动 → 平移视角（备选）
- *   - 右键节点 → 显示上下文菜单（LiteGraph 原生 processContextMenu，含 Remove 等）
- *   - 左键节点 → 选中/拖动节点（LiteGraph 原生）
- *   - 多选后拖动任一节点 → 整体移动（LiteGraph 原生）
+ *   - 右键 → 上下文菜单（节点菜单 / 画布菜单）
  *
  * 实现方式：monkey-patch LGraphCanvas._mousedown_callback
  *   1. 保持 allow_dragcanvas=true（LiteGraph processMouseWheel 依赖此属性，设 false 会禁用滚轮缩放）
- *   2. 左键空白：强制 ctrlKey=true 让 LiteGraph 进入 dragging_rectangle 框选模式（skip_action 阻止平移）
+ *   2. 左键空白：强制 ctrlKey=true 让 LiteGraph 进入 dragging_rectangle 框选模式（skip_action 阻止平移）；
+ *      hack 失效时手动设置 dragging_rectangle 并清除 dragging_canvas 确保 box-selection 优先
  *   3. 中键空白：preventDefault + 强制 dragging_canvas=true 启动平移
- *   4. 右键空白：origCallback 后强制 dragging_canvas=true 启动平移
+ *   4. 右键：不干预，让 LiteGraph 原生 processContextMenu 处理（画布菜单 / 节点菜单）
  */
 function enableCanvasInteractions(canvas: LGraphCanvasClass) {
   const canvasAny = canvas as unknown as {
@@ -745,7 +744,6 @@ function enableCanvasInteractions(canvas: LGraphCanvasClass) {
   const wrappedCallback = (e: MouseEvent) => {
     const isLeftClick = e.button === 0
     const isMiddleClick = e.button === 1
-    const isRightClick = e.button === 2
     const onEmpty = isPointOnEmptyArea(e, canvas)
 
     // 点击空白：立即清除对齐辅助线
@@ -765,7 +763,8 @@ function enableCanvasInteractions(canvas: LGraphCanvasClass) {
     }
 
     // 左键空白 → 框选：让 LiteGraph 进入 dragging_rectangle 模式
-    if (isLeftClick && shouldTriggerBoxSelection(e, canvas)) {
+    const wantBoxSelection = isLeftClick && shouldTriggerBoxSelection(e, canvas)
+    if (wantBoxSelection) {
       try {
         Object.defineProperty(e, 'ctrlKey', { get: () => true, configurable: true })
       } catch {
@@ -784,10 +783,26 @@ function enableCanvasInteractions(canvas: LGraphCanvasClass) {
 
     const result = origCallback(e)
 
-    // 右键空白 → 平移视角
-    if (isRightClick && shouldTriggerPanOnRightClick(e, canvas)) {
-      canvasAny.dragging_canvas = true
+    // 框选保底：如果 ctrlKey hack 成功，LiteGraph 已设 dragging_rectangle 且 skip_action=true；
+    // 如果 hack 失效，LiteGraph 可能同时设了 dragging_canvas 和未设 dragging_rectangle。
+    // 此处确保 dragging_rectangle 存在且 dragging_canvas 被清除，让 processMouseMove 优先走框选分支。
+    if (wantBoxSelection) {
+      if (!canvasAny.dragging_rectangle) {
+        const rect = canvasRef.value?.getBoundingClientRect()
+        if (rect) {
+          const ds = (canvas as unknown as { ds?: { offset: [number, number]; scale: number } }).ds
+          if (ds) {
+            const cx = (e.clientX - rect.left) / ds.scale - ds.offset[0]
+            const cy = (e.clientY - rect.top) / ds.scale - ds.offset[1]
+            canvasAny.dragging_rectangle = [cx, cy, 0, 0]
+          }
+        }
+      }
+      // 清除平移标志，确保框选优先于平移
+      canvasAny.dragging_canvas = false
     }
+
+    // 右键：不干预，LiteGraph 原生 processMouseDown 会调用 processContextMenu 显示菜单
 
     return result
   }
@@ -834,22 +849,8 @@ function shouldTriggerBoxSelection(e: MouseEvent, canvas: LGraphCanvasClass): bo
 }
 
 /**
- * 判断当前 mousedown 事件是否应触发右键平移模式。
- * 条件：
- *   1. 右键（button === 2）
- *   2. 非只读模式（只读也允许平移视角，不禁用）
- *   3. 点击位置不在任何节点上（点中节点时让 LiteGraph 显示右键菜单）
- *   4. canvas 状态正常
- */
-function shouldTriggerPanOnRightClick(e: MouseEvent, canvas: LGraphCanvasClass): boolean {
-  if (e.button !== 2) return false
-  if (!graphInstance.value) return false
-  return isPointOnEmptyArea(e, canvas)
-}
-
-/**
  * 判断鼠标点击位置是否在空白区域（不在任何节点上）。
- * 共用工具函数，供框选和右键平移判断使用。
+ * 共用工具函数，供框选判断使用。
  */
 function isPointOnEmptyArea(e: MouseEvent, canvas: LGraphCanvasClass): boolean {
   if (!graphInstance.value) return false

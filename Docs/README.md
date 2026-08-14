@@ -57,4 +57,7 @@
 | 天地图街道 | `tianditu-vec` + `tianditu-cva` overlay；代理 UA=`CGDA-Backend/1.0` | `07-工程保障/UI优化与底图模块修复-2026-08-12.md` |
 | 配置门面 | `config_service` 再导出 L3：`config_api_keys` / GEE / weather / remote_storage | `Code/backend/README.md` |
 | 图层 store | `stores/layers/` 域拆分：bindings / selectors / workspace\|viewport\|workflow-run-domain | `Code/frontend/README.md` |
+| 图层目录真源 | 后端 `catalog_seeds/*.json`；前端 `gen:catalog` → `catalog-seeds.generated.json`；`check:catalog` 门禁 | `Tools/generate_catalog_seeds.py`、`AGENTS.md` |
+| 在线时序编排 | Timeline 驱动自动取数：`online-temporal-orchestrator.ts` + `useOnlineTemporalIntegration.ts` | `Code/frontend/src/stores/layers/` |
+| 默认同域入口 | `launch.py start`/`restart` → Nginx Gateway `:5175`；HMR：`start --vite` | `Code/infra/gateway/README.md` |
 | 测试落点 | 后端/算法：`Test/`；前端：`Test/frontend/`（由 Vite vitest 加载） | `AGENTS.md` |

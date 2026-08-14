@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+import posixpath
 import sys
 import time
 from pathlib import Path
@@ -22,6 +23,59 @@ from app.api.deps import require_write_access
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# 安全：远程路径校验
+# - 禁止空字节 / 控制字符
+# - 禁止 .. 路径遍历
+# - 限制路径长度
+# - 允许 Unicode 目录名（中文 NAS 路径）；不强制 ASCII 白名单
+_MAX_PATH_LENGTH = 1024
+
+
+def _validate_remote_path(path: str) -> str:
+    """校验并规范化远程目录路径。
+
+    Returns:
+        规范化后的安全路径（统一为 ``/`` 分隔）
+
+    Raises:
+        HTTPException: 路径不合法时返回 400
+    """
+    if not path:
+        return "/"
+
+    if "\x00" in path:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid path: null bytes are not allowed.",
+        )
+
+    if len(path) > _MAX_PATH_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid path: path too long.",
+        )
+
+    # 拒绝 C0 控制字符（保留普通空白）；允许 Unicode 文件名
+    if any(ord(ch) < 32 for ch in path):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid path: control characters are not allowed.",
+        )
+
+    # Windows 分隔符统一为 /，再做 posix 规范化与遍历检查
+    normalized = posixpath.normpath(path.replace("\\", "/"))
+    if normalized.startswith("..") or "/.." in normalized or normalized == "..":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid path: directory traversal is not allowed.",
+        )
+
+    if not normalized.startswith("/"):
+        normalized = "/" + normalized
+
+    return normalized
+
 
 # 发布就绪修复（P0-2/P1-7）：远程浏览全部端点强制写权限鉴权。
 # 这些端点会携带已存凭据向内/外部服务器发起真实出站连接，未鉴权可被利用做 SSRF/凭据外带。
@@ -110,6 +164,8 @@ def list_remote_dir(
 ) -> dict[str, Any]:
     """列出远程目录内容。"""
     cfg = _resolve_server(server)
+    # 安全：校验路径，防止路径遍历和注入攻击
+    safe_path = _validate_remote_path(path)
 
     try:
         if cfg["server_type"] == "sftp":
@@ -124,13 +180,13 @@ def list_remote_dir(
             )
             ssh_client, sftp = _sftp_connect(sc)
             try:
-                items = _sftp_list_dir(sftp, path)
+                items = _sftp_list_dir(sftp, safe_path)
             finally:
                 sftp.close()
                 ssh_client.close()
             return {
                 "server": server,
-                "path": path,
+                "path": safe_path,
                 "items": [
                     {"name": f.name, "isDir": f.is_dir, "size": f.size} for f in items
                 ],
@@ -143,10 +199,10 @@ def list_remote_dir(
             )
 
             token = filebrowser_login(cfg["url"], cfg["username"], cfg["password"])
-            items = _filebrowser_list_dir(cfg["url"], token, path)
+            items = _filebrowser_list_dir(cfg["url"], token, safe_path)
             return {
                 "server": server,
-                "path": path,
+                "path": safe_path,
                 "items": [
                     {"name": f.name, "isDir": f.is_dir, "size": f.size} for f in items
                 ],
@@ -160,11 +216,12 @@ def list_remote_dir(
         raise
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "Remote list failed: server=%s path=%s err=%s", server, path, exc
+            "Remote list failed: server=%s path=%s err=%s", server, safe_path, exc
         )
+        # 安全：不向客户端泄露原始异常细节，仅返回通用错误信息
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Remote directory listing failed: {exc}",
+            detail="Remote directory listing failed. Check server logs for details.",
         ) from exc
 
 
@@ -221,9 +278,10 @@ def test_remote_connection(
     except Exception as exc:  # noqa: BLE001
         latency_ms = int((time.monotonic() - t0) * 1000)
         logger.warning("Remote test failed: server=%s err=%s", server, exc)
+        # 安全：不向客户端泄露原始异常细节
         return {
             "ok": False,
             "server": server,
-            "error": str(exc),
+            "error": "Connection failed. Check server logs for details.",
             "latency_ms": latency_ms,
         }

@@ -137,7 +137,12 @@ class OpenWeatherProvider(WeatherProvider):
             if key and "…" not in key and key != "****":
                 self._api_key = key
         if "base_url" in config and config["base_url"]:
-            self._base_url = str(config["base_url"]).rstrip("/")
+            from app.core.ssrf import validate_url_for_storage
+
+            # 安全：存储时校验 URL 格式
+            self._base_url = validate_url_for_storage(str(config["base_url"])).rstrip(
+                "/"
+            )
         with self._lock:
             self._memory_cache.clear()
         logger.info(

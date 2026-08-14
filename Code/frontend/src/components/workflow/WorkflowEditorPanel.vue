@@ -598,8 +598,14 @@ async function handleImportFile(event: Event) {
       throw new Error(`节点数量过多（${data.nodes.length}），上限 ${MAX_NODES}`)
     }
     // Basic node structure validation
+    // LiteGraph 序列化的 node.id 为 number，后端 int(lg_id) 也接受 number，
+    // 因此同时允许 string 和 number 类型
     for (const node of data.nodes) {
-      if (!node || typeof node !== 'object' || typeof node.id !== 'string') {
+      if (
+        !node ||
+        typeof node !== 'object' ||
+        (typeof node.id !== 'string' && typeof node.id !== 'number')
+      ) {
         throw new Error('工作流节点结构无效：缺少 id')
       }
     }

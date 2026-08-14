@@ -235,9 +235,13 @@ class OpenMeteoProvider(WeatherProvider):
         }
 
     def apply_config(self, config: dict[str, Any]) -> None:
+        from app.core.ssrf import validate_url_for_storage
+
         base_url = config.get("base_url")
         if isinstance(base_url, str) and base_url.strip():
-            self._base_url_override = base_url.strip().rstrip("?")
+            # 安全：存储时校验 URL 格式，防止非 HTTP(S) 协议
+            validated = validate_url_for_storage(base_url.strip())
+            self._base_url_override = validated.rstrip("?")
             self._client.base_url = self._base_url_override
             logger.info(
                 "OpenMeteoProvider(%s) base_url override: %s",

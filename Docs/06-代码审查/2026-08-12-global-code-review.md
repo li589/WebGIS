@@ -48,7 +48,7 @@
 
 ## 重启与推送
 
-1. `launch.py stop` → `launch.py start`：Docker + FastAPI + 7 Worker + Beat + Vite 均就绪（Gateway 可选未启）
+1. `launch.py stop` → `launch.py start`：Docker + FastAPI + 7 Worker + Beat + **Nginx Gateway** 均就绪（本地 HMR 改用 `start --vite`）
 2. `GET /health` → ok；`tianditu-vec` / `tianditu-cva` 瓦片抽样 → **200**
 3. 提交 `4ac932f` → `git push origin dev`（`2d71f3f..4ac932f`）成功
 

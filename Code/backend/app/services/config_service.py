@@ -422,9 +422,17 @@ def schedule_ui_backend_restart(
 
 
 def update_open_data_presets(presets: dict[str, Any]) -> dict[str, Any]:
-    cleaned = {
-        str(k): str(v) for k, v in presets.items() if str(k).strip() and str(v).strip()
-    }
+    from app.core.ssrf import validate_url_for_storage
+
+    cleaned: dict[str, str] = {}
+    for k, v in presets.items():
+        key = str(k).strip()
+        val = str(v).strip()
+        if not key or not val:
+            continue
+        # 安全：存储时校验 URL 格式，防止非 HTTP(S) 协议入库
+        validate_url_for_storage(val)
+        cleaned[key] = val
     _research_data_repo().set_json("open_data_presets", cleaned)
     return {"open_data_presets": cleaned}
 
@@ -477,6 +485,8 @@ def get_portal_credentials_runtime() -> dict[str, Any]:
 
 def update_remote_layer_data_uris(uris: dict[str, Any]) -> dict[str, Any]:
     """Persist nested overlay: {layer_id: {dataset: uri|[uri...]}}."""
+    from app.core.ssrf import validate_data_source_uri_for_storage
+
     cleaned: dict[str, dict[str, list[str]]] = {}
     for layer_id, datasets in uris.items():
         if not str(layer_id).strip() or not isinstance(datasets, dict):
@@ -484,9 +494,15 @@ def update_remote_layer_data_uris(uris: dict[str, Any]) -> dict[str, Any]:
         ds_map: dict[str, list[str]] = {}
         for dataset_name, raw_uris in datasets.items():
             if isinstance(raw_uris, str) and raw_uris.strip():
-                ds_map[str(dataset_name)] = [raw_uris.strip()]
+                # 安全：允许 smb/file/minio 等取数 scheme，拒绝 javascript: 等
+                validated = validate_data_source_uri_for_storage(raw_uris.strip())
+                ds_map[str(dataset_name)] = [validated]
             elif isinstance(raw_uris, list):
-                vals = [str(u).strip() for u in raw_uris if str(u).strip()]
+                vals = []
+                for u in raw_uris:
+                    val = str(u).strip()
+                    if val:
+                        vals.append(validate_data_source_uri_for_storage(val))
                 if vals:
                     ds_map[str(dataset_name)] = vals
         if ds_map:
