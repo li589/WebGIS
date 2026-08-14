@@ -43,7 +43,7 @@
 
 ## 验证清单
 
-- [ ] `Env/Python312/python.exe -m pytest Test/backend/test_ssrf.py Test/backend/test_layer_remote_uris.py Test/backend/test_config_contracts.py -q`
-- [ ] `cd Code/frontend && npm run build`
-- [ ] `Env/Python312/python.exe launch.py restart`
-- [ ] `GET http://localhost:5175/health` → ok
+- [x] `Env/Python312/python.exe -m pytest Test/backend/test_ssrf.py Test/backend/test_layer_remote_uris.py Test/backend/test_config_contracts.py Test/backend/test_config_breaking_contracts.py -q`（57 passed）
+- [x] `cd Code/frontend && npm run build`
+- [x] `Env/Python312/python.exe launch.py restart`（Gateway `:5175` + `/health` ok）
+- [x] 提交 `d8fea86`
