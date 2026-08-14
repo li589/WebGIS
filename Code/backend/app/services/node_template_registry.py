@@ -304,7 +304,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "engine": "common",
         "category": "数据获取与解析",
         "title": "SSH/SFTP 同步",
-        "description": "从 HPC/Win11/NAS 远程服务器增量同步数据到本地。支持日期过滤、断点续传、FileBrowser REST API。",
+        "description": "从远程服务器增量同步数据到本地。server_type 可选「远程与存储」中的 profile（ssh/sftp/filebrowser）或 hpc/win11/nas 遗留内置。支持日期过滤、断点续传、FileBrowser REST API。",
         "inputs": [
             _port(
                 "data",
@@ -323,7 +323,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 "string",
                 default="hpc",
                 options=["hpc", "win11", "nas"],
-                description="服务器类型。",
+                description="服务器：远程存储 profile id（设置→远程与存储）或 hpc/win11/nas 遗留内置。",
             ),
             _param(
                 "remote_path", "string", description="远程目录路径。", widget="path"
@@ -3478,7 +3478,13 @@ _FALLBACK_PRESET_OPTIONS = [
 ]
 _FALLBACK_PORTAL_CRED_OPTIONS = ["", "earthdata", "nsidc", "copernicus"]
 
-_DYNAMIC_OPTION_NODES = frozenset({"download/http_open_data", "download/remote_fetch"})
+_DYNAMIC_OPTION_NODES = frozenset(
+    {"download/http_open_data", "download/remote_fetch", "download/ssh_sync"}
+)
+
+# ssh_sync 可直接选用的远程存储协议（SFTP 直连 / FileBrowser REST）
+_SSH_SYNC_PROFILE_PROTOCOLS = frozenset({"ssh", "sftp", "filebrowser"})
+_SSH_SYNC_LEGACY_SERVERS = ["hpc", "win11", "nas"]
 
 
 def invalidate_portal_options_cache() -> None:
@@ -3502,6 +3508,7 @@ def _dynamic_portal_options() -> dict[str, list[str]]:
     presets = list(_FALLBACK_PRESET_OPTIONS)
     portal_creds = list(_FALLBACK_PORTAL_CRED_OPTIONS)
     remote_creds: list[str] = []
+    ssh_servers = list(_SSH_SYNC_LEGACY_SERVERS)
     try:
         from app.services.portal_catalog import known_portal_ids, list_portal_defs
 
@@ -3512,10 +3519,18 @@ def _dynamic_portal_options() -> dict[str, list[str]]:
     try:
         from app.services.config_remote_storage import list_remote_storage_profiles
 
+        profiles = list_remote_storage_profiles()
         remote_creds = [
             str(p.get("profile_id"))
-            for p in list_remote_storage_profiles()
+            for p in profiles
             if str(p.get("profile_id") or "").strip()
+        ]
+        ssh_servers += [
+            str(p["profile_id"])
+            for p in profiles
+            if str(p.get("protocol") or "").lower() in _SSH_SYNC_PROFILE_PROTOCOLS
+            and p.get("enabled") is not False
+            and str(p.get("profile_id") or "").strip()
         ]
     except Exception:  # noqa: BLE001
         pass
@@ -3524,6 +3539,7 @@ def _dynamic_portal_options() -> dict[str, list[str]]:
         "presets": presets,
         "portal_creds": portal_creds,
         "remote_creds": remote_creds,
+        "ssh_servers": ssh_servers,
     }
     _portal_options_cached_at = now
     return _portal_options_cache
@@ -3548,6 +3564,10 @@ def _apply_dynamic_options(tpl: dict[str, Any]) -> dict[str, Any]:
         elif tpl["type"] == "download/remote_fetch":
             if key == "cred_profile" and options["remote_creds"]:
                 p["options"] = list(options["remote_creds"])
+                p["allow_custom"] = True
+        elif tpl["type"] == "download/ssh_sync":
+            if key == "server_type" and options["ssh_servers"]:
+                p["options"] = list(options["ssh_servers"])
                 p["allow_custom"] = True
         params.append(p)
     out = dict(tpl)

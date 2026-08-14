@@ -279,6 +279,19 @@ def test_browse_filebrowser_uses_client(tmp_path, monkeypatch):
     assert search["items"][0]["name"] == "fy.mat"
 
 
+def test_browser_repository_import_wiring(monkeypatch, tmp_path):
+    """回归：browser._get_repository 的导入路径必须真实可用（曾引用不存在的公开名）。"""
+    from app.services import config_remote_storage
+    from app.services.remote_access import browser
+
+    repo = _make_repo(tmp_path)
+    monkeypatch.setattr(
+        config_remote_storage, "_get_remote_storage_repository", lambda: repo
+    )
+    # 不 monkeypatch browser._get_repository，走真实导入链
+    assert browser._get_repository() is repo
+
+
 # ── 凭据仓库：扩展协议 + 双路径持久化 ───────────────────────────────────────
 
 

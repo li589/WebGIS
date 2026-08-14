@@ -498,6 +498,35 @@ def test_node_templates_dynamic_portal_options(repo_env) -> None:
     assert "nsmc" in cred_opts
 
 
+def test_node_templates_ssh_sync_profile_server_options(repo_env, monkeypatch, tmp_path):
+    """ssh_sync server_type 动态注入：启用 profile（ssh/sftp/filebrowser）+ 遗留三台。"""
+    from app.services import node_template_registry as ntr
+    from app.services.remote_storage_credentials_repository import (
+        RemoteStorageCredentialsRepository,
+    )
+
+    repo = RemoteStorageCredentialsRepository(tmp_path / "rs.sqlite3", encryption_key="")
+    monkeypatch.setattr(
+        "app.services.config_remote_storage._get_remote_storage_repository",
+        lambda: repo,
+    )
+    repo.upsert(profile_id="lab-nas", protocol="filebrowser", host="", extra={"base_url": "https://nas.local"})
+    repo.upsert(profile_id="lab-hpc", protocol="sftp", host="172.16.98.184")
+    repo.upsert(profile_id="lab-smb", protocol="smb", host="files")  # 不支持同步 → 不注入
+    repo.upsert(profile_id="disabled-fb", protocol="filebrowser", host="", enabled=False)
+    ntr.invalidate_portal_options_cache()
+
+    tpl = ntr.get_node_template("download/ssh_sync")
+    assert tpl is not None
+    params = {p["key"]: p for p in tpl["params"]}
+    opts = params["server_type"]["options"]
+    assert opts[:3] == ["hpc", "win11", "nas"]
+    assert "lab-nas" in opts and "lab-hpc" in opts
+    assert "lab-smb" not in opts
+    assert "disabled-fb" not in opts
+    assert params["server_type"].get("allow_custom") is True
+
+
 def test_node_templates_dynamic_options_fallback_on_catalog_error(
     monkeypatch,
 ) -> None:

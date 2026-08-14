@@ -2,6 +2,10 @@
 
 提供前端 SSH/SFTP/FileBrowser 远程目录浏览能力，供下载节点参数 UI 使用。
 
+server 参数两种取值：
+- 遗留内置：hpc / win11 / nas（环境变量配置）
+- 「远程与存储」profile id（设置页配置，支持双路径回退，协议分发见 remote_access.browser）
+
 端点：
 - GET /api/remote/servers    列出可用服务器配置（不含密码/密钥）
 - GET /api/remote/list       列出远程目录内容
@@ -91,6 +95,9 @@ if str(_PROVIDER_ROOT) not in sys.path:
     sys.path.append(str(_PROVIDER_ROOT))
 
 
+_LEGACY_SERVERS = ("hpc", "win11", "nas")
+
+
 def _resolve_server(server: str) -> dict[str, Any]:
     """根据 server 名称解析连接参数（不含敏感凭据之外的字段）。
 
@@ -135,11 +142,84 @@ def _resolve_server(server: str) -> dict[str, Any]:
     )
 
 
+def _profile_browser():
+    from app.services.remote_access import browser
+
+    return browser
+
+
+def _list_profile_dir(server: str, path: str) -> dict[str, Any]:
+    """远程存储 profile 目录浏览（双路径回退；错误已脱敏）。"""
+    browser = _profile_browser()
+    try:
+        result = browser.browse_profile(server, path)
+    except browser.RemoteAccessAuthError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    except browser.RemoteAccessNetworkError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+    except browser.RemoteAccessError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return {
+        "server": server,
+        "path": result["path"],
+        "items": [
+            {
+                "name": i["name"],
+                "isDir": bool(i.get("is_dir")),
+                "size": int(i.get("size") or 0),
+            }
+            for i in result.get("items") or []
+        ],
+    }
+
+
+def _test_profile(server: str) -> dict[str, Any]:
+    """远程存储 profile 连通性测试（复用配置服务，含双路径自动回退）。"""
+    from app.services import config_service
+
+    result = config_service.test_remote_storage_profile(server)
+    ok = bool(result.get("success"))
+    return {
+        "ok": ok,
+        "server": server,
+        "server_type": f"profile:{result.get('profile_id') or server}",
+        "error": None if ok else str(result.get("message") or "Connection failed"),
+        "message": result.get("message") if ok else None,
+    }
+
+
+def _profile_server_entries() -> list[dict[str, Any]]:
+    """启用的可浏览远程存储 profile（不含敏感凭据），并入 /servers 列表。"""
+    entries: list[dict[str, Any]] = []
+    try:
+        from app.services.config_remote_storage import list_remote_storage_profiles
+
+        profiles = list_remote_storage_profiles()
+    except Exception:  # noqa: BLE001 — 目录不可用时静默降级为仅遗留内置
+        return entries
+    for p in profiles:
+        if p.get("enabled") is False:
+            continue
+        protocol = str(p.get("protocol") or "").lower()
+        entries.append(
+            {
+                "name": str(p.get("profile_id") or ""),
+                "server_type": "profile",
+                "protocol": protocol,
+                "host": str(p.get("host") or ""),
+                "port": p.get("port") or 0,
+                "url": str((p.get("extra") or {}).get("base_url") or ""),
+                "display_name": str(p.get("display_name") or ""),
+            }
+        )
+    return entries
+
+
 @router.get("/servers")
 def list_servers() -> dict[str, Any]:
     """列出可用远程服务器配置（不含敏感凭据）。"""
     servers = []
-    for name in ("hpc", "win11", "nas"):
+    for name in _LEGACY_SERVERS:
         try:
             cfg = _resolve_server(name)
         except Exception:  # noqa: BLE001
@@ -154,15 +234,20 @@ def list_servers() -> dict[str, Any]:
                 "url": cfg.get("url", ""),
             }
         )
+    servers.extend(_profile_server_entries())
     return {"servers": servers}
 
 
 @router.get("/list")
 def list_remote_dir(
-    server: str = Query(..., description="服务器名称: hpc / win11 / nas"),
+    server: str = Query(
+        ..., description="服务器名称: hpc / win11 / nas 或远程存储 profile id"
+    ),
     path: str = Query("/", description="远程目录路径"),
 ) -> dict[str, Any]:
     """列出远程目录内容。"""
+    if server not in _LEGACY_SERVERS:
+        return _list_profile_dir(server, _validate_remote_path(path))
     cfg = _resolve_server(server)
     # 安全：校验路径，防止路径遍历和注入攻击
     safe_path = _validate_remote_path(path)
@@ -227,9 +312,13 @@ def list_remote_dir(
 
 @router.get("/test")
 def test_remote_connection(
-    server: str = Query(..., description="服务器名称: hpc / win11 / nas"),
+    server: str = Query(
+        ..., description="服务器名称: hpc / win11 / nas 或远程存储 profile id"
+    ),
 ) -> dict[str, Any]:
     """测试远程服务器连接是否可用。"""
+    if server not in _LEGACY_SERVERS:
+        return _test_profile(server)
     cfg = _resolve_server(server)
     t0 = time.monotonic()
 

@@ -32,6 +32,11 @@ def _get_remote_storage_repository():
     )
 
 
+def get_remote_storage_repository():
+    """公开仓库访问器（供 remote_access.browser 复用，含解密 bundle）。"""
+    return _get_remote_storage_repository()
+
+
 def list_remote_storage_profiles(include_disabled: bool = True) -> list[dict[str, Any]]:
     return [
         _decorate_profile(info)
