@@ -77,6 +77,8 @@ class ServerConfig:
     username: str
     password: str = ""
     key_filename: str = ""
+    # 私钥 PEM 字符串（远程存储 profile 解析产物；与 key_filename 二选一）
+    private_key_pem: str = ""
     # SSH 配置别名（win11 跳板机用）
     ssh_alias: str = ""
     # FileBrowser URL（nas 用）
@@ -228,6 +230,22 @@ def _get_paramiko() -> Any:
         )
 
 
+def _load_private_key_pem(pem: str):
+    """从 PEM 字符串加载 paramiko PKey（RSA/Ed25519/ECDSA 逐类型尝试）。"""
+    import io
+
+    paramiko = _get_paramiko()
+    errors: list[Exception] = []
+    for key_cls in (paramiko.RSAKey, paramiko.Ed25519Key, paramiko.ECDSAKey):
+        try:
+            return key_cls.from_private_key(io.StringIO(pem))
+        except Exception as exc:  # noqa: BLE001 — 逐类型尝试加载
+            errors.append(exc)
+    raise ValueError("私钥 PEM 格式不受支持（支持 RSA/Ed25519/ECDSA）") from (
+        errors[-1] if errors else None
+    )
+
+
 def _sftp_connect(config: ServerConfig) -> tuple[Any, Any]:
     """建立 SSH/SFTP 连接，返回 (ssh_client, sftp_client)。"""
     paramiko = _get_paramiko()
@@ -245,6 +263,9 @@ def _sftp_connect(config: ServerConfig) -> tuple[Any, Any]:
 
     if config.key_filename:
         connect_kwargs["key_filename"] = config.key_filename
+        connect_kwargs["look_for_keys"] = False
+    elif config.private_key_pem:
+        connect_kwargs["pkey"] = _load_private_key_pem(config.private_key_pem)
         connect_kwargs["look_for_keys"] = False
     elif config.password:
         connect_kwargs["password"] = config.password

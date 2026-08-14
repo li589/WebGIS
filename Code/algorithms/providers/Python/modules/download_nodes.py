@@ -88,6 +88,69 @@ def _store_path_manifest(
 
 # ─── SSH 远程同步节点 ─────────────────────────────────────────────────────────
 
+_SSH_SYNC_LEGACY_SERVERS = frozenset({"hpc", "win11", "nas"})
+
+
+def _resolve_profile_server_config(profile_id: str) -> object:
+    """把「远程与存储」profile id 解析为 ServerConfig（凭据懒加载，不入作业负载）。
+
+    支持 ssh/sftp（paramiko，含私钥 PEM）与 filebrowser（REST）；
+    manual/auto 模式下 failover_state.active=alt 时使用备用路径。
+    """
+    from ingest.remote_sync import ServerConfig
+
+    from app.services.config_remote_storage import get_remote_storage_repository
+
+    repo = get_remote_storage_repository()
+    bundle = repo.get_secret_bundle(profile_id)
+    if bundle is None:
+        raise ValueError(f"远程存储 profile 不存在或已禁用: {profile_id}")
+
+    extra = bundle.get("extra") or {}
+    alt = extra.get("alt") if isinstance(extra.get("alt"), dict) else {}
+    state = (
+        extra.get("failover_state")
+        if isinstance(extra.get("failover_state"), dict)
+        else {}
+    )
+    use_alt = bool(
+        alt
+        and state.get("active") == "alt"
+        and any(alt.get(k) for k in ("host", "url"))
+    )
+
+    protocol = str(bundle.get("protocol") or "").lower()
+    if protocol in ("ssh", "sftp"):
+        host = str(bundle.get("host") or "")
+        port = bundle.get("port")
+        if use_alt and alt.get("host"):
+            host = str(alt["host"])
+            if alt.get("port") is not None:
+                port = alt["port"]
+        return ServerConfig(
+            server_type="hpc",
+            host=host,
+            port=int(port or 22),
+            username=str(bundle.get("username") or ""),
+            password=str(bundle.get("secret") or ""),
+            private_key_pem=str(bundle.get("private_key_pem") or ""),
+        )
+    if protocol == "filebrowser":
+        url = str(extra.get("base_url") or bundle.get("host") or "")
+        if use_alt and alt.get("url"):
+            url = str(alt["url"])
+        return ServerConfig(
+            server_type="nas",
+            host="",
+            port=0,
+            username=str(bundle.get("username") or ""),
+            password=str(bundle.get("secret") or ""),
+            filebrowser_url=url,
+        )
+    raise ValueError(
+        f"profile '{profile_id}' 协议 {protocol} 暂不支持 ssh_sync（支持 ssh/sftp/filebrowser）"
+    )
+
 
 @register_module_decorator(name="ssh_sync")
 class SshSyncModule(BaseModule):
@@ -140,7 +203,7 @@ class SshSyncModule(BaseModule):
         ap = dict(inputs.get("algorithm_params", {}))
         resolved = {**self.default_params, **params, **ap, **ds}
 
-        server_type = str(resolved.get("server_type") or "hpc").lower()
+        server_type = str(resolved.get("server_type") or "hpc").strip()
         host = str(resolved.get("host") or "").strip()
         port = int(resolved.get("port") or 22)
         username = str(resolved.get("username") or "").strip()
@@ -158,18 +221,23 @@ class SshSyncModule(BaseModule):
             # 回退到 workspace
             local_path = str(ctx.workspace / "data_access" / "ssh_sync")
 
-        # 构建 ServerConfig
-        config = ServerConfig(
-            server_type=server_type,
-            host=host,
-            port=port,
-            username=username,
-            password=password,
-            key_filename=key_filename,
-            ssh_alias=ssh_alias,
-            filebrowser_url=filebrowser_url,
-            proxy_command=proxy_command,
-        )
+        # 构建 ServerConfig：hpc/win11/nas 走显式连接参数，其余视为
+        # 「远程与存储」profile id（凭据由后端仓库解密，不落作业负载）
+        if server_type.lower() in _SSH_SYNC_LEGACY_SERVERS:
+            server_type = server_type.lower()
+            config = ServerConfig(
+                server_type=server_type,
+                host=host,
+                port=port,
+                username=username,
+                password=password,
+                key_filename=key_filename,
+                ssh_alias=ssh_alias,
+                filebrowser_url=filebrowser_url,
+                proxy_command=proxy_command,
+            )
+        else:
+            config = _resolve_profile_server_config(server_type)
 
         # 日期范围
         date_start = str(resolved.get("date_start") or "").strip()
@@ -297,6 +365,12 @@ class NsidcSmapDownloadModule(BaseModule):
         short_name = str(resolved.get("short_name") or "SPL3SMP_E")
         username = str(resolved.get("username") or "").strip()
         password = str(resolved.get("password") or "").strip()
+        # Prefer settings-page earthdata portal credentials when node leaves
+        # username/password blank (bridge sets portal_credentials_resolve).
+        if not (username and password):
+            portal_user, portal_pass = _resolve_earthdata_portal_userpass(ds)
+            username = username or portal_user
+            password = password or portal_pass
         dry_run = bool(resolved.get("dry_run"))
         max_files_raw = resolved.get("max_files")
         max_files = int(max_files_raw) if max_files_raw else None
