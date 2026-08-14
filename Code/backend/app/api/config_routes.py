@@ -696,7 +696,10 @@ async def search_remote_storage_profile(profile_id: str, request: RemoteSearchRe
     try:
         result = await anyio.to_thread.run_sync(
             lambda: browser.search_profile(
-                profile_id, request.query, max_results=request.max_results
+                profile_id,
+                request.query,
+                max_results=request.max_results,
+                start_path=request.start_path,
             )
         )
     except browser.RemoteAccessAuthError as exc:

@@ -92,6 +92,17 @@ class FailureClassifier:
             kw in message for kw in ("timeout", "timed out", "超时", "soft time limit")
         ):
             return FailureCategory.timeout
+        # 数据拉取节点部分失败（ssh_sync/nsidc/gldas 下载）：
+        # 增量跳过 + 断点续传使重跑只补失败文件，归 partial_success 可重试
+        if (
+            "completed with" in message
+            and "failures" in message
+            and any(
+                node in message
+                for node in ("ssh_sync", "nsidc_smap_download", "gldas_download")
+            )
+        ):
+            return FailureCategory.partial_success
         if any(
             kw in message for kw in ("rate limit", "429", "too many requests", "限流")
         ):

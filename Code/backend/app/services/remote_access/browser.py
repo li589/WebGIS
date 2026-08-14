@@ -559,12 +559,18 @@ def _entries_http(bundle: dict[str, Any], target: dict[str, Any], path: str):
 
 def _recursive_search(
     list_fn, root: str, query: str, max_results: int
-) -> list[dict[str, Any]]:
-    """受限深度递归名称匹配搜索（文件系统类源）。"""
+) -> tuple[list[dict[str, Any]], int]:
+    """受限深度递归名称匹配搜索（文件系统类源）。
+
+    返回 (结果, 失败目录数)。起点（root）列举失败直接上抛——
+    网络类异常触发双路径回退、认证类不回退；更深层目录列举失败
+    计入 failed_dirs 继续其余子树（部分结果而非空结果/整树中断）。
+    """
     pattern = query.lower()
     results: list[dict[str, Any]] = []
     stack: list[tuple[str, int]] = [(root, 0)]
     visited = 0
+    failed_dirs = 0
     while stack and len(results) < max_results:
         current, depth = stack.pop()
         if depth > SEARCH_MAX_DEPTH:
@@ -572,6 +578,9 @@ def _recursive_search(
         try:
             entries = list_fn(current)
         except RemoteAccessError:
+            if depth == 0:
+                raise
+            failed_dirs += 1
             continue
         visited += 1
         for item in entries:
@@ -586,8 +595,13 @@ def _recursive_search(
                         depth + 1,
                     )
                 )
-    logger.debug("recursive search visited %d dirs for %r", visited, query)
-    return results
+    logger.debug(
+        "recursive search visited %d dirs (%d failed) for %r",
+        visited,
+        failed_dirs,
+        query,
+    )
+    return results, failed_dirs
 
 
 def _sftp_items(entries: list[Any]) -> list[dict[str, Any]]:
@@ -607,8 +621,12 @@ def _sftp_items(entries: list[Any]) -> list[dict[str, Any]]:
 
 
 def _search_sftp(
-    bundle: dict[str, Any], target: dict[str, Any], query: str, max_results: int
-) -> list[dict[str, Any]]:
+    bundle: dict[str, Any],
+    target: dict[str, Any],
+    query: str,
+    max_results: int,
+    start_path: str = "/",
+) -> tuple[list[dict[str, Any]], int]:
     """单连接递归搜索：整个搜索复用一次 SSH/SFTP 会话（避免每目录重握手）。"""
     import paramiko
 
@@ -635,7 +653,10 @@ def _search_sftp(
         sftp = client.open_sftp()
         try:
             return _recursive_search(
-                lambda p: _sftp_items(sftp.listdir_attr(p)), "/", query, max_results
+                lambda p: _sftp_items(sftp.listdir_attr(p)),
+                start_path,
+                query,
+                max_results,
             )
         finally:
             sftp.close()
@@ -655,7 +676,8 @@ def _search_ftp(
     query: str,
     max_results: int,
     scheme: str,
-) -> list[dict[str, Any]]:
+    start_path: str = "/",
+) -> tuple[list[dict[str, Any]], int]:
     """单连接递归搜索：整个搜索复用一次 FTP 会话。"""
 
     def list_fn(path: str) -> list[dict[str, Any]]:
@@ -680,7 +702,7 @@ def _search_ftp(
 
     ftp = _ftp_connect(bundle, target, scheme)
     try:
-        return _recursive_search(list_fn, "/", query, max_results)
+        return _recursive_search(list_fn, start_path, query, max_results)
     finally:
         try:
             ftp.quit()
@@ -689,8 +711,12 @@ def _search_ftp(
 
 
 def _search_filebrowser(
-    bundle: dict[str, Any], target: dict[str, Any], query: str, max_results: int
-):
+    bundle: dict[str, Any],
+    target: dict[str, Any],
+    query: str,
+    max_results: int,
+    start_path: str = "/",
+) -> tuple[list[dict[str, Any]], int]:
     url = target["url"] or target["host"]
     if not url:
         raise RemoteAccessError("FileBrowser 数据源缺少 base URL")
@@ -698,16 +724,28 @@ def _search_filebrowser(
         client = FileBrowserClient(
             url, bundle.get("username") or "", bundle.get("secret") or ""
         )
-        return client.search(query, max_results=max_results)
+        items = client.search(query, max_results=max_results)
     except FileBrowserAuthError as exc:
         raise RemoteAccessAuthError(str(exc)) from exc
     except FileBrowserError as exc:
         raise RemoteAccessNetworkError(str(exc)) from exc
+    if start_path == "/":
+        return items, 0
+    # 服务端搜索无路径过滤：客户端按 path 前缀过滤
+    prefix = start_path.strip("/")
+    filtered = [
+        item for item in items if (item.get("path") or "").strip("/").startswith(prefix)
+    ]
+    return filtered, 0
 
 
 def _search_gs(
-    bundle: dict[str, Any], target: dict[str, Any], query: str, max_results: int
-):
+    bundle: dict[str, Any],
+    target: dict[str, Any],
+    query: str,
+    max_results: int,
+    start_path: str = "/",
+) -> tuple[list[dict[str, Any]], int]:
     sa_json = bundle.get("secret") or ""
     bucket_name = target["host"]
     if not bucket_name:
@@ -723,8 +761,10 @@ def _search_gs(
         )
         bucket = client.bucket(bucket_name)
         pattern = query.lower()
+        # 起点路径直接作为对象前缀，缩小列举范围
+        prefix = start_path.strip("/")
         results: list[dict[str, Any]] = []
-        for blob in bucket.list_blobs():
+        for blob in bucket.list_blobs(prefix=prefix):
             if pattern in blob.name.lower():
                 results.append(
                     {
@@ -737,7 +777,7 @@ def _search_gs(
                 )
                 if len(results) >= max_results:
                     break
-        return results
+        return results, 0
     except Exception as exc:  # noqa: BLE001
         if "Auth" in type(exc).__name__:
             raise RemoteAccessAuthError("GCS 认证失败") from exc
@@ -745,13 +785,20 @@ def _search_gs(
 
 
 def _search_local(
-    bundle: dict[str, Any], target: dict[str, Any], query: str, max_results: int
-):
+    bundle: dict[str, Any],
+    target: dict[str, Any],
+    query: str,
+    max_results: int,
+    start_path: str = "/",
+) -> tuple[list[dict[str, Any]], int]:
     base = _local_base(bundle, target)
     base_resolved = base.resolve()
+    start = (base / start_path.strip("/")).resolve()
+    if base_resolved != start and base_resolved not in start.parents:
+        raise RemoteAccessError("搜索起点越出挂载根目录")
     pattern = query.lower()
     results: list[dict[str, Any]] = []
-    stack: list[tuple[Path, int]] = [(base, 0)]
+    stack: list[tuple[Path, int]] = [(start, 0)]
     while stack and len(results) < max_results:
         current, depth = stack.pop()
         if depth > SEARCH_MAX_DEPTH:
@@ -768,15 +815,14 @@ def _search_local(
             continue
         for child in children:
             try:
-                # 不跟随符号链接判定目录；符号链接目录不入栈（防越根）
-                st = child.stat(follow_symlinks=False)
+                # lstat：不跟随符号链接（Path.stat(follow_symlinks=) 需 3.13）
+                st = child.lstat()
             except OSError:
                 continue
             if pattern in child.name.lower():
                 results.append(
                     {
                         "name": child.name,
-                        # lstat 判定目录（Path.is_dir(follow_symlinks=) 需 3.13）
                         "is_dir": stat_module.S_ISDIR(st.st_mode),
                         "size": int(st.st_size),
                         "mtime": st.st_mtime,
@@ -787,7 +833,7 @@ def _search_local(
                     break
             if stat_module.S_ISDIR(st.st_mode):
                 stack.append((child, depth + 1))
-    return results
+    return results, 0
 
 
 # ── 公共入口 ──────────────────────────────────────────────────────────────────
@@ -830,14 +876,25 @@ def browse_profile(profile_id: str, path: str = "/") -> dict[str, Any]:
 
 
 def search_profile(
-    profile_id: str, query: str, *, max_results: int = SEARCH_MAX_RESULTS_DEFAULT
+    profile_id: str,
+    query: str,
+    *,
+    max_results: int = SEARCH_MAX_RESULTS_DEFAULT,
+    start_path: str = "/",
 ) -> dict[str, Any]:
-    """在存储 profile 内按名称搜索，返回 {profile_id, protocol, query, via, items}。"""
+    """在存储 profile 内按名称搜索（可指定起点目录）。
+
+    返回 {profile_id, protocol, query, start_path, via, items, truncated, failed_dirs}：
+    - ``truncated``：命中条数已达 max_results 上限，可能还有未扫到的匹配；
+    - ``failed_dirs``：递归扫描中列举失败的子目录数（起点失败会上抛触发双路径回退，
+      深层失败跳过继续，结果为部分结果）。
+    """
     query = (query or "").strip()
     if not query:
         raise RemoteAccessError("搜索关键词不能为空")
     if len(query) > 256:
         raise RemoteAccessError("搜索关键词过长")
+    safe_start = normalize_remote_path(start_path)
     bundle = _get_bundle(profile_id)
     protocol = str(bundle.get("protocol") or "").lower()
     if protocol not in PROTOCOLS_SEARCHABLE:
@@ -847,29 +904,32 @@ def search_profile(
     def attempt(which: str, alt: dict[str, Any] | None):
         target = _effective_target(bundle, which, alt)
         if protocol == "filebrowser":
-            return _search_filebrowser(bundle, target, query, limit)
+            return _search_filebrowser(bundle, target, query, limit, safe_start)
         if protocol in {"sftp", "ssh"}:
-            return _search_sftp(bundle, target, query, limit)
+            return _search_sftp(bundle, target, query, limit, safe_start)
         if protocol == "smb":
             share = (bundle.get("extra") or {}).get("default_share") or ""
             if not share:
                 raise RemoteAccessError("SMB 数据源缺少 extra.default_share")
             return _recursive_search(
-                lambda p: _entries_smb(bundle, target, p), "/", query, limit
+                lambda p: _entries_smb(bundle, target, p), safe_start, query, limit
             )
         if protocol in {"ftp", "ftps"}:
-            return _search_ftp(bundle, target, query, limit, protocol)
+            return _search_ftp(bundle, target, query, limit, protocol, safe_start)
         if protocol == "gs":
-            return _search_gs(bundle, target, query, limit)
+            return _search_gs(bundle, target, query, limit, safe_start)
         if protocol in {"lan", "nfs"}:
-            return _search_local(bundle, target, query, limit)
+            return _search_local(bundle, target, query, limit, safe_start)
         raise RemoteAccessError(f"协议未实现搜索: {protocol}")
 
-    items, via = _with_failover(bundle, attempt)
+    (items, failed_dirs), via = _with_failover(bundle, attempt)
     return {
         "profile_id": profile_id,
         "protocol": protocol,
         "query": query,
+        "start_path": safe_start,
         "via": via,
         "items": items,
+        "truncated": len(items) >= limit,
+        "failed_dirs": failed_dirs,
     }

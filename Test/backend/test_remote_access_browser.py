@@ -269,6 +269,126 @@ def test_search_unsupported_protocol(tmp_path, monkeypatch):
         browser.search_profile("nas-lan", "q")
 
 
+# ── 搜索增强：起点路径 / 截断标志 / 子目录失败计数 ───────────────────────────
+
+
+def test_search_start_path_scopes_subtree(tmp_path, monkeypatch):
+    """start_path 应把递归搜索限定在指定子树内。"""
+    (tmp_path / "proj_a").mkdir()
+    (tmp_path / "proj_a" / "fy3d_a.mat").write_bytes(b"x")
+    (tmp_path / "proj_b").mkdir()
+    (tmp_path / "proj_b" / "fy3d_b.mat").write_bytes(b"x")
+
+    repo = FakeRepo(_lan_bundle(tmp_path))
+    browser = _install_repo(monkeypatch, repo)
+    result = browser.search_profile("nas-lan", "fy3d", start_path="/proj_a")
+
+    assert result["start_path"] == "/proj_a"
+    names = [item["name"] for item in result["items"]]
+    assert names == ["fy3d_a.mat"]
+
+
+def test_search_start_path_rejects_symlink_escape(tmp_path, monkeypatch):
+    """start_path 经符号链接解析越出挂载根时必须拒绝（防内网路径外泄）。"""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "fy.mat").write_bytes(b"x")
+
+    mount = tmp_path / "mount"
+    mount.mkdir()
+    try:
+        (mount / "link").symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("当前平台无符号链接权限")
+
+    repo = FakeRepo(_lan_bundle(mount))
+    browser = _install_repo(monkeypatch, repo)
+    with pytest.raises(browser.RemoteAccessError, match="越出挂载根"):
+        browser.search_profile("nas-lan", "fy", start_path="/link")
+
+
+def test_search_truncated_flag(tmp_path, monkeypatch):
+    for i in range(3):
+        (tmp_path / f"fy_{i}.mat").write_bytes(b"x")
+    repo = FakeRepo(_lan_bundle(tmp_path))
+    browser = _install_repo(monkeypatch, repo)
+    result = browser.search_profile("nas-lan", "fy", max_results=2)
+
+    assert len(result["items"]) == 2
+    assert result["truncated"] is True
+
+    full = browser.search_profile("nas-lan", "fy", max_results=50)
+    assert full["truncated"] is False
+    assert len(full["items"]) == 3
+
+
+def test_recursive_search_deep_failure_counts_partial():
+    """深层目录列举失败计入 failed_dirs、返回部分结果而非整树中断。"""
+    from app.services.remote_access.browser import RemoteAccessError, _recursive_search
+
+    def list_fn(path):
+        if path == "/bad":
+            raise RemoteAccessError("permission denied")
+        if path == "/":
+            return [
+                {"name": "good", "is_dir": True, "size": 0, "mtime": None},
+                {"name": "bad", "is_dir": True, "size": 0, "mtime": None},
+                {"name": "fy_root.mat", "is_dir": False, "size": 1, "mtime": None},
+            ]
+        if path == "/good":
+            return [{"name": "fy_good.mat", "is_dir": False, "size": 1, "mtime": None}]
+        return []
+
+    results, failed = _recursive_search(list_fn, "/", "fy", 100)
+    names = [item["name"] for item in results]
+    assert "fy_root.mat" in names
+    assert "fy_good.mat" in names
+    assert failed == 1
+
+
+def test_recursive_search_root_failure_raises():
+    """起点目录失败必须上抛（供双路径回退捕获），不吞为空结果。"""
+    from app.services.remote_access.browser import (
+        RemoteAccessNetworkError,
+        _recursive_search,
+    )
+
+    def list_fn(_):
+        raise RemoteAccessNetworkError("host unreachable")
+
+    with pytest.raises(RemoteAccessNetworkError):
+        _recursive_search(list_fn, "/", "fy", 10)
+
+
+def test_search_filebrowser_filters_by_start_path(tmp_path, monkeypatch):
+    """FileBrowser 服务端搜索无路径参数：应按 path 前缀客户端过滤。"""
+    bundle = _lan_bundle(tmp_path)
+    bundle["protocol"] = "filebrowser"
+    bundle["host"] = "http://nas.local:8080"
+    bundle["username"] = "u"
+    bundle["secret"] = "p"
+    bundle["extra"] = {}
+    repo = FakeRepo(bundle)
+    browser = _install_repo(monkeypatch, repo)
+
+    class Client:
+        def __init__(self, *_args, **_kw):
+            pass
+
+        def search(self, _query, *, max_results=200):
+            return [
+                {"name": "fy.mat", "is_dir": False, "size": 1, "path": "/proj_a/fy.mat"},
+                {"name": "fy.mat", "is_dir": False, "size": 1, "path": "/proj_b/fy.mat"},
+            ][:max_results]
+
+    monkeypatch.setattr(browser, "FileBrowserClient", Client)
+
+    result = browser.search_profile("nas-lan", "fy", start_path="/proj_a")
+    paths = [item.get("path") for item in result["items"]]
+    assert paths == ["/proj_a/fy.mat"]
+    assert result["truncated"] is False
+
+
 # ── filebrowser ──────────────────────────────────────────────────────────────
 
 

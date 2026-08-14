@@ -215,7 +215,10 @@ def toggle_remote_storage_profile(profile_id: str, enabled: bool) -> bool:
 
 
 def _build_probe_uri(
-    protocol: str, host: str, port: int | None, extra: dict[str, Any]
+    protocol: str,
+    host: str,
+    port: int | None,
+    extra: dict[str, Any],
 ) -> str | None:
     """按协议构造默认探测 URI；返回 None 表示需要浏览器式探测（filebrowser/lan/nfs）。"""
     if protocol in {"filebrowser", "lan", "nfs"}:
@@ -232,6 +235,61 @@ def _build_probe_uri(
         # http/https 约定 host 存 base URL
         return host
     return f"{protocol}://{host_part}/"
+
+
+def _probe_http_connectivity(probe_uri: str) -> str:
+    """http/https 存储源连通性探测。
+
+    http/https 不在 shared transport 注册表内（shared 层不依赖后端 SSRF 模块），
+    此处经 SSRF 校验的 safe_urlopen 直连：HEAD 优先，405/501 退化 GET；
+    凭据按 Basic Auth 头携带。返回 probe_uri（成功），失败抛网络异常。
+    """
+    import base64
+    from urllib.error import HTTPError
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    from app.core.ssrf import safe_urlopen
+    from app.services.remote_auth_resolver import resolve_remote_auth
+
+    auth = resolve_remote_auth(probe_uri)
+    # 剥离内部 cred 标记参数，避免污染真实请求
+    parts = urlsplit(probe_uri)
+    query = urlencode(
+        [
+            (k, v)
+            for k, v in parse_qsl(parts.query, keep_blank_values=True)
+            if k != "cred"
+        ]
+    )
+    fetch_url = urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, query, parts.fragment or "")
+    )
+
+    headers: dict[str, str] = {}
+    if auth.username or auth.password:
+        token = base64.b64encode(
+            f"{auth.username or ''}:{auth.password or ''}".encode("utf-8")
+        ).decode("ascii")
+        headers["Authorization"] = f"Basic {token}"
+
+    for method in ("HEAD", "GET"):
+        try:
+            with safe_urlopen(
+                fetch_url, timeout=15.0, headers=headers, method=method
+            ) as resp:
+                status = int(
+                    getattr(resp, "status", None)
+                    or getattr(resp, "getcode", lambda: 0)()
+                    or 0
+                )
+                if status < 400:
+                    return probe_uri
+                raise ConnectionError(f"HTTP {status} probing {parts.hostname}")
+        except HTTPError as exc:
+            if method == "HEAD" and exc.code in (405, 501):
+                continue
+            raise ConnectionError(f"HTTP {exc.code} probing {parts.hostname}") from exc
+    raise ConnectionError(f"HTTP probe failed for {parts.hostname}")
 
 
 def test_remote_storage_profile(
@@ -316,6 +374,8 @@ def test_remote_storage_profile(
             parsed_probe = urlparse(probe_uri)
             if parsed_probe.scheme in {"http", "https"}:
                 validate_outbound_url(probe_uri, allow_private=default_allow_private())
+                # http/https 无 shared transport 注册：SSRF 校验后直连探测
+                return _probe_http_connectivity(probe_uri)
             if "cred=" not in probe_uri:
                 sep = "&" if "?" in probe_uri else "?"
                 probe_uri = f"{probe_uri}{sep}cred={profile_id}"

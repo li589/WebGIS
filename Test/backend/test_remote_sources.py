@@ -252,6 +252,87 @@ def test_remote_source_alt_retry_on_network_error(monkeypatch, tmp_path):
     assert result.metadata["remote_size"] == 10
 
 
+# ── http/https 存储源连通性探测（_probe_http_connectivity） ─────────────────
+
+
+class _ProbeResp:
+    def __init__(self, status: int):
+        self.status = status
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+def _install_probe(monkeypatch, handler):
+    """Patch safe_urlopen + resolve_remote_auth；返回 (method, url, headers) 调用记录。"""
+    from types import SimpleNamespace
+
+    import app.core.ssrf as ssrf_mod
+    import app.services.remote_auth_resolver as auth_mod
+    from app.services import config_remote_storage as svc
+
+    calls: list[tuple[str, str, dict]] = []
+
+    def fake_safe_urlopen(url, timeout=None, headers=None, method="GET"):
+        calls.append((method, url, dict(headers or {})))
+        return handler(method, url)
+
+    monkeypatch.setattr(ssrf_mod, "safe_urlopen", fake_safe_urlopen)
+    monkeypatch.setattr(
+        auth_mod,
+        "resolve_remote_auth",
+        lambda _uri: SimpleNamespace(username="u", password="p"),
+    )
+    return svc, calls
+
+
+def test_probe_http_success_strips_cred_and_adds_basic_auth(monkeypatch):
+    svc, calls = _install_probe(monkeypatch, lambda method, _url: _ProbeResp(200))
+
+    uri = "https://data.example.org/dir/index.html?cred=nas-lab"
+    assert svc._probe_http_connectivity(uri) == uri
+
+    assert len(calls) == 1
+    method, url, headers = calls[0]
+    assert method == "HEAD"
+    # 内部 cred 标记参数必须剥离，凭据以 Basic Auth 头携带
+    assert "cred=" not in url
+    assert url == "https://data.example.org/dir/index.html"
+    assert headers.get("Authorization", "").startswith("Basic ")
+
+
+def test_probe_http_falls_back_to_get_on_405(monkeypatch):
+    from urllib.error import HTTPError
+
+    def handler(method, url):
+        if method == "HEAD":
+            raise HTTPError(url, 405, "Method Not Allowed", None, None)
+        return _ProbeResp(204)
+
+    svc, calls = _install_probe(monkeypatch, handler)
+
+    assert svc._probe_http_connectivity("https://data.example.org/") == "https://data.example.org/"
+    assert [m for m, _, _ in calls] == ["HEAD", "GET"]
+
+
+def test_probe_http_terminal_status_raises(monkeypatch):
+    import pytest
+    from urllib.error import HTTPError
+
+    def handler(method, url):
+        raise HTTPError(url, 404, "Not Found", None, None)
+
+    svc, calls = _install_probe(monkeypatch, handler)
+
+    with pytest.raises(ConnectionError, match="404"):
+        svc._probe_http_connectivity("https://data.example.org/missing")
+    # 终态 404 不做 GET 退化
+    assert [m for m, _, _ in calls] == ["HEAD"]
+
+
 def test_remote_source_no_alt_reraises_network_error(monkeypatch, tmp_path):
     import pytest
 

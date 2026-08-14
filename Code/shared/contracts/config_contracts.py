@@ -593,14 +593,24 @@ class RemoteBrowseResponse(BaseModel):
 class RemoteSearchRequest(BaseModel):
     query: str = Field(..., min_length=1)
     max_results: int = Field(default=200, ge=1, le=500)
+    start_path: str = Field(
+        default="/", description="搜索起点目录（默认根；用于在当前目录子树内搜索）"
+    )
 
 
 class RemoteSearchResponse(BaseModel):
     profile_id: str
     protocol: str
     query: str
+    start_path: str = "/"
     via: str
     items: list[RemoteEntryItem] = Field(default_factory=list)
+    truncated: bool = Field(
+        default=False, description="结果已达 max_results 上限，可能存在未扫到的匹配"
+    )
+    failed_dirs: int = Field(
+        default=0, description="递归扫描中列举失败的子目录数（部分结果）"
+    )
 
 
 class RemoteFailoverRequest(BaseModel):
