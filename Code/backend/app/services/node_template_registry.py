@@ -323,6 +323,7 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 "string",
                 default="hpc",
                 options=["hpc", "win11", "nas"],
+                allow_custom=True,
                 description="服务器：远程存储 profile id（设置→远程与存储）或 hpc/win11/nas 遗留内置。",
             ),
             _param(
@@ -345,15 +346,6 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 "file_filter",
                 "string",
                 description="文件扩展名过滤（如 .mat,.h5）。",
-            ),
-            _param(
-                "max_depth",
-                "number",
-                default=4,
-                min_val=1,
-                max_val=10,
-                step=1,
-                description="最大递归深度。",
             ),
         ],
         "node_class": "ssh_sync",
@@ -3593,6 +3585,9 @@ def get_node_templates_by_engine(engine: str) -> list[dict[str, Any]]:
 # 历史种子/画布类型别名 → 现行注册 type（避免画布出现「未定义」节点）
 _NODE_TYPE_ALIASES: dict[str, str] = {
     "algorithm/omega_avg_daily": "module/omega_avg_daily",
+    "remote_fetch": "download/remote_fetch",
+    "module/fy_preprocess": "download/fy_preprocess",
+    "module/fy_download": "download/fy_download",
 }
 
 

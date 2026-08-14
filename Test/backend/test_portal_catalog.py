@@ -584,3 +584,139 @@ def test_portal_routes_auth_guards() -> None:
         guards = _route_dependency_callables(route)
         assert expected[key] in guards, f"{key} missing guard {expected[key]}"
     assert found == set(expected.keys()), f"missing routes: {set(expected) - found}"
+
+
+# ── 动态 options 缓存失效（node_template_registry） ─────────────────────────
+
+
+@pytest.fixture()
+def _fresh_options_cache():
+    from app.services import node_template_registry as ntr
+
+    ntr.invalidate_portal_options_cache()
+    yield ntr
+    ntr.invalidate_portal_options_cache()
+
+
+def test_portal_upsert_invalidates_options_cache(repo_env, _fresh_options_cache) -> None:
+    ntr = _fresh_options_cache
+    options0 = ntr._dynamic_portal_options()
+    assert "custom_opts_portal" not in options0["presets"]
+
+    from app.services.config_service import upsert_portal
+
+    upsert_portal(
+        "custom_opts_portal",
+        {
+            "name": "缓存失效测试门户",
+            "base_url": "https://example.test/",
+            "auth_type": "none",
+        },
+    )
+    options1 = ntr._dynamic_portal_options()
+    assert "custom_opts_portal" in options1["presets"], (
+        "upsert_portal 后动态 options 缓存未失效"
+    )
+
+
+def test_portal_delete_invalidates_options_cache(repo_env, _fresh_options_cache) -> None:
+    from app.services.config_service import delete_portal, upsert_portal
+
+    upsert_portal(
+        "custom_del_portal",
+        {
+            "name": "删除失效测试",
+            "base_url": "https://example.test/",
+            "auth_type": "none",
+        },
+    )
+    ntr = _fresh_options_cache
+    assert "custom_del_portal" in ntr._dynamic_portal_options()["presets"]
+
+    delete_portal("custom_del_portal")
+    assert "custom_del_portal" not in ntr._dynamic_portal_options()["presets"], (
+        "delete_portal 后动态 options 缓存未失效"
+    )
+
+
+def test_remote_storage_profile_write_invalidates_options_cache(
+    repo_env, _fresh_options_cache, monkeypatch
+) -> None:
+    from app.services import config_remote_storage as crs
+
+    ntr = _fresh_options_cache
+
+    # 有状态仓储打桩：签名对齐 RemoteStorageCredentialsRepository（关键字 upsert /
+    # include_disabled 过滤），并隔离真实仓储中已存在的 profile（如 seahpc）。
+    class _FakeRepo:
+        def __init__(self):
+            self.profiles: dict[str, dict] = {}
+
+        def upsert(
+            self,
+            *,
+            profile_id,
+            protocol,
+            host="",
+            port=None,
+            username=None,
+            secret=None,
+            private_key_pem=None,
+            domain=None,
+            extra=None,
+            display_name=None,
+            enabled=None,
+        ):
+            info = {
+                "profile_id": profile_id,
+                "protocol": protocol,
+                "host": host,
+                "port": port,
+                "username": username,
+                "extra": dict(extra or {}),
+                "enabled": enabled if enabled is not None else True,
+            }
+            self.profiles[profile_id] = info
+            return dict(info)
+
+        def get_profile_info(self, profile_id):
+            info = self.profiles.get(profile_id)
+            return dict(info) if info is not None else None
+
+        def delete(self, profile_id):
+            return self.profiles.pop(profile_id, None) is not None
+
+        def set_enabled(self, profile_id, enabled):
+            info = self.profiles.get(profile_id)
+            if info is None:
+                return False
+            info["enabled"] = enabled
+            return True
+
+        def list_profiles(self, include_disabled=True):
+            items = [dict(p) for p in self.profiles.values()]
+            if not include_disabled:
+                items = [p for p in items if p.get("enabled") is not False]
+            return items
+
+        def list_history(self, profile_id):
+            return []
+
+    fake = _FakeRepo()
+    monkeypatch.setattr(crs, "_get_remote_storage_repository", lambda: fake)
+
+    base = {"hpc", "win11", "nas"}
+    assert set(ntr._dynamic_portal_options()["ssh_servers"]) == base
+
+    crs.upsert_remote_storage_profile(
+        profile_id="seahpc_probe",
+        protocol="ssh",
+        host="hpc.example.test",
+        port=22,
+        username="u",
+        secret={"kind": "password", "password": "p"},
+    )
+    got = ntr._dynamic_portal_options()
+    assert "seahpc_probe" in got["ssh_servers"], (
+        "upsert_remote_storage_profile 后 ssh_servers 缓存未失效"
+    )

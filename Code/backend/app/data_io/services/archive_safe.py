@@ -1,9 +1,10 @@
-"""安全解压：路径穿越、zip/rar bomb、符号链接、可执行载荷与 GUI/SFX 工具隔离。
+"""安全解压：路径穿越、zip/rar/tar/gz/7z bomb、符号链接、可执行载荷与 GUI/SFX 工具隔离。
 
 RAR 仅允许无界面控制台 UnRAR：
 `Code/backend/vendor/unrar/{win-x64,linux-x64}` 或系统 PATH 的 `unrar`。
 禁止调用 WinRAR GUI / 自解压安装包；不把运行时依赖放在仓库根 `Tools/`。
 解压全程不依赖本机 WinRAR；不执行用户上传的 SFX。
+7z 依赖 7-Zip CLI（`7z`/`7za`，PATH 或常见安装位置），无 GUI。
 """
 
 from __future__ import annotations
@@ -444,18 +445,32 @@ def _extract_rar_with_unrar_cli(archive: Path, dest: Path, tool: str) -> list[Pa
 
 
 def _find_7z() -> str | None:
-    """仅查找 7z CLI（非 GUI）。部署环境应优先 UnRAR，勿依赖本机 WinRAR。"""
-    candidates: list[str | None] = [
-        shutil.which("7z"),
-        shutil.which("7za"),
-    ]
+    """仅查找 7z CLI（非 GUI）。探测顺序：vendor → PATH → 平台常见安装位置。
+
+    Windows vendor: ``Code/backend/vendor/7zip/win-x64/7z.exe``（与 vendor/unrar 对称）。
+    Linux: ``apt install p7zip-full``（/usr/bin/7z）或 p7zip（7za）。
+    """
+    vendor = _backend_root() / "vendor" / "7zip"
+    candidates: list[str | None] = []
     if sys.platform == "win32":
         candidates.extend(
             [
+                str(vendor / "win-x64" / "7z.exe"),
                 r"C:\Program Files\7-Zip\7z.exe",
                 r"C:\Program Files (x86)\7-Zip\7z.exe",
             ]
         )
+    else:
+        candidates.extend(
+            [
+                str(vendor / "linux-x64" / "7z"),
+                "/usr/bin/7z",
+                "/usr/bin/7za",
+                "/usr/local/bin/7z",
+                "/usr/local/bin/7za",
+            ]
+        )
+    candidates.extend([shutil.which("7z"), shutil.which("7za")])
     for cand in candidates:
         if not cand or not os.path.isfile(cand):
             continue
@@ -466,8 +481,8 @@ def _find_7z() -> str | None:
     return None
 
 
-def _extract_rar_via_7z(archive: Path, dest: Path) -> list[Path]:
-    """7-Zip CLI 回退（仍无界面）。先 list 再解压，避免盲目展开。"""
+def _extract_via_7z(archive: Path, dest: Path, *, fmt_label: str) -> list[Path]:
+    """7-Zip CLI 提取（RAR 回退与 .7z 主路径共用；无界面）。先 list 再解压。"""
     seven = _find_7z()
     if not seven:
         raise ValueError("未找到 7-Zip CLI")
@@ -485,7 +500,7 @@ def _extract_rar_via_7z(archive: Path, dest: Path) -> list[Path]:
     )
     if listed.returncode != 0:
         detail = (listed.stderr or listed.stdout or "").strip()[:300]
-        raise ValueError(f"7-Zip 无法列出 RAR: {detail or listed.returncode}")
+        raise ValueError(f"7-Zip 无法列出 {fmt_label}: {detail or listed.returncode}")
 
     names: list[str] = []
     declared_total = 0
@@ -539,11 +554,17 @@ def _extract_rar_via_7z(archive: Path, dest: Path) -> list[Path]:
     )
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "").strip()[:400]
-        raise ValueError(f"7-Zip 解压 RAR 失败（code={proc.returncode}）: {detail}")
+        raise ValueError(
+            f"7-Zip 解压 {fmt_label} 失败（code={proc.returncode}）: {detail}"
+        )
     extracted = _collect_extracted_files(dest)
     if not extracted:
-        raise ValueError("RAR 解压结果为空")
+        raise ValueError(f"{fmt_label} 解压结果为空")
     return extracted
+
+
+def safe_extract_7z(archive: Path, dest: Path) -> list[Path]:
+    return _extract_via_7z(archive, dest, fmt_label="7z")
 
 
 def safe_extract_rar(archive: Path, dest: Path) -> list[Path]:
@@ -567,7 +588,7 @@ def safe_extract_rar(archive: Path, dest: Path) -> list[Path]:
         )
 
     try:
-        return _extract_rar_via_7z(archive, dest)
+        return _extract_via_7z(archive, dest, fmt_label="RAR")
     except ArchiveSecurityError:
         raise
     except Exception as exc:
@@ -582,12 +603,121 @@ def safe_extract_rar(archive: Path, dest: Path) -> list[Path]:
     )
 
 
+def safe_extract_tar(archive: Path, dest: Path) -> list[Path]:
+    """tar / tar.gz / tgz / tar.bz2 / tar.xz（tarfile ``r:*`` 透明解压压缩层）。"""
+    import tarfile
+
+    dest.mkdir(parents=True, exist_ok=True)
+    archive_size = max(1, archive.stat().st_size)
+    extracted: list[Path] = []
+    total_uncompressed = 0
+
+    with tarfile.open(archive, "r:*") as tf:
+        members = tf.getmembers()
+        if len(members) > MAX_ARCHIVE_MEMBERS:
+            raise ArchiveSecurityError(
+                f"压缩包成员过多（{len(members)} > {MAX_ARCHIVE_MEMBERS}），已拒绝"
+            )
+
+        declared_total = 0
+        for member in members:
+            if member.isdir():
+                continue
+            if member.issym() or member.islnk():
+                raise ArchiveSecurityError(f"拒绝链接成员: {member.name}")
+            if not member.isfile():
+                raise ArchiveSecurityError(f"拒绝非常规文件成员: {member.name}")
+            if member.size > MAX_SINGLE_MEMBER_BYTES:
+                raise ArchiveSecurityError(
+                    f"单文件过大（>{MAX_SINGLE_MEMBER_BYTES // (1024 * 1024)} MiB）"
+                    f": {member.name}"
+                )
+            safe_name = _sanitize_member_name(member.name)
+            if safe_name:
+                _reject_dangerous_member(safe_name)
+            declared_total += member.size
+
+        if declared_total > MAX_UNCOMPRESSED_BYTES:
+            raise ArchiveSecurityError(
+                f"解压后体积过大（>{MAX_UNCOMPRESSED_BYTES // (1024 * 1024)} MiB），已拒绝"
+            )
+        _check_ratio(archive_size, declared_total)
+
+        for member in members:
+            if not member.isfile():
+                continue
+            safe_name = _sanitize_member_name(member.name)
+            if not safe_name:
+                continue
+            target = _assert_under_dest(dest / safe_name, dest)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source = tf.extractfile(member)
+            if source is None:
+                continue
+            written = 0
+            with source, target.open("wb") as out:
+                while True:
+                    chunk = source.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    total_uncompressed += len(chunk)
+                    if written > MAX_SINGLE_MEMBER_BYTES:
+                        raise ArchiveSecurityError(f"单文件解压超限: {member.name}")
+                    if total_uncompressed > MAX_UNCOMPRESSED_BYTES:
+                        raise ArchiveSecurityError("累计解压体积超限，已中止")
+                    out.write(chunk)
+            extracted.append(target)
+
+    return extracted
+
+
+def safe_extract_gzip(archive: Path, dest: Path) -> list[Path]:
+    """纯 gzip 单文件（非 tar.gz）。解压为去掉 .gz 后缀的文件，流式限额。"""
+    import gzip
+
+    dest.mkdir(parents=True, exist_ok=True)
+    out_name = (
+        archive.name[: -len(".gz")]
+        if archive.name.lower().endswith(".gz")
+        else f"{archive.name}.out"
+    )
+    if not out_name.strip():
+        out_name = "extracted.bin"
+    _reject_dangerous_member(out_name)
+
+    target = _assert_under_dest(dest / _sanitize_member_name(out_name), dest)
+    written = 0
+    with gzip.open(archive, "rb") as src, target.open("wb") as out:
+        while True:
+            chunk = src.read(1024 * 1024)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > MAX_SINGLE_MEMBER_BYTES:
+                raise ArchiveSecurityError(f"单文件解压超限: {out_name}")
+            out.write(chunk)
+    if written == 0:
+        target.unlink(missing_ok=True)
+        raise ValueError("gzip 内容为空")
+    return [target]
+
+
 def safe_extract_archive(archive: Path, dest: Path) -> list[Path]:
+    name_lower = archive.name.lower()
     suffix = archive.suffix.lower()
     if suffix == ".zip":
         return safe_extract_zip(archive, dest)
     if suffix == ".rar":
         return safe_extract_rar(archive, dest)
+    if suffix == ".7z":
+        return safe_extract_7z(archive, dest)
+    if name_lower.endswith(
+        (".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz")
+    ):
+        return safe_extract_tar(archive, dest)
+    if suffix == ".gz":
+        return safe_extract_gzip(archive, dest)
     if suffix in {".exe", ".sfx"}:
         raise ArchiveSecurityError(
             "拒绝自解压/可执行包。请上传标准 .zip 或 .rar（非 SFX）。"
