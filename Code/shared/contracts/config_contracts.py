@@ -332,14 +332,110 @@ class DataSourceConfig(BaseModel):
     download_real_fetch_enabled: bool = False
     tile_proxy_enabled: bool = False
     tile_proxy_cache_ttl_seconds: int = 0
+    static_cache_root: str = ""
+    cache_dir: str = ""
     minio: MinioPublicConfig | None = None
     discovered_datasets: list[DiscoveredDataset] = Field(default_factory=list)
+    available_datasets: list[AvailableDatasetEntry] = Field(default_factory=list)
     open_data_presets: dict[str, str] = Field(default_factory=dict)
     open_data_preset_labels: dict[str, str] = Field(default_factory=dict)
     portal_credentials: dict[str, PortalCredentialPublic] = Field(default_factory=dict)
     remote_layer_data_uris: dict[str, Any] = Field(default_factory=dict)
     static_cache: StaticCacheSummary | None = None
     workflow_hint: str | None = None
+
+
+class AvailableDatasetEntry(BaseModel):
+    """可用数据集注册表条目（available_datasets 表行）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    dataset_id: str
+    logical_name: str
+    path: str
+    file_format: str = ""
+    variables: list[str] = Field(default_factory=list)
+    time_range: str = ""
+    resolution: str = ""
+    tags: list[str] = Field(default_factory=list)
+    description: str = ""
+    source: str = "manual"
+    enabled: bool = True
+    file_count: int | None = None
+    last_scanned_at: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class DatasetUpsertRequest(BaseModel):
+    """PUT /config/data-source/datasets/{dataset_id} body。
+
+    dataset_id 传 "new"（或空）时创建新条目；logical_name 冲突且非同一条目返回 400。
+    source=algorithm_registry 条目：仅 path/描述/启停/元数据可改，改名/删除被拒。
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    logical_name: str
+    path: str
+    file_format: str | None = None
+    variables: list[str] | None = None
+    time_range: str | None = None
+    resolution: str | None = None
+    tags: list[str] | None = None
+    description: str | None = None
+    enabled: bool = True
+
+
+class DatasetRescanResponse(BaseModel):
+    root: str = ""
+    created: int = 0
+    created_names: list[str] = Field(default_factory=list)
+    refreshed: int = 0
+    entries: list[AvailableDatasetEntry] = Field(default_factory=list)
+
+
+class RemoteSourceRefBadge(BaseModel):
+    """引用源能力徽标（存储 profile 或门户）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    protocol: str | None = None
+    enabled: bool | None = None
+    last_test_status: str | None = None
+    display_name: str = ""
+    search_capability: str | None = None
+    requires_credentials: bool | None = None
+    name: str = ""
+
+
+class RemoteSourceEntry(BaseModel):
+    """「可访问远程数据源」别名条目 + 引用源能力。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    remote_source_id: str
+    kind: str
+    ref_id: str
+    remote_path: str = ""
+    display_name: str = ""
+    cache_policy: str = "standard"
+    created_at: str = ""
+    updated_at: str = ""
+    ref: RemoteSourceRefBadge | None = None
+    ref_exists: bool = False
+
+
+class RemoteSourceUpsertRequest(BaseModel):
+    """PUT /config/remote-sources/{remote_source_id} body."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    kind: str
+    ref_id: str
+    remote_path: str = ""
+    display_name: str = ""
+    cache_policy: str = "standard"
 
 
 class DataCacheEntry(BaseModel):

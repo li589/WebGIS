@@ -39,6 +39,13 @@
 - POST /config/remote-storage/{profile_id}/failover — 手动切换主/备路径
 - GET /config/data-source — 数据源配置（含生效/待重启数据根）
 - PUT /config/data-source/paths — 更新数据根/产物根（写 .env，需重启后端）
+- GET /config/data-source/datasets — 可用数据集注册表（read 权限）
+- POST /config/data-source/datasets/rescan — 重扫数据根（admin）
+- PUT /config/data-source/datasets/{dataset_id} — 新增/更新数据集（admin）
+- DELETE /config/data-source/datasets/{dataset_id} — 删除数据集（admin；内置条目拒删）
+- GET /config/remote-sources — 可访问远程数据源别名 + 能力徽标（read）
+- PUT /config/remote-sources/{remote_source_id} — 新增/更新别名（admin）
+- DELETE /config/remote-sources/{remote_source_id} — 删除别名（admin）
 - POST /config/service/restart — 调度重启 FastAPI+Worker+Beat
 - GET /config/about — 项目信息
 """
@@ -67,8 +74,12 @@ from shared.contracts.config_contracts import (
     DataCacheEvictResponse,
     DataCacheOverview,
     DataSourceConfig,
+    DeletedResponse,
     DataSourcePathsUpdateRequest,
     DataSourcePathsUpdateResponse,
+    DatasetRescanResponse,
+    DatasetUpsertRequest,
+    AvailableDatasetEntry,
     GeeAccountCreateRequest,
     GeeAccountDeletedResponse,
     GeeAccountItem,
@@ -104,6 +115,8 @@ from shared.contracts.config_contracts import (
     RemoteSearchResponse,
     RemoteFailoverRequest,
     RemoteFailoverResponse,
+    RemoteSourceEntry,
+    RemoteSourceUpsertRequest,
     ServiceRestartRequest,
     ServiceRestartResponse,
     TestResultResponse,
@@ -981,6 +994,102 @@ async def update_remote_layer_uris(payload: RemoteLayerUrisUpdateRequest):
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ── 可用数据集注册表 ──────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/data-source/datasets",
+    response_model=list[AvailableDatasetEntry],
+    dependencies=[Depends(require_config_read_access)],
+)
+async def list_available_datasets(include_disabled: bool = True):
+    """可用数据集注册表（manual/scan/algorithm_registry 三来源）。"""
+    return config_service.list_available_datasets(include_disabled=include_disabled)
+
+
+@router.post(
+    "/data-source/datasets/rescan",
+    response_model=DatasetRescanResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def rescan_available_datasets():
+    """重扫数据根：未注册目录生成 source=scan 条目，已有条目刷新文件统计。"""
+    return await anyio.to_thread.run_sync(config_service.rescan_available_datasets)
+
+
+@router.put(
+    "/data-source/datasets/{dataset_id}",
+    response_model=AvailableDatasetEntry,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def upsert_available_dataset(dataset_id: str, payload: DatasetUpsertRequest):
+    """新增/更新可用数据集；dataset_id 传 "new" 创建。写后失效 readiness 缓存。"""
+    try:
+        return config_service.upsert_available_dataset(dataset_id, payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/data-source/datasets/{dataset_id}",
+    response_model=DeletedResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def delete_available_dataset(dataset_id: str):
+    """删除可用数据集（algorithm_registry 内置条目拒删）。"""
+    try:
+        deleted = config_service.delete_available_dataset(dataset_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Dataset '{dataset_id}' not found")
+    return DeletedResponse(deleted=True)
+
+
+# ── 可访问远程数据源（别名注册表） ────────────────────────────────────────────
+
+
+@router.get(
+    "/remote-sources",
+    response_model=list[RemoteSourceEntry],
+    dependencies=[Depends(require_config_read_access)],
+)
+async def list_remote_sources():
+    """别名条目 + 引用源能力徽标（protocol/search/enabled/test 状态）。"""
+    return config_service.list_remote_sources()
+
+
+@router.put(
+    "/remote-sources/{remote_source_id}",
+    response_model=RemoteSourceEntry,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def upsert_remote_source(
+    remote_source_id: str, payload: RemoteSourceUpsertRequest
+):
+    """新增/更新「可访问远程数据源」别名（供下载节点一键填充）。"""
+    try:
+        return config_service.upsert_remote_source_entry(
+            remote_source_id, payload.model_dump()
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/remote-sources/{remote_source_id}",
+    response_model=DeletedResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def delete_remote_source(remote_source_id: str):
+    """删除别名条目（不影响引用的 profile/门户本身）。"""
+    if not config_service.delete_remote_source_entry(remote_source_id):
+        raise HTTPException(
+            status_code=404, detail=f"Remote source '{remote_source_id}' not found"
+        )
+    return DeletedResponse(deleted=True)
 
 
 # ── 关于 ──────────────────────────────────────────────────────────────────────

@@ -1108,6 +1108,18 @@ def _resolve_scheme_uri(uri: str) -> str | None:
 
 @lru_cache(maxsize=128)
 def _resolve_provider_dataset_path(logical_name: str) -> Path | None:
+    # 可用数据集注册表优先（运行时可编辑；写操作经 invalidate_template_cache 失效本缓存）
+    try:
+        from app.services.dataset_registry_service import (
+            resolve_dataset_path as _registry_resolve,
+        )
+
+        registry_path = _registry_resolve(logical_name)
+        if registry_path is not None:
+            return registry_path
+    except Exception:  # noqa: BLE001 — 注册表不可用不应阻断既有解析链路
+        pass
+
     dataset_helpers = _load_provider_dataset_helpers()
     if dataset_helpers is None:
         return None

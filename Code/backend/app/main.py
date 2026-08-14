@@ -78,6 +78,19 @@ async def lifespan(app: FastAPI):
 
     threading.Thread(target=_warmup, daemon=True, name="provider-warmup").start()
 
+    # 可用数据集注册表：从算法包 DATASET_REGISTRY 同步内置条目（失败仅告警）
+    try:
+        from app.services.dataset_registry_service import sync_algorithm_datasets
+
+        synced = sync_algorithm_datasets()
+        if synced:
+            logger.info(
+                "Dataset registry: synced %d entrie(s) from algorithm package",
+                synced,
+            )
+    except Exception:  # noqa: BLE001 — 同步失败不应阻断启动
+        logger.exception("Failed to sync dataset registry on startup")
+
     # 预热 psutil CPU 采样：cpu_percent(interval=None) 首次调用返回 0.0（psutil 语义），
     # 提前调用一次使后续 get_resource_usage() 能拿到真实值
     try:

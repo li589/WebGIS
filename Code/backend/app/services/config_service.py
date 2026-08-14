@@ -321,6 +321,8 @@ def get_data_source_config() -> dict[str, Any]:
         "download_real_fetch_enabled": settings.download_real_fetch_enabled,
         "tile_proxy_enabled": settings.tile_proxy_enabled,
         "tile_proxy_cache_ttl_seconds": settings.tile_proxy_cache_ttl_seconds,
+        "static_cache_root": str(_resolve_static_cache_root_effective()),
+        "cache_dir": str(settings.cache_dir or ""),
         "minio": {
             "endpoint": settings.minio_endpoint,
             "bucket": settings.minio_bucket,
@@ -329,6 +331,7 @@ def get_data_source_config() -> dict[str, Any]:
         if settings.storage_backend == "minio"
         else None,
         "discovered_datasets": scan_data_root_datasets(),
+        "available_datasets": _available_datasets_safe(),
         "open_data_presets": presets,
         "open_data_preset_labels": labels,
         "portal_credentials": portal_creds,
@@ -366,11 +369,32 @@ def _validate_absolute_existing_dir(path_str: str, *, label: str) -> Path:
     return path.resolve()
 
 
+def _validate_or_create_absolute_dir(path_str: str, *, label: str) -> Path:
+    """缓存类路径：允许不存在但必须可创建（创建失败抛 ValueError）。"""
+    raw = str(path_str or "").strip()
+    if not raw:
+        raise ValueError(f"{label} must not be empty")
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        raise ValueError(f"{label} must be an absolute path")
+    if not path.exists():
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ValueError(f"cannot create {label}: {path}") from exc
+    if not path.is_dir():
+        raise ValueError(f"{label} is not a directory: {path}")
+    return path.resolve()
+
+
 def update_data_source_paths(
     data_root: str,
     output_root: str | None = None,
+    static_cache_root: str | None = None,
+    cache_dir: str | None = None,
+    download_source_root: str | None = None,
 ) -> dict[str, Any]:
-    """校验并写入 BACKEND_DATA_ROOT / BACKEND_OUTPUT_ROOT 到 .env。"""
+    """校验并写入数据根/产物根/缓存类路径到 .env（需重启后端生效）。"""
     from app.services.env_file_upsert import backend_env_path, upsert_env_keys
 
     root = _validate_absolute_existing_dir(data_root, label="data_root")
@@ -385,20 +409,56 @@ def update_data_source_paths(
             raise ValueError(f"cannot create output_root: {out}") from exc
         out = _validate_absolute_existing_dir(str(out), label="output_root")
 
-    env_path = upsert_env_keys(
-        {
-            "BACKEND_DATA_ROOT": str(root),
-            "BACKEND_OUTPUT_ROOT": str(out),
-        }
-    )
+    env_updates: dict[str, str] = {
+        "BACKEND_DATA_ROOT": str(root),
+        "BACKEND_OUTPUT_ROOT": str(out),
+    }
+    effective_map: dict[str, str] = {}
+    optional_paths: list[tuple[str, str | None, str, str]] = [
+        (
+            "static_cache_root",
+            static_cache_root,
+            "BACKEND_STATIC_CACHE_ROOT",
+            str(_resolve_static_cache_root_effective()),
+        ),
+        (
+            "cache_dir",
+            cache_dir,
+            "BACKEND_CACHE_DIR",
+            str(settings.cache_dir or ""),
+        ),
+        (
+            "download_source_root",
+            download_source_root,
+            "BACKEND_DOWNLOAD_SOURCE_ROOT",
+            str(settings.download_source_root or ""),
+        ),
+    ]
+    for label, raw_value, env_key, effective_value in optional_paths:
+        value = str(raw_value or "").strip()
+        if not value:
+            continue
+        resolved = _validate_or_create_absolute_dir(value, label=label)
+        env_updates[env_key] = str(resolved)
+        effective_map[label] = str(resolved)
+
+    env_path = upsert_env_keys(env_updates)
     effective_data = (settings.data_root or "").strip()
     effective_output = (settings.output_root or "").strip()
     pending = str(root) != effective_data or str(out) != effective_output
+    for label, resolved in effective_map.items():
+        env_key = next(k for _l, _v, k, _e in optional_paths if _l == label)
+        env_effective = next(e for _l, _v, k, e in optional_paths if k == env_key)
+        if resolved != env_effective:
+            pending = True
     return {
         "data_root": str(root),
         "output_root": str(out),
         "effective_data_root": effective_data,
         "effective_output_root": effective_output,
+        "static_cache_root": effective_map.get("static_cache_root"),
+        "cache_dir": effective_map.get("cache_dir"),
+        "download_source_root": effective_map.get("download_source_root"),
         "pending_restart": pending,
         "env_path": str(env_path if env_path else backend_env_path()),
         "message": (
@@ -407,6 +467,121 @@ def update_data_source_paths(
             else "Paths saved; already match the running process."
         ),
     }
+
+
+def _resolve_static_cache_root_effective() -> Path:
+    from app.services.data_cache_service import resolve_static_cache_root
+
+    return resolve_static_cache_root()
+
+
+def _available_datasets_safe() -> list[dict[str, Any]]:
+    try:
+        from app.services.dataset_registry_service import get_dataset_registry
+
+        return get_dataset_registry().list_entries()
+    except Exception as exc:  # noqa: BLE001 — 注册表不可用不应阻断配置读取
+        logger.warning("dataset registry unavailable: %s", exc)
+        return []
+
+
+def list_available_datasets(*, include_disabled: bool = True) -> list[dict[str, Any]]:
+    from app.services.dataset_registry_service import get_dataset_registry
+
+    return get_dataset_registry().list_entries(include_disabled=include_disabled)
+
+
+def upsert_available_dataset(
+    dataset_id: str | None, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """可用数据集创建/更新；写后失效 readiness 路径缓存。"""
+    from app.services.dataset_registry_service import (
+        DatasetRegistryError,
+        get_dataset_registry,
+        invalidate_dataset_caches,
+    )
+
+    try:
+        entry = get_dataset_registry().upsert(
+            dataset_id=None
+            if not dataset_id or dataset_id in {"new", "-"}
+            else dataset_id,
+            logical_name=str(payload.get("logical_name") or "").strip(),
+            path=str(payload.get("path") or "").strip(),
+            file_format=str(payload.get("file_format") or ""),
+            variables=payload.get("variables"),
+            time_range=str(payload.get("time_range") or ""),
+            resolution=str(payload.get("resolution") or ""),
+            tags=payload.get("tags"),
+            description=str(payload.get("description") or ""),
+            enabled=bool(payload.get("enabled", True)),
+        )
+    except DatasetRegistryError as exc:
+        raise ValueError(str(exc)) from exc
+    invalidate_dataset_caches()
+    return entry
+
+
+def delete_available_dataset(dataset_id: str) -> bool:
+    from app.services.dataset_registry_service import (
+        DatasetRegistryError,
+        get_dataset_registry,
+        invalidate_dataset_caches,
+    )
+
+    try:
+        deleted = get_dataset_registry().delete(dataset_id)
+    except DatasetRegistryError as exc:
+        raise ValueError(str(exc)) from exc
+    if deleted:
+        invalidate_dataset_caches()
+    return deleted
+
+
+def rescan_available_datasets() -> dict[str, Any]:
+    from app.services.dataset_registry_service import (
+        invalidate_dataset_caches,
+        rescan_data_root,
+    )
+
+    result = rescan_data_root()
+    invalidate_dataset_caches()
+    return result
+
+
+def list_remote_sources() -> list[dict[str, Any]]:
+    from app.services.remote_source_registry import (
+        list_remote_sources_with_capabilities,
+    )
+
+    return list_remote_sources_with_capabilities()
+
+
+def upsert_remote_source_entry(
+    remote_source_id: str, payload: dict[str, Any]
+) -> dict[str, Any]:
+    from app.services.remote_source_registry import (
+        RemoteSourceRegistryError,
+        get_remote_source_registry,
+    )
+
+    try:
+        return get_remote_source_registry().upsert(
+            remote_source_id=remote_source_id,
+            kind=str(payload.get("kind") or ""),
+            ref_id=str(payload.get("ref_id") or ""),
+            remote_path=str(payload.get("remote_path") or ""),
+            display_name=str(payload.get("display_name") or ""),
+            cache_policy=str(payload.get("cache_policy") or "standard"),
+        )
+    except RemoteSourceRegistryError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def delete_remote_source_entry(remote_source_id: str) -> bool:
+    from app.services.remote_source_registry import get_remote_source_registry
+
+    return get_remote_source_registry().delete(remote_source_id)
 
 
 def schedule_ui_backend_restart(
