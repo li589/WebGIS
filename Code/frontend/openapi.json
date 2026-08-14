@@ -12217,6 +12217,42 @@
             ],
             "title": "Output Root",
             "description": "可选；留空则默认为 {data_root}/ProjectOutput"
+          },
+          "static_cache_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Static Cache Root",
+            "description": "可选；静态下载缓存根（BACKEND_STATIC_CACHE_ROOT），不存在时自动创建"
+          },
+          "cache_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Dir",
+            "description": "可选；通用缓存目录（BACKEND_CACHE_DIR），不存在时自动创建"
+          },
+          "download_source_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Source Root",
+            "description": "可选；下载源根目录（BACKEND_DOWNLOAD_SOURCE_ROOT），不存在时自动创建"
           }
         },
         "type": "object",
@@ -12243,6 +12279,39 @@
           "effective_output_root": {
             "type": "string",
             "title": "Effective Output Root"
+          },
+          "static_cache_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Static Cache Root"
+          },
+          "cache_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Dir"
+          },
+          "download_source_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Source Root"
           },
           "pending_restart": {
             "type": "boolean",

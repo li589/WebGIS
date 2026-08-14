@@ -35,6 +35,13 @@ import {
   upsertPortal,
   deletePortal,
   testPortal,
+  fetchAvailableDatasets,
+  upsertAvailableDataset,
+  deleteAvailableDataset,
+  rescanAvailableDatasets,
+  fetchRemoteSources,
+  upsertRemoteSource,
+  deleteRemoteSource,
   upsertRemoteStorageProfile,
   deleteRemoteStorageProfile,
   toggleRemoteStorageProfile,
@@ -65,6 +72,11 @@ import {
   type PortalCatalogEntry,
   type PortalTestResponse,
   type PortalUpsertRequest,
+  type AvailableDatasetEntry,
+  type DatasetUpsertRequest,
+  type DatasetRescanResponse,
+  type RemoteSourceEntry,
+  type RemoteSourceUpsertRequest,
 } from '../services/settings-api'
 import { hydrateMapDefaults } from '../services/map-defaults'
 import { safeLog } from './log'
@@ -79,6 +91,8 @@ type LoaderName =
   | 'data-source'
   | 'remote-storage'
   | 'portals'
+  | 'datasets'
+  | 'remote-sources'
   | 'about'
 
 const LOADER_LABELS: Record<LoaderName, string> = {
@@ -91,6 +105,8 @@ const LOADER_LABELS: Record<LoaderName, string> = {
   'data-source': '数据源',
   'remote-storage': '远程与存储',
   portals: '开放门户',
+  datasets: '可用数据集',
+  'remote-sources': '远程数据源',
   about: '关于',
 }
 
@@ -120,6 +136,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const remoteStorageProfiles = ref<RemoteStorageProfile[]>([])
   const remoteStorageHistory = ref<Record<string, RemoteStorageHistoryItem[]>>({})
   const portalCatalog = ref<PortalCatalogEntry[]>([])
+  const availableDatasets = ref<AvailableDatasetEntry[]>([])
+  const remoteSourceRegistry = ref<RemoteSourceEntry[]>([])
   const aboutInfo = ref<AboutInfo | null>(null)
   const loading = ref(false)
   /** 致命错误：核心配置不可用，界面阻断 */
@@ -156,6 +174,8 @@ export const useSettingsStore = defineStore('settings', () => {
         settled('data-source', fetchDataSourceConfig),
         settled('remote-storage', fetchRemoteStorageProfiles),
         settled('portals', async () => (await fetchPortalCatalog()).portals ?? []),
+        settled('datasets', () => fetchAvailableDatasets(true)),
+        settled('remote-sources', fetchRemoteSources),
       ])
 
     const applyResult = (r: Awaited<ReturnType<typeof settled>>) => {
@@ -196,6 +216,12 @@ export const useSettingsStore = defineStore('settings', () => {
           break
         case 'portals':
           portalCatalog.value = r.value as PortalCatalogEntry[]
+          break
+        case 'datasets':
+          availableDatasets.value = r.value as AvailableDatasetEntry[]
+          break
+        case 'remote-sources':
+          remoteSourceRegistry.value = r.value as RemoteSourceEntry[]
           break
         case 'about':
           aboutInfo.value = r.value as AboutInfo
@@ -243,6 +269,8 @@ export const useSettingsStore = defineStore('settings', () => {
             'remote-storage': () => settled('remote-storage', fetchRemoteStorageProfiles),
             portals: async () =>
               settled('portals', async () => (await fetchPortalCatalog()).portals ?? []),
+            datasets: () => settled('datasets', () => fetchAvailableDatasets(true)),
+            'remote-sources': () => settled('remote-sources', fetchRemoteSources),
           }[item.name as Exclude<LoaderName, 'general' | 'api-keys' | 'about'>]
           if (loader) retryMap.set(item.name, await loader())
         }),
@@ -496,6 +524,46 @@ export const useSettingsStore = defineStore('settings', () => {
     return result
   }
 
+  // ── 可用数据集 ───────────────────────────────────────────────────────────
+
+  async function loadAvailableDatasets(includeDisabled = true) {
+    availableDatasets.value = await fetchAvailableDatasets(includeDisabled)
+  }
+
+  async function saveAvailableDataset(datasetId: string | null, request: DatasetUpsertRequest) {
+    const updated = await upsertAvailableDataset(datasetId || 'new', request)
+    await loadAvailableDatasets()
+    return updated
+  }
+
+  async function removeAvailableDataset(datasetId: string) {
+    await deleteAvailableDataset(datasetId)
+    await loadAvailableDatasets()
+  }
+
+  async function runDatasetRescan(): Promise<DatasetRescanResponse> {
+    const result = await rescanAvailableDatasets()
+    await loadAvailableDatasets()
+    return result
+  }
+
+  // ── 可访问远程数据源 ─────────────────────────────────────────────────────
+
+  async function loadRemoteSources() {
+    remoteSourceRegistry.value = await fetchRemoteSources()
+  }
+
+  async function saveRemoteSource(remoteSourceId: string, request: RemoteSourceUpsertRequest) {
+    const updated = await upsertRemoteSource(remoteSourceId, request)
+    await loadRemoteSources()
+    return updated
+  }
+
+  async function removeRemoteSource(remoteSourceId: string) {
+    await deleteRemoteSource(remoteSourceId)
+    await loadRemoteSources()
+  }
+
   async function saveWeatherDefaultModel(defaultModel: string) {
     const updated = await updateWeatherDefaultModel(defaultModel)
     weatherConfig.value = { ...(weatherConfig.value ?? ({} as WeatherConfig)), ...updated }
@@ -570,5 +638,14 @@ export const useSettingsStore = defineStore('settings', () => {
     savePortal,
     removePortal,
     runPortalTest,
+    availableDatasets,
+    remoteSourceRegistry,
+    loadAvailableDatasets,
+    saveAvailableDataset,
+    removeAvailableDataset,
+    runDatasetRescan,
+    loadRemoteSources,
+    saveRemoteSource,
+    removeRemoteSource,
   }
 })

@@ -4501,6 +4501,21 @@ export interface components {
              * @description 可选；留空则默认为 {data_root}/ProjectOutput
              */
             output_root?: string | null;
+            /**
+             * Static Cache Root
+             * @description 可选；静态下载缓存根（BACKEND_STATIC_CACHE_ROOT），不存在时自动创建
+             */
+            static_cache_root?: string | null;
+            /**
+             * Cache Dir
+             * @description 可选；通用缓存目录（BACKEND_CACHE_DIR），不存在时自动创建
+             */
+            cache_dir?: string | null;
+            /**
+             * Download Source Root
+             * @description 可选；下载源根目录（BACKEND_DOWNLOAD_SOURCE_ROOT），不存在时自动创建
+             */
+            download_source_root?: string | null;
         };
         /** DataSourcePathsUpdateResponse */
         DataSourcePathsUpdateResponse: {
@@ -4512,6 +4527,12 @@ export interface components {
             effective_data_root: string;
             /** Effective Output Root */
             effective_output_root: string;
+            /** Static Cache Root */
+            static_cache_root?: string | null;
+            /** Cache Dir */
+            cache_dir?: string | null;
+            /** Download Source Root */
+            download_source_root?: string | null;
             /** Pending Restart */
             pending_restart: boolean;
             /** Env Path */

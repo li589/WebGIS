@@ -621,6 +621,18 @@ class DataSourcePathsUpdateRequest(BaseModel):
         default=None,
         description="可选；留空则默认为 {data_root}/ProjectOutput",
     )
+    static_cache_root: str | None = Field(
+        default=None,
+        description="可选；静态下载缓存根（BACKEND_STATIC_CACHE_ROOT），不存在时自动创建",
+    )
+    cache_dir: str | None = Field(
+        default=None,
+        description="可选；通用缓存目录（BACKEND_CACHE_DIR），不存在时自动创建",
+    )
+    download_source_root: str | None = Field(
+        default=None,
+        description="可选；下载源根目录（BACKEND_DOWNLOAD_SOURCE_ROOT），不存在时自动创建",
+    )
 
 
 class DataSourcePathsUpdateResponse(BaseModel):
@@ -628,6 +640,9 @@ class DataSourcePathsUpdateResponse(BaseModel):
     output_root: str
     effective_data_root: str
     effective_output_root: str
+    static_cache_root: str | None = None
+    cache_dir: str | None = None
+    download_source_root: str | None = None
     pending_restart: bool
     env_path: str
     message: str

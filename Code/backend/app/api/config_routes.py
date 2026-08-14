@@ -793,6 +793,9 @@ async def update_data_source_paths(request: DataSourcePathsUpdateRequest):
             config_service.update_data_source_paths,
             request.data_root,
             request.output_root,
+            request.static_cache_root,
+            request.cache_dir,
+            request.download_source_root,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
