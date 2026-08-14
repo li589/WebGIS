@@ -2587,7 +2587,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get Remote Storage Profile */
+        get: operations["get_remote_storage_profile_config_remote_storage__profile_id__get"];
         /** Upsert Remote Storage Profile */
         put: operations["upsert_remote_storage_profile_config_remote_storage__profile_id__put"];
         post?: never;
@@ -2626,6 +2627,66 @@ export interface paths {
         put?: never;
         /** Test Remote Storage Profile */
         post: operations["test_remote_storage_profile_config_remote_storage__profile_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/remote-storage/{profile_id}/browse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Browse Remote Storage Profile
+         * @description 浏览存储 profile 目录（双路径感知；standard 角色可浏览）。
+         */
+        post: operations["browse_remote_storage_profile_config_remote_storage__profile_id__browse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/remote-storage/{profile_id}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search Remote Storage Profile
+         * @description 在存储 profile 内按名称搜索（能力因协议而异）。
+         */
+        post: operations["search_remote_storage_profile_config_remote_storage__profile_id__search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/remote-storage/{profile_id}/failover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Failover Remote Storage Profile
+         * @description 手动切换主/备访问路径。
+         */
+        post: operations["failover_remote_storage_profile_config_remote_storage__profile_id__failover_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2848,6 +2909,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config/portals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Portal Catalog
+         * @description 门户目录（内置 + 自定义，含凭据状态与 URL 覆盖态）。
+         */
+        get: operations["get_portal_catalog_config_portals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/portals/{portal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upsert Portal
+         * @description 自定义门户创建/更新；builtin 门户仅允许覆盖 base_url / alt_url。
+         */
+        put: operations["upsert_portal_config_portals__portal_id__put"];
+        post?: never;
+        /**
+         * Delete Portal
+         * @description 删除自定义门户（builtin 不可删）。
+         */
+        delete: operations["delete_portal_config_portals__portal_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/portals/{portal_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Portal
+         * @description 门户连通性测试（凭据感知，SSRF 校验）。
+         */
+        post: operations["test_portal_config_portals__portal_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/portals/{portal_id}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Portal
+         * @description 门户在线检索（仅 search_capability != none 的门户；本期实装 CMR）。
+         */
+        get: operations["search_portal_config_portals__portal_id__search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config/data-source/remote-layer-uris": {
         parameters: {
             query?: never;
@@ -2863,6 +3008,114 @@ export interface paths {
         put: operations["update_remote_layer_uris_config_data_source_remote_layer_uris_put"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/data-source/datasets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Available Datasets
+         * @description 可用数据集注册表（manual/scan/algorithm_registry 三来源）。
+         */
+        get: operations["list_available_datasets_config_data_source_datasets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/data-source/datasets/rescan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rescan Available Datasets
+         * @description 重扫数据根：未注册目录生成 source=scan 条目，已有条目刷新文件统计。
+         */
+        post: operations["rescan_available_datasets_config_data_source_datasets_rescan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/data-source/datasets/{dataset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upsert Available Dataset
+         * @description 新增/更新可用数据集；dataset_id 传 "new" 创建。写后失效 readiness 缓存。
+         */
+        put: operations["upsert_available_dataset_config_data_source_datasets__dataset_id__put"];
+        post?: never;
+        /**
+         * Delete Available Dataset
+         * @description 删除可用数据集（algorithm_registry 内置条目拒删）。
+         */
+        delete: operations["delete_available_dataset_config_data_source_datasets__dataset_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/remote-sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Remote Sources
+         * @description 别名条目 + 引用源能力徽标（protocol/search/enabled/test 状态）。
+         */
+        get: operations["list_remote_sources_config_remote_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/remote-sources/{remote_source_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upsert Remote Source
+         * @description 新增/更新「可访问远程数据源」别名（供下载节点一键填充）。
+         */
+        put: operations["upsert_remote_source_config_remote_sources__remote_source_id__put"];
+        post?: never;
+        /**
+         * Delete Remote Source
+         * @description 删除别名条目（不影响引用的 profile/门户本身）。
+         */
+        delete: operations["delete_remote_source_config_remote_sources__remote_source_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3802,6 +4055,66 @@ export interface components {
             /** Dev Write Api Key */
             dev_write_api_key?: string | null;
         };
+        /**
+         * AvailableDatasetEntry
+         * @description 可用数据集注册表条目（available_datasets 表行）。
+         */
+        AvailableDatasetEntry: {
+            /** Dataset Id */
+            dataset_id: string;
+            /** Logical Name */
+            logical_name: string;
+            /** Path */
+            path: string;
+            /**
+             * File Format
+             * @default
+             */
+            file_format: string;
+            /** Variables */
+            variables?: string[];
+            /**
+             * Time Range
+             * @default
+             */
+            time_range: string;
+            /**
+             * Resolution
+             * @default
+             */
+            resolution: string;
+            /** Tags */
+            tags?: string[];
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Source
+             * @default manual
+             */
+            source: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** File Count */
+            file_count?: number | null;
+            /** Last Scanned At */
+            last_scanned_at?: string | null;
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
+        };
         /** BackendServiceStatus */
         BackendServiceStatus: {
             /** Service Name */
@@ -4138,9 +4451,21 @@ export interface components {
              * @default 0
              */
             tile_proxy_cache_ttl_seconds: number;
+            /**
+             * Static Cache Root
+             * @default
+             */
+            static_cache_root: string;
+            /**
+             * Cache Dir
+             * @default
+             */
+            cache_dir: string;
             minio?: components["schemas"]["MinioPublicConfig"] | null;
             /** Discovered Datasets */
             discovered_datasets?: components["schemas"]["DiscoveredDataset"][];
+            /** Available Datasets */
+            available_datasets?: components["schemas"]["AvailableDatasetEntry"][];
             /** Open Data Presets */
             open_data_presets?: {
                 [key: string]: string;
@@ -4193,6 +4518,63 @@ export interface components {
             env_path: string;
             /** Message */
             message: string;
+        };
+        /** DatasetRescanResponse */
+        DatasetRescanResponse: {
+            /**
+             * Root
+             * @default
+             */
+            root: string;
+            /**
+             * Created
+             * @default 0
+             */
+            created: number;
+            /** Created Names */
+            created_names?: string[];
+            /**
+             * Refreshed
+             * @default 0
+             */
+            refreshed: number;
+            /** Entries */
+            entries?: components["schemas"]["AvailableDatasetEntry"][];
+        };
+        /**
+         * DatasetUpsertRequest
+         * @description PUT /config/data-source/datasets/{dataset_id} body。
+         *
+         *     dataset_id 传 "new"（或空）时创建新条目；logical_name 冲突且非同一条目返回 400。
+         *     source=algorithm_registry 条目：仅 path/描述/启停/元数据可改，改名/删除被拒。
+         */
+        DatasetUpsertRequest: {
+            /** Logical Name */
+            logical_name: string;
+            /** Path */
+            path: string;
+            /** File Format */
+            file_format?: string | null;
+            /** Variables */
+            variables?: string[] | null;
+            /** Time Range */
+            time_range?: string | null;
+            /** Resolution */
+            resolution?: string | null;
+            /** Tags */
+            tags?: string[] | null;
+            /** Description */
+            description?: string | null;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+        };
+        /** DeletedResponse */
+        DeletedResponse: {
+            /** Deleted */
+            deleted: boolean;
         };
         /** DiagnosticsReport */
         DiagnosticsReport: {
@@ -5301,6 +5683,103 @@ export interface components {
             /** Description */
             description?: string | null;
         };
+        /**
+         * PortalCatalogEntry
+         * @description 目录条目 + 运行时状态（URL 覆盖 / 凭据状态）。
+         */
+        PortalCatalogEntry: {
+            /** Portal Id */
+            portal_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Organization
+             * @default
+             */
+            organization: string;
+            /**
+             * Region
+             * @description international | china
+             * @default international
+             */
+            region: string;
+            /** Base Url */
+            base_url: string;
+            /** Alt Url */
+            alt_url?: string | null;
+            /**
+             * Website
+             * @default
+             */
+            website: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Requires Credentials
+             * @default false
+             */
+            requires_credentials: boolean;
+            /**
+             * Auth Type
+             * @description bearer | basic | header | token | none
+             * @default none
+             */
+            auth_type: string;
+            /** Token Header */
+            token_header?: string | null;
+            /**
+             * Credential Profile
+             * @description 凭据键（规范 id）；空 = portal_id 自身
+             * @default
+             */
+            credential_profile: string;
+            /**
+             * Credentials Hint
+             * @default
+             */
+            credentials_hint: string;
+            /**
+             * Search Capability
+             * @description cmr | none
+             * @default none
+             */
+            search_capability: string;
+            /**
+             * Builtin
+             * @default true
+             */
+            builtin: boolean;
+            /**
+             * Effective Base Url
+             * @default
+             */
+            effective_base_url: string;
+            /**
+             * Base Url Overridden
+             * @default false
+             */
+            base_url_overridden: boolean;
+            /** Effective Alt Url */
+            effective_alt_url?: string | null;
+            /**
+             * Has Credentials
+             * @default false
+             */
+            has_credentials: boolean;
+            /**
+             * Credential Source
+             * @default none
+             */
+            credential_source: string;
+        };
+        /** PortalCatalogResponse */
+        PortalCatalogResponse: {
+            /** Portals */
+            portals?: components["schemas"]["PortalCatalogEntry"][];
+        };
         /** PortalCredentialPublic */
         PortalCredentialPublic: {
             /**
@@ -5369,6 +5848,124 @@ export interface components {
             portal_credentials: {
                 [key: string]: components["schemas"]["PortalCredentialPublic"];
             };
+        };
+        /** PortalSearchResponse */
+        PortalSearchResponse: {
+            /** Portal Id */
+            portal_id: string;
+            /** Query */
+            query: string;
+            /**
+             * Page Size
+             * @default 20
+             */
+            page_size: number;
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /** Items */
+            items?: components["schemas"]["PortalSearchResultItem"][];
+        };
+        /** PortalSearchResultItem */
+        PortalSearchResultItem: {
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Granule Id
+             * @default
+             */
+            granule_id: string;
+            /**
+             * Producer Granule Id
+             * @default
+             */
+            producer_granule_id: string;
+            /**
+             * Size Bytes
+             * @default 0
+             */
+            size_bytes: number;
+            /**
+             * Time Start
+             * @default
+             */
+            time_start: string;
+            /**
+             * Time End
+             * @default
+             */
+            time_end: string;
+            /**
+             * Data Link
+             * @default
+             */
+            data_link: string;
+            /**
+             * Browse Link
+             * @default
+             */
+            browse_link: string;
+        };
+        /** PortalTestResponse */
+        PortalTestResponse: {
+            /** Portal Id */
+            portal_id: string;
+            /** Ok */
+            ok: boolean;
+            /** Status Code */
+            status_code?: number | null;
+            /**
+             * Via Credentials
+             * @default false
+             */
+            via_credentials: boolean;
+            /** Message */
+            message: string;
+            /**
+             * Tested Url
+             * @default
+             */
+            tested_url: string;
+        };
+        /**
+         * PortalUpsertRequest
+         * @description PUT /config/portals/{portal_id} body。
+         *
+         *     builtin 门户：仅 base_url（覆盖 open_data_presets）与 alt_url 生效，空串清除覆盖；
+         *     自定义门户：全字段创建/更新（name/base_url 必填）。
+         */
+        PortalUpsertRequest: {
+            /** Name */
+            name?: string | null;
+            /** Organization */
+            organization?: string | null;
+            /** Region */
+            region?: string | null;
+            /** Base Url */
+            base_url?: string | null;
+            /** Alt Url */
+            alt_url?: string | null;
+            /** Website */
+            website?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Requires Credentials */
+            requires_credentials?: boolean | null;
+            /** Auth Type */
+            auth_type?: string | null;
+            /** Token Header */
+            token_header?: string | null;
+            /** Credential Profile */
+            credential_profile?: string | null;
+            /** Credentials Hint */
+            credentials_hint?: string | null;
+            /** Search Capability */
+            search_capability?: string | null;
         };
         /**
          * ProcessResourceSnapshot
@@ -5480,6 +6077,65 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** RemoteBrowseRequest */
+        RemoteBrowseRequest: {
+            /**
+             * Path
+             * @default /
+             */
+            path: string;
+        };
+        /** RemoteBrowseResponse */
+        RemoteBrowseResponse: {
+            /** Profile Id */
+            profile_id: string;
+            /** Protocol */
+            protocol: string;
+            /** Path */
+            path: string;
+            /**
+             * Via
+             * @description 本次实际使用的路径：primary | alt
+             */
+            via: string;
+            /** Items */
+            items?: components["schemas"]["RemoteEntryItem"][];
+        };
+        /**
+         * RemoteEntryItem
+         * @description 远程目录条目（浏览/搜索通用）。
+         */
+        RemoteEntryItem: {
+            /** Name */
+            name: string;
+            /**
+             * Is Dir
+             * @default false
+             */
+            is_dir: boolean;
+            /** Size */
+            size?: number | null;
+            /** Mtime */
+            mtime?: number | null;
+            /** Path */
+            path?: string | null;
+        };
+        /** RemoteFailoverRequest */
+        RemoteFailoverRequest: {
+            /** Target */
+            target: string;
+        };
+        /** RemoteFailoverResponse */
+        RemoteFailoverResponse: {
+            /** Profile Id */
+            profile_id: string;
+            /** Active */
+            active: string;
+            /** Updated */
+            updated: boolean;
+            /** Message */
+            message: string;
+        };
         /** RemoteLayerUrisUpdateRequest */
         RemoteLayerUrisUpdateRequest: {
             /** Remote Layer Data Uris */
@@ -5495,6 +6151,123 @@ export interface components {
                     [key: string]: string[];
                 };
             };
+        };
+        /** RemoteSearchRequest */
+        RemoteSearchRequest: {
+            /** Query */
+            query: string;
+            /**
+             * Max Results
+             * @default 200
+             */
+            max_results: number;
+        };
+        /** RemoteSearchResponse */
+        RemoteSearchResponse: {
+            /** Profile Id */
+            profile_id: string;
+            /** Protocol */
+            protocol: string;
+            /** Query */
+            query: string;
+            /** Via */
+            via: string;
+            /** Items */
+            items?: components["schemas"]["RemoteEntryItem"][];
+        };
+        /**
+         * RemoteSourceEntry
+         * @description 「可访问远程数据源」别名条目 + 引用源能力。
+         */
+        RemoteSourceEntry: {
+            /** Remote Source Id */
+            remote_source_id: string;
+            /** Kind */
+            kind: string;
+            /** Ref Id */
+            ref_id: string;
+            /**
+             * Remote Path
+             * @default
+             */
+            remote_path: string;
+            /**
+             * Display Name
+             * @default
+             */
+            display_name: string;
+            /**
+             * Cache Policy
+             * @default standard
+             */
+            cache_policy: string;
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
+            ref?: components["schemas"]["RemoteSourceRefBadge"] | null;
+            /**
+             * Ref Exists
+             * @default false
+             */
+            ref_exists: boolean;
+        };
+        /**
+         * RemoteSourceRefBadge
+         * @description 引用源能力徽标（存储 profile 或门户）。
+         */
+        RemoteSourceRefBadge: {
+            /** Protocol */
+            protocol?: string | null;
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Last Test Status */
+            last_test_status?: string | null;
+            /**
+             * Display Name
+             * @default
+             */
+            display_name: string;
+            /** Search Capability */
+            search_capability?: string | null;
+            /** Requires Credentials */
+            requires_credentials?: boolean | null;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+        };
+        /**
+         * RemoteSourceUpsertRequest
+         * @description PUT /config/remote-sources/{remote_source_id} body.
+         */
+        RemoteSourceUpsertRequest: {
+            /** Kind */
+            kind: string;
+            /** Ref Id */
+            ref_id: string;
+            /**
+             * Remote Path
+             * @default
+             */
+            remote_path: string;
+            /**
+             * Display Name
+             * @default
+             */
+            display_name: string;
+            /**
+             * Cache Policy
+             * @default standard
+             */
+            cache_policy: string;
         };
         /** RemoteStorageDeletedResponse */
         RemoteStorageDeletedResponse: {
@@ -5602,6 +6375,27 @@ export interface components {
             last_tested_at?: string | null;
             /** Last Test Status */
             last_test_status?: string | null;
+            /**
+             * Alt Host
+             * @default
+             */
+            alt_host: string;
+            /** Alt Port */
+            alt_port?: number | null;
+            /**
+             * Alt Url
+             * @default
+             */
+            alt_url: string;
+            /**
+             * Fallback Mode
+             * @default auto
+             */
+            fallback_mode: string;
+            /** Failover State */
+            failover_state?: {
+                [key: string]: unknown;
+            };
         };
         /**
          * RemoteStorageTestRequest
@@ -5664,6 +6458,26 @@ export interface components {
             display_name?: string | null;
             /** Enabled */
             enabled?: boolean | null;
+            /**
+             * Alt Host
+             * @description 备用访问路径主机/URL（隧道），写入 extra.alt.host
+             */
+            alt_host?: string | null;
+            /**
+             * Alt Port
+             * @description 备用访问路径端口，写入 extra.alt.port
+             */
+            alt_port?: number | null;
+            /**
+             * Alt Url
+             * @description 备用 base URL（http/https/filebrowser），写入 extra.alt.url
+             */
+            alt_url?: string | null;
+            /**
+             * Fallback Mode
+             * @description 回退模式 auto|manual|off，写入 extra.fallback_mode
+             */
+            fallback_mode?: string | null;
         };
         /**
          * ResourceUsageResponse
@@ -11566,6 +12380,37 @@ export interface operations {
             };
         };
     };
+    get_remote_storage_profile_config_remote_storage__profile_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteStorageProfile"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     upsert_remote_storage_profile_config_remote_storage__profile_id__put: {
         parameters: {
             query?: never;
@@ -11689,6 +12534,111 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RemoteStorageTestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    browse_remote_storage_profile_config_remote_storage__profile_id__browse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RemoteBrowseRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteBrowseResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_remote_storage_profile_config_remote_storage__profile_id__search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemoteSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteSearchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    failover_remote_storage_profile_config_remote_storage__profile_id__failover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemoteFailoverRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteFailoverResponse"];
                 };
             };
             /** @description Validation Error */
@@ -12086,6 +13036,157 @@ export interface operations {
             };
         };
     };
+    get_portal_catalog_config_portals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortalCatalogResponse"];
+                };
+            };
+        };
+    };
+    upsert_portal_config_portals__portal_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                portal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortalUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortalCatalogEntry"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_portal_config_portals__portal_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                portal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteStorageDeletedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_portal_config_portals__portal_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                portal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortalTestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_portal_config_portals__portal_id__search_get: {
+        parameters: {
+            query: {
+                q: string;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                portal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortalSearchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_remote_layer_uris_config_data_source_remote_layer_uris_put: {
         parameters: {
             query?: never;
@@ -12106,6 +13207,209 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RemoteLayerUrisUpdateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_available_datasets_config_data_source_datasets_get: {
+        parameters: {
+            query?: {
+                include_disabled?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailableDatasetEntry"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rescan_available_datasets_config_data_source_datasets_rescan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetRescanResponse"];
+                };
+            };
+        };
+    };
+    upsert_available_dataset_config_data_source_datasets__dataset_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatasetUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailableDatasetEntry"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_available_dataset_config_data_source_datasets__dataset_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_remote_sources_config_remote_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteSourceEntry"][];
+                };
+            };
+        };
+    };
+    upsert_remote_source_config_remote_sources__remote_source_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                remote_source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemoteSourceUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteSourceEntry"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_remote_source_config_remote_sources__remote_source_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                remote_source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResponse"];
                 };
             };
             /** @description Validation Error */

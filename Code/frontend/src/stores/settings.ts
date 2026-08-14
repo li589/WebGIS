@@ -31,6 +31,10 @@ import {
   fetchAboutInfo,
   updateRuntimeConfig,
   fetchRemoteStorageProfiles,
+  fetchPortalCatalog,
+  upsertPortal,
+  deletePortal,
+  testPortal,
   upsertRemoteStorageProfile,
   deleteRemoteStorageProfile,
   toggleRemoteStorageProfile,
@@ -58,6 +62,9 @@ import {
   type RemoteStorageUpsertRequest,
   type RemoteStorageTestResponse,
   type RemoteStorageHistoryItem,
+  type PortalCatalogEntry,
+  type PortalTestResponse,
+  type PortalUpsertRequest,
 } from '../services/settings-api'
 import { hydrateMapDefaults } from '../services/map-defaults'
 import { safeLog } from './log'
@@ -71,6 +78,7 @@ type LoaderName =
   | 'weather-providers'
   | 'data-source'
   | 'remote-storage'
+  | 'portals'
   | 'about'
 
 const LOADER_LABELS: Record<LoaderName, string> = {
@@ -81,7 +89,8 @@ const LOADER_LABELS: Record<LoaderName, string> = {
   weather: '天气引擎',
   'weather-providers': '天气源',
   'data-source': '数据源',
-  'remote-storage': '远程存储',
+  'remote-storage': '远程与存储',
+  portals: '开放门户',
   about: '关于',
 }
 
@@ -110,6 +119,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const dataSourceConfig = ref<DataSourceConfig | null>(null)
   const remoteStorageProfiles = ref<RemoteStorageProfile[]>([])
   const remoteStorageHistory = ref<Record<string, RemoteStorageHistoryItem[]>>({})
+  const portalCatalog = ref<PortalCatalogEntry[]>([])
   const aboutInfo = ref<AboutInfo | null>(null)
   const loading = ref(false)
   /** 致命错误：核心配置不可用，界面阻断 */
@@ -145,6 +155,7 @@ export const useSettingsStore = defineStore('settings', () => {
         settled('weather-providers', fetchWeatherProviders),
         settled('data-source', fetchDataSourceConfig),
         settled('remote-storage', fetchRemoteStorageProfiles),
+        settled('portals', async () => (await fetchPortalCatalog()).portals ?? []),
       ])
 
     const applyResult = (r: Awaited<ReturnType<typeof settled>>) => {
@@ -182,6 +193,9 @@ export const useSettingsStore = defineStore('settings', () => {
           break
         case 'remote-storage':
           remoteStorageProfiles.value = r.value as RemoteStorageProfile[]
+          break
+        case 'portals':
+          portalCatalog.value = r.value as PortalCatalogEntry[]
           break
         case 'about':
           aboutInfo.value = r.value as AboutInfo
@@ -227,6 +241,8 @@ export const useSettingsStore = defineStore('settings', () => {
             'weather-providers': () => settled('weather-providers', fetchWeatherProviders),
             'data-source': () => settled('data-source', fetchDataSourceConfig),
             'remote-storage': () => settled('remote-storage', fetchRemoteStorageProfiles),
+            portals: async () =>
+              settled('portals', async () => (await fetchPortalCatalog()).portals ?? []),
           }[item.name as Exclude<LoaderName, 'general' | 'api-keys' | 'about'>]
           if (loader) retryMap.set(item.name, await loader())
         }),
@@ -456,6 +472,30 @@ export const useSettingsStore = defineStore('settings', () => {
     await loadRemoteStorageHistory(profileId)
   }
 
+  // ── 开放门户 ─────────────────────────────────────────────────────────────
+
+  async function loadPortalCatalog() {
+    const res = await fetchPortalCatalog()
+    portalCatalog.value = res.portals ?? []
+  }
+
+  async function savePortal(portalId: string, request: PortalUpsertRequest) {
+    const updated = await upsertPortal(portalId, request)
+    await loadPortalCatalog()
+    return updated
+  }
+
+  async function removePortal(portalId: string) {
+    await deletePortal(portalId)
+    await loadPortalCatalog()
+  }
+
+  async function runPortalTest(portalId: string): Promise<PortalTestResponse> {
+    const result = await testPortal(portalId)
+    await loadPortalCatalog()
+    return result
+  }
+
   async function saveWeatherDefaultModel(defaultModel: string) {
     const updated = await updateWeatherDefaultModel(defaultModel)
     weatherConfig.value = { ...(weatherConfig.value ?? ({} as WeatherConfig)), ...updated }
@@ -485,6 +525,7 @@ export const useSettingsStore = defineStore('settings', () => {
     dataSourceConfig,
     remoteStorageProfiles,
     remoteStorageHistory,
+    portalCatalog,
     aboutInfo,
     loading,
     error,
@@ -525,5 +566,9 @@ export const useSettingsStore = defineStore('settings', () => {
     restoreRemoteStorageFromHistory,
     removeRemoteStorageHistoryEntry,
     clearRemoteStorageHistoryFor,
+    loadPortalCatalog,
+    savePortal,
+    removePortal,
+    runPortalTest,
   }
 })

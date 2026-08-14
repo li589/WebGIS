@@ -92,7 +92,7 @@ const ALL_TABS: Array<{ id: SettingsTab; label: string; icon: Component }> = [
   { id: 'gee-accounts', label: SETTINGS_COPY.tabGee, icon: Globe },
   { id: 'weather-providers', label: SETTINGS_COPY.tabWeather, icon: CloudSun },
   { id: 'open-meteo-sync', label: SETTINGS_COPY.tabOpenMeteo, icon: CloudLightning },
-  { id: 'remote-storage', label: '远程存储', icon: Server },
+  { id: 'remote-storage', label: SETTINGS_COPY.tabRemoteStorage, icon: Server },
   { id: 'data-source', label: SETTINGS_COPY.tabDataSource, icon: Database },
   { id: 'about', label: '系统与关于', icon: Info },
 ]

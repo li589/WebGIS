@@ -153,6 +153,33 @@ export type RemoteStorageDeletedResponse = Schema<'RemoteStorageDeletedResponse'
 export type RemoteStorageToggleRequest = Schema<'RemoteStorageToggleRequest'>
 export type RemoteStorageToggleResponse = Schema<'RemoteStorageToggleResponse'>
 export type RemoteStorageTestRequest = Schema<'RemoteStorageTestRequest'>
+export type RemoteEntryItem = Schema<'RemoteEntryItem'>
+export type RemoteBrowseRequest = Schema<'RemoteBrowseRequest'>
+export type RemoteBrowseResponse = Schema<'RemoteBrowseResponse'>
+export type RemoteSearchRequest = Schema<'RemoteSearchRequest'>
+export type RemoteSearchResponse = Schema<'RemoteSearchResponse'>
+export type RemoteFailoverRequest = Schema<'RemoteFailoverRequest'>
+export type RemoteFailoverResponse = Schema<'RemoteFailoverResponse'>
+
+// ── 开放门户目录（Phase B） ─────────────────────────────────────────────────
+
+export type PortalCatalogEntry = Schema<'PortalCatalogEntry'>
+export type PortalCatalogResponse = Schema<'PortalCatalogResponse'>
+export type PortalUpsertRequest = Schema<'PortalUpsertRequest'>
+export type PortalTestResponse = Schema<'PortalTestResponse'>
+export type PortalSearchResponse = Schema<'PortalSearchResponse'>
+export type PortalSearchResultItem = Schema<'PortalSearchResultItem'>
+
+// ── 可用数据集 / 远程数据源注册表（Phase C） ─────────────────────────────────
+
+export type AvailableDatasetEntry = Schema<'AvailableDatasetEntry'>
+export type DatasetUpsertRequest = Schema<'DatasetUpsertRequest'>
+export type DatasetRescanResponse = Schema<'DatasetRescanResponse'>
+export type RemoteSourceEntry = Schema<'RemoteSourceEntry'>
+export type RemoteSourceRefBadge = Schema<'RemoteSourceRefBadge'>
+export type RemoteSourceUpsertRequest = Schema<'RemoteSourceUpsertRequest'>
+
+export type DeletedResponse = Schema<'DeletedResponse'>
 
 export type RuntimeConfigScope = Schema<'RuntimeConfigScope'>
 export type RuntimeConfigPatch = Schema<'RuntimeConfigPatch'>
@@ -169,4 +196,22 @@ export type ProcessResourceSnapshot = Schema<'ProcessResourceSnapshot'>
 export type WeatherProviderType = 'free_api' | 'commercial_api' | 'local_data'
 export type WeatherCapability = 'all' | 'point_query' | 'grid_query'
 export type CircuitState = 'closed' | 'open' | 'half_open' | 'n/a'
-export type RemoteStorageProtocol = 'sftp' | 'smb' | 'ftp' | 'ftps' | 'gs'
+/** 远程存储协议（与后端 ALLOWED_PROTOCOLS 对齐，Phase A 扩展至 11 种）。 */
+export type RemoteStorageProtocol =
+  | 'sftp'
+  | 'ssh'
+  | 'smb'
+  | 'ftp'
+  | 'ftps'
+  | 'gs'
+  | 'http'
+  | 'https'
+  | 'filebrowser'
+  | 'lan'
+  | 'nfs'
+/** 双路径回退模式（存 profile extra.fallback_mode）。 */
+export type RemoteFallbackMode = 'auto' | 'manual' | 'off'
+/** 可用数据集来源。 */
+export type DatasetSource = 'manual' | 'scan' | 'algorithm_registry'
+/** 远程数据源别名引用类型。 */
+export type RemoteSourceKind = 'storage_profile' | 'portal'
