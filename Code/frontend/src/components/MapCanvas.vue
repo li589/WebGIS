@@ -57,7 +57,6 @@ const { statusVersion: weatherStatusVersion, activityVersion: weatherActivityVer
 const props = defineProps<{
   tileSourceId: TileSourceId
   currentHour: number
-  hourLabel: string
   /** 地图点查选中坐标（持久标记，非定位标记） */
   inspectPoint?: { lng: number; lat: number } | null
 }>()
@@ -219,12 +218,7 @@ const adminBoundaryOpacity = computed(() => {
 // Safe fallback for template (no selected layer = dark atmospheric state)
 const activeLayer = computed(() => selectedLayer.value ?? buildFallbackActiveLayerDisplay())
 const stageDisplayModel = computed(() =>
-  buildMapStageDisplayModel({
-    basemapProvider: currentTileConfig.value.provider,
-    basemapLabel: currentTileConfig.value.label,
-    hourLabel: props.hourLabel,
-    activeLayer: activeLayer.value,
-  }),
+  buildMapStageDisplayModel({ activeLayer: activeLayer.value }),
 )
 const stageStatusModel = computed(() =>
   buildMapStageStatusModel({
@@ -305,7 +299,9 @@ function applyBasemapSuppression() {
   if (_isUnmounted) return
   const map = state.resources.map
   if (!map || !mapReady.value) return
-  const suppress = shouldSuppressBasemap.value
+  // 空白底图（tileSourceId=none）必须保持隐藏；否则切源后的延时抑制会把旧瓦片重新显示出来
+  const blankBasemap = props.tileSourceId === 'none'
+  const suppress = shouldSuppressBasemap.value || blankBasemap
   const tileLayer = map.getLayer('tile-base-raster')
   if (tileLayer) {
     const target = suppress ? 'none' : 'visible'
@@ -758,18 +754,6 @@ async function handleLocateMe() {
         </svg>
       </span>
       <span>{{ weatherTileStatusModel.error }}</span>
-    </div>
-
-    <!-- Map chips -->
-    <div class="map-overlay">
-      <span class="chip">
-        {{ stageDisplayModel.basemapChipLabel }}
-      </span>
-      <span class="chip">{{ stageDisplayModel.hourChipLabel }}</span>
-      <span class="chip secondary">{{ stageDisplayModel.layerChipLabel }}</span>
-      <span class="chip" :class="stageDisplayModel.availabilityChipClass">
-        {{ stageDisplayModel.availabilityChipLabel }}
-      </span>
     </div>
 
     <!-- Layer info card -->

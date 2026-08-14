@@ -2,11 +2,6 @@ import type { ActiveLayerDisplay } from '../../stores/layers/types'
 import { LAYERS_COPY } from '../../ui-copy'
 
 export interface MapStageDisplayModel {
-  basemapChipLabel: string
-  hourChipLabel: string
-  layerChipLabel: string
-  availabilityChipLabel: string
-  availabilityChipClass: string
   noteTitle: string
   noteSummary: string
   noteMeta: string
@@ -84,17 +79,9 @@ export function buildFallbackActiveLayerDisplay(): ActiveLayerDisplay {
 }
 
 export function buildMapStageDisplayModel(options: {
-  basemapProvider: string
-  basemapLabel: string
-  hourLabel: string
   activeLayer: ActiveLayerDisplay
 }): MapStageDisplayModel {
   return {
-    basemapChipLabel: `${options.basemapProvider} · ${options.basemapLabel}`,
-    hourChipLabel: options.hourLabel,
-    layerChipLabel: options.activeLayer.name,
-    availabilityChipLabel: options.activeLayer.availabilityLabel,
-    availabilityChipClass: `chip-${options.activeLayer.availabilityState}`,
     noteTitle: options.activeLayer.name,
     noteSummary: options.activeLayer.trendLabel,
     noteMeta: `${options.activeLayer.observationTimeLabel} · ${options.activeLayer.availabilityLabel}`,

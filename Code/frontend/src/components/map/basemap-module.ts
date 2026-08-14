@@ -190,8 +190,17 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     if (sourceId === 'none') {
       if (options.map.getLayer(TILE_LAYER_ID)) {
         options.map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'none')
+        options.map.setPaintProperty(TILE_LAYER_ID, 'raster-opacity', 0)
+      }
+      // 清空底图瓦片 URL，避免仅 visibility 被其它逻辑改回 visible 时残留旧图
+      const existingSource = options.map.getSource(TILE_SOURCE_ID) as RasterTileSource | undefined
+      if (existingSource && existingSource.type === 'raster') {
+        existingSource.setTiles([])
+        options.map.triggerRepaint()
       }
       hideOverlay()
+      // 空白模式下卸掉注记 overlay 源，避免残留
+      syncOverlayLayer(undefined, false)
       return
     }
 

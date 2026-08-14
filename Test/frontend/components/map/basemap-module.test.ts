@@ -265,4 +265,46 @@ describe('basemap-module', () => {
       '/unified-tiles/tianditu-cva/{z}/{x}/{y}',
     ])
   })
+
+  it('hides and clears basemap tiles when switching to blank (none)', () => {
+    const { map, layers, sources } = createMapMock()
+    const source = {
+      type: 'raster',
+      tiles: ['https://example.com/gaode/{z}/{x}/{y}.png'],
+      setTiles: vi.fn(function (this: { tiles: string[] }, next: string[]) {
+        this.tiles = next
+      }),
+    }
+    sources.set('tile-base', source)
+    layers.add('tile-base-raster')
+    layers.add('tile-base-overlay-raster')
+    sources.set('tile-base-overlay', {
+      type: 'raster',
+      tiles: ['https://example.com/cva/{z}/{x}/{y}.png'],
+    })
+
+    const module = createBasemapModule({
+      map,
+      getTileConfig: () => undefined,
+      getCurrentTileSourceId: () => 'none',
+      setTileLoadFailed: vi.fn(),
+      setTileFailedProvider: vi.fn(),
+      setSourceTransitioning: vi.fn(),
+    })
+
+    module.switchTileSource('none')
+
+    expect(map.setLayoutProperty).toHaveBeenCalledWith('tile-base-raster', 'visibility', 'none')
+    expect(map.setPaintProperty).toHaveBeenCalledWith('tile-base-raster', 'raster-opacity', 0)
+    expect(source.setTiles).toHaveBeenCalledWith([])
+    expect(map.triggerRepaint).toHaveBeenCalled()
+    expect(map.setLayoutProperty).toHaveBeenCalledWith(
+      'tile-base-overlay-raster',
+      'visibility',
+      'none',
+    )
+    // overlay 源在空白模式下卸掉
+    expect(sources.has('tile-base-overlay')).toBe(false)
+    expect(layers.has('tile-base-overlay-raster')).toBe(false)
+  })
 })

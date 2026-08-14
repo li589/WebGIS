@@ -36,7 +36,6 @@ export const MAP_CANVAS_SELECTORS = [
 
 export const CLEAN_IGNORE_SELECTORS = [
   '.overlay',
-  '.map-overlay',
   '.map-note',
   '.tile-load-error',
   '.map-loading',
@@ -423,7 +422,6 @@ export function prepareCloneForCapture(
     '.maplibregl-map',
     '.maplibregl-canvas-container',
     '.overlay',
-    '.map-overlay',
     '#map',
   ]
   transparentSelectors.forEach((sel) => {

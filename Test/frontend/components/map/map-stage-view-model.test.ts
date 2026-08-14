@@ -24,12 +24,9 @@ describe("map-stage-view-model", () => {
     });
   });
 
-  it("builds stage display model from current basemap and active layer", () => {
+  it("builds stage display model from active layer", () => {
     expect(
       buildMapStageDisplayModel({
-        basemapProvider: "Esri",
-        basemapLabel: "Street",
-        hourLabel: "12:00",
         activeLayer: {
           ...buildFallbackActiveLayerDisplay(),
           name: "风场图层",
@@ -40,11 +37,6 @@ describe("map-stage-view-model", () => {
         },
       }),
     ).toEqual({
-      basemapChipLabel: "Esri · Street",
-      hourChipLabel: "12:00",
-      layerChipLabel: "风场图层",
-      availabilityChipLabel: "加载中",
-      availabilityChipClass: "chip-partial",
       noteTitle: "风场图层",
       noteSummary: "等待工作流返回结果",
       noteMeta: "11:45 · 加载中",
