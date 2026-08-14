@@ -188,6 +188,61 @@ def test_sync_algorithm_datasets(tmp_path: Path, monkeypatch, request, registry_
     assert registry_env.get_by_logical_name("TEST_SMAP")["path"] == "Override/SMAP"
 
 
+def test_sync_dataset_id_collision_appends_suffix(
+    tmp_path: Path, monkeypatch, request, registry_env
+) -> None:
+    """派生 id 被其它 logical_name 占用时，sync 追加序号而非 ON CONFLICT 静默覆盖。"""
+    from app.services import dataset_registry_service as svc
+
+    # 手工条目抢占 TEST_SMAP 的派生 id "test-smap"
+    registry_env.upsert(
+        dataset_id="test-smap", logical_name="MANUAL", path="manual", source="manual"
+    )
+
+    provider_root = tmp_path / "provider"
+    provider_root.mkdir()
+    (provider_root / "dataset_config.py").write_text(
+        _FAKE_DATASET_CONFIG, encoding="utf-8"
+    )
+    _patch_setting(request, monkeypatch, "python_provider_root", str(provider_root))
+    monkeypatch.delitem(sys.modules, "dataset_config", raising=False)
+
+    assert svc.sync_algorithm_datasets() == 1
+
+    entry = registry_env.get_by_logical_name("TEST_SMAP")
+    assert entry is not None
+    assert entry["dataset_id"] == "test-smap-2"
+    # 占用者未被覆盖
+    manual = registry_env.get("test-smap")
+    assert manual is not None and manual["logical_name"] == "MANUAL"
+
+
+def test_sync_preserves_user_disabled_state(
+    tmp_path: Path, monkeypatch, request, registry_env
+) -> None:
+    """用户禁用的内置条目不得被启动 sync 复活。"""
+    from app.services import dataset_registry_service as svc
+
+    provider_root = tmp_path / "provider"
+    provider_root.mkdir()
+    (provider_root / "dataset_config.py").write_text(
+        _FAKE_DATASET_CONFIG, encoding="utf-8"
+    )
+    _patch_setting(request, monkeypatch, "python_provider_root", str(provider_root))
+    monkeypatch.delitem(sys.modules, "dataset_config", raising=False)
+
+    assert svc.sync_algorithm_datasets() == 1
+    ds_id = registry_env.get_by_logical_name("TEST_SMAP")["dataset_id"]
+    registry_env.upsert(
+        dataset_id=ds_id, logical_name="TEST_SMAP", path="Soil_Moisture/SMAP", enabled=False
+    )
+    assert registry_env.get_by_logical_name("TEST_SMAP")["enabled"] is False
+
+    # 再次 sync（模拟服务重启）后仍保持禁用
+    assert svc.sync_algorithm_datasets() == 1
+    assert registry_env.get_by_logical_name("TEST_SMAP")["enabled"] is False
+
+
 def test_sync_algorithm_datasets_missing_root(monkeypatch, request, registry_env) -> None:
     _patch_setting(
         request, monkeypatch, "python_provider_root", "Z:/__nonexistent_provider_root__"

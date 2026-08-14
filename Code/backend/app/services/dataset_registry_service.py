@@ -181,7 +181,10 @@ class DatasetRegistryRepository:
                     f"Invalid source: {source}; expected one of {sorted(VALID_SOURCES)}"
                 )
             merged = {
-                "dataset_id": dataset_id or self._derive_dataset_id(logical_name),
+                "dataset_id": self._unique_dataset_id(
+                    dataset_id or self._derive_dataset_id(logical_name),
+                    logical_name,
+                ),
                 "logical_name": logical_name,
                 "path": path,
                 "file_format": file_format,
@@ -245,6 +248,19 @@ class DatasetRegistryRepository:
     def _derive_dataset_id(logical_name: str) -> str:
         base = "".join(c if c.isalnum() else "-" for c in logical_name.lower())
         return base.strip("-") or f"ds-{_now_iso()}"
+
+    def _unique_dataset_id(self, candidate: str, logical_name: str) -> str:
+        """派生 id 被其它 logical_name 占用时追加序号，避免 ON CONFLICT 静默覆盖。"""
+        existing = self.get(candidate)
+        if existing is None or existing["logical_name"] == logical_name:
+            return candidate
+        suffix = 2
+        while True:
+            alt = f"{candidate}-{suffix}"
+            existing = self.get(alt)
+            if existing is None or existing["logical_name"] == logical_name:
+                return alt
+            suffix += 1
 
     def update_scan_stats(self, logical_name: str, *, file_count: int | None) -> None:
         now = _now_iso()
@@ -329,14 +345,15 @@ def sync_algorithm_datasets() -> int:
             else:
                 time_range = ""
             tags = [str(t) for t in (getattr(info, "tags", ()) or ())]
-            # 已存在条目若 path 与算法包 relative_path 不同，视为用户覆盖，不回写
+            # 已存在条目若 path 与算法包 relative_path 不同，视为用户覆盖，不回写；
+            # enabled 同理保留用户启停（sync 不得复活被禁用的内置条目）
             effective_path = rel_path
+            effective_enabled = True
             prev = repo.get_by_logical_name(str(logical_name))
-            if prev is not None and str(prev.get("path") or "").strip() not in (
-                "",
-                rel_path,
-            ):
-                effective_path = str(prev["path"])
+            if prev is not None:
+                if str(prev.get("path") or "").strip() not in ("", rel_path):
+                    effective_path = str(prev["path"])
+                effective_enabled = bool(prev.get("enabled"))
             repo.upsert(
                 dataset_id=None,
                 logical_name=str(logical_name),
@@ -348,7 +365,7 @@ def sync_algorithm_datasets() -> int:
                 tags=tags,
                 description=str(getattr(info, "description", "") or ""),
                 source="algorithm_registry",
-                enabled=True,
+                enabled=effective_enabled,
             )
             synced += 1
         except Exception as exc:  # noqa: BLE001
