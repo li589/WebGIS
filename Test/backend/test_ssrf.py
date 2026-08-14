@@ -234,6 +234,134 @@ def test_safe_urlopen_success_no_redirect() -> None:
             assert resp.read() == body
 
 
+def test_safe_urlopen_cross_host_redirect_drops_body_and_auth_headers() -> None:
+    """BUG：跨主机重定向必须降级为 GET、丢弃请求体并剥离凭据类头。"""
+    seen_requests: list[dict] = []
+
+    class _Resp:
+        headers = EmailMessage()
+
+        def read(self) -> bytes:
+            return b"ok"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def close(self) -> None:
+            return None
+
+    def _open(req, timeout=None):  # type: ignore[no-untyped-def]
+        seen_requests.append(
+            {
+                "url": req.full_url,
+                "method": req.get_method(),
+                "body": req.data,
+                "headers": {k.lower(): v for k, v in req.header_items()},
+            }
+        )
+        if len(seen_requests) == 1:
+            headers = EmailMessage()
+            headers["Location"] = "http://other.invalid/collector"
+            raise HTTPError(req.full_url, 302, "Found", headers, BytesIO(b""))
+        return _Resp()
+
+    opener = OpenerDirector()
+    opener.open = _open  # type: ignore[method-assign]
+
+    with (
+        patch(
+            "app.core.ssrf.resolve_outbound_target",
+            side_effect=lambda u, **kw: OutboundTarget(url=u, ips=(_PUBLIC_IP,)),
+        ),
+        patch("app.core.ssrf.build_opener", return_value=opener),
+    ):
+        with safe_urlopen(
+            "http://example.invalid/login",
+            timeout=1,
+            data=b'{"password":"hunter2"}',
+            headers={
+                "Authorization": "Bearer tok",
+                "Cookie": "session=1",
+                "Content-Type": "application/json",
+                "X-Custom": "keep-me",
+            },
+        ) as resp:
+            assert resp.read() == b"ok"
+
+    assert len(seen_requests) == 2
+    first, second = seen_requests
+    assert first["method"] == "POST"
+    assert first["body"] == b'{"password":"hunter2"}'
+    assert first["headers"].get("authorization") == "Bearer tok"
+    # 跨主机后的第二跳：无体、GET、无凭据类头，非敏感头保留
+    assert second["url"].startswith("http://other.invalid/")
+    assert second["method"] == "GET"
+    assert second["body"] is None
+    assert "authorization" not in second["headers"]
+    assert "cookie" not in second["headers"]
+    assert second["headers"].get("x-custom") == "keep-me"
+
+
+def test_safe_urlopen_same_host_redirect_keeps_body_and_headers() -> None:
+    """同主机重定向不属于跨主机外泄面：保持方法/体/头语义不变。"""
+    seen_requests: list[dict] = []
+
+    class _Resp:
+        headers = EmailMessage()
+
+        def read(self) -> bytes:
+            return b"ok"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def close(self) -> None:
+            return None
+
+    def _open(req, timeout=None):  # type: ignore[no-untyped-def]
+        seen_requests.append(
+            {
+                "method": req.get_method(),
+                "body": req.data,
+                "headers": {k.lower(): v for k, v in req.header_items()},
+            }
+        )
+        if len(seen_requests) == 1:
+            headers = EmailMessage()
+            headers["Location"] = "http://example.invalid/final"
+            raise HTTPError(req.full_url, 302, "Found", headers, BytesIO(b""))
+        return _Resp()
+
+    opener = OpenerDirector()
+    opener.open = _open  # type: ignore[method-assign]
+
+    with (
+        patch(
+            "app.core.ssrf.resolve_outbound_target",
+            side_effect=lambda u, **kw: OutboundTarget(url=u, ips=(_PUBLIC_IP,)),
+        ),
+        patch("app.core.ssrf.build_opener", return_value=opener),
+    ):
+        safe_urlopen(
+            "http://example.invalid/login",
+            timeout=1,
+            data=b'{"password":"hunter2"}',
+            headers={"Authorization": "Bearer tok"},
+        )
+
+    assert len(seen_requests) == 2
+    second = seen_requests[1]
+    assert second["method"] == "POST"
+    assert second["body"] == b'{"password":"hunter2"}'
+    assert second["headers"].get("authorization") == "Bearer tok"
+
+
 def test_build_pinned_opener_blocks_proxy_by_default() -> None:
     target = OutboundTarget(url="http://example.invalid/data", ips=(_PUBLIC_IP,))
     with patch("app.core.ssrf.getproxies", return_value={"http": "http://127.0.0.1:8888"}):

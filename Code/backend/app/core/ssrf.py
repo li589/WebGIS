@@ -392,10 +392,35 @@ def safe_urlopen(
                     f"出站重定向超过上限（max_redirects={max_redirects}）"
                 ) from exc
             next_url = urljoin(target.url, location)
+            next_target = resolve_outbound_target(next_url, allow_private=allow_private)
+            if _host_of(next_target.url) != _host_of(target.url):
+                # 跨主机跳转不携带请求体与凭据类头，防止凭据被重定向外泄
+                if data is not None or req_method != "GET":
+                    logger.warning(
+                        "Cross-host redirect drops request body: %s -> %s",
+                        target.url,
+                        next_target.url,
+                    )
+                data = None
+                req_method = "GET"
+                req_headers = {
+                    k: v
+                    for k, v in req_headers.items()
+                    if k.lower() not in _SENSITIVE_REDIRECT_HEADERS
+                }
             logger.info(
                 "SSRF-safe redirect %s -> %s (hop=%d)",
                 target.url,
-                next_url,
+                next_target.url,
                 redirects,
             )
-            target = resolve_outbound_target(next_url, allow_private=allow_private)
+            target = next_target
+
+
+_SENSITIVE_REDIRECT_HEADERS = frozenset(
+    {"authorization", "cookie", "proxy-authorization"}
+)
+
+
+def _host_of(url: str) -> str:
+    return (urlparse(url).hostname or "").lower()
