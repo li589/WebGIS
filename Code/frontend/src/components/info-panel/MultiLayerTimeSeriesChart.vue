@@ -108,7 +108,12 @@ const echartsOption = computed(() => {
       ? {
           top: props.title ? 28 : 0,
           type: 'scroll',
-          textStyle: { fontSize: 11 },
+          selectedMode: true,
+          icon: 'circle',
+          textStyle: { fontSize: 11, color: '#9ab' },
+          inactiveColor: '#556',
+          itemWidth: 10,
+          itemHeight: 10,
         }
       : undefined,
     grid: {

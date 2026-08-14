@@ -117,7 +117,29 @@ export function useMapInspect(
   async function fetchOverlayPointValues(lng: number, lat: number) {
     const states = overlayTimeStates.value
     if (states.length === 0) {
-      overlayPointValues.value = []
+      // 回退：overlayTimeStates 为空时，直接查询可见栅格 overlay 图层的当前值。
+      // 这解决了工作流刚运行完、overlay 已加载但 time states 尚未 emit 的时序缺口。
+      const visibleOverlayIds = workspace.activeLayersDisplay.value
+        .filter((l) => l.visible && l.importedRasterOverlayLayerId)
+        .map((l) => l.importedRasterOverlayLayerId!)
+        .filter((id, idx, arr) => arr.indexOf(id) === idx) // 去重
+
+      if (visibleOverlayIds.length === 0) {
+        overlayPointValues.value = []
+        selectedOverlayTimeSeries.value = []
+        allOverlayTimeSeries.value = {}
+        return
+      }
+
+      const seq = ++overlayPointFetchSeq
+      const fallbackResults = await Promise.allSettled(
+        visibleOverlayIds.map((layerId) => getOverlayValue(layerId, lng, lat)),
+      )
+      if (seq !== overlayPointFetchSeq) return
+      overlayPointValues.value = fallbackResults
+        .map((r) => (r.status === 'fulfilled' ? r.value : null))
+        .filter((v): v is OverlayPointValue => v !== null && v.value !== null)
+      // 无 time states 时不查询时序，仅提供当前点值
       selectedOverlayTimeSeries.value = []
       allOverlayTimeSeries.value = {}
       return
@@ -212,10 +234,12 @@ export function useMapInspect(
   watch(
     () => selectedLayerDisplay.value?.importedRasterOverlayLayerId,
     (overlayId) => {
-      if (!overlayId || selectedMapPoint.value) return
-      void fetchSelectedOverlaySeries(11.25, 19.7623)
+      if (!overlayId) return
+      // 选中点已存在时，用实际坐标重新获取时序；否则等待用户选点
+      if (selectedMapPoint.value) {
+        void fetchSelectedOverlaySeries(selectedMapPoint.value.lng, selectedMapPoint.value.lat)
+      }
     },
-    { immediate: true },
   )
 
   // 切换为移动/测量等非点选模式时，清除选中点

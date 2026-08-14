@@ -294,20 +294,12 @@ const stageAppearanceModel = computed(() =>
 )
 
 // ─── 低缩放纯色底图抑制 ──────────────────────────────────────────────────────
-// 当「分布淡底」关闭 + 无可见数据图层 + 比例尺≥2000km（zoom≤3.5）时，
-// 隐藏纯色底图瓦片层，避免大洲/世界视口下大面积纯色遮挡。
+// 设计变更：关闭「分布淡底 / 氛围遮罩」时，底图应始终可见，不再在低 zoom 抑制。
+// 原逻辑在 zoom≤3.5 + 无数据图层 + 设置关闭时隐藏底图瓦片，导致大洲/世界视口下底图消失。
+// 现改为始终保留底图，氛围效果由 CSS chrome-off 类统一控制（opacity:0）。
 let _isUnmounted = false
-const BASEMAP_SUPPRESS_ZOOM = 3.5
 
-const shouldSuppressBasemap = computed(() => {
-  if (props.tileSourceId === 'none') return false
-  if (mapDistributionChromeEnabled.value) return false
-  const hasDataLayers = workspace.activeLayers.value.some(
-    (layer) => layer.visible && !layer.isAdminBoundary,
-  )
-  if (hasDataLayers) return false
-  return viewport.currentMapZoom.value <= BASEMAP_SUPPRESS_ZOOM
-})
+const shouldSuppressBasemap = computed(() => false)
 
 function applyBasemapSuppression() {
   if (_isUnmounted) return

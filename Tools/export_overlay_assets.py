@@ -1375,10 +1375,22 @@ def export_forest_ratio() -> None:
         data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
         print(f"  forest_ratio reprojected: {data.shape}, bounds={bounds}")
     except Exception as e:
-        print(
-            f"  [WARN] EASE-Grid reproject failed, falling back to global bounds: {e}"
-        )
-        bounds = (-180.0, -90.0, 180.0, 90.0)
+        print(f"  [WARN] EASE-Grid reproject with .mat metadata failed: {e}")
+        # 重试：使用默认 EASE-Grid 9km transform（不依赖 .mat 元数据）
+        try:
+            data, bounds = _reproject_ease_to_wgs84(
+                data, target_resolution=0.1, mat_dict=None
+            )
+            print(
+                f"  forest_ratio reprojected (default transform): {data.shape}, bounds={bounds}"
+            )
+        except Exception as e2:
+            print(f"  [ERROR] EASE-Grid reproject failed entirely: {e2}")
+            print(
+                "  [SKIP] Skipping forest_ratio export — "
+                "un-reprojected data with wrong bounds would cause severe coordinate offset"
+            )
+            return
     _render_png(data, out_dir / "forest_ratio_overlay.png", cmap="YlGn", vmin=0, vmax=1)
     _write_bounds(out_dir / "forest_ratio_overlay_bounds.json", "forest-ratio", bounds)
 
@@ -1423,10 +1435,22 @@ def export_landscape_metrics() -> None:
         data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
         print(f"  landscape_metrics reprojected: {data.shape}, bounds={bounds}")
     except Exception as e:
-        print(
-            f"  [WARN] EASE-Grid reproject failed, falling back to global bounds: {e}"
-        )
-        bounds = (-180.0, -90.0, 180.0, 90.0)
+        print(f"  [WARN] EASE-Grid reproject with .mat metadata failed: {e}")
+        # 重试：使用默认 EASE-Grid 9km transform（不依赖 .mat 元数据）
+        try:
+            data, bounds = _reproject_ease_to_wgs84(
+                data, target_resolution=0.1, mat_dict=None
+            )
+            print(
+                f"  landscape_metrics reprojected (default transform): {data.shape}, bounds={bounds}"
+            )
+        except Exception as e2:
+            print(f"  [ERROR] EASE-Grid reproject failed entirely: {e2}")
+            print(
+                "  [SKIP] Skipping landscape_metrics export — "
+                "un-reprojected data with wrong bounds would cause severe coordinate offset"
+            )
+            return
     # SHDI 取 99 分位作为 vmax，避免极端值压缩色彩
     vmax = float(np.nanpercentile(data, 99))
     _render_png(

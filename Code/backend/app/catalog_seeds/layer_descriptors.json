@@ -41,6 +41,8 @@
     ],
     "module_name": "ndvi_daily",
     "engine": "python_provider",
+    "workflow_name": "ndvi_local_read",
+    "workflow_id": "ndvi_local_read",
     "default_task_type": "ndvi_daily",
     "default_data_access_sources": {
       "NDVI_16DAY_RASTER": [
@@ -640,6 +642,8 @@
     ],
     "module_name": "smap_daily",
     "engine": "python_provider",
+    "workflow_name": "smap_soil_moisture_local",
+    "workflow_id": "smap_soil_moisture_local",
     "default_task_type": "smap_daily",
     "default_data_access_sources": {
       "SMAP_L3_DEC2025": [
@@ -808,6 +812,8 @@
     ],
     "module_name": "fy_daily",
     "engine": "python_provider",
+    "workflow_name": "fy_tb_local_read",
+    "workflow_id": "fy_tb_local_read",
     "default_task_type": "fy_daily",
     "default_data_access_sources": {
       "FY_MWRI_HDF": [
@@ -1120,10 +1126,10 @@
     "time_granularity": "static",
     "default_time_offset": 0,
     "extent": {
-      "west": 109.6,
-      "south": 20.1,
-      "east": 117.4,
-      "north": 25.6,
+      "west": 73.0,
+      "south": 15.0,
+      "east": 137.0,
+      "north": 59.0,
       "crs": "EPSG:4326"
     },
     "style": {

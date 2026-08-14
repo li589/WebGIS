@@ -183,6 +183,7 @@ export interface OverlayBoundsMeta {
   overview_max_zoom: number
   maxzoom: number
   tile_url_template: string | null
+  bounds_warning: string | null
 }
 
 function _overlayMetaString(value: unknown): string | undefined {
@@ -216,6 +217,7 @@ export function parseOverlayBoundsMeta(raw: unknown): OverlayBoundsMeta {
   const maxzoom = _overlayMetaFiniteNumber(meta.maxzoom) ?? DEFAULT_TILE_MAX_ZOOM
   const rawTemplate = _overlayMetaString(meta.tile_url_template)
   const tile_url_template = rawTemplate && rawTemplate.length > 0 ? rawTemplate : null
+  const bounds_warning = _overlayMetaString(meta.bounds_warning) ?? null
 
   return {
     currentTime,
@@ -231,6 +233,7 @@ export function parseOverlayBoundsMeta(raw: unknown): OverlayBoundsMeta {
     overview_max_zoom,
     maxzoom,
     tile_url_template,
+    bounds_warning,
   }
 }
 
@@ -705,6 +708,13 @@ export function createOverlayImageModule(
         return
       }
       const bounds: [number, number, number, number] = boundsValidation.bounds
+
+      // bounds 异常警告（如重投影失败导致全球 bounds）
+      if (meta.bounds_warning) {
+        console.warn(`[Overlay] bounds_warning for ${layerId}: ${meta.bounds_warning}`)
+        showToast(`图层坐标可能异常：${meta.bounds_warning}`, true, 8000)
+      }
+
       // 写回共享 symbology store（含 bounds 内存缓存命中路径）
       try {
         const { useOverlaySymbologyStore } = await import('../../stores/overlay-symbology')

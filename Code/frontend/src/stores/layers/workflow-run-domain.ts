@@ -277,6 +277,9 @@ export function createWorkflowRunDomain(
   bindings.clearPointWeather = () => clearPointWeather()
   bindings.hasPointWeather = () => Boolean(pointWeather.value)
   bindings.onWorkflowViewportRefresh = (epoch) => void refreshActiveWeatherWorkflows(epoch)
+  bindings.runWorkflowForCatalog = async (catalogId) => {
+    await runWorkflowForCatalog(catalogId)
+  }
 
   return {
     jobLayers,

@@ -53,6 +53,9 @@ export interface CrossDomainBindings {
 
   // ── viewport → workflow-run (refreshActiveWeatherWorkflows) ──
   onWorkflowViewportRefresh: (epoch: number) => void
+
+  // ── workspace → workflow-run (auto-run on layer add) ──
+  runWorkflowForCatalog: (catalogId: string) => Promise<void>
 }
 
 /**
@@ -86,5 +89,6 @@ export function createCrossDomainBindings(): CrossDomainBindings {
     activateWeatherTileViewport: () => {},
     onCatalogLoaded: () => {},
     onWorkflowViewportRefresh: () => {},
+    runWorkflowForCatalog: () => Promise.resolve(),
   }
 }

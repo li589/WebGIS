@@ -12,7 +12,8 @@
       "demo",
       "weather"
     ],
-    "category": "weather"
+    "category": "weather",
+    "notes": "演示用 linked_layer_id：天气图层主路径为 /weather/tiles，不设置图层 workflow_id。本 seed 仅用于编辑器联调 WeatherWorkflowService。"
   },
   "workflow_id": "weather_temperature_grid_demo",
   "name": "温度网格渲染（天气 demo）",

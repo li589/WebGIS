@@ -1273,7 +1273,99 @@ class _WeatherPopulator:
         return None
 
 
+class _OverlayRegistryPopulator:
+    """overlay_registry 引擎的就绪检查器。
+
+    检查 overlay 图层的 PNG 预览文件、bounds JSON 文件和源数据文件是否实际存在。
+    文件缺失时将图层标记为 "blocked"，避免用户添加图层后看到空白显示。
+    """
+
+    @property
+    def engine_name(self) -> str:
+        return "overlay_registry"
+
+    def populate(
+        self,
+        *,
+        payload: WorkflowSubmitRequest,
+        layer_id: str,
+        descriptor: Any,
+    ) -> WorkflowSubmitRequest:
+        # overlay_registry 图层不走工作流提交
+        return payload
+
+    def describe_resolution(
+        self, payload: WorkflowSubmitRequest
+    ) -> dict[str, Any] | None:
+        return None
+
+    def describe_readiness(self, descriptor: Any) -> dict[str, Any] | None:
+        # 延迟导入避免模块加载顺序问题
+        from app.services.overlay_registry import get_overlay_spec
+
+        layer_id = getattr(descriptor, "layer_id", None)
+        if not layer_id:
+            return None
+
+        spec = get_overlay_spec(layer_id)
+        if spec is None:
+            return {
+                "unresolved_default_datasets": [
+                    {
+                        "dataset_name": "overlay 注册",
+                        "candidate_sources": [
+                            f"overlay_registry 中未找到 layer_id={layer_id}"
+                        ],
+                    }
+                ]
+            }
+
+        unresolved: list[dict[str, Any]] = []
+
+        # 检查 PNG 预览文件
+        try:
+            png_path = spec.resolve_png(None)
+            if not png_path.exists():
+                unresolved.append(
+                    {
+                        "dataset_name": "PNG 预览文件",
+                        "candidate_sources": [str(png_path)],
+                    }
+                )
+        except Exception:
+            pass  # 配置错误由其他检查覆盖
+
+        # 检查 bounds JSON 文件
+        try:
+            bounds_path = spec.resolve_bounds(None)
+            if not bounds_path.exists():
+                unresolved.append(
+                    {
+                        "dataset_name": "bounds 边界文件",
+                        "candidate_sources": [str(bounds_path)],
+                    }
+                )
+        except Exception:
+            pass
+
+        # 检查源数据文件（用于点查询；缺失不阻止显示但影响点选）
+        try:
+            source_path = spec.resolve_source_path(None)
+            if source_path is None and spec.source_path is not None:
+                unresolved.append(
+                    {
+                        "dataset_name": "源数据文件（点查询）",
+                        "candidate_sources": [str(spec.source_path)],
+                    }
+                )
+        except Exception:
+            pass
+
+        return {"unresolved_default_datasets": unresolved} if unresolved else None
+
+
 # 模块加载时注册所有 populator
 register_engine_populator(_PythonProviderPopulator())
 register_engine_populator(_GeePopulator())
 register_engine_populator(_WeatherPopulator())
+register_engine_populator(_OverlayRegistryPopulator())

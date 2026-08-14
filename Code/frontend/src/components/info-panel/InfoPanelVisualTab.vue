@@ -2,7 +2,7 @@
 模板抽取（原 1708-1834、2247-2336 行）。纯展示组件， * 全部状态经 props 传入，交互经 emit
 上抛父组件。 */
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import type { ActiveLayerDisplay, LayerHotspot } from '../../stores/layers/types'
 import type { WeatherPointResponse } from '../../services/runtime-api'
 import type { OverlaySymbologyMeta } from '../../types/overlay-symbology'
@@ -10,15 +10,15 @@ import type { AnalysisChartModel, AnalysisTableModel } from './AnalysisResultCha
 import type { OverlayBarItem } from './MultiOverlayBarChart.vue'
 import type { MultiLayerSeries } from './MultiLayerTimeSeriesChart.vue'
 import type { UnifiedPointValue, LayerDataCategory } from './useUnifiedChartData'
+import { normalizeUnitKey, detectTimeAxisType, type TimeAxisType } from './useUnifiedChartData'
 import type { ResultDisplayModel } from './result-adapter'
 import { ANALYSIS_COPY, INSPECT_COPY } from '../../ui-copy'
 import AppButton from '../ui/AppButton.vue'
-import PointTimeSeriesChart from './PointTimeSeriesChart.vue'
 import MultiOverlayBarChart from './MultiOverlayBarChart.vue'
 import MultiLayerTimeSeriesChart from './MultiLayerTimeSeriesChart.vue'
 import AnalysisResultCharts from './AnalysisResultCharts.vue'
 
-defineProps<{
+const props = defineProps<{
   displayLayer: ActiveLayerDisplay
   isRealtimeWeatherLayer: boolean
   hasAnalysisCharts: boolean
@@ -34,7 +34,12 @@ defineProps<{
   pointWeatherPrimaryValue: string
   pointWeatherRows: { label: string; value: string }[]
   pointWeatherHourlyRows: { time: string; metric: string; active: boolean }[]
-  pointWeatherHourlyChartRows: { time: string; metric: string; active: boolean }[]
+  pointWeatherHourlyChartRows: {
+    time: string
+    metric: string
+    numericValue: number | null
+    active: boolean
+  }[]
   pointWeatherMetricLabel: string
   showMultiOverlayBar: boolean
   multiOverlayBarItems: OverlayBarItem[]
@@ -75,13 +80,97 @@ const emit = defineEmits<{
 /** 显示模式：combined（组合显示）| categorized（分类显示） */
 const displayMode = ref<'combined' | 'categorized'>('combined')
 
+/** 天气点查时序转换为 MultiLayerSeries 格式 */
+const weatherChartSeries = computed<MultiLayerSeries[]>(() => {
+  const rows = props.pointWeatherHourlyChartRows
+  if (!rows.length) return []
+  return [
+    {
+      id: 'weather-hourly',
+      name: props.pointWeatherMetricLabel,
+      data: rows.map((r) => ({ time: r.time, value: r.numericValue ?? null })),
+    },
+  ]
+})
+
+/** 天气时序图是否有数据 */
+const hasWeatherChart = computed(() => weatherChartSeries.value.length > 0)
+
+// ── D1: 量纲感知分组（本地计算，从 props 派生） ─────────────────────────────
+
+/** 按量纲分组的时间序列 */
+const localTimeSeriesByUnit = computed<Record<string, MultiLayerSeries[]>>(() => {
+  const groups: Record<string, MultiLayerSeries[]> = {}
+  for (const s of props.allTimeSeries) {
+    const key = normalizeUnitKey(s.unit ?? '')
+    if (!groups[key]) groups[key] = []
+    groups[key].push(s)
+  }
+  return groups
+})
+
+/** 按量纲分组的点值（仅含有数值的条目） */
+const localPointValuesByUnit = computed<Record<string, UnifiedPointValue[]>>(() => {
+  const groups: Record<string, UnifiedPointValue[]> = {}
+  for (const v of props.unifiedPointValues) {
+    if (v.value === null) continue
+    const key = normalizeUnitKey(v.unit)
+    if (!groups[key]) groups[key] = []
+    groups[key].push(v)
+  }
+  return groups
+})
+
+/** 量纲分组 key 列表 */
+const localUnitGroupKeys = computed<string[]>(() => Object.keys(localPointValuesByUnit.value))
+
+/** 是否存在多种量纲 */
+const hasMultipleUnits = computed(() => localUnitGroupKeys.value.length > 1)
+
+/** 将 UnifiedPointValue 转为 OverlayBarItem */
+function toBarItem(v: UnifiedPointValue): OverlayBarItem {
+  return {
+    layerId: v.layerId,
+    name: v.name,
+    category: v.category,
+    valueText: v.valueText,
+    numericValue: v.value,
+    unit: v.unit,
+    accentColor: v.accentColor,
+  }
+}
+
+// ── D2: 时间轴类型分离 ────────────────────────────────────────────────────────
+
+const timeAxisTypeLabels: Record<TimeAxisType, string> = {
+  hourly: '逐小时',
+  block: '周期块',
+  date: '逐日',
+  unknown: '其他',
+}
+
+/** 对给定序列列表按时间轴类型分组 */
+function groupByTimeAxis(
+  series: MultiLayerSeries[],
+): { type: TimeAxisType; label: string; series: MultiLayerSeries[] }[] {
+  const groups: Record<TimeAxisType, MultiLayerSeries[]> = {
+    hourly: [],
+    block: [],
+    date: [],
+    unknown: [],
+  }
+  for (const s of series) {
+    const t = detectTimeAxisType(s.data.map((p) => p.time))
+    groups[t].push(s)
+  }
+  return (Object.keys(groups) as TimeAxisType[])
+    .filter((t) => groups[t].length > 0)
+    .map((t) => ({ type: t, label: timeAxisTypeLabels[t], series: groups[t] }))
+}
+
 function enterInspectTools() {
   emit('setActiveTab', 'tools')
   emit('enterSelectMode')
-}
-
-function queryDefaultOverlaySeries() {
-  emit('queryOverlaySeries', { lng: 11.25, lat: 19.7623 })
 }
 </script>
 
@@ -124,17 +213,51 @@ function queryDefaultOverlaySeries() {
 
     <!-- 组合模式：全部图层在同一图表 -->
     <template v-if="displayMode === 'combined'">
-      <!-- 点值柱状对比 -->
-      <div v-if="hasPointComparison" class="unified-subsection">
-        <h4 class="subsection-title">点值对比</h4>
-        <MultiOverlayBarChart :items="unifiedBarItems" title="全部可见图层点值" />
-      </div>
+      <!-- 多量纲：按量纲分组显示 -->
+      <template v-if="hasMultipleUnits">
+        <div
+          v-for="unitKey in localUnitGroupKeys"
+          :key="unitKey"
+          class="unified-subsection unified-subsection--unit"
+        >
+          <h4 class="subsection-title">
+            {{ unitKey }}
+            <span class="subsection-count">{{ localPointValuesByUnit[unitKey].length }} 层</span>
+          </h4>
+          <MultiOverlayBarChart
+            :items="localPointValuesByUnit[unitKey].map(toBarItem)"
+            :title="`${unitKey} · 点值对比`"
+          />
+          <template
+            v-for="tg in groupByTimeAxis(localTimeSeriesByUnit[unitKey] ?? [])"
+            :key="tg.type"
+          >
+            <MultiLayerTimeSeriesChart
+              :series="tg.series"
+              :title="`${unitKey} · 时序（${tg.label}）`"
+              :height="220"
+            />
+          </template>
+        </div>
+      </template>
 
-      <!-- 多图层时序对比 -->
-      <div v-if="hasMultiLayerTimeSeries" class="unified-subsection">
-        <h4 class="subsection-title">时间序列对比</h4>
-        <MultiLayerTimeSeriesChart :series="allTimeSeries" title="全部图层时序" :height="280" />
-      </div>
+      <!-- 单量纲：合并显示，但按时间轴类型分离时序 -->
+      <template v-else>
+        <div v-if="hasPointComparison" class="unified-subsection">
+          <h4 class="subsection-title">点值对比</h4>
+          <MultiOverlayBarChart :items="unifiedBarItems" title="全部可见图层点值" />
+        </div>
+        <div v-if="hasMultiLayerTimeSeries" class="unified-subsection">
+          <h4 class="subsection-title">时间序列对比</h4>
+          <template v-for="tg in groupByTimeAxis(allTimeSeries)" :key="tg.type">
+            <MultiLayerTimeSeriesChart
+              :series="tg.series"
+              :title="tg.series.length > 1 ? `时序（${tg.label}）` : undefined"
+              :height="280"
+            />
+          </template>
+        </div>
+      </template>
     </template>
 
     <!-- 分类模式：按数据类型分组显示 -->
@@ -150,25 +273,20 @@ function queryDefaultOverlaySeries() {
         </div>
         <MultiOverlayBarChart
           v-if="pointValuesByCategory.weather.length"
-          :items="
-            pointValuesByCategory.weather.map((v) => ({
-              layerId: v.layerId,
-              name: v.name,
-              category: v.category,
-              valueText: v.valueText,
-              numericValue: v.value,
-              unit: v.unit,
-              accentColor: v.accentColor,
-            }))
-          "
+          :items="pointValuesByCategory.weather.map(toBarItem)"
           title="天气图层点值"
         />
-        <MultiLayerTimeSeriesChart
-          v-if="timeSeriesByCategory.weather.length"
-          :series="timeSeriesByCategory.weather"
-          title="天气图层时序"
-          :height="240"
-        />
+        <template
+          v-for="tg in groupByTimeAxis(timeSeriesByCategory.weather)"
+          :key="'weather-' + tg.type"
+        >
+          <MultiLayerTimeSeriesChart
+            v-if="tg.series.length"
+            :series="tg.series"
+            :title="`天气图层时序（${tg.label}）`"
+            :height="240"
+          />
+        </template>
       </div>
 
       <!-- 栅格数据组 -->
@@ -182,25 +300,20 @@ function queryDefaultOverlaySeries() {
         </div>
         <MultiOverlayBarChart
           v-if="pointValuesByCategory.raster.length"
-          :items="
-            pointValuesByCategory.raster.map((v) => ({
-              layerId: v.layerId,
-              name: v.name,
-              category: v.category,
-              valueText: v.valueText,
-              numericValue: v.value,
-              unit: v.unit,
-              accentColor: v.accentColor,
-            }))
-          "
+          :items="pointValuesByCategory.raster.map(toBarItem)"
           title="栅格图层点值"
         />
-        <MultiLayerTimeSeriesChart
-          v-if="timeSeriesByCategory.raster.length"
-          :series="timeSeriesByCategory.raster"
-          title="栅格图层时序"
-          :height="240"
-        />
+        <template
+          v-for="tg in groupByTimeAxis(timeSeriesByCategory.raster)"
+          :key="'raster-' + tg.type"
+        >
+          <MultiLayerTimeSeriesChart
+            v-if="tg.series.length"
+            :series="tg.series"
+            :title="`栅格图层时序（${tg.label}）`"
+            :height="240"
+          />
+        </template>
       </div>
 
       <!-- 矢量数据组 -->
@@ -214,18 +327,8 @@ function queryDefaultOverlaySeries() {
         </div>
         <MultiOverlayBarChart
           v-if="pointValuesByCategory.vector.length"
-          :items="
-            pointValuesByCategory.vector.map((v) => ({
-              layerId: v.layerId,
-              name: v.name,
-              category: v.category,
-              valueText: v.valueText,
-              numericValue: v.value,
-              unit: v.unit,
-              accentColor: v.accentColor,
-            }))
-          "
-          title="矢量图层点值"
+          :items="pointValuesByCategory.vector.map(toBarItem)"
+          title="矢量图层信息"
         />
       </div>
     </template>
@@ -286,60 +389,13 @@ function queryDefaultOverlaySeries() {
         </article>
       </div>
 
-      <PointTimeSeriesChart
-        v-if="pointWeatherHourlyChartRows.length"
-        :hourly-rows="pointWeatherHourlyChartRows"
+      <MultiLayerTimeSeriesChart
+        v-if="hasWeatherChart"
+        :series="weatherChartSeries"
         :title="pointWeatherMetricLabel + ' 时序趋势'"
+        :height="180"
       />
     </template>
-  </section>
-
-  <section
-    v-if="showMultiOverlayBar"
-    v-show="true"
-    id="overlay-compare"
-    class="analysis-section analysis-section--overlays"
-  >
-    <div class="section-kicker">叠加对比</div>
-    <h3>可见叠加层点值</h3>
-    <p>当前选点处可见各叠加层的采样对比（含当前选中层与非天气层）。</p>
-    <MultiOverlayBarChart :items="multiOverlayBarItems" />
-  </section>
-
-  <section
-    v-if="
-      showSelectedOverlayTimeSeries || showDemoOverlayTimeSeries || displayLayer.isImportedRaster
-    "
-    v-show="true"
-    id="overlay-point-series"
-    class="analysis-section analysis-section--overlays"
-  >
-    <div class="section-kicker">点时间序列</div>
-    <h3>
-      {{ displayLayer.name }} ·
-      {{ showDemoOverlayTimeSeries ? '默认有效点时序' : '选点时序' }}
-    </h3>
-    <p>
-      {{
-        showDemoOverlayTimeSeries
-          ? '展示当前图层一个稳定有效观测点在全部 8 天块上的数值变化；点击地图可切换为自定义选点。'
-          : '同一选点在全部可用 8 天时间块上的数值变化；高亮当前时间轴块。'
-      }}
-    </p>
-    <AppButton
-      v-if="!selectedOverlayTimeSeriesRows.length"
-      size="xs"
-      variant="secondary"
-      @click="queryDefaultOverlaySeries"
-    >
-      加载当前图层 8 天块时序
-    </AppButton>
-    <PointTimeSeriesChart
-      v-if="selectedOverlayTimeSeriesRows.length"
-      :hourly-rows="selectedOverlayTimeSeriesRows"
-      :title="displayLayer.name + ' 8 天块时序'"
-      :unit="overlayStyleMeta?.unit || ''"
-    />
   </section>
 
   <section
