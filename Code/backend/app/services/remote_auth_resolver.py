@@ -2,10 +2,19 @@
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
+from typing import Any
 
 from shared.remote_sources.protocol import RemoteAuth
 from shared.remote_sources.uri import parse_remote_uri
+
+# 协议兼容组：profile 协议与 URI scheme 可互通
+_COMPAT_SETS: list[frozenset[str]] = [
+    frozenset({"ftp", "ftps"}),
+    frozenset({"sftp", "ssh"}),
+    frozenset({"http", "https"}),
+]
 
 
 @lru_cache(maxsize=1)
@@ -34,6 +43,12 @@ def _normalize_protocol(protocol: str) -> str:
     return p
 
 
+def _protocols_compatible(profile_proto: str, uri_proto: str) -> bool:
+    if profile_proto == uri_proto:
+        return True
+    return any({profile_proto, uri_proto} <= s for s in _COMPAT_SETS)
+
+
 def resolve_remote_auth(uri: str) -> RemoteAuth:
     parsed = parse_remote_uri(uri)
     repo = _repo()
@@ -54,12 +69,7 @@ def resolve_remote_auth(uri: str) -> RemoteAuth:
 
     profile_proto = _normalize_protocol(str(bundle.get("protocol") or ""))
     uri_proto = parsed.scheme
-    # Allow ftp profile to serve ftps and vice versa loosely? Keep strict with ftp/ftps match.
-    compatible = profile_proto == uri_proto or {profile_proto, uri_proto} <= {
-        "ftp",
-        "ftps",
-    }
-    if not compatible:
+    if not _protocols_compatible(profile_proto, uri_proto):
         raise ValueError(
             f"Credential profile protocol '{profile_proto}' does not match URI scheme '{uri_proto}'"
         )
@@ -70,6 +80,28 @@ def resolve_remote_auth(uri: str) -> RemoteAuth:
     if parsed.scheme == "gs" and secret:
         extra.setdefault("service_account_json", secret)
         secret = None
+
+    # 双路径回退元数据以 JSON 字符串形式进入 extra（RemoteAuth.extra 为 dict[str, str]）
+    auth_extra: dict[str, str] = {}
+    for k, v in extra.items():
+        if isinstance(v, bool):
+            # transports 以字符串 "true"/"false" 语义消费布尔（如 allow_plain_ftp）
+            auth_extra[str(k)] = "true" if v else "false"
+        elif isinstance(v, str):
+            auth_extra[str(k)] = v
+        elif isinstance(v, (int, float)):
+            auth_extra[str(k)] = str(v)
+    alt = extra.get("alt")
+    if isinstance(alt, dict) and any(alt.get(key) for key in ("host", "url", "share")):
+        auth_extra.setdefault("alt_json", json.dumps(alt, ensure_ascii=False))
+    fallback_mode = extra.get("fallback_mode")
+    if fallback_mode in {"auto", "manual", "off"}:
+        auth_extra.setdefault("fallback_mode", str(fallback_mode))
+    failover_state = extra.get("failover_state")
+    if isinstance(failover_state, dict):
+        active = failover_state.get("active")
+        if active in {"primary", "alt"}:
+            auth_extra.setdefault("active_path", str(active))
 
     profile_port = bundle.get("port")
     try:
@@ -83,10 +115,23 @@ def resolve_remote_auth(uri: str) -> RemoteAuth:
         private_key_pem=bundle.get("private_key_pem") or None,
         domain=bundle.get("domain") or None,
         port=profile_port_int,
-        extra={
-            str(k): str(v) if not isinstance(v, str) else v for k, v in extra.items()
-        },
+        extra=auth_extra,
     )
+
+
+def resolve_remote_auth_bundle(uri: str) -> tuple[RemoteAuth, dict[str, Any] | None]:
+    """Resolve primary auth plus the alt path descriptor for dual-path failover."""
+    auth = resolve_remote_auth(uri)
+    alt: dict[str, Any] | None = None
+    alt_json = auth.extra.get("alt_json")
+    if alt_json:
+        try:
+            loaded = json.loads(alt_json)
+            if isinstance(loaded, dict):
+                alt = loaded
+        except json.JSONDecodeError:
+            alt = None
+    return auth, alt
 
 
 def clear_remote_auth_cache() -> None:

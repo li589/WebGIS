@@ -29,10 +29,14 @@
 - PUT /config/weather/providers/{provider_id}/priority — 调整 Provider 优先级
 - DELETE /config/weather/providers/{provider_id} — 删除 Provider DB 配置
 - GET /config/remote-storage — 列出远程存储凭证 Profile
-- PUT /config/remote-storage/{profile_id} — 新增/更新 Profile
+- GET /config/remote-storage/{profile_id} — 单条 Profile（脱敏）
+- PUT /config/remote-storage/{profile_id} — 新增/更新 Profile（支持双路径字段）
 - DELETE /config/remote-storage/{profile_id} — 删除 Profile
 - PUT /config/remote-storage/{profile_id}/toggle — 启用/禁用
-- POST /config/remote-storage/{profile_id}/test — 测试连通性
+- POST /config/remote-storage/{profile_id}/test — 测试连通性（双路径回退感知）
+- POST /config/remote-storage/{profile_id}/browse — 浏览目录（read 权限）
+- POST /config/remote-storage/{profile_id}/search — 名称搜索（read 权限）
+- POST /config/remote-storage/{profile_id}/failover — 手动切换主/备路径
 - GET /config/data-source — 数据源配置（含生效/待重启数据根）
 - PUT /config/data-source/paths — 更新数据根/产物根（写 .env，需重启后端）
 - POST /config/service/restart — 调度重启 FastAPI+Worker+Beat
@@ -89,6 +93,12 @@ from shared.contracts.config_contracts import (
     RemoteStorageToggleRequest,
     RemoteStorageToggleResponse,
     RemoteStorageUpsertRequest,
+    RemoteBrowseRequest,
+    RemoteBrowseResponse,
+    RemoteSearchRequest,
+    RemoteSearchResponse,
+    RemoteFailoverRequest,
+    RemoteFailoverResponse,
     ServiceRestartRequest,
     ServiceRestartResponse,
     TestResultResponse,
@@ -547,6 +557,18 @@ async def list_remote_storage_profiles(include_disabled: bool = True):
     )
 
 
+@router.get(
+    "/remote-storage/{profile_id}",
+    response_model=RemoteStorageProfile,
+    dependencies=[Depends(require_config_read_access)],
+)
+async def get_remote_storage_profile(profile_id: str):
+    info = config_service.get_remote_storage_profile(profile_id)
+    if info is None:
+        raise HTTPException(status_code=404, detail=f"Profile '{profile_id}' not found")
+    return info
+
+
 @router.put(
     "/remote-storage/{profile_id}",
     response_model=RemoteStorageProfile,
@@ -568,6 +590,10 @@ async def upsert_remote_storage_profile(
             extra=request.extra,
             display_name=request.display_name,
             enabled=request.enabled,
+            alt_host=request.alt_host,
+            alt_port=request.alt_port,
+            alt_url=request.alt_url,
+            fallback_mode=request.fallback_mode,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -609,8 +635,74 @@ async def test_remote_storage_profile(
     request: RemoteStorageTestRequest | None = None,
 ):
     uri = request.uri if request else None
-    result = config_service.test_remote_storage_profile(profile_id, uri=uri)
+    result = await anyio.to_thread.run_sync(
+        lambda: config_service.test_remote_storage_profile(profile_id, uri=uri)
+    )
     return RemoteStorageTestResponse(**result)
+
+
+@router.post(
+    "/remote-storage/{profile_id}/browse",
+    response_model=RemoteBrowseResponse,
+    dependencies=[Depends(require_config_read_access)],
+)
+async def browse_remote_storage_profile(
+    profile_id: str, request: RemoteBrowseRequest | None = None
+):
+    """浏览存储 profile 目录（双路径感知；standard 角色可浏览）。"""
+    from app.services.remote_access import browser
+
+    path = request.path if request else "/"
+    try:
+        result = await anyio.to_thread.run_sync(
+            browser.browse_profile, profile_id, path
+        )
+    except browser.RemoteAccessAuthError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except browser.RemoteAccessNetworkError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except browser.RemoteAccessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RemoteBrowseResponse(**result)
+
+
+@router.post(
+    "/remote-storage/{profile_id}/search",
+    response_model=RemoteSearchResponse,
+    dependencies=[Depends(require_config_read_access)],
+)
+async def search_remote_storage_profile(profile_id: str, request: RemoteSearchRequest):
+    """在存储 profile 内按名称搜索（能力因协议而异）。"""
+    from app.services.remote_access import browser
+
+    try:
+        result = await anyio.to_thread.run_sync(
+            lambda: browser.search_profile(
+                profile_id, request.query, max_results=request.max_results
+            )
+        )
+    except browser.RemoteAccessAuthError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except browser.RemoteAccessNetworkError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except browser.RemoteAccessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RemoteSearchResponse(**result)
+
+
+@router.post(
+    "/remote-storage/{profile_id}/failover",
+    response_model=RemoteFailoverResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def failover_remote_storage_profile(
+    profile_id: str, request: RemoteFailoverRequest
+):
+    """手动切换主/备访问路径。"""
+    try:
+        return config_service.probe_failover(profile_id, request.target)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get(

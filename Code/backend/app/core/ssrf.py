@@ -346,8 +346,14 @@ def safe_urlopen(
     allow_private: bool | None = None,
     allow_proxy: bool = False,
     max_redirects: int = 5,
+    data: bytes | None = None,
+    method: str | None = None,
 ):
     """带 SSRF 校验的 urlopen；每跳重定向再校验，且连接钉死已校验 IP。
+
+    Args:
+        data: 可选请求体（非 None 时默认方法为 POST）。
+        method: 可选显式 HTTP 方法（默认 GET / 有 data 时 POST）。
 
     Returns:
         最终响应对象（调用方负责 ``.read()`` / ``.close()``，或 ``with`` 使用）。
@@ -361,11 +367,12 @@ def safe_urlopen(
     target = resolve_outbound_target(url, allow_private=allow_private)
     redirects = 0
     req_headers = dict(headers or {})
+    req_method = method or ("POST" if data is not None else "GET")
 
     while True:
         # 每跳目标主机不同，opener 需按当次已校验 IP 重建。
         opener = _build_pinned_opener(target, allow_proxy=allow_proxy)
-        req = Request(target.url, headers=req_headers)
+        req = Request(target.url, headers=req_headers, data=data, method=req_method)
         try:
             # noqa: S310 — URL 经 resolve_outbound_target 校验；重定向亦同
             return opener.open(req, timeout=timeout)

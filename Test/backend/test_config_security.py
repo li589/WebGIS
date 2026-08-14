@@ -30,16 +30,29 @@ def _route_dependency_callables(route) -> list:
 
 def test_config_api_key_write_requires_auth_when_enabled():
     from app.api import config_routes
-    from app.api.deps import require_config_management_access, require_write_access
+    from app.api.deps import (
+        require_config_management_access,
+        require_config_read_access,
+        require_write_access,
+    )
 
     # RBAC v2: 高危配置路由可使用 require_config_management_access（admin 级）
     # 替代 require_write_access，二者均提供写保护。
     accepted_write_guards = {require_write_access, require_config_management_access}
 
+    # 只读型 POST 端点豁免：浏览/搜索远程目录不落库、不改配置，
+    # 按「远程与存储」设计 standard 角色可浏览（require_config_read_access）。
+    read_only_post_allowlist = {
+        "/config/remote-storage/{profile_id}/browse",
+        "/config/remote-storage/{profile_id}/search",
+    }
+
     mutating = [
         route
         for route in config_routes.router.routes
-        if getattr(route, "methods", None) and route.methods & {"PUT", "POST", "DELETE"}
+        if getattr(route, "methods", None)
+        and route.methods & {"PUT", "POST", "DELETE"}
+        and route.path not in read_only_post_allowlist
     ]
     assert mutating, "expected mutating config routes"
     for route in mutating:
@@ -48,6 +61,16 @@ def test_config_api_key_write_requires_auth_when_enabled():
             f"route {route.path} missing require_write_access "
             f"or require_config_management_access"
         )
+    for route in config_routes.router.routes:
+        if (
+            getattr(route, "path", "") in read_only_post_allowlist
+            and getattr(route, "methods", None)
+            and route.methods & {"POST"}
+        ):
+            dep_calls = _route_dependency_callables(route)
+            assert require_config_read_access in set(dep_calls), (
+                f"read-only POST route {route.path} must still require read access"
+            )
 
 
 def test_sensitive_config_gets_require_read_access():

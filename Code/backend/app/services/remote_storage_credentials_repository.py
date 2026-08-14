@@ -16,8 +16,41 @@ import contextlib
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_PROTOCOLS = frozenset({"sftp", "smb", "ftp", "ftps", "gs"})
+# 协议互通匹配组：profile 协议可服务的 URI scheme 组
+_PROTOCOL_MATCH_GROUPS: dict[str, list[str]] = {
+    "sftp": ["sftp", "ssh"],
+    "ssh": ["sftp", "ssh"],
+    "ftp": ["ftp", "ftps"],
+    "ftps": ["ftp", "ftps"],
+    "http": ["http", "https"],
+    "https": ["http", "https"],
+    "gs": ["gs"],
+    "gcs": ["gs"],
+    "smb": ["smb"],
+}
+
+ALLOWED_PROTOCOLS = frozenset(
+    {
+        "sftp",
+        "ssh",
+        "smb",
+        "ftp",
+        "ftps",
+        "gs",
+        "http",
+        "https",
+        "filebrowser",
+        "lan",
+        "nfs",
+    }
+)
 DEFAULT_HISTORY_LIMIT = 20
+
+# extra_json 约定键（双路径回退，不迁移 schema）
+EXTRA_KEY_ALT = "alt"
+EXTRA_KEY_FALLBACK_MODE = "fallback_mode"
+EXTRA_KEY_FAILOVER_STATE = "failover_state"
+VALID_FALLBACK_MODES = frozenset({"auto", "manual", "off"})
 
 
 def _mask_secret(value: str) -> str:
@@ -193,6 +226,15 @@ class RemoteStorageCredentialsRepository:
             extra_val = dict((existing or {}).get("extra") or {})
         else:
             extra_val = dict(extra)
+        mode = extra_val.get(EXTRA_KEY_FALLBACK_MODE, "auto")
+        if mode not in VALID_FALLBACK_MODES:
+            raise ValueError(
+                f"Invalid {EXTRA_KEY_FALLBACK_MODE}: {mode!r} "
+                f"(expected one of {sorted(VALID_FALLBACK_MODES)})"
+            )
+        alt = extra_val.get(EXTRA_KEY_ALT)
+        if alt is not None and not isinstance(alt, dict):
+            raise ValueError(f"Invalid {EXTRA_KEY_ALT}: expected object")
         if enabled is None:
             enabled_val = (
                 bool((existing or {}).get("enabled", True)) if existing else True
@@ -364,9 +406,7 @@ class RemoteStorageCredentialsRepository:
 
     def find_by_host_protocol(self, protocol: str, host: str) -> dict[str, Any] | None:
         protocol = protocol.lower().strip()
-        protocols = [protocol]
-        if protocol in {"ftp", "ftps"}:
-            protocols = ["ftp", "ftps"]
+        protocols = _PROTOCOL_MATCH_GROUPS.get(protocol, [protocol])
         placeholders = ",".join("?" for _ in protocols)
         with self._connect() as conn:
             row = conn.execute(
@@ -380,6 +420,33 @@ class RemoteStorageCredentialsRepository:
         if not row:
             return None
         return self.get_secret_bundle(row["profile_id"])
+
+    def set_failover_state(self, profile_id: str, state: dict[str, Any]) -> bool:
+        """Merge-write extra['failover_state'] for a profile (dual-path bookkeeping)."""
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT extra_json FROM remote_storage_credentials WHERE profile_id=?",
+                (profile_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            extra: dict[str, Any] = {}
+            if row["extra_json"]:
+                try:
+                    extra = json.loads(row["extra_json"])
+                except json.JSONDecodeError:
+                    extra = {}
+            current = extra.get(EXTRA_KEY_FAILOVER_STATE) or {}
+            current.update(state)
+            extra[EXTRA_KEY_FAILOVER_STATE] = current
+            conn.execute(
+                "UPDATE remote_storage_credentials SET extra_json=?, updated_at=? "
+                "WHERE profile_id=?",
+                (json.dumps(extra, ensure_ascii=False), now, profile_id),
+            )
+            conn.commit()
+        return True
 
     def _row_to_info(self, row: sqlite3.Row) -> dict[str, Any]:
         extra = {}

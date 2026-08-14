@@ -395,6 +395,21 @@ class RemoteStorageUpsertRequest(BaseModel):
     display_name: str | None = None
     # None preserves existing enabled flag on update
     enabled: bool | None = None
+    # 双路径（合并写入 extra.alt；任一字段非 None 即触发合并，None 的字段保留原值；
+    # 置空字符串可清除对应备用字段）
+    alt_host: str | None = Field(
+        default=None, description="备用访问路径主机/URL（隧道），写入 extra.alt.host"
+    )
+    alt_port: int | None = Field(
+        default=None, description="备用访问路径端口，写入 extra.alt.port"
+    )
+    alt_url: str | None = Field(
+        default=None,
+        description="备用 base URL（http/https/filebrowser），写入 extra.alt.url",
+    )
+    fallback_mode: str | None = Field(
+        default=None, description="回退模式 auto|manual|off，写入 extra.fallback_mode"
+    )
 
 
 class RemoteStorageToggleRequest(BaseModel):
@@ -448,6 +463,58 @@ class RemoteStorageProfile(BaseModel):
     updated_at: str = ""
     last_tested_at: str | None = None
     last_test_status: str | None = None
+    # 双路径便捷回显（真源在 extra.alt / extra.fallback_mode / extra.failover_state）
+    alt_host: str = ""
+    alt_port: int | None = None
+    alt_url: str = ""
+    fallback_mode: str = "auto"
+    failover_state: dict[str, Any] = Field(default_factory=dict)
+
+
+class RemoteEntryItem(BaseModel):
+    """远程目录条目（浏览/搜索通用）。"""
+
+    name: str
+    is_dir: bool = False
+    size: int | None = None
+    mtime: float | None = None
+    path: str | None = None
+
+
+class RemoteBrowseRequest(BaseModel):
+    path: str = "/"
+
+
+class RemoteBrowseResponse(BaseModel):
+    profile_id: str
+    protocol: str
+    path: str
+    via: str = Field(description="本次实际使用的路径：primary | alt")
+    items: list[RemoteEntryItem] = Field(default_factory=list)
+
+
+class RemoteSearchRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    max_results: int = Field(default=200, ge=1, le=500)
+
+
+class RemoteSearchResponse(BaseModel):
+    profile_id: str
+    protocol: str
+    query: str
+    via: str
+    items: list[RemoteEntryItem] = Field(default_factory=list)
+
+
+class RemoteFailoverRequest(BaseModel):
+    target: str = Field(..., pattern="^(primary|alt)$")
+
+
+class RemoteFailoverResponse(BaseModel):
+    profile_id: str
+    active: str
+    updated: bool
+    message: str
 
 
 class DataSourcePathsUpdateRequest(BaseModel):
