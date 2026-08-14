@@ -1,0 +1,854 @@
+"""开放门户目录：内置/自定义门户、URL 覆盖、连通性测试与 CMR 检索。
+
+目录是门户元数据（组织/凭据/搜索能力）的单一真源；
+``open_data_presets`` KV 继续作为 base URL 覆盖层（现有语义不变），
+``portal_catalog_custom`` KV 存自定义门户，``portal_alt_urls`` KV 存备用地址覆盖。
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+from dataclasses import dataclass
+from typing import Any
+from urllib.parse import quote_plus
+
+from app.core.ssrf import safe_urlopen, validate_url_for_storage
+from app.services.portal_credentials import load_portal_credentials_secret
+
+logger = logging.getLogger(__name__)
+
+_PORTAL_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
+
+VALID_AUTH_TYPES = frozenset({"bearer", "basic", "header", "token", "none"})
+VALID_SEARCH_CAPABILITIES = frozenset({"cmr", "none"})
+VALID_REGIONS = frozenset({"international", "china"})
+
+# CMR granule 检索模板（short_name 检索；page_size 由调用方注入）
+_CMR_SEARCH_TEMPLATE = (
+    "{base}/search/granules.json?short_name={query}&page_size={page_size}"
+)
+
+
+class PortalCatalogError(ValueError):
+    """目录操作校验失败（portal_id 未知/字段非法）。"""
+
+
+class PortalSearchUnsupported(PortalCatalogError):
+    """该门户不支持在线检索（search_capability=none）。"""
+
+
+@dataclass(frozen=True)
+class PortalDef:
+    portal_id: str
+    name: str
+    base_url: str
+    organization: str = ""
+    region: str = "international"
+    alt_url: str | None = None
+    website: str = ""
+    description: str = ""
+    requires_credentials: bool = False
+    auth_type: str = "none"
+    token_header: str | None = None
+    credential_profile: str = ""  # 凭据键；空 = 自身 portal_id
+    credentials_hint: str = ""
+    search_capability: str = "none"
+    search_url_template: str | None = None
+    builtin: bool = True
+
+    def cred_key(self) -> str:
+        return self.credential_profile or self.portal_id
+
+    def to_public(self) -> dict[str, Any]:
+        return {
+            "portal_id": self.portal_id,
+            "name": self.name,
+            "organization": self.organization,
+            "region": self.region,
+            "base_url": self.base_url,
+            "alt_url": self.alt_url,
+            "website": self.website,
+            "description": self.description,
+            "requires_credentials": self.requires_credentials,
+            "auth_type": self.auth_type,
+            "token_header": self.token_header,
+            "credential_profile": self.cred_key(),
+            "credentials_hint": self.credentials_hint,
+            "search_capability": self.search_capability,
+            "builtin": self.builtin,
+        }
+
+
+_ED = "https://urs.earthdata.nasa.gov/home"
+
+DEFAULT_PORTAL_CATALOG: dict[str, PortalDef] = {
+    p.portal_id: p
+    for p in (
+        # ── 国际组织 ──
+        PortalDef(
+            portal_id="nasa_earthdata",
+            name="NASA Earthdata / LP DAAC 云端对象",
+            organization="NASA EOSDIS LP DAAC",
+            region="international",
+            base_url="https://data.lpdaac.earthdatacloud.nasa.gov/",
+            website=_ED,
+            description="LP DAAC 云端对象存储（HDF/COG 产品直下）。",
+            requires_credentials=True,
+            auth_type="bearer",
+            credential_profile="earthdata",
+            credentials_hint="Earthdata Login（urs.earthdata.nasa.gov）生成 token。",
+            search_capability="none",
+        ),
+        PortalDef(
+            portal_id="nasa_cmr",
+            name="NASA CMR 元数据检索",
+            organization="NASA EOSDIS",
+            region="international",
+            base_url="https://cmr.earthdata.nasa.gov/",
+            website="https://cmr.earthdata.nasa.gov/",
+            description="通用元数据仓库（granule/collection 检索，公共只读）。",
+            requires_credentials=False,
+            auth_type="none",
+            credential_profile="earthdata",
+            search_capability="cmr",
+            search_url_template=_CMR_SEARCH_TEMPLATE,
+        ),
+        PortalDef(
+            portal_id="nasa_ges_disc",
+            name="NASA GES DISC 水文数据",
+            organization="NASA GES DISC",
+            region="international",
+            base_url="https://hydro1.gesdisc.eosdis.nasa.gov/",
+            website="https://disc.gsfc.nasa.gov/",
+            description="GES DISC 水文/大气再分析产品（GPM、MERRA-2 等）。",
+            requires_credentials=True,
+            auth_type="bearer",
+            credential_profile="earthdata",
+            credentials_hint="Earthdata Login token（与 Earthdata 同一凭据）。",
+        ),
+        PortalDef(
+            portal_id="nasa_gldas",
+            name="NASA GLDAS 全球陆面数据",
+            organization="NASA GES DISC",
+            region="international",
+            base_url="https://hydro1.gesdisc.eosdis.nasa.gov/data/GLDAS/",
+            website="https://disc.gsfc.nasa.gov/datasets?keywords=GLDAS",
+            description="GLDAS Noah/VIC 陆面同化产品目录。",
+            requires_credentials=True,
+            auth_type="bearer",
+            credential_profile="earthdata",
+            credentials_hint="Earthdata Login token（与 Earthdata 同一凭据）。",
+        ),
+        PortalDef(
+            portal_id="nsidc_data",
+            name="NSIDC 数据下载",
+            organization="NSIDC",
+            region="international",
+            base_url="https://n5eil01u.ecs.nsidc.org/",
+            website="https://nsidc.org/",
+            description="NSIDC 极地/冰冻圈产品（可回退 Earthdata 凭据）。",
+            requires_credentials=True,
+            auth_type="bearer",
+            credential_profile="nsidc",
+            credentials_hint="NSIDC 或 Earthdata token（登录页 earthdata.nasa.gov）。",
+        ),
+        PortalDef(
+            portal_id="noaa_nomads",
+            name="NOAA NOMADS 数值产品",
+            organization="NOAA NCEP",
+            region="international",
+            base_url="https://nomads.ncep.noaa.gov/",
+            website="https://nomads.ncep.noaa.gov/",
+            description="NCEP 数值预报产品开放目录（免凭据）。",
+            requires_credentials=False,
+            auth_type="none",
+        ),
+        PortalDef(
+            portal_id="noaa_goes",
+            name="NOAA GOES 影像 CDN",
+            organization="NOAA NESDIS",
+            region="international",
+            base_url="https://cdn.star.nesdis.noaa.gov/",
+            website="https://www.star.nesdis.noaa.gov/",
+            description="GOES 卫星影像 CDN（免凭据）。",
+            requires_credentials=False,
+            auth_type="none",
+        ),
+        PortalDef(
+            portal_id="esa_copernicus",
+            name="欧空局 Copernicus 目录",
+            organization="ESA Copernicus Data Space",
+            region="international",
+            base_url="https://catalogue.dataspace.copernicus.eu/",
+            website="https://dataspace.copernicus.eu/",
+            description="Copernicus Sentinel 产品目录（OData/API）。",
+            requires_credentials=True,
+            auth_type="bearer",
+            credential_profile="copernicus",
+            credentials_hint="Copernicus Data Space 控制台生成 Access Token。",
+        ),
+        PortalDef(
+            portal_id="esa_download",
+            name="欧空局 Copernicus 下载 CDN",
+            organization="ESA Copernicus Data Space",
+            region="international",
+            base_url="https://download.dataspace.copernicus.eu/",
+            website="https://dataspace.copernicus.eu/",
+            description="Copernicus 产品下载 CDN（凭据同目录）。",
+            requires_credentials=True,
+            auth_type="bearer",
+            credential_profile="copernicus",
+            credentials_hint="Copernicus Data Space Access Token（与目录同一凭据）。",
+        ),
+        PortalDef(
+            portal_id="ecmwf_cds",
+            name="ECMWF 气候数据存储 CDS",
+            organization="ECMWF",
+            region="international",
+            base_url="https://cds.climate.copernicus.eu/",
+            website="https://cds.climate.copernicus.eu/",
+            description="ERA5/ORAS5 等再分析产品（新版 CDS API 使用 Bearer key）。",
+            requires_credentials=True,
+            auth_type="bearer",
+            credential_profile="ecmwf_cds",
+            credentials_hint="CDS 个人主页 API key（形如 xxxxxx-xxxx-xxxx）。",
+        ),
+        PortalDef(
+            portal_id="usgs_earthexplorer",
+            name="USGS EarthExplorer",
+            organization="USGS",
+            region="international",
+            base_url="https://earthexplorer.usgs.gov/",
+            website="https://earthexplorer.usgs.gov/",
+            description="Landsat/DEM 等陆地卫星产品门户（账号密码）。",
+            requires_credentials=True,
+            auth_type="basic",
+            credential_profile="usgs_earthexplorer",
+            credentials_hint="EarthExplorer 注册账号（用户名 + 密码）。",
+        ),
+        PortalDef(
+            portal_id="jaxa_gportal",
+            name="JAXA G-Portal",
+            organization="JAXA",
+            region="international",
+            base_url="https://gportal.jaxa.jp/",
+            website="https://gportal.jaxa.jp/",
+            description="JAXA 卫星（GPM/AMSR2 等）产品门户（账号密码）。",
+            requires_credentials=True,
+            auth_type="basic",
+            credential_profile="jaxa_gportal",
+            credentials_hint="G-Portal 注册账号（用户名 + 密码）。",
+        ),
+        # ── 国内机构 ──
+        PortalDef(
+            portal_id="cma_nsmc",
+            name="国家卫星气象中心 NSMC 门户",
+            organization="国家卫星气象中心（NSMC）",
+            region="china",
+            base_url="https://satellite.nsmc.org.cn/",
+            website="https://satellite.nsmc.org.cn/",
+            description="风云卫星产品门户（FY-3/FY-4 各级产品）。",
+            requires_credentials=True,
+            auth_type="token",
+            token_header="token",
+            credential_profile="nsmc",
+            credentials_hint="NSMC 门户注册后在「个人中心」获取 token。",
+        ),
+        PortalDef(
+            portal_id="cma_data",
+            name="国家卫星气象中心数据平台",
+            organization="国家卫星气象中心（NSMC）",
+            region="china",
+            base_url="https://data.nsmc.org.cn/",
+            website="https://data.nsmc.org.cn/",
+            description="风云卫星数据服务平台（凭据与 NSMC 门户共用）。",
+            requires_credentials=True,
+            auth_type="token",
+            token_header="token",
+            credential_profile="nsmc",
+            credentials_hint="NSMC 门户 token（与 satellite.nsmc.org.cn 共用）。",
+        ),
+        PortalDef(
+            portal_id="cma_mdc",
+            name="国家气象科学数据中心",
+            organization="中国气象局",
+            region="china",
+            base_url="https://data.cma.cn/",
+            website="https://data.cma.cn/",
+            description="地面/高空/辐射等气象观测数据（data.cma.cn）。",
+            requires_credentials=True,
+            auth_type="token",
+            token_header="token",
+            credential_profile="cma_mdc",
+            credentials_hint="data.cma.cn 注册账号后生成的接口 token。",
+        ),
+        PortalDef(
+            portal_id="tpdc",
+            name="国家青藏高原科学数据中心",
+            organization="中科院青藏高原研究所",
+            region="china",
+            base_url="https://data.tpdc.ac.cn/",
+            website="https://data.tpdc.ac.cn/",
+            description="青藏高原观测/再分析/冰川冻土数据。",
+            requires_credentials=True,
+            auth_type="token",
+            token_header="token",
+            credential_profile="tpdc",
+            credentials_hint="TPDC 注册账号的 API token（个人中心申请）。",
+        ),
+        PortalDef(
+            portal_id="geodata_nessdc",
+            name="国家地球系统科学数据中心",
+            organization="国家地球系统科学数据中心",
+            region="china",
+            base_url="https://www.geodata.cn/",
+            website="https://www.geodata.cn/",
+            description="地球系统多学科数据共享（geodata.cn）。",
+            requires_credentials=True,
+            auth_type="token",
+            token_header="token",
+            credential_profile="geodata_nessdc",
+            credentials_hint="geodata.cn 账号授权后的下载 token。",
+        ),
+        PortalDef(
+            portal_id="resdc",
+            name="中科院资源环境科学数据中心",
+            organization="中科院地理资源所",
+            region="china",
+            base_url="https://www.resdc.cn/",
+            website="https://www.resdc.cn/",
+            description="资源环境时空序列数据（土地利用/植被/人口等）。",
+            requires_credentials=True,
+            auth_type="token",
+            token_header="token",
+            credential_profile="resdc",
+            credentials_hint="RESDC 注册账号（部分数据需申请授权）。",
+        ),
+        PortalDef(
+            portal_id="noda",
+            name="国家对地观测科学数据中心",
+            organization="科技部国家遥感中心",
+            region="china",
+            base_url="https://www.noda.org.cn/",
+            website="https://www.noda.org.cn/",
+            description="对地观测数据共享（光学/SAR/无人机）。",
+            requires_credentials=True,
+            auth_type="token",
+            token_header="token",
+            credential_profile="noda",
+            credentials_hint="NODA 注册账号的接口 token。",
+        ),
+    )
+}
+
+
+# ── KV 存储 ──────────────────────────────────────────────────────────────────
+
+_CUSTOM_PORTALS_KEY = "portal_catalog_custom"
+_ALT_URLS_KEY = "portal_alt_urls"
+
+
+def _repo() -> Any:
+    from app.services.config_service import _research_data_repo
+
+    return _research_data_repo()
+
+
+def _load_custom_raw(repo: Any) -> dict[str, dict[str, Any]]:
+    raw = repo.get_json(_CUSTOM_PORTALS_KEY, {})
+    if not isinstance(raw, dict):
+        return {}
+    return {str(k): v for k, v in raw.items() if isinstance(v, dict)}
+
+
+def _portal_def_from_raw(pid: str, raw: dict[str, Any]) -> PortalDef:
+    return PortalDef(
+        portal_id=pid,
+        name=str(raw.get("name") or pid),
+        organization=str(raw.get("organization") or ""),
+        region=str(raw.get("region") or "international"),
+        base_url=str(raw.get("base_url") or ""),
+        alt_url=str(raw["alt_url"]) if raw.get("alt_url") else None,
+        website=str(raw.get("website") or ""),
+        description=str(raw.get("description") or ""),
+        requires_credentials=bool(raw.get("requires_credentials")),
+        auth_type=str(raw.get("auth_type") or "none"),
+        token_header=str(raw["token_header"]) if raw.get("token_header") else None,
+        credential_profile=str(raw.get("credential_profile") or ""),
+        credentials_hint=str(raw.get("credentials_hint") or ""),
+        search_capability=str(raw.get("search_capability") or "none"),
+        search_url_template=(
+            str(raw["search_url_template"]) if raw.get("search_url_template") else None
+        ),
+        builtin=False,
+    )
+
+
+def builtin_portal_catalog() -> dict[str, PortalDef]:
+    return dict(DEFAULT_PORTAL_CATALOG)
+
+
+def custom_portal_catalog(*, repo: Any = None) -> dict[str, PortalDef]:
+    r = repo if repo is not None else _repo()
+    return {
+        pid: _portal_def_from_raw(pid, raw) for pid, raw in _load_custom_raw(r).items()
+    }
+
+
+def list_portal_defs(*, repo: Any = None) -> dict[str, PortalDef]:
+    r = repo if repo is not None else _repo()
+    defs = builtin_portal_catalog()
+    defs.update(custom_portal_catalog(repo=r))
+    return defs
+
+
+def known_portal_ids(*, repo: Any = None) -> set[str]:
+    """凭据 upsert 的动态白名单：目录键 ∪ 规范凭据键 ∪ 遗留三键。"""
+    r = repo if repo is not None else _repo()
+    defs = list_portal_defs(repo=r)
+    ids: set[str] = set(defs.keys())
+    ids.update(d.cred_key() for d in defs.values())
+    # 遗留规范键（PORTAL_IDS 时代已存数据迁移安全）
+    ids.update({"earthdata", "nsidc", "copernicus"})
+    return ids
+
+
+def preset_labels_from_catalog(*, repo: Any = None) -> dict[str, str]:
+    """目录生成的 preset 标签（供 open_data_preset_labels 合并，键名向后兼容）。"""
+    return {pid: d.name for pid, d in list_portal_defs(repo=repo).items()}
+
+
+def effective_base_urls(*, repo: Any = None) -> dict[str, str]:
+    """目录默认 base URL + ``open_data_presets`` 覆盖 + 自定义门户 base_url。"""
+    r = repo if repo is not None else _repo()
+    defs = list_portal_defs(repo=r)
+    out = {pid: d.base_url for pid, d in defs.items()}
+    overrides = r.get_json("open_data_presets", {})
+    if isinstance(overrides, dict):
+        for k, v in overrides.items():
+            key = str(k).strip()
+            val = str(v or "").strip()
+            if key and val:
+                out[key] = val
+    return out
+
+
+def alt_url_overrides(*, repo: Any = None) -> dict[str, str]:
+    r = repo if repo is not None else _repo()
+    raw = r.get_json(_ALT_URLS_KEY, {})
+    if not isinstance(raw, dict):
+        return {}
+    return {str(k): str(v) for k, v in raw.items() if str(v or "").strip()}
+
+
+# ── 凭据状态 ─────────────────────────────────────────────────────────────────
+
+
+def _runtime_credentials(repo: Any) -> dict[str, dict[str, Any]]:
+    from app.core.config import settings
+
+    try:
+        loaded = load_portal_credentials_secret(
+            repo=repo,
+            encryption_key=settings.gee_credentials_encryption_key,
+        )
+        return loaded if isinstance(loaded, dict) else {}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("portal catalog: load credentials failed: %s", exc)
+        return {}
+
+
+def _entry_has_secret(entry: dict[str, Any]) -> bool:
+    return bool(
+        str(entry.get("token") or entry.get("access_token") or "").strip()
+        or str(entry.get("password") or entry.get("secret") or "").strip()
+    )
+
+
+def _credential_status(
+    defn: PortalDef, creds: dict[str, dict[str, Any]]
+) -> tuple[bool, str]:
+    entry = creds.get(defn.cred_key())
+    if not isinstance(entry, dict) or entry.get("enabled") is False:
+        return False, "none"
+    if not _entry_has_secret(entry):
+        return False, str(entry.get("source") or "none")
+    return True, str(entry.get("source") or "db")
+
+
+# ── 目录载荷（API 投影） ──────────────────────────────────────────────────────
+
+
+def get_portal_catalog() -> list[dict[str, Any]]:
+    repo = _repo()
+    defs = list_portal_defs(repo=repo)
+    bases = effective_base_urls(repo=repo)
+    alts = alt_url_overrides(repo=repo)
+    presets = repo.get_json("open_data_presets", {})
+    presets = presets if isinstance(presets, dict) else {}
+    creds = _runtime_credentials(repo)
+
+    entries: list[dict[str, Any]] = []
+    for pid, defn in defs.items():
+        entry = defn.to_public()
+        overridden = bool(str(presets.get(pid) or "").strip())
+        entry["effective_base_url"] = bases.get(pid) or defn.base_url
+        entry["base_url_overridden"] = overridden
+        alt_override = alts.get(pid)
+        entry["effective_alt_url"] = alt_override or defn.alt_url
+        has_creds, cred_source = _credential_status(defn, creds)
+        entry["has_credentials"] = has_creds
+        entry["credential_source"] = cred_source
+        entries.append(entry)
+    entries.sort(
+        key=lambda e: (0 if e["region"] == "international" else 1, e["portal_id"])
+    )
+    return entries
+
+
+# ── 目录写操作 ────────────────────────────────────────────────────────────────
+
+
+def normalize_portal_id(raw: str) -> str:
+    pid = str(raw or "").strip().lower()
+    if not _PORTAL_ID_RE.match(pid):
+        raise PortalCatalogError(
+            f"Invalid portal_id: {raw!r} (expected [a-z0-9][a-z0-9_-]{{2,63}})"
+        )
+    return pid
+
+
+def _validated_url(raw: str) -> str:
+    try:
+        return validate_url_for_storage(raw)
+    except ValueError as exc:
+        raise PortalCatalogError(str(exc)) from exc
+
+
+def upsert_portal(portal_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """创建/更新自定义门户，或覆盖内置门户 URL。
+
+    - builtin 门户：仅允许覆盖 base_url（写 ``open_data_presets``）与 alt_url；
+      传空字符串清除对应覆盖。
+    - 自定义门户：全字段创建/更新，base_url 必填且过存储校验。
+    """
+    pid = normalize_portal_id(portal_id)
+    repo = _repo()
+
+    if pid in DEFAULT_PORTAL_CATALOG:
+        base_override = str(payload.get("base_url") or "").strip()
+        if base_override:
+            _validated_url(base_override)
+            presets = repo.get_json("open_data_presets", {})
+            if not isinstance(presets, dict):
+                presets = {}
+            presets[pid] = base_override
+            repo.set_json("open_data_presets", presets)
+        else:
+            presets = repo.get_json("open_data_presets", {})
+            if isinstance(presets, dict) and pid in presets:
+                presets.pop(pid, None)
+                repo.set_json("open_data_presets", presets)
+
+        alt_override = str(payload.get("alt_url") or "").strip()
+        alts = repo.get_json(_ALT_URLS_KEY, {})
+        if not isinstance(alts, dict):
+            alts = {}
+        if alt_override:
+            _validated_url(alt_override)
+            alts[pid] = alt_override
+            repo.set_json(_ALT_URLS_KEY, alts)
+        elif pid in alts:
+            alts.pop(pid, None)
+            repo.set_json(_ALT_URLS_KEY, alts)
+
+        defs = list_portal_defs(repo=repo)
+        entry = defs[pid].to_public()
+        entry["effective_base_url"] = effective_base_urls(repo=repo).get(pid)
+        entry["base_url_overridden"] = bool(
+            str((repo.get_json("open_data_presets", {}) or {}).get(pid) or "").strip()
+        )
+        return entry
+
+    name = str(payload.get("name") or "").strip()
+    base_url = str(payload.get("base_url") or "").strip()
+    if not name:
+        raise PortalCatalogError("Custom portal requires 'name'")
+    if not base_url:
+        raise PortalCatalogError("Custom portal requires 'base_url'")
+    _validated_url(base_url)
+
+    auth_type = str(payload.get("auth_type") or "none").strip().lower()
+    if auth_type not in VALID_AUTH_TYPES:
+        raise PortalCatalogError(
+            f"Invalid auth_type: {auth_type}; expected one of {sorted(VALID_AUTH_TYPES)}"
+        )
+    region = str(payload.get("region") or "international").strip().lower()
+    if region not in VALID_REGIONS:
+        raise PortalCatalogError(
+            f"Invalid region: {region}; expected one of {sorted(VALID_REGIONS)}"
+        )
+    search_capability = str(payload.get("search_capability") or "none").strip().lower()
+    if search_capability not in VALID_SEARCH_CAPABILITIES:
+        raise PortalCatalogError(
+            "Invalid search_capability: "
+            f"{search_capability}; expected one of {sorted(VALID_SEARCH_CAPABILITIES)}"
+        )
+    alt_url = str(payload.get("alt_url") or "").strip()
+    if alt_url:
+        _validated_url(alt_url)
+
+    custom = _load_custom_raw(repo)
+    prev = custom.get(pid, {})
+    record: dict[str, Any] = {
+        "name": name,
+        "organization": str(
+            payload.get("organization") or prev.get("organization") or ""
+        ),
+        "region": region,
+        "base_url": base_url,
+        "alt_url": alt_url or None,
+        "website": str(payload.get("website") or prev.get("website") or ""),
+        "description": str(payload.get("description") or prev.get("description") or ""),
+        "requires_credentials": bool(
+            payload.get("requires_credentials", prev.get("requires_credentials", False))
+        ),
+        "auth_type": auth_type,
+        "token_header": str(
+            payload.get("token_header") or prev.get("token_header") or ""
+        )
+        or None,
+        "credential_profile": str(
+            payload.get("credential_profile") or prev.get("credential_profile") or ""
+        ),
+        "credentials_hint": str(
+            payload.get("credentials_hint") or prev.get("credentials_hint") or ""
+        ),
+        "search_capability": search_capability,
+        "search_url_template": _CMR_SEARCH_TEMPLATE
+        if search_capability == "cmr"
+        else None,
+    }
+    custom[pid] = record
+    repo.set_json(_CUSTOM_PORTALS_KEY, custom)
+
+    defn = _portal_def_from_raw(pid, record)
+    entry = defn.to_public()
+    entry["effective_base_url"] = base_url
+    entry["base_url_overridden"] = False
+    has_creds, cred_source = _credential_status(defn, _runtime_credentials(repo))
+    entry["has_credentials"] = has_creds
+    entry["credential_source"] = cred_source
+    return entry
+
+
+def delete_portal(portal_id: str) -> bool:
+    """仅自定义门户可删除（连带清除其 URL 覆盖与凭据）。"""
+    pid = normalize_portal_id(portal_id)
+    if pid in DEFAULT_PORTAL_CATALOG:
+        raise PortalCatalogError(
+            f"Built-in portal '{pid}' cannot be deleted; clear URL overrides instead"
+        )
+    repo = _repo()
+    custom = _load_custom_raw(repo)
+    if pid not in custom:
+        return False
+    del custom[pid]
+    repo.set_json(_CUSTOM_PORTALS_KEY, custom)
+
+    presets = repo.get_json("open_data_presets", {})
+    if isinstance(presets, dict) and pid in presets:
+        presets.pop(pid, None)
+        repo.set_json("open_data_presets", presets)
+    alts = repo.get_json(_ALT_URLS_KEY, {})
+    if isinstance(alts, dict) and pid in alts:
+        alts.pop(pid, None)
+        repo.set_json(_ALT_URLS_KEY, alts)
+    return True
+
+
+# ── 连通性测试 ────────────────────────────────────────────────────────────────
+
+
+def _auth_headers_for_portal(
+    defn: PortalDef, creds: dict[str, dict[str, Any]]
+) -> dict[str, str]:
+    entry = creds.get(defn.cred_key())
+    if not isinstance(entry, dict) or entry.get("enabled") is False:
+        return {}
+    token = str(entry.get("token") or entry.get("access_token") or "").strip()
+    password = str(entry.get("password") or entry.get("secret") or "").strip()
+    username = str(entry.get("username") or "").strip()
+    auth_type = str(entry.get("auth_type") or defn.auth_type or "none").lower()
+    token_header = str(entry.get("token_header") or defn.token_header or "").strip()
+
+    if auth_type == "bearer" and token:
+        return {"Authorization": f"Bearer {token}"}
+    if auth_type == "basic" and username and password:
+        import base64
+
+        cred = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode(
+            "ascii"
+        )
+        return {"Authorization": f"Basic {cred}"}
+    if auth_type in {"header", "token"} and token:
+        header = token_header or ("Authorization" if auth_type == "header" else "token")
+        return {header: token}
+    return {}
+
+
+def _test_url_for(defn: PortalDef, base: str) -> str:
+    if defn.search_capability == "cmr":
+        return f"{base.rstrip('/')}/search/granules.json?page_size=1"
+    return base
+
+
+def test_portal(portal_id: str) -> dict[str, Any]:
+    """门户连通性测试（带凭据构造请求头；全程过 SSRF 校验）。"""
+    import http.client
+    from urllib.error import HTTPError, URLError
+
+    from app.core.ssrf import SSRFBlockedError
+
+    pid = normalize_portal_id(portal_id)
+    repo = _repo()
+    defs = list_portal_defs(repo=repo)
+    defn = defs.get(pid)
+    if defn is None:
+        raise PortalCatalogError(f"Unknown portal: {pid}")
+    base = effective_base_urls(repo=repo).get(pid) or defn.base_url
+    url = _test_url_for(defn, base)
+    creds = _runtime_credentials(repo)
+    headers = _auth_headers_for_portal(defn, creds)
+    via_credentials = bool(headers)
+
+    try:
+        with safe_urlopen(url, timeout=12.0, headers=headers or None) as resp:
+            status = int(getattr(resp, "status", 0) or 0)
+            return {
+                "portal_id": pid,
+                "ok": 200 <= status < 400,
+                "status_code": status,
+                "via_credentials": via_credentials,
+                "message": f"HTTP {status}",
+                "tested_url": url,
+            }
+    except HTTPError as exc:
+        code = int(exc.code)
+        hint = ""
+        if code in {401, 403} and defn.requires_credentials:
+            hint = (
+                "（未配置凭据或凭据无效）"
+                if not via_credentials
+                else "（凭据可能无效）"
+            )
+        return {
+            "portal_id": pid,
+            "ok": False,
+            "status_code": code,
+            "via_credentials": via_credentials,
+            "message": f"HTTP {code}{hint}",
+            "tested_url": url,
+        }
+    except (URLError, SSRFBlockedError, http.client.HTTPException, OSError) as exc:
+        return {
+            "portal_id": pid,
+            "ok": False,
+            "status_code": None,
+            "via_credentials": via_credentials,
+            "message": str(exc),
+            "tested_url": url,
+        }
+
+
+# ── 在线检索（CMR provider） ─────────────────────────────────────────────────
+
+
+def _first_link_by_rel(entry: dict[str, Any], needle: str) -> str:
+    for link in entry.get("links") or []:
+        if isinstance(link, dict) and needle in str(link.get("rel") or ""):
+            href = str(link.get("href") or "").strip()
+            if href:
+                return href
+    return ""
+
+
+def _parse_cmr_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    try:
+        size_bytes = int(float(entry.get("granule_size") or 0))
+    except (TypeError, ValueError):
+        size_bytes = 0
+    return {
+        "title": str(entry.get("title") or ""),
+        "granule_id": str(entry.get("id") or ""),
+        "producer_granule_id": str(entry.get("producer_granule_id") or ""),
+        "size_bytes": size_bytes,
+        "time_start": str(entry.get("time_start") or ""),
+        "time_end": str(entry.get("time_end") or ""),
+        "data_link": _first_link_by_rel(entry, "data#"),
+        "browse_link": _first_link_by_rel(entry, "browse"),
+    }
+
+
+def search_portal(
+    portal_id: str,
+    *,
+    query: str,
+    page_size: int = 20,
+) -> dict[str, Any]:
+    """门户在线检索；本期实装 CMR provider（granules.json）。"""
+    from urllib.error import HTTPError, URLError
+
+    from app.core.ssrf import SSRFBlockedError
+
+    pid = normalize_portal_id(portal_id)
+    repo = _repo()
+    defs = list_portal_defs(repo=repo)
+    defn = defs.get(pid)
+    if defn is None:
+        raise PortalCatalogError(f"Unknown portal: {pid}")
+    if defn.search_capability != "cmr" or not defn.search_url_template:
+        raise PortalSearchUnsupported(
+            f"Portal '{pid}' does not support online search (search_capability="
+            f"{defn.search_capability})"
+        )
+
+    q = str(query or "").strip()
+    if not q:
+        raise PortalCatalogError("Search query must not be empty")
+    size = max(1, min(int(page_size or 20), 100))
+
+    base = effective_base_urls(repo=repo).get(pid) or defn.base_url
+    url = defn.search_url_template.format(
+        base=base.rstrip("/"), query=quote_plus(q), page_size=size
+    )
+    creds = _runtime_credentials(repo)
+    headers = {"Accept": "application/json"}
+    headers.update(_auth_headers_for_portal(defn, creds))
+
+    try:
+        with safe_urlopen(url, timeout=20.0, headers=headers) as resp:
+            payload = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except HTTPError as exc:
+        raise PortalCatalogError(f"Portal search failed: HTTP {exc.code}") from exc
+    except (URLError, SSRFBlockedError, OSError) as exc:
+        raise PortalCatalogError(f"Portal search failed: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise PortalCatalogError("Portal search returned non-JSON payload") from exc
+
+    feed = payload.get("feed") if isinstance(payload, dict) else None
+    entries = feed.get("entry") if isinstance(feed, dict) else None
+    if entries is None:
+        entries = []
+    if isinstance(entries, dict):  # 单条结果时 CMR 返回对象而非数组
+        entries = [entries]
+    items = [_parse_cmr_entry(e) for e in entries if isinstance(e, dict)]
+    return {
+        "portal_id": pid,
+        "query": q,
+        "page_size": size,
+        "count": len(items),
+        "items": items,
+    }

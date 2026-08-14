@@ -78,8 +78,13 @@ from shared.contracts.config_contracts import (
     GeneralConfig,
     OpenDataPresetsUpdateRequest,
     OpenDataPresetsUpdateResponse,
+    PortalCatalogEntry,
+    PortalCatalogResponse,
     PortalCredentialUpsertRequest,
     PortalCredentialsMapResponse,
+    PortalSearchResponse,
+    PortalTestResponse,
+    PortalUpsertRequest,
     ReloadResultResponse,
     RemoteLayerUrisUpdateRequest,
     RemoteLayerUrisUpdateResponse,
@@ -871,6 +876,96 @@ async def upsert_portal_credential(
 async def delete_portal_credential(portal_id: str):
     """删除门户凭证。"""
     return config_service.delete_portal_credential(portal_id)
+
+
+# ── 开放门户目录 ──────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/portals",
+    response_model=PortalCatalogResponse,
+    dependencies=[Depends(require_config_read_access)],
+)
+async def get_portal_catalog():
+    """门户目录（内置 + 自定义，含凭据状态与 URL 覆盖态）。"""
+    return await anyio.to_thread.run_sync(config_service.get_portal_catalog)
+
+
+@router.put(
+    "/portals/{portal_id}",
+    response_model=PortalCatalogEntry,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def upsert_portal(portal_id: str, payload: PortalUpsertRequest):
+    """自定义门户创建/更新；builtin 门户仅允许覆盖 base_url / alt_url。"""
+    from app.services.portal_catalog import PortalCatalogError
+
+    try:
+        return config_service.upsert_portal(
+            portal_id, payload.model_dump(exclude_none=True)
+        )
+    except PortalCatalogError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/portals/{portal_id}",
+    response_model=RemoteStorageDeletedResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def delete_portal(portal_id: str):
+    """删除自定义门户（builtin 不可删）。"""
+    from app.services.portal_catalog import PortalCatalogError
+
+    try:
+        deleted = config_service.delete_portal(portal_id)
+    except PortalCatalogError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Portal '{portal_id}' not found")
+    return RemoteStorageDeletedResponse(deleted=True, profile_id=portal_id)
+
+
+@router.post(
+    "/portals/{portal_id}/test",
+    response_model=PortalTestResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def test_portal(portal_id: str):
+    """门户连通性测试（凭据感知，SSRF 校验）。"""
+    from app.services.portal_catalog import PortalCatalogError
+
+    try:
+        return await anyio.to_thread.run_sync(config_service.test_portal, portal_id)
+    except PortalCatalogError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/portals/{portal_id}/search",
+    response_model=PortalSearchResponse,
+    dependencies=[Depends(require_config_read_access)],
+)
+async def search_portal(
+    portal_id: str,
+    q: str,
+    page_size: int = 20,
+):
+    """门户在线检索（仅 search_capability != none 的门户；本期实装 CMR）。"""
+    from app.services.portal_catalog import (
+        PortalCatalogError,
+        PortalSearchUnsupported,
+    )
+
+    def _run() -> dict:
+        return config_service.search_portal(portal_id, query=q, page_size=page_size)
+
+    try:
+        return await anyio.to_thread.run_sync(_run)
+    except PortalSearchUnsupported as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PortalCatalogError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.put(

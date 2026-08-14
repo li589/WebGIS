@@ -151,9 +151,8 @@ def load_portal_credentials_secret(
     if not isinstance(raw, dict):
         return {k: v for k, v in merged.items() if v}
 
-    for pid in PORTAL_IDS:
-        blob = raw.get(pid)
-        if not isinstance(blob, dict):
+    for pid, blob in raw.items():
+        if not isinstance(pid, str) or not isinstance(blob, dict):
             continue
         try:
             secret_json = _decrypt_blob(
@@ -205,6 +204,24 @@ def public_portal_credentials(
         if pid == "copernicus":
             pub["client_id"] = str(entry.get("client_id") or "")
         base[pid] = pub
+
+    # 目录扩展门户（nsmc/ecmwf_cds/tpdc/自定义等）：不在遗留三键内的
+    # 已存凭据也投影为通用形状，供门户卡片状态展示。
+    for pid, entry in runtime.items():
+        if pid in base or not isinstance(entry, dict):
+            continue
+        base[pid] = {
+            "enabled": bool(entry.get("enabled", True)),
+            "auth_type": str(entry.get("auth_type") or "bearer"),
+            "username": str(entry.get("username") or ""),
+            "has_token": bool(
+                str(entry.get("token") or entry.get("access_token") or "").strip()
+            ),
+            "has_password": bool(
+                str(entry.get("password") or entry.get("secret") or "").strip()
+            ),
+            "source": str(entry.get("source") or "none"),
+        }
     return base
 
 
@@ -216,9 +233,16 @@ def upsert_portal_credential(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     portal_id = str(portal_id).strip().lower()
-    if portal_id not in PORTAL_IDS:
+    # 动态白名单：目录键（内置+自定义）∪ 规范凭据键 ∪ 遗留三键
+    try:
+        from app.services.portal_catalog import known_portal_ids
+
+        allowed_ids = known_portal_ids(repo=repo)
+    except Exception:  # noqa: BLE001
+        allowed_ids = set(PORTAL_IDS)
+    if portal_id not in allowed_ids:
         raise ValueError(
-            f"Unknown portal_id: {portal_id}; expected one of {PORTAL_IDS}"
+            f"Unknown portal_id: {portal_id}; expected one of {sorted(allowed_ids)}"
         )
 
     existing_raw = repo.get_json("portal_credentials", {})

@@ -276,20 +276,19 @@ def get_data_source_config() -> dict[str, Any]:
     from app.services.portal_credentials import public_portal_credentials
 
     repo = _research_data_repo()
-    presets = repo.get_json("open_data_presets", None)
+    # presets = 目录默认（内置+自定义门户）+ open_data_presets KV 覆盖
+    from app.services.portal_catalog import (
+        effective_base_urls,
+        preset_labels_from_catalog,
+    )
+
+    presets = effective_base_urls(repo=repo)
     if not isinstance(presets, dict) or not presets:
         presets = dict(DEFAULT_OPEN_DATA_PRESETS)
-    else:
-        # Merge defaults so new portal keys appear even if DB has older map
-        merged = dict(DEFAULT_OPEN_DATA_PRESETS)
-        merged.update(
-            {
-                str(k): str(v)
-                for k, v in presets.items()
-                if str(k).strip() and str(v).strip()
-            }
-        )
-        presets = merged
+    labels = preset_labels_from_catalog(repo=repo)
+    for legacy_key, legacy_label in OPEN_DATA_PRESET_LABELS.items():
+        if legacy_key in presets:
+            labels[legacy_key] = legacy_label
     layer_uris = repo.get_json("remote_layer_data_uris", {})
     if not isinstance(layer_uris, dict):
         layer_uris = {}
@@ -331,7 +330,7 @@ def get_data_source_config() -> dict[str, Any]:
         else None,
         "discovered_datasets": scan_data_root_datasets(),
         "open_data_presets": presets,
-        "open_data_preset_labels": OPEN_DATA_PRESET_LABELS,
+        "open_data_preset_labels": labels,
         "portal_credentials": portal_creds,
         "remote_layer_data_uris": layer_uris,
         "static_cache": {
@@ -483,6 +482,47 @@ def get_portal_credentials_runtime() -> dict[str, Any]:
         repo=_research_data_repo(),
         encryption_key=settings.gee_credentials_encryption_key,
     )
+
+
+# ── 开放门户目录 ─────────────────────────────────────────────────────────────
+
+
+def get_portal_catalog() -> dict[str, Any]:
+    from app.services.portal_catalog import get_portal_catalog as _list
+
+    return {"portals": _list()}
+
+
+def upsert_portal(portal_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    from app.services.node_template_registry import invalidate_portal_options_cache
+    from app.services.portal_catalog import upsert_portal as _upsert
+
+    try:
+        return _upsert(portal_id, payload)
+    finally:
+        invalidate_portal_options_cache()
+
+
+def delete_portal(portal_id: str) -> bool:
+    from app.services.node_template_registry import invalidate_portal_options_cache
+    from app.services.portal_catalog import delete_portal as _delete
+
+    try:
+        return _delete(portal_id)
+    finally:
+        invalidate_portal_options_cache()
+
+
+def test_portal(portal_id: str) -> dict[str, Any]:
+    from app.services.portal_catalog import test_portal as _test
+
+    return _test(portal_id)
+
+
+def search_portal(portal_id: str, *, query: str, page_size: int = 20) -> dict[str, Any]:
+    from app.services.portal_catalog import search_portal as _search
+
+    return _search(portal_id, query=query, page_size=page_size)
 
 
 def update_remote_layer_data_uris(uris: dict[str, Any]) -> dict[str, Any]:

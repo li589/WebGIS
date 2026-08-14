@@ -3455,15 +3455,119 @@ def _ensure_dimension_ports(templates: list[dict[str, Any]]) -> None:
 _ensure_dimension_ports(_NODE_TEMPLATES)
 
 
+# ─── 门户/存储动态 options ───────────────────────────────────────────────────
+# http_open_data 的 preset/cred_profile 与 remote_fetch 的 cred_profile 选项
+# 在查询时动态注入（目录/存储 profile 运行时可编辑；硬编码列表仅作兜底）。
+
+_PORTAL_OPTIONS_TTL_SECONDS = 30.0
+_portal_options_cache: dict[str, list[str]] | None = None
+_portal_options_cached_at: float = 0.0
+
+_FALLBACK_PRESET_OPTIONS = [
+    "noaa_nomads",
+    "noaa_goes",
+    "nasa_earthdata",
+    "nasa_cmr",
+    "nsidc_data",
+    "nasa_ges_disc",
+    "nasa_gldas",
+    "esa_copernicus",
+    "esa_download",
+    "cma_nsmc",
+    "cma_data",
+]
+_FALLBACK_PORTAL_CRED_OPTIONS = ["", "earthdata", "nsidc", "copernicus"]
+
+_DYNAMIC_OPTION_NODES = frozenset({"download/http_open_data", "download/remote_fetch"})
+
+
+def invalidate_portal_options_cache() -> None:
+    """门户/存储目录变更后失效动态 options 缓存。"""
+    global _portal_options_cache, _portal_options_cached_at
+    _portal_options_cache = None
+    _portal_options_cached_at = 0.0
+
+
+def _dynamic_portal_options() -> dict[str, list[str]]:
+    global _portal_options_cache, _portal_options_cached_at
+    import time
+
+    now = time.monotonic()
+    if (
+        _portal_options_cache is not None
+        and now - _portal_options_cached_at < _PORTAL_OPTIONS_TTL_SECONDS
+    ):
+        return _portal_options_cache
+
+    presets = list(_FALLBACK_PRESET_OPTIONS)
+    portal_creds = list(_FALLBACK_PORTAL_CRED_OPTIONS)
+    remote_creds: list[str] = []
+    try:
+        from app.services.portal_catalog import known_portal_ids, list_portal_defs
+
+        presets = list(list_portal_defs().keys())
+        portal_creds = [""] + sorted(known_portal_ids())
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from app.services.config_remote_storage import list_remote_storage_profiles
+
+        remote_creds = [
+            str(p.get("profile_id"))
+            for p in list_remote_storage_profiles()
+            if str(p.get("profile_id") or "").strip()
+        ]
+    except Exception:  # noqa: BLE001
+        pass
+
+    _portal_options_cache = {
+        "presets": presets,
+        "portal_creds": portal_creds,
+        "remote_creds": remote_creds,
+    }
+    _portal_options_cached_at = now
+    return _portal_options_cache
+
+
+def _apply_dynamic_options(tpl: dict[str, Any]) -> dict[str, Any]:
+    if tpl.get("type") not in _DYNAMIC_OPTION_NODES:
+        return tpl
+    options = _dynamic_portal_options()
+    params: list[dict[str, Any]] = []
+    for p in tpl.get("params") or []:
+        p = dict(p)
+        key = p.get("key")
+        if tpl["type"] == "download/http_open_data":
+            if key == "preset":
+                p["options"] = list(options["presets"])
+                if p.get("default") not in p["options"] and p["options"]:
+                    p["default"] = p["options"][0]
+            elif key == "cred_profile":
+                p["options"] = list(options["portal_creds"])
+                p["allow_custom"] = True
+        elif tpl["type"] == "download/remote_fetch":
+            if key == "cred_profile" and options["remote_creds"]:
+                p["options"] = list(options["remote_creds"])
+                p["allow_custom"] = True
+        params.append(p)
+    out = dict(tpl)
+    out["params"] = params
+    return out
+
+
 # ─── 查询接口 ────────────────────────────────────────────────────────────────
 def get_all_node_templates() -> list[dict[str, Any]]:
     """返回所有节点模板的列表。"""
-    return [dict(t) for t in _NODE_TEMPLATES]
+    return [_apply_dynamic_options(dict(t)) for t in _NODE_TEMPLATES]
 
 
 def get_node_templates_by_engine(engine: str) -> list[dict[str, Any]]:
     """按引擎过滤节点模板。"""
-    return [dict(t) for t in _NODE_TEMPLATES if t["engine"] == engine]
+    return [
+        _apply_dynamic_options(dict(t))
+        for t in _NODE_TEMPLATES
+        if t["engine"] == engine
+    ]
 
 
 # 历史种子/画布类型别名 → 现行注册 type（避免画布出现「未定义」节点）
@@ -3482,7 +3586,7 @@ def get_node_template(node_type: str) -> dict[str, Any] | None:
     canonical = resolve_node_type(node_type)
     for t in _NODE_TEMPLATES:
         if t["type"] == canonical:
-            return dict(t)
+            return _apply_dynamic_options(dict(t))
     return None
 
 

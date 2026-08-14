@@ -577,6 +577,100 @@ class PortalCredentialUpsertRequest(BaseModel):
     clear_secrets: bool | None = None
 
 
+class PortalDef(BaseModel):
+    """门户目录条目元数据（内置与自定义统一）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    portal_id: str
+    name: str
+    organization: str = ""
+    region: str = Field(
+        default="international", description="international | china"
+    )
+    base_url: str
+    alt_url: str | None = None
+    website: str = ""
+    description: str = ""
+    requires_credentials: bool = False
+    auth_type: str = Field(
+        default="none", description="bearer | basic | header | token | none"
+    )
+    token_header: str | None = None
+    credential_profile: str = Field(
+        default="", description="凭据键（规范 id）；空 = portal_id 自身"
+    )
+    credentials_hint: str = ""
+    search_capability: str = Field(default="none", description="cmr | none")
+    builtin: bool = True
+
+
+class PortalCatalogEntry(PortalDef):
+    """目录条目 + 运行时状态（URL 覆盖 / 凭据状态）。"""
+
+    effective_base_url: str = ""
+    base_url_overridden: bool = False
+    effective_alt_url: str | None = None
+    has_credentials: bool = False
+    credential_source: str = "none"
+
+
+class PortalCatalogResponse(BaseModel):
+    portals: list[PortalCatalogEntry] = Field(default_factory=list)
+
+
+class PortalUpsertRequest(BaseModel):
+    """PUT /config/portals/{portal_id} body。
+
+    builtin 门户：仅 base_url（覆盖 open_data_presets）与 alt_url 生效，空串清除覆盖；
+    自定义门户：全字段创建/更新（name/base_url 必填）。
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str | None = None
+    organization: str | None = None
+    region: str | None = None
+    base_url: str | None = None
+    alt_url: str | None = None
+    website: str | None = None
+    description: str | None = None
+    requires_credentials: bool | None = None
+    auth_type: str | None = None
+    token_header: str | None = None
+    credential_profile: str | None = None
+    credentials_hint: str | None = None
+    search_capability: str | None = None
+
+
+class PortalTestResponse(BaseModel):
+    portal_id: str
+    ok: bool
+    status_code: int | None = None
+    via_credentials: bool = False
+    message: str
+    tested_url: str = ""
+
+
+class PortalSearchResultItem(BaseModel):
+    title: str = ""
+    granule_id: str = ""
+    producer_granule_id: str = ""
+    size_bytes: int = 0
+    time_start: str = ""
+    time_end: str = ""
+    data_link: str = ""
+    browse_link: str = ""
+
+
+class PortalSearchResponse(BaseModel):
+    portal_id: str
+    query: str
+    page_size: int = 20
+    count: int = 0
+    items: list[PortalSearchResultItem] = Field(default_factory=list)
+
+
 class DataCacheEvictRequest(BaseModel):
     uri_or_name: str | None = None
     older_than_seconds: int | None = None
