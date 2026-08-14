@@ -58,6 +58,40 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     }
   }
 
+  /** 图层栈最底层图层 id；空栈返回 undefined（addLayer 追加到栈顶）。 */
+  function bottomLayerId(): string | undefined {
+    const layers = options.map.getStyle().layers
+    return layers && layers.length > 0 ? layers[0].id : undefined
+  }
+
+  /** 紧贴底图之上的图层 id；底图缺失或已居栈顶时返回 undefined。 */
+  function layerAboveBasemapId(): string | undefined {
+    const layers = options.map.getStyle().layers ?? []
+    const baseIdx = layers.findIndex((l) => l.id === TILE_LAYER_ID)
+    if (baseIdx < 0) return bottomLayerId()
+    return baseIdx + 1 < layers.length ? layers[baseIdx + 1].id : undefined
+  }
+
+  /**
+   * 强制底图位于图层栈最底、注记紧贴其上（所有数据叠加层之下）。
+   * 空白底图起步后叠加层已上图，再切回真实底图时若仅 addLayer 追加会落栈顶盖住数据层，
+   * 故每次切换后幂等校正。
+   */
+  function enforceBasemapStackPosition() {
+    if (options.map.getLayer(TILE_LAYER_ID)) {
+      const bottom = bottomLayerId()
+      if (bottom && bottom !== TILE_LAYER_ID) {
+        options.map.moveLayer(TILE_LAYER_ID, bottom)
+      }
+    }
+    if (options.map.getLayer(TILE_OVERLAY_LAYER_ID)) {
+      const above = layerAboveBasemapId()
+      if (above && above !== TILE_OVERLAY_LAYER_ID) {
+        options.map.moveLayer(TILE_OVERLAY_LAYER_ID, above)
+      }
+    }
+  }
+
   function syncOverlayLayer(cfg: TileSourceConfig | undefined, visible: boolean) {
     const overlayUrl = cfg?.overlayUrlTemplate
     if (!overlayUrl) {
@@ -91,8 +125,8 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     }
 
     if (!options.map.getLayer(TILE_OVERLAY_LAYER_ID)) {
-      // Place annotation above the base raster but below admin overlays when present.
-      const beforeLayerId = options.map.getLayer('admin-fill') ? 'admin-fill' : undefined
+      // 注记紧贴底图之上、所有数据叠加层之下
+      const beforeLayerId = layerAboveBasemapId()
       options.map.addLayer(
         {
           id: TILE_OVERLAY_LAYER_ID,
@@ -129,7 +163,8 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     }
 
     if (!options.map.getLayer(TILE_LAYER_ID)) {
-      const beforeLayerId = options.map.getLayer('admin-fill') ? 'admin-fill' : undefined
+      // 底图插入图层栈最底，保证既有数据叠加层始终在其上
+      const beforeLayerId = bottomLayerId()
       options.map.addLayer(
         {
           id: TILE_LAYER_ID,
@@ -238,6 +273,7 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     }
 
     syncOverlayLayer(cfg, true)
+    enforceBasemapStackPosition()
   }
 
   function scheduleTileSourceSwitch(sourceId: TileSourceId) {

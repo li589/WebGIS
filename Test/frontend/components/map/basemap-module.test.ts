@@ -4,11 +4,28 @@ import { createBasemapModule } from '@/components/map/basemap-module'
 
 function createMapMock() {
   const sources = new Map<string, any>()
-  const layers = new Set<string>()
+  const layerOrder: string[] = []
+  const layers = {
+    has: (id: string) => layerOrder.includes(id),
+    add: (id: string) => {
+      layerOrder.push(id)
+    },
+    delete: (id: string) => {
+      const idx = layerOrder.indexOf(id)
+      if (idx >= 0) layerOrder.splice(idx, 1)
+    },
+  }
+
+  function insertAt(id: string, beforeId: string | undefined) {
+    const idx = beforeId ? layerOrder.indexOf(beforeId) : -1
+    if (idx >= 0) layerOrder.splice(idx, 0, id)
+    else layerOrder.push(id)
+  }
 
   return {
     sources,
     layers,
+    layerOrder,
     map: {
       getSource: (id: string) => sources.get(id),
       addSource: (id: string, source: any) => {
@@ -17,9 +34,15 @@ function createMapMock() {
       removeSource: (id: string) => {
         sources.delete(id)
       },
-      getLayer: (id: string) => (layers.has(id) ? { id } : undefined),
-      addLayer: (layer: { id: string }) => {
-        layers.add(layer.id)
+      getStyle: () => ({ layers: layerOrder.map((id) => ({ id })) }),
+      getLayer: (id: string) => (layerOrder.includes(id) ? { id } : undefined),
+      addLayer: (layer: { id: string }, beforeId?: string) => {
+        insertAt(layer.id, beforeId)
+      },
+      moveLayer: (id: string, beforeId?: string) => {
+        const from = layerOrder.indexOf(id)
+        if (from >= 0) layerOrder.splice(from, 1)
+        insertAt(id, beforeId)
       },
       removeLayer: (id: string) => {
         layers.delete(id)
@@ -306,5 +329,117 @@ describe('basemap-module', () => {
     // overlay 源在空白模式下卸掉
     expect(sources.has('tile-base-overlay')).toBe(false)
     expect(layers.has('tile-base-overlay-raster')).toBe(false)
+  })
+
+  it('inserts base raster below existing overlay layers after blank-basemap start', () => {
+    // 空白底图起步：数据叠加层先上图，底图层尚不存在
+    const { layerOrder, map } = createMapMock()
+    map.addLayer({ id: 'data-overlay-1' })
+    map.addLayer({ id: 'data-overlay-2' })
+    map.addLayer({ id: 'admin-fill' })
+
+    const module = createBasemapModule({
+      map,
+      getTileConfig: (sourceId) =>
+        sourceId === 'esri-street'
+          ? {
+              id: 'esri-street',
+              label: 'Esri Street',
+              provider: 'Esri',
+              style: 'street',
+              urlTemplate: 'https://example.com/{z}/{x}/{y}.png',
+              saturation: 0,
+              brightness: 0,
+              contrast: 0,
+              isStandard: true,
+              needsBackendTransform: false,
+              authMode: 'none',
+            }
+          : undefined,
+      getCurrentTileSourceId: () => 'esri-street',
+      setTileLoadFailed: vi.fn(),
+      setTileFailedProvider: vi.fn(),
+      setSourceTransitioning: vi.fn(),
+    })
+
+    module.switchTileSource('esri-street')
+
+    // 底图必须位于所有数据叠加层之下
+    expect(layerOrder.indexOf('tile-base-raster')).toBe(0)
+    expect(layerOrder.indexOf('tile-base-raster')).toBeLessThan(layerOrder.indexOf('data-overlay-1'))
+    expect(layerOrder.indexOf('tile-base-raster')).toBeLessThan(layerOrder.indexOf('admin-fill'))
+  })
+
+  it('places annotation overlay directly above base raster and below data overlays', () => {
+    const { layerOrder, map } = createMapMock()
+    map.addLayer({ id: 'data-overlay-1' })
+
+    const module = createBasemapModule({
+      map,
+      getTileConfig: (sourceId) =>
+        sourceId === 'tianditu-vec'
+          ? {
+              id: 'tianditu-vec',
+              label: '天地图街道',
+              provider: 'Tianditu',
+              style: 'street',
+              urlTemplate: '/unified-tiles/tianditu-vec/{z}/{x}/{y}',
+              overlayUrlTemplate: '/unified-tiles/tianditu-cva/{z}/{x}/{y}',
+              saturation: 0,
+              brightness: 0,
+              contrast: 0,
+              isStandard: true,
+              needsBackendTransform: false,
+              authMode: 'api-key',
+            }
+          : undefined,
+      getCurrentTileSourceId: () => 'tianditu-vec',
+      setTileLoadFailed: vi.fn(),
+      setTileFailedProvider: vi.fn(),
+      setSourceTransitioning: vi.fn(),
+    })
+
+    module.switchTileSource('tianditu-vec')
+
+    expect(layerOrder.indexOf('tile-base-raster')).toBe(0)
+    expect(layerOrder.indexOf('tile-base-overlay-raster')).toBe(1)
+    expect(layerOrder.indexOf('tile-base-overlay-raster')).toBeLessThan(
+      layerOrder.indexOf('data-overlay-1'),
+    )
+  })
+
+  it('repositions a misplaced base raster to the stack bottom on subsequent switches', () => {
+    // 历史错位：底图层被追加到了栈顶
+    const { layerOrder, map } = createMapMock()
+    map.addLayer({ id: 'data-overlay-1' })
+    map.addLayer({ id: 'tile-base-raster' })
+
+    const module = createBasemapModule({
+      map,
+      getTileConfig: (sourceId) =>
+        sourceId === 'esri-street'
+          ? {
+              id: 'esri-street',
+              label: 'Esri Street',
+              provider: 'Esri',
+              style: 'street',
+              urlTemplate: 'https://example.com/{z}/{x}/{y}.png',
+              saturation: 0,
+              brightness: 0,
+              contrast: 0,
+              isStandard: true,
+              needsBackendTransform: false,
+              authMode: 'none',
+            }
+          : undefined,
+      getCurrentTileSourceId: () => 'esri-street',
+      setTileLoadFailed: vi.fn(),
+      setTileFailedProvider: vi.fn(),
+      setSourceTransitioning: vi.fn(),
+    })
+
+    expect(layerOrder.indexOf('tile-base-raster')).toBe(1)
+    module.switchTileSource('esri-street')
+    expect(layerOrder.indexOf('tile-base-raster')).toBe(0)
   })
 })
