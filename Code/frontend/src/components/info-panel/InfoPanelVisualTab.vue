@@ -57,6 +57,7 @@ const props = defineProps<{
   resultModel: ResultDisplayModel | null
   hasVisualTabContent: boolean
   sparseVisualHint: string
+  pointInspectInfo: { lng: string; lat: string; basemapLabel: string } | null
   canRunWorkflow: boolean
   interactionMode: string
   // ── 统一多图层分析数据 ──
@@ -473,7 +474,20 @@ function enterInspectTools() {
     class="analysis-sparse-card analysis-sparse-card--visual"
   >
     <p class="analysis-sparse-title">{{ ANALYSIS_COPY.sparseVisualTitle }}</p>
-    <p>{{ sparseVisualHint }}</p>
+    <template v-if="pointInspectInfo">
+      <dl class="meta-list" style="margin-top: 0.35rem">
+        <div>
+          <dt>选点坐标</dt>
+          <dd>{{ pointInspectInfo.lng }}, {{ pointInspectInfo.lat }}</dd>
+        </div>
+        <div>
+          <dt>底图</dt>
+          <dd>{{ pointInspectInfo.basemapLabel }}</dd>
+        </div>
+      </dl>
+      <p>该点无可见数据图层取值 — 添加数据图层或换点查询。</p>
+    </template>
+    <p v-else>{{ sparseVisualHint }}</p>
     <div v-if="isRealtimeWeatherLayer || canRunWorkflow" class="overview-quick-actions">
       <AppButton
         v-if="isRealtimeWeatherLayer && interactionMode !== 'select'"

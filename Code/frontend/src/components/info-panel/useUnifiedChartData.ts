@@ -140,21 +140,31 @@ export function useUnifiedChartData(
     const stateMap = new Map((overlayTimeStates.value ?? []).map((s) => [s.layerId, s]))
     const valueMap = new Map((overlayPointValues.value ?? []).map((v) => [v.layer_id, v]))
 
-    return workspace.activeLayersDisplay.value
-      .filter((l) => l.visible && Boolean(l.importedRasterOverlayLayerId))
-      .map((l) => {
-        const overlayId = l.importedRasterOverlayLayerId ?? l.catalogId
-        const state = stateMap.get(overlayId)
-        const value = valueMap.get(overlayId)
-        return {
-          layerId: overlayId,
-          name: l.name || l.catalogId,
-          category: 'raster' as const,
-          unit: value?.unit || state?.unit || '',
-          accentColor: l.accentColor,
-          hasTimeSeries: state?.category === 'time-series' && (state.timeList?.length ?? 0) > 0,
-        }
+    const infos: UnifiedLayerInfo[] = []
+    const seen = new Set<string>()
+
+    // 渠道一：导入栅格 / 工作流物化层（显式挂 overlayLayerId）
+    // 渠道二：目录 overlay / 运行时注册层——以 catalogId 为 overlay layer id 上图，
+    // 经 overlayTimeStates 或点查结果注册后同样可取值，须纳入点值对比
+    for (const l of workspace.activeLayersDisplay.value) {
+      if (!l.visible) continue
+      const overlayId = l.importedRasterOverlayLayerId ?? l.catalogId
+      if (!overlayId || seen.has(overlayId)) continue
+      const state = stateMap.get(overlayId)
+      const value = valueMap.get(overlayId)
+      if (!l.importedRasterOverlayLayerId && !state && !value) continue
+      seen.add(overlayId)
+      infos.push({
+        layerId: overlayId,
+        name: l.name || l.catalogId,
+        category: 'raster' as const,
+        unit: value?.unit || state?.unit || '',
+        accentColor: l.accentColor,
+        hasTimeSeries: state?.category === 'time-series' && (state.timeList?.length ?? 0) > 0,
       })
+    }
+
+    return infos
   })
 
   /** 矢量图层信息列表（导入矢量 / 行政边界等非栅格非天气图层） */

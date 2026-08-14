@@ -15,6 +15,7 @@ import type { WeatherPointResponse } from '../services/runtime-api'
 import type { OverlayTimeState } from './map/overlay-image-module'
 import { useLayerWorkspace } from '../stores/layers/selectors'
 import { useUiStore } from '../stores/ui'
+import { TILE_SOURCE_MAP } from '../services/api-config'
 import { ANALYSIS_COPY } from '../ui-copy'
 import { buildResultDisplayModel } from './info-panel/result-adapter'
 import type { AnalysisTabId } from './info-panel/analysis-tab-focus'
@@ -82,6 +83,18 @@ function setActiveTab(tab: AnalysisTabId | string) {
   activeTab.value = tab as AnalysisTabId
 }
 
+/** 选点基础信息：无任何数据图层取值时，图表 tab 至少反馈坐标与底图 */
+const pointInspectInfo = computed(() => {
+  const point = props.selectedMapPoint
+  if (!point) return null
+  const basemapLabel = TILE_SOURCE_MAP.get(uiStore.tileSourceId)?.label ?? '空白底图'
+  return {
+    lng: point.lng.toFixed(5),
+    lat: point.lat.toFixed(5),
+    basemapLabel,
+  }
+})
+
 // ── 从 props 派生 ComputedRef 供 composables 使用 ────────────────────────
 
 const overlayTimeStatesRef = computed(() => props.overlayTimeStates ?? [])
@@ -147,6 +160,7 @@ const wf = useWorkflowState({
   showMultiOverlayBar: overlay.showMultiOverlayBar,
   showSelectedOverlayTimeSeries: overlay.showSelectedOverlayTimeSeries,
   showDemoOverlayTimeSeries: overlay.showDemoOverlayTimeSeries,
+  hasUnifiedData: unified.hasUnifiedData,
   resultModel,
 })
 
@@ -351,6 +365,7 @@ function queryDefaultOverlaySeries() {
               :result-model="resultModel"
               :has-visual-tab-content="wf.hasVisualTabContent.value"
               :sparse-visual-hint="wf.sparseVisualHint.value"
+              :point-inspect-info="pointInspectInfo"
               :can-run-workflow="wf.canRunWorkflow.value"
               :interaction-mode="uiStore.interactionMode"
               :has-unified-data="unified.hasUnifiedData.value"

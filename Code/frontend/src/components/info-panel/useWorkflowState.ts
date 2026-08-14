@@ -31,6 +31,7 @@ export interface WorkflowStateOptions {
   showMultiOverlayBar: ComputedRef<boolean>
   showSelectedOverlayTimeSeries: ComputedRef<boolean>
   showDemoOverlayTimeSeries: ComputedRef<boolean>
+  hasUnifiedData: ComputedRef<boolean>
   resultModel: ComputedRef<ResultDisplayModel | null>
 }
 
@@ -48,6 +49,7 @@ export function useWorkflowState(options: WorkflowStateOptions) {
     showMultiOverlayBar,
     showSelectedOverlayTimeSeries,
     showDemoOverlayTimeSeries,
+    hasUnifiedData,
     resultModel,
   } = options
 
@@ -101,6 +103,7 @@ export function useWorkflowState(options: WorkflowStateOptions) {
       showMultiOverlayBar.value ||
       showSelectedOverlayTimeSeries.value ||
       showDemoOverlayTimeSeries.value ||
+      hasUnifiedData.value ||
       displayLayer.value.isImportedRaster ||
       !!resultModel.value ||
       visibleHotspots.value.length > 0,
