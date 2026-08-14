@@ -491,6 +491,10 @@ export function updateOpenDataPresets(
   })
 }
 
+export function fetchPortalCredentials(): Promise<PortalCredentialsMapResponse> {
+  return settingsFetch('/config/data-source/portal-credentials')
+}
+
 export function upsertPortalCredential(
   portalId: string,
   payload: PortalCredentialUpsertRequest,

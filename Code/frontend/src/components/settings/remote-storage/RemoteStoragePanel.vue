@@ -113,7 +113,7 @@ async function deleteHistory(profileId: string, historyId: number) {
         引用形如 <code>smb://host/share/path/file.h5?cred=profile_id</code>，
         工作流「远程拉取」节点用 <code>cred_profile</code> 引用。
       </p>
-      <ProfileForm :editing="editing" @saved="onSaved" />
+      <ProfileForm :editing="editing" @saved="onSaved" @switch-new="editing = null" />
     </section>
 
     <section class="settings-section">

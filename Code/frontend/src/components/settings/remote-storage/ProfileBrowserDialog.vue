@@ -38,6 +38,10 @@ const searchQuery = ref('')
 const searching = ref(false)
 const searchResults = ref<RemoteEntryItem[]>([])
 
+// 竞态防护：导航/新搜索递增序号，晚到的旧响应直接丢弃
+let loadSeq = 0
+let searchSeq = 0
+
 const addBusy = ref(false)
 const addMsg = ref('')
 const addAlias = ref('')
@@ -58,12 +62,16 @@ function normalizePath(p: string): string {
 
 async function loadDir(path: string) {
   if (!props.profile) return
+  const seq = ++loadSeq
   loading.value = true
   errorMsg.value = ''
   addMsg.value = ''
+  // 导航即退出搜索视图：清掉旧结果，避免冻结显示已失效的搜索列表
+  searchResults.value = []
   const target = normalizePath(path)
   try {
     const res = await browseRemoteStorage(props.profile.profile_id, target)
+    if (seq !== loadSeq) return
     currentPath.value = normalizePath(res.path || target)
     viaPrimary.value = res.via !== 'alt'
     viaLabel.value = res.via
@@ -72,28 +80,39 @@ async function loadDir(path: string) {
       return a.name.localeCompare(b.name)
     })
   } catch (e) {
+    if (seq !== loadSeq) return
     errorMsg.value = (e as Error).message
     items.value = []
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
 
 async function runSearch() {
   if (!props.profile || !searchQuery.value.trim()) return
+  const seq = ++searchSeq
   searching.value = true
   errorMsg.value = ''
   try {
     const res = await searchRemoteStorage(props.profile.profile_id, searchQuery.value.trim())
+    if (seq !== searchSeq) return
     searchResults.value = res.items ?? []
     viaPrimary.value = res.via !== 'alt'
     if (!searchResults.value.length) errorMsg.value = '无匹配结果（深度限制 3 层）'
   } catch (e) {
+    if (seq !== searchSeq) return
     errorMsg.value = (e as Error).message
     searchResults.value = []
   } finally {
-    searching.value = false
+    if (seq === searchSeq) searching.value = false
   }
+}
+
+/** 点击搜索结果：目录进入该目录；文件定位到其父目录（路径回带到浏览上下文）。 */
+function pickSearchResult(row: RemoteEntryItem) {
+  const p = normalizePath(row.path || row.name)
+  const target = row.is_dir ? p : p.replace(/\/[^/]*$/, '') || '/'
+  void loadDir(target)
 }
 
 function enterDir(item: RemoteEntryItem) {
@@ -230,8 +249,25 @@ watch(
           <div v-if="loading" class="fb-state">加载中…</div>
           <div v-else-if="errorMsg" class="fb-state error">{{ errorMsg }}</div>
           <template v-else>
-            <div v-if="searchResults.length" class="fb-list">
-              <div v-for="(row, i) in searchResults" :key="`s${i}`" class="fb-row">
+            <div v-if="searchResults.length" class="fb-list fb-search-list">
+              <div class="fb-search-head">
+                <span>搜索结果（点击行定位到所在目录）</span>
+                <button
+                  type="button"
+                  class="fb-mini-btn"
+                  title="返回目录浏览"
+                  @click="loadDir(currentPath)"
+                >
+                  ✕
+                </button>
+              </div>
+              <div
+                v-for="(row, i) in searchResults"
+                :key="`s${i}`"
+                class="fb-row clickable"
+                :title="row.is_dir ? '进入该目录' : '定位到所在目录'"
+                @click="pickSearchResult(row)"
+              >
                 <span class="fb-name" :title="row.path || row.name">
                   {{ row.is_dir ? '📁' : '📄' }} {{ row.name }}
                 </span>
@@ -434,6 +470,18 @@ watch(
 }
 .fb-state.error {
   color: var(--danger);
+}
+.fb-search-list {
+  gap: 0.12rem;
+}
+.fb-search-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.1rem 0.36rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
 }
 .fb-list {
   display: flex;

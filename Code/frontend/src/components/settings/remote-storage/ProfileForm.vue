@@ -25,6 +25,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   saved: [profile: RemoteStorageProfile]
+  /** 用户点击「切换为新建」：请求父组件清除 editing 状态 */
+  switchNew: []
 }>()
 
 const protocols = PROTOCOL_ORDER.map((p) => ({ label: PROTOCOL_META[p].label, value: p }))
@@ -67,7 +69,14 @@ watch(
 watch(
   () => props.editing,
   (p) => {
-    if (p) fillFrom(p)
+    // 草稿保护：同 profile 的对象引用变化（列表刷新后重新传入）不覆盖未保存草稿；
+    // editing 置空（删除/切换为新建）则重置表单，避免残留已删 profile 继续可保存
+    if (!p) {
+      resetForm()
+      return
+    }
+    if (p.profile_id === form.profile_id && form.profile_id) return
+    fillFrom(p)
   },
   { immediate: true },
 )
@@ -112,6 +121,12 @@ function resetForm() {
   form.alt_url = ''
   form.fallback_mode = 'auto'
   formError.value = ''
+}
+
+/** 切换为新建：丢弃编辑态（父组件清 editing → watch 重置表单）。 */
+function switchToNew() {
+  resetForm()
+  emit('switchNew')
 }
 
 /** 每协议必填字段校验（对齐后端 upsert/探测约束）。 */
@@ -198,10 +213,9 @@ async function save() {
     extra: buildExtra(),
     display_name: form.display_name.trim() || form.profile_id.trim(),
     enabled: props.editing?.enabled ?? true,
-    // 双路径：空串 = 清除；undefined(显式 null 之外的省略) 不行——
-    // 契约要求传 null 保留原值，这里仅在未配置且原本无备用时也传空串以便清除
+    // 双路径：host/url 空串 = 清除；port 空填 = 0（显式清除），null = 保留原值
     alt_host: protocolSupportsAlt(form.protocol) ? form.alt_host.trim() : '',
-    alt_port: protocolSupportsAlt(form.protocol) && altPort ? Number(altPort) : null,
+    alt_port: protocolSupportsAlt(form.protocol) ? (altPort ? Number(altPort) : 0) : null,
     alt_url: protocolSupportsAlt(form.protocol) ? form.alt_url.trim() : '',
     fallback_mode: form.fallback_mode,
   }
@@ -226,7 +240,7 @@ async function save() {
       <span class="form-title">{{
         isEdit ? `编辑 · ${editing?.profile_id}` : '新建远程存储源'
       }}</span>
-      <button v-if="isEdit" type="button" class="btn" @click="resetForm">切换为新建</button>
+      <button v-if="isEdit" type="button" class="btn" @click="switchToNew">切换为新建</button>
     </div>
 
     <div class="form-grid">

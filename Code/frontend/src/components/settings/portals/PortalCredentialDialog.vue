@@ -8,7 +8,11 @@
 
 import { computed, reactive, ref, watch } from 'vue'
 import type { PortalCatalogEntry } from '../../../types/api-reexports'
-import { deletePortalCredential, upsertPortalCredential } from '../../../services/settings-api'
+import {
+  deletePortalCredential,
+  fetchPortalCredentials,
+  upsertPortalCredential,
+} from '../../../services/settings-api'
 import AppSelect from '../../ui/AppSelect.vue'
 
 const props = defineProps<{
@@ -57,8 +61,31 @@ watch(
     form.token_header = props.portal.token_header || ''
     form.use_for_nsidc = false
     form.use_earthdata = false
+    void prefillFromStored()
   },
 )
+
+/** 已存凭据回填非敏感字段（username/enabled/auth_type/共享开关），机密留空。 */
+async function prefillFromStored() {
+  const portal = props.portal
+  if (!portal) return
+  try {
+    const res = await fetchPortalCredentials()
+    // 凭据键 = credential_profile || portal_id（与后端 cred_key 一致）
+    const key = portal.credential_profile || portal.portal_id
+    const stored = (res.portal_credentials || {})[key]
+    // source=none 是无凭据的占位默认（enabled=false），不作为已存配置回填
+    if (!stored || !stored.source || stored.source === 'none') return
+    if (portal !== props.portal) return
+    form.enabled = stored.enabled
+    if (stored.auth_type) form.auth_type = stored.auth_type
+    if (stored.username) form.username = stored.username
+    if (stored.use_for_nsidc != null) form.use_for_nsidc = stored.use_for_nsidc
+    if (stored.use_earthdata != null) form.use_earthdata = stored.use_earthdata
+  } catch {
+    // 预填失败不打断对话框，保持默认值
+  }
+}
 
 async function save() {
   if (!props.portal) return

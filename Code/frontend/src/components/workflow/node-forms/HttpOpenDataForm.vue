@@ -143,7 +143,13 @@ function validateForm() {
   const e: FormErrors = {}
   let r = validateRequired(form.preset, '门户预设')
   if (r) e.preset = r
-  if (!String(form.base_url ?? '').trim() && !selectedPortal.value && portalsLoaded.value) {
+  // 仅在目录已成功加载且含条目时校验 preset；目录失败时回落 FALLBACK_PRESETS，不误报
+  if (
+    !String(form.base_url ?? '').trim() &&
+    !selectedPortal.value &&
+    portalsLoaded.value &&
+    portals.value.length > 0
+  ) {
     e.preset = '未知门户预设（目录中不存在，请选择列表项或填写 base_url）'
   }
   r = validateRequired(form.relative_path, '相对路径')
