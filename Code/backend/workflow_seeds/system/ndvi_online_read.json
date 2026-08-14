@@ -1,0 +1,75 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "NDVI 植被指数（NASA Earthdata 在线拉取）",
+    "description": "目的：通过 NASA Earthdata LP DAAC 在线拉取 VIIRS NDVI 产品（VNP13 系列）。使用 nasa_earthdata 预设 + earthdata 凭证。拉取后经 ndvi_daily 模块处理生成植被指数图层。本种子为 NDVI 在线获取的 Earthdata 路径。",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": "ndvi",
+    "tags": ["sample", "download"],
+    "category": "data_access"
+  },
+  "workflow_id": "ndvi_online_read",
+  "name": "NDVI 植被指数（NASA Earthdata 在线拉取）",
+  "description": "Earthdata http_open_data → archive/extract → ndvi_daily → 输出地图图层。",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "download/http_open_data",
+      "pos": [80, 140],
+      "properties": {
+        "preset": "nasa_earthdata",
+        "relative_path": "VIIRS/VNP13A1/{YYYY.MM.DD}/",
+        "cred_profile": "earthdata",
+        "force_refresh": false
+      }
+    },
+    {
+      "id": 2,
+      "type": "archive/extract",
+      "pos": [400, 140],
+      "properties": {
+        "member_glob": "*.tif",
+        "recurse_once": true,
+        "output_dirname": "ndvi_extracted"
+      }
+    },
+    {
+      "id": 3,
+      "type": "module/ndvi_daily",
+      "pos": [720, 140],
+      "properties": {
+        "algorithm_params": {
+          "rescale": "-1,1",
+          "nodata": -9999
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "output/map_layer",
+      "pos": [1040, 140],
+      "properties": {
+        "layer_id": "ndvi",
+        "colormap": "ndvi",
+        "rescale": "-1,1"
+      }
+    }
+  ],
+  "links": [
+    {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "value:string"},
+    {"0": 2, "1": 2, "2": 0, "3": 3, "4": 0, "5": "value:string"},
+    {"0": 3, "1": 3, "2": 0, "3": 4, "4": 0, "5": "value:string"}
+  ],
+  "extra": {
+    "purpose": "online_ndvi_earthdata_pipeline",
+    "scheme": "EARTHDATA_ONLINE_NDVI",
+    "portal": "nasa_earthdata",
+    "cred_profile": "earthdata",
+    "pipeline": "NASA Earthdata HTTP download → extract TIF → ndvi_daily → map_layer",
+    "prerequisite": "earthdata 凭证（NASA Earthdata 账号）",
+    "notes": "模板种子：relative_path 含 YYYY.MM.DD 占位符，运行前由 resolver 替换。产品为 VIIRS VNP13A1（500m 16-day NDVI）。"
+  }
+}

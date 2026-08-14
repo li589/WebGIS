@@ -744,6 +744,19 @@ h2 {
   font-size: var(--font-size-caption);
 }
 
+.online-fetch-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.36rem;
+  border-radius: 0.24rem;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: rgb(96, 165, 250);
+  font-size: var(--font-size-caption);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 .add-btn {
   padding: 0.18rem 0.46rem;
   border: 1px solid var(--border-accent);

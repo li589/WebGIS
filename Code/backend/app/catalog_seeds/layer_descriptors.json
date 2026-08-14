@@ -825,6 +825,16 @@
         "Soil_Moisture/FY_MWRI"
       ]
     },
+    "online_temporal": {
+      "enabled": true,
+      "coverage_start": "2020-01",
+      "coverage_end": null,
+      "native_step": "1d",
+      "max_batch": 8,
+      "prefetch_depth": 1,
+      "queue_tag": "temporal-fetch",
+      "priority": "low"
+    },
     "run_readiness_summary": "待确认 FY MWRI 原始数据是否齐全",
     "run_readiness_notes": [
       "数据源: 风云三号 MWRI 亮温原始数据"

@@ -9,6 +9,7 @@
  *   - download/gldas_download      → GldasDownloadForm
  *   - download/gldas_nc4_to_mat    → GldasNc4ToMatForm
  *   - download/fy_preprocess       → FyPreprocessForm
+ *   - download/fy_download         → FyDownloadForm
  *
  * Props: node (LGraphNodeClass) / readonly (boolean)
  * Emits: update-property (key: string, value: unknown)
@@ -20,6 +21,7 @@ import NsidcDownloadForm from './NsidcDownloadForm.vue'
 import GldasDownloadForm from './GldasDownloadForm.vue'
 import GldasNc4ToMatForm from './GldasNc4ToMatForm.vue'
 import FyPreprocessForm from './FyPreprocessForm.vue'
+import FyDownloadForm from './FyDownloadForm.vue'
 
 const props = defineProps<{
   node: LGraphNodeClass | null
@@ -38,6 +40,7 @@ const SUBFORM_LABELS: Record<string, string> = {
   'download/gldas_download': 'GLDAS 在线下载',
   'download/gldas_nc4_to_mat': 'GLDAS nc4→mat',
   'download/fy_preprocess': 'FY 预处理',
+  'download/fy_download': '风云卫星下载',
 }
 
 const subLabel = computed(() => SUBFORM_LABELS[nodeType.value] ?? '')
@@ -81,6 +84,13 @@ function forward(key: string, value: unknown) {
 
     <FyPreprocessForm
       v-else-if="nodeType === 'download/fy_preprocess'"
+      :node="node"
+      :readonly="readonly"
+      @update-property="forward"
+    />
+
+    <FyDownloadForm
+      v-else-if="nodeType === 'download/fy_download'"
       :node="node"
       :readonly="readonly"
       @update-property="forward"

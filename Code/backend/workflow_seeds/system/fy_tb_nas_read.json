@@ -1,0 +1,61 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "FY MWRI 亮温（NAS 远程拉取）",
+    "description": "目的：通过 SMB/NAS 协议从远端 NAS 的 Chenhaojun/fy 目录拉取 FY-3 MWRI HDF 亮温数据。部署环境可直接访问 NAS；开发环境通过 Cloudflare 隧道 + filebrowser 访问。拉取后经 fy_preprocess 预处理（geolocation 校正 + 轨道拼接 + 重投影）生成可显示图层。",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": "ref-fy-tb-202512-mwri",
+    "tags": ["sample", "remote"],
+    "category": "data_access"
+  },
+  "workflow_id": "fy_tb_nas_read",
+  "name": "FY MWRI 亮温（NAS 远程拉取）",
+  "description": "NAS remote_fetch → fy_preprocess → 输出地图图层。",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "remote_fetch",
+      "pos": [80, 140],
+      "properties": {
+        "uri": "smb://nas/Chenhaojun/fy/{YYYY.MM.DD}/?cred=nas_profile",
+        "cred_profile": "nas_profile"
+      }
+    },
+    {
+      "id": 2,
+      "type": "module/fy_preprocess",
+      "pos": [400, 140],
+      "properties": {
+        "satellite": "FY3D",
+        "orbit_mode": "MWRID",
+        "band_ids": [1, 2],
+        "outfile_type": "hdf5",
+        "spatial_extent": "global"
+      }
+    },
+    {
+      "id": 3,
+      "type": "output/map_layer",
+      "pos": [740, 140],
+      "properties": {
+        "layer_id": "ref-fy-tb-202512-mwri",
+        "colormap": "viridis",
+        "rescale": "200,320"
+      }
+    }
+  ],
+  "links": [
+    {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "value:string"},
+    {"0": 2, "1": 2, "2": 0, "3": 3, "4": 0, "5": "value:string"}
+  ],
+  "extra": {
+    "purpose": "nas_fy_pipeline",
+    "scheme": "SMB_NAS_REMOTE",
+    "pipeline": "NAS SMB fetch → fy_preprocess → map_layer",
+    "prerequisite": "nas_profile 凭证（SMB 协议，host=NAS 主机名/IP）",
+    "notes": "模板种子：uri 含 YYYY.MM.DD 占位符，运行前由 resolver 替换。开发环境可通过 Cloudflare 隧道 + filebrowser HTTP API 访问，此时 uri 改为 https://filebrowser.{domain}/api/... 形式。"
+  }
+}

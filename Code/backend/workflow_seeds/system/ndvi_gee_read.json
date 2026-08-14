@@ -1,0 +1,55 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "gee",
+    "name": "NDVI 植被指数（GEE 在线获取）",
+    "description": "目的：通过 Google Earth Engine 桥接服务获取 MODIS/VIIRS NDVI 产品。使用 GEE 工作流导出 NDVI 合成影像并发布为地图图层。本种子为 NDVI 在线获取的 GEE 路径，适合需要大范围合成或自定义算法的场景。",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": "ndvi",
+    "tags": ["sample", "gee"],
+    "category": "data_access"
+  },
+  "workflow_id": "ndvi_gee_read",
+  "name": "NDVI 植被指数（GEE 在线获取）",
+  "description": "GEE NDVI export → 输出地图图层。",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "gee/export",
+      "pos": [100, 140],
+      "properties": {
+        "workflow": {
+          "description": "MODIS NDVI 16-day composite export",
+          "expression": "ee.ImageCollection('MODIS/061/MOD13A2').filterDate(start, end).select('NDVI').mean().multiply(0.0001)",
+          "collection": "MODIS/061/MOD13A2",
+          "band": "NDVI",
+          "scale": 1000,
+          "crs": "EPSG:4326",
+          "rescale": "-1,1"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "output/map_layer",
+      "pos": [420, 140],
+      "properties": {
+        "layer_id": "ndvi",
+        "colormap": "ndvi",
+        "rescale": "-1,1"
+      }
+    }
+  ],
+  "links": [
+    {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "value:string"}
+  ],
+  "extra": {
+    "purpose": "gee_ndvi_pipeline",
+    "scheme": "GEE_MODIS_NDVI",
+    "pipeline": "GEE export MOD13A2 NDVI → map_layer",
+    "prerequisite": "GEE 账号（SA JSON 凭证，通过 GeeBridgeService 账号池管理）",
+    "notes": "GEE 引擎工作流。使用 MODIS MOD13A2（1km 16-day NDVI），也可切换为 VIIRS VNP13A1。导出由 GeeBridgeService._execute_workflow() 提交，结果通过 _build_result_refs() 返回 map_layer。priority=low 建议用于大范围合成。"
+  }
+}

@@ -262,6 +262,8 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                     "nasa_gldas",
                     "esa_copernicus",
                     "esa_download",
+                    "cma_nsmc",
+                    "cma_data",
                 ],
                 description="开放门户预设键（与设置页 open_data_presets 对齐）。",
                 allow_custom=False,
@@ -543,6 +545,65 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             ),
         ],
         "node_class": "fy_preprocess",
+    },
+    {
+        "type": "download/fy_download",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "风云卫星数据下载",
+        "description": (
+            "风云卫星数据专用下载模块：支持 NSMC 门户 HTTP 下载、NAS SMB 远程拉取、"
+            "auto 自动回退（NSMC→NAS）。下载 FY-3 MWRI HDF 亮温数据供 fy_preprocess 处理。"
+        ),
+        "inputs": [
+            _port(
+                "datasource_selection",
+                "config",
+                required=False,
+                description="数据源选择（含 portal_credentials 等）。",
+            ),
+        ],
+        "outputs": [
+            _port("path", "value:string", description="下载后的本地路径。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param(
+                "satellite",
+                "string",
+                default="FY3D",
+                options=["FY3D", "FY3B"],
+                description="卫星。",
+            ),
+            _param(
+                "data_source",
+                "string",
+                default="auto",
+                options=["auto", "nsmc", "nas"],
+                description="数据源：auto=自动回退（NSMC→NAS），nsmc=NSMC门户，nas=NAS远程拉取。",
+            ),
+            _param(
+                "start_date", "string", description="起始日期 YYYYMMDD。", widget="date"
+            ),
+            _param(
+                "end_date", "string", description="结束日期 YYYYMMDD。", widget="date"
+            ),
+            _param("local_dir", "string", description="本地保存目录。", widget="path"),
+            _param(
+                "band_ids",
+                "string",
+                default="1,2",
+                description="通道 ID 列表（逗号分隔），如 1,2。",
+            ),
+            _param(
+                "orbit_mode",
+                "string",
+                default="MWRID",
+                options=["MWRID", "MWRIA", "Both"],
+                description="轨道模式。",
+            ),
+        ],
+        "node_class": "fy_download",
     },
     {
         "type": "archive/extract",

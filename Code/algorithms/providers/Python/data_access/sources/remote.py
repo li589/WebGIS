@@ -17,6 +17,10 @@ _REMOTE_SCHEMES = frozenset({"sftp", "smb", "ftp", "ftps", "gs", "gcs"})
 
 def _resolve_auth(uri: str, metadata: dict[str, object] | None) -> RemoteAuth:
     meta = dict(metadata or {})
+    # Context-first: if a pre-resolved RemoteAuth is injected, use it directly.
+    pre_resolved = meta.get("auth")
+    if isinstance(pre_resolved, RemoteAuth):
+        return pre_resolved
     if meta.get("username") or meta.get("password") or meta.get("private_key_pem"):
         extra = meta.get("extra") if isinstance(meta.get("extra"), dict) else {}
         port_raw = meta.get("port")

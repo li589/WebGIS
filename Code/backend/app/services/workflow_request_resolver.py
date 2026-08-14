@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from contextlib import contextmanager, suppress
+from datetime import date, datetime
 from functools import lru_cache
 import importlib
 import logging
 from pathlib import Path
+import re
 import sys
 import threading
 from typing import Any
@@ -27,6 +29,45 @@ _ALGORITHM_ENTRY_KEYS: tuple[str, ...] = (
 )
 _GEE_ENTRY_KEYS: tuple[str, ...] = ("workflow", "manifest_uri")
 _WEATHER_ENTRY_KEYS: tuple[str, ...] = ("workflow",)
+
+_DATE_PLACEHOLDER_RE = re.compile(r"\{((?:YYYY|yyyy|MM|mm|DD|dd)[^{}]*?)\}")
+
+
+def _format_date_token(fmt: str, ref_date: date) -> str:
+    result = fmt
+    result = result.replace("YYYY", f"{ref_date.year:04d}")
+    result = result.replace("yyyy", f"{ref_date.year:04d}")
+    result = result.replace("MM", f"{ref_date.month:02d}")
+    result = result.replace("mm", f"{ref_date.month:02d}")
+    result = result.replace("DD", f"{ref_date.day:02d}")
+    result = result.replace("dd", f"{ref_date.day:02d}")
+    return result
+
+
+def _expand_date_placeholders(value: Any, ref_date: date) -> Any:
+    if isinstance(value, str):
+        if "{" not in value:
+            return value
+        return _DATE_PLACEHOLDER_RE.sub(
+            lambda m: _format_date_token(m.group(1), ref_date), value
+        )
+    if isinstance(value, dict):
+        return {k: _expand_date_placeholders(v, ref_date) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_expand_date_placeholders(v, ref_date) for v in value]
+    return value
+
+
+def _get_ref_date_from_payload(payload: WorkflowSubmitRequest) -> date:
+    tr = payload.time_range
+    if tr and getattr(tr, "start_at", None):
+        return tr.start_at.date()
+    if tr and getattr(tr, "start", None):
+        try:
+            return datetime.fromisoformat(str(tr.start)).date()
+        except (ValueError, TypeError):
+            pass
+    return date.today()
 
 
 def normalize_workflow_submit_request(
@@ -456,12 +497,23 @@ def _flatten_ui_workflow_definition(
     time_range = _extract_time_range_from_nodes(nodes)
     spatial = _extract_bbox_from_nodes(nodes)
 
+    ref_date = date.today()
+    if time_range and getattr(time_range, "start_at", None):
+        ref_date = time_range.start_at.date()
+
     existing_ds = algorithm_request.get("datasource_selection")
     if not isinstance(existing_ds, dict):
         existing_ds = {}
     canvas_ds = _extract_datasource_selection_from_nodes(nodes)
     for key, value in canvas_ds.items():
         existing_ds.setdefault(key, value)
+    for key, value in list(existing_ds.items()):
+        if key.startswith("_") or not isinstance(value, str) or not value.strip():
+            continue
+        expanded = _expand_date_placeholders(value, ref_date)
+        if expanded != value:
+            existing_ds[key] = expanded
+            value = expanded
     for key, value in list(existing_ds.items()):
         if key.startswith("_") or not isinstance(value, str) or not value.strip():
             continue
@@ -494,6 +546,10 @@ def _flatten_ui_workflow_definition(
         enriched["datasource_selection"] = existing_ds
         enriched["algorithm_params"] = existing_params
         enriched.setdefault("output_spec", {})
+        if "workflow_definition" in enriched:
+            enriched["workflow_definition"] = _expand_date_placeholders(
+                enriched["workflow_definition"], ref_date
+            )
         # Bridge rejects workflow_definition + module_name together; keep graph only.
         enriched.pop("module_name", None)
         # Bridge builds job_request from algorithm_request; keep time_range there too
@@ -735,6 +791,9 @@ def _populate_python_provider_request(
         )
         if resolved_tr is not None:
             payload = payload.model_copy(update={"time_range": resolved_tr})
+        ref_date = _get_ref_date_from_payload(payload)
+        algorithm_request = _expand_date_placeholders(algorithm_request, ref_date)
+        payload = payload.model_copy(update={"algorithm_request": algorithm_request})
         return payload
 
     descriptor_module = getattr(descriptor, "module_name", None)
@@ -800,6 +859,13 @@ def _populate_python_provider_request(
             algorithm_request.setdefault("module_name", effective_module)
             algorithm_request.setdefault("workflow_entry_name", effective_module)
 
+    # 展开种子 algorithm_params 中的日期占位符
+    _ref_date = _get_ref_date_from_payload(payload)
+    if isinstance(algorithm_request.get("algorithm_params"), dict):
+        algorithm_request["algorithm_params"] = _expand_date_placeholders(
+            algorithm_request["algorithm_params"], _ref_date
+        )
+
     datasource_selection = _normalize_request(
         algorithm_request.get("datasource_selection")
     )
@@ -840,7 +906,19 @@ def _populate_python_provider_request(
                         datasource_selection[required_key] = uris[0]
                         break
 
-    # 显式相对路径（画布/种子）→ 绝对本地 URI，供 omega_sf 读 IGBP 等
+    # 展开日期占位符 {YYYY.MM.DD} 等（种子 uri/relative_path 中的模板）
+    ref_date = _ref_date
+    for key, value in list(datasource_selection.items()):
+        if isinstance(value, str) and "{" in value:
+            expanded = _expand_date_placeholders(value, ref_date)
+            if expanded != value:
+                datasource_selection[key] = expanded
+    if isinstance(algorithm_request.get("workflow_definition"), dict):
+        algorithm_request["workflow_definition"] = _expand_date_placeholders(
+            algorithm_request["workflow_definition"], ref_date
+        )
+
+    # 显式相对路径（画布/种子）→ 绝对本地 URI，供 omega_sf 读 IGPB 等
     for key, value in list(datasource_selection.items()):
         if key.startswith("_") or not isinstance(value, str) or not value.strip():
             continue

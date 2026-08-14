@@ -1,0 +1,63 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "FY MWRI 亮温（专业下载模块·自动回退）",
+    "description": "目的：使用专业风云卫星数据下载模块（fy_download）拉取 FY-3 MWRI 亮温数据。支持 data_source=auto 自动回退：优先 NSMC 门户 → 回退 NAS 远程拉取。下载后经 fy_preprocess 预处理生成可显示图层。本种子为推荐在线获取入口。",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": "ref-fy-tb-202512-mwri",
+    "tags": ["sample", "download"],
+    "category": "data_access"
+  },
+  "workflow_id": "fy_tb_online_read",
+  "name": "FY MWRI 亮温（专业下载模块·自动回退）",
+  "description": "fy_download (auto: NSMC→NAS) → fy_preprocess → 输出地图图层。",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "module/fy_download",
+      "pos": [80, 140],
+      "properties": {
+        "satellite": "FY3D",
+        "data_source": "auto",
+        "band_ids": [1, 2],
+        "orbit_mode": "MWRID"
+      }
+    },
+    {
+      "id": 2,
+      "type": "module/fy_preprocess",
+      "pos": [420, 140],
+      "properties": {
+        "satellite": "FY3D",
+        "orbit_mode": "MWRID",
+        "band_ids": [1, 2],
+        "outfile_type": "hdf5",
+        "spatial_extent": "global"
+      }
+    },
+    {
+      "id": 3,
+      "type": "output/map_layer",
+      "pos": [760, 140],
+      "properties": {
+        "layer_id": "ref-fy-tb-202512-mwri",
+        "colormap": "viridis",
+        "rescale": "200,320"
+      }
+    }
+  ],
+  "links": [
+    {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "value:string"},
+    {"0": 2, "1": 2, "2": 0, "3": 3, "4": 0, "5": "value:string"}
+  ],
+  "extra": {
+    "purpose": "online_fy_auto_pipeline",
+    "scheme": "FY_DOWNLOAD_AUTO_FALLBACK",
+    "pipeline": "fy_download(auto: NSMC→NAS) → fy_preprocess → map_layer",
+    "prerequisite": "nsmc 凭证（NSMC 门户）和/或 nas_profile 凭证（SMB NAS）",
+    "notes": "推荐在线获取入口。data_source=auto 时优先 NSMC，失败自动回退 NAS。也可手动指定 data_source=nsmc 或 data_source=nas。"
+  }
+}

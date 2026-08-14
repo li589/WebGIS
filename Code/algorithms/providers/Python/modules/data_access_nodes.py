@@ -179,17 +179,12 @@ class RemoteFetchModule(BaseModule):
         )
 
 
-# Default open-data base URLs (overridable via params / settings injection)
+# Minimal safety-net presets for offline/test scenarios where backend injection
+# (datasource_selection.open_data_presets) is unavailable. The canonical source
+# lives in backend app.services.data_cache_service.DEFAULT_OPEN_DATA_PRESETS.
 _DEFAULT_OPEN_DATA_PRESETS: dict[str, str] = {
-    "noaa_nomads": "https://nomads.ncep.noaa.gov/",
-    "noaa_goes": "https://cdn.star.nesdis.noaa.gov/",
     "nasa_earthdata": "https://data.lpdaac.earthdatacloud.nasa.gov/",
-    "nasa_cmr": "https://cmr.earthdata.nasa.gov/",
     "nsidc_data": "https://n5eil01u.ecs.nsidc.org/",
-    "nasa_ges_disc": "https://hydro1.gesdisc.eosdis.nasa.gov/",
-    "nasa_gldas": "https://hydro1.gesdisc.eosdis.nasa.gov/data/GLDAS/",
-    "esa_copernicus": "https://catalogue.dataspace.copernicus.eu/",
-    "esa_download": "https://download.dataspace.copernicus.eu/",
 }
 
 _PORTAL_CRED_ALIASES: dict[str, tuple[str, ...]] = {
@@ -202,6 +197,7 @@ _PORTAL_CRED_ALIASES: dict[str, tuple[str, ...]] = {
     ),
     "nsidc": ("nsidc", "nsidc_data", "earthdata"),
     "copernicus": ("copernicus", "esa", "esa_download", "esa_copernicus"),
+    "nsmc": ("nsmc", "cma_nsmc", "cma_data", "fy"),
 }
 
 
@@ -224,8 +220,10 @@ def _resolve_portal_headers(
     if not isinstance(portal_creds, dict):
         portal_creds = {}
 
-    # Prefer lazy resolve from backend config over secrets embedded in job payload.
-    # Bridge sets portal_credentials_resolve=True and omits plaintext tokens.
+    # Context-first: prefer portal_credentials already injected by the request
+    # builder (python_provider_request_builder.py sets portal_credentials_resolve=True
+    # and may inline resolved credentials). Only fall back to lazy backend import
+    # when the context is empty and the resolve flag is set.
     if (not portal_creds) and datasource_selection.get("portal_credentials_resolve"):
         try:
             from app.services.config_service import get_portal_credentials_runtime

@@ -21,6 +21,7 @@ defineProps<{
   getSymbologyVmax: (layer: ActiveLayerDisplayLike) => string
   availabilityClass: (state: string) => string
   getCategoryName: (categoryId: string) => string
+  supportsOnlineTemporal: (catalogId: string) => boolean
 }>()
 
 const emit = defineEmits<{
@@ -195,6 +196,12 @@ const emit = defineEmits<{
               >
                 {{ row.layer.availabilityLabel }}
               </span>
+              <span
+                v-if="supportsOnlineTemporal(row.layer.catalogId)"
+                class="online-fetch-badge"
+                title="此图层支持在线获取历史时间数据"
+                >在线</span
+              >
               <span v-if="row.layer.isAdminBoundary" class="admin-tip-inline">边界 · 静态矢量</span>
               <span v-else-if="row.layer.isImported" class="admin-tip-inline"
                 >导入 · {{ row.layer.importedGeometryType }} ·

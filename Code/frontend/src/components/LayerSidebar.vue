@@ -116,6 +116,10 @@ function getCatalogRunBlockReason(catalogId: string): string | null {
   return workspace.getCatalogRunBlockReason(catalogId)
 }
 
+function supportsOnlineTemporal(catalogId: string): boolean {
+  return workspace.supportsOnlineTemporal(catalogId)
+}
+
 function getCatalogItem(catalogId: string) {
   return layerLibrary.value.find((item) => item.catalogId === catalogId)
 }
@@ -350,6 +354,7 @@ onMounted(() => {
       :get-category-name="getCategoryName"
       :get-catalog-source-summary="getCatalogSourceSummary"
       :get-primary-source-name="getPrimarySourceName"
+      :supports-online-temporal="supportsOnlineTemporal"
       :org-label="orgLabel"
       @update:search-query="search.searchQuery.value = $event"
       @update:selected-sub-category="search.selectedSubCategory.value = $event"
@@ -377,6 +382,7 @@ onMounted(() => {
       :get-symbology-vmax="symbology.getSymbologyVmax"
       :availability-class="availabilityClass"
       :get-category-name="getCategoryName"
+      :supports-online-temporal="supportsOnlineTemporal"
       @select-item="selectItem"
       @zoom-to-item="zoomToItem"
       @toggle-visibility="toggleVisibility"
