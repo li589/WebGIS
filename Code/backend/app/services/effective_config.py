@@ -92,6 +92,22 @@ def refuse_empty_iv_outside_development(iv_b64: str | None) -> None:
         )
 
 
+def assert_dev_bypass_policy() -> None:
+    """非 development 环境禁止 api_keys_enabled=false（堵 dev_bypass 旁路）。
+
+    credential_resolver 的 dev_bypass 逻辑在 ``environment == "development"``
+    且 ``api_keys_enabled == false`` 时对 loopback IP 放行所有写请求。
+    若生产环境误设 ``api_keys_enabled=false``，dev_bypass 将被意外激活。
+    本断言在启动时拦截此配置错误。
+    """
+    if secrets_encryption_required() and not config.settings.api_keys_enabled:
+        raise RuntimeError(
+            "BACKEND_API_KEYS_ENABLED=false is not allowed outside development "
+            "(dev_bypass would be exploitable). Set BACKEND_API_KEYS_ENABLED=true "
+            "or BACKEND_ENV=development."
+        )
+
+
 def assert_encryption_policy() -> None:
     """非 development 环境缺少加密 key 时 fail-fast；有 key 时校验 hex 形态。"""
     global _secrets_insecure

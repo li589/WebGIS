@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import { useSettingsStore } from '../../stores/settings'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerViewport } from '../../stores/layers/selectors'
 import { useWeatherEngineStore } from '../../stores/weather-engine'
 import { normalizeWeatherModel } from '../../utils/weather-model'
 import { useWeatherSyncStatusStore } from '../../stores/weather-sync-status'
@@ -14,10 +14,11 @@ import {
   type WeatherSyncOverview,
   type WeatherSyncStatus,
 } from '../../services/runtime-api'
+import AppSelect from '../ui/AppSelect.vue'
 
 const settingsStore = useSettingsStore()
 const weatherSyncStatusStore = useWeatherSyncStatusStore()
-const layersStore = useLayersStore()
+const viewport = useLayerViewport()
 const weatherEngine = useWeatherEngineStore()
 const { weatherConfig } = storeToRefs(settingsStore)
 
@@ -196,7 +197,7 @@ async function onModelChange() {
     }
     await refreshCoverage()
     await refreshOverview()
-    layersStore.flushWeatherTileViewports()
+    viewport.flushWeatherTileViewports()
   } catch (err) {
     modelUpdateMessage.value = (err as Error).message || '保存失败'
   } finally {
@@ -292,6 +293,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   stopPolling()
+  // 同时清理 store 层的轮询定时器，防止组件卸载后 store 继续每 3s 轮询
+  weatherSyncStatusStore.stopPolling()
 })
 </script>
 
@@ -315,17 +318,17 @@ onBeforeUnmount(() => {
       <p class="channel-desc">写入后端 DB，立即影响时间轴覆盖、瓦片与点预报（全局单模型）。</p>
       <div class="setting-row">
         <label class="row-label">模型</label>
-        <select
+        <AppSelect
           v-model="selectedModel"
-          class="model-select"
           :disabled="modelUpdating"
+          :options="
+            modelOptions.map((m) => ({
+              label: `${m.label}${syncDomains.includes(m.id) ? ' · 已在 sync 域' : ''}`,
+              value: m.id,
+            }))
+          "
           @change="onModelChange"
-        >
-          <option v-for="m in modelOptions" :key="m.id" :value="m.id">
-            {{ m.label }}
-            {{ syncDomains.includes(m.id) ? ' · 已在 sync 域' : '' }}
-          </option>
-        </select>
+        />
       </div>
       <div v-if="selectedModelMeta" class="model-meta">
         <span class="meta-chip">区域: {{ selectedModelMeta.region }}</span>
@@ -570,21 +573,21 @@ onBeforeUnmount(() => {
 .section-header h2 {
   margin: 0 0 0.4rem;
   font-size: 0.82rem;
-  color: #e8f3fc;
+  color: var(--text-strong);
 }
 
 .section-desc {
   margin: 0;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   line-height: 1.5;
-  color: #8aa8bf;
+  color: var(--text-muted);
 }
 
 .channel-card {
   padding: 0.7rem 0.75rem;
-  border: 1px solid rgba(136, 192, 255, 0.12);
+  border: 1px solid var(--border-default);
   border-radius: 0.7rem;
-  background: rgba(4, 12, 23, 0.35);
+  background: var(--surface-sunken);
 }
 
 .channel-head {
@@ -596,45 +599,45 @@ onBeforeUnmount(() => {
 
 .channel-head h3 {
   margin: 0;
-  font-size: 0.72rem;
-  color: #e8f3fc;
+  font-size: var(--font-size-caption);
+  color: var(--text-strong);
 }
 
 .channel-badge {
   padding: 0.12rem 0.4rem;
   border-radius: 999px;
-  font-size: 0.5rem;
+  font-size: var(--font-size-caption);
   font-weight: 700;
   letter-spacing: 0.04em;
 }
 
 .badge-global {
-  background: rgba(159, 248, 207, 0.14);
-  color: #9ff8cf;
+  background: var(--success-surface);
+  color: var(--success);
 }
 
 .badge-local {
-  background: rgba(90, 213, 255, 0.14);
-  color: #5ad5ff;
+  background: var(--accent-surface);
+  color: var(--accent);
 }
 
 .badge-online {
-  background: rgba(201, 163, 255, 0.14);
-  color: #c9a3ff;
+  background: var(--surface-violet-tint);
+  color: var(--accent-strong);
 }
 
 .channel-desc {
   margin: 0 0 0.55rem;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   line-height: 1.5;
-  color: #8aa8bf;
+  color: var(--text-muted);
 }
 
 .channel-desc code,
 .sync-hint code,
 .section-desc code {
-  font-size: 0.54rem;
-  color: #b7d4ea;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 
 .setting-row {
@@ -644,23 +647,23 @@ onBeforeUnmount(() => {
 }
 
 .row-label {
-  font-size: 0.64rem;
-  color: #b8cce0;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
 }
 
 .model-select {
   padding: 0.42rem 0.55rem;
-  border: 1px solid rgba(136, 192, 255, 0.2);
+  border: 1px solid var(--border-strong);
   border-radius: 0.42rem;
-  background: rgba(8, 17, 31, 0.6);
-  color: #e8f3fc;
+  background: var(--surface-1);
+  color: var(--text-strong);
   font: inherit;
-  font-size: 0.66rem;
+  font-size: var(--font-size-caption);
 }
 
 .model-select:focus {
   outline: none;
-  border-color: rgba(90, 213, 255, 0.5);
+  border-color: var(--border-strong);
 }
 
 .model-meta {
@@ -673,29 +676,29 @@ onBeforeUnmount(() => {
 .meta-chip {
   padding: 0.18rem 0.5rem;
   border-radius: 0.32rem;
-  background: rgba(10, 132, 255, 0.1);
-  color: #5ad5ff;
-  font-size: 0.56rem;
+  background: var(--accent-surface);
+  color: var(--accent);
+  font-size: var(--font-size-caption);
 }
 
 .meta-chip.ok {
-  background: rgba(114, 255, 207, 0.12);
-  color: #9ff8cf;
+  background: var(--success-surface);
+  color: var(--success);
 }
 
 .meta-chip.warn {
-  background: rgba(255, 196, 120, 0.12);
-  color: #ffd38a;
+  background: var(--warning-surface);
+  color: var(--accent-warm);
 }
 
 .model-update-hint {
   margin-top: 0.45rem;
   padding: 0.42rem 0.55rem;
-  border: 1px solid rgba(255, 180, 90, 0.28);
+  border: 1px solid var(--warning-border);
   border-radius: 0.42rem;
-  background: rgba(90, 60, 20, 0.2);
-  color: #ffd9a8;
-  font-size: 0.58rem;
+  background: var(--warning-surface);
+  color: var(--accent-warm);
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
@@ -710,20 +713,20 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   gap: 0.4rem;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
 }
 
 .info-label {
-  color: #8aa8bf;
+  color: var(--text-muted);
 }
 .info-value {
-  color: #e8f3fc;
+  color: var(--text-strong);
   font-variant-numeric: tabular-nums;
 }
 
 .setting-block {
   padding: 0.55rem 0 0;
-  border-top: 1px solid rgba(136, 192, 255, 0.08);
+  border-top: 1px solid var(--border-subtle);
   margin-top: 0.45rem;
 }
 
@@ -732,24 +735,24 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 0.42rem;
-  font-size: 0.68rem;
-  color: #b8cce0;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
   font-weight: 600;
 }
 
 .refresh-btn {
   padding: 0.2rem 0.55rem;
-  border: 1px solid rgba(90, 213, 255, 0.3);
+  border: 1px solid var(--accent-border);
   border-radius: 0.32rem;
-  background: rgba(10, 132, 255, 0.1);
-  color: #5ad5ff;
+  background: var(--accent-surface);
+  color: var(--accent);
   cursor: pointer;
   font: inherit;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
 }
 
 .refresh-btn:hover:not(:disabled) {
-  background: rgba(10, 132, 255, 0.2);
+  background: var(--surface-hover);
 }
 .refresh-btn:disabled {
   opacity: 0.5;
@@ -758,18 +761,18 @@ onBeforeUnmount(() => {
 
 .coverage-error {
   padding: 0.42rem 0.55rem;
-  border: 1px solid rgba(255, 100, 100, 0.28);
+  border: 1px solid var(--danger-border);
   border-radius: 0.42rem;
-  background: rgba(90, 20, 20, 0.2);
-  color: #ffb0b0;
-  font-size: 0.6rem;
+  background: var(--danger-surface);
+  color: var(--danger);
+  font-size: var(--font-size-caption);
 }
 
 .coverage-hint {
   display: block;
   margin-top: 0.25rem;
-  color: #7f96ab;
-  font-size: 0.58rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
 }
 
 .meta-hint {
@@ -794,19 +797,19 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 
 .coverage-label {
-  color: #8aa8bf;
+  color: var(--text-muted);
 }
 .coverage-value {
-  color: #e8f3fc;
-  font-family: monospace;
+  color: var(--text-strong);
+  font-family: var(--font-mono);
 }
 .coverage-loading {
-  font-size: 0.6rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
 }
 
 .sync-control {
@@ -817,13 +820,13 @@ onBeforeUnmount(() => {
 
 .sync-btn {
   padding: 0.36rem 0.75rem;
-  border: 1px solid rgba(114, 255, 207, 0.3);
+  border: 1px solid var(--success-border);
   border-radius: 0.42rem;
-  background: rgba(114, 255, 207, 0.1);
-  color: #9ff8cf;
+  background: var(--success-surface);
+  color: var(--success);
   cursor: pointer;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 
 .sync-btn:disabled {
@@ -835,45 +838,45 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
 }
 .sync-state {
-  color: #b8cce0;
+  color: var(--text-secondary);
 }
 .state-success {
-  color: #9ff8cf;
+  color: var(--success);
 }
 .state-failure {
-  color: #ff8a8a;
+  color: var(--danger);
 }
 .state-started,
 .state-pending,
 .state-retry {
-  color: #5ad5ff;
+  color: var(--accent);
 }
 .sync-error {
-  color: #ffb0b0;
+  color: var(--danger);
 }
 .sync-hint {
   margin: 0.45rem 0 0;
-  font-size: 0.54rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   line-height: 1.45;
 }
 
 .online-list {
   margin: 0;
   padding-left: 1.1rem;
-  color: #8aa8bf;
-  font-size: 0.58rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   line-height: 1.55;
 }
 
 .sync-domains-hint {
   margin: 4px 0 10px;
-  font-size: 11px;
+  font-size: var(--font-size-caption);
   line-height: 1.4;
-  color: var(--text-muted, #8a8578);
+  color: var(--text-muted);
 }
 .sync-domains-override {
   margin-bottom: 10px;
@@ -882,16 +885,16 @@ onBeforeUnmount(() => {
   margin: 0 0 12px;
   padding: 8px 10px;
   border-radius: 6px;
-  border: 1px solid rgba(200, 80, 60, 0.45);
-  background: rgba(200, 80, 60, 0.12);
-  color: var(--text-secondary, #c9b896);
+  border: 1px solid var(--danger-border);
+  background: var(--danger-surface);
+  color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.45;
 }
 .coverage-value.ok {
-  color: #6bcf7f;
+  color: var(--success);
 }
 .coverage-value.warn {
-  color: #e0a84a;
+  color: var(--warning);
 }
 </style>

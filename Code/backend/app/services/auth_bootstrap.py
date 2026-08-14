@@ -9,9 +9,12 @@ from app.core import config
 
 logger = logging.getLogger(__name__)
 
-DEV_DEFAULT_API_KEY = "cgda-dev-write-key"
-DEV_DEFAULT_ADMIN_USER = "admin"
-DEV_DEFAULT_ADMIN_PASSWORD = "cgda-dev-admin"
+DEV_DEFAULT_API_KEY = os.getenv("BACKEND_DEV_DEFAULT_API_KEY", "")
+DEV_DEFAULT_ADMIN_USER = os.getenv("BACKEND_ADMIN_USERNAME", "admin")
+DEV_DEFAULT_ADMIN_PASSWORD = os.getenv("BACKEND_ADMIN_PASSWORD", "")
+
+# 仅这些绑定地址允许在 development 环境使用默认凭据
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
 def _is_development() -> bool:
@@ -21,6 +24,22 @@ def _is_development() -> bool:
 def _is_production_like() -> bool:
     env = (config.settings.environment or "").lower()
     return env not in {"development", "dev", "test", "testing"}
+
+
+def _check_dev_credentials_safety() -> None:
+    """development 环境下，若服务绑定非 loopback 地址，拒绝使用默认凭据。
+
+    防止开发默认凭据（已知明文）暴露在可达网络上。0.0.0.0 也拒绝（监听全部接口）。
+    """
+    host = (config.settings.host or "").strip()
+    if not host:
+        return  # 未配置 host 时不拦截（通常默认 127.0.0.1）
+    if host not in _LOOPBACK_HOSTS:
+        raise RuntimeError(
+            "Development default credentials are not safe when binding to "
+            f"non-loopback address '{host}'. Set BACKEND_ADMIN_PASSWORD and "
+            "BACKEND_API_KEY explicitly, or bind to 127.0.0.1/localhost."
+        )
 
 
 def bootstrap_auth() -> None:
@@ -38,6 +57,7 @@ def bootstrap_auth() -> None:
     admin_password = config.settings.admin_password or ""
 
     if not admin_user and _is_development():
+        _check_dev_credentials_safety()
         admin_user = DEV_DEFAULT_ADMIN_USER
         admin_password = DEV_DEFAULT_ADMIN_PASSWORD
 
@@ -70,6 +90,7 @@ def bootstrap_auth() -> None:
             )
 
     if _is_development():
+        _check_dev_credentials_safety()
         _bootstrap_dev_api_key()
 
 
@@ -80,7 +101,7 @@ def _bootstrap_dev_api_key() -> None:
         return
     if config.settings.api_key is not None and config.settings.api_key.strip() == "":
         # 配置了空串（如 .env 中 BACKEND_API_KEY=）会被静默回退到 dev 默认 key，
-        # 若 operator 误以为已配置真实密钥，将使用已知的默认 key——显式告警。
+        # 若 administrator 误以为已配置真实密钥，将使用已知的默认 key——显式告警。
         logger.warning(
             "BACKEND_API_KEY is configured but empty; falling back to dev default "
             "write key (bootstrap). Remove the empty value or set a real key."
@@ -96,6 +117,13 @@ def _bootstrap_dev_api_key() -> None:
         return
 
     default_key = (config.settings.dev_default_api_key or DEV_DEFAULT_API_KEY).strip()
+    if not default_key:
+        logger.warning(
+            "Development bootstrap: skipped backend_auth seed — "
+            "BACKEND_API_KEY / BACKEND_DEV_DEFAULT_API_KEY are empty. "
+            "Set an explicit key before enabling write APIs."
+        )
+        return
     repo = _get_api_keys_repository()
     repo.upsert_key(
         key_name="backend_auth",

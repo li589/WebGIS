@@ -7,15 +7,57 @@
     "category": "weather",
     "source_type": "weather",
     "render_type": "vector",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": true,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "blue-cyan", "unit_label": "m/s", "opacity": 0.85 },
-    "tags": ["wind", "frontend-aligned", "10m"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "blue-cyan",
+      "unit_label": "m/s",
+      "opacity": 0.85
+    },
+    "tags": [
+      "wind",
+      "frontend-aligned",
+      "10m"
+    ],
+    "presentation": {
+      "accent_color": "#67d4ff",
+      "accent_glow": "rgba(103, 212, 255, 0.34)",
+      "chip_tone": "rgba(103, 212, 255, 0.18)",
+      "metric_label": "风速",
+      "metric_unit": "m/s",
+      "metric_precision": 1,
+      "update_label": "每小时更新",
+      "source_label": "天气引擎（多源）"
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-wind",
+        "name": "天气引擎 · 风场（多模型）",
+        "description": "由后端 weatherengine 多源路由的风场数据，支持钉选 Provider 与多模型。",
+        "url_template": "https://example.com/wind/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "wind-field-80m",
@@ -25,15 +67,58 @@
     "category": "weather",
     "source_type": "weather",
     "render_type": "vector",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "blue-cyan", "unit_label": "m/s", "opacity": 0.85 },
-    "tags": ["wind", "frontend-aligned", "80m", "turbine-hub"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "blue-cyan",
+      "unit_label": "m/s",
+      "opacity": 0.85
+    },
+    "tags": [
+      "wind",
+      "frontend-aligned",
+      "80m",
+      "turbine-hub"
+    ],
+    "presentation": {
+      "accent_color": "#7ec4ff",
+      "accent_glow": "rgba(126, 196, 255, 0.34)",
+      "chip_tone": "rgba(126, 196, 255, 0.18)",
+      "metric_label": "风速",
+      "metric_unit": "m/s",
+      "metric_precision": 1,
+      "update_label": "每小时更新",
+      "source_label": "天气引擎（多源）"
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-wind-80m",
+        "name": "天气引擎 · 80m 风场",
+        "description": "天气引擎 80 米高度风场，对应现代风机轮毂高度。",
+        "url_template": "https://example.com/wind-80m/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "wind-field-120m",
@@ -43,15 +128,58 @@
     "category": "weather",
     "source_type": "weather",
     "render_type": "vector",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "blue-cyan", "unit_label": "m/s", "opacity": 0.85 },
-    "tags": ["wind", "frontend-aligned", "120m", "offshore"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "blue-cyan",
+      "unit_label": "m/s",
+      "opacity": 0.85
+    },
+    "tags": [
+      "wind",
+      "frontend-aligned",
+      "120m",
+      "offshore"
+    ],
+    "presentation": {
+      "accent_color": "#95b8ff",
+      "accent_glow": "rgba(149, 184, 255, 0.34)",
+      "chip_tone": "rgba(149, 184, 255, 0.18)",
+      "metric_label": "风速",
+      "metric_unit": "m/s",
+      "metric_precision": 1,
+      "update_label": "每小时更新",
+      "source_label": "天气引擎（多源）"
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-wind-120m",
+        "name": "天气引擎 · 120m 风场",
+        "description": "天气引擎 120 米高度风场，大型/海上风机轮毂高度参考层。",
+        "url_template": "https://example.com/wind-120m/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "wind-field-180m",
@@ -61,15 +189,58 @@
     "category": "weather",
     "source_type": "weather",
     "render_type": "vector",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "blue-cyan", "unit_label": "m/s", "opacity": 0.85 },
-    "tags": ["wind", "frontend-aligned", "180m", "boundary-layer"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "blue-cyan",
+      "unit_label": "m/s",
+      "opacity": 0.85
+    },
+    "tags": [
+      "wind",
+      "frontend-aligned",
+      "180m",
+      "boundary-layer"
+    ],
+    "presentation": {
+      "accent_color": "#a8a8ff",
+      "accent_glow": "rgba(168, 168, 255, 0.34)",
+      "chip_tone": "rgba(168, 168, 255, 0.18)",
+      "metric_label": "风速",
+      "metric_unit": "m/s",
+      "metric_precision": 1,
+      "update_label": "每小时更新",
+      "source_label": "天气引擎（多源）"
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-wind-180m",
+        "name": "天气引擎 · 180m 风场",
+        "description": "天气引擎 180 米高度风场，大气边界层顶部参考风场。",
+        "url_template": "https://example.com/wind-180m/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "wind-field-850hPa",
@@ -79,15 +250,59 @@
     "category": "weather",
     "source_type": "weather",
     "render_type": "vector",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "blue-cyan", "unit_label": "m/s", "opacity": 0.78 },
-    "tags": ["wind", "frontend-aligned", "850hPa", "pressure-level", "low-level-jet"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "blue-cyan",
+      "unit_label": "m/s",
+      "opacity": 0.78
+    },
+    "tags": [
+      "wind",
+      "frontend-aligned",
+      "850hPa",
+      "pressure-level",
+      "low-level-jet"
+    ],
+    "presentation": {
+      "accent_color": "#8fb8ff",
+      "accent_glow": "rgba(143, 184, 255, 0.34)",
+      "chip_tone": "rgba(143, 184, 255, 0.18)",
+      "metric_label": "850hPa 风速",
+      "metric_unit": "m/s",
+      "metric_precision": 1,
+      "update_label": "每小时更新",
+      "source_label": "天气引擎（多源）"
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-wind-850hPa",
+        "name": "天气引擎 · 850hPa 风场",
+        "description": "天气引擎 850 hPa 气压层风场（约 1.5 km AGL），低空急流与对流 inflow 参考。",
+        "url_template": "https://example.com/wind-850hpa/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "wind-field-500hPa",
@@ -97,15 +312,59 @@
     "category": "weather",
     "source_type": "weather",
     "render_type": "vector",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "blue-cyan", "unit_label": "m/s", "opacity": 0.74 },
-    "tags": ["wind", "frontend-aligned", "500hPa", "pressure-level", "mid-level"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "blue-cyan",
+      "unit_label": "m/s",
+      "opacity": 0.74
+    },
+    "tags": [
+      "wind",
+      "frontend-aligned",
+      "500hPa",
+      "pressure-level",
+      "mid-level"
+    ],
+    "presentation": {
+      "accent_color": "#7ea0ff",
+      "accent_glow": "rgba(126, 160, 255, 0.34)",
+      "chip_tone": "rgba(126, 160, 255, 0.18)",
+      "metric_label": "500hPa 风速",
+      "metric_unit": "m/s",
+      "metric_precision": 1,
+      "update_label": "每小时更新",
+      "source_label": "天气引擎（多源）"
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-wind-500hPa",
+        "name": "天气引擎 · 500hPa 风场",
+        "description": "天气引擎 500 hPa 气压层风场（约 5.5 km AGL），中空天气尺度流场参考。",
+        "url_template": "https://example.com/wind-500hpa/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "wind-field-200hPa",
@@ -115,141 +374,480 @@
     "category": "weather",
     "source_type": "weather",
     "render_type": "vector",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "blue-cyan", "unit_label": "m/s", "opacity": 0.7 },
-    "tags": ["wind", "frontend-aligned", "200hPa", "pressure-level", "upper-jet"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "blue-cyan",
+      "unit_label": "m/s",
+      "opacity": 0.7
+    },
+    "tags": [
+      "wind",
+      "frontend-aligned",
+      "200hPa",
+      "pressure-level",
+      "upper-jet"
+    ],
+    "presentation": {
+      "accent_color": "#6e88ff",
+      "accent_glow": "rgba(110, 136, 255, 0.34)",
+      "chip_tone": "rgba(110, 136, 255, 0.18)",
+      "metric_label": "200hPa 风速",
+      "metric_unit": "m/s",
+      "metric_precision": 1,
+      "update_label": "每小时更新",
+      "source_label": "天气引擎（多源）"
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-wind-200hPa",
+        "name": "天气引擎 · 200hPa 风场",
+        "description": "天气引擎 200 hPa 气压层风场（约 12 km AGL），高空急流参考层。",
+        "url_template": "https://example.com/wind-200hpa/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "precipitation",
     "dataset_key": "precipitation",
-    "display_name": "降水",
+    "display_name": "降水量",
     "description": "小时降水图层，天气引擎多源实时预报，可映射到 TiTiler、GEE 或融合降水产品。",
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": false,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": -1,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "teal-blue", "unit_label": "mm/h", "opacity": 0.8 },
-    "tags": ["rainfall", "frontend-aligned"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "teal-blue",
+      "unit_label": "mm/h",
+      "opacity": 0.8
+    },
+    "tags": [
+      "rainfall",
+      "frontend-aligned"
+    ],
+    "presentation": {
+      "accent_color": "#72ffcf",
+      "accent_glow": "rgba(114, 255, 207, 0.3)",
+      "chip_tone": "rgba(114, 255, 207, 0.16)",
+      "metric_label": "峰值降水",
+      "metric_unit": "mm/h",
+      "metric_precision": 0,
+      "update_label": "每小时更新",
+      "source_label": "天气引擎（多源）"
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-precipitation",
+        "name": "天气引擎 · 降水量",
+        "description": "由后端 weatherengine 多源路由的降水量数据。",
+        "url_template": "https://example.com/precip/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "temperature",
     "dataset_key": "temperature",
-    "display_name": "温度",
+    "display_name": "气温",
     "description": "2 米气温图层，天气引擎多源实时数据，可接遥感反演、站点订正与历史栅格。",
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": false,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "orange-red", "unit_label": "degC", "opacity": 0.82 },
-    "tags": ["temperature", "frontend-aligned"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "orange-red",
+      "unit_label": "°C",
+      "opacity": 0.82
+    },
+    "tags": [
+      "temperature",
+      "frontend-aligned"
+    ],
+    "presentation": {
+      "accent_color": "#ffb65c",
+      "accent_glow": "rgba(255, 182, 92, 0.3)",
+      "chip_tone": "rgba(255, 182, 92, 0.16)",
+      "metric_label": "区域均温",
+      "metric_unit": "°C",
+      "metric_precision": 1,
+      "update_label": "每小时更新",
+      "source_label": "天气引擎（多源）"
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-temperature",
+        "name": "天气引擎 · 气温",
+        "description": "由后端 weatherengine 多源路由的温度数据。",
+        "url_template": "https://example.com/temperature/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "temperature-80m",
     "dataset_key": "temperature_80m",
-    "display_name": "温度（80m）",
+    "display_name": "气温（80m）",
     "description": "80 米高度温度图层，适用于风机结冰与尾流分析。",
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "orange-red", "unit_label": "degC", "opacity": 0.58 },
-    "tags": ["temperature", "frontend-aligned", "80m", "turbine-hub"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "orange-red",
+      "unit_label": "°C",
+      "opacity": 0.58
+    },
+    "tags": [
+      "temperature",
+      "frontend-aligned",
+      "80m",
+      "turbine-hub"
+    ],
+    "presentation": {
+      "accent_color": "#ffc97a",
+      "accent_glow": "rgba(255, 201, 122, 0.3)",
+      "chip_tone": "rgba(255, 201, 122, 0.16)",
+      "metric_label": "80m 气温",
+      "metric_unit": "°C",
+      "metric_precision": 1,
+      "update_label": "每小时更新",
+      "source_label": "天气引擎（多源）"
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-temperature-80m",
+        "name": "天气引擎 · 80m 气温",
+        "description": "天气引擎 80 米高度温度，适用于风机结冰与尾流分析。",
+        "url_template": "https://example.com/temperature-80m/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "temperature-120m",
     "dataset_key": "temperature_120m",
-    "display_name": "温度（120m）",
+    "display_name": "气温（120m）",
     "description": "120 米高度温度图层，大型风机轮毂高度热力参考。",
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "orange-red", "unit_label": "degC", "opacity": 0.58 },
-    "tags": ["temperature", "frontend-aligned", "120m", "offshore"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "orange-red",
+      "unit_label": "°C",
+      "opacity": 0.58
+    },
+    "tags": [
+      "temperature",
+      "frontend-aligned",
+      "120m",
+      "offshore"
+    ],
+    "presentation": {
+      "accent_color": "#ffdc8a",
+      "accent_glow": "rgba(255, 220, 138, 0.3)",
+      "chip_tone": "rgba(255, 220, 138, 0.16)",
+      "metric_label": "120m 气温",
+      "metric_unit": "°C",
+      "metric_precision": 1,
+      "update_label": "每小时更新",
+      "source_label": "天气引擎（多源）"
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-temperature-120m",
+        "name": "天气引擎 · 120m 气温",
+        "description": "天气引擎 120 米高度温度，大型风机轮毂高度热力参考。",
+        "url_template": "https://example.com/temperature-120m/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "temperature-180m",
     "dataset_key": "temperature_180m",
-    "display_name": "温度（180m）",
+    "display_name": "气温（180m）",
     "description": "180 米高度温度图层，大气边界层顶部热力剖面。",
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "orange-red", "unit_label": "degC", "opacity": 0.58 },
-    "tags": ["temperature", "frontend-aligned", "180m", "boundary-layer"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "orange-red",
+      "unit_label": "°C",
+      "opacity": 0.58
+    },
+    "tags": [
+      "temperature",
+      "frontend-aligned",
+      "180m",
+      "boundary-layer"
+    ],
+    "presentation": {
+      "accent_color": "#ffe49a",
+      "accent_glow": "rgba(255, 228, 154, 0.3)",
+      "chip_tone": "rgba(255, 228, 154, 0.16)",
+      "metric_label": "180m 气温",
+      "metric_unit": "°C",
+      "metric_precision": 1,
+      "update_label": "每小时更新",
+      "source_label": "天气引擎（多源）"
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-temperature-180m",
+        "name": "天气引擎 · 180m 气温",
+        "description": "天气引擎 180 米高度温度，大气边界层顶部热力剖面。",
+        "url_template": "https://example.com/temperature-180m/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "pressure",
     "dataset_key": "pressure",
-    "display_name": "气压",
+    "display_name": "海平面气压",
     "description": "海平面气压图层，支持等压线分析与低压中心追踪。",
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "purple-seq", "unit_label": "hPa", "opacity": 0.62 },
-    "tags": ["pressure", "atmosphere", "frontend-aligned"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "purple-seq",
+      "unit_label": "hPa",
+      "opacity": 0.62
+    },
+    "tags": [
+      "pressure",
+      "atmosphere",
+      "frontend-aligned"
+    ],
+    "presentation": {
+      "accent_color": "#c9a3ff",
+      "accent_glow": "rgba(201, 163, 255, 0.3)",
+      "chip_tone": "rgba(201, 163, 255, 0.16)",
+      "metric_label": "海平面气压",
+      "metric_unit": "hPa",
+      "metric_precision": 1,
+      "update_label": "每小时更新",
+      "source_label": "天气引擎（多源）"
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-pressure",
+        "name": "天气引擎 · 海平面气压",
+        "description": "由后端 weatherengine 多源路由的海平面气压数据。",
+        "url_template": "https://example.com/pressure/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "humidity",
     "dataset_key": "humidity",
-    "display_name": "湿度",
+    "display_name": "相对湿度",
     "description": "2 米相对湿度图层，反映大气水汽含量与体感舒适度。",
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "green-seq", "unit_label": "%", "opacity": 0.66 },
-    "tags": ["humidity", "atmosphere", "frontend-aligned"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "green-seq",
+      "unit_label": "%",
+      "opacity": 0.66
+    },
+    "tags": [
+      "humidity",
+      "atmosphere",
+      "frontend-aligned"
+    ],
+    "presentation": {
+      "accent_color": "#a3d9b0",
+      "accent_glow": "rgba(163, 217, 176, 0.3)",
+      "chip_tone": "rgba(163, 217, 176, 0.16)",
+      "metric_label": "相对湿度",
+      "metric_unit": "%",
+      "metric_precision": 0,
+      "update_label": "每小时更新",
+      "source_label": "天气引擎（多源）"
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-humidity",
+        "name": "天气引擎 · 相对湿度",
+        "description": "由后端 weatherengine 多源路由的近地面相对湿度数据。",
+        "url_template": "https://example.com/humidity/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "visibility",
@@ -259,15 +857,57 @@
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "amber-gray", "unit_label": "m", "opacity": 0.7 },
-    "tags": ["visibility", "atmosphere", "frontend-aligned"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "amber-gray",
+      "unit_label": "m",
+      "opacity": 0.7
+    },
+    "tags": [
+      "visibility",
+      "atmosphere",
+      "frontend-aligned"
+    ],
+    "presentation": {
+      "accent_color": "#e8c87a",
+      "accent_glow": "rgba(232, 200, 122, 0.3)",
+      "chip_tone": "rgba(232, 200, 122, 0.16)",
+      "metric_label": "能见度",
+      "metric_unit": "m",
+      "metric_precision": 0,
+      "update_label": "每小时更新",
+      "source_label": "天气引擎（多源）"
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-visibility",
+        "name": "天气引擎 · 能见度",
+        "description": "由后端 weatherengine 多源路由的地面能见度数据。",
+        "url_template": "https://example.com/visibility/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "cloud-cover",
@@ -277,32 +917,116 @@
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "cloud-gray", "unit_label": "%", "opacity": 0.65 },
-    "tags": ["cloud", "atmosphere", "frontend-aligned"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "cloud-gray",
+      "unit_label": "%",
+      "opacity": 0.65
+    },
+    "tags": [
+      "cloud",
+      "atmosphere",
+      "frontend-aligned"
+    ],
+    "presentation": {
+      "accent_color": "#9aa7b5",
+      "accent_glow": "rgba(154, 167, 181, 0.3)",
+      "chip_tone": "rgba(154, 167, 181, 0.16)",
+      "metric_label": "云量",
+      "metric_unit": "%",
+      "metric_precision": 0,
+      "update_label": "每小时更新",
+      "source_label": "天气引擎（多源）"
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-cloud-cover",
+        "name": "天气引擎 · 云量",
+        "description": "Open-Meteo online/local 总云量。",
+        "url_template": "https://example.com/cloud-cover/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   },
   {
     "layer_id": "dewpoint",
     "dataset_key": "dewpoint",
-    "display_name": "露点",
+    "display_name": "露点温度",
     "description": "2 米露点温度图层，反映空气湿度饱和度。",
     "category": "weather",
     "source_type": "weather",
     "render_type": "raster",
-    "supported_map_modes": ["2d"],
+    "supported_map_modes": [
+      "2d"
+    ],
     "supports_time": true,
     "is_realtime": true,
     "default_visible": false,
     "time_granularity": "hour",
     "default_time_offset": 0,
-    "extent": { "west": 109.6, "south": 20.1, "east": 117.4, "north": 25.6, "crs": "EPSG:4326" },
-    "style": { "palette": "thermal-orange", "unit_label": "C", "opacity": 0.78 },
-    "tags": ["dewpoint", "atmosphere", "frontend-aligned"]
+    "extent": {
+      "west": 109.6,
+      "south": 20.1,
+      "east": 117.4,
+      "north": 25.6,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "thermal-orange",
+      "unit_label": "°C",
+      "opacity": 0.78
+    },
+    "tags": [
+      "dewpoint",
+      "atmosphere",
+      "frontend-aligned"
+    ],
+    "presentation": {
+      "accent_color": "#f0a070",
+      "accent_glow": "rgba(240, 160, 112, 0.3)",
+      "chip_tone": "rgba(240, 160, 112, 0.16)",
+      "metric_label": "露点",
+      "metric_unit": "°C",
+      "metric_precision": 1,
+      "update_label": "每小时更新",
+      "source_label": "天气引擎（多源）"
+    },
+    "sources": [
+      {
+        "source_id": "weatherengine-dewpoint",
+        "name": "天气引擎 · 露点温度",
+        "description": "Open-Meteo online/local 2 米露点温度。",
+        "url_template": "https://example.com/dewpoint/{z}/{x}/{y}.png",
+        "needs_auth": false,
+        "needs_backend_transform": true,
+        "coord_sys": "EPSG:3857",
+        "update_frequency": "每小时更新"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": false,
+    "members": [],
+    "is_admin_boundary": false
   }
 ]

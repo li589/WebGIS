@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { useLogStore } from '../stores/log'
 import { BRAND } from '../ui-copy'
+import AppButton from '../components/ui/AppButton.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -27,7 +28,7 @@ function goHome() {
       <h1>页面不存在</h1>
       <p class="hint">请求的地址在 {{ BRAND.shortName }} 中未找到。</p>
       <p class="path" aria-live="polite">{{ attemptedPath }}</p>
-      <button type="button" class="home-btn" @click="goHome">返回首页</button>
+      <AppButton variant="primary" @click="goHome">返回首页</AppButton>
     </div>
   </div>
 </template>
@@ -39,16 +40,16 @@ function goHome() {
   place-items: center;
   padding: 2rem;
   background:
-    radial-gradient(ellipse at 50% 0%, rgba(10, 132, 255, 0.12), transparent 55%), #060d18;
-  color: #d8e6f5;
+    radial-gradient(ellipse at 50% 0%, var(--accent-surface), transparent 55%), var(--surface-base);
+  color: var(--text-primary);
 }
 
 .not-found-card {
   width: min(28rem, 100%);
   padding: 2rem 1.75rem;
   border-radius: 1rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
-  background: rgba(4, 12, 23, 0.82);
+  border: 1px solid var(--border-default);
+  background: var(--surface-1);
   text-align: center;
 }
 
@@ -56,7 +57,7 @@ function goHome() {
   margin: 0;
   font-size: 2.5rem;
   font-weight: 700;
-  color: #5ad5ff;
+  color: var(--accent);
   letter-spacing: 0.08em;
 }
 
@@ -67,7 +68,7 @@ h1 {
 
 .hint {
   margin: 0;
-  color: #9fb6cc;
+  color: var(--text-secondary);
   font-size: 0.9rem;
 }
 
@@ -75,25 +76,10 @@ h1 {
   margin: 1rem 0 1.25rem;
   padding: 0.5rem 0.75rem;
   border-radius: 0.5rem;
-  background: rgba(136, 192, 255, 0.06);
-  color: #c8dff0;
-  font-family: ui-monospace, monospace;
+  background: var(--border-subtle);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
   font-size: 0.82rem;
   word-break: break-all;
-}
-
-.home-btn {
-  border: 1px solid rgba(90, 213, 255, 0.35);
-  border-radius: 0.55rem;
-  padding: 0.55rem 1.1rem;
-  background: rgba(10, 132, 255, 0.18);
-  color: #5ad5ff;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.9rem;
-}
-
-.home-btn:hover {
-  background: rgba(10, 132, 255, 0.28);
 }
 </style>

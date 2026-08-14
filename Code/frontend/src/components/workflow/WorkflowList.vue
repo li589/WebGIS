@@ -8,7 +8,9 @@
  */
 import { ref, computed } from 'vue'
 import { storeToRefs } from 'pinia'
+import { ClipboardList, Zap, Settings, Lock, Gem, Diamond, X } from '../ui/icons'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
+import { useLogStore } from '../../stores/log'
 import type { WorkflowDefinitionSummary } from '../../services/workflow-definition-api'
 import InlineLoader from '../common/InlineLoader.vue'
 
@@ -18,6 +20,7 @@ const emit = defineEmits<{
 }>()
 
 const store = useWorkflowDefinitionsStore()
+const logStore = useLogStore()
 const { summaries, systemWorkflows, userWorkflows, currentDefinition, loading } = storeToRefs(store)
 
 const confirmDeleteId = ref<string | null>(null)
@@ -28,10 +31,10 @@ const duplicateNewName = ref('')
 // ── 分类过滤 ──────────────────────────────────────────────────────────
 /** 分类标签映射：后端 category → 中文显示名 + 颜色 */
 const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
-  inversion: { label: '反演', color: '#5ad5ff' },
-  weather: { label: '天气', color: '#ffd38a' },
-  data_access: { label: '数据获取', color: '#a6e3a1' },
-  demo: { label: '演示', color: '#f38ba8' },
+  inversion: { label: '反演', color: 'var(--accent)' },
+  weather: { label: '天气', color: 'var(--accent-warm)' },
+  data_access: { label: '数据获取', color: 'var(--success)' },
+  demo: { label: '演示', color: 'var(--danger)' },
 }
 
 /** 当前选中的分类过滤器：null = 全部 */
@@ -49,7 +52,7 @@ const availableCategories = computed(() => {
 /** 分类徽章信息 */
 function categoryBadge(cat: string | null | undefined) {
   if (!cat) return null
-  return CATEGORY_LABELS[cat] ?? { label: cat, color: '#6e8ba0' }
+  return CATEGORY_LABELS[cat] ?? { label: cat, color: 'var(--text-faint)' }
 }
 
 /** 按分类过滤后的工作流列表 */
@@ -95,6 +98,12 @@ async function confirmUseTemplate() {
     emit('select', created.workflow_id)
   } catch (err) {
     console.error('[WorkflowList] Failed to instantiate template:', err)
+    logStore.logOperation(
+      'workflow-error',
+      '范例实例化失败',
+      err instanceof Error ? err.message : String(err),
+      'error',
+    )
   } finally {
     useTemplateSourceId.value = null
     useTemplateNewId.value = ''
@@ -122,6 +131,12 @@ async function confirmDelete() {
     await store.remove(confirmDeleteId.value)
   } catch (err) {
     console.error('[WorkflowList] Failed to delete workflow:', err)
+    logStore.logOperation(
+      'workflow-error',
+      '删除工作流失败',
+      err instanceof Error ? err.message : String(err),
+      'error',
+    )
   } finally {
     confirmDeleteId.value = null
   }
@@ -148,6 +163,12 @@ async function confirmDuplicate() {
     )
   } catch (err) {
     console.error('[WorkflowList] Failed to duplicate workflow:', err)
+    logStore.logOperation(
+      'workflow-error',
+      '复制工作流失败',
+      err instanceof Error ? err.message : String(err),
+      'error',
+    )
   } finally {
     duplicateSourceId.value = null
     duplicateNewId.value = ''
@@ -219,7 +240,7 @@ function formatTime(iso: string | null): string {
       <!-- 范例工作流 -->
       <section v-if="templateWorkflows.length" class="list-section">
         <h3 class="section-title">
-          <span class="section-icon" aria-hidden="true">📋</span>
+          <ClipboardList :size="14" class="section-icon" aria-hidden="true" />
           <span>范例</span>
           <span class="section-count">{{ templateWorkflows.length }}</span>
         </h3>
@@ -258,7 +279,7 @@ function formatTime(iso: string | null): string {
               title="基于此范例创建新工作流"
               @click.stop="handleUseTemplate(summary)"
             >
-              <span aria-hidden="true">⚡</span>
+              <Zap :size="14" aria-hidden="true" />
               <span>从范例新建</span>
             </button>
           </button>
@@ -268,7 +289,7 @@ function formatTime(iso: string | null): string {
       <!-- 系统预设工作流 -->
       <section v-if="systemWorkflowsNonTemplate.length" class="list-section">
         <h3 class="section-title">
-          <span class="section-icon" aria-hidden="true">⚙</span>
+          <Settings :size="14" class="section-icon" aria-hidden="true" />
           <span>系统预设</span>
           <span class="section-count">{{ systemWorkflowsNonTemplate.length }}</span>
         </h3>
@@ -293,7 +314,9 @@ function formatTime(iso: string | null): string {
                   }"
                   >{{ categoryBadge(summary.category)?.label }}</span
                 >
-                <span v-if="summary.readonly" class="readonly-badge" aria-label="只读">🔒</span>
+                <span v-if="summary.readonly" class="readonly-badge" aria-label="只读"
+                  ><Lock :size="14" aria-hidden="true"
+                /></span>
               </div>
             </div>
             <div v-if="summary.description" class="item-desc">{{ summary.description }}</div>
@@ -309,7 +332,7 @@ function formatTime(iso: string | null): string {
       <!-- 用户工作流 -->
       <section v-if="userWorkflowsFiltered.length" class="list-section">
         <h3 class="section-title">
-          <span class="section-icon" aria-hidden="true">◈</span>
+          <Gem :size="14" class="section-icon" aria-hidden="true" />
           <span>用户工作流</span>
           <span class="section-count">{{ userWorkflowsFiltered.length }}</span>
         </h3>
@@ -338,6 +361,7 @@ function formatTime(iso: string | null): string {
                   class="action-btn"
                   type="button"
                   title="复制"
+                  aria-label="复制"
                   @click.stop="handleDuplicate(summary.workflow_id)"
                 >
                   ⧉
@@ -346,9 +370,10 @@ function formatTime(iso: string | null): string {
                   class="action-btn danger"
                   type="button"
                   title="删除"
+                  aria-label="删除"
                   @click.stop="handleDelete(summary.workflow_id)"
                 >
-                  ✕
+                  <X :size="14" aria-hidden="true" />
                 </button>
               </div>
             </div>
@@ -372,7 +397,7 @@ function formatTime(iso: string | null): string {
         "
         class="list-empty"
       >
-        <span class="empty-icon" aria-hidden="true">◇</span>
+        <Diamond :size="20" class="empty-icon" aria-hidden="true" />
         <span class="empty-text">暂无工作流</span>
         <span class="empty-hint">{{
           activeCategory ? '该分类下暂无工作流' : '点击"新建"创建第一个工作流'
@@ -480,8 +505,8 @@ function formatTime(iso: string | null): string {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: rgba(8, 17, 31, 0.72);
-  color: #c4d6e8;
+  background: var(--surface-1);
+  color: var(--text-secondary);
 }
 
 .list-header {
@@ -489,13 +514,13 @@ function formatTime(iso: string | null): string {
   align-items: center;
   justify-content: space-between;
   padding: 0.62rem 0.72rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.1);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .header-title {
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 
 .new-btn {
@@ -503,19 +528,19 @@ function formatTime(iso: string | null): string {
   align-items: center;
   gap: 0.18rem;
   padding: 0.26rem 0.52rem;
-  border: 1px solid rgba(90, 213, 255, 0.3);
+  border: 1px solid var(--accent-border);
   border-radius: 0.4rem;
-  background: rgba(10, 132, 255, 0.14);
-  color: #5ad5ff;
+  background: var(--accent-surface);
+  color: var(--accent);
   cursor: pointer;
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   transition: background 0.16s ease;
 }
 
 .new-btn:hover {
-  background: rgba(10, 132, 255, 0.24);
+  background: var(--accent-border);
 }
 
 .list-empty {
@@ -525,8 +550,8 @@ function formatTime(iso: string | null): string {
   justify-content: center;
   gap: 0.42rem;
   padding: 2rem 1rem;
-  color: #5a7080;
-  font-size: 0.62rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   text-align: center;
 }
 
@@ -540,7 +565,7 @@ function formatTime(iso: string | null): string {
   overflow-y: auto;
   padding: 0.42rem 0;
   scrollbar-width: thin;
-  scrollbar-color: rgba(90, 180, 255, 0.28) transparent;
+  scrollbar-color: var(--border-accent) transparent;
 }
 
 /* ── 分类过滤栏 ──────────────────────────────────────────────────── */
@@ -549,33 +574,33 @@ function formatTime(iso: string | null): string {
   flex-wrap: wrap;
   gap: 0.22rem;
   padding: 0.32rem 0.72rem 0.42rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.06);
+  border-bottom: 1px solid var(--border-subtle);
   margin-bottom: 0.32rem;
 }
 
 .cat-chip {
   padding: 0.16rem 0.46rem;
-  border: 1px solid rgba(136, 192, 255, 0.12);
+  border: 1px solid var(--border-default);
   border-radius: 999px;
   background: transparent;
-  color: #6e8ba0;
+  color: var(--text-faint);
   cursor: pointer;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   font-weight: 500;
   transition: all 0.16s ease;
   white-space: nowrap;
 }
 
 .cat-chip:hover {
-  border-color: rgba(136, 192, 255, 0.3);
-  color: #c4d6e8;
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
 }
 
 .cat-chip.active {
-  border-color: rgba(90, 213, 255, 0.4);
-  background: rgba(10, 132, 255, 0.14);
-  color: #5ad5ff;
+  border-color: var(--border-strong);
+  background: var(--accent-surface);
+  color: var(--accent);
 }
 
 /* ── 分类徽章 ────────────────────────────────────────────────────── */
@@ -590,10 +615,10 @@ function formatTime(iso: string | null): string {
   padding: 0.02rem 0.3rem;
   border: 1px solid;
   border-radius: 0.2rem;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   letter-spacing: 0.02em;
-  background: rgba(136, 192, 255, 0.04);
+  background: var(--border-subtle);
 }
 
 .list-content::-webkit-scrollbar {
@@ -605,12 +630,12 @@ function formatTime(iso: string | null): string {
 }
 
 .list-content::-webkit-scrollbar-thumb {
-  background: rgba(90, 180, 255, 0.26);
+  background: var(--border-accent);
   border-radius: 3px;
 }
 
 .list-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(90, 180, 255, 0.45);
+  background: var(--border-strong);
 }
 
 .list-section {
@@ -623,24 +648,24 @@ function formatTime(iso: string | null): string {
   gap: 0.32rem;
   margin: 0;
   padding: 0.32rem 0.72rem;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
-  color: #6e8ba0;
+  color: var(--text-faint);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .section-icon {
-  font-size: 0.66rem;
+  font-size: var(--font-size-caption);
   opacity: 0.7;
 }
 
 .section-count {
   padding: 0.02rem 0.28rem;
   border-radius: 999px;
-  background: rgba(136, 192, 255, 0.06);
-  color: #5a7080;
-  font-size: 0.5rem;
+  background: var(--border-subtle);
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
 }
 
 .section-items {
@@ -654,10 +679,10 @@ function formatTime(iso: string | null): string {
   width: 100%;
   margin-bottom: 0.18rem;
   padding: 0.42rem 0.52rem;
-  border: 1px solid rgba(136, 192, 255, 0.08);
+  border: 1px solid var(--border-subtle);
   border-radius: 0.42rem;
-  background: rgba(4, 12, 23, 0.4);
-  color: #c4d6e8;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
   text-align: left;
@@ -667,13 +692,13 @@ function formatTime(iso: string | null): string {
 }
 
 .workflow-item:hover {
-  border-color: rgba(90, 213, 255, 0.24);
-  background: rgba(10, 132, 255, 0.08);
+  border-color: var(--accent-border);
+  background: var(--accent-surface);
 }
 
 .workflow-item.active {
-  border-color: rgba(90, 213, 255, 0.4);
-  background: rgba(10, 132, 255, 0.18);
+  border-color: var(--border-strong);
+  background: var(--accent-surface);
   box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.16);
 }
 
@@ -686,16 +711,16 @@ function formatTime(iso: string | null): string {
 
 .item-title {
   flex: 1;
-  font-size: 0.64rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
-  color: #d8e6f5;
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .readonly-badge {
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   opacity: 0.7;
 }
 
@@ -713,28 +738,28 @@ function formatTime(iso: string | null): string {
   border: 1px solid transparent;
   border-radius: 0.32rem;
   background: transparent;
-  color: #6e8ba0;
+  color: var(--text-faint);
   cursor: pointer;
   font: inherit;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   transition: all 0.16s ease;
 }
 
 .action-btn:hover {
-  border-color: rgba(136, 192, 255, 0.2);
-  background: rgba(136, 192, 255, 0.08);
-  color: #d8e6f5;
+  border-color: var(--border-strong);
+  background: var(--border-subtle);
+  color: var(--text-primary);
 }
 
 .action-btn.danger:hover {
   border-color: rgba(255, 120, 120, 0.3);
   background: rgba(255, 120, 120, 0.1);
-  color: #ff9b9b;
+  color: var(--danger);
 }
 
 .item-desc {
-  font-size: 0.56rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   line-height: 1.3;
   overflow: hidden;
   display: -webkit-box;
@@ -746,16 +771,16 @@ function formatTime(iso: string | null): string {
   display: flex;
   align-items: center;
   gap: 0.32rem;
-  font-size: 0.5rem;
-  color: #5a7080;
+  font-size: var(--font-size-caption);
+  color: var(--text-disabled);
 }
 
 .meta-engine {
   padding: 0.02rem 0.28rem;
   border-radius: 0.24rem;
-  background: rgba(136, 192, 255, 0.06);
-  color: #5ad5ff;
-  font-family: 'Consolas', 'Monaco', monospace;
+  background: var(--border-subtle);
+  color: var(--accent);
+  font-family: var(--font-mono);
 }
 
 /* ── 对话框 ──────────────────────────────────────────────────────── */
@@ -766,7 +791,7 @@ function formatTime(iso: string | null): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 10, 18, 0.6);
+  background: var(--surface-1);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
@@ -775,23 +800,23 @@ function formatTime(iso: string | null): string {
   width: 22rem;
   max-width: 92vw;
   padding: 1rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  border: 1px solid var(--border-default);
   border-radius: 0.72rem;
-  background: rgba(8, 17, 31, 0.98);
+  background: var(--surface-2);
   box-shadow: 0 18px 48px rgba(1, 8, 16, 0.4);
 }
 
 .dialog-title {
   margin: 0 0 0.62rem;
-  font-size: 0.78rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 
 .dialog-text {
   margin: 0 0 0.72rem;
-  color: #8aa8bf;
-  font-size: 0.62rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
@@ -807,13 +832,13 @@ function formatTime(iso: string | null): string {
 
 .dialog-btn {
   padding: 0.36rem 0.82rem;
-  border: 1px solid rgba(136, 192, 255, 0.2);
+  border: 1px solid var(--border-strong);
   border-radius: 0.42rem;
   background: transparent;
-  color: #c4d6e8;
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   font-weight: 500;
   transition: all 0.16s ease;
 }
@@ -824,27 +849,27 @@ function formatTime(iso: string | null): string {
 }
 
 .dialog-btn.cancel:hover {
-  background: rgba(136, 192, 255, 0.06);
+  background: var(--border-subtle);
 }
 
 .dialog-btn.primary {
-  border-color: rgba(90, 213, 255, 0.4);
-  background: rgba(10, 132, 255, 0.2);
-  color: #5ad5ff;
+  border-color: var(--border-strong);
+  background: var(--accent-border);
+  color: var(--accent);
 }
 
 .dialog-btn.primary:hover:not(:disabled) {
-  background: rgba(10, 132, 255, 0.32);
+  background: var(--border-strong);
 }
 
 .dialog-btn.danger {
   border-color: rgba(255, 120, 120, 0.3);
-  background: rgba(255, 80, 80, 0.14);
-  color: #ff9b9b;
+  background: var(--danger-surface);
+  color: var(--danger);
 }
 
 .dialog-btn.danger:hover {
-  background: rgba(255, 80, 80, 0.24);
+  background: var(--danger-border);
 }
 
 .form-row {
@@ -855,23 +880,23 @@ function formatTime(iso: string | null): string {
 }
 
 .form-label {
-  font-size: 0.56rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
 }
 
 .form-input {
   padding: 0.36rem 0.46rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.36rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #d8e6f5;
+  background: var(--surface-raised);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
 }
 
 .form-input:focus {
   outline: none;
-  border-color: rgba(90, 213, 255, 0.4);
+  border-color: var(--border-strong);
 }
 
 /* ── 模板项样式 ──────────────────────────────────────────────────── */
@@ -882,9 +907,9 @@ function formatTime(iso: string | null): string {
 .template-badge {
   padding: 0.02rem 0.32rem;
   border-radius: 0.2rem;
-  background: rgba(255, 184, 77, 0.16);
-  color: #ffd38a;
-  font-size: 0.5rem;
+  background: var(--warning-border);
+  color: var(--accent-warm);
+  font-size: var(--font-size-caption);
   font-weight: 600;
   letter-spacing: 0.04em;
 }
@@ -892,13 +917,13 @@ function formatTime(iso: string | null): string {
 .use-template-btn {
   margin-top: 0.32rem;
   padding: 0.28rem 0.5rem;
-  border: 1px dashed rgba(255, 184, 77, 0.4);
+  border: 1px dashed var(--warning-border);
   border-radius: 0.32rem;
-  background: rgba(255, 184, 77, 0.06);
-  color: #ffd38a;
+  background: var(--warning-surface);
+  color: var(--accent-warm);
   cursor: pointer;
   font: inherit;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -909,7 +934,7 @@ function formatTime(iso: string | null): string {
 }
 
 .use-template-btn:hover {
-  background: rgba(255, 184, 77, 0.16);
-  border-color: rgba(255, 184, 77, 0.6);
+  background: var(--warning-border);
+  border-color: var(--warning-border);
 }
 </style>

@@ -6,9 +6,13 @@
 通过设置 ``PYTEST_DEBUG_TEMPROOT`` 环境变量到项目内 ``.pytest_tmp`` 子目录绕过。
 """
 
+from __future__ import annotations
+
 import os
 import sys
 from pathlib import Path
+
+import pytest
 
 os.environ["ENVIRONMENT"] = "test"
 os.environ["BACKEND_ENV"] = "test"
@@ -51,3 +55,49 @@ if "PYTEST_DEBUG_TEMPROOT" not in os.environ:
 # SpatiaLite 测试隔离：默认 spatial DB 落到项目 tmp，避免污染开发库
 if not os.environ.get("BACKEND_SPATIALITE_DB_PATH", "").strip():
     os.environ["BACKEND_SPATIALITE_DB_PATH"] = str(_PROJECT_TMP / "spatial_test.sqlite")
+
+
+# ── P1-9: 共享 fixture ─────────────────────────────────────────────────────
+# 以下 fixture 供 Test/backend/ 下所有测试文件复用，消除重复的 app/client setup。
+# 若测试文件本地定义了同名 fixture，pytest 优先使用本地定义（不冲突）。
+
+
+@pytest.fixture()
+def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """创建隔离环境的 FastAPI app 实例。
+
+    使用 tmp_path 隔离 DATA_ROOT / OUTPUT_ROOT / WORKFLOW_STATE_DIR，
+    禁用 API Keys 以允许测试免鉴权访问公开端点。
+    """
+    monkeypatch.setenv("BACKEND_ENV", "test")
+    monkeypatch.setenv("BACKEND_DATA_ROOT", str(tmp_path / "data_root"))
+    monkeypatch.setenv("BACKEND_OUTPUT_ROOT", str(tmp_path / "output_root"))
+    monkeypatch.setenv("BACKEND_WORKFLOW_STATE_DIR", str(tmp_path / "workflow_state"))
+    monkeypatch.setenv("BACKEND_API_KEYS_ENABLED", "false")
+
+    # 重置 settings 以拾取新的环境变量
+    try:
+        import app.core.config
+
+        app.core.config.settings = app.core.config.Settings()
+    except Exception:
+        pass
+
+    from app.main import create_app
+
+    return create_app()
+
+
+@pytest.fixture()
+def client(app):
+    """返回带 lifespan 管理的 TestClient。"""
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture()
+def tmp_db(tmp_path: Path) -> Path:
+    """返回临时 SQLite 数据库文件路径（不创建文件，首次连接时自动创建）。"""
+    return tmp_path / "test.sqlite3"

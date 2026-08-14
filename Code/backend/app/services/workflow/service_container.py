@@ -28,6 +28,7 @@ from app.services.workflow_repository import SQLiteWorkflowRepository
 from app.services.workflow.follow_up_dispatch_service import FollowUpDispatchService
 from app.services.workflow.lifecycle_service import WorkflowLifecycleService
 from app.services.workflow.persistence_service import WorkflowPersistenceService
+from app.services.workflow.queue_dispatch_service import QueueDispatchService
 from app.services.workflow.retry_dispatcher import RetryDispatcher
 from app.services.workflow.runtime_status_service import RuntimeStatusService
 from app.services.workflow.submission_service import WorkflowSubmissionService
@@ -63,8 +64,15 @@ follow_up_dispatch_service = FollowUpDispatchService(
 submission_service = WorkflowSubmissionService(
     _repository, persistence_service, transition_builder, follow_up_dispatch_service
 )
+# Phase C：队列唤醒服务（在 submission 之后创建，因为需要 _workflow_capacity_limit
+# 和 _user_concurrency_limit；在 lifecycle 之前创建，因为 lifecycle 需要它）
+queue_dispatch_service = QueueDispatchService(_repository, submission_service)
 lifecycle_service = WorkflowLifecycleService(
-    _repository, persistence_service, transition_builder, follow_up_dispatch_service
+    _repository,
+    persistence_service,
+    transition_builder,
+    follow_up_dispatch_service,
+    queue_dispatch=queue_dispatch_service,
 )
 submission_service.set_lifecycle_service(lifecycle_service)
 

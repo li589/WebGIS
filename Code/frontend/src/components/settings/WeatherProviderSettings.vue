@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, type Component } from 'vue'
 import { storeToRefs } from 'pinia'
+import { CloudSun, Settings, AlertTriangle, Save, DollarSign, Gift, HelpCircle } from '../ui/icons'
 import { useSettingsStore } from '../../stores/settings'
 import type { WeatherProviderItem, WeatherProviderType } from '../../services/settings-api'
+import AppSelect from '../ui/AppSelect.vue'
 
 const settingsStore = useSettingsStore()
 const { weatherProviders, weatherConfig } = storeToRefs(settingsStore)
@@ -24,16 +26,16 @@ const confirmResetId = ref<string | null>(null)
 
 const providerTypeMeta: Record<
   WeatherProviderType,
-  { label: string; icon: string; class: string }
+  { label: string; icon: Component; class: string }
 > = {
-  free_api: { label: '免费 API', icon: '🆓', class: 'type-free' },
-  commercial_api: { label: '商业 API', icon: '💰', class: 'type-commercial' },
-  local_data: { label: '本地数据', icon: '💾', class: 'type-local' },
+  free_api: { label: '免费 API', icon: Gift, class: 'type-free' },
+  commercial_api: { label: '商业 API', icon: DollarSign, class: 'type-commercial' },
+  local_data: { label: '本地数据', icon: Save, class: 'type-local' },
 }
 
 function typeMeta(t: string | undefined) {
   const key = (t ?? 'free_api') as WeatherProviderType
-  return providerTypeMeta[key] ?? { label: t ?? '未知', icon: '❓', class: 'type-unknown' }
+  return providerTypeMeta[key] ?? { label: t ?? '未知', icon: HelpCircle, class: 'type-unknown' }
 }
 
 /** Open-Meteo 通道标签（避免三条同名混淆） */
@@ -255,7 +257,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
       <!-- 空状态 -->
       <div v-if="sortedProviders.length === 0" class="empty-state">
-        <span class="empty-icon">🌦</span>
+        <span class="empty-icon"><CloudSun :size="48" aria-hidden="true" /></span>
         <span>暂无天气数据源，请检查后端是否正确注册</span>
       </div>
 
@@ -276,7 +278,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
                   {{ channelBadge(p)?.text }}
                 </span>
                 <span class="type-badge" :class="typeMeta(p.provider_type).class">
-                  {{ typeMeta(p.provider_type).icon }} {{ typeMeta(p.provider_type).label }}
+                  <component :is="typeMeta(p.provider_type).icon" :size="14" aria-hidden="true" />
+                  {{ typeMeta(p.provider_type).label }}
                 </span>
                 <span class="key-badge" :class="statusBadge(p).class">
                   {{ statusBadge(p).text }}
@@ -382,7 +385,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
               class="action-btn config"
               @click="startEditConfig(p)"
             >
-              ⚙ 配置
+              <Settings :size="14" aria-hidden="true" /> 配置
             </button>
             <button v-else class="action-btn cancel" @click="cancelEditConfig(p.provider_id)">
               收起
@@ -462,13 +465,14 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
                   type="checkbox"
                   class="form-checkbox"
                 />
-                <select
+                <AppSelect
                   v-else-if="field.field_type === 'select' && (field.options?.length ?? 0) > 0"
-                  v-model="editingConfig[p.provider_id][field.key]"
-                  class="form-input"
-                >
-                  <option v-for="opt in field.options" :key="opt" :value="opt">{{ opt }}</option>
-                </select>
+                  :model-value="String(editingConfig[p.provider_id][field.key] ?? '')"
+                  :options="(field.options ?? []).map((opt) => ({ label: opt, value: opt }))"
+                  @update:model-value="
+                    (val: string) => (editingConfig[p.provider_id][field.key] = val)
+                  "
+                />
                 <textarea
                   v-else
                   v-model="editingConfig[p.provider_id][field.key] as string"
@@ -510,7 +514,9 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
           </div>
 
           <!-- 错误信息 -->
-          <div v-if="p.status?.last_error" class="provider-error">⚠ {{ p.status.last_error }}</div>
+          <div v-if="p.status?.last_error" class="provider-error">
+            <AlertTriangle :size="14" aria-hidden="true" /> {{ p.status.last_error }}
+          </div>
         </div>
       </div>
     </section>
@@ -540,8 +546,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
 .section-title {
   margin: 0;
-  color: #e8f3fc;
-  font-size: 0.7rem;
+  color: var(--text-strong);
+  font-size: var(--font-size-caption);
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -551,9 +557,9 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 .count-badge {
   padding: 0.08rem 0.36rem;
   border-radius: 999px;
-  background: rgba(10, 132, 255, 0.2);
-  color: #5ad5ff;
-  font-size: 0.52rem;
+  background: var(--accent-surface);
+  color: var(--accent-strong);
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
@@ -564,8 +570,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
 .section-hint {
   margin: 0;
-  color: #5a7080;
-  font-size: 0.56rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
@@ -583,19 +589,19 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   gap: 0.62rem;
   padding: 0.36rem 0.52rem;
   border-radius: 0.4rem;
-  background: rgba(4, 12, 23, 0.5);
-  border: 1px solid rgba(136, 192, 255, 0.06);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
 }
 
 .info-label {
-  color: #8aa8bf;
-  font-size: 0.6rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   flex: none;
 }
 
 .info-value {
-  color: #d8e6f5;
-  font-size: 0.6rem;
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
   text-align: right;
 }
 
@@ -606,8 +612,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   align-items: center;
   gap: 0.52rem;
   padding: 2rem 1rem;
-  color: #5a7080;
-  font-size: 0.6rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
 }
 
 .empty-icon {
@@ -625,8 +631,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 .provider-card {
   padding: 0.72rem 0.82rem;
   border-radius: 0.52rem;
-  background: rgba(4, 12, 23, 0.5);
-  border: 1px solid rgba(136, 192, 255, 0.1);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
   transition:
     opacity 0.2s ease,
     border-color 0.2s ease;
@@ -637,7 +643,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .provider-card.expanded {
-  border-color: rgba(90, 213, 255, 0.3);
+  border-color: var(--accent-border);
 }
 
 .provider-header {
@@ -664,8 +670,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .provider-name {
-  color: #e8f3fc;
-  font-size: 0.7rem;
+  color: var(--text-strong);
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
@@ -677,22 +683,22 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .provider-id {
-  color: #5a7080;
-  font-size: 0.54rem;
-  font-family: 'SF Mono', 'Consolas', monospace;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
+  font-family: var(--font-mono);
 }
 
 .provider-version {
-  color: #5a7080;
-  font-size: 0.52rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   padding: 0.04rem 0.26rem;
   border-radius: 0.2rem;
-  background: rgba(136, 192, 255, 0.08);
+  background: var(--border-subtle);
 }
 
 .provider-link {
-  color: #5ad5ff;
-  font-size: 0.54rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   text-decoration: none;
 }
 
@@ -702,8 +708,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
 .provider-desc {
   margin: 0.18rem 0 0 0;
-  color: #8aa8bf;
-  font-size: 0.56rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
@@ -719,8 +725,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   padding: 0.42rem 0.52rem;
   margin-bottom: 0.42rem;
   border-radius: 0.36rem;
-  background: rgba(4, 12, 23, 0.4);
-  border: 1px solid rgba(136, 192, 255, 0.06);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
 }
 
 .meta-item {
@@ -730,18 +736,18 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .meta-label {
-  color: #5a7080;
-  font-size: 0.52rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
 }
 
 .meta-value {
-  color: #d8e6f5;
-  font-size: 0.58rem;
-  font-family: 'SF Mono', 'Consolas', monospace;
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
+  font-family: var(--font-mono);
 }
 
 .meta-value.warn {
-  color: #ffcc66;
+  color: var(--warning);
 }
 
 /* 运行时状态 */
@@ -756,8 +762,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .runtime-label {
-  color: #8aa8bf;
-  font-size: 0.56rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   flex: none;
 }
 
@@ -772,25 +778,25 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   flex: 1;
   height: 0.36rem;
   border-radius: 999px;
-  background: rgba(4, 12, 23, 0.8);
-  border: 1px solid rgba(136, 192, 255, 0.1);
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
   overflow: hidden;
 }
 
 .runtime-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, rgba(90, 213, 255, 0.6), rgba(10, 132, 255, 0.8));
+  background: linear-gradient(90deg, var(--border-strong), var(--border-strong));
   transition: width 0.3s ease;
 }
 
 .runtime-bar-fill.warn {
-  background: linear-gradient(90deg, rgba(255, 204, 102, 0.6), rgba(255, 100, 100, 0.8));
+  background: linear-gradient(90deg, var(--warning), var(--danger-border));
 }
 
 .runtime-text {
-  color: #d8e6f5;
-  font-size: 0.54rem;
-  font-family: 'SF Mono', 'Consolas', monospace;
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
+  font-family: var(--font-mono);
   flex: none;
 }
 
@@ -806,14 +812,14 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   margin-top: 0.62rem;
   padding: 0.62rem;
   border-radius: 0.4rem;
-  background: rgba(4, 12, 23, 0.6);
-  border: 1px solid rgba(90, 213, 255, 0.16);
+  background: var(--surface-raised);
+  border: 1px solid var(--accent-surface);
 }
 
 .config-title {
   margin: 0 0 0.52rem 0;
-  color: #5ad5ff;
-  font-size: 0.62rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
@@ -825,30 +831,30 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .form-label {
-  color: #8aa8bf;
-  font-size: 0.58rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   display: flex;
   align-items: center;
   gap: 0.16rem;
 }
 
 .required-mark {
-  color: #ff9999;
+  color: var(--danger);
 }
 
 .form-input {
   padding: 0.36rem 0.52rem;
   border-radius: 0.36rem;
-  background: rgba(4, 12, 23, 0.8);
-  border: 1px solid rgba(136, 192, 255, 0.14);
-  color: #d8e6f5;
-  font-size: 0.6rem;
-  font-family: 'SF Mono', 'Consolas', monospace;
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
+  font-family: var(--font-mono);
   outline: none;
 }
 
 .form-input:focus {
-  border-color: rgba(90, 213, 255, 0.4);
+  border-color: var(--border-strong);
 }
 
 .priority-input {
@@ -862,18 +868,18 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .saving-hint {
-  color: #5ad5ff;
-  font-size: 0.54rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
 }
 
 .form-textarea {
   padding: 0.36rem 0.52rem;
   border-radius: 0.36rem;
-  background: rgba(4, 12, 23, 0.8);
-  border: 1px solid rgba(136, 192, 255, 0.14);
-  color: #d8e6f5;
-  font-size: 0.56rem;
-  font-family: 'SF Mono', 'Consolas', monospace;
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
+  font-family: var(--font-mono);
   outline: none;
   resize: vertical;
   min-height: 3rem;
@@ -882,20 +888,20 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 .form-checkbox {
   width: 1rem;
   height: 1rem;
-  accent-color: #5ad5ff;
+  accent-color: var(--accent);
 }
 
 .form-hint {
   margin: 0;
-  color: #5a7080;
-  font-size: 0.52rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   line-height: 1.4;
 }
 
 .no-config {
   padding: 0.52rem;
-  color: #5a7080;
-  font-size: 0.56rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   text-align: center;
 }
 
@@ -913,10 +919,10 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   margin-top: 0.42rem;
   padding: 0.42rem 0.52rem;
   border-radius: 0.36rem;
-  background: rgba(255, 100, 100, 0.08);
-  border: 1px solid rgba(255, 100, 100, 0.2);
-  color: #ffcccc;
-  font-size: 0.56rem;
+  background: var(--danger-surface);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
+  font-size: var(--font-size-caption);
   flex-wrap: wrap;
 }
 
@@ -924,106 +930,111 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 .type-badge {
   padding: 0.08rem 0.32rem;
   border-radius: 0.2rem;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
 .type-free {
-  background: rgba(114, 255, 207, 0.12);
-  color: #9ff8cf;
+  background: var(--success-surface);
+  color: var(--success);
 }
 
 .type-commercial {
-  background: rgba(255, 204, 102, 0.12);
-  color: #ffcc66;
+  background: var(--warning-surface);
+  color: var(--warning);
 }
 
 .type-local {
-  background: rgba(201, 163, 255, 0.12);
-  color: #c9a3ff;
+  background: var(--surface-violet-tint);
+  color: var(--accent-strong);
 }
 
 .type-unknown {
-  background: rgba(136, 192, 255, 0.12);
-  color: #8aa8bf;
+  background: var(--border-default);
+  color: var(--text-secondary);
 }
 
 .channel-badge {
   padding: 0.1rem 0.36rem;
   border-radius: 0.26rem;
-  font-size: 0.5rem;
+  font-size: var(--font-size-caption);
   font-weight: 700;
   letter-spacing: 0.03em;
   white-space: nowrap;
 }
 
 .channel-local {
-  background: rgba(90, 213, 255, 0.14);
-  color: #5ad5ff;
+  background: var(--accent-surface);
+  color: var(--accent-strong);
 }
 
 .channel-online {
-  background: rgba(201, 163, 255, 0.14);
-  color: #c9a3ff;
+  background: var(--surface-violet-tint);
+  color: var(--accent-strong);
 }
 
 .channel-legacy {
-  background: rgba(255, 138, 138, 0.14);
-  color: #ff8a8a;
+  background: var(--danger-surface);
+  color: var(--danger);
 }
 
 /* 状态徽章 */
 .key-badge {
   padding: 0.1rem 0.36rem;
   border-radius: 0.26rem;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   white-space: nowrap;
 }
 
 .badge-ok {
-  background: rgba(114, 255, 207, 0.14);
-  color: #9ff8cf;
+  background: var(--success-surface);
+  border: 1px solid var(--success-border);
+  color: var(--success);
 }
 
 .badge-fail {
-  background: rgba(255, 100, 100, 0.14);
-  color: #ff9999;
+  background: var(--danger-surface);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
 }
 
 .badge-warn {
-  background: rgba(255, 204, 102, 0.14);
-  color: #ffcc66;
+  background: var(--warning-surface);
+  border: 1px solid var(--warning-border);
+  color: var(--warning);
 }
 
 .badge-disabled {
-  background: rgba(90, 106, 128, 0.2);
-  color: #8aa8bf;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
 }
 
 .badge-unknown {
-  background: rgba(201, 163, 255, 0.14);
-  color: #c9a3ff;
+  background: var(--surface-violet-tint);
+  border: 1px solid var(--border-violet-tint);
+  color: var(--accent-strong);
 }
 
 /* 按钮 */
 .action-btn {
   padding: 0.26rem 0.62rem;
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  border: 1px solid var(--border-default);
   border-radius: 0.36rem;
   background: transparent;
-  color: #8aa8bf;
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   transition: all 0.16s ease;
   white-space: nowrap;
 }
 
 .action-btn:hover:not(:disabled) {
-  border-color: rgba(90, 213, 255, 0.3);
-  color: #5ad5ff;
-  background: rgba(10, 132, 255, 0.1);
+  border-color: var(--accent-border);
+  color: var(--accent-strong);
+  background: var(--accent-surface);
 }
 
 .action-btn:disabled {
@@ -1032,43 +1043,43 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .action-btn.test {
-  border-color: rgba(90, 213, 255, 0.24);
-  color: #5ad5ff;
+  border-color: var(--accent-border);
+  color: var(--accent-strong);
 }
 
 .action-btn.config {
-  border-color: rgba(201, 163, 255, 0.2);
-  color: #c9a3ff;
+  border-color: var(--border-violet-tint);
+  color: var(--accent-strong);
 }
 
 .action-btn.save {
-  border-color: rgba(114, 255, 207, 0.24);
-  color: #9ff8cf;
+  border-color: var(--success-border);
+  color: var(--success);
 }
 
 .action-btn.save:hover:not(:disabled) {
-  background: rgba(114, 255, 207, 0.1);
+  background: var(--success-surface);
 }
 
 .action-btn.cancel {
-  border-color: rgba(255, 100, 100, 0.16);
-  color: #ff9999;
+  border-color: var(--danger-border);
+  color: var(--danger);
 }
 
 .action-btn.delete {
-  border-color: rgba(255, 100, 100, 0.16);
-  color: #ff9999;
+  border-color: var(--danger-border);
+  color: var(--danger);
 }
 
 .action-btn.confirm-delete {
-  border-color: rgba(255, 77, 77, 0.4);
-  color: #ffcccc;
-  background: rgba(255, 77, 77, 0.12);
+  border-color: var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-surface);
 }
 
 .action-btn.reload {
-  border-color: rgba(201, 163, 255, 0.2);
-  color: #c9a3ff;
+  border-color: var(--border-violet-tint);
+  color: var(--accent-strong);
 }
 
 /* 切换开关 */
@@ -1076,9 +1087,9 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   position: relative;
   width: 2rem;
   height: 1.06rem;
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  border: 1px solid var(--border-default);
   border-radius: 999px;
-  background: rgba(4, 12, 23, 0.8);
+  background: var(--surface-1);
   cursor: pointer;
   padding: 0;
   transition:
@@ -1088,8 +1099,8 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 }
 
 .toggle-switch.on {
-  background: rgba(10, 132, 255, 0.4);
-  border-color: rgba(90, 213, 255, 0.4);
+  background: var(--border-strong);
+  border-color: var(--border-strong);
 }
 
 .toggle-switch:disabled {
@@ -1104,7 +1115,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   width: 0.72rem;
   height: 0.72rem;
   border-radius: 50%;
-  background: #8aa8bf;
+  background: var(--surface-3);
   transform: translateY(-50%);
   transition:
     left 0.2s ease,
@@ -1113,7 +1124,7 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
 
 .toggle-switch.on .toggle-knob {
   left: calc(100% - 0.88rem);
-  background: #5ad5ff;
+  background: var(--accent);
 }
 
 /* 测试结果 */
@@ -1121,50 +1132,50 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   margin-top: 0.42rem;
   padding: 0.42rem 0.52rem;
   border-radius: 0.36rem;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   line-height: 1.4;
 }
 
 .test-result.success {
-  background: rgba(114, 255, 207, 0.08);
-  border: 1px solid rgba(114, 255, 207, 0.16);
-  color: #9ff8cf;
+  background: var(--success-surface);
+  border: 1px solid var(--success-border);
+  color: var(--success);
 }
 
 .test-result.fail {
-  background: rgba(255, 100, 100, 0.08);
-  border: 1px solid rgba(255, 100, 100, 0.16);
-  color: #ff9999;
+  background: var(--danger-surface);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
 }
 
 .test-time {
   margin-top: 0.16rem;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   opacity: 0.7;
 }
 
 .last-test {
   margin-top: 0.32rem;
-  color: #5a7080;
-  font-size: 0.52rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
 }
 
 .text-ok {
-  color: #9ff8cf;
+  color: var(--success);
 }
 
 .text-fail {
-  color: #ff9999;
+  color: var(--danger);
 }
 
 .provider-error {
   margin-top: 0.42rem;
   padding: 0.32rem 0.52rem;
   border-radius: 0.36rem;
-  background: rgba(255, 100, 100, 0.08);
-  border: 1px solid rgba(255, 100, 100, 0.16);
-  color: #ff9999;
-  font-size: 0.54rem;
+  background: var(--danger-surface);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
+  font-size: var(--font-size-caption);
   line-height: 1.4;
 }
 
@@ -1172,9 +1183,9 @@ const healthyCount = computed(() => weatherProviders.value.filter((p) => p.statu
   margin-top: 10px;
   padding: 8px 10px;
   border-radius: 6px;
-  border: 1px solid rgba(200, 140, 40, 0.45);
-  background: rgba(200, 140, 40, 0.12);
-  color: var(--text-secondary, #c9b896);
+  border: 1px solid var(--warning-border);
+  background: var(--warning-surface);
+  color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.45;
 }

@@ -432,21 +432,27 @@ def store_geojson_manifest(
     output_path: Path,
     extra: dict[str, object] | None = None,
     port_name: str = "vector",
+    extra_products: list[ProductRef] | None = None,
+    table_uris: list[str] | None = None,
 ) -> dict[str, object]:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(geojson, ensure_ascii=True), encoding="utf-8")
     uri = str(output_path)
+    products = [
+        ProductRef(
+            name=output_path.name,
+            type="geojson",
+            uri=uri,
+            tags={"module": module_name, "kind": "vector"},
+        )
+    ]
+    if extra_products:
+        products.extend(extra_products)
     manifest = ProductManifest(
         job_id=ctx.request.job_id,
         run_id=ctx.runtime_context.run_id,
-        products=[
-            ProductRef(
-                name=output_path.name,
-                type="geojson",
-                uri=uri,
-                tags={"module": module_name, "kind": "vector"},
-            )
-        ],
+        products=products,
+        tables=list(table_uris or []),
         extra={"module_name": module_name, "path": uri, **(extra or {})},
     )
     artifact = ArtifactRef(

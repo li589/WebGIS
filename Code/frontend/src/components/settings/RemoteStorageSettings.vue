@@ -3,6 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSettingsStore } from '../../stores/settings'
 import type { RemoteStorageProtocol, RemoteStorageUpsertRequest } from '../../services/settings-api'
+import AppSelect from '../ui/AppSelect.vue'
 
 const settingsStore = useSettingsStore()
 const { remoteStorageProfiles, remoteStorageHistory } = storeToRefs(settingsStore)
@@ -212,9 +213,10 @@ async function deleteHistory(profileId: string, historyId: number) {
           </label>
           <label>
             <span>协议</span>
-            <select v-model="form.protocol">
-              <option v-for="p in protocols" :key="p" :value="p">{{ p }}</option>
-            </select>
+            <AppSelect
+              v-model="form.protocol"
+              :options="protocols.map((p) => ({ label: p, value: p }))"
+            />
           </label>
           <label>
             <span>{{ form.protocol === 'gs' ? 'Bucket' : '主机' }}</span>
@@ -387,25 +389,25 @@ async function deleteHistory(profileId: string, historyId: number) {
 }
 .section-title {
   margin: 0 0 0.32rem;
-  color: #e8f3fc;
-  font-size: 0.7rem;
+  color: var(--text-strong);
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 .section-hint {
   margin: 0;
-  color: #5a7080;
-  font-size: 0.54rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 .section-hint code {
-  color: #9ec9ff;
+  color: var(--accent-strong);
 }
 .form-card,
 .key-card {
   padding: 0.62rem 0.72rem;
   border-radius: 0.52rem;
-  background: rgba(4, 12, 23, 0.5);
-  border: 1px solid rgba(136, 192, 255, 0.1);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
 }
 .key-card.disabled {
   opacity: 0.55;
@@ -419,8 +421,8 @@ async function deleteHistory(profileId: string, historyId: number) {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  color: #8aa0b4;
-  font-size: 0.54rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
 }
 .form-grid label.span-2 {
   grid-column: span 2;
@@ -434,11 +436,11 @@ async function deleteHistory(profileId: string, historyId: number) {
 .form-grid select,
 .form-grid textarea,
 .test-uri input {
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  border: 1px solid var(--border-default);
   border-radius: 0.36rem;
-  background: rgba(2, 8, 16, 0.72);
-  color: #e8f3fc;
-  font-size: 0.62rem;
+  background: var(--surface-1);
+  color: var(--text-strong);
+  font-size: var(--font-size-caption);
   padding: 0.32rem 0.42rem;
 }
 .test-uri {
@@ -446,12 +448,12 @@ async function deleteHistory(profileId: string, historyId: number) {
   flex-direction: column;
   gap: 0.2rem;
   margin-top: 0.4rem;
-  color: #8aa0b4;
-  font-size: 0.54rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
 }
 .form-error {
-  color: #ff9999;
-  font-size: 0.56rem;
+  color: var(--danger);
+  font-size: var(--font-size-caption);
   margin: 0.4rem 0 0;
 }
 .form-actions,
@@ -462,20 +464,22 @@ async function deleteHistory(profileId: string, historyId: number) {
   margin-top: 0.48rem;
 }
 .btn {
-  border: 1px solid rgba(136, 192, 255, 0.22);
-  background: rgba(20, 40, 64, 0.7);
-  color: #cfe6ff;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-primary);
   border-radius: 0.32rem;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   padding: 0.28rem 0.52rem;
   cursor: pointer;
 }
 .btn.primary {
-  background: rgba(56, 120, 196, 0.45);
+  background: var(--accent-surface);
+  color: var(--accent-strong);
 }
 .btn.danger {
-  border-color: rgba(255, 120, 120, 0.35);
-  color: #ffb0b0;
+  border-color: var(--danger-border);
+  background: var(--danger-surface);
+  color: var(--danger);
 }
 .btn:disabled {
   opacity: 0.5;
@@ -492,8 +496,8 @@ async function deleteHistory(profileId: string, historyId: number) {
   gap: 0.4rem;
 }
 .key-name {
-  color: #e8f3fc;
-  font-size: 0.66rem;
+  color: var(--text-strong);
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 .key-badges {
@@ -503,44 +507,44 @@ async function deleteHistory(profileId: string, historyId: number) {
 .key-badge {
   padding: 0.1rem 0.36rem;
   border-radius: 0.26rem;
-  font-size: 0.52rem;
-  background: rgba(136, 192, 255, 0.12);
-  color: #9ec9ff;
+  font-size: var(--font-size-caption);
+  background: var(--border-default);
+  color: var(--accent-strong);
 }
 .badge-ok {
-  background: rgba(114, 255, 207, 0.14);
-  color: #9ff8cf;
+  background: var(--success-surface);
+  color: var(--success);
 }
 .badge-fail {
-  background: rgba(255, 100, 100, 0.14);
-  color: #ff9999;
+  background: var(--danger-surface);
+  color: var(--danger);
 }
 .key-desc {
   margin: 0.28rem 0 0;
-  color: #5a7080;
-  font-size: 0.56rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
 }
 .test-msg {
   margin: 0.28rem 0 0;
-  color: #ff9999;
-  font-size: 0.54rem;
+  color: var(--danger);
+  font-size: var(--font-size-caption);
 }
 .test-msg.ok {
-  color: #9ff8cf;
+  color: var(--success);
 }
 .empty {
-  color: #5a7080;
-  font-size: 0.58rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
 }
 .history-panel {
   margin-top: 0.45rem;
   padding-top: 0.4rem;
-  border-top: 1px solid rgba(136, 192, 255, 0.1);
+  border-top: 1px solid var(--border-subtle);
 }
 .history-empty {
   margin: 0;
-  color: #5a7080;
-  font-size: 0.54rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
 }
 .history-list {
   list-style: none;
@@ -555,11 +559,11 @@ async function deleteHistory(profileId: string, historyId: number) {
   justify-content: space-between;
   gap: 0.4rem;
   align-items: center;
-  color: #8aa0b4;
-  font-size: 0.52rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
 }
 .history-row code {
-  color: #cfe6ff;
+  color: var(--text-primary);
 }
 .history-actions {
   display: flex;

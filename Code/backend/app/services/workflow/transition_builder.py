@@ -76,7 +76,7 @@ class WorkflowTransitionBuilder:
             payload=payload,
             status=ExecutionStatus.accepted,
             progress=3,
-            message="工作流已创建，准备进入服务编排链。",
+            message="已创建",
             created_at=accepted_at,
             updated_at=accepted_at,
             status_url=status_url,
@@ -87,7 +87,7 @@ class WorkflowTransitionBuilder:
             payload=payload,
             status=ExecutionStatus.queued,
             progress=12,
-            message="工作流已进入本地任务编排器。",
+            message="编排中",
             created_at=accepted_at,
             updated_at=queued_at,
             status_url=status_url,
@@ -96,6 +96,7 @@ class WorkflowTransitionBuilder:
                 "executor": get_task_executor(),
                 "dispatch_channel": resolve_workflow_channel(payload),
                 "queue_name": resolve_workflow_queue(payload),
+                **self._analysis_exclusivity_meta(payload),
             },
         )
         return [
@@ -146,6 +147,15 @@ class WorkflowTransitionBuilder:
             ),
         ]
 
+    @staticmethod
+    def _analysis_exclusivity_meta(payload: WorkflowSubmitRequest) -> dict:
+        """Extract analysis_exclusivity_key from payload parameters if present."""
+        params = payload.parameters
+        if not isinstance(params, dict):
+            return {}
+        key = str(params.get("analysis_exclusivity_key") or "").strip()
+        return {"analysis_exclusivity_key": key} if key else {}
+
     def build_execution_transition(
         self,
         *,
@@ -193,7 +203,7 @@ class WorkflowTransitionBuilder:
             payload=payload,
             status=ExecutionStatus.running,
             progress=35,
-            message="服务层正在执行真实工作流。",
+            message="运行中",
             created_at=created_at,
             updated_at=updated_at,
             status_url=status_url,

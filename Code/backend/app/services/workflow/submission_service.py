@@ -143,7 +143,11 @@ class WorkflowSubmissionService:
         return self._lifecycle
 
     def submit_workflow(
-        self, payload: WorkflowSubmitRequest
+        self,
+        payload: WorkflowSubmitRequest,
+        *,
+        user_id: int | None = None,
+        role: str | None = None,
     ) -> WorkflowAcceptedResponse:
         payload = normalize_workflow_submit_request(payload)
         from app.services.resource_profile_resolver import (
@@ -152,6 +156,8 @@ class WorkflowSubmissionService:
 
         # Upgrade standard → heavy when seed meta or heavy modules are present
         apply_resource_profile_to_payload(payload)
+        # Same layer+tool analysis: cancel prior non-terminal run before accept.
+        cancelled_prior = self._cancel_exclusive_analysis_runs(payload)
         now = datetime.now(UTC)
         run_id = f"run-{uuid4().hex[:12]}"
         status_url = self._transitions.workflow_status_url(run_id)
@@ -161,7 +167,11 @@ class WorkflowSubmissionService:
         with log_context(run_id=run_id):
             self._validate_requested_outputs(payload)
             self._validate_request_params(payload)
-            logger.info("Workflow accepted run_class=%s", run_class)
+            logger.info(
+                "Workflow accepted run_class=%s exclusivity_cancelled=%s",
+                run_class,
+                cancelled_prior,
+            )
             accepted_at = now
             queued_at = datetime.now(UTC)
             submission_transitions = self._transitions.build_submission_transitions(
@@ -174,15 +184,43 @@ class WorkflowSubmissionService:
                 make_event_fn=self._persistence.make_event,
             )
             capacity_limit = self._workflow_capacity_limit(run_class)
+            user_limit = self._user_concurrency_limit(user_id, role)
+            user_queued = False
             for transition in submission_transitions:
                 if transition.request_json:
                     # Atomic capacity reservation + first persist (closes TOCTOU).
-                    self._persistence.save_run_under_capacity(
-                        run_status=transition.status,
-                        request_json=request_json,
-                        run_class=run_class,
-                        limit=capacity_limit,
-                    )
+                    try:
+                        self._persistence.save_run_under_capacity(
+                            run_status=transition.status,
+                            request_json=request_json,
+                            run_class=run_class,
+                            limit=capacity_limit,
+                            user_id=user_id,
+                            user_limit=user_limit,
+                        )
+                    except ValueError as exc:
+                        if "User workflow capacity" in str(exc):
+                            # Phase C：用户级并发上限达到——保存为 queued 状态，
+                            # 等待 queue_dispatch_service 在其他工作流完成后唤醒。
+                            # 注意：transition.status 的状态是 accepted，需要覆写为
+                            # queued，否则 dispatch_queued_workflows 无法找到该 run
+                            # （它搜索 status='queued'），且该 run 会被错误计为
+                            # accepted 但不会派发到 Celery，永久卡死。
+                            user_queued = True
+                            queued_run_status = transition.status.model_copy(
+                                update={
+                                    "status": ExecutionStatus.queued,
+                                    "progress": 5,
+                                }
+                            )
+                            self._persistence.save_run_status(
+                                run_status=queued_run_status,
+                                request_json=request_json,
+                                run_class=run_class,
+                                user_id=user_id,
+                            )
+                        else:
+                            raise
                 else:
                     self._persistence.save_run_status(
                         run_status=transition.status,
@@ -192,19 +230,116 @@ class WorkflowSubmissionService:
                 for event in transition.events:
                     self._persistence.record_event(event=event)
 
+            if user_queued:
+                logger.info(
+                    "Workflow queued due to user concurrency limit: "
+                    "run_id=%s user_id=%s user_limit=%s",
+                    run_id,
+                    user_id,
+                    user_limit,
+                )
+                self._persistence.record_event(
+                    run_id=run_id,
+                    channel=EventChannel.system,
+                    level=LogLevel.warning,
+                    message="用户并发工作流数已达上限，工作流已入队等待调度。",
+                    progress=5,
+                    payload={
+                        "queued_reason": "user_concurrency_limit",
+                        "user_limit": user_limit,
+                    },
+                    created_at=datetime.now(UTC),
+                )
+                return WorkflowAcceptedResponse(
+                    run_id=run_id,
+                    status=ExecutionStatus.queued,
+                    status_url=status_url,
+                    events_url=events_url,
+                    created_at=now,
+                    message="用户并发工作流数已达上限，工作流已入队等待调度。",
+                )
+
             if use_celery_executor():
                 self._dispatch_async_workflow(run_id, payload)
             else:
                 self.process_workflow_run(run_id, payload)
 
+            message = "工作流已提交，可轮询状态、事件与结果引用。"
+            if cancelled_prior:
+                message = (
+                    f"工作流已提交（已取代 {cancelled_prior} 个同工具先前分析）。"
+                    "可轮询状态、事件与结果引用。"
+                )
             return WorkflowAcceptedResponse(
                 run_id=run_id,
                 status=ExecutionStatus.accepted,
                 status_url=status_url,
                 events_url=events_url,
                 created_at=now,
-                message="工作流已提交，可轮询状态、事件与结果引用。",
+                message=message,
             )
+
+    @staticmethod
+    def _analysis_exclusivity_key(payload: WorkflowSubmitRequest) -> str | None:
+        params = payload.parameters if isinstance(payload.parameters, dict) else {}
+        key = str(params.get("analysis_exclusivity_key") or "").strip()
+        return key or None
+
+    def _cancel_exclusive_analysis_runs(self, payload: WorkflowSubmitRequest) -> int:
+        """Cancel non-terminal runs sharing ``analysis_exclusivity_key``.
+
+        Returns the number of runs cancelled (best-effort; race-safe via lifecycle CAS).
+        """
+        key = self._analysis_exclusivity_key(payload)
+        if not key:
+            return 0
+        terminal = {
+            ExecutionStatus.succeeded,
+            ExecutionStatus.failed,
+            ExecutionStatus.cancelled,
+        }
+        cancelled = 0
+        for run in self._repository.list_runs():
+            if run.status in terminal:
+                continue
+            meta = dict(run.executor_metadata or {})
+            if str(meta.get("analysis_exclusivity_key") or "").strip() == key:
+                try:
+                    self.lifecycle.cancel_workflow_run(run.run_id)
+                    cancelled += 1
+                    continue
+                except Exception:
+                    logger.warning(
+                        "Failed to cancel exclusive analysis run %s key=%s",
+                        run.run_id,
+                        key,
+                        exc_info=True,
+                    )
+            raw = self._repository.get_run_request_json(run.run_id)
+            if not raw:
+                continue
+            try:
+                req = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(req, dict):
+                continue
+            req_params = (
+                req.get("parameters") if isinstance(req.get("parameters"), dict) else {}
+            )
+            if str(req_params.get("analysis_exclusivity_key") or "").strip() != key:
+                continue
+            try:
+                self.lifecycle.cancel_workflow_run(run.run_id)
+                cancelled += 1
+            except Exception:
+                logger.warning(
+                    "Failed to cancel exclusive analysis run %s key=%s",
+                    run.run_id,
+                    key,
+                    exc_info=True,
+                )
+        return cancelled
 
     def process_workflow_run(self, run_id: str, payload: WorkflowSubmitRequest) -> None:
         current_run = self._repository.get_run(run_id)
@@ -222,6 +357,41 @@ class WorkflowSubmissionService:
                 current_run.status.value,
             )
             return
+
+        # C5：at-least-once 重投追踪（审查 H2）。
+        # acks_late 保证 worker 崩溃后任务重投，但幂等检查仅挡终态。
+        # running 状态的重投意味着原 worker 已死亡——记录 retry 次数与诊断信息，
+        # 供后续排查重复计算与产物覆盖（受保护终态 H2a 已在收口端阻止终态覆盖）。
+        existing_meta = dict(current_run.executor_metadata if current_run else {})
+        retry_count = 0
+        if current_run is not None and current_run.status == ExecutionStatus.running:
+            retry_count = int(existing_meta.get("execution_retry_count", 0)) + 1
+            logger.warning(
+                "Workflow run %s redelivered while still running (execution_retry=%d). "
+                "Original started_at=%s worker_task_id=%s. "
+                "Re-executing from scratch; check lifecycle logs for duplicate artifacts.",
+                run_id,
+                retry_count,
+                existing_meta.get("started_at"),
+                existing_meta.get("celery_task_id"),
+            )
+            self._persistence.record_event(
+                run_id=run_id,
+                channel=EventChannel.system,
+                level=LogLevel.warning,
+                message=(
+                    f"工作流重投：当前状态 running，疑似前次 worker 崩溃"
+                    f"（重试次数={retry_count}）"
+                ),
+                progress=5,
+                payload={
+                    "execution_retry_count": retry_count,
+                    "previous_started_at": existing_meta.get("started_at"),
+                    "previous_worker_task_id": existing_meta.get("celery_task_id"),
+                },
+                created_at=datetime.now(UTC),
+            )
+
         now = datetime.now(UTC)
         created_at = current_run.created_at if current_run is not None else now
 
@@ -238,13 +408,10 @@ class WorkflowSubmissionService:
                         status_url=self._transitions.workflow_status_url(run_id),
                         events_url=self._transitions.workflow_events_url(run_id),
                         executor_metadata={
-                            **(
-                                current_run.executor_metadata
-                                if current_run is not None
-                                else {}
-                            ),
+                            **existing_meta,
                             "started_at": running_at.isoformat(),
                             "worker_task_name": "app.tasks.workflow_tasks.process_workflow_run",
+                            "execution_retry_count": retry_count,
                         },
                     )
                 )
@@ -372,15 +539,20 @@ class WorkflowSubmissionService:
                     created_at=dispatch_at,
                 )
             except Exception as exc:
-                logger.exception("Workflow dispatch failed")
+                logger.exception(
+                    "Workflow dispatch failed – marking as queued (message may have been delivered)"
+                )
                 current_run = self._repository.get_run(run_id)
+                # C4：派发超时 / 异常时不确定消息是否实际投递（H1 审查）。
+                # 改为 queued 而非 failed：若已投递，worker 消费后正常执行；
+                # 若未投递，watchdog 在 15 min 内标记为 stuck_running_watchdog→failed。
                 self._persistence.save_run_status(
                     run_status=self._transitions.build_execution_transition(
                         run_id=run_id,
                         payload=payload,
-                        status=ExecutionStatus.failed,
-                        progress=100,
-                        message="工作流派发失败，请检查 worker 与 broker 状态。",
+                        status=ExecutionStatus.queued,
+                        progress=20,
+                        message="工作流已提交到队列（派发确认异常：消息可能已投递，worker 将在恢复后消费）。",
                         created_at=current_run.created_at
                         if current_run
                         else dispatch_at,
@@ -396,10 +568,11 @@ class WorkflowSubmissionService:
                             "queue_name": queue_name,
                             "dispatch_failed_at": dispatch_at.isoformat(),
                             "dispatch_error": str(exc),
+                            "dispatch_ack_uncertain": True,
                         },
                         diagnostics=[
-                            "异步派发失败，请检查 Redis/Celery 配置。",
-                            "error_code=workflow_dispatch_failed",
+                            "派发确认异常：消息可能已投递到队列，若 worker 未在 15 min 内消费将被 watchdog 标记为失败。",
+                            "error_code=workflow_dispatch_timeout_or_error",
                             f"dispatch_error={exc}",
                         ],
                     )
@@ -407,10 +580,10 @@ class WorkflowSubmissionService:
                 self._persistence.record_event(
                     run_id=run_id,
                     channel=EventChannel.log,
-                    level=LogLevel.error,
-                    message="Celery 派发失败。",
-                    progress=100,
-                    payload={"error_code": "workflow_dispatch_failed"},
+                    level=LogLevel.warning,
+                    message="Celery 派发确认异常（消息可能已投递）。",
+                    progress=20,
+                    payload={"error_code": "workflow_dispatch_uncertain"},
                     created_at=dispatch_at,
                 )
 
@@ -426,6 +599,46 @@ class WorkflowSubmissionService:
             "max_active_runs",
             settings.max_active_runs,
         )
+
+    def _user_concurrency_limit(
+        self, user_id: int | None, role: str | None
+    ) -> int | None:
+        """Phase C: Compute the per-user concurrent workflow limit.
+
+        Resolution order:
+        1. ``admin`` role → ``None`` (no per-user limit).
+        2. User-specific ``max_concurrent_workflows`` in users table → use it.
+        3. Role-based default from config (``max_concurrent_workflows_standard``
+           or ``max_concurrent_workflows_demo``).
+
+        Returns ``None`` when no limit applies (admin, unknown role, or
+        no user context).
+        """
+        if not user_id or not role:
+            return None
+        if role == "admin":
+            return None  # admin 不受用户级限制
+        # 1. 检查用户独立配置
+        from app.services.user_repository import get_user_repository
+
+        user_repo = get_user_repository()
+        user_limit = user_repo.get_max_concurrent_workflows(user_id)
+        if user_limit is not None:
+            return user_limit
+        # 2. 回退到角色默认值
+        if role == "standard":
+            return self._persistence.get_effective_config_int(
+                "backend",
+                "max_concurrent_workflows_standard",
+                settings.max_concurrent_workflows_standard,
+            )
+        if role == "demo":
+            return self._persistence.get_effective_config_int(
+                "backend",
+                "max_concurrent_workflows_demo",
+                settings.max_concurrent_workflows_demo,
+            )
+        return None
 
     def _assert_workflow_capacity(self, run_class: str = RUN_CLASS_BUSINESS) -> None:
         """Read-only capacity probe (tests / diagnostics). Submit path uses atomic reserve."""
@@ -463,7 +676,10 @@ class WorkflowSubmissionService:
         - 无 module_name（workflow_definition / workflow_name 模式，图编译时校验）；
         - python provider root 不存在；
         - 未知 module（无模板）；
-        - 模板导入/校验过程异常（降级跳过，避免阻断提交链路）。
+
+        Fail-closed 条件（阻断提交）：
+        - 已知 module 但模板校验过程异常（非 ImportError）；
+        - 校验返回 errors。
         """
         if payload.command_type != WorkflowCommandType.analysis:
             return
@@ -493,13 +709,28 @@ class WorkflowSubmissionService:
                 _, errors = deriver.validate_request_against_template(
                     request_proxy, template
                 )
-        except Exception:
+        except ImportError:
             logger.debug(
-                "Submission-time template validation skipped for module=%s",
+                "Submission-time template validation skipped for module=%s (import failed)",
                 module_name,
                 exc_info=True,
             )
             return
+        except Exception:
+            # 已知 module 但校验过程异常 → fail-closed，避免绕过校验
+            logger.warning(
+                "Submission-time template validation failed for module=%s",
+                module_name,
+                exc_info=True,
+            )
+            raise WorkflowValidationError(
+                [
+                    {
+                        "field": "algorithm_request",
+                        "message": f"参数校验内部错误，请检查模块 '{module_name}' 的参数配置",
+                    }
+                ]
+            )
         if errors:
             raise WorkflowValidationError(
                 [_template_error_to_issue(msg) for msg in errors]

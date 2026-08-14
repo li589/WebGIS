@@ -40,8 +40,10 @@ logger = logging.getLogger(__name__)
 # Cron / 日期模板墙钟时区（存储仍为 UTC ISO）
 TIMER_TZ = ZoneInfo("Asia/Shanghai")
 
-# claim 后若进程在 mark_fired 前崩溃，CLAIMED 哨兵超过此时长则回收为立即到期
-CLAIM_TTL_SECONDS = 300
+# claim 后若进程在 mark_fired 前崩溃，CLAIMED 哨兵超过此时长则回收为立即到期。
+# 600s 覆盖 tick() 内同步 submit_workflow 的最坏耗时（payload 构建 + 容量预留 +
+# dispatch 8s 超时），并留安全边际防止提交积压时误回收（审查 M2）。
+CLAIM_TTL_SECONDS = 600
 
 
 # ─── 异常 ────────────────────────────────────────────────────────────────────

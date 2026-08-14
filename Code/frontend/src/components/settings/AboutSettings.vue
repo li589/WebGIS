@@ -115,7 +115,11 @@ function selectNode(name: string) {
           <div
             class="arch-node root"
             :class="{ selected: selectedNode === rootNode.name }"
+            role="button"
+            tabindex="0"
             @click="selectNode(rootNode.name)"
+            @keydown.enter.prevent="selectNode(rootNode.name)"
+            @keydown.space.prevent="selectNode(rootNode.name)"
           >
             {{ rootNode.name }}
           </div>
@@ -127,7 +131,11 @@ function selectNode(name: string) {
               <div
                 class="arch-node level-1"
                 :class="{ selected: selectedNode === child.name }"
+                role="button"
+                tabindex="0"
                 @click="selectNode(child.name)"
+                @keydown.enter.prevent="selectNode(child.name)"
+                @keydown.space.prevent="selectNode(child.name)"
               >
                 {{ child.name }}
               </div>
@@ -137,7 +145,11 @@ function selectNode(name: string) {
                   <div
                     class="arch-node level-2"
                     :class="{ selected: selectedNode === leaf.name }"
+                    role="button"
+                    tabindex="0"
                     @click="selectNode(leaf.name)"
+                    @keydown.enter.prevent="selectNode(leaf.name)"
+                    @keydown.space.prevent="selectNode(leaf.name)"
                   >
                     {{ leaf.name }}
                   </div>
@@ -149,7 +161,11 @@ function selectNode(name: string) {
                         :key="nested.name"
                         class="arch-node level-3"
                         :class="{ selected: selectedNode === nested.name }"
+                        role="button"
+                        tabindex="0"
                         @click="selectNode(nested.name)"
+                        @keydown.enter.prevent="selectNode(nested.name)"
+                        @keydown.space.prevent="selectNode(nested.name)"
                       >
                         {{ nested.name }}
                       </div>
@@ -216,8 +232,8 @@ function selectNode(name: string) {
 
 .section-title {
   margin: 0 0 0.32rem;
-  color: #e8f3fc;
-  font-size: 0.7rem;
+  color: var(--text-strong);
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
@@ -234,26 +250,26 @@ function selectNode(name: string) {
   gap: 0.62rem;
   padding: 0.36rem 0.52rem;
   border-radius: 0.4rem;
-  background: rgba(4, 12, 23, 0.5);
-  border: 1px solid rgba(136, 192, 255, 0.06);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
 }
 
 .info-label {
-  color: #8aa8bf;
-  font-size: 0.6rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   flex: none;
 }
 
 .info-value {
-  color: #d8e6f5;
-  font-size: 0.6rem;
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
   text-align: right;
   flex: 1;
 }
 
 .loading-hint {
-  color: #5a7080;
-  font-size: 0.6rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
 }
 
 /* 技术栈标签云 */
@@ -266,10 +282,10 @@ function selectNode(name: string) {
 .tech-tag {
   padding: 0.22rem 0.52rem;
   border-radius: 999px;
-  background: rgba(10, 132, 255, 0.14);
-  border: 1px solid rgba(90, 213, 255, 0.18);
-  color: #5ad5ff;
-  font-size: 0.56rem;
+  background: var(--accent-surface);
+  border: 1px solid var(--accent-surface);
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   font-weight: 500;
 }
 
@@ -277,8 +293,8 @@ function selectNode(name: string) {
 .arch-diagram {
   padding: 0.62rem;
   border-radius: 0.52rem;
-  background: rgba(4, 12, 23, 0.6);
-  border: 1px solid rgba(136, 192, 255, 0.08);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
   overflow-x: auto;
 }
 
@@ -293,37 +309,37 @@ function selectNode(name: string) {
   padding: 0.32rem 0.72rem;
   border-radius: 0.4rem;
   cursor: pointer;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   font-weight: 500;
   transition: all 0.16s ease;
   white-space: nowrap;
 }
 
 .arch-node.root {
-  background: linear-gradient(135deg, rgba(10, 132, 255, 0.3), rgba(125, 125, 255, 0.2));
-  border: 1px solid rgba(90, 213, 255, 0.4);
-  color: #f0faff;
-  font-size: 0.64rem;
+  background: linear-gradient(135deg, var(--accent-border), var(--surface-violet-tint));
+  border: 1px solid var(--border-strong);
+  color: var(--text-strong);
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
 .arch-node.level-1 {
-  background: rgba(10, 132, 255, 0.16);
-  border: 1px solid rgba(90, 213, 255, 0.22);
-  color: #5ad5ff;
+  background: var(--accent-surface);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
 }
 
 .arch-node.level-2 {
-  background: rgba(4, 12, 23, 0.6);
-  border: 1px solid rgba(136, 192, 255, 0.1);
-  color: #8aa8bf;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
 }
 
 .arch-node.level-3 {
-  background: rgba(4, 12, 23, 0.45);
-  border: 1px dashed rgba(136, 192, 255, 0.14);
-  color: #7a96ad;
-  font-size: 0.54rem;
+  background: var(--surface-raised);
+  border: 1px dashed var(--border-default);
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
 }
 
 .arch-node:hover {
@@ -332,14 +348,14 @@ function selectNode(name: string) {
 }
 
 .arch-node.selected {
-  border-color: rgba(90, 213, 255, 0.6);
-  box-shadow: 0 0 0 2px rgba(90, 213, 255, 0.2);
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 2px var(--accent-border);
 }
 
 .arch-connector {
   width: 1px;
   height: 0.72rem;
-  background: rgba(136, 192, 255, 0.2);
+  background: var(--border-strong);
 }
 
 .arch-connector.sub {
@@ -396,26 +412,26 @@ function selectNode(name: string) {
   gap: 0.16rem;
   padding: 0.42rem 0.62rem;
   border-radius: 0.4rem;
-  background: rgba(4, 12, 23, 0.5);
-  border: 1px solid rgba(136, 192, 255, 0.06);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
 }
 
 .module-name {
-  color: #5ad5ff;
-  font-size: 0.62rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
 .module-desc {
-  color: #8aa8bf;
-  font-size: 0.56rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   line-height: 1.4;
 }
 
 .arch-summary {
   margin: 0;
-  color: #9fb6cc;
-  font-size: 0.58rem;
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
   line-height: 1.6;
 }
 
@@ -432,29 +448,29 @@ function selectNode(name: string) {
   gap: 0.16rem;
   padding: 0.42rem 0.72rem;
   border-radius: 0.4rem;
-  background: rgba(4, 12, 23, 0.5);
-  border: 1px solid rgba(136, 192, 255, 0.1);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
   opacity: 0.6;
 }
 
 .engine-card.active {
   opacity: 1;
-  border-color: rgba(114, 255, 207, 0.2);
-  background: rgba(114, 255, 207, 0.06);
+  border-color: var(--success-border);
+  background: var(--success-surface);
 }
 
 .engine-name {
-  color: #d8e6f5;
-  font-size: 0.62rem;
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
 .engine-state {
-  color: #8aa8bf;
-  font-size: 0.54rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
 }
 
 .engine-card.active .engine-state {
-  color: #9ff8cf;
+  color: var(--success);
 }
 </style>

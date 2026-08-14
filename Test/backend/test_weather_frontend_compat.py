@@ -8,10 +8,11 @@ mock Open-Meteo API 避免网络依赖。
 
 from __future__ import annotations
 
+import pytest
+import types
 import json
 import os
 import shutil
-import unittest
 from typing import Any
 
 from app.services.workflow.service_container import submission_service
@@ -113,249 +114,233 @@ def _build_mock_payload() -> dict[str, Any]:
     }
 
 
-class WeatherFrontendCompatTests(unittest.TestCase):
-    """验证 fallback 路径产出的 map_layer ref 符合前端 extractMapLayerPayload 期望。"""
+@pytest.fixture
+def _weather_frontend_compat_tests_env():
+    ns = types.SimpleNamespace()
+    cache_dir = os.path.join(os.getcwd(), ".data", "cache", "weatherengine")
+    if os.path.exists(cache_dir):
+        shutil.rmtree(cache_dir, ignore_errors=True)
+    # 确保每测用例仍启用 open-meteo-online（防止其他测试禁用后遗留）
+    get_registry().set_enabled("open-meteo-online", True)
+    yield ns
 
-    @classmethod
-    def setUpClass(cls) -> None:
-        # 全链路经 fetch_gateway / Registry；注入 Fake 底层 client
-        registry = get_registry()
-        registry.register(
-            OpenMeteoProvider(client=_FakeOpenMeteoClient()),
-            priority=0,
-            enabled=True,
+
+def _submit_fallback_workflow(layer_id: str) -> str:
+    """模拟前端 runWorkflowForCatalog 提交（无 weather_request.workflow，走 fallback）。"""
+    payload = WorkflowSubmitRequest(
+        command_type="analysis",
+        command_label=f"运行 {layer_id} 分析",
+        layer_id=layer_id,
+        requested_outputs=["json", "text", "table", "map_layer"],
+        parameters={"hour": 0},
+        client={"page": "dashboard", "view_id": "map-2d"},
+        map_context={"active_layer_id": layer_id, "map_mode": "2d"},
+    )
+    accepted = submission_service.submit_workflow(payload)
+    return accepted.run_id
+
+
+def _find_map_layer_ref(result_refs) -> dict | None:
+    """从 result_refs 中找到 map_layer 类型的 ref，处理 spill 情况。
+
+    兼容本地文件存储和 MinIO 对象存储后端：
+    - 本地后端：artifact.file_path 指向磁盘文件
+    - MinIO 后端：file_path 为 None，需通过 fetch_artifact_bytes 读取
+    """
+    from app.services.result_storage import result_storage_service
+
+    for ref in result_refs:
+        ref_dict = (
+            ref.model_dump(mode="json") if hasattr(ref, "model_dump") else dict(ref)
         )
+        if ref_dict.get("result_kind") != "map_layer":
+            continue
+        inline = ref_dict.get("inline_data") or {}
+        if not inline:
+            # spill 到 artifact storage（兼容 local 和 minio 后端）
+            resource_key = ref_dict.get("resource_key")
+            if resource_key:
+                raw_bytes = result_storage_service.fetch_artifact_bytes(
+                    resource_key
+                )
+                if raw_bytes is not None:
+                    inline = json.loads(raw_bytes.decode("utf-8"))
+        if inline:
+            return inline
+    return None
 
-    @classmethod
-    def tearDownClass(cls) -> None:
-        get_registry().clear()
 
-    def setUp(self) -> None:
-        cache_dir = os.path.join(os.getcwd(), ".data", "cache", "weatherengine")
-        if os.path.exists(cache_dir):
-            shutil.rmtree(cache_dir, ignore_errors=True)
-        # 确保每测用例仍启用 open-meteo-online（防止其他测试禁用后遗留）
-        get_registry().set_enabled("open-meteo-online", True)
+def _assert_geojson_only_grid_layer(
+    *,
+    layer_id: str,
+    expected_palette: str,
+    expected_metric: str,
+    expected_unit: str,
+) -> None:
+    run_id = _submit_fallback_workflow(layer_id)
+    status_resp = submission_service.get_workflow_run(run_id)
 
-    def _submit_fallback_workflow(self, layer_id: str) -> str:
-        """模拟前端 runWorkflowForCatalog 提交（无 weather_request.workflow，走 fallback）。"""
-        payload = WorkflowSubmitRequest(
-            command_type="analysis",
-            command_label=f"运行 {layer_id} 分析",
-            layer_id=layer_id,
-            requested_outputs=["json", "text", "table", "map_layer"],
-            parameters={"hour": 0},
-            client={"page": "dashboard", "view_id": "map-2d"},
-            map_context={"active_layer_id": layer_id, "map_mode": "2d"},
+    assert status_resp.status in ("succeeded", "completed"), 'status_resp.status in ("succeeded", "completed")'
+
+    inline = _find_map_layer_ref(status_resp.result_refs)
+    assert inline is not None, f"{layer_id} 未找到 map_layer ref 的 inline_data"
+
+    render_hint = inline.get("render_hint") or {}
+    assert render_hint.get("paint_mode") == "grid_fill", 'render_hint.get("paint_mode") == "grid_fill"'
+    assert render_hint.get("palette") == expected_palette, 'render_hint.get("palette") == expected_palette'
+    assert render_hint.get("primary_metric") == expected_metric, 'render_hint.get("primary_metric") == expected_metric'
+    assert render_hint.get("unit_label") == expected_unit, 'render_hint.get("unit_label") == expected_unit'
+
+    layer_assets = inline.get("layer_assets") or {}
+    assert layer_assets.get("geojson_url"), f"{layer_id} missing geojson_url"
+    assert not layer_assets.get("cog_url"), f"{layer_id} should not include cog_url"
+    assert not layer_assets.get("cog_preview_url"), f"{layer_id} should not include cog_preview_url"
+
+
+def test_wind_field_map_layer_ref(_weather_frontend_compat_tests_env) -> None:
+    """验证 wind-field 图层的 map_layer ref 格式。"""
+    self = _weather_frontend_compat_tests_env
+    run_id = _submit_fallback_workflow("wind-field")
+    status_resp = submission_service.get_workflow_run(run_id)
+
+    assert status_resp.status in ("succeeded", "completed"), 'status_resp.status in ("succeeded", "completed")'
+
+    # 必须有 map_layer 类型 ref
+    ref_kinds = []
+    for ref in status_resp.result_refs:
+        ref_dict = (
+            ref.model_dump(mode="json") if hasattr(ref, "model_dump") else dict(ref)
         )
-        accepted = submission_service.submit_workflow(payload)
-        return accepted.run_id
+        ref_kinds.append(ref_dict.get("result_kind"))
+    assert "map_layer" in ref_kinds, f"result_refs kinds: {ref_kinds}"
 
-    def _find_map_layer_ref(self, result_refs) -> dict | None:
-        """从 result_refs 中找到 map_layer 类型的 ref，处理 spill 情况。
+    inline = _find_map_layer_ref(status_resp.result_refs)
+    assert inline is not None, "未找到 map_layer ref 的 inline_data"
 
-        兼容本地文件存储和 MinIO 对象存储后端：
-        - 本地后端：artifact.file_path 指向磁盘文件
-        - MinIO 后端：file_path 为 None，需通过 fetch_artifact_bytes 读取
-        """
-        from app.services.result_storage import result_storage_service
+    # render_hint 字段（前端 WeatherLayerRenderHint 期望）
+    render_hint = inline.get("render_hint") or {}
+    assert render_hint.get("paint_mode") == "particle_flow", 'render_hint.get("paint_mode") == "particle_flow"'
+    assert render_hint.get("palette") == "wind-blue", 'render_hint.get("palette") == "wind-blue"'
+    assert render_hint.get("primary_metric") == "wind_speed_10m", 'render_hint.get("primary_metric") == "wind_speed_10m"'
+    assert render_hint.get("unit_label") == "m/s", 'render_hint.get("unit_label") == "m/s"'
 
-        for ref in result_refs:
-            ref_dict = (
-                ref.model_dump(mode="json") if hasattr(ref, "model_dump") else dict(ref)
-            )
-            if ref_dict.get("result_kind") != "map_layer":
-                continue
-            inline = ref_dict.get("inline_data") or {}
-            if not inline:
-                # spill 到 artifact storage（兼容 local 和 minio 后端）
-                resource_key = ref_dict.get("resource_key")
-                if resource_key:
-                    raw_bytes = result_storage_service.fetch_artifact_bytes(
-                        resource_key
-                    )
-                    if raw_bytes is not None:
-                        inline = json.loads(raw_bytes.decode("utf-8"))
-            if inline:
-                return inline
-        return None
+    # point_feature
+    point_feature = inline.get("point_feature") or {}
+    assert point_feature.get("type") == "Feature", 'point_feature.get("type") == "Feature"'
+    geometry = point_feature.get("geometry") or {}
+    assert geometry.get("type") == "Point", 'geometry.get("type") == "Point"'
 
-    def test_wind_field_map_layer_ref(self) -> None:
-        """验证 wind-field 图层的 map_layer ref 格式。"""
-        run_id = self._submit_fallback_workflow("wind-field")
+    # layer_assets（wind-field 应有 geojson_url，无 cog_url）
+    layer_assets = inline.get("layer_assets") or {}
+    assert layer_assets.get("geojson_url"), "missing geojson_url"
+
+
+def test_temperature_map_layer_ref(_weather_frontend_compat_tests_env) -> None:
+    """验证 temperature 图层的 map_layer ref 格式（含 COG）。"""
+    self = _weather_frontend_compat_tests_env
+    run_id = _submit_fallback_workflow("temperature")
+    status_resp = submission_service.get_workflow_run(run_id)
+
+    assert status_resp.status in ("succeeded", "completed"), 'status_resp.status in ("succeeded", "completed")'
+
+    inline = _find_map_layer_ref(status_resp.result_refs)
+    assert inline is not None, "未找到 map_layer ref 的 inline_data"
+
+    render_hint = inline.get("render_hint") or {}
+    assert render_hint.get("paint_mode") == "heatmap", 'render_hint.get("paint_mode") == "heatmap"'
+    assert render_hint.get("palette") == "thermal-orange", 'render_hint.get("palette") == "thermal-orange"'
+    assert render_hint.get("primary_metric") == "temperature_2m", 'render_hint.get("primary_metric") == "temperature_2m"'
+    assert render_hint.get("unit_label") == "C", 'render_hint.get("unit_label") == "C"'
+
+    # layer_assets（temperature 应有 geojson_url + cog_url + cog_bbox）
+    layer_assets = inline.get("layer_assets") or {}
+    assert layer_assets.get("geojson_url"), "missing geojson_url"
+    assert layer_assets.get("cog_url"), "missing cog_url"
+
+    cog_bbox = layer_assets.get("cog_bbox") or {}
+    assert cog_bbox.get("west") is not None, "missing cog_bbox.west"
+    assert cog_bbox.get("south") is not None, "missing cog_bbox.south"
+    assert cog_bbox.get("east") is not None, "missing cog_bbox.east"
+    assert cog_bbox.get("north") is not None, "missing cog_bbox.north"
+    assert cog_bbox.get("crs") == "EPSG:4326", 'cog_bbox.get("crs") == "EPSG:4326"'
+
+
+def test_precipitation_map_layer_ref(_weather_frontend_compat_tests_env) -> None:
+    """验证 precipitation 图层的 map_layer ref 格式（含 COG）。"""
+    self = _weather_frontend_compat_tests_env
+    run_id = _submit_fallback_workflow("precipitation")
+    status_resp = submission_service.get_workflow_run(run_id)
+
+    assert status_resp.status in ("succeeded", "completed"), 'status_resp.status in ("succeeded", "completed")'
+
+    inline = _find_map_layer_ref(status_resp.result_refs)
+    assert inline is not None, "未找到 map_layer ref 的 inline_data"
+
+    render_hint = inline.get("render_hint") or {}
+    assert render_hint.get("paint_mode") == "heatmap", 'render_hint.get("paint_mode") == "heatmap"'
+    assert render_hint.get("palette") == "precip-cyan", 'render_hint.get("palette") == "precip-cyan"'
+    assert render_hint.get("primary_metric") == "precipitation", 'render_hint.get("primary_metric") == "precipitation"'
+    assert render_hint.get("unit_label") == "mm", 'render_hint.get("unit_label") == "mm"'
+
+    layer_assets = inline.get("layer_assets") or {}
+    assert layer_assets.get("geojson_url"), "missing geojson_url"
+    assert layer_assets.get("cog_url"), "missing cog_url"
+
+    cog_bbox = layer_assets.get("cog_bbox") or {}
+    assert cog_bbox.get("west") is not None, 'cog_bbox.get("west") is not None'
+    assert cog_bbox.get("crs") == "EPSG:4326", 'cog_bbox.get("crs") == "EPSG:4326"'
+
+
+def test_pressure_map_layer_ref(_weather_frontend_compat_tests_env) -> None:
+    self = _weather_frontend_compat_tests_env
+    _assert_geojson_only_grid_layer(        layer_id="pressure",
+        expected_palette="pressure-purple",
+        expected_metric="pressure_msl",
+        expected_unit="hPa",
+    )
+
+
+def test_humidity_map_layer_ref(_weather_frontend_compat_tests_env) -> None:
+    self = _weather_frontend_compat_tests_env
+    _assert_geojson_only_grid_layer(        layer_id="humidity",
+        expected_palette="humidity-green",
+        expected_metric="relative_humidity_2m",
+        expected_unit="%",
+    )
+
+
+def test_visibility_map_layer_ref(_weather_frontend_compat_tests_env) -> None:
+    self = _weather_frontend_compat_tests_env
+    _assert_geojson_only_grid_layer(        layer_id="visibility",
+        expected_palette="visibility-amber",
+        expected_metric="visibility",
+        expected_unit="m",
+    )
+
+
+def test_all_weather_layers_succeed(_weather_frontend_compat_tests_env) -> None:
+    """验证所有 weather 图层 fallback 路径全部成功。"""
+    self = _weather_frontend_compat_tests_env
+    for layer_id in (
+        "wind-field",
+        "temperature",
+        "precipitation",
+        "pressure",
+        "humidity",
+        "visibility",
+    ):
+        run_id = _submit_fallback_workflow(layer_id)
         status_resp = submission_service.get_workflow_run(run_id)
+        assert status_resp.status in ("succeeded", "completed"), f"{layer_id} failed: {status_resp.status}"
+        assert status_resp.progress == 100, 'status_resp.progress == 100'
 
-        self.assertIn(status_resp.status, ("succeeded", "completed"))
-
-        # 必须有 map_layer 类型 ref
+        # 验证 result_refs 含 map_layer
         ref_kinds = []
         for ref in status_resp.result_refs:
             ref_dict = (
-                ref.model_dump(mode="json") if hasattr(ref, "model_dump") else dict(ref)
+                ref.model_dump(mode="json")
+                if hasattr(ref, "model_dump")
+                else dict(ref)
             )
             ref_kinds.append(ref_dict.get("result_kind"))
-        self.assertIn("map_layer", ref_kinds, f"result_refs kinds: {ref_kinds}")
-
-        inline = self._find_map_layer_ref(status_resp.result_refs)
-        self.assertIsNotNone(inline, "未找到 map_layer ref 的 inline_data")
-
-        # render_hint 字段（前端 WeatherLayerRenderHint 期望）
-        render_hint = inline.get("render_hint") or {}
-        self.assertEqual(render_hint.get("paint_mode"), "particle_flow")
-        self.assertEqual(render_hint.get("palette"), "wind-blue")
-        self.assertEqual(render_hint.get("primary_metric"), "wind_speed_10m")
-        self.assertEqual(render_hint.get("unit_label"), "m/s")
-
-        # point_feature
-        point_feature = inline.get("point_feature") or {}
-        self.assertEqual(point_feature.get("type"), "Feature")
-        geometry = point_feature.get("geometry") or {}
-        self.assertEqual(geometry.get("type"), "Point")
-
-        # layer_assets（wind-field 应有 geojson_url，无 cog_url）
-        layer_assets = inline.get("layer_assets") or {}
-        self.assertTrue(layer_assets.get("geojson_url"), "missing geojson_url")
-
-    def test_temperature_map_layer_ref(self) -> None:
-        """验证 temperature 图层的 map_layer ref 格式（含 COG）。"""
-        run_id = self._submit_fallback_workflow("temperature")
-        status_resp = submission_service.get_workflow_run(run_id)
-
-        self.assertIn(status_resp.status, ("succeeded", "completed"))
-
-        inline = self._find_map_layer_ref(status_resp.result_refs)
-        self.assertIsNotNone(inline, "未找到 map_layer ref 的 inline_data")
-
-        render_hint = inline.get("render_hint") or {}
-        self.assertEqual(render_hint.get("paint_mode"), "heatmap")
-        self.assertEqual(render_hint.get("palette"), "thermal-orange")
-        self.assertEqual(render_hint.get("primary_metric"), "temperature_2m")
-        self.assertEqual(render_hint.get("unit_label"), "C")
-
-        # layer_assets（temperature 应有 geojson_url + cog_url + cog_bbox）
-        layer_assets = inline.get("layer_assets") or {}
-        self.assertTrue(layer_assets.get("geojson_url"), "missing geojson_url")
-        self.assertTrue(layer_assets.get("cog_url"), "missing cog_url")
-
-        cog_bbox = layer_assets.get("cog_bbox") or {}
-        self.assertIsNotNone(cog_bbox.get("west"), "missing cog_bbox.west")
-        self.assertIsNotNone(cog_bbox.get("south"), "missing cog_bbox.south")
-        self.assertIsNotNone(cog_bbox.get("east"), "missing cog_bbox.east")
-        self.assertIsNotNone(cog_bbox.get("north"), "missing cog_bbox.north")
-        self.assertEqual(cog_bbox.get("crs"), "EPSG:4326")
-
-    def test_precipitation_map_layer_ref(self) -> None:
-        """验证 precipitation 图层的 map_layer ref 格式（含 COG）。"""
-        run_id = self._submit_fallback_workflow("precipitation")
-        status_resp = submission_service.get_workflow_run(run_id)
-
-        self.assertIn(status_resp.status, ("succeeded", "completed"))
-
-        inline = self._find_map_layer_ref(status_resp.result_refs)
-        self.assertIsNotNone(inline, "未找到 map_layer ref 的 inline_data")
-
-        render_hint = inline.get("render_hint") or {}
-        self.assertEqual(render_hint.get("paint_mode"), "heatmap")
-        self.assertEqual(render_hint.get("palette"), "precip-cyan")
-        self.assertEqual(render_hint.get("primary_metric"), "precipitation")
-        self.assertEqual(render_hint.get("unit_label"), "mm")
-
-        layer_assets = inline.get("layer_assets") or {}
-        self.assertTrue(layer_assets.get("geojson_url"), "missing geojson_url")
-        self.assertTrue(layer_assets.get("cog_url"), "missing cog_url")
-
-        cog_bbox = layer_assets.get("cog_bbox") or {}
-        self.assertIsNotNone(cog_bbox.get("west"))
-        self.assertEqual(cog_bbox.get("crs"), "EPSG:4326")
-
-    def _assert_geojson_only_grid_layer(
-        self,
-        *,
-        layer_id: str,
-        expected_palette: str,
-        expected_metric: str,
-        expected_unit: str,
-    ) -> None:
-        run_id = self._submit_fallback_workflow(layer_id)
-        status_resp = submission_service.get_workflow_run(run_id)
-
-        self.assertIn(status_resp.status, ("succeeded", "completed"))
-
-        inline = self._find_map_layer_ref(status_resp.result_refs)
-        self.assertIsNotNone(inline, f"{layer_id} 未找到 map_layer ref 的 inline_data")
-
-        render_hint = inline.get("render_hint") or {}
-        self.assertEqual(render_hint.get("paint_mode"), "grid_fill")
-        self.assertEqual(render_hint.get("palette"), expected_palette)
-        self.assertEqual(render_hint.get("primary_metric"), expected_metric)
-        self.assertEqual(render_hint.get("unit_label"), expected_unit)
-
-        layer_assets = inline.get("layer_assets") or {}
-        self.assertTrue(
-            layer_assets.get("geojson_url"), f"{layer_id} missing geojson_url"
-        )
-        self.assertFalse(
-            layer_assets.get("cog_url"), f"{layer_id} should not include cog_url"
-        )
-        self.assertFalse(
-            layer_assets.get("cog_preview_url"),
-            f"{layer_id} should not include cog_preview_url",
-        )
-
-    def test_pressure_map_layer_ref(self) -> None:
-        self._assert_geojson_only_grid_layer(
-            layer_id="pressure",
-            expected_palette="pressure-purple",
-            expected_metric="pressure_msl",
-            expected_unit="hPa",
-        )
-
-    def test_humidity_map_layer_ref(self) -> None:
-        self._assert_geojson_only_grid_layer(
-            layer_id="humidity",
-            expected_palette="humidity-green",
-            expected_metric="relative_humidity_2m",
-            expected_unit="%",
-        )
-
-    def test_visibility_map_layer_ref(self) -> None:
-        self._assert_geojson_only_grid_layer(
-            layer_id="visibility",
-            expected_palette="visibility-amber",
-            expected_metric="visibility",
-            expected_unit="m",
-        )
-
-    def test_all_weather_layers_succeed(self) -> None:
-        """验证所有 weather 图层 fallback 路径全部成功。"""
-        for layer_id in (
-            "wind-field",
-            "temperature",
-            "precipitation",
-            "pressure",
-            "humidity",
-            "visibility",
-        ):
-            run_id = self._submit_fallback_workflow(layer_id)
-            status_resp = submission_service.get_workflow_run(run_id)
-            self.assertIn(
-                status_resp.status,
-                ("succeeded", "completed"),
-                f"{layer_id} failed: {status_resp.status}",
-            )
-            self.assertEqual(status_resp.progress, 100)
-
-            # 验证 result_refs 含 map_layer
-            ref_kinds = []
-            for ref in status_resp.result_refs:
-                ref_dict = (
-                    ref.model_dump(mode="json")
-                    if hasattr(ref, "model_dump")
-                    else dict(ref)
-                )
-                ref_kinds.append(ref_dict.get("result_kind"))
-            self.assertIn("map_layer", ref_kinds, f"{layer_id} missing map_layer ref")
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert "map_layer" in ref_kinds, f"{layer_id} missing map_layer ref"

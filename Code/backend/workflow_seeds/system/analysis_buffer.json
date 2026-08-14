@@ -1,0 +1,41 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "Analysis: buffer",
+    "description": "InfoPanel GIS buffer. Inject data/source.path to points/vector GeoJSON; set distance via node props or algorithm_params.",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": null,
+    "tags": ["analysis", "gis", "ui-panel", "buffer"],
+    "category": "analysis",
+    "resource_profile": "standard"
+  },
+  "workflow_id": "analysis_buffer",
+  "name": "Analysis: buffer",
+  "description": "data/source → gis/buffer_analysis",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "data/source",
+      "pos": [60, 160],
+      "properties": {
+        "path": "{DATA_ROOT}/_runtime/smoke_points.geojson",
+        "dataset_key": "input_path",
+        "notes": "Points/lines/polygons GeoJSON"
+      }
+    },
+    {
+      "id": 2,
+      "type": "gis/buffer_analysis",
+      "pos": [380, 160],
+      "properties": {
+        "distance_unit": "meters",
+        "segments": 16,
+        "distance": 500
+      }
+    }
+  ],
+  "links": [[1, 1, 2, 2, 1]]
+}

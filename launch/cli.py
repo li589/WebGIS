@@ -17,6 +17,7 @@ import argparse
 import sys
 
 from launch.commands import (
+    cmd_clean_cache,
     cmd_flush,
     cmd_logs,
     cmd_reset_db,
@@ -43,7 +44,16 @@ _STOP_COMPONENT_HELP = "可选: gateway（仅停 Nginx 网关；默认停止全�
 def _add_start_restart_args(p: argparse.ArgumentParser) -> None:
     """为 start / restart 子命令添加共享参数。"""
     p.add_argument("component", nargs="?", default="all", help=_COMPONENT_HELP)
-    p.add_argument("--no-frontend", action="store_true", help="不启动前端开发服务器")
+    p.add_argument(
+        "--no-frontend",
+        action="store_true",
+        help="不启动前端入口（Nginx Gateway / Vite 都不启）",
+    )
+    p.add_argument(
+        "--vite",
+        action="store_true",
+        help="前台用 Vite 开发服务器（HMR）；默认用 Nginx Gateway 同域入口",
+    )
     p.add_argument("--no-docker", action="store_true", help="不启动 Docker 容器")
     p.add_argument(
         "--no-open-meteo",
@@ -56,7 +66,7 @@ def _add_start_restart_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--frontend-only",
         action="store_true",
-        help="仅启动前端（等同 start frontend）",
+        help="仅启动前端（等同 start frontend；Vite 开发服务器）",
     )
     p.add_argument(
         "--debug",
@@ -72,7 +82,12 @@ def _add_start_restart_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--rebuild-frontend",
         action="store_true",
-        help="start gateway 时强制 npm run build 再挂载 dist",
+        help="启动 Gateway 前强制 npm run build 刷新 dist（默认有 dist 则复用）",
+    )
+    p.add_argument(
+        "--clean-cache",
+        action="store_true",
+        help="启动/重启前先执行 clean-cache（清 __pycache__ 与 Vite .vite；非 flush）",
     )
 
 
@@ -84,20 +99,24 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "示例:\n"
-            "  python launch.py start                      # 启动全部，进入监控循环\n"
+            "  python launch.py start                      # 启动全部（含 Nginx Gateway :5175）\n"
+            "  python launch.py start --vite               # 全部启动，前台改用 Vite HMR（与 Gateway 互斥）\n"
             "  python launch.py start docker               # 仅 Redis + MinIO + Open-Meteo API\n"
             "  python launch.py sync                       # 跑 data-sync open-meteo-sync\n"
-            "  python launch.py start gateway              # Nginx 同域入口 :5175（与 Vite 互斥）\n"
+            "  python launch.py start gateway              # 仅 Nginx 同域入口 :5175\n"
             "  python launch.py start gateway --rebuild-frontend\n"
             "  python launch.py stop gateway               # 仅停 Nginx Gateway\n"
             "  python launch.py start worker:weather       # 仅启动 weather Worker\n"
             "  python launch.py start fastapi --debug      # 调试模式启动 FastAPI\n"
-            "  python launch.py start --frontend-port 3000 # 全部启动，前端用 3000 端口\n"
+            "  python launch.py start --frontend-port 3000 # 仅 --vite 时生效\n"
+            "  python launch.py restart                    # 全量重启（默认含 Gateway）\n"
+            "  python launch.py restart --clean-cache      # 清本地编译缓存后再全量重启\n"
             "  python launch.py logs fastapi -n 100        # 查看 FastAPI 最后 100 行日志\n"
             "  python launch.py logs worker:all            # 查看所有 Worker 日志\n"
             "  python launch.py flush                      # 清空 Redis + 文件缓存（需确认）\n"
             "  python launch.py flush --dry-run            # 预览将要清空的对象，不执行\n"
             "  python launch.py flush --yes                # 跳过确认直接执行\n"
+            "  python launch.py clean-cache                # 清 __pycache__ + Vite .vite（不碰 Redis）\n"
             "  python launch.py reset-db                   # 清空 workflow_state，自动快照 + 重 seed\n"
             "  python launch.py reset-db --yes             # 跳过确认直接执行\n"
             "  python launch.py reset-db --clear-user      # 同时清空用户自定义工作流\n"
@@ -143,6 +162,32 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="仅预览将要清空的对象，不执行任何删除",
+    )
+
+    # clean-cache（本地编译缓存；与 flush 隔离）
+    p_clean = sub.add_parser(
+        "clean-cache",
+        help="清理 __pycache__ / *.pyc 与 Vite node_modules/.vite（不碰 Redis）",
+    )
+    p_clean.add_argument(
+        "--all",
+        action="store_true",
+        help="清理 pycache + Vite（默认行为）",
+    )
+    p_clean.add_argument(
+        "--pycache",
+        action="store_true",
+        help="仅清理 Code/backend、Code/algorithms、Test 下的 __pycache__ / *.pyc",
+    )
+    p_clean.add_argument(
+        "--vite",
+        action="store_true",
+        help="仅清理 Code/frontend/node_modules/.vite（及 frontend/.vite）",
+    )
+    p_clean.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="仅预览将要删除的路径，不执行",
     )
 
     # reset-db
@@ -204,6 +249,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return cmd_logs(args)
     if command == "flush":
         return cmd_flush(args)
+    if command == "clean-cache":
+        return cmd_clean_cache(args)
     if command == "reset-db":
         return cmd_reset_db(args)
     if command == "sync":

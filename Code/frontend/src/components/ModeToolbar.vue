@@ -1,6 +1,25 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import {
+  Settings,
+  ScrollText,
+  Camera,
+  Workflow,
+  Move,
+  Crosshair,
+  Ruler,
+  Trash2,
+  Satellite,
+  Map,
+  Moon,
+  Mountain,
+  Globe,
+} from './ui/icons'
+import AppButton from './ui/AppButton.vue'
+import IconButton from './ui/IconButton.vue'
+import Chip from './ui/Chip.vue'
+import SegmentedControl from './ui/SegmentedControl.vue'
 
 import {
   TILE_SOURCES,
@@ -12,14 +31,14 @@ import {
   type TileSourceConfig,
   type TileSourceId,
 } from '../services/api-config'
-import type { ActiveLayerDisplay } from '../stores/layers/types'
-import { useLayersStore } from '../stores/layers'
+import { useWorkflowRun } from '../stores/layers/selectors'
 import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
 import { useSettingsStore } from '../stores/settings'
 import { useAuthStore } from '../stores/auth'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import { useWeatherSyncStatusStore } from '../stores/weather-sync-status'
+import { useBreakpoint } from '../composables/useBreakpoint'
 import { mergeWorkflowSummaryWithWeather } from '../utils/workflow-status-merge'
 import {
   BRAND,
@@ -28,19 +47,18 @@ import {
   basemapProviderShort,
   WORKFLOW_COPY,
   SETTINGS_COPY,
-  LAYERS_COPY,
 } from '../ui-copy'
 import WorkflowStatusButton from './workflow/WorkflowStatusButton.vue'
 import DataImportMenu from '../data-manager/ui/DataImportMenu.vue'
 
-const layersStore = useLayersStore()
 const uiStore = useUiStore()
 const logStore = useLogStore()
 const settingsStore = useSettingsStore()
 const authStore = useAuthStore()
 const weatherTileManager = useWeatherTileManager()
 const weatherSyncStatus = useWeatherSyncStatusStore()
-const { workflowSummary } = storeToRefs(layersStore)
+const { isMobile } = useBreakpoint()
+const { workflowSummary } = useWorkflowRun()
 const { activityVersion, statusVersion } = storeToRefs(weatherTileManager)
 const { apiKeys } = storeToRefs(settingsStore)
 const { syncInProgress } = storeToRefs(weatherSyncStatus)
@@ -54,7 +72,6 @@ onMounted(() => {
   void weatherSyncStatus.refreshOverview()
 })
 
-/** 合并业务 job + 天气瓦片合成态（含 data-empty → 失败/等待重试） */
 const mergedWorkflowSummary = computed(() => {
   void activityVersion.value
   void statusVersion.value
@@ -67,9 +84,7 @@ const mergedWorkflowSummary = computed(() => {
 
 const props = defineProps<{
   tileSourceId: TileSourceId
-  activeLayer: ActiveLayerDisplay
   hourLabel: string
-  activeLayerCount: number
 }>()
 
 const emit = defineEmits<{
@@ -91,39 +106,40 @@ const activeStyle = computed<BasemapStyle>(() => {
   return cfg?.style ?? 'street'
 })
 
+const styleMeta: Record<BasemapStyle, { icon: typeof Map }> = {
+  none: { icon: Globe },
+  satellite: { icon: Satellite },
+  street: { icon: Map },
+  dark: { icon: Moon },
+  terrain: { icon: Mountain },
+}
+
 const sourcesByStyle = computed(() => {
   const result: Array<{
     style: BasemapStyle
     label: string
-    icon: string
+    icon: typeof Map
     sources: TileSourceConfig[]
   }> = []
-  const styleMeta: Record<BasemapStyle, { icon: string }> = {
-    none: { icon: '◇' },
-    satellite: { icon: '◆' },
-    street: { icon: '▦' },
-    dark: { icon: '◑' },
-    terrain: { icon: '⛰' },
-  }
-
   for (const [style, sources] of TILE_SOURCES_BY_STYLE) {
     const standard = sources.filter((s) => s.isStandard)
-    // Keep key-locked sources visible but marked unusable so users know to configure keys
     if (standard.some((s) => s.isStandard)) {
       result.push({
         style,
         label: basemapStyleLabel(style),
-        icon: styleMeta[style]?.icon ?? '▦',
+        icon: styleMeta[style]?.icon ?? Map,
         sources: standard,
       })
     }
   }
-
   return result
 })
 
-const currentTileConfig = computed(() => TILE_SOURCES.find((s) => s.id === props.tileSourceId))
+const styleOptions = computed(() =>
+  sourcesByStyle.value.map((g) => ({ value: g.style, label: g.label, icon: g.icon })),
+)
 
+const currentTileConfig = computed(() => TILE_SOURCES.find((s) => s.id === props.tileSourceId))
 const currentSourceLocked = computed(() => {
   const cfg = currentTileConfig.value
   if (!cfg) return false
@@ -150,6 +166,13 @@ function selectSource(source: TileSourceConfig) {
     return
   }
   emit('changeTileSource', source.id)
+}
+
+function onStyleChange(style: BasemapStyle) {
+  const group = sourcesByStyle.value.find((g) => g.style === style)
+  if (group) {
+    selectSource(group.sources.find((s) => sourceUsable(s)) ?? group.sources[0])
+  }
 }
 
 function setInteractionMode(mode: 'move' | 'select' | 'measure') {
@@ -184,192 +207,109 @@ function sourcePillLabel(source: TileSourceConfig): string {
 </script>
 
 <template>
-  <header class="toolbar">
-    <!-- 左侧：主工具栏 -->
-    <div class="toolbar-primary">
+  <header class="mode-toolbar">
+    <!-- 左侧：品牌 + 主工具 -->
+    <div class="toolbar-left">
       <div class="brand">
-        <div class="brand-mark"></div>
+        <div class="brand-mark" />
         <div class="brand-copy">
-          <p class="eyebrow">{{ BRAND.eyebrow }}</p>
-          <h1>{{ BRAND.shortName }}</h1>
+          <p class="brand-eyebrow">{{ BRAND.eyebrow }}</p>
+          <h1 class="brand-name">{{ BRAND.shortName }}</h1>
         </div>
       </div>
 
-      <div class="primary-tools">
-        <!-- 数据导入 / 导出 -->
+      <div class="toolbar-divider" />
+
+      <div class="toolbar-tools">
+        <!-- 数据导入/导出 -->
         <DataImportMenu />
 
-        <!-- 移动 / 选择 模式 -->
+        <!-- 交互模式：移动/选择/测量 -->
         <div class="mode-group">
-          <button
-            class="mode-btn"
-            :class="{ active: uiStore.interactionMode === 'move' }"
-            type="button"
-            title="移动模式（拖动平移地图）"
+          <IconButton
+            size="sm"
+            :active="uiStore.interactionMode === 'move'"
+            label="移动模式（拖动平移地图）"
             @click="setInteractionMode('move')"
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <polyline points="5 9 2 12 5 15" />
-              <polyline points="9 5 12 2 15 5" />
-              <polyline points="15 19 12 22 9 19" />
-              <polyline points="19 9 22 12 19 15" />
-              <line x1="2" y1="12" x2="22" y2="12" />
-              <line x1="12" y1="2" x2="12" y2="22" />
-            </svg>
-          </button>
-          <button
-            class="mode-btn"
-            :class="{ active: uiStore.interactionMode === 'select' }"
-            type="button"
-            title="点查模式（点击查询）"
+            <template #icon><Move :size="14" /></template>
+          </IconButton>
+          <IconButton
+            size="sm"
+            :active="uiStore.interactionMode === 'select'"
+            label="点查模式（点击查询）"
             @click="setInteractionMode('select')"
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
-            </svg>
-          </button>
-          <button
-            class="mode-btn"
-            :class="{ active: uiStore.interactionMode === 'measure' }"
-            type="button"
-            title="测量模式（点击打点，双击完成，右键撤销）"
+            <template #icon><Crosshair :size="14" /></template>
+          </IconButton>
+          <IconButton
+            size="sm"
+            :active="uiStore.interactionMode === 'measure'"
+            label="测量模式（点击打点，双击完成）"
             @click="setInteractionMode('measure')"
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M21 3L3 21" />
-              <circle cx="21" cy="3" r="2" fill="currentColor" />
-              <circle cx="3" cy="21" r="2" fill="currentColor" />
-            </svg>
-          </button>
-          <button
+            <template #icon><Ruler :size="14" /></template>
+          </IconButton>
+          <IconButton
             v-if="uiStore.interactionMode === 'measure' && uiStore.measureState.points.length > 0"
-            class="mode-btn clear-btn"
-            type="button"
-            title="清除测量路径"
+            size="sm"
+            variant="danger"
+            label="清除测量路径"
             @click="clearMeasure"
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M3 6h18" />
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-            </svg>
-          </button>
+            <template #icon><Trash2 :size="14" /></template>
+          </IconButton>
         </div>
 
         <!-- 截图 -->
-        <button class="tool-btn" type="button" title="导出截图" @click="handleScreenshot">
-          <span class="btn-icon" aria-hidden="true">◫</span>
-          <span class="btn-label">截图</span>
-        </button>
+        <AppButton size="sm" variant="secondary" aria-label="导出截图" @click="handleScreenshot">
+          <template #icon><Camera :size="14" /></template>
+          <span v-if="!isMobile">截图</span>
+        </AppButton>
 
-        <!-- 工作流 -->
-        <button
-          class="tool-btn"
-          type="button"
-          :title="WORKFLOW_COPY.entryTitle"
+        <!-- 工作流编辑器 -->
+        <AppButton
+          size="sm"
+          variant="secondary"
+          :aria-label="WORKFLOW_COPY.entryTitle"
           @click="handleWorkflowEditor"
         >
-          <span class="btn-icon" aria-hidden="true">⬡</span>
-          <span class="btn-label">{{ WORKFLOW_COPY.entry }}</span>
-        </button>
+          <template #icon><Workflow :size="14" /></template>
+          <span v-if="!isMobile">{{ WORKFLOW_COPY.entry }}</span>
+        </AppButton>
 
         <!-- 设置 -->
-        <button
-          class="tool-btn"
-          type="button"
-          :title="SETTINGS_COPY.panelTitle"
+        <AppButton
+          size="sm"
+          variant="secondary"
+          :aria-label="SETTINGS_COPY.panelTitle"
           @click="handleSettings"
         >
-          <span class="btn-icon" aria-hidden="true">⚙</span>
-          <span class="btn-label">{{ SETTINGS_COPY.panelTitle }}</span>
-        </button>
+          <template #icon><Settings :size="14" /></template>
+          <span v-if="!isMobile">{{ SETTINGS_COPY.panelTitle }}</span>
+        </AppButton>
 
         <!-- 日志 -->
-        <button class="tool-btn" type="button" title="系统日志" @click="emit('openLog')">
-          <span class="btn-icon" aria-hidden="true">📋</span>
-          <span class="btn-label">日志</span>
-          <span v-if="logStore.errorCount > 0" class="log-badge">{{ logStore.errorCount }}</span>
-        </button>
+        <div class="log-btn-wrap">
+          <AppButton size="sm" variant="secondary" aria-label="系统日志" @click="emit('openLog')">
+            <template #icon><ScrollText :size="14" /></template>
+            <span v-if="!isMobile">日志</span>
+          </AppButton>
+          <span
+            v-if="logStore.errorCount > 0"
+            class="log-badge"
+            :title="`${logStore.errorCount} 个错误`"
+          >
+            {{ logStore.errorCount >= 100 ? '99+' : logStore.errorCount }}
+          </span>
+        </div>
       </div>
     </div>
 
-    <!-- 右侧：保留元素 -->
-    <div class="toolbar-main">
-      <!-- Row 1: style tabs + workflow status + availability + 2D -->
-      <div class="toolbar-strip">
-        <div class="style-tabs" role="tablist" aria-label="底图风格">
-          <button
-            v-for="group in sourcesByStyle"
-            :key="group.style"
-            class="style-tab"
-            :class="{ active: activeStyle === group.style }"
-            role="tab"
-            :aria-selected="activeStyle === group.style"
-            @click="selectSource(group.sources.find((s) => sourceUsable(s)) ?? group.sources[0])"
-          >
-            <span class="style-icon" aria-hidden="true">{{ group.icon }}</span>
-            <span>{{ group.label }}</span>
-          </button>
-        </div>
-
-        <!-- Workflow status -->
-        <WorkflowStatusButton
-          :summary="mergedWorkflowSummary"
-          @click="emit('openWorkflowStatus')"
-        />
-
-        <!-- Availability status chip -->
-        <div
-          v-if="activeLayerCount > 0"
-          class="status-chip"
-          :class="`availability-${activeLayer.availabilityState}`"
-          :title="activeLayer.availabilityDescription"
-        >
-          {{ activeLayer.availabilityLabel }}
-        </div>
-
-        <!-- 2D/3D dimension indicator -->
-        <div class="status-chip dim-mode">2D</div>
-      </div>
-
-      <!-- Row 2: source selector + time + layer info -->
-      <div class="toolbar-strip">
+    <!-- 右侧：状态集群 -->
+    <div class="toolbar-right">
+      <div class="status-cluster">
+        <!-- 来源选择器 -->
         <div v-if="activeStyle !== 'none'" class="source-pill">
           <button
             v-for="source in sourcesByStyle.find((g) => g.style === activeStyle)?.sources ?? []"
@@ -382,7 +322,7 @@ function sourcePillLabel(source: TileSourceConfig): string {
             :title="
               sourceUsable(source)
                 ? `${source.provider} · ${source.label}`
-                : `${source.label}（需配置 API Key：${source.secretRef?.key ?? ''}，点击打开设置）`
+                : `${source.label}（需配置 API Key，点击打开设置）`
             "
             @click="selectSource(source)"
           >
@@ -390,411 +330,42 @@ function sourcePillLabel(source: TileSourceConfig): string {
           </button>
         </div>
 
-        <div class="time-chip">{{ hourLabel }}</div>
+        <!-- 底图风格 -->
+        <SegmentedControl
+          :model-value="activeStyle"
+          :options="styleOptions"
+          size="xs"
+          @change="(val) => onStyleChange(val as BasemapStyle)"
+        />
 
-        <div v-if="activeLayerCount > 0" class="status-chip">{{ activeLayer.name }}</div>
-        <div v-else class="status-chip">{{ LAYERS_COPY.emptyTitle }}</div>
-        <div v-if="activeLayerCount > 0" class="status-chip">{{ activeLayerCount }} 个图层</div>
-        <div v-if="currentSourceLocked" class="status-chip warning">
+        <!-- 工作流状态 -->
+        <WorkflowStatusButton
+          :summary="mergedWorkflowSummary"
+          @click="emit('openWorkflowStatus')"
+        />
+
+        <!-- 时间标签 -->
+        <Chip class="time-chip">{{ hourLabel }}</Chip>
+
+        <!-- 2D/3D 视图切换 -->
+        <button
+          class="dim-toggle"
+          :class="{ 'dim-toggle--3d': uiStore.viewMode === '3d' }"
+          type="button"
+          :title="uiStore.viewMode === '2d' ? '切换到3D地球视图' : '切换到2D平面视图'"
+          @click="uiStore.toggleViewMode()"
+        >
+          <component :is="uiStore.viewMode === '2d' ? Map : Globe" :size="12" class="dim-icon" />
+          <span>{{ uiStore.viewMode === '2d' ? '2D' : '3D' }}</span>
+        </button>
+
+        <!-- API Key 锁定警告 -->
+        <Chip v-if="currentSourceLocked" variant="warning">
           {{ BASEMAP_COPY.needApiKey }}
-        </div>
+        </Chip>
       </div>
     </div>
   </header>
 </template>
 
-<style scoped>
-.toolbar {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.8rem;
-  align-items: center;
-  padding: 0.48rem 0.7rem;
-  border: 1px solid rgba(145, 197, 255, 0.14);
-  border-radius: 1rem;
-  background:
-    linear-gradient(180deg, rgba(8, 17, 31, 0.52), rgba(7, 15, 28, 0.44)), rgba(8, 18, 33, 0.42);
-  backdrop-filter: blur(18px);
-  box-shadow:
-    0 18px 42px rgba(1, 8, 16, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
-}
-
-/* ── 左侧主工具栏 ─────────────────────────────────────────────────── */
-.toolbar-primary {
-  display: flex;
-  align-items: center;
-  gap: 0.62rem;
-  min-width: 0;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 0.58rem;
-  min-width: 0;
-  flex: none;
-}
-
-.brand-mark {
-  width: 1.9rem;
-  height: 1.9rem;
-  flex: none;
-  border-radius: 0.72rem;
-  background:
-    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.32), transparent 42%),
-    linear-gradient(135deg, #5ad5ff, #2f7eff 58%, #7d7dff);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.06),
-    0 12px 30px rgba(47, 126, 255, 0.28);
-}
-
-.brand-copy {
-  min-width: 0;
-}
-
-.eyebrow {
-  margin: 0 0 0.08rem;
-  color: #88dfff;
-  font-size: 0.62rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-h1 {
-  margin: 0;
-  font-size: clamp(0.9rem, 1.5vw, 1.18rem);
-  color: #f5fbff;
-  white-space: nowrap;
-}
-
-.primary-tools {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding-left: 0.62rem;
-  border-left: 1px solid rgba(136, 192, 255, 0.1);
-}
-
-/* 统一工具按钮样式 */
-.tool-btn {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.24rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
-  border-radius: 0.5rem;
-  padding: 0.3rem 0.46rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #9fb6cc;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.62rem;
-  font-weight: 500;
-  white-space: nowrap;
-  transition:
-    border-color 0.18s ease,
-    color 0.18s ease,
-    background 0.18s ease;
-}
-
-.tool-btn:hover {
-  border-color: rgba(90, 213, 255, 0.3);
-  color: #5ad5ff;
-  background: rgba(10, 132, 255, 0.12);
-}
-
-.tool-btn.active {
-  border-color: rgba(90, 213, 255, 0.4);
-  color: #5ad5ff;
-  background: rgba(10, 132, 255, 0.2);
-  box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.16);
-}
-
-.btn-icon {
-  font-size: 0.72rem;
-  opacity: 0.9;
-}
-.btn-label {
-  font-size: 0.6rem;
-}
-
-.log-badge {
-  position: absolute;
-  top: -0.36rem;
-  right: -0.36rem;
-  min-width: 0.82rem;
-  height: 0.82rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 0.18rem;
-  border-radius: 999px;
-  background: rgba(10, 132, 255, 0.8);
-  color: #fff;
-  font-size: 0.48rem;
-  font-weight: 700;
-}
-
-/* 移动 / 选择 模式按钮组 */
-.mode-group {
-  display: inline-flex;
-  gap: 0.12rem;
-  padding: 0.16rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
-  border-radius: 0.5rem;
-  background: rgba(4, 12, 23, 0.6);
-}
-
-.mode-btn {
-  width: 1.56rem;
-  height: 1.56rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid transparent;
-  border-radius: 0.36rem;
-  background: transparent;
-  color: #6e8ba0;
-  cursor: pointer;
-  transition:
-    background 0.16s ease,
-    color 0.16s ease,
-    border-color 0.16s ease;
-}
-
-.mode-btn:hover {
-  background: rgba(136, 192, 255, 0.1);
-  color: #c8dff0;
-}
-
-.mode-btn.active {
-  background: rgba(60, 120, 200, 0.32);
-  border-color: rgba(136, 192, 255, 0.38);
-  color: #f4fbff;
-}
-
-/* 清除测量路径按钮（仅在 measure 模式且有路径时显示） */
-.mode-btn.clear-btn {
-  background: rgba(180, 60, 60, 0.18);
-  border-color: rgba(255, 120, 120, 0.32);
-  color: #ff9a9a;
-}
-
-.mode-btn.clear-btn:hover {
-  background: rgba(220, 80, 80, 0.28);
-  color: #ffb0b0;
-}
-
-/* ── 右侧保留区 ───────────────────────────────────────────────────── */
-.toolbar-main {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.38rem;
-  flex: none;
-}
-
-.toolbar-strip {
-  display: flex;
-  align-items: center;
-  gap: 0.42rem;
-  flex-wrap: wrap;
-}
-
-.toolbar-strip:last-child {
-  flex-wrap: nowrap;
-  overflow: hidden;
-  min-width: 0;
-}
-
-/* Style tabs */
-.style-tabs {
-  display: inline-flex;
-  gap: 0.18rem;
-  padding: 0.16rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
-  border-radius: 999px;
-  background: rgba(4, 12, 23, 0.82);
-}
-
-.style-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.28rem;
-  border: none;
-  border-radius: 999px;
-  padding: 0.26rem 0.52rem;
-  background: transparent;
-  color: #8aa8bf;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.64rem;
-  transition:
-    background-color 0.2s ease,
-    color 0.2s ease,
-    transform 0.2s ease;
-  white-space: nowrap;
-}
-
-.style-tab:hover {
-  color: #f0f8ff;
-  background: rgba(136, 192, 255, 0.1);
-  transform: translateY(-1px);
-}
-
-.style-tab.active {
-  background: rgba(10, 132, 255, 0.5);
-  color: #f0faff;
-  font-weight: 600;
-  box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.2);
-}
-
-.style-icon {
-  font-size: 0.7rem;
-  opacity: 0.7;
-}
-
-.style-tab.active .style-icon {
-  opacity: 1;
-}
-
-/* Source buttons */
-.source-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.14rem;
-  padding: 0.16rem 0.22rem 0.16rem 0.3rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
-  border-radius: 999px;
-  background: rgba(4, 12, 23, 0.6);
-}
-
-.source-btn {
-  min-width: 1.8rem;
-  height: 1.38rem;
-  border: none;
-  border-radius: 0.4rem;
-  padding: 0 0.28rem;
-  background: transparent;
-  color: #6e8ba0;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.58rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  transition:
-    background 0.16s ease,
-    color 0.16s ease,
-    transform 0.16s ease;
-}
-
-.source-btn:hover {
-  background: rgba(136, 192, 255, 0.1);
-  color: #c8dff0;
-  transform: scale(1.06);
-}
-
-.source-btn.active {
-  background: rgba(10, 132, 255, 0.22);
-  color: #5ad5ff;
-  box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.3);
-}
-
-.source-btn.locked {
-  opacity: 0.42;
-  color: #8a6a6a;
-  text-decoration: line-through;
-}
-
-.source-btn.locked:hover {
-  background: rgba(255, 140, 100, 0.12);
-  color: #ffb090;
-}
-
-/* Status chips */
-.status-chip {
-  display: inline-flex;
-  align-items: center;
-  max-width: 8rem;
-  padding: 0.24rem 0.46rem;
-  border-radius: 999px;
-  background: rgba(4, 12, 23, 0.42);
-  border: 1px solid rgba(136, 192, 255, 0.1);
-  color: #d8e6f5;
-  font-size: 0.6rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.availability-ready {
-  color: #9ff8cf;
-  border-color: rgba(114, 255, 207, 0.18);
-  background: rgba(114, 255, 207, 0.1);
-}
-.availability-partial {
-  color: #ffd38a;
-  border-color: rgba(255, 196, 120, 0.18);
-  background: rgba(255, 196, 120, 0.08);
-}
-.availability-empty {
-  color: #d7c1ff;
-  border-color: rgba(187, 137, 255, 0.2);
-  background: rgba(187, 137, 255, 0.1);
-}
-.status-chip.warning {
-  color: #ffc878;
-  border-color: rgba(255, 180, 80, 0.2);
-  background: rgba(255, 160, 60, 0.1);
-}
-.status-chip.dim-mode {
-  color: #5ad5ff;
-  border-color: rgba(90, 213, 255, 0.24);
-  background: rgba(10, 132, 255, 0.12);
-  font-weight: 600;
-}
-
-/* Time chip */
-.time-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 3.2rem;
-  padding: 0.24rem 0.56rem;
-  border-radius: 999px;
-  background: rgba(4, 12, 23, 0.42);
-  border: 1px solid rgba(136, 192, 255, 0.12);
-  color: #eff8ff;
-  font-size: 0.66rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
-  text-align: center;
-  white-space: nowrap;
-}
-
-@media (max-width: 1100px) {
-  .toolbar {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.48rem;
-  }
-
-  .toolbar-primary {
-    flex-wrap: wrap;
-    gap: 0.42rem;
-  }
-  .toolbar-main {
-    align-items: stretch;
-  }
-  .toolbar-strip {
-    justify-content: flex-start;
-  }
-  .style-tabs {
-    align-self: flex-start;
-    flex-wrap: wrap;
-  }
-}
-</style>
+<style scoped src="./ModeToolbar.styles.css" />

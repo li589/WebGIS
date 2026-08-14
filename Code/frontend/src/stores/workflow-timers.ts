@@ -23,6 +23,7 @@ import {
   type EmitEventResponse,
   type TickStats,
 } from '../services/workflow-timer-api'
+import { useLogStore } from './log'
 
 export const useWorkflowTimersStore = defineStore('workflow-timers', () => {
   // ─── 状态 ────────────────────────────────────────────────────────────────
@@ -52,7 +53,12 @@ export const useWorkflowTimersStore = defineStore('workflow-timers', () => {
       timers.value = await fetchWorkflowTimers(workflowId)
       if (silent) error.value = null
     } catch (err) {
-      console.error('[workflow-timers] Failed to load timers:', err)
+      useLogStore().logOperation(
+        'workflow-error',
+        '加载定时器列表失败',
+        err instanceof Error ? err.message : String(err),
+        'error',
+      )
       error.value = err instanceof Error ? err.message : String(err)
     } finally {
       if (!silent) loading.value = false
@@ -71,7 +77,12 @@ export const useWorkflowTimersStore = defineStore('workflow-timers', () => {
       }
       return timer
     } catch (err) {
-      console.error('[workflow-timers] Failed to load timer:', err)
+      useLogStore().logOperation(
+        'workflow-error',
+        '加载定时器详情失败',
+        err instanceof Error ? err.message : String(err),
+        'error',
+      )
       error.value = err instanceof Error ? err.message : String(err)
       return null
     }
@@ -122,9 +133,23 @@ export const useWorkflowTimersStore = defineStore('workflow-timers', () => {
           const layersStore = useLayersStore()
           const catalogIdHint = timers.value.find((t) => t.timer_id === timerId)?.payload_overrides
             ?.layer_id
-          void layersStore.registerExternalWorkflowRun(result.run_id, catalogIdHint)
+          void layersStore
+            .registerExternalWorkflowRun(result.run_id, catalogIdHint)
+            .catch((err) => {
+              useLogStore().logOperation(
+                'workflow-error',
+                '定时器触发的工作流运行注册失败',
+                String(err),
+                'warn',
+              )
+            })
         } catch (err) {
-          console.warn('[workflow-timers] registerExternalWorkflowRun failed:', err)
+          useLogStore().logOperation(
+            'workflow-error',
+            '定时器触发的工作流运行注册失败',
+            String(err),
+            'warn',
+          )
         }
       }
       return result

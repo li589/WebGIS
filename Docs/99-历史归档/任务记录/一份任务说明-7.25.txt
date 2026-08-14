@@ -1,0 +1,14 @@
+我们课题组想要跑通一个数据集的拉取（本地源+在线源）+处理+展示+导出的全流程："D:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Code\algorithms\providers\Matlab\omega_sf_fenkuai.m"，似乎和已有的一个文件（这里面有一些额外的注释："D:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Code\algorithms\providers\Matlab\D1_raw_omeg.m"）类似，不过我们肯定是要把详细的算法迁移到py组件中的（D:\Workspace\mat2py\Python）。我们要求产的数据的师兄给了一个说明内容在："D:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Code\algorithms\providers\docs\FY-3D与SMAP亮温反演数据输入配置.xlsx"。matlab代码中里面似乎使用了两个不同的ndvi数据，这需要注意，还要一些（相对）静态的数据。然后我们提供一个smap的数据下载点："https://nsidc.org/data/spl3smp_e/versions/6#anchor-data-access-tools"；Earthdata的账号：Rejoyce，密码：Diandian143。你可能需要在线查询大量信息才可以继续操作。
+然后那个excle中的路径是服务器共享路径（public/share是公开的目录），任何人都可以下载数据，但是你不要删除数据。服务器在校园网中是使用ssh登陆的，内网ip是172.16.98.184，账号为likr6008，端口22，使用ssh-key凭据登陆，这个凭据失效30天，刚刚生成。我做了cloudflare隧道，是这样的因为网络问题，我做了几件事情：
+1.终端使用"ssh win11-lab"可以直接登陆校园网的中转电脑（open-ssh，已做了cloudflare隧道授权），账号qiujianqiu，密码qiujianxiu.1234,在win中可以使用"ssh -i C:\Users\qiujianxiu\Downloads\likr6008_10.10.10.254_RsaKeyExpireTime_2026-08-23_20-23-34.txt likr6008@172.16.98.184 -p 22"来桥接登陆；
+2.我这边启用了邮箱验证和cloudflare授权，已经使用“D:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Tools> cloudflared access tcp --hostname seahpc.personaltunnel.dpdns.org --url 127.0.0.1:2222
+2026-07-24T15:45:34Z INF Start Websocket listener host=127.0.0.1:2222
+A browser window should have opened at the following URL:
+https://seahpc.personaltunnel.dpdns.org/cdn-cgi/access/cli?aud=a757b89ce9b331fd0da4b2ec817d5fe749305093e7ced87ebfd8aae2afa40e15&edge_token_transfer=true&redirect_url=https%3A%2F%2Fseahpc.personaltunnel.dpdns.org%3Faud%3Da757b89ce9b331fd0da4b2ec817d5fe749305093e7ced87ebfd8aae2afa40e15%26token%3D1my5yXLw1Xita1-lcDwmUqH6bXlNJJhJY0FS86-NeR0%253D&send_org_token=true&token=1my5yXLw1Xita1-lcDwmUqH6bXlNJJhJY0FS86-NeR0%3D
+If the browser failed to open, please visit the URL above directly in your browser.”启用了端口转发，这边也已经下载了ssh-key文件："D:\Workspace\mat2py\tmp\likr6008_10.10.10.254_RsaKeyExpireTime_2026-08-23_20-23-34.txt"，因为考虑ssh权限问题，我复制了key文件，使用“ssh -p 2222 likr6008@127.0.0.1 -i ~/.ssh/seahpc_key”即可登陆服务器。
+3.其它内容（不是服务器，还是存在其它数据）在远端（校园网跳板电脑）上可以使用cloudflare的隧道："https://nasfile.personaltunnel.dpdns.org/"通过filebrowser服务来访问电脑连接的nas（z盘），账号为user，密码为remotefangwen123，不允许删除数据，使用另一个隧道："https://win11file.personaltunnel.dpdns.org/"通过filebrowser服务来访问电脑的数据盘（e盘），账号密码还是如上，里面也有一些数据。
+
+顺便说一下，远端电脑的路径："Z:\Liuzheng\omega_final"里面是已经通过matlab脚本（"D:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Code\algorithms\providers\Matlab\D1_raw_omeg.m"）运行得到的数据，里面有fy和smap两个反演数据，我们主要看含有raw的动态反演结果，里面的数据远程可以使用cloudflare隧道+filebrowser进行访问（https://win11file.personaltunnel.dpdns.org/，使用user登陆，密码remotefangwen123。）
+其它数据（辅助数据）位置放在了"I:\Geograph_DataSet\Soil_Ecological_Data\Smap_auxiliary_data"，有什么土壤容重之类的，可以参考“D:\Workspace\mat2py\Matlab”里面的mlx文件（这个文件是交互式的matlab文件，似乎记事本打不开）
+
+注意：cloudflare一次只能传输少于100MB数据（免费隧道），且有断联风险。

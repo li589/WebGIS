@@ -43,8 +43,8 @@ class VisibilityLayerOutput(LayerOutputStrategy):
         )
         try:
             grid_data, _, _ = service._fetch_layer_grid_data(bbox=bbox, spec=spec)
-            feature_collection = service.build_visibility_geojson_from_grid(
-                grid_data, spec.layer_id
+            feature_collection = service.build_scalar_geojson_from_grid(
+                grid_data, metric_key="visibility", unit="m"
             )
         except (HTTPError, URLError, OSError, KeyError, ValueError):
             feature_collection = service.build_visibility_geojson(weather, bbox)

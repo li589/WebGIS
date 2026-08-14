@@ -14,9 +14,11 @@
  * col-row / col-field / col-select / action-row / cancel-btn / confirm-btn）。
  */
 import { computed, nextTick, ref, watch } from 'vue'
+import { Map, X, AlertTriangle } from '../../components/ui/icons'
 import { listCrs, transformBounds } from '@/services/crs'
 import type { CRSOption } from '@/services/crs'
 import { fetchCrsOptionsExpanded } from '@/services/data-import'
+import AppSelect from '@/components/ui/AppSelect.vue'
 
 interface DetectionResult {
   /** 后端 RasterImportResult 字段均为 optional，dialog 内部已做 fallback */
@@ -225,10 +227,16 @@ watch(
       tabindex="-1"
     >
       <div class="panel-header">
-        <span class="panel-icon" aria-hidden="true">🗺️</span>
+        <Map :size="16" class="panel-icon" aria-hidden="true" />
         <span>确认栅格数据坐标系 — {{ fileName }}</span>
-        <button class="close-btn" :disabled="isBusy" title="关闭" @click="handleCancel">
-          <span aria-hidden="true">✕</span>
+        <button
+          class="close-btn"
+          :disabled="isBusy"
+          title="关闭"
+          aria-label="关闭"
+          @click="handleCancel"
+        >
+          <X :size="14" aria-hidden="true" />
         </button>
       </div>
 
@@ -268,11 +276,15 @@ watch(
             placeholder="搜索 EPSG / 名称（全量 UTM/GK）"
             style="margin-bottom: 0.35rem"
           />
-          <select v-model="selectedCrs" class="col-select">
-            <option v-for="opt in filteredCrsOptions" :key="opt.code" :value="opt.code">
-              {{ opt.code }} — {{ opt.label }}
-            </option>
-          </select>
+          <AppSelect
+            v-model="selectedCrs"
+            :options="
+              filteredCrsOptions.map((opt) => ({
+                label: `${opt.code} — ${opt.label}`,
+                value: opt.code,
+              }))
+            "
+          />
         </label>
       </div>
       <div class="col-row">
@@ -302,7 +314,9 @@ watch(
       <div class="preview-block" :class="{ invalid: !previewValid }">
         <div class="preview-label">
           转换后 WGS84 bounds
-          <span v-if="!previewValid" class="preview-warn">⚠ 转换失败或越界</span>
+          <span v-if="!previewValid" class="preview-warn"
+            ><AlertTriangle :size="14" aria-hidden="true" /> 转换失败或越界</span
+          >
         </div>
         <div class="preview-value mono">{{ formatBounds(previewBounds) }}</div>
         <div class="preview-hint">
@@ -333,7 +347,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 10, 18, 0.52);
+  background: var(--surface-raised);
 }
 
 .csv-dialog-panel {
@@ -346,8 +360,8 @@ watch(
   gap: 0.6rem;
   padding: 0.82rem;
   border-radius: 1rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
-  background: rgba(8, 17, 31, 0.96);
+  border: 1px solid var(--border-default);
+  background: var(--surface-1);
   box-shadow: 0 24px 60px rgba(1, 8, 16, 0.48);
 }
 
@@ -356,15 +370,15 @@ watch(
   align-items: center;
   gap: 0.38rem;
   padding-bottom: 0.48rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.1);
-  color: #e8f3fc;
-  font-size: 0.72rem;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-strong);
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
 .panel-icon {
   font-size: 0.8rem;
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .close-btn {
@@ -374,13 +388,13 @@ watch(
   border: none;
   border-radius: 0.5rem;
   background: transparent;
-  color: #6e8ba0;
+  color: var(--text-faint);
   cursor: pointer;
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
 }
 .close-btn:hover:not(:disabled) {
-  background: rgba(136, 192, 255, 0.1);
-  color: #d8e6f5;
+  background: var(--border-subtle);
+  color: var(--text-primary);
 }
 .close-btn:disabled {
   opacity: 0.5;
@@ -388,8 +402,8 @@ watch(
 }
 
 .section-label {
-  color: #5a7080;
-  font-size: 0.58rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -401,49 +415,49 @@ watch(
   gap: 0.32rem;
   padding: 0.52rem;
   border-radius: 0.5rem;
-  border: 1px solid rgba(136, 192, 255, 0.08);
-  background: rgba(4, 12, 23, 0.5);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
 }
 
 .info-line {
   display: flex;
   align-items: baseline;
   gap: 0.42rem;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   flex-wrap: wrap;
 }
 
 .info-key {
-  color: #6e8ba0;
+  color: var(--text-faint);
   min-width: 5.6rem;
   flex-shrink: 0;
 }
 
 .info-value {
-  color: #d8e6f5;
+  color: var(--text-primary);
   word-break: break-all;
 }
 
 .info-value.notes {
-  color: #9fb6cc;
+  color: var(--text-secondary);
   font-style: italic;
 }
 .info-value.mono {
   font-variant-numeric: tabular-nums;
-  color: #5ad5ff;
+  color: var(--accent);
 }
 .info-unit {
-  color: #5a7080;
-  font-size: 0.54rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
 }
 
 .crs-badge {
   display: inline-block;
   padding: 0.12rem 0.42rem;
   border-radius: 0.32rem;
-  background: rgba(90, 213, 255, 0.14);
-  border: 1px solid rgba(90, 213, 255, 0.28);
-  color: #5ad5ff;
+  background: var(--accent-surface);
+  border: 1px solid var(--border-accent);
+  color: var(--accent);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -468,19 +482,19 @@ watch(
 }
 
 .col-label {
-  color: #8aa8bf;
-  font-size: 0.56rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
 }
 
 .col-select,
 .col-input {
   padding: 0.32rem 0.42rem;
   border-radius: 0.42rem;
-  border: 1px solid rgba(136, 192, 255, 0.16);
-  background: rgba(4, 12, 23, 0.6);
-  color: #d8e6f5;
+  border: 1px solid var(--border-default);
+  background: var(--surface-raised);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 
@@ -491,25 +505,25 @@ watch(
 .col-select:focus,
 .col-input:focus {
   outline: none;
-  border-color: rgba(90, 213, 255, 0.36);
+  border-color: var(--border-strong);
 }
 
 /* 实时预览块 */
 .preview-block {
   padding: 0.52rem;
   border-radius: 0.5rem;
-  border: 1px solid rgba(90, 213, 255, 0.18);
-  background: rgba(10, 132, 255, 0.06);
+  border: 1px solid var(--accent-surface);
+  background: var(--accent-surface);
 }
 
 .preview-block.invalid {
-  border-color: rgba(255, 140, 100, 0.32);
-  background: rgba(255, 100, 77, 0.06);
+  border-color: var(--danger-border);
+  background: var(--danger-surface);
 }
 
 .preview-label {
-  color: #88dfff;
-  font-size: 0.58rem;
+  color: var(--accent-strong);
+  font-size: var(--font-size-caption);
   font-weight: 600;
   margin-bottom: 0.22rem;
   display: flex;
@@ -518,21 +532,21 @@ watch(
 }
 
 .preview-warn {
-  color: #ffb070;
+  color: var(--warning);
   font-weight: 400;
-  font-size: 0.54rem;
+  font-size: var(--font-size-caption);
 }
 
 .preview-value {
-  color: #5ad5ff;
-  font-size: 0.66rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   font-variant-numeric: tabular-nums;
   word-break: break-all;
 }
 
 .preview-hint {
-  color: #5a7080;
-  font-size: 0.54rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   margin-top: 0.22rem;
 }
 
@@ -546,7 +560,7 @@ watch(
   gap: 0.52rem;
   justify-content: flex-end;
   padding-top: 0.32rem;
-  border-top: 1px solid rgba(136, 192, 255, 0.08);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .cancel-btn,
@@ -555,7 +569,7 @@ watch(
   padding: 0.42rem 0.72rem;
   border-radius: 0.5rem;
   font: inherit;
-  font-size: 0.64rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 
@@ -567,33 +581,33 @@ watch(
 }
 
 .cancel-btn {
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  border: 1px solid var(--border-default);
   background: transparent;
-  color: #9fb6cc;
+  color: var(--text-secondary);
 }
 .cancel-btn:hover:not(:disabled) {
-  background: rgba(136, 192, 255, 0.08);
-  color: #d8e6f5;
+  background: var(--border-subtle);
+  color: var(--text-primary);
 }
 
 .skip-btn {
   border: 1px solid rgba(255, 200, 120, 0.22);
   background: rgba(255, 200, 120, 0.06);
-  color: #ffc878;
+  color: var(--accent-warm);
 }
 .skip-btn:hover:not(:disabled) {
   background: rgba(255, 200, 120, 0.14);
-  color: #ffe0a8;
+  color: var(--warning);
 }
 
 .confirm-btn {
-  border: 1px solid rgba(90, 213, 255, 0.3);
-  background: rgba(10, 132, 255, 0.28);
-  color: #a8e8ff;
+  border: 1px solid var(--accent-border);
+  background: var(--border-accent);
+  color: var(--accent-strong);
   font-weight: 600;
 }
 .confirm-btn:hover:not(:disabled) {
-  background: rgba(10, 132, 255, 0.48);
-  color: #d0f0ff;
+  background: var(--border-strong);
+  color: var(--text-primary);
 }
 </style>

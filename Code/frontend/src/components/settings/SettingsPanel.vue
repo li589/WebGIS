@@ -1,11 +1,26 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef, watch, type Component } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch, type Component } from 'vue'
+import {
+  Settings,
+  User,
+  X,
+  LayoutGrid,
+  Key,
+  Globe,
+  CloudSun,
+  CloudLightning,
+  Server,
+  Database,
+  Info,
+  Palette,
+} from '../ui/icons'
 
 import { useAuthStore } from '../../stores/auth'
 import { useSettingsStore } from '../../stores/settings'
 import { useUiLoadingStore } from '../../stores/ui-loading'
 import { loadSettingsUiLocal, saveSettingsUiLocal } from '../../services/settings-local'
 import GeneralSettings from './GeneralSettings.vue'
+import AppearanceSettings from './AppearanceSettings.vue'
 import ApiKeySettings from './ApiKeySettings.vue'
 import GeeAccountSettings from './GeeAccountSettings.vue'
 import WeatherProviderSettings from './WeatherProviderSettings.vue'
@@ -25,6 +40,7 @@ const authStore = useAuthStore()
 
 type SettingsTab =
   | 'general'
+  | 'appearance'
   | 'accounts'
   | 'api-keys'
   | 'gee-accounts'
@@ -36,6 +52,7 @@ type SettingsTab =
 
 const TAB_IDS: SettingsTab[] = [
   'general',
+  'appearance',
   'accounts',
   'api-keys',
   'gee-accounts',
@@ -56,6 +73,7 @@ const activeTab = ref<SettingsTab>(savedTab && TAB_IDS.includes(savedTab) ? save
 
 const tabComponents = shallowRef<Record<SettingsTab, Component>>({
   general: GeneralSettings,
+  appearance: AppearanceSettings,
   accounts: UserAccountSettings,
   'api-keys': ApiKeySettings,
   'gee-accounts': GeeAccountSettings,
@@ -66,20 +84,21 @@ const tabComponents = shallowRef<Record<SettingsTab, Component>>({
   about: AboutSettings,
 })
 
-const ALL_TABS: Array<{ id: SettingsTab; label: string; icon: string }> = [
-  { id: 'general', label: SETTINGS_COPY.tabGeneral, icon: '▣' },
-  { id: 'accounts', label: '账户', icon: '👤' },
-  { id: 'api-keys', label: SETTINGS_COPY.tabApiKeys, icon: '🔑' },
-  { id: 'gee-accounts', label: SETTINGS_COPY.tabGee, icon: '🌍' },
-  { id: 'weather-providers', label: SETTINGS_COPY.tabWeather, icon: '🌦' },
-  { id: 'open-meteo-sync', label: SETTINGS_COPY.tabOpenMeteo, icon: '🌩' },
-  { id: 'remote-storage', label: '远程存储', icon: '🖧' },
-  { id: 'data-source', label: SETTINGS_COPY.tabDataSource, icon: '⚱' },
-  { id: 'about', label: '系统与关于', icon: 'ⓘ' },
+const ALL_TABS: Array<{ id: SettingsTab; label: string; icon: Component }> = [
+  { id: 'general', label: SETTINGS_COPY.tabGeneral, icon: LayoutGrid },
+  { id: 'appearance', label: SETTINGS_COPY.tabAppearance, icon: Palette },
+  { id: 'accounts', label: '账户', icon: User },
+  { id: 'api-keys', label: SETTINGS_COPY.tabApiKeys, icon: Key },
+  { id: 'gee-accounts', label: SETTINGS_COPY.tabGee, icon: Globe },
+  { id: 'weather-providers', label: SETTINGS_COPY.tabWeather, icon: CloudSun },
+  { id: 'open-meteo-sync', label: SETTINGS_COPY.tabOpenMeteo, icon: CloudLightning },
+  { id: 'remote-storage', label: '远程存储', icon: Server },
+  { id: 'data-source', label: SETTINGS_COPY.tabDataSource, icon: Database },
+  { id: 'about', label: '系统与关于', icon: Info },
 ]
 
 /** VITE_SETTINGS_TABS=comma ids 白名单；未配置则全开（兼容现网） */
-function resolveVisibleSettingsTabs(): Array<{ id: SettingsTab; label: string; icon: string }> {
+function resolveVisibleSettingsTabs(): Array<{ id: SettingsTab; label: string; icon: Component }> {
   const raw = String((import.meta.env as Record<string, unknown>).VITE_SETTINGS_TABS ?? '').trim()
   if (!raw) return ALL_TABS
   const allowed = new Set(
@@ -102,8 +121,8 @@ const tabs = computed(() => {
 
 const ROLE_LABEL: Record<string, string> = {
   admin: '管理员',
-  operator: '操作员',
-  viewer: '只读',
+  standard: '标准用户',
+  demo: '演示',
 }
 
 const sessionLabel = computed(() => {
@@ -120,6 +139,7 @@ if (!tabs.value.some((t) => t.id === activeTab.value)) {
 }
 
 onMounted(async () => {
+  window.addEventListener('resize', onWindowResize)
   const loading = useUiLoadingStore()
   // 面板异步 chunk 已挂上：立刻关掉全屏 hero。
   // 配置拉取用面板内 spinner；否则 9 路 /config 全完（甚至重试）才关全屏，看起来像「设置已出来但还在转」。
@@ -132,7 +152,8 @@ onMounted(async () => {
 })
 
 watch(activeTab, (tab) => {
-  saveSettingsUiLocal({ activeTab: tab })
+  // merge 写入：勿整表替换，否则会丢掉 mapDistributionChrome 等偏好
+  saveSettingsUiLocal({ ...loadSettingsUiLocal(), activeTab: tab })
   if (tab === 'api-keys' && settingsStore.apiKeys.length === 0) {
     void settingsStore.loadApiKeys()
   } else if (tab === 'gee-accounts' && settingsStore.geeAccounts.length === 0) {
@@ -143,13 +164,90 @@ watch(activeTab, (tab) => {
     void settingsStore.loadRemoteStorageProfiles()
   }
 })
+
+/** 设置侧栏：左缘拖动加宽（面板贴右，向左拖 = 变宽） */
+const PANEL_WIDTH_DEFAULT_PX = Math.round(38 * 16)
+const PANEL_WIDTH_MIN_PX = Math.round(32 * 16)
+const PANEL_WIDTH_MAX_CAP_PX = Math.round(56 * 16)
+
+function clampPanelWidth(px: number): number {
+  const maxByViewport = Math.floor(window.innerWidth * 0.92)
+  const max = Math.min(PANEL_WIDTH_MAX_CAP_PX, Math.max(PANEL_WIDTH_MIN_PX, maxByViewport))
+  return Math.min(max, Math.max(PANEL_WIDTH_MIN_PX, Math.round(px)))
+}
+
+const savedWidth = loadSettingsUiLocal().panelWidthPx
+const panelWidthPx = ref(
+  clampPanelWidth(
+    typeof savedWidth === 'number' && Number.isFinite(savedWidth)
+      ? savedWidth
+      : PANEL_WIDTH_DEFAULT_PX,
+  ),
+)
+const panelStyle = computed(() => ({ width: `${panelWidthPx.value}px` }))
+
+let resizeStartX = 0
+let resizeStartWidth = 0
+const isResizing = ref(false)
+
+function onResizePointerMove(event: PointerEvent) {
+  if (!isResizing.value) return
+  // 向左拖 → clientX 变小 → 宽度增加
+  const next = resizeStartWidth + (resizeStartX - event.clientX)
+  panelWidthPx.value = clampPanelWidth(next)
+}
+
+function stopResize() {
+  if (!isResizing.value) return
+  isResizing.value = false
+  window.removeEventListener('pointermove', onResizePointerMove)
+  window.removeEventListener('pointerup', stopResize)
+  window.removeEventListener('pointercancel', stopResize)
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  saveSettingsUiLocal({ ...loadSettingsUiLocal(), panelWidthPx: panelWidthPx.value })
+}
+
+function onResizePointerDown(event: PointerEvent) {
+  if (event.button !== 0) return
+  event.preventDefault()
+  isResizing.value = true
+  resizeStartX = event.clientX
+  resizeStartWidth = panelWidthPx.value
+  document.body.style.cursor = 'ew-resize'
+  document.body.style.userSelect = 'none'
+  window.addEventListener('pointermove', onResizePointerMove)
+  window.addEventListener('pointerup', stopResize)
+  window.addEventListener('pointercancel', stopResize)
+}
+
+function onWindowResize() {
+  panelWidthPx.value = clampPanelWidth(panelWidthPx.value)
+}
+
+onUnmounted(() => {
+  stopResize()
+  window.removeEventListener('resize', onWindowResize)
+})
 </script>
 
 <template>
   <div class="settings-overlay" @click.self="emit('close')">
-    <div class="settings-panel">
+    <div
+      class="settings-panel"
+      :class="{ 'settings-panel--resizing': isResizing }"
+      :style="panelStyle"
+    >
+      <div
+        class="settings-resize-handle"
+        title="向左拖动加宽"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整设置面板宽度"
+        @pointerdown="onResizePointerDown"
+      />
       <div class="settings-header">
-        <span class="header-icon" aria-hidden="true">⚙</span>
+        <Settings :size="18" class="header-icon" aria-hidden="true" />
         <span class="header-title">{{ SETTINGS_COPY.panelTitle }}</span>
         <button
           v-if="sessionLabel"
@@ -158,11 +256,11 @@ watch(activeTab, (tab) => {
           title="账户与登录"
           @click="openAccountsTab"
         >
-          <span class="session-avatar" aria-hidden="true">👤</span>
+          <User :size="14" class="session-avatar" aria-hidden="true" />
           <span class="session-text">{{ sessionLabel }}</span>
         </button>
         <button class="close-btn" title="关闭" @click="emit('close')">
-          <span aria-hidden="true">✕</span>
+          <X :size="14" aria-hidden="true" />
         </button>
       </div>
 
@@ -175,7 +273,7 @@ watch(activeTab, (tab) => {
             :class="{ active: activeTab === tab.id }"
             @click="activeTab = tab.id"
           >
-            <span class="nav-icon" aria-hidden="true">{{ tab.icon }}</span>
+            <span class="nav-icon" aria-hidden="true"><component :is="tab.icon" :size="16" /></span>
             <span class="nav-label">{{ tab.label }}</span>
           </button>
         </nav>
@@ -214,18 +312,55 @@ watch(activeTab, (tab) => {
   z-index: 998;
   display: flex;
   justify-content: flex-end;
-  background: rgba(4, 10, 18, 0.4);
+  background: var(--surface-raised);
 }
 
 .settings-panel {
+  position: relative;
   width: 38rem;
   max-width: 92vw;
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: rgba(8, 17, 31, 0.98);
-  border-left: 1px solid rgba(136, 192, 255, 0.14);
+  background: var(--surface-2);
+  border-left: 1px solid var(--border-default);
   box-shadow: -12px 0 36px rgba(1, 8, 16, 0.32);
+}
+
+.settings-panel--resizing {
+  transition: none;
+}
+
+.settings-resize-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0.4rem;
+  transform: translateX(-50%);
+  cursor: ew-resize;
+  z-index: 2;
+  touch-action: none;
+}
+
+.settings-resize-handle::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.18rem;
+  height: 2.4rem;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: var(--border-default);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.settings-panel:hover .settings-resize-handle::after,
+.settings-panel--resizing .settings-resize-handle::after {
+  opacity: 0.9;
+  background: var(--accent);
 }
 
 .settings-header {
@@ -233,16 +368,16 @@ watch(activeTab, (tab) => {
   align-items: center;
   gap: 0.38rem;
   padding: 0.72rem 0.82rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.1);
-  color: #e8f3fc;
-  font-size: 0.74rem;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-strong);
+  font-size: var(--font-size-caption);
   font-weight: 600;
   flex: none;
 }
 
 .header-icon {
   font-size: 0.82rem;
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .header-title {
@@ -256,22 +391,22 @@ watch(activeTab, (tab) => {
   gap: 0.35rem;
   max-width: 9rem;
   padding: 0.22rem 0.45rem;
-  border: 1px solid rgba(114, 255, 207, 0.22);
+  border: 1px solid var(--success-border);
   border-radius: 999px;
-  background: rgba(114, 255, 207, 0.08);
-  color: #9ff8cf;
+  background: var(--success-surface);
+  color: var(--success);
   cursor: pointer;
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
 }
 
 .session-chip:hover {
-  border-color: rgba(114, 255, 207, 0.38);
-  background: rgba(114, 255, 207, 0.14);
+  border-color: var(--success);
+  background: var(--success-surface);
 }
 
 .session-avatar {
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   line-height: 1;
 }
 
@@ -287,14 +422,14 @@ watch(activeTab, (tab) => {
   border: none;
   border-radius: 0.5rem;
   background: transparent;
-  color: #6e8ba0;
+  color: var(--text-muted);
   cursor: pointer;
-  font-size: 0.7rem;
+  font-size: var(--font-size-caption);
 }
 
 .close-btn:hover {
-  background: rgba(136, 192, 255, 0.1);
-  color: #d8e6f5;
+  background: var(--border-subtle);
+  color: var(--text-primary);
 }
 
 .settings-body {
@@ -310,7 +445,7 @@ watch(activeTab, (tab) => {
   flex-direction: column;
   gap: 0.12rem;
   padding: 0.52rem 0.32rem;
-  border-right: 1px solid rgba(136, 192, 255, 0.08);
+  border-right: 1px solid var(--border-subtle);
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -325,28 +460,28 @@ watch(activeTab, (tab) => {
   border: 1px solid transparent;
   border-radius: 0.5rem;
   background: transparent;
-  color: #8aa8bf;
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   text-align: left;
   transition: all 0.16s ease;
 }
 
 .nav-item:hover {
-  background: rgba(136, 192, 255, 0.06);
-  color: #d8e6f5;
+  background: var(--border-subtle);
+  color: var(--text-primary);
 }
 
 .nav-item.active {
-  border-color: rgba(90, 213, 255, 0.3);
-  background: rgba(10, 132, 255, 0.14);
-  color: #5ad5ff;
+  border-color: var(--accent-border);
+  background: var(--accent-surface);
+  color: var(--accent-strong);
   font-weight: 600;
 }
 
 .nav-icon {
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   opacity: 0.8;
   flex: none;
 }
@@ -379,8 +514,8 @@ watch(activeTab, (tab) => {
   justify-content: center;
   gap: 0.62rem;
   padding: 3rem 1rem;
-  color: #5a7080;
-  font-size: 0.62rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
 }
 
 .content-partial-error {
@@ -390,19 +525,19 @@ watch(activeTab, (tab) => {
   gap: 0.6rem;
   margin-bottom: 0.55rem;
   padding: 0.42rem 0.55rem;
-  border: 1px solid rgba(255, 180, 90, 0.28);
+  border: 1px solid var(--warning-border);
   border-radius: 0.45rem;
-  background: rgba(90, 60, 20, 0.28);
-  color: #ffd9a8;
-  font-size: 0.58rem;
+  background: var(--warning-surface);
+  color: var(--accent-warm);
+  font-size: var(--font-size-caption);
   line-height: 1.4;
 }
 
 .loading-spinner {
   width: 1.6rem;
   height: 1.6rem;
-  border: 2px solid rgba(90, 213, 255, 0.2);
-  border-top-color: #5ad5ff;
+  border: 2px solid var(--accent-border);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -415,23 +550,36 @@ watch(activeTab, (tab) => {
 
 .retry-btn {
   padding: 0.26rem 0.72rem;
-  border: 1px solid rgba(90, 213, 255, 0.3);
+  border: 1px solid var(--accent-border);
   border-radius: 0.4rem;
-  background: rgba(10, 132, 255, 0.12);
-  color: #5ad5ff;
+  background: var(--accent-surface);
+  color: var(--accent-strong);
   cursor: pointer;
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
 }
 
 .retry-btn:hover {
-  background: rgba(10, 132, 255, 0.22);
+  background: var(--surface-hover);
 }
 
-@media (max-width: 600px) {
+/* 键盘焦点可达性：统一交互元素 focus-visible 轮廓 */
+.session-chip:focus-visible,
+.close-btn:focus-visible,
+.nav-item:focus-visible,
+.retry-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
   .settings-panel {
-    width: 100vw;
+    width: 100vw !important;
     max-width: 100vw;
+  }
+
+  .settings-resize-handle {
+    display: none;
   }
 
   .settings-body {
@@ -442,7 +590,7 @@ watch(activeTab, (tab) => {
     width: 100%;
     flex-direction: row;
     border-right: none;
-    border-bottom: 1px solid rgba(136, 192, 255, 0.08);
+    border-bottom: 1px solid var(--border-subtle);
     overflow-x: auto;
     overflow-y: hidden;
     padding: 0.32rem;
@@ -451,6 +599,12 @@ watch(activeTab, (tab) => {
 
   .nav-item {
     flex: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-spinner {
+    animation: none;
   }
 }
 </style>

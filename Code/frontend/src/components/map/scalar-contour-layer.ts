@@ -47,7 +47,7 @@ export function buildPressureIsobarLevels(
     const bold = v % 10 === 0
     levels.push({
       value: v,
-      color: bold ? 'rgba(255,255,255,0.72)' : 'rgba(220,230,255,0.45)',
+      color: bold ? 'var(--text-primary)' : 'rgba(220,230,255,0.45)',
       width: bold ? 1.6 : 0.9,
       bold,
     })
@@ -428,7 +428,7 @@ export class ScalarContourLayer {
         const mid = segments[Math.floor(segments.length / 2)]
         if (mid) {
           const p = this.map.project([mid[0][0] + this.lonWrapOffset, mid[0][1]])
-          ctx.fillStyle = 'rgba(255,255,255,0.75)'
+          ctx.fillStyle = 'var(--text-primary)'
           ctx.font = `${10 * dpr}px sans-serif`
           ctx.fillText(
             `${level.value}${this.unitLabel ? ` ${this.unitLabel}` : ''}`,

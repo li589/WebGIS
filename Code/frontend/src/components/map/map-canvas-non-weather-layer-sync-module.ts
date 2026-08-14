@@ -8,6 +8,7 @@ import { createOverlayImageModule } from './overlay-image-module'
 import { createImportedLayerModule } from './imported-layer-module'
 import { applyActiveLayerStackOrder } from './layer-stack-sync'
 import type { ActiveLayer } from '../../stores/layers/types'
+import { resolveLayerDisplayLabel } from '../../stores/layers/layer-naming'
 
 type MapInstance = import('maplibre-gl').Map
 
@@ -100,6 +101,18 @@ export function createMapCanvasNonWeatherLayerSyncModule(
     applyLayerStackOrder()
   }
 
+  /** 仅更新 overlay 透明度，不触发 setOverlayStyle（避免配色突变） */
+  function syncOverlayOpacity() {
+    if (!options.getMapReady()) return
+    for (const layer of options.getActiveLayers()) {
+      if (layer.importedVector || layer.isAdminBoundary) continue
+      const overlayId = layer.importedRaster ? layer.importedRaster.overlayLayerId : layer.catalogId
+      if (layer.importedRaster || overlayImageModule.knownOverlayIds.value.includes(overlayId)) {
+        overlayImageModule.setOverlayOpacity(overlayId, layer.opacity)
+      }
+    }
+  }
+
   function syncImportedLayers(opts: { fitNew?: boolean } = {}) {
     const imported = options.getActiveLayers().filter((l) => l.importedVector)
     const loadedIds = new Set(importedLayerModule.getLoadedIds())
@@ -107,11 +120,12 @@ export function createMapCanvasNonWeatherLayerSyncModule(
     for (const layer of imported) {
       const payload = layer.importedVector!
       if (payload.geojson && !loadedIds.has(layer.instanceId)) {
-        importedLayerModule.addVectorLayer(
-          layer.instanceId,
-          payload.geojson,
-          layer.name ?? payload.fileName ?? '导入图层',
-        )
+        const label = resolveLayerDisplayLabel({
+          name: layer.name,
+          catalogId: layer.catalogId,
+          fileStem: payload.fileName,
+        })
+        importedLayerModule.addVectorLayer(layer.instanceId, payload.geojson, label)
         if (importedLayerModule.getLoadedIds().includes(layer.instanceId)) {
           newlyAdded.push(layer.instanceId)
         }
@@ -120,9 +134,13 @@ export function createMapCanvasNonWeatherLayerSyncModule(
     }
     for (const layer of imported) {
       importedLayerModule.setLayerVisibility(layer.instanceId, layer.visible)
-      if (layer.name) {
-        importedLayerModule.updateLayerDisplayName(layer.instanceId, layer.name)
-      }
+      const payload = layer.importedVector
+      const label = resolveLayerDisplayLabel({
+        name: layer.name,
+        catalogId: layer.catalogId,
+        fileStem: payload?.fileName,
+      })
+      importedLayerModule.updateLayerDisplayName(layer.instanceId, label)
       const style = layer.importedVector?.style
       if (style) {
         importedLayerModule.applyLayerStyle(layer.instanceId, style, layer.opacity)
@@ -148,6 +166,21 @@ export function createMapCanvasNonWeatherLayerSyncModule(
       }
       window.addEventListener('cgda:layer-renamed', onLayerRenamed)
     }
+    // 透明度专用 watcher — 仅更新 raster-opacity paint 属性，不触发 setOverlayStyle
+    stopHandles.push(
+      watch(
+        () =>
+          options
+            .getActiveLayers()
+            .filter((l) => l.importedRaster || (!l.importedVector && !l.isAdminBoundary))
+            .map((l) => `${l.instanceId}:${l.opacity}`)
+            .join(','),
+        () => {
+          syncOverlayOpacity()
+        },
+      ),
+    )
+    // 样式/结构 watcher — 不含 opacity，仅在结构或样式变更时全量同步
     stopHandles.push(
       watch(
         () =>
@@ -156,7 +189,7 @@ export function createMapCanvasNonWeatherLayerSyncModule(
             .filter((l) => l.importedRaster || (!l.importedVector && !l.isAdminBoundary))
             .map(
               (l) =>
-                `${l.instanceId}:${l.catalogId}:${l.visible}:${l.opacity}:${l.importedRaster ? 'r' : 'c'}:${l.paletteOverride ?? ''}:${l.vminOverride ?? ''}:${l.vmaxOverride ?? ''}:${l.nodataMode ?? ''}:${l.nodataColor ?? ''}`,
+                `${l.instanceId}:${l.catalogId}:${l.visible}:${l.importedRaster ? 'r' : 'c'}:${l.paletteOverride ?? ''}:${l.vminOverride ?? ''}:${l.vmaxOverride ?? ''}:${l.nodataMode ?? ''}:${l.nodataColor ?? ''}`,
             )
             .join(','),
         () => {

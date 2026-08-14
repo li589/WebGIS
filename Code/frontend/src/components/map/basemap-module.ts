@@ -6,8 +6,12 @@ type RasterTileSource = import('maplibre-gl').RasterTileSource
 
 const TILE_SOURCE_ID = 'tile-base'
 const TILE_LAYER_ID = 'tile-base-raster'
+const TILE_OVERLAY_SOURCE_ID = 'tile-base-overlay'
+const TILE_OVERLAY_LAYER_ID = 'tile-base-overlay-raster'
 const TILE_ERROR_WINDOW_MS = 5000
 const TILE_ERROR_THRESHOLD = 15
+/** 熔断触发后自动恢复重试的延迟（毫秒） */
+const AUTO_RECOVERY_DELAY_MS = 15000
 
 export interface BasemapModule {
   ensureInitialLayer: (sourceId: TileSourceId) => void
@@ -43,10 +47,75 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
   let switchTileToken = 0
   let sourceTransitionTimer: ReturnType<typeof setTimeout> | null = null
   let tileSourceDebounceHandle: ReturnType<typeof setTimeout> | null = null
+  /** 熔断后自动恢复重试定时器 */
+  let autoRecoveryTimer: ReturnType<typeof setTimeout> | null = null
+  /** 标记当前是否处于熔断状态 */
+  let isCircuitBroken = false
+
+  function hideOverlay() {
+    if (options.map.getLayer(TILE_OVERLAY_LAYER_ID)) {
+      options.map.setLayoutProperty(TILE_OVERLAY_LAYER_ID, 'visibility', 'none')
+    }
+  }
+
+  function syncOverlayLayer(cfg: TileSourceConfig | undefined, visible: boolean) {
+    const overlayUrl = cfg?.overlayUrlTemplate
+    if (!overlayUrl) {
+      // 完全无 overlay 配置：移除已有 overlay 源和图层，避免无期限常驻隐藏
+      if (options.map.getLayer(TILE_OVERLAY_LAYER_ID)) {
+        options.map.removeLayer(TILE_OVERLAY_LAYER_ID)
+      }
+      if (options.map.getSource(TILE_OVERLAY_SOURCE_ID)) {
+        options.map.removeSource(TILE_OVERLAY_SOURCE_ID)
+      }
+      return
+    }
+    if (!visible) {
+      // 有 overlay 配置但不展示（熔断 / ensureTileLayer 初始）：仅隐藏，保留源/层供恢复
+      hideOverlay()
+      return
+    }
+
+    const existingOverlay = options.map.getSource(TILE_OVERLAY_SOURCE_ID) as
+      RasterTileSource | undefined
+    if (existingOverlay && existingOverlay.type === 'raster') {
+      existingOverlay.setTiles([overlayUrl])
+    } else if (!options.map.getSource(TILE_OVERLAY_SOURCE_ID)) {
+      options.map.addSource(TILE_OVERLAY_SOURCE_ID, {
+        type: 'raster',
+        tiles: [overlayUrl],
+        tileSize: cfg.tileSize ?? 256,
+        maxzoom: 18,
+        scheme: 'xyz',
+      } as RasterSourceSpecification)
+    }
+
+    if (!options.map.getLayer(TILE_OVERLAY_LAYER_ID)) {
+      // Place annotation above the base raster but below admin overlays when present.
+      const beforeLayerId = options.map.getLayer('admin-fill') ? 'admin-fill' : undefined
+      options.map.addLayer(
+        {
+          id: TILE_OVERLAY_LAYER_ID,
+          type: 'raster',
+          source: TILE_OVERLAY_SOURCE_ID,
+          layout: { visibility: 'visible' },
+          paint: {
+            'raster-opacity': 1,
+          },
+        },
+        beforeLayerId,
+      )
+    } else {
+      options.map.setLayoutProperty(TILE_OVERLAY_LAYER_ID, 'visibility', 'visible')
+    }
+  }
 
   function ensureTileLayer(sourceId: TileSourceId) {
     const cfg = options.getTileConfig(sourceId)
-    if (!cfg) return
+    if (!cfg) {
+      console.warn(`[basemap] getTileConfig returned undefined for sourceId="${sourceId}"`)
+      return
+    }
 
     if (!options.map.getSource(TILE_SOURCE_ID)) {
       options.map.addSource(TILE_SOURCE_ID, {
@@ -68,7 +137,7 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
           source: TILE_SOURCE_ID,
           layout: { visibility: 'none' },
           paint: {
-            'raster-opacity': 0.88,
+            'raster-opacity': 1,
             'raster-saturation': cfg.saturation,
             'raster-brightness-max': Math.min(1.0, 1.0 + cfg.brightness),
             'raster-brightness-min': Math.max(0.0, Math.min(1.0, cfg.brightness)),
@@ -78,6 +147,8 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
         beforeLayerId,
       )
     }
+
+    syncOverlayLayer(cfg, false)
   }
 
   function triggerSourceTransition() {
@@ -93,6 +164,24 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     options.setTileLoadFailed(false)
     options.setTileFailedProvider(null)
     tileErrorTimestamps.length = 0
+    isCircuitBroken = false
+    if (autoRecoveryTimer !== null) {
+      clearTimeoutImpl(autoRecoveryTimer)
+      autoRecoveryTimer = null
+    }
+  }
+
+  /** 调度自动恢复：熔断后一段时间自动重试一次 */
+  function scheduleAutoRecovery() {
+    if (autoRecoveryTimer !== null) {
+      clearTimeoutImpl(autoRecoveryTimer)
+    }
+    autoRecoveryTimer = setTimeoutImpl(() => {
+      autoRecoveryTimer = null
+      if (isCircuitBroken) {
+        retryTileLoad()
+      }
+    }, AUTO_RECOVERY_DELAY_MS)
   }
 
   function switchTileSource(sourceId: TileSourceId) {
@@ -102,11 +191,17 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
       if (options.map.getLayer(TILE_LAYER_ID)) {
         options.map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'none')
       }
+      hideOverlay()
       return
     }
 
     const cfg = options.getTileConfig(sourceId)
-    if (!cfg) return
+    if (!cfg) {
+      console.warn(
+        `[basemap] switchTileSource: getTileConfig returned undefined for sourceId="${sourceId}"`,
+      )
+      return
+    }
 
     const existingSource = options.map.getSource(TILE_SOURCE_ID) as RasterTileSource | undefined
     if (existingSource && existingSource.type === 'raster') {
@@ -118,7 +213,7 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
 
     if (options.map.getLayer(TILE_LAYER_ID)) {
       options.map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'visible')
-      options.map.setPaintProperty(TILE_LAYER_ID, 'raster-opacity', 0.88)
+      options.map.setPaintProperty(TILE_LAYER_ID, 'raster-opacity', 1)
       options.map.setPaintProperty(TILE_LAYER_ID, 'raster-saturation', cfg.saturation)
       options.map.setPaintProperty(
         TILE_LAYER_ID,
@@ -132,6 +227,8 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
       )
       options.map.setPaintProperty(TILE_LAYER_ID, 'raster-contrast', cfg.contrast)
     }
+
+    syncOverlayLayer(cfg, true)
   }
 
   function scheduleTileSourceSwitch(sourceId: TileSourceId) {
@@ -159,7 +256,10 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     if (
       currentProvider &&
       failedProvider !== currentProvider &&
-      failedProvider !== currentSourceId
+      failedProvider !== currentSourceId &&
+      !options
+        .getTileConfig(currentSourceId)
+        ?.overlayUrlTemplate?.includes(`/unified-tiles/${failedProvider}/`)
     ) {
       return
     }
@@ -171,11 +271,14 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     tileErrorTimestamps.push(now)
 
     if (tileErrorTimestamps.length > TILE_ERROR_THRESHOLD) {
+      isCircuitBroken = true
       options.setTileLoadFailed(true)
       options.setTileFailedProvider(failedProvider ?? currentProvider)
       if (options.map.getLayer(TILE_LAYER_ID)) {
         options.map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'none')
       }
+      hideOverlay()
+      scheduleAutoRecovery()
     }
   }
 
@@ -188,7 +291,13 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
       }
     }
 
-    if (mapError.sourceId !== TILE_SOURCE_ID && mapError.sourceId !== undefined) return
+    if (
+      mapError.sourceId !== TILE_SOURCE_ID &&
+      mapError.sourceId !== TILE_OVERLAY_SOURCE_ID &&
+      mapError.sourceId !== undefined
+    ) {
+      return
+    }
 
     const status = mapError.error?.status
     if (
@@ -196,6 +305,7 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
       status !== 0 &&
       status !== 403 &&
       status !== 404 &&
+      status !== 502 &&
       status !== 503
     ) {
       return
@@ -220,6 +330,7 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     if (options.map.getLayer(TILE_LAYER_ID) && options.getCurrentTileSourceId() !== 'none') {
       options.map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'visible')
     }
+    syncOverlayLayer(currentTileConfig, options.getCurrentTileSourceId() !== 'none')
   }
 
   function dispose() {
@@ -231,6 +342,13 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
       clearTimeoutImpl(tileSourceDebounceHandle)
       tileSourceDebounceHandle = null
     }
+    if (autoRecoveryTimer !== null) {
+      clearTimeoutImpl(autoRecoveryTimer)
+      autoRecoveryTimer = null
+    }
+    // 清理错误时间戳数组，避免内存泄漏
+    tileErrorTimestamps.length = 0
+    isCircuitBroken = false
   }
 
   return {

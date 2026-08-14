@@ -77,11 +77,11 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
 .loading-overlay.hero {
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  z-index: var(--z-loading);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 10, 20, 0.72);
+  background: var(--surface-1);
   backdrop-filter: blur(5px);
   -webkit-backdrop-filter: blur(5px);
 }
@@ -91,11 +91,16 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   flex-direction: column;
   align-items: center;
   gap: 1.1rem;
-  padding: 1.6rem 2rem 1.4rem;
-  border-radius: 1rem;
-  background: rgba(8, 18, 34, 0.78);
-  border: 1px solid rgba(90, 213, 255, 0.18);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  padding: 2rem 2.4rem 1.6rem;
+  border-radius: var(--radius-xl);
+  background: linear-gradient(165deg, var(--surface-2), var(--surface-1));
+  border: 1px solid var(--accent-border);
+  box-shadow:
+    0 24px 80px var(--shadow-ambient-strong),
+    0 0 60px var(--accent-surface),
+    inset 0 1px 0 var(--accent-surface);
+  backdrop-filter: blur(24px) saturate(1.1);
+  -webkit-backdrop-filter: blur(24px) saturate(1.1);
 }
 
 .orbit-stage {
@@ -111,10 +116,10 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   inset: 12%;
   border-radius: 50%;
   background:
-    radial-gradient(1px 1px at 20% 30%, rgba(255, 255, 255, 0.7), transparent),
-    radial-gradient(1px 1px at 70% 22%, rgba(255, 255, 255, 0.55), transparent),
+    radial-gradient(1px 1px at 20% 30%, var(--text-primary), transparent),
+    radial-gradient(1px 1px at 70% 22%, var(--text-secondary), transparent),
     radial-gradient(1.5px 1.5px at 40% 70%, rgba(180, 230, 255, 0.65), transparent),
-    radial-gradient(1px 1px at 82% 62%, rgba(255, 255, 255, 0.5), transparent);
+    radial-gradient(1px 1px at 82% 62%, var(--text-secondary), transparent);
   opacity: 0.7;
   animation: twinkle 2.8s ease-in-out infinite;
 }
@@ -123,7 +128,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   position: absolute;
   width: 132px;
   height: 132px;
-  border: 1px dashed rgba(90, 213, 255, 0.28);
+  border: 1px dashed var(--border-accent);
   border-radius: 50%;
   transform: rotateX(58deg) scale(1.05);
 }
@@ -131,7 +136,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
 .orbit-ring.ring-2 {
   width: 150px;
   height: 150px;
-  border-color: rgba(255, 184, 77, 0.16);
+  border-color: var(--warning-border);
   transform: rotateX(58deg) rotateZ(25deg) scale(1.02);
 }
 
@@ -146,7 +151,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   position: absolute;
   inset: -10px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(90, 213, 255, 0.28) 0%, transparent 68%);
+  background: radial-gradient(circle, var(--border-accent) 0%, transparent 68%);
   animation: pulse-glow 2.4s ease-in-out infinite;
 }
 
@@ -157,14 +162,14 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   overflow: hidden;
   background: radial-gradient(
     circle at 32% 28%,
-    #7fd4ff 0%,
-    #2a7fbf 38%,
-    #0d3a62 78%,
-    #071e36 100%
+    var(--accent) 0%,
+    var(--accent-strong) 38%,
+    var(--surface-1) 78%,
+    var(--surface-base) 100%
   );
   box-shadow:
-    inset -10px -6px 18px rgba(0, 0, 0, 0.35),
-    0 0 18px rgba(90, 213, 255, 0.25);
+    inset -10px -6px 18px var(--surface-sunken),
+    0 0 18px var(--border-accent);
   animation: earth-spin 12s linear infinite;
 }
 
@@ -246,7 +251,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   width: 6px;
   height: 6px;
   border-radius: 1px;
-  background: linear-gradient(135deg, #fff6e0, #ffb84d);
+  background: linear-gradient(135deg, var(--warning), var(--accent-warm));
   box-shadow: 0 0 8px rgba(255, 184, 77, 0.7);
 }
 
@@ -255,8 +260,8 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   top: 3px;
   width: 6px;
   height: 4px;
-  background: rgba(90, 213, 255, 0.85);
-  box-shadow: 0 0 6px rgba(90, 213, 255, 0.5);
+  background: var(--border-strong);
+  box-shadow: 0 0 6px var(--border-strong);
 }
 
 .sat-wing.left {
@@ -272,15 +277,15 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   top: 8px;
   width: 2px;
   height: 14px;
-  background: linear-gradient(180deg, rgba(255, 184, 77, 0.7), transparent);
+  background: linear-gradient(180deg, var(--warning-border), transparent);
   transform-origin: top center;
   animation: beam-pulse 1.2s ease-in-out infinite;
 }
 
 .loading-message {
-  color: #c5dceb;
-  font-size: 0.8rem;
-  font-weight: 500;
+  color: var(--text-primary);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-medium);
   letter-spacing: 0.04em;
   text-align: center;
   min-height: 1.2em;
@@ -298,7 +303,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   position: relative;
   width: 148px;
   height: 2px;
-  background: rgba(90, 213, 255, 0.12);
+  background: var(--accent-surface);
   border-radius: 1px;
   overflow: hidden;
 }
@@ -309,9 +314,9 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   width: 40%;
   background: linear-gradient(
     90deg,
-    rgba(90, 213, 255, 0) 0%,
-    rgba(90, 213, 255, 0.85) 50%,
-    rgba(255, 184, 77, 0) 100%
+    var(--accent-surface) 0%,
+    var(--border-strong) 50%,
+    var(--warning-surface) 100%
   );
   animation: progress-slide 1.6s ease-in-out infinite;
 }
@@ -322,7 +327,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   top: 0;
   left: 0;
   right: 0;
-  z-index: 9998;
+  z-index: calc(var(--z-loading) - 1);
   pointer-events: none;
   display: flex;
   flex-direction: column;
@@ -330,35 +335,29 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
 }
 
 .compact-track {
-  height: 2px;
-  background: rgba(90, 213, 255, 0.12);
+  height: 3px;
+  background: var(--accent-surface);
   overflow: hidden;
 }
 
 .compact-glow {
   height: 100%;
-  width: 28%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(90, 213, 255, 0.95),
-    rgba(255, 184, 77, 0.8),
-    transparent
-  );
+  width: 32%;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--warning), transparent);
   animation: progress-slide 1.1s ease-in-out infinite;
 }
 
 .compact-msg {
   align-self: center;
-  margin-top: 0.35rem;
-  padding: 0.18rem 0.55rem;
-  border-radius: 999px;
-  background: rgba(8, 18, 34, 0.82);
-  border: 1px solid rgba(90, 213, 255, 0.2);
-  color: #a8c4d8;
-  font-size: 0.58rem;
+  margin-top: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-1);
+  border: 1px solid var(--border-accent);
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
   letter-spacing: 0.03em;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  box-shadow: var(--elevation-2);
 }
 
 .compact-msg::after {
@@ -447,11 +446,32 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
 
 .loading-fade-enter-active,
 .loading-fade-leave-active {
-  transition: opacity 0.22s ease;
+  transition: opacity var(--motion-base) var(--ease-standard);
 }
 
 .loading-fade-enter-from,
 .loading-fade-leave-to {
   opacity: 0;
+}
+
+/* 系统「减少动效」：放慢加载反馈，但不要完全静止（否则像卡死） */
+@media (prefers-reduced-motion: reduce) {
+  .stars {
+    animation-duration: 6s;
+  }
+  .earth-sphere {
+    animation-duration: 24s;
+  }
+  .sat-orbit {
+    animation-duration: 8s;
+  }
+  .earth-glow,
+  .sat-beam {
+    animation-duration: 3s;
+  }
+  .loading-progress-glow,
+  .compact-glow {
+    animation-duration: 2.4s;
+  }
 }
 </style>

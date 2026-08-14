@@ -54,6 +54,22 @@ def execute_stuck_workflow_watchdog() -> dict[str, Any]:
     }
 
 
+def execute_queued_workflow_dispatch() -> dict[str, Any]:
+    """执行排队工作流唤醒调度（非 Celery 入口，可供 API 直接调用）。
+
+    Phase C：周期性检查是否有因用户级并发上限而排队的工作流可以唤醒派发。
+    也在 lifecycle_service 的 finalize/failure/cancel 中被同步触发，
+    此 Beat 任务作为兜底机制处理边缘情况（如 Beat 宕机后恢复、
+    并发窗口恰好在 finalize 触发时关闭等）。
+    """
+    from app.services.workflow.service_container import queue_dispatch_service
+
+    dispatched = queue_dispatch_service.dispatch_queued_workflows()
+    if dispatched > 0:
+        logger.info("Queued workflow dispatch: %d run(s) dispatched", dispatched)
+    return {"dispatched": dispatched}
+
+
 if celery_available and celery_app is not None:
 
     @celery_app.task(
@@ -96,6 +112,18 @@ if celery_available and celery_app is not None:
             logger.exception("stuck workflow watchdog task failed")
             return {"error": "watchdog_failed"}
 
+    @celery_app.task(
+        name="app.tasks.cleanup_tasks.dispatch_queued_workflows",
+        queue=settings.workflow_queue_standard,
+    )
+    def dispatch_queued_workflows() -> dict[str, Any]:
+        """Celery 任务入口：Phase C 排队工作流唤醒调度。"""
+        try:
+            return execute_queued_workflow_dispatch()
+        except Exception:
+            logger.exception("queued workflow dispatch task failed")
+            return {"error": "dispatch_failed"}
+
 else:
 
     def cleanup_workflow_runs(
@@ -111,6 +139,11 @@ else:
         )
 
     def watchdog_stuck_running_workflows() -> dict[str, Any]:
+        raise RuntimeError(
+            "Celery is not installed. Install backend dependencies before using cleanup tasks."
+        )
+
+    def dispatch_queued_workflows() -> dict[str, Any]:
         raise RuntimeError(
             "Celery is not installed. Install backend dependencies before using cleanup tasks."
         )

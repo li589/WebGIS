@@ -15,9 +15,9 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | `Code/algorithms/` | Python 算法包：contracts / data_access / runner / publish | `providers/Python/`（lint/mypy 覆盖范围） |
 | `Code/shared/` | 前后端共享协议与公共契约 | `contracts/` |
 | `Code/infra/data-sync/` | 数据面 compose（Open-Meteo 同步，与运行栈隔离） | `docker-compose.yml`、`sync.sh` / `sync.ps1` |
-| `Code/infra/gateway/` | 可选 Nginx 同域入口（静态 dist + 反代 FastAPI `:8000`） | `docker-compose.yml`、`nginx.conf`、`README.md` |
-| `.ai/` | **AI 工作区（本地专用，不上传 GitHub）**：技能 / 规则 / 计划 / 进度 / 记忆 / 文档 | `rules/`、`skills/`、`plans/`、`progress/`、`memory/`、`docs/` |
-| `Doc/` | **（已并入 `.ai/docs/`）** 原方案、技术栈、规范与协作文档 | 见 `.ai/docs/{design,specs,reference}/` |
+| `Code/infra/gateway/` | **默认** Nginx 同域入口（静态 dist + 反代 FastAPI `:8000`） | `docker-compose.yml`、`nginx.conf`、`maintenance/`、`README.md` |
+| `Docs/` | **公开文档仓库**：架构设计 / 规范协议 / 专题研究 / 代码审查 / 结题材料 / HTML 报告 | 见 `Docs/README.md` 索引 |
+| `.ai/` | **AI 工作区（本地专用，不上传 GitHub）**：技能 / 规则 / 计划 / 进度 / 记忆 | `rules/`、`skills/`、`plans/`、`progress/`、`memory/` |
 | `Tools/` | 主线外辅助（下载/校验/一次性脚本）；**禁止**放主体功能与运行时模块，见 `Tools/README.md` | — |
 | `Test/` | **测试集中地**（仓库根，不在任何 `Code/` 子树下）：后端 `Test/backend/`、前端 `Test/frontend/`（保留 `src/` 目录结构，相对导入已改写为 `@/`）、算法 `Test/algorithms/`、独立/调试/报告 `Test/{standalone,debug,reports,tools}/` | 运行：`Env/Python312/python.exe -m pytest Test/backend`（后端/算法）；`cd Code/frontend && npm run test`（前端） |
 | `Env/Python312/` | **本地联调唯一 Python 运行时**（Windows: `python.exe`） | 依赖与后端/Worker 必须与此一致 |
@@ -39,7 +39,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 - **Docker Desktop 与运行启动命令的终端必须以管理员身份运行。**
 - **否则启动可能会失败**（Docker 未就绪、compose 失败、镜像/volume 访问异常等）。
 - 否则还可能出现：**镜像无法访问/拉取**、named volume 或引擎配置读失败、部分容器起不全。
-- 默认联调**不包含 Nginx**；可选剖面 `launch.py start gateway`（见 `Code/infra/gateway/`），日常入口是 Vite `:5175` + FastAPI `:8000`。
+- 默认联调/演示入口为 **Nginx Gateway** `:5175`（静态 `Code/frontend/dist` + 反代 API）；与 Vite HMR 互斥。本地改前端热更新用 `launch.py start --vite` 或 `start frontend`。
 
 ## 命令指针（launch.py）
 
@@ -47,33 +47,37 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 
 | 命令 | 作用 |
 |------|------|
-| `start.bat` 或 `Env\Python312\python.exe launch.py start` | 启动全部（Docker + FastAPI + 7 Worker + Beat + Vite 前端） |
+| `start.bat` 或 `Env\Python312\python.exe launch.py start` | 启动全部（Docker + FastAPI + 7 Worker + Beat + **Nginx Gateway**） |
+| `Env\Python312\python.exe launch.py start --vite` | 同上，但前台改用 Vite HMR（会停 Gateway） |
 | `Env\Python312\python.exe launch.py start <component>` | 单组件：`docker` / `fastapi` / `beat` / `worker` / `worker:<name>` / `frontend` / `gateway` / `backend` |
-| `Env\Python312\python.exe launch.py start gateway` | Nginx 同域入口 `:5175`（静态 dist + 反代 API；与 Vite 互斥） |
-| `Env\Python312\python.exe launch.py restart backend` | **仅**重启 FastAPI + 全部 Worker + Beat（不动 Docker / Vite）；改 `BACKEND_DATA_ROOT` 后必用 |
+| `Env\Python312\python.exe launch.py start gateway` | 仅 Nginx 同域入口 `:5175`（`--rebuild-frontend` 可强制 rebuild dist） |
+| `Env\Python312\python.exe launch.py restart` | 全量重启（**默认含 Gateway**）；改前端后建议加 `--rebuild-frontend` |
+| `Env\Python312\python.exe launch.py restart backend` | **仅**重启 FastAPI + 全部 Worker + Beat（不动 Docker / Gateway / Vite）；改 `BACKEND_DATA_ROOT` 后必用 |
 | `stop.bat` / `… launch.py stop` | 停止全部服务（含 Docker 与 gateway 容器） |
 | `… launch.py stop gateway` | 仅停 Nginx Gateway |
 | `… launch.py status` | 查看服务状态（Docker / FastAPI :8000 / 前端 :5175 / Gateway / Worker PID / volume） |
 | `… launch.py logs [component] [-n N]` | 查看日志 |
 | `… launch.py flush` | 清空 Redis DB + 应用天气文件缓存（**见高风险区**） |
+| `… launch.py clean-cache` | 清理 `__pycache__` / `*.pyc` 与 Vite `node_modules/.vite`（**不**碰 Redis；代码更新后推荐） |
+| `… launch.py start\|restart --clean-cache` | 启动/重启前先执行 `clean-cache` |
 | `… launch.py sync [job]` | 数据面一次性同步（默认 `open-meteo-sync`） |
 
-服务地址：FastAPI `http://127.0.0.1:8000`（docs `/docs`）、前端 `http://localhost:5175`、Open-Meteo API `http://127.0.0.1:8080`、Redis `:6379`、MinIO `:9100`（Console `:9101`）。
+服务地址：FastAPI `http://127.0.0.1:8000`（docs `/docs`）、前端入口 `http://localhost:5175`（默认 Nginx Gateway；`--vite` 时为 Vite）、Open-Meteo API `http://127.0.0.1:8080`、Redis `:6379`、MinIO `:9100`（Console `:9101`）。
 
 ## 高风险区
 
 改动以下区域前必须确认鉴权、加密或数据面隔离约束，避免破坏运行态或泄露凭据：
 
-1. **`/config/*` 写操作与敏感读**：`app/api/config_routes.py` + `app/services/config_service.py` / `api_config.py` / `effective_config.py` / `credential_resolver.py`。写操作与敏感 GET 需有效凭据：会话 Cookie、用户 API Token 或 `backend_auth` 服务密钥（`X-API-Key`）。RBAC：`viewer` 只读；`operator`/`admin` 可写。development 且 `api_keys_enabled=false` 时仅 **直连 loopback** 可旁路。`/config/about` 仍公开。`PUT /config/data-source/paths` 写 `.env` 后须重启后端进程组。
+1. **`/config/*` 写操作与敏感读**：`app/api/config_routes.py` + `app/services/config_service.py` / `api_config.py` / `effective_config.py` / `credential_resolver.py`。写操作与敏感 GET 需有效凭据：会话 Cookie、用户 API Token 或 `backend_auth` 服务密钥（`X-API-Key`）。RBAC：三角色模型——`admin`（全权限）、`standard`（可读写/创建工作流，不可改高危配置）、`demo`（只读 + 受控数据传输）。配置管理端点（API Key / GEE / 天气 / 远程存储等）仅 `admin` 可写。development 且 `api_keys_enabled=false` 时仅 **直连 loopback** 可旁路。`/config/about` 仍公开。`PUT /config/data-source/paths` 写 `.env` 后须重启后端进程组。
 2. **用户鉴权**：`app/api/routers/auth_router.py`（`/auth/*` 登录、账户、个人 Token）、`session_service.py`、`user_repository.py`。角色/密码/禁用变更会吊销该用户全部会话与 Token。
 
 3. **GEE / 共享加密主密钥**：`BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY` 须为 **64 hex chars（32-byte）**，启动时校验；同一把 key 加密 GEE SA、API keys、天气 provider、远程存储、门户凭据。非 development 缺 key 拒启；空 IV 明文行在生产拒绝解密。GEE API 账号管理 production 默认关闭。涉及 `/config/gee/accounts*` 与 `/gee/config`。
 
-4. **flush（清缓存）**：`Env\Python312\python.exe launch.py flush` 执行 Redis `FLUSHDB` + 删除 `Code/backend/.data/cache/weather` 与 `weatherengine` 目录。会清空队列、缓存与限流/断路器状态，影响在线服务；**不**删 Open-Meteo Docker volume。仅在排障或强制刷新天气缓存时使用，勿在正常联调中随意执行。
+4. **flush（清缓存）**：`Env\Python312\python.exe launch.py flush` 执行 Redis `FLUSHDB` + 删除 `Code/backend/.data/cache/weather` 与 `weatherengine` 目录。会清空队列、缓存与限流/断路器状态，影响在线服务；**不**删 Open-Meteo Docker volume。仅在排障或强制刷新天气缓存时使用，勿在正常联调中随意执行。代码更新 / 模块导入怪错 / Vite 插件异常请用 **`launch.py clean-cache`**（只清本地 `__pycache__` 与 Vite `.vite`），再 `restart`；两者勿混用。
 
 5. **Open-Meteo volume**：named volume `backend_open-meteo-data`（名可经 `Code/infra/data-sync/.env` 的 `OPEN_METEO_DATA_VOLUME` 覆盖），落在 Docker Desktop VHDX 内（`I:\Docker\DockerDesktop`）。**勿用 Windows 路径 bind mount** 替代。API 在 backend 运行栈（容器 `cgda-open-meteo`）；同步在 `Code/infra/data-sync`（`-p data-sync`）。两栈共享同一 volume 但 compose project 不同，改动 compose 时勿混用 project 名。
 
-6. **生产禁止演示开关**：勿开启 `BACKEND_DEMO_SOURCES_ENABLED` / `BACKEND_NODE_STUBS_VISIBLE`；机构交付核对见 `.ai/docs/reference/delivery-checklist.md`。
+6. **生产禁止演示开关**：勿开启 `BACKEND_DEMO_SOURCES_ENABLED` / `BACKEND_NODE_STUBS_VISIBLE`；机构交付核对见 `Docs/04-执行部署/delivery-checklist.md`。
 
 7. **地理数据根**：`BACKEND_DATA_ROOT`（及 `BACKEND_OUTPUT_ROOT`）为算法 / overlay / 图层 readiness 真源；**禁止**代码静默回退盘符。production 空根拒启。前端设置 → 数据源可改并调度 `restart backend`。
 
@@ -90,13 +94,14 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | 错误处理 / 可观测性 | `app/main.py`（全局异常）、`runtime_status_service.py`；FE `_http.ts`、`LogPanel`、`SystemStatusSettings` | `Env/Python312/python.exe -m pytest Test/backend/test_error_handlers.py Test/backend/test_interaction_hub.py -q`；`cd Code/frontend && npm run test -- _http auth-router` |
 | 数据根 / 图层就绪 | `BACKEND_DATA_ROOT`、`env_file_upsert.py`、`service_restart.py`、`catalog_seeds/layer_descriptors.json`；FE `DataSourceSettings.vue` | `Env/Python312/python.exe -m pytest Test/backend/test_data_source_paths.py Test/backend/test_data_root_policy.py -q`；改路径后 `launch.py restart backend`，再 `GET /layers` 看 `run_readiness` |
 | GEE | `app/gee/`、`app/services/gee_bridge_service.py` | `Env/Python312/python.exe -m pytest Test/backend/test_gee_bridge_service.py -q` |
-| 统一瓦片（底图） | `app/api/tile_routes.py`、`tile_provider_registry.py` | `Env/Python312/python.exe -m pytest Test/backend/test_unified_tile_service.py -q` |
+| 统一瓦片（底图） | `app/api/tile_routes.py`、`tile_provider_registry.py`、`tile_proxy_service.py`（天地图须用服务端 UA `CGDA-Backend/1.0`；街道=`tianditu-vec`+`tianditu-cva` overlay） | `Env/Python312/python.exe -m pytest Test/backend/test_unified_tile_service.py Test/backend/test_api_keys_basemap.py -q`；联调抽样 `GET /unified-tiles/tianditu-vec/{z}/{x}/{y}` 与 `…/tianditu-cva/…` 应 200 |
 | 栅格导入 / CRS | `app/api/routers/import_router.py` | `Env/Python312/python.exe -m pytest Test/backend/test_import_raster_crs.py Test/backend/test_crs_detector.py -q` |
 | Open-Meteo 双源 | `app/weatherengine/providers/`、`.env.open-meteo.example` | `Env/Python312/python.exe -m pytest Test/backend/test_open_meteo_dual_providers.py Test/backend/test_open_meteo_performance.py -q`；本地：`python launch.py sync`（`visibility` 需 `gfs_global`） |
 | overlay 本地图 | `overlay_registry.py`、`Tools/audit_overlay_assets.py` | `python Tools/audit_overlay_assets.py` |
 | D2 / A1A2 NDVI | `modules/omega_avg_daily.py`、`ingest/ndvi_hdf_preprocess.py` | `Env/Python312/python.exe -m pytest Test/backend/test_omega_avg_algorithm.py Test/backend/test_omega_avg_daily_module.py -q`；`Env/Python312/python.exe -m pytest Test/algorithms/test_ndvi_hdf_preprocess.py -q` |
 | 前端任意改动 | `Code/frontend/src/`（测试在 `Test/frontend/`） | `cd Code/frontend && npm run test && npm run lint && npm run build` |
-| 图层工作区持久化 | `stores/layers/workspace-persist.ts`、`stores/layers/index.ts`；说明见 `.ai/docs/design/图层持久化说明.md` | `cd Code/frontend && npm run test -- workspace-persist` |
+| 图层工作区持久化 | `stores/layers/workspace-persist.ts`、`stores/layers/index.ts`；说明见 `Docs/02-架构设计/图层持久化说明.md`；命名见 `Docs/03-规范协议/layer-naming.md` | `cd Code/frontend && npm run test -- workspace-persist` |
+| 图层命名 / 重命名 | `stores/layers/layer-naming.ts`、`layer-display-names.ts`、`active-layers.ts`（`setLayerDisplayName`） | `cd Code/frontend && npm run test -- layer-naming layer-display-names setLayerDisplayName`；`npm run check:catalog` |
 | 天气瓦片 FE 调度 / 图例 | `weather-tile-manager.ts`、`weather-tile-banner.ts`、`effective-layer-symbology.ts` | `cd Code/frontend && npm run test -- weather-tile weather-tile-banner effective-layer-symbology` |
 | 前后端契约 / OpenAPI | `Code/frontend/openapi.json`、`Code/shared/contracts/` | `cd Code/frontend && npm run check:openapi` |
 | 图层目录漂移 | FE `catalog.ts` LAYER_LIBRARY ↔ BE `catalog_seeds/*_descriptors.json` | `cd Code/frontend && npm run check:catalog` |
@@ -132,21 +137,20 @@ CODEBUDDY_SESSION_ID= CLAUDE_SESSION_ID= CODEBUDDY_SAFE_DELETE_SANDBOX= Env/Pyth
 
 - **404**：未知路由 → `NotFoundView`；登录 `?redirect=` 经 `safeRedirect` 防开放重定向。
 - **会话过期**：API 401（非 `/auth/*` bootstrap）→ 自动跳转登录（`session-expired.ts`、`_http.ts`）。
-- **服务不可用**：`ServiceConnectivityBanner` 轮询 `GET /health`；Gateway API 5xx → `Code/infra/gateway/html/50x.html`。
+- **服务不可用**：`ServiceConnectivityBanner` 轮询 `GET /health`；Gateway API 5xx → `Code/infra/gateway/maintenance/html/50x.html`。
 - **客户端日志**：工具栏「日志」支持仅错误筛选与 JSON 导出；badge 显示 `errorCount`。
 - **系统状态**：设置 → 系统状态（`GET /runtime/status`）。
 - **Gateway 代理**：与 `vite.config.ts` 对齐（含 `/auth`、`/overlay-tiles`、`/health`）。
-- 运维排障：`.ai/docs/reference/error-handling-and-observability.md`。
+- 运维排障：`Docs/07-工程保障/error-handling-and-observability.md`。
 
 ## AI 知识库（`.ai/`，本地专用，不上传 GitHub）
 
-所有 AI 提示 / 技能 / 计划 / 进度 / 记忆 / 文档集中在仓库根 **`.ai/`**，根目录表面仅保留 `AGENTS.md`、`CLAUDE.md`、`README.md` 三份文档。
+所有 AI 提示 / 技能 / 计划 / 进度 / 记忆集中在仓库根 **`.ai/`**，根目录表面仅保留 `AGENTS.md`、`CLAUDE.md`、`README.md` 三份文档，公开文档在 `Docs/`。
 
 - `.ai/rules/` —— **约定单一真源**：`project-conventions.md`（运行时/launch/改X则跑Y/高风险区/命名/提交）、`qingtian-decision-policy.md`（QingTian 决策策略）、`git-commit-message.md`（Conventional Commits）。各 AI 工具（Cursor/Trae/Copilot）的规则文件仅作指针，指向此处。
 - `.ai/skills/` —— 可复用技能：`workflow-design`（种子命名/分类/标记与定时器）、`omega-sf-inversion`（FY/SMAP 反演+Matlab 一致性校验）、`multi-source-data-ingestion`（校园SSH/NAS/NSIDC/Earthdata）、`runtime-and-verify`（运行时与验证命令）、`contract-openapi-drift`（契约/OpenAPI 漂移防护）。
 - `.ai/plans/` —— 计划。
 - `.ai/progress/` —— 进度 / 验证追踪（FY-SMAP 系列、`ui-verification-steps.md`）。
-- `.ai/memory/` —— AI 记忆 / 历史上下文（`archive/` 含 ~72 份历史计划与对话）。
-- `.ai/docs/` —— 项目文档（原 `Doc/` 整体迁入：`design/` 架构设计、`specs/` 规范 spec、`reference/` 任务记录与验证报告）。
+- `.ai/memory/` —— AI 记忆 / 历史上下文（`archive/` 含历史计划与对话）。
 
-> 改代码前读 `.ai/rules/project-conventions.md`；做反演 / 数据接入 / **工作流种子与定时器**读 `.ai/skills/` 对应技能。
+> 改代码前读 `.ai/rules/project-conventions.md`；做反演 / 数据接入 / **工作流种子与定时器**读 `.ai/skills/` 对应技能。公开文档（架构、规范、审查、结题等）见 `Docs/`。

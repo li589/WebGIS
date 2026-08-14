@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { X, Minimize2, Maximize2 } from '../../components/ui/icons'
 import DataImportPanel from './DataImportPanel.vue'
 import DataExportPanel from './DataExportPanel.vue'
 import AttributeTable from './AttributeTable.vue'
@@ -13,17 +14,31 @@ import {
   dataWorkspaceOpen,
   dataWorkspaceSeedFiles,
   dataWorkspaceTab,
+  importQuota,
+  quotaLoading,
+  reclaimQuota,
+  refreshImportQuota,
   type DataWorkspaceTab,
 } from '../core/workspace-store'
+import { formatBytes } from '../core/api'
 import { DATA_COPY } from '../../ui-copy'
+import { useAuthStore } from '../../stores/auth'
 
-const tabs: Array<{ id: DataWorkspaceTab; label: string }> = [
-  { id: 'import', label: DATA_COPY.wsImport },
-  { id: 'export', label: DATA_COPY.wsExport },
+const authStore = useAuthStore()
+
+const demoTransferRestricted = computed(() => authStore.isDemo)
+
+const tabs: Array<{ id: DataWorkspaceTab; label: string; restricted?: boolean }> = [
+  { id: 'import', label: DATA_COPY.wsImport, restricted: true },
+  { id: 'export', label: DATA_COPY.wsExport, restricted: true },
   { id: 'attributes', label: DATA_COPY.wsAttributes },
   { id: 'details', label: DATA_COPY.wsDetails },
   { id: 'jobs', label: DATA_COPY.wsJobs },
 ]
+
+function isTabDisabled(tab: { restricted?: boolean }): boolean {
+  return Boolean(tab.restricted && demoTransferRestricted.value)
+}
 
 const mountedTabs = ref<Set<DataWorkspaceTab>>(new Set(['import']))
 
@@ -99,6 +114,38 @@ watch(dataWorkspaceTab, (tab) => {
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKey)
 })
+
+onMounted(() => {
+  void refreshImportQuota()
+})
+
+const quotaPercent = computed(() =>
+  importQuota.value ? Math.min(100, Math.round(importQuota.value.used_ratio * 100)) : 0,
+)
+const quotaWarn = computed(() => (importQuota.value?.used_ratio ?? 0) > 0.85)
+
+const onReclaim = () => {
+  void reclaimQuota()
+}
+
+const dragOver = ref(false)
+
+function onDragOver(e: DragEvent) {
+  if (!e.dataTransfer?.types?.includes('Files')) return
+  e.preventDefault()
+  dragOver.value = true
+}
+
+function onDragLeave(e: DragEvent) {
+  // 只在离开整个面板时才取消高亮
+  const rt = e.currentTarget as HTMLElement
+  if (e.relatedTarget && rt.contains(e.relatedTarget as Node)) return
+  dragOver.value = false
+}
+
+function onDrop(_e: DragEvent) {
+  dragOver.value = false
+}
 </script>
 
 <template>
@@ -106,11 +153,14 @@ onBeforeUnmount(() => {
     <aside
       v-if="dataWorkspaceOpen"
       class="data-workspace"
-      :class="{ maximized: dataWorkspaceMaximized, resizing }"
+      :class="{ maximized: dataWorkspaceMaximized, resizing, 'drag-over': dragOver }"
       :style="panelStyle"
       role="dialog"
       aria-modal="false"
       :aria-label="DATA_COPY.workspaceTitle"
+      @dragover="onDragOver"
+      @dragleave="onDragLeave"
+      @drop="onDrop"
     >
       <div
         class="resize-handle"
@@ -133,6 +183,8 @@ onBeforeUnmount(() => {
             class="ws-tab"
             :class="{ active: dataWorkspaceTab === t.id }"
             role="tab"
+            :disabled="isTabDisabled(t)"
+            :title="isTabDisabled(t) ? '演示账户数据传输受限' : undefined"
             @click="setTab(t.id)"
           >
             {{ t.label }}
@@ -140,7 +192,11 @@ onBeforeUnmount(() => {
         </nav>
         <div class="ws-actions">
           <button class="icon-btn" type="button" :title="DATA_COPY.maximize" @click="toggleMax">
-            {{ dataWorkspaceMaximized ? '❐' : '□' }}
+            <component
+              :is="dataWorkspaceMaximized ? Minimize2 : Maximize2"
+              :size="14"
+              aria-hidden="true"
+            />
           </button>
           <button
             class="icon-btn"
@@ -148,10 +204,39 @@ onBeforeUnmount(() => {
             :title="DATA_COPY.close"
             @click="closeDataWorkspace"
           >
-            ✕
+            <X :size="14" aria-hidden="true" />
           </button>
         </div>
       </header>
+
+      <div v-if="importQuota" class="quota-bar">
+        <div class="quota-track">
+          <div
+            class="quota-fill"
+            :class="{ warn: quotaWarn }"
+            :style="{ width: `${quotaPercent}%` }"
+          />
+        </div>
+        <span class="quota-text">
+          {{ formatBytes(importQuota.used_bytes) }} / {{ formatBytes(importQuota.limit_bytes) }}
+          <button
+            v-if="importQuota.ephemeral_bytes > 0"
+            class="link-btn"
+            type="button"
+            :disabled="quotaLoading"
+            @click="onReclaim"
+          >
+            回收 {{ formatBytes(importQuota.ephemeral_bytes) }}
+          </button>
+        </span>
+      </div>
+
+      <div v-if="demoTransferRestricted" class="demo-banner" role="alert">
+        <span class="demo-banner-icon">!</span>
+        <span class="demo-banner-text">
+          演示账户的数据导入/导出功能受限。如需上传或下载数据，请联系管理员开通权限或升级为标准用户。
+        </span>
+      </div>
 
       <div class="ws-body">
         <div v-show="dataWorkspaceTab === 'import'" class="ws-pane">
@@ -192,11 +277,20 @@ onBeforeUnmount(() => {
   flex-direction: column;
   min-height: 0;
   border-radius: 0.75rem 0.75rem 0.55rem 0.55rem;
-  background: rgba(8, 17, 31, 0.97);
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  background: var(--surface-2);
+  border: 1px solid var(--border-default);
   box-shadow: 0 18px 48px rgba(1, 8, 16, 0.5);
-  color: #d8e6f5;
+  color: var(--text-primary);
   overflow: hidden;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.data-workspace.drag-over {
+  border-color: var(--accent);
+  box-shadow:
+    0 18px 48px rgba(1, 8, 16, 0.5),
+    0 0 0 2px var(--accent-border);
 }
 .data-workspace.maximized {
   top: 0;
@@ -210,7 +304,7 @@ onBeforeUnmount(() => {
   height: 0.42rem;
   cursor: ns-resize;
   flex: none;
-  background: linear-gradient(180deg, rgba(90, 213, 255, 0.18), transparent);
+  background: linear-gradient(180deg, var(--accent-surface), transparent);
 }
 .ws-header {
   display: flex;
@@ -218,7 +312,7 @@ onBeforeUnmount(() => {
   gap: 0.65rem;
   flex-shrink: 0;
   padding: 0.45rem 0.7rem 0.4rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.1);
+  border-bottom: 1px solid var(--border-subtle);
 }
 .ws-title-block {
   display: flex;
@@ -227,12 +321,12 @@ onBeforeUnmount(() => {
   min-width: 5.5rem;
 }
 .ws-title {
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 .ws-sub {
-  font-size: 0.5rem;
-  color: #6a8094;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
 }
 .ws-tabs {
   display: flex;
@@ -241,30 +335,66 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(90, 213, 255, 0.35) transparent;
+  scrollbar-color: var(--border-strong) transparent;
 }
 .ws-tabs::-webkit-scrollbar {
   height: 4px;
 }
 .ws-tabs::-webkit-scrollbar-thumb {
-  background: rgba(90, 213, 255, 0.35);
+  background: var(--border-strong);
   border-radius: 999px;
 }
 .ws-tab {
-  border: 1px solid rgba(136, 192, 255, 0.12);
+  border: 1px solid var(--border-default);
   border-radius: 0.4rem;
   padding: 0.28rem 0.58rem;
-  background: rgba(4, 12, 23, 0.5);
-  color: #9fb6cc;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   white-space: nowrap;
 }
 .ws-tab.active {
-  color: #5ad5ff;
-  border-color: rgba(90, 213, 255, 0.35);
-  background: rgba(10, 132, 255, 0.16);
+  color: var(--accent);
+  border-color: var(--border-strong);
+  background: var(--accent-surface);
+}
+.ws-tab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.ws-tab:disabled:hover {
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  border-color: var(--border-default);
+}
+.demo-banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.7rem;
+  background: var(--warning-surface, rgba(255, 193, 7, 0.12));
+  border-bottom: 1px solid var(--warning-border, rgba(255, 193, 7, 0.3));
+  font-size: var(--font-size-caption);
+  color: var(--warning, #f0a020);
+}
+.demo-banner-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  background: var(--warning, #f0a020);
+  color: var(--surface-1, #fff);
+  font-weight: 700;
+  font-size: 0.7rem;
+  flex: none;
+}
+.demo-banner-text {
+  line-height: 1.4;
 }
 .ws-actions {
   display: flex;
@@ -277,17 +407,17 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(136, 192, 255, 0.2);
+  border: 1px solid var(--border-strong);
   border-radius: 0.36rem;
-  background: rgba(4, 12, 23, 0.7);
-  color: #d8e6f5;
+  background: var(--surface-1);
+  color: var(--text-primary);
   cursor: pointer;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   line-height: 1;
 }
 .icon-btn:hover {
-  border-color: rgba(90, 213, 255, 0.4);
-  color: #5ad5ff;
+  border-color: var(--border-strong);
+  color: var(--accent);
 }
 .ws-body {
   flex: 1 1 auto;
@@ -297,12 +427,57 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
 }
+.quota-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.7rem;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+}
+.quota-track {
+  flex: 1;
+  height: 0.24rem;
+  border-radius: 999px;
+  background: var(--border-default);
+  overflow: hidden;
+}
+.quota-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent));
+  transition: width 0.3s ease;
+}
+.quota-fill.warn {
+  background: linear-gradient(90deg, var(--warning), var(--warning));
+}
+.quota-text {
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.link-btn {
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--font-size-caption);
+  cursor: pointer;
+  padding: 0;
+}
+.link-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .ws-pane {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(90, 213, 255, 0.35) transparent;
+  scrollbar-color: var(--border-strong) transparent;
 }
 .ws-pane-fill {
   display: flex;
@@ -318,7 +493,7 @@ onBeforeUnmount(() => {
   height: 4px;
 }
 .ws-pane::-webkit-scrollbar-thumb {
-  background: rgba(90, 213, 255, 0.35);
+  background: var(--border-strong);
   border-radius: 999px;
 }
 </style>

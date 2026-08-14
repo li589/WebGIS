@@ -6,6 +6,17 @@ interface CreateMapCanvasMapOptionsOptions {
   container: HTMLElement
 }
 
+/**
+ * 从 :root 读取 CSS 变量的实际计算值， fallback 到暗色默认。
+ * MapLibre GL JS 的 WebGL 渲染器不支持 CSS 自定义属性（var(--xxx)），
+ * 必须传入字面量颜色值。
+ */
+export function resolveSurfaceColor(varName = '--surface-1'): string {
+  if (typeof document === 'undefined') return '#0b1a2a'
+  const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim()
+  return value || '#0b1a2a'
+}
+
 export function createMapCanvasMapOptions(options: CreateMapCanvasMapOptionsOptions): MapOptions {
   const mapDefaults = getMapDefaults()
   return {
@@ -13,7 +24,13 @@ export function createMapCanvasMapOptions(options: CreateMapCanvasMapOptionsOpti
     style: {
       version: 8,
       sources: {},
-      layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#07111e' } }],
+      layers: [
+        {
+          id: 'background',
+          type: 'background',
+          paint: { 'background-color': resolveSurfaceColor() },
+        },
+      ],
     } as StyleSpecification,
     center: [mapDefaults.longitude, mapDefaults.latitude],
     zoom: mapDefaults.zoom,

@@ -12,7 +12,7 @@ from pipelines.base import BasePipeline, PipelinePlan
 
 def _resolve_smap_input_dir(datasource_selection: dict[str, object]) -> Path:
     prepared_dir = resolve_prepared_local_directory(
-        datasource_selection, ("SMAP_SPL3SMP_E",)
+        datasource_selection, ("SMAP_L3_DEC2025",)
     )
     if prepared_dir is not None:
         return prepared_dir
@@ -27,7 +27,7 @@ class SmapDailyPipeline(BasePipeline):
 
     def plan(self, request: JobRequest, ctx: RuntimeContext) -> PipelinePlan:
         return PipelinePlan(
-            required_datasets=["SMAP_SPL3SMP_E"],
+            required_datasets=["SMAP_L3_DEC2025"],
             required_variables=[
                 "TBh",
                 "TBv",

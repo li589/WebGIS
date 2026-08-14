@@ -1,4 +1,4 @@
-import type { RuntimeLayerCapabilities, RuntimeLayerDescriptor } from './runtime-api'
+import type { LayerCapabilities, LayerDescriptor, OnlineTemporalCapability } from './runtime-api'
 
 type RenderStrategyBehavior = {
   tileManaged: boolean
@@ -47,31 +47,31 @@ const PAINT_MODE_REGISTRY: Record<string, PaintModeBehavior> = {
 }
 
 export function getLayerCapabilities(
-  descriptor?: RuntimeLayerDescriptor | null,
-): RuntimeLayerCapabilities | null {
+  descriptor?: LayerDescriptor | null,
+): LayerCapabilities | null {
   return descriptor?.capabilities ?? null
 }
 
-export function resolveRenderStrategy(descriptor?: RuntimeLayerDescriptor | null) {
+export function resolveRenderStrategy(descriptor?: LayerDescriptor | null) {
   return descriptor?.capabilities?.render_strategy ?? 'workflow_result'
 }
 
-export function getRenderStrategyBehavior(descriptor?: RuntimeLayerDescriptor | null) {
+export function getRenderStrategyBehavior(descriptor?: LayerDescriptor | null) {
   return (
     RENDER_STRATEGY_REGISTRY[resolveRenderStrategy(descriptor)] ??
     RENDER_STRATEGY_REGISTRY.workflow_result
   )
 }
 
-export function resolvePaintMode(descriptor?: RuntimeLayerDescriptor | null) {
+export function resolvePaintMode(descriptor?: LayerDescriptor | null) {
   return descriptor?.capabilities?.paint_mode ?? null
 }
 
-export function isTileManagedLayer(descriptor?: RuntimeLayerDescriptor | null) {
+export function isTileManagedLayer(descriptor?: LayerDescriptor | null) {
   return getRenderStrategyBehavior(descriptor).tileManaged
 }
 
-export function isWeatherLayerDescriptor(descriptor?: RuntimeLayerDescriptor | null) {
+export function isWeatherLayerDescriptor(descriptor?: LayerDescriptor | null) {
   const capabilities = getLayerCapabilities(descriptor)
   if (capabilities?.data_domain) {
     return capabilities.data_domain === 'weather'
@@ -79,7 +79,7 @@ export function isWeatherLayerDescriptor(descriptor?: RuntimeLayerDescriptor | n
   return descriptor?.source_type === 'weather'
 }
 
-export function supportsParticleFlowCapability(descriptor?: RuntimeLayerDescriptor | null) {
+export function supportsParticleFlowCapability(descriptor?: LayerDescriptor | null) {
   const capabilities = getLayerCapabilities(descriptor)
   if (typeof capabilities?.supports_particle_flow === 'boolean') {
     return capabilities.supports_particle_flow
@@ -88,7 +88,7 @@ export function supportsParticleFlowCapability(descriptor?: RuntimeLayerDescript
   return PAINT_MODE_REGISTRY[paintMode ?? '']?.supportsParticleFlow ?? false
 }
 
-export function supportsMapLayerCapability(descriptor?: RuntimeLayerDescriptor | null) {
+export function supportsMapLayerCapability(descriptor?: LayerDescriptor | null) {
   const capabilities = getLayerCapabilities(descriptor)
   if (typeof capabilities?.supports_map_layer === 'boolean') {
     return capabilities.supports_map_layer
@@ -99,12 +99,37 @@ export function supportsMapLayerCapability(descriptor?: RuntimeLayerDescriptor |
   return getRenderStrategyBehavior(descriptor).supportsMapLayer
 }
 
-export function supportsViewportDrivenRefreshCapability(
-  descriptor?: RuntimeLayerDescriptor | null,
-) {
+export function supportsViewportDrivenRefreshCapability(descriptor?: LayerDescriptor | null) {
   const capabilities = getLayerCapabilities(descriptor)
   if (typeof capabilities?.supports_viewport_refresh === 'boolean') {
     return capabilities.supports_viewport_refresh
   }
   return getRenderStrategyBehavior(descriptor).supportsViewportRefresh
+}
+
+// ── Online Temporal 能力判定 ──────────────────────────────────────────────
+
+/**
+ * 判断图层是否支持在线时间获取（用户选时间点 → 自动在线获取 → 动态刷新）。
+ *
+ * 判定依据：descriptor.online_temporal?.enabled === true。
+ * None / false 均视为不支持。
+ */
+export function supportsOnlineTemporalCapability(descriptor?: LayerDescriptor | null): boolean {
+  return Boolean(descriptor?.online_temporal?.enabled)
+}
+
+/**
+ * 返回图层的在线时间获取配置；不支持时返回 null。
+ *
+ * 调用方可用 coverage_start / coverage_end 限制时间轴可选范围，
+ * 用 native_step / max_batch / prefetch_depth / queue_tag / priority
+ * 驱动编排器提交工作流。
+ */
+export function getOnlineTemporalConfig(
+  descriptor?: LayerDescriptor | null,
+): OnlineTemporalCapability | null {
+  const cap = descriptor?.online_temporal
+  if (!cap?.enabled) return null
+  return cap
 }

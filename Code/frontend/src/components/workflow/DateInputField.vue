@@ -95,18 +95,18 @@ function onInput(event: Event) {
 .date-input {
   width: 100%;
   padding: 0.28rem 0.42rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  border: 1px solid var(--border-default);
   border-radius: 0.32rem;
-  background: rgba(8, 17, 31, 0.55);
-  color: #e8f3fc;
+  background: var(--surface-raised);
+  color: var(--text-strong);
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   color-scheme: dark;
 }
 
 .date-input:focus {
   outline: none;
-  border-color: rgba(90, 213, 255, 0.5);
+  border-color: var(--border-strong);
 }
 
 .date-input-wrapper.error .date-input {
@@ -115,9 +115,9 @@ function onInput(event: Event) {
 
 .date-raw-hint {
   flex-shrink: 0;
-  font-size: 0.48rem;
-  color: #5a7080;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: var(--font-size-caption);
+  color: var(--text-disabled);
+  font-family: var(--font-mono);
   white-space: nowrap;
 }
 </style>

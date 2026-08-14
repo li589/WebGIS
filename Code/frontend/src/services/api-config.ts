@@ -37,6 +37,7 @@ export type TileSourceId =
   | 'bing-dark'
   | 'gaode-street'
   | 'gaode-satellite'
+  | 'tianditu-vec'
   | 'tianditu-img'
   | 'tianditu-cva'
   | 'tianditu-ter'
@@ -213,6 +214,8 @@ export interface TileSourceConfig {
   authMode: AuthMode
   secretRef?: ConfigReference
   certificateRef?: ConfigReference
+  /** 可选注记/叠加瓦片（如天地图 vec + cva） */
+  overlayUrlTemplate?: string
 }
 
 export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
@@ -516,6 +519,27 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
     coordinateSystem: 'EPSG:3857',
     endpoints: [
       {
+        id: 'vector',
+        sourceId: 'tianditu-vec',
+        label: '天地图街道',
+        url: '/unified-tiles/tianditu-vec/{z}/{x}/{y}',
+        authMode: 'api-key',
+        enabled: true,
+        style: 'street',
+        attribution: '© 天地图',
+        tileSize: 256,
+        saturation: 0,
+        brightness: 0,
+        contrast: 0.02,
+        isStandard: true,
+        needsBackendTransform: false,
+        secretRef: { id: 'tianditu-token', backend: 'config-api-keys', key: 'tianditu' },
+        metadata: {
+          providerLabel: 'Tianditu',
+          overlayUrl: '/unified-tiles/tianditu-cva/{z}/{x}/{y}',
+        },
+      },
+      {
         id: 'imagery',
         sourceId: 'tianditu-img',
         label: '天地图影像',
@@ -529,24 +553,7 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
         brightness: 0.02,
         contrast: 0.08,
         isStandard: true,
-        needsBackendTransform: true,
-        secretRef: { id: 'tianditu-token', backend: 'config-api-keys', key: 'tianditu' },
-      },
-      {
-        id: 'annotation',
-        sourceId: 'tianditu-cva',
-        label: '天地图标注',
-        url: '/unified-tiles/tianditu-cva/{z}/{x}/{y}',
-        authMode: 'api-key',
-        enabled: true,
-        style: 'street',
-        attribution: '© 天地图',
-        tileSize: 256,
-        saturation: 0,
-        brightness: 0,
-        contrast: 0.02,
-        isStandard: true,
-        needsBackendTransform: true,
+        needsBackendTransform: false,
         secretRef: { id: 'tianditu-token', backend: 'config-api-keys', key: 'tianditu' },
       },
       {
@@ -563,7 +570,7 @@ export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = [
         brightness: 0.02,
         contrast: 0.1,
         isStandard: true,
-        needsBackendTransform: true,
+        needsBackendTransform: false,
         secretRef: { id: 'tianditu-token', backend: 'config-api-keys', key: 'tianditu' },
       },
     ],
@@ -720,6 +727,10 @@ export const TILE_SOURCES: TileSourceConfig[] = BASEMAP_PROVIDER_CONFIGS.flatMap
       authMode: endpoint.authMode,
       secretRef: endpoint.secretRef,
       certificateRef: endpoint.certificateRef,
+      overlayUrlTemplate:
+        typeof endpoint.metadata?.overlayUrl === 'string'
+          ? endpoint.metadata.overlayUrl
+          : undefined,
     })),
 )
 
@@ -768,8 +779,15 @@ for (const [style, sources] of TILE_SOURCES_BY_STYLE) {
 
 export function getDefaultTileSource(): TileSourceId {
   // 运行时可由 /config/general.map_default_tile_source 覆盖（见 map-defaults）
-  const id = getMapDefaults().tileSource as TileSourceId
+  const id = normalizeTileSourceId(getMapDefaults().tileSource)
   if (TILE_SOURCE_MAP.has(id)) return id
+  return 'gaode-street'
+}
+
+/** 旧版误把 cva 注记当街道；持久化 id 迁移到 vec。 */
+export function normalizeTileSourceId(sourceId: string): TileSourceId {
+  if (sourceId === 'tianditu-cva') return 'tianditu-vec'
+  if (TILE_SOURCE_MAP.has(sourceId as TileSourceId)) return sourceId as TileSourceId
   return 'gaode-street'
 }
 

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { cancelImportJob, listImportJobs } from '../core/api'
 import { dataJobs, openDataWorkspace } from '../core/workspace-store'
 import { DATA_COPY } from '../../ui-copy'
+import AppSelect from '../../components/ui/AppSelect.vue'
 
 const loading = ref(false)
 const error = ref('')
@@ -18,7 +19,19 @@ const items = ref<
   }>
 >([])
 
-let timer: ReturnType<typeof setInterval> | null = null
+const statusFilter = ref('all')
+
+const filteredItems = computed(() => {
+  if (statusFilter.value === 'all') return items.value
+  if (statusFilter.value === 'active')
+    return items.value.filter((j) => j.status === 'queued' || j.status === 'running')
+  return items.value.filter((j) => j.status === statusFilter.value)
+})
+
+let timer: ReturnType<typeof setTimeout> | null = null
+
+const POLL_ACTIVE_MS = 2000
+const POLL_IDLE_MS = 15000
 
 async function refresh() {
   loading.value = true
@@ -60,15 +73,25 @@ function statusLabel(s: string) {
   return map[s] || s
 }
 
+function hasActiveJobs(): boolean {
+  return items.value.some((j) => j.status === 'queued' || j.status === 'running')
+}
+
+function scheduleNext() {
+  if (timer) clearTimeout(timer)
+  const delay = hasActiveJobs() ? POLL_ACTIVE_MS : POLL_IDLE_MS
+  timer = setTimeout(async () => {
+    await refresh()
+    scheduleNext()
+  }, delay)
+}
+
 onMounted(() => {
-  void refresh()
-  timer = setInterval(() => {
-    void refresh()
-  }, 2500)
+  void refresh().then(() => scheduleNext())
 })
 
 onUnmounted(() => {
-  if (timer) clearInterval(timer)
+  if (timer) clearTimeout(timer)
 })
 </script>
 
@@ -76,14 +99,31 @@ onUnmounted(() => {
   <div class="jobs-panel">
     <div class="jobs-toolbar">
       <span class="hint">{{ DATA_COPY.jobsHint }}</span>
+      <label class="filter-label">
+        筛选
+        <AppSelect
+          v-model="statusFilter"
+          :options="[
+            { label: '全部', value: 'all' },
+            { label: '进行中', value: 'active' },
+            { label: '排队', value: 'queued' },
+            { label: '运行中', value: 'running' },
+            { label: '成功', value: 'succeeded' },
+            { label: '失败', value: 'failed' },
+            { label: '已取消', value: 'cancelled' },
+          ]"
+        />
+      </label>
       <button class="ghost-btn" type="button" :disabled="loading" @click="refresh">
         {{ DATA_COPY.jobsRefresh }}
       </button>
     </div>
     <p v-if="error" class="err">{{ error }}</p>
-    <p v-else-if="!items.length" class="empty">{{ DATA_COPY.jobsEmpty }}</p>
+    <p v-else-if="!filteredItems.length" class="empty">
+      {{ statusFilter === 'all' ? DATA_COPY.jobsEmpty : '无匹配作业' }}
+    </p>
     <ul v-else class="job-list">
-      <li v-for="j in items" :key="j.job_id" class="job-row">
+      <li v-for="j in filteredItems" :key="j.job_id" class="job-row">
         <div class="job-main">
           <span class="kind">{{ j.kind }}</span>
           <span class="id" :title="j.job_id">{{ j.job_id }}</span>
@@ -132,19 +172,27 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.filter-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.14rem;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 .hint {
-  font-size: 0.58rem;
-  color: #8aa0b4;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 .ghost-btn {
-  border: 1px solid rgba(136, 192, 255, 0.2);
+  border: 1px solid var(--border-strong);
   border-radius: 0.38rem;
   padding: 0.28rem 0.5rem;
-  background: rgba(4, 12, 23, 0.55);
-  color: #c5d8ea;
+  background: var(--surface-raised);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 .job-list {
@@ -157,38 +205,38 @@ onUnmounted(() => {
   gap: 0.45rem;
 }
 .job-row {
-  border: 1px solid rgba(136, 192, 255, 0.12);
+  border: 1px solid var(--border-default);
   border-radius: 0.42rem;
   padding: 0.45rem 0.55rem;
-  background: rgba(4, 12, 23, 0.45);
+  background: var(--surface-raised);
 }
 .job-main {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
   align-items: center;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
 }
 .kind {
-  color: #5ad5ff;
+  color: var(--accent);
   font-weight: 600;
 }
 .id {
-  color: #6a8094;
+  color: var(--text-faint);
   max-width: 12rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .status[data-status='succeeded'] {
-  color: #7dffb3;
+  color: var(--success);
 }
 .status[data-status='failed'] {
-  color: #ffb0b0;
+  color: var(--danger);
 }
 .status[data-status='running'],
 .status[data-status='queued'] {
-  color: #ffd166;
+  color: var(--warning);
 }
 .job-progress {
   display: flex;
@@ -200,24 +248,24 @@ onUnmounted(() => {
   flex: 1;
   height: 0.28rem;
   border-radius: 999px;
-  background: rgba(136, 192, 255, 0.12);
+  background: var(--border-default);
   overflow: hidden;
 }
 .bar i {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, #0a84ff, #5ad5ff);
+  background: linear-gradient(90deg, var(--accent), var(--accent));
 }
 .pct {
-  font-size: 0.52rem;
-  color: #8aa0b4;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
   min-width: 2.2rem;
   text-align: right;
 }
 .msg {
   margin: 0.28rem 0 0;
-  font-size: 0.55rem;
-  color: #9fb6cc;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
 }
 .job-actions {
   margin-top: 0.35rem;
@@ -227,12 +275,12 @@ onUnmounted(() => {
 .empty,
 .err {
   margin: 0;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 .err {
-  color: #ffb0b0;
+  color: var(--danger);
 }
 .empty {
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 </style>

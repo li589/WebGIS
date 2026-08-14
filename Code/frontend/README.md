@@ -24,18 +24,35 @@
 - `src/App.vue`：路由出口
 - `src/app/router.ts`：当前主路由 `/` → `DashboardView`
 - `src/views/DashboardView.vue`：主布局（地图 + 面板 + 工具栏）
-- `src/stores/ui.ts`：底图瓦片源、时间轴、交互模式等 UI 状态
-- `src/stores/layers/`：图层目录、workflow 编排、result-adapter
+- `src/stores/ui.ts`：底图瓦片源、时间轴、交互模式等 UI 状态（`tianditu-cva` 遗留 id 归一为 `tianditu-vec`）
+- `src/stores/theme.ts`：主题 token 相关状态（若启用）
+- `src/stores/layers/`：图层目录与运行态（域拆分，见下）
 - `src/stores/weather-tile-manager.ts`：天气瓦片并发、缓存与优先队列（缓存键含 provider）；`data-empty` 按 layerId 隔离，不因全局 `modelEmpty` 连坐其它层
 - `src/stores/weather-source-prefs.ts`：每图层天气源偏好（auto / provider_id；旧 `open-meteo` 映射为 `open-meteo-online`）
 - `src/stores/log.ts`：日志面板
 - `src/data-manager/`：数据管理器（`ui/` 工作台面板、`core/` API 与 workspace store、`adapters/` 导出/图层注册）；`services/data-io.ts` 为兼容 re-export
 - `src/services/runtime-api.ts`：workflow / runtime / weather providers-for-layer API 客户端
 - `src/services/weather-tile-api.ts`：Mercator 瓦片数学与 `/weather/tiles` 请求（支持 `provider`）
+- `src/services/api-config.ts`：底图 provider 模板（含 `overlayUrlTemplate` → 天地图 cva）
 - `src/components/map/`：地图模块化实现（底图、天气 overlay、风场 Canvas 等）
+  - `basemap-module.ts`：底图切换、熔断自动恢复、vec+cva 双 raster 叠层
   - `weather-tile-banner.ts`：全图横幅按层隔离聚合（仅当可见天气层均无缓存且有错误时才盖 error）
   - `effective-layer-symbology.ts`：InfoPanel / LayerSidebar 图例同源（色板覆盖；`legend_ticks` 优先配置，不足时视口采样）
-- `src/styles/main.css`：全局样式
+- `src/components/ui/`：设计系统基础件（Button / Card / Chip / PanelDock / Skeleton 等）
+- `src/styles/main.css` / `tokens.css`：全局样式与设计 token
+
+### `stores/layers/` 域拆分（2026-08）
+
+| 模块 | 职责 |
+|------|------|
+| `index.ts` | Pinia store 组装与对外 API |
+| `catalog.ts` / `catalog-builders.ts` | `/layers` 目录与 presentation 字段 |
+| `bindings.ts` / `selectors.ts` | 绑定与派生选择器 |
+| `workspace-domain.ts` | 工作区持久化相关 |
+| `viewport-domain.ts` | 地图视口驱动刷新 |
+| `workflow-run-domain.ts` | workflow-run 提交 / 轮询 / 结果接入 |
+| `weather-viewport.ts` | 天气视口防抖 / maxWait / immediate flush |
+| `result-adapter.ts` | `render_hint` / `layer_assets` 解析 |
 
 ### 天气模型 / Provider 缺口（瓦片热路径）
 
@@ -70,12 +87,13 @@
 
 ### 当前界面补充说明
 
-- `ModeToolbar.vue`：标题栏工具（底图风格、行政区、数据导入/导出、截图、工作流入口等）
+- `ModeToolbar.vue`：标题栏工具（底图风格、行政区、数据导入/导出、截图、工作流入口、日志等）；可用性 chip 已移除，工作流状态见 `WorkflowStatusButton`
 - `LayerSidebar.vue`：分类、搜索、批量显隐/移除、拖拽排序；`online-weather` 卡片接入运行时 `providers-for-layer` 选源
 - `InfoPanel.vue`：态势摘要、workflow 状态、天气图例/数据源钉选、选中图层/热点信息（图例经 `effective-layer-symbology` 与侧栏色条同源；说明文案可跟 live `windDisplayMode`）
 - `ControlPanel.vue`：图层 / 分析等浮动框（拖动记忆位置、角点缩放）
 - `TimelineScrubber.vue` / `TimelinePanel.vue`：时间轴
 - `ScreenshotExport.vue`：截图导出
+- `LoginView.vue`：登录页（开发态可预填 admin / cgda-dev-admin，以 `/auth/config` 为准）
 - `workflow/`：全局工作流状态按钮与面板；`WorkflowEditorPanel` 画布 Run 提交编译后的 `workflow_definition`
 - `toolbar/`：日志面板；数据入口见 `src/data-manager/ui/DataImportMenu.vue` + `DataWorkspace.vue`
 - `data-manager/`：导入/导出/属性表/详情/作业；侧栏与 InfoPanel 仅调用 `openDataWorkspace` / `exportLayer`
@@ -164,7 +182,8 @@
 - `components/map/weather-render.ts`：样式映射
 - `ui-copy/`：验收中文词表（品牌 / 底图 / 风场 / 点查 / 图层 / 工作流 / 地图）
 - `stores/layers/result-adapter.ts`：解析 `render_hint` 与 `layer_assets`
-- `stores/layers/index.ts`：图层状态、workflow、粒子流独占与视口状态
+- `stores/layers/index.ts`：组装各 domain；对外暴露图层 / workflow / 视口 API
+- `stores/layers/workspace-domain.ts` / `viewport-domain.ts` / `workflow-run-domain.ts`：域实现
 - `stores/layers/weather-viewport.ts`：天气视口防抖 / maxWait / immediate flush
 - `stores/weather-tile-manager.ts` / `weather-tile-cache-trim.ts`：瓦片调度与 LRU trim
 - `stores/weather-tile-concurrency.ts`：AIMD 并发（上限 6，对齐后端 semaphore / Open-Meteo API pool）
@@ -215,7 +234,9 @@
 1. `Code/frontend/README.md`
 2. `Code/shared/contracts/README.md`
 3. `Code/backend/README.md`
-4. `Docs/双通道接口设计总结.md`
+4. `Docs/03-规范协议/双通道接口设计总结.md`
+5. `Docs/02-架构设计/工程决策纪要-配置瓦片与契约.md`
+6. `Docs/07-工程保障/UI优化与底图模块修复-2026-08-12.md`（登录页 / 底图熔断 / 天地图 vec+cva）
 
 ## 说明
 

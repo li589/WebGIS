@@ -98,8 +98,8 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
     const accent = saved.accentColor
       ? {
           accentColor: saved.accentColor,
-          accentGlow: saved.accentGlow ?? 'rgba(255, 255, 255, 0.2)',
-          chipTone: saved.chipTone ?? 'rgba(255, 255, 255, 0.1)',
+          accentGlow: saved.accentGlow ?? 'var(--surface-3)',
+          chipTone: saved.chipTone ?? 'var(--surface-hover)',
         }
       : deps.assignLayerAccent(libraryItem?.accentColor)
     const instanceId = deps.genInstanceId()
@@ -118,6 +118,7 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
       chipTone: accent.chipTone,
       runGroupId: saved.runGroupId,
       runGroupProductTag: saved.runGroupProductTag,
+      runGroupLocked: Boolean(saved.runGroupLocked),
       paletteOverride: saved.paletteOverride ?? null,
       vminOverride: saved.vminOverride ?? null,
       vmaxOverride: saved.vmaxOverride ?? null,
@@ -167,13 +168,14 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
         }
       }
       if (!memberInstanceIds.length) continue
+      const computing = savedGroup.status === 'computing'
       runLayerGroups.push({
         groupId: savedGroup.groupId,
         runId: savedGroup.runId || '',
         title: savedGroup.title,
-        status: savedGroup.status === 'computing' ? 'ready' : savedGroup.status || 'ready',
+        status: computing ? 'computing' : savedGroup.status || 'ready',
         memberInstanceIds,
-        dissolvable: true,
+        dissolvable: computing ? false : Boolean(savedGroup.dissolvable ?? true),
         sourceLayerId: savedGroup.sourceLayerId,
         workflowId: savedGroup.workflowId,
         progress: savedGroup.progress,
@@ -181,7 +183,12 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
       })
       for (const id of memberInstanceIds) {
         const layer = activeLayers.find((l) => l.instanceId === id)
-        if (layer) layer.runGroupId = savedGroup.groupId
+        if (layer) {
+          layer.runGroupId = savedGroup.groupId
+          if (computing && !layer.importedRaster?.overlayLayerId) {
+            layer.runGroupLocked = true
+          }
+        }
       }
     }
   }
@@ -234,7 +241,7 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
         chipTone: saved.chipTone,
         runGroupId: saved.runGroupId,
         runGroupProductTag: saved.runGroupProductTag,
-        runGroupLocked: false,
+        runGroupLocked: Boolean(saved.runGroupLocked),
         paletteOverride: saved.paletteOverride ?? null,
         vminOverride: saved.vminOverride ?? null,
         vmaxOverride: saved.vmaxOverride ?? null,
@@ -298,10 +305,10 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
         const accent = saved.accentColor
           ? {
               accentColor: saved.accentColor,
-              accentGlow: saved.accentGlow ?? 'rgba(255, 255, 255, 0.2)',
-              chipTone: saved.chipTone ?? 'rgba(255, 255, 255, 0.1)',
+              accentGlow: saved.accentGlow ?? 'var(--surface-3)',
+              chipTone: saved.chipTone ?? 'var(--surface-hover)',
             }
-          : deps.assignLayerAccent('#7ee0a8')
+          : deps.assignLayerAccent('var(--success)')
 
         activeLayers.push({
           instanceId,

@@ -27,7 +27,7 @@ Windows 联调：Docker Desktop 与终端须**以管理员身份运行**，否�
     Env\\Python312\\python.exe launch.py                     # 等同 start
     Env\\Python312\\python.exe launch.py start [component]
     start.bat / stop.bat                                     # Windows 推荐
-    Env\\Python312\\python.exe launch.py stop|status|restart|logs|flush|sync|reset-db
+    Env\\Python312\\python.exe launch.py stop|status|restart|logs|flush|clean-cache|sync|reset-db
 
 组件 (component):
     (无) 或 all        启动全部服务并进入监控循环（默认）
@@ -44,6 +44,9 @@ Windows 联调：Docker Desktop 与终端须**以管理员身份运行**，否�
     worker:gee          仅启动 gee 队列 Worker
     worker:weather      仅启动 weather 队列 Worker
     frontend            仅启动前端 Vite 开发服务器
+    gateway             仅启动 Nginx 同域入口（静态 dist）
+
+默认 ``start`` / ``restart``（全量）启 **Nginx Gateway**；本地 HMR 用 ``start --vite``。
 
 完整示例见 ``Env\\Python312\\python.exe launch.py --help``。
 Windows: start.bat / stop.bat    Linux/macOS: ./start.sh / ./stop.sh

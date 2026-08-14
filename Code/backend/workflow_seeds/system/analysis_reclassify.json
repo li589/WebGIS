@@ -1,0 +1,39 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "Analysis: reclassify",
+    "description": "InfoPanel reclassify. Inject raster path and remap_table.",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": null,
+    "tags": ["analysis", "gis", "ui-panel", "raster"],
+    "category": "analysis",
+    "resource_profile": "standard"
+  },
+  "workflow_id": "analysis_reclassify",
+  "name": "Analysis: reclassify",
+  "description": "data/source → gis/reclassify",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "data/source",
+      "pos": [60, 160],
+      "properties": {
+        "path": "{DATA_ROOT}/_runtime/smoke_stub.tif",
+        "dataset_key": "input_path"
+      }
+    },
+    {
+      "id": 2,
+      "type": "gis/reclassify",
+      "pos": [380, 160],
+      "properties": {
+        "remap_table": "0-10:1,10-100:2,100-1000:3",
+        "nodata_value": -9999
+      }
+    }
+  ],
+  "links": [[1, 1, 2, 2, 1]]
+}

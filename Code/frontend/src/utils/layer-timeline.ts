@@ -8,7 +8,7 @@ export type TimeGranularity = 'hour' | 'day' | 'month' | 'year' | 'static'
 export interface TimelineAvailabilitySegment {
   index: number
   label: string
-  state: 'empty' | 'partial' | 'ready' | 'static'
+  state: 'empty' | 'partial' | 'ready' | 'static' | 'error' | 'fetchable'
   availabilityLabel: string
   timestamp?: number
 }
@@ -66,7 +66,11 @@ export function granularityUnitLabel(granularity: TimeGranularity): string {
 }
 
 /**
- * 根据粒度移动时间/日期
+ * 根据粒度移动时间/日期。
+ *
+ * 月末（如 1/31 +1 月）和闰日跨平年（如 2/29 +1 年）时 JS Date 会滚动到次月
+ * （setMonth/setFullYear 不钳制），本函数在溢出后用 ``setDate(0)`` 钳制到目标月
+ * 最后一天（如 1/31 +1月 → 2/28，2/29 +1年 → 2/28），保持"月末不移出当月"语义。
  */
 export function shiftTimelineDate(
   date: Date,
@@ -77,11 +81,17 @@ export function shiftTimelineDate(
   if (granularity === 'static') return result
 
   if (granularity === 'year') {
+    const origDay = date.getDate()
     result.setFullYear(result.getFullYear() + delta)
+    // 闰日跨平年溢出 → 钳制到目标年同月最后一天
+    if (result.getDate() !== origDay) result.setDate(0)
     return result
   }
   if (granularity === 'month') {
+    const origDay = date.getDate()
     result.setMonth(result.getMonth() + delta)
+    // 月末溢出（如 1/31→2 月）→ 钳制到目标月最后一天
+    if (result.getDate() !== origDay) result.setDate(0)
     return result
   }
   if (granularity === 'day' || granularity === 'hour') {
@@ -100,7 +110,7 @@ export function shiftTimelineDate(
 export function generateTimelineSegments(
   date: Date,
   granularity: TimeGranularity = 'hour',
-  availabilityMap?: Record<number, 'empty' | 'partial' | 'ready'>,
+  availabilityMap?: Record<number, 'empty' | 'partial' | 'ready' | 'error' | 'fetchable'>,
 ): TimelineAvailabilitySegment[] {
   if (granularity === 'static') {
     return [
@@ -113,15 +123,23 @@ export function generateTimelineSegments(
     ]
   }
 
+  const labelFor = (state: 'empty' | 'partial' | 'ready' | 'error' | 'fetchable') => {
+    if (state === 'ready') return '数据可用'
+    if (state === 'partial') return '部分就绪 / 加载中'
+    if (state === 'error') return '产出异常'
+    if (state === 'fetchable') return '可在线获取'
+    return '无数据'
+  }
+
   if (granularity === 'month') {
     return Array.from({ length: 12 }, (_, idx) => {
-      const state = availabilityMap?.[idx] ?? 'ready'
+      // 未知 ≠ 就绪：缺 map 或未覆盖格一律 empty，避免工作流计算中「假全绿」
+      const state = availabilityMap?.[idx] ?? 'empty'
       return {
         index: idx,
         label: `${idx + 1}`,
         state,
-        availabilityLabel:
-          state === 'ready' ? '数据可用' : state === 'partial' ? '部分就绪' : '数据未定测/空数据',
+        availabilityLabel: labelFor(state),
       }
     })
   }
@@ -133,12 +151,21 @@ export function generateTimelineSegments(
     const segments: TimelineAvailabilitySegment[] = []
     for (let i = 0; i < 10; i++) {
       const yr = baseYear + i
-      const state = availabilityMap?.[yr] ?? availabilityMap?.[i] ?? 'ready'
+      const state = availabilityMap?.[yr] ?? availabilityMap?.[i] ?? 'empty'
       segments.push({
         index: yr,
         label: `${yr}`,
         state,
-        availabilityLabel: state === 'ready' ? '年度数据已就绪' : '无数据',
+        availabilityLabel:
+          state === 'ready'
+            ? '年度数据已就绪'
+            : state === 'partial'
+              ? '部分就绪 / 加载中'
+              : state === 'error'
+                ? '产出异常'
+                : state === 'fetchable'
+                  ? '可在线获取'
+                  : '无数据',
       })
     }
     return segments
@@ -151,12 +178,21 @@ export function generateTimelineSegments(
     const daysInMonth = new Date(year, month + 1, 0).getDate()
     const segments: TimelineAvailabilitySegment[] = []
     for (let d = 1; d <= daysInMonth; d++) {
-      const state = availabilityMap?.[d] ?? 'ready'
+      const state = availabilityMap?.[d] ?? 'empty'
       segments.push({
         index: d,
         label: `${d}`,
         state,
-        availabilityLabel: state === 'ready' ? '每日数据已就绪' : '数据空缺',
+        availabilityLabel:
+          state === 'ready'
+            ? '每日数据已就绪'
+            : state === 'partial'
+              ? '部分就绪 / 加载中'
+              : state === 'error'
+                ? '产出异常'
+                : state === 'fetchable'
+                  ? '可在线获取'
+                  : '无数据',
       })
     }
     return segments
@@ -165,13 +201,17 @@ export function generateTimelineSegments(
   // hour 粒度 (0 - 23 小时)，用紧凑格式 "0" ~ "23" 代替 "00:00"
   const segments: TimelineAvailabilitySegment[] = []
   for (let h = 0; h < 24; h++) {
-    const state = availabilityMap?.[h] ?? 'ready'
+    const state = availabilityMap?.[h] ?? 'empty'
     const statusText =
       state === 'ready'
         ? '瓦片数据已就绪'
         : state === 'partial'
           ? '降采样中/部分补全'
-          : '空数据切片 (标灰指示)'
+          : state === 'error'
+            ? '产出异常'
+            : state === 'fetchable'
+              ? '可在线获取'
+              : '无数据'
     segments.push({
       index: h,
       label: `${h}`,

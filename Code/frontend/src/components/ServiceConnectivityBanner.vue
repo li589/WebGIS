@@ -60,8 +60,8 @@ onBeforeUnmount(() => {
   gap: 0.75rem;
   padding: 0.45rem 1rem;
   background: rgba(120, 24, 24, 0.92);
-  border-bottom: 1px solid rgba(255, 140, 100, 0.35);
-  color: #ffd8cc;
+  border-bottom: 1px solid var(--danger-border);
+  color: var(--danger);
   font-size: 0.82rem;
 }
 
@@ -69,7 +69,7 @@ button {
   border: 1px solid rgba(255, 200, 176, 0.4);
   border-radius: 0.4rem;
   padding: 0.2rem 0.55rem;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-hover);
   color: inherit;
   cursor: pointer;
   font: inherit;

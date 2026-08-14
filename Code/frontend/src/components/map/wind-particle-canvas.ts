@@ -156,7 +156,7 @@ const MAX_AGE_RANDOM_RANGE = 20
  * 默认近白粒子（对照 Windy particleColor [1,1,1,0.8]）。
  * 风速着色交给底层 heatmap；粒子只表达流向。
  */
-const DEFAULT_PARTICLE_COLORS = ['#f2f6ff', '#f2f6ff', '#ffffff', '#ffffff']
+const DEFAULT_PARTICLE_COLORS = ['#f2f6ff', '#f2f6ff', 'var(--text-strong)', 'var(--text-strong)']
 
 /** 默认风速断点（m/s），与近白色阶对应（色差极小，仅作插值锚点） */
 const DEFAULT_WIND_SPEED_STOPS = [0, 8, 20, 35]
@@ -875,7 +875,7 @@ export class WindParticleCanvas {
       // 旧线性模型 fadeAlpha*dt 在 dt 较大时被 0.15 cap 饱和，造成"一阵一阵"。
       // dt 已在 animate() 被 MAX_DT_FRAMES=4 钳制，指数函数自身有界（趋于 1）。
       ctx.globalAlpha = 1 - Math.pow(1 - fadeAlpha, dt)
-      ctx.fillStyle = '#000'
+      ctx.fillStyle = 'var(--surface-base)'
       ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
     }
 

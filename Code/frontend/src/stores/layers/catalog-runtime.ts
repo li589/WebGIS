@@ -4,9 +4,15 @@
  */
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
 
-import { fetchLayerCatalog, type RuntimeLayerDescriptor } from '../../services/runtime-api'
 import {
+  fetchLayerCatalog,
+  type LayerDescriptor,
+  type OnlineTemporalCapability,
+} from '../../services/runtime-api'
+import {
+  getOnlineTemporalConfig,
   supportsMapLayerCapability,
+  supportsOnlineTemporalCapability,
   supportsParticleFlowCapability,
   supportsViewportDrivenRefreshCapability,
 } from '../../services/layer-capabilities'
@@ -40,16 +46,16 @@ export interface CatalogRuntimeSliceDeps {
 }
 
 export interface CatalogRuntimeSlice {
-  runtimeLayerCatalog: Ref<Record<string, RuntimeLayerDescriptor>>
+  runtimeLayerCatalog: Ref<Record<string, LayerDescriptor>>
   runtimeLayerCatalogLoading: Ref<boolean>
   layerLibrary: ComputedRef<RuntimeLayerLibraryItem[]>
   layerLibraryMap: ComputedRef<Map<string, RuntimeLayerLibraryItem>>
   catalogJobStatus: ComputedRef<Map<string, JobStatus>>
   catalogRunReadiness: ComputedRef<Map<string, string>>
   ensureRuntimeLayerCatalog: (force?: boolean) => Promise<void>
-  getRuntimeLayerDescriptor: (catalogId: string) => RuntimeLayerDescriptor | null
+  getRuntimeLayerDescriptor: (catalogId: string) => LayerDescriptor | null
   resolveBackendLayerId: (catalogId: string) => string
-  resolveEffectiveDescriptor: (catalogId: string) => RuntimeLayerDescriptor | null
+  resolveEffectiveDescriptor: (catalogId: string) => LayerDescriptor | null
   getCatalogWorkflowEngine: (catalogId: string) => string | null
   supportsAnalysisWorkflow: (catalogId: string) => boolean
   getCatalogRunBlockReason: (catalogId: string) => string | null
@@ -58,25 +64,87 @@ export interface CatalogRuntimeSlice {
   supportsMapLayerResult: (catalogId: string) => boolean
   supportsViewportDrivenRefresh: (catalogId: string) => boolean
   supportsParticleFlow: (catalogId: string) => boolean
+  supportsOnlineTemporal: (catalogId: string) => boolean
+  getOnlineTemporalConfig: (catalogId: string) => OnlineTemporalCapability | null
   getLayerPrimaryMetric: (catalogId: string) => string | null
-  setRuntimeLayerCatalog: (catalog: Record<string, RuntimeLayerDescriptor>) => void
+  setRuntimeLayerCatalog: (catalog: Record<string, LayerDescriptor>) => void
 }
 
 export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): CatalogRuntimeSlice {
-  const runtimeLayerCatalog = ref<Record<string, RuntimeLayerDescriptor>>({})
+  const runtimeLayerCatalog = ref<Record<string, LayerDescriptor>>({})
   const runtimeLayerCatalogLoading = ref(false)
   let runtimeLayerCatalogRequest: Promise<void> | null = null
 
   const layerLibrary = computed<RuntimeLayerLibraryItem[]>(() => {
-    const runtimeItems = Object.values(runtimeLayerCatalog.value).map((descriptor) =>
+    const allRuntimeItems = Object.values(runtimeLayerCatalog.value).map((descriptor) =>
       buildRuntimeLayerLibraryItem(descriptor),
     )
-    const items =
-      runtimeItems.length > 0
-        ? runtimeItems
-        : LAYER_LIBRARY.filter((item) => !item.isAdminBoundary).map((item) =>
-            buildCatalogFallbackItem(null, item.catalogId),
-          )
+
+    let items: RuntimeLayerLibraryItem[]
+    if (allRuntimeItems.length > 0) {
+      // X1: 分离独立条目、合并组虚拟条目与合并源条目（均从后端 descriptor 派生）
+      const standaloneItems: RuntimeLayerLibraryItem[] = []
+      const mergedGroupItems: RuntimeLayerLibraryItem[] = []
+      const mergedSourceItems = new Map<string, RuntimeLayerLibraryItem>()
+
+      for (const item of allRuntimeItems) {
+        if (item.isMergedGroup) {
+          // X1: 合并组虚拟条目 — 后端 descriptor.is_merged_group=true
+          mergedGroupItems.push(item)
+        } else if (item.mergedInto) {
+          // X1: 合并组成员 — 后端 descriptor.merged_into 指向父条目
+          mergedSourceItems.set(item.catalogId, item)
+        } else {
+          standaloneItems.push(item)
+        }
+      }
+
+      // X1: 为每个合并组虚拟条目 enriched sources（注入成员的运行时状态）
+      const mergedEntries: RuntimeLayerLibraryItem[] = mergedGroupItems.map((groupItem) => {
+        const memberIds = groupItem.members ?? []
+
+        const enrichedSources = groupItem.sources.map((source) => {
+          const rt = mergedSourceItems.get(source.id)
+          return {
+            ...source,
+            runReadiness: rt?.runReadiness,
+            runReadinessSummary: rt?.runReadinessSummary,
+            backendStatus: rt?.backendStatus,
+            supportsTime: rt?.supportsTime,
+          }
+        })
+
+        // 选取第一个 ready 的源作为代表状态
+        const representative =
+          memberIds
+            .map((sid) => mergedSourceItems.get(sid))
+            .find((rt) => rt && !isBlockedRunReadiness(rt.runReadiness)) ??
+          (memberIds.length > 0 ? mergedSourceItems.get(memberIds[0]) : undefined)
+
+        return {
+          ...groupItem,
+          sources: enrichedSources,
+          description: representative?.description ?? groupItem.description,
+          runReadiness: representative?.runReadiness ?? groupItem.runReadiness,
+          runReadinessSummary: representative?.runReadinessSummary ?? groupItem.runReadinessSummary,
+          runReadinessNotes: representative?.runReadinessNotes ?? groupItem.runReadinessNotes,
+          backendStatus: representative?.backendStatus ?? groupItem.backendStatus,
+          supportsTime: representative?.supportsTime ?? groupItem.supportsTime,
+          engine: representative?.engine ?? groupItem.engine,
+          sourceType: representative?.sourceType ?? groupItem.sourceType,
+          renderType: representative?.renderType ?? groupItem.renderType,
+          workflowName: representative?.workflowName ?? groupItem.workflowName,
+          defaultVisible: representative?.defaultVisible ?? groupItem.defaultVisible,
+        }
+      })
+
+      items = standaloneItems.concat(mergedEntries)
+    } else {
+      // 静态兜底：显示独立条目和合并组虚拟条目，隐藏合并源成员条目
+      items = LAYER_LIBRARY.filter((item) => !item.isAdminBoundary && !item.mergedInto).map(
+        (item) => buildCatalogFallbackItem(null, item.catalogId),
+      )
+    }
 
     const outputStore = useWorkflowOutputLayersStore()
     const researchCategory = LAYER_CATEGORIES.find((c) => c.id === 'research-group')
@@ -125,9 +193,25 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
       })
   })
 
-  const layerLibraryMap = computed(
-    () => new Map(layerLibrary.value.map((item) => [item.catalogId, item])),
-  )
+  const layerLibraryMap = computed(() => {
+    const map = new Map<string, RuntimeLayerLibraryItem>()
+    for (const item of layerLibrary.value) {
+      map.set(item.catalogId, item)
+    }
+    // X1: 合并条目的各源 ID 也需可查（addLayer 等通过 source ID 查找 accent 等信息）
+    for (const descriptor of Object.values(runtimeLayerCatalog.value)) {
+      if (!map.has(descriptor.layer_id) && descriptor.merged_into) {
+        map.set(descriptor.layer_id, buildRuntimeLayerLibraryItem(descriptor))
+      }
+    }
+    // 静态兜底：后端未返回时也需包含被隐藏的独立源条目
+    for (const item of LAYER_LIBRARY) {
+      if (item.mergedInto && !map.has(item.catalogId)) {
+        map.set(item.catalogId, buildCatalogFallbackItem(null, item.catalogId))
+      }
+    }
+    return map
+  })
 
   const catalogJobStatus = computed(() => {
     const map = new Map<string, JobStatus>()
@@ -170,7 +254,7 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     return catalogId
   }
 
-  function resolveEffectiveDescriptor(catalogId: string): RuntimeLayerDescriptor | null {
+  function resolveEffectiveDescriptor(catalogId: string): LayerDescriptor | null {
     if (catalogId.startsWith('wf-out-') || catalogId.startsWith('wf-run-')) {
       const backendId = resolveBackendLayerId(catalogId)
       return getRuntimeLayerDescriptor(backendId)
@@ -235,7 +319,9 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
   function supportsAnalysisWorkflow(catalogId: string): boolean {
     const backendLayerId = resolveBackendLayerId(catalogId)
     if (isWeatherEngineLayer(backendLayerId) || isWeatherEngineLayer(catalogId)) return false
-    return Boolean(getCatalogWorkflowEngine(backendLayerId) || getCatalogWorkflowEngine(catalogId))
+    const engine = getCatalogWorkflowEngine(backendLayerId) || getCatalogWorkflowEngine(catalogId)
+    // overlay_registry / missing engine = display-only; only these engines can submit /workflow-runs
+    return engine === 'python_provider' || engine === 'gee'
   }
 
   function getCatalogRunBlockReason(catalogId: string) {
@@ -280,11 +366,21 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     return catalogId.startsWith('wind-field')
   }
 
+  function supportsOnlineTemporal(catalogId: string): boolean {
+    const descriptor = resolveEffectiveDescriptor(catalogId)
+    return supportsOnlineTemporalCapability(descriptor)
+  }
+
+  function getOnlineTemporalConfigForCatalog(catalogId: string): OnlineTemporalCapability | null {
+    const descriptor = resolveEffectiveDescriptor(catalogId)
+    return getOnlineTemporalConfig(descriptor)
+  }
+
   function getLayerPrimaryMetric(catalogId: string): string | null {
     return getRuntimeLayerDescriptor(catalogId)?.capabilities?.primary_metric ?? null
   }
 
-  function setRuntimeLayerCatalog(catalog: Record<string, RuntimeLayerDescriptor>) {
+  function setRuntimeLayerCatalog(catalog: Record<string, LayerDescriptor>) {
     runtimeLayerCatalog.value = catalog
   }
 
@@ -307,6 +403,8 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     supportsMapLayerResult,
     supportsViewportDrivenRefresh,
     supportsParticleFlow,
+    supportsOnlineTemporal,
+    getOnlineTemporalConfig: getOnlineTemporalConfigForCatalog,
     getLayerPrimaryMetric,
     setRuntimeLayerCatalog,
   }

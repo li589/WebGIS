@@ -18,7 +18,6 @@ export interface WeatherOverlayRenderContext {
   markRendered: (catalogId: string) => void
   syncWeatherCogOverlay: (state: WeatherOverlayState) => void
   syncWeatherGridFillOverlay: (state: WeatherOverlayState) => void
-  syncWeatherHeatmapOverlay: (state: WeatherOverlayState) => void
   syncWeatherPointOverlay: (state: WeatherOverlayState) => void
   syncWindParticleFlow: (state: WeatherOverlayState, overlayToken: number) => Promise<void>
   /** WebGL 标量场；返回 true 表示已渲染，false 应回退 fill */
@@ -66,7 +65,10 @@ const WEATHER_OVERLAY_RENDERERS: Record<string, WeatherOverlayRenderer> = {
   heatmap: {
     canRender: hasGeojsonSource,
     render: (state, context) => {
-      context.syncWeatherHeatmapOverlay(state)
+      context.syncWeatherGridFillOverlay({
+        ...state,
+        renderHint: { ...state.renderHint, paint_mode: 'grid_fill' },
+      })
       context.markRendered(state.catalogId)
     },
   },

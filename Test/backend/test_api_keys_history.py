@@ -16,6 +16,7 @@ for _p in (_PYTHON_PROVIDER, _CODE_ROOT):
 
 def _repo(tmp_path, monkeypatch, *, limit: int = 20):
     from app.services import config_service
+    from app.services import config_api_keys
 
     monkeypatch.setenv("BACKEND_ENVIRONMENT", "development")
     db_parent = tmp_path / "workflow_state"
@@ -27,7 +28,9 @@ def _repo(tmp_path, monkeypatch, *, limit: int = 20):
     )
     object.__setattr__(config_service.settings, "gee_credentials_encryption_key", "")
     object.__setattr__(config_service.settings, "api_key_history_limit", limit)
-    monkeypatch.setattr(config_service, "_env_api_key_value", lambda _n: "")
+    _env_fn = lambda _n: ""
+    monkeypatch.setattr(config_service, "_env_api_key_value", _env_fn)
+    monkeypatch.setattr(config_api_keys, "_env_api_key_value", _env_fn)
 
     # 关闭上一个 lru_cache 中的 repository 连接池，避免 Windows 文件句柄泄漏
     # 导致 tmp_path 清理时 PermissionError [WinError 5]

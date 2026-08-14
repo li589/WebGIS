@@ -37,7 +37,7 @@ const FONT_SIZE_BEARING = 10
 /** 总距离文字字号（px，加粗） */
 const FONT_SIZE_TOTAL = 13
 
-/** 文字白色描边宽度 */
+/** 文字描边宽度（浅色描边提高地图底图对比度） */
 const STROKE_WIDTH = 3
 
 /** 标签距离段中点的偏移量（px，向上偏移避免压住线） */
@@ -45,6 +45,17 @@ const LABEL_OFFSET_Y = -8
 
 /** 预览虚线线段长度（px） */
 const DASH_PATTERN = [6, 4]
+
+/**
+ * Canvas 无法解析 CSS 变量；固定沿用深色模式下的可读配色：
+ * 浅色描边 + 深色填充，在浅底/深底地图上均清晰。
+ */
+const LABEL_STROKE = '#f0faff'
+const LABEL_FILL_DISTANCE = '#0a1626'
+const LABEL_FILL_BEARING = '#1a2b42'
+const LABEL_FILL_TOTAL = '#b91c1c'
+const LABEL_FILL_PREVIEW = '#1e78c8'
+const PREVIEW_STROKE = 'rgba(30, 120, 200, 0.75)'
 
 // ── 类型 ─────────────────────────────────────────────────
 
@@ -237,12 +248,17 @@ export class MeasureCanvas {
         y: (p1.y + p2.y) / 2,
       }
 
-      this.drawLabel(midScreen, formatDistance(seg.distance), FONT_SIZE_DISTANCE, '#000')
+      this.drawLabel(
+        midScreen,
+        formatDistance(seg.distance),
+        FONT_SIZE_DISTANCE,
+        LABEL_FILL_DISTANCE,
+      )
       this.drawLabel(
         { x: midScreen.x, y: midScreen.y + FONT_SIZE_DISTANCE + 2 },
         formatBearing(seg.bearing),
         FONT_SIZE_BEARING,
-        '#333',
+        LABEL_FILL_BEARING,
       )
     }
 
@@ -253,7 +269,7 @@ export class MeasureCanvas {
 
       // 虚线预览
       ctx.save()
-      ctx.strokeStyle = 'rgba(30, 120, 200, 0.7)'
+      ctx.strokeStyle = PREVIEW_STROKE
       ctx.lineWidth = 1.5
       ctx.setLineDash(DASH_PATTERN)
       ctx.beginPath()
@@ -274,12 +290,17 @@ export class MeasureCanvas {
           x: (lastPoint.x + hoverScreen.x) / 2,
           y: (lastPoint.y + hoverScreen.y) / 2,
         }
-        this.drawLabel(midScreen, formatDistance(previewDist), FONT_SIZE_DISTANCE, '#1e78c8')
+        this.drawLabel(
+          midScreen,
+          formatDistance(previewDist),
+          FONT_SIZE_DISTANCE,
+          LABEL_FILL_PREVIEW,
+        )
         this.drawLabel(
           { x: midScreen.x, y: midScreen.y + FONT_SIZE_DISTANCE + 2 },
           formatBearing(previewBearing),
           FONT_SIZE_BEARING,
-          '#1e78c8',
+          LABEL_FILL_PREVIEW,
         )
       }
     }
@@ -291,13 +312,13 @@ export class MeasureCanvas {
         { x: lastScreen.x, y: lastScreen.y - 22 },
         `总计：${formatDistance(total)}`,
         FONT_SIZE_TOTAL,
-        '#b00',
+        LABEL_FILL_TOTAL,
         true,
       )
     }
   }
 
-  /** 绘制带白色描边的文字标签 */
+  /** 绘制带浅色描边的文字标签（Canvas 不用 CSS 变量） */
   private drawLabel(
     pos: ScreenPoint,
     text: string,
@@ -312,12 +333,10 @@ export class MeasureCanvas {
     ctx.textBaseline = 'middle'
     ctx.lineJoin = 'round'
 
-    // 白色描边（提高对比度）
-    ctx.strokeStyle = '#ffffff'
+    ctx.strokeStyle = LABEL_STROKE
     ctx.lineWidth = STROKE_WIDTH
     ctx.strokeText(text, pos.x, pos.y + LABEL_OFFSET_Y)
 
-    // 主填充色
     ctx.fillStyle = fillColor
     ctx.fillText(text, pos.x, pos.y + LABEL_OFFSET_Y)
     ctx.restore()

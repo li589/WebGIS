@@ -8,15 +8,18 @@
  * 两种模式共用「预期产出」命名面板（组标题 + 每产品图层名）。
  */
 import { computed, ref, watch } from 'vue'
+import { Info } from '../ui/icons'
 import { useWorkflowOutputLayersStore } from '../../stores/workflow-output-layers'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import {
   defaultProductLayerNames,
+  productTagDescription,
   productTagLabel,
   resolveExpectedOutputTags,
   resolveOutputNamePrefix,
 } from '../../utils/workflow-expected-outputs'
+import AppSelect from '../ui/AppSelect.vue'
 
 export interface WorkflowRunProductTarget {
   name: string
@@ -50,7 +53,7 @@ const emit = defineEmits<{
 }>()
 
 const outputStore = useWorkflowOutputLayersStore()
-const layersStore = useLayersStore()
+const workspace = useLayerWorkspace()
 const workflowDefsStore = useWorkflowDefinitionsStore()
 
 const mode = ref<'default' | 'new'>('default')
@@ -59,7 +62,7 @@ const groupTitle = ref('')
 const productNames = ref<string[]>([])
 
 const catalogOptions = computed(() =>
-  layersStore.layerLibrary
+  workspace.layerLibrary.value
     .filter((l) => Boolean(l.catalogId) && !String(l.catalogId).startsWith('wf-out-'))
     .map((l) => ({
       id: l.catalogId,
@@ -85,7 +88,7 @@ const existingOutputs = computed(() => {
 const sourceLayerName = computed(() => {
   const layerId = effectiveLayerId.value
   if (!layerId) return '未选择图层'
-  const libItem = layersStore.layerLibrary.find((l) => l.catalogId === layerId)
+  const libItem = workspace.layerLibrary.value.find((l) => l.catalogId === layerId)
   return libItem?.name ?? layerId
 })
 
@@ -143,103 +146,109 @@ watch(outputTags, (tags) => {
 </script>
 
 <template>
-  <div v-if="visible" class="run-dialog-overlay" @click.self="handleCancel">
-    <div class="run-dialog">
-      <header class="dialog-header">
-        <h3 class="dialog-title">运行工作流</h3>
-        <p class="dialog-subtitle">{{ workflowName }} · 源图层: {{ sourceLayerName }}</p>
-        <p v-if="workflowDescription" class="dialog-description">{{ workflowDescription }}</p>
-      </header>
+  <Transition name="run-dialog-fade">
+    <div v-if="visible" class="run-dialog-overlay" @click.self="handleCancel">
+      <div class="run-dialog">
+        <header class="dialog-header">
+          <h3 class="dialog-title">运行工作流</h3>
+          <p class="dialog-subtitle">{{ workflowName }} · 源图层: {{ sourceLayerName }}</p>
+          <p v-if="workflowDescription" class="dialog-description">{{ workflowDescription }}</p>
+        </header>
 
-      <div class="dialog-body">
-        <div v-if="!linkedLayerId" class="layer-picker">
-          <label class="form-label">选择关联图层 *</label>
-          <select v-model="pickedLayerId" class="form-select">
-            <option value="" disabled>请选择图层目录条目</option>
-            <option v-for="opt in catalogOptions" :key="opt.id" :value="opt.id">
-              {{ opt.name }}（{{ opt.engine }}）
-            </option>
-          </select>
-          <p class="info-hint">当前工作流未绑定图层；选择后将作为本次运行的源图层。</p>
-        </div>
-
-        <div class="mode-selector">
-          <label class="mode-option" :class="{ active: mode === 'default' }">
-            <input v-model="mode" type="radio" value="default" />
-            <span class="mode-label">
-              <span class="mode-name">默认图层</span>
-              <span class="mode-desc">在已添加图层中建计算组；不写入目录产出条目</span>
-            </span>
-          </label>
-          <label class="mode-option" :class="{ active: mode === 'new' }">
-            <input v-model="mode" type="radio" value="new" />
-            <span class="mode-label">
-              <span class="mode-name">新建图层</span>
-              <span class="mode-desc">计算组 + 写入「科研数据 → 模型输出」目录条目</span>
-            </span>
-          </label>
-        </div>
-
-        <div v-if="mode === 'default' && existingOutputs.length > 0" class="default-mode-info">
-          <p class="info-label">该源图层已有目录产出条目:</p>
-          <ul class="output-list">
-            <li v-for="output in existingOutputs" :key="output.localId" class="output-item">
-              <span class="output-name">{{ output.name }}</span>
-              <span class="output-group">[{{ output.group }}]</span>
-            </li>
-          </ul>
-        </div>
-
-        <div class="products-form">
-          <div class="multi-info-bar">
-            <span class="info-icon" aria-hidden="true">ℹ</span>
-            <span class="info-text">
-              将创建计算组，含 {{ productNames.length }} 个图层：{{
-                outputTags.map(productTagLabel).join(' / ')
-              }}
-            </span>
+        <div class="dialog-body">
+          <div v-if="!linkedLayerId" class="layer-picker">
+            <label class="form-label">选择关联图层 *</label>
+            <AppSelect v-model="pickedLayerId" placeholder="请选择图层目录条目">
+              <option value="" disabled>请选择图层目录条目</option>
+              <option v-for="opt in catalogOptions" :key="opt.id" :value="opt.id">
+                {{ opt.name }}（{{ opt.engine }}）
+              </option>
+            </AppSelect>
+            <p class="info-hint">当前工作流未绑定图层；选择后将作为本次运行的源图层。</p>
           </div>
 
-          <div class="form-row">
-            <label class="form-label">计算组标题</label>
-            <input
-              v-model="groupTitle"
-              type="text"
-              class="form-input"
-              placeholder="显示在已添加图层中的组名"
-            />
+          <div class="mode-selector">
+            <label class="mode-option" :class="{ active: mode === 'default' }">
+              <input v-model="mode" type="radio" value="default" />
+              <span class="mode-label">
+                <span class="mode-name">默认图层</span>
+                <span class="mode-desc">在已添加图层中建计算组；不写入目录产出条目</span>
+              </span>
+            </label>
+            <label class="mode-option" :class="{ active: mode === 'new' }">
+              <input v-model="mode" type="radio" value="new" />
+              <span class="mode-label">
+                <span class="mode-name">新建图层</span>
+                <span class="mode-desc">计算组 + 写入「科研数据 → 模型输出」目录条目</span>
+              </span>
+            </label>
           </div>
 
-          <div class="form-row">
-            <label class="form-label">图层名称（可编辑）</label>
-            <div class="multi-name-list">
-              <div v-for="(_name, idx) in productNames" :key="idx" class="multi-name-row">
-                <span class="multi-name-tag">{{ productTagLabel(outputTags[idx]) }}</span>
-                <input
-                  v-model="productNames[idx]"
-                  type="text"
-                  class="form-input"
-                  :placeholder="`${namePrefix}_${outputTags[idx]}`"
-                />
+          <div v-if="mode === 'default' && existingOutputs.length > 0" class="default-mode-info">
+            <p class="info-label">该源图层已有目录产出条目:</p>
+            <ul class="output-list">
+              <li v-for="output in existingOutputs" :key="output.localId" class="output-item">
+                <span class="output-name">{{ output.name }}</span>
+                <span class="output-group">[{{ output.group }}]</span>
+              </li>
+            </ul>
+          </div>
+
+          <div class="products-form">
+            <div class="multi-info-bar">
+              <Info :size="14" class="info-icon" aria-hidden="true" />
+              <span class="info-text">
+                将创建计算组，含 {{ productNames.length }} 个图层：{{
+                  outputTags.map(productTagLabel).join(' / ')
+                }}
+              </span>
+            </div>
+
+            <div class="form-row">
+              <label class="form-label">计算组标题</label>
+              <input
+                v-model="groupTitle"
+                type="text"
+                class="form-input"
+                placeholder="显示在已添加图层中的组名"
+              />
+            </div>
+
+            <div class="form-row">
+              <label class="form-label">图层名称（可编辑）</label>
+              <div class="multi-name-list">
+                <div v-for="(_name, idx) in productNames" :key="idx" class="multi-name-row">
+                  <span
+                    class="multi-name-tag"
+                    :title="productTagDescription(outputTags[idx] ?? '')"
+                    >{{ productTagLabel(outputTags[idx]) }}</span
+                  >
+                  <input
+                    v-model="productNames[idx]"
+                    type="text"
+                    class="form-input"
+                    :placeholder="`${namePrefix}_${outputTags[idx]}`"
+                  />
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <footer class="dialog-actions">
-        <button class="action-btn cancel" type="button" @click="handleCancel">取消</button>
-        <button
-          class="action-btn confirm"
-          type="button"
-          :disabled="!canConfirm"
-          @click="handleConfirm"
-        >
-          {{ mode === 'default' ? '运行' : '创建并运行' }}
-        </button>
-      </footer>
+        <footer class="dialog-actions">
+          <button class="action-btn cancel" type="button" @click="handleCancel">取消</button>
+          <button
+            class="action-btn confirm"
+            type="button"
+            :disabled="!canConfirm"
+            @click="handleConfirm"
+          >
+            {{ mode === 'default' ? '运行' : '创建并运行' }}
+          </button>
+        </footer>
+      </div>
     </div>
-  </div>
+  </Transition>
 </template>
 
 <style scoped>
@@ -250,7 +259,7 @@ watch(outputTags, (tags) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(2, 8, 18, 0.62);
+  background: var(--surface-1);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
@@ -261,29 +270,29 @@ watch(outputTags, (tags) => {
   display: flex;
   flex-direction: column;
   border-radius: 0.9rem;
-  border: 1px solid rgba(136, 192, 255, 0.22);
-  background: linear-gradient(180deg, rgba(14, 24, 42, 0.96), rgba(8, 16, 30, 0.96));
+  border: 1px solid var(--border-strong);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-2));
   box-shadow: 0 20px 48px rgba(1, 8, 16, 0.5);
 }
 .dialog-header {
   padding: 0.72rem 0.86rem 0.5rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.12);
+  border-bottom: 1px solid var(--border-default);
 }
 .dialog-title {
   margin: 0;
   font-size: 0.82rem;
-  color: #f0f7ff;
+  color: var(--text-strong);
 }
 .dialog-subtitle {
   margin: 0.18rem 0 0;
-  font-size: 0.58rem;
-  color: #7f93a9;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 .dialog-description {
   margin: 0.3rem 0 0;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   line-height: 1.5;
-  color: #8aa0b6;
+  color: var(--text-muted);
   white-space: pre-line;
 }
 .dialog-body {
@@ -294,13 +303,13 @@ watch(outputTags, (tags) => {
   flex-direction: column;
   gap: 0.6rem;
   scrollbar-width: thin;
-  scrollbar-color: rgba(90, 180, 255, 0.28) transparent;
+  scrollbar-color: var(--border-accent) transparent;
 }
 .dialog-body::-webkit-scrollbar {
   width: 4px;
 }
 .dialog-body::-webkit-scrollbar-thumb {
-  background: rgba(90, 180, 255, 0.26);
+  background: var(--border-accent);
   border-radius: 3px;
 }
 .layer-picker {
@@ -309,8 +318,8 @@ watch(outputTags, (tags) => {
   gap: 0.28rem;
   padding: 0.4rem 0.5rem;
   border-radius: 0.52rem;
-  background: rgba(255, 184, 77, 0.06);
-  border: 1px solid rgba(255, 184, 77, 0.2);
+  background: var(--warning-surface);
+  border: 1px solid var(--warning-border);
 }
 .mode-selector {
   display: flex;
@@ -323,23 +332,23 @@ watch(outputTags, (tags) => {
   gap: 0.5rem;
   padding: 0.5rem 0.56rem;
   border-radius: 0.62rem;
-  border: 1px solid rgba(136, 192, 255, 0.12);
-  background: rgba(8, 18, 33, 0.5);
+  border: 1px solid var(--border-default);
+  background: var(--surface-sunken);
   cursor: pointer;
   transition:
     border-color 0.18s ease,
     background 0.18s ease;
 }
 .mode-option:hover {
-  border-color: rgba(136, 192, 255, 0.24);
+  border-color: var(--border-strong);
 }
 .mode-option.active {
-  border-color: rgba(255, 184, 77, 0.4);
-  background: rgba(255, 184, 77, 0.08);
+  border-color: var(--warning-border);
+  background: var(--warning-surface);
 }
 .mode-option input[type='radio'] {
   margin-top: 0.16rem;
-  accent-color: #ffb84d;
+  accent-color: var(--warning);
 }
 .mode-label {
   display: flex;
@@ -348,26 +357,26 @@ watch(outputTags, (tags) => {
   min-width: 0;
 }
 .mode-name {
-  font-size: 0.66rem;
-  color: #eaf3fb;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
   font-weight: 600;
 }
 .mode-desc {
-  font-size: 0.56rem;
-  color: #8aa0b6;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
   line-height: 1.4;
 }
 .default-mode-info {
   padding: 0.4rem 0.5rem;
   border-radius: 0.52rem;
-  background: rgba(8, 18, 33, 0.4);
-  border: 1px solid rgba(136, 192, 255, 0.08);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
 }
 .info-label,
 .info-hint {
   margin: 0;
-  font-size: 0.56rem;
-  color: #8aa0b6;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
   line-height: 1.5;
 }
 .existing-outputs {
@@ -386,13 +395,13 @@ watch(outputTags, (tags) => {
 .output-item {
   display: flex;
   gap: 0.32rem;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
 }
 .output-name {
-  color: #bfd3e6;
+  color: var(--text-secondary);
 }
 .output-group {
-  color: #ffb84d;
+  color: var(--warning);
 }
 .products-form {
   display: flex;
@@ -405,27 +414,27 @@ watch(outputTags, (tags) => {
   gap: 0.22rem;
 }
 .form-label {
-  font-size: 0.58rem;
-  color: #9eb3c8;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 .form-input,
 .form-select {
   padding: 0.36rem 0.44rem;
   border-radius: 0.5rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
-  background: rgba(8, 18, 33, 0.6);
-  color: #eaf3fb;
-  font-size: 0.62rem;
+  border: 1px solid var(--border-default);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
   font-family: inherit;
   outline: none;
   transition: border-color 0.18s ease;
 }
 .form-input:focus,
 .form-select:focus {
-  border-color: rgba(255, 184, 77, 0.4);
+  border-color: var(--warning-border);
 }
 .form-input::placeholder {
-  color: #5a6f85;
+  color: var(--text-faint);
 }
 .group-select-row {
   display: flex;
@@ -441,16 +450,16 @@ watch(outputTags, (tags) => {
   flex: 0 0 auto;
   padding: 0.32rem 0.5rem;
   border-radius: 0.5rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
-  background: rgba(12, 24, 42, 0.6);
-  color: #ffd38a;
-  font-size: 0.56rem;
+  border: 1px solid var(--border-default);
+  background: var(--surface-1);
+  color: var(--accent-warm);
+  font-size: var(--font-size-caption);
   cursor: pointer;
   white-space: nowrap;
   transition: border-color 0.18s ease;
 }
 .toggle-group-btn:hover {
-  border-color: rgba(255, 184, 77, 0.4);
+  border-color: var(--warning-border);
 }
 .multi-info-bar {
   display: flex;
@@ -462,12 +471,12 @@ watch(outputTags, (tags) => {
   border: 1px solid rgba(120, 255, 160, 0.18);
 }
 .multi-info-bar .info-icon {
-  font-size: 0.72rem;
-  color: #9ff8cf;
+  font-size: var(--font-size-caption);
+  color: var(--success);
 }
 .multi-info-bar .info-text {
-  font-size: 0.56rem;
-  color: #9ff8cf;
+  font-size: var(--font-size-caption);
+  color: var(--success);
   line-height: 1.4;
 }
 .multi-name-list {
@@ -486,8 +495,8 @@ watch(outputTags, (tags) => {
   border-radius: 0.32rem;
   border: 1px solid rgba(120, 255, 160, 0.3);
   background: rgba(40, 180, 90, 0.12);
-  color: #9ff8cf;
-  font-size: 0.54rem;
+  color: var(--success);
+  font-size: var(--font-size-caption);
   font-weight: 600;
   letter-spacing: 0.02em;
   min-width: 3rem;
@@ -502,15 +511,15 @@ watch(outputTags, (tags) => {
   justify-content: flex-end;
   gap: 0.4rem;
   padding: 0.5rem 0.86rem 0.62rem;
-  border-top: 1px solid rgba(136, 192, 255, 0.12);
+  border-top: 1px solid var(--border-default);
 }
 .action-btn {
   padding: 0.4rem 0.78rem;
   border-radius: 999px;
-  border: 1px solid rgba(136, 192, 255, 0.2);
-  background: rgba(8, 18, 33, 0.6);
-  color: #bfd3e6;
-  font-size: 0.62rem;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
   cursor: pointer;
   transition:
     border-color 0.18s ease,
@@ -518,21 +527,58 @@ watch(outputTags, (tags) => {
     color 0.18s ease;
 }
 .action-btn.cancel:hover {
-  border-color: rgba(136, 192, 255, 0.36);
-  color: #eaf3fb;
+  border-color: var(--border-strong);
+  color: var(--text-primary);
 }
 .action-btn.confirm {
-  border-color: rgba(255, 184, 77, 0.36);
-  background: rgba(255, 184, 77, 0.14);
-  color: #ffd38a;
+  border-color: var(--warning-border);
+  background: var(--warning-surface);
+  color: var(--accent-warm);
 }
 .action-btn.confirm:hover:not(:disabled) {
-  border-color: rgba(255, 184, 77, 0.56);
-  background: rgba(255, 184, 77, 0.22);
-  color: #fff0d4;
+  border-color: var(--warning-border);
+  background: var(--warning-border);
+  color: var(--accent-warm);
 }
 .action-btn.confirm:disabled {
   opacity: 0.42;
   cursor: not-allowed;
+}
+
+/* ── 对话框出入场动画 ──────────────────────────────────────── */
+.run-dialog-fade-enter-active {
+  transition: opacity 0.2s ease;
+}
+.run-dialog-fade-enter-active .run-dialog {
+  transition:
+    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.2s ease;
+}
+.run-dialog-fade-leave-active {
+  transition: opacity 0.16s ease;
+}
+.run-dialog-fade-leave-active .run-dialog {
+  transition:
+    transform 0.16s ease,
+    opacity 0.16s ease;
+}
+.run-dialog-fade-enter-from,
+.run-dialog-fade-leave-to {
+  opacity: 0;
+}
+.run-dialog-fade-enter-from .run-dialog {
+  transform: scale(0.96) translateY(8px);
+  opacity: 0;
+}
+.run-dialog-fade-leave-to .run-dialog {
+  transform: scale(0.98);
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-dialog-fade-enter-active,
+  .run-dialog-fade-leave-active {
+    transition: opacity 0.01s ease;
+  }
 }
 </style>

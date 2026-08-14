@@ -195,7 +195,7 @@ def test_http_err_unknown_reraises():
 
 def _setup_api_key_env(monkeypatch, key_name="tianditu", key_value="fake-key-123"):
     """为 test_api_key 准备配置环境。"""
-    import app.services.config_service as svc
+    import app.services.config_api_keys as svc
 
     monkeypatch.setattr(svc, "get_effective_api_key", lambda _name: key_value)
     # repo mock：update_test_status 无副作用
@@ -227,7 +227,7 @@ def test_test_api_key_unexpected_error_logs_and_returns_failure(monkeypatch, cap
         patch("app.core.ssrf.validate_outbound_url", return_value=None),
         patch("httpx.AsyncClient.get", side_effect=RuntimeError("unexpected boom")),
     ):
-        with caplog.at_level(logging.ERROR, logger="app.services.config_service"):
+        with caplog.at_level(logging.ERROR, logger="app.services.config_api_keys"):
             ok, msg = asyncio.run(svc.test_api_key("tianditu"))
 
     assert ok is False
@@ -238,5 +238,5 @@ def test_test_api_key_unexpected_error_logs_and_returns_failure(monkeypatch, cap
     assert any(
         "unexpected boom" in r.getMessage() or r.levelno >= logging.ERROR
         for r in caplog.records
-        if r.name == "app.services.config_service"
+        if r.name == "app.services.config_api_keys"
     )

@@ -4,11 +4,13 @@
  * 全部配置完成且校验通过后才允许提交导入。
  */
 import { computed, ref, watch } from 'vue'
+import { X } from '../../components/ui/icons'
 import { listCrs } from '@/services/crs'
 import { fetchCrsOptionsExpanded } from '@/services/data-import'
 import type { CRSOption } from '@/services/crs'
 import { detectRasterInvalidValues } from '../core/api'
 import { DATA_COPY } from '../../ui-copy'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import {
   buildImportTemporalPayload,
   guessTimeLabelFromFilename,
@@ -332,7 +334,9 @@ function handleCancel() {
           <h3>科学栅格导入配置</h3>
           <p class="sub">{{ fileName }}{{ format ? ` · ${format}` : '' }}</p>
         </div>
-        <button type="button" class="x-btn" :disabled="importing" @click="handleCancel">✕</button>
+        <button type="button" class="x-btn" :disabled="importing" @click="handleCancel">
+          <X :size="14" aria-hidden="true" />
+        </button>
       </header>
 
       <section class="sci-section">
@@ -368,9 +372,10 @@ function handleCancel() {
         <div class="grid-2">
           <label>
             网格预设
-            <select v-model="gridPreset">
-              <option v-for="p in gridPresets" :key="p.id" :value="p.id">{{ p.label }}</option>
-            </select>
+            <AppSelect
+              v-model="gridPreset"
+              :options="gridPresets.map((p) => ({ label: p.label, value: p.id }))"
+            />
           </label>
           <label>
             源坐标系
@@ -380,22 +385,26 @@ function handleCancel() {
               placeholder="搜索 EPSG / 名称（全量 UTM/GK）"
               style="margin-bottom: 0.35rem"
             />
-            <select v-model="sourceCrs">
-              <option v-for="c in filteredCrsOptions" :key="c.code" :value="c.code">
-                {{ c.code }} — {{ c.label }}
-              </option>
-            </select>
+            <AppSelect
+              v-model="sourceCrs"
+              :options="
+                filteredCrsOptions.map((c) => ({ label: `${c.code} — ${c.label}`, value: c.code }))
+              "
+            />
           </label>
         </div>
         <p v-if="shapeHint" class="hint">当前选中变量尺寸：{{ shapeHint }}（行×列）</p>
         <p v-if="transposeHint" class="hint">{{ transposeHint }}</p>
         <label>
           轴序（XY）
-          <select v-model="axisOrder">
-            <option value="auto">自动（推荐，按网格预设校正颠倒）</option>
-            <option value="as_is">保持原样</option>
-            <option value="transpose">强制转置（等同 swap_xy）</option>
-          </select>
+          <AppSelect
+            v-model="axisOrder"
+            :options="[
+              { label: '自动（推荐，按网格预设校正颠倒）', value: 'auto' },
+              { label: '保持原样', value: 'as_is' },
+              { label: '强制转置（等同 swap_xy）', value: 'transpose' },
+            ]"
+          />
         </label>
         <p class="hint">轴序与 swap_xy 一致：transpose = 交换行列；EASE 全球图拉伸时优先用自动。</p>
         <div class="grid-4">
@@ -446,11 +455,14 @@ function handleCancel() {
         </label>
         <label>
           同名图层
-          <select v-model="conflictPolicy">
-            <option value="overwrite">覆盖已导入的同名图层（不额外占配额，推荐）</option>
-            <option value="rename">另存为新图层（需有剩余配额）</option>
-            <option value="error">若已存在则报错</option>
-          </select>
+          <AppSelect
+            v-model="conflictPolicy"
+            :options="[
+              { label: '覆盖已导入的同名图层（不额外占配额，推荐）', value: 'overwrite' },
+              { label: '另存为新图层（需有剩余配额）', value: 'rename' },
+              { label: '若已存在则报错', value: 'error' },
+            ]"
+          />
         </label>
       </section>
 
@@ -511,7 +523,7 @@ function handleCancel() {
   position: fixed;
   inset: 0;
   z-index: 90;
-  background: rgba(2, 8, 16, 0.62);
+  background: var(--surface-1);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -522,11 +534,11 @@ function handleCancel() {
   max-height: min(88vh, 900px);
   overflow: auto;
   border-radius: 0.7rem;
-  border: 1px solid rgba(136, 192, 255, 0.22);
-  background: linear-gradient(180deg, rgba(12, 26, 42, 0.98), rgba(6, 14, 24, 0.98));
+  border: 1px solid var(--border-strong);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-2));
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
   padding: 1rem 1.1rem 0.9rem;
-  color: #d7e6f5;
+  color: var(--text-primary);
 }
 .sci-head {
   display: flex;
@@ -541,13 +553,13 @@ function handleCancel() {
 }
 .sub {
   margin: 0.2rem 0 0;
-  font-size: 0.72rem;
-  color: #8aa0b4;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 .x-btn {
   border: 0;
   background: transparent;
-  color: #9ab0c4;
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 1rem;
 }
@@ -555,15 +567,15 @@ function handleCancel() {
   margin-bottom: 0.85rem;
   padding: 0.65rem 0.7rem;
   border-radius: 0.5rem;
-  border: 1px solid rgba(136, 192, 255, 0.12);
-  background: rgba(4, 12, 22, 0.45);
+  border: 1px solid var(--border-default);
+  background: var(--surface-raised);
 }
 .sec-title {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.74rem;
-  color: #9ec4e0;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
   margin-bottom: 0.5rem;
 }
 .sec-actions {
@@ -573,9 +585,9 @@ function handleCancel() {
 .link-btn {
   border: 0;
   background: transparent;
-  color: #7ee0a8;
+  color: var(--success);
   cursor: pointer;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
 }
 .var-list {
   list-style: none;
@@ -591,20 +603,20 @@ function handleCancel() {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  font-size: 0.74rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 .var-list .meta {
-  color: #8aa0b4;
-  font-size: 0.66rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
 }
 .temporal-modes {
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem 0.9rem;
   margin-bottom: 0.45rem;
-  font-size: 0.72rem;
-  color: #c5d7ea;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
 }
 .temporal-modes label {
   display: inline-flex;
@@ -612,8 +624,8 @@ function handleCancel() {
   align-items: center;
   gap: 0.28rem;
   cursor: pointer;
-  font-size: 0.72rem;
-  color: #c5d7ea;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
 }
 .grid-2,
 .grid-4 {
@@ -631,23 +643,23 @@ label {
   display: flex;
   flex-direction: column;
   gap: 0.18rem;
-  font-size: 0.64rem;
-  color: #8aa0b4;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 input,
 select {
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  border: 1px solid var(--border-default);
   border-radius: 0.34rem;
   padding: 0.3rem 0.4rem;
-  background: rgba(4, 12, 23, 0.75);
-  color: #d8e6f5;
+  background: var(--surface-1);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
 }
 .hint {
   margin: 0.4rem 0 0;
-  font-size: 0.64rem;
-  color: #8aa0b4;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 .detect-row {
   display: flex;
@@ -660,7 +672,7 @@ select {
   margin: 0;
 }
 .hint.bad {
-  color: #ffb0b0;
+  color: var(--danger);
 }
 .time-row {
   margin-top: 0.45rem;
@@ -671,8 +683,8 @@ select {
   flex-direction: row;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.7rem;
-  color: #c5d8ea;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
 }
 .sci-foot {
   display: flex;
@@ -685,18 +697,18 @@ select {
   border-radius: 0.4rem;
   padding: 0.42rem 0.85rem;
   font: inherit;
-  font-size: 0.74rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 .ghost {
-  border: 1px solid rgba(136, 192, 255, 0.22);
+  border: 1px solid var(--border-strong);
   background: transparent;
-  color: #c5d8ea;
+  color: var(--text-primary);
 }
 .primary {
   border: 1px solid rgba(126, 224, 168, 0.4);
-  background: rgba(24, 70, 48, 0.65);
-  color: #d6ffe8;
+  background: var(--surface-1);
+  color: var(--success-surface);
 }
 .primary:disabled,
 .ghost:disabled {

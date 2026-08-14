@@ -5,15 +5,17 @@
  * 不依赖 store 闭包，仅依赖 catalog 静态表与类型定义。
  * index.ts 经 re-export 保持既有引用兼容。
  */
-import type { RuntimeLayerDescriptor, WorkflowEvent } from '../../services/runtime-api'
+import type { LayerDescriptor, WorkflowEvent } from '../../services/runtime-api'
 import { formatWorkflowEventLine } from '../../utils/workflow-event-label'
 import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
+import { isWeatherEngineCatalogId } from './weather-session'
 import type {
   ActiveLayer,
   JobLayerItem,
   JobStatus,
   LayerCatalogItem,
   LayerHotspot,
+  LayerSource,
   RuntimeLayerLibraryItem,
 } from './types'
 
@@ -167,12 +169,13 @@ export function formatClockLabel(value?: string | null) {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
+/** BE/历史中文类别 → FE LAYER_CATEGORIES.id（英文） */
 const CATEGORY_ALIASES: Record<string, string> = {
-  weather: '气象场',
-  climate: '气候产品',
+  气象场: 'weather',
+  气候产品: 'climate',
 }
 
-export function resolveCategory(descriptor: RuntimeLayerDescriptor, fallbackCategory?: string) {
+export function resolveCategory(descriptor: LayerDescriptor, fallbackCategory?: string) {
   const raw = descriptor.category || fallbackCategory
   const category = raw ? (CATEGORY_ALIASES[raw] ?? raw) : undefined
   if (category && CATEGORY_INDEX_BY_ID.has(category)) {
@@ -182,7 +185,7 @@ export function resolveCategory(descriptor: RuntimeLayerDescriptor, fallbackCate
 }
 
 export function buildUpdateLabel(
-  descriptor: RuntimeLayerDescriptor,
+  descriptor: LayerDescriptor,
   fallback?: Pick<LayerCatalogItem, 'updateLabel'> | null,
 ) {
   if (fallback?.updateLabel) return fallback.updateLabel
@@ -194,7 +197,7 @@ export function buildUpdateLabel(
 }
 
 export function buildSourceLabel(
-  descriptor: RuntimeLayerDescriptor,
+  descriptor: LayerDescriptor,
   fallback?: Pick<LayerCatalogItem, 'sourceLabel'> | null,
 ) {
   if (fallback?.sourceLabel) return fallback.sourceLabel
@@ -203,9 +206,37 @@ export function buildSourceLabel(
   return `${sourceType}${engine}`
 }
 
-export function buildRuntimeLayerLibraryItem(
-  descriptor: RuntimeLayerDescriptor,
-): RuntimeLayerLibraryItem {
+/**
+ * X1: 将后端 LayerSourceDef 转换为前端 LayerSource。
+ *
+ * 关键映射：``source_id`` → ``id``（X1 字段重命名）。
+ * 运行时字段（runReadiness 等） intentionally omitted — 由 catalog-runtime.ts 注入。
+ */
+function transformBackendSource(src: {
+  source_id: string
+  name: string
+  description: string
+  url_template: string
+  needs_auth: boolean
+  needs_backend_transform: boolean
+  coord_sys: string
+  update_frequency: string
+  attribution?: string | null
+}): LayerSource {
+  return {
+    id: src.source_id,
+    name: src.name,
+    description: src.description,
+    urlTemplate: src.url_template,
+    needsAuth: src.needs_auth,
+    needsBackendTransform: src.needs_backend_transform,
+    coordSys: src.coord_sys as LayerSource['coordSys'],
+    updateFrequency: src.update_frequency,
+    attribution: src.attribution ?? undefined,
+  }
+}
+
+export function buildRuntimeLayerLibraryItem(descriptor: LayerDescriptor): RuntimeLayerLibraryItem {
   const fallback = getStaticLayerLibraryItem(descriptor.layer_id)
   const category = resolveCategory(descriptor, fallback?.category)
   const categoryMeta = LAYER_CATEGORIES.find((item) => item.id === category)
@@ -216,22 +247,58 @@ export function buildRuntimeLayerLibraryItem(
   const subCategory =
     (descriptorSub as RuntimeLayerLibraryItem['subCategory'] | undefined) ?? fallback?.subCategory
 
+  // X1: 优先使用后端 presentation 下发的 UI 呈现字段，静态 LAYER_LIBRARY 仅作兜底
+  const pres = descriptor.presentation
+  const hasPres = pres && typeof pres === 'object'
+  const presValue = <T>(v: T | null | undefined): T | undefined => (v != null ? v : undefined)
+
+  // X1: sources 优先从后端 descriptor 取，静态 fallback 仅在后端未下发时兜底
+  const backendSources = descriptor.sources?.length
+    ? descriptor.sources.map(transformBackendSource)
+    : undefined
+
   return {
     catalogId: descriptor.layer_id,
     name: descriptor.display_name,
     category,
     subCategory,
     description: descriptor.description,
-    metricLabel: fallback?.metricLabel ?? '主指标',
-    metricUnit: fallback?.metricUnit ?? '',
-    metricPrecision: fallback?.metricPrecision ?? 1,
-    updateLabel: buildUpdateLabel(descriptor, fallback ?? null),
-    sourceLabel: buildSourceLabel(descriptor, fallback ?? null),
-    accentColor: fallback?.accentColor ?? categoryMeta?.accentColor ?? '#67d4ff',
-    accentGlow: fallback?.accentGlow ?? 'rgba(103, 212, 255, 0.28)',
-    chipTone: fallback?.chipTone ?? categoryMeta?.chipTone ?? 'rgba(103, 212, 255, 0.16)',
-    sources: fallback?.sources ?? [],
-    isAdminBoundary: fallback?.isAdminBoundary,
+    metricLabel:
+      (hasPres ? presValue(pres.metric_label) : undefined) ?? fallback?.metricLabel ?? '主指标',
+    metricUnit: (hasPres ? presValue(pres.metric_unit) : undefined) ?? fallback?.metricUnit ?? '',
+    metricPrecision:
+      (hasPres ? presValue(pres.metric_precision) : undefined) ?? fallback?.metricPrecision ?? 1,
+    updateLabel:
+      (hasPres ? presValue(pres.update_label) : undefined) ??
+      buildUpdateLabel(descriptor, fallback ?? null),
+    sourceLabel:
+      (hasPres ? presValue(pres.source_label) : undefined) ??
+      buildSourceLabel(descriptor, fallback ?? null),
+    accentColor:
+      (hasPres ? presValue(pres.accent_color) : undefined) ??
+      fallback?.accentColor ??
+      categoryMeta?.accentColor ??
+      '#67d4ff',
+    accentGlow:
+      (hasPres ? presValue(pres.accent_glow) : undefined) ??
+      fallback?.accentGlow ??
+      'rgba(103, 212, 255, 0.28)',
+    chipTone:
+      (hasPres ? presValue(pres.chip_tone) : undefined) ??
+      fallback?.chipTone ??
+      categoryMeta?.chipTone ??
+      'rgba(103, 212, 255, 0.16)',
+    // X1: sources 从后端 descriptor 派生，fallback 兜底
+    sources: backendSources ?? fallback?.sources ?? [],
+    // X1: 合并组字段从后端 descriptor 派生，fallback 兜底
+    isMergedGroup: descriptor.is_merged_group ?? fallback?.isMergedGroup ?? false,
+    members: descriptor.members ?? fallback?.members,
+    mergedInto: descriptor.merged_into ?? fallback?.mergedInto,
+    isAdminBoundary: descriptor.is_admin_boundary ?? fallback?.isAdminBoundary,
+    // X1: 课题组元数据从后端 descriptor 派生
+    dataOwner: descriptor.data_owner ?? fallback?.dataOwner,
+    temporalCoverage: descriptor.temporal_coverage ?? fallback?.temporalCoverage,
+    sourceReference: descriptor.source_reference ?? fallback?.sourceReference,
     engine: descriptor.engine,
     sourceType: descriptor.source_type,
     renderType: descriptor.render_type,
@@ -346,6 +413,31 @@ export function buildAvailabilityState(
     }
   }
 
+  // 天气瓦片层：不依赖 workflow job，禁止回落到「待运行」
+  if (isWeatherEngineCatalogId(layer.catalogId, null)) {
+    return {
+      state: 'partial' as const,
+      label: '可查看',
+      description: item.runReadinessSummary ?? '天气瓦片层，显示后由 tile manager 加载。',
+    }
+  }
+
+  // 已有真实结果 / 导入产物 / 地图载荷：禁止仍显示「待运行」
+  const hasMapPayload = Boolean(jobLayer?.mapLayerPayload)
+  const hasImportedData =
+    layer.dataState === 'imported' || Boolean(layer.importedRaster) || Boolean(layer.importedVector)
+  if (layer.dataState === 'real' || hasMapPayload || hasImportedData) {
+    return {
+      state: hasImportedData || hasMapPayload ? ('ready' as const) : ('partial' as const),
+      label: hasImportedData || hasMapPayload ? '完整数据' : '等待结果',
+      description:
+        item.runReadinessSummary ??
+        (hasImportedData || hasMapPayload
+          ? '图层数据已就绪。'
+          : '图层已有运行结果，等待刷新或重新运行。'),
+    }
+  }
+
   if (item.backendStatus === 'sample') {
     return {
       state: 'partial' as const,
@@ -366,8 +458,8 @@ export function buildAvailabilityState(
   }
 
   return {
-    state: layer.dataState === 'real' ? ('partial' as const) : ('empty' as const),
-    label: layer.dataState === 'real' ? '等待结果' : '待运行',
+    state: 'empty' as const,
+    label: '待运行',
     description: item.runReadinessSummary ?? '图层已加入工作区，可按需运行工作流。',
   }
 }

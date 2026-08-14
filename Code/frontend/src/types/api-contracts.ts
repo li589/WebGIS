@@ -160,6 +160,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/users/{user_id}/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List User Permissions */
+        get: operations["list_user_permissions_auth_users__user_id__permissions_get"];
+        /** Set User Permissions */
+        put: operations["set_user_permissions_auth_users__user_id__permissions_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/users/{user_id}/permissions/{permission_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Permission */
+        delete: operations["delete_permission_auth_users__user_id__permissions__permission_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/users/{user_id}/permission-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Permission Mode */
+        patch: operations["update_permission_mode_auth_users__user_id__permission_mode_patch"];
+        trace?: never;
+    };
     "/layers": {
         parameters: {
             query?: never;
@@ -169,6 +221,52 @@ export interface paths {
         };
         /** List Layers */
         get: operations["list_layers_layers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/layers/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Layer Categories
+         * @description X1: 后端下发图层分类定义（id / name / icon / accent_color / chip_tone）。
+         *
+         *     前端运行时消费此端点获取分类样式，消除前后端分类定义双写。
+         *     前端 ``LAYER_CATEGORIES`` 静态表仅在 API 不可用时作离线兜底。
+         */
+        get: operations["list_layer_categories_layers_categories_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/layers/{layer_id}/online-temporal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Layer Online Temporal
+         * @description 返回图层的在线时间获取能力与可获取范围。
+         *
+         *     前端时间轴据此判断哪些时间点可在线获取（标 'fetchable' 段），
+         *     以及获取参数（步长、预取深度、队列标签）。
+         */
+        get: operations["get_layer_online_temporal_layers__layer_id__online_temporal_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -268,7 +366,7 @@ export interface paths {
         };
         /**
          * List Overlays
-         * @description 列出所有已注册的叠加图层 ID（供前端发现可用 overlay 图层）。
+         * @description 列出当前用户可访问的叠加图层 ID（供前端发现可用 overlay 图层）。
          */
         get: operations["list_overlays_overlays_get"];
         put?: never;
@@ -288,7 +386,7 @@ export interface paths {
         };
         /**
          * Get Overlays In Viewport
-         * @description 返回与视口相交的 overlay layer_ids（服务端空间索引查询）。
+         * @description 返回与视口相交且当前用户可访问的 overlay layer_ids。
          *
          *     优先用 spatial.sqlite + R*Tree（``ST_Intersects``）；扩展不可用或表空时
          *     回退到逐层读 ``bounds.json`` 做 AABB 相交（与原前端 O(N) 过滤等价）。
@@ -344,6 +442,7 @@ export interface paths {
          *
          *     可选 status 过滤与 limit 取最近 N 条（按创建时间倒序），
          *     供前端启动恢复（含"最近成功 run 产物自动恢复"）与跨会话状态同步使用。
+         *     非 admin 仅可见本人 run（无 user_id 的旧 run 对非 admin 不可见）。
          */
         get: operations["list_workflow_runs_workflow_runs_get"];
         put?: never;
@@ -453,11 +552,60 @@ export interface paths {
          * Materialize Workflow Map Layers
          * @description Publish algorithm science products as imported overlays for map display.
          *
-         *     Used when a run completed with file-only product refs (no map_layer), or to
-         *     re-publish after code updates without re-running the inversion.
-         *     Also allowed while ``running`` so block mats can progressively appear.
+         *     L2: 业务逻辑已下沉到 python_provider_result_builder.materialize_map_layers。
          */
         post: operations["materialize_workflow_map_layers_workflow_runs__run_id__materialize_map_layers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/analysis/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Analysis Tools */
+        get: operations["get_analysis_tools_analysis_tools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/analysis/tools/{tool_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Analysis Tool */
+        get: operations["get_analysis_tool_analysis_tools__tool_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/analysis/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Analysis Run */
+        post: operations["create_analysis_run_analysis_runs_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -502,6 +650,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runtime/resources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Runtime Resources
+         * @description 返回后端进程与各子系统资源占用（CPU / 内存 / 磁盘）。
+         *
+         *     数据由 psutil 轻量采样（TTL 5s 缓存），前端资源面板低频轮询即可。
+         */
+        get: operations["get_runtime_resources_runtime_resources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runtime/metrics": {
         parameters: {
             query?: never;
@@ -511,7 +681,7 @@ export interface paths {
         };
         /**
          * Get Runtime Metrics
-         * @description 返回各端点的 P50/P95 请求耗时统计（按天聚合，从 Redis 读取）。
+         * @description 返回各节点的 P50/P95 请求耗时统计（按天聚合，从 Redis 读取）。
          *
          *     Query params:
          *         date: YYYY-MM-DD 格式日期，默认当天（UTC）。
@@ -582,7 +752,7 @@ export interface paths {
         /**
          * Update Provider Api Config
          * @deprecated
-         * @description 已移除：运行时密钥/配置请改用 /config/api-keys* 与 /config/weather/providers*。
+         * @description 已移除：运行时密钥配置请改用 /config/api-keys* 与 /config/weather/providers*。
          */
         post: operations["update_provider_api_config_runtime_api_config__provider__post"];
         delete?: never;
@@ -807,11 +977,7 @@ export interface paths {
         put?: never;
         /**
          * Trigger Open Meteo Sync
-         * @description 手动触发 Open-Meteo 数据同步。
-         *
-         *     优先 Celery 异步派发；broker 卡住/超时时降级为本地后台线程。
-         *     可选 body.domains 临时覆盖同步域（白名单校验，不改环境变量）。
-         *     Docker/compose 不可用时返回 503 sync_unavailable。
+         * @description 手动触发 Open-Meteo 数据同步（L1: 业务逻辑已抽取到 weather_sync_service）。
          */
         post: operations["trigger_open_meteo_sync_weather_sync_trigger_post"];
         delete?: never;
@@ -2722,6 +2888,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config/cache/invalidate-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Invalidate Template Caches
+         * @description P1-3：清除 workflow_request_resolver 的 lru_cache（module templates / dataset paths / provider helpers）。
+         *
+         *     在以下场景需调用：
+         *     - 修改了 MODULE_REQUEST_TEMPLATES 后（避免重启 FastAPI）
+         *     - 修改了 provider dataset 配置后
+         *     - admin 主动刷新缓存
+         */
+        post: operations["invalidate_template_caches_config_cache_invalidate_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workflow-definitions/node-templates": {
         parameters: {
             query?: never;
@@ -2798,7 +2989,7 @@ export interface paths {
         };
         /**
          * List Definitions
-         * @description 列出所有工作流定义（system + user）。
+         * @description 列出所有工作流定义（system + user）。鉴权开启时匿名 fail-closed；非 admin 按 ACL 过滤。
          */
         get: operations["list_definitions_workflow_definitions_get"];
         put?: never;
@@ -3381,6 +3572,120 @@ export interface components {
             /** Priority */
             priority?: number | null;
         };
+        /** AnalysisMapPoint */
+        AnalysisMapPoint: {
+            /** Lng */
+            lng: number;
+            /** Lat */
+            lat: number;
+        };
+        /** AnalysisRunRequest */
+        AnalysisRunRequest: {
+            /** Tool Id */
+            tool_id: string;
+            /** Layer Id */
+            layer_id: string;
+            /** Overlay Layer Id */
+            overlay_layer_id?: string | null;
+            /** Zones Overlay Layer Id */
+            zones_overlay_layer_id?: string | null;
+            /** Zones Geojson Path */
+            zones_geojson_path?: string | null;
+            /** Geojson Path */
+            geojson_path?: string | null;
+            map_point?: components["schemas"]["AnalysisMapPoint"] | null;
+            bbox?: components["schemas"]["BoundingBox"] | null;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Show On Map
+             * @default true
+             */
+            show_on_map: boolean;
+        };
+        /** AnalysisToolDescriptor */
+        AnalysisToolDescriptor: {
+            /** Tool Id */
+            tool_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Category
+             * @default analysis
+             */
+            category: string;
+            /** Input Kinds */
+            input_kinds?: string[];
+            /** Param Schema */
+            param_schema?: components["schemas"]["AnalysisToolParamField"][];
+            /** Workflow Template Id */
+            workflow_template_id: string;
+            /** Outputs */
+            outputs?: string[];
+            /**
+             * Resource Profile
+             * @default standard
+             */
+            resource_profile: string;
+            /**
+             * Concurrency Key
+             * @default layer_tool
+             */
+            concurrency_key: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Disabled Reason */
+            disabled_reason?: string | null;
+        };
+        /** AnalysisToolListResponse */
+        AnalysisToolListResponse: {
+            /** Layer Id */
+            layer_id?: string | null;
+            /**
+             * Layer Kind
+             * @default any
+             */
+            layer_kind: string;
+            /** Items */
+            items?: components["schemas"]["AnalysisToolDescriptor"][];
+        };
+        /** AnalysisToolParamField */
+        AnalysisToolParamField: {
+            /** Key */
+            key: string;
+            /**
+             * Type
+             * @default string
+             */
+            type: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /** Description */
+            description?: string | null;
+            /** Default */
+            default?: unknown;
+            /** Min */
+            min?: number | null;
+            /** Max */
+            max?: number | null;
+            /** Unit */
+            unit?: string | null;
+            /** Options */
+            options?: string[] | null;
+        };
         /** ApiKeyDeletedResponse */
         ApiKeyDeletedResponse: {
             /** Deleted */
@@ -3730,10 +4035,10 @@ export interface components {
             password: string;
             /**
              * Role
-             * @default operator
+             * @default standard
              * @enum {string}
              */
-            role: "admin" | "operator" | "viewer";
+            role: "admin" | "standard" | "demo";
         };
         /** DataCacheEntry */
         DataCacheEntry: {
@@ -3993,6 +4298,22 @@ export interface components {
          * @enum {string}
          */
         ExecutionStatus: "accepted" | "queued" | "running" | "succeeded" | "failed" | "cancelled" | "retry_pending";
+        /** ExportBBox */
+        ExportBBox: {
+            /** West */
+            west: number;
+            /** South */
+            south: number;
+            /** East */
+            east: number;
+            /** North */
+            north: number;
+            /**
+             * Crs
+             * @default EPSG:4326
+             */
+            crs: string;
+        };
         /** ExportBatchBody */
         ExportBatchBody: {
             /** Layer Ids */
@@ -4014,6 +4335,13 @@ export interface components {
             async_mode: boolean;
             /** Time */
             time?: string | null;
+            /** Times */
+            times?: string[] | null;
+            bbox?: components["schemas"]["ExportBBox"] | null;
+            /** Output Crs */
+            output_crs?: string | null;
+            /** Fields */
+            fields?: string[] | null;
         };
         /** ExportBody */
         ExportBody: {
@@ -4033,6 +4361,11 @@ export interface components {
             time?: string | null;
             /** Times */
             times?: string[] | null;
+            bbox?: components["schemas"]["ExportBBox"] | null;
+            /** Output Crs */
+            output_crs?: string | null;
+            /** Fields */
+            fields?: string[] | null;
         };
         /**
          * ExportTaskStatusResponse
@@ -4462,6 +4795,31 @@ export interface components {
         LayerCatalogResponse: {
             /** Items */
             items: components["schemas"]["LayerDescriptor"][];
+            /** Categories */
+            categories?: components["schemas"]["LayerCategoryDef"][];
+        };
+        /**
+         * LayerCategoryDef
+         * @description X1: 图层分类定义 — 后端下发，消除前后端分类双写。
+         */
+        LayerCategoryDef: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Icon */
+            icon?: string | null;
+            /** Accent Color */
+            accent_color?: string | null;
+            /** Chip Tone */
+            chip_tone?: string | null;
+            /** Sub Categories */
+            sub_categories?: string[];
+        };
+        /** LayerCategoryResponse */
+        LayerCategoryResponse: {
+            /** Items */
+            items: components["schemas"]["LayerCategoryDef"][];
         };
         /** LayerDescriptor */
         LayerDescriptor: {
@@ -4542,6 +4900,24 @@ export interface components {
             source_reference?: string | null;
             /** Sub Category */
             sub_category?: string | null;
+            presentation?: components["schemas"]["LayerPresentation"];
+            /** Sources */
+            sources?: components["schemas"]["LayerSourceDef"][];
+            /** Merged Into */
+            merged_into?: string | null;
+            /**
+             * Is Merged Group
+             * @default false
+             */
+            is_merged_group: boolean;
+            /** Members */
+            members?: string[];
+            /**
+             * Is Admin Boundary
+             * @default false
+             */
+            is_admin_boundary: boolean;
+            online_temporal?: components["schemas"]["OnlineTemporalCapability"] | null;
         };
         /** LayerDisplayNameBody */
         LayerDisplayNameBody: {
@@ -4549,10 +4925,82 @@ export interface components {
             display_name: string;
         };
         /**
+         * LayerPresentation
+         * @description X1: 图层 UI 呈现元数据 — 后端下发，前端消费的唯一真源。
+         *
+         *     将原前端 ``LAYER_LIBRARY`` 中的 UI 样式字段（accentColor / accentGlow /
+         *     chipTone / metricLabel / metricUnit / metricPrecision / updateLabel /
+         *     sourceLabel）迁移到后端种子 JSON，经 ``GET /layers`` 下发。
+         *     前端 ``LAYER_LIBRARY`` 仅在 API 不可用时作离线兜底。
+         */
+        LayerPresentation: {
+            /** Accent Color */
+            accent_color?: string | null;
+            /** Accent Glow */
+            accent_glow?: string | null;
+            /** Chip Tone */
+            chip_tone?: string | null;
+            /** Metric Label */
+            metric_label?: string | null;
+            /** Metric Unit */
+            metric_unit?: string | null;
+            /** Metric Precision */
+            metric_precision?: number | null;
+            /** Update Label */
+            update_label?: string | null;
+            /** Source Label */
+            source_label?: string | null;
+        };
+        /**
          * LayerRenderType
          * @enum {string}
          */
         LayerRenderType: "raster" | "vector" | "point" | "heatmap";
+        /**
+         * LayerSourceDef
+         * @description X1: 图层数据源定义 — 从前端 catalog.ts 迁移到后端 JSON。
+         *
+         *     单源图层含 1 项；合并组虚拟条目含多个成员源。
+         *     前端通过 codegen 或运行时 API 消费，``source_id`` 映射为前端 ``LayerSource.id``。
+         */
+        LayerSourceDef: {
+            /** Source Id */
+            source_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Url Template
+             * @default
+             */
+            url_template: string;
+            /**
+             * Needs Auth
+             * @default false
+             */
+            needs_auth: boolean;
+            /**
+             * Needs Backend Transform
+             * @default false
+             */
+            needs_backend_transform: boolean;
+            /**
+             * Coord Sys
+             * @default EPSG:4326
+             */
+            coord_sys: string;
+            /**
+             * Update Frequency
+             * @default
+             */
+            update_frequency: string;
+            /** Attribution */
+            attribution?: string | null;
+        };
         /**
          * LayerSourceType
          * @enum {string}
@@ -4710,6 +5158,49 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /**
+         * OnlineTemporalCapability
+         * @description 在线时间获取能力声明。
+         *
+         *     标记图层支持"用户选时间点 → 自动在线获取 → 动态刷新"流程。
+         *     None 表示该图层不支持在线历史时间获取。
+         */
+        OnlineTemporalCapability: {
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /** Coverage Start */
+            coverage_start?: string | null;
+            /** Coverage End */
+            coverage_end?: string | null;
+            /**
+             * Native Step
+             * @default 1d
+             */
+            native_step: string;
+            /**
+             * Max Batch
+             * @default 12
+             */
+            max_batch: number;
+            /**
+             * Prefetch Depth
+             * @default 1
+             */
+            prefetch_depth: number;
+            /**
+             * Queue Tag
+             * @default temporal-fetch
+             */
+            queue_tag: string;
+            /**
+             * Priority
+             * @default low
+             */
+            priority: string;
+        };
         /** OpenDataPresetsUpdateRequest */
         OpenDataPresetsUpdateRequest: {
             /** Open Data Presets */
@@ -4750,6 +5241,46 @@ export interface components {
             account_cooldown_seconds: number;
             /** Max Tasks Per Account */
             max_tasks_per_account: number;
+        };
+        /** PermissionItemInput */
+        PermissionItemInput: {
+            /**
+             * Resource Type
+             * @enum {string}
+             */
+            resource_type: "layer" | "workflow" | "data_source";
+            /** Resource Id */
+            resource_id: string;
+            /**
+             * Permission
+             * @enum {string}
+             */
+            permission: "allow" | "deny";
+        };
+        /** PermissionModeRequest */
+        PermissionModeRequest: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "open" | "whitelist";
+        };
+        /** PermissionRecord */
+        PermissionRecord: {
+            /** Id */
+            id: number;
+            /** User Id */
+            user_id: number;
+            /** Resource Type */
+            resource_type: string;
+            /** Resource Id */
+            resource_id: string;
+            /** Permission */
+            permission: string;
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
         };
         /**
          * PortKind
@@ -4838,6 +5369,24 @@ export interface components {
             portal_credentials: {
                 [key: string]: components["schemas"]["PortalCredentialPublic"];
             };
+        };
+        /**
+         * ProcessResourceSnapshot
+         * @description 单个后端进程资源快照。
+         */
+        ProcessResourceSnapshot: {
+            /** Pid */
+            pid: number;
+            /** Name */
+            name: string;
+            /** Cpu Percent */
+            cpu_percent?: number | null;
+            /** Memory Rss Mb */
+            memory_rss_mb?: number | null;
+            /** Threads */
+            threads?: number | null;
+            /** Status */
+            status?: string | null;
         };
         /** RasterCommitBody */
         RasterCommitBody: {
@@ -5117,6 +5666,22 @@ export interface components {
             enabled?: boolean | null;
         };
         /**
+         * ResourceUsageResponse
+         * @description GET /runtime/resources — 后端进程与宿主系统资源占用。
+         */
+        ResourceUsageResponse: {
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            system?: components["schemas"]["SystemResourceSnapshot"] | null;
+            /** Processes */
+            processes?: components["schemas"]["ProcessResourceSnapshot"][];
+            /** Worker Count */
+            worker_count?: number | null;
+        };
+        /**
          * ResultKind
          * @enum {string}
          */
@@ -5286,6 +5851,11 @@ export interface components {
             /** Ui Restart Enabled */
             ui_restart_enabled: boolean;
         };
+        /** SetPermissionsRequest */
+        SetPermissionsRequest: {
+            /** Permissions */
+            permissions?: components["schemas"]["PermissionItemInput"][];
+        };
         /** SpatialFilter */
         SpatialFilter: {
             /**
@@ -5318,6 +5888,26 @@ export interface components {
             backend?: string | null;
             /** Base Path */
             base_path?: string | null;
+        };
+        /**
+         * SystemResourceSnapshot
+         * @description 系统级资源快照（psutil 采集，轻量非阻塞）。
+         */
+        SystemResourceSnapshot: {
+            /** Cpu Percent */
+            cpu_percent?: number | null;
+            /** Memory Total Mb */
+            memory_total_mb?: number | null;
+            /** Memory Used Mb */
+            memory_used_mb?: number | null;
+            /** Memory Percent */
+            memory_percent?: number | null;
+            /** Disk Total Mb */
+            disk_total_mb?: number | null;
+            /** Disk Used Mb */
+            disk_used_mb?: number | null;
+            /** Disk Percent */
+            disk_percent?: number | null;
         };
         /**
          * TableSpec
@@ -5498,7 +6088,7 @@ export interface components {
             /** Password */
             password?: string | null;
             /** Role */
-            role?: ("admin" | "operator" | "viewer") | null;
+            role?: ("admin" | "standard" | "demo") | null;
             /** Enabled */
             enabled?: boolean | null;
         };
@@ -5543,12 +6133,17 @@ export interface components {
              * Role
              * @enum {string}
              */
-            role: "admin" | "operator" | "viewer";
+            role: "admin" | "standard" | "demo";
             /**
              * Enabled
              * @default true
              */
             enabled: boolean;
+            /**
+             * Permission Mode
+             * @default open
+             */
+            permission_mode: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -6822,6 +7417,139 @@ export interface operations {
             };
         };
     };
+    list_user_permissions_auth_users__user_id__permissions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_user_permissions_auth_users__user_id__permissions_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPermissionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_permission_auth_users__user_id__permissions__permission_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+                permission_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_permission_mode_auth_users__user_id__permission_mode_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PermissionModeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_layers_layers_get: {
         parameters: {
             query?: never;
@@ -6838,6 +7566,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LayerCatalogResponse"];
+                };
+            };
+        };
+    };
+    list_layer_categories_layers_categories_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayerCategoryResponse"];
+                };
+            };
+        };
+    };
+    get_layer_online_temporal_layers__layer_id__online_temporal_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -7347,6 +8128,107 @@ export interface operations {
             };
         };
     };
+    get_analysis_tools_analysis_tools_get: {
+        parameters: {
+            query?: {
+                layer_id?: string | null;
+                source_type?: string | null;
+                overlay_layer_id?: string | null;
+                has_vector?: boolean;
+                has_raster?: boolean;
+                is_weather?: boolean;
+                is_point_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalysisToolListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_analysis_tool_analysis_tools__tool_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalysisToolDescriptor"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_analysis_run_analysis_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalysisRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowAcceptedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_runtime_config_runtime_config_get: {
         parameters: {
             query?: never;
@@ -7416,6 +8298,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RuntimeStatusResponse"];
+                };
+            };
+        };
+    };
+    get_runtime_resources_runtime_resources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceUsageResponse"];
                 };
             };
         };
@@ -11233,6 +12135,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AboutInfo"];
+                };
+            };
+        };
+    };
+    invalidate_template_caches_config_cache_invalidate_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

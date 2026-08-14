@@ -11,6 +11,10 @@ from app.services.credential_resolver import (
     CredentialContext,
     allows_sensitive_read,
     allows_write,
+    can_create_workflow,
+    can_data_transfer,
+    can_manage_config,
+    can_run_workflow,
     resolve_credential,
 )
 
@@ -30,6 +34,18 @@ def resolve_request_credential(
     request: Request,
     x_api_key: str | None = Security(_api_key_header),
 ) -> CredentialContext | None:
+    return resolve_credential(request, x_api_key)
+
+
+def get_request_user(
+    request: Request,
+    x_api_key: str | None = Security(_api_key_header),
+) -> CredentialContext | None:
+    """Resolve and return the credential context for the current request.
+
+    Phase C: Used by workflow_router to pass ``user_id`` and ``role`` to
+    ``submission_service.submit_workflow`` for per-user concurrency control.
+    """
     return resolve_credential(request, x_api_key)
 
 
@@ -70,11 +86,11 @@ def require_write_access(
     ctx = resolve_credential(request, x_api_key)
     if ctx is not None and allows_write(ctx):
         return
-    if ctx is not None and ctx.role == "viewer":
+    if ctx is not None and ctx.role == "demo":
         raise ApiError(
             AUTH_ERROR,
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Read-only account cannot perform write operations.",
+            detail="Demo account cannot perform write operations.",
         )
     if ctx is not None:
         raise ApiError(
@@ -109,6 +125,37 @@ def require_write_access(
     )
 
 
+def require_workflow_run_access(
+    request: Request,
+    x_api_key: str | None = Security(_api_key_header),
+) -> None:
+    """工作流运行权限：admin + standard + demo（受并发上限约束）。"""
+    ctx = resolve_credential(request, x_api_key)
+    if ctx is not None and can_run_workflow(ctx):
+        return
+
+    if (
+        not config.settings.api_keys_enabled
+        and config.settings.environment == "development"
+    ):
+        from app.services.credential_resolver import dev_bypass_allowed
+
+        if dev_bypass_allowed(request):
+            return
+
+    if ctx is not None:
+        raise ApiError(
+            AUTH_ERROR,
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions to run workflows.",
+        )
+    raise ApiError(
+        AUTH_ERROR,
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required.",
+    )
+
+
 def require_config_read_access(
     request: Request,
     x_api_key: str | None = Security(_api_key_header),
@@ -124,4 +171,131 @@ def require_gee_account_management_enabled() -> None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="GEE API account management is disabled on this server.",
+        )
+
+
+def require_config_management_access(
+    request: Request,
+    x_api_key: str | None = Security(_api_key_header),
+) -> None:
+    """配置管理权限：仅 admin 可写配置（API Key / GEE / 天气 / 远程存储等）。"""
+    ctx = resolve_credential(request, x_api_key)
+    if ctx is not None and can_manage_config(ctx):
+        return
+    if ctx is not None:
+        raise ApiError(
+            AUTH_ERROR,
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required for configuration management.",
+        )
+    raise ApiError(
+        AUTH_ERROR,
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required.",
+    )
+
+
+def require_workflow_create_access(
+    request: Request,
+    x_api_key: str | None = Security(_api_key_header),
+) -> None:
+    """工作流定义创建/修改权限：admin + standard。demo 不可。"""
+    ctx = resolve_credential(request, x_api_key)
+    if ctx is not None and can_create_workflow(ctx):
+        return
+    if ctx is not None and ctx.role == "demo":
+        raise ApiError(
+            AUTH_ERROR,
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo account cannot create or modify workflow definitions.",
+        )
+    if ctx is not None:
+        raise ApiError(
+            AUTH_ERROR,
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions for this operation.",
+        )
+    raise ApiError(
+        AUTH_ERROR,
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required.",
+    )
+
+
+def require_data_transfer_access(
+    request: Request,
+    x_api_key: str | None = Security(_api_key_header),
+) -> None:
+    """数据上传/下载权限：admin + standard 无限制；demo 受全局开关管控。"""
+    ctx = resolve_credential(request, x_api_key)
+    if ctx is not None and can_data_transfer(ctx):
+        return
+    if ctx is not None and ctx.role == "demo":
+        raise ApiError(
+            AUTH_ERROR,
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Data transfer is not enabled for demo accounts. "
+            "Contact an administrator.",
+        )
+    if ctx is not None:
+        raise ApiError(
+            AUTH_ERROR,
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions for data transfer.",
+        )
+    raise ApiError(
+        AUTH_ERROR,
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase B: Resource-level access control
+# ---------------------------------------------------------------------------
+
+
+def check_resource_access(
+    ctx: CredentialContext | None,
+    resource_type: str,
+    resource_id: str,
+) -> None:
+    """Raise 401/403 if the user lacks access to ``resource_type/resource_id``.
+
+    *admin* always bypasses. When user auth is enabled, unauthenticated
+    callers (``ctx is None``) fail closed with 401 — overlay/tile routes
+    must not enumerate protected layers anonymously.
+
+    When user auth is disabled, ``ctx is None`` is allowed (legacy open mode).
+
+    Authenticated principals without ``user_id`` only bypass when they are
+    infrastructure sources (``service_key`` / ``dev_bypass``). Session or
+    user-token contexts with a missing ``user_id`` fail closed.
+    """
+    if ctx is None:
+        if config.settings.user_auth_enabled:
+            raise ApiError(
+                AUTH_ERROR,
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required.",
+            )
+        return
+    if ctx.role == "admin":
+        return
+    if ctx.user_id is None:
+        if ctx.source in {"service_key", "dev_bypass"}:
+            return
+        raise ApiError(
+            AUTH_ERROR,
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Resource access denied. Contact an administrator.",
+        )
+    from app.services.permission_repository import get_permission_repository
+
+    repo = get_permission_repository()
+    if not repo.check_resource_access(int(ctx.user_id), resource_type, resource_id):
+        raise ApiError(
+            AUTH_ERROR,
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Resource access denied. Contact an administrator.",
         )

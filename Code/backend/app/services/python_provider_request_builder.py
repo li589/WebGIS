@@ -120,11 +120,24 @@ class PythonProviderRequestBuilder:
         except Exception:  # noqa: BLE001
             pass
 
-        if payload.time_range is not None and "time_range" not in request_payload:
+        # Prefer workflow-level time_range; repair missing/invalid algorithm_request copy.
+        existing_tr = request_payload.get("time_range")
+        existing_tr_ok = (
+            isinstance(existing_tr, dict)
+            and existing_tr.get("start") is not None
+            and existing_tr.get("end") is not None
+        )
+        if payload.time_range is not None and not existing_tr_ok:
             request_payload["time_range"] = {
                 "start": payload.time_range.start_at.isoformat(),
                 "end": payload.time_range.end_at.isoformat(),
             }
+            existing_tr_ok = True
+
+        if not existing_tr_ok:
+            repaired = self._recover_time_range_from_algorithm_request(request_payload)
+            if repaired is not None:
+                request_payload["time_range"] = repaired
 
         if "region" not in request_payload:
             request_payload["region"] = self._build_region_payload(payload)
@@ -159,6 +172,69 @@ class PythonProviderRequestBuilder:
 
         self.validate_algorithm_request_shape(request_payload)
         return request_payload
+
+    @staticmethod
+    def _recover_time_range_from_algorithm_request(
+        request_payload: dict[str, Any],
+    ) -> dict[str, str] | None:
+        """Last-resort time_range recovery for UI/editor submits that omit it.
+
+        Order:
+        1. ``workflow_definition`` / seed-style nodes (``data/time_range``)
+        2. ``algorithm_params.start_date`` / ``end_date`` (YYYYMMDD, SF modules)
+        3. ``workflow_name`` / ``workflow_entry_name`` / tags.workflow_id seed lookup
+        """
+        try:
+            from app.services.workflow_request_resolver import (
+                _extract_time_range_from_nodes,
+                _extract_time_range_from_seed,
+            )
+        except Exception:
+            return None
+
+        wf_def = request_payload.get("workflow_definition")
+        if isinstance(wf_def, dict):
+            from_nodes = _extract_time_range_from_nodes(wf_def.get("nodes"))
+            if from_nodes is not None:
+                return {
+                    "start": from_nodes.start_at.isoformat(),
+                    "end": from_nodes.end_at.isoformat(),
+                }
+
+        params = request_payload.get("algorithm_params")
+        if isinstance(params, dict):
+            start_raw = params.get("start_date") or params.get("start")
+            end_raw = params.get("end_date") or params.get("end")
+            if (
+                isinstance(start_raw, str)
+                and isinstance(end_raw, str)
+                and len(start_raw) >= 8
+                and len(end_raw) >= 8
+            ):
+                start_s = start_raw.strip()
+                end_s = end_raw.strip()
+                if len(start_s) == 8 and start_s.isdigit():
+                    start_s = f"{start_s[:4]}-{start_s[4:6]}-{start_s[6:8]}T00:00:00"
+                if len(end_s) == 8 and end_s.isdigit():
+                    end_s = f"{end_s[:4]}-{end_s[4:6]}-{end_s[6:8]}T00:00:00"
+                return {"start": start_s, "end": end_s}
+
+        tags = request_payload.get("tags")
+        tag_workflow_id = tags.get("workflow_id") if isinstance(tags, dict) else None
+        for name in (
+            request_payload.get("workflow_name"),
+            request_payload.get("workflow_entry_name"),
+            tag_workflow_id,
+        ):
+            if not name:
+                continue
+            from_seed = _extract_time_range_from_seed(str(name))
+            if from_seed is not None:
+                return {
+                    "start": from_seed.start_at.isoformat(),
+                    "end": from_seed.end_at.isoformat(),
+                }
+        return None
 
     def validate_algorithm_request_shape(self, request_payload: dict[str, Any]) -> None:
         """Enforce structural contracts on the assembled request payload.

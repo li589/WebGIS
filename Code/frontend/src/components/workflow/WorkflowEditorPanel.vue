@@ -16,6 +16,25 @@
  */
 import { onMounted, onBeforeUnmount, ref, shallowRef, computed, nextTick } from 'vue'
 import { storeToRefs } from 'pinia'
+import {
+  Hexagon,
+  Settings,
+  LayoutGrid,
+  Square,
+  Ban,
+  ChevronDown,
+  ChevronUp,
+  AlarmClock,
+  Trash2,
+  LoaderCircle,
+  Save,
+  AlertTriangle,
+  AlertCircle,
+  Check,
+  Rocket,
+  Play,
+  X,
+} from '../ui/icons'
 
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import { useUiLoadingStore } from '../../stores/ui-loading'
@@ -28,6 +47,7 @@ import WorkflowRunDialog, { type WorkflowRunTarget } from './WorkflowRunDialog.v
 import WorkflowTimerPanel from './WorkflowTimerPanel.vue'
 import PipelineLauncher from './PipelineLauncher.vue'
 import NodeCacheDialog from './NodeCacheDialog.vue'
+import AppSelect from '../ui/AppSelect.vue'
 import { WORKFLOW_COPY } from '../../ui-copy'
 import {
   validateWorkflowBeforeRun,
@@ -79,7 +99,6 @@ const dirty = ref(false)
 const running = ref(false)
 const runStatus = ref<'idle' | 'submitting' | 'submitted' | 'error'>('idle')
 // 运行按钮状态恢复定时器（组件销毁时需清理，避免修改已卸载组件的 ref）
-let _runStatusTimer1: ReturnType<typeof setTimeout> | null = null
 let _runStatusTimer2: ReturnType<typeof setTimeout> | null = null
 
 // 运行对话框
@@ -219,11 +238,16 @@ onBeforeUnmount(() => {
 
 // ─── 事件处理 ───────────────────────────────────────────────────────────────
 
+// 工作流选择序列号：防止快速切换时旧请求覆盖新请求
+let _selectSeq = 0
+
 async function handleSelectWorkflow(workflowId: string) {
+  const seq = ++_selectSeq
   selectedNode.value = null
   dirty.value = false
   saveError.value = null
   const def = await store.loadDefinition(workflowId)
+  if (seq !== _selectSeq) return // 已有更新的选择请求
   if (def?.nodes?.length) {
     currentGraphData.value = {
       nodes: def.nodes as WorkflowDefinitionNode[],
@@ -505,10 +529,6 @@ function notifyRunOutcome(ok: boolean, message?: string) {
 }
 
 function clearRunStatusTimers() {
-  if (_runStatusTimer1 !== null) {
-    clearTimeout(_runStatusTimer1)
-    _runStatusTimer1 = null
-  }
   if (_runStatusTimer2 !== null) {
     clearTimeout(_runStatusTimer2)
     _runStatusTimer2 = null
@@ -552,13 +572,44 @@ async function handleImportFile(event: Event) {
   const input = event.target as HTMLInputElement
   if (!input.files?.length) return
   const file = input.files[0]
+  // File size guard: reject files over 10 MB to prevent DoS
+  const MAX_IMPORT_BYTES = 10 * 1024 * 1024
+  if (file.size > MAX_IMPORT_BYTES) {
+    saveError.value = `导入失败：文件过大（${(file.size / 1024 / 1024).toFixed(1)} MiB），上限 10 MiB`
+    input.value = ''
+    return
+  }
   try {
     const text = await file.text()
     const data = JSON.parse(text)
-    if (!data.nodes || !data.links || !data.workflow_id) {
-      throw new Error('无效的工作流文件格式')
+    if (!data || typeof data !== 'object') {
+      throw new Error('无效的 JSON：根对象不存在')
     }
-    // 创建新工作流（用导入的 ID 或生成新 ID）
+    if (
+      !Array.isArray(data.nodes) ||
+      !Array.isArray(data.links) ||
+      typeof data.workflow_id !== 'string'
+    ) {
+      throw new Error('无效的工作流文件格式：缺少 nodes/links/workflow_id')
+    }
+    // Node count guard: reject workflows with too many nodes
+    const MAX_NODES = 500
+    if (data.nodes.length > MAX_NODES) {
+      throw new Error(`节点数量过多（${data.nodes.length}），上限 ${MAX_NODES}`)
+    }
+    // Basic node structure validation
+    // LiteGraph 序列化的 node.id 为 number，后端 int(lg_id) 也接受 number，
+    // 因此同时允许 string 和 number 类型
+    for (const node of data.nodes) {
+      if (
+        !node ||
+        typeof node !== 'object' ||
+        (typeof node.id !== 'string' && typeof node.id !== 'number')
+      ) {
+        throw new Error('工作流节点结构无效：缺少 id')
+      }
+    }
+    // Create new workflow with generated ID (imported ID is not reused)
     const newId = `imported_${Date.now()}`
     const created = await store.createNew({
       workflow_id: newId,
@@ -605,7 +656,7 @@ defineExpose({
       <!-- 顶部工具栏 -->
       <header class="editor-header">
         <div class="header-left">
-          <span class="header-icon" aria-hidden="true">⬡</span>
+          <Hexagon :size="18" class="header-icon" aria-hidden="true" />
           <span class="header-title">{{ WORKFLOW_COPY.editorTitle }}</span>
           <span v-if="currentDefinition" class="header-sep">/</span>
           <span v-if="currentDefinition" class="header-workflow-name">{{
@@ -622,7 +673,7 @@ defineExpose({
             title="编辑工作流名称与说明描述"
             @click="openPropsDialog"
           >
-            <span aria-hidden="true">⚙</span>
+            <Settings :size="14" aria-hidden="true" />
             <span>属性</span>
           </button>
         </div>
@@ -635,7 +686,7 @@ defineExpose({
             title="自动排列节点"
             @click="handleArrange"
           >
-            <span aria-hidden="true">⊞</span>
+            <LayoutGrid :size="14" aria-hidden="true" />
             <span>排列</span>
           </button>
           <button
@@ -645,7 +696,7 @@ defineExpose({
             title="适配视图"
             @click="handleFitView"
           >
-            <span aria-hidden="true">⊡</span>
+            <Square :size="14" aria-hidden="true" />
             <span>适配</span>
           </button>
           <button
@@ -655,7 +706,7 @@ defineExpose({
             title="清空画布"
             @click="handleClear"
           >
-            <span aria-hidden="true">⊘</span>
+            <Ban :size="14" aria-hidden="true" />
             <span>清空</span>
           </button>
           <span class="action-divider"></span>
@@ -666,11 +717,11 @@ defineExpose({
             title="导出为 JSON"
             @click="handleExport"
           >
-            <span aria-hidden="true">⬇</span>
+            <ChevronDown :size="14" aria-hidden="true" />
             <span>导出</span>
           </button>
           <button class="header-btn" type="button" title="从 JSON 导入" @click="handleImportClick">
-            <span aria-hidden="true">⬆</span>
+            <ChevronUp :size="14" aria-hidden="true" />
             <span>导入</span>
           </button>
           <input
@@ -688,7 +739,7 @@ defineExpose({
             title="工作流定时器（Cron / 间隔 / 事件）。侧栏边缘可拖拽调宽。"
             @click="editorView = editorView === 'timers' ? 'canvas' : 'timers'"
           >
-            <span aria-hidden="true">⏰</span>
+            <AlarmClock :size="14" aria-hidden="true" />
             <span>{{ editorView === 'timers' ? '返回画布' : '定时器' }}</span>
           </button>
           <span class="action-divider"></span>
@@ -698,12 +749,13 @@ defineExpose({
             title="节点缓存管理（查看/清理算法模块产物缓存）"
             @click="nodeCacheDialogOpen = true"
           >
-            <span aria-hidden="true">🗑</span>
+            <Trash2 :size="14" aria-hidden="true" />
             <span>缓存</span>
           </button>
           <span class="action-divider"></span>
           <button class="header-btn primary" type="button" :disabled="!canSave" @click="handleSave">
-            <span aria-hidden="true">{{ saving ? '◌' : '💾' }}</span>
+            <LoaderCircle v-if="saving" :size="14" class="animate-spin" aria-hidden="true" />
+            <Save v-else :size="14" aria-hidden="true" />
             <span>{{ saving ? '保存中...' : '保存' }}</span>
           </button>
           <!-- 校验状态指示器 -->
@@ -719,9 +771,9 @@ defineExpose({
             :title="formatValidationSummary(validationResult)"
             @click="showValidationPanel = !showValidationPanel"
           >
-            <span aria-hidden="true">{{
-              validationResult.hasErrors ? '⚠' : validationResult.hasWarnings ? '◐' : '✓'
-            }}</span>
+            <AlertTriangle v-if="validationResult.hasErrors" :size="14" aria-hidden="true" />
+            <AlertCircle v-else-if="validationResult.hasWarnings" :size="14" aria-hidden="true" />
+            <Check v-else :size="14" aria-hidden="true" />
             <span v-if="validationResult.errorCount > 0">{{ validationResult.errorCount }}</span>
             <span v-else-if="validationResult.warningCount > 0">{{
               validationResult.warningCount
@@ -733,7 +785,7 @@ defineExpose({
             title="端到端流水线"
             @click="showPipelineLauncher = true"
           >
-            <span aria-hidden="true">🚀</span>
+            <Rocket :size="14" aria-hidden="true" />
             <span>流水线</span>
           </button>
           <button
@@ -753,9 +805,14 @@ defineExpose({
             "
             @click="handleRun"
           >
-            <span aria-hidden="true">{{
-              runStatus === 'submitting' ? '◌' : runStatus === 'submitted' ? '✓' : '▶'
-            }}</span>
+            <LoaderCircle
+              v-if="runStatus === 'submitting'"
+              :size="14"
+              class="animate-spin"
+              aria-hidden="true"
+            />
+            <Check v-else-if="runStatus === 'submitted'" :size="14" aria-hidden="true" />
+            <Play v-else :size="14" aria-hidden="true" />
             <span>{{
               runStatus === 'submitting'
                 ? '提交中...'
@@ -766,62 +823,72 @@ defineExpose({
           </button>
           <span class="action-divider"></span>
           <button class="header-btn close" type="button" title="关闭" @click="handleClose">
-            <span aria-hidden="true">✕</span>
+            <X :size="14" aria-hidden="true" />
           </button>
         </div>
       </header>
 
       <!-- 错误提示 -->
-      <div v-if="error || saveError" class="editor-error-bar">
-        <span class="error-icon" aria-hidden="true">⚠</span>
-        <span class="error-text">{{ saveError ?? error }}</span>
-        <button class="error-dismiss" type="button" @click="saveError = null">✕</button>
-      </div>
+      <Transition name="error-slide">
+        <div v-if="error || saveError" class="editor-error-bar">
+          <AlertTriangle :size="14" class="error-icon" aria-hidden="true" />
+          <span class="error-text">{{ saveError ?? error }}</span>
+          <button class="error-dismiss" type="button" @click="saveError = null">
+            <X :size="14" aria-hidden="true" />
+          </button>
+        </div>
+      </Transition>
 
       <!-- 校验结果面板 -->
-      <div v-if="showValidationPanel && validationResult" class="validation-panel">
-        <div class="validation-header">
-          <span class="validation-title">
-            <span aria-hidden="true">{{
-              validationResult.hasErrors ? '⚠' : validationResult.hasWarnings ? '◐' : '✓'
-            }}</span>
-            <span>运行前校验：{{ formatValidationSummary(validationResult) }}</span>
-          </span>
-          <div class="validation-actions">
-            <button
-              v-if="!validationResult.hasErrors"
-              class="validation-action-btn proceed"
-              type="button"
-              @click="proceedAfterValidation"
-            >
-              继续运行
-            </button>
-            <button
-              class="validation-action-btn close"
-              type="button"
-              @click="showValidationPanel = false"
-            >
-              关闭
-            </button>
+      <Transition name="panel-slide-down">
+        <div v-if="showValidationPanel && validationResult" class="validation-panel">
+          <div class="validation-header">
+            <span class="validation-title">
+              <AlertTriangle v-if="validationResult.hasErrors" :size="14" aria-hidden="true" />
+              <AlertCircle v-else-if="validationResult.hasWarnings" :size="14" aria-hidden="true" />
+              <Check v-else :size="14" aria-hidden="true" />
+              <span>运行前校验：{{ formatValidationSummary(validationResult) }}</span>
+            </span>
+            <div class="validation-actions">
+              <button
+                v-if="!validationResult.hasErrors"
+                class="validation-action-btn proceed"
+                type="button"
+                @click="proceedAfterValidation"
+              >
+                继续运行
+              </button>
+              <button
+                class="validation-action-btn close"
+                type="button"
+                @click="showValidationPanel = false"
+              >
+                关闭
+              </button>
+            </div>
           </div>
-        </div>
-        <div v-if="validationResult.issues.length > 0" class="validation-list">
-          <div
-            v-for="(issue, idx) in validationResult.issues"
-            :key="idx"
-            class="validation-item"
-            :class="{ error: issue.severity === 'error', warning: issue.severity === 'warning' }"
-          >
-            <span class="validation-icon" aria-hidden="true">{{
-              issue.severity === 'error' ? '✕' : '⚠'
-            }}</span>
-            <span class="validation-node">{{ issue.nodeTitle || '全局' }}</span>
-            <span v-if="issue.field" class="validation-field">{{ issue.field }}</span>
-            <span class="validation-message">{{ issue.message }}</span>
+          <div v-if="validationResult.issues.length > 0" class="validation-list">
+            <div
+              v-for="(issue, idx) in validationResult.issues"
+              :key="idx"
+              class="validation-item"
+              :class="{ error: issue.severity === 'error', warning: issue.severity === 'warning' }"
+            >
+              <X
+                v-if="issue.severity === 'error'"
+                :size="14"
+                class="validation-icon"
+                aria-hidden="true"
+              />
+              <AlertTriangle v-else :size="14" class="validation-icon" aria-hidden="true" />
+              <span class="validation-node">{{ issue.nodeTitle || '全局' }}</span>
+              <span v-if="issue.field" class="validation-field">{{ issue.field }}</span>
+              <span class="validation-message">{{ issue.message }}</span>
+            </div>
           </div>
+          <div v-else class="validation-empty">所有节点参数校验通过</div>
         </div>
-        <div v-else class="validation-empty">所有节点参数校验通过</div>
-      </div>
+      </Transition>
 
       <!-- 主体三栏布局 -->
       <div class="editor-body">
@@ -842,7 +909,7 @@ defineExpose({
         <main v-else class="editor-canvas-area">
           <div v-if="!hasDefinition" class="canvas-placeholder">
             <div class="placeholder-content">
-              <span class="placeholder-icon" aria-hidden="true">⬡</span>
+              <Hexagon :size="48" class="placeholder-icon" aria-hidden="true" />
               <h2 class="placeholder-title">工作流编辑器</h2>
               <p class="placeholder-text">从左侧选择工作流或范例，也可点击「新建」创建空白流</p>
               <p class="placeholder-hint">
@@ -888,62 +955,67 @@ defineExpose({
     />
 
     <!-- 新建工作流对话框 -->
-    <div v-if="showCreateDialog" class="create-dialog-overlay" @click.self="cancelCreateWorkflow">
-      <div class="create-dialog">
-        <h3 class="dialog-title">新建工作流</h3>
-        <div class="dialog-form">
-          <div class="form-row">
-            <label class="form-label">工作流 ID</label>
-            <input
-              v-model="newWorkflowId"
-              type="text"
-              class="form-input"
-              placeholder="唯一标识符"
-            />
+    <Transition name="dialog-fade">
+      <div v-if="showCreateDialog" class="create-dialog-overlay" @click.self="cancelCreateWorkflow">
+        <div class="create-dialog">
+          <h3 class="dialog-title">新建工作流</h3>
+          <div class="dialog-form">
+            <div class="form-row">
+              <label class="form-label">工作流 ID</label>
+              <input
+                v-model="newWorkflowId"
+                type="text"
+                class="form-input"
+                placeholder="唯一标识符"
+              />
+            </div>
+            <div class="form-row">
+              <label class="form-label">名称 *</label>
+              <input
+                v-model="newWorkflowName"
+                type="text"
+                class="form-input"
+                placeholder="显示名称"
+              />
+            </div>
+            <div class="form-row">
+              <label class="form-label">描述</label>
+              <textarea
+                v-model="newWorkflowDescription"
+                class="form-textarea"
+                rows="2"
+                placeholder="可选描述"
+              ></textarea>
+            </div>
+            <div class="form-row">
+              <label class="form-label">引擎</label>
+              <AppSelect
+                v-model="newWorkflowEngine"
+                :options="[
+                  { label: '通用', value: 'general' },
+                  { label: '天气引擎', value: 'weather' },
+                  { label: 'Python 处理器', value: 'python_provider' },
+                  { label: 'GEE', value: 'gee' },
+                ]"
+              />
+            </div>
           </div>
-          <div class="form-row">
-            <label class="form-label">名称 *</label>
-            <input
-              v-model="newWorkflowName"
-              type="text"
-              class="form-input"
-              placeholder="显示名称"
-            />
+          <div class="dialog-actions">
+            <button class="dialog-btn cancel" type="button" @click="cancelCreateWorkflow">
+              取消
+            </button>
+            <button
+              class="dialog-btn primary"
+              type="button"
+              :disabled="!newWorkflowId.trim() || !newWorkflowName.trim()"
+              @click="confirmCreateWorkflow"
+            >
+              创建
+            </button>
           </div>
-          <div class="form-row">
-            <label class="form-label">描述</label>
-            <textarea
-              v-model="newWorkflowDescription"
-              class="form-textarea"
-              rows="2"
-              placeholder="可选描述"
-            ></textarea>
-          </div>
-          <div class="form-row">
-            <label class="form-label">引擎</label>
-            <select v-model="newWorkflowEngine" class="form-select">
-              <option value="general">通用</option>
-              <option value="weather">天气引擎</option>
-              <option value="python_provider">Python 处理器</option>
-              <option value="gee">GEE</option>
-            </select>
-          </div>
-        </div>
-        <div class="dialog-actions">
-          <button class="dialog-btn cancel" type="button" @click="cancelCreateWorkflow">
-            取消
-          </button>
-          <button
-            class="dialog-btn primary"
-            type="button"
-            :disabled="!newWorkflowId.trim() || !newWorkflowName.trim()"
-            @click="confirmCreateWorkflow"
-          >
-            创建
-          </button>
         </div>
       </div>
-    </div>
+    </Transition>
 
     <!-- 流水线启动器对话框 -->
     <PipelineLauncher
@@ -954,49 +1026,51 @@ defineExpose({
 
     <!-- 工作流属性编辑对话框（名称/描述） -->
     <Teleport to="body">
-      <div v-if="showPropsDialog" class="props-mask" @click.self="showPropsDialog = false">
-        <div class="props-dialog" role="dialog" aria-label="工作流属性">
-          <div class="props-header">
-            <span class="props-title">工作流属性</span>
-            <button
-              class="props-close"
-              type="button"
-              aria-label="关闭"
-              @click="showPropsDialog = false"
-            >
-              ×
-            </button>
-          </div>
-          <div class="props-body">
-            <div class="form-row">
-              <label class="form-label">名称 *</label>
-              <input v-model="editName" type="text" class="form-input" placeholder="显示名称" />
+      <Transition name="dialog-fade">
+        <div v-if="showPropsDialog" class="props-mask" @click.self="showPropsDialog = false">
+          <div class="props-dialog" role="dialog" aria-label="工作流属性">
+            <div class="props-header">
+              <span class="props-title">工作流属性</span>
+              <button
+                class="props-close"
+                type="button"
+                aria-label="关闭"
+                @click="showPropsDialog = false"
+              >
+                ×
+              </button>
             </div>
-            <div class="form-row">
-              <label class="form-label">说明描述</label>
-              <textarea
-                v-model="editDescription"
-                class="form-textarea"
-                rows="3"
-                placeholder="说明该工作流的用途、输入输出与注意事项（运行对话框与列表展示）"
-              ></textarea>
+            <div class="props-body">
+              <div class="form-row">
+                <label class="form-label">名称 *</label>
+                <input v-model="editName" type="text" class="form-input" placeholder="显示名称" />
+              </div>
+              <div class="form-row">
+                <label class="form-label">说明描述</label>
+                <textarea
+                  v-model="editDescription"
+                  class="form-textarea"
+                  rows="3"
+                  placeholder="说明该工作流的用途、输入输出与注意事项（运行对话框与列表展示）"
+                ></textarea>
+              </div>
             </div>
-          </div>
-          <div class="dialog-actions">
-            <button class="dialog-btn cancel" type="button" @click="showPropsDialog = false">
-              取消
-            </button>
-            <button
-              class="dialog-btn primary"
-              type="button"
-              :disabled="!editName.trim()"
-              @click="saveProps"
-            >
-              保存
-            </button>
+            <div class="dialog-actions">
+              <button class="dialog-btn cancel" type="button" @click="showPropsDialog = false">
+                取消
+              </button>
+              <button
+                class="dialog-btn primary"
+                type="button"
+                :disabled="!editName.trim()"
+                @click="saveProps"
+              >
+                保存
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      </Transition>
     </Teleport>
 
     <NodeCacheDialog :open="nodeCacheDialogOpen" @close="nodeCacheDialogOpen = false" />
@@ -1011,7 +1085,7 @@ defineExpose({
   display: flex;
   align-items: stretch;
   justify-content: stretch;
-  background: rgba(4, 10, 18, 0.85);
+  background: var(--surface-1);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
@@ -1021,7 +1095,7 @@ defineExpose({
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background: rgba(6, 13, 24, 0.98);
+  background: var(--surface-2);
   /* 局部抬高 rem 基准（全局 :root 仍为 15px），改善导师反馈的「字太小」 */
   font-size: 19px;
 }
@@ -1032,8 +1106,8 @@ defineExpose({
   align-items: center;
   justify-content: space-between;
   padding: 0.52rem 0.72rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.14);
-  background: rgba(8, 17, 31, 0.9);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--surface-1);
   flex: none;
 }
 
@@ -1046,22 +1120,22 @@ defineExpose({
 
 .header-icon {
   font-size: 0.92rem;
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .header-title {
   font-size: 0.9rem;
   font-weight: 600;
-  color: #e8f3fc;
+  color: var(--text-strong);
 }
 
 .header-sep {
-  color: #4a5a6a;
+  color: var(--text-disabled);
 }
 
 .header-workflow-name {
-  font-size: 0.7rem;
-  color: #88dfff;
+  font-size: var(--font-size-caption);
+  color: var(--accent-strong);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1072,19 +1146,19 @@ defineExpose({
 .dirty-badge {
   padding: 0.08rem 0.42rem;
   border-radius: 0.32rem;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 
 .readonly-badge {
-  background: rgba(255, 180, 90, 0.18);
-  color: #ffd9a8;
-  border: 1px solid rgba(255, 180, 90, 0.2);
+  background: var(--warning-border);
+  color: var(--accent-warm);
+  border: 1px solid var(--warning-border);
 }
 
 .dirty-badge {
   background: rgba(255, 220, 120, 0.18);
-  color: #ffe89a;
+  color: var(--warning);
   border: 1px solid rgba(255, 220, 120, 0.2);
 }
 
@@ -1099,21 +1173,25 @@ defineExpose({
   align-items: center;
   gap: 0.22rem;
   padding: 0.32rem 0.56rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.42rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #9fb6cc;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   font-weight: 500;
-  transition: all 0.16s ease;
+  transition:
+    color var(--motion-fast) var(--ease-soft),
+    background var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft),
+    box-shadow var(--motion-fast) var(--ease-soft);
 }
 
 .header-btn:hover:not(:disabled) {
-  border-color: rgba(90, 213, 255, 0.32);
-  color: #5ad5ff;
-  background: rgba(10, 132, 255, 0.12);
+  border-color: var(--border-accent);
+  color: var(--accent);
+  background: var(--accent-surface);
 }
 
 .header-btn:disabled {
@@ -1122,19 +1200,19 @@ defineExpose({
 }
 
 .header-btn.primary {
-  border-color: rgba(90, 213, 255, 0.4);
-  background: rgba(10, 132, 255, 0.2);
-  color: #5ad5ff;
+  border-color: var(--border-strong);
+  background: var(--accent-border);
+  color: var(--accent);
 }
 
 .header-btn.primary:hover:not(:disabled) {
-  background: rgba(10, 132, 255, 0.32);
+  background: var(--border-strong);
 }
 
 .header-btn.run {
   border-color: rgba(120, 255, 160, 0.3);
   background: rgba(40, 180, 90, 0.16);
-  color: #9ff8cf;
+  color: var(--success);
 }
 
 .header-btn.run:hover:not(:disabled) {
@@ -1142,16 +1220,16 @@ defineExpose({
 }
 
 .header-btn.run.submitting {
-  border-color: rgba(255, 184, 77, 0.4);
+  border-color: var(--warning-border);
   background: rgba(180, 130, 40, 0.2);
-  color: #ffb84d;
+  color: var(--warning);
   pointer-events: none;
 }
 
 .header-btn.run.submitted {
   border-color: rgba(120, 255, 160, 0.5);
   background: rgba(40, 180, 90, 0.28);
-  color: #78ffa0;
+  color: var(--success);
 }
 
 .header-btn.run.submitting span:first-child,
@@ -1164,26 +1242,26 @@ defineExpose({
 }
 
 .header-btn.pipeline {
-  border-color: rgba(255, 184, 77, 0.3);
+  border-color: var(--warning-border);
   background: rgba(180, 130, 40, 0.14);
-  color: #ffd38a;
+  color: var(--accent-warm);
 }
 
 .header-btn.pipeline:hover:not(:disabled) {
-  border-color: rgba(255, 184, 77, 0.5);
+  border-color: var(--warning-border);
   background: rgba(180, 130, 40, 0.24);
-  color: #fff0d4;
+  color: var(--accent-warm);
 }
 
 .header-btn.close {
   padding: 0.32rem 0.46rem;
-  color: #6e8ba0;
+  color: var(--text-faint);
 }
 
 .action-divider {
   width: 1px;
   height: 1rem;
-  background: rgba(136, 192, 255, 0.14);
+  background: var(--border-default);
   margin: 0 0.18rem;
 }
 
@@ -1195,12 +1273,12 @@ defineExpose({
   padding: 0.36rem 0.72rem;
   border-bottom: 1px solid rgba(255, 120, 120, 0.2);
   background: rgba(90, 30, 30, 0.18);
-  color: #ff9b9b;
-  font-size: 0.6rem;
+  color: var(--danger);
+  font-size: var(--font-size-caption);
 }
 
 .error-icon {
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
 }
 
 .error-text {
@@ -1210,10 +1288,10 @@ defineExpose({
 .error-dismiss {
   border: none;
   background: transparent;
-  color: #ff9b9b;
+  color: var(--danger);
   cursor: pointer;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 
 /* ── 主体三栏 ───────────────────────────────────────────────────── */
@@ -1227,7 +1305,7 @@ defineExpose({
   flex: 1;
   position: relative;
   overflow: hidden;
-  background: #0a0f1c;
+  background: var(--surface-base);
   min-width: 0;
 }
 
@@ -1238,13 +1316,13 @@ defineExpose({
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background: rgba(4, 12, 23, 0.28);
+  background: var(--surface-sunken);
 }
 
 .header-btn.active {
-  border-color: rgba(90, 213, 255, 0.4);
-  color: #5ad5ff;
-  background: rgba(10, 132, 255, 0.16);
+  border-color: var(--border-strong);
+  color: var(--accent);
+  background: var(--accent-surface);
 }
 
 .canvas-placeholder {
@@ -1257,7 +1335,7 @@ defineExpose({
 
 .placeholder-content {
   text-align: center;
-  color: #5a7080;
+  color: var(--text-disabled);
 }
 
 .placeholder-icon {
@@ -1265,25 +1343,36 @@ defineExpose({
   opacity: 0.3;
   display: block;
   margin-bottom: 0.72rem;
+  animation: placeholder-float 3s ease-in-out infinite;
+}
+
+@keyframes placeholder-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
 }
 
 .placeholder-title {
   margin: 0 0 0.42rem;
   font-size: 1.1rem;
   font-weight: 600;
-  color: #6e8ba0;
+  color: var(--text-faint);
 }
 
 .placeholder-text {
   margin: 0 0 0.22rem;
-  font-size: 0.72rem;
-  color: #5a7080;
+  font-size: var(--font-size-caption);
+  color: var(--text-disabled);
 }
 
 .placeholder-hint {
   margin: 0;
-  font-size: 0.6rem;
-  color: #4a5a6a;
+  font-size: var(--font-size-caption);
+  color: var(--text-disabled);
 }
 
 /* ── 新建对话框 ──────────────────────────────────────────────────── */
@@ -1294,7 +1383,7 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 10, 18, 0.6);
+  background: var(--surface-1);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
@@ -1303,9 +1392,9 @@ defineExpose({
   width: 24rem;
   max-width: 92vw;
   padding: 1.1rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  border: 1px solid var(--border-default);
   border-radius: 0.72rem;
-  background: rgba(8, 17, 31, 0.98);
+  background: var(--surface-2);
   box-shadow: 0 18px 48px rgba(1, 8, 16, 0.4);
 }
 
@@ -1313,7 +1402,7 @@ defineExpose({
   margin: 0 0 0.82rem;
   font-size: 0.82rem;
   font-weight: 600;
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 
 .dialog-form {
@@ -1328,8 +1417,8 @@ defineExpose({
 }
 
 .form-label {
-  font-size: 0.58rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   font-weight: 500;
 }
 
@@ -1337,12 +1426,12 @@ defineExpose({
 .form-select,
 .form-textarea {
   padding: 0.4rem 0.52rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.42rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #d8e6f5;
+  background: var(--surface-raised);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 
 .form-textarea {
@@ -1355,7 +1444,7 @@ defineExpose({
 .form-select:focus,
 .form-textarea:focus {
   outline: none;
-  border-color: rgba(90, 213, 255, 0.4);
+  border-color: var(--border-strong);
 }
 
 .form-select {
@@ -1370,15 +1459,19 @@ defineExpose({
 
 .dialog-btn {
   padding: 0.4rem 0.92rem;
-  border: 1px solid rgba(136, 192, 255, 0.2);
+  border: 1px solid var(--border-strong);
   border-radius: 0.42rem;
   background: transparent;
-  color: #c4d6e8;
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   font-weight: 500;
-  transition: all 0.16s ease;
+  transition:
+    color var(--motion-fast) var(--ease-soft),
+    background var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft),
+    box-shadow var(--motion-fast) var(--ease-soft);
 }
 
 .dialog-btn:disabled {
@@ -1387,21 +1480,21 @@ defineExpose({
 }
 
 .dialog-btn.cancel:hover {
-  background: rgba(136, 192, 255, 0.06);
+  background: var(--border-subtle);
 }
 
 .dialog-btn.primary {
-  border-color: rgba(90, 213, 255, 0.4);
-  background: rgba(10, 132, 255, 0.2);
-  color: #5ad5ff;
+  border-color: var(--border-strong);
+  background: var(--accent-border);
+  color: var(--accent);
 }
 
 .dialog-btn.primary:hover:not(:disabled) {
-  background: rgba(10, 132, 255, 0.32);
+  background: var(--border-strong);
 }
 
 /* ── 响应式 ──────────────────────────────────────────────────────── */
-@media (max-width: 800px) {
+@media (max-width: 768px) {
   .editor-body {
     flex-direction: column;
   }
@@ -1417,22 +1510,22 @@ defineExpose({
 .validation-btn.has-errors {
   border-color: rgba(232, 70, 58, 0.4);
   background: rgba(232, 70, 58, 0.14);
-  color: #ff9b9b;
+  color: var(--danger);
 }
 .validation-btn.has-warnings {
   border-color: rgba(239, 170, 23, 0.36);
   background: rgba(239, 170, 23, 0.12);
-  color: #ffd38a;
+  color: var(--accent-warm);
 }
 .validation-btn.all-good {
   border-color: rgba(29, 201, 129, 0.3);
   background: rgba(29, 201, 129, 0.08);
-  color: #6ee7b7;
+  color: var(--success);
 }
 
 .validation-panel {
-  border-bottom: 1px solid rgba(136, 192, 255, 0.12);
-  background: rgba(8, 16, 30, 0.88);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--surface-1);
   max-height: 280px;
   overflow-y: auto;
 }
@@ -1442,10 +1535,10 @@ defineExpose({
   align-items: center;
   justify-content: space-between;
   padding: 0.52rem 0.86rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.08);
+  border-bottom: 1px solid var(--border-subtle);
   position: sticky;
   top: 0;
-  background: rgba(8, 16, 30, 0.96);
+  background: var(--surface-2);
   z-index: 1;
 }
 
@@ -1453,8 +1546,8 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.68rem;
-  color: #c4d6e8;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
   font-weight: 500;
 }
 
@@ -1466,19 +1559,23 @@ defineExpose({
 .validation-action-btn {
   padding: 0.24rem 0.62rem;
   border-radius: 0.32rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  border: 1px solid var(--border-default);
   background: transparent;
-  color: #8aa0b6;
+  color: var(--text-muted);
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
-  transition: all 0.16s ease;
+  transition:
+    color var(--motion-fast) var(--ease-soft),
+    background var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft),
+    box-shadow var(--motion-fast) var(--ease-soft);
 }
 
 .validation-action-btn.proceed {
   border-color: rgba(29, 201, 129, 0.36);
   background: rgba(29, 201, 129, 0.1);
-  color: #6ee7b7;
+  color: var(--success);
 }
 
 .validation-action-btn.proceed:hover {
@@ -1487,8 +1584,8 @@ defineExpose({
 }
 
 .validation-action-btn.close:hover {
-  border-color: rgba(136, 192, 255, 0.36);
-  color: #c4d6e8;
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
 }
 
 .validation-list {
@@ -1500,31 +1597,31 @@ defineExpose({
   align-items: center;
   gap: 0.4rem;
   padding: 0.36rem 0.86rem;
-  font-size: 0.6rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.04);
-  transition: background 0.12s ease;
+  font-size: var(--font-size-caption);
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background var(--motion-fast) var(--ease-soft);
 }
 
 .validation-item:hover {
-  background: rgba(136, 192, 255, 0.04);
+  background: var(--border-subtle);
 }
 
 .validation-item.error .validation-icon {
-  color: #ff7b7b;
+  color: var(--danger);
 }
 
 .validation-item.warning .validation-icon {
-  color: #ffd38a;
+  color: var(--accent-warm);
 }
 
 .validation-icon {
   flex-shrink: 0;
-  font-size: 0.64rem;
+  font-size: var(--font-size-caption);
 }
 
 .validation-node {
   flex-shrink: 0;
-  color: #a0b8d0;
+  color: var(--text-secondary);
   font-weight: 500;
   max-width: 120px;
   overflow: hidden;
@@ -1536,10 +1633,10 @@ defineExpose({
   flex-shrink: 0;
   padding: 0.08rem 0.36rem;
   border-radius: 0.24rem;
-  background: rgba(136, 192, 255, 0.1);
-  color: #8aa0b6;
-  font-size: 0.54rem;
-  font-family: var(--font-mono, monospace);
+  background: var(--border-subtle);
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
+  font-family: var(--font-mono);
   max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1548,7 +1645,7 @@ defineExpose({
 
 .validation-message {
   flex: 1;
-  color: #8aa0b6;
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1557,8 +1654,8 @@ defineExpose({
 .validation-empty {
   padding: 1rem;
   text-align: center;
-  font-size: 0.62rem;
-  color: #6ee7b7;
+  font-size: var(--font-size-caption);
+  color: var(--success);
 }
 
 /* ── 工作流属性对话框 ──────────────────────────────────────────────────── */
@@ -1569,16 +1666,16 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(3, 8, 16, 0.6);
+  background: var(--surface-1);
   backdrop-filter: blur(4px);
 }
 
 .props-dialog {
   width: min(460px, 90vw);
   border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: #0c1524;
-  color: #dbe7f5;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-1);
+  color: var(--text-primary);
   box-shadow: 0 20px 44px rgba(0, 0, 0, 0.45);
   overflow: hidden;
 }
@@ -1588,19 +1685,19 @@ defineExpose({
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .props-title {
   font-size: 14px;
   font-weight: 500;
-  color: #f1f7ff;
+  color: var(--text-strong);
 }
 
 .props-close {
   border: none;
   background: transparent;
-  color: #8aa2bd;
+  color: var(--text-muted);
   font-size: 19px;
   line-height: 1;
   cursor: pointer;
@@ -1611,5 +1708,110 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
+}
+
+/* ── 按钮按压反馈 ─────────────────────────────────────────── */
+.header-btn:active,
+.dialog-btn:active,
+.validation-action-btn:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 3px var(--shadow-ambient);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header-btn.run.submitting span:first-child,
+  .header-btn.run.submitted span:first-child,
+  .placeholder-icon {
+    animation: none;
+  }
+  .header-btn:active,
+  .dialog-btn:active,
+  .validation-action-btn:active {
+    transform: none;
+  }
+  .error-slide-enter-active,
+  .error-slide-leave-active,
+  .panel-slide-down-enter-active,
+  .panel-slide-down-leave-active,
+  .dialog-fade-enter-active,
+  .dialog-fade-leave-active {
+    transition: opacity 0.01s ease;
+  }
+}
+
+/* ── 动画：错误条滑入 ──────────────────────────────────────── */
+.error-slide-enter-active {
+  transition:
+    opacity var(--motion-base) var(--ease-standard),
+    max-height var(--motion-slow) var(--ease-standard),
+    margin var(--motion-slow) var(--ease-standard);
+  overflow: hidden;
+}
+.error-slide-leave-active {
+  transition:
+    opacity var(--motion-fast) var(--ease-soft),
+    max-height var(--motion-base) var(--ease-standard),
+    margin var(--motion-base) var(--ease-standard);
+  overflow: hidden;
+}
+.error-slide-enter-from,
+.error-slide-leave-to {
+  opacity: 0;
+  max-height: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* ── 动画：校验面板下滑展开 ────────────────────────────────── */
+.panel-slide-down-enter-active {
+  transition:
+    opacity var(--motion-base) var(--ease-standard),
+    max-height var(--motion-slow) var(--ease-emphasized);
+  overflow: hidden;
+}
+.panel-slide-down-leave-active {
+  transition:
+    opacity var(--motion-fast) var(--ease-soft),
+    max-height var(--motion-base) var(--ease-standard);
+  overflow: hidden;
+}
+.panel-slide-down-enter-from,
+.panel-slide-down-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
+
+/* ── 动画：对话框淡入缩放 ──────────────────────────────────── */
+.dialog-fade-enter-active {
+  transition: opacity var(--motion-base) var(--ease-standard);
+}
+.dialog-fade-enter-active .create-dialog,
+.dialog-fade-enter-active .props-dialog {
+  transition:
+    transform var(--motion-slow) var(--ease-emphasized),
+    opacity var(--motion-base) var(--ease-standard);
+}
+.dialog-fade-leave-active {
+  transition: opacity var(--motion-fast) var(--ease-soft);
+}
+.dialog-fade-leave-active .create-dialog,
+.dialog-fade-leave-active .props-dialog {
+  transition:
+    transform var(--motion-fast) var(--ease-soft),
+    opacity var(--motion-fast) var(--ease-soft);
+}
+.dialog-fade-enter-from,
+.dialog-fade-leave-to {
+  opacity: 0;
+}
+.dialog-fade-enter-from .create-dialog,
+.dialog-fade-enter-from .props-dialog {
+  transform: scale(0.96) translateY(8px);
+  opacity: 0;
+}
+.dialog-fade-leave-to .create-dialog,
+.dialog-fade-leave-to .props-dialog {
+  transform: scale(0.98);
+  opacity: 0;
 }
 </style>

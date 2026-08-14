@@ -16,7 +16,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.deps import require_write_access
+from app.api.deps import (
+    require_workflow_create_access,
+    check_resource_access,
+    get_request_user,
+)
 from app.services import workflow_definition_service as wds
 from app.services.workflow_definition_service import (
     WorkflowExistsError,
@@ -56,7 +60,7 @@ def list_node_templates() -> dict[str, Any]:
 
 @router.post(
     "/compile",
-    dependencies=[Depends(require_write_access)],
+    dependencies=[Depends(require_workflow_create_access)],
     tags=["workflow-definition"],
 )
 def compile_graph(payload: dict[str, Any]) -> dict[str, Any]:
@@ -87,7 +91,7 @@ def compile_graph(payload: dict[str, Any]) -> dict[str, Any]:
 
 @router.post(
     "/dry-validate",
-    dependencies=[Depends(require_write_access)],
+    dependencies=[Depends(require_workflow_create_access)],
     tags=["workflow-definition"],
 )
 def dry_validate_graph(payload: dict[str, Any]) -> dict[str, Any]:
@@ -236,15 +240,58 @@ def dry_validate_graph(payload: dict[str, Any]) -> dict[str, Any]:
 
 # ─── 工作流定义 CRUD ──────────────────────────────────────────────────────────
 @router.get("", tags=["workflow-definition"])
-def list_definitions() -> dict[str, Any]:
-    """列出所有工作流定义（system + user）。"""
+def list_definitions(
+    cred=Depends(get_request_user),
+) -> dict[str, Any]:
+    """列出所有工作流定义（system + user）。鉴权开启时匿名 fail-closed；非 admin 按 ACL 过滤。"""
+    from app.api.error_codes import AUTH_ERROR, ApiError
+    from app.core import config
+
     items = wds.list_definitions()
+    _cred = cred if hasattr(cred, "role") else None
+    if _cred is None:
+        if config.settings.user_auth_enabled:
+            raise ApiError(
+                AUTH_ERROR,
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required.",
+            )
+        return {"items": items, "count": len(items)}
+    if _cred.role == "admin":
+        return {"items": items, "count": len(items)}
+    if _cred.user_id is None:
+        if getattr(_cred, "source", None) in {"service_key", "dev_bypass"}:
+            return {"items": items, "count": len(items)}
+        return {"items": [], "count": 0}
+    from app.services.permission_repository import get_permission_repository
+
+    perm_repo = get_permission_repository()
+    all_ids = [
+        str(item.get("workflow_id") or item.get("id") or "")
+        for item in items
+        if isinstance(item, dict)
+    ]
+    all_ids = [i for i in all_ids if i]
+    accessible = set(
+        perm_repo.batch_filter_accessible(int(_cred.user_id), "workflow", all_ids)
+    )
+    items = [
+        item
+        for item in items
+        if isinstance(item, dict)
+        and str(item.get("workflow_id") or item.get("id") or "") in accessible
+    ]
     return {"items": items, "count": len(items)}
 
 
 @router.get("/{workflow_id}", tags=["workflow-definition"])
-def get_definition(workflow_id: str) -> dict[str, Any]:
+def get_definition(
+    workflow_id: str,
+    cred=Depends(get_request_user),
+) -> dict[str, Any]:
     """获取单个工作流定义的完整内容。"""
+    # Phase B: 资源访问控制——非 admin 用户需有 workflow 访问权限
+    check_resource_access(cred, "workflow", workflow_id)
     definition = wds.get_definition(workflow_id)
     if definition is None:
         raise HTTPException(
@@ -257,7 +304,7 @@ def get_definition(workflow_id: str) -> dict[str, Any]:
 @router.post(
     "",
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_write_access)],
+    dependencies=[Depends(require_workflow_create_access)],
     tags=["workflow-definition"],
 )
 def create_definition(payload: dict[str, Any]) -> dict[str, Any]:
@@ -276,7 +323,7 @@ def create_definition(payload: dict[str, Any]) -> dict[str, Any]:
 
 @router.put(
     "/{workflow_id}",
-    dependencies=[Depends(require_write_access)],
+    dependencies=[Depends(require_workflow_create_access)],
     tags=["workflow-definition"],
 )
 def update_definition(workflow_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -296,7 +343,7 @@ def update_definition(workflow_id: str, payload: dict[str, Any]) -> dict[str, An
 @router.delete(
     "/{workflow_id}",
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(require_write_access)],
+    dependencies=[Depends(require_workflow_create_access)],
     tags=["workflow-definition"],
 )
 def delete_definition(workflow_id: str) -> dict[str, Any]:
@@ -316,7 +363,7 @@ def delete_definition(workflow_id: str) -> dict[str, Any]:
 
 @router.post(
     "/{workflow_id}/duplicate",
-    dependencies=[Depends(require_write_access)],
+    dependencies=[Depends(require_workflow_create_access)],
     tags=["workflow-definition"],
 )
 def duplicate_definition(workflow_id: str, payload: dict[str, Any]) -> dict[str, Any]:

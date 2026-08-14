@@ -35,43 +35,43 @@ function reloadPage() {
   display: grid;
   place-items: center;
   padding: 2rem;
-  background: #060d18;
-  color: #d8e6f5;
+  background: var(--surface-base);
+  color: var(--text-primary);
 }
 
 .error-card {
   width: min(32rem, 100%);
   padding: 1.75rem;
   border-radius: 0.9rem;
-  border: 1px solid rgba(255, 140, 100, 0.25);
-  background: rgba(40, 12, 8, 0.35);
+  border: 1px solid var(--danger-border);
+  background: var(--surface-sunken);
 }
 
 h2 {
   margin: 0 0 0.75rem;
-  color: #ffb090;
+  color: var(--danger);
 }
 
 p {
   margin: 0 0 0.75rem;
-  color: #c8dff0;
+  color: var(--text-primary);
   font-size: 0.9rem;
 }
 
 .detail {
-  font-family: ui-monospace, monospace;
-  font-size: 0.78rem;
-  color: #9fb6cc;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
   word-break: break-word;
 }
 
 .reload-btn {
   margin-top: 0.5rem;
-  border: 1px solid rgba(255, 140, 100, 0.35);
+  border: 1px solid var(--danger-border);
   border-radius: 0.5rem;
   padding: 0.5rem 1rem;
-  background: rgba(255, 140, 100, 0.12);
-  color: #ffc8b0;
+  background: var(--danger-surface);
+  color: var(--warning);
   cursor: pointer;
   font: inherit;
 }

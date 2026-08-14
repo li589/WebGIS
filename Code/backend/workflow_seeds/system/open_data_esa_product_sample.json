@@ -7,7 +7,7 @@
     "author": "system",
     "readonly": true,
     "is_template": true,
-    "linked_layer_id": "remote-sensing",
+    "linked_layer_id": null,
     "tags": ["sample", "download"],
     "category": "data_access"
   },

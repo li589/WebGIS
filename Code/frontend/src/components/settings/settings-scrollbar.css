@@ -10,7 +10,7 @@
 .settings-panel .table-wrap,
 .settings-panel .history-list {
   scrollbar-width: thin;
-  scrollbar-color: rgba(90, 213, 255, 0.32) rgba(136, 192, 255, 0.06);
+  scrollbar-color: var(--border-accent) var(--border-subtle);
 }
 
 .settings-panel .settings-nav::-webkit-scrollbar,
@@ -31,7 +31,7 @@
 .settings-panel .code-block::-webkit-scrollbar-track,
 .settings-panel .table-wrap::-webkit-scrollbar-track,
 .settings-panel .history-list::-webkit-scrollbar-track {
-  background: rgba(136, 192, 255, 0.04);
+  background: var(--border-subtle);
   border-radius: 4px;
 }
 
@@ -42,7 +42,7 @@
 .settings-panel .code-block::-webkit-scrollbar-thumb,
 .settings-panel .table-wrap::-webkit-scrollbar-thumb,
 .settings-panel .history-list::-webkit-scrollbar-thumb {
-  background: rgba(90, 213, 255, 0.28);
+  background: var(--border-accent);
   border-radius: 4px;
   border: 1px solid transparent;
   background-clip: padding-box;
@@ -55,7 +55,7 @@
 .settings-panel .code-block::-webkit-scrollbar-thumb:hover,
 .settings-panel .table-wrap::-webkit-scrollbar-thumb:hover,
 .settings-panel .history-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(90, 213, 255, 0.48);
+  background: var(--border-strong);
 }
 
 .settings-panel .settings-nav::-webkit-scrollbar-corner,

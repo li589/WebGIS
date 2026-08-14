@@ -129,11 +129,6 @@ export function buildMapStageAppearanceModel(options: {
   skeletonVisible: boolean
   /** 近全球视口（数据分布淡底模式的前置条件之一） */
   isGlobalViewport?: boolean
-  /**
-   * @deprecated Prefer hasVisibleDataLayers
-   * 工作区是否已有添加图层（非仅底图）
-   */
-  hasAddedLayers?: boolean
   /** 是否存在可见的非行政区数据图层 */
   hasVisibleDataLayers?: boolean
   /** 设置：是否允许分布淡底 / 氛围遮罩（默认 true） */
@@ -142,7 +137,7 @@ export function buildMapStageAppearanceModel(options: {
   const usesLightNavigationTheme =
     options.basemapStyle === 'satellite' || options.basemapStyle === 'terrain'
   const isGlobalViewport = options.isGlobalViewport ?? false
-  const hasVisibleDataLayers = options.hasVisibleDataLayers ?? options.hasAddedLayers ?? false
+  const hasVisibleDataLayers = options.hasVisibleDataLayers ?? false
   const distributionChromeEnabled = options.distributionChromeEnabled !== false
   const showAtmosphereChrome = distributionChromeEnabled && hasVisibleDataLayers
   const showDistributionChrome = showAtmosphereChrome && isGlobalViewport

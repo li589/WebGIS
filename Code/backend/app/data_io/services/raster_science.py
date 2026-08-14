@@ -99,7 +99,7 @@ def _list_netcdf(path: Path) -> dict[str, Any]:
             "variables": variables,
             "needs_variable_select": True,
         }
-    except Exception:
+    except Exception:  # noqa: BLE001 — netCDF4 可选依赖或格式不符，回退到 scipy
         pass
     try:
         import scipy.io as sio  # type: ignore
@@ -121,7 +121,7 @@ def _list_netcdf(path: Path) -> dict[str, Any]:
             "variables": variables,
             "needs_variable_select": True,
         }
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — scipy 兜底读取，汇总为 RuntimeError
         raise RuntimeError(f"无法读取 NetCDF: {exc}") from exc
 
 
@@ -137,7 +137,7 @@ def _walk_h5(obj: Any, prefix: str = "") -> list[dict[str, Any]]:
                 fill_v = (
                     float(np.asarray(fill).reshape(-1)[0]) if fill is not None else None
                 )
-            except Exception:
+            except (TypeError, ValueError, IndexError):
                 fill_v = None
             out.append(
                 {
@@ -169,7 +169,7 @@ def _list_hdf(path: Path) -> dict[str, Any]:
                 "variables": variables,
                 "needs_variable_select": True,
             }
-    except Exception:
+    except Exception:  # noqa: BLE001 — h5py 可选依赖或格式不符，回退到 GDAL
         pass
 
     try:
@@ -200,7 +200,7 @@ def _list_hdf(path: Path) -> dict[str, Any]:
             "variables": variables,
             "needs_variable_select": True,
         }
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — GDAL 兜底读取，汇总为 RuntimeError
         raise RuntimeError(f"无法读取 HDF（需 h5py 或 GDAL）: {exc}") from exc
 
 
@@ -214,7 +214,7 @@ def _decode_matlab_char(dataset: Any) -> str | None:
             return chars or None
         if raw.dtype.kind in {"U", "S"}:
             return str(raw.astype(str)).strip() or None
-    except Exception:
+    except (TypeError, ValueError, IndexError):
         return None
     return None
 
@@ -260,7 +260,7 @@ def _list_mat(path: Path) -> dict[str, Any]:
                 "needs_variable_select": True,
                 "file_meta": file_meta,
             }
-    except Exception:
+    except Exception:  # noqa: BLE001 — h5py v7.3 读取失败，回退 scipy whosmat
         pass
 
     try:
@@ -286,7 +286,7 @@ def _list_mat(path: Path) -> dict[str, Any]:
                 "needs_variable_select": True,
                 "file_meta": file_meta,
             }
-    except Exception:
+    except Exception:  # noqa: BLE001 — scipy whosmat 失败，交由下方报错
         pass
 
     raise RuntimeError("无法读取 MAT（v5/v7.3）")
@@ -345,11 +345,11 @@ def extract_variable_to_geotiff(
         try:
             detected = auto_detect_invalid_values(path, variable_id)
             applied_invalid = list(detected.get("suggested_invalid_values") or [])
-        except Exception:
+        except Exception:  # noqa: BLE001 — 元数据探测失败，回退到数组统计检测
             try:
                 detected = detect_sentinel_values(array)
                 applied_invalid = list(detected.get("suggested_invalid_values") or [])
-            except Exception:
+            except (TypeError, ValueError):
                 applied_invalid = []
 
     array = apply_invalid_values(
@@ -462,7 +462,7 @@ def _load_netcdf_2d(
             var = ds.variables[variable_id]
             data = _as_2d(var[...], time_index)
             return np.ma.filled(np.ma.array(data), np.nan), None, None
-    except Exception:
+    except Exception:  # noqa: BLE001 — netCDF4 读取失败，回退 scipy netcdf_file
         import scipy.io as sio  # type: ignore
 
         ds = sio.netcdf_file(str(path), "r", mmap=False)
@@ -523,7 +523,7 @@ def _load_mat_2d(path: Path, variable_id: str, time_index: int) -> tuple[Any, An
                     ds = ds[part]
                 arr = _as_2d(ds[...], time_index)
                 return np.asarray(arr, dtype=np.float32), None, None
-    except Exception:
+    except Exception:  # noqa: BLE001 — h5py 读取失败，回退 scipy loadmat
         pass
 
     try:
@@ -547,7 +547,7 @@ def _load_mat_2d(path: Path, variable_id: str, time_index: int) -> tuple[Any, An
                     obj = obj.flat[0]
         arr = _as_2d(obj, time_index)
         return np.asarray(arr, dtype=np.float32), None, None
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — scipy loadmat 兜底，汇总为 RuntimeError
         raise RuntimeError(f"无法读取 MAT 变量 {variable_id}: {exc}") from exc
 
 
@@ -729,7 +729,14 @@ def _read_fill_metadata(
                         fill_value = float(np.asarray(fv).reshape(-1)[0])
                     if mv is not None:
                         missing_value = float(np.asarray(mv).reshape(-1)[0])
-        except Exception as exc:  # 发布就绪修复（P1-5）：不再静默吞错
+        except (
+            ImportError,
+            OSError,
+            KeyError,
+            ValueError,
+            TypeError,
+            IndexError,
+        ) as exc:  # 发布就绪修复（P1-5）：不再静默吞错
             logger.warning(
                 "读取 NetCDF fill/missing 元数据失败 path=%s variable=%s: %s",
                 path,
@@ -755,7 +762,14 @@ def _read_fill_metadata(
                             fill_value = float(np.asarray(fv).reshape(-1)[0])
                         if mv is not None:
                             missing_value = float(np.asarray(mv).reshape(-1)[0])
-            except Exception as exc:  # 发布就绪修复（P1-5）：不再静默吞错
+            except (
+                ImportError,
+                OSError,
+                KeyError,
+                ValueError,
+                TypeError,
+                IndexError,
+            ) as exc:  # 发布就绪修复（P1-5）：不再静默吞错
                 logger.warning(
                     "读取 HDF/MAT fill/missing 元数据失败 path=%s variable=%s: %s",
                     path,

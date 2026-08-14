@@ -101,8 +101,8 @@ const activePoint = computed(() => {
       >
         <defs>
           <linearGradient id="chartAreaGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#4fc3f7" stop-opacity="0.35" />
-            <stop offset="100%" stop-color="#4fc3f7" stop-opacity="0.0" />
+            <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.35" />
+            <stop offset="100%" stop-color="var(--accent)" stop-opacity="0.0" />
           </linearGradient>
         </defs>
 
@@ -112,7 +112,7 @@ const activePoint = computed(() => {
           :y1="padding"
           :x2="chartWidth - padding"
           :y2="padding"
-          stroke="rgba(255, 255, 255, 0.08)"
+          stroke="var(--surface-hover)"
           stroke-dasharray="3 3"
         />
         <line
@@ -120,7 +120,7 @@ const activePoint = computed(() => {
           :y1="chartHeight - padding"
           :x2="chartWidth - padding"
           :y2="chartHeight - padding"
-          stroke="rgba(255, 255, 255, 0.15)"
+          stroke="var(--surface-3)"
         />
 
         <!-- Area Fill -->
@@ -130,7 +130,7 @@ const activePoint = computed(() => {
         <path
           :d="linePathD"
           fill="none"
-          stroke="#4fc3f7"
+          stroke="var(--accent)"
           stroke-width="2"
           stroke-linecap="round"
           stroke-linejoin="round"
@@ -143,8 +143,8 @@ const activePoint = computed(() => {
           :cx="p.x"
           :cy="p.y"
           :r="hoverIndex === p.index || p.active ? 4.5 : 2.5"
-          :fill="hoverIndex === p.index || p.active ? '#64ffda' : '#4fc3f7'"
-          stroke="#0f172a"
+          :fill="hoverIndex === p.index || p.active ? 'var(--success)' : 'var(--accent)'"
+          stroke="var(--surface-sunken)"
           stroke-width="1.5"
           class="chart-point"
           @mouseenter="hoverIndex = p.index"
@@ -162,9 +162,9 @@ const activePoint = computed(() => {
 
 <style scoped>
 .time-series-chart-card {
-  background: rgba(15, 23, 42, 0.65);
+  background: var(--surface-1);
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--surface-hover);
   border-radius: 10px;
   padding: 0.8rem;
   margin-top: 0.6rem;
@@ -178,14 +178,14 @@ const activePoint = computed(() => {
 }
 
 .chart-title {
-  font-size: 0.78rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-strong);
 }
 
 .chart-unit {
-  font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.45);
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 
 .chart-stage {
@@ -209,7 +209,7 @@ const activePoint = computed(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: rgba(30, 41, 59, 0.85);
+  background: var(--surface-2);
   border: 1px solid rgba(79, 195, 247, 0.3);
   border-radius: 6px;
   padding: 0.25rem 0.6rem;
@@ -217,13 +217,13 @@ const activePoint = computed(() => {
 }
 
 .tooltip-time {
-  font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.65);
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
 }
 
 .tooltip-val {
   font-size: 0.82rem;
-  color: #64ffda;
+  color: var(--success);
   font-weight: 700;
 }
 </style>

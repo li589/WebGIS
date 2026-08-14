@@ -1,5 +1,6 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { Table2, ChevronDown, ChevronUp, Menu, Info, RefreshCw } from '../../components/ui/icons'
 import DataWorkspace from './DataWorkspace.vue'
 import {
   dataWorkspaceOpen,
@@ -99,12 +100,18 @@ const progressLabel = computed(() =>
       :class="{ active: menuOpen || dataWorkspaceOpen }"
       type="button"
       :disabled="!authStore.canWrite"
-      :title="authStore.canWrite ? DATA_COPY.menuTitle : '只读账户无法导入/导出数据'"
+      :title="
+        authStore.canWrite
+          ? DATA_COPY.menuTitle
+          : authStore.isDemo
+            ? '演示账户数据传输受限，请联系管理员开启'
+            : '只读账户无法导入/导出数据'
+      "
       @click="toggleMenu"
     >
-      <span class="btn-icon" aria-hidden="true">◫</span>
+      <Table2 :size="14" class="btn-icon" aria-hidden="true" />
       <span class="btn-label">{{ DATA_COPY.menuLabel }}</span>
-      <span class="caret" aria-hidden="true">▾</span>
+      <ChevronDown :size="14" class="caret" aria-hidden="true" />
     </button>
 
     <Teleport to="body">
@@ -115,28 +122,28 @@ const progressLabel = computed(() =>
         @click.stop
       >
         <button class="dropdown-item" type="button" @click="openImport('vector')">
-          <span class="item-icon" aria-hidden="true">⬆</span>
+          <ChevronUp :size="14" class="item-icon" aria-hidden="true" />
           <span class="item-body">
             <span class="item-title">{{ DATA_COPY.import }}</span>
             <span class="item-desc">矢量 / 栅格 / 文档 · 后端统一解析</span>
           </span>
         </button>
         <button class="dropdown-item" type="button" @click="openExport">
-          <span class="item-icon" aria-hidden="true">⬇</span>
+          <ChevronDown :size="14" class="item-icon" aria-hidden="true" />
           <span class="item-body">
             <span class="item-title">{{ DATA_COPY.export }}</span>
             <span class="item-desc">导出已导入图层</span>
           </span>
         </button>
         <button class="dropdown-item" type="button" @click="openAttributesWorkspace">
-          <span class="item-icon" aria-hidden="true">☰</span>
+          <Menu :size="14" class="item-icon" aria-hidden="true" />
           <span class="item-body">
             <span class="item-title">{{ DATA_COPY.wsAttributes }}</span>
             <span class="item-desc">分页浏览与字段重命名</span>
           </span>
         </button>
         <button class="dropdown-item" type="button" @click="openDetailsWorkspace">
-          <span class="item-icon" aria-hidden="true">ℹ</span>
+          <Info :size="14" class="item-icon" aria-hidden="true" />
           <span class="item-body">
             <span class="item-title">{{ DATA_COPY.wsDetails }}</span>
             <span class="item-desc">元数据 · 样式 · 删除</span>
@@ -154,7 +161,7 @@ const progressLabel = computed(() =>
 
     <div v-if="importing" class="import-spinner">
       <div class="spinner-card">
-        <span class="spinning-icon" aria-hidden="true">↻</span>
+        <RefreshCw :size="20" class="spinning-icon" aria-hidden="true" />
         <span v-if="progressLabel" class="progress-text">{{ progressLabel }}</span>
       </div>
     </div>
@@ -174,46 +181,62 @@ const progressLabel = computed(() =>
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.24rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
-  border-radius: 0.5rem;
-  padding: 0.3rem 0.46rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #9fb6cc;
+  gap: var(--space-2);
+  height: 30px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
   cursor: pointer;
-  font: inherit;
-  font-size: 0.62rem;
-  font-weight: 500;
+  font-family: inherit;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
   white-space: nowrap;
   transition:
-    border-color 0.18s ease,
-    color 0.18s ease,
-    background 0.18s ease;
+    background-color var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft),
+    box-shadow var(--motion-fast) var(--ease-soft);
 }
 
-.import-trigger:hover {
-  border-color: rgba(90, 213, 255, 0.3);
-  color: #5ad5ff;
-  background: rgba(10, 132, 255, 0.12);
+.import-trigger:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+  color: var(--accent);
+  box-shadow: var(--elevation-1);
 }
 
 .import-trigger.active {
-  border-color: rgba(90, 213, 255, 0.4);
-  color: #5ad5ff;
-  background: rgba(10, 132, 255, 0.2);
-  box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.16);
+  background: var(--accent-surface);
+  border-color: var(--border-accent);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--border-accent);
+}
+
+.import-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.import-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .btn-icon {
-  font-size: 0.72rem;
+  font-size: 14px;
   opacity: 0.9;
+  line-height: 1;
 }
 .btn-label {
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
+  line-height: 1;
 }
 .caret {
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   opacity: 0.6;
+  line-height: 1;
 }
 
 .import-spinner {
@@ -223,8 +246,8 @@ const progressLabel = computed(() =>
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 10, 18, 0.4);
-  pointer-events: none;
+  background: var(--surface-raised);
+  pointer-events: auto;
 }
 
 .spinner-card {
@@ -234,19 +257,19 @@ const progressLabel = computed(() =>
   gap: 0.4rem;
   padding: 0.8rem 1rem;
   border-radius: 0.6rem;
-  background: rgba(8, 18, 33, 0.92);
-  border: 1px solid rgba(90, 213, 255, 0.25);
+  background: var(--surface-1);
+  border: 1px solid var(--border-accent);
 }
 
 .spinning-icon {
   font-size: 1.6rem;
-  color: #5ad5ff;
+  color: var(--accent);
   animation: spin 0.8s linear infinite;
 }
 
 .progress-text {
-  font-size: 0.68rem;
-  color: #a8e8ff;
+  font-size: var(--font-size-caption);
+  color: var(--accent);
 }
 
 @keyframes spin {
@@ -254,94 +277,109 @@ const progressLabel = computed(() =>
     transform: rotate(360deg);
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .spinning-icon {
+    animation: none;
+  }
+}
 </style>
 
 <style>
-/* Teleport 到 body，不能用 scoped */
+/* Teleport 到 body，不能用 scoped，使用设计 token 保持一致性 */
 .import-dropdown {
   position: fixed;
   z-index: 9999;
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
-  padding: 0.3rem;
-  border-radius: 0.6rem;
-  background: rgba(8, 18, 33, 0.96);
-  border: 1px solid rgba(136, 192, 255, 0.16);
-  box-shadow: 0 12px 36px rgba(1, 8, 16, 0.4);
-  min-width: 12.5rem;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--accent-surface);
+  box-shadow: 0 12px 36px rgba(1, 8, 16, 0.45);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  min-width: 14rem;
 }
 
 .import-dropdown .dropdown-item {
   display: flex;
   align-items: center;
-  gap: 0.42rem;
-  padding: 0.42rem 0.5rem;
+  gap: 8px;
+  padding: 8px 12px;
   border: none;
-  border-radius: 0.42rem;
+  border-radius: 6px;
   background: transparent;
-  color: #9fb6cc;
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
   text-align: left;
   transition:
-    background 0.16s ease,
-    color 0.16s ease;
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .import-dropdown .dropdown-item:hover {
-  background: rgba(136, 192, 255, 0.1);
-  color: #d8e6f5;
+  background: var(--accent-surface);
+  color: var(--text-primary);
 }
 
 .import-dropdown .item-icon {
-  font-size: 0.8rem;
+  font-size: 14px;
+  color: var(--accent);
   flex: none;
+  opacity: 0.8;
 }
 .import-dropdown .item-body {
   display: flex;
   flex-direction: column;
-  gap: 0.08rem;
+  gap: 2px;
   min-width: 0;
 }
 .import-dropdown .item-title {
-  font-size: 0.62rem;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 .import-dropdown .item-desc {
-  font-size: 0.52rem;
-  color: #5a7080;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
 }
 .import-dropdown .dropdown-hint {
-  margin: 0.2rem 0.35rem 0.15rem;
-  padding-top: 0.28rem;
-  border-top: 1px solid rgba(136, 192, 255, 0.1);
-  font-size: 0.5rem;
-  color: #5a7080;
-  line-height: 1.35;
+  margin: 4px 8px 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--accent-surface);
+  font-size: 12px;
+  color: var(--text-faint);
+  line-height: 1.4;
 }
 
 .import-toast {
   position: fixed;
-  top: 4.2rem;
+  top: 4.5rem;
   left: 50%;
   transform: translateX(-50%);
   z-index: 10020;
   max-width: min(36rem, calc(100vw - 2rem));
-  padding: 0.42rem 0.72rem;
-  border-radius: 0.48rem;
-  background: rgba(10, 132, 255, 0.22);
-  border: 1px solid rgba(90, 213, 255, 0.35);
-  color: #a8e8ff;
-  font-size: 0.62rem;
+  padding: 8px 16px;
+  border-radius: 6px;
+  background: var(--accent-surface);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
   line-height: 1.4;
   pointer-events: none;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 8px 24px var(--surface-sunken);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .import-toast.error {
-  background: rgba(255, 77, 77, 0.18);
-  border-color: rgba(255, 100, 100, 0.35);
-  color: #ffb0b0;
+  background: var(--danger-surface);
+  border-color: var(--danger-border);
+  color: var(--danger);
 }
 </style>

@@ -1,12 +1,27 @@
 ﻿<script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { DATA_COPY } from '../../ui-copy'
-import { exportLayer, type ExportFormat } from '../adapters/export'
-import { fetchExportEncodings, type ExportEncodingOption } from '../core/api'
+import AppSelect from '../../components/ui/AppSelect.vue'
+import AppButton from '../../components/ui/AppButton.vue'
+import IconButton from '../../components/ui/IconButton.vue'
+import { X } from '../../components/ui/icons'
+import {
+  exportLayer,
+  exportLayersBatch,
+  type ExportFormat,
+  type ExportOptions,
+} from '../adapters/export'
+import {
+  fetchExportEncodings,
+  fetchImportedLayerGeojson,
+  formatBytes,
+  type ExportEncodingOption,
+} from '../core/api'
 import { dataWorkspaceExportTime, dataWorkspaceLayerId } from '../core/workspace-store'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerWorkspace, useLayerViewport } from '../../stores/layers/selectors'
 import { useLogStore } from '../../stores/log'
 import type { ActiveLayer } from '../../stores/layers/types'
+import { resolveExportBasename } from '../../stores/layers/layer-naming'
 
 defineProps<{
   /** 嵌入数据工作台时不渲染全屏遮罩 */
@@ -15,7 +30,8 @@ defineProps<{
 
 const emit = defineEmits<{ close: [] }>()
 
-const layersStore = useLayersStore()
+const workspace = useLayerWorkspace()
+const viewport = useLayerViewport()
 const logStore = useLogStore()
 
 const selectedIds = ref<string[]>([])
@@ -26,6 +42,9 @@ const selectedTimes = ref<string[]>([])
 const vectorFormat = ref('geojson')
 const rasterFormat = ref('geotiff')
 const textEncoding = ref('auto')
+const clipToMap = ref(false)
+const outputCrs = ref('')
+const selectedFields = ref<string[]>([])
 const encodingOptions = ref<ExportEncodingOption[]>([
   { id: 'auto', label: '自动（跟导入源编码）' },
   { id: 'utf-8', label: 'UTF-8' },
@@ -41,7 +60,7 @@ const msg = ref('')
 const err = ref('')
 
 const importedLayers = computed(() =>
-  layersStore.activeLayers.filter((l) => l.importedVector || l.importedRaster),
+  workspace.activeLayers.value.filter((l) => l.importedVector || l.importedRaster),
 )
 
 const selectedLayers = computed(() =>
@@ -54,17 +73,83 @@ const needsTextEncoding = computed(
   () => hasVector.value && (vectorFormat.value === 'csv' || vectorFormat.value === 'shp-zip'),
 )
 
+function machineIdOf(layer: ActiveLayer): string {
+  return (
+    resolveExportBasename({
+      catalogId: layer.catalogId,
+      overlayLayerId: layer.importedRaster?.overlayLayerId,
+      backendLayerId: layer.importedVector?.backendLayerId,
+      sourceFilename: layer.importedVector?.fileName ?? layer.importedRaster?.fileName,
+      displayName: layer.name,
+    }) ||
+    layer.catalogId ||
+    layer.instanceId
+  )
+}
+
+function isWorkflowProduct(layer: ActiveLayer): boolean {
+  return Boolean(layer.importedRaster && layer.runGroupProductTag)
+}
+
 function timeListOf(layer: ActiveLayer | undefined): string[] {
   return layer?.importedRaster?.timeList?.filter(Boolean) ?? []
 }
 
-/** 单选栅格且有 time_list 时展示时刻选择 */
+/** 多选栅格的公共 time_list；单选则用该层全部时刻 */
 const availableTimes = computed(() => {
-  if (selectedLayers.value.length !== 1) return [] as string[]
-  return timeListOf(selectedLayers.value[0])
+  const rasters = selectedLayers.value.filter((l) => l.importedRaster)
+  if (!rasters.length) return [] as string[]
+  if (rasters.length === 1) return timeListOf(rasters[0])
+  let common: string[] | null = null
+  for (const layer of rasters) {
+    const times = timeListOf(layer)
+    if (!times.length) return []
+    common = common == null ? [...times] : common.filter((t) => times.includes(t))
+  }
+  return common ?? []
 })
 
 const showTimePicker = computed(() => availableTimes.value.length > 0)
+
+const availableFields = computed(() => {
+  const names = new Set<string>()
+  for (const layer of selectedLayers.value) {
+    const feats = layer.importedVector?.geojson?.features
+    if (!feats?.length) continue
+    const sample = feats.slice(0, 40)
+    for (const f of sample) {
+      const props = f.properties || {}
+      for (const k of Object.keys(props)) names.add(k)
+    }
+  }
+  return [...names].sort((a, b) => a.localeCompare(b))
+})
+
+const showFieldPicker = computed(() => hasVector.value && availableFields.value.length > 0)
+
+const estimatedSize = computed(() => {
+  let total = 0
+  const layers = selectedLayers.value
+  const timeCount =
+    showTimePicker.value && timeExportMode.value === 'multi'
+      ? Math.max(1, selectedTimes.value.length)
+      : 1
+
+  for (const layer of layers) {
+    if (layer.importedVector) {
+      const featCount = layer.importedVector.featureCount || 0
+      const fmt = vectorFormat.value
+      const bytesPerFeat = fmt === 'csv' ? 200 : fmt === 'shp-zip' ? 350 : 600
+      total += featCount * bytesPerFeat
+    } else if (layer.importedRaster) {
+      const tiles = (layer.importedRaster.timeList?.length ?? 1) * timeCount
+      const fmt = rasterFormat.value
+      const bytesPerTile = fmt === 'mat' ? 2_000_000 : fmt === 'netcdf' ? 3_000_000 : 5_000_000
+      total += tiles * bytesPerTile
+    }
+  }
+  return total
+})
 
 function defaultTimeForLayer(layer: ActiveLayer | undefined): string {
   const times = timeListOf(layer)
@@ -106,8 +191,14 @@ watch(
 watch(
   [selectedLayers, dataWorkspaceExportTime, availableTimes],
   () => {
-    if (selectedLayers.value.length === 1) {
-      const def = defaultTimeForLayer(selectedLayers.value[0])
+    if (availableTimes.value.length) {
+      const preferred = dataWorkspaceExportTime.value
+      const def =
+        (preferred && availableTimes.value.includes(preferred)
+          ? preferred
+          : selectedLayers.value.length === 1
+            ? defaultTimeForLayer(selectedLayers.value[0])
+            : availableTimes.value[availableTimes.value.length - 1]) || ''
       selectedTime.value = def
       if (!selectedTimes.value.length && def) {
         selectedTimes.value = [def]
@@ -123,6 +214,11 @@ watch(
   },
   { immediate: true },
 )
+
+watch(availableFields, (fields) => {
+  const allow = new Set(fields)
+  selectedFields.value = selectedFields.value.filter((f) => allow.has(f))
+})
 
 function toggle(id: string) {
   if (selectedIds.value.includes(id)) {
@@ -156,28 +252,80 @@ function clearExportTimes() {
   selectedTimes.value = []
 }
 
-function exportOptsFor(layer: ActiveLayer) {
-  const encoding = textEncoding.value || 'auto'
-  const times = timeListOf(layer)
-  if (!times.length) return { encoding, time: null as string | null }
-
-  if (
-    selectedLayers.value.length === 1 &&
-    timeExportMode.value === 'multi' &&
-    selectedTimes.value.length > 0
-  ) {
-    const picked = selectedTimes.value.filter((t) => times.includes(t))
-    if (picked.length > 1) return { encoding, time: null as string | null, times: picked }
-    if (picked.length === 1) return { encoding, time: picked[0]! }
-  }
-
-  let time: string | null
-  if (selectedLayers.value.length === 1 && selectedTime.value) {
-    time = selectedTime.value
+function toggleField(name: string) {
+  if (selectedFields.value.includes(name)) {
+    selectedFields.value = selectedFields.value.filter((x) => x !== name)
   } else {
-    time = defaultTimeForLayer(layer) || times[times.length - 1] || null
+    selectedFields.value = [...selectedFields.value, name]
   }
-  return { encoding, time }
+}
+
+function selectAllFields() {
+  selectedFields.value = [...availableFields.value]
+}
+
+function clearFields() {
+  selectedFields.value = []
+}
+
+function buildSharedExportOptions(): ExportOptions {
+  const encoding = textEncoding.value || 'auto'
+  const opts: ExportOptions = { encoding }
+  if (showTimePicker.value) {
+    if (timeExportMode.value === 'multi' && selectedTimes.value.length > 0) {
+      const picked = selectedTimes.value.filter((t) => availableTimes.value.includes(t))
+      if (picked.length > 1) {
+        opts.times = picked
+        opts.time = null
+      } else if (picked.length === 1) {
+        opts.time = picked[0]!
+      }
+    } else if (selectedTime.value) {
+      opts.time = selectedTime.value
+    }
+  }
+  if (clipToMap.value) {
+    const bbox = viewport.currentMapBBox.value
+    if (bbox && Number.isFinite(bbox.west) && Number.isFinite(bbox.south)) {
+      opts.bbox = {
+        west: bbox.west,
+        south: bbox.south,
+        east: bbox.east,
+        north: bbox.north,
+        crs: bbox.crs || 'EPSG:4326',
+      }
+    }
+  }
+  if (outputCrs.value.trim()) {
+    opts.outputCrs = outputCrs.value.trim()
+  }
+  if (hasVector.value && selectedFields.value.length) {
+    opts.fields = [...selectedFields.value]
+  }
+  return opts
+}
+
+function exportOptsFor(layer: ActiveLayer): ExportOptions {
+  const shared = buildSharedExportOptions()
+  const times = timeListOf(layer)
+  if (!times.length) return shared
+  if (shared.times?.length || shared.time) return shared
+  return {
+    ...shared,
+    time: defaultTimeForLayer(layer) || times[times.length - 1] || null,
+  }
+}
+
+async function ensureFullVectorData(layers: ActiveLayer[]): Promise<void> {
+  for (const layer of layers) {
+    if (!layer.importedVector?.truncated || !layer.importedVector.backendLayerId) continue
+    msg.value = DATA_COPY.exportLoadFullFirst
+    const gj = await fetchImportedLayerGeojson(layer.importedVector.backendLayerId, false)
+    workspace.updateImportedVectorGeojson(layer.instanceId, gj, {
+      featureCount: gj.features.length,
+      truncated: false,
+    })
+  }
 }
 
 async function doExport() {
@@ -193,34 +341,80 @@ async function doExport() {
     err.value = '请至少选择一个导出时刻'
     return
   }
+  if (clipToMap.value && !viewport.currentMapBBox.value) {
+    err.value = '当前无地图范围，无法裁剪'
+    return
+  }
   busy.value = true
   progress.value = 0
   msg.value = DATA_COPY.processing
   err.value = ''
   try {
     const list = selectedLayers.value
+    await ensureFullVectorData(list.filter((l) => l.importedVector))
     const allVector = list.every((l) => l.importedVector)
     const allRaster = list.every((l) => l.importedRaster)
+    const shared = buildSharedExportOptions()
+
     if (list.length >= 2 && (allVector || allRaster)) {
       const raw = allRaster ? rasterFormat.value : vectorFormat.value
-      const format = (raw === 'geotiff' ? 'tif' : raw === 'netcdf' ? 'nc' : raw) as ExportFormat
-      // 批导出：逐层带各自最新/生效时刻（后端 batch 暂不传统一 time）
-      for (let i = 0; i < list.length; i++) {
-        const layer = list[i]!
-        await exportLayer(layer, format, exportOptsFor(layer))
-        progress.value = (i + 1) / list.length
-        msg.value = `已导出 ${i + 1}/${list.length}`
+      const format = (
+        raw === 'geotiff' ? 'tif' : raw === 'netcdf' ? 'nc' : raw === 'matlab' ? 'mat' : raw
+      ) as ExportFormat
+      try {
+        await exportLayersBatch(
+          list,
+          format,
+          (p, m) => {
+            progress.value = p
+            msg.value = m
+          },
+          shared,
+        )
+        msg.value = `已导出 ${list.length} 个图层`
+        logStore.logOperation('export-batch', `批导出 ${list.length} 层`, format)
+        return
+      } catch (batchErr) {
+        // 批失败则逐层并汇总错误
+        const errors: string[] = []
+        let ok = 0
+        for (let i = 0; i < list.length; i++) {
+          const layer = list[i]!
+          try {
+            await exportLayer(layer, format, exportOptsFor(layer))
+            ok += 1
+          } catch (e) {
+            errors.push(`${layer.name}: ${e instanceof Error ? e.message : String(e)}`)
+          }
+          progress.value = (i + 1) / list.length
+        }
+        if (ok && !errors.length) {
+          msg.value = `已导出 ${ok} 个图层`
+        } else if (ok) {
+          msg.value = `成功 ${ok} 个`
+          err.value = `失败 ${errors.length}：${errors[0]}`
+        } else {
+          err.value = errors[0] || (batchErr instanceof Error ? batchErr.message : String(batchErr))
+          msg.value = ''
+        }
+        return
       }
-      msg.value = `已导出 ${list.length} 个图层`
-      logStore.logOperation('export-batch', `逐层导出 ${list.length} 层`, format)
-      return
     }
+
     let ok = 0
     const errors: string[] = []
     for (let i = 0; i < list.length; i++) {
       const layer = list[i]!
       const format = (
-        layer.importedRaster ? rasterFormat.value : vectorFormat.value
+        layer.importedRaster
+          ? rasterFormat.value === 'geotiff'
+            ? 'tif'
+            : rasterFormat.value === 'netcdf'
+              ? 'nc'
+              : rasterFormat.value === 'matlab'
+                ? 'mat'
+                : rasterFormat.value
+          : vectorFormat.value
       ) as ExportFormat
       const opts = exportOptsFor(layer)
       try {
@@ -240,6 +434,7 @@ async function doExport() {
         errors.push(`${layer.name}: ${e instanceof Error ? e.message : String(e)}`)
       }
       progress.value = (i + 1) / list.length
+      msg.value = `已处理 ${i + 1}/${list.length}`
     }
     if (ok && !errors.length) {
       const stamp =
@@ -251,9 +446,9 @@ async function doExport() {
       msg.value = `已导出 ${ok} 个图层${stamp}`
     } else if (ok) {
       msg.value = `成功 ${ok} 个`
-      err.value = `失败 ${errors.length}：${errors[0]}`
+      err.value = `失败 ${errors.length}：${errors.join('；')}`
     } else {
-      err.value = errors[0] || '导出失败'
+      err.value = errors.join('；') || '导出失败'
       msg.value = ''
     }
   } catch (e) {
@@ -279,9 +474,9 @@ async function doExport() {
     >
       <header v-if="!embedded" class="data-panel-header">
         <span class="header-title">{{ DATA_COPY.exportTitle }}</span>
-        <button class="close-btn" type="button" :title="DATA_COPY.close" @click="emit('close')">
-          ✕
-        </button>
+        <IconButton size="sm" label="关闭" @click="emit('close')"
+          ><template #icon><X :size="14" /></template
+        ></IconButton>
       </header>
 
       <p class="tab-hint">{{ DATA_COPY.exportHint }}</p>
@@ -290,12 +485,12 @@ async function doExport() {
         <p v-if="!importedLayers.length" class="empty">{{ DATA_COPY.emptyExport }}</p>
         <template v-else>
           <div class="sel-actions">
-            <button type="button" class="link-btn" @click="selectAll">
+            <AppButton size="xs" variant="ghost" @click="selectAll">
               {{ DATA_COPY.selectAll }}
-            </button>
-            <button type="button" class="link-btn" @click="clearSelection">
+            </AppButton>
+            <AppButton size="xs" variant="ghost" @click="clearSelection">
               {{ DATA_COPY.clearSelection }}
-            </button>
+            </AppButton>
             <span class="sel-count">已选 {{ selectedIds.length }}</span>
           </div>
           <ul class="layer-list">
@@ -306,8 +501,16 @@ async function doExport() {
                   :checked="selectedIds.includes(l.instanceId)"
                   @change="toggle(l.instanceId)"
                 />
-                <span>{{ l.name }}</span>
+                <span class="layer-main">
+                  <span class="layer-name">{{ l.name }}</span>
+                  <span class="layer-id"
+                    >{{ DATA_COPY.exportMachineId }}: {{ machineIdOf(l) }}</span
+                  >
+                </span>
                 <em>
+                  <template v-if="isWorkflowProduct(l)"
+                    >{{ DATA_COPY.exportWorkflowProduct }} ·
+                  </template>
                   {{ l.importedRaster ? '栅格' : '矢量'
                   }}{{
                     l.importedRaster?.timeList?.length
@@ -320,22 +523,31 @@ async function doExport() {
           </ul>
           <label v-if="hasVector">
             矢量 {{ DATA_COPY.exportFormat }}
-            <select v-model="vectorFormat">
-              <option value="geojson">GeoJSON</option>
-              <option value="csv">CSV</option>
-              <option value="shp-zip">SHP (zip)</option>
-            </select>
+            <AppSelect
+              v-model="vectorFormat"
+              :options="[
+                { label: 'GeoJSON', value: 'geojson' },
+                { label: 'CSV', value: 'csv' },
+                { label: 'SHP (zip)', value: 'shp-zip' },
+              ]"
+            />
           </label>
           <label v-if="hasRaster">
             栅格 {{ DATA_COPY.exportFormat }}
-            <select v-model="rasterFormat">
-              <option value="geotiff">GeoTIFF</option>
-              <option value="netcdf">NetCDF</option>
-              <option value="png">预览 PNG</option>
-            </select>
+            <AppSelect
+              v-model="rasterFormat"
+              :options="[
+                { label: DATA_COPY.exportRasterGeotiff, value: 'geotiff' },
+                { label: DATA_COPY.exportRasterMat, value: 'mat' },
+                { label: DATA_COPY.exportRasterNc, value: 'netcdf' },
+                { label: DATA_COPY.exportRasterPng, value: 'png' },
+              ]"
+            />
           </label>
           <fieldset v-if="showTimePicker" class="time-export">
-            <legend>{{ DATA_COPY.exportTime }}</legend>
+            <legend>
+              {{ selectedLayers.length > 1 ? DATA_COPY.exportTimeCommon : DATA_COPY.exportTime }}
+            </legend>
             <div class="time-mode-row">
               <label class="radio-row">
                 <input v-model="timeExportMode" type="radio" value="single" />
@@ -346,17 +558,19 @@ async function doExport() {
                 {{ DATA_COPY.exportTimeModeMulti }}
               </label>
             </div>
-            <select v-if="timeExportMode === 'single'" v-model="selectedTime">
-              <option v-for="t in availableTimes" :key="t" :value="t">{{ t }}</option>
-            </select>
+            <AppSelect
+              v-if="timeExportMode === 'single'"
+              v-model="selectedTime"
+              :options="availableTimes.map((t) => ({ label: t, value: t }))"
+            />
             <template v-else>
               <div class="sel-actions">
-                <button type="button" class="link-btn" @click="selectAllExportTimes">
+                <AppButton size="xs" variant="ghost" @click="selectAllExportTimes">
                   {{ DATA_COPY.exportTimeSelectAll }}
-                </button>
-                <button type="button" class="link-btn" @click="clearExportTimes">
+                </AppButton>
+                <AppButton size="xs" variant="ghost" @click="clearExportTimes">
                   {{ DATA_COPY.exportTimeClear }}
-                </button>
+                </AppButton>
                 <span class="sel-count">已选 {{ selectedTimes.length }}</span>
               </div>
               <ul class="time-list">
@@ -374,18 +588,61 @@ async function doExport() {
             </template>
             <p class="enc-hint">{{ DATA_COPY.exportTimeHint }}</p>
           </fieldset>
+          <label class="check-inline">
+            <input v-model="clipToMap" type="checkbox" />
+            {{ DATA_COPY.exportClipMap }}
+          </label>
+          <label>
+            {{ DATA_COPY.exportOutputCrs }}
+            <AppSelect
+              v-model="outputCrs"
+              :options="[
+                { label: DATA_COPY.exportOutputCrsSource, value: '' },
+                { label: 'EPSG:4326 (WGS84)', value: 'EPSG:4326' },
+                { label: 'EPSG:3857 (Web Mercator)', value: 'EPSG:3857' },
+              ]"
+            />
+          </label>
+          <fieldset v-if="showFieldPicker" class="time-export">
+            <legend>{{ DATA_COPY.exportFields }}</legend>
+            <div class="sel-actions">
+              <AppButton size="xs" variant="ghost" @click="selectAllFields">
+                {{ DATA_COPY.exportFieldsAll }}
+              </AppButton>
+              <AppButton size="xs" variant="ghost" @click="clearFields">
+                {{ DATA_COPY.exportFieldsClear }}
+              </AppButton>
+              <span class="sel-count">已选 {{ selectedFields.length || '全部' }}</span>
+            </div>
+            <ul class="time-list">
+              <li v-for="f in availableFields" :key="f">
+                <label class="check-row">
+                  <input
+                    type="checkbox"
+                    :checked="selectedFields.includes(f)"
+                    @change="toggleField(f)"
+                  />
+                  <span>{{ f }}</span>
+                </label>
+              </li>
+            </ul>
+            <p class="enc-hint">{{ DATA_COPY.exportFieldsHint }}</p>
+          </fieldset>
           <label v-if="needsTextEncoding">
             {{ DATA_COPY.exportEncoding }}
-            <select v-model="textEncoding">
-              <option v-for="opt in encodingOptions" :key="opt.id" :value="opt.id">
-                {{ opt.label }}
-              </option>
-            </select>
+            <AppSelect
+              v-model="textEncoding"
+              :options="encodingOptions.map((opt) => ({ label: opt.label, value: opt.id }))"
+            />
           </label>
           <p v-if="needsTextEncoding" class="enc-hint">{{ DATA_COPY.exportEncodingHint }}</p>
-          <button
-            class="primary-btn"
-            type="button"
+          <p v-if="estimatedSize > 0" class="est-size">
+            预估大小：~{{ formatBytes(estimatedSize) }}
+            <span class="est-hint">（仅为粗略估算）</span>
+          </p>
+          <AppButton
+            variant="primary"
+            block
             :disabled="
               busy ||
               !selectedIds.length ||
@@ -394,7 +651,7 @@ async function doExport() {
             @click="doExport"
           >
             {{ DATA_COPY.doExport }}
-          </button>
+          </AppButton>
         </template>
       </div>
 
@@ -434,20 +691,20 @@ async function doExport() {
   justify-content: center;
   padding: 3.5vh 1rem 2vh;
   overflow: auto;
-  background: rgba(4, 10, 18, 0.55);
+  background: var(--surface-raised);
 }
 .data-panel {
   width: min(28rem, calc(100vw - 2rem));
-  max-height: min(70vh, 32rem);
+  max-height: min(78vh, 40rem);
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
   border-radius: 0.7rem;
-  background: rgba(8, 17, 31, 0.98);
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  background: var(--surface-2);
+  border: 1px solid var(--border-default);
   box-shadow: 0 18px 48px rgba(1, 8, 16, 0.45);
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 .data-panel-header {
   display: flex;
@@ -456,35 +713,16 @@ async function doExport() {
   gap: 0.6rem;
   flex-shrink: 0;
   padding: 0.62rem 0.8rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.1);
+  border-bottom: 1px solid var(--border-subtle);
 }
 .header-title {
-  font-size: 0.76rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
-}
-.close-btn {
-  flex: none;
-  width: 1.7rem;
-  height: 1.7rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(136, 192, 255, 0.22);
-  border-radius: 0.38rem;
-  background: rgba(4, 12, 23, 0.72);
-  color: #d8e6f5;
-  cursor: pointer;
-  font-size: 0.78rem;
-  line-height: 1;
-}
-.close-btn:hover {
-  border-color: rgba(90, 213, 255, 0.4);
-  color: #5ad5ff;
 }
 .tab-hint {
   margin: 0.5rem 0.9rem 0;
-  font-size: 0.54rem;
-  color: #6a8094;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   line-height: 1.4;
 }
 .data-panel-body {
@@ -497,8 +735,8 @@ async function doExport() {
 }
 .empty {
   margin: 0;
-  font-size: 0.62rem;
-  color: #8aa0b4;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 .sel-actions {
   display: flex;
@@ -508,27 +746,37 @@ async function doExport() {
 .link-btn {
   border: none;
   background: transparent;
-  color: #5ad5ff;
+  color: var(--accent);
   font: inherit;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   padding: 0;
 }
 .sel-count {
   margin-left: auto;
-  font-size: 0.52rem;
-  color: #6a8094;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
 }
 .enc-hint {
   margin: -0.15rem 0 0;
-  font-size: 0.5rem;
-  color: #7a91a8;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
   line-height: 1.35;
+}
+.est-size {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.est-hint {
+  color: var(--text-faint);
+  font-weight: 400;
 }
 .time-export {
   margin: 0;
   padding: 0.45rem 0.55rem 0.5rem;
-  border: 1px solid rgba(136, 192, 255, 0.12);
+  border: 1px solid var(--border-default);
   border-radius: 0.4rem;
   display: flex;
   flex-direction: column;
@@ -536,8 +784,8 @@ async function doExport() {
 }
 .time-export legend {
   padding: 0 0.25rem;
-  font-size: 0.56rem;
-  color: #9bb4c8;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
 }
 .time-mode-row {
   display: flex;
@@ -548,8 +796,17 @@ async function doExport() {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  font-size: 0.56rem;
-  color: #d8e6f5;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.check-inline {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
   cursor: pointer;
 }
 .time-list {
@@ -558,7 +815,7 @@ async function doExport() {
   list-style: none;
   max-height: 8.5rem;
   overflow: auto;
-  border: 1px solid rgba(136, 192, 255, 0.1);
+  border: 1px solid var(--border-subtle);
   border-radius: 0.35rem;
 }
 .layer-list {
@@ -567,52 +824,71 @@ async function doExport() {
   list-style: none;
   max-height: 12rem;
   overflow: auto;
-  border: 1px solid rgba(136, 192, 255, 0.1);
+  border: 1px solid var(--border-subtle);
   border-radius: 0.4rem;
+}
+.layer-list li {
+  content-visibility: auto;
+  contain-intrinsic-size: 2.4rem;
 }
 .check-row {
   display: flex;
   align-items: center;
   gap: 0.4rem;
   padding: 0.32rem 0.5rem;
-  font-size: 0.58rem;
-  color: #d8e6f5;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
   cursor: pointer;
 }
 .check-row:hover {
-  background: rgba(10, 132, 255, 0.08);
+  background: var(--accent-surface);
+}
+.layer-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+  min-width: 0;
+}
+.layer-name {
+  font-size: var(--font-size-caption);
+}
+.layer-id {
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
+  word-break: break-all;
 }
 .check-row em {
   margin-left: auto;
   font-style: normal;
-  color: #6a8094;
-  font-size: 0.5rem;
+  color: var(--text-faint);
+  font-size: var(--font-size-caption);
+  flex-shrink: 0;
 }
-label:not(.check-row) {
+label:not(.check-row):not(.radio-row):not(.check-inline) {
   display: flex;
   flex-direction: column;
   gap: 0.18rem;
-  font-size: 0.54rem;
-  color: #8aa0b4;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 select {
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.34rem;
   padding: 0.32rem 0.4rem;
-  background: rgba(4, 12, 23, 0.7);
-  color: #d8e6f5;
+  background: var(--surface-1);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
 }
 .primary-btn {
   width: fit-content;
-  border: 1px solid rgba(90, 213, 255, 0.35);
+  border: 1px solid var(--border-strong);
   border-radius: 0.42rem;
   padding: 0.36rem 0.72rem;
-  background: rgba(10, 132, 255, 0.22);
-  color: #a8e8ff;
+  background: var(--accent-border);
+  color: var(--accent-strong);
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 .primary-btn:disabled {
@@ -621,25 +897,25 @@ select {
 }
 .data-panel-footer {
   padding: 0.45rem 0.9rem 0.7rem;
-  border-top: 1px solid rgba(136, 192, 255, 0.1);
+  border-top: 1px solid var(--border-subtle);
 }
 .progress-bar {
   height: 0.28rem;
   border-radius: 999px;
-  background: rgba(136, 192, 255, 0.12);
+  background: var(--border-default);
   overflow: hidden;
   margin-bottom: 0.35rem;
 }
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #0a84ff, #5ad5ff);
+  background: linear-gradient(90deg, var(--accent), var(--accent));
 }
 .msg {
   margin: 0;
-  font-size: 0.58rem;
-  color: #9ec4e0;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
 }
 .msg.error {
-  color: #ffb0b0;
+  color: var(--danger);
 }
 </style>

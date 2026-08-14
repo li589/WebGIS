@@ -13,6 +13,16 @@
  * - 高级参数类型提示
  */
 import { computed, ref, watch } from 'vue'
+import {
+  Rocket,
+  X,
+  Check,
+  AlertTriangle,
+  Settings,
+  ArrowRight,
+  ChevronDown,
+  Play,
+} from '../ui/icons'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import { fetchWorkflowDefinition } from '../../services/workflow-definition-api'
 import type { WorkflowDefinition } from '../../services/workflow-definition-api'
@@ -361,171 +371,186 @@ watch(
 </script>
 
 <template>
-  <div v-if="visible" class="pipeline-overlay" @click.self="handleClose">
-    <div class="pipeline-dialog">
-      <header class="pipeline-header">
-        <div class="header-left">
-          <span class="header-icon" aria-hidden="true">🚀</span>
-          <div class="header-titles">
-            <h3 class="dialog-title">
-              {{ showParams ? '配置流水线参数' : '端到端流水线' }}
-            </h3>
-            <p v-if="showParams && selectedPipeline" class="dialog-subtitle">
-              {{ selectedPipeline.name }}
-            </p>
-            <p v-else class="dialog-subtitle">选择一个流水线以启动端到端反演流程</p>
+  <Transition name="pipeline-fade">
+    <div v-if="visible" class="pipeline-overlay" @click.self="handleClose">
+      <div class="pipeline-dialog">
+        <header class="pipeline-header">
+          <div class="header-left">
+            <Rocket :size="18" class="header-icon" aria-hidden="true" />
+            <div class="header-titles">
+              <h3 class="dialog-title">
+                {{ showParams ? '配置流水线参数' : '端到端流水线' }}
+              </h3>
+              <p v-if="showParams && selectedPipeline" class="dialog-subtitle">
+                {{ selectedPipeline.name }}
+              </p>
+              <p v-else class="dialog-subtitle">选择一个流水线以启动端到端反演流程</p>
+            </div>
           </div>
-        </div>
-        <button class="close-btn" type="button" title="关闭" @click="handleClose">
-          <span aria-hidden="true">✕</span>
-        </button>
-      </header>
-
-      <!-- 启动反馈横幅 -->
-      <div
-        v-if="launchResult"
-        class="launch-banner"
-        :class="launchResult.success ? 'success' : 'error'"
-      >
-        <span aria-hidden="true">{{ launchResult.success ? '✓' : '✕' }}</span>
-        <span>{{ launchResult.message }}</span>
-      </div>
-
-      <!-- 加载状态 -->
-      <div v-if="loading" class="pipeline-body wf-scroll">
-        <div class="loading-hint">
-          正在加载流水线列表...<span v-if="loadProgress.total > 0" class="loading-progress"
-            >（{{ loadProgress.done }}/{{ loadProgress.total }}）</span
+          <button
+            class="close-btn"
+            type="button"
+            title="关闭"
+            aria-label="关闭"
+            @click="handleClose"
           >
-        </div>
-      </div>
+            <X :size="14" aria-hidden="true" />
+          </button>
+        </header>
 
-      <!-- 加载错误 -->
-      <div v-else-if="loadError" class="pipeline-body wf-scroll">
-        <div class="error-hint">
-          <span aria-hidden="true">⚠</span>
-          <span>加载失败: {{ loadError }}</span>
-        </div>
-      </div>
-
-      <!-- 空状态 -->
-      <div v-else-if="pipelines.length === 0 && !showParams" class="pipeline-body wf-scroll">
-        <div class="empty-hint">未找到带 "pipeline" 标签的系统工作流</div>
-      </div>
-
-      <!-- 流水线卡片列表 -->
-      <div v-else-if="!showParams" class="pipeline-body wf-scroll">
-        <!-- 搜索栏 -->
-        <div v-if="pipelines.length > 1" class="search-row">
-          <input
-            v-model="searchQuery"
-            type="text"
-            class="search-input"
-            placeholder="搜索流水线名称、描述或 ID..."
-          />
-          <span class="search-count">{{ filteredPipelines.length }}/{{ pipelines.length }}</span>
+        <!-- 启动反馈横幅 -->
+        <div
+          v-if="launchResult"
+          class="launch-banner"
+          :class="launchResult.success ? 'success' : 'error'"
+        >
+          <Check v-if="launchResult.success" :size="14" aria-hidden="true" />
+          <X v-else :size="14" aria-hidden="true" />
+          <span>{{ launchResult.message }}</span>
         </div>
 
-        <div v-for="card in filteredPipelines" :key="card.workflowId" class="pipeline-card">
-          <div class="card-header">
-            <span class="card-icon" aria-hidden="true">⚙</span>
-            <h4 class="card-title">{{ card.name }}</h4>
-          </div>
-          <p class="card-desc">{{ card.description }}</p>
-          <div v-if="card.outputs.length > 0" class="card-outputs">
-            <span v-for="output in card.outputs" :key="output" class="output-tag">
-              {{ output }}
-            </span>
-          </div>
-          <div class="card-footer">
-            <button
-              class="quick-btn"
-              type="button"
-              title="使用默认参数快速启动"
-              @click="handleQuickLaunch(card)"
+        <!-- 加载状态 -->
+        <div v-if="loading" class="pipeline-body wf-scroll">
+          <div class="loading-hint">
+            正在加载流水线列表...<span v-if="loadProgress.total > 0" class="loading-progress"
+              >（{{ loadProgress.done }}/{{ loadProgress.total }}）</span
             >
-              快速启动
-            </button>
-            <button class="launch-btn" type="button" @click="handleLaunchClick(card)">
-              <span>配置并启动</span>
-              <span aria-hidden="true">→</span>
-            </button>
           </div>
         </div>
 
-        <!-- 搜索无结果 -->
-        <div v-if="filteredPipelines.length === 0 && searchQuery" class="empty-hint">
-          未找到匹配 "{{ searchQuery }}" 的流水线
+        <!-- 加载错误 -->
+        <div v-else-if="loadError" class="pipeline-body wf-scroll">
+          <div class="error-hint">
+            <AlertTriangle :size="14" aria-hidden="true" />
+            <span>加载失败: {{ loadError }}</span>
+          </div>
         </div>
-      </div>
 
-      <!-- 参数配置面板 -->
-      <div v-else class="pipeline-body wf-scroll">
-        <div class="param-form">
-          <!-- 日期范围预设 -->
-          <div class="preset-row">
-            <span class="preset-label">快捷选择</span>
-            <div class="preset-buttons">
+        <!-- 空状态 -->
+        <div v-else-if="pipelines.length === 0 && !showParams" class="pipeline-body wf-scroll">
+          <div class="empty-hint">未找到带 "pipeline" 标签的系统工作流</div>
+        </div>
+
+        <!-- 流水线卡片列表 -->
+        <div v-else-if="!showParams" class="pipeline-body wf-scroll">
+          <!-- 搜索栏 -->
+          <div v-if="pipelines.length > 1" class="search-row">
+            <input
+              v-model="searchQuery"
+              type="text"
+              class="search-input"
+              placeholder="搜索流水线名称、描述或 ID..."
+            />
+            <span class="search-count">{{ filteredPipelines.length }}/{{ pipelines.length }}</span>
+          </div>
+
+          <div v-for="card in filteredPipelines" :key="card.workflowId" class="pipeline-card">
+            <div class="card-header">
+              <Settings :size="14" class="card-icon" aria-hidden="true" />
+              <h4 class="card-title">{{ card.name }}</h4>
+            </div>
+            <p class="card-desc">{{ card.description }}</p>
+            <div v-if="card.outputs.length > 0" class="card-outputs">
+              <span v-for="output in card.outputs" :key="output" class="output-tag">
+                {{ output }}
+              </span>
+            </div>
+            <div class="card-footer">
               <button
-                v-for="preset in datePresets"
-                :key="preset.label"
-                class="preset-btn"
+                class="quick-btn"
                 type="button"
-                @click="applyDatePreset(preset)"
+                title="使用默认参数快速启动"
+                @click="handleQuickLaunch(card)"
               >
-                {{ preset.label }}
+                快速启动
+              </button>
+              <button class="launch-btn" type="button" @click="handleLaunchClick(card)">
+                <span>配置并启动</span>
+                <ArrowRight :size="14" aria-hidden="true" />
               </button>
             </div>
           </div>
 
-          <div class="date-row">
-            <div class="form-row">
-              <label class="form-label">开始日期</label>
-              <input v-model="startDate" type="date" class="form-input date-input" />
-            </div>
-            <span class="date-separator">→</span>
-            <div class="form-row">
-              <label class="form-label">结束日期</label>
-              <input v-model="endDate" type="date" class="form-input date-input" />
-            </div>
+          <!-- 搜索无结果 -->
+          <div v-if="filteredPipelines.length === 0 && searchQuery" class="empty-hint">
+            未找到匹配 "{{ searchQuery }}" 的流水线
           </div>
+        </div>
 
-          <div class="format-hint">格式: YYYYMMDD（自动转换）</div>
+        <!-- 参数配置面板 -->
+        <div v-else class="pipeline-body wf-scroll">
+          <div class="param-form">
+            <!-- 日期范围预设 -->
+            <div class="preset-row">
+              <span class="preset-label">快捷选择</span>
+              <div class="preset-buttons">
+                <button
+                  v-for="preset in datePresets"
+                  :key="preset.label"
+                  class="preset-btn"
+                  type="button"
+                  @click="applyDatePreset(preset)"
+                >
+                  {{ preset.label }}
+                </button>
+              </div>
+            </div>
 
-          <!-- 日期范围校验错误 -->
-          <div v-if="dateError" class="date-error">{{ dateError }}</div>
+            <div class="date-row">
+              <div class="form-row">
+                <label class="form-label">开始日期</label>
+                <input v-model="startDate" type="date" class="form-input date-input" />
+              </div>
+              <ArrowRight :size="14" class="date-separator" aria-hidden="true" />
+              <div class="form-row">
+                <label class="form-label">结束日期</label>
+                <input v-model="endDate" type="date" class="form-input date-input" />
+              </div>
+            </div>
 
-          <!-- 高级参数可折叠区域 -->
-          <div v-if="advancedParams.length > 0" class="advanced-section">
-            <button class="advanced-toggle" type="button" @click="showAdvanced = !showAdvanced">
-              <span aria-hidden="true">{{ showAdvanced ? '▼' : '▶' }}</span>
-              <span>高级参数 ({{ advancedParams.length }})</span>
-            </button>
-            <p class="override-tip">启动器参数优先覆盖节点 algorithm_params 中的同名键</p>
-            <div v-if="showAdvanced" class="advanced-content">
-              <div v-for="(adv, idx) in advancedParams" :key="idx" class="form-row compact">
-                <label class="form-label">{{ adv.key }}</label>
-                <input v-model="adv.value" type="text" class="form-input" :placeholder="adv.key" />
+            <div class="format-hint">格式: YYYYMMDD（自动转换）</div>
+
+            <!-- 日期范围校验错误 -->
+            <div v-if="dateError" class="date-error">{{ dateError }}</div>
+
+            <!-- 高级参数可折叠区域 -->
+            <div v-if="advancedParams.length > 0" class="advanced-section">
+              <button class="advanced-toggle" type="button" @click="showAdvanced = !showAdvanced">
+                <ChevronDown v-if="showAdvanced" :size="14" aria-hidden="true" />
+                <Play v-else :size="14" aria-hidden="true" />
+                <span>高级参数 ({{ advancedParams.length }})</span>
+              </button>
+              <p class="override-tip">启动器参数优先覆盖节点 algorithm_params 中的同名键</p>
+              <div v-if="showAdvanced" class="advanced-content">
+                <div v-for="(adv, idx) in advancedParams" :key="idx" class="form-row compact">
+                  <label class="form-label">{{ adv.key }}</label>
+                  <input
+                    v-model="adv.value"
+                    type="text"
+                    class="form-input"
+                    :placeholder="adv.key"
+                  />
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- 底部操作栏（参数配置步骤） -->
-      <footer v-if="showParams" class="pipeline-footer">
-        <button class="action-btn cancel" type="button" @click="handleBack">返回</button>
-        <button
-          class="action-btn confirm"
-          type="button"
-          :disabled="!startDate || !endDate || !!launchResult"
-          @click="handleConfirmLaunch"
-        >
-          确认启动
-        </button>
-      </footer>
+        <!-- 底部操作栏（参数配置步骤） -->
+        <footer v-if="showParams" class="pipeline-footer">
+          <button class="action-btn cancel" type="button" @click="handleBack">返回</button>
+          <button
+            class="action-btn confirm"
+            type="button"
+            :disabled="!startDate || !endDate || !!launchResult"
+            @click="handleConfirmLaunch"
+          >
+            确认启动
+          </button>
+        </footer>
+      </div>
     </div>
-  </div>
+  </Transition>
 </template>
 
 <style scoped>
@@ -536,7 +561,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(2, 8, 18, 0.62);
+  background: var(--surface-1);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
@@ -548,8 +573,8 @@ watch(
   display: flex;
   flex-direction: column;
   border-radius: 0.9rem;
-  border: 1px solid rgba(136, 192, 255, 0.22);
-  background: linear-gradient(180deg, rgba(14, 24, 42, 0.96), rgba(8, 16, 30, 0.96));
+  border: 1px solid var(--border-strong);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-2));
   box-shadow: 0 20px 48px rgba(1, 8, 16, 0.5);
 }
 
@@ -559,7 +584,7 @@ watch(
   align-items: center;
   justify-content: space-between;
   padding: 0.72rem 0.86rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.12);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .header-left {
@@ -581,31 +606,34 @@ watch(
 .dialog-title {
   margin: 0;
   font-size: 0.82rem;
-  color: #f0f7ff;
+  color: var(--text-strong);
   font-weight: 600;
 }
 
 .dialog-subtitle {
   margin: 0;
-  font-size: 0.58rem;
-  color: #7f93a9;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 
 .close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0.32rem 0.46rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.42rem;
   background: transparent;
-  color: #6e8ba0;
+  color: var(--text-faint);
   cursor: pointer;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   transition: all 0.16s ease;
 }
 
 .close-btn:hover {
   border-color: rgba(255, 120, 120, 0.36);
-  color: #ff9b9b;
+  color: var(--danger);
 }
 
 /* ── 启动反馈横幅 ────────────────────────────────────────────── */
@@ -614,19 +642,19 @@ watch(
   align-items: center;
   gap: 0.4rem;
   padding: 0.5rem 0.86rem;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   font-weight: 500;
 }
 
 .launch-banner.success {
   background: rgba(40, 180, 90, 0.12);
-  color: #9ff8cf;
+  color: var(--success);
   border-bottom: 1px solid rgba(40, 180, 90, 0.25);
 }
 
 .launch-banner.error {
   background: rgba(180, 40, 40, 0.12);
-  color: #ff9b9b;
+  color: var(--danger);
   border-bottom: 1px solid rgba(180, 40, 40, 0.25);
 }
 
@@ -645,8 +673,8 @@ watch(
 .error-hint {
   text-align: center;
   padding: 2rem 1rem;
-  font-size: 0.66rem;
-  color: #7f93a9;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 
 .error-hint {
@@ -654,7 +682,7 @@ watch(
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  color: #ff9b9b;
+  color: var(--danger);
 }
 
 /* ── 搜索栏 ────────────────────────────────────────────────── */
@@ -669,26 +697,26 @@ watch(
   flex: 1;
   padding: 0.36rem 0.62rem;
   border-radius: 0.5rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
-  background: rgba(8, 18, 33, 0.6);
-  color: #eaf3fb;
+  border: 1px solid var(--border-default);
+  background: var(--surface-1);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   outline: none;
   transition: border-color 0.18s ease;
 }
 
 .search-input:focus {
-  border-color: rgba(255, 184, 77, 0.4);
+  border-color: var(--warning-border);
 }
 
 .search-input::placeholder {
-  color: #5a6f85;
+  color: var(--text-faint);
 }
 
 .search-count {
-  font-size: 0.56rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   flex: none;
 }
 
@@ -696,16 +724,16 @@ watch(
 .pipeline-card {
   padding: 0.72rem 0.82rem;
   border-radius: 0.62rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
-  background: rgba(8, 17, 31, 0.72);
+  border: 1px solid var(--border-default);
+  background: var(--surface-1);
   transition:
     border-color 0.18s ease,
     background 0.18s ease;
 }
 
 .pipeline-card:hover {
-  border-color: rgba(90, 213, 255, 0.32);
-  background: rgba(12, 28, 48, 0.72);
+  border-color: var(--border-accent);
+  background: var(--surface-1);
 }
 
 .card-header {
@@ -716,21 +744,21 @@ watch(
 }
 
 .card-icon {
-  font-size: 0.72rem;
-  color: #5ad5ff;
+  font-size: var(--font-size-caption);
+  color: var(--accent);
 }
 
 .card-title {
   margin: 0;
-  font-size: 0.72rem;
-  color: #eaf3fb;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
   font-weight: 600;
 }
 
 .card-desc {
   margin: 0 0 0.52rem;
-  font-size: 0.58rem;
-  color: #8aa0b6;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
   line-height: 1.5;
 }
 
@@ -746,8 +774,8 @@ watch(
   border-radius: 0.32rem;
   border: 1px solid rgba(120, 255, 160, 0.3);
   background: rgba(40, 180, 90, 0.12);
-  color: #9ff8cf;
-  font-size: 0.56rem;
+  color: var(--success);
+  font-size: var(--font-size-caption);
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -761,11 +789,11 @@ watch(
 .quick-btn {
   padding: 0.36rem 0.62rem;
   border-radius: 0.52rem;
-  border: 1px solid rgba(136, 192, 255, 0.2);
-  background: rgba(8, 18, 33, 0.6);
-  color: #bfd3e6;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-1);
+  color: var(--text-secondary);
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   transition:
     border-color 0.18s ease,
@@ -774,9 +802,9 @@ watch(
 }
 
 .quick-btn:hover {
-  border-color: rgba(136, 192, 255, 0.4);
-  background: rgba(16, 32, 54, 0.8);
-  color: #eaf3fb;
+  border-color: var(--border-strong);
+  background: var(--surface-1);
+  color: var(--text-primary);
 }
 
 .launch-btn {
@@ -785,11 +813,11 @@ watch(
   gap: 0.32rem;
   padding: 0.36rem 0.78rem;
   border-radius: 0.52rem;
-  border: 1px solid rgba(255, 184, 77, 0.36);
-  background: rgba(255, 184, 77, 0.14);
-  color: #ffd38a;
+  border: 1px solid var(--warning-border);
+  background: var(--warning-surface);
+  color: var(--accent-warm);
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   font-weight: 500;
   cursor: pointer;
   transition:
@@ -799,9 +827,9 @@ watch(
 }
 
 .launch-btn:hover {
-  border-color: rgba(255, 184, 77, 0.56);
-  background: rgba(255, 184, 77, 0.22);
-  color: #fff0d4;
+  border-color: var(--warning-border);
+  background: var(--warning-border);
+  color: var(--accent-warm);
 }
 
 /* ── 参数表单 ──────────────────────────────────────────────── */
@@ -819,8 +847,8 @@ watch(
 }
 
 .preset-label {
-  font-size: 0.58rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   flex: none;
 }
 
@@ -833,11 +861,11 @@ watch(
 .preset-btn {
   padding: 0.24rem 0.56rem;
   border-radius: 999px;
-  border: 1px solid rgba(90, 213, 255, 0.25);
-  background: rgba(10, 132, 255, 0.08);
-  color: #5ad5ff;
+  border: 1px solid var(--border-accent);
+  background: var(--accent-surface);
+  color: var(--accent);
   font: inherit;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   transition:
     border-color 0.16s ease,
@@ -845,8 +873,8 @@ watch(
 }
 
 .preset-btn:hover {
-  border-color: rgba(90, 213, 255, 0.5);
-  background: rgba(10, 132, 255, 0.18);
+  border-color: var(--border-strong);
+  background: var(--accent-surface);
 }
 
 /* 日期并排 */
@@ -861,8 +889,8 @@ watch(
 }
 
 .date-separator {
-  font-size: 0.72rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   padding-bottom: 0.4rem;
   flex: none;
 }
@@ -878,29 +906,29 @@ watch(
 }
 
 .form-label {
-  font-size: 0.58rem;
-  color: #9eb3c8;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
   font-weight: 500;
 }
 
 .form-input {
   padding: 0.4rem 0.52rem;
   border-radius: 0.5rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
-  background: rgba(8, 18, 33, 0.6);
-  color: #eaf3fb;
+  border: 1px solid var(--border-default);
+  background: var(--surface-1);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   outline: none;
   transition: border-color 0.18s ease;
 }
 
 .form-input:focus {
-  border-color: rgba(255, 184, 77, 0.4);
+  border-color: var(--warning-border);
 }
 
 .form-input::placeholder {
-  color: #5a6f85;
+  color: var(--text-faint);
 }
 
 .date-input {
@@ -908,21 +936,21 @@ watch(
 }
 
 .format-hint {
-  font-size: 0.52rem;
-  color: #5a7080;
+  font-size: var(--font-size-caption);
+  color: var(--text-disabled);
   margin-top: -0.2rem;
 }
 
 /* ── 高级参数折叠区 ────────────────────────────────────────── */
 .advanced-section {
   margin-top: 0.32rem;
-  border-top: 1px solid rgba(136, 192, 255, 0.1);
+  border-top: 1px solid var(--border-subtle);
   padding-top: 0.52rem;
 }
 
 .override-tip {
   margin: 0.28rem 0 0.2rem;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
   color: rgba(200, 220, 235, 0.72);
   line-height: 1.35;
 }
@@ -934,15 +962,15 @@ watch(
   padding: 0;
   border: none;
   background: transparent;
-  color: #8aa0b6;
+  color: var(--text-muted);
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   transition: color 0.16s ease;
 }
 
 .advanced-toggle:hover {
-  color: #c4d6e8;
+  color: var(--text-secondary);
 }
 
 .advanced-content {
@@ -952,8 +980,8 @@ watch(
   gap: 0.52rem;
   padding: 0.52rem;
   border-radius: 0.52rem;
-  background: rgba(4, 12, 23, 0.4);
-  border: 1px solid rgba(136, 192, 255, 0.08);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
 }
 
 /* ── 底部操作栏 ────────────────────────────────────────────── */
@@ -962,17 +990,17 @@ watch(
   justify-content: flex-end;
   gap: 0.4rem;
   padding: 0.5rem 0.86rem 0.62rem;
-  border-top: 1px solid rgba(136, 192, 255, 0.12);
+  border-top: 1px solid var(--border-default);
 }
 
 .action-btn {
   padding: 0.4rem 0.78rem;
   border-radius: 999px;
-  border: 1px solid rgba(136, 192, 255, 0.2);
-  background: rgba(8, 18, 33, 0.6);
-  color: #bfd3e6;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-1);
+  color: var(--text-secondary);
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   transition:
     border-color 0.18s ease,
@@ -981,20 +1009,20 @@ watch(
 }
 
 .action-btn.cancel:hover {
-  border-color: rgba(136, 192, 255, 0.36);
-  color: #eaf3fb;
+  border-color: var(--border-strong);
+  color: var(--text-primary);
 }
 
 .action-btn.confirm {
-  border-color: rgba(255, 184, 77, 0.36);
-  background: rgba(255, 184, 77, 0.14);
-  color: #ffd38a;
+  border-color: var(--warning-border);
+  background: var(--warning-surface);
+  color: var(--accent-warm);
 }
 
 .action-btn.confirm:hover:not(:disabled) {
-  border-color: rgba(255, 184, 77, 0.56);
-  background: rgba(255, 184, 77, 0.22);
-  color: #fff0d4;
+  border-color: var(--warning-border);
+  background: var(--warning-border);
+  color: var(--accent-warm);
 }
 
 .action-btn.confirm:disabled {
@@ -1004,11 +1032,48 @@ watch(
 
 /* 日期范围校验错误提示 */
 .date-error {
-  font-size: 0.56rem;
-  color: #ff7b7b;
+  font-size: var(--font-size-caption);
+  color: var(--danger);
   padding: 0.3rem 0.52rem;
   border-radius: 0.5rem;
   border: 1px solid rgba(255, 123, 123, 0.25);
   background: rgba(255, 123, 123, 0.08);
+}
+
+/* ── 对话框出入场动画 ──────────────────────────────────────── */
+.pipeline-fade-enter-active {
+  transition: opacity 0.2s ease;
+}
+.pipeline-fade-enter-active .pipeline-dialog {
+  transition:
+    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.2s ease;
+}
+.pipeline-fade-leave-active {
+  transition: opacity 0.16s ease;
+}
+.pipeline-fade-leave-active .pipeline-dialog {
+  transition:
+    transform 0.16s ease,
+    opacity 0.16s ease;
+}
+.pipeline-fade-enter-from,
+.pipeline-fade-leave-to {
+  opacity: 0;
+}
+.pipeline-fade-enter-from .pipeline-dialog {
+  transform: scale(0.96) translateY(8px);
+  opacity: 0;
+}
+.pipeline-fade-leave-to .pipeline-dialog {
+  transform: scale(0.98);
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pipeline-fade-enter-active,
+  .pipeline-fade-leave-active {
+    transition: opacity 0.01s ease;
+  }
 }
 </style>

@@ -463,6 +463,14 @@ export async function buildJobLayer(
       typeof run.executor_metadata?.retry_of_run_id === 'string'
         ? run.executor_metadata.retry_of_run_id
         : undefined,
+    expectedTimeRange: previousJobLayer?.expectedTimeRange,
+    expectedNativeStep: previousJobLayer?.expectedNativeStep,
+    inFlightTimeKeys: previousJobLayer?.inFlightTimeKeys,
+    failedTimeKeys: previousJobLayer?.failedTimeKeys,
+    progressiveOverlayCount: previousJobLayer?.progressiveOverlayCount,
+    progressiveOverlayError: previousJobLayer?.progressiveOverlayError,
+    progressiveOverlayAt: previousJobLayer?.progressiveOverlayAt,
+    catalogId: previousJobLayer?.catalogId,
   }
 }
 

@@ -1,11 +1,17 @@
-import type { RuntimeLayerDescriptor } from '../../services/runtime-api'
+import type { LayerDescriptor } from '../../services/runtime-api'
 import { buildDefaultWeatherRenderHint } from '../../data/weather-render-hints'
 import { formatClockHourLabel } from '../../utils/weather-timeline'
 import { resolveWeatherTileReadyKind } from '../../utils/weather-tile-readiness'
 import { buildAvailabilityState, buildCatalogFallbackItem } from './catalog-builders'
 import { resolvePersistedDisplayName } from './layer-display-names'
+import { resolveLayerDisplayLabel } from './layer-naming'
 import { buildRealLayerDisplay } from './result-adapter'
-import type { ActiveLayer, ActiveLayerDisplay, RuntimeLayerLibraryItem } from './types'
+import type {
+  ActiveLayer,
+  ActiveLayerDisplay,
+  ActiveRunLayerGroup,
+  RuntimeLayerLibraryItem,
+} from './types'
 
 export interface WeatherTileDisplayBridge {
   getStats(
@@ -20,10 +26,25 @@ export interface WeatherTileDisplayBridge {
 export interface ActiveLayersDisplayContext {
   activeLayers: ActiveLayer[]
   layerLibraryMap: Map<string, RuntimeLayerLibraryItem>
-  runtimeLayerCatalog: Record<string, RuntimeLayerDescriptor | null>
+  runtimeLayerCatalog: Record<string, LayerDescriptor | null>
   currentHour: number
   weatherTileManager: WeatherTileDisplayBridge
   isWeatherEngineLayer: (catalogId: string) => boolean
+  /** 计算组状态：importedRaster 渐进产物勿在 computing 时标「完整数据」 */
+  runLayerGroups?: ActiveRunLayerGroup[]
+}
+
+function isWorkflowProductComputing(
+  layer: ActiveLayer,
+  groups: ActiveRunLayerGroup[] | undefined,
+): boolean {
+  const jobStatus = layer.jobLayer?.status
+  if (jobStatus === 'running' || jobStatus === 'queued' || jobStatus === 'retry_pending')
+    return true
+  if (layer.runGroupLocked) return true
+  if (!layer.runGroupId || !groups?.length) return false
+  const g = groups.find((x) => x.groupId === layer.runGroupId)
+  return g?.status === 'computing'
 }
 
 /** 将 activeLayers 投影为侧栏/详情展示结构（从 layers store 热路径抽离）。 */
@@ -36,11 +57,16 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
       if (layer.importedVector) {
         const payload = layer.importedVector
         const persisted = resolvePersistedDisplayName(
-          layer.catalogId,
-          payload.backendLayerId,
           layer.instanceId,
+          payload.backendLayerId,
+          layer.catalogId,
         )
-        const displayName = layer.name ?? persisted ?? payload.fileName ?? '导入图层'
+        const displayName = resolveLayerDisplayLabel({
+          name: layer.name,
+          persisted,
+          catalogId: layer.catalogId,
+          fileStem: payload.fileName,
+        })
         return {
           instanceId: layer.instanceId,
           catalogId: layer.catalogId,
@@ -59,7 +85,7 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
           updateLabel: '本地文件',
           sourceLabel: payload.fileName ?? '本地导入',
           confidenceLabel: '本地数据',
-          accentColor: layer.accentColor ?? '#7ee0a8',
+          accentColor: layer.accentColor ?? 'var(--success)',
           accentGlow: layer.accentGlow ?? 'rgba(126, 224, 168, 0.28)',
           chipTone: layer.chipTone ?? 'rgba(126, 224, 168, 0.16)',
           availabilityState: 'ready',
@@ -71,7 +97,7 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
           isAdminBoundary: false,
           isImported: true,
           isImportedRaster: false,
-          jobLayer: undefined,
+          jobLayer: layer.jobLayer,
           visible: layer.visible,
           opacity: layer.opacity,
           order: layer.order,
@@ -87,12 +113,34 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
 
       if (layer.importedRaster) {
         const payload = layer.importedRaster
-        const displayName =
-          layer.name ??
-          resolvePersistedDisplayName(layer.catalogId, payload.overlayLayerId, layer.instanceId) ??
-          payload.fileName ??
-          '导入栅格'
+        const displayName = resolveLayerDisplayLabel({
+          name: layer.name,
+          persisted: resolvePersistedDisplayName(
+            layer.instanceId,
+            payload.overlayLayerId,
+            layer.catalogId,
+          ),
+          catalogId: layer.catalogId,
+          fileStem: payload.fileName,
+        })
         const hasTimes = Boolean(payload.timeList?.length)
+        const timeCount = payload.timeList?.length ?? 0
+        const computing = isWorkflowProductComputing(layer, ctx.runLayerGroups)
+        const availabilityState = computing ? ('partial' as const) : ('ready' as const)
+        const availabilityLabel = computing
+          ? hasTimes
+            ? `已到 ${timeCount} 个时间块`
+            : '运行中'
+          : hasTimes
+            ? `${timeCount} 个时间块`
+            : '完整数据'
+        const availabilityDescription = computing
+          ? hasTimes
+            ? '工作流仍在计算；已到时间块可在底部时间轴查看，其余格为无数据。'
+            : '工作流仍在计算，时间轴暂无可用时间块。'
+          : hasTimes
+            ? '时间序列已注册；底部时间轴按块覆盖日期着色。'
+            : '已通过后端注册为 overlay，可在图层列表控制显隐与透明度。'
         return {
           instanceId: layer.instanceId,
           catalogId: layer.catalogId,
@@ -102,23 +150,21 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
           engine: 'local',
           supportsTime: hasTimes,
           runReadiness: 'ready',
-          runReadinessSummary: '本地栅格已注册',
+          runReadinessSummary: computing ? '工作流计算中' : '本地栅格已注册',
           summary: hasTimes ? '时间序列栅格叠加' : '本地 TIF 栅格叠加',
           metricLabel: '类型',
           metricValue: '栅格',
-          trendLabel: hasTimes ? '科学时间序列' : '本地栅格叠加',
-          statusLabel: '已导入',
+          trendLabel: computing ? '工作流计算中' : hasTimes ? '科学时间序列' : '本地栅格叠加',
+          statusLabel: computing ? '计算中' : '已导入',
           updateLabel: '本地文件',
           sourceLabel: payload.fileName ?? '本地导入',
           confidenceLabel: '本地数据',
           accentColor: layer.accentColor ?? '#7eb8e0',
           accentGlow: layer.accentGlow ?? 'rgba(126, 184, 224, 0.28)',
           chipTone: layer.chipTone ?? 'rgba(126, 184, 224, 0.16)',
-          availabilityState: 'ready',
-          availabilityLabel: hasTimes ? `${payload.timeList!.length} 个时间块` : '完整数据',
-          availabilityDescription: hasTimes
-            ? '时间序列已注册；底部时间轴按块覆盖日期着色。'
-            : '已通过后端注册为 overlay，可在图层列表控制显隐与透明度。',
+          availabilityState,
+          availabilityLabel,
+          availabilityDescription,
           observationTimeLabel:
             payload.effectiveTimeLabel ||
             (hasTimes ? payload.timeList![payload.timeList!.length - 1]! : '静态'),
@@ -127,7 +173,7 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
           isAdminBoundary: false,
           isImported: false,
           isImportedRaster: true,
-          jobLayer: undefined,
+          jobLayer: layer.jobLayer,
           visible: layer.visible,
           opacity: layer.opacity,
           order: layer.order,
@@ -165,8 +211,7 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
       const descriptor = ctx.runtimeLayerCatalog[layer.catalogId] ?? null
 
       const isWeatherLayer = !layer.isAdminBoundary && ctx.isWeatherEngineLayer(layer.catalogId)
-      const tileStats =
-        isWeatherLayer && layer.visible ? ctx.weatherTileManager.getStats(layer.catalogId) : null
+      const tileStats = layer.visible ? ctx.weatherTileManager.getStats(layer.catalogId) : null
       const baseRenderHint = isWeatherLayer
         ? buildDefaultWeatherRenderHint(layer.catalogId, descriptor)
         : (layer.jobLayer?.mapLayerPayload?.renderHint ?? null)
@@ -175,7 +220,7 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
           ? { ...baseRenderHint, palette: layer.paletteOverride }
           : baseRenderHint
       let finalAvailability = availability
-      if (isWeatherLayer && tileStats) {
+      if (isWeatherLayer) {
         const layerStatus = ctx.weatherTileManager.getLayerStatus(layer.catalogId)
         if (layerStatus.errorType === 'data-empty') {
           finalAvailability = {
@@ -183,7 +228,7 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
             label: '无有效数据',
             description: layerStatus.errorMessage || '本地模型无数据，请同步 Open-Meteo',
           }
-        } else {
+        } else if (tileStats) {
           const readyKind = resolveWeatherTileReadyKind(tileStats)
           if (readyKind === 'ready') {
             finalAvailability = {
@@ -204,6 +249,15 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
               description: '正在等待瓦片调度',
             }
           }
+        } else {
+          // 无 stats（未显示或尚未调度）：仍勿回落「待运行」
+          finalAvailability = {
+            state: 'partial' as const,
+            label: layer.visible ? '等待瓦片' : '可查看',
+            description: layer.visible
+              ? '正在等待瓦片调度'
+              : '天气瓦片层，显示后由 tile manager 加载。',
+          }
         }
       }
 
@@ -214,9 +268,16 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
         catalogId: layer.catalogId,
         name: layer.isAdminBoundary
           ? '行政区边界'
-          : (layer.name ??
-            resolvePersistedDisplayName(layer.catalogId, layer.instanceId) ??
-            item.name),
+          : resolveLayerDisplayLabel({
+              name: layer.name,
+              persisted: resolvePersistedDisplayName(layer.instanceId, layer.catalogId),
+              catalogDisplayName: item.name,
+              datasetKey: (() => {
+                const key = (descriptor as { dataset_key?: unknown } | null)?.dataset_key
+                return typeof key === 'string' && key.trim() ? key : null
+              })(),
+              catalogId: layer.catalogId,
+            }),
         category: layer.isAdminBoundary ? 'boundary' : item.category,
         description: layer.isAdminBoundary ? '广东省市级行政区边界叠加层。' : item.description,
         engine: layer.isAdminBoundary ? 'builtin' : item.engine,
@@ -295,6 +356,7 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
         importedRasterEffectiveTime: rasterPayload?.effectiveTimeLabel,
         importedRasterTimeCount: rasterPayload?.timeList?.length ?? 0,
         paletteOverride: layer.paletteOverride ?? null,
+        defaultPalette: baseRenderHint?.palette ?? undefined,
         vminOverride: layer.vminOverride ?? null,
         vmaxOverride: layer.vmaxOverride ?? null,
         nodataMode: layer.nodataMode ?? null,

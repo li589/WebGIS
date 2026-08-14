@@ -4,7 +4,7 @@
  *
  * 工作流编辑器左侧面板：收起/展开 + 可向外拖拽调整宽度 + 工作流列表。
  */
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import WorkflowList from './WorkflowList.vue'
 import './workflow-editor-chrome.css'
@@ -40,7 +40,17 @@ const resizing = ref(false)
 let _startX = 0
 let _startW = 0
 
-const sidebarStyle = computed(() => (props.collapsed ? undefined : { width: `${widthPx.value}px` }))
+const _vw = ref(typeof window !== 'undefined' ? window.innerWidth : 1280)
+function _onResize() {
+  _vw.value = window.innerWidth
+}
+onMounted(() => window.addEventListener('resize', _onResize, { passive: true }))
+onBeforeUnmount(() => window.removeEventListener('resize', _onResize))
+
+const sidebarStyle = computed(() => {
+  if (props.collapsed || _vw.value < 768) return undefined
+  return { width: `${widthPx.value}px` }
+})
 
 function toggleCollapsed() {
   emit('update:collapsed', !props.collapsed)
@@ -110,7 +120,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   flex: none;
-  border-right: 1px solid rgba(136, 192, 255, 0.1);
+  border-right: 1px solid var(--border-subtle);
   position: relative;
   transition: width 0.22s ease;
   min-width: 0;
@@ -134,11 +144,11 @@ onBeforeUnmount(() => {
   z-index: 10;
   width: 1.2rem;
   height: 1.6rem;
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  border: 1px solid var(--border-default);
   border-radius: 0.32rem;
-  background: rgba(12, 24, 42, 0.88);
-  color: #8aa8bf;
-  font-size: 0.62rem;
+  background: var(--surface-1);
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -150,9 +160,9 @@ onBeforeUnmount(() => {
 }
 
 .sidebar-toggle:hover {
-  color: #ffd38a;
-  border-color: rgba(255, 184, 77, 0.36);
-  background: rgba(20, 34, 56, 0.92);
+  color: var(--accent-warm);
+  border-color: var(--warning-border);
+  background: var(--surface-2);
 }
 
 .left-toggle {
@@ -170,7 +180,7 @@ onBeforeUnmount(() => {
 
 .editor-sidebar.left :deep(.list-content) {
   scrollbar-width: thin;
-  scrollbar-color: rgba(90, 180, 255, 0.28) transparent;
+  scrollbar-color: var(--border-accent) transparent;
 }
 
 .editor-sidebar.left :deep(.list-content)::-webkit-scrollbar {
@@ -182,23 +192,23 @@ onBeforeUnmount(() => {
 }
 
 .editor-sidebar.left :deep(.list-content)::-webkit-scrollbar-thumb {
-  background: rgba(90, 180, 255, 0.26);
+  background: var(--border-accent);
   border-radius: 3px;
 }
 
 .editor-sidebar.left :deep(.list-content)::-webkit-scrollbar-thumb:hover {
-  background: rgba(90, 180, 255, 0.45);
+  background: var(--border-strong);
 }
 
-@media (max-width: 800px) {
+@media (max-width: 768px) {
   .editor-sidebar.left {
-    width: 100% !important;
+    width: 100%;
     height: 12rem;
     border-right: none;
-    border-bottom: 1px solid rgba(136, 192, 255, 0.1);
+    border-bottom: 1px solid var(--border-subtle);
   }
   .editor-sidebar.left.collapsed {
-    width: 100% !important;
+    width: 100%;
     height: 1.6rem;
   }
   .wf-sidebar-resizer {

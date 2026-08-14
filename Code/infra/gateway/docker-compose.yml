@@ -4,7 +4,8 @@
 #   - 静态：Code/frontend/dist
 #   - 反代：宿主机 FastAPI 127.0.0.1:8000（容器内 host.docker.internal:8000）
 #
-# 与日常 Vite 开发互斥（同端口 5175）。默认 launch.py start 不起 Gateway。
+# 与日常 Vite 开发互斥（同端口 5175）。
+# 默认 launch.py start / restart 会启动 Gateway；本地 HMR 用 start --vite。
 #
 # Windows: Docker Desktop 与终端须管理员身份运行。
 #
@@ -23,7 +24,7 @@ services:
       - "5175:5175"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./html:/etc/nginx/error-pages:ro
+      - ./maintenance:/etc/nginx/maintenance:ro
       - ../../frontend/dist:/usr/share/nginx/html:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"

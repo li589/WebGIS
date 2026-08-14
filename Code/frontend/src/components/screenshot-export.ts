@@ -12,6 +12,16 @@
 export type ScreenshotMode = 'shell' | 'bare' | 'clean' | 'pure'
 export type ScreenshotFormat = 'png' | 'pdf'
 
+/**
+ * 将 CSS 自定义属性（如 var(--surface-1)）解析为字面量颜色值。
+ * Canvas 2D Context 的 fillStyle 不支持 CSS 变量，必须传入实际颜色。
+ */
+function resolveCssColor(varName: string, fallback = '#0b1a2a'): string {
+  if (typeof document === 'undefined') return fallback
+  const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim()
+  return value || fallback
+}
+
 export const MAP_CANVAS_SELECTORS = [
   '.maplibregl-canvas-container',
   '.maplibregl-canvas',
@@ -48,17 +58,15 @@ export const PURE_IGNORE_SELECTORS = [
 /** Container panel cards whose computed paint is copied to the clone. (Inner flex items are omitted to prevent duplication). */
 export const STYLE_BAKE_SELECTORS = [
   '.toolbar',
-  '.base-panel',
-  '.control-panel',
+  '.panel-dock__frame',
   '.panel-anchor',
-  '.timeline-panel',
   '.info-panel',
   '.layer-sidebar',
 ] as const
 
 /** Elements that use transform / centered absolute layout and break html2canvas. */
 export const PIN_OVERLAY_SELECTORS = ['.overlay'] as const
-export const PIN_PANEL_SELECTORS = ['.control-panel', '.panel-anchor'] as const
+export const PIN_PANEL_SELECTORS = ['.panel-dock__frame', '.panel-anchor'] as const
 
 export type MapSnapshot = {
   dataUrl: string
@@ -204,10 +212,10 @@ function copyPaintFromComputed(style: CSSStyleDeclaration): Array<[string, strin
   const isClear =
     !safeBg ||
     safeBg === 'transparent' ||
-    safeBg === 'rgba(0, 0, 0, 0)' ||
-    safeBg === 'rgba(0,0,0,0)'
+    safeBg === 'var(--surface-sunken)' ||
+    safeBg === 'var(--surface-sunken)'
   if (isClear && style.backdropFilter && style.backdropFilter !== 'none') {
-    props.push(['background-color', 'rgba(8, 18, 33, 0.92)'])
+    props.push(['background-color', 'var(--surface-1)'])
     props.push(['background-image', 'none'])
   } else if (safeBg) {
     props.push(['background-color', safeBg])
@@ -526,14 +534,14 @@ export function buildMapSnapshotLayout(
 
 /**
  * Composite map snapshot underneath UI controls in three forward layers:
- * 1. Base dark background fill (#07111e)
+ * 1. Base background fill (resolved from --surface-1)
  * 2. Map Snapshot (Basemap + weather layers + scalar fields + vector lines + particles)
  * 3. UI Canvas (transparent HTML controls, panels, toolbar) on top!
  */
 export async function compositeMapUnderUi(
   uiCanvas: HTMLCanvasElement,
   mapSnapshot: MapSnapshot | null,
-  fillColor = '#07111e',
+  fillColor?: string,
 ): Promise<HTMLCanvasElement> {
   const composed = document.createElement('canvas')
   composed.width = uiCanvas.width
@@ -541,8 +549,8 @@ export async function compositeMapUnderUi(
   const ctx = composed.getContext('2d')
   if (!ctx) return uiCanvas
 
-  // Layer 1: Fill solid background
-  ctx.fillStyle = fillColor
+  // Layer 1: Fill solid background (resolve CSS variable to literal color)
+  ctx.fillStyle = fillColor || resolveCssColor('--surface-1', '#0b1a2a')
   ctx.fillRect(0, 0, composed.width, composed.height)
 
   // Layer 2: Draw map snapshot (basemap + layers)

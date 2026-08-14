@@ -152,15 +152,15 @@ function cellText(value: unknown): string {
   margin-bottom: 12px;
 }
 .section-kicker {
-  font-size: 11px;
+  font-size: var(--font-size-caption);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   opacity: 0.65;
 }
 .analysis-chart-card,
 .analysis-table-card {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--surface-hover);
+  border: 1px solid var(--surface-hover);
   border-radius: 8px;
   padding: 10px 12px;
 }
@@ -183,14 +183,14 @@ function cellText(value: unknown): string {
 }
 .analysis-table-card th,
 .analysis-table-card td {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--surface-hover);
   padding: 4px 6px;
   text-align: left;
   white-space: nowrap;
 }
 .analysis-table-more {
   margin: 6px 0 0;
-  font-size: 11px;
+  font-size: var(--font-size-caption);
   opacity: 0.7;
 }
 </style>

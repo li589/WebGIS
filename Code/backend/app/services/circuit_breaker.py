@@ -26,6 +26,10 @@
     except CircuitOpenError:
         # 降级：使用过期缓存或返回默认值
         result = load_stale_cache()
+
+注意：本模块暂未接线。当前 Open-Meteo 断路器由 weatherengine/client.py 内联实现
+（含类级共享锁、独立参数），与本 registry 实现存在差异。统一两套实现属大重构，
+保留本模块供未来统一使用。技术债务追踪见详细修复计划 v3 P3-1。
 """
 
 from __future__ import annotations

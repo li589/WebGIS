@@ -2,7 +2,7 @@ import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
 import type { TileSourceId } from '../services/api-config'
-import { getDefaultTileSource } from '../services/api-config'
+import { getDefaultTileSource, normalizeTileSourceId } from '../services/api-config'
 import {
   CLOCK_DAY_MAX_HOUR,
   formatClockHourLabel,
@@ -20,6 +20,9 @@ export { DEFAULT_PLAY_INTERVAL_MS, TIMELINE_PLAY_INTERVAL_OPTIONS } from '../uti
 
 /** 地图交互模式：移动（拖动视角）/ 选择（点击查询点气象）/ 测量（路径规划与测距） */
 export type InteractionMode = 'move' | 'select' | 'measure'
+
+/** 视图模式：2D平面地图 / 3D地球（实验性，未完全实现） */
+export type ViewMode = '2d' | '3d'
 
 /** 测量路径点 */
 export interface MeasurePoint {
@@ -124,6 +127,9 @@ export const useUiStore = defineStore('ui', () => {
 
   const interactionMode = ref<InteractionMode>('move')
 
+  /** 视图模式：默认2D平面地图，3D为实验性占位 */
+  const viewMode = ref<ViewMode>('2d')
+
   const measureState = ref<MeasureState>({
     points: [],
     isDrawing: false,
@@ -148,20 +154,16 @@ export const useUiStore = defineStore('ui', () => {
     }
   })
 
-  watch(
-    layerTimeMemory,
-    (value) => {
-      try {
-        window.localStorage?.setItem(LAYER_TIME_STORAGE_KEY, JSON.stringify(value))
-      } catch {
-        /* ignore */
-      }
-    },
-    { deep: true },
-  )
+  watch(layerTimeMemory, (value) => {
+    try {
+      window.localStorage?.setItem(LAYER_TIME_STORAGE_KEY, JSON.stringify(value))
+    } catch {
+      /* ignore */
+    }
+  })
 
   function setTileSource(sourceId: TileSourceId) {
-    tileSourceId.value = sourceId
+    tileSourceId.value = normalizeTileSourceId(sourceId)
   }
 
   function setHour(hour: number) {
@@ -263,6 +265,14 @@ export const useUiStore = defineStore('ui', () => {
     interactionMode.value = mode
   }
 
+  function setViewMode(mode: ViewMode) {
+    viewMode.value = mode
+  }
+
+  function toggleViewMode() {
+    viewMode.value = viewMode.value === '2d' ? '3d' : '2d'
+  }
+
   function addMeasurePoint(p: MeasurePoint) {
     measureState.value.points.push(p)
     measureState.value.isDrawing = true
@@ -315,6 +325,7 @@ export const useUiStore = defineStore('ui', () => {
     unifiedTimeLock,
     layerTimeMemory,
     interactionMode,
+    viewMode,
     measureState,
     lockedLayerIds,
     activeTimeGranularity,
@@ -336,6 +347,8 @@ export const useUiStore = defineStore('ui', () => {
     applyDateHour,
     applyTimelineFromLayerGranularity,
     setInteractionMode,
+    setViewMode,
+    toggleViewMode,
     addMeasurePoint,
     undoLastMeasurePoint,
     completeMeasure,

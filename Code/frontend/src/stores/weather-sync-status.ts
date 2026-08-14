@@ -12,6 +12,9 @@ import {
   type WeatherSyncOverview,
 } from '../services/runtime-api'
 
+/** 同步任务轮询间隔（毫秒） */
+const SYNC_POLL_INTERVAL_MS = 3000
+
 export const useWeatherSyncStatusStore = defineStore('weatherSyncStatus', () => {
   const overview = ref<WeatherSyncOverview | null>(null)
   const taskId = ref<string | null>(null)
@@ -69,7 +72,7 @@ export const useWeatherSyncStatusStore = defineStore('weatherSyncStatus', () => 
     void pollTaskOnce()
     pollTimer = setInterval(() => {
       void pollTaskOnce()
-    }, 3000)
+    }, SYNC_POLL_INTERVAL_MS)
   }
 
   async function triggerSync(options?: { domains?: string }) {

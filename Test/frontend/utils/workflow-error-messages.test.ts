@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  formatWorkflowValidationError,
   localizeWorkflowDiagnostic,
   localizeWorkflowDiagnostics,
   localizeWorkflowErrorMessage,
@@ -29,5 +30,22 @@ describe('localizeWorkflowDiagnostic', () => {
 describe('localizeWorkflowDiagnostics', () => {
   it('filters empty lines', () => {
     expect(localizeWorkflowDiagnostics(['', 'error_code=compile_error'])).toEqual(['工作流图编译失败。'])
+  })
+})
+
+describe('formatWorkflowValidationError', () => {
+  it('appends field-level issues to summary and notes', () => {
+    const { summary, notes } = formatWorkflowValidationError(
+      '请求参数未通过业务校验，请检查表单字段。',
+      [
+        {
+          field: 'datasource_selection._data_access_requests.fy_folder',
+          message: "dataset 'fy_folder' not in accepted_data_access_datasets",
+        },
+      ],
+    )
+    expect(summary).toContain('请求参数未通过业务校验')
+    expect(summary).toContain('fy_folder')
+    expect(notes.some((n) => n.includes('fy_folder'))).toBe(true)
   })
 })

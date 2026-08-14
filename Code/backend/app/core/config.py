@@ -1,18 +1,20 @@
 from dataclasses import dataclass, field
+import logging
 import os
 from pathlib import Path
 import sys
 
-# 尝试加载 dotenv，若不可用或 .env 不可读则跳过
-# catch Exception 而非仅 ImportError：Windows 文件系统可能存在
-# 文件存在但 open() 失败的异常情况，此时环境变量应已通过系统路径设置
+# 尝试加载 dotenv；ImportError 表示 python-dotenv 未安装（环境变量已通过其他方式设置），
+# 其他异常（如文件权限/编码问题）记录警告但不阻塞启动
 try:
     from dotenv import load_dotenv
 
     _env_path = Path(__file__).resolve().parents[2] / ".env"
     load_dotenv(_env_path)
-except Exception:
+except ImportError:
     pass
+except Exception as exc:
+    logging.warning("Failed to load .env file: %s", exc)
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -26,6 +28,19 @@ DEFAULT_PYTHON_PROVIDER_ROOT = (
     BACKEND_ROOT.parent / "algorithms" / "providers" / "Python"
 )
 DEFAULT_PYTHON_PROVIDER_WORKSPACE = _RUNTIME_ROOT / "python_provider"
+
+# ---- 命名常量（提取自原内联魔数，便于维护与审阅）----
+# 结果内联返回上限：小于此字节数的产物直接内联在响应中
+_RESULT_INLINE_MAX_BYTES = 128 * 1024  # 128 KB
+# 远端单文件下载上限（NAS 上大 HDF/GeoTIFF 可调高，例如 8 GiB）
+_DOWNLOAD_MAX_BYTES = 512 * 1024 * 1024  # 512 MB
+# Celery broker visibility_timeout（秒）：必须大于最长 task_time_limit
+# （workflow 任务 time_limit=7500），否则 acks_late 下长任务会被重投
+_BROKER_VISIBILITY_TIMEOUT = 8100  # seconds
+# solo 池看门狗阈值（秒）：运行时长超此值的 run 标记为 failed
+_WORKFLOW_STUCK_WATCHDOG_SECONDS = 8100  # seconds
+# GEE 本地单次写入上限
+_GEE_MAX_LOCAL_WRITE_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
 def _parse_csv_env(name: str, default: str = "") -> list[str]:
@@ -48,6 +63,136 @@ def _default_gee_api_account_management_enabled() -> bool:
         return str(raw).strip().lower() in {"1", "true", "yes", "on"}
     env = (os.getenv("BACKEND_ENV") or "production").lower()
     return env in {"development", "dev"}
+
+
+# ===========================================================================
+# 嵌套配置分组（只读视图）
+#
+# 设计说明（P2-10）：
+# `Settings` 仍保留全部扁平字段（向后兼容 `settings.redis_url` 等访问，
+# 且 `dataclasses.replace` 可继续工作）。以下嵌套 dataclass 仅作为**便利
+# 分组视图**，通过 `Settings` 的 `@property` 按需构造，不参与序列化/替换。
+# 所有字段值与对应扁平字段同源，修改扁平字段后属性自动反映最新值。
+# ===========================================================================
+
+
+@dataclass(frozen=True)
+class RedisConfig:
+    """Redis 连接配置（分组视图）。"""
+
+    url: str
+
+
+@dataclass(frozen=True)
+class CeleryConfig:
+    """Celery broker / worker 配置（分组视图）。"""
+
+    broker_url: str
+    result_backend: str
+    task_always_eager: bool
+    task_soft_time_limit: int
+    task_time_limit: int
+    broker_visibility_timeout: int
+    broker_socket_timeout: int
+    broker_socket_connect_timeout: int
+    worker_concurrency: int
+    worker_prefetch_multiplier: int
+    worker_pool: str
+    worker_max_tasks_per_child: int
+
+
+@dataclass(frozen=True)
+class GeeConfig:
+    """GEE 引擎配置（分组视图）。"""
+
+    enabled: bool
+    module_root: str
+    storage_backend: str
+    local_storage_root: str
+    minio_endpoint: str
+    minio_access_key: str
+    minio_secret_key: str
+    minio_bucket: str
+    minio_secure: bool
+    account_cooldown_seconds: int
+    max_parallel_exports: int
+    max_parallel_uploads: int
+    max_parallel_downloads: int
+    max_local_write_bytes: int
+    credentials_encryption_key: str
+    credentials_db_path: str
+    api_account_management_enabled: bool
+    queue_realtime: str
+    queue_standard: str
+    queue_heavy: str
+    queue_batch: str
+
+
+@dataclass(frozen=True)
+class WeatherConfig:
+    """天气工作流引擎与 Open-Meteo 同步配置（分组视图）。"""
+
+    default_model: str
+    cache_ttl_seconds: int
+    refresh_forecast_hours: int
+    schedule_enabled: bool
+    workflow_enabled: bool
+    default_latitude: float
+    default_longitude: float
+    default_place_name: str
+    open_meteo_sync_enabled: bool
+    open_meteo_sync_cron_minute: str
+    open_meteo_sync_cron_hour: str
+    open_meteo_sync_domains: str
+    open_meteo_sync_variables: str
+    open_meteo_sync_compose_project: str
+    open_meteo_sync_compose_dir: str
+    queue_realtime: str
+    queue_standard: str
+    queue_heavy: str
+    queue_batch: str
+
+
+@dataclass(frozen=True)
+class AuthConfig:
+    """用户鉴权 / 会话 / API Key 配置（分组视图）。"""
+
+    api_key: str
+    api_keys_enabled: bool
+    user_auth_enabled: bool
+    admin_username: str
+    admin_password: str
+    session_cookie_name: str
+    session_ttl_hours: int
+    dev_auth_prefill: bool
+    dev_default_api_key: str
+    api_key_role: str
+    demo_data_transfer_enabled: bool
+    login_rate_limit_per_minute: int
+
+
+@dataclass(frozen=True)
+class StorageConfig:
+    """存储根 / 产物 / 缓存 / 对象存储配置（分组视图）。"""
+
+    backend: str
+    data_root: str
+    output_root: str
+    workflow_state_dir: str
+    python_provider_root: str
+    python_provider_workspace: str
+    log_dir: str
+    log_level: str
+    result_artifact_dir: str
+    cache_dir: str
+    cache_default_ttl_seconds: int
+    object_store_backend: str
+    object_store_public_base: str
+    minio_endpoint: str
+    minio_access_key: str
+    minio_secret_key: str
+    minio_bucket: str
+    minio_secure: bool
 
 
 @dataclass(frozen=True)
@@ -114,11 +259,19 @@ class Settings:
     minio_bucket: str = os.getenv("BACKEND_MINIO_BUCKET", "workflow-artifacts")
     minio_secure: bool = os.getenv("BACKEND_MINIO_SECURE", "false").lower() == "true"
     result_inline_max_bytes: int = int(
-        os.getenv("BACKEND_RESULT_INLINE_MAX_BYTES", str(128 * 1024))
+        os.getenv("BACKEND_RESULT_INLINE_MAX_BYTES", str(_RESULT_INLINE_MAX_BYTES))
     )
     max_active_runs: int = int(os.getenv("BACKEND_MAX_ACTIVE_RUNS", "8"))
     max_active_weather_tile_runs: int = int(
         os.getenv("BACKEND_MAX_ACTIVE_WEATHER_TILE_RUNS", "16")
+    )
+    # Phase C：按角色并发控制——用户级工作流并发上限（在全局容量池之上的额外约束）。
+    # admin 不受用户级限制；standard / demo 回退到此默认值，可被用户独立配置覆盖。
+    max_concurrent_workflows_standard: int = int(
+        os.getenv("BACKEND_MAX_CONCURRENT_WORKFLOWS_STANDARD", "3")
+    )
+    max_concurrent_workflows_demo: int = int(
+        os.getenv("BACKEND_MAX_CONCURRENT_WORKFLOWS_DEMO", "1")
     )
     max_requested_outputs: int = int(os.getenv("BACKEND_MAX_REQUESTED_OUTPUTS", "6"))
     provider_max_hotspots: int = int(os.getenv("BACKEND_PROVIDER_MAX_HOTSPOTS", "200"))
@@ -305,7 +458,7 @@ class Settings:
         os.getenv("BACKEND_GEE_MAX_PARALLEL_DOWNLOADS", "4")
     )
     gee_max_local_write_bytes: int = int(
-        os.getenv("BACKEND_GEE_MAX_LOCAL_WRITE_BYTES", str(10 * 1024 * 1024))
+        os.getenv("BACKEND_GEE_MAX_LOCAL_WRITE_BYTES", str(_GEE_MAX_LOCAL_WRITE_BYTES))
     )
     # GEE 队列（独立队列，避免与 algorithm 队列混用）
     workflow_queue_gee_realtime: str = os.getenv(
@@ -403,7 +556,10 @@ class Settings:
     # 必须大于最长 task_time_limit（workflow 任务 time_limit=7500），否则 acks_late
     # 下长任务会在 visibility 超时（Redis 默认 3600）后被重投到另一 worker，导致并发重复执行。
     celery_broker_visibility_timeout: int = int(
-        os.getenv("BACKEND_CELERY_BROKER_VISIBILITY_TIMEOUT", "8100")
+        os.getenv(
+            "BACKEND_CELERY_BROKER_VISIBILITY_TIMEOUT",
+            str(_BROKER_VISIBILITY_TIMEOUT),
+        )
     )
     # broker 连接/读取超时（秒）：给 broker 操作定上界，避免 broker 挂起时
     # 工作线程无限期阻塞（同根修复线程池阻塞无寿命上界问题）。
@@ -418,7 +574,10 @@ class Settings:
     # 的 run 标记为 failed（仅纠正状态，不释放被卡 worker）。默认 8100 > workflow
     # 任务 time_limit=7500，避免误杀合法长任务。
     workflow_stuck_watchdog_seconds: int = int(
-        os.getenv("BACKEND_WORKFLOW_STUCK_WATCHDOG_SECONDS", "8100")
+        os.getenv(
+            "BACKEND_WORKFLOW_STUCK_WATCHDOG_SECONDS",
+            str(_WORKFLOW_STUCK_WATCHDOG_SECONDS),
+        )
     )
     # Celery worker 并发度：每个 worker 进程的最大并发任务数。
     # launch.py 启动 7 个 worker，默认占满 CPU 会严重过订阅；建议物理核数/worker 数。
@@ -472,10 +631,10 @@ class Settings:
     )
     # 远端单文件下载上限（字节）。NAS 上大 HDF/GeoTIFF 可调高，例如 8589934592（8 GiB）
     remote_max_bytes: int = int(
-        os.getenv("BACKEND_REMOTE_MAX_BYTES", str(512 * 1024 * 1024))
+        os.getenv("BACKEND_REMOTE_MAX_BYTES", str(_DOWNLOAD_MAX_BYTES))
     )
     # 图层远端数据源覆盖（JSON）。将 SMB/SFTP URI 插到对应 layer 的候选列表最前，不改本地已跑通路径。
-    # 例: {"ref-smap-sm-202512-l3":{"SMAP_SPL3SMP_E":["smb://nas/share/SMAP/x.h5?cred=nas-lab"]}}
+    # 例: {"ref-smap-sm-202512-l3":{"SMAP_L3_DEC2025":["smb://nas/share/SMAP/x.h5?cred=nas-lab"]}}
     remote_layer_data_uris: str = os.getenv("BACKEND_REMOTE_LAYER_DATA_URIS", "")
     # 每个 API Key 保留的历史版本上限
     api_key_history_limit: int = int(os.getenv("BACKEND_API_KEY_HISTORY_LIMIT", "20"))
@@ -496,11 +655,15 @@ class Settings:
         os.getenv("BACKEND_DEV_AUTH_PREFILL", "").strip() == ""
         and (os.getenv("BACKEND_ENV") or "production").lower() in {"development", "dev"}
     )
-    dev_default_api_key: str = os.getenv(
-        "BACKEND_DEV_DEFAULT_API_KEY", "cgda-dev-write-key"
+    # No hardcoded default secret — set BACKEND_DEV_DEFAULT_API_KEY explicitly
+    # for local bootstrap, or leave empty to skip seeding backend_auth.
+    dev_default_api_key: str = os.getenv("BACKEND_DEV_DEFAULT_API_KEY", "")
+    # 服务密钥 backend_auth 绑定角色（脚本/CI）；默认 standard
+    api_key_role: str = os.getenv("BACKEND_API_KEY_ROLE", "standard")
+    # demo 角色数据上传/下载开关（默认关闭，管理员可开启）
+    demo_data_transfer_enabled: bool = (
+        os.getenv("BACKEND_DEMO_DATA_TRANSFER_ENABLED", "false").lower() == "true"
     )
-    # 服务密钥 backend_auth 绑定角色（脚本/CI）；默认 operator
-    api_key_role: str = os.getenv("BACKEND_API_KEY_ROLE", "operator")
     login_rate_limit_per_minute: int = int(
         os.getenv("BACKEND_LOGIN_RATE_LIMIT_PER_MINUTE", "10")
     )
@@ -533,8 +696,8 @@ class Settings:
     filebrowser_password: str = os.getenv("BACKEND_FILEBROWSER_PASSWORD", "")
 
     # ---- P0-10 产品边界开关 ----
-    # demo:// 占位数据源：仅 development 默认可用（联调/展出演示）；production 默认直接
-    # fail，除非显式设 BACKEND_DEMO_SOURCES_ENABLED=true（如临时展出演示以生产模式运行时）。
+    # demo:// 占位数据源：仅 development 默认可用（联调/展演示）；production 默认直接
+    # fail，除非显式设 BACKEND_DEMO_SOURCES_ENABLED=true（如临时展演示以生产模式运行时）。
     demo_sources_enabled: bool = os.getenv(
         "BACKEND_DEMO_SOURCES_ENABLED", ""
     ).strip().lower() in {"1", "true", "yes", "on"}
@@ -558,6 +721,130 @@ class Settings:
         "BACKEND_SPATIALITE_DB_PATH",
         str(BACKEND_ROOT / ".data" / "spatial.sqlite"),
     )
+
+    # ===============================================================
+    # 嵌套配置分组属性（便利只读视图）
+    #
+    # 这些 property 从上方扁平字段构造分组 dataclass，不引入新的状态。
+    # 扁平字段仍是唯一真源；`dataclasses.replace` 仅作用于扁平字段。
+    # ===============================================================
+
+    @property
+    def redis(self) -> RedisConfig:
+        """Redis 连接配置分组视图。"""
+        return RedisConfig(url=self.redis_url)
+
+    @property
+    def celery(self) -> CeleryConfig:
+        """Celery broker / worker 配置分组视图。"""
+        return CeleryConfig(
+            broker_url=self.celery_broker_url,
+            result_backend=self.celery_result_backend,
+            task_always_eager=self.celery_task_always_eager,
+            task_soft_time_limit=self.celery_task_soft_time_limit,
+            task_time_limit=self.celery_task_time_limit,
+            broker_visibility_timeout=self.celery_broker_visibility_timeout,
+            broker_socket_timeout=self.celery_broker_socket_timeout,
+            broker_socket_connect_timeout=self.celery_broker_socket_connect_timeout,
+            worker_concurrency=self.celery_worker_concurrency,
+            worker_prefetch_multiplier=self.celery_worker_prefetch_multiplier,
+            worker_pool=self.celery_worker_pool,
+            worker_max_tasks_per_child=self.celery_worker_max_tasks_per_child,
+        )
+
+    @property
+    def gee(self) -> GeeConfig:
+        """GEE 引擎配置分组视图。"""
+        return GeeConfig(
+            enabled=self.gee_enabled,
+            module_root=self.gee_module_root,
+            storage_backend=self.gee_storage_backend,
+            local_storage_root=self.gee_local_storage_root,
+            minio_endpoint=self.gee_minio_endpoint,
+            minio_access_key=self.gee_minio_access_key,
+            minio_secret_key=self.gee_minio_secret_key,
+            minio_bucket=self.gee_minio_bucket,
+            minio_secure=self.gee_minio_secure,
+            account_cooldown_seconds=self.gee_account_cooldown_seconds,
+            max_parallel_exports=self.gee_max_parallel_exports,
+            max_parallel_uploads=self.gee_max_parallel_uploads,
+            max_parallel_downloads=self.gee_max_parallel_downloads,
+            max_local_write_bytes=self.gee_max_local_write_bytes,
+            credentials_encryption_key=self.gee_credentials_encryption_key,
+            credentials_db_path=self.gee_credentials_db_path,
+            api_account_management_enabled=self.gee_api_account_management_enabled,
+            queue_realtime=self.workflow_queue_gee_realtime,
+            queue_standard=self.workflow_queue_gee_standard,
+            queue_heavy=self.workflow_queue_gee_heavy,
+            queue_batch=self.workflow_queue_gee_batch,
+        )
+
+    @property
+    def weather(self) -> WeatherConfig:
+        """天气工作流引擎与 Open-Meteo 同步配置分组视图。"""
+        return WeatherConfig(
+            default_model=self.weather_default_model,
+            cache_ttl_seconds=self.weather_cache_ttl_seconds,
+            refresh_forecast_hours=self.weather_refresh_forecast_hours,
+            schedule_enabled=self.weather_schedule_enabled,
+            workflow_enabled=self.weather_workflow_enabled,
+            default_latitude=self.weather_default_latitude,
+            default_longitude=self.weather_default_longitude,
+            default_place_name=self.weather_default_place_name,
+            open_meteo_sync_enabled=self.open_meteo_sync_enabled,
+            open_meteo_sync_cron_minute=self.open_meteo_sync_cron_minute,
+            open_meteo_sync_cron_hour=self.open_meteo_sync_cron_hour,
+            open_meteo_sync_domains=self.open_meteo_sync_domains,
+            open_meteo_sync_variables=self.open_meteo_sync_variables,
+            open_meteo_sync_compose_project=self.open_meteo_sync_compose_project,
+            open_meteo_sync_compose_dir=self.open_meteo_sync_compose_dir,
+            queue_realtime=self.workflow_queue_weather_realtime,
+            queue_standard=self.workflow_queue_weather_standard,
+            queue_heavy=self.workflow_queue_weather_heavy,
+            queue_batch=self.workflow_queue_weather_batch,
+        )
+
+    @property
+    def auth(self) -> AuthConfig:
+        """用户鉴权 / 会话 / API Key 配置分组视图。"""
+        return AuthConfig(
+            api_key=self.api_key,
+            api_keys_enabled=self.api_keys_enabled,
+            user_auth_enabled=self.user_auth_enabled,
+            admin_username=self.admin_username,
+            admin_password=self.admin_password,
+            session_cookie_name=self.session_cookie_name,
+            session_ttl_hours=self.session_ttl_hours,
+            dev_auth_prefill=self.dev_auth_prefill,
+            dev_default_api_key=self.dev_default_api_key,
+            api_key_role=self.api_key_role,
+            demo_data_transfer_enabled=self.demo_data_transfer_enabled,
+            login_rate_limit_per_minute=self.login_rate_limit_per_minute,
+        )
+
+    @property
+    def storage(self) -> StorageConfig:
+        """存储根 / 产物 / 缓存 / 对象存储配置分组视图。"""
+        return StorageConfig(
+            backend=self.storage_backend,
+            data_root=self.data_root,
+            output_root=self.output_root,
+            workflow_state_dir=self.workflow_state_dir,
+            python_provider_root=self.python_provider_root,
+            python_provider_workspace=self.python_provider_workspace,
+            log_dir=self.log_dir,
+            log_level=self.log_level,
+            result_artifact_dir=self.result_artifact_dir,
+            cache_dir=self.cache_dir,
+            cache_default_ttl_seconds=self.cache_default_ttl_seconds,
+            object_store_backend=self.object_store_backend,
+            object_store_public_base=self.object_store_public_base,
+            minio_endpoint=self.minio_endpoint,
+            minio_access_key=self.minio_access_key,
+            minio_secret_key=self.minio_secret_key,
+            minio_bucket=self.minio_bucket,
+            minio_secure=self.minio_secure,
+        )
 
 
 settings = Settings()

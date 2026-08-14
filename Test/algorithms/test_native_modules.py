@@ -746,7 +746,7 @@ class NativeModuleTests(unittest.TestCase):
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
-                        "SMAP_SPL3SMP_E": {
+                        "SMAP_L3_DEC2025": {
                             "selector": {"uris": [str(input_dir)]},
                             "accepted_formats": [],
                         }
@@ -814,7 +814,7 @@ class NativeModuleTests(unittest.TestCase):
                 region=RegionSpec(kind="global", value={}),
                 datasource_selection={
                     "_data_access_requests": {
-                        "SMAP_SPL3SMP_E": {
+                        "SMAP_L3_DEC2025": {
                             "selector": {"uris": [str(input_dir)]},
                         }
                     }

@@ -20,6 +20,7 @@ import {
 } from './weather-overlay-maplibre'
 import type { WeatherOverlayState } from './weather-overlay-registry'
 import type { WindGeoJSON } from './types'
+import type { GeoJSONSourceSpecification } from 'maplibre-gl'
 
 type MapInstance = import('maplibre-gl').Map
 type GeoJsonSourceSpecification = import('maplibre-gl').GeoJSONSourceSpecification
@@ -279,7 +280,7 @@ export function syncWeatherGridFillOverlay(map: MapInstance, overlayState: Weath
       data: geojsonSource,
     } as GeoJsonSourceSpecification)
   } else {
-    existingSource.setData(geojsonSource as any)
+    existingSource.setData(geojsonSource as GeoJSONSourceSpecification['data'])
   }
 
   if (!map.getLayer(ids.fillLayerId)) {
@@ -308,18 +309,6 @@ export function syncWeatherGridFillOverlay(map: MapInstance, overlayState: Weath
   if (map.getLayer(ids.lineLayerId)) {
     map.setLayoutProperty(ids.lineLayerId, 'visibility', 'none')
   }
-}
-
-/** @deprecated 名称保留兼容；实现已统一为 grid_fill（见 syncWeatherGridFillOverlay）。 */
-export function syncWeatherHeatmapOverlay(map: MapInstance, overlayState: WeatherOverlayState) {
-  // 连续气象场统一走网格 fill：heatmap 放大后必然「一坨坨晕点」，观感差
-  syncWeatherGridFillOverlay(map, {
-    ...overlayState,
-    renderHint: {
-      ...overlayState.renderHint,
-      paint_mode: 'grid_fill',
-    },
-  })
 }
 
 export function syncWeatherPointOverlay(map: MapInstance, overlayState: WeatherOverlayState) {
@@ -382,14 +371,14 @@ export function syncWeatherPointOverlay(map: MapInstance, overlayState: WeatherO
       paint: {
         'text-color': '#e8fbff',
         'text-opacity': pointOpacity,
-        'text-halo-color': 'rgba(5, 16, 30, 0.86)',
+        'text-halo-color': 'var(--surface-1)',
         'text-halo-width': 1.1,
       },
     })
     return
   }
 
-  existingSource.setData(geojsonSource as any)
+  existingSource.setData(geojsonSource as GeoJSONSourceSpecification['data'])
   if (map.getLayer(ids.pointLayerId)) {
     map.setPaintProperty(ids.pointLayerId, 'circle-radius', pointRadius)
     map.setPaintProperty(ids.pointLayerId, 'circle-color', pointColor)

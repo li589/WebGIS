@@ -1,0 +1,57 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "Analysis: histogram",
+    "description": "InfoPanel histogram. Inject raster path → stats/histogram → viz/chart_generate.",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": null,
+    "tags": ["analysis", "histogram", "chart", "ui-panel", "raster"],
+    "category": "analysis",
+    "resource_profile": "standard"
+  },
+  "workflow_id": "analysis_histogram",
+  "name": "Analysis: histogram",
+  "description": "data/source → stats/histogram → viz/chart_generate",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "data/source",
+      "pos": [80, 160],
+      "properties": {
+        "path": "{DATA_ROOT}/_runtime/smoke_stub.tif",
+        "dataset_key": "input_path"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stats/histogram",
+      "pos": [380, 160],
+      "properties": {
+        "bins": 50,
+        "band": 0,
+        "density": false,
+        "variable": "",
+        "nodata": ""
+      }
+    },
+    {
+      "id": 3,
+      "type": "viz/chart_generate",
+      "pos": [680, 160],
+      "properties": {
+        "chart_type": "histogram",
+        "title": "Raster Histogram",
+        "x_label": "value",
+        "y_label": "count",
+        "write_png": true
+      }
+    }
+  ],
+  "links": [
+    [1, 1, 2, 2, 2],
+    [2, 2, 0, 3, 2]
+  ]
+}

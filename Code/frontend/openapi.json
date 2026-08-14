@@ -376,6 +376,204 @@
         }
       }
     },
+    "/auth/users/{user_id}/permissions": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "List User Permissions",
+        "operationId": "list_user_permissions_auth_users__user_id__permissions_get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PermissionRecord"
+                  },
+                  "title": "Response List User Permissions Auth Users  User Id  Permissions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Set User Permissions",
+        "operationId": "set_user_permissions_auth_users__user_id__permissions_put",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPermissionsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PermissionRecord"
+                  },
+                  "title": "Response Set User Permissions Auth Users  User Id  Permissions Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/users/{user_id}/permissions/{permission_id}": {
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Delete Permission",
+        "operationId": "delete_permission_auth_users__user_id__permissions__permission_id__delete",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "permission_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Permission Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/users/{user_id}/permission-mode": {
+      "patch": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Update Permission Mode",
+        "operationId": "update_permission_mode_auth_users__user_id__permission_mode_patch",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PermissionModeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Update Permission Mode Auth Users  User Id  Permission Mode Patch"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/layers": {
       "get": {
         "tags": [
@@ -390,6 +588,83 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LayerCatalogResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/layers/categories": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "List Layer Categories",
+        "description": "X1: 后端下发图层分类定义（id / name / icon / accent_color / chip_tone）。\n\n前端运行时消费此端点获取分类样式，消除前后端分类定义双写。\n前端 ``LAYER_CATEGORIES`` 静态表仅在 API 不可用时作离线兜底。",
+        "operationId": "list_layer_categories_layers_categories_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerCategoryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/layers/{layer_id}/online-temporal": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Get Layer Online Temporal",
+        "description": "返回图层的在线时间获取能力与可获取范围。\n\n前端时间轴据此判断哪些时间点可在线获取（标 'fetchable' 段），\n以及获取参数（步长、预取深度、队列标签）。",
+        "operationId": "get_layer_online_temporal_layers__layer_id__online_temporal_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "layer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Layer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Layer Online Temporal Layers  Layer Id  Online Temporal Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -486,6 +761,11 @@
         "summary": "Get Overlay Preview",
         "description": "返回图层的 PNG 预览图（地理配准），供前端 MapLibre image source 使用。\n\n对于时间序列图层，可通过 `?time=YYYYMMDD` 指定时间标签；\n未指定时使用 default_time。\n\n有可读源且传入 palette/min/max/nodata 时动态重着色；否则返回烘焙 PNG。",
         "operationId": "get_overlay_preview_overlay_preview__layer_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "layer_id",
@@ -623,6 +903,11 @@
         "summary": "Get Overlay Tile",
         "description": "Web Mercator XYZ PNG tile for imported / geotiff-backed overlays.",
         "operationId": "get_overlay_tile_overlay_tiles__layer_id___z___x___y__png_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "layer_id",
@@ -787,6 +1072,11 @@
         "summary": "Get Overlay Bounds",
         "description": "返回图层的地理边界信息 + 元数据，供前端 MapLibre image source 定位与时间控制使用。",
         "operationId": "get_overlay_bounds_overlay_bounds__layer_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "layer_id",
@@ -846,7 +1136,7 @@
           "overlay"
         ],
         "summary": "List Overlays",
-        "description": "列出所有已注册的叠加图层 ID（供前端发现可用 overlay 图层）。",
+        "description": "列出当前用户可访问的叠加图层 ID（供前端发现可用 overlay 图层）。",
         "operationId": "list_overlays_overlays_get",
         "responses": {
           "200": {
@@ -861,7 +1151,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/overlays/intersect": {
@@ -870,8 +1165,13 @@
           "overlay"
         ],
         "summary": "Get Overlays In Viewport",
-        "description": "返回与视口相交的 overlay layer_ids（服务端空间索引查询）。\n\n优先用 spatial.sqlite + R*Tree（``ST_Intersects``）；扩展不可用或表空时\n回退到逐层读 ``bounds.json`` 做 AABB 相交（与原前端 O(N) 过滤等价）。\n空间库就绪时即使零命中也信任结果，不再误扫 bounds.json。\n\n跨日界线约定：前端对跨日界线视口传 ``east > 180``（unwrap），与\n``overlay_safe_wgs84_bounds`` 一致。\n\n回退路径无 zoom 元资料时不过滤（bounds.json / registry 目前无 min/maxzoom）。",
+        "description": "返回与视口相交且当前用户可访问的 overlay layer_ids。\n\n优先用 spatial.sqlite + R*Tree（``ST_Intersects``）；扩展不可用或表空时\n回退到逐层读 ``bounds.json`` 做 AABB 相交（与原前端 O(N) 过滤等价）。\n空间库就绪时即使零命中也信任结果，不再误扫 bounds.json。\n\n跨日界线约定：前端对跨日界线视口传 ``east > 180``（unwrap），与\n``overlay_safe_wgs84_bounds`` 一致。\n\n回退路径无 zoom 元资料时不过滤（bounds.json / registry 目前无 min/maxzoom）。",
         "operationId": "get_overlays_in_viewport_overlays_intersect_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "west",
@@ -970,6 +1270,11 @@
         "summary": "Get Overlay Value",
         "description": "查询 overlay 图层在指定点 (lng, lat) 的像素值。\n\n对于时间序列图层，可通过 ?time=YYYYMMDD 指定时间标签。\n返回 {\"value\": float | null, \"unit\": str, \"layer_id\": str, ...}。",
         "operationId": "get_overlay_value_overlay_value__layer_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "layer_id",
@@ -1091,8 +1396,13 @@
           "workflow"
         ],
         "summary": "List Workflow Runs",
-        "description": "列出工作流 run。active_only=true（默认）仅返回非终态 run。\n\n可选 status 过滤与 limit 取最近 N 条（按创建时间倒序），\n供前端启动恢复（含\"最近成功 run 产物自动恢复\"）与跨会话状态同步使用。",
+        "description": "列出工作流 run。active_only=true（默认）仅返回非终态 run。\n\n可选 status 过滤与 limit 取最近 N 条（按创建时间倒序），\n供前端启动恢复（含\"最近成功 run 产物自动恢复\"）与跨会话状态同步使用。\n非 admin 仅可见本人 run（无 user_id 的旧 run 对非 admin 不可见）。",
         "operationId": "list_workflow_runs_workflow_runs_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "active_only",
@@ -1178,6 +1488,11 @@
         ],
         "summary": "Get Workflow Run",
         "operationId": "get_workflow_run_workflow_runs__run_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "run_id",
@@ -1220,6 +1535,11 @@
         ],
         "summary": "Get Workflow Run View",
         "operationId": "get_workflow_run_view_workflow_runs__run_id__view_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "run_id",
@@ -1262,6 +1582,11 @@
         ],
         "summary": "List Workflow Events",
         "operationId": "list_workflow_events_workflow_runs__run_id__events_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "run_id",
@@ -1429,7 +1754,7 @@
           "workflow"
         ],
         "summary": "Materialize Workflow Map Layers",
-        "description": "Publish algorithm science products as imported overlays for map display.\n\nUsed when a run completed with file-only product refs (no map_layer), or to\nre-publish after code updates without re-running the inversion.\nAlso allowed while ``running`` so block mats can progressively appear.",
+        "description": "Publish algorithm science products as imported overlays for map display.\n\nL2: 业务逻辑已下沉到 python_provider_result_builder.materialize_map_layers。",
         "operationId": "materialize_workflow_map_layers_workflow_runs__run_id__materialize_map_layers_post",
         "security": [
           {
@@ -1471,6 +1796,215 @@
             }
           }
         }
+      }
+    },
+    "/analysis/tools": {
+      "get": {
+        "tags": [
+          "analysis"
+        ],
+        "summary": "Get Analysis Tools",
+        "operationId": "get_analysis_tools_analysis_tools_get",
+        "parameters": [
+          {
+            "name": "layer_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Layer Id"
+            }
+          },
+          {
+            "name": "source_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Type"
+            }
+          },
+          {
+            "name": "overlay_layer_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Overlay Layer Id"
+            }
+          },
+          {
+            "name": "has_vector",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Has Vector"
+            }
+          },
+          {
+            "name": "has_raster",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Has Raster"
+            }
+          },
+          {
+            "name": "is_weather",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Is Weather"
+            }
+          },
+          {
+            "name": "is_point_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Is Point Only"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisToolListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/analysis/tools/{tool_id}": {
+      "get": {
+        "tags": [
+          "analysis"
+        ],
+        "summary": "Get Analysis Tool",
+        "operationId": "get_analysis_tool_analysis_tools__tool_id__get",
+        "parameters": [
+          {
+            "name": "tool_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tool Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisToolDescriptor"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/analysis/runs": {
+      "post": {
+        "tags": [
+          "analysis"
+        ],
+        "summary": "Create Analysis Run",
+        "operationId": "create_analysis_run_analysis_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowAcceptedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/runtime/config": {
@@ -1570,13 +2104,40 @@
         ]
       }
     },
+    "/runtime/resources": {
+      "get": {
+        "tags": [
+          "runtime"
+        ],
+        "summary": "Get Runtime Resources",
+        "description": "返回后端进程与各子系统资源占用（CPU / 内存 / 磁盘）。\n\n数据由 psutil 轻量采样（TTL 5s 缓存），前端资源面板低频轮询即可。",
+        "operationId": "get_runtime_resources_runtime_resources_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceUsageResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
     "/runtime/metrics": {
       "get": {
         "tags": [
           "runtime"
         ],
         "summary": "Get Runtime Metrics",
-        "description": "返回各端点的 P50/P95 请求耗时统计（按天聚合，从 Redis 读取）。\n\nQuery params:\n    date: YYYY-MM-DD 格式日期，默认当天（UTC）。",
+        "description": "返回各节点的 P50/P95 请求耗时统计（按天聚合，从 Redis 读取）。\n\nQuery params:\n    date: YYYY-MM-DD 格式日期，默认当天（UTC）。",
         "operationId": "get_runtime_metrics_runtime_metrics_get",
         "security": [
           {
@@ -1750,7 +2311,7 @@
           "runtime"
         ],
         "summary": "Update Provider Api Config",
-        "description": "已移除：运行时密钥/配置请改用 /config/api-keys* 与 /config/weather/providers*。",
+        "description": "已移除：运行时密钥配置请改用 /config/api-keys* 与 /config/weather/providers*。",
         "operationId": "update_provider_api_config_runtime_api_config__provider__post",
         "deprecated": true,
         "security": [
@@ -2166,7 +2727,7 @@
           "weather"
         ],
         "summary": "Trigger Open Meteo Sync",
-        "description": "手动触发 Open-Meteo 数据同步。\n\n优先 Celery 异步派发；broker 卡住/超时时降级为本地后台线程。\n可选 body.domains 临时覆盖同步域（白名单校验，不改环境变量）。\nDocker/compose 不可用时返回 503 sync_unavailable。",
+        "description": "手动触发 Open-Meteo 数据同步（L1: 业务逻辑已抽取到 weather_sync_service）。",
         "operationId": "trigger_open_meteo_sync_weather_sync_trigger_post",
         "requestBody": {
           "content": {
@@ -2578,6 +3139,11 @@
         ],
         "summary": "Get Artifact",
         "operationId": "get_artifact_artifacts__artifact_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "artifact_id",
@@ -2618,6 +3184,11 @@
         ],
         "summary": "Get Artifact Preview Png",
         "operationId": "get_artifact_preview_png_artifacts__artifact_id__preview_png_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "artifact_id",
@@ -7469,6 +8040,31 @@
         }
       }
     },
+    "/config/cache/invalidate-templates": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Invalidate Template Caches",
+        "description": "P1-3：清除 workflow_request_resolver 的 lru_cache（module templates / dataset paths / provider helpers）。\n\n在以下场景需调用：\n- 修改了 MODULE_REQUEST_TEMPLATES 后（避免重启 FastAPI）\n- 修改了 provider dataset 配置后\n- admin 主动刷新缓存",
+        "operationId": "invalidate_template_caches_config_cache_invalidate_templates_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
     "/workflow-definitions/node-templates": {
       "get": {
         "tags": [
@@ -7605,7 +8201,7 @@
           "workflow-definition"
         ],
         "summary": "List Definitions",
-        "description": "列出所有工作流定义（system + user）。",
+        "description": "列出所有工作流定义（system + user）。鉴权开启时匿名 fail-closed；非 admin 按 ACL 过滤。",
         "operationId": "list_definitions_workflow_definitions_get",
         "responses": {
           "200": {
@@ -7620,7 +8216,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       },
       "post": {
         "tags": [
@@ -7682,6 +8283,11 @@
         "summary": "Get Definition",
         "description": "获取单个工作流定义的完整内容。",
         "operationId": "get_definition_workflow_definitions__workflow_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "workflow_id",
@@ -9115,6 +9721,309 @@
         "type": "object",
         "title": "AlgorithmWorkflowRequest"
       },
+      "AnalysisMapPoint": {
+        "properties": {
+          "lng": {
+            "type": "number",
+            "title": "Lng"
+          },
+          "lat": {
+            "type": "number",
+            "title": "Lat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lng",
+          "lat"
+        ],
+        "title": "AnalysisMapPoint"
+      },
+      "AnalysisRunRequest": {
+        "properties": {
+          "tool_id": {
+            "type": "string",
+            "title": "Tool Id"
+          },
+          "layer_id": {
+            "type": "string",
+            "title": "Layer Id"
+          },
+          "overlay_layer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overlay Layer Id"
+          },
+          "zones_overlay_layer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zones Overlay Layer Id"
+          },
+          "zones_geojson_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zones Geojson Path"
+          },
+          "geojson_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geojson Path"
+          },
+          "map_point": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalysisMapPoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BoundingBox"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "show_on_map": {
+            "type": "boolean",
+            "title": "Show On Map",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool_id",
+          "layer_id"
+        ],
+        "title": "AnalysisRunRequest"
+      },
+      "AnalysisToolDescriptor": {
+        "properties": {
+          "tool_id": {
+            "type": "string",
+            "title": "Tool Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "category": {
+            "type": "string",
+            "title": "Category",
+            "default": "analysis"
+          },
+          "input_kinds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Input Kinds"
+          },
+          "param_schema": {
+            "items": {
+              "$ref": "#/components/schemas/AnalysisToolParamField"
+            },
+            "type": "array",
+            "title": "Param Schema"
+          },
+          "workflow_template_id": {
+            "type": "string",
+            "title": "Workflow Template Id"
+          },
+          "outputs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Outputs"
+          },
+          "resource_profile": {
+            "type": "string",
+            "title": "Resource Profile",
+            "default": "standard"
+          },
+          "concurrency_key": {
+            "type": "string",
+            "title": "Concurrency Key",
+            "default": "layer_tool"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "disabled_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool_id",
+          "title",
+          "workflow_template_id"
+        ],
+        "title": "AnalysisToolDescriptor"
+      },
+      "AnalysisToolListResponse": {
+        "properties": {
+          "layer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layer Id"
+          },
+          "layer_kind": {
+            "type": "string",
+            "title": "Layer Kind",
+            "default": "any"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AnalysisToolDescriptor"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "title": "AnalysisToolListResponse"
+      },
+      "AnalysisToolParamField": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": "string"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": ""
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "default": {
+            "title": "Default"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key"
+        ],
+        "title": "AnalysisToolParamField"
+      },
       "ApiKeyDeletedResponse": {
         "properties": {
           "deleted": {
@@ -10000,11 +10909,11 @@
             "type": "string",
             "enum": [
               "admin",
-              "operator",
-              "viewer"
+              "standard",
+              "demo"
             ],
             "title": "Role",
-            "default": "operator"
+            "default": "standard"
           }
         },
         "type": "object",
@@ -10623,6 +11532,39 @@
         ],
         "title": "ExecutionStatus"
       },
+      "ExportBBox": {
+        "properties": {
+          "west": {
+            "type": "number",
+            "title": "West"
+          },
+          "south": {
+            "type": "number",
+            "title": "South"
+          },
+          "east": {
+            "type": "number",
+            "title": "East"
+          },
+          "north": {
+            "type": "number",
+            "title": "North"
+          },
+          "crs": {
+            "type": "string",
+            "title": "Crs",
+            "default": "EPSG:4326"
+          }
+        },
+        "type": "object",
+        "required": [
+          "west",
+          "south",
+          "east",
+          "north"
+        ],
+        "title": "ExportBBox"
+      },
       "ExportBatchBody": {
         "properties": {
           "layer_ids": {
@@ -10664,6 +11606,55 @@
               }
             ],
             "title": "Time"
+          },
+          "times": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Times"
+          },
+          "bbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportBBox"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "output_crs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Crs"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields"
           }
         },
         "type": "object",
@@ -10716,6 +11707,41 @@
               }
             ],
             "title": "Times"
+          },
+          "bbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportBBox"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "output_crs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Crs"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields"
           }
         },
         "type": "object",
@@ -11932,6 +12958,13 @@
             },
             "type": "array",
             "title": "Items"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/LayerCategoryDef"
+            },
+            "type": "array",
+            "title": "Categories"
           }
         },
         "type": "object",
@@ -11939,6 +12972,81 @@
           "items"
         ],
         "title": "LayerCatalogResponse"
+      },
+      "LayerCategoryDef": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "accent_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Color"
+          },
+          "chip_tone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chip Tone"
+          },
+          "sub_categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sub Categories"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "LayerCategoryDef",
+        "description": "X1: 图层分类定义 — 后端下发，消除前后端分类双写。"
+      },
+      "LayerCategoryResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LayerCategoryDef"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "LayerCategoryResponse"
       },
       "LayerDescriptor": {
         "properties": {
@@ -12175,6 +13283,54 @@
               }
             ],
             "title": "Sub Category"
+          },
+          "presentation": {
+            "$ref": "#/components/schemas/LayerPresentation"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/LayerSourceDef"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "merged_into": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merged Into"
+          },
+          "is_merged_group": {
+            "type": "boolean",
+            "title": "Is Merged Group",
+            "default": false
+          },
+          "members": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Members"
+          },
+          "is_admin_boundary": {
+            "type": "boolean",
+            "title": "Is Admin Boundary",
+            "default": false
+          },
+          "online_temporal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OnlineTemporalCapability"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -12206,6 +13362,101 @@
         ],
         "title": "LayerDisplayNameBody"
       },
+      "LayerPresentation": {
+        "properties": {
+          "accent_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Color"
+          },
+          "accent_glow": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Glow"
+          },
+          "chip_tone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chip Tone"
+          },
+          "metric_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Label"
+          },
+          "metric_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Unit"
+          },
+          "metric_precision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Precision"
+          },
+          "update_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Update Label"
+          },
+          "source_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Label"
+          }
+        },
+        "type": "object",
+        "title": "LayerPresentation",
+        "description": "X1: 图层 UI 呈现元数据 — 后端下发，前端消费的唯一真源。\n\n将原前端 ``LAYER_LIBRARY`` 中的 UI 样式字段（accentColor / accentGlow /\nchipTone / metricLabel / metricUnit / metricPrecision / updateLabel /\nsourceLabel）迁移到后端种子 JSON，经 ``GET /layers`` 下发。\n前端 ``LAYER_LIBRARY`` 仅在 API 不可用时作离线兜底。"
+      },
       "LayerRenderType": {
         "type": "string",
         "enum": [
@@ -12215,6 +13466,66 @@
           "heatmap"
         ],
         "title": "LayerRenderType"
+      },
+      "LayerSourceDef": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "url_template": {
+            "type": "string",
+            "title": "Url Template",
+            "default": ""
+          },
+          "needs_auth": {
+            "type": "boolean",
+            "title": "Needs Auth",
+            "default": false
+          },
+          "needs_backend_transform": {
+            "type": "boolean",
+            "title": "Needs Backend Transform",
+            "default": false
+          },
+          "coord_sys": {
+            "type": "string",
+            "title": "Coord Sys",
+            "default": "EPSG:4326"
+          },
+          "update_frequency": {
+            "type": "string",
+            "title": "Update Frequency",
+            "default": ""
+          },
+          "attribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attribution"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "name"
+        ],
+        "title": "LayerSourceDef",
+        "description": "X1: 图层数据源定义 — 从前端 catalog.ts 迁移到后端 JSON。\n\n单源图层含 1 项；合并组虚拟条目含多个成员源。\n前端通过 codegen 或运行时 API 消费，``source_id`` 映射为前端 ``LayerSource.id``。"
       },
       "LayerSourceType": {
         "type": "string",
@@ -12558,6 +13869,65 @@
         ],
         "title": "NodeSpec"
       },
+      "OnlineTemporalCapability": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": false
+          },
+          "coverage_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Start"
+          },
+          "coverage_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage End"
+          },
+          "native_step": {
+            "type": "string",
+            "title": "Native Step",
+            "default": "1d"
+          },
+          "max_batch": {
+            "type": "integer",
+            "title": "Max Batch",
+            "default": 12
+          },
+          "prefetch_depth": {
+            "type": "integer",
+            "title": "Prefetch Depth",
+            "default": 1
+          },
+          "queue_tag": {
+            "type": "string",
+            "title": "Queue Tag",
+            "default": "temporal-fetch"
+          },
+          "priority": {
+            "type": "string",
+            "title": "Priority",
+            "default": "low"
+          }
+        },
+        "type": "object",
+        "title": "OnlineTemporalCapability",
+        "description": "在线时间获取能力声明。\n\n标记图层支持\"用户选时间点 → 自动在线获取 → 动态刷新\"流程。\nNone 表示该图层不支持在线历史时间获取。"
+      },
       "OpenDataPresetsUpdateRequest": {
         "properties": {
           "open_data_presets": {
@@ -12642,6 +14012,100 @@
         ],
         "title": "ParallelConfig",
         "description": "并行配置"
+      },
+      "PermissionItemInput": {
+        "properties": {
+          "resource_type": {
+            "type": "string",
+            "enum": [
+              "layer",
+              "workflow",
+              "data_source"
+            ],
+            "title": "Resource Type"
+          },
+          "resource_id": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Resource Id"
+          },
+          "permission": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "deny"
+            ],
+            "title": "Permission"
+          }
+        },
+        "type": "object",
+        "required": [
+          "resource_type",
+          "resource_id",
+          "permission"
+        ],
+        "title": "PermissionItemInput"
+      },
+      "PermissionModeRequest": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "open",
+              "whitelist"
+            ],
+            "title": "Mode"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "title": "PermissionModeRequest"
+      },
+      "PermissionRecord": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          },
+          "resource_type": {
+            "type": "string",
+            "title": "Resource Type"
+          },
+          "resource_id": {
+            "type": "string",
+            "title": "Resource Id"
+          },
+          "permission": {
+            "type": "string",
+            "title": "Permission"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "user_id",
+          "resource_type",
+          "resource_id",
+          "permission",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PermissionRecord"
       },
       "PortKind": {
         "type": "string",
@@ -12897,6 +14361,69 @@
           "portal_credentials"
         ],
         "title": "PortalCredentialsMapResponse"
+      },
+      "ProcessResourceSnapshot": {
+        "properties": {
+          "pid": {
+            "type": "integer",
+            "title": "Pid"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "cpu_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Percent"
+          },
+          "memory_rss_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Rss Mb"
+          },
+          "threads": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threads"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pid",
+          "name"
+        ],
+        "title": "ProcessResourceSnapshot",
+        "description": "单个后端进程资源快照。"
       },
       "RasterCommitBody": {
         "properties": {
@@ -13592,6 +15119,49 @@
         ],
         "title": "RemoteStorageUpsertRequest"
       },
+      "ResourceUsageResponse": {
+        "properties": {
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "system": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SystemResourceSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "processes": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessResourceSnapshot"
+            },
+            "type": "array",
+            "title": "Processes"
+          },
+          "worker_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "updated_at"
+        ],
+        "title": "ResourceUsageResponse",
+        "description": "GET /runtime/resources — 后端进程与宿主系统资源占用。"
+      },
       "ResultKind": {
         "type": "string",
         "enum": [
@@ -13945,6 +15515,20 @@
         ],
         "title": "ServiceRestartResponse"
       },
+      "SetPermissionsRequest": {
+        "properties": {
+          "permissions": {
+            "items": {
+              "$ref": "#/components/schemas/PermissionItemInput"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Permissions"
+          }
+        },
+        "type": "object",
+        "title": "SetPermissionsRequest"
+      },
       "SpatialFilter": {
         "properties": {
           "filter_type": {
@@ -14048,6 +15632,90 @@
         },
         "type": "object",
         "title": "StoragePolicy"
+      },
+      "SystemResourceSnapshot": {
+        "properties": {
+          "cpu_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Percent"
+          },
+          "memory_total_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Total Mb"
+          },
+          "memory_used_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Used Mb"
+          },
+          "memory_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Percent"
+          },
+          "disk_total_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disk Total Mb"
+          },
+          "disk_used_mb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disk Used Mb"
+          },
+          "disk_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disk Percent"
+          }
+        },
+        "type": "object",
+        "title": "SystemResourceSnapshot",
+        "description": "系统级资源快照（psutil 采集，轻量非阻塞）。"
       },
       "TableSpec": {
         "properties": {
@@ -14432,8 +16100,8 @@
                 "type": "string",
                 "enum": [
                   "admin",
-                  "operator",
-                  "viewer"
+                  "standard",
+                  "demo"
                 ]
               },
               {
@@ -14586,8 +16254,8 @@
             "type": "string",
             "enum": [
               "admin",
-              "operator",
-              "viewer"
+              "standard",
+              "demo"
             ],
             "title": "Role"
           },
@@ -14595,6 +16263,11 @@
             "type": "boolean",
             "title": "Enabled",
             "default": true
+          },
+          "permission_mode": {
+            "type": "string",
+            "title": "Permission Mode",
+            "default": "open"
           }
         },
         "type": "object",

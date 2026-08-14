@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { X } from '../../components/ui/icons'
 import { DATA_COPY } from '../../ui-copy'
+import AppSelect from '../../components/ui/AppSelect.vue'
 import {
   applyDocumentOps,
   chunkedUpload,
@@ -23,7 +25,7 @@ import {
   registerImportedRasterLayer,
   registerImportedVectorLayer,
 } from '../adapters/layers'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { useLogStore } from '../../stores/log'
 import RasterImportConfirmDialog from './RasterImportConfirmDialog.vue'
 import ScienceRasterImportDialog, {
@@ -49,7 +51,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ close: [] }>()
 
-const layersStore = useLayersStore()
+const workspace = useLayerWorkspace()
 const logStore = useLogStore()
 
 const activeTab = ref<'vector' | 'raster' | 'document'>(props.initialTab ?? 'vector')
@@ -314,7 +316,7 @@ async function runVectorImport() {
     if (ok && !errors.length) {
       setStatus(`已导入 ${ok} 个矢量图层`)
       vectorFiles.value = []
-      const last = [...layersStore.activeLayers].reverse().find((l) => l.importedVector)
+      const last = [...workspace.activeLayers.value].reverse().find((l) => l.importedVector)
       if (last) {
         focusImportedLayer(last.instanceId)
         openDataWorkspace({ tab: 'attributes', layerInstanceId: last.instanceId })
@@ -819,7 +821,7 @@ async function commitDocument() {
       <header v-if="!embedded" class="data-panel-header">
         <span class="header-title">{{ DATA_COPY.importTitle }}</span>
         <button class="close-btn" type="button" :title="DATA_COPY.close" @click="emit('close')">
-          ✕
+          <X :size="14" aria-hidden="true" />
         </button>
       </header>
 
@@ -982,10 +984,13 @@ async function commitDocument() {
             <div class="ops-grid">
               <label>
                 {{ DATA_COPY.renameFrom }}
-                <select v-model="opRenameFrom">
-                  <option value="">—</option>
-                  <option v-for="c in documentColumns" :key="c" :value="c">{{ c }}</option>
-                </select>
+                <AppSelect
+                  v-model="opRenameFrom"
+                  :options="[
+                    { label: '—', value: '' },
+                    ...documentColumns.map((c) => ({ label: c, value: c })),
+                  ]"
+                />
               </label>
               <label>
                 {{ DATA_COPY.renameTo }}
@@ -993,10 +998,13 @@ async function commitDocument() {
               </label>
               <label>
                 {{ DATA_COPY.filterField }}
-                <select v-model="opFilterField">
-                  <option value="">—</option>
-                  <option v-for="c in documentColumns" :key="c" :value="c">{{ c }}</option>
-                </select>
+                <AppSelect
+                  v-model="opFilterField"
+                  :options="[
+                    { label: '—', value: '' },
+                    ...documentColumns.map((c) => ({ label: c, value: c })),
+                  ]"
+                />
               </label>
               <label>
                 {{ DATA_COPY.filterContains }}
@@ -1004,10 +1012,13 @@ async function commitDocument() {
               </label>
               <label>
                 {{ DATA_COPY.findReplaceField }}
-                <select v-model="opFindField">
-                  <option value="">—</option>
-                  <option v-for="c in documentColumns" :key="c" :value="c">{{ c }}</option>
-                </select>
+                <AppSelect
+                  v-model="opFindField"
+                  :options="[
+                    { label: '—', value: '' },
+                    ...documentColumns.map((c) => ({ label: c, value: c })),
+                  ]"
+                />
               </label>
               <label>
                 {{ DATA_COPY.findText }}
@@ -1019,10 +1030,13 @@ async function commitDocument() {
               </label>
               <label>
                 {{ DATA_COPY.splitField }}
-                <select v-model="opSplitField">
-                  <option value="">—</option>
-                  <option v-for="c in documentColumns" :key="c" :value="c">{{ c }}</option>
-                </select>
+                <AppSelect
+                  v-model="opSplitField"
+                  :options="[
+                    { label: '—', value: '' },
+                    ...documentColumns.map((c) => ({ label: c, value: c })),
+                  ]"
+                />
               </label>
               <label>
                 {{ DATA_COPY.splitSep }}
@@ -1059,15 +1073,17 @@ async function commitDocument() {
             <div class="commit-row">
               <label>
                 {{ DATA_COPY.xField }}
-                <select v-model="xField">
-                  <option v-for="c in documentColumns" :key="c" :value="c">{{ c }}</option>
-                </select>
+                <AppSelect
+                  v-model="xField"
+                  :options="documentColumns.map((c) => ({ label: c, value: c }))"
+                />
               </label>
               <label>
                 {{ DATA_COPY.yField }}
-                <select v-model="yField">
-                  <option v-for="c in documentColumns" :key="c" :value="c">{{ c }}</option>
-                </select>
+                <AppSelect
+                  v-model="yField"
+                  :options="documentColumns.map((c) => ({ label: c, value: c }))"
+                />
               </label>
               <label>
                 {{ DATA_COPY.sourceCrs }}
@@ -1075,11 +1091,14 @@ async function commitDocument() {
               </label>
               <label>
                 交换 XY
-                <select v-model="docSwapXyMode">
-                  <option value="auto">自动检测</option>
-                  <option value="force">强制交换</option>
-                  <option value="keep">保持不交换</option>
-                </select>
+                <AppSelect
+                  v-model="docSwapXyMode"
+                  :options="[
+                    { label: '自动检测', value: 'auto' },
+                    { label: '强制交换', value: 'force' },
+                    { label: '保持不交换', value: 'keep' },
+                  ]"
+                />
               </label>
               <button class="primary-btn" type="button" :disabled="busy" @click="commitDocument">
                 {{ DATA_COPY.commit }}
@@ -1178,7 +1197,7 @@ async function commitDocument() {
   justify-content: center;
   padding: 3.5vh 1rem 2vh;
   overflow: auto;
-  background: rgba(4, 10, 18, 0.55);
+  background: var(--surface-raised);
 }
 .data-panel {
   width: min(42rem, calc(100vw - 2rem));
@@ -1188,10 +1207,10 @@ async function commitDocument() {
   min-height: 0;
   overflow: hidden;
   border-radius: 0.7rem;
-  background: rgba(8, 17, 31, 0.98);
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  background: var(--surface-2);
+  border: 1px solid var(--border-default);
   box-shadow: 0 18px 48px rgba(1, 8, 16, 0.45);
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 .data-panel-header {
   display: flex;
@@ -1200,10 +1219,10 @@ async function commitDocument() {
   gap: 0.6rem;
   flex-shrink: 0;
   padding: 0.62rem 0.8rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.1);
+  border-bottom: 1px solid var(--border-subtle);
 }
 .header-title {
-  font-size: 0.76rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
 }
 .close-btn {
@@ -1213,17 +1232,17 @@ async function commitDocument() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(136, 192, 255, 0.22);
+  border: 1px solid var(--border-strong);
   border-radius: 0.38rem;
-  background: rgba(4, 12, 23, 0.72);
-  color: #d8e6f5;
+  background: var(--surface-1);
+  color: var(--text-primary);
   cursor: pointer;
-  font-size: 0.78rem;
+  font-size: var(--font-size-caption);
   line-height: 1;
 }
 .close-btn:hover {
-  border-color: rgba(90, 213, 255, 0.4);
-  color: #5ad5ff;
+  border-color: var(--border-strong);
+  color: var(--accent);
 }
 .data-tabs {
   display: flex;
@@ -1232,25 +1251,25 @@ async function commitDocument() {
   padding: 0.48rem 0.8rem 0;
 }
 .data-tab {
-  border: 1px solid rgba(136, 192, 255, 0.12);
+  border: 1px solid var(--border-default);
   border-radius: 0.42rem;
   padding: 0.28rem 0.62rem;
-  background: rgba(4, 12, 23, 0.5);
-  color: #9fb6cc;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 .data-tab.active {
-  color: #5ad5ff;
-  border-color: rgba(90, 213, 255, 0.35);
-  background: rgba(10, 132, 255, 0.16);
+  color: var(--accent);
+  border-color: var(--border-strong);
+  background: var(--accent-surface);
 }
 .tab-hint {
   flex-shrink: 0;
   margin: 0.36rem 0.8rem 0;
-  font-size: 0.54rem;
-  color: #6a8094;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   line-height: 1.4;
 }
 .data-panel-body {
@@ -1268,8 +1287,8 @@ async function commitDocument() {
 .file-line,
 .table-meta {
   margin: 0;
-  font-size: 0.56rem;
-  color: #8aa0b4;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 .file-btn,
 .primary-btn,
@@ -1281,19 +1300,19 @@ async function commitDocument() {
   border-radius: 0.42rem;
   padding: 0.36rem 0.72rem;
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 .file-btn,
 .secondary-btn {
-  border: 1px solid rgba(136, 192, 255, 0.18);
-  background: rgba(4, 12, 23, 0.55);
-  color: #c5d8ea;
+  border: 1px solid var(--border-default);
+  background: var(--surface-raised);
+  color: var(--text-primary);
 }
 .primary-btn {
-  border: 1px solid rgba(90, 213, 255, 0.35);
-  background: rgba(10, 132, 255, 0.22);
-  color: #a8e8ff;
+  border: 1px solid var(--border-strong);
+  background: var(--accent-border);
+  color: var(--accent-strong);
 }
 .primary-btn:disabled,
 .secondary-btn:disabled {
@@ -1303,23 +1322,23 @@ async function commitDocument() {
 .file-list {
   margin: 0;
   padding-left: 1rem;
-  font-size: 0.58rem;
-  color: #b7c9da;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 .temporal-block {
   margin: 0.45rem 0 0.55rem;
   padding: 0.5rem 0.55rem;
   border-radius: 0.42rem;
-  border: 1px solid rgba(136, 192, 255, 0.12);
-  background: rgba(4, 12, 23, 0.42);
+  border: 1px solid var(--border-default);
+  background: var(--surface-raised);
 }
 .temporal-modes {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem 0.8rem;
   margin: 0.3rem 0 0.35rem;
-  font-size: 0.6rem;
-  color: #c5d7ea;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
 }
 .temporal-modes label {
   display: inline-flex;
@@ -1336,41 +1355,41 @@ async function commitDocument() {
   display: flex;
   flex-direction: column;
   gap: 0.18rem;
-  font-size: 0.58rem;
-  color: #8aa0b4;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 .temporal-fields input {
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  border: 1px solid var(--border-default);
   border-radius: 0.35rem;
-  background: rgba(2, 10, 18, 0.7);
-  color: #d8e6f5;
+  background: var(--surface-1);
+  color: var(--text-primary);
   padding: 0.26rem 0.38rem;
   font: inherit;
-  font-size: 0.66rem;
+  font-size: var(--font-size-caption);
 }
 .temporal-preview {
   margin: 0.35rem 0 0;
-  font-size: 0.58rem;
-  color: #7eb8e0;
+  font-size: var(--font-size-caption);
+  color: var(--accent);
 }
 .sidecar-status {
   margin: 0;
   padding: 0.35rem 0.55rem;
   list-style: none;
-  border: 1px solid rgba(136, 192, 255, 0.12);
+  border: 1px solid var(--border-default);
   border-radius: 0.4rem;
-  background: rgba(4, 12, 23, 0.45);
-  font-size: 0.56rem;
-  color: #9ec4e0;
-  font-family: ui-monospace, Consolas, monospace;
+  background: var(--surface-raised);
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
 }
 .sidecar-status .bad {
-  color: #ffb0b0;
+  color: var(--danger);
 }
 .sidecar-warn {
   margin: 0;
-  font-size: 0.58rem;
-  color: #ffd166;
+  font-size: var(--font-size-caption);
+  color: var(--warning);
   line-height: 1.35;
 }
 .ops-grid,
@@ -1384,34 +1403,34 @@ label {
   display: flex;
   flex-direction: column;
   gap: 0.18rem;
-  font-size: 0.54rem;
-  color: #8aa0b4;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 input,
 select {
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.34rem;
   padding: 0.28rem 0.4rem;
-  background: rgba(4, 12, 23, 0.7);
-  color: #d8e6f5;
+  background: var(--surface-1);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
 }
 .table-wrap {
   overflow: auto;
   max-height: 10rem;
-  border: 1px solid rgba(136, 192, 255, 0.1);
+  border: 1px solid var(--border-subtle);
   border-radius: 0.4rem;
 }
 table {
   border-collapse: collapse;
   width: max-content;
   min-width: 100%;
-  font-size: 0.52rem;
+  font-size: var(--font-size-caption);
 }
 th,
 td {
-  border-bottom: 1px solid rgba(136, 192, 255, 0.08);
+  border-bottom: 1px solid var(--border-subtle);
   padding: 0.22rem 0.4rem;
   text-align: left;
   white-space: nowrap;
@@ -1419,31 +1438,31 @@ td {
 th {
   position: sticky;
   top: 0;
-  background: rgba(10, 20, 34, 0.98);
-  color: #9ec4e0;
+  background: var(--surface-2);
+  color: var(--text-secondary);
 }
 .data-panel-footer {
   flex-shrink: 0;
   padding: 0.45rem 0.8rem 0.6rem;
-  border-top: 1px solid rgba(136, 192, 255, 0.1);
+  border-top: 1px solid var(--border-subtle);
 }
 .progress-bar {
   height: 0.28rem;
   border-radius: 999px;
-  background: rgba(136, 192, 255, 0.12);
+  background: var(--border-default);
   overflow: hidden;
   margin-bottom: 0.35rem;
 }
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #0a84ff, #5ad5ff);
+  background: linear-gradient(90deg, var(--accent), var(--accent));
 }
 .msg {
   margin: 0;
-  font-size: 0.58rem;
-  color: #9ec4e0;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
 }
 .msg.error {
-  color: #ffb0b0;
+  color: var(--danger);
 }
 </style>

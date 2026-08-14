@@ -12,9 +12,9 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-from app.api.deps import require_write_access
+from app.api.deps import require_data_transfer_access
 from app.data_io.services import paths as import_paths
 from app.data_io.services.paths import QuotaExceededError
 from app.data_io.services.document import (
@@ -98,18 +98,18 @@ class RasterDetectInvalidBody(BaseModel):
 
 
 class RasterCommitBody(BaseModel):
-    upload_id: str
+    upload_id: str = Field(min_length=1, max_length=256)
     variable_id: str | None = None
     """单变量（兼容旧客户端）。与 variable_ids 二选一，优先 variable_ids。"""
-    variable_ids: list[str] = Field(default_factory=list)
-    time_index: int = 0
-    source_name: str | None = None
+    variable_ids: list[str] = Field(default_factory=list, max_length=64)
+    time_index: int = Field(default=0, ge=0)
+    source_name: str | None = Field(default=None, max_length=256)
     async_mode: bool = False
-    source_crs: str | None = None
-    grid_preset: str | None = None
+    source_crs: str | None = Field(default=None, max_length=64)
+    grid_preset: str | None = Field(default=None, max_length=64)
     bounds: list[float] | None = None
     """源 CRS 下 [west, south, east, north]。"""
-    invalid_values: list[float] = Field(default_factory=list)
+    invalid_values: list[float] = Field(default_factory=list, max_length=1024)
     """导入前替换为 nodata 的无效值列表。"""
     nodata: float | None = None
     auto_confirm: bool = True
@@ -125,11 +125,19 @@ class RasterCommitBody(BaseModel):
     """时间语义：auto 从文件名猜测；static 强制无时间；point/range 手动指定。"""
     temporal_mode: str = "auto"
     """时间点 YYYYMMDD，或时间段标签 YYYYMMDD_YYYYMMDD。"""
-    time_label: str | None = None
-    time_start: str | None = None
-    time_end: str | None = None
+    time_label: str | None = Field(default=None, max_length=64)
+    time_start: str | None = Field(default=None, max_length=64)
+    time_end: str | None = Field(default=None, max_length=64)
     """原生时间步，如 1d / 8d / 1m。"""
-    native_step: str | None = None
+    native_step: str | None = Field(default=None, max_length=16)
+
+    @model_validator(mode="after")
+    def _validate_bounds_length(self) -> RasterCommitBody:
+        if self.bounds is not None and len(self.bounds) != 4:
+            raise ValueError(
+                "bounds must have exactly 4 elements [west, south, east, north]"
+            )
+        return self
 
 
 class DocumentOpsBody(BaseModel):
@@ -173,6 +181,14 @@ class FieldAddBody(BaseModel):
     default: Any = ""
 
 
+class ExportBBox(BaseModel):
+    west: float
+    south: float
+    east: float
+    north: float
+    crs: str = "EPSG:4326"
+
+
 class ExportBody(BaseModel):
     layer_id: str
     format: str = "geojson"
@@ -182,6 +198,12 @@ class ExportBody(BaseModel):
     time: str | None = None
     # 多时刻列表；长度>1 时打成 zip。与 time 二选一优先 times
     times: list[str] | None = None
+    # 裁剪到地图/指定范围
+    bbox: ExportBBox | None = None
+    # 输出坐标系，如 EPSG:4326 / EPSG:3857；缺省保持源
+    output_crs: str | None = None
+    # 矢量属性字段子集
+    fields: list[str] | None = None
 
 
 class ExportBatchBody(BaseModel):
@@ -190,6 +212,10 @@ class ExportBatchBody(BaseModel):
     encoding: str | None = "auto"
     async_mode: bool = False
     time: str | None = None
+    times: list[str] | None = None
+    bbox: ExportBBox | None = None
+    output_crs: str | None = None
+    fields: list[str] | None = None
 
 
 class BatchGroupBody(BaseModel):
@@ -264,7 +290,9 @@ def _raster_commit_sync(body: RasterCommitBody) -> dict[str, Any]:
 # ── 分块上传 ────────────────────────────────────────────────────────────
 
 
-@router.post("/import/upload/init", dependencies=[Depends(require_write_access)])
+@router.post(
+    "/import/upload/init", dependencies=[Depends(require_data_transfer_access)]
+)
 async def upload_init(body: UploadInitBody) -> dict[str, Any]:
     try:
         return init_upload(
@@ -278,7 +306,8 @@ async def upload_init(body: UploadInitBody) -> dict[str, Any]:
 
 
 @router.post(
-    "/import/upload/resumable/init", dependencies=[Depends(require_write_access)]
+    "/import/upload/resumable/init",
+    dependencies=[Depends(require_data_transfer_access)],
 )
 async def upload_resumable_init(body: UploadResumableInitBody) -> dict[str, Any]:
     try:
@@ -295,7 +324,8 @@ async def upload_resumable_init(body: UploadResumableInitBody) -> dict[str, Any]
 
 
 @router.get(
-    "/import/upload/{upload_id}/status", dependencies=[Depends(require_write_access)]
+    "/import/upload/{upload_id}/status",
+    dependencies=[Depends(require_data_transfer_access)],
 )
 async def upload_status(upload_id: str) -> dict[str, Any]:
     try:
@@ -305,7 +335,8 @@ async def upload_status(upload_id: str) -> dict[str, Any]:
 
 
 @router.post(
-    "/import/upload/{upload_id}/chunk", dependencies=[Depends(require_write_access)]
+    "/import/upload/{upload_id}/chunk",
+    dependencies=[Depends(require_data_transfer_access)],
 )
 async def upload_chunk(
     upload_id: str,
@@ -323,7 +354,7 @@ async def upload_chunk(
 
 @router.post(
     "/import/upload/{upload_id}/chunk/{chunk_index}",
-    dependencies=[Depends(require_write_access)],
+    dependencies=[Depends(require_data_transfer_access)],
 )
 async def upload_chunk_indexed(
     upload_id: str,
@@ -339,7 +370,9 @@ async def upload_chunk_indexed(
         await file.close()
 
 
-@router.post("/import/upload/complete", dependencies=[Depends(require_write_access)])
+@router.post(
+    "/import/upload/complete", dependencies=[Depends(require_data_transfer_access)]
+)
 async def upload_complete(body: UploadCompleteBody) -> dict[str, Any]:
     try:
         return complete_upload(body.upload_id)
@@ -348,7 +381,8 @@ async def upload_complete(body: UploadCompleteBody) -> dict[str, Any]:
 
 
 @router.post(
-    "/import/upload/resumable/complete", dependencies=[Depends(require_write_access)]
+    "/import/upload/resumable/complete",
+    dependencies=[Depends(require_data_transfer_access)],
 )
 async def upload_resumable_complete(body: UploadCompleteBody) -> dict[str, Any]:
     try:
@@ -358,19 +392,21 @@ async def upload_resumable_complete(body: UploadCompleteBody) -> dict[str, Any]:
 
 
 @router.delete(
-    "/import/upload/{upload_id}", dependencies=[Depends(require_write_access)]
+    "/import/upload/{upload_id}", dependencies=[Depends(require_data_transfer_access)]
 )
 async def upload_discard(upload_id: str) -> dict[str, Any]:
     discard_upload(upload_id)
     return {"ok": True, "upload_id": upload_id}
 
 
-@router.get("/import/jobs", dependencies=[Depends(require_write_access)])
+@router.get("/import/jobs", dependencies=[Depends(require_data_transfer_access)])
 async def import_jobs_list(limit: int = 20) -> dict[str, Any]:
     return {"items": list_jobs(limit=limit)}
 
 
-@router.get("/import/jobs/{job_id}", dependencies=[Depends(require_write_access)])
+@router.get(
+    "/import/jobs/{job_id}", dependencies=[Depends(require_data_transfer_access)]
+)
 async def import_job_status(job_id: str) -> dict[str, Any]:
     try:
         return get_job(job_id)
@@ -379,7 +415,7 @@ async def import_job_status(job_id: str) -> dict[str, Any]:
 
 
 @router.post(
-    "/import/jobs/{job_id}/cancel", dependencies=[Depends(require_write_access)]
+    "/import/jobs/{job_id}/cancel", dependencies=[Depends(require_data_transfer_access)]
 )
 async def import_job_cancel(job_id: str) -> dict[str, Any]:
     try:
@@ -389,7 +425,8 @@ async def import_job_cancel(job_id: str) -> dict[str, Any]:
 
 
 @router.get(
-    "/import/jobs/{job_id}/download", dependencies=[Depends(require_write_access)]
+    "/import/jobs/{job_id}/download",
+    dependencies=[Depends(require_data_transfer_access)],
 )
 async def import_job_download(job_id: str) -> FileResponse:
     try:
@@ -419,7 +456,7 @@ async def import_job_download(job_id: str) -> FileResponse:
 # ── 批导入 ─────────────────────────────────────────────────────────────
 
 
-@router.post("/import/batch", dependencies=[Depends(require_write_access)])
+@router.post("/import/batch", dependencies=[Depends(require_data_transfer_access)])
 async def import_batch(body: ImportBatchBody) -> dict[str, Any]:
     if not body.groups:
         raise HTTPException(status_code=400, detail="groups 不能为空")
@@ -474,7 +511,7 @@ async def import_batch(body: ImportBatchBody) -> dict[str, Any]:
 # ── 矢量 ───────────────────────────────────────────────────────────────
 
 
-@router.post("/import/vector", dependencies=[Depends(require_write_access)])
+@router.post("/import/vector", dependencies=[Depends(require_data_transfer_access)])
 async def import_vector(body: VectorImportBody) -> dict[str, Any]:
     if not body.upload_ids:
         raise HTTPException(status_code=400, detail="upload_ids 不能为空")
@@ -507,7 +544,9 @@ async def import_vector(body: VectorImportBody) -> dict[str, Any]:
         raise _http_err(exc) from exc
 
 
-@router.post("/import/vector/multipart", dependencies=[Depends(require_write_access)])
+@router.post(
+    "/import/vector/multipart", dependencies=[Depends(require_data_transfer_access)]
+)
 async def import_vector_multipart(
     files: list[UploadFile] = File(...),
 ) -> dict[str, Any]:
@@ -536,7 +575,8 @@ async def import_vector_multipart(
 
 
 @router.get(
-    "/import/layers/{layer_id}/meta", dependencies=[Depends(require_write_access)]
+    "/import/layers/{layer_id}/meta",
+    dependencies=[Depends(require_data_transfer_access)],
 )
 async def vector_meta(layer_id: str) -> dict[str, Any]:
     try:
@@ -546,7 +586,8 @@ async def vector_meta(layer_id: str) -> dict[str, Any]:
 
 
 @router.get(
-    "/import/layers/{layer_id}/geojson", dependencies=[Depends(require_write_access)]
+    "/import/layers/{layer_id}/geojson",
+    dependencies=[Depends(require_data_transfer_access)],
 )
 async def vector_geojson(layer_id: str, preview: bool = True) -> dict[str, Any]:
     try:
@@ -556,7 +597,8 @@ async def vector_geojson(layer_id: str, preview: bool = True) -> dict[str, Any]:
 
 
 @router.get(
-    "/import/layers/{layer_id}/features", dependencies=[Depends(require_write_access)]
+    "/import/layers/{layer_id}/features",
+    dependencies=[Depends(require_data_transfer_access)],
 )
 async def vector_features(
     layer_id: str,
@@ -583,7 +625,7 @@ async def vector_features(
 
 @router.patch(
     "/import/layers/{layer_id}/features/{feature_index}",
-    dependencies=[Depends(require_write_access)],
+    dependencies=[Depends(require_data_transfer_access)],
 )
 async def vector_feature_patch(
     layer_id: str, feature_index: int, body: FeaturePatchBody
@@ -596,7 +638,7 @@ async def vector_feature_patch(
 
 @router.post(
     "/import/layers/{layer_id}/features/batch",
-    dependencies=[Depends(require_write_access)],
+    dependencies=[Depends(require_data_transfer_access)],
 )
 async def vector_feature_batch(layer_id: str, body: FeatureBatchBody) -> dict[str, Any]:
     try:
@@ -608,7 +650,8 @@ async def vector_feature_batch(layer_id: str, body: FeatureBatchBody) -> dict[st
 
 
 @router.post(
-    "/import/layers/{layer_id}/fields", dependencies=[Depends(require_write_access)]
+    "/import/layers/{layer_id}/fields",
+    dependencies=[Depends(require_data_transfer_access)],
 )
 async def vector_field_add(layer_id: str, body: FieldAddBody) -> dict[str, Any]:
     try:
@@ -619,7 +662,7 @@ async def vector_field_add(layer_id: str, body: FieldAddBody) -> dict[str, Any]:
 
 @router.delete(
     "/import/layers/{layer_id}/fields/{name}",
-    dependencies=[Depends(require_write_access)],
+    dependencies=[Depends(require_data_transfer_access)],
 )
 async def vector_field_delete(layer_id: str, name: str) -> dict[str, Any]:
     try:
@@ -630,7 +673,7 @@ async def vector_field_delete(layer_id: str, name: str) -> dict[str, Any]:
 
 @router.post(
     "/import/layers/{layer_id}/rename-field",
-    dependencies=[Depends(require_write_access)],
+    dependencies=[Depends(require_data_transfer_access)],
 )
 async def vector_rename_field(layer_id: str, body: VectorRenameBody) -> dict[str, Any]:
     try:
@@ -641,7 +684,7 @@ async def vector_rename_field(layer_id: str, body: VectorRenameBody) -> dict[str
 
 @router.patch(
     "/import/layers/{layer_id}/display-name",
-    dependencies=[Depends(require_write_access)],
+    dependencies=[Depends(require_data_transfer_access)],
 )
 async def patch_imported_layer_display_name(
     layer_id: str, body: LayerDisplayNameBody
@@ -656,7 +699,7 @@ async def patch_imported_layer_display_name(
 
 
 @router.delete(
-    "/import/layers/{layer_id}", dependencies=[Depends(require_write_access)]
+    "/import/layers/{layer_id}", dependencies=[Depends(require_data_transfer_access)]
 )
 async def delete_imported_layer(layer_id: str) -> dict[str, Any]:
     """删除已导入矢量/栅格落盘目录（仅允许 imported-* 前缀）。"""
@@ -685,21 +728,25 @@ async def delete_imported_layer(layer_id: str) -> dict[str, Any]:
 # ── 科学栅格 ───────────────────────────────────────────────────────────
 
 
-@router.get("/import/quota", dependencies=[Depends(require_write_access)])
+@router.get("/import/quota", dependencies=[Depends(require_data_transfer_access)])
 async def import_quota() -> dict[str, Any]:
     """导入存储配额用量；可选触发临时目录回收。"""
     usage = import_paths.get_quota_usage()
     return {"ok": True, **usage}
 
 
-@router.post("/import/quota/reclaim", dependencies=[Depends(require_write_access)])
+@router.post(
+    "/import/quota/reclaim", dependencies=[Depends(require_data_transfer_access)]
+)
 async def import_quota_reclaim() -> dict[str, Any]:
     """主动清理 staging/_tmp/_exports，不删除已导入图层。"""
     result = import_paths.reclaim_import_space(needed_bytes=0, aggressive=True)
     return {"ok": True, **result}
 
 
-@router.post("/import/raster/inspect", dependencies=[Depends(require_write_access)])
+@router.post(
+    "/import/raster/inspect", dependencies=[Depends(require_data_transfer_access)]
+)
 async def raster_inspect(body: RasterInspectBody) -> dict[str, Any]:
     try:
         from app.data_io.services.time_label import guess_time_label_from_filename
@@ -717,7 +764,9 @@ async def raster_inspect(body: RasterInspectBody) -> dict[str, Any]:
         raise _http_err(exc) from exc
 
 
-@router.post("/import/raster/commit", dependencies=[Depends(require_write_access)])
+@router.post(
+    "/import/raster/commit", dependencies=[Depends(require_data_transfer_access)]
+)
 async def raster_commit(body: RasterCommitBody) -> dict[str, Any]:
     try:
         path = resolve_upload_path(body.upload_id)
@@ -768,7 +817,8 @@ async def raster_commit(body: RasterCommitBody) -> dict[str, Any]:
 
 
 @router.post(
-    "/import/raster/detect-invalid", dependencies=[Depends(require_write_access)]
+    "/import/raster/detect-invalid",
+    dependencies=[Depends(require_data_transfer_access)],
 )
 async def raster_detect_invalid(body: RasterDetectInvalidBody) -> dict[str, Any]:
     """检测科学栅格变量中的哨兵值 / Inf / FillValue，供 UI 一键填入。"""
@@ -784,7 +834,7 @@ async def raster_detect_invalid(body: RasterDetectInvalidBody) -> dict[str, Any]
 # ── 文档 ───────────────────────────────────────────────────────────────
 
 
-@router.post("/import/document", dependencies=[Depends(require_write_access)])
+@router.post("/import/document", dependencies=[Depends(require_data_transfer_access)])
 async def import_document(body: RasterInspectBody) -> dict[str, Any]:
     """复用 upload_id 字段打开文档会话。"""
     try:
@@ -794,7 +844,9 @@ async def import_document(body: RasterInspectBody) -> dict[str, Any]:
         raise _http_err(exc) from exc
 
 
-@router.post("/import/document/multipart", dependencies=[Depends(require_write_access)])
+@router.post(
+    "/import/document/multipart", dependencies=[Depends(require_data_transfer_access)]
+)
 async def import_document_multipart(file: UploadFile = File(...)) -> dict[str, Any]:
     tmp = Path(tempfile.mkdtemp(prefix="doc-upload-"))
     try:
@@ -815,7 +867,8 @@ async def import_document_multipart(file: UploadFile = File(...)) -> dict[str, A
 
 
 @router.get(
-    "/import/document/{session_id}", dependencies=[Depends(require_write_access)]
+    "/import/document/{session_id}",
+    dependencies=[Depends(require_data_transfer_access)],
 )
 async def document_preview(session_id: str) -> dict[str, Any]:
     try:
@@ -825,7 +878,8 @@ async def document_preview(session_id: str) -> dict[str, Any]:
 
 
 @router.post(
-    "/import/document/{session_id}/ops", dependencies=[Depends(require_write_access)]
+    "/import/document/{session_id}/ops",
+    dependencies=[Depends(require_data_transfer_access)],
 )
 async def document_ops(session_id: str, body: DocumentOpsBody) -> dict[str, Any]:
     try:
@@ -835,7 +889,8 @@ async def document_ops(session_id: str, body: DocumentOpsBody) -> dict[str, Any]
 
 
 @router.post(
-    "/import/document/{session_id}/commit", dependencies=[Depends(require_write_access)]
+    "/import/document/{session_id}/commit",
+    dependencies=[Depends(require_data_transfer_access)],
 )
 async def document_commit(session_id: str, body: DocumentCommitBody) -> dict[str, Any]:
     try:
@@ -870,12 +925,12 @@ async def document_commit(session_id: str, body: DocumentCommitBody) -> dict[str
 # ── 导出 ───────────────────────────────────────────────────────────────
 
 
-@router.get("/export/encodings", dependencies=[Depends(require_write_access)])
+@router.get("/export/encodings", dependencies=[Depends(require_data_transfer_access)])
 async def export_encodings_endpoint() -> dict[str, Any]:
     return {"encodings": list_export_encodings()}
 
 
-@router.post("/export/layer", dependencies=[Depends(require_write_access)])
+@router.post("/export/layer", dependencies=[Depends(require_data_transfer_access)])
 async def export_layer_endpoint(body: ExportBody) -> Response:
     try:
         content, media_type, filename = export_layer(
@@ -884,6 +939,9 @@ async def export_layer_endpoint(body: ExportBody) -> Response:
             encoding=body.encoding,
             time=body.time,
             times=body.times,
+            bbox=body.bbox.model_dump() if body.bbox else None,
+            output_crs=body.output_crs,
+            fields=body.fields,
         )
     except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
@@ -894,11 +952,12 @@ async def export_layer_endpoint(body: ExportBody) -> Response:
     )
 
 
-@router.post("/export/batch", dependencies=[Depends(require_write_access)])
+@router.post("/export/batch", dependencies=[Depends(require_data_transfer_access)])
 async def export_batch_endpoint(body: ExportBatchBody) -> Response:
     if not body.layer_ids:
         raise HTTPException(status_code=400, detail="layer_ids 不能为空")
     force_async = body.async_mode or len(body.layer_ids) > 2
+    bbox_payload = body.bbox.model_dump() if body.bbox else None
     try:
         if force_async:
             job = enqueue_job(
@@ -907,6 +966,11 @@ async def export_batch_endpoint(body: ExportBatchBody) -> Response:
                     "layer_ids": body.layer_ids,
                     "format": body.format,
                     "encoding": body.encoding,
+                    "time": body.time,
+                    "times": body.times,
+                    "bbox": bbox_payload,
+                    "output_crs": body.output_crs,
+                    "fields": body.fields,
                 },
                 force_async=True,
             )
@@ -921,12 +985,23 @@ async def export_batch_endpoint(body: ExportBatchBody) -> Response:
             body.layer_ids,
             format=body.format,
             encoding=body.encoding,
+            time=body.time,
+            times=body.times,
+            bbox=bbox_payload,
+            output_crs=body.output_crs,
+            fields=body.fields,
         )
         path = Path(str(result["download_path"]))
+        fname = str(result.get("filename") or path.name)
+        media = (
+            "application/x-matlab-data"
+            if fname.lower().endswith(".mat")
+            else "application/zip"
+        )
         return FileResponse(
             path,
-            media_type="application/zip",
-            filename=str(result.get("filename") or path.name),
+            media_type=media,
+            filename=fname,
         )
     except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc

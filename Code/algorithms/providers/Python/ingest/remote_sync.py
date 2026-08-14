@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any
 from collections.abc import Callable, Iterator
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 logger = logging.getLogger(__name__)
@@ -381,7 +382,10 @@ def _filebrowser_list_dir(
     使用 isDir 布尔字段判断目录（非 type 字段）。
     根目录返回 {"items": [...]} 字典，子目录返回列表。
     """
-    api_url = f"{url.rstrip('/')}/api/resources/{path.lstrip('/')}"
+    # 安全：对 path 做 URL 编码，防止路径注入和 URL 拼接攻击
+    # safe="/" 保留路径分隔符，其余特殊字符编码
+    encoded_path = quote(path.lstrip("/"), safe="/")
+    api_url = f"{url.rstrip('/')}/api/resources/{encoded_path}"
     req = Request(
         api_url,
         headers={

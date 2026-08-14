@@ -18,6 +18,13 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      // 机构演示/临时排障：设 VITE_HIDE_ERROR_OVERLAY=1 关闭红屏叠加层，避免把源码片段打到屏幕上。
+      // 日常本地开发默认保持 overlay，便于立刻看到编译/运行错误。
+      hmr: {
+        overlay: !['1', 'true', 'yes', 'on'].includes(
+          (env.VITE_HIDE_ERROR_OVERLAY || '').trim().toLowerCase(),
+        ),
+      },
       fs: {
         // 允许加载仓库根下的 Test/frontend/（测试已迁出 src/）。
         allow: [path.resolve(__dirname, '../..')],
@@ -51,6 +58,7 @@ export default defineConfig(({ mode }) => {
         '/import': { target: apiTarget, changeOrigin: true },
         '/export': { target: apiTarget, changeOrigin: true },
         '/auth': { target: apiTarget, changeOrigin: true },
+        '/analysis': { target: apiTarget, changeOrigin: true },
         '/health': { target: apiTarget, changeOrigin: true },
       },
       allowedHosts: ['geoflow.cgdas.dpdns.org'],
@@ -80,6 +88,19 @@ export default defineConfig(({ mode }) => {
       // 保持 vite root = Code/frontend/，使 bare import（vue/vitest/pinia）经
       // Code/frontend/node_modules 解析；include 用 ../../ 跨出 root，配合 server.fs.allow。
       include: ['../../Test/frontend/**/*.test.ts'],
+      // P0-4：前端覆盖率配置（起步阈值 = 当前覆盖率基线，防止倒退；后续逐步提升）
+      coverage: {
+        provider: 'v8' as const,
+        reporter: ['text', 'lcov'],
+        include: ['src/**/*.{ts,vue}'],
+        exclude: ['src/types/api-contracts.ts', 'src/**/*.d.ts'],
+        thresholds: {
+          lines: 22,
+          statements: 21,
+          branches: 16,
+          functions: 19,
+        },
+      },
     },
   }
   return config

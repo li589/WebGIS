@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   defaultProductLayerNames,
   namePrefixFromDefinition,
+  productTagDescription,
   resolveExpectedOutputTags,
   resolveOutputNamePrefix,
 } from '@/utils/workflow-expected-outputs'
@@ -38,15 +39,19 @@ describe('workflow-expected-outputs', () => {
 
   it('builds default product names from productTagLabel', () => {
     expect(defaultProductLayerNames(['SM', 'VOD'], 'omega_sf_fenkuai')).toEqual([
-      { productTag: 'SM', name: 'SM（土壤湿度）' },
-      { productTag: 'VOD', name: 'VOD（植被光学厚度）' },
+      { productTag: 'SM', name: 'SM' },
+      { productTag: 'VOD', name: 'VOD' },
     ])
-    expect(defaultProductLayerNames(['OMEGA'])).toEqual([
-      { productTag: 'OMEGA', name: 'ω（反演参数）' },
-    ])
+    expect(defaultProductLayerNames(['OMEGA'])).toEqual([{ productTag: 'OMEGA', name: 'ω' }])
     expect(defaultProductLayerNames(['result'], 'my_wf')).toEqual([
-      { productTag: 'result', name: '计算结果' },
+      { productTag: 'result', name: '产出变量' },
     ])
+  })
+
+  it('exposes geo-worker descriptions for product tags', () => {
+    expect(productTagDescription('SM')).toBe('土壤水分')
+    expect(productTagDescription('VOD')).toBe('植被光学厚度')
+    expect(productTagDescription('OMEGA')).toBe('反演参数 ω')
   })
 
   it('extracts module name prefix', () => {

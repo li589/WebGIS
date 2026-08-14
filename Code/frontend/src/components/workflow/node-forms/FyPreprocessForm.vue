@@ -12,6 +12,7 @@
  *   - outfile_type: HDF5 / NetCDF / GTiff
  */
 import { computed, onMounted, reactive, watch } from 'vue'
+import { Check, AlertTriangle } from '../../ui/icons'
 import type { LGraphNodeClass } from '../litegraph-setup'
 import {
   type FormErrors,
@@ -27,6 +28,7 @@ import {
 } from '../../../composables/system-settings-fill'
 import { fieldMapForNodeType } from '../../../composables/node-form-system-settings-map'
 import { WORKFLOW_COPY } from '../../../ui-copy/workflow'
+import AppSelect from '../../ui/AppSelect.vue'
 
 const NODE_TYPE = 'download/fy_preprocess'
 const PATH_FIELD_MAP = fieldMapForNodeType(NODE_TYPE)
@@ -118,46 +120,46 @@ function update(key: string, value: unknown) {
     <!-- 卫星 -->
     <div class="form-row">
       <label class="form-label">卫星 satellite</label>
-      <select
-        class="form-input form-select"
-        :value="String(form.satellite ?? 'FY3D')"
+      <AppSelect
+        :model-value="String(form.satellite ?? 'FY3D')"
         :disabled="readonly"
-        @change="update('satellite', ($event.target as HTMLSelectElement).value)"
-      >
-        <option value="FY3D">FY3D</option>
-        <option value="FY3B">FY3B</option>
-      </select>
+        :options="[
+          { label: 'FY3D', value: 'FY3D' },
+          { label: 'FY3B', value: 'FY3B' },
+        ]"
+        @change="(val: string) => update('satellite', val)"
+      />
       <span v-if="errors.satellite" class="field-error">{{ errors.satellite }}</span>
     </div>
 
     <!-- 轨道模式 -->
     <div class="form-row">
       <label class="form-label">轨道模式 orbit_mode</label>
-      <select
-        class="form-input form-select"
-        :value="String(form.orbit_mode ?? 'MWRID')"
+      <AppSelect
+        :model-value="String(form.orbit_mode ?? 'MWRID')"
         :disabled="readonly"
-        @change="update('orbit_mode', ($event.target as HTMLSelectElement).value)"
-      >
-        <option value="MWRID">MWRID</option>
-        <option value="MWRIA">MWRIA</option>
-        <option value="Both">Both</option>
-      </select>
+        :options="[
+          { label: 'MWRID', value: 'MWRID' },
+          { label: 'MWRIA', value: 'MWRIA' },
+          { label: 'Both', value: 'Both' },
+        ]"
+        @change="(val: string) => update('orbit_mode', val)"
+      />
     </div>
 
     <!-- 输出文件类型 -->
     <div class="form-row">
       <label class="form-label">输出类型 outfile_type</label>
-      <select
-        class="form-input form-select"
-        :value="String(form.outfile_type ?? 'HDF5')"
+      <AppSelect
+        :model-value="String(form.outfile_type ?? 'HDF5')"
         :disabled="readonly"
-        @change="update('outfile_type', ($event.target as HTMLSelectElement).value)"
-      >
-        <option value="HDF5">HDF5</option>
-        <option value="NetCDF">NetCDF</option>
-        <option value="GTiff">GTiff</option>
-      </select>
+        :options="[
+          { label: 'HDF5', value: 'HDF5' },
+          { label: 'NetCDF', value: 'NetCDF' },
+          { label: 'GTiff', value: 'GTiff' },
+        ]"
+        @change="(val: string) => update('outfile_type', val)"
+      />
     </div>
 
     <!-- 输入目录 -->
@@ -225,8 +227,12 @@ function update(key: string, value: unknown) {
 
     <!-- 校验状态摘要 -->
     <div class="form-summary" :class="{ valid: errorCount === 0, invalid: errorCount > 0 }">
-      <template v-if="errorCount === 0">✓ 表单校验通过</template>
-      <template v-else>⚠ 请修正 {{ errorCount }} 处错误</template>
+      <template v-if="errorCount === 0"
+        ><Check :size="14" aria-hidden="true" /> 表单校验通过</template
+      >
+      <template v-else
+        ><AlertTriangle :size="14" aria-hidden="true" /> 请修正 {{ errorCount }} 处错误</template
+      >
     </div>
   </div>
 </template>
@@ -246,31 +252,31 @@ function update(key: string, value: unknown) {
 }
 
 .form-label {
-  font-size: 0.56rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   font-weight: 500;
 }
 
 .form-input {
   width: 100%;
   padding: 0.32rem 0.42rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.36rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #d8e6f5;
+  background: var(--surface-raised);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   box-sizing: border-box;
 }
 
 .form-input:focus {
   outline: none;
-  border-color: rgba(90, 213, 255, 0.4);
+  border-color: var(--border-strong);
 }
 
 .form-input:read-only {
-  background: rgba(4, 12, 23, 0.3);
-  color: #6e8ba0;
+  background: var(--surface-sunken);
+  color: var(--text-faint);
   cursor: default;
 }
 
@@ -278,8 +284,8 @@ function update(key: string, value: unknown) {
   appearance: none;
   cursor: pointer;
   background-image:
-    linear-gradient(45deg, transparent 50%, #6e8ba0 50%),
-    linear-gradient(135deg, #6e8ba0 50%, transparent 50%);
+    linear-gradient(45deg, transparent 50%, var(--text-faint) 50%),
+    linear-gradient(135deg, var(--text-faint) 50%, transparent 50%);
   background-position:
     calc(100% - 0.8rem) center,
     calc(100% - 0.5rem) center;
@@ -297,8 +303,8 @@ function update(key: string, value: unknown) {
 
 /* 字段错误提示 */
 .field-error {
-  font-size: 0.52rem;
-  color: #ff7b7b;
+  font-size: var(--font-size-caption);
+  color: var(--danger);
   margin-top: 0.06rem;
   line-height: 1.3;
 }
@@ -308,31 +314,31 @@ function update(key: string, value: unknown) {
   margin-top: 0.32rem;
   padding: 0.3rem 0.52rem;
   border-radius: 0.36rem;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   text-align: center;
   border: 1px solid transparent;
 }
 
 .form-summary.valid {
-  background: rgba(114, 255, 207, 0.08);
-  color: #72ffcf;
-  border-color: rgba(114, 255, 207, 0.22);
+  background: var(--success-surface);
+  color: var(--success);
+  border-color: var(--success-border);
 }
 
 .form-summary.invalid {
   background: rgba(255, 123, 123, 0.08);
-  color: #ff7b7b;
+  color: var(--danger);
   border-color: rgba(255, 123, 123, 0.22);
 }
 
 .sys-fill-btn {
   margin-left: 0.4rem;
-  font-size: 0.5rem;
+  font-size: var(--font-size-caption);
   padding: 0.1rem 0.35rem;
   border-radius: 0.25rem;
-  border: 1px solid rgba(90, 213, 255, 0.35);
-  background: rgba(90, 213, 255, 0.08);
-  color: #88dfff;
+  border: 1px solid var(--border-strong);
+  background: var(--accent-surface);
+  color: var(--accent-strong);
   cursor: pointer;
 }
 </style>

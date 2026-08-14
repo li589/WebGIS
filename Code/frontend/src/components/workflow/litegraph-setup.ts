@@ -7,6 +7,7 @@
 import 'litegraph.js/css/litegraph.css'
 import './litegraph-ui-overrides.css'
 import * as litegraphCore from 'litegraph.js/build/litegraph.core.js'
+import { getPortColors } from './canvas-theme'
 
 // 类型导入（仅用于类型检查，不参与运行时）
 import type {
@@ -355,15 +356,15 @@ export function resolveNodeEngine(nodeType: string, templateEngine?: string | nu
 function getEngineColor(nodeType: string, templateEngine?: string | null): EngineColor {
   const engine = resolveNodeEngine(nodeType, templateEngine)
   if (engine === 'weather') {
-    return { nodeBg: '#1a2230', nodeHeader: '#2a4a5a', accent: '#ffb84d' }
+    return { nodeBg: '#1a2230', nodeHeader: '#2a4a5a', accent: 'var(--warning)' }
   }
   if (engine === 'python_provider') {
-    return { nodeBg: '#1a2a1e', nodeHeader: '#2a4a38', accent: '#78ffa0' }
+    return { nodeBg: '#1a2a1e', nodeHeader: '#2a4a38', accent: 'var(--success)' }
   }
   if (engine === 'gee') {
-    return { nodeBg: '#1a2030', nodeHeader: '#3a2e5a', accent: '#5ad5ff' }
+    return { nodeBg: '#1a2030', nodeHeader: '#3a2e5a', accent: 'var(--accent)' }
   }
-  return { nodeBg: '#1a2740', nodeHeader: '#1a2540', accent: '#88dfff' }
+  return { nodeBg: 'var(--surface-2)', nodeHeader: '#1a2540', accent: 'var(--accent-strong)' }
 }
 
 function mapParamTypeToWidget(paramType: string, options?: string[]): string {
@@ -410,19 +411,21 @@ export function checkConnectionValid(inputType: string, outputType: string): boo
 
 /**
  * 按端口类型返回颜色（用于 slot 渲染）。
+ * 注意：Canvas 2D 不支持 CSS 变量，使用 getPortColors() 解析为字面量值。
  */
 export function getPortColor(type: string): string {
-  if (type === 'data' || type === 'data:source') return '#5ad5ff' // 青色
-  if (type === 'data:mat') return '#ffb84d' // 橙色
-  if (type === 'data:raster') return '#5ad5ff' // 蓝色
-  if (type === 'data:geojson') return '#78ffa0' // 绿色
-  if (type === 'data:timeseries') return '#c084fc' // 紫色
+  const c = getPortColors()
+  if (type === 'data' || type === 'data:source') return c.data // 青色
+  if (type === 'data:mat') return c.dataMat // 橙色
+  if (type === 'data:raster') return c.dataRaster // 蓝色
+  if (type === 'data:geojson') return c.dataGeojson // 绿色
+  if (type === 'data:timeseries') return '#c084fc' // 紫色（无对应 token，保留 hex）
   if (type === 'value:number') return '#ffd5a8' // 浅黄
   if (type === 'value:string') return '#ffe08a' // 金黄
   if (type === 'value:boolean') return '#9ae6b4' // 浅绿
   if (type === 'value:time_range') return '#ff8fb1' // 粉色
-  if (type === 'geometry:bbox') return '#ff6b6b' // 红色
-  return '#6e8ba0' // 默认灰
+  if (type === 'geometry:bbox') return c.bbox // 红色
+  return c.default // 默认灰
 }
 
 /** 端口类型中文说明（检查器/面板用） */

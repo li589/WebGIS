@@ -5,8 +5,40 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="综合地理态势分析系统（CGDA）— 多源地理与气象数据科研分析平台" />
+    <meta
+      name="description"
+      content="综合地理态势分析系统（CGDA）— 多源地理与气象数据科研分析平台"
+    />
+    <!-- 系统已内置浅色/深色主题；禁止 Dark Reader 等扩展二次改色（避免浅色发褐） -->
+    <meta name="darkreader-lock" />
     <title>综合地理态势分析系统</title>
+    <!-- 字体：Sora（显示/正文）+ IBM Plex Mono（等宽数据），display=swap 避免 FOIT -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <!-- 首屏同步主题，避免刷新时先暗后浅 / 半透明叠错底发棕 -->
+    <script>
+      ;(function () {
+        try {
+          var pref = localStorage.getItem('cgda-theme') || 'system'
+          var mode =
+            pref === 'light' || pref === 'dark'
+              ? pref
+              : window.matchMedia('(prefers-color-scheme: light)').matches
+                ? 'light'
+                : 'dark'
+          document.documentElement.setAttribute('data-theme', mode)
+          var motion = localStorage.getItem('cgda-reduce-motion')
+          var reduce =
+            motion === 'true' ||
+            (motion === null && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+          document.documentElement.classList.toggle('reduce-motion', reduce)
+        } catch (_) {}
+      })()
+    </script>
   </head>
   <body>
     <div id="app"></div>

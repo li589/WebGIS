@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CGDA 代码库健康审查报告</title>
+<style>
+  :root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #21262d;
+    --bg-card: #1c2128;
+    --border: #30363d;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-muted: #6e7681;
+    --accent-blue: #58a6ff;
+    --accent-green: #3fb950;
+    --accent-yellow: #d29922;
+    --accent-orange: #db6d28;
+    --accent-red: #f85149;
+    --accent-purple: #bc8cff;
+    --score-high: #3fb950;
+    --score-mid: #d29922;
+    --score-low: #f85149;
+    --shadow: 0 3px 12px rgba(0,0,0,0.4);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans CJK SC', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+    font-size: 14px;
+  }
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 32px 24px;
+    margin-bottom: 32px;
+  }
+  .header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .header .meta {
+    color: var(--text-secondary);
+    font-size: 13px;
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  .header .meta span { display: inline-flex; align-items: center; gap: 4px; }
+
+  /* Score Dashboard */
+  .score-dashboard {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .score-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .score-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+  .score-card.composite::before { background: var(--accent-blue); }
+  .score-card.arch::before { background: var(--accent-yellow); }
+  .score-card.security::before { background: var(--accent-green); }
+  .score-card.test::before { background: var(--accent-red); }
+  .score-card.hygiene::before { background: var(--accent-orange); }
+
+  .score-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+  .score-value {
+    font-size: 36px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .score-value.high { color: var(--score-high); }
+  .score-value.mid { color: var(--score-mid); }
+  .score-value.low { color: var(--score-low); }
+  .score-weight {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  /* Section */
+  .section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 24px;
+    overflow: hidden;
+  }
+  .section-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    user-select: none;
+  }
+  .section-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-header .badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+  }
+  .badge-p0 { background: rgba(248,81,73,0.15); color: var(--accent-red); }
+  .badge-p1 { background: rgba(219,109,40,0.15); color: var(--accent-orange); }
+  .badge-p2 { background: rgba(210,153,34,0.15); color: var(--accent-yellow); }
+  .badge-good { background: rgba(63,185,80,0.15); color: var(--accent-green); }
+  .section-content { padding: 0; }
+  .section-content.hidden { display: none; }
+  .toggle-icon {
+    color: var(--text-muted);
+    transition: transform 0.2s;
+  }
+  .section-header.expanded .toggle-icon { transform: rotate(90deg); }
+
+  /* Finding Card */
+  .finding {
+    border-bottom: 1px solid var(--border);
+    padding: 16px 20px;
+    transition: background 0.15s;
+  }
+  .finding:last-child { border-bottom: none; }
+  .finding:hover { background: var(--bg-tertiary); }
+  .finding-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .finding-id {
+    font-family: 'SF Mono', monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+    min-width: 36px;
+    padding-top: 2px;
+  }
+  .finding-title {
+    flex: 1;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .severity-tag {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+  }
+  .sev-blocker { background: rgba(248,81,73,0.2); color: var(--accent-red); border: 1px solid rgba(248,81,73,0.3); }
+  .sev-high { background: rgba(248,81,73,0.15); color: var(--accent-red); }
+  .sev-medium { background: rgba(210,153,34,0.15); color: var(--accent-yellow); }
+  .sev-low { background: rgba(139,148,158,0.15); color: var(--text-secondary); }
+  .sev-info { background: rgba(88,166,255,0.1); color: var(--accent-blue); }
+
+  .finding-detail {
+    margin-left: 48px;
+    color: var(--text-secondary);
+    font-size: 13px;
+  }
+  .finding-detail p { margin-bottom: 6px; }
+  .finding-detail code {
+    font-family: 'SF Mono', 'Consolas', monospace;
+    font-size: 12px;
+    background: var(--bg-tertiary);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--accent-blue);
+  }
+  .finding-detail .file-path {
+    font-family: 'SF Mono', monospace;
+    font-size: 12px;
+    color: var(--accent-purple);
+  }
+  .finding-detail .remedy {
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: rgba(63,185,80,0.05);
+    border-left: 3px solid var(--accent-green);
+    border-radius: 0 4px 4px 0;
+  }
+  .finding-detail .remedy strong { color: var(--accent-green); }
+
+  /* Table */
+  .table-wrap { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th {
+    text-align: left;
+    padding: 10px 16px;
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-tertiary);
+  }
+  td {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  tr:hover td { background: var(--bg-tertiary); }
+  td code {
+    font-family: 'SF Mono', monospace;
+    font-size: 12px;
+    color: var(--accent-purple);
+  }
+
+  /* Summary stats */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .stat-box {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+  }
+  .stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--accent-blue);
+  }
+  .stat-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+  }
+
+  /* Book reference */
+  .book-ref {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-top: 4px;
+  }
+
+  /* Print */
+  @media print {
+    .section-content.hidden { display: block !important; }
+    .section-header { cursor: default; }
+    body { background: white; color: black; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="container" style="padding:0;">
+    <h1>CGDA 代码库健康审查报告</h1>
+    <div class="meta">
+      <span>📅 2026-08-13</span>
+      <span>🔧 Brooks-Lint Health Dashboard</span>
+      <span>📐 SEM architecture-decisions + code-readability-for-agents</span>
+      <span>📊 ~700+ 源文件 / ~225K 行 / 310 测试文件</span>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- ============ SCORE DASHBOARD ============ -->
+<div class="score-dashboard">
+  <div class="score-card composite">
+    <div class="score-label">综合健康度</div>
+    <div class="score-value mid">67</div>
+    <div class="score-weight">100</div>
+  </div>
+  <div class="score-card arch">
+    <div class="score-label">架构边界</div>
+    <div class="score-value mid">65</div>
+    <div class="score-weight">权重 30%</div>
+  </div>
+  <div class="score-card security">
+    <div class="score-label">安全防护</div>
+    <div class="score-value high">82</div>
+    <div class="score-weight">权重 25%</div>
+  </div>
+  <div class="score-card test">
+    <div class="score-label">测试质量</div>
+    <div class="score-value low">55</div>
+    <div class="score-weight">权重 25%</div>
+  </div>
+  <div class="score-card hygiene">
+    <div class="score-label">代码卫生</div>
+    <div class="score-value mid">68</div>
+    <div class="score-weight">权重 20%</div>
+  </div>
+</div>
+
+<!-- ============ STATS ============ -->
+<div class="stats-grid">
+  <div class="stat-box">
+    <div class="stat-value">38</div>
+    <div class="stat-label">总发现项</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-value" style="color:var(--accent-red)">2</div>
+    <div class="stat-label">P0 阻塞级</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-value" style="color:var(--accent-orange)">8</div>
+    <div class="stat-label">P1 高优先级</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-value" style="color:var(--accent-green)">14</div>
+    <div class="stat-label">安全优秀实践</div>
+  </div>
+</div>
+
+<!-- ============ DIMENSION A: ARCHITECTURE ============ -->
+<div class="section">
+  <div class="section-header expanded" onclick="toggleSection(this)">
+    <h2>📐 维度 A：架构边界 <span class="badge badge-p0">2 P0</span> <span class="badge badge-p1">5 P1</span></h2>
+    <span class="toggle-icon">▶</span>
+  </div>
+  <div class="section-content">
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">A-01</span>
+        <span class="finding-title">overlay_registry.py 硬编码开发机器绝对路径</span>
+        <span class="severity-tag sev-blocker">P0</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>症状</strong>：Provider Root 路径硬编码为开发机器绝对路径</p>
+        <p><strong>源</strong>：<span class="file-path">app/services/overlay_registry.py:29-30</span></p>
+        <p><code>_PROVIDER_ROOT = Path(r"d:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Code\algorithms\providers\Python")</code></p>
+        <p><strong>后果</strong>：其他任何环境（CI、生产、其他开发者机器）都无法加载 overlay 注册表，导致图层系统完全不可用</p>
+        <div class="remedy"><strong>修复</strong>：替换为 <code>settings.python_provider_root</code> 或 <code>Path(__file__).resolve().parents[N]</code> 相对路径计算</div>
+        <div class="book-ref">参考：《A Philosophy of Software Design》第13章「浅模块」· Ousterhout</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">A-02</span>
+        <span class="finding-title">weather_sync_service.py 服务层反向导入路由层</span>
+        <span class="severity-tag sev-blocker">P0</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>症状</strong>：Service 层直接导入 Router 层函数</p>
+        <p><strong>源</strong>：<span class="file-path">app/services/weather_sync_service.py:172</span></p>
+        <p><code>from app.api.routers.weather_router import invalidate_weather_coverage_cache</code></p>
+        <p><strong>后果</strong>：依赖方向违反（Service → Router），破坏分层架构。Router 变更会波及 Service，且无法独立测试 Service 层</p>
+        <div class="remedy"><strong>修复</strong>：将 <code>invalidate_weather_coverage_cache</code> 移至 Service 层或独立的 cache-invalidation 模块，Router 调用 Service 而非反向</div>
+        <div class="book-ref">参考：《Clean Architecture》第22章「边界」· Martin</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">A-03</span>
+        <span class="finding-title">weather-tile-manager.ts 14 职责 God Store（1948 行）</span>
+        <span class="severity-tag sev-high">P1</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>症状</strong>：单一 Store 承担 14 项独立职责，6 个模块级可变全局状态</p>
+        <p><strong>源</strong>：<span class="file-path">stores/weather-tile-manager.ts</span>（1948 行）</p>
+        <p>职责包括：瓦片缓存管理、全局并发槽位控制、四级优先级队列调度、视口瓦片排序、多图层 round-robin、Generation 代际取消、Gap sweep 补洞、错误分类与退避重试、Soft requeue 断路器、Data version 合并去抖、Zoom-out 过渡加速、Data-empty 422 短路、Merge cache 管理、天气工作流六态映射</p>
+        <p><strong>后果</strong>：测试隔离问题（需 <code>__testResetWeatherTileManagerModuleState()</code> 补丁）、手动响应式模式脆弱（<code>dataVersion</code>/<code>statusVersion</code>/<code>activityVersion</code> 递增可能遗漏 bump）</p>
+        <div class="remedy"><strong>修复</strong>：按职责拆分为 <code>tile-cache.ts</code> / <code>tile-concurrency.ts</code> / <code>tile-scheduler.ts</code> / <code>tile-error-handler.ts</code> 子模块</div>
+        <div class="book-ref">参考：《A Philosophy of Software Design》第9章「深模块」· Ousterhout</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">A-04</span>
+        <span class="finding-title">overlay_registry.py 非线程安全注册表 + import 时注册 17 个 overlay</span>
+        <span class="severity-tag sev-high">P1</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>症状</strong>：模块级 <code>_REGISTRY</code> dict 无锁保护，17 个 <code>register_overlay()</code> 调用在 import 时执行</p>
+        <p><strong>源</strong>：<span class="file-path">app/services/overlay_registry.py</span>（行 625-997，分散注册）</p>
+        <p><strong>后果</strong>：并发请求下注册表竞态；所有 overlay 在模块加载时即注册（启动延迟）；跨进程（Celery worker ↔ FastAPI）一致性无保证</p>
+        <div class="remedy"><strong>修复</strong>：使用 <code>threading.Lock</code> 保护注册表操作；改为延迟注册（首次查询时注册）；跨进程一致性通过 Redis 或共享文件实现</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">A-05</span>
+        <span class="finding-title">workflow_request_resolver.py 三处 lru_cache 无失效机制</span>
+        <span class="severity-tag sev-high">P1</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>症状</strong>：3 处 <code>@lru_cache</code> 缓存文件系统读取结果，无失效/刷新机制</p>
+        <p><strong>源</strong>：<span class="file-path">app/services/workflow_request_resolver.py:188,1031,1115</span></p>
+        <p><code>_load_module_template_map()</code>（maxsize=1）、<code>_resolve_provider_dataset_path()</code>（maxsize=128）、<code>_load_provider_dataset_helpers()</code>（maxsize=1）</p>
+        <p><strong>后果</strong>：模板文件或 dataset 路径变更后缓存陈旧，需重启 FastAPI 进程才生效（project_memory 已记录此问题）</p>
+        <div class="remedy"><strong>修复</strong>：添加 <code>cache_clear()</code> 暴露为 admin API 端点；或使用带 TTL 的缓存替代 <code>lru_cache</code></div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">A-06</span>
+        <span class="finding-title">weather_render_service.py 6 个 build_X_geojson_from_grid 方法代码重复</span>
+        <span class="severity-tag sev-high">P1</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>症状</strong>：dewpoint/humidity/pressure/visibility/precipitation/temperature 6 个方法结构几乎完全一致</p>
+        <p><strong>源</strong>：<span class="file-path">app/weatherengine/weather_render_service.py</span>（行 1054-1455）</p>
+        <p><strong>后果</strong>：已有通用方法 <code>build_scalar_geojson_from_grid</code>（行 1455），但特化方法未被替换/删除——维护时需同步修改 7 处</p>
+        <div class="remedy"><strong>修复</strong>：删除 6 个特化方法，统一调用 <code>build_scalar_geojson_from_grid</code>，仅 wind 方法因外推逻辑保留</div>
+        <div class="book-ref">参考：《The Pragmatic Programmer》DRY 原则 · Hunt & Thomas</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">A-07</span>
+        <span class="finding-title">WorkflowCanvas.vue 1924 行 God Component（98% script）</span>
+        <span class="severity-tag sev-high">P1</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>症状</strong>：1890 行 <code>&lt;script setup&gt;</code> + 44 行 template + 89 行 style，无对应测试</p>
+        <p><strong>源</strong>：<span class="file-path">components/workflow/WorkflowCanvas.vue</span></p>
+        <p><strong>后果</strong>：LiteGraph 生命周期、canvas 渲染、对齐辅助线、吸附网格、端口提示、序列化全部耦合在单组件中，无法独立测试</p>
+        <div class="remedy"><strong>修复</strong>：抽取 <code>useLiteGraphLifecycle()</code> / <code>useAlignmentGuides()</code> / <code>useNodeSerialization()</code> composables</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">A-08</span>
+        <span class="finding-title">workflow-runner.ts 1116 行编排模块 + 30 方法 DI 接口，无测试</span>
+        <span class="severity-tag sev-high">P1</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>症状</strong>：<code>WorkflowRunnerDeps</code> 接口含 30+ 方法，与 store 内部实现深度耦合</p>
+        <p><strong>源</strong>：<span class="file-path">stores/layers/workflow-runner.ts:89-161</span></p>
+        <p><strong>后果</strong>：Store 侧任何重构都会波及此模块；1116 行核心编排逻辑零测试覆盖</p>
+        <div class="remedy"><strong>修复</strong>：缩窄 DI 接口为 5-8 个高层方法；补单元测试覆盖核心编排路径</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">A-09</span>
+        <span class="finding-title">WebGL compileShader/linkProgram 跨渲染器代码重复</span>
+        <span class="severity-tag sev-high">P1</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>症状</strong>：风场渲染器和标量场渲染器中 shader 编译/链接函数近乎逐行复制</p>
+        <p><strong>源</strong>：<span class="file-path">components/map/wind-particle-webgl-renderer.ts:78-100</span> vs <span class="file-path">components/map/scalar-field-webgl-renderer.ts:18-52</span></p>
+        <p><strong>后果</strong>：Bug 修复需同步两处；已有部分共享（<code>computeWorldWrapOffsets</code> 等）但不完整</p>
+        <div class="remedy"><strong>修复</strong>：抽取 <code>webgl-utils.ts</code> 共享模块（compileShader / linkProgram / createProgram）</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">A-10</span>
+        <span class="finding-title">node_template_registry.py 3398 行数据巨石模块</span>
+        <span class="severity-tag sev-medium">P2</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>症状</strong>：3194 行纯数据定义（81 个节点模板）+ 仅 95 行逻辑代码，数据与逻辑耦合</p>
+        <p><strong>源</strong>：<span class="file-path">app/services/node_template_registry.py</span></p>
+        <p><strong>后果</strong>：新增/修改节点模板需编辑 3400 行文件；import 时 <code>_ensure_dimension_ports()</code> 修改全局可变列表（副作用）</p>
+        <div class="remedy"><strong>修复</strong>：按引擎拆分为 <code>weather_templates.py</code> / <code>gee_templates.py</code> / <code>python_provider_templates.py</code>，或外置为 JSON/YAML 种子文件</div>
+        <div class="book-ref">参考：《Working Effectively with Legacy Code》· Feathers</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">A-11</span>
+        <span class="finding-title">data_io/api/router.py 42 端点 Fat Router</span>
+        <span class="severity-tag sev-medium">P2</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>症状</strong>：上传、矢量导入、栅格提交、文档操作、导出 5+ 业务域 42 个端点集中在一个文件</p>
+        <p><strong>源</strong>：<span class="file-path">app/data_io/api/router.py</span>（823 行）</p>
+        <p><strong>后果</strong>：Router 内含业务逻辑（文件 I/O、异步阈值判断），魔法数字 <code>8 * 1024 * 1024</code> 硬编码</p>
+        <div class="remedy"><strong>修复</strong>：拆分为 <code>upload_router.py</code> / <code>vector_router.py</code> / <code>raster_router.py</code> / <code>document_router.py</code> / <code>export_router.py</code></div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">A-12</span>
+        <span class="finding-title">services/import_service/ 不完整 shim 层未标记 deprecation</span>
+        <span class="severity-tag sev-medium">P2</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>症状</strong>：11 个文件全部为单行 re-export shim，但缺少 data_io/services 中 8+ 个新文件</p>
+        <p><strong>源</strong>：<span class="file-path">app/services/import_service/</span>（11 个文件）</p>
+        <p><strong>后果</strong>：新开发者可能使用已废弃路径；迁移未完成留下技术债</p>
+        <div class="remedy"><strong>修复</strong>：添加 <code>DeprecationWarning</code>；完成迁移后删除整个目录</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">A-13</span>
+        <span class="finding-title">service 层多处抛 HTTPException 破坏分层</span>
+        <span class="severity-tag sev-medium">P2</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>症状</strong>：Service 层直接 <code>from fastapi import HTTPException</code> 并抛出</p>
+        <p><strong>源</strong>：<span class="file-path">app/services/overlay_registry.py:25</span>、<span class="file-path">app/services/tile_proxy_service.py:20</span>、<span class="file-path">app/services/credential_resolver.py:11</span></p>
+        <p><strong>后果</strong>：Service 层依赖 Web 框架，无法在非 HTTP 上下文（如 Celery worker）复用</p>
+        <div class="remedy"><strong>修复</strong>：Service 层抛领域异常（如 <code>OverlayNotFoundError</code>），Router 层捕获后转换为 HTTPException</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============ DIMENSION B: SECURITY ============ -->
+<div class="section">
+  <div class="section-header expanded" onclick="toggleSection(this)">
+    <h2>🔒 维度 B：安全与威胁模型 <span class="badge badge-p2">3 MEDIUM</span> <span class="badge badge-good">14 优秀实践</span></h2>
+    <span class="toggle-icon">▶</span>
+  </div>
+  <div class="section-content">
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">B-01</span>
+        <span class="finding-title">源码硬编码开发凭据</span>
+        <span class="severity-tag sev-medium">MEDIUM</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>源</strong>：<span class="file-path">app/services/auth_bootstrap.py:12,14</span></p>
+        <p><code>DEV_DEFAULT_API_KEY = "cgda-dev-write-key"</code> / <code>DEV_DEFAULT_ADMIN_PASSWORD = "cgda-dev-admin"</code></p>
+        <p><strong>缓解</strong>：<code>_check_dev_credentials_safety()</code> 在非 loopback 绑定时拒绝启动，仅 development 生效</p>
+        <div class="remedy"><strong>修复</strong>：将默认凭据移至 <code>.env.example</code> 占位符，源码中仅读环境变量</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">B-02</span>
+        <span class="finding-title">.env.example 含可被复制粘贴的弱默认值</span>
+        <span class="severity-tag sev-medium">MEDIUM</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>源</strong>：<span class="file-path">Code/backend/.env.example:14,24,27</span></p>
+        <p><strong>后果</strong>：部署人员可能直接取消注释使用弱密钥；GEE 加密主密钥为空值</p>
+        <div class="remedy"><strong>修复</strong>：使用占位符 <code>&lt;generate-with-secrets-token-hex&gt;</code> 替代真实弱密钥</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">B-03</span>
+        <span class="finding-title">Nginx 缺少 server_tokens off + 无 TLS 配置</span>
+        <span class="severity-tag sev-low">LOW</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>源</strong>：<span class="file-path">Code/infra/gateway/nginx.conf:1-2,25</span></p>
+        <p><strong>后果</strong>：Nginx 版本号暴露；HTTP 明文传输凭据（生产部署风险）</p>
+        <div class="remedy"><strong>修复</strong>：添加 <code>server_tokens off;</code>；生产部署配置 TLS 或前置 HTTPS 反代</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">B-04</span>
+        <span class="finding-title">dev_bypass 在 user_auth_enabled 时仍可生效</span>
+        <span class="severity-tag sev-low">LOW</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>源</strong>：<span class="file-path">app/services/credential_resolver.py:77-83</span></p>
+        <p><strong>缓解</strong>：三重条件限制（development + api_keys_disabled + loopback），单机开发场景风险可控</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">B-05</span>
+        <span class="finding-title">安全优秀实践清单（14 项）</span>
+        <span class="severity-tag sev-info">EXCELLENT</span>
+      </div>
+      <div class="finding-detail">
+        <div class="table-wrap">
+        <table>
+          <tr><th>编号</th><th>领域</th><th>实践</th><th>源文件</th></tr>
+          <tr><td>G1</td><td>密码哈希</td><td>PBKDF2-SHA256, 200K 迭代, 16B 盐, 常量时间比较</td><td><code>passwords.py</code></td></tr>
+          <tr><td>G2</td><td>会话管理</td><td>256 位熵令牌, Redis+SQLite 双写, 过期/吊销/角色变更联动</td><td><code>session_service.py</code></td></tr>
+          <tr><td>G3</td><td>SSRF 防护</td><td>环回/私网/保留地址阻断, DNS 重绑定防护, 重定向再校验</td><td><code>core/ssrf.py</code></td></tr>
+          <tr><td>G4</td><td>限流</td><td>Redis ZSET 滑动窗口, 登录10/分·写120/分·瓦片240/分</td><td><code>rate_limit.py</code></td></tr>
+          <tr><td>G5</td><td>RBAC</td><td>三角色模型(admin/standard/demo), 配置写仅admin, fail-closed</td><td><code>config_routes.py</code></td></tr>
+          <tr><td>G6</td><td>CORS</td><td>显式 origin 白名单(无*), allow_credentials=true, 空origin拒启</td><td><code>main.py</code></td></tr>
+          <tr><td>G7</td><td>安全头</td><td>HSTS, CSP, X-Frame-Options:DENY, X-Content-Type-Options, Referrer-Policy</td><td><code>main.py</code></td></tr>
+          <tr><td>G8</td><td>开放重定向</td><td>白名单SPA路由, 拒绝//和编码斜杠, decode前后双重检查</td><td><code>safe-redirect.ts</code></td></tr>
+          <tr><td>G9</td><td>.env 写安全</td><td>原子写入(tempfile+os.replace), 保留注释, 失败清理</td><td><code>env_file_upsert.py</code></td></tr>
+          <tr><td>G10</td><td>subprocess</td><td>全部8处列表参数(无shell=True), 归档解压有符号链接拒绝/压缩比检查</td><td><code>archive_safe.py</code> 等</td></tr>
+          <tr><td>G11</td><td>Cookie</td><td>HttpOnly=true, Secure(非dev), SameSite=Lax, logout清除</td><td><code>auth_router.py</code></td></tr>
+          <tr><td>G12</td><td>前端HTTP</td><td>401自动会话过期, credentials:include, 429 Retry-After透传, AbortController超时</td><td><code>_http.ts</code></td></tr>
+          <tr><td>G13</td><td>innerHTML</td><td>2处均为静态SVG/HTML, 不涉及用户输入, 无XSS风险</td><td><code>map-chrome-controls.ts</code></td></tr>
+          <tr><td>G14</td><td>凭据解析</td><td>三路解析(session→token→key), 常量时间比较, 实时校验用户状态</td><td><code>credential_resolver.py</code></td></tr>
+        </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============ DIMENSION C: TEST QUALITY ============ -->
+<div class="section">
+  <div class="section-header expanded" onclick="toggleSection(this)">
+    <h2>🧪 维度 C：测试质量与 CI 门禁 <span class="badge badge-p0">2 P0</span> <span class="badge badge-p1">4 P1</span></h2>
+    <span class="toggle-icon">▶</span>
+  </div>
+  <div class="section-content">
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">C-01</span>
+        <span class="finding-title">CI 后端覆盖率阈值 50% 过低</span>
+        <span class="severity-tag sev-blocker">P0</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>源</strong>：<span class="file-path">.github/workflows/ci.yml:101</span> — <code>--cov-fail-under=50</code></p>
+        <p><strong>后果</strong>：当前覆盖率约 54%，阈值仅比现状低 4 个百分点，几乎不会因覆盖率下降而失败。大量关键模块（workflow/lifecycle_service.py, persistence_service.py 等）无测试覆盖</p>
+        <div class="remedy"><strong>修复</strong>：逐步提升至 60% → 65% → 70%，优先补 <code>workflow/</code> 目录 9 个无测试模块</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">C-02</span>
+        <span class="finding-title">CI 无前端覆盖率阈值</span>
+        <span class="severity-tag sev-blocker">P0</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>源</strong>：<span class="file-path">.github/workflows/ci.yml:121-123</span> — 仅 <code>npm run test</code>，无 <code>--coverage</code></p>
+        <p><strong>后果</strong>：前端覆盖率无量化追踪，关键组件（WorkflowCanvas 1924行、workflow-runner 1116行）零覆盖</p>
+        <div class="remedy"><strong>修复</strong>：添加 <code>vitest --coverage</code> + <code>--coverage.thresholds.lines=40</code> 起步阈值</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">C-03</span>
+        <span class="finding-title">后端 15+ 关键模块无测试覆盖</span>
+        <span class="severity-tag sev-high">P1</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>高严重度无测试模块</strong>：</p>
+        <div class="table-wrap">
+        <table>
+          <tr><th>模块</th><th>路径</th><th>风险</th></tr>
+          <tr><td><code>workflow_execution.py</code></td><td>app/services/</td><td>工作流执行核心</td></tr>
+          <tr><td><code>lifecycle_service.py</code></td><td>app/services/workflow/</td><td>生命周期管理</td></tr>
+          <tr><td><code>persistence_service.py</code></td><td>app/services/workflow/</td><td>状态持久化</td></tr>
+          <tr><td><code>session_service.py</code></td><td>app/services/</td><td>会话管理（仅间接覆盖）</td></tr>
+          <tr><td><code>download_service.py</code></td><td>app/services/</td><td>下载服务</td></tr>
+          <tr><td><code>passwords.py</code></td><td>app/services/</td><td>密码处理</td></tr>
+          <tr><td><code>follow_up_dispatch_service.py</code></td><td>app/services/workflow/</td><td>后续调度</td></tr>
+          <tr><td><code>retry_dispatcher.py</code></td><td>app/services/workflow/</td><td>重试调度</td></tr>
+          <tr><td><code>queue_dispatch_service.py</code></td><td>app/services/workflow/</td><td>队列调度</td></tr>
+        </table>
+        </div>
+        <div class="remedy"><strong>修复</strong>：按 workflow/ 目录 9 个模块优先补测，每个模块至少 3 个测试（正常/边界/异常）</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">C-04</span>
+        <span class="finding-title">conftest.py 无共享 fixture，测试 setup 重复严重</span>
+        <span class="severity-tag sev-high">P1</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>源</strong>：<span class="file-path">Test/backend/conftest.py</span>（53 行，仅路径设置，无 <code>@pytest.fixture</code>）</p>
+        <p><strong>后果</strong>：<code>test_auth.py</code> 的 <code>auth_client</code> fixture 40+ 行设置在每个需要的测试文件中重复</p>
+        <div class="remedy"><strong>修复</strong>：提取 <code>auth_client</code>、<code>service</code> 等为 conftest 共享 fixture</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">C-05</span>
+        <span class="finding-title">test_circuit_breaker.py time.sleep 导致 flaky 风险</span>
+        <span class="severity-tag sev-high">P1</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>源</strong>：<span class="file-path">Test/backend/test_circuit_breaker.py:58,66</span> — <code>time.sleep(0.6)</code> / <code>time.sleep(0.1)</code></p>
+        <p><strong>后果</strong>：依赖真实时间，CI 负载高时可能失败</p>
+        <div class="remedy"><strong>修复</strong>：替换为 <code>freezegun</code> 或 mock <code>time.monotonic</code></div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">C-06</span>
+        <span class="finding-title">测试风格不统一：unittest.TestCase 与 pytest 混用</span>
+        <span class="severity-tag sev-high">P1</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>症状</strong>：<code>test_weather_tile_service.py</code> 混用 class-based 和 function-based；<code>test_workflow_routes.py</code> 和 <code>test_circuit_breaker.py</code> 使用 <code>unittest.TestCase</code></p>
+        <p><strong>后果</strong>：fixture 使用不一致、断言模式不一致、Assertion Roulette（bare assert 无 message）</p>
+        <div class="remedy"><strong>修复</strong>：统一为 pytest function-based + <code>assert x == y, "message"</code> 模式</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">C-07</span>
+        <span class="finding-title">security-scan 非阻塞，高危漏洞不阻断 CI</span>
+        <span class="severity-tag sev-medium">P2</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>源</strong>：<span class="file-path">.github/workflows/ci.yml:194</span> — <code>continue-on-error: true</code></p>
+        <div class="remedy"><strong>修复</strong>：对 <code>pip-audit</code> 和 <code>npm audit</code> 的 high/critical 级别设为阻塞</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">C-08</span>
+        <span class="finding-title">test_auth.py 直接替换模块级单例，跨测试污染风险</span>
+        <span class="severity-tag sev-medium">P2</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>源</strong>：<span class="file-path">Test/backend/test_auth.py:49</span> — <code>ur_mod._repo = UserRepository(...)</code></p>
+        <div class="remedy"><strong>修复</strong>：用 <code>mock.patch</code> 或 pytest fixture 隔离单例替换</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============ DIMENSION D: CODE HYGIENE ============ -->
+<div class="section">
+  <div class="section-header expanded" onclick="toggleSection(this)">
+    <h2>🧹 维度 D：代码卫生与依赖管理 <span class="badge badge-p2">5 项</span></h2>
+    <span class="toggle-icon">▶</span>
+  </div>
+  <div class="section-content">
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">D-01</span>
+        <span class="finding-title">全后端 265 处 except Exception 宽泛异常捕获</span>
+        <span class="severity-tag sev-medium">P2</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>源</strong>：<code>app/</code> 全目录 100 个文件共 265 处 <code>except Exception</code></p>
+        <p><strong>Top 5</strong>：<code>raster_science.py</code>(15)、<code>gee/nodes.py</code>(13)、<code>export_layer.py</code>(10)、<code>dbf_encoding.py</code>(9)、<code>main.py</code>(9)</p>
+        <p><strong>后果</strong>：编程 bug（AttributeError/NameError）被静默吞掉，排障困难</p>
+        <div class="remedy"><strong>修复</strong>：按 project_memory 约定，网络/API 失败降级 + 编程 bug 传播；批量替换为具体异常类型</div>
+        <div class="book-ref">参考：《Clean Code》第7章「错误处理」· Martin</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">D-02</span>
+        <span class="finding-title">core/config.py 80+ 字段配置巨石 + import 时求值</span>
+        <span class="severity-tag sev-medium">P2</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>源</strong>：<span class="file-path">app/core/config.py</span>（547 行，~80 字段，frozen dataclass）</p>
+        <p><strong>后果</strong>：所有字段在类定义时 <code>os.getenv()</code> 求值，运行时修改环境变量不生效；<code>frozen=True</code> 阻止覆盖；魔法数字散布</p>
+        <div class="remedy"><strong>修复</strong>：按子系统分组为嵌套 dataclass（<code>RedisConfig</code> / <code>GeeConfig</code> / <code>WeatherConfig</code> 等）；提取魔法数字为命名常量</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">D-03</span>
+        <span class="finding-title">main.py import 时副作用 + lifespan 过重</span>
+        <span class="severity-tag sev-medium">P2</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>源</strong>：<span class="file-path">app/main.py:46</span> — <code>register_default_providers()</code> 在 import 时执行；<code>lifespan</code>（行 54-143）含 6 个 try-except 块</p>
+        <div class="remedy"><strong>修复</strong>：将 <code>register_default_providers()</code> 移入 <code>create_app()</code>；拆分 lifespan 为独立初始化函数</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">D-04</span>
+        <span class="finding-title">超长函数 Top 5（最大 204 行）</span>
+        <span class="severity-tag sev-low">P3</span>
+      </div>
+      <div class="finding-detail">
+        <div class="table-wrap">
+        <table>
+          <tr><th>文件</th><th>函数</th><th>行数</th></tr>
+          <tr><td><code>python_provider_result_builder.py</code></td><td><code>_build_product_map_layer_ref</code></td><td>204</td></tr>
+          <tr><td><code>workflow_request_resolver.py</code></td><td><code>_populate_python_provider_request</code></td><td>174</td></tr>
+          <tr><td><code>weather_render_service.py</code></td><td><code>build_wind_geojson_from_grid</code></td><td>162</td></tr>
+          <tr><td><code>python_provider_result_builder.py</code></td><td><code>_build_generic_raster_map_layer_ref</code></td><td>124</td></tr>
+          <tr><td><code>overlay_registry.py</code></td><td><code>_try_load_imported_overlay</code></td><td>107</td></tr>
+        </table>
+        </div>
+        <div class="remedy"><strong>修复</strong>：按 Extract Function 重构手法拆分为 ≤40 行函数</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <span class="finding-id">D-05</span>
+        <span class="finding-title">Tools/ 目录临时脚本积压</span>
+        <span class="severity-tag sev-low">P3</span>
+      </div>
+      <div class="finding-detail">
+        <p><strong>源</strong>：<code>Tools/</code> 目录 ~50 个脚本，含 <code>_tmp_check_data_root.py</code> / <code>_tmp_list_runs.py</code> / <code>_tmp_watch_run.py</code> 等临时排查脚本</p>
+        <p>另有遗留启动脚本 <code>start_backend.py</code> / <code>restart_backend.py</code> 已被 <code>launch.py</code> 取代</p>
+        <div class="remedy"><strong>修复</strong>：清理 <code>_tmp_*</code> 脚本；为遗留启动脚本添加 deprecation 注释或删除</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============ RISK PRIORITY MATRIX ============ -->
+<div class="section">
+  <div class="section-header expanded" onclick="toggleSection(this)">
+    <h2>🎯 风险优先级矩阵</h2>
+    <span class="toggle-icon">▶</span>
+  </div>
+  <div class="section-content">
+    <div class="table-wrap">
+    <table>
+      <tr>
+        <th>编号</th><th>维度</th><th>严重度</th><th>发现项</th><th>影响范围</th><th>建议动作</th>
+      </tr>
+      <tr><td>A-01</td><td>架构</td><td><span class="severity-tag sev-blocker">P0</span></td><td>overlay_registry.py 硬编码绝对路径</td><td>全环境（除开发机外不可用）</td><td>替换为 settings 路径</td></tr>
+      <tr><td>A-02</td><td>架构</td><td><span class="severity-tag sev-blocker">P0</span></td><td>weather_sync_service 反向导入 router</td><td>分层架构破坏</td><td>提取 cache 失效函数至 service 层</td></tr>
+      <tr><td>C-01</td><td>测试</td><td><span class="severity-tag sev-blocker">P0</span></td><td>CI 覆盖率阈值 50% 过低</td><td>后端全量代码</td><td>逐步提升至 70%</td></tr>
+      <tr><td>C-02</td><td>测试</td><td><span class="severity-tag sev-blocker">P0</span></td><td>CI 无前端覆盖率阈值</td><td>前端全量代码</td><td>添加 vitest --coverage</td></tr>
+      <tr><td>A-03</td><td>架构</td><td><span class="severity-tag sev-high">P1</span></td><td>weather-tile-manager.ts 14 职责 God Store</td><td>天气瓦片前端热路径</td><td>按职责拆分为 4 子模块</td></tr>
+      <tr><td>A-04</td><td>架构</td><td><span class="severity-tag sev-high">P1</span></td><td>overlay_registry 非线程安全 + import 时注册</td><td>overlay 图层系统</td><td>加锁 + 延迟注册</td></tr>
+      <tr><td>A-05</td><td>架构</td><td><span class="severity-tag sev-high">P1</span></td><td>workflow_request_resolver lru_cache 无失效</td><td>工作流模板解析</td><td>添加 cache_clear API</td></tr>
+      <tr><td>A-06</td><td>架构</td><td><span class="severity-tag sev-high">P1</span></td><td>weather_render_service 6 方法重复</td><td>天气渲染服务</td><td>统一调用通用方法</td></tr>
+      <tr><td>A-07</td><td>架构</td><td><span class="severity-tag sev-high">P1</span></td><td>WorkflowCanvas.vue 1924 行 God Component</td><td>工作流编辑器</td><td>抽取 composables</td></tr>
+      <tr><td>A-08</td><td>架构</td><td><span class="severity-tag sev-high">P1</span></td><td>workflow-runner.ts 30 方法 DI + 无测试</td><td>工作流编排</td><td>缩窄接口 + 补测</td></tr>
+      <tr><td>A-09</td><td>架构</td><td><span class="severity-tag sev-high">P1</span></td><td>WebGL shader 编译跨渲染器重复</td><td>地图渲染</td><td>抽取 webgl-utils.ts</td></tr>
+      <tr><td>C-03</td><td>测试</td><td><span class="severity-tag sev-high">P1</span></td><td>后端 15+ 关键模块无测试</td><td>工作流/安全核心</td><td>优先补 workflow/ 目录</td></tr>
+      <tr><td>C-04</td><td>测试</td><td><span class="severity-tag sev-high">P1</span></td><td>conftest.py 无共享 fixture</td><td>全部后端测试</td><td>提取共享 fixture</td></tr>
+      <tr><td>C-05</td><td>测试</td><td><span class="severity-tag sev-high">P1</span></td><td>circuit_breaker 测试 time.sleep flaky</td><td>熔断器测试</td><td>替换为 freezegun</td></tr>
+      <tr><td>C-06</td><td>测试</td><td><span class="severity-tag sev-high">P1</span></td><td>unittest vs pytest 风格混用</td><td>全部后端测试</td><td>统一为 pytest 风格</td></tr>
+      <tr><td>B-01</td><td>安全</td><td><span class="severity-tag sev-medium">MED</span></td><td>源码硬编码开发凭据</td><td>开发环境</td><td>移至 .env 占位符</td></tr>
+      <tr><td>B-02</td><td>安全</td><td><span class="severity-tag sev-medium">MED</span></td><td>.env.example 弱默认值</td><td>部署配置</td><td>使用占位符替代</td></tr>
+      <tr><td>D-01</td><td>卫生</td><td><span class="severity-tag sev-medium">P2</span></td><td>265 处 except Exception</td><td>后端全量</td><td>批量替换为具体异常</td></tr>
+      <tr><td>D-02</td><td>卫生</td><td><span class="severity-tag sev-medium">P2</span></td><td>config.py 80+ 字段巨石</td><td>后端配置</td><td>分组为嵌套 dataclass</td></tr>
+      <tr><td>D-03</td><td>卫生</td><td><span class="severity-tag sev-medium">P2</span></td><td>main.py import 时副作用</td><td>后端启动</td><td>移入 create_app()</td></tr>
+    </table>
+    </div>
+  </div>
+</div>
+
+<!-- ============ FOOTER ============ -->
+<div style="text-align:center; padding: 24px; color: var(--text-muted); font-size: 12px; border-top: 1px solid var(--border); margin-top: 32px;">
+  <p>CGDA 代码库健康审查报告 · Brooks-Lint Health Dashboard + SEM architecture-decisions</p>
+  <p>审查范围：~700+ 源文件 / ~225K 行代码 / 310 测试文件 · 审查日期：2026-08-13</p>
+  <p>本轮为只读审查，不修改代码。修复方案见配套 MD 可执行计划。</p>
+</div>
+
+</div>
+
+<script>
+function toggleSection(header) {
+  const content = header.nextElementSibling;
+  const icon = header.querySelector('.toggle-icon');
+  content.classList.toggle('hidden');
+  header.classList.toggle('expanded');
+}
+</script>
+
+</body>
+</html>

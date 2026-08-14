@@ -48,18 +48,19 @@ import {
   type WeatherConfig,
   type WeatherProviderItem,
   type WeatherProviderUpdateRequest,
-  type WeatherProviderTestResult,
+  type WeatherProviderTestResponse,
   type GeneralConfig,
   type DataSourceConfig,
   type AboutInfo,
-  type TestResult,
+  type TestResultResponse,
   type RuntimeConfigPatch,
   type RemoteStorageProfile,
   type RemoteStorageUpsertRequest,
-  type RemoteStorageTestResult,
+  type RemoteStorageTestResponse,
   type RemoteStorageHistoryItem,
 } from '../services/settings-api'
 import { hydrateMapDefaults } from '../services/map-defaults'
+import { safeLog } from './log'
 
 type LoaderName =
   | 'general'
@@ -93,6 +94,7 @@ async function settled<T>(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.warn(`[settings] load ${name} failed:`, message)
+    safeLog('client-error', `配置加载失败: ${name}`, message, 'warn')
     return { name, error: message }
   }
 }
@@ -267,7 +269,7 @@ export const useSettingsStore = defineStore('settings', () => {
     await loadApiKeys()
   }
 
-  async function runApiKeyTest(keyName: string): Promise<TestResult> {
+  async function runApiKeyTest(keyName: string): Promise<TestResultResponse> {
     const result = await testApiKey(keyName)
     await loadApiKeys()
     return result
@@ -327,7 +329,7 @@ export const useSettingsStore = defineStore('settings', () => {
     await loadGeeAccounts()
   }
 
-  async function runGeeAccountTest(accountId: string): Promise<TestResult> {
+  async function runGeeAccountTest(accountId: string): Promise<TestResultResponse> {
     const result = await testGeeAccount(accountId)
     await loadGeeAccounts()
     return result
@@ -362,6 +364,12 @@ export const useSettingsStore = defineStore('settings', () => {
         '[settings] refresh weather providers failed (operation may have succeeded):',
         err,
       )
+      safeLog(
+        'client-error',
+        '天气 Provider 刷新失败',
+        err instanceof Error ? err.message : String(err),
+        'warn',
+      )
       return false
     }
   }
@@ -372,7 +380,7 @@ export const useSettingsStore = defineStore('settings', () => {
     return updated
   }
 
-  async function runWeatherProviderTest(providerId: string): Promise<WeatherProviderTestResult> {
+  async function runWeatherProviderTest(providerId: string): Promise<WeatherProviderTestResponse> {
     const result = await testWeatherProvider(providerId)
     await _refreshProvidersSilently()
     return result
@@ -418,7 +426,7 @@ export const useSettingsStore = defineStore('settings', () => {
   async function runRemoteStorageTest(
     profileId: string,
     uri?: string | null,
-  ): Promise<RemoteStorageTestResult> {
+  ): Promise<RemoteStorageTestResponse> {
     const result = await testRemoteStorageProfile(profileId, uri)
     await loadRemoteStorageProfiles()
     return result

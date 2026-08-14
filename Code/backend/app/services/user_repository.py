@@ -11,15 +11,24 @@ from app.core.config import settings
 from app.services._sqlite_pool import SQLiteConnectionPool
 from app.services.passwords import hash_password, verify_password
 
-UserRole = Literal["admin", "operator", "viewer"]
-VALID_ROLES: frozenset[str] = frozenset({"admin", "operator", "viewer"})
+UserRole = Literal["admin", "standard", "demo"]
+VALID_ROLES: frozenset[str] = frozenset({"admin", "standard", "demo"})
 
 # Fixed hash for timing-equalization when username is missing.
 _DUMMY_PASSWORD_HASH = hash_password("dummy-timing-equalization-secret")
 
 #: ``update_user`` 可写字段白名单（f-string 拼接 SQL 列名时的注入防线：
 #: 未来新增可更新字段必须登记于此，否则断言失败而非静默拼接）。
-_UPDATABLE_COLUMNS = frozenset({"updated_at", "password_hash", "role", "enabled"})
+_UPDATABLE_COLUMNS = frozenset(
+    {
+        "updated_at",
+        "password_hash",
+        "role",
+        "enabled",
+        "max_concurrent_workflows",
+        "permission_mode",
+    }
+)
 
 
 def _users_db_path() -> Path:
@@ -43,7 +52,7 @@ class UserRepository:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT NOT NULL UNIQUE COLLATE NOCASE,
                     password_hash TEXT NOT NULL,
-                    role TEXT NOT NULL DEFAULT 'operator',
+                    role TEXT NOT NULL DEFAULT 'standard',
                     enabled INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -65,6 +74,46 @@ class UserRepository:
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)"
+            )
+            # Phase C：按角色并发控制——为 users 表增量加列（additive-only 迁移）。
+            # 用 try/except 处理列已存在的情况（首次创建表时列已在 CREATE TABLE 中，
+            # 但旧库升级时需要 ALTER）。
+            try:
+                conn.execute(
+                    "ALTER TABLE users ADD COLUMN max_concurrent_workflows INTEGER DEFAULT NULL"
+                )
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            try:
+                conn.execute(
+                    "ALTER TABLE users ADD COLUMN permission_mode TEXT NOT NULL DEFAULT 'open'"
+                )
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+            # Phase B：资源访问控制——权限记录表。
+            # permission_mode='open' 时为黑名单模式（无 deny 记录则允许），
+            # permission_mode='whitelist' 时为白名单模式（仅 allow 记录可访问）。
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_resource_permissions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    resource_type TEXT NOT NULL,
+                    resource_id TEXT NOT NULL,
+                    permission TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(user_id, resource_type, resource_id)
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_permissions_user "
+                "ON user_resource_permissions(user_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_permissions_user_type "
+                "ON user_resource_permissions(user_id, resource_type)"
             )
             conn.commit()
 
@@ -118,7 +167,7 @@ class UserRepository:
         *,
         username: str,
         password: str,
-        role: UserRole = "operator",
+        role: UserRole = "standard",
     ) -> dict[str, Any]:
         name = username.strip()
         if not name:
@@ -151,6 +200,8 @@ class UserRepository:
         password: str | None = None,
         role: UserRole | None = None,
         enabled: bool | None = None,
+        max_concurrent_workflows: int | None = None,
+        permission_mode: str | None = None,
     ) -> dict[str, Any] | None:
         user = self.get_by_id(user_id)
         if not user:
@@ -169,6 +220,12 @@ class UserRepository:
         if enabled is not None:
             fields.append("enabled=?")
             params.append(1 if enabled else 0)
+        if max_concurrent_workflows is not None:
+            fields.append("max_concurrent_workflows=?")
+            params.append(max_concurrent_workflows)
+        if permission_mode is not None:
+            fields.append("permission_mode=?")
+            params.append(permission_mode)
         # 注入防线：拼接的列名必须全部在白名单内（见模块级 _UPDATABLE_COLUMNS），
         # 用显式检查而非 assert，避免 python -O 下失效。
         if not set(fields) <= {f"{c}=?" for c in _UPDATABLE_COLUMNS}:
@@ -185,9 +242,38 @@ class UserRepository:
     def delete_user(self, user_id: int) -> bool:
         with self._pool.connection() as conn:
             cur = conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+            deleted = cur.rowcount > 0
             conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
             conn.commit()
-            return cur.rowcount > 0
+        # 权限表可能在独立连接/未启用 FK；显式清理避免孤儿 ACL
+        try:
+            from app.services.permission_repository import get_permission_repository
+
+            get_permission_repository().set_user_permissions(user_id, [])
+        except Exception:
+            logger = __import__("logging").getLogger(__name__)
+            logger.warning(
+                "Failed to clear resource permissions for deleted user %s",
+                user_id,
+                exc_info=True,
+            )
+        return deleted
+
+    def get_max_concurrent_workflows(self, user_id: int) -> int | None:
+        """Return the user-specific concurrent workflow limit, or ``None`` if unset.
+
+        When ``None``, the caller should fall back to the role-based default
+        (see ``submission_service._user_concurrency_limit``).
+        """
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "SELECT max_concurrent_workflows FROM users WHERE id=?",
+                (user_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        value = row["max_concurrent_workflows"] if isinstance(row, dict) else row[0]
+        return int(value) if value is not None else None
 
     def upsert_session(
         self,

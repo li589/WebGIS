@@ -46,7 +46,7 @@ describe('map-stage-presentation-module', () => {
 
     module.scheduleNavigationThemeSync()
     timeouts.get(1)?.()
-    expect(button.style.backgroundColor).toBe('rgba(255,255,255,0.86)')
+    expect(button.style.backgroundColor).toBe('rgba(252, 253, 255, 0.94)')
 
     module.revealMap()
     expect(animationFrameCallback).not.toBeNull()

@@ -5,14 +5,21 @@ import type { ActiveLayer } from '../../stores/layers/types'
 import { applyApiFetchDefaults } from '../../services/http-credentials'
 import { resolveApiUrl } from '../../services/_http'
 import { withWriteAuthHeaders } from '../../services/backend-auth'
-import { downloadBlob, exportImportedLayer, exportBatchLayers, waitForImportJob } from '../core/api'
+import {
+  downloadBlob,
+  exportImportedLayer,
+  exportBatchLayers,
+  waitForImportJob,
+  type ExportBBoxPayload,
+} from '../core/api'
 import {
   exportFeatureCollectionAsCsv,
   exportFeatureCollectionAsGeoJson,
 } from '../../stores/layers/imported-vector'
+import { resolveExportBasename } from '../../stores/layers/layer-naming'
 
 export type ExportFormat =
-  'geojson' | 'csv' | 'shp-zip' | 'tif' | 'png' | 'nc' | 'geotiff' | 'netcdf'
+  'geojson' | 'csv' | 'shp-zip' | 'tif' | 'png' | 'nc' | 'mat' | 'geotiff' | 'netcdf' | 'matlab'
 
 export type ExportOptions = {
   /** auto | utf-8 | utf-8-sig | gbk | gb18030 | … */
@@ -21,12 +28,19 @@ export type ExportOptions = {
   time?: string | null
   /** 多时刻；长度>1 时后端返回 zip */
   times?: string[] | null
+  /** 裁剪到地图/指定范围 */
+  bbox?: ExportBBoxPayload | null
+  /** 输出坐标系，如 EPSG:4326 */
+  outputCrs?: string | null
+  /** 矢量属性字段子集 */
+  fields?: string[] | null
 }
 
 function normalizeFormat(format: string): ExportFormat {
   const f = format.toLowerCase()
   if (f === 'geotiff' || f === 'tiff') return 'tif'
   if (f === 'netcdf') return 'nc'
+  if (f === 'matlab') return 'mat'
   return f as ExportFormat
 }
 
@@ -34,7 +48,7 @@ function safeName(name: string, ext: string, time?: string | null): string {
   let base =
     (name || 'export')
       .replace(
-        /\.(geojson|json|shp|zip|rar|csv|xlsx|xls|txt|dbf|shx|prj|cpg|sbn|sbx|qix|tif|tiff|png|nc)$/i,
+        /\.(geojson|json|shp|zip|rar|csv|xlsx|xls|txt|dbf|shx|prj|cpg|sbn|sbx|qix|tif|tiff|png|nc|mat)$/i,
         '',
       )
       .replace(/[\\/:*?"<>|]+/g, '_')
@@ -52,20 +66,33 @@ function backendIdOf(
   return layer.importedVector?.backendLayerId || layer.importedRaster?.overlayLayerId || null
 }
 
+function exportBasenameFor(
+  layer: Pick<ActiveLayer, 'name' | 'importedVector' | 'importedRaster' | 'catalogId'>,
+): string {
+  return resolveExportBasename({
+    catalogId: layer.catalogId,
+    overlayLayerId: layer.importedRaster?.overlayLayerId,
+    backendLayerId: layer.importedVector?.backendLayerId,
+    sourceFilename: layer.importedVector?.fileName ?? layer.importedRaster?.fileName,
+    displayName: layer.name,
+  })
+}
+
 async function exportLocalFallback(
-  layer: Pick<ActiveLayer, 'name' | 'importedVector'>,
+  layer: Pick<ActiveLayer, 'name' | 'importedVector' | 'importedRaster' | 'catalogId'>,
   format: ExportFormat,
 ): Promise<void> {
   const fc = layer.importedVector?.geojson
   if (!fc?.features?.length) {
     throw new Error('本地预览为空，无法导出（可尝试重新导入或先「加载完整数据」）')
   }
+  const base = exportBasenameFor(layer)
   if (format === 'csv') {
-    exportFeatureCollectionAsCsv(fc, safeName(layer.name ?? 'export', 'csv'))
+    exportFeatureCollectionAsCsv(fc, safeName(base, 'csv'))
     return
   }
   // shp-zip 无本地实现时降级 geojson
-  exportFeatureCollectionAsGeoJson(fc, safeName(layer.name ?? 'export', 'geojson'))
+  exportFeatureCollectionAsGeoJson(fc, safeName(base, 'geojson'))
 }
 
 export async function exportLayer(
@@ -80,13 +107,14 @@ export async function exportLayer(
   if (backendId) {
     try {
       const multi = options.times?.filter(Boolean) ?? []
-      const blob = await exportImportedLayer(
-        backendId,
-        fmt,
+      const blob = await exportImportedLayer(backendId, fmt, {
         encoding,
-        multi.length > 1 ? null : options.time,
-        multi.length > 1 ? multi : null,
-      )
+        time: multi.length > 1 ? null : options.time,
+        times: multi.length > 1 ? multi : null,
+        bbox: options.bbox,
+        outputCrs: options.outputCrs,
+        fields: options.fields,
+      })
       const isZip =
         multi.length > 1 ||
         blob.type.includes('zip') ||
@@ -106,7 +134,7 @@ export async function exportLayer(
             ? `${multi.length}times`
             : `${multi[0]}_${multi[multi.length - 1]}`
           : options.time
-      downloadBlob(blob, safeName(layer.name ?? 'export', ext, stamp))
+      downloadBlob(blob, safeName(exportBasenameFor(layer), ext, stamp))
       return
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -146,7 +174,14 @@ export async function exportLayersBatch(
   }
   onProgress?.(0.05, '提交批导出…')
   try {
-    const result = await exportBatchLayers(ids, fmt, encoding)
+    const result = await exportBatchLayers(ids, fmt, {
+      encoding,
+      time: options.time,
+      times: options.times,
+      bbox: options.bbox,
+      outputCrs: options.outputCrs,
+      fields: options.fields,
+    })
     if (result.job_id) {
       const job = await waitForImportJob(result.job_id, {
         onProgress: (p, msg) => onProgress?.(p, msg ?? '导出中…'),
@@ -163,7 +198,12 @@ export async function exportLayersBatch(
       }
     }
     if (result.blob) {
-      downloadBlob(result.blob, safeName('batch_export', 'zip'))
+      // 同网格多图层 MAT 合并为单 .mat；网格不一致时后端仍返回 zip
+      const ext =
+        result.blob.type.includes('matlab') || (fmt === 'mat' && !result.blob.type.includes('zip'))
+          ? 'mat'
+          : 'zip'
+      downloadBlob(result.blob, safeName('batch_export', ext))
       return
     }
     throw new Error('批导出未返回文件')

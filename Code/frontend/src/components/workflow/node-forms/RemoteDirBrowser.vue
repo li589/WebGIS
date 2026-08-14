@@ -137,12 +137,19 @@ watch(
             class="path-btn"
             :disabled="currentPath === '/'"
             title="返回上级"
+            aria-label="返回上级"
             @click="goUp"
           >
             ↑
           </button>
           <span class="path-current" :title="currentPath">{{ currentPath }}</span>
-          <button type="button" class="path-btn" title="刷新" @click="loadDir(currentPath)">
+          <button
+            type="button"
+            class="path-btn"
+            title="刷新"
+            aria-label="刷新"
+            @click="loadDir(currentPath)"
+          >
             ↻
           </button>
         </div>
@@ -191,7 +198,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(2, 6, 14, 0.62);
+  background: var(--surface-1);
   backdrop-filter: blur(3px);
   z-index: 11000;
 }
@@ -201,11 +208,11 @@ watch(
   flex-direction: column;
   width: min(540px, 92vw);
   max-height: 78vh;
-  border: 1px solid rgba(90, 213, 255, 0.28);
+  border: 1px solid var(--border-accent);
   border-radius: 0.5rem;
-  background: rgba(8, 17, 31, 0.96);
+  background: var(--surface-1);
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
-  color: #c4d6e8;
+  color: var(--text-secondary);
   overflow: hidden;
 }
 
@@ -214,13 +221,13 @@ watch(
   align-items: center;
   justify-content: space-between;
   padding: 0.5rem 0.62rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.12);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .dialog-title {
-  font-size: 0.66rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 
 .dialog-close {
@@ -232,7 +239,7 @@ watch(
   border: none;
   border-radius: 0.28rem;
   background: transparent;
-  color: #8aa8bf;
+  color: var(--text-muted);
   cursor: pointer;
   font-size: 0.9rem;
   line-height: 1;
@@ -240,7 +247,7 @@ watch(
 
 .dialog-close:hover {
   background: rgba(255, 138, 138, 0.16);
-  color: #ff8a8a;
+  color: var(--danger);
 }
 
 .dialog-pathbar {
@@ -248,8 +255,8 @@ watch(
   align-items: center;
   gap: 0.32rem;
   padding: 0.4rem 0.62rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.08);
-  background: rgba(4, 12, 23, 0.4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
 }
 
 .path-btn {
@@ -259,17 +266,17 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(136, 192, 255, 0.18);
+  border: 1px solid var(--border-default);
   border-radius: 0.32rem;
-  background: rgba(10, 132, 255, 0.08);
-  color: #8aa8bf;
+  background: var(--accent-surface);
+  color: var(--text-muted);
   cursor: pointer;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
 }
 
 .path-btn:hover:not(:disabled) {
-  background: rgba(10, 132, 255, 0.2);
-  color: #5ad5ff;
+  background: var(--accent-border);
+  color: var(--accent);
 }
 
 .path-btn:disabled {
@@ -283,9 +290,9 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.58rem;
-  font-family: 'Consolas', 'Monaco', monospace;
-  color: #5ad5ff;
+  font-size: var(--font-size-caption);
+  font-family: var(--font-mono);
+  color: var(--accent);
 }
 
 .dialog-body {
@@ -297,12 +304,12 @@ watch(
 .dialog-state {
   padding: 1.4rem 0.62rem;
   text-align: center;
-  font-size: 0.58rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
 }
 
 .dialog-state.error {
-  color: #ff8a8a;
+  color: var(--danger);
 }
 
 .dir-list {
@@ -317,22 +324,22 @@ watch(
   gap: 0.36rem;
   padding: 0.3rem 0.42rem;
   border-radius: 0.3rem;
-  font-size: 0.58rem;
-  color: #d8e6f5;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
   cursor: pointer;
   user-select: none;
 }
 
 .dir-item:hover {
-  background: rgba(10, 132, 255, 0.14);
+  background: var(--accent-surface);
 }
 
 .dir-item.selected {
-  background: rgba(90, 213, 255, 0.2);
+  background: var(--accent-border);
 }
 
 .dir-item.dir .item-name {
-  color: #9ff8cf;
+  color: var(--success);
   font-weight: 500;
 }
 
@@ -340,12 +347,12 @@ watch(
   flex: none;
   width: 0.8rem;
   text-align: center;
-  color: #6e8ba0;
-  font-size: 0.62rem;
+  color: var(--text-faint);
+  font-size: var(--font-size-caption);
 }
 
 .item-icon.dir {
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .item-name {
@@ -358,9 +365,9 @@ watch(
 
 .item-size {
   flex: none;
-  font-size: 0.5rem;
-  color: #5a7080;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: var(--font-size-caption);
+  color: var(--text-disabled);
+  font-family: var(--font-mono);
 }
 
 .dialog-footer {
@@ -369,13 +376,13 @@ watch(
   justify-content: space-between;
   gap: 0.42rem;
   padding: 0.42rem 0.62rem;
-  border-top: 1px solid rgba(136, 192, 255, 0.12);
-  background: rgba(4, 12, 23, 0.4);
+  border-top: 1px solid var(--border-default);
+  background: var(--surface-sunken);
 }
 
 .footer-hint {
-  font-size: 0.52rem;
-  color: #5a7080;
+  font-size: var(--font-size-caption);
+  color: var(--text-disabled);
 }
 
 .footer-actions {
@@ -385,29 +392,29 @@ watch(
 
 .dialog-btn {
   padding: 0.3rem 0.72rem;
-  border: 1px solid rgba(136, 192, 255, 0.22);
+  border: 1px solid var(--border-strong);
   border-radius: 0.32rem;
   background: transparent;
-  color: #c4d6e8;
+  color: var(--text-secondary);
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   transition: all 0.16s ease;
 }
 
 .dialog-btn:hover {
-  background: rgba(10, 132, 255, 0.16);
-  color: #d8e6f5;
+  background: var(--accent-surface);
+  color: var(--text-primary);
 }
 
 .dialog-btn.primary {
-  border-color: rgba(90, 213, 255, 0.5);
-  background: rgba(90, 213, 255, 0.2);
-  color: #5ad5ff;
+  border-color: var(--border-strong);
+  background: var(--accent-border);
+  color: var(--accent);
 }
 
 .dialog-btn.primary:hover {
-  background: rgba(90, 213, 255, 0.32);
-  color: #9ff8cf;
+  background: var(--border-accent);
+  color: var(--success);
 }
 </style>

@@ -13,22 +13,29 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.api.deps import require_write_access
+from app.api.deps import require_workflow_run_access, require_write_access
 from app.services import workflow_timer_service as wts
 from app.services.workflow_timer_service import (
     TimerNotFoundError,
     TimerValidationError,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
-# ─── Cron 预览（无需鉴权，只读计算） ─────────────────────────────────────────
-@router.post("/workflow-timers/cron-preview", tags=["workflow-timer"])
+# ─── Cron 预览（只读计算，但需鉴权防滥用） ─────────────────────────────────
+@router.post(
+    "/workflow-timers/cron-preview",
+    tags=["workflow-timer"],
+    dependencies=[Depends(require_write_access)],
+)
 def preview_cron(payload: dict[str, Any]) -> dict[str, Any]:
     """预览 cron 表达式的接下来 N 次触发时间。
 
@@ -50,7 +57,11 @@ def preview_cron(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 # ─── 列表 / 详情 ────────────────────────────────────────────────────────────
-@router.get("/workflow-timers", tags=["workflow-timer"])
+@router.get(
+    "/workflow-timers",
+    tags=["workflow-timer"],
+    dependencies=[Depends(require_write_access)],
+)
 def list_timers(workflow_id: str | None = Query(default=None)) -> dict[str, Any]:
     """列出全部定时器，可选按 workflow_id 过滤。"""
     timers = wts.get_timer_store().list_timers(workflow_id=workflow_id)
@@ -60,7 +71,11 @@ def list_timers(workflow_id: str | None = Query(default=None)) -> dict[str, Any]
     }
 
 
-@router.get("/workflow-timers/{timer_id}", tags=["workflow-timer"])
+@router.get(
+    "/workflow-timers/{timer_id}",
+    tags=["workflow-timer"],
+    dependencies=[Depends(require_write_access)],
+)
 def get_timer(timer_id: str) -> dict[str, Any]:
     """获取单个定时器详情。"""
     timer = wts.get_timer_store().get_timer(timer_id)
@@ -165,6 +180,13 @@ def update_timer(timer_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         )
         if k in payload
     }
+    # 安全：字段类型校验
+    if "name" in updates and (
+        not isinstance(updates["name"], str) or not updates["name"].strip()
+    ):
+        raise HTTPException(status_code=400, detail="name must be a non-empty string")
+    if "enabled" in updates and not isinstance(updates["enabled"], bool):
+        raise HTTPException(status_code=400, detail="enabled must be a boolean")
     try:
         timer = wts.get_timer_store().update_timer(timer_id, updates)
     except TimerNotFoundError as exc:
@@ -196,7 +218,7 @@ def delete_timer(timer_id: str) -> dict[str, Any]:
 @router.post(
     "/workflow-timers/{timer_id}/run",
     tags=["workflow-timer"],
-    dependencies=[Depends(require_write_access)],
+    dependencies=[Depends(require_workflow_run_access)],
 )
 def run_timer(timer_id: str) -> dict[str, Any]:
     """手动触发一次定时器对应的工作流（不影响 next_fire_at）。"""
@@ -207,7 +229,8 @@ def run_timer(timer_id: str) -> dict[str, Any]:
     except TimerValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"trigger failed: {exc}") from exc
+        logger.warning("Timer trigger failed: timer_id=%s err=%s", timer_id, exc)
+        raise HTTPException(status_code=500, detail="Timer trigger failed.") from exc
 
 
 @router.post(

@@ -1,7 +1,7 @@
 /**
  * 后端统一数据导入/导出 API（分块上传 + 矢量/栅格/文档 + 导出）。
  */
-import { getBackendWriteApiKey, withWriteAuthHeaders } from './backend-auth'
+import { withWriteAuthHeaders } from './backend-auth'
 import { applyApiFetchDefaults } from '../../services/http-credentials'
 import { resolveApiUrl } from './_http'
 
@@ -112,10 +112,8 @@ async function writeFetch(path: string, init: RequestInit = {}): Promise<Respons
     { ...(init.headers as Record<string, string> | undefined) },
     method,
   )
-  const key = getBackendWriteApiKey()
-  if (!key && import.meta.env.PROD) {
-    throw new Error('未配置写权限：请登录或联系管理员获取 API Token')
-  }
+  // Session Cookie (credentials:include) is enough for authenticated writes;
+  // local X-Api-Key is optional and attached by withWriteAuthHeaders when present.
   return fetch(resolveApiUrl(path), applyApiFetchDefaults({ ...init, headers }))
 }
 
@@ -510,15 +508,44 @@ export async function importBatch(
   return resp.json() as Promise<{ batch_id: string; job_ids: string[] }>
 }
 
+export type ExportBBoxPayload = {
+  west: number
+  south: number
+  east: number
+  north: number
+  crs?: string
+}
+
+export type ExportRequestOptions = {
+  encoding?: string
+  time?: string | null
+  times?: string[] | null
+  bbox?: ExportBBoxPayload | null
+  outputCrs?: string | null
+  fields?: string[] | null
+}
+
 export async function exportBatchLayers(
   layerIds: string[],
   format: string,
-  encoding: string = 'auto',
+  encodingOrOpts: string | ExportRequestOptions = 'auto',
 ): Promise<{ job_id?: string; blob?: Blob }> {
+  const opts: ExportRequestOptions =
+    typeof encodingOrOpts === 'string' ? { encoding: encodingOrOpts } : encodingOrOpts
+  const payload: Record<string, unknown> = {
+    layer_ids: layerIds,
+    format,
+    encoding: opts.encoding || 'auto',
+  }
+  if (opts.times?.length) payload.times = opts.times
+  else if (opts.time) payload.time = opts.time
+  if (opts.bbox) payload.bbox = { crs: 'EPSG:4326', ...opts.bbox }
+  if (opts.outputCrs) payload.output_crs = opts.outputCrs
+  if (opts.fields?.length) payload.fields = opts.fields
   const resp = await writeFetch('/export/batch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ layer_ids: layerIds, format, encoding }),
+    body: JSON.stringify(payload),
   })
   if (!resp.ok) throw new Error(parseErrorDetail(resp.status, await resp.text()))
   const ct = resp.headers.get('content-type') || ''
@@ -768,20 +795,25 @@ export async function commitDocumentSession(params: {
 export async function exportImportedLayer(
   layerId: string,
   format: string,
-  encoding: string = 'auto',
+  encodingOrOpts: string | ExportRequestOptions = 'auto',
   time?: string | null,
   times?: string[] | null,
 ): Promise<Blob> {
+  const opts: ExportRequestOptions =
+    typeof encodingOrOpts === 'string' ? { encoding: encodingOrOpts, time, times } : encodingOrOpts
   const payload: Record<string, unknown> = {
     layer_id: layerId,
     format,
-    encoding,
+    encoding: opts.encoding || 'auto',
   }
-  if (times?.length) {
-    payload.times = times
-  } else if (time) {
-    payload.time = time
+  if (opts.times?.length) {
+    payload.times = opts.times
+  } else if (opts.time) {
+    payload.time = opts.time
   }
+  if (opts.bbox) payload.bbox = { crs: 'EPSG:4326', ...opts.bbox }
+  if (opts.outputCrs) payload.output_crs = opts.outputCrs
+  if (opts.fields?.length) payload.fields = opts.fields
   const resp = await writeFetch('/export/layer', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -958,6 +990,32 @@ export async function deleteImportedLayer(layerId: string): Promise<void> {
   if (!resp.ok && resp.status !== 404) {
     throw new Error(parseErrorDetail(resp.status, await resp.text()))
   }
+}
+
+export interface ImportQuotaInfo {
+  ok: boolean
+  used_bytes: number
+  ephemeral_bytes: number
+  limit_bytes: number
+  free_bytes: number
+  soft_reserve_bytes: number
+  used_ratio: number
+  imports_dir: string
+}
+
+export async function fetchImportQuota(): Promise<ImportQuotaInfo> {
+  const resp = await writeFetch('/import/quota')
+  if (!resp.ok) throw new Error(parseErrorDetail(resp.status, await resp.text()))
+  return resp.json() as Promise<ImportQuotaInfo>
+}
+
+export async function reclaimImportSpace(): Promise<{
+  ok: boolean
+  reclaimed_bytes: number
+}> {
+  const resp = await writeFetch('/import/quota/reclaim', { method: 'POST' })
+  if (!resp.ok) throw new Error(parseErrorDetail(resp.status, await resp.text()))
+  return resp.json()
 }
 
 export function downloadBlob(blob: Blob, filename: string) {

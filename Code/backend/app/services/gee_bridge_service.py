@@ -49,7 +49,7 @@ def _build_account_pool_from_repository(
             encryption_key=settings.gee_credentials_encryption_key,
         )
         accounts_with_creds = repo.list_enabled_accounts_with_credentials()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — best-effort repo load, logged and falls back
         logger.warning(
             "Failed to load GEE credentials repository (%s); "
             "falling back to global ~/.config/earthengine/ credentials",
@@ -83,7 +83,7 @@ def _build_account_pool_from_repository(
                     display_name=display_name,
                 )
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 — best-effort per-account credential load, logged
             logger.exception(
                 "Failed to load credentials for GEE account %s",
                 account_id,
@@ -106,7 +106,7 @@ def _is_account_unavailable_error(exc: BaseException) -> bool:
 
         _AccountUnavailableError_cls = _cls
         return isinstance(exc, _cls)
-    except Exception:
+    except ImportError:
         return False
 
 
@@ -187,7 +187,7 @@ def _load_gee_facade():
                     credentials_module, "GeeCredentialsLoader"
                 ),
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — best-effort pool build, logged and continues
             logger.warning(
                 "Failed to build GEE account pool (%s); continuing without pool", exc
             )
@@ -271,7 +271,7 @@ class GeeBridgeService:
 
         try:
             response = facade.submit_workflow(workflow, context)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — catch-check-reraise for account-unavailable errors
             if _is_account_unavailable_error(exc):
                 logger.warning(
                     "GEE workflow %s failed: no account pool/credentials available (%s)",
@@ -529,7 +529,7 @@ class GeeBridgeService:
             raise RuntimeError("GEE bridge is disabled by BACKEND_GEE_ENABLED=false.")
         try:
             return _load_gee_facade()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — facade init failure, logged and re-raised as RuntimeError
             logger.exception("Failed to initialize GEE facade")
             raise RuntimeError(f"Failed to initialize GEE facade: {exc}") from exc
 

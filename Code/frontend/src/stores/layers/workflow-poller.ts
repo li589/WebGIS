@@ -7,6 +7,7 @@
  */
 import { getWorkflowEvents, getWorkflowRun } from '../../services/runtime-api'
 import type { WorkflowEvent } from '../../services/runtime-api'
+import { ApiRequestError } from '../../services/http-errors'
 import {
   hasRenderableMapLayerAsset,
   isRecognizedJobStatus,
@@ -502,9 +503,18 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
         return
       }
 
+      // Events poll rate-limit / transient 429: back off, do not count as hard failure
+      const isRateLimited = error instanceof ApiRequestError && error.status === 429
       // AbortError（requestJson 30s 超时）是临时性错误，不显示给用户，直接重试
       const isAbortError = error instanceof DOMException && error.name === 'AbortError'
-      if (isAbortError) {
+      if (isRateLimited && error instanceof ApiRequestError) {
+        const retrySec =
+          typeof error.retryAfterSec === 'number' && error.retryAfterSec > 0
+            ? error.retryAfterSec
+            : 5
+        nextDelayMs = Math.max(EVENT_POLL_IDLE_INTERVAL_MS, retrySec * 1000)
+        nextActivityAt = Date.now()
+      } else if (isAbortError) {
         // 超时后用 idle 间隔重试，不递增错误计数，不设置 workflowError
         nextDelayMs = EVENT_POLL_IDLE_INTERVAL_MS
         nextActivityAt = Date.now()

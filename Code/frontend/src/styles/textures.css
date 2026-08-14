@@ -1,0 +1,33 @@
+/**
+ * Subtle atmosphere textures (noise / grain / patterns).
+ * Tokens: --noise-opacity-dark/light, --grid-pattern-size, --dot-pattern-size
+ */
+
+.noise-overlay {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  opacity: var(--noise-opacity-dark);
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 180px 180px;
+  mix-blend-mode: overlay;
+}
+
+[data-theme='light'] .noise-overlay {
+  opacity: var(--noise-opacity-light);
+  mix-blend-mode: multiply;
+}
+
+.texture-grid {
+  background-image:
+    linear-gradient(to right, var(--border-subtle) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border-subtle) 1px, transparent 1px);
+  background-size: var(--grid-pattern-size) var(--grid-pattern-size);
+}
+
+.texture-dots {
+  background-image: radial-gradient(var(--border-subtle) 1px, transparent 1px);
+  background-size: var(--dot-pattern-size) var(--dot-pattern-size);
+}

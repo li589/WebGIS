@@ -2,6 +2,7 @@
 export const SETTINGS_COPY = {
   panelTitle: '设置',
   tabGeneral: '常规设置',
+  tabAppearance: '外观',
   tabApiKeys: 'API 管理',
   tabGee: 'GEE 账户',
   tabWeather: '天气源',

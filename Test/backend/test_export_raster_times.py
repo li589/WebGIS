@@ -51,7 +51,9 @@ def test_export_raster_single_time(imports_tmp: Path):
         layer_id, "tif", time="20251203_20251210"
     )
     assert media == "image/tiff"
+    assert filename.startswith(layer_id)
     assert "20251203_20251210" in filename
+    assert "SM" not in filename  # 不用 meta.label/display_name 作导出基座
     assert b"A" in content
 
 
@@ -84,6 +86,7 @@ def test_export_raster_multi_times_zip(imports_tmp: Path):
         times=["20251203_20251210", "20251227_20251231"],
     )
     assert media == "application/zip"
+    assert filename.startswith(layer_id)
     assert filename.endswith(".zip")
     with zipfile.ZipFile(BytesIO(content)) as zf:
         names = zf.namelist()

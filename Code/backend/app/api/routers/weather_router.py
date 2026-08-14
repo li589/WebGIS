@@ -1,9 +1,9 @@
 import json
 import logging
+import re
 import time
-from contextlib import suppress
-from datetime import datetime, UTC
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import urlopen
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -16,10 +16,15 @@ from app.api.routers._helpers import service_json_response
 from app.core.redis_client import (
     cache_get_json,
     cache_set_json,
-    get_redis_client,
-    scan_keys,
 )
 from app.services.weather_bridge_service import weather_bridge_service
+from app.services.weather_coverage_cache import (
+    COVERAGE_CACHE as _COVERAGE_CACHE,
+    COVERAGE_CACHE_TTL_SECONDS as _COVERAGE_CACHE_TTL_SECONDS,
+    COVERAGE_REDIS_PREFIX as _COVERAGE_REDIS_PREFIX,
+    COVERAGE_REDIS_TTL_SECONDS as _COVERAGE_REDIS_TTL_SECONDS,
+    invalidate_weather_coverage_cache,
+)
 from app.weatherengine.service import weather_engine_service
 from shared.contracts.api_contracts import WeatherPointResponse
 import contextlib
@@ -29,26 +34,10 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # ── 本地 Open-Meteo 数据覆盖范围探针（Phase 1c）──────────────
-# C2：coverage 与本地线程 sync job 状态同时落 Redis（TTL 300s），多 worker 共享；
+# C2：coverage 缓存落 Redis（TTL 300s），多 worker 共享；
 # 进程内 dict 仅作 Redis 不可用时的降级缓存。
-_COVERAGE_CACHE: dict[str, dict] = {}
-_COVERAGE_CACHE_TTL_SECONDS = 600  # 10 分钟
-_COVERAGE_REDIS_PREFIX = "weather:coverage:"
-_COVERAGE_REDIS_TTL_SECONDS = 300
-_SYNC_JOB_REDIS_PREFIX = "weather:sync:job:"
-_SYNC_JOB_REDIS_TTL_SECONDS = 300
-
-# Celery 不可用 / broker 超时时的本进程同步任务状态（降级面；Redis 优先）
-_LOCAL_SYNC_JOBS: dict[str, dict] = {}
-
-
-def _parse_iso_ts(value: str) -> float:
-    """Best-effort 解析 ISO8601 时间戳为 epoch 秒（失败返回 0，用于本地 job 清理）。"""
-    try:
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return dt.timestamp()
-    except (ValueError, AttributeError):
-        return 0.0
+# L1: sync job 状态已迁移至 weather_sync_service。
+# P0-2: 缓存状态和失效函数迁移至 weather_coverage_cache 模块，消除反向依赖。
 
 
 def _probe_local_open_meteo_coverage(model: str) -> tuple[dict | None, str | None]:
@@ -63,6 +52,11 @@ def _probe_local_open_meteo_coverage(model: str) -> tuple[dict | None, str | Non
     - ``times``：原始 hourly.time（供瓦片 hour 索引映射，与 Open-Meteo 对齐）
     - ``valid_times``：temperature 非空的时次（供时间轴绿/紫着色）
     """
+    # 安全：model 来自用户查询参数，先做格式白名单校验（仅允许字母/数字/下划线/连字符）
+    # 必须在缓存查找之前校验，避免无效输入进入缓存键
+    if not re.match(r"^[A-Za-z0-9_-]+$", model):
+        return None, "model_invalid"
+
     cache_key = f"local:{model}"
     # C2：Redis 优先（多 worker 共享），miss 才本地缓存/探针
     redis_key = f"{_COVERAGE_REDIS_PREFIX}{model}"
@@ -76,9 +70,12 @@ def _probe_local_open_meteo_coverage(model: str) -> tuple[dict | None, str | Non
 
     from app.weatherengine.provider_ids import OPEN_METEO_LOCAL_URL
 
+    # 安全：model 已通过白名单校验，URL 编码防止查询参数注入
+    safe_model = quote(model, safe="")
+
     probe_url = (
         f"{OPEN_METEO_LOCAL_URL}?latitude=23.13&longitude=113.26"
-        f"&hourly=temperature_2m&models={model}&forecast_days=16&timezone=Asia%2FShanghai"
+        f"&hourly=temperature_2m&models={safe_model}&forecast_days=16&timezone=Asia%2FShanghai"
     )
     try:
         with urlopen(probe_url, timeout=5) as response:
@@ -127,34 +124,6 @@ def _probe_local_open_meteo_coverage(model: str) -> tuple[dict | None, str | Non
     return coverage, None
 
 
-def invalidate_weather_coverage_cache(model: str | None = None) -> None:
-    """同步成功后清除探针缓存（本地 + Redis）。
-
-    - ``model`` 给定：删该模型的本地/Redis 键。
-    - ``model`` 未给定（无参调用）：清空本地 dict，并按前缀扫描删除全部 Redis coverage 键
-      （R-1 修复：此前无参版只清进程内 dict，而读端 Redis 优先，导致同步后各 worker
-      仍会读到旧 coverage 直到 TTL 过期）。
-    """
-    client = get_redis_client()
-    if model:
-        _COVERAGE_CACHE.pop(f"local:{model}", None)
-        if client is not None:
-            with suppress(Exception):  # noqa: BLE001 - best-effort
-                client.delete(f"{_COVERAGE_REDIS_PREFIX}{model}")
-        return
-    _COVERAGE_CACHE.clear()
-    if client is None:
-        return
-    try:
-        keys = scan_keys(client, f"{_COVERAGE_REDIS_PREFIX}*")
-        if keys:
-            client.delete(*keys)
-    except Exception:  # noqa: BLE001 - best-effort，失效失败由 TTL 兜底
-        logger.debug(
-            "invalidate_weather_coverage_cache scan/delete failed", exc_info=True
-        )
-
-
 @router.get("/weather/coverage", tags=["weather"])
 def get_weather_coverage(model: str | None = None):
     """返回本地 Open-Meteo 数据覆盖范围，供前端时间轴限制可选时段。"""
@@ -168,11 +137,18 @@ def get_weather_coverage(model: str | None = None):
         messages = {
             "local_unreachable": "Local Open-Meteo is unreachable (container may be down).",
             "model_empty": f"No usable data for model={resolved_model} (not synced or empty hourly).",
+            "model_invalid": f"Invalid model name: {resolved_model} (only alphanumeric, underscore and hyphen are allowed).",
             "probe_error": f"Coverage probe failed for model={resolved_model}.",
         }
         code = error_code or "probe_error"
+        # model_invalid 是客户端输入错误，返回 400；其余为服务端问题，返回 503
+        http_status = (
+            status.HTTP_400_BAD_REQUEST
+            if code == "model_invalid"
+            else status.HTTP_503_SERVICE_UNAVAILABLE
+        )
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=http_status,
             detail={
                 "code": code,
                 "message": messages.get(code, messages["probe_error"]),
@@ -211,12 +187,10 @@ def get_open_meteo_sync_overview():
         logger.debug("overview coverage enrich failed: %s", exc)
         overview["coverage_error"] = overview.get("coverage_error") or "probe_error"
 
-    # In-flight local-thread sync jobs
-    overview["sync_in_progress"] = any(
-        isinstance(job, dict)
-        and str(job.get("state", "")).upper() in {"PENDING", "STARTED", "RETRY"}
-        for job in _LOCAL_SYNC_JOBS.values()
-    )
+    # L1: in-flight sync 查询委托给 service
+    from app.services.weather_sync_service import has_in_progress_sync
+
+    overview["sync_in_progress"] = has_in_progress_sync()
     return overview
 
 
@@ -237,189 +211,42 @@ class OpenMeteoSyncTriggerRequest(BaseModel):
 def trigger_open_meteo_sync(
     body: OpenMeteoSyncTriggerRequest = OpenMeteoSyncTriggerRequest(),
 ):
-    """手动触发 Open-Meteo 数据同步。
-
-    优先 Celery 异步派发；broker 卡住/超时时降级为本地后台线程。
-    可选 body.domains 临时覆盖同步域（白名单校验，不改环境变量）。
-    Docker/compose 不可用时返回 503 sync_unavailable。
-    """
-    import concurrent.futures
-    import shutil
-    import threading
-    import uuid
-    from datetime import datetime
-    from pathlib import Path
-
-    from app.core.celery_app import celery_available
-    from app.core.config import settings
-    from app.tasks.open_meteo_sync_tasks import (
-        execute_open_meteo_sync,
-        is_open_meteo_sync_locked,
-        sync_open_meteo_data,
+    """手动触发 Open-Meteo 数据同步（L1: 业务逻辑已抽取到 weather_sync_service）。"""
+    from app.services.weather_sync_service import (
+        SyncInProgressError,
+        SyncUnavailableError,
+        SyncValidationError,
+        trigger_sync,
     )
-    from app.weatherengine.supported_models import is_supported_weather_model
 
-    domains_override: str | None = None
-    if body.domains and body.domains.strip():
-        parts = [p.strip() for p in body.domains.split(",") if p.strip()]
-        if not parts:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="domains must list at least one model id",
-            )
-        bad = [p for p in parts if not is_supported_weather_model(p)]
-        if bad:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unsupported weather model(s): {', '.join(bad)}",
-            )
-        domains_override = ",".join(parts)
-
-    # C1：全局互斥——同一 domains 的同步已在运行（API/Beat/launch 任一入口）时返回 409。
-    domains_eff = domains_override or settings.open_meteo_sync_domains
-    if is_open_meteo_sync_locked(domains_eff):
+    try:
+        return trigger_sync(body.domains)
+    except SyncValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except SyncInProgressError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "sync_in_progress",
                 "message": (
-                    f"Open-Meteo 同步正在进行中（domains={domains_eff}），"
+                    f"Open-Meteo 同步正在进行中（domains={exc.domains}），"
                     "请稍后再试或查询 /weather/sync/status。"
                 ),
             },
-        )
-
-    docker_ok = bool(shutil.which("docker"))
-    compose_ok = Path(
-        settings.open_meteo_sync_compose_dir, "docker-compose.yml"
-    ).is_file()
-    if not docker_ok or not compose_ok:
+        ) from exc
+    except SyncUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
                 "code": "sync_unavailable",
-                "message": (
-                    "Open-Meteo sync service unavailable: "
-                    + (
-                        "Docker CLI not found"
-                        if not docker_ok
-                        else f"compose file missing under {settings.open_meteo_sync_compose_dir}"
-                    )
-                ),
-                "docker_cli_available": docker_ok,
-                "compose_file_exists": compose_ok,
+                "message": str(exc),
+                "docker_cli_available": exc.docker_ok,
+                "compose_file_exists": exc.compose_ok,
             },
-        )
-
-    def _record_local_sync_job(task_id: str, job: dict) -> None:
-        """写入本地线程 sync job 状态：进程内 dict + Redis（TTL 300s，多 worker 共享）。"""
-        _LOCAL_SYNC_JOBS[task_id] = job
-        # 顺手清理超期 job，避免进程内 dict 无限增长
-        cutoff = time.time() - _SYNC_JOB_REDIS_TTL_SECONDS
-        stale = [
-            tid
-            for tid, j in _LOCAL_SYNC_JOBS.items()
-            if j.get("finished_at") and _parse_iso_ts(j["finished_at"]) < cutoff
-        ]
-        for tid in stale:
-            _LOCAL_SYNC_JOBS.pop(tid, None)
-        cache_set_json(
-            f"{_SYNC_JOB_REDIS_PREFIX}{task_id}",
-            job,
-            _SYNC_JOB_REDIS_TTL_SECONDS,
-        )
-
-    def _run_local(task_id: str) -> None:
-        _record_local_sync_job(
-            task_id,
-            {
-                "task_id": task_id,
-                "state": "STARTED",
-                "info": None,
-                "mode": "local_thread",
-                "finished_at": None,
-                "domains": domains_override or settings.open_meteo_sync_domains,
-            },
-        )
-        try:
-            result = execute_open_meteo_sync(domains=domains_override)
-            invalidate_weather_coverage_cache()
-            _record_local_sync_job(
-                task_id,
-                {
-                    "task_id": task_id,
-                    "state": "SUCCESS",
-                    "info": result,
-                    "mode": "local_thread",
-                    "finished_at": datetime.now(UTC).isoformat(),
-                },
-            )
-        except Exception as exc:
-            logger.exception("Local Open-Meteo sync thread failed")
-            # 记录失败摘要，便于断网/Docker 不可用诊断
-            _record_local_sync_job(
-                task_id,
-                {
-                    "task_id": task_id,
-                    "state": "FAILURE",
-                    "info": str(exc),
-                    "mode": "local_thread",
-                    "finished_at": datetime.now(UTC).isoformat(),
-                    "error": str(exc),
-                },
-            )
-
-    def _dispatch_local(reason: str) -> dict:
-        task_id = f"local-{uuid.uuid4().hex[:12]}"
-        thread = threading.Thread(
-            target=_run_local,
-            args=(task_id,),
-            name=f"om-sync-{task_id}",
-            daemon=True,
-        )
-        thread.start()
-        return {
-            "status": "dispatched",
-            "task_id": task_id,
-            "mode": "local_thread",
-            "domains": domains_override or settings.open_meteo_sync_domains,
-            "message": (
-                f"{reason} Sync running in a local background thread. "
-                "Poll /weather/sync/status?task_id=..."
-            ),
-        }
-
-    # 1) 尝试 Celery（限时；池退出 wait=False，避免 broker 挂起拖死 HTTP）
-    if celery_available:
-        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        try:
-            fut = pool.submit(
-                lambda: sync_open_meteo_data.apply_async(
-                    kwargs={"domains": domains_override} if domains_override else {},
-                    queue=settings.workflow_queue_weather_batch,
-                )
-            )
-            async_result = fut.result(timeout=4)
-            return {
-                "status": "dispatched",
-                "task_id": async_result.task_id,
-                "mode": "celery",
-                "domains": domains_override or settings.open_meteo_sync_domains,
-                "message": "Sync task dispatched via Celery. Poll /weather/sync/status?task_id=...",
-            }
-        except concurrent.futures.TimeoutError:
-            logger.warning("Celery apply_async timed out; falling back to local thread")
-            return _dispatch_local("Celery broker timeout;")
-        except Exception as exc:
-            logger.warning(
-                "Celery dispatch failed (%s); falling back to local thread", exc
-            )
-            return _dispatch_local(f"Celery dispatch failed ({exc});")
-        finally:
-            pool.shutdown(wait=False, cancel_futures=True)
-
-    # 2) Celery 不可用：本进程后台线程
-    return _dispatch_local("Celery unavailable;")
+        ) from exc
 
 
 @router.get("/weather/sync/status", tags=["weather"])
@@ -427,31 +254,12 @@ def get_open_meteo_sync_status(task_id: str):
     """查询同步任务状态（含完成时间 / domains / 错误摘要）。"""
     from app.core.celery_app import celery_app, celery_available
     from app.core.config import settings
+    from app.services.weather_sync_service import get_local_sync_job
 
-    # C2：本地线程降级任务——Redis 优先（多 worker 共享），miss 回落到进程内 dict
-    redis_job = cache_get_json(f"{_SYNC_JOB_REDIS_PREFIX}{task_id}")
-    if redis_job is not None and isinstance(redis_job, dict):
-        return {
-            "task_id": task_id,
-            "state": redis_job.get("state"),
-            "info": redis_job.get("info"),
-            "mode": redis_job.get("mode", "local_thread"),
-            "finished_at": redis_job.get("finished_at"),
-            "error": redis_job.get("error"),
-            "domains": redis_job.get("domains") or settings.open_meteo_sync_domains,
-        }
-
-    if task_id in _LOCAL_SYNC_JOBS:
-        job = _LOCAL_SYNC_JOBS[task_id]
-        return {
-            "task_id": task_id,
-            "state": job.get("state"),
-            "info": job.get("info"),
-            "mode": "local_thread",
-            "finished_at": job.get("finished_at"),
-            "error": job.get("error"),
-            "domains": settings.open_meteo_sync_domains,
-        }
+    # L1: Redis + 进程内 dict 查询委托给 service
+    local_job = get_local_sync_job(task_id)
+    if local_job is not None:
+        return local_job
 
     if not celery_available or celery_app is None:
         raise HTTPException(

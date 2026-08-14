@@ -36,9 +36,9 @@ withDefaults(
 .inline-loader {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  color: #8aa8bf;
-  font-size: 0.62rem;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
 }
 
 .inline-loader.block {
@@ -46,26 +46,26 @@ withDefaults(
   width: 100%;
   min-height: 4rem;
   justify-content: center;
-  padding: 1rem 0.5rem;
+  padding: var(--space-4) var(--space-2);
 }
 
 .inline-spinner {
   flex: 0 0 auto;
-  border: 2px solid rgba(90, 213, 255, 0.18);
-  border-top-color: #5ad5ff;
+  border: 2px solid var(--accent-surface);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: inline-spin 0.75s linear infinite;
 }
 
 .size-sm .inline-spinner {
-  width: 0.85rem;
-  height: 0.85rem;
+  width: 16px;
+  height: 16px;
   border-width: 1.5px;
 }
 
 .size-md .inline-spinner {
-  width: 1.15rem;
-  height: 1.15rem;
+  width: 22px;
+  height: 22px;
 }
 
 .inline-label {
@@ -75,6 +75,14 @@ withDefaults(
 @keyframes inline-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inline-spinner {
+    animation: none;
+    border-top-color: var(--accent);
+    border-style: dashed;
   }
 }
 </style>

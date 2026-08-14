@@ -25,6 +25,7 @@ from datetime import datetime
 from pathlib import Path
 
 from launch.constants import (
+    ALGORITHMS_DIR,
     BACKEND_DIR,
     DATA_SYNC_DIR,
     DEFAULT_FRONTEND_PORT,
@@ -32,8 +33,11 @@ from launch.constants import (
     IS_WINDOWS,
     LOG_DIR,
     PID_FILE,
+    SCRIPT_DIR,
     SNAPSHOT_ROOT,
+    TEST_DIR,
     VALID_WORKER_NAMES,
+    VITE_CACHE_DIR,
     WEATHER_CACHE_DIR,
     WEATHERENGINE_CACHE_DIR,
     WORKFLOW_DEFINITIONS_DIR,
@@ -70,8 +74,48 @@ from launch.subprocess_utils import (
 
 
 # ─── 启动命令 ────────────────────────────────────────────────────────────────
+def _regenerate_catalog_seeds() -> None:
+    """X1 codegen：开启/重启系统时自动刷新前端图层目录。
+
+    后端 ``catalog_seeds/*.json`` 是图层目录唯一真源；每次启动/重启时自动重跑
+    ``Tools/generate_catalog_seeds.py`` 生成 ``catalog-seeds.generated.json``，
+    避免手动执行 ``npm run gen:catalog``，保证前端兜底目录与后端一致。
+    失败仅告警不阻塞启动（前端运行时仍以后端 ``GET /layers`` 为准）。
+    """
+    script = SCRIPT_DIR / "Tools" / "generate_catalog_seeds.py"
+    if not script.is_file():
+        log.warn("Launcher", f"catalog codegen 脚本缺失，跳过: {script}")
+        return
+    try:
+        r = subprocess.run(
+            [sys.executable, str(script)],
+            cwd=str(SCRIPT_DIR),
+            capture_output=True,
+            text=True,
+            timeout=120,
+            **hidden_kwargs(),
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        log.warn("Launcher", f"catalog codegen 执行异常（跳过）: {exc}")
+        return
+    if r.returncode != 0:
+        log.warn(
+            "Launcher",
+            f"catalog codegen 失败（跳过）: {(r.stderr or r.stdout).strip()}",
+        )
+        return
+    log.ok("Launcher", "已自动刷新图层目录 catalog-seeds.generated.json")
+
+
 def cmd_start(args: argparse.Namespace) -> int:
     """启动 CGDA 服务（全部或指定组件）。"""
+    if getattr(args, "clean_cache", False):
+        rc = cmd_clean_cache(
+            argparse.Namespace(all=True, pycache=False, vite=False, dry_run=False)
+        )
+        if rc != 0:
+            return rc
+
     component = args.component
     if component is None:
         component = "all"
@@ -80,6 +124,7 @@ def cmd_start(args: argparse.Namespace) -> int:
         component = "frontend"
 
     ensure_project_initialized()
+    _regenerate_catalog_seeds()
 
     if args.debug:
         print_debug_info()
@@ -237,11 +282,24 @@ def _start_all(args: argparse.Namespace) -> int:
         pm.wait_for_fastapi(max_wait=30)
 
     if not args.no_frontend:
-        if gateway_running():
-            log.info("Launcher", "检测到 Nginx Gateway 占用 :5175，先停止 gateway 以启动 Vite")
-            stop_gateway_infra()
-        pm.start_frontend()
-        time.sleep(3)
+        use_vite = bool(getattr(args, "vite", False))
+        if use_vite:
+            if gateway_running():
+                log.info(
+                    "Launcher",
+                    "检测到 Nginx Gateway 占用 :5175，先停止 gateway 以启动 Vite（--vite）",
+                )
+                stop_gateway_infra()
+            pm.start_frontend()
+            time.sleep(3)
+        else:
+            # 上线默认：同域 Nginx Gateway（静态 dist + 反代 API）；与 Vite 互斥
+            if not start_gateway_infra(
+                rebuild_frontend=bool(getattr(args, "rebuild_frontend", False))
+            ):
+                log.error("Launcher", "Nginx Gateway 启动失败，终止")
+                return 1
+            time.sleep(2)
 
     pm.save_pids()
 
@@ -252,7 +310,17 @@ def _start_all(args: argparse.Namespace) -> int:
         log.info("Launcher", "  API Docs:  http://127.0.0.1:8000/docs")
         log.info("Launcher", "  Workers:   7 个 Celery Worker + 1 Beat")
     if not args.no_frontend:
-        log.info("Launcher", f"  Frontend:  http://localhost:{args.frontend_port}")
+        if getattr(args, "vite", False):
+            log.info(
+                "Launcher",
+                f"  Frontend:  http://localhost:{args.frontend_port}  [Vite]",
+            )
+        else:
+            log.info(
+                "Launcher",
+                f"  Frontend:  http://localhost:{GATEWAY_PORT}  [Nginx Gateway]",
+            )
+            log.info("Launcher", "  静态:     Code/frontend/dist（改前端后需 --rebuild-frontend）")
     log.info("Launcher", f"  日志目录:  {LOG_DIR}")
     log.info("Launcher", "  停止方式:  python launch.py stop  或  Ctrl+C")
     log.info("Launcher", "  查看日志:  python launch.py logs [component]")
@@ -463,19 +531,30 @@ def _start_backend_app_processes(args: argparse.Namespace) -> int:
 def cmd_restart(args: argparse.Namespace) -> int:
     """重启 CGDA 服务（全部或指定组件）。
 
-    ``backend``：仅重启 FastAPI + Worker + Beat，保留 Docker / Vite。
+    ``backend``：仅重启 FastAPI + Worker + Beat，保留 Docker / Gateway / Vite。
     """
+    if getattr(args, "clean_cache", False):
+        rc = cmd_clean_cache(
+            argparse.Namespace(all=True, pycache=False, vite=False, dry_run=False)
+        )
+        if rc != 0:
+            return rc
+
     component = getattr(args, "component", None) or "all"
     if component == "backend":
         log.banner("重启 backend（FastAPI + Worker + Beat）")
         ensure_project_initialized()
         _stop_backend_app_processes()
+        _regenerate_catalog_seeds()
         time.sleep(2)
         return _start_backend_app_processes(args)
 
     log.banner("重启 CGDA 服务")
     cmd_stop()
     time.sleep(2)
+    # Avoid running clean-cache twice when restart delegates to start.
+    if getattr(args, "clean_cache", False):
+        args.clean_cache = False
     return cmd_start(args)
 
 
@@ -909,6 +988,81 @@ def cmd_reset_db(args: argparse.Namespace) -> int:
         log.error("Reset", "workflow_state 清空不完整，请检查上方错误信息")
         log.info("Reset", f"  可从快照恢复: {SNAPSHOT_ROOT}")
         return 1
+
+
+# ─── 编译 / Vite 缓存清理（与 flush 隔离：不碰 Redis / 天气文件缓存）──────────
+def cmd_clean_cache(args: argparse.Namespace) -> int:
+    """清理本地 ``__pycache__`` / ``*.pyc`` 与 Vite ``node_modules/.vite``。
+
+    与 ``flush`` 不同：本命令**不**清空 Redis，也**不**删除天气文件缓存。
+    适合代码更新、模块导入怪错、Vite 插件状态异常后，在 ``restart`` 前执行。
+    """
+    dry_run = bool(getattr(args, "dry_run", False))
+    do_pycache = bool(getattr(args, "pycache", False))
+    do_vite = bool(getattr(args, "vite", False))
+    do_all = bool(getattr(args, "all", False)) or (not do_pycache and not do_vite)
+    if do_all:
+        do_pycache = True
+        do_vite = True
+
+    log.banner("预览本地编译缓存清理" if dry_run else "清理本地编译缓存")
+
+    removed_dirs = 0
+    removed_files = 0
+
+    if do_pycache:
+        roots = [BACKEND_DIR, ALGORITHMS_DIR, TEST_DIR]
+        for root in roots:
+            if not root.is_dir():
+                log.warn("CleanCache", f"跳过不存在的目录: {root}")
+                continue
+            for dirpath, dirnames, filenames in os.walk(root, topdown=False):
+                base = Path(dirpath)
+                # 跳过虚拟环境与前端 node_modules（算法包下偶发）
+                parts_lower = [p.lower() for p in base.parts]
+                if "node_modules" in parts_lower or ".venv" in parts_lower:
+                    continue
+                if base.name == "__pycache__":
+                    if dry_run:
+                        log.info("CleanCache", f"[dry-run] rmtree {base}")
+                    else:
+                        shutil.rmtree(base, ignore_errors=True)
+                    removed_dirs += 1
+                    continue
+                for name in filenames:
+                    if name.endswith((".pyc", ".pyo")):
+                        target = base / name
+                        if dry_run:
+                            log.info("CleanCache", f"[dry-run] unlink {target}")
+                        else:
+                            try:
+                                target.unlink(missing_ok=True)
+                            except OSError as exc:
+                                log.warn("CleanCache", f"无法删除 {target}: {exc}")
+                        removed_files += 1
+
+    if do_vite:
+        vite_targets = [VITE_CACHE_DIR, FRONTEND_DIR / ".vite"]
+        for cache_dir in vite_targets:
+            if not cache_dir.exists():
+                log.info("CleanCache", f"Vite 缓存不存在（跳过）: {cache_dir}")
+                continue
+            if dry_run:
+                log.info("CleanCache", f"[dry-run] rmtree {cache_dir}")
+            else:
+                shutil.rmtree(cache_dir, ignore_errors=True)
+            removed_dirs += 1
+
+    log.ok(
+        "CleanCache",
+        f"{'将清理' if dry_run else '已清理'} dirs≈{removed_dirs} files≈{removed_files}"
+        f"（pycache={'on' if do_pycache else 'off'}, vite={'on' if do_vite else 'off'}）",
+    )
+    log.info(
+        "CleanCache",
+        "提示: 与 flush 无关。代码更新后建议: launch.py clean-cache && launch.py restart",
+    )
+    return 0
 
 
 # ─── 清空缓存命令 ────────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -22,13 +23,17 @@ from typing import Any
 import numpy as np
 import rasterio
 from pyproj import Transformer
-from fastapi import HTTPException
+from app.services.errors import (
+    OverlayConfigError,
+    OverlayNotFoundError,
+    OverlayValidationError,
+)
 
 # 引入 algorithms providers 目录以复用 universal_reader
 # 注意：必须 append 而非 insert(0)，否则 providers/Python/algorithms 会遮蔽顶层 algorithms 包
-_PROVIDER_ROOT = Path(
-    r"d:\temp_desktop\Proj\Comprehensive Geographic Data Analysis system\Code\algorithms\providers\Python"
-)
+from app.core.config import settings as _settings
+
+_PROVIDER_ROOT = Path(_settings.python_provider_root)
 if str(_PROVIDER_ROOT) not in sys.path:
     sys.path.append(str(_PROVIDER_ROOT))
 
@@ -101,14 +106,12 @@ class OverlaySpec:
         直接拼进文件路径的路径穿越（G1-01）。静态图层或空白名单时不拦截。
         """
         if self.category == "time-series" and t is None:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Time-series overlay {self.layer_id} requires 'time' parameter",
+            raise OverlayValidationError(
+                f"Time-series overlay {self.layer_id} requires 'time' parameter",
             )
         if self.time_list and t not in self.time_list:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Time {t} not available for overlay {self.layer_id}",
+            raise OverlayNotFoundError(
+                f"Time {t} not available for overlay {self.layer_id}",
             )
         return t
 
@@ -116,9 +119,8 @@ class OverlaySpec:
     def _assert_no_path_traversal(path: Path) -> Path:
         """防御纵深：拒绝含 ``..`` 段的结果路径（白名单之外的最后一层防护）。"""
         if ".." in path.parts:
-            raise HTTPException(
-                status_code=404,
-                detail="Invalid overlay path (traversal detected)",
+            raise OverlayNotFoundError(
+                "Invalid overlay path (traversal detected)",
             )
         return path
 
@@ -126,18 +128,16 @@ class OverlaySpec:
         if self.category == "time-series":
             t = self._assert_time_available(time or self.default_time)
             if self.time_pattern is None:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Time-series overlay {self.layer_id} missing time_pattern",
+                raise OverlayConfigError(
+                    f"Time-series overlay {self.layer_id} missing time_pattern",
                 )
             return self._assert_no_path_traversal(
                 self.overlay_dir / self.time_pattern.format(time=t)
             )
         # static
         if self.png_filename is None:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Static overlay {self.layer_id} missing png_filename",
+            raise OverlayConfigError(
+                f"Static overlay {self.layer_id} missing png_filename",
             )
         return self.overlay_dir / self.png_filename
 
@@ -148,9 +148,8 @@ class OverlaySpec:
                 self.overlay_dir / self.bounds_pattern.format(time=t)
             )
         if self.bounds_filename is None:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Overlay {self.layer_id} missing bounds file config",
+            raise OverlayConfigError(
+                f"Overlay {self.layer_id} missing bounds file config",
             )
         return self.overlay_dir / self.bounds_filename
 
@@ -362,6 +361,14 @@ _OVERLAY_PNG_ROOT = _PROJECT_OUTPUT / "_overlays"
 """所有导出 PNG 的统一存放目录（由 Tools/export_overlay_assets.py 生成）。"""
 
 
+def _uniform_sample(tags: list[str], limit: int | None) -> list[str]:
+    """对时间标签列表进行均匀采样，限制数量。"""
+    if limit is not None and len(tags) > limit:
+        step = max(1, len(tags) // limit)
+        return tags[::step][:limit]
+    return tags
+
+
 def _smap_time_list() -> list[str]:
     """从 stage1_smap_mat 目录推断 SMAP 时间序列标签。"""
     smap_dir = _PROJECT_OUTPUT / "stage1_smap_mat"
@@ -388,55 +395,14 @@ def _gpcp_time_list(limit: int = 24) -> list[str]:
         parts = f.stem.split("_")
         if len(parts) >= 3 and len(parts[2]) == 6 and parts[2].isdigit():
             tags.append(parts[2])
-    if len(tags) > limit:
-        # 均匀采样
-        step = max(1, len(tags) // limit)
-        tags = tags[::step][:limit]
-    return tags
-
-
-def _doy_time_list(directory: Path, prefix: str = "doy_") -> list[str]:
-    """从 Inversion_Results/smap_avg|fy_avg 目录推断 doy 时间序列标签。
-
-    文件名形如 ``doy_017.mat`` → 标签 ``'017'``。
-    """
-    if not directory.exists():
-        return []
-    tags: list[str] = []
-    for f in sorted(directory.glob(f"{prefix}*.mat")):
-        # doy_017.mat -> 017
-        stem = f.stem  # 'doy_017'
-        if stem.startswith(prefix):
-            tag = stem[len(prefix) :]
-            if tag.isdigit():
-                tags.append(tag)
-    return tags
-
-
-def _soil_ddca_time_list(limit: int = 60) -> list[str]:
-    """从 Soil_Moisture/DDCA/DDCA_DH/H 目录推断日期时间序列标签。
-
-    文件名形如 ``20150401.mat`` → 标签 ``'20150401'``。
-    限制最多 limit 个标签，避免时间轴过长。
-    """
-    if not _SOIL_DDCA_H_DIR.exists():
-        return []
-    tags: list[str] = []
-    for f in sorted(_SOIL_DDCA_H_DIR.glob("*.mat")):
-        stem = f.stem
-        if len(stem) == 8 and stem.isdigit():
-            tags.append(stem)
-    if len(tags) > limit:
-        step = max(1, len(tags) // limit)
-        tags = tags[::step][:limit]
-    return tags
+    return _uniform_sample(tags, limit)
 
 
 def _date8_time_list(directory: Path, limit: int | None = None) -> list[str]:
     """通用 8 位日期时间序列标签扫描：YYYYMMDD.mat → 'YYYYMMDD'。
 
-    与 ``_soil_ddca_time_list`` 逻辑一致，但接受任意目录参数，且 ``limit=None``
-    时不采样（返回全部日期）。供 Phase 2 VOD/SM 产品族使用。
+    扫描目录下所有 ``*.mat`` 文件，提取文件名 stem 为 8 位纯数字的标签。
+    ``limit`` 不为 None 时进行均匀采样。
 
     Args:
         directory: 包含 YYYYMMDD.mat 文件的目录
@@ -452,15 +418,12 @@ def _date8_time_list(directory: Path, limit: int | None = None) -> list[str]:
         stem = f.stem
         if len(stem) == 8 and stem.isdigit():
             tags.append(stem)
-    if limit is not None and len(tags) > limit:
-        step = max(1, len(tags) // limit)
-        tags = tags[::step][:limit]
-    return tags
+    return _uniform_sample(tags, limit)
 
 
 _SMAP_TIMES = _smap_time_list()
 _GPCP_TIMES = _gpcp_time_list(limit=24)
-_SOIL_DDCA_TIMES = _soil_ddca_time_list(limit=60)
+_SOIL_DDCA_TIMES = _date8_time_list(_SOIL_DDCA_H_DIR, limit=60)
 # Phase 2: VOD/SM/Omega 2025-12 时间序列（31 天，全量不采样）
 _VOD_SM_TIMES = _date8_time_list(_SMAP_SOIL_VOD_SM_DIR, limit=None)
 
@@ -469,7 +432,9 @@ _VOD_SM_TIMES = _date8_time_list(_SMAP_SOIL_VOD_SM_DIR, limit=None)
 # 注册表
 # ──────────────────────────────────────────────────────────────────────────────
 
+# P1-2：线程安全注册表 — 并发 register/get/list 可能导致竞态
 _REGISTRY: dict[str, OverlaySpec] = {}
+_REGISTRY_LOCK = threading.Lock()
 
 
 def _try_load_imported_overlay(layer_id: str) -> OverlaySpec | None:
@@ -576,28 +541,33 @@ def _try_load_imported_overlay(layer_id: str) -> OverlaySpec | None:
         if (source_path is not None or source_pattern is not None)
         else "auto",
     )
-    _REGISTRY[layer_id] = spec
+    with _REGISTRY_LOCK:
+        _REGISTRY[layer_id] = spec
     return spec
 
 
 def register_overlay(spec: OverlaySpec) -> None:
-    _REGISTRY[spec.layer_id] = spec
+    with _REGISTRY_LOCK:
+        _REGISTRY[spec.layer_id] = spec
 
 
 def unregister_overlay(layer_id: str) -> OverlaySpec | None:
     """Remove a dynamically registered overlay; returns the removed spec if any."""
-    return _REGISTRY.pop(layer_id, None)
+    with _REGISTRY_LOCK:
+        return _REGISTRY.pop(layer_id, None)
 
 
 def get_overlay_spec(layer_id: str) -> OverlaySpec | None:
-    spec = _REGISTRY.get(layer_id)
+    with _REGISTRY_LOCK:
+        spec = _REGISTRY.get(layer_id)
     if spec is not None:
         return spec
     return _try_load_imported_overlay(layer_id)
 
 
 def list_overlay_ids() -> list[str]:
-    ids = set(_REGISTRY.keys())
+    with _REGISTRY_LOCK:
+        ids = set(_REGISTRY.keys())
     try:
         from app.data_io.services.paths import IMPORTS_DIR
 
@@ -767,6 +737,25 @@ _CO2_TIF = _data_join(
 _SOIL_DDCA_MAT = _data_join("Soil_Moisture", "DDCA", "DDCA_DH", "H", "20150401.mat")
 _OMEGA_FY_MAT = _data_join("Inversion_Results", "fy_avg", "doy_025.mat")
 _FOREST_RATIO_MAT = _data_join("Inversion_Results", "Forest_Ratio_9KM_2020.mat")
+
+# ── SMAP 辅助数据（Soil_Moisture/SMAP_Auxiliary_Data，静态参数场）──────────────
+# Albedo/BD/SF/B/CF/H/IGBP 为 EASE-Grid 9km（v7.3 HDF5），shape (3856, 1624)；
+# Koppen 为 0.083° 全球网格，shape (4320, 2160)；VI_v_qa 为 v5 格式，shape (1624, 3856)
+_SMAP_AUX_ALBEDO_MAT = _data_join("Soil_Moisture", "SMAP_Auxiliary_Data", "Albedo.mat")
+_SMAP_AUX_BD_MAT = _data_join("Soil_Moisture", "SMAP_Auxiliary_Data", "BD.mat")
+_SMAP_AUX_SF_MAT = _data_join("Soil_Moisture", "SMAP_Auxiliary_Data", "SF.mat")
+_SMAP_AUX_B_MAT = _data_join("Soil_Moisture", "SMAP_Auxiliary_Data", "B.mat")
+_SMAP_AUX_CF_MAT = _data_join("Soil_Moisture", "SMAP_Auxiliary_Data", "CF.mat")
+_SMAP_AUX_H_MAT = _data_join("Soil_Moisture", "SMAP_Auxiliary_Data", "H.mat")
+_SMAP_AUX_IGBP_MAT = _data_join(
+    "Soil_Moisture", "SMAP_Auxiliary_Data", "IGBP_9km_12.mat"
+)
+_SMAP_AUX_KOPPEN_MAT = _data_join(
+    "Soil_Moisture", "SMAP_Auxiliary_Data", "Koppen_present_083.mat"
+)
+_SMAP_AUX_VI_V_QA_MAT = _data_join(
+    "Soil_Moisture", "SMAP_Auxiliary_Data", "VI_v_qa.mat"
+)
 
 
 # GEBCO 2024 DEM（中国区域）
@@ -965,6 +954,183 @@ register_overlay(
 )
 
 
+# SMAP 辅助数据（Soil_Moisture/SMAP_Auxiliary_Data，静态参数场）
+# 与 forest-ratio 同属静态图层；按变量分别暴露为独立 overlay，便于点查询与配色。
+# 注意：VI_v_qa.mat 为 v5 格式（scipy 可读），其余为 v7.3 HDF5；reader 统一 "mat"，
+# 由 source_reader 按实际格式自动适配（h5py/scipy）。
+
+# Albedo — 地表反照率（EASE-Grid 9km）
+register_overlay(
+    OverlaySpec(
+        layer_id="smap-aux-albedo",
+        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_albedo",
+        png_filename="smap_aux_albedo_overlay.png",
+        bounds_filename="smap_aux_albedo_overlay_bounds.json",
+        category="static",
+        palette="YlOrRd",
+        vmin=0.0,
+        vmax=0.5,
+        unit="",
+        opacity=0.8,
+        source_path=_SMAP_AUX_ALBEDO_MAT,
+        source_variable="ALBEDO",
+        source_reader="mat",
+    )
+)
+
+# BD — 土壤容重（EASE-Grid 9km）
+register_overlay(
+    OverlaySpec(
+        layer_id="smap-aux-bd",
+        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_bd",
+        png_filename="smap_aux_bd_overlay.png",
+        bounds_filename="smap_aux_bd_overlay_bounds.json",
+        category="static",
+        palette="YlOrBr",
+        vmin=0.8,
+        vmax=1.8,
+        unit="g/cm³",
+        opacity=0.8,
+        source_path=_SMAP_AUX_BD_MAT,
+        source_variable="BD",
+        source_reader="mat",
+    )
+)
+
+# SF — 砂粒分数（EASE-Grid 9km）
+register_overlay(
+    OverlaySpec(
+        layer_id="smap-aux-sf",
+        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_sf",
+        png_filename="smap_aux_sf_overlay.png",
+        bounds_filename="smap_aux_sf_overlay_bounds.json",
+        category="static",
+        palette="YlGn",
+        vmin=0.0,
+        vmax=1.0,
+        unit="fraction",
+        opacity=0.8,
+        source_path=_SMAP_AUX_SF_MAT,
+        source_variable="SF",
+        source_reader="mat",
+    )
+)
+
+# B — B 参数（EASE-Grid 9km）
+register_overlay(
+    OverlaySpec(
+        layer_id="smap-aux-b",
+        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_b",
+        png_filename="smap_aux_b_overlay.png",
+        bounds_filename="smap_aux_b_overlay_bounds.json",
+        category="static",
+        palette="RdBu",
+        vmin=0.0,
+        vmax=10.0,
+        unit="",
+        opacity=0.8,
+        source_path=_SMAP_AUX_B_MAT,
+        source_variable="B",
+        source_reader="mat",
+    )
+)
+
+# CF — 粘粒分数（EASE-Grid 9km）
+register_overlay(
+    OverlaySpec(
+        layer_id="smap-aux-cf",
+        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_cf",
+        png_filename="smap_aux_cf_overlay.png",
+        bounds_filename="smap_aux_cf_overlay_bounds.json",
+        category="static",
+        palette="PuBu",
+        vmin=0.0,
+        vmax=1.0,
+        unit="fraction",
+        opacity=0.8,
+        source_path=_SMAP_AUX_CF_MAT,
+        source_variable="CF",
+        source_reader="mat",
+    )
+)
+
+# H — H 参数（EASE-Grid 9km）
+register_overlay(
+    OverlaySpec(
+        layer_id="smap-aux-h",
+        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_h",
+        png_filename="smap_aux_h_overlay.png",
+        bounds_filename="smap_aux_h_overlay_bounds.json",
+        category="static",
+        palette="Oranges",
+        vmin=0.0,
+        vmax=0.5,
+        unit="",
+        opacity=0.8,
+        source_path=_SMAP_AUX_H_MAT,
+        source_variable="H",
+        source_reader="mat",
+    )
+)
+
+# IGBP 土地覆盖分类（EASE-Grid 9km，1~17 类）
+register_overlay(
+    OverlaySpec(
+        layer_id="smap-aux-igbp",
+        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_igbp",
+        png_filename="smap_aux_igbp_overlay.png",
+        bounds_filename="smap_aux_igbp_overlay_bounds.json",
+        category="static",
+        palette="igbp-landcover-ramp",
+        vmin=1,
+        vmax=17,
+        unit="class",
+        opacity=0.8,
+        source_path=_SMAP_AUX_IGBP_MAT,
+        source_variable="IGBP_9km_12",
+        source_reader="mat",
+    )
+)
+
+# Koppen 气候分类（0.083° 全球网格，1~30 类）
+register_overlay(
+    OverlaySpec(
+        layer_id="smap-aux-koppen",
+        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_koppen",
+        png_filename="smap_aux_koppen_overlay.png",
+        bounds_filename="smap_aux_koppen_overlay_bounds.json",
+        category="static",
+        palette="Set3",
+        vmin=1,
+        vmax=30,
+        unit="class",
+        opacity=0.8,
+        source_path=_SMAP_AUX_KOPPEN_MAT,
+        source_variable="Koppen",
+        source_reader="mat",
+    )
+)
+
+# VI/NDVI 均值（v5 格式，shape (1624, 3856)，注意轴序与 EASE-Grid 9km 其余场相反）
+register_overlay(
+    OverlaySpec(
+        layer_id="smap-aux-vi-qa",
+        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_vi_qa",
+        png_filename="smap_aux_vi_qa_overlay.png",
+        bounds_filename="smap_aux_vi_qa_overlay_bounds.json",
+        category="static",
+        palette="RdYlGn",
+        vmin=0.0,
+        vmax=1.0,
+        unit="",
+        opacity=0.8,
+        source_path=_SMAP_AUX_VI_V_QA_MAT,
+        source_variable="NDVI_v_mean",
+        source_reader="mat",
+    )
+)
+
+
 # ─── Phase 2: 课题组 VOD/SM/Omega 2025-12 产品族 ──────────────────────────────
 # 数据源：I:\Geograph_DataSet\Soil_Moisture\SMAP_Soil_VOD_SM\YYYYMMDD.mat
 # v7.3 HDF5，含 OMEGA / SM / VOD 三个变量，shape (1624, 3856) on EASE-Grid 9km
@@ -999,12 +1165,11 @@ def read_bounds(layer_id: str, time: str | None = None) -> dict[str, Any]:
     """读取 bounds JSON 并附加元数据。"""
     spec = get_overlay_spec(layer_id)
     if spec is None:
-        raise HTTPException(status_code=404, detail=f"No overlay for layer: {layer_id}")
+        raise OverlayNotFoundError(f"No overlay for layer: {layer_id}")
     bounds_path = spec.resolve_bounds(time)
     if not bounds_path.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=f"Overlay bounds file not found: {bounds_path.name}",
+        raise OverlayNotFoundError(
+            f"Overlay bounds file not found: {bounds_path.name}",
         )
     data = json.loads(bounds_path.read_text(encoding="utf-8"))
     # 合并元数据
@@ -1026,9 +1191,8 @@ def read_bounds(layer_id: str, time: str | None = None) -> dict[str, Any]:
     data.setdefault("meta", {}).update(meta)
     # 确保 bounds 字段存在
     if "bounds" not in data:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Bounds JSON missing 'bounds' field: {bounds_path.name}",
+        raise OverlayConfigError(
+            f"Bounds JSON missing 'bounds' field: {bounds_path.name}",
         )
     return data
 
@@ -1037,11 +1201,10 @@ def read_png_bytes(layer_id: str, time: str | None = None) -> bytes:
     """读取 PNG 字节。"""
     spec = get_overlay_spec(layer_id)
     if spec is None:
-        raise HTTPException(status_code=404, detail=f"No overlay for layer: {layer_id}")
+        raise OverlayNotFoundError(f"No overlay for layer: {layer_id}")
     png_path = spec.resolve_png(time)
     if not png_path.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=f"Overlay preview file not found: {png_path.name}",
+        raise OverlayNotFoundError(
+            f"Overlay preview file not found: {png_path.name}",
         )
     return png_path.read_bytes()

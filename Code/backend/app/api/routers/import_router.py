@@ -14,15 +14,16 @@ CRS 支持端点（Phase 1）：
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import uuid
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
-from app.api.deps import require_write_access
+from app.api.deps import require_data_transfer_access
 from app.services.crs import crs_detector, crs_transformer
 from app.services.crs.crs_registry import to_api_payload, to_api_payload_expanded
 from app.data_io.services.paths import (
@@ -40,8 +41,10 @@ from app.data_io.services.raster_register import confirm_imported_raster_crs
 from app.services.raster_preview_service import raster_preview_service
 
 router = APIRouter(prefix="/import", tags=["import"])
+logger = logging.getLogger(__name__)
 
 _ALLOWED_EXTENSIONS = frozenset({"tif", "tiff"})
+_PREVIEW_MAX_DIMENSION = 1024
 
 
 # ── Pydantic 请求模型 ───────────────────────────────────────────────────
@@ -67,29 +70,35 @@ class ConfirmRequest(BaseModel):
 class TransformPointRequest(BaseModel):
     """``POST /import/transform-point`` 请求体。"""
 
-    points: list[tuple[float, float]]
-    """待转换的 (lng, lat) 点列表（源 CRS 下）。"""
+    points: list[tuple[float, float]] = Field(max_length=10000)
+    """待转换的 (lng, lat) 点列表（源 CRS 下），上限 10000 点防滥用。"""
 
-    source_crs: str
-    target_crs: str = "EPSG:4326"
+    source_crs: str = Field(min_length=1, max_length=64)
+    target_crs: str = Field(default="EPSG:4326", min_length=1, max_length=64)
     lng_offset: float = 0.0
     lat_offset: float = 0.0
+
+    @model_validator(mode="after")
+    def _validate_non_empty(self) -> TransformPointRequest:
+        if not self.points:
+            raise ValueError("points must not be empty")
+        return self
 
 
 class TransformBoundsRequest(BaseModel):
     """``POST /import/transform-bounds`` 请求体。"""
 
-    bounds: list[float]
-    """[west, south, east, north]，源 CRS 下。"""
+    bounds: list[float] = Field(min_length=4, max_length=4)
+    """[west, south, east, north]，源 CRS 下，必须恰好 4 个元素。"""
 
-    source_crs: str
-    target_crs: str = "EPSG:4326"
+    source_crs: str = Field(min_length=1, max_length=64)
+    target_crs: str = Field(default="EPSG:4326", min_length=1, max_length=64)
 
 
 # ── CRS 选项端点 ───────────────────────────────────────────────────────
 
 
-@router.get("/crs-options", dependencies=[Depends(require_write_access)])
+@router.get("/crs-options", dependencies=[Depends(require_data_transfer_access)])
 async def list_crs_options() -> dict[str, Any]:
     """返回前端下拉用 CRS 列表（按 category 分组前的平铺列表）。
 
@@ -101,7 +110,9 @@ async def list_crs_options() -> dict[str, Any]:
     }
 
 
-@router.get("/crs-options/expanded", dependencies=[Depends(require_write_access)])
+@router.get(
+    "/crs-options/expanded", dependencies=[Depends(require_data_transfer_access)]
+)
 async def list_crs_options_expanded() -> dict[str, Any]:
     """返回完整 CRS 列表（含动态 UTM/GK 带，供高级选择）。
 
@@ -118,7 +129,7 @@ async def list_crs_options_expanded() -> dict[str, Any]:
 # ── 上传端点 ───────────────────────────────────────────────────────────
 
 
-@router.post("/raster", dependencies=[Depends(require_write_access)])
+@router.post("/raster", dependencies=[Depends(require_data_transfer_access)])
 async def import_raster(file: UploadFile = File(...)) -> dict[str, Any]:
     """上传栅格文件（TIF），生成预览 PNG + bounds，动态注册为 overlay 图层。
 
@@ -188,11 +199,19 @@ async def import_raster(file: UploadFile = File(...)) -> dict[str, Any]:
             width = dataset.width
             height = dataset.height
             count = dataset.count
-    except Exception as exc:
+    except rasterio.errors.RasterioIOError as exc:
         _cleanup_on_failure()
+        logger.exception("rasterio open failed: %s", src_path)
         raise HTTPException(
             status_code=422,
-            detail=f"无法读取栅格文件: {exc}",
+            detail="无法读取栅格文件：文件不存在或格式不支持。",
+        ) from exc
+    except rasterio.errors.RasterioError as exc:
+        _cleanup_on_failure()
+        logger.exception("rasterio read failed: %s", src_path)
+        raise HTTPException(
+            status_code=422,
+            detail="栅格文件读取失败：数据损坏或 CRS 缺失。",
         ) from exc
 
     # 用 crs_detector 自动检测 CRS（比 str(crs) 更友好：归一化为 EPSG:xxxx）
@@ -204,8 +223,8 @@ async def import_raster(file: UploadFile = File(...)) -> dict[str, Any]:
     # 生成预览 PNG（保持源 CRS，未重投影；confirm 阶段才会重投影）
     png_path = dest_dir / "preview.png"
     try:
-        preview_width = min(1024, width)
-        preview_height = min(1024, height)
+        preview_width = min(_PREVIEW_MAX_DIMENSION, width)
+        preview_height = min(_PREVIEW_MAX_DIMENSION, height)
         png_bytes = raster_preview_service.render_cog_preview(
             cog_path=src_path,
             palette="wind-blue",
@@ -213,11 +232,19 @@ async def import_raster(file: UploadFile = File(...)) -> dict[str, Any]:
             height=preview_height,
         )
         png_path.write_bytes(png_bytes)
-    except Exception as exc:
+    except (ValueError, rasterio.errors.RasterioError) as exc:
         _cleanup_on_failure()
+        logger.exception("preview generation failed: %s", src_path)
         raise HTTPException(
             status_code=500,
-            detail=f"预览生成失败: {exc}",
+            detail="预览生成失败，请检查栅格数据是否有效。",
+        ) from exc
+    except (OSError, RuntimeError) as exc:  # noqa: BLE001 — 渲染层文件 I/O 或处理异常
+        _cleanup_on_failure()
+        logger.exception("unexpected preview error: %s", src_path)
+        raise HTTPException(
+            status_code=500,
+            detail="预览生成时发生意外错误。",
         ) from exc
 
     # 生成 bounds JSON（保留源 CRS 的 bounds，confirm 阶段才转 WGS84）
@@ -277,7 +304,9 @@ async def import_raster(file: UploadFile = File(...)) -> dict[str, Any]:
     }
 
 
-@router.delete("/raster/{layer_id}", dependencies=[Depends(require_write_access)])
+@router.delete(
+    "/raster/{layer_id}", dependencies=[Depends(require_data_transfer_access)]
+)
 async def delete_imported_raster(layer_id: str) -> dict[str, Any]:
     """删除动态导入的栅格 overlay，并清理磁盘目录。"""
     if not layer_id.startswith("imported-"):
@@ -297,7 +326,7 @@ async def delete_imported_raster(layer_id: str) -> dict[str, Any]:
 # ── CRS 确认端点 ───────────────────────────────────────────────────────
 
 
-@router.post("/raster/confirm", dependencies=[Depends(require_write_access)])
+@router.post("/raster/confirm", dependencies=[Depends(require_data_transfer_access)])
 async def confirm_imported_raster(body: ConfirmRequest) -> dict[str, Any]:
     """用户确认 CRS 后：重投影 PNG、重算 bounds、更新 overlay。"""
     try:
@@ -311,14 +340,18 @@ async def confirm_imported_raster(body: ConfirmRequest) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"重投影失败: {exc}") from exc
+    except (OSError, RuntimeError) as exc:  # noqa: BLE001 — rasterio/pyproj 运行时异常
+        logger.exception("raster confirm failed: layer_id=%s", body.layer_id)
+        raise HTTPException(
+            status_code=500,
+            detail="重投影失败，请检查源 CRS 是否正确。",
+        ) from exc
 
 
 # ── 转换端点 ───────────────────────────────────────────────────────────
 
 
-@router.post("/transform-point", dependencies=[Depends(require_write_access)])
+@router.post("/transform-point", dependencies=[Depends(require_data_transfer_access)])
 async def transform_point_endpoint(body: TransformPointRequest) -> dict[str, Any]:
     """批量点转换（前端 CSV/POI 提交时用）。
 
@@ -332,10 +365,18 @@ async def transform_point_endpoint(body: TransformPointRequest) -> dict[str, Any
             lng_offset=body.lng_offset,
             lat_offset=body.lat_offset,
         )
-    except Exception as exc:
+    except ValueError as exc:
         raise HTTPException(
             status_code=400,
             detail=f"点转换失败: {exc}",
+        ) from exc
+    except (OSError, RuntimeError) as exc:  # noqa: BLE001 — pyproj 运行时异常
+        logger.exception(
+            "transform-point failed: %s→%s", body.source_crs, body.target_crs
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="点转换失败，请检查 CRS 标识符是否正确。",
         ) from exc
 
     return {
@@ -347,7 +388,7 @@ async def transform_point_endpoint(body: TransformPointRequest) -> dict[str, Any
     }
 
 
-@router.post("/transform-bounds", dependencies=[Depends(require_write_access)])
+@router.post("/transform-bounds", dependencies=[Depends(require_data_transfer_access)])
 async def transform_bounds_endpoint(body: TransformBoundsRequest) -> dict[str, Any]:
     """bounds 转换（前端栅格预览用）。
 
@@ -369,10 +410,18 @@ async def transform_bounds_endpoint(body: TransformBoundsRequest) -> dict[str, A
             body.source_crs,
             body.target_crs,
         )
-    except Exception as exc:
+    except ValueError as exc:
         raise HTTPException(
             status_code=400,
             detail=f"bounds 转换失败: {exc}",
+        ) from exc
+    except (OSError, RuntimeError) as exc:  # noqa: BLE001 — pyproj 运行时异常
+        logger.exception(
+            "transform-bounds failed: %s→%s", body.source_crs, body.target_crs
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="bounds 转换失败，请检查 CRS 标识符是否正确。",
         ) from exc
 
     return {

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 from app.core.config import settings
 
@@ -38,6 +38,17 @@ class ObjectStore(ABC):
         object_key: str,
         data: bytes,
         content_type: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> StoredObject: ...
+
+    @abstractmethod
+    def put_stream(
+        self,
+        *,
+        object_key: str,
+        stream: BinaryIO,
+        content_type: str,
+        length: int | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> StoredObject: ...
 
@@ -99,6 +110,53 @@ class LocalObjectStore(ObjectStore):
             file_path=file_path,
             content_type=content_type,
             content_length=len(data),
+            metadata=metadata or {},
+        )
+
+    def put_stream(
+        self,
+        *,
+        object_key: str,
+        stream: BinaryIO,
+        content_type: str,
+        length: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> StoredObject:
+        file_path = self._root_dir / object_key
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = file_path.with_suffix(file_path.suffix + ".tmp")
+        total_bytes = 0
+        with open(tmp_path, "wb") as out_f:
+            # 1 MB chunks — balances memory usage and syscall overhead
+            while True:
+                chunk = stream.read(1024 * 1024)
+                if not chunk:
+                    break
+                out_f.write(chunk)
+                total_bytes += len(chunk)
+        tmp_path.replace(file_path)
+
+        meta_path = self._meta_path(object_key)
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+        meta_tmp_path = meta_path.with_suffix(meta_path.suffix + ".tmp")
+        meta_tmp_path.write_text(
+            json.dumps(
+                {
+                    "object_key": object_key,
+                    "content_type": content_type,
+                    "content_length": total_bytes,
+                    "metadata": metadata or {},
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        meta_tmp_path.replace(meta_path)
+        return StoredObject(
+            object_key=object_key,
+            file_path=file_path,
+            content_type=content_type,
+            content_length=total_bytes,
             metadata=metadata or {},
         )
 
@@ -168,6 +226,45 @@ class MinioObjectStore(ObjectStore):
             file_path=None,
             content_type=content_type,
             content_length=len(data),
+            metadata=metadata or {},
+            public_url=self._client.presigned_get_object(self._bucket, object_key),
+        )
+
+    def put_stream(
+        self,
+        *,
+        object_key: str,
+        stream: BinaryIO,
+        content_type: str,
+        length: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> StoredObject:
+        if length is not None and length >= 0:
+            self._client.put_object(
+                self._bucket,
+                object_key,
+                data=stream,
+                length=length,
+                content_type=content_type,
+                metadata={key: str(value) for key, value in (metadata or {}).items()},
+            )
+        else:
+            # Unknown length: use multipart upload with 5MB parts
+            self._client.put_object(
+                self._bucket,
+                object_key,
+                data=stream,
+                length=-1,
+                part_size=5 * 1024 * 1024,
+                content_type=content_type,
+                metadata={key: str(value) for key, value in (metadata or {}).items()},
+            )
+        stat = self._client.stat_object(self._bucket, object_key)
+        return StoredObject(
+            object_key=object_key,
+            file_path=None,
+            content_type=content_type,
+            content_length=stat.size,
             metadata=metadata or {},
             public_url=self._client.presigned_get_object(self._bucket, object_key),
         )

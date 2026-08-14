@@ -1,0 +1,283 @@
+.mode-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--elevation-2);
+  min-height: 48px;
+}
+
+/* 左侧 */
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+
+.brand-mark {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: var(--radius-md);
+  background:
+    radial-gradient(circle at 30% 30%, var(--border-strong), transparent 42%),
+    linear-gradient(135deg, var(--accent), var(--accent-blue-deep) 58%, var(--accent-strong));
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 12px 30px var(--accent-blue-deep-glow);
+}
+
+.brand-copy {
+  min-width: 0;
+}
+
+.brand-eyebrow {
+  margin: 0 0 2px;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.brand-name {
+  margin: 0;
+  font-size: clamp(0.9rem, 1.2vw, 1.1rem);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border-subtle);
+  flex: none;
+}
+
+.toolbar-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* 统一工具按钮 — 已迁移至 AppButton */
+
+/* 模式按钮组容器 — 按钮本身由 IconButton 渲染 */
+.mode-group {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+
+/* 日志按钮包装器（用于 badge 定位） */
+.log-btn-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+/* 日志徽章 - 仅显示错误数，小字号，99+ 截断 */
+.log-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--danger);
+  color: #fff8f5;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--badge-ring);
+  border: 1px solid var(--surface-3);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* 右侧 */
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.status-cluster {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* 来源选择器 */
+.source-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 2px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+}
+
+.source-btn {
+  min-width: 30px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-2);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  transition:
+    background-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft);
+}
+
+.source-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.source-btn.active {
+  background: var(--accent-surface);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--border-accent);
+}
+
+.source-btn.locked {
+  opacity: 0.42;
+  color: var(--text-disabled);
+  text-decoration: line-through;
+}
+
+.source-btn.locked:hover {
+  background: var(--danger-surface);
+  color: var(--danger);
+}
+
+.source-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 2D/3D 切换按钮 */
+.dim-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 24px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-accent);
+  background: var(--accent-surface);
+  color: var(--accent);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft),
+    box-shadow var(--motion-fast) var(--ease-soft);
+}
+
+.dim-toggle:hover {
+  background: var(--accent);
+  color: var(--surface-base);
+  box-shadow: var(--elevation-1);
+}
+
+.dim-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.dim-toggle--3d {
+  color: var(--accent-warm);
+  border-color: var(--accent-warm-border);
+  background: var(--accent-warm-surface);
+}
+
+.dim-toggle--3d:hover {
+  background: var(--accent-warm);
+  color: var(--surface-base);
+}
+
+.dim-icon {
+  flex: none;
+  line-height: 1;
+}
+
+/* Chip 在 ModeToolbar 中的定制 */
+:deep([data-ui='chip']) {
+  height: 24px;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:deep(.time-chip) {
+  min-width: 56px;
+  justify-content: center;
+  color: var(--text-strong);
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  max-width: none;
+}
+
+/* 响应式 */
+@media (max-width: 1024px) {
+  .mode-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+  .toolbar-left {
+    flex-wrap: wrap;
+  }
+  .toolbar-right {
+    width: 100%;
+  }
+  .status-cluster {
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .source-btn,
+  .dim-toggle {
+    transition: none;
+  }
+}

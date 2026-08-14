@@ -87,9 +87,10 @@ def _login(client: TestClient, username: str, password: str) -> None:
 
 def _create_viewer(client: TestClient) -> None:
     _login(client, "testadmin", "test-pass-123")
+    # RBAC v2: "viewer" 角色已移除，使用 "demo"（只读）替代。
     resp = client.post(
         "/auth/users",
-        json={"username": "viewer1", "password": "viewer-pass-1", "role": "viewer"},
+        json={"username": "viewer1", "password": "viewer-pass-1", "role": "demo"},
     )
     assert resp.status_code == 201, resp.text
     client.post("/auth/logout")

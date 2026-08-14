@@ -1,4 +1,5 @@
 import logging
+import threading
 import time
 from contextlib import asynccontextmanager
 from uuid import uuid4
@@ -11,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers import (
     algorithm_router,
+    analysis_router,
     artifact_router,
     data_io_router,
     health_router,
@@ -41,9 +43,6 @@ from app.gee.core.src.webgis_gee.api.routes import (
 from app.services.providers import register_default_providers
 from app.services.workflow.service_container import follow_up_dispatch_service
 
-# 注册统一瓦片提供者（BaseMap + Weather）
-register_default_providers()
-
 logger = logging.getLogger(__name__)
 
 ensure_logging_configured()
@@ -59,13 +58,11 @@ async def lifespan(app: FastAPI):
             logger.info(
                 "Startup cleanup: marked %d stale workflow run(s) as failed", cleaned
             )
-    except Exception:
+    except Exception:  # noqa: BLE001 — 启动清理失败不应阻断服务启动
         logger.exception("Failed to cleanup stale workflow runs on startup")
 
     # 后台预热 provider dataset helpers 缓存，避免首次 /layers 请求阻塞
     # 在后台线程运行，不阻塞服务启动
-    import threading
-
     def _warmup():
         try:
             from app.services.workflow_request_resolver import warm_provider_helpers
@@ -76,10 +73,20 @@ async def lifespan(app: FastAPI):
                 logger.warning(
                     "Provider dataset helpers warmup returned None — /layers may be slow on first call"
                 )
-        except Exception:
+        except Exception:  # noqa: BLE001 — 后台预热失败不应影响服务可用性
             logger.exception("Failed to warm up provider dataset helpers")
 
     threading.Thread(target=_warmup, daemon=True, name="provider-warmup").start()
+
+    # 预热 psutil CPU 采样：cpu_percent(interval=None) 首次调用返回 0.0（psutil 语义），
+    # 提前调用一次使后续 get_resource_usage() 能拿到真实值
+    try:
+        import psutil
+
+        psutil.cpu_percent(interval=None)
+        logger.debug("psutil cpu_percent warmup done")
+    except (ImportError, OSError, RuntimeError):
+        logger.debug("psutil warmup skipped (import or call failed)")
 
     # 注册默认天气源 Provider 到全局注册表
     # 使 /config/weather/providers 端点能查询到已注册的天气源
@@ -91,19 +98,21 @@ async def lifespan(app: FastAPI):
         from app.services.config_service import apply_persisted_provider_overrides
 
         apply_persisted_provider_overrides()
-    except Exception:
+    except Exception:  # noqa: BLE001 — 天气源注册失败不应阻断启动
         logger.exception("Failed to register default weather providers")
 
     # 单一配置投影：env + DB api keys + runtime overrides
     try:
         from app.services.effective_config import (
             assert_data_root_policy,
+            assert_dev_bypass_policy,
             hydrate_effective_config,
         )
 
         hydrate_effective_config()
         assert_data_root_policy()
-    except Exception:
+        assert_dev_bypass_policy()
+    except Exception:  # noqa: BLE001 — 配置初始化失败须记录后终止启动
         logger.exception("Failed to hydrate effective config on startup")
         raise
 
@@ -111,7 +120,7 @@ async def lifespan(app: FastAPI):
         from app.services.auth_bootstrap import bootstrap_auth
 
         bootstrap_auth()
-    except Exception:
+    except Exception:  # noqa: BLE001 — 鉴权初始化失败须记录后终止启动
         logger.exception("Failed to bootstrap user auth on startup")
         raise
 
@@ -124,7 +133,7 @@ async def lifespan(app: FastAPI):
             logger.info(
                 "Startup cleanup: removed %d expired import staging dir(s)", removed
             )
-    except Exception:
+    except Exception:  # noqa: BLE001 — 过期 staging 清理失败不应阻断启动
         logger.exception("Failed to cleanup expired import staging")
 
     yield
@@ -137,6 +146,9 @@ def create_app() -> FastAPI:
         description="Minimal backend service for the geographic analysis platform.",
         lifespan=lifespan,
     )
+
+    # P2-11: 注册统一瓦片提供者（BaseMap + Weather）—— 从模块级移入 create_app()
+    register_default_providers()
     _origins = settings.cors_origins
     if not _origins:
         raise ValueError(
@@ -147,9 +159,47 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=[
+            "Content-Type",
+            "Authorization",
+            "X-API-Key",
+            "X-Request-ID",
+        ],
     )
+
+    # ── 安全响应头中间件 ──────────────────────────────────────────
+    # P0 修复：注入 X-Frame-Options / X-Content-Type-Options / HSTS / Referrer-Policy
+    # / Permissions-Policy / Content-Security-Policy（仅生产环境）。
+    # 开发环境不设 CSP 与 HSTS，避免阻断 Vite HMR 的 inline script。
+    @app.middleware("http")
+    async def security_headers_middleware(request: Request, call_next):
+        response = await call_next(request)
+        env = (settings.environment or "").lower()
+        is_prod = env not in {"development", "dev", "test", "testing"}
+
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-same-origin"
+        response.headers["Permissions-Policy"] = (
+            "geolocation=(), microphone=(), camera=()"
+        )
+
+        if is_prod:
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: blob: https:; "
+                "connect-src 'self' https:; "
+                "font-src 'self' data:; "
+                "frame-ancestors 'none'"
+            )
+
+        return response
 
     # 发布就绪修复（P1-2）：写接口/登录/天气瓦片的 IP 级限流（超阈 429 + C429001）。
     # P0-10 产品定位决策：目标用户为课题组/研究院（访问量小），限流宽松化，
@@ -221,7 +271,7 @@ def create_app() -> FastAPI:
                         status_code=response.status_code,
                         duration_ms=duration_ms,
                     )
-                except Exception:
+                except Exception:  # noqa: BLE001 — Redis 指标记录（含 RedisError）失败不应影响请求热路径
                     pass  # 指标记录不应影响正常请求
                 logger.info(
                     "HTTP request completed",
@@ -235,6 +285,17 @@ def create_app() -> FastAPI:
                 return response
             finally:
                 set_request_id(None)
+
+    # P2-4: Service 层领域异常 → HTTP 响应（在 StarletteHTTPException 之前注册）
+    from app.services.errors import ServiceError
+
+    @app.exception_handler(ServiceError)
+    async def service_error_handler(request: Request, exc: ServiceError):
+        request_id = getattr(request.state, "request_id", None)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail, "request_id": request_id},
+        )
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
@@ -270,6 +331,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(layer_router)
     app.include_router(workflow_router)
+    app.include_router(analysis_router)
     app.include_router(runtime_router)
     app.include_router(algorithm_router)
     app.include_router(weather_router)
@@ -291,7 +353,7 @@ def create_app() -> FastAPI:
     try:
         gee_router = create_gee_router()
         app.include_router(gee_router)
-    except Exception:
+    except Exception:  # noqa: BLE001 — GEE 为可选后端，挂载失败仅告警
         logger.warning(
             "GEE router failed to mount — GEE backend may not be installed or configured."
         )

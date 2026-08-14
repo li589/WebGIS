@@ -158,7 +158,6 @@ interface CreateWeatherOverlayRenderContextOptions {
   markRendered: (catalogId: string) => void
   syncWeatherCogOverlay: WeatherOverlayRenderContext['syncWeatherCogOverlay']
   syncWeatherGridFillOverlay: WeatherOverlayRenderContext['syncWeatherGridFillOverlay']
-  syncWeatherHeatmapOverlay: WeatherOverlayRenderContext['syncWeatherHeatmapOverlay']
   syncWeatherPointOverlay: WeatherOverlayRenderContext['syncWeatherPointOverlay']
   syncWindParticleFlow: WeatherOverlayRenderContext['syncWindParticleFlow']
   syncScalarFieldWebGL: WeatherOverlayRenderContext['syncScalarFieldWebGL']
@@ -172,7 +171,6 @@ export function createWeatherOverlayRenderContext(
     markRendered: options.markRendered,
     syncWeatherCogOverlay: options.syncWeatherCogOverlay,
     syncWeatherGridFillOverlay: options.syncWeatherGridFillOverlay,
-    syncWeatherHeatmapOverlay: options.syncWeatherHeatmapOverlay,
     syncWeatherPointOverlay: options.syncWeatherPointOverlay,
     syncWindParticleFlow: options.syncWindParticleFlow,
     syncScalarFieldWebGL: options.syncScalarFieldWebGL,

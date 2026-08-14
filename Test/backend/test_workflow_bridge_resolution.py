@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import unittest
 
+import pytest
 from app.tasks.workflow_tasks import _explain_no_bridge, resolve_workflow_channel
 from shared.contracts.api_contracts import (
     ClientIdentity,
@@ -24,23 +24,18 @@ def _bare_analysis_payload(layer_id: str) -> WorkflowSubmitRequest:
     )
 
 
-class WorkflowBridgeResolutionTests(unittest.TestCase):
-    def test_overlay_without_engine_explains_static_layer(self) -> None:
-        # catalog 演进：dem-etopo 现已绑定 engine=python_provider（module=dem_stat），
-        # 不再走 "no engine / Static overlays" 分支。所有图层均已有 engine，
-        # 故此处校验 engine 已配置但未命中 bridge 的可读说明。
-        message = _explain_no_bridge(_bare_analysis_payload("dem-etopo"))
-        self.assertIn("ETOPO1", message)  # display_name
-        self.assertIn("python_provider", message)
-        self.assertIn("did not match", message)
-
-    def test_resolve_channel_raises_readable_error_for_overlay(self) -> None:
-        # dem-etopo 现有 engine，但仍无 bridge 匹配 → 可读错误说明 engine 未命中。
-        with self.assertRaises(ValueError) as ctx:
-            resolve_workflow_channel(_bare_analysis_payload("dem-etopo"))
-        self.assertIn("ETOPO1", str(ctx.exception))
-        self.assertIn("did not match", str(ctx.exception))
+def test_overlay_without_engine_explains_static_layer() -> None:
+    # catalog 演进：dem-etopo 已绑定 engine=overlay_registry。
+    # 校验 engine 已配置但未命中 bridge 的可读说明。
+    message = _explain_no_bridge(_bare_analysis_payload("dem-etopo"))
+    assert "ETOPO" in message, '"ETOPO" in message'  # display_name（用户提交 4587c70 改为「ETOPO 地形高程」）
+    assert "overlay_registry" in message, '"overlay_registry" in message'
+    assert "did not match" in message, '"did not match" in message'
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_resolve_channel_raises_readable_error_for_overlay() -> None:
+    # dem-etopo 现有 engine，但仍无 bridge 匹配 → 可读错误说明 engine 未命中。
+    with pytest.raises(ValueError) as ctx:
+        resolve_workflow_channel(_bare_analysis_payload("dem-etopo"))
+    assert "ETOPO" in str(ctx.value), '"ETOPO" in str(ctx.exception)'
+    assert "did not match" in str(ctx.value), '"did not match" in str(ctx.exception)'

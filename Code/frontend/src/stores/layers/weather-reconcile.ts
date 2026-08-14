@@ -84,7 +84,8 @@ export function createWeatherReconcileSlice(deps: WeatherReconcileSliceDeps) {
     }
     const last = deps.getLastPointWeatherQuery()
     if (last && last.catalogId === catalogId) {
-      void deps.fetchPointWeather(last.lng, last.lat, catalogId)
+      const result = deps.fetchPointWeather(last.lng, last.lat, catalogId)
+      if (result instanceof Promise) void result.catch(() => {})
     } else if (deps.hasPointWeather()) {
       // Provider changed but no remembered click — clear stale point card.
       deps.clearPointWeather()

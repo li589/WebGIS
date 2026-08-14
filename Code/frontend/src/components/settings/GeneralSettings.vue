@@ -4,22 +4,11 @@ import { storeToRefs } from 'pinia'
 import { useSettingsStore } from '../../stores/settings'
 import { useWeatherTileManager } from '../../stores/weather-tile-manager'
 import type { RuntimeConfigPatch } from '../../services/settings-api'
-import {
-  isMapDistributionChromeEnabled,
-  setMapDistributionChromeEnabled,
-} from '../../services/settings-local'
+import AppSelect from '../ui/AppSelect.vue'
 
 const settingsStore = useSettingsStore()
 const weatherTileManager = useWeatherTileManager()
 const { generalConfig } = storeToRefs(settingsStore)
-
-const mapDistributionChrome = ref(isMapDistributionChromeEnabled())
-
-function onMapDistributionChromeChange(event: Event) {
-  const checked = (event.target as HTMLInputElement).checked
-  mapDistributionChrome.value = checked
-  setMapDistributionChromeEnabled(checked)
-}
 
 // ── 只读系统信息 ──────────────────────────────────────────────────────────
 const readonlyItems = computed(() => {
@@ -415,23 +404,6 @@ const restartParams = computed(() => {
 
 <template>
   <div class="general-settings">
-    <!-- 地图显示 -->
-    <section class="settings-section">
-      <h3 class="section-title">地图显示</h3>
-      <p class="section-hint">
-        控制底图上方的分布淡底 /
-        氛围遮罩。无可见数据图层时始终关闭；有图层且缩放到近全球时可呈现数据分布观感。
-      </p>
-      <label class="toggle-row">
-        <input
-          type="checkbox"
-          :checked="mapDistributionChrome"
-          @change="onMapDistributionChromeChange"
-        />
-        <span>地图分布淡底 / 氛围遮罩</span>
-      </label>
-    </section>
-
     <!-- 系统信息 -->
     <section class="settings-section">
       <h3 class="section-title">系统信息</h3>
@@ -462,14 +434,12 @@ const restartParams = computed(() => {
               <span class="param-desc">{{ param.description }}</span>
             </div>
             <div class="runtime-control-group">
-              <select
+              <AppSelect
                 v-if="param.type === 'select'"
                 v-model="runtimeValues[param.key]"
-                class="runtime-select"
                 :disabled="savingKey === param.key"
-              >
-                <option v-for="opt in param.options" :key="opt" :value="opt">{{ opt }}</option>
-              </select>
+                :options="(param.options ?? []).map((opt) => ({ label: opt, value: opt }))"
+              />
               <input
                 v-else
                 v-model.number="runtimeValues[param.key]"
@@ -533,8 +503,8 @@ const restartParams = computed(() => {
 }
 .section-title {
   margin: 0 0 0.32rem;
-  color: #e8f3fc;
-  font-size: 0.7rem;
+  color: var(--text-strong);
+  font-size: var(--font-size-caption);
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -544,14 +514,14 @@ const restartParams = computed(() => {
   gap: 0.48rem;
   padding: 0.42rem 0.56rem;
   border-radius: 0.4rem;
-  background: rgba(4, 12, 23, 0.5);
-  border: 1px solid rgba(136, 192, 255, 0.08);
-  color: #d8e6f5;
-  font-size: 0.62rem;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 .toggle-row input {
-  accent-color: #5ad5ff;
+  accent-color: var(--accent);
 }
 .info-grid {
   display: flex;
@@ -565,19 +535,19 @@ const restartParams = computed(() => {
   gap: 0.62rem;
   padding: 0.36rem 0.52rem;
   border-radius: 0.4rem;
-  background: rgba(4, 12, 23, 0.5);
-  border: 1px solid rgba(136, 192, 255, 0.06);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
 }
 .info-label {
-  color: #8aa8bf;
-  font-size: 0.6rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   flex: none;
   white-space: nowrap;
 }
 .info-value {
-  color: #d8e6f5;
-  font-size: 0.6rem;
-  font-family: 'SF Mono', 'Consolas', monospace;
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
+  font-family: var(--font-mono);
   text-align: right;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -587,15 +557,15 @@ const restartParams = computed(() => {
 }
 .section-hint {
   margin: 0;
-  color: #5a7080;
-  font-size: 0.54rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 .section-hint code {
-  background: rgba(136, 192, 255, 0.1);
+  background: var(--border-subtle);
   padding: 0 0.2rem;
   border-radius: 0.2rem;
-  font-size: 0.5rem;
+  font-size: var(--font-size-caption);
 }
 .param-group {
   display: flex;
@@ -605,8 +575,8 @@ const restartParams = computed(() => {
 }
 .group-title {
   margin: 0 0 0.2rem;
-  color: #6a8aa0;
-  font-size: 0.54rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -623,8 +593,8 @@ const restartParams = computed(() => {
   gap: 0.62rem;
   padding: 0.36rem 0.52rem;
   border-radius: 0.4rem;
-  background: rgba(4, 12, 23, 0.5);
-  border: 1px solid rgba(136, 192, 255, 0.06);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
 }
 .runtime-label-group {
   display: flex;
@@ -634,8 +604,8 @@ const restartParams = computed(() => {
   min-width: 0;
 }
 .param-desc {
-  color: #5a7080;
-  font-size: 0.5rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   line-height: 1.3;
 }
 .runtime-control-group {
@@ -646,12 +616,12 @@ const restartParams = computed(() => {
 }
 .runtime-select,
 .runtime-input {
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(136, 192, 255, 0.15);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
   border-radius: 0.3rem;
-  color: #d8e6f5;
-  font-size: 0.58rem;
-  font-family: 'SF Mono', 'Consolas', monospace;
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
+  font-family: var(--font-mono);
   padding: 0.22rem 0.36rem;
   width: 5.5rem;
   outline: none;
@@ -659,7 +629,7 @@ const restartParams = computed(() => {
 }
 .runtime-select:focus,
 .runtime-input:focus {
-  border-color: rgba(100, 180, 255, 0.5);
+  border-color: var(--border-strong);
 }
 .runtime-select:disabled,
 .runtime-input:disabled {
@@ -667,40 +637,40 @@ const restartParams = computed(() => {
   cursor: not-allowed;
 }
 .param-unit {
-  color: #5a7080;
-  font-size: 0.52rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   flex: none;
 }
 .save-btn {
-  background: rgba(40, 80, 130, 0.6);
-  border: 1px solid rgba(136, 192, 255, 0.2);
+  background: var(--accent-surface);
+  border: 1px solid var(--border-strong);
   border-radius: 0.3rem;
-  color: #c8e0f5;
-  font-size: 0.54rem;
+  color: var(--accent-strong);
+  font-size: var(--font-size-caption);
   padding: 0.22rem 0.48rem;
   cursor: pointer;
   transition: background 0.15s;
   flex: none;
 }
 .save-btn:hover:not(:disabled) {
-  background: rgba(50, 100, 160, 0.7);
+  background: var(--surface-hover);
 }
 .save-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 .save-all-btn {
-  background: rgba(40, 100, 60, 0.6);
-  border: 1px solid rgba(100, 200, 120, 0.2);
+  background: var(--success-surface);
+  border: 1px solid var(--success-border);
   border-radius: 0.3rem;
-  color: #c8f0d5;
-  font-size: 0.54rem;
+  color: var(--success);
+  font-size: var(--font-size-caption);
   padding: 0.22rem 0.6rem;
   cursor: pointer;
   transition: background 0.15s;
 }
 .save-all-btn:hover {
-  background: rgba(50, 120, 70, 0.7);
+  background: var(--surface-hover);
 }
 .restart-row {
   flex-direction: row;
@@ -714,18 +684,18 @@ const restartParams = computed(() => {
   min-width: 0;
 }
 .param-hint {
-  color: #4a6070;
-  font-size: 0.46rem;
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
   line-height: 1.3;
 }
 .error-msg {
   margin: 0;
-  color: #ff7a6a;
-  font-size: 0.52rem;
+  color: var(--danger);
+  font-size: var(--font-size-caption);
 }
 .success-msg {
   margin: 0;
-  color: #5acf8a;
-  font-size: 0.52rem;
+  color: var(--success);
+  font-size: var(--font-size-caption);
 }
 </style>

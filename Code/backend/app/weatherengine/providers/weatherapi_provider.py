@@ -99,6 +99,11 @@ class WeatherApiProvider(WeatherProvider):
     def requires_api_key(self) -> bool:
         return True
 
+    @property
+    def grid_density(self) -> str:
+        """X2: 商业源稀疏网格——点采样不适合瓦片渲染。"""
+        return "sparse"
+
     def get_config_schema(self) -> list[ConfigFieldSchema]:
         return [
             ConfigFieldSchema(
@@ -134,7 +139,12 @@ class WeatherApiProvider(WeatherProvider):
             if key and "…" not in key and key != "****":
                 self._api_key = key
         if "base_url" in config and config["base_url"]:
-            self._base_url = str(config["base_url"]).rstrip("/")
+            from app.core.ssrf import validate_url_for_storage
+
+            # 安全：存储时校验 URL 格式
+            self._base_url = validate_url_for_storage(str(config["base_url"])).rstrip(
+                "/"
+            )
         with self._lock:
             self._memory_cache.clear()
         logger.info(

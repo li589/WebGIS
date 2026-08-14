@@ -52,7 +52,9 @@ class GeeContext:
                 self._runtime_lock.release()
                 self._lock_acquired = False
             logger.error(
-                "GEE context initialization failed for %s: %s", self.account_id, str(e)
+                "GEE context initialization failed for %s: %s",
+                self.account_id,
+                str(e),
             )
             raise
 

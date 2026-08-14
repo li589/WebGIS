@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class MapMode(str, Enum):
@@ -35,11 +35,20 @@ class TimeGranularity(str, Enum):
 
 
 class BoundingBox(BaseModel):
-    west: float
-    south: float
-    east: float
-    north: float
+    west: float = Field(ge=-180.0, le=180.0)
+    south: float = Field(ge=-90.0, le=90.0)
+    east: float = Field(ge=-180.0, le=180.0)
+    north: float = Field(ge=-90.0, le=90.0)
     crs: str = "EPSG:4326"
+
+    @model_validator(mode="after")
+    def _validate_bounds_order(self) -> BoundingBox:
+        # south must always be <= north; west <= east is NOT enforced because
+        # antimeridian-crossing bounds (e.g. west=170, east=-170) are valid
+        # and supported by layer_router (ge=-180, le=360) and geo_math.
+        if self.south > self.north:
+            raise ValueError("south must be <= north")
+        return self
 
 
 class LayerStyleHint(BaseModel):
@@ -61,6 +70,89 @@ class LayerCapabilities(BaseModel):
     notes: list[str] = Field(default_factory=list)
     delivery_modes: list[str] = Field(default_factory=list)
     result_interfaces: list[str] = Field(default_factory=list)
+
+
+class LayerPresentation(BaseModel):
+    """X1: 图层 UI 呈现元数据 — 后端下发，前端消费的唯一真源。
+
+    将原前端 ``LAYER_LIBRARY`` 中的 UI 样式字段（accentColor / accentGlow /
+    chipTone / metricLabel / metricUnit / metricPrecision / updateLabel /
+    sourceLabel）迁移到后端种子 JSON，经 ``GET /layers`` 下发。
+    前端 ``LAYER_LIBRARY`` 仅在 API 不可用时作离线兜底。
+    """
+    accent_color: str | None = None
+    """UI 强调色（hex），如 '#67d4ff'。"""
+    accent_glow: str | None = None
+    """UI 辉光色（rgba），如 'rgba(103, 212, 255, 0.34)'。"""
+    chip_tone: str | None = None
+    """UI 标签底色（rgba），如 'rgba(103, 212, 255, 0.18)'。"""
+    metric_label: str | None = None
+    """指标标签，如 '风速' / 'NDVI'。"""
+    metric_unit: str | None = None
+    """指标单位，如 'm/s' / ''。"""
+    metric_precision: int | None = None
+    """指标小数精度，如 1。"""
+    update_label: str | None = None
+    """更新频率文案，如 '每小时更新' / '按时间维度'。"""
+    source_label: str | None = None
+    """数据源文案，如 '天气引擎（多源）'。"""
+
+
+class LayerSourceDef(BaseModel):
+    """X1: 图层数据源定义 — 从前端 catalog.ts 迁移到后端 JSON。
+
+    单源图层含 1 项；合并组虚拟条目含多个成员源。
+    前端通过 codegen 或运行时 API 消费，``source_id`` 映射为前端 ``LayerSource.id``。
+    """
+    source_id: str
+    """源标识，与 layer_id 对齐（合并组的成员 layer_id）。"""
+    name: str
+    """源显示名。"""
+    description: str = ""
+    url_template: str = ""
+    needs_auth: bool = False
+    needs_backend_transform: bool = False
+    coord_sys: str = "EPSG:4326"
+    update_frequency: str = ""
+    attribution: str | None = None
+
+
+class LayerCategoryDef(BaseModel):
+    """X1: 图层分类定义 — 后端下发，消除前后端分类双写。"""
+    id: str
+    name: str
+    icon: str | None = None
+    accent_color: str | None = None
+    chip_tone: str | None = None
+    sub_categories: list[str] = Field(default_factory=list)
+
+
+class LayerCategoryResponse(BaseModel):
+    items: list[LayerCategoryDef]
+
+
+class OnlineTemporalCapability(BaseModel):
+    """在线时间获取能力声明。
+
+    标记图层支持"用户选时间点 → 自动在线获取 → 动态刷新"流程。
+    None 表示该图层不支持在线历史时间获取。
+    """
+    enabled: bool = False
+    """是否启用在线时间获取。"""
+    coverage_start: str | None = None
+    """可获取的时间范围起点（ISO 日期或 'YYYY-MM'）。"""
+    coverage_end: str | None = None
+    """可获取的时间范围终点。"""
+    native_step: str = "1d"
+    """原生时间步（'1d' / '8d' / '1M' / '1Y'），与 descriptor 时间粒度对齐。"""
+    max_batch: int = 12
+    """单次批量获取的最大时间点数。"""
+    prefetch_depth: int = 1
+    """预获取相邻时间点深度（前后各 N 步）。"""
+    queue_tag: str = "temporal-fetch"
+    """工作流提交时的 queue_tag，用于与视口驱动工作流区分。"""
+    priority: str = "low"
+    """提交优先级（'low' | 'normal'），预取用 low 避免抢占用户操作。"""
 
 
 class LayerDescriptor(BaseModel):
@@ -108,10 +200,28 @@ class LayerDescriptor(BaseModel):
     """
     sub_category: str | None = None
     """课题组数据二级分类：'模型输入' | '模型输出' | '辅助数据'；其它分类可留空。"""
+    presentation: LayerPresentation = Field(default_factory=LayerPresentation)
+    """X1: UI 呈现元数据（accentColor / metricLabel / sourceLabel 等）。
+    后端种子 JSON 提供，前端 ``LAYER_LIBRARY`` 仅在 API 不可用时作离线兜底。"""
+    # ── X1: 数据源与合并组（外部化字段）────────────────────────────────────────
+    sources: list[LayerSourceDef] = Field(default_factory=list)
+    """图层数据源列表（X1）。单源图层含 1 项；合并组含多个成员源。"""
+    merged_into: str | None = None
+    """若此图层已合并到某个多源组，此处记录目标 catalog_id。"""
+    is_merged_group: bool = False
+    """标记此条目为合并组虚拟条目（含 members 列表，自身不对应实际数据）。"""
+    members: list[str] = Field(default_factory=list)
+    """合并组成员的 layer_id 列表（仅 is_merged_group=true 时有效）。"""
+    is_admin_boundary: bool = False
+    """是否为行政区边界图层。"""
+    online_temporal: OnlineTemporalCapability | None = None
+    """在线时间获取能力声明。None 表示该图层不支持在线历史时间获取。"""
 
 
 class LayerCatalogResponse(BaseModel):
     items: list[LayerDescriptor]
+    categories: list[LayerCategoryDef] = Field(default_factory=list)
+    """X1: 类别定义随 catalog 一起下发，前端无需维护静态 LAYER_CATEGORIES。"""
 
 
 class SpatialFilter(BaseModel):
@@ -125,6 +235,12 @@ class TimeRange(BaseModel):
     start_at: datetime
     end_at: datetime
     granularity: TimeGranularity = TimeGranularity.hour
+
+    @model_validator(mode="after")
+    def _validate_time_order(self) -> TimeRange:
+        if self.start_at > self.end_at:
+            raise ValueError("start_at must be <= end_at")
+        return self
 
 
 class ExecutionStatus(str, Enum):
@@ -700,6 +816,38 @@ class RuntimeStatusResponse(BaseModel):
     services: list[BackendServiceStatus] = Field(default_factory=list)
 
 
+class SystemResourceSnapshot(BaseModel):
+    """系统级资源快照（psutil 采集，轻量非阻塞）。"""
+
+    cpu_percent: float | None = None
+    memory_total_mb: float | None = None
+    memory_used_mb: float | None = None
+    memory_percent: float | None = None
+    disk_total_mb: float | None = None
+    disk_used_mb: float | None = None
+    disk_percent: float | None = None
+
+
+class ProcessResourceSnapshot(BaseModel):
+    """单个后端进程资源快照。"""
+
+    pid: int
+    name: str
+    cpu_percent: float | None = None
+    memory_rss_mb: float | None = None
+    threads: int | None = None
+    status: str | None = None
+
+
+class ResourceUsageResponse(BaseModel):
+    """GET /runtime/resources — 后端进程与宿主系统资源占用。"""
+
+    updated_at: datetime
+    system: SystemResourceSnapshot | None = None
+    processes: list[ProcessResourceSnapshot] = Field(default_factory=list)
+    worker_count: int | None = None
+
+
 class FrontendCommandRequest(BaseModel):
     command_type: FrontendCommandType
     target: str | None = None
@@ -715,3 +863,57 @@ class FrontendCommandResponse(BaseModel):
     created_at: datetime
     message: str
     next_action: str | None = None
+
+
+# ─── InfoPanel GIS analysis tools ─────────────────────────────────────────────
+
+
+class AnalysisToolParamField(BaseModel):
+    key: str
+    type: str = "string"
+    title: str = ""
+    description: str | None = None
+    default: Any = None
+    min: float | None = None
+    max: float | None = None
+    unit: str | None = None
+    options: list[str] | None = None
+
+
+class AnalysisToolDescriptor(BaseModel):
+    tool_id: str
+    title: str
+    description: str = ""
+    category: str = "analysis"
+    input_kinds: list[str] = Field(default_factory=list)
+    param_schema: list[AnalysisToolParamField] = Field(default_factory=list)
+    workflow_template_id: str
+    outputs: list[str] = Field(default_factory=list)
+    resource_profile: str = "standard"
+    concurrency_key: str = "layer_tool"
+    enabled: bool = True
+    disabled_reason: str | None = None
+
+
+class AnalysisToolListResponse(BaseModel):
+    layer_id: str | None = None
+    layer_kind: str = "any"
+    items: list[AnalysisToolDescriptor] = Field(default_factory=list)
+
+
+class AnalysisMapPoint(BaseModel):
+    lng: float
+    lat: float
+
+
+class AnalysisRunRequest(BaseModel):
+    tool_id: str
+    layer_id: str
+    overlay_layer_id: str | None = None
+    zones_overlay_layer_id: str | None = None
+    zones_geojson_path: str | None = None
+    geojson_path: str | None = None
+    map_point: AnalysisMapPoint | None = None
+    bbox: BoundingBox | None = None
+    params: dict[str, Any] = Field(default_factory=dict)
+    show_on_map: bool = True

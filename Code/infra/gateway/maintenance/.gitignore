@@ -1,0 +1,23 @@
+# Gateway 维护模式目录
+#
+# 布局：
+#   maintenance/
+#     on              # 开关（空文件；gitignore，不入库）
+#     html/
+#       maintenance.html
+#       50x.html
+#     README.md
+#     .gitignore
+#
+# 启用前台维护页（SPA only；API 继续服务）：
+#   1. 本目录创建空文件 `on`
+#   2. docker exec cgda-gateway-nginx nginx -s reload
+#
+# 关闭：删除 `on` 后再 reload。
+#
+# 预览（不必启用）：http://localhost:5175/maintenance.html（gateway 剖面）
+*
+!html/
+!html/**
+!.gitignore
+!README.md

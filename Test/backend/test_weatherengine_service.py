@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import pytest
+import types
 from datetime import datetime, timezone
-import unittest
 
 from app.weatherengine.constants import WEATHER_LAYER_SPECS
 from app.weatherengine.service import WeatherEngineService
@@ -103,113 +104,179 @@ class _FakeOpenMeteoClient:
         )
 
 
-class WeatherEngineServiceTests(unittest.TestCase):
-    def setUp(self) -> None:
-        # 注册带 fake client 的 OpenMeteoProvider，供 get_point_weather 通过 registry 路由
-        # （get_point_weather 不再使用 self._client，而是通过 provider registry 获取 provider）
-        registry = get_registry()
-        registry.register(
-            OpenMeteoProvider(client=_FakeOpenMeteoClient()),
-            priority=0,
-            enabled=True,
-        )
+@pytest.fixture
+def _weather_engine_service_tests_env():
+    ns = types.SimpleNamespace()
+    # 注册带 fake client 的 OpenMeteoProvider，供 get_point_weather 通过 registry 路由
+    # （get_point_weather 不再使用 ns._client，而是通过 provider registry 获取 provider）
+    registry = get_registry()
+    registry.register(
+        OpenMeteoProvider(client=_FakeOpenMeteoClient()),
+        priority=0,
+        enabled=True,
+    )
+    yield ns
+    get_registry().clear()
 
-    def tearDown(self) -> None:
-        get_registry().clear()
 
-    def test_get_point_weather_builds_contract(self) -> None:
-        service = WeatherEngineService()
+def test_get_point_weather_builds_contract(_weather_engine_service_tests_env) -> None:
+    self = _weather_engine_service_tests_env
+    service = WeatherEngineService()
 
-        weather = service.get_point_weather(
-            layer_id="wind-field",
-            latitude=23.1291,
-            longitude=113.2644,
-            model="best_match",
-            forecast_hours=3,
-            place_name="Guangzhou",
-        )
+    weather = service.get_point_weather(
+        layer_id="wind-field",
+        latitude=23.1291,
+        longitude=113.2644,
+        model="best_match",
+        forecast_hours=3,
+        place_name="Guangzhou",
+    )
 
-        self.assertEqual(weather.provider, "open-meteo-online")
-        self.assertEqual(weather.layer_id, "wind-field")
-        self.assertEqual(weather.place_name, "Guangzhou")
-        self.assertEqual(weather.cache_status, "hit")
-        self.assertEqual(
-            weather.render_hint.primary_metric,
-            WEATHER_LAYER_SPECS["wind-field"].primary_metric,
-        )
-        self.assertEqual(
-            weather.render_hint.paint_mode, WEATHER_LAYER_SPECS["wind-field"].paint_mode
-        )
-        self.assertAlmostEqual(
-            weather.render_hint.opacity,
-            WEATHER_LAYER_SPECS["wind-field"].default_opacity,
-        )
-        self.assertEqual(len(weather.hourly), 3)
-        self.assertAlmostEqual(weather.current.wind_speed_10m or 0.0, 8.2)
-        self.assertEqual(weather.hourly[0].primary_metric, "wind_speed_10m")
-        self.assertAlmostEqual(weather.hourly[0].primary_value or 0.0, 8.2)
+    assert weather.provider == "open-meteo-online", 'weather.provider == "open-meteo-online"'
+    assert weather.layer_id == "wind-field", 'weather.layer_id == "wind-field"'
+    assert weather.place_name == "Guangzhou", 'weather.place_name == "Guangzhou"'
+    assert weather.cache_status == "hit", 'weather.cache_status == "hit"'
+    assert weather.render_hint.primary_metric == WEATHER_LAYER_SPECS["wind-field"].primary_metric, 'weather.render_hint.primary_metric == WEATHER_LAYER_SPECS["wind-field"].primary_metric'
+    assert weather.render_hint.paint_mode == WEATHER_LAYER_SPECS["wind-field"].paint_mode, 'weather.render_hint.paint_mode == WEATHER_LAYER_SPECS["wind-field"].paint_mode'
+    assert round(weather.render_hint.opacity, 7) == round(WEATHER_LAYER_SPECS["wind-field"].default_opacity, 7), 'round(weather.render_hint.opacity, 7) == round(WEATHER_LAYER_SPECS["wind-field"].default_opacity, 7)'
+    assert len(weather.hourly) == 3, 'len(weather.hourly) == 3'
+    assert round(weather.current.wind_speed_10m or 0.0, 7) == round(8.2, 7), 'round(weather.current.wind_speed_10m or 0.0, 7) == round(8.2, 7)'
+    assert weather.hourly[0].primary_metric == "wind_speed_10m", 'weather.hourly[0].primary_metric == "wind_speed_10m"'
+    assert round(weather.hourly[0].primary_value or 0.0, 7) == round(8.2, 7), 'round(weather.hourly[0].primary_value or 0.0, 7) == round(8.2, 7)'
 
-    def test_get_point_weather_exposes_layer_primary_metric_in_hourly_rows(
-        self,
-    ) -> None:
-        service = WeatherEngineService()
 
-        weather = service.get_point_weather(
-            layer_id="humidity",
-            latitude=23.1291,
-            longitude=113.2644,
-            model="best_match",
-            forecast_hours=3,
-            place_name="Guangzhou",
-        )
+def test_get_point_weather_exposes_layer_primary_metric_in_hourly_rows(
+    _weather_engine_service_tests_env,
+) -> None:
+    self = _weather_engine_service_tests_env
+    service = WeatherEngineService()
 
-        self.assertEqual(weather.render_hint.primary_metric, "relative_humidity_2m")
-        self.assertEqual(weather.hourly[0].primary_metric, "relative_humidity_2m")
-        self.assertAlmostEqual(weather.hourly[0].primary_value or 0.0, 81.0)
+    weather = service.get_point_weather(
+        layer_id="humidity",
+        latitude=23.1291,
+        longitude=113.2644,
+        model="best_match",
+        forecast_hours=3,
+        place_name="Guangzhou",
+    )
 
-    def test_execute_returns_workflow_outputs(self) -> None:
-        service = WeatherEngineService()
-        payload = WorkflowSubmitRequest(
-            command_type=WorkflowCommandType.analysis,
-            layer_id="temperature",
-            requested_outputs=[
-                ResultKind.json,
-                ResultKind.text,
-                ResultKind.table,
-                ResultKind.map_layer,
-            ],
-            parameters={
-                "latitude": 23.1291,
-                "longitude": 113.2644,
-                "place_name": "Guangzhou",
-                "forecast_hours": 3,
-            },
-            map_context=RuntimeMapContext(active_layer_id="temperature"),
-        )
+    assert weather.render_hint.primary_metric == "relative_humidity_2m", 'weather.render_hint.primary_metric == "relative_humidity_2m"'
+    assert weather.hourly[0].primary_metric == "relative_humidity_2m", 'weather.hourly[0].primary_metric == "relative_humidity_2m"'
+    assert round(weather.hourly[0].primary_value or 0.0, 7) == round(81.0, 7), 'round(weather.hourly[0].primary_value or 0.0, 7) == round(81.0, 7)'
 
-        execution = service.execute(
-            run_id="run-weather-1",
-            payload=payload,
-            requested_at=datetime.now(timezone.utc),
-            event_factory=lambda **kwargs: kwargs,
-        )
 
-        self.assertIn("Open-Meteo", execution.message)
-        self.assertEqual(
-            execution.result_dto["workflow_entry_name"],
-            "weatherengine.open_meteo_point",
-        )
-        self.assertEqual(execution.result_dto["layer_id"], "temperature")
-        self.assertGreaterEqual(len(execution.result_refs), 5)
-        result_kinds = [result.result_kind for result in execution.result_refs]
-        self.assertEqual(result_kinds[0], ResultKind.json)
-        self.assertIn(ResultKind.file, result_kinds)
-        self.assertEqual(result_kinds[-1], ResultKind.map_layer)
-        map_layer_ref = execution.result_refs[-1]
-        self.assertIn("layer_assets", map_layer_ref.inline_data or {})
-        self.assertIn("render_hint", map_layer_ref.inline_data or {})
+def test_execute_returns_workflow_outputs(_weather_engine_service_tests_env) -> None:
+    self = _weather_engine_service_tests_env
+    service = WeatherEngineService()
+    payload = WorkflowSubmitRequest(
+        command_type=WorkflowCommandType.analysis,
+        layer_id="temperature",
+        requested_outputs=[
+            ResultKind.json,
+            ResultKind.text,
+            ResultKind.table,
+            ResultKind.map_layer,
+        ],
+        parameters={
+            "latitude": 23.1291,
+            "longitude": 113.2644,
+            "place_name": "Guangzhou",
+            "forecast_hours": 3,
+        },
+        map_context=RuntimeMapContext(active_layer_id="temperature"),
+    )
 
-    def test_execute_precipitation_returns_geojson_asset(self) -> None:
+    execution = service.execute(
+        run_id="run-weather-1",
+        payload=payload,
+        requested_at=datetime.now(timezone.utc),
+        event_factory=lambda **kwargs: kwargs,
+    )
+
+    assert "Open-Meteo" in execution.message, '"Open-Meteo" in execution.message'
+    assert execution.result_dto["workflow_entry_name"] == "weatherengine.open_meteo_point", 'execution.result_dto["workflow_entry_name"] == "weatherengine.open_meteo_point"'
+    assert execution.result_dto["layer_id"] == "temperature", 'execution.result_dto["layer_id"] == "temperature"'
+    assert len(execution.result_refs) >= 5, 'len(execution.result_refs) >= 5'
+    result_kinds = [result.result_kind for result in execution.result_refs]
+    assert result_kinds[0] == ResultKind.json, 'result_kinds[0] == ResultKind.json'
+    assert ResultKind.file in result_kinds, 'ResultKind.file in result_kinds'
+    assert result_kinds[-1] == ResultKind.map_layer, 'result_kinds[-1] == ResultKind.map_layer'
+    map_layer_ref = execution.result_refs[-1]
+    assert "layer_assets" in map_layer_ref.inline_data or {}, '"layer_assets" in map_layer_ref.inline_data or {}'
+    assert "render_hint" in map_layer_ref.inline_data or {}, '"render_hint" in map_layer_ref.inline_data or {}'
+
+
+def test_execute_precipitation_returns_geojson_asset(_weather_engine_service_tests_env) -> None:
+    self = _weather_engine_service_tests_env
+    client = _FakeOpenMeteoClient()
+    get_registry().register(
+        OpenMeteoProvider(client=client), priority=0, enabled=True
+    )
+    service = WeatherEngineService()
+    payload = WorkflowSubmitRequest(
+        command_type=WorkflowCommandType.analysis,
+        layer_id="precipitation",
+        requested_outputs=[ResultKind.json, ResultKind.map_layer],
+        parameters={
+            "latitude": 23.1291,
+            "longitude": 113.2644,
+            "place_name": "Guangzhou",
+            "forecast_hours": 3,
+        },
+        map_context=RuntimeMapContext(active_layer_id="precipitation"),
+    )
+
+    execution = service.execute(
+        run_id="run-weather-precip-1",
+        payload=payload,
+        requested_at=datetime.now(timezone.utc),
+        event_factory=lambda **kwargs: kwargs,
+    )
+
+    assert execution.result_dto["layer_id"] == "precipitation", 'execution.result_dto["layer_id"] == "precipitation"'
+    map_layer_ref = execution.result_refs[-1]
+    inline_data = map_layer_ref.inline_data or {}
+    layer_assets = inline_data.get("layer_assets") or {}
+    assert layer_assets.get("geojson_url"), 'layer_assets.get("geojson_url") is truthy'
+    assert layer_assets.get("cog_url"), 'layer_assets.get("cog_url") is truthy'
+    assert client.grid_calls.count("precipitation") >= 2, 'client.grid_calls.count("precipitation") >= 2'
+
+
+def test_execute_wind_returns_point_symbol_geojson_asset(_weather_engine_service_tests_env) -> None:
+    self = _weather_engine_service_tests_env
+    service = WeatherEngineService()
+    payload = WorkflowSubmitRequest(
+        command_type=WorkflowCommandType.analysis,
+        layer_id="wind-field",
+        requested_outputs=[ResultKind.json, ResultKind.map_layer],
+        parameters={
+            "latitude": 23.1291,
+            "longitude": 113.2644,
+            "place_name": "Guangzhou",
+            "forecast_hours": 3,
+        },
+        map_context=RuntimeMapContext(active_layer_id="wind-field"),
+    )
+
+    execution = service.execute(
+        run_id="run-weather-wind-1",
+        payload=payload,
+        requested_at=datetime.now(timezone.utc),
+        event_factory=lambda **kwargs: kwargs,
+    )
+
+    assert execution.result_dto["layer_id"] == "wind-field", 'execution.result_dto["layer_id"] == "wind-field"'
+    map_layer_ref = execution.result_refs[-1]
+    inline_data = map_layer_ref.inline_data or {}
+    render_hint = inline_data.get("render_hint") or {}
+    layer_assets = inline_data.get("layer_assets") or {}
+    assert render_hint.get("paint_mode") == "particle_flow", 'render_hint.get("paint_mode") == "particle_flow"'
+    assert layer_assets.get("geojson_url"), 'layer_assets.get("geojson_url") is truthy'
+
+
+def test_execute_scalar_layers_use_grid_fetch_in_fallback(_weather_engine_service_tests_env) -> None:
+    self = _weather_engine_service_tests_env
+    for layer_id in ("temperature", "humidity", "pressure", "visibility"):
         client = _FakeOpenMeteoClient()
         get_registry().register(
             OpenMeteoProvider(client=client), priority=0, enabled=True
@@ -217,7 +284,7 @@ class WeatherEngineServiceTests(unittest.TestCase):
         service = WeatherEngineService()
         payload = WorkflowSubmitRequest(
             command_type=WorkflowCommandType.analysis,
-            layer_id="precipitation",
+            layer_id=layer_id,
             requested_outputs=[ResultKind.json, ResultKind.map_layer],
             parameters={
                 "latitude": 23.1291,
@@ -225,116 +292,49 @@ class WeatherEngineServiceTests(unittest.TestCase):
                 "place_name": "Guangzhou",
                 "forecast_hours": 3,
             },
-            map_context=RuntimeMapContext(active_layer_id="precipitation"),
+            map_context=RuntimeMapContext(active_layer_id=layer_id),
         )
 
         execution = service.execute(
-            run_id="run-weather-precip-1",
+            run_id=f"run-weather-{layer_id}",
             payload=payload,
             requested_at=datetime.now(timezone.utc),
             event_factory=lambda **kwargs: kwargs,
         )
 
-        self.assertEqual(execution.result_dto["layer_id"], "precipitation")
-        map_layer_ref = execution.result_refs[-1]
-        inline_data = map_layer_ref.inline_data or {}
-        layer_assets = inline_data.get("layer_assets") or {}
-        self.assertTrue(layer_assets.get("geojson_url"))
-        self.assertTrue(layer_assets.get("cog_url"))
-        self.assertGreaterEqual(client.grid_calls.count("precipitation"), 2)
-
-    def test_execute_wind_returns_point_symbol_geojson_asset(self) -> None:
-        service = WeatherEngineService()
-        payload = WorkflowSubmitRequest(
-            command_type=WorkflowCommandType.analysis,
-            layer_id="wind-field",
-            requested_outputs=[ResultKind.json, ResultKind.map_layer],
-            parameters={
-                "latitude": 23.1291,
-                "longitude": 113.2644,
-                "place_name": "Guangzhou",
-                "forecast_hours": 3,
-            },
-            map_context=RuntimeMapContext(active_layer_id="wind-field"),
-        )
-
-        execution = service.execute(
-            run_id="run-weather-wind-1",
-            payload=payload,
-            requested_at=datetime.now(timezone.utc),
-            event_factory=lambda **kwargs: kwargs,
-        )
-
-        self.assertEqual(execution.result_dto["layer_id"], "wind-field")
-        map_layer_ref = execution.result_refs[-1]
-        inline_data = map_layer_ref.inline_data or {}
-        render_hint = inline_data.get("render_hint") or {}
-        layer_assets = inline_data.get("layer_assets") or {}
-        self.assertEqual(render_hint.get("paint_mode"), "particle_flow")
-        self.assertTrue(layer_assets.get("geojson_url"))
-
-    def test_execute_scalar_layers_use_grid_fetch_in_fallback(self) -> None:
-        for layer_id in ("temperature", "humidity", "pressure", "visibility"):
-            client = _FakeOpenMeteoClient()
-            get_registry().register(
-                OpenMeteoProvider(client=client), priority=0, enabled=True
-            )
-            service = WeatherEngineService()
-            payload = WorkflowSubmitRequest(
-                command_type=WorkflowCommandType.analysis,
-                layer_id=layer_id,
-                requested_outputs=[ResultKind.json, ResultKind.map_layer],
-                parameters={
-                    "latitude": 23.1291,
-                    "longitude": 113.2644,
-                    "place_name": "Guangzhou",
-                    "forecast_hours": 3,
-                },
-                map_context=RuntimeMapContext(active_layer_id=layer_id),
-            )
-
-            execution = service.execute(
-                run_id=f"run-weather-{layer_id}",
-                payload=payload,
-                requested_at=datetime.now(timezone.utc),
-                event_factory=lambda **kwargs: kwargs,
-            )
-
-            self.assertEqual(execution.result_dto["layer_id"], layer_id)
-            self.assertIn(layer_id, client.grid_calls)
-
-    def test_execute_temperature_uses_grid_for_geojson_and_cog(self) -> None:
-        client = _FakeOpenMeteoClient()
-        get_registry().register(
-            OpenMeteoProvider(client=client), priority=0, enabled=True
-        )
-        service = WeatherEngineService()
-        payload = WorkflowSubmitRequest(
-            command_type=WorkflowCommandType.analysis,
-            layer_id="temperature",
-            requested_outputs=[ResultKind.json, ResultKind.map_layer],
-            parameters={
-                "latitude": 23.1291,
-                "longitude": 113.2644,
-                "place_name": "Guangzhou",
-                "forecast_hours": 3,
-            },
-            map_context=RuntimeMapContext(active_layer_id="temperature"),
-        )
-
-        execution = service.execute(
-            run_id="run-weather-temperature-grid",
-            payload=payload,
-            requested_at=datetime.now(timezone.utc),
-            event_factory=lambda **kwargs: kwargs,
-        )
-
-        map_layer_ref = execution.result_refs[-1]
-        layer_assets = (map_layer_ref.inline_data or {}).get("layer_assets") or {}
-        self.assertTrue(layer_assets.get("geojson_url"))
-        self.assertTrue(layer_assets.get("cog_url"))
-        self.assertGreaterEqual(client.grid_calls.count("temperature"), 2)
+        assert execution.result_dto["layer_id"] == layer_id, 'execution.result_dto["layer_id"] == layer_id'
+        assert layer_id in client.grid_calls, 'layer_id in client.grid_calls'
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_execute_temperature_uses_grid_for_geojson_and_cog(_weather_engine_service_tests_env) -> None:
+    self = _weather_engine_service_tests_env
+    client = _FakeOpenMeteoClient()
+    get_registry().register(
+        OpenMeteoProvider(client=client), priority=0, enabled=True
+    )
+    service = WeatherEngineService()
+    payload = WorkflowSubmitRequest(
+        command_type=WorkflowCommandType.analysis,
+        layer_id="temperature",
+        requested_outputs=[ResultKind.json, ResultKind.map_layer],
+        parameters={
+            "latitude": 23.1291,
+            "longitude": 113.2644,
+            "place_name": "Guangzhou",
+            "forecast_hours": 3,
+        },
+        map_context=RuntimeMapContext(active_layer_id="temperature"),
+    )
+
+    execution = service.execute(
+        run_id="run-weather-temperature-grid",
+        payload=payload,
+        requested_at=datetime.now(timezone.utc),
+        event_factory=lambda **kwargs: kwargs,
+    )
+
+    map_layer_ref = execution.result_refs[-1]
+    layer_assets = (map_layer_ref.inline_data or {}).get("layer_assets") or {}
+    assert layer_assets.get("geojson_url"), 'layer_assets.get("geojson_url") is truthy'
+    assert layer_assets.get("cog_url"), 'layer_assets.get("cog_url") is truthy'
+    assert client.grid_calls.count("temperature") >= 2, 'client.grid_calls.count("temperature") >= 2'

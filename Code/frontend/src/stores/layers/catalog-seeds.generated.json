@@ -1,0 +1,1785 @@
+{
+  "categories": [
+    {
+      "id": "climate",
+      "name": "气候与灾害",
+      "icon": "C",
+      "accentColor": "#ff9d6c",
+      "chipTone": "rgba(255, 157, 108, 0.16)"
+    },
+    {
+      "id": "landcover",
+      "name": "土地利用",
+      "icon": "L",
+      "accentColor": "#7fd99a",
+      "chipTone": "rgba(127, 217, 154, 0.16)"
+    },
+    {
+      "id": "terrain",
+      "name": "地形数据",
+      "icon": "T",
+      "accentColor": "#eab308",
+      "chipTone": "rgba(234, 179, 8, 0.16)"
+    },
+    {
+      "id": "vegetation",
+      "name": "植被相关",
+      "icon": "V",
+      "accentColor": "#4daf4a",
+      "chipTone": "rgba(77, 175, 74, 0.16)"
+    },
+    {
+      "id": "research-group",
+      "name": "课题组数据",
+      "icon": "R",
+      "accentColor": "#ff6f91",
+      "chipTone": "rgba(255, 111, 145, 0.16)",
+      "subCategories": [
+        "模型输入",
+        "模型输出",
+        "辅助数据"
+      ]
+    },
+    {
+      "id": "imported",
+      "name": "本地导入",
+      "icon": "I",
+      "accentColor": "#7ee0a8",
+      "chipTone": "rgba(126, 224, 168, 0.16)"
+    },
+    {
+      "id": "weather",
+      "name": "在线天气",
+      "icon": "W",
+      "accentColor": "#67d4ff",
+      "chipTone": "rgba(103, 212, 255, 0.18)"
+    }
+  ],
+  "items": [
+    {
+      "catalogId": "wind-field",
+      "name": "风场（10m）",
+      "category": "weather",
+      "metricLabel": "风速",
+      "metricUnit": "m/s",
+      "metricPrecision": 1,
+      "updateLabel": "每小时更新",
+      "sourceLabel": "天气引擎（多源）",
+      "accentColor": "#67d4ff",
+      "accentGlow": "rgba(103, 212, 255, 0.34)",
+      "chipTone": "rgba(103, 212, 255, 0.18)",
+      "sources": [
+        {
+          "id": "weatherengine-wind",
+          "name": "天气引擎 · 风场（多模型）",
+          "description": "由后端 weatherengine 多源路由的风场数据，支持钉选 Provider 与多模型。",
+          "urlTemplate": "https://example.com/wind/{z}/{x}/{y}.png",
+          "needsAuth": false,
+          "needsBackendTransform": true,
+          "coordSys": "EPSG:3857",
+          "updateFrequency": "每小时更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "wind-field-80m",
+      "name": "风场（80m）",
+      "category": "weather",
+      "metricLabel": "风速",
+      "metricUnit": "m/s",
+      "metricPrecision": 1,
+      "updateLabel": "每小时更新",
+      "sourceLabel": "天气引擎（多源）",
+      "accentColor": "#7ec4ff",
+      "accentGlow": "rgba(126, 196, 255, 0.34)",
+      "chipTone": "rgba(126, 196, 255, 0.18)",
+      "sources": [
+        {
+          "id": "weatherengine-wind-80m",
+          "name": "天气引擎 · 80m 风场",
+          "description": "天气引擎 80 米高度风场，对应现代风机轮毂高度。",
+          "urlTemplate": "https://example.com/wind-80m/{z}/{x}/{y}.png",
+          "needsAuth": false,
+          "needsBackendTransform": true,
+          "coordSys": "EPSG:3857",
+          "updateFrequency": "每小时更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "wind-field-120m",
+      "name": "风场（120m）",
+      "category": "weather",
+      "metricLabel": "风速",
+      "metricUnit": "m/s",
+      "metricPrecision": 1,
+      "updateLabel": "每小时更新",
+      "sourceLabel": "天气引擎（多源）",
+      "accentColor": "#95b8ff",
+      "accentGlow": "rgba(149, 184, 255, 0.34)",
+      "chipTone": "rgba(149, 184, 255, 0.18)",
+      "sources": [
+        {
+          "id": "weatherengine-wind-120m",
+          "name": "天气引擎 · 120m 风场",
+          "description": "天气引擎 120 米高度风场，大型/海上风机轮毂高度参考层。",
+          "urlTemplate": "https://example.com/wind-120m/{z}/{x}/{y}.png",
+          "needsAuth": false,
+          "needsBackendTransform": true,
+          "coordSys": "EPSG:3857",
+          "updateFrequency": "每小时更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "wind-field-180m",
+      "name": "风场（180m）",
+      "category": "weather",
+      "metricLabel": "风速",
+      "metricUnit": "m/s",
+      "metricPrecision": 1,
+      "updateLabel": "每小时更新",
+      "sourceLabel": "天气引擎（多源）",
+      "accentColor": "#a8a8ff",
+      "accentGlow": "rgba(168, 168, 255, 0.34)",
+      "chipTone": "rgba(168, 168, 255, 0.18)",
+      "sources": [
+        {
+          "id": "weatherengine-wind-180m",
+          "name": "天气引擎 · 180m 风场",
+          "description": "天气引擎 180 米高度风场，大气边界层顶部参考风场。",
+          "urlTemplate": "https://example.com/wind-180m/{z}/{x}/{y}.png",
+          "needsAuth": false,
+          "needsBackendTransform": true,
+          "coordSys": "EPSG:3857",
+          "updateFrequency": "每小时更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "wind-field-850hPa",
+      "name": "风场（850hPa）",
+      "category": "weather",
+      "metricLabel": "850hPa 风速",
+      "metricUnit": "m/s",
+      "metricPrecision": 1,
+      "updateLabel": "每小时更新",
+      "sourceLabel": "天气引擎（多源）",
+      "accentColor": "#8fb8ff",
+      "accentGlow": "rgba(143, 184, 255, 0.34)",
+      "chipTone": "rgba(143, 184, 255, 0.18)",
+      "sources": [
+        {
+          "id": "weatherengine-wind-850hPa",
+          "name": "天气引擎 · 850hPa 风场",
+          "description": "天气引擎 850 hPa 气压层风场（约 1.5 km AGL），低空急流与对流 inflow 参考。",
+          "urlTemplate": "https://example.com/wind-850hpa/{z}/{x}/{y}.png",
+          "needsAuth": false,
+          "needsBackendTransform": true,
+          "coordSys": "EPSG:3857",
+          "updateFrequency": "每小时更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "wind-field-500hPa",
+      "name": "风场（500hPa）",
+      "category": "weather",
+      "metricLabel": "500hPa 风速",
+      "metricUnit": "m/s",
+      "metricPrecision": 1,
+      "updateLabel": "每小时更新",
+      "sourceLabel": "天气引擎（多源）",
+      "accentColor": "#7ea0ff",
+      "accentGlow": "rgba(126, 160, 255, 0.34)",
+      "chipTone": "rgba(126, 160, 255, 0.18)",
+      "sources": [
+        {
+          "id": "weatherengine-wind-500hPa",
+          "name": "天气引擎 · 500hPa 风场",
+          "description": "天气引擎 500 hPa 气压层风场（约 5.5 km AGL），中空天气尺度流场参考。",
+          "urlTemplate": "https://example.com/wind-500hpa/{z}/{x}/{y}.png",
+          "needsAuth": false,
+          "needsBackendTransform": true,
+          "coordSys": "EPSG:3857",
+          "updateFrequency": "每小时更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "wind-field-200hPa",
+      "name": "风场（200hPa）",
+      "category": "weather",
+      "metricLabel": "200hPa 风速",
+      "metricUnit": "m/s",
+      "metricPrecision": 1,
+      "updateLabel": "每小时更新",
+      "sourceLabel": "天气引擎（多源）",
+      "accentColor": "#6e88ff",
+      "accentGlow": "rgba(110, 136, 255, 0.34)",
+      "chipTone": "rgba(110, 136, 255, 0.18)",
+      "sources": [
+        {
+          "id": "weatherengine-wind-200hPa",
+          "name": "天气引擎 · 200hPa 风场",
+          "description": "天气引擎 200 hPa 气压层风场（约 12 km AGL），高空急流参考层。",
+          "urlTemplate": "https://example.com/wind-200hpa/{z}/{x}/{y}.png",
+          "needsAuth": false,
+          "needsBackendTransform": true,
+          "coordSys": "EPSG:3857",
+          "updateFrequency": "每小时更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "precipitation",
+      "name": "降水量",
+      "category": "weather",
+      "metricLabel": "峰值降水",
+      "metricUnit": "mm/h",
+      "metricPrecision": 0,
+      "updateLabel": "每小时更新",
+      "sourceLabel": "天气引擎（多源）",
+      "accentColor": "#72ffcf",
+      "accentGlow": "rgba(114, 255, 207, 0.3)",
+      "chipTone": "rgba(114, 255, 207, 0.16)",
+      "sources": [
+        {
+          "id": "weatherengine-precipitation",
+          "name": "天气引擎 · 降水量",
+          "description": "由后端 weatherengine 多源路由的降水量数据。",
+          "urlTemplate": "https://example.com/precip/{z}/{x}/{y}.png",
+          "needsAuth": false,
+          "needsBackendTransform": true,
+          "coordSys": "EPSG:3857",
+          "updateFrequency": "每小时更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "temperature",
+      "name": "气温",
+      "category": "weather",
+      "metricLabel": "区域均温",
+      "metricUnit": "°C",
+      "metricPrecision": 1,
+      "updateLabel": "每小时更新",
+      "sourceLabel": "天气引擎（多源）",
+      "accentColor": "#ffb65c",
+      "accentGlow": "rgba(255, 182, 92, 0.3)",
+      "chipTone": "rgba(255, 182, 92, 0.16)",
+      "sources": [
+        {
+          "id": "weatherengine-temperature",
+          "name": "天气引擎 · 气温",
+          "description": "由后端 weatherengine 多源路由的温度数据。",
+          "urlTemplate": "https://example.com/temperature/{z}/{x}/{y}.png",
+          "needsAuth": false,
+          "needsBackendTransform": true,
+          "coordSys": "EPSG:3857",
+          "updateFrequency": "每小时更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "temperature-80m",
+      "name": "气温（80m）",
+      "category": "weather",
+      "metricLabel": "80m 气温",
+      "metricUnit": "°C",
+      "metricPrecision": 1,
+      "updateLabel": "每小时更新",
+      "sourceLabel": "天气引擎（多源）",
+      "accentColor": "#ffc97a",
+      "accentGlow": "rgba(255, 201, 122, 0.3)",
+      "chipTone": "rgba(255, 201, 122, 0.16)",
+      "sources": [
+        {
+          "id": "weatherengine-temperature-80m",
+          "name": "天气引擎 · 80m 气温",
+          "description": "天气引擎 80 米高度温度，适用于风机结冰与尾流分析。",
+          "urlTemplate": "https://example.com/temperature-80m/{z}/{x}/{y}.png",
+          "needsAuth": false,
+          "needsBackendTransform": true,
+          "coordSys": "EPSG:3857",
+          "updateFrequency": "每小时更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "temperature-120m",
+      "name": "气温（120m）",
+      "category": "weather",
+      "metricLabel": "120m 气温",
+      "metricUnit": "°C",
+      "metricPrecision": 1,
+      "updateLabel": "每小时更新",
+      "sourceLabel": "天气引擎（多源）",
+      "accentColor": "#ffdc8a",
+      "accentGlow": "rgba(255, 220, 138, 0.3)",
+      "chipTone": "rgba(255, 220, 138, 0.16)",
+      "sources": [
+        {
+          "id": "weatherengine-temperature-120m",
+          "name": "天气引擎 · 120m 气温",
+          "description": "天气引擎 120 米高度温度，大型风机轮毂高度热力参考。",
+          "urlTemplate": "https://example.com/temperature-120m/{z}/{x}/{y}.png",
+          "needsAuth": false,
+          "needsBackendTransform": true,
+          "coordSys": "EPSG:3857",
+          "updateFrequency": "每小时更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "temperature-180m",
+      "name": "气温（180m）",
+      "category": "weather",
+      "metricLabel": "180m 气温",
+      "metricUnit": "°C",
+      "metricPrecision": 1,
+      "updateLabel": "每小时更新",
+      "sourceLabel": "天气引擎（多源）",
+      "accentColor": "#ffe49a",
+      "accentGlow": "rgba(255, 228, 154, 0.3)",
+      "chipTone": "rgba(255, 228, 154, 0.16)",
+      "sources": [
+        {
+          "id": "weatherengine-temperature-180m",
+          "name": "天气引擎 · 180m 气温",
+          "description": "天气引擎 180 米高度温度，大气边界层顶部热力剖面。",
+          "urlTemplate": "https://example.com/temperature-180m/{z}/{x}/{y}.png",
+          "needsAuth": false,
+          "needsBackendTransform": true,
+          "coordSys": "EPSG:3857",
+          "updateFrequency": "每小时更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "pressure",
+      "name": "海平面气压",
+      "category": "weather",
+      "metricLabel": "海平面气压",
+      "metricUnit": "hPa",
+      "metricPrecision": 1,
+      "updateLabel": "每小时更新",
+      "sourceLabel": "天气引擎（多源）",
+      "accentColor": "#c9a3ff",
+      "accentGlow": "rgba(201, 163, 255, 0.3)",
+      "chipTone": "rgba(201, 163, 255, 0.16)",
+      "sources": [
+        {
+          "id": "weatherengine-pressure",
+          "name": "天气引擎 · 海平面气压",
+          "description": "由后端 weatherengine 多源路由的海平面气压数据。",
+          "urlTemplate": "https://example.com/pressure/{z}/{x}/{y}.png",
+          "needsAuth": false,
+          "needsBackendTransform": true,
+          "coordSys": "EPSG:3857",
+          "updateFrequency": "每小时更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "humidity",
+      "name": "相对湿度",
+      "category": "weather",
+      "metricLabel": "相对湿度",
+      "metricUnit": "%",
+      "metricPrecision": 0,
+      "updateLabel": "每小时更新",
+      "sourceLabel": "天气引擎（多源）",
+      "accentColor": "#a3d9b0",
+      "accentGlow": "rgba(163, 217, 176, 0.3)",
+      "chipTone": "rgba(163, 217, 176, 0.16)",
+      "sources": [
+        {
+          "id": "weatherengine-humidity",
+          "name": "天气引擎 · 相对湿度",
+          "description": "由后端 weatherengine 多源路由的近地面相对湿度数据。",
+          "urlTemplate": "https://example.com/humidity/{z}/{x}/{y}.png",
+          "needsAuth": false,
+          "needsBackendTransform": true,
+          "coordSys": "EPSG:3857",
+          "updateFrequency": "每小时更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "visibility",
+      "name": "能见度",
+      "category": "weather",
+      "metricLabel": "能见度",
+      "metricUnit": "m",
+      "metricPrecision": 0,
+      "updateLabel": "每小时更新",
+      "sourceLabel": "天气引擎（多源）",
+      "accentColor": "#e8c87a",
+      "accentGlow": "rgba(232, 200, 122, 0.3)",
+      "chipTone": "rgba(232, 200, 122, 0.16)",
+      "sources": [
+        {
+          "id": "weatherengine-visibility",
+          "name": "天气引擎 · 能见度",
+          "description": "由后端 weatherengine 多源路由的地面能见度数据。",
+          "urlTemplate": "https://example.com/visibility/{z}/{x}/{y}.png",
+          "needsAuth": false,
+          "needsBackendTransform": true,
+          "coordSys": "EPSG:3857",
+          "updateFrequency": "每小时更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "cloud-cover",
+      "name": "云量",
+      "category": "weather",
+      "metricLabel": "云量",
+      "metricUnit": "%",
+      "metricPrecision": 0,
+      "updateLabel": "每小时更新",
+      "sourceLabel": "天气引擎（多源）",
+      "accentColor": "#9aa7b5",
+      "accentGlow": "rgba(154, 167, 181, 0.3)",
+      "chipTone": "rgba(154, 167, 181, 0.16)",
+      "sources": [
+        {
+          "id": "weatherengine-cloud-cover",
+          "name": "天气引擎 · 云量",
+          "description": "Open-Meteo online/local 总云量。",
+          "urlTemplate": "https://example.com/cloud-cover/{z}/{x}/{y}.png",
+          "needsAuth": false,
+          "needsBackendTransform": true,
+          "coordSys": "EPSG:3857",
+          "updateFrequency": "每小时更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "dewpoint",
+      "name": "露点温度",
+      "category": "weather",
+      "metricLabel": "露点",
+      "metricUnit": "°C",
+      "metricPrecision": 1,
+      "updateLabel": "每小时更新",
+      "sourceLabel": "天气引擎（多源）",
+      "accentColor": "#f0a070",
+      "accentGlow": "rgba(240, 160, 112, 0.3)",
+      "chipTone": "rgba(240, 160, 112, 0.16)",
+      "sources": [
+        {
+          "id": "weatherengine-dewpoint",
+          "name": "天气引擎 · 露点温度",
+          "description": "Open-Meteo online/local 2 米露点温度。",
+          "urlTemplate": "https://example.com/dewpoint/{z}/{x}/{y}.png",
+          "needsAuth": false,
+          "needsBackendTransform": true,
+          "coordSys": "EPSG:3857",
+          "updateFrequency": "每小时更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "ndvi",
+      "name": "植被指数 NDVI",
+      "category": "vegetation",
+      "metricLabel": "植被指数",
+      "metricUnit": "",
+      "metricPrecision": 2,
+      "updateLabel": "每日更新",
+      "sourceLabel": "Landsat / Sentinel-2",
+      "accentColor": "#7fd99a",
+      "accentGlow": "rgba(127, 217, 154, 0.3)",
+      "chipTone": "rgba(127, 217, 154, 0.16)",
+      "sources": [
+        {
+          "id": "ndvi-satellite",
+          "name": "Landsat / Sentinel-2 NDVI 产品",
+          "description": "由 Landsat 8/9 与 Sentinel-2 红/近红外波段反演的 NDVI 产品。",
+          "urlTemplate": "https://example.com/ndvi/{z}/{x}/{y}.png",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:3857",
+          "updateFrequency": "每日更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "dataOwner": "NOAA/NESDIS",
+      "temporalCoverage": "2000-01 to 2025-06 (Monthly)",
+      "sourceReference": "https://www.star.nesdis.noaa.gov/smcd/emb/vci/VH/vh_browse.php"
+    },
+    {
+      "catalogId": "biomass-cn",
+      "name": "地上生物量 AGB",
+      "category": "vegetation",
+      "metricLabel": "地上生物量",
+      "metricUnit": "Mg/ha",
+      "metricPrecision": 1,
+      "updateLabel": "静态数据",
+      "sourceLabel": "ESA CCI BIOMASS 2020",
+      "accentColor": "#4daf4a",
+      "accentGlow": "rgba(77, 175, 74, 0.3)",
+      "chipTone": "rgba(77, 175, 74, 0.16)",
+      "sources": [
+        {
+          "id": "biomass-cn",
+          "name": "地上生物量 AGB",
+          "description": "ESA CCI BIOMASS L4 AGB（地上生物量）合并产品 2020 年，中国区域。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "dataOwner": "CAS",
+      "temporalCoverage": "2020 Baseline",
+      "sourceReference": "National Earth System Science Data Center"
+    },
+    {
+      "catalogId": "landcover-cn",
+      "name": "MODIS 土地覆盖",
+      "category": "landcover",
+      "metricLabel": "IGBP 分类",
+      "metricUnit": "",
+      "metricPrecision": 0,
+      "updateLabel": "静态数据",
+      "sourceLabel": "MODIS MCD12Q1",
+      "accentColor": "#7fd99a",
+      "accentGlow": "rgba(127, 217, 154, 0.3)",
+      "chipTone": "rgba(127, 217, 154, 0.16)",
+      "sources": [
+        {
+          "id": "landcover-cn",
+          "name": "MODIS 土地覆盖",
+          "description": "MODIS MCD12Q1 IGBP 土地覆盖分类，中国区域 0.25° 重采样。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "dataOwner": "NASA LP DAAC",
+      "temporalCoverage": "2001 to 2022 (Annual)",
+      "sourceReference": "https://lpdaac.usgs.gov/products/mcd12q1v061/"
+    },
+    {
+      "catalogId": "clcd-cn",
+      "name": "CLCD 土地利用",
+      "category": "landcover",
+      "metricLabel": "土地覆盖",
+      "metricUnit": "class",
+      "metricPrecision": 0,
+      "updateLabel": "静态数据",
+      "sourceLabel": "CLCD 1997",
+      "accentColor": "#7fc97f",
+      "accentGlow": "rgba(127, 201, 127, 0.3)",
+      "chipTone": "rgba(127, 201, 127, 0.16)",
+      "sources": [
+        {
+          "id": "clcd-cn",
+          "name": "CLCD 土地利用",
+          "description": "China Land Cover Dataset (CLCD) 1997 年土地覆盖分类（9 类）。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "dataOwner": "Wuhan University",
+      "temporalCoverage": "1985 to 2022 (Annual)",
+      "sourceReference": "https://zenodo.org/record/4417810"
+    },
+    {
+      "catalogId": "hfp-cn",
+      "name": "人类足迹指数 HFP",
+      "category": "landcover",
+      "metricLabel": "HFP",
+      "metricUnit": "",
+      "metricPrecision": 1,
+      "updateLabel": "静态数据",
+      "sourceLabel": "HFP 2018",
+      "accentColor": "#ff8c42",
+      "accentGlow": "rgba(255, 140, 66, 0.3)",
+      "chipTone": "rgba(255, 140, 66, 0.16)",
+      "sources": [
+        {
+          "id": "hfp-cn",
+          "name": "人类足迹指数 HFP（中国 0.25°）",
+          "description": "Human Footprint 2018 人类足迹指数，中国区域 0.25° 重采样。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "dataOwner": "WCS / SEDAC",
+      "temporalCoverage": "2020 Global HFP Release",
+      "sourceReference": "https://sedac.ciesin.columbia.edu/"
+    },
+    {
+      "catalogId": "dem-etopo",
+      "name": "ETOPO 地形高程",
+      "category": "terrain",
+      "metricLabel": "高程",
+      "metricUnit": "m",
+      "metricPrecision": 0,
+      "updateLabel": "静态数据",
+      "sourceLabel": "NOAA ETOPO 2022",
+      "accentColor": "#eab308",
+      "accentGlow": "rgba(234, 179, 8, 0.3)",
+      "chipTone": "rgba(234, 179, 8, 0.16)",
+      "sources": [
+        {
+          "id": "dem-etopo",
+          "name": "ETOPO 地形高程",
+          "description": "ETOPO 2022 全球地形起伏数据（60s 分辨率），含陆地高程与海洋深度。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "dataOwner": "NOAA NCEI",
+      "temporalCoverage": "Static Topography Baseline",
+      "sourceReference": "https://www.ncei.noaa.gov/products/etopo-global-relief-model"
+    },
+    {
+      "catalogId": "gebco-dem-cn",
+      "name": "GEBCO 海底地形",
+      "category": "terrain",
+      "metricLabel": "高程",
+      "metricUnit": "m",
+      "metricPrecision": 0,
+      "updateLabel": "静态数据",
+      "sourceLabel": "GEBCO 2024",
+      "accentColor": "#6b8e9c",
+      "accentGlow": "rgba(107, 142, 156, 0.3)",
+      "chipTone": "rgba(107, 142, 156, 0.16)",
+      "sources": [
+        {
+          "id": "gebco-dem-cn",
+          "name": "GEBCO 海底地形",
+          "description": "GEBCO 2024 全球海底地形数据，中国区域裁剪，含陆地高程与海洋深度。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "dataOwner": "GEBCO Consortium",
+      "temporalCoverage": "2023 Release",
+      "sourceReference": "https://www.gebco.net/data_and_products/gridded_bathymetry_data/"
+    },
+    {
+      "catalogId": "ref-smap-sm-202512-l3",
+      "name": "SMAP L3 土壤水分",
+      "category": "research-group",
+      "subCategory": "模型输入",
+      "metricLabel": "土壤湿度",
+      "metricUnit": "m³/m³",
+      "metricPrecision": 3,
+      "updateLabel": "每日更新",
+      "sourceLabel": "SMAP L3 (2025-12)",
+      "accentColor": "#4ecdc4",
+      "accentGlow": "rgba(78, 205, 196, 0.3)",
+      "chipTone": "rgba(78, 205, 196, 0.16)",
+      "sources": [
+        {
+          "id": "ref-smap-sm-202512-l3",
+          "name": "SMAP L3 土壤湿度",
+          "description": "SMAP L3 土壤湿度日数据（2025 年 12 月，31 天，中国区域）。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "每日更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "mergedInto": "soil-moisture",
+      "dataOwner": "Lab",
+      "temporalCoverage": "2025-12-01 to 2025-12-31 (31 days)",
+      "sourceReference": "https://nsidc.org/data/SPL3SMP"
+    },
+    {
+      "catalogId": "prod-fy_smap_station-sm_vod_omega-202512-fusion",
+      "name": "多源融合土壤水分",
+      "category": "research-group",
+      "subCategory": "模型输入",
+      "metricLabel": "土壤湿度",
+      "metricUnit": "m³/m³",
+      "metricPrecision": 3,
+      "updateLabel": "每日更新",
+      "sourceLabel": "SMAP/FY/站点融合 (v7.3)",
+      "accentColor": "#66c2a5",
+      "accentGlow": "rgba(102, 194, 165, 0.3)",
+      "chipTone": "rgba(102, 194, 165, 0.16)",
+      "sources": [
+        {
+          "id": "prod-fy_smap_station-sm_vod_omega-202512-fusion",
+          "name": "多源融合土壤湿度",
+          "description": "融合SMAP/FY-3D/站点观测的土壤湿度（SM）/植被光学厚度（VOD）/动态散射反照率（ω）产品族（2025-12-01 至 2025-12-31，EASE-Grid 9km）。当前展示 SM，VOD/ω 图层补实现中。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "每日更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "mergedInto": "soil-moisture",
+      "dataOwner": "Lab",
+      "temporalCoverage": "2025-12-01 to 2025-12-31 (31 days)"
+    },
+    {
+      "catalogId": "ref-fy-tb-202512-mwri",
+      "name": "FY-3 MWRI 亮温",
+      "category": "research-group",
+      "subCategory": "模型输入",
+      "metricLabel": "亮温",
+      "metricUnit": "K",
+      "metricPrecision": 1,
+      "updateLabel": "每日更新",
+      "sourceLabel": "FY-3 MWRI",
+      "accentColor": "#e6a85c",
+      "accentGlow": "rgba(230, 168, 92, 0.3)",
+      "chipTone": "rgba(230, 168, 92, 0.16)",
+      "sources": [
+        {
+          "id": "ref-fy-tb-202512-mwri",
+          "name": "FY-3 MWRI 亮温",
+          "description": "风云三号 MWRI 微波成像仪多波段亮温产品（10V/10H/18V/18H/23V/36V/36H/89V/89H）。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "每日更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "obs-station-sm-daily",
+      "name": "站点土壤水分",
+      "category": "research-group",
+      "subCategory": "模型输入",
+      "metricLabel": "土壤湿度",
+      "metricUnit": "m³/m³",
+      "metricPrecision": 3,
+      "updateLabel": "每日更新",
+      "sourceLabel": "ISMN/CASMOS",
+      "accentColor": "#6bbf59",
+      "accentGlow": "rgba(107, 191, 89, 0.3)",
+      "chipTone": "rgba(107, 191, 89, 0.16)",
+      "sources": [
+        {
+          "id": "obs-station-sm-daily",
+          "name": "站点土壤湿度",
+          "description": "ISMN/CASMOS 站点逐日土壤湿度观测，用于算法验证与产品订正。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "每日更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "mergedInto": "soil-moisture"
+    },
+    {
+      "catalogId": "ref-ddca-sm-201504-202512",
+      "name": "DDCA 土壤水分",
+      "category": "research-group",
+      "subCategory": "辅助数据",
+      "metricLabel": "DH",
+      "metricUnit": "",
+      "metricPrecision": 2,
+      "updateLabel": "按时间维度",
+      "sourceLabel": "Soil DDCA 2015-04 to 2025-12 (sampled 60)",
+      "accentColor": "#5e4fa2",
+      "accentGlow": "rgba(94, 79, 162, 0.3)",
+      "chipTone": "rgba(94, 79, 162, 0.16)",
+      "sources": [
+        {
+          "id": "ref-ddca-sm-201504-202512",
+          "name": "DDCA 土壤湿度",
+          "description": "中国 9km 土壤生态数据集 DDCA（双通道算法 DCA 反演）产品（变量 DH 土壤湿度，2015-04-01 至 2022-12-31 时间序列，采样 60 个时间点）。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "每日更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "mergedInto": "soil-moisture",
+      "dataOwner": "Lab",
+      "temporalCoverage": "2023-01 to Present"
+    },
+    {
+      "catalogId": "forest-ratio",
+      "name": "森林覆盖率",
+      "category": "vegetation",
+      "metricLabel": "森林比例",
+      "metricUnit": "ratio",
+      "metricPrecision": 2,
+      "updateLabel": "静态数据",
+      "sourceLabel": "Forest_Ratio_9KM_2020",
+      "accentColor": "#1b9e77",
+      "accentGlow": "rgba(27, 158, 119, 0.3)",
+      "chipTone": "rgba(27, 158, 119, 0.16)",
+      "sources": [
+        {
+          "id": "forest-ratio",
+          "name": "森林覆盖率",
+          "description": "全球 9km 森林比例数据（Forest_Ratio_9KM_2020），值域 0-1。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "dataOwner": "Lab",
+      "temporalCoverage": "Static Auxiliary Baseline"
+    },
+    {
+      "catalogId": "landscape-metrics-9km",
+      "name": "景观多样性 SHDI",
+      "category": "research-group",
+      "subCategory": "模型输出",
+      "metricLabel": "SHDI",
+      "metricUnit": "",
+      "metricPrecision": 2,
+      "updateLabel": "静态数据",
+      "sourceLabel": "Landscape_Metrics_LandOnly_9KM_2020",
+      "accentColor": "#8c6bb1",
+      "accentGlow": "rgba(140, 107, 177, 0.3)",
+      "chipTone": "rgba(140, 107, 177, 0.16)",
+      "sources": [
+        {
+          "id": "landscape-metrics-9km",
+          "name": "景观多样性 SHDI",
+          "description": "全球 9km 景观格局指数（Shannon 多样性指数 SHDI），基于 EASE-Grid 9km 与 IGBP 土地覆盖派生。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "dataOwner": "Lab",
+      "temporalCoverage": "Static Auxiliary Baseline"
+    },
+    {
+      "catalogId": "aridity-cn",
+      "name": "干旱指数 AI",
+      "category": "climate",
+      "metricLabel": "AI（P/PET）",
+      "metricUnit": "",
+      "metricPrecision": 2,
+      "updateLabel": "静态数据",
+      "sourceLabel": "P/PET（降水/蒸散比）",
+      "accentColor": "#c4a35a",
+      "accentGlow": "rgba(196, 163, 90, 0.3)",
+      "chipTone": "rgba(196, 163, 90, 0.16)",
+      "sources": [
+        {
+          "id": "aridity-cn",
+          "name": "干旱指数 AI（中国 0.25°）",
+          "description": "Aridity Index 干旱指数（P/PET），中国区域 0.25°。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "temporalCoverage": "Static Climate Product"
+    },
+    {
+      "catalogId": "gpcp-precip-ts",
+      "name": "GPCP 月降水",
+      "category": "climate",
+      "metricLabel": "降水",
+      "metricUnit": "mm/month",
+      "metricPrecision": 1,
+      "updateLabel": "月度更新",
+      "sourceLabel": "GPCP V3.2",
+      "accentColor": "#5b8def",
+      "accentGlow": "rgba(91, 141, 239, 0.3)",
+      "chipTone": "rgba(91, 141, 239, 0.16)",
+      "sources": [
+        {
+          "id": "gpcp-precip-ts",
+          "name": "GPCP 月降水",
+          "description": "GPCP 月平均降水（V3.2），全球 0.5°；库内采样约 1983–2010。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "月度更新"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "mergedInto": "precipitation-static",
+      "temporalCoverage": "Monthly sample series"
+    },
+    {
+      "catalogId": "cmfd-precip-cn",
+      "name": "CMFD 区域降水",
+      "category": "climate",
+      "metricLabel": "降水",
+      "metricUnit": "mm",
+      "metricPrecision": 1,
+      "updateLabel": "静态数据",
+      "sourceLabel": "CMFD 2002-01",
+      "accentColor": "#3a9bd9",
+      "accentGlow": "rgba(58, 155, 217, 0.3)",
+      "chipTone": "rgba(58, 155, 217, 0.16)",
+      "sources": [
+        {
+          "id": "cmfd-precip-cn",
+          "name": "CMFD 区域降水",
+          "description": "中国区域高精度格点降水数据集（CMFD），2002 年 1 月月降水（0.1mm 单位转换后）。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "mergedInto": "precipitation-static",
+      "temporalCoverage": "2002-01 sample"
+    },
+    {
+      "catalogId": "era5-dwaa-cn",
+      "name": "ERA5 白天热浪",
+      "category": "climate",
+      "metricLabel": "事件次数",
+      "metricUnit": "events",
+      "metricPrecision": 0,
+      "updateLabel": "静态数据",
+      "sourceLabel": "ERA5 DWAA SMCI 2020",
+      "accentColor": "#e08214",
+      "accentGlow": "rgba(224, 130, 20, 0.3)",
+      "chipTone": "rgba(224, 130, 20, 0.16)",
+      "sources": [
+        {
+          "id": "era5-dwaa-cn",
+          "name": "ERA5 白天热浪",
+          "description": "ERA5 基于 SMCI（土壤湿度指数）指标的白天热浪事件累积计数（2020 全年 366 天）。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "mergedInto": "era5-hazard-events",
+      "temporalCoverage": "2020"
+    },
+    {
+      "catalogId": "era5-wdaa-cn",
+      "name": "ERA5 夜间热浪",
+      "category": "climate",
+      "metricLabel": "事件次数",
+      "metricUnit": "events",
+      "metricPrecision": 0,
+      "updateLabel": "静态数据",
+      "sourceLabel": "ERA5 WDAA SMCI 2020",
+      "accentColor": "#8073ac",
+      "accentGlow": "rgba(128, 115, 172, 0.3)",
+      "chipTone": "rgba(128, 115, 172, 0.16)",
+      "sources": [
+        {
+          "id": "era5-wdaa-cn",
+          "name": "ERA5 夜间热浪",
+          "description": "ERA5 基于 SMCI（土壤湿度指数）指标的夜间热浪事件累积计数（2020 全年 366 天）。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "mergedInto": "era5-hazard-events",
+      "temporalCoverage": "2020"
+    },
+    {
+      "catalogId": "co2-cn",
+      "name": "GOSAT CO₂ 柱浓度",
+      "category": "climate",
+      "metricLabel": "CO₂",
+      "metricUnit": "ppm",
+      "metricPrecision": 2,
+      "updateLabel": "静态数据",
+      "sourceLabel": "GOSAT MeanCarbonDioxide",
+      "accentColor": "#d6604d",
+      "accentGlow": "rgba(214, 96, 77, 0.3)",
+      "chipTone": "rgba(214, 96, 77, 0.16)",
+      "sources": [
+        {
+          "id": "co2-cn",
+          "name": "GOSAT 中层 CO₂ 柱浓度",
+          "description": "GOSAT 卫星中层大气 CO₂ 柱浓度均值产品（MeanCarbonDioxide）。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "temporalCoverage": "Static Mean Product"
+    },
+    {
+      "catalogId": "method-smap-omega-doy-dynamic",
+      "name": "SMAP 动态 ω 反演",
+      "category": "research-group",
+      "subCategory": "模型输出",
+      "metricLabel": "ω",
+      "metricUnit": "",
+      "metricPrecision": 3,
+      "updateLabel": "按工作流运行",
+      "sourceLabel": "SMAP 分块反演（动态）",
+      "accentColor": "#d53e4f",
+      "accentGlow": "rgba(213, 62, 79, 0.3)",
+      "chipTone": "rgba(213, 62, 79, 0.16)",
+      "sources": [
+        {
+          "id": "method-smap-omega-doy-dynamic",
+          "name": "SMAP 动态 ω 反演",
+          "description": "omega_sf_fenkuai 流水线：SMAP 亮温 + 辅助数据 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "按工作流运行"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "mergedInto": "smap-omega-inversion",
+      "dataOwner": "Lab",
+      "temporalCoverage": "Depends on SMAP daily mats under DATA_ROOT"
+    },
+    {
+      "catalogId": "method-fy-omega-doy-dynamic",
+      "name": "风云卫星 动态 ω 反演",
+      "category": "research-group",
+      "subCategory": "模型输出",
+      "metricLabel": "ω",
+      "metricUnit": "",
+      "metricPrecision": 3,
+      "updateLabel": "按工作流运行",
+      "sourceLabel": "FY 分块反演（动态）",
+      "accentColor": "#3288bd",
+      "accentGlow": "rgba(50, 136, 189, 0.3)",
+      "chipTone": "rgba(50, 136, 189, 0.16)",
+      "sources": [
+        {
+          "id": "method-fy-omega-doy-dynamic",
+          "name": "风云卫星 动态 ω 反演",
+          "description": "omega_sf_fenkuai 流水线：FY 亮温 + SMAP 辅助 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "按工作流运行"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "mergedInto": "fy-omega-inversion",
+      "dataOwner": "Lab",
+      "temporalCoverage": "Depends on FY/SMAP daily mats under DATA_ROOT"
+    },
+    {
+      "catalogId": "method-smap-omega-doy-avg",
+      "name": "SMAP 日均 ω 反演",
+      "category": "research-group",
+      "subCategory": "模型输出",
+      "metricLabel": "ω",
+      "metricUnit": "",
+      "metricPrecision": 3,
+      "updateLabel": "按工作流运行",
+      "sourceLabel": "SMAP 日均反演",
+      "accentColor": "#abdda4",
+      "accentGlow": "rgba(171, 221, 164, 0.3)",
+      "chipTone": "rgba(171, 221, 164, 0.16)",
+      "sources": [
+        {
+          "id": "method-smap-omega-doy-avg",
+          "name": "SMAP 日均 ω 反演",
+          "description": "omega_avg_daily / omega_block 经典 D1→D2 链路：SMAP 日均 ω 反演。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "按工作流运行"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "mergedInto": "smap-omega-inversion",
+      "dataOwner": "Lab",
+      "temporalCoverage": "Depends on omega_block outputs"
+    },
+    {
+      "catalogId": "method-fy-omega-doy-avg",
+      "name": "风云卫星 日均 ω 反演",
+      "category": "research-group",
+      "subCategory": "模型输出",
+      "metricLabel": "ω",
+      "metricUnit": "",
+      "metricPrecision": 3,
+      "updateLabel": "按工作流运行",
+      "sourceLabel": "FY 日均反演",
+      "accentColor": "#66c2a5",
+      "accentGlow": "rgba(102, 194, 165, 0.3)",
+      "chipTone": "rgba(102, 194, 165, 0.16)",
+      "sources": [
+        {
+          "id": "method-fy-omega-doy-avg",
+          "name": "风云卫星 日均 ω 反演",
+          "description": "omega_avg_daily FY ORIG_TS 链路：经典 D1→D2 日均 ω 反演。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "按工作流运行"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "mergedInto": "fy-omega-inversion",
+      "dataOwner": "Lab",
+      "temporalCoverage": "Depends on omega_block outputs"
+    },
+    {
+      "catalogId": "smap-aux-albedo",
+      "name": "反照率",
+      "category": "research-group",
+      "subCategory": "辅助数据",
+      "metricLabel": "反照率",
+      "metricUnit": "",
+      "metricPrecision": 3,
+      "updateLabel": "静态数据",
+      "sourceLabel": "SMAP Auxiliary Albedo",
+      "accentColor": "#fee08b",
+      "accentGlow": "rgba(254, 224, 139, 0.3)",
+      "chipTone": "rgba(254, 224, 139, 0.16)",
+      "sources": [
+        {
+          "id": "smap-aux-albedo",
+          "name": "反照率",
+          "description": "SMAP 辅助数据：地表反照率（Albedo），EASE-Grid 9km。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "dataOwner": "Lab",
+      "temporalCoverage": "Static Auxiliary Baseline"
+    },
+    {
+      "catalogId": "smap-aux-bd",
+      "name": "土壤容重",
+      "category": "research-group",
+      "subCategory": "辅助数据",
+      "metricLabel": "土壤容重",
+      "metricUnit": "g/cm³",
+      "metricPrecision": 2,
+      "updateLabel": "静态数据",
+      "sourceLabel": "SMAP Auxiliary BD",
+      "accentColor": "#d73027",
+      "accentGlow": "rgba(215, 48, 39, 0.3)",
+      "chipTone": "rgba(215, 48, 39, 0.16)",
+      "sources": [
+        {
+          "id": "smap-aux-bd",
+          "name": "土壤容重",
+          "description": "SMAP 辅助数据：土壤容重（Bulk Density），EASE-Grid 9km。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "dataOwner": "Lab",
+      "temporalCoverage": "Static Auxiliary Baseline"
+    },
+    {
+      "catalogId": "smap-aux-sf",
+      "name": "砂粒分数",
+      "category": "research-group",
+      "subCategory": "辅助数据",
+      "metricLabel": "砂粒分数",
+      "metricUnit": "fraction",
+      "metricPrecision": 2,
+      "updateLabel": "静态数据",
+      "sourceLabel": "SMAP Auxiliary SF",
+      "accentColor": "#a6d96a",
+      "accentGlow": "rgba(166, 217, 106, 0.3)",
+      "chipTone": "rgba(166, 217, 106, 0.16)",
+      "sources": [
+        {
+          "id": "smap-aux-sf",
+          "name": "砂粒分数",
+          "description": "SMAP 辅助数据：砂粒分数（Sand Fraction），EASE-Grid 9km。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "dataOwner": "Lab",
+      "temporalCoverage": "Static Auxiliary Baseline"
+    },
+    {
+      "catalogId": "smap-aux-b",
+      "name": "B 参数",
+      "category": "research-group",
+      "subCategory": "辅助数据",
+      "metricLabel": "B",
+      "metricUnit": "",
+      "metricPrecision": 2,
+      "updateLabel": "静态数据",
+      "sourceLabel": "SMAP Auxiliary B",
+      "accentColor": "#4575b4",
+      "accentGlow": "rgba(69, 117, 180, 0.3)",
+      "chipTone": "rgba(69, 117, 180, 0.16)",
+      "sources": [
+        {
+          "id": "smap-aux-b",
+          "name": "B 参数",
+          "description": "SMAP 辅助数据：tau-omega 模型 B 参数，EASE-Grid 9km。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "dataOwner": "Lab",
+      "temporalCoverage": "Static Auxiliary Baseline"
+    },
+    {
+      "catalogId": "smap-aux-cf",
+      "name": "粘粒分数",
+      "category": "research-group",
+      "subCategory": "辅助数据",
+      "metricLabel": "粘粒分数",
+      "metricUnit": "fraction",
+      "metricPrecision": 2,
+      "updateLabel": "静态数据",
+      "sourceLabel": "SMAP Auxiliary CF",
+      "accentColor": "#74add1",
+      "accentGlow": "rgba(116, 173, 209, 0.3)",
+      "chipTone": "rgba(116, 173, 209, 0.16)",
+      "sources": [
+        {
+          "id": "smap-aux-cf",
+          "name": "粘粒分数",
+          "description": "SMAP 辅助数据：粘粒分数（Clay Fraction），EASE-Grid 9km。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "dataOwner": "Lab",
+      "temporalCoverage": "Static Auxiliary Baseline"
+    },
+    {
+      "catalogId": "smap-aux-h",
+      "name": "粗糙度参数 H",
+      "category": "research-group",
+      "subCategory": "辅助数据",
+      "metricLabel": "H",
+      "metricUnit": "",
+      "metricPrecision": 3,
+      "updateLabel": "静态数据",
+      "sourceLabel": "SMAP Auxiliary H",
+      "accentColor": "#f46d43",
+      "accentGlow": "rgba(244, 109, 67, 0.3)",
+      "chipTone": "rgba(244, 109, 67, 0.16)",
+      "sources": [
+        {
+          "id": "smap-aux-h",
+          "name": "粗糙度参数 H",
+          "description": "SMAP 辅助数据：Q/H 模型表面粗糙度参数 H，EASE-Grid 9km。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "dataOwner": "Lab",
+      "temporalCoverage": "Static Auxiliary Baseline"
+    },
+    {
+      "catalogId": "smap-aux-igbp",
+      "name": "IGBP 土地覆盖 (9km)",
+      "category": "research-group",
+      "subCategory": "辅助数据",
+      "metricLabel": "IGBP",
+      "metricUnit": "class",
+      "metricPrecision": 0,
+      "updateLabel": "静态数据",
+      "sourceLabel": "SMAP Auxiliary IGBP 9km",
+      "accentColor": "#7fd99a",
+      "accentGlow": "rgba(127, 217, 154, 0.3)",
+      "chipTone": "rgba(127, 217, 154, 0.16)",
+      "sources": [
+        {
+          "id": "smap-aux-igbp",
+          "name": "IGBP 土地覆盖 (9km)",
+          "description": "SMAP 辅助数据：IGBP 土地覆盖分类（9km EASE-Grid），12 类。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "dataOwner": "Lab",
+      "temporalCoverage": "Static Auxiliary Baseline"
+    },
+    {
+      "catalogId": "smap-aux-koppen",
+      "name": "柯本气候分类",
+      "category": "research-group",
+      "subCategory": "辅助数据",
+      "metricLabel": "柯本分类",
+      "metricUnit": "class",
+      "metricPrecision": 0,
+      "updateLabel": "静态数据",
+      "sourceLabel": "SMAP Auxiliary Köppen",
+      "accentColor": "#abdda4",
+      "accentGlow": "rgba(171, 221, 164, 0.3)",
+      "chipTone": "rgba(171, 221, 164, 0.16)",
+      "sources": [
+        {
+          "id": "smap-aux-koppen",
+          "name": "柯本气候分类",
+          "description": "SMAP 辅助数据：柯本气候分类（Köppen），0.083° 全球网格。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "dataOwner": "Lab",
+      "temporalCoverage": "Static Auxiliary Baseline"
+    },
+    {
+      "catalogId": "smap-aux-vi-qa",
+      "name": "植被指数 NDVI 均值",
+      "category": "research-group",
+      "subCategory": "辅助数据",
+      "metricLabel": "NDVI",
+      "metricUnit": "",
+      "metricPrecision": 3,
+      "updateLabel": "静态数据",
+      "sourceLabel": "SMAP Auxiliary NDVI_v_mean",
+      "accentColor": "#1a9850",
+      "accentGlow": "rgba(26, 152, 80, 0.3)",
+      "chipTone": "rgba(26, 152, 80, 0.16)",
+      "sources": [
+        {
+          "id": "smap-aux-vi-qa",
+          "name": "植被指数 NDVI 均值",
+          "description": "SMAP 辅助数据：NDVI 均值产品（NDVI_v_mean），EASE-Grid 9km。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "dataOwner": "Lab",
+      "temporalCoverage": "Static Auxiliary Baseline"
+    },
+    {
+      "catalogId": "soil-moisture",
+      "name": "土壤湿度",
+      "category": "research-group",
+      "subCategory": "模型输入",
+      "metricLabel": "土壤湿度",
+      "metricUnit": "m³/m³",
+      "metricPrecision": 3,
+      "updateLabel": "每日更新",
+      "sourceLabel": "多源可选",
+      "accentColor": "#4ecdc4",
+      "accentGlow": "rgba(78, 205, 196, 0.3)",
+      "chipTone": "rgba(78, 205, 196, 0.16)",
+      "sources": [
+        {
+          "id": "ref-smap-sm-202512-l3",
+          "name": "SMAP L3 土壤湿度",
+          "description": "SMAP L3 土壤湿度日数据（2025 年 12 月，31 天，中国区域）。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "每日更新"
+        },
+        {
+          "id": "ref-ddca-sm-201504-202512",
+          "name": "DDCA 土壤湿度",
+          "description": "中国 9km 土壤生态数据集 DDCA（双通道算法 DCA 反演）产品（变量 DH 土壤湿度，2015-04-01 至 2022-12-31 时间序列，采样 60 个时间点）。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "每日更新"
+        },
+        {
+          "id": "obs-station-sm-daily",
+          "name": "站点土壤湿度",
+          "description": "ISMN/CASMOS 站点逐日土壤湿度观测，用于算法验证与产品订正。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "每日更新"
+        },
+        {
+          "id": "prod-fy_smap_station-sm_vod_omega-202512-fusion",
+          "name": "多源融合土壤湿度",
+          "description": "融合SMAP/FY-3D/站点观测的土壤湿度（SM）/植被光学厚度（VOD）/动态散射反照率（ω）产品族（2025-12-01 至 2025-12-31，EASE-Grid 9km）。当前展示 SM，VOD/ω 图层补实现中。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "每日更新"
+        }
+      ],
+      "isMergedGroup": true,
+      "members": [
+        "ref-smap-sm-202512-l3",
+        "ref-ddca-sm-201504-202512",
+        "obs-station-sm-daily",
+        "prod-fy_smap_station-sm_vod_omega-202512-fusion"
+      ],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "precipitation-static",
+      "name": "历史降水",
+      "category": "climate",
+      "metricLabel": "降水",
+      "metricUnit": "mm",
+      "metricPrecision": 1,
+      "updateLabel": "静态数据",
+      "sourceLabel": "多源可选",
+      "accentColor": "#5b8def",
+      "accentGlow": "rgba(91, 141, 239, 0.3)",
+      "chipTone": "rgba(91, 141, 239, 0.16)",
+      "sources": [
+        {
+          "id": "gpcp-precip-ts",
+          "name": "GPCP 月降水",
+          "description": "GPCP 月平均降水（V3.2），全球 0.5°；库内采样约 1983–2010。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "月度更新"
+        },
+        {
+          "id": "cmfd-precip-cn",
+          "name": "CMFD 区域降水",
+          "description": "中国区域高精度格点降水数据集（CMFD），2002 年 1 月月降水（0.1mm 单位转换后）。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": true,
+      "members": [
+        "gpcp-precip-ts",
+        "cmfd-precip-cn"
+      ],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "era5-hazard-events",
+      "name": "ERA5 灾害事件",
+      "category": "climate",
+      "metricLabel": "事件次数",
+      "metricUnit": "events",
+      "metricPrecision": 0,
+      "updateLabel": "静态数据",
+      "sourceLabel": "多源可选",
+      "accentColor": "#e08214",
+      "accentGlow": "rgba(224, 130, 20, 0.3)",
+      "chipTone": "rgba(224, 130, 20, 0.16)",
+      "sources": [
+        {
+          "id": "era5-dwaa-cn",
+          "name": "ERA5 白天热浪",
+          "description": "ERA5 基于 SMCI（土壤湿度指数）指标的白天热浪事件累积计数（2020 全年 366 天）。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        },
+        {
+          "id": "era5-wdaa-cn",
+          "name": "ERA5 夜间热浪",
+          "description": "ERA5 基于 SMCI（土壤湿度指数）指标的夜间热浪事件累积计数（2020 全年 366 天）。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "静态数据"
+        }
+      ],
+      "isMergedGroup": true,
+      "members": [
+        "era5-dwaa-cn",
+        "era5-wdaa-cn"
+      ],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "fy-omega-inversion",
+      "name": "风云 ω 反演",
+      "category": "research-group",
+      "subCategory": "模型输出",
+      "metricLabel": "ω",
+      "metricUnit": "",
+      "metricPrecision": 3,
+      "updateLabel": "按工作流运行",
+      "sourceLabel": "多源可选",
+      "accentColor": "#3288bd",
+      "accentGlow": "rgba(50, 136, 189, 0.3)",
+      "chipTone": "rgba(50, 136, 189, 0.16)",
+      "sources": [
+        {
+          "id": "method-fy-omega-doy-dynamic",
+          "name": "风云卫星 动态 ω 反演",
+          "description": "omega_sf_fenkuai 流水线：FY 亮温 + SMAP 辅助 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "按工作流运行"
+        },
+        {
+          "id": "method-fy-omega-doy-avg",
+          "name": "风云卫星 日均 ω 反演",
+          "description": "omega_avg_daily FY ORIG_TS 链路：经典 D1→D2 日均 ω 反演。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "按工作流运行"
+        }
+      ],
+      "isMergedGroup": true,
+      "members": [
+        "method-fy-omega-doy-dynamic",
+        "method-fy-omega-doy-avg"
+      ],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "smap-omega-inversion",
+      "name": "SMAP ω 反演",
+      "category": "research-group",
+      "subCategory": "模型输出",
+      "metricLabel": "ω",
+      "metricUnit": "",
+      "metricPrecision": 3,
+      "updateLabel": "按工作流运行",
+      "sourceLabel": "多源可选",
+      "accentColor": "#d53e4f",
+      "accentGlow": "rgba(213, 62, 79, 0.3)",
+      "chipTone": "rgba(213, 62, 79, 0.16)",
+      "sources": [
+        {
+          "id": "method-smap-omega-doy-dynamic",
+          "name": "SMAP 动态 ω 反演",
+          "description": "omega_sf_fenkuai 流水线：SMAP 亮温 + 辅助数据 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "按工作流运行"
+        },
+        {
+          "id": "method-smap-omega-doy-avg",
+          "name": "SMAP 日均 ω 反演",
+          "description": "omega_avg_daily / omega_block 经典 D1→D2 链路：SMAP 日均 ω 反演。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "按工作流运行"
+        }
+      ],
+      "isMergedGroup": true,
+      "members": [
+        "method-smap-omega-doy-dynamic",
+        "method-smap-omega-doy-avg"
+      ],
+      "isAdminBoundary": false
+    }
+  ]
+}

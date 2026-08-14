@@ -1,0 +1,48 @@
+request_id: 20260811-dataset-layer-catalog
+entry_type: full_pipeline
+stage_chain: [1, 2, 3]
+current_stage: 1
+user_query: 熟悉整个项目，整理一份完整报告（md+docx）：根据当前的数据集、图层等创造图层名称、数据集名称、内部分类、内部id的综合表格，用于导师交付，并配完整说明。
+created_at: "2026-08-11T07:20:00+08:00"
+updated_at: "2026-08-11T07:20:00+08:00"
+
+stages:
+  stage_0:
+    status: completed
+    completed_at: "2026-08-11T07:20:00+08:00"
+    entry: full_pipeline
+    decision: "创作类任务（无既有文档 + 整理/创造动词）→ S1→S2→S3"
+  stage_1:
+    status: completed
+    started_at: "2026-08-11T07:20:00+08:00"
+    completed_at: "2026-08-11T07:25:00+08:00"
+    output_path: "stage1/final_draft.md"
+    genre: work-report
+    expert_used: work-report-expert
+    route_tag: expert_work_report
+    critic_decision: PASS
+  stage_2:
+    status: in_progress
+    started_at: "2026-08-11T07:25:00+08:00"
+    completed_at: "2026-08-11T07:32:00+08:00"
+    route: html
+    html_sub: template
+    genre: business-report
+    template_used: business-report
+    output_path: "stage2/formatted-数据集与图层综合对照表.html"
+    output_format: html
+    skills_invoked: [design-token, doc-typeset, html-review]
+    html_review_attempts: 1
+    fallback: false
+  stage_3:
+    status: in_progress
+    started_at: "2026-08-11T07:35:00+08:00"
+    completed_at: "2026-08-11T07:40:00+08:00"
+    executor: doc-converter
+    input_format: html
+    output_path: "stage3/output.docx"
+    skill_used: [html-to-docx]
+    present_files_opened: true
+    fallback: false
+    fallback_reason: null
+    warnings: []

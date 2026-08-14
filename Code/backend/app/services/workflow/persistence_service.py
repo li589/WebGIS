@@ -11,9 +11,12 @@ from datetime import datetime, UTC
 import logging
 from uuid import uuid4
 
-from app.services.workflow_repository import SQLiteWorkflowRepository
+from app.services.workflow_repository import (
+    SQLiteWorkflowRepository,
+)
 from shared.contracts.api_contracts import (
     EventChannel,
+    ExecutionStatus,
     LogLevel,
     WorkflowEvent,
     WorkflowRunStatusResponse,
@@ -39,9 +42,33 @@ class WorkflowPersistenceService:
         request_json: str | None = None,
         run_class: str | None = None,
         result_dto_override: dict[str, object] | None = None,
+        user_id: int | None = None,
     ) -> None:
         self._repository.save_run(
             run_status,
+            request_json=request_json,
+            run_class=run_class,
+            result_dto_override=result_dto_override,
+            user_id=user_id,
+        )
+
+    def save_run_status_cas(
+        self,
+        *,
+        run_status: WorkflowRunStatusResponse,
+        expected_status: ExecutionStatus | str,
+        request_json: str | None = None,
+        run_class: str | None = None,
+        result_dto_override: dict[str, object] | None = None,
+    ) -> bool:
+        """CAS-protected status update.
+
+        Delegates to repository.save_run_cas with optimistic locking.
+        Raises ConcurrentModificationError on persistent conflict.
+        """
+        return self._repository.save_run_cas(
+            run_status,
+            expected_status=expected_status,
             request_json=request_json,
             run_class=run_class,
             result_dto_override=result_dto_override,
@@ -54,6 +81,8 @@ class WorkflowPersistenceService:
         request_json: str,
         run_class: str,
         limit: int,
+        user_id: int | None = None,
+        user_limit: int | None = None,
     ) -> None:
         """Atomically reserve capacity and persist the accepted run."""
         self._repository.save_run_under_capacity(
@@ -61,6 +90,8 @@ class WorkflowPersistenceService:
             request_json=request_json,
             run_class=run_class,
             limit=limit,
+            user_id=user_id,
+            user_limit=user_limit,
         )
 
     def record_event(

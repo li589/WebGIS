@@ -100,8 +100,8 @@ MODULE_REQUEST_TEMPLATES: dict[str, RequestTemplateSpec] = {
         entry_kind="module",
         entry_name="smap_daily",
         required_datasource_keys=("input_dir",),
-        accepted_data_access_datasets=("SMAP_SPL3SMP_E",),
-        accepted_data_access_by_required_key={"input_dir": ("SMAP_SPL3SMP_E",)},
+        accepted_data_access_datasets=("SMAP_L3_DEC2025",),
+        accepted_data_access_by_required_key={"input_dir": ("SMAP_L3_DEC2025",)},
         allowed_task_types=("smap_daily", "workflow"),
     ),
     "station_daily": RequestTemplateSpec(

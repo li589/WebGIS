@@ -4,7 +4,9 @@ import { MapChromeNavigationControl } from './map/map-chrome-controls'
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 
+import { AlertTriangle } from './ui/icons'
 import { useLayersStore } from '../stores/layers'
+import { useLayerWorkspace, useLayerViewport } from '../stores/layers/selectors'
 import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
@@ -34,10 +36,18 @@ import {
   isMapDistributionChromeEnabled,
   subscribeMapDistributionChrome,
 } from '../services/settings-local'
-import { dataWorkspaceHighlight, showToast } from '../data-manager/core/workspace-store'
+import { useThemeStore } from '../stores/theme'
+import { resolveSurfaceColor } from './map/map-canvas-map-options'
+import {
+  dataWorkspaceHighlight,
+  dataWorkspaceZoomRequest,
+  showToast,
+} from '../data-manager/core/workspace-store'
 import { debugLog as probeDebugLog } from '../utils/perf-probe'
 
-const layersStore = useLayersStore()
+const layersStore = useLayersStore() // createMapCanvasModuleBundle 需完整 store 实例
+const workspace = useLayerWorkspace()
+const viewport = useLayerViewport()
 const uiStore = useUiStore()
 const logStore = useLogStore()
 const weatherTileManager = useWeatherTileManager()
@@ -106,8 +116,8 @@ function fitToLayerExtent(instanceId: string): boolean {
   const map = state.resources.map
   if (!map) return false
 
-  const layer = layersStore.activeLayers.find((l) => l.instanceId === instanceId)
-  const display = layersStore.activeLayersDisplay.find((l) => l.instanceId === instanceId)
+  const layer = workspace.activeLayers.value.find((l) => l.instanceId === instanceId)
+  const display = workspace.activeLayersDisplay.value.find((l) => l.instanceId === instanceId)
   if (!layer && !display) {
     showToast('未找到图层，无法缩放', true)
     return false
@@ -197,12 +207,12 @@ const currentTileConfig = computed(
 
 // ── Derived from layersStore ──────────────────────────────────────────────────
 
-const selectedLayer = computed(() => layersStore.selectedLayerDisplay)
+const selectedLayer = computed(() => workspace.selectedLayerDisplay.value)
 const hasAdminBoundary = computed(() =>
-  layersStore.activeLayersDisplay.some((d) => d.isAdminBoundary),
+  workspace.activeLayersDisplay.value.some((d) => d.isAdminBoundary),
 )
 const adminBoundaryOpacity = computed(() => {
-  const layer = layersStore.activeLayersDisplay.find((d) => d.isAdminBoundary)
+  const layer = workspace.activeLayersDisplay.value.find((d) => d.isAdminBoundary)
   return layer ? layer.opacity : 1
 })
 
@@ -230,14 +240,14 @@ const weatherTileStatusModel = computed(() => {
   // statusVersion：错误/补洞；activityVersion：瓦片入队/完成（缩放中途加载进度）
   void weatherStatusVersion.value
   void weatherActivityVersion.value
-  const weatherLayers = layersStore.activeLayersDisplay.filter(
-    (l) => l.visible && layersStore.isWeatherEngineLayer(l.catalogId),
+  const weatherLayers = workspace.activeLayersDisplay.value.filter(
+    (l) => l.visible && workspace.isWeatherEngineLayer(l.catalogId),
   )
   return aggregateWeatherTileBanner(
     weatherLayers.map((layer) => {
       const status = weatherTileManager.getLayerStatus(layer.catalogId)
       return {
-        label: layer.metricLabel || layer.name || layer.catalogId,
+        label: layer.name || layer.metricLabel || layer.catalogId,
         active: status.active,
         cachedInViewport: status.cachedInViewport,
         missingInViewport: status.missingInViewport,
@@ -254,6 +264,18 @@ const unsubscribeMapChrome = subscribeMapDistributionChrome(() => {
   mapDistributionChromeEnabled.value = isMapDistributionChromeEnabled()
 })
 
+// ─── 主题切换时更新 MapLibre 背景色 ──────────────────────────────────────────
+const themeStore = useThemeStore()
+watch(
+  () => themeStore.mode,
+  () => {
+    const map = state.resources.map
+    if (map && mapReady.value) {
+      map.setPaintProperty('background', 'background-color', resolveSurfaceColor())
+    }
+  },
+)
+
 const stageAppearanceModel = computed(() =>
   buildMapStageAppearanceModel({
     basemapStyle: currentTileConfig.value.style,
@@ -263,12 +285,58 @@ const stageAppearanceModel = computed(() =>
     isSourceTransitioning: isSourceTransitioning.value,
     mapVisible: mapVisible.value,
     skeletonVisible: skeletonVisible.value,
-    isGlobalViewport: isGlobalMapViewport(layersStore.currentMapBBox),
-    hasVisibleDataLayers: layersStore.activeLayers.some(
+    isGlobalViewport: isGlobalMapViewport(viewport.currentMapBBox.value),
+    hasVisibleDataLayers: workspace.activeLayers.value.some(
       (layer) => layer.visible && !layer.isAdminBoundary,
     ),
     distributionChromeEnabled: mapDistributionChromeEnabled.value,
   }),
+)
+
+// ─── 低缩放纯色底图抑制 ──────────────────────────────────────────────────────
+// 当「分布淡底」关闭 + 无可见数据图层 + 比例尺≥2000km（zoom≤3.5）时，
+// 隐藏纯色底图瓦片层，避免大洲/世界视口下大面积纯色遮挡。
+let _isUnmounted = false
+const BASEMAP_SUPPRESS_ZOOM = 3.5
+
+const shouldSuppressBasemap = computed(() => {
+  if (props.tileSourceId === 'none') return false
+  if (mapDistributionChromeEnabled.value) return false
+  const hasDataLayers = workspace.activeLayers.value.some(
+    (layer) => layer.visible && !layer.isAdminBoundary,
+  )
+  if (hasDataLayers) return false
+  return viewport.currentMapZoom.value <= BASEMAP_SUPPRESS_ZOOM
+})
+
+function applyBasemapSuppression() {
+  if (_isUnmounted) return
+  const map = state.resources.map
+  if (!map || !mapReady.value) return
+  const suppress = shouldSuppressBasemap.value
+  const tileLayer = map.getLayer('tile-base-raster')
+  if (tileLayer) {
+    const target = suppress ? 'none' : 'visible'
+    if (map.getLayoutProperty('tile-base-raster', 'visibility') !== target) {
+      map.setLayoutProperty('tile-base-raster', 'visibility', target)
+    }
+  }
+  const overlayLayer = map.getLayer('tile-base-overlay-raster')
+  if (overlayLayer && suppress) {
+    if (map.getLayoutProperty('tile-base-overlay-raster', 'visibility') !== 'none') {
+      map.setLayoutProperty('tile-base-overlay-raster', 'visibility', 'none')
+    }
+  }
+}
+
+watch(shouldSuppressBasemap, () => applyBasemapSuppression())
+
+// 瓦片源切换（scheduleTileSourceSwitch 有 80ms 防抖）后重新应用抑制
+watch(
+  () => props.tileSourceId,
+  () => {
+    setTimeout(applyBasemapSuppression, 120)
+  },
 )
 
 // ─── Time-of-day visual vars ─────────────────────────────────────────────────
@@ -296,8 +364,10 @@ onMounted(async () => {
     })
     state.resources.mapStagePresentationModule = presentationModule
     await presentationModule.prepareMount()
+    if (_isUnmounted) return
 
     const { default: maplibregl } = await import('maplibre-gl')
+    if (_isUnmounted) return
 
     const mapInstance = new maplibregl.Map(
       createMapCanvasMapOptions({
@@ -390,10 +460,26 @@ onMounted(async () => {
       { deep: false },
     )
 
+    watch(
+      dataWorkspaceZoomRequest,
+      (req) => {
+        if (!req || !mapInstance) return
+        const [west, south, east, north] = req.bbox
+        mapInstance.fitBounds(
+          [
+            [west, south],
+            [east, north],
+          ],
+          { padding: 80, maxZoom: 14, duration: 600 },
+        )
+      },
+      { deep: false },
+    )
+
     createMapCanvasLifecycleBinder({
       map: mapInstance,
       controls: {
-        NavigationControl: MapChromeNavigationControl as any,
+        NavigationControl: MapChromeNavigationControl,
       },
       onLocate: handleLocateMe,
       onMapError: (event) => {
@@ -429,6 +515,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  _isUnmounted = true
   unsubscribeMapChrome()
   teardownBinder.dispose()
   overlayImageModule = null
@@ -445,7 +532,6 @@ const isLocating = ref(false)
 const locateError = ref<{ message: string; hint: string } | null>(null)
 let locationMarkerCleanup: (() => void) | null = null
 let locateErrorTimer: ReturnType<typeof setTimeout> | null = null
-let locationMarkerTimer: ReturnType<typeof setTimeout> | null = null
 
 function _showLocateError(message: string, hint: string) {
   locateError.value = { message, hint }
@@ -456,10 +542,6 @@ function _showLocateError(message: string, hint: string) {
 }
 
 function _clearLocationMarker() {
-  if (locationMarkerTimer) {
-    clearTimeout(locationMarkerTimer)
-    locationMarkerTimer = null
-  }
   if (locationMarkerCleanup) {
     locationMarkerCleanup()
     locationMarkerCleanup = null
@@ -483,7 +565,7 @@ async function _syncInspectMarker(point: { lng: number; lat: number } | null | u
   }
   _clearInspectMarker()
   const { default: maplibregl } = await import('maplibre-gl')
-  if (!state.resources.map) return
+  if (_isUnmounted || !state.resources.map) return
   const el = document.createElement('div')
   el.className = 'inspect-point-marker'
   el.innerHTML = '<div class="inspect-dot"></div>'
@@ -493,12 +575,12 @@ async function _syncInspectMarker(point: { lng: number; lat: number } | null | u
   inspectMarkerCleanup = () => marker.remove()
 }
 
+// inspectPoint 是 {lng, lat} 浅对象，用字符串键浅 watch 替代 deep watch
 watch(
-  () => props.inspectPoint,
-  (point) => {
-    void _syncInspectMarker(point)
+  () => (props.inspectPoint ? `${props.inspectPoint.lng},${props.inspectPoint.lat}` : null),
+  () => {
+    void _syncInspectMarker(props.inspectPoint)
   },
-  { deep: true },
 )
 
 async function handleLocateMe() {
@@ -539,12 +621,16 @@ async function handleLocateMe() {
       // 添加定位标记 (持续保留在地图上，直至再次点击消除)
       _clearLocationMarker()
       const { default: maplibregl } = await import('maplibre-gl')
+      if (_isUnmounted || !state.resources.map) {
+        isLocating.value = false
+        return
+      }
       const el = document.createElement('div')
       el.className = 'geolocation-marker'
       el.innerHTML = '<div class="geo-pulse"></div><div class="geo-dot"></div>'
       const marker = new maplibregl.Marker({ element: el })
         .setLngLat([longitude, latitude])
-        .addTo(mapInstance)
+        .addTo(state.resources.map)
       locationMarkerCleanup = () => marker.remove()
 
       isLocating.value = false
@@ -726,844 +812,21 @@ async function handleLocateMe() {
     <!-- 定位失败提示 -->
     <Transition name="locate-error">
       <div v-if="locateError" class="locate-error-tip">
-        <span class="locate-error-icon">⚠</span>
+        <span class="locate-error-icon"><AlertTriangle :size="14" aria-hidden="true" /></span>
         <div class="locate-error-body">
           <p class="locate-error-msg">{{ locateError.message }}</p>
           <p class="locate-error-hint">{{ locateError.hint }}</p>
         </div>
-        <button class="locate-error-close" @click="locateError = null">×</button>
+        <button
+          class="locate-error-close"
+          aria-label="关闭定位错误提示"
+          @click="locateError = null"
+        >
+          ×
+        </button>
       </div>
     </Transition>
   </section>
 </template>
 
-<style scoped>
-.map-stage {
-  position: relative;
-  min-height: calc(100vh - 1.5rem);
-  overflow: hidden;
-  border-radius: 1.4rem;
-  border: 1px solid rgba(136, 192, 255, 0.16);
-  background:
-    radial-gradient(circle at top, rgba(66, 130, 255, 0.14), transparent 28rem),
-    linear-gradient(180deg, rgba(6, 14, 26, 0.98), rgba(10, 19, 35, 0.94));
-  /* 性能优化：contained paint layer */
-  contain: layout style paint;
-}
-
-.map-host,
-.map-fog,
-.weather-overlay,
-.grid-overlay,
-.hotspot-layer {
-  position: absolute;
-  inset: 0;
-}
-
-.map-host {
-  z-index: 0;
-  opacity: 0.01;
-  transition: opacity 0.45s ease;
-}
-
-.map-host.visible {
-  opacity: 1;
-}
-
-.map-skeleton {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 28% 36%, rgba(87, 166, 255, 0.18), transparent 16rem),
-    linear-gradient(180deg, rgba(7, 16, 29, 0.98), rgba(10, 19, 35, 0.95));
-  opacity: 1;
-  transition: opacity 0.35s ease;
-}
-
-.map-skeleton.hidden {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.map-skeleton.hidden .skeleton-sweep {
-  animation-play-state: paused;
-}
-
-.skeleton-sweep,
-.skeleton-node,
-.skeleton-strip {
-  position: absolute;
-}
-
-.skeleton-sweep {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    110deg,
-    transparent 26%,
-    rgba(255, 255, 255, 0.08) 50%,
-    transparent 74%
-  );
-  transform: translateX(-100%);
-  animation: sweep 2.4s linear infinite;
-  /* 性能优化：GPU 加速 */
-  will-change: transform;
-}
-
-.skeleton-node {
-  width: 0.9rem;
-  height: 0.9rem;
-  border-radius: 999px;
-  background: rgba(138, 198, 255, 0.34);
-  box-shadow: 0 0 0 10px rgba(82, 134, 255, 0.08);
-}
-
-.skeleton-node-a {
-  top: 34%;
-  left: 28%;
-}
-.skeleton-node-b {
-  top: 56%;
-  left: 64%;
-}
-
-.skeleton-strip {
-  height: 0.7rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.skeleton-strip-a {
-  left: 1rem;
-  bottom: 5rem;
-  width: 10rem;
-}
-.skeleton-strip-b {
-  right: 1rem;
-  bottom: 4.9rem;
-  width: 7.6rem;
-}
-
-.map-fog {
-  z-index: 1;
-  pointer-events: none;
-  background:
-    radial-gradient(circle at 20% 18%, rgba(3, 12, 24, 0.06), transparent 18rem),
-    linear-gradient(180deg, rgba(4, 11, 20, 0.01), rgba(4, 11, 20, 0.24));
-}
-
-.basemap-transition-mask {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  opacity: 0;
-  background:
-    radial-gradient(circle at 50% 48%, rgba(125, 192, 255, 0.08), transparent 18rem),
-    linear-gradient(180deg, rgba(4, 11, 20, 0.08), rgba(4, 11, 20, 0.14));
-  /* 性能优化：GPU 加速，仅 opacity 使用过渡 */
-  transform: translateZ(0);
-  will-change: opacity;
-  transition: opacity 0.22s ease;
-}
-
-.time-sheen {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  background:
-    radial-gradient(
-      circle at var(--horizon-position) 18%,
-      rgba(255, 196, 120, var(--time-glow-opacity)),
-      transparent 20rem
-    ),
-    linear-gradient(
-      180deg,
-      rgba(255, 181, 107, calc(var(--time-glow-opacity) * 0.35)) 0%,
-      transparent 38%
-    );
-  /* 性能优化：GPU 加速，仅 opacity 使用过渡 */
-  transform: translateZ(0);
-  will-change: opacity;
-  transition: opacity 0.35s ease;
-}
-
-.time-band {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  background:
-    radial-gradient(
-      circle at var(--horizon-position) 72%,
-      rgba(100, 140, 220, 0.18),
-      transparent var(--stage-glow-spread)
-    ),
-    linear-gradient(
-      180deg,
-      transparent 58%,
-      rgba(255, 255, 255, calc(var(--stage-band-opacity) * 0.16)) 100%
-    );
-  /* 性能优化：GPU 加速，仅 opacity 使用过渡 */
-  transform: translateZ(0);
-  will-change: opacity;
-  opacity: 0.92;
-  transition: opacity 0.35s ease;
-}
-
-.weather-overlay {
-  z-index: 1;
-  pointer-events: none;
-  opacity: 0.24;
-  background:
-    radial-gradient(circle at 18% 30%, rgba(82, 134, 255, 0.12), transparent 18rem),
-    radial-gradient(circle at 78% 24%, rgba(82, 134, 255, 0.12), transparent 20rem),
-    radial-gradient(circle at 52% 72%, rgba(255, 255, 255, 0.06), transparent 16rem);
-  /* 性能优化：移除 filter blur，改用背景渐变透明度，GPU 加速 */
-  transform: translateZ(0);
-  will-change: opacity;
-}
-
-.grid-overlay {
-  z-index: 1;
-  pointer-events: none;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
-  background-size: 72px 72px;
-  mask-image: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.6) 18%, rgba(0, 0, 0, 0.92));
-  will-change: opacity;
-}
-
-.map-stage-interacting .weather-overlay,
-.map-stage-interacting .time-sheen,
-.map-stage-interacting .time-band,
-.map-stage-interacting .grid-overlay {
-  opacity: 0.08;
-}
-
-.map-stage-interacting .hotspot-layer {
-  opacity: 0.4;
-}
-
-.map-stage-transitioning .basemap-transition-mask {
-  opacity: 1;
-}
-
-.map-stage-transitioning .map-host {
-  filter: saturate(0.92) brightness(0.92);
-}
-
-.map-stage-ready .weather-overlay {
-  opacity: 0.28;
-}
-.map-stage-ready .time-sheen {
-  opacity: 1;
-}
-.map-stage-ready .time-band {
-  opacity: 1;
-}
-.map-stage-partial .weather-overlay {
-  opacity: 0.16;
-}
-.map-stage-partial .grid-overlay {
-  opacity: 0.32;
-}
-.map-stage-empty .map-fog {
-  background:
-    radial-gradient(circle at 20% 18%, rgba(3, 12, 24, 0.12), transparent 18rem),
-    linear-gradient(180deg, rgba(4, 11, 20, 0.08), rgba(4, 11, 20, 0.34));
-}
-.map-stage-empty .time-sheen {
-  opacity: 0.38;
-}
-.map-stage-empty .time-band {
-  opacity: 0.46;
-}
-.map-stage-empty .weather-overlay {
-  opacity: 0.08;
-}
-.map-stage-empty .grid-overlay {
-  opacity: 0.2;
-}
-
-/* 无可见数据图层或设置关闭：任意缩放下关闭氛围遮罩 */
-.map-stage.map-stage-chrome-off .map-fog,
-.map-stage.map-stage-chrome-off .time-sheen,
-.map-stage.map-stage-chrome-off .time-band,
-.map-stage.map-stage-chrome-off .weather-overlay,
-.map-stage.map-stage-chrome-off .grid-overlay {
-  opacity: 0 !important;
-  pointer-events: none;
-}
-
-/* 全球视口淡底：仅在有可见数据图层时启用，纯底图时保持清晰 */
-.map-stage.map-stage-global-view:not(.map-stage-distribution) .map-fog,
-.map-stage.map-stage-global-view:not(.map-stage-distribution) .time-sheen,
-.map-stage.map-stage-global-view:not(.map-stage-distribution) .time-band,
-.map-stage.map-stage-global-view:not(.map-stage-distribution) .weather-overlay,
-.map-stage.map-stage-global-view:not(.map-stage-distribution) .grid-overlay {
-  opacity: 0;
-}
-
-/* 空状态不再额外加暗（无图层时由 chrome-off 清底图） */
-.map-stage-empty.map-stage-chrome-off .map-fog,
-.map-stage-empty.map-stage-chrome-off .time-sheen,
-.map-stage-empty.map-stage-chrome-off .time-band,
-.map-stage-empty.map-stage-chrome-off .weather-overlay,
-.map-stage-empty.map-stage-chrome-off .grid-overlay {
-  opacity: 0 !important;
-}
-
-.map-overlay {
-  position: absolute;
-  z-index: 21;
-  top: 0;
-  left: 0;
-  right: auto;
-  display: flex;
-  gap: 0.38rem;
-  flex-wrap: wrap;
-  padding: 0.8rem 0.8rem 0;
-  box-sizing: border-box;
-  align-content: flex-start;
-}
-
-.chip {
-  padding: 0.24rem 0.48rem;
-  border-radius: 999px;
-  background: rgba(8, 18, 33, 0.52);
-  border: 1px solid rgba(136, 192, 255, 0.12);
-  color: #eff7ff;
-  font-size: 0.64rem;
-}
-
-.chip.secondary {
-  color: #eaf7ff;
-  border-color: rgba(90, 162, 255, 0.36);
-  background: rgba(36, 90, 170, 0.16);
-}
-
-.chip-ready {
-  color: #9ff8cf;
-  border-color: rgba(114, 255, 207, 0.2);
-  background: rgba(114, 255, 207, 0.08);
-}
-.chip-partial {
-  color: #ffd38a;
-  border-color: rgba(255, 196, 120, 0.18);
-  background: rgba(255, 196, 120, 0.08);
-}
-.chip-empty {
-  color: #d7c1ff;
-  border-color: rgba(187, 137, 255, 0.18);
-  background: rgba(187, 137, 255, 0.08);
-}
-
-.map-note {
-  position: absolute;
-  z-index: 18;
-  left: 1rem;
-  bottom: 3.15rem;
-  max-width: 13rem;
-  display: grid;
-  gap: 0.2rem;
-  padding: 0.46rem 0.54rem;
-  border-radius: 0.82rem;
-  background: rgba(8, 18, 33, 0.72);
-  border: 1px solid rgba(90, 162, 255, 0.12);
-}
-
-.map-note h2 {
-  margin: 0;
-  font-size: 0.76rem;
-  color: #f3fbff;
-}
-.map-note p {
-  margin: 0;
-  color: #96a8bb;
-  font-size: 0.64rem;
-  line-height: 1.32;
-}
-.map-note-meta {
-  color: #bfd3e6;
-  font-size: 0.58rem;
-  letter-spacing: 0.02em;
-}
-
-.time-indicator {
-  position: relative;
-  height: 0.24rem;
-  margin-top: 0.16rem;
-  border-radius: 999px;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.time-indicator-fill {
-  width: var(--time-progress);
-  height: 100%;
-  border-radius: inherit;
-  background: rgba(90, 106, 128, 0.25);
-}
-
-.hotspot-layer {
-  z-index: 2;
-  pointer-events: none;
-}
-.hotspot-layer-ready .hotspot-pin {
-  opacity: 1;
-}
-.hotspot-layer-partial .hotspot-pin {
-  opacity: 0.76;
-}
-.hotspot-layer-empty .hotspot-pin {
-  opacity: 0.38;
-}
-
-.hotspot-pin {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 0;
-  border: none;
-  background: transparent;
-  appearance: none;
-  pointer-events: auto;
-  cursor: pointer;
-  /* 性能优化：GPU 加速，仅 opacity 使用过渡 */
-  will-change: opacity;
-  transition: opacity 0.28s ease;
-}
-
-.hotspot-core {
-  width: 0.74rem;
-  height: 0.74rem;
-  border-radius: 999px;
-  background: var(--accent-color);
-  transform: translateZ(0) scale(var(--hotspot-scale));
-  box-shadow:
-    0 0 0 0 rgba(255, 255, 255, 0.08),
-    0 0 0 var(--hotspot-halo-size) rgba(90, 106, 128, 0.3);
-  /* 性能优化：仅 GPU 属性过渡 */
-  transition:
-    transform 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-    box-shadow 0.28s ease;
-}
-
-.hotspot-label {
-  margin-top: 0.4rem;
-  padding: 0.32rem 0.42rem;
-  border-radius: 0.8rem;
-  background: rgba(4, 12, 23, 0.72);
-  border: 1px solid rgba(136, 192, 255, 0.14);
-  color: #e8f3fc;
-  white-space: nowrap;
-  box-shadow: 0 10px 18px rgba(1, 8, 16, 0.18);
-  opacity: var(--hotspot-label-opacity);
-  will-change: opacity;
-  transition: opacity 0.28s ease;
-  transform: translateZ(0);
-}
-
-.map-loading {
-  position: absolute;
-  inset: auto auto 1rem 1rem;
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.5rem 0.72rem;
-  border-radius: 999px;
-  background: rgba(8, 18, 33, 0.88);
-  border: 1px solid rgba(136, 192, 255, 0.16);
-  color: #dfeefd;
-  font-size: 0.74rem;
-}
-
-.loading-dot {
-  width: 0.48rem;
-  height: 0.48rem;
-  border-radius: 999px;
-  background: var(--accent-color);
-  box-shadow: 0 0 0 6px rgba(90, 106, 128, 0.13);
-}
-
-.tile-load-error {
-  position: absolute;
-  top: 110px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.38rem;
-  padding: 0.38rem 0.6rem 0.38rem 0.5rem;
-  border-radius: 999px;
-  background: rgba(8, 18, 33, 0.92);
-  border: 1px solid rgba(255, 100, 100, 0.28);
-  color: #ffb3b3;
-  font-size: 0.64rem;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
-}
-
-.tile-error-icon {
-  display: flex;
-  align-items: center;
-  color: #ff9090;
-}
-
-.tile-retry-btn {
-  margin-left: 0.18rem;
-  padding: 0.18rem 0.46rem;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 140, 140, 0.3);
-  background: rgba(255, 80, 80, 0.12);
-  color: #ffc0c0;
-  font-size: 0.6rem;
-  font-family: inherit;
-  cursor: pointer;
-  transition:
-    background 0.18s ease,
-    color 0.18s ease;
-}
-
-.tile-retry-btn:hover {
-  background: rgba(255, 80, 80, 0.22);
-  color: #fff0f0;
-}
-
-/* 天气瓦片加载指示器 */
-.weather-loading {
-  position: absolute;
-  top: 110px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.38rem;
-  padding: 0.38rem 0.7rem;
-  border-radius: 999px;
-  background: rgba(8, 18, 33, 0.88);
-  border: 1px solid rgba(100, 160, 255, 0.25);
-  color: #a8c8ff;
-  font-size: 0.64rem;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
-}
-
-.weather-loading-dot {
-  width: 0.48rem;
-  height: 0.48rem;
-  border-radius: 999px;
-  background: #6aa0ff;
-  box-shadow: 0 0 0 6px rgba(100, 160, 255, 0.12);
-  animation: weather-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes weather-pulse {
-  0%,
-  100% {
-    opacity: 0.5;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-/* 天气瓦片半覆盖 / 补洞提示 */
-.weather-load-partial {
-  position: absolute;
-  top: 110px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.38rem;
-  padding: 0.38rem 0.7rem;
-  border-radius: 999px;
-  background: rgba(18, 28, 22, 0.9);
-  border: 1px solid rgba(120, 200, 160, 0.28);
-  color: #b8e6c8;
-  font-size: 0.64rem;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
-}
-
-/* 天气瓦片错误横幅 */
-.weather-load-error {
-  position: absolute;
-  top: 110px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.38rem;
-  padding: 0.38rem 0.6rem 0.38rem 0.5rem;
-  border-radius: 999px;
-  background: rgba(33, 22, 8, 0.92);
-  border: 1px solid rgba(255, 180, 60, 0.3);
-  color: #ffcb80;
-  font-size: 0.64rem;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
-  max-width: min(80%, 36rem);
-  max-height: 2.6rem;
-  overflow: hidden;
-}
-
-.weather-load-error > span:last-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.weather-error-icon {
-  display: flex;
-  align-items: center;
-  color: #ffa040;
-  flex-shrink: 0;
-}
-
-.hotspot-label strong,
-.hotspot-label span {
-  display: block;
-}
-.hotspot-label strong {
-  font-size: 0.64rem;
-}
-.hotspot-label span {
-  margin-top: 0.15rem;
-  color: #99afc3;
-  font-size: 0.6rem;
-}
-
-:deep(.maplibregl-ctrl-attrib) {
-  background: rgba(255, 255, 255, 0.8);
-}
-
-@keyframes sweep {
-  to {
-    transform: translateX(100%);
-  }
-}
-
-@media (max-width: 820px) {
-  .map-stage {
-    min-height: calc(100vh - 1rem);
-  }
-  .map-overlay {
-    top: 0;
-    left: 0;
-    padding: 0.75rem 0.75rem 0;
-  }
-  .map-note {
-    left: 0.75rem;
-    right: 0.75rem;
-    bottom: 8.3rem;
-    max-width: none;
-  }
-  :deep(.maplibregl-ctrl-bottom-left) {
-    left: 0.75rem;
-    bottom: 0.75rem;
-  }
-  :deep(.maplibregl-ctrl-bottom-right) {
-    right: 0.75rem;
-    bottom: 0.75rem;
-  }
-  .locate-me-btn {
-    right: 3.55rem;
-    bottom: 0.75rem;
-  }
-}
-
-/* ── 自动定位按钮 ─────────────────────────────────────────────────────── */
-.locate-me-btn {
-  position: absolute;
-  right: 3.8rem;
-  bottom: 0.8rem;
-  z-index: 25;
-  width: 2.4rem;
-  height: 2.4rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
-  border-radius: 0.6rem;
-  background: rgba(4, 12, 23, 0.55);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  color: #9fb6cc;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition:
-    border-color 0.2s ease,
-    color 0.2s ease,
-    background 0.2s ease;
-  pointer-events: auto;
-}
-
-.locate-me-btn:hover:not(:disabled) {
-  border-color: rgba(90, 213, 255, 0.4);
-  color: #5ad5ff;
-  background: rgba(10, 132, 255, 0.15);
-}
-
-.locate-me-btn:active:not(:disabled) {
-  transform: scale(0.95);
-}
-
-.locate-me-btn.locating {
-  border-color: rgba(90, 213, 255, 0.3);
-  color: #5ad5ff;
-}
-
-.locate-spinner {
-  width: 1rem;
-  height: 1rem;
-  border: 2px solid rgba(90, 213, 255, 0.2);
-  border-top-color: #5ad5ff;
-  border-radius: 50%;
-  animation: locate-spin 0.8s linear infinite;
-}
-
-@keyframes locate-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* ── 定位失败提示 ─────────────────────────────────────────────────────── */
-.locate-error-tip {
-  position: absolute;
-  right: 3.5rem;
-  bottom: 3.4rem;
-  z-index: 26;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  max-width: 18rem;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid rgba(255, 138, 138, 0.28);
-  border-radius: 0.6rem;
-  background: rgba(40, 12, 18, 0.82);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  pointer-events: auto;
-}
-
-.locate-error-icon {
-  color: #ff8a8a;
-  font-size: 0.85rem;
-  flex: none;
-  margin-top: 0.05rem;
-}
-
-.locate-error-body {
-  flex: 1;
-  min-width: 0;
-}
-
-.locate-error-msg {
-  margin: 0;
-  color: #ffb0b0;
-  font-size: 0.68rem;
-  font-weight: 600;
-  line-height: 1.3;
-}
-
-.locate-error-hint {
-  margin: 0.15rem 0 0;
-  color: #c8a0a0;
-  font-size: 0.58rem;
-  line-height: 1.4;
-}
-
-.locate-error-close {
-  border: none;
-  background: transparent;
-  color: #8a6060;
-  font-size: 0.9rem;
-  line-height: 1;
-  cursor: pointer;
-  flex: none;
-  padding: 0;
-  margin-top: -0.1rem;
-}
-
-.locate-error-close:hover {
-  color: #ff8a8a;
-}
-
-.locate-error-enter-active,
-.locate-error-leave-active {
-  transition:
-    opacity 0.25s ease,
-    transform 0.25s ease;
-}
-
-.locate-error-enter-from,
-.locate-error-leave-to {
-  opacity: 0;
-  transform: translateY(0.4rem);
-}
-
-/* ── 定位标记 ─────────────────────────────────────────────────────────── */
-:deep(.geolocation-marker) {
-  pointer-events: none;
-}
-
-:deep(.inspect-point-marker) {
-  pointer-events: none;
-}
-
-:deep(.inspect-dot) {
-  width: 0.75rem;
-  height: 0.75rem;
-  border-radius: 50%;
-  background: #ffb84d;
-  border: 2px solid #fff;
-  box-shadow: 0 0 8px rgba(255, 184, 77, 0.75);
-}
-:deep(.geo-dot) {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 0.7rem;
-  height: 0.7rem;
-  border-radius: 50%;
-  background: #5ad5ff;
-  border: 2px solid #fff;
-  box-shadow: 0 0 6px rgba(90, 213, 255, 0.6);
-}
-
-:deep(.geo-pulse) {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 2rem;
-  height: 2rem;
-  border-radius: 50%;
-  background: rgba(90, 213, 255, 0.25);
-  animation: geo-pulse-anim 2s ease-out infinite;
-}
-
-@keyframes geo-pulse-anim {
-  0% {
-    transform: translate(-50%, -50%) scale(0.5);
-    opacity: 1;
-  }
-  100% {
-    transform: translate(-50%, -50%) scale(2.5);
-    opacity: 0;
-  }
-}
-</style>
+<style scoped src="./MapCanvas.styles.css" />

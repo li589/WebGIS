@@ -2,44 +2,51 @@
   {
     "id": "climate",
     "name": "气候与灾害",
-    "icon": "Thermometer",
-    "accentColor": "#f97316"
-  },
-  {
-    "id": "vegetation",
-    "name": "植被相关",
-    "icon": "Leaf",
-    "accentColor": "#10b981"
+    "icon": "C",
+    "accent_color": "#ff9d6c",
+    "chip_tone": "rgba(255, 157, 108, 0.16)"
   },
   {
     "id": "landcover",
     "name": "土地利用",
-    "icon": "Layers",
-    "accentColor": "#a855f7"
+    "icon": "L",
+    "accent_color": "#7fd99a",
+    "chip_tone": "rgba(127, 217, 154, 0.16)"
   },
   {
     "id": "terrain",
     "name": "地形数据",
-    "icon": "Mountain",
-    "accentColor": "#eab308"
+    "icon": "T",
+    "accent_color": "#eab308",
+    "chip_tone": "rgba(234, 179, 8, 0.16)"
+  },
+  {
+    "id": "vegetation",
+    "name": "植被相关",
+    "icon": "V",
+    "accent_color": "#4daf4a",
+    "chip_tone": "rgba(77, 175, 74, 0.16)"
   },
   {
     "id": "research-group",
     "name": "课题组数据",
-    "icon": "FolderGit2",
-    "accentColor": "#6366f1",
-    "subCategories": ["模型输入", "模型输出", "辅助数据"]
+    "icon": "R",
+    "accent_color": "#ff6f91",
+    "chip_tone": "rgba(255, 111, 145, 0.16)",
+    "sub_categories": ["模型输入", "模型输出", "辅助数据"]
   },
   {
     "id": "imported",
     "name": "本地导入",
-    "icon": "Upload",
-    "accentColor": "#06b6d4"
+    "icon": "I",
+    "accent_color": "#7ee0a8",
+    "chip_tone": "rgba(126, 224, 168, 0.16)"
   },
   {
     "id": "weather",
     "name": "在线天气",
-    "icon": "CloudSun",
-    "accentColor": "#38bdf8"
+    "icon": "W",
+    "accent_color": "#67d4ff",
+    "chip_tone": "rgba(103, 212, 255, 0.18)"
   }
 ]

@@ -58,9 +58,19 @@ def resolve_open_meteo_model(
     return resolved
 
 
-def provider_grid_mode(provider_id: str) -> str:
-    """dense = native multi-point grid; sparse = point-sampled commercial grids."""
-    pid = normalize_provider_id(provider_id) or provider_id
+def provider_grid_mode(provider_id: str | object) -> str:
+    """X2: 返回 provider 的网格密度能力。
+
+    优先使用 provider 实例的 ``grid_density`` 属性（显式能力声明）；
+    传入字符串 ID 时按前缀推断（向后兼容）。
+
+    - ``"dense"``：原生多点网格（如 Open-Meteo），可直接用于瓦片渲染
+    - ``"sparse"``：点采样商业源（如 WeatherAPI / OpenWeather），不适合瓦片渲染
+    """
+    # X2: 优先使用 provider 实例的显式能力声明
+    if hasattr(provider_id, "grid_density"):
+        return provider_id.grid_density  # type: ignore[union-attr]
+    pid = normalize_provider_id(provider_id) or provider_id  # type: ignore[arg-type]
     if pid.startswith("open-meteo"):
         return "dense"
     return "sparse"

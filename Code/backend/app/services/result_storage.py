@@ -25,6 +25,7 @@ class StoredArtifact:
     title: str
     content_length: int
     public_url: str | None = None
+    run_id: str | None = None
 
 
 class ResultStorageService:
@@ -184,6 +185,7 @@ class ResultStorageService:
             title=str(stored_object.metadata.get("title", artifact_id)),
             content_length=stored_object.content_length,
             public_url=stored_object.public_url,
+            run_id=stored_object.metadata.get("run_id"),
         )
 
     def fetch_artifact_bytes(self, artifact_id: str) -> bytes | None:

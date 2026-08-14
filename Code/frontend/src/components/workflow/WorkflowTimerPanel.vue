@@ -7,6 +7,7 @@
  */
 import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { AlarmClock, X, CircleSlash, Timer, Play } from '../ui/icons'
 
 import { useWorkflowTimersStore } from '../../stores/workflow-timers'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
@@ -561,12 +562,12 @@ onUnmounted(() => {
 
 <template>
   <div
-    :class="embedded ? 'timer-embedded' : 'timer-overlay'"
+    :class="[embedded ? 'timer-embedded' : 'timer-overlay', !embedded && 'timer-overlay-anim']"
     @click.self="!embedded && emit('close')"
   >
     <div class="timer-panel" :class="{ 'timer-panel--embedded': embedded }">
       <div class="panel-header">
-        <span class="header-icon" aria-hidden="true">⏰</span>
+        <AlarmClock :size="18" class="header-icon" aria-hidden="true" />
         <span class="header-title">{{ contextTitle }}</span>
         <span class="header-tz-hint" title="Cron 与日期模板按 Asia/Shanghai 解释；存储为 UTC ISO"
           >北京时间</span
@@ -603,9 +604,10 @@ onUnmounted(() => {
             class="close-btn"
             type="button"
             title="关闭"
+            aria-label="关闭"
             @click="emit('close')"
           >
-            <span aria-hidden="true">✕</span>
+            <X :size="14" aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -646,7 +648,7 @@ onUnmounted(() => {
             </div>
 
             <div v-if="!loading && filteredTimers.length === 0" class="empty-state compact">
-              <span class="empty-icon" aria-hidden="true">∅</span>
+              <CircleSlash :size="20" class="empty-icon" aria-hidden="true" />
               <span>暂无定时器</span>
               <span class="empty-hint">为当前工作流创建调度任务</span>
               <button class="header-btn primary" type="button" @click="openCreate">
@@ -683,6 +685,7 @@ onUnmounted(() => {
                     type="button"
                     :disabled="lastActionTimerId === timer.timer_id"
                     :title="timer.enabled ? '点击禁用' : '点击启用'"
+                    :aria-label="timer.enabled ? '点击禁用' : '点击启用'"
                     @click="timersStore.toggleEnabled(timer)"
                   >
                     <span class="toggle-knob"></span>
@@ -691,12 +694,23 @@ onUnmounted(() => {
                     class="action-btn primary"
                     type="button"
                     :disabled="runningTimerIds.has(timer.timer_id)"
+                    aria-label="运行定时器"
                     @click="runTimer(timer)"
                   >
-                    {{ runningTimerIds.has(timer.timer_id) ? '…' : '▶' }}
+                    {{ runningTimerIds.has(timer.timer_id) ? '…' : ''
+                    }}<Play
+                      v-if="!runningTimerIds.has(timer.timer_id)"
+                      :size="14"
+                      aria-hidden="true"
+                    />
                   </button>
-                  <button class="action-btn danger" type="button" @click="askDelete(timer)">
-                    ✕
+                  <button
+                    class="action-btn danger"
+                    type="button"
+                    aria-label="删除定时器"
+                    @click="askDelete(timer)"
+                  >
+                    <X :size="14" aria-hidden="true" />
                   </button>
                 </div>
               </button>
@@ -747,7 +761,7 @@ onUnmounted(() => {
               />
             </div>
             <div v-else class="detail-empty">
-              <span class="empty-icon" aria-hidden="true">⏱</span>
+              <Timer :size="20" class="empty-icon" aria-hidden="true" />
               <h3>选择左侧定时器</h3>
               <p>查看详情、编辑触发规则，或新建调度任务。</p>
               <button class="header-btn primary" type="button" @click="openCreate">
@@ -827,7 +841,7 @@ onUnmounted(() => {
   z-index: 998;
   display: flex;
   justify-content: flex-end;
-  background: rgba(4, 10, 18, 0.5);
+  background: var(--surface-raised);
 }
 
 .timer-embedded {
@@ -847,18 +861,18 @@ onUnmounted(() => {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: rgba(8, 17, 31, 0.98);
-  border-left: 1px solid rgba(136, 192, 255, 0.14);
+  background: var(--surface-2);
+  border-left: 1px solid var(--border-default);
   box-shadow: -12px 0 36px rgba(1, 8, 16, 0.32);
 }
 
-.timer-panel--embedded {
-  width: 100% !important;
-  max-width: none !important;
-  height: 100% !important;
+.timer-panel.timer-panel--embedded {
+  width: 100%;
+  max-width: none;
+  height: 100%;
   border-left: none;
   box-shadow: none;
-  background: rgba(6, 14, 26, 0.55);
+  background: var(--surface-raised);
 }
 
 .panel-header {
@@ -866,8 +880,8 @@ onUnmounted(() => {
   align-items: center;
   gap: 0.4rem;
   padding: 0.72rem 0.82rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.1);
-  color: #e8f3fc;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-strong);
   font-size: 0.88rem;
   font-weight: 600;
   flex: none;
@@ -875,7 +889,7 @@ onUnmounted(() => {
 
 .header-icon {
   font-size: 0.95rem;
-  color: #5ad5ff;
+  color: var(--accent);
 }
 
 .header-title {
@@ -889,10 +903,10 @@ onUnmounted(() => {
 .header-tz-hint {
   margin-left: 0.5rem;
   margin-right: auto;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   font-weight: 500;
-  color: rgba(160, 200, 240, 0.72);
-  border: 1px solid rgba(136, 192, 255, 0.22);
+  color: var(--text-muted);
+  border: 1px solid var(--border-strong);
   border-radius: 0.25rem;
   padding: 0.1rem 0.35rem;
   flex: none;
@@ -907,18 +921,18 @@ onUnmounted(() => {
 
 .header-btn {
   padding: 0.36rem 0.68rem;
-  border: 1px solid rgba(90, 213, 255, 0.3);
+  border: 1px solid var(--accent-border);
   border-radius: 0.35rem;
-  background: rgba(12, 28, 48, 0.75);
-  color: #c5d8ea;
-  font-size: 0.68rem;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 
 .header-btn.primary {
-  border-color: rgba(90, 213, 255, 0.5);
-  background: rgba(24, 70, 105, 0.85);
-  color: #e8f3fc;
+  border-color: var(--border-strong);
+  background: var(--accent-blue-deep, #1a5fcc);
+  color: #fff;
 }
 
 .header-btn:disabled {
@@ -929,7 +943,7 @@ onUnmounted(() => {
 .close-btn {
   border: none;
   background: transparent;
-  color: #8aa8bf;
+  color: var(--text-muted);
   cursor: pointer;
   font-size: 0.85rem;
 }
@@ -951,20 +965,20 @@ onUnmounted(() => {
   margin: 0.5rem 0.72rem 0;
   padding: 0.45rem 0.62rem;
   border-radius: 0.35rem;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   flex: none;
 }
 
 .error-banner {
-  background: rgba(120, 30, 40, 0.35);
-  color: #ffb4b4;
-  border: 1px solid rgba(255, 120, 120, 0.25);
+  background: var(--danger-surface);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
 }
 
 .info-banner {
-  background: rgba(20, 50, 80, 0.45);
-  color: #b8d4ec;
-  border: 1px solid rgba(90, 180, 255, 0.22);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  border: 1px solid var(--accent-border);
 }
 
 .timer-split {
@@ -985,17 +999,17 @@ onUnmounted(() => {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  border-right: 1px solid rgba(136, 192, 255, 0.1);
-  background: rgba(8, 16, 28, 0.45);
+  border-right: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
 }
 
-.timer-split-resizer {
-  position: relative !important;
+.wf-sidebar-resizer.timer-split-resizer {
+  position: relative;
   flex: none;
   width: 8px;
   align-self: stretch;
-  right: auto !important;
-  left: auto !important;
+  right: auto;
+  left: auto;
 }
 
 .timer-detail-pane {
@@ -1004,7 +1018,7 @@ onUnmounted(() => {
   min-height: 0;
   overflow: auto;
   padding: 0.85rem 1rem;
-  background: rgba(4, 12, 22, 0.35);
+  background: var(--surface-sunken);
 }
 
 .list-toolbar {
@@ -1019,18 +1033,18 @@ onUnmounted(() => {
   width: 100%;
   padding: 0.35rem 0.45rem;
   border-radius: 0.3rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
-  background: rgba(4, 12, 22, 0.65);
-  color: #e8f3fc;
-  font-size: 0.68rem;
+  border: 1px solid var(--border-default);
+  background: var(--surface-1);
+  color: var(--text-strong);
+  font-size: var(--font-size-caption);
 }
 
 .link-btn {
   align-self: flex-start;
   border: none;
   background: transparent;
-  color: #5ad5ff;
-  font-size: 0.62rem;
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   cursor: pointer;
   padding: 0;
 }
@@ -1052,19 +1066,19 @@ onUnmounted(() => {
   gap: 0.32rem;
   padding: 0.55rem 0.55rem 0.45rem;
   border-radius: 0.4rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
-  background: rgba(10, 22, 38, 0.72);
+  border: 1px solid var(--border-default);
+  background: var(--surface-1);
   color: inherit;
   cursor: pointer;
 }
 
 .timer-card:hover {
-  border-color: rgba(90, 213, 255, 0.35);
+  border-color: var(--border-strong);
 }
 
 .timer-card.selected {
-  border-color: rgba(90, 213, 255, 0.65);
-  box-shadow: inset 0 0 0 1px rgba(90, 213, 255, 0.25);
+  border-color: var(--border-strong);
+  box-shadow: inset 0 0 0 1px var(--border-accent);
 }
 
 .timer-card.disabled {
@@ -1084,18 +1098,18 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
-  color: #e8f3fc;
+  color: var(--text-strong);
 }
 
 .type-badge {
   flex: none;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   padding: 0.08rem 0.32rem;
   border-radius: 0.25rem;
   background: rgba(60, 120, 180, 0.35);
-  color: #b8d4ec;
+  color: var(--text-secondary);
 }
 
 .badge-interval {
@@ -1112,12 +1126,12 @@ onUnmounted(() => {
 }
 
 .meta-line {
-  font-size: 0.62rem;
-  color: #8aa8bf;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 .card-actions {
@@ -1132,15 +1146,15 @@ onUnmounted(() => {
   width: 1.8rem;
   height: 1rem;
   border-radius: 999px;
-  border: 1px solid rgba(136, 192, 255, 0.25);
-  background: rgba(40, 50, 65, 0.8);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
   cursor: pointer;
   padding: 0;
 }
 
 .toggle-switch.on {
-  background: rgba(40, 120, 90, 0.75);
-  border-color: rgba(90, 220, 160, 0.45);
+  background: var(--success);
+  border-color: var(--success-border);
 }
 
 .toggle-knob {
@@ -1150,7 +1164,7 @@ onUnmounted(() => {
   width: 0.7rem;
   height: 0.7rem;
   border-radius: 50%;
-  background: #d8e6f5;
+  background: var(--surface-3);
   transition: left 0.15s ease;
 }
 
@@ -1161,20 +1175,20 @@ onUnmounted(() => {
 .action-btn {
   padding: 0.18rem 0.4rem;
   border-radius: 0.28rem;
-  border: 1px solid rgba(136, 192, 255, 0.22);
-  background: rgba(12, 24, 42, 0.8);
-  color: #c5d8ea;
-  font-size: 0.62rem;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 
 .action-btn.primary {
-  border-color: rgba(90, 213, 255, 0.4);
+  border-color: var(--border-strong);
 }
 
 .action-btn.danger {
   border-color: rgba(255, 120, 120, 0.35);
-  color: #ffb4b4;
+  color: var(--danger);
 }
 
 .empty-state {
@@ -1184,8 +1198,8 @@ onUnmounted(() => {
   justify-content: center;
   gap: 0.45rem;
   padding: 1.5rem 1rem;
-  color: #8aa8bf;
-  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
   text-align: center;
 }
 
@@ -1199,8 +1213,8 @@ onUnmounted(() => {
 }
 
 .empty-hint {
-  font-size: 0.65rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
 }
 
 .detail-empty {
@@ -1211,19 +1225,19 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  color: #8aa8bf;
+  color: var(--text-muted);
   text-align: center;
 }
 
 .detail-empty h3 {
   margin: 0;
   font-size: 0.95rem;
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 
 .detail-empty p {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   max-width: 22rem;
 }
 
@@ -1234,13 +1248,13 @@ onUnmounted(() => {
 .detail-title {
   margin: 0 0 0.25rem;
   font-size: 0.92rem;
-  color: #e8f3fc;
+  color: var(--text-strong);
 }
 
 .detail-sub {
   margin: 0 0 0.55rem;
-  font-size: 0.62rem;
-  color: #7a96ad;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 
 .detail-stats {
@@ -1248,12 +1262,12 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 0.55rem 0.9rem;
   margin-bottom: 0.85rem;
-  font-size: 0.65rem;
-  color: #9fb6cc;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
 }
 
 .detail-stats .err {
-  color: #ff9b9b;
+  color: var(--danger);
 }
 
 .dialog-overlay {
@@ -1263,7 +1277,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(2, 8, 16, 0.55);
+  background: var(--surface-raised);
 }
 
 .dialog {
@@ -1272,21 +1286,21 @@ onUnmounted(() => {
   overflow: auto;
   padding: 1rem;
   border-radius: 0.5rem;
-  border: 1px solid rgba(136, 192, 255, 0.18);
-  background: rgba(10, 20, 34, 0.98);
+  border: 1px solid var(--border-default);
+  background: var(--surface-2);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
 }
 
 .dialog-title {
   margin: 0 0 0.55rem;
   font-size: 0.9rem;
-  color: #e8f3fc;
+  color: var(--text-strong);
 }
 
 .dialog-text {
   margin: 0 0 0.75rem;
-  font-size: 0.72rem;
-  color: #9fb6cc;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
 }
 
 .dialog-form {
@@ -1302,17 +1316,17 @@ onUnmounted(() => {
 }
 
 .form-label {
-  font-size: 0.7rem;
-  color: #c5d8ea;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
 }
 
 .form-input {
   padding: 0.4rem 0.5rem;
   border-radius: 0.35rem;
-  border: 1px solid rgba(136, 192, 255, 0.2);
-  background: rgba(4, 12, 22, 0.7);
-  color: #e8f3fc;
-  font-size: 0.72rem;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-1);
+  color: var(--text-strong);
+  font-size: var(--font-size-caption);
 }
 
 .form-input.textarea {
@@ -1322,8 +1336,8 @@ onUnmounted(() => {
 
 .dialog-info {
   margin: 0.55rem 0;
-  font-size: 0.68rem;
-  color: #b8d4ec;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
 }
 
 .dialog-actions {
@@ -1336,21 +1350,81 @@ onUnmounted(() => {
 .dialog-btn {
   padding: 0.38rem 0.72rem;
   border-radius: 0.35rem;
-  border: 1px solid rgba(136, 192, 255, 0.22);
-  background: rgba(12, 24, 42, 0.9);
-  color: #c5d8ea;
-  font-size: 0.72rem;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 
 .dialog-btn.primary {
-  border-color: rgba(90, 213, 255, 0.45);
-  background: rgba(20, 60, 90, 0.85);
+  border-color: var(--border-strong);
+  background: var(--surface-3);
 }
 
 .dialog-btn.danger {
-  border-color: rgba(255, 120, 120, 0.4);
-  color: #ffb4b4;
-  background: rgba(80, 24, 32, 0.75);
+  border-color: var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-surface);
+}
+
+/* ── 定时器面板滑入动画（overlay 模式） ──────────────────────── */
+.timer-overlay-anim {
+  animation: timer-overlay-fade 0.2s ease;
+}
+.timer-overlay-anim .timer-panel {
+  animation: timer-panel-slide-in 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes timer-overlay-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes timer-panel-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* ── 确认/事件对话框动画 ────────────────────────────────────── */
+.dialog-overlay {
+  animation: dialog-fade-in 0.18s ease;
+}
+.dialog {
+  animation: dialog-pop-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes dialog-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes dialog-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timer-overlay-anim,
+  .timer-overlay-anim .timer-panel,
+  .dialog-overlay,
+  .dialog {
+    animation: none;
+    transition: opacity 0.01s ease;
+  }
 }
 </style>

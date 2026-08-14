@@ -146,4 +146,85 @@ describe('workspace-persist', () => {
     expect(snap.vectorLayers).toHaveLength(0)
     expect(isVectorDismissed('vec-gone')).toBe(true)
   })
+
+  it('persists computing run-group placeholders (locked, no overlay)', () => {
+    const groupId = 'run-group-abc'
+    const members: ActiveLayer[] = (['SM', 'VOD', 'OMEGA'] as const).map((tag, i) => ({
+      instanceId: `inst-${tag.toLowerCase()}`,
+      catalogId: `wf-run-${groupId}-${tag.toLowerCase()}`,
+      name: tag,
+      visible: true,
+      opacity: 1,
+      order: i,
+      isAdminBoundary: false,
+      dataState: 'catalog',
+      runGroupId: groupId,
+      runGroupProductTag: tag,
+      runGroupLocked: true,
+    }))
+    const groups: ActiveRunLayerGroup[] = [
+      {
+        groupId,
+        runId: 'run-live-1',
+        title: 'SF 运行中',
+        status: 'computing',
+        memberInstanceIds: members.map((m) => m.instanceId),
+        dissolvable: false,
+        sourceLayerId: 'method-smap-omega-doy-dynamic',
+        workflowId: 'omega_sf_fenkuai_smap_single',
+      },
+    ]
+    const snap = buildWorkspaceSnapshot(members, groups)
+    expect(snap.catalogLayers).toHaveLength(3)
+    expect(snap.catalogLayers?.every((l) => l.runGroupLocked === true)).toBe(true)
+    expect(snap.groups).toHaveLength(1)
+    expect(snap.groups[0]?.status).toBe('computing')
+    expect(snap.groups[0]?.dissolvable).toBe(false)
+    expect(snap.groups[0]?.memberInstanceIds).toHaveLength(3)
+  })
+
+  it('keeps computing status when progressive overlay + placeholders mix', () => {
+    const groupId = 'run-group-mix'
+    const sm: ActiveLayer = {
+      instanceId: 'inst-sm',
+      catalogId: `wf-run-${groupId}-sm`,
+      visible: true,
+      opacity: 1,
+      order: 2,
+      isAdminBoundary: false,
+      dataState: 'imported',
+      runGroupId: groupId,
+      runGroupProductTag: 'SM',
+      runGroupLocked: true,
+      importedRaster: { overlayLayerId: 'ov-sm', fileName: 'sm.tif', timeList: ['20251201'] },
+    }
+    const vod: ActiveLayer = {
+      instanceId: 'inst-vod',
+      catalogId: `wf-run-${groupId}-vod`,
+      visible: true,
+      opacity: 1,
+      order: 1,
+      isAdminBoundary: false,
+      dataState: 'catalog',
+      runGroupId: groupId,
+      runGroupProductTag: 'VOD',
+      runGroupLocked: true,
+    }
+    const groups: ActiveRunLayerGroup[] = [
+      {
+        groupId,
+        runId: 'run-mix',
+        title: '渐进',
+        status: 'computing',
+        memberInstanceIds: ['inst-sm', 'inst-vod'],
+        dissolvable: false,
+      },
+    ]
+    const snap = buildWorkspaceSnapshot([sm, vod], groups)
+    expect(snap.layers).toHaveLength(1)
+    expect(snap.layers[0]?.runGroupLocked).toBe(true)
+    expect(snap.catalogLayers).toHaveLength(1)
+    expect(snap.groups[0]?.status).toBe('computing')
+    expect(snap.groups[0]?.memberInstanceIds).toEqual(['inst-sm', 'inst-vod'])
+  })
 })

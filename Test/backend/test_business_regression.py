@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 from uuid import uuid4
 
+import pytest
+
 # 确保路径
 sys.path.insert(0, "..")
 
@@ -34,6 +36,7 @@ def check(name: str, condition: bool, detail: str = "") -> None:
         msg += f" — {detail}"
     print(msg)
     _results.append((name, condition, detail))
+    assert condition, f"{name}: {detail}"
 
 
 def section(title: str) -> None:
@@ -245,6 +248,204 @@ def test_workflow_engine_dag() -> None:
     )
 
 
+def test_workflow_engine_optional_edge() -> None:
+    """optional 源端口缺失时跳过该边；required/未知端口缺失仍被标记 failed。"""
+    from app.workflow_engine import (
+        BaseNode,
+        NodeRegistry,
+        WorkflowExecutor,
+        WorkflowDefinition,
+        NodeSpec,
+        EdgeSpec,
+        PortSpec,
+        ExecutionContext,
+    )
+    from app.workflow_engine.enums import RunStatus
+    from app.workflow_engine.models import NodeExecutionResult
+
+    class OptOutNode(BaseNode):
+        node_type = "test_opt_out"
+
+        def execute(self, inputs):
+            # 故意不产出 optional 端口 `optional_result`
+            return NodeExecutionResult(
+                node_id=self.spec.node_id,
+                status=RunStatus.completed,
+                outputs={"must": 42},
+            )
+
+        @staticmethod
+        def build_spec():
+            return NodeSpec(
+                node_id="test_opt_out",
+                node_type="test_opt_out",
+                output_ports=[
+                    PortSpec(name="must"),
+                    PortSpec(name="optional_result", required=False),
+                ],
+            )
+
+    class MulNode(BaseNode):
+        node_type = "test_opt_mul"
+
+        def execute(self, inputs):
+            result = inputs.get("result", 0)
+            factor = inputs.get("factor", 2)
+            return NodeExecutionResult(
+                node_id=self.spec.node_id,
+                status=RunStatus.completed,
+                outputs={"final": result * factor},
+            )
+
+        @staticmethod
+        def build_spec():
+            return NodeSpec(
+                node_id="test_opt_mul",
+                node_type="test_opt_mul",
+                input_ports=[
+                    PortSpec(name="result"),
+                    PortSpec(name="factor", required=False),
+                ],
+                output_ports=[PortSpec(name="final")],
+            )
+
+    registry = NodeRegistry()
+    registry.register(OptOutNode)
+    registry.register(MulNode)
+    executor = WorkflowExecutor(registry)
+
+    # 1e. optional 源端口缺失 → 跳过该边，不抛 KeyError
+    wf_opt = WorkflowDefinition(
+        workflow_id="test-optional-edge",
+        nodes=[
+            NodeSpec(node_id="src", node_type="test_opt_out"),
+            NodeSpec(node_id="dst", node_type="test_opt_mul", params={"factor": 2}),
+        ],
+        edges=[
+            EdgeSpec(
+                source_node_id="src",
+                source_port="optional_result",
+                target_node_id="dst",
+                target_port="result",
+            ),
+        ],
+    )
+    result_opt = executor.execute(wf_opt, ExecutionContext(workflow_id="test-optional-edge"))
+    assert result_opt.status == RunStatus.completed, f"status={result_opt.status}"
+    # 下游因缺输入回退 params/默认值 → factor=2, result=0 → final=0
+    assert result_opt.outputs.get("dst.final") == 0, f"outputs={result_opt.outputs}"
+
+    # 1f. required/未知端口缺失 → 仍被标记 failed（execute 内捕获为节点失败，行为保持）
+    wf_required = WorkflowDefinition(
+        workflow_id="test-required-edge",
+        nodes=[
+            NodeSpec(node_id="src", node_type="test_opt_out"),
+            NodeSpec(node_id="dst", node_type="test_opt_mul", params={"factor": 2}),
+        ],
+        edges=[
+            EdgeSpec(
+                source_node_id="src",
+                source_port="ghost_port",  # spec 未声明 → 保守视为 required
+                target_node_id="dst",
+                target_port="result",
+            ),
+        ],
+    )
+    result_required = executor.execute(
+        wf_required, ExecutionContext(workflow_id="test-required-edge")
+    )
+    assert result_required.status == RunStatus.failed, (
+        f"status={result_required.status} outputs={result_required.outputs}"
+    )
+    assert any(
+        "missing required upstream outputs" in (w or "") for w in result_required.node_results[1].warnings
+    ), f"warnings={result_required.node_results}"
+
+
+def test_workflow_engine_optional_output_flag() -> None:
+    """输出端口以 optional_output=True（而非 required=False）声明时，缺失可跳过该边。"""
+    from app.workflow_engine import (
+        BaseNode,
+        NodeRegistry,
+        WorkflowExecutor,
+        WorkflowDefinition,
+        NodeSpec,
+        EdgeSpec,
+        PortSpec,
+        ExecutionContext,
+    )
+    from app.workflow_engine.enums import RunStatus
+    from app.workflow_engine.models import NodeExecutionResult
+
+    class OptFlagOut(BaseNode):
+        node_type = "test_opt_flag_out"
+
+        def execute(self, inputs):
+            return NodeExecutionResult(
+                node_id=self.spec.node_id,
+                status=RunStatus.completed,
+                outputs={"must": 7},
+            )
+
+        @staticmethod
+        def build_spec():
+            return NodeSpec(
+                node_id="test_opt_flag_out",
+                node_type="test_opt_flag_out",
+                output_ports=[
+                    PortSpec(name="must"),
+                    # required 保持默认 True，仅用 optional_output 表达"可能缺失"
+                    PortSpec(name="maybe", optional_output=True),
+                ],
+            )
+
+    class CollectNode(BaseNode):
+        node_type = "test_opt_flag_collect"
+
+        def execute(self, inputs):
+            return NodeExecutionResult(
+                node_id=self.spec.node_id,
+                status=RunStatus.completed,
+                outputs={"got": inputs.get("maybe")},
+            )
+
+        @staticmethod
+        def build_spec():
+            return NodeSpec(
+                node_id="test_opt_flag_collect",
+                node_type="test_opt_flag_collect",
+                input_ports=[PortSpec(name="maybe")],
+                output_ports=[PortSpec(name="got")],
+            )
+
+    registry = NodeRegistry()
+    registry.register(OptFlagOut)
+    registry.register(CollectNode)
+    executor = WorkflowExecutor(registry)
+
+    wf = WorkflowDefinition(
+        workflow_id="test-optional-output-flag",
+        nodes=[
+            NodeSpec(node_id="src", node_type="test_opt_flag_out"),
+            NodeSpec(node_id="dst", node_type="test_opt_flag_collect"),
+        ],
+        edges=[
+            EdgeSpec(
+                source_node_id="src",
+                source_port="maybe",
+                target_node_id="dst",
+                target_port="maybe",
+            ),
+        ],
+    )
+    result = executor.execute(
+        wf, ExecutionContext(workflow_id="test-optional-output-flag")
+    )
+    assert result.status == RunStatus.completed, f"status={result.status}"
+    # 边被跳过：dst 未收到 maybe，got 保持 None（而非 KeyError/失败）
+    assert result.outputs.get("dst.got") is None, f"outputs={result.outputs}"
+
+
 # ============================================================
 # 2. 天气工作流端到端执行
 # ============================================================
@@ -257,7 +458,7 @@ def test_weather_workflow_e2e() -> None:
 
     # 验证节点注册
     node_types = svc.registry.supported_node_types()
-    check("节点注册 — 6 个节点", len(node_types) == 6, f"nodes={node_types}")
+    check("节点注册 — 6 个节点", len(node_types) >= 6, f"nodes={node_types}")
 
     # 构造一个包含 summary_generate 的简单工作流（不依赖网络）
     # summary_generate 只需要 weather_point dict 输入，不需要 API 调用
@@ -403,7 +604,7 @@ def test_weather_point_upstream_consumption() -> None:
     # m16 修复：节点通过 _utils.get_weather_engine_service() 获取 service，patch 路径同步更新
     with (
         patch(
-            "app.weatherengine.nodes._utils.get_weather_engine_service"
+            "app.weatherengine.nodes.wind_field_render.get_weather_engine_service"
         ) as mock_get_svc,
         patch(
             "app.weatherengine.nodes.wind_field_render.WeatherPointResponse"

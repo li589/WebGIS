@@ -14,9 +14,15 @@ function createMapMock() {
       addSource: (id: string, source: any) => {
         sources.set(id, source)
       },
+      removeSource: (id: string) => {
+        sources.delete(id)
+      },
       getLayer: (id: string) => (layers.has(id) ? { id } : undefined),
       addLayer: (layer: { id: string }) => {
         layers.add(layer.id)
+      },
+      removeLayer: (id: string) => {
+        layers.delete(id)
       },
       setLayoutProperty: vi.fn(),
       setPaintProperty: vi.fn(),
@@ -220,5 +226,43 @@ describe('basemap-module', () => {
 
     expect(setTileLoadFailed).toHaveBeenLastCalledWith(true)
     expect(setTileFailedProvider).toHaveBeenLastCalledWith('Esri')
+  })
+
+  it('adds annotation overlay when tile source provides overlayUrlTemplate', () => {
+    const { map, layers, sources } = createMapMock()
+    const module = createBasemapModule({
+      map,
+      getTileConfig: (sourceId) =>
+        sourceId === 'tianditu-vec'
+          ? {
+              id: 'tianditu-vec',
+              label: '天地图街道',
+              provider: 'Tianditu',
+              style: 'street',
+              urlTemplate: '/unified-tiles/tianditu-vec/{z}/{x}/{y}',
+              overlayUrlTemplate: '/unified-tiles/tianditu-cva/{z}/{x}/{y}',
+              saturation: 0,
+              brightness: 0,
+              contrast: 0,
+              isStandard: true,
+              needsBackendTransform: false,
+              authMode: 'api-key',
+            }
+          : undefined,
+      getCurrentTileSourceId: () => 'tianditu-vec',
+      setTileLoadFailed: vi.fn(),
+      setTileFailedProvider: vi.fn(),
+      setSourceTransitioning: vi.fn(),
+    })
+
+    module.switchTileSource('tianditu-vec')
+
+    expect(sources.has('tile-base')).toBe(true)
+    expect(sources.has('tile-base-overlay')).toBe(true)
+    expect(layers.has('tile-base-raster')).toBe(true)
+    expect(layers.has('tile-base-overlay-raster')).toBe(true)
+    expect(sources.get('tile-base-overlay').tiles).toEqual([
+      '/unified-tiles/tianditu-cva/{z}/{x}/{y}',
+    ])
   })
 })

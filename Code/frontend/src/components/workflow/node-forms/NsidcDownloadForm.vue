@@ -11,6 +11,7 @@
  *   - short_name: NSIDC 数据集短名（默认 SPL3SMP_E）
  */
 import { computed, onMounted, reactive, watch } from 'vue'
+import { Check, AlertTriangle } from '../../ui/icons'
 import type { LGraphNodeClass } from '../litegraph-setup'
 import {
   type FormErrors,
@@ -26,6 +27,7 @@ import {
 } from '../../../composables/system-settings-fill'
 import { fieldMapForNodeType } from '../../../composables/node-form-system-settings-map'
 import { WORKFLOW_COPY } from '../../../ui-copy/workflow'
+import AppSelect from '../../ui/AppSelect.vue'
 
 const NODE_TYPE = 'download/nsidc_smap_download'
 const PATH_FIELD_MAP = fieldMapForNodeType(NODE_TYPE)
@@ -114,11 +116,6 @@ function update(key: string, value: unknown) {
   validateForm()
   emit('update-property', key, value)
 }
-
-function onVersionChange(event: Event) {
-  const raw = (event.target as HTMLSelectElement).value
-  update('version', Number(raw))
-}
 </script>
 
 <template>
@@ -140,15 +137,15 @@ function onVersionChange(event: Event) {
     <!-- 版本 -->
     <div class="form-row">
       <label class="form-label">版本 version</label>
-      <select
-        class="form-input form-select"
-        :value="String(form.version ?? '6')"
+      <AppSelect
+        :model-value="String(form.version ?? '6')"
         :disabled="readonly"
-        @change="onVersionChange"
-      >
-        <option value="5">5</option>
-        <option value="6">6</option>
-      </select>
+        :options="[
+          { label: '5', value: '5' },
+          { label: '6', value: '6' },
+        ]"
+        @change="(val: string) => update('version', Number(val))"
+      />
     </div>
 
     <!-- 日期范围 -->
@@ -202,8 +199,12 @@ function onVersionChange(event: Event) {
 
     <!-- 校验状态摘要 -->
     <div class="form-summary" :class="{ valid: errorCount === 0, invalid: errorCount > 0 }">
-      <template v-if="errorCount === 0">✓ 表单校验通过</template>
-      <template v-else>⚠ 请修正 {{ errorCount }} 处错误</template>
+      <template v-if="errorCount === 0"
+        ><Check :size="14" aria-hidden="true" /> 表单校验通过</template
+      >
+      <template v-else
+        ><AlertTriangle :size="14" aria-hidden="true" /> 请修正 {{ errorCount }} 处错误</template
+      >
     </div>
   </div>
 </template>
@@ -223,8 +224,8 @@ function onVersionChange(event: Event) {
 }
 
 .form-label {
-  font-size: 0.56rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   font-weight: 500;
   display: flex;
   align-items: center;
@@ -236,37 +237,37 @@ function onVersionChange(event: Event) {
   margin-left: auto;
   padding: 0.12rem 0.36rem;
   border-radius: 0.28rem;
-  border: 1px solid rgba(90, 213, 255, 0.35);
-  background: rgba(90, 213, 255, 0.1);
-  color: #5ad5ff;
-  font-size: 0.5rem;
+  border: 1px solid var(--border-strong);
+  background: var(--accent-surface);
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 
 .sys-fill-btn:hover {
-  background: rgba(90, 213, 255, 0.2);
+  background: var(--accent-border);
 }
 
 .form-input {
   width: 100%;
   padding: 0.32rem 0.42rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.36rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #d8e6f5;
+  background: var(--surface-raised);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   box-sizing: border-box;
 }
 
 .form-input:focus {
   outline: none;
-  border-color: rgba(90, 213, 255, 0.4);
+  border-color: var(--border-strong);
 }
 
 .form-input:read-only {
-  background: rgba(4, 12, 23, 0.3);
-  color: #6e8ba0;
+  background: var(--surface-sunken);
+  color: var(--text-faint);
   cursor: default;
 }
 
@@ -274,8 +275,8 @@ function onVersionChange(event: Event) {
   appearance: none;
   cursor: pointer;
   background-image:
-    linear-gradient(45deg, transparent 50%, #6e8ba0 50%),
-    linear-gradient(135deg, #6e8ba0 50%, transparent 50%);
+    linear-gradient(45deg, transparent 50%, var(--text-faint) 50%),
+    linear-gradient(135deg, var(--text-faint) 50%, transparent 50%);
   background-position:
     calc(100% - 0.8rem) center,
     calc(100% - 0.5rem) center;
@@ -293,8 +294,8 @@ function onVersionChange(event: Event) {
 
 /* 字段错误提示 */
 .field-error {
-  font-size: 0.52rem;
-  color: #ff7b7b;
+  font-size: var(--font-size-caption);
+  color: var(--danger);
   margin-top: 0.06rem;
   line-height: 1.3;
 }
@@ -304,20 +305,20 @@ function onVersionChange(event: Event) {
   margin-top: 0.32rem;
   padding: 0.3rem 0.52rem;
   border-radius: 0.36rem;
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   text-align: center;
   border: 1px solid transparent;
 }
 
 .form-summary.valid {
-  background: rgba(114, 255, 207, 0.08);
-  color: #72ffcf;
-  border-color: rgba(114, 255, 207, 0.22);
+  background: var(--success-surface);
+  color: var(--success);
+  border-color: var(--success-border);
 }
 
 .form-summary.invalid {
   background: rgba(255, 123, 123, 0.08);
-  color: #ff7b7b;
+  color: var(--danger);
   border-color: rgba(255, 123, 123, 0.22);
 }
 </style>

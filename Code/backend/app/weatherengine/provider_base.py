@@ -165,6 +165,18 @@ class WeatherProvider(ABC):
         """是否需要 API Key。免费 API 通常返回 False。默认 False。"""
         return False
 
+    @property
+    def grid_density(self) -> str:
+        """X2: 网格密度能力声明。
+
+        - ``"dense"``：原生多点网格（如 Open-Meteo），可直接用于瓦片渲染。
+        - ``"sparse"``：点采样商业源（如 WeatherAPI / OpenWeather），网格数据稀疏，
+          不适合直接渲染瓦片，应由瓦片服务跳过或降级处理。
+
+        默认 ``"dense"``；商业 Provider 应覆盖为 ``"sparse"``。
+        """
+        return "dense"
+
     # ── 核心数据获取方法（必须实现） ───────────────────────────────────────────
 
     @abstractmethod

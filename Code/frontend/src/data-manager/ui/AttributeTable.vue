@@ -1,5 +1,6 @@
 ﻿<script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { AlertTriangle } from '../../components/ui/icons'
 import {
   addLayerField,
   batchSetFeatureAttribute,
@@ -21,13 +22,16 @@ import {
   dataWorkspaceLayerId,
   dataWorkspaceMaximized,
   dataWorkspaceSelection,
+  dataWorkspaceZoomRequest,
   openDataWorkspace,
   showToast,
 } from '../core/workspace-store'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { DATA_COPY } from '../../ui-copy'
+import AppButton from '../../components/ui/AppButton.vue'
+import AppSelect from '../../components/ui/AppSelect.vue'
 
-const layersStore = useLayersStore()
+const workspace = useLayerWorkspace()
 
 const pageSize = 80
 const offset = ref(0)
@@ -36,6 +40,7 @@ const features = ref<GeoJSON.Feature[]>([])
 const absIndexes = ref<number[]>([])
 const schemaFields = ref<string[]>([])
 const encodingBadge = ref('')
+const metaError = ref('')
 const loading = ref(false)
 const error = ref('')
 const filterField = ref('')
@@ -58,7 +63,7 @@ const ctxMenu = ref<{ x: number; y: number; abs: number; field: string; value: u
 )
 
 const importedVectors = computed(() =>
-  layersStore.activeLayers.filter((l) => l.importedVector?.backendLayerId),
+  workspace.activeLayers.value.filter((l) => l.importedVector?.backendLayerId),
 )
 
 const selectedLayer = computed(() => {
@@ -153,14 +158,16 @@ async function loadMetaAndRows() {
     schemaFields.value = []
     return
   }
+  metaError.value = ''
   try {
     const meta = await fetchImportedLayerMeta(backendId.value)
     if (Array.isArray(meta.fields) && meta.fields.length) {
       schemaFields.value = meta.fields.map(String)
     }
     encodingBadge.value = describeSourceEncoding(meta) || DATA_COPY.attrEncodingUnknown
-  } catch {
+  } catch (e) {
     encodingBadge.value = ''
+    metaError.value = `元数据加载失败：${e instanceof Error ? e.message : String(e)}`
   }
   await load()
 }
@@ -228,9 +235,8 @@ async function load() {
   }
 }
 
-function onSelectLayer(e: Event) {
-  const v = (e.target as HTMLSelectElement).value
-  dataWorkspaceLayerId.value = v || null
+function onSelectLayer(val: string) {
+  dataWorkspaceLayerId.value = val || null
 }
 
 function prevPage() {
@@ -382,16 +388,75 @@ function syncSelectionHighlight(primary?: GeoJSON.Feature) {
   }
 }
 
+function computeFeaturesBbox(feats: GeoJSON.Feature[]): [number, number, number, number] | null {
+  let minLng = Infinity,
+    minLat = Infinity,
+    maxLng = -Infinity,
+    maxLat = -Infinity
+  let hasCoords = false
+  for (const feat of feats) {
+    const geom = feat.geometry
+    if (!geom) continue
+    const coords: number[] = []
+    switch (geom.type) {
+      case 'Point':
+        coords.push(...geom.coordinates)
+        break
+      case 'MultiPoint':
+      case 'LineString':
+        for (const c of geom.coordinates) coords.push(...c)
+        break
+      case 'MultiLineString':
+      case 'Polygon':
+        for (const ring of geom.coordinates) for (const c of ring) coords.push(...c)
+        break
+      case 'MultiPolygon':
+        for (const poly of geom.coordinates)
+          for (const ring of poly) for (const c of ring) coords.push(...c)
+        break
+    }
+    for (let i = 0; i < coords.length; i += 2) {
+      const lng = coords[i]!,
+        lat = coords[i + 1]!
+      if (Number.isFinite(lng) && Number.isFinite(lat)) {
+        minLng = Math.min(minLng, lng)
+        maxLng = Math.max(maxLng, lng)
+        minLat = Math.min(minLat, lat)
+        maxLat = Math.max(maxLat, lat)
+        hasCoords = true
+      }
+    }
+  }
+  if (!hasCoords) return null
+  const pad = 0.0001
+  if (maxLng - minLng < pad) {
+    minLng -= pad
+    maxLng += pad
+  }
+  if (maxLat - minLat < pad) {
+    minLat -= pad
+    maxLat += pad
+  }
+  return [minLng, minLat, maxLng, maxLat]
+}
+
 function zoomToSelected() {
   if (!selectedLayer.value || !selectedAbs.value.size) return
   const feats = features.value.filter((_, i) => selectedAbs.value.has(absIndexes.value[i] ?? -1))
   if (!feats.length) return
+  const bbox = computeFeaturesBbox(feats)
+  if (bbox) {
+    dataWorkspaceZoomRequest.value = {
+      instanceId: selectedLayer.value.instanceId,
+      bbox,
+    }
+  }
+  // 同时更新高亮（单选时设为首个要素）
   dataWorkspaceHighlight.value = {
     instanceId: selectedLayer.value.instanceId,
     feature: feats[0]!,
     featureIndex: Array.from(selectedAbs.value)[0],
   }
-  // 复用地图高亮；多要素时 fit 由 MapCanvas 对单要素已足够，后续可扩展
   openDataWorkspace({ tab: 'attributes', layerInstanceId: selectedLayer.value.instanceId })
 }
 
@@ -467,7 +532,7 @@ async function doRename() {
   try {
     const result = await renameImportedLayerField(backendId.value, renameFrom.value, safeTo.value)
     if (result.preview_geojson && selectedLayer.value) {
-      layersStore.updateImportedVectorGeojson(
+      workspace.updateImportedVectorGeojson(
         selectedLayer.value.instanceId,
         result.preview_geojson,
         {
@@ -547,6 +612,59 @@ function toggleSort(field: string) {
   offset.value = 0
   void load()
 }
+
+function onTableKeydown(e: KeyboardEvent) {
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+  if (!rows.value.length) return
+  e.preventDefault()
+  const currentIdx = lastClickedAbs.value
+  let targetLocal: number
+  if (currentIdx == null) {
+    targetLocal = 0
+  } else {
+    const currentLocal = absIndexes.value.findIndex((a) => a === currentIdx)
+    if (currentLocal < 0) {
+      targetLocal = 0
+    } else {
+      targetLocal = e.key === 'ArrowDown' ? currentLocal + 1 : currentLocal - 1
+    }
+  }
+  if (targetLocal < 0 || targetLocal >= rows.value.length) return
+  const targetRow = rows.value[targetLocal]!
+  selectedAbs.value = new Set([targetRow.abs])
+  lastClickedAbs.value = targetRow.abs
+  syncSelectionHighlight(targetRow.feat)
+  nextTick(() => {
+    const el = tableBodyEl.value?.querySelector(
+      `tr[data-abs="${targetRow.abs}"]`,
+    ) as HTMLElement | null
+    el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  })
+}
+
+const qualityHints = computed(() => {
+  if (!features.value.length || !columns.value.length) return null
+  const nullCounts: Record<string, number> = {}
+  const totalFeats = features.value.length
+  for (const col of columns.value) {
+    let nulls = 0
+    for (const feat of features.value) {
+      const v = feat.properties?.[col]
+      if (v == null || v === '') nulls++
+    }
+    nullCounts[col] = nulls
+  }
+  const colsWithNulls = Object.entries(nullCounts).filter(([, n]) => n > 0)
+  if (!colsWithNulls.length) return null
+  const worst = colsWithNulls.sort((a, b) => b[1] - a[1])[0]!
+  const worstRatio = ((worst[1] / totalFeats) * 100).toFixed(0)
+  return {
+    worstCol: worst[0],
+    worstCount: worst[1],
+    worstRatio,
+    totalColsWithNulls: colsWithNulls.length,
+  }
+})
 </script>
 
 <template>
@@ -554,19 +672,21 @@ function toggleSort(field: string) {
     <div class="attr-toolbar">
       <label>
         {{ DATA_COPY.attrLayer }}
-        <select :value="selectedLayer?.instanceId ?? ''" @change="onSelectLayer">
-          <option v-if="!importedVectors.length" value="">{{ DATA_COPY.attrEmpty }}</option>
-          <option v-for="l in importedVectors" :key="l.instanceId" :value="l.instanceId">
-            {{ l.name }}
-          </option>
-        </select>
+        <AppSelect
+          :model-value="selectedLayer?.instanceId ?? ''"
+          :options="[
+            ...(!importedVectors.length ? [{ label: DATA_COPY.attrEmpty, value: '' }] : []),
+            ...importedVectors.map((l) => ({ label: l.name || l.instanceId, value: l.instanceId })),
+          ]"
+          @update:model-value="onSelectLayer"
+        />
       </label>
       <label>
         {{ DATA_COPY.filterField }}
-        <select v-model="filterField">
-          <option value="">—</option>
-          <option v-for="c in columns" :key="c" :value="c">{{ c }}</option>
-        </select>
+        <AppSelect
+          v-model="filterField"
+          :options="[{ label: '—', value: '' }, ...columns.map((c) => ({ label: c, value: c }))]"
+        />
       </label>
       <label>
         {{ DATA_COPY.filterContains }}
@@ -591,45 +711,35 @@ function toggleSort(field: string) {
           @keydown.enter="applyFilter"
         />
       </label>
-      <button
-        class="ghost-btn"
-        type="button"
-        :disabled="loading || !backendId"
-        @click="applyFilter"
-      >
+      <AppButton size="xs" variant="ghost" :disabled="loading || !backendId" @click="applyFilter">
         {{ DATA_COPY.attrFilter }}
-      </button>
-      <button class="ghost-btn" type="button" :disabled="!selectedAbs.size" @click="zoomToSelected">
+      </AppButton>
+      <AppButton size="xs" variant="ghost" :disabled="!selectedAbs.size" @click="zoomToSelected">
         {{ DATA_COPY.attrZoomSelected }}
-      </button>
-      <button
-        class="ghost-btn"
-        type="button"
-        :disabled="!absIndexes.length"
-        @click="selectAllOnPage"
-      >
+      </AppButton>
+      <AppButton size="xs" variant="ghost" :disabled="!absIndexes.length" @click="selectAllOnPage">
         {{ DATA_COPY.attrSelectPage }}
-      </button>
-      <button class="ghost-btn" type="button" :disabled="!selectedAbs.size" @click="clearSelection">
+      </AppButton>
+      <AppButton size="xs" variant="ghost" :disabled="!selectedAbs.size" @click="clearSelection">
         {{ DATA_COPY.attrClearSel }}
-      </button>
-      <button
-        class="ghost-btn accent-btn"
-        type="button"
+      </AppButton>
+      <AppButton
+        size="xs"
+        variant="secondary"
         :disabled="!selectedAbs.size"
         @click="copySelectedCsv"
       >
         {{ DATA_COPY.attrCopySelected }}
-      </button>
+      </AppButton>
 
       <span class="toolbar-sep" aria-hidden="true" />
 
       <label>
         {{ DATA_COPY.renameFrom }}
-        <select v-model="renameFrom">
-          <option value="">—</option>
-          <option v-for="c in columns" :key="c" :value="c">{{ c }}</option>
-        </select>
+        <AppSelect
+          v-model="renameFrom"
+          :options="[{ label: '—', value: '' }, ...columns.map((c) => ({ label: c, value: c }))]"
+        />
       </label>
       <label>
         {{ DATA_COPY.renameTo }}
@@ -642,14 +752,14 @@ function toggleSort(field: string) {
           @keydown.enter="doRename"
         />
       </label>
-      <button
-        class="ghost-btn"
-        type="button"
+      <AppButton
+        size="xs"
+        variant="ghost"
         :disabled="loading || !renameFrom || !renameTo"
         @click="doRename"
       >
         {{ DATA_COPY.attrRename }}
-      </button>
+      </AppButton>
       <label>
         {{ DATA_COPY.attrAddField }}
         <input
@@ -661,20 +771,15 @@ function toggleSort(field: string) {
           @keydown.enter="doAddField"
         />
       </label>
-      <button
-        class="ghost-btn"
-        type="button"
-        :disabled="loading || !newFieldName"
-        @click="doAddField"
-      >
+      <AppButton size="xs" variant="ghost" :disabled="loading || !newFieldName" @click="doAddField">
         {{ DATA_COPY.attrAddFieldBtn }}
-      </button>
+      </AppButton>
       <label>
         {{ DATA_COPY.attrBatchField }}
-        <select v-model="batchField">
-          <option value="">—</option>
-          <option v-for="c in columns" :key="c" :value="c">{{ c }}</option>
-        </select>
+        <AppSelect
+          v-model="batchField"
+          :options="[{ label: '—', value: '' }, ...columns.map((c) => ({ label: c, value: c }))]"
+        />
       </label>
       <label>
         {{ DATA_COPY.attrBatchValue }}
@@ -687,17 +792,18 @@ function toggleSort(field: string) {
           @keydown.enter="applyBatchSet"
         />
       </label>
-      <button
-        class="ghost-btn"
-        type="button"
+      <AppButton
+        size="xs"
+        variant="ghost"
         :disabled="loading || !batchField || !selectedAbs.size"
         @click="applyBatchSet"
       >
         {{ DATA_COPY.attrBatchSet }}
-      </button>
+      </AppButton>
     </div>
 
     <p v-if="error" class="err">{{ error }}</p>
+    <p v-else-if="metaError" class="warn">{{ metaError }}</p>
     <p v-else-if="!importedVectors.length" class="empty">{{ DATA_COPY.attrEmpty }}</p>
     <template v-else>
       <p class="sel-hint">
@@ -705,9 +811,25 @@ function toggleSort(field: string) {
         <span v-if="encodingBadge" class="enc-badge" :title="encodingBadge">{{
           encodingBadge
         }}</span>
+        <span
+          v-if="qualityHints"
+          class="quality-hint"
+          :title="`空值最多的字段：${qualityHints.worstCol}（${qualityHints.worstCount}/${features.length}）`"
+        >
+          <AlertTriangle :size="14" aria-hidden="true" />
+          {{ qualityHints.totalColsWithNulls }} 个字段有空值（{{ qualityHints.worstCol }}:
+          {{ qualityHints.worstRatio }}%）
+        </span>
       </p>
 
-      <div ref="tableBodyEl" class="table-scroll" @click="ctxMenu = null">
+      <div
+        ref="tableBodyEl"
+        class="table-scroll"
+        tabindex="0"
+        role="grid"
+        @click="ctxMenu = null"
+        @keydown="onTableKeydown"
+      >
         <table>
           <thead>
             <tr>
@@ -722,6 +844,7 @@ function toggleSort(field: string) {
                     type="button"
                     class="del-field"
                     :title="DATA_COPY.attrDeleteField"
+                    :aria-label="DATA_COPY.attrDeleteField"
                     @click.stop="doDeleteField(c)"
                   >
                     ×
@@ -775,23 +898,18 @@ function toggleSort(field: string) {
       </div>
 
       <div class="pager">
-        <button
-          class="ghost-btn"
-          type="button"
-          :disabled="offset <= 0 || loading"
-          @click="prevPage"
-        >
+        <AppButton size="xs" variant="ghost" :disabled="offset <= 0 || loading" @click="prevPage">
           {{ DATA_COPY.attrPrev }}
-        </button>
+        </AppButton>
         <span>{{ page }} / {{ pageCount }} · {{ total }} {{ DATA_COPY.attrRows }}</span>
-        <button
-          class="ghost-btn"
-          type="button"
+        <AppButton
+          size="xs"
+          variant="ghost"
           :disabled="offset + pageSize >= total || loading"
           @click="nextPage"
         >
           {{ DATA_COPY.attrNext }}
-        </button>
+        </AppButton>
       </div>
     </template>
 
@@ -801,12 +919,12 @@ function toggleSort(field: string) {
       :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
       @click.stop
     >
-      <button type="button" class="ctx-btn" @click="copyCellFromMenu">
+      <AppButton size="xs" variant="ghost" @click="copyCellFromMenu">
         {{ DATA_COPY.attrCopyCell }}
-      </button>
-      <button type="button" class="ctx-btn" :disabled="!selectedAbs.size" @click="copySelectedCsv">
+      </AppButton>
+      <AppButton size="xs" variant="ghost" :disabled="!selectedAbs.size" @click="copySelectedCsv">
         {{ DATA_COPY.attrCopySelected }}
-      </button>
+      </AppButton>
     </div>
   </div>
 </template>
@@ -839,43 +957,43 @@ function toggleSort(field: string) {
   width: 1px;
   min-height: 1.8rem;
   margin: 0 0.12rem;
-  background: linear-gradient(180deg, transparent, rgba(136, 192, 255, 0.28), transparent);
+  background: linear-gradient(180deg, transparent, var(--border-strong), transparent);
 }
 label {
   display: flex;
   flex-direction: column;
   gap: 0.14rem;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   letter-spacing: 0.02em;
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 input,
 select {
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  border: 1px solid var(--border-default);
   border-radius: 0.34rem;
   padding: 0.28rem 0.4rem;
-  background: rgba(4, 12, 23, 0.72);
-  color: #d8e6f5;
+  background: var(--surface-1);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   min-width: 6.2rem;
 }
 .ghost-btn {
-  border: 1px solid rgba(136, 192, 255, 0.2);
+  border: 1px solid var(--border-strong);
   border-radius: 0.38rem;
   padding: 0.3rem 0.55rem;
-  background: rgba(4, 12, 23, 0.55);
-  color: #c5d8ea;
+  background: var(--surface-raised);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.66rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
   transition:
     background 0.15s ease,
     border-color 0.15s ease;
 }
 .ghost-btn:hover:not(:disabled) {
-  background: rgba(20, 48, 78, 0.72);
-  border-color: rgba(136, 192, 255, 0.35);
+  background: var(--surface-2);
+  border-color: var(--border-strong);
 }
 .ghost-btn:disabled {
   opacity: 0.45;
@@ -883,27 +1001,45 @@ select {
 }
 .accent-btn {
   border-color: rgba(126, 224, 168, 0.35);
-  color: #b8f0cf;
-  background: rgba(20, 56, 40, 0.45);
+  color: var(--success);
+  background: var(--surface-sunken);
 }
 .table-scroll {
   flex: 1 1 0;
   min-height: 0;
   overflow: auto;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.48rem;
   background:
-    linear-gradient(180deg, rgba(12, 28, 46, 0.55), rgba(6, 14, 24, 0.35)), rgba(4, 10, 18, 0.55);
+    linear-gradient(180deg, var(--surface-raised), var(--surface-sunken)), var(--surface-raised);
   box-shadow: inset 0 1px 0 rgba(160, 210, 255, 0.06);
   scrollbar-width: thin;
-  scrollbar-color: rgba(90, 213, 255, 0.35) transparent;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.table-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.quality-hint {
+  display: inline-block;
+  margin-left: 0.45rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 209, 102, 0.3);
+  background: rgba(64, 48, 18, 0.35);
+  color: var(--warning);
+  font-size: var(--font-size-caption);
+  max-width: min(28rem, 55vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
 }
 .table-scroll::-webkit-scrollbar {
   width: 5px;
   height: 5px;
 }
 .table-scroll::-webkit-scrollbar-thumb {
-  background: rgba(90, 213, 255, 0.35);
+  background: var(--border-strong);
   border-radius: 999px;
 }
 table {
@@ -911,14 +1047,14 @@ table {
   border-spacing: 0;
   width: max-content;
   min-width: 100%;
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
   font-family:
     'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans CJK SC',
     'Noto Sans SC', 'Source Han Sans SC', 'WenQuanYi Micro Hei', system-ui, sans-serif;
 }
 th,
 td {
-  border-bottom: 1px solid rgba(136, 192, 255, 0.07);
+  border-bottom: 1px solid var(--border-subtle);
   padding: 0.32rem 0.55rem;
   text-align: left;
   white-space: nowrap;
@@ -934,23 +1070,23 @@ td.cell-text {
 td.col-idx,
 th.col-idx {
   max-width: 3.2rem;
-  color: #7a91a8;
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   position: sticky;
   left: 0;
   z-index: 2;
-  background: rgba(10, 20, 34, 0.96);
+  background: var(--surface-2);
 }
 th {
   position: sticky;
   top: 0;
-  background: linear-gradient(180deg, rgba(16, 34, 54, 0.98), rgba(10, 22, 38, 0.96));
-  color: #9ec4e0;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-2));
+  color: var(--text-secondary);
   z-index: 3;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   letter-spacing: 0.01em;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.18);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+  border-bottom: 1px solid var(--border-default);
+  box-shadow: 0 1px 0 var(--surface-sunken);
 }
 th.col-idx {
   z-index: 4;
@@ -963,7 +1099,7 @@ th.col-idx {
   padding-right: 0.45rem;
 }
 .sort-mark {
-  color: #7ee0a8;
+  color: var(--success);
   margin-left: 0.12rem;
 }
 .enc-badge {
@@ -971,10 +1107,10 @@ th.col-idx {
   margin-left: 0.45rem;
   padding: 0.1rem 0.4rem;
   border-radius: 999px;
-  border: 1px solid rgba(90, 213, 255, 0.28);
-  background: rgba(10, 40, 64, 0.65);
-  color: #9fd8ff;
-  font-size: 0.58rem;
+  border: 1px solid var(--border-accent);
+  background: var(--surface-1);
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   max-width: min(28rem, 55vw);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -992,15 +1128,15 @@ th.col-idx {
   margin-left: 0.1rem;
   border: 0;
   background: transparent;
-  color: #6a8094;
+  color: var(--text-faint);
   cursor: pointer;
-  font-size: 0.78rem;
+  font-size: var(--font-size-caption);
   line-height: 1;
   opacity: 0.55;
 }
 .del-field:hover {
   opacity: 1;
-  color: #ffb0b0;
+  color: var(--danger);
 }
 .col-resizer {
   position: absolute;
@@ -1012,31 +1148,31 @@ th.col-idx {
   border-radius: 2px;
 }
 .col-resizer:hover {
-  background: rgba(90, 213, 255, 0.35);
+  background: var(--border-strong);
 }
 tr {
   cursor: pointer;
   transition: background 0.12s ease;
 }
 tr.zebra td {
-  background: rgba(255, 255, 255, 0.015);
+  background: var(--surface-hover);
 }
 tr.zebra td.col-idx {
-  background: rgba(12, 24, 40, 0.96);
+  background: var(--surface-2);
 }
 tr:hover td {
-  background: rgba(10, 132, 255, 0.1);
+  background: var(--accent-surface);
 }
 tr:hover td.col-idx {
-  background: rgba(14, 40, 68, 0.96);
+  background: var(--surface-3);
 }
 tr.selected td {
   background: rgba(255, 209, 102, 0.16);
 }
 tr.selected td.col-idx {
   background: rgba(64, 48, 18, 0.92);
-  color: #ffd166;
-  box-shadow: inset 3px 0 0 #ffd166;
+  color: var(--warning);
+  box-shadow: inset 3px 0 0 var(--warning);
 }
 .cell-edit {
   min-width: 4rem;
@@ -1046,21 +1182,24 @@ tr.selected td.col-idx {
 }
 .pager {
   justify-content: space-between;
-  font-size: 0.64rem;
-  color: #8aa0b4;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 .sel-hint,
 .empty,
 .err {
   margin: 0;
-  font-size: 0.66rem;
+  font-size: var(--font-size-caption);
 }
 .err {
-  color: #ffb0b0;
+  color: var(--danger);
+}
+.warn {
+  color: var(--warning);
 }
 .empty,
 .sel-hint {
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 .cell-ctx {
   position: fixed;
@@ -1068,8 +1207,8 @@ tr.selected td.col-idx {
   min-width: 8.5rem;
   padding: 0.28rem;
   border-radius: 0.42rem;
-  border: 1px solid rgba(136, 192, 255, 0.22);
-  background: rgba(8, 18, 32, 0.96);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
   display: flex;
   flex-direction: column;
@@ -1080,9 +1219,9 @@ tr.selected td.col-idx {
   border-radius: 0.3rem;
   padding: 0.35rem 0.55rem;
   background: transparent;
-  color: #d0e4f6;
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.68rem;
+  font-size: var(--font-size-caption);
   text-align: left;
   cursor: pointer;
 }

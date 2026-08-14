@@ -21,7 +21,7 @@ describe('buildLayerContextMenu', () => {
     expect(ids).not.toContain('exportGeoJson')
   })
 
-  it('imported vector gets attributes, exports, and single openStyle', () => {
+  it('imported vector gets attributes, exports, shp, and export panel', () => {
     const groups = buildLayerContextMenu({
       visible: true,
       isAdminBoundary: false,
@@ -34,11 +34,13 @@ describe('buildLayerContextMenu', () => {
     expect(ids).toContain('openAttributes')
     expect(ids).toContain('exportGeoJson')
     expect(ids).toContain('exportCsv')
+    expect(ids).toContain('exportShp')
+    expect(ids).toContain('openExportPanel')
     expect(ids.filter((id) => id === 'openStyle')).toHaveLength(1)
     expect(ids).not.toContain('runWorkflow')
   })
 
-  it('imported raster gets png/tif export', () => {
+  it('imported raster gets tif/nc/mat/png and export panel', () => {
     const groups = buildLayerContextMenu({
       visible: false,
       isAdminBoundary: false,
@@ -50,10 +52,27 @@ describe('buildLayerContextMenu', () => {
     const ids = groups.flatMap((g) => g.items.map((i) => i.id))
     expect(ids).toContain('exportPng')
     expect(ids).toContain('exportTif')
+    expect(ids).toContain('exportNc')
+    expect(ids).toContain('exportMat')
+    expect(ids).toContain('openExportPanel')
     expect(ids).toContain('toggleVisible')
     expect(ids).toContain('openStyle')
     const toggle = groups.flatMap((g) => g.items).find((i) => i.id === 'toggleVisible')
     expect(toggle?.label).toContain('显示')
+  })
+
+  it('export pending placeholder shows disabled export item', () => {
+    const groups = buildLayerContextMenu({
+      visible: true,
+      isAdminBoundary: false,
+      isImported: false,
+      isImportedRaster: false,
+      isExportPending: true,
+      hasJobReport: false,
+      canRunWorkflow: false,
+    })
+    const pending = groups.flatMap((g) => g.items).find((i) => i.id === 'exportPending')
+    expect(pending?.disabled).toBe(true)
   })
 
   it('admin boundary still gets openStyle for opacity in analysis panel', () => {

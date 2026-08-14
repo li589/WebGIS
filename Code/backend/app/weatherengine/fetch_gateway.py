@@ -16,7 +16,7 @@ from app.weatherengine.default_model import weather_default_model
 from app.services.effective_config import get_weather_cache_ttl_seconds
 from app.weatherengine.constants import WEATHER_LAYER_SPECS, WeatherLayerSpec
 from app.weatherengine.provider_base import WeatherProvider
-from app.weatherengine.provider_ids import normalize_provider_id, provider_grid_mode
+from app.weatherengine.provider_ids import normalize_provider_id
 from app.weatherengine.provider_registry import get_registry
 from shared.contracts.api_contracts import BoundingBox
 
@@ -106,7 +106,7 @@ def list_providers_for_layer(
             "provider_type": str(provider.provider_type.value)
             if hasattr(provider.provider_type, "value")
             else str(provider.provider_type),
-            "grid_mode": provider_grid_mode(provider.provider_id),
+            "grid_mode": provider.grid_density,  # X2: 使用 provider 能力声明替代字符串推断
         }
         if layer_id in COMMERCIAL_LAYER_IDS and provider.provider_id in (
             "weatherapi",

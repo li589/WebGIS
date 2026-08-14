@@ -44,6 +44,24 @@ from urllib.request import (
 logger = logging.getLogger(__name__)
 
 _ALLOWED_SCHEMES = {"http", "https"}
+# 图层/下载 source_uri 允许的 scheme（与 source_fetcher + remote_sources 对齐）
+_DATA_SOURCE_SCHEMES = frozenset(
+    {
+        "http",
+        "https",
+        "file",
+        "local",
+        "minio",
+        "s3",
+        "smb",
+        "sftp",
+        "ftp",
+        "ftps",
+        "gs",
+        "gcs",
+        "demo",
+    }
+)
 _REDIRECT_STATUS = frozenset({301, 302, 303, 307, 308})
 
 
@@ -68,6 +86,61 @@ def is_trusted_open_meteo_local_url(url: str) -> bool:
 
 class SSRFBlockedError(ValueError):
     """出站 URL 被 SSRF 防护策略阻断。"""
+
+
+def validate_url_for_storage(url: str) -> str:
+    """存储时 HTTP(S) URL 格式校验（开放数据预设 / 天气 provider base_url）。
+
+    仅允许 ``http`` / ``https``，并要求有效 hostname。
+    运行时 SSRF 防护（``safe_urlopen``）仍为最终安全屏障。
+
+    Returns:
+        校验通过的 URL 原值
+
+    Raises:
+        ValueError: URL 格式不合法或协议不在白名单内
+    """
+    if not url or not url.strip():
+        raise ValueError("URL must not be empty")
+    url = url.strip()
+    parsed = urlparse(url)
+    if parsed.scheme not in _ALLOWED_SCHEMES:
+        raise ValueError(
+            f"URL scheme must be http or https (got: {parsed.scheme or 'none'})"
+        )
+    if not parsed.hostname:
+        raise ValueError("URL must contain a valid hostname")
+    return url
+
+
+def validate_data_source_uri_for_storage(uri: str) -> str:
+    """存储时数据源 URI 校验（``remote_layer_data_uris`` 等）。
+
+    允许平台支持的取数 scheme（``smb://`` / ``file://`` / ``minio://`` 等），
+    拒绝 ``javascript:`` / ``data:`` 等危险协议。与
+    :func:`validate_url_for_storage`（仅 HTTP(S)）区分。
+
+    Returns:
+        校验通过的 URI 原值
+
+    Raises:
+        ValueError: URI 为空或 scheme 不在白名单内
+    """
+    if not uri or not uri.strip():
+        raise ValueError("URI must not be empty")
+    uri = uri.strip()
+    parsed = urlparse(uri)
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in _DATA_SOURCE_SCHEMES:
+        raise ValueError(
+            "URI scheme must be one of: "
+            + ", ".join(sorted(_DATA_SOURCE_SCHEMES))
+            + f" (got: {scheme or 'none'})"
+        )
+    # file/local 允许无 host（file:///C:/...）；其余网络类 scheme 要求 host/bucket
+    if scheme not in {"file", "local", "demo"} and not parsed.hostname:
+        raise ValueError("URI must contain a valid hostname")
+    return uri
 
 
 @dataclass(frozen=True)

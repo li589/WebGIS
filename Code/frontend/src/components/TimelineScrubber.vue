@@ -25,6 +25,8 @@ const props = withDefaults(
     granularity?: TimeGranularity
     activeLayerName?: string
     isLayerLocked?: boolean
+    /** 当前段是否正在在线获取中 */
+    onlineFetchInProgress?: boolean
   }>(),
   {
     granularity: 'hour',
@@ -33,6 +35,7 @@ const props = withDefaults(
     playIntervalMs: DEFAULT_PLAY_INTERVAL_MS,
     isLayerLocked: false,
     activeLayerName: '',
+    onlineFetchInProgress: false,
   },
 )
 
@@ -44,6 +47,8 @@ const emit = defineEmits<{
   toggleUnifiedTime: []
   toggleLayerLock: []
   changePlayInterval: [ms: number]
+  /** 用户点击可在线获取段时触发 */
+  fetchSegment: [segment: TimelineAvailabilitySegment]
 }>()
 
 // ── 日期与粒度格式化 ──────────────────────────────────────────
@@ -192,7 +197,7 @@ function advanceSlice(delta: number) {
   if (props.granularity === 'hour') {
     const segs = props.timelineSegments
     const usable = segs
-      .filter((s) => s.state === 'ready' || s.state === 'partial')
+      .filter((s) => s.state === 'ready' || s.state === 'partial' || s.state === 'fetchable')
       .map((s) => ({ seg: s, value: segmentIndex(s) }))
       .sort((a, b) => a.value - b.value)
 
@@ -463,7 +468,11 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
         <div
           class="date-display"
           :title="isStatic ? '静态数据' : '点击弹出日期/时间选择器'"
+          role="button"
+          tabindex="0"
           @click="triggerDatePicker"
+          @keydown.enter.prevent="triggerDatePicker"
+          @keydown.space.prevent="triggerDatePicker"
         >
           <svg class="calendar-icon" viewBox="0 0 16 16" aria-hidden="true">
             <path
@@ -663,14 +672,18 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
         <span class="availability-caption-side availability-live">{{ liveLabel }}</span>
       </div>
 
-      <!-- 可用性切片条：包含空数据灰色条指示 -->
-      <div class="availability-strip" aria-hidden="true">
+      <!-- 可用性切片条：fetchable 段可点击触发在线获取 -->
+      <div class="availability-strip">
         <span
           v-for="segment in timelineSegments"
           :key="segment.index"
           class="availability-segment"
-          :class="`availability-${segment.state}`"
+          :class="[
+            `availability-${segment.state}`,
+            { 'availability-fetchable-clickable': segment.state === 'fetchable' },
+          ]"
           :title="`${segment.label} · ${segment.availabilityLabel}`"
+          @click="segment.state === 'fetchable' ? emit('fetchSegment', segment) : undefined"
         ></span>
       </div>
 
@@ -766,7 +779,7 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
         }}</strong>
       </span>
       <span class="meta-text meta-text--center">
-        维度进度: <strong>{{ progressPercent }}</strong>
+        进度: <strong>{{ progressPercent }}</strong>
       </span>
       <span class="meta-text meta-text--right">
         当前观测: <strong>{{ observationTimeLabel || formattedTimeHeader }}</strong>
@@ -804,573 +817,6 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
   </section>
 </template>
 
-<style scoped>
-.timeline {
-  display: flex;
-  flex-direction: column;
-  background: rgba(18, 30, 52, 0.72);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(136, 192, 255, 0.16);
-  border-radius: 0.85rem;
-  padding: 0.48rem 0.75rem;
-  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
-  color: #e2e8f0;
-  user-select: none;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  transition: all 0.2s ease;
-}
+<style scoped src="./TimelineScrubber.styles.css" />
 
-.timeline-top {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-bottom: 0.25rem;
-  min-height: 2rem;
-}
-
-.date-nav {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  justify-self: start;
-  flex-shrink: 0;
-  min-width: max-content;
-  z-index: 2;
-}
-
-.calendar-icon {
-  width: 0.85rem;
-  height: 0.85rem;
-  color: #38bdf8;
-  flex-shrink: 0;
-}
-
-.date-display {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.25rem 0.55rem;
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(56, 189, 248, 0.22);
-  border-radius: 0.45rem;
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: #f1f5f9;
-  cursor: pointer;
-  flex-shrink: 0;
-  max-width: none;
-  transition:
-    border-color 0.15s ease,
-    background 0.15s ease;
-}
-
-.date-display:hover {
-  border-color: rgba(56, 189, 248, 0.45);
-  background: rgba(15, 23, 42, 0.85);
-}
-
-.date-text {
-  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Roboto, monospace;
-  font-size: 0.78rem;
-  color: #38bdf8;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.date-picker-hidden {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-
-.date-weekday {
-  font-size: 0.68rem;
-  color: #94a3b8;
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-.date-today-badge {
-  font-size: 0.6rem;
-  background: rgba(56, 189, 248, 0.2);
-  color: #38bdf8;
-  border: 1px solid rgba(56, 189, 248, 0.3);
-  padding: 0 0.25rem;
-  border-radius: 0.2rem;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
-.nav-btn--now {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.18rem 0.38rem;
-  border-radius: 0.35rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
-  color: #94a3b8;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 0.15s ease;
-}
-
-.nav-btn--now:hover {
-  background: rgba(56, 189, 248, 0.12);
-  color: #e0f2fe;
-  border-color: rgba(56, 189, 248, 0.35);
-}
-
-.now-label {
-  font-family:
-    'JetBrains Mono', ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace;
-  font-style: normal;
-  font-weight: 600;
-  font-size: 0.62rem;
-  letter-spacing: 0.08em;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
-.time-heading {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  min-width: 0;
-  max-width: min(42%, 280px);
-  z-index: 1;
-  pointer-events: none;
-  text-align: center;
-}
-
-.time-heading .active-layer-tag,
-.time-heading .granularity-badge {
-  pointer-events: auto;
-}
-
-.top-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  justify-content: flex-end;
-  flex-shrink: 0;
-  z-index: 2;
-  margin-left: auto;
-}
-
-.active-layer-tag {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: #f8fafc;
-  background: rgba(30, 41, 59, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 0.15rem 0.5rem;
-  border-radius: 0.35rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-  max-width: min(100%, 220px);
-  flex: 1 1 auto;
-  cursor: default;
-}
-
-.granularity-badge {
-  font-size: 0.62rem;
-  padding: 0.12rem 0.4rem;
-  border-radius: 0.3rem;
-  border: 1px solid rgba(56, 189, 248, 0.3);
-  background: rgba(56, 189, 248, 0.1);
-  color: #38bdf8;
-  font-weight: 500;
-  flex: none;
-}
-
-.granularity-static {
-  border-color: rgba(148, 163, 184, 0.25);
-  background: rgba(148, 163, 184, 0.08);
-  color: #94a3b8;
-}
-
-.granularity-month {
-  border-color: rgba(16, 185, 129, 0.3);
-  background: rgba(16, 185, 129, 0.1);
-  color: #10b981;
-}
-
-.divider {
-  width: 1px;
-  height: 1rem;
-  background: rgba(255, 255, 255, 0.1);
-  margin: 0 0.1rem;
-}
-
-.step-group {
-  display: flex;
-  align-items: center;
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 0.45rem;
-  padding: 0.1rem;
-  gap: 0.1rem;
-}
-
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 1.45rem;
-  padding: 0 0.4rem;
-  border-radius: 0.35rem;
-  border: 1px solid transparent;
-  background: transparent;
-  color: #94a3b8;
-  cursor: pointer;
-  font-size: 0.68rem;
-  transition: all 0.15s ease;
-}
-
-.action-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  color: #f8fafc;
-}
-
-.action-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.action-btn svg {
-  width: 0.8rem;
-  height: 0.8rem;
-}
-
-.play-btn {
-  color: #38bdf8;
-}
-
-.play-btn--playing {
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.15);
-}
-
-.play-btn--menu-open {
-  border-color: rgba(56, 189, 248, 0.45);
-  color: #38bdf8;
-}
-
-.lock-btn {
-  width: 1.45rem;
-  padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(15, 23, 42, 0.5);
-}
-
-.lock-btn--locked {
-  border-color: rgba(245, 158, 11, 0.45);
-  background: rgba(245, 158, 11, 0.18);
-  color: #fbbf24;
-}
-
-.sync-btn {
-  width: 1.45rem;
-  padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(15, 23, 42, 0.5);
-}
-
-.sync-btn--on {
-  border-color: rgba(56, 189, 248, 0.4);
-  background: rgba(56, 189, 248, 0.15);
-  color: #38bdf8;
-}
-
-.timeline-track {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-
-.availability-caption {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  column-gap: 0.4rem;
-  font-size: 0.65rem;
-  color: #94a3b8;
-  min-height: 1rem;
-}
-
-.availability-caption-side {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.availability-caption-main {
-  justify-self: start;
-  text-align: left;
-}
-
-.availability-caption-status {
-  justify-self: center;
-  text-align: center;
-  font-weight: 500;
-  color: #cbd5e1;
-  white-space: nowrap;
-  padding: 0 0.15rem;
-}
-
-.availability-live {
-  justify-self: end;
-  text-align: right;
-}
-
-.availability-strip {
-  display: flex;
-  height: 4px;
-  gap: 2px;
-  border-radius: 2px;
-  overflow: hidden;
-  background: rgba(15, 23, 42, 0.4);
-}
-
-.availability-segment {
-  flex: 1;
-  border-radius: 1px;
-  transition: opacity 0.15s ease;
-}
-
-.availability-ready {
-  background: #10b981;
-}
-
-.availability-partial {
-  background: #f59e0b;
-}
-
-/* 高质感无数据标灰切片 */
-.availability-empty {
-  background: rgba(148, 163, 184, 0.3);
-}
-
-.availability-static {
-  background: rgba(100, 116, 139, 0.2);
-}
-
-.track-interactive {
-  position: relative;
-  height: 1rem;
-  display: flex;
-  align-items: center;
-}
-
-.track-interactive.disabled {
-  opacity: 0.45;
-  pointer-events: none;
-}
-
-.track-shell {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 0.35rem;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.track-fill {
-  height: 100%;
-  width: var(--track-progress);
-  background: linear-gradient(90deg, rgba(56, 189, 248, 0.4), var(--accent-color, #38bdf8));
-  border-radius: 999px;
-}
-
-.slider {
-  position: absolute;
-  left: 0;
-  right: 0;
-  width: 100%;
-  opacity: 0;
-  cursor: pointer;
-  height: 100%;
-  margin: 0;
-}
-
-.timeline-ticks {
-  display: flex;
-  align-items: flex-end;
-  gap: 1px;
-  overflow: hidden;
-  position: relative;
-}
-
-.tick-button {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  background: transparent;
-  color: #64748b;
-  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Roboto, monospace;
-  font-size: 0.58rem;
-  padding: 0;
-  border-radius: 0.2rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 1.35rem;
-}
-
-.tick-label {
-  display: block;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-/* 次要刻度：不显示文字，仅显示细竖线 */
-.tick-button.tick-minor {
-  max-width: 6px;
-  flex: 0.4;
-}
-
-.tick-bar {
-  display: block;
-  width: 1px;
-  height: 0.5rem;
-  background: rgba(148, 163, 184, 0.25);
-  border-radius: 1px;
-}
-
-.tick-button.tick-minor:hover .tick-bar {
-  background: rgba(148, 163, 184, 0.55);
-  height: 0.65rem;
-}
-
-.tick-button.active,
-.tick-button:hover {
-  color: #f8fafc;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.tick-button.active {
-  color: #38bdf8;
-  font-weight: 600;
-  background: rgba(56, 189, 248, 0.12);
-}
-
-.tick-button.tick-minor.active .tick-bar,
-.tick-button.tick-minor.active:hover .tick-bar {
-  background: #38bdf8;
-  width: 2px;
-  height: 0.7rem;
-}
-
-/* 空数据刻度弱化 */
-.tick-button.tick-empty {
-  opacity: 0.4;
-}
-
-/* 单位指示标签 */
-.tick-unit-badge {
-  flex: none;
-  font-size: 0.55rem;
-  color: #64748b;
-  background: rgba(30, 41, 59, 0.6);
-  border: 1px solid rgba(100, 116, 139, 0.2);
-  padding: 0.08rem 0.3rem;
-  border-radius: 0.22rem;
-  margin-left: 0.2rem;
-  align-self: center;
-  white-space: nowrap;
-  letter-spacing: 0.04em;
-}
-
-.timeline-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.62rem;
-  color: #64748b;
-  margin-top: 0.22rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  padding-top: 0.2rem;
-}
-
-.meta-text strong {
-  color: #cbd5e1;
-  font-weight: 500;
-}
-</style>
-
-<style>
-/* Teleport 到 body，需非 scoped */
-.play-interval-menu {
-  min-width: 9.2rem;
-  padding: 0.35rem;
-  border-radius: 0.55rem;
-  border: 1px solid rgba(136, 192, 255, 0.28);
-  background: linear-gradient(180deg, rgba(22, 34, 56, 0.96), rgba(12, 20, 36, 0.94));
-  box-shadow: 0 12px 28px rgba(1, 8, 16, 0.45);
-  backdrop-filter: blur(14px);
-  color: #e2e8f0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-}
-
-.play-interval-menu-title {
-  padding: 0.2rem 0.45rem 0.35rem;
-  font-size: 0.62rem;
-  color: #94a3b8;
-  letter-spacing: 0.04em;
-}
-
-.play-interval-option {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  width: 100%;
-  border: none;
-  border-radius: 0.35rem;
-  background: transparent;
-  color: #cbd5e1;
-  font: inherit;
-  font-size: 0.72rem;
-  padding: 0.32rem 0.45rem;
-  cursor: pointer;
-  text-align: left;
-}
-
-.play-interval-option:hover {
-  background: rgba(56, 189, 248, 0.12);
-  color: #f8fafc;
-}
-
-.play-interval-option.active {
-  background: rgba(56, 189, 248, 0.18);
-  color: #38bdf8;
-}
-
-.play-interval-check {
-  width: 0.85rem;
-  text-align: center;
-  font-size: 0.58rem;
-  opacity: 0.9;
-}
-</style>
+<style src="./TimelineScrubber.global.css" />

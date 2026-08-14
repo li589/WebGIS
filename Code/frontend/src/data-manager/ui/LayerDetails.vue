@@ -1,14 +1,15 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { fetchImportedLayerGeojson, fetchImportedLayerMeta } from '../core/api'
 import { exportLayer, type ExportFormat } from '../adapters/export'
-import { focusImportedLayer } from '../adapters/layers'
+import { focusImportedLayer, removeImportedLayer } from '../adapters/layers'
 import { dataWorkspaceLayerId, openDataWorkspace } from '../core/workspace-store'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { useLogStore } from '../../stores/log'
 import { DATA_COPY } from '../../ui-copy'
+import AppSelect from '../../components/ui/AppSelect.vue'
 
-const layersStore = useLayersStore()
+const workspace = useLayerWorkspace()
 const logStore = useLogStore()
 
 const meta = ref<Record<string, unknown> | null>(null)
@@ -17,7 +18,7 @@ const error = ref('')
 const msg = ref('')
 
 const importedLayers = computed(() =>
-  layersStore.activeLayers.filter((l) => l.importedVector || l.importedRaster),
+  workspace.activeLayers.value.filter((l) => l.importedVector || l.importedRaster),
 )
 
 const selectedLayer = computed(() => {
@@ -34,7 +35,7 @@ const backendId = computed(() => {
 
 const isVector = computed(() => Boolean(selectedLayer.value?.importedVector))
 
-const styleColor = ref('#7ee0a8')
+const styleColor = ref('var(--success)')
 const styleWidth = ref(2)
 const styleRadius = ref(4)
 const styleFillOpacity = ref(0.25)
@@ -44,7 +45,7 @@ watch(
   (id) => {
     if (id) dataWorkspaceLayerId.value = id
     const st = selectedLayer.value?.importedVector?.style
-    styleColor.value = st?.color ?? '#7ee0a8'
+    styleColor.value = st?.color ?? 'var(--success)'
     styleWidth.value = st?.width ?? 2
     styleRadius.value = st?.radius ?? 4
     styleFillOpacity.value = st?.fillOpacity ?? 0.25
@@ -67,13 +68,13 @@ async function loadMeta() {
   }
 }
 
-function onSelectLayer(e: Event) {
-  dataWorkspaceLayerId.value = (e.target as HTMLSelectElement).value || null
+function onSelectLayer(val: string) {
+  dataWorkspaceLayerId.value = val || null
 }
 
 function applyStyle() {
   if (!selectedLayer.value?.importedVector) return
-  layersStore.setImportedVectorStyle(selectedLayer.value.instanceId, {
+  workspace.setImportedVectorStyle(selectedLayer.value.instanceId, {
     color: styleColor.value,
     width: styleWidth.value,
     radius: styleRadius.value,
@@ -88,7 +89,7 @@ async function loadFullGeojson() {
   error.value = ''
   try {
     const gj = await fetchImportedLayerGeojson(backendId.value, false)
-    layersStore.updateImportedVectorGeojson(selectedLayer.value.instanceId, gj, {
+    workspace.updateImportedVectorGeojson(selectedLayer.value.instanceId, gj, {
       featureCount: gj.features.length,
       truncated: false,
     })
@@ -130,12 +131,25 @@ function openAttributes() {
   openDataWorkspace({ tab: 'attributes', layerInstanceId: selectedLayer.value.instanceId })
 }
 
-function removeLayer() {
+const removing = ref(false)
+
+async function removeLayer() {
   if (!selectedLayer.value) return
   const id = selectedLayer.value.instanceId
-  layersStore.removeLayer(id)
-  dataWorkspaceLayerId.value = null
-  msg.value = DATA_COPY.layerRemoved
+  const bid = backendId.value ?? undefined
+  removing.value = true
+  try {
+    await removeImportedLayer(id, bid)
+    dataWorkspaceLayerId.value = null
+    msg.value = DATA_COPY.layerRemoved
+  } catch (e) {
+    // 后端清理失败时前端仍已移除，但需告知用户
+    workspace.removeLayer(id)
+    dataWorkspaceLayerId.value = null
+    error.value = `前端已移除，后端清理失败：${e instanceof Error ? e.message : String(e)}`
+  } finally {
+    removing.value = false
+  }
 }
 </script>
 
@@ -144,12 +158,17 @@ function removeLayer() {
     <div class="row">
       <label>
         {{ DATA_COPY.attrLayer }}
-        <select :value="selectedLayer?.instanceId ?? ''" @change="onSelectLayer">
-          <option v-if="!importedLayers.length" value="">{{ DATA_COPY.emptyExport }}</option>
-          <option v-for="l in importedLayers" :key="l.instanceId" :value="l.instanceId">
-            {{ l.name }} · {{ l.importedRaster ? '栅格' : '矢量' }}
-          </option>
-        </select>
+        <AppSelect
+          :model-value="selectedLayer?.instanceId ?? ''"
+          :options="[
+            ...(!importedLayers.length ? [{ label: DATA_COPY.emptyExport, value: '' }] : []),
+            ...importedLayers.map((l) => ({
+              label: `${l.name} · ${l.importedRaster ? '栅格' : '矢量'}`,
+              value: l.instanceId,
+            })),
+          ]"
+          @update:model-value="onSelectLayer"
+        />
       </label>
     </div>
 
@@ -247,8 +266,11 @@ function removeLayer() {
           <button v-if="!isVector" class="ghost-btn" type="button" @click="exportFmt('geotiff')">
             GeoTIFF
           </button>
-          <button class="danger-btn" type="button" @click="removeLayer">
-            {{ DATA_COPY.deleteLayer }}
+          <button v-if="!isVector" class="ghost-btn" type="button" @click="exportFmt('mat')">
+            MAT
+          </button>
+          <button class="danger-btn" type="button" :disabled="removing" @click="removeLayer">
+            {{ removing ? '删除中…' : DATA_COPY.deleteLayer }}
           </button>
         </div>
       </section>
@@ -272,18 +294,18 @@ label {
   display: flex;
   flex-direction: column;
   gap: 0.16rem;
-  font-size: 0.58rem;
-  color: #8aa0b4;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 input,
 select {
-  border: 1px solid rgba(136, 192, 255, 0.16);
+  border: 1px solid var(--border-default);
   border-radius: 0.34rem;
   padding: 0.28rem 0.4rem;
-  background: rgba(4, 12, 23, 0.72);
-  color: #d8e6f5;
+  background: var(--surface-1);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 input[type='color'] {
   width: 3rem;
@@ -291,16 +313,16 @@ input[type='color'] {
   padding: 0.1rem;
 }
 .card {
-  border: 1px solid rgba(136, 192, 255, 0.12);
+  border: 1px solid var(--border-default);
   border-radius: 0.48rem;
   padding: 0.55rem 0.65rem;
-  background: rgba(4, 12, 23, 0.35);
+  background: var(--surface-sunken);
 }
 .card h3 {
   margin: 0 0 0.4rem;
-  font-size: 0.66rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
-  color: #9ec4e0;
+  color: var(--text-secondary);
 }
 dl {
   margin: 0;
@@ -311,22 +333,22 @@ dl > div {
   display: grid;
   grid-template-columns: 4.5rem 1fr;
   gap: 0.4rem;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
 }
 dt {
-  color: #6a8094;
+  color: var(--text-faint);
 }
 dd {
   margin: 0;
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 .mono {
-  font-family: ui-monospace, monospace;
-  font-size: 0.54rem;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-caption);
   word-break: break-all;
 }
 .warn {
-  color: #ffd166;
+  color: var(--warning);
 }
 .style-grid {
   display: grid;
@@ -345,37 +367,37 @@ dd {
   border-radius: 0.38rem;
   padding: 0.3rem 0.55rem;
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
   cursor: pointer;
 }
 .ghost-btn {
-  border: 1px solid rgba(136, 192, 255, 0.2);
-  background: rgba(4, 12, 23, 0.55);
-  color: #c5d8ea;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--text-primary);
 }
 .primary-btn {
-  border: 1px solid rgba(90, 213, 255, 0.35);
-  background: rgba(10, 132, 255, 0.22);
-  color: #a8e8ff;
+  border: 1px solid var(--border-strong);
+  background: var(--accent-border);
+  color: var(--accent-strong);
 }
 .danger-btn {
   border: 1px solid rgba(255, 120, 120, 0.35);
   background: rgba(120, 20, 20, 0.25);
-  color: #ffb0b0;
+  color: var(--danger);
 }
 .empty,
 .err,
 .ok {
   margin: 0;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
 }
 .empty {
-  color: #8aa0b4;
+  color: var(--text-muted);
 }
 .err {
-  color: #ffb0b0;
+  color: var(--danger);
 }
 .ok {
-  color: #9ec4e0;
+  color: var(--text-secondary);
 }
 </style>

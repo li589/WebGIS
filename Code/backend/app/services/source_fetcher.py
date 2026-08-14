@@ -89,10 +89,38 @@ class HttpSourceFetcher(SourceFetcher):
                 headers={"User-Agent": "cgda-backend-download-service/1.0"},
                 allow_private=default_allow_private(),
             ) as response:
-                data = response.read()
                 content_type = response.headers.get(
                     "Content-Type", "application/octet-stream"
                 )
+                # R1: Stream response body directly to object_store,
+                # avoiding full-in-memory read for large HTTP downloads.
+                content_length_header = response.headers.get("Content-Length")
+                content_length = (
+                    int(content_length_header)
+                    if content_length_header and content_length_header.isdigit()
+                    else None
+                )
+                artifact_key = f"{artifact_key_prefix}/{ref_id}"
+                stored = object_store.put_stream(
+                    object_key=artifact_key,
+                    stream=response,
+                    content_type=content_type,
+                    length=content_length,
+                    metadata={
+                        "source_uri": source_uri,
+                        "ref_id": ref_id,
+                        "fetched_at": fetched_at,
+                    },
+                )
+            return FetchResult(
+                ref_id=ref_id,
+                success=True,
+                artifact_key=artifact_key,
+                fetched_bytes=stored.content_length,
+                content_type=content_type,
+                local_path=str(stored.file_path) if stored.file_path else None,
+                fetched_at=fetched_at,
+            )
         except Exception as exc:  # pragma: no cover - 依赖运行时网络环境
             logger.warning(
                 "HTTP fetch failed for ref=%s uri=%s: %s", ref_id, source_uri, exc
@@ -103,27 +131,6 @@ class HttpSourceFetcher(SourceFetcher):
                 error=f"HTTP fetch failed: {exc}",
                 fetched_at=fetched_at,
             )
-
-        artifact_key = f"{artifact_key_prefix}/{ref_id}"
-        stored = object_store.put_bytes(
-            object_key=artifact_key,
-            data=data,
-            content_type=content_type,
-            metadata={
-                "source_uri": source_uri,
-                "ref_id": ref_id,
-                "fetched_at": fetched_at,
-            },
-        )
-        return FetchResult(
-            ref_id=ref_id,
-            success=True,
-            artifact_key=artifact_key,
-            fetched_bytes=stored.content_length,
-            content_type=content_type,
-            local_path=str(stored.file_path) if stored.file_path else None,
-            fetched_at=fetched_at,
-        )
 
 
 class MinioSourceFetcher(SourceFetcher):
@@ -172,11 +179,33 @@ class MinioSourceFetcher(SourceFetcher):
             )
             response = client.get_object(bucket, object_key)
             try:
-                data = response.read()
+                content_type = response.headers.get(
+                    "Content-Type", "application/octet-stream"
+                )
+                content_length_header = response.headers.get("Content-Length")
+                content_length = (
+                    int(content_length_header)
+                    if content_length_header and content_length_header.isdigit()
+                    else None
+                )
+                artifact_key = f"{artifact_key_prefix}/{ref_id}"
+                # R1: Stream MinIO object directly to object_store,
+                # avoiding full-in-memory read for large objects.
+                stored = object_store.put_stream(
+                    object_key=artifact_key,
+                    stream=response,
+                    content_type=content_type,
+                    length=content_length,
+                    metadata={
+                        "source_uri": source_uri,
+                        "ref_id": ref_id,
+                        "fetched_at": fetched_at,
+                    },
+                )
             finally:
                 response.close()
                 response.release_conn()
-        except Exception as exc:  # pragma: no cover - 依赖运行时 MinIO 环境
+        except Exception as exc:
             logger.warning(
                 "MinIO fetch failed for ref=%s uri=%s: %s", ref_id, source_uri, exc
             )
@@ -187,18 +216,6 @@ class MinioSourceFetcher(SourceFetcher):
                 fetched_at=fetched_at,
             )
 
-        content_type = response.headers.get("Content-Type", "application/octet-stream")
-        artifact_key = f"{artifact_key_prefix}/{ref_id}"
-        stored = object_store.put_bytes(
-            object_key=artifact_key,
-            data=data,
-            content_type=content_type,
-            metadata={
-                "source_uri": source_uri,
-                "ref_id": ref_id,
-                "fetched_at": fetched_at,
-            },
-        )
         return FetchResult(
             ref_id=ref_id,
             success=True,
@@ -250,8 +267,30 @@ class LocalFileSourceFetcher(SourceFetcher):
             )
 
         try:
-            data = local_path.read_bytes()
-        except Exception as exc:  # pragma: no cover - 依赖运行时文件系统
+            content_type = "application/octet-stream"
+            suffix = local_path.suffix.lower()
+            if suffix in {".json", ".geojson"}:
+                content_type = "application/json"
+            elif suffix in {".png", ".jpg", ".jpeg", ".tif", ".tiff"}:
+                content_type = f"image/{suffix[1:]}"
+
+            file_size = local_path.stat().st_size
+            artifact_key = f"{artifact_key_prefix}/{ref_id}"
+            # R1: Stream local file to object_store, avoiding full-in-memory read.
+            with open(local_path, "rb") as f:
+                stored = object_store.put_stream(
+                    object_key=artifact_key,
+                    stream=f,
+                    content_type=content_type,
+                    length=file_size,
+                    metadata={
+                        "source_uri": source_uri,
+                        "ref_id": ref_id,
+                        "fetched_at": fetched_at,
+                        "origin_path": str(local_path),
+                    },
+                )
+        except Exception as exc:
             logger.warning(
                 "Local file read failed for ref=%s path=%s: %s", ref_id, local_path, exc
             )
@@ -262,25 +301,6 @@ class LocalFileSourceFetcher(SourceFetcher):
                 fetched_at=fetched_at,
             )
 
-        content_type = "application/octet-stream"
-        suffix = local_path.suffix.lower()
-        if suffix in {".json", ".geojson"}:
-            content_type = "application/json"
-        elif suffix in {".png", ".jpg", ".jpeg", ".tif", ".tiff"}:
-            content_type = f"image/{suffix[1:]}"
-
-        artifact_key = f"{artifact_key_prefix}/{ref_id}"
-        stored = object_store.put_bytes(
-            object_key=artifact_key,
-            data=data,
-            content_type=content_type,
-            metadata={
-                "source_uri": source_uri,
-                "ref_id": ref_id,
-                "fetched_at": fetched_at,
-                "origin_path": str(local_path),
-            },
-        )
         return FetchResult(
             ref_id=ref_id,
             success=True,
@@ -324,7 +344,22 @@ class RemoteProtocolSourceFetcher(SourceFetcher):
                 target_dir=cache_dir,
                 max_bytes=get_max_remote_bytes(settings.remote_max_bytes),
             )
-            data = local_path.read_bytes()
+            file_size = local_path.stat().st_size
+            artifact_key = f"{artifact_key_prefix}/{ref_id}"
+            # R1: Stream downloaded remote file to object_store, avoiding
+            # full-in-memory read for large remote files.
+            with open(local_path, "rb") as f:
+                stored = object_store.put_stream(
+                    object_key=artifact_key,
+                    stream=f,
+                    content_type="application/octet-stream",
+                    length=file_size,
+                    metadata={
+                        "source_uri": source_uri,
+                        "ref_id": ref_id,
+                        "fetched_at": fetched_at,
+                    },
+                )
         except Exception as exc:
             logger.warning(
                 "Remote fetch failed for ref=%s uri=%s: %s", ref_id, source_uri, exc
@@ -336,17 +371,6 @@ class RemoteProtocolSourceFetcher(SourceFetcher):
                 fetched_at=fetched_at,
             )
 
-        artifact_key = f"{artifact_key_prefix}/{ref_id}"
-        stored = object_store.put_bytes(
-            object_key=artifact_key,
-            data=data,
-            content_type="application/octet-stream",
-            metadata={
-                "source_uri": source_uri,
-                "ref_id": ref_id,
-                "fetched_at": fetched_at,
-            },
-        )
         return FetchResult(
             ref_id=ref_id,
             success=True,

@@ -25,6 +25,11 @@ export interface LayerSource {
   /** 数据更新频率描述 */
   updateFrequency: string
   attribution?: string
+  /** 运行时就绪状态（由 backend descriptor 注入，仅合并条目的源有值） */
+  runReadiness?: string
+  runReadinessSummary?: string | null
+  backendStatus?: string | null
+  supportsTime?: boolean
 }
 
 // ─── Layer catalog item (图层库条目) ─────────────────────────────────────────
@@ -48,6 +53,12 @@ export interface LayerCatalogItem {
   sources: LayerSource[]
   /** 是否内置行政区边界图层 */
   isAdminBoundary?: boolean
+  /** 若此条目已合并到某个多源条目，此处记录目标 catalogId（运行时目录中隐藏本条目） */
+  mergedInto?: string
+  /** X1: 标记此条目为合并组虚拟条目（含 members 列表，自身不对应实际数据） */
+  isMergedGroup?: boolean
+  /** X1: 合并组成员的 catalogId 列表（仅 isMergedGroup=true 时有效） */
+  members?: string[]
   // ── 课题组数据集元数据扩展（Phase 1：扩展和细化）────────────────────────────
   /** 数据归属（课题组成员 / Lab / 留空表示外部公开数据）；与 NAS 顶级目录对齐 */
   dataOwner?: string
@@ -228,6 +239,14 @@ export interface JobLayerItem {
   progressiveOverlayAt?: string
   /** 若为重试运行，指向原 run_id */
   retryOfRunId?: string
+  /** 提交时约定的产出时间段（ISO），供运行中时间轴画总覆盖 */
+  expectedTimeRange?: { start_at: string; end_at: string }
+  /** 原生时间步，如 8d / 1h / 1m */
+  expectedNativeStep?: string
+  /** 正在产出/加载中的时间键（块起点或 YYYYMMDD_YYYYMMDD） */
+  inFlightTimeKeys?: string[]
+  /** 明确失败的时间键 */
+  failedTimeKeys?: string[]
 }
 
 // ─── Active layer (已添加图层) ────────────────────────────────────────────────
@@ -348,6 +367,8 @@ export interface ActiveLayerDisplay {
   renderHint?: WeatherLayerRenderHint
   /** 用户自定义配色方案覆盖 */
   paletteOverride?: string | null
+  /** 不含 override 的原始默认配色（用于判断"恢复默认"） */
+  defaultPalette?: string
   vminOverride?: number | null
   vmaxOverride?: number | null
   nodataMode?: 'transparent' | 'solid' | null

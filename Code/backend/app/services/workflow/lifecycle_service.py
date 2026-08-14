@@ -21,13 +21,17 @@ from app.services.workflow.cancel_paths import (
 )
 from app.services.failure_classifier import FailureClassifier
 from app.services.result_storage import result_storage_service
-from app.services.workflow_repository import SQLiteWorkflowRepository
+from app.services.workflow_repository import (
+    SQLiteWorkflowRepository,
+    ConcurrentModificationError,
+)
 from app.services.workflow.persistence_service import WorkflowPersistenceService
 from app.services.workflow.transition_builder import (
     WorkflowTransitionBuilder,
     use_celery_executor,
 )
 from app.services.workflow.follow_up_dispatch_service import FollowUpDispatchService
+from app.services.workflow.queue_dispatch_service import QueueDispatchService
 from app.tasks.workflow_tasks import dispatch_workflow_task
 from shared.contracts.api_contracts import (
     EventChannel,
@@ -55,6 +59,7 @@ class WorkflowLifecycleService:
         persistence: WorkflowPersistenceService | None = None,
         transitions: WorkflowTransitionBuilder | None = None,
         follow_up: FollowUpDispatchService | None = None,
+        queue_dispatch: QueueDispatchService | None = None,
     ) -> None:
         self._repository = repository or SQLiteWorkflowRepository()
         self._persistence = persistence or WorkflowPersistenceService(self._repository)
@@ -62,6 +67,8 @@ class WorkflowLifecycleService:
         self._follow_up = follow_up or FollowUpDispatchService(
             self._repository, self._persistence, self._transitions
         )
+        # Phase C：队列唤醒服务（可选，测试时可传 None 跳过）
+        self._queue_dispatch = queue_dispatch
 
     def cancel_workflow_run(self, run_id: str) -> WorkflowRunStatusResponse:
         now = datetime.now(UTC)
@@ -96,41 +103,64 @@ class WorkflowLifecycleService:
             if task_id:
                 revoke_task(task_id, terminate=True)
 
-        self._persistence.save_run_status(
-            run_status=self._transitions.build_execution_transition(
-                run_id=run_id,
-                payload=WorkflowSubmitRequest(
-                    command_type=current_run.command_type,
-                    command_label=current_run.command_label,
-                    priority=current_run.priority,
-                    resource_profile=current_run.resource_profile,
-                    realtime_preferred=current_run.realtime_preferred,
-                    queue_tag=current_run.queue_tag,
-                    spatial_filter=current_run.spatial_filter,
-                    time_range=current_run.time_range,
-                    requested_outputs=current_run.requested_outputs,
-                    client=current_run.client,
-                    map_context=current_run.map_context,
-                    config_overrides=current_run.config_overrides,
+        try:
+            self._persistence.save_run_status_cas(
+                run_status=self._transitions.build_execution_transition(
+                    run_id=run_id,
+                    payload=WorkflowSubmitRequest(
+                        command_type=current_run.command_type,
+                        command_label=current_run.command_label,
+                        priority=current_run.priority,
+                        resource_profile=current_run.resource_profile,
+                        realtime_preferred=current_run.realtime_preferred,
+                        queue_tag=current_run.queue_tag,
+                        spatial_filter=current_run.spatial_filter,
+                        time_range=current_run.time_range,
+                        requested_outputs=current_run.requested_outputs,
+                        client=current_run.client,
+                        map_context=current_run.map_context,
+                        config_overrides=current_run.config_overrides,
+                    ),
+                    status=ExecutionStatus.cancelled,
+                    progress=100,
+                    message="工作流已被用户取消。",
+                    created_at=current_run.created_at,
+                    updated_at=now,
+                    result_refs=current_run.result_refs,
+                    result_dto=current_run.result_dto,
+                    diagnostics=[
+                        "工作流已被取消。",
+                        "error_code=workflow_cancelled_by_user",
+                    ],
+                    executor_metadata={
+                        **meta,
+                        "cancelled_at": now.isoformat(),
+                        "cancelled_by": "user",
+                    },
                 ),
-                status=ExecutionStatus.cancelled,
-                progress=100,
-                message="工作流已被用户取消。",
-                created_at=current_run.created_at,
-                updated_at=now,
-                result_refs=current_run.result_refs,
-                result_dto=current_run.result_dto,
-                diagnostics=[
-                    "工作流已被取消。",
-                    "error_code=workflow_cancelled_by_user",
-                ],
-                executor_metadata={
-                    **meta,
-                    "cancelled_at": now.isoformat(),
-                    "cancelled_by": "user",
-                },
+                expected_status=current_run.status,
             )
-        )
+        except ConcurrentModificationError:
+            logger.warning(
+                "CAS conflict in cancel_workflow_run for %s: "
+                "run status changed by concurrent writer",
+                run_id,
+            )
+            # Re-check if it's already terminal
+            updated = self._repository.get_run(run_id)
+            if updated and updated.status in (
+                ExecutionStatus.succeeded,
+                ExecutionStatus.failed,
+                ExecutionStatus.cancelled,
+            ):
+                raise ValueError(
+                    f"Cannot cancel workflow in terminal state: {updated.status.value}"
+                )
+            # If non-terminal but changed, retry the whole cancel
+            raise ValueError(
+                "Workflow status changed concurrently during cancel attempt. "
+                "Please retry."
+            )
         self._persistence.record_event(
             run_id=run_id,
             channel=EventChannel.status,
@@ -139,6 +169,8 @@ class WorkflowLifecycleService:
             payload={"status": ExecutionStatus.cancelled.value},
             created_at=now,
         )
+        # Phase C：取消后触发队列唤醒，让排队中的工作流获得容量
+        self._trigger_queue_dispatch()
         return self._repository.get_run(run_id)
 
     def handle_workflow_timeout(
@@ -223,20 +255,29 @@ class WorkflowLifecycleService:
             return
 
         retry_at = datetime.now(UTC)
-        self._persistence.save_run_status(
-            run_status=self._transitions.build_retry_pending_transition(
-                run_id=run_id,
-                payload=payload,
-                created_at=created_at,
-                updated_at=retry_at,
-                status_url=self._transitions.workflow_status_url(run_id),
-                events_url=self._transitions.workflow_events_url(run_id),
-                category=category,
-                current_attempt=current_attempt,
-                next_attempt=next_attempt,
-                backoff_seconds=backoff_seconds,
+        try:
+            self._persistence.save_run_status_cas(
+                run_status=self._transitions.build_retry_pending_transition(
+                    run_id=run_id,
+                    payload=payload,
+                    created_at=created_at,
+                    updated_at=retry_at,
+                    status_url=self._transitions.workflow_status_url(run_id),
+                    events_url=self._transitions.workflow_events_url(run_id),
+                    category=category,
+                    current_attempt=current_attempt,
+                    next_attempt=next_attempt,
+                    backoff_seconds=backoff_seconds,
+                ),
+                expected_status=ExecutionStatus.running,
             )
-        )
+        except ConcurrentModificationError:
+            logger.warning(
+                "CAS conflict in finalize_workflow_retry for %s: "
+                "run status changed by concurrent writer, skipping",
+                run_id,
+            )
+            return
         self._persistence.record_event(
             run_id=run_id,
             channel=EventChannel.log,
@@ -264,7 +305,12 @@ class WorkflowLifecycleService:
         )
 
     def _is_protected_terminal(self, run_id: str) -> tuple[bool, str]:
-        """受保护终态检查：看门狗失败 / 用户取消后，禁止后续成功或失败收口覆盖状态。
+        """受保护终态检查：任何终态（succeeded / failed / cancelled）禁止后续收口覆盖。
+
+        原文仅保护 cancelled 与 watchdog-failed；代码审查 H2 发现普通 failed 可能
+        被迟到重复执行的 finalize_workflow_success 覆盖为 succeeded。扩展为所有终态
+        （cancelled / failed / succeeded），任何终态 run 均不可再被 finalize 改写。
+        看门狗失败仍保留 cleanup_reason="stuck_running_watchdog" 用于诊断区分。
 
         Returns:
             (blocked, reason) — blocked 为 True 时应跳过 status 写入。
@@ -276,8 +322,13 @@ class WorkflowLifecycleService:
             return True, "cancelled"
         if current.status == ExecutionStatus.failed:
             meta = current.executor_metadata or {}
-            if meta.get("cleanup_reason") == "stuck_running_watchdog":
-                return True, "stuck_running_watchdog"
+            return True, (
+                "stuck_running_watchdog"
+                if meta.get("cleanup_reason") == "stuck_running_watchdog"
+                else "failed"
+            )
+        if current.status == ExecutionStatus.succeeded:
+            return True, "succeeded"
         return False, ""
 
     def finalize_workflow_success(
@@ -354,21 +405,32 @@ class WorkflowLifecycleService:
             spill_diagnostics_count=len(spill_diagnostics),
         )
         completed_at = datetime.now(UTC)
-        self._persistence.save_run_status(
-            run_status=self._transitions.build_succeeded_transition(
-                run_id=run_id,
-                payload=payload,
-                message=execution.message,
-                created_at=requested_at,
-                updated_at=completed_at,
-                status_url=self._transitions.workflow_status_url(run_id),
-                events_url=self._transitions.workflow_events_url(run_id),
-                result_refs=result_refs,
-                result_dto=result_dto,
-                diagnostics=diagnostics,
-            ),
-            result_dto_override=result_dto if isinstance(result_dto, dict) else None,
-        )
+        try:
+            self._persistence.save_run_status_cas(
+                run_status=self._transitions.build_succeeded_transition(
+                    run_id=run_id,
+                    payload=payload,
+                    message=execution.message,
+                    created_at=requested_at,
+                    updated_at=completed_at,
+                    status_url=self._transitions.workflow_status_url(run_id),
+                    events_url=self._transitions.workflow_events_url(run_id),
+                    result_refs=result_refs,
+                    result_dto=result_dto,
+                    diagnostics=diagnostics,
+                ),
+                expected_status=ExecutionStatus.running,
+                result_dto_override=result_dto
+                if isinstance(result_dto, dict)
+                else None,
+            )
+        except ConcurrentModificationError:
+            logger.warning(
+                "CAS conflict in finalize_workflow_success for %s: "
+                "run status changed by concurrent writer, skipping",
+                run_id,
+            )
+            return
         # Mid-run event_factory 已即时落库；禁止在收尾再 INSERT 同批 event_id。
         # （旧 worker 若仍执行「整表重写」会撞 UNIQUE 并把已成功的算法 run 标成 failed。）
         if spill_diagnostics:
@@ -398,6 +460,8 @@ class WorkflowLifecycleService:
                 follow_up_tasks=execution.follow_up_tasks,
                 created_at=completed_at,
             )
+        # Phase C：成功完成后触发队列唤醒
+        self._trigger_queue_dispatch()
 
     def finalize_workflow_failure(
         self,
@@ -436,18 +500,27 @@ class WorkflowLifecycleService:
         if exc is not None and category == FailureCategory.validation_error:
             failure_message = f"工作流校验失败：{str(exc)[:180]}"
 
-        self._persistence.save_run_status(
-            run_status=self._transitions.build_failed_transition(
-                run_id=run_id,
-                payload=payload,
-                message=failure_message,
-                created_at=created_at,
-                updated_at=failed_at,
-                status_url=self._transitions.workflow_status_url(run_id),
-                events_url=self._transitions.workflow_events_url(run_id),
-                diagnostics=diagnostics,
+        try:
+            self._persistence.save_run_status_cas(
+                run_status=self._transitions.build_failed_transition(
+                    run_id=run_id,
+                    payload=payload,
+                    message=failure_message,
+                    created_at=created_at,
+                    updated_at=failed_at,
+                    status_url=self._transitions.workflow_status_url(run_id),
+                    events_url=self._transitions.workflow_events_url(run_id),
+                    diagnostics=diagnostics,
+                ),
+                expected_status=ExecutionStatus.running,
             )
-        )
+        except ConcurrentModificationError:
+            logger.warning(
+                "CAS conflict in finalize_workflow_failure for %s: "
+                "run status changed by concurrent writer, skipping",
+                run_id,
+            )
+            return
         self._persistence.record_event(
             run_id=run_id,
             channel=EventChannel.log,
@@ -462,6 +535,23 @@ class WorkflowLifecycleService:
             },
             created_at=failed_at,
         )
+        # Phase C：失败后触发队列唤醒
+        self._trigger_queue_dispatch()
+
+    def _trigger_queue_dispatch(self) -> None:
+        """Phase C: Trigger queue dispatch after a run reaches terminal state.
+
+        Best-effort: failures are logged but never propagated, so they
+        cannot interfere with the normal lifecycle flow.
+        """
+        if self._queue_dispatch is not None:
+            try:
+                self._queue_dispatch.dispatch_queued_workflows()
+            except Exception:
+                logger.warning(
+                    "Queue dispatch failed after workflow terminal state",
+                    exc_info=True,
+                )
 
     def _schedule_retry(
         self,

@@ -7,7 +7,8 @@
  *
  * 增强：参数分组（基础/高级/数据源）、默认值对比、数组编辑器、tooltip、单位徽章。
  */
-import { computed, watch, ref, reactive } from 'vue'
+import { computed, watch, ref, reactive, type Component } from 'vue'
+import { Diamond, Lock, Info, X, AlertTriangle, Sun, Zap, Globe } from '../ui/icons'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import type { LGraphNodeClass, INodeInputSlot, INodeOutputSlot } from './litegraph-setup'
 import { getPortColor, getPortTypeLabel, suggestConnectorsForPortType } from './litegraph-setup'
@@ -92,7 +93,7 @@ const nodeEngine = computed(() => {
   return '通用'
 })
 
-const nodeEngineIcon = computed(() => {
+const nodeEngineIcon = computed<Component>(() => {
   const type = props.selectedNode?.type ?? ''
   const engine =
     nodeTemplate.value?.engine ??
@@ -103,10 +104,10 @@ const nodeEngineIcon = computed(() => {
         : type.startsWith('gee/')
           ? 'gee'
           : 'common')
-  if (engine === 'weather') return '☀'
-  if (engine === 'python_provider') return '⚡'
-  if (engine === 'gee') return '🌍'
-  return '◈'
+  if (engine === 'weather') return Sun
+  if (engine === 'python_provider') return Zap
+  if (engine === 'gee') return Globe
+  return Diamond
 })
 
 // 参数信息（从模板获取，含说明）
@@ -397,7 +398,7 @@ function handleTitleChange() {
     </div>
 
     <div v-if="!selectedNode" class="inspector-empty">
-      <span class="empty-icon" aria-hidden="true">◇</span>
+      <Diamond :size="20" class="empty-icon" aria-hidden="true" />
       <span class="empty-text">未选中节点</span>
       <span class="empty-hint">在画布上点击节点查看属性</span>
     </div>
@@ -406,7 +407,9 @@ function handleTitleChange() {
       <!-- 节点描述 -->
       <div v-if="nodeDescription" class="node-description">
         <div class="desc-header">
-          <span class="desc-engine-icon" aria-hidden="true">{{ nodeEngineIcon }}</span>
+          <span class="desc-engine-icon" aria-hidden="true"
+            ><component :is="nodeEngineIcon" :size="14"
+          /></span>
           <span class="desc-engine">{{ nodeEngine }}</span>
         </div>
         <p class="desc-text">{{ nodeDescription }}</p>
@@ -420,9 +423,8 @@ function handleTitleChange() {
           class="validation-issue"
           :class="issue.severity"
         >
-          <span class="issue-icon" aria-hidden="true">{{
-            issue.severity === 'error' ? '✕' : '⚠'
-          }}</span>
+          <X v-if="issue.severity === 'error'" :size="14" class="issue-icon" aria-hidden="true" />
+          <AlertTriangle v-else :size="14" class="issue-icon" aria-hidden="true" />
           <span class="issue-message">{{ issue.message }}</span>
         </div>
       </div>
@@ -554,7 +556,7 @@ function handleTitleChange() {
                   }}<span v-if="isModified(key)" class="modified-mark">*</span>
                 </span>
                 <span v-if="getParamHint(key)" class="param-hint">{{ getParamHint(key) }}</span>
-                <span class="param-info-icon" :title="getParamTooltip(key)">ⓘ</span>
+                <Info :size="14" class="param-info-icon" :title="getParamTooltip(key)" />
                 <span v-if="getParamMeta(key)?.unit" class="param-unit-badge">{{
                   getParamMeta(key)?.unit
                 }}</span>
@@ -602,9 +604,11 @@ function handleTitleChange() {
             >
               <label class="form-label">
                 <span class="param-label-text">{{ grp.anchorKey }}</span>
-                <span class="param-info-icon" title="西/南/东/北四至范围，可使用预设快捷选择"
-                  >ⓘ</span
-                >
+                <Info
+                  :size="14"
+                  class="param-info-icon"
+                  title="西/南/东/北四至范围，可使用预设快捷选择"
+                />
               </label>
               <BboxInputField
                 :model-value="getBboxValue(grp.bboxKeys)"
@@ -627,7 +631,7 @@ function handleTitleChange() {
                   }}<span v-if="isModified(key)" class="modified-mark">*</span>
                 </span>
                 <span v-if="getParamHint(key)" class="param-hint">{{ getParamHint(key) }}</span>
-                <span class="param-info-icon" :title="getParamTooltip(key)">ⓘ</span>
+                <Info :size="14" class="param-info-icon" :title="getParamTooltip(key)" />
                 <span v-if="getParamMeta(key)?.unit" class="param-unit-badge">{{
                   getParamMeta(key)?.unit
                 }}</span>
@@ -674,7 +678,7 @@ function handleTitleChange() {
                   }}<span v-if="isModified(key)" class="modified-mark">*</span>
                 </span>
                 <span v-if="getParamHint(key)" class="param-hint">{{ getParamHint(key) }}</span>
-                <span class="param-info-icon" :title="getParamTooltip(key)">ⓘ</span>
+                <Info :size="14" class="param-info-icon" :title="getParamTooltip(key)" />
                 <span v-if="getParamMeta(key)?.unit" class="param-unit-badge">{{
                   getParamMeta(key)?.unit
                 }}</span>
@@ -712,7 +716,7 @@ function handleTitleChange() {
       </section>
 
       <div v-if="readonly" class="readonly-hint">
-        <span aria-hidden="true">🔒</span>
+        <Lock :size="14" aria-hidden="true" />
         <span>系统预设工作流为只读</span>
       </div>
     </div>
@@ -724,16 +728,16 @@ function handleTitleChange() {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: rgba(8, 17, 31, 0.72);
-  color: #c4d6e8;
+  background: var(--surface-1);
+  color: var(--text-secondary);
 }
 
 .inspector-header {
   padding: 0.62rem 0.72rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.1);
-  font-size: 0.7rem;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--font-size-caption);
   font-weight: 600;
-  color: #d8e6f5;
+  color: var(--text-primary);
 }
 
 .inspector-empty {
@@ -743,7 +747,7 @@ function handleTitleChange() {
   justify-content: center;
   gap: 0.36rem;
   padding: 2.2rem 1rem;
-  color: #5a7080;
+  color: var(--text-disabled);
   text-align: center;
 }
 
@@ -753,13 +757,13 @@ function handleTitleChange() {
 }
 
 .empty-text {
-  font-size: 0.7rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
 }
 
 .empty-hint {
-  font-size: 0.58rem;
-  color: #4a5a6a;
+  font-size: var(--font-size-caption);
+  color: var(--text-disabled);
 }
 
 .inspector-content {
@@ -767,7 +771,7 @@ function handleTitleChange() {
   overflow-y: auto;
   padding: 0.42rem 0.62rem;
   scrollbar-width: thin;
-  scrollbar-color: rgba(90, 180, 255, 0.28) transparent;
+  scrollbar-color: var(--border-accent) transparent;
 }
 
 .inspector-content::-webkit-scrollbar {
@@ -779,21 +783,21 @@ function handleTitleChange() {
 }
 
 .inspector-content::-webkit-scrollbar-thumb {
-  background: rgba(90, 180, 255, 0.26);
+  background: var(--border-accent);
   border-radius: 3px;
 }
 
 .inspector-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(90, 180, 255, 0.45);
+  background: var(--border-strong);
 }
 
 /* 节点描述卡片 */
 .node-description {
   margin-bottom: 0.62rem;
   padding: 0.52rem 0.62rem;
-  border: 1px solid rgba(90, 213, 255, 0.14);
+  border: 1px solid var(--accent-surface);
   border-radius: 0.42rem;
-  background: rgba(10, 132, 255, 0.06);
+  background: var(--accent-surface);
 }
 
 .desc-header {
@@ -804,30 +808,30 @@ function handleTitleChange() {
 }
 
 .desc-engine-icon {
-  font-size: 0.72rem;
+  font-size: var(--font-size-caption);
 }
 
 .desc-engine {
-  font-size: 0.56rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
-  color: #5ad5ff;
+  color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .desc-text {
   margin: 0;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   line-height: 1.4;
-  color: #8aa8bf;
+  color: var(--text-muted);
 }
 
 /* 运行前校验问题 */
 .node-validation-issues {
   margin-bottom: 0.52rem;
   padding: 0.32rem 0.42rem;
-  background: rgba(255, 107, 107, 0.08);
-  border: 1px solid rgba(255, 107, 107, 0.25);
+  background: var(--danger-surface);
+  border: 1px solid var(--danger-border);
   border-radius: 4px;
 }
 
@@ -835,23 +839,23 @@ function handleTitleChange() {
   display: flex;
   align-items: flex-start;
   gap: 0.32rem;
-  font-size: 0.55rem;
+  font-size: var(--font-size-caption);
   line-height: 1.4;
   padding: 0.12rem 0;
 }
 
 .validation-issue.warning {
-  color: #e0a030;
+  color: var(--warning);
 }
 
 .validation-issue.error {
-  color: #ff6b6b;
+  color: var(--danger);
 }
 
 .issue-icon {
   flex-shrink: 0;
   font-weight: 700;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
 }
 
 .issue-message {
@@ -864,10 +868,10 @@ function handleTitleChange() {
 .param-hint {
   display: block;
   margin-top: 0.1rem;
-  font-size: 0.5rem;
+  font-size: var(--font-size-caption);
   font-weight: 400;
-  color: #5a7080;
-  font-family: 'Consolas', 'Monaco', monospace;
+  color: var(--text-disabled);
+  font-family: var(--font-mono);
 }
 
 /* 参数分组标题 */
@@ -878,13 +882,13 @@ function handleTitleChange() {
 .param-group-title {
   margin: 0 0 0.32rem;
   padding: 0.18rem 0.42rem;
-  font-size: 0.54rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
-  color: #6e8ba0;
+  color: var(--text-faint);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  border-left: 2px solid rgba(136, 192, 255, 0.3);
-  background: rgba(136, 192, 255, 0.04);
+  border-left: 2px solid var(--border-strong);
+  background: var(--border-subtle);
 }
 
 /* 参数 label 容器：横向布局 */
@@ -892,8 +896,8 @@ function handleTitleChange() {
   display: flex;
   align-items: center;
   gap: 0.28rem;
-  font-size: 0.56rem;
-  color: #6e8ba0;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
   font-weight: 500;
 }
 
@@ -902,11 +906,11 @@ function handleTitleChange() {
 }
 
 .param-label-text.modified {
-  color: #ffd38a;
+  color: var(--accent-warm);
 }
 
 .modified-mark {
-  color: #ffb84d;
+  color: var(--warning);
   margin-left: 0.18rem;
 }
 
@@ -918,16 +922,16 @@ function handleTitleChange() {
   width: 0.92rem;
   height: 0.92rem;
   border-radius: 50%;
-  background: rgba(136, 192, 255, 0.1);
-  color: #88dfff;
-  font-size: 0.54rem;
+  background: var(--border-subtle);
+  color: var(--accent-strong);
+  font-size: var(--font-size-caption);
   cursor: help;
   flex: none;
 }
 
 .param-info-icon:hover {
-  background: rgba(90, 213, 255, 0.24);
-  color: #5ad5ff;
+  background: var(--accent-border);
+  color: var(--accent);
 }
 
 /* 单位徽章 */
@@ -936,9 +940,9 @@ function handleTitleChange() {
   align-items: center;
   padding: 0.04rem 0.32rem;
   border-radius: 0.24rem;
-  background: rgba(90, 213, 255, 0.18);
-  color: #5ad5ff;
-  font-size: 0.5rem;
+  background: var(--accent-surface);
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   font-weight: 600;
   flex: none;
 }
@@ -950,25 +954,25 @@ function handleTitleChange() {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 184, 77, 0.3);
+  border: 1px solid var(--warning-border);
   border-radius: 0.32rem;
   background: transparent;
-  color: #ffb84d;
+  color: var(--warning);
   cursor: pointer;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   flex: none;
   transition: all 0.16s ease;
 }
 
 .reset-btn:hover {
-  background: rgba(255, 184, 77, 0.16);
-  color: #ffd38a;
+  background: var(--warning-border);
+  color: var(--accent-warm);
 }
 
 .inspector-section {
   margin-bottom: 0.72rem;
   padding-bottom: 0.42rem;
-  border-bottom: 1px solid rgba(136, 192, 255, 0.06);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .inspector-section:last-child {
@@ -977,9 +981,9 @@ function handleTitleChange() {
 
 .section-title {
   margin: 0 0 0.42rem;
-  font-size: 0.62rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
-  color: #88dfff;
+  color: var(--accent-strong);
   letter-spacing: 0.02em;
 }
 
@@ -992,23 +996,23 @@ function handleTitleChange() {
 
 .form-input {
   padding: 0.32rem 0.42rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.36rem;
-  background: rgba(4, 12, 23, 0.6);
-  color: #d8e6f5;
+  background: var(--surface-raised);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.6rem;
+  font-size: var(--font-size-caption);
 }
 
 .form-input.readonly {
-  background: rgba(4, 12, 23, 0.3);
-  color: #6e8ba0;
+  background: var(--surface-sunken);
+  color: var(--text-faint);
   cursor: default;
 }
 
 .form-input:focus {
   outline: none;
-  border-color: rgba(90, 213, 255, 0.4);
+  border-color: var(--border-strong);
 }
 
 .form-pair {
@@ -1029,9 +1033,9 @@ function handleTitleChange() {
 
 .ports-hint {
   margin: 0 0 0.4rem;
-  font-size: 0.55rem;
+  font-size: var(--font-size-caption);
   line-height: 1.4;
-  color: #7f96ad;
+  color: var(--text-muted);
 }
 
 .port-item {
@@ -1039,35 +1043,35 @@ function handleTitleChange() {
   align-items: center;
   gap: 0.32rem;
   padding: 0.28rem 0.42rem;
-  border: 1px solid rgba(136, 192, 255, 0.06);
+  border: 1px solid var(--border-subtle);
   border-radius: 0.36rem;
-  background: rgba(4, 12, 23, 0.3);
-  font-size: 0.58rem;
+  background: var(--surface-sunken);
+  font-size: var(--font-size-caption);
 }
 
 .port-name {
   flex: 1;
-  color: #d8e6f5;
+  color: var(--text-primary);
   font-weight: 500;
 }
 
 .port-type {
-  color: #5ad5ff;
-  font-family: 'Consolas', 'Monaco', monospace;
-  font-size: 0.52rem;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-caption);
 }
 
 .port-status {
   padding: 0.04rem 0.28rem;
   border-radius: 0.24rem;
-  background: rgba(136, 192, 255, 0.06);
-  color: #6e8ba0;
-  font-size: 0.5rem;
+  background: var(--border-subtle);
+  color: var(--text-faint);
+  font-size: var(--font-size-caption);
 }
 
 .port-status.connected {
-  background: rgba(114, 255, 207, 0.1);
-  color: #9ff8cf;
+  background: var(--success-surface);
+  color: var(--success);
 }
 
 /* 端口类型颜色色块 */
@@ -1077,18 +1081,18 @@ function handleTitleChange() {
   height: 0.5rem;
   border-radius: 50%;
   flex-shrink: 0;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--surface-3);
 }
 
 /* 验证错误状态 */
 .form-input.error {
-  border-color: rgba(255, 107, 107, 0.6);
+  border-color: var(--danger-border);
   background: rgba(60, 20, 20, 0.3);
 }
 
 .param-error {
-  font-size: 0.5rem;
-  color: #ff8a8a;
+  font-size: var(--font-size-caption);
+  color: var(--danger);
   margin-top: 0.08rem;
 }
 
@@ -1114,7 +1118,7 @@ function handleTitleChange() {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(136, 192, 255, 0.15);
+  background: var(--border-default);
   border-radius: 1rem;
   transition: 0.2s;
 }
@@ -1126,18 +1130,18 @@ function handleTitleChange() {
   width: 0.72rem;
   left: 0.14rem;
   bottom: 0.14rem;
-  background: #6e8ba0;
+  background: var(--surface-3);
   border-radius: 50%;
   transition: 0.2s;
 }
 
 .toggle-switch input:checked + .toggle-slider {
-  background: rgba(90, 213, 255, 0.3);
+  background: var(--accent-border);
 }
 
 .toggle-switch input:checked + .toggle-slider::before {
   transform: translateX(1rem);
-  background: #5ad5ff;
+  background: var(--accent);
 }
 
 .toggle-switch.disabled {
@@ -1151,9 +1155,9 @@ function handleTitleChange() {
   flex-wrap: wrap;
   gap: 0.22rem;
   padding: 0.32rem 0.42rem;
-  border: 1px solid rgba(136, 192, 255, 0.14);
+  border: 1px solid var(--border-default);
   border-radius: 0.36rem;
-  background: rgba(4, 12, 23, 0.6);
+  background: var(--surface-raised);
   min-height: 2rem;
   align-items: center;
 }
@@ -1164,9 +1168,9 @@ function handleTitleChange() {
   gap: 0.18rem;
   padding: 0.16rem 0.36rem;
   border-radius: 0.28rem;
-  background: rgba(90, 213, 255, 0.18);
-  color: #5ad5ff;
-  font-size: 0.54rem;
+  background: var(--accent-surface);
+  color: var(--accent);
+  font-size: var(--font-size-caption);
   font-weight: 500;
 }
 
@@ -1178,16 +1182,16 @@ function handleTitleChange() {
   justify-content: center;
   border: none;
   background: transparent;
-  color: #5ad5ff;
+  color: var(--accent);
   cursor: pointer;
-  font-size: 0.5rem;
+  font-size: var(--font-size-caption);
   line-height: 1;
   padding: 0;
   transition: color 0.12s ease;
 }
 
 .chip-remove:hover {
-  color: #ff8a8a;
+  color: var(--danger);
 }
 
 .array-input {
@@ -1195,14 +1199,14 @@ function handleTitleChange() {
   min-width: 6rem;
   border: none;
   background: transparent;
-  color: #d8e6f5;
+  color: var(--text-primary);
   font: inherit;
-  font-size: 0.58rem;
+  font-size: var(--font-size-caption);
   outline: none;
 }
 
 .array-input::placeholder {
-  color: #5a7080;
+  color: var(--text-disabled);
 }
 
 .readonly-hint {
@@ -1211,10 +1215,10 @@ function handleTitleChange() {
   gap: 0.36rem;
   margin-top: 0.62rem;
   padding: 0.42rem 0.52rem;
-  border: 1px solid rgba(255, 180, 90, 0.2);
+  border: 1px solid var(--warning-border);
   border-radius: 0.42rem;
   background: rgba(90, 60, 20, 0.18);
-  color: #ffd9a8;
-  font-size: 0.56rem;
+  color: var(--accent-warm);
+  font-size: var(--font-size-caption);
 }
 </style>

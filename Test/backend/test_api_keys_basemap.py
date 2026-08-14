@@ -16,6 +16,7 @@ for _p in (_PYTHON_PROVIDER, _CODE_ROOT):
 
 def _fresh_repo(tmp_path, monkeypatch, *, env_keys: dict[str, str] | None = None):
     from app.services import config_service
+    from app.services import config_api_keys
 
     monkeypatch.setenv("BACKEND_ENVIRONMENT", "development")
     db_parent = tmp_path / "workflow_state"
@@ -28,11 +29,9 @@ def _fresh_repo(tmp_path, monkeypatch, *, env_keys: dict[str, str] | None = None
     object.__setattr__(config_service.settings, "gee_credentials_encryption_key", "")
 
     env = env_keys or {}
-    monkeypatch.setattr(
-        config_service,
-        "_env_api_key_value",
-        lambda name: str(env.get(name) or "").strip(),
-    )
+    _env_fn = lambda name: str(env.get(name) or "").strip()
+    monkeypatch.setattr(config_service, "_env_api_key_value", _env_fn)
+    monkeypatch.setattr(config_api_keys, "_env_api_key_value", _env_fn)
 
     # 关闭上一个 lru_cache 中的 repository 连接池，避免 Windows 文件句柄泄漏
     # 导致 tmp_path 清理时 PermissionError [WinError 5]

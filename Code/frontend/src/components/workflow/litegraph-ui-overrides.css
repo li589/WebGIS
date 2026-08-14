@@ -58,3 +58,36 @@
   z-index: 11000 !important;
   font-size: 14px !important;
 }
+
+/* ── 入场动画（菜单/对话框动态创建 DOM，无法用 Vue Transition） ── */
+.litegraph.litecontextmenu,
+.litecontextmenu {
+  animation: litegraph-menu-enter var(--motion-fast) var(--ease-decelerate);
+}
+
+.graphdialog,
+.litegraph.graphdialog,
+.litegraph.dialog {
+  animation: litegraph-menu-enter var(--motion-fast) var(--ease-decelerate);
+}
+
+@keyframes litegraph-menu-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .litegraph.litecontextmenu,
+  .litecontextmenu,
+  .graphdialog,
+  .litegraph.graphdialog,
+  .litegraph.dialog {
+    animation: none;
+  }
+}

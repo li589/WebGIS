@@ -2,7 +2,6 @@ import type { WeatherOverlayRenderContext, WeatherOverlayState } from './weather
 import {
   syncWeatherCogOverlay as syncWeatherCogOverlayRenderer,
   syncWeatherGridFillOverlay as syncWeatherGridFillOverlayRenderer,
-  syncWeatherHeatmapOverlay as syncWeatherHeatmapOverlayRenderer,
   syncWeatherPointOverlay as syncWeatherPointOverlayRenderer,
 } from './weather-overlay-renderers'
 import type { WindParticleControllerContract } from './wind-particle-controller-contract'
@@ -25,7 +24,6 @@ interface CreateWeatherOverlayServicesOptions {
 export interface WeatherOverlayServices {
   syncWeatherCogOverlay: WeatherOverlayRenderContext['syncWeatherCogOverlay']
   syncWeatherGridFillOverlay: WeatherOverlayRenderContext['syncWeatherGridFillOverlay']
-  syncWeatherHeatmapOverlay: WeatherOverlayRenderContext['syncWeatherHeatmapOverlay']
   syncWeatherPointOverlay: WeatherOverlayRenderContext['syncWeatherPointOverlay']
   syncWindParticleFlow: WeatherOverlayRenderContext['syncWindParticleFlow']
   syncScalarFieldWebGL: WeatherOverlayRenderContext['syncScalarFieldWebGL']
@@ -40,9 +38,6 @@ export function createWeatherOverlayServices(
     },
     syncWeatherGridFillOverlay(overlayState: WeatherOverlayState) {
       syncWeatherGridFillOverlayRenderer(options.map, overlayState)
-    },
-    syncWeatherHeatmapOverlay(overlayState: WeatherOverlayState) {
-      syncWeatherHeatmapOverlayRenderer(options.map, overlayState)
     },
     syncWeatherPointOverlay(overlayState: WeatherOverlayState) {
       syncWeatherPointOverlayRenderer(options.map, overlayState)

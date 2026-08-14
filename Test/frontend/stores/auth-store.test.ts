@@ -8,7 +8,7 @@ vi.mock('@/services/auth-api', () => ({
   fetchAuthConfig: vi.fn(async () => ({
     auth_required: true,
     session_cookie_name: 'cgda_session',
-    roles: ['admin', 'operator', 'viewer'],
+    roles: ['admin', 'standard', 'demo'],
     dev_prefill: { username: 'admin', password: 'cgda-dev-admin' },
     dev_write_api_key: 'cgda-dev-write-key',
   })),

@@ -17,11 +17,19 @@ from dataclasses import dataclass
 from enum import Enum
 
 import httpx
-from fastapi import HTTPException
+from app.services.errors import (
+    TileProxyConfigError,
+    TileProxyError,
+    TileProxyUpstreamError,
+)
 
 from app.core.config import settings
 from app.services.crs import CoordinatePoint
 from app.services.crs._gcj_bd import wgs84_to_bd09, wgs84_to_gcj02
+
+# 天地图按 User-Agent 区分浏览器端 / 服务器端 Key；服务器端 Key 遇 Mozilla UA 会 403 (301013)。
+TIANDITU_SERVER_USER_AGENT = "CGDA-Backend/1.0"
+DEFAULT_TILE_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
 
 class TileProvider(Enum):
@@ -50,18 +58,28 @@ class TileUrlTemplate:
 # Tile URL 模板配置
 TILE_URL_TEMPLATES: dict[str, TileUrlTemplate] = {
     # 天地图（需要 TK token，坐标系 WGS84 但有偏移）
+    # 矢量底图（街道）
+    "tianditu-vec": TileUrlTemplate(
+        provider=TileProvider.TIANDITU,
+        url_pattern="https://t0.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk={tk}",
+        requires_transform=False,
+        coord_system="WGS84",
+    ),
+    # 影像底图
     "tianditu-img": TileUrlTemplate(
         provider=TileProvider.TIANDITU,
         url_pattern="https://t0.tianditu.gov.cn/img_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=img&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk={tk}",
         requires_transform=False,
         coord_system="WGS84",
     ),
+    # 矢量/影像中文注记
     "tianditu-cva": TileUrlTemplate(
         provider=TileProvider.TIANDITU,
         url_pattern="https://t0.tianditu.gov.cn/cva_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=cva&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk={tk}",
         requires_transform=False,
         coord_system="WGS84",
     ),
+    # 地形底图
     "tianditu-ter": TileUrlTemplate(
         provider=TileProvider.TIANDITU,
         url_pattern="https://t0.tianditu.gov.cn/ter_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ter&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk={tk}",
@@ -235,7 +253,7 @@ class TileProxyService:
                 timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0),
                 follow_redirects=True,
                 headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "User-Agent": DEFAULT_TILE_USER_AGENT,
                 },
             )
         return self._http_client
@@ -356,9 +374,7 @@ class TileProxyService:
         """
         template = TILE_URL_TEMPLATES.get(tile_id)
         if not template:
-            raise HTTPException(
-                status_code=400, detail=f"Unknown tile provider: {tile_id}"
-            )
+            raise TileProxyError(f"Unknown tile provider: {tile_id}")
 
         from app.services.config_service import get_effective_api_key
 
@@ -367,16 +383,14 @@ class TileProxyService:
 
         # 天地图需要 API Key（tk），未配置时返回明确错误
         if template.provider == TileProvider.TIANDITU and not tianditu_key:
-            raise HTTPException(
-                status_code=503,
-                detail="天地图需要配置 API Key（设置页或 BACKEND_TIANDITU_API_KEY）。请从 https://console.tianditu.gov.cn/ 申请 Key。",
+            raise TileProxyConfigError(
+                "天地图需要配置 API Key（设置页或 BACKEND_TIANDITU_API_KEY）。请从 https://console.tianditu.gov.cn/ 申请 Key。",
             )
 
         # 百度需要 API Key（ak），未配置时返回明确错误（否则百度返回空白 tile）
         if template.provider == TileProvider.BAIDU and not baidu_key:
-            raise HTTPException(
-                status_code=503,
-                detail="百度地图需要配置 API Key（设置页或 BACKEND_BAIDU_API_KEY）。请从 https://lbsyun.baidu.com/ 申请 ak。",
+            raise TileProxyConfigError(
+                "百度地图需要配置 API Key（设置页或 BACKEND_BAIDU_API_KEY）。请从 https://lbsyun.baidu.com/ 申请 ak。",
             )
 
         # 坐标转换
@@ -415,8 +429,12 @@ class TileProxyService:
 
         # 请求 tile
         client = await self.get_http_client()
+        # 天地图服务器端 Key 必须使用非浏览器 UA，否则上游返回 301013。
+        request_headers: dict[str, str] | None = None
+        if template.provider == TileProvider.TIANDITU:
+            request_headers = {"User-Agent": TIANDITU_SERVER_USER_AGENT}
         try:
-            response = await client.get(url)
+            response = await client.get(url, headers=request_headers)
             response.raise_for_status()
             data = response.content
 
@@ -429,12 +447,14 @@ class TileProxyService:
 
             return data
         except httpx.HTTPStatusError as e:
-            raise HTTPException(
+            # 不暴露上游 URL，仅返回状态码
+            raise TileProxyUpstreamError(
+                f"Tile source returned HTTP {e.response.status_code}",
                 status_code=e.response.status_code,
-                detail=f"Failed to fetch tile: {e.response.status_code}",
             )
-        except httpx.RequestError as e:
-            raise HTTPException(status_code=502, detail=f"Tile server error: {str(e)}")
+        except httpx.RequestError:
+            # 不暴露上游 URL 或内部错误细节，返回通用错误
+            raise TileProxyUpstreamError("Tile source is temporarily unavailable")
 
     def get_available_providers(self) -> list[dict]:
         """获取所有可用的底图提供商列表"""

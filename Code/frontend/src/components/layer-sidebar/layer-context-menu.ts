@@ -16,8 +16,13 @@ export type LayerContextActionId =
   | 'openStyle'
   | 'exportGeoJson'
   | 'exportCsv'
+  | 'exportShp'
   | 'exportPng'
   | 'exportTif'
+  | 'exportNc'
+  | 'exportMat'
+  | 'openExportPanel'
+  | 'exportPending'
   | 'viewReport'
   | 'runWorkflow'
   | 'runWorkflowNoCache'
@@ -48,6 +53,8 @@ export interface LayerContextMenuInput {
   isAdminBoundary: boolean
   isImported: boolean
   isImportedRaster: boolean
+  /** 工作流占位：有 run 组但尚无 overlay，导出不可用 */
+  isExportPending?: boolean
   /** 有 jobLayer 且带报告摘要时可「查看报告」 */
   hasJobReport: boolean
   /** 可提交分析工作流（非天气/导入/边界） */
@@ -124,14 +131,27 @@ export function buildLayerContextMenu(input: LayerContextMenuInput): LayerContex
       { id: 'openDetails', label: DATA_COPY.openDetails, icon: 'ℹ' },
       { id: 'exportGeoJson', label: LAYERS_COPY.exportGeoJson, icon: '⇩' },
       { id: 'exportCsv', label: LAYERS_COPY.exportCsv, icon: '⇩' },
+      { id: 'exportShp', label: LAYERS_COPY.exportShp, icon: '⇩' },
+      { id: 'openExportPanel', label: LAYERS_COPY.openExportPanel, icon: '▤' },
     )
   }
   if (input.isImportedRaster) {
     dataItems.push(
       { id: 'openDetails', label: DATA_COPY.openDetails, icon: 'ℹ' },
-      { id: 'exportPng', label: LAYERS_COPY.exportPng, icon: '⇩' },
       { id: 'exportTif', label: LAYERS_COPY.exportTif, icon: '⇩' },
+      { id: 'exportNc', label: LAYERS_COPY.exportNc, icon: '⇩' },
+      { id: 'exportMat', label: LAYERS_COPY.exportMat, icon: '⇩' },
+      { id: 'exportPng', label: LAYERS_COPY.exportPng, icon: '⇩' },
+      { id: 'openExportPanel', label: LAYERS_COPY.openExportPanel, icon: '▤' },
     )
+  }
+  if (input.isExportPending && !input.isImported && !input.isImportedRaster) {
+    dataItems.push({
+      id: 'exportPending',
+      label: LAYERS_COPY.exportPending,
+      icon: '⇩',
+      disabled: true,
+    })
   }
   if (dataItems.length) {
     groups.push({

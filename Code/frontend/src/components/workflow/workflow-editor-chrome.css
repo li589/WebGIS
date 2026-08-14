@@ -11,12 +11,12 @@
  * 已接入：WorkflowLeftSidebar / WorkflowRightSidebar / WorkflowTimerPanel /
  * PipelineLauncher（`.pipeline-body`）/ NodeCacheDialog（`.nc-list`）。
  *
- * 工作流编辑器外的面板可参考 ControlPanel 的 `--panel-scrollbar-*` 变量，
+ * 工作流编辑器外的面板可参考 PanelDock 的 `--panel-scrollbar-*` 变量，
  * 或复用本文件的色值 `rgba(90, 180, 255, 0.26~0.45)` 以保持视觉一致。
  */
 .wf-scroll {
   scrollbar-width: thin;
-  scrollbar-color: rgba(90, 180, 255, 0.28) transparent;
+  scrollbar-color: var(--border-accent) transparent;
 }
 
 .wf-scroll::-webkit-scrollbar {
@@ -29,12 +29,12 @@
 }
 
 .wf-scroll::-webkit-scrollbar-thumb {
-  background: rgba(90, 180, 255, 0.26);
+  background: var(--border-accent);
   border-radius: 3px;
 }
 
 .wf-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(90, 180, 255, 0.45);
+  background: var(--border-strong);
 }
 
 .wf-sidebar-resizer {
@@ -58,7 +58,7 @@
   height: 36px;
   transform: translate(-50%, -50%);
   border-radius: 2px;
-  background: rgba(136, 192, 255, 0.32);
+  background: var(--border-strong);
   transition:
     background 0.16s ease,
     height 0.16s ease,
@@ -67,7 +67,7 @@
 
 .wf-sidebar-resizer:hover::after,
 .wf-sidebar-resizer.active::after {
-  background: rgba(90, 213, 255, 0.85);
+  background: var(--border-strong);
   height: 52px;
   width: 3px;
 }

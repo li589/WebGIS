@@ -25,6 +25,10 @@ export interface SettingsUiLocal {
    * 关闭或无可见数据图层时不盖雾/淡白层。
    */
   mapDistributionChrome?: boolean
+  /** 设置侧栏宽度（px）；未设则用默认 38rem */
+  panelWidthPx?: number
+  /** 分析工具运行成功后是否在地图显示新图层（默认开启） */
+  showAnalysisResultOnMap?: boolean
 }
 
 function safeGet(storage: Storage, key: string): string | null {
@@ -146,8 +150,10 @@ export function loadSettingsUiLocal(): SettingsUiLocal {
   }
 }
 
+/** 合并写入 settings UI 偏好，避免切 Tab 等场景冲掉其它字段（如 mapDistributionChrome）。 */
 export function saveSettingsUiLocal(ui: SettingsUiLocal): void {
-  safeSet(localStorage, SETTINGS_UI, JSON.stringify(ui))
+  const merged: SettingsUiLocal = { ...loadSettingsUiLocal(), ...ui }
+  safeSet(localStorage, SETTINGS_UI, JSON.stringify(merged))
 }
 
 /** 地图分布淡底默认开启；显式 false 时关闭。 */
@@ -173,6 +179,15 @@ export function setMapDistributionChromeEnabled(on: boolean): void {
       // ignore listener errors
     }
   }
+}
+
+/** 分析结果地图显示默认开启；显式 false 时关闭。 */
+export function isShowAnalysisResultOnMapEnabled(): boolean {
+  return loadSettingsUiLocal().showAnalysisResultOnMap !== false
+}
+
+export function setShowAnalysisResultOnMapEnabled(on: boolean): void {
+  saveSettingsUiLocal({ ...loadSettingsUiLocal(), showAnalysisResultOnMap: on })
 }
 
 /** Clear local preferences only — does not touch server-side key history. */

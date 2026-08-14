@@ -26,8 +26,15 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => user.value !== null)
   const isAdmin = computed(() => user.value?.role === 'admin')
-  const isViewer = computed(() => user.value?.role === 'viewer')
-  const canWrite = computed(() => user.value?.role === 'admin' || user.value?.role === 'operator')
+  const isDemo = computed(() => user.value?.role === 'demo')
+  const canWrite = computed(() => user.value?.role === 'admin' || user.value?.role === 'standard')
+  /** 可提交/运行工作流（含 demo；创建定义仍看 canWrite） */
+  const canRunWorkflow = computed(
+    () =>
+      user.value?.role === 'admin' ||
+      user.value?.role === 'standard' ||
+      user.value?.role === 'demo',
+  )
   const authRequired = computed(() => {
     if (bootstrapError.value) return true
     return config.value?.auth_required ?? true
@@ -140,8 +147,9 @@ export const useAuthStore = defineStore('auth', () => {
     usersLoading,
     isAuthenticated,
     isAdmin,
-    isViewer,
+    isDemo,
     canWrite,
+    canRunWorkflow,
     authRequired,
     bootstrap,
     retryBootstrap,
