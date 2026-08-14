@@ -616,11 +616,16 @@ export function browseRemoteStorage(
 export function searchRemoteStorage(
   profileId: string,
   query: string,
-  maxResults = 200,
+  maxResults = 500,
+  startPath = '/',
 ): Promise<RemoteSearchResponse> {
   return settingsFetch(`/config/remote-storage/${encodeURIComponent(profileId)}/search`, {
     method: 'POST',
-    body: JSON.stringify({ query, max_results: maxResults } satisfies RemoteSearchRequest),
+    body: JSON.stringify({
+      query,
+      max_results: maxResults,
+      start_path: startPath,
+    } satisfies RemoteSearchRequest),
   })
 }
 

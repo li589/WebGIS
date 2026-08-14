@@ -16479,6 +16479,12 @@
             "minimum": 1.0,
             "title": "Max Results",
             "default": 200
+          },
+          "start_path": {
+            "type": "string",
+            "title": "Start Path",
+            "description": "搜索起点目录（默认根；用于在当前目录子树内搜索）",
+            "default": "/"
           }
         },
         "type": "object",
@@ -16501,6 +16507,11 @@
             "type": "string",
             "title": "Query"
           },
+          "start_path": {
+            "type": "string",
+            "title": "Start Path",
+            "default": "/"
+          },
           "via": {
             "type": "string",
             "title": "Via"
@@ -16511,6 +16522,18 @@
             },
             "type": "array",
             "title": "Items"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "description": "结果已达 max_results 上限，可能存在未扫到的匹配",
+            "default": false
+          },
+          "failed_dirs": {
+            "type": "integer",
+            "title": "Failed Dirs",
+            "description": "递归扫描中列举失败的子目录数（部分结果）",
+            "default": 0
           }
         },
         "type": "object",

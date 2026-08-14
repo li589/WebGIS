@@ -6182,6 +6182,12 @@ export interface components {
              * @default 200
              */
             max_results: number;
+            /**
+             * Start Path
+             * @description 搜索起点目录（默认根；用于在当前目录子树内搜索）
+             * @default /
+             */
+            start_path: string;
         };
         /** RemoteSearchResponse */
         RemoteSearchResponse: {
@@ -6191,10 +6197,27 @@ export interface components {
             protocol: string;
             /** Query */
             query: string;
+            /**
+             * Start Path
+             * @default /
+             */
+            start_path: string;
             /** Via */
             via: string;
             /** Items */
             items?: components["schemas"]["RemoteEntryItem"][];
+            /**
+             * Truncated
+             * @description 结果已达 max_results 上限，可能存在未扫到的匹配
+             * @default false
+             */
+            truncated: boolean;
+            /**
+             * Failed Dirs
+             * @description 递归扫描中列举失败的子目录数（部分结果）
+             * @default 0
+             */
+            failed_dirs: number;
         };
         /**
          * RemoteSourceEntry

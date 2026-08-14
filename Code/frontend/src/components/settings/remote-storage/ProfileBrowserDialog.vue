@@ -37,6 +37,34 @@ const viaPrimary = ref(true)
 const searchQuery = ref('')
 const searching = ref(false)
 const searchResults = ref<RemoteEntryItem[]>([])
+// 搜索范围：true=当前目录子树（start_path=currentPath），false=全库（start_path=/）
+const searchScopeCurrent = ref(true)
+const searchTruncated = ref(false)
+const searchFailedDirs = ref(0)
+
+type SortKey = 'name' | 'mtime' | 'size'
+const sortBy = ref<SortKey>('name')
+const sortDesc = ref(false)
+
+function compareEntries(a: RemoteEntryItem, b: RemoteEntryItem): number {
+  let cmp: number
+  if (sortBy.value === 'name') {
+    cmp = (a.name ?? '').localeCompare(b.name ?? '')
+  } else if (sortBy.value === 'mtime') {
+    cmp = (a.mtime ?? 0) - (b.mtime ?? 0)
+  } else {
+    cmp = (a.size ?? 0) - (b.size ?? 0)
+  }
+  if (cmp === 0) cmp = (a.name ?? '').localeCompare(b.name ?? '')
+  return sortDesc.value ? -cmp : cmp
+}
+
+const sortedItems = computed(() => {
+  const dirsFirst = (x: RemoteEntryItem, y: RemoteEntryItem) =>
+    (x.is_dir ?? false) === (y.is_dir ?? false) ? 0 : x.is_dir ? -1 : 1
+  return [...items.value].sort((a, b) => dirsFirst(a, b) || compareEntries(a, b))
+})
+const sortedSearchResults = computed(() => [...searchResults.value].sort(compareEntries))
 
 // 竞态防护：导航/新搜索递增序号，晚到的旧响应直接丢弃
 let loadSeq = 0
@@ -68,6 +96,8 @@ async function loadDir(path: string) {
   addMsg.value = ''
   // 导航即退出搜索视图：清掉旧结果，避免冻结显示已失效的搜索列表
   searchResults.value = []
+  searchTruncated.value = false
+  searchFailedDirs.value = 0
   const target = normalizePath(path)
   try {
     const res = await browseRemoteStorage(props.profile.profile_id, target)
@@ -75,10 +105,7 @@ async function loadDir(path: string) {
     currentPath.value = normalizePath(res.path || target)
     viaPrimary.value = res.via !== 'alt'
     viaLabel.value = res.via
-    items.value = [...(res.items ?? [])].sort((a, b) => {
-      if ((a.is_dir ?? false) !== (b.is_dir ?? false)) return a.is_dir ? -1 : 1
-      return a.name.localeCompare(b.name)
-    })
+    items.value = res.items ?? []
   } catch (e) {
     if (seq !== loadSeq) return
     errorMsg.value = (e as Error).message
@@ -93,12 +120,25 @@ async function runSearch() {
   const seq = ++searchSeq
   searching.value = true
   errorMsg.value = ''
+  const startPath = searchScopeCurrent.value ? currentPath.value : '/'
   try {
-    const res = await searchRemoteStorage(props.profile.profile_id, searchQuery.value.trim())
+    const res = await searchRemoteStorage(
+      props.profile.profile_id,
+      searchQuery.value.trim(),
+      500,
+      startPath,
+    )
     if (seq !== searchSeq) return
     searchResults.value = res.items ?? []
+    searchTruncated.value = res.truncated ?? false
+    searchFailedDirs.value = res.failed_dirs ?? 0
     viaPrimary.value = res.via !== 'alt'
-    if (!searchResults.value.length) errorMsg.value = '无匹配结果（深度限制 3 层）'
+    if (!searchResults.value.length) {
+      errorMsg.value =
+        startPath === '/'
+          ? '无匹配结果（递归深度限制 3 层）'
+          : `无匹配结果（${startPath} 子树内，深度限制 3 层）`
+    }
   } catch (e) {
     if (seq !== searchSeq) return
     errorMsg.value = (e as Error).message
@@ -179,12 +219,23 @@ function formatSize(size: number | null | undefined): string {
   return `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
 
+function formatMtime(mtime: number | null | undefined): string {
+  if (mtime == null || mtime <= 0) return ''
+  const d = new Date(mtime * 1000)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 watch(
   () => props.visible,
   (v) => {
     if (v && props.profile) {
       searchQuery.value = ''
       searchResults.value = []
+      searchTruncated.value = false
+      searchFailedDirs.value = 0
+      searchScopeCurrent.value = true
       addMsg.value = ''
       addAlias.value = ''
       void loadDir(props.initialPath || '/')
@@ -235,13 +286,38 @@ watch(
         </div>
 
         <div v-if="searchable" class="fb-searchbar">
+          <label class="fb-scope" title="勾选后在当前目录子树内搜索，取消则从根目录全库搜索">
+            <input v-model="searchScopeCurrent" type="checkbox" />
+            当前目录内
+          </label>
           <input
             v-model="searchQuery"
-            placeholder="按名称搜索（递归，最多 3 层 / 500 条）"
+            :placeholder="
+              searchScopeCurrent
+                ? `在 ${currentPath} 子树内搜索（递归 3 层）`
+                : '全库搜索（递归 3 层 / 500 条）'
+            "
             @keyup.enter="runSearch"
           />
           <button type="button" class="fb-btn" :disabled="searching" @click="runSearch">
             {{ searching ? '搜索中…' : '搜索' }}
+          </button>
+        </div>
+
+        <div class="fb-toolbar">
+          <span class="fb-toolbar-label">排序</span>
+          <select v-model="sortBy" class="fb-select" title="排序字段（目录浏览固定目录优先）">
+            <option value="name">名称</option>
+            <option value="mtime">修改时间</option>
+            <option value="size">大小</option>
+          </select>
+          <button
+            type="button"
+            class="fb-mini-btn"
+            :title="sortDesc ? '当前：降序，点击切换升序' : '当前：升序，点击切换降序'"
+            @click="sortDesc = !sortDesc"
+          >
+            {{ sortDesc ? '↓' : '↑' }}
           </button>
         </div>
 
@@ -251,7 +327,13 @@ watch(
           <template v-else>
             <div v-if="searchResults.length" class="fb-list fb-search-list">
               <div class="fb-search-head">
-                <span>搜索结果（点击行定位到所在目录）</span>
+                <span>
+                  搜索结果 {{ searchResults.length }} 条（点击行定位到所在目录）
+                  <em v-if="searchTruncated" class="fb-hint warn">已达 500 条上限，结果被截断</em>
+                  <em v-if="searchFailedDirs > 0" class="fb-hint warn">
+                    {{ searchFailedDirs }} 个子目录列举失败，结果不完整
+                  </em>
+                </span>
                 <button
                   type="button"
                   class="fb-mini-btn"
@@ -262,7 +344,7 @@ watch(
                 </button>
               </div>
               <div
-                v-for="(row, i) in searchResults"
+                v-for="(row, i) in sortedSearchResults"
                 :key="`s${i}`"
                 class="fb-row clickable"
                 :title="row.is_dir ? '进入该目录' : '定位到所在目录'"
@@ -272,13 +354,14 @@ watch(
                   {{ row.is_dir ? '📁' : '📄' }} {{ row.name }}
                 </span>
                 <code class="fb-meta">{{ row.path }}</code>
+                <span class="fb-mtime">{{ formatMtime(row.mtime) }}</span>
                 <span class="fb-size">{{ formatSize(row.size) }}</span>
               </div>
             </div>
             <div v-else-if="!items.length" class="fb-state">空目录</div>
             <div v-else class="fb-list">
               <div
-                v-for="row in items"
+                v-for="row in sortedItems"
                 :key="row.name"
                 class="fb-row"
                 :class="{ dir: row.is_dir, clickable: row.is_dir }"
@@ -286,6 +369,7 @@ watch(
                 @dblclick="enterDir(row)"
               >
                 <span class="fb-name">{{ row.is_dir ? '📁' : '📄' }} {{ row.name }}</span>
+                <span class="fb-mtime">{{ formatMtime(row.mtime) }}</span>
                 <span class="fb-size">{{ formatSize(row.size) }}</span>
               </div>
             </div>
@@ -426,9 +510,45 @@ watch(
 }
 .fb-searchbar {
   display: flex;
+  align-items: center;
   gap: 0.4rem;
   padding: 0.42rem 0.72rem;
   border-bottom: 1px solid var(--border-subtle);
+}
+.fb-scope {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.24rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
+  cursor: pointer;
+  user-select: none;
+}
+.fb-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.32rem;
+  padding: 0.32rem 0.72rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.fb-toolbar-label,
+.fb-hint {
+  color: var(--text-disabled);
+  font-size: var(--font-size-caption);
+  font-style: normal;
+}
+.fb-hint.warn {
+  color: var(--accent-warm);
+  margin-left: 0.4rem;
+}
+.fb-select {
+  border: 1px solid var(--border-default);
+  border-radius: 0.32rem;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
+  padding: 0.14rem 0.3rem;
 }
 .fb-searchbar input {
   flex: 1;
@@ -514,8 +634,16 @@ watch(
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.fb-mtime {
+  flex: none;
+  min-width: 7.2rem;
+  color: var(--text-disabled);
+  font-variant-numeric: tabular-nums;
+}
 .fb-size {
   flex: none;
+  min-width: 4.6rem;
+  text-align: right;
   color: var(--text-disabled);
 }
 .fb-footer {

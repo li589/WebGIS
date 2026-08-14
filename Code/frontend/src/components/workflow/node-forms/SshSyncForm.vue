@@ -16,8 +16,8 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { Check, AlertTriangle } from '../../ui/icons'
 import type { LGraphNodeClass } from '../litegraph-setup'
 import { requestJson } from '../../../services/_http'
-import { fetchRemoteStorageProfiles } from '../../../services/settings-api'
-import type { RemoteStorageProfile } from '../../../types/api-reexports'
+import { fetchRemoteSources, fetchRemoteStorageProfiles } from '../../../services/settings-api'
+import type { RemoteSourceEntry, RemoteStorageProfile } from '../../../types/api-reexports'
 import RemoteDirBrowser from './RemoteDirBrowser.vue'
 import ParamCombobox from '../ParamCombobox.vue'
 import {
@@ -111,6 +111,7 @@ onMounted(async () => {
     /* ignore settings fetch errors */
   }
   loadSyncProfiles()
+  loadRegisteredSources()
 })
 
 // ── 动态服务器选项：遗留内置 + 可同步的远程存储 profile ─────────────────────
@@ -126,6 +127,33 @@ async function loadSyncProfiles() {
   } catch {
     syncProfiles.value = []
   }
+}
+
+// ── 已注册远程数据源（settings → 远程存储「添加为数据源」的别名注册表）──────
+const registeredSources = ref<RemoteSourceEntry[]>([])
+const selectedSourceId = ref('')
+
+async function loadRegisteredSources() {
+  try {
+    const entries = await fetchRemoteSources()
+    registeredSources.value = entries.filter(
+      (s) =>
+        s.kind === 'storage_profile' &&
+        s.ref_exists &&
+        s.ref?.enabled !== false &&
+        SYNC_PROFILE_PROTOCOLS.has(String(s.ref?.protocol || '').toLowerCase()),
+    )
+  } catch {
+    registeredSources.value = []
+  }
+}
+
+/** 选中已注册数据源：快捷填充 server_type（引用的 profile）+ remote_path。 */
+function applyRegisteredSource() {
+  const entry = registeredSources.value.find((s) => s.remote_source_id === selectedSourceId.value)
+  if (!entry || props.readonly) return
+  update('server_type', entry.ref_id)
+  update('remote_path', entry.remote_path || '/')
 }
 
 const serverOptions = computed(() => [
@@ -250,6 +278,32 @@ function toggleFilter(ext: string) {
       />
       <span v-if="errors.server_type" class="field-error">{{ errors.server_type }}</span>
       <span v-else-if="serverHint" class="field-hint">{{ serverHint }}</span>
+    </div>
+
+    <!-- 已注册远程数据源快捷填充 -->
+    <div v-if="registeredSources.length" class="form-row">
+      <label class="form-label">快捷填充：已注册数据源</label>
+      <div class="input-with-btn">
+        <select v-model="selectedSourceId" class="form-input form-select" :disabled="readonly">
+          <option value="">选择已注册数据源…</option>
+          <option
+            v-for="src in registeredSources"
+            :key="src.remote_source_id"
+            :value="src.remote_source_id"
+          >
+            {{ src.remote_source_id }}（{{ src.ref?.protocol }} · {{ src.remote_path }}）
+          </option>
+        </select>
+        <button
+          type="button"
+          class="browse-btn"
+          :disabled="readonly || !selectedSourceId"
+          title="按注册条目填充服务器与远程路径"
+          @click="applyRegisteredSource"
+        >
+          填充
+        </button>
+      </div>
     </div>
 
     <!-- 连接状态 -->
