@@ -254,8 +254,52 @@ class LocalFileSourceFetcher(SourceFetcher):
             else:
                 local_path = Path(raw_path)
         else:
-            local_path = Path(
-                unquote(parsed.path) if parsed.path else source_uri[len("local://") :]
+            # local://tiles/t.bin 的首段会被 urlparse 归入 netloc，
+            # 拼回 path 头部以免丢段（G1-04 顺带修复该解析缺陷）
+            if parsed.netloc:
+                raw_path = parsed.netloc + unquote(parsed.path)
+            elif parsed.path:
+                raw_path = unquote(parsed.path)
+            else:
+                raw_path = source_uri[len("local://") :]
+            local_path = Path(raw_path)
+
+        # G1-04：file:// / local:// 源必须约束在 download_source_root 内，
+        # 防止 source_uri 指向服务器任意路径（.env / 凭据库等）造成本地文件泄露。
+        root_raw = (settings.download_source_root or "").strip()
+        if root_raw:
+            root_path = Path(root_raw).resolve()
+            if not local_path.is_absolute():
+                local_path = root_path / local_path
+            # resolve() 归一化 ../ 与符号链接后再判界，防穿越与 symlink 逃逸
+            local_path = local_path.resolve()
+            if not local_path.is_relative_to(root_path):
+                logger.warning(
+                    "Local source rejected (outside download source root): %s",
+                    source_uri,
+                )
+                return FetchResult(
+                    ref_id=ref_id,
+                    success=False,
+                    error="Local file is outside the configured download source root",
+                    fetched_at=fetched_at,
+                )
+        elif settings.environment == "production":
+            # production fail-closed：未配置根时禁用本地文件源（对齐 BACKEND_DATA_ROOT 策略）
+            return FetchResult(
+                ref_id=ref_id,
+                success=False,
+                error=(
+                    "BACKEND_DOWNLOAD_SOURCE_ROOT is not configured; "
+                    "local file sources are disabled in production"
+                ),
+                fetched_at=fetched_at,
+            )
+        else:
+            logger.warning(
+                "BACKEND_DOWNLOAD_SOURCE_ROOT not set; local source fetch is "
+                "unconstrained (non-production only): %s",
+                source_uri,
             )
 
         if not local_path.exists() or not local_path.is_file():

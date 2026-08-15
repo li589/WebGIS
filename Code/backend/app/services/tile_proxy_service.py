@@ -10,11 +10,13 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from enum import Enum
+from urllib.parse import urljoin
 
 import httpx
 from app.services.errors import (
@@ -24,12 +26,19 @@ from app.services.errors import (
 )
 
 from app.core.config import settings
+from app.core.ssrf import SSRFBlockedError, resolve_outbound_target
 from app.services.crs import CoordinatePoint
 from app.services.crs._gcj_bd import wgs84_to_bd09, wgs84_to_gcj02
+
+logger = logging.getLogger(__name__)
 
 # 天地图按 User-Agent 区分浏览器端 / 服务器端 Key；服务器端 Key 遇 Mozilla UA 会 403 (301013)。
 TIANDITU_SERVER_USER_AGENT = "CGDA-Backend/1.0"
 DEFAULT_TILE_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
+# G1-02：客户端禁用自动重定向，重定向由 _get_ssrf_safe 逐跳校验后手动跟随。
+_MAX_REDIRECT_HOPS = 3
+_REDIRECT_STATUS_CODES = frozenset({301, 302, 303, 307, 308})
 
 
 class TileProvider(Enum):
@@ -249,9 +258,11 @@ class TileProxyService:
     async def get_http_client(self) -> httpx.AsyncClient:
         if self._http_client is None:
             # 分层超时：连接超时短（5s）让不可达底图快速失败，读取超时长（30s）允许慢速 CDN
+            # follow_redirects=False（G1-02）：自动跟随会绕过 SSRF 校验直连 3xx 目标，
+            # 改由 _get_ssrf_safe 逐跳 resolve_outbound_target 校验后手动跟随。
             self._http_client = httpx.AsyncClient(
                 timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0),
-                follow_redirects=True,
+                follow_redirects=False,
                 headers={
                     "User-Agent": DEFAULT_TILE_USER_AGENT,
                 },
@@ -353,6 +364,41 @@ class TileProxyService:
     def _get_cache_key(self, url: str) -> str:
         return hashlib.md5(url.encode()).hexdigest()
 
+    async def _get_ssrf_safe(
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        headers: dict[str, str] | None,
+    ) -> httpx.Response:
+        """请求 tile 并手动跟随重定向：每跳 Location 先过 SSRF 校验。
+
+        初始 URL 由 TILE_URL_TEMPLATES 常量构造（无外部输入的主机/路径），
+        风险点只在 3xx Location。底图上游均为公网 CDN，故 allow_private=False：
+        重定向进环回/链路本地/私网必为异常，一律阻断。
+        """
+        current = url
+        for _hop in range(_MAX_REDIRECT_HOPS + 1):
+            response = await client.get(current, headers=headers)
+            if response.status_code not in _REDIRECT_STATUS_CODES:
+                return response
+            location = response.headers.get("location")
+            await response.aclose()
+            if not location:
+                raise TileProxyUpstreamError("Tile source redirect missing Location")
+            next_url = urljoin(current, location)
+            try:
+                resolve_outbound_target(next_url, allow_private=False)
+            except SSRFBlockedError as exc:
+                logger.warning("Tile redirect blocked by SSRF policy: %s", exc)
+                raise TileProxyUpstreamError(
+                    "Tile source redirect blocked by policy"
+                ) from exc
+            logger.info("Tile redirect followed: hop=%d", _hop + 1)
+            current = next_url
+        raise TileProxyUpstreamError(
+            f"Tile source redirect exceeded {_MAX_REDIRECT_HOPS} hops"
+        )
+
     async def fetch_tile(
         self,
         tile_id: str,
@@ -434,7 +480,7 @@ class TileProxyService:
         if template.provider == TileProvider.TIANDITU:
             request_headers = {"User-Agent": TIANDITU_SERVER_USER_AGENT}
         try:
-            response = await client.get(url, headers=request_headers)
+            response = await self._get_ssrf_safe(client, url, request_headers)
             response.raise_for_status()
             data = response.content
 

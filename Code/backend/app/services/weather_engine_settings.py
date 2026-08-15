@@ -135,14 +135,22 @@ def get_last_sync_record() -> dict[str, Any] | None:
 
 def probe_local_open_meteo_reachable(timeout: float = 2.0) -> bool:
     """轻量可达性探测（不解析完整 coverage）。"""
+    from app.core.ssrf import (
+        SSRFBlockedError,
+        is_trusted_open_meteo_local_url,
+        safe_urlopen,
+    )
     from app.weatherengine.provider_ids import OPEN_METEO_LOCAL_URL
 
+    probe_url = f"{OPEN_METEO_LOCAL_URL}?latitude=0&longitude=0"
     try:
-        with urlopen(
-            f"{OPEN_METEO_LOCAL_URL}?latitude=0&longitude=0", timeout=timeout
-        ) as resp:
+        if is_trusted_open_meteo_local_url(probe_url):
+            resp_ctx = urlopen(probe_url, timeout=timeout)
+        else:
+            resp_ctx = safe_urlopen(probe_url, timeout=timeout, allow_private=True)
+        with resp_ctx as resp:
             return 200 <= int(getattr(resp, "status", 200)) < 500
-    except (URLError, HTTPError, OSError, TimeoutError):
+    except (URLError, HTTPError, OSError, TimeoutError, SSRFBlockedError):
         return False
 
 
