@@ -16,17 +16,22 @@ from unittest.mock import MagicMock, patch
 
 @contextmanager
 def _settings_override(**overrides):
-    """settings 为冻结 dataclass，须用 object.__setattr__ 覆写并恢复。"""
-    from app.core.config import settings
+    """替换 fetcher 模块级 settings 绑定（而非覆写全局对象）。
 
-    saved = {k: getattr(settings, k) for k in overrides}
-    for key, value in overrides.items():
-        object.__setattr__(settings, key, value)
-    try:
+    source_fetcher 以 ``from app.core.config import settings`` 在导入期绑定；
+    合并收集（Test/algorithms + Test/backend）会话中，backend conftest 会在该模块
+    已导入后重赋 ``app.core.config.settings``，全局对象与模块绑定分裂，覆写全局
+    对 fetcher 不生效。这里用 dataclasses.replace 生成全字段拷贝并 patch 模块
+    属性，使断言与导入顺序无关。
+    """
+    import dataclasses
+
+    from app.core.config import settings
+    from app.services import source_fetcher
+
+    stub = dataclasses.replace(settings, **overrides)
+    with patch.object(source_fetcher, "settings", stub):
         yield
-    finally:
-        for key, value in saved.items():
-            object.__setattr__(settings, key, value)
 
 
 def _fetcher():

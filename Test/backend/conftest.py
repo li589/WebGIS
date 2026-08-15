@@ -23,6 +23,7 @@ os.environ["BACKEND_WORKFLOW_EXECUTOR"] = "sync"
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _BACKEND_ROOT = _REPO_ROOT / "Code" / "backend"
 _CODE_ROOT = _REPO_ROOT / "Code"
+_ALGO_ROOT = _REPO_ROOT / "Code" / "algorithms" / "providers" / "Python"
 _GEE_SRC = _BACKEND_ROOT / "app" / "gee" / "core" / "src"
 
 # 去硬编码批 1：算法/后端不再默认 I:；测试注入 DATA_ROOT。
@@ -47,6 +48,13 @@ except Exception:
 for path in (str(_BACKEND_ROOT), str(_CODE_ROOT), str(_GEE_SRC)):
     if path not in sys.path:
         sys.path.insert(0, path)
+
+# B-N7：COG 导入链 algorithms.providers.Python.publish/__init__ → output_manager
+# 依赖 provider 根上的顶层模块（path_utils 等），单文件运行也须可导入。
+# 用 append 而非 insert(0)：保证 Code 根的 algorithms（含 __path__ 合并垫片）
+# 始终优先于 provider 本地同名包，避免 B-N8 的包名遮蔽。
+if str(_ALGO_ROOT) not in sys.path:
+    sys.path.append(str(_ALGO_ROOT))
 
 # ── 重定向 pytest tmp_path 到项目内可写目录 ──────────────────────────────
 # 必须在 pytest 初始化 ``tmp_path_factory`` 之前设置 ``PYTEST_DEBUG_TEMPROOT``
