@@ -40,7 +40,7 @@
 | V-01 | 画布提交未调用 dry-validate | **已实施**（DashboardView → `POST /dry-validate`；HTTP 单测 `test_workflow_dry_validate.py`；编译后按 `params.module_name` 识别模块） |
 | V-02 | `node_progress` 按最大 progress 选取 | **已实施**（`pickLatestNodeProgress`：`updatedAt` + `eventId` 平局） |
 | P-01 | progressive 物化失败无 UI | **已实施**（`progressiveOverlayError` + diagnosticNotes + 状态面板区分色） |
-| P-02 | 时间轴不随 node_progress.timeKey seek | 仍开：MapCanvas / Timeline 可选联动 |
+| P-02 | 时间轴不随 node_progress.timeKey seek | **已实施**（`useTimelineSync.ts`：node_progress hint → 守卫（locked/playing/layerTimeLocked）→ `applyDateHour` seek；测试 `Test/frontend/views/dashboard/useTimelineSync.test.ts` + `Test/frontend/utils/workflow-timekey-seek.test.ts`） |
 
 ### P2（体验）
 
