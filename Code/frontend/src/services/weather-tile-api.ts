@@ -34,7 +34,8 @@ export interface FetchWeatherTileOptions {
 }
 
 const _WEB_MERCATOR_MAX_LAT = 85.0511287798066
-const _TILE_KEY_PREFIX = 'weather:tile:'
+/** 瓦片缓存 key 统一前缀；nearby-z 扫描等处需用它拼完整前缀做归属判断 */
+export const TILE_KEY_PREFIX = 'weather:tile:'
 
 /**
  * 将 HTTP 错误响应体压成短文案。
@@ -79,7 +80,7 @@ export function buildTileKey(
 ): string {
   const modelPart = model.replace(/\//g, '_').replace(/:/g, '_')
   const providerPart = normalizeProviderPart(provider)
-  return `${_TILE_KEY_PREFIX}${layerId}:z${z}:x${x}:y${y}:h${hour}:m${modelPart}:p${providerPart}`
+  return `${TILE_KEY_PREFIX}${layerId}:z${z}:x${x}:y${y}:h${hour}:m${modelPart}:p${providerPart}`
 }
 
 /** 标准 Web Mercator：经纬度 → z/x/y 瓦片坐标。 */
