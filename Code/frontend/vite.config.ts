@@ -90,17 +90,17 @@ export default defineConfig(({ mode }) => {
       // 保持 vite root = Code/frontend/，使 bare import（vue/vitest/pinia）经
       // Code/frontend/node_modules 解析；include 用 ../../ 跨出 root，配合 server.fs.allow。
       include: ['../../Test/frontend/**/*.test.ts'],
-      // P0-4：前端覆盖率配置（起步阈值 = 当前覆盖率基线，防止倒退；后续逐步提升）
+      // P0-4：前端覆盖率配置（W3.4 覆盖率门：22% → 30%+，阈值锁定当前基线防倒退）
       coverage: {
         provider: 'v8' as const,
         reporter: ['text', 'lcov'],
         include: ['src/**/*.{ts,vue}'],
         exclude: ['src/types/api-contracts.ts', 'src/**/*.d.ts'],
         thresholds: {
-          lines: 22,
-          statements: 21,
-          branches: 16,
-          functions: 19,
+          lines: 32,
+          statements: 30,
+          branches: 25,
+          functions: 28,
         },
       },
     },

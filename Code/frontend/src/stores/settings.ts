@@ -182,15 +182,17 @@ export const useSettingsStore = defineStore('settings', () => {
       if (r.value === undefined) return
       switch (r.name) {
         case 'general': {
-          const general = r.value as GeneralConfig
+          const general = r.value as GeneralConfig | null
           generalConfig.value = general
-          hydrateMapDefaults({
-            longitude: general.map_default_longitude,
-            latitude: general.map_default_latitude,
-            zoom: general.map_default_zoom,
-            tileSource: general.map_default_tile_source,
-            aoiPresets: general.map_aoi_presets,
-          })
+          if (general) {
+            hydrateMapDefaults({
+              longitude: general.map_default_longitude,
+              latitude: general.map_default_latitude,
+              zoom: general.map_default_zoom,
+              tileSource: general.map_default_tile_source,
+              aoiPresets: general.map_aoi_presets,
+            })
+          }
           break
         }
         case 'api-keys':
