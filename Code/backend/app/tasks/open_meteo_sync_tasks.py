@@ -9,6 +9,7 @@ Phase 2: Open-Meteo 本地数据自动同步任务。
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import subprocess
@@ -30,9 +31,13 @@ logger = logging.getLogger(__name__)
 # 同步任务超时（秒）：ECMWF IFS 0.25° 全球同步约 10-30 分钟
 _SYNC_TIMEOUT_SECONDS = 3600
 
-# ─── 全局同步互斥（C1 + L-1）──────────────────────────────────────
-# 三入口（API trigger / Celery Beat task / launch.py sync）共用同一把锁：
-# - Redis 可用：SET NX key=sync:{domains}（value=owner token，Lua 比对后删除；
+# ─── 全局同步互斥（C1 + L-1 + B-N3）─────────────────────────────────
+# 三入口（API trigger / Celery Beat task / launch.py sync）共用同一组锁：
+# - 按「单域」加锁 sync:domain:{d}：不同域集合只要相交即互斥，无交集可并行
+#   （集合键 sync:{a,b} 只能防完全相同的域集合，a 与 a,b 重叠时仍并发写同一 volume）
+# - 归一化（排序 + 去重 + 去空白，B-R3）：``a,b`` 与 ``b,a`` 解析为同一域列表
+# - all-or-nothing：任一域获取失败 → 逆序释放已获取域 → 返回 None
+# - Redis 可用：每域 SET NX（value=owner token，Lua 比对后删除；
 #   TTL=7200s > 最长同步时长 3600s，避免锁在同步期间过期被他人接管后误删他人锁）
 # - Redis 不可用：进程内 threading 互斥兜底（仅单进程内串行）
 _SYNC_LOCK_TTL_SECONDS = 7200
@@ -40,56 +45,92 @@ _sync_local_lock = threading.Lock()
 _sync_local_holders: set[str] = set()
 
 
-def _sync_lock_key(domains: str) -> str:
-    """同步锁键须对 domains 归一化（排序 + 去重 + 去空白，B-R3）。
-
-    API 允许调用方以任意顺序/重复项传 domains_override；原始串直接拼键会让
-    ``a,b`` 与 ``b,a`` 拿到不同锁，同一域集合的两次同步并发跑在同一 Docker
-    volume 上，产生数据面文件竞争与缓存互相覆盖。
-    """
+def _sync_domains(domains: str | None) -> list[str]:
+    """解析并归一化 domains（排序 + 去重 + 去空白；空 → ["default"]，B-R3）。"""
     parts = sorted({p.strip() for p in (domains or "").split(",") if p.strip()})
-    return f"sync:{','.join(parts) if parts else 'default'}"
+    return parts or ["default"]
+
+
+def _sync_domain_key(domain: str) -> str:
+    return f"sync:domain:{domain}"
 
 
 def acquire_open_meteo_sync_lock(
     domains: str, ttl_seconds: int = _SYNC_LOCK_TTL_SECONDS
 ) -> str | None:
-    """尝试获取全局同步锁。
+    """按单域 all-or-nothing 获取同步锁（B-N3）。
 
     Returns:
-        持有者 token（str）：获取成功；None：锁已被其他入口持有。
+        聚合 token（JSON 串 ``{"domain": token}``）：获取成功；None：任一域已被
+        其他入口持有（已获取的域已逆序回滚释放）。
     """
-    key = _sync_lock_key(domains)
+    domain_list = _sync_domains(domains)
     if get_redis_client() is not None:
-        return acquire_dedup_lock(key, ttl_seconds=ttl_seconds)
+        acquired: dict[str, str] = {}
+        for domain in domain_list:
+            token = acquire_dedup_lock(
+                _sync_domain_key(domain), ttl_seconds=ttl_seconds
+            )
+            if token is None:
+                for held in reversed(list(acquired)):
+                    release_dedup_lock(_sync_domain_key(held), acquired[held])
+                return None
+            acquired[domain] = token
+        return json.dumps(acquired)
     with _sync_local_lock:
-        if key in _sync_local_holders:
+        keys = [_sync_domain_key(d) for d in domain_list]
+        if any(k in _sync_local_holders for k in keys):
             return None
-        _sync_local_holders.add(key)
+        _sync_local_holders.update(keys)
         return f"local-{uuid.uuid4().hex}"
 
 
 def release_open_meteo_sync_lock(domains: str, token: str | None = None) -> None:
-    """释放全局同步锁（须与 acquire 返回的 token 配对）。"""
-    key = _sync_lock_key(domains)
+    """释放同步锁（须与 acquire 返回的聚合 token 配对，逐域 compare-and-delete）。"""
+    domain_list = _sync_domains(domains)
     if get_redis_client() is not None:
-        release_dedup_lock(key, token)
+        if not token:
+            logger.warning(
+                "release_open_meteo_sync_lock called without token; "
+                "locks will expire via TTL (domains=%s)",
+                domain_list,
+            )
+            return
+        try:
+            tokens = json.loads(token)
+        except (json.JSONDecodeError, TypeError):
+            logger.warning(
+                "release_open_meteo_sync_lock: invalid token format; skip (domains=%s)",
+                domain_list,
+            )
+            return
+        if not isinstance(tokens, dict):
+            logger.warning(
+                "release_open_meteo_sync_lock: token is not a domain map; skip (domains=%s)",
+                domain_list,
+            )
+            return
+        for domain in domain_list:
+            domain_token = tokens.get(domain)
+            if isinstance(domain_token, str):
+                release_dedup_lock(_sync_domain_key(domain), domain_token)
         return
     with _sync_local_lock:
-        _sync_local_holders.discard(key)
+        for domain in domain_list:
+            _sync_local_holders.discard(_sync_domain_key(domain))
 
 
 def is_open_meteo_sync_locked(domains: str) -> bool:
-    """只读探测锁是否被持有（API 用于快速 409，不实际获取锁）。"""
-    key = _sync_lock_key(domains)
+    """只读探测任一域是否被持有（API 用于快速 409，不实际获取锁）。"""
+    domain_list = _sync_domains(domains)
     client = get_redis_client()
     if client is not None:
         try:
-            return client.get(key) is not None
+            return any(client.get(_sync_domain_key(d)) is not None for d in domain_list)
         except Exception:  # noqa: BLE001 - 探测失败按未持有处理
             return False
     with _sync_local_lock:
-        return key in _sync_local_holders
+        return any(_sync_domain_key(d) in _sync_local_holders for d in domain_list)
 
 
 def _build_sync_command(domains: str | None = None) -> list[str]:

@@ -21,8 +21,11 @@ from collections.abc import Callable
 from app.services.workflow_repository import SQLiteWorkflowRepository
 from app.services.workflow.persistence_service import WorkflowPersistenceService
 from app.services.workflow.reuse_cache import (
+    acquire_retry_reuse_claim,
     inject_retry_reuse_params,
+    release_retry_reuse_claim,
     resolve_reuse_output_dir,
+    upgrade_retry_reuse_claim,
 )
 from app.services.workflow.transition_builder import WorkflowTransitionBuilder
 from shared.contracts.api_contracts import (
@@ -68,17 +71,33 @@ class RetryDispatcher:
 
         payload = WorkflowSubmitRequest.model_validate_json(request_json)
         reuse_output_dir, _module = resolve_reuse_output_dir(self._repository, run_id)
+        claim: str | None = None
         if reuse_output_dir:
+            # B-N2：并发双 retry 复用同一目录会并发写块缓存，提交前先拿写互斥 claim
+            claim = acquire_retry_reuse_claim(self._repository, reuse_output_dir)
+            if claim is None:
+                raise ValueError(
+                    f"Retry rejected: another retry is already in progress "
+                    f"writing to {reuse_output_dir}"
+                )
             payload_dict = payload.model_dump(mode="json")
             merged = inject_retry_reuse_params(
                 payload_dict, reuse_output_dir=reuse_output_dir
             )
             payload = WorkflowSubmitRequest.model_validate(merged)
 
-        new_response = self._submit_fn(payload)
+        try:
+            new_response = self._submit_fn(payload)
+        except BaseException:
+            if claim is not None:
+                release_retry_reuse_claim(reuse_output_dir, claim)
+            raise
         new_run = self._repository.get_run(new_response.run_id)
 
         if new_run:
+            if claim is not None:
+                # 升级为持有者 run：后续 retry 据其终态懒抢占，TTL 拉长防中途过期
+                upgrade_retry_reuse_claim(reuse_output_dir, claim, new_response.run_id)
             retry_meta: dict[str, object] = {
                 **new_run.executor_metadata,
                 "retry_of_run_id": run_id,
@@ -101,4 +120,7 @@ class RetryDispatcher:
                     executor_metadata=retry_meta,
                 )
             )
+        elif claim is not None:
+            # 新 run 未落库：无人会写该目录，立即释放
+            release_retry_reuse_claim(reuse_output_dir, claim)
         return new_response

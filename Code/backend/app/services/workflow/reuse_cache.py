@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
+import os
+import threading
+import uuid
 from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
-from app.services.workflow_repository import SQLiteWorkflowRepository
+from app.core.redis_client import get_redis_client
+from app.services.workflow_repository import (
+    _TERMINAL_STATUSES,
+    SQLiteWorkflowRepository,
+)
+
+logger = logging.getLogger(__name__)
 
 # Modules that support reuse_block_cache / reuse_output_dir on retry.
 _OMEGA_BLOCK_MODULES = frozenset(
@@ -170,3 +181,145 @@ def inject_retry_reuse_params(
         algo = {**algo, "algorithm_params": params}
         return {**payload_dict, "algorithm_request": algo}
     return payload_dict
+
+
+# ─── B-N2：retry 复用目录 claim（写互斥）─────────────────────────────────────
+# 并发双 retry 解析出同一 reuse_output_dir 后，两个新 run 会同时向该目录写
+# chunk checkpoint / 块缓存（``_save_chunk_checkpoint(output_dir, ...)``）。
+# 生命周期：提交前 acquire（pending，TTL 短）→ 新 run 落库后 upgrade 为
+# ``{run_id}:{token}``（TTL 长）→ 持有者 run 终态/被清理后由下一次 acquire
+# 懒抢占（compare-and-delete）→ 提交失败/未落库则立即 release。
+# Redis 不可用时退化为进程内 dict 兜底（仅单进程互斥，与 sync 锁 B-N3 同定位）。
+
+RETRY_REUSE_PENDING_TTL_SECONDS = 300
+RETRY_REUSE_RUNNING_TTL_SECONDS = 6 * 3600
+
+_CAS_DELETE_SCRIPT = """
+-- cas-delete: value matches expected then DEL
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+    return redis.call('DEL', KEYS[1])
+end
+return 0
+"""
+
+_CAS_UPGRADE_SCRIPT = """
+-- cas-upgrade: value matches expected then SET new value with new TTL
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+    redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
+    return 1
+end
+return 0
+"""
+
+_retry_reuse_local_lock = threading.Lock()
+_retry_reuse_local_holders: dict[str, str] = {}
+
+
+def _retry_reuse_claim_key(reuse_output_dir: str) -> str:
+    normalized = os.path.abspath(reuse_output_dir.strip())
+    digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:16]
+    return f"workflow:retry-reuse:{digest}"
+
+
+def _holder_run_id(claim_value: str) -> str:
+    return claim_value.split(":", 1)[0]
+
+
+def _holder_finished(repository: SQLiteWorkflowRepository, claim_value: str) -> bool:
+    """持有者是否已可抢占：run 已终态或已被清理。pending（提交中）不可抢占。"""
+    holder = _holder_run_id(claim_value)
+    if holder == "pending":
+        return False
+    run = repository.get_run(holder)
+    if run is None:
+        return True
+    return getattr(run, "status", None) in _TERMINAL_STATUSES
+
+
+def acquire_retry_reuse_claim(
+    repository: SQLiteWorkflowRepository,
+    reuse_output_dir: str,
+) -> str | None:
+    """获取复用目录写互斥 claim；被持有时返回 None。
+
+    持有者 run 已终态/被清理时懒抢占（CAS 删除后重取一次）。
+    """
+    key = _retry_reuse_claim_key(reuse_output_dir)
+    client = get_redis_client()
+    if client is not None:
+        token = f"pending:{uuid.uuid4().hex[:12]}"
+        if client.set(key, token, nx=True, ex=RETRY_REUSE_PENDING_TTL_SECONDS):
+            return token
+        current = client.get(key)
+        if current is None or not _holder_finished(repository, current):
+            return None
+        if client.eval(_CAS_DELETE_SCRIPT, 1, key, current) == 1:
+            retry_token = f"pending:{uuid.uuid4().hex[:12]}"
+            if client.set(
+                key, retry_token, nx=True, ex=RETRY_REUSE_PENDING_TTL_SECONDS
+            ):
+                return retry_token
+        return None
+    with _retry_reuse_local_lock:
+        current = _retry_reuse_local_holders.get(key)
+        if current is None:
+            token = f"pending:{uuid.uuid4().hex[:12]}"
+            _retry_reuse_local_holders[key] = token
+            return token
+        if not _holder_finished(repository, current):
+            return None
+        del _retry_reuse_local_holders[key]
+        token = f"pending:{uuid.uuid4().hex[:12]}"
+        _retry_reuse_local_holders[key] = token
+        return token
+
+
+def upgrade_retry_reuse_claim(
+    reuse_output_dir: str,
+    claim: str,
+    holder_run_id: str,
+) -> bool:
+    """提交成功后将 pending claim 升级为持有者 run（TTL 拉长到运行时长档）。"""
+    key = _retry_reuse_claim_key(reuse_output_dir)
+    new_value = f"{holder_run_id}:{claim.split(':', 1)[1]}"
+    client = get_redis_client()
+    if client is not None:
+        try:
+            return (
+                client.eval(
+                    _CAS_UPGRADE_SCRIPT,
+                    1,
+                    key,
+                    claim,
+                    new_value,
+                    RETRY_REUSE_RUNNING_TTL_SECONDS,
+                )
+                == 1
+            )
+        except Exception:  # noqa: BLE001 - Redis 抖动不应毁掉已提交的 run
+            logger.warning(
+                "retry reuse claim upgrade failed for %s", key, exc_info=True
+            )
+            return False
+    with _retry_reuse_local_lock:
+        if _retry_reuse_local_holders.get(key) != claim:
+            return False
+        _retry_reuse_local_holders[key] = new_value
+        return True
+
+
+def release_retry_reuse_claim(reuse_output_dir: str, claim: str) -> None:
+    """提交失败/新 run 未落库时释放 claim（token 不匹配则不动他人锁）。"""
+    key = _retry_reuse_claim_key(reuse_output_dir)
+    client = get_redis_client()
+    if client is not None:
+        try:
+            client.eval(_CAS_DELETE_SCRIPT, 1, key, claim)
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "retry reuse claim release failed for %s", key, exc_info=True
+            )
+        return
+    with _retry_reuse_local_lock:
+        if _retry_reuse_local_holders.get(key) == claim:
+            del _retry_reuse_local_holders[key]

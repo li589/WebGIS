@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import threading
+import uuid
 from pathlib import Path
 
 import pytest
@@ -123,7 +124,7 @@ def test_unique_cache_tmp_path_concurrent_replace_is_safe() -> None:
         assert list(target.parent.glob("*.tmp")) == []
 
 
-# ── B-R3：同步锁键归一化 ─────────────────────────────────────────────────────
+# ── B-R3/B-N3：同步锁域归一化 + 按单域加锁 ────────────────────────────────────
 
 
 @pytest.mark.parametrize(
@@ -135,12 +136,134 @@ def test_unique_cache_tmp_path_concurrent_replace_is_safe() -> None:
         ("a,b,a", "b,a"),
     ],
 )
-def test_sync_lock_key_normalizes_domain_order(left: str, right: str) -> None:
-    assert open_meteo_sync_tasks._sync_lock_key(left) == open_meteo_sync_tasks._sync_lock_key(
+def test_sync_domains_normalizes_domain_order(left: str, right: str) -> None:
+    assert open_meteo_sync_tasks._sync_domains(left) == open_meteo_sync_tasks._sync_domains(
         right
     )
 
 
-def test_sync_lock_key_empty_falls_back_to_default() -> None:
-    assert open_meteo_sync_tasks._sync_lock_key("") == "sync:default"
-    assert open_meteo_sync_tasks._sync_lock_key(None) == "sync:default"  # type: ignore[arg-type]
+def test_sync_domains_empty_falls_back_to_default() -> None:
+    assert open_meteo_sync_tasks._sync_domains("") == ["default"]
+    assert open_meteo_sync_tasks._sync_domains(None) == ["default"]  # type: ignore[arg-type]
+
+
+class _FakeLockRedis:
+    """SET NX / GET / Lua compare-and-delete 的最小假客户端。"""
+
+    def __init__(self) -> None:
+        self.store: dict[str, str] = {}
+        self.ttls: dict[str, int] = {}
+
+    def set(
+        self,
+        key: str,
+        value: str,
+        nx: bool = False,
+        ex: int | None = None,
+    ) -> bool | None:
+        if nx and key in self.store:
+            return None
+        self.store[key] = value
+        if ex is not None:
+            self.ttls[key] = ex
+        return True
+
+    def get(self, key: str) -> str | None:
+        return self.store.get(key)
+
+    def eval(self, script: str, numkeys: int, key: str, token: str) -> int:  # noqa: ARG002
+        if self.store.get(key) == token:
+            del self.store[key]
+            return 1
+        return 0
+
+
+@pytest.fixture()
+def redis_locks(monkeypatch: pytest.MonkeyPatch) -> _FakeLockRedis:
+    """把 open_meteo_sync_tasks 的三入口锁原语接到假 Redis。"""
+    fake = _FakeLockRedis()
+    monkeypatch.setattr(open_meteo_sync_tasks, "get_redis_client", lambda: fake)
+
+    def _acquire(key: str, ttl_seconds: int = 30) -> str | None:
+        token = f"tok-{key}-{uuid.uuid4().hex[:6]}"
+        return token if fake.set(key, token, nx=True, ex=ttl_seconds) is not None else None
+
+    def _release(key: str, token: str | None = None) -> None:
+        if token is None:
+            return
+        fake.eval("release", 1, key, token)
+
+    monkeypatch.setattr(open_meteo_sync_tasks, "acquire_dedup_lock", _acquire)
+    monkeypatch.setattr(open_meteo_sync_tasks, "release_dedup_lock", _release)
+    return fake
+
+
+@pytest.fixture()
+def local_locks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """强制走 Redis 不可用的进程内兜底路径，并清理本地持有集。"""
+    monkeypatch.setattr(open_meteo_sync_tasks, "get_redis_client", lambda: None)
+    open_meteo_sync_tasks._sync_local_holders.clear()
+
+
+def test_sync_lock_per_domain_mutual_exclusion(redis_locks: _FakeLockRedis) -> None:
+    """sync:a 持有时，任何包含 a 的域集合（任意顺序）都获取失败。"""
+    assert open_meteo_sync_tasks.acquire_open_meteo_sync_lock("ecmwf_ifs025") is not None
+    assert open_meteo_sync_tasks.acquire_open_meteo_sync_lock("ecmwf_ifs025,gfs_global") is None
+    assert open_meteo_sync_tasks.acquire_open_meteo_sync_lock("gfs_global,ecmwf_ifs025") is None
+
+
+def test_sync_lock_disjoint_domains_independent(redis_locks: _FakeLockRedis) -> None:
+    assert open_meteo_sync_tasks.acquire_open_meteo_sync_lock("a") is not None
+    assert open_meteo_sync_tasks.acquire_open_meteo_sync_lock("c") is not None
+
+
+def test_sync_lock_partial_failure_rolls_back(redis_locks: _FakeLockRedis) -> None:
+    """b 被他人持有时 acquire(a,b) 失败，已获取的 a 必须回滚释放。"""
+    foreign = "tok-foreign"
+    redis_locks.store["sync:domain:b"] = foreign
+    assert open_meteo_sync_tasks.acquire_open_meteo_sync_lock("a,b") is None
+    assert "sync:domain:a" not in redis_locks.store
+    assert open_meteo_sync_tasks.acquire_open_meteo_sync_lock("a") is not None
+
+
+def test_sync_lock_release_then_reacquire_and_no_cross_delete(
+    redis_locks: _FakeLockRedis,
+) -> None:
+    token_ab = open_meteo_sync_tasks.acquire_open_meteo_sync_lock("a,b")
+    assert token_ab is not None
+    token_c = open_meteo_sync_tasks.acquire_open_meteo_sync_lock("c")
+    assert token_c is not None
+    open_meteo_sync_tasks.release_open_meteo_sync_lock("a,b", token_ab)
+    assert "sync:domain:a" not in redis_locks.store
+    assert "sync:domain:b" not in redis_locks.store
+    # 他人锁不被误删
+    assert "sync:domain:c" in redis_locks.store
+    assert open_meteo_sync_tasks.acquire_open_meteo_sync_lock("a,b") is not None
+
+
+def test_sync_lock_token_is_per_domain_json(redis_locks: _FakeLockRedis) -> None:
+    token = open_meteo_sync_tasks.acquire_open_meteo_sync_lock("gfs_global,ecmwf_ifs025")
+    assert token is not None
+    mapping = json.loads(token)
+    assert set(mapping) == {"ecmwf_ifs025", "gfs_global"}
+
+
+def test_is_open_meteo_sync_locked_any_domain(redis_locks: _FakeLockRedis) -> None:
+    assert open_meteo_sync_tasks.acquire_open_meteo_sync_lock("a") is not None
+    assert open_meteo_sync_tasks.is_open_meteo_sync_locked("a,b") is True
+    assert open_meteo_sync_tasks.is_open_meteo_sync_locked("b") is False
+
+
+def test_sync_lock_local_fallback_mutual_exclusion(local_locks: None) -> None:
+    assert open_meteo_sync_tasks.acquire_open_meteo_sync_lock("a") is not None
+    assert open_meteo_sync_tasks.acquire_open_meteo_sync_lock("a,b") is None
+    assert open_meteo_sync_tasks.is_open_meteo_sync_locked("b,a") is True
+    assert open_meteo_sync_tasks.acquire_open_meteo_sync_lock("c") is not None
+
+
+def test_sync_lock_local_fallback_release_allows_reacquire(local_locks: None) -> None:
+    token = open_meteo_sync_tasks.acquire_open_meteo_sync_lock("a,b")
+    assert token is not None
+    open_meteo_sync_tasks.release_open_meteo_sync_lock("a,b", token)
+    assert open_meteo_sync_tasks.is_open_meteo_sync_locked("a") is False
+    assert open_meteo_sync_tasks.acquire_open_meteo_sync_lock("b,a") is not None
