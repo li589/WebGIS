@@ -58,33 +58,58 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     }
   }
 
-  /** 图层栈最底层图层 id；空栈返回 undefined（addLayer 追加到栈顶）。 */
-  function bottomLayerId(): string | undefined {
-    const layers = options.map.getStyle().layers
-    return layers && layers.length > 0 ? layers[0].id : undefined
+  /** background 恒居栈底；返回第一个非 background 且非底图自身的图层 id，无则 undefined。 */
+  function firstDataLayerId(): string | undefined {
+    const layers = options.map.getStyle().layers ?? []
+    for (const layer of layers) {
+      if (layer.type === 'background' || layer.id === TILE_LAYER_ID) continue
+      return layer.id
+    }
+    return undefined
+  }
+
+  /** 目标图层之前是否只剩 background（即紧贴 background 之上）。 */
+  function isDirectlyAboveBackground(layerId: string): boolean {
+    const layers = options.map.getStyle().layers ?? []
+    const idx = layers.findIndex((l) => l.id === layerId)
+    return idx > 0 && layers.slice(0, idx).every((l) => l.type === 'background')
   }
 
   /** 紧贴底图之上的图层 id；底图缺失或已居栈顶时返回 undefined。 */
   function layerAboveBasemapId(): string | undefined {
     const layers = options.map.getStyle().layers ?? []
     const baseIdx = layers.findIndex((l) => l.id === TILE_LAYER_ID)
-    if (baseIdx < 0) return bottomLayerId()
+    if (baseIdx < 0) return firstDataLayerId()
     return baseIdx + 1 < layers.length ? layers[baseIdx + 1].id : undefined
   }
 
   /**
-   * 强制底图位于图层栈最底、注记紧贴其上（所有数据叠加层之下）。
-   * 空白底图起步后叠加层已上图，再切回真实底图时若仅 addLayer 追加会落栈顶盖住数据层，
-   * 故每次切换后幂等校正。
+   * 强制图层栈不变量：background 恒居栈底，底图紧贴其上、注记再上（所有数据叠加层之下）。
+   * 空白底图起步后叠加层已上图，再切回真实底图时若仅 addLayer 追加会落栈顶盖住数据层；
+   * 底图若沉到 background 之下会被背景色（--surface-1 半透明深色）罩住导致整图发暗，
+   * 故每次切换后幂等校正两件事：background 归底、底图归位。
    */
   function enforceBasemapStackPosition() {
-    if (options.map.getLayer(TILE_LAYER_ID)) {
-      const bottom = bottomLayerId()
-      if (bottom && bottom !== TILE_LAYER_ID) {
-        options.map.moveLayer(TILE_LAYER_ID, bottom)
+    const map = options.map
+    const layers = map.getStyle().layers ?? []
+
+    const backgroundLayer = layers.find((l) => l.type === 'background')
+    if (backgroundLayer && layers.length > 0 && layers[0].id !== backgroundLayer.id) {
+      const firstNonBackground = layers.find((l) => l.type !== 'background')
+      if (firstNonBackground) {
+        map.moveLayer(backgroundLayer.id, firstNonBackground.id)
       }
     }
-    if (options.map.getLayer(TILE_OVERLAY_LAYER_ID)) {
+
+    if (map.getLayer(TILE_LAYER_ID)) {
+      const anchor = firstDataLayerId()
+      if (anchor) {
+        map.moveLayer(TILE_LAYER_ID, anchor)
+      } else if (!isDirectlyAboveBackground(TILE_LAYER_ID)) {
+        map.moveLayer(TILE_LAYER_ID)
+      }
+    }
+    if (map.getLayer(TILE_OVERLAY_LAYER_ID)) {
       const above = layerAboveBasemapId()
       if (above && above !== TILE_OVERLAY_LAYER_ID) {
         options.map.moveLayer(TILE_OVERLAY_LAYER_ID, above)
@@ -163,8 +188,8 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     }
 
     if (!options.map.getLayer(TILE_LAYER_ID)) {
-      // 底图插入图层栈最底，保证既有数据叠加层始终在其上
-      const beforeLayerId = bottomLayerId()
+      // 底图插到 background 之上、既有数据叠加层之下（沉到 background 之下会被背景色罩暗整图）
+      const beforeLayerId = firstDataLayerId()
       options.map.addLayer(
         {
           id: TILE_LAYER_ID,

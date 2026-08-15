@@ -15,7 +15,7 @@ from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
-from app.core.config import settings
+from app.core import config
 from app.services._sqlite_pool import SQLiteConnectionPool
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,8 @@ class DatasetRegistryError(ValueError):
 
 def _db_path() -> Path:
     return (
-        Path(settings.gee_credentials_db_path).parent / "research_data_settings.sqlite3"
+        Path(config.settings.gee_credentials_db_path).parent
+        / "research_data_settings.sqlite3"
     )
 
 
@@ -315,7 +316,7 @@ def sync_algorithm_datasets() -> int:
 
     from app.services.workflow_request_resolver import _python_provider_import_path
 
-    provider_root = Path(settings.python_provider_root)
+    provider_root = Path(config.settings.python_provider_root)
     if not provider_root.exists():
         return 0
 
@@ -392,7 +393,7 @@ def _count_files(directory: Path, *, max_files: int = 5000) -> tuple[int, bool]:
 def rescan_data_root() -> dict[str, Any]:
     """扫描数据根一级/二级目录：未注册目录生成 source=scan 条目，已有条目刷新统计。"""
     repo = get_dataset_registry()
-    root = Path(settings.data_root) if settings.data_root else None
+    root = Path(config.settings.data_root) if config.settings.data_root else None
     if root is None or not root.exists():
         return {"root": str(root or ""), "created": 0, "refreshed": 0, "entries": []}
 
@@ -481,7 +482,7 @@ def resolve_dataset_path(logical_name: str) -> Path | None:
         return None
     path = Path(raw)
     if not path.is_absolute():
-        base = Path(settings.data_root) if settings.data_root else None
+        base = Path(config.settings.data_root) if config.settings.data_root else None
         if base is None:
             return None
         path = base / path

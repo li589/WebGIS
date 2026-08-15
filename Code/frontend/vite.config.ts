@@ -32,7 +32,9 @@ export default defineConfig(({ mode }) => {
       proxy: {
         // API 请求代理到后端
         // 注意：前端 runtime-api.ts 中所有请求路径均无 /api 前缀，
-        // 因此 proxy 改为拦截实际使用的路径（与 runtime-api.ts 保持一致）
+        // 因此 proxy 改为拦截实际使用的路径（与 runtime-api.ts 保持一致）。
+        // /api 例外：remote browser（/api/remote/*）在 remote_browser_router 挂载。
+        '/api': { target: apiTarget, changeOrigin: true },
         '/workflow-runs': { target: apiTarget, changeOrigin: true },
         '/workflow-definitions': { target: apiTarget, changeOrigin: true },
         '/workflow-node-templates': { target: apiTarget, changeOrigin: true },

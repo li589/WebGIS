@@ -39,6 +39,10 @@
 - POST /config/remote-storage/{profile_id}/failover — 手动切换主/备路径
 - GET /config/data-source — 数据源配置（含生效/待重启数据根）
 - PUT /config/data-source/paths — 更新数据根/产物根（写 .env，需重启后端）
+- GET /config/deployment — 部署配置中心状态：每键三方对比 + 备份列表（read 权限）
+- POST /config/deployment/preview — 预览部署配置变更（纯只读校验 + diff；admin）
+- PUT /config/deployment — 保存部署配置（校验→备份→双 .env 镜像→JSON 原子写；admin）
+- GET /config/deployment/export — 导出 deployment.config.json（默认脱敏；admin）
 - GET /config/data-source/datasets — 可用数据集注册表（read 权限）
 - POST /config/data-source/datasets/rescan — 重扫数据根（admin）
 - PUT /config/data-source/datasets/{dataset_id} — 新增/更新数据集（admin）
@@ -53,7 +57,9 @@
 import logging
 
 import anyio
+import json
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 
 from app.api.deps import (
     require_config_read_access,
@@ -61,6 +67,7 @@ from app.api.deps import (
     require_config_management_access,
 )
 from app.services import config_service
+from app.services import deployment_config as dc
 from shared.contracts.config_contracts import (
     AboutInfo,
     ApiKeyDeletedResponse,
@@ -77,6 +84,10 @@ from shared.contracts.config_contracts import (
     DeletedResponse,
     DataSourcePathsUpdateRequest,
     DataSourcePathsUpdateResponse,
+    DeploymentConfigPreviewResponse,
+    DeploymentConfigStatus,
+    DeploymentConfigUpdateRequest,
+    DeploymentConfigUpdateResponse,
     DatasetRescanResponse,
     DatasetUpsertRequest,
     AvailableDatasetEntry,
@@ -802,6 +813,73 @@ async def update_data_source_paths(request: DataSourcePathsUpdateRequest):
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ── 部署与数据源配置中心（deployment.config.json 真源）────────────────────────
+
+
+@router.get(
+    "/deployment",
+    response_model=DeploymentConfigStatus,
+    dependencies=[Depends(require_config_read_access)],
+)
+async def get_deployment_config():
+    """部署配置状态：每键三方对比（运行值 / .env / deployment.json）+ 备份列表。"""
+    return await anyio.to_thread.run_sync(dc.get_deployment_status)
+
+
+@router.post(
+    "/deployment/preview",
+    response_model=DeploymentConfigPreviewResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def preview_deployment_config(request: DeploymentConfigUpdateRequest):
+    """纯只读预览：全量校验 + 与当前运行值 diff（不写文件、不建目录）。"""
+    return await anyio.to_thread.run_sync(
+        dc.preview_deployment_config, request.model_dump(exclude_none=True)
+    )
+
+
+@router.put(
+    "/deployment",
+    response_model=DeploymentConfigUpdateResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def update_deployment_config(request: DeploymentConfigUpdateRequest):
+    """保存部署配置：校验 → 备份轮换 → 双 .env 镜像 → JSON 原子写（失败整体回滚）。"""
+    try:
+        result = await anyio.to_thread.run_sync(
+            dc.apply_deployment_config, request.model_dump(exclude_none=True)
+        )
+    except dc.DeploymentConfigError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    result["message"] = (
+        "已保存并镜像写入 .env；含 Docker 相关键，需在服务器执行全量重启（launch.py restart）后生效。"
+        if result["restart_level"] == "restart-full"
+        else "已保存并镜像写入 .env；重启后端进程组（FastAPI+Worker+Beat）后生效。"
+    )
+    return result
+
+
+@router.get(
+    "/deployment/export",
+    dependencies=[Depends(require_config_management_access)],
+)
+async def export_deployment_config(redact: bool = True):
+    """导出 deployment.config.json（默认脱敏，供部署机拷贝）。"""
+    payload = dc.load_deployment_config()
+    if payload is None:
+        raise HTTPException(status_code=404, detail="deployment.config.json 不存在")
+    if redact:
+        payload = dc.redact_payload(payload)
+    body = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": 'attachment; filename="deployment.config.json"'
+        },
+    )
 
 
 @router.post(

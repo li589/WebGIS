@@ -18,13 +18,19 @@ _CODE_ROOT = _REPO_ROOT / "Code"
 
 os.environ.setdefault("BACKEND_ENV", "test")
 os.environ.setdefault("ENVIRONMENT", "test")
+# 数据根优先级：CGDA_TEST_DATA_ROOT（显式覆盖）> 已设 BACKEND_DATA_ROOT
+# > 实验室盘存在则复用（向后兼容）> 仓库内临时目录。
 if not os.environ.get("BACKEND_DATA_ROOT", "").strip():
-    _lab_root = Path(r"I:\Geograph_DataSet")
-    os.environ["BACKEND_DATA_ROOT"] = str(
-        _lab_root
-        if _lab_root.exists()
-        else _REPO_ROOT / "Code" / "backend" / ".pytest_tmp" / "data_root"
-    )
+    _explicit_test_root = os.environ.get("CGDA_TEST_DATA_ROOT", "").strip()
+    if _explicit_test_root:
+        os.environ["BACKEND_DATA_ROOT"] = _explicit_test_root
+    else:
+        _lab_root = Path(r"I:\Geograph_DataSet")
+        os.environ["BACKEND_DATA_ROOT"] = str(
+            _lab_root
+            if _lab_root.exists()
+            else _REPO_ROOT / "Code" / "backend" / ".pytest_tmp" / "data_root"
+        )
 
 for _path in (str(_ALGO_ROOT), str(_CODE_ROOT)):
     if _path not in sys.path:

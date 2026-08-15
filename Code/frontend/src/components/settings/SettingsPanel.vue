@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, shallowRef, watch, type Component } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   Settings,
   User,
@@ -37,6 +38,13 @@ const emit = defineEmits<{
 
 const settingsStore = useSettingsStore()
 const authStore = useAuthStore()
+const router = useRouter()
+
+/** 跳转管理员专属的部署配置中心（/deployment），先关设置面板避免双层遮罩。 */
+function openDeploymentCenter() {
+  emit('close')
+  void router.push('/deployment')
+}
 
 type SettingsTab =
   | 'general'
@@ -276,6 +284,18 @@ onUnmounted(() => {
             <span class="nav-icon" aria-hidden="true"><component :is="tab.icon" :size="16" /></span>
             <span class="nav-label">{{ tab.label }}</span>
           </button>
+
+          <div v-if="authStore.isAdmin" class="nav-divider" aria-hidden="true"></div>
+          <button
+            v-if="authStore.isAdmin"
+            type="button"
+            class="nav-item nav-deploy"
+            title="部署与数据源配置中心（管理员专属页面）"
+            @click="openDeploymentCenter"
+          >
+            <span class="nav-icon" aria-hidden="true"><Server :size="16" /></span>
+            <span class="nav-label">部署配置中心</span>
+          </button>
         </nav>
 
         <div class="settings-content">
@@ -450,6 +470,15 @@ onUnmounted(() => {
   overflow-x: hidden;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+
+.nav-divider {
+  margin: 0.3rem 0.24rem 0.18rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.nav-deploy .nav-label {
+  color: var(--accent-strong);
 }
 
 .nav-item {

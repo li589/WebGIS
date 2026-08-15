@@ -1,0 +1,179 @@
+{
+  "generated_at": "2026-08-15 08:15:13",
+  "log_file": "I:\\Geograph_DataSet\\_runtime\\logs\\backend.log",
+  "total_lines": 11280,
+  "level_distribution": {
+    "ERROR": 847,
+    "INFO": 9370,
+    "WARNING": 1063
+  },
+  "error_message_categories": {
+    "Secrets encryption key is not set; storing plaintext is allowed only in developm": 391,
+    "API keys encryption key not set, storing plaintext (development only)": 150,
+    "Failed to cleanup stale workflow runs on startup": 112,
+    "Unhandled API exception": 65,
+    "Remote credentials encryption key not set, storing plaintext (development only)": 61,
+    "Workflow execution failed": 18,
+    "API key is not configured; rejecting write request.": 8,
+    "[UnifiedTileRoutes] failed to generate tile for layer=esri-street": 5,
+    "[WeatherTileRoutes] failed to generate tile": 5,
+    "Node execution failed: test_opt_mul (node_id=dst)": 3,
+    "cache cleanup task failed": 3,
+    "workflow timer tick failed": 3,
+    "Decryption failed: ": 3,
+    "test_api_key failed for key=tianditu": 3,
+    "Download follow-up dispatch failed": 3
+  },
+  "recent_entries": [
+    {
+      "timestamp": "2026-08-15T00:13:01.757096+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:13:01.760098+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:13:01.769264+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:13:01.775530+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:13:01.778534+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:13:01.781639+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:13:01.788638+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:13:01.813338+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:13:01.820822+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:13:01.875246+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:13:02.725225+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:13:02.820645+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:13:02.966611+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:13:02.969612+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:13:04.131973+00:00",
+      "level": "ERROR",
+      "logger": "app.main",
+      "message": "Unhandled API exception"
+    },
+    {
+      "timestamp": "2026-08-15T00:13:11.371894+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:13:12.341110+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:13:30.778126+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:13:42.337373+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:14:00.775250+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:14:12.334715+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:14:30.791709+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:14:42.349751+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:15:00.770750+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    },
+    {
+      "timestamp": "2026-08-15T00:15:12.338401+00:00",
+      "level": "INFO",
+      "logger": "app.main",
+      "message": "HTTP request completed"
+    }
+  ]
+}

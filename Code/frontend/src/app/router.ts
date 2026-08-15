@@ -6,6 +6,17 @@ import { EXTRA_ROUTES, NOT_FOUND_ROUTE, SPA_ROUTES } from './route-paths'
 
 export { safeRedirect }
 
+/** SPA 业务路由 → 视图组件（懒加载）。未列出的路由名回退 Dashboard。 */
+const ROUTE_VIEWS: Record<string, () => Promise<typeof import('../views/DashboardView.vue')>> = {
+  dashboard: () => import('../views/DashboardView.vue'),
+  'deployment-config': () => import('../views/DeploymentConfigView.vue'),
+}
+
+/** 路由级 meta（当前仅 requiresAdmin：UX 层守卫，后端 API 才是安全边界）。 */
+const ROUTE_META: Record<string, { requiresAdmin?: boolean }> = {
+  'deployment-config': { requiresAdmin: true },
+}
+
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -20,7 +31,8 @@ export const router = createRouter({
     ...SPA_ROUTES.map((route) => ({
       path: route.path,
       name: route.name,
-      component: () => import('../views/DashboardView.vue'),
+      component: ROUTE_VIEWS[route.name] ?? (() => import('../views/DashboardView.vue')),
+      meta: ROUTE_META[route.name],
     })),
     {
       path: NOT_FOUND_ROUTE.path, // /:pathMatch(.*)*
@@ -42,6 +54,10 @@ router.beforeEach(async (to) => {
   if (auth.authRequired && !auth.isAuthenticated) {
     const redirect = typeof to.fullPath === 'string' ? safeRedirect(to.fullPath) : '/'
     return { name: 'login', query: { redirect } }
+  }
+  // admin 专属页（如 /deployment）：UX 层拦截非 admin；后端 API 鉴权为安全边界。
+  if (to.meta.requiresAdmin && auth.bootstrapped && !auth.isAdmin) {
+    return { path: '/' }
   }
   return true
 })

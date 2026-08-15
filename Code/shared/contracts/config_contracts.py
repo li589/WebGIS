@@ -873,3 +873,139 @@ class WeatherProviderPriorityResponse(BaseModel):
 class RemoteStorageToggleResponse(BaseModel):
     profile_id: str
     enabled: bool
+
+
+# ── 部署与数据源配置中心（deployment.config.json）────────────────────────────
+
+
+class DeploymentDataGroup(BaseModel):
+    """data 组：数据根与导入导出。空串/None = 未设置（不覆盖）。"""
+
+    data_root: str | None = Field(default=None, description="地理数据根目录（绝对路径，必须已存在）")
+    output_root: str | None = Field(default=None, description="产出结果/报告/分析图表输出根（绝对路径，必须已存在）")
+    project_backup_root: str | None = Field(default=None, description="项目备份根（绝对路径）")
+
+
+class DeploymentRuntimeGroup(BaseModel):
+    """runtime 组：运行时目录与日志。"""
+
+    runtime_root: str | None = Field(default=None, description="运行时根；未设时派生自 <data_root>/_runtime")
+    workflow_state_dir: str | None = Field(default=None, description="工作流状态目录")
+    log_dir: str | None = Field(default=None, description="后端日志目录")
+    log_level: str | None = Field(default=None, description="DEBUG | INFO | WARNING | ERROR")
+    result_artifact_dir: str | None = Field(default=None, description="工作流产物/工件目录")
+    python_provider_workspace: str | None = Field(default=None, description="Python 算法工作区")
+    spatialite_db_path: str | None = Field(default=None, description="SpatiaLite 数据库文件路径")
+
+
+class DeploymentCachesGroup(BaseModel):
+    """caches 组：各类缓存与下载源。"""
+
+    cache_dir: str | None = Field(default=None, description="通用缓存目录（不存在时自动创建）")
+    static_cache_root: str | None = Field(default=None, description="静态物化缓存根")
+    static_cache_ttl_seconds: int | None = Field(default=None, ge=0, description="静态缓存 TTL 秒（0=永不过期）")
+    download_source_root: str | None = Field(default=None, description="真实数据保存与下载位置")
+    cache_default_ttl_seconds: int | None = Field(default=None, ge=0, description="默认缓存 TTL 秒")
+    tile_proxy_cache_ttl_seconds: int | None = Field(default=None, ge=0, description="瓦片代理缓存 TTL 秒")
+
+
+class DeploymentImportsGroup(BaseModel):
+    """imports 组：导入配额（字节）。"""
+
+    max_imports_total_bytes: int | None = Field(default=None, ge=1, description="导入永久层总配额")
+    imports_soft_reserve_bytes: int | None = Field(default=None, ge=0, description="导入软预留（0=禁用）")
+
+
+class DeploymentDockerGroup(BaseModel):
+    """docker 组：Docker / Open-Meteo（部分键需全量 restart）。"""
+
+    minio_root_user: str | None = Field(default=None, description="MinIO root 用户")
+    minio_root_password: str | None = Field(default=None, description="MinIO root 密码（留空保持不变，回显恒脱敏）")
+    open_meteo_host_port: int | None = Field(default=None, ge=1, le=65535, description="Open-Meteo 宿主端口")
+    open_meteo_data_volume: str | None = Field(default=None, description="Open-Meteo 共享 named volume 名")
+    open_meteo_sync_domains: str | None = Field(default=None, description="同步气象模型（逗号分隔）")
+    open_meteo_sync_variables: str | None = Field(default=None, description="同步变量列表（逗号分隔）")
+    open_meteo_local_url: str | None = Field(default=None, description="Open-Meteo 本地 API URL（http(s)）")
+
+
+class DeploymentConfigUpdateRequest(BaseModel):
+    """部署配置整体写入请求（preview 与 PUT 共用）。"""
+
+    schema_version: int = Field(default=1, description="配置 schema 版本（当前 1）")
+    data: DeploymentDataGroup | None = None
+    runtime: DeploymentRuntimeGroup | None = None
+    caches: DeploymentCachesGroup | None = None
+    imports: DeploymentImportsGroup | None = None
+    docker: DeploymentDockerGroup | None = None
+    notes: str | None = Field(default=None, description="备注（部署说明等）")
+
+
+class DeploymentKeyValueStatus(BaseModel):
+    """单键三方状态：运行值 / .env 值 / deployment.json 值。"""
+
+    group: str
+    group_label: str
+    key: str
+    env_key: str
+    kind: str
+    label: str
+    restart_level: str
+    must_exist: bool
+    sensitive: bool
+    double_write_sync: bool
+    runtime_value: str
+    env_value: str
+    config_value: str
+    source: str
+    pending: bool
+
+
+class DeploymentBackupInfo(BaseModel):
+    name: str
+    path: str
+    size_bytes: int
+    mtime: float
+
+
+class DeploymentConfigStatus(BaseModel):
+    path: str
+    exists: bool
+    schema_version: int
+    applied_env_keys: list[str]
+    keys: list[DeploymentKeyValueStatus]
+    backups: list[DeploymentBackupInfo]
+    pending_restart: bool
+    env_path: str
+    sync_env_path: str
+    notes: str = ""
+
+
+class DeploymentPreviewDiffItem(BaseModel):
+    group: str
+    key: str
+    env_key: str
+    old: str
+    new: str
+    restart_level: str
+    derived: bool = False
+
+
+class DeploymentConfigPreviewResponse(BaseModel):
+    ok: bool
+    errors: list[str]
+    warnings: list[str]
+    diff: list[DeploymentPreviewDiffItem]
+    restart_level: str
+
+
+class DeploymentConfigUpdateResponse(BaseModel):
+    applied_env_keys: list[str]
+    sync_env_keys: list[str]
+    config_path: str
+    env_path: str
+    sync_env_path: str | None = None
+    restart_level: str
+    pending_restart: bool
+    warnings: list[str]
+    backups: list[str]
+    message: str

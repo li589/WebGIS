@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from app.services._sqlite_pool import SQLiteConnectionPool
+from app.services.secret_cipher import decrypt_secret, encrypt_secret
 import contextlib
 
 logger = logging.getLogger(__name__)
@@ -87,74 +88,35 @@ class GeeCredentialsRepository:
 
         新密文带 ``v1:`` 版本前缀，支持未来密钥轮换。无 key 时仅 development 允许明文。
         """
-        if not self._encryption_key:
-            from app.services.effective_config import secrets_encryption_required
+        from app.services.effective_config import secrets_encryption_required
 
-            if secrets_encryption_required():
-                raise RuntimeError(
-                    "Cannot store GEE credentials without BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY "
-                    "outside development."
-                )
-            logger.error(
-                "GEE credentials encryption key not set, storing plaintext (development only)"
-            )
-            return plaintext, ""
-        try:
-            from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # type: ignore
-            import base64
-            import os
-
-            key_bytes = bytes.fromhex(self._encryption_key)
-            iv = os.urandom(12)
-            aesgcm = AESGCM(key_bytes)
-            ct = aesgcm.encrypt(iv, plaintext.encode("utf-8"), None)
-            ct_b64 = base64.b64encode(ct).decode("ascii")
-            iv_b64 = base64.b64encode(iv).decode("ascii")
-            # 版本前缀：v1 表示当前 AES-GCM-256 + 随机 12-byte IV
-            return f"{self._KEY_VERSION_PREFIX}{ct_b64}", iv_b64
-        except ImportError:
-            from app.services.effective_config import secrets_encryption_required
-
-            if secrets_encryption_required():
-                raise RuntimeError(
-                    "cryptography package required to encrypt GEE credentials"
-                ) from None
-            logger.warning("cryptography not installed, storing plaintext")
-            return plaintext, ""
-        except RuntimeError:
-            raise
-        except Exception as e:
-            from app.services.effective_config import secrets_encryption_required
-
-            if secrets_encryption_required():
-                raise RuntimeError(f"Encryption failed for GEE credentials: {e}") from e
-            logger.error("Encryption failed for account, storing plaintext: %s", e)
-            return plaintext, ""
+        ct, iv = encrypt_secret(
+            plaintext,
+            key=self._encryption_key,
+            require_encryption=secrets_encryption_required(),
+            label="GEE credentials",
+        )
+        # 版本前缀：v1 表示当前 AES-GCM-256 + 随机 12-byte IV。
+        # dev 明文回退（iv 为空）不加前缀，保持 (plaintext, "") 原样。
+        if iv:
+            return f"{self._KEY_VERSION_PREFIX}{ct}", iv
+        return ct, iv
 
     def _decrypt(self, ciphertext_b64: str, iv_b64: str) -> str:
         """AES-GCM 解密。自动识别 ``v1:`` 版本前缀；无前缀按 v0 兼容路径处理。"""
-        from app.services.effective_config import refuse_empty_iv_outside_development
-
-        refuse_empty_iv_outside_development(iv_b64)
-        if not self._encryption_key or not iv_b64:
-            return ciphertext_b64
+        from app.services.effective_config import secrets_encryption_required
 
         # 版本检测：v1 前缀剥离后走标准 AES-GCM 解密
         if ciphertext_b64.startswith(self._KEY_VERSION_PREFIX):
             ciphertext_b64 = ciphertext_b64[len(self._KEY_VERSION_PREFIX) :]
 
-        try:
-            from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # type: ignore
-            import base64
-
-            key_bytes = bytes.fromhex(self._encryption_key)
-            iv = base64.b64decode(iv_b64)
-            ct = base64.b64decode(ciphertext_b64)
-            aesgcm = AESGCM(key_bytes)
-            return aesgcm.decrypt(iv, ct, None).decode("utf-8")
-        except Exception as e:
-            logger.error("Decryption failed: %s", e)
-            raise
+        return decrypt_secret(
+            ciphertext_b64,
+            iv_b64,
+            key=self._encryption_key,
+            require_encryption=secrets_encryption_required(),
+            label="GEE credentials",
+        )
 
     def upsert_account(
         self,

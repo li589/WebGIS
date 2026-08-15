@@ -1,0 +1,39 @@
+﻿layer_id,display_name,category,data_source,availability,source_type
+ndvi,植被指数 NDVI,vegetation,VIIRS 逐月 NDVI（NOAA/NESDIS 卫星植被指数）,core,卫星遥感
+biomass-cn,地上生物量 AGB,vegetation,ESA CCI BIOMASS L4 地上生物量 AGB（2020，中国 30m）,core,静态辅助
+landcover-cn,MODIS 土地覆盖,landcover,MODIS MCD12Q1 土地覆盖（IGBP 17 类）,core,静态辅助
+clcd-cn,CLCD 土地利用,landcover,武汉大学 CLCD 土地利用（30m 年度）,core,静态辅助
+hfp-cn,人类足迹指数 HFP,landcover,人类足迹指数 HFP（WCS/SEDAC，2018）,core,静态辅助
+dem-etopo,ETOPO 地形高程,terrain,NOAA ETOPO1/2022 全球地形高程（60s）,core,地形
+gebco-dem-cn,GEBCO 海底地形,terrain,GEBCO 2024 全球海底地形（15 角秒）,core,地形
+ref-smap-sm-202512-l3,SMAP L3 土壤水分,research-group,SMAP L3 土壤水分（NASA NSIDC，2025-12 逐日）,core,卫星遥感
+prod-fy_smap_station-sm_vod_omega-202512-fusion,多源融合土壤水分,research-group,SMAP/FY-3D/站点融合 SM·VOD·ω（EASE-Grid 9km，2025-12）,core,融合产品
+ref-fy-tb-202512-mwri,FY-3 MWRI 亮温,research-group,风云三号 MWRI 微波成像仪多波段亮温（NSMC，2025-12）,core,卫星遥感
+obs-station-sm-daily,站点土壤水分,research-group,ISMN/CASMOS 站点逐日土壤湿度观测,ext,站点观测
+ref-ddca-sm-201504-202512,DDCA 土壤水分,research-group,DDCA 双通道算法土壤水分参考（2015-04 起）,ext,反演参考
+forest-ratio,森林覆盖率,vegetation,森林覆盖率 9km 网格（2020）,core,静态辅助
+landscape-metrics-9km,景观多样性 SHDI,research-group,景观多样性 SHDI 9km 网格（2020）,core,静态辅助
+aridity-cn,干旱指数 AI,climate,干旱指数 AI（P/PET，MSWEP/GLEAM，中国 0.25°）,ext,气候产品
+gpcp-precip-ts,GPCP 月降水,climate,GPCP V3.2 月降水（全球 0.5°，库内采样）,ext,气候产品
+cmfd-precip-cn,CMFD 区域降水,climate,CMFD 中国区域格点降水（2002-01 示例）,ext,气候产品
+era5-dwaa-cn,ERA5 白天热浪,climate,ERA5 白天热浪事件（SMCI 指标，2020）,ext,气候产品
+era5-wdaa-cn,ERA5 夜间热浪,climate,ERA5 夜间热浪事件（SMCI 指标，2020）,ext,气候产品
+co2-cn,GOSAT CO₂ 柱浓度,climate,GOSAT 中层 CO₂ 柱浓度均值产品,ext,卫星遥感
+method-smap-omega-doy-dynamic,SMAP 动态 ω 反演,research-group,SMAP 亮温+辅助 → 8-day 分块 SF 倒推 SM/VOD/ω,core,反演产品
+method-fy-omega-doy-dynamic,风云卫星 动态 ω 反演,research-group,FY 亮温+SMAP 辅助 → 8-day 分块 SF 倒推 SM/VOD/ω,core,反演产品
+method-smap-omega-doy-avg,SMAP 日均 ω 反演,research-group,SMAP 日均 ω 反演（D1 omega_block → D2）,core,反演产品
+method-fy-omega-doy-avg,风云卫星 日均 ω 反演,research-group,FY 日均 ω 反演（D1 omega_block → D2）,core,反演产品
+smap-aux-albedo,反照率,research-group,SMAP 辅助：地表反照率 Albedo（9km）,core,静态辅助
+smap-aux-bd,土壤容重,research-group,SMAP 辅助：土壤容重 Bulk Density（9km）,core,静态辅助
+smap-aux-sf,砂粒分数,research-group,SMAP 辅助：砂粒分数 Sand Fraction（9km）,core,静态辅助
+smap-aux-b,B 参数,research-group,SMAP 辅助：tau-omega 模型 B 参数（9km）,core,静态辅助
+smap-aux-cf,粘粒分数,research-group,SMAP 辅助：粘粒分数 Clay Fraction（9km）,core,静态辅助
+smap-aux-h,粗糙度参数 H,research-group,SMAP 辅助：Q/H 模型粗糙度参数 H（9km）,core,静态辅助
+smap-aux-igbp,IGBP 土地覆盖 (9km),research-group,SMAP 辅助：IGBP 土地覆盖分类（9km，12 类）,core,静态辅助
+smap-aux-koppen,柯本气候分类,research-group,SMAP 辅助：柯本气候分类（0.083°）,core,静态辅助
+smap-aux-vi-qa,植被指数 NDVI 均值,research-group,SMAP 辅助：NDVI 均值产品（9km）,core,静态辅助
+soil-moisture,土壤湿度,research-group,土壤湿度合集（SMAP L3 / DDCA / 站点 / 多源融合）,core,合集
+precipitation-static,历史降水,climate,历史降水合集（GPCP / CMFD）,ext,合集
+era5-hazard-events,ERA5 灾害事件,climate,ERA5 灾害事件合集（白天 / 夜间热浪）,ext,合集
+fy-omega-inversion,风云 ω 反演,research-group,风云 ω 反演合集（动态 / 日均）,core,合集
+smap-omega-inversion,SMAP ω 反演,research-group,SMAP ω 反演合集（动态 / 日均）,core,合集

@@ -10,13 +10,16 @@
  *   - local_path:  本地路径（须填写；相对 BACKEND_DATA_ROOT 或绝对路径）
  *   - start_date / end_date: YYYYMMDD
  *   - file_filter: 多选扩展名标签 (.mat/.h5/.nc/.tif/.txt)
- *   - 连接状态指示器（GET /api/remote/test?server=...，legacy 与 profile 均支持）
+ *   - 连接状态指示器（POST /config/remote-storage/{id}/test，仅 profile；admin-only，403 时提示）
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { Check, AlertTriangle } from '../../ui/icons'
 import type { LGraphNodeClass } from '../litegraph-setup'
-import { requestJson } from '../../../services/_http'
-import { fetchRemoteSources, fetchRemoteStorageProfiles } from '../../../services/settings-api'
+import {
+  fetchRemoteSources,
+  fetchRemoteStorageProfiles,
+  testRemoteStorageProfile,
+} from '../../../services/settings-api'
 import type { RemoteSourceEntry, RemoteStorageProfile } from '../../../types/api-reexports'
 import RemoteDirBrowser from './RemoteDirBrowser.vue'
 import ParamCombobox from '../ParamCombobox.vue'
@@ -161,6 +164,12 @@ const serverOptions = computed(() => [
   ...syncProfiles.value.map((p) => p.profile_id),
 ])
 
+/** 当前 server_type 是否为远程存储 profile（legacy 内置不支持 UI 浏览/测试）。 */
+const isProfileServer = computed(() => {
+  const v = String(form.server_type ?? '').trim()
+  return !!v && !LEGACY_SERVERS.includes(v)
+})
+
 const serverHint = computed(() => {
   const v = String(form.server_type ?? '').trim()
   if (!v) return ''
@@ -196,7 +205,7 @@ const browserVisible = ref(false)
 
 function openBrowser() {
   if (props.readonly) return
-  if (!form.server_type) return
+  if (!isProfileServer.value) return
   browserVisible.value = true
 }
 
@@ -207,7 +216,6 @@ function onBrowserSelect(path: string) {
 // ── 连接状态测试 ────────────────────────────────────────────────────────────
 interface ConnState {
   status: 'idle' | 'testing' | 'ok' | 'fail'
-  latency?: number
   message?: string
   error?: string
 }
@@ -216,26 +224,30 @@ const connState = ref<ConnState>({ status: 'idle' })
 async function testConnection() {
   const server = String(form.server_type ?? '')
   if (!server || props.readonly) return
-  connState.value = { status: 'testing' }
-  try {
-    const data = await requestJson<{
-      ok: boolean
-      latency_ms?: number
-      error?: string
-      message?: string
-    }>(`/api/remote/test?server=${encodeURIComponent(server)}`, {
-      silent: true,
-      timeoutMs: 30000,
-    })
-    if (data.ok) {
-      connState.value = { status: 'ok', latency: data.latency_ms, message: data.message }
-    } else {
-      connState.value = { status: 'fail', error: data.error || data.message || '连接失败' }
-    }
-  } catch (err) {
+  if (!isProfileServer.value) {
     connState.value = {
       status: 'fail',
-      error: err instanceof Error ? err.message : String(err),
+      error: '遗留内置服务器（hpc/win11/nas）不支持 UI 连接测试',
+    }
+    return
+  }
+  connState.value = { status: 'testing' }
+  try {
+    const data = await testRemoteStorageProfile(server)
+    if (data.success) {
+      connState.value = { status: 'ok', message: data.message || '已连接' }
+    } else {
+      connState.value = { status: 'fail', error: data.message || '连接失败' }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.startsWith('Settings API failed: 403')) {
+      connState.value = {
+        status: 'fail',
+        error: '仅管理员可测试连接（当前角色无 config 管理权限）',
+      }
+    } else {
+      connState.value = { status: 'fail', error: msg }
     }
   }
 }
@@ -323,11 +335,7 @@ function toggleFilter(ext: string) {
           <template v-if="connState.status === 'idle'">未测试</template>
           <template v-else-if="connState.status === 'testing'">测试中…</template>
           <template v-else-if="connState.status === 'ok'">
-            {{
-              connState.latency != null
-                ? `已连接（${connState.latency} ms）`
-                : connState.message || '已连接'
-            }}
+            {{ connState.message || '已连接' }}
           </template>
           <template v-else>{{ connState.error || '连接失败' }}</template>
         </span>
@@ -335,6 +343,11 @@ function toggleFilter(ext: string) {
           type="button"
           class="mini-btn"
           :disabled="readonly || connState.status === 'testing' || !form.server_type"
+          :title="
+            isProfileServer
+              ? '测试远程存储 profile 连通性（admin-only）'
+              : '遗留内置服务器不支持 UI 连接测试'
+          "
           @click="testConnection"
         >
           测试连接
@@ -357,7 +370,12 @@ function toggleFilter(ext: string) {
         <button
           type="button"
           class="browse-btn"
-          :disabled="readonly || !form.server_type"
+          :disabled="readonly || !isProfileServer"
+          :title="
+            isProfileServer
+              ? '浏览远程存储 profile 目录'
+              : '遗留内置服务器不支持目录浏览，请改用远程存储 profile'
+          "
           @click="openBrowser"
         >
           浏览
@@ -446,7 +464,7 @@ function toggleFilter(ext: string) {
     <!-- 远程目录浏览对话框 -->
     <RemoteDirBrowser
       :visible="browserVisible"
-      :server="String(form.server_type ?? '')"
+      :profile-id="String(form.server_type ?? '')"
       :initial-path="String(form.remote_path ?? '/')"
       @close="browserVisible = false"
       @select="onBrowserSelect"

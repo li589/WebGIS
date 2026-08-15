@@ -23,12 +23,22 @@ export type {
   DataCacheEvictResponse,
   DataCacheOverview,
   DataSourceConfig,
-  DataSourcePathsUpdateRequest,
-  DataSourcePathsUpdateResponse,
   DatasetRescanResponse,
   DatasetSource,
   DatasetUpsertRequest,
   DeletedResponse,
+  DeploymentBackupInfo,
+  DeploymentCachesGroup,
+  DeploymentConfigPreviewResponse,
+  DeploymentConfigStatus,
+  DeploymentConfigUpdateRequest,
+  DeploymentConfigUpdateResponse,
+  DeploymentDataGroup,
+  DeploymentDockerGroup,
+  DeploymentImportsGroup,
+  DeploymentKeyValueStatus,
+  DeploymentPreviewDiffItem,
+  DeploymentRuntimeGroup,
   DiscoveredDataset,
   GeeAccountCreateRequest,
   GeeAccountDeletedResponse,
@@ -125,11 +135,13 @@ import type {
   DataCacheEvictResponse,
   DataCacheOverview,
   DataSourceConfig,
-  DataSourcePathsUpdateRequest,
-  DataSourcePathsUpdateResponse,
   DatasetRescanResponse,
   DatasetUpsertRequest,
   DeletedResponse,
+  DeploymentConfigPreviewResponse,
+  DeploymentConfigStatus,
+  DeploymentConfigUpdateRequest,
+  DeploymentConfigUpdateResponse,
   GeeAccountCreateRequest,
   GeeAccountDeletedResponse,
   GeeAccountItem,
@@ -432,13 +444,37 @@ export function fetchDataSourceConfig(): Promise<DataSourceConfig> {
   return settingsFetch('/config/data-source')
 }
 
-export function updateDataSourcePaths(
-  payload: DataSourcePathsUpdateRequest,
-): Promise<DataSourcePathsUpdateResponse> {
-  return settingsFetch('/config/data-source/paths', {
+// 旧 PUT /config/data-source/paths 前端入口已下线（路径修改收敛至部署配置中心）；后端端点保留。
+
+// ── 部署配置中心（/config/deployment） ─────────────────────────────────────
+// 注意：PUT 对 deployment.config.json 为「全量期望态」写入（空=未设置），
+// 前端每次提交完整表单，避免旧键被静默清掉。
+
+export function getDeploymentConfig(): Promise<DeploymentConfigStatus> {
+  return settingsFetch('/config/deployment')
+}
+
+export function previewDeploymentConfig(
+  payload: DeploymentConfigUpdateRequest,
+): Promise<DeploymentConfigPreviewResponse> {
+  return settingsFetch('/config/deployment/preview', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateDeploymentConfig(
+  payload: DeploymentConfigUpdateRequest,
+): Promise<DeploymentConfigUpdateResponse> {
+  return settingsFetch('/config/deployment', {
     method: 'PUT',
     body: JSON.stringify(payload),
   })
+}
+
+/** 导出（默认脱敏）下载地址；浏览器直开携带会话 Cookie 即可鉴权。 */
+export function deploymentConfigExportUrl(redact = true): string {
+  return resolveApiUrl(`/config/deployment/export?redact=${redact ? 'true' : 'false'}`)
 }
 
 export function restartBackendService(

@@ -28,18 +28,7 @@
   flex: none;
 }
 
-.brand-mark {
-  width: 32px;
-  height: 32px;
-  flex: none;
-  border-radius: var(--radius-md);
-  background:
-    radial-gradient(circle at 30% 30%, var(--border-strong), transparent 42%),
-    linear-gradient(135deg, var(--accent), var(--accent-blue-deep) 58%, var(--accent-strong));
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.06),
-    0 12px 30px var(--accent-blue-deep-glow);
-}
+/* 品牌 Logo 由 BrandMark.vue 组件渲染（自带深空底与辉光） */
 
 .brand-copy {
   min-width: 0;

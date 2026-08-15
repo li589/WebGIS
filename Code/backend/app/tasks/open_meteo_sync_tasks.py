@@ -41,7 +41,14 @@ _sync_local_holders: set[str] = set()
 
 
 def _sync_lock_key(domains: str) -> str:
-    return f"sync:{domains or 'default'}"
+    """同步锁键须对 domains 归一化（排序 + 去重 + 去空白，B-R3）。
+
+    API 允许调用方以任意顺序/重复项传 domains_override；原始串直接拼键会让
+    ``a,b`` 与 ``b,a`` 拿到不同锁，同一域集合的两次同步并发跑在同一 Docker
+    volume 上，产生数据面文件竞争与缓存互相覆盖。
+    """
+    parts = sorted({p.strip() for p in (domains or "").split(",") if p.strip()})
+    return f"sync:{','.join(parts) if parts else 'default'}"
 
 
 def acquire_open_meteo_sync_lock(

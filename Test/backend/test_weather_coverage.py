@@ -14,15 +14,18 @@ def _weather_coverage_probe_phase_d_tests_env():
     ns = types.SimpleNamespace()
     import importlib
 
+    from app.services import weather_coverage_cache
+
     ns.wr = importlib.import_module("app.api.routers.weather_router")
     ns.wr._COVERAGE_CACHE.clear()
     # C2：coverage 结果落 Redis（TTL 300s），测试间残留会污染后续用例，
     # 故 setUp 一并清除 Redis 中的 coverage 键，保证用例隔离。
-    client = ns.wr.get_redis_client()
+    # P0-2 后 get_redis_client/_COVERAGE_REDIS_PREFIX 已迁至 weather_coverage_cache 模块。
+    client = weather_coverage_cache.get_redis_client()
     if client is not None:
         try:
             for _model in ("ecmwf_ifs025", "gfs_global"):
-                client.delete(ns.wr._COVERAGE_REDIS_PREFIX + _model)
+                client.delete(weather_coverage_cache.COVERAGE_REDIS_PREFIX + _model)
         except Exception:
             pass
     yield ns

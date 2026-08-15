@@ -8,6 +8,8 @@ import logging
 import os
 from typing import Any
 
+from app.services.secret_cipher import aesgcm_decrypt, aesgcm_encrypt
+
 logger = logging.getLogger(__name__)
 
 PORTAL_IDS = ("earthdata", "nsidc", "copernicus")
@@ -41,16 +43,8 @@ def _encrypt_blob(plaintext: str, encryption_key: str) -> dict[str, str]:
             "ciphertext": base64.b64encode(plaintext.encode("utf-8")).decode("ascii"),
             "iv": "plain",
         }
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-    key_bytes = bytes.fromhex(encryption_key)
-    iv = os.urandom(12)
-    aes = AESGCM(key_bytes)
-    ct = aes.encrypt(iv, plaintext.encode("utf-8"), None)
-    return {
-        "ciphertext": base64.b64encode(ct).decode("ascii"),
-        "iv": base64.b64encode(iv).decode("ascii"),
-    }
+    ct, iv = aesgcm_encrypt(encryption_key, plaintext)
+    return {"ciphertext": ct, "iv": iv}
 
 
 def _decrypt_blob(ciphertext: str, iv: str, encryption_key: str) -> str:
@@ -66,12 +60,7 @@ def _decrypt_blob(ciphertext: str, iv: str, encryption_key: str) -> str:
         return base64.b64decode(ciphertext.encode("ascii")).decode("utf-8")
     if not encryption_key:
         raise RuntimeError("Cannot decrypt portal credentials without encryption key")
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-    key_bytes = bytes.fromhex(encryption_key)
-    aes = AESGCM(key_bytes)
-    pt = aes.decrypt(base64.b64decode(iv), base64.b64decode(ciphertext), None)
-    return pt.decode("utf-8")
+    return aesgcm_decrypt(encryption_key, ciphertext, iv)
 
 
 def default_portal_credentials_public() -> dict[str, Any]:

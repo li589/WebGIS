@@ -752,7 +752,8 @@ def get_about_info() -> dict[str, Any]:
     return {
         "project_name": settings.service_name,
         "version": "0.1.0",
-        "description": "综合地理态势数据分析与可视化系统",
+        # 旧描述（CGDA 时代）："综合地理态势数据分析与可视化系统"
+        "description": "星地融合土壤水分监测与干旱预警数据分析与可视化系统",
         "tech_stack": [
             "Vue 3",
             "TypeScript",

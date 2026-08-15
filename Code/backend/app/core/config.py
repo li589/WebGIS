@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 import sys
 
+from app.services.deployment_config import apply_startup_overrides
+
 # 尝试加载 dotenv；ImportError 表示 python-dotenv 未安装（环境变量已通过其他方式设置），
 # 其他异常（如文件权限/编码问题）记录警告但不阻塞启动
 try:
@@ -18,8 +20,21 @@ except Exception as exc:
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
-# Runtime cache root on I drive (avoids D drive space exhaustion)
-_RUNTIME_ROOT = Path(os.getenv("BACKEND_RUNTIME_ROOT", r"I:\Geograph_DataSet\_runtime"))
+
+# ② 部署配置真源：deployment.config.json 逐键覆盖环境变量（优先于 .env）。
+#    文件存在但损坏/校验失败 → 此处抛错拒启（fail-closed，错误信息含 .bak 恢复指引）。
+#    deployment_config 仅依赖标准库，无循环导入；Celery worker/beat 同链生效。
+DEPLOYMENT_OVERRIDES_APPLIED: list[str] = apply_startup_overrides()
+
+# ③ 运行时根派生（去硬编码 H1）：显式 BACKEND_RUNTIME_ROOT
+#    > <BACKEND_DATA_ROOT>/_runtime > 仓库 .data/_runtime（开发兜底）。
+#    不再默认指向任何实验室盘符；production 空数据根由 assert_data_root_policy 拒启。
+_data_root_env = os.getenv("BACKEND_DATA_ROOT", "").strip()
+_RUNTIME_ROOT = Path(
+    os.getenv("BACKEND_RUNTIME_ROOT", "").strip()
+    or (_data_root_env and str(Path(_data_root_env) / "_runtime"))
+    or str(BACKEND_ROOT / ".data" / "_runtime")
+)
 DEFAULT_WORKFLOW_STATE_DIR = _RUNTIME_ROOT / "workflow_state"
 DEFAULT_LOG_DIR = _RUNTIME_ROOT / "logs"
 DEFAULT_ARTIFACT_DIR = _RUNTIME_ROOT / "artifacts"
@@ -197,9 +212,11 @@ class StorageConfig:
 
 @dataclass(frozen=True)
 class Settings:
+    # 2026-08 品牌更名：旧名 "Comprehensive Geographic Data Analysis Backend"（CGDA/CGDAS）。
+    # 回退方案见前端 src/ui-copy/brand.ts 品牌沿革注释。
     service_name: str = os.getenv(
         "BACKEND_SERVICE_NAME",
-        "Comprehensive Geographic Data Analysis Backend",
+        "Star-Ground Fusion Soil Data Platform Backend",
     )
     # 发布就绪修复（P0-1）：默认 environment 反转为 "production"（fail-secure）。
     # 此前默认 "development" 会在未配置 API Key 时静默放行所有写接口（见 app/api/deps.py）。

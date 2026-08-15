@@ -2,6 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 const fetchWeatherTile = vi.fn()
+const perfNoteViewportFill = vi.fn()
+
+vi.mock('@/utils/perf-probe', () => ({
+  debugLog: vi.fn(),
+  isPerfEnabled: () => false,
+  perfIncBump: vi.fn(),
+  perfMark: vi.fn(),
+  perfNoteViewportFill: (...args: unknown[]) => perfNoteViewportFill(...args),
+}))
 
 vi.mock('@/services/weather-tile-api', async () => {
   const actual = await vi.importActual<typeof import('@/services/weather-tile-api')>(
@@ -42,6 +51,7 @@ describe('weather-tile-manager cache + prefetch', () => {
     __testResetWeatherTileManagerModuleState()
     fetchWeatherTile.mockReset()
     fetchWeatherTile.mockResolvedValue(emptyFc)
+    perfNoteViewportFill.mockReset()
   })
 
   it('enqueues adjacent-hour viewport tiles (hour±1) at low priority', async () => {
@@ -169,5 +179,43 @@ describe('weather-tile-manager cache + prefetch', () => {
       await Promise.resolve()
     }
     expect(fetchWeatherTile.mock.calls.length).toBeGreaterThan(callsAfterEmpty)
+  })
+
+  it('clearLayer discards viewport fill timing: re-created layer must not inherit stale start', async () => {
+    const manager = useWeatherTileManager()
+    let now = 1_000
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => now)
+
+    // 阶段1：激活 + 设视口，请求悬挂（abort 时 reject 以释放并发槽）→ 记录起点后删除图层
+    fetchWeatherTile.mockImplementation(
+      (_layer, _z, _x, _y, opts?: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          opts?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+        }),
+    )
+    manager.setLayerActive('wind-field', true)
+    manager.setViewport('wind-field', center, 5, 0, undefined, bbox)
+    for (let i = 0; i < 40; i += 1) {
+      await Promise.resolve()
+    }
+    expect(perfNoteViewportFill).not.toHaveBeenCalled()
+
+    manager.clearLayer('wind-field')
+
+    // 阶段2：时间前进 60s，同 id 重建图层并让瓦片立即铺满
+    now = 61_000
+    fetchWeatherTile.mockResolvedValue(emptyFc)
+    manager.setLayerActive('wind-field', true)
+    manager.setViewport('wind-field', center, 5, 0, undefined, bbox)
+    for (let i = 0; i < 200; i += 1) {
+      await Promise.resolve()
+    }
+
+    // 填充时长必须从第二次激活起算；继承旧起点会得到 ≈60s 的失真值
+    expect(perfNoteViewportFill).toHaveBeenCalled()
+    const durations = perfNoteViewportFill.mock.calls.map(([ms]) => ms as number)
+    expect(Math.max(...durations)).toBeLessThan(30_000)
+
+    nowSpy.mockRestore()
   })
 })

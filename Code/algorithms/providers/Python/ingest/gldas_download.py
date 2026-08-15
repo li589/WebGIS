@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -43,8 +44,30 @@ except ImportError:  # pragma: no cover
 
 SHORT_NAME = "GLDAS_NOAH025_3H"
 VERSION = "2.1"
-DEFAULT_OUTPUT_DIR = Path(r"I:\Geograph_DataSet\Meteorological\Weather\GLDAS_Download")
 _NC4_SUFFIXES = (".nc4", ".nc")
+
+# GLDAS 下载目录相对数据根的子路径（数据盘模板：Meteorological/Weather/GLDAS_Download）
+_GLDAS_SUBDIR = ("Meteorological", "Weather", "GLDAS_Download")
+
+
+def _default_output_dir() -> Path:
+    """独立运行的默认输出目录：``BACKEND_DATA_ROOT`` 派生；未设且非 test 环境 fail-fast。
+
+    工作流路径不使用此默认——``gldas_download`` 节点显式传 ``local_dir``。
+    """
+    root = os.getenv("BACKEND_DATA_ROOT", "").strip()
+    if root:
+        return Path(root).joinpath(*_GLDAS_SUBDIR)
+    be = (os.getenv("BACKEND_ENV") or os.getenv("ENVIRONMENT") or "").lower()
+    if be in {"test", "testing"}:
+        import tempfile
+
+        return Path(tempfile.gettempdir()) / "cgda_gldas_download"
+    raise RuntimeError(
+        "BACKEND_DATA_ROOT is not set; cannot derive GLDAS download output dir. "
+        "Set BACKEND_DATA_ROOT (deployment config center /deployment) or pass "
+        "local_dir explicitly."
+    )
 
 
 def _normalize_date(value: str) -> str:
@@ -292,7 +315,7 @@ def download_gldas_range(
 ) -> DownloadResult:
     """Download GLDAS NOAH025_3H granules for ``start_date``..``end_date``."""
     user, pwd = load_credentials(username, password)
-    local_path = Path(local_dir) if local_dir else DEFAULT_OUTPUT_DIR
+    local_path = Path(local_dir) if local_dir else _default_output_dir()
     local_path.mkdir(parents=True, exist_ok=True)
 
     result = DownloadResult(local_dir=str(local_path))

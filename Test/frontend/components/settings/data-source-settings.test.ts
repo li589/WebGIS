@@ -4,7 +4,7 @@
 //   1) DataSourceSettings 双 tab（本地数据源 / 远程数据源）切换 + localStorage 持久化；
 //   2) AvailableDatasetsPanel 来源筛选 / 内置条目保护（无删除按钮）/ 空态引导；
 //   3) RemoteDataSourcesPanel 动态分组（存储源 / 国际门户 / 国内门户）与空态；
-//   4) PathConfigSection 数据根必填校验；
+//   4) PathConfigSection 只读展示（修改入口收敛至部署配置中心）；
 //   5) DatasetFormDialog 新增必填校验与内置条目锁定。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, mount, setActivePinia } from '@/test-utils'
@@ -195,15 +195,23 @@ describe('RemoteDataSourcesPanel 动态分组', () => {
   })
 })
 
-describe('PathConfigSection', () => {
-  it('数据根为空时报错，不发请求', async () => {
+describe('PathConfigSection（只读）', () => {
+  it('仅展示进程生效路径，无输入框与保存按钮', () => {
     mountStore()
     const wrapper = mount(PathConfigSection)
-    const input = wrapper.find('input')
-    await input.setValue('   ')
-    const saveBtn = wrapper.findAll('button').find((b) => b.text() === '保存路径')
-    await saveBtn!.trigger('click')
-    expect(wrapper.text()).toContain('请填写数据根目录')
+    expect(wrapper.findAll('input').length).toBe(0)
+    expect(wrapper.findAll('button').length).toBe(0)
+    expect(wrapper.text()).toContain('路径配置（只读）')
+    expect(wrapper.text()).toContain('部署与数据源配置中心')
+    expect(wrapper.text()).toContain('进程生效数据根')
+    expect(wrapper.text()).toContain('I:/Geograph_DataSet')
+  })
+
+  it('pending_restart 时显示待重启徽章', () => {
+    const store = mountStore()
+    store.dataSourceConfig = { ...store.dataSourceConfig, pending_restart: true } as never
+    const wrapper = mount(PathConfigSection)
+    expect(wrapper.find('.badge-warn').exists()).toBe(true)
   })
 })
 

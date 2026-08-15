@@ -141,6 +141,7 @@ export const useLayersStore = defineStore('layers', () => {
     // ── Actions: workspace ──
     addLayer: workspace.addLayer,
     addImportedVectorLayer: workspace.addImportedVectorLayer,
+    addDrawDraftLayer: workspace.addDrawDraftLayer,
     addImportedRasterLayer: workspace.addImportedRasterLayer,
     getImportedVectorGeojson: workspace.getImportedVectorGeojson,
     updateImportedVectorGeojson: workspace.updateImportedVectorGeojson,

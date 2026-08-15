@@ -120,6 +120,20 @@ export type DataSourceConfig = Schema<'DataSourceConfig'>
 export type DataSourcePathsUpdateRequest = Schema<'DataSourcePathsUpdateRequest'>
 export type DataSourcePathsUpdateResponse = Schema<'DataSourcePathsUpdateResponse'>
 export type DiscoveredDataset = Schema<'DiscoveredDataset'>
+
+// ── 部署配置中心（/config/deployment） ─────────────────────────────────────
+export type DeploymentConfigStatus = Schema<'DeploymentConfigStatus'>
+export type DeploymentKeyValueStatus = Schema<'DeploymentKeyValueStatus'>
+export type DeploymentPreviewDiffItem = Schema<'DeploymentPreviewDiffItem'>
+export type DeploymentBackupInfo = Schema<'DeploymentBackupInfo'>
+export type DeploymentConfigUpdateRequest = Schema<'DeploymentConfigUpdateRequest'>
+export type DeploymentConfigPreviewResponse = Schema<'DeploymentConfigPreviewResponse'>
+export type DeploymentConfigUpdateResponse = Schema<'DeploymentConfigUpdateResponse'>
+export type DeploymentDataGroup = Schema<'DeploymentDataGroup'>
+export type DeploymentRuntimeGroup = Schema<'DeploymentRuntimeGroup'>
+export type DeploymentCachesGroup = Schema<'DeploymentCachesGroup'>
+export type DeploymentImportsGroup = Schema<'DeploymentImportsGroup'>
+export type DeploymentDockerGroup = Schema<'DeploymentDockerGroup'>
 export type MinioPublicConfig = Schema<'MinioPublicConfig'>
 export type StaticCacheSummary = Schema<'StaticCacheSummary'>
 export type PortalCredentialPublic = Schema<'PortalCredentialPublic'>

@@ -481,6 +481,53 @@ def _find_7z() -> str | None:
     return None
 
 
+def _parse_7z_slt_listing(stdout: str) -> tuple[list[str], int]:
+    """解析 `7z l -slt` 输出，返回 (成员路径, 声明总字节)。
+
+    首块是压缩包自身头（Path = <传入的路径，绝对/相对均可>），
+    只有 `----------` 分隔线之后才是成员条目；头块不得计入成员，
+    否则绝对路径调用时合法压缩包会被误判「非法压缩包路径」。
+    """
+    names: list[str] = []
+    declared_total = 0
+    current_path: str | None = None
+    current_size = 0
+    current_folder = False
+    in_entries = False
+
+    def _flush_7z_entry() -> None:
+        nonlocal current_path, current_size, current_folder, declared_total
+        if current_path and not current_folder:
+            names.append(current_path)
+            declared_total += current_size
+        current_path = None
+        current_size = 0
+        current_folder = False
+
+    for line in (stdout or "").splitlines():
+        if line.strip() == "-" * 10:
+            if not in_entries:
+                in_entries = True
+                current_path = None
+                current_size = 0
+                current_folder = False
+            continue
+        if not in_entries:
+            continue
+        if line.startswith("Path = "):
+            _flush_7z_entry()
+            current_path = line[7:].strip()
+        elif line.startswith("Size = "):
+            try:
+                current_size = int(line[7:].strip() or "0")
+            except ValueError:
+                current_size = 0
+        elif line.startswith("Folder = "):
+            current_folder = line[9:].strip() in {"+", "true", "True", "1"}
+    _flush_7z_entry()
+    return names, declared_total
+
+
 def _extract_via_7z(archive: Path, dest: Path, *, fmt_label: str) -> list[Path]:
     """7-Zip CLI 提取（RAR 回退与 .7z 主路径共用；无界面）。先 list 再解压。"""
     seven = _find_7z()
@@ -502,34 +549,7 @@ def _extract_via_7z(archive: Path, dest: Path, *, fmt_label: str) -> list[Path]:
         detail = (listed.stderr or listed.stdout or "").strip()[:300]
         raise ValueError(f"7-Zip 无法列出 {fmt_label}: {detail or listed.returncode}")
 
-    names: list[str] = []
-    declared_total = 0
-    current_path: str | None = None
-    current_size = 0
-    current_folder = False
-    archive_name = archive.name
-
-    def _flush_7z_entry() -> None:
-        nonlocal current_path, current_size, current_folder, declared_total
-        if current_path and current_path != archive_name and not current_folder:
-            names.append(current_path)
-            declared_total += current_size
-        current_path = None
-        current_size = 0
-        current_folder = False
-
-    for line in (listed.stdout or "").splitlines():
-        if line.startswith("Path = "):
-            _flush_7z_entry()
-            current_path = line[7:].strip()
-        elif line.startswith("Size = "):
-            try:
-                current_size = int(line[7:].strip() or "0")
-            except ValueError:
-                current_size = 0
-        elif line.startswith("Folder = "):
-            current_folder = line[9:].strip() in {"+", "true", "True", "1"}
-    _flush_7z_entry()
+    names, declared_total = _parse_7z_slt_listing(listed.stdout or "")
 
     for name in names:
         safe_name = _sanitize_member_name(name)

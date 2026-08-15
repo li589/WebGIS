@@ -2,30 +2,24 @@
 /**
  * RemoteDirBrowser.vue
  *
- * 远程目录浏览对话框：调用 GET /api/remote/list 浏览远程目录，
- * 双击进入子目录，"确定"回选当前路径。
+ * 远程目录浏览对话框：调用 POST /config/remote-storage/{id}/browse 浏览
+ * 远程存储 profile 目录，双击进入子目录，"确定"回选当前路径。
  *
- * Props: visible / server / initialPath
+ * Props: visible / profileId / initialPath
  * Emits: close / select(path)
  */
 import { ref, watch } from 'vue'
-import { requestJson } from '../../../services/_http'
+import { browseRemoteStorage } from '../../../services/settings-api'
 
 interface RemoteItem {
   name: string
-  isDir: boolean
-  size: number
-}
-
-interface RemoteListResponse {
-  server: string
-  path: string
-  items: RemoteItem[]
+  is_dir: boolean
+  size: number | null
 }
 
 const props = defineProps<{
   visible: boolean
-  server: string
+  profileId: string
   initialPath: string
 }>()
 
@@ -50,24 +44,23 @@ function normalizePath(p: string): string {
 }
 
 async function loadDir(path: string) {
-  if (!props.server) {
-    errorMsg.value = '未指定服务器'
+  if (!props.profileId) {
+    errorMsg.value = '未指定远程存储 profile'
     return
   }
   loading.value = true
   errorMsg.value = ''
   const target = normalizePath(path)
   try {
-    const data = await requestJson<RemoteListResponse>(
-      `/api/remote/list?server=${encodeURIComponent(props.server)}&path=${encodeURIComponent(target)}`,
-      { silent: true, timeoutMs: 20000 },
-    )
+    const data = await browseRemoteStorage(props.profileId, target)
     currentPath.value = normalizePath(data.path || target)
     // 目录在前、文件在后，各自字母序
-    items.value = [...(data.items ?? [])].sort((a, b) => {
-      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
-      return a.name.localeCompare(b.name)
-    })
+    items.value = (data.items ?? [])
+      .map((i) => ({ name: i.name, is_dir: !!i.is_dir, size: i.size ?? null }))
+      .sort((a, b) => {
+        if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1
+        return a.name.localeCompare(b.name)
+      })
     selectedName.value = ''
   } catch (err) {
     errorMsg.value = err instanceof Error ? err.message : String(err)
@@ -78,7 +71,7 @@ async function loadDir(path: string) {
 }
 
 function enterDir(item: RemoteItem) {
-  if (!item.isDir) return
+  if (!item.is_dir) return
   const base = currentPath.value.replace(/\/$/, '')
   loadDir(`${base}/${item.name}`)
 }
@@ -94,7 +87,7 @@ function onItemClick(item: RemoteItem) {
 }
 
 function onItemDblClick(item: RemoteItem) {
-  if (item.isDir) enterDir(item)
+  if (item.is_dir) enterDir(item)
   else selectedName.value = item.name
 }
 
@@ -103,7 +96,7 @@ function confirm() {
   emit('close')
 }
 
-function formatSize(size: number): string {
+function formatSize(size: number | null): string {
   if (!size) return ''
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
@@ -125,7 +118,7 @@ watch(
     <div v-if="visible" class="remote-browser-overlay" @click.self="emit('close')">
       <div class="remote-browser-dialog" role="dialog" aria-modal="true">
         <div class="dialog-header">
-          <span class="dialog-title">远程目录浏览 · {{ server || '—' }}</span>
+          <span class="dialog-title">远程目录浏览 · {{ profileId || '—' }}</span>
           <button type="button" class="dialog-close" aria-label="关闭" @click="emit('close')">
             ×
           </button>
@@ -163,18 +156,18 @@ watch(
               v-for="item in items"
               :key="item.name"
               class="dir-item"
-              :class="{ dir: item.isDir, selected: selectedName === item.name }"
+              :class="{ dir: item.is_dir, selected: selectedName === item.name }"
               :title="
-                item.isDir ? `进入目录 ${item.name}` : `${item.name} (${formatSize(item.size)})`
+                item.is_dir ? `进入目录 ${item.name}` : `${item.name} (${formatSize(item.size)})`
               "
               @click="onItemClick(item)"
               @dblclick="onItemDblClick(item)"
             >
-              <span class="item-icon" :class="{ dir: item.isDir }">{{
-                item.isDir ? '▸' : '·'
+              <span class="item-icon" :class="{ dir: item.is_dir }">{{
+                item.is_dir ? '▸' : '·'
               }}</span>
               <span class="item-name">{{ item.name }}</span>
-              <span v-if="!item.isDir" class="item-size">{{ formatSize(item.size) }}</span>
+              <span v-if="!item.is_dir" class="item-size">{{ formatSize(item.size) }}</span>
             </li>
           </ul>
         </div>

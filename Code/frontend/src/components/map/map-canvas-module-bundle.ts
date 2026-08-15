@@ -1,5 +1,7 @@
 import { createAdminBoundaryModule } from './admin-boundary-module'
 import { createBasemapModule } from './basemap-module'
+import { createDrawModule, type DrawModule, type DrawStateSnapshot } from './draw-module'
+import type { DrawFeature, DrawVertex } from '../../stores/draw-store'
 import { createHotspotPinsModule } from './hotspot-pins-module'
 import { createMapInteractionModule } from './map-interaction-module'
 import { createMapCanvasRuntimeModule } from './map-canvas-runtime-module'
@@ -58,6 +60,7 @@ export interface MapCanvasModuleBundle {
   mapCanvasRuntimeModule: ReturnType<typeof createMapCanvasRuntimeModule>
   selectedLayerFocusModule: ReturnType<typeof createSelectedLayerFocusModule>
   measureModule: ReturnType<typeof createMeasureModule>
+  drawModule: DrawModule
 }
 
 interface CreateMapCanvasModuleBundleOptions {
@@ -104,6 +107,15 @@ interface CreateMapCanvasModuleBundleOptions {
   completeMeasure: () => void
   setHoverPoint: (p: MeasurePoint | null) => void
   clearMeasure: () => void
+  // ── 绘制模式相关 ──
+  getDrawState: () => DrawStateSnapshot
+  addDrawVertex: (v: DrawVertex) => void
+  undoDrawVertex: () => void
+  setDrawHoverPoint: (p: DrawVertex | null) => void
+  addDrawFeature: (f: DrawFeature) => void
+  clearDrawVertices: () => void
+  setDrawDrawingFlag: (v: boolean) => void
+  scheduleDrawPersist: () => void
   dependencies?: {
     createBasemapModule?: typeof createBasemapModule
     createAdminBoundaryModule?: typeof createAdminBoundaryModule
@@ -114,6 +126,7 @@ interface CreateMapCanvasModuleBundleOptions {
     createMapCanvasRuntimeModule?: typeof createMapCanvasRuntimeModule
     createSelectedLayerFocusModule?: typeof createSelectedLayerFocusModule
     createMeasureModule?: typeof createMeasureModule
+    createDrawModule?: typeof createDrawModule
   }
 }
 
@@ -137,6 +150,7 @@ export function createMapCanvasModuleBundle(
   const createSelectedLayerFocusModuleImpl =
     options.dependencies?.createSelectedLayerFocusModule ?? createSelectedLayerFocusModule
   const createMeasureModuleImpl = options.dependencies?.createMeasureModule ?? createMeasureModule
+  const createDrawModuleImpl = options.dependencies?.createDrawModule ?? createDrawModule
 
   const basemapModule = createBasemapModuleImpl({
     map: options.map,
@@ -203,6 +217,19 @@ export function createMapCanvasModuleBundle(
     clearMeasure: options.clearMeasure,
   })
 
+  const drawModule = createDrawModuleImpl({
+    map: options.map,
+    getInteractionMode: options.getInteractionMode,
+    getDrawState: options.getDrawState,
+    addVertex: options.addDrawVertex,
+    undoLastVertex: options.undoDrawVertex,
+    setHoverPoint: options.setDrawHoverPoint,
+    addFeature: options.addDrawFeature,
+    clearActiveVertices: options.clearDrawVertices,
+    setDrawingFlag: options.setDrawDrawingFlag,
+    scheduleDraftPersist: options.scheduleDrawPersist,
+  })
+
   const mapCanvasRuntimeModule = createMapCanvasRuntimeModuleImpl({
     getTileSourceId: options.getCurrentTileSourceId,
     getMapReady: options.getMapReady,
@@ -219,6 +246,7 @@ export function createMapCanvasModuleBundle(
     onInteractionModeChange: () => {
       mapInteractionModule.applyInteractionMode()
       measureModule.applyMeasureMode()
+      drawModule.applyDrawMode()
       // 非「点选」模式：清除选中点，避免移动/测量模式下残留 inspect 圆点与选中高亮
       const mode = options.getInteractionMode()
       if (mode !== 'select') {
@@ -249,5 +277,6 @@ export function createMapCanvasModuleBundle(
     mapCanvasRuntimeModule,
     selectedLayerFocusModule,
     measureModule,
+    drawModule,
   }
 }

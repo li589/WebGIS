@@ -1,0 +1,47 @@
+{
+  "runs_total": 2002,
+  "runs_succeeded": 1435,
+  "runs_failed": 440,
+  "runs_cancelled": 127,
+  "date_range": [
+    "2026-07-25",
+    "2026-08-14"
+  ],
+  "succeeded_by_layer": {
+    "wind-field": 497,
+    "temperature": 151,
+    "visibility": 144,
+    "humidity": 144,
+    "pressure": 144,
+    "precipitation": 144,
+    "(none)": 110,
+    "lab-output": 47,
+    "omega-sf-fenkuai": 44,
+    "method-smap-omega-doy-dynamic": 3,
+    "omega-sf-fenkuai-fy-online": 3,
+    "omega-avg-daily": 2,
+    "method-fy-omega-doy-dynamic": 1,
+    "omega-sf-fenkuai-smap-online": 1
+  },
+  "succeeded_by_command": {
+    "analysis": 1072,
+    "custom": 358,
+    "(none)": 5
+  },
+  "catalog_total": 38,
+  "catalog_by_category": {
+    "research-group": 22,
+    "climate": 8,
+    "vegetation": 3,
+    "landcover": 3,
+    "terrain": 2
+  },
+  "product_files_total": 13192,
+  "product_files_by_dir": {
+    "Soil_Moisture": 11305,
+    "ProjectOutput": 1829,
+    "Inversion_Results": 58
+  },
+  "product_files_total_bytes": 78264444184,
+  "product_files_total_gb": 78.26
+}

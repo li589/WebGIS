@@ -25,12 +25,18 @@ _BACKEND_ROOT = _REPO_ROOT / "Code" / "backend"
 _CODE_ROOT = _REPO_ROOT / "Code"
 _GEE_SRC = _BACKEND_ROOT / "app" / "gee" / "core" / "src"
 
-# 去硬编码批 1：算法/后端不再默认 I:；测试注入 DATA_ROOT（实验室盘存在则复用）
+# 去硬编码批 1：算法/后端不再默认 I:；测试注入 DATA_ROOT。
+# 优先级：CGDA_TEST_DATA_ROOT（显式覆盖，部署机/CI 推荐）> 已设 BACKEND_DATA_ROOT
+# > 实验室盘存在则复用（向后兼容）> 仓库内临时目录。
 if not os.environ.get("BACKEND_DATA_ROOT", "").strip():
-    _lab_root = Path(r"I:\Geograph_DataSet")
-    os.environ["BACKEND_DATA_ROOT"] = str(
-        _lab_root if _lab_root.exists() else _BACKEND_ROOT / ".pytest_tmp" / "data_root"
-    )
+    _explicit_test_root = os.environ.get("CGDA_TEST_DATA_ROOT", "").strip()
+    if _explicit_test_root:
+        os.environ["BACKEND_DATA_ROOT"] = _explicit_test_root
+    else:
+        _lab_root = Path(r"I:\Geograph_DataSet")
+        os.environ["BACKEND_DATA_ROOT"] = str(
+            _lab_root if _lab_root.exists() else _BACKEND_ROOT / ".pytest_tmp" / "data_root"
+        )
 
 try:
     import app.core.config

@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -19,10 +20,10 @@ from app.api.routers import (
     import_router,
     layer_router,
     provider_router,
-    remote_browser_router,
     runtime_router,
     weather_router,
     workflow_router,
+    zonal_stats_router,
 )
 from app.api.routers.unified_tile_router import router as unified_tile_router
 from app.api.weather_tile_routes import router as weather_tile_router
@@ -118,12 +119,14 @@ async def lifespan(app: FastAPI):
     try:
         from app.services.effective_config import (
             assert_data_root_policy,
+            assert_deployment_config_policy,
             assert_dev_bypass_policy,
             hydrate_effective_config,
         )
 
         hydrate_effective_config()
         assert_data_root_policy()
+        assert_deployment_config_policy()
         assert_dev_bypass_policy()
     except Exception:  # noqa: BLE001 — 配置初始化失败须记录后终止启动
         logger.exception("Failed to hydrate effective config on startup")
@@ -325,9 +328,14 @@ def create_app() -> FastAPI:
         request: Request, exc: RequestValidationError
     ):
         request_id = getattr(request.state, "request_id", None)
+        # exc.errors() 的 ctx 可能携带 model_validator 抛出的原始 ValueError 对象，
+        # 直接进 JSONResponse 会 TypeError → 500；jsonable_encoder 递归降级为可序列化值
         return JSONResponse(
             status_code=422,
-            content={"detail": exc.errors(), "request_id": request_id},
+            content={
+                "detail": jsonable_encoder(exc.errors()),
+                "request_id": request_id,
+            },
         )
 
     @app.exception_handler(Exception)
@@ -359,7 +367,7 @@ def create_app() -> FastAPI:
     app.include_router(workflow_definition_router)
     app.include_router(workflow_timer_router)
     app.include_router(cleanup_router)
-    app.include_router(remote_browser_router)
+    app.include_router(zonal_stats_router)
 
     # 挂载 GEE engine router，使 /gee/* 路由正式接入 FastAPI
     # 路由前缀已在 create_gee_router 内部定义为 /gee

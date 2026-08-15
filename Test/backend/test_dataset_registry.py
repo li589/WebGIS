@@ -324,6 +324,34 @@ def test_resolve_dataset_path(tmp_path: Path, monkeypatch, request, registry_env
     assert resolve_dataset_path("DISABLED") is None
 
 
+def test_rescan_reads_current_settings_object(
+    tmp_path: Path, monkeypatch, registry_env
+) -> None:
+    """回归：服务不得在导入期绑定 settings 引用（split-brain 防护）。
+
+    其他测试（test_config_* / test_data_root_policy）会以
+    ``monkeypatch.setattr("app.core.config.settings", replace(settings, ...))``
+    替换整个 settings 对象；若本服务模块在导入期用
+    ``from app.core.config import settings`` 绑定引用，则会永久持有临时对象，
+    导致此后一切属性补丁（_patch_setting 打在还原后的对象上）对本服务无效。
+    """
+    from dataclasses import replace
+
+    from app.core import config
+    from app.services.dataset_registry_service import rescan_data_root
+
+    root = tmp_path / "geo"
+    (root / "Alpha").mkdir(parents=True)
+    (root / "Alpha" / "f.bin").write_bytes(b"x")
+    monkeypatch.setattr(
+        "app.core.config.settings", replace(config.settings, data_root=str(root))
+    )
+
+    result = rescan_data_root()
+    assert result["created"] == 1
+    assert result["entries"][0]["logical_name"] == "Alpha"
+
+
 def test_invalidate_dataset_caches(monkeypatch) -> None:
     from app.services import dataset_registry_service as svc
 

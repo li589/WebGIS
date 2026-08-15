@@ -16,6 +16,7 @@ from app.data_io.services.archive_safe import (
     ArchiveSecurityError,
     _find_7z,
     _find_unrar_tool,
+    _parse_7z_slt_listing,
     _probe_console_unrar,
     safe_extract_archive,
     safe_extract_rar,
@@ -239,6 +240,58 @@ def test_safe_extract_7z_roundtrip(tmp_path: Path) -> None:
     assert any(p.name == "ndvi.tif" for p in files)
     content = next(p for p in files if p.name == "ndvi.tif").read_bytes()
     assert content == b"TIF-0123456789ABCDEF"
+
+
+def test_7z_slt_listing_skips_archive_header_path() -> None:
+    """`7z l -slt` 首块是压缩包自身头（Path = <绝对路径>），不得计入成员。
+
+    回归守卫：绝对路径调用时旧解析仅比对 basename，头块未被过滤，
+    合法成员被误判「非法压缩包路径」而整体拒绝（CI 无 7z CLI 时该路径 skip）。
+    """
+    stdout = "\n".join(
+        [
+            "",
+            "Scanning the drive for archives:",
+            "",
+            "Listing archive: D:\\data\\pack.7z",
+            "",
+            "--",
+            "Path = D:\\data\\pack.7z",
+            "Type = 7z",
+            "Physical Size = 165",
+            "Headers Size = 154",
+            "",
+            "----------",
+            "Path = src/ndvi.tif",
+            "Size = 16",
+            "Folder = -",
+            "Attributes = A",
+        ]
+    )
+    names, total = _parse_7z_slt_listing(stdout)
+    assert names == ["src/ndvi.tif"]
+    assert total == 16
+
+
+def test_7z_slt_listing_relative_header_and_folder_skip() -> None:
+    stdout = "\n".join(
+        [
+            "Path = pack.7z",
+            "Type = 7z",
+            "----------",
+            "Path = dir",
+            "Folder = +",
+            "Size = 0",
+            "Path = dir/a.tif",
+            "Size = 10",
+            "Folder = -",
+            "Path = dir/b.tif",
+            "Size = 5",
+        ]
+    )
+    names, total = _parse_7z_slt_listing(stdout)
+    assert names == ["dir/a.tif", "dir/b.tif"]
+    assert total == 15
 
 
 def test_7z_without_cli_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

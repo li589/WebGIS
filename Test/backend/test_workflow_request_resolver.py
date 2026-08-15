@@ -135,8 +135,36 @@ def test_normalize_multi_module_keeps_definition_without_module_name() -> None:
     assert "module_name" not in algo, '"module_name" not in algo'
 
 
-def test_fy_single_descriptor_uses_accepted_fy_dataset_keys() -> None:
-    """method-fy-omega-doy-dynamic 不得注入模板不接受的 fy_folder。"""
+def test_fy_single_descriptor_uses_accepted_fy_dataset_keys(
+    tmp_path, request
+) -> None:
+    """method-fy-omega-doy-dynamic 不得注入模板不接受的 fy_folder。
+
+    数据依赖隔离：在 tmp 数据根中自建 descriptor.default_data_access_sources
+    的全部候选目录，不依赖机器上的真实机构数据（BACKEND_DATA_ROOT 指向）。
+    """
+    from app.core.config import settings
+    from app.services.workflow_request_resolver import invalidate_template_cache
+
+    root = tmp_path / "Geograph_DataSet"
+    for rel in (
+        "Soil_Moisture/SMAP_Origin_Data",  # smap_folder（required）
+        "Soil_Moisture/SMAP_Auxiliary_Data",  # anc_root（required）
+        "Ecological_Vegetation/NDVI/climatology",  # ndvi_clim_folder
+        "Soil_Moisture/FY3D",  # fy3d_folder
+        "Soil_Moisture/FY3B",  # fy3b_folder
+    ):
+        (root / rel).mkdir(parents=True, exist_ok=True)
+        (root / rel / "dummy.bin").write_bytes(b"x")
+
+    old_root = getattr(settings, "data_root")
+    object.__setattr__(settings, "data_root", str(root))
+    request.addfinalizer(lambda: object.__setattr__(settings, "data_root", old_root))
+    # _resolve_provider_dataset_path 为 lru_cache：先清掉其他测试遗留的解析结果，
+    # 结束后再清一次，避免本测试的 tmp 路径泄漏进后续测试
+    invalidate_template_cache()
+    request.addfinalizer(invalidate_template_cache)
+
     payload = WorkflowSubmitRequest(
         command_type=WorkflowCommandType.analysis,
         command_label="run FY SF",

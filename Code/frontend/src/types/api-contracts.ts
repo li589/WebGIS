@@ -2785,6 +2785,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config/deployment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Deployment Config
+         * @description 部署配置状态：每键三方对比（运行值 / .env / deployment.json）+ 备份列表。
+         */
+        get: operations["get_deployment_config_config_deployment_get"];
+        /**
+         * Update Deployment Config
+         * @description 保存部署配置：校验 → 备份轮换 → 双 .env 镜像 → JSON 原子写（失败整体回滚）。
+         */
+        put: operations["update_deployment_config_config_deployment_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/deployment/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Deployment Config
+         * @description 纯只读预览：全量校验 + 与当前运行值 diff（不写文件、不建目录）。
+         */
+        post: operations["preview_deployment_config_config_deployment_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/deployment/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Deployment Config
+         * @description 导出 deployment.config.json（默认脱敏，供部署机拷贝）。
+         */
+        get: operations["export_deployment_config_config_deployment_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config/service/restart": {
         parameters: {
             query?: never;
@@ -3574,60 +3638,20 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/remote/servers": {
+    "/analysis/zonal-stats/sync": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /**
-         * List Servers
-         * @description 列出可用远程服务器配置（不含敏感凭据）。
-         */
-        get: operations["list_servers_api_remote_servers_get"];
+        get?: never;
         put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/remote/list": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
         /**
-         * List Remote Dir
-         * @description 列出远程目录内容。
+         * 同步分区统计
+         * @description 对指定面要素区域内的栅格图层进行同步统计（均值/最值/像元数/标准差）。
          */
-        get: operations["list_remote_dir_api_remote_list_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/remote/test": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Test Remote Connection
-         * @description 测试远程服务器连接是否可用。
-         */
-        get: operations["test_remote_connection_api_remote_test_get"];
-        put?: never;
-        post?: never;
+        post: operations["sync_zonal_stats_analysis_zonal_stats_sync_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4597,6 +4621,312 @@ export interface components {
             /** Deleted */
             deleted: boolean;
         };
+        /** DeploymentBackupInfo */
+        DeploymentBackupInfo: {
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Mtime */
+            mtime: number;
+        };
+        /**
+         * DeploymentCachesGroup
+         * @description caches 组：各类缓存与下载源。
+         */
+        DeploymentCachesGroup: {
+            /**
+             * Cache Dir
+             * @description 通用缓存目录（不存在时自动创建）
+             */
+            cache_dir?: string | null;
+            /**
+             * Static Cache Root
+             * @description 静态物化缓存根
+             */
+            static_cache_root?: string | null;
+            /**
+             * Static Cache Ttl Seconds
+             * @description 静态缓存 TTL 秒（0=永不过期）
+             */
+            static_cache_ttl_seconds?: number | null;
+            /**
+             * Download Source Root
+             * @description 真实数据保存与下载位置
+             */
+            download_source_root?: string | null;
+            /**
+             * Cache Default Ttl Seconds
+             * @description 默认缓存 TTL 秒
+             */
+            cache_default_ttl_seconds?: number | null;
+            /**
+             * Tile Proxy Cache Ttl Seconds
+             * @description 瓦片代理缓存 TTL 秒
+             */
+            tile_proxy_cache_ttl_seconds?: number | null;
+        };
+        /** DeploymentConfigPreviewResponse */
+        DeploymentConfigPreviewResponse: {
+            /** Ok */
+            ok: boolean;
+            /** Errors */
+            errors: string[];
+            /** Warnings */
+            warnings: string[];
+            /** Diff */
+            diff: components["schemas"]["DeploymentPreviewDiffItem"][];
+            /** Restart Level */
+            restart_level: string;
+        };
+        /** DeploymentConfigStatus */
+        DeploymentConfigStatus: {
+            /** Path */
+            path: string;
+            /** Exists */
+            exists: boolean;
+            /** Schema Version */
+            schema_version: number;
+            /** Applied Env Keys */
+            applied_env_keys: string[];
+            /** Keys */
+            keys: components["schemas"]["DeploymentKeyValueStatus"][];
+            /** Backups */
+            backups: components["schemas"]["DeploymentBackupInfo"][];
+            /** Pending Restart */
+            pending_restart: boolean;
+            /** Env Path */
+            env_path: string;
+            /** Sync Env Path */
+            sync_env_path: string;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+        };
+        /**
+         * DeploymentConfigUpdateRequest
+         * @description 部署配置整体写入请求（preview 与 PUT 共用）。
+         */
+        DeploymentConfigUpdateRequest: {
+            /**
+             * Schema Version
+             * @description 配置 schema 版本（当前 1）
+             * @default 1
+             */
+            schema_version: number;
+            data?: components["schemas"]["DeploymentDataGroup"] | null;
+            runtime?: components["schemas"]["DeploymentRuntimeGroup"] | null;
+            caches?: components["schemas"]["DeploymentCachesGroup"] | null;
+            imports?: components["schemas"]["DeploymentImportsGroup"] | null;
+            docker?: components["schemas"]["DeploymentDockerGroup"] | null;
+            /**
+             * Notes
+             * @description 备注（部署说明等）
+             */
+            notes?: string | null;
+        };
+        /** DeploymentConfigUpdateResponse */
+        DeploymentConfigUpdateResponse: {
+            /** Applied Env Keys */
+            applied_env_keys: string[];
+            /** Sync Env Keys */
+            sync_env_keys: string[];
+            /** Config Path */
+            config_path: string;
+            /** Env Path */
+            env_path: string;
+            /** Sync Env Path */
+            sync_env_path?: string | null;
+            /** Restart Level */
+            restart_level: string;
+            /** Pending Restart */
+            pending_restart: boolean;
+            /** Warnings */
+            warnings: string[];
+            /** Backups */
+            backups: string[];
+            /** Message */
+            message: string;
+        };
+        /**
+         * DeploymentDataGroup
+         * @description data 组：数据根与导入导出。空串/None = 未设置（不覆盖）。
+         */
+        DeploymentDataGroup: {
+            /**
+             * Data Root
+             * @description 地理数据根目录（绝对路径，必须已存在）
+             */
+            data_root?: string | null;
+            /**
+             * Output Root
+             * @description 产出结果/报告/分析图表输出根（绝对路径，必须已存在）
+             */
+            output_root?: string | null;
+            /**
+             * Project Backup Root
+             * @description 项目备份根（绝对路径）
+             */
+            project_backup_root?: string | null;
+        };
+        /**
+         * DeploymentDockerGroup
+         * @description docker 组：Docker / Open-Meteo（部分键需全量 restart）。
+         */
+        DeploymentDockerGroup: {
+            /**
+             * Minio Root User
+             * @description MinIO root 用户
+             */
+            minio_root_user?: string | null;
+            /**
+             * Minio Root Password
+             * @description MinIO root 密码（留空保持不变，回显恒脱敏）
+             */
+            minio_root_password?: string | null;
+            /**
+             * Open Meteo Host Port
+             * @description Open-Meteo 宿主端口
+             */
+            open_meteo_host_port?: number | null;
+            /**
+             * Open Meteo Data Volume
+             * @description Open-Meteo 共享 named volume 名
+             */
+            open_meteo_data_volume?: string | null;
+            /**
+             * Open Meteo Sync Domains
+             * @description 同步气象模型（逗号分隔）
+             */
+            open_meteo_sync_domains?: string | null;
+            /**
+             * Open Meteo Sync Variables
+             * @description 同步变量列表（逗号分隔）
+             */
+            open_meteo_sync_variables?: string | null;
+            /**
+             * Open Meteo Local Url
+             * @description Open-Meteo 本地 API URL（http(s)）
+             */
+            open_meteo_local_url?: string | null;
+        };
+        /**
+         * DeploymentImportsGroup
+         * @description imports 组：导入配额（字节）。
+         */
+        DeploymentImportsGroup: {
+            /**
+             * Max Imports Total Bytes
+             * @description 导入永久层总配额
+             */
+            max_imports_total_bytes?: number | null;
+            /**
+             * Imports Soft Reserve Bytes
+             * @description 导入软预留（0=禁用）
+             */
+            imports_soft_reserve_bytes?: number | null;
+        };
+        /**
+         * DeploymentKeyValueStatus
+         * @description 单键三方状态：运行值 / .env 值 / deployment.json 值。
+         */
+        DeploymentKeyValueStatus: {
+            /** Group */
+            group: string;
+            /** Group Label */
+            group_label: string;
+            /** Key */
+            key: string;
+            /** Env Key */
+            env_key: string;
+            /** Kind */
+            kind: string;
+            /** Label */
+            label: string;
+            /** Restart Level */
+            restart_level: string;
+            /** Must Exist */
+            must_exist: boolean;
+            /** Sensitive */
+            sensitive: boolean;
+            /** Double Write Sync */
+            double_write_sync: boolean;
+            /** Runtime Value */
+            runtime_value: string;
+            /** Env Value */
+            env_value: string;
+            /** Config Value */
+            config_value: string;
+            /** Source */
+            source: string;
+            /** Pending */
+            pending: boolean;
+        };
+        /** DeploymentPreviewDiffItem */
+        DeploymentPreviewDiffItem: {
+            /** Group */
+            group: string;
+            /** Key */
+            key: string;
+            /** Env Key */
+            env_key: string;
+            /** Old */
+            old: string;
+            /** New */
+            new: string;
+            /** Restart Level */
+            restart_level: string;
+            /**
+             * Derived
+             * @default false
+             */
+            derived: boolean;
+        };
+        /**
+         * DeploymentRuntimeGroup
+         * @description runtime 组：运行时目录与日志。
+         */
+        DeploymentRuntimeGroup: {
+            /**
+             * Runtime Root
+             * @description 运行时根；未设时派生自 <data_root>/_runtime
+             */
+            runtime_root?: string | null;
+            /**
+             * Workflow State Dir
+             * @description 工作流状态目录
+             */
+            workflow_state_dir?: string | null;
+            /**
+             * Log Dir
+             * @description 后端日志目录
+             */
+            log_dir?: string | null;
+            /**
+             * Log Level
+             * @description DEBUG | INFO | WARNING | ERROR
+             */
+            log_level?: string | null;
+            /**
+             * Result Artifact Dir
+             * @description 工作流产物/工件目录
+             */
+            result_artifact_dir?: string | null;
+            /**
+             * Python Provider Workspace
+             * @description Python 算法工作区
+             */
+            python_provider_workspace?: string | null;
+            /**
+             * Spatialite Db Path
+             * @description SpatiaLite 数据库文件路径
+             */
+            spatialite_db_path?: string | null;
+        };
         /** DiagnosticsReport */
         DiagnosticsReport: {
             /** Status */
@@ -5420,6 +5750,30 @@ export interface components {
              * @default 1
              */
             opacity: number;
+        };
+        /** LayerZonalStats */
+        LayerZonalStats: {
+            /** Layer Id */
+            layer_id: string;
+            /** Layer Name */
+            layer_name: string;
+            /** Mean */
+            mean?: number | null;
+            /** Max */
+            max?: number | null;
+            /** Min */
+            min?: number | null;
+            /** Sum */
+            sum?: number | null;
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /** Std */
+            std?: number | null;
+            /** Unit */
+            unit?: string | null;
         };
         /**
          * LogLevel
@@ -7953,6 +8307,26 @@ export interface components {
             saveback_terminal_plans?: {
                 [key: string]: components["schemas"]["SavebackTerminalPlanPayload"];
             };
+        };
+        /** ZonalStatsSyncRequest */
+        ZonalStatsSyncRequest: {
+            /**
+             * Geojson
+             * @description 面要素 GeoJSON（Feature 或 Geometry）
+             */
+            geojson: {
+                [key: string]: unknown;
+            };
+            /**
+             * Overlay Layer Ids
+             * @description 要统计的栅格图层 ID 列表
+             */
+            overlay_layer_ids: string[];
+        };
+        /** ZonalStatsSyncResponse */
+        ZonalStatsSyncResponse: {
+            /** Results */
+            results: components["schemas"]["LayerZonalStats"][];
         };
     };
     responses: never;
@@ -12875,6 +13249,123 @@ export interface operations {
             };
         };
     };
+    get_deployment_config_config_deployment_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentConfigStatus"];
+                };
+            };
+        };
+    };
+    update_deployment_config_config_deployment_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeploymentConfigUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentConfigUpdateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_deployment_config_config_deployment_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeploymentConfigUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentConfigPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_deployment_config_config_deployment_export_get: {
+        parameters: {
+            query?: {
+                redact?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     restart_backend_service_config_service_restart_post: {
         parameters: {
             query?: never;
@@ -14258,14 +14749,18 @@ export interface operations {
             };
         };
     };
-    list_servers_api_remote_servers_get: {
+    sync_zonal_stats_analysis_zonal_stats_sync_post: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ZonalStatsSyncRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -14273,70 +14768,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    list_remote_dir_api_remote_list_get: {
-        parameters: {
-            query: {
-                /** @description 服务器名称: hpc / win11 / nas 或远程存储 profile id */
-                server: string;
-                /** @description 远程目录路径 */
-                path?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    test_remote_connection_api_remote_test_get: {
-        parameters: {
-            query: {
-                /** @description 服务器名称: hpc / win11 / nas 或远程存储 profile id */
-                server: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ZonalStatsSyncResponse"];
                 };
             };
             /** @description Validation Error */

@@ -67,14 +67,16 @@ export function createMapInteractionModule(
   function applyInteractionMode() {
     const mode = options.getInteractionMode()
     const canvas = options.map.getCanvas?.()
-    // measure 与 select 模式都需要禁用 dragPan：
+    // measure / select / draw 模式都需要禁用 dragPan：
     // - select：点击查询点信息，拖动会与单击冲突
     // - measure：点击打点，拖动会与单击冲突
-    if (mode === 'select' || mode === 'measure') {
+    // - draw：点击打点绘制，拖动会与单击冲突
+    if (mode === 'select' || mode === 'measure' || mode === 'draw') {
       options.map.dragPan.disable()
-      // select 用箭头（非抓手）；measure 用十字准星
+      // select 用箭头（非抓手）；measure/draw 用十字准星
       if (canvas?.style) {
-        canvas.style.cursor = mode === 'select' ? 'default' : 'crosshair'
+        canvas.style.cursor =
+          mode === 'draw' ? 'crosshair' : mode === 'select' ? 'default' : 'crosshair'
       }
     } else {
       options.map.dragPan.enable()

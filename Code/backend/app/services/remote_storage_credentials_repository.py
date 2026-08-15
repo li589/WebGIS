@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-import base64
 import json
 import logging
-import os
 import sqlite3
 from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
 from app.services._sqlite_pool import SQLiteConnectionPool
+from app.services.secret_cipher import decrypt_secret, encrypt_secret
 import contextlib
 
 logger = logging.getLogger(__name__)
@@ -144,50 +143,27 @@ class RemoteStorageCredentialsRepository:
     def _encrypt(self, plaintext: str) -> tuple[str, str]:
         if not plaintext:
             return "", ""
-        if not self._encryption_key:
-            from app.services.effective_config import secrets_encryption_required
+        from app.services.effective_config import secrets_encryption_required
 
-            if secrets_encryption_required():
-                raise RuntimeError(
-                    "Cannot store remote credentials without BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY "
-                    "outside development."
-                )
-            logger.error(
-                "Remote credentials encryption key not set, storing plaintext (development only)"
-            )
-            return plaintext, ""
-        try:
-            from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # type: ignore
-
-            key_bytes = bytes.fromhex(self._encryption_key)
-            iv = os.urandom(12)
-            aesgcm = AESGCM(key_bytes)
-            ct = aesgcm.encrypt(iv, plaintext.encode("utf-8"), None)
-            return base64.b64encode(ct).decode("ascii"), base64.b64encode(iv).decode(
-                "ascii"
-            )
-        except ImportError as exc:
-            from app.services.effective_config import secrets_encryption_required
-
-            if secrets_encryption_required():
-                raise RuntimeError("cryptography package required") from exc
-            return plaintext, ""
+        return encrypt_secret(
+            plaintext,
+            key=self._encryption_key,
+            require_encryption=secrets_encryption_required(),
+            label="remote credentials",
+        )
 
     def _decrypt(self, ciphertext_b64: str, iv_b64: str) -> str:
         if not ciphertext_b64:
             return ""
-        from app.services.effective_config import refuse_empty_iv_outside_development
+        from app.services.effective_config import secrets_encryption_required
 
-        refuse_empty_iv_outside_development(iv_b64)
-        if not self._encryption_key or not iv_b64:
-            return ciphertext_b64
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # type: ignore
-
-        key_bytes = bytes.fromhex(self._encryption_key)
-        iv = base64.b64decode(iv_b64)
-        ct = base64.b64decode(ciphertext_b64)
-        aesgcm = AESGCM(key_bytes)
-        return aesgcm.decrypt(iv, ct, None).decode("utf-8")
+        return decrypt_secret(
+            ciphertext_b64,
+            iv_b64,
+            key=self._encryption_key,
+            require_encryption=secrets_encryption_required(),
+            label="remote credentials",
+        )
 
     def upsert(
         self,

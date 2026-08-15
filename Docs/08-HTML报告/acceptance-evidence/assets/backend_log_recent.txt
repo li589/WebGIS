@@ -1,0 +1,29 @@
+# 后端运行日志（最近 25 条）
+日志文件: I:\Geograph_DataSet\_runtime\logs\backend.log
+生成时间: 2026-08-15 08:15:13
+
+[2026-08-15T00:13:01.757096+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:13:01.760098+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:13:01.769264+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:13:01.775530+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:13:01.778534+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:13:01.781639+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:13:01.788638+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:13:01.813338+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:13:01.820822+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:13:01.875246+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:13:02.725225+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:13:02.820645+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:13:02.966611+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:13:02.969612+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:13:04.131973+00:00] [ERROR] [app.main] Unhandled API exception
+[2026-08-15T00:13:11.371894+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:13:12.341110+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:13:30.778126+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:13:42.337373+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:14:00.775250+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:14:12.334715+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:14:30.791709+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:14:42.349751+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:15:00.770750+00:00] [INFO] [app.main] HTTP request completed
+[2026-08-15T00:15:12.338401+00:00] [INFO] [app.main] HTTP request completed

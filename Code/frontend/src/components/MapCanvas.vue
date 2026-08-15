@@ -5,10 +5,15 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 import { storeToRefs } from 'pinia'
 
 import { AlertTriangle } from './ui/icons'
+import DrawToolbar from './map/draw-toolbar.vue'
+import ZonalStatsCard from './info-panel/ZonalStatsCard.vue'
+import VectorAttributeTable from './info-panel/VectorAttributeTable.vue'
 import { useLayersStore } from '../stores/layers'
 import { useLayerWorkspace, useLayerViewport } from '../stores/layers/selectors'
 import { useUiStore } from '../stores/ui'
+import { useDrawStore } from '../stores/draw-store'
 import { useLogStore } from '../stores/log'
+import { importVectorMultipart } from '../data-manager/core/api'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import type { LayerHotspot } from '../stores/layers/types'
 import { createMapCanvasActionBridge } from './map/map-canvas-action-bridge'
@@ -49,6 +54,7 @@ const layersStore = useLayersStore() // createMapCanvasModuleBundle 需完整 st
 const workspace = useLayerWorkspace()
 const viewport = useLayerViewport()
 const uiStore = useUiStore()
+const drawStore = useDrawStore()
 const logStore = useLogStore()
 const weatherTileManager = useWeatherTileManager()
 const { statusVersion: weatherStatusVersion, activityVersion: weatherActivityVersion } =
@@ -413,6 +419,23 @@ onMounted(async () => {
       completeMeasure: () => uiStore.completeMeasure(),
       setHoverPoint: (p) => uiStore.setHoverPoint(p),
       clearMeasure: () => uiStore.clearMeasure(),
+      getDrawState: () => ({
+        drawMode: drawStore.drawMode,
+        features: drawStore.features,
+        activeVertices: drawStore.activeVertices,
+        isDrawing: drawStore.isDrawing,
+        hoverPoint: drawStore.hoverPoint,
+        selectedFeatureIndex: drawStore.selectedFeatureIndex,
+      }),
+      addDrawVertex: (v) => drawStore.addVertex(v),
+      undoDrawVertex: () => drawStore.undoLastVertex(),
+      setDrawHoverPoint: (p) => drawStore.setHoverPoint(p),
+      addDrawFeature: (f) => drawStore.addFeature(f),
+      clearDrawVertices: () => drawStore.clearActiveVertices(),
+      setDrawDrawingFlag: (v) => {
+        drawStore.isDrawing = v
+      },
+      scheduleDrawPersist: () => drawStore.scheduleDraftPersist(),
     })
     state.resources.basemapModule = moduleBundle.basemapModule
     state.resources.adminBoundaryModule = moduleBundle.adminBoundaryModule
@@ -424,6 +447,7 @@ onMounted(async () => {
     state.resources.selectedLayerFocusModule = moduleBundle.selectedLayerFocusModule
     state.resources.measureModule = moduleBundle.measureModule
     overlayImageModule = moduleBundle.nonWeatherLayerSyncModule.overlayImageModule
+    state.resources.drawModule = moduleBundle.drawModule
     overlayImageModuleRef.value = moduleBundle.nonWeatherLayerSyncModule.overlayImageModule
     moduleBundle.weatherOverlayModule.setupWatchers()
     moduleBundle.nonWeatherLayerSyncModule.setupWatchers()
@@ -432,6 +456,7 @@ onMounted(async () => {
     moduleBundle.mapCanvasRuntimeModule.setupWatchers()
     moduleBundle.selectedLayerFocusModule.setupWatchers()
     moduleBundle.measureModule.bindEvents()
+    moduleBundle.drawModule.bindEvents()
     watch(
       dataWorkspaceHighlight,
       (hl) => {
@@ -489,6 +514,8 @@ onMounted(async () => {
         moduleBundle.mapInteractionModule.applyInteractionMode()
         // 测量模式初始状态同步（mapInteractionModule 已处理 dragPan，measureModule 处理 doubleClickZoom/boxZoom + Canvas show）
         moduleBundle.measureModule.applyMeasureMode()
+        // 绘制模式初始状态同步
+        moduleBundle.drawModule.applyDrawMode()
         presentationModule.revealMap()
       },
       scheduleNavigationThemeSync: () => {
@@ -513,7 +540,102 @@ onBeforeUnmount(() => {
     clearTimeout(locateErrorTimer)
     locateErrorTimer = null
   }
+  window.removeEventListener('draw:save', handleDrawSave)
+  window.removeEventListener('draw:toggle-attr-table', handleToggleAttrTable)
 })
+
+// ── 绘制保存事件处理 ────────────────────────────────────────────────────
+
+const attrTableVisible = ref(false)
+
+function handleToggleAttrTable() {
+  attrTableVisible.value = !attrTableVisible.value
+}
+
+/** 移除草稿图层（保存成功替换为正式图层，或空图层丢弃时） */
+function removeDraftLayerInstance() {
+  const draftInstanceId = drawStore.draftLayerId
+  if (draftInstanceId) {
+    layersStore.removeLayer(draftInstanceId)
+  }
+}
+
+async function handleDrawSave() {
+  const features = drawStore.features
+
+  // S5：空图层丢弃 —— 移除草稿图层与本地草稿，不上传
+  if (features.length === 0) {
+    removeDraftLayerInstance()
+    drawStore.clearDraft()
+    logStore.logOperation('draw-save', '空图层已丢弃')
+    return
+  }
+
+  const geojson: GeoJSON.FeatureCollection = {
+    type: 'FeatureCollection',
+    features: features.map((f) => ({
+      type: 'Feature' as const,
+      geometry: f.geometry,
+      properties: f.properties,
+    })),
+  }
+
+  const jsonStr = JSON.stringify(geojson)
+  const blob = new Blob([jsonStr], { type: 'application/geo+json' })
+  const fileName = drawStore.draftLayerName
+    ? `${drawStore.draftLayerName.replace(/[<>:"/\\|?*]/g, '_')}.geojson`
+    : `绘制图层-${Date.now()}.geojson`
+  const file = new File([blob], fileName, { type: 'application/geo+json' })
+
+  try {
+    logStore.logOperation('draw-save', '正在保存绘制图层…')
+    const imported = await importVectorMultipart([file])
+    if (imported?.layer_id) {
+      // 先移除草稿图层，再添加正式图层（避免空壳残留）
+      removeDraftLayerInstance()
+      layersStore.addImportedVectorLayer(fileName.replace(/\.geojson$/i, ''), geojson, {
+        backendLayerId: imported.layer_id,
+        featureCount: features.length,
+      })
+      // S2：保存成功后必须清除本地草稿，防止刷新恢复时要素重复
+      drawStore.clearDraft()
+      logStore.logOperation('draw-save', `绘制图层已保存 (${features.length} 个要素)`)
+    }
+  } catch (err) {
+    logStore.logOperation('draw-save', `保存失败: ${err}`)
+    console.error('[draw] save failed:', err)
+  }
+}
+
+// 进入绘制模式时自动创建草稿图层；已有未保存草稿则继续编辑（防丢失）
+watch(
+  () => uiStore.interactionMode,
+  (mode) => {
+    if (mode !== 'draw') return
+    const hasActiveDraft = drawStore.draftLayerId || drawStore.features.length > 0
+    if (hasActiveDraft) return
+    const name = drawStore.draftLayerName || `绘制图层-${new Date().toLocaleString('zh-CN')}`
+    const layer = layersStore.addDrawDraftLayer(name)
+    drawStore.beginDrawSession(name)
+    drawStore.setDraftLayerId(layer.instanceId)
+  },
+)
+
+// L3：刷新后恢复未保存草稿 —— 重建草稿图层并回填要素
+{
+  const restored = drawStore.restoreDraft()
+  if (restored && drawStore.features.length > 0) {
+    const name = drawStore.draftLayerName || '恢复的绘制图层'
+    const layer = layersStore.addDrawDraftLayer(name)
+    drawStore.setDraftLayerId(layer.instanceId)
+    logStore.logOperation('draw-restore', `已恢复未保存草稿 (${drawStore.features.length} 个要素)`)
+  } else if (restored === false && drawStore.editingLayerId) {
+    // 编辑已有图层的草稿恢复暂不自动进入，等用户切到 draw 模式
+  }
+}
+
+window.addEventListener('draw:save', handleDrawSave)
+window.addEventListener('draw:toggle-attr-table', handleToggleAttrTable)
 
 // ── 自动定位 ──────────────────────────────────────────────────────────────
 const isLocating = ref(false)
@@ -765,6 +887,15 @@ async function handleLocateMe() {
         <div class="time-indicator-fill"></div>
       </div>
     </div>
+
+    <!-- 绘制工具栏 -->
+    <DrawToolbar />
+
+    <!-- 分区统计卡片 -->
+    <ZonalStatsCard />
+
+    <!-- 矢量属性表 -->
+    <VectorAttributeTable v-if="attrTableVisible" @close="attrTableVisible = false" />
 
     <!-- Hotspot pins -->
     <div class="hotspot-layer" :class="stageDisplayModel.hotspotLayerClass" aria-hidden="true">

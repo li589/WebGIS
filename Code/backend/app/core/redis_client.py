@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 import uuid
 from typing import Any
@@ -146,6 +147,17 @@ else
 end
 """
 
+# Lua：INCR 与 EXPIRE 原子化。分离调用存在两个窗口（B-R1）：
+# 1) INCR 后进程崩溃，EXPIRE 未执行 → 计数器无 TTL 永久滞留，槽位慢性泄漏直至池耗尽；
+# 2) 并发首获时 TTL 只由恰见 current==1 的那个进程补挂。TTL==-1（无 TTL）时统一补挂。
+_ACQUIRE_SLOT_LUA = """
+local current = redis.call("INCR", KEYS[1])
+if current == 1 or redis.call("TTL", KEYS[1]) == -1 then
+    redis.call("EXPIRE", KEYS[1], ARGV[1])
+end
+return current
+"""
+
 
 def acquire_dedup_lock(key: str, ttl_seconds: int = 30) -> str | None:
     """Try to acquire a distributed lock using SET NX.
@@ -241,21 +253,36 @@ def _normalize_api_pool(pool: str | None) -> str:
     return "".join(ch if ch.isalnum() or ch in "-_.:/" else "_" for ch in raw)[:180]
 
 
+def _local_open_meteo_netlocs() -> set[str]:
+    """本地 Open-Meteo 容器 URL 的 host:port 集合（含 ``BACKEND_OPEN_METEO_LOCAL_URL`` 覆盖）。"""
+    from urllib.parse import urlsplit
+
+    from app.weatherengine.provider_ids import OPEN_METEO_LOCAL_URL
+
+    urls = (OPEN_METEO_LOCAL_URL, os.getenv("BACKEND_OPEN_METEO_LOCAL_URL", ""))
+    netlocs: set[str] = set()
+    for url in urls:
+        netloc = urlsplit((url or "").strip()).netloc.lower()
+        if netloc:
+            netlocs.add(netloc)
+    return netlocs
+
+
 def _max_concurrent_for_pool(pool: str) -> int:
     """Open-Meteo（含 base_url / provider id）放宽到 6；其余池保持 2。
 
-    本地 Open-Meteo Docker（http://127.0.0.1:8080）的 base_url 不含
-    "open-meteo" 字符串，需额外匹配 localhost / 127.0.0.1 端口 8080
-    （OPEN_METEO_API_PORT 默认 8080）以及 provider_id 形式的 pool key。
+    本地 Open-Meteo Docker 的 base_url 不含 "open-meteo" 字符串，
+    需从 ``OPEN_METEO_LOCAL_URL`` / ``BACKEND_OPEN_METEO_LOCAL_URL``
+    解析 host:port 比对（部署机改端口后仍生效），另匹配 provider_id
+    形式的 pool key。
     """
     lowered = pool.lower()
     if "open-meteo" in lowered or "openmeteo" in lowered:
         return _MAX_CONCURRENT_API_CALLS_OPEN_METEO
-    # 本地 Docker Open-Meteo API（http://127.0.0.1:8080 或 localhost:8080）
-    # 不限速，放宽并发
-    if (
-        "127.0.0.1:8080" in lowered or "localhost:8080" in lowered
-    ) and "/forecast" in lowered:
+    # 本地 Docker Open-Meteo API 不限速，放宽并发
+    if "forecast" in lowered and any(
+        netloc in lowered for netloc in _local_open_meteo_netlocs()
+    ):
         return _MAX_CONCURRENT_API_CALLS_OPEN_METEO
     # provider_id 形式的 pool key
     if "open-meteo-local" in lowered or "open_meteo_local" in lowered:
@@ -309,10 +336,7 @@ def acquire_api_slot(timeout: float = 30.0, *, pool: str | None = None) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            current = client.incr(redis_key)
-            if current == 1:
-                # 首个调用者设置 TTL，防止 worker 崩溃后计数器卡住
-                client.expire(redis_key, _API_SLOT_TTL)
+            current = client.eval(_ACQUIRE_SLOT_LUA, 1, redis_key, _API_SLOT_TTL)
             if current <= limit:
                 _mark_redis_success()
                 return True

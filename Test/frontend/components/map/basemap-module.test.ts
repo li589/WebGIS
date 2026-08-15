@@ -5,6 +5,7 @@ import { createBasemapModule } from '@/components/map/basemap-module'
 function createMapMock() {
   const sources = new Map<string, any>()
   const layerOrder: string[] = []
+  const layerSpecs = new Map<string, any>()
   const layers = {
     has: (id: string) => layerOrder.includes(id),
     add: (id: string) => {
@@ -34,9 +35,12 @@ function createMapMock() {
       removeSource: (id: string) => {
         sources.delete(id)
       },
-      getStyle: () => ({ layers: layerOrder.map((id) => ({ id })) }),
+      getStyle: () => ({
+        layers: layerOrder.map((id) => layerSpecs.get(id) ?? { id }),
+      }),
       getLayer: (id: string) => (layerOrder.includes(id) ? { id } : undefined),
-      addLayer: (layer: { id: string }, beforeId?: string) => {
+      addLayer: (layer: { id: string; type?: string }, beforeId?: string) => {
+        layerSpecs.set(layer.id, layer)
         insertAt(layer.id, beforeId)
       },
       moveLayer: (id: string, beforeId?: string) => {
@@ -441,5 +445,78 @@ describe('basemap-module', () => {
     expect(layerOrder.indexOf('tile-base-raster')).toBe(1)
     module.switchTileSource('esri-street')
     expect(layerOrder.indexOf('tile-base-raster')).toBe(0)
+  })
+
+  it('keeps base raster above the style background layer on initial add', () => {
+    // 真实 map 初始 style 仅含 background 层；底图必须落在其上，否则被背景色罩暗整图
+    const { layerOrder, map } = createMapMock()
+    map.addLayer({ id: 'background', type: 'background' })
+
+    const module = createBasemapModule({
+      map,
+      getTileConfig: (sourceId) =>
+        sourceId === 'esri-street'
+          ? {
+              id: 'esri-street',
+              label: 'Esri Street',
+              provider: 'Esri',
+              style: 'street',
+              urlTemplate: 'https://example.com/{z}/{x}/{y}.png',
+              saturation: 0,
+              brightness: 0,
+              contrast: 0,
+              isStandard: true,
+              needsBackendTransform: false,
+              authMode: 'none',
+            }
+          : undefined,
+      getCurrentTileSourceId: () => 'esri-street',
+      setTileLoadFailed: vi.fn(),
+      setTileFailedProvider: vi.fn(),
+      setSourceTransitioning: vi.fn(),
+    })
+
+    module.switchTileSource('esri-street')
+
+    expect(layerOrder.indexOf('background')).toBe(0)
+    expect(layerOrder.indexOf('tile-base-raster')).toBe(1)
+  })
+
+  it('lifts a base raster that sank below the background layer', () => {
+    // bug 现场：底图沉到 background 之下被半透明背景色罩暗，画面整体发暗且与氛围遮罩开关无关
+    const { layerOrder, map } = createMapMock()
+    map.addLayer({ id: 'tile-base-raster', type: 'raster' })
+    map.addLayer({ id: 'background', type: 'background' })
+    map.addLayer({ id: 'admin-fill', type: 'fill' })
+
+    const module = createBasemapModule({
+      map,
+      getTileConfig: (sourceId) =>
+        sourceId === 'esri-street'
+          ? {
+              id: 'esri-street',
+              label: 'Esri Street',
+              provider: 'Esri',
+              style: 'street',
+              urlTemplate: 'https://example.com/{z}/{x}/{y}.png',
+              saturation: 0,
+              brightness: 0,
+              contrast: 0,
+              isStandard: true,
+              needsBackendTransform: false,
+              authMode: 'none',
+            }
+          : undefined,
+      getCurrentTileSourceId: () => 'esri-street',
+      setTileLoadFailed: vi.fn(),
+      setTileFailedProvider: vi.fn(),
+      setSourceTransitioning: vi.fn(),
+    })
+
+    expect(layerOrder.indexOf('tile-base-raster')).toBe(0)
+    module.switchTileSource('esri-street')
+    expect(layerOrder.indexOf('background')).toBe(0)
+    expect(layerOrder.indexOf('tile-base-raster')).toBe(1)
+    expect(layerOrder.indexOf('admin-fill')).toBe(2)
   })
 })

@@ -258,6 +258,39 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
     return layer
   }
 
+  /** 创建绘制草稿图层（空 GeoJSON，等待用户绘制要素） */
+  function addDrawDraftLayer(name: string): ActiveLayer {
+    const maxOrder = activeLayers.value.reduce((max, l) => Math.max(max, l.order), 0)
+    const instanceId = genInstanceId()
+    const catalogId = `draw-draft-${instanceId}`
+    const emptyGeojson: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
+    const payload = buildImportedVectorPayload(emptyGeojson, name, {
+      featureCount: 0,
+    })
+    const accent = assignLayerAccent('var(--accent)')
+    const layer: ActiveLayer = {
+      instanceId,
+      catalogId,
+      name: name || `绘制图层-${new Date().toLocaleString('zh-CN')}`,
+      visible: true,
+      opacity: 0.85,
+      order: maxOrder + 1,
+      isAdminBoundary: false,
+      importedVector: payload,
+      dataState: 'imported',
+      accentColor: accent.accentColor,
+      accentGlow: accent.accentGlow,
+      chipTone: accent.chipTone,
+    }
+    activeLayers.value.push(layer)
+    selectedInstanceId.value = layer.instanceId
+    if (sidebarView.value === 'empty' || sidebarView.value === 'library') {
+      sidebarView.value = 'active'
+    }
+    deps.scheduleWorkspacePersist()
+    return layer
+  }
+
   function getImportedVectorGeojson(instanceId: string): GeoJSON.FeatureCollection | null {
     const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
     return layer?.importedVector?.geojson ?? null
@@ -727,6 +760,7 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
     assignLayerAccent,
     addLayer,
     addImportedVectorLayer,
+    addDrawDraftLayer,
     getImportedVectorGeojson,
     updateImportedVectorGeojson,
     setImportedVectorStyle,

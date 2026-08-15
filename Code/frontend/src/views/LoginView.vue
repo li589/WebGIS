@@ -6,6 +6,7 @@ import { safeRedirect } from '../app/router'
 import { useAuthStore } from '../stores/auth'
 import { BRAND } from '../ui-copy'
 import AppButton from '../components/ui/AppButton.vue'
+import BrandMark from '../components/brand/BrandMark.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -184,76 +185,13 @@ async function submit() {
     <div class="login-card">
       <div class="brand-block">
         <div class="brand-mark" aria-hidden="true">
-          <!-- SVG 地球 Logo 替换 Unicode 字符 -->
-          <svg class="mark-svg" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-            <circle
-              cx="24"
-              cy="24"
-              r="20"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              opacity="0.6"
-            />
-            <ellipse
-              cx="24"
-              cy="24"
-              rx="20"
-              ry="6"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1"
-              opacity="0.4"
-            />
-            <ellipse
-              cx="24"
-              cy="16"
-              rx="17"
-              ry="5"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="0.8"
-              opacity="0.3"
-            />
-            <ellipse
-              cx="24"
-              cy="32"
-              rx="17"
-              ry="5"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="0.8"
-              opacity="0.3"
-            />
-            <ellipse
-              cx="24"
-              cy="24"
-              rx="6"
-              ry="20"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="0.8"
-              opacity="0.3"
-            />
-            <ellipse
-              cx="24"
-              cy="24"
-              rx="20"
-              ry="20"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="0.5"
-              opacity="0.2"
-              transform="rotate(30 24 24) scale(1, 0.3)"
-            />
-            <circle cx="24" cy="24" r="3" fill="currentColor" opacity="0.8" />
-          </svg>
-          <span class="mark-ring"></span>
+          <BrandMark :size="56" />
           <span class="mark-ring-outer"></span>
         </div>
         <div class="brand-copy">
           <p class="eyebrow">{{ BRAND.eyebrow }}</p>
           <h1>{{ BRAND.shortName }}</h1>
+          <p class="subtitle-en">{{ BRAND.displayNameEn }}</p>
           <p class="subtitle">登录以访问地图分析、工作流与数据服务</p>
         </div>
       </div>
@@ -578,43 +516,17 @@ async function submit() {
   position: relative;
   width: 56px;
   height: 56px;
-  display: grid;
-  place-items: center;
-  color: var(--accent);
   flex-shrink: 0;
-  background: radial-gradient(circle at 30% 30%, var(--accent-surface), transparent 60%);
-  border-radius: var(--radius-lg);
-}
-
-.mark-svg {
-  width: 44px;
-  height: 44px;
-  animation: mark-spin 50s linear infinite;
-  filter: drop-shadow(0 0 8px var(--accent-border));
-}
-
-@keyframes mark-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.mark-ring {
-  position: absolute;
-  inset: 2px;
-  border-radius: 50%;
-  border: 1px solid var(--border-accent);
-  box-shadow:
-    0 0 24px var(--accent-surface),
-    inset 0 0 12px rgba(90, 213, 255, 0.05);
+  filter: drop-shadow(0 8px 22px rgba(90, 213, 255, 0.22));
 }
 
 .mark-ring-outer {
   position: absolute;
-  inset: -3px;
-  border-radius: 50%;
+  inset: -5px;
+  border-radius: 17px;
   border: 1px solid var(--accent-surface);
   animation: ring-pulse 4s ease-in-out infinite;
+  pointer-events: none;
 }
 
 @keyframes ring-pulse {
@@ -625,7 +537,7 @@ async function submit() {
   }
   50% {
     opacity: 0.7;
-    transform: scale(1.06);
+    transform: scale(1.05);
   }
 }
 
@@ -649,6 +561,15 @@ async function submit() {
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+}
+
+.subtitle-en {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-caption);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-family: var(--font-family-mono, 'IBM Plex Mono', monospace);
 }
 
 .subtitle {

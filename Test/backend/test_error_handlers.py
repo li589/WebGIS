@@ -51,6 +51,28 @@ def test_validation_error_includes_request_id(api_client: TestClient):
     assert isinstance(body["detail"], list)
 
 
+def test_model_validator_value_error_serializes_cleanly(monkeypatch):
+    """Pydantic model_validator 抛 ValueError 时，errors() 的 ctx 携带原始异常对象；
+    422 响应必须可 JSON 序列化（回归：此前 TypeError: Object of type ValueError
+    is not JSON serializable → 500）。"""
+    from app.main import create_app
+
+    monkeypatch.setenv("BACKEND_DATA_ROOT", str(Path(__file__).parent / ".tmp-data"))
+    monkeypatch.setattr(
+        "app.services.effective_config.get_backend_auth_key", lambda: "test-key"
+    )
+    client = TestClient(create_app(), headers={"X-API-Key": "test-key"})
+    resp = client.post(
+        "/import/transform-point",
+        json={"points": [], "source_crs": "EPSG:4326", "target_crs": "EPSG:4326"},
+    )
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["request_id"]
+    assert isinstance(body["detail"], list)
+    assert "points must not be empty" in body["detail"][0]["msg"]
+
+
 def test_internal_error_includes_request_id(api_client: TestClient, monkeypatch):
     from app.main import create_app
 

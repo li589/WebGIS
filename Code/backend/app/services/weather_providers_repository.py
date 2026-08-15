@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from app.services._sqlite_pool import SQLiteConnectionPool
+from app.services.secret_cipher import decrypt_secret, encrypt_secret
 import contextlib
 
 logger = logging.getLogger(__name__)
@@ -95,81 +96,27 @@ class WeatherProvidersRepository:
 
     def _encrypt(self, plaintext: str) -> tuple[str, str]:
         """AES-GCM 加密，返回 (ciphertext_b64, iv_b64)。无 key 时仅 development 允许明文。"""
-        if not self._encryption_key:
-            from app.services.effective_config import secrets_encryption_required
+        from app.services.effective_config import secrets_encryption_required
 
-            if secrets_encryption_required():
-                raise RuntimeError(
-                    "Cannot store weather provider config without BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY "
-                    "outside development."
-                )
-            logger.error(
-                "Weather provider encryption key not set, storing plaintext (development only)"
-            )
-            return plaintext, ""
-        try:
-            from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # type: ignore
-            import base64
-            import os
-
-            key_bytes = bytes.fromhex(self._encryption_key)
-            iv = os.urandom(12)
-            aesgcm = AESGCM(key_bytes)
-            ct = aesgcm.encrypt(iv, plaintext.encode("utf-8"), None)
-            return base64.b64encode(ct).decode("ascii"), base64.b64encode(iv).decode(
-                "ascii"
-            )
-        except ImportError:
-            from app.services.effective_config import secrets_encryption_required
-
-            if secrets_encryption_required():
-                raise RuntimeError(
-                    "cryptography package required to encrypt weather provider config"
-                ) from None
-            logger.warning("cryptography not installed, storing plaintext")
-            return plaintext, ""
-        except RuntimeError:
-            raise
-        except Exception as e:
-            from app.services.effective_config import secrets_encryption_required
-
-            if secrets_encryption_required():
-                raise RuntimeError(
-                    f"Encryption failed for weather provider config: {e}"
-                ) from e
-            logger.error(
-                "Encryption failed for weather provider config, storing plaintext: %s",
-                e,
-            )
-            return plaintext, ""
+        return encrypt_secret(
+            plaintext,
+            key=self._encryption_key,
+            require_encryption=secrets_encryption_required(),
+            label="weather provider config",
+        )
 
     def _decrypt(self, ciphertext_b64: str, iv_b64: str) -> str:
-        # Sprint 3.3: 无 key 时记录 warning，避免静默返回密文。
-        # dev 模式下 _encrypt 存储明文 + 空 IV（secrets_encryption_required()=False），
-        # 此处返回 ciphertext_b64（即明文）以保持 round-trip；
-        # 生产模式下 assert_encryption_policy() 会在启动时拒绝无 key 状态，故此分支不会在生产路径触发。
-        # 与 api_keys_repository / gee_credentials_repository 保持一致的降级策略。
-        from app.services.effective_config import refuse_empty_iv_outside_development
+        # dev 模式下 _encrypt 存储明文 + 空 IV，decrypt_secret 返回密文原样以保持
+        # round-trip；生产模式下 fail-closed（空 IV / 无 key 均拒绝）。
+        from app.services.effective_config import secrets_encryption_required
 
-        refuse_empty_iv_outside_development(iv_b64)
-        if not self._encryption_key or not iv_b64:
-            if ciphertext_b64:
-                logger.warning(
-                    "Decrypting weather provider config without encryption key (dev-mode plaintext round-trip)"
-                )
-            return ciphertext_b64
-        try:
-            from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # type: ignore
-            import base64
-
-            key_bytes = bytes.fromhex(self._encryption_key)
-            iv = base64.b64decode(iv_b64)
-            ct = base64.b64decode(ciphertext_b64)
-            aesgcm = AESGCM(key_bytes)
-            return aesgcm.decrypt(iv, ct, None).decode("utf-8")
-        except Exception as e:
-            logger.error("Decryption failed for weather provider config: %s", e)
-            raise
+        return decrypt_secret(
+            ciphertext_b64,
+            iv_b64,
+            key=self._encryption_key,
+            require_encryption=secrets_encryption_required(),
+            label="weather provider config",
+        )
 
     # ── CRUD ────────────────────────────────────────────────────────────────
 

@@ -12,7 +12,7 @@ import threading
 from typing import Any
 from collections.abc import Iterator
 
-from app.core.config import settings
+from app.core import config
 from app.services.engine_request_registry import (
     get_engine_populator,
     register_engine_populator,
@@ -232,7 +232,7 @@ def _load_module_template_map():
 
     返回 {module_name: RequestTemplateSpec} 字典。若 provider root 不存在或导入失败返回空 dict。
     """
-    provider_root = Path(settings.python_provider_root)
+    provider_root = Path(config.settings.python_provider_root)
     if not provider_root.exists():
         return {}
     try:
@@ -1047,11 +1047,11 @@ def _resolve_data_access_source_uri(source: str) -> str | None:
         alias_resolved = _resolve_provider_dataset_path(normalized)
         if alias_resolved is not None:
             return str(alias_resolved)
-        alias_fallback = Path(settings.data_root) / Path(normalized)
+        alias_fallback = Path(config.settings.data_root) / Path(normalized)
         if alias_fallback.exists():
             return str(alias_fallback)
 
-    fallback_path = Path(settings.data_root) / Path(candidate)
+    fallback_path = Path(config.settings.data_root) / Path(candidate)
     return str(fallback_path) if fallback_path.exists() else None
 
 
@@ -1095,7 +1095,7 @@ def _resolve_scheme_uri(uri: str) -> str | None:
     except Exception:
         return None
 
-    if settings.remote_readiness_probe:
+    if config.settings.remote_readiness_probe:
         try:
             from shared.remote_sources.download import probe_remote_connectivity
 
@@ -1136,7 +1136,7 @@ def _resolve_provider_dataset_path(logical_name: str) -> Path | None:
             getattr(info, "relative_path", None) if info is not None else None
         )
         if relative_path:
-            candidate = Path(settings.data_root) / Path(str(relative_path))
+            candidate = Path(config.settings.data_root) / Path(str(relative_path))
             if candidate.exists():
                 return candidate
 
@@ -1152,7 +1152,7 @@ def _load_provider_dataset_helpers_uncached() -> tuple[Any, Any] | None:
 
     start = time.time()
     logger = logging.getLogger(__name__)
-    provider_root = Path(settings.python_provider_root)
+    provider_root = Path(config.settings.python_provider_root)
     logger.info(
         f"[workflow_request_resolver] _load_provider_dataset_helpers start, root={provider_root}"
     )

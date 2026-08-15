@@ -184,14 +184,15 @@ class TestTransformPoint:
         assert abs(result[1] - 2.0) < 1e-9
 
     def test_empty_points(self, client: TestClient) -> None:
-        """空点列表应返回空结果（不报错）。"""
+        """空点列表被 model_validator 拒绝，应返回 422（含可序列化 detail）。"""
         resp = client.post(
             "/import/transform-point",
             json={"points": [], "source_crs": "EPSG:4326", "target_crs": "EPSG:3857"},
         )
-        assert resp.status_code == 200
-        assert resp.json()["count"] == 0
-        assert resp.json()["points"] == []
+        assert resp.status_code == 422
+        detail = resp.json()["detail"]
+        assert isinstance(detail, list)
+        assert "points must not be empty" in detail[0]["msg"]
 
 
 # ── /import/transform-bounds ───────────────────────────────────────────
@@ -241,12 +242,13 @@ class TestTransformBounds:
         assert s < 39.0
 
     def test_invalid_bounds_length(self, client: TestClient) -> None:
-        """bounds 元素数 != 4 应返回 400。"""
+        """bounds 元素数 != 4 被 Pydantic Field(min/max_length=4) 拒绝 → 422（与 openapi 契约一致）。"""
         resp = client.post(
             "/import/transform-bounds",
             json={"bounds": [1.0, 2.0, 3.0], "source_crs": "EPSG:4326"},
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 422
+        assert isinstance(resp.json()["detail"], list)
 
 
 # ── /import/raster (upload) ────────────────────────────────────────────
