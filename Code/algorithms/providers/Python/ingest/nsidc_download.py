@@ -120,6 +120,14 @@ def format_size(size_bytes: float) -> str:
     return _format_size(size_bytes)
 
 
+def _normalize_iso_date(value: str) -> str:
+    """``YYYYMMDD`` → ``YYYY-MM-DD``（已是 ISO 则原样返回）。"""
+    v = value.strip()
+    if len(v) == 8 and v.isdigit():
+        return f"{v[:4]}-{v[4:6]}-{v[6:8]}"
+    return v
+
+
 def load_credentials(
     username: str = "",
     password: str = "",
@@ -216,6 +224,23 @@ def test_earthdata_auth(username: str, password: str) -> bool:
 # ─── Granule 搜索 ────────────────────────────────────────────────────────────
 
 
+def _version_variants(version: str) -> list[str]:
+    """CMR ``version_id`` 惯例为 3 位零填充（SPL3SMP_E V6 = ``006``）。
+
+    用户/节点模板习惯写 "6"；原样透传会 0 命中且被误判为"该日无数据"。
+    纯数字短版本追加 zfill(3) 变体；非数字（如 GLDAS "2.1"）原样。
+    """
+    v = str(version).strip()
+    if not v:
+        return [v]
+    variants = [v]
+    if v.isdigit() and len(v) < 3:
+        padded = v.zfill(3)
+        if padded != v:
+            variants.append(padded)
+    return variants
+
+
 def search_granules(
     start_date: str,
     end_date: str,
@@ -241,12 +266,18 @@ def search_granules(
     logger.info(
         "搜索 %s V%s，时间范围 %s ~ %s", short_name, version, start_date, end_date
     )
-    if _HAS_EARTHACCESS:
-        return _search_via_earthaccess(
-            start_date, end_date, short_name, version, username, password
-        )
-    logger.warning("未安装 earthaccess，使用 requests + CMR 回退搜索路径。")
-    return _search_via_cmr(start_date, end_date, short_name, version)
+    granules: list[Granule] = []
+    for ver in _version_variants(version):
+        if _HAS_EARTHACCESS:
+            granules = _search_via_earthaccess(
+                start_date, end_date, short_name, ver, username, password
+            )
+        else:
+            logger.warning("未安装 earthaccess，使用 requests + CMR 回退搜索路径。")
+            granules = _search_via_cmr(start_date, end_date, short_name, ver)
+        if granules:
+            break
+    return granules
 
 
 def _search_via_earthaccess(
@@ -536,6 +567,10 @@ def download_smap_range(
     Returns:
         DownloadResult 统计信息
     """
+    # 节点模板/种子 {YYYYMMDD} 占位符展开后为紧凑格式；earthaccess temporal
+    # 与 CMR 查询均要求 ISO 日期，入口统一归一化。
+    start_date = _normalize_iso_date(start_date)
+    end_date = _normalize_iso_date(end_date)
     local_path = Path(local_dir)
     username, password = load_credentials(username, password)
 

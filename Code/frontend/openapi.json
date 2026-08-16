@@ -11535,7 +11535,7 @@
         "properties": {
           "west": {
             "type": "number",
-            "maximum": 180.0,
+            "maximum": 360.0,
             "minimum": -180.0,
             "title": "West"
           },
@@ -11547,7 +11547,7 @@
           },
           "east": {
             "type": "number",
-            "maximum": 180.0,
+            "maximum": 360.0,
             "minimum": -180.0,
             "title": "East"
           },
@@ -16371,6 +16371,11 @@
             "type": "string",
             "title": "Credential Source",
             "default": "none"
+          },
+          "account_count": {
+            "type": "integer",
+            "title": "Account Count",
+            "default": 0
           }
         },
         "type": "object",
@@ -16394,6 +16399,28 @@
         },
         "type": "object",
         "title": "PortalCatalogResponse"
+      },
+      "PortalCredentialAccount": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username",
+            "default": ""
+          },
+          "token": {
+            "type": "string",
+            "title": "Token",
+            "default": ""
+          },
+          "password": {
+            "type": "string",
+            "title": "Password",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "PortalCredentialAccount",
+        "description": "多账号轮换条目（NSMC 等限额门户）。"
       },
       "PortalCredentialPublic": {
         "properties": {
@@ -16465,6 +16492,11 @@
               }
             ],
             "title": "Client Id"
+          },
+          "account_count": {
+            "type": "integer",
+            "title": "Account Count",
+            "default": 0
           }
         },
         "type": "object",
@@ -16581,6 +16613,20 @@
               }
             ],
             "title": "Clear Secrets"
+          },
+          "accounts": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PortalCredentialAccount"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accounts"
           }
         },
         "type": "object",

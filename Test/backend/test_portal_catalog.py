@@ -237,7 +237,17 @@ def test_get_portal_catalog_entry_projection(repo_env, monkeypatch) -> None:
                 "auth_type": "bearer",
                 "token": "tok",
                 "source": "db",
-            }
+            },
+            # 仅多账号、无单凭据：NSMC 限额轮换场景
+            "nsmc": {
+                "enabled": True,
+                "auth_type": "basic",
+                "accounts": [
+                    {"username": "u1", "token": "", "password": "p1"},
+                    {"username": "u2", "token": "t2", "password": ""},
+                ],
+                "source": "db",
+            },
         },
     )
 
@@ -246,8 +256,14 @@ def test_get_portal_catalog_entry_projection(repo_env, monkeypatch) -> None:
     assert "nasa_earthdata" in by_id
     assert by_id["nasa_earthdata"]["has_credentials"] is True
     assert by_id["nasa_earthdata"]["credential_source"] == "db"
+    assert by_id["nasa_earthdata"]["account_count"] == 0
+    # 仅多账号也计为已配置，且投影账号数（cma_nsmc/cma_data 共用 nsmc 键）
+    assert by_id["cma_nsmc"]["has_credentials"] is True
+    assert by_id["cma_nsmc"]["account_count"] == 2
+    assert by_id["cma_data"]["account_count"] == 2
     # 无凭据门户（noaa_nomads）不误报
     assert by_id["noaa_nomads"]["has_credentials"] is False
+    assert by_id["noaa_nomads"]["account_count"] == 0
 
     upsert_portal(
         "noaa_nomads", {"base_url": "https://mirror.example.gov/"}

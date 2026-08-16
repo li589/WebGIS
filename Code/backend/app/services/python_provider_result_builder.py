@@ -73,7 +73,7 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
     },
 }
 
-_BLOCK_MAT_RE = re.compile(r"^\d{8}_\d{8}\.mat$", re.IGNORECASE)
+_SINGLE_DAY_MAT_RE = re.compile(r"^\d{8}\.mat$", re.IGNORECASE)
 
 # MIME types for the three standard algorithm artifact kinds. Indexed by
 # the artifact_name key used in result_dto.artifacts.
@@ -635,6 +635,8 @@ class PythonProviderResultBuilder:
                     payload=payload,
                     product=product,
                     index=index,
+                    time_start=time_start,
+                    time_end=time_end,
                 )
             return None
 
@@ -652,6 +654,16 @@ class PythonProviderResultBuilder:
         if config.get("from_block_dir"):
             if not local_path.is_dir():
                 return None
+            # 目录含单日 YYYYMMDD.mat（omega_avg_daily 逐日产品）→ 步长 1d，
+            # 否则 8 日块（Omega-SF 动态链）→ 8d。
+            native_step = (
+                "1d"
+                if any(
+                    path.is_file() and _SINGLE_DAY_MAT_RE.match(path.name)
+                    for path in local_path.iterdir()
+                )
+                else "8d"
+            )
             try:
                 from app.data_io.services.raster_timeseries import (
                     upsert_block_dir_timeseries,
@@ -664,7 +676,7 @@ class PythonProviderResultBuilder:
                     run_id=run_id,
                     grid_preset=str(config["grid_preset"]),
                     palette=str(config.get("palette") or "cividis"),
-                    native_step="8d",
+                    native_step=native_step,
                     time_start=time_start,
                     time_end=time_end,
                     canonical_viirs8_only=canonical_viirs8_only,
@@ -707,7 +719,7 @@ class PythonProviderResultBuilder:
                 notes=[
                     f"product={product_type}",
                     f"overlay={overlay_id}",
-                    "native_step=8d",
+                    f"native_step={native_step}",
                 ],
             )
             return WorkflowResultReference(
@@ -822,6 +834,8 @@ class PythonProviderResultBuilder:
         payload: WorkflowSubmitRequest,
         product: dict[str, Any],
         index: int,
+        time_start: str | None = None,
+        time_end: str | None = None,
     ) -> WorkflowResultReference | None:
         """Register a GeoTIFF product using native CRS/bounds (no ease2 preset)."""
         uri = str(
@@ -843,16 +857,15 @@ class PythonProviderResultBuilder:
             tags.get("layer") or product.get("name") or local_path.stem or "GIS"
         )[:64]
         try:
-            from app.data_io.services.raster_register import (
-                confirm_imported_raster_crs,
-                register_geotiff_as_imported,
-            )
+            from app.data_io.services.raster_commit import commit_algorithm_geotiff
 
-            registered = register_geotiff_as_imported(
+            registered = commit_algorithm_geotiff(
                 local_path,
-                source_filename=f"{run_id[-8:]}_{local_path.name}",
                 layer_id=f"imported-gis-{run_id[-8:]}-{index:02d}",
-                replace_existing=True,
+                source_name=f"{run_id[-8:]}_{local_path.name}",
+                conflict_policy="overwrite",
+                time_start=time_start,
+                time_end=time_end,
                 extra_meta={
                     "analysis_product": True,
                     "variable_id": variable,
@@ -860,25 +873,6 @@ class PythonProviderResultBuilder:
                     "module": str(tags.get("module") or ""),
                 },
             )
-            crs_for_confirm = str(registered.get("source_crs") or "").strip()
-            if crs_for_confirm and (
-                registered.get("needs_confirm")
-                or crs_for_confirm not in {"EPSG:4326", "EPSG:4490"}
-            ):
-                try:
-                    confirmed = confirm_imported_raster_crs(
-                        str(registered["layer_id"]),
-                        source_crs=crs_for_confirm,
-                    )
-                    registered = {**registered, **confirmed, "needs_confirm": False}
-                except Exception as exc:
-                    registered["auto_confirm_error"] = str(exc)
-                    logger.warning(
-                        "Generic raster auto-confirm failed overlay=%s crs=%s: %s",
-                        registered.get("layer_id"),
-                        crs_for_confirm,
-                        exc,
-                    )
         except Exception:
             logger.exception(
                 "Failed to publish generic raster map_layer path=%s",
@@ -932,22 +926,13 @@ class PythonProviderResultBuilder:
                     "cog_bbox": cog_bbox,
                     "product_tag": label,
                     "source_path": str(local_path),
+                    "time_list": registered.get("time_list") or [],
+                    "default_time": registered.get("default_time"),
+                    "native_step": registered.get("native_step"),
                 },
             },
             updated_at=requested_at,
         )
-
-    @staticmethod
-    def _latest_block_mat(directory: Path) -> Path | None:
-        """Pick the newest YYYYMMDD_YYYYMMDD.mat under a block output dir."""
-        candidates = [
-            path
-            for path in directory.iterdir()
-            if path.is_file() and _BLOCK_MAT_RE.match(path.name)
-        ]
-        if not candidates:
-            return None
-        return sorted(candidates, key=lambda p: p.name)[-1]
 
     # ------------------------------------------------------------------
     # URI → local path resolution

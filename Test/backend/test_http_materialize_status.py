@@ -143,7 +143,7 @@ def test_http_download_resumes_after_mid_stream_failure(
 
     requests_seen: list[dict] = []
 
-    def fake_urlopen(req, timeout=None):
+    def fake_urlopen(req, timeout=None, context=None):
         headers = {k.lower(): v for k, v in req.header_items()}
         requests_seen.append(headers)
         if len(requests_seen) == 1:
@@ -178,7 +178,7 @@ def test_http_download_full_rewrite_when_server_ignores_range(
 
     requests_seen: list[dict] = []
 
-    def fake_urlopen(req, timeout=None):
+    def fake_urlopen(req, timeout=None, context=None):
         headers = {k.lower(): v for k, v in req.header_items()}
         requests_seen.append(headers)
         if len(requests_seen) == 1:
@@ -206,7 +206,7 @@ def test_http_download_terminal_4xx_fails_fast(
 
     calls: list[int] = []
 
-    def fake_urlopen(req, timeout=None):
+    def fake_urlopen(req, timeout=None, context=None):
         calls.append(1)
         raise HTTPError(req.full_url, 404, "Not Found", None, None)
 
@@ -226,7 +226,7 @@ def test_http_download_5xx_retries_then_raises_connection_error(
 
     calls: list[int] = []
 
-    def fake_urlopen(req, timeout=None):
+    def fake_urlopen(req, timeout=None, context=None):
         calls.append(1)
         raise HTTPError(req.full_url, 503, "Service Unavailable", None, None)
 

@@ -14,6 +14,7 @@ import { useLayerWorkspace, useWorkflowRun } from '../stores/layers/selectors'
 import { useLayersStore } from '../stores/layers'
 import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
+import { useDrawStore } from '../stores/draw-store'
 import { useOverlaySymbologyStore } from '../stores/overlay-symbology'
 import { useWeatherSourcePrefsStore } from '../stores/weather-source-prefs'
 import { isWeatherLayerUnsupportedByModel } from '../stores/weather-tile-manager'
@@ -45,6 +46,7 @@ const workflowRun = useWorkflowRun()
 const layersStore = useLayersStore() // 内部 composable 需完整 store 实例
 const uiStore = useUiStore()
 const logStore = useLogStore()
+const drawStore = useDrawStore()
 const overlaySymbologyStore = useOverlaySymbologyStore()
 const weatherSourcePrefs = useWeatherSourcePrefsStore()
 const weatherEngine = useWeatherEngineStore()
@@ -237,7 +239,21 @@ function removeAllLayers() {
 function removeItem(instanceId: string, event: MouseEvent) {
   event.stopPropagation()
   const layer = activeLayersDisplay.value.find((l) => l.instanceId === instanceId)
+  const isActiveDrawLayer =
+    drawStore.draftLayerId === instanceId || drawStore.editingLayerId === instanceId
+  const hasUnsaved = drawStore.features.length > 0
+  // 移除当前绘制/编辑图层且含未保存要素时确认，避免误删草稿
+  if (isActiveDrawLayer && hasUnsaved) {
+    const ok = window.confirm(
+      `「${layer?.name ?? instanceId}」是当前绘制图层且包含 ${hasUnsaved ? drawStore.features.length : 0} 个未保存要素，移除后将丢失这些要素。确定移除并退出绘制模式？`,
+    )
+    if (!ok) return
+  }
   workspace.removeLayer(instanceId)
+  // 移除的是当前绘制/编辑图层时，退出绘制模式（孤儿草稿安全网会随之清空绘制 store）
+  if (isActiveDrawLayer && uiStore.interactionMode === 'draw') {
+    uiStore.setInteractionMode('move')
+  }
   logStore.logOperation('layer-remove', `移除图层「${layer?.name ?? instanceId}」`)
 }
 

@@ -316,6 +316,7 @@ class PortalCredentialPublic(BaseModel):
     use_for_nsidc: bool | None = None
     use_earthdata: bool | None = None
     client_id: str | None = None
+    account_count: int = 0
 
 
 class DataSourceConfig(BaseModel):
@@ -682,6 +683,16 @@ class PortalCredentialsMapResponse(BaseModel):
     portal_credentials: dict[str, PortalCredentialPublic]
 
 
+class PortalCredentialAccount(BaseModel):
+    """多账号轮换条目（NSMC 等限额门户）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    username: str = ""
+    token: str = ""
+    password: str = ""
+
+
 class PortalCredentialUpsertRequest(BaseModel):
     """PUT /config/data-source/portal-credentials/{portal_id} body."""
 
@@ -697,6 +708,7 @@ class PortalCredentialUpsertRequest(BaseModel):
     use_for_nsidc: bool | None = None
     use_earthdata: bool | None = None
     clear_secrets: bool | None = None
+    accounts: list[PortalCredentialAccount] | None = None
 
 
 class PortalDef(BaseModel):
@@ -735,6 +747,7 @@ class PortalCatalogEntry(PortalDef):
     effective_alt_url: str | None = None
     has_credentials: bool = False
     credential_source: str = "none"
+    account_count: int = 0
 
 
 class PortalCatalogResponse(BaseModel):

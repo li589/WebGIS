@@ -488,18 +488,25 @@ def _entry_has_secret(entry: dict[str, Any]) -> bool:
     return bool(
         str(entry.get("token") or entry.get("access_token") or "").strip()
         or str(entry.get("password") or entry.get("secret") or "").strip()
+        or _entry_account_count(entry) > 0
     )
+
+
+def _entry_account_count(entry: dict[str, Any]) -> int:
+    accounts = entry.get("accounts")
+    return len(accounts) if isinstance(accounts, list) else 0
 
 
 def _credential_status(
     defn: PortalDef, creds: dict[str, dict[str, Any]]
-) -> tuple[bool, str]:
+) -> tuple[bool, str, int]:
+    """返回 (has_credentials, credential_source, account_count)。"""
     entry = creds.get(defn.cred_key())
     if not isinstance(entry, dict) or entry.get("enabled") is False:
-        return False, "none"
+        return False, "none", 0
     if not _entry_has_secret(entry):
-        return False, str(entry.get("source") or "none")
-    return True, str(entry.get("source") or "db")
+        return False, str(entry.get("source") or "none"), 0
+    return True, str(entry.get("source") or "db"), _entry_account_count(entry)
 
 
 # ── 目录载荷（API 投影） ──────────────────────────────────────────────────────
@@ -522,9 +529,10 @@ def get_portal_catalog() -> list[dict[str, Any]]:
         entry["base_url_overridden"] = overridden
         alt_override = alts.get(pid)
         entry["effective_alt_url"] = alt_override or defn.alt_url
-        has_creds, cred_source = _credential_status(defn, creds)
+        has_creds, cred_source, account_count = _credential_status(defn, creds)
         entry["has_credentials"] = has_creds
         entry["credential_source"] = cred_source
+        entry["account_count"] = account_count
         entries.append(entry)
     entries.sort(
         key=lambda e: (0 if e["region"] == "international" else 1, e["portal_id"])
@@ -660,9 +668,12 @@ def upsert_portal(portal_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     entry = defn.to_public()
     entry["effective_base_url"] = base_url
     entry["base_url_overridden"] = False
-    has_creds, cred_source = _credential_status(defn, _runtime_credentials(repo))
+    has_creds, cred_source, account_count = _credential_status(
+        defn, _runtime_credentials(repo)
+    )
     entry["has_credentials"] = has_creds
     entry["credential_source"] = cred_source
+    entry["account_count"] = account_count
     return entry
 
 

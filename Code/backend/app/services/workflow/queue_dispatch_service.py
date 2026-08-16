@@ -106,6 +106,15 @@ class QueueDispatchService:
                     continue
                 if current_run.status != ExecutionStatus.queued:
                     continue
+                # 已派发到 Celery 的 run（task_id 已写入 executor_metadata）状态仍为
+                # queued（队列等待语义）。本服务只负责唤醒"因池/用户配额排队、
+                # 尚未派发"的 run；重派发已在队列中的 run 会每个 Beat 周期（*/2min）
+                # 重复投递同一消息，heavy 队列积压时会被复制数十次。孤儿恢复由
+                # 启动清理 cleanup_stale_workflow_runs（live task 交叉校验）兜底。
+                if str(
+                    (current_run.executor_metadata or {}).get("task_id") or ""
+                ).strip():
+                    continue
                 accepted_status = current_run.model_copy(
                     update={
                         "status": ExecutionStatus.accepted,

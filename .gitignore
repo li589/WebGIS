@@ -103,6 +103,7 @@ Tools/reports/data_production_e2e_*
 /tmp_*.txt
 /tmp_*.json
 /temp_wf_*.json
+/_tmp_*
 
 # Local Windows env probe / repair scratch (machine-specific, not part of the project)
 /_env_*.bat

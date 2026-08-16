@@ -175,10 +175,50 @@ def _describe_python_provider_resolution_impl(
     }
 
 
+def _describe_merged_group_readiness(descriptor: Any) -> dict[str, Any]:
+    """合并组虚拟条目的就绪聚合：任一成员 ready 即 ready。
+
+    合并组自身不对应实际数据资产（overlay_registry 中无对应 spec），
+    就绪状态应由成员图层的 readiness 聚合得出。
+    """
+    notes = list(descriptor.run_readiness_notes)
+    ready_members: list[str] = []
+    blocked_members: list[str] = []
+    for member_id in descriptor.members:
+        member = get_layer_descriptor(member_id)
+        if member is None or member.is_merged_group:
+            blocked_members.append(member_id)
+            continue
+        member_result = describe_layer_run_readiness(member_id)
+        member_status = (member_result or {}).get("run_readiness", "blocked")
+        if member_status == "ready":
+            ready_members.append(member_id)
+        else:
+            blocked_members.append(member_id)
+
+    total = len(descriptor.members)
+    readiness = "ready" if ready_members else "blocked"
+    if ready_members:
+        summary = f"合并组虚拟条目：{len(ready_members)}/{total} 个成员源就绪"
+    else:
+        summary = f"合并组虚拟条目：全部 {total} 个成员源未就绪"
+    if blocked_members:
+        notes.append(f"未就绪成员：{', '.join(blocked_members)}")
+    return {
+        "run_readiness": readiness,
+        "run_readiness_summary": summary,
+        "run_readiness_notes": notes,
+        "unresolved_default_datasets": [],
+    }
+
+
 def describe_layer_run_readiness(layer_id: str) -> dict[str, Any] | None:
     descriptor = get_layer_descriptor(layer_id)
     if descriptor is None:
         return None
+
+    if descriptor.is_merged_group and descriptor.members:
+        return _describe_merged_group_readiness(descriptor)
 
     readiness = "ready"
     notes: list[str] = list(descriptor.run_readiness_notes)
@@ -553,7 +593,17 @@ def _flatten_ui_workflow_definition(
     existing_params = algorithm_request.get("algorithm_params")
     if not isinstance(existing_params, dict):
         existing_params = {}
-    if canvas_params:
+
+    # Multi-module graph: keep executable definition; only enrich request fields.
+    # 数据获取节点（download/*）承载拉取参数（server_type/remote_path/日期过滤），
+    # 展平会丢弃这些参数并把请求错配为层描述符默认 module（如 fy_tb_nas_read
+    # 跳过预处理直连 map_layer 的单 ssh_sync 形态）；含任一即保留整图执行。
+    executable_types = _executable_node_types(nodes)
+    keep_graph = len(executable_types) >= 2 or any(
+        t.startswith("download/") for t in executable_types
+    )
+
+    if canvas_params and not keep_graph:
         merged = dict(canvas_params)
         merged.update(existing_params)
         existing_params = merged
@@ -567,14 +617,10 @@ def _flatten_ui_workflow_definition(
             "bbox", [bbox.west, bbox.south, bbox.east, bbox.north]
         )
 
-    # Multi-module graph: keep executable definition; only enrich request fields.
-    # 数据获取节点（download/*）承载拉取参数（server_type/remote_path/日期过滤），
-    # 展平会丢弃这些参数并把请求错配为层描述符默认 module（如 fy_tb_nas_read
-    # 跳过预处理直连 map_layer 的单 ssh_sync 形态）；含任一即保留整图执行。
-    executable_types = _executable_node_types(nodes)
-    if len(executable_types) >= 2 or any(
-        t.startswith("download/") for t in executable_types
-    ):
+    # 图执行路径：请求级 algorithm_params 仅保留用户覆盖（首模块提取已在上方
+    # 剥离），节点级 properties.algorithm_params 由算法侧 executor 以节点基底
+    # 合并，避免首模块参数（如 fy_daily 的 orbit_mode）泄漏进其余模块。
+    if keep_graph:
         enriched = dict(algorithm_request)
         enriched["datasource_selection"] = existing_ds
         enriched["algorithm_params"] = existing_params
@@ -659,6 +705,27 @@ def _compile_workflow_seed(workflow_name: str) -> dict[str, Any] | None:
     except Exception:
         logger.debug("Failed to compile workflow seed", exc_info=True)
         return None
+
+
+def _seed_uses_graph_execution(workflow_name: str) -> bool:
+    """判断种子是否按图执行（多模块或含 download/* 节点）。
+
+    图执行种子的节点级 properties.algorithm_params 由算法侧 executor 以节点
+    基底合并；请求级不应再注入首模块提取，否则首模块参数泄漏进其余模块。
+    """
+    try:
+        from app.services.workflow_definition_service import get_definition
+
+        definition = get_definition(workflow_name)
+        if not definition:
+            return False
+        executable_types = _executable_node_types(definition.get("nodes"))
+        return len(executable_types) >= 2 or any(
+            t.startswith("download/") for t in executable_types
+        )
+    except Exception:
+        logger.debug("Failed to inspect seed graph shape", exc_info=True)
+        return False
 
 
 def _extract_algorithm_params_from_seed(workflow_name: str) -> dict[str, Any] | None:
@@ -870,17 +937,21 @@ def _populate_python_provider_request(
     # 如果图层有 workflow_name，从种子中提取 algorithm_params（如 tb_source=SMAP）
     # 直接合并到 algorithm_request，避免设置 workflow_definition 导致 executor
     # 处理 graph 时出现 datasource_selection 多重绑定问题。
+    # 图执行种子（多模块/含下载节点）例外：节点级 params 由算法侧 executor 以
+    # 节点基底合并，请求级注入首模块提取会造成跨模块参数泄漏。
     descriptor_workflow = getattr(descriptor, "workflow_name", None)
     effective_module = descriptor_module or algorithm_request.get("module_name")
     if descriptor_workflow:
-        seed_params = _extract_algorithm_params_from_seed(str(descriptor_workflow))
-        if seed_params is not None:
-            existing_params = algorithm_request.get("algorithm_params")
-            if not isinstance(existing_params, dict):
-                existing_params = {}
-                algorithm_request["algorithm_params"] = existing_params
-            for k, v in seed_params.items():
-                existing_params.setdefault(k, v)
+        seed_graph_execution = _seed_uses_graph_execution(str(descriptor_workflow))
+        if not seed_graph_execution:
+            seed_params = _extract_algorithm_params_from_seed(str(descriptor_workflow))
+            if seed_params is not None:
+                existing_params = algorithm_request.get("algorithm_params")
+                if not isinstance(existing_params, dict):
+                    existing_params = {}
+                    algorithm_request["algorithm_params"] = existing_params
+                for k, v in seed_params.items():
+                    existing_params.setdefault(k, v)
         if effective_module:
             algorithm_request.setdefault("module_name", effective_module)
         algorithm_request.setdefault(

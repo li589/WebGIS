@@ -35,6 +35,8 @@ const layersStore = useLayersStore()
 const loading = ref(false)
 const error = ref<string | null>(null)
 const stats = ref<ZonalStatItem[]>([])
+// 竞态防护：仅采纳最新一次请求的结果，避免慢响应覆盖新结果
+let statsSeq = 0
 
 const visible = computed(() => {
   return (
@@ -56,13 +58,17 @@ const overlayLayers = computed(() => {
 
 async function fetchStats() {
   const feature = lastPolygonFeature.value
-  if (!feature) return
+  if (!feature) {
+    stats.value = []
+    return
+  }
+  const seq = ++statsSeq
 
   const overlayLayerIds = overlayLayers.value.map(
     (l) => l.importedRaster?.overlayLayerId ?? l.catalogId,
   )
   if (overlayLayerIds.length === 0) {
-    error.value = '没有可统计的栅格图层'
+    if (seq === statsSeq) error.value = '没有可统计的栅格图层'
     return
   }
 
@@ -92,18 +98,23 @@ async function fetchStats() {
     }
 
     const data = (await resp.json()) as ZonalStatsResponse
-    stats.value = data.results ?? []
+    if (seq === statsSeq) stats.value = data.results ?? []
   } catch (err) {
-    error.value = `统计失败: ${err instanceof Error ? err.message : String(err)}`
-    stats.value = []
+    if (seq === statsSeq) {
+      error.value = `统计失败: ${err instanceof Error ? err.message : String(err)}`
+      stats.value = []
+    }
   } finally {
-    loading.value = false
+    if (seq === statsSeq) loading.value = false
   }
 }
 
-// 当最后一个面要素变化时自动触发统计
+// 当最后一个面要素几何变化时自动触发统计（覆盖删除/替换/新增）
 watch(
-  () => drawStore.features.length,
+  () => {
+    const f = lastPolygonFeature.value
+    return f ? JSON.stringify(f.geometry) : null
+  },
   () => {
     if (visible.value) {
       fetchStats()

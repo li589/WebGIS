@@ -9,8 +9,10 @@
  *   - request: CDS request JSON（textarea）
  *   - target_dir: 本地目标目录（默认 workspace/data_access/cds）
  *   - use: 下载路径 auto / cdsapi / legacy
- *   - api_key: CDS Personal Access Key（留空走门户/环境变量）
  *   - filename / direct_url / force
+ *
+ * 凭据不经节点参数下发（防明文落库），统一走门户 ecmwf_cds /
+ * BACKEND_CDS_API_KEY，表单内仅展示凭据状态提示。
  *
  * 附加能力：
  *   - ecmwf_cds 门户凭据状态提示
@@ -46,7 +48,6 @@ const DEFAULTS = {
   request: '',
   target_dir: '',
   use: 'auto',
-  api_key: '',
   filename: '',
   direct_url: '',
   force: false,
@@ -166,31 +167,21 @@ function update(key: string, value: unknown) {
       <span v-else class="field-hint">CDS API request 体（变量/日期/范围/格式）</span>
     </div>
 
-    <!-- legacy 直链 + API Key -->
-    <div class="form-row two-col">
-      <div class="col">
-        <label class="form-label">legacy 直链 direct_url</label>
-        <input
-          type="text"
-          class="form-input"
-          :value="String(form.direct_url ?? '')"
-          placeholder="https://…（use=legacy 时必填）"
-          :readonly="readonly"
-          @input="update('direct_url', ($event.target as HTMLInputElement).value)"
-        />
-        <span v-if="errors.direct_url" class="field-error">{{ errors.direct_url }}</span>
-      </div>
-      <div class="col">
-        <label class="form-label">API Key（可选）</label>
-        <input
-          type="password"
-          class="form-input"
-          :value="String(form.api_key ?? '')"
-          placeholder="留空走门户 / BACKEND_CDS_API_KEY"
-          :readonly="readonly"
-          @input="update('api_key', ($event.target as HTMLInputElement).value)"
-        />
-      </div>
+    <!-- legacy 直链 -->
+    <div class="form-row">
+      <label class="form-label">legacy 直链 direct_url</label>
+      <input
+        type="text"
+        class="form-input"
+        :value="String(form.direct_url ?? '')"
+        placeholder="https://…（use=legacy 时必填）"
+        :readonly="readonly"
+        @input="update('direct_url', ($event.target as HTMLInputElement).value)"
+      />
+      <span v-if="errors.direct_url" class="field-error">{{ errors.direct_url }}</span>
+      <span v-else class="field-hint"
+        >凭据走门户 ecmwf_cds / BACKEND_CDS_API_KEY，不在节点参数中填写</span
+      >
     </div>
 
     <!-- 目标目录 + 文件名 -->

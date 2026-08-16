@@ -4,6 +4,7 @@
  *
  * auth_type 决定字段集：bearer/token → token；basic → username+password；header → token+token_header。
  * 留空 = 保留已存值；「清除凭据」整体删除。use_for_nsidc/use_earthdata 仅 Earthdata/NSIDC 体系显示。
+ * NSMC 系门户额外支持多账号轮换（限额场景）：保存时整表覆盖已存账号列表，留空不动。
  */
 
 import { computed, reactive, ref, watch } from 'vue'
@@ -36,6 +37,17 @@ const form = reactive({
   use_earthdata: false,
 })
 
+interface AccountRow {
+  username: string
+  token: string
+  password: string
+}
+
+const accountRows = ref<AccountRow[]>([])
+/** 脏标记：用户编辑过账号表才随保存覆盖（未触碰保持已存列表）。 */
+const accountRowsDirty = ref(false)
+const storedAccountCount = ref(0)
+
 const saving = ref(false)
 const errMsg = ref('')
 const okMsg = ref('')
@@ -45,6 +57,11 @@ const isEarthdataFamily = computed(
   () =>
     props.portal?.credential_profile === 'earthdata' ||
     props.portal?.credential_profile === 'nsidc',
+)
+
+/** NSMC 系门户：支持多账号轮换（单账号限流场景）。 */
+const supportsMultiAccount = computed(
+  () => props.portal?.credential_profile === 'nsmc' || props.portal?.portal_id === 'nsmc',
 )
 
 watch(
@@ -61,6 +78,9 @@ watch(
     form.token_header = props.portal.token_header || ''
     form.use_for_nsidc = false
     form.use_earthdata = false
+    accountRows.value = []
+    accountRowsDirty.value = false
+    storedAccountCount.value = 0
     void prefillFromStored()
   },
 )
@@ -82,15 +102,46 @@ async function prefillFromStored() {
     if (stored.username) form.username = stored.username
     if (stored.use_for_nsidc != null) form.use_for_nsidc = stored.use_for_nsidc
     if (stored.use_earthdata != null) form.use_earthdata = stored.use_earthdata
+    storedAccountCount.value = stored.account_count ?? 0
   } catch {
     // 预填失败不打断对话框，保持默认值
   }
+}
+
+function addAccountRow() {
+  accountRows.value.push({ username: '', token: '', password: '' })
+  accountRowsDirty.value = true
+}
+
+function removeAccountRow(i: number) {
+  accountRows.value.splice(i, 1)
+  accountRowsDirty.value = true
+}
+
+function markAccountDirty() {
+  accountRowsDirty.value = true
+}
+
+/** 有效账号行：token 或（用户名+密码）至少其一；返回 null 表示存在无效行。 */
+function validAccountRows(): AccountRow[] | null {
+  const rows = accountRows.value.map((r) => ({
+    username: r.username.trim(),
+    token: r.token.trim(),
+    password: r.password.trim(),
+  }))
+  if (rows.some((r) => !r.token && !(r.username && r.password))) return null
+  return rows
 }
 
 async function save() {
   if (!props.portal) return
   errMsg.value = ''
   okMsg.value = ''
+  const accounts = validAccountRows()
+  if (accounts === null) {
+    errMsg.value = '多账号行须至少填写 token 或「用户名+密码」其一'
+    return
+  }
   saving.value = true
   try {
     await upsertPortalCredential(props.portal.portal_id, {
@@ -102,6 +153,8 @@ async function save() {
       token_header: form.token_header.trim() || null,
       use_for_nsidc: isEarthdataFamily.value ? form.use_for_nsidc : null,
       use_earthdata: isEarthdataFamily.value ? form.use_earthdata : null,
+      // 未触碰不动已存账号；编辑过则整表覆盖（显式删完=清空多账号）
+      accounts: supportsMultiAccount.value && accountRowsDirty.value ? accounts : null,
     })
     okMsg.value = '凭据已保存（加密存储于后端）'
     emit('saved')
@@ -190,6 +243,55 @@ async function clearCredentials() {
               </label>
             </template>
           </div>
+
+          <div v-if="supportsMultiAccount" class="pc-accounts">
+            <div class="pc-accounts-head">
+              <span class="pc-accounts-title"> 多账号轮换（单账号下载限额时自动切换） </span>
+              <button type="button" class="btn pc-add-acc" @click="addAccountRow">添加账号</button>
+            </div>
+            <p class="pc-accounts-hint">
+              已存 {{ storedAccountCount }} 个账号。每行填 token 或「用户名+密码」其一；
+              保存时整表覆盖（清空并删完全部行 = 移除多账号）。下载节点遇 401/403/429
+              自动冷却该账号并切换下一个。
+            </p>
+            <div v-for="(row, i) in accountRows" :key="i" class="pc-account-row">
+              <input
+                v-model="row.username"
+                class="acc-user"
+                placeholder="用户名"
+                autocomplete="off"
+                @input="markAccountDirty"
+              />
+              <input
+                v-model="row.password"
+                class="acc-pass"
+                type="password"
+                placeholder="密码"
+                autocomplete="new-password"
+                @input="markAccountDirty"
+              />
+              <input
+                v-model="row.token"
+                class="acc-token"
+                type="password"
+                placeholder="Token（可选）"
+                autocomplete="new-password"
+                @input="markAccountDirty"
+              />
+              <button
+                type="button"
+                class="pc-acc-del"
+                :aria-label="`删除账号 ${i + 1}`"
+                @click="removeAccountRow(i)"
+              >
+                ×
+              </button>
+            </div>
+            <p v-if="accountRows.length === 0" class="pc-accounts-empty">
+              暂无新账号行——不添加则保持已存账号列表不变。
+            </p>
+          </div>
+
           <p v-if="okMsg" class="pc-ok">{{ okMsg }}</p>
           <p v-if="errMsg" class="form-error">{{ errMsg }}</p>
         </div>
@@ -276,6 +378,70 @@ async function clearCredentials() {
 .pc-ok {
   margin: 0;
   color: var(--success);
+  font-size: var(--font-size-caption);
+}
+.pc-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.36rem;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.4rem;
+  background: var(--surface-sunken);
+}
+.pc-accounts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+.pc-accounts-title {
+  color: var(--text-strong);
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+}
+.pc-add-acc {
+  padding: 0.18rem 0.5rem;
+  font-size: var(--font-size-caption);
+}
+.pc-accounts-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
+  line-height: 1.45;
+}
+.pc-account-row {
+  display: grid;
+  grid-template-columns: 1.1fr 1.2fr 1.2fr 1.5rem;
+  gap: 0.32rem;
+  align-items: center;
+}
+.pc-account-row input {
+  min-width: 0;
+  padding: 0.28rem 0.4rem;
+  border: 1px solid var(--border-default);
+  border-radius: 0.32rem;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-size: var(--font-size-caption);
+}
+.pc-acc-del {
+  width: 1.4rem;
+  height: 1.4rem;
+  border: none;
+  border-radius: 0.32rem;
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+.pc-acc-del:hover {
+  background: var(--danger-surface);
+}
+.pc-accounts-empty {
+  margin: 0;
+  color: var(--text-disabled);
   font-size: var(--font-size-caption);
 }
 .pc-footer {

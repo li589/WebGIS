@@ -450,11 +450,16 @@ class NsidcSmapDownloadModule(BaseModule):
                 f"skipped={result.skipped} failed={result.failed}",
             )
 
-        if result.failed > 0 and not result.success:
+        # 前置失败（认证/磁盘）errors 非空但 failed=0，旧条件会静默 0/0 通过，
+        # 下游 smap_daily 才报误导性的 "No SMAP HDF5 files found"。
+        if (
+            result.failed > 0 or (result.errors and result.total_granules == 0)
+        ) and not (result.success):
             error_summary = "; ".join(result.errors[:5]) if result.errors else "unknown"
             raise RuntimeError(
-                f"nsidc_smap_download completed with {result.failed} failures: "
-                f"{error_summary}"
+                f"nsidc_smap_download failed: {error_summary} "
+                f"(downloaded={result.downloaded}/{result.total_granules}, "
+                f"skipped={result.skipped}, failed={result.failed})"
             )
 
         return _store_path_manifest(

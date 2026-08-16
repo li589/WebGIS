@@ -186,6 +186,56 @@ def test_dispatch_cas_conflict_skips_run():
     )
 
 
+def test_dispatch_skips_run_already_dispatched_to_celery():
+    """已派发（executor_metadata.task_id 已写入、状态回到 queued）的 run 不得重派发。
+
+    回归：heavy 队列积压时，Beat 周期（*/2min）曾把队列驻留 run 每 tick 重复
+    投递一次，30 分钟内复制出数十条相同消息。孤儿恢复由启动清理兜底。
+    """
+    payload = _payload()
+    repo = MagicMock()
+    repo.get_queued_runs.return_value = [
+        _queued_run_dict("r1", request_json=payload.model_dump_json())
+    ]
+    repo.count_active_runs.return_value = 0
+    dispatched = _queued_status("r1").model_copy(
+        update={"executor_metadata": {"task_id": "celery-task-1"}}
+    )
+    repo.get_run.return_value = dispatched
+    sub = _submission_mock()
+    svc = QueueDispatchService(repo, sub)
+
+    assert svc.dispatch_queued_workflows() == 0, (
+        "already-dispatched run must not be re-dispatched"
+    )
+    sub._dispatch_async_workflow.assert_not_called(), (
+        "queue-resident run must not receive a duplicate message"
+    )
+    repo.save_run_cas.assert_not_called(), (
+        "skip must happen before the queued->accepted CAS"
+    )
+
+
+def test_dispatch_redoes_run_without_task_id_after_dispatch_failure():
+    """派发异常路径（dispatch_failed_at、无 task_id）的 run 仍会被下个周期重试。"""
+    payload = _payload()
+    repo = MagicMock()
+    repo.get_queued_runs.return_value = [
+        _queued_run_dict("r1", request_json=payload.model_dump_json())
+    ]
+    repo.count_active_runs.return_value = 0
+    repo.get_run.return_value = _queued_status("r1").model_copy(
+        update={"executor_metadata": {"dispatch_failed_at": "2026-08-16T00:00:00+00:00"}}
+    )
+    sub = _submission_mock(capacity=10)
+    svc = QueueDispatchService(repo, sub)
+
+    assert svc.dispatch_queued_workflows() == 1, (
+        "dispatch-failure runs without task_id must be retried"
+    )
+    sub._dispatch_async_workflow.assert_called_once()
+
+
 # ---------------------------------------------------------------------------
 # Per-user capacity
 # ---------------------------------------------------------------------------

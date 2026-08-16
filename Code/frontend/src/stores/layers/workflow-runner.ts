@@ -49,6 +49,32 @@ function debugLog(module: string, ...args: unknown[]) {
   probeDebugLog(`[${performance.now().toFixed(1)}ms] [LayersStore:${module}]`, ...args)
 }
 
+/**
+ * 反演历史 run 的英文 workflow id / layer_id → 图层目录 id（合并组成员）。
+ *
+ * 历史 run 的 layer_id 直接落 workflow_id（omega_sf_fenkuai_* 等），
+ * catalog 无此条目时会以英文 id 回退显示（占位图层）。此处统一映射到
+ * method-*-omega-doy-* 目录成员，使恢复产物并入「风云/SMAP ω 反演」组。
+ */
+const INVERSION_RUN_CATALOG_MAP: Array<{ pattern: RegExp; catalogId: string }> = [
+  { pattern: /omega[-_]sf[-_]fenkuai[-_]?fy/i, catalogId: 'method-fy-omega-doy-dynamic' },
+  { pattern: /omega[-_]sf[-_]fenkuai[-_]?smap/i, catalogId: 'method-smap-omega-doy-dynamic' },
+  { pattern: /omega[-_]avg[-_]daily[-_]?fy/i, catalogId: 'method-fy-omega-doy-avg' },
+  { pattern: /omega[-_]avg[-_]daily[-_]?smap/i, catalogId: 'method-smap-omega-doy-avg' },
+]
+
+/** 匹配反演 run（fenkuai 动态链 / avg 逐日链 / omega_pixel）的 layer_id 识别。 */
+export const INVERSION_RUN_LAYER_PATTERN =
+  /omega[-_]sf[-_]fenkuai|omega[-_]avg[-_]daily|omega_sf_omega_pixel/i
+
+/** 英文反演 workflow/layer id → 目录 id；非反演 id 原样返回。 */
+export function resolveInversionCatalogId(layerId: string): string {
+  for (const entry of INVERSION_RUN_CATALOG_MAP) {
+    if (entry.pattern.test(layerId)) return entry.catalogId
+  }
+  return layerId
+}
+
 /** Safely log to useLogStore; no-ops if Pinia is not active (e.g., in tests) */
 function safeLog(type: string, message: string, details?: string, severity?: string) {
   try {
@@ -235,8 +261,8 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
 
     try {
       const run = await getWorkflowRun(runId)
-      // 推断 catalogId：优先 hint，其次从 run payload 的 layer_id 取
-      const inferredCatalogId = catalogIdHint ?? run.layer_id ?? runId
+      // 推断 catalogId：优先 hint，其次从 run payload 的 layer_id 取（反演英文 id 归一）
+      const inferredCatalogId = resolveInversionCatalogId(catalogIdHint ?? run.layer_id ?? runId)
       const jobLayer = await buildJobLayer(run, inferredCatalogId, {})
       deps.upsertJobLayer(inferredCatalogId, jobLayer)
       if (!isTerminalStatus(jobLayer.status)) {
@@ -270,7 +296,8 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         // Prefer most recently created output entry
         return bySource[0].localId
       }
-      return layerId
+      // 英文反演 workflow id（omega_sf_fenkuai_* 等）→ 目录合并组成员
+      return resolveInversionCatalogId(layerId)
     }
     return runId
   }
@@ -318,8 +345,9 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       const seenWorkflowLabels = new Set<string>()
       for (const run of recentSucceeded) {
         const layerId = String(run.layer_id || '')
-        // 仅恢复 omega_sf_fenkuai 分块反演等算法产物 run，避免无差别拉起所有历史 run
-        if (!/omega[-_]sf[-_]fenkuai|omega_sf_omega_pixel/i.test(layerId)) continue
+        // 仅恢复 omega 反演（fenkuai 动态链 / avg 逐日链）等算法产物 run，
+        // 避免无差别拉起所有历史 run
+        if (!INVERSION_RUN_LAYER_PATTERN.test(layerId)) continue
         const workflowKey = String(run.command_label || layerId)
         succeededByWorkflow.add(workflowKey)
         if (seenWorkflowLabels.has(workflowKey)) continue

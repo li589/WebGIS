@@ -6,6 +6,7 @@ import csv
 import io
 import json
 import re
+import uuid
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -61,7 +62,16 @@ def export_layer(
     fmt = fmt.lower().strip()
     dest = IMPORTS_DIR / layer_id
     if not dest.exists():
-        raise FileNotFoundError(f"图层不存在: {layer_id}")
+        # 非 IMPORTS_DIR 图层（prod-/ref-/dem 等注册表 overlay）走专用导出路径
+        return _export_registry_overlay(
+            layer_id,
+            fmt,
+            time=time,
+            times=times,
+            bbox=bbox,
+            output_crs=output_crs,
+            fields=fields,
+        )
 
     meta_path = dest / "meta.json"
     meta: dict[str, Any] = {}
@@ -84,6 +94,17 @@ def export_layer(
 
     if is_raster:
         resolved_times = _resolve_export_times(meta, time=time, times=times)
+        if not resolved_times:
+            # 未指定时刻的时序图层默认导 default_time（缺省取最新），避免
+            # glob 命中最早切片 / PNG 分支报「无预览 PNG」
+            default_key = str(meta.get("default_time") or "").strip()
+            time_list = [
+                str(t) for t in (meta.get("time_list") or []) if str(t).strip()
+            ]
+            if not default_key and time_list:
+                default_key = time_list[-1]
+            if default_key:
+                resolved_times = [default_key]
         if len(resolved_times) > 1:
             return _export_raster_times_zip(
                 dest, layer_id, fmt, meta, times=resolved_times, **opts
@@ -226,6 +247,237 @@ def _export_vector(
         return _export_shp_zip(geojson, safe_base, resolved, output_crs=out_crs)
 
     raise ValueError(f"矢量不支持导出格式: {fmt}")
+
+
+# ── 注册表 overlay 导出（prod-/ref-/dem- 等非 IMPORTS_DIR 图层）───────────────
+
+
+def _overlay_export_meta(layer_id: str, spec: Any) -> dict[str, Any]:
+    meta: dict[str, Any] = {
+        "layer_id": layer_id,
+        "category": spec.category,
+        "time_list": [str(t) for t in (spec.time_list or [])],
+        "default_time": spec.default_time,
+        "label": spec.unit or layer_id,
+        "variable_id": spec.source_variable or "",
+    }
+    meta_path = spec.overlay_dir / "meta.json"
+    if meta_path.is_file():
+        try:
+            disk_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            if isinstance(disk_meta, dict):
+                meta.update({k: v for k, v in disk_meta.items() if v not in (None, "")})
+        except (OSError, json.JSONDecodeError):
+            pass
+    return meta
+
+
+def _resolve_overlay_source(spec: Any, time_key: str | None) -> Path | None:
+    """解析 overlay 的科学数据源（tif 直读；mat/nc 经变量抽取转 GeoTIFF）。"""
+    if spec.category == "time-series" and spec.source_pattern:
+        if not time_key:
+            return None
+        raw = str(spec.source_pattern).format(time=time_key)
+        if ".." in Path(raw).parts:
+            return None
+        return Path(raw)
+    if spec.source_path is not None:
+        return Path(spec.source_path)
+    return None
+
+
+def _overlay_source_tif_bytes(
+    spec: Any, source: Path, layer_id: str, time_key: str | None
+) -> bytes:
+    """tif 直读；mat/nc/hdf5 抽取 source_variable 转 GeoTIFF 后读取。"""
+    ext = source.suffix.lower()
+    if ext in {".tif", ".tiff"}:
+        return source.read_bytes()
+
+    from app.data_io.services.raster_science import extract_variable_to_geotiff
+
+    variable = str(getattr(spec, "source_variable", "") or "")
+    if not variable:
+        raise ValueError(f"图层 {layer_id} 的源为 {ext} 但未配置变量名，无法转换导出")
+    tmp_dir = IMPORTS_DIR / "_tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    tag = f"{layer_id}_{time_key}" if time_key else layer_id
+    tmp_tif = tmp_dir / f"overlay_export_{_safe_filename_base(tag)}.tif"
+    try:
+        extract_variable_to_geotiff(
+            source,
+            variable_id=variable,
+            output_tif=tmp_tif,
+        )
+        return tmp_tif.read_bytes()
+    finally:
+        tmp_tif.unlink(missing_ok=True)
+
+
+def _export_registry_overlay(
+    layer_id: str,
+    fmt: str,
+    *,
+    time: str | None = None,
+    times: list[str] | None = None,
+    bbox: BBoxDict | None = None,
+    output_crs: str | None = None,
+    fields: list[str] | None = None,
+) -> tuple[bytes, str, str]:
+    from app.services.overlay_registry import get_overlay_spec
+
+    spec = get_overlay_spec(layer_id)
+    if spec is None:
+        raise FileNotFoundError(f"图层不存在: {layer_id}")
+
+    meta = _overlay_export_meta(layer_id, spec)
+    resolved_times = _resolve_export_times(meta, time=time, times=times)
+    if not resolved_times:
+        default_key = str(meta.get("default_time") or "").strip()
+        if not default_key and meta.get("time_list"):
+            default_key = str(meta["time_list"][-1])
+        resolved_times = [default_key] if default_key else [None]
+
+    if len(resolved_times) > 1:
+        return _export_overlay_times_zip(
+            spec,
+            layer_id,
+            fmt,
+            meta,
+            times=resolved_times,
+            bbox=bbox,
+            output_crs=output_crs,
+            fields=fields,
+        )
+    return _export_overlay_single(
+        spec,
+        layer_id,
+        fmt,
+        meta,
+        time=resolved_times[0],
+        bbox=bbox,
+        output_crs=output_crs,
+        fields=fields,
+    )
+
+
+def _export_overlay_times_zip(
+    spec: Any,
+    layer_id: str,
+    fmt: str,
+    meta: dict[str, Any],
+    *,
+    times: list[str],
+    bbox: BBoxDict | None = None,
+    output_crs: str | None = None,
+    fields: list[str] | None = None,
+) -> tuple[bytes, str, str]:
+    base = _export_filename_stem(layer_id, meta)
+    mem = io.BytesIO()
+    errors: list[str] = []
+    with zipfile.ZipFile(mem, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for t in times:
+            try:
+                content, _media, filename = _export_overlay_single(
+                    spec,
+                    layer_id,
+                    fmt,
+                    meta,
+                    time=t,
+                    bbox=bbox,
+                    output_crs=output_crs,
+                    fields=fields,
+                )
+            except Exception as exc:  # noqa: BLE001 — 单切片失败收集入 zip，与 IMPORTS 导出一致
+                errors.append(f"{t}: {exc}")
+                zf.writestr(f"{t}.error.txt", str(exc))
+                continue
+            zf.writestr(filename, content)
+        if errors and len(errors) == len(times):
+            raise ValueError(f"多时刻导出全部失败: {errors[0]}")
+    stem = (
+        f"{base}_{len(times)}times"
+        if len(times) > 3
+        else f"{base}_{times[0]}_{times[-1]}"
+    )
+    return mem.getvalue(), "application/zip", f"{_safe_filename_base(stem)}.zip"
+
+
+def _export_overlay_single(
+    spec: Any,
+    layer_id: str,
+    fmt: str,
+    meta: dict[str, Any],
+    *,
+    time: str | None = None,
+    bbox: BBoxDict | None = None,
+    output_crs: str | None = None,
+    fields: list[str] | None = None,
+) -> tuple[bytes, str, str]:
+    base = _export_filename_stem(layer_id, meta)
+    time_key = str(time or "").strip() or None
+    if time_key:
+        base = f"{base}_{time_key}"
+    bbox_norm = _normalize_bbox(bbox)
+    crs_norm = (str(output_crs).strip() if output_crs else None) or None
+
+    if fmt == "png":
+        png = spec.resolve_png(time_key)
+        if not png.exists():
+            raise ValueError("无预览 PNG")
+        return png.read_bytes(), "image/png", f"{base}.png"
+
+    if fmt not in {"geotiff", "tif", "tiff", "netcdf", "nc", "mat", "matlab"}:
+        raise ValueError(f"该图层不支持导出格式: {fmt}")
+
+    source = _resolve_overlay_source(spec, time_key)
+    if source is None or not source.is_file():
+        raise ValueError(f"图层 {layer_id} 无可导出的科学数据源（仅有预览 PNG）")
+
+    tif_bytes = _overlay_source_tif_bytes(spec, source, layer_id, time_key)
+    need_xform = bool(bbox_norm) or bool(crs_norm)
+    if need_xform:
+        tif_bytes = _transform_geotiff_from_bytes(
+            tif_bytes, bbox=bbox_norm, output_crs=crs_norm
+        )
+
+    if fmt in {"geotiff", "tif", "tiff"}:
+        return tif_bytes, "image/tiff", f"{base}.tif"
+    if fmt in {"netcdf", "nc"}:
+        return (
+            _geotiff_bytes_to_netcdf(tif_bytes, time_key=time_key),
+            "application/netcdf",
+            f"{base}.nc",
+        )
+    return (
+        _geotiff_bytes_to_mat(
+            tif_bytes,
+            meta=meta,
+            layer_id=layer_id,
+            time_key=time_key,
+            fields=fields,
+        ),
+        "application/x-matlab-data",
+        f"{base}.mat",
+    )
+
+
+def _transform_geotiff_from_bytes(
+    tif_bytes: bytes,
+    *,
+    bbox: BBoxDict | None,
+    output_crs: str | None,
+) -> bytes:
+    """内存版 GeoTIFF 裁剪/重投影（复用 _transform_geotiff 的文件接口）。"""
+    tmp_dir = IMPORTS_DIR / "_tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    token = uuid.uuid4().hex[:8]
+    src = tmp_dir / f"xform_src_{token}.tif"
+    try:
+        src.write_bytes(tif_bytes)
+        return _transform_geotiff(src, bbox=bbox, output_crs=output_crs)
+    finally:
+        src.unlink(missing_ok=True)
 
 
 def _apply_vector_export_options(

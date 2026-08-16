@@ -1642,6 +1642,10 @@ class NativeModuleTests(unittest.TestCase):
             )
 
             class _Plan:
+                # metadata 为空 dict → input_format 非 tif，走 HDF 命令链分支
+                metadata: dict = {}
+                input_files: tuple = ()
+
                 def __init__(
                     self,
                     date_key: str,
@@ -1747,6 +1751,10 @@ class NativeModuleTests(unittest.TestCase):
             )
 
             class _Plan:
+                # metadata 为空 dict → input_format 非 tif，走 HDF 命令链分支
+                metadata: dict = {}
+                input_files: tuple = ()
+
                 def __init__(
                     self,
                     date_key: str,
@@ -1863,6 +1871,10 @@ class NativeModuleTests(unittest.TestCase):
             )
 
             class _Plan:
+                # metadata 为空 dict → input_format 非 tif，走 HDF 命令链分支
+                metadata: dict = {}
+                input_files: tuple = ()
+
                 def __init__(
                     self,
                     date_key: str,

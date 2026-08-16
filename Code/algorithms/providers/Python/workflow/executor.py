@@ -262,6 +262,22 @@ class WorkflowRunner:
                 raise ValueError(
                     f"Workflow required input port not bound: {node.node_id}.{port_name}"
                 )
+        # 多模块图：节点自身的 properties.algorithm_params 是该模块的参数基底；
+        # 请求级 algorithm_params 仅承载用户/定时器覆盖（后端在图执行路径已
+        # 剥离首模块提取，避免跨模块泄漏）。合并语义与 bridge.pipeline 一致：
+        # 节点基底 + 请求级覆盖优先。ModuleNodeExecutor.get_input_ports() 恒为
+        # 空，故以 resolved 中是否绑定该键（而非 port_specs）判断。
+        node_algo = (
+            node.params.get("algorithm_params")
+            if isinstance(node.params, dict)
+            else None
+        )
+        if isinstance(node_algo, dict) and node_algo:
+            request_algo = resolved.get("algorithm_params")
+            if isinstance(request_algo, dict):
+                resolved["algorithm_params"] = {**node_algo, **request_algo}
+            else:
+                resolved["algorithm_params"] = dict(node_algo)
         return resolved
 
     def _resolve_binding(

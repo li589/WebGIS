@@ -104,9 +104,9 @@
         920
       ],
       "properties": {
-        "path": "Ecological_Vegetation/NDVI/climatology",
+        "path": "Soil_Moisture/SMAP_Auxiliary_Data/NDVI_clim",
         "dataset_key": "ndvi_clim_folder",
-        "notes": "NDVI DOY 气候态（ndvi_mode=DOY_CLIM）"
+        "notes": "NDVI DOY 气候态（SMAP 辅助库 NDVI_clim，与 ndvi_clim_max/min 同源；生态目录 12 月下旬 DOY 全空不可用）"
       }
     },
     {

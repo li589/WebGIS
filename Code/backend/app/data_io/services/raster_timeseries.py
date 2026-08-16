@@ -24,7 +24,9 @@ from app.services.overlay_registry import (
 )
 from app.services.raster_preview_service import raster_preview_service
 
-_BLOCK_MAT_RE = re.compile(r"^(\d{8})_(\d{8})\.mat$", re.IGNORECASE)
+# YYYYMMDD_YYYYMMDD.mat（8 日块，Omega-SF 动态链）或 YYYYMMDD.mat（单日，
+# omega_avg_daily 逐日产品视为一天块：start=end）。
+_BLOCK_MAT_RE = re.compile(r"^(\d{8})(?:_(\d{8}))?\.mat$", re.IGNORECASE)
 
 
 @contextmanager
@@ -133,8 +135,9 @@ def list_block_mats(
     time_end: str | None = None,
     canonical_viirs8_only: bool = False,
 ) -> list[tuple[str, Path]]:
-    """Return sorted (time_label, path) for YYYYMMDD_YYYYMMDD.mat files.
+    """Return sorted (time_label, path) for YYYYMMDD[_YYYYMMDD].mat files.
 
+    单日 ``YYYYMMDD.mat``（omega_avg_daily 逐日产品）视为 start=end 的一天块。
     Optional ``time_start`` / ``time_end`` are ``YYYYMMDD`` inclusive filters
     against the block's own start/end dates (overlap with the window).
     ``canonical_viirs8_only`` rejects stale shortened blocks from older partial
@@ -151,7 +154,8 @@ def list_block_mats(
         m = _BLOCK_MAT_RE.match(path.name)
         if not m:
             continue
-        block_start, block_end = m.group(1), m.group(2)
+        block_start = m.group(1)
+        block_end = m.group(2) or block_start
         if canonical_viirs8_only and not _is_canonical_viirs8_block(
             block_start, block_end
         ):
@@ -209,7 +213,7 @@ def upsert_block_dir_timeseries(
         canonical_viirs8_only=canonical_viirs8_only,
     )
     if not mats:
-        raise FileNotFoundError(f"块目录无 YYYYMMDD_YYYYMMDD.mat: {block_dir}")
+        raise FileNotFoundError(f"块目录无 YYYYMMDD[_YYYYMMDD].mat: {block_dir}")
 
     display_label = (
         "OMEGA"

@@ -419,11 +419,6 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 allow_custom=False,
             ),
             _param(
-                "api_key",
-                "string",
-                description="CDS Personal Access Key（留空走门户/环境变量）。",
-            ),
-            _param(
                 "filename",
                 "string",
                 description="落盘文件名（可选，默认由数据集/请求推导）。",
@@ -598,21 +593,6 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 allow_custom=False,
             ),
             _param(
-                "username",
-                "string",
-                description="CDSE 用户名（留空走门户凭据）。",
-            ),
-            _param(
-                "password",
-                "string",
-                description="CDSE 密码（留空走门户凭据）。",
-            ),
-            _param(
-                "bearer_token",
-                "string",
-                description="CDSE Bearer token（可选，优先于账密）。",
-            ),
-            _param(
                 "legacy_urls",
                 "string",
                 description="公共直链列表（use=legacy，逗号/换行分隔）。",
@@ -692,7 +672,14 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "category": "数据获取与解析",
         "title": "NSIDC SMAP 下载",
         "description": "从 NASA NSIDC 下载 SMAP L3 SPL3SMP_E V6 土壤湿度数据。支持日期范围、增量下载、earthaccess 认证。",
-        "inputs": [],
+        "inputs": [
+            _port(
+                "datasource_selection",
+                "config",
+                required=False,
+                description="数据源选择（含 portal_credentials 等）。",
+            ),
+        ],
         "outputs": [
             _port("path", "value:string", description="本地落盘目录。"),
             _port("manifest", "data", description="产物清单。"),
@@ -721,7 +708,14 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "category": "数据获取与解析",
         "title": "GLDAS 在线下载",
         "description": "从 NASA GES DISC 下载 GLDAS NOAH025_3H V2.1（.nc4）。支持日期范围、增量下载、earthdata 认证；落地后可转 .mat 接入 DUAL 温度链。",
-        "inputs": [],
+        "inputs": [
+            _port(
+                "datasource_selection",
+                "config",
+                required=False,
+                description="数据源选择（含 portal_credentials 等）。",
+            ),
+        ],
         "outputs": [
             _port("path", "value:string", description="本地落盘目录。"),
             _port("manifest", "data", description="产物清单。"),

@@ -141,7 +141,7 @@ class FollowUpDispatchService:
         }
         now = datetime.now(UTC)
         grace = timedelta(minutes=15)
-        live_task_ids = self._collect_live_celery_task_ids()
+        live_task_ids, live_run_ids = self._collect_live_celery_tasks()
         cleaned = 0
         for run in self._repository.list_runs():
             if run.status == ExecutionStatus.running:
@@ -155,6 +155,11 @@ class FollowUpDispatchService:
                 else run.updated_at.replace(tzinfo=UTC)
             )
             if age < grace:
+                continue
+            # run_id 直接命中队列驻留消息：重派发曾产生多个 task_id 副本时，
+            # executor_metadata 里记录的只是最后一次的 task_id，可能已被去重
+            # 清理；只要队列里还有该 run 的任意消息即视为存活。
+            if run.run_id in live_run_ids:
                 continue
             task_id = str((run.executor_metadata or {}).get("task_id") or "").strip()
             if task_id and task_id in live_task_ids:
@@ -311,9 +316,16 @@ class FollowUpDispatchService:
         return failed
 
     @staticmethod
-    def _collect_live_celery_task_ids() -> set[str]:
-        """Return task ids currently active, reserved, or unacked in the broker."""
+    def _collect_live_celery_tasks() -> tuple[set[str], set[str]]:
+        """Return (live_task_ids, live_run_ids) for tasks in the broker.
+
+        覆盖三类位置：worker active/reserved（inspect）、broker unacked 哈希、
+        以及队列驻留消息（含 kombu 优先级键 ``<queue>\\x06\\x16<step>``）。
+        run_ids 仅从队列驻留的 process_workflow_run 消息体解析，用于
+        run_id 级存活判定（task_id 副本与 metadata 记录可能不一致）。
+        """
         live: set[str] = set()
+        live_run_ids: set[str] = set()
         try:
             from app.core.celery_app import celery_app
 
@@ -358,8 +370,45 @@ class FollowUpDispatchService:
                         live.add(task_id)
                 except Exception:
                     continue
+            # 队列驻留消息（含 kombu 优先级键 ``<queue>\x06\x16<step>``）不属于
+            # active/reserved/unacked——worker 忙碌积压时合法 run 的消息只在
+            # 队列里等待，不扫描会把它们误标 orphaned failed。跳过 pidbox /
+            # metrics 等非任务列表；每队列最多扫 2000 条足以覆盖正常积压。
+            import base64
+
+            for key in client.scan_iter(match=b"*"):
+                kb = key if isinstance(key, bytes) else key.encode()
+                if b"pidbox" in kb or kb.startswith(b"metrics"):
+                    continue
+                if client.type(kb) != b"list":
+                    continue
+                for raw in client.lrange(kb, 0, 1999):
+                    try:
+                        env = json.loads(raw)
+                        if not isinstance(env, dict):
+                            continue
+                        task_id = str(
+                            ((env.get("properties") or {}).get("correlation_id"))
+                            or ((env.get("headers") or {}).get("id"))
+                            or ""
+                        ).strip()
+                        if task_id:
+                            live.add(task_id)
+                        if (env.get("headers") or {}).get(
+                            "task"
+                        ) != "app.tasks.workflow_tasks.process_workflow_run":
+                            continue
+                        body = env.get("body")
+                        if not body:
+                            continue
+                        args, kwargs, _ = json.loads(base64.b64decode(body))
+                        run_id = (args or [None])[0] if args else None
+                        if not run_id and isinstance(kwargs, dict):
+                            run_id = kwargs.get("run_id") or kwargs.get("runId")
+                        if run_id:
+                            live_run_ids.add(str(run_id))
+                    except Exception:
+                        continue
         except Exception:
-            logger.debug(
-                "Redis unacked scan failed during stale cleanup", exc_info=True
-            )
-        return live
+            logger.debug("Redis broker scan failed during stale cleanup", exc_info=True)
+        return live, live_run_ids

@@ -6149,11 +6149,37 @@ export interface components {
              * @default none
              */
             credential_source: string;
+            /**
+             * Account Count
+             * @default 0
+             */
+            account_count: number;
         };
         /** PortalCatalogResponse */
         PortalCatalogResponse: {
             /** Portals */
             portals?: components["schemas"]["PortalCatalogEntry"][];
+        };
+        /**
+         * PortalCredentialAccount
+         * @description 多账号轮换条目（NSMC 等限额门户）。
+         */
+        PortalCredentialAccount: {
+            /**
+             * Username
+             * @default
+             */
+            username: string;
+            /**
+             * Token
+             * @default
+             */
+            token: string;
+            /**
+             * Password
+             * @default
+             */
+            password: string;
         };
         /** PortalCredentialPublic */
         PortalCredentialPublic: {
@@ -6190,6 +6216,11 @@ export interface components {
             use_earthdata?: boolean | null;
             /** Client Id */
             client_id?: string | null;
+            /**
+             * Account Count
+             * @default 0
+             */
+            account_count: number;
         };
         /**
          * PortalCredentialUpsertRequest
@@ -6216,6 +6247,8 @@ export interface components {
             use_earthdata?: boolean | null;
             /** Clear Secrets */
             clear_secrets?: boolean | null;
+            /** Accounts */
+            accounts?: components["schemas"]["PortalCredentialAccount"][] | null;
         };
         /** PortalCredentialsMapResponse */
         PortalCredentialsMapResponse: {

@@ -150,3 +150,50 @@ def test_register_overwrite_same_layer_id(imports_tmp, tmp_path):
     assert second.get("replaced") is True
     # still a single directory
     assert (imports_tmp / layer_id).is_dir()
+
+
+def test_commit_algorithm_geotiff_temporal_and_conflict(imports_tmp, tmp_path):
+    from app.data_io.services.raster_commit import commit_algorithm_geotiff
+
+    tif = tmp_path / "algo_out.tif"
+    _write_tiny_tif(tif, 3.0)
+
+    result = commit_algorithm_geotiff(
+        tif,
+        layer_id="imported-gis-abcd1234-00",
+        source_name="abcd1234_algo_out.tif",
+        time_start="20260801",
+        time_end="20260808",
+        extra_meta={"analysis_product": True, "variable_id": "SM"},
+    )
+    assert result["layer_id"] == "imported-gis-abcd1234-00"
+    assert result["time_list"] == ["20260801_20260808"]
+    assert result["default_time"] == "20260801_20260808"
+    assert result["native_step"] == "8d"
+    assert result["conflict_policy"] == "overwrite"
+    bounds_path = imports_tmp / result["layer_id"] / "bounds.json"
+    meta = json.loads(bounds_path.read_text(encoding="utf-8"))["meta"]
+    assert meta["analysis_product"] is True
+    assert meta["variable_id"] == "SM"
+
+    # 同 id 再提交：overwrite 复用目录（replaced=True），rename 分配新 id
+    again = commit_algorithm_geotiff(
+        tif,
+        layer_id="imported-gis-abcd1234-00",
+        source_name="abcd1234_algo_out.tif",
+        conflict_policy="overwrite",
+    )
+    assert again["replaced"] is True
+    renamed = commit_algorithm_geotiff(
+        tif,
+        layer_id="imported-gis-abcd1234-00",
+        source_name="abcd1234_algo_out.tif",
+        conflict_policy="rename",
+    )
+    assert renamed["layer_id"] != "imported-gis-abcd1234-00"
+    with pytest.raises(ValueError, match="同名导入已存在"):
+        commit_algorithm_geotiff(
+            tif,
+            layer_id="imported-gis-abcd1234-00",
+            conflict_policy="error",
+        )

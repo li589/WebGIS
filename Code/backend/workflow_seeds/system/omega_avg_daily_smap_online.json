@@ -3,7 +3,7 @@
     "kind": "system",
     "engine": "python_provider",
     "name": "avg-ω 逐日反演（SMAP 在线拉取 + ORIG_TS）",
-    "description": "目的：在线拉取 SMAP L3 SM P（NSIDC 云 CDN，granule URL 经 CMR 解析）.h5 → D2 avg-omega 逐日反演（SMAP_SINGLE + ORIG_TS 单温度方案）。前置：earthdata 凭证（设置页 earthdata profile）；D1 omega_block 已产出；anc/NDVI 本地就绪。产出：目标年逐日 SM/VOD/OMEGA .mat。本种子为模板：start_date/end_date 用 YYYYMMDD 占位符，运行前替换。注意：SMAP .h5 → .mat 预处理（对应 B1_SMAPL3.m）当前不在 D2 主链，需用户在实例化时补 h5→mat 转换节点或预先落盘 .mat。",
+    "description": "目的：在线拉取 SMAP L3 SM P（NSIDC 云 CDN，granule URL 经 CMR 解析）.h5 → smap_daily 转逐日 .mat（落盘 DATA_ROOT/Soil_Moisture/SMAP_Origin_Data）→ D2 avg-omega 逐日反演（SMAP_SINGLE + ORIG_TS 单温度方案）→ 发布 SM/VOD/OMEGA 三图层。前置：earthdata 凭证（设置页 earthdata profile）；D1 omega_block 已产出；anc/NDVI 本地就绪。本种子为模板：start_date/end_date 用 YYYYMMDD 占位符，运行前替换。",
     "author": "system",
     "readonly": true,
     "is_template": true,
@@ -16,7 +16,7 @@
   },
   "workflow_id": "omega_avg_daily_smap_online",
   "name": "avg-ω 逐日反演（SMAP 在线拉取 + ORIG_TS）",
-  "description": "nsidc_smap_download（CMR+云 CDN，earthdata 凭证）→ D2 avg-omega 逐日反演（ORIG_TS）。",
+  "description": "nsidc_smap_download（CMR+云 CDN，earthdata 凭证）→ smap_daily（.h5→YYYYMMDD.mat）→ D2 avg-omega 逐日反演（ORIG_TS）→ SM/VOD/OMEGA 三图层。",
   "nodes": [
     {
       "id": 1,
@@ -33,11 +33,87 @@
       }
     },
     {
+      "id": 2,
+      "type": "module/smap_daily",
+      "pos": [
+        380,
+        140
+      ],
+      "properties": {
+        "output_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\SMAP_Origin_Data"
+      }
+    },
+    {
+      "id": 4,
+      "type": "data/source",
+      "pos": [
+        640,
+        40
+      ],
+      "properties": {
+        "path": "Inversion_Results/omega_block",
+        "dataset_key": "omega_block_output",
+        "notes": "D1 omega_block 输出（avg 气候态构建输入）"
+      }
+    },
+    {
+      "id": 5,
+      "type": "data/source",
+      "pos": [
+        640,
+        160
+      ],
+      "properties": {
+        "path": "Soil_Moisture/SMAP_Origin_Data",
+        "dataset_key": "smap_daily_mat",
+        "notes": "逐日 SMAP .mat（smap_daily 落盘同目录，含 TBv/TBh/IA/Ts/vwc/SM）"
+      }
+    },
+    {
+      "id": 6,
+      "type": "data/source",
+      "pos": [
+        640,
+        280
+      ],
+      "properties": {
+        "path": "Soil_Moisture/SMAP_Auxiliary_Data",
+        "dataset_key": "ancillary_mat",
+        "notes": "静态辅助库（IGBP_9km_12/Albedo/B/BD/CF/H/SF/VI_v_qa）"
+      }
+    },
+    {
+      "id": 7,
+      "type": "data/source",
+      "pos": [
+        640,
+        400
+      ],
+      "properties": {
+        "path": "Ecological_Vegetation/NDVI/NDVIday",
+        "dataset_key": "ndvi_daily_mat",
+        "notes": "逐日 NDVI .mat（ndvi_mode=DAILY_FILE 时使用）"
+      }
+    },
+    {
+      "id": 8,
+      "type": "data/source",
+      "pos": [
+        640,
+        520
+      ],
+      "properties": {
+        "path": "Soil_Moisture/SMAP_Auxiliary_Data/NDVI_clim",
+        "dataset_key": "ndvi_clim_folder",
+        "notes": "NDVI DOY 气候态（SMAP 辅助库 NDVI_clim，与 ndvi_clim_max/min 同源；生态目录 12 月下旬 DOY 全空不可用）"
+      }
+    },
+    {
       "id": 3,
       "type": "module/omega_avg_daily",
       "pos": [
-        720,
-        140
+        960,
+        280
       ],
       "properties": {
         "module_name": "omega_avg_daily",
@@ -57,6 +133,18 @@
           "enable_parallel": true
         }
       }
+    },
+    {
+      "id": 9,
+      "type": "output/map_layer",
+      "pos": [
+        1240,
+        280
+      ],
+      "properties": {
+        "layer_id": "method-smap-omega-doy-avg",
+        "display_name": "avg-ω 逐日反演（SMAP 在线拉取）"
+      }
     }
   ],
   "links": [
@@ -64,9 +152,57 @@
       "0": 1,
       "1": 1,
       "2": 0,
+      "3": 2,
+      "4": 0,
+      "5": "value:string"
+    },
+    {
+      "0": 2,
+      "1": 4,
+      "2": 0,
       "3": 3,
       "4": 2,
       "5": "value:string"
+    },
+    {
+      "0": 3,
+      "1": 5,
+      "2": 0,
+      "3": 3,
+      "4": 2,
+      "5": "value:string"
+    },
+    {
+      "0": 4,
+      "1": 6,
+      "2": 0,
+      "3": 3,
+      "4": 2,
+      "5": "value:string"
+    },
+    {
+      "0": 5,
+      "1": 7,
+      "2": 0,
+      "3": 3,
+      "4": 2,
+      "5": "value:string"
+    },
+    {
+      "0": 6,
+      "1": 8,
+      "2": 0,
+      "3": 3,
+      "4": 2,
+      "5": "value:string"
+    },
+    {
+      "0": 7,
+      "1": 3,
+      "2": 0,
+      "3": 9,
+      "4": 0,
+      "5": "data"
     }
   ],
   "extra": {
@@ -74,12 +210,16 @@
     "scheme": "SMAP_SINGLE_ORIG_TS_ONLINE_SMAP",
     "portal": "nsidc_data",
     "cred_profile": "earthdata",
-    "pipeline": "nsidc_smap_download (CMR+云 CDN) → D2 DDCA (ORIG_TS, Ts from SMAP IA)",
+    "pipeline": "nsidc_smap_download (CMR+云 CDN) → smap_daily (.h5→YYYYMMDD.mat) → D2 DDCA (ORIG_TS, Ts from SMAP IA) → SM/VOD/OMEGA 三图层",
     "prerequisite": "earthdata 凭证 + D1 omega_block + 本地 anc/NDVI .mat",
     "outputs": [
       "SM",
+      "VOD",
       "OMEGA"
     ],
-    "notes": "模板种子：start_date/end_date 含 YYYYMMDD 占位符，运行前替换（granule URL 由 nsidc_smap_download 内部经 CMR 动态解析）。SMAP .h5 需转 .mat（B1_SMAPL3.m 预处理）方可被 build_daily_bundle_for_date 读取；当前 D2 主链假定 smap_folder 已含 YYYYMMDD.mat（含 TBv/TBh/IA/Ts/vwc/SM）。"
+    "notes": "模板种子：start_date/end_date 含 YYYYMMDD 占位符，运行前替换（granule URL 由 nsidc_smap_download 内部经 CMR 动态解析）。smap_daily 将 .h5 转为 YYYYMMDD.mat（含 TBv/TBh/IA/Ts/vwc/SM）落盘 DATA_ROOT/Soil_Moisture/SMAP_Origin_Data，反演经 data/source smap_daily_mat 读取同目录；omega_avg_daily 产出 SM/VOD/OMEGA 三产品经 output/map_layer 发布到 avg 图层。",
+    "has_time_range_node": false,
+    "has_bbox_node": false,
+    "has_output_node": true
   }
 }

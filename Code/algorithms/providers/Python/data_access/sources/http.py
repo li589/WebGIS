@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+import ssl
 import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -16,6 +17,55 @@ from path_utils import local_path_to_uri
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024  # 512 MiB
+# NSMC 门户（satellite.nsmc.org.cn）使用内部自签 CA 签发证书，公共信任库
+# 无法验证（SSL: self-signed certificate in certificate chain）。仅对显式
+# 域名放宽验证，其余 HTTPS 一律保持严格校验；空字符串可恢复全严格。
+_DEFAULT_INSECURE_HOSTS = "satellite.nsmc.org.cn"
+
+
+def _insecure_hosts() -> set[str]:
+    raw = os.getenv("CGDA_HTTP_INSECURE_HOSTS")
+    if raw is None:
+        raw = _DEFAULT_INSECURE_HOSTS
+    return {h.strip().lower() for h in raw.split(",") if h.strip()}
+
+
+def _insecure_ssl_context() -> ssl.SSLContext:
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
+def _ssl_verify_disabled(meta: dict[str, object] | None) -> bool:
+    if not meta:
+        return False
+    raw = str(meta.get("ssl_verify", "1")).strip().lower()
+    return raw in {"0", "false", "no", "off"}
+
+
+def ssl_context_for(
+    uri: str, meta: dict[str, object] | None = None
+) -> ssl.SSLContext | None:
+    """Return an SSL context for urlopen; ``None`` keeps default strict verification.
+
+    请求级 ``metadata["ssl_verify"]=false`` 或域名命中 ``CGDA_HTTP_INSECURE_HOSTS``
+    （默认含 NSMC 门户）时返回不验证上下文，并记录 warning 便于审计。
+    """
+    host = (urlparse(uri).hostname or "").lower()
+    if _ssl_verify_disabled(meta):
+        logger.warning(
+            "HTTPS certificate verification disabled by request metadata for %s", host
+        )
+        return _insecure_ssl_context()
+    if host and host in _insecure_hosts():
+        logger.warning(
+            "HTTPS certificate verification disabled for allowlisted host %s", host
+        )
+        return _insecure_ssl_context()
+    return None
+
+
 # 下载重试（指数退避 2s/4s；.part 半成品保留供 Range 续传）
 _MAX_DOWNLOAD_ATTEMPTS = 3
 _RETRY_BACKOFF_BASE_SECONDS = 2.0
@@ -303,7 +353,9 @@ class HttpSource:
         req = Request(uri, headers=headers)
         timeout = _timeout_seconds(meta)
         try:
-            with urlopen(req, timeout=timeout) as resp:
+            with urlopen(
+                req, timeout=timeout, context=ssl_context_for(uri, meta)
+            ) as resp:
                 status = getattr(resp, "status", None) or resp.getcode()
                 if int(status) == 304:
                     return True
@@ -351,8 +403,9 @@ class HttpSource:
             if resume_offset > 0:
                 headers["Range"] = f"bytes={resume_offset}-"
             req = Request(uri, headers=headers)
+            ssl_ctx = ssl_context_for(uri, meta)
             try:
-                with urlopen(req, timeout=timeout) as resp:
+                with urlopen(req, timeout=timeout, context=ssl_ctx) as resp:
                     status = int(
                         getattr(resp, "status", None)
                         or getattr(resp, "getcode", lambda: 0)()

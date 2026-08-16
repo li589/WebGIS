@@ -314,9 +314,15 @@ def _build_submit_payload(
         "python_provider",
         "common",
     ):
-        algo_params = dict(seed_algo_params)
-        if isinstance(parameters, dict):
-            algo_params.update(parameters)
+        # 图执行种子（多模块/含下载节点）：请求级仅承载定时器 parameters 覆盖，
+        # 节点级 properties.algorithm_params 由算法侧 executor 以节点基底合并；
+        # 注入首模块提取会把 fy_daily 等参数泄漏进反演模块。
+        if _definition_uses_graph_execution(definition):
+            algo_params = dict(parameters) if isinstance(parameters, dict) else {}
+        else:
+            algo_params = dict(seed_algo_params)
+            if isinstance(parameters, dict):
+                algo_params.update(parameters)
         # workflow_name 走种子路径；同时附带图定义供 flatten / 画布执行
         payload.algorithm_request = AlgorithmWorkflowRequest(
             workflow_name=workflow_id,
@@ -357,6 +363,19 @@ def _build_submit_payload(
         payload, meta=meta if isinstance(meta, dict) else {}, definition=definition
     )
     return payload
+
+
+def _definition_uses_graph_execution(definition: dict[str, Any]) -> bool:
+    """图执行判定（与 workflow_request_resolver._flatten_ui_workflow_definition 一致）：
+    多模块或含 download/* 节点时保留整图执行。"""
+    executable: list[str] = []
+    for node in definition.get("nodes") or []:
+        if not isinstance(node, dict):
+            continue
+        node_type = str(node.get("type") or node.get("node_type") or "")
+        if node_type.startswith(("module/", "download/", "stats/", "viz/")):
+            executable.append(node_type)
+    return len(executable) >= 2 or any(t.startswith("download/") for t in executable)
 
 
 def _extract_seed_algorithm_params(definition: dict[str, Any]) -> dict[str, Any]:

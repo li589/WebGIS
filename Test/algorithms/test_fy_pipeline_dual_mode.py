@@ -218,5 +218,92 @@ class FyCommandPlanFileTests(unittest.TestCase):
             self.assertEqual(plan_data[0]["name"], "s1")
 
 
+class FyCanonicalMatNamingTests(unittest.TestCase):
+    """M3：单轨道日落盘规范名 YYYYMMDD.mat（omega_sf_fenkuai fy3d/fy3b_folder
+    要求 \d{8} 命名）；Both 模式同日双轨道回落 mat/YYYYMMDD_<orbit>.mat。"""
+
+    def _run(self, tmp_dir: Path, out_root: Path, plans: list) -> None:
+        import numpy as np
+        import rasterio
+
+        tif_path = tmp_dir / "tif.tif"
+        profile = {
+            "driver": "GTiff",
+            "height": 2,
+            "width": 2,
+            "count": 3,
+            "dtype": "int16",
+            "nodata": -9999,
+        }
+        with rasterio.open(tif_path, "w", **profile) as dst:
+            dst.write(np.full((2, 2), 500, dtype=np.int16), 1)
+            dst.write(np.full((2, 2), 600, dtype=np.int16), 2)
+            dst.write(np.full((2, 2), 50, dtype=np.int16), 3)
+
+        request = JobRequest(
+            job_id="fy-naming",
+            pipeline_name="fy_daily_pipeline",
+            task_type="extract",
+            time_range=TimeRange(
+                start=datetime(2023, 1, 1), end=datetime(2023, 1, 2)
+            ),
+            region=RegionSpec(kind="global", value={}),
+            datasource_selection={"input_dir": str(tmp_dir)},
+            algorithm_params={"execute_commands": True, "orbit_mode": "MWRID"},
+            output_spec=OutputSpec(extra={"output_dir": str(out_root)}),
+        )
+        ctx = RuntimeContext(
+            job_id="fy-naming",
+            run_id="run-fy-naming",
+            workspace=Path(tempfile.mkdtemp()),
+            tmp_dir=Path(tempfile.mkdtemp()),
+            cache_dir=Path(tempfile.mkdtemp()),
+        )
+
+        with (
+            patch("pipelines.fy_products.build_fy_daily_job_plans") as mock_plans,
+            patch(
+                "pipelines.fy_products.build_fy_daily_command_steps",
+                return_value=[],
+            ),
+            patch("pipelines.fy_products.execute_fy_command_steps"),
+            patch(
+                "pipelines.fy_products.get_fy_daily_multiband_output_path",
+                return_value=tif_path,
+            ),
+        ):
+            mock_plans.return_value = plans
+            FyDailyPipeline().execute(request, ctx)
+
+    def test_single_orbit_day_writes_canonical_mat(self) -> None:
+        from ingest.fy import FyDailyJobPlan
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            out_root = tmp_dir / "out"
+            plan = FyDailyJobPlan(**_make_fy_plan(tmp_dir, date_key="20230101"))
+            self._run(tmp_dir, out_root, [plan])
+
+            self.assertTrue((out_root / "20230101.mat").exists())
+            self.assertFalse((out_root / "mat" / "20230101_D.mat").exists())
+
+    def test_both_orbits_same_day_falls_back_to_mat_dir(self) -> None:
+        from ingest.fy import FyDailyJobPlan
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            out_root = tmp_dir / "out"
+            desc = _make_fy_plan(tmp_dir, date_key="20230101")
+            desc["orbit_type"] = "MWRID"
+            asc = dict(desc)
+            asc["orbit_type"] = "MWRIA"
+            plans = [FyDailyJobPlan(**desc), FyDailyJobPlan(**asc)]
+            self._run(tmp_dir, out_root, plans)
+
+            self.assertTrue((out_root / "mat" / "20230101_MWRID.mat").exists())
+            self.assertTrue((out_root / "mat" / "20230101_MWRIA.mat").exists())
+            self.assertFalse((out_root / "20230101.mat").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

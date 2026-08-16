@@ -69,6 +69,9 @@ async function runTest() {
           {{ portal.region === 'china' ? '国内' : '国际' }}
         </span>
         <span class="portal-badge" :class="credLabel.cls">{{ credLabel.text }}</span>
+        <span v-if="portal.account_count > 0" class="portal-badge badge-accounts">
+          账号 ×{{ portal.account_count }}
+        </span>
         <span v-if="portal.search_capability !== 'none'" class="portal-badge badge-search">
           可检索
         </span>
@@ -187,6 +190,10 @@ async function runTest() {
 .badge-search {
   background: var(--accent-surface);
   color: var(--accent-strong);
+}
+.badge-accounts {
+  background: var(--success-surface);
+  color: var(--success);
 }
 .badge-custom {
   background: var(--surface-2);

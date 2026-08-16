@@ -478,7 +478,9 @@ onMounted(() => {
 
 <style scoped>
 .deployment-view {
-  min-height: 100vh;
+  /* #app 全局 overflow:hidden 裁掉文档流滚动，本页改为内部滚动自治 */
+  height: calc(100vh - 1.5rem);
+  overflow-y: auto;
   background: var(--surface-2, #0b1118);
   color: var(--text-primary, #d7e2ea);
   padding: 1rem 1.2rem 2.4rem;

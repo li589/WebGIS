@@ -14,6 +14,7 @@ import { X, Trash2, Save, Table2, CheckCircle2, AlertTriangle } from '../ui/icon
 import IconButton from '../ui/IconButton.vue'
 import { useDrawStore } from '../../stores/draw-store'
 import { useUiStore } from '../../stores/ui'
+import { useDrawSave, type DrawValidationIssue } from '../../composables/useDrawSave'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -21,12 +22,13 @@ const emit = defineEmits<{
 
 const drawStore = useDrawStore()
 const uiStore = useUiStore()
+const drawSave = useDrawSave()
 
 const newPropKey = ref('')
 const editingCell = ref<string | null>(null)
-const validationErrors = ref<string[]>([])
+const validationErrors = ref<DrawValidationIssue[]>([])
 const lastSavedAt = ref<string | null>(null)
-const isSaving = ref(false)
+const isSaving = drawSave.isSaving
 
 const visible = computed(() => uiStore.interactionMode === 'draw')
 
@@ -64,12 +66,21 @@ function startEditCell(key: string) {
   editingCell.value = key
 }
 
+/**
+ * 单元格值清洗：仅当为纯数字且无前导零时才转为数字，否则保留原字符串，
+ * 避免破坏像元编码/地类号等前导零属性（"001" 不应变成 1）。
+ */
+function coerceCellValue(raw: string): unknown {
+  if (raw === '') return ''
+  if (/^-?\d+(\.\d+)?$/.test(raw) && !/^-?0\d+/.test(raw)) {
+    return Number(raw)
+  }
+  return raw
+}
+
 function commitCell(index: number, key: string, event: Event) {
   const target = event.target as HTMLInputElement
-  const raw = target.value
-  let value: unknown = raw
-  if (raw !== '' && !Number.isNaN(Number(raw))) value = Number(raw)
-  drawStore.updateFeatureProperties(index, { [key]: value })
+  drawStore.updateFeatureProperties(index, { [key]: coerceCellValue(target.value) })
   drawStore.scheduleDraftPersist()
   editingCell.value = null
 }
@@ -89,60 +100,15 @@ function addPropertyColumn() {
   drawStore.scheduleDraftPersist()
 }
 
-/** 保存前几何自动检查 */
-function validateFeatures(): string[] {
-  const errors: string[] = []
-  const features = drawStore.features
-  if (features.length === 0) {
-    errors.push('图层为空，将按空图层丢弃处理')
-    return errors
-  }
-  for (let i = 0; i < features.length; i++) {
-    const f = features[i]
-    const label = `要素 ${i + 1}`
-    if (f.geometry.type === 'Polygon') {
-      const ring = f.geometry.coordinates[0] ?? []
-      if (ring.length < 4) {
-        errors.push(`${label}：面环至少需要 4 个坐标（含闭合点）`)
-      } else {
-        const first = ring[0]
-        const last = ring[ring.length - 1]
-        if (first[0] !== last[0] || first[1] !== last[1]) {
-          errors.push(`${label}：面环未闭合`)
-        }
-      }
-    } else if (f.geometry.type === 'LineString') {
-      if ((f.geometry.coordinates ?? []).length < 2) {
-        errors.push(`${label}：线至少需要 2 个顶点`)
-      }
-    }
-    const coords =
-      f.geometry.type === 'Polygon'
-        ? (f.geometry.coordinates[0] ?? [])
-        : (f.geometry.coordinates ?? [])
-    for (const c of coords) {
-      if (!Number.isFinite(c[0]) || !Number.isFinite(c[1])) {
-        errors.push(`${label}：包含非法坐标`)
-        break
-      }
-    }
-  }
-  return errors
-}
-
+/** 保存：几何校验 + 真实异步上传，成功后才显示"已保存" */
 async function handleSave() {
-  validationErrors.value = validateFeatures()
-  // 空图层（无硬性几何错误）允许走保存流程 —— handleDrawSave 会丢弃
-  const blocking = validationErrors.value.filter((e) => !e.includes('空图层'))
-  if (blocking.length > 0) return
-
-  isSaving.value = true
-  try {
-    window.dispatchEvent(new CustomEvent('draw:save'))
-    lastSavedAt.value = new Date().toLocaleTimeString('zh-CN')
-  } finally {
-    isSaving.value = false
+  validationErrors.value = []
+  const res = await drawSave.saveDrawLayer()
+  if (!res.ok) {
+    validationErrors.value = res.validationErrors
+    return
   }
+  lastSavedAt.value = new Date().toLocaleTimeString('zh-CN')
 }
 </script>
 
@@ -165,7 +131,7 @@ async function handleSave() {
     <div v-if="validationErrors.length > 0" class="attr-table-errors">
       <div v-for="(e, i) in validationErrors" :key="i" class="attr-table-error-item">
         <AlertTriangle :size="11" />
-        <span>{{ e }}</span>
+        <span>{{ e.label }}：{{ e.message }}</span>
       </div>
     </div>
 

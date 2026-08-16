@@ -27,6 +27,28 @@ def _mask(value: str) -> str:
     return f"{value[:4]}****{value[-4:]}"
 
 
+def _sanitize_accounts(raw: Any) -> list[dict[str, str]]:
+    """清洗多账号列表：仅保留含 token 或（用户名+密码）的有效条目。"""
+    if not isinstance(raw, list):
+        return []
+    cleaned: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        acc = {
+            key: str(item.get(key) or "").strip()
+            for key in ("username", "token", "password")
+        }
+        if acc["token"] or (acc["username"] and acc["password"]):
+            cleaned.append(acc)
+    return cleaned
+
+
+def _account_count(entry: dict[str, Any]) -> int:
+    accounts = entry.get("accounts")
+    return len(accounts) if isinstance(accounts, list) else 0
+
+
 def _encrypt_blob(plaintext: str, encryption_key: str) -> dict[str, str]:
     if not plaintext:
         return {"ciphertext": "", "iv": ""}
@@ -193,6 +215,7 @@ def public_portal_credentials(
         pub["has_password"] = bool(
             str(entry.get("password") or entry.get("secret") or "").strip()
         )
+        pub["account_count"] = _account_count(entry)
         pub["source"] = str(entry.get("source") or "none")
         if pid == "earthdata":
             pub["use_for_nsidc"] = bool(entry.get("use_for_nsidc", True))
@@ -217,6 +240,7 @@ def public_portal_credentials(
             "has_password": bool(
                 str(entry.get("password") or entry.get("secret") or "").strip()
             ),
+            "account_count": _account_count(entry),
             "source": str(entry.get("source") or "none"),
         }
     return base
@@ -273,6 +297,14 @@ def upsert_portal_credential(
     for key in ("username", "client_id", "auth_type", "token_header"):
         if key in payload and payload[key] is not None:
             secrets[key] = str(payload[key]).strip()
+
+    # 多账号列表（NSMC 等限额门户轮换）：显式空列表视为清空，回落单凭据模式
+    if payload.get("accounts") is not None:
+        cleaned = _sanitize_accounts(payload.get("accounts"))
+        if cleaned:
+            secrets["accounts"] = cleaned
+        else:
+            secrets.pop("accounts", None)
 
     if "use_for_nsidc" in payload:
         secrets["use_for_nsidc"] = bool(payload["use_for_nsidc"])

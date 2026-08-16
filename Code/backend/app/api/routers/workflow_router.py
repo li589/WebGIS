@@ -173,6 +173,9 @@ def list_workflow_runs(
     供前端启动恢复（含"最近成功 run 产物自动恢复"）与跨会话状态同步使用。
     非 admin 仅可见本人 run（无 user_id 的旧 run 对非 admin 不可见）。
     """
+    # 查询参数 ``status`` 遮蔽了模块级 ``fastapi.status``，此处取别名使用。
+    from fastapi import status as http_status
+
     from app.services.workflow_repository import SQLiteWorkflowRepository
     from shared.contracts.api_contracts import ExecutionStatus
 
@@ -183,7 +186,7 @@ def list_workflow_runs(
         if config.settings.user_auth_enabled:
             raise ApiError(
                 AUTH_ERROR,
-                status_code=status.HTTP_401_UNAUTHORIZED,
+                status_code=http_status.HTTP_401_UNAUTHORIZED,
                 detail="Authentication required.",
             )
     elif _cred.role != "admin":

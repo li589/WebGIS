@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 from unittest.mock import patch
 
 from app.services.workflow.submission_service import WorkflowSubmissionService
@@ -321,3 +322,94 @@ def test_fy_single_descriptor_uses_accepted_fy_dataset_keys(
     assert "fy3b_folder" in data_access, '"fy3b_folder" in data_access'
     # 提交期模板校验应通过（此前因 fy_folder 直接 422）
     WorkflowSubmissionService()._validate_request_params(normalized)
+
+
+def _mk_descriptor(layer_id: str, **overrides: Any):
+    from shared.contracts.api_contracts import BoundingBox, LayerDescriptor
+
+    fields: dict[str, Any] = {
+        "layer_id": layer_id,
+        "dataset_key": f"dk-{layer_id}",
+        "display_name": layer_id,
+        "description": "test descriptor",
+        "category": "research-group",
+        "source_type": "algorithm_output",
+        "render_type": "raster",
+        "supported_map_modes": ["2d"],
+        "extent": BoundingBox(west=-180.0, south=-85.0, east=180.0, north=85.0),
+    }
+    fields.update(overrides)
+    return LayerDescriptor(**fields)
+
+
+def test_merged_group_readiness_aggregates_ready_members() -> None:
+    """合并组 readiness 由成员聚合：成员全 ready → 组 ready。"""
+    group = _mk_descriptor(
+        "grp-x",
+        is_merged_group=True,
+        members=["m-ready-a", "m-ready-b"],
+        engine="overlay_registry",
+    )
+    members = {
+        "grp-x": group,
+        "m-ready-a": _mk_descriptor("m-ready-a"),
+        "m-ready-b": _mk_descriptor("m-ready-b"),
+    }
+    with patch(
+        "app.services.workflow_request_resolver.get_layer_descriptor",
+        side_effect=lambda lid: members.get(lid),
+    ):
+        readiness = describe_layer_run_readiness("grp-x")
+
+    assert readiness is not None
+    assert readiness["run_readiness"] == "ready"
+    assert "2/2" in (readiness["run_readiness_summary"] or "")
+
+
+def test_merged_group_readiness_partial_members_still_ready() -> None:
+    """任一成员 ready 即 ready，且 notes 记录未就绪成员。"""
+    group = _mk_descriptor(
+        "grp-y",
+        is_merged_group=True,
+        members=["m-ok", "m-placeholder"],
+        engine="overlay_registry",
+    )
+    members = {
+        "grp-y": group,
+        "m-ok": _mk_descriptor("m-ok"),
+        "m-placeholder": _mk_descriptor("m-placeholder", status="placeholder"),
+    }
+    with patch(
+        "app.services.workflow_request_resolver.get_layer_descriptor",
+        side_effect=lambda lid: members.get(lid),
+    ):
+        readiness = describe_layer_run_readiness("grp-y")
+
+    assert readiness is not None
+    assert readiness["run_readiness"] == "ready"
+    assert "1/2" in (readiness["run_readiness_summary"] or "")
+    assert any("m-placeholder" in note for note in readiness["run_readiness_notes"])
+
+
+def test_merged_group_readiness_all_blocked_and_missing_member() -> None:
+    """全部成员未就绪（含缺失成员）→ 组 blocked。"""
+    group = _mk_descriptor(
+        "grp-z",
+        is_merged_group=True,
+        members=["m-missing", "m-placeholder"],
+        engine="overlay_registry",
+    )
+    members = {
+        "grp-z": group,
+        "m-placeholder": _mk_descriptor("m-placeholder", status="placeholder"),
+    }
+    with patch(
+        "app.services.workflow_request_resolver.get_layer_descriptor",
+        side_effect=lambda lid: members.get(lid),
+    ):
+        readiness = describe_layer_run_readiness("grp-z")
+
+    assert readiness is not None
+    assert readiness["run_readiness"] == "blocked"
+    assert readiness["unresolved_default_datasets"] == []
+    assert any("m-missing" in note for note in readiness["run_readiness_notes"])

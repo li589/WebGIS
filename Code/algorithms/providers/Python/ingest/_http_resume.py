@@ -1,10 +1,10 @@
 r"""共享 HTTP 下载工具：Range 断点续传 + 指数退避重试 + 磁盘空间检查。
 
-从 ``ingest/nsidc_download.py`` 提取，供 nsidc / nomads / cdse 等 ingest
-下载模块复用，保证三条新增下载链与既有 NSIDC 链续传语义一致。
+从 ``ingest/nsidc_download.py`` 提取，供 nsidc / nomads / cdse / gldas 等
+ingest 下载模块复用，保证各下载链续传语义一致。
 
-说明：``gldas_download.py`` 暂保留自有 ``.part`` 临时文件实现（含原子替换语义），
-后续再收敛，本次不改其行为。
+``gldas_download.py`` 在此基础上叠加 ``.part`` 临时文件 + 原子替换，
+避免部分下载文件污染"已下载跳过"判断。
 """
 
 from __future__ import annotations

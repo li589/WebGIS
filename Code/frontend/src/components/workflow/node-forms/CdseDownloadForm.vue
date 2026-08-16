@@ -7,9 +7,11 @@
  * 字段：
  *   - product_ids: 产品 UUID 列表（逗号/换行分隔，textarea）
  *   - odata_filter: OData $filter（在线检索）
- *   - target_dir / use / username / password / bearer_token
- *   - legacy_urls: 公共直链列表（use=legacy）
+ *   - target_dir / use / legacy_urls
  *   - force / max_products
+ *
+ * 凭据不经节点参数下发（防明文落库），统一走门户 copernicus，
+ * 表单内仅展示凭据状态提示。
  *
  * 附加能力：copernicus 门户凭据状态提示；下载源三选一校验。
  */
@@ -42,9 +44,6 @@ const DEFAULTS = {
   odata_filter: '',
   target_dir: '',
   use: 'auto',
-  username: '',
-  password: '',
-  bearer_token: '',
   legacy_urls: '',
   force: false,
   max_products: '',
@@ -157,44 +156,6 @@ function update(key: string, value: unknown) {
         @input="update('odata_filter', ($event.target as HTMLTextAreaElement).value)"
       />
       <span class="field-hint">在线检索产品；与 product_ids 并存时优先显式 UUID</span>
-    </div>
-
-    <!-- 凭据覆盖 -->
-    <div class="form-row two-col">
-      <div class="col">
-        <label class="form-label">用户名（可选）</label>
-        <input
-          type="text"
-          class="form-input"
-          :value="String(form.username ?? '')"
-          placeholder="留空走门户凭据"
-          :readonly="readonly"
-          @input="update('username', ($event.target as HTMLInputElement).value)"
-        />
-      </div>
-      <div class="col">
-        <label class="form-label">密码（可选）</label>
-        <input
-          type="password"
-          class="form-input"
-          :value="String(form.password ?? '')"
-          placeholder="留空走门户凭据"
-          :readonly="readonly"
-          @input="update('password', ($event.target as HTMLInputElement).value)"
-        />
-      </div>
-    </div>
-
-    <div class="form-row">
-      <label class="form-label">Bearer token（可选，优先于账密）</label>
-      <input
-        type="password"
-        class="form-input"
-        :value="String(form.bearer_token ?? '')"
-        placeholder="留空自动 token 交换"
-        :readonly="readonly"
-        @input="update('bearer_token', ($event.target as HTMLInputElement).value)"
-      />
     </div>
 
     <!-- legacy 直链 -->

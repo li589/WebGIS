@@ -13,7 +13,7 @@ import { useLayerWorkspace, useLayerViewport } from '../stores/layers/selectors'
 import { useUiStore } from '../stores/ui'
 import { useDrawStore } from '../stores/draw-store'
 import { useLogStore } from '../stores/log'
-import { importVectorMultipart } from '../data-manager/core/api'
+import { useDrawSave } from '../composables/useDrawSave'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import type { LayerHotspot } from '../stores/layers/types'
 import { createMapCanvasActionBridge } from './map/map-canvas-action-bridge'
@@ -547,64 +547,31 @@ onBeforeUnmount(() => {
 // ── 绘制保存事件处理 ────────────────────────────────────────────────────
 
 const attrTableVisible = ref(false)
+const drawSave = useDrawSave()
 
 function handleToggleAttrTable() {
   attrTableVisible.value = !attrTableVisible.value
 }
 
-/** 移除草稿图层（保存成功替换为正式图层，或空图层丢弃时） */
-function removeDraftLayerInstance() {
-  const draftInstanceId = drawStore.draftLayerId
-  if (draftInstanceId) {
-    layersStore.removeLayer(draftInstanceId)
-  }
-}
-
 async function handleDrawSave() {
-  const features = drawStore.features
-
-  // S5：空图层丢弃 —— 移除草稿图层与本地草稿，不上传
-  if (features.length === 0) {
-    removeDraftLayerInstance()
-    drawStore.clearDraft()
-    logStore.logOperation('draw-save', '空图层已丢弃')
+  const res = await drawSave.saveDrawLayer()
+  if (res.ok) {
+    logStore.logOperation(
+      'draw-save',
+      res.dropped ? '空图层已丢弃' : `绘制图层已保存 (${res.featureCount} 个要素)`,
+    )
     return
   }
-
-  const geojson: GeoJSON.FeatureCollection = {
-    type: 'FeatureCollection',
-    features: features.map((f) => ({
-      type: 'Feature' as const,
-      geometry: f.geometry,
-      properties: f.properties,
-    })),
-  }
-
-  const jsonStr = JSON.stringify(geojson)
-  const blob = new Blob([jsonStr], { type: 'application/geo+json' })
-  const fileName = drawStore.draftLayerName
-    ? `${drawStore.draftLayerName.replace(/[<>:"/\\|?*]/g, '_')}.geojson`
-    : `绘制图层-${Date.now()}.geojson`
-  const file = new File([blob], fileName, { type: 'application/geo+json' })
-
-  try {
-    logStore.logOperation('draw-save', '正在保存绘制图层…')
-    const imported = await importVectorMultipart([file])
-    if (imported?.layer_id) {
-      // 先移除草稿图层，再添加正式图层（避免空壳残留）
-      removeDraftLayerInstance()
-      layersStore.addImportedVectorLayer(fileName.replace(/\.geojson$/i, ''), geojson, {
-        backendLayerId: imported.layer_id,
-        featureCount: features.length,
-      })
-      // S2：保存成功后必须清除本地草稿，防止刷新恢复时要素重复
-      drawStore.clearDraft()
-      logStore.logOperation('draw-save', `绘制图层已保存 (${features.length} 个要素)`)
+  if (res.validationErrors.length > 0) {
+    logStore.logOperation('draw-save-error', `校验未通过: ${res.validationErrors[0].message}`)
+    // 打开属性表展示校验错误，便于用户定位问题要素
+    if (!attrTableVisible.value) {
+      window.dispatchEvent(new CustomEvent('draw:toggle-attr-table'))
     }
-  } catch (err) {
-    logStore.logOperation('draw-save', `保存失败: ${err}`)
-    console.error('[draw] save failed:', err)
+    return
   }
+  logStore.logOperation('draw-save-error', `保存失败: ${res.error ?? '未知错误'}`)
+  console.error('[draw] save failed:', res.error)
 }
 
 // 进入绘制模式时自动创建草稿图层；已有未保存草稿则继续编辑（防丢失）
@@ -618,6 +585,31 @@ watch(
     const layer = layersStore.addDrawDraftLayer(name)
     drawStore.beginDrawSession(name)
     drawStore.setDraftLayerId(layer.instanceId)
+  },
+)
+
+// 切出绘制模式：丢弃未闭合的半成品多边形，保留已完成要素（草稿）
+watch(
+  () => uiStore.interactionMode,
+  (mode) => {
+    if (mode !== 'draw') {
+      drawStore.clearActiveVertices()
+    }
+  },
+)
+
+// 孤儿草稿安全网：草稿/编辑图层在工作区被移除时，清空绘制 store，避免悬空状态
+watch(
+  () => layersStore.activeLayers.map((l) => l.instanceId),
+  (ids) => {
+    const draftId = drawStore.draftLayerId
+    const editingId = drawStore.editingLayerId
+    if ((draftId && !ids.includes(draftId)) || (editingId && !ids.includes(editingId))) {
+      drawStore.clearDraft()
+      if (uiStore.interactionMode === 'draw') {
+        uiStore.setInteractionMode('move')
+      }
+    }
   },
 )
 

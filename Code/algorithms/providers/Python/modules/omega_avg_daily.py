@@ -171,7 +171,6 @@ class OmegaAvgDailyModule(BaseModule):
             load_lin_pix_selection,
         )
 
-        _ = params
         datasource_selection = _resolve_omega_avg_datasource_selection(
             dict(inputs.get("datasource_selection", {}))
         )
@@ -206,11 +205,12 @@ class OmegaAvgDailyModule(BaseModule):
         # 解析 grid_shape
         grid_shape = _resolve_grid_shape(algorithm_params, datasource_selection)
 
-        # 解析输出目录
+        # 解析输出目录：节点属性 output_dir（种子/画布 params）优先，
+        # 其次 request output_spec_extra，缺省 run 工作区。
         output_dir = Path(
-            output_spec_extra.get(
-                "output_dir", ctx.workspace / "products" / "omega_avg_daily"
-            )
+            str(params.get("output_dir") or "").strip()
+            or output_spec_extra.get("output_dir")
+            or (ctx.workspace / "products" / "omega_avg_daily")
         )
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -290,15 +290,18 @@ class OmegaAvgDailyModule(BaseModule):
         days_processed = int(stage_d_result.get("days_processed", 0))
         products: list[ProductRef] = []
         if days_processed > 0:
-            # 汇总产品：目标年的逐日 SM/VOD/OMEGA 目录
-            products.append(
-                ProductRef(
-                    name=f"omega_avg_daily_{target_year}",
-                    type="omega_avg_daily_dir",
-                    uri=str(output_dir),
-                    variable="SM",
+            # 目标年逐日 SM/VOD/OMEGA 目录：复用 omega_sf_*_block_dir 类型，
+            # 单日 YYYYMMDD.mat 由物化链按一天块发布为时间序列图层。
+            for variable, layer in (("SM", "SM"), ("VOD", "VOD"), ("OMEGA", "OMEGA")):
+                products.append(
+                    ProductRef(
+                        name=f"omega_avg_{variable.lower()}_{target_year}",
+                        type=f"omega_sf_{variable.lower()}_block_dir",
+                        uri=str(output_dir),
+                        variable=variable,
+                        tags={"module": self.name, "layer": layer},
+                    )
                 )
-            )
 
         if ctx.logger_adapter is not None:
             for product in products:
