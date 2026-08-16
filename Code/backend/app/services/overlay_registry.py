@@ -555,15 +555,24 @@ def _smap_time_list() -> list[str]:
 
 
 def _gpcp_time_list(limit: int = 24) -> list[str]:
-    """从 GPCP NetCDF 目录采样时间标签（取最近 limit 个月）。"""
-    if not _GPCP_DIR.exists():
-        return []
+    """从 GPCP NetCDF 目录采样时间标签（取最近 limit 个月）。
+
+    源目录被清理而 PNG 资产仍在时，回退扫描 overlay PNG 目录
+    （gpcp_YYYYMM.png），保证时间轴可用；此时 /overlay-value 点查询
+    因源数据缺失而不可用。
+    """
     tags: list[str] = []
-    for f in sorted(_GPCP_DIR.glob("GPCPMON_L3_*_V3.2.nc4")):
-        # GPCPMON_L3_198301_V3.2.nc4 -> 198301
-        parts = f.stem.split("_")
-        if len(parts) >= 3 and len(parts[2]) == 6 and parts[2].isdigit():
-            tags.append(parts[2])
+    if _GPCP_DIR.exists():
+        for f in sorted(_GPCP_DIR.glob("GPCPMON_L3_*_V3.2.nc4")):
+            # GPCPMON_L3_198301_V3.2.nc4 -> 198301
+            parts = f.stem.split("_")
+            if len(parts) >= 3 and len(parts[2]) == 6 and parts[2].isdigit():
+                tags.append(parts[2])
+    if not tags:
+        for f in sorted((_OVERLAY_PNG_ROOT / "gpcp_ts").glob("gpcp_*.png")):
+            parts = f.stem.split("_")
+            if len(parts) >= 2 and len(parts[1]) == 6 and parts[1].isdigit():
+                tags.append(parts[1])
     return _uniform_sample(tags, limit)
 
 
@@ -890,9 +899,7 @@ register_overlay(
 # 源数据（相对 BACKEND_DATA_ROOT）
 _GEBCO_NC = _data_join("Geological", "DEM", "GEBCO_2024.nc")
 _CMFD_TIF = _data_join("Meteorological", "Precipitation", "pre_2002_01.tif")
-_CLCD_TIF = _data_join(
-    "Ecological_Vegetation", "LandCover", "CLCD", "CLCD_v01_1997.tif"
-)
+_CLCD_TIF = _data_join("Ecological_Vegetation", "LandCover", "CLCD_v01_1997.tif")
 _BIOMASS_NC = _data_join(
     "Ecological_Vegetation",
     "Biomass",
@@ -1138,7 +1145,7 @@ register_overlay(
         category="static",
         palette="YlOrRd",
         vmin=0.0,
-        vmax=0.5,
+        vmax=0.0953,
         unit="",
         opacity=0.8,
         source_path=_SMAP_AUX_ALBEDO_MAT,
@@ -1156,8 +1163,8 @@ register_overlay(
         bounds_filename="smap_aux_bd_overlay_bounds.json",
         category="static",
         palette="YlOrBr",
-        vmin=0.8,
-        vmax=1.8,
+        vmin=0.8843,
+        vmax=1.5675,
         unit="g/cm³",
         opacity=0.8,
         source_path=_SMAP_AUX_BD_MAT,
@@ -1166,7 +1173,7 @@ register_overlay(
     )
 )
 
-# SF — 砂粒分数（EASE-Grid 9km）
+# SF — SMAP 辅助参数场（EASE-Grid 9km；中国区实测 p1~p99 = 0.29~19.1，非 0–1 分数，语义待课题组确认）
 register_overlay(
     OverlaySpec(
         layer_id="smap-aux-sf",
@@ -1175,9 +1182,9 @@ register_overlay(
         bounds_filename="smap_aux_sf_overlay_bounds.json",
         category="static",
         palette="YlGn",
-        vmin=0.0,
-        vmax=1.0,
-        unit="fraction",
+        vmin=0.2904,
+        vmax=19.1067,
+        unit="",
         opacity=0.8,
         source_path=_SMAP_AUX_SF_MAT,
         source_variable="SF",
@@ -1195,7 +1202,7 @@ register_overlay(
         category="static",
         palette="RdBu",
         vmin=0.0,
-        vmax=10.0,
+        vmax=0.1299,
         unit="",
         opacity=0.8,
         source_path=_SMAP_AUX_B_MAT,
@@ -1213,8 +1220,8 @@ register_overlay(
         bounds_filename="smap_aux_cf_overlay_bounds.json",
         category="static",
         palette="PuBu",
-        vmin=0.0,
-        vmax=1.0,
+        vmin=0.0119,
+        vmax=0.396,
         unit="fraction",
         opacity=0.8,
         source_path=_SMAP_AUX_CF_MAT,
@@ -1232,8 +1239,8 @@ register_overlay(
         bounds_filename="smap_aux_h_overlay_bounds.json",
         category="static",
         palette="Oranges",
-        vmin=0.0,
-        vmax=0.5,
+        vmin=0.1833,
+        vmax=2.2918,
         unit="",
         opacity=0.8,
         source_path=_SMAP_AUX_H_MAT,
@@ -1289,8 +1296,8 @@ register_overlay(
         bounds_filename="smap_aux_vi_qa_overlay_bounds.json",
         category="static",
         palette="RdYlGn",
-        vmin=0.0,
-        vmax=1.0,
+        vmin=0.0398,
+        vmax=0.8535,
         unit="",
         opacity=0.8,
         source_path=_SMAP_AUX_VI_V_QA_MAT,
@@ -1305,9 +1312,10 @@ register_overlay(
 # v7.3 HDF5，含 OMEGA / SM / VOD 三个变量，shape (1624, 3856) on EASE-Grid 9km
 # 每个图层导出 31 天（2025-12-01 ~ 2025-12-31）的 PNG + bounds JSON
 
-# TODO: VOD/ω 独立展示图层待补实现（数据源同 SmapSoil_VOD_SM/{YYYYMMDD}.mat，VOD/OMEGA 变量）
+# 注：VOD/ω 独立展示图层已于 5cfba8e 有意移除（固化汇报图层下线，产物走
+# 工作流 run 结果图层）；SmapSoil_VOD_SM 的 SM 展示层保留在下方。
 
-# SMAP/FY/站点融合土壤水分产品（2025-12，31 天，SM/VOD/ω；当前展示 SM，VOD/ω 补实现中）
+# SMAP/FY/站点融合土壤水分产品（2025-12，31 天；本层展示 SM，VOD/ω 经工作流结果图层查看）
 register_overlay(
     OverlaySpec(
         layer_id="prod-fy_smap_station-sm_vod_omega-202512-fusion",

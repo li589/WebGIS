@@ -27,6 +27,7 @@
   19. vod-dec2025 [TS]    — VOD 植被光学厚度时间序列 (2025-12, 31 天, magma) [Phase 2 新增]
   20. prod-fy_smap_station-sm_vod_omega-202512-fusion [TS]     — SM 土壤湿度时间序列 (2025-12, 31 天, YlGnBu) [Phase 2 新增]
   21. omega-dec2025 [TS]  — Omega 反演时间序列 (2025-12, 31 天, plasma) [Phase 2 新增]
+  22. smap-aux-* (9 层)   — SMAP 辅助数据静态层 (albedo/bd/sf/b/cf/h/igbp/koppen/vi-qa) [S1 清理新增]
 
 [TS] = 时间序列图层，输出多张按时间索引的 PNG + bounds JSON。
 """
@@ -1396,6 +1397,139 @@ def export_forest_ratio() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# 21. SMAP 辅助数据静态图层（9 层，EASE-Grid 9km / 全球 0.083°）
+#     命名与 overlay_registry.py 的 smap-aux-* 条目严格一致；
+#     旧版 aux_*/ 目录为全球范围未重投影导出（地理定位错误），由本节取代
+# ──────────────────────────────────────────────────────────────────────────────
+
+_SMAP_AUX_DATA_DIR = Path(r"I:\Geograph_DataSet\Soil_Moisture\SMAP_Auxiliary_Data")
+
+
+def _smap_aux_continuous_range(data: np.ndarray) -> tuple[float, float]:
+    """中国区裁剪后连续场的显示范围：1% / 99% 分位（打印后同步回注册表）。"""
+    valid = data[np.isfinite(data)]
+    if valid.size == 0:
+        return (0.0, 1.0)
+    vmin = float(np.percentile(valid, 1))
+    vmax = float(np.percentile(valid, 99))
+    if vmax <= vmin:
+        vmax = vmin + 1.0
+    return (round(vmin, 4), round(vmax, 4))
+
+
+def export_smap_aux_layers() -> None:
+    """导出 9 个 smap-aux-* 静态叠加层 PNG + bounds（registry 命名）。
+
+    - EASE-Grid 9km 场（albedo/bd/sf/b/cf/h/igbp/vi-qa）：重投影 WGS84 0.1°
+      并裁剪中国区（同 landscape_metrics 路径），避免高纬 Mercator 拉伸。
+    - Koppen 为全球 0.083° 等经纬网格：按 lat_kop/lon_kop 直接切片裁剪。
+    - 分类场（igbp/koppen）：0 视为无效掩膜，vmin/vmax 固定类别范围。
+    - 连续场：vmin/vmax 取 1%/99% 分位并打印——注册表需同步该值以保持
+      图例与 PNG 一致。
+    """
+    print("\n=== SMAP auxiliary static layers (9 layers) ===")
+
+    ease_fields = [
+        ("Albedo.mat", "ALBEDO", "smap_aux_albedo", "smap-aux-albedo", "YlOrRd"),
+        ("BD.mat", "BD", "smap_aux_bd", "smap-aux-bd", "YlOrBr"),
+        ("SF.mat", "SF", "smap_aux_sf", "smap-aux-sf", "YlGn"),
+        ("B.mat", "B", "smap_aux_b", "smap-aux-b", "RdBu"),
+        ("CF.mat", "CF", "smap_aux_cf", "smap-aux-cf", "PuBu"),
+        ("H.mat", "H", "smap_aux_h", "smap-aux-h", "Oranges"),
+        (
+            "IGBP_9km_12.mat",
+            "IGBP_9km_12",
+            "smap_aux_igbp",
+            "smap-aux-igbp",
+            "nipy_spectral",
+        ),
+        ("VI_v_qa.mat", "NDVI_v_mean", "smap_aux_vi_qa", "smap-aux-vi-qa", "RdYlGn"),
+    ]
+    discrete = {"smap-aux-igbp"}
+
+    for mat_file, var, subdir, layer_id, cmap in ease_fields:
+        src = _SMAP_AUX_DATA_DIR / mat_file
+        print(f"\n--- {layer_id} ({mat_file}:{var}) ---")
+        if not src.exists():
+            print(f"  [SKIP] File not found: {src}")
+            continue
+        m = _read_mat_auto(src)
+        if var not in m:
+            print(f"  [SKIP] Variable {var} not found, keys={list(m.keys())[:10]}")
+            continue
+        data = np.asarray(m[var], dtype=np.float64)
+        if layer_id in discrete:
+            data[data == 0] = np.nan
+        try:
+            data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1)
+        except Exception as e:
+            print(f"  [FAIL] EASE-Grid reproject failed: {e}")
+            continue
+        out_dir = _OUT_ROOT / subdir
+        if layer_id in discrete:
+            vmin, vmax = 1, 17
+        else:
+            vmin, vmax = _smap_aux_continuous_range(data)
+            print(f"  display range (p1/p99): vmin={vmin}, vmax={vmax}")
+        _render_png(
+            data,
+            out_dir / f"{subdir}_overlay.png",
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+        )
+        _write_bounds(
+            out_dir / f"{subdir}_overlay_bounds.json", layer_id, bounds
+        )
+
+    # Koppen：全球 0.083° 等经纬网格（非 EASE-Grid，不做重投影，直接切片）
+    print("\n--- smap-aux-koppen (Koppen_present_083.mat:Koppen) ---")
+    src = _SMAP_AUX_DATA_DIR / "Koppen_present_083.mat"
+    if not src.exists():
+        print(f"  [SKIP] File not found: {src}")
+        return
+    m = _read_mat_auto(src)
+    if "Koppen" not in m:
+        print(f"  [SKIP] Variable Koppen not found, keys={list(m.keys())[:10]}")
+        return
+    data = np.asarray(m["Koppen"], dtype=np.float64)
+    data[data == 0] = np.nan
+    lat_raw = np.asarray(m["lat_kop"], dtype=np.float64)
+    lon_raw = np.asarray(m["lon_kop"], dtype=np.float64)
+    # 坐标可能是 2D 网格（规则网格取首列/首行即 1D 轴）
+    lat = lat_raw[:, 0].ravel() if lat_raw.ndim == 2 else lat_raw.ravel()
+    lon = lon_raw[0, :].ravel() if lon_raw.ndim == 2 else lon_raw.ravel()
+    if lat.size != data.shape[0] or lon.size != data.shape[1]:
+        print(
+            f"  [SKIP] Grid mismatch: data {data.shape} vs lat {lat.size}/lon {lon.size}"
+        )
+        return
+    # 坐标可能降序（北→南），统一为行号升纬度便于切片
+    if lat[0] > lat[-1]:
+        lat = lat[::-1]
+        data = data[::-1, :]
+    west, south, east, north = _CHINA_BBOX
+    lat_lo = int(np.searchsorted(lat, south))
+    lat_hi = int(np.searchsorted(lat, north))
+    lon_lo = int(np.searchsorted(lon, west))
+    lon_hi = int(np.searchsorted(lon, east))
+    if lat_hi <= lat_lo or lon_hi <= lon_lo:
+        print("  [SKIP] China clip empty after slicing")
+        return
+    sub = data[lat_lo:lat_hi, lon_lo:lon_hi]
+    sub_lat = lat[lat_lo:lat_hi]
+    sub_lon = lon[lon_lo:lon_hi]
+    bounds = _bounds_from_centers(sub_lat, sub_lon)
+    out_dir = _OUT_ROOT / "smap_aux_koppen"
+    _render_png(
+        sub, out_dir / "smap_aux_koppen_overlay.png", cmap="Set3", vmin=1, vmax=30
+    )
+    _write_bounds(
+        out_dir / "smap_aux_koppen_overlay_bounds.json", "smap-aux-koppen", bounds
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # 17. Landscape Metrics 9km 2020 — SHDI（Phase 1.6 新增）
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -1655,6 +1789,7 @@ def main() -> int:
         ("Omega FY TS", export_omega_fy_ts),
         ("Forest Ratio", export_forest_ratio),
         ("Landscape Metrics", export_landscape_metrics),
+        ("SMAP Aux Layers", export_smap_aux_layers),
         # ── Phase 2: 课题组 VOD/SM/Omega 2025-12 产品族 ──
         ("VOD TS", export_vod_ts),
         ("SM Dec2025 TS", export_sm_dec2025_ts),

@@ -799,7 +799,7 @@
         {
           "id": "prod-fy_smap_station-sm_vod_omega-202512-fusion",
           "name": "多源融合土壤湿度",
-          "description": "融合SMAP/FY-3D/站点观测的土壤湿度（SM）/植被光学厚度（VOD）/动态散射反照率（ω）产品族（2025-12-01 至 2025-12-31，EASE-Grid 9km）。当前展示 SM，VOD/ω 图层补实现中。",
+          "description": "融合SMAP/FY-3D/站点观测的土壤湿度（SM）/植被光学厚度（VOD）/动态散射反照率（ω）产品族（2025-12-01 至 2025-12-31，EASE-Grid 9km）。本层展示 SM；VOD/ω 经工作流结果图层查看。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1054,66 +1054,6 @@
       "isAdminBoundary": false,
       "mergedInto": "precipitation-static",
       "temporalCoverage": "2002-01 sample"
-    },
-    {
-      "catalogId": "era5-dwaa-cn",
-      "name": "ERA5 白天热浪",
-      "category": "climate",
-      "metricLabel": "事件次数",
-      "metricUnit": "events",
-      "metricPrecision": 0,
-      "updateLabel": "静态数据",
-      "sourceLabel": "ERA5 DWAA SMCI 2020",
-      "accentColor": "#e08214",
-      "accentGlow": "rgba(224, 130, 20, 0.3)",
-      "chipTone": "rgba(224, 130, 20, 0.16)",
-      "sources": [
-        {
-          "id": "era5-dwaa-cn",
-          "name": "ERA5 白天热浪",
-          "description": "ERA5 基于 SMCI（土壤湿度指数）指标的白天热浪事件累积计数（2020 全年 366 天）。",
-          "urlTemplate": "",
-          "needsAuth": false,
-          "needsBackendTransform": false,
-          "coordSys": "EPSG:4326",
-          "updateFrequency": "静态数据"
-        }
-      ],
-      "isMergedGroup": false,
-      "members": [],
-      "isAdminBoundary": false,
-      "mergedInto": "era5-hazard-events",
-      "temporalCoverage": "2020"
-    },
-    {
-      "catalogId": "era5-wdaa-cn",
-      "name": "ERA5 夜间热浪",
-      "category": "climate",
-      "metricLabel": "事件次数",
-      "metricUnit": "events",
-      "metricPrecision": 0,
-      "updateLabel": "静态数据",
-      "sourceLabel": "ERA5 WDAA SMCI 2020",
-      "accentColor": "#8073ac",
-      "accentGlow": "rgba(128, 115, 172, 0.3)",
-      "chipTone": "rgba(128, 115, 172, 0.16)",
-      "sources": [
-        {
-          "id": "era5-wdaa-cn",
-          "name": "ERA5 夜间热浪",
-          "description": "ERA5 基于 SMCI（土壤湿度指数）指标的夜间热浪事件累积计数（2020 全年 366 天）。",
-          "urlTemplate": "",
-          "needsAuth": false,
-          "needsBackendTransform": false,
-          "coordSys": "EPSG:4326",
-          "updateFrequency": "静态数据"
-        }
-      ],
-      "isMergedGroup": false,
-      "members": [],
-      "isAdminBoundary": false,
-      "mergedInto": "era5-hazard-events",
-      "temporalCoverage": "2020"
     },
     {
       "catalogId": "co2-cn",
@@ -1598,7 +1538,7 @@
         {
           "id": "prod-fy_smap_station-sm_vod_omega-202512-fusion",
           "name": "多源融合土壤湿度",
-          "description": "融合SMAP/FY-3D/站点观测的土壤湿度（SM）/植被光学厚度（VOD）/动态散射反照率（ω）产品族（2025-12-01 至 2025-12-31，EASE-Grid 9km）。当前展示 SM，VOD/ω 图层补实现中。",
+          "description": "融合SMAP/FY-3D/站点观测的土壤湿度（SM）/植被光学厚度（VOD）/动态散射反照率（ω）产品族（2025-12-01 至 2025-12-31，EASE-Grid 9km）。本层展示 SM；VOD/ω 经工作流结果图层查看。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1653,47 +1593,6 @@
       "members": [
         "gpcp-precip-ts",
         "cmfd-precip-cn"
-      ],
-      "isAdminBoundary": false
-    },
-    {
-      "catalogId": "era5-hazard-events",
-      "name": "ERA5 灾害事件",
-      "category": "climate",
-      "metricLabel": "事件次数",
-      "metricUnit": "events",
-      "metricPrecision": 0,
-      "updateLabel": "静态数据",
-      "sourceLabel": "多源可选",
-      "accentColor": "#e08214",
-      "accentGlow": "rgba(224, 130, 20, 0.3)",
-      "chipTone": "rgba(224, 130, 20, 0.16)",
-      "sources": [
-        {
-          "id": "era5-dwaa-cn",
-          "name": "ERA5 白天热浪",
-          "description": "ERA5 基于 SMCI（土壤湿度指数）指标的白天热浪事件累积计数（2020 全年 366 天）。",
-          "urlTemplate": "",
-          "needsAuth": false,
-          "needsBackendTransform": false,
-          "coordSys": "EPSG:4326",
-          "updateFrequency": "静态数据"
-        },
-        {
-          "id": "era5-wdaa-cn",
-          "name": "ERA5 夜间热浪",
-          "description": "ERA5 基于 SMCI（土壤湿度指数）指标的夜间热浪事件累积计数（2020 全年 366 天）。",
-          "urlTemplate": "",
-          "needsAuth": false,
-          "needsBackendTransform": false,
-          "coordSys": "EPSG:4326",
-          "updateFrequency": "静态数据"
-        }
-      ],
-      "isMergedGroup": true,
-      "members": [
-        "era5-dwaa-cn",
-        "era5-wdaa-cn"
       ],
       "isAdminBoundary": false
     },
