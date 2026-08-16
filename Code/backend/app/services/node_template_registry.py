@@ -298,6 +298,72 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         ],
         "node_class": "http_open_data",
     },
+    {
+        "type": "download/cmr_search",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "CMR Granule 检索",
+        "description": (
+            "NASA CMR granule 检索（公共只读，免凭据）：按产品短名/版本/时间/范围"
+            "返回 granule 数据 URL。输出 path（首个 URL，可直接接「门户数据下载」）。"
+            "Earthdata 云 CDN 对象名含 tile/时间戳无法直接拼路径时，用本节点解析真实地址。"
+        ),
+        "inputs": [
+            _port(
+                "path",
+                "value:string",
+                required=False,
+                description="预留（当前以参数为准）。",
+            ),
+        ],
+        "outputs": [
+            _port("path", "value:string", description="首个数据 URL（绝对地址）。"),
+            _port("urls", "value:string", description="数据 URL 列表。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param(
+                "short_name",
+                "string",
+                description="产品短名（如 VNP13A1 / SPL3SMP_E / GLDAS_NOAH025_3H）。",
+            ),
+            _param("version", "string", description="产品版本（可选）。"),
+            _param(
+                "start_date",
+                "string",
+                description="起始日期 YYYY-MM-DD 或 YYYYMMDD。",
+                widget="date",
+            ),
+            _param(
+                "end_date",
+                "string",
+                description="结束日期 YYYY-MM-DD 或 YYYYMMDD（默认同起始）。",
+                widget="date",
+            ),
+            _param(
+                "bounding_box",
+                "string",
+                description="范围过滤（西,南,东,北，可选）。",
+            ),
+            _param(
+                "link_filter",
+                "string",
+                description="URL 子串过滤（如 .h5，可选）。",
+            ),
+            _param(
+                "max_results",
+                "number",
+                default=5,
+                description="最多返回条数（1~50）。",
+            ),
+            _param(
+                "cmr_base",
+                "string",
+                description="CMR 检索端点覆盖（一般不改）。",
+            ),
+        ],
+        "node_class": "cmr_granule_search",
+    },
     # ── 远程数据下载/同步/预处理节点 ──
     {
         "type": "download/ssh_sync",

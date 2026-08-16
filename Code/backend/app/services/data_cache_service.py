@@ -180,7 +180,7 @@ DEFAULT_OPEN_DATA_PRESETS: dict[str, str] = {
     "noaa_goes": "https://cdn.star.nesdis.noaa.gov/",
     "nasa_earthdata": "https://data.lpdaac.earthdatacloud.nasa.gov/",
     "nasa_cmr": "https://cmr.earthdata.nasa.gov/",
-    "nsidc_data": "https://n5eil01u.ecs.nsidc.org/",
+    "nsidc_data": "https://data.nsidc.earthdatacloud.nasa.gov/",
     "nasa_ges_disc": "https://hydro1.gesdisc.eosdis.nasa.gov/",
     "nasa_gldas": "https://hydro1.gesdisc.eosdis.nasa.gov/data/GLDAS/",
     "esa_copernicus": "https://catalogue.dataspace.copernicus.eu/",

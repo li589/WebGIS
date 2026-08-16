@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -159,11 +160,25 @@ def _fetch_from_nas(
     """Fetch FY HDF data from NAS via RemoteSource (SMB)."""
     from data_access.sources.remote import RemoteSource
 
-    # 默认 URI 为本实验室 NAS 兜底（ds 未注入 nas_uri 时生效）；
-    # 生产经工作流 datasource_selection.nas_uri 或「远程与存储」profile 覆盖。
-    nas_uri = ds.get("nas_uri", "")
+    # 2026-08 实测修正：NAS 上 FY3D 逐日文件位于
+    # /Chenhaojun/Data/fy3dhdf2425/FY3D_GBAL_L1_10H_YYYYMMDD_MWRID_0.tif
+    # （旧默认 smb://nas/Chenhaojun/fy/{date}/ 是目录形式且路径不存在；
+    #   RemoteSource 仅支持单对象下载，目录 URI 会落成 .bin 垃圾文件）。
+    # 优先级：datasource_selection.nas_uri > CGDA_FY_NAS_URI 环境变量 > 实验室默认。
+    date_ymd = date_path.replace(".", "").replace("-", "")
+    default_uri = (
+        "smb://nas/Chenhaojun/Data/fy3dhdf2425/"
+        f"FY3D_GBAL_L1_10H_{date_ymd}_MWRID_0.tif?cred=nas_profile"
+    )
+    nas_uri = str(ds.get("nas_uri", "") or "").strip()
     if not nas_uri:
-        nas_uri = f"smb://nas/Chenhaojun/fy/{date_path}/?cred=nas_profile"
+        nas_uri = os.getenv("CGDA_FY_NAS_URI", "").strip()
+    if nas_uri:
+        nas_uri = nas_uri.replace("{date_ymd}", date_ymd).replace(
+            "{date_path}", date_path
+        )
+    if not nas_uri:
+        nas_uri = default_uri
 
     if ctx.logger_adapter is not None:
         ctx.logger_adapter.emit_stage_start(

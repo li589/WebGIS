@@ -6,6 +6,7 @@
  *
  *   - download/ssh_sync           → SshSyncForm
  *   - download/http_open_data     → HttpOpenDataForm
+ *   - download/cmr_search         → CmrSearchForm
  *   - download/nsidc_smap_download → NsidcDownloadForm
  *   - download/gldas_download      → GldasDownloadForm
  *   - download/gldas_nc4_to_mat    → GldasNc4ToMatForm
@@ -19,6 +20,7 @@ import { computed } from 'vue'
 import type { LGraphNodeClass } from '../litegraph-setup'
 import SshSyncForm from './SshSyncForm.vue'
 import HttpOpenDataForm from './HttpOpenDataForm.vue'
+import CmrSearchForm from './CmrSearchForm.vue'
 import NsidcDownloadForm from './NsidcDownloadForm.vue'
 import GldasDownloadForm from './GldasDownloadForm.vue'
 import GldasNc4ToMatForm from './GldasNc4ToMatForm.vue'
@@ -39,6 +41,7 @@ const nodeType = computed(() => props.node?.type ?? '')
 const SUBFORM_LABELS: Record<string, string> = {
   'download/ssh_sync': 'SSH 同步',
   'download/http_open_data': '门户数据下载',
+  'download/cmr_search': 'CMR Granule 检索',
   'download/nsidc_smap_download': 'NSIDC SMAP 下载',
   'download/gldas_download': 'GLDAS 在线下载',
   'download/gldas_nc4_to_mat': 'GLDAS nc4→mat',
@@ -66,6 +69,13 @@ function forward(key: string, value: unknown) {
 
     <HttpOpenDataForm
       v-else-if="nodeType === 'download/http_open_data'"
+      :node="node"
+      :readonly="readonly"
+      @update-property="forward"
+    />
+
+    <CmrSearchForm
+      v-else-if="nodeType === 'download/cmr_search'"
       :node="node"
       :readonly="readonly"
       @update-property="forward"

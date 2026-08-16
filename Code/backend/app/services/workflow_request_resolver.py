@@ -437,8 +437,27 @@ def _extract_datasource_selection_from_nodes(
     return selection
 
 
-def _count_executable_module_nodes(nodes: list[Any] | None) -> int:
-    """Count algorithm/module nodes, excluding canvas metadata helpers."""
+@lru_cache(maxsize=1)
+def _registry_type_by_node_class() -> dict[str, str]:
+    """node_class → 注册表规范 type 映射（如 ssh_sync → download/ssh_sync）。
+
+    compile_litegraph_to_workflow_definition 将 download/* 编译为
+    node_type="module" + params.module_name=<node_class>，原始前缀丢失；
+    借注册表反查以恢复 download/stats/viz 类别判断。
+    """
+    from app.services.node_template_registry import get_all_node_templates
+
+    mapping: dict[str, str] = {}
+    for template in get_all_node_templates():
+        node_class = str(template.get("node_class") or "")
+        node_type = str(template.get("type") or "")
+        if node_class and node_type:
+            mapping.setdefault(node_class, node_type)
+    return mapping
+
+
+def _executable_node_types(nodes: list[Any] | None) -> list[str]:
+    """List raw node types of executable nodes, excluding canvas metadata helpers."""
     scrape_only = {
         "data_source",
         "source",
@@ -452,7 +471,7 @@ def _count_executable_module_nodes(nodes: list[Any] | None) -> int:
         "output_map_layer",
         "output_file",
     }
-    count = 0
+    types: list[str] = []
     for node in nodes or []:
         if not isinstance(node, dict):
             continue
@@ -466,15 +485,23 @@ def _count_executable_module_nodes(nodes: list[Any] | None) -> int:
             or ntype.startswith("stats/")
             or ntype.startswith("viz/")
         ):
-            count += 1
+            types.append(ntype)
             continue
-        # Compiled form: node_type=module + params.module_name=<algorithm>
+        # Compiled form: node_type=module + params.module_name=<node_class>.
+        # 反查注册表恢复规范 type（download/* 判定依赖前缀），查不到退化为 module/*。
         if str(node.get("node_type") or "") == "module" and module_name not in {
             "",
             "module",
         }:
-            count += 1
-    return count
+            types.append(
+                _registry_type_by_node_class().get(module_name, f"module/{module_name}")
+            )
+    return types
+
+
+def _count_executable_module_nodes(nodes: list[Any] | None) -> int:
+    """Count algorithm/module nodes, excluding canvas metadata helpers."""
+    return len(_executable_node_types(nodes))
 
 
 def _flatten_ui_workflow_definition(
@@ -541,7 +568,13 @@ def _flatten_ui_workflow_definition(
         )
 
     # Multi-module graph: keep executable definition; only enrich request fields.
-    if _count_executable_module_nodes(nodes) >= 2:
+    # 数据获取节点（download/*）承载拉取参数（server_type/remote_path/日期过滤），
+    # 展平会丢弃这些参数并把请求错配为层描述符默认 module（如 fy_tb_nas_read
+    # 跳过预处理直连 map_layer 的单 ssh_sync 形态）；含任一即保留整图执行。
+    executable_types = _executable_node_types(nodes)
+    if len(executable_types) >= 2 or any(
+        t.startswith("download/") for t in executable_types
+    ):
         enriched = dict(algorithm_request)
         enriched["datasource_selection"] = existing_ds
         enriched["algorithm_params"] = existing_params

@@ -135,6 +135,143 @@ def test_normalize_multi_module_keeps_definition_without_module_name() -> None:
     assert "module_name" not in algo, '"module_name" not in algo'
 
 
+def test_normalize_single_download_node_keeps_definition() -> None:
+    """单 download/* 数据获取节点画布（如 ssh_sync→map_layer）不得展平。
+
+    展平会丢弃拉取参数（server_type/remote_path/日期过滤），并把请求错配为
+    层描述符默认 module（fy_tb_nas_read 直连输出场景即此形态）。
+    """
+    payload = WorkflowSubmitRequest(
+        command_type=WorkflowCommandType.analysis,
+        command_label="run nas fetch",
+        layer_id="ref-fy-tb-202512-mwri",
+        map_context=RuntimeMapContext(active_layer_id="ref-fy-tb-202512-mwri"),
+        algorithm_request={
+            "workflow_definition": {
+                "nodes": [
+                    {
+                        "id": 1,
+                        "type": "download/ssh_sync",
+                        "properties": {
+                            "server_type": "nas_profile",
+                            "remote_path": "/Chenhaojun/Data/fy3dhdf2425",
+                            "start_date": "20240101",
+                            "end_date": "20240101",
+                            "file_filter": ".tif",
+                        },
+                    },
+                    {
+                        "id": 2,
+                        "type": "output/map_layer",
+                        "properties": {"layer_id": "ref-fy-tb-202512-mwri"},
+                    },
+                ],
+                "links": [[1, 1, 0, 2, 0]],
+            },
+            "time_range": {
+                "start": "2024-01-01T00:00:00",
+                "end": "2024-01-01T23:59:59",
+            },
+        },
+    )
+
+    class _Descriptor:
+        engine = "python_provider"
+        layer_id = "ref-fy-tb-202512-mwri"
+        module_name = "fy_daily"
+        workflow_name = "fy_tb_local_read"
+        default_task_type = "fy_daily"
+        default_data_access_sources: dict[str, list[str]] = {}
+        status = "available"
+
+    with patch(
+        "app.services.workflow_request_resolver.get_layer_descriptor",
+        return_value=_Descriptor(),
+    ):
+        normalized = normalize_workflow_submit_request(payload)
+
+    algo = normalized.algorithm_request or {}
+    assert isinstance(algo.get("workflow_definition"), dict), (
+        "single download node canvas must keep workflow_definition"
+    )
+    assert "module_name" not in algo, (
+        "download pipeline must not be flattened into descriptor module_name"
+    )
+
+
+def test_normalize_compiled_download_node_keeps_definition() -> None:
+    """编译形态（node_type=module + params.module_name=node_class）的 download 节点不得展平。
+
+    compile_litegraph_to_workflow_definition 会把 download/ssh_sync 编译为
+    node_type="module" + params.module_name="ssh_sync"（node_class），原始
+    "download/" 前缀丢失。检测若只认原始前缀，单 download 节点图会被错配为
+    层描述符默认 module（fy_daily），拉取参数全部丢弃（run-b6906e8ed273）。
+    """
+    payload = WorkflowSubmitRequest(
+        command_type=WorkflowCommandType.analysis,
+        command_label="run nas fetch compiled",
+        layer_id="ref-fy-tb-202512-mwri",
+        map_context=RuntimeMapContext(active_layer_id="ref-fy-tb-202512-mwri"),
+        algorithm_request={
+            "workflow_definition": {
+                "workflow_id": "fy_tb_nas_read_live",
+                "nodes": [
+                    {
+                        "node_id": "n1",
+                        "node_type": "module",
+                        "params": {
+                            "server_type": "nas_profile",
+                            "remote_path": "/Chenhaojun/Data/fy3dhdf2425",
+                            "start_date": "20240101",
+                            "end_date": "20240101",
+                            "file_filter": ".tif",
+                            "module_name": "ssh_sync",
+                        },
+                    },
+                    {
+                        "node_id": "n2",
+                        "node_type": "module",
+                        "params": {
+                            "layer_id": "ref-fy-tb-202512-mwri",
+                            "module_name": "output_map_layer",
+                        },
+                    },
+                ],
+                "edges": [
+                    {"from_node": "n1", "from_port": "path", "to_node": "n2", "to_port": "data"}
+                ],
+            },
+            "time_range": {
+                "start": "2024-01-01T00:00:00",
+                "end": "2024-01-01T23:59:59",
+            },
+        },
+    )
+
+    class _Descriptor:
+        engine = "python_provider"
+        layer_id = "ref-fy-tb-202512-mwri"
+        module_name = "fy_daily"
+        workflow_name = "fy_tb_local_read"
+        default_task_type = "fy_daily"
+        default_data_access_sources: dict[str, list[str]] = {}
+        status = "available"
+
+    with patch(
+        "app.services.workflow_request_resolver.get_layer_descriptor",
+        return_value=_Descriptor(),
+    ):
+        normalized = normalize_workflow_submit_request(payload)
+
+    algo = normalized.algorithm_request or {}
+    assert isinstance(algo.get("workflow_definition"), dict), (
+        "compiled single download node must keep workflow_definition"
+    )
+    assert "module_name" not in algo, (
+        "compiled download pipeline must not be flattened into descriptor module_name"
+    )
+
+
 def test_fy_single_descriptor_uses_accepted_fy_dataset_keys(
     tmp_path, request
 ) -> None:

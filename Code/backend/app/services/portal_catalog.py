@@ -146,9 +146,12 @@ DEFAULT_PORTAL_CATALOG: dict[str, PortalDef] = {
             name="NSIDC 数据下载",
             organization="NSIDC",
             region="international",
-            base_url="https://n5eil01u.ecs.nsidc.org/",
+            # 2026-08 迁移：旧 ECS 主机 n5eil01u.ecs.nsidc.org 已被官方云 CDN 取代
+            # （且旧主机对部分地区网络 TCP 拒绝）。新结构：
+            # /nsidc-cumulus-prod-protected/<PROG>/<VER>/YYYY/MM/<granule>。
+            base_url="https://data.nsidc.earthdatacloud.nasa.gov/",
             website="https://nsidc.org/",
-            description="NSIDC 极地/冰冻圈产品（可回退 Earthdata 凭据）。",
+            description="NSIDC 极地/冰冻圈产品云 CDN（可回退 Earthdata 凭据）。",
             requires_credentials=True,
             auth_type="bearer",
             credential_profile="nsidc",
@@ -824,9 +827,13 @@ def search_portal(
     url = defn.search_url_template.format(
         base=base.rstrip("/"), query=quote_plus(q), page_size=size
     )
-    creds = _runtime_credentials(repo)
     headers = {"Accept": "application/json"}
-    headers.update(_auth_headers_for_portal(defn, creds))
+    # 公共只读检索（requires_credentials=False，如 CMR）不携带凭据：
+    # CMR 对携带的 Authorization 头会做校验，无效 Basic 凭据会把本来
+    # 公共可用的检索直接打成 401。
+    if defn.requires_credentials:
+        creds = _runtime_credentials(repo)
+        headers.update(_auth_headers_for_portal(defn, creds))
 
     try:
         with safe_urlopen(url, timeout=20.0, headers=headers) as resp:

@@ -184,7 +184,7 @@ class RemoteFetchModule(BaseModule):
 # lives in backend app.services.data_cache_service.DEFAULT_OPEN_DATA_PRESETS.
 _DEFAULT_OPEN_DATA_PRESETS: dict[str, str] = {
     "nasa_earthdata": "https://data.lpdaac.earthdatacloud.nasa.gov/",
-    "nsidc_data": "https://n5eil01u.ecs.nsidc.org/",
+    "nsidc_data": "https://data.nsidc.earthdatacloud.nasa.gov/",
 }
 
 _PORTAL_CRED_ALIASES: dict[str, tuple[str, ...]] = {
@@ -199,6 +199,123 @@ _PORTAL_CRED_ALIASES: dict[str, tuple[str, ...]] = {
     "copernicus": ("copernicus", "esa", "esa_download", "esa_copernicus"),
     "nsmc": ("nsmc", "cma_nsmc", "cma_data", "fy"),
 }
+
+# URS token 交换：Earthdata 云 CDN（lp-prod-protected / nsidc-cumulus-prod-protected）
+# 只认 Bearer token，不认 Basic。basic 凭据经 URS 换 token 后可用。
+_URS_TOKEN_URL = "https://urs.earthdata.nasa.gov/api/users/token"
+_URS_TOKENS_URL = "https://urs.earthdata.nasa.gov/api/users/tokens"
+_URS_TOKEN_TTL_SECONDS = 100 * 60  # URS token 有效期 2h，提前 20 分钟过期
+_urs_token_cache: dict[str, tuple[float, str]] = {}
+
+
+def _urs_list_tokens(basic_header: str) -> list[dict[str, object]]:
+    """列出账号当前有效 token（URS 每用户 token 数量有限，须先复用再新建）。"""
+    import urllib.request
+
+    req = urllib.request.Request(
+        _URS_TOKENS_URL,
+        method="GET",
+        headers={"Authorization": basic_header, "Accept": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        payload = json.loads(resp.read().decode("utf-8", "replace"))
+    if isinstance(payload, dict):
+        payload = payload.get("tokens") or []
+    return [t for t in payload if isinstance(t, dict)] if payload else []
+
+
+def _urs_token_still_valid(entry: dict[str, object]) -> bool:
+    """判断 token 未过期（expiration_date 解析失败时按有效处理，URS 只列活跃 token）。"""
+    import time
+    from datetime import datetime, timezone
+
+    raw = str(entry.get("expiration_date") or "").strip()
+    if not raw:
+        return True
+    for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ", "%m/%d/%Y %H:%M:%S"):
+        try:
+            dt = datetime.strptime(raw.replace("Z", "+0000"), fmt)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.timestamp() > time.time() + 300
+        except ValueError:
+            continue
+    return True
+
+
+def _earthdata_bearer_token(username: str, password: str) -> str:
+    """用 Earthdata 账密获取 URS Bearer token（进程内缓存，失败抛异常）。
+
+    复用优先：URS 每用户 token 数量有上限，盲目新建很快触发
+    403 max_token_limit（provider 侧限流）；先列已存在 token 并复用，
+    仅在无可用 token 时新建。交换为幂等只读语义；缓存避免重复打 URS。
+    可用 CGDA_URS_TOKEN_EXCHANGE=0 关闭（测试环境）。
+    """
+    import base64
+    import time
+    import urllib.error
+    import urllib.request
+
+    if os.getenv("CGDA_URS_TOKEN_EXCHANGE", "1").strip() == "0":
+        raise RuntimeError("URS token exchange disabled by CGDA_URS_TOKEN_EXCHANGE")
+
+    cache_key = f"{username}:{password}"
+    now = time.monotonic()
+    cached = _urs_token_cache.get(cache_key)
+    if cached and now - cached[0] < _URS_TOKEN_TTL_SECONDS:
+        return cached[1]
+
+    basic_header = "Basic " + base64.b64encode(
+        f"{username}:{password}".encode()
+    ).decode("ascii")
+
+    def _extract(entry_or_payload: object) -> str:
+        raw = (
+            entry_or_payload.get("access_token")
+            if isinstance(entry_or_payload, dict)
+            else entry_or_payload
+        )
+        if isinstance(raw, dict):
+            return str(raw.get("token") or "").strip()
+        return str(raw or "").strip()
+
+    # 1) 复用已存在的有效 token
+    try:
+        for entry in _urs_list_tokens(basic_header):
+            token = _extract(entry)
+            if token and _urs_token_still_valid(entry):
+                _urs_token_cache[cache_key] = (now, token)
+                return token
+    except Exception:  # noqa: BLE001
+        pass  # 列表失败不阻断，继续尝试新建
+
+    # 2) 新建 token
+    req = urllib.request.Request(
+        _URS_TOKEN_URL,
+        data=b"",
+        method="POST",
+        headers={"Authorization": basic_header, "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            payload = json.loads(resp.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as exc:
+        # 3) 上限触发（并发/多进程竞争）：再列一次并复用
+        if exc.code == 403:
+            for entry in _urs_list_tokens(basic_header):
+                token = _extract(entry)
+                if token and _urs_token_still_valid(entry):
+                    _urs_token_cache[cache_key] = (now, token)
+                    return token
+        raise
+    # URS 响应两种形态都见过：{"access_token": "..."}（字符串）与
+    # {"access_token": {"token": "..."}}（对象）；字符串形态解析失败会静默
+    # 回退 Basic → 云 CDN 401，故必须兼容两者。
+    token = _extract(payload)
+    if not token:
+        raise RuntimeError("URS token response missing access_token")
+    _urs_token_cache[cache_key] = (now, token)
+    return token
 
 
 def _resolve_portal_headers(
@@ -285,10 +402,23 @@ def _resolve_portal_headers(
         value = token if token.lower().startswith("bearer ") else f"Bearer {token}"
         headers[header_name] = value
     elif auth_type == "basic" and username:
-        import base64
+        # Earthdata 云 CDN 只认 Bearer：先用账密换 URS token，失败回退 Basic
+        # （GES DISC 传统端点仍接受 Basic）。
+        bearer = ""
+        if profile in {"earthdata", "nsidc", "nsidc_data"} or wants_earthdata:
+            try:
+                bearer = _earthdata_bearer_token(username, password)
+            except Exception:  # noqa: BLE001
+                bearer = ""
+        if bearer:
+            headers["Authorization"] = f"Bearer {bearer}"
+        else:
+            import base64
 
-        raw_cred = f"{username}:{password}".encode()
-        headers["Authorization"] = f"Basic {base64.b64encode(raw_cred).decode('ascii')}"
+            raw_cred = f"{username}:{password}".encode()
+            headers["Authorization"] = (
+                f"Basic {base64.b64encode(raw_cred).decode('ascii')}"
+            )
     elif auth_type == "header" and token:
         headers[header_name] = token
     elif token:
@@ -447,6 +577,160 @@ def _safe_zip_extract(zf: zipfile.ZipFile, member_name: str, extract_dir: Path) 
     if not _is_safe_archive_member(member_name, extract_dir):
         raise ValueError(f"Refusing unsafe archive member path: {member_name!r}")
     zf.extract(member_name, extract_dir)
+
+
+# ─── CMR granule 检索（公共，免凭据） ─────────────────────────────────────────
+
+_CMR_GRANULE_URL = "https://cmr.earthdata.nasa.gov/search/granules.json"
+_CMR_NON_DATA_SUFFIXES = (
+    ".iso.xml",
+    ".cmr.xml",
+    ".dmrpp",
+    ".dmr",
+    ".hdr",
+    ".qa",
+    ".md5",
+    ".png",
+    ".jpg",
+    ".bmp",
+    ".txt",
+)
+
+
+def _cmr_data_links(entry: dict[str, object], link_filter: str) -> list[str]:
+    """从 CMR granule entry 提取 https 数据链接（跳过 browse/s3/元数据小文件）。"""
+    links: list[str] = []
+    for link in entry.get("links") or []:
+        if not isinstance(link, dict):
+            continue
+        href = str(link.get("href") or "").strip()
+        rel = str(link.get("rel") or "").strip()
+        if not href.startswith("https://"):
+            continue
+        if "data#" not in rel and "data" != rel:
+            continue
+        if href.lower().endswith(_CMR_NON_DATA_SUFFIXES):
+            continue
+        if "/s3credentials" in href:
+            continue
+        if link_filter and link_filter not in href:
+            continue
+        links.append(href)
+    return links
+
+
+def _norm_cmr_date(raw: str) -> str:
+    """YYYYMMDD / YYYY-MM-DD → CMR temporal 需要的 YYYY-MM-DD。"""
+    text = raw.strip()
+    if len(text) == 8 and text.isdigit():
+        return f"{text[0:4]}-{text[4:6]}-{text[6:8]}"
+    return text
+
+
+@register_module_decorator(name="cmr_granule_search")
+class CmrGranuleSearchModule(BaseModule):
+    name = "cmr_granule_search"
+    description = (
+        "NASA CMR granule 检索（公共只读，免凭据）：按产品/版本/时间/范围返回"
+        " granule 数据 URL。输出 path（首个 URL，可直连 http_open_data）与 urls 列表。"
+        "Earthdata 云 CDN 的对象名含 tile/revolution/时间戳，无法由日期路径直接"
+        "构造，须经 CMR 解析真实下载地址。"
+    )
+    input_ports = [
+        PortSpec(name="path", kind="value", data_class="string", required=False),
+    ]
+    output_ports = [
+        PortSpec(name="path", kind="value", data_class="string"),
+        PortSpec(name="urls", kind="value", data_class="string"),
+        PortSpec(name="manifest", kind="artifact", data_class="product_manifest"),
+    ]
+    default_params: dict[str, object] = {
+        "short_name": "",
+        "version": "",
+        "start_date": "",
+        "end_date": "",
+        "bounding_box": "",
+        "link_filter": "",
+        "max_results": 5,
+        "cmr_base": _CMR_GRANULE_URL,
+    }
+
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
+        import urllib.parse
+        import urllib.request
+
+        short_name = str(params.get("short_name") or "").strip()
+        if not short_name:
+            raise ValueError("cmr_granule_search requires short_name")
+        start_date = _norm_cmr_date(str(params.get("start_date") or ""))
+        end_date = _norm_cmr_date(str(params.get("end_date") or ""))
+        if not start_date:
+            raise ValueError("cmr_granule_search requires start_date")
+        if not end_date:
+            end_date = start_date
+
+        query: dict[str, str] = {
+            "short_name": short_name,
+            "page_size": str(max(1, min(int(params.get("max_results") or 5), 50))),
+            "sort_key": "-start_date",
+        }
+        version = str(params.get("version") or "").strip()
+        if version:
+            query["version"] = version
+        # temporal: 覆盖与请求区间相交的 granule（CMR 语义）
+        query["temporal"] = f"{start_date}T00:00:00Z,{end_date}T23:59:59Z"
+        bbox = str(params.get("bounding_box") or "").strip()
+        if bbox:
+            query["bounding_box"] = bbox
+        link_filter = str(params.get("link_filter") or "").strip()
+
+        base = str(params.get("cmr_base") or _CMR_GRANULE_URL).strip()
+        url = f"{base}?{urllib.parse.urlencode(query)}"
+        req = urllib.request.Request(
+            url,
+            headers={"Accept": "application/json", "User-Agent": "CGDA-Backend/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            payload = json.loads(resp.read().decode("utf-8", "replace"))
+
+        entries = (payload.get("feed") or {}).get("entry") or []
+        if isinstance(entries, dict):
+            entries = [entries]
+        urls: list[str] = []
+        titles: list[str] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            entry_links = _cmr_data_links(entry, link_filter)
+            if entry_links:
+                urls.append(entry_links[0])
+                titles.append(str(entry.get("title") or ""))
+        if not urls:
+            raise ValueError(
+                f"cmr_granule_search: no data links for {short_name} "
+                f"[{start_date}~{end_date}] (hits={len(entries)})"
+            )
+
+        result = _store_path_manifest(
+            ctx,
+            module_name=self.name,
+            path=urls[0],
+            product_type="cmr_granule_urls",
+            extra={
+                "url": urls[0],
+                "urls": urls,
+                "titles": titles,
+                "short_name": short_name,
+                "version": version,
+            },
+        )
+        result["urls"] = urls
+        return result
 
 
 def _safe_tar_extractall(

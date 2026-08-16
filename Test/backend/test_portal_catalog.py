@@ -414,6 +414,40 @@ def test_search_portal_single_entry_dict(repo_env, monkeypatch) -> None:
     assert result["count"] == 1
 
 
+def test_search_portal_public_portal_skips_credentials(repo_env, monkeypatch) -> None:
+    """CMR 公共检索不应携带凭据：无效 Basic 头会把公共检索打成 401。"""
+    from app.services import portal_catalog
+
+    monkeypatch.setattr(
+        portal_catalog,
+        "load_portal_credentials_secret",
+        lambda **_kw: {
+            "earthdata": {
+                "enabled": True,
+                "auth_type": "basic",
+                "username": "user",
+                "password": "bad-pass",
+                "source": "db",
+            }
+        },
+    )
+    seen: dict = {}
+
+    class _JsonResponse(_FakeResponse):
+        def __init__(self) -> None:
+            super().__init__(200)
+            self._buf = io.BytesIO(json.dumps(_cmr_payload()).encode("utf-8"))
+
+    def fake_urlopen(url, **kw):
+        seen["headers"] = kw.get("headers")
+        return _JsonResponse()
+
+    monkeypatch.setattr(portal_catalog, "safe_urlopen", fake_urlopen)
+    result = portal_catalog.search_portal("nasa_cmr", query="MOD09GQ")
+    assert result["count"] == 1
+    assert "Authorization" not in (seen["headers"] or {})
+
+
 def test_search_portal_unsupported_and_empty_query(repo_env) -> None:
     from app.services.portal_catalog import (
         PortalCatalogError,
