@@ -668,10 +668,20 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "engine": "common",
         "category": "数据获取与解析",
         "title": "解压归档",
-        "description": "解压 zip/tar/gz/tgz；支持 member_glob、recurse_once、Sentinel SAFE 识别。不支持 7z/rar。",
+        "description": (
+            "解压 zip/tar/gz/tgz；非归档数据文件（如 CMR 直下的裸 .h5/.nc）透传复制进目录，"
+            "url 输入可恢复原始文件名。支持 member_glob、recurse_once、Sentinel SAFE 识别。"
+            "不支持 7z/rar。"
+        ),
         "inputs": [
             _port("path", "value:string", required=False, description="归档文件路径。"),
             _port("data", "data:source", required=False, description="上游数据源。"),
+            _port(
+                "url",
+                "value:string",
+                required=False,
+                description="来源 URL；透传时恢复原始文件名（HTTP 缓存以 sha256 命名）。",
+            ),
         ],
         "outputs": [
             _port(
@@ -2198,17 +2208,33 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "title": "NDVI 日常处理",
         "description": "读取 NDVI 栅格，生成日常 NDVI .mat 产品。",
         "inputs": [
-            _port("input_dir", "data:source", description="NDVI 栅格目录。"),
             _port(
-                "time_range",
-                "value:time_range",
+                "data",
+                "data:source",
                 required=False,
-                description="过滤时间。",
+                description="上游节点（archive/extract、remote_fetch）输出的数据目录；缺省时回退 datasource_selection。",
             ),
-            _port("bbox", "geometry:bbox", required=False, description="空间裁剪。"),
+            _port(
+                "datasource_selection",
+                "data:source",
+                required=False,
+                description="数据源选择（含 input_dir；通常 request 绑定）。",
+            ),
+            _port(
+                "algorithm_params",
+                "value:any",
+                required=False,
+                description="算法参数（通常 request 绑定）。",
+            ),
+            _port(
+                "output_spec_extra",
+                "value:any",
+                required=False,
+                description="输出扩展配置。",
+            ),
         ],
         "outputs": [
-            _port("ndvi_daily_mat", "data:mat", description="NDVI 日常 .mat 输出。"),
+            _port("manifest", "data", description="NDVI 日常产品清单。"),
         ],
         "params": [
             _param(

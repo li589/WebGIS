@@ -3,7 +3,7 @@
     "kind": "system",
     "engine": "python_provider",
     "name": "NDVI 植被指数（NASA CMR 检索 + Earthdata 下载）",
-    "description": "目的：经 CMR 公共检索解析 VIIRS NDVI（VNP13A1，500m 16-day）granule 真实 URL（Earthdata 云 CDN 对象名含 tile/时间戳，无法由日期直接拼路径），再用 earthdata 凭证下载。检索免凭据，下载需 earthdata 凭证。拉取后经 ndvi_daily 模块处理生成植被指数图层。本种子为 NDVI 在线获取的 CMR+Earthdata 路径。",
+    "description": "目的：经 CMR 公共检索解析 VIIRS NDVI（VNP13C1，0.05° CMG 16-day）granule 真实 URL（Earthdata 云 CDN 对象名含时间戳，无法由日期直接拼路径），再用 earthdata 凭证下载。检索免凭据，下载需 earthdata 凭证。裸 .h5 经 ndvi_hdf_preprocess 转 9 km GeoTIFF 后入 ndvi_daily 生成植被指数图层。本种子为 NDVI 在线获取的 CMR+Earthdata 路径。",
     "author": "system",
     "readonly": true,
     "is_template": true,
@@ -13,14 +13,14 @@
   },
   "workflow_id": "ndvi_online_read",
   "name": "NDVI 植被指数（NASA CMR 检索 + Earthdata 下载）",
-  "description": "cmr_granule_search → http_open_data（earthdata 凭证）→ archive/extract → ndvi_daily → 输出地图图层。",
+  "description": "cmr_granule_search → http_open_data（earthdata 凭证）→ archive/extract（裸 .h5 透传）→ ndvi_hdf_preprocess → ndvi_daily → 输出地图图层。",
   "nodes": [
     {
       "id": 1,
       "type": "download/cmr_search",
       "pos": [60, 140],
       "properties": {
-        "short_name": "VNP13A1",
+        "short_name": "VNP13C1",
         "start_date": "{YYYYMMDD}",
         "end_date": "{YYYYMMDD}",
         "max_results": 5
@@ -47,20 +47,21 @@
       }
     },
     {
+      "id": 6,
+      "type": "module/ndvi_hdf_preprocess",
+      "pos": [960, 140],
+      "properties": {}
+    },
+    {
       "id": 4,
       "type": "module/ndvi_daily",
-      "pos": [960, 140],
-      "properties": {
-        "algorithm_params": {
-          "rescale": "-1,1",
-          "nodata": -9999
-        }
-      }
+      "pos": [1260, 140],
+      "properties": {}
     },
     {
       "id": 5,
       "type": "output/map_layer",
-      "pos": [1260, 140],
+      "pos": [1560, 140],
       "properties": {
         "layer_id": "ndvi",
         "colormap": "ndvi",
@@ -71,16 +72,18 @@
   "links": [
     {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "value:string"},
     {"0": 2, "1": 2, "2": 0, "3": 3, "4": 0, "5": "value:string"},
-    {"0": 3, "1": 3, "2": 0, "3": 4, "4": 0, "5": "value:string"},
-    {"0": 4, "1": 4, "2": 0, "3": 5, "4": 0, "5": "value:string"}
+    {"0": 3, "1": 2, "2": 1, "3": 3, "4": 2, "5": "value:string"},
+    {"0": 4, "1": 3, "2": 0, "3": 6, "4": 2, "5": "value:string"},
+    {"0": 5, "1": 6, "2": 1, "3": 4, "4": 2, "5": "value:string"},
+    {"0": 6, "1": 4, "2": 0, "3": 5, "4": 0, "5": "value:string"}
   ],
   "extra": {
     "purpose": "online_ndvi_cmr_earthdata_pipeline",
     "scheme": "CMR_SEARCH_PLUS_EARTHDATA_DOWNLOAD",
     "portal": "nasa_cmr+nasa_earthdata",
     "cred_profile": "earthdata",
-    "pipeline": "CMR granule search (public) → earthdata download → extract H5 → ndvi_daily → map_layer",
+    "pipeline": "CMR granule search (public) → earthdata download → extract H5 → ndvi_hdf_preprocess (9 km GeoTIFF) → ndvi_daily → map_layer",
     "prerequisite": "下载步骤需 earthdata 凭证（NASA Earthdata 账号）；CMR 检索免凭据",
-    "notes": "模板种子：start_date/end_date 含 YYYYMMDD 占位符，运行前由 resolver 替换。产品为 VIIRS VNP13A1（500m 16-day NDVI，HDF5）。granule URL 由 CMR 动态解析（云 CDN 对象名不可直接构造）。"
+    "notes": "模板种子：start_date/end_date 含 YYYYMMDD 占位符，运行前由 resolver 替换。产品为 VIIRS VNP13C1（0.05° CMG 16-day NDVI，HDF5）——与 A1/A2 Matlab 预处理管线的 CMG 网格一致；granule URL 由 CMR 动态解析（云 CDN 对象名不可直接构造）。archive/extract 对裸 .h5 走透传并按 url 恢复原始文件名（观测日期 YYYYDDD 自文件名解析）。"
   }
 }

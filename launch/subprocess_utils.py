@@ -185,6 +185,31 @@ def frontend_dev_command(port: int) -> list[str] | None:
     return None
 
 
+def _resolve_windows_tool(name: str) -> str:
+    """解析 System32 工具的绝对路径（PATH 缺 System32 时裸名会静默失败）。
+
+    2026-08-16 事故：清扫用裸名 ``powershell``/``taskkill``，在 PATH 缺
+    System32 的终端里枚举返回空 → 清扫 no-op → 旧世代进程堆叠。
+    未知工具名原样返回，交由调用方处理。
+    """
+    if not IS_WINDOWS:
+        return name
+    sysroot = os.environ.get("SystemRoot") or os.environ.get("WINDIR") or r"C:\Windows"
+    candidates: dict[str, list[str]] = {
+        "powershell": [
+            rf"{sysroot}\System32\WindowsPowerShell\v1.0\powershell.exe",
+            rf"{sysroot}\SysWOW64\WindowsPowerShell\v1.0\powershell.exe",
+        ],
+        "pwsh": [rf"{sysroot}\System32\WindowsPowerShell\v1.0\powershell.exe"],
+        "taskkill": [rf"{sysroot}\System32\taskkill.exe"],
+        "docker": [rf"{sysroot}\System32\docker.exe"],
+    }
+    for cand in candidates.get(name, []):
+        if Path(cand).is_file():
+            return cand
+    return name
+
+
 def terminate_by_cmdline_patterns(patterns: list[str]) -> None:
     """按命令行子串终止进程（Windows: CIM/WMI/taskkill 回退；Linux: pkill -f）。"""
     if not patterns:
@@ -207,7 +232,7 @@ $rows | ForEach-Object {
         try:
             r = subprocess.run(
                 [
-                    "powershell",
+                    _resolve_windows_tool("powershell"),
                     "-NoProfile",
                     "-ExecutionPolicy",
                     "Bypass",
@@ -236,7 +261,7 @@ $rows | ForEach-Object {
                 continue
             if any(pat in cmdline for pat in patterns):
                 subprocess.run(
-                    ["taskkill", "/PID", str(pid), "/T", "/F"],
+                    [_resolve_windows_tool("taskkill"), "/PID", str(pid), "/T", "/F"],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     **hidden_kwargs(),

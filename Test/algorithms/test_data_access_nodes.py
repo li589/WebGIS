@@ -94,6 +94,70 @@ class DataAccessNodesTests(unittest.TestCase):
             self.assertTrue((extract_dir / "keep.nc").exists())
             self.assertFalse((extract_dir / "inner.txt").exists())
 
+    def test_archive_extract_passthrough_restores_url_basename(self) -> None:
+        """CMR 直下的裸 .h5：透传复制，并按 URL 恢复原始文件名（缓存名为 sha256）。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            cached = Path(tmp) / "deadbeefcafe0123456789ab.h5"
+            cached.write_bytes(b"hdf5-bytes")
+
+            out = self.registry.get_module("archive_extract").execute(
+                {
+                    "path": str(cached),
+                    "url": (
+                        "https://data.laadsdaac.earthdatacloud.nasa.gov/"
+                        "laads/allData/VNP13C1.002/2025/161/"
+                        "VNP13C1.A2025161.002.2025210032044.h5"
+                    ),
+                },
+                {"output_dirname": "ndvi_extracted", "member_glob": "*.h5"},
+                _ctx(workspace),
+            )
+            extract_dir = Path(str(out["extract_dir"]))
+            restored = extract_dir / "VNP13C1.A2025161.002.2025210032044.h5"
+            self.assertTrue(restored.exists())
+            self.assertEqual(restored.read_bytes(), b"hdf5-bytes")
+
+    def test_archive_extract_passthrough_without_url_keeps_cache_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            cached = Path(tmp) / "cafe0123456789ab.nc"
+            cached.write_bytes(b"nc-bytes")
+
+            out = self.registry.get_module("archive_extract").execute(
+                {"path": str(cached)}, {}, _ctx(workspace)
+            )
+            extract_dir = Path(str(out["extract_dir"]))
+            self.assertTrue((extract_dir / "cafe0123456789ab.nc").exists())
+
+    def test_archive_extract_passthrough_glob_mismatch_raises(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            cached = Path(tmp) / "cafe0123456789ab.h5"
+            cached.write_bytes(b"hdf5-bytes")
+
+            with self.assertRaises(FileNotFoundError):
+                self.registry.get_module("archive_extract").execute(
+                    {"path": str(cached)},
+                    {"member_glob": "*.hdf"},
+                    _ctx(workspace),
+                )
+
+    def test_archive_extract_still_refuses_7z(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            archived = Path(tmp) / "a.7z"
+            archived.write_bytes(b"fake-7z")
+
+            with self.assertRaises(ValueError):
+                self.registry.get_module("archive_extract").execute(
+                    {"path": str(archived)}, {}, _ctx(workspace)
+                )
+
     def test_data_source_module(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
@@ -127,7 +191,9 @@ class DataAccessNodesTests(unittest.TestCase):
             )
             self.assertIs(out["manifest"], upstream)
             self.assertEqual(out["map_layer"]["source"], "upstream_manifest")
-            self.assertEqual(out["map_layer"]["layer_id"], "method-smap-omega-doy-dynamic")
+            self.assertEqual(
+                out["map_layer"]["layer_id"], "method-smap-omega-doy-dynamic"
+            )
 
 
 class TestResolvePortalEntry(unittest.TestCase):

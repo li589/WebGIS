@@ -24,11 +24,18 @@ def _ensure_default_modules_loaded() -> None:
     import importlib
     import logging
     import pkgutil
+    import sys
     from pathlib import Path
 
     _logger = logging.getLogger(__name__)
-    # 扫描 modules/ 目录下所有 .py 文件（排除特殊文件）
     modules_dir = Path(__file__).parent
+    # 模块顶层有 ``from output import ...`` 等绝对导入；调用方（backend bridge）
+    # 的 import path 上下文可能已退出，须由 registry 自行保证 provider root 可解析，
+    # 否则模块加载失败、被 compat shim 静默顶班（原生端口签名与行为失效）。
+    provider_root = str(modules_dir.parent)
+    if provider_root not in sys.path:
+        sys.path.insert(0, provider_root)
+    # 扫描 modules/ 目录下所有 .py 文件（排除特殊文件）
     exclude = {"__init__", "base", "compat", "registry"}
     for _finder, name, _ispkg in pkgutil.iter_modules([str(modules_dir)]):
         if name in exclude:

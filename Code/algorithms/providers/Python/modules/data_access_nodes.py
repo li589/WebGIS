@@ -535,6 +535,22 @@ def _fnmatch_member(name: str, pattern: str) -> bool:
     )
 
 
+def _passthrough_basename(archive_path: Path, inputs: dict[str, object]) -> str:
+    """透传时的目标文件名：优先按来源 URL 恢复原始名。
+
+    HttpSource 物化缓存以 sha256 命名，产品文件名中的 YYYYDDD 等元信息丢失
+    （如 VNP13C1 HDF 需按文件名解析观测日期），须由 URL 还原。
+    """
+    url_hint = _coerce_path(inputs.get("url")) or ""
+    if url_hint.startswith(("http://", "https://")):
+        from urllib.parse import urlparse
+
+        base = Path(urlparse(url_hint).path).name
+        if base and "." in base:
+            return base
+    return archive_path.name
+
+
 def _find_safe_root(extract_dir: Path) -> Path | None:
     if extract_dir.name.upper().endswith(".SAFE") and extract_dir.is_dir():
         return extract_dir
@@ -780,12 +796,20 @@ def _recurse_once_archives(extract_dir: Path) -> None:
 class ArchiveExtractModule(BaseModule):
     name = "archive_extract"
     description = (
-        "解压 zip/tar/gz/tgz 归档到目录；支持 member_glob 过滤、recurse_once 内层压缩、"
-        "Sentinel SAFE 根目录识别。不支持 7z/rar。"
+        "解压 zip/tar/gz/tgz 归档到目录；非归档数据文件（如 CMR 直下的裸 .h5/.nc）"
+        "透传复制进目录，url 输入可恢复原始文件名。支持 member_glob 过滤、"
+        "recurse_once 内层压缩、Sentinel SAFE 根目录识别。不支持 7z/rar。"
     )
     input_ports = [
         PortSpec(name="path", kind="value", data_class="string", required=False),
         PortSpec(name="data", kind="data", data_class="source", required=False),
+        PortSpec(
+            name="url",
+            kind="value",
+            data_class="string",
+            required=False,
+            description="来源 URL；透传时用于恢复原始文件名（HTTP 缓存以 sha256 命名）。",
+        ),
     ]
     output_ports = [
         PortSpec(name="path", kind="value", data_class="string"),
@@ -826,6 +850,7 @@ class ArchiveExtractModule(BaseModule):
 
         member_glob = str(params.get("member_glob") or "").strip()
         name_lower = archive_path.name.lower()
+        passthrough = False
         if name_lower.endswith(".zip"):
             with zipfile.ZipFile(archive_path, "r") as zf:
                 members = zf.namelist()
@@ -847,11 +872,20 @@ class ArchiveExtractModule(BaseModule):
             out_file = extract_dir / archive_path.stem
             with gzip.open(archive_path, "rb") as src, out_file.open("wb") as dst:
                 shutil.copyfileobj(src, dst)
-        else:
+        elif name_lower.endswith((".7z", ".rar")):
             raise ValueError(
                 f"Unsupported archive type: {archive_path.suffix}. "
                 "Supported: zip/tar/gz/tgz. 7z/rar are not supported."
             )
+        else:
+            passthrough = True
+            dest_name = _passthrough_basename(archive_path, inputs)
+            if member_glob and not _fnmatch_member(dest_name, member_glob):
+                raise FileNotFoundError(
+                    f"passthrough file {dest_name!r} does not match "
+                    f"member_glob {member_glob!r}"
+                )
+            shutil.copy2(archive_path, extract_dir / dest_name)
 
         if bool(params.get("recurse_once")):
             _recurse_once_archives(extract_dir)
@@ -859,6 +893,8 @@ class ArchiveExtractModule(BaseModule):
         result_path = extract_dir
         safe_root = _find_safe_root(extract_dir)
         extra: dict[str, object] = {"archive": str(archive_path)}
+        if passthrough:
+            extra["passthrough"] = True
         if safe_root is not None:
             result_path = safe_root
             extra["safe_root"] = str(safe_root)
