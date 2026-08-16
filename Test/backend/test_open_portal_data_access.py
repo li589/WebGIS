@@ -377,3 +377,180 @@ def test_seeds_copied_on_ensure() -> None:
         "smap_soil_moisture_local",
     ):
         assert wid in ids, 'wid in ids'
+
+
+# ─── P2e：http_open_data earthaccess 默认化 ──────────────────────────────────
+
+
+def _open_data_ctx(tmp: str, datasource_selection: dict):
+    from types import SimpleNamespace
+    from workflow.schemas import NodeExecutionContext
+
+    class _Store:
+        def put(self, artifact, payload=None):
+            return artifact
+
+    workspace = Path(tmp)
+    request = SimpleNamespace(
+        job_id="j-ea",
+        datasource_selection=datasource_selection,
+    )
+    runtime = SimpleNamespace(run_id="r-ea", workspace=str(workspace))
+    return NodeExecutionContext(
+        workflow_id="wf",
+        node_id="n1",
+        request=request,  # type: ignore[arg-type]
+        runtime_context=runtime,  # type: ignore[arg-type]
+        workspace=workspace,
+        artifact_store=_Store(),  # type: ignore[arg-type]
+    )
+
+
+def _fake_legacy_materialize(tmp: str):
+    """HttpSource.materialize 桩：记录调用并落文件。"""
+    captured = {"called": False}
+
+    def fake_materialize(_self, resource, *, target_dir=None):
+        captured["called"] = True
+        path = Path(target_dir or tmp) / "out.bin"
+        path.write_bytes(b"x")
+        from data_access.contracts import build_resource_ref
+
+        return build_resource_ref(
+            uri=path.as_uri(),
+            source_kind="online",
+            storage_backend="local",
+            local_path=str(path),
+            metadata={"cache_hit": False, "local_path": str(path)},
+        )
+
+    return fake_materialize, captured
+
+
+_EA_FAMILY_DS = {
+    "open_data_presets": {
+        "nasa_earthdata": "https://data.lpdaac.earthdatacloud.nasa.gov/"
+    },
+    "portal_credentials": {
+        "earthdata": {
+            "enabled": True,
+            "auth_type": "basic",
+            "username": "u",
+            "password": "p",
+        }
+    },
+}
+
+
+def test_http_open_data_auto_earthaccess_when_family_and_creds() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        with (
+            patch(
+                "modules.data_access_nodes._earthaccess_credentials_available",
+                return_value=True,
+            ),
+            patch(
+                "modules.data_access_nodes._materialize_via_earthaccess"
+            ) as ea_mock,
+        ):
+            ea_mock.return_value = Path(tmp) / "ea.bin"
+            from modules.registry import get_module
+
+            out = get_module("http_open_data").execute(
+                {},
+                {
+                    "preset": "nasa_earthdata",
+                    "relative_path": "file.hdf",
+                },
+                _open_data_ctx(tmp, _EA_FAMILY_DS),
+            )
+        ea_mock.assert_called_once()
+        assert "path" in out, '"path" in out'
+
+
+def test_http_open_data_auto_legacy_without_credentials() -> None:
+    fake, captured = _fake_legacy_materialize("legacynocreds")
+    with tempfile.TemporaryDirectory() as tmp:
+        with (
+            patch(
+                "modules.data_access_nodes._earthaccess_credentials_available",
+                return_value=False,
+            ),
+            patch(
+                "modules.data_access_nodes._materialize_via_earthaccess"
+            ) as ea_mock,
+            patch("data_access.sources.http.HttpSource.materialize", fake),
+        ):
+            from modules.registry import get_module
+
+            get_module("http_open_data").execute(
+                {},
+                {"preset": "nasa_earthdata", "relative_path": "file.hdf"},
+                _open_data_ctx(tmp, _EA_FAMILY_DS),
+            )
+        ea_mock.assert_not_called()
+        assert captured["called"], 'captured["called"] is truthy'
+
+
+def test_http_open_data_use_legacy_forced_overrides_default() -> None:
+    fake, captured = _fake_legacy_materialize("legacyforced")
+    with tempfile.TemporaryDirectory() as tmp:
+        with (
+            patch(
+                "modules.data_access_nodes._earthaccess_credentials_available",
+                return_value=True,
+            ),
+            patch(
+                "modules.data_access_nodes._materialize_via_earthaccess"
+            ) as ea_mock,
+            patch("data_access.sources.http.HttpSource.materialize", fake),
+        ):
+            from modules.registry import get_module
+
+            get_module("http_open_data").execute(
+                {},
+                {
+                    "preset": "nasa_earthdata",
+                    "relative_path": "file.hdf",
+                    "use": "legacy",
+                },
+                _open_data_ctx(tmp, _EA_FAMILY_DS),
+            )
+        ea_mock.assert_not_called()
+        assert captured["called"], 'captured["called"] is truthy'
+
+
+def test_http_open_data_use_earthaccess_without_install_raises() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        with patch(
+            "modules.data_access_nodes._earthaccess_available",
+            return_value=False,
+        ):
+            from modules.registry import get_module
+
+            with pytest.raises(RuntimeError, match="earthaccess"):
+                get_module("http_open_data").execute(
+                    {},
+                    {
+                        "preset": "nasa_earthdata",
+                        "relative_path": "file.hdf",
+                        "use": "earthaccess",
+                    },
+                    _open_data_ctx(tmp, _EA_FAMILY_DS),
+                )
+
+
+def test_http_open_data_invalid_use_raises() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        from modules.registry import get_module
+
+        with pytest.raises(ValueError, match="invalid use"):
+            get_module("http_open_data").execute(
+                {},
+                {
+                    "preset": "nasa_earthdata",
+                    "relative_path": "file.hdf",
+                    "use": "bogus",
+                },
+                _open_data_ctx(tmp, _EA_FAMILY_DS),
+            )

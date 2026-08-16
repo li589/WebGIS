@@ -28,6 +28,18 @@ export const NODE_FORM_SYSTEM_SETTINGS_MAP: NodeFormSystemSettingsEntry[] = [
     },
   },
   {
+    nodeType: 'download/cds_download',
+    formFields: { target_dir: 'dataRoot' },
+  },
+  {
+    nodeType: 'download/nomads_grib_download',
+    formFields: { target_dir: 'dataRoot' },
+  },
+  {
+    nodeType: 'download/cdse_download',
+    formFields: { target_dir: 'dataRoot' },
+  },
+  {
     nodeType: 'download/nsidc_smap_download',
     formFields: { local_dir: 'dataRoot' },
   },

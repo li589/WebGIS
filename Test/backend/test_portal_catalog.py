@@ -463,6 +463,149 @@ def test_search_portal_unsupported_and_empty_query(repo_env) -> None:
         search_portal("nasa_cmr", query="  ")
 
 
+# ── CDSE OData / CDS 目录检索（P1 扩展 provider） ─────────────────────────────
+
+
+def _cdse_payload() -> dict:
+    return {
+        "value": [
+            {
+                "Id": "427be276-cf42-419e-9dd3-c6544a2f4d46",
+                "Name": "S1A_IW_GRDH_1SDV_20150412T174535.SAFE",
+                "ContentLength": 1004000225,
+                "Online": True,
+                "SensingStartDate": "2015-04-12T17:45:35Z",
+                "SensingEndDate": "2015-04-12T17:46:00Z",
+            }
+        ]
+    }
+
+
+def _cds_payload() -> dict:
+    return {
+        "collections": [
+            {
+                "id": "reanalysis-era5-single-levels",
+                "title": "ERA5 hourly data on single levels from 1940 to present",
+                "type": "Collection",
+            }
+        ]
+    }
+
+
+def test_catalog_new_search_capabilities_declared() -> None:
+    from app.services.portal_catalog import DEFAULT_PORTAL_CATALOG as cat
+
+    assert cat["esa_copernicus"].search_capability == "cdse_odata"
+    assert cat["esa_copernicus"].search_url_template is not None
+    assert cat["ecmwf_cds"].search_capability == "cds"
+    assert cat["ecmwf_cds"].search_url_template is not None
+
+
+def _json_response(payload: dict):
+    class _JsonResponse(_FakeResponse):
+        def __init__(self) -> None:
+            super().__init__(200)
+            self._buf = io.BytesIO(json.dumps(payload).encode("utf-8"))
+
+    return _JsonResponse()
+
+
+def test_search_portal_cdse_odata_parsing(repo_env, monkeypatch) -> None:
+    from app.services import portal_catalog
+
+    seen: dict = {}
+    monkeypatch.setattr(
+        portal_catalog,
+        "load_portal_credentials_secret",
+        lambda **_kw: {
+            "copernicus": {
+                "enabled": True,
+                "auth_type": "bearer",
+                "token": "tok-cdse",
+                "source": "db",
+            }
+        },
+    )
+
+    def fake_urlopen(url, **kw):
+        seen["url"] = url
+        seen["headers"] = kw.get("headers")
+        return _json_response(_cdse_payload())
+
+    monkeypatch.setattr(portal_catalog, "safe_urlopen", fake_urlopen)
+    result = portal_catalog.search_portal(
+        "esa_copernicus", query="S1A_IW_GRDH_1SDV", page_size=5
+    )
+    assert result["count"] == 1
+    item = result["items"][0]
+    assert item["title"].startswith("S1A_IW_GRDH")
+    assert item["granule_id"] == "427be276-cf42-419e-9dd3-c6544a2f4d46"
+    assert item["size_bytes"] == 1004000225
+    assert item["online"] is True
+    assert item["data_link"] == (
+        "https://download.dataspace.copernicus.eu/odata/v1/Products"
+        "(427be276-cf42-419e-9dd3-c6544a2f4d46)/$value"
+    )
+    # OData 检索为公共端点：即使门户配置了凭据也不携带
+    assert "Authorization" not in (seen["headers"] or {})
+    assert "odata/v1/Products" in seen["url"]
+
+
+def test_search_portal_cds_parsing(repo_env, monkeypatch) -> None:
+    from app.services import portal_catalog
+
+    seen: dict = {}
+
+    def fake_urlopen(url, **kw):
+        seen["url"] = url
+        return _json_response(_cds_payload())
+
+    monkeypatch.setattr(portal_catalog, "safe_urlopen", fake_urlopen)
+    result = portal_catalog.search_portal("ecmwf_cds", query="ERA5", page_size=3)
+    assert result["count"] == 1
+    item = result["items"][0]
+    assert item["granule_id"] == "reanalysis-era5-single-levels"
+    assert item["title"].startswith("ERA5 hourly")
+    assert item["data_link"] == (
+        "https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels"
+    )
+    assert "api/catalogue/v1/collections" in seen["url"]
+    assert "limit=3" in seen["url"]
+
+
+def test_test_portal_new_capability_probe_urls(repo_env, monkeypatch) -> None:
+    from app.services import portal_catalog
+
+    urls: list[str] = []
+
+    def fake_urlopen(url, **kw):
+        urls.append(url)
+        return _FakeResponse(200)
+
+    monkeypatch.setattr(portal_catalog, "safe_urlopen", fake_urlopen)
+    assert portal_catalog.test_portal("esa_copernicus")["ok"] is True
+    assert portal_catalog.test_portal("ecmwf_cds")["ok"] is True
+    assert any("odata/v1/Products" in u for u in urls)
+    assert any("api/catalogue/v1/collections" in u for u in urls)
+
+
+def test_custom_portal_new_capability_gets_template(repo_env) -> None:
+    from app.services.portal_catalog import list_portal_defs, upsert_portal
+
+    upsert_portal(
+        "cds_mirror",
+        {
+            "name": "CDS 镜像",
+            "base_url": "https://cds-mirror.example.org/",
+            "search_capability": "cds",
+        },
+    )
+    defn = list_portal_defs(repo=repo_env)["cds_mirror"]
+    assert defn.search_capability == "cds"
+    assert defn.search_url_template is not None
+
+
 # ── presets / labels 联动 ────────────────────────────────────────────────────
 
 

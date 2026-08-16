@@ -364,6 +364,276 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         ],
         "node_class": "cmr_granule_search",
     },
+    {
+        "type": "download/cds_download",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "CDS 再分析下载",
+        "description": (
+            "ECMWF CDS 数据集下载（ERA5/ORAS5 等再分析）：主路径 cdsapi 排队轮询，"
+            "回退 legacy 静态直链（Range 续传）。凭据经门户 ecmwf_cds 或"
+            " BACKEND_CDS_API_KEY 下发。"
+        ),
+        "inputs": [
+            _port(
+                "datasource_selection",
+                "config",
+                required=False,
+                description="数据源选择（门户 ecmwf_cds 凭据注入）。",
+            ),
+            _port(
+                "algorithm_params",
+                "config",
+                required=False,
+                description="算法参数覆盖（可选）。",
+            ),
+        ],
+        "outputs": [
+            _port("path", "value:string", description="下载后的本地路径。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param(
+                "dataset",
+                "string",
+                description="CDS 数据集 ID（如 reanalysis-era5-single-levels）。",
+            ),
+            _param(
+                "request",
+                "string",
+                description="CDS request JSON（变量/日期/范围等）。",
+                widget="textarea",
+            ),
+            _param(
+                "target_dir",
+                "string",
+                description="本地目标目录（默认 workspace/data_access/cds）。",
+                widget="path",
+            ),
+            _param(
+                "use",
+                "string",
+                default="auto",
+                options=["auto", "cdsapi", "legacy"],
+                description="下载路径：auto=自动（cdsapi→legacy 回退）。",
+                allow_custom=False,
+            ),
+            _param(
+                "api_key",
+                "string",
+                description="CDS Personal Access Key（留空走门户/环境变量）。",
+            ),
+            _param(
+                "filename",
+                "string",
+                description="落盘文件名（可选，默认由数据集/请求推导）。",
+            ),
+            _param(
+                "direct_url",
+                "string",
+                description="legacy 直链 URL（use=legacy 或回退时使用）。",
+            ),
+            _param(
+                "force",
+                "boolean",
+                default=False,
+                description="忽略已有文件强制重下。",
+            ),
+        ],
+        "node_class": "cds_download",
+    },
+    {
+        "type": "download/nomads_grib_download",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "NOMADS GRIB2 下载",
+        "description": (
+            "NCEP NOMADS GRIB2 下载（GFS/GEFS/GDAS/NAM 等）：主路径 herbie 参数化"
+            "检索与字段子集物化，回退 NOMADS 直连直链（Range 续传）。"
+        ),
+        "inputs": [
+            _port(
+                "datasource_selection",
+                "config",
+                required=False,
+                description="数据源选择（可选）。",
+            ),
+            _port(
+                "algorithm_params",
+                "config",
+                required=False,
+                description="算法参数覆盖（可选）。",
+            ),
+        ],
+        "outputs": [
+            _port("path", "value:string", description="下载后的本地目录。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param(
+                "date",
+                "string",
+                description="起报日期 YYYYMMDD 或 latest。",
+                widget="date",
+            ),
+            _param(
+                "model",
+                "string",
+                default="gfs",
+                options=["gfs", "gefs", "gdas", "nam", "hrrr", "rap"],
+                description="NOMADS 模型（herbie 命名）。",
+                allow_custom=True,
+            ),
+            _param(
+                "product",
+                "string",
+                description="产品子路径（如 pgrb2.0p25；空=模型默认）。",
+            ),
+            _param(
+                "fxx",
+                "number",
+                default=0,
+                min_val=0,
+                max_val=8640,
+                step=1,
+                description="预报时效（小时）。",
+                unit="h",
+            ),
+            _param(
+                "search_string",
+                "string",
+                description="GRIB 字段子集（herbie 语法，如 :TMP:2 m ；空=整场）。",
+            ),
+            _param(
+                "members",
+                "string",
+                description="集合成员列表（逗号分隔，GEFS 适用，可选）。",
+            ),
+            _param(
+                "target_dir",
+                "string",
+                description="本地目标目录（默认 workspace/data_access/nomads）。",
+                widget="path",
+            ),
+            _param(
+                "use",
+                "string",
+                default="auto",
+                options=["auto", "herbie", "legacy"],
+                description="下载路径：auto=自动（herbie→legacy 回退）。",
+                allow_custom=False,
+            ),
+            _param(
+                "legacy_url",
+                "string",
+                description="legacy 直链 URL（可选覆盖）。",
+            ),
+            _param(
+                "overwrite",
+                "boolean",
+                default=False,
+                description="覆盖已存在文件。",
+            ),
+        ],
+        "node_class": "nomads_grib_download",
+    },
+    {
+        "type": "download/cdse_download",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "CDSE 产品下载",
+        "description": (
+            "Copernicus CDSE 产品下载（Sentinel 等）：门户 copernicus 凭据 token"
+            " 交换后 OData $value 下载（Range 续传）；use='legacy' 走公共直链。"
+            "可接 search_portal / cmr_granule_search 检索结果。"
+        ),
+        "inputs": [
+            _port(
+                "datasource_selection",
+                "config",
+                required=False,
+                description="数据源选择（门户 copernicus 凭据注入）。",
+            ),
+            _port(
+                "algorithm_params",
+                "config",
+                required=False,
+                description="算法参数覆盖（可选）。",
+            ),
+            _port(
+                "search_results",
+                "data",
+                required=False,
+                description="上游检索结果（含 granule_id/product_id 条目）。",
+            ),
+        ],
+        "outputs": [
+            _port("path", "value:string", description="下载后的本地目录。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param(
+                "product_ids",
+                "string",
+                description="产品 UUID 列表（逗号/换行分隔）。",
+                widget="textarea",
+            ),
+            _param(
+                "odata_filter",
+                "string",
+                description="OData $filter（在线检索产品，可选）。",
+            ),
+            _param(
+                "target_dir",
+                "string",
+                description="本地目标目录（默认 workspace/data_access/cdse）。",
+                widget="path",
+            ),
+            _param(
+                "use",
+                "string",
+                default="auto",
+                options=["auto", "cdse", "legacy"],
+                description="下载路径：auto=自动（cdse→legacy 回退）。",
+                allow_custom=False,
+            ),
+            _param(
+                "username",
+                "string",
+                description="CDSE 用户名（留空走门户凭据）。",
+            ),
+            _param(
+                "password",
+                "string",
+                description="CDSE 密码（留空走门户凭据）。",
+            ),
+            _param(
+                "bearer_token",
+                "string",
+                description="CDSE Bearer token（可选，优先于账密）。",
+            ),
+            _param(
+                "legacy_urls",
+                "string",
+                description="公共直链列表（use=legacy，逗号/换行分隔）。",
+                widget="textarea",
+            ),
+            _param(
+                "force",
+                "boolean",
+                default=False,
+                description="忽略已有文件强制重下。",
+            ),
+            _param(
+                "max_products",
+                "number",
+                min_val=1,
+                step=1,
+                description="最多下载数（联调节流，可选）。",
+            ),
+        ],
+        "node_class": "cdse_download",
+    },
     # ── 远程数据下载/同步/预处理节点 ──
     {
         "type": "download/ssh_sync",

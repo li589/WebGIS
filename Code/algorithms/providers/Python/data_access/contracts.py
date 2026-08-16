@@ -15,11 +15,15 @@ FORMAT_ALIASES: dict[str, str] = {
     "xlsx": "excel",
     "xls": "excel",
     "geojson": "json",
+    "grib2": "grib",
+    "grb": "grib",
+    "grb2": "grib",
 }
 
 LOGICAL_TYPE_BY_FORMAT: dict[str, str] = {
     "mat": "array",
     "nc": "array",
+    "grib": "array",
     "hdf": "array",
     "h5": "array",
     "tif": "raster",

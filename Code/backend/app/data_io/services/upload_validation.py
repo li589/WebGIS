@@ -28,6 +28,10 @@ ALLOWED_EXTENSIONS = frozenset(
         "h5",
         "he5",
         "mat",
+        "grib",
+        "grib2",
+        "grb",
+        "grb2",
         # document
         "csv",
         "xlsx",
@@ -88,6 +92,7 @@ _MAGIC_PREFIXES: list[tuple[bytes, frozenset[str]]] = [
     (b"CDF\x01", frozenset({"nc"})),
     (b"CDF\x02", frozenset({"nc"})),
     (b"\x0e\x03\x13\x01", frozenset({"mat"})),  # MATLAB Level 5 常见头
+    (b"GRIB", frozenset({"grib", "grib2", "grb", "grb2"})),  # GRIB1/GRIB2 消息头
 ]
 
 
@@ -151,7 +156,22 @@ def sniff_magic(path: Path, *, declared_ext: str | None = None) -> None:
     if head.startswith(b"#!"):
         raise UploadValidationError("检测到脚本 shebang，已拒绝")
 
-    if ext in {"zip", "xlsx", "rar", "tif", "tiff", "nc", "hdf", "h5", "he5", "mat"}:
+    if ext in {
+        "zip",
+        "xlsx",
+        "rar",
+        "tif",
+        "tiff",
+        "nc",
+        "hdf",
+        "h5",
+        "he5",
+        "mat",
+        "grib",
+        "grib2",
+        "grb",
+        "grb2",
+    }:
         matched = False
         for magic, exts in _MAGIC_PREFIXES:
             if head.startswith(magic) and ext in exts:

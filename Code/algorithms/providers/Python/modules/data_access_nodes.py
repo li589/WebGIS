@@ -187,6 +187,82 @@ _DEFAULT_OPEN_DATA_PRESETS: dict[str, str] = {
     "nsidc_data": "https://data.nsidc.earthdatacloud.nasa.gov/",
 }
 
+# earthdata 家族（plan P2e）：命中且已装 earthaccess 时 http_open_data 默认
+# 走 earthaccess 认证会话物化；use='legacy' 保持 HttpSource+门户头路径。
+_EARTHDATA_FAMILY_KEYS = frozenset(
+    {
+        "earthdata",
+        "nasa_earthdata",
+        "nsidc",
+        "nsidc_data",
+        "nasa_ges_disc",
+        "nasa_gldas",
+    }
+)
+_HTTP_OPEN_DATA_USE_VALUES = frozenset({"auto", "earthaccess", "legacy"})
+
+
+def _earthaccess_available() -> bool:
+    try:
+        import earthaccess  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+def _earthaccess_credentials_available(ds: dict[str, object]) -> bool:
+    """earthaccess 登录凭据是否可解析（门户账密或环境变量）。
+
+    缺凭据时 auto 保持 legacy 匿名路径，避免破坏公开数据集的免登录下载。
+    """
+    from modules.download_nodes import _resolve_earthdata_portal_userpass
+
+    username, password = _resolve_earthdata_portal_userpass(ds)
+    if username and password:
+        return True
+    return bool(
+        os.environ.get("EARTHDATA_USERNAME") and os.environ.get("EARTHDATA_PASSWORD")
+    )
+
+
+def _is_earthdata_family(preset: str, cred_profile: str) -> bool:
+    key = (cred_profile.strip() or preset.strip()).lower()
+    return key in _EARTHDATA_FAMILY_KEYS
+
+
+def _materialize_via_earthaccess(
+    url: str,
+    target_dir: Path,
+    ds: dict[str, object],
+) -> Path:
+    """earthaccess 认证会话物化：登录后 get_requests_https_session 下载。
+
+    与 HttpSource 缓存互补：以 URL 原始文件名直落 target_dir（保留
+    YYYYDDD 等元信息），续传/重试复用 ``ingest/_http_resume``。
+    """
+    import earthaccess
+
+    from ingest._http_resume import download_with_retry
+    from ingest.nsidc_download import _earthaccess_login
+    from modules.download_nodes import _resolve_earthdata_portal_userpass
+
+    username, password = _resolve_earthdata_portal_userpass(ds)
+    _earthaccess_login(username, password, persist=True)
+    session = earthaccess.get_requests_https_session()
+
+    from urllib.parse import urlparse
+
+    basename = Path(urlparse(url).path).name
+    local_path = target_dir / (
+        basename if basename.strip() else "earthaccess_download.bin"
+    )
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    if not download_with_retry(session, url, local_path):
+        raise RuntimeError(f"earthaccess materialize failed: {url}")
+    return local_path
+
+
 _PORTAL_CRED_ALIASES: dict[str, tuple[str, ...]] = {
     "earthdata": (
         "earthdata",
@@ -453,6 +529,7 @@ class HttpOpenDataModule(BaseModule):
         "token_value": "",
         "force_refresh": False,
         "accept": "",
+        "use": "auto",
     }
 
     def execute(
@@ -490,27 +567,54 @@ class HttpOpenDataModule(BaseModule):
                 else f"{url}&{query.lstrip('&')}"
             )
 
-        headers = _resolve_portal_headers(
-            cred_profile=str(params.get("cred_profile") or ""),
-            datasource_selection=ds,
-            token_header=str(params.get("token_header") or ""),
-            token_value=str(params.get("token_value") or ""),
-            accept=str(params.get("accept") or ""),
-        )
-        metadata: dict[str, object] = {
-            "force_refresh": bool(params.get("force_refresh")),
-        }
-        if headers:
-            metadata["http_headers"] = headers
+        use = str(params.get("use") or "auto").strip().lower()
+        if use not in _HTTP_OPEN_DATA_USE_VALUES:
+            raise ValueError(
+                f"http_open_data: invalid use={use!r} (auto|earthaccess|legacy)"
+            )
+        cred_profile = str(params.get("cred_profile") or "").strip()
+        effective_use = "legacy"
+        if use == "earthaccess":
+            if not _earthaccess_available():
+                raise RuntimeError(
+                    "earthaccess requested (use='earthaccess') but not installed"
+                )
+            effective_use = "earthaccess"
+        elif (
+            use == "auto"
+            and _is_earthdata_family(preset, cred_profile)
+            and _earthaccess_available()
+            and _earthaccess_credentials_available(ds)
+        ):
+            effective_use = "earthaccess"
 
         target = _materialize_root(ctx)
-        source = HttpSource()
-        resource = source.locate(url, metadata=metadata)
-        materialized = source.materialize(resource, target_dir=target)
-        local_path = materialized.local_path or materialized.metadata.get("local_path")
-        if not local_path:
-            raise RuntimeError(f"HTTP open data materialize failed for {url}")
-        cache_hit = bool(materialized.metadata.get("cache_hit"))
+        if effective_use == "earthaccess":
+            local_path = str(_materialize_via_earthaccess(url, target, ds))
+            cache_hit = False
+        else:
+            headers = _resolve_portal_headers(
+                cred_profile=cred_profile,
+                datasource_selection=ds,
+                token_header=str(params.get("token_header") or ""),
+                token_value=str(params.get("token_value") or ""),
+                accept=str(params.get("accept") or ""),
+            )
+            metadata: dict[str, object] = {
+                "force_refresh": bool(params.get("force_refresh")),
+            }
+            if headers:
+                metadata["http_headers"] = headers
+
+            source = HttpSource()
+            resource = source.locate(url, metadata=metadata)
+            materialized = source.materialize(resource, target_dir=target)
+            local_path = materialized.local_path or materialized.metadata.get(
+                "local_path"
+            )
+            if not local_path:
+                raise RuntimeError(f"HTTP open data materialize failed for {url}")
+            cache_hit = bool(materialized.metadata.get("cache_hit"))
         result = _store_path_manifest(
             ctx,
             module_name=self.name,
@@ -520,7 +624,8 @@ class HttpOpenDataModule(BaseModule):
                 "url": url,
                 "preset": preset,
                 "cache_hit": cache_hit,
-                "cred_profile": str(params.get("cred_profile") or ""),
+                "cred_profile": cred_profile,
+                "use": effective_use,
             },
         )
         result["url"] = url

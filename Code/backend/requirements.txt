@@ -28,3 +28,18 @@ h5py==3.16.0
 netCDF4==1.7.4
 rarfile==4.4
 scipy==1.18.0
+# DBF 中文编码探测：app/data_io/services/dbf_encoding.py 直接依赖
+geopandas==1.1.4
+# 科学数据读取：data_access/universal_reader.py（GRIB 经 xarray engine=cfgrib）、
+# ingest/gldas_nc4_to_mat.py 直接依赖
+xarray==2026.4.0
+cfgrib==0.9.15.1
+# 多源下载：ingest/nsidc_download.py、ingest/gldas_download.py
+# 主路径 earthaccess，回退 requests + CMR + HTTP Basic Auth
+earthaccess==0.18.0
+requests==2.34.2
+# ECMWF CDS 主路径（ingest/cds_download.py）；未安装时回退门户通用 HTTP 语义
+cdsapi==0.7.7
+# NOAA NOMADS GRIB2 主路径（ingest/nomads_download.py）；未安装时回退 NOMADS 直连 HTTP。
+# 注意：PyPI 包名为 herbie-data（import 名为 herbie）；名为 "herbie" 的包是无关的 Django 项目
+herbie-data==2026.3.0

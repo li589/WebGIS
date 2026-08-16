@@ -7,6 +7,9 @@
  *   - download/ssh_sync           → SshSyncForm
  *   - download/http_open_data     → HttpOpenDataForm
  *   - download/cmr_search         → CmrSearchForm
+ *   - download/cds_download       → CdsDownloadForm
+ *   - download/nomads_grib_download → NomadsGribDownloadForm
+ *   - download/cdse_download      → CdseDownloadForm
  *   - download/nsidc_smap_download → NsidcDownloadForm
  *   - download/gldas_download      → GldasDownloadForm
  *   - download/gldas_nc4_to_mat    → GldasNc4ToMatForm
@@ -21,6 +24,9 @@ import type { LGraphNodeClass } from '../litegraph-setup'
 import SshSyncForm from './SshSyncForm.vue'
 import HttpOpenDataForm from './HttpOpenDataForm.vue'
 import CmrSearchForm from './CmrSearchForm.vue'
+import CdsDownloadForm from './CdsDownloadForm.vue'
+import NomadsGribDownloadForm from './NomadsGribDownloadForm.vue'
+import CdseDownloadForm from './CdseDownloadForm.vue'
 import NsidcDownloadForm from './NsidcDownloadForm.vue'
 import GldasDownloadForm from './GldasDownloadForm.vue'
 import GldasNc4ToMatForm from './GldasNc4ToMatForm.vue'
@@ -42,6 +48,9 @@ const SUBFORM_LABELS: Record<string, string> = {
   'download/ssh_sync': 'SSH 同步',
   'download/http_open_data': '门户数据下载',
   'download/cmr_search': 'CMR Granule 检索',
+  'download/cds_download': 'CDS 再分析下载',
+  'download/nomads_grib_download': 'NOMADS GRIB2 下载',
+  'download/cdse_download': 'CDSE 产品下载',
   'download/nsidc_smap_download': 'NSIDC SMAP 下载',
   'download/gldas_download': 'GLDAS 在线下载',
   'download/gldas_nc4_to_mat': 'GLDAS nc4→mat',
@@ -76,6 +85,27 @@ function forward(key: string, value: unknown) {
 
     <CmrSearchForm
       v-else-if="nodeType === 'download/cmr_search'"
+      :node="node"
+      :readonly="readonly"
+      @update-property="forward"
+    />
+
+    <CdsDownloadForm
+      v-else-if="nodeType === 'download/cds_download'"
+      :node="node"
+      :readonly="readonly"
+      @update-property="forward"
+    />
+
+    <NomadsGribDownloadForm
+      v-else-if="nodeType === 'download/nomads_grib_download'"
+      :node="node"
+      :readonly="readonly"
+      @update-property="forward"
+    />
+
+    <CdseDownloadForm
+      v-else-if="nodeType === 'download/cdse_download'"
       :node="node"
       :readonly="readonly"
       @update-property="forward"

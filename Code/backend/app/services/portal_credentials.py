@@ -123,6 +123,14 @@ def _env_runtime_overlays() -> dict[str, dict[str, Any]]:
             "token": cp,
             "source": "env",
         }
+    cds = os.getenv("BACKEND_CDS_API_KEY", "").strip()
+    if cds:
+        out["ecmwf_cds"] = {
+            "enabled": True,
+            "auth_type": "bearer",
+            "token": cds,
+            "source": "env",
+        }
     return out
 
 

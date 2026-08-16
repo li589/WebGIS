@@ -35,13 +35,17 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from collections.abc import Callable
 import contextlib
+
+from ingest._http_resume import (
+    check_disk_space as _check_disk_space,
+    format_size as _format_size,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,16 +116,8 @@ class DownloadResult:
 
 
 def format_size(size_bytes: float) -> str:
-    """将字节数格式化为易读字符串。"""
-    if size_bytes <= 0:
-        return "0 B"
-    units = ["B", "KB", "MB", "GB", "TB"]
-    size = float(size_bytes)
-    idx = 0
-    while size >= 1024 and idx < len(units) - 1:
-        size /= 1024
-        idx += 1
-    return f"{size:.2f} {units[idx]}"
+    """将字节数格式化为易读字符串（委托共享实现，保持既有公开名）。"""
+    return _format_size(size_bytes)
 
 
 def load_credentials(
@@ -160,15 +156,8 @@ def load_credentials(
 def check_disk_space(
     path: Path, min_gb: float = MIN_DISK_FREE_GB
 ) -> tuple[bool, float]:
-    """检查 path 所在磁盘可用空间，返回 (是否充足, 可用 GB)。"""
-    try:
-        path.mkdir(parents=True, exist_ok=True)
-        usage = shutil.disk_usage(path)
-        free_gb = usage.free / (1024**3)
-        return free_gb >= min_gb, free_gb
-    except OSError as exc:
-        logger.error("磁盘空间检查失败: %s", exc)
-        return False, 0.0
+    """检查 path 所在磁盘可用空间（委托共享实现，保持既有公开名）。"""
+    return _check_disk_space(path, min_gb)
 
 
 # ─── 认证 ────────────────────────────────────────────────────────────────────

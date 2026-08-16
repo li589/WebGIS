@@ -22,13 +22,30 @@ logger = logging.getLogger(__name__)
 _PORTAL_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
 
 VALID_AUTH_TYPES = frozenset({"bearer", "basic", "header", "token", "none"})
-VALID_SEARCH_CAPABILITIES = frozenset({"cmr", "none"})
+VALID_SEARCH_CAPABILITIES = frozenset({"cmr", "cdse_odata", "cds", "none"})
 VALID_REGIONS = frozenset({"international", "china"})
 
 # CMR granule 检索模板（short_name 检索；page_size 由调用方注入）
 _CMR_SEARCH_TEMPLATE = (
     "{base}/search/granules.json?short_name={query}&page_size={page_size}"
 )
+# Copernicus Data Space OData V2 产品检索（公共，无鉴权；2026-08-16 活体探针确认契约：
+# 响应 {"value": [{Id, Name, ContentLength, Online, SensingStartDate, ...}]}）
+_CDSE_ODATA_SEARCH_TEMPLATE = (
+    "{base}/odata/v1/Products?$filter=contains(Name,'{query}')&$top={page_size}"
+)
+# ECMWF 新版 CDS STAC 风格目录（公共；探针确认：/api/catalogue/v1/collections?q=&limit=
+# 返回 {"collections": [{id, title, description, ...}]}）
+_CDS_SEARCH_TEMPLATE = "{base}/api/catalogue/v1/collections?q={query}&limit={page_size}"
+
+# CDSE 产品内容下载固定走下载域（与目录域不同 host）
+_CDSE_DOWNLOAD_ORIGIN = "https://download.dataspace.copernicus.eu"
+
+_SEARCH_TEMPLATES_BY_CAPABILITY: dict[str, str] = {
+    "cmr": _CMR_SEARCH_TEMPLATE,
+    "cdse_odata": _CDSE_ODATA_SEARCH_TEMPLATE,
+    "cds": _CDS_SEARCH_TEMPLATE,
+}
 
 
 class PortalCatalogError(ValueError):
@@ -191,6 +208,8 @@ DEFAULT_PORTAL_CATALOG: dict[str, PortalDef] = {
             auth_type="bearer",
             credential_profile="copernicus",
             credentials_hint="Copernicus Data Space 控制台生成 Access Token。",
+            search_capability="cdse_odata",
+            search_url_template=_CDSE_ODATA_SEARCH_TEMPLATE,
         ),
         PortalDef(
             portal_id="esa_download",
@@ -217,6 +236,8 @@ DEFAULT_PORTAL_CATALOG: dict[str, PortalDef] = {
             auth_type="bearer",
             credential_profile="ecmwf_cds",
             credentials_hint="CDS 个人主页 API key（形如 xxxxxx-xxxx-xxxx）。",
+            search_capability="cds",
+            search_url_template=_CDS_SEARCH_TEMPLATE,
         ),
         PortalDef(
             portal_id="usgs_earthexplorer",
@@ -630,9 +651,7 @@ def upsert_portal(portal_id: str, payload: dict[str, Any]) -> dict[str, Any]:
             payload.get("credentials_hint") or prev.get("credentials_hint") or ""
         ),
         "search_capability": search_capability,
-        "search_url_template": _CMR_SEARCH_TEMPLATE
-        if search_capability == "cmr"
-        else None,
+        "search_url_template": _SEARCH_TEMPLATES_BY_CAPABILITY.get(search_capability),
     }
     custom[pid] = record
     repo.set_json(_CUSTOM_PORTALS_KEY, custom)
@@ -705,6 +724,10 @@ def _auth_headers_for_portal(
 def _test_url_for(defn: PortalDef, base: str) -> str:
     if defn.search_capability == "cmr":
         return f"{base.rstrip('/')}/search/granules.json?page_size=1"
+    if defn.search_capability == "cdse_odata":
+        return f"{base.rstrip('/')}/odata/v1/Products?$top=1"
+    if defn.search_capability == "cds":
+        return f"{base.rstrip('/')}/api/catalogue/v1/collections?limit=1"
     return base
 
 
@@ -795,13 +818,92 @@ def _parse_cmr_entry(entry: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _parse_cdse_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    try:
+        size_bytes = int(float(entry.get("ContentLength") or 0))
+    except (TypeError, ValueError):
+        size_bytes = 0
+    product_id = str(entry.get("Id") or "")
+    data_link = (
+        f"{_CDSE_DOWNLOAD_ORIGIN}/odata/v1/Products({product_id})/$value"
+        if product_id
+        else ""
+    )
+    return {
+        "title": str(entry.get("Name") or ""),
+        "granule_id": product_id,
+        "producer_granule_id": "",
+        "size_bytes": size_bytes,
+        "time_start": str(entry.get("SensingStartDate") or ""),
+        "time_end": str(entry.get("SensingEndDate") or ""),
+        "data_link": data_link,
+        "browse_link": "",
+        "online": bool(entry.get("Online")),
+    }
+
+
+def _parse_cds_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    dataset_id = str(entry.get("id") or "")
+    return {
+        "title": str(entry.get("title") or dataset_id),
+        "granule_id": dataset_id,
+        "producer_granule_id": "",
+        "size_bytes": 0,
+        "time_start": "",
+        "time_end": "",
+        # CDS 数据集页；实际取数须经 cdsapi（download/cds_download 节点）
+        "data_link": (
+            f"https://cds.climate.copernicus.eu/datasets/{dataset_id}"
+            if dataset_id
+            else ""
+        ),
+        "browse_link": "",
+    }
+
+
+_SEARCH_ITEM_EXTRACTORS: dict[str, str] = {
+    # capability -> payload 内条目数组的取值键
+    "cmr": "feed.entry",
+    "cdse_odata": "value",
+    "cds": "collections",
+}
+
+_SEARCH_ITEM_PARSERS: dict[str, Any] = {
+    "cmr": _parse_cmr_entry,
+    "cdse_odata": _parse_cdse_entry,
+    "cds": _parse_cds_entry,
+}
+
+
+def _extract_search_items(capability: str, payload: Any) -> list[dict[str, Any]]:
+    """按 capability 从检索响应中提取条目数组（CMR 兼容单条对象形态）。"""
+    if not isinstance(payload, dict):
+        return []
+    if capability == "cmr":
+        feed = payload.get("feed")
+        entries = feed.get("entry") if isinstance(feed, dict) else None
+        if entries is None:
+            entries = []
+        if isinstance(entries, dict):  # 单条结果时 CMR 返回对象而非数组
+            entries = [entries]
+        return [e for e in entries if isinstance(e, dict)]
+    node: Any = payload
+    for key in _SEARCH_ITEM_EXTRACTORS[capability].split("."):
+        node = node.get(key) if isinstance(node, dict) else None
+        if node is None:
+            return []
+    if not isinstance(node, list):
+        return []
+    return [e for e in node if isinstance(e, dict)]
+
+
 def search_portal(
     portal_id: str,
     *,
     query: str,
     page_size: int = 20,
 ) -> dict[str, Any]:
-    """门户在线检索；本期实装 CMR provider（granules.json）。"""
+    """门户在线检索：按 search_capability 分发 provider（cmr/cdse_odata/cds）。"""
     from urllib.error import HTTPError, URLError
 
     from app.core.ssrf import SSRFBlockedError
@@ -812,7 +914,8 @@ def search_portal(
     defn = defs.get(pid)
     if defn is None:
         raise PortalCatalogError(f"Unknown portal: {pid}")
-    if defn.search_capability != "cmr" or not defn.search_url_template:
+    capability = defn.search_capability
+    if capability not in _SEARCH_ITEM_PARSERS or not defn.search_url_template:
         raise PortalSearchUnsupported(
             f"Portal '{pid}' does not support online search (search_capability="
             f"{defn.search_capability})"
@@ -830,8 +933,9 @@ def search_portal(
     headers = {"Accept": "application/json"}
     # 公共只读检索（requires_credentials=False，如 CMR）不携带凭据：
     # CMR 对携带的 Authorization 头会做校验，无效 Basic 凭据会把本来
-    # 公共可用的检索直接打成 401。
-    if defn.requires_credentials:
+    # 公共可用的检索直接打成 401。cdse_odata / cds 检索端点亦为公共只读，
+    # 同样不携带凭据（凭据仅在下载链使用）。
+    if capability == "cmr" and defn.requires_credentials:
         creds = _runtime_credentials(repo)
         headers.update(_auth_headers_for_portal(defn, creds))
 
@@ -845,13 +949,9 @@ def search_portal(
     except json.JSONDecodeError as exc:
         raise PortalCatalogError("Portal search returned non-JSON payload") from exc
 
-    feed = payload.get("feed") if isinstance(payload, dict) else None
-    entries = feed.get("entry") if isinstance(feed, dict) else None
-    if entries is None:
-        entries = []
-    if isinstance(entries, dict):  # 单条结果时 CMR 返回对象而非数组
-        entries = [entries]
-    items = [_parse_cmr_entry(e) for e in entries if isinstance(e, dict)]
+    entries = _extract_search_items(capability, payload)
+    parser = _SEARCH_ITEM_PARSERS[capability]
+    items = [parser(e) for e in entries]
     return {
         "portal_id": pid,
         "query": q,

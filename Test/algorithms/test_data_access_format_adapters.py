@@ -95,6 +95,7 @@ class DataAccessFormatAdapterTests(unittest.TestCase):
             (
                 "csv",
                 "excel",
+                "grib",
                 "hdf5",
                 "json",
                 "mat",
@@ -110,6 +111,7 @@ class DataAccessFormatAdapterTests(unittest.TestCase):
             (
                 "csv",
                 "excel",
+                "grib",
                 "h5",
                 "hdf",
                 "json",

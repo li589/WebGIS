@@ -30,7 +30,7 @@ from app.data_io.services.export_layer import (
 )
 from app.data_io.services.http_files import content_disposition_attachment
 from app.data_io.services.jobs import cancel_job, enqueue_job, get_job, list_jobs
-from app.data_io.services.raster_science import list_raster_variables
+from app.data_io.services.raster_science import GRIB_SUFFIXES, list_raster_variables
 from app.data_io.services.upload import (
     append_chunk,
     complete_upload,
@@ -777,7 +777,7 @@ async def raster_commit(body: RasterCommitBody) -> dict[str, Any]:
             or path.stat().st_size > import_paths.CHUNK_SYNC_THRESHOLD_BYTES
         )
         if (
-            ext in {".mat", ".nc", ".hdf", ".h5", ".he5"}
+            ext in {".mat", ".nc", ".hdf", ".h5", ".he5"} | set(GRIB_SUFFIXES)
             and path.stat().st_size > 8 * 1024 * 1024
         ):
             force_async = True

@@ -1,0 +1,39 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "CDS 再分析下载（ERA5 cdsapi）",
+    "description": "目的：经 ECMWF CDS 门户下载 ERA5 再分析场（cdsapi 排队轮询主路径，legacy 静态直链回退并支持 Range 断点续传）。示例取 ERA5 single-levels 2 m 温度 GRIB；request 日期占位符运行前由 resolver 替换。需 ecmwf_cds 凭据（设置 → 远程与存储 → 开放门户）或 BACKEND_CDS_API_KEY。",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "tags": ["sample", "download"],
+    "category": "data_access"
+  },
+  "workflow_id": "cds_era5_reanalysis_download",
+  "name": "CDS 再分析下载（ERA5 cdsapi）",
+  "description": "cds_download（cdsapi 主路径 → legacy 直链回退）→ 本地 GRIB + 产物清单。",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "download/cds_download",
+      "pos": [120, 160],
+      "properties": {
+        "dataset": "reanalysis-era5-single-levels",
+        "request": "{\"product_type\": [\"reanalysis\"], \"variable\": [\"2m_temperature\"], \"date\": [\"{YYYY-MM-DD}\"], \"time\": [\"00:00\"], \"data_format\": \"grib\", \"download_format\": \"unarchived\"}",
+        "use": "auto",
+        "force": false
+      }
+    }
+  ],
+  "links": [],
+  "extra": {
+    "purpose": "cds_reanalysis_download_pipeline",
+    "scheme": "CDS_CDSAPI_QUEUE",
+    "portal": "ecmwf_cds",
+    "cred_profile": "ecmwf_cds",
+    "pipeline": "cds_download (cdsapi queued poll, legacy fallback with Range resume) → workspace/data_access/cds",
+    "prerequisite": "ecmwf_cds 凭据（CDS Personal Access Key，设置 → 远程与存储 → 开放门户）或 BACKEND_CDS_API_KEY 环境变量",
+    "notes": "模板种子：request 为 CDS JSON 语法，日期占位符 {YYYY-MM-DD} 运行前展开。CDS 排队可能数分钟至数小时；失败自动回退 legacy 直链（direct_url）路径。"
+  }
+}

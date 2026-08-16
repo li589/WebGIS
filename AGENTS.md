@@ -134,6 +134,7 @@ CODEBUDDY_SESSION_ID= CLAUDE_SESSION_ID= CODEBUDDY_SAFE_DELETE_SANDBOX= Env/Pyth
 - 天气模型缺口：`visibility` 非 `gfs_global` 常 data-empty；80 m 风/温无原生场时外推。本地源需 `launch.py sync`。
 - 活文档以各 README 为准；带日期的快照文档（`代码事实同步文档-*` 等）仅作历史参考，不覆盖现行结构。
 - 提交信息遵循 Conventional Commits（`feat` / `fix` / `refactor` / `perf` / `chore` / `docs` / `test` / `style` / `build` / `ci`）。
+- **提交操作硬约定（本机 Windows）**：commit 前必须先 `git add -A` 全量暂存（工作区无未暂存改动）再提交；禁止部分暂存提交与 pathspec 提交（`git commit -- <paths>`）。原因：pre-commit 的 stash/restore 机制在本机 Windows 文件锁下会吞掉未暂存改动（2026-08-16 事故，改动被回滚/文件被删）。丢失改动可从 `~/.cache/pre-commit/patch<时间戳>` 用 `git apply` 找回；详见 `.ai/rules/git-commit-message.md`。
 
 ## 前端错误与可观测性
 

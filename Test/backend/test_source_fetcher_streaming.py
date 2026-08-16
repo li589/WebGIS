@@ -33,23 +33,34 @@ from app.services.object_store import LocalObjectStore, StoredObject
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 class _FakeHTTPResponse:
     """Fake HTTP response that mimics urllib's response object.
 
     Supports ``read()`` for streaming, ``headers`` dict for metadata,
-    and context-manager protocol for ``with safe_urlopen(...) as response:``.
+    ``status``/``getcode()`` for status codes, and context-manager protocol
+    for ``with safe_urlopen(...) as response:``.
     """
 
-    def __init__(self, body: bytes = b"", headers: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        body: bytes = b"",
+        headers: dict[str, str] | None = None,
+        status: int = 200,
+    ) -> None:
         self._body = body
         self._pos = 0
         self.headers = headers or {}
+        self.status = status
+
+    def getcode(self) -> int:
+        return self.status
 
     def read(self, size: int = -1) -> bytes:
         if self._pos >= len(self._body):
             return b""
         if size is None or size < 0:
-            data = self._body[self._pos:]
+            data = self._body[self._pos :]
             self._pos = len(self._body)
             return data
         data = self._body[self._pos : self._pos + size]
@@ -69,7 +80,9 @@ class _FakeHTTPResponse:
         return False
 
 
-def _make_stored_object(content_length: int = 42, file_path: str = "artifacts/test") -> SimpleNamespace:
+def _make_stored_object(
+    content_length: int = 42, file_path: str = "artifacts/test"
+) -> SimpleNamespace:
     """Create a lightweight stand-in for ``StoredObject`` returned by ``put_stream``."""
     return SimpleNamespace(
         content_length=content_length,
@@ -87,7 +100,9 @@ class _StubFetcher(SourceFetcher):
     def supports(self, source_uri: str) -> bool:
         return source_uri.startswith(self._scheme + "://")
 
-    def fetch(self, *, ref_id: str, source_uri: str, artifact_key_prefix: str) -> FetchResult:
+    def fetch(
+        self, *, ref_id: str, source_uri: str, artifact_key_prefix: str
+    ) -> FetchResult:
         return self._result
 
 
@@ -95,8 +110,26 @@ class _StubFetcher(SourceFetcher):
 # HTTP Source Fetcher tests
 # ---------------------------------------------------------------------------
 
+
+class _PutStreamCapture:
+    """Capture put_stream args at call time (stream is closed after the call)."""
+
+    def __init__(self, content_length: int, file_path: str = "artifacts/test") -> None:
+        self.content_length = content_length
+        self.file_path = file_path
+        self.data = b""
+        self.kwargs: dict[str, object] = {}
+
+    def __call__(self, **kwargs: object) -> SimpleNamespace:
+        self.kwargs = dict(kwargs)
+        self.data = kwargs["stream"].read()
+        return _make_stored_object(
+            content_length=self.content_length, file_path=self.file_path
+        )
+
+
 def test_http_fetcher_streams_to_object_store() -> None:
-    """Mock safe_urlopen → put_stream called with correct args; FetchResult.success."""
+    """Mock safe_urlopen → put_stream called with staging file; FetchResult.success."""
     body = b'{"key": "value"}'
     fake_response = _FakeHTTPResponse(
         body=body,
@@ -107,35 +140,49 @@ def test_http_fetcher_streams_to_object_store() -> None:
     )
     fetcher = HttpSourceFetcher()
 
-    with (
-        patch("app.core.ssrf.safe_urlopen", return_value=fake_response),
-        patch("app.services.source_fetcher.object_store") as mock_store,
-    ):
-        mock_store.put_stream.return_value = _make_stored_object(
-            content_length=len(body), file_path="artifacts/test/ref-1"
-        )
+    with tempfile.TemporaryDirectory() as staging:
+        capture = _PutStreamCapture(content_length=len(body))
+        with (
+            patch("app.core.ssrf.safe_urlopen", return_value=fake_response),
+            patch(
+                "app.services.source_fetcher._http_staging_dir",
+                return_value=Path(staging),
+            ),
+            patch("app.services.source_fetcher.object_store") as mock_store,
+        ):
+            mock_store.put_stream.side_effect = capture
 
-        result = fetcher.fetch(
-            ref_id="ref-1",
-            source_uri="http://example.com/data.json",
-            artifact_key_prefix="artifacts/test",
-        )
+            result = fetcher.fetch(
+                ref_id="ref-1",
+                source_uri="http://example.com/data.json",
+                artifact_key_prefix="artifacts/test",
+            )
 
     # Verify put_stream was called with correct arguments
     mock_store.put_stream.assert_called_once()
-    call_kwargs = mock_store.put_stream.call_args.kwargs
-    assert call_kwargs["object_key"] == "artifacts/test/ref-1", 'call_kwargs["object_key"] == "artifacts/test/ref-1"'
-    assert call_kwargs["stream"] == fake_response, 'call_kwargs["stream"] == fake_response'
-    assert call_kwargs["content_type"] == "application/json", 'call_kwargs["content_type"] == "application/json"'
-    assert call_kwargs["length"] == len(body), 'call_kwargs["length"] == len(body)'
+    assert (
+        capture.kwargs["object_key"] == "artifacts/test/ref-1"
+    ), 'capture.kwargs["object_key"] == "artifacts/test/ref-1"'
+    # 断点续传改造后：完整字节先落暂存文件，再以文件流入库
+    assert capture.data == body, "capture.data == body"
+    assert (
+        capture.kwargs["content_type"] == "application/json"
+    ), 'capture.kwargs["content_type"] == "application/json"'
+    assert capture.kwargs["length"] == len(
+        body
+    ), 'capture.kwargs["length"] == len(body)'
 
     # Verify FetchResult
-    assert result.success, 'result.success is truthy'
+    assert result.success, "result.success is truthy"
     assert result.ref_id == "ref-1", 'result.ref_id == "ref-1"'
-    assert result.artifact_key == "artifacts/test/ref-1", 'result.artifact_key == "artifacts/test/ref-1"'
-    assert result.fetched_bytes == len(body), 'result.fetched_bytes == len(body)'
-    assert result.content_type == "application/json", 'result.content_type == "application/json"'
-    assert result.fetched_at, 'result.fetched_at is truthy'
+    assert (
+        result.artifact_key == "artifacts/test/ref-1"
+    ), 'result.artifact_key == "artifacts/test/ref-1"'
+    assert result.fetched_bytes == len(body), "result.fetched_bytes == len(body)"
+    assert (
+        result.content_type == "application/json"
+    ), 'result.content_type == "application/json"'
+    assert result.fetched_at, "result.fetched_at is truthy"
 
 
 def test_http_fetcher_missing_content_length() -> None:
@@ -147,28 +194,34 @@ def test_http_fetcher_missing_content_length() -> None:
     )
     fetcher = HttpSourceFetcher()
 
-    with (
-        patch("app.core.ssrf.safe_urlopen", return_value=fake_response),
-        patch("app.services.source_fetcher.object_store") as mock_store,
-    ):
-        mock_store.put_stream.return_value = _make_stored_object(
-            content_length=len(body)
-        )
+    with tempfile.TemporaryDirectory() as staging:
+        capture = _PutStreamCapture(content_length=len(body))
+        with (
+            patch("app.core.ssrf.safe_urlopen", return_value=fake_response),
+            patch(
+                "app.services.source_fetcher._http_staging_dir",
+                return_value=Path(staging),
+            ),
+            patch("app.services.source_fetcher.object_store") as mock_store,
+        ):
+            mock_store.put_stream.side_effect = capture
 
-        result = fetcher.fetch(
-            ref_id="ref-2",
-            source_uri="http://example.com/blob",
-            artifact_key_prefix="artifacts/test",
-        )
+            result = fetcher.fetch(
+                ref_id="ref-2",
+                source_uri="http://example.com/blob",
+                artifact_key_prefix="artifacts/test",
+            )
 
-    call_kwargs = mock_store.put_stream.call_args.kwargs
-    assert call_kwargs["length"] is None, 'call_kwargs["length"] is None'
-    assert result.success, 'result.success is truthy'
-    assert result.fetched_bytes == len(body), 'result.fetched_bytes == len(body)'
+    # 断点续传改造后：暂存落盘即知确切大小，length 传实际字节数（避免 MinIO multipart）
+    assert capture.kwargs["length"] == len(
+        body
+    ), 'capture.kwargs["length"] == len(body)'
+    assert result.success, "result.success is truthy"
+    assert result.fetched_bytes == len(body), "result.fetched_bytes == len(body)"
 
 
 def test_http_fetcher_invalid_content_length() -> None:
-    """Content-Length='abc' → length=None (not int)."""
+    """Content-Length='abc' → 暂存实测大小作为 length（头不可信但不影响入库）。"""
     body = b"data with bad length"
     fake_response = _FakeHTTPResponse(
         body=body,
@@ -179,23 +232,28 @@ def test_http_fetcher_invalid_content_length() -> None:
     )
     fetcher = HttpSourceFetcher()
 
-    with (
-        patch("app.core.ssrf.safe_urlopen", return_value=fake_response),
-        patch("app.services.source_fetcher.object_store") as mock_store,
-    ):
-        mock_store.put_stream.return_value = _make_stored_object(
-            content_length=len(body)
-        )
+    with tempfile.TemporaryDirectory() as staging:
+        capture = _PutStreamCapture(content_length=len(body))
+        with (
+            patch("app.core.ssrf.safe_urlopen", return_value=fake_response),
+            patch(
+                "app.services.source_fetcher._http_staging_dir",
+                return_value=Path(staging),
+            ),
+            patch("app.services.source_fetcher.object_store") as mock_store,
+        ):
+            mock_store.put_stream.side_effect = capture
 
-        result = fetcher.fetch(
-            ref_id="ref-3",
-            source_uri="http://example.com/blob",
-            artifact_key_prefix="artifacts/test",
-        )
+            result = fetcher.fetch(
+                ref_id="ref-3",
+                source_uri="http://example.com/blob",
+                artifact_key_prefix="artifacts/test",
+            )
 
-    call_kwargs = mock_store.put_stream.call_args.kwargs
-    assert call_kwargs["length"] is None, 'call_kwargs["length"] is None'
-    assert result.success, 'result.success is truthy'
+    assert capture.kwargs["length"] == len(
+        body
+    ), 'capture.kwargs["length"] == len(body)'
+    assert result.success, "result.success is truthy"
 
 
 def test_http_fetcher_ssrf_exception_returns_failure() -> None:
@@ -216,14 +274,17 @@ def test_http_fetcher_ssrf_exception_returns_failure() -> None:
         )
 
     mock_store.put_stream.assert_not_called()
-    assert not result.success, 'result.success is falsy'
-    assert "HTTP fetch failed" in result.error or "", '"HTTP fetch failed" in result.error or ""'
+    assert not result.success, "result.success is falsy"
+    assert (
+        "HTTP fetch failed" in result.error or ""
+    ), '"HTTP fetch failed" in result.error or ""'
     assert "SSRF blocked" in result.error or "", '"SSRF blocked" in result.error or ""'
 
 
 # ---------------------------------------------------------------------------
 # Local File Source Fetcher tests
 # ---------------------------------------------------------------------------
+
 
 def test_local_file_fetcher_streams_file() -> None:
     """Create a temp file with known content → FetchResult.success, correct bytes and content_type."""
@@ -248,13 +309,21 @@ def test_local_file_fetcher_streams_file() -> None:
 
     mock_store.put_stream.assert_called_once()
     call_kwargs = mock_store.put_stream.call_args.kwargs
-    assert call_kwargs["object_key"] == "artifacts/test/ref-local-1", 'call_kwargs["object_key"] == "artifacts/test/ref-local-1"'
-    assert call_kwargs["content_type"] == "application/json", 'call_kwargs["content_type"] == "application/json"'
-    assert call_kwargs["length"] == len(content), 'call_kwargs["length"] == len(content)'
+    assert (
+        call_kwargs["object_key"] == "artifacts/test/ref-local-1"
+    ), 'call_kwargs["object_key"] == "artifacts/test/ref-local-1"'
+    assert (
+        call_kwargs["content_type"] == "application/json"
+    ), 'call_kwargs["content_type"] == "application/json"'
+    assert call_kwargs["length"] == len(
+        content
+    ), 'call_kwargs["length"] == len(content)'
 
-    assert result.success, 'result.success is truthy'
-    assert result.fetched_bytes == len(content), 'result.fetched_bytes == len(content)'
-    assert result.content_type == "application/json", 'result.content_type == "application/json"'
+    assert result.success, "result.success is truthy"
+    assert result.fetched_bytes == len(content), "result.fetched_bytes == len(content)"
+    assert (
+        result.content_type == "application/json"
+    ), 'result.content_type == "application/json"'
 
 
 def test_local_file_fetcher_not_found() -> None:
@@ -268,8 +337,10 @@ def test_local_file_fetcher_not_found() -> None:
             artifact_key_prefix="artifacts/test",
         )
 
-    assert not result.success, 'result.success is falsy'
-    assert "Local file not found" in result.error or "", '"Local file not found" in result.error or ""'
+    assert not result.success, "result.success is falsy"
+    assert (
+        "Local file not found" in result.error or ""
+    ), '"Local file not found" in result.error or ""'
 
 
 def test_local_file_fetcher_content_type_detection() -> None:
@@ -305,12 +376,15 @@ def test_local_file_fetcher_content_type_detection() -> None:
                     )
 
                 assert result.success, f"Failed for {suffix}"
-                assert result.content_type == expected_ct, f"Wrong content_type for {suffix}"
+                assert (
+                    result.content_type == expected_ct
+                ), f"Wrong content_type for {suffix}"
 
 
 # ---------------------------------------------------------------------------
 # Minio Source Fetcher tests
 # ---------------------------------------------------------------------------
+
 
 def test_minio_fetcher_streams_object() -> None:
     """Mock Minio client → put_stream is used (not put_bytes); response is streamed."""
@@ -350,9 +424,15 @@ def test_minio_fetcher_streams_object() -> None:
     mock_store.put_bytes.assert_not_called()
 
     call_kwargs = mock_store.put_stream.call_args.kwargs
-    assert call_kwargs["object_key"] == "artifacts/test/ref-minio", 'call_kwargs["object_key"] == "artifacts/test/ref-minio"'
-    assert call_kwargs["stream"] == fake_response, 'call_kwargs["stream"] == fake_response'
-    assert call_kwargs["content_type"] == "application/json", 'call_kwargs["content_type"] == "application/json"'
+    assert (
+        call_kwargs["object_key"] == "artifacts/test/ref-minio"
+    ), 'call_kwargs["object_key"] == "artifacts/test/ref-minio"'
+    assert (
+        call_kwargs["stream"] == fake_response
+    ), 'call_kwargs["stream"] == fake_response'
+    assert (
+        call_kwargs["content_type"] == "application/json"
+    ), 'call_kwargs["content_type"] == "application/json"'
     assert call_kwargs["length"] == 256, 'call_kwargs["length"] == 256'
 
     # Verify response cleanup
@@ -360,14 +440,17 @@ def test_minio_fetcher_streams_object() -> None:
     fake_response.release_conn.assert_called_once()
 
     # Verify FetchResult
-    assert result.success, 'result.success is truthy'
-    assert result.fetched_bytes == 256, 'result.fetched_bytes == 256'
-    assert result.content_type == "application/json", 'result.content_type == "application/json"'
+    assert result.success, "result.success is truthy"
+    assert result.fetched_bytes == 256, "result.fetched_bytes == 256"
+    assert (
+        result.content_type == "application/json"
+    ), 'result.content_type == "application/json"'
 
 
 # ---------------------------------------------------------------------------
 # Remote Protocol Source Fetcher tests
 # ---------------------------------------------------------------------------
+
 
 def test_remote_protocol_fetcher_streams_after_download() -> None:
     """Mock download_remote_uri → file is streamed (not read_bytes); put_stream used."""
@@ -410,19 +493,28 @@ def test_remote_protocol_fetcher_streams_after_download() -> None:
     mock_store.put_bytes.assert_not_called()
 
     call_kwargs = mock_store.put_stream.call_args.kwargs
-    assert call_kwargs["object_key"] == "artifacts/test/ref-sftp-1", 'call_kwargs["object_key"] == "artifacts/test/ref-sftp-1"'
-    assert call_kwargs["content_type"] == "application/octet-stream", 'call_kwargs["content_type"] == "application/octet-stream"'
-    assert call_kwargs["length"] == len(content), 'call_kwargs["length"] == len(content)'
+    assert (
+        call_kwargs["object_key"] == "artifacts/test/ref-sftp-1"
+    ), 'call_kwargs["object_key"] == "artifacts/test/ref-sftp-1"'
+    assert (
+        call_kwargs["content_type"] == "application/octet-stream"
+    ), 'call_kwargs["content_type"] == "application/octet-stream"'
+    assert call_kwargs["length"] == len(
+        content
+    ), 'call_kwargs["length"] == len(content)'
 
     # Verify FetchResult
-    assert result.success, 'result.success is truthy'
-    assert result.fetched_bytes == len(content), 'result.fetched_bytes == len(content)'
-    assert result.content_type == "application/octet-stream", 'result.content_type == "application/octet-stream"'
+    assert result.success, "result.success is truthy"
+    assert result.fetched_bytes == len(content), "result.fetched_bytes == len(content)"
+    assert (
+        result.content_type == "application/octet-stream"
+    ), 'result.content_type == "application/octet-stream"'
 
 
 # ---------------------------------------------------------------------------
 # Registry tests
 # ---------------------------------------------------------------------------
+
 
 def test_registry_fetch_many_partial_failure() -> None:
     """3 source_refs: unsupported scheme (stub fail), empty uri (built-in fail), valid (stub success).
@@ -468,26 +560,31 @@ def test_registry_fetch_many_partial_failure() -> None:
         artifact_key_prefix="test-prefix",
     )
 
-    assert len(results) == 3, 'len(results) == 3'
+    assert len(results) == 3, "len(results) == 3"
 
     # Unsupported scheme → failure
-    assert not results[0].success, 'results[0].success is falsy'
-    assert results[0].ref_id == "ref-unsupported", 'results[0].ref_id == "ref-unsupported"'
+    assert not results[0].success, "results[0].success is falsy"
+    assert (
+        results[0].ref_id == "ref-unsupported"
+    ), 'results[0].ref_id == "ref-unsupported"'
 
     # Empty URI → built-in failure
-    assert not results[1].success, 'results[1].success is falsy'
+    assert not results[1].success, "results[1].success is falsy"
     assert results[1].ref_id == "ref-empty", 'results[1].ref_id == "ref-empty"'
-    assert "source_uri is empty" in results[1].error or "", '"source_uri is empty" in results[1].error or ""'
+    assert (
+        "source_uri is empty" in results[1].error or ""
+    ), '"source_uri is empty" in results[1].error or ""'
 
     # Valid → success
-    assert results[2].success, 'results[2].success is truthy'
+    assert results[2].success, "results[2].success is truthy"
     assert results[2].ref_id == "ref-valid", 'results[2].ref_id == "ref-valid"'
-    assert results[2].fetched_bytes == 100, 'results[2].fetched_bytes == 100'
+    assert results[2].fetched_bytes == 100, "results[2].fetched_bytes == 100"
 
 
 # ---------------------------------------------------------------------------
 # LocalObjectStore.put_stream tests
 # ---------------------------------------------------------------------------
+
 
 def test_object_store_put_stream_local() -> None:
     """Create LocalObjectStore with temp dir, put_stream with BytesIO → file + metadata created."""
@@ -505,25 +602,41 @@ def test_object_store_put_stream_local() -> None:
         )
 
         # Verify StoredObject
-        assert isinstance(stored, StoredObject), 'isinstance(stored, StoredObject)'
-        assert stored.object_key == "test/object.bin", 'stored.object_key == "test/object.bin"'
-        assert stored.content_length == len(content), 'stored.content_length == len(content)'
-        assert stored.content_type == "application/octet-stream", 'stored.content_type == "application/octet-stream"'
-        assert stored.metadata["source"] == "test", 'stored.metadata["source"] == "test"'
+        assert isinstance(stored, StoredObject), "isinstance(stored, StoredObject)"
+        assert (
+            stored.object_key == "test/object.bin"
+        ), 'stored.object_key == "test/object.bin"'
+        assert stored.content_length == len(
+            content
+        ), "stored.content_length == len(content)"
+        assert (
+            stored.content_type == "application/octet-stream"
+        ), 'stored.content_type == "application/octet-stream"'
+        assert (
+            stored.metadata["source"] == "test"
+        ), 'stored.metadata["source"] == "test"'
 
         # Verify file is created with correct content
         file_path = Path(tmpdir) / "test" / "object.bin"
-        assert file_path.exists(), 'file_path.exists() is truthy'
-        assert file_path.read_bytes() == content, 'file_path.read_bytes() == content'
+        assert file_path.exists(), "file_path.exists() is truthy"
+        assert file_path.read_bytes() == content, "file_path.read_bytes() == content"
 
         # Verify metadata file exists and has correct structure
         meta_path = Path(tmpdir) / "test" / "object.bin.meta.json"
-        assert meta_path.exists(), 'meta_path.exists() is truthy'
+        assert meta_path.exists(), "meta_path.exists() is truthy"
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        assert meta["object_key"] == "test/object.bin", 'meta["object_key"] == "test/object.bin"'
-        assert meta["content_type"] == "application/octet-stream", 'meta["content_type"] == "application/octet-stream"'
-        assert meta["content_length"] == len(content), 'meta["content_length"] == len(content)'
-        assert meta["metadata"]["source"] == "test", 'meta["metadata"]["source"] == "test"'
+        assert (
+            meta["object_key"] == "test/object.bin"
+        ), 'meta["object_key"] == "test/object.bin"'
+        assert (
+            meta["content_type"] == "application/octet-stream"
+        ), 'meta["content_type"] == "application/octet-stream"'
+        assert meta["content_length"] == len(
+            content
+        ), 'meta["content_length"] == len(content)'
+        assert (
+            meta["metadata"]["source"] == "test"
+        ), 'meta["metadata"]["source"] == "test"'
 
 
 def test_object_store_put_stream_unknown_length() -> None:
@@ -543,20 +656,26 @@ def test_object_store_put_stream_unknown_length() -> None:
         )
 
         # Verify content_length is computed from actual bytes written
-        assert stored.content_length == len(content), 'stored.content_length == len(content)'
+        assert stored.content_length == len(
+            content
+        ), "stored.content_length == len(content)"
 
         # Verify file content matches
         file_path = Path(tmpdir) / "test" / "unknown_len.bin"
-        assert file_path.exists(), 'file_path.exists() is truthy'
-        assert file_path.read_bytes() == content, 'file_path.read_bytes() == content'
+        assert file_path.exists(), "file_path.exists() is truthy"
+        assert file_path.read_bytes() == content, "file_path.read_bytes() == content"
 
         # Verify metadata file reflects correct length
         meta_path = Path(tmpdir) / "test" / "unknown_len.bin.meta.json"
-        assert meta_path.exists(), 'meta_path.exists() is truthy'
+        assert meta_path.exists(), "meta_path.exists() is truthy"
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        assert meta["content_length"] == len(content), 'meta["content_length"] == len(content)'
+        assert meta["content_length"] == len(
+            content
+        ), 'meta["content_length"] == len(content)'
 
         # Verify round-trip via get_object
         retrieved = store.get_object("test/unknown_len.bin")
-        assert retrieved is not None, 'retrieved is not None'
-        assert retrieved.content_length == len(content), 'retrieved.content_length == len(content)'
+        assert retrieved is not None, "retrieved is not None"
+        assert retrieved.content_length == len(
+            content
+        ), "retrieved.content_length == len(content)"

@@ -19,6 +19,9 @@ from app.data_io.services.grid_presets import (
 
 logger = logging.getLogger(__name__)
 
+#: GRIB1/GRIB2 后缀（NOMADS/CDS 下载产物），经 xarray engine="cfgrib" 读取
+GRIB_SUFFIXES = frozenset({".grib", ".grib2", ".grb", ".grb2"})
+
 
 def list_raster_variables(path: Path) -> dict[str, Any]:
     ext = path.suffix.lower()
@@ -35,6 +38,8 @@ def list_raster_variables(path: Path) -> dict[str, Any]:
         }
     if ext == ".nc":
         info = _list_netcdf(path)
+    elif ext in GRIB_SUFFIXES:
+        info = _list_grib(path)
     elif ext in {".h5", ".hdf", ".he5"}:
         info = _list_hdf(path)
     elif ext == ".mat":
@@ -123,6 +128,59 @@ def _list_netcdf(path: Path) -> dict[str, Any]:
         }
     except Exception as exc:  # noqa: BLE001 — scipy 兜底读取，汇总为 RuntimeError
         raise RuntimeError(f"无法读取 NetCDF: {exc}") from exc
+
+
+def _open_grib_dataset(path: Path) -> Any:
+    try:
+        import xarray as xr  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError(
+            "读取 GRIB 需要安装可选依赖 xarray 与 cfgrib，请安装后重试。"
+        ) from exc
+    try:
+        return xr.open_dataset(str(path), engine="cfgrib")
+    except Exception as exc:  # noqa: BLE001 — cfgrib 引擎/格式错误统一汇总
+        raise RuntimeError(f"无法打开 GRIB 文件 {path}: {exc}") from exc
+
+
+def _grib_geo_bounds(ds: Any) -> list[float]:
+    """从 cfgrib 数据集经纬坐标计算 WSEN bounds（格点中心外扩半格）。"""
+    lat = np.asarray(ds["latitude"].values, dtype=np.float64)
+    lon = np.asarray(ds["longitude"].values, dtype=np.float64)
+    south, north = float(lat.min()), float(lat.max())
+    west, east = float(lon.min()), float(lon.max())
+    if lat.size > 1:
+        d = abs(float(lat[1]) - float(lat[0])) / 2.0
+        south -= d
+        north += d
+    if lon.size > 1:
+        d = abs(float(lon[1]) - float(lon[0])) / 2.0
+        west -= d
+        east += d
+    return [west, south, east, north]
+
+
+def _list_grib(path: Path) -> dict[str, Any]:
+    ds = _open_grib_dataset(path)
+    try:
+        variables = [
+            {
+                "id": str(name),
+                "name": str(name),
+                "shape": list(ds[name].shape),
+                "dtype": str(ds[name].dtype),
+                "fill_value": None,  # cfgrib 已把缺测解码为 NaN
+            }
+            for name in ds.data_vars
+        ]
+        return {
+            "format": "grib2",
+            "variables": variables,
+            "needs_variable_select": True,
+            "suggested_bounds": _grib_geo_bounds(ds),
+        }
+    finally:
+        ds.close()
 
 
 def _walk_h5(obj: Any, prefix: str = "") -> list[dict[str, Any]]:
@@ -362,6 +420,14 @@ def extract_variable_to_geotiff(
         array, effective_preset, axis_order=axis_order
     )
 
+    # GRIB：无预设网格，从 cfgrib 经纬坐标取真实 bounds（外扩半格中心）
+    if bounds is None and ext in GRIB_SUFFIXES:
+        ds = _open_grib_dataset(path)
+        try:
+            bounds = _grib_geo_bounds(ds)
+        finally:
+            ds.close()
+
     try:
         import rasterio
     except ImportError as exc:
@@ -432,11 +498,28 @@ def _load_2d_array(
     ext = path.suffix.lower()
     if ext == ".nc":
         return _load_netcdf_2d(path, variable_id, time_index)
+    if ext in GRIB_SUFFIXES:
+        return _load_grib_2d(path, variable_id, time_index)
     if ext in {".h5", ".hdf", ".he5"}:
         return _load_hdf_2d(path, variable_id, time_index)
     if ext == ".mat":
         return _load_mat_2d(path, variable_id, time_index)
     raise ValueError(f"不支持抽取: {ext}")
+
+
+def _load_grib_2d(
+    path: Path, variable_id: str, time_index: int
+) -> tuple[Any, Any, Any]:
+    ds = _open_grib_dataset(path)
+    try:
+        if variable_id not in ds.data_vars:
+            raise ValueError(
+                f"GRIB 变量不存在: {variable_id}；可选: {list(ds.data_vars)[:20]}"
+            )
+        da = ds[variable_id]
+        return np.asarray(_as_2d(da.values, time_index)), None, None
+    finally:
+        ds.close()
 
 
 def _as_2d(arr: Any, time_index: int) -> Any:
