@@ -53,7 +53,7 @@
 
 现有词汇（新增须先改本文再改 seed；2026-08-17 审计后与 `workflow_seeds/system/` 全量对齐）：
 
-`pipeline` · `omega_avg` · `omega_block` · `sf_inversion` · `d1` · `demo` · `sample` · `download` · `local` · `online` · `remote` · `gldas_online` · `gee` · `weather` · `analysis` · `statistics` · `stats` · `histogram` · `timeseries` · `chart` · `raster` · `vector` · `zonal` · `preprocess` · `gis` · `fusion` · `report` · `calculator` · `dem` · `slope` · `aspect` · `contour` · `watershed` · `buffer` · `stub_v1` · `ui-panel`
+`pipeline` · `omega_avg` · `omega_block` · `sf_inversion` · `d1` · `demo` · `sample` · `download` · `local` · `online` · `remote` · `gldas_online` · `gee` · `weather` · `analysis` · `statistics` · `stats` · `histogram` · `timeseries` · `chart` · `raster` · `vector` · `zonal` · `preprocess` · `gis` · `fusion` · `report` · `calculator` · `dem` · `slope` · `aspect` · `contour` · `watershed` · `buffer` · `stub_v1` · `ui-panel` · `hidden`
 
 约定：
 
@@ -70,6 +70,7 @@
 - `calculator`：栅格计算器（`analysis_raster_calc`）。
 - `ui-panel`：InfoPanel 分析面板固化模板（`analysis_*.json`），勿强制 `pipeline`。
 - `buffer`：缓冲分析相关。
+- `hidden`：运行时机制标记（2026-08-18 启用）——`list_definitions` 过滤该标记的种子（不出现在前端列表 / 流水线启动器）；`get_definition` 按 id 直取与运行、定时器、已保存引用不受影响。适用 stub_v1 烟测载体（9 条 `*_basic`）与用户自定义隐藏，对 user 定义同样生效。
 ### `_meta.resource_profile`（可选）
 
 | 值 | 说明 |

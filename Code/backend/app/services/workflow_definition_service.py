@@ -268,6 +268,10 @@ def list_definitions() -> list[dict[str, Any]]:
             try:
                 data = _read_file(path)
                 meta = data.get("_meta", {})
+                # hidden 标记：编译烟测载体（stub_v1 sample）不出现在用户列表；
+                # get_definition 按 id 直取与运行不受影响（定时器/已保存引用仍可用）
+                if "hidden" in (meta.get("tags") or []):
+                    continue
                 results.append(
                     {
                         "workflow_id": data.get("workflow_id", path.stem),

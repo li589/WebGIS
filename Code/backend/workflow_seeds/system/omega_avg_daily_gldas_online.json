@@ -2,7 +2,7 @@
   "_meta": {
     "kind": "system",
     "engine": "python_provider",
-    "name": "avg-ω 逐日反演（GLDAS 在线拉取 + DUAL 双温度）",
+    "name": "SMAP ω 平均反演·双温度（GLDAS 在线）",
     "description": "目的：经 gldas_download 在线拉取 GLDAS NOAH025_3H（.nc4）并由 gldas_nc4_to_mat 转为 DUAL 温度 .mat，再与本地 D1/SMAP/anc/NDVI 一并接入 D2 avg-omega。前置：earthdata 凭证；D1 omega_block 已产出。",
     "author": "system",
     "readonly": true,
@@ -16,8 +16,8 @@
     "category": "inversion"
   },
   "workflow_id": "omega_avg_daily_gldas_online",
-  "name": "avg-ω 逐日反演（GLDAS 在线拉取 + DUAL 双温度）",
-  "description": "gldas_download（GES DISC / earthdata）→ gldas_nc4_to_mat（Ts_gldas/Tsoil*）→ D2 avg-omega DUAL；本地 D1/SMAP/anc/NDVI 数据源并联。",
+  "name": "SMAP ω 平均反演·双温度（GLDAS 在线）",
+  "description": "gldas_download（GES DISC / earthdata）→ gldas_nc4_to_mat（Ts_gldas/Tsoil*）→ D2 avg-omega DUAL；本地 D1/SMAP/anc/NDVI 数据源并联。语义：平均=ω 固定为多年 DOY 气候态均值，逐日仅做轻量 DDCA 回代。双温度=GLDAS 三温度变量（Ts/Tsoil1/Tsoil2）推土壤 TG 与冠层 TC。",
   "nodes": [
     {
       "id": 1,
@@ -156,7 +156,7 @@
       ],
       "properties": {
         "layer_id": "method-smap-omega-doy-avg",
-        "display_name": "avg-ω 逐日反演（GLDAS 在线拉取 + DUAL 双温度）"
+        "display_name": "SMAP ω 平均反演·双温度（GLDAS 在线）"
       }
     },
     {

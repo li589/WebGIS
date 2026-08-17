@@ -96,8 +96,12 @@ def test_system_seed_runtime_engine_contract(workflow_id: str) -> None:
 
 
 def test_fy_seeds_use_registered_types() -> None:
-    """FY 在线/NAS 链路必须用注册表规范 type（P0-1 回归守卫）。"""
-    for name in ("fy_tb_nas_read", "fy_tb_online_read", "fy_tb_nsmc_online", "fy_tb_local_read"):
+    """FY 在线/NAS 链路必须用注册表规范 type（P0-1 回归守卫）。
+
+    2026-08-18 冗余清理：fy_tb_nas_read / fy_tb_nsmc_online 已移除
+    （fy_tb_online_read 的 auto NSMC→NAS 回退覆盖两者），此处仅守卫现存种子。
+    """
+    for name in ("fy_tb_online_read", "fy_tb_local_read"):
         data = json.loads((_SEED_DIR / f"{name}.json").read_text(encoding="utf-8"))
         for node in data.get("nodes") or []:
             assert not str(node.get("type") or "").startswith("module/fy_"), (

@@ -45,6 +45,9 @@ _OMEGA_AVG_DATASOURCE_KEY_MAP: dict[str, tuple[str, ...]] = {
     "omega_block_dir": ("omega_block_dir", "omega_block_output", "daily_omega_dir"),
     "avg_omega_doy_dir": ("avg_omega_doy_dir", "avg_omega_cache"),
     "omega_block_mat": ("omega_block_mat", "omega_block_result"),
+    # DUAL 双温度：GLDAS 三温度目录 + 可选 UTC 过境模板（与 omega_sf_fenkuai 对齐）
+    "gldas_mat_folder": ("gldas_mat_folder", "gldas_mat", "daily_mat_sources"),
+    "gldas_template_mat": ("gldas_template_mat", "gldas_template", "daily_mat_sources"),
 }
 
 

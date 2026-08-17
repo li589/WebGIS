@@ -2,7 +2,7 @@
   "_meta": {
     "kind": "system",
     "engine": "python_provider",
-    "name": "D1 omega_block（SMAP 单温度）",
+    "name": "ω 块反演·D1 预处理（SMAP 本地）",
     "description": "目的：D1 omega_block 块反演（timeseries_bundle → omega_block），产出 omega_block_*.mat + daily_omega/ 供 D2 avg-ω 使用。前置：SMAP 逐日 .mat + 辅助库 + NDVI（DOY 气候态或逐日）。产出：Inversion_Results/omega_block。配置：mode=dh 时仅需 timeseries input_mat；mode=omega 另需 omega_fixed_mat/exp0_calib_mat。",
     "author": "system",
     "readonly": true,
@@ -16,8 +16,8 @@
     "category": "inversion"
   },
   "workflow_id": "omega_block_smap_single",
-  "name": "D1 omega_block（SMAP 单温度）",
-  "description": "SMAP 亮温 + 辅助/NDVI → timeseries_bundle → omega_block（daily_omega + h/alpha）。",
+  "name": "ω 块反演·D1 预处理（SMAP 本地）",
+  "description": "SMAP 亮温 + 辅助/NDVI → timeseries_bundle → omega_block（daily_omega + h/alpha）。语义：D1=上游块反演，产 h/α 图与逐日 ω 缓存，是「平均」族的必需输入。",
   "nodes": [
     {
       "id": 1,

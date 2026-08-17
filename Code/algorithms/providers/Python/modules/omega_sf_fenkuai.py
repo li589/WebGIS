@@ -50,6 +50,7 @@ _OMEGA_SF_DATASOURCE_KEY_MAP: dict[str, tuple[str, ...]] = {
     "fy3d_folder": ("fy3d_folder", "fy_daily_mat", "daily_mat_sources"),
     "fy3b_folder": ("fy3b_folder", "fy_daily_mat", "daily_mat_sources"),
     "gldas_mat_folder": ("gldas_mat_folder", "gldas_mat", "daily_mat_sources"),
+    "gldas_template_mat": ("gldas_template_mat", "gldas_template", "daily_mat_sources"),
     "ddca_sm_folder": ("ddca_sm_folder", "ddca_sm", "daily_mat_sources"),
     "ndvi_clim_folder": ("ndvi_clim_folder", "ndvi_clim", "daily_mat_sources"),
 }
@@ -219,6 +220,7 @@ class OmegaSfFenkuaiModule(BaseModule):
         fy3d_folder = str(datasource_selection.get("fy3d_folder") or "")
         fy3b_folder = str(datasource_selection.get("fy3b_folder") or "")
         gldas_mat_folder = str(datasource_selection.get("gldas_mat_folder") or "")
+        gldas_template_mat = str(datasource_selection.get("gldas_template_mat") or "")
         ddca_sm_folder = str(datasource_selection.get("ddca_sm_folder") or "")
 
         if ctx.logger_adapter is not None:
@@ -273,6 +275,7 @@ class OmegaSfFenkuaiModule(BaseModule):
             fy3d_folder=fy3d_folder,
             fy3b_folder=fy3b_folder,
             gldas_mat_folder=gldas_mat_folder,
+            gldas_template_mat=gldas_template_mat,
             ddca_sm_folder=ddca_sm_folder,
             grid_shape=grid_shape,
             output_dir=str(output_dir),

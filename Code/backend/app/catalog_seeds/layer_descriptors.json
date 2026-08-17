@@ -1481,7 +1481,7 @@
     "layer_id": "method-smap-omega-doy-dynamic",
     "dataset_key": "omega_sf_fenkuai_smap",
     "display_name": "SMAP 动态 ω 反演",
-    "description": "omega_sf_fenkuai 流水线产出：SMAP 亮温 + 辅助数据 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。关联种子 omega_sf_fenkuai_smap_single。 SMAP 分块反演，动态 ω（DOY）。",
+    "description": "omega_sf_fenkuai 流水线产出：SMAP 亮温 + 辅助数据 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。关联种子 omega_sf_fenkuai_smap_single。 SMAP 分块反演，动态 ω（DOY）。双温度变体见 omega_sf_fenkuai_smap_dual（GLDAS DUAL）。",
     "category": "research-group",
     "sub_category": "模型输出",
     "source_type": "algorithm_output",
@@ -1540,7 +1540,8 @@
     },
     "run_readiness_summary": "SMAP SF 块反演输入（日 .mat / 辅助库 / NDVI 气候态）按 DATA_ROOT 解析",
     "run_readiness_notes": [
-      "运行请使用 heavy 队列；默认种子时间窗见 omega_sf_fenkuai_smap_single"
+      "运行请使用 heavy 队列；默认种子时间窗见 omega_sf_fenkuai_smap_single",
+      "双温度变体 omega_sf_fenkuai_smap_dual 需 GLDAS .mat（Meteorological/Weather/GLDAS，temp_scheme=DUAL）"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "Depends on SMAP daily mats under DATA_ROOT",
@@ -1575,7 +1576,7 @@
     "layer_id": "method-fy-omega-doy-dynamic",
     "dataset_key": "omega_sf_fenkuai_fy",
     "display_name": "风云卫星 动态 ω 反演",
-    "description": "omega_sf_fenkuai 流水线产出：FY 亮温 + SMAP 辅助 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。关联种子 omega_sf_fenkuai_fy_single。 FY 分块反演，动态 ω（DOY）。",
+    "description": "omega_sf_fenkuai 流水线产出：FY 亮温 + SMAP 辅助 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。关联种子 omega_sf_fenkuai_fy_single。 FY 分块反演，动态 ω（DOY）。双温度变体见 omega_sf_fenkuai_fy_dual。",
     "category": "research-group",
     "sub_category": "模型输出",
     "source_type": "algorithm_output",
@@ -1640,7 +1641,8 @@
     },
     "run_readiness_summary": "FY SF 块反演输入（FY/SMAP/辅助库/NDVI）按 DATA_ROOT 解析",
     "run_readiness_notes": [
-      "运行请使用 heavy 队列；默认种子见 omega_sf_fenkuai_fy_single"
+      "运行请使用 heavy 队列；默认种子见 omega_sf_fenkuai_fy_single",
+      "双温度变体 omega_sf_fenkuai_fy_dual 需 GLDAS .mat（Meteorological/Weather/GLDAS，temp_scheme=DUAL）"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "Depends on FY/SMAP daily mats under DATA_ROOT",
@@ -1675,7 +1677,7 @@
     "layer_id": "method-smap-omega-doy-avg",
     "dataset_key": "omega_avg_daily_smap",
     "display_name": "SMAP 日均 ω 反演",
-    "description": "omega_avg_daily / omega_block 经典 D1→D2 链路产出。关联种子 omega_avg_daily_smap_single。 SMAP 日均 ω 反演（原 D2 链路）。",
+    "description": "omega_avg_daily / omega_block 经典 D1→D2 链路产出。关联种子 omega_avg_daily_smap_single。 SMAP 日均 ω 反演（原 D2 链路）。双温度变体见 omega_avg_daily_smap_dual / omega_avg_daily_gldas_online（GLDAS DUAL）。",
     "category": "research-group",
     "sub_category": "模型输出",
     "source_type": "algorithm_output",
@@ -1725,7 +1727,8 @@
     },
     "run_readiness_summary": "D2 日均 ω 依赖 D1 omega_block 产物目录",
     "run_readiness_notes": [
-      "请先跑 omega_block_smap_single 或确认 Inversion_Results/omega_block 就绪"
+      "请先跑 omega_block_smap_single 或确认 Inversion_Results/omega_block 就绪",
+      "双温度变体（smap_dual / gldas_online）需 GLDAS .mat（Meteorological/Weather/GLDAS，temp_scheme=DUAL）"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "Depends on omega_block outputs",
@@ -1760,7 +1763,7 @@
     "layer_id": "method-fy-omega-doy-avg",
     "dataset_key": "omega_avg_daily_fy",
     "display_name": "风云卫星 日均 ω 反演",
-    "description": "omega_avg_daily FY ORIG_TS 链路。关联种子 omega_avg_daily_fy_single。 FY 日均 ω 反演（原 D2 链路）。",
+    "description": "omega_avg_daily FY ORIG_TS 链路。关联种子 omega_avg_daily_fy_single。 FY 日均 ω 反演（原 D2 链路）。在线入口：omega_avg_daily_fy_online（NSMC auto→NAS 回退）。",
     "category": "research-group",
     "sub_category": "模型输出",
     "source_type": "algorithm_output",
@@ -1810,7 +1813,8 @@
     },
     "run_readiness_summary": "FY D2 日均 ω 依赖 D1 omega_block 产物目录",
     "run_readiness_notes": [
-      "请先跑对应 FY/SMAP D1 块反演或确认 omega_block 目录就绪"
+      "请先跑对应 FY/SMAP D1 块反演或确认 omega_block 目录就绪",
+      "在线入口 omega_avg_daily_fy_online 需 nsmc 凭证（建议多账号）与 GDAL CLI"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "Depends on omega_block outputs",

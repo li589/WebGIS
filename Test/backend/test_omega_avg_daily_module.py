@@ -30,7 +30,10 @@ import contracts  # noqa: E402, F401 — break circular import: contracts first
 from contracts.job import JobRequest  # noqa: E402
 from contracts.product import OutputSpec  # noqa: E402
 from contracts.runtime import RegionSpec, RuntimeContext, TimeRange  # noqa: E402
-from modules.omega_avg_daily import OmegaAvgDailyModule  # noqa: E402
+from modules.omega_avg_daily import (  # noqa: E402
+    OmegaAvgDailyModule,
+    _resolve_omega_avg_datasource_selection,
+)
 from workflow.schemas import NodeExecutionContext  # noqa: E402
 
 # ── Synthetic data root ─────────────────────────────────────────────────────
@@ -225,3 +228,43 @@ def test_omega_avg_daily_module_missing_omega_block_mat_raises(
     module = OmegaAvgDailyModule()
     with pytest.raises(FileNotFoundError, match="omega_block_\\*.mat"):
         module.execute(inputs=inputs, params={}, ctx=ctx)
+
+
+def test_resolve_omega_avg_datasource_maps_gldas_mat_keys(tmp_path: Path) -> None:
+    """DUAL 种子的 gldas_mat / gldas_template_mat dataset_key 应解析为模块消费键。
+
+    2026-08-18 修复回归守卫：omega_avg_daily_smap_dual / gldas_online 种子的
+    dataset_key=gldas_mat 此前无键映射，运行时抛
+    "gldas_folder or gldas_mat_folder is required"。
+    """
+    gldas_dir = tmp_path / "gldas"
+    gldas_dir.mkdir()
+    template_mat = tmp_path / "template.mat"
+    template_mat.write_bytes(b"")
+
+    resolved = _resolve_omega_avg_datasource_selection(
+        {
+            "_prepared_inputs": {
+                "gldas_mat": {
+                    "materialized_resources": [
+                        {
+                            "local_path": str(gldas_dir),
+                            "source_kind": "local_dir",
+                            "metadata": {"target_key": "gldas_mat_folder"},
+                        }
+                    ]
+                },
+                "gldas_template_mat": {
+                    "materialized_resources": [
+                        {
+                            "local_path": str(template_mat),
+                            "source_kind": "local_file",
+                        }
+                    ]
+                },
+            }
+        }
+    )
+
+    assert resolved.get("gldas_mat_folder") == str(gldas_dir)
+    assert resolved.get("gldas_template_mat") == str(template_mat)
