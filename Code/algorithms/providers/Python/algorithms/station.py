@@ -79,7 +79,7 @@ def aggregate_station_records_daily(
         ]
         if not valid_values:
             continue
-        mean_sm = sum(valid_values) / len(valid_values)
+        mean_sm = math.fsum(valid_values) / len(valid_values)
         aggregated.append(
             StationRecord(
                 year=first.year,

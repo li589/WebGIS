@@ -17,15 +17,24 @@
 
 from __future__ import annotations
 
+import logging
+import warnings
 from pathlib import Path
 
 import numpy as np
+from numpy.exceptions import RankWarning
 
 from contracts.product import ProductManifest, ProductRef
 from data_access.universal_reader import UniversalDataReader
 from modules.base import BaseModule
 from modules.registry import register_module_decorator
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
+
+logger = logging.getLogger(__name__)
+
+# 数值专项 W2：高阶多项式在有限样本上条件数爆炸（Vandermonde 病态），
+# 拟合曲线在端点大幅振荡甚至溢出；6 阶为科研时序拟合的经验上限
+_MAX_POLY_DEGREE = 6
 
 
 def _store_manifest(
@@ -126,12 +135,21 @@ def _fit_linear(values: np.ndarray) -> dict[str, object]:
 
 def _fit_polynomial(values: np.ndarray, degree: int) -> dict[str, object]:
     time = np.arange(values.size, dtype=np.float64)
+    if not 1 <= degree <= _MAX_POLY_DEGREE:
+        raise ValueError(
+            f"curve_fitting: degree 必须在 1..{_MAX_POLY_DEGREE}"
+            f"（收到 {degree}），高阶拟合病态且易溢出"
+        )
     valid = np.isfinite(values) & np.isfinite(time)
     if valid.sum() < degree + 1:
         raise ValueError(
             f"curve_fitting: 有效样本不足 ({valid.sum()}) 进行 {degree} 阶多项式拟合"
         )
-    coeffs = np.polyfit(time[valid], values[valid], degree)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", RankWarning)
+        coeffs = np.polyfit(time[valid], values[valid], degree)
+    for entry in caught:
+        logger.warning("polyfit 条件数差/秩亏 (degree=%d): %s", degree, entry.message)
     poly = np.poly1d(coeffs)
     fitted = poly(time)
     coeff_terms = [f"{c:.6f} * x^{degree - i}" for i, c in enumerate(coeffs)]
@@ -152,13 +170,23 @@ def _fit_exponential(values: np.ndarray) -> dict[str, object]:
         raise ValueError("curve_fitting: 正值样本不足进行指数拟合")
 
     def _exp_func(x, a, b):
-        return a * np.exp(b * x)
+        # 优化器试参可能使 exp 上溢——非有限结果由下游统一截 NaN，抑制告警噪音
+        with np.errstate(over="ignore"):
+            return a * np.exp(b * x)
 
     try:
+        # 数值专项 W2：初值量纲感知——固定 a0=1.0 对亮温(~300K)等大量纲
+        # 数据梯度悬殊，curve_fit 收敛差甚至发散；以数据峰值作 a0
+        a0 = float(np.nanmax(values[valid]))
+        if not np.isfinite(a0) or a0 <= 0:
+            a0 = 1.0
         popt, _ = curve_fit(
-            _exp_func, time[valid], values[valid], p0=(1.0, 0.01), maxfev=5000
+            _exp_func, time[valid], values[valid], p0=(a0, 0.01), maxfev=5000
         )
         fitted = _exp_func(time, *popt)
+        # b>0 时对全时间轴求值可能在末端溢出 inf——落盘前截为 NaN
+        fitted = np.asarray(fitted, dtype=np.float64)
+        fitted[~np.isfinite(fitted)] = np.nan
         return {
             "params": {"a": float(popt[0]), "b": float(popt[1])},
             "fitted_curve": fitted,
@@ -240,6 +268,11 @@ class CurveFittingModule(BaseModule):
             raise ValueError(
                 f"不支持的拟合方法: {method} (可选 linear|polynomial|exponential)"
             )
+
+        # 数值专项 W2：任何方法拟合曲线的溢出值（inf）不得落盘污染下游
+        fitted_curve = np.asarray(result["fitted_curve"], dtype=np.float64)
+        fitted_curve[~np.isfinite(fitted_curve)] = np.nan
+        result["fitted_curve"] = fitted_curve
 
         # 输出 MAT + CSV
         out_name = f"fitting_{method}_{var_name}"

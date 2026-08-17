@@ -32,25 +32,36 @@ from data_access.universal_reader import UniversalDataReader, CHINA_BBOX, DataAr
 from data_access.geo_math import grid_size_from_span, pixel_center_axis  # noqa: E402
 
 
-# 重采样方法映射
-_RESAMPLING_MAP = {
-    "nearest": "nearest",
-    "bilinear": "bilinear",
-    "cubic": "cubic",
-    "average": "average",
-}
-
-
 def _get_resampling_enum(method: str):
-    """获取 rasterio 重采样枚举值。"""
+    """获取 rasterio 重采样枚举值（未知方法名 fail-loud，不静默回退）。
+
+    数值专项 S2：旧行为未知名静默替换为 bilinear——nearest 的"不混合
+    邻域"意图被悄悄丢弃且无任何提示。映射覆盖 rasterio 全部常用方法，
+    映射外显式 ValueError（与 stats_ops 的 fail-loud 策略一致）。
+    """
     from rasterio.enums import Resampling
 
-    return {
+    mapping = {
         "nearest": Resampling.nearest,
         "bilinear": Resampling.bilinear,
         "cubic": Resampling.cubic,
+        "cubic_spline": Resampling.cubic_spline,
+        "lanczos": Resampling.lanczos,
         "average": Resampling.average,
-    }.get(method, Resampling.bilinear)
+        "mode": Resampling.mode,
+        "gauss": Resampling.gauss,
+        "max": Resampling.max,
+        "min": Resampling.min,
+        "med": Resampling.med,
+        "q1": Resampling.q1,
+        "q3": Resampling.q3,
+        "sum": Resampling.sum,
+        "rms": Resampling.rms,
+    }
+    try:
+        return mapping[method]
+    except KeyError:
+        raise ValueError(f"未知重采样方法 {method!r}；可选 {sorted(mapping)}") from None
 
 
 class SpatialAligner:
@@ -317,9 +328,15 @@ class SpatialAligner:
 
         west, south, east, north = bbox
 
-        # 构建目标网格
-        target_lat = np.linspace(north, south, target_height)
-        target_lon = np.linspace(west, east, target_width)
+        # 构建目标网格——必须与 align_to_grid 返回坐标同用像素中心轴
+        # （pixel_center_axis），否则插值采样点（边点）与返回坐标（中心）
+        # 系统性错开半像素，多源融合空间配准偏移
+        target_lat = np.asarray(
+            pixel_center_axis(north, south, target_height), dtype=np.float64
+        )
+        target_lon = np.asarray(
+            pixel_center_axis(west, east, target_width), dtype=np.float64
+        )
         target_lon_2d, target_lat_2d = np.meshgrid(target_lon, target_lat)
 
         if lat.ndim == 1 and lon.ndim == 1:

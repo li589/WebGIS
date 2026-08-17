@@ -104,7 +104,7 @@ def _interpolate_nc4_field(
 ) -> Any:
     import numpy as np
     import xarray as xr
-    from scipy.interpolate import RegularGridInterpolator
+    from scipy.interpolate import RegularGridInterpolator, griddata
 
     with xr.open_dataset(nc_path) as ds:
         if variable not in ds:
@@ -116,15 +116,45 @@ def _interpolate_nc4_field(
     if lat.size < 2 or lon.size < 2:
         raise ValueError(f"invalid GLDAS grid in {nc_path.name}")
 
-    interp = RegularGridInterpolator(
-        (lat, lon),
-        field,
-        bounds_error=False,
+    # 坐标单调性校验：RegularGridInterpolator 要求严格升序——降序翻转，乱序拒绝
+    if np.all(np.diff(lat) < 0):
+        lat = lat[::-1]
+        field = field[::-1, :]
+    elif not np.all(np.diff(lat) > 0):
+        raise ValueError(f"lat axis not monotonic in {nc_path.name}")
+    if np.all(np.diff(lon) < 0):
+        lon = lon[::-1]
+        field = field[:, ::-1]
+    elif not np.all(np.diff(lon) > 0):
+        raise ValueError(f"lon axis not monotonic in {nc_path.name}")
+
+    finite_mask = np.isfinite(field)
+    if bool(finite_mask.all()):
+        # 快路径：全场有限 → 规则网格插值
+        interp = RegularGridInterpolator(
+            (lat, lon),
+            field,
+            bounds_error=False,
+            fill_value=np.nan,
+        )
+        query = np.column_stack([lat_tgt.ravel(), lon_tgt.ravel()])
+        return interp(query).reshape(lat_tgt.shape)
+
+    # 数值专项 C4：NaN 点不得进入插值输入——RegularGridInterpolator 会把
+    # NaN 线性涂抹到相邻目标格点（海洋边缘陆地像元成片丢失）。改为仅以
+    # 有限点做逐点 griddata（与 spatial_aligner._coordinate_based_resample
+    # 同策略），凸包内有效邻域不再被污染。
+    lon_grid = np.broadcast_to(lon[None, :], field.shape)
+    lat_grid = np.broadcast_to(lat[:, None], field.shape)
+    points = np.column_stack([lon_grid[finite_mask], lat_grid[finite_mask]])
+    out = griddata(
+        points,
+        field[finite_mask],
+        (lon_tgt.ravel(), lat_tgt.ravel()),
+        method="linear",
         fill_value=np.nan,
     )
-    query = np.column_stack([lat_tgt.ravel(), lon_tgt.ravel()])
-    out = interp(query).reshape(lat_tgt.shape)
-    return out
+    return out.reshape(lat_tgt.shape)
 
 
 def convert_gldas_nc4_file(

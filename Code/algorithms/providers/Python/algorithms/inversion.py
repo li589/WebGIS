@@ -371,9 +371,15 @@ def ddca_retrieve_pixel(
 
     lower_bounds = (0.02, 0.0)
     upper_bounds = (porosity, 5.0)
+    if not math.isfinite(porosity) or porosity <= lower_bounds[0]:
+        # 孔隙度无效时 bounds 不合理，least_squares 会抛 x0 infeasible，直接 NaN
+        return float("nan"), float("nan")
+    # 初值必须落在 bounds 内：低孔隙度像元上固定 0.20 会越界（与 omega.py 同款修复）
+    sm0 = min(max(0.2, lower_bounds[0]), upper_bounds[0])
+    tau0 = min(max(0.5, lower_bounds[1]), upper_bounds[1])
     result = least_squares(
         residual,
-        x0=[0.2, 0.5],
+        x0=[sm0, tau0],
         bounds=(lower_bounds, upper_bounds),
         jac=lambda x: _finite_difference_jacobian(
             x, residual, lower_bounds, upper_bounds
@@ -510,6 +516,10 @@ def ddca_retrieve_grid(
         | np.isnan(albedo)
         | np.isnan(porosity)
         | np.isnan(theta_deg)
+        # porosity 下界检查与 retrieve_dynamic_h_grid 对称：越界像元直接 NaN，
+        # 不进入 ddca_retrieve_pixel（其内部同样会因 bounds 不合理失败）
+        | ~np.isfinite(porosity)
+        | (porosity <= 0.02)
     )
     if not np.any(valid_mask):
         return sm, vod

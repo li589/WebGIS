@@ -340,6 +340,10 @@ class UniversalDataReader:
                 else:
                     slices.append(slice(None))
 
+            # 数值专项 C2：关闭 netCDF4 auto maskandscale——raw 整数直读，
+            # 让下方手工清洗/缩放管线（fill→NaN + *scale/+offset）成为唯一真源。
+            # 默认开启时读出已缩放的掩码数组，再手工缩放一次即双重缩放失真。
+            var.set_auto_maskandscale(False)
             values = var[tuple(slices)]
 
             # 处理时间维度
@@ -366,13 +370,20 @@ class UniversalDataReader:
             lon_out = lon_1d[lon_slice] if lon_1d is not None else None
 
             # 填充值 + 比例缩放
-            values = values.astype(np.float64)
+            if isinstance(values, np.ma.MaskedArray):
+                # 防御性兜底：个别 netCDF4 路径仍返回掩码数组时，以 fill_value
+                # 回填成普通数组，让下方 NaN 管线统一处理（掩码点即变 NaN）
+                values = np.asarray(
+                    values.filled(fill_value if fill_value is not None else np.nan),
+                    dtype=np.float64,
+                )
+            else:
+                values = values.astype(np.float64)
             if fill_value is not None:
                 values[values == fill_value] = np.nan
-            # int16 特殊: -32768/-32767 也是填充值（在缩放前处理）
-            if values.dtype == np.int16 or (
-                hasattr(var, "dtype") and var.dtype == np.int16
-            ):
+            # int16 特殊: -32768/-32767 也是填充值（在缩放前处理）；
+            # astype 后 values 恒为 float64，须以原始存储 dtype 判定
+            if hasattr(var, "dtype") and var.dtype == np.int16:
                 values[values <= -32767] = np.nan
             from data_access.numeric_sanitize import mask_common_fill_values
 

@@ -6,6 +6,10 @@ from typing import Any
 
 # ─── 物理常量 ────────────────────────────────────────────────────────────────
 # 真空介电常数 (F/m)
+# 数值审计决策（2026-08）：4 位有效数字（CODATA 精确值 8.8541878128e-12）为
+# 有意锁定——介电模型整体不确定度（Mironov 系数经验拟合）远大于该常数误差，
+# 且此值进入 golden fixture（test_omega_retrieval_golden，rtol=1e-9），改动
+# 即需重生成基准。勿"顺手精确化"。
 _VACUUM_PERMITTIVITY = 8.854e-12
 # 高频极限下水介电常数（无量纲）
 _WATER_HIGH_FREQ_DIELECTRIC = 4.9
