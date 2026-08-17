@@ -148,6 +148,18 @@
       }
     },
     {
+      "id": 10,
+      "type": "output/map_layer",
+      "pos": [
+        960,
+        400
+      ],
+      "properties": {
+        "layer_id": "method-smap-omega-doy-avg",
+        "display_name": "avg-ω 逐日反演（GLDAS 在线拉取 + DUAL 双温度）"
+      }
+    },
+    {
       "id": 8,
       "type": "data/time_range",
       "pos": [
@@ -221,6 +233,14 @@
       "3": 7,
       "4": 2,
       "5": "value:string"
+    },
+    {
+      "0": 8,
+      "1": 7,
+      "2": 0,
+      "3": 10,
+      "4": 0,
+      "5": "data"
     }
   ],
   "extra": {
@@ -232,6 +252,7 @@
     "prerequisite": "earthdata 凭证 + D1 omega_block；gldas_nc4_to_mat 产出 Ts_gldas/Tsoil1_gldas/Tsoil2_gldas",
     "outputs": [
       "SM",
+      "VOD",
       "OMEGA"
     ],
     "notes": "种子内置 nc4→mat 转换节点；科学跑通仍需真实 D1 与足够时段 GLDAS .mat。"

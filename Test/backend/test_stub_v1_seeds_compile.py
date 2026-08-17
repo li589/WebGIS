@@ -31,8 +31,8 @@ _STUB_V1_SEEDS = (
     "stats_summary_chart_basic",
 )
 # 2026-08-17 去重：5 条 gis_* 组合样例与 raster_histogram_basic 因与
-# analysis_* 单元流功能重复归档至 workflow_seeds/archive/（见
-# .ai/progress/2026-08-17-workflow-seed-audit.md）。
+# analysis_* 单元流功能重复先归档、2026-08-18 经引用核实后从仓库移除
+# （审计见 .ai/progress/2026-08-17-workflow-seed-audit.md，文件可从 git 历史找回）。
 
 
 def test_stub_v1_seeds_compile() -> None:

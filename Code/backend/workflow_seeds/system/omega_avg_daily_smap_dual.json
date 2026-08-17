@@ -138,6 +138,18 @@
           "enable_parallel": true
         }
       }
+    },
+    {
+      "id": 10,
+      "type": "output/map_layer",
+      "pos": [
+        960,
+        380
+      ],
+      "properties": {
+        "layer_id": "method-smap-omega-doy-avg",
+        "display_name": "avg-ω 逐日反演（SMAP 双温度 GLDAS）"
+      }
     }
   ],
   "links": [
@@ -196,6 +208,14 @@
       "3": 7,
       "4": 2,
       "5": "value:string"
+    },
+    {
+      "0": 8,
+      "1": 7,
+      "2": 0,
+      "3": 10,
+      "4": 0,
+      "5": "data"
     }
   ],
   "extra": {
@@ -205,6 +225,7 @@
     "prerequisite": "D1 omega_block + GLDAS .mat（Ts_gldas/Tsoil1_gldas/Tsoil2_gldas）+ 可选 gldas_utc_template_global.mat；本地联调默认对齐 2025 SMAP 窗口",
     "outputs": [
       "SM",
+      "VOD",
       "OMEGA"
     ],
     "notes": "双温度方案：build_daily_bundle_for_date 内部调用 build_effective_soil_temperature_scheme(sm_ref, tsoil1, tsoil2) → Ct/TG，DDCA 用 ddca_dual_temp(tbv, tbh, tc, tg, ..., omega_value=OMEGA_AVG)。NDVI 用 DOY 气候态。模板缺失时 Python 侧回退到过顶时刻匹配。"
