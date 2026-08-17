@@ -93,12 +93,28 @@ def coerce_request(request: dict[str, Any] | str) -> dict[str, Any]:
     return parsed
 
 
+def _target_extension(request: dict[str, Any]) -> str:
+    """按请求推断落盘扩展名。
+
+    - ``download_format=unarchived``（单文件不打包）时按 ``data_format`` 落实际
+      格式：netcdf* → ``.nc``、grib* → ``.grib``（未声明 data_format 时 CDS 默认 GRIB）；
+    - 其余（zip 归档或未声明，CDS 默认打包）→ ``.zip``。
+    """
+    download_format = str(request.get("download_format", "")).strip().lower()
+    if download_format != "unarchived":
+        return ".zip"
+    data_format = str(request.get("data_format", "")).strip().lower()
+    if data_format.startswith("netcdf"):
+        return ".nc"
+    return ".grib"
+
+
 def default_filename(dataset: str, request: dict[str, Any]) -> str:
-    """确定性目标文件名：``{dataset 转义}_{请求指纹}.zip``。"""
+    """确定性目标文件名：``{dataset 转义}_{请求指纹}.{实际格式扩展名}``。"""
     slug = dataset.strip().replace("/", "_").replace("\\", "_") or "cds_product"
     canonical = json.dumps(request, sort_keys=True, ensure_ascii=False)
     digest = hashlib.md5(canonical.encode("utf-8")).hexdigest()[:8]  # noqa: S324
-    return f"{slug}_{digest}.zip"
+    return f"{slug}_{digest}{_target_extension(request)}"
 
 
 def download_via_cdsapi(

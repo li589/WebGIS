@@ -86,6 +86,30 @@ class TestDefaultFilename(unittest.TestCase):
             default_filename("ds", {"a": 1}), default_filename("ds", {"a": 2})
         )
 
+    def test_unarchived_extension_follows_data_format(self) -> None:
+        nc = default_filename(
+            "ds", {"data_format": "netcdf", "download_format": "unarchived"}
+        )
+        grib = default_filename(
+            "ds", {"data_format": "grib", "download_format": "unarchived"}
+        )
+        self.assertTrue(nc.endswith(".nc"))
+        self.assertTrue(grib.endswith(".grib"))
+
+    def test_unarchived_without_data_format_defaults_to_grib(self) -> None:
+        name = default_filename("ds", {"download_format": "unarchived"})
+        self.assertTrue(name.endswith(".grib"))
+
+    def test_zip_download_format_keeps_zip_suffix(self) -> None:
+        name = default_filename(
+            "ds", {"data_format": "netcdf", "download_format": "zip"}
+        )
+        self.assertTrue(name.endswith(".zip"))
+
+    def test_undeclared_download_format_keeps_zip_suffix(self) -> None:
+        name = default_filename("ds", {"data_format": "netcdf"})
+        self.assertTrue(name.endswith(".zip"))
+
 
 class _FakeCdsapiClient:
     """回放 retrieve：把内容写入 target。"""
@@ -285,9 +309,7 @@ class TestCdsDownloadNode(unittest.TestCase):
             kwargs = call_args.kwargs
             self.assertEqual(kwargs["api_key"], "portal-key")
             # 缺省 target_dir 落 workspace/data_access/cds（第 3 个位置参数）
-            self.assertEqual(
-                call_args.args[2], str(workspace / "data_access" / "cds")
-            )
+            self.assertEqual(call_args.args[2], str(workspace / "data_access" / "cds"))
             self.assertEqual(out["path"], fake.target)
             self.assertIn("manifest", out)
 
