@@ -87,6 +87,7 @@ function setupDeps(initial: JobLayerItem = makeJobLayer()) {
     syncProgressiveBlockOverlays: vi.fn(),
     emitWorkflowProgressTimeSeek: vi.fn(),
     attachAlgorithmProductOverlays: vi.fn(async () => 1),
+    cleanupUnproducedRunLayers: vi.fn(),
     clearWindForCatalog: vi.fn(),
     enableParticleIfUnset: vi.fn(),
     buildJobLayer: vi.fn(

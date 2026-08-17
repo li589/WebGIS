@@ -49,11 +49,9 @@ export function namePrefixFromDefinition(
 /** @deprecated 使用 namePrefixFromDefinition；保留别名兼容运行对话框 */
 export const resolveOutputNamePrefix = namePrefixFromDefinition
 
-/**
- * 预期产出标签列表；至少返回 ['result']（单产出也进计算组）。
- */
-export function resolveExpectedOutputTags(def: WorkflowDefLike | null | undefined): string[] {
-  if (!def) return ['result']
+/** 显式声明的产出标签（extra.outputs → 节点 main_layers）；未声明返回 []，由调用方自行回退 */
+export function explicitExpectedOutputTags(def: WorkflowDefLike | null | undefined): string[] {
+  if (!def) return []
   const fromExtra = asStringArray(def.extra?.outputs)
   if (fromExtra.length) return fromExtra
 
@@ -62,7 +60,14 @@ export function resolveExpectedOutputTags(def: WorkflowDefLike | null | undefine
     if (layers.length) return layers
   }
 
-  return ['result']
+  return []
+}
+
+/**
+ * 预期产出标签列表；至少返回 ['result']（单产出也进计算组）。
+ */
+export function resolveExpectedOutputTags(def: WorkflowDefLike | null | undefined): string[] {
+  return explicitExpectedOutputTags(def).length > 0 ? explicitExpectedOutputTags(def) : ['result']
 }
 
 export function defaultProductLayerNames(

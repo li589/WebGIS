@@ -170,8 +170,8 @@ onBeforeUnmount(() => {
 .draw-toolbar {
   position: absolute;
   z-index: 20;
-  background: var(--surface-elevated);
-  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border: 1px solid var(--border-default);
   border-radius: 10px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
   user-select: none;
@@ -194,7 +194,7 @@ onBeforeUnmount(() => {
   width: 28px;
   height: 3px;
   border-radius: 2px;
-  background: var(--border);
+  background: var(--border-strong);
 }
 
 .draw-toolbar-body {
@@ -221,7 +221,7 @@ onBeforeUnmount(() => {
 .draw-toolbar-divider {
   width: 1px;
   height: 20px;
-  background: var(--border);
+  background: var(--border-default);
   margin: 0 4px;
 }
 
@@ -234,10 +234,10 @@ onBeforeUnmount(() => {
 .draw-mode-group {
   display: flex;
   gap: 1px;
-  background: var(--surface);
+  background: var(--surface-1);
   border-radius: 6px;
   padding: 2px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-default);
 }
 
 .draw-mode-btn {
@@ -257,8 +257,8 @@ onBeforeUnmount(() => {
 }
 
 .draw-mode-btn:hover {
-  background: var(--hover);
-  color: var(--text);
+  background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
 .draw-mode-btn.active {

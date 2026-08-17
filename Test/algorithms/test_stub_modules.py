@@ -370,7 +370,7 @@ class StubModulesSmokeTests(unittest.TestCase):
             )
             self.assertTrue(Path(str(reproj["raster"])).exists())
 
-            # gis_raster_calc_reclassify_basic
+            # analysis_raster_calc + analysis_reclassify
             calc = self.registry.get_module("gis_raster_calculator").execute(
                 {"a": str(tif)},
                 {"expression": "A * 2"},
@@ -383,7 +383,7 @@ class StubModulesSmokeTests(unittest.TestCase):
             )
             self.assertTrue(Path(str(reclass["raster"])).exists())
 
-            # gis_buffer_zonal_basic
+            # analysis_buffer + analysis_zonal_stats
             buf = self.registry.get_module("gis_buffer_analysis").execute(
                 {"points": points, "distance": 500},
                 {"distance_unit": "meters"},

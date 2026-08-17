@@ -76,9 +76,12 @@ def _sync_system_seeds() -> None:
 
     Missing files are created; existing files are overwritten when seed content
     differs so shipped fixes (node type renames, meta flags) reach .data/.
+    Definitions whose seed no longer ships are removed, making "delete a seed"
+    self-contained (no manual .data cleanup needed after seed removal).
     """
     if not _SEED_SYSTEM_DIR.is_dir():
         return
+    seed_names = {src.name for src in _SEED_SYSTEM_DIR.glob("*.json")}
     for src in sorted(_SEED_SYSTEM_DIR.glob("*.json")):
         dest = _SYSTEM_DIR / src.name
         try:
@@ -104,6 +107,20 @@ def _sync_system_seeds() -> None:
             )
         except OSError as exc:
             logger.warning("Failed to seed workflow %s: %s", src.name, exc)
+
+    # 孤儿清理：运行时 system 目录中已无对应种子的定义一并移除。
+    # 仅覆盖 .json 定义文件；种子仍在但内容非法（上面对 continue 的场景）
+    # 时旧定义保留，避免误删可用回退。
+    if not _SYSTEM_DIR.is_dir():
+        return
+    for stale in sorted(_SYSTEM_DIR.glob("*.json")):
+        if stale.name in seed_names:
+            continue
+        try:
+            stale.unlink()
+            logger.info("Removed orphan system workflow definition: %s", stale.name)
+        except OSError as exc:
+            logger.warning("Failed to remove orphan workflow %s: %s", stale.name, exc)
 
 
 def _ensure_dirs() -> None:

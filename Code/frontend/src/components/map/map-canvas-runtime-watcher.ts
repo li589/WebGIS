@@ -29,6 +29,13 @@ interface WatchMeasureStateOptions {
   onMeasureStateChange: () => void
 }
 
+interface WatchDrawStateOptions {
+  /** 轻量版本号：要素数 / 顶点数 / 模式 / 选中项变化时变化即可（不含 hover，避免 mousemove 高频触发） */
+  getDrawSyncKey: () => string
+  getMapReady: () => boolean
+  onDrawStateChange: () => void
+}
+
 export function watchBasemapSource(options: WatchBasemapSourceOptions): WatchStopHandle {
   return watch(
     () => ({
@@ -80,6 +87,19 @@ export function watchMeasureState(options: WatchMeasureStateOptions): WatchStopH
     ({ mapReady }) => {
       if (!mapReady) return
       options.onMeasureStateChange()
+    },
+  )
+}
+
+export function watchDrawState(options: WatchDrawStateOptions): WatchStopHandle {
+  return watch(
+    () => ({
+      key: options.getDrawSyncKey(),
+      mapReady: options.getMapReady(),
+    }),
+    ({ mapReady }) => {
+      if (!mapReady) return
+      options.onDrawStateChange()
     },
   )
 }

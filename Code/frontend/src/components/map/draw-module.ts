@@ -25,8 +25,8 @@ const POINT_RADIUS = 5
 const POINT_RADIUS_FIRST = 7
 const POINT_STROKE_WIDTH = 2
 const LINE_WIDTH = 2
-const PREVIEW_LINE_WIDTH = 2
-const PREVIEW_LINE_OPACITY = 0.6
+const PREVIEW_LINE_WIDTH = 3
+const PREVIEW_LINE_OPACITY = 0.9
 const PREVIEW_LINE_DASHARRAY = [4, 3] as [number, number]
 const FILL_COLOR = 'rgba(43, 127, 255, 0.15)'
 const FILL_OUTLINE_COLOR = '#2b7fff'
@@ -42,6 +42,7 @@ const SOURCE_PREVIEW = 'draw-preview'
 const LAYER_FEATURES_FILL = 'draw-features-fill-layer'
 const LAYER_FEATURES_LINE = 'draw-features-line-layer'
 const LAYER_VERTICES = 'draw-vertices-layer'
+const LAYER_PREVIEW_PATH = 'draw-preview-path-layer'
 const LAYER_PREVIEW = 'draw-preview-layer'
 
 /** 多边形自动闭合的像素阈值 */
@@ -135,10 +136,23 @@ export function createDrawModule(options: CreateDrawModuleOptions): DrawModule {
       },
     })
     map.addLayer({
+      id: LAYER_PREVIEW_PATH,
+      type: 'line',
+      source: SOURCE_PREVIEW,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      filter: ['==', ['get', 'kind'], 'path'],
+      paint: {
+        'line-color': LINE_COLOR,
+        'line-width': PREVIEW_LINE_WIDTH,
+        'line-opacity': PREVIEW_LINE_OPACITY,
+      },
+    })
+    map.addLayer({
       id: LAYER_PREVIEW,
       type: 'line',
       source: SOURCE_PREVIEW,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
+      filter: ['==', ['get', 'kind'], 'cursor'],
       paint: {
         'line-color': LINE_COLOR,
         'line-width': PREVIEW_LINE_WIDTH,
@@ -221,44 +235,56 @@ export function createDrawModule(options: CreateDrawModuleOptions): DrawModule {
       verticesSource.setData({ type: 'FeatureCollection', features: vertexFeatures })
     }
 
-    // 预览虚线（多边形/线段：最后顶点 → 鼠标；矩形：拖拽对角线预览）
+    // 预览：已放置折线整段（实线 path）+ 末点→光标段（虚线 cursor）；
+    // 矩形：拖拽整框预览（虚线）
     const previewSource = map.getSource(SOURCE_PREVIEW) as GeoJSONSource | undefined
     if (previewSource) {
-      let coords: number[][] | null = null
+      const previewFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = []
 
       if (currentMode === 'rectangle' && rectStart && hoverPoint && isDrawing) {
-        // 矩形预览：起始角 → 鼠标 → 对角 → 闭合
-        coords = [
-          [rectStart.lng, rectStart.lat],
-          [hoverPoint.lng, rectStart.lat],
-          [hoverPoint.lng, hoverPoint.lat],
-          [rectStart.lng, hoverPoint.lat],
-          [rectStart.lng, rectStart.lat],
-        ]
+        previewFeatures.push({
+          type: 'Feature',
+          geometry: {
+            type: 'LineString',
+            coordinates: [
+              [rectStart.lng, rectStart.lat],
+              [hoverPoint.lng, rectStart.lat],
+              [hoverPoint.lng, hoverPoint.lat],
+              [rectStart.lng, hoverPoint.lat],
+              [rectStart.lng, rectStart.lat],
+            ],
+          },
+          properties: { kind: 'cursor' },
+        })
       } else if (isDrawing && hoverPoint && activeVertices.length > 0) {
-        const last = activeVertices[activeVertices.length - 1]
-        coords = [[last.lng, last.lat]]
-        if (currentMode === 'polygon' && isNearFirstVertex(hoverPoint, activeVertices)) {
-          coords.push([activeVertices[0].lng, activeVertices[0].lat])
-        } else {
-          coords.push([hoverPoint.lng, hoverPoint.lat])
+        if (activeVertices.length >= 2) {
+          previewFeatures.push({
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: activeVertices.map((v) => [v.lng, v.lat]),
+            },
+            properties: { kind: 'path' },
+          })
         }
+        const last = activeVertices[activeVertices.length - 1]
+        const cursorCoords: number[][] = [[last.lng, last.lat]]
+        if (currentMode === 'polygon' && isNearFirstVertex(hoverPoint, activeVertices)) {
+          cursorCoords.push([activeVertices[0].lng, activeVertices[0].lat])
+        } else {
+          cursorCoords.push([hoverPoint.lng, hoverPoint.lat])
+        }
+        previewFeatures.push({
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: cursorCoords },
+          properties: { kind: 'cursor' },
+        })
       }
 
-      if (coords && coords.length >= 2) {
-        previewSource.setData({
-          type: 'FeatureCollection',
-          features: [
-            {
-              type: 'Feature',
-              geometry: { type: 'LineString', coordinates: coords },
-              properties: {},
-            },
-          ],
-        } as GeoJSON.FeatureCollection)
-      } else {
-        previewSource.setData({ type: 'FeatureCollection', features: [] })
-      }
+      previewSource.setData({
+        type: 'FeatureCollection',
+        features: previewFeatures,
+      } as GeoJSON.FeatureCollection)
     }
   }
 
@@ -402,7 +428,7 @@ export function createDrawModule(options: CreateDrawModuleOptions): DrawModule {
       return
     }
 
-    if (!options.getDrawState().isDrawing) return
+    // 首点前（isDrawing=false）也反馈光标位置；不产生预览线（顶点为空）
     options.setHoverPoint({ lng: e.lngLat.lng, lat: e.lngLat.lat })
     syncAll()
   }
@@ -498,6 +524,7 @@ export function createDrawModule(options: CreateDrawModuleOptions): DrawModule {
 
     if (map.getLayer(LAYER_VERTICES)) map.removeLayer(LAYER_VERTICES)
     if (map.getLayer(LAYER_PREVIEW)) map.removeLayer(LAYER_PREVIEW)
+    if (map.getLayer(LAYER_PREVIEW_PATH)) map.removeLayer(LAYER_PREVIEW_PATH)
     if (map.getLayer(LAYER_FEATURES_LINE)) map.removeLayer(LAYER_FEATURES_LINE)
     if (map.getLayer(LAYER_FEATURES_FILL)) map.removeLayer(LAYER_FEATURES_FILL)
     if (map.getSource(SOURCE_VERTICES)) map.removeSource(SOURCE_VERTICES)

@@ -561,3 +561,126 @@ describe('registerExternalWorkflowRun', () => {
     await expect(runner.registerExternalWorkflowRun('run-missing')).resolves.toBeUndefined()
   })
 })
+
+describe('restoreActiveWorkflows / ensureRestoredRunGroup（F2 manifest 成员）', () => {
+  function setupRestore(
+    workflowDefinition: Record<string, unknown> | null,
+  ) {
+    const deps = makeDeps()
+    const catalog = deps.getRuntimeLayerCatalog()
+    catalog['layer-fy'] = {
+      layer_id: 'layer-fy',
+      dataset_key: 'ds-fy',
+      display_name: '反演图层',
+      description: '',
+      category: 'analysis',
+      source_type: 'imported' as never,
+      render_type: 'raster' as never,
+      supported_map_modes: ['2d'] as never,
+      extent: { west: 116, south: 39, east: 117, north: 40 },
+      workflow_id: 'wf-fy',
+      workflow_definition: workflowDefinition,
+    } as LayerDescriptor
+
+    vi.mocked(listActiveWorkflowRuns).mockResolvedValue(
+      [{ run_id: 'run-f2', layer_id: 'layer-fy', command_label: '反演', status: 'running' }] as never,
+    )
+    vi.mocked(getWorkflowRun).mockResolvedValue({
+      run_id: 'run-f2',
+      layer_id: 'layer-fy',
+      command_label: '反演',
+      status: 'running',
+      result_refs: [],
+    } as never)
+    vi.mocked(getWorkflowEvents).mockResolvedValue({ items: [] } as never)
+
+    // 真实写回：创建组 + 占位成员（对齐 run-layers.ts createRunLayerGroup 行为）
+    deps.createRunLayerGroup = (options: {
+      title: string
+      targets: Array<{ name: string; productTag: string }>
+      memberCatalogIds?: string[]
+    }) => {
+      const groups = deps.getRunLayerGroups()
+      const activeLayers = deps.getActiveLayers()
+      const groupId = `grp-restore-${groups.length + 1}`
+      const memberInstanceIds: string[] = []
+      options.targets.forEach((t, i) => {
+        const catalogId =
+          options.memberCatalogIds?.[i] || `wf-run-${groupId}-${String(t.productTag).toLowerCase()}`
+        const layer: ActiveLayer = {
+          instanceId: `inst-${groupId}-${i}`,
+          catalogId,
+          name: t.name,
+          visible: true,
+          opacity: 1,
+          order: activeLayers.length,
+          isAdminBoundary: false,
+          dataState: 'catalog',
+          runGroupId: groupId,
+          runGroupProductTag: t.productTag,
+          runGroupLocked: true,
+        }
+        activeLayers.push(layer)
+        memberInstanceIds.push(layer.instanceId)
+      })
+      groups.push({
+        groupId,
+        runId: '',
+        title: options.title,
+        status: 'computing',
+        memberInstanceIds,
+        dissolvable: false,
+      } as ActiveRunLayerGroup)
+      return { groupId, memberInstanceIds, memberCatalogIds: [] }
+    }
+    deps.bindRunIdToGroup = (groupId: string, runId: string) => {
+      const g = deps.getRunLayerGroups().find((x) => x.groupId === groupId)
+      if (g) g.runId = runId
+    }
+    return deps
+  }
+
+  it('manifest extra.outputs 优先：占位成员按 manifest 标签生成', async () => {
+    const deps = setupRestore({ extra: { outputs: ['SM', 'LST'] }, nodes: [] })
+    const runner = createWorkflowRunner(deps)
+    await runner.restoreActiveWorkflows()
+
+    const groups = deps.getRunLayerGroups()
+    const group = groups.find((g) => g.runId === 'run-f2')
+    expect(group).toBeDefined()
+    expect(group!.status).toBe('computing')
+
+    const memberTags = group!.memberInstanceIds
+      .map((id) => deps.getActiveLayers().find((l) => l.instanceId === id)?.runGroupProductTag)
+      .filter(Boolean)
+    expect(memberTags.sort()).toEqual(['LST', 'SM'])
+  })
+
+  it('无 extra.outputs 时回退 nodes main_layers', async () => {
+    const deps = setupRestore({
+      nodes: [{ properties: { main_layers: ['NDVI'] } }],
+    })
+    const runner = createWorkflowRunner(deps)
+    await runner.restoreActiveWorkflows()
+
+    const group = deps.getRunLayerGroups().find((g) => g.runId === 'run-f2')
+    expect(group).toBeDefined()
+    const memberTags = group!.memberInstanceIds
+      .map((id) => deps.getActiveLayers().find((l) => l.instanceId === id)?.runGroupProductTag)
+      .filter(Boolean)
+    expect(memberTags).toEqual(['NDVI'])
+  })
+
+  it('无 manifest 时回退 SM/VOD/OMEGA 兼容标签', async () => {
+    const deps = setupRestore(null)
+    const runner = createWorkflowRunner(deps)
+    await runner.restoreActiveWorkflows()
+
+    const group = deps.getRunLayerGroups().find((g) => g.runId === 'run-f2')
+    expect(group).toBeDefined()
+    const memberTags = group!.memberInstanceIds
+      .map((id) => deps.getActiveLayers().find((l) => l.instanceId === id)?.runGroupProductTag)
+      .filter(Boolean)
+    expect(memberTags.sort()).toEqual(['OMEGA', 'SM', 'VOD'])
+  })
+})

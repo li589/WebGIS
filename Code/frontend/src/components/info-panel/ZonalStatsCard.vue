@@ -196,8 +196,8 @@ function formatValue(val: number | null): string {
   right: 1rem;
   top: 5rem;
   z-index: 18;
-  background: var(--surface-elevated);
-  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border: 1px solid var(--border-default);
   border-radius: 10px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
   padding: 10px 12px;
@@ -217,7 +217,7 @@ function formatValue(val: number | null): string {
 .zonal-stats-title {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text);
+  color: var(--text-primary);
   margin: 0;
 }
 
@@ -235,8 +235,8 @@ function formatValue(val: number | null): string {
 }
 
 .zonal-stats-refresh:hover {
-  background: var(--hover);
-  color: var(--text);
+  background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
 .spinning {
@@ -289,7 +289,7 @@ function formatValue(val: number | null): string {
 .zonal-stats-retry {
   margin-left: auto;
   padding: 2px 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-default);
   border-radius: 4px;
   background: transparent;
   color: var(--text-secondary);
@@ -317,10 +317,10 @@ function formatValue(val: number | null): string {
 .zonal-stats-table th {
   color: var(--text-secondary);
   font-weight: 500;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-default);
   position: sticky;
   top: 0;
-  background: var(--surface-elevated);
+  background: var(--surface-2);
 }
 
 .zonal-stats-table th:first-child,
@@ -332,7 +332,7 @@ function formatValue(val: number | null): string {
   max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--text);
+  color: var(--text-primary);
 }
 
 .stat-unit {
@@ -342,7 +342,7 @@ function formatValue(val: number | null): string {
 
 .stat-value {
   font-variant-numeric: tabular-nums;
-  color: var(--text);
+  color: var(--text-primary);
 }
 
 .stat-count {

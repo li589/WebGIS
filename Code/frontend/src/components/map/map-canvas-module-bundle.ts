@@ -240,6 +240,10 @@ export function createMapCanvasModuleBundle(
       const s = options.getMeasureState()
       return `${s.points.length}:${s.isDrawing ? 1 : 0}`
     },
+    getDrawSyncKey: () => {
+      const s = options.getDrawState()
+      return `${s.drawMode}:${s.features.length}:${s.activeVertices.length}:${s.isDrawing ? 1 : 0}:${s.selectedFeatureIndex ?? -1}`
+    },
     onTileSourceChange: (sourceId) => {
       basemapModule.scheduleTileSourceSwitch(sourceId)
     },
@@ -257,6 +261,9 @@ export function createMapCanvasModuleBundle(
     onAdminBoundaryOverlayChange: options.syncAdminOverlay,
     onMeasureStateChange: () => {
       measureModule.syncFromStore()
+    },
+    onDrawStateChange: () => {
+      drawModule.syncFromStore()
     },
   })
 

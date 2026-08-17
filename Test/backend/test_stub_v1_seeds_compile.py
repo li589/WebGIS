@@ -21,20 +21,18 @@ _SEED_DIR = (
 
 _STUB_V1_SEEDS = (
     "preprocess_clip_reproject_basic",
-    "gis_raster_calc_reclassify_basic",
-    "gis_buffer_zonal_basic",
     "stats_mean_summary_report_basic",
     "fusion_idw_interpolate_basic",
     "preprocess_mask_resample_basic",
-    "gis_vector_raster_roundtrip_basic",
-    "gis_contour_slope_basic",
     "stats_trend_anomaly_basic",
     "fusion_multi_source_merge_basic",
-    "gis_watershed_basic",
     "stats_correlation_basic",
     "stats_correlation_report_basic",
     "stats_summary_chart_basic",
 )
+# 2026-08-17 去重：5 条 gis_* 组合样例与 raster_histogram_basic 因与
+# analysis_* 单元流功能重复归档至 workflow_seeds/archive/（见
+# .ai/progress/2026-08-17-workflow-seed-audit.md）。
 
 
 def test_stub_v1_seeds_compile() -> None:

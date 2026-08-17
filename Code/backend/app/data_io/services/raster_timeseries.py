@@ -85,8 +85,19 @@ def stable_imported_layer_id(*parts: str) -> str:
     return f"imported-{digest}"
 
 
-def resolve_block_timeseries_layer_id(run_id: str, label: str, variable_id: str) -> str:
-    """Stable overlay id; OMEGA_BLOCK 历史目录与新 OMEGA 标签共用同一层。"""
+def resolve_block_timeseries_layer_id(
+    run_id: str,
+    label: str,
+    variable_id: str,
+    *,
+    layer_key: str = "",
+) -> str:
+    """Stable overlay id; OMEGA_BLOCK 历史目录与新 OMEGA 标签共用同一层。
+
+    ``layer_key``（工作流/图层级稳定标识，如 layer_id）非空时替代 run_id 参与
+    哈希 → 同一工作流重复运行覆盖同一 imported-* 图层，而非逐 run 堆积新层。
+    """
+    key = (layer_key or "").strip() or run_id
     label_u = (label or "").strip().upper()
     var_u = (variable_id or "").strip().upper()
     is_omega = (
@@ -95,10 +106,10 @@ def resolve_block_timeseries_layer_id(run_id: str, label: str, variable_id: str)
         or "OMEGA_BLOCK" in label_u
     )
     canon_label = "OMEGA" if is_omega else label
-    layer_id = stable_imported_layer_id(run_id, canon_label, variable_id)
+    layer_id = stable_imported_layer_id(key, canon_label, variable_id)
     if not is_omega:
         return layer_id
-    legacy = stable_imported_layer_id(run_id, "OMEGA_BLOCK", variable_id)
+    legacy = stable_imported_layer_id(key, "OMEGA_BLOCK", variable_id)
     legacy_dir = import_paths.IMPORTS_DIR / legacy
     new_dir = import_paths.IMPORTS_DIR / layer_id
     # 已有旧目录且尚未迁到新 id 时继续写旧目录，避免重复层
@@ -191,6 +202,7 @@ def upsert_block_dir_timeseries(
     variable_id: str,
     label: str,
     run_id: str,
+    layer_key: str = "",
     grid_preset: str = "ease2-global-9km",
     palette: str = "cividis",
     native_step: str = "8d",
@@ -203,7 +215,8 @@ def upsert_block_dir_timeseries(
 
     Incremental: existing slices are kept when still newer than the source mat.
     Progressive runs rewrite mats in place; stale early TIFs are re-extracted.
-    Overlay id is stable per (run_id, label); OMEGA 与历史 OMEGA_BLOCK 目录兼容。
+    Overlay id is stable per (layer_key or run_id, label); OMEGA 与历史
+    OMEGA_BLOCK 目录兼容。
     """
     block_dir = Path(block_dir)
     mats = list_block_mats(
@@ -224,7 +237,9 @@ def upsert_block_dir_timeseries(
         )
         else label
     )
-    layer_id = resolve_block_timeseries_layer_id(run_id, display_label, variable_id)
+    layer_id = resolve_block_timeseries_layer_id(
+        run_id, display_label, variable_id, layer_key=layer_key
+    )
     dest_dir = import_paths.IMPORTS_DIR / layer_id
     dest_dir.mkdir(parents=True, exist_ok=True)
     lock_path = import_paths.IMPORTS_DIR / "_locks" / f"{layer_id}.lock"

@@ -3691,6 +3691,27 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         ],
         "node_class": "gee_select_bands",
     },
+    {
+        "type": "gee/export",
+        "engine": "gee",
+        "category": "GEE-输出",
+        "title": "GEE 导出",
+        "description": "内联 GEE 导出任务规格（expression/collection/scale 等），由 GeeBridgeService 提交并发布地图图层。",
+        "inputs": [],
+        "outputs": [
+            _port("result", "data", description="导出任务 manifest / 图层产物。"),
+        ],
+        "params": [
+            _param(
+                "workflow",
+                "string",
+                widget="textarea",
+                description="GEE 导出任务规格 JSON（description/expression/collection/band/scale/crs/rescale）。",
+            ),
+        ],
+        "executable": True,
+        "node_class": "gee_export_image",
+    },
 ]
 
 

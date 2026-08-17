@@ -1014,6 +1014,30 @@ describe('cleanupUnproducedRunLayers', () => {
     slice.cleanupUnproducedRunLayers('run-none')
     expect(slice.runLayerGroups.value).toHaveLength(1)
   })
+
+  it('succeeded：空占位成员移除、产物成员不加（部分）、组保留且状态 ready', () => {
+    const { slice, calls } = setup()
+    const { group, members } = setupGroup(slice, {
+      runId: 'run-ok',
+      tags: ['SM', 'VOD'],
+    })
+    members[0]!.importedRaster = { overlayLayerId: 'ov-sm', nativeStep: null }
+    members[0]!.name = productTagLabel('SM')
+    slice.cleanupUnproducedRunLayers('run-ok', { succeeded: true })
+    expect(calls.removeLayer).toHaveBeenCalledWith(members[1]!.instanceId)
+    expect(members[0]!.runGroupLocked).toBe(false)
+    expect(members[0]!.name).not.toContain('（部分）')
+    expect(group.status).toBe('ready')
+    expect(group.dissolvable).toBe(true)
+    expect(slice.runLayerGroups.value.map((g) => g.groupId)).toContain(group.groupId)
+  })
+
+  it('succeeded：全部成员无产物时组整体移除', () => {
+    const { slice } = setup()
+    const { group } = setupGroup(slice, { runId: 'run-ok2', tags: ['SM', 'VOD'] })
+    slice.cleanupUnproducedRunLayers('run-ok2', { succeeded: true })
+    expect(slice.runLayerGroups.value.map((g) => g.groupId)).not.toContain(group.groupId)
+  })
 })
 
 describe('refreshRunGroupDissolvable', () => {

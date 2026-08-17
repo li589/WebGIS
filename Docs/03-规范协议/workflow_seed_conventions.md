@@ -19,6 +19,8 @@
 - **`workflow_id` / 文件名**：`snake_case`，匹配 `^[a-zA-Z0-9][a-zA-Z0-9_\-]*$`，文件为 `{workflow_id}.json`。
 - 示例：`omega_avg_daily_smap_single`、`weather_temperature_grid_demo`、`open_data_nsidc_smap_sample`。
 - 禁止路径穿越字符、空格、中文 ID。
+- **归档目录** `workflow_seeds/archive/`：功能重复 / 组合样例去重后归档的种子（2026-08-17 审计起），不参与同步；如需恢复移回 `system/` 即可（运行时孤儿会随下次同步自动重建）。
+- **删除种子是自洽操作**：`_sync_system_seeds` 同步后会自动移除 `.data/workflow_definitions/system/` 中已无对应种子的孤儿定义（user 目录不受影响；种子包目录整体缺失时不做清理）。
 
 ## 3. `_meta` 必填 / 推荐字段
 
@@ -49,18 +51,23 @@
 
 ## 5. `tags`（标记，多选）
 
-现有词汇（新增须先改本文再改 seed）：
+现有词汇（新增须先改本文再改 seed；2026-08-17 审计后与 `workflow_seeds/system/` 全量对齐）：
 
-`pipeline` · `omega_avg` · `omega_block` · `sf_inversion` · `d1` · `demo` · `sample` · `download` · `local` · `gldas_online` · `weather` · `analysis` · `statistics` · `histogram` · `timeseries` · `chart` · `raster` · `zonal` · `preprocess` · `gis` · `fusion` · `report` · `stub_v1` · `ui-panel` · `buffer`
+`pipeline` · `omega_avg` · `omega_block` · `sf_inversion` · `d1` · `demo` · `sample` · `download` · `local` · `online` · `remote` · `gldas_online` · `gee` · `weather` · `analysis` · `statistics` · `stats` · `histogram` · `timeseries` · `chart` · `raster` · `vector` · `zonal` · `preprocess` · `gis` · `fusion` · `report` · `calculator` · `dem` · `slope` · `aspect` · `contour` · `watershed` · `buffer` · `stub_v1` · `ui-panel`
 
 约定：
 
 - `pipeline`：多节点主链路模板。
 - `demo` / `sample`：演示或样例，不作为生产默认定时任务。
-- `local` / `*_online`：数据来源暗示。
+- `local` / `*_online`：数据来源暗示；`online` / `remote` 为通用在线 / 远端来源标记（`omega_sf_fenkuai_*_online`、`fy_tb_nas_read` 等）。
 - 算法族用稳定前缀（`omega_*`、`sf_*`）。
+- `gee`：GEE 引擎读取流（`ndvi_gee_read` 等）。
 - `stub_v1`：2026-08 新启用的预处理 / GIS / 统计 / 融合样例种子。
 - `preprocess` / `gis` / `fusion` / `report`：功能域标记（可与 `analysis` category 并存）。
+- `statistics`：统计功能域；`stats`：`stats_*_basic` 单元流家族标记（命名兼容，新种子优先用 `statistics`）。
+- `dem` / `slope` / `aspect` / `contour` / `watershed`：DEM 地形分析族（`analysis_slope_aspect`、`analysis_contour`、`analysis_watershed`）。
+- `vector`：栅格 / 矢量转换（`analysis_raster_to_vector`、`analysis_vector_to_raster`）。
+- `calculator`：栅格计算器（`analysis_raster_calc`）。
 - `ui-panel`：InfoPanel 分析面板固化模板（`analysis_*.json`），勿强制 `pipeline`。
 - `buffer`：缓冲分析相关。
 ### `_meta.resource_profile`（可选）

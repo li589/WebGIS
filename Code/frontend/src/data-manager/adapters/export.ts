@@ -84,6 +84,11 @@ async function exportLocalFallback(
 ): Promise<void> {
   const fc = layer.importedVector?.geojson
   if (!fc?.features?.length) {
+    if (layer.catalogId.startsWith('draw-draft-')) {
+      throw new Error(
+        '当前为绘制草稿且尚无已保存数据：请先在绘制工具栏点「保存」生成正式图层后再导出，或先绘制要素',
+      )
+    }
     throw new Error('本地预览为空，无法导出（可尝试重新导入或先「加载完整数据」）')
   }
   const base = exportBasenameFor(layer)

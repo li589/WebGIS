@@ -208,8 +208,8 @@ async function handleSave() {
   left: 1rem;
   bottom: 10rem;
   z-index: 19;
-  background: var(--surface-elevated);
-  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border: 1px solid var(--border-default);
   border-radius: 10px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   padding: 8px 10px;
@@ -223,7 +223,7 @@ async function handleSave() {
   align-items: center;
   gap: 8px;
   padding-bottom: 6px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .attr-table-title {
@@ -232,7 +232,7 @@ async function handleSave() {
   gap: 5px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--text);
+  color: var(--text-primary);
 }
 
 .attr-table-saved {
@@ -258,8 +258,8 @@ async function handleSave() {
 }
 
 .attr-table-close:hover {
-  background: var(--hover);
-  color: var(--text);
+  background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
 .attr-table-errors {
@@ -298,19 +298,19 @@ async function handleSave() {
 .attr-table th {
   position: sticky;
   top: 0;
-  background: var(--surface-elevated);
+  background: var(--surface-2);
   color: var(--text-secondary);
   font-weight: 500;
   padding: 4px 6px;
   text-align: left;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-default);
   white-space: nowrap;
 }
 
 .attr-table td {
   padding: 3px 6px;
-  border-bottom: 1px solid var(--border);
-  color: var(--text);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-primary);
   white-space: nowrap;
 }
 
@@ -319,7 +319,7 @@ async function handleSave() {
 }
 
 .attr-table tbody tr:hover {
-  background: var(--hover);
+  background: var(--surface-hover);
 }
 
 .attr-table tbody tr.selected {
@@ -345,8 +345,8 @@ async function handleSave() {
   padding: 1px 4px;
   border: 1px solid var(--accent);
   border-radius: 3px;
-  background: var(--surface);
-  color: var(--text);
+  background: var(--surface-1);
+  color: var(--text-primary);
   font-size: 11px;
   outline: none;
 }
@@ -381,7 +381,7 @@ async function handleSave() {
   align-items: center;
   gap: 6px;
   padding-top: 6px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-default);
 }
 
 .attr-table-add-col {
@@ -394,10 +394,10 @@ async function handleSave() {
 .add-col-input {
   width: 100px;
   padding: 2px 6px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-default);
   border-radius: 4px;
-  background: var(--surface);
-  color: var(--text);
+  background: var(--surface-1);
+  color: var(--text-primary);
   font-size: 11px;
   outline: none;
 }
@@ -408,7 +408,7 @@ async function handleSave() {
 
 .add-col-btn {
   padding: 2px 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-default);
   border-radius: 4px;
   background: transparent;
   color: var(--text-secondary);
@@ -417,7 +417,7 @@ async function handleSave() {
 }
 
 .add-col-btn:hover:not(:disabled) {
-  color: var(--text);
+  color: var(--text-primary);
   border-color: var(--accent);
 }
 

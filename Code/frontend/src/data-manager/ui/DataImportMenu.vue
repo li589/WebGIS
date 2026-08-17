@@ -358,14 +358,14 @@ const progressLabel = computed(() =>
 
 .import-toast {
   position: fixed;
-  top: 4.5rem;
+  top: 110px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 10020;
+  z-index: calc(var(--z-loading) - 20);
   max-width: min(36rem, calc(100vw - 2rem));
   padding: 8px 16px;
   border-radius: 6px;
-  background: var(--accent-surface);
+  background: var(--surface-1);
   border: 1px solid var(--accent-border);
   color: var(--accent);
   font-size: 12px;
@@ -378,7 +378,7 @@ const progressLabel = computed(() =>
 }
 
 .import-toast.error {
-  background: var(--danger-surface);
+  background: var(--surface-1);
   border-color: var(--danger-border);
   color: var(--danger);
 }

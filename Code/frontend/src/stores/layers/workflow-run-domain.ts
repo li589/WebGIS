@@ -117,6 +117,7 @@ export function createWorkflowRunDomain(
       emitWorkflowProgressTimeSeek(jobLayer, status, detail),
     attachAlgorithmProductOverlays: (refs, catalogId, runId) =>
       attachAlgorithmProductOverlays(refs as never, catalogId, runId),
+    cleanupUnproducedRunLayers: (runId, opts) => cleanupUnproducedRunLayers(runId, opts),
     clearWindForCatalog: (catalogId) => viewport.clearWindForCatalog(catalogId),
     enableParticleIfUnset: (catalogId) => viewport.enableParticleIfUnset(catalogId),
     buildJobLayer: (run, catalogId, opts) => buildJobLayer(run as never, catalogId, opts),
@@ -214,7 +215,7 @@ export function createWorkflowRunDomain(
       workflowError.value = msg
     },
     scheduleWorkspacePersist: () => bindings.scheduleWorkspacePersist(),
-    cleanupUnproducedRunLayers: (runId) => cleanupUnproducedRunLayers(runId),
+    cleanupUnproducedRunLayers: (runId, opts) => cleanupUnproducedRunLayers(runId, opts),
     createRunLayerGroup: (options) => createRunLayerGroup(options),
     bindRunIdToGroup: (groupId, runId) => bindRunIdToGroup(groupId, runId),
     attachAlgorithmProductOverlays: (refs, catalogId, runId, opts) =>

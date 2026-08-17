@@ -35,7 +35,11 @@ import {
   localizeWorkflowErrorMessage,
 } from '../../utils/workflow-error-messages'
 import { WorkflowValidationError } from '../../services/_http'
-import { productTagLabel } from '../../utils/workflow-expected-outputs'
+import {
+  explicitExpectedOutputTags,
+  productTagLabel,
+  type WorkflowDefLike,
+} from '../../utils/workflow-expected-outputs'
 import { debugLog as probeDebugLog } from '../../utils/perf-probe'
 import { WORKFLOW_COPY } from '../../ui-copy/workflow'
 import type {
@@ -164,7 +168,7 @@ export interface WorkflowStateWriterDeps {
   removeJobLayerById: (jobId: string) => void
   setWorkflowError: (message: string | null) => void
   scheduleWorkspacePersist: () => void
-  cleanupUnproducedRunLayers: (runId: string) => void
+  cleanupUnproducedRunLayers: (runId: string, opts?: { succeeded?: boolean }) => void
   createRunLayerGroup: (options: {
     title: string
     targets: Array<{ name: string; productTag: string }>
@@ -502,7 +506,10 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
             .attachAlgorithmProductOverlays(run.result_refs, catalogId, run.run_id, {
               forceBind: Boolean(candidate.autoDiscovered),
             })
-            .then(() => deps.scheduleWorkspacePersist())
+            .then(() => {
+              deps.cleanupUnproducedRunLayers(run.run_id, { succeeded: true })
+              deps.scheduleWorkspacePersist()
+            })
         }
       }
 
@@ -599,6 +606,31 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     }
   }
 
+  /** 旧 run 恢复兜底占位标签（无 manifest/工作流定义时的兼容行为） */
+  const LEGACY_RESTORE_TAGS = ['SM', 'VOD', 'OMEGA']
+
+  /** 从 runtime 图层目录解析工作流定义（descriptor 携带 workflow_definition） */
+  function workflowDefinitionForRestore(
+    workflowId?: string,
+    sourceLayerId?: string,
+    catalogId?: string,
+  ): WorkflowDefLike | null {
+    const catalog = deps.getRuntimeLayerCatalog()
+    const keys = [workflowId, sourceLayerId, catalogId].filter((k): k is string => Boolean(k))
+    for (const key of keys) {
+      const def = catalog[key]?.workflow_definition
+      if (def && typeof def === 'object') return def as WorkflowDefLike
+    }
+    if (workflowId) {
+      for (const d of Object.values(catalog)) {
+        if (d.workflow_id === workflowId && d.workflow_definition) {
+          return d.workflow_definition as WorkflowDefLike
+        }
+      }
+    }
+    return null
+  }
+
   function ensureRestoredRunGroup(
     runId: string,
     catalogId: string,
@@ -610,16 +642,34 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       catalogId,
       tracked,
     )
-    const tags = ['SM', 'VOD', 'OMEGA'] as const
     const existingGroup = deps.getRunLayerGroups().find((g) => g.runId === runId)
+    // 占位成员标签：优先沿用已恢复组/已水合成员的真实标签，
+    // 其次按工作流定义 manifest（extra.outputs / main_layers）推导，
+    // 均无（旧 run）时回退 SM/VOD/OMEGA 兼容
+    const memberTagsFromLayers = () => {
+      const ids = existingGroup?.memberInstanceIds ?? []
+      const tags = ids
+        .map((id) => deps.getActiveLayers().find((l) => l.instanceId === id)?.runGroupProductTag)
+        .filter((t): t is string => Boolean(t))
+      return tags.length ? Array.from(new Set(tags)) : []
+    }
+    const defTags = explicitExpectedOutputTags(
+      workflowDefinitionForRestore(
+        existingGroup?.workflowId || bridge.workflowId,
+        existingGroup?.sourceLayerId || bridge.sourceLayerId,
+        catalogId,
+      ),
+    )
+    const layerTags = memberTagsFromLayers()
+    const tags = layerTags.length ? layerTags : defTags.length ? defTags : LEGACY_RESTORE_TAGS
     const groupId =
       existingGroup?.groupId ||
       tracked?.groupId ||
       `run-group-restored-${runId.replace(/[^a-zA-Z0-9]/g, '').slice(-10)}`
     const memberCatalogIds =
-      tracked?.memberCatalogIds?.length === 3
+      tracked?.memberCatalogIds?.length === tags.length
         ? tracked.memberCatalogIds
-        : tags.map((tag) => `wf-run-${groupId}-${tag.toLowerCase()}`)
+        : tags.map((tag) => `wf-run-${groupId}-${String(tag).toLowerCase()}`)
 
     // 无 descriptor/workflow 元数据时做通用 restore，禁止写死实验室 seed id
     const sourceLayerId = existingGroup?.sourceLayerId || bridge.sourceLayerId || catalogId

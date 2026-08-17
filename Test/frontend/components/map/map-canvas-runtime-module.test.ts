@@ -8,6 +8,7 @@ describe('map-canvas-runtime-module', () => {
     const stopInteraction = vi.fn()
     const stopAdminBoundary = vi.fn()
     const stopMeasure = vi.fn()
+    const stopDraw = vi.fn()
     let triggerTileSourceChange: ((sourceId: 'esri-street') => void) | null = null
     let triggerInteractionModeChange: (() => void) | null = null
     let triggerAdminBoundaryOverlayChange: (() => void) | null = null
@@ -15,6 +16,7 @@ describe('map-canvas-runtime-module', () => {
     const onInteractionModeChange = vi.fn()
     const onAdminBoundaryOverlayChange = vi.fn()
     const onMeasureStateChange = vi.fn()
+    const onDrawStateChange = vi.fn()
 
     const module = createMapCanvasRuntimeModule({
       getTileSourceId: () => 'esri-street',
@@ -23,10 +25,12 @@ describe('map-canvas-runtime-module', () => {
       getHasAdminBoundary: () => false,
       getAdminBoundaryOpacity: () => 1,
       getMeasureSyncKey: () => 'measure-key',
+      getDrawSyncKey: () => 'draw-key',
       onTileSourceChange,
       onInteractionModeChange,
       onAdminBoundaryOverlayChange,
       onMeasureStateChange,
+      onDrawStateChange,
       dependencies: {
         watchBasemapSource: vi.fn((options) => {
           triggerTileSourceChange = options.onTileSourceChange
@@ -41,6 +45,7 @@ describe('map-canvas-runtime-module', () => {
           return stopAdminBoundary
         }),
         watchMeasureState: vi.fn(() => stopMeasure),
+        watchDrawState: vi.fn(() => stopDraw),
       },
     })
 
@@ -64,6 +69,7 @@ describe('map-canvas-runtime-module', () => {
     expect(stopInteraction).toHaveBeenCalledTimes(1)
     expect(stopAdminBoundary).toHaveBeenCalledTimes(1)
     expect(stopMeasure).toHaveBeenCalledTimes(1)
+    expect(stopDraw).toHaveBeenCalledTimes(1)
   })
 
   it('does not setup runtime watchers twice', () => {
@@ -71,6 +77,7 @@ describe('map-canvas-runtime-module', () => {
     const watchInteractionMode = vi.fn(() => vi.fn())
     const watchAdminBoundaryOverlay = vi.fn(() => vi.fn())
     const watchMeasureState = vi.fn(() => vi.fn())
+    const watchDrawState = vi.fn(() => vi.fn())
 
     const module = createMapCanvasRuntimeModule({
       getTileSourceId: () => 'esri-street',
@@ -79,15 +86,18 @@ describe('map-canvas-runtime-module', () => {
       getHasAdminBoundary: () => false,
       getAdminBoundaryOpacity: () => 1,
       getMeasureSyncKey: () => 'measure-key',
+      getDrawSyncKey: () => 'draw-key',
       onTileSourceChange: vi.fn(),
       onInteractionModeChange: vi.fn(),
       onAdminBoundaryOverlayChange: vi.fn(),
       onMeasureStateChange: vi.fn(),
+      onDrawStateChange: vi.fn(),
       dependencies: {
         watchBasemapSource,
         watchInteractionMode,
         watchAdminBoundaryOverlay,
         watchMeasureState,
+        watchDrawState,
       },
     })
 
@@ -98,5 +108,6 @@ describe('map-canvas-runtime-module', () => {
     expect(watchInteractionMode).toHaveBeenCalledTimes(1)
     expect(watchAdminBoundaryOverlay).toHaveBeenCalledTimes(1)
     expect(watchMeasureState).toHaveBeenCalledTimes(1)
+    expect(watchDrawState).toHaveBeenCalledTimes(1)
   })
 })

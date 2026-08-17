@@ -148,7 +148,7 @@ def test_analysis_seeds_compile():
         / "system"
     )
     for name in (
-        "raster_histogram_basic.json",
+        "analysis_histogram.json",
         "raster_zonal_stats_aligned.json",
         "raster_timeseries_curve.json",
     ):
