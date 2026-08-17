@@ -35,6 +35,10 @@ export {
   AlertCircle,
   AlertTriangle,
   XCircle,
+  Copy,
+  Eye,
+  EyeOff,
+  ClipboardCheck,
   // ── 加载 ──
   LoaderCircle,
   // ── 图层 / 地图 ──

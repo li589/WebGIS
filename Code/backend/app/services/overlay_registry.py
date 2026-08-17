@@ -1145,7 +1145,7 @@ register_overlay(
         category="static",
         palette="YlOrRd",
         vmin=0.0,
-        vmax=0.0953,
+        vmax=0.0985,
         unit="",
         opacity=0.8,
         source_path=_SMAP_AUX_ALBEDO_MAT,
@@ -1163,8 +1163,8 @@ register_overlay(
         bounds_filename="smap_aux_bd_overlay_bounds.json",
         category="static",
         palette="YlOrBr",
-        vmin=0.8843,
-        vmax=1.5675,
+        vmin=0.6051,
+        vmax=1.5449,
         unit="g/cm³",
         opacity=0.8,
         source_path=_SMAP_AUX_BD_MAT,
@@ -1173,7 +1173,7 @@ register_overlay(
     )
 )
 
-# SF — SMAP 辅助参数场（EASE-Grid 9km；中国区实测 p1~p99 = 0.29~19.1，非 0–1 分数，语义待课题组确认）
+# SF — SMAP 辅助参数场（EASE-Grid 9km；全球分位 p1~p99 = 0.1057~19.5637，非 0–1 分数，语义待课题组确认）
 register_overlay(
     OverlaySpec(
         layer_id="smap-aux-sf",
@@ -1182,8 +1182,8 @@ register_overlay(
         bounds_filename="smap_aux_sf_overlay_bounds.json",
         category="static",
         palette="YlGn",
-        vmin=0.2904,
-        vmax=19.1067,
+        vmin=0.1057,
+        vmax=19.5637,
         unit="",
         opacity=0.8,
         source_path=_SMAP_AUX_SF_MAT,
@@ -1202,7 +1202,7 @@ register_overlay(
         category="static",
         palette="RdBu",
         vmin=0.0,
-        vmax=0.1299,
+        vmax=0.1286,
         unit="",
         opacity=0.8,
         source_path=_SMAP_AUX_B_MAT,
@@ -1220,8 +1220,8 @@ register_overlay(
         bounds_filename="smap_aux_cf_overlay_bounds.json",
         category="static",
         palette="PuBu",
-        vmin=0.0119,
-        vmax=0.396,
+        vmin=0.0004,
+        vmax=0.3854,
         unit="fraction",
         opacity=0.8,
         source_path=_SMAP_AUX_CF_MAT,
@@ -1239,8 +1239,8 @@ register_overlay(
         bounds_filename="smap_aux_h_overlay_bounds.json",
         category="static",
         palette="Oranges",
-        vmin=0.1833,
-        vmax=2.2918,
+        vmin=0.1561,
+        vmax=1.8143,
         unit="",
         opacity=0.8,
         source_path=_SMAP_AUX_H_MAT,
@@ -1296,8 +1296,8 @@ register_overlay(
         bounds_filename="smap_aux_vi_qa_overlay_bounds.json",
         category="static",
         palette="RdYlGn",
-        vmin=0.0398,
-        vmax=0.8535,
+        vmin=0.0709,
+        vmax=0.8596,
         unit="",
         opacity=0.8,
         source_path=_SMAP_AUX_VI_V_QA_MAT,
@@ -1372,12 +1372,11 @@ def read_bounds(layer_id: str, time: str | None = None) -> dict[str, Any]:
             f"Bounds JSON missing 'bounds' field: {bounds_path.name}",
         )
     # ── bounds 合理性校验 ──────────────────────────────────────────────────
-    # 检测重投影失败回退到全球 bounds 的典型模式，以及坐标轴值超出
-    # WGS84 范围（可能是投影坐标被误当作经纬度）。
+    # 仅检查坐标值超出 WGS84 范围（可能是投影坐标被误当作经纬度）。
+    # 全球 bounds (-180,-90,180,90) 是 GPCP 等全球数据集的合法值，不告警。
     b = data["bounds"]
     if isinstance(b, list) and len(b) == 4:
         w, s, e, n = b
-        _is_global = w == -180.0 and s == -90.0 and e == 180.0 and n == 90.0
         _out_of_wgs84 = (
             not all(isinstance(v, (int, float)) for v in b)
             or abs(w) > 180.1
@@ -1385,9 +1384,9 @@ def read_bounds(layer_id: str, time: str | None = None) -> dict[str, Any]:
             or abs(s) > 90.1
             or abs(n) > 90.1
         )
-        if _is_global or _out_of_wgs84:
+        if _out_of_wgs84:
             data.setdefault("meta", {})["bounds_warning"] = (
-                "Bounds appear to be global or out of WGS84 range — "
+                "Bounds out of WGS84 range — "
                 "possible reproject failure or CRS mismatch. "
                 "Run Tools/export_overlay_assets.py to regenerate."
             )

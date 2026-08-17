@@ -918,7 +918,6 @@ h2 {
     background-color var(--motion-base) var(--ease-standard),
     box-shadow var(--motion-base) var(--ease-standard),
     opacity var(--motion-base) var(--ease-standard);
-  user-select: none;
 }
 
 .layer-item:nth-child(1) {
@@ -990,8 +989,7 @@ h2 {
   border-radius: var(--sidebar-soft-radius);
   background: linear-gradient(90deg, var(--surface-3) 0%, var(--surface-1) 100%);
   box-shadow: inset 3px 0 0 rgba(90, 213, 255, 0.65);
-  cursor: grab;
-  user-select: none;
+  cursor: default;
 }
 
 .layer-group-header.computing {
@@ -1021,6 +1019,8 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  user-select: text;
+  cursor: text;
 }
 
 .group-status-chip {
@@ -1085,6 +1085,23 @@ h2 {
   cursor: grabbing;
 }
 
+/* 拖拽仅限手柄：条目主体（图层名等）放开文本选择 */
+.drag-handle-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  flex-shrink: 0;
+  user-select: none;
+  padding: 0.1rem;
+  margin-left: -0.1rem;
+  border-radius: 0.3rem;
+}
+
+.drag-handle-wrap:active {
+  cursor: grabbing;
+}
+
 .vis-btn {
   display: flex;
   align-items: center;
@@ -1125,6 +1142,8 @@ h2 {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  user-select: text;
+  cursor: text;
 }
 
 .layer-chip {

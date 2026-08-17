@@ -119,16 +119,19 @@ export function createMapCanvasNonWeatherLayerSyncModule(
     const newlyAdded: string[] = []
     for (const layer of imported) {
       const payload = layer.importedVector!
-      if (payload.geojson && !loadedIds.has(layer.instanceId)) {
-        const label = resolveLayerDisplayLabel({
-          name: layer.name,
-          catalogId: layer.catalogId,
-          fileStem: payload.fileName,
-        })
-        importedLayerModule.addVectorLayer(layer.instanceId, payload.geojson, label)
-        if (importedLayerModule.getLoadedIds().includes(layer.instanceId)) {
-          newlyAdded.push(layer.instanceId)
-        }
+      if (!payload.geojson) continue
+      // addVectorLayer 内部区分新增（addSource+addLayer）与已加载（geojson
+      // 引用变化时仅 setData），空 FeatureCollection 也会注册 source/渲染层，
+      // 待后续数据加载（revision 递增）后直接显示
+      const wasLoaded = loadedIds.has(layer.instanceId)
+      const label = resolveLayerDisplayLabel({
+        name: layer.name,
+        catalogId: layer.catalogId,
+        fileStem: payload.fileName,
+      })
+      const ok = importedLayerModule.addVectorLayer(layer.instanceId, payload.geojson, label)
+      if (ok && !wasLoaded) {
+        newlyAdded.push(layer.instanceId)
       }
       loadedIds.delete(layer.instanceId)
     }
@@ -212,14 +215,14 @@ export function createMapCanvasNonWeatherLayerSyncModule(
     stopHandles.push(
       watch(
         () =>
-          options
+          `${options.getMapReady() ? 'ready' : 'pending'}|${options
             .getActiveLayers()
             .filter((l) => l.importedVector)
             .map(
               (l) =>
-                `${l.instanceId}:${l.name ?? ''}:${l.visible}:${l.opacity}:${l.importedVector!.featureCount}:${JSON.stringify(l.importedVector!.style ?? null)}`,
+                `${l.instanceId}:${l.name ?? ''}:${l.visible}:${l.opacity}:${l.importedVector!.revision ?? 0}:${l.importedVector!.featureCount}:${JSON.stringify(l.importedVector!.style ?? null)}`,
             )
-            .join(','),
+            .join(',')}`,
         () => {
           syncImportedLayers({ fitNew: true })
         },

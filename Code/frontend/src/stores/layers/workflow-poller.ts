@@ -273,12 +273,7 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
       nextUpdatedAt = event.created_at
     }
 
-    const eventMessages = mergeRecentEventMessages(
-      jobLayer.eventMessages ?? jobLayer.diagnosticNotes,
-      events,
-    )
-    const showEventMessages =
-      nextStatus === 'queued' || nextStatus === 'running' || nextStatus === 'retry_pending'
+    const eventMessages = mergeRecentEventMessages(jobLayer.eventMessages, events)
 
     return {
       ...jobLayer,
@@ -290,7 +285,7 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
       lastEventAt,
       eventMessages,
       nodeProgress: nextNodeProgress,
-      diagnosticNotes: showEventMessages ? eventMessages : jobLayer.diagnosticNotes,
+      diagnosticNotes: jobLayer.diagnosticNotes,
     }
   }
 
@@ -345,9 +340,7 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
             lastEventAt: existingJobLayer.lastEventAt,
             eventMessages: existingJobLayer.eventMessages,
             nodeProgress: existingJobLayer.nodeProgress,
-            diagnosticNotes: jobLayer.diagnosticNotes?.length
-              ? jobLayer.diagnosticNotes
-              : (existingJobLayer.eventMessages ?? existingJobLayer.diagnosticNotes),
+            diagnosticNotes: jobLayer.diagnosticNotes,
           }
         : {
             ...jobLayer,

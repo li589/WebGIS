@@ -7,12 +7,27 @@
  * 保存后按 restart_level 引导：restart-backend 可页面内重启进程组；
  * restart-full（Docker 相关键）须在服务器执行 launch.py restart。
  * 注意：PUT 对 json 为全量期望态写入，本页每次提交完整表单（空 = 未设置）。
+ *
+ * 超长值处理：展示位统一用 CodeValue（省略→展开→复制）；
+ * 输入位：路径/URL/长文本支持 input ↔ textarea 展开编辑，草稿改动有角标与一键还原。
  */
 
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { RefreshCw, Undo2, Download, Lock, AlertTriangle } from '../components/ui/icons'
+import {
+  RefreshCw,
+  Undo2,
+  Download,
+  Lock,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  EyeOff,
+  ClipboardCheck,
+} from '../components/ui/icons'
+import CodeValue from '../components/ui/CodeValue.vue'
 import {
   deploymentConfigExportUrl,
   getDeploymentConfig,
@@ -46,6 +61,13 @@ const saveBusy = ref(false)
 const restartBusy = ref(false)
 const actionMessage = ref('')
 const actionError = ref('')
+
+/** 分组折叠态（默认全展开；折叠以便复查长页时收窄）。 */
+const collapsedGroups = reactive(new Set<string>())
+/** 展开为多行编辑的字段 id 集合（超长路径/URL）。 */
+const expandedFields = reactive(new Set<string>())
+/** 明文显示的密码字段 id 集合。 */
+const revealedPasswords = reactive(new Set<string>())
 
 const RESTART_LABELS: Record<string, string> = {
   'restart-backend': '重启后端',
@@ -82,6 +104,29 @@ const groupSections = computed<
 
 const pendingRestart = computed(() => Boolean(status.value?.pending_restart))
 
+/** 字段基线值：敏感键不回填，其余为 json 真源值（空 = 未设置）。 */
+function baselineValue(k: DeploymentKeyValueStatus): string {
+  return k.sensitive ? '' : k.config_value
+}
+
+function isFieldChanged(k: DeploymentKeyValueStatus): boolean {
+  const current = String(draft[fieldId(k)] ?? '').trim()
+  return current !== baselineValue(k).trim()
+}
+
+/** 全表草稿改动计数（含 notes 未计入，仅键值）。 */
+const changedCount = computed(() => {
+  const s = status.value
+  if (!s) return 0
+  return s.keys.filter((k) => isFieldChanged(k)).length
+})
+
+function changedCountForGroup(group: string): number {
+  const s = status.value
+  if (!s) return 0
+  return s.keys.filter((k) => k.group === group && isFieldChanged(k)).length
+}
+
 function fieldId(k: DeploymentKeyValueStatus): string {
   return `${k.group}.${k.key}`
 }
@@ -94,6 +139,8 @@ function syncDraftFromStatus() {
     draft[fieldId(k)] = k.sensitive ? '' : k.config_value
   }
   notes.value = s.notes ?? ''
+  expandedFields.clear()
+  revealedPasswords.clear()
 }
 
 async function loadStatus(quiet = false) {
@@ -217,6 +264,31 @@ function inputPlaceholder(k: DeploymentKeyValueStatus): string {
   return k.must_exist ? '绝对路径，目录须已存在' : '绝对路径；留空 = 默认'
 }
 
+/** 可展开多行编辑的字段类型（超长路径 / URL / 自由文本）。 */
+function isLongTextField(k: DeploymentKeyValueStatus): boolean {
+  return k.kind === 'path' || k.kind === 'path_file' || k.kind === 'url' || k.kind === 'str'
+}
+
+function toggleGroup(group: string): void {
+  if (collapsedGroups.has(group)) collapsedGroups.delete(group)
+  else collapsedGroups.add(group)
+}
+
+function toggleFieldExpand(id: string): void {
+  if (expandedFields.has(id)) expandedFields.delete(id)
+  else expandedFields.add(id)
+}
+
+function togglePasswordReveal(id: string): void {
+  if (revealedPasswords.has(id)) revealedPasswords.delete(id)
+  else revealedPasswords.add(id)
+}
+
+/** 还原单字段草稿到基线（json 真源值）。 */
+function resetField(k: DeploymentKeyValueStatus): void {
+  draft[fieldId(k)] = baselineValue(k)
+}
+
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
@@ -262,21 +334,25 @@ onMounted(() => {
     <div v-if="loading && !status" class="banner">加载配置状态中…</div>
 
     <template v-if="status">
-      <!-- 状态条：文件 + 三方对比 + 备份 -->
+      <!-- 状态条：文件 + 三方对比 + 备份 + 汇总 -->
       <section class="status-strip">
         <div class="status-row">
           <span class="status-label">配置文件</span>
-          <code class="status-value" :title="status.path">{{ status.path }}</code>
+          <CodeValue :value="status.path" class="status-value" max-width="30rem" />
           <span class="badge" :class="status.exists ? 'badge-ok' : 'badge-muted'">
             {{ status.exists ? `已存在 · v${status.schema_version}` : '未创建（保存后生成）' }}
           </span>
           <span v-if="pendingRestart" class="badge badge-warn" title="运行值与期望配置不一致">
             待重启生效
           </span>
+          <span class="badge badge-muted" :title="`${status.keys.length} 个配置键`">
+            {{ status.keys.length }} 键
+          </span>
+          <span v-if="changedCount" class="badge badge-info">草稿改动 {{ changedCount }}</span>
         </div>
         <div class="status-row">
           <span class="status-label">.env 镜像</span>
-          <code class="status-value" :title="status.env_path">{{ status.env_path }}</code>
+          <CodeValue :value="status.env_path" class="status-value" max-width="30rem" />
         </div>
         <div v-if="status.backups.length" class="status-row">
           <span class="status-label">备份轮换</span>
@@ -316,87 +392,116 @@ onMounted(() => {
           <li v-for="w in previewResult.warnings" :key="w">{{ w }}</li>
         </ul>
 
-        <table v-if="previewResult.diff.length" class="diff-table">
-          <thead>
-            <tr>
-              <th>配置项</th>
-              <th>环境变量</th>
-              <th>当前值</th>
-              <th>新值</th>
-              <th>生效方式</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="d in previewResult.diff" :key="`${d.group}.${d.key}`">
-              <td>{{ d.key }}</td>
-              <td>
-                <code>{{ d.env_key }}</code>
-              </td>
-              <td>
-                <code class="val-old">{{ d.old || '（未设置）' }}</code>
-              </td>
-              <td>
-                <code class="val-new">{{ d.new }}</code>
-                <span
-                  v-if="d.derived"
-                  class="badge badge-muted"
-                  title="data_root 变更且未显式设置产物根时，自动派生为新数据根下的 ProjectOutput"
-                >
-                  联动派生
-                </span>
-              </td>
-              <td>{{ RESTART_LABELS[d.restart_level] ?? d.restart_level }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <p v-else-if="previewResult.ok" class="empty">无变更（当前值与期望值一致）。</p>
-
-        <div class="form-actions">
-          <button type="button" class="btn" :disabled="saveBusy" @click="mode = 'editing'">
-            返回编辑
-          </button>
-          <button
-            type="button"
-            class="btn btn-primary"
-            :disabled="!previewResult.ok || saveBusy"
-            @click="handleApply"
-          >
-            {{ saveBusy ? '保存中…' : '确认并保存' }}
-          </button>
+        <div v-if="previewResult.diff.length" class="diff-scroll">
+          <table class="diff-table">
+            <thead>
+              <tr>
+                <th>配置项</th>
+                <th>环境变量</th>
+                <th>当前值</th>
+                <th>新值</th>
+                <th>生效方式</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="d in previewResult.diff" :key="`${d.group}.${d.key}`">
+                <td>{{ d.key }}</td>
+                <td>
+                  <code class="env-chip">{{ d.env_key }}</code>
+                </td>
+                <td class="val-cell">
+                  <CodeValue :value="d.old" placeholder="（未设置）" />
+                  <span
+                    v-if="d.derived"
+                    class="badge badge-muted"
+                    title="data_root 变更且未显式设置产物根时，自动派生为新数据根下的 ProjectOutput"
+                  >
+                    联动派生
+                  </span>
+                </td>
+                <td class="val-cell">
+                  <CodeValue :value="d.new" placeholder="（未设置）" class="val-new" />
+                </td>
+                <td>{{ RESTART_LABELS[d.restart_level] ?? d.restart_level }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
+        <p v-else-if="previewResult.ok" class="empty">无变更（当前值与期望值一致）。</p>
       </section>
 
-      <!-- 分组编辑表单 -->
+      <!-- 分组编辑表单（可折叠） -->
       <section v-for="section in groupSections" :key="section.group" class="form-card">
-        <h2 class="card-title">{{ section.label }}</h2>
-        <div class="key-rows">
+        <button type="button" class="group-head" @click="toggleGroup(section.group)">
+          <component
+            :is="collapsedGroups.has(section.group) ? ChevronDown : ChevronUp"
+            :size="14"
+            aria-hidden="true"
+          />
+          <span class="group-title">{{ section.label }}</span>
+          <span class="badge badge-muted">{{ section.keys.length }} 项</span>
+          <span v-if="changedCountForGroup(section.group)" class="badge badge-info">
+            改动 {{ changedCountForGroup(section.group) }}
+          </span>
+          <span
+            v-if="section.keys.some((k) => k.pending)"
+            class="badge badge-warn"
+            title="保存后尚未重启，运行值仍为旧配置"
+          >
+            待生效
+          </span>
+        </button>
+
+        <div v-show="!collapsedGroups.has(section.group)" class="key-rows">
           <div
             v-for="k in section.keys"
             :key="fieldId(k)"
             class="key-row"
-            :class="{ pending: k.pending }"
+            :class="{ pending: k.pending, changed: isFieldChanged(k) }"
           >
             <div class="key-head">
               <span class="key-label">
                 {{ k.label }}
                 <em v-if="k.must_exist" class="req" title="目录必须已存在">*</em>
+                <span
+                  v-if="isFieldChanged(k)"
+                  class="changed-chip"
+                  title="草稿与 json 真源不一致；重置可还原"
+                >
+                  已修改
+                </span>
               </span>
               <code class="env-chip" :title="`生效方式：${restartLevelChip(k)}`">
                 {{ k.env_key }}
               </code>
             </div>
             <div class="key-input">
+              <!-- 级别：下拉 -->
               <select v-if="k.kind === 'level'" v-model="draft[fieldId(k)]" :aria-label="k.label">
                 <option value="">（未设置）</option>
                 <option v-for="opt in LEVEL_OPTIONS" :key="opt" :value="opt">{{ opt }}</option>
               </select>
-              <input
-                v-else-if="k.kind === 'password'"
-                v-model="draft[fieldId(k)]"
-                type="password"
-                autocomplete="new-password"
-                placeholder="留空保持不变（回显恒脱敏）"
-              />
+
+              <!-- 敏感：密码框 + 明文切换 -->
+              <div v-else-if="k.kind === 'password'" class="input-wrap">
+                <input
+                  v-model="draft[fieldId(k)]"
+                  :type="revealedPasswords.has(fieldId(k)) ? 'text' : 'password'"
+                  autocomplete="new-password"
+                  placeholder="留空保持不变（回显恒脱敏）"
+                />
+                <button
+                  type="button"
+                  class="input-affix"
+                  :title="revealedPasswords.has(fieldId(k)) ? '隐藏' : '显示明文'"
+                  @click="togglePasswordReveal(fieldId(k))"
+                >
+                  <EyeOff v-if="revealedPasswords.has(fieldId(k))" :size="13" aria-hidden="true" />
+                  <Eye v-else :size="13" aria-hidden="true" />
+                </button>
+              </div>
+
+              <!-- 整数：数字框 -->
               <input
                 v-else-if="k.kind === 'int'"
                 v-model="draft[fieldId(k)]"
@@ -404,28 +509,71 @@ onMounted(() => {
                 min="0"
                 placeholder="留空 = 默认"
               />
+
+              <!-- 超长文本：input ↔ textarea 展开编辑 -->
+              <template v-else-if="isLongTextField(k)">
+                <div v-if="!expandedFields.has(fieldId(k))" class="input-wrap">
+                  <input
+                    v-model="draft[fieldId(k)]"
+                    type="text"
+                    class="mono"
+                    :placeholder="inputPlaceholder(k)"
+                    spellcheck="false"
+                  />
+                  <button
+                    type="button"
+                    class="input-affix"
+                    title="展开多行编辑（超长路径/URL）"
+                    @click="toggleFieldExpand(fieldId(k))"
+                  >
+                    <ChevronDown :size="13" aria-hidden="true" />
+                  </button>
+                </div>
+                <textarea
+                  v-else
+                  v-model="draft[fieldId(k)]"
+                  class="mono"
+                  rows="3"
+                  spellcheck="false"
+                  :placeholder="inputPlaceholder(k)"
+                />
+                <button
+                  v-if="expandedFields.has(fieldId(k))"
+                  type="button"
+                  class="collapse-edit"
+                  @click="toggleFieldExpand(fieldId(k))"
+                >
+                  收起为单行
+                </button>
+              </template>
+
               <input
                 v-else
                 v-model="draft[fieldId(k)]"
                 type="text"
                 :placeholder="inputPlaceholder(k)"
               />
+
+              <button
+                v-if="isFieldChanged(k)"
+                type="button"
+                class="reset-field"
+                :title="`还原为 json 真源值：${baselineValue(k) || '（未设置）'}`"
+                @click="resetField(k)"
+              >
+                <ClipboardCheck :size="12" aria-hidden="true" /> 还原
+              </button>
             </div>
             <div class="key-meta">
-              <span
-                class="meta-item"
-                :title="`运行值（当前进程）：${k.runtime_value || '（默认）'}`"
-              >
-                运行 <code>{{ k.runtime_value || '—' }}</code>
+              <span class="meta-item" title="运行值（当前进程）">
+                运行 <CodeValue :value="k.runtime_value" max-width="16rem" />
               </span>
-              <span class="meta-item" :title="`.env 值：${k.env_value || '（未设置）'}`">
-                .env <code>{{ k.env_value || '—' }}</code>
+              <span class="meta-item" title=".env 值">
+                .env <CodeValue :value="k.env_value" max-width="16rem" />
               </span>
-              <span
-                class="meta-item"
-                :title="`deployment.json 值：${k.config_value || '（未设置）'}`"
-              >
-                json <code>{{ k.config_value || '—' }}</code>
+              <span class="meta-item" title="deployment.json 值">
+                json
+                <CodeValue :value="k.sensitive ? '' : k.config_value" max-width="16rem" />
                 <span v-if="k.source === 'config'" class="src-chip">真源</span>
               </span>
             </div>
@@ -442,16 +590,17 @@ onMounted(() => {
         />
       </section>
 
-      <footer class="view-footer">
-        <div class="form-actions">
+      <!-- 粘性操作栏：编辑/预览两态，长页滚动中始终可达 -->
+      <div class="sticky-actions">
+        <template v-if="mode === 'editing'">
           <button
-            v-if="mode === 'editing'"
             type="button"
             class="btn btn-primary"
             :disabled="previewBusy || loading"
             @click="handlePreview"
           >
             {{ previewBusy ? '校验中…' : '预览变更' }}
+            <span v-if="changedCount" class="btn-count">{{ changedCount }}</span>
           </button>
           <button
             v-if="pendingRestart"
@@ -463,7 +612,23 @@ onMounted(() => {
           >
             {{ restartBusy ? '重启中…' : '重启后端使配置生效' }}
           </button>
-        </div>
+        </template>
+        <template v-else-if="mode === 'previewing' && previewResult">
+          <button type="button" class="btn" :disabled="saveBusy" @click="mode = 'editing'">
+            返回编辑
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            :disabled="!previewResult.ok || saveBusy"
+            @click="handleApply"
+          >
+            {{ saveBusy ? '保存中…' : '确认并保存' }}
+          </button>
+        </template>
+      </div>
+
+      <footer class="view-footer">
         <p class="footer-hint">
           保存将原子写入 deployment.config.json 并镜像 .env（自动备份 3 份，失败整体回滚）。 含
           Docker 相关键（restart-full）时须在服务器执行
@@ -487,7 +652,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0.8rem;
-  max-width: 1080px;
+  max-width: 1120px;
   margin: 0 auto;
 }
 
@@ -545,6 +710,18 @@ onMounted(() => {
   opacity: 0.5;
   cursor: default;
 }
+.btn-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.05rem;
+  padding: 0 0.22rem;
+  border-radius: 999px;
+  background: var(--accent, #5ad5ff);
+  color: #06121c;
+  font-weight: 600;
+  font-size: 0.66rem;
+}
 .spinning {
   animation: spin 1s linear infinite;
 }
@@ -590,17 +767,14 @@ onMounted(() => {
   gap: 0.5rem;
   flex-wrap: wrap;
   font-size: var(--font-size-caption, 0.75rem);
+  min-width: 0;
 }
 .status-label {
   color: var(--text-muted, #8fa3b3);
   min-width: 4.5rem;
 }
 .status-value {
-  color: var(--text-primary, #d7e2ea);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 34rem;
+  min-width: 0;
 }
 
 .badge {
@@ -608,6 +782,7 @@ onMounted(() => {
   border-radius: 0.24rem;
   font-size: var(--font-size-caption, 0.75rem);
   border: 1px solid transparent;
+  white-space: nowrap;
 }
 .badge-ok {
   background: rgba(47, 107, 74, 0.24);
@@ -626,6 +801,11 @@ onMounted(() => {
   border-color: var(--border-subtle, #223140);
   color: var(--text-muted, #8fa3b3);
 }
+.badge-info {
+  background: rgba(90, 213, 255, 0.14);
+  border-color: var(--accent, #5ad5ff);
+  color: var(--accent-strong, #9fe4ff);
+}
 
 .form-card {
   padding: 0.62rem 0.72rem;
@@ -642,21 +822,46 @@ onMounted(() => {
   align-items: center;
   gap: 0.4rem;
 }
+.group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-strong, #f2f7fa);
+  font-size: var(--font-size-caption, 0.75rem);
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.1rem 0;
+  text-align: left;
+}
+.group-head:hover {
+  color: var(--accent-strong, #9fe4ff);
+}
+.group-title {
+  flex: none;
+}
 
 .key-rows {
   display: flex;
   flex-direction: column;
+  margin-top: 0.35rem;
 }
 .key-row {
   display: grid;
   grid-template-columns: minmax(13rem, 16rem) 1fr;
   gap: 0.3rem 0.8rem;
-  padding: 0.4rem 0.2rem;
+  padding: 0.45rem 0.2rem;
   border-top: 1px solid var(--border-subtle, #1a2836);
   align-items: center;
 }
 .key-row:first-child {
   border-top: none;
+}
+.key-row.changed {
+  background: rgba(90, 213, 255, 0.05);
+  border-radius: 0.3rem;
 }
 .key-row.pending .key-label::after {
   content: '待生效';
@@ -667,10 +872,19 @@ onMounted(() => {
   border-radius: 0.24rem;
   padding: 0 0.25rem;
 }
+.changed-chip {
+  margin-left: 0.4rem;
+  font-size: 0.66rem;
+  color: var(--accent-strong, #9fe4ff);
+  border: 1px solid var(--accent, #5ad5ff);
+  border-radius: 0.24rem;
+  padding: 0 0.25rem;
+}
 .key-head {
   display: flex;
   flex-direction: column;
   gap: 0.18rem;
+  min-width: 0;
 }
 .key-label {
   color: var(--text-primary, #d7e2ea);
@@ -688,15 +902,47 @@ onMounted(() => {
   border: 1px solid var(--border-subtle, #223140);
   border-radius: 0.24rem;
   padding: 0 0.28rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .key-input {
   display: flex;
   flex-direction: column;
   gap: 0.22rem;
+  min-width: 0;
+}
+.input-wrap {
+  display: flex;
+  align-items: stretch;
+  gap: 0.28rem;
+  min-width: 0;
+}
+.input-wrap input {
+  flex: 1;
+  min-width: 0;
+}
+.input-affix {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.7rem;
+  border: 1px solid var(--border-default, #2a3a48);
+  border-radius: 0.36rem;
+  background: var(--surface-1, #101a24);
+  color: var(--text-muted, #8fa3b3);
+  cursor: pointer;
+}
+.input-affix:hover {
+  color: var(--accent-strong, #9fe4ff);
+  border-color: var(--border-strong, #3a4c5c);
 }
 .key-input input,
 .key-input select,
-.form-card textarea {
+.key-input textarea,
+.form-card > textarea {
   border: 1px solid var(--border-default, #2a3a48);
   border-radius: 0.36rem;
   background: var(--surface-1, #101a24);
@@ -706,19 +952,53 @@ onMounted(() => {
   width: 100%;
   box-sizing: border-box;
 }
+.key-input textarea.mono {
+  resize: vertical;
+  line-height: 1.5;
+}
+input.mono,
+textarea.mono {
+  font-family: var(--font-mono, ui-monospace, 'Cascadia Mono', Consolas, monospace);
+}
+.collapse-edit,
+.reset-field {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.24rem;
+  border: 1px solid var(--border-subtle, #223140);
+  background: transparent;
+  color: var(--text-muted, #8fa3b3);
+  border-radius: 0.24rem;
+  font-size: 0.66rem;
+  padding: 0.1rem 0.34rem;
+  cursor: pointer;
+}
+.collapse-edit:hover,
+.reset-field:hover {
+  color: var(--accent-strong, #9fe4ff);
+  border-color: var(--border-default, #2a3a48);
+}
 .key-meta {
   grid-column: 2;
   display: flex;
-  gap: 1rem;
+  gap: 0.9rem;
   flex-wrap: wrap;
   font-size: 0.68rem;
   color: var(--text-muted, #8fa3b3);
+  min-width: 0;
 }
-.meta-item code {
-  color: var(--text-secondary, #a9bccb);
+.meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  min-width: 0;
+  max-width: 100%;
+}
+.meta-item :deep(.code-value) {
+  min-width: 0;
 }
 .src-chip {
-  margin-left: 0.25rem;
   color: var(--accent-strong, #9fe4ff);
 }
 
@@ -740,6 +1020,9 @@ onMounted(() => {
 .msg-warn li {
   color: var(--accent-warm, #ffcc80);
 }
+.diff-scroll {
+  overflow-x: auto;
+}
 .diff-table {
   width: 100%;
   border-collapse: collapse;
@@ -756,21 +1039,33 @@ onMounted(() => {
 .diff-table th {
   color: var(--text-muted, #8fa3b3);
   font-weight: 600;
+  white-space: nowrap;
 }
-.val-old {
-  color: var(--text-muted, #8fa3b3);
-  word-break: break-all;
+.val-cell {
+  max-width: 22rem;
+  min-width: 10rem;
 }
-.val-new {
+.val-cell .badge {
+  margin-left: 0.3rem;
+}
+.val-new :deep(.cv-text) {
   color: var(--accent-strong, #9fe4ff);
-  word-break: break-all;
 }
 
-.form-actions {
+.sticky-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.36rem;
-  margin-top: 0.5rem;
+  margin-top: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border-subtle, #223140);
+  border-radius: 0.52rem;
+  background: color-mix(in srgb, var(--surface-2, #0b1118) 88%, transparent);
+  backdrop-filter: blur(6px);
 }
 .view-footer {
   display: flex;

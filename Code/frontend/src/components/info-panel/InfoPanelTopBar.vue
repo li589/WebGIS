@@ -6,6 +6,8 @@ import type { AnalysisTabId } from './analysis-tab-focus'
 defineProps<{
   activeTab: AnalysisTabId
   stageLabel: string
+  /** 选中图层名；与阶段短标签合成显示为「图层名 · 叠加图层」 */
+  layerName?: string
 }>()
 
 const emit = defineEmits<{
@@ -35,7 +37,12 @@ function onTabChange(value: string) {
       @update:model-value="onTabChange"
     />
     <div class="panel-stage-row">
-      <span class="readiness readiness--inline" :title="stageLabel">{{ stageLabel }}</span>
+      <span
+        class="readiness readiness--inline"
+        :title="layerName ? `${layerName} · ${stageLabel}` : stageLabel"
+      >
+        <template v-if="layerName">{{ layerName }} · </template>{{ stageLabel }}
+      </span>
     </div>
   </div>
 </template>

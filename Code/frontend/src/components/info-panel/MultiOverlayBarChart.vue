@@ -50,7 +50,7 @@ const echartsOption = computed(() => {
       : undefined,
     tooltip: {
       trigger: 'item',
-      formatter: (params: any) => {
+      formatter: (params: { dataIndex: number }) => {
         const item = items[params.dataIndex]
         if (!item) return ''
         const unit = item.unit ? ` ${item.unit}` : ''
@@ -93,7 +93,7 @@ const echartsOption = computed(() => {
           show: true,
           position: 'right' as const,
           fontSize: 10,
-          formatter: (params: any) => {
+          formatter: (params: { dataIndex: number }) => {
             const item = items[params.dataIndex]
             return item?.valueText ?? ''
           },

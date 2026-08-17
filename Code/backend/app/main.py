@@ -23,6 +23,7 @@ from app.api.routers import (
     runtime_router,
     weather_router,
     workflow_router,
+    workspace_router,
     zonal_stats_router,
 )
 from app.api.routers.unified_tile_router import router as unified_tile_router
@@ -239,6 +240,10 @@ def create_app() -> FastAPI:
         env = (settings.environment or "").lower()
         request_id = getattr(request.state, "request_id", None)
 
+        # /health 为存活探测：不进限流检查，保证高负载时仍可即时应答
+        if path == "/health":
+            return await call_next(request)
+
         if env not in ("test", "testing", "development"):
             if should_rate_limit_login(path, method):
                 result = check_login_rate_limit(client_ip(request))
@@ -270,6 +275,12 @@ def create_app() -> FastAPI:
     async def request_context_middleware(request: Request, call_next):
         request_id = request.headers.get("x-request-id", f"req-{uuid4().hex[:12]}")
         request.state.request_id = request_id
+
+        # /health 为存活探测：跳过 Redis 指标记录与访问日志，
+        # 避免高负载（Redis 抖动/线程池排队）时健康检查被拖慢导致前端误报断联
+        if request.url.path == "/health":
+            return await call_next(request)
+
         set_request_id(request_id)
         start_time = time.monotonic()
         with log_context(request_id=request_id):
@@ -368,6 +379,7 @@ def create_app() -> FastAPI:
     app.include_router(workflow_timer_router)
     app.include_router(cleanup_router)
     app.include_router(zonal_stats_router)
+    app.include_router(workspace_router)
 
     # 挂载 GEE engine router，使 /gee/* 路由正式接入 FastAPI
     # 路由前缀已在 create_gee_router 内部定义为 /gee

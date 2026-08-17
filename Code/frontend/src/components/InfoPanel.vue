@@ -215,6 +215,7 @@ function queryDefaultOverlaySeries() {
       <InfoPanelTopBar
         :active-tab="activeTab"
         :stage-label="stageLabel"
+        :layer-name="displayLayer.name"
         @update:active-tab="setActiveTab"
       />
 

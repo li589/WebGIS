@@ -3658,6 +3658,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workspace */
+        get: operations["get_workspace_workspace_get"];
+        /** Put Workspace */
+        put: operations["put_workspace_workspace_put"];
+        post?: never;
+        /** Delete Workspace */
+        delete: operations["delete_workspace_workspace_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/gee/workflows:validate": {
         parameters: {
             query?: never;
@@ -8340,6 +8359,40 @@ export interface components {
             saveback_terminal_plans?: {
                 [key: string]: components["schemas"]["SavebackTerminalPlanPayload"];
             };
+        };
+        /** WorkspaceGetResponse */
+        WorkspaceGetResponse: {
+            /** Revision */
+            revision: number;
+            /** Updated At */
+            updated_at?: string | null;
+            payload?: components["schemas"]["WorkspacePayloadModel"] | null;
+        };
+        /** WorkspacePayloadModel */
+        WorkspacePayloadModel: {
+            /** Version */
+            version: number;
+            /** Snapshot */
+            snapshot: {
+                [key: string]: unknown;
+            };
+            /** Dismissed */
+            dismissed?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** WorkspacePutRequest */
+        WorkspacePutRequest: {
+            payload: components["schemas"]["WorkspacePayloadModel"];
+            /** Base Revision */
+            base_revision?: number | null;
+        };
+        /** WorkspacePutResponse */
+        WorkspacePutResponse: {
+            /** Revision */
+            revision: number;
+            /** Updated At */
+            updated_at: string;
         };
         /** ZonalStatsSyncRequest */
         ZonalStatsSyncRequest: {
@@ -14812,6 +14865,77 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    get_workspace_workspace_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceGetResponse"];
+                };
+            };
+        };
+    };
+    put_workspace_workspace_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspacePutRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspacePutResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_workspace_workspace_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

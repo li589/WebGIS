@@ -108,13 +108,6 @@ async function onExtract() {
 
 <template>
   <section id="basemap-feature-extract" class="analysis-section analysis-section--extract">
-    <div class="section-kicker">底图要素</div>
-    <h3>底图要素提取</h3>
-    <p class="extract-note">
-      从底图提取行政区 / 道路要素并自动创建矢量图层。栅格底图无原生要素，
-      行政区来自内置边界数据，道路来自 OpenStreetMap（需外部网络）。
-    </p>
-
     <div class="extract-kind-row">
       <button
         type="button"
@@ -163,12 +156,6 @@ async function onExtract() {
 </template>
 
 <style scoped>
-.extract-note {
-  margin: 0.25rem 0 0.5rem;
-  font-size: var(--font-size-caption);
-  color: var(--text-secondary);
-}
-
 .extract-kind-row {
   display: flex;
   gap: 0.4rem;

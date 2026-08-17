@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import pytest
 
 from app.services.crs import crs_transformer
 from app.services.crs._crs_transformer import CRSTransformer
@@ -89,6 +90,44 @@ class TestTransformPoint:
         )
         assert abs(back.lng - lng) < 1e-5
         assert abs(back.lat - lat) < 1e-5
+
+    @pytest.mark.parametrize(
+        ("epsg", "lng", "lat"),
+        [
+            ("EPSG:6931", 105.0, 75.0),  # EASE-Grid 2.0 北半球（格陵兰以北）
+            ("EPSG:6932", 70.0, -75.0),  # EASE-Grid 2.0 南半球（南极）
+            ("EPSG:3408", -150.0, 70.0),  # EASE-Grid 1.0 北半球（阿拉斯加）
+            ("EPSG:3409", 20.0, -70.0),  # EASE-Grid 1.0 南半球
+            ("EPSG:3410", 105.0, 30.0),  # EASE-Grid 1.0 全球（中纬度）
+        ],
+    )
+    def test_ease_family_roundtrip(self, epsg: str, lng: float, lat: float):
+        """EASE-Grid 全家族（2.0 半球 + 1.0 球体系）↔ WGS84 往返 < 1e-4 度。"""
+        fwd = crs_transformer.transform_point(lng, lat, "EPSG:4326", epsg)
+        assert fwd.lng != 0 or fwd.lat != 0
+        back = crs_transformer.transform_point(fwd.lng, fwd.lat, epsg, "EPSG:4326")
+        assert abs(back.lng - lng) < 1e-4, f"{epsg} 往返经度误差过大"
+        assert abs(back.lat - lat) < 1e-4, f"{epsg} 往返纬度误差过大"
+
+    def test_transform_bounds_ease_hemisphere_clamped(self):
+        """半球 LAEA 越域 bounds 被 ±9,010,000 钳位，结果不出现 NaN/翻转。"""
+        w, s, e, n = crs_transformer.transform_bounds(
+            -1e8, -1e8, 1e8, 1e8, "EPSG:6931", "EPSG:4326"
+        )
+        assert -90.0 <= s <= 90.0
+        assert -90.0 <= n <= 90.0
+        assert -180.0001 <= w <= 180.0001
+        assert -180.0001 <= e <= 180.0001
+
+    def test_transform_bounds_ease1_global_clamped(self):
+        """EASE-Grid 1.0 全球越域 bounds 被 (±17,334,194, ±7,356,861) 钳位。"""
+        w, s, e, n = crs_transformer.transform_bounds(
+            -3e7, -3e7, 3e7, 3e7, "EPSG:3410", "EPSG:4326"
+        )
+        assert -90.0 <= s <= 90.0
+        assert -90.0 <= n <= 90.0
+        assert -180.0001 <= w <= 180.0001
+        assert -180.0001 <= e <= 180.0001
 
     def test_transform_gauss_kruger_4527_to_wgs84(self):
         """EPSG:4527 → EPSG:4326：北京天安门 GK zone 39 反算（往返一致）。

@@ -17,7 +17,7 @@ export const ANALYSIS_COPY = {
   stageImportedRaster: '导入栅格',
   stageBoundary: '边界图层',
   stageWorkflow: '分析工作流',
-  stageStatic: '静态图层',
+  stageStatic: '叠加图层',
 
   emptyTitle: '尚未选中图层',
   emptyLead: '从左侧图层面板添加数据图层后，可在此查看摘要、点查与样式。',

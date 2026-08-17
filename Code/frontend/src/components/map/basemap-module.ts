@@ -1,4 +1,8 @@
-import type { TileSourceConfig, TileSourceId } from '../../services/api-config'
+import {
+  getFailoverCandidates as defaultGetFailoverCandidates,
+  type TileSourceConfig,
+  type TileSourceId,
+} from '../../services/api-config'
 
 type MapInstance = import('maplibre-gl').Map
 type RasterSourceSpecification = import('maplibre-gl').RasterSourceSpecification
@@ -9,9 +13,11 @@ const TILE_LAYER_ID = 'tile-base-raster'
 const TILE_OVERLAY_SOURCE_ID = 'tile-base-overlay'
 const TILE_OVERLAY_LAYER_ID = 'tile-base-overlay-raster'
 const TILE_ERROR_WINDOW_MS = 5000
-const TILE_ERROR_THRESHOLD = 15
+const TILE_ERROR_THRESHOLD = 8
 /** 熔断触发后自动恢复重试的延迟（毫秒） */
 const AUTO_RECOVERY_DELAY_MS = 15000
+/** 熔断过的 provider 在此期间不参与故障转移候选（毫秒） */
+const PROVIDER_COOLDOWN_MS = 10 * 60 * 1000
 
 export interface BasemapModule {
   ensureInitialLayer: (sourceId: TileSourceId) => void
@@ -31,6 +37,13 @@ interface CreateBasemapModuleOptions {
   setTileFailedProvider: (provider: string | null) => void
   setSourceTransitioning: (transitioning: boolean) => void
   onAfterSourceSwitch?: () => void
+  /** 熔断后选中了替代源时回调（用于同步 UI 选中态并提示用户） */
+  onProviderFailover?: (nextSourceId: TileSourceId, failedProvider: string) => void
+  /** 故障转移候选筛选（默认取 api-config 同风格组；调用方可叠加 API Key 可用性过滤） */
+  getFailoverCandidates?: (
+    currentSourceId: TileSourceId,
+    excludeProviders: ReadonlySet<string>,
+  ) => TileSourceId[]
   dependencies?: {
     setTimeout?: typeof setTimeout
     clearTimeout?: typeof clearTimeout
@@ -51,6 +64,10 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
   let autoRecoveryTimer: ReturnType<typeof setTimeout> | null = null
   /** 标记当前是否处于熔断状态 */
   let isCircuitBroken = false
+  /** provider -> 冷却截止时间戳（毫秒），冷却期内不参与故障转移候选 */
+  const providerCooldownUntil = new Map<string, number>()
+  /** 已调度的故障转移目标（防抖完成前抑制重复触发），switchTileSource 执行时清空 */
+  let pendingFailoverSourceId: TileSourceId | null = null
 
   function hideOverlay() {
     if (options.map.getLayer(TILE_OVERLAY_LAYER_ID)) {
@@ -246,6 +263,7 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
 
   function switchTileSource(sourceId: TileSourceId) {
     resetTileErrorState()
+    pendingFailoverSourceId = null
 
     if (sourceId === 'none') {
       if (options.map.getLayer(TILE_LAYER_ID)) {
@@ -315,6 +333,43 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     }, 80)
   }
 
+  /**
+   * 熔断后尝试自动切换到同风格的可用替代源。
+   * 返回 true 表示已调度切换；false 表示无候选，走熔断+自动恢复路径。
+   */
+  function requestFailover(failedProvider: string): boolean {
+    const currentSourceId = options.getCurrentTileSourceId()
+    if (currentSourceId === 'none') return false
+
+    const now = nowImpl()
+    const excludeProviders = new Set<string>([failedProvider])
+    for (const [provider, until] of providerCooldownUntil) {
+      if (until <= now) {
+        providerCooldownUntil.delete(provider)
+      } else {
+        excludeProviders.add(provider)
+      }
+    }
+
+    const selectCandidates = options.getFailoverCandidates ?? defaultGetFailoverCandidates
+    const candidates = selectCandidates(currentSourceId, excludeProviders)
+    if (candidates.length === 0) return false
+
+    const nextSourceId = candidates[0]
+    providerCooldownUntil.set(failedProvider, now + PROVIDER_COOLDOWN_MS)
+    if (pendingFailoverSourceId !== null) {
+      // 已有转移在防抖队列中：不再重复回调，仅刷新错误窗口
+      tileErrorTimestamps.length = 0
+      return true
+    }
+    pendingFailoverSourceId = nextSourceId
+    options.onProviderFailover?.(nextSourceId, failedProvider)
+    // 立即清空错误窗口，防止 80ms 切换防抖期内错误继续累计导致重复触发
+    tileErrorTimestamps.length = 0
+    scheduleTileSourceSwitch(nextSourceId)
+    return true
+  }
+
   function handleTileError(failedProvider: string | null) {
     // 仅累计仍指向「当前选中底图」的错误，避免快速切换时旧 provider 迟到失败误伤
     const currentSourceId = options.getCurrentTileSourceId()
@@ -341,9 +396,15 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     tileErrorTimestamps.push(now)
 
     if (tileErrorTimestamps.length > TILE_ERROR_THRESHOLD) {
+      const brokenProvider = failedProvider ?? currentProvider ?? ''
+      // 优先故障转移到同风格可用源；无候选才进入熔断等待自动恢复
+      if (brokenProvider && requestFailover(brokenProvider)) {
+        isCircuitBroken = false
+        return
+      }
       isCircuitBroken = true
       options.setTileLoadFailed(true)
-      options.setTileFailedProvider(failedProvider ?? currentProvider)
+      options.setTileFailedProvider(brokenProvider || null)
       if (options.map.getLayer(TILE_LAYER_ID)) {
         options.map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'none')
       }
@@ -418,6 +479,8 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     }
     // 清理错误时间戳数组，避免内存泄漏
     tileErrorTimestamps.length = 0
+    providerCooldownUntil.clear()
+    pendingFailoverSourceId = null
     isCircuitBroken = false
   }
 

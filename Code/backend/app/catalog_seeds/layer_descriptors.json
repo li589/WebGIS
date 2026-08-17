@@ -449,9 +449,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -90.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 90.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -1053,10 +1053,10 @@
     "time_granularity": "static",
     "default_time_offset": 0,
     "extent": {
-      "west": 109.6,
-      "south": 20.1,
-      "east": 117.4,
-      "north": 25.6,
+      "west": -180.0,
+      "south": -85.051129,
+      "east": 180.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -1136,10 +1136,10 @@
     "time_granularity": "static",
     "default_time_offset": 0,
     "extent": {
-      "west": 73.0,
-      "south": 15.0,
-      "east": 137.0,
-      "north": 59.0,
+      "west": -180.0,
+      "south": -85.051129,
+      "east": 180.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -1288,9 +1288,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -90.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 90.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -1861,9 +1861,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -85.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 85.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -1943,9 +1943,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -85.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 85.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -2025,9 +2025,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -85.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 85.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -2107,9 +2107,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -85.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 85.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -2189,9 +2189,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -85.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 85.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -2271,9 +2271,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -85.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 85.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -2353,9 +2353,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -85.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 85.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -2436,9 +2436,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -90.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 90.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -2519,9 +2519,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -85.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 85.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {

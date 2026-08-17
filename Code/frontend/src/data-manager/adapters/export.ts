@@ -105,6 +105,11 @@ export async function exportLayer(
   format: ExportFormat,
   options: ExportOptions = {},
 ): Promise<void> {
+  // 绘制草稿层未保存：其 store 内 geojson 恒为空，必须先经绘制工具栏「保存」
+  // 生成正式（含 backendLayerId）图层后才能导出
+  if (layer.catalogId.startsWith('draw-draft-')) {
+    throw new Error('该绘制图层尚未保存：请先在绘制工具栏点击「保存」生成正式图层，再进行导出')
+  }
   const fmt = normalizeFormat(format)
   const encoding = options.encoding || 'auto'
   const backendId = backendIdOf(layer)

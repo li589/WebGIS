@@ -17,7 +17,8 @@ def test_analysis_tools_catalog_loads():
     assert len(tools) >= 5
     ids = {t.tool_id for t in tools}
     assert "gis.buffer" in ids
-    assert "stats.histogram" in ids
+    # 直方图工具已从分析面板移除（保留 workflow seed 供编辑器手动编排）
+    assert "stats.histogram" not in ids
     assert get_tool("gis.clip") is not None
 
     weather = list_tools_for_layer(layer_id="wind", is_weather=True)
@@ -27,7 +28,7 @@ def test_analysis_tools_catalog_loads():
 
     raster = list_tools_for_layer(layer_id="imported-abc", has_raster=True)
     assert raster.layer_kind == "raster"
-    assert any(t.tool_id == "stats.histogram" and t.enabled for t in raster.items)
+    assert any(t.tool_id == "gis.reclassify" and t.enabled for t in raster.items)
 
 
 def test_analysis_seeds_compile():
@@ -169,7 +170,7 @@ def test_exclusivity_cancel_then_accept(monkeypatch: pytest.MonkeyPatch):
     lifecycle.cancel_workflow_run.assert_called_once_with("run-old")
 
 
-def test_build_analysis_histogram_request_injects_path(tmp_path: Path, monkeypatch):
+def test_build_analysis_contour_request_injects_path(tmp_path: Path, monkeypatch):
     from app.services import analysis_run_service as ars
     from shared.contracts.api_contracts import AnalysisRunRequest
 
@@ -183,38 +184,34 @@ def test_build_analysis_histogram_request_injects_path(tmp_path: Path, monkeypat
 
     seed = {
         "_meta": {"engine": "python_provider"},
-        "workflow_id": "analysis_histogram",
+        "workflow_id": "analysis_contour",
         "nodes": [
             {
                 "id": 1,
                 "type": "data/source",
                 "properties": {"path": "old", "dataset_key": "input_path"},
             },
-            {"id": 2, "type": "stats/histogram", "properties": {"bins": 10}},
-            {"id": 3, "type": "viz/chart_generate", "properties": {}},
+            {"id": 2, "type": "gis/contour", "properties": {"interval": 100}},
         ],
         "links": [],
     }
     monkeypatch.setattr(
         "app.services.workflow_definition_service.get_definition",
-        lambda wid: seed if wid == "analysis_histogram" else None,
+        lambda wid: seed if wid == "analysis_contour" else None,
     )
 
     req = AnalysisRunRequest(
-        tool_id="stats.histogram",
+        tool_id="gis.contour",
         layer_id="imported-xyz",
         overlay_layer_id="imported-xyz",
-        params={"bins": 32},
+        params={"interval": 50},
     )
     payload = ars.build_analysis_submit_request(req)
-    assert payload.parameters.get("analysis_exclusivity_key") == "imported-xyz:stats.histogram"
+    assert payload.parameters.get("analysis_exclusivity_key") == "imported-xyz:gis.contour"
     algo = payload.algorithm_request
     assert not isinstance(algo, dict)
     graph = algo.workflow_definition
     assert isinstance(graph, dict)
     nodes = graph["nodes"]
     assert nodes[0]["properties"]["path"] == str(tif)
-    assert nodes[1]["properties"]["bins"] == 32
-    assert "map_layer" not in [
-        k.value if hasattr(k, "value") else k for k in payload.requested_outputs
-    ]
+    assert nodes[1]["properties"]["interval"] == 50

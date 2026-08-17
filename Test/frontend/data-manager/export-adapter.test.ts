@@ -60,6 +60,17 @@ describe('export adapter options', () => {
     expect(downloadBlob).toHaveBeenCalled()
   })
 
+  it('rejects unsaved draw-draft layers with a save-first hint', async () => {
+    await expect(
+      exportLayer(
+        { name: '绘制图层', catalogId: 'draw-draft-x', importedVector: { geojson: { type: 'FeatureCollection', features: [] } } } as never,
+        'geojson',
+      ),
+    ).rejects.toThrow('尚未保存')
+    expect(exportImportedLayer).not.toHaveBeenCalled()
+    expect(downloadBlob).not.toHaveBeenCalled()
+  })
+
   it('passes times to batch export', async () => {
     await exportLayersBatch(
       [

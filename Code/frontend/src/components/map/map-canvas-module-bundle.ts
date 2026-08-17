@@ -75,6 +75,11 @@ interface CreateMapCanvasModuleBundleOptions {
   setTileFailedProvider: (provider: string | null) => void
   setSourceTransitioning: (transitioning: boolean) => void
   onAfterSourceSwitch: () => void
+  onProviderFailover?: (nextSourceId: TileSourceId, failedProvider: string) => void
+  getFailoverCandidates?: (
+    currentSourceId: TileSourceId,
+    excludeProviders: ReadonlySet<string>,
+  ) => TileSourceId[]
   setLoadingLabel: (label: string) => void
   getSelectedLayer: () => ActiveLayerDisplay | null | undefined
   getSelectedHotspotId: () => string | null
@@ -160,6 +165,8 @@ export function createMapCanvasModuleBundle(
     setTileFailedProvider: options.setTileFailedProvider,
     setSourceTransitioning: options.setSourceTransitioning,
     onAfterSourceSwitch: options.onAfterSourceSwitch,
+    onProviderFailover: options.onProviderFailover,
+    getFailoverCandidates: options.getFailoverCandidates,
   })
 
   const adminBoundaryModule = createAdminBoundaryModuleImpl({

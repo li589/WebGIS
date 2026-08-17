@@ -60,6 +60,7 @@ export default defineConfig(({ mode }) => {
         '/import': { target: apiTarget, changeOrigin: true },
         '/export': { target: apiTarget, changeOrigin: true },
         '/auth': { target: apiTarget, changeOrigin: true },
+        '/workspace': { target: apiTarget, changeOrigin: true },
         '/analysis': { target: apiTarget, changeOrigin: true },
         '/health': { target: apiTarget, changeOrigin: true },
       },

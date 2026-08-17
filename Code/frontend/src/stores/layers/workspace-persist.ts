@@ -133,6 +133,11 @@ function saveDismissedLayers(registry: DismissedLayersRegistry): void {
   }
 }
 
+/** 服务端工作区同步：整体替换移除登记（远端为准）。 */
+export function writeDismissedLayers(registry: DismissedLayersRegistry): void {
+  saveDismissedLayers(registry)
+}
+
 export function rememberDismissedLayer(entry: {
   overlayLayerId?: string | null
   catalogId?: string | null

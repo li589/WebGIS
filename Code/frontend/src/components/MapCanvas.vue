@@ -35,7 +35,13 @@ import {
   buildMapStageTimeVisualState,
 } from './map/map-stage-view-model'
 import { aggregateWeatherTileBanner } from './map/weather-tile-banner'
-import { TILE_SOURCE_MAP, getDefaultTileSource, type TileSourceId } from '../services/api-config'
+import {
+  TILE_SOURCE_MAP,
+  getDefaultTileSource,
+  getFailoverCandidates,
+  isTileSourceUsable,
+  type TileSourceId,
+} from '../services/api-config'
 import { isGlobalMapViewport } from '../utils/map-viewport'
 import {
   isMapDistributionChromeEnabled,
@@ -49,11 +55,13 @@ import {
   showToast,
 } from '../data-manager/core/workspace-store'
 import { debugLog as probeDebugLog } from '../utils/perf-probe'
+import { useSettingsStore } from '../stores/settings'
 
 const layersStore = useLayersStore() // createMapCanvasModuleBundle 需完整 store 实例
 const workspace = useLayerWorkspace()
 const viewport = useLayerViewport()
 const uiStore = useUiStore()
+const settingsStore = useSettingsStore()
 const drawStore = useDrawStore()
 const logStore = useLogStore()
 const weatherTileManager = useWeatherTileManager()
@@ -389,6 +397,23 @@ onMounted(async () => {
       onAfterSourceSwitch: () => {
         presentationModule.scheduleNavigationThemeSync()
       },
+      onProviderFailover: (nextSourceId, failedProvider) => {
+        // 同步单一真源：更新 store 选中态，让底图选择器 UI 与实际渲染一致
+        uiStore.setTileSource(nextSourceId)
+        const nextLabel = TILE_SOURCE_MAP.get(nextSourceId)?.label ?? nextSourceId
+        logStore.logOperation(
+          'basemap-failover',
+          `底图源「${failedProvider}」暂时不可用，已自动切换至「${nextLabel}」`,
+        )
+        showToast(`底图源「${failedProvider}」暂时不可用，已自动切换至「${nextLabel}」`, false)
+      },
+      getFailoverCandidates: (sourceId, excludeProviders) =>
+        getFailoverCandidates(sourceId, excludeProviders).filter((id) => {
+          const cfg = TILE_SOURCE_MAP.get(id)
+          return (
+            !!cfg && isTileSourceUsable(cfg, (key) => settingsStore.isBasemapApiKeyAvailable(key))
+          )
+        }),
       setLoadingLabel: (label) => {
         presentationModule.setLoadingLabel(label)
       },

@@ -24,6 +24,16 @@ _EASE2_WGS84_BOUNDS: list[float] = [
     85.04456642797585,
 ]
 
+# NSIDC EASE-Grid 2.0 North/South（LAEA，EPSG:6931/6932）官方网格角点：
+# UL = (-9,000,000, 9,000,000)，25km 为 720×720，其余分辨率整除 18,000,000 m。
+# https://nsidc.org/data/user-resources/help-center/guide-ease-grids
+_EASE2_HEMI_UL = -9_000_000.0
+
+# NSIDC EASE-Grid 1.0 North/South 25km（EPSG:3408/3409）：
+# 721×721 单元 × 25,067.525 m（球体 R=6,371,228 m 时代分辨率）。
+_EASE1_HEMI_RES = 25067.525
+_EASE1_HEMI_DIM = 721
+
 
 def _ease2(res: float, cols: int, rows: int) -> dict[str, Any]:
     """构建 EASE-Grid 2.0 Global 预设（对称角点 + 标称分辨率/行列）。"""
@@ -39,6 +49,52 @@ def _ease2(res: float, cols: int, rows: int) -> dict[str, Any]:
         "resolution": res,
         "bounds": [west, south, east, north],
         "geographic_bounds": list(_EASE2_WGS84_BOUNDS),
+        "origin": "upper-left",
+    }
+
+
+def _ease2_hemi(crs: str, hemisphere: str, res: float, dim: int) -> dict[str, Any]:
+    """构建 EASE-Grid 2.0 半球 LAEA 预设（±9,000,000 网格域，dim×dim）。"""
+    span = res * dim
+    west = _EASE2_HEMI_UL
+    north = -_EASE2_HEMI_UL
+    east = west + span
+    south = north - span
+    geo = (
+        [-180.0, 0.0, 180.0, 90.0]
+        if hemisphere == "north"
+        else [-180.0, -90.0, 180.0, 0.0]
+    )
+    return {
+        "crs": crs,
+        "cols": dim,
+        "rows": dim,
+        "resolution": res,
+        "bounds": [west, south, east, north],
+        "geographic_bounds": geo,
+        "origin": "upper-left",
+    }
+
+
+def _ease1_hemi_25km(crs: str, hemisphere: str) -> dict[str, Any]:
+    """构建 EASE-Grid 1.0 半球 25km 预设（721×721，NSIDC 原版球体网格）。"""
+    span = _EASE1_HEMI_RES * _EASE1_HEMI_DIM
+    west = _EASE2_HEMI_UL
+    north = -_EASE2_HEMI_UL
+    east = west + span
+    south = north - span
+    geo = (
+        [-180.0, 0.0, 180.0, 90.0]
+        if hemisphere == "north"
+        else [-180.0, -90.0, 180.0, 0.0]
+    )
+    return {
+        "crs": crs,
+        "cols": _EASE1_HEMI_DIM,
+        "rows": _EASE1_HEMI_DIM,
+        "resolution": _EASE1_HEMI_RES,
+        "bounds": [west, south, east, north],
+        "geographic_bounds": geo,
         "origin": "upper-left",
     }
 
@@ -79,6 +135,68 @@ GRID_PRESETS: dict[str, dict[str, Any]] = {
         "label": "EASE-Grid 2.0 全球 3km（4872×11568）",
         "category": "ease2",
         **_ease2(3002.68507004971, 11568, 4872),
+    },
+    # ── EASE-Grid 2.0 半球（LAEA，±9,000,000 网格域）─────────────────
+    "ease2-north-36km": {
+        "id": "ease2-north-36km",
+        "label": "EASE-Grid 2.0 北半球 36km（500×500）",
+        "category": "ease2",
+        **_ease2_hemi("EPSG:6931", "north", 36000.0, 500),
+    },
+    "ease2-north-25km": {
+        "id": "ease2-north-25km",
+        "label": "EASE-Grid 2.0 北半球 25km（720×720）",
+        "category": "ease2",
+        **_ease2_hemi("EPSG:6931", "north", 25000.0, 720),
+    },
+    "ease2-north-9km": {
+        "id": "ease2-north-9km",
+        "label": "EASE-Grid 2.0 北半球 9km（2000×2000）",
+        "category": "ease2",
+        **_ease2_hemi("EPSG:6931", "north", 9000.0, 2000),
+    },
+    "ease2-north-3km": {
+        "id": "ease2-north-3km",
+        "label": "EASE-Grid 2.0 北半球 3km（6000×6000）",
+        "category": "ease2",
+        **_ease2_hemi("EPSG:6931", "north", 3000.0, 6000),
+    },
+    "ease2-south-36km": {
+        "id": "ease2-south-36km",
+        "label": "EASE-Grid 2.0 南半球 36km（500×500）",
+        "category": "ease2",
+        **_ease2_hemi("EPSG:6932", "south", 36000.0, 500),
+    },
+    "ease2-south-25km": {
+        "id": "ease2-south-25km",
+        "label": "EASE-Grid 2.0 南半球 25km（720×720）",
+        "category": "ease2",
+        **_ease2_hemi("EPSG:6932", "south", 25000.0, 720),
+    },
+    "ease2-south-9km": {
+        "id": "ease2-south-9km",
+        "label": "EASE-Grid 2.0 南半球 9km（2000×2000）",
+        "category": "ease2",
+        **_ease2_hemi("EPSG:6932", "south", 9000.0, 2000),
+    },
+    "ease2-south-3km": {
+        "id": "ease2-south-3km",
+        "label": "EASE-Grid 2.0 南半球 3km（6000×6000）",
+        "category": "ease2",
+        **_ease2_hemi("EPSG:6932", "south", 3000.0, 6000),
+    },
+    # ── EASE-Grid 1.0（NSIDC 原版球体网格）─────────────────────────
+    "ease1-north-25km": {
+        "id": "ease1-north-25km",
+        "label": "EASE-Grid 1.0 北半球 25km（721×721，球体）",
+        "category": "ease1",
+        **_ease1_hemi_25km("EPSG:3408", "north"),
+    },
+    "ease1-south-25km": {
+        "id": "ease1-south-25km",
+        "label": "EASE-Grid 1.0 南半球 25km（721×721，球体）",
+        "category": "ease1",
+        **_ease1_hemi_25km("EPSG:3409", "south"),
     },
     "custom": {
         "id": "custom",
@@ -182,6 +300,21 @@ def align_array_to_grid_preset(
     return a, False
 
 
+# 投影域钳位表（值经 pyproj 边界采样核验）：
+# - 6933：NSIDC 2.0 Global CEA 官方角点
+# - 6931/6932：赤道边界 |x|,|y| ≈ 9,009,965，取整 9,010,000
+# - 3408/3409：1.0 球体 LAEA 网格东南角 ≈ 9,073,689.5（25km 721×721 角点）
+# - 3410：1.0 球体 CEA，lon=±180 → x ≈ 17,334,194；lat→±90 → y ≈ 7,356,861
+_PROJECTED_DOMAIN_BY_CRS: dict[str, tuple[float, float]] = {
+    "EPSG:6933": (abs(_EASE2_ULX), abs(_EASE2_ULY)),
+    "EPSG:6931": (9_010_000.0, 9_010_000.0),
+    "EPSG:6932": (9_010_000.0, 9_010_000.0),
+    "EPSG:3408": (9_073_690.0, 9_073_690.0),
+    "EPSG:3409": (9_073_690.0, 9_073_690.0),
+    "EPSG:3410": (17_334_194.0, 7_356_861.0),
+}
+
+
 def clamp_projected_bounds_to_crs_domain(
     west: float,
     south: float,
@@ -190,18 +323,18 @@ def clamp_projected_bounds_to_crs_domain(
     crs_code: str,
 ) -> tuple[float, float, float, float]:
     """将投影 bounds 钳到 CRS 有效域，避免浮点越界导致经度折返。"""
-    if crs_code == "EPSG:6933":
-        # 略向内收 1e-6 m，避免刚好落在域边界时 proj 数值抖动
-        eps = 1e-6
-        xmax = abs(_EASE2_ULX) - eps
-        ymax = abs(_EASE2_ULY) - eps
-        return (
-            max(-xmax, min(xmax, west)),
-            max(-ymax, min(ymax, south)),
-            max(-xmax, min(xmax, east)),
-            max(-ymax, min(ymax, north)),
-        )
-    return (west, south, east, north)
+    domain = _PROJECTED_DOMAIN_BY_CRS.get(crs_code)
+    if domain is None:
+        return (west, south, east, north)
+    # 略向内收 1e-6 m，避免刚好落在域边界时 proj 数值抖动
+    eps = 1e-6
+    xmax, ymax = domain[0] - eps, domain[1] - eps
+    return (
+        max(-xmax, min(xmax, west)),
+        max(-ymax, min(ymax, south)),
+        max(-xmax, min(xmax, east)),
+        max(-ymax, min(ymax, north)),
+    )
 
 
 def normalize_geographic_bounds(

@@ -26,6 +26,7 @@ import type { OverlayTimeState } from '../components/map/overlay-image-module'
 import { useUiStore } from '../stores/ui'
 import { useUiLoadingStore } from '../stores/ui-loading'
 import { useLayerWorkspace, useWorkflowRun } from '../stores/layers/selectors'
+import { syncWorkspaceOnBoot, teardownWorkspaceSync } from '../stores/layers/workspace-sync'
 import { useLogStore } from '../stores/log'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import { useWeatherSyncStatusStore } from '../stores/weather-sync-status'
@@ -60,11 +61,16 @@ const workflowOutputStore = useWorkflowOutputLayersStore()
 
 uiLoading.showImmediate('初始化地图数据...')
 void workspace.ensureRuntimeLayerCatalog().finally(() => uiLoading.hideImmediate())
-void workflowRun.restoreActiveWorkflows()
+// 先完成跨设备工作区同步（远端较新时接管 localStorage），再从快照恢复图层
+void (async () => {
+  await syncWorkspaceOnBoot()
+  void workflowRun.restoreActiveWorkflows()
+})()
 
 // Dashboard 卸载时清理所有 429 重试定时器，防止已取消的工作流被重新提交
 onBeforeUnmount(() => {
   workflowRun.cleanupAllRetryTimers()
+  teardownWorkspaceSync()
 })
 
 const {

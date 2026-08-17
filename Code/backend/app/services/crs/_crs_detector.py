@@ -296,6 +296,44 @@ class CRSDetector:
                 ),
             )
 
+        # EASE-Grid 半球（LAEA，6931/6932/3408/3409）：近正方形大坐标域。
+        # 2.0 半球网格跨度恰为 18,000,000 m；1.0 半球 25km 为 18,073,689.5 m。
+        # 必须置于 3857 判定之前（方形 ±9e6 域也落入 3857 数值范围）。
+        if (
+            max_abs > 8_000_000
+            and max_abs <= 9_100_000
+            and y_span > 0
+            and 0.95 < x_span / y_span < 1.05
+            and abs(west + east) < 1e5
+            and abs(south + north) < 1e5
+        ):
+            # 2.0 跨度恰为 18,000,000；1.0 为 18,073,689.5，两者差 73,689，
+            # 容差取 30,000（< 差值一半）以区分。
+            if abs(x_span - 18_000_000) < 30_000:
+                return CRSDetectionResult(
+                    source_crs="EPSG:6931",
+                    confidence=0.6,
+                    method="bounds_heuristic",
+                    suggested_crs="EPSG:6931",
+                    needs_user_confirm=True,
+                    notes=(
+                        f"bounds ({west:.0f},{south:.0f},{east:.0f},{north:.0f}) 为近正方形 "
+                        f"±9,000,000 域，匹配 EASE-Grid 2.0 半球（LAEA）；南半球数据请选 EPSG:6932"
+                    ),
+                )
+            return CRSDetectionResult(
+                source_crs="EPSG:3408",
+                confidence=0.55,
+                method="bounds_heuristic",
+                suggested_crs="EPSG:3408",
+                needs_user_confirm=True,
+                notes=(
+                    f"bounds ({west:.0f},{south:.0f},{east:.0f},{north:.0f}) 为近正方形 "
+                    f"大坐标域（跨度 {x_span:.0f}），匹配 NSIDC EASE-Grid 1.0 半球（球体 LAEA）；"
+                    f"南半球数据请选 EPSG:3409"
+                ),
+            )
+
         # Web Mercator (EPSG:3857)：全球/大区 Web 地图投影。
         # 要求跨度足够大，避免 UTM 局部米制框（~4e6 northing）被误判。
         if max_abs > 5_000_000 and max_abs <= 20_100_000 and x_span > 1_000_000:

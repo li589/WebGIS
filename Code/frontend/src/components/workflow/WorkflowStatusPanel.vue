@@ -738,8 +738,11 @@ onBeforeUnmount(() => {
               </span>
             </div>
 
-            <!-- 诊断（可展开） -->
-            <ul v-if="item.jobLayer.diagnosticNotes?.length" class="wf-item-notes">
+            <!-- 诊断（可展开；事件列表存在时互斥隐藏，避免同一内容双列） -->
+            <ul
+              v-if="!item.jobLayer.eventMessages?.length && item.jobLayer.diagnosticNotes?.length"
+              class="wf-item-notes"
+            >
               <li
                 v-for="note in isExpanded(item.jobLayer.jobId)
                   ? item.jobLayer.diagnosticNotes

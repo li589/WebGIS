@@ -36,6 +36,8 @@ interface LoadedImportedLayer {
   geometryType: ImportedGeometryType
   bounds: [number, number, number, number] | null
   displayName: string
+  /** 最近一次写入 source 的 geojson 引用，用于检测数据变更 */
+  dataRef: GeoJSON.FeatureCollection
   /** 注册的事件监听器引用，用于 removeLayer 时精确移除 */
   eventHandlers: Array<{
     type: MapLayerEventType
@@ -44,10 +46,24 @@ interface LoadedImportedLayer {
   }>
 }
 
-/** 与导入矢量 display accent（var(--success)）对齐 */
-const DEFAULT_POINT_COLOR = 'var(--success)'
-const DEFAULT_LINE_COLOR = 'var(--success)'
-const DEFAULT_FILL_COLOR = 'var(--success)'
+/**
+ * MapLibre WebGL 渲染器不支持 CSS var(--xxx)，paint 属性必须传字面量颜色。
+ * 从 :root 解析主题变量计算值，缺失时回退 tokens.css 暗色默认。
+ */
+function resolveThemeColor(varName: string, fallback: string): string {
+  if (typeof document === 'undefined') return fallback
+  const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim()
+  return value || fallback
+}
+
+function normalizeFeatureCollection(geojson: GeoJSON.FeatureCollection): GeoJSON.FeatureCollection {
+  if (geojson && Array.isArray(geojson.features)) return geojson
+  return { type: 'FeatureCollection', features: [] }
+}
+
+/** 与导入矢量 display accent（--success）对齐；回退 tokens.css 暗色值 */
+const FALLBACK_SUCCESS = '#9ff8cf'
+const FALLBACK_TEXT_PRIMARY = '#d8e6f5'
 
 function _safeId(id: string): string {
   return id.replace(/[^a-zA-Z0-9_-]/g, '-')
@@ -123,29 +139,42 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
     return true
   }
 
-  function addVectorLayer(id: string, geojson: GeoJSON.FeatureCollection, name: string): void {
-    if (!_ensureMap()) return
-    if (loaded.has(id)) return
+  /**
+   * 注册/更新导入矢量图层。
+   * - 已加载：geojson 引用变化时仅 setData（不重建渲染层）
+   * - 未加载：addSource + 渲染层；fill/line/circle 无条件创建（类型 filter
+   *   保证空几何不渲染），使空数据图层在后续 setData 后直接显示
+   * - 任一步失败：清理半成品并返回 false，交由下次 sync 重试
+   */
+  function addVectorLayer(id: string, geojson: GeoJSON.FeatureCollection, name: string): boolean {
+    if (!_ensureMap()) return false
 
+    const existing = loaded.get(id)
+    if (existing) {
+      if (existing.dataRef !== geojson) {
+        updateLayerData(id, geojson)
+      }
+      return true
+    }
+
+    const fc = normalizeFeatureCollection(geojson)
     const safe = _safeId(id)
     const sourceId = `imported-src-${safe}`
     const layerIds: string[] = []
+    const fillColor = resolveThemeColor('--success', FALLBACK_SUCCESS)
+    const labelColor = resolveThemeColor('--text-primary', FALLBACK_TEXT_PRIMARY)
 
-    // 如果 GeoJSON 为空，跳过
-    if (!geojson.features || geojson.features.length === 0) return
+    try {
+      options.map.addSource(sourceId, {
+        type: 'geojson',
+        data: fc,
+        // 供点选时用 feature.id 作为要素绝对索引，联动属性表行
+        generateId: true,
+      } as GeoJSONSourceSpecification)
 
-    options.map.addSource(sourceId, {
-      type: 'geojson',
-      data: geojson,
-      // 供点选时用 feature.id 作为要素绝对索引，联动属性表行
-      generateId: true,
-    } as GeoJSONSourceSpecification)
+      const beforeAdmin = options.map.getLayer('admin-fill') ? 'admin-fill' : undefined
 
-    const beforeAdmin = options.map.getLayer('admin-fill') ? 'admin-fill' : undefined
-
-    // 根据几何类型添加对应的渲染图层
-    // 面图层（Polygon / MultiPolygon）
-    if (_hasGeometryType(geojson, ['Polygon', 'MultiPolygon'])) {
+      // 面图层（Polygon / MultiPolygon）
       const fillId = `imported-fill-${safe}`
       options.map.addLayer(
         {
@@ -154,7 +183,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
           source: sourceId,
           filter: ['==', '$type', 'Polygon'],
           paint: {
-            'fill-color': DEFAULT_FILL_COLOR,
+            'fill-color': fillColor,
             'fill-opacity': 0.25,
           },
           layout: { visibility: 'visible' },
@@ -162,10 +191,8 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
         beforeAdmin,
       )
       layerIds.push(fillId)
-    }
 
-    // 线图层（LineString / MultiLineString + Polygon 边线）
-    if (_hasGeometryType(geojson, ['LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'])) {
+      // 线图层（含 Polygon 边线）
       const lineId = `imported-line-${safe}`
       options.map.addLayer(
         {
@@ -173,7 +200,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
           type: 'line',
           source: sourceId,
           paint: {
-            'line-color': DEFAULT_LINE_COLOR,
+            'line-color': fillColor,
             'line-width': 2,
             'line-opacity': 0.9,
           },
@@ -182,10 +209,8 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
         beforeAdmin,
       )
       layerIds.push(lineId)
-    }
 
-    // 点图层（Point / MultiPoint）
-    if (_hasGeometryType(geojson, ['Point', 'MultiPoint'])) {
+      // 点图层（Point / MultiPoint）
       const circleId = `imported-circle-${safe}`
       options.map.addLayer(
         {
@@ -195,7 +220,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
           filter: ['==', '$type', 'Point'],
           paint: {
             'circle-radius': 4,
-            'circle-color': DEFAULT_POINT_COLOR,
+            'circle-color': fillColor,
             'circle-stroke-width': 1,
             'circle-stroke-color': '#0a233a',
             'circle-opacity': 0.9,
@@ -206,98 +231,110 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
       )
       layerIds.push(circleId)
 
-      // 点标签
-      const labelId = `imported-label-${safe}`
-      options.map.addLayer(
-        {
-          id: labelId,
-          type: 'symbol',
-          source: sourceId,
-          filter: ['==', '$type', 'Point'],
-          layout: {
-            'text-field': ['get', 'name'] as ExpressionSpecification,
-            'text-size': 10,
-            'text-offset': [0, 1.2],
-            'text-allow-overlap': false,
-            visibility: 'visible',
+      // 点标签（仅在当前数据含点要素时创建，避免无字形样式下 addLayer 失败）
+      if (_hasGeometryType(fc, ['Point', 'MultiPoint'])) {
+        const labelId = `imported-label-${safe}`
+        options.map.addLayer(
+          {
+            id: labelId,
+            type: 'symbol',
+            source: sourceId,
+            filter: ['==', '$type', 'Point'],
+            layout: {
+              'text-field': ['get', 'name'] as ExpressionSpecification,
+              'text-size': 10,
+              'text-offset': [0, 1.2],
+              'text-allow-overlap': false,
+              visibility: 'visible',
+            },
+            paint: {
+              'text-color': labelColor,
+              'text-halo-color': '#0a1a2a',
+              'text-halo-width': 1.5,
+            },
           },
-          paint: {
-            'text-color': 'var(--text-primary)',
-            'text-halo-color': '#0a1a2a',
-            'text-halo-width': 1.5,
-          },
-        },
-        beforeAdmin,
-      )
-      layerIds.push(labelId)
+          beforeAdmin,
+        )
+        layerIds.push(labelId)
+      }
+
+      // 推断主几何类型
+      const primaryType =
+        (fc.features.find((f: GeoJSON.Feature) => f.geometry)?.geometry
+          ?.type as ImportedGeometryType) ?? 'Unknown'
+
+      // 注册事件监听器并保存引用，以便 removeLayer 时精确移除
+      const eventHandlers: LoadedImportedLayer['eventHandlers'] = []
+
+      for (const layerId of layerIds) {
+        const clickHandler = (e: MapLayerMouseEvent) => {
+          if (!e.features || e.features.length === 0) return
+          const feature = e.features[0]
+          const props = feature.properties ?? {}
+          const propLines = Object.entries(props)
+            .map(
+              ([k, v]) =>
+                `<tr><td class="pk">${escapeHtml(k)}</td><td class="pv">${escapeHtml(String(v ?? ''))}</td></tr>`,
+            )
+            .join('')
+          const title = loaded.get(id)?.displayName ?? name
+          const html = `<div class="imported-popup"><strong>${escapeHtml(title)}</strong><table>${propLines}</table></div>`
+          new Popup().setLngLat(e.lngLat).setHTML(html).addTo(options.map)
+          // 地图点选 → 属性表跟踪（不自动打开工作台；若已打开则切到属性表）
+          const geoFeature = {
+            type: 'Feature' as const,
+            geometry: feature.geometry as GeoJSON.Geometry,
+            properties: { ...props },
+          }
+          const featureIndex =
+            typeof feature.id === 'number' && Number.isFinite(feature.id) ? feature.id : undefined
+          dataWorkspaceLayerId.value = id
+          dataWorkspaceHighlight.value = {
+            instanceId: id,
+            feature: geoFeature,
+            featureIndex,
+          }
+          if (dataWorkspaceOpen.value) {
+            dataWorkspaceTab.value = 'attributes'
+          }
+        }
+        const enterHandler = (_e: MapLayerMouseEvent) => {
+          options.map.getCanvas().style.cursor = 'pointer'
+        }
+        const leaveHandler = (_e: MapLayerMouseEvent) => {
+          options.map.getCanvas().style.cursor = ''
+        }
+
+        options.map.on('click', layerId, clickHandler)
+        options.map.on('mouseenter', layerId, enterHandler)
+        options.map.on('mouseleave', layerId, leaveHandler)
+        eventHandlers.push(
+          { type: 'click', layerId, handler: clickHandler },
+          { type: 'mouseenter', layerId, handler: enterHandler },
+          { type: 'mouseleave', layerId, handler: leaveHandler },
+        )
+      }
+
+      loaded.set(id, {
+        id,
+        sourceId,
+        layerIds,
+        geometryType: primaryType,
+        bounds: _collectBounds(fc),
+        displayName: name,
+        dataRef: fc,
+        eventHandlers,
+      })
+      return true
+    } catch (err) {
+      console.error(`[imported-layer] 添加图层 ${id} 失败:`, err)
+      // 清理半成品（事件注册在全部 addLayer 之后，此刻必然尚未注册）
+      for (const layerId of layerIds) {
+        if (options.map.getLayer(layerId)) options.map.removeLayer(layerId)
+      }
+      if (options.map.getSource(sourceId)) options.map.removeSource(sourceId)
+      return false
     }
-
-    // 推断主几何类型
-    const primaryType =
-      (geojson.features.find((f: GeoJSON.Feature) => f.geometry)?.geometry
-        ?.type as ImportedGeometryType) ?? 'Unknown'
-
-    // 注册事件监听器并保存引用，以便 removeLayer 时精确移除
-    const eventHandlers: LoadedImportedLayer['eventHandlers'] = []
-
-    for (const layerId of layerIds) {
-      const clickHandler = (e: MapLayerMouseEvent) => {
-        if (!e.features || e.features.length === 0) return
-        const feature = e.features[0]
-        const props = feature.properties ?? {}
-        const propLines = Object.entries(props)
-          .map(
-            ([k, v]) =>
-              `<tr><td class="pk">${escapeHtml(k)}</td><td class="pv">${escapeHtml(String(v ?? ''))}</td></tr>`,
-          )
-          .join('')
-        const title = loaded.get(id)?.displayName ?? name
-        const html = `<div class="imported-popup"><strong>${escapeHtml(title)}</strong><table>${propLines}</table></div>`
-        new Popup().setLngLat(e.lngLat).setHTML(html).addTo(options.map)
-        // 地图点选 → 属性表跟踪（不自动打开工作台；若已打开则切到属性表）
-        const geoFeature = {
-          type: 'Feature' as const,
-          geometry: feature.geometry as GeoJSON.Geometry,
-          properties: { ...props },
-        }
-        const featureIndex =
-          typeof feature.id === 'number' && Number.isFinite(feature.id) ? feature.id : undefined
-        dataWorkspaceLayerId.value = id
-        dataWorkspaceHighlight.value = {
-          instanceId: id,
-          feature: geoFeature,
-          featureIndex,
-        }
-        if (dataWorkspaceOpen.value) {
-          dataWorkspaceTab.value = 'attributes'
-        }
-      }
-      const enterHandler = (_e: MapLayerMouseEvent) => {
-        options.map.getCanvas().style.cursor = 'pointer'
-      }
-      const leaveHandler = (_e: MapLayerMouseEvent) => {
-        options.map.getCanvas().style.cursor = ''
-      }
-
-      options.map.on('click', layerId, clickHandler)
-      options.map.on('mouseenter', layerId, enterHandler)
-      options.map.on('mouseleave', layerId, leaveHandler)
-      eventHandlers.push(
-        { type: 'click', layerId, handler: clickHandler },
-        { type: 'mouseenter', layerId, handler: enterHandler },
-        { type: 'mouseleave', layerId, handler: leaveHandler },
-      )
-    }
-
-    loaded.set(id, {
-      id,
-      sourceId,
-      layerIds,
-      geometryType: primaryType,
-      bounds: _collectBounds(geojson),
-      displayName: name,
-      eventHandlers,
-    })
   }
 
   function updateLayerDisplayName(id: string, name: string): void {
@@ -357,7 +394,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
   function applyLayerStyle(id: string, style: ImportedLayerStyle, baseOpacity = 1): void {
     const info = loaded.get(id)
     if (!info) return
-    const color = style.color || DEFAULT_FILL_COLOR
+    const color = style.color || resolveThemeColor('--success', FALLBACK_SUCCESS)
     const width = style.width ?? 2
     const radius = style.radius ?? 4
     const fillOpacity = (style.fillOpacity ?? 0.25) * baseOpacity
@@ -385,8 +422,10 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
     const src = options.map.getSource(info.sourceId) as
       { setData?: (d: unknown) => void } | undefined
     if (src?.setData) {
-      src.setData(geojson)
-      info.bounds = _collectBounds(geojson)
+      const fc = normalizeFeatureCollection(geojson)
+      src.setData(fc)
+      info.bounds = _collectBounds(fc)
+      info.dataRef = fc
     }
   }
 
@@ -410,6 +449,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
 
     clearHl()
     const fc: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [feature] }
+    const hlColor = resolveThemeColor('--warning', '#ffb070')
     options.map.addSource(hlSource, {
       type: 'geojson',
       data: fc,
@@ -419,7 +459,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
       type: 'line',
       source: hlSource,
       paint: {
-        'line-color': 'var(--warning)',
+        'line-color': hlColor,
         'line-width': 3.5,
         'line-opacity': 0.95,
       },
@@ -431,7 +471,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
       filter: ['==', '$type', 'Point'],
       paint: {
         'circle-radius': 8,
-        'circle-color': 'var(--warning)',
+        'circle-color': hlColor,
         'circle-stroke-width': 2,
         'circle-stroke-color': '#0a233a',
         'circle-opacity': 0.95,

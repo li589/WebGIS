@@ -26,8 +26,20 @@ const POINT_RADIUS = 5
 /** 首点强调半径（px） */
 const POINT_RADIUS_FIRST = 8
 
-/** 首点强调颜色（琥珀色，区分路径蓝） */
-const POINT_COLOR_FIRST = 'var(--warning)'
+/** 首点强调颜色（琥珀色，区分路径蓝）；MapLibre 不支持 var()，运行时解析字面量 */
+function resolveFirstPointColor(): string {
+  if (typeof document === 'undefined') return '#ffb070'
+  return (
+    getComputedStyle(document.documentElement).getPropertyValue('--warning').trim() || '#ffb070'
+  )
+}
+
+function resolvePointStrokeColor(): string {
+  if (typeof document === 'undefined') return '#f0faff'
+  return (
+    getComputedStyle(document.documentElement).getPropertyValue('--text-strong').trim() || '#f0faff'
+  )
+}
 
 /** 圆点边框宽度（px） */
 const POINT_STROKE_WIDTH = 2
@@ -156,9 +168,14 @@ export function createMeasureModule(options: CreateMeasureModuleOptions): Measur
           POINT_RADIUS_FIRST,
           POINT_RADIUS,
         ],
-        'circle-color': ['case', ['==', ['get', 'isFirst'], true], POINT_COLOR_FIRST, LINE_COLOR],
+        'circle-color': [
+          'case',
+          ['==', ['get', 'isFirst'], true],
+          resolveFirstPointColor(),
+          LINE_COLOR,
+        ],
         'circle-stroke-width': POINT_STROKE_WIDTH,
-        'circle-stroke-color': 'var(--text-strong)',
+        'circle-stroke-color': resolvePointStrokeColor(),
       },
     })
 

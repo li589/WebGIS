@@ -105,13 +105,14 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 class TestCrsOptions:
     """``GET /import/crs-options`` 端点。"""
 
-    def test_returns_13_items(self, client: TestClient) -> None:
+    def test_returns_all_items(self, client: TestClient) -> None:
         resp = client.get("/import/crs-options")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["count"] == 13
+        # 13 基础 + 5 EASE-Grid 变体（6931/6932/3408/3409/3410）
+        assert data["count"] == 18
         codes = {item["code"] for item in data["items"]}
-        # 应包含 Phase 1 扩展版全部 13 个 CRS
+        # 应包含 Phase 1 扩展版全部 13 个 CRS + EASE-Grid 变体
         expected = {
             "EPSG:4326",
             "EPSG:4490",
@@ -126,6 +127,11 @@ class TestCrsOptions:
             "EPSG:4528",
             "EPSG:4529",
             "EPSG:3034",
+            "EPSG:6931",
+            "EPSG:6932",
+            "EPSG:3408",
+            "EPSG:3409",
+            "EPSG:3410",
         }
         assert codes == expected
 

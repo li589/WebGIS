@@ -5,7 +5,11 @@ import { useLogStore } from '../../stores/log'
 import { useOverlaySymbologyStore } from '../../stores/overlay-symbology'
 import type { ActiveLayerDisplay, ActiveRunLayerGroup } from '../../stores/layers/types'
 import { LAYERS_COPY } from '../../ui-copy'
-import { openDataWorkspace, openDatedExportForLayer } from '../../data-manager/core/workspace-store'
+import {
+  openDataWorkspace,
+  openDatedExportForLayer,
+  showToast,
+} from '../../data-manager/core/workspace-store'
 import { exportLayer } from '../../data-manager/adapters/export'
 import {
   buildLayerContextMenu,
@@ -192,6 +196,12 @@ export function useSidebarContextMenu(
       (format === 'tif' || format === 'png' || format === 'nc' || format === 'mat')
     ) {
       openExportPanelForActive()
+      return
+    }
+    // 未保存的绘制草稿：前置提示而非事后报错
+    if (active.catalogId.startsWith('draw-draft-')) {
+      showToast('该绘制图层尚未保存：请先在绘制工具栏点击「保存」后再导出', true)
+      closeContextMenu()
       return
     }
     try {

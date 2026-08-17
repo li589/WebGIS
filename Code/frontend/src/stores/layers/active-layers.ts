@@ -310,6 +310,7 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       truncated: extras?.truncated ?? layer.importedVector.truncated,
       geometryType: inferGeometryType(geojson),
       bounds: computeBounds(geojson),
+      revision: (layer.importedVector.revision ?? 0) + 1,
     }
   }
 

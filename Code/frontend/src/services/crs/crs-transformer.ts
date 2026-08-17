@@ -66,15 +66,26 @@ export function transformPoint(
   return [result[0] + (opts.lngOffset ?? 0), result[1] + (opts.latOffset ?? 0)]
 }
 
+// 投影域钳位表（与后端 grid_presets._PROJECTED_DOMAIN_BY_CRS 一致）
+const PROJECTED_DOMAIN_BY_CRS: Record<string, [number, number]> = {
+  'EPSG:6933': [EASE2_ULX, EASE2_ULY],
+  'EPSG:6931': [9010000, 9010000],
+  'EPSG:6932': [9010000, 9010000],
+  'EPSG:3408': [9073690, 9073690],
+  'EPSG:3409': [9073690, 9073690],
+  'EPSG:3410': [17334194, 7356861],
+}
+
 function clampProjectedBounds(
   bounds: [number, number, number, number],
   sourceCode: string,
 ): [number, number, number, number] {
   const src = normalizeCode(sourceCode)
-  if (src !== 'EPSG:6933') return bounds
+  const domain = PROJECTED_DOMAIN_BY_CRS[src]
+  if (!domain) return bounds
   const eps = 1e-6
-  const xmax = EASE2_ULX - eps
-  const ymax = EASE2_ULY - eps
+  const xmax = domain[0] - eps
+  const ymax = domain[1] - eps
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
   return [
     clamp(bounds[0], -xmax, xmax),

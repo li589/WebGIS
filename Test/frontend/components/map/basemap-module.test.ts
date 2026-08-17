@@ -152,6 +152,8 @@ describe('basemap-module', () => {
       setTileLoadFailed,
       setTileFailedProvider,
       setSourceTransitioning: vi.fn(),
+      // 本用例聚焦熔断+重试恢复路径；有候选时的故障转移见 failover 测试文件
+      getFailoverCandidates: () => [],
       dependencies: {
         now: () => {
           now += 100
@@ -204,6 +206,8 @@ describe('basemap-module', () => {
       setTileLoadFailed,
       setTileFailedProvider,
       setSourceTransitioning: vi.fn(),
+      // 本用例聚焦熔断路径；有候选时的故障转移见 failover 测试文件
+      getFailoverCandidates: () => [],
       dependencies: {
         now: () => {
           now += 100

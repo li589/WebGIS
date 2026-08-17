@@ -327,21 +327,22 @@ describe('applyWorkflowEventsToJobLayer', () => {
     expect(result.updatedAt).toBe('2026-01-01T02:00:00Z')
   })
 
-  it('运行中状态把事件消息写入 diagnosticNotes；终态保留原诊断', () => {
+  it('事件消息只进 eventMessages，不回填 diagnosticNotes（避免面板双列）', () => {
     const { poller } = setupDeps()
     const withMsg = makeEvent({ message: '下载中' })
     const running = poller.applyWorkflowEventsToJobLayer(
       makeJobLayer({ status: 'running', diagnosticNotes: ['旧诊断'] }),
       [withMsg],
     )
-    expect(running.eventMessages).toEqual(['旧诊断', '进度 · 下载中'])
-    expect(running.diagnosticNotes).toEqual(running.eventMessages)
+    expect(running.eventMessages).toEqual(['进度 · 下载中'])
+    expect(running.diagnosticNotes).toEqual(['旧诊断'])
 
     const done = poller.applyWorkflowEventsToJobLayer(
       makeJobLayer({ status: 'succeeded', diagnosticNotes: ['最终诊断'] }),
       [withMsg],
     )
     expect(done.diagnosticNotes).toEqual(['最终诊断'])
+    expect(done.eventMessages).toEqual(['进度 · 下载中'])
   })
 })
 
