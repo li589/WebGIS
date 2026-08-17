@@ -5,18 +5,24 @@
  * download/ssh_sync 节点专用参数表单。
  *
  * 字段：
- *   - server_type: hpc / win11 / nas
- *   - remote_path: 远程路径（带"浏览"按钮 → RemoteDirBrowser）
+ *   - server_type: hpc / win11 / nas 遗留内置 + 「远程与存储」profile（ssh/sftp/filebrowser，动态注入）
+ *   - remote_path: 远程路径（带"浏览"按钮 → RemoteDirBrowser；profile 走双路径回退浏览）
  *   - local_path:  本地路径（须填写；相对 BACKEND_DATA_ROOT 或绝对路径）
  *   - start_date / end_date: YYYYMMDD
  *   - file_filter: 多选扩展名标签 (.mat/.h5/.nc/.tif/.txt)
- *   - 连接状态指示器（GET /api/remote/test?server=...）
+ *   - 连接状态指示器（POST /config/remote-storage/{id}/test，仅 profile；admin-only，403 时提示）
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { Check, AlertTriangle } from '../../ui/icons'
 import type { LGraphNodeClass } from '../litegraph-setup'
-import { requestJson } from '../../../services/_http'
+import {
+  fetchRemoteSources,
+  fetchRemoteStorageProfiles,
+  testRemoteStorageProfile,
+} from '../../../services/settings-api'
+import type { RemoteSourceEntry, RemoteStorageProfile } from '../../../types/api-reexports'
 import RemoteDirBrowser from './RemoteDirBrowser.vue'
+import ParamCombobox from '../ParamCombobox.vue'
 import {
   type FormErrors,
   isoToYyyymmdd,
@@ -31,10 +37,13 @@ import {
 } from '../../../composables/system-settings-fill'
 import { fieldMapForNodeType } from '../../../composables/node-form-system-settings-map'
 import { WORKFLOW_COPY } from '../../../ui-copy/workflow'
-import AppSelect from '../../ui/AppSelect.vue'
 
 const NODE_TYPE = 'download/ssh_sync'
 const PATH_FIELD_MAP = fieldMapForNodeType(NODE_TYPE)
+
+/** 与后端 _SSH_SYNC_PROFILE_PROTOCOLS 对齐：可直接执行同步的远程存储协议。 */
+const SYNC_PROFILE_PROTOCOLS = new Set(['ssh', 'sftp', 'filebrowser'])
+const LEGACY_SERVERS = ['hpc', 'win11', 'nas']
 
 const props = defineProps<{
   node: LGraphNodeClass | null
@@ -104,6 +113,76 @@ onMounted(async () => {
   } catch {
     /* ignore settings fetch errors */
   }
+  loadSyncProfiles()
+  loadRegisteredSources()
+})
+
+// ── 动态服务器选项：遗留内置 + 可同步的远程存储 profile ─────────────────────
+const syncProfiles = ref<RemoteStorageProfile[]>([])
+
+async function loadSyncProfiles() {
+  try {
+    // 仅启用中的 profile；凭据细节不出仓库
+    const profiles = await fetchRemoteStorageProfiles(false)
+    syncProfiles.value = profiles.filter(
+      (p) => p.enabled && SYNC_PROFILE_PROTOCOLS.has(String(p.protocol || '').toLowerCase()),
+    )
+  } catch {
+    syncProfiles.value = []
+  }
+}
+
+// ── 已注册远程数据源（settings → 远程存储「添加为数据源」的别名注册表）──────
+const registeredSources = ref<RemoteSourceEntry[]>([])
+const selectedSourceId = ref('')
+
+async function loadRegisteredSources() {
+  try {
+    const entries = await fetchRemoteSources()
+    registeredSources.value = entries.filter(
+      (s) =>
+        s.kind === 'storage_profile' &&
+        s.ref_exists &&
+        s.ref?.enabled !== false &&
+        SYNC_PROFILE_PROTOCOLS.has(String(s.ref?.protocol || '').toLowerCase()),
+    )
+  } catch {
+    registeredSources.value = []
+  }
+}
+
+/** 选中已注册数据源：快捷填充 server_type（引用的 profile）+ remote_path。 */
+function applyRegisteredSource() {
+  const entry = registeredSources.value.find((s) => s.remote_source_id === selectedSourceId.value)
+  if (!entry || props.readonly) return
+  update('server_type', entry.ref_id)
+  update('remote_path', entry.remote_path || '/')
+}
+
+const serverOptions = computed(() => [
+  ...LEGACY_SERVERS,
+  ...syncProfiles.value.map((p) => p.profile_id),
+])
+
+/** 当前 server_type 是否为远程存储 profile（legacy 内置不支持 UI 浏览/测试）。 */
+const isProfileServer = computed(() => {
+  const v = String(form.server_type ?? '').trim()
+  return !!v && !LEGACY_SERVERS.includes(v)
+})
+
+const serverHint = computed(() => {
+  const v = String(form.server_type ?? '').trim()
+  if (!v) return ''
+  const profile = syncProfiles.value.find((p) => p.profile_id === v)
+  if (profile) {
+    const via = String(profile.failover_state?.['active'] || '') === 'alt' ? '备用路径' : '主路径'
+    const cred = profile.has_secret || profile.has_private_key ? '凭据已存' : '缺凭据'
+    return `${profile.display_name || profile.profile_id} · ${profile.protocol} · ${via} · ${cred}`
+  }
+  if (v === 'hpc') return 'hpc — 遗留内置 SFTP（环境变量配置）'
+  if (v === 'win11') return 'win11 — 遗留内置 FileBrowser（环境变量配置）'
+  if (v === 'nas') return 'nas — 遗留内置 FileBrowser（环境变量配置）'
+  return '未识别的 server（不在目录中，运行时按远程存储 profile 解析）'
 })
 
 async function applySystemSettings(overwrite = true) {
@@ -126,7 +205,7 @@ const browserVisible = ref(false)
 
 function openBrowser() {
   if (props.readonly) return
-  if (!form.server_type) return
+  if (!isProfileServer.value) return
   browserVisible.value = true
 }
 
@@ -137,7 +216,7 @@ function onBrowserSelect(path: string) {
 // ── 连接状态测试 ────────────────────────────────────────────────────────────
 interface ConnState {
   status: 'idle' | 'testing' | 'ok' | 'fail'
-  latency?: number
+  message?: string
   error?: string
 }
 const connState = ref<ConnState>({ status: 'idle' })
@@ -145,19 +224,30 @@ const connState = ref<ConnState>({ status: 'idle' })
 async function testConnection() {
   const server = String(form.server_type ?? '')
   if (!server || props.readonly) return
-  connState.value = { status: 'testing' }
-  try {
-    const data = await requestJson<{ ok: boolean; latency_ms?: number; error?: string }>(
-      `/api/remote/test?server=${encodeURIComponent(server)}`,
-      { silent: true, timeoutMs: 20000 },
-    )
-    connState.value = data.ok
-      ? { status: 'ok', latency: data.latency_ms }
-      : { status: 'fail', error: data.error || '连接失败' }
-  } catch (err) {
+  if (!isProfileServer.value) {
     connState.value = {
       status: 'fail',
-      error: err instanceof Error ? err.message : String(err),
+      error: '遗留内置服务器（hpc/win11/nas）不支持 UI 连接测试',
+    }
+    return
+  }
+  connState.value = { status: 'testing' }
+  try {
+    const data = await testRemoteStorageProfile(server)
+    if (data.success) {
+      connState.value = { status: 'ok', message: data.message || '已连接' }
+    } else {
+      connState.value = { status: 'fail', error: data.message || '连接失败' }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.startsWith('Settings API failed: 403')) {
+      connState.value = {
+        status: 'fail',
+        error: '仅管理员可测试连接（当前角色无 config 管理权限）',
+      }
+    } else {
+      connState.value = { status: 'fail', error: msg }
     }
   }
 }
@@ -190,17 +280,42 @@ function toggleFilter(ext: string) {
     <!-- 服务器类型 -->
     <div class="form-row">
       <label class="form-label">服务器 server_type</label>
-      <AppSelect
+      <ParamCombobox
         :model-value="String(form.server_type ?? 'hpc')"
+        :options="serverOptions"
         :disabled="readonly"
-        :options="[
-          { label: 'hpc（SFTP 高性能集群）', value: 'hpc' },
-          { label: 'win11（FileBrowser）', value: 'win11' },
-          { label: 'nas（FileBrowser）', value: 'nas' },
-        ]"
-        @change="(val: string) => update('server_type', val)"
+        :allow-custom="true"
+        placeholder="hpc / win11 / nas 或远程存储 profile id"
+        @update:model-value="(v: string) => update('server_type', v)"
       />
       <span v-if="errors.server_type" class="field-error">{{ errors.server_type }}</span>
+      <span v-else-if="serverHint" class="field-hint">{{ serverHint }}</span>
+    </div>
+
+    <!-- 已注册远程数据源快捷填充 -->
+    <div v-if="registeredSources.length" class="form-row">
+      <label class="form-label">快捷填充：已注册数据源</label>
+      <div class="input-with-btn">
+        <select v-model="selectedSourceId" class="form-input form-select" :disabled="readonly">
+          <option value="">选择已注册数据源…</option>
+          <option
+            v-for="src in registeredSources"
+            :key="src.remote_source_id"
+            :value="src.remote_source_id"
+          >
+            {{ src.remote_source_id }}（{{ src.ref?.protocol }} · {{ src.remote_path }}）
+          </option>
+        </select>
+        <button
+          type="button"
+          class="browse-btn"
+          :disabled="readonly || !selectedSourceId"
+          title="按注册条目填充服务器与远程路径"
+          @click="applyRegisteredSource"
+        >
+          填充
+        </button>
+      </div>
     </div>
 
     <!-- 连接状态 -->
@@ -220,7 +335,7 @@ function toggleFilter(ext: string) {
           <template v-if="connState.status === 'idle'">未测试</template>
           <template v-else-if="connState.status === 'testing'">测试中…</template>
           <template v-else-if="connState.status === 'ok'">
-            已连接（{{ connState.latency }} ms）
+            {{ connState.message || '已连接' }}
           </template>
           <template v-else>{{ connState.error || '连接失败' }}</template>
         </span>
@@ -228,6 +343,11 @@ function toggleFilter(ext: string) {
           type="button"
           class="mini-btn"
           :disabled="readonly || connState.status === 'testing' || !form.server_type"
+          :title="
+            isProfileServer
+              ? '测试远程存储 profile 连通性（admin-only）'
+              : '遗留内置服务器不支持 UI 连接测试'
+          "
           @click="testConnection"
         >
           测试连接
@@ -250,7 +370,12 @@ function toggleFilter(ext: string) {
         <button
           type="button"
           class="browse-btn"
-          :disabled="readonly || !form.server_type"
+          :disabled="readonly || !isProfileServer"
+          :title="
+            isProfileServer
+              ? '浏览远程存储 profile 目录'
+              : '遗留内置服务器不支持目录浏览，请改用远程存储 profile'
+          "
           @click="openBrowser"
         >
           浏览
@@ -339,7 +464,7 @@ function toggleFilter(ext: string) {
     <!-- 远程目录浏览对话框 -->
     <RemoteDirBrowser
       :visible="browserVisible"
-      :server="String(form.server_type ?? '')"
+      :profile-id="String(form.server_type ?? '')"
       :initial-path="String(form.remote_path ?? '/')"
       @close="browserVisible = false"
       @select="onBrowserSelect"
@@ -561,6 +686,15 @@ function toggleFilter(ext: string) {
   color: var(--danger);
   margin-top: 0.06rem;
   line-height: 1.3;
+}
+
+.field-hint {
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 校验状态摘要 */

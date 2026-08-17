@@ -24,7 +24,9 @@ from app.services.overlay_registry import (
 )
 from app.services.raster_preview_service import raster_preview_service
 
-_BLOCK_MAT_RE = re.compile(r"^(\d{8})_(\d{8})\.mat$", re.IGNORECASE)
+# YYYYMMDD_YYYYMMDD.mat（8 日块，Omega-SF 动态链）或 YYYYMMDD.mat（单日，
+# omega_avg_daily 逐日产品视为一天块：start=end）。
+_BLOCK_MAT_RE = re.compile(r"^(\d{8})(?:_(\d{8}))?\.mat$", re.IGNORECASE)
 
 
 @contextmanager
@@ -83,8 +85,19 @@ def stable_imported_layer_id(*parts: str) -> str:
     return f"imported-{digest}"
 
 
-def resolve_block_timeseries_layer_id(run_id: str, label: str, variable_id: str) -> str:
-    """Stable overlay id; OMEGA_BLOCK 历史目录与新 OMEGA 标签共用同一层。"""
+def resolve_block_timeseries_layer_id(
+    run_id: str,
+    label: str,
+    variable_id: str,
+    *,
+    layer_key: str = "",
+) -> str:
+    """Stable overlay id; OMEGA_BLOCK 历史目录与新 OMEGA 标签共用同一层。
+
+    ``layer_key``（工作流/图层级稳定标识，如 layer_id）非空时替代 run_id 参与
+    哈希 → 同一工作流重复运行覆盖同一 imported-* 图层，而非逐 run 堆积新层。
+    """
+    key = (layer_key or "").strip() or run_id
     label_u = (label or "").strip().upper()
     var_u = (variable_id or "").strip().upper()
     is_omega = (
@@ -93,10 +106,10 @@ def resolve_block_timeseries_layer_id(run_id: str, label: str, variable_id: str)
         or "OMEGA_BLOCK" in label_u
     )
     canon_label = "OMEGA" if is_omega else label
-    layer_id = stable_imported_layer_id(run_id, canon_label, variable_id)
+    layer_id = stable_imported_layer_id(key, canon_label, variable_id)
     if not is_omega:
         return layer_id
-    legacy = stable_imported_layer_id(run_id, "OMEGA_BLOCK", variable_id)
+    legacy = stable_imported_layer_id(key, "OMEGA_BLOCK", variable_id)
     legacy_dir = import_paths.IMPORTS_DIR / legacy
     new_dir = import_paths.IMPORTS_DIR / layer_id
     # 已有旧目录且尚未迁到新 id 时继续写旧目录，避免重复层
@@ -133,8 +146,9 @@ def list_block_mats(
     time_end: str | None = None,
     canonical_viirs8_only: bool = False,
 ) -> list[tuple[str, Path]]:
-    """Return sorted (time_label, path) for YYYYMMDD_YYYYMMDD.mat files.
+    """Return sorted (time_label, path) for YYYYMMDD[_YYYYMMDD].mat files.
 
+    单日 ``YYYYMMDD.mat``（omega_avg_daily 逐日产品）视为 start=end 的一天块。
     Optional ``time_start`` / ``time_end`` are ``YYYYMMDD`` inclusive filters
     against the block's own start/end dates (overlap with the window).
     ``canonical_viirs8_only`` rejects stale shortened blocks from older partial
@@ -151,7 +165,8 @@ def list_block_mats(
         m = _BLOCK_MAT_RE.match(path.name)
         if not m:
             continue
-        block_start, block_end = m.group(1), m.group(2)
+        block_start = m.group(1)
+        block_end = m.group(2) or block_start
         if canonical_viirs8_only and not _is_canonical_viirs8_block(
             block_start, block_end
         ):
@@ -187,6 +202,7 @@ def upsert_block_dir_timeseries(
     variable_id: str,
     label: str,
     run_id: str,
+    layer_key: str = "",
     grid_preset: str = "ease2-global-9km",
     palette: str = "cividis",
     native_step: str = "8d",
@@ -199,7 +215,8 @@ def upsert_block_dir_timeseries(
 
     Incremental: existing slices are kept when still newer than the source mat.
     Progressive runs rewrite mats in place; stale early TIFs are re-extracted.
-    Overlay id is stable per (run_id, label); OMEGA 与历史 OMEGA_BLOCK 目录兼容。
+    Overlay id is stable per (layer_key or run_id, label); OMEGA 与历史
+    OMEGA_BLOCK 目录兼容。
     """
     block_dir = Path(block_dir)
     mats = list_block_mats(
@@ -209,7 +226,7 @@ def upsert_block_dir_timeseries(
         canonical_viirs8_only=canonical_viirs8_only,
     )
     if not mats:
-        raise FileNotFoundError(f"块目录无 YYYYMMDD_YYYYMMDD.mat: {block_dir}")
+        raise FileNotFoundError(f"块目录无 YYYYMMDD[_YYYYMMDD].mat: {block_dir}")
 
     display_label = (
         "OMEGA"
@@ -220,7 +237,9 @@ def upsert_block_dir_timeseries(
         )
         else label
     )
-    layer_id = resolve_block_timeseries_layer_id(run_id, display_label, variable_id)
+    layer_id = resolve_block_timeseries_layer_id(
+        run_id, display_label, variable_id, layer_key=layer_key
+    )
     dest_dir = import_paths.IMPORTS_DIR / layer_id
     dest_dir.mkdir(parents=True, exist_ok=True)
     lock_path = import_paths.IMPORTS_DIR / "_locks" / f"{layer_id}.lock"

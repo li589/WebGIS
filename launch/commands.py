@@ -485,7 +485,30 @@ def cmd_status() -> int:
 
 # ─── 重启命令 ────────────────────────────────────────────────────────────────
 def _stop_backend_app_processes() -> None:
-    """仅停止 FastAPI / Celery worker / Beat（不动 Docker、Vite、gateway）。"""
+    """仅停止 FastAPI / Celery worker / Beat（不动 Docker、Vite、gateway）。
+
+    双保险：PID 文件条目先 SIGTERM 兜底（os.kill 走 Win32 API，不依赖
+    PATH），再按命令行模式清扫（覆盖 PID 文件未收录的孤儿世代）。
+    2026-08-16 事故：仅靠裸名 powershell/taskkill 清扫，PATH 缺 System32
+    时枚举静默为空 → no-op → 旧世代堆叠并占用 8000 端口。
+    """
+    if PID_FILE.exists():
+        try:
+            pids = json.loads(PID_FILE.read_text(encoding="utf-8"))
+            if isinstance(pids, dict):
+                for name, pid in pids.items():
+                    if not (
+                        str(name).startswith("worker-")
+                        or str(name) in {"fastapi", "beat", "celery-beat"}
+                    ):
+                        continue
+                    try:
+                        os.kill(int(pid), signal.SIGTERM)
+                        log.info("Stop", f"已发送 SIGTERM 到 {name} (pid={pid})")
+                    except (ProcessLookupError, PermissionError, ValueError, OSError):
+                        log.debug("Stop", f"{name} (pid={pid}) 已不存在")
+        except (json.JSONDecodeError, OSError):
+            pass
     terminate_by_cmdline_patterns(
         [
             "start_celery_worker.py",
@@ -522,7 +545,15 @@ def _start_backend_app_processes(args: argparse.Namespace) -> int:
     pm.start_celery_workers()
     pm.start_celery_beat()
     pm.start_fastapi()
-    pm.wait_for_fastapi(max_wait=45)
+    ready = pm.wait_for_fastapi(max_wait=45)
+    fastapi_proc = pm.processes.get("fastapi")
+    if ready and fastapi_proc is not None and fastapi_proc.poll() is not None:
+        log.error(
+            "Launcher",
+            "端口 8000 已响应但本次启动的 FastAPI 进程已退出——"
+            "疑似旧世代僵尸进程仍在占用端口，请排查 start_fastapi 进程",
+        )
+        return 1
     pm.save_pids(merge=True)
     log.ok("Launcher", "backend（worker+beat+fastapi）已启动")
     return 0

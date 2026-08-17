@@ -895,11 +895,15 @@ class FyPreprocessor:
                 arr = src.read(idx, masked=True).astype(np.float32)
                 band = np.ma.filled(arr, np.nan)
                 if band_name == cfg.zenith_name:
-                    var = ncfile.createVariable(band_name, np.float32, ("x", "y"))
+                    # 数值专项 W5：数据体写 NaN，则 _FillValue 必须同为 NaN——
+                    # 旧实现写后赋非标准属性 FillValue=-32767 与数据体不一致，
+                    # 标准自动掩膜消费端掩不住。创建期 fill_value 设标准 _FillValue。
+                    var = ncfile.createVariable(
+                        band_name, np.float32, ("x", "y"), fill_value=np.nan
+                    )
                     var[:, :] = band
                     var.units = "degree"
                     var.Valid_range = [0, 18000]
-                    var.FillValue = cfg.dst_nodata
                     var.Intercept = zen_intercept
                     var.Slope = zen_slope
                     var.Long_name = cfg.zenith_name
@@ -907,11 +911,12 @@ class FyPreprocessor:
                     number_part = "".join(filter(str.isdigit, band_name))
                     letter_part = "".join(filter(str.isalpha, band_name))
                     vari_name = f"EARTH OBSERVE BT {number_part}GHz {letter_part}"
-                    var = ncfile.createVariable(vari_name, np.float32, ("x", "y"))
+                    var = ncfile.createVariable(
+                        vari_name, np.float32, ("x", "y"), fill_value=np.nan
+                    )
                     var[:, :] = band
                     var.units = "K"
                     var.Valid_range = [-32766, 10000]
-                    var.FillValue = cfg.dst_nodata
                     var.Intercept = tb_intercept
                     var.Slope = tb_slope
                     var.Long_name = f"{number_part}GHZ {letter_part} Earth Observation Brightness Temperature"

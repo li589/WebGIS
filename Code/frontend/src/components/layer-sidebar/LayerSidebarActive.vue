@@ -21,6 +21,7 @@ defineProps<{
   getSymbologyVmax: (layer: ActiveLayerDisplayLike) => string
   availabilityClass: (state: string) => string
   getCategoryName: (categoryId: string) => string
+  supportsOnlineTemporal: (catalogId: string) => boolean
 }>()
 
 const emit = defineEmits<{
@@ -83,14 +84,18 @@ const emit = defineEmits<{
               'drag-over': row.groupId === dragOverGroupId,
               computing: runGroupOf(row.groupId)?.status === 'computing',
             }"
-            draggable="true"
-            @dragstart="emit('onGroupDragStart', row.groupId, $event)"
             @dragover="emit('onGroupDragOver', row.groupId, $event)"
             @drop="emit('onGroupDrop', row.groupId)"
             @dragend="emit('onDragEnd')"
             @contextmenu.prevent="emit('onGroupContextMenu', row.groupId, $event)"
           >
-            <Menu :size="14" class="drag-handle" title="拖动整组" />
+            <span
+              class="drag-handle-wrap"
+              draggable="true"
+              @dragstart="emit('onGroupDragStart', row.groupId, $event)"
+            >
+              <Menu :size="14" class="drag-handle" title="拖动整组" />
+            </span>
             <span class="group-accent" aria-hidden="true"></span>
             <strong class="group-title">{{
               runGroupOf(row.groupId)?.title || LAYERS_COPY.computingGroup
@@ -126,23 +131,27 @@ const emit = defineEmits<{
               '--accent': row.layer.accentColor,
               '--glow': row.layer.accentGlow,
             }"
-            :draggable="true"
             role="option"
             :aria-selected="row.layer.instanceId === selectedInstanceId"
             @click="emit('selectItem', row.layer.instanceId)"
             @dblclick.stop="emit('zoomToItem', row.layer.instanceId)"
             @contextmenu="emit('onLayerContextMenu', row.layer.instanceId, $event)"
-            @dragstart="emit('onDragStart', row.layer.instanceId)"
             @dragover="emit('onDragOver', row.layer.instanceId, $event)"
             @drop="emit('onDrop', row.layer.instanceId)"
             @dragend="emit('onDragEnd')"
           >
             <div class="layer-row-top">
-              <Menu
-                :size="14"
-                class="drag-handle"
-                :title="row.layer.runGroupLocked ? '仅可在组内排序' : '拖动排序'"
-              />
+              <span
+                class="drag-handle-wrap"
+                draggable="true"
+                @dragstart="emit('onDragStart', row.layer.instanceId)"
+              >
+                <Menu
+                  :size="14"
+                  class="drag-handle"
+                  :title="row.layer.runGroupLocked ? '仅可在组内排序' : '拖动排序'"
+                />
+              </span>
               <button
                 class="vis-btn"
                 :title="row.layer.visible ? '隐藏图层' : '显示图层'"
@@ -195,6 +204,12 @@ const emit = defineEmits<{
               >
                 {{ row.layer.availabilityLabel }}
               </span>
+              <span
+                v-if="supportsOnlineTemporal(row.layer.catalogId)"
+                class="online-fetch-badge"
+                title="此图层支持在线获取历史时间数据"
+                >在线</span
+              >
               <span v-if="row.layer.isAdminBoundary" class="admin-tip-inline">边界 · 静态矢量</span>
               <span v-else-if="row.layer.isImported" class="admin-tip-inline"
                 >导入 · {{ row.layer.importedGeometryType }} ·

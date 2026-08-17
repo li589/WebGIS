@@ -180,9 +180,13 @@ DEFAULT_OPEN_DATA_PRESETS: dict[str, str] = {
     "noaa_goes": "https://cdn.star.nesdis.noaa.gov/",
     "nasa_earthdata": "https://data.lpdaac.earthdatacloud.nasa.gov/",
     "nasa_cmr": "https://cmr.earthdata.nasa.gov/",
-    "nsidc_data": "https://n5eil01u.ecs.nsidc.org/",
+    "nsidc_data": "https://data.nsidc.earthdatacloud.nasa.gov/",
+    "nasa_ges_disc": "https://hydro1.gesdisc.eosdis.nasa.gov/",
+    "nasa_gldas": "https://hydro1.gesdisc.eosdis.nasa.gov/data/GLDAS/",
     "esa_copernicus": "https://catalogue.dataspace.copernicus.eu/",
     "esa_download": "https://download.dataspace.copernicus.eu/",
+    "cma_nsmc": "https://satellite.nsmc.org.cn/",
+    "cma_data": "https://data.nsmc.org.cn/",
 }
 
 OPEN_DATA_PRESET_LABELS: dict[str, str] = {
@@ -191,6 +195,10 @@ OPEN_DATA_PRESET_LABELS: dict[str, str] = {
     "nasa_earthdata": "NASA Earthdata / LP DAAC 云端对象",
     "nasa_cmr": "NASA CMR 元数据（二期检索预留）",
     "nsidc_data": "NSIDC 数据下载",
+    "nasa_ges_disc": "NASA GES DISC 水文数据",
+    "nasa_gldas": "NASA GLDAS 全球陆面数据",
     "esa_copernicus": "欧空局 Copernicus 目录",
     "esa_download": "欧空局 Copernicus 下载 CDN",
+    "cma_nsmc": "国家卫星气象中心 NSMC 门户",
+    "cma_data": "国家卫星气象中心数据平台",
 }

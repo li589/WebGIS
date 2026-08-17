@@ -129,6 +129,20 @@ def _build_transform_from_bounds(
     return (transform, crs)
 
 
+def _coerce_edge_dir(value: object) -> str | None:
+    """从边输入值提取数据目录（archive_extract 输出 path 字符串或含路径键的 dict）。"""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, dict):
+        for key in ("path", "extract_dir", "local_path", "input_dir"):
+            raw = value.get(key)
+            if isinstance(raw, str) and raw.strip():
+                return raw.strip()
+    return None
+
+
 def _resolve_ndvi_input_dir(datasource_selection: dict[str, object]) -> Path:
     prepared_dir = resolve_prepared_local_directory(
         datasource_selection, ("NDVI_16DAY_RASTER",)
@@ -165,6 +179,7 @@ class NdviDailyModule(BaseModule):
         "Native module that converts 16-day NDVI rasters to daily MAT products."
     )
     input_ports = [
+        PortSpec(name="data", kind="data", data_class="source", required=False),
         PortSpec(
             name="datasource_selection",
             kind="config",
@@ -194,7 +209,12 @@ class NdviDailyModule(BaseModule):
         algorithm_params = dict(inputs.get("algorithm_params", {}))
         output_spec_extra = dict(inputs.get("output_spec_extra", {}))
 
-        input_dir = _resolve_ndvi_input_dir(datasource_selection)
+        edge_dir = _coerce_edge_dir(inputs.get("data"))
+        input_dir = (
+            Path(edge_dir)
+            if edge_dir
+            else _resolve_ndvi_input_dir(datasource_selection)
+        )
         output_dir = Path(
             output_spec_extra.get(
                 "output_dir", ctx.workspace / "products" / "ndvi_daily"

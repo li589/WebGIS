@@ -544,23 +544,40 @@ def pick_gldas_file_indices(
     target_times: list[datetime | None],
     tol_hours: float,
 ) -> list[int | None]:
-    indices: list[int | None] = []
-    for target_time in target_times:
-        if target_time is None:
-            indices.append(None)
-            continue
-        best_index: int | None = None
-        best_delta_hours: float | None = None
-        for file_index, gldas_time in enumerate(gldas_times):
-            delta_hours = abs((gldas_time - target_time).total_seconds()) / 3600.0
-            if best_delta_hours is None or delta_hours < best_delta_hours:
-                best_delta_hours = delta_hours
-                best_index = file_index
-        if best_delta_hours is not None and best_delta_hours <= float(tol_hours):
-            indices.append(best_index)
-        else:
-            indices.append(None)
-    return indices
+    import numpy as np
+
+    # 向量化最近邻匹配（语义与逐文件线性扫描一致：
+    # 取 |Δt| 最小的文件；并列时保留更早索引；超容差返回 None）
+    finite_targets = [t for t in target_times if t is not None]
+    if not gldas_times or not finite_targets:
+        return [None] * len(target_times)
+
+    epoch = datetime(1970, 1, 1)
+    gldas_sec = np.asarray(
+        [(t - epoch).total_seconds() for t in gldas_times], dtype=np.float64
+    )
+    valid_pos = [i for i, t in enumerate(target_times) if t is not None]
+    target_sec = np.asarray(
+        [(target_times[i] - epoch).total_seconds() for i in valid_pos],
+        dtype=np.float64,
+    )
+
+    insert_pos = np.searchsorted(gldas_sec, target_sec)
+    left = np.clip(insert_pos - 1, 0, gldas_sec.size - 1)
+    right = np.clip(insert_pos, 0, gldas_sec.size - 1)
+    delta_left = np.abs(gldas_sec[left] - target_sec)
+    delta_right = np.abs(gldas_sec[right] - target_sec)
+    take_left = delta_left <= delta_right
+    best_index = np.where(take_left, left, right)
+    best_delta = np.where(take_left, delta_left, delta_right)
+    tol_sec = float(tol_hours) * 3600.0
+    matched = np.where(best_delta <= tol_sec, best_index, -1)
+
+    result: list[int | None] = [None] * len(target_times)
+    for slot, value in zip(valid_pos, matched.tolist(), strict=True):
+        index = int(value)
+        result[slot] = index if index >= 0 else None
+    return result
 
 
 def _infer_gldas_template_names(config: DailyBundleConfig) -> list[str]:

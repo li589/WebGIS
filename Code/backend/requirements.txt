@@ -2,29 +2,44 @@ fastapi==0.116.1
 uvicorn[standard]==0.35.0
 celery[redis]==5.4.0
 minio==7.2.7
-python-multipart
-python-dotenv>=1.0.0
-paramiko>=3.4.0
-smbprotocol>=1.13.0
-google-cloud-storage>=2.14.0
-cryptography>=42.0.0
+python-multipart==0.0.32
+python-dotenv==1.2.2
+paramiko==5.0.0
+smbprotocol==1.17.0
+google-cloud-storage==3.12.0
+cryptography==49.0.0
 # GEE：app.gee.core.src.webgis_gee.gee.context 直接 import ee（earthengine-api）
-earthengine-api>=0.1.390
-httpx>=0.27.0
+earthengine-api==1.7.33
+httpx==0.28.1
 # 配置模型：app.core.config / GEE config settings.py 直接依赖
-pydantic-settings>=2.0
+pydantic-settings==2.14.2
 # CRS 转换：app.services.crs._crs_transformer 直接依赖 rasterio/pyproj；
 # rasterio 曾仅靠 pyproj 传递依赖隐式存在，现显式声明（后端 8+ 模块直接 import）
-pyproj>=3.6,<4
-rasterio>=1.3.10,<2
+pyproj==3.7.2
+rasterio==1.5.0
 # 工作流编排：workflow_engine.executor / GEE workflow validator 直接依赖
-networkx>=3.0
+networkx==3.6.1
 # 数据导入/导出（矢量 SHP、文档表、科学栅格）
-pyshp>=2.3.1
-pandas>=2.0
-openpyxl>=3.1
-xlrd>=2.0
-h5py>=3.10
-netCDF4>=1.6
-rarfile>=4.1
-scipy>=1.11
+pyshp==3.1.6
+pandas==3.0.3
+openpyxl==3.1.5
+xlrd==2.0.2
+h5py==3.16.0
+netCDF4==1.7.4
+rarfile==4.4
+scipy==1.18.0
+# DBF 中文编码探测：app/data_io/services/dbf_encoding.py 直接依赖
+geopandas==1.1.4
+# 科学数据读取：data_access/universal_reader.py（GRIB 经 xarray engine=cfgrib）、
+# ingest/gldas_nc4_to_mat.py 直接依赖
+xarray==2026.4.0
+cfgrib==0.9.15.1
+# 多源下载：ingest/nsidc_download.py、ingest/gldas_download.py
+# 主路径 earthaccess，回退 requests + CMR + HTTP Basic Auth
+earthaccess==0.18.0
+requests==2.34.2
+# ECMWF CDS 主路径（ingest/cds_download.py）；未安装时回退门户通用 HTTP 语义
+cdsapi==0.7.7
+# NOAA NOMADS GRIB2 主路径（ingest/nomads_download.py）；未安装时回退 NOMADS 直连 HTTP。
+# 注意：PyPI 包名为 herbie-data（import 名为 herbie）；名为 "herbie" 的包是无关的 Django 项目
+herbie-data==2026.3.0

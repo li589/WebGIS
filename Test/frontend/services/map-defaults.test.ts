@@ -45,7 +45,9 @@ describe('map-defaults', () => {
 describe('brand whitelabel defaults', () => {
   it('keeps stock brand and org label without VITE overrides', () => {
     expect(BRAND.shortName).toBeTruthy()
-    expect(BRAND.fullName).toContain('地理')
+    // 2026-08 验收更名：CGDA（含「地理」）→ SGFS「星地融合土壤水分监测与干旱预警系统」
+    expect(BRAND.fullName).toBe('星地融合土壤水分监测与干旱预警系统')
+    expect(BRAND.abbr).toBe('SGFS')
     expect(ORG_LABEL).toBe('科研')
   })
 })

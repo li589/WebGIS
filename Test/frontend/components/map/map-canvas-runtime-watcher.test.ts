@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   watchAdminBoundaryOverlay,
   watchBasemapSource,
+  watchDrawState,
   watchInteractionMode,
   watchMeasureState,
 } from '@/components/map/map-canvas-runtime-watcher'
@@ -100,6 +101,38 @@ describe('map-canvas-runtime-watcher', () => {
     syncKey.value = '0:0'
     await nextTick()
     expect(onMeasureStateChange).toHaveBeenCalledTimes(2)
+
+    stop()
+  })
+
+  it('syncs draw visuals when draw sync key changes and map is ready', async () => {
+    const syncKey = ref('polygon:0:0:0:-1')
+    const mapReady = ref(false)
+    const onDrawStateChange = vi.fn()
+
+    const stop = watchDrawState({
+      getDrawSyncKey: () => syncKey.value,
+      getMapReady: () => mapReady.value,
+      onDrawStateChange,
+    })
+
+    // 地图未就绪：不触发（store 清空不引发同步）
+    syncKey.value = 'polygon:0:0:1:-1'
+    await nextTick()
+    expect(onDrawStateChange).not.toHaveBeenCalled()
+
+    mapReady.value = true
+    await nextTick()
+    expect(onDrawStateChange).toHaveBeenCalledTimes(1)
+
+    // key 不变（如 hoverPoint 变化由模块内 mousemove 处理）不重复触发
+    await nextTick()
+    expect(onDrawStateChange).toHaveBeenCalledTimes(1)
+
+    // 移除图层 → clearDraft → key 变化 → 触发同步
+    syncKey.value = 'polygon:0:0:0:-1'
+    await nextTick()
+    expect(onDrawStateChange).toHaveBeenCalledTimes(2)
 
     stop()
   })

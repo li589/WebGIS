@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import { getDefaultTileSource, getSourcesByStyle, TILE_SOURCES } from '@/services/api-config'
-import { BASEMAP_COPY, BRAND, WIND_COPY, basemapStyleLabel } from '@/ui-copy/index'
+import {
+  BASEMAP_COPY,
+  BRAND,
+  LEGACY_BRAND,
+  WIND_COPY,
+  basemapStyleLabel,
+} from '@/ui-copy/index'
 
 describe('acceptance basemap defaults', () => {
   it('defaults to gaode-street', () => {
@@ -41,12 +47,20 @@ describe('acceptance basemap defaults', () => {
 
 describe('ui-copy glossary', () => {
   it('keeps brand and wind labels stable for acceptance', () => {
-    expect(BRAND.shortName).toBe('综合地理态势')
-    expect(BRAND.fullName).toBe('综合地理态势分析系统')
-    expect(BRAND.eyebrow).toBe('CGDA')
+    // 2026-08 验收更名：CGDA → SGFS（星地融合土壤水分监测与干旱预警系统）
+    expect(BRAND.shortName).toBe('星地融合土壤数据平台')
+    expect(BRAND.fullName).toBe('星地融合土壤水分监测与干旱预警系统')
+    expect(BRAND.displayNameEn).toBe('Star-Ground Fusion Soil Data Platform')
+    expect(BRAND.eyebrow).toBe('SGFS')
     expect(WIND_COPY.particle).toBe('粒子流')
     expect(WIND_COPY.streamline).toBe('流量场')
     expect(WIND_COPY.off).toBe('网格')
     expect(basemapStyleLabel('none')).toBe(BASEMAP_COPY.styleNone)
+  })
+
+  it('keeps legacy CGDA brand available for rollback', () => {
+    expect(LEGACY_BRAND.shortName).toBe('综合地理态势')
+    expect(LEGACY_BRAND.fullName).toBe('综合地理态势分析系统')
+    expect(LEGACY_BRAND.legacyAbbr).toBe('CGDA / CGDAS')
   })
 })

@@ -1,0 +1,216 @@
+﻿method,path,tags,summary
+GET,/algorithm/diagnostics,algorithm,Get Algorithm Diagnostics
+GET,/algorithm/workflows,algorithm,List Algorithm Workflows
+GET,/algorithm/workflows/{workflow_name},algorithm,Describe Algorithm Workflow
+GET,/algorithm/workflows/{workflow_name}/panel-schema,algorithm,Get Algorithm Workflow Panel Schema
+GET,/algorithm/workflows/{workflow_name}/ui-schema,algorithm,Get Algorithm Workflow Ui Schema
+GET,/analysis/tools,analysis,Get Analysis Tools
+GET,/analysis/tools/{tool_id},analysis,Get Analysis Tool
+POST,/analysis/runs,analysis,Create Analysis Run
+GET,/artifacts/{artifact_id},artifacts,Get Artifact
+GET,/artifacts/{artifact_id}/preview.png,artifacts,Get Artifact Preview Png
+DELETE,/auth/tokens/{token_id},auth,Revoke Token
+DELETE,/auth/users/{user_id},auth,Delete User
+DELETE,/auth/users/{user_id}/permissions/{permission_id},auth,Delete Permission
+GET,/auth/config,auth,Get Auth Config
+GET,/auth/me,auth,Me
+GET,/auth/tokens,auth,List Tokens
+GET,/auth/users,auth,List Users
+GET,/auth/users/{user_id}/permissions,auth,List User Permissions
+PATCH,/auth/users/{user_id},auth,Update User
+PATCH,/auth/users/{user_id}/permission-mode,auth,Update Permission Mode
+POST,/auth/login,auth,Login
+POST,/auth/logout,auth,Logout
+POST,/auth/tokens,auth,Create Token
+POST,/auth/users,auth,Create User
+PUT,/auth/users/{user_id}/permissions,auth,Set User Permissions
+GET,/layers,catalog,List Layers
+GET,/layers/categories,catalog,List Layer Categories
+GET,/layers/{layer_id}/online-temporal,catalog,Get Layer Online Temporal
+GET,/cleanup/node-caches,cleanup,List Node Caches
+GET,/cleanup/stats,cleanup,Get Cleanup Stats
+POST,/cleanup/cache,cleanup,Cleanup Cache
+POST,/cleanup/node-caches,cleanup,Cleanup Node Caches
+POST,/cleanup/vacuum,cleanup,Vacuum Workflow State
+POST,/cleanup/workflow-runs,cleanup,Cleanup Workflow Runs
+DELETE,/config/api-keys/{key_name},config,Delete Api Key
+DELETE,/config/api-keys/{key_name}/history,config,Clear Api Key History
+DELETE,/config/api-keys/{key_name}/history/{history_id},config,Delete Api Key History Entry
+DELETE,/config/data-source/datasets/{dataset_id},config,Delete Available Dataset
+DELETE,/config/data-source/portal-credentials/{portal_id},config,Delete Portal Credential
+DELETE,/config/gee/accounts/{account_id},config,Delete Gee Account
+DELETE,/config/portals/{portal_id},config,Delete Portal
+DELETE,/config/remote-sources/{remote_source_id},config,Delete Remote Source
+DELETE,/config/remote-storage/{profile_id},config,Delete Remote Storage Profile
+DELETE,/config/remote-storage/{profile_id}/history,config,Clear Remote Storage History
+DELETE,/config/remote-storage/{profile_id}/history/{history_id},config,Delete Remote Storage History Entry
+DELETE,/config/weather/providers/{provider_id},config,Delete Weather Provider
+GET,/config/about,config,Get About Info
+GET,/config/api-keys,config,List Api Keys
+GET,/config/api-keys/{key_name}/history,config,List Api Key History
+GET,/config/data-cache/overview,config,Get Data Cache Overview
+GET,/config/data-source,config,Get Data Source Config
+GET,/config/data-source/datasets,config,List Available Datasets
+GET,/config/data-source/portal-credentials,config,Get Portal Credentials
+GET,/config/gee/accounts,config,List Gee Accounts
+GET,/config/gee/runtime,config,Get Gee Runtime Config
+GET,/config/general,config,Get General Config
+GET,/config/portals,config,Get Portal Catalog
+GET,/config/portals/{portal_id}/search,config,Search Portal
+GET,/config/remote-sources,config,List Remote Sources
+GET,/config/remote-storage,config,List Remote Storage Profiles
+GET,/config/remote-storage/{profile_id},config,Get Remote Storage Profile
+GET,/config/remote-storage/{profile_id}/history,config,List Remote Storage History
+GET,/config/weather,config,Get Weather Config
+GET,/config/weather/providers,config,List Weather Providers
+GET,/config/weather/providers/{provider_id},config,Get Weather Provider
+POST,/config/api-keys/{key_name}/history/{history_id}/restore,config,Restore Api Key History
+POST,/config/api-keys/{key_name}/test,config,Test Api Key
+POST,/config/cache/invalidate-templates,config,Invalidate Template Caches
+POST,/config/data-cache/evict,config,Evict Data Cache
+POST,/config/data-source/datasets/rescan,config,Rescan Available Datasets
+POST,/config/gee/accounts,config,Create Gee Account
+POST,/config/gee/accounts/reload,config,Reload Gee Accounts
+POST,/config/gee/accounts/{account_id}/test,config,Test Gee Account
+POST,/config/portals/{portal_id}/test,config,Test Portal
+POST,/config/remote-storage/{profile_id}/browse,config,Browse Remote Storage Profile
+POST,/config/remote-storage/{profile_id}/failover,config,Failover Remote Storage Profile
+POST,/config/remote-storage/{profile_id}/history/{history_id}/restore,config,Restore Remote Storage History
+POST,/config/remote-storage/{profile_id}/search,config,Search Remote Storage Profile
+POST,/config/remote-storage/{profile_id}/test,config,Test Remote Storage Profile
+POST,/config/service/restart,config,Restart Backend Service
+POST,/config/weather/providers/{provider_id}/test,config,Test Weather Provider
+PUT,/config/api-keys/{key_name},config,Update Api Key
+PUT,/config/api-keys/{key_name}/toggle,config,Toggle Api Key
+PUT,/config/data-source/datasets/{dataset_id},config,Upsert Available Dataset
+PUT,/config/data-source/open-data-presets,config,Update Open Data Presets
+PUT,/config/data-source/paths,config,Update Data Source Paths
+PUT,/config/data-source/portal-credentials/{portal_id},config,Upsert Portal Credential
+PUT,/config/data-source/remote-layer-uris,config,Update Remote Layer Uris
+PUT,/config/gee/accounts/{account_id}/toggle,config,Toggle Gee Account
+PUT,/config/portals/{portal_id},config,Upsert Portal
+PUT,/config/remote-sources/{remote_source_id},config,Upsert Remote Source
+PUT,/config/remote-storage/{profile_id},config,Upsert Remote Storage Profile
+PUT,/config/remote-storage/{profile_id}/toggle,config,Toggle Remote Storage Profile
+PUT,/config/weather/model,config,Update Weather Default Model
+PUT,/config/weather/providers/{provider_id},config,Update Weather Provider
+PUT,/config/weather/providers/{provider_id}/priority,config,Set Weather Provider Priority
+PUT,/config/weather/providers/{provider_id}/toggle,config,Toggle Weather Provider
+DELETE,/import/layers/{layer_id},data-io,Delete Imported Layer
+DELETE,/import/layers/{layer_id}/fields/{name},data-io,Vector Field Delete
+DELETE,/import/upload/{upload_id},data-io,Upload Discard
+GET,/export/encodings,data-io,Export Encodings Endpoint
+GET,/import/document/{session_id},data-io,Document Preview
+GET,/import/jobs,data-io,Import Jobs List
+GET,/import/jobs/{job_id},data-io,Import Job Status
+GET,/import/jobs/{job_id}/download,data-io,Import Job Download
+GET,/import/layers/{layer_id}/features,data-io,Vector Features
+GET,/import/layers/{layer_id}/geojson,data-io,Vector Geojson
+GET,/import/layers/{layer_id}/meta,data-io,Vector Meta
+GET,/import/quota,data-io,Import Quota
+GET,/import/upload/{upload_id}/status,data-io,Upload Status
+PATCH,/import/layers/{layer_id}/display-name,data-io,Patch Imported Layer Display Name
+PATCH,/import/layers/{layer_id}/features/{feature_index},data-io,Vector Feature Patch
+POST,/export/batch,data-io,Export Batch Endpoint
+POST,/export/layer,data-io,Export Layer Endpoint
+POST,/import/batch,data-io,Import Batch
+POST,/import/document,data-io,Import Document
+POST,/import/document/multipart,data-io,Import Document Multipart
+POST,/import/document/{session_id}/commit,data-io,Document Commit
+POST,/import/document/{session_id}/ops,data-io,Document Ops
+POST,/import/jobs/{job_id}/cancel,data-io,Import Job Cancel
+POST,/import/layers/{layer_id}/features/batch,data-io,Vector Feature Batch
+POST,/import/layers/{layer_id}/fields,data-io,Vector Field Add
+POST,/import/layers/{layer_id}/rename-field,data-io,Vector Rename Field
+POST,/import/quota/reclaim,data-io,Import Quota Reclaim
+POST,/import/raster/commit,data-io,Raster Commit
+POST,/import/raster/detect-invalid,data-io,Raster Detect Invalid
+POST,/import/raster/inspect,data-io,Raster Inspect
+POST,/import/upload/complete,data-io,Upload Complete
+POST,/import/upload/init,data-io,Upload Init
+POST,/import/upload/resumable/complete,data-io,Upload Resumable Complete
+POST,/import/upload/resumable/init,data-io,Upload Resumable Init
+POST,/import/upload/{upload_id}/chunk,data-io,Upload Chunk
+POST,/import/upload/{upload_id}/chunk/{chunk_index},data-io,Upload Chunk Indexed
+POST,/import/vector,data-io,Import Vector
+POST,/import/vector/multipart,data-io,Import Vector Multipart
+POST,/frontend/commands,frontend,Submit Frontend Command
+GET,/gee/diagnostics,gee,Diagnose
+GET,/gee/exports:status,gee,Get Export Status
+POST,/gee/workflow-jobs:run,gee,Run Workflow Job
+POST,/gee/workflows:submit,gee,Submit Workflow
+POST,/gee/workflows:validate,gee,Validate Workflow
+GET,/gee/config,gee-config,Get Gee Config
+GET,/gee/config/environment,gee-config,Get Gee Environment
+GET,/gee/config/limits,gee-config,Get Task Limits
+GET,/gee/config/status,gee-config,Get Gee Status
+GET,/geo/transform,geo,Transform Geo Point
+DELETE,/import/raster/{layer_id},import,Delete Imported Raster
+GET,/import/crs-options,import,List Crs Options
+GET,/import/crs-options/expanded,import,List Crs Options Expanded
+POST,/import/raster,import,Import Raster
+POST,/import/raster/confirm,import,Confirm Imported Raster
+POST,/import/transform-bounds,import,Transform Bounds Endpoint
+POST,/import/transform-point,import,Transform Point Endpoint
+GET,/overlay-bounds/{layer_id},overlay,Get Overlay Bounds
+GET,/overlay-preview/{layer_id},overlay,Get Overlay Preview
+GET,/overlay-tiles/{layer_id}/{z}/{x}/{y}.png,overlay,Get Overlay Tile
+GET,/overlay-value/{layer_id},overlay,Get Overlay Value
+GET,/overlays,overlay,List Overlays
+GET,/overlays/intersect,overlay,Get Overlays In Viewport
+GET,/provider/workflows,provider,List Provider Workflows
+GET,/provider/workflows/diagnostics,provider,Get Provider Diagnostics
+GET,/provider/workflows/{workflow_name},provider,Describe Provider Workflow
+GET,/api/remote/list,remote-browser,List Remote Dir
+GET,/api/remote/servers,remote-browser,List Servers
+GET,/api/remote/test,remote-browser,Test Remote Connection
+GET,/runtime/api-config,runtime,Get Api Config Status
+GET,/runtime/api-config/{provider},runtime,Get Provider Api Config
+GET,/runtime/api-config/{provider}/best,runtime,Get Best Available Api
+GET,/runtime/config,runtime,Get Runtime Config
+GET,/runtime/metrics,runtime,Get Runtime Metrics
+GET,/runtime/resources,runtime,Get Runtime Resources
+GET,/runtime/status,runtime,Get Runtime Status
+GET,/runtime/tiles/cache/stats,runtime,Get Runtime Tile Cache Stats
+GET,/runtime/tiles/providers,runtime,List Runtime Tile Providers
+PATCH,/runtime/config,runtime,Update Runtime Config
+POST,/runtime/api-config/{provider},runtime,Update Provider Api Config
+POST,/runtime/tiles/cache/clear,runtime,Clear Runtime Tile Cache
+GET,/health,system,Health Check
+GET,/unified-tiles/{layer_id}/{z}/{x}/{y},tiles,Get Unified Tile
+GET,/weather/coverage,weather,Get Weather Coverage
+GET,/weather/point,weather,Get Weather Point
+GET,/weather/providers-for-layer/{layer_id},weather,Get Providers For Layer
+GET,/weather/sync/overview,weather,Get Open Meteo Sync Overview
+GET,/weather/sync/status,weather,Get Open Meteo Sync Status
+GET,/weather/tiles/{layer_id}/{z}/{x}/{y},weather,Get Weather Tile
+GET,/weather/workflows,weather,List Weather Workflows
+GET,/weather/workflows/diagnostics,weather,Get Weather Diagnostics
+GET,/weather/workflows/{workflow_name},weather,Describe Weather Workflow
+POST,/weather/sync/trigger,weather,Trigger Open Meteo Sync
+GET,/workflow-runs,workflow,List Workflow Runs
+GET,/workflow-runs/{run_id},workflow,Get Workflow Run
+GET,/workflow-runs/{run_id}/events,workflow,List Workflow Events
+GET,/workflow-runs/{run_id}/view,workflow,Get Workflow Run View
+POST,/workflow-runs,workflow,Submit Workflow
+POST,/workflow-runs/{run_id}/cancel,workflow,Cancel Workflow Run
+POST,/workflow-runs/{run_id}/materialize-map-layers,workflow,Materialize Workflow Map Layers
+POST,/workflow-runs/{run_id}/retry,workflow,Retry Workflow Run
+DELETE,/workflow-definitions/{workflow_id},"workflow-definition,workflow-definition",Delete Definition
+GET,/workflow-definitions,"workflow-definition,workflow-definition",List Definitions
+GET,/workflow-definitions/node-templates,"workflow-definition,workflow-definition",List Node Templates
+GET,/workflow-definitions/{workflow_id},"workflow-definition,workflow-definition",Get Definition
+POST,/workflow-definitions,"workflow-definition,workflow-definition",Create Definition
+POST,/workflow-definitions/compile,"workflow-definition,workflow-definition",Compile Graph
+POST,/workflow-definitions/dry-validate,"workflow-definition,workflow-definition",Dry Validate Graph
+POST,/workflow-definitions/{workflow_id}/duplicate,"workflow-definition,workflow-definition",Duplicate Definition
+PUT,/workflow-definitions/{workflow_id},"workflow-definition,workflow-definition",Update Definition
+DELETE,/workflow-timers/{timer_id},workflow-timer,Delete Timer
+GET,/workflow-timers,workflow-timer,List Timers
+GET,/workflow-timers/{timer_id},workflow-timer,Get Timer
+POST,/workflow-timers,workflow-timer,Create Timer
+POST,/workflow-timers/cron-preview,workflow-timer,Preview Cron
+POST,/workflow-timers/events,workflow-timer,Emit Event
+POST,/workflow-timers/tick,workflow-timer,Manual Tick
+POST,/workflow-timers/{timer_id}/run,workflow-timer,Run Timer
+PUT,/workflow-timers/{timer_id},workflow-timer,Update Timer

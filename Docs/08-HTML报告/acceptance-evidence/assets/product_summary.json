@@ -1,0 +1,16 @@
+{
+  "generated_at": "2026-08-15 08:11:25",
+  "workflow_runs_total": 2002,
+  "workflow_runs_status": {
+    "failed": 440,
+    "succeeded": 1435,
+    "cancelled": 127
+  },
+  "layer_catalog_total": 38,
+  "product_files_total": 13192,
+  "product_files_by_dir": {
+    "ProjectOutput": 1829,
+    "Inversion_Results": 58,
+    "Soil_Moisture": 11305
+  }
+}

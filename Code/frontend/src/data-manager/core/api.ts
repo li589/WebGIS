@@ -3,6 +3,8 @@
  */
 import { withWriteAuthHeaders } from './backend-auth'
 import { applyApiFetchDefaults } from '../../services/http-credentials'
+import { handleSessionExpired, isAuthBootstrapPath } from '../../services/session-expired'
+import { SessionExpiredError } from '../../services/http-errors'
 import { resolveApiUrl } from './_http'
 
 export const MAX_UPLOAD_BYTES = 512 * 1024 * 1024
@@ -114,7 +116,14 @@ async function writeFetch(path: string, init: RequestInit = {}): Promise<Respons
   )
   // Session Cookie (credentials:include) is enough for authenticated writes;
   // local X-Api-Key is optional and attached by withWriteAuthHeaders when present.
-  return fetch(resolveApiUrl(path), applyApiFetchDefaults({ ...init, headers }))
+  const response = await fetch(resolveApiUrl(path), applyApiFetchDefaults({ ...init, headers }))
+  // 与 services/_http.ts 对齐：401（非 /auth/* bootstrap）视为会话过期，
+  // 清理会话并跳转登录；抛 SessionExpiredError 使分块上传等调用方立即中止、不做网络型重试。
+  if (response.status === 401 && !isAuthBootstrapPath(path)) {
+    handleSessionExpired(path)
+    throw new SessionExpiredError(path)
+  }
+  return response
 }
 
 async function sha256Hex(file: File, signal?: AbortSignal): Promise<string> {

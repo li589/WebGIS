@@ -23,6 +23,13 @@ FileBrowser 数据同步函数，供工作流 ``ssh_sync`` 节点调用。
     - 远程数据只读，绝不删除远端文件
     - 增量同步：按文件大小判断，跳过本地已存在且大小一致的文件
     - 断点续传：本地存在但小于远程的文件自动追加续传
+
+连接配置来源（重要）：
+    - 工作流 ``ssh_sync`` 节点的生产路径**不使用**下方工厂方法的默认值——
+      host/user/密钥等经后端「远程与存储」profile（``config_remote_storage``，
+      AESGCM 加密存储）解析后注入 ``ServerConfig`` 字段。
+    - 工厂方法中的 host/username/key 默认值仅为本机实验室内网**兜底/示例**，
+      跨机器部署时一律显式传参或配置 profile，勿依赖默认值。
 """
 
 from __future__ import annotations
@@ -30,7 +37,9 @@ from __future__ import annotations
 import json
 import logging
 import posixpath
+import re
 import stat
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -48,6 +57,17 @@ ALLOWED_EXTENSIONS: frozenset[str] = frozenset(
     {".mat", ".h5", ".hdf5", ".hdf", ".nc", ".tif", ".txt"}
 )
 _FILEBROWSER_USER_AGENT: str = "CGDA-RemoteSync/1.0"
+# 单文件下载失败重试（指数退避 2s/4s；重试前按本地大小重新分类续传偏移）
+MAX_DOWNLOAD_ATTEMPTS: int = 3
+RETRY_BACKOFF_BASE_SECONDS: float = 2.0
+
+# Windows 保留设备名（不带或带任意扩展名均非法），跨平台落盘前统一消毒
+_WINDOWS_RESERVED_NAMES: frozenset[str] = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{i}" for i in range(1, 10)}
+    | {f"LPT{i}" for i in range(1, 10)}
+)
+_ILLEGAL_FILENAME_CHARS: re.Pattern[str] = re.compile(r'[<>:"|?*\x00-\x1f]')
 
 
 # ─── 数据类 ──────────────────────────────────────────────────────────────────
@@ -77,6 +97,8 @@ class ServerConfig:
     username: str
     password: str = ""
     key_filename: str = ""
+    # 私钥 PEM 字符串（远程存储 profile 解析产物；与 key_filename 二选一）
+    private_key_pem: str = ""
     # SSH 配置别名（win11 跳板机用）
     ssh_alias: str = ""
     # FileBrowser URL（nas 用）
@@ -91,7 +113,10 @@ class ServerConfig:
         username: str = "likr6008",
         key_filename: str = "",
     ) -> ServerConfig:
-        """Cloudflare 隧道方式连接 HPC。"""
+        """Cloudflare 隧道方式连接 HPC。
+
+        默认值为本机实验室兜底（可被参数覆盖）；生产走 profile 注入。
+        """
         key = key_filename or str(Path.home() / ".ssh" / "seahpc_key")
         return ServerConfig(
             server_type="hpc",
@@ -108,7 +133,7 @@ class ServerConfig:
         username: str = "likr6008",
         key_filename: str = "",
     ) -> ServerConfig:
-        """校园网内直连 HPC。"""
+        """校园网内直连 HPC（默认值为实验室兜底，可被参数覆盖）。"""
         return ServerConfig(
             server_type="hpc",
             host=host,
@@ -122,7 +147,7 @@ class ServerConfig:
         ssh_alias: str = "win11-lab",
         username: str = "qiujianqiu",
     ) -> ServerConfig:
-        """经 SSH 配置别名连接 Win11 跳板机。"""
+        """经 SSH 配置别名连接 Win11 跳板机（默认值为实验室兜底）。"""
         return ServerConfig(
             server_type="win11",
             host=ssh_alias,
@@ -133,11 +158,20 @@ class ServerConfig:
 
     @staticmethod
     def for_nas(
-        filebrowser_url: str = "https://nasfile.personaltunnel.dpdns.org",
-        username: str = "user",
+        filebrowser_url: str = "",
+        username: str = "",
         password: str = "",
     ) -> ServerConfig:
-        """FileBrowser API 连接 NAS。"""
+        """FileBrowser API 连接 NAS。
+
+        与后端 ``settings.filebrowser_nas_url`` 一致默认为空（功能禁用）：
+        历史 *.personaltunnel.dpdns.org 免费动态 DNS 端点可被第三方注册，
+        已从默认值移除，须显式传入内部地址或经 profile 配置。
+        """
+        if not filebrowser_url:
+            raise ValueError(
+                "for_nas 需要 filebrowser_url（历史外部 DDNS 默认值已按后端安全决策移除）"
+            )
         return ServerConfig(
             server_type="nas",
             host=filebrowser_url,
@@ -213,6 +247,23 @@ def _classify_local(local_path: Path, remote_size: int) -> tuple[str, int]:
     return ("larger", local_size)
 
 
+def _sanitize_path_component(name: str) -> str:
+    """消毒单个路径段：替换 Windows 非法字符/保留名，保证跨平台可落盘。"""
+    if name in {".", ".."}:
+        return "_"
+    cleaned = _ILLEGAL_FILENAME_CHARS.sub("_", name).rstrip(" .") or "_"
+    stem = cleaned.split(".", 1)[0].upper()
+    if stem in _WINDOWS_RESERVED_NAMES:
+        cleaned = f"_{cleaned}"
+    return cleaned
+
+
+def sanitize_rel_path(rel: str) -> str:
+    """消毒远端相对路径，防止目录穿越并保证 Windows 兼容。"""
+    parts = [_sanitize_path_component(p) for p in rel.split("/") if p]
+    return "/".join(parts)
+
+
 # ─── SFTP 实现 ───────────────────────────────────────────────────────────────
 
 
@@ -226,6 +277,22 @@ def _get_paramiko() -> Any:
         raise ImportError(
             "paramiko is required for SSH/SFTP sync. Install with: pip install paramiko"
         )
+
+
+def _load_private_key_pem(pem: str):
+    """从 PEM 字符串加载 paramiko PKey（RSA/Ed25519/ECDSA 逐类型尝试）。"""
+    import io
+
+    paramiko = _get_paramiko()
+    errors: list[Exception] = []
+    for key_cls in (paramiko.RSAKey, paramiko.Ed25519Key, paramiko.ECDSAKey):
+        try:
+            return key_cls.from_private_key(io.StringIO(pem))
+        except Exception as exc:  # noqa: BLE001 — 逐类型尝试加载
+            errors.append(exc)
+    raise ValueError("私钥 PEM 格式不受支持（支持 RSA/Ed25519/ECDSA）") from (
+        errors[-1] if errors else None
+    )
 
 
 def _sftp_connect(config: ServerConfig) -> tuple[Any, Any]:
@@ -245,6 +312,9 @@ def _sftp_connect(config: ServerConfig) -> tuple[Any, Any]:
 
     if config.key_filename:
         connect_kwargs["key_filename"] = config.key_filename
+        connect_kwargs["look_for_keys"] = False
+    elif config.private_key_pem:
+        connect_kwargs["pkey"] = _load_private_key_pem(config.private_key_pem)
         connect_kwargs["look_for_keys"] = False
     elif config.password:
         connect_kwargs["password"] = config.password
@@ -280,22 +350,34 @@ def _sftp_walk(
     sftp: Any,
     remote_dir: str,
     file_filter: frozenset[str] | None = None,
+    *,
+    root: str | None = None,
+    walk_errors: list[str] | None = None,
 ) -> Iterator[tuple[str, str, int]]:
-    """递归遍历远程目录，yield (remote_path, rel_path, size)。"""
+    """递归遍历远程目录，yield (remote_path, rel_path, size)。
+
+    rel_path 相对遍历根（非当前子目录），保证子目录结构在本地镜像、
+    跨子目录同名文件不互相覆盖；目录列举失败记入 walk_errors 继续其余子树。
+    """
+    if root is None:
+        root = remote_dir
     try:
         entries = sftp.listdir_attr(remote_dir)
     except OSError as exc:
         logger.error("无法列出远程目录 %s: %s", remote_dir, exc)
+        if walk_errors is not None:
+            walk_errors.append(f"dir unreadable: {remote_dir} ({exc})")
         return
 
     for entry in entries:
         full = posixpath.join(remote_dir, entry.filename)
         mode = entry.st_mode or 0
         if stat.S_ISDIR(mode):
-            yield from _sftp_walk(sftp, full, file_filter)
+            yield from _sftp_walk(
+                sftp, full, file_filter, root=root, walk_errors=walk_errors
+            )
         elif stat.S_ISREG(mode) and _extension_allowed(entry.filename, file_filter):
-            rel = posixpath.relpath(full, remote_dir)
-            yield (full, rel, entry.st_size or 0)
+            yield (full, posixpath.relpath(full, root), entry.st_size or 0)
 
 
 def _sftp_download_file(
@@ -417,15 +499,30 @@ def _filebrowser_walk(
     token: str,
     path: str,
     file_filter: frozenset[str] | None = None,
+    *,
+    root: str | None = None,
+    walk_errors: list[str] | None = None,
 ) -> Iterator[tuple[str, str, int]]:
-    """递归遍历 FileBrowser 目录，yield (remote_path, rel_path, size)。"""
-    items = _filebrowser_list_dir(url, token, path)
+    """递归遍历 FileBrowser 目录，yield (remote_path, rel_path, size)。
+
+    rel_path 相对遍历根（与 _sftp_walk 一致），列举失败记入 walk_errors。
+    """
+    if root is None:
+        root = path
+    try:
+        items = _filebrowser_list_dir(url, token, path)
+    except (HTTPError, URLError, OSError) as exc:
+        logger.error("无法列出 FileBrowser 目录 %s: %s", path, exc)
+        if walk_errors is not None:
+            walk_errors.append(f"dir unreadable: {path} ({exc})")
+        return
     for item in items:
         if item.is_dir:
-            yield from _filebrowser_walk(url, token, item.path, file_filter)
+            yield from _filebrowser_walk(
+                url, token, item.path, file_filter, root=root, walk_errors=walk_errors
+            )
         elif _extension_allowed(item.name, file_filter):
-            rel = posixpath.relpath(item.path, path)
-            yield (item.path, rel, item.size)
+            yield (item.path, posixpath.relpath(item.path, root), item.size)
 
 
 def _filebrowser_download(
@@ -505,18 +602,21 @@ def sync_dataset(
     local_path = Path(local_path)
     local_path.mkdir(parents=True, exist_ok=True)
     result = SyncResult(local_path=str(local_path))
+    walk_errors: list[str] = []
 
     st = server_config.server_type
 
     if st in ("hpc", "win11"):
         ssh_client, sftp = _sftp_connect(server_config)
         try:
-            for rpath, rel, rsize in _sftp_walk(sftp, remote_path, file_filter):
+            for rpath, rel, rsize in _sftp_walk(
+                sftp, remote_path, file_filter, walk_errors=walk_errors
+            ):
                 result.total_files += 1
                 _sync_one_file(
                     sftp,
                     rpath,
-                    local_path / rel,
+                    local_path / sanitize_rel_path(rel),
                     rsize,
                     result,
                     progress_callback,
@@ -538,13 +638,17 @@ def sync_dataset(
             server_config.password,
         )
         for rpath, rel, rsize in _filebrowser_walk(
-            server_config.filebrowser_url, token, remote_path, file_filter
+            server_config.filebrowser_url,
+            token,
+            remote_path,
+            file_filter,
+            walk_errors=walk_errors,
         ):
             result.total_files += 1
             _sync_one_file(
                 None,
                 rpath,
-                local_path / rel,
+                local_path / sanitize_rel_path(rel),
                 rsize,
                 result,
                 progress_callback,
@@ -557,6 +661,9 @@ def sync_dataset(
             )
     else:
         raise ValueError(f"Unknown server_type: {st}")
+
+    # 遍历期目录不可读不算下载失败，但必须上浮（否则静默丢子树）
+    result.errors.extend(walk_errors)
 
     logger.info(
         "同步完成: total=%d skipped=%d downloaded=%d failed=%d (%s)",
@@ -607,7 +714,34 @@ def _sync_one_file(
         if progress_callback:
             progress_callback(result.downloaded + 1, result.total_files, downloaded)
 
-    ok = download_func(remote_path, local_path, remote_size, resume_offset, _file_cb)
+    # 单文件重试：失败退避后重试，重试前按本地实际大小重算续传偏移
+    # （上次失败可能已写入部分字节，从新偏移追加续传，避免覆盖重来）
+    ok = False
+    for attempt in range(1, MAX_DOWNLOAD_ATTEMPTS + 1):
+        ok = download_func(
+            remote_path, local_path, remote_size, resume_offset, _file_cb
+        )
+        if ok:
+            break
+        if attempt >= MAX_DOWNLOAD_ATTEMPTS:
+            break
+        retry_status, retry_size = _classify_local(local_path, remote_size)
+        if retry_status == "equal":
+            # 失败后本地已达完整大小（如远端提前关闭但数据已落盘）
+            ok = True
+            break
+        resume_offset = retry_size if retry_status == "partial" else 0
+        delay = RETRY_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1))
+        logger.warning(
+            "下载失败（第 %d/%d 次），%.1fs 后从偏移 %d 重试: %s",
+            attempt,
+            MAX_DOWNLOAD_ATTEMPTS,
+            delay,
+            resume_offset,
+            rel,
+        )
+        time.sleep(delay)
+
     if ok:
         result.downloaded += 1
         result.downloaded_bytes += remote_size

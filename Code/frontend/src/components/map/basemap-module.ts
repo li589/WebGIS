@@ -1,4 +1,8 @@
-import type { TileSourceConfig, TileSourceId } from '../../services/api-config'
+import {
+  getFailoverCandidates as defaultGetFailoverCandidates,
+  type TileSourceConfig,
+  type TileSourceId,
+} from '../../services/api-config'
 
 type MapInstance = import('maplibre-gl').Map
 type RasterSourceSpecification = import('maplibre-gl').RasterSourceSpecification
@@ -9,9 +13,11 @@ const TILE_LAYER_ID = 'tile-base-raster'
 const TILE_OVERLAY_SOURCE_ID = 'tile-base-overlay'
 const TILE_OVERLAY_LAYER_ID = 'tile-base-overlay-raster'
 const TILE_ERROR_WINDOW_MS = 5000
-const TILE_ERROR_THRESHOLD = 15
+const TILE_ERROR_THRESHOLD = 8
 /** 熔断触发后自动恢复重试的延迟（毫秒） */
 const AUTO_RECOVERY_DELAY_MS = 15000
+/** 熔断过的 provider 在此期间不参与故障转移候选（毫秒） */
+const PROVIDER_COOLDOWN_MS = 10 * 60 * 1000
 
 export interface BasemapModule {
   ensureInitialLayer: (sourceId: TileSourceId) => void
@@ -31,6 +37,13 @@ interface CreateBasemapModuleOptions {
   setTileFailedProvider: (provider: string | null) => void
   setSourceTransitioning: (transitioning: boolean) => void
   onAfterSourceSwitch?: () => void
+  /** 熔断后选中了替代源时回调（用于同步 UI 选中态并提示用户） */
+  onProviderFailover?: (nextSourceId: TileSourceId, failedProvider: string) => void
+  /** 故障转移候选筛选（默认取 api-config 同风格组；调用方可叠加 API Key 可用性过滤） */
+  getFailoverCandidates?: (
+    currentSourceId: TileSourceId,
+    excludeProviders: ReadonlySet<string>,
+  ) => TileSourceId[]
   dependencies?: {
     setTimeout?: typeof setTimeout
     clearTimeout?: typeof clearTimeout
@@ -51,10 +64,73 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
   let autoRecoveryTimer: ReturnType<typeof setTimeout> | null = null
   /** 标记当前是否处于熔断状态 */
   let isCircuitBroken = false
+  /** provider -> 冷却截止时间戳（毫秒），冷却期内不参与故障转移候选 */
+  const providerCooldownUntil = new Map<string, number>()
+  /** 已调度的故障转移目标（防抖完成前抑制重复触发），switchTileSource 执行时清空 */
+  let pendingFailoverSourceId: TileSourceId | null = null
 
   function hideOverlay() {
     if (options.map.getLayer(TILE_OVERLAY_LAYER_ID)) {
       options.map.setLayoutProperty(TILE_OVERLAY_LAYER_ID, 'visibility', 'none')
+    }
+  }
+
+  /** background 恒居栈底；返回第一个非 background 且非底图自身的图层 id，无则 undefined。 */
+  function firstDataLayerId(): string | undefined {
+    const layers = options.map.getStyle().layers ?? []
+    for (const layer of layers) {
+      if (layer.type === 'background' || layer.id === TILE_LAYER_ID) continue
+      return layer.id
+    }
+    return undefined
+  }
+
+  /** 目标图层之前是否只剩 background（即紧贴 background 之上）。 */
+  function isDirectlyAboveBackground(layerId: string): boolean {
+    const layers = options.map.getStyle().layers ?? []
+    const idx = layers.findIndex((l) => l.id === layerId)
+    return idx > 0 && layers.slice(0, idx).every((l) => l.type === 'background')
+  }
+
+  /** 紧贴底图之上的图层 id；底图缺失或已居栈顶时返回 undefined。 */
+  function layerAboveBasemapId(): string | undefined {
+    const layers = options.map.getStyle().layers ?? []
+    const baseIdx = layers.findIndex((l) => l.id === TILE_LAYER_ID)
+    if (baseIdx < 0) return firstDataLayerId()
+    return baseIdx + 1 < layers.length ? layers[baseIdx + 1].id : undefined
+  }
+
+  /**
+   * 强制图层栈不变量：background 恒居栈底，底图紧贴其上、注记再上（所有数据叠加层之下）。
+   * 空白底图起步后叠加层已上图，再切回真实底图时若仅 addLayer 追加会落栈顶盖住数据层；
+   * 底图若沉到 background 之下会被背景色（--surface-1 半透明深色）罩住导致整图发暗，
+   * 故每次切换后幂等校正两件事：background 归底、底图归位。
+   */
+  function enforceBasemapStackPosition() {
+    const map = options.map
+    const layers = map.getStyle().layers ?? []
+
+    const backgroundLayer = layers.find((l) => l.type === 'background')
+    if (backgroundLayer && layers.length > 0 && layers[0].id !== backgroundLayer.id) {
+      const firstNonBackground = layers.find((l) => l.type !== 'background')
+      if (firstNonBackground) {
+        map.moveLayer(backgroundLayer.id, firstNonBackground.id)
+      }
+    }
+
+    if (map.getLayer(TILE_LAYER_ID)) {
+      const anchor = firstDataLayerId()
+      if (anchor) {
+        map.moveLayer(TILE_LAYER_ID, anchor)
+      } else if (!isDirectlyAboveBackground(TILE_LAYER_ID)) {
+        map.moveLayer(TILE_LAYER_ID)
+      }
+    }
+    if (map.getLayer(TILE_OVERLAY_LAYER_ID)) {
+      const above = layerAboveBasemapId()
+      if (above && above !== TILE_OVERLAY_LAYER_ID) {
+        options.map.moveLayer(TILE_OVERLAY_LAYER_ID, above)
+      }
     }
   }
 
@@ -91,8 +167,8 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     }
 
     if (!options.map.getLayer(TILE_OVERLAY_LAYER_ID)) {
-      // Place annotation above the base raster but below admin overlays when present.
-      const beforeLayerId = options.map.getLayer('admin-fill') ? 'admin-fill' : undefined
+      // 注记紧贴底图之上、所有数据叠加层之下
+      const beforeLayerId = layerAboveBasemapId()
       options.map.addLayer(
         {
           id: TILE_OVERLAY_LAYER_ID,
@@ -129,7 +205,8 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     }
 
     if (!options.map.getLayer(TILE_LAYER_ID)) {
-      const beforeLayerId = options.map.getLayer('admin-fill') ? 'admin-fill' : undefined
+      // 底图插到 background 之上、既有数据叠加层之下（沉到 background 之下会被背景色罩暗整图）
+      const beforeLayerId = firstDataLayerId()
       options.map.addLayer(
         {
           id: TILE_LAYER_ID,
@@ -186,12 +263,22 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
 
   function switchTileSource(sourceId: TileSourceId) {
     resetTileErrorState()
+    pendingFailoverSourceId = null
 
     if (sourceId === 'none') {
       if (options.map.getLayer(TILE_LAYER_ID)) {
         options.map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'none')
+        options.map.setPaintProperty(TILE_LAYER_ID, 'raster-opacity', 0)
+      }
+      // 清空底图瓦片 URL，避免仅 visibility 被其它逻辑改回 visible 时残留旧图
+      const existingSource = options.map.getSource(TILE_SOURCE_ID) as RasterTileSource | undefined
+      if (existingSource && existingSource.type === 'raster') {
+        existingSource.setTiles([])
+        options.map.triggerRepaint()
       }
       hideOverlay()
+      // 空白模式下卸掉注记 overlay 源，避免残留
+      syncOverlayLayer(undefined, false)
       return
     }
 
@@ -229,6 +316,7 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     }
 
     syncOverlayLayer(cfg, true)
+    enforceBasemapStackPosition()
   }
 
   function scheduleTileSourceSwitch(sourceId: TileSourceId) {
@@ -243,6 +331,43 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
       switchTileSource(sourceId)
       options.onAfterSourceSwitch?.()
     }, 80)
+  }
+
+  /**
+   * 熔断后尝试自动切换到同风格的可用替代源。
+   * 返回 true 表示已调度切换；false 表示无候选，走熔断+自动恢复路径。
+   */
+  function requestFailover(failedProvider: string): boolean {
+    const currentSourceId = options.getCurrentTileSourceId()
+    if (currentSourceId === 'none') return false
+
+    const now = nowImpl()
+    const excludeProviders = new Set<string>([failedProvider])
+    for (const [provider, until] of providerCooldownUntil) {
+      if (until <= now) {
+        providerCooldownUntil.delete(provider)
+      } else {
+        excludeProviders.add(provider)
+      }
+    }
+
+    const selectCandidates = options.getFailoverCandidates ?? defaultGetFailoverCandidates
+    const candidates = selectCandidates(currentSourceId, excludeProviders)
+    if (candidates.length === 0) return false
+
+    const nextSourceId = candidates[0]
+    providerCooldownUntil.set(failedProvider, now + PROVIDER_COOLDOWN_MS)
+    if (pendingFailoverSourceId !== null) {
+      // 已有转移在防抖队列中：不再重复回调，仅刷新错误窗口
+      tileErrorTimestamps.length = 0
+      return true
+    }
+    pendingFailoverSourceId = nextSourceId
+    options.onProviderFailover?.(nextSourceId, failedProvider)
+    // 立即清空错误窗口，防止 80ms 切换防抖期内错误继续累计导致重复触发
+    tileErrorTimestamps.length = 0
+    scheduleTileSourceSwitch(nextSourceId)
+    return true
   }
 
   function handleTileError(failedProvider: string | null) {
@@ -271,9 +396,15 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     tileErrorTimestamps.push(now)
 
     if (tileErrorTimestamps.length > TILE_ERROR_THRESHOLD) {
+      const brokenProvider = failedProvider ?? currentProvider ?? ''
+      // 优先故障转移到同风格可用源；无候选才进入熔断等待自动恢复
+      if (brokenProvider && requestFailover(brokenProvider)) {
+        isCircuitBroken = false
+        return
+      }
       isCircuitBroken = true
       options.setTileLoadFailed(true)
-      options.setTileFailedProvider(failedProvider ?? currentProvider)
+      options.setTileFailedProvider(brokenProvider || null)
       if (options.map.getLayer(TILE_LAYER_ID)) {
         options.map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'none')
       }
@@ -348,6 +479,8 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     }
     // 清理错误时间戳数组，避免内存泄漏
     tileErrorTimestamps.length = 0
+    providerCooldownUntil.clear()
+    pendingFailoverSourceId = null
     isCircuitBroken = false
   }
 

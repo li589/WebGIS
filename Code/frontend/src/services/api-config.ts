@@ -811,6 +811,29 @@ export function getSourcesByStyle(style: BasemapStyle): TileSourceConfig[] {
   return TILE_SOURCES_BY_STYLE.get(style) ?? []
 }
 
+/**
+ * 底图 provider 熔断后的故障转移候选：同风格组内按既有展示优先级排序，
+ * 排除自身与冷却中的 provider（按 provider 标签与 sourceId 双重排除，
+ * 因为熔断归因既可能是 provider 标签也可能是代理 sourceId）。
+ */
+export function getFailoverCandidates(
+  currentSourceId: TileSourceId,
+  excludeProviders: ReadonlySet<string>,
+): TileSourceId[] {
+  const current = TILE_SOURCE_MAP.get(currentSourceId)
+  if (!current) return []
+  const group = TILE_SOURCES_BY_STYLE.get(current.style) ?? []
+  return group
+    .filter(
+      (source) =>
+        source.id !== currentSourceId &&
+        source.isStandard &&
+        !excludeProviders.has(source.provider) &&
+        !excludeProviders.has(source.id),
+    )
+    .map((source) => source.id)
+}
+
 export function isSourceAvailable(sourceId: TileSourceId): boolean {
   return sourceId !== 'none' && TILE_SOURCE_MAP.has(sourceId)
 }

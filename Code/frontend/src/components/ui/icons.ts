@@ -14,6 +14,7 @@ export {
   // ── 通用操作 ──
   X,
   Check,
+  CheckCircle2,
   Play,
   Save,
   Trash2,
@@ -21,6 +22,8 @@ export {
   User,
   RefreshCw,
   ArrowRight,
+  Undo2,
+  Minus,
   // ── 导航 / 折叠 ──
   ChevronDown,
   ChevronUp,
@@ -32,6 +35,10 @@ export {
   AlertCircle,
   AlertTriangle,
   XCircle,
+  Copy,
+  Eye,
+  EyeOff,
+  ClipboardCheck,
   // ── 加载 ──
   LoaderCircle,
   // ── 图层 / 地图 ──
@@ -73,6 +80,7 @@ export {
   ScrollText,
   Camera,
   Workflow,
+  Pen,
   // ── 数据 / 传输 ──
   Table2,
   Folder,

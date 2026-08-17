@@ -100,27 +100,36 @@ def audit_overlay(spec) -> AssetCheck:
     if spec.category == "time-series":
         times = spec.time_list or [None]
         for t in times:
-            src = spec.resolve_source_path(t)
-            src_ok = src is not None and src.exists()
+            src, src_ok = _resolve_safely(spec.resolve_source_path, t)
             check.source_paths.append((t, src, src_ok))
 
-            png = spec.resolve_png(t)
-            check.png_paths.append((t, png, png.exists()))
+            png, png_ok = _resolve_safely(spec.resolve_png, t)
+            check.png_paths.append((t, png, png_ok))
 
-            bounds = spec.resolve_bounds(t)
-            check.bounds_paths.append((t, bounds, bounds.exists()))
+            bounds, bounds_ok = _resolve_safely(spec.resolve_bounds, t)
+            check.bounds_paths.append((t, bounds, bounds_ok))
     else:
         src = spec.source_path
         src_ok = src is not None and src.exists()
         check.source_paths.append((None, src, src_ok))
 
-        png = spec.resolve_png(None)
-        check.png_paths.append((None, png, png.exists()))
+        png, png_ok = _resolve_safely(spec.resolve_png, None)
+        check.png_paths.append((None, png, png_ok))
 
-        bounds = spec.resolve_bounds(None)
-        check.bounds_paths.append((None, bounds, bounds.exists()))
+        bounds, bounds_ok = _resolve_safely(spec.resolve_bounds, None)
+        check.bounds_paths.append((None, bounds, bounds_ok))
 
     return check
+
+
+def _resolve_safely(resolve, t):
+    """resolve_png/resolve_bounds 对非法 time 会抛校验错（如空 time_list），按缺失计。"""
+    try:
+        path = resolve(t)
+        return path, path is not None and path.exists()
+    except Exception as e:
+        print(f"  [AUDIT] {type(e).__name__}: {e}")
+        return None, False
 
 
 def _format_check_table(check: AssetCheck) -> list[str]:
@@ -186,6 +195,15 @@ _EXPORT_MAP: dict[str, str] = {
     "omega-fy-output": "export_omega_fy_ts",
     "landscape-metrics-9km": "export_landscape_metrics",
     "forest-ratio": "export_forest_ratio",
+    "smap-aux-albedo": "export_smap_aux_layers",
+    "smap-aux-bd": "export_smap_aux_layers",
+    "smap-aux-sf": "export_smap_aux_layers",
+    "smap-aux-b": "export_smap_aux_layers",
+    "smap-aux-cf": "export_smap_aux_layers",
+    "smap-aux-h": "export_smap_aux_layers",
+    "smap-aux-igbp": "export_smap_aux_layers",
+    "smap-aux-koppen": "export_smap_aux_layers",
+    "smap-aux-vi-qa": "export_smap_aux_layers",
     "vod-dec2025": "export_vod_ts",
     "prod-fy_smap_station-sm_vod_omega-202512-fusion": "export_sm_dec2025_ts",
     "omega-dec2025": "export_omega_2025_ts",

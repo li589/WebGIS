@@ -68,6 +68,11 @@ def _probe_local_open_meteo_coverage(model: str) -> tuple[dict | None, str | Non
     if cached and time.time() - cached["_ts"] < _COVERAGE_CACHE_TTL_SECONDS:
         return {k: v for k, v in cached.items() if k != "_ts"}, None
 
+    from app.core.ssrf import (
+        SSRFBlockedError,
+        is_trusted_open_meteo_local_url,
+        safe_urlopen,
+    )
     from app.weatherengine.provider_ids import OPEN_METEO_LOCAL_URL
 
     # 安全：model 已通过白名单校验，URL 编码防止查询参数注入
@@ -78,9 +83,13 @@ def _probe_local_open_meteo_coverage(model: str) -> tuple[dict | None, str | Non
         f"&hourly=temperature_2m&models={safe_model}&forecast_days=16&timezone=Asia%2FShanghai"
     )
     try:
-        with urlopen(probe_url, timeout=5) as response:
+        if is_trusted_open_meteo_local_url(probe_url):
+            response_ctx = urlopen(probe_url, timeout=5)
+        else:
+            response_ctx = safe_urlopen(probe_url, timeout=5, allow_private=True)
+        with response_ctx as response:
             payload = json.loads(response.read().decode("utf-8"))
-    except (URLError, HTTPError, OSError) as exc:
+    except (URLError, HTTPError, OSError, SSRFBlockedError) as exc:
         logger.warning(
             "weather coverage probe unreachable for model=%s: %s", model, exc
         )

@@ -25,10 +25,14 @@ class ErrorCodeSpec:
 
 
 C403001 = ErrorCodeSpec("C403001", "无权访问或写接口未鉴权被拒绝")
-C429001 = ErrorCodeSpec("C429001", "操作太频繁，请稍后再试")
+C429001 = ErrorCodeSpec("C429001", "操作太频繁，请稍后再重试")
 
 #: 鉴权/授权失败语义域统一归属 C403001 的便捷引用（401 未鉴权 / 403 无权限）。
 AUTH_ERROR = C403001
+
+#: 状态冲突语义域：乐观并发冲突（如工作区快照 409）、请求体超限（413）。
+C409001 = ErrorCodeSpec("C409001", "状态冲突或请求体超限，请刷新后重试")
+CONFLICT_ERROR = C409001
 
 
 class ApiError(HTTPException):

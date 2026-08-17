@@ -18,14 +18,27 @@ _CODE_ROOT = _REPO_ROOT / "Code"
 
 os.environ.setdefault("BACKEND_ENV", "test")
 os.environ.setdefault("ENVIRONMENT", "test")
+# 数据根优先级：CGDA_TEST_DATA_ROOT（显式覆盖）> 已设 BACKEND_DATA_ROOT
+# > 实验室盘存在则复用（向后兼容）> 仓库内临时目录。
 if not os.environ.get("BACKEND_DATA_ROOT", "").strip():
-    _lab_root = Path(r"I:\Geograph_DataSet")
-    os.environ["BACKEND_DATA_ROOT"] = str(
-        _lab_root
-        if _lab_root.exists()
-        else _REPO_ROOT / "Code" / "backend" / ".pytest_tmp" / "data_root"
-    )
+    _explicit_test_root = os.environ.get("CGDA_TEST_DATA_ROOT", "").strip()
+    if _explicit_test_root:
+        os.environ["BACKEND_DATA_ROOT"] = _explicit_test_root
+    else:
+        _lab_root = Path(r"I:\Geograph_DataSet")
+        os.environ["BACKEND_DATA_ROOT"] = str(
+            _lab_root
+            if _lab_root.exists()
+            else _REPO_ROOT / "Code" / "backend" / ".pytest_tmp" / "data_root"
+        )
 
+# B-N8：合并收集（Test/backend 与 Test/algorithms 同一会话）时，Code 根可能已
+# 被其它 conftest 加入 sys.path；若沿用 not-in 守卫，Code 根会被跳过而 provider
+# 根插到 [0]，令 provider 本地 algorithms 包先入 sys.modules，遮蔽 Code/algorithms
+# （后者经 __init__ 的 __path__ 合并垫片可同时解析内核算法与 providers 子包），
+# 导致后端 22 个文件的 algorithms.providers 导入链断裂。故先移除已存在项，
+# 再按「Code 根在前、provider 根紧随其后」的固定顺序重插。
 for _path in (str(_ALGO_ROOT), str(_CODE_ROOT)):
-    if _path not in sys.path:
-        sys.path.insert(0, _path)
+    if _path in sys.path:
+        sys.path.remove(_path)
+    sys.path.insert(0, _path)

@@ -280,7 +280,13 @@ def build_doy_omega_climatology(
             if year not in used_years:
                 used_years.append(year)
         stacked = np.stack(stack, axis=0)  # (nsamples, nrows, ncols)
-        omega_avg = np.nanmean(stacked, axis=0)
+        # 数值专项 S1：全 NaN 列 nanmean 触发 RuntimeWarning（结果正确仍为
+        # NaN），与 ndvi._safe_nanmean 一致地抑制（局部包裹，不引跨模块依赖）
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            omega_avg = np.nanmean(stacked, axis=0)
         count_grid = np.sum(~np.isnan(stacked), axis=0).astype(np.float64)
         dst = output_doy_dir / f"{_DOY_FILE_PREFIX}{doy:03d}.mat"
         savemat(

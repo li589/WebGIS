@@ -479,6 +479,8 @@ export const useWeatherTileManager = defineStore('weatherTileManager', () => {
     layerStates.delete(layerId)
     // 清理当前图层的合并缓存与软重拉计数，保留其他图层的缓存
     clearMergeCacheForLayer(mergeCache, layerId)
+    // 同 id 重建图层时不得继承旧填充起点，否则 viewport-fill 指标失真
+    viewportFillStartedAt.delete(layerId)
     for (const key of Array.from(softRequeueCounts.keys())) {
       if (key.startsWith(`${layerId}:`)) softRequeueCounts.delete(key)
     }

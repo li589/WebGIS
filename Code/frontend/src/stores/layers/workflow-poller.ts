@@ -47,6 +47,8 @@ export interface WorkflowPollerDeps {
     preferredCatalogId: string,
     runId?: string,
   ) => Promise<number>
+  /** 成功终态 attach 后清理组内未产出占位成员（F1） */
+  cleanupUnproducedRunLayers: (runId: string, opts?: { succeeded?: boolean }) => void
   clearWindForCatalog: (catalogId: string) => void
   enableParticleIfUnset: (catalogId: string) => void
   /** buildJobLayer（result-adapter）注入，避免反向依赖 */
@@ -271,12 +273,7 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
       nextUpdatedAt = event.created_at
     }
 
-    const eventMessages = mergeRecentEventMessages(
-      jobLayer.eventMessages ?? jobLayer.diagnosticNotes,
-      events,
-    )
-    const showEventMessages =
-      nextStatus === 'queued' || nextStatus === 'running' || nextStatus === 'retry_pending'
+    const eventMessages = mergeRecentEventMessages(jobLayer.eventMessages, events)
 
     return {
       ...jobLayer,
@@ -288,7 +285,7 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
       lastEventAt,
       eventMessages,
       nodeProgress: nextNodeProgress,
-      diagnosticNotes: showEventMessages ? eventMessages : jobLayer.diagnosticNotes,
+      diagnosticNotes: jobLayer.diagnosticNotes,
     }
   }
 
@@ -343,9 +340,7 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
             lastEventAt: existingJobLayer.lastEventAt,
             eventMessages: existingJobLayer.eventMessages,
             nodeProgress: existingJobLayer.nodeProgress,
-            diagnosticNotes: jobLayer.diagnosticNotes?.length
-              ? jobLayer.diagnosticNotes
-              : (existingJobLayer.eventMessages ?? existingJobLayer.diagnosticNotes),
+            diagnosticNotes: jobLayer.diagnosticNotes,
           }
         : {
             ...jobLayer,
@@ -359,7 +354,11 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
       stopWorkflowPolling(jobId)
       deps.removeActiveCatalog(catalogId)
       if (mergedJobLayer.status === 'succeeded' && !deps.isRunDismissed(run.run_id)) {
-        void deps.attachAlgorithmProductOverlays(run.result_refs, catalogId, run.run_id)
+        void deps
+          .attachAlgorithmProductOverlays(run.result_refs, catalogId, run.run_id)
+          .then(() => {
+            deps.cleanupUnproducedRunLayers(run.run_id, { succeeded: true })
+          })
       }
       if (
         deps.getParticleFlowCatalogId() === catalogId &&

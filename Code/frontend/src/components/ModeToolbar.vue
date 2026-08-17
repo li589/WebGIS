@@ -9,6 +9,7 @@ import {
   Move,
   Crosshair,
   Ruler,
+  Pen,
   Trash2,
   Satellite,
   Map,
@@ -50,6 +51,7 @@ import {
 } from '../ui-copy'
 import WorkflowStatusButton from './workflow/WorkflowStatusButton.vue'
 import DataImportMenu from '../data-manager/ui/DataImportMenu.vue'
+import BrandMark from './brand/BrandMark.vue'
 
 const uiStore = useUiStore()
 const logStore = useLogStore()
@@ -175,9 +177,10 @@ function onStyleChange(style: BasemapStyle) {
   }
 }
 
-function setInteractionMode(mode: 'move' | 'select' | 'measure') {
+function setInteractionMode(mode: 'move' | 'select' | 'measure' | 'draw') {
   uiStore.setInteractionMode(mode)
-  const label = mode === 'move' ? '移动' : mode === 'select' ? '选择' : '测量'
+  const label =
+    mode === 'move' ? '移动' : mode === 'select' ? '选择' : mode === 'measure' ? '测量' : '绘制'
   logStore.logOperation('mode-switch', `切换到${label}模式`)
 }
 
@@ -211,7 +214,7 @@ function sourcePillLabel(source: TileSourceConfig): string {
     <!-- 左侧：品牌 + 主工具 -->
     <div class="toolbar-left">
       <div class="brand">
-        <div class="brand-mark" />
+        <BrandMark :size="30" />
         <div class="brand-copy">
           <p class="brand-eyebrow">{{ BRAND.eyebrow }}</p>
           <h1 class="brand-name">{{ BRAND.shortName }}</h1>
@@ -249,6 +252,14 @@ function sourcePillLabel(source: TileSourceConfig): string {
             @click="setInteractionMode('measure')"
           >
             <template #icon><Ruler :size="14" /></template>
+          </IconButton>
+          <IconButton
+            size="sm"
+            :active="uiStore.interactionMode === 'draw'"
+            label="绘制模式（点击添加顶点，双击完成多边形）"
+            @click="setInteractionMode('draw')"
+          >
+            <template #icon><Pen :size="14" /></template>
           </IconButton>
           <IconButton
             v-if="uiStore.interactionMode === 'measure' && uiStore.measureState.points.length > 0"

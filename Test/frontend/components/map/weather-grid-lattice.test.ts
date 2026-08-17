@@ -32,6 +32,13 @@ describe('weather-grid-lattice', () => {
     expect(pointInTileHalfOpen(112, 20, tile)).toBe(false)
   })
 
+  it('keeps points on both sides of IDL when viewport east > 180', () => {
+    const viewport = { west: 170, south: -10, east: 190, north: 20 }
+    expect(pointInTileHalfOpen(175, 0, viewport)).toBe(true)
+    expect(pointInTileHalfOpen(-175, 0, viewport)).toBe(true) // unwrap → 185
+    expect(pointInTileHalfOpen(160, 0, viewport)).toBe(false)
+  })
+
   it('without tile clip, neighbor lattice cells meet across tile east', () => {
     // 瓦片边 115 落在格网线上：左最后格心 114.75、右最先 115.25
     const left = latticeCellBounds(114.75, 22.25, 0.5, { seamEps: 0 })

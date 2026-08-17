@@ -30,6 +30,27 @@ from modules.registry import register_module_decorator
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
 
 
+def _json_safe(value):
+    """递归将非有限 float（NaN/±inf）转为 None。
+
+    数值专项 W1：全 NaN 栅格的统计量是 NaN，``json.dumps`` 默认
+    ``allow_nan=True`` 会写出 ``NaN`` 字面量——非法 JSON，前端
+    ``JSON.parse`` 直接抛错。转 null 后语义为"无值"，可安全解析。
+    """
+    import math
+    from collections.abc import Mapping
+
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, Mapping):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, np.generic):
+        return _json_safe(value.item())
+    return value
+
+
 def _store_manifest(
     ctx: NodeExecutionContext,
     *,
@@ -297,7 +318,10 @@ def _build_chart_table_products(
 
     if chart is not None:
         chart_path = output_dir / f"stats_{mode}_{var_name}.chart.json"
-        chart_path.write_text(json.dumps(chart, ensure_ascii=True), encoding="utf-8")
+        chart_path.write_text(
+            json.dumps(_json_safe(chart), ensure_ascii=True, allow_nan=False),
+            encoding="utf-8",
+        )
         products.append(
             ProductRef(
                 name=f"stats_chart_{mode}_{var_name}",
@@ -313,7 +337,10 @@ def _build_chart_table_products(
         )
     if table is not None:
         table_path = output_dir / f"stats_{mode}_{var_name}.table.json"
-        table_path.write_text(json.dumps(table, ensure_ascii=True), encoding="utf-8")
+        table_path.write_text(
+            json.dumps(_json_safe(table), ensure_ascii=True, allow_nan=False),
+            encoding="utf-8",
+        )
         tables.append(str(table_path))
         products.append(
             ProductRef(

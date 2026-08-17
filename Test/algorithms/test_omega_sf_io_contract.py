@@ -77,6 +77,22 @@ def _make_smap_day(folder: Path, date_str: str, offset: float = 0.0) -> None:
     )
 
 
+def _make_gldas_day(folder: Path, date_str: str, tc: float) -> None:
+    """合成单时次 GLDAS 文件（YYYYMMDD_HHMM.mat，三温度均匀填充）。
+
+    均匀值使 loader 的 1-based lin_pix 子集索引不影响断言。
+    """
+    folder.mkdir(parents=True, exist_ok=True)
+    savemat(
+        str(folder / f"{date_str}_2230.mat"),
+        {
+            "Ts_gldas": np.full(_NPIX, tc),
+            "Tsoil1_gldas": np.full(_NPIX, tc + 4.0),
+            "Tsoil2_gldas": np.full(_NPIX, tc - 2.0),
+        },
+    )
+
+
 # ─── _load_ancillary 契约 ───────────────────────────────────────────────────
 
 
@@ -306,3 +322,119 @@ class TestPreloadChunk:
         assert np.all(np.isnan(result["tbv"][1]))
         # 第 0 行仍有效
         assert not np.all(np.isnan(result["tbv"][0]))
+
+
+# ─── _preload_chunk DUAL 双温度契约 ──────────────────────────────────────────
+
+
+class TestPreloadChunkDual:
+    """temp_scheme=DUAL：预读 dict 额外含 tc/tsoil1/tsoil2 三键（共 10 键）。
+
+    GLDAS 过境匹配：SMAP 降轨本地时 6:00、lon 110–115°E →
+    目标 UTC ≈ 前一日 22:20–22:40，故合成 GLDAS 文件置于前一日 22:30
+    （容差 gldas_time_tol_hours=1.6h 内全像元命中）。
+    """
+
+    @pytest.fixture
+    def dual_setup(self, tmp_path: Path):
+        anc_root = _make_ancillary_tree(tmp_path)
+        smap_folder = tmp_path / "smap"
+        gldas_folder = tmp_path / "gldas"
+        tvec = [datetime(2025, 12, 1) + timedelta(days=i) for i in range(3)]
+        for i, d in enumerate(tvec):
+            _make_smap_day(smap_folder, d.strftime("%Y%m%d"), offset=i * 1.0)
+            # SMAP 过境匹配到前一日 22:30 UTC 的 GLDAS 文件
+            prev = d - timedelta(days=1)
+            _make_gldas_day(gldas_folder, prev.strftime("%Y%m%d"), tc=280.0 + i)
+        anc = _load_ancillary(str(anc_root))
+        config = OmegaSfConfig.from_params(
+            {
+                "tb_source": "SMAP",
+                "sf_mode": "STATIC",
+                "ndvi_mode": "DOY_CLIM",
+                "temp_scheme": "DUAL",
+            }
+        )
+        return {
+            "tvec": tvec,
+            "anc": anc,
+            "config": config,
+            "smap_folder": str(smap_folder),
+            "gldas_folder": str(gldas_folder),
+            "ndvi_clim_folder": str(anc_root / "NDVI_clim"),
+            "ndvi_folder": "",
+            "fy3d_folder": "",
+            "fy3b_folder": "",
+            "anc_root": str(anc_root),
+        }
+
+    def _preload(self, setup, lin_pix=None):
+        return _preload_chunk(
+            setup["tvec"],
+            3,
+            4,
+            setup["config"],
+            setup["smap_folder"],
+            setup["fy3d_folder"],
+            setup["fy3b_folder"],
+            setup["ndvi_clim_folder"],
+            setup["ndvi_folder"],
+            setup["anc"],
+            lin_pix=lin_pix
+            if lin_pix is not None
+            else np.arange(_NPIX, dtype=np.int64),
+            gldas_mat_folder=setup["gldas_folder"],
+            anc_root=setup["anc_root"],
+        )
+
+    def test_returns_all_ten_keys(self, dual_setup) -> None:
+        result = self._preload(dual_setup)
+        expected = {
+            "tbv",
+            "tbh",
+            "ia",
+            "ts",
+            "sm_ref",
+            "ndvi",
+            "sf",
+            "tc",
+            "tsoil1",
+            "tsoil2",
+        }
+        assert set(result.keys()) == expected
+
+    def test_dual_shapes_and_values(self, dual_setup) -> None:
+        result = self._preload(dual_setup)
+        nt = len(dual_setup["tvec"])
+        for key in ("tc", "tsoil1", "tsoil2"):
+            assert result[key].shape == (nt, _NPIX), (
+                f"{key}: {result[key].shape} != ({nt}, {_NPIX})"
+            )
+        # 逐日 TC = 280/281/282；Tsoil1 = TC+4；Tsoil2 = TC-2
+        for i in range(nt):
+            np.testing.assert_allclose(result["tc"][i], 280.0 + i)
+            np.testing.assert_allclose(result["tsoil1"][i], 284.0 + i)
+            np.testing.assert_allclose(result["tsoil2"][i], 278.0 + i)
+
+    def test_dual_subset_lin_pix(self, dual_setup) -> None:
+        """非连续 lin_pix（bbox 打包）下温度行正确切片。"""
+        lin_pix = np.array([0, 2, 5, 7], dtype=np.int64)
+        result = self._preload(dual_setup, lin_pix=lin_pix)
+        for i in range(len(dual_setup["tvec"])):
+            assert result["tc"][i].shape == (4,)
+            np.testing.assert_allclose(result["tc"][i], 280.0 + i)
+
+    def test_dual_requires_gldas_folder(self, dual_setup) -> None:
+        dual_setup["gldas_folder"] = ""
+        with pytest.raises(ValueError, match="gldas_mat_folder"):
+            self._preload(dual_setup)
+
+    def test_dual_missing_gldas_day_yields_nan_row(self, dual_setup) -> None:
+        """某日 GLDAS 全缺失（无可匹配文件）时该行温度为 NaN。"""
+        (Path(dual_setup["gldas_folder"]) / "20251130_2230.mat").unlink()
+        result = self._preload(dual_setup)
+        assert np.all(np.isnan(result["tc"][0]))
+        assert np.all(np.isnan(result["tsoil1"][0]))
+        assert np.all(np.isnan(result["tsoil2"][0]))
+        # 其他日仍有效
+        assert not np.all(np.isnan(result["tc"][1]))

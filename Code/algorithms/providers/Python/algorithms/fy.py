@@ -470,6 +470,68 @@ def get_fy_daily_multiband_output_path(plan: FyDailyJobPlan) -> Path:
     )
 
 
+# FY-3 MWRI 圆锥扫描标称入射角（度）。NAS 预投影 TIF 无天顶角 SDS，
+# 规范 mat 的 IA 用该常数填充（本地 HDF 产物实测 IA ∈ [52.5, 53.2]）。
+FY_NOMINAL_INCIDENCE_DEG = 53.0
+
+
+def build_fy_daily_mat_payload_from_band_tifs(
+    input_files: list[str] | tuple[str, ...],
+    satellite: str,
+) -> dict[str, Any]:
+    """从 NAS 预投影逐波段 TIF 直接构建 YYYYMMDD.mat 载荷（TBv/TBh/IA）。
+
+    输入文件名形如 ``FY3D_GBAL_L1_10V_YYYYMMDD_MWRID_0.tif``（10V/10H 各一），
+    已在 EASE2 9km 网格（EPSG:6933, 1624×3856），值域与 HDF L1 相同的
+    int16 缩放（TB = raw*0.01 + 327.68，nodata=-32767）。无需 GDAL 命令链，
+    纯 numpy/rasterio 读取后换算落盘，IA 用标称入射角填充。
+
+    Raises:
+        ValueError: 缺 10V/10H 任一波段、网格不符或波段文件名无法解析时。
+    """
+    import numpy as np
+    import rasterio
+
+    profile = get_fy_profile(satellite)
+    band_files: dict[str, str] = {}
+    for raw_path in input_files:
+        name = Path(raw_path).name.upper()
+        if "_10V_" in name:
+            band_files["10V"] = str(raw_path)
+        elif "_10H_" in name:
+            band_files["10H"] = str(raw_path)
+    missing = [b for b in ("10V", "10H") if b not in band_files]
+    if missing:
+        raise ValueError(
+            f"FY band-tif inputs must contain both 10V and 10H files; missing {missing}"
+        )
+
+    arrays: dict[str, Any] = {}
+    for band, path in band_files.items():
+        with rasterio.open(path) as dataset:
+            if (dataset.width, dataset.height) != (
+                EASE2_SHAPE_9KM[1],
+                EASE2_SHAPE_9KM[0],
+            ):
+                raise ValueError(
+                    f"FY band tif grid mismatch (got {dataset.width}x{dataset.height}, "
+                    f"expect {EASE2_SHAPE_9KM[1]}x{EASE2_SHAPE_9KM[0]}): {path}"
+                )
+            values = dataset.read(1).astype(np.float64)
+            nodata = (
+                dataset.nodata if dataset.nodata is not None else profile.tb_src_nodata
+            )
+        values[values == nodata] = np.nan
+        values[~np.isfinite(values)] = np.nan
+        tb = values * profile.tb_scale + profile.tb_offset
+        tb[(tb > 330.0) | (tb < 0.0)] = np.nan
+        arrays[band] = tb
+
+    ia = np.full(arrays["10V"].shape, FY_NOMINAL_INCIDENCE_DEG)
+    ia[~np.isfinite(arrays["10V"]) & ~np.isfinite(arrays["10H"])] = np.nan
+    return {"TBv": arrays["10V"], "TBh": arrays["10H"], "IA": ia}
+
+
 def write_fy_command_plan_json(
     steps: list[FyCommandStep], output_path: str | Path
 ) -> Path:

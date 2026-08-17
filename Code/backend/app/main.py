@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -19,10 +20,11 @@ from app.api.routers import (
     import_router,
     layer_router,
     provider_router,
-    remote_browser_router,
     runtime_router,
     weather_router,
     workflow_router,
+    workspace_router,
+    zonal_stats_router,
 )
 from app.api.routers.unified_tile_router import router as unified_tile_router
 from app.api.weather_tile_routes import router as weather_tile_router
@@ -78,6 +80,19 @@ async def lifespan(app: FastAPI):
 
     threading.Thread(target=_warmup, daemon=True, name="provider-warmup").start()
 
+    # 可用数据集注册表：从算法包 DATASET_REGISTRY 同步内置条目（失败仅告警）
+    try:
+        from app.services.dataset_registry_service import sync_algorithm_datasets
+
+        synced = sync_algorithm_datasets()
+        if synced:
+            logger.info(
+                "Dataset registry: synced %d entrie(s) from algorithm package",
+                synced,
+            )
+    except Exception:  # noqa: BLE001 — 同步失败不应阻断启动
+        logger.exception("Failed to sync dataset registry on startup")
+
     # 预热 psutil CPU 采样：cpu_percent(interval=None) 首次调用返回 0.0（psutil 语义），
     # 提前调用一次使后续 get_resource_usage() 能拿到真实值
     try:
@@ -105,12 +120,14 @@ async def lifespan(app: FastAPI):
     try:
         from app.services.effective_config import (
             assert_data_root_policy,
+            assert_deployment_config_policy,
             assert_dev_bypass_policy,
             hydrate_effective_config,
         )
 
         hydrate_effective_config()
         assert_data_root_policy()
+        assert_deployment_config_policy()
         assert_dev_bypass_policy()
     except Exception:  # noqa: BLE001 — 配置初始化失败须记录后终止启动
         logger.exception("Failed to hydrate effective config on startup")
@@ -223,6 +240,10 @@ def create_app() -> FastAPI:
         env = (settings.environment or "").lower()
         request_id = getattr(request.state, "request_id", None)
 
+        # /health 为存活探测：不进限流检查，保证高负载时仍可即时应答
+        if path == "/health":
+            return await call_next(request)
+
         if env not in ("test", "testing", "development"):
             if should_rate_limit_login(path, method):
                 result = check_login_rate_limit(client_ip(request))
@@ -254,6 +275,12 @@ def create_app() -> FastAPI:
     async def request_context_middleware(request: Request, call_next):
         request_id = request.headers.get("x-request-id", f"req-{uuid4().hex[:12]}")
         request.state.request_id = request_id
+
+        # /health 为存活探测：跳过 Redis 指标记录与访问日志，
+        # 避免高负载（Redis 抖动/线程池排队）时健康检查被拖慢导致前端误报断联
+        if request.url.path == "/health":
+            return await call_next(request)
+
         set_request_id(request_id)
         start_time = time.monotonic()
         with log_context(request_id=request_id):
@@ -312,9 +339,14 @@ def create_app() -> FastAPI:
         request: Request, exc: RequestValidationError
     ):
         request_id = getattr(request.state, "request_id", None)
+        # exc.errors() 的 ctx 可能携带 model_validator 抛出的原始 ValueError 对象，
+        # 直接进 JSONResponse 会 TypeError → 500；jsonable_encoder 递归降级为可序列化值
         return JSONResponse(
             status_code=422,
-            content={"detail": exc.errors(), "request_id": request_id},
+            content={
+                "detail": jsonable_encoder(exc.errors()),
+                "request_id": request_id,
+            },
         )
 
     @app.exception_handler(Exception)
@@ -346,7 +378,8 @@ def create_app() -> FastAPI:
     app.include_router(workflow_definition_router)
     app.include_router(workflow_timer_router)
     app.include_router(cleanup_router)
-    app.include_router(remote_browser_router)
+    app.include_router(zonal_stats_router)
+    app.include_router(workspace_router)
 
     # 挂载 GEE engine router，使 /gee/* 路由正式接入 FastAPI
     # 路由前缀已在 create_gee_router 内部定义为 /gee

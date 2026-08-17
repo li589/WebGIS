@@ -27,6 +27,7 @@ const props = defineProps<{
   getCategoryName: (categoryId: string) => string
   getCatalogSourceSummary: (catalogId: string) => string
   getPrimarySourceName: (catalogId: string) => string
+  supportsOnlineTemporal: (catalogId: string) => boolean
   orgLabel: string
 }>()
 
@@ -290,6 +291,12 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
 
           <div class="card-actions">
             <span class="card-metric">{{ item.metricLabel }}: {{ item.metricUnit }}</span>
+            <span
+              v-if="supportsOnlineTemporal(effectiveSourceId(item))"
+              class="online-fetch-badge"
+              title="此图层支持在线获取历史时间数据"
+              >在线获取</span
+            >
             <button
               v-if="!isAdded(effectiveSourceId(item))"
               class="add-btn"

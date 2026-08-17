@@ -578,20 +578,33 @@ def reduce_raster_blocks(
         band_i = min(max(band, 0), ds.count - 1) + 1
         count = 0
         total = 0.0
-        total_sq = 0.0
         vmin = np.inf
         vmax = -np.inf
+        # 数值专项 W4：方差弃用一阶矩公式 E[X²]-E[X]²（TB~300K、σ~1 时
+        # 两个 ~9e4 大数相减丢 8 位有效数字，跨块朴素累加进一步放大）。
+        # 改为逐块 (count, mean, M2) 二阶矩累计 + Chan 并行合并。
+        welford_count = 0
+        welford_mean = 0.0
+        welford_m2 = 0.0
         for _win, arr in iter_block_windows(ds, band=band_i):
             finite = arr[np.isfinite(arr)]
             if finite.size == 0:
                 continue
             count += int(finite.size)
             total += float(np.sum(finite))
+            vmin = min(vmin, float(np.min(finite)))
+            vmax = max(vmax, float(np.max(finite)))
             if stat == "std":
-                total_sq += float(np.sum(finite * finite))
-            if stat in {"min", "max", "mean", "sum", "count", "std"}:
-                vmin = min(vmin, float(np.min(finite)))
-                vmax = max(vmax, float(np.max(finite)))
+                block_count = int(finite.size)
+                block_mean = float(np.mean(finite))
+                block_m2 = float(np.sum((finite - block_mean) ** 2, dtype=np.float64))
+                delta = block_mean - welford_mean
+                new_count = welford_count + block_count
+                welford_mean += delta * block_count / new_count
+                welford_m2 += (
+                    block_m2 + delta * delta * welford_count * block_count / new_count
+                )
+                welford_count = new_count
 
     if count == 0:
         raise RasterOpsValidationError("No finite pixels for spatial statistic")
@@ -605,9 +618,8 @@ def reduce_raster_blocks(
         return vmin, count
     if stat == "max":
         return vmax, count
-    # std
-    mean = total / count
-    var = max(total_sq / count - mean * mean, 0.0)
+    # std（总体口径 ddof=0，max 守卫吸收浮点负零方差）
+    var = max(welford_m2 / count, 0.0)
     return float(np.sqrt(var)), count
 
 

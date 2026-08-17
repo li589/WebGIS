@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "data": {
+    "data_root": "I:\\Geograph_DataSet",
+    "output_root": "I:\\Geograph_DataSet\\ProjectOutput"
+  },
+  "runtime": {},
+  "caches": {},
+  "imports": {},
+  "docker": {}
+}

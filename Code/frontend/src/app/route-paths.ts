@@ -6,7 +6,10 @@
  * 必然一致（auth-router.test.ts 有运行时一致性断言兜底）。
  */
 
-export const SPA_ROUTES = [{ path: '/', name: 'dashboard' }] as const
+export const SPA_ROUTES = [
+  { path: '/', name: 'dashboard' },
+  { path: '/deployment', name: 'deployment-config' },
+] as const
 
 export const LOGIN_ROUTE = { path: '/login', name: 'login' } as const
 export const NOT_FOUND_ROUTE = { path: '/:pathMatch(.*)*', name: 'not-found' } as const

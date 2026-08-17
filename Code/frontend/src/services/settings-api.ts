@@ -15,6 +15,7 @@ export type {
   ApiKeyItem,
   ApiKeyToggleRequest,
   ApiKeyUpdateRequest,
+  AvailableDatasetEntry,
   BackendServiceStatus,
   CircuitState,
   DataCacheEntry,
@@ -22,8 +23,22 @@ export type {
   DataCacheEvictResponse,
   DataCacheOverview,
   DataSourceConfig,
-  DataSourcePathsUpdateRequest,
-  DataSourcePathsUpdateResponse,
+  DatasetRescanResponse,
+  DatasetSource,
+  DatasetUpsertRequest,
+  DeletedResponse,
+  DeploymentBackupInfo,
+  DeploymentCachesGroup,
+  DeploymentConfigPreviewResponse,
+  DeploymentConfigStatus,
+  DeploymentConfigUpdateRequest,
+  DeploymentConfigUpdateResponse,
+  DeploymentDataGroup,
+  DeploymentDockerGroup,
+  DeploymentImportsGroup,
+  DeploymentKeyValueStatus,
+  DeploymentPreviewDiffItem,
+  DeploymentRuntimeGroup,
   DiscoveredDataset,
   GeeAccountCreateRequest,
   GeeAccountDeletedResponse,
@@ -36,12 +51,30 @@ export type {
   MinioPublicConfig,
   OpenDataPresetsUpdateRequest,
   OpenDataPresetsUpdateResponse,
+  PortalCatalogEntry,
+  PortalCatalogResponse,
   PortalCredentialPublic,
   PortalCredentialUpsertRequest,
   PortalCredentialsMapResponse,
+  PortalSearchResponse,
+  PortalSearchResultItem,
+  PortalTestResponse,
+  PortalUpsertRequest,
   ReloadResultResponse,
+  RemoteBrowseRequest,
+  RemoteBrowseResponse,
+  RemoteEntryItem,
+  RemoteFailoverRequest,
+  RemoteFailoverResponse,
+  RemoteFallbackMode,
   RemoteLayerUrisUpdateRequest,
   RemoteLayerUrisUpdateResponse,
+  RemoteSearchRequest,
+  RemoteSearchResponse,
+  RemoteSourceEntry,
+  RemoteSourceKind,
+  RemoteSourceRefBadge,
+  RemoteSourceUpsertRequest,
   RemoteStorageDeletedResponse,
   RemoteStorageHistoryClearResponse,
   RemoteStorageHistoryDeletedResponse,
@@ -97,12 +130,18 @@ import type {
   ApiKeyItem,
   ApiKeyToggleRequest,
   ApiKeyUpdateRequest,
+  AvailableDatasetEntry,
   DataCacheEvictRequest,
   DataCacheEvictResponse,
   DataCacheOverview,
   DataSourceConfig,
-  DataSourcePathsUpdateRequest,
-  DataSourcePathsUpdateResponse,
+  DatasetRescanResponse,
+  DatasetUpsertRequest,
+  DeletedResponse,
+  DeploymentConfigPreviewResponse,
+  DeploymentConfigStatus,
+  DeploymentConfigUpdateRequest,
+  DeploymentConfigUpdateResponse,
   GeeAccountCreateRequest,
   GeeAccountDeletedResponse,
   GeeAccountItem,
@@ -112,11 +151,24 @@ import type {
   GeneralConfig,
   OpenDataPresetsUpdateRequest,
   OpenDataPresetsUpdateResponse,
+  PortalCatalogEntry,
+  PortalCatalogResponse,
   PortalCredentialUpsertRequest,
   PortalCredentialsMapResponse,
+  PortalSearchResponse,
+  PortalTestResponse,
+  PortalUpsertRequest,
   ReloadResultResponse,
+  RemoteBrowseRequest,
+  RemoteBrowseResponse,
+  RemoteFailoverRequest,
+  RemoteFailoverResponse,
   RemoteLayerUrisUpdateRequest,
   RemoteLayerUrisUpdateResponse,
+  RemoteSearchRequest,
+  RemoteSearchResponse,
+  RemoteSourceEntry,
+  RemoteSourceUpsertRequest,
   RemoteStorageDeletedResponse,
   RemoteStorageHistoryClearResponse,
   RemoteStorageHistoryDeletedResponse,
@@ -392,13 +444,37 @@ export function fetchDataSourceConfig(): Promise<DataSourceConfig> {
   return settingsFetch('/config/data-source')
 }
 
-export function updateDataSourcePaths(
-  payload: DataSourcePathsUpdateRequest,
-): Promise<DataSourcePathsUpdateResponse> {
-  return settingsFetch('/config/data-source/paths', {
+// 旧 PUT /config/data-source/paths 前端入口已下线（路径修改收敛至部署配置中心）；后端端点保留。
+
+// ── 部署配置中心（/config/deployment） ─────────────────────────────────────
+// 注意：PUT 对 deployment.config.json 为「全量期望态」写入（空=未设置），
+// 前端每次提交完整表单，避免旧键被静默清掉。
+
+export function getDeploymentConfig(): Promise<DeploymentConfigStatus> {
+  return settingsFetch('/config/deployment')
+}
+
+export function previewDeploymentConfig(
+  payload: DeploymentConfigUpdateRequest,
+): Promise<DeploymentConfigPreviewResponse> {
+  return settingsFetch('/config/deployment/preview', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateDeploymentConfig(
+  payload: DeploymentConfigUpdateRequest,
+): Promise<DeploymentConfigUpdateResponse> {
+  return settingsFetch('/config/deployment', {
     method: 'PUT',
     body: JSON.stringify(payload),
   })
+}
+
+/** 导出（默认脱敏）下载地址；浏览器直开携带会话 Cookie 即可鉴权。 */
+export function deploymentConfigExportUrl(redact = true): string {
+  return resolveApiUrl(`/config/deployment/export?redact=${redact ? 'true' : 'false'}`)
 }
 
 export function restartBackendService(
@@ -449,6 +525,10 @@ export function updateOpenDataPresets(
     method: 'PUT',
     body: JSON.stringify({ open_data_presets } satisfies OpenDataPresetsUpdateRequest),
   })
+}
+
+export function fetchPortalCredentials(): Promise<PortalCredentialsMapResponse> {
+  return settingsFetch('/config/data-source/portal-credentials')
 }
 
 export function upsertPortalCredential(
@@ -548,6 +628,137 @@ export function clearRemoteStorageHistory(
   profileId: string,
 ): Promise<RemoteStorageHistoryClearResponse> {
   return settingsFetch(`/config/remote-storage/${encodeURIComponent(profileId)}/history`, {
+    method: 'DELETE',
+  })
+}
+
+/** 单条 Profile（脱敏回显，编辑表单填充用）。 */
+export function fetchRemoteStorageProfile(profileId: string): Promise<RemoteStorageProfile> {
+  return settingsFetch(`/config/remote-storage/${encodeURIComponent(profileId)}`)
+}
+
+/** 浏览远端目录（read 权限；filebrowser/sftp/smb/lan 等协议分发在后端）。 */
+export function browseRemoteStorage(
+  profileId: string,
+  path: string,
+): Promise<RemoteBrowseResponse> {
+  return settingsFetch(`/config/remote-storage/${encodeURIComponent(profileId)}/browse`, {
+    method: 'POST',
+    body: JSON.stringify({ path } satisfies RemoteBrowseRequest),
+  })
+}
+
+/** 远端名称搜索（filebrowser 原生 / 文件系统类受限 glob / 门户按能力）。 */
+export function searchRemoteStorage(
+  profileId: string,
+  query: string,
+  maxResults = 500,
+  startPath = '/',
+): Promise<RemoteSearchResponse> {
+  return settingsFetch(`/config/remote-storage/${encodeURIComponent(profileId)}/search`, {
+    method: 'POST',
+    body: JSON.stringify({
+      query,
+      max_results: maxResults,
+      start_path: startPath,
+    } satisfies RemoteSearchRequest),
+  })
+}
+
+/** 手动切换主/备访问路径。 */
+export function failoverRemoteStorage(
+  profileId: string,
+  target: RemoteFailoverRequest['target'],
+): Promise<RemoteFailoverResponse> {
+  return settingsFetch(`/config/remote-storage/${encodeURIComponent(profileId)}/failover`, {
+    method: 'POST',
+    body: JSON.stringify({ target } satisfies RemoteFailoverRequest),
+  })
+}
+
+// ── 开放门户目录 ────────────────────────────────────────────────────────────
+
+export function fetchPortalCatalog(): Promise<PortalCatalogResponse> {
+  return settingsFetch('/config/portals')
+}
+
+/** 自定义门户创建/更新；builtin 门户仅 base_url/alt_url 覆盖生效。 */
+export function upsertPortal(
+  portalId: string,
+  payload: PortalUpsertRequest,
+): Promise<PortalCatalogEntry> {
+  return settingsFetch(`/config/portals/${encodeURIComponent(portalId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deletePortal(portalId: string): Promise<DeletedResponse> {
+  return settingsFetch(`/config/portals/${encodeURIComponent(portalId)}`, {
+    method: 'DELETE',
+  })
+}
+
+export function testPortal(portalId: string): Promise<PortalTestResponse> {
+  return settingsFetch(`/config/portals/${encodeURIComponent(portalId)}/test`, {
+    method: 'POST',
+  })
+}
+
+/** 门户在线检索（仅 search_capability != none 的门户，如 CMR）。 */
+export function searchPortal(
+  portalId: string,
+  query: string,
+  pageSize = 20,
+): Promise<PortalSearchResponse> {
+  const qs = new URLSearchParams({ q: query, page_size: String(pageSize) })
+  return settingsFetch(`/config/portals/${encodeURIComponent(portalId)}/search?${qs}`)
+}
+
+// ── 可用数据集注册表 ────────────────────────────────────────────────────────
+
+export function fetchAvailableDatasets(includeDisabled = true): Promise<AvailableDatasetEntry[]> {
+  return settingsFetch(`/config/data-source/datasets?include_disabled=${includeDisabled}`)
+}
+
+export function upsertAvailableDataset(
+  datasetId: string,
+  payload: DatasetUpsertRequest,
+): Promise<AvailableDatasetEntry> {
+  return settingsFetch(`/config/data-source/datasets/${encodeURIComponent(datasetId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteAvailableDataset(datasetId: string): Promise<DeletedResponse> {
+  return settingsFetch(`/config/data-source/datasets/${encodeURIComponent(datasetId)}`, {
+    method: 'DELETE',
+  })
+}
+
+export function rescanAvailableDatasets(): Promise<DatasetRescanResponse> {
+  return settingsFetch('/config/data-source/datasets/rescan', { method: 'POST' })
+}
+
+// ── 可访问远程数据源（别名注册表） ──────────────────────────────────────────
+
+export function fetchRemoteSources(): Promise<RemoteSourceEntry[]> {
+  return settingsFetch('/config/remote-sources')
+}
+
+export function upsertRemoteSource(
+  remoteSourceId: string,
+  payload: RemoteSourceUpsertRequest,
+): Promise<RemoteSourceEntry> {
+  return settingsFetch(`/config/remote-sources/${encodeURIComponent(remoteSourceId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteRemoteSource(remoteSourceId: string): Promise<DeletedResponse> {
+  return settingsFetch(`/config/remote-sources/${encodeURIComponent(remoteSourceId)}`, {
     method: 'DELETE',
   })
 }

@@ -13,11 +13,13 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any
 from collections.abc import Callable
 
+from ingest._http_resume import download_with_retry
 from ingest.nsidc_download import (
     DOWNLOAD_TIMEOUT,
     MAX_RETRIES,
@@ -43,8 +45,30 @@ except ImportError:  # pragma: no cover
 
 SHORT_NAME = "GLDAS_NOAH025_3H"
 VERSION = "2.1"
-DEFAULT_OUTPUT_DIR = Path(r"I:\Geograph_DataSet\Meteorological\Weather\GLDAS_Download")
 _NC4_SUFFIXES = (".nc4", ".nc")
+
+# GLDAS 下载目录相对数据根的子路径（数据盘模板：Meteorological/Weather/GLDAS_Download）
+_GLDAS_SUBDIR = ("Meteorological", "Weather", "GLDAS_Download")
+
+
+def _default_output_dir() -> Path:
+    """独立运行的默认输出目录：``BACKEND_DATA_ROOT`` 派生；未设且非 test 环境 fail-fast。
+
+    工作流路径不使用此默认——``gldas_download`` 节点显式传 ``local_dir``。
+    """
+    root = os.getenv("BACKEND_DATA_ROOT", "").strip()
+    if root:
+        return Path(root).joinpath(*_GLDAS_SUBDIR)
+    be = (os.getenv("BACKEND_ENV") or os.getenv("ENVIRONMENT") or "").lower()
+    if be in {"test", "testing"}:
+        import tempfile
+
+        return Path(tempfile.gettempdir()) / "cgda_gldas_download"
+    raise RuntimeError(
+        "BACKEND_DATA_ROOT is not set; cannot derive GLDAS download output dir. "
+        "Set BACKEND_DATA_ROOT (deployment config center /deployment) or pass "
+        "local_dir explicitly."
+    )
 
 
 def _normalize_date(value: str) -> str:
@@ -222,59 +246,22 @@ def _download_with_retry(
     session: Any,
     url: str,
     dest: Path,
-    size_mb: float | None,
     progress_callback: Callable[[int, int], None] | None,
 ) -> bool:
+    """共享续传下载 + ``.part`` 临时文件原子替换，避免部分文件污染跳过逻辑。"""
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            resume_from = tmp.stat().st_size if tmp.exists() else 0
-            headers = {"Range": f"bytes={resume_from}-"} if resume_from else {}
-            with session.get(
-                url,
-                stream=True,
-                timeout=DOWNLOAD_TIMEOUT,
-                headers=headers,
-                allow_redirects=True,
-            ) as resp:
-                if resp.status_code not in {200, 206}:
-                    raise RuntimeError(f"HTTP {resp.status_code}")
-                mode = "ab" if resume_from and resp.status_code == 206 else "wb"
-                if mode == "wb":
-                    resume_from = 0
-                total = None
-                if size_mb:
-                    total = int(size_mb * 1024 * 1024)
-                cl = resp.headers.get("Content-Length")
-                if cl and total is None:
-                    try:
-                        total = resume_from + int(cl)
-                    except ValueError:
-                        total = None
-                downloaded = resume_from
-                with tmp.open(mode) as handle:
-                    for chunk in resp.iter_content(chunk_size=262144):
-                        if not chunk:
-                            continue
-                        handle.write(chunk)
-                        downloaded += len(chunk)
-                        if progress_callback:
-                            progress_callback(downloaded, total or downloaded)
-            tmp.replace(dest)
-            return True
-        except Exception as exc:
-            logger.warning(
-                "下载失败 attempt=%d/%d url=%s err=%s",
-                attempt,
-                MAX_RETRIES,
-                url,
-                exc,
-            )
-            if attempt >= MAX_RETRIES:
-                return False
-            time.sleep(2.0 * attempt)
-    return False
+    if not download_with_retry(
+        session,
+        url,
+        tmp,
+        max_retries=MAX_RETRIES,
+        timeout=DOWNLOAD_TIMEOUT,
+        progress_callback=progress_callback,
+    ):
+        return False
+    tmp.replace(dest)
+    return True
 
 
 def download_gldas_range(
@@ -292,7 +279,7 @@ def download_gldas_range(
 ) -> DownloadResult:
     """Download GLDAS NOAH025_3H granules for ``start_date``..``end_date``."""
     user, pwd = load_credentials(username, password)
-    local_path = Path(local_dir) if local_dir else DEFAULT_OUTPUT_DIR
+    local_path = Path(local_dir) if local_dir else _default_output_dir()
     local_path.mkdir(parents=True, exist_ok=True)
 
     result = DownloadResult(local_dir=str(local_path))
@@ -343,7 +330,7 @@ def download_gldas_range(
             if progress_callback:
                 progress_callback(i, len(todo), dl)
 
-        if _download_with_retry(session, g.url, fp, g.size_mb, file_progress):
+        if _download_with_retry(session, g.url, fp, file_progress):
             result.downloaded += 1
             result.downloaded_bytes += fp.stat().st_size
             logger.info("  完成: %s", format_size(fp.stat().st_size))

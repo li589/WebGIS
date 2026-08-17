@@ -114,34 +114,6 @@
     "concurrency_key": "layer_tool"
   },
   {
-    "tool_id": "stats.histogram",
-    "title": "直方图",
-    "description": "计算栅格像元直方图并在分析面板展示图表。",
-    "category": "stats",
-    "input_kinds": ["raster"],
-    "param_schema": [
-      {
-        "key": "bins",
-        "type": "integer",
-        "title": "分箱数",
-        "default": 50,
-        "min": 5,
-        "max": 256
-      },
-      {
-        "key": "band",
-        "type": "integer",
-        "title": "波段",
-        "default": 0,
-        "min": 0
-      }
-    ],
-    "workflow_template_id": "analysis_histogram",
-    "outputs": ["chart", "table"],
-    "resource_profile": "standard",
-    "concurrency_key": "layer_tool"
-  },
-  {
     "tool_id": "gis.reclassify",
     "title": "栅格重分类",
     "description": "按 remap 表重分类栅格并发布为新 overlay。",

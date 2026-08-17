@@ -2,22 +2,54 @@
 
 from __future__ import annotations
 
-import base64
 import json
 import logging
-import os
 import sqlite3
 from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
 from app.services._sqlite_pool import SQLiteConnectionPool
+from app.services.secret_cipher import decrypt_secret, encrypt_secret
 import contextlib
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_PROTOCOLS = frozenset({"sftp", "smb", "ftp", "ftps", "gs"})
+# 协议互通匹配组：profile 协议可服务的 URI scheme 组
+_PROTOCOL_MATCH_GROUPS: dict[str, list[str]] = {
+    "sftp": ["sftp", "ssh"],
+    "ssh": ["sftp", "ssh"],
+    "ftp": ["ftp", "ftps"],
+    "ftps": ["ftp", "ftps"],
+    "http": ["http", "https"],
+    "https": ["http", "https"],
+    "gs": ["gs"],
+    "gcs": ["gs"],
+    "smb": ["smb"],
+}
+
+ALLOWED_PROTOCOLS = frozenset(
+    {
+        "sftp",
+        "ssh",
+        "smb",
+        "ftp",
+        "ftps",
+        "gs",
+        "http",
+        "https",
+        "filebrowser",
+        "lan",
+        "nfs",
+    }
+)
 DEFAULT_HISTORY_LIMIT = 20
+
+# extra_json 约定键（双路径回退，不迁移 schema）
+EXTRA_KEY_ALT = "alt"
+EXTRA_KEY_FALLBACK_MODE = "fallback_mode"
+EXTRA_KEY_FAILOVER_STATE = "failover_state"
+VALID_FALLBACK_MODES = frozenset({"auto", "manual", "off"})
 
 
 def _mask_secret(value: str) -> str:
@@ -111,50 +143,27 @@ class RemoteStorageCredentialsRepository:
     def _encrypt(self, plaintext: str) -> tuple[str, str]:
         if not plaintext:
             return "", ""
-        if not self._encryption_key:
-            from app.services.effective_config import secrets_encryption_required
+        from app.services.effective_config import secrets_encryption_required
 
-            if secrets_encryption_required():
-                raise RuntimeError(
-                    "Cannot store remote credentials without BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY "
-                    "outside development."
-                )
-            logger.error(
-                "Remote credentials encryption key not set, storing plaintext (development only)"
-            )
-            return plaintext, ""
-        try:
-            from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # type: ignore
-
-            key_bytes = bytes.fromhex(self._encryption_key)
-            iv = os.urandom(12)
-            aesgcm = AESGCM(key_bytes)
-            ct = aesgcm.encrypt(iv, plaintext.encode("utf-8"), None)
-            return base64.b64encode(ct).decode("ascii"), base64.b64encode(iv).decode(
-                "ascii"
-            )
-        except ImportError as exc:
-            from app.services.effective_config import secrets_encryption_required
-
-            if secrets_encryption_required():
-                raise RuntimeError("cryptography package required") from exc
-            return plaintext, ""
+        return encrypt_secret(
+            plaintext,
+            key=self._encryption_key,
+            require_encryption=secrets_encryption_required(),
+            label="remote credentials",
+        )
 
     def _decrypt(self, ciphertext_b64: str, iv_b64: str) -> str:
         if not ciphertext_b64:
             return ""
-        from app.services.effective_config import refuse_empty_iv_outside_development
+        from app.services.effective_config import secrets_encryption_required
 
-        refuse_empty_iv_outside_development(iv_b64)
-        if not self._encryption_key or not iv_b64:
-            return ciphertext_b64
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # type: ignore
-
-        key_bytes = bytes.fromhex(self._encryption_key)
-        iv = base64.b64decode(iv_b64)
-        ct = base64.b64decode(ciphertext_b64)
-        aesgcm = AESGCM(key_bytes)
-        return aesgcm.decrypt(iv, ct, None).decode("utf-8")
+        return decrypt_secret(
+            ciphertext_b64,
+            iv_b64,
+            key=self._encryption_key,
+            require_encryption=secrets_encryption_required(),
+            label="remote credentials",
+        )
 
     def upsert(
         self,
@@ -193,6 +202,15 @@ class RemoteStorageCredentialsRepository:
             extra_val = dict((existing or {}).get("extra") or {})
         else:
             extra_val = dict(extra)
+        mode = extra_val.get(EXTRA_KEY_FALLBACK_MODE, "auto")
+        if mode not in VALID_FALLBACK_MODES:
+            raise ValueError(
+                f"Invalid {EXTRA_KEY_FALLBACK_MODE}: {mode!r} "
+                f"(expected one of {sorted(VALID_FALLBACK_MODES)})"
+            )
+        alt = extra_val.get(EXTRA_KEY_ALT)
+        if alt is not None and not isinstance(alt, dict):
+            raise ValueError(f"Invalid {EXTRA_KEY_ALT}: expected object")
         if enabled is None:
             enabled_val = (
                 bool((existing or {}).get("enabled", True)) if existing else True
@@ -364,9 +382,7 @@ class RemoteStorageCredentialsRepository:
 
     def find_by_host_protocol(self, protocol: str, host: str) -> dict[str, Any] | None:
         protocol = protocol.lower().strip()
-        protocols = [protocol]
-        if protocol in {"ftp", "ftps"}:
-            protocols = ["ftp", "ftps"]
+        protocols = _PROTOCOL_MATCH_GROUPS.get(protocol, [protocol])
         placeholders = ",".join("?" for _ in protocols)
         with self._connect() as conn:
             row = conn.execute(
@@ -380,6 +396,33 @@ class RemoteStorageCredentialsRepository:
         if not row:
             return None
         return self.get_secret_bundle(row["profile_id"])
+
+    def set_failover_state(self, profile_id: str, state: dict[str, Any]) -> bool:
+        """Merge-write extra['failover_state'] for a profile (dual-path bookkeeping)."""
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT extra_json FROM remote_storage_credentials WHERE profile_id=?",
+                (profile_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            extra: dict[str, Any] = {}
+            if row["extra_json"]:
+                try:
+                    extra = json.loads(row["extra_json"])
+                except json.JSONDecodeError:
+                    extra = {}
+            current = extra.get(EXTRA_KEY_FAILOVER_STATE) or {}
+            current.update(state)
+            extra[EXTRA_KEY_FAILOVER_STATE] = current
+            conn.execute(
+                "UPDATE remote_storage_credentials SET extra_json=?, updated_at=? "
+                "WHERE profile_id=?",
+                (json.dumps(extra, ensure_ascii=False), now, profile_id),
+            )
+            conn.commit()
+        return True
 
     def _row_to_info(self, row: sqlite3.Row) -> dict[str, Any]:
         extra = {}

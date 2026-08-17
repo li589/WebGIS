@@ -316,6 +316,7 @@ class PortalCredentialPublic(BaseModel):
     use_for_nsidc: bool | None = None
     use_earthdata: bool | None = None
     client_id: str | None = None
+    account_count: int = 0
 
 
 class DataSourceConfig(BaseModel):
@@ -332,14 +333,110 @@ class DataSourceConfig(BaseModel):
     download_real_fetch_enabled: bool = False
     tile_proxy_enabled: bool = False
     tile_proxy_cache_ttl_seconds: int = 0
+    static_cache_root: str = ""
+    cache_dir: str = ""
     minio: MinioPublicConfig | None = None
     discovered_datasets: list[DiscoveredDataset] = Field(default_factory=list)
+    available_datasets: list[AvailableDatasetEntry] = Field(default_factory=list)
     open_data_presets: dict[str, str] = Field(default_factory=dict)
     open_data_preset_labels: dict[str, str] = Field(default_factory=dict)
     portal_credentials: dict[str, PortalCredentialPublic] = Field(default_factory=dict)
     remote_layer_data_uris: dict[str, Any] = Field(default_factory=dict)
     static_cache: StaticCacheSummary | None = None
     workflow_hint: str | None = None
+
+
+class AvailableDatasetEntry(BaseModel):
+    """可用数据集注册表条目（available_datasets 表行）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    dataset_id: str
+    logical_name: str
+    path: str
+    file_format: str = ""
+    variables: list[str] = Field(default_factory=list)
+    time_range: str = ""
+    resolution: str = ""
+    tags: list[str] = Field(default_factory=list)
+    description: str = ""
+    source: str = "manual"
+    enabled: bool = True
+    file_count: int | None = None
+    last_scanned_at: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class DatasetUpsertRequest(BaseModel):
+    """PUT /config/data-source/datasets/{dataset_id} body。
+
+    dataset_id 传 "new"（或空）时创建新条目；logical_name 冲突且非同一条目返回 400。
+    source=algorithm_registry 条目：仅 path/描述/启停/元数据可改，改名/删除被拒。
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    logical_name: str
+    path: str
+    file_format: str | None = None
+    variables: list[str] | None = None
+    time_range: str | None = None
+    resolution: str | None = None
+    tags: list[str] | None = None
+    description: str | None = None
+    enabled: bool = True
+
+
+class DatasetRescanResponse(BaseModel):
+    root: str = ""
+    created: int = 0
+    created_names: list[str] = Field(default_factory=list)
+    refreshed: int = 0
+    entries: list[AvailableDatasetEntry] = Field(default_factory=list)
+
+
+class RemoteSourceRefBadge(BaseModel):
+    """引用源能力徽标（存储 profile 或门户）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    protocol: str | None = None
+    enabled: bool | None = None
+    last_test_status: str | None = None
+    display_name: str = ""
+    search_capability: str | None = None
+    requires_credentials: bool | None = None
+    name: str = ""
+
+
+class RemoteSourceEntry(BaseModel):
+    """「可访问远程数据源」别名条目 + 引用源能力。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    remote_source_id: str
+    kind: str
+    ref_id: str
+    remote_path: str = ""
+    display_name: str = ""
+    cache_policy: str = "standard"
+    created_at: str = ""
+    updated_at: str = ""
+    ref: RemoteSourceRefBadge | None = None
+    ref_exists: bool = False
+
+
+class RemoteSourceUpsertRequest(BaseModel):
+    """PUT /config/remote-sources/{remote_source_id} body."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    kind: str
+    ref_id: str
+    remote_path: str = ""
+    display_name: str = ""
+    cache_policy: str = "standard"
 
 
 class DataCacheEntry(BaseModel):
@@ -395,6 +492,22 @@ class RemoteStorageUpsertRequest(BaseModel):
     display_name: str | None = None
     # None preserves existing enabled flag on update
     enabled: bool | None = None
+    # 双路径（合并写入 extra.alt；任一字段非 None 即触发合并，None 的字段保留原值；
+    # host/url 置空字符串清除对应备用字段；port 传 0 显式清除备用端口）
+    alt_host: str | None = Field(
+        default=None, description="备用访问路径主机/URL（隧道），写入 extra.alt.host"
+    )
+    alt_port: int | None = Field(
+        default=None,
+        description="备用访问路径端口，写入 extra.alt.port；0 表示显式清除",
+    )
+    alt_url: str | None = Field(
+        default=None,
+        description="备用 base URL（http/https/filebrowser），写入 extra.alt.url",
+    )
+    fallback_mode: str | None = Field(
+        default=None, description="回退模式 auto|manual|off，写入 extra.fallback_mode"
+    )
 
 
 class RemoteStorageToggleRequest(BaseModel):
@@ -448,6 +561,68 @@ class RemoteStorageProfile(BaseModel):
     updated_at: str = ""
     last_tested_at: str | None = None
     last_test_status: str | None = None
+    # 双路径便捷回显（真源在 extra.alt / extra.fallback_mode / extra.failover_state）
+    alt_host: str = ""
+    alt_port: int | None = None
+    alt_url: str = ""
+    fallback_mode: str = "auto"
+    failover_state: dict[str, Any] = Field(default_factory=dict)
+
+
+class RemoteEntryItem(BaseModel):
+    """远程目录条目（浏览/搜索通用）。"""
+
+    name: str
+    is_dir: bool = False
+    size: int | None = None
+    mtime: float | None = None
+    path: str | None = None
+
+
+class RemoteBrowseRequest(BaseModel):
+    path: str = "/"
+
+
+class RemoteBrowseResponse(BaseModel):
+    profile_id: str
+    protocol: str
+    path: str
+    via: str = Field(description="本次实际使用的路径：primary | alt")
+    items: list[RemoteEntryItem] = Field(default_factory=list)
+
+
+class RemoteSearchRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    max_results: int = Field(default=200, ge=1, le=500)
+    start_path: str = Field(
+        default="/", description="搜索起点目录（默认根；用于在当前目录子树内搜索）"
+    )
+
+
+class RemoteSearchResponse(BaseModel):
+    profile_id: str
+    protocol: str
+    query: str
+    start_path: str = "/"
+    via: str
+    items: list[RemoteEntryItem] = Field(default_factory=list)
+    truncated: bool = Field(
+        default=False, description="结果已达 max_results 上限，可能存在未扫到的匹配"
+    )
+    failed_dirs: int = Field(
+        default=0, description="递归扫描中列举失败的子目录数（部分结果）"
+    )
+
+
+class RemoteFailoverRequest(BaseModel):
+    target: str = Field(..., pattern="^(primary|alt)$")
+
+
+class RemoteFailoverResponse(BaseModel):
+    profile_id: str
+    active: str
+    updated: bool
+    message: str
 
 
 class DataSourcePathsUpdateRequest(BaseModel):
@@ -458,6 +633,18 @@ class DataSourcePathsUpdateRequest(BaseModel):
         default=None,
         description="可选；留空则默认为 {data_root}/ProjectOutput",
     )
+    static_cache_root: str | None = Field(
+        default=None,
+        description="可选；静态下载缓存根（BACKEND_STATIC_CACHE_ROOT），不存在时自动创建",
+    )
+    cache_dir: str | None = Field(
+        default=None,
+        description="可选；通用缓存目录（BACKEND_CACHE_DIR），不存在时自动创建",
+    )
+    download_source_root: str | None = Field(
+        default=None,
+        description="可选；下载源根目录（BACKEND_DOWNLOAD_SOURCE_ROOT），不存在时自动创建",
+    )
 
 
 class DataSourcePathsUpdateResponse(BaseModel):
@@ -465,6 +652,9 @@ class DataSourcePathsUpdateResponse(BaseModel):
     output_root: str
     effective_data_root: str
     effective_output_root: str
+    static_cache_root: str | None = None
+    cache_dir: str | None = None
+    download_source_root: str | None = None
     pending_restart: bool
     env_path: str
     message: str
@@ -493,6 +683,16 @@ class PortalCredentialsMapResponse(BaseModel):
     portal_credentials: dict[str, PortalCredentialPublic]
 
 
+class PortalCredentialAccount(BaseModel):
+    """多账号轮换条目（NSMC 等限额门户）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    username: str = ""
+    token: str = ""
+    password: str = ""
+
+
 class PortalCredentialUpsertRequest(BaseModel):
     """PUT /config/data-source/portal-credentials/{portal_id} body."""
 
@@ -508,6 +708,102 @@ class PortalCredentialUpsertRequest(BaseModel):
     use_for_nsidc: bool | None = None
     use_earthdata: bool | None = None
     clear_secrets: bool | None = None
+    accounts: list[PortalCredentialAccount] | None = None
+
+
+class PortalDef(BaseModel):
+    """门户目录条目元数据（内置与自定义统一）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    portal_id: str
+    name: str
+    organization: str = ""
+    region: str = Field(
+        default="international", description="international | china"
+    )
+    base_url: str
+    alt_url: str | None = None
+    website: str = ""
+    description: str = ""
+    requires_credentials: bool = False
+    auth_type: str = Field(
+        default="none", description="bearer | basic | header | token | none"
+    )
+    token_header: str | None = None
+    credential_profile: str = Field(
+        default="", description="凭据键（规范 id）；空 = portal_id 自身"
+    )
+    credentials_hint: str = ""
+    search_capability: str = Field(default="none", description="cmr | none")
+    builtin: bool = True
+
+
+class PortalCatalogEntry(PortalDef):
+    """目录条目 + 运行时状态（URL 覆盖 / 凭据状态）。"""
+
+    effective_base_url: str = ""
+    base_url_overridden: bool = False
+    effective_alt_url: str | None = None
+    has_credentials: bool = False
+    credential_source: str = "none"
+    account_count: int = 0
+
+
+class PortalCatalogResponse(BaseModel):
+    portals: list[PortalCatalogEntry] = Field(default_factory=list)
+
+
+class PortalUpsertRequest(BaseModel):
+    """PUT /config/portals/{portal_id} body。
+
+    builtin 门户：仅 base_url（覆盖 open_data_presets）与 alt_url 生效，空串清除覆盖；
+    自定义门户：全字段创建/更新（name/base_url 必填）。
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str | None = None
+    organization: str | None = None
+    region: str | None = None
+    base_url: str | None = None
+    alt_url: str | None = None
+    website: str | None = None
+    description: str | None = None
+    requires_credentials: bool | None = None
+    auth_type: str | None = None
+    token_header: str | None = None
+    credential_profile: str | None = None
+    credentials_hint: str | None = None
+    search_capability: str | None = None
+
+
+class PortalTestResponse(BaseModel):
+    portal_id: str
+    ok: bool
+    status_code: int | None = None
+    via_credentials: bool = False
+    message: str
+    tested_url: str = ""
+
+
+class PortalSearchResultItem(BaseModel):
+    title: str = ""
+    granule_id: str = ""
+    producer_granule_id: str = ""
+    size_bytes: int = 0
+    time_start: str = ""
+    time_end: str = ""
+    data_link: str = ""
+    browse_link: str = ""
+
+
+class PortalSearchResponse(BaseModel):
+    portal_id: str
+    query: str
+    page_size: int = 20
+    count: int = 0
+    items: list[PortalSearchResultItem] = Field(default_factory=list)
 
 
 class DataCacheEvictRequest(BaseModel):
@@ -590,3 +886,139 @@ class WeatherProviderPriorityResponse(BaseModel):
 class RemoteStorageToggleResponse(BaseModel):
     profile_id: str
     enabled: bool
+
+
+# ── 部署与数据源配置中心（deployment.config.json）────────────────────────────
+
+
+class DeploymentDataGroup(BaseModel):
+    """data 组：数据根与导入导出。空串/None = 未设置（不覆盖）。"""
+
+    data_root: str | None = Field(default=None, description="地理数据根目录（绝对路径，必须已存在）")
+    output_root: str | None = Field(default=None, description="产出结果/报告/分析图表输出根（绝对路径，必须已存在）")
+    project_backup_root: str | None = Field(default=None, description="项目备份根（绝对路径）")
+
+
+class DeploymentRuntimeGroup(BaseModel):
+    """runtime 组：运行时目录与日志。"""
+
+    runtime_root: str | None = Field(default=None, description="运行时根；未设时派生自 <data_root>/_runtime")
+    workflow_state_dir: str | None = Field(default=None, description="工作流状态目录")
+    log_dir: str | None = Field(default=None, description="后端日志目录")
+    log_level: str | None = Field(default=None, description="DEBUG | INFO | WARNING | ERROR")
+    result_artifact_dir: str | None = Field(default=None, description="工作流产物/工件目录")
+    python_provider_workspace: str | None = Field(default=None, description="Python 算法工作区")
+    spatialite_db_path: str | None = Field(default=None, description="SpatiaLite 数据库文件路径")
+
+
+class DeploymentCachesGroup(BaseModel):
+    """caches 组：各类缓存与下载源。"""
+
+    cache_dir: str | None = Field(default=None, description="通用缓存目录（不存在时自动创建）")
+    static_cache_root: str | None = Field(default=None, description="静态物化缓存根")
+    static_cache_ttl_seconds: int | None = Field(default=None, ge=0, description="静态缓存 TTL 秒（0=永不过期）")
+    download_source_root: str | None = Field(default=None, description="真实数据保存与下载位置")
+    cache_default_ttl_seconds: int | None = Field(default=None, ge=0, description="默认缓存 TTL 秒")
+    tile_proxy_cache_ttl_seconds: int | None = Field(default=None, ge=0, description="瓦片代理缓存 TTL 秒")
+
+
+class DeploymentImportsGroup(BaseModel):
+    """imports 组：导入配额（字节）。"""
+
+    max_imports_total_bytes: int | None = Field(default=None, ge=1, description="导入永久层总配额")
+    imports_soft_reserve_bytes: int | None = Field(default=None, ge=0, description="导入软预留（0=禁用）")
+
+
+class DeploymentDockerGroup(BaseModel):
+    """docker 组：Docker / Open-Meteo（部分键需全量 restart）。"""
+
+    minio_root_user: str | None = Field(default=None, description="MinIO root 用户")
+    minio_root_password: str | None = Field(default=None, description="MinIO root 密码（留空保持不变，回显恒脱敏）")
+    open_meteo_host_port: int | None = Field(default=None, ge=1, le=65535, description="Open-Meteo 宿主端口")
+    open_meteo_data_volume: str | None = Field(default=None, description="Open-Meteo 共享 named volume 名")
+    open_meteo_sync_domains: str | None = Field(default=None, description="同步气象模型（逗号分隔）")
+    open_meteo_sync_variables: str | None = Field(default=None, description="同步变量列表（逗号分隔）")
+    open_meteo_local_url: str | None = Field(default=None, description="Open-Meteo 本地 API URL（http(s)）")
+
+
+class DeploymentConfigUpdateRequest(BaseModel):
+    """部署配置整体写入请求（preview 与 PUT 共用）。"""
+
+    schema_version: int = Field(default=1, description="配置 schema 版本（当前 1）")
+    data: DeploymentDataGroup | None = None
+    runtime: DeploymentRuntimeGroup | None = None
+    caches: DeploymentCachesGroup | None = None
+    imports: DeploymentImportsGroup | None = None
+    docker: DeploymentDockerGroup | None = None
+    notes: str | None = Field(default=None, description="备注（部署说明等）")
+
+
+class DeploymentKeyValueStatus(BaseModel):
+    """单键三方状态：运行值 / .env 值 / deployment.json 值。"""
+
+    group: str
+    group_label: str
+    key: str
+    env_key: str
+    kind: str
+    label: str
+    restart_level: str
+    must_exist: bool
+    sensitive: bool
+    double_write_sync: bool
+    runtime_value: str
+    env_value: str
+    config_value: str
+    source: str
+    pending: bool
+
+
+class DeploymentBackupInfo(BaseModel):
+    name: str
+    path: str
+    size_bytes: int
+    mtime: float
+
+
+class DeploymentConfigStatus(BaseModel):
+    path: str
+    exists: bool
+    schema_version: int
+    applied_env_keys: list[str]
+    keys: list[DeploymentKeyValueStatus]
+    backups: list[DeploymentBackupInfo]
+    pending_restart: bool
+    env_path: str
+    sync_env_path: str
+    notes: str = ""
+
+
+class DeploymentPreviewDiffItem(BaseModel):
+    group: str
+    key: str
+    env_key: str
+    old: str
+    new: str
+    restart_level: str
+    derived: bool = False
+
+
+class DeploymentConfigPreviewResponse(BaseModel):
+    ok: bool
+    errors: list[str]
+    warnings: list[str]
+    diff: list[DeploymentPreviewDiffItem]
+    restart_level: str
+
+
+class DeploymentConfigUpdateResponse(BaseModel):
+    applied_env_keys: list[str]
+    sync_env_keys: list[str]
+    config_path: str
+    env_path: str
+    sync_env_path: str | None = None
+    restart_level: str
+    pending_restart: bool
+    warnings: list[str]
+    backups: list[str]
+    message: str

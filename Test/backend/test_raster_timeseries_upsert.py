@@ -148,3 +148,69 @@ def test_omega_reuses_legacy_omega_block_layer_id(
     )
     assert out["layer_id"] == legacy
     assert out["product_tag"] == "OMEGA"
+
+
+def test_layer_key_dedupes_across_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    imports = tmp_path / "imports"
+    imports.mkdir()
+    monkeypatch.setattr(
+        "app.data_io.services.raster_timeseries.import_paths.IMPORTS_DIR",
+        imports,
+    )
+
+    first_dir = tmp_path / "blocks_a"
+    first_dir.mkdir()
+    _write_block_mat(first_dir / "20251227_20251231.mat", value=0.3)
+    first = upsert_block_dir_timeseries(
+        first_dir,
+        variable_id="SM",
+        label="SM",
+        run_id="run-alpha",
+        layer_key="method-fy-omega-doy-dynamic",
+        grid_preset="ease2-global-9km",
+    )
+
+    second_dir = tmp_path / "blocks_b"
+    second_dir.mkdir()
+    _write_block_mat(second_dir / "20260101_20260108.mat", value=0.5)
+    second = upsert_block_dir_timeseries(
+        second_dir,
+        variable_id="SM",
+        label="SM",
+        run_id="run-beta",
+        layer_key="method-fy-omega-doy-dynamic",
+        grid_preset="ease2-global-9km",
+    )
+    assert second["layer_id"] == first["layer_id"]
+    meta = json.loads(
+        (imports / first["layer_id"] / "meta.json").read_text(encoding="utf-8")
+    )
+    # 跨 run 覆盖语义：meta 以最新 run 的窗口为准
+    assert meta["time_list"] == ["20260101_20260108"]
+
+
+def test_layer_key_empty_falls_back_to_run_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    imports = tmp_path / "imports"
+    imports.mkdir()
+    monkeypatch.setattr(
+        "app.data_io.services.raster_timeseries.import_paths.IMPORTS_DIR",
+        imports,
+    )
+    from app.data_io.services.raster_timeseries import stable_imported_layer_id
+
+    block_dir = tmp_path / "blocks"
+    block_dir.mkdir()
+    _write_block_mat(block_dir / "20251227_20251231.mat", value=0.4)
+
+    out = upsert_block_dir_timeseries(
+        block_dir,
+        variable_id="SM",
+        label="SM",
+        run_id="run-legacy",
+        grid_preset="ease2-global-9km",
+    )
+    assert out["layer_id"] == stable_imported_layer_id("run-legacy", "SM", "SM")

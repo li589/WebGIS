@@ -1,0 +1,272 @@
+<script setup lang="ts">
+/**
+ * 单个分析工具的参数子页：页头（返回 + 工具信息）+ 参数表单 + 运行控制。
+ * 表单值/校验状态由父级持有（跨页面往返保留输入）。
+ */
+import type { AnalysisToolDescriptor } from '../../../services/analysis-api'
+import {
+  fieldHintFor,
+  numericRangeLabel,
+  type ToolRunContext,
+  runDisabledReasonFor,
+  canRunTool,
+} from './tool-page-model'
+import AppButton from '../../ui/AppButton.vue'
+
+defineProps<{
+  tool: AnalysisToolDescriptor
+  formValues: Record<string, unknown>
+  formErrors: Record<string, string>
+  runContext: ToolRunContext
+  runPhase: string
+  runPhaseLabel: string
+  runMessage: string
+  importedVectorOptions: { id: string; label: string }[]
+}>()
+
+const zonesOverlayId = defineModel<string>('zonesOverlayId', { default: '' })
+
+const emit = defineEmits<{
+  back: []
+  run: []
+  cancel: []
+  setField: [key: string, value: unknown]
+}>()
+
+function isRunning(phase: string): boolean {
+  return phase === 'running' || phase === 'submitting' || phase === 'queued'
+}
+
+function onFieldInput(key: string, evt: Event): void {
+  const target = evt.target as HTMLInputElement | HTMLSelectElement
+  emit('setField', key, target.value)
+}
+
+function onNumberFieldInput(key: string, evt: Event): void {
+  const raw = (evt.target as HTMLInputElement).value
+  if (raw === '') {
+    emit('setField', key, '')
+    return
+  }
+  const num = Number(raw)
+  emit('setField', key, Number.isFinite(num) ? num : raw)
+}
+</script>
+
+<template>
+  <div class="tool-page">
+    <div class="tool-page-head">
+      <button type="button" class="page-back" @click="emit('back')">← 工具列表</button>
+      <span class="tool-kicker">{{ tool.category }}</span>
+      <h4 class="tool-title">{{ tool.title }}</h4>
+      <p class="tool-note">{{ tool.description }}</p>
+      <p v-if="!tool.enabled && tool.disabled_reason" class="tool-error">
+        {{ tool.disabled_reason }}
+      </p>
+    </div>
+
+    <div class="param-grid">
+      <label
+        v-for="field in tool.param_schema"
+        :key="field.key"
+        class="param-row"
+        :title="fieldHintFor(field, tool.tool_id)"
+      >
+        <span class="param-label">
+          {{ field.title || field.key }}
+          <em v-if="field.unit">（{{ field.unit }}）</em>
+        </span>
+
+        <select
+          v-if="field.type === 'enum' && field.options?.length"
+          :value="formValues[field.key]"
+          class="param-input"
+          @change="onFieldInput(field.key, $event)"
+        >
+          <option v-for="opt in field.options" :key="opt" :value="opt">{{ opt }}</option>
+        </select>
+
+        <input
+          v-else-if="field.type === 'number' || field.type === 'integer'"
+          :value="formValues[field.key]"
+          type="number"
+          class="param-input"
+          :class="{ 'param-input--error': formErrors[field.key] }"
+          :min="field.min ?? undefined"
+          :max="field.max ?? undefined"
+          @input="onNumberFieldInput(field.key, $event)"
+        />
+
+        <input
+          v-else-if="field.key === 'zones_overlay_layer_id'"
+          :value="formValues[field.key]"
+          type="text"
+          class="param-input"
+          list="zones-overlay-options"
+          :class="{ 'param-input--error': formErrors[field.key] }"
+          placeholder="可从下拉选择已导入矢量层，或直接输入 overlay id"
+          @input="onFieldInput(field.key, $event)"
+        />
+
+        <input
+          v-else
+          :value="formValues[field.key]"
+          type="text"
+          class="param-input"
+          :class="{ 'param-input--error': formErrors[field.key] }"
+          :placeholder="fieldHintFor(field, tool.tool_id)"
+          @input="onFieldInput(field.key, $event)"
+        />
+
+        <span v-if="formErrors[field.key]" class="param-error">{{ formErrors[field.key] }}</span>
+        <span v-else-if="fieldHintFor(field, tool.tool_id)" class="param-hint">
+          {{ fieldHintFor(field, tool.tool_id) }}
+        </span>
+        <span v-else-if="numericRangeLabel(field)" class="param-hint">
+          {{ numericRangeLabel(field) }}
+        </span>
+      </label>
+
+      <datalist id="zones-overlay-options">
+        <option v-for="opt in importedVectorOptions" :key="opt.id" :value="opt.id">
+          {{ opt.label }}
+        </option>
+      </datalist>
+    </div>
+
+    <div v-if="tool.tool_id === 'gis.zonal_stats'" class="param-grid">
+      <label class="param-row" title="分区矢量图层，留空使用模板默认 zones">
+        <span class="param-label">分区矢量 overlay id（可选）</span>
+        <input
+          v-model="zonesOverlayId"
+          type="text"
+          class="param-input"
+          list="zones-overlay-options"
+          placeholder="imported-…"
+        />
+      </label>
+    </div>
+
+    <div class="run-row">
+      <AppButton
+        size="sm"
+        variant="primary"
+        :disabled="!canRunTool(tool, runContext)"
+        @click="emit('run')"
+      >
+        运行
+      </AppButton>
+      <AppButton v-if="isRunning(runPhase)" size="sm" variant="secondary" @click="emit('cancel')">
+        取消
+      </AppButton>
+      <span v-if="runPhaseLabel" class="run-phase">{{ runPhaseLabel }}</span>
+    </div>
+
+    <p
+      v-if="runDisabledReasonFor(tool, runContext) && !canRunTool(tool, runContext)"
+      class="tool-hint"
+    >
+      {{ runDisabledReasonFor(tool, runContext) }}
+    </p>
+    <p v-if="runMessage" class="tool-hint">{{ runMessage }}</p>
+  </div>
+</template>
+
+<style scoped>
+.tool-page-head {
+  display: grid;
+  gap: 0.15rem;
+  margin-bottom: 0.5rem;
+}
+
+.page-back {
+  justify-self: start;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 0.2rem;
+}
+
+.page-back:hover {
+  color: var(--accent, #3b82f6);
+}
+
+.tool-kicker {
+  font-size: var(--font-size-caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.tool-title {
+  margin: 0;
+  font-size: var(--font-size-body);
+}
+
+.tool-note,
+.tool-hint {
+  margin: 0.2rem 0 0;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+
+.tool-error {
+  margin: 0.2rem 0 0;
+  font-size: var(--font-size-caption);
+  color: var(--danger, #b91c1c);
+}
+
+.param-grid {
+  display: grid;
+  gap: 0.45rem;
+  margin-bottom: 0.4rem;
+}
+
+.param-row {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.param-label {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+
+.param-input {
+  width: 100%;
+  border: 1px solid var(--border-default);
+  border-radius: 0.4rem;
+  padding: 0.28rem 0.4rem;
+  background: var(--surface-base, transparent);
+  color: inherit;
+}
+
+.param-input--error {
+  border-color: var(--danger, #b91c1c);
+}
+
+.param-error {
+  font-size: var(--font-size-caption);
+  color: var(--danger, #b91c1c);
+}
+
+.param-hint {
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+}
+
+.run-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+}
+
+.run-phase {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+</style>

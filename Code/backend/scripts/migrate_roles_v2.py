@@ -64,7 +64,10 @@ def _find_users_db() -> Path | None:
     if legacy_db.exists():
         return legacy_db
 
-    runtime_root = os.getenv("BACKEND_RUNTIME_ROOT", r"I:\Geograph_DataSet\_runtime")
+    # 去硬编码：不再回退实验室 I: 盘；默认落仓库 .data/_runtime（与 config.py 派生一致）
+    runtime_root = os.getenv("BACKEND_RUNTIME_ROOT", "").strip() or str(
+        backend_root / ".data" / "_runtime"
+    )
     for name in ("users.sqlite3", "users.db"):
         alt = Path(runtime_root) / name
         if alt.exists():

@@ -20,6 +20,7 @@ import {
   type PersistedCatalogLayer,
   type PersistedVectorLayer,
 } from './workspace-persist'
+import { scheduleWorkspaceSyncPush } from './workspace-sync'
 import type {
   ActiveLayer,
   ActiveRunLayerGroup,
@@ -64,6 +65,7 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
       workspacePersistTimer = null
     }
     saveWorkspaceSnapshot(buildWorkspaceSnapshot(deps.getActiveLayers(), deps.getRunLayerGroups()))
+    scheduleWorkspaceSyncPush()
   }
 
   function scheduleWorkspacePersist() {

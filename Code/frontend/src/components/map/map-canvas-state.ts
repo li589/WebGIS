@@ -2,6 +2,7 @@ import { ref, type Ref } from 'vue'
 
 import { createAdminBoundaryModule } from './admin-boundary-module'
 import { createBasemapModule } from './basemap-module'
+import type { DrawModule } from './draw-module'
 import { createHotspotPinsModule } from './hotspot-pins-module'
 import { createMapInteractionModule } from './map-interaction-module'
 import { createMapCanvasRuntimeModule } from './map-canvas-runtime-module'
@@ -48,6 +49,7 @@ export interface MapCanvasState {
     mapCanvasRuntimeModule: ReturnType<typeof createMapCanvasRuntimeModule> | null
     selectedLayerFocusModule: ReturnType<typeof createSelectedLayerFocusModule> | null
     measureModule: ReturnType<typeof createMeasureModule> | null
+    drawModule: DrawModule | null
   }
   clearResources: () => void
 }
@@ -78,6 +80,7 @@ export function createMapCanvasState(): MapCanvasState {
       mapCanvasRuntimeModule: null,
       selectedLayerFocusModule: null,
       measureModule: null,
+      drawModule: null,
     },
     clearResources: () => {
       state.resources.map = null
@@ -91,6 +94,7 @@ export function createMapCanvasState(): MapCanvasState {
       state.resources.mapCanvasRuntimeModule = null
       state.resources.selectedLayerFocusModule = null
       state.resources.measureModule = null
+      state.resources.drawModule = null
     },
   }
 

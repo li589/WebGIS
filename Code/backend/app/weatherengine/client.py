@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, UTC
 import json
+import os
 from pathlib import Path
 import threading
 import time
@@ -9,6 +10,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
+from uuid import uuid4
 import logging
 
 from app.core.config import settings
@@ -43,6 +45,39 @@ from app.weatherengine.field_mapping import (
 REDIS_CACHE_PREFIX = "weather:"
 
 logger = logging.getLogger(__name__)
+
+
+def unique_cache_tmp_path(cache_path: Path) -> Path:
+    """为原子写入生成唯一临时文件路径（pid + thread id + 随机片段隔离并发写者）。
+
+    固定 `.tmp` 后缀会让多 worker / 多线程在写同一 cache_key 时互相踩踏：
+    Windows 上 `replace` 目标或源被他人占用会 PermissionError，交错写则产生
+    损坏的缓存文件。唯一名 + os.replace 保证「全有或全无」。
+    """
+    return cache_path.with_name(
+        f"{cache_path.name}.{os.getpid()}.{threading.get_ident()}"
+        f".{uuid4().hex[:8]}.tmp"
+    )
+
+
+def replace_with_retry(
+    src: Path, dst: Path, *, attempts: int = 5, delay: float = 0.05
+) -> None:
+    """os.replace 的 Windows 安全版本。
+
+    即便临时文件名唯一，多个写者并发 replace 同一目标在 Windows 上仍可能
+    撞上 sharing violation（PermissionError 13）。短退避重试后让「最后一次
+    写入获胜」——同 cache_key 的载荷语义等价，覆盖无害。
+    """
+    for attempt in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay)
+            delay *= 2
 
 
 class CircuitBreaker:
@@ -567,8 +602,8 @@ class OpenMeteoClient:
                 None,
             )
 
-        # 原子写入缓存：先写临时文件再 rename，避免半写文件被并发读取
-        cache_tmp_path = cache_path.with_suffix(".tmp")
+        # 原子写入缓存：先写唯一临时文件再 rename，避免半写文件被并发读取/写入
+        cache_tmp_path = unique_cache_tmp_path(cache_path)
         cache_tmp_path.parent.mkdir(parents=True, exist_ok=True)
         cache_tmp_path.write_text(
             json.dumps(
@@ -582,7 +617,7 @@ class OpenMeteoClient:
             ),
             encoding="utf-8",
         )
-        cache_tmp_path.replace(cache_path)
+        replace_with_retry(cache_tmp_path, cache_path)
         # Write to Redis cache for fast cross-worker access
         cache_set_json(redis_key, payload, max(60, ttl_seconds))
         # L-1：仅当本线程实际持有锁时才释放（token 比对），避免误删他人锁。
@@ -972,8 +1007,8 @@ class OpenMeteoClient:
                 None,
             )
 
-        # 写入缓存
-        cache_tmp_path = cache_path.with_suffix(".tmp")
+        # 写入缓存（唯一临时文件 + 原子 rename，见 unique_cache_tmp_path）
+        cache_tmp_path = unique_cache_tmp_path(cache_path)
         cache_tmp_path.parent.mkdir(parents=True, exist_ok=True)
         cache_tmp_path.write_text(
             json.dumps(
@@ -987,7 +1022,7 @@ class OpenMeteoClient:
             ),
             encoding="utf-8",
         )
-        cache_tmp_path.replace(cache_path)
+        replace_with_retry(cache_tmp_path, cache_path)
         # Write to Redis cache for fast cross-worker access
         cache_set_json(redis_key, grid_data, max(60, ttl_seconds))
         # L-1：仅当本线程实际持有锁时才释放（token 比对），避免误删他人锁。

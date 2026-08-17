@@ -35,9 +35,11 @@ class TimeGranularity(str, Enum):
 
 
 class BoundingBox(BaseModel):
-    west: float = Field(ge=-180.0, le=180.0)
+    # east 容许 >180（跨日界线 unwrap，如 170..235.5），与 layer_router
+    # Query(ge=-180, le=360) 约定一致；west 同步放宽避免 unwrap 视口 west>180。
+    west: float = Field(ge=-180.0, le=360.0)
     south: float = Field(ge=-90.0, le=90.0)
-    east: float = Field(ge=-180.0, le=180.0)
+    east: float = Field(ge=-180.0, le=360.0)
     north: float = Field(ge=-90.0, le=90.0)
     crs: str = "EPSG:4326"
 

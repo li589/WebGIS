@@ -1,0 +1,42 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "NOMADS GRIB2 下载（GFS herbie）",
+    "description": "目的：经 NCEP NOMADS 下载 GFS GRIB2 场（herbie 主路径参数化检索与字段子集物化，legacy NOMADS 直连直链回退并支持 Range 断点续传）。示例取分析场 2 m 温度子集；date 支持起报日期或 latest。开放数据，无需凭据。",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "tags": ["sample", "download"],
+    "category": "data_access"
+  },
+  "workflow_id": "nomads_gfs_grib_download",
+  "name": "NOMADS GRIB2 下载（GFS herbie）",
+  "description": "nomads_grib_download（herbie 主路径 → NOMADS 直连回退）→ 本地 GRIB2 + 产物清单。",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "download/nomads_grib_download",
+      "pos": [120, 160],
+      "properties": {
+        "date": "{YYYYMMDD}",
+        "model": "gfs",
+        "product": "pgrb2.0p25",
+        "fxx": 0,
+        "search_string": ":TMP:2 m",
+        "use": "auto",
+        "overwrite": false
+      }
+    }
+  ],
+  "links": [],
+  "extra": {
+    "purpose": "nomads_grib_download_pipeline",
+    "scheme": "NOMADS_HERBIE_SUBSET",
+    "portal": "noaa_nomads",
+    "cred_profile": "",
+    "pipeline": "nomads_grib_download (herbie subset, legacy direct HTTP fallback with Range resume) → workspace/data_access/nomads",
+    "prerequisite": "开放数据免凭据；herbie 主路径需依赖可用，缺失时自动回退 legacy 直连",
+    "notes": "模板种子：date 占位符 {YYYYMMDD} 运行前展开，亦可填 latest 取最新起报。search_string 为 herbie 字段子集语法（示例仅取 2 m 温度），留空下载整场 GRIB2。GEFS 集合经 members 参数（逗号分隔成员号）。"
+  }
+}

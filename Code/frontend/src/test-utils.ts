@@ -7,3 +7,5 @@
 // 纯逻辑测试（经 @/ 进入 src 后解析依赖）是同一机制。生产构建中本文件因未被引用会被 tree-shake。
 export { mount, shallowMount } from '@vue/test-utils'
 export { createPinia, setActivePinia } from 'pinia'
+// 组件测试需要路由上下文时（useRouter/useRoute）经同一垫片解析 vue-router。
+export { createRouter, createMemoryHistory } from 'vue-router'

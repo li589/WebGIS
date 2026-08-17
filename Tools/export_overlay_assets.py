@@ -5,28 +5,28 @@
 为后端 overlay_registry.py 中注册的每个图层生成地理配准 PNG 预览图。
 输出目录: I:\\Geograph_DataSet\\ProjectOutput\\2023-01_Omega_Inversion\\_overlays\\
 
-支持的图层（Phase 1.6 扩展后）:
+地理配准约定（2026-08 重构）：
+  - 所有 PNG 输出到 **Web Mercator 线性网格**（行/列在 EPSG:3857 平面均匀）。
+    MapLibre ImageSource 以 4 角坐标在 Mercator 平面双线性插值渲染，等经纬
+    图像在中高纬会偏移十几度、±90° 角点无法表示（GPCP 不可显示的根因）。
+  - 全球层 bounds 为 (-180, -85.0511, 180, 85.0511)；中国层为中国窗口。
+  - 全球产品（smap-aux 9 层、forest-ratio、landscape-metrics、dem-etopo、
+    gpcp）默认输出全球全幅，不再硬裁剪到中国。
+
+CLI：
+  python Tools/export_overlay_assets.py                        # 全量
+  python Tools/export_overlay_assets.py --tasks smap-aux,forest-ratio,landscape-metrics
+  python Tools/export_overlay_assets.py --tasks gpcp-rewarp    # 修既有 GPCP 资产
+  python Tools/export_overlay_assets.py --extent global        # 强制全球（诊断）
+  python Tools/export_overlay_assets.py --dry-run              # 只打印计划
+
+支持的图层（节选；完整清单见 _build_task_table）：
   1. dem-etopo           — ETOPO_2022 bed topography (global, terrain)
-  2. landcover-cn        — MCD12Q1 landcover (China 0.25deg, IGBP)
-  3. hfp-cn              — Human Footprint (China 0.25deg, hot)
-  4. aridity-cn          — Aridity Index (China 0.25deg, BrBG)
   5. omega-output [TS]   — Omega inversion avg 时间序列 (doy 017-030, 14 天, plasma)
-  6. ref-smap-sm-202512-l3 [TS]     — SMAP soil moisture 时间序列 (China, 13 days)
   7. gpcp-precip-ts [TS] — GPCP monthly precipitation 时间序列 (global, 24 months)
-  8. gebco-dem-cn        — GEBCO 2024 DEM (China)
-  9. cmfd-precip-cn      — CMFD 降水 (China 1km, 2002-01)
- 10. clcd-cn             — CLCD 1997 土地覆盖 (China)
- 11. biomass-cn          — ESACCI BIOMASS 2020 (China)
- 12. era5-dwaa-cn        — ERA5 白天热浪事件 (China, 2020)
- 13. era5-wdaa-cn        — ERA5 夜间热浪事件 (China, 2020)
- 14. co2-cn              — GOSAT 中层 CO2 柱浓度 (China)
- 15. ref-ddca-sm-201504-202512 [TS]      — Soil DDCA DH 时间序列 (2015-04 ~ 2022-12, 采样 60 天)
- 16. omega-fy-output [TS]— Omega FY avg 时间序列 (doy 025-030, 6 天, magma)
- 17. forest-ratio        — Forest Ratio 9KM 2020 (global EASE-Grid 9km, YlGn)
-  18. landscape-metrics-9km — Shannon 多样性指数 SHDI (global EASE-Grid 9km, cividis) [Phase 1.6 新增]
-  19. vod-dec2025 [TS]    — VOD 植被光学厚度时间序列 (2025-12, 31 天, magma) [Phase 2 新增]
-  20. prod-fy_smap_station-sm_vod_omega-202512-fusion [TS]     — SM 土壤湿度时间序列 (2025-12, 31 天, YlGnBu) [Phase 2 新增]
-  21. omega-dec2025 [TS]  — Omega 反演时间序列 (2025-12, 31 天, plasma) [Phase 2 新增]
+  17. forest-ratio        — Forest Ratio 9KM 2020 (global EASE-Grid 9km, YlGn)
+  18. landscape-metrics-9km — Shannon 多样性指数 SHDI (global EASE-Grid 9km, cividis)
+  22. smap-aux-* (9 层)   — SMAP 辅助数据静态层 (albedo/bd/sf/b/cf/h/igbp/koppen/vi-qa)
 
 [TS] = 时间序列图层，输出多张按时间索引的 PNG + bounds JSON。
 """
@@ -52,6 +52,24 @@ import matplotlib.pyplot as plt
 # Output root
 _OUT_ROOT = Path(r"I:\Geograph_DataSet\ProjectOutput\2023-01_Omega_Inversion\_overlays")
 _CHINA_BBOX = (73.0, 15.0, 137.0, 59.0)
+
+# extent 模式：auto = 按任务表声明；global/china = CLI 强制覆盖（诊断用）
+_EXTENT_MODE = "auto"
+
+
+def _resolve_extent(declared: str) -> str:
+    """返回生效 extent（"global" | "china"）：CLI --extent 非 auto 时覆盖任务声明。"""
+    return _EXTENT_MODE if _EXTENT_MODE != "auto" else declared
+
+
+def _extent_clip(extent: str):
+    """extent → 重投影裁剪窗口；global 返回 None（全球全幅）。"""
+    return None if extent == "global" else _CHINA_BBOX
+
+
+def _extent_res_deg(extent: str, china_deg: float = 0.1, global_deg: float = 0.25) -> float:
+    """extent → 输出分辨率（度）：全球层用较粗分辨率控制 PNG 尺寸。"""
+    return global_deg if extent == "global" else china_deg
 
 # ── Phase 1.6: 课题组时间序列源数据目录（与 overlay_registry.py 同步）──────────
 _INVERSION_RESULTS_ROOT = Path(r"I:\Geograph_DataSet\Inversion_Results")
@@ -294,20 +312,51 @@ def _bounds_from_centers(lat_1d, lon_1d):
 # 早期硬编码 9000.879 是错误的（差 7.18m/像素，1624 行累计偏差 11.6km）
 _EASE_GRID_9K_CRS = "EPSG:6933"
 _EASE_GRID_9K_PIXEL_SIZE = 9008.0552  # 米（= 18 × 500.4475，NSIDC 标准）
-_EASE_GRID_9K_UL_X = -17367530.45  # 上左角 x（米）
-_EASE_GRID_9K_UL_Y = 7314540.83  # 上左角 y（米）
+
+# EASE-Grid 2.0 上左角（米）：同一 CRS 各分辨率共享角点（500m 基准网格对齐）
+# 出处：NSIDC EASE-Grid 2.0 https://nsidc.org/data/ease/ease_grid2.html
+# 半球 LAEA（6931/6932）官方角点 (-9,000,000, 9,000,000)；
+# EASE-Grid 1.0（3408/3409/3410）为球体 R=6371228 网格，角点不可与 2.0 混用：
+#   - 1.0 半球 25km：721×721 × 25067.525 m，UL 同 (-9,000,000, 9,000,000)
+#   - 1.0 全球：x ∈ ±17,334,194（lon=±180），y 由分辨率对齐（约 ±7,356,861）
+_EASE_GRID_UL_BY_CRS: dict[str, tuple[float, float]] = {
+    "EPSG:6933": (-17367530.45, 7314540.83),
+    "EPSG:6931": (-9000000.0, 9000000.0),
+    "EPSG:6932": (-9000000.0, 9000000.0),
+    "EPSG:3408": (-9000000.0, 9000000.0),
+    "EPSG:3409": (-9000000.0, 9000000.0),
+    "EPSG:3410": (-17334193.94, 7356860.29),
+}
+
+# Web Mercator（EPSG:3857）纬度极限：MapLibre ImageSource 四角无法表示 ±90°，
+# 超出即渲染失败（GPCP 全球 bounds (-180,-90,180,90) 图层不显示的根因）
+_MERCATOR_MAX_LAT = 85.0511287798066
+_MERCATOR_MAX_Y = 20037508.342789244
+_METERS_PER_DEGREE_EQUATOR = 111319.49079327358
+
+
+def _ease_grid_transform(
+    src_crs: str = _EASE_GRID_9K_CRS, resolution_m: float = _EASE_GRID_9K_PIXEL_SIZE
+):
+    """按 (CRS, 分辨率) 返回 EASE-Grid 仿射变换（rasterio 约定）。
+
+    覆盖 EASE-Grid 2.0 全球（6933）与半球 LAEA（6931/6932），以及
+    NSIDC EASE-Grid 1.0（3408/3409/3410，球体 R=6371228）。角点查
+    ``_EASE_GRID_UL_BY_CRS``；1.0 与 2.0 角点不同，不可混用。
+    """
+    from rasterio.transform import from_origin
+
+    ul = _EASE_GRID_UL_BY_CRS.get(src_crs)
+    if ul is None:
+        raise ValueError(
+            f"No EASE-Grid preset for {src_crs}; known: {sorted(_EASE_GRID_UL_BY_CRS)}"
+        )
+    return from_origin(ul[0], ul[1], resolution_m, resolution_m)
 
 
 def _ease_grid_9k_transform():
     """返回 EASE-Grid 2.0 9km 的 Affine 变换（rasterio 约定）。"""
-    from rasterio.transform import from_origin
-
-    return from_origin(
-        _EASE_GRID_9K_UL_X,
-        _EASE_GRID_9K_UL_Y,
-        _EASE_GRID_9K_PIXEL_SIZE,
-        _EASE_GRID_9K_PIXEL_SIZE,
-    )
+    return _ease_grid_transform(_EASE_GRID_9K_CRS, _EASE_GRID_9K_PIXEL_SIZE)
 
 
 def _ease_grid_9k_transform_from_mat(mat_dict):
@@ -352,154 +401,105 @@ def _ease_grid_9k_transform_from_mat(mat_dict):
         return None
 
 
-def _reproject_ease_to_wgs84(
-    data, target_resolution=0.1, clip_bounds=_CHINA_BBOX, mat_dict=None
+def _reproject_to_mercator_linear(
+    data,
+    src_transform,
+    src_crs,
+    target_resolution=0.25,
+    clip_bounds=None,
 ):
-    """将 EASE-Grid 2.0 9km 数据重投影到 WGS84 等经纬度网格，并裁剪到指定区域。
+    """重投影任意投影栅格到 Web Mercator 线性网格（行/列在 3857 平面均匀）。
 
-    EASE-Grid 2.0 9km 是圆柱等积投影（EPSG:6933），行间距随纬度变化。
-    直接当作经纬度会导致高纬度地区偏移上百公里。本函数使用 rasterio.warp
-    重采样到等经纬度网格，确保地理定位准确。
-
-    重要：全球 EASE-Grid 数据 (-180,-84,180,85) 通过 MapLibre image source 渲染时，
-    4 角线性插值在 Web Mercator 投影下高纬度严重拉伸（南北方向）。
-    因此重投影后必须裁剪到中国区域 (73,15,137,59)，避免高纬度 Mercator 拉伸。
+    为什么目标不是等经纬（EPSG:4326）：MapLibre ``ImageSource`` 以 4 角坐标
+    在 Mercator 平面做双线性插值渲染。等经纬图像的行按纬度均匀分布，而
+    Mercator y 对纬度非线性 → 中高纬渲染偏移可达十几度；±90° 角点甚至
+    无法表示。把行重采样为 Mercator y 均匀后，四角线性插值即地理精确，
+    南北极边界自动收敛到 ±85.0511°（Mercator 全幅）。
 
     Args:
-        data: (n_lat, n_lon) 2D array，EASE-Grid 2.0 9km 数据
-        target_resolution: 目标分辨率（度），默认 0.1°
-        clip_bounds: (west, south, east, north) 裁剪边界，默认中国区域；
-                     None 表示不裁剪（保留全球范围，仅用于诊断）
-        mat_dict: 可选，.mat 元数据字典（用于读取真实 Transform）
-
+        data: (n_lat, n_lon) 2D 源数组
+        src_transform / src_crs: 源栅格仿射变换与 CRS
+        target_resolution: 输出分辨率（度，赤道处；1 度 = 111319.49 米）
+        clip_bounds: (west, south, east, north) WGS84 裁剪窗口；
+                     None = 全球全幅（-180 ~ 180, ±85.0511）
     Returns:
-        (reprojected_data, bounds) — bounds = (west, south, east, north)
+        (out_data, (west, south, east, north)) — bounds 为角点精确反算的经纬度
     """
-    from rasterio.warp import reproject, calculate_default_transform
+    from pyproj import Transformer
     from rasterio.enums import Resampling
+    from rasterio.transform import from_origin
+    from rasterio.warp import reproject
 
-    # 优先使用 .mat 提供的真实 Transform
-    src_transform = None
-    if mat_dict is not None:
-        src_transform = _ease_grid_9k_transform_from_mat(mat_dict)
-    if src_transform is None:
-        src_transform = _ease_grid_9k_transform()
+    res_m = target_resolution * _METERS_PER_DEGREE_EQUATOR
+    if clip_bounds is None:
+        west_m = south_m = -_MERCATOR_MAX_Y
+        east_m = north_m = _MERCATOR_MAX_Y
+    else:
+        west, south, east, north = clip_bounds
+        fwd = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
+        west_m, south_m = fwd.transform(west, max(south, -_MERCATOR_MAX_LAT))
+        east_m, north_m = fwd.transform(east, min(north, _MERCATOR_MAX_LAT))
 
-    src_crs = _EASE_GRID_9K_CRS
-    dst_crs = "EPSG:4326"
+    width = max(1, int(round((east_m - west_m) / res_m)))
+    height = max(1, int(round((north_m - south_m) / res_m)))
+    dst_transform = from_origin(west_m, north_m, res_m, res_m)
 
-    n_lat, n_lon = data.shape
-    # 计算目标网格的 transform 和尺寸
-    dst_transform, dst_width, dst_height = calculate_default_transform(
-        src_crs,
-        dst_crs,
-        n_lon,
-        n_lat,
-        *_ease_grid_9k_transform_bounds(src_transform, n_lon, n_lat),
-        resolution=target_resolution,
-    )
-
-    dst_data = np.full((dst_height, dst_width), np.nan, dtype=np.float64)
+    dst_data = np.full((height, width), np.nan, dtype=np.float64)
     reproject(
         source=data,
         destination=dst_data,
         src_transform=src_transform,
         src_crs=src_crs,
         dst_transform=dst_transform,
-        dst_crs=dst_crs,
+        dst_crs="EPSG:3857",
         resampling=Resampling.nearest,  # 分类数据用最近邻；连续数据可改 bilinear
         src_nodata=np.nan,
         dst_nodata=np.nan,
     )
 
-    # 计算 WGS84 边界（dst_transform 的像素边界）
-    west = dst_transform[2]
-    east = dst_transform[2] + dst_transform[0] * dst_width
-    north = dst_transform[5]
-    south = dst_transform[5] + dst_transform[4] * dst_height
-
-    # 裁剪到指定区域（默认中国），避免高纬度 Web Mercator 拉伸
-    if clip_bounds is not None:
-        dst_data, west, south, east, north = _clip_wgs84_array(
-            dst_data,
-            dst_transform,
-            west=west,
-            south=south,
-            east=east,
-            north=north,
-            clip_bounds=clip_bounds,
-        )
-
-    return dst_data, (float(west), float(south), float(east), float(north))
+    inv = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
+    w, s = inv.transform(west_m, south_m)
+    e, n = inv.transform(east_m, north_m)
+    return dst_data, (float(w), float(s), float(e), float(n))
 
 
-def _clip_wgs84_array(data, transform, west, south, east, north, clip_bounds):
-    """裁剪 WGS84 网格数组到指定边界。
+def _reproject_ease_to_wgs84(
+    data,
+    target_resolution=0.1,
+    clip_bounds=_CHINA_BBOX,
+    mat_dict=None,
+    src_crs=_EASE_GRID_9K_CRS,
+):
+    """将 EASE-Grid 数据重投影到 Web Mercator 线性网格，并裁剪到指定窗口。
+
+    EASE-Grid 2.0 是圆柱等积投影（EPSG:6933），行间距随纬度变化。直接当作
+    经纬度会导致高纬度地区偏移上百公里。本函数重采样到 MapLibre ImageSource
+    渲染精确的 Mercator 线性网格（见 ``_reproject_to_mercator_linear``）。
 
     Args:
-        data: (n_lat, n_lon) 2D array
-        transform: rasterio Affine transform
-        west, south, east, north: 当前数据的地理边界
-        clip_bounds: (west, south, east, north) 目标裁剪边界
+        data: (n_lat, n_lon) 2D array，EASE-Grid 数据
+        target_resolution: 目标分辨率（度，赤道处），默认 0.1°；全球层建议 0.25°
+        clip_bounds: (west, south, east, north) 裁剪边界，默认中国区域；
+                     None 表示全球全幅（-180 ~ 180, ±85.0511）
+        mat_dict: 可选，.mat 元数据字典（用于读取真实 Transform）
+        src_crs: 源 CRS，默认 EASE-Grid 2.0 全球（EPSG:6933）
 
     Returns:
-        (clipped_data, new_west, new_south, new_east, new_north)
+        (reprojected_data, bounds) — bounds = (west, south, east, north)
     """
-    cw, cs, ce, cn = clip_bounds
-    # 求交集（避免裁剪到数据范围外）
-    cw = max(cw, west)
-    cs = max(cs, south)
-    ce = min(ce, east)
-    cn = min(cn, north)
-    if cw >= ce or cs >= cn:
-        # 无交集，返回原数据
-        return data, west, south, east, north
+    src_transform = None
+    if mat_dict is not None:
+        src_transform = _ease_grid_9k_transform_from_mat(mat_dict)
+    if src_transform is None:
+        src_transform = _ease_grid_transform(src_crs)
 
-    pixel_w = abs(transform[0])
-    pixel_h = abs(transform[4])
-    if pixel_w <= 0 or pixel_h <= 0:
-        return data, west, south, east, north
-
-    # 计算裁剪后的像素索引（按行列计算）
-    # transform: x = a*col + c; y = e*row + f
-    # 假设 a > 0, e < 0（北朝上，西朝左）
-    a = transform[0]
-    c = transform[2]
-    e = transform[4]
-    f = transform[5]
-    if a > 0 and e < 0:
-        col_w = int(np.floor((cw - c) / a))
-        col_e = int(np.ceil((ce - c) / a))
-        row_n = int(np.floor((cn - f) / e))
-        row_s = int(np.ceil((cs - f) / e))
-    else:
-        # 不支持的 transform 方向，跳过裁剪
-        return data, west, south, east, north
-
-    n_lat, n_lon = data.shape
-    col_w = max(0, min(col_w, n_lon))
-    col_e = max(0, min(col_e, n_lon))
-    row_n = max(0, min(row_n, n_lat))
-    row_s = max(0, min(row_s, n_lat))
-    if col_w >= col_e or row_n >= row_s:
-        return data, west, south, east, north
-
-    clipped = data[row_n:row_s, col_w:col_e]
-    # 裁剪后的边界：用像素外边沿
-    new_west = c + col_w * a
-    new_east = c + col_e * a
-    new_north = f + row_n * e
-    new_south = f + row_s * e
-    return clipped, new_west, new_south, new_east, new_north
-
-
-def _ease_grid_9k_transform_bounds(transform, width, height):
-    """计算 rasterio transform 的地理边界 (west, south, east, north)。"""
-    # transform * (col, row) → (x, y)
-    # 左上角 (0, 0)，右下角 (width, height)
-    x_ul, y_ul = transform * (0, 0)
-    x_lr, y_lr = transform * (width, height)
-    return (min(x_ul, x_lr), min(y_ul, y_lr), max(x_ul, x_lr), max(y_ul, y_lr))
+    return _reproject_to_mercator_linear(
+        data,
+        src_transform,
+        src_crs,
+        target_resolution=target_resolution,
+        clip_bounds=clip_bounds,
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -518,6 +518,7 @@ def export_dem_etopo() -> None:
 
     import rasterio
     from rasterio.enums import Resampling
+    from rasterio.transform import from_origin
 
     out_dir = _OUT_ROOT / "dem"
     # Downsample to ~0.5 degree for manageable PNG size
@@ -535,18 +536,28 @@ def export_dem_etopo() -> None:
         nodata = src.nodata
         if nodata is not None:
             data[data == nodata] = np.nan
+        # 等经纬源网格的仿射（下采样后像素 = scale × 原像素）
+        src_transform = from_origin(
+            west,
+            north,
+            (east - west) / (src.width // scale),
+            (north - south) / (src.height // scale),
+        )
+        src_crs = str(src.crs) if src.crs else "EPSG:4326"
 
     print(
         f"  Data shape: {data.shape}, range: {np.nanmin(data):.1f} to {np.nanmax(data):.1f}"
     )
+    # 全球层：重投影到 Web Mercator 线性网格（±90° 角点 MapLibre 无法渲染，
+    # 且等经纬行分布在中高纬会偏移十几度）
+    data, bounds = _reproject_to_mercator_linear(
+        data, src_transform, src_crs, target_resolution=0.5
+    )
+    print(f"  dem-etopo reprojected: {data.shape}, bounds={bounds}")
     _render_png(
         data, out_dir / "etopo_bed_overlay.png", cmap="terrain", vmin=-8000, vmax=8000
     )
-    _write_bounds(
-        out_dir / "etopo_bed_overlay_bounds.json",
-        "dem-etopo",
-        (float(west), float(south), float(east), float(north)),
-    )
+    _write_bounds(out_dir / "etopo_bed_overlay_bounds.json", "dem-etopo", bounds)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -672,8 +683,10 @@ def export_omega_ts() -> None:
                 data, target_resolution=0.1, mat_dict=m
             )
         except Exception as e:
-            print(f"  [WARN] doy_{tag} reproject failed, fallback to global: {e}")
-            bounds = (-180.0, -90.0, 180.0, 90.0)
+            # 不再回退全球 bounds：未重投影的 EASE 网格配全球 bounds 会被
+            # MapLibre 拉伸到错误位置（历史上“大变样”事故的来源），跳过该帧
+            print(f"  [WARN] doy_{tag} reproject failed, skip frame: {e}")
+            continue
 
         if generic_bounds is None:
             generic_bounds = bounds
@@ -839,10 +852,14 @@ def export_gpcp_ts() -> None:
         # Replace fill values
         arr = np.where(arr < 0, np.nan, arr).astype(np.float64)
 
-        # Global bounds for 0.5 degree grid
-        # lat: -89.75 to 89.75, lon: -179.75 to 179.75 (center of pixels)
-        # Use cell edges: -90 to 90, -180 to 180
-        bounds = (-180.0, -90.0, 180.0, 90.0)
+        # 0.5° 等经纬源网格 → Web Mercator 线性网格（720×720）。
+        # 旧版直接写 (-180,-90,180,90)：±90° 角点 MapLibre 无法渲染 → 图层不显示。
+        from rasterio.transform import from_origin as _from_origin
+
+        src_transform = _from_origin(-180.0, 90.0, 0.5, 0.5)
+        arr, bounds = _reproject_to_mercator_linear(
+            arr, src_transform, "EPSG:4326", target_resolution=0.5
+        )
 
         print(f"  {tag}: {arr.shape}, range={np.nanmin(arr):.2f}-{np.nanmax(arr):.2f}")
         vmax = float(np.nanpercentile(arr, 99))
@@ -853,10 +870,121 @@ def export_gpcp_ts() -> None:
 
         ds.close()
 
-    # Generic bounds
+    # Generic bounds（与最新一帧一致；Mercator 全幅）
     _write_bounds(
-        out_dir / "gpcp_ts_bounds.json", "gpcp-precip-ts", (-180.0, -90.0, 180.0, 90.0)
+        out_dir / "gpcp_ts_bounds.json",
+        "gpcp-precip-ts",
+        (-180.0, -_MERCATOR_MAX_LAT, 180.0, _MERCATOR_MAX_LAT),
     )
+
+
+def export_gpcp_rewarp() -> None:
+    """把既有 GPCP 资产 PNG（等经纬 ±90° 旧格式）原地重变形为 Mercator 线性。
+
+    源 NC 数据目录缺失无法重导出时，用本任务直接修复已导出的 PNG：
+    对每帧按行最近邻重采样（行从纬度均匀 → Mercator y 均匀），并重写
+    bounds JSON 为 Mercator 全幅。只改资产文件，不触碰源数据。
+    """
+    print("\n=== GPCP asset re-warp (equirect -> mercator-linear) ===")
+    out_dir = _OUT_ROOT / "gpcp_ts"
+    pngs = sorted(out_dir.glob("gpcp_*.png")) if out_dir.exists() else []
+    if not pngs:
+        print("  [SKIP] No existing gpcp_*.png assets found")
+        return
+
+    from PIL import Image
+
+    # 源：0.5° 等经纬，纬度中心 -89.75..89.75（360 行）
+    lat_centers = 90.0 - (np.arange(360) + 0.5) * 0.5
+    # 目标：Mercator y 均匀的 720 行（0.5° 等效），反解各行纬度中心
+    t_edges = np.linspace(-_MERCATOR_MAX_LAT, _MERCATOR_MAX_LAT, 721)
+    y_edges = np.log(np.tan(np.deg2rad(t_edges) / 2 + np.pi / 4))
+    y_centers = 0.5 * (y_edges[:-1] + y_edges[1:])
+    tgt_lat = np.rad2deg(2 * np.arctan(np.exp(y_centers)) - np.pi / 2)
+
+    # 每个目标行取最近源行（源行号按纬度降序 → 反转索引）
+    src_rows = np.searchsorted(-lat_centers, -tgt_lat)  # lat_centers 降序
+    src_rows = np.clip(src_rows, 0, len(lat_centers) - 1)
+
+    n_fixed = 0
+    for png in pngs:
+        bounds_json = png.with_name(png.stem + "_bounds.json")
+        img = Image.open(png)
+        if img.size[1] != len(lat_centers):
+            print(f"  [SKIP] {png.name}: unexpected height {img.size[1]}")
+            continue
+        # 按行最近邻采样（源行纬度均匀 → 目标行 Mercator y 均匀），列保持 720
+        arr = np.asarray(img)
+        warped_arr = arr[src_rows, :]
+        out_img = Image.fromarray(warped_arr)
+        out_img.save(png)
+        _write_bounds(
+            bounds_json,
+            "gpcp-precip-ts",
+            (-180.0, -_MERCATOR_MAX_LAT, 180.0, _MERCATOR_MAX_LAT),
+        )
+        n_fixed += 1
+        print(f"  [OK] {png.name} re-warped ({img.size[1]}x{img.size[0]} -> 720x720)")
+
+    generic = out_dir / "gpcp_ts_bounds.json"
+    if generic.exists() or n_fixed:
+        _write_bounds(
+            generic,
+            "gpcp-precip-ts",
+            (-180.0, -_MERCATOR_MAX_LAT, 180.0, _MERCATOR_MAX_LAT),
+        )
+    print(f"  Re-warped {n_fixed} PNG(s)")
+
+
+def export_dem_rewarp() -> None:
+    """把既有 DEM 资产 PNG（等经纬 ±90° 旧格式）原地重变形为 Mercator 线性。
+
+    源 GeoTIFF 缺失无法重导出时，用本任务直接修复已导出的 PNG：
+    按行最近邻重采样（纬度均匀 → Mercator y 均匀）并重写 bounds JSON。
+    """
+    print("\n=== DEM asset re-warp (equirect -> mercator-linear) ===")
+    out_dir = _OUT_ROOT / "dem"
+    png = out_dir / "etopo_bed_overlay.png"
+    bounds_json = out_dir / "etopo_bed_overlay_bounds.json"
+    if not png.exists():
+        print("  [SKIP] No existing etopo_bed_overlay.png asset found")
+        return
+
+    from PIL import Image
+
+    img = Image.open(png)
+    if img.size != (1800, 900):
+        print(f"  [SKIP] Unexpected size {img.size}, expected (1800, 900)")
+        return
+
+    # 源：0.2° 等经纬，纬度中心 -89.0..89.0（900 行）
+    lat_centers = 90.0 - (np.arange(900) + 0.5) * 0.2
+    # 目标：Mercator y 均匀的 720 行（0.25° 等效），反解各行纬度中心
+    t_edges = np.linspace(-_MERCATOR_MAX_LAT, _MERCATOR_MAX_LAT, 721)
+    y_edges = np.log(np.tan(np.deg2rad(t_edges) / 2 + np.pi / 4))
+    y_centers = 0.5 * (y_edges[:-1] + y_edges[1:])
+    tgt_lat = np.rad2deg(2 * np.arctan(np.exp(y_centers)) - np.pi / 2)
+
+    src_rows = np.searchsorted(-lat_centers, -tgt_lat)  # lat_centers 降序
+    src_rows = np.clip(src_rows, 0, len(lat_centers) - 1)
+
+    arr = np.asarray(img)
+    warped_arr = arr[src_rows, :]
+    Image.fromarray(warped_arr).save(png)
+    _write_bounds(
+        bounds_json,
+        "dem-etopo",
+        (-180.0, -_MERCATOR_MAX_LAT, 180.0, _MERCATOR_MAX_LAT),
+    )
+    print(f"  [OK] {png.name} re-warped (900x1800 -> 720x1800)")
+
+    generic = out_dir / "dem_bounds.json"
+    if generic.exists():
+        _write_bounds(
+            generic,
+            "dem-etopo",
+            (-180.0, -_MERCATOR_MAX_LAT, 180.0, _MERCATOR_MAX_LAT),
+        )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1248,8 +1376,9 @@ def export_soil_ddca_ts() -> None:
                 data, target_resolution=0.1, mat_dict=m
             )
         except Exception as e:
-            print(f"  [WARN] {tag} reproject failed, fallback to global: {e}")
-            bounds = (-180.0, -90.0, 180.0, 90.0)
+            # 不回退全球 bounds（同 omega 路径），重投影失败跳过该帧
+            print(f"  [WARN] {tag} reproject failed, skip frame: {e}")
+            continue
 
         if generic_bounds is None:
             generic_bounds = bounds
@@ -1322,8 +1451,10 @@ def export_omega_fy_ts() -> None:
                 data, target_resolution=0.1, mat_dict=m
             )
         except Exception as e:
-            print(f"  [WARN] doy_{tag} reproject failed, fallback to global: {e}")
-            bounds = (-180.0, -90.0, 180.0, 90.0)
+            # 不再回退全球 bounds：未重投影的 EASE 网格配全球 bounds 会被
+            # MapLibre 拉伸到错误位置（历史上“大变样”事故的来源），跳过该帧
+            print(f"  [WARN] doy_{tag} reproject failed, skip frame: {e}")
+            continue
 
         if generic_bounds is None:
             generic_bounds = bounds
@@ -1370,17 +1501,185 @@ def export_forest_ratio() -> None:
     print(
         f"  Data shape: {data.shape}, range: {np.nanmin(data):.3f} to {np.nanmax(data):.3f}"
     )
-    # 修复：EASE-Grid 2.0 9km 重投影到 WGS84 + 裁剪到中国区域（避免全球 Mercator 拉伸）
+    # EASE-Grid 2.0 9km 重投影到 Web Mercator 线性网格（全球产品，默认全球全幅）
+    extent = _resolve_extent("global")
     try:
-        data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
-        print(f"  forest_ratio reprojected: {data.shape}, bounds={bounds}")
-    except Exception as e:
-        print(
-            f"  [WARN] EASE-Grid reproject failed, falling back to global bounds: {e}"
+        data, bounds = _reproject_ease_to_wgs84(
+            data,
+            target_resolution=_extent_res_deg(extent),
+            clip_bounds=_extent_clip(extent),
+            mat_dict=m,
         )
-        bounds = (-180.0, -90.0, 180.0, 90.0)
+        print(f"  forest_ratio reprojected ({extent}): {data.shape}, bounds={bounds}")
+    except Exception as e:
+        print(f"  [WARN] EASE-Grid reproject with .mat metadata failed: {e}")
+        # 重试：使用默认 EASE-Grid 9km transform（不依赖 .mat 元数据）
+        try:
+            data, bounds = _reproject_ease_to_wgs84(
+                data,
+                target_resolution=_extent_res_deg(extent),
+                clip_bounds=_extent_clip(extent),
+                mat_dict=None,
+            )
+            print(
+                f"  forest_ratio reprojected (default transform, {extent}): "
+                f"{data.shape}, bounds={bounds}"
+            )
+        except Exception as e2:
+            print(f"  [ERROR] EASE-Grid reproject failed entirely: {e2}")
+            print(
+                "  [SKIP] Skipping forest_ratio export — "
+                "un-reprojected data with wrong bounds would cause severe coordinate offset"
+            )
+            return
     _render_png(data, out_dir / "forest_ratio_overlay.png", cmap="YlGn", vmin=0, vmax=1)
     _write_bounds(out_dir / "forest_ratio_overlay_bounds.json", "forest-ratio", bounds)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 21. SMAP 辅助数据静态图层（9 层，EASE-Grid 9km / 全球 0.083°）
+#     命名与 overlay_registry.py 的 smap-aux-* 条目严格一致；
+#     旧版 aux_*/ 目录为全球范围未重投影导出（地理定位错误），由本节取代
+# ──────────────────────────────────────────────────────────────────────────────
+
+_SMAP_AUX_DATA_DIR = Path(r"I:\Geograph_DataSet\Soil_Moisture\SMAP_Auxiliary_Data")
+
+
+def _smap_aux_continuous_range(data: np.ndarray) -> tuple[float, float]:
+    """中国区裁剪后连续场的显示范围：1% / 99% 分位（打印后同步回注册表）。"""
+    valid = data[np.isfinite(data)]
+    if valid.size == 0:
+        return (0.0, 1.0)
+    vmin = float(np.percentile(valid, 1))
+    vmax = float(np.percentile(valid, 99))
+    if vmax <= vmin:
+        vmax = vmin + 1.0
+    return (round(vmin, 4), round(vmax, 4))
+
+
+def export_smap_aux_layers() -> None:
+    """导出 9 个 smap-aux-* 静态叠加层 PNG + bounds（registry 命名）。
+
+    - EASE-Grid 9km 场（albedo/bd/sf/b/cf/h/igbp/vi-qa）：重投影到 Web Mercator
+      线性网格（全球产品，默认全球全幅 0.25°）。
+    - Koppen 为全球 0.083° 等经纬网格：构建源仿射后同样重投影（全球全幅）。
+    - 分类场（igbp/koppen）：0 视为无效掩膜，vmin/vmax 固定类别范围。
+    - 连续场：vmin/vmax 取 1%/99% 分位并打印——注册表需同步该值以保持
+      图例与 PNG 一致。
+    """
+    print("\n=== SMAP auxiliary static layers (9 layers) ===")
+    aux_extent = _resolve_extent("global")
+
+    ease_fields = [
+        ("Albedo.mat", "ALBEDO", "smap_aux_albedo", "smap-aux-albedo", "YlOrRd"),
+        ("BD.mat", "BD", "smap_aux_bd", "smap-aux-bd", "YlOrBr"),
+        ("SF.mat", "SF", "smap_aux_sf", "smap-aux-sf", "YlGn"),
+        ("B.mat", "B", "smap_aux_b", "smap-aux-b", "RdBu"),
+        ("CF.mat", "CF", "smap_aux_cf", "smap-aux-cf", "PuBu"),
+        ("H.mat", "H", "smap_aux_h", "smap-aux-h", "Oranges"),
+        (
+            "IGBP_9km_12.mat",
+            "IGBP_9km_12",
+            "smap_aux_igbp",
+            "smap-aux-igbp",
+            "nipy_spectral",
+        ),
+        ("VI_v_qa.mat", "NDVI_v_mean", "smap_aux_vi_qa", "smap-aux-vi-qa", "RdYlGn"),
+    ]
+    discrete = {"smap-aux-igbp"}
+
+    for mat_file, var, subdir, layer_id, cmap in ease_fields:
+        src = _SMAP_AUX_DATA_DIR / mat_file
+        print(f"\n--- {layer_id} ({mat_file}:{var}) ---")
+        if not src.exists():
+            print(f"  [SKIP] File not found: {src}")
+            continue
+        m = _read_mat_auto(src)
+        if var not in m:
+            print(f"  [SKIP] Variable {var} not found, keys={list(m.keys())[:10]}")
+            continue
+        data = np.asarray(m[var], dtype=np.float64)
+        if layer_id in discrete:
+            data[data == 0] = np.nan
+        try:
+            data, bounds = _reproject_ease_to_wgs84(
+                data,
+                target_resolution=_extent_res_deg(aux_extent),
+                clip_bounds=_extent_clip(aux_extent),
+            )
+            print(f"  reprojected ({aux_extent}): {data.shape}, bounds={bounds}")
+        except Exception as e:
+            print(f"  [FAIL] EASE-Grid reproject failed: {e}")
+            continue
+        out_dir = _OUT_ROOT / subdir
+        if layer_id in discrete:
+            vmin, vmax = 1, 17
+        else:
+            vmin, vmax = _smap_aux_continuous_range(data)
+            print(f"  display range (p1/p99): vmin={vmin}, vmax={vmax}")
+        _render_png(
+            data,
+            out_dir / f"{subdir}_overlay.png",
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+        )
+        _write_bounds(
+            out_dir / f"{subdir}_overlay_bounds.json", layer_id, bounds
+        )
+
+    # Koppen：全球 0.083° 等经纬网格 → 与 EASE 场同样重投影到 Mercator 线性网格
+    print("\n--- smap-aux-koppen (Koppen_present_083.mat:Koppen) ---")
+    src = _SMAP_AUX_DATA_DIR / "Koppen_present_083.mat"
+    if not src.exists():
+        print(f"  [SKIP] File not found: {src}")
+        return
+    m = _read_mat_auto(src)
+    if "Koppen" not in m:
+        print(f"  [SKIP] Variable Koppen not found, keys={list(m.keys())[:10]}")
+        return
+    data = np.asarray(m["Koppen"], dtype=np.float64)
+    data[data == 0] = np.nan
+    lat_raw = np.asarray(m["lat_kop"], dtype=np.float64)
+    lon_raw = np.asarray(m["lon_kop"], dtype=np.float64)
+    # 坐标可能是 2D 网格（规则网格取首列/首行即 1D 轴）
+    lat = lat_raw[:, 0].ravel() if lat_raw.ndim == 2 else lat_raw.ravel()
+    lon = lon_raw[0, :].ravel() if lon_raw.ndim == 2 else lon_raw.ravel()
+    if lat.size != data.shape[0] or lon.size != data.shape[1]:
+        print(
+            f"  [SKIP] Grid mismatch: data {data.shape} vs lat {lat.size}/lon {lon.size}"
+        )
+        return
+    # 坐标可能降序（北→南），统一为行号升纬度
+    if lat[0] > lat[-1]:
+        lat = lat[::-1]
+        data = data[::-1, :]
+    try:
+        from rasterio.transform import from_origin as _from_origin
+
+        dlat = float(np.median(np.abs(np.diff(lat))))
+        dlon = float(np.median(np.abs(np.diff(lon))))
+        src_transform = _from_origin(
+            float(lon[0] - dlon / 2), float(lat[-1] + dlat / 2), dlon, dlat
+        )
+        data, bounds = _reproject_to_mercator_linear(
+            data,
+            src_transform,
+            "EPSG:4326",
+            target_resolution=_extent_res_deg(aux_extent, china_deg=0.083),
+            clip_bounds=_extent_clip(aux_extent),
+        )
+        print(f"  koppen reprojected ({aux_extent}): {data.shape}, bounds={bounds}")
+    except Exception as e:
+        print(f"  [FAIL] Koppen reproject failed: {e}")
+        return
+    out_dir = _OUT_ROOT / "smap_aux_koppen"
+    _render_png(
+        data, out_dir / "smap_aux_koppen_overlay.png", cmap="Set3", vmin=1, vmax=30
+    )
+    _write_bounds(
+        out_dir / "smap_aux_koppen_overlay_bounds.json", "smap-aux-koppen", bounds
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1417,16 +1716,40 @@ def export_landscape_metrics() -> None:
     print(
         f"  Data shape: {data.shape}, range: {np.nanmin(data):.4f} to {np.nanmax(data):.4f}"
     )
-    # EASE-Grid 2.0 9km 重投影到 WGS84 + 裁剪到中国区域
+    # EASE-Grid 2.0 9km 重投影到 Web Mercator 线性网格（全球产品，默认全球全幅）
     # .mat 含 Transform (500m 网格，需 × 18 = 9008.0552m) + CRS (EPSG:6933)
+    extent = _resolve_extent("global")
     try:
-        data, bounds = _reproject_ease_to_wgs84(data, target_resolution=0.1, mat_dict=m)
-        print(f"  landscape_metrics reprojected: {data.shape}, bounds={bounds}")
-    except Exception as e:
-        print(
-            f"  [WARN] EASE-Grid reproject failed, falling back to global bounds: {e}"
+        data, bounds = _reproject_ease_to_wgs84(
+            data,
+            target_resolution=_extent_res_deg(extent),
+            clip_bounds=_extent_clip(extent),
+            mat_dict=m,
         )
-        bounds = (-180.0, -90.0, 180.0, 90.0)
+        print(
+            f"  landscape_metrics reprojected ({extent}): {data.shape}, bounds={bounds}"
+        )
+    except Exception as e:
+        print(f"  [WARN] EASE-Grid reproject with .mat metadata failed: {e}")
+        # 重试：使用默认 EASE-Grid 9km transform（不依赖 .mat 元数据）
+        try:
+            data, bounds = _reproject_ease_to_wgs84(
+                data,
+                target_resolution=_extent_res_deg(extent),
+                clip_bounds=_extent_clip(extent),
+                mat_dict=None,
+            )
+            print(
+                f"  landscape_metrics reprojected (default transform, {extent}): "
+                f"{data.shape}, bounds={bounds}"
+            )
+        except Exception as e2:
+            print(f"  [ERROR] EASE-Grid reproject failed entirely: {e2}")
+            print(
+                "  [SKIP] Skipping landscape_metrics export — "
+                "un-reprojected data with wrong bounds would cause severe coordinate offset"
+            )
+            return
     # SHDI 取 99 分位作为 vmax，避免极端值压缩色彩
     vmax = float(np.nanpercentile(data, 99))
     _render_png(
@@ -1510,8 +1833,9 @@ def _export_smap_soil_vod_sm_ts(
                 data, target_resolution=0.1, mat_dict=m
             )
         except Exception as e:
-            print(f"  [WARN] {tag} reproject failed, fallback to global: {e}")
-            bounds = (-180.0, -90.0, 180.0, 90.0)
+            # 不回退全球 bounds（同 omega 路径），重投影失败跳过该帧
+            print(f"  [WARN] {tag} reproject failed, skip frame: {e}")
+            continue
 
         if generic_bounds is None:
             generic_bounds = bounds
@@ -1607,40 +1931,159 @@ def export_omega_2025_ts() -> None:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def main() -> int:
+def _build_task_table() -> list[dict]:
+    """导出任务表：key / 显示名 / 执行函数 / 声明 extent / 覆盖的 layer_id。
+
+    extent 语义：
+      - "global"：全球产品（默认输出全球全幅 Mercator 线性网格 0.25°）
+      - "china" ：中国区域产品（中国窗口 0.1°）
+      - "native"：全球产品且天然全球网格（GPCP/DEM，不受 --extent 裁剪）
+    CLI ``--extent global|china`` 可强制覆盖（诊断用），``auto`` 按声明执行。
+    """
+    return [
+        {"key": "dem-etopo", "name": "DEM ETOPO", "func": export_dem_etopo,
+         "extent": "native", "layers": ["dem-etopo"]},
+        {"key": "thematic", "name": "Thematic", "func": export_thematic_layers,
+         "extent": "china", "layers": ["landcover-cn", "hfp-cn", "aridity-cn"]},
+        {"key": "omega-ts", "name": "Omega TS", "func": export_omega_ts,
+         "extent": "china", "layers": ["omega-output"]},
+        {"key": "smap-ts", "name": "SMAP TS", "func": export_smap_ts,
+         "extent": "china", "layers": ["ref-smap-sm-202512-l3"]},
+        {"key": "gpcp-ts", "name": "GPCP TS", "func": export_gpcp_ts,
+         "extent": "native", "layers": ["gpcp-precip-ts"]},
+        {"key": "gpcp-rewarp", "name": "GPCP Re-warp", "func": export_gpcp_rewarp,
+         "extent": "native", "layers": ["gpcp-precip-ts"]},
+        {"key": "dem-rewarp", "name": "DEM Re-warp", "func": export_dem_rewarp,
+         "extent": "native", "layers": ["dem-etopo"]},
+        {"key": "gebco-dem", "name": "GEBCO DEM", "func": export_gebco_dem,
+         "extent": "china", "layers": ["gebco-dem-cn"]},
+        {"key": "cmfd-precip", "name": "CMFD Precip", "func": export_cmfd_precip,
+         "extent": "china", "layers": ["cmfd-precip-cn"]},
+        {"key": "clcd", "name": "CLCD", "func": export_clcd,
+         "extent": "china", "layers": ["clcd-cn"]},
+        {"key": "biomass", "name": "BIOMASS", "func": export_biomass,
+         "extent": "china", "layers": ["biomass-cn"]},
+        {"key": "era5-dwaa", "name": "ERA5 DWAA", "func": export_era5_dwaa,
+         "extent": "china", "layers": ["era5-dwaa-cn"]},
+        {"key": "era5-wdaa", "name": "ERA5 WDAA", "func": export_era5_wdaa,
+         "extent": "china", "layers": ["era5-wdaa-cn"]},
+        {"key": "co2", "name": "CO2", "func": export_co2,
+         "extent": "china", "layers": ["co2-cn"]},
+        {"key": "soil-ddca-ts", "name": "Soil DDCA TS", "func": export_soil_ddca_ts,
+         "extent": "china", "layers": ["ref-ddca-sm-201504-202512"]},
+        {"key": "omega-fy-ts", "name": "Omega FY TS", "func": export_omega_fy_ts,
+         "extent": "china", "layers": ["omega-fy-output"]},
+        {"key": "forest-ratio", "name": "Forest Ratio", "func": export_forest_ratio,
+         "extent": "global", "layers": ["forest-ratio"]},
+        {"key": "landscape-metrics", "name": "Landscape Metrics",
+         "func": export_landscape_metrics,
+         "extent": "global", "layers": ["landscape-metrics-9km"]},
+        {"key": "smap-aux", "name": "SMAP Aux Layers", "func": export_smap_aux_layers,
+         "extent": "global",
+         "layers": [
+             "smap-aux-albedo", "smap-aux-bd", "smap-aux-sf", "smap-aux-b",
+             "smap-aux-cf", "smap-aux-h", "smap-aux-igbp", "smap-aux-vi-qa",
+             "smap-aux-koppen",
+         ]},
+        # ── Phase 2: 课题组 VOD/SM/Omega 2025-12 产品族 ──
+        {"key": "vod-ts", "name": "VOD TS", "func": export_vod_ts,
+         "extent": "china", "layers": ["vod-dec2025"]},
+        {"key": "sm-dec2025-ts", "name": "SM Dec2025 TS", "func": export_sm_dec2025_ts,
+         "extent": "china", "layers": ["prod-fy_smap_station-sm_vod_omega-202512-fusion"]},
+        {"key": "omega-2025-ts", "name": "Omega 2025 TS", "func": export_omega_2025_ts,
+         "extent": "china", "layers": ["omega-dec2025"]},
+    ]
+
+
+def main(argv: list[str] | None = None) -> int:
+    global _EXTENT_MODE, _OUT_ROOT
+
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="批量导出叠加图层预览资产（PNG + bounds JSON）",
+    )
+    parser.add_argument(
+        "--tasks",
+        default="all",
+        help=(
+            "逗号分隔的任务 key（见任务表），或 'all'（默认全量）。"
+            " 例：--tasks smap-aux,forest-ratio,landscape-metrics,gpcp-rewarp"
+        ),
+    )
+    parser.add_argument(
+        "--extent",
+        choices=["auto", "global", "china"],
+        default="auto",
+        help=(
+            "强制覆盖任务声明的输出范围（诊断用）；auto=按任务表声明。"
+            " global=全球全幅（-180~180, ±85.0511, 0.25°），china=中国窗口 0.1°"
+        ),
+    )
+    parser.add_argument(
+        "--out-root",
+        default=None,
+        help="覆盖输出根目录（默认 I:\\...\\_overlays）",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="只打印将执行的任务与目标 bounds/分辨率，不写任何文件",
+    )
+    args = parser.parse_args(argv)
+
+    if args.out_root:
+        _OUT_ROOT = Path(args.out_root)
+    _EXTENT_MODE = args.extent
+
     print("=" * 60)
     print("Overlay Assets Export Tool")
+    print(f"  out_root: {_OUT_ROOT}")
+    print(f"  extent:   {_EXTENT_MODE}")
     print("=" * 60)
+
+    task_table = _build_task_table()
+    if args.tasks.strip().lower() == "all":
+        selected = task_table
+    else:
+        by_key = {t["key"]: t for t in task_table}
+        unknown = []
+        selected = []
+        for key in [k.strip() for k in args.tasks.split(",") if k.strip()]:
+            if key in by_key:
+                selected.append(by_key[key])
+            else:
+                unknown.append(key)
+        if unknown:
+            print(f"[ERROR] Unknown task keys: {', '.join(unknown)}")
+            print("Available keys:")
+            for t in task_table:
+                print(f"  {t['key']:<18} ({t['extent']})  {t['name']}")
+            return 2
+
+    if args.dry_run:
+        print("\n[dry-run] Selected tasks:")
+        for t in selected:
+            eff = _resolve_extent(t["extent"])
+            clip = _extent_clip(eff)
+            res = _extent_res_deg(eff)
+            if t["extent"] == "native":
+                target = "native-global (source grid extent, --extent ignored)"
+            else:
+                target = (
+                    f"clip={clip or 'FULL GLOBE (-180~180, ±85.05)'}, res={res} deg"
+                )
+            print(f"  {t['key']:<18} extent={t['extent']:<7} {target}")
+            print(f"    layers: {', '.join(t['layers'])}")
+        return 0
 
     _OUT_ROOT.mkdir(parents=True, exist_ok=True)
 
-    tasks = [
-        ("DEM ETOPO", export_dem_etopo),
-        ("Thematic", export_thematic_layers),
-        ("Omega TS", export_omega_ts),
-        ("SMAP TS", export_smap_ts),
-        ("GPCP TS", export_gpcp_ts),
-        ("GEBCO DEM", export_gebco_dem),
-        ("CMFD Precip", export_cmfd_precip),
-        ("CLCD", export_clcd),
-        ("BIOMASS", export_biomass),
-        ("ERA5 DWAA", export_era5_dwaa),
-        ("ERA5 WDAA", export_era5_wdaa),
-        ("CO2", export_co2),
-        ("Soil DDCA TS", export_soil_ddca_ts),
-        ("Omega FY TS", export_omega_fy_ts),
-        ("Forest Ratio", export_forest_ratio),
-        ("Landscape Metrics", export_landscape_metrics),
-        # ── Phase 2: 课题组 VOD/SM/Omega 2025-12 产品族 ──
-        ("VOD TS", export_vod_ts),
-        ("SM Dec2025 TS", export_sm_dec2025_ts),
-        ("Omega 2025 TS", export_omega_2025_ts),
-    ]
-
     results = {}
-    for name, func in tasks:
+    for task in selected:
+        name = task["name"]
         try:
-            func()
+            task["func"]()
             results[name] = "OK"
         except Exception as e:
             print(f"\n  [FAIL] {name}: {e}")

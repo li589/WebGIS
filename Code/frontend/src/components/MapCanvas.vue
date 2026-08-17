@@ -5,10 +5,15 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 import { storeToRefs } from 'pinia'
 
 import { AlertTriangle } from './ui/icons'
+import DrawToolbar from './map/draw-toolbar.vue'
+import ZonalStatsCard from './info-panel/ZonalStatsCard.vue'
+import VectorAttributeTable from './info-panel/VectorAttributeTable.vue'
 import { useLayersStore } from '../stores/layers'
 import { useLayerWorkspace, useLayerViewport } from '../stores/layers/selectors'
 import { useUiStore } from '../stores/ui'
+import { useDrawStore } from '../stores/draw-store'
 import { useLogStore } from '../stores/log'
+import { useDrawSave } from '../composables/useDrawSave'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import type { LayerHotspot } from '../stores/layers/types'
 import { createMapCanvasActionBridge } from './map/map-canvas-action-bridge'
@@ -30,7 +35,13 @@ import {
   buildMapStageTimeVisualState,
 } from './map/map-stage-view-model'
 import { aggregateWeatherTileBanner } from './map/weather-tile-banner'
-import { TILE_SOURCE_MAP, getDefaultTileSource, type TileSourceId } from '../services/api-config'
+import {
+  TILE_SOURCE_MAP,
+  getDefaultTileSource,
+  getFailoverCandidates,
+  isTileSourceUsable,
+  type TileSourceId,
+} from '../services/api-config'
 import { isGlobalMapViewport } from '../utils/map-viewport'
 import {
   isMapDistributionChromeEnabled,
@@ -44,11 +55,14 @@ import {
   showToast,
 } from '../data-manager/core/workspace-store'
 import { debugLog as probeDebugLog } from '../utils/perf-probe'
+import { useSettingsStore } from '../stores/settings'
 
 const layersStore = useLayersStore() // createMapCanvasModuleBundle 需完整 store 实例
 const workspace = useLayerWorkspace()
 const viewport = useLayerViewport()
 const uiStore = useUiStore()
+const settingsStore = useSettingsStore()
+const drawStore = useDrawStore()
 const logStore = useLogStore()
 const weatherTileManager = useWeatherTileManager()
 const { statusVersion: weatherStatusVersion, activityVersion: weatherActivityVersion } =
@@ -57,7 +71,6 @@ const { statusVersion: weatherStatusVersion, activityVersion: weatherActivityVer
 const props = defineProps<{
   tileSourceId: TileSourceId
   currentHour: number
-  hourLabel: string
   /** 地图点查选中坐标（持久标记，非定位标记） */
   inspectPoint?: { lng: number; lat: number } | null
 }>()
@@ -219,12 +232,7 @@ const adminBoundaryOpacity = computed(() => {
 // Safe fallback for template (no selected layer = dark atmospheric state)
 const activeLayer = computed(() => selectedLayer.value ?? buildFallbackActiveLayerDisplay())
 const stageDisplayModel = computed(() =>
-  buildMapStageDisplayModel({
-    basemapProvider: currentTileConfig.value.provider,
-    basemapLabel: currentTileConfig.value.label,
-    hourLabel: props.hourLabel,
-    activeLayer: activeLayer.value,
-  }),
+  buildMapStageDisplayModel({ activeLayer: activeLayer.value }),
 )
 const stageStatusModel = computed(() =>
   buildMapStageStatusModel({
@@ -294,26 +302,20 @@ const stageAppearanceModel = computed(() =>
 )
 
 // ─── 低缩放纯色底图抑制 ──────────────────────────────────────────────────────
-// 当「分布淡底」关闭 + 无可见数据图层 + 比例尺≥2000km（zoom≤3.5）时，
-// 隐藏纯色底图瓦片层，避免大洲/世界视口下大面积纯色遮挡。
+// 设计变更：关闭「分布淡底 / 氛围遮罩」时，底图应始终可见，不再在低 zoom 抑制。
+// 原逻辑在 zoom≤3.5 + 无数据图层 + 设置关闭时隐藏底图瓦片，导致大洲/世界视口下底图消失。
+// 现改为始终保留底图，氛围效果由 CSS chrome-off 类统一控制（opacity:0）。
 let _isUnmounted = false
-const BASEMAP_SUPPRESS_ZOOM = 3.5
 
-const shouldSuppressBasemap = computed(() => {
-  if (props.tileSourceId === 'none') return false
-  if (mapDistributionChromeEnabled.value) return false
-  const hasDataLayers = workspace.activeLayers.value.some(
-    (layer) => layer.visible && !layer.isAdminBoundary,
-  )
-  if (hasDataLayers) return false
-  return viewport.currentMapZoom.value <= BASEMAP_SUPPRESS_ZOOM
-})
+const shouldSuppressBasemap = computed(() => false)
 
 function applyBasemapSuppression() {
   if (_isUnmounted) return
   const map = state.resources.map
   if (!map || !mapReady.value) return
-  const suppress = shouldSuppressBasemap.value
+  // 空白底图（tileSourceId=none）必须保持隐藏；否则切源后的延时抑制会把旧瓦片重新显示出来
+  const blankBasemap = props.tileSourceId === 'none'
+  const suppress = shouldSuppressBasemap.value || blankBasemap
   const tileLayer = map.getLayer('tile-base-raster')
   if (tileLayer) {
     const target = suppress ? 'none' : 'visible'
@@ -395,6 +397,23 @@ onMounted(async () => {
       onAfterSourceSwitch: () => {
         presentationModule.scheduleNavigationThemeSync()
       },
+      onProviderFailover: (nextSourceId, failedProvider) => {
+        // 同步单一真源：更新 store 选中态，让底图选择器 UI 与实际渲染一致
+        uiStore.setTileSource(nextSourceId)
+        const nextLabel = TILE_SOURCE_MAP.get(nextSourceId)?.label ?? nextSourceId
+        logStore.logOperation(
+          'basemap-failover',
+          `底图源「${failedProvider}」暂时不可用，已自动切换至「${nextLabel}」`,
+        )
+        showToast(`底图源「${failedProvider}」暂时不可用，已自动切换至「${nextLabel}」`, false)
+      },
+      getFailoverCandidates: (sourceId, excludeProviders) =>
+        getFailoverCandidates(sourceId, excludeProviders).filter((id) => {
+          const cfg = TILE_SOURCE_MAP.get(id)
+          return (
+            !!cfg && isTileSourceUsable(cfg, (key) => settingsStore.isBasemapApiKeyAvailable(key))
+          )
+        }),
       setLoadingLabel: (label) => {
         presentationModule.setLoadingLabel(label)
       },
@@ -425,6 +444,23 @@ onMounted(async () => {
       completeMeasure: () => uiStore.completeMeasure(),
       setHoverPoint: (p) => uiStore.setHoverPoint(p),
       clearMeasure: () => uiStore.clearMeasure(),
+      getDrawState: () => ({
+        drawMode: drawStore.drawMode,
+        features: drawStore.features,
+        activeVertices: drawStore.activeVertices,
+        isDrawing: drawStore.isDrawing,
+        hoverPoint: drawStore.hoverPoint,
+        selectedFeatureIndex: drawStore.selectedFeatureIndex,
+      }),
+      addDrawVertex: (v) => drawStore.addVertex(v),
+      undoDrawVertex: () => drawStore.undoLastVertex(),
+      setDrawHoverPoint: (p) => drawStore.setHoverPoint(p),
+      addDrawFeature: (f) => drawStore.addFeature(f),
+      clearDrawVertices: () => drawStore.clearActiveVertices(),
+      setDrawDrawingFlag: (v) => {
+        drawStore.isDrawing = v
+      },
+      scheduleDrawPersist: () => drawStore.scheduleDraftPersist(),
     })
     state.resources.basemapModule = moduleBundle.basemapModule
     state.resources.adminBoundaryModule = moduleBundle.adminBoundaryModule
@@ -436,6 +472,7 @@ onMounted(async () => {
     state.resources.selectedLayerFocusModule = moduleBundle.selectedLayerFocusModule
     state.resources.measureModule = moduleBundle.measureModule
     overlayImageModule = moduleBundle.nonWeatherLayerSyncModule.overlayImageModule
+    state.resources.drawModule = moduleBundle.drawModule
     overlayImageModuleRef.value = moduleBundle.nonWeatherLayerSyncModule.overlayImageModule
     moduleBundle.weatherOverlayModule.setupWatchers()
     moduleBundle.nonWeatherLayerSyncModule.setupWatchers()
@@ -444,6 +481,7 @@ onMounted(async () => {
     moduleBundle.mapCanvasRuntimeModule.setupWatchers()
     moduleBundle.selectedLayerFocusModule.setupWatchers()
     moduleBundle.measureModule.bindEvents()
+    moduleBundle.drawModule.bindEvents()
     watch(
       dataWorkspaceHighlight,
       (hl) => {
@@ -501,6 +539,8 @@ onMounted(async () => {
         moduleBundle.mapInteractionModule.applyInteractionMode()
         // 测量模式初始状态同步（mapInteractionModule 已处理 dragPan，measureModule 处理 doubleClickZoom/boxZoom + Canvas show）
         moduleBundle.measureModule.applyMeasureMode()
+        // 绘制模式初始状态同步
+        moduleBundle.drawModule.applyDrawMode()
         presentationModule.revealMap()
       },
       scheduleNavigationThemeSync: () => {
@@ -525,7 +565,94 @@ onBeforeUnmount(() => {
     clearTimeout(locateErrorTimer)
     locateErrorTimer = null
   }
+  window.removeEventListener('draw:save', handleDrawSave)
+  window.removeEventListener('draw:toggle-attr-table', handleToggleAttrTable)
 })
+
+// ── 绘制保存事件处理 ────────────────────────────────────────────────────
+
+const attrTableVisible = ref(false)
+const drawSave = useDrawSave()
+
+function handleToggleAttrTable() {
+  attrTableVisible.value = !attrTableVisible.value
+}
+
+async function handleDrawSave() {
+  const res = await drawSave.saveDrawLayer()
+  if (res.ok) {
+    logStore.logOperation(
+      'draw-save',
+      res.dropped ? '空图层已丢弃' : `绘制图层已保存 (${res.featureCount} 个要素)`,
+    )
+    return
+  }
+  if (res.validationErrors.length > 0) {
+    logStore.logOperation('draw-save-error', `校验未通过: ${res.validationErrors[0].message}`)
+    // 打开属性表展示校验错误，便于用户定位问题要素
+    if (!attrTableVisible.value) {
+      window.dispatchEvent(new CustomEvent('draw:toggle-attr-table'))
+    }
+    return
+  }
+  logStore.logOperation('draw-save-error', `保存失败: ${res.error ?? '未知错误'}`)
+  console.error('[draw] save failed:', res.error)
+}
+
+// 进入绘制模式时自动创建草稿图层；已有未保存草稿则继续编辑（防丢失）
+watch(
+  () => uiStore.interactionMode,
+  (mode) => {
+    if (mode !== 'draw') return
+    const hasActiveDraft = drawStore.draftLayerId || drawStore.features.length > 0
+    if (hasActiveDraft) return
+    const name = drawStore.draftLayerName || `绘制图层-${new Date().toLocaleString('zh-CN')}`
+    const layer = layersStore.addDrawDraftLayer(name)
+    drawStore.beginDrawSession(name)
+    drawStore.setDraftLayerId(layer.instanceId)
+  },
+)
+
+// 切出绘制模式：丢弃未闭合的半成品多边形，保留已完成要素（草稿）
+watch(
+  () => uiStore.interactionMode,
+  (mode) => {
+    if (mode !== 'draw') {
+      drawStore.clearActiveVertices()
+    }
+  },
+)
+
+// 孤儿草稿安全网：草稿/编辑图层在工作区被移除时，清空绘制 store，避免悬空状态
+watch(
+  () => layersStore.activeLayers.map((l) => l.instanceId),
+  (ids) => {
+    const draftId = drawStore.draftLayerId
+    const editingId = drawStore.editingLayerId
+    if ((draftId && !ids.includes(draftId)) || (editingId && !ids.includes(editingId))) {
+      drawStore.clearDraft()
+      if (uiStore.interactionMode === 'draw') {
+        uiStore.setInteractionMode('move')
+      }
+    }
+  },
+)
+
+// L3：刷新后恢复未保存草稿 —— 重建草稿图层并回填要素
+{
+  const restored = drawStore.restoreDraft()
+  if (restored && drawStore.features.length > 0) {
+    const name = drawStore.draftLayerName || '恢复的绘制图层'
+    const layer = layersStore.addDrawDraftLayer(name)
+    drawStore.setDraftLayerId(layer.instanceId)
+    logStore.logOperation('draw-restore', `已恢复未保存草稿 (${drawStore.features.length} 个要素)`)
+  } else if (restored === false && drawStore.editingLayerId) {
+    // 编辑已有图层的草稿恢复暂不自动进入，等用户切到 draw 模式
+  }
+}
+
+window.addEventListener('draw:save', handleDrawSave)
+window.addEventListener('draw:toggle-attr-table', handleToggleAttrTable)
 
 // ── 自动定位 ──────────────────────────────────────────────────────────────
 const isLocating = ref(false)
@@ -768,18 +895,6 @@ async function handleLocateMe() {
       <span>{{ weatherTileStatusModel.error }}</span>
     </div>
 
-    <!-- Map chips -->
-    <div class="map-overlay">
-      <span class="chip">
-        {{ stageDisplayModel.basemapChipLabel }}
-      </span>
-      <span class="chip">{{ stageDisplayModel.hourChipLabel }}</span>
-      <span class="chip secondary">{{ stageDisplayModel.layerChipLabel }}</span>
-      <span class="chip" :class="stageDisplayModel.availabilityChipClass">
-        {{ stageDisplayModel.availabilityChipLabel }}
-      </span>
-    </div>
-
     <!-- Layer info card -->
     <div class="map-note">
       <h2>{{ stageDisplayModel.noteTitle }}</h2>
@@ -789,6 +904,15 @@ async function handleLocateMe() {
         <div class="time-indicator-fill"></div>
       </div>
     </div>
+
+    <!-- 绘制工具栏 -->
+    <DrawToolbar />
+
+    <!-- 分区统计卡片 -->
+    <ZonalStatsCard />
+
+    <!-- 矢量属性表 -->
+    <VectorAttributeTable v-if="attrTableVisible" @close="attrTableVisible = false" />
 
     <!-- Hotspot pins -->
     <div class="hotspot-layer" :class="stageDisplayModel.hotspotLayerClass" aria-hidden="true">

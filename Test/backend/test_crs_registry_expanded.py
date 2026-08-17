@@ -14,7 +14,8 @@ from app.services.crs.crs_registry import (
 def test_expanded_count_utm_and_gk():
     featured = to_api_payload()
     expanded = to_api_payload_expanded()
-    assert len(featured) == 13
+    # featured = 13 基础 + 5 EASE-Grid 变体（6931/6932/3408/3409/3410）
+    assert len(featured) == 18
     assert len(expanded) >= 140
 
     codes = {item["code"] for item in expanded}

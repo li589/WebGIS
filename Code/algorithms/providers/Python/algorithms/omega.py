@@ -2499,9 +2499,15 @@ def retrieve_omega_pixel_timeseries(
                     x, halpha_fun, halpha_lower_bounds, halpha_upper_bounds
                 )
 
+            # 初值必须整体落在 bounds 内：h0 上游已 clamp（见上方 min/max），
+            # alpha0 来自配置，越界时 least_squares 会抛 x0 infeasible
+            h0_clamped = min(max(h0, halpha_lower_bounds[0]), halpha_upper_bounds[0])
+            alpha0_clamped = min(
+                max(config.alpha0, halpha_lower_bounds[1]), halpha_upper_bounds[1]
+            )
             xhat = least_squares(
                 halpha_fun,
-                x0=[h0, config.alpha0],
+                x0=[h0_clamped, alpha0_clamped],
                 bounds=(halpha_lower_bounds, halpha_upper_bounds),
                 jac=halpha_jac,
             )

@@ -657,7 +657,18 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         continue
       }
 
-      const added = deps.addImportedRasterLayer(displayName, item.overlayLayerId, item.bounds, {
+      // F3：兜底新增图层命名——技术名（Algorithm Map Layer 标题 / overlay id）之前
+      // 优先工作流显示名，避免游离图层直出英文技术名
+      const workflowDisplayName = runId
+        ? jobLayers.value.find((j) => j.jobId === runId)?.name
+        : undefined
+      const freeLayerName =
+        matchingOutput?.name ||
+        (tag ? productTagLabel(tag) : '') ||
+        workflowDisplayName ||
+        item.title.replace(/^Algorithm Map Layer:\s*/i, '') ||
+        item.overlayLayerId
+      const added = deps.addImportedRasterLayer(freeLayerName, item.overlayLayerId, item.bounds, {
         sourceCrs: item.sourceCrs,
         nativeStep: nativeStep || (timeList?.length ? '8d' : null),
         timeList,
@@ -872,10 +883,13 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
   }
 
   /**
-   * 停止/失败后清理未产出占位图层：无 overlay 的组成员移除；
-   * 已有栅格产物的成员保留并解锁，便于用户继续查看部分结果。
+   * 终态后清理未产出占位图层：无 overlay 的组成员移除；
+   * 已有栅格产物的成员保留并解锁。
+   * - failed/cancelled：成员标注「（部分）」，组状态置 failed/cancelled；
+   * - succeeded（opts.succeeded）：产物为完整结果不加「（部分）」，组状态置 ready，
+   *   全部成员可显示时经 refreshRunGroupDissolvable 解锁可拆。
    */
-  function cleanupUnproducedRunLayers(runId: string) {
+  function cleanupUnproducedRunLayers(runId: string, opts?: { succeeded?: boolean }) {
     if (!runId) return
     progressiveMaterializeAt.delete(runId)
     progressiveMaterializeInFlight.delete(runId)
@@ -894,14 +908,16 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         removeIds.push(instanceId)
       } else {
         layer.runGroupLocked = false
-        const tag = normalizeProductTag(layer.runGroupProductTag || layer.name)
-        const defaultLabel = tag ? productTagLabel(tag) : ''
-        if (
-          layer.name &&
-          !layer.name.includes('（部分）') &&
-          isDefaultProductDisplayName(layer.name, tag, defaultLabel)
-        ) {
-          layer.name = `${layer.name}（部分）`
+        if (!opts?.succeeded) {
+          const tag = normalizeProductTag(layer.runGroupProductTag || layer.name)
+          const defaultLabel = tag ? productTagLabel(tag) : ''
+          if (
+            layer.name &&
+            !layer.name.includes('（部分）') &&
+            isDefaultProductDisplayName(layer.name, tag, defaultLabel)
+          ) {
+            layer.name = `${layer.name}（部分）`
+          }
         }
       }
     }
@@ -912,8 +928,13 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
 
     const left = runLayerGroups.value.find((x) => x.groupId === g.groupId)
     if (left) {
-      left.dissolvable = true
-      left.status = left.status === 'failed' ? 'failed' : 'cancelled'
+      if (opts?.succeeded) {
+        left.status = 'ready'
+        refreshRunGroupDissolvable(left.groupId)
+      } else {
+        left.dissolvable = true
+        left.status = left.status === 'failed' ? 'failed' : 'cancelled'
+      }
       if (!left.memberInstanceIds.length) {
         runLayerGroups.value = runLayerGroups.value.filter((x) => x.groupId !== left.groupId)
       }

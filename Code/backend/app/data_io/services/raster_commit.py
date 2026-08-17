@@ -240,6 +240,79 @@ def commit_science_raster_variable(
     return result
 
 
+def commit_algorithm_geotiff(
+    path: Path,
+    *,
+    layer_id: str,
+    source_name: str | None = None,
+    conflict_policy: ConflictPolicy = "overwrite",
+    time_start: str | None = None,
+    time_end: str | None = None,
+    extra_meta: dict[str, Any] | None = None,
+    auto_confirm: bool = True,
+) -> dict[str, Any]:
+    """算法产物 GeoTIFF 注册：与导入 commit 共用配额/冲突/时间标签语义。
+
+    与 ``commit_raster_upload`` 的 .tif 分支一致，但不经过 upload 目录，
+    供工作流产物物化（generic raster map_layer）复用。时间标签优先取
+    run 的 time_range（起止俱备→range，仅起点→point），否则按文件名猜。
+    """
+    from app.data_io.services.time_label import build_temporal_meta
+
+    start = (time_start or "").strip()
+    end = (time_end or "").strip()
+    if start and end:
+        temporal_mode = "range"
+    elif start or end:
+        temporal_mode = "point"
+        start = start or end
+    else:
+        temporal_mode = "auto"
+
+    temporal_meta = build_temporal_meta(
+        temporal_mode=temporal_mode,
+        time_start=start or None,
+        time_end=end or None,
+        source_name=source_name or path.name,
+    )
+
+    resolved_id = layer_id
+    dest = import_paths.IMPORTS_DIR / resolved_id
+    exists = dest.exists()
+    if conflict_policy == "error" and exists:
+        raise ValueError(f"同名导入已存在: {resolved_id}")
+    if conflict_policy == "rename" and exists:
+        resolved_id = f"imported-{uuid.uuid4().hex[:12]}"
+    replace = conflict_policy == "overwrite" and exists
+
+    result = register_geotiff_as_imported(
+        path,
+        source_filename=source_name or path.name,
+        layer_id=resolved_id,
+        replace_existing=replace,
+        extra_meta={**(extra_meta or {}), **temporal_meta},
+    )
+    result["conflict_policy"] = conflict_policy
+
+    crs_for_confirm = str(result.get("source_crs") or "").strip()
+    if (
+        auto_confirm
+        and crs_for_confirm
+        and (
+            result.get("needs_confirm")
+            or crs_for_confirm not in ("EPSG:4326", "EPSG:4490")
+        )
+    ):
+        try:
+            confirmed = confirm_imported_raster_crs(
+                result["layer_id"], source_crs=crs_for_confirm
+            )
+            result = {**result, **confirmed, "needs_confirm": False}
+        except Exception as exc:
+            result["auto_confirm_error"] = str(exc)
+    return result
+
+
 def commit_raster_upload(
     *,
     upload_id: str,

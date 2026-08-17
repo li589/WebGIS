@@ -1,0 +1,39 @@
+{
+  "generated_at": "2026-08-15 08:11:40",
+  "title": "Comprehensive Geographic Data Analysis Backend",
+  "version": "0.1.0",
+  "description": "Minimal backend service for the geographic analysis platform.",
+  "total_endpoints": 215,
+  "endpoints_by_method": {
+    "GET": 98,
+    "POST": 72,
+    "DELETE": 21,
+    "PATCH": 5,
+    "PUT": 19
+  },
+  "endpoints_by_tag": {
+    "config": 63,
+    "data-io": 38,
+    "workflow-definition": 18,
+    "auth": 15,
+    "runtime": 12,
+    "weather": 10,
+    "workflow-timer": 9,
+    "workflow": 8,
+    "import": 7,
+    "cleanup": 6,
+    "overlay": 6,
+    "algorithm": 5,
+    "gee": 5,
+    "gee-config": 4,
+    "analysis": 3,
+    "catalog": 3,
+    "provider": 3,
+    "remote-browser": 3,
+    "artifacts": 2,
+    "frontend": 1,
+    "geo": 1,
+    "system": 1,
+    "tiles": 1
+  }
+}

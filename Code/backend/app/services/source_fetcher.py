@@ -13,9 +13,15 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, UTC
+import hashlib
+import http.client
+import json
 import logging
+import random
+import time
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse, unquote
 
 from app.core.config import settings
@@ -27,6 +33,18 @@ logger = logging.getLogger(__name__)
 # TODO: 后续若引入 requests 库，可改用 requests.Session 复用连接池以提升抓取性能；
 #       当前项目仅依赖 urllib，保持现有实现以避免新增依赖。
 DEFAULT_HTTP_TIMEOUT = 60
+
+# Range 断点续传策略（对齐 ingest/_http_resume.py 语义）：
+# - 瞬时错误（网络异常 / IncompleteRead / 5xx / 429）指数退避重试，预算 3 次；
+# - 协议纠正（Range 被忽略 / 416 / ETag 变化）整体重下，预算 2 次；
+# - 其余 4xx 立即失败；object_store 始终只接收完整文件（.part 完成后才入库）。
+HTTP_RESUME_MAX_RETRIES = 3
+HTTP_RESUME_MAX_RESTARTS = 2
+HTTP_RESUME_INITIAL_BACKOFF = 1.0
+HTTP_RESUME_JITTER = 0.25
+HTTP_RESUME_CHUNK_SIZE = 1024 * 1024
+_TRANSIENT_HTTP_CODES = frozenset({429, 500, 502, 503, 504})
+_DOWNLOAD_USER_AGENT = "cgda-backend-download-service/1.0"
 
 
 @dataclass
@@ -63,8 +81,54 @@ class SourceFetcher(ABC):
         ...
 
 
+def _http_staging_dir() -> Path:
+    """HTTP 断点续传暂存目录（.part + sidecar），落在统一缓存根下。"""
+    root = Path(settings.cache_dir) / "http_fetch"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _parse_content_range_total(value: str | None) -> int | None:
+    """解析 ``Content-Range: bytes 100-199/1234`` 尾部的总长度；``*`` 或缺失返回 None。"""
+    if not value:
+        return None
+    tail = value.rsplit("/", 1)[-1].strip()
+    if tail.isdigit():
+        return int(tail)
+    return None
+
+
+def _read_part_sidecar(sidecar_path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _write_part_sidecar(
+    sidecar_path: Path,
+    *,
+    total: int | None,
+    etag: str | None,
+    content_type: str | None,
+) -> None:
+    sidecar_path.write_text(
+        json.dumps(
+            {"total": total, "etag": etag, "content_type": content_type},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
 class HttpSourceFetcher(SourceFetcher):
-    """HTTP/HTTPS 源抓取器。"""
+    """HTTP/HTTPS 源抓取器（Range 断点续传 + 退避重试）。
+
+    下载先落到暂存 ``.part`` 文件；完成后一次性 ``put_stream`` 入库，
+    object_store 保持「完整或不存在」语义。抓取中断时暂存保留，
+    下次对同一 artifact_key 的抓取携带 ``Range`` 从断点继续。
+    """
 
     def supports(self, source_uri: str) -> bool:
         parsed = urlparse(source_uri)
@@ -78,40 +142,33 @@ class HttpSourceFetcher(SourceFetcher):
         artifact_key_prefix: str,
     ) -> FetchResult:
         fetched_at = datetime.now(UTC).isoformat()
+        artifact_key = f"{artifact_key_prefix}/{ref_id}"
         try:
-            # safe_urlopen 对初始 URL 与每次
-            # 重定向 Location 均做 SSRF 校验，避免 urlopen 默认跟随 3xx 绕过到环回。
-            from app.core.ssrf import default_allow_private, safe_urlopen
+            # SSRF 校验（含重定向每跳再校验）在 _download_with_resume 的
+            # safe_urlopen 内完成，避免 urlopen 默认跟随 3xx 绕过到环回。
+            staging_dir = _http_staging_dir()
+            digest = hashlib.sha1(artifact_key.encode("utf-8")).hexdigest()[:16]
+            part_path = staging_dir / f"{digest}.part"
+            sidecar_path = staging_dir / f"{digest}.json"
 
-            with safe_urlopen(
-                source_uri,
-                timeout=DEFAULT_HTTP_TIMEOUT,
-                headers={"User-Agent": "cgda-backend-download-service/1.0"},
-                allow_private=default_allow_private(),
-            ) as response:
-                content_type = response.headers.get(
-                    "Content-Type", "application/octet-stream"
-                )
-                # R1: Stream response body directly to object_store,
-                # avoiding full-in-memory read for large HTTP downloads.
-                content_length_header = response.headers.get("Content-Length")
-                content_length = (
-                    int(content_length_header)
-                    if content_length_header and content_length_header.isdigit()
-                    else None
-                )
-                artifact_key = f"{artifact_key_prefix}/{ref_id}"
+            content_type, total = self._download_with_resume(
+                source_uri, part_path, sidecar_path
+            )
+            # 完整文件才入库；入库失败时暂存保留，下次跳过网络直接重传
+            with open(part_path, "rb") as f:
                 stored = object_store.put_stream(
                     object_key=artifact_key,
-                    stream=response,
+                    stream=f,
                     content_type=content_type,
-                    length=content_length,
+                    length=total,
                     metadata={
                         "source_uri": source_uri,
                         "ref_id": ref_id,
                         "fetched_at": fetched_at,
                     },
                 )
+            part_path.unlink(missing_ok=True)
+            sidecar_path.unlink(missing_ok=True)
             return FetchResult(
                 ref_id=ref_id,
                 success=True,
@@ -131,6 +188,146 @@ class HttpSourceFetcher(SourceFetcher):
                 error=f"HTTP fetch failed: {exc}",
                 fetched_at=fetched_at,
             )
+
+    def _download_with_resume(
+        self,
+        source_uri: str,
+        part_path: Path,
+        sidecar_path: Path,
+    ) -> tuple[str, int | None]:
+        """下载 source_uri 到 part_path，返回 (content_type, 总字节数)。"""
+        from app.core.ssrf import default_allow_private, safe_urlopen
+
+        state = _read_part_sidecar(sidecar_path)
+        offset = part_path.stat().st_size if part_path.exists() else 0
+        total_state = state.get("total")
+        if isinstance(total_state, int) and total_state >= 0 and offset == total_state:
+            # 上次调用已完成暂存但未入库（进程崩溃/入库失败）：跳过网络直接重传
+            return (
+                state.get("content_type") or "application/octet-stream",
+                total_state,
+            )
+
+        retries = 0
+        restarts = 0
+        while True:
+            offset = part_path.stat().st_size if part_path.exists() else 0
+            headers = {"User-Agent": _DOWNLOAD_USER_AGENT}
+            if offset > 0:
+                headers["Range"] = f"bytes={offset}-"
+                logger.info(
+                    "HTTP fetch resuming ref download from byte %d: %s",
+                    offset,
+                    source_uri,
+                )
+            try:
+                with safe_urlopen(
+                    source_uri,
+                    timeout=DEFAULT_HTTP_TIMEOUT,
+                    headers=headers,
+                    allow_private=default_allow_private(),
+                ) as response:
+                    (
+                        content_type,
+                        total,
+                        mode,
+                        restart,
+                    ) = self._inspect_response(response, state)
+                    if restart:
+                        if restarts >= HTTP_RESUME_MAX_RESTARTS:
+                            raise RuntimeError(
+                                "origin keeps invalidating the resume state; "
+                                f"giving up: {source_uri}"
+                            )
+                        restarts += 1
+                        part_path.unlink(missing_ok=True)
+                        state = {}
+                        continue
+
+                    if mode == "wb":
+                        state = {}
+                    with open(part_path, mode) as out_f:
+                        while True:
+                            chunk = response.read(HTTP_RESUME_CHUNK_SIZE)
+                            if not chunk:
+                                break
+                            out_f.write(chunk)
+                    size = part_path.stat().st_size
+                    if total is not None and size > total:
+                        # 服务端多发了尾部字节：按声明长度截齐
+                        with open(part_path, "r+b") as f:
+                            f.truncate(total)
+                        size = total
+                    _write_part_sidecar(
+                        sidecar_path,
+                        total=total,
+                        etag=response.headers.get("ETag"),
+                        content_type=content_type,
+                    )
+                    if total is None or size >= total:
+                        return content_type, total if total is not None else size
+                    raise http.client.IncompleteRead(size, total)
+            except HTTPError as exc:
+                if exc.code == 416 and offset > 0:
+                    # Range 起点超出资源当前大小：暂存已过期，整体重下
+                    if restarts >= HTTP_RESUME_MAX_RESTARTS:
+                        raise
+                    restarts += 1
+                    part_path.unlink(missing_ok=True)
+                    state = {}
+                    continue
+                if exc.code in _TRANSIENT_HTTP_CODES:
+                    if retries >= HTTP_RESUME_MAX_RETRIES:
+                        raise
+                    retries += 1
+                    self._sleep_backoff(retries)
+                    continue
+                raise
+            except (URLError, TimeoutError, ConnectionError, http.client.HTTPException):
+                if retries >= HTTP_RESUME_MAX_RETRIES:
+                    raise
+                retries += 1
+                self._sleep_backoff(retries)
+                continue
+
+    def _inspect_response(
+        self,
+        response: Any,
+        state: dict[str, Any],
+    ) -> tuple[str, int | None, str, bool]:
+        """解析响应头，返回 (content_type, total, 写入模式, 是否需要重下)。
+
+        206 → 追加写（Range 生效）；200 → 整写（含服务端忽略 Range 的情形）。
+        """
+        code = getattr(response, "status", None)
+        if code is None:
+            getcode = getattr(response, "getcode", None)
+            code = getcode() if callable(getcode) else 200
+        content_type = response.headers.get("Content-Type", "application/octet-stream")
+        etag = response.headers.get("ETag")
+
+        if code == 206:
+            total = _parse_content_range_total(response.headers.get("Content-Range"))
+            state_etag = state.get("etag")
+            if state_etag and etag and state_etag != etag:
+                # 源内容已变更：断点对应的旧字节失效，整体重下
+                return content_type, None, "wb", True
+            return content_type, total, "ab", False
+
+        if code != 200:
+            raise RuntimeError(f"unexpected HTTP status {code}")
+        length_header = response.headers.get("Content-Length")
+        total = (
+            int(length_header) if length_header and length_header.isdigit() else None
+        )
+        # offset>0 时服务端忽略 Range 返回整文件：重置为整写模式
+        return content_type, total, "wb", False
+
+    @staticmethod
+    def _sleep_backoff(retries: int) -> None:
+        delay = HTTP_RESUME_INITIAL_BACKOFF * (2 ** (retries - 1))
+        delay += random.uniform(0, HTTP_RESUME_JITTER * delay)
+        time.sleep(delay)
 
 
 class MinioSourceFetcher(SourceFetcher):
@@ -254,8 +451,52 @@ class LocalFileSourceFetcher(SourceFetcher):
             else:
                 local_path = Path(raw_path)
         else:
-            local_path = Path(
-                unquote(parsed.path) if parsed.path else source_uri[len("local://") :]
+            # local://tiles/t.bin 的首段会被 urlparse 归入 netloc，
+            # 拼回 path 头部以免丢段（G1-04 顺带修复该解析缺陷）
+            if parsed.netloc:
+                raw_path = parsed.netloc + unquote(parsed.path)
+            elif parsed.path:
+                raw_path = unquote(parsed.path)
+            else:
+                raw_path = source_uri[len("local://") :]
+            local_path = Path(raw_path)
+
+        # G1-04：file:// / local:// 源必须约束在 download_source_root 内，
+        # 防止 source_uri 指向服务器任意路径（.env / 凭据库等）造成本地文件泄露。
+        root_raw = (settings.download_source_root or "").strip()
+        if root_raw:
+            root_path = Path(root_raw).resolve()
+            if not local_path.is_absolute():
+                local_path = root_path / local_path
+            # resolve() 归一化 ../ 与符号链接后再判界，防穿越与 symlink 逃逸
+            local_path = local_path.resolve()
+            if not local_path.is_relative_to(root_path):
+                logger.warning(
+                    "Local source rejected (outside download source root): %s",
+                    source_uri,
+                )
+                return FetchResult(
+                    ref_id=ref_id,
+                    success=False,
+                    error="Local file is outside the configured download source root",
+                    fetched_at=fetched_at,
+                )
+        elif settings.environment == "production":
+            # production fail-closed：未配置根时禁用本地文件源（对齐 BACKEND_DATA_ROOT 策略）
+            return FetchResult(
+                ref_id=ref_id,
+                success=False,
+                error=(
+                    "BACKEND_DOWNLOAD_SOURCE_ROOT is not configured; "
+                    "local file sources are disabled in production"
+                ),
+                fetched_at=fetched_at,
+            )
+        else:
+            logger.warning(
+                "BACKEND_DOWNLOAD_SOURCE_ROOT not set; local source fetch is "
+                "unconstrained (non-production only): %s",
+                source_uri,
             )
 
         if not local_path.exists() or not local_path.is_file():

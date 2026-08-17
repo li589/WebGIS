@@ -262,6 +262,8 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                     "nasa_gldas",
                     "esa_copernicus",
                     "esa_download",
+                    "cma_nsmc",
+                    "cma_data",
                 ],
                 description="开放门户预设键（与设置页 open_data_presets 对齐）。",
                 allow_custom=False,
@@ -296,13 +298,329 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         ],
         "node_class": "http_open_data",
     },
+    {
+        "type": "download/cmr_search",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "CMR Granule 检索",
+        "description": (
+            "NASA CMR granule 检索（公共只读，免凭据）：按产品短名/版本/时间/范围"
+            "返回 granule 数据 URL。输出 path（首个 URL，可直接接「门户数据下载」）。"
+            "Earthdata 云 CDN 对象名含 tile/时间戳无法直接拼路径时，用本节点解析真实地址。"
+        ),
+        "inputs": [
+            _port(
+                "path",
+                "value:string",
+                required=False,
+                description="预留（当前以参数为准）。",
+            ),
+        ],
+        "outputs": [
+            _port("path", "value:string", description="首个数据 URL（绝对地址）。"),
+            _port("urls", "value:string", description="数据 URL 列表。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param(
+                "short_name",
+                "string",
+                description="产品短名（如 VNP13A1 / SPL3SMP_E / GLDAS_NOAH025_3H）。",
+            ),
+            _param("version", "string", description="产品版本（可选）。"),
+            _param(
+                "start_date",
+                "string",
+                description="起始日期 YYYY-MM-DD 或 YYYYMMDD。",
+                widget="date",
+            ),
+            _param(
+                "end_date",
+                "string",
+                description="结束日期 YYYY-MM-DD 或 YYYYMMDD（默认同起始）。",
+                widget="date",
+            ),
+            _param(
+                "bounding_box",
+                "string",
+                description="范围过滤（西,南,东,北，可选）。",
+            ),
+            _param(
+                "link_filter",
+                "string",
+                description="URL 子串过滤（如 .h5，可选）。",
+            ),
+            _param(
+                "max_results",
+                "number",
+                default=5,
+                description="最多返回条数（1~50）。",
+            ),
+            _param(
+                "cmr_base",
+                "string",
+                description="CMR 检索端点覆盖（一般不改）。",
+            ),
+        ],
+        "node_class": "cmr_granule_search",
+    },
+    {
+        "type": "download/cds_download",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "CDS 再分析下载",
+        "description": (
+            "ECMWF CDS 数据集下载（ERA5/ORAS5 等再分析）：主路径 cdsapi 排队轮询，"
+            "回退 legacy 静态直链（Range 续传）。凭据经门户 ecmwf_cds 或"
+            " BACKEND_CDS_API_KEY 下发。"
+        ),
+        "inputs": [
+            _port(
+                "datasource_selection",
+                "config",
+                required=False,
+                description="数据源选择（门户 ecmwf_cds 凭据注入）。",
+            ),
+            _port(
+                "algorithm_params",
+                "config",
+                required=False,
+                description="算法参数覆盖（可选）。",
+            ),
+        ],
+        "outputs": [
+            _port("path", "value:string", description="下载后的本地路径。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param(
+                "dataset",
+                "string",
+                description="CDS 数据集 ID（如 reanalysis-era5-single-levels）。",
+            ),
+            _param(
+                "request",
+                "string",
+                description="CDS request JSON（变量/日期/范围等）。",
+                widget="textarea",
+            ),
+            _param(
+                "target_dir",
+                "string",
+                description="本地目标目录（默认 workspace/data_access/cds）。",
+                widget="path",
+            ),
+            _param(
+                "use",
+                "string",
+                default="auto",
+                options=["auto", "cdsapi", "legacy"],
+                description="下载路径：auto=自动（cdsapi→legacy 回退）。",
+                allow_custom=False,
+            ),
+            _param(
+                "filename",
+                "string",
+                description="落盘文件名（可选，默认由数据集/请求推导）。",
+            ),
+            _param(
+                "direct_url",
+                "string",
+                description="legacy 直链 URL（use=legacy 或回退时使用）。",
+            ),
+            _param(
+                "force",
+                "boolean",
+                default=False,
+                description="忽略已有文件强制重下。",
+            ),
+        ],
+        "node_class": "cds_download",
+    },
+    {
+        "type": "download/nomads_grib_download",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "NOMADS GRIB2 下载",
+        "description": (
+            "NCEP NOMADS GRIB2 下载（GFS/GEFS/GDAS/NAM 等）：主路径 herbie 参数化"
+            "检索与字段子集物化，回退 NOMADS 直连直链（Range 续传）。"
+        ),
+        "inputs": [
+            _port(
+                "datasource_selection",
+                "config",
+                required=False,
+                description="数据源选择（可选）。",
+            ),
+            _port(
+                "algorithm_params",
+                "config",
+                required=False,
+                description="算法参数覆盖（可选）。",
+            ),
+        ],
+        "outputs": [
+            _port("path", "value:string", description="下载后的本地目录。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param(
+                "date",
+                "string",
+                description="起报日期 YYYYMMDD 或 latest。",
+                widget="date",
+            ),
+            _param(
+                "model",
+                "string",
+                default="gfs",
+                options=["gfs", "gefs", "gdas", "nam", "hrrr", "rap"],
+                description="NOMADS 模型（herbie 命名）。",
+                allow_custom=True,
+            ),
+            _param(
+                "product",
+                "string",
+                description="产品子路径（如 pgrb2.0p25；空=模型默认）。",
+            ),
+            _param(
+                "fxx",
+                "number",
+                default=0,
+                min_val=0,
+                max_val=8640,
+                step=1,
+                description="预报时效（小时）。",
+                unit="h",
+            ),
+            _param(
+                "search_string",
+                "string",
+                description="GRIB 字段子集（herbie 语法，如 :TMP:2 m ；空=整场）。",
+            ),
+            _param(
+                "members",
+                "string",
+                description="集合成员列表（逗号分隔，GEFS 适用，可选）。",
+            ),
+            _param(
+                "target_dir",
+                "string",
+                description="本地目标目录（默认 workspace/data_access/nomads）。",
+                widget="path",
+            ),
+            _param(
+                "use",
+                "string",
+                default="auto",
+                options=["auto", "herbie", "legacy"],
+                description="下载路径：auto=自动（herbie→legacy 回退）。",
+                allow_custom=False,
+            ),
+            _param(
+                "legacy_url",
+                "string",
+                description="legacy 直链 URL（可选覆盖）。",
+            ),
+            _param(
+                "overwrite",
+                "boolean",
+                default=False,
+                description="覆盖已存在文件。",
+            ),
+        ],
+        "node_class": "nomads_grib_download",
+    },
+    {
+        "type": "download/cdse_download",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "CDSE 产品下载",
+        "description": (
+            "Copernicus CDSE 产品下载（Sentinel 等）：门户 copernicus 凭据 token"
+            " 交换后 OData $value 下载（Range 续传）；use='legacy' 走公共直链。"
+            "可接 search_portal / cmr_granule_search 检索结果。"
+        ),
+        "inputs": [
+            _port(
+                "datasource_selection",
+                "config",
+                required=False,
+                description="数据源选择（门户 copernicus 凭据注入）。",
+            ),
+            _port(
+                "algorithm_params",
+                "config",
+                required=False,
+                description="算法参数覆盖（可选）。",
+            ),
+            _port(
+                "search_results",
+                "data",
+                required=False,
+                description="上游检索结果（含 granule_id/product_id 条目）。",
+            ),
+        ],
+        "outputs": [
+            _port("path", "value:string", description="下载后的本地目录。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param(
+                "product_ids",
+                "string",
+                description="产品 UUID 列表（逗号/换行分隔）。",
+                widget="textarea",
+            ),
+            _param(
+                "odata_filter",
+                "string",
+                description="OData $filter（在线检索产品，可选）。",
+            ),
+            _param(
+                "target_dir",
+                "string",
+                description="本地目标目录（默认 workspace/data_access/cdse）。",
+                widget="path",
+            ),
+            _param(
+                "use",
+                "string",
+                default="auto",
+                options=["auto", "cdse", "legacy"],
+                description="下载路径：auto=自动（cdse→legacy 回退）。",
+                allow_custom=False,
+            ),
+            _param(
+                "legacy_urls",
+                "string",
+                description="公共直链列表（use=legacy，逗号/换行分隔）。",
+                widget="textarea",
+            ),
+            _param(
+                "force",
+                "boolean",
+                default=False,
+                description="忽略已有文件强制重下。",
+            ),
+            _param(
+                "max_products",
+                "number",
+                min_val=1,
+                step=1,
+                description="最多下载数（联调节流，可选）。",
+            ),
+        ],
+        "node_class": "cdse_download",
+    },
     # ── 远程数据下载/同步/预处理节点 ──
     {
         "type": "download/ssh_sync",
         "engine": "common",
         "category": "数据获取与解析",
         "title": "SSH/SFTP 同步",
-        "description": "从 HPC/Win11/NAS 远程服务器增量同步数据到本地。支持日期过滤、断点续传、FileBrowser REST API。",
+        "description": "从远程服务器增量同步数据到本地。server_type 可选「远程与存储」中的 profile（ssh/sftp/filebrowser）或 hpc/win11/nas 遗留内置。支持日期过滤、断点续传、FileBrowser REST API。",
         "inputs": [
             _port(
                 "data",
@@ -321,7 +639,8 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 "string",
                 default="hpc",
                 options=["hpc", "win11", "nas"],
-                description="服务器类型。",
+                allow_custom=True,
+                description="服务器：远程存储 profile id（设置→远程与存储）或 hpc/win11/nas 遗留内置。",
             ),
             _param(
                 "remote_path", "string", description="远程目录路径。", widget="path"
@@ -344,15 +663,6 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
                 "string",
                 description="文件扩展名过滤（如 .mat,.h5）。",
             ),
-            _param(
-                "max_depth",
-                "number",
-                default=4,
-                min_val=1,
-                max_val=10,
-                step=1,
-                description="最大递归深度。",
-            ),
         ],
         "node_class": "ssh_sync",
     },
@@ -362,7 +672,14 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "category": "数据获取与解析",
         "title": "NSIDC SMAP 下载",
         "description": "从 NASA NSIDC 下载 SMAP L3 SPL3SMP_E V6 土壤湿度数据。支持日期范围、增量下载、earthaccess 认证。",
-        "inputs": [],
+        "inputs": [
+            _port(
+                "datasource_selection",
+                "config",
+                required=False,
+                description="数据源选择（含 portal_credentials 等）。",
+            ),
+        ],
         "outputs": [
             _port("path", "value:string", description="本地落盘目录。"),
             _port("manifest", "data", description="产物清单。"),
@@ -391,7 +708,14 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "category": "数据获取与解析",
         "title": "GLDAS 在线下载",
         "description": "从 NASA GES DISC 下载 GLDAS NOAH025_3H V2.1（.nc4）。支持日期范围、增量下载、earthdata 认证；落地后可转 .mat 接入 DUAL 温度链。",
-        "inputs": [],
+        "inputs": [
+            _port(
+                "datasource_selection",
+                "config",
+                required=False,
+                description="数据源选择（含 portal_credentials 等）。",
+            ),
+        ],
         "outputs": [
             _port("path", "value:string", description="本地落盘目录。"),
             _port("manifest", "data", description="产物清单。"),
@@ -545,14 +869,83 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "node_class": "fy_preprocess",
     },
     {
+        "type": "download/fy_download",
+        "engine": "common",
+        "category": "数据获取与解析",
+        "title": "风云卫星数据下载",
+        "description": (
+            "风云卫星数据专用下载模块：支持 NSMC 门户 HTTP 下载、NAS SMB 远程拉取、"
+            "auto 自动回退（NSMC→NAS）。下载 FY-3 MWRI HDF 亮温数据供 fy_preprocess 处理。"
+        ),
+        "inputs": [
+            _port(
+                "datasource_selection",
+                "config",
+                required=False,
+                description="数据源选择（含 portal_credentials 等）。",
+            ),
+        ],
+        "outputs": [
+            _port("path", "value:string", description="下载后的本地路径。"),
+            _port("manifest", "data", description="产物清单。"),
+        ],
+        "params": [
+            _param(
+                "satellite",
+                "string",
+                default="FY3D",
+                options=["FY3D", "FY3B"],
+                description="卫星。",
+            ),
+            _param(
+                "data_source",
+                "string",
+                default="auto",
+                options=["auto", "nsmc", "nas"],
+                description="数据源：auto=自动回退（NSMC→NAS），nsmc=NSMC门户，nas=NAS远程拉取。",
+            ),
+            _param(
+                "start_date", "string", description="起始日期 YYYYMMDD。", widget="date"
+            ),
+            _param(
+                "end_date", "string", description="结束日期 YYYYMMDD。", widget="date"
+            ),
+            _param("local_dir", "string", description="本地保存目录。", widget="path"),
+            _param(
+                "band_ids",
+                "string",
+                default="1,2",
+                description="通道 ID 列表（逗号分隔），如 1,2。",
+            ),
+            _param(
+                "orbit_mode",
+                "string",
+                default="MWRID",
+                options=["MWRID", "MWRIA", "Both"],
+                description="轨道模式。",
+            ),
+        ],
+        "node_class": "fy_download",
+    },
+    {
         "type": "archive/extract",
         "engine": "common",
         "category": "数据获取与解析",
         "title": "解压归档",
-        "description": "解压 zip/tar/gz/tgz；支持 member_glob、recurse_once、Sentinel SAFE 识别。不支持 7z/rar。",
+        "description": (
+            "解压 zip/tar/gz/tgz；非归档数据文件（如 CMR 直下的裸 .h5/.nc）透传复制进目录，"
+            "url 输入可恢复原始文件名。支持 member_glob、recurse_once、Sentinel SAFE 识别。"
+            "不支持 7z/rar。"
+        ),
         "inputs": [
             _port("path", "value:string", required=False, description="归档文件路径。"),
             _port("data", "data:source", required=False, description="上游数据源。"),
+            _port(
+                "url",
+                "value:string",
+                required=False,
+                description="来源 URL；透传时恢复原始文件名（HTTP 缓存以 sha256 命名）。",
+            ),
         ],
         "outputs": [
             _port(
@@ -2079,17 +2472,33 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         "title": "NDVI 日常处理",
         "description": "读取 NDVI 栅格，生成日常 NDVI .mat 产品。",
         "inputs": [
-            _port("input_dir", "data:source", description="NDVI 栅格目录。"),
             _port(
-                "time_range",
-                "value:time_range",
+                "data",
+                "data:source",
                 required=False,
-                description="过滤时间。",
+                description="上游节点（archive/extract、remote_fetch）输出的数据目录；缺省时回退 datasource_selection。",
             ),
-            _port("bbox", "geometry:bbox", required=False, description="空间裁剪。"),
+            _port(
+                "datasource_selection",
+                "data:source",
+                required=False,
+                description="数据源选择（含 input_dir；通常 request 绑定）。",
+            ),
+            _port(
+                "algorithm_params",
+                "value:any",
+                required=False,
+                description="算法参数（通常 request 绑定）。",
+            ),
+            _port(
+                "output_spec_extra",
+                "value:any",
+                required=False,
+                description="输出扩展配置。",
+            ),
         ],
         "outputs": [
-            _port("ndvi_daily_mat", "data:mat", description="NDVI 日常 .mat 输出。"),
+            _port("manifest", "data", description="NDVI 日常产品清单。"),
         ],
         "params": [
             _param(
@@ -3282,6 +3691,27 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
         ],
         "node_class": "gee_select_bands",
     },
+    {
+        "type": "gee/export",
+        "engine": "gee",
+        "category": "GEE-输出",
+        "title": "GEE 导出",
+        "description": "内联 GEE 导出任务规格（expression/collection/scale 等），由 GeeBridgeService 提交并发布地图图层。",
+        "inputs": [],
+        "outputs": [
+            _port("result", "data", description="导出任务 manifest / 图层产物。"),
+        ],
+        "params": [
+            _param(
+                "workflow",
+                "string",
+                widget="textarea",
+                description="GEE 导出任务规格 JSON（description/expression/collection/band/scale/crs/rescale）。",
+            ),
+        ],
+        "executable": True,
+        "node_class": "gee_export_image",
+    },
 ]
 
 
@@ -3394,20 +3824,147 @@ def _ensure_dimension_ports(templates: list[dict[str, Any]]) -> None:
 _ensure_dimension_ports(_NODE_TEMPLATES)
 
 
+# ─── 门户/存储动态 options ───────────────────────────────────────────────────
+# http_open_data 的 preset/cred_profile 与 remote_fetch 的 cred_profile 选项
+# 在查询时动态注入（目录/存储 profile 运行时可编辑；硬编码列表仅作兜底）。
+
+_PORTAL_OPTIONS_TTL_SECONDS = 30.0
+_portal_options_cache: dict[str, list[str]] | None = None
+_portal_options_cached_at: float = 0.0
+
+_FALLBACK_PRESET_OPTIONS = [
+    "noaa_nomads",
+    "noaa_goes",
+    "nasa_earthdata",
+    "nasa_cmr",
+    "nsidc_data",
+    "nasa_ges_disc",
+    "nasa_gldas",
+    "esa_copernicus",
+    "esa_download",
+    "cma_nsmc",
+    "cma_data",
+]
+_FALLBACK_PORTAL_CRED_OPTIONS = ["", "earthdata", "nsidc", "copernicus"]
+
+_DYNAMIC_OPTION_NODES = frozenset(
+    {"download/http_open_data", "download/remote_fetch", "download/ssh_sync"}
+)
+
+# ssh_sync 可直接选用的远程存储协议（SFTP 直连 / FileBrowser REST）
+_SSH_SYNC_PROFILE_PROTOCOLS = frozenset({"ssh", "sftp", "filebrowser"})
+_SSH_SYNC_LEGACY_SERVERS = ["hpc", "win11", "nas"]
+
+
+def invalidate_portal_options_cache() -> None:
+    """门户/存储目录变更后失效动态 options 缓存。"""
+    global _portal_options_cache, _portal_options_cached_at
+    _portal_options_cache = None
+    _portal_options_cached_at = 0.0
+
+
+def _dynamic_portal_options() -> dict[str, list[str]]:
+    global _portal_options_cache, _portal_options_cached_at
+    import time
+
+    now = time.monotonic()
+    if (
+        _portal_options_cache is not None
+        and now - _portal_options_cached_at < _PORTAL_OPTIONS_TTL_SECONDS
+    ):
+        return _portal_options_cache
+
+    presets = list(_FALLBACK_PRESET_OPTIONS)
+    portal_creds = list(_FALLBACK_PORTAL_CRED_OPTIONS)
+    remote_creds: list[str] = []
+    ssh_servers = list(_SSH_SYNC_LEGACY_SERVERS)
+    try:
+        from app.services.portal_catalog import known_portal_ids, list_portal_defs
+
+        presets = list(list_portal_defs().keys())
+        portal_creds = [""] + sorted(known_portal_ids())
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from app.services.config_remote_storage import list_remote_storage_profiles
+
+        profiles = list_remote_storage_profiles()
+        remote_creds = [
+            str(p.get("profile_id"))
+            for p in profiles
+            if str(p.get("profile_id") or "").strip()
+        ]
+        ssh_servers += [
+            str(p["profile_id"])
+            for p in profiles
+            if str(p.get("protocol") or "").lower() in _SSH_SYNC_PROFILE_PROTOCOLS
+            and p.get("enabled") is not False
+            and str(p.get("profile_id") or "").strip()
+        ]
+    except Exception:  # noqa: BLE001
+        pass
+
+    _portal_options_cache = {
+        "presets": presets,
+        "portal_creds": portal_creds,
+        "remote_creds": remote_creds,
+        "ssh_servers": ssh_servers,
+    }
+    _portal_options_cached_at = now
+    return _portal_options_cache
+
+
+def _apply_dynamic_options(tpl: dict[str, Any]) -> dict[str, Any]:
+    if tpl.get("type") not in _DYNAMIC_OPTION_NODES:
+        return tpl
+    options = _dynamic_portal_options()
+    params: list[dict[str, Any]] = []
+    for p in tpl.get("params") or []:
+        p = dict(p)
+        key = p.get("key")
+        if tpl["type"] == "download/http_open_data":
+            if key == "preset":
+                p["options"] = list(options["presets"])
+                if p.get("default") not in p["options"] and p["options"]:
+                    p["default"] = p["options"][0]
+            elif key == "cred_profile":
+                p["options"] = list(options["portal_creds"])
+                p["allow_custom"] = True
+        elif tpl["type"] == "download/remote_fetch":
+            if key == "cred_profile" and options["remote_creds"]:
+                p["options"] = list(options["remote_creds"])
+                p["allow_custom"] = True
+        elif tpl["type"] == "download/ssh_sync":
+            if key == "server_type" and options["ssh_servers"]:
+                p["options"] = list(options["ssh_servers"])
+                p["allow_custom"] = True
+        params.append(p)
+    out = dict(tpl)
+    out["params"] = params
+    return out
+
+
 # ─── 查询接口 ────────────────────────────────────────────────────────────────
 def get_all_node_templates() -> list[dict[str, Any]]:
     """返回所有节点模板的列表。"""
-    return [dict(t) for t in _NODE_TEMPLATES]
+    return [_apply_dynamic_options(dict(t)) for t in _NODE_TEMPLATES]
 
 
 def get_node_templates_by_engine(engine: str) -> list[dict[str, Any]]:
     """按引擎过滤节点模板。"""
-    return [dict(t) for t in _NODE_TEMPLATES if t["engine"] == engine]
+    return [
+        _apply_dynamic_options(dict(t))
+        for t in _NODE_TEMPLATES
+        if t["engine"] == engine
+    ]
 
 
 # 历史种子/画布类型别名 → 现行注册 type（避免画布出现「未定义」节点）
 _NODE_TYPE_ALIASES: dict[str, str] = {
     "algorithm/omega_avg_daily": "module/omega_avg_daily",
+    "remote_fetch": "download/remote_fetch",
+    "module/fy_preprocess": "download/fy_preprocess",
+    "module/fy_download": "download/fy_download",
 }
 
 
@@ -3421,7 +3978,7 @@ def get_node_template(node_type: str) -> dict[str, Any] | None:
     canonical = resolve_node_type(node_type)
     for t in _NODE_TEMPLATES:
         if t["type"] == canonical:
-            return dict(t)
+            return _apply_dynamic_options(dict(t))
     return None
 
 

@@ -259,7 +259,7 @@ def test_cleanup_stale_skips_running_runs(monkeypatch):
     """Running runs are never cleaned up by the startup sweep."""
     # Avoid any real celery/redis interaction.
     monkeypatch.setattr(
-        FollowUpDispatchService, "_collect_live_celery_task_ids", lambda self: set()
+        FollowUpDispatchService, "_collect_live_celery_tasks", lambda self: (set(), set())
     )
     with TemporaryDirectory() as tmpdir:
         repository, persistence, transitions, svc = _real_services(tmpdir)
@@ -280,5 +280,74 @@ def test_cleanup_stale_skips_running_runs(monkeypatch):
             assert svc.cleanup_stale_workflow_runs() == 0, "running runs must be skipped"
             run = repository.get_run("run-running")
             assert run.status == ExecutionStatus.running, "running run must remain running"
+        finally:
+            repository.close()
+
+
+def test_cleanup_stale_keeps_run_with_queue_resident_message(monkeypatch):
+    """排队驻留在 broker 队列里的 run（worker 忙碌积压）不得被误标 orphaned。
+
+    回归：原实现只查 active/reserved/unacked，队列驻留消息不可见；worker 被
+    长任务占用时合法 run 会在 FastAPI 重启后被启动清理误杀。run_id 级匹配
+    还覆盖 task_id 副本与 metadata 记录不一致（重派发去重后）的场景。
+    """
+    monkeypatch.setattr(
+        FollowUpDispatchService,
+        "_collect_live_celery_tasks",
+        lambda self: (set(), {"run-queued-live"}),
+    )
+    with TemporaryDirectory() as tmpdir:
+        repository, persistence, transitions, svc = _real_services(tmpdir)
+        try:
+            past = datetime.now(UTC) - timedelta(hours=3)
+            payload = _payload()
+            repository.save_run(
+                transitions.build_execution_transition(
+                    run_id="run-queued-live",
+                    payload=payload,
+                    status=ExecutionStatus.queued,
+                    progress=18,
+                    message="queued",
+                    created_at=past,
+                    updated_at=past,
+                    executor_metadata={"task_id": "removed-duplicate-task"},
+                )
+            )
+            assert svc.cleanup_stale_workflow_runs() == 0, (
+                "queue-resident run must be treated as live"
+            )
+            run = repository.get_run("run-queued-live")
+            assert run.status == ExecutionStatus.queued, "live queued run must survive"
+        finally:
+            repository.close()
+
+
+def test_cleanup_stale_fails_orphaned_queued_run(monkeypatch):
+    """超宽限且 broker 中确无对应消息（task_id 与 run_id 均不命中）的 run 被清理。"""
+    monkeypatch.setattr(
+        FollowUpDispatchService, "_collect_live_celery_tasks", lambda self: (set(), set())
+    )
+    with TemporaryDirectory() as tmpdir:
+        repository, persistence, transitions, svc = _real_services(tmpdir)
+        try:
+            past = datetime.now(UTC) - timedelta(hours=3)
+            payload = _payload()
+            repository.save_run(
+                transitions.build_execution_transition(
+                    run_id="run-orphaned",
+                    payload=payload,
+                    status=ExecutionStatus.queued,
+                    progress=18,
+                    message="queued",
+                    created_at=past,
+                    updated_at=past,
+                    executor_metadata={"task_id": "vanished-task"},
+                )
+            )
+            assert svc.cleanup_stale_workflow_runs() == 1, (
+                "orphaned queued run must be cleaned"
+            )
+            run = repository.get_run("run-orphaned")
+            assert run.status == ExecutionStatus.failed, "orphaned run must be failed"
         finally:
             repository.close()

@@ -133,6 +133,11 @@ function saveDismissedLayers(registry: DismissedLayersRegistry): void {
   }
 }
 
+/** 服务端工作区同步：整体替换移除登记（远端为准）。 */
+export function writeDismissedLayers(registry: DismissedLayersRegistry): void {
+  saveDismissedLayers(registry)
+}
+
 export function rememberDismissedLayer(entry: {
   overlayLayerId?: string | null
   catalogId?: string | null
@@ -376,10 +381,38 @@ export function loadWorkspaceSnapshot(): WorkspaceSnapshot | null {
     if (!Array.isArray(parsed.catalogLayers)) parsed.catalogLayers = []
     if (!Array.isArray(parsed.vectorLayers)) parsed.vectorLayers = []
     if (!Array.isArray(parsed.groups)) parsed.groups = []
-    return parsed
+    return migrateSnapshot(parsed)
   } catch {
     return null
   }
+}
+
+/**
+ * 一次性迁移：删除英文占位图层条目（catalogId 为 omega_sf_fenkuai_* /
+ * omega_avg_daily_* 等原始 workflow id）。这些占位无目录条目、无独立数据源，
+ * 产物恢复改经 restoreActiveWorkflows 映射到「风云/SMAP ω 反演」合并组。
+ */
+const ENGLISH_PLACEHOLDER_CATALOG_PATTERN = /^omega[-_]sf[-_]fenkuai|^omega[-_]avg[-_]daily/i
+
+function migrateSnapshot(snapshot: WorkspaceSnapshot): WorkspaceSnapshot {
+  const drop = (catalogId: string | undefined | null): boolean =>
+    Boolean(catalogId) && ENGLISH_PLACEHOLDER_CATALOG_PATTERN.test(String(catalogId))
+  const catalogLayers = snapshot.catalogLayers ?? []
+  const vectorLayers = snapshot.vectorLayers ?? []
+  const beforeLayers = snapshot.layers.length + catalogLayers.length
+  snapshot.layers = snapshot.layers.filter((l) => !drop(l.catalogId))
+  snapshot.catalogLayers = catalogLayers.filter((l) => !drop(l.catalogId))
+  if (snapshot.layers.length + snapshot.catalogLayers.length === beforeLayers) return snapshot
+  const keptInstanceIds = new Set([
+    ...snapshot.layers.map((l) => l.instanceId),
+    ...snapshot.catalogLayers.map((l) => l.instanceId),
+    ...vectorLayers.map((l) => l.instanceId),
+  ])
+  for (const group of snapshot.groups) {
+    group.memberInstanceIds = group.memberInstanceIds.filter((id) => keptInstanceIds.has(id))
+  }
+  snapshot.groups = snapshot.groups.filter((g) => g.memberInstanceIds.length > 0)
+  return snapshot
 }
 
 export function clearWorkspaceSnapshot(): void {

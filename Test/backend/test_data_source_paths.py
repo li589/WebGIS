@@ -66,6 +66,37 @@ def test_update_data_source_paths_rejects_relative(tmp_path: Path):
         config_service.update_data_source_paths("relative/path", None)
 
 
+def test_update_data_source_paths_optional_cache_dirs(tmp_path: Path, monkeypatch):
+    from app.services import config_service
+
+    root = tmp_path / "Geograph_DataSet"
+    root.mkdir()
+    env = tmp_path / ".env"
+    env.write_text("BACKEND_ENV=development\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "app.services.env_file_upsert.backend_env_path", lambda: env
+    )
+
+    cache_root = tmp_path / "static-cache"
+    source_root = tmp_path / "new-downloads"  # 不存在 → 应自动创建
+    result = config_service.update_data_source_paths(
+        str(root),
+        None,
+        static_cache_root=str(cache_root),
+        cache_dir=None,
+        download_source_root=str(source_root),
+    )
+    assert result["static_cache_root"] == str(cache_root)
+    assert result["cache_dir"] is None
+    assert result["download_source_root"] == str(source_root)
+    assert cache_root.is_dir() and source_root.is_dir()
+    text = env.read_text(encoding="utf-8")
+    assert "BACKEND_STATIC_CACHE_ROOT=" in text
+    assert "BACKEND_DOWNLOAD_SOURCE_ROOT=" in text
+    assert "BACKEND_CACHE_DIR=" not in text
+    assert result["pending_restart"] is True
+
+
 def test_schedule_ui_backend_restart_forbidden_when_disabled(monkeypatch):
     from app.services import config_service
 

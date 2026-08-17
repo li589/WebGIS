@@ -224,7 +224,7 @@ def test_submit_workflow_auto_populates_algorithm_request_from_layer_catalog(
         normalized_payload = execute_mock.call_args.kwargs["payload"]
         algorithm_request = _as_dict(normalized_payload.algorithm_request)
         assert algorithm_request["module_name"] == "ndvi_daily", 'algorithm_request["module_name"] == "ndvi_daily"'
-        assert algorithm_request["workflow_entry_name"] == "ndvi_daily", 'algorithm_request["workflow_entry_name"] == "ndvi_daily"'
+        assert algorithm_request["workflow_entry_name"] == "ndvi_local_read", 'algorithm_request["workflow_entry_name"] == "ndvi_local_read"'
         assert algorithm_request["task_type"] == "ndvi_daily", 'algorithm_request["task_type"] == "ndvi_daily"'
         assert algorithm_request["datasource_selection"]["_data_access_requests"][
                 "NDVI_16DAY_RASTER"

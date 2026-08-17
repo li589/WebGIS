@@ -34,6 +34,7 @@ const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
   inversion: { label: '反演', color: 'var(--accent)' },
   weather: { label: '天气', color: 'var(--accent-warm)' },
   data_access: { label: '数据获取', color: 'var(--success)' },
+  analysis: { label: '分析', color: 'var(--recent-accent)' },
   demo: { label: '演示', color: 'var(--danger)' },
 }
 

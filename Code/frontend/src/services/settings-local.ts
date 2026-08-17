@@ -29,6 +29,10 @@ export interface SettingsUiLocal {
   panelWidthPx?: number
   /** 分析工具运行成功后是否在地图显示新图层（默认开启） */
   showAnalysisResultOnMap?: boolean
+  /** 「远程与存储」二级 tab：storage（远程存储）| portals（开放门户） */
+  remoteStorageTab?: string
+  /** 「数据源」二级 tab：local（本地数据源）| remote（远程数据源） */
+  dataSourceTab?: string
 }
 
 function safeGet(storage: Storage, key: string): string | null {

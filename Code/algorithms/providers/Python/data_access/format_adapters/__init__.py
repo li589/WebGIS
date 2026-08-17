@@ -1,6 +1,7 @@
 from data_access.format_adapters.base import FormatAdapter, LocalFileFormatAdapter
 from data_access.format_adapters.csv_file import CsvFormatAdapter
 from data_access.format_adapters.excel_file import ExcelFormatAdapter
+from data_access.format_adapters.grib_file import GribFormatAdapter
 from data_access.format_adapters.hdf_file import HdfFormatAdapter
 from data_access.format_adapters.json_file import JsonFormatAdapter
 from data_access.format_adapters.mat_file import MatFormatAdapter
@@ -19,6 +20,7 @@ __all__ = [
     "ExcelFormatAdapter",
     "FormatAdapter",
     "FormatRegistry",
+    "GribFormatAdapter",
     "HdfFormatAdapter",
     "JsonFormatAdapter",
     "LocalFileFormatAdapter",

@@ -8,15 +8,16 @@
 使用示例:
     from data_access.data_preprocessor import DataPreprocessor
 
-    pre = DataPreprocessor("I:/Geograph_DataSet")
+    pre = DataPreprocessor()  # data_root 取 BACKEND_DATA_ROOT 环境变量，未设为空
     pre.convert_smap_to_mat(
-        smap_h5_path="I:/Geograph_DataSet/Soil_Moisture/SMAP/SMAP_L3_SM_P_20230110_R18290_001.h5",
-        output_dir="I:/Geograph_DataSet/Soil_Moisture/SMAP/mat",
+        smap_h5_path="/data/Soil_Moisture/SMAP/SMAP_L3_SM_P_20230110_R18290_001.h5",
+        output_dir="/data/Soil_Moisture/SMAP/mat",
     )
 """
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -46,7 +47,14 @@ _SMAP_AM_GROUP = "Soil_Moisture_Retrieval_Data_AM"
 class DataPreprocessor:
     """数据预处理管道 — 多格式数据转 .mat。"""
 
-    def __init__(self, data_root: str | Path = "I:/Geograph_DataSet"):
+    def __init__(self, data_root: str | Path | None = None):
+        """data_root 解析顺序：显式参数 > ``BACKEND_DATA_ROOT`` 环境变量 > 空字符串。
+
+        默认不落任何盘符（跨平台安全）：空根时 ``_find_landcover_tif`` 直接返回
+        None，landcover 需经参数或环境变量显式提供。
+        """
+        if data_root is None:
+            data_root = os.getenv("BACKEND_DATA_ROOT", "")
         self.data_root = Path(data_root)
 
     # ------------------------------------------------------------------

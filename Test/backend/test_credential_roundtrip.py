@@ -167,3 +167,53 @@ def test_portal_enabled_fail_closed_preserves_disabled_on_partial_update():
     )
     raw = repo.get_json("portal_credentials", {})
     assert raw["earthdata"]["enabled"] is False
+
+
+def test_portal_accounts_upsert_roundtrip():
+    """多账号（NSMC 限额轮换）：写入清洗、public 投影报 account_count、清空回落单凭据。"""
+    repo = _DictRepo()
+
+    portal_mod.upsert_portal_credential(
+        repo=repo,
+        encryption_key=_VALID_KEY,
+        portal_id="nsmc",
+        payload={
+            "enabled": True,
+            "auth_type": "basic",
+            "token_header": "token",
+            "accounts": [
+                {"username": "u1", "password": "p1", "token": ""},
+                {"username": "", "password": "", "token": "tok2"},
+                # 无效条目（既无 token 也无用户名+密码）被清洗
+                {"username": "u3", "password": "", "token": ""},
+                "garbage",
+            ],
+        },
+    )
+    entry = portal_mod.load_portal_credentials_secret(
+        repo=repo, encryption_key=_VALID_KEY
+    )["nsmc"]
+    accounts = entry["accounts"]
+    assert [a["username"] for a in accounts] == ["u1", ""]
+    assert accounts[1]["token"] == "tok2"
+
+    public = portal_mod.public_portal_credentials(
+        repo=repo, encryption_key=_VALID_KEY
+    )["nsmc"]
+    assert public["account_count"] == 2
+
+    # 显式空列表 = 清空多账号（回落单凭据模式）
+    portal_mod.upsert_portal_credential(
+        repo=repo,
+        encryption_key=_VALID_KEY,
+        portal_id="nsmc",
+        payload={"accounts": []},
+    )
+    entry = portal_mod.load_portal_credentials_secret(
+        repo=repo, encryption_key=_VALID_KEY
+    )["nsmc"]
+    assert "accounts" not in entry
+    public = portal_mod.public_portal_credentials(
+        repo=repo, encryption_key=_VALID_KEY
+    )["nsmc"]
+    assert public["account_count"] == 0

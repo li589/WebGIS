@@ -606,11 +606,28 @@
 .unified-subsection {
   margin-bottom: 0.6rem;
 }
+.unified-subsection--unit {
+  padding: 0.5rem;
+  background: var(--surface-2, rgba(255, 255, 255, 0.03));
+  border-radius: 8px;
+  border: 1px solid var(--surface-hover, rgba(255, 255, 255, 0.06));
+}
 .subsection-title {
   font-size: var(--font-size-caption);
   font-weight: 600;
   color: var(--text-secondary);
   margin: 0 0 0.3rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.subsection-count {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-tertiary, #9ab);
+  background: var(--surface-hover, rgba(255, 255, 255, 0.06));
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
 }
 .unified-category-group {
   margin-bottom: 0.8rem;

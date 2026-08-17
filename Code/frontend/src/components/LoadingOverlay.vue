@@ -324,7 +324,7 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
 /* compact 顶栏 */
 .loading-compact {
   position: fixed;
-  top: 0;
+  top: 96px;
   left: 0;
   right: 0;
   z-index: calc(var(--z-loading) - 1);

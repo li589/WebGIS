@@ -16,6 +16,7 @@ describe('map-canvas-module-bundle', () => {
     }
     const selectedLayerFocusModule = {}
     const measureModule = { applyMeasureMode: vi.fn(), syncFromStore: vi.fn() }
+    const drawModule = { applyDrawMode: vi.fn(), syncFromStore: vi.fn() }
     const syncAdminOverlay = vi.fn()
     const runtimeOptions: {
       onTileSourceChange?: (sourceId: 'esri-street') => void
@@ -70,6 +71,21 @@ describe('map-canvas-module-bundle', () => {
       completeMeasure: vi.fn(),
       setHoverPoint: vi.fn(),
       clearMeasure: vi.fn(),
+      getDrawState: () => ({
+        drawMode: 'polygon' as const,
+        features: [],
+        activeVertices: [],
+        isDrawing: false,
+        hoverPoint: null,
+        selectedFeatureIndex: null,
+      }),
+      addDrawVertex: vi.fn(),
+      undoDrawVertex: vi.fn(),
+      setDrawHoverPoint: vi.fn(),
+      addDrawFeature: vi.fn(),
+      clearDrawVertices: vi.fn(),
+      setDrawDrawingFlag: vi.fn(),
+      scheduleDrawPersist: vi.fn(),
       dependencies: {
         createBasemapModule: vi.fn(() => basemapModule as any),
         createAdminBoundaryModule: vi.fn(() => adminBoundaryModule as any),
@@ -86,6 +102,7 @@ describe('map-canvas-module-bundle', () => {
         }),
         createSelectedLayerFocusModule: vi.fn(() => selectedLayerFocusModule as any),
         createMeasureModule: vi.fn(() => measureModule as any),
+        createDrawModule: vi.fn(() => drawModule as any),
       },
     })
 
@@ -102,10 +119,12 @@ describe('map-canvas-module-bundle', () => {
     expect(bundle.mapInteractionModule).toBe(mapInteractionModule)
     expect(bundle.selectedLayerFocusModule).toBe(selectedLayerFocusModule)
     expect(bundle.measureModule).toBe(measureModule)
+    expect(bundle.drawModule).toBe(drawModule)
     expect(basemapModule.scheduleTileSourceSwitch).toHaveBeenCalledWith('esri-street')
     expect(mapInteractionModule.applyInteractionMode).toHaveBeenCalledTimes(1)
     expect(measureModule.applyMeasureMode).toHaveBeenCalledTimes(1)
     expect(measureModule.syncFromStore).toHaveBeenCalledTimes(1)
+    expect(drawModule.applyDrawMode).toHaveBeenCalledTimes(1)
     expect(syncAdminOverlay).toHaveBeenCalledTimes(1)
   })
 })

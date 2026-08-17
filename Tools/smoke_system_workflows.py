@@ -36,7 +36,7 @@ BATCH_B = [
     "weather_wind_field_demo",
 ]
 BATCH_C = [
-    "raster_histogram_basic",
+    "analysis_histogram",
     "raster_timeseries_curve",
     "raster_zonal_stats_aligned",
 ]
@@ -61,24 +61,21 @@ BATCH_F = [
 ]
 BATCH_G = [
     "preprocess_clip_reproject_basic",
-    "gis_raster_calc_reclassify_basic",
-    "gis_buffer_zonal_basic",
     "stats_mean_summary_report_basic",
     "fusion_idw_interpolate_basic",
 ]
 BATCH_H = [
     "preprocess_mask_resample_basic",
-    "gis_vector_raster_roundtrip_basic",
-    "gis_contour_slope_basic",
     "stats_trend_anomaly_basic",
     "fusion_multi_source_merge_basic",
 ]
 BATCH_I = [
-    "gis_watershed_basic",
     "stats_correlation_basic",
     "stats_correlation_report_basic",
     "stats_summary_chart_basic",
 ]
+# 2026-08-17 去重归档：raster_histogram_basic 与 5 条 gis_* 组合样例移至
+# workflow_seeds/archive/，histogram 冒烟改走保留的 analysis_histogram。
 
 TERMINAL = {"succeeded", "failed", "cancelled", "canceled"}
 
@@ -1161,7 +1158,7 @@ def prepare_overrides(
     overrides: dict[str, Any] = {}
     smoke_tif = DATA_ROOT / "_runtime" / "smoke_hist.tif"
     fixtures = ensure_analysis_fixtures()
-    if workflow_id == "raster_histogram_basic" and smoke_tif.is_file():
+    if workflow_id == "analysis_histogram" and smoke_tif.is_file():
         overrides["definition"] = patch_node_path(
             definition, 1, str(smoke_tif).replace("\\", "/")
         )
@@ -1632,7 +1629,7 @@ def render_markdown(rows: list[Row], *, infra: dict[str, Any]) -> str:
             "`blocked:config` / `blocked:creds` (no forged portal paths), except "
             "`open_data_noaa_grib_sample` (live NOMADS filter probe) and "
             "`open_data_nasa_earthdata_sample` (LP DAAC browse download-only).",
-            "- `raster_histogram_basic` used temp GeoTIFF under "
+            "- `analysis_histogram` used temp GeoTIFF under "
             "`{DATA_ROOT}/_runtime/smoke_hist.tif`.",
             "- `smap_soil_moisture_local` path overridden to "
             "`Soil_Moisture/SMAP` (seed default `{DATA_ROOT}/SMAP` missing).",

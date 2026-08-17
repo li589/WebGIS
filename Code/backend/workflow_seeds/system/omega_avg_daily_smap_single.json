@@ -2,7 +2,7 @@
   "_meta": {
     "kind": "system",
     "engine": "python_provider",
-    "name": "avg-ω 逐日反演（SMAP 单温度）",
+    "name": "SMAP ω 平均反演（本地）",
     "description": "目的：D2 avg-omega 逐日反演主链路（SMAP TB + ORIG_TS 单温度方案）。前置：D1 omega_block 已产出 omega_block_*.mat + daily_omega/。产出：目标年逐日 SM/VOD/OMEGA .mat。配置：algorithm_params.target_year 指定目标年；avg_build_start_year/avg_build_end_year 指定 DOY 气候态构建年份范围。",
     "author": "system",
     "readonly": true,
@@ -15,8 +15,8 @@
     "category": "inversion"
   },
   "workflow_id": "omega_avg_daily_smap_single",
-  "name": "avg-ω 逐日反演（SMAP 单温度）",
-  "description": "D1 omega_block 输出 → D2 DOY 气候态 + 逐日 DDCA 回代（SMAP_SINGLE + ORIG_TS）。",
+  "name": "SMAP ω 平均反演（本地）",
+  "description": "D1 omega_block 输出 → D2 DOY 气候态 + 逐日 DDCA 回代（SMAP 本地亮温 + ORIG_TS 单温度）。语义：平均=ω 固定为多年 DOY 气候态均值，逐日仅做轻量 DDCA 回代。",
   "nodes": [
     {
       "id": 1,
@@ -78,9 +78,9 @@
         860
       ],
       "properties": {
-        "path": "Ecological_Vegetation/NDVI/climatology",
+        "path": "Soil_Moisture/SMAP_Auxiliary_Data/NDVI_clim",
         "dataset_key": "ndvi_clim_folder",
-        "notes": "NDVI DOY 气候态（ndvi_mode=DOY_CLIM）"
+        "notes": "NDVI DOY 气候态（SMAP 辅助库 NDVI_clim，与 ndvi_clim_max/min 同源；生态目录 12 月下旬 DOY 全空不可用）"
       }
     },
     {
@@ -125,6 +125,18 @@
         "bind_timeline": true,
         "timezone": "UTC"
       }
+    },
+    {
+      "id": 8,
+      "type": "output/map_layer",
+      "pos": [
+        780,
+        360
+      ],
+      "properties": {
+        "layer_id": "method-smap-omega-doy-avg",
+        "display_name": "SMAP ω 平均反演（本地）"
+      }
     }
   ],
   "links": [
@@ -167,6 +179,14 @@
       "3": 6,
       "4": 2,
       "5": "value:string"
+    },
+    {
+      "0": 6,
+      "1": 6,
+      "2": 0,
+      "3": 8,
+      "4": 0,
+      "5": "data"
     }
   ],
   "extra": {
@@ -176,8 +196,10 @@
     "prerequisite": "D1 omega_block 必须先运行并产出 omega_block_*.mat + daily_omega/；本地联调默认对齐 SMAP 2025-12 窗口",
     "outputs": [
       "SM",
+      "VOD",
       "OMEGA"
     ],
-    "notes": "单温度方案用 Ts（SMAP 地表温度）；NDVI 用 DOY 气候态（本地 NDVIday 仅到 2023）。DOY 气候态从 avg_build_start_year~avg_build_end_year 的逐日 OMEGA 构建。"
+    "notes": "单温度方案用 Ts（SMAP 地表温度）；NDVI 用 DOY 气候态（本地 NDVIday 仅到 2023）。DOY 气候态从 avg_build_start_year~avg_build_end_year 的逐日 OMEGA 构建。产物发 SM/VOD/OMEGA 三个时间序列图层（并入「SMAP ω 反演」合并组 avg 成员）。",
+    "has_output_node": true
   }
 }

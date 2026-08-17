@@ -77,6 +77,48 @@ _CRS_DEFS: list[CRSDef] = [
         proj4_def="+proj=cea +lon_0=0 +lat_ts=30 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs",
         area="Global",
     ),
+    # ── EASE-Grid 家族扩展（proj4 串取自 pyproj CRS.from_epsg().to_proj4()）──
+    # EASE-Grid 2.0 为 WGS84 椭球；EASE-Grid 1.0（NSIDC 原版）为球体 R=6371228。
+    CRSDef(
+        code="EPSG:6931",
+        label="EASE-Grid 2.0 北半球（LAEA）",
+        category=CRSCategory.PROJECTED,
+        epsg=6931,
+        proj4_def="+proj=laea +lat_0=90 +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs +type=crs",
+        area="North",
+    ),
+    CRSDef(
+        code="EPSG:6932",
+        label="EASE-Grid 2.0 南半球（LAEA）",
+        category=CRSCategory.PROJECTED,
+        epsg=6932,
+        proj4_def="+proj=laea +lat_0=-90 +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs +type=crs",
+        area="South",
+    ),
+    CRSDef(
+        code="EPSG:3408",
+        label="NSIDC EASE-Grid 1.0 北半球（LAEA，球体）",
+        category=CRSCategory.PROJECTED,
+        epsg=3408,
+        proj4_def="+proj=laea +lat_0=90 +lon_0=0 +x_0=0 +y_0=0 +R=6371228 +units=m +no_defs +type=crs",
+        area="North",
+    ),
+    CRSDef(
+        code="EPSG:3409",
+        label="NSIDC EASE-Grid 1.0 南半球（LAEA，球体）",
+        category=CRSCategory.PROJECTED,
+        epsg=3409,
+        proj4_def="+proj=laea +lat_0=-90 +lon_0=0 +x_0=0 +y_0=0 +R=6371228 +units=m +no_defs +type=crs",
+        area="South",
+    ),
+    CRSDef(
+        code="EPSG:3410",
+        label="NSIDC EASE-Grid 1.0 全球（等积圆柱，球体）",
+        category=CRSCategory.PROJECTED,
+        epsg=3410,
+        proj4_def="+proj=cea +lat_ts=30 +lon_0=0 +x_0=0 +y_0=0 +R=6371228 +units=m +no_defs +type=crs",
+        area="Global",
+    ),
     CRSDef(
         code="EPSG:32649",
         label="UTM Zone 49N（通用横轴墨卡托 49 带 北半球）",

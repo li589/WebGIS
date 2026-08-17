@@ -32,7 +32,9 @@ export default defineConfig(({ mode }) => {
       proxy: {
         // API 请求代理到后端
         // 注意：前端 runtime-api.ts 中所有请求路径均无 /api 前缀，
-        // 因此 proxy 改为拦截实际使用的路径（与 runtime-api.ts 保持一致）
+        // 因此 proxy 改为拦截实际使用的路径（与 runtime-api.ts 保持一致）。
+        // /api 例外：remote browser（/api/remote/*）在 remote_browser_router 挂载。
+        '/api': { target: apiTarget, changeOrigin: true },
         '/workflow-runs': { target: apiTarget, changeOrigin: true },
         '/workflow-definitions': { target: apiTarget, changeOrigin: true },
         '/workflow-node-templates': { target: apiTarget, changeOrigin: true },
@@ -58,6 +60,7 @@ export default defineConfig(({ mode }) => {
         '/import': { target: apiTarget, changeOrigin: true },
         '/export': { target: apiTarget, changeOrigin: true },
         '/auth': { target: apiTarget, changeOrigin: true },
+        '/workspace': { target: apiTarget, changeOrigin: true },
         '/analysis': { target: apiTarget, changeOrigin: true },
         '/health': { target: apiTarget, changeOrigin: true },
       },
@@ -88,17 +91,17 @@ export default defineConfig(({ mode }) => {
       // 保持 vite root = Code/frontend/，使 bare import（vue/vitest/pinia）经
       // Code/frontend/node_modules 解析；include 用 ../../ 跨出 root，配合 server.fs.allow。
       include: ['../../Test/frontend/**/*.test.ts'],
-      // P0-4：前端覆盖率配置（起步阈值 = 当前覆盖率基线，防止倒退；后续逐步提升）
+      // P0-4：前端覆盖率配置（W3.4 覆盖率门：22% → 30%+，阈值锁定当前基线防倒退）
       coverage: {
         provider: 'v8' as const,
         reporter: ['text', 'lcov'],
         include: ['src/**/*.{ts,vue}'],
         exclude: ['src/types/api-contracts.ts', 'src/**/*.d.ts'],
         thresholds: {
-          lines: 22,
-          statements: 21,
-          branches: 16,
-          functions: 19,
+          lines: 32,
+          statements: 30,
+          branches: 25,
+          functions: 28,
         },
       },
     },

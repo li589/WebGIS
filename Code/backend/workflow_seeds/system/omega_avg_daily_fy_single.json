@@ -2,7 +2,7 @@
   "_meta": {
     "kind": "system",
     "engine": "python_provider",
-    "name": "avg-ω 逐日反演（FY 单温度）",
+    "name": "风云 ω 平均反演（本地）",
     "description": "目的：D2 avg-omega 逐日反演（FY3D/FY3B TB + ORIG_TS 单温度方案，含 FY3B→FY3D 时空匹配）。前置：D1 omega_block 已产出（tb_source=FY）；FY3B/FY3D 逐日 .mat 已落盘。产出：目标年逐日 SM/VOD/OMEGA .mat。配置：tb_source=FY, fy_platform=3D/3B。",
     "author": "system",
     "readonly": true,
@@ -15,8 +15,8 @@
     "category": "inversion"
   },
   "workflow_id": "omega_avg_daily_fy_single",
-  "name": "avg-ω 逐日反演（FY 单温度）",
-  "description": "D1 omega_block 输出 → D2 DOY 气候态 + 逐日 DDCA 回代（FY_SINGLE + ORIG_TS，FY3B→FY3D match）。",
+  "name": "风云 ω 平均反演（本地）",
+  "description": "D1 omega_block 输出 → D2 DOY 气候态 + 逐日 DDCA 回代（FY 亮温 + ORIG_TS 单温度，FY3B→FY3D 时空匹配）。语义：平均=ω 固定为多年 DOY 气候态均值，逐日仅做轻量 DDCA 回代。",
   "nodes": [
     {
       "id": 1,
@@ -104,9 +104,9 @@
         1080
       ],
       "properties": {
-        "path": "Ecological_Vegetation/NDVI/climatology",
+        "path": "Soil_Moisture/SMAP_Auxiliary_Data/NDVI_clim",
         "dataset_key": "ndvi_clim_folder",
-        "notes": "NDVI DOY 气候态（ndvi_mode=DOY_CLIM）"
+        "notes": "NDVI DOY 气候态（SMAP 辅助库 NDVI_clim，与 ndvi_clim_max/min 同源；生态目录 12 月下旬 DOY 全空不可用）"
       }
     },
     {
@@ -134,6 +134,18 @@
           "pixel_chunk_size": 200000,
           "enable_parallel": true
         }
+      }
+    },
+    {
+      "id": 9,
+      "type": "output/map_layer",
+      "pos": [
+        820,
+        360
+      ],
+      "properties": {
+        "layer_id": "method-fy-omega-doy-avg",
+        "display_name": "风云 ω 平均反演（本地）"
       }
     }
   ],
@@ -193,6 +205,14 @@
       "3": 8,
       "4": 2,
       "5": "value:string"
+    },
+    {
+      "0": 8,
+      "1": 8,
+      "2": 0,
+      "3": 9,
+      "4": 0,
+      "5": "data"
     }
   ],
   "extra": {
@@ -202,8 +222,10 @@
     "prerequisite": "D1 omega_block（tb_source=FY）+ FY3D/FY3B 逐日 .mat + SMAP 辅助 .mat；本地联调默认对齐 2025-11/12 窗口",
     "outputs": [
       "SM",
+      "VOD",
       "OMEGA"
     ],
-    "notes": "FY 方案：build_daily_bundle_for_date 按 fy_platform=3D/3B 从 fy3d_folder/fy3b_folder 加载 TB；SMAP .mat 仅提供 Ts/vwc/SM_ref 辅助量；NDVI 用 DOY 气候态。"
+    "notes": "FY 方案：build_daily_bundle_for_date 按 fy_platform=3D/3B 从 fy3d_folder/fy3b_folder 加载 TB；SMAP .mat 仅提供 Ts/vwc/SM_ref 辅助量；NDVI 用 DOY 气候态。产物发 SM/VOD/OMEGA 三个时间序列图层（并入「风云 ω 反演」合并组 avg 成员）。",
+    "has_output_node": true
   }
 }

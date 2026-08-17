@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 from contextlib import contextmanager, suppress
+from datetime import date, datetime
 from functools import lru_cache
 import importlib
 import logging
 from pathlib import Path
+import re
 import sys
 import threading
 from typing import Any
 from collections.abc import Iterator
 
-from app.core.config import settings
+from app.core import config
 from app.services.engine_request_registry import (
     get_engine_populator,
     register_engine_populator,
@@ -27,6 +29,45 @@ _ALGORITHM_ENTRY_KEYS: tuple[str, ...] = (
 )
 _GEE_ENTRY_KEYS: tuple[str, ...] = ("workflow", "manifest_uri")
 _WEATHER_ENTRY_KEYS: tuple[str, ...] = ("workflow",)
+
+_DATE_PLACEHOLDER_RE = re.compile(r"\{((?:YYYY|yyyy|MM|mm|DD|dd)[^{}]*?)\}")
+
+
+def _format_date_token(fmt: str, ref_date: date) -> str:
+    result = fmt
+    result = result.replace("YYYY", f"{ref_date.year:04d}")
+    result = result.replace("yyyy", f"{ref_date.year:04d}")
+    result = result.replace("MM", f"{ref_date.month:02d}")
+    result = result.replace("mm", f"{ref_date.month:02d}")
+    result = result.replace("DD", f"{ref_date.day:02d}")
+    result = result.replace("dd", f"{ref_date.day:02d}")
+    return result
+
+
+def _expand_date_placeholders(value: Any, ref_date: date) -> Any:
+    if isinstance(value, str):
+        if "{" not in value:
+            return value
+        return _DATE_PLACEHOLDER_RE.sub(
+            lambda m: _format_date_token(m.group(1), ref_date), value
+        )
+    if isinstance(value, dict):
+        return {k: _expand_date_placeholders(v, ref_date) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_expand_date_placeholders(v, ref_date) for v in value]
+    return value
+
+
+def _get_ref_date_from_payload(payload: WorkflowSubmitRequest) -> date:
+    tr = payload.time_range
+    if tr and getattr(tr, "start_at", None):
+        return tr.start_at.date()
+    if tr and getattr(tr, "start", None):
+        try:
+            return datetime.fromisoformat(str(tr.start)).date()
+        except (ValueError, TypeError):
+            pass
+    return date.today()
 
 
 def normalize_workflow_submit_request(
@@ -134,10 +175,50 @@ def _describe_python_provider_resolution_impl(
     }
 
 
+def _describe_merged_group_readiness(descriptor: Any) -> dict[str, Any]:
+    """合并组虚拟条目的就绪聚合：任一成员 ready 即 ready。
+
+    合并组自身不对应实际数据资产（overlay_registry 中无对应 spec），
+    就绪状态应由成员图层的 readiness 聚合得出。
+    """
+    notes = list(descriptor.run_readiness_notes)
+    ready_members: list[str] = []
+    blocked_members: list[str] = []
+    for member_id in descriptor.members:
+        member = get_layer_descriptor(member_id)
+        if member is None or member.is_merged_group:
+            blocked_members.append(member_id)
+            continue
+        member_result = describe_layer_run_readiness(member_id)
+        member_status = (member_result or {}).get("run_readiness", "blocked")
+        if member_status == "ready":
+            ready_members.append(member_id)
+        else:
+            blocked_members.append(member_id)
+
+    total = len(descriptor.members)
+    readiness = "ready" if ready_members else "blocked"
+    if ready_members:
+        summary = f"合并组虚拟条目：{len(ready_members)}/{total} 个成员源就绪"
+    else:
+        summary = f"合并组虚拟条目：全部 {total} 个成员源未就绪"
+    if blocked_members:
+        notes.append(f"未就绪成员：{', '.join(blocked_members)}")
+    return {
+        "run_readiness": readiness,
+        "run_readiness_summary": summary,
+        "run_readiness_notes": notes,
+        "unresolved_default_datasets": [],
+    }
+
+
 def describe_layer_run_readiness(layer_id: str) -> dict[str, Any] | None:
     descriptor = get_layer_descriptor(layer_id)
     if descriptor is None:
         return None
+
+    if descriptor.is_merged_group and descriptor.members:
+        return _describe_merged_group_readiness(descriptor)
 
     readiness = "ready"
     notes: list[str] = list(descriptor.run_readiness_notes)
@@ -191,7 +272,7 @@ def _load_module_template_map():
 
     返回 {module_name: RequestTemplateSpec} 字典。若 provider root 不存在或导入失败返回空 dict。
     """
-    provider_root = Path(settings.python_provider_root)
+    provider_root = Path(config.settings.python_provider_root)
     if not provider_root.exists():
         return {}
     try:
@@ -396,8 +477,27 @@ def _extract_datasource_selection_from_nodes(
     return selection
 
 
-def _count_executable_module_nodes(nodes: list[Any] | None) -> int:
-    """Count algorithm/module nodes, excluding canvas metadata helpers."""
+@lru_cache(maxsize=1)
+def _registry_type_by_node_class() -> dict[str, str]:
+    """node_class → 注册表规范 type 映射（如 ssh_sync → download/ssh_sync）。
+
+    compile_litegraph_to_workflow_definition 将 download/* 编译为
+    node_type="module" + params.module_name=<node_class>，原始前缀丢失；
+    借注册表反查以恢复 download/stats/viz 类别判断。
+    """
+    from app.services.node_template_registry import get_all_node_templates
+
+    mapping: dict[str, str] = {}
+    for template in get_all_node_templates():
+        node_class = str(template.get("node_class") or "")
+        node_type = str(template.get("type") or "")
+        if node_class and node_type:
+            mapping.setdefault(node_class, node_type)
+    return mapping
+
+
+def _executable_node_types(nodes: list[Any] | None) -> list[str]:
+    """List raw node types of executable nodes, excluding canvas metadata helpers."""
     scrape_only = {
         "data_source",
         "source",
@@ -411,7 +511,7 @@ def _count_executable_module_nodes(nodes: list[Any] | None) -> int:
         "output_map_layer",
         "output_file",
     }
-    count = 0
+    types: list[str] = []
     for node in nodes or []:
         if not isinstance(node, dict):
             continue
@@ -425,15 +525,23 @@ def _count_executable_module_nodes(nodes: list[Any] | None) -> int:
             or ntype.startswith("stats/")
             or ntype.startswith("viz/")
         ):
-            count += 1
+            types.append(ntype)
             continue
-        # Compiled form: node_type=module + params.module_name=<algorithm>
+        # Compiled form: node_type=module + params.module_name=<node_class>.
+        # 反查注册表恢复规范 type（download/* 判定依赖前缀），查不到退化为 module/*。
         if str(node.get("node_type") or "") == "module" and module_name not in {
             "",
             "module",
         }:
-            count += 1
-    return count
+            types.append(
+                _registry_type_by_node_class().get(module_name, f"module/{module_name}")
+            )
+    return types
+
+
+def _count_executable_module_nodes(nodes: list[Any] | None) -> int:
+    """Count algorithm/module nodes, excluding canvas metadata helpers."""
+    return len(_executable_node_types(nodes))
 
 
 def _flatten_ui_workflow_definition(
@@ -456,12 +564,23 @@ def _flatten_ui_workflow_definition(
     time_range = _extract_time_range_from_nodes(nodes)
     spatial = _extract_bbox_from_nodes(nodes)
 
+    ref_date = date.today()
+    if time_range and getattr(time_range, "start_at", None):
+        ref_date = time_range.start_at.date()
+
     existing_ds = algorithm_request.get("datasource_selection")
     if not isinstance(existing_ds, dict):
         existing_ds = {}
     canvas_ds = _extract_datasource_selection_from_nodes(nodes)
     for key, value in canvas_ds.items():
         existing_ds.setdefault(key, value)
+    for key, value in list(existing_ds.items()):
+        if key.startswith("_") or not isinstance(value, str) or not value.strip():
+            continue
+        expanded = _expand_date_placeholders(value, ref_date)
+        if expanded != value:
+            existing_ds[key] = expanded
+            value = expanded
     for key, value in list(existing_ds.items()):
         if key.startswith("_") or not isinstance(value, str) or not value.strip():
             continue
@@ -474,7 +593,17 @@ def _flatten_ui_workflow_definition(
     existing_params = algorithm_request.get("algorithm_params")
     if not isinstance(existing_params, dict):
         existing_params = {}
-    if canvas_params:
+
+    # Multi-module graph: keep executable definition; only enrich request fields.
+    # 数据获取节点（download/*）承载拉取参数（server_type/remote_path/日期过滤），
+    # 展平会丢弃这些参数并把请求错配为层描述符默认 module（如 fy_tb_nas_read
+    # 跳过预处理直连 map_layer 的单 ssh_sync 形态）；含任一即保留整图执行。
+    executable_types = _executable_node_types(nodes)
+    keep_graph = len(executable_types) >= 2 or any(
+        t.startswith("download/") for t in executable_types
+    )
+
+    if canvas_params and not keep_graph:
         merged = dict(canvas_params)
         merged.update(existing_params)
         existing_params = merged
@@ -488,12 +617,18 @@ def _flatten_ui_workflow_definition(
             "bbox", [bbox.west, bbox.south, bbox.east, bbox.north]
         )
 
-    # Multi-module graph: keep executable definition; only enrich request fields.
-    if _count_executable_module_nodes(nodes) >= 2:
+    # 图执行路径：请求级 algorithm_params 仅保留用户覆盖（首模块提取已在上方
+    # 剥离），节点级 properties.algorithm_params 由算法侧 executor 以节点基底
+    # 合并，避免首模块参数（如 fy_daily 的 orbit_mode）泄漏进其余模块。
+    if keep_graph:
         enriched = dict(algorithm_request)
         enriched["datasource_selection"] = existing_ds
         enriched["algorithm_params"] = existing_params
         enriched.setdefault("output_spec", {})
+        if "workflow_definition" in enriched:
+            enriched["workflow_definition"] = _expand_date_placeholders(
+                enriched["workflow_definition"], ref_date
+            )
         # Bridge rejects workflow_definition + module_name together; keep graph only.
         enriched.pop("module_name", None)
         # Bridge builds job_request from algorithm_request; keep time_range there too
@@ -570,6 +705,27 @@ def _compile_workflow_seed(workflow_name: str) -> dict[str, Any] | None:
     except Exception:
         logger.debug("Failed to compile workflow seed", exc_info=True)
         return None
+
+
+def _seed_uses_graph_execution(workflow_name: str) -> bool:
+    """判断种子是否按图执行（多模块或含 download/* 节点）。
+
+    图执行种子的节点级 properties.algorithm_params 由算法侧 executor 以节点
+    基底合并；请求级不应再注入首模块提取，否则首模块参数泄漏进其余模块。
+    """
+    try:
+        from app.services.workflow_definition_service import get_definition
+
+        definition = get_definition(workflow_name)
+        if not definition:
+            return False
+        executable_types = _executable_node_types(definition.get("nodes"))
+        return len(executable_types) >= 2 or any(
+            t.startswith("download/") for t in executable_types
+        )
+    except Exception:
+        logger.debug("Failed to inspect seed graph shape", exc_info=True)
+        return False
 
 
 def _extract_algorithm_params_from_seed(workflow_name: str) -> dict[str, Any] | None:
@@ -735,6 +891,9 @@ def _populate_python_provider_request(
         )
         if resolved_tr is not None:
             payload = payload.model_copy(update={"time_range": resolved_tr})
+        ref_date = _get_ref_date_from_payload(payload)
+        algorithm_request = _expand_date_placeholders(algorithm_request, ref_date)
+        payload = payload.model_copy(update={"algorithm_request": algorithm_request})
         return payload
 
     descriptor_module = getattr(descriptor, "module_name", None)
@@ -778,17 +937,21 @@ def _populate_python_provider_request(
     # 如果图层有 workflow_name，从种子中提取 algorithm_params（如 tb_source=SMAP）
     # 直接合并到 algorithm_request，避免设置 workflow_definition 导致 executor
     # 处理 graph 时出现 datasource_selection 多重绑定问题。
+    # 图执行种子（多模块/含下载节点）例外：节点级 params 由算法侧 executor 以
+    # 节点基底合并，请求级注入首模块提取会造成跨模块参数泄漏。
     descriptor_workflow = getattr(descriptor, "workflow_name", None)
     effective_module = descriptor_module or algorithm_request.get("module_name")
     if descriptor_workflow:
-        seed_params = _extract_algorithm_params_from_seed(str(descriptor_workflow))
-        if seed_params is not None:
-            existing_params = algorithm_request.get("algorithm_params")
-            if not isinstance(existing_params, dict):
-                existing_params = {}
-                algorithm_request["algorithm_params"] = existing_params
-            for k, v in seed_params.items():
-                existing_params.setdefault(k, v)
+        seed_graph_execution = _seed_uses_graph_execution(str(descriptor_workflow))
+        if not seed_graph_execution:
+            seed_params = _extract_algorithm_params_from_seed(str(descriptor_workflow))
+            if seed_params is not None:
+                existing_params = algorithm_request.get("algorithm_params")
+                if not isinstance(existing_params, dict):
+                    existing_params = {}
+                    algorithm_request["algorithm_params"] = existing_params
+                for k, v in seed_params.items():
+                    existing_params.setdefault(k, v)
         if effective_module:
             algorithm_request.setdefault("module_name", effective_module)
         algorithm_request.setdefault(
@@ -799,6 +962,13 @@ def _populate_python_provider_request(
         if effective_module:
             algorithm_request.setdefault("module_name", effective_module)
             algorithm_request.setdefault("workflow_entry_name", effective_module)
+
+    # 展开种子 algorithm_params 中的日期占位符
+    _ref_date = _get_ref_date_from_payload(payload)
+    if isinstance(algorithm_request.get("algorithm_params"), dict):
+        algorithm_request["algorithm_params"] = _expand_date_placeholders(
+            algorithm_request["algorithm_params"], _ref_date
+        )
 
     datasource_selection = _normalize_request(
         algorithm_request.get("datasource_selection")
@@ -840,7 +1010,19 @@ def _populate_python_provider_request(
                         datasource_selection[required_key] = uris[0]
                         break
 
-    # 显式相对路径（画布/种子）→ 绝对本地 URI，供 omega_sf 读 IGBP 等
+    # 展开日期占位符 {YYYY.MM.DD} 等（种子 uri/relative_path 中的模板）
+    ref_date = _ref_date
+    for key, value in list(datasource_selection.items()):
+        if isinstance(value, str) and "{" in value:
+            expanded = _expand_date_placeholders(value, ref_date)
+            if expanded != value:
+                datasource_selection[key] = expanded
+    if isinstance(algorithm_request.get("workflow_definition"), dict):
+        algorithm_request["workflow_definition"] = _expand_date_placeholders(
+            algorithm_request["workflow_definition"], ref_date
+        )
+
+    # 显式相对路径（画布/种子）→ 绝对本地 URI，供 omega_sf 读 IGPB 等
     for key, value in list(datasource_selection.items()):
         if key.startswith("_") or not isinstance(value, str) or not value.strip():
             continue
@@ -969,11 +1151,11 @@ def _resolve_data_access_source_uri(source: str) -> str | None:
         alias_resolved = _resolve_provider_dataset_path(normalized)
         if alias_resolved is not None:
             return str(alias_resolved)
-        alias_fallback = Path(settings.data_root) / Path(normalized)
+        alias_fallback = Path(config.settings.data_root) / Path(normalized)
         if alias_fallback.exists():
             return str(alias_fallback)
 
-    fallback_path = Path(settings.data_root) / Path(candidate)
+    fallback_path = Path(config.settings.data_root) / Path(candidate)
     return str(fallback_path) if fallback_path.exists() else None
 
 
@@ -1017,7 +1199,7 @@ def _resolve_scheme_uri(uri: str) -> str | None:
     except Exception:
         return None
 
-    if settings.remote_readiness_probe:
+    if config.settings.remote_readiness_probe:
         try:
             from shared.remote_sources.download import probe_remote_connectivity
 
@@ -1030,6 +1212,18 @@ def _resolve_scheme_uri(uri: str) -> str | None:
 
 @lru_cache(maxsize=128)
 def _resolve_provider_dataset_path(logical_name: str) -> Path | None:
+    # 可用数据集注册表优先（运行时可编辑；写操作经 invalidate_template_cache 失效本缓存）
+    try:
+        from app.services.dataset_registry_service import (
+            resolve_dataset_path as _registry_resolve,
+        )
+
+        registry_path = _registry_resolve(logical_name)
+        if registry_path is not None:
+            return registry_path
+    except Exception:  # noqa: BLE001 — 注册表不可用不应阻断既有解析链路
+        pass
+
     dataset_helpers = _load_provider_dataset_helpers()
     if dataset_helpers is None:
         return None
@@ -1046,7 +1240,7 @@ def _resolve_provider_dataset_path(logical_name: str) -> Path | None:
             getattr(info, "relative_path", None) if info is not None else None
         )
         if relative_path:
-            candidate = Path(settings.data_root) / Path(str(relative_path))
+            candidate = Path(config.settings.data_root) / Path(str(relative_path))
             if candidate.exists():
                 return candidate
 
@@ -1062,7 +1256,7 @@ def _load_provider_dataset_helpers_uncached() -> tuple[Any, Any] | None:
 
     start = time.time()
     logger = logging.getLogger(__name__)
-    provider_root = Path(settings.python_provider_root)
+    provider_root = Path(config.settings.python_provider_root)
     logger.info(
         f"[workflow_request_resolver] _load_provider_dataset_helpers start, root={provider_root}"
     )
@@ -1273,7 +1467,99 @@ class _WeatherPopulator:
         return None
 
 
+class _OverlayRegistryPopulator:
+    """overlay_registry 引擎的就绪检查器。
+
+    检查 overlay 图层的 PNG 预览文件、bounds JSON 文件和源数据文件是否实际存在。
+    文件缺失时将图层标记为 "blocked"，避免用户添加图层后看到空白显示。
+    """
+
+    @property
+    def engine_name(self) -> str:
+        return "overlay_registry"
+
+    def populate(
+        self,
+        *,
+        payload: WorkflowSubmitRequest,
+        layer_id: str,
+        descriptor: Any,
+    ) -> WorkflowSubmitRequest:
+        # overlay_registry 图层不走工作流提交
+        return payload
+
+    def describe_resolution(
+        self, payload: WorkflowSubmitRequest
+    ) -> dict[str, Any] | None:
+        return None
+
+    def describe_readiness(self, descriptor: Any) -> dict[str, Any] | None:
+        # 延迟导入避免模块加载顺序问题
+        from app.services.overlay_registry import get_overlay_spec
+
+        layer_id = getattr(descriptor, "layer_id", None)
+        if not layer_id:
+            return None
+
+        spec = get_overlay_spec(layer_id)
+        if spec is None:
+            return {
+                "unresolved_default_datasets": [
+                    {
+                        "dataset_name": "overlay 注册",
+                        "candidate_sources": [
+                            f"overlay_registry 中未找到 layer_id={layer_id}"
+                        ],
+                    }
+                ]
+            }
+
+        unresolved: list[dict[str, Any]] = []
+
+        # 检查 PNG 预览文件
+        try:
+            png_path = spec.resolve_png(None)
+            if not png_path.exists():
+                unresolved.append(
+                    {
+                        "dataset_name": "PNG 预览文件",
+                        "candidate_sources": [str(png_path)],
+                    }
+                )
+        except Exception:
+            pass  # 配置错误由其他检查覆盖
+
+        # 检查 bounds JSON 文件
+        try:
+            bounds_path = spec.resolve_bounds(None)
+            if not bounds_path.exists():
+                unresolved.append(
+                    {
+                        "dataset_name": "bounds 边界文件",
+                        "candidate_sources": [str(bounds_path)],
+                    }
+                )
+        except Exception:
+            pass
+
+        # 检查源数据文件（用于点查询；缺失不阻止显示但影响点选）
+        try:
+            source_path = spec.resolve_source_path(None)
+            if source_path is None and spec.source_path is not None:
+                unresolved.append(
+                    {
+                        "dataset_name": "源数据文件（点查询）",
+                        "candidate_sources": [str(spec.source_path)],
+                    }
+                )
+        except Exception:
+            pass
+
+        return {"unresolved_default_datasets": unresolved} if unresolved else None
+
+
 # 模块加载时注册所有 populator
 register_engine_populator(_PythonProviderPopulator())
 register_engine_populator(_GeePopulator())
 register_engine_populator(_WeatherPopulator())
+register_engine_populator(_OverlayRegistryPopulator())

@@ -13,6 +13,7 @@
 | 鉴权 | `BACKEND_API_KEYS` / 设置页写入 | 生产勿依赖 development 旁路 |
 | MinIO | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | **禁止**沿用 compose 默认 `minioadmin` |
 | GEE 加密 | `BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY` | 非 development 必配 |
+| 本地文件源根 | `BACKEND_DOWNLOAD_SOURCE_ROOT` | **production 未配时 `file://` / `local://` 本地文件源 fail-closed 禁用**（G1-04）；配置后本地源约束在该根内，`local://` 相对路径以它为基础 |
 
 ## 生产禁止开关
 
@@ -20,7 +21,7 @@
 |------|------|
 | `BACKEND_DEMO_SOURCES_ENABLED` | **禁止**在生产开启（demo:// 抓取） |
 | `BACKEND_NODE_STUBS_VISIBLE` | **禁止**在生产对终端用户开启未实现节点 stub |
-| `BACKEND_RELOAD=true` | 生产应显式 `false` |
+| `BACKEND_RELOAD=true` | 生产应显式 `false`（注意：代码默认为 true，`start_fastapi.py` 无生产守卫，见交付演练记录 2026-08-16 §二 #12） |
 | `BACKEND_TRUST_PROXY` | 仅受信 Nginx gateway 后开启 |
 
 ## 可选白标 / 裁剪

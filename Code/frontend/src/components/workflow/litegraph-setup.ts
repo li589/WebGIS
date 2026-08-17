@@ -113,6 +113,9 @@ const _registeredTypes = new Set<string>()
 /** 历史画布 type → 现行注册 type（与后端 _NODE_TYPE_ALIASES 对齐） */
 const NODE_TYPE_ALIASES: Record<string, string> = {
   'algorithm/omega_avg_daily': 'module/omega_avg_daily',
+  remote_fetch: 'download/remote_fetch',
+  'module/fy_preprocess': 'download/fy_preprocess',
+  'module/fy_download': 'download/fy_download',
 }
 
 export function resolveNodeType(nodeType: string): string {

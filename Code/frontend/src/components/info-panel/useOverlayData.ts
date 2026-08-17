@@ -30,26 +30,45 @@ export function useOverlayData(
 
   const overlayLayers = computed(() => {
     const timeStateMap = new Map((overlayTimeStates.value ?? []).map((s) => [s.layerId, s]))
-    return workspace.activeLayersDisplay.value
-      .filter((l) => l.visible && Boolean(l.importedRasterOverlayLayerId))
+    const valueMap = new Map((overlayPointValues.value ?? []).map((v) => [v.layer_id, v]))
+
+    const seen = new Set<string>()
+    // 与 useUnifiedChartData.rasterLayerInfos 对齐：
+    // 导入/物化层走 importedRasterOverlayLayerId；目录 overlay 层以 catalogId
+    // 注册（overlayTimeStates 或点查结果可见）时同样纳入柱状对比
+    const entries = workspace.activeLayersDisplay.value
       .map((l) => {
         const overlayLayerId = l.importedRasterOverlayLayerId ?? l.catalogId
-        const ts = timeStateMap.get(overlayLayerId)
-        return {
-          name: l.name,
-          category: l.category,
-          availabilityState: l.availabilityState,
-          accentColor: l.accentColor,
-          catalogId: l.catalogId,
-          overlayLayerId,
-          palette: ts?.palette ?? null,
-          vmin: ts?.vmin ?? null,
-          vmax: ts?.vmax ?? null,
-          unit: ts?.unit ?? '',
-          currentTime: ts?.currentTime ?? null,
-          isTimeSeries: ts?.category === 'time-series',
-        }
+        const registered =
+          !!l.importedRasterOverlayLayerId ||
+          timeStateMap.has(overlayLayerId) ||
+          valueMap.has(overlayLayerId)
+        return { l, overlayLayerId, registered }
       })
+      .filter(({ l, overlayLayerId, registered }) => {
+        if (!overlayLayerId || seen.has(overlayLayerId)) return false
+        if (!l.visible || !registered) return false
+        seen.add(overlayLayerId)
+        return true
+      })
+
+    return entries.map(({ l, overlayLayerId }) => {
+      const ts = timeStateMap.get(overlayLayerId)
+      return {
+        name: l.name,
+        category: l.category,
+        availabilityState: l.availabilityState,
+        accentColor: l.accentColor,
+        catalogId: l.catalogId,
+        overlayLayerId,
+        palette: ts?.palette ?? null,
+        vmin: ts?.vmin ?? null,
+        vmax: ts?.vmax ?? null,
+        unit: ts?.unit ?? '',
+        currentTime: ts?.currentTime ?? null,
+        isTimeSeries: ts?.category === 'time-series',
+      }
+    })
   })
 
   // ── 叠加图层像素值查询结果 ──────────────────────────────────────────────────

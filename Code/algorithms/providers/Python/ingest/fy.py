@@ -118,7 +118,14 @@ def build_fy_daily_job_plans(
     end_time: datetime,
     orbit_mode: str,
 ) -> list[FyDailyJobPlan]:
-    input_files = discover_fy_orbit_files(input_dir)
+    # 优先 HDF 轨道文件；无 HDF 时接受 NAS 回退交付的逐波段预投影 TIF
+    # （FY3D_GBAL_L1_10V/10H_YYYYMMDD_MWRID_0.tif，已是 EASE2 9km 网格）。
+    try:
+        input_files = discover_fy_orbit_files(input_dir)
+        input_format = "hdf"
+    except FileNotFoundError:
+        input_files = discover_fy_orbit_files(input_dir, pattern="*.tif")
+        input_format = "tif"
     grouped = group_fy_files_by_day(input_files)
     date_keys = build_date_keys(start_time, end_time)
     output_root = Path(output_root)
@@ -154,6 +161,7 @@ def build_fy_daily_job_plans(
                     metadata={
                         "input_dir": str(Path(input_dir)),
                         "file_count": str(len(files)),
+                        "input_format": input_format,
                     },
                 )
             )

@@ -86,6 +86,18 @@ def _build_run_status(
     )
 
 
+def _admin_cred():
+    """直接调用路由函数时携带的有效 admin 凭据。
+
+    RBAC v2 后匿名调用对工作流端点 fail-closed（401）；
+    单测目标是 ValueError→HTTPException 映射，故显式传入 admin 凭据
+    而非绕过鉴权语义。
+    """
+    from app.api.deps import CredentialContext
+
+    return CredentialContext(source="dev_bypass", role="admin")
+
+
 def test_full_frontend_workflow_lifecycle() -> None:
     """端到端模拟前端调用模式，验证路由→服务委派链完整。
 
@@ -119,7 +131,7 @@ def test_full_frontend_workflow_lifecycle() -> None:
         "app.api.routers.workflow_router.submission_service.submit_workflow",
         return_value=accepted,
     ):
-        result = submit_workflow(payload)
+        result = submit_workflow(payload, cred=_admin_cred())
     assert result.run_id == run_id, 'result.run_id == run_id'
     assert result.status == ExecutionStatus.accepted, 'result.status == ExecutionStatus.accepted'
 
@@ -131,7 +143,7 @@ def test_full_frontend_workflow_lifecycle() -> None:
         "app.api.routers.workflow_router.submission_service.get_workflow_run",
         return_value=running_status,
     ):
-        status_result = get_workflow_run(run_id)
+        status_result = get_workflow_run(run_id, cred=_admin_cred())
     assert status_result is not None, 'status_result is not None'
     assert status_result.status == ExecutionStatus.running, 'status_result.status == ExecutionStatus.running'
     assert status_result.progress == 50, 'status_result.progress == 50'
@@ -157,7 +169,7 @@ def test_full_frontend_workflow_lifecycle() -> None:
         "app.api.routers.workflow_router.submission_service.list_workflow_events",
         return_value=events_response,
     ):
-        events_result = list_workflow_events(request_mock, run_id)
+        events_result = list_workflow_events(request_mock, run_id, cred=_admin_cred())
     assert events_result.run_id == run_id, 'events_result.run_id == run_id'
     assert len(events_result.items) == 1, 'len(events_result.items) == 1'
 
@@ -183,7 +195,7 @@ def test_full_frontend_workflow_lifecycle() -> None:
         "app.api.routers.workflow_router.result_view_service.get_workflow_run_view",
         return_value=view_response,
     ):
-        view_result = get_workflow_run_view(run_id)
+        view_result = get_workflow_run_view(run_id, cred=_admin_cred())
     assert view_result.run_id == run_id, 'view_result.run_id == run_id'
     assert view_result.title == "Test Workflow", 'view_result.title == "Test Workflow"'
 
@@ -195,7 +207,7 @@ def test_full_frontend_workflow_lifecycle() -> None:
         "app.api.routers.workflow_router.lifecycle_service.cancel_workflow_run",
         return_value=cancelled_status,
     ):
-        cancel_result = cancel_workflow_run(run_id)
+        cancel_result = cancel_workflow_run(run_id, cred=_admin_cred())
     assert cancel_result.status == ExecutionStatus.cancelled, 'cancel_result.status == ExecutionStatus.cancelled'
 
 
@@ -242,7 +254,7 @@ def test_cancel_completed_workflow_raises_http_400() -> None:
         side_effect=ValueError(error_msg),
     ):
         with pytest.raises(HTTPException) as ctx:
-            cancel_workflow_run("run-done-1")
+            cancel_workflow_run("run-done-1", cred=_admin_cred())
         assert ctx.value.status_code == 400, 'ctx.exception.status_code == 400'
         assert "terminal state" in str(ctx.value.detail), '"terminal state" in str(ctx.exception.detail)'
 
@@ -257,7 +269,7 @@ def test_retry_nonexistent_workflow_raises_http_400() -> None:
         side_effect=ValueError("Cannot retry: no request found"),
     ):
         with pytest.raises(HTTPException) as ctx:
-            retry_workflow_run("run-nonexistent")
+            retry_workflow_run("run-nonexistent", cred=_admin_cred())
         assert ctx.value.status_code == 400, 'ctx.exception.status_code == 400'
         assert "no request found" in str(ctx.value.detail), '"no request found" in str(ctx.exception.detail)'
 
@@ -430,7 +442,16 @@ def test_concurrent_weather_tile_provider_lazy_init() -> None:
 
 def test_unified_tile_returns_503_when_provider_raises() -> None:
     """已知底图 id 且 Provider 内部异常时，端点应返回 503 而非 500。"""
+    from contextlib import suppress
+
     from app.services.tile_provider_registry import tile_provider_registry
+
+    # create_app 首次调用会 clear() 并重建默认 provider 注册表；
+    # 必须先触发注册，再插入失败 provider，否则插入项被重建清掉
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+
+    app = create_app()
 
     failing_provider = MagicMock()
     failing_provider.matches = MagicMock(
@@ -443,17 +464,15 @@ def test_unified_tile_returns_503_when_provider_raises() -> None:
     # 插入队首，确保先于 BaseMapTileProvider 匹配
     tile_provider_registry._providers.insert(0, failing_provider)
     try:
-        from fastapi.testclient import TestClient
-        from app.main import create_app
-
-        app = create_app()
         client = TestClient(app)
 
         response = client.get("/unified-tiles/esri-street/5/25/12")
         assert response.status_code == 503, 'response.status_code == 503'
         assert "Tile unavailable" in response.json()["detail"], '"Tile unavailable" in response.json()["detail"]'
     finally:
-        tile_provider_registry._providers.remove(failing_provider)
+        # 防御：若注册表在此期间被其它机制重建，remove 不应掩盖真实断言失败
+        with suppress(ValueError):
+            tile_provider_registry._providers.remove(failing_provider)
 
 
 def test_unified_tile_returns_404_for_unknown_layer() -> None:

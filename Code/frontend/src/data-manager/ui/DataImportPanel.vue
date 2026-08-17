@@ -10,6 +10,7 @@ import {
   commitDocumentSession,
   commitRasterUpload,
   discardUpload,
+  fetchImportedLayerGeojson,
   fileExtension,
   formatBytes,
   importVectorByUploads,
@@ -259,9 +260,20 @@ async function importOneVectorGroup(files: File[], groupIndex: number, groupTota
     })
     result = { async: false, ...(job.result as typeof result) }
   }
-  const preview =
+  let preview =
     (result.preview_geojson as GeoJSON.FeatureCollection | undefined) ??
     ({ type: 'FeatureCollection', features: [] } as GeoJSON.FeatureCollection)
+  // 后端未随导入结果返回预览时补拉一次，避免「侧栏有条目、地图无数据」
+  if ((!preview.features || preview.features.length === 0) && result.layer_id) {
+    try {
+      const fetched = await fetchImportedLayerGeojson(result.layer_id, true)
+      if (fetched?.features?.length) {
+        preview = fetched
+      }
+    } catch {
+      /* 补拉失败保持空预览；后续仍可在图层详情「加载完整数据」 */
+    }
+  }
   const displayName =
     (typeof result.source_name === 'string' && result.source_name) ||
     uploadable.find((f) => fileExtension(f.name) === 'shp')?.name ||

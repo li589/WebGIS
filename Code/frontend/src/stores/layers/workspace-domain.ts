@@ -66,6 +66,9 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
     scheduleWorkspacePersist: () => bindings.scheduleWorkspacePersist(),
     flushWorkspacePersistNow: () => bindings.flushWorkspacePersistNow(),
     debugLog,
+    supportsAnalysisWorkflow: (catalogId) => catalog.supportsAnalysisWorkflow(catalogId),
+    canRunCatalog: (catalogId) => catalog.canRunCatalog(catalogId),
+    runWorkflowForCatalog: (catalogId) => bindings.runWorkflowForCatalog(catalogId),
   })
   const {
     activeLayers,
@@ -78,6 +81,7 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
     assignLayerAccent,
     addLayer,
     addImportedVectorLayer,
+    addDrawDraftLayer,
     getImportedVectorGeojson,
     updateImportedVectorGeojson,
     setImportedVectorStyle,
@@ -152,6 +156,7 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
     assignLayerAccent,
     addLayer,
     addImportedVectorLayer,
+    addDrawDraftLayer,
     getImportedVectorGeojson,
     updateImportedVectorGeojson,
     setImportedVectorStyle,

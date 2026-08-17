@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Comprehensive Geographic Data Analysis Backend",
+    "title": "Star-Ground Fusion Soil Data Platform Backend",
     "description": "Minimal backend service for the geographic analysis platform.",
     "version": "0.1.0"
   },
@@ -2511,7 +2511,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/algorithm/workflows/{workflow_name}": {
@@ -2521,6 +2526,11 @@
         ],
         "summary": "Describe Algorithm Workflow",
         "operationId": "describe_algorithm_workflow_algorithm_workflows__workflow_name__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "workflow_name",
@@ -2561,6 +2571,11 @@
         ],
         "summary": "Get Algorithm Workflow Panel Schema",
         "operationId": "get_algorithm_workflow_panel_schema_algorithm_workflows__workflow_name__panel_schema_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "workflow_name",
@@ -2601,6 +2616,11 @@
         ],
         "summary": "Get Algorithm Workflow Ui Schema",
         "operationId": "get_algorithm_workflow_ui_schema_algorithm_workflows__workflow_name__ui_schema_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "workflow_name",
@@ -2650,7 +2670,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/weather/coverage": {
@@ -3070,7 +3095,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/provider/workflows/diagnostics": {
@@ -3089,7 +3119,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/provider/workflows/{workflow_name}": {
@@ -3099,6 +3134,11 @@
         ],
         "summary": "Describe Provider Workflow",
         "operationId": "describe_provider_workflow_provider_workflows__workflow_name__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "workflow_name",
@@ -3215,6 +3255,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 4096,
+              "minimum": 64,
               "default": 768,
               "title": "Width"
             }
@@ -3225,6 +3267,8 @@
             "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 4096,
+              "minimum": 64,
               "default": 768,
               "title": "Height"
             }
@@ -7154,6 +7198,51 @@
       }
     },
     "/config/remote-storage/{profile_id}": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get Remote Storage Profile",
+        "operationId": "get_remote_storage_profile_config_remote_storage__profile_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteStorageProfile"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "put": {
         "tags": [
           "config"
@@ -7359,6 +7448,187 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RemoteStorageTestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/remote-storage/{profile_id}/browse": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Browse Remote Storage Profile",
+        "description": "浏览存储 profile 目录（双路径感知；standard 角色可浏览）。",
+        "operationId": "browse_remote_storage_profile_config_remote_storage__profile_id__browse_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RemoteBrowseRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteBrowseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/remote-storage/{profile_id}/search": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Search Remote Storage Profile",
+        "description": "在存储 profile 内按名称搜索（能力因协议而异）。",
+        "operationId": "search_remote_storage_profile_config_remote_storage__profile_id__search_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteSearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteSearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/remote-storage/{profile_id}/failover": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Failover Remote Storage Profile",
+        "description": "手动切换主/备访问路径。",
+        "operationId": "failover_remote_storage_profile_config_remote_storage__profile_id__failover_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteFailoverRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteFailoverResponse"
                 }
               }
             }
@@ -7656,6 +7926,172 @@
             "APIKeyHeader": []
           }
         ]
+      }
+    },
+    "/config/deployment": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get Deployment Config",
+        "description": "部署配置状态：每键三方对比（运行值 / .env / deployment.json）+ 备份列表。",
+        "operationId": "get_deployment_config_config_deployment_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentConfigStatus"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Update Deployment Config",
+        "description": "保存部署配置：校验 → 备份轮换 → 双 .env 镜像 → JSON 原子写（失败整体回滚）。",
+        "operationId": "update_deployment_config_config_deployment_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeploymentConfigUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentConfigUpdateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/config/deployment/preview": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Preview Deployment Config",
+        "description": "纯只读预览：全量校验 + 与当前运行值 diff（不写文件、不建目录）。",
+        "operationId": "preview_deployment_config_config_deployment_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeploymentConfigUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentConfigPreviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/config/deployment/export": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Export Deployment Config",
+        "description": "导出 deployment.config.json（默认脱敏，供部署机拷贝）。",
+        "operationId": "export_deployment_config_config_deployment_export_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "redact",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Redact"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/config/service/restart": {
@@ -7971,6 +8407,252 @@
         }
       }
     },
+    "/config/portals": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get Portal Catalog",
+        "description": "门户目录（内置 + 自定义，含凭据状态与 URL 覆盖态）。",
+        "operationId": "get_portal_catalog_config_portals_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalCatalogResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/config/portals/{portal_id}": {
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Upsert Portal",
+        "description": "自定义门户创建/更新；builtin 门户仅允许覆盖 base_url / alt_url。",
+        "operationId": "upsert_portal_config_portals__portal_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "portal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Portal Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortalUpsertRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalCatalogEntry"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete Portal",
+        "description": "删除自定义门户（builtin 不可删）。",
+        "operationId": "delete_portal_config_portals__portal_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "portal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Portal Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteStorageDeletedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/portals/{portal_id}/test": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Test Portal",
+        "description": "门户连通性测试（凭据感知，SSRF 校验）。",
+        "operationId": "test_portal_config_portals__portal_id__test_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "portal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Portal Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalTestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/portals/{portal_id}/search": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Search Portal",
+        "description": "门户在线检索（仅 search_capability != none 的门户；本期实装 CMR）。",
+        "operationId": "search_portal_config_portals__portal_id__search_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "portal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Portal Id"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalSearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/config/data-source/remote-layer-uris": {
       "put": {
         "tags": [
@@ -8016,6 +8698,325 @@
             "APIKeyHeader": []
           }
         ]
+      }
+    },
+    "/config/data-source/datasets": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "List Available Datasets",
+        "description": "可用数据集注册表（manual/scan/algorithm_registry 三来源）。",
+        "operationId": "list_available_datasets_config_data_source_datasets_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "include_disabled",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Include Disabled"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AvailableDatasetEntry"
+                  },
+                  "title": "Response List Available Datasets Config Data Source Datasets Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/data-source/datasets/rescan": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Rescan Available Datasets",
+        "description": "重扫数据根：未注册目录生成 source=scan 条目，已有条目刷新文件统计。",
+        "operationId": "rescan_available_datasets_config_data_source_datasets_rescan_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetRescanResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/config/data-source/datasets/{dataset_id}": {
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Upsert Available Dataset",
+        "description": "新增/更新可用数据集；dataset_id 传 \"new\" 创建。写后失效 readiness 缓存。",
+        "operationId": "upsert_available_dataset_config_data_source_datasets__dataset_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "dataset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Dataset Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetUpsertRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvailableDatasetEntry"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete Available Dataset",
+        "description": "删除可用数据集（algorithm_registry 内置条目拒删）。",
+        "operationId": "delete_available_dataset_config_data_source_datasets__dataset_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "dataset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Dataset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/remote-sources": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "List Remote Sources",
+        "description": "别名条目 + 引用源能力徽标（protocol/search/enabled/test 状态）。",
+        "operationId": "list_remote_sources_config_remote_sources_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RemoteSourceEntry"
+                  },
+                  "type": "array",
+                  "title": "Response List Remote Sources Config Remote Sources Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/config/remote-sources/{remote_source_id}": {
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Upsert Remote Source",
+        "description": "新增/更新「可访问远程数据源」别名（供下载节点一键填充）。",
+        "operationId": "upsert_remote_source_config_remote_sources__remote_source_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "remote_source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Remote Source Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteSourceUpsertRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteSourceEntry"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete Remote Source",
+        "description": "删除别名条目（不影响引用的 profile/门户本身）。",
+        "operationId": "delete_remote_source_config_remote_sources__remote_source_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "remote_source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Remote Source Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/config/about": {
@@ -8541,7 +9542,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/workflow-timers": {
@@ -8552,6 +9558,11 @@
         "summary": "List Timers",
         "description": "列出全部定时器，可选按 workflow_id 过滤。",
         "operationId": "list_timers_workflow_timers_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "workflow_id",
@@ -8653,6 +9664,11 @@
         "summary": "Get Timer",
         "description": "获取单个定时器详情。",
         "operationId": "get_timer_workflow_timers__timer_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "timer_id",
@@ -9130,82 +10146,31 @@
         ]
       }
     },
-    "/api/remote/servers": {
-      "get": {
+    "/analysis/zonal-stats/sync": {
+      "post": {
         "tags": [
-          "remote-browser"
+          "analysis"
         ],
-        "summary": "List Servers",
-        "description": "列出可用远程服务器配置（不含敏感凭据）。",
-        "operationId": "list_servers_api_remote_servers_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response List Servers Api Remote Servers Get"
-                }
+        "summary": "同步分区统计",
+        "description": "对指定面要素区域内的栅格图层进行同步统计（均值/最值/像元数/标准差）。",
+        "operationId": "sync_zonal_stats_analysis_zonal_stats_sync_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ZonalStatsSyncRequest"
               }
             }
-          }
-        },
-        "security": [
-          {
-            "APIKeyHeader": []
-          }
-        ]
-      }
-    },
-    "/api/remote/list": {
-      "get": {
-        "tags": [
-          "remote-browser"
-        ],
-        "summary": "List Remote Dir",
-        "description": "列出远程目录内容。",
-        "operationId": "list_remote_dir_api_remote_list_get",
-        "security": [
-          {
-            "APIKeyHeader": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "server",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "description": "服务器名称: hpc / win11 / nas",
-              "title": "Server"
-            },
-            "description": "服务器名称: hpc / win11 / nas"
           },
-          {
-            "name": "path",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "description": "远程目录路径",
-              "default": "/",
-              "title": "Path"
-            },
-            "description": "远程目录路径"
-          }
-        ],
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response List Remote Dir Api Remote List Get"
+                  "$ref": "#/components/schemas/ZonalStatsSyncResponse"
                 }
               }
             }
@@ -9223,41 +10188,49 @@
         }
       }
     },
-    "/api/remote/test": {
+    "/workspace": {
       "get": {
         "tags": [
-          "remote-browser"
+          "workspace"
         ],
-        "summary": "Test Remote Connection",
-        "description": "测试远程服务器连接是否可用。",
-        "operationId": "test_remote_connection_api_remote_test_get",
-        "security": [
-          {
-            "APIKeyHeader": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "server",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "description": "服务器名称: hpc / win11 / nas",
-              "title": "Server"
-            },
-            "description": "服务器名称: hpc / win11 / nas"
-          }
-        ],
+        "summary": "Get Workspace",
+        "operationId": "get_workspace_workspace_get",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Test Remote Connection Api Remote Test Get"
+                  "$ref": "#/components/schemas/WorkspaceGetResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "workspace"
+        ],
+        "summary": "Put Workspace",
+        "operationId": "put_workspace_workspace_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspacePutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspacePutResponse"
                 }
               }
             }
@@ -9271,6 +10244,18 @@
                 }
               }
             }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "workspace"
+        ],
+        "summary": "Delete Workspace",
+        "operationId": "delete_workspace_workspace_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           }
         }
       }
@@ -10354,6 +11339,106 @@
         ],
         "title": "AuthConfigResponse"
       },
+      "AvailableDatasetEntry": {
+        "properties": {
+          "dataset_id": {
+            "type": "string",
+            "title": "Dataset Id"
+          },
+          "logical_name": {
+            "type": "string",
+            "title": "Logical Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "file_format": {
+            "type": "string",
+            "title": "File Format",
+            "default": ""
+          },
+          "variables": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Variables"
+          },
+          "time_range": {
+            "type": "string",
+            "title": "Time Range",
+            "default": ""
+          },
+          "resolution": {
+            "type": "string",
+            "title": "Resolution",
+            "default": ""
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "manual"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "file_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Count"
+          },
+          "last_scanned_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Scanned At"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset_id",
+          "logical_name",
+          "path"
+        ],
+        "title": "AvailableDatasetEntry",
+        "description": "可用数据集注册表条目（available_datasets 表行）。"
+      },
       "BackendServiceStatus": {
         "properties": {
           "service_name": {
@@ -10522,18 +11607,26 @@
         "properties": {
           "west": {
             "type": "number",
+            "maximum": 360.0,
+            "minimum": -180.0,
             "title": "West"
           },
           "south": {
             "type": "number",
+            "maximum": 90.0,
+            "minimum": -90.0,
             "title": "South"
           },
           "east": {
             "type": "number",
+            "maximum": 360.0,
+            "minimum": -180.0,
             "title": "East"
           },
           "north": {
             "type": "number",
+            "maximum": 90.0,
+            "minimum": -90.0,
             "title": "North"
           },
           "crs": {
@@ -11152,6 +12245,16 @@
             "title": "Tile Proxy Cache Ttl Seconds",
             "default": 0
           },
+          "static_cache_root": {
+            "type": "string",
+            "title": "Static Cache Root",
+            "default": ""
+          },
+          "cache_dir": {
+            "type": "string",
+            "title": "Cache Dir",
+            "default": ""
+          },
           "minio": {
             "anyOf": [
               {
@@ -11168,6 +12271,13 @@
             },
             "type": "array",
             "title": "Discovered Datasets"
+          },
+          "available_datasets": {
+            "items": {
+              "$ref": "#/components/schemas/AvailableDatasetEntry"
+            },
+            "type": "array",
+            "title": "Available Datasets"
           },
           "open_data_presets": {
             "additionalProperties": {
@@ -11242,6 +12352,42 @@
             ],
             "title": "Output Root",
             "description": "可选；留空则默认为 {data_root}/ProjectOutput"
+          },
+          "static_cache_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Static Cache Root",
+            "description": "可选；静态下载缓存根（BACKEND_STATIC_CACHE_ROOT），不存在时自动创建"
+          },
+          "cache_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Dir",
+            "description": "可选；通用缓存目录（BACKEND_CACHE_DIR），不存在时自动创建"
+          },
+          "download_source_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Source Root",
+            "description": "可选；下载源根目录（BACKEND_DOWNLOAD_SOURCE_ROOT），不存在时自动创建"
           }
         },
         "type": "object",
@@ -11269,6 +12415,39 @@
             "type": "string",
             "title": "Effective Output Root"
           },
+          "static_cache_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Static Cache Root"
+          },
+          "cache_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Dir"
+          },
+          "download_source_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Source Root"
+          },
           "pending_restart": {
             "type": "boolean",
             "title": "Pending Restart"
@@ -11293,6 +12472,907 @@
           "message"
         ],
         "title": "DataSourcePathsUpdateResponse"
+      },
+      "DatasetRescanResponse": {
+        "properties": {
+          "root": {
+            "type": "string",
+            "title": "Root",
+            "default": ""
+          },
+          "created": {
+            "type": "integer",
+            "title": "Created",
+            "default": 0
+          },
+          "created_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Created Names"
+          },
+          "refreshed": {
+            "type": "integer",
+            "title": "Refreshed",
+            "default": 0
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/AvailableDatasetEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          }
+        },
+        "type": "object",
+        "title": "DatasetRescanResponse"
+      },
+      "DatasetUpsertRequest": {
+        "properties": {
+          "logical_name": {
+            "type": "string",
+            "title": "Logical Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "file_format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Format"
+          },
+          "variables": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variables"
+          },
+          "time_range": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Range"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "logical_name",
+          "path"
+        ],
+        "title": "DatasetUpsertRequest",
+        "description": "PUT /config/data-source/datasets/{dataset_id} body。\n\ndataset_id 传 \"new\"（或空）时创建新条目；logical_name 冲突且非同一条目返回 400。\nsource=algorithm_registry 条目：仅 path/描述/启停/元数据可改，改名/删除被拒。"
+      },
+      "DeletedResponse": {
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted"
+        ],
+        "title": "DeletedResponse"
+      },
+      "DeploymentBackupInfo": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "mtime": {
+            "type": "number",
+            "title": "Mtime"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "path",
+          "size_bytes",
+          "mtime"
+        ],
+        "title": "DeploymentBackupInfo"
+      },
+      "DeploymentCachesGroup": {
+        "properties": {
+          "cache_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Dir",
+            "description": "通用缓存目录（不存在时自动创建）"
+          },
+          "static_cache_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Static Cache Root",
+            "description": "静态物化缓存根"
+          },
+          "static_cache_ttl_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Static Cache Ttl Seconds",
+            "description": "静态缓存 TTL 秒（0=永不过期）"
+          },
+          "download_source_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Source Root",
+            "description": "真实数据保存与下载位置"
+          },
+          "cache_default_ttl_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Default Ttl Seconds",
+            "description": "默认缓存 TTL 秒"
+          },
+          "tile_proxy_cache_ttl_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tile Proxy Cache Ttl Seconds",
+            "description": "瓦片代理缓存 TTL 秒"
+          }
+        },
+        "type": "object",
+        "title": "DeploymentCachesGroup",
+        "description": "caches 组：各类缓存与下载源。"
+      },
+      "DeploymentConfigPreviewResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "diff": {
+            "items": {
+              "$ref": "#/components/schemas/DeploymentPreviewDiffItem"
+            },
+            "type": "array",
+            "title": "Diff"
+          },
+          "restart_level": {
+            "type": "string",
+            "title": "Restart Level"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "errors",
+          "warnings",
+          "diff",
+          "restart_level"
+        ],
+        "title": "DeploymentConfigPreviewResponse"
+      },
+      "DeploymentConfigStatus": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "exists": {
+            "type": "boolean",
+            "title": "Exists"
+          },
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version"
+          },
+          "applied_env_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Applied Env Keys"
+          },
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/DeploymentKeyValueStatus"
+            },
+            "type": "array",
+            "title": "Keys"
+          },
+          "backups": {
+            "items": {
+              "$ref": "#/components/schemas/DeploymentBackupInfo"
+            },
+            "type": "array",
+            "title": "Backups"
+          },
+          "pending_restart": {
+            "type": "boolean",
+            "title": "Pending Restart"
+          },
+          "env_path": {
+            "type": "string",
+            "title": "Env Path"
+          },
+          "sync_env_path": {
+            "type": "string",
+            "title": "Sync Env Path"
+          },
+          "notes": {
+            "type": "string",
+            "title": "Notes",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "exists",
+          "schema_version",
+          "applied_env_keys",
+          "keys",
+          "backups",
+          "pending_restart",
+          "env_path",
+          "sync_env_path"
+        ],
+        "title": "DeploymentConfigStatus"
+      },
+      "DeploymentConfigUpdateRequest": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version",
+            "description": "配置 schema 版本（当前 1）",
+            "default": 1
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeploymentDataGroup"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runtime": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeploymentRuntimeGroup"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "caches": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeploymentCachesGroup"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "imports": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeploymentImportsGroup"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "docker": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeploymentDockerGroup"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes",
+            "description": "备注（部署说明等）"
+          }
+        },
+        "type": "object",
+        "title": "DeploymentConfigUpdateRequest",
+        "description": "部署配置整体写入请求（preview 与 PUT 共用）。"
+      },
+      "DeploymentConfigUpdateResponse": {
+        "properties": {
+          "applied_env_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Applied Env Keys"
+          },
+          "sync_env_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sync Env Keys"
+          },
+          "config_path": {
+            "type": "string",
+            "title": "Config Path"
+          },
+          "env_path": {
+            "type": "string",
+            "title": "Env Path"
+          },
+          "sync_env_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Env Path"
+          },
+          "restart_level": {
+            "type": "string",
+            "title": "Restart Level"
+          },
+          "pending_restart": {
+            "type": "boolean",
+            "title": "Pending Restart"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "backups": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Backups"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "applied_env_keys",
+          "sync_env_keys",
+          "config_path",
+          "env_path",
+          "restart_level",
+          "pending_restart",
+          "warnings",
+          "backups",
+          "message"
+        ],
+        "title": "DeploymentConfigUpdateResponse"
+      },
+      "DeploymentDataGroup": {
+        "properties": {
+          "data_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Root",
+            "description": "地理数据根目录（绝对路径，必须已存在）"
+          },
+          "output_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Root",
+            "description": "产出结果/报告/分析图表输出根（绝对路径，必须已存在）"
+          },
+          "project_backup_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Backup Root",
+            "description": "项目备份根（绝对路径）"
+          }
+        },
+        "type": "object",
+        "title": "DeploymentDataGroup",
+        "description": "data 组：数据根与导入导出。空串/None = 未设置（不覆盖）。"
+      },
+      "DeploymentDockerGroup": {
+        "properties": {
+          "minio_root_user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minio Root User",
+            "description": "MinIO root 用户"
+          },
+          "minio_root_password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minio Root Password",
+            "description": "MinIO root 密码（留空保持不变，回显恒脱敏）"
+          },
+          "open_meteo_host_port": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 65535.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Meteo Host Port",
+            "description": "Open-Meteo 宿主端口"
+          },
+          "open_meteo_data_volume": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Meteo Data Volume",
+            "description": "Open-Meteo 共享 named volume 名"
+          },
+          "open_meteo_sync_domains": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Meteo Sync Domains",
+            "description": "同步气象模型（逗号分隔）"
+          },
+          "open_meteo_sync_variables": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Meteo Sync Variables",
+            "description": "同步变量列表（逗号分隔）"
+          },
+          "open_meteo_local_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Meteo Local Url",
+            "description": "Open-Meteo 本地 API URL（http(s)）"
+          }
+        },
+        "type": "object",
+        "title": "DeploymentDockerGroup",
+        "description": "docker 组：Docker / Open-Meteo（部分键需全量 restart）。"
+      },
+      "DeploymentImportsGroup": {
+        "properties": {
+          "max_imports_total_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Imports Total Bytes",
+            "description": "导入永久层总配额"
+          },
+          "imports_soft_reserve_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imports Soft Reserve Bytes",
+            "description": "导入软预留（0=禁用）"
+          }
+        },
+        "type": "object",
+        "title": "DeploymentImportsGroup",
+        "description": "imports 组：导入配额（字节）。"
+      },
+      "DeploymentKeyValueStatus": {
+        "properties": {
+          "group": {
+            "type": "string",
+            "title": "Group"
+          },
+          "group_label": {
+            "type": "string",
+            "title": "Group Label"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "env_key": {
+            "type": "string",
+            "title": "Env Key"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "restart_level": {
+            "type": "string",
+            "title": "Restart Level"
+          },
+          "must_exist": {
+            "type": "boolean",
+            "title": "Must Exist"
+          },
+          "sensitive": {
+            "type": "boolean",
+            "title": "Sensitive"
+          },
+          "double_write_sync": {
+            "type": "boolean",
+            "title": "Double Write Sync"
+          },
+          "runtime_value": {
+            "type": "string",
+            "title": "Runtime Value"
+          },
+          "env_value": {
+            "type": "string",
+            "title": "Env Value"
+          },
+          "config_value": {
+            "type": "string",
+            "title": "Config Value"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "pending": {
+            "type": "boolean",
+            "title": "Pending"
+          }
+        },
+        "type": "object",
+        "required": [
+          "group",
+          "group_label",
+          "key",
+          "env_key",
+          "kind",
+          "label",
+          "restart_level",
+          "must_exist",
+          "sensitive",
+          "double_write_sync",
+          "runtime_value",
+          "env_value",
+          "config_value",
+          "source",
+          "pending"
+        ],
+        "title": "DeploymentKeyValueStatus",
+        "description": "单键三方状态：运行值 / .env 值 / deployment.json 值。"
+      },
+      "DeploymentPreviewDiffItem": {
+        "properties": {
+          "group": {
+            "type": "string",
+            "title": "Group"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "env_key": {
+            "type": "string",
+            "title": "Env Key"
+          },
+          "old": {
+            "type": "string",
+            "title": "Old"
+          },
+          "new": {
+            "type": "string",
+            "title": "New"
+          },
+          "restart_level": {
+            "type": "string",
+            "title": "Restart Level"
+          },
+          "derived": {
+            "type": "boolean",
+            "title": "Derived",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "group",
+          "key",
+          "env_key",
+          "old",
+          "new",
+          "restart_level"
+        ],
+        "title": "DeploymentPreviewDiffItem"
+      },
+      "DeploymentRuntimeGroup": {
+        "properties": {
+          "runtime_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Root",
+            "description": "运行时根；未设时派生自 <data_root>/_runtime"
+          },
+          "workflow_state_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow State Dir",
+            "description": "工作流状态目录"
+          },
+          "log_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Log Dir",
+            "description": "后端日志目录"
+          },
+          "log_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Log Level",
+            "description": "DEBUG | INFO | WARNING | ERROR"
+          },
+          "result_artifact_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Artifact Dir",
+            "description": "工作流产物/工件目录"
+          },
+          "python_provider_workspace": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Python Provider Workspace",
+            "description": "Python 算法工作区"
+          },
+          "spatialite_db_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spatialite Db Path",
+            "description": "SpatiaLite 数据库文件路径"
+          }
+        },
+        "type": "object",
+        "title": "DeploymentRuntimeGroup",
+        "description": "runtime 组：运行时目录与日志。"
       },
       "DiagnosticsReport": {
         "properties": {
@@ -13572,6 +15652,95 @@
         "type": "object",
         "title": "LayerStyleHint"
       },
+      "LayerZonalStats": {
+        "properties": {
+          "layer_id": {
+            "type": "string",
+            "title": "Layer Id"
+          },
+          "layer_name": {
+            "type": "string",
+            "title": "Layer Name"
+          },
+          "mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "sum": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sum"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "default": 0
+          },
+          "std": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Std"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "layer_id",
+          "layer_name"
+        ],
+        "title": "LayerZonalStats"
+      },
       "LogLevel": {
         "type": "string",
         "enum": [
@@ -14154,6 +16323,177 @@
         ],
         "title": "PortSpec"
       },
+      "PortalCatalogEntry": {
+        "properties": {
+          "portal_id": {
+            "type": "string",
+            "title": "Portal Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "organization": {
+            "type": "string",
+            "title": "Organization",
+            "default": ""
+          },
+          "region": {
+            "type": "string",
+            "title": "Region",
+            "description": "international | china",
+            "default": "international"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url"
+          },
+          "alt_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alt Url"
+          },
+          "website": {
+            "type": "string",
+            "title": "Website",
+            "default": ""
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "requires_credentials": {
+            "type": "boolean",
+            "title": "Requires Credentials",
+            "default": false
+          },
+          "auth_type": {
+            "type": "string",
+            "title": "Auth Type",
+            "description": "bearer | basic | header | token | none",
+            "default": "none"
+          },
+          "token_header": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Header"
+          },
+          "credential_profile": {
+            "type": "string",
+            "title": "Credential Profile",
+            "description": "凭据键（规范 id）；空 = portal_id 自身",
+            "default": ""
+          },
+          "credentials_hint": {
+            "type": "string",
+            "title": "Credentials Hint",
+            "default": ""
+          },
+          "search_capability": {
+            "type": "string",
+            "title": "Search Capability",
+            "description": "cmr | none",
+            "default": "none"
+          },
+          "builtin": {
+            "type": "boolean",
+            "title": "Builtin",
+            "default": true
+          },
+          "effective_base_url": {
+            "type": "string",
+            "title": "Effective Base Url",
+            "default": ""
+          },
+          "base_url_overridden": {
+            "type": "boolean",
+            "title": "Base Url Overridden",
+            "default": false
+          },
+          "effective_alt_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Alt Url"
+          },
+          "has_credentials": {
+            "type": "boolean",
+            "title": "Has Credentials",
+            "default": false
+          },
+          "credential_source": {
+            "type": "string",
+            "title": "Credential Source",
+            "default": "none"
+          },
+          "account_count": {
+            "type": "integer",
+            "title": "Account Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "portal_id",
+          "name",
+          "base_url"
+        ],
+        "title": "PortalCatalogEntry",
+        "description": "目录条目 + 运行时状态（URL 覆盖 / 凭据状态）。"
+      },
+      "PortalCatalogResponse": {
+        "properties": {
+          "portals": {
+            "items": {
+              "$ref": "#/components/schemas/PortalCatalogEntry"
+            },
+            "type": "array",
+            "title": "Portals"
+          }
+        },
+        "type": "object",
+        "title": "PortalCatalogResponse"
+      },
+      "PortalCredentialAccount": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username",
+            "default": ""
+          },
+          "token": {
+            "type": "string",
+            "title": "Token",
+            "default": ""
+          },
+          "password": {
+            "type": "string",
+            "title": "Password",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "PortalCredentialAccount",
+        "description": "多账号轮换条目（NSMC 等限额门户）。"
+      },
       "PortalCredentialPublic": {
         "properties": {
           "enabled": {
@@ -14224,6 +16564,11 @@
               }
             ],
             "title": "Client Id"
+          },
+          "account_count": {
+            "type": "integer",
+            "title": "Account Count",
+            "default": 0
           }
         },
         "type": "object",
@@ -14340,6 +16685,20 @@
               }
             ],
             "title": "Clear Secrets"
+          },
+          "accounts": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PortalCredentialAccount"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accounts"
           }
         },
         "type": "object",
@@ -14361,6 +16720,281 @@
           "portal_credentials"
         ],
         "title": "PortalCredentialsMapResponse"
+      },
+      "PortalSearchResponse": {
+        "properties": {
+          "portal_id": {
+            "type": "string",
+            "title": "Portal Id"
+          },
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size",
+            "default": 20
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "default": 0
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PortalSearchResultItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "portal_id",
+          "query"
+        ],
+        "title": "PortalSearchResponse"
+      },
+      "PortalSearchResultItem": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": ""
+          },
+          "granule_id": {
+            "type": "string",
+            "title": "Granule Id",
+            "default": ""
+          },
+          "producer_granule_id": {
+            "type": "string",
+            "title": "Producer Granule Id",
+            "default": ""
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes",
+            "default": 0
+          },
+          "time_start": {
+            "type": "string",
+            "title": "Time Start",
+            "default": ""
+          },
+          "time_end": {
+            "type": "string",
+            "title": "Time End",
+            "default": ""
+          },
+          "data_link": {
+            "type": "string",
+            "title": "Data Link",
+            "default": ""
+          },
+          "browse_link": {
+            "type": "string",
+            "title": "Browse Link",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "PortalSearchResultItem"
+      },
+      "PortalTestResponse": {
+        "properties": {
+          "portal_id": {
+            "type": "string",
+            "title": "Portal Id"
+          },
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "status_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Code"
+          },
+          "via_credentials": {
+            "type": "boolean",
+            "title": "Via Credentials",
+            "default": false
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "tested_url": {
+            "type": "string",
+            "title": "Tested Url",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "portal_id",
+          "ok",
+          "message"
+        ],
+        "title": "PortalTestResponse"
+      },
+      "PortalUpsertRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "organization": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "alt_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alt Url"
+          },
+          "website": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "requires_credentials": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires Credentials"
+          },
+          "auth_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Type"
+          },
+          "token_header": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Header"
+          },
+          "credential_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Profile"
+          },
+          "credentials_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credentials Hint"
+          },
+          "search_capability": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Search Capability"
+          }
+        },
+        "type": "object",
+        "title": "PortalUpsertRequest",
+        "description": "PUT /config/portals/{portal_id} body。\n\nbuiltin 门户：仅 base_url（覆盖 open_data_presets）与 alt_url 生效，空串清除覆盖；\n自定义门户：全字段创建/更新（name/base_url 必填）。"
       },
       "ProcessResourceSnapshot": {
         "properties": {
@@ -14429,6 +17063,8 @@
         "properties": {
           "upload_id": {
             "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
             "title": "Upload Id"
           },
           "variable_id": {
@@ -14447,17 +17083,20 @@
               "type": "string"
             },
             "type": "array",
+            "maxItems": 64,
             "title": "Variable Ids"
           },
           "time_index": {
             "type": "integer",
+            "minimum": 0.0,
             "title": "Time Index",
             "default": 0
           },
           "source_name": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 256
               },
               {
                 "type": "null"
@@ -14473,7 +17112,8 @@
           "source_crs": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 64
               },
               {
                 "type": "null"
@@ -14484,7 +17124,8 @@
           "grid_preset": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 64
               },
               {
                 "type": "null"
@@ -14511,6 +17152,7 @@
               "type": "number"
             },
             "type": "array",
+            "maxItems": 1024,
             "title": "Invalid Values"
           },
           "nodata": {
@@ -14568,7 +17210,8 @@
           "time_label": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 64
               },
               {
                 "type": "null"
@@ -14579,7 +17222,8 @@
           "time_start": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 64
               },
               {
                 "type": "null"
@@ -14590,7 +17234,8 @@
           "time_end": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 64
               },
               {
                 "type": "null"
@@ -14601,7 +17246,8 @@
           "native_step": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 16
               },
               {
                 "type": "null"
@@ -14670,6 +17316,147 @@
         ],
         "title": "ReloadResultResponse"
       },
+      "RemoteBrowseRequest": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "default": "/"
+          }
+        },
+        "type": "object",
+        "title": "RemoteBrowseRequest"
+      },
+      "RemoteBrowseResponse": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          },
+          "protocol": {
+            "type": "string",
+            "title": "Protocol"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "via": {
+            "type": "string",
+            "title": "Via",
+            "description": "本次实际使用的路径：primary | alt"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RemoteEntryItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id",
+          "protocol",
+          "path",
+          "via"
+        ],
+        "title": "RemoteBrowseResponse"
+      },
+      "RemoteEntryItem": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "is_dir": {
+            "type": "boolean",
+            "title": "Is Dir",
+            "default": false
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "mtime": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mtime"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "RemoteEntryItem",
+        "description": "远程目录条目（浏览/搜索通用）。"
+      },
+      "RemoteFailoverRequest": {
+        "properties": {
+          "target": {
+            "type": "string",
+            "pattern": "^(primary|alt)$",
+            "title": "Target"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target"
+        ],
+        "title": "RemoteFailoverRequest"
+      },
+      "RemoteFailoverResponse": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          },
+          "active": {
+            "type": "string",
+            "title": "Active"
+          },
+          "updated": {
+            "type": "boolean",
+            "title": "Updated"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id",
+          "active",
+          "updated",
+          "message"
+        ],
+        "title": "RemoteFailoverResponse"
+      },
       "RemoteLayerUrisUpdateRequest": {
         "properties": {
           "remote_layer_data_uris": {
@@ -14705,6 +17492,255 @@
           "remote_layer_data_uris"
         ],
         "title": "RemoteLayerUrisUpdateResponse"
+      },
+      "RemoteSearchRequest": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Query"
+          },
+          "max_results": {
+            "type": "integer",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Max Results",
+            "default": 200
+          },
+          "start_path": {
+            "type": "string",
+            "title": "Start Path",
+            "description": "搜索起点目录（默认根；用于在当前目录子树内搜索）",
+            "default": "/"
+          }
+        },
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "RemoteSearchRequest"
+      },
+      "RemoteSearchResponse": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          },
+          "protocol": {
+            "type": "string",
+            "title": "Protocol"
+          },
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "start_path": {
+            "type": "string",
+            "title": "Start Path",
+            "default": "/"
+          },
+          "via": {
+            "type": "string",
+            "title": "Via"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RemoteEntryItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "description": "结果已达 max_results 上限，可能存在未扫到的匹配",
+            "default": false
+          },
+          "failed_dirs": {
+            "type": "integer",
+            "title": "Failed Dirs",
+            "description": "递归扫描中列举失败的子目录数（部分结果）",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id",
+          "protocol",
+          "query",
+          "via"
+        ],
+        "title": "RemoteSearchResponse"
+      },
+      "RemoteSourceEntry": {
+        "properties": {
+          "remote_source_id": {
+            "type": "string",
+            "title": "Remote Source Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "ref_id": {
+            "type": "string",
+            "title": "Ref Id"
+          },
+          "remote_path": {
+            "type": "string",
+            "title": "Remote Path",
+            "default": ""
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name",
+            "default": ""
+          },
+          "cache_policy": {
+            "type": "string",
+            "title": "Cache Policy",
+            "default": "standard"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At",
+            "default": ""
+          },
+          "ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RemoteSourceRefBadge"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ref_exists": {
+            "type": "boolean",
+            "title": "Ref Exists",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "remote_source_id",
+          "kind",
+          "ref_id"
+        ],
+        "title": "RemoteSourceEntry",
+        "description": "「可访问远程数据源」别名条目 + 引用源能力。"
+      },
+      "RemoteSourceRefBadge": {
+        "properties": {
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "last_test_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Test Status"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name",
+            "default": ""
+          },
+          "search_capability": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Search Capability"
+          },
+          "requires_credentials": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires Credentials"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "RemoteSourceRefBadge",
+        "description": "引用源能力徽标（存储 profile 或门户）。"
+      },
+      "RemoteSourceUpsertRequest": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "ref_id": {
+            "type": "string",
+            "title": "Ref Id"
+          },
+          "remote_path": {
+            "type": "string",
+            "title": "Remote Path",
+            "default": ""
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name",
+            "default": ""
+          },
+          "cache_policy": {
+            "type": "string",
+            "title": "Cache Policy",
+            "default": "standard"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "ref_id"
+        ],
+        "title": "RemoteSourceUpsertRequest",
+        "description": "PUT /config/remote-sources/{remote_source_id} body."
       },
       "RemoteStorageDeletedResponse": {
         "properties": {
@@ -14925,6 +17961,37 @@
               }
             ],
             "title": "Last Test Status"
+          },
+          "alt_host": {
+            "type": "string",
+            "title": "Alt Host",
+            "default": ""
+          },
+          "alt_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alt Port"
+          },
+          "alt_url": {
+            "type": "string",
+            "title": "Alt Url",
+            "default": ""
+          },
+          "fallback_mode": {
+            "type": "string",
+            "title": "Fallback Mode",
+            "default": "auto"
+          },
+          "failover_state": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Failover State"
           }
         },
         "type": "object",
@@ -15111,6 +18178,54 @@
               }
             ],
             "title": "Enabled"
+          },
+          "alt_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alt Host",
+            "description": "备用访问路径主机/URL（隧道），写入 extra.alt.host"
+          },
+          "alt_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alt Port",
+            "description": "备用访问路径端口，写入 extra.alt.port；0 表示显式清除"
+          },
+          "alt_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alt Url",
+            "description": "备用 base URL（http/https/filebrowser），写入 extra.alt.url"
+          },
+          "fallback_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Mode",
+            "description": "回退模式 auto|manual|off，写入 extra.fallback_mode"
           }
         },
         "type": "object",
@@ -16012,14 +19127,20 @@
               "type": "number"
             },
             "type": "array",
+            "maxItems": 4,
+            "minItems": 4,
             "title": "Bounds"
           },
           "source_crs": {
             "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
             "title": "Source Crs"
           },
           "target_crs": {
             "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
             "title": "Target Crs",
             "default": "EPSG:4326"
           }
@@ -16049,14 +19170,19 @@
               "minItems": 2
             },
             "type": "array",
+            "maxItems": 10000,
             "title": "Points"
           },
           "source_crs": {
             "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
             "title": "Source Crs"
           },
           "target_crs": {
             "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
             "title": "Target Crs",
             "default": "EPSG:4326"
           },
@@ -19137,6 +22263,154 @@
         ],
         "title": "WorkflowValidationResponse",
         "description": "Route-friendly validation response with typed terminal plan projections."
+      },
+      "WorkspaceGetResponse": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkspacePayloadModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision"
+        ],
+        "title": "WorkspaceGetResponse"
+      },
+      "WorkspacePayloadModel": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "maximum": 1.0,
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "snapshot": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Snapshot"
+          },
+          "dismissed": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dismissed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "snapshot"
+        ],
+        "title": "WorkspacePayloadModel"
+      },
+      "WorkspacePutRequest": {
+        "properties": {
+          "payload": {
+            "$ref": "#/components/schemas/WorkspacePayloadModel"
+          },
+          "base_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Revision"
+          }
+        },
+        "type": "object",
+        "required": [
+          "payload"
+        ],
+        "title": "WorkspacePutRequest"
+      },
+      "WorkspacePutResponse": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision",
+          "updated_at"
+        ],
+        "title": "WorkspacePutResponse"
+      },
+      "ZonalStatsSyncRequest": {
+        "properties": {
+          "geojson": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Geojson",
+            "description": "面要素 GeoJSON（Feature 或 Geometry）"
+          },
+          "overlay_layer_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Overlay Layer Ids",
+            "description": "要统计的栅格图层 ID 列表"
+          }
+        },
+        "type": "object",
+        "required": [
+          "geojson",
+          "overlay_layer_ids"
+        ],
+        "title": "ZonalStatsSyncRequest"
+      },
+      "ZonalStatsSyncResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/LayerZonalStats"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "results"
+        ],
+        "title": "ZonalStatsSyncResponse"
       }
     },
     "securitySchemes": {

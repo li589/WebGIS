@@ -132,6 +132,47 @@ class _WorkflowDefaultParamModule(BaseModule):
         return {"manifest": artifact}
 
 
+class _RecordingParamsModule(BaseModule):
+    """M3：记录模块实际收到的 algorithm_params，用于验证节点级合并。"""
+
+    name = "workflow_recording_params_module"
+    input_ports = [
+        PortSpec(
+            name="algorithm_params", kind="config", data_class="dict", required=False
+        )
+    ]
+    output_ports = [
+        PortSpec(name="manifest", kind="artifact", data_class="product_manifest")
+    ]
+
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
+        received = dict(inputs.get("algorithm_params") or {})
+        manifest = ProductManifest(
+            job_id=ctx.request.job_id,
+            run_id=ctx.runtime_context.run_id,
+            products=[],
+            main_layers=[],
+            extra={"received_params": received},
+        )
+        from workflow.schemas import ArtifactRef
+
+        artifact = ArtifactRef(
+            artifact_id=f"{ctx.runtime_context.run_id}:{ctx.node_id}:manifest",
+            artifact_type="product_manifest",
+            format="python_object",
+            uri=None,
+            producer_node_id=ctx.node_id,
+            schema_name="ProductManifest",
+        )
+        ctx.artifact_store.put(artifact, payload=manifest)
+        return {"manifest": artifact}
+
+
 class _BridgeAcceptancePipeline(BasePipeline):
     name = "bridge_acceptance_pipeline"
 
@@ -271,6 +312,103 @@ class WorkflowRunnerTests(unittest.TestCase):
             )
         MODULE_ALIASES.clear()
         MODULE_ALIASES.update(self._original_module_aliases)
+
+    def test_workflow_runner_merges_node_level_algorithm_params(self) -> None:
+        """M3 耦合修复：多模块图中各节点自身 properties.algorithm_params 作为
+        基底；请求级 algorithm_params 仅承载用户/定时器覆盖（后端在图执行路径
+        已剥离首模块提取），覆盖键优先、节点专有键（如 tb_source）保留。"""
+        register_module(_RecordingParamsModule())
+        self.addCleanup(MODULE_REGISTRY.pop, _RecordingParamsModule.name, None)
+
+        definition = WorkflowDefinition(
+            workflow_id="wf-node-params",
+            nodes=[
+                WorkflowNodeSpec(
+                    node_id="first",
+                    node_type="module",
+                    input_bindings={"algorithm_params": "request:algorithm_params"},
+                    params={
+                        "module_name": "workflow_recording_params_module",
+                        "algorithm_params": {"tb_source": "SMAP", "block_days": 8},
+                    },
+                ),
+                WorkflowNodeSpec(
+                    node_id="second",
+                    node_type="module",
+                    input_bindings={"algorithm_params": "request:algorithm_params"},
+                    params={
+                        "module_name": "workflow_recording_params_module",
+                        "algorithm_params": {"orbit_mode": "MWRID", "tb_source": "FY"},
+                    },
+                ),
+            ],
+            edges=[],
+            outputs=[
+                WorkflowOutputSpec(name="first_manifest", source="node:first.manifest"),
+                WorkflowOutputSpec(
+                    name="second_manifest", source="node:second.manifest"
+                ),
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = Path(tmp_dir)
+            request = JobRequest(
+                job_id="job-node-params",
+                pipeline_name="workflow",
+                task_type="workflow",
+                time_range=TimeRange(
+                    start=datetime(2020, 1, 1), end=datetime(2020, 1, 1)
+                ),
+                region=RegionSpec(kind="global", value={}),
+                datasource_selection={},
+                # 请求级 = 纯用户/定时器覆盖（图执行路径不再混入首模块提取）
+                algorithm_params={
+                    "block_days": 16,
+                    "start_date": "20251201",
+                },
+                output_spec=OutputSpec(),
+            )
+            runtime_context = RuntimeContext(
+                job_id=request.job_id,
+                run_id="run-node-params",
+                workspace=workspace,
+                tmp_dir=workspace / "tmp",
+                cache_dir=workspace / "cache",
+            )
+            runtime_context.tmp_dir.mkdir(parents=True, exist_ok=True)
+            runtime_context.cache_dir.mkdir(parents=True, exist_ok=True)
+
+            runner = WorkflowRunner()
+            result = runner.run(definition, request, runtime_context)
+
+            first = runner.artifact_store.load(
+                result.outputs["first_manifest"].artifact_id
+            )
+            second = runner.artifact_store.load(
+                result.outputs["second_manifest"].artifact_id
+            )
+            # first：节点基底（tb_source=SMAP）+ 请求覆盖（block_days 16 胜出）
+            # + 请求专有键透传（start_date）。
+            self.assertEqual(
+                first.extra["received_params"],
+                {
+                    "tb_source": "SMAP",
+                    "block_days": 16,
+                    "start_date": "20251201",
+                },
+            )
+            # second：自身 tb_source=FY/orbit_mode 保留（不被 first 或请求级覆盖）；
+            # 请求覆盖与专有键仍生效。
+            self.assertEqual(
+                second.extra["received_params"],
+                {
+                    "tb_source": "FY",
+                    "block_days": 16,
+                    "orbit_mode": "MWRID",
+                    "start_date": "20251201",
+                },
+            )
 
     def test_workflow_runner_executes_module_after_upstream_node(self) -> None:
         definition = WorkflowDefinition(

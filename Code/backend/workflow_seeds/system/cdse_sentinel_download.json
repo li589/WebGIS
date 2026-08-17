@@ -1,0 +1,39 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "CDSE 产品下载（Sentinel OData）",
+    "description": "目的：经 Copernicus CDSE 门户下载 Sentinel 产品（门户凭据 token 交换后 OData $value 下载，Range 断点续传；use=legacy 走公共直链）。示例按 OData $filter 取指定日内 Sentinel-2 L2A 产品前若干条；亦可改为 product_ids 明确列出或经上游检索节点（search_portal/cmr_granule_search）注入。需 copernicus 凭据。",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "tags": ["sample", "download"],
+    "category": "data_access"
+  },
+  "workflow_id": "cdse_sentinel_download",
+  "name": "CDSE 产品下载（Sentinel OData）",
+  "description": "cdse_download（OData $value 主路径 → legacy 公共直链回退）→ 本地产品目录 + 产物清单。",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "download/cdse_download",
+      "pos": [120, 160],
+      "properties": {
+        "odata_filter": "Collection/Name eq 'SENTINEL-2' and Attributes/OData.CSC.StringAttribute/any(att:att/Name eq 'productType' and att/OData.CSC.StringAttribute/Value eq 'S2MSI2A') and ContentDate/Start gt {YYYY-MM-DD}T00:00:00.000Z and ContentDate/Start lt {YYYY-MM-DD}T23:59:59.999Z",
+        "use": "auto",
+        "max_products": 2,
+        "force": false
+      }
+    }
+  ],
+  "links": [],
+  "extra": {
+    "purpose": "cdse_sentinel_download_pipeline",
+    "scheme": "CDSE_ODATA_TOKEN_EXCHANGE",
+    "portal": "esa_copernicus",
+    "cred_profile": "copernicus",
+    "pipeline": "cdse_download (OData $value with Range resume, legacy public URL fallback) → workspace/data_access/cdse",
+    "prerequisite": "copernicus 凭据（CDSE 账号，设置 → 远程与存储 → 开放门户）；legacy 直链为公共数据免凭据",
+    "notes": "模板种子：odata_filter 中 {YYYY-MM-DD} 运行前展开为检索窗口。产品量大时用 max_products 节流；确定性下载改填 product_ids（UUID 列表）。检索结果（含 granule_id 条目）可经 search_results 输入端口注入。"
+  }
+}

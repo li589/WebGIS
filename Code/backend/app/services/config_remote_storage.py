@@ -32,10 +32,58 @@ def _get_remote_storage_repository():
     )
 
 
+def get_remote_storage_repository():
+    """公开仓库访问器（供 remote_access.browser 复用，含解密 bundle）。"""
+    return _get_remote_storage_repository()
+
+
 def list_remote_storage_profiles(include_disabled: bool = True) -> list[dict[str, Any]]:
-    return _get_remote_storage_repository().list_profiles(
-        include_disabled=include_disabled
+    return [
+        _decorate_profile(info)
+        for info in _get_remote_storage_repository().list_profiles(
+            include_disabled=include_disabled
+        )
+    ]
+
+
+def get_remote_storage_profile(profile_id: str) -> dict[str, Any] | None:
+    info = _get_remote_storage_repository().get_profile_info(profile_id)
+    return _decorate_profile(info) if info is not None else None
+
+
+def _decorate_profile(info: dict[str, Any]) -> dict[str, Any]:
+    """把 extra.alt / fallback_mode / failover_state 展平为顶层便捷字段（只读回显）。"""
+    extra = info.get("extra") or {}
+    alt = extra.get("alt") if isinstance(extra.get("alt"), dict) else {}
+    out = dict(info)
+    out["alt_host"] = str(alt.get("host") or "")
+    out["alt_port"] = alt.get("port") if isinstance(alt.get("port"), int) else None
+    out["alt_url"] = str(alt.get("url") or "")
+    out["fallback_mode"] = str(extra.get("fallback_mode") or "auto")
+    out["failover_state"] = (
+        extra.get("failover_state")
+        if isinstance(extra.get("failover_state"), dict)
+        else {}
     )
+    return out
+
+
+def _invalidate_profile_derived_caches(protocols: set[str]) -> None:
+    """profile 变更后失效派生缓存：auth 解析、FileBrowser token、动态 options。
+
+    filebrowser 涉及凭据/协议变化时必须清 token 缓存：token 以
+    (base_url, username) 为键，换密码或删除重建同键 profile 会复用旧
+    token（最长 45 分钟），造成鉴权材料错配。
+    """
+    from app.services.remote_auth_resolver import clear_remote_auth_cache
+    from app.services.node_template_registry import invalidate_portal_options_cache
+
+    clear_remote_auth_cache()
+    if "filebrowser" in protocols:
+        from app.services.remote_access import clear_filebrowser_token_cache
+
+        clear_filebrowser_token_cache()
+    invalidate_portal_options_cache()
 
 
 def list_remote_storage_history(profile_id: str) -> list[dict[str, Any]]:
@@ -43,8 +91,6 @@ def list_remote_storage_history(profile_id: str) -> list[dict[str, Any]]:
 
 
 def restore_remote_storage_history(profile_id: str, history_id: int) -> dict[str, Any]:
-    from app.services.remote_auth_resolver import clear_remote_auth_cache
-
     repo = _get_remote_storage_repository()
     info = repo.get_profile_info(profile_id)
     if info is None:
@@ -65,8 +111,8 @@ def restore_remote_storage_history(profile_id: str, history_id: int) -> dict[str
         display_name=info.get("display_name"),
         enabled=info.get("enabled"),
     )
-    clear_remote_auth_cache()
-    return result
+    _invalidate_profile_derived_caches({str(info.get("protocol") or "").lower()})
+    return _decorate_profile(result)
 
 
 def delete_remote_storage_history_entry(profile_id: str, history_id: int) -> bool:
@@ -90,10 +136,51 @@ def upsert_remote_storage_profile(
     extra: dict[str, Any] | None = None,
     display_name: str | None = None,
     enabled: bool | None = None,
+    alt_host: str | None = None,
+    alt_port: int | None = None,
+    alt_url: str | None = None,
+    fallback_mode: str | None = None,
 ) -> dict[str, Any]:
-    from app.services.remote_auth_resolver import clear_remote_auth_cache
+    repo = _get_remote_storage_repository()
+    existing_info = repo.get_profile_info(profile_id)
+    prev_extra = dict((existing_info or {}).get("extra") or {})
+    prev_protocol = str((existing_info or {}).get("protocol") or "")
+    protocols = {protocol.lower(), prev_protocol.lower()}
 
-    result = _get_remote_storage_repository().upsert(
+    # extra 合并语义：None 全保留；{} 显式清空协议字段；非空 dict 仅覆盖给定键，
+    # 未提及的既有键（default_share 等未知键）保留，避免前端局部更新丢配置。
+    if extra is None:
+        merged = dict(prev_extra)
+    elif extra:
+        merged = {**prev_extra, **extra}
+    else:
+        merged = {}
+    # failover_state 为运行时状态（browser/test 端点写入），服务端权威：
+    # 编辑不重置，也不接受客户端经 extra 回写
+    merged.pop("failover_state", None)
+    if "failover_state" in prev_extra:
+        merged["failover_state"] = prev_extra["failover_state"]
+
+    alt_given = any(v is not None for v in (alt_host, alt_port, alt_url))
+    if alt_given or fallback_mode is not None:
+        if alt_given:
+            alt = dict(merged.get("alt") or {})
+            if alt_host is not None:
+                alt["host"] = alt_host
+            if alt_port is not None:
+                # 0 表示显式清除备用端口（端口不可能为 0）
+                if alt_port > 0:
+                    alt["port"] = alt_port
+                else:
+                    alt.pop("port", None)
+            if alt_url is not None:
+                alt["url"] = alt_url
+            merged["alt"] = alt
+        if fallback_mode is not None:
+            merged["fallback_mode"] = fallback_mode
+    extra = merged
+
+    result = repo.upsert(
         profile_id=profile_id,
         protocol=protocol,
         host=host,
@@ -106,32 +193,113 @@ def upsert_remote_storage_profile(
         display_name=display_name,
         enabled=enabled,
     )
-    clear_remote_auth_cache()
-    return result
+    _invalidate_profile_derived_caches(protocols)
+    return _decorate_profile(result)
 
 
 def delete_remote_storage_profile(profile_id: str) -> bool:
-    from app.services.remote_auth_resolver import clear_remote_auth_cache
-
-    deleted = _get_remote_storage_repository().delete(profile_id)
+    repo = _get_remote_storage_repository()
+    prev_protocol = str((repo.get_profile_info(profile_id) or {}).get("protocol") or "")
+    deleted = repo.delete(profile_id)
     if deleted:
-        clear_remote_auth_cache()
+        _invalidate_profile_derived_caches({prev_protocol.lower()})
     return deleted
 
 
 def toggle_remote_storage_profile(profile_id: str, enabled: bool) -> bool:
-    from app.services.remote_auth_resolver import clear_remote_auth_cache
-
     ok = _get_remote_storage_repository().set_enabled(profile_id, enabled)
     if ok:
-        clear_remote_auth_cache()
+        # 启停影响 ssh_servers 动态 options；凭据未变，无需清 filebrowser token
+        _invalidate_profile_derived_caches(set())
     return ok
+
+
+def _build_probe_uri(
+    protocol: str,
+    host: str,
+    port: int | None,
+    extra: dict[str, Any],
+) -> str | None:
+    """按协议构造默认探测 URI；返回 None 表示需要浏览器式探测（filebrowser/lan/nfs）。"""
+    if protocol in {"filebrowser", "lan", "nfs"}:
+        return None
+    host_part = f"{host}:{port}" if port is not None and protocol != "gs" else host
+    if protocol == "smb":
+        share = extra.get("default_share")
+        if not share:
+            return "MISSING_SMB_SHARE"
+        return f"smb://{host_part}/{share}/"
+    if protocol == "gs":
+        return f"gs://{host}/"
+    if protocol in {"http", "https"} and host.startswith(("http://", "https://")):
+        # http/https 约定 host 存 base URL
+        return host
+    return f"{protocol}://{host_part}/"
+
+
+def _probe_http_connectivity(probe_uri: str) -> str:
+    """http/https 存储源连通性探测。
+
+    http/https 不在 shared transport 注册表内（shared 层不依赖后端 SSRF 模块），
+    此处经 SSRF 校验的 safe_urlopen 直连：HEAD 优先，405/501 退化 GET；
+    凭据按 Basic Auth 头携带。返回 probe_uri（成功），失败抛网络异常。
+    """
+    import base64
+    from urllib.error import HTTPError
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    from app.core.ssrf import safe_urlopen
+    from app.services.remote_auth_resolver import resolve_remote_auth
+
+    auth = resolve_remote_auth(probe_uri)
+    # 剥离内部 cred 标记参数，避免污染真实请求
+    parts = urlsplit(probe_uri)
+    query = urlencode(
+        [
+            (k, v)
+            for k, v in parse_qsl(parts.query, keep_blank_values=True)
+            if k != "cred"
+        ]
+    )
+    fetch_url = urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, query, parts.fragment or "")
+    )
+
+    headers: dict[str, str] = {}
+    if auth.username or auth.password:
+        token = base64.b64encode(
+            f"{auth.username or ''}:{auth.password or ''}".encode("utf-8")
+        ).decode("ascii")
+        headers["Authorization"] = f"Basic {token}"
+
+    for method in ("HEAD", "GET"):
+        try:
+            with safe_urlopen(
+                fetch_url, timeout=15.0, headers=headers, method=method
+            ) as resp:
+                status = int(
+                    getattr(resp, "status", None)
+                    or getattr(resp, "getcode", lambda: 0)()
+                    or 0
+                )
+                if status < 400:
+                    return probe_uri
+                raise ConnectionError(f"HTTP {status} probing {parts.hostname}")
+        except HTTPError as exc:
+            if method == "HEAD" and exc.code in (405, 501):
+                continue
+            raise ConnectionError(f"HTTP {exc.code} probing {parts.hostname}") from exc
+    raise ConnectionError(f"HTTP probe failed for {parts.hostname}")
 
 
 def test_remote_storage_profile(
     profile_id: str, uri: str | None = None
 ) -> dict[str, Any]:
-    """Probe connectivity for a credential profile (auth/host, not object existence)."""
+    """Probe connectivity for a credential profile (auth/host, not object existence).
+
+    双路径：主路径网络类失败且 fallback_mode=auto 时自动重试备用路径；
+    filebrowser/lan/nfs 走 remote_access.browser 统一探测（内部处理回退）。
+    """
     from datetime import datetime
 
     from app.services.remote_auth_resolver import resolve_remote_auth
@@ -159,66 +327,169 @@ def test_remote_storage_profile(
         }
 
     protocol = info["protocol"]
-    host = info.get("host") or "localhost"
-    port = info.get("port")
-    host_part = f"{host}:{port}" if port is not None and protocol != "gs" else host
+    extra = info.get("extra") or {}
+    alt = extra.get("alt") if isinstance(extra.get("alt"), dict) else None
+    alt_valid = bool(alt and any(alt.get(k) for k in ("host", "url", "share")))
+    fallback_mode = str(extra.get("fallback_mode") or "auto")
 
-    if uri:
-        probe_uri = uri
-    elif protocol == "smb":
-        share = (info.get("extra") or {}).get("default_share")
-        if not share:
+    default_uri = _build_probe_uri(
+        protocol, info.get("host") or "", info.get("port"), extra
+    )
+    if uri is None and default_uri == "MISSING_SMB_SHARE":
+        return {
+            "profile_id": profile_id,
+            "success": False,
+            "message": "SMB profile requires extra.default_share for connectivity probe",
+            "tested_at": datetime.now(UTC).isoformat(),
+        }
+
+    if uri is None and default_uri is None:
+        return _test_via_browser(repo, profile_id)
+
+    def _probe_once(which: str, host: str, port: int | None, url_override: str) -> str:
+        """Returns probe URI on success; raises on failure."""
+        if uri is not None:
+            # 自定义 URI 仅首跳使用；备用路径跳过（用户明确指定了对象路径）
+            probe_uri = uri
+            if which != "primary":
+                raise ConnectionError("alt path skipped for custom URI probe")
+        elif protocol in {"http", "https", "filebrowser"} and url_override:
+            probe_uri = url_override
+        else:
+            built = _build_probe_uri(protocol, host or "", port, extra)
+            probe_uri = (
+                built
+                if isinstance(built, str) and built != "MISSING_SMB_SHARE"
+                else (default_uri or "")
+            )
+        try:
+            from urllib.parse import urlparse
+
+            from app.core.ssrf import (
+                SSRFBlockedError,
+                default_allow_private,
+                validate_outbound_url,
+            )
+
+            parsed_probe = urlparse(probe_uri)
+            if parsed_probe.scheme in {"http", "https"}:
+                validate_outbound_url(probe_uri, allow_private=default_allow_private())
+                # http/https 无 shared transport 注册：SSRF 校验后直连探测
+                return _probe_http_connectivity(probe_uri)
+            if "cred=" not in probe_uri:
+                sep = "&" if "?" in probe_uri else "?"
+                probe_uri = f"{probe_uri}{sep}cred={profile_id}"
+            auth = resolve_remote_auth(probe_uri)
+            if uri:
+                probe_remote_uri(probe_uri, auth)
+            else:
+                probe_remote_connectivity(probe_uri, auth)
+            return probe_uri
+        except SSRFBlockedError:
+            raise
+
+    active = None
+    if isinstance(extra.get("failover_state"), dict):
+        active = str(extra["failover_state"].get("active") or "") or None
+
+    attempts: list[tuple[str, str, int | None, str]] = []
+    if fallback_mode == "manual" and active == "alt" and alt_valid:
+        # manual 钉死备用：仅探测备用路径，且成功后不回写 primary
+        attempts.append(
+            (
+                "alt",
+                str(alt.get("host") or info.get("host") or "localhost"),
+                alt.get("port")
+                if isinstance(alt.get("port"), int)
+                else info.get("port"),
+                str(alt.get("url") or ""),
+            )
+        )
+    else:
+        attempts.append(
+            ("primary", info.get("host") or "localhost", info.get("port"), "")
+        )
+        if alt_valid and fallback_mode == "auto" and uri is None:
+            attempts.append(
+                (
+                    "alt",
+                    str(alt.get("host") or info.get("host") or "localhost"),
+                    alt.get("port")
+                    if isinstance(alt.get("port"), int)
+                    else info.get("port"),
+                    str(alt.get("url") or ""),
+                )
+            )
+
+    manual_pinned_alt = fallback_mode == "manual" and active == "alt"
+
+    last_error = ""
+    for which, host, port, url_override in attempts:
+        try:
+            probe_uri = _probe_once(which, host, port, url_override)
+            repo.update_test_status(profile_id, "ok")
+            repo.set_failover_state(profile_id, {"active": which, "last_error": ""})
+            label = "主路径" if which == "primary" else "备用路径"
+            return {
+                "profile_id": profile_id,
+                "success": True,
+                "message": f"Probe OK ({label}): {redact_uri(probe_uri)}",
+                "tested_at": datetime.now(UTC).isoformat(),
+            }
+        except (OSError, ConnectionError, TimeoutError) as exc:
+            # 网络类失败——auto 模式继续尝试备用路径
+            logger.info(
+                "Probe failed via %s for profile %s: %s", which, profile_id, exc
+            )
+            last_error = str(exc)
+            continue
+        except Exception as exc:  # noqa: BLE001 — unexpected error catch-all
+            logger.exception(
+                "Unexpected error probing remote storage profile %s", profile_id
+            )
+            repo.update_test_status(profile_id, "failed")
+            if not manual_pinned_alt:
+                repo.set_failover_state(
+                    profile_id, {"active": "primary", "last_error": str(exc)}
+                )
             return {
                 "profile_id": profile_id,
                 "success": False,
-                "message": "SMB profile requires extra.default_share for connectivity probe",
+                "message": str(exc),
                 "tested_at": datetime.now(UTC).isoformat(),
             }
-        probe_uri = f"smb://{host_part}/{share}/"
-    elif protocol == "gs":
-        probe_uri = f"gs://{host}/"
-    else:
-        probe_uri = f"{protocol}://{host_part}/"
+
+    repo.update_test_status(profile_id, "failed")
+    if not manual_pinned_alt:
+        repo.set_failover_state(
+            profile_id, {"active": "primary", "last_error": last_error}
+        )
+    label = "主路径与备用路径均不可达" if len(attempts) > 1 else "探测失败"
+    return {
+        "profile_id": profile_id,
+        "success": False,
+        "message": f"{label}: {last_error}",
+        "tested_at": datetime.now(UTC).isoformat(),
+    }
+
+
+def _test_via_browser(repo: Any, profile_id: str) -> dict[str, Any]:
+    """filebrowser/lan/nfs 协议经 remote_access.browser 探测（含双路径回退）。"""
+    from datetime import datetime
+
+    from app.services.remote_access import browser
 
     try:
-        from urllib.parse import urlparse
-
-        from app.core.ssrf import (
-            SSRFBlockedError,
-            default_allow_private,
-            validate_outbound_url,
-        )
-
-        parsed_probe = urlparse(probe_uri)
-        if parsed_probe.scheme in {"http", "https"}:
-            try:
-                validate_outbound_url(probe_uri, allow_private=default_allow_private())
-            except SSRFBlockedError as exc:
-                repo.update_test_status(profile_id, "failed")
-                return {
-                    "profile_id": profile_id,
-                    "success": False,
-                    "message": str(exc),
-                    "tested_at": datetime.now(UTC).isoformat(),
-                }
-        if "cred=" not in probe_uri:
-            sep = "&" if "?" in probe_uri else "?"
-            probe_uri = f"{probe_uri}{sep}cred={profile_id}"
-        auth = resolve_remote_auth(probe_uri)
-        # Custom URI probes the given path; default probes connectivity only
-        if uri:
-            probe_remote_uri(probe_uri, auth)
-        else:
-            probe_remote_connectivity(probe_uri, auth)
+        result = browser.browse_profile(profile_id, "/")
         repo.update_test_status(profile_id, "ok")
+        label = "主路径" if result.get("via") == "primary" else "备用路径"
         return {
             "profile_id": profile_id,
             "success": True,
-            "message": f"Probe OK: {redact_uri(probe_uri)}",
+            "message": f"Probe OK ({label}): {len(result.get('items') or [])} entries",
             "tested_at": datetime.now(UTC).isoformat(),
         }
-    except (OSError, ConnectionError, TimeoutError) as exc:
-        # 探测失败（连接拒绝/超时/认证失败等）——预期结果，不记 ERROR
+    except browser.RemoteAccessError as exc:
         repo.update_test_status(profile_id, "failed")
         return {
             "profile_id": profile_id,
@@ -226,15 +497,37 @@ def test_remote_storage_profile(
             "message": str(exc),
             "tested_at": datetime.now(UTC).isoformat(),
         }
-    except Exception as exc:  # noqa: BLE001 — unexpected error catch-all after specific exceptions, logged
-        # 意外错误——记录完整堆栈，但仍返回失败元组（形状不变）
-        logger.exception(
-            "Unexpected error probing remote storage profile %s", profile_id
-        )
-        repo.update_test_status(profile_id, "failed")
-        return {
-            "profile_id": profile_id,
-            "success": False,
-            "message": str(exc),
-            "tested_at": datetime.now(UTC).isoformat(),
-        }
+
+
+def probe_failover(profile_id: str, target: str) -> dict[str, Any]:
+    """手动切换主/备访问路径（写 failover_state.active；manual 模式下生效）。"""
+    from datetime import UTC as _UTC
+    from datetime import datetime
+
+    repo = _get_remote_storage_repository()
+    info = repo.get_profile_info(profile_id)
+    if info is None:
+        raise ValueError(f"Profile not found: {profile_id}")
+    extra = info.get("extra") or {}
+    alt = extra.get("alt") if isinstance(extra.get("alt"), dict) else None
+    target = (target or "").lower().strip()
+    if target not in {"primary", "alt"}:
+        raise ValueError("target must be 'primary' or 'alt'")
+    if target == "alt" and not any(alt.get(k) for k in ("host", "url", "share") if alt):
+        raise ValueError("该 Profile 未配置备用访问路径（alt）")
+
+    state: dict[str, Any] = {"active": target, "last_error": ""}
+    if target == "alt":
+        state["last_failover_at"] = datetime.now(_UTC).isoformat()
+    updated = repo.set_failover_state(profile_id, state)
+    return {
+        "profile_id": profile_id,
+        "active": target,
+        "updated": updated,
+        "message": f"已切换到{'备用' if target == 'alt' else '主'}访问路径"
+        + (
+            "（manual 模式下立即生效；auto 模式下主路径恢复后会自动回切）"
+            if str(extra.get("fallback_mode") or "auto") == "auto"
+            else ""
+        ),
+    }

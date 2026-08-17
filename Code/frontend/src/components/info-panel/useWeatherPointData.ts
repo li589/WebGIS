@@ -183,7 +183,6 @@ export function useWeatherPointData(
     if (!weather) return []
     const activeHour = Math.max(0, Math.floor(inspectHour.value ?? 0))
     return (weather.hourly ?? [])
-      .slice(0, Math.max(8, activeHour + 1))
       .map((entry, index) => {
         const metricValue =
           typeof entry.primary_value === 'number'
@@ -193,6 +192,7 @@ export function useWeatherPointData(
         return {
           time: formatHour(entry.time),
           metric,
+          numericValue: metricValue,
           active: index === activeHour,
         }
       })
@@ -203,6 +203,7 @@ export function useWeatherPointData(
     return pointWeatherHourlyRows.value.map((row) => ({
       time: row.time,
       metric: row.metric,
+      numericValue: row.numericValue,
       active: row.active,
     }))
   })

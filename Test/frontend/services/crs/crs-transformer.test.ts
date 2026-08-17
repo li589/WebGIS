@@ -6,8 +6,16 @@ import { bd09ToGcj02, gcj02ToBd09 } from '@/services/crs/gcj-bd'
 import { detectFromBounds } from '@/services/crs/crs-detector'
 
 describe('crs-registry', () => {
-  it('注册 13 个 CRS', () => {
-    expect(listCrs().length).toBe(13)
+  it('注册 18 个 CRS（13 基础 + 5 EASE-Grid 变体）', () => {
+    expect(listCrs().length).toBe(18)
+  })
+
+  it('包含 EASE-Grid 全家族变体', () => {
+    expect(getCrs('EPSG:6931')).toBeDefined()
+    expect(getCrs('EPSG:6932')).toBeDefined()
+    expect(getCrs('EPSG:3408')).toBeDefined()
+    expect(getCrs('EPSG:3409')).toBeDefined()
+    expect(getCrs('EPSG:3410')).toBeDefined()
   })
 
   it('getCrs 兼容 GCJ-02 旧码', () => {

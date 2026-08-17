@@ -1,15 +1,16 @@
 # 开发工具依赖（Sprint 4.1/4.2）
 # 安装：pip install -r requirements-dev.txt
 # 与运行时 requirements.txt 分离，避免生产镜像膨胀
+# 版本锁定基准：仓库 Env/Python312 实装版本（N-9 供应链加固，升级须显式改此文件）
 
 -r requirements.txt
 
 # 类型检查
-mypy>=1.10.0
-types-requests>=2.31.0
+mypy==2.3.0
+types-requests==2.33.0.20260712
 
 # Lint + 格式化
-ruff>=0.5.0
+ruff==0.5.0
 
 # Git 钩子管理
-pre-commit>=3.7.0
+pre-commit==4.6.1

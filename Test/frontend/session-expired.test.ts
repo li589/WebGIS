@@ -25,6 +25,16 @@ describe('session-expired', () => {
     vi.resetModules()
   })
 
+  describe('clearLocalSession', () => {
+    it('delegates to auth store without redirect', async () => {
+      const { clearLocalSession } = await import('@/services/session-expired')
+      clearLocalSession()
+      expect(clearSessionMock).toHaveBeenCalledTimes(1)
+      await new Promise((r) => setTimeout(r, 0))
+      expect(replaceMock).not.toHaveBeenCalled()
+    })
+  })
+
   describe('handleSessionExpired', () => {
     it('redirects to login with SPA path when API path is passed', async () => {
       const { handleSessionExpired } = await import('@/services/session-expired')
@@ -35,6 +45,49 @@ describe('session-expired', () => {
         query: { redirect: '/' },
       })
       expect(clearSessionMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('falls back to current location when no redirectPath is given', async () => {
+      window.history.pushState({}, '', '/deployment?tab=1')
+      const { handleSessionExpired } = await import('@/services/session-expired')
+      handleSessionExpired()
+      await vi.waitFor(() => expect(replaceMock).toHaveBeenCalled())
+      expect(replaceMock).toHaveBeenCalledWith({
+        name: 'login',
+        query: { redirect: '/deployment?tab=1' },
+      })
+    })
+
+    it('replaces /login redirectPath with current SPA fallback', async () => {
+      window.history.pushState({}, '', '/deployment')
+      const { handleSessionExpired } = await import('@/services/session-expired')
+      handleSessionExpired('/login')
+      await vi.waitFor(() => expect(replaceMock).toHaveBeenCalled())
+      expect(replaceMock).toHaveBeenCalledWith({
+        name: 'login',
+        query: { redirect: '/deployment' },
+      })
+    })
+
+    it('sanitizes external redirect targets via safeRedirect', async () => {
+      const { handleSessionExpired } = await import('@/services/session-expired')
+      handleSessionExpired('https://evil.example.com/phish')
+      await vi.waitFor(() => expect(replaceMock).toHaveBeenCalled())
+      expect(replaceMock).toHaveBeenCalledWith({
+        name: 'login',
+        query: { redirect: '/' },
+      })
+    })
+
+    it('replaces backend /layers path with current SPA fallback', async () => {
+      window.history.pushState({}, '', '/')
+      const { handleSessionExpired } = await import('@/services/session-expired')
+      handleSessionExpired('/layers?bbox=1')
+      await vi.waitFor(() => expect(replaceMock).toHaveBeenCalled())
+      expect(replaceMock).toHaveBeenCalledWith({
+        name: 'login',
+        query: { redirect: '/' },
+      })
     })
 
     it('ignores concurrent calls while redirect is in flight', async () => {

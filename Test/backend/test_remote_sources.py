@@ -6,7 +6,12 @@ import sys
 from pathlib import Path
 
 _CODE_ROOT = Path(__file__).resolve().parents[2]
-for _p in (_CODE_ROOT / "algorithms" / "providers" / "Python", _CODE_ROOT):
+# 注意必须带 Code/ 前缀：mat2py editable finder 只映射 data_access 等包、
+# 不映射 path_utils 等顶层模块，故必须显式挂上真实 provider 根目录。
+for _p in (
+    _CODE_ROOT / "Code" / "algorithms" / "providers" / "Python",
+    _CODE_ROOT,
+):
     _s = str(_p)
     if _s in sys.path:
         sys.path.remove(_s)
@@ -118,12 +123,19 @@ def test_remote_storage_routes_require_write_access():
     # 替代 require_write_access，二者均提供写保护。
     accepted_write_guards = {require_write_access, require_config_management_access}
 
+    # 浏览/搜索为只读 POST（不落库不改配置），standard 角色可用（read 权限）
+    read_only_post = {
+        "/config/remote-storage/{profile_id}/browse",
+        "/config/remote-storage/{profile_id}/search",
+    }
+
     mutating = [
         route
         for route in config_routes.router.routes
         if getattr(route, "methods", None)
         and route.methods & {"PUT", "POST", "DELETE"}
         and "/remote-storage" in getattr(route, "path", "")
+        and route.path not in read_only_post
     ]
     assert mutating
     for route in mutating:
@@ -179,3 +191,196 @@ def test_upsert_preserves_secret_extra_enabled(tmp_path, monkeypatch):
     found = repo.find_by_host_protocol("sftp", "NAS.local")
     assert found is not None
     assert found["port"] == 2222
+
+
+# ── 算法包 RemoteSource：双路径回退 ──────────────────────────────────────────
+
+
+class _FakeStat:
+    size = 10
+
+
+def _install_fake_download(monkeypatch, behavior):
+    """behavior(uri) -> ('ok', stat) | ('raise', exc)；记录调用顺序。"""
+    from data_access.sources import remote as remote_mod
+
+    calls: list[str] = []
+
+    def fake_download(uri, auth, *, target_dir, max_bytes):
+        calls.append(uri)
+        action = behavior(uri)
+        if action[0] == "raise":
+            raise action[1]
+        return Path(str(target_dir)) / "staged.tif", action[1]
+
+    monkeypatch.setattr(remote_mod, "download_remote_uri", fake_download)
+    return remote_mod, calls
+
+
+def _auth_with_alt(fallback_mode: str = "auto"):
+    from shared.remote_sources.protocol import RemoteAuth
+
+    return RemoteAuth(
+        username="u",
+        extra={
+            "alt_json": '{"host": "tunnel.example.com", "port": 2222}',
+            "fallback_mode": fallback_mode,
+        },
+    )
+
+
+def test_remote_source_alt_retry_on_network_error(monkeypatch, tmp_path):
+    remote_mod, calls = _install_fake_download(
+        monkeypatch,
+        lambda uri: (
+            ("raise", ConnectionRefusedError("primary unreachable"))
+            if "primary.host" in uri
+            else ("ok", _FakeStat())
+        ),
+    )
+    src = remote_mod.RemoteSource()
+    ref = src.locate(
+        "sftp://primary.host:22/data/a.tif?cred=nas",
+        metadata={"auth": _auth_with_alt()},
+    )
+    result = src.materialize(ref, target_dir=tmp_path)
+
+    assert len(calls) == 2
+    assert calls[0].startswith("sftp://primary.host:22/")
+    assert "tunnel.example.com:2222" in calls[1]
+    assert "?cred=nas" in calls[1]
+    assert result.metadata["remote_size"] == 10
+
+
+# ── http/https 存储源连通性探测（_probe_http_connectivity） ─────────────────
+
+
+class _ProbeResp:
+    def __init__(self, status: int):
+        self.status = status
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+def _install_probe(monkeypatch, handler):
+    """Patch safe_urlopen + resolve_remote_auth；返回 (method, url, headers) 调用记录。"""
+    from types import SimpleNamespace
+
+    import app.core.ssrf as ssrf_mod
+    import app.services.remote_auth_resolver as auth_mod
+    from app.services import config_remote_storage as svc
+
+    calls: list[tuple[str, str, dict]] = []
+
+    def fake_safe_urlopen(url, timeout=None, headers=None, method="GET"):
+        calls.append((method, url, dict(headers or {})))
+        return handler(method, url)
+
+    monkeypatch.setattr(ssrf_mod, "safe_urlopen", fake_safe_urlopen)
+    monkeypatch.setattr(
+        auth_mod,
+        "resolve_remote_auth",
+        lambda _uri: SimpleNamespace(username="u", password="p"),
+    )
+    return svc, calls
+
+
+def test_probe_http_success_strips_cred_and_adds_basic_auth(monkeypatch):
+    svc, calls = _install_probe(monkeypatch, lambda method, _url: _ProbeResp(200))
+
+    uri = "https://data.example.org/dir/index.html?cred=nas-lab"
+    assert svc._probe_http_connectivity(uri) == uri
+
+    assert len(calls) == 1
+    method, url, headers = calls[0]
+    assert method == "HEAD"
+    # 内部 cred 标记参数必须剥离，凭据以 Basic Auth 头携带
+    assert "cred=" not in url
+    assert url == "https://data.example.org/dir/index.html"
+    assert headers.get("Authorization", "").startswith("Basic ")
+
+
+def test_probe_http_falls_back_to_get_on_405(monkeypatch):
+    from urllib.error import HTTPError
+
+    def handler(method, url):
+        if method == "HEAD":
+            raise HTTPError(url, 405, "Method Not Allowed", None, None)
+        return _ProbeResp(204)
+
+    svc, calls = _install_probe(monkeypatch, handler)
+
+    assert svc._probe_http_connectivity("https://data.example.org/") == "https://data.example.org/"
+    assert [m for m, _, _ in calls] == ["HEAD", "GET"]
+
+
+def test_probe_http_terminal_status_raises(monkeypatch):
+    import pytest
+    from urllib.error import HTTPError
+
+    def handler(method, url):
+        raise HTTPError(url, 404, "Not Found", None, None)
+
+    svc, calls = _install_probe(monkeypatch, handler)
+
+    with pytest.raises(ConnectionError, match="404"):
+        svc._probe_http_connectivity("https://data.example.org/missing")
+    # 终态 404 不做 GET 退化
+    assert [m for m, _, _ in calls] == ["HEAD"]
+
+
+def test_remote_source_no_alt_reraises_network_error(monkeypatch, tmp_path):
+    import pytest
+
+    from shared.remote_sources.protocol import RemoteAuth
+
+    remote_mod, calls = _install_fake_download(
+        monkeypatch,
+        lambda uri: ("raise", ConnectionRefusedError("down")),
+    )
+    src = remote_mod.RemoteSource()
+    ref = src.locate(
+        "sftp://primary.host:22/data/a.tif?cred=nas",
+        metadata={"auth": RemoteAuth(username="u")},
+    )
+    with pytest.raises(ConnectionRefusedError):
+        src.materialize(ref, target_dir=tmp_path)
+    assert len(calls) == 1
+
+
+def test_remote_source_manual_mode_no_retry(monkeypatch, tmp_path):
+    import pytest
+
+    remote_mod, calls = _install_fake_download(
+        monkeypatch,
+        lambda uri: ("raise", ConnectionRefusedError("down")),
+    )
+    src = remote_mod.RemoteSource()
+    ref = src.locate(
+        "sftp://primary.host:22/data/a.tif?cred=nas",
+        metadata={"auth": _auth_with_alt(fallback_mode="manual")},
+    )
+    with pytest.raises(ConnectionRefusedError):
+        src.materialize(ref, target_dir=tmp_path)
+    assert len(calls) == 1
+
+
+def test_remote_source_auth_error_not_retried(monkeypatch, tmp_path):
+    import pytest
+
+    remote_mod, calls = _install_fake_download(
+        monkeypatch,
+        lambda uri: ("raise", ValueError("SMB 认证失败")),
+    )
+    src = remote_mod.RemoteSource()
+    ref = src.locate(
+        "sftp://primary.host:22/data/a.tif?cred=nas",
+        metadata={"auth": _auth_with_alt()},
+    )
+    with pytest.raises(ValueError, match="认证失败"):
+        src.materialize(ref, target_dir=tmp_path)
+    assert len(calls) == 1

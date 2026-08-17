@@ -376,6 +376,44 @@ class TestDetectFromBounds:
         assert result.needs_user_confirm is True
         assert "Lambert Europe" in result.notes
 
+    def test_detect_from_bounds_ease2_hemisphere_north(self):
+        """EASE-Grid 2.0 半球方形 ±9,000,000 域：建议 EPSG:6931（南半球 6932）。"""
+        result = crs_detector.detect_from_bounds(
+            (-9000000.0, -9000000.0, 9000000.0, 9000000.0)
+        )
+        assert result.source_crs == "EPSG:6931"
+        assert result.suggested_crs == "EPSG:6931"
+        assert result.confidence == 0.6
+        assert result.method == "bounds_heuristic"
+        assert result.needs_user_confirm is True
+        assert "6932" in result.notes
+
+    def test_detect_from_bounds_ease1_hemisphere(self):
+        """EASE-Grid 1.0 半球 25km 域（跨度 18,073,689.5）：建议 EPSG:3408。"""
+        half = 25067.525 * 721 / 2.0  # 9,036,844.76
+        result = crs_detector.detect_from_bounds((-half, -half, half, half))
+        assert result.source_crs == "EPSG:3408"
+        assert result.suggested_crs == "EPSG:3408"
+        assert result.confidence == 0.55
+        assert result.method == "bounds_heuristic"
+        assert result.needs_user_confirm is True
+        assert "3409" in result.notes
+
+    def test_detect_from_bounds_ease2_global_6933_kept(self):
+        """EASE-Grid 2.0 Global 宽矩形仍判 6933，不被半球分支抢占。"""
+        result = crs_detector.detect_from_bounds(
+            (-17367530.0, -7314540.0, 17367530.0, 7314540.0)
+        )
+        assert result.source_crs == "EPSG:6933"
+        assert result.confidence == 0.65
+
+    def test_detect_from_bounds_mercator_not_stolen_by_hemisphere(self):
+        """宽矩形 Mercator 域（宽高比 > 1.05）不落入半球 LAEA 分支。"""
+        result = crs_detector.detect_from_bounds(
+            (-9000000.0, -5000000.0, 9000000.0, 5000000.0)
+        )
+        assert result.source_crs == "EPSG:3857"
+
     def test_global_bounds(self):
         """全球 bounds：判定地理坐标系。"""
         result = crs_detector.detect_from_bounds((-180.0, -90.0, 180.0, 90.0))

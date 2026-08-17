@@ -22,6 +22,8 @@ export interface ImportedVectorPayload {
   backendLayerId?: string
   /** 导入时后端是否截断预览 */
   truncated?: boolean
+  /** geojson 替换次数：驱动地图 watcher 检测同 featureCount 下的数据变更 */
+  revision?: number
   /** 用户自定义矢量样式 */
   style?: {
     color?: string

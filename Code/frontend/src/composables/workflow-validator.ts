@@ -90,6 +90,11 @@ function hasControlChars(s: string): boolean {
   return false
 }
 
+/** 剥离 Windows 盘符前缀（如 C:\ 或 D:/）——盘符冒号是合法字符，不应误报 */
+function stripDrivePrefix(p: string): string {
+  return p.replace(/^[A-Za-z]:[\\/]/, '')
+}
+
 // ─── 工具函数 ──────────────────────────────────────────────────────────────
 
 /** 判断 key 是否为路径类参数 */
@@ -297,7 +302,8 @@ export function validateNode(
   // ── 4. 路径格式校验 ──
   for (const [key, value] of Object.entries(props)) {
     if (isPathKey(key) && typeof value === 'string' && value.trim()) {
-      if (ILLEGAL_PATH_CHARS.test(value) || hasControlChars(value)) {
+      const probe = stripDrivePrefix(value)
+      if (ILLEGAL_PATH_CHARS.test(probe) || hasControlChars(probe)) {
         issues.push({
           nodeId,
           nodeType,

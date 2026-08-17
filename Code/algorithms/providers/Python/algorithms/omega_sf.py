@@ -47,6 +47,10 @@ from algorithms.inversion import (
 )
 from algorithms.physics import tau_from_ndvi
 
+# ingest.daily_bundle 经 contracts 包 → runner.registry → pipelines 回引自身，
+# 须先完整加载 contracts 才能安全 lazy-import daily_bundle（否则部分初始化循环导入）
+import contracts  # noqa: E402,F401
+
 logger = logging.getLogger(__name__)
 
 # ─── 常量 ────────────────────────────────────────────────────────────────────
@@ -98,6 +102,17 @@ class OmegaSfConfig:
     # ── NDVI 方案 ──
     ndvi_mode: str = "DOY_CLIM"  # "DAILY_FILE" | "DOY_CLIM"
     tau_vwc2_mode: str = "POINT1"  # "NDVIMIN" | "POINT1"
+
+    # ── 双温度方案（temp_scheme="DUAL"）──
+    # 字段语义与 ingest/daily_bundle.py DailyBundleConfig 对齐
+    dual_tg_mode: str = "PAPER_CT"  # "PAPER_CT" | "TSOIL1_ONLY" | "TSOIL2_ONLY"
+    ct_smref: float = 0.30  # PAPER_CT 幂律参考土壤水分
+    ct_exp: float = 0.30  # PAPER_CT 幂律指数
+    gldas_time_tol_hours: float = 1.6  # GLDAS 过境时间匹配容差（小时）
+    fy3d_desc_local_hour: float = 2.0  # FY-3D 降轨过境本地时
+    fy3b_desc_local_hour: float = 1.0 + 40.0 / 60.0  # FY-3B 降轨过境本地时
+    smap_desc_local_hour: float = 6.0  # SMAP 降轨过境本地时
+    use_gldas_template: bool = False  # True=按模板槽位选 GLDAS；False=过境本地时匹配
 
     # ── FY3B→FY3D 匹配 ──
     match_enable: bool = True
@@ -614,15 +629,18 @@ def _step1_invert_halpha(
     omega_low: float,
     h_static: float,
     config: OmegaSfConfig,
+    tc: np.ndarray | None = None,
+    tg: np.ndarray | None = None,
 ) -> tuple[float, float, np.ndarray, np.ndarray]:
     """Step 1: h/alpha 联合优化（所有低 τ 样本）。
 
     使用 scipy least_squares 联合优化 [h, alpha]。
-    内部定义 _resid_halpha 闭包调用 _resid_halpha_single_temp。
+    内部定义 _resid_halpha 闭包调用 _resid_halpha_single_temp；
+    ``tc``/``tg`` 非 None 时（DUAL）改调 _resid_halpha_dual_temp。
     对应原 ``execute_pixel_inversion`` L666–760。
 
     Args:
-        tbv, tbh, ts, tau_star, sm_ref, ia: 全时序 (Nt,)
+        tbv, tbh, ts, tau_star, sm_ref, ia: 全时序 (Nt,)（ts 仅 ORIG_TS 使用）
         low_tau: 低 τ 布尔掩码 (Nt,)
         valid_tau: 有效 τ 布尔掩码 (Nt,)，用于广播 h_star_series/alpha_series
         clay_fraction: 黏土含量
@@ -630,6 +648,7 @@ def _step1_invert_halpha(
         omega_low: 低 τ 模式单次散射反照率
         h_static: 静态 h 值
         config: OmegaSfConfig（读取 bounds_h, bounds_alpha, alpha0, lambda_alpha）
+        tc, tg: DUAL 温度序列 (Nt,)（None 表示 ORIG_TS）
 
     Returns:
         (h_star, alpha_star, h_star_series, alpha_series)
@@ -637,6 +656,7 @@ def _step1_invert_halpha(
         h_star_series/alpha_series: (Nt,) 广播到 valid_tau 样本
     """
     nt = len(tbv)
+    use_dual = tc is not None and tg is not None
 
     h_star = float("nan")
     alpha_star = float("nan")
@@ -651,6 +671,16 @@ def _step1_invert_halpha(
     tau_low = tau_star[low_tau_idx].astype(np.float64)
     sm_low = sm_ref[low_tau_idx].astype(np.float64)
     theta_low = ia[low_tau_idx].astype(np.float64)
+    tc_low = (
+        np.asarray(tc, dtype=np.float64)[low_tau_idx]
+        if use_dual
+        else np.array([], dtype=np.float64)
+    )
+    tg_low = (
+        np.asarray(tg, dtype=np.float64)[low_tau_idx]
+        if use_dual
+        else np.array([], dtype=np.float64)
+    )
 
     # 介电上下文（低 τ 样本共用，Fresnel 按样本入射角现算）
     model_ctx_halpha = build_tb_model_context(freq_ghz, clay_fraction, 40.0)
@@ -664,24 +694,47 @@ def _step1_invert_halpha(
     w_v = 1.0
     w_h = 1.0
 
-    def _resid_halpha(x):
-        return _resid_halpha_single_temp(
-            x,
-            tbv_low,
-            tbh_low,
-            ts_low,
-            tau_low,
-            sm_low,
-            theta_low,
-            clay_fraction,
-            freq_ghz,
-            omega_low,
-            config.alpha0,
-            config.lambda_alpha,
-            w_v,
-            w_h,
-            model_ctx_halpha,
-        )
+    if use_dual:
+
+        def _resid_halpha(x):
+            return _resid_halpha_dual_temp(
+                x,
+                tbv_low,
+                tbh_low,
+                tc_low,
+                tg_low,
+                tau_low,
+                sm_low,
+                theta_low,
+                clay_fraction,
+                freq_ghz,
+                omega_low,
+                config.alpha0,
+                config.lambda_alpha,
+                w_v,
+                w_h,
+                model_ctx_halpha,
+            )
+    else:
+
+        def _resid_halpha(x):
+            return _resid_halpha_single_temp(
+                x,
+                tbv_low,
+                tbh_low,
+                ts_low,
+                tau_low,
+                sm_low,
+                theta_low,
+                clay_fraction,
+                freq_ghz,
+                omega_low,
+                config.alpha0,
+                config.lambda_alpha,
+                w_v,
+                w_h,
+                model_ctx_halpha,
+            )
 
     try:
         from scipy.optimize import least_squares
@@ -729,15 +782,18 @@ def _step3_ddca_retrieval(
     porosity: float,
     freq_ghz: float,
     config: OmegaSfConfig,
+    tc: np.ndarray | None = None,
+    tg: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Step 3: 逐日 SM/VOD DDCA 反演。
 
-    使用 _ddca_single_temp 逐日反演。
+    使用 _ddca_single_temp 逐日反演；``tc``/``tg`` 非 None 时（DUAL）
+    改调 _ddca_dual_temp。
     内部重建 _tb_ctx_for_theta 闭包（含 Fresnel 缓存）。
     对应原 ``execute_pixel_inversion`` L850–883。
 
     Args:
-        tbv, tbh, ts, ia, tau_star: 全时序 (Nt,)
+        tbv, tbh, ts, ia, tau_star: 全时序 (Nt,)（ts 仅 ORIG_TS 使用）
         valid_tau: 有效 τ 布尔掩码 (Nt,)
         omega_series: OMEGA 序列 (Nt,)
         h_star_series, alpha_series: h/alpha 序列 (Nt,)
@@ -745,11 +801,13 @@ def _step3_ddca_retrieval(
         clay_fraction, porosity: 静态参数
         freq_ghz: 频率
         config: OmegaSfConfig（读取 lambda_tau）
+        tc, tg: DUAL 温度序列 (Nt,)（None 表示 ORIG_TS）
 
     Returns:
         (sm_ret, vod_ret) — 各 (Nt,)，无效位置 NaN
     """
     nt = len(tbv)
+    use_dual = tc is not None and tg is not None
 
     # 重建 _tb_ctx_for_theta 闭包（含 Fresnel 缓存）
     dielectric_ctx = build_tb_model_context(freq_ghz, clay_fraction, 40.0).dielectric
@@ -778,21 +836,39 @@ def _step3_ddca_retrieval(
 
         model_ctx_k = _tb_ctx_for_theta(float(ia[k]))
 
-        sm_val, vod_val = _ddca_single_temp(
-            float(tbv[k]),
-            float(tbh[k]),
-            float(ts[k]),
-            float(tau_star[k]),
-            float(hk),
-            clay_fraction,
-            float(omega_series[k]),
-            porosity,
-            freq_ghz,
-            float(ia[k]),
-            float(ak),
-            config.lambda_tau,
-            model_ctx_k,
-        )
+        if use_dual:
+            sm_val, vod_val = _ddca_dual_temp(
+                float(tbv[k]),
+                float(tbh[k]),
+                float(tc[k]),
+                float(tg[k]),
+                float(tau_star[k]),
+                float(hk),
+                clay_fraction,
+                float(omega_series[k]),
+                porosity,
+                freq_ghz,
+                float(ia[k]),
+                float(ak),
+                config.lambda_tau,
+                model_ctx_k,
+            )
+        else:
+            sm_val, vod_val = _ddca_single_temp(
+                float(tbv[k]),
+                float(tbh[k]),
+                float(ts[k]),
+                float(tau_star[k]),
+                float(hk),
+                clay_fraction,
+                float(omega_series[k]),
+                porosity,
+                freq_ghz,
+                float(ia[k]),
+                float(ak),
+                config.lambda_tau,
+                model_ctx_k,
+            )
         if np.isfinite(sm_val):
             sm_ret[k] = sm_val
         if np.isfinite(vod_val):
@@ -820,6 +896,9 @@ def execute_pixel_inversion(
     config: OmegaSfConfig,
     block_struct: BlockStructure,
     omega_fixed: float | None = None,
+    tc: np.ndarray | None = None,
+    tsoil1: np.ndarray | None = None,
+    tsoil2: np.ndarray | None = None,
 ) -> PixelResult | None:
     """单像元 SF 块反演核心。
 
@@ -832,7 +911,7 @@ def execute_pixel_inversion(
         Step 3: 逐日 SM/VOD 反演（DDCA）
 
     Args:
-        tbv, tbh, ia, ts: 时间序列亮温/角度/温度 (Nt,)
+        tbv, tbh, ia, ts: 时间序列亮温/角度/温度 (Nt,)（ts 仅 ORIG_TS 使用）
         sm_ref: 参考土壤水分 (Nt,)
         ndvi: NDVI 时间序列 (Nt,)
         sf_col: SF 时间序列 (Nt,)
@@ -842,12 +921,14 @@ def execute_pixel_inversion(
         config: OmegaSfConfig
         block_struct: 8 天块结构
         omega_fixed: 固定 OMEGA 值（PFT/PIXEL 模式）
+        tc, tsoil1, tsoil2: DUAL 温度方案 GLDAS 三温度序列 (Nt,)
 
     Returns:
         PixelResult 或 None（反演失败时）
     """
     nt = len(tbv)
     freq = config.freq_ghz
+    use_dual = config.temp_scheme.upper() == "DUAL"
 
     # Mironov / TB 模型要求 clay∈[0,1]；辅助库陆地掩膜外常为 NaN，应跳过而非抛错
     if (
@@ -858,25 +939,53 @@ def execute_pixel_inversion(
     ):
         return None
 
+    # ── DUAL：由 Tsoil1/Tsoil2 合成 Ct/TG 序列（PAPER_CT 幂律或子模式） ──
+    tc_series = np.full(nt, np.nan)
+    tg_series = np.full(nt, np.nan)
+    if use_dual:
+        from ingest.daily_bundle import build_effective_soil_temperature_scheme
+
+        tc_series = np.asarray(
+            tc if tc is not None else np.full(nt, np.nan), dtype=np.float64
+        )
+        t1 = np.asarray(
+            tsoil1 if tsoil1 is not None else np.full(nt, np.nan), dtype=np.float64
+        )
+        t2 = np.asarray(
+            tsoil2 if tsoil2 is not None else np.full(nt, np.nan), dtype=np.float64
+        )
+        _ct_series, _tg_series = build_effective_soil_temperature_scheme(
+            sm_ref,
+            t1,
+            t2,
+            dual_tg_mode=config.dual_tg_mode,
+            ct_smref=config.ct_smref,
+            ct_exp=config.ct_exp,
+        )
+        tg_series = np.asarray(_tg_series, dtype=np.float64)
+
     # ── Step 0: Tau (delegated) ──
     tau_star = _step0_compute_tau_star(
         ndvi, ia, sf_col, ndvi_max, ndvi_min, landcover, b_param, nt
     )
 
     # ── 有效性判断 ──
-    if config.temp_scheme.upper() == "ORIG_TS":
+    if use_dual:
+        # DUAL：温度有效性改为 TC+TG（TG 依赖 sm_ref/Tsoil1/Tsoil2）
         ok_base = (
             np.isfinite(tbv)
             & np.isfinite(tbh)
-            & np.isfinite(ts)
             & np.isfinite(sm_ref)
             & np.isfinite(ndvi)
             & np.isfinite(ia)
+            & np.isfinite(tc_series)
+            & np.isfinite(tg_series)
         )
     else:
         ok_base = (
             np.isfinite(tbv)
             & np.isfinite(tbh)
+            & np.isfinite(ts)
             & np.isfinite(sm_ref)
             & np.isfinite(ndvi)
             & np.isfinite(ia)
@@ -917,6 +1026,8 @@ def execute_pixel_inversion(
         omega_low,
         h_static,
         config,
+        tc=tc_series if use_dual else None,
+        tg=tg_series if use_dual else None,
     )
 
     if not np.isfinite(h_star) or not np.isfinite(alpha_star):
@@ -963,28 +1074,54 @@ def execute_pixel_inversion(
             theta_blk = ia[blk_use].astype(np.float64)
             h_blk = h_star_series[blk_use].astype(np.float64)
             a_blk = alpha_series[blk_use].astype(np.float64)
+            tc_blk = tc_series[blk_use].astype(np.float64)
+            tg_blk = tg_series[blk_use].astype(np.float64)
 
             model_ctx_blk = build_tb_model_context(freq, clay_fraction, 40.0)
 
-            def _resid_omega(om):
-                return _resid_omega_block_single_temp(
-                    float(om[0]) if hasattr(om, "__len__") else float(om),
-                    tbv_blk,
-                    tbh_blk,
-                    ts_blk,
-                    tau_blk,
-                    sm_blk,
-                    theta_blk,
-                    clay_fraction,
-                    freq,
-                    h_blk,
-                    a_blk,
-                    config.lambda_smooth,
-                    omega_prev,
-                    w_v,
-                    w_h,
-                    model_ctx_blk,
-                )
+            if use_dual:
+
+                def _resid_omega(om):
+                    return _resid_omega_block_dual_temp(
+                        float(om[0]) if hasattr(om, "__len__") else float(om),
+                        tbv_blk,
+                        tbh_blk,
+                        tc_blk,
+                        tg_blk,
+                        tau_blk,
+                        sm_blk,
+                        theta_blk,
+                        clay_fraction,
+                        freq,
+                        h_blk,
+                        a_blk,
+                        config.lambda_smooth,
+                        omega_prev,
+                        w_v,
+                        w_h,
+                        model_ctx_blk,
+                    )
+            else:
+
+                def _resid_omega(om):
+                    return _resid_omega_block_single_temp(
+                        float(om[0]) if hasattr(om, "__len__") else float(om),
+                        tbv_blk,
+                        tbh_blk,
+                        ts_blk,
+                        tau_blk,
+                        sm_blk,
+                        theta_blk,
+                        clay_fraction,
+                        freq,
+                        h_blk,
+                        a_blk,
+                        config.lambda_smooth,
+                        omega_prev,
+                        w_v,
+                        w_h,
+                        model_ctx_blk,
+                    )
 
             # 初始猜测：omega_prev if finite else OMEGA0
             # 对应 Matlab L1238: om_init = iff(isfinite(omega_prev), omega_prev, OMEGA0)
@@ -1033,6 +1170,8 @@ def execute_pixel_inversion(
         porosity,
         freq,
         config,
+        tc=tc_series if use_dual else None,
+        tg=tg_series if use_dual else None,
     )
 
     return PixelResult(
@@ -1350,6 +1489,288 @@ def _ddca_single_temp(
             tbv,
             tbh,
             ts,
+            tau_ini,
+            h,
+            clay_fraction,
+            omega,
+            freq_ghz,
+            theta_deg,
+            alpha,
+            lambda_tau,
+            model_ctx,
+        )
+
+    lower_bounds = (0.02, 0.0)
+    upper_bounds = (porosity, 5.0)
+    if porosity <= 0.02:
+        return float("nan"), float("nan")
+    result = least_squares(
+        residual,
+        x0=[0.20, tau_ini],
+        bounds=(lower_bounds, upper_bounds),
+        jac=lambda x: _finite_difference_jacobian(
+            x, residual, lower_bounds, upper_bounds
+        ),
+    )
+    return float(result.x[0]), float(result.x[1])
+
+
+def _forward_tb_dual(
+    sm: float,
+    tau: float,
+    omega: float,
+    h: float,
+    tc: float,
+    tg: float,
+    clay_fraction: float,
+    theta_deg: float,
+    freq_ghz: float,
+    model_ctx: TbModelContext,
+    alpha: float | None = None,
+) -> tuple[float, float]:
+    """双温度前向 TB 模型：冠层温度 TC 与有效土壤温度 TG 分离。
+
+    对应 Matlab ``tb_forward_dual_temp`` (L2245-2255)：
+        TBv = C·( TG·(1-rv_r)·γ + TC·(1-ω)·(1-γ)·(1+rv_r·γ) )
+    与单温度版共用 Mironov 介电 + Fresnel + 粗糙度（Q=max(alpha·h,0)），
+    仅发射项由 Ts 单一乘子改为 TG(土壤)/TC(冠层) 两项加权和。
+
+    Args:
+        tc: 冠层温度（GLDAS Ts_gldas，K）
+        tg: 有效土壤温度（由 Tsoil1/Tsoil2 按 Ct 合成，K）
+
+    Returns:
+        (TBv, TBh) 模型亮温
+    """
+    from algorithms.physics import (
+        build_fresnel_context,
+        fresnel_reflectance_from_context,
+        mironov_dielectric_from_context,
+    )
+
+    if any(np.isnan([sm, tau, omega, h, tc, tg, theta_deg, clay_fraction])):
+        return float("nan"), float("nan")
+    if tau < 0.0 or h < 0.0:
+        return float("nan"), float("nan")
+
+    try:
+        epsilon = mironov_dielectric_from_context(sm, model_ctx.dielectric)
+        fresnel_ctx = build_fresnel_context(theta_deg)
+        if fresnel_ctx.cos_theta <= 1e-12:
+            return float("nan"), float("nan")
+        rh, rv = fresnel_reflectance_from_context(epsilon, fresnel_ctx)
+        if not (np.isfinite(rh) and np.isfinite(rv)):
+            return float("nan"), float("nan")
+
+        alpha_eff = float(alpha) if alpha is not None else 0.1771
+        q_value = max(alpha_eff * h, 0.0)
+        exp_term = math.exp(-h * fresnel_ctx.cos_theta_sq)
+        rh_r = ((1.0 - q_value) * rh + q_value * rv) * exp_term
+        rv_r = ((1.0 - q_value) * rv + q_value * rh) * exp_term
+
+        gamma = math.exp(-tau)
+        one_minus_gamma = -math.expm1(-tau)
+        canopy_factor = (1.0 - omega) * one_minus_gamma
+
+        # C=1.0；土壤发射项乘 TG，冠层发射/散射项乘 TC
+        tbv = tg * ((1.0 - rv_r) * gamma) + tc * (canopy_factor * (1.0 + rv_r * gamma))
+        tbh = tg * ((1.0 - rh_r) * gamma) + tc * (canopy_factor * (1.0 + rh_r * gamma))
+
+        if not (math.isfinite(tbv) and math.isfinite(tbh)):
+            return float("nan"), float("nan")
+        return float(tbv), float(tbh)
+    except (ValueError, OverflowError, FloatingPointError):
+        return float("nan"), float("nan")
+
+
+def _resid_halpha_dual_temp(
+    x: np.ndarray,
+    tbv: np.ndarray,
+    tbh: np.ndarray,
+    tc: np.ndarray,
+    tg: np.ndarray,
+    tau: np.ndarray,
+    sm_ref: np.ndarray,
+    theta: np.ndarray,
+    clay_fraction: float,
+    freq_ghz: float,
+    omega_low: float,
+    alpha0: float,
+    lam_alpha: float,
+    w_v: float,
+    w_h: float,
+    model_ctx: TbModelContext,
+) -> np.ndarray:
+    """h/alpha 联合优化残差函数（双温度方案）。
+
+    对应 Matlab ``resid_halpha_dual_temp`` (L2195-2206)。
+    结构与单温度版一致，仅前向算子换成 ``_forward_tb_dual``。
+    """
+    h_val = float(x[0])
+    alpha_val = float(x[1])
+    k = len(tbv)
+    sv = math.sqrt(w_v)
+    sh = math.sqrt(w_h)
+    r = np.zeros(2 * k + 1)
+    for i in range(k):
+        tbv_m, tbh_m = _forward_tb_dual(
+            float(sm_ref[i]),
+            float(tau[i]),
+            omega_low,
+            h_val,
+            float(tc[i]),
+            float(tg[i]),
+            clay_fraction,
+            float(theta[i]),
+            freq_ghz,
+            model_ctx,
+            alpha=alpha_val,
+        )
+        r[2 * i] = sv * (tbv_m - float(tbv[i]))
+        r[2 * i + 1] = sh * (tbh_m - float(tbh[i]))
+    r[-1] = math.sqrt(lam_alpha) * (alpha_val - alpha0)
+    return r
+
+
+def _resid_omega_block_dual_temp(
+    omega: float,
+    tbv: np.ndarray,
+    tbh: np.ndarray,
+    tc: np.ndarray,
+    tg: np.ndarray,
+    tau: np.ndarray,
+    sm_ref: np.ndarray,
+    theta: np.ndarray,
+    clay_fraction: float,
+    freq_ghz: float,
+    h_series: np.ndarray,
+    alpha_series: np.ndarray,
+    lam_smooth: float,
+    omega_prev: float,
+    w_v: float,
+    w_h: float,
+    model_ctx: TbModelContext,
+) -> np.ndarray:
+    """OMEGA 块识别残差函数（双温度方案）。
+
+    对应 Matlab ``resid_omega_block_dual_temp`` (L2208-2222)。
+    逐样本 h/alpha + 可选时间平滑尾项 sqrt(lam_smooth)·(ω-ω_prev)。
+    """
+    k = len(tbv)
+    sv = math.sqrt(w_v)
+    sh = math.sqrt(w_h)
+    rvh = np.zeros(2 * k)
+    for i in range(k):
+        tbv_m, tbh_m = _forward_tb_dual(
+            float(sm_ref[i]),
+            float(tau[i]),
+            omega,
+            float(h_series[i]),
+            float(tc[i]),
+            float(tg[i]),
+            clay_fraction,
+            float(theta[i]),
+            freq_ghz,
+            model_ctx,
+            alpha=float(alpha_series[i]),
+        )
+        rvh[2 * i] = sv * (tbv_m - float(tbv[i]))
+        rvh[2 * i + 1] = sh * (tbh_m - float(tbh[i]))
+    if np.isfinite(omega_prev) and lam_smooth > 0:
+        r = np.append(rvh, math.sqrt(lam_smooth) * (omega - omega_prev))
+    else:
+        r = rvh
+    return r
+
+
+def _f_sm_dual_temp(
+    x: np.ndarray,
+    tbv: float,
+    tbh: float,
+    tc: float,
+    tg: float,
+    tau_ini: float,
+    h: float,
+    clay_fraction: float,
+    omega: float,
+    freq_ghz: float,
+    theta_deg: float,
+    alpha: float,
+    lambda_tau: float,
+    model_ctx: TbModelContext,
+) -> list[float]:
+    """DDCA 残差函数（双温度方案，alpha 依赖 Q）。
+
+    对应 Matlab ``F_sm_dual_temp`` (L2231-2243)。
+    """
+    sm = float(x[0])
+    tau = float(x[1])
+    tbv_m, tbh_m = _forward_tb_dual(
+        sm,
+        tau,
+        omega,
+        h,
+        tc,
+        tg,
+        clay_fraction,
+        theta_deg,
+        freq_ghz,
+        model_ctx,
+        alpha=alpha,
+    )
+    return [tbv_m - tbv, tbh_m - tbh, lambda_tau * (tau - tau_ini)]
+
+
+def _ddca_dual_temp(
+    tbv: float,
+    tbh: float,
+    tc: float,
+    tg: float,
+    tau_ini: float,
+    h: float,
+    clay_fraction: float,
+    omega: float,
+    porosity: float,
+    freq_ghz: float,
+    theta_deg: float,
+    alpha: float,
+    lambda_tau: float,
+    model_ctx: TbModelContext,
+) -> tuple[float, float]:
+    """DDCA SM/VOD 反演（双温度方案，alpha 依赖 Q）。
+
+    对应 Matlab ``DDCA_dual_temp`` (L2224-2229)：lsqnonlin → least_squares，
+    初始 [0.20, Tau_ini]，边界 [0.02,0]~[porosity,5]。
+
+    Returns:
+        (SM, VOD) 反演结果
+    """
+    from scipy.optimize import least_squares
+
+    if any(
+        math.isnan(v)
+        for v in [
+            tbv,
+            tbh,
+            tc,
+            tg,
+            tau_ini,
+            h,
+            clay_fraction,
+            omega,
+            porosity,
+            theta_deg,
+        ]
+    ):
+        return float("nan"), float("nan")
+
+    def residual(x):
+        return _f_sm_dual_temp(
+            x,
+            tbv,
+            tbh,
+            tc,
+            tg,
             tau_ini,
             h,
             clay_fraction,
@@ -1763,8 +2184,13 @@ def _invert_omega_sf_pixel_indices(
     omega_fixed_map: np.ndarray | None,
     config: OmegaSfConfig,
     block_struct: BlockStructure,
+    tc: np.ndarray | None = None,
+    tsoil1: np.ndarray | None = None,
+    tsoil2: np.ndarray | None = None,
 ) -> tuple[list[PixelResult], int, int]:
     """串行处理一批局部像元索引（模块级，可供 ProcessPool pickle）。
+
+    tc/tsoil1/tsoil2 为 DUAL 温度方案 (Nt, chunk_pix) 数组（ORIG_TS 传 None）。
 
     Returns:
         (成功结果列表, 尝试数, 失败数)
@@ -1808,6 +2234,9 @@ def _invert_omega_sf_pixel_indices(
                 config=config,
                 block_struct=block_struct,
                 omega_fixed=omega_fixed,
+                tc=tc[:, p] if tc is not None else None,
+                tsoil1=tsoil1[:, p] if tsoil1 is not None else None,
+                tsoil2=tsoil2[:, p] if tsoil2 is not None else None,
             )
         except ValueError:
             # 单像元物理约束失败（如 clay NaN）不拖垮整块并行/串行批次
@@ -1886,6 +2315,9 @@ def _run_omega_sf_pixels_parallel(
         "omega_fixed_map": omega_fixed_map,
         "config": config,
         "block_struct": block_struct,
+        "tc": chunk_data.get("tc"),
+        "tsoil1": chunk_data.get("tsoil1"),
+        "tsoil2": chunk_data.get("tsoil2"),
     }
 
     ctx = get_spawn_context()
@@ -2105,6 +2537,9 @@ def _run_pixel_inversion(
         omega_fixed_map=omega_fixed_map,
         config=config,
         block_struct=block_struct,
+        tc=chunk_data.get("tc"),
+        tsoil1=chunk_data.get("tsoil1"),
+        tsoil2=chunk_data.get("tsoil2"),
     )
 
 
@@ -2184,31 +2619,50 @@ def _build_chunk_validity_mask(
     chunk_data: dict[str, np.ndarray],
     anc: dict[str, np.ndarray],
     lin_pix: np.ndarray,
+    config: OmegaSfConfig | None = None,
 ) -> np.ndarray:
     """构建 chunk 有效像元掩码。
 
-    检查 TBv/TBh/Ts/SM_ref/NDVI 至少有一个有限值 + clay/porosity 有效。
+    检查 TBv/TBh/温度/SM_ref/NDVI 至少有一个有限值 + clay/porosity 有效。
+    DUAL（temp_scheme=DUAL）时温度项改查 tc/tsoil1/tsoil2。
     对应原 ``_process_one_chunk`` L1990–2007。
 
     Args:
         chunk_data: _preload_chunk 返回的 dict（含 tbv/tbh/ts/sm_ref/ndvi）
         anc: 辅助库 dict（含 clay/porosity）
         lin_pix: 像元线性索引
+        config: OmegaSfConfig（None 按 ORIG_TS 处理）
 
     Returns:
         valid_mask (chunk_pix,) bool 数组
     """
     tbv_chunk = chunk_data["tbv"]
     tbh_chunk = chunk_data["tbh"]
-    ts_chunk = chunk_data["ts"]
     sm_chunk = chunk_data["sm_ref"]
     ndvi_chunk = chunk_data["ndvi"]
+    if config is not None and config.temp_scheme.upper() == "DUAL":
+        temp_ok = (
+            np.any(
+                np.isfinite(chunk_data.get("tc", np.full_like(tbv_chunk, np.nan))),
+                axis=0,
+            )
+            & np.any(
+                np.isfinite(chunk_data.get("tsoil1", np.full_like(tbv_chunk, np.nan))),
+                axis=0,
+            )
+            & np.any(
+                np.isfinite(chunk_data.get("tsoil2", np.full_like(tbv_chunk, np.nan))),
+                axis=0,
+            )
+        )
+    else:
+        temp_ok = np.any(np.isfinite(chunk_data["ts"]), axis=0)
     clay_chunk = anc["clay"].ravel()[lin_pix]
     porosity_chunk = anc["porosity"].ravel()[lin_pix]
     valid_mask = (
         np.any(np.isfinite(tbv_chunk), axis=0)
         & np.any(np.isfinite(tbh_chunk), axis=0)
-        & np.any(np.isfinite(ts_chunk), axis=0)
+        & temp_ok
         & np.any(np.isfinite(sm_chunk), axis=0)
         & np.any(np.isfinite(ndvi_chunk), axis=0)
         & np.isfinite(clay_chunk)
@@ -2247,6 +2701,9 @@ def _process_one_chunk(
     cancel_flag_path: str | Path | None,
     reuse_block_cache: bool,
     grid_shape: tuple[int, int],
+    gldas_mat_folder: str = "",
+    anc_root: str = "",
+    gldas_template_mat: str = "",
 ) -> None:
     """处理单个 chunk：预读 → 像元反演 → 汇总 → checkpoint → 渐进写盘。
 
@@ -2295,6 +2752,9 @@ def _process_one_chunk(
         ndvi_folder,
         anc,
         lin_pix=lin_pix,
+        gldas_mat_folder=gldas_mat_folder,
+        anc_root=anc_root,
+        gldas_template_mat=gldas_template_mat,
     )
 
     _emit_progress(
@@ -2658,6 +3118,7 @@ def retrieve_omega_sf_daily(
     fy3d_folder: str = "",
     fy3b_folder: str = "",
     gldas_mat_folder: str = "",
+    gldas_template_mat: str = "",
     ddca_sm_folder: str = "",
     grid_shape: tuple[int, int] | None = None,
     output_dir: str = "",
@@ -2686,6 +3147,8 @@ def retrieve_omega_sf_daily(
         fy3d_folder: FY-3D .mat 目录
         fy3b_folder: FY-3B .mat 目录
         gldas_mat_folder: GLDAS .mat 目录（DUAL 温度方案）
+        gldas_template_mat: GLDAS UTC 过境模板 .mat
+            （use_gldas_template=True 时按 slot 选取；缺省回退过境本地时匹配）
         ddca_sm_folder: DDCA SM 目录
         grid_shape: 网格形状 (nrows, ncols)
         output_dir: 输出目录
@@ -2698,7 +3161,8 @@ def retrieve_omega_sf_daily(
     logger.info("=" * 60)
     logger.info("[START] omega_sf_fenkuai 反演")
     logger.info(
-        "[RUN  ] EXP=Exp0 | RUN_DOMAIN=%s | TB_SOURCE=%s | SM_SOURCE=%s",
+        "[RUN  ] EXP=Exp0 | TEMP_SCHEME=%s | RUN_DOMAIN=%s | TB_SOURCE=%s | SM_SOURCE=%s",
+        config.temp_scheme,
         config.run_domain,
         config.tb_source,
         config.sm_source,
@@ -2706,6 +3170,21 @@ def retrieve_omega_sf_daily(
     logger.info("[FIXED] OMEGA_FIXED_MODE=%s", config.omega_fixed_mode)
     logger.info("[BLOCK] %d-day", config.block_days)
     logger.info("=" * 60)
+
+    if config.temp_scheme.upper() == "DUAL":
+        if not gldas_mat_folder:
+            raise ValueError(
+                "temp_scheme=DUAL 需要提供 gldas_mat_folder（GLDAS 三温度 .mat 目录）；"
+                "请在工作流数据源中配置 gldas_mat，或将 temp_scheme 设为 ORIG_TS。"
+            )
+        logger.info(
+            "[DUAL ] mode=%s | ct_smref=%.2f | ct_exp=%.2f | tol=%.1fh | template=%s",
+            config.dual_tg_mode,
+            config.ct_smref,
+            config.ct_exp,
+            config.gldas_time_tol_hours,
+            config.use_gldas_template,
+        )
 
     # 1) 构建时间序列
     tvec = _build_time_series(
@@ -2724,6 +3203,15 @@ def retrieve_omega_sf_daily(
         grid_shape = landcover.shape
     nrows, ncols = grid_shape
     npix = nrows * ncols
+
+    # 2b) DUAL：按 GLDAS 可匹配性过滤运行日期（对齐 Matlab 日期交集，
+    #     必须在块结构构建前完成以保证时间索引对齐）
+    if config.temp_scheme.upper() == "DUAL":
+        tvec = _filter_tvec_by_gldas_days(tvec, config, gldas_mat_folder, anc)
+        nt = len(tvec)
+        logger.info(
+            "[DUAL ] GLDAS 交集后可用日期：%d（%s ~ %s）", nt, tvec[0], tvec[-1]
+        )
 
     # 3) 构建 8 天块结构
     block_struct = make_viirs8_blocks(tvec, block_days=config.block_days)
@@ -2813,6 +3301,9 @@ def retrieve_omega_sf_daily(
             cancel_flag_path=cancel_flag_path,
             reuse_block_cache=reuse_block_cache,
             grid_shape=grid_shape,
+            gldas_mat_folder=gldas_mat_folder,
+            anc_root=anc_root,
+            gldas_template_mat=gldas_template_mat,
         )
         if state.stop:
             break
@@ -3606,6 +4097,151 @@ def _compute_sf_inverted_day(
     )
 
 
+# ─── DUAL 双温度 GLDAS 预读（复用 ingest/daily_bundle） ─────────────────────
+
+
+def _sf_desc_local_hour(config: OmegaSfConfig) -> float:
+    """按 TB 源返回降轨过境本地时（与 daily_bundle 过境匹配一致）。"""
+    if config.tb_source.upper() == "FY":
+        if config.fy_platform.upper() == "3B":
+            return config.fy3b_desc_local_hour
+        return config.fy3d_desc_local_hour
+    return config.smap_desc_local_hour
+
+
+def _build_sf_daily_bundle_config(config: OmegaSfConfig) -> Any:
+    """由 OmegaSfConfig 构造 DailyBundleConfig（仅 DUAL 相关字段）。"""
+    from ingest.daily_bundle import DailyBundleConfig
+
+    return DailyBundleConfig(
+        tb_source=config.tb_source,
+        fy_platform=config.fy_platform,
+        temp_scheme="DUAL",
+        dual_tg_mode=config.dual_tg_mode,
+        ct_smref=config.ct_smref,
+        ct_exp=config.ct_exp,
+        use_gldas_template=config.use_gldas_template,
+        fy3d_desc_local_hour=config.fy3d_desc_local_hour,
+        fy3b_desc_local_hour=config.fy3b_desc_local_hour,
+        smap_desc_local_hour=config.smap_desc_local_hour,
+        gldas_time_tol_hours=config.gldas_time_tol_hours,
+    )
+
+
+def _build_sf_gldas_selection(
+    gldas_mat_folder: str,
+    anc_root: str,
+    gldas_template_mat: str = "",
+) -> dict[str, Any]:
+    """构造 daily_bundle loader 所需的 datasource_selection（最小键集）。"""
+    selection: dict[str, Any] = {
+        "gldas_mat_folder": gldas_mat_folder,
+        "anc_root": anc_root,
+    }
+    if gldas_template_mat:
+        selection["gldas_template_mat"] = gldas_template_mat
+    return selection
+
+
+def _load_gldas_day_rows(
+    date_str: str,
+    lin_pix: np.ndarray,
+    gldas_mat_folder: str,
+    anc_root: str,
+    config: OmegaSfConfig,
+    gldas_template_mat: str = "",
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """加载单日 GLDAS 三温度行（TC/Tsoil1/Tsoil2），形状 (chunk_pix,)。
+
+    经 daily_bundle.load_dual_temperature_row_for_day 过境匹配（或模板法）。
+    lin_pix 为 0-based 线性索引；loader 约定 1-based，此处 +1 传递。
+    无匹配像元返回 NaN。
+    """
+    from ingest.daily_bundle import load_dual_temperature_row_for_day
+
+    lin_pix_1based = np.asarray(lin_pix, dtype=np.int64).ravel() + 1
+    tc_row, tsoil1_row, tsoil2_row, _diag = load_dual_temperature_row_for_day(
+        date_str,
+        _build_sf_gldas_selection(gldas_mat_folder, anc_root, gldas_template_mat),
+        _build_sf_daily_bundle_config(config),
+        lin_pix=lin_pix_1based,
+    )
+    tc = np.asarray(tc_row, dtype=np.float64).ravel()
+    tsoil1 = np.asarray(tsoil1_row, dtype=np.float64).ravel()
+    tsoil2 = np.asarray(tsoil2_row, dtype=np.float64).ravel()
+    expected = int(lin_pix_1based.size)
+    if tc.size != expected or tsoil1.size != expected or tsoil2.size != expected:
+        raise ValueError(
+            f"GLDAS 行长度 {tc.size}/{tsoil1.size}/{tsoil2.size} != chunk 像元数 "
+            f"{expected}（date={date_str}）"
+        )
+    return tc, tsoil1, tsoil2
+
+
+def _filter_tvec_by_gldas_days(
+    tvec: list[datetime],
+    config: OmegaSfConfig,
+    gldas_mat_folder: str,
+    anc: dict[str, np.ndarray],
+) -> list[datetime]:
+    """DUAL 模式下按 GLDAS 可匹配性过滤运行日期（对齐 Matlab 日期交集）。
+
+    过境匹配法：给定卫星过境本地时 h 与经度范围 [lon_min, lon_max]，
+    目标 UTC 窗口为 [day+h-lon_max/15-tol, day+h-lon_min/15+tol]；
+    窗口内存在任一 GLDAS 文件则保留该日（像元级无匹配由 NaN 掩码处理）。
+    模板法（use_gldas_template=True）无法用经度窗口预判，保留全部日期。
+    """
+    from bisect import bisect_left
+
+    from ingest.daily_bundle import build_gldas_file_index
+
+    if config.use_gldas_template:
+        return list(tvec)
+
+    lon = anc.get("lon")
+    lon_vals = np.asarray(lon, dtype=np.float64).ravel() if lon is not None else None
+    if lon_vals is None or not np.any(np.isfinite(lon_vals)):
+        raise ValueError(
+            "temp_scheme=DUAL 需要辅助库 lon 网格"
+            "（IGBP_9km_12.mat 内附或 lat_lon 回退文件）用于 GLDAS 过境匹配。"
+        )
+    lon_min = float(np.nanmin(lon_vals))
+    lon_max = float(np.nanmax(lon_vals))
+
+    index = build_gldas_file_index(gldas_mat_folder)
+    times = index["times"]
+    tol = timedelta(hours=float(config.gldas_time_tol_hours))
+    local_hour = _sf_desc_local_hour(config)
+
+    kept: list[datetime] = []
+    dropped: list[datetime] = []
+    for date in tvec:
+        day0 = datetime(date.year, date.month, date.day)
+        t_lo = day0 + timedelta(hours=local_hour - lon_max / 15.0) - tol
+        t_hi = day0 + timedelta(hours=local_hour - lon_min / 15.0) + tol
+        i = bisect_left(times, t_lo)
+        has_match = i < len(times) and times[i] <= t_hi
+        (kept if has_match else dropped).append(date)
+
+    if dropped:
+        preview = ", ".join(d.strftime("%Y%m%d") for d in dropped[:8])
+        suffix = "…" if len(dropped) > 8 else ""
+        logger.warning(
+            "[DUAL ] GLDAS 无匹配剔除 %d/%d 天：%s%s",
+            len(dropped),
+            len(tvec),
+            preview,
+            suffix,
+        )
+    if not kept:
+        raise ValueError(
+            f"temp_scheme=DUAL：{tvec[0]:%Y%m%d}~{tvec[-1]:%Y%m%d} 内无任何日期"
+            f"可在 {gldas_mat_folder} 找到 ±{config.gldas_time_tol_hours}h 容差的"
+            " GLDAS 匹配文件，请检查 GLDAS 数据覆盖范围。"
+        )
+    return kept
+
+
 def _preload_one_day(
     date: datetime,
     doy: int,
@@ -3727,12 +4363,16 @@ def _preload_chunk(
     lin_pix: np.ndarray | None = None,
     chunk_start: int | None = None,
     chunk_end: int | None = None,
+    gldas_mat_folder: str = "",
+    anc_root: str = "",
+    gldas_template_mat: str = "",
 ) -> dict[str, np.ndarray]:
     """预读 chunk 数据。
 
     对应 Matlab 预读总函数 (L1425-1729)。
 
     返回 dict 包含 tbv/tbh/ia/ts/sm_ref/ndvi/sf，形状均为 (Nt, chunk_pix)。
+    ``temp_scheme=DUAL`` 时额外包含 tc/tsoil1/tsoil2 三键（GLDAS 双温度）。
     ``lin_pix`` 可为非连续索引（bbox mask 打包）；未给时退回 ``[chunk_start, chunk_end)``。
     """
     nt = len(tvec)
@@ -3744,6 +4384,9 @@ def _preload_chunk(
         lin_pix = np.asarray(lin_pix, dtype=np.int64).ravel()
     chunk_pix = int(lin_pix.size)
     npix = nrows * ncols
+    use_dual = config.temp_scheme.upper() == "DUAL"
+    if use_dual and not gldas_mat_folder:
+        raise ValueError("temp_scheme=DUAL 预读需要 gldas_mat_folder")
 
     tbv_mat = np.full((nt, chunk_pix), np.nan)
     tbh_mat = np.full((nt, chunk_pix), np.nan)
@@ -3752,6 +4395,10 @@ def _preload_chunk(
     sm_ref_mat = np.full((nt, chunk_pix), np.nan)
     ndvi_mat = np.full((nt, chunk_pix), np.nan)
     sf_mat = np.full((nt, chunk_pix), np.nan)
+    if use_dual:
+        tc_mat = np.full((nt, chunk_pix), np.nan)
+        tsoil1_mat = np.full((nt, chunk_pix), np.nan)
+        tsoil2_mat = np.full((nt, chunk_pix), np.nan)
 
     sf_static = anc.get("sf_static", np.full(anc["landcover"].size, np.nan)).ravel()
 
@@ -3806,7 +4453,29 @@ def _preload_chunk(
             anc=anc,
             sf_static=sf_static,
         )
+        if use_dual:
+            tc_mat[k], tsoil1_mat[k], tsoil2_mat[k] = _load_gldas_day_rows(
+                date.strftime("%Y%m%d"),
+                lin_pix,
+                gldas_mat_folder,
+                anc_root,
+                config,
+                gldas_template_mat,
+            )
 
+    if use_dual:
+        return {
+            "tbv": tbv_mat,
+            "tbh": tbh_mat,
+            "ia": ia_mat,
+            "ts": ts_mat,
+            "sm_ref": sm_ref_mat,
+            "ndvi": ndvi_mat,
+            "sf": sf_mat,
+            "tc": tc_mat,
+            "tsoil1": tsoil1_mat,
+            "tsoil2": tsoil2_mat,
+        }
     return {
         "tbv": tbv_mat,
         "tbh": tbh_mat,

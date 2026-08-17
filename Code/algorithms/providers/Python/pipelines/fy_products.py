@@ -176,8 +176,12 @@ class FyDailyPipeline(BasePipeline):
         from scipy.io import savemat
 
         data_products: list[ProductRef] = []
+        # 单轨道日落盘规范名 YYYYMMDD.mat（供 omega_sf_fenkuai fy3d/fy3b_folder
+        # 读取）；Both 模式同日双轨道回落 mat/YYYYMMDD_<orbit>.mat。
+        date_plan_counts: dict[str, int] = {}
+        for plan in plans:
+            date_plan_counts[plan.date_key] = date_plan_counts.get(plan.date_key, 0) + 1
         mat_dir = output_root / "mat"
-        mat_dir.mkdir(parents=True, exist_ok=True)
         for plan in plans:
             tif_path = get_fy_daily_multiband_output_path(plan)
             if not tif_path.exists():
@@ -196,7 +200,11 @@ class FyDailyPipeline(BasePipeline):
                 )
             )
             payload = _load_fy_multiband_payload(tif_path, satellite=plan.satellite)
-            mat_path = mat_dir / f"{plan.date_key}_{plan.orbit_type}.mat"
+            if date_plan_counts[plan.date_key] == 1:
+                mat_path = output_root / f"{plan.date_key}.mat"
+            else:
+                mat_dir.mkdir(parents=True, exist_ok=True)
+                mat_path = mat_dir / f"{plan.date_key}_{plan.orbit_type}.mat"
             savemat(mat_path, payload, do_compression=True)
             data_products.append(
                 ProductRef(

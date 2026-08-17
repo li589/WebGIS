@@ -346,8 +346,14 @@ def safe_urlopen(
     allow_private: bool | None = None,
     allow_proxy: bool = False,
     max_redirects: int = 5,
+    data: bytes | None = None,
+    method: str | None = None,
 ):
     """带 SSRF 校验的 urlopen；每跳重定向再校验，且连接钉死已校验 IP。
+
+    Args:
+        data: 可选请求体（非 None 时默认方法为 POST）。
+        method: 可选显式 HTTP 方法（默认 GET / 有 data 时 POST）。
 
     Returns:
         最终响应对象（调用方负责 ``.read()`` / ``.close()``，或 ``with`` 使用）。
@@ -361,11 +367,12 @@ def safe_urlopen(
     target = resolve_outbound_target(url, allow_private=allow_private)
     redirects = 0
     req_headers = dict(headers or {})
+    req_method = method or ("POST" if data is not None else "GET")
 
     while True:
         # 每跳目标主机不同，opener 需按当次已校验 IP 重建。
         opener = _build_pinned_opener(target, allow_proxy=allow_proxy)
-        req = Request(target.url, headers=req_headers)
+        req = Request(target.url, headers=req_headers, data=data, method=req_method)
         try:
             # noqa: S310 — URL 经 resolve_outbound_target 校验；重定向亦同
             return opener.open(req, timeout=timeout)
@@ -385,10 +392,35 @@ def safe_urlopen(
                     f"出站重定向超过上限（max_redirects={max_redirects}）"
                 ) from exc
             next_url = urljoin(target.url, location)
+            next_target = resolve_outbound_target(next_url, allow_private=allow_private)
+            if _host_of(next_target.url) != _host_of(target.url):
+                # 跨主机跳转不携带请求体与凭据类头，防止凭据被重定向外泄
+                if data is not None or req_method != "GET":
+                    logger.warning(
+                        "Cross-host redirect drops request body: %s -> %s",
+                        target.url,
+                        next_target.url,
+                    )
+                data = None
+                req_method = "GET"
+                req_headers = {
+                    k: v
+                    for k, v in req_headers.items()
+                    if k.lower() not in _SENSITIVE_REDIRECT_HEADERS
+                }
             logger.info(
                 "SSRF-safe redirect %s -> %s (hop=%d)",
                 target.url,
-                next_url,
+                next_target.url,
                 redirects,
             )
-            target = resolve_outbound_target(next_url, allow_private=allow_private)
+            target = next_target
+
+
+_SENSITIVE_REDIRECT_HEADERS = frozenset(
+    {"authorization", "cookie", "proxy-authorization"}
+)
+
+
+def _host_of(url: str) -> str:
+    return (urlparse(url).hostname or "").lower()

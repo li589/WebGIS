@@ -1,0 +1,330 @@
+{
+  "_meta": {
+    "kind": "system",
+    "engine": "python_provider",
+    "name": "风云 ω 平均反演（在线）",
+    "description": "目的：NSMC 门户在线拉取 FY3D/FY3B MWRI HDF（多账号轮换）→ fy_daily 转 YYYYMMDD.mat 落盘规范目录 → D2 avg-omega 逐日 DDCA 回代（ORIG_TS 单温度，FY3B→FY3D 时空匹配）。前置：nsmc 凭证（建议多账号）；GDAL CLI；D1 omega_block 已产出（tb_source=FY）；本地 SMAP 逐日 .mat/辅助库/NDVI 就绪。产出：目标年逐日 SM/VOD/OMEGA .mat。配置：tb_source=FY, fy_platform=3D。",
+    "author": "system",
+    "readonly": true,
+    "is_template": true,
+    "linked_layer_id": "method-fy-omega-doy-avg",
+    "tags": [
+      "pipeline",
+      "omega_avg",
+      "online"
+    ],
+    "category": "inversion"
+  },
+  "workflow_id": "omega_avg_daily_fy_online",
+  "name": "风云 ω 平均反演（在线）",
+  "description": "fy_download FY3D+FY3B（NSMC 多账号并行）→ fy_daily（HDF→YYYYMMDD.mat）→ D2 avg-omega 逐日回代（ORIG_TS 单温度，FY3B→FY3D 时空匹配）。语义：平均=ω 固定为多年 DOY 气候态均值，逐日仅做轻量 DDCA 回代。",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "download/fy_download",
+      "pos": [
+        80,
+        140
+      ],
+      "properties": {
+        "satellite": "FY3D",
+        "data_source": "auto",
+        "start_date": "{YYYYMMDD}",
+        "end_date": "{YYYYMMDD}",
+        "local_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\FY3D\\raw",
+        "band_ids": "1,2",
+        "orbit_mode": "MWRID"
+      }
+    },
+    {
+      "id": 2,
+      "type": "download/fy_download",
+      "pos": [
+        80,
+        300
+      ],
+      "properties": {
+        "enabled": false,
+        "satellite": "FY3B",
+        "data_source": "auto",
+        "start_date": "{YYYYMMDD}",
+        "end_date": "{YYYYMMDD}",
+        "local_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\FY3B\\raw",
+        "band_ids": "1,2",
+        "orbit_mode": "MWRID"
+      }
+    },
+    {
+      "id": 3,
+      "type": "module/fy_daily",
+      "pos": [
+        380,
+        140
+      ],
+      "properties": {
+        "output_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\FY3D",
+        "algorithm_params": {
+          "orbit_mode": "MWRID",
+          "band_ids": [
+            1,
+            2
+          ],
+          "execute_commands": true,
+          "spatial_mode": "global",
+          "overlap_option": "average"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "module/fy_daily",
+      "pos": [
+        380,
+        300
+      ],
+      "properties": {
+        "enabled": false,
+        "output_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\FY3B",
+        "algorithm_params": {
+          "orbit_mode": "MWRID",
+          "band_ids": [
+            1,
+            2
+          ],
+          "execute_commands": true,
+          "spatial_mode": "global",
+          "overlap_option": "average"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "data/source",
+      "pos": [
+        640,
+        40
+      ],
+      "properties": {
+        "path": "Inversion_Results/omega_block",
+        "dataset_key": "omega_block_output",
+        "notes": "D1 omega_block 输出目录（D1 需用 tb_source=FY 运行，保持本地）"
+      }
+    },
+    {
+      "id": 6,
+      "type": "data/source",
+      "pos": [
+        640,
+        200
+      ],
+      "properties": {
+        "path": "Soil_Moisture/FY3D",
+        "dataset_key": "fy3d_folder",
+        "notes": "逐日 FY3D TB .mat（fy_daily 落盘同目录，规范名 YYYYMMDD.mat）"
+      }
+    },
+    {
+      "id": 7,
+      "type": "data/source",
+      "pos": [
+        640,
+        360
+      ],
+      "properties": {
+        "path": "Soil_Moisture/FY3B",
+        "dataset_key": "fy3b_folder",
+        "notes": "逐日 FY3B TB .mat（FY3B→FY3D 时空匹配用；FY3B 支路停用时自动跳过回退匹配）"
+      }
+    },
+    {
+      "id": 8,
+      "type": "data/source",
+      "pos": [
+        640,
+        520
+      ],
+      "properties": {
+        "path": "Soil_Moisture/SMAP_Origin_Data",
+        "dataset_key": "smap_daily_mat",
+        "notes": "SMAP .mat（提供 Ts/vwc/SM_ref 辅助量，保持本地）"
+      }
+    },
+    {
+      "id": 9,
+      "type": "data/source",
+      "pos": [
+        640,
+        680
+      ],
+      "properties": {
+        "path": "Soil_Moisture/SMAP_Auxiliary_Data",
+        "dataset_key": "ancillary_mat",
+        "notes": "静态辅助库（保持本地）"
+      }
+    },
+    {
+      "id": 10,
+      "type": "data/source",
+      "pos": [
+        640,
+        840
+      ],
+      "properties": {
+        "path": "Ecological_Vegetation/NDVI/NDVIday",
+        "dataset_key": "ndvi_daily_mat",
+        "notes": "逐日 NDVI .mat；本种子默认 ndvi_mode=DOY_CLIM（保持本地）"
+      }
+    },
+    {
+      "id": 11,
+      "type": "data/source",
+      "pos": [
+        640,
+        1000
+      ],
+      "properties": {
+        "path": "Soil_Moisture/SMAP_Auxiliary_Data/NDVI_clim",
+        "dataset_key": "ndvi_clim_folder",
+        "notes": "NDVI DOY 气候态（SMAP 辅助库 NDVI_clim，与 ndvi_clim_max/min 同源；生态目录 12 月下旬 DOY 全空不可用）"
+      }
+    },
+    {
+      "id": 12,
+      "type": "module/omega_avg_daily",
+      "pos": [
+        960,
+        460
+      ],
+      "properties": {
+        "module_name": "omega_avg_daily",
+        "task_type": "omega_avg_daily",
+        "algorithm_params": {
+          "target_year": 2025,
+          "tb_source": "FY",
+          "fy_platform": "3D",
+          "sm_source": "SMAP",
+          "temp_scheme": "ORIG_TS",
+          "ndvi_mode": "DOY_CLIM",
+          "sf_mode": "STATIC",
+          "avg_build_start_year": 2025,
+          "avg_build_end_year": 2025,
+          "freq_ghz": 1.4,
+          "lambda_tau": 20.0,
+          "pixel_chunk_size": 200000,
+          "enable_parallel": true
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "output/map_layer",
+      "pos": [
+        1240,
+        460
+      ],
+      "properties": {
+        "layer_id": "method-fy-omega-doy-avg",
+        "display_name": "风云 ω 平均反演（在线）"
+      }
+    }
+  ],
+  "links": [
+    {
+      "0": 0,
+      "1": 1,
+      "2": 0,
+      "3": 3,
+      "4": 0,
+      "5": "value:string"
+    },
+    {
+      "0": 1,
+      "1": 2,
+      "2": 0,
+      "3": 4,
+      "4": 0,
+      "5": "value:string"
+    },
+    {
+      "0": 2,
+      "1": 5,
+      "2": 0,
+      "3": 12,
+      "4": 2,
+      "5": "value:string"
+    },
+    {
+      "0": 3,
+      "1": 6,
+      "2": 0,
+      "3": 12,
+      "4": 2,
+      "5": "value:string"
+    },
+    {
+      "0": 4,
+      "1": 7,
+      "2": 0,
+      "3": 12,
+      "4": 2,
+      "5": "value:string"
+    },
+    {
+      "0": 5,
+      "1": 8,
+      "2": 0,
+      "3": 12,
+      "4": 2,
+      "5": "value:string"
+    },
+    {
+      "0": 6,
+      "1": 9,
+      "2": 0,
+      "3": 12,
+      "4": 2,
+      "5": "value:string"
+    },
+    {
+      "0": 7,
+      "1": 10,
+      "2": 0,
+      "3": 12,
+      "4": 2,
+      "5": "value:string"
+    },
+    {
+      "0": 8,
+      "1": 11,
+      "2": 0,
+      "3": 12,
+      "4": 2,
+      "5": "value:string"
+    },
+    {
+      "0": 9,
+      "1": 12,
+      "2": 0,
+      "3": 13,
+      "4": 0,
+      "5": "data"
+    }
+  ],
+  "extra": {
+    "purpose": "online_fy_avg_pipeline",
+    "scheme": "FY_SINGLE_ORIG_TS_ONLINE_AVG",
+    "portal": "cma_nsmc",
+    "cred_profile": "nsmc",
+    "pipeline": "fy_download FY3D（auto：NSMC 多账号优先，失败回退 NAS FileBrowser 直连）→ fy_daily（HDF/TIF→YYYYMMDD.mat 规范目录）→ D2 avg-omega 逐日 DDCA 回代（ORIG_TS 单温度）→ SM/VOD/OMEGA 三图层",
+    "prerequisite": "nsmc 凭证（建议配置多账号轮换）+ nas_profile（远程与存储 FileBrowser 凭据）+ GDAL CLI（gdal_translate/gdalwarp/gdalbuildvrt，经 PATH 或 algorithm_params.gdal_bin 指定）+ D1 omega_block（tb_source=FY）+ 本地 SMAP 逐日 .mat/辅助库/NDVI",
+    "outputs": [
+      "SM",
+      "VOD",
+      "OMEGA"
+    ],
+    "notes": "模板种子：start_date/end_date 含 YYYYMMDD 占位符，运行前替换。data_source=auto：优先 NSMC 门户在线（多账号轮换 + 额度冷却；历史日期门户 404），失败回退 NAS FileBrowser（/Chenhaojun/Data/fy3dhdf2425 逐日 FY3D TIF）。FY3B 支路默认停用（properties.enabled=false，FY3B 卫星 2020 年退役、无现代日期数据；反演回退匹配在 fy3b_folder 为空时自动跳过）——历史日期回补可在画布重新启用节点 2/4。fy_daily 落盘规范名 YYYYMMDD.mat 供 fy3d_folder/fy3b_folder 读取；D1 omega_block 产物、SMAP、辅助库、NDVI 数据源保持本地。补齐 2×2×2 矩阵的「风云×平均×在线」一格。",
+    "has_time_range_node": false,
+    "has_bbox_node": false,
+    "has_output_node": true
+  }
+}

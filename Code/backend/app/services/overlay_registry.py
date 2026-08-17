@@ -238,6 +238,145 @@ class OverlaySpec:
             out = float(val)
             return out if np.isfinite(out) else None
 
+    # EASE-Grid 2.0 9km 标准参数（与 export_overlay_assets.py 同步）
+    _EASE_GRID_9K_CRS = "EPSG:6933"
+    _EASE_GRID_9K_PIXEL_SIZE = 9008.0552  # 米
+    _EASE_GRID_9K_UL_X = -17367530.45  # 上左角 x（米）
+    _EASE_GRID_9K_UL_Y = 7314540.83  # 上左角 y（米）
+
+    def _sample_mat_ease_grid(
+        self, src_path: Path, variable: str, lng: float, lat: float
+    ) -> float | None:
+        """对含 EASE-Grid Transform/CRS 元数据的 .mat 文件做投影采样。
+
+        当 ``UniversalDataReader`` 无法从 .mat 中提取 lat/lon 坐标变量时，
+        本方法读取 .mat 的 ``Transform`` 和 ``CRS`` 元数据，用 pyproj 将
+        WGS84 查询点转换到源投影坐标系，再通过仿射变换映射到像素行列采样。
+
+        若 .mat 无 Transform/CRS 元数据，回退到默认 EASE-Grid 9km 参数。
+        """
+        try:
+            # 读取 .mat 文件（兼容 v5/v6 和 v7.3）
+            mat_data: dict[str, Any] = {}
+            try:
+                from scipy.io import loadmat
+
+                mat_data = loadmat(str(src_path))
+                is_v73 = False
+            except NotImplementedError:
+                import h5py
+
+                with h5py.File(str(src_path), "r") as f:
+                    mat_data = {k: np.array(f[k]) for k in f.keys()}
+                is_v73 = True
+
+            if variable not in mat_data:
+                return None
+
+            values = np.array(mat_data[variable], dtype=np.float64)
+            if values.ndim >= 2 and 1 in values.shape:
+                values = values.squeeze()
+            if is_v73 and values.ndim >= 2:
+                values = values.T  # MAT v7.3 列优先转置
+
+            if values.ndim != 2:
+                return None
+
+            n_lat, n_lon = values.shape
+
+            # 尝试从 .mat 读取 Transform 和 CRS
+            src_crs = self._EASE_GRID_9K_CRS
+            pixel_size = self._EASE_GRID_9K_PIXEL_SIZE
+            ul_x = self._EASE_GRID_9K_UL_X
+            ul_y = self._EASE_GRID_9K_UL_Y
+
+            if "Transform" in mat_data and "CRS" in mat_data:
+                t = np.asarray(mat_data["Transform"]).ravel()
+                if len(t) >= 6:
+                    px = abs(float(t[1]))
+                    scale = 18 if 400 < px < 600 else 1  # 500m → 9km
+                    pixel_size = abs(float(t[1])) * scale
+                    ul_x = float(t[0])
+                    ul_y = float(t[3])
+                    # CRS 可能是字符串或字符数组
+                    crs_raw = mat_data["CRS"]
+                    if isinstance(crs_raw, np.ndarray):
+                        crs_flat = crs_raw.ravel()
+                        if crs_flat.dtype.kind in ("U", "S"):
+                            crs_str = str(crs_flat.ravel()[0])
+                        else:
+                            crs_str = "".join(
+                                chr(int(c)) for c in crs_flat if 32 <= int(c) < 127
+                            )
+                    else:
+                        crs_str = str(crs_raw)
+                    if "6933" in crs_str:
+                        src_crs = "EPSG:6933"
+
+            # 将 WGS84 查询点转换到源投影坐标
+            transformer = Transformer.from_crs("EPSG:4326", src_crs, always_xy=True)
+            x, y = transformer.transform(lng, lat)
+
+            # 仿射变换 → 像素行列（origin = upper-left）
+            col = (x - ul_x) / pixel_size
+            row = (ul_y - y) / pixel_size
+
+            row_int = int(round(row))
+            col_int = int(round(col))
+
+            if not (0 <= row_int < n_lat and 0 <= col_int < n_lon):
+                return None
+
+            val = float(values[row_int, col_int])
+            if not np.isfinite(val):
+                return None
+            return val
+        except Exception:
+            return None
+
+    def _sample_from_bounds_json(
+        self, values: np.ndarray, lng: float, lat: float, time: str | None = None
+    ) -> float | None:
+        """当 .mat 缺少坐标变量且无 EASE-Grid 元数据时，用 bounds JSON
+        构建线性 WGS84 网格做最近邻采样。
+
+        适用于 WGS84 等经纬度网格数据（如 0.25° 干旱指数）。
+        bounds JSON 记录了重投影后的 WGS84 边界，配合数据 shape
+        即可构建线性坐标轴。
+
+        注意：对非等经纬度投影（如 EASE-Grid）数据，此方法为近似采样，
+        精度取决于投影变形程度。仅作为最后回退手段。
+        """
+        try:
+            bounds_path = self.resolve_bounds(time)
+            if not bounds_path.exists():
+                return None
+            bdata = json.loads(bounds_path.read_text(encoding="utf-8"))
+            bounds = bdata.get("bounds")
+            if not bounds or len(bounds) != 4:
+                return None
+            west, south, east, north = bounds
+
+            if values.ndim != 2:
+                return None
+            n_lat, n_lon = values.shape
+
+            # 构建线性 WGS84 坐标轴
+            # 数据 origin = upper-left → 纬度从北到南降序
+            lat_1d = np.linspace(north, south, n_lat)
+            lon_1d = np.linspace(west, east, n_lon)
+
+            row = int(np.argmin(np.abs(lat_1d - lat)))
+            col = int(np.argmin(np.abs(lon_1d - lng)))
+
+            if not (0 <= row < n_lat and 0 <= col < n_lon):
+                return None
+
+            val = float(values[row, col])
+            return val if np.isfinite(val) else None
+        except Exception:
+            return None
+
     def resolve_value(
         self, lng: float, lat: float, time: str | None = None
     ) -> dict[str, Any]:
@@ -259,6 +398,10 @@ class OverlaySpec:
         try:
             src_path = self.resolve_source_path(time)
             if src_path is None:
+                result["error"] = (
+                    f"Source data file not found or not configured "
+                    f"(layer={self.layer_id}, source_path={self.source_path})"
+                )
                 return result
 
             if self.source_reader == "geotiff":
@@ -276,6 +419,32 @@ class OverlaySpec:
             lon_arr = data_array.lon
 
             if lat_arr is None or lon_arr is None:
+                # 回退 1：对 .mat 文件尝试 EASE-Grid 投影采样
+                # （读取 Transform/CRS 元数据，将查询点投影到源坐标系采样）
+                if self.source_reader == "mat" and self.source_variable:
+                    val = self._sample_mat_ease_grid(
+                        src_path, self.source_variable, lng, lat
+                    )
+                    if val is not None:
+                        result["value"] = val
+                        return result
+                    result["error"] = (
+                        f"MAT file lacks lat/lon variables and EASE-Grid "
+                        f"sampling failed for {self.source_variable}"
+                    )
+
+                # 回退 2：用 bounds JSON 构建线性 WGS84 网格采样
+                # （适用于等经纬度网格数据，如 0.25° 干旱指数）
+                val = self._sample_from_bounds_json(values, lng, lat, time)
+                if val is not None:
+                    result["value"] = val
+                    return result
+
+                if "error" not in result:
+                    result["error"] = (
+                        "Source data lacks coordinate variables; "
+                        "EASE-Grid and bounds-based reconstruction both failed"
+                    )
                 return result
 
             # 统一为一维坐标
@@ -386,15 +555,24 @@ def _smap_time_list() -> list[str]:
 
 
 def _gpcp_time_list(limit: int = 24) -> list[str]:
-    """从 GPCP NetCDF 目录采样时间标签（取最近 limit 个月）。"""
-    if not _GPCP_DIR.exists():
-        return []
+    """从 GPCP NetCDF 目录采样时间标签（取最近 limit 个月）。
+
+    源目录被清理而 PNG 资产仍在时，回退扫描 overlay PNG 目录
+    （gpcp_YYYYMM.png），保证时间轴可用；此时 /overlay-value 点查询
+    因源数据缺失而不可用。
+    """
     tags: list[str] = []
-    for f in sorted(_GPCP_DIR.glob("GPCPMON_L3_*_V3.2.nc4")):
-        # GPCPMON_L3_198301_V3.2.nc4 -> 198301
-        parts = f.stem.split("_")
-        if len(parts) >= 3 and len(parts[2]) == 6 and parts[2].isdigit():
-            tags.append(parts[2])
+    if _GPCP_DIR.exists():
+        for f in sorted(_GPCP_DIR.glob("GPCPMON_L3_*_V3.2.nc4")):
+            # GPCPMON_L3_198301_V3.2.nc4 -> 198301
+            parts = f.stem.split("_")
+            if len(parts) >= 3 and len(parts[2]) == 6 and parts[2].isdigit():
+                tags.append(parts[2])
+    if not tags:
+        for f in sorted((_OVERLAY_PNG_ROOT / "gpcp_ts").glob("gpcp_*.png")):
+            parts = f.stem.split("_")
+            if len(parts) >= 2 and len(parts[1]) == 6 and parts[1].isdigit():
+                tags.append(parts[1])
     return _uniform_sample(tags, limit)
 
 
@@ -721,9 +899,7 @@ register_overlay(
 # 源数据（相对 BACKEND_DATA_ROOT）
 _GEBCO_NC = _data_join("Geological", "DEM", "GEBCO_2024.nc")
 _CMFD_TIF = _data_join("Meteorological", "Precipitation", "pre_2002_01.tif")
-_CLCD_TIF = _data_join(
-    "Ecological_Vegetation", "LandCover", "CLCD", "CLCD_v01_1997.tif"
-)
+_CLCD_TIF = _data_join("Ecological_Vegetation", "LandCover", "CLCD_v01_1997.tif")
 _BIOMASS_NC = _data_join(
     "Ecological_Vegetation",
     "Biomass",
@@ -969,7 +1145,7 @@ register_overlay(
         category="static",
         palette="YlOrRd",
         vmin=0.0,
-        vmax=0.5,
+        vmax=0.0985,
         unit="",
         opacity=0.8,
         source_path=_SMAP_AUX_ALBEDO_MAT,
@@ -987,8 +1163,8 @@ register_overlay(
         bounds_filename="smap_aux_bd_overlay_bounds.json",
         category="static",
         palette="YlOrBr",
-        vmin=0.8,
-        vmax=1.8,
+        vmin=0.6051,
+        vmax=1.5449,
         unit="g/cm³",
         opacity=0.8,
         source_path=_SMAP_AUX_BD_MAT,
@@ -997,7 +1173,7 @@ register_overlay(
     )
 )
 
-# SF — 砂粒分数（EASE-Grid 9km）
+# SF — SMAP 辅助参数场（EASE-Grid 9km；全球分位 p1~p99 = 0.1057~19.5637，非 0–1 分数，语义待课题组确认）
 register_overlay(
     OverlaySpec(
         layer_id="smap-aux-sf",
@@ -1006,9 +1182,9 @@ register_overlay(
         bounds_filename="smap_aux_sf_overlay_bounds.json",
         category="static",
         palette="YlGn",
-        vmin=0.0,
-        vmax=1.0,
-        unit="fraction",
+        vmin=0.1057,
+        vmax=19.5637,
+        unit="",
         opacity=0.8,
         source_path=_SMAP_AUX_SF_MAT,
         source_variable="SF",
@@ -1026,7 +1202,7 @@ register_overlay(
         category="static",
         palette="RdBu",
         vmin=0.0,
-        vmax=10.0,
+        vmax=0.1286,
         unit="",
         opacity=0.8,
         source_path=_SMAP_AUX_B_MAT,
@@ -1044,8 +1220,8 @@ register_overlay(
         bounds_filename="smap_aux_cf_overlay_bounds.json",
         category="static",
         palette="PuBu",
-        vmin=0.0,
-        vmax=1.0,
+        vmin=0.0004,
+        vmax=0.3854,
         unit="fraction",
         opacity=0.8,
         source_path=_SMAP_AUX_CF_MAT,
@@ -1063,8 +1239,8 @@ register_overlay(
         bounds_filename="smap_aux_h_overlay_bounds.json",
         category="static",
         palette="Oranges",
-        vmin=0.0,
-        vmax=0.5,
+        vmin=0.1561,
+        vmax=1.8143,
         unit="",
         opacity=0.8,
         source_path=_SMAP_AUX_H_MAT,
@@ -1120,8 +1296,8 @@ register_overlay(
         bounds_filename="smap_aux_vi_qa_overlay_bounds.json",
         category="static",
         palette="RdYlGn",
-        vmin=0.0,
-        vmax=1.0,
+        vmin=0.0709,
+        vmax=0.8596,
         unit="",
         opacity=0.8,
         source_path=_SMAP_AUX_VI_V_QA_MAT,
@@ -1136,9 +1312,10 @@ register_overlay(
 # v7.3 HDF5，含 OMEGA / SM / VOD 三个变量，shape (1624, 3856) on EASE-Grid 9km
 # 每个图层导出 31 天（2025-12-01 ~ 2025-12-31）的 PNG + bounds JSON
 
-# TODO: VOD/ω 独立展示图层待补实现（数据源同 SmapSoil_VOD_SM/{YYYYMMDD}.mat，VOD/OMEGA 变量）
+# 注：VOD/ω 独立展示图层已于 5cfba8e 有意移除（固化汇报图层下线，产物走
+# 工作流 run 结果图层）；SmapSoil_VOD_SM 的 SM 展示层保留在下方。
 
-# SMAP/FY/站点融合土壤水分产品（2025-12，31 天，SM/VOD/ω；当前展示 SM，VOD/ω 补实现中）
+# SMAP/FY/站点融合土壤水分产品（2025-12，31 天；本层展示 SM，VOD/ω 经工作流结果图层查看）
 register_overlay(
     OverlaySpec(
         layer_id="prod-fy_smap_station-sm_vod_omega-202512-fusion",
@@ -1194,6 +1371,25 @@ def read_bounds(layer_id: str, time: str | None = None) -> dict[str, Any]:
         raise OverlayConfigError(
             f"Bounds JSON missing 'bounds' field: {bounds_path.name}",
         )
+    # ── bounds 合理性校验 ──────────────────────────────────────────────────
+    # 仅检查坐标值超出 WGS84 范围（可能是投影坐标被误当作经纬度）。
+    # 全球 bounds (-180,-90,180,90) 是 GPCP 等全球数据集的合法值，不告警。
+    b = data["bounds"]
+    if isinstance(b, list) and len(b) == 4:
+        w, s, e, n = b
+        _out_of_wgs84 = (
+            not all(isinstance(v, (int, float)) for v in b)
+            or abs(w) > 180.1
+            or abs(e) > 360.1
+            or abs(s) > 90.1
+            or abs(n) > 90.1
+        )
+        if _out_of_wgs84:
+            data.setdefault("meta", {})["bounds_warning"] = (
+                "Bounds out of WGS84 range — "
+                "possible reproject failure or CRS mismatch. "
+                "Run Tools/export_overlay_assets.py to regenerate."
+            )
     return data
 
 

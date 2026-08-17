@@ -4,11 +4,29 @@ import { createBasemapModule } from '@/components/map/basemap-module'
 
 function createMapMock() {
   const sources = new Map<string, any>()
-  const layers = new Set<string>()
+  const layerOrder: string[] = []
+  const layerSpecs = new Map<string, any>()
+  const layers = {
+    has: (id: string) => layerOrder.includes(id),
+    add: (id: string) => {
+      layerOrder.push(id)
+    },
+    delete: (id: string) => {
+      const idx = layerOrder.indexOf(id)
+      if (idx >= 0) layerOrder.splice(idx, 1)
+    },
+  }
+
+  function insertAt(id: string, beforeId: string | undefined) {
+    const idx = beforeId ? layerOrder.indexOf(beforeId) : -1
+    if (idx >= 0) layerOrder.splice(idx, 0, id)
+    else layerOrder.push(id)
+  }
 
   return {
     sources,
     layers,
+    layerOrder,
     map: {
       getSource: (id: string) => sources.get(id),
       addSource: (id: string, source: any) => {
@@ -17,9 +35,18 @@ function createMapMock() {
       removeSource: (id: string) => {
         sources.delete(id)
       },
-      getLayer: (id: string) => (layers.has(id) ? { id } : undefined),
-      addLayer: (layer: { id: string }) => {
-        layers.add(layer.id)
+      getStyle: () => ({
+        layers: layerOrder.map((id) => layerSpecs.get(id) ?? { id }),
+      }),
+      getLayer: (id: string) => (layerOrder.includes(id) ? { id } : undefined),
+      addLayer: (layer: { id: string; type?: string }, beforeId?: string) => {
+        layerSpecs.set(layer.id, layer)
+        insertAt(layer.id, beforeId)
+      },
+      moveLayer: (id: string, beforeId?: string) => {
+        const from = layerOrder.indexOf(id)
+        if (from >= 0) layerOrder.splice(from, 1)
+        insertAt(id, beforeId)
       },
       removeLayer: (id: string) => {
         layers.delete(id)
@@ -125,6 +152,8 @@ describe('basemap-module', () => {
       setTileLoadFailed,
       setTileFailedProvider,
       setSourceTransitioning: vi.fn(),
+      // 本用例聚焦熔断+重试恢复路径；有候选时的故障转移见 failover 测试文件
+      getFailoverCandidates: () => [],
       dependencies: {
         now: () => {
           now += 100
@@ -177,6 +206,8 @@ describe('basemap-module', () => {
       setTileLoadFailed,
       setTileFailedProvider,
       setSourceTransitioning: vi.fn(),
+      // 本用例聚焦熔断路径；有候选时的故障转移见 failover 测试文件
+      getFailoverCandidates: () => [],
       dependencies: {
         now: () => {
           now += 100
@@ -264,5 +295,232 @@ describe('basemap-module', () => {
     expect(sources.get('tile-base-overlay').tiles).toEqual([
       '/unified-tiles/tianditu-cva/{z}/{x}/{y}',
     ])
+  })
+
+  it('hides and clears basemap tiles when switching to blank (none)', () => {
+    const { map, layers, sources } = createMapMock()
+    const source = {
+      type: 'raster',
+      tiles: ['https://example.com/gaode/{z}/{x}/{y}.png'],
+      setTiles: vi.fn(function (this: { tiles: string[] }, next: string[]) {
+        this.tiles = next
+      }),
+    }
+    sources.set('tile-base', source)
+    layers.add('tile-base-raster')
+    layers.add('tile-base-overlay-raster')
+    sources.set('tile-base-overlay', {
+      type: 'raster',
+      tiles: ['https://example.com/cva/{z}/{x}/{y}.png'],
+    })
+
+    const module = createBasemapModule({
+      map,
+      getTileConfig: () => undefined,
+      getCurrentTileSourceId: () => 'none',
+      setTileLoadFailed: vi.fn(),
+      setTileFailedProvider: vi.fn(),
+      setSourceTransitioning: vi.fn(),
+    })
+
+    module.switchTileSource('none')
+
+    expect(map.setLayoutProperty).toHaveBeenCalledWith('tile-base-raster', 'visibility', 'none')
+    expect(map.setPaintProperty).toHaveBeenCalledWith('tile-base-raster', 'raster-opacity', 0)
+    expect(source.setTiles).toHaveBeenCalledWith([])
+    expect(map.triggerRepaint).toHaveBeenCalled()
+    expect(map.setLayoutProperty).toHaveBeenCalledWith(
+      'tile-base-overlay-raster',
+      'visibility',
+      'none',
+    )
+    // overlay 源在空白模式下卸掉
+    expect(sources.has('tile-base-overlay')).toBe(false)
+    expect(layers.has('tile-base-overlay-raster')).toBe(false)
+  })
+
+  it('inserts base raster below existing overlay layers after blank-basemap start', () => {
+    // 空白底图起步：数据叠加层先上图，底图层尚不存在
+    const { layerOrder, map } = createMapMock()
+    map.addLayer({ id: 'data-overlay-1' })
+    map.addLayer({ id: 'data-overlay-2' })
+    map.addLayer({ id: 'admin-fill' })
+
+    const module = createBasemapModule({
+      map,
+      getTileConfig: (sourceId) =>
+        sourceId === 'esri-street'
+          ? {
+              id: 'esri-street',
+              label: 'Esri Street',
+              provider: 'Esri',
+              style: 'street',
+              urlTemplate: 'https://example.com/{z}/{x}/{y}.png',
+              saturation: 0,
+              brightness: 0,
+              contrast: 0,
+              isStandard: true,
+              needsBackendTransform: false,
+              authMode: 'none',
+            }
+          : undefined,
+      getCurrentTileSourceId: () => 'esri-street',
+      setTileLoadFailed: vi.fn(),
+      setTileFailedProvider: vi.fn(),
+      setSourceTransitioning: vi.fn(),
+    })
+
+    module.switchTileSource('esri-street')
+
+    // 底图必须位于所有数据叠加层之下
+    expect(layerOrder.indexOf('tile-base-raster')).toBe(0)
+    expect(layerOrder.indexOf('tile-base-raster')).toBeLessThan(layerOrder.indexOf('data-overlay-1'))
+    expect(layerOrder.indexOf('tile-base-raster')).toBeLessThan(layerOrder.indexOf('admin-fill'))
+  })
+
+  it('places annotation overlay directly above base raster and below data overlays', () => {
+    const { layerOrder, map } = createMapMock()
+    map.addLayer({ id: 'data-overlay-1' })
+
+    const module = createBasemapModule({
+      map,
+      getTileConfig: (sourceId) =>
+        sourceId === 'tianditu-vec'
+          ? {
+              id: 'tianditu-vec',
+              label: '天地图街道',
+              provider: 'Tianditu',
+              style: 'street',
+              urlTemplate: '/unified-tiles/tianditu-vec/{z}/{x}/{y}',
+              overlayUrlTemplate: '/unified-tiles/tianditu-cva/{z}/{x}/{y}',
+              saturation: 0,
+              brightness: 0,
+              contrast: 0,
+              isStandard: true,
+              needsBackendTransform: false,
+              authMode: 'api-key',
+            }
+          : undefined,
+      getCurrentTileSourceId: () => 'tianditu-vec',
+      setTileLoadFailed: vi.fn(),
+      setTileFailedProvider: vi.fn(),
+      setSourceTransitioning: vi.fn(),
+    })
+
+    module.switchTileSource('tianditu-vec')
+
+    expect(layerOrder.indexOf('tile-base-raster')).toBe(0)
+    expect(layerOrder.indexOf('tile-base-overlay-raster')).toBe(1)
+    expect(layerOrder.indexOf('tile-base-overlay-raster')).toBeLessThan(
+      layerOrder.indexOf('data-overlay-1'),
+    )
+  })
+
+  it('repositions a misplaced base raster to the stack bottom on subsequent switches', () => {
+    // 历史错位：底图层被追加到了栈顶
+    const { layerOrder, map } = createMapMock()
+    map.addLayer({ id: 'data-overlay-1' })
+    map.addLayer({ id: 'tile-base-raster' })
+
+    const module = createBasemapModule({
+      map,
+      getTileConfig: (sourceId) =>
+        sourceId === 'esri-street'
+          ? {
+              id: 'esri-street',
+              label: 'Esri Street',
+              provider: 'Esri',
+              style: 'street',
+              urlTemplate: 'https://example.com/{z}/{x}/{y}.png',
+              saturation: 0,
+              brightness: 0,
+              contrast: 0,
+              isStandard: true,
+              needsBackendTransform: false,
+              authMode: 'none',
+            }
+          : undefined,
+      getCurrentTileSourceId: () => 'esri-street',
+      setTileLoadFailed: vi.fn(),
+      setTileFailedProvider: vi.fn(),
+      setSourceTransitioning: vi.fn(),
+    })
+
+    expect(layerOrder.indexOf('tile-base-raster')).toBe(1)
+    module.switchTileSource('esri-street')
+    expect(layerOrder.indexOf('tile-base-raster')).toBe(0)
+  })
+
+  it('keeps base raster above the style background layer on initial add', () => {
+    // 真实 map 初始 style 仅含 background 层；底图必须落在其上，否则被背景色罩暗整图
+    const { layerOrder, map } = createMapMock()
+    map.addLayer({ id: 'background', type: 'background' })
+
+    const module = createBasemapModule({
+      map,
+      getTileConfig: (sourceId) =>
+        sourceId === 'esri-street'
+          ? {
+              id: 'esri-street',
+              label: 'Esri Street',
+              provider: 'Esri',
+              style: 'street',
+              urlTemplate: 'https://example.com/{z}/{x}/{y}.png',
+              saturation: 0,
+              brightness: 0,
+              contrast: 0,
+              isStandard: true,
+              needsBackendTransform: false,
+              authMode: 'none',
+            }
+          : undefined,
+      getCurrentTileSourceId: () => 'esri-street',
+      setTileLoadFailed: vi.fn(),
+      setTileFailedProvider: vi.fn(),
+      setSourceTransitioning: vi.fn(),
+    })
+
+    module.switchTileSource('esri-street')
+
+    expect(layerOrder.indexOf('background')).toBe(0)
+    expect(layerOrder.indexOf('tile-base-raster')).toBe(1)
+  })
+
+  it('lifts a base raster that sank below the background layer', () => {
+    // bug 现场：底图沉到 background 之下被半透明背景色罩暗，画面整体发暗且与氛围遮罩开关无关
+    const { layerOrder, map } = createMapMock()
+    map.addLayer({ id: 'tile-base-raster', type: 'raster' })
+    map.addLayer({ id: 'background', type: 'background' })
+    map.addLayer({ id: 'admin-fill', type: 'fill' })
+
+    const module = createBasemapModule({
+      map,
+      getTileConfig: (sourceId) =>
+        sourceId === 'esri-street'
+          ? {
+              id: 'esri-street',
+              label: 'Esri Street',
+              provider: 'Esri',
+              style: 'street',
+              urlTemplate: 'https://example.com/{z}/{x}/{y}.png',
+              saturation: 0,
+              brightness: 0,
+              contrast: 0,
+              isStandard: true,
+              needsBackendTransform: false,
+              authMode: 'none',
+            }
+          : undefined,
+      getCurrentTileSourceId: () => 'esri-street',
+      setTileLoadFailed: vi.fn(),
+      setTileFailedProvider: vi.fn(),
+      setSourceTransitioning: vi.fn(),
+    })
+
+    expect(layerOrder.indexOf('tile-base-raster')).toBe(0)
+    module.switchTileSource('esri-street')
+    expect(layerOrder.indexOf('background')).toBe(0)
+    expect(layerOrder.indexOf('tile-base-raster')).toBe(1)
+    expect(layerOrder.indexOf('admin-fill')).toBe(2)
   })
 })

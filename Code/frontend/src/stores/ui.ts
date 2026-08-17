@@ -18,8 +18,8 @@ import {
 export type { TileSourceId } from '../services/api-config'
 export { DEFAULT_PLAY_INTERVAL_MS, TIMELINE_PLAY_INTERVAL_OPTIONS } from '../utils/timeline-play'
 
-/** 地图交互模式：移动（拖动视角）/ 选择（点击查询点气象）/ 测量（路径规划与测距） */
-export type InteractionMode = 'move' | 'select' | 'measure'
+/** 地图交互模式：移动（拖动视角）/ 选择（点击查询点气象）/ 测量（路径规划与测距）/ 绘制（矢量要素绘制） */
+export type InteractionMode = 'move' | 'select' | 'measure' | 'draw'
 
 /** 视图模式：2D平面地图 / 3D地球（实验性，未完全实现） */
 export type ViewMode = '2d' | '3d'

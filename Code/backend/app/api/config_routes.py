@@ -29,12 +29,27 @@
 - PUT /config/weather/providers/{provider_id}/priority — 调整 Provider 优先级
 - DELETE /config/weather/providers/{provider_id} — 删除 Provider DB 配置
 - GET /config/remote-storage — 列出远程存储凭证 Profile
-- PUT /config/remote-storage/{profile_id} — 新增/更新 Profile
+- GET /config/remote-storage/{profile_id} — 单条 Profile（脱敏）
+- PUT /config/remote-storage/{profile_id} — 新增/更新 Profile（支持双路径字段）
 - DELETE /config/remote-storage/{profile_id} — 删除 Profile
 - PUT /config/remote-storage/{profile_id}/toggle — 启用/禁用
-- POST /config/remote-storage/{profile_id}/test — 测试连通性
+- POST /config/remote-storage/{profile_id}/test — 测试连通性（双路径回退感知）
+- POST /config/remote-storage/{profile_id}/browse — 浏览目录（read 权限）
+- POST /config/remote-storage/{profile_id}/search — 名称搜索（read 权限）
+- POST /config/remote-storage/{profile_id}/failover — 手动切换主/备路径
 - GET /config/data-source — 数据源配置（含生效/待重启数据根）
 - PUT /config/data-source/paths — 更新数据根/产物根（写 .env，需重启后端）
+- GET /config/deployment — 部署配置中心状态：每键三方对比 + 备份列表（read 权限）
+- POST /config/deployment/preview — 预览部署配置变更（纯只读校验 + diff；admin）
+- PUT /config/deployment — 保存部署配置（校验→备份→双 .env 镜像→JSON 原子写；admin）
+- GET /config/deployment/export — 导出 deployment.config.json（默认脱敏；admin）
+- GET /config/data-source/datasets — 可用数据集注册表（read 权限）
+- POST /config/data-source/datasets/rescan — 重扫数据根（admin）
+- PUT /config/data-source/datasets/{dataset_id} — 新增/更新数据集（admin）
+- DELETE /config/data-source/datasets/{dataset_id} — 删除数据集（admin；内置条目拒删）
+- GET /config/remote-sources — 可访问远程数据源别名 + 能力徽标（read）
+- PUT /config/remote-sources/{remote_source_id} — 新增/更新别名（admin）
+- DELETE /config/remote-sources/{remote_source_id} — 删除别名（admin）
 - POST /config/service/restart — 调度重启 FastAPI+Worker+Beat
 - GET /config/about — 项目信息
 """
@@ -42,7 +57,9 @@
 import logging
 
 import anyio
+import json
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 
 from app.api.deps import (
     require_config_read_access,
@@ -50,6 +67,7 @@ from app.api.deps import (
     require_config_management_access,
 )
 from app.services import config_service
+from app.services import deployment_config as dc
 from shared.contracts.config_contracts import (
     AboutInfo,
     ApiKeyDeletedResponse,
@@ -63,8 +81,16 @@ from shared.contracts.config_contracts import (
     DataCacheEvictResponse,
     DataCacheOverview,
     DataSourceConfig,
+    DeletedResponse,
     DataSourcePathsUpdateRequest,
     DataSourcePathsUpdateResponse,
+    DeploymentConfigPreviewResponse,
+    DeploymentConfigStatus,
+    DeploymentConfigUpdateRequest,
+    DeploymentConfigUpdateResponse,
+    DatasetRescanResponse,
+    DatasetUpsertRequest,
+    AvailableDatasetEntry,
     GeeAccountCreateRequest,
     GeeAccountDeletedResponse,
     GeeAccountItem,
@@ -74,8 +100,13 @@ from shared.contracts.config_contracts import (
     GeneralConfig,
     OpenDataPresetsUpdateRequest,
     OpenDataPresetsUpdateResponse,
+    PortalCatalogEntry,
+    PortalCatalogResponse,
     PortalCredentialUpsertRequest,
     PortalCredentialsMapResponse,
+    PortalSearchResponse,
+    PortalTestResponse,
+    PortalUpsertRequest,
     ReloadResultResponse,
     RemoteLayerUrisUpdateRequest,
     RemoteLayerUrisUpdateResponse,
@@ -89,6 +120,14 @@ from shared.contracts.config_contracts import (
     RemoteStorageToggleRequest,
     RemoteStorageToggleResponse,
     RemoteStorageUpsertRequest,
+    RemoteBrowseRequest,
+    RemoteBrowseResponse,
+    RemoteSearchRequest,
+    RemoteSearchResponse,
+    RemoteFailoverRequest,
+    RemoteFailoverResponse,
+    RemoteSourceEntry,
+    RemoteSourceUpsertRequest,
     ServiceRestartRequest,
     ServiceRestartResponse,
     TestResultResponse,
@@ -547,6 +586,18 @@ async def list_remote_storage_profiles(include_disabled: bool = True):
     )
 
 
+@router.get(
+    "/remote-storage/{profile_id}",
+    response_model=RemoteStorageProfile,
+    dependencies=[Depends(require_config_read_access)],
+)
+async def get_remote_storage_profile(profile_id: str):
+    info = config_service.get_remote_storage_profile(profile_id)
+    if info is None:
+        raise HTTPException(status_code=404, detail=f"Profile '{profile_id}' not found")
+    return info
+
+
 @router.put(
     "/remote-storage/{profile_id}",
     response_model=RemoteStorageProfile,
@@ -568,6 +619,10 @@ async def upsert_remote_storage_profile(
             extra=request.extra,
             display_name=request.display_name,
             enabled=request.enabled,
+            alt_host=request.alt_host,
+            alt_port=request.alt_port,
+            alt_url=request.alt_url,
+            fallback_mode=request.fallback_mode,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -609,8 +664,77 @@ async def test_remote_storage_profile(
     request: RemoteStorageTestRequest | None = None,
 ):
     uri = request.uri if request else None
-    result = config_service.test_remote_storage_profile(profile_id, uri=uri)
+    result = await anyio.to_thread.run_sync(
+        lambda: config_service.test_remote_storage_profile(profile_id, uri=uri)
+    )
     return RemoteStorageTestResponse(**result)
+
+
+@router.post(
+    "/remote-storage/{profile_id}/browse",
+    response_model=RemoteBrowseResponse,
+    dependencies=[Depends(require_config_read_access)],
+)
+async def browse_remote_storage_profile(
+    profile_id: str, request: RemoteBrowseRequest | None = None
+):
+    """浏览存储 profile 目录（双路径感知；standard 角色可浏览）。"""
+    from app.services.remote_access import browser
+
+    path = request.path if request else "/"
+    try:
+        result = await anyio.to_thread.run_sync(
+            browser.browse_profile, profile_id, path
+        )
+    except browser.RemoteAccessAuthError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except browser.RemoteAccessNetworkError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except browser.RemoteAccessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RemoteBrowseResponse(**result)
+
+
+@router.post(
+    "/remote-storage/{profile_id}/search",
+    response_model=RemoteSearchResponse,
+    dependencies=[Depends(require_config_read_access)],
+)
+async def search_remote_storage_profile(profile_id: str, request: RemoteSearchRequest):
+    """在存储 profile 内按名称搜索（能力因协议而异）。"""
+    from app.services.remote_access import browser
+
+    try:
+        result = await anyio.to_thread.run_sync(
+            lambda: browser.search_profile(
+                profile_id,
+                request.query,
+                max_results=request.max_results,
+                start_path=request.start_path,
+            )
+        )
+    except browser.RemoteAccessAuthError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except browser.RemoteAccessNetworkError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except browser.RemoteAccessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RemoteSearchResponse(**result)
+
+
+@router.post(
+    "/remote-storage/{profile_id}/failover",
+    response_model=RemoteFailoverResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def failover_remote_storage_profile(
+    profile_id: str, request: RemoteFailoverRequest
+):
+    """手动切换主/备访问路径。"""
+    try:
+        return config_service.probe_failover(profile_id, request.target)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get(
@@ -683,9 +807,79 @@ async def update_data_source_paths(request: DataSourcePathsUpdateRequest):
             config_service.update_data_source_paths,
             request.data_root,
             request.output_root,
+            request.static_cache_root,
+            request.cache_dir,
+            request.download_source_root,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ── 部署与数据源配置中心（deployment.config.json 真源）────────────────────────
+
+
+@router.get(
+    "/deployment",
+    response_model=DeploymentConfigStatus,
+    dependencies=[Depends(require_config_read_access)],
+)
+async def get_deployment_config():
+    """部署配置状态：每键三方对比（运行值 / .env / deployment.json）+ 备份列表。"""
+    return await anyio.to_thread.run_sync(dc.get_deployment_status)
+
+
+@router.post(
+    "/deployment/preview",
+    response_model=DeploymentConfigPreviewResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def preview_deployment_config(request: DeploymentConfigUpdateRequest):
+    """纯只读预览：全量校验 + 与当前运行值 diff（不写文件、不建目录）。"""
+    return await anyio.to_thread.run_sync(
+        dc.preview_deployment_config, request.model_dump(exclude_none=True)
+    )
+
+
+@router.put(
+    "/deployment",
+    response_model=DeploymentConfigUpdateResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def update_deployment_config(request: DeploymentConfigUpdateRequest):
+    """保存部署配置：校验 → 备份轮换 → 双 .env 镜像 → JSON 原子写（失败整体回滚）。"""
+    try:
+        result = await anyio.to_thread.run_sync(
+            dc.apply_deployment_config, request.model_dump(exclude_none=True)
+        )
+    except dc.DeploymentConfigError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    result["message"] = (
+        "已保存并镜像写入 .env；含 Docker 相关键，需在服务器执行全量重启（launch.py restart）后生效。"
+        if result["restart_level"] == "restart-full"
+        else "已保存并镜像写入 .env；重启后端进程组（FastAPI+Worker+Beat）后生效。"
+    )
+    return result
+
+
+@router.get(
+    "/deployment/export",
+    dependencies=[Depends(require_config_management_access)],
+)
+async def export_deployment_config(redact: bool = True):
+    """导出 deployment.config.json（默认脱敏，供部署机拷贝）。"""
+    payload = dc.load_deployment_config()
+    if payload is None:
+        raise HTTPException(status_code=404, detail="deployment.config.json 不存在")
+    if redact:
+        payload = dc.redact_payload(payload)
+    body = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": 'attachment; filename="deployment.config.json"'
+        },
+    )
 
 
 @router.post(
@@ -781,6 +975,96 @@ async def delete_portal_credential(portal_id: str):
     return config_service.delete_portal_credential(portal_id)
 
 
+# ── 开放门户目录 ──────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/portals",
+    response_model=PortalCatalogResponse,
+    dependencies=[Depends(require_config_read_access)],
+)
+async def get_portal_catalog():
+    """门户目录（内置 + 自定义，含凭据状态与 URL 覆盖态）。"""
+    return await anyio.to_thread.run_sync(config_service.get_portal_catalog)
+
+
+@router.put(
+    "/portals/{portal_id}",
+    response_model=PortalCatalogEntry,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def upsert_portal(portal_id: str, payload: PortalUpsertRequest):
+    """自定义门户创建/更新；builtin 门户仅允许覆盖 base_url / alt_url。"""
+    from app.services.portal_catalog import PortalCatalogError
+
+    try:
+        return config_service.upsert_portal(
+            portal_id, payload.model_dump(exclude_none=True)
+        )
+    except PortalCatalogError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/portals/{portal_id}",
+    response_model=RemoteStorageDeletedResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def delete_portal(portal_id: str):
+    """删除自定义门户（builtin 不可删）。"""
+    from app.services.portal_catalog import PortalCatalogError
+
+    try:
+        deleted = config_service.delete_portal(portal_id)
+    except PortalCatalogError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Portal '{portal_id}' not found")
+    return RemoteStorageDeletedResponse(deleted=True, profile_id=portal_id)
+
+
+@router.post(
+    "/portals/{portal_id}/test",
+    response_model=PortalTestResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def test_portal(portal_id: str):
+    """门户连通性测试（凭据感知，SSRF 校验）。"""
+    from app.services.portal_catalog import PortalCatalogError
+
+    try:
+        return await anyio.to_thread.run_sync(config_service.test_portal, portal_id)
+    except PortalCatalogError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/portals/{portal_id}/search",
+    response_model=PortalSearchResponse,
+    dependencies=[Depends(require_config_read_access)],
+)
+async def search_portal(
+    portal_id: str,
+    q: str,
+    page_size: int = 20,
+):
+    """门户在线检索（仅 search_capability != none 的门户；本期实装 CMR）。"""
+    from app.services.portal_catalog import (
+        PortalCatalogError,
+        PortalSearchUnsupported,
+    )
+
+    def _run() -> dict:
+        return config_service.search_portal(portal_id, query=q, page_size=page_size)
+
+    try:
+        return await anyio.to_thread.run_sync(_run)
+    except PortalSearchUnsupported as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PortalCatalogError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.put(
     "/data-source/remote-layer-uris",
     response_model=RemoteLayerUrisUpdateResponse,
@@ -794,6 +1078,102 @@ async def update_remote_layer_uris(payload: RemoteLayerUrisUpdateRequest):
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ── 可用数据集注册表 ──────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/data-source/datasets",
+    response_model=list[AvailableDatasetEntry],
+    dependencies=[Depends(require_config_read_access)],
+)
+async def list_available_datasets(include_disabled: bool = True):
+    """可用数据集注册表（manual/scan/algorithm_registry 三来源）。"""
+    return config_service.list_available_datasets(include_disabled=include_disabled)
+
+
+@router.post(
+    "/data-source/datasets/rescan",
+    response_model=DatasetRescanResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def rescan_available_datasets():
+    """重扫数据根：未注册目录生成 source=scan 条目，已有条目刷新文件统计。"""
+    return await anyio.to_thread.run_sync(config_service.rescan_available_datasets)
+
+
+@router.put(
+    "/data-source/datasets/{dataset_id}",
+    response_model=AvailableDatasetEntry,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def upsert_available_dataset(dataset_id: str, payload: DatasetUpsertRequest):
+    """新增/更新可用数据集；dataset_id 传 "new" 创建。写后失效 readiness 缓存。"""
+    try:
+        return config_service.upsert_available_dataset(dataset_id, payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/data-source/datasets/{dataset_id}",
+    response_model=DeletedResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def delete_available_dataset(dataset_id: str):
+    """删除可用数据集（algorithm_registry 内置条目拒删）。"""
+    try:
+        deleted = config_service.delete_available_dataset(dataset_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Dataset '{dataset_id}' not found")
+    return DeletedResponse(deleted=True)
+
+
+# ── 可访问远程数据源（别名注册表） ────────────────────────────────────────────
+
+
+@router.get(
+    "/remote-sources",
+    response_model=list[RemoteSourceEntry],
+    dependencies=[Depends(require_config_read_access)],
+)
+async def list_remote_sources():
+    """别名条目 + 引用源能力徽标（protocol/search/enabled/test 状态）。"""
+    return config_service.list_remote_sources()
+
+
+@router.put(
+    "/remote-sources/{remote_source_id}",
+    response_model=RemoteSourceEntry,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def upsert_remote_source(
+    remote_source_id: str, payload: RemoteSourceUpsertRequest
+):
+    """新增/更新「可访问远程数据源」别名（供下载节点一键填充）。"""
+    try:
+        return config_service.upsert_remote_source_entry(
+            remote_source_id, payload.model_dump()
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/remote-sources/{remote_source_id}",
+    response_model=DeletedResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def delete_remote_source(remote_source_id: str):
+    """删除别名条目（不影响引用的 profile/门户本身）。"""
+    if not config_service.delete_remote_source_entry(remote_source_id):
+        raise HTTPException(
+            status_code=404, detail=f"Remote source '{remote_source_id}' not found"
+        )
+    return DeletedResponse(deleted=True)
 
 
 # ── 关于 ──────────────────────────────────────────────────────────────────────

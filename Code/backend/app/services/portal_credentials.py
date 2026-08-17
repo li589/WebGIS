@@ -8,6 +8,8 @@ import logging
 import os
 from typing import Any
 
+from app.services.secret_cipher import aesgcm_decrypt, aesgcm_encrypt
+
 logger = logging.getLogger(__name__)
 
 PORTAL_IDS = ("earthdata", "nsidc", "copernicus")
@@ -23,6 +25,28 @@ def _mask(value: str) -> str:
     if len(value) <= 8:
         return "****"
     return f"{value[:4]}****{value[-4:]}"
+
+
+def _sanitize_accounts(raw: Any) -> list[dict[str, str]]:
+    """清洗多账号列表：仅保留含 token 或（用户名+密码）的有效条目。"""
+    if not isinstance(raw, list):
+        return []
+    cleaned: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        acc = {
+            key: str(item.get(key) or "").strip()
+            for key in ("username", "token", "password")
+        }
+        if acc["token"] or (acc["username"] and acc["password"]):
+            cleaned.append(acc)
+    return cleaned
+
+
+def _account_count(entry: dict[str, Any]) -> int:
+    accounts = entry.get("accounts")
+    return len(accounts) if isinstance(accounts, list) else 0
 
 
 def _encrypt_blob(plaintext: str, encryption_key: str) -> dict[str, str]:
@@ -41,16 +65,8 @@ def _encrypt_blob(plaintext: str, encryption_key: str) -> dict[str, str]:
             "ciphertext": base64.b64encode(plaintext.encode("utf-8")).decode("ascii"),
             "iv": "plain",
         }
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-    key_bytes = bytes.fromhex(encryption_key)
-    iv = os.urandom(12)
-    aes = AESGCM(key_bytes)
-    ct = aes.encrypt(iv, plaintext.encode("utf-8"), None)
-    return {
-        "ciphertext": base64.b64encode(ct).decode("ascii"),
-        "iv": base64.b64encode(iv).decode("ascii"),
-    }
+    ct, iv = aesgcm_encrypt(encryption_key, plaintext)
+    return {"ciphertext": ct, "iv": iv}
 
 
 def _decrypt_blob(ciphertext: str, iv: str, encryption_key: str) -> str:
@@ -66,12 +82,7 @@ def _decrypt_blob(ciphertext: str, iv: str, encryption_key: str) -> str:
         return base64.b64decode(ciphertext.encode("ascii")).decode("utf-8")
     if not encryption_key:
         raise RuntimeError("Cannot decrypt portal credentials without encryption key")
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-    key_bytes = bytes.fromhex(encryption_key)
-    aes = AESGCM(key_bytes)
-    pt = aes.decrypt(base64.b64decode(iv), base64.b64decode(ciphertext), None)
-    return pt.decode("utf-8")
+    return aesgcm_decrypt(encryption_key, ciphertext, iv)
 
 
 def default_portal_credentials_public() -> dict[str, Any]:
@@ -134,6 +145,14 @@ def _env_runtime_overlays() -> dict[str, dict[str, Any]]:
             "token": cp,
             "source": "env",
         }
+    cds = os.getenv("BACKEND_CDS_API_KEY", "").strip()
+    if cds:
+        out["ecmwf_cds"] = {
+            "enabled": True,
+            "auth_type": "bearer",
+            "token": cds,
+            "source": "env",
+        }
     return out
 
 
@@ -151,9 +170,8 @@ def load_portal_credentials_secret(
     if not isinstance(raw, dict):
         return {k: v for k, v in merged.items() if v}
 
-    for pid in PORTAL_IDS:
-        blob = raw.get(pid)
-        if not isinstance(blob, dict):
+    for pid, blob in raw.items():
+        if not isinstance(pid, str) or not isinstance(blob, dict):
             continue
         try:
             secret_json = _decrypt_blob(
@@ -197,6 +215,7 @@ def public_portal_credentials(
         pub["has_password"] = bool(
             str(entry.get("password") or entry.get("secret") or "").strip()
         )
+        pub["account_count"] = _account_count(entry)
         pub["source"] = str(entry.get("source") or "none")
         if pid == "earthdata":
             pub["use_for_nsidc"] = bool(entry.get("use_for_nsidc", True))
@@ -205,6 +224,25 @@ def public_portal_credentials(
         if pid == "copernicus":
             pub["client_id"] = str(entry.get("client_id") or "")
         base[pid] = pub
+
+    # 目录扩展门户（nsmc/ecmwf_cds/tpdc/自定义等）：不在遗留三键内的
+    # 已存凭据也投影为通用形状，供门户卡片状态展示。
+    for pid, entry in runtime.items():
+        if pid in base or not isinstance(entry, dict):
+            continue
+        base[pid] = {
+            "enabled": bool(entry.get("enabled", True)),
+            "auth_type": str(entry.get("auth_type") or "bearer"),
+            "username": str(entry.get("username") or ""),
+            "has_token": bool(
+                str(entry.get("token") or entry.get("access_token") or "").strip()
+            ),
+            "has_password": bool(
+                str(entry.get("password") or entry.get("secret") or "").strip()
+            ),
+            "account_count": _account_count(entry),
+            "source": str(entry.get("source") or "none"),
+        }
     return base
 
 
@@ -216,9 +254,16 @@ def upsert_portal_credential(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     portal_id = str(portal_id).strip().lower()
-    if portal_id not in PORTAL_IDS:
+    # 动态白名单：目录键（内置+自定义）∪ 规范凭据键 ∪ 遗留三键
+    try:
+        from app.services.portal_catalog import known_portal_ids
+
+        allowed_ids = known_portal_ids(repo=repo)
+    except Exception:  # noqa: BLE001
+        allowed_ids = set(PORTAL_IDS)
+    if portal_id not in allowed_ids:
         raise ValueError(
-            f"Unknown portal_id: {portal_id}; expected one of {PORTAL_IDS}"
+            f"Unknown portal_id: {portal_id}; expected one of {sorted(allowed_ids)}"
         )
 
     existing_raw = repo.get_json("portal_credentials", {})
@@ -252,6 +297,14 @@ def upsert_portal_credential(
     for key in ("username", "client_id", "auth_type", "token_header"):
         if key in payload and payload[key] is not None:
             secrets[key] = str(payload[key]).strip()
+
+    # 多账号列表（NSMC 等限额门户轮换）：显式空列表视为清空，回落单凭据模式
+    if payload.get("accounts") is not None:
+        cleaned = _sanitize_accounts(payload.get("accounts"))
+        if cleaned:
+            secrets["accounts"] = cleaned
+        else:
+            secrets.pop("accounts", None)
 
     if "use_for_nsidc" in payload:
         secrets["use_for_nsidc"] = bool(payload["use_for_nsidc"])

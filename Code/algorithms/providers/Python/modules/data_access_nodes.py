@@ -179,18 +179,89 @@ class RemoteFetchModule(BaseModule):
         )
 
 
-# Default open-data base URLs (overridable via params / settings injection)
+# Minimal safety-net presets for offline/test scenarios where backend injection
+# (datasource_selection.open_data_presets) is unavailable. The canonical source
+# lives in backend app.services.data_cache_service.DEFAULT_OPEN_DATA_PRESETS.
 _DEFAULT_OPEN_DATA_PRESETS: dict[str, str] = {
-    "noaa_nomads": "https://nomads.ncep.noaa.gov/",
-    "noaa_goes": "https://cdn.star.nesdis.noaa.gov/",
     "nasa_earthdata": "https://data.lpdaac.earthdatacloud.nasa.gov/",
-    "nasa_cmr": "https://cmr.earthdata.nasa.gov/",
-    "nsidc_data": "https://n5eil01u.ecs.nsidc.org/",
-    "nasa_ges_disc": "https://hydro1.gesdisc.eosdis.nasa.gov/",
-    "nasa_gldas": "https://hydro1.gesdisc.eosdis.nasa.gov/data/GLDAS/",
-    "esa_copernicus": "https://catalogue.dataspace.copernicus.eu/",
-    "esa_download": "https://download.dataspace.copernicus.eu/",
+    "nsidc_data": "https://data.nsidc.earthdatacloud.nasa.gov/",
 }
+
+# earthdata 家族（plan P2e）：命中且已装 earthaccess 时 http_open_data 默认
+# 走 earthaccess 认证会话物化；use='legacy' 保持 HttpSource+门户头路径。
+_EARTHDATA_FAMILY_KEYS = frozenset(
+    {
+        "earthdata",
+        "nasa_earthdata",
+        "nsidc",
+        "nsidc_data",
+        "nasa_ges_disc",
+        "nasa_gldas",
+    }
+)
+_HTTP_OPEN_DATA_USE_VALUES = frozenset({"auto", "earthaccess", "legacy"})
+
+
+def _earthaccess_available() -> bool:
+    try:
+        import earthaccess  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+def _earthaccess_credentials_available(ds: dict[str, object]) -> bool:
+    """earthaccess 登录凭据是否可解析（门户账密或环境变量）。
+
+    缺凭据时 auto 保持 legacy 匿名路径，避免破坏公开数据集的免登录下载。
+    """
+    from modules.download_nodes import _resolve_earthdata_portal_userpass
+
+    username, password = _resolve_earthdata_portal_userpass(ds)
+    if username and password:
+        return True
+    return bool(
+        os.environ.get("EARTHDATA_USERNAME") and os.environ.get("EARTHDATA_PASSWORD")
+    )
+
+
+def _is_earthdata_family(preset: str, cred_profile: str) -> bool:
+    key = (cred_profile.strip() or preset.strip()).lower()
+    return key in _EARTHDATA_FAMILY_KEYS
+
+
+def _materialize_via_earthaccess(
+    url: str,
+    target_dir: Path,
+    ds: dict[str, object],
+) -> Path:
+    """earthaccess 认证会话物化：登录后 get_requests_https_session 下载。
+
+    与 HttpSource 缓存互补：以 URL 原始文件名直落 target_dir（保留
+    YYYYDDD 等元信息），续传/重试复用 ``ingest/_http_resume``。
+    """
+    import earthaccess
+
+    from ingest._http_resume import download_with_retry
+    from ingest.nsidc_download import _earthaccess_login
+    from modules.download_nodes import _resolve_earthdata_portal_userpass
+
+    username, password = _resolve_earthdata_portal_userpass(ds)
+    _earthaccess_login(username, password, persist=True)
+    session = earthaccess.get_requests_https_session()
+
+    from urllib.parse import urlparse
+
+    basename = Path(urlparse(url).path).name
+    local_path = target_dir / (
+        basename if basename.strip() else "earthaccess_download.bin"
+    )
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    if not download_with_retry(session, url, local_path):
+        raise RuntimeError(f"earthaccess materialize failed: {url}")
+    return local_path
+
 
 _PORTAL_CRED_ALIASES: dict[str, tuple[str, ...]] = {
     "earthdata": (
@@ -202,7 +273,125 @@ _PORTAL_CRED_ALIASES: dict[str, tuple[str, ...]] = {
     ),
     "nsidc": ("nsidc", "nsidc_data", "earthdata"),
     "copernicus": ("copernicus", "esa", "esa_download", "esa_copernicus"),
+    "nsmc": ("nsmc", "cma_nsmc", "cma_data", "fy"),
 }
+
+# URS token 交换：Earthdata 云 CDN（lp-prod-protected / nsidc-cumulus-prod-protected）
+# 只认 Bearer token，不认 Basic。basic 凭据经 URS 换 token 后可用。
+_URS_TOKEN_URL = "https://urs.earthdata.nasa.gov/api/users/token"
+_URS_TOKENS_URL = "https://urs.earthdata.nasa.gov/api/users/tokens"
+_URS_TOKEN_TTL_SECONDS = 100 * 60  # URS token 有效期 2h，提前 20 分钟过期
+_urs_token_cache: dict[str, tuple[float, str]] = {}
+
+
+def _urs_list_tokens(basic_header: str) -> list[dict[str, object]]:
+    """列出账号当前有效 token（URS 每用户 token 数量有限，须先复用再新建）。"""
+    import urllib.request
+
+    req = urllib.request.Request(
+        _URS_TOKENS_URL,
+        method="GET",
+        headers={"Authorization": basic_header, "Accept": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        payload = json.loads(resp.read().decode("utf-8", "replace"))
+    if isinstance(payload, dict):
+        payload = payload.get("tokens") or []
+    return [t for t in payload if isinstance(t, dict)] if payload else []
+
+
+def _urs_token_still_valid(entry: dict[str, object]) -> bool:
+    """判断 token 未过期（expiration_date 解析失败时按有效处理，URS 只列活跃 token）。"""
+    import time
+    from datetime import datetime, timezone
+
+    raw = str(entry.get("expiration_date") or "").strip()
+    if not raw:
+        return True
+    for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ", "%m/%d/%Y %H:%M:%S"):
+        try:
+            dt = datetime.strptime(raw.replace("Z", "+0000"), fmt)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.timestamp() > time.time() + 300
+        except ValueError:
+            continue
+    return True
+
+
+def _earthdata_bearer_token(username: str, password: str) -> str:
+    """用 Earthdata 账密获取 URS Bearer token（进程内缓存，失败抛异常）。
+
+    复用优先：URS 每用户 token 数量有上限，盲目新建很快触发
+    403 max_token_limit（provider 侧限流）；先列已存在 token 并复用，
+    仅在无可用 token 时新建。交换为幂等只读语义；缓存避免重复打 URS。
+    可用 CGDA_URS_TOKEN_EXCHANGE=0 关闭（测试环境）。
+    """
+    import base64
+    import time
+    import urllib.error
+    import urllib.request
+
+    if os.getenv("CGDA_URS_TOKEN_EXCHANGE", "1").strip() == "0":
+        raise RuntimeError("URS token exchange disabled by CGDA_URS_TOKEN_EXCHANGE")
+
+    cache_key = f"{username}:{password}"
+    now = time.monotonic()
+    cached = _urs_token_cache.get(cache_key)
+    if cached and now - cached[0] < _URS_TOKEN_TTL_SECONDS:
+        return cached[1]
+
+    basic_header = "Basic " + base64.b64encode(
+        f"{username}:{password}".encode()
+    ).decode("ascii")
+
+    def _extract(entry_or_payload: object) -> str:
+        raw = (
+            entry_or_payload.get("access_token")
+            if isinstance(entry_or_payload, dict)
+            else entry_or_payload
+        )
+        if isinstance(raw, dict):
+            return str(raw.get("token") or "").strip()
+        return str(raw or "").strip()
+
+    # 1) 复用已存在的有效 token
+    try:
+        for entry in _urs_list_tokens(basic_header):
+            token = _extract(entry)
+            if token and _urs_token_still_valid(entry):
+                _urs_token_cache[cache_key] = (now, token)
+                return token
+    except Exception:  # noqa: BLE001
+        pass  # 列表失败不阻断，继续尝试新建
+
+    # 2) 新建 token
+    req = urllib.request.Request(
+        _URS_TOKEN_URL,
+        data=b"",
+        method="POST",
+        headers={"Authorization": basic_header, "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            payload = json.loads(resp.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as exc:
+        # 3) 上限触发（并发/多进程竞争）：再列一次并复用
+        if exc.code == 403:
+            for entry in _urs_list_tokens(basic_header):
+                token = _extract(entry)
+                if token and _urs_token_still_valid(entry):
+                    _urs_token_cache[cache_key] = (now, token)
+                    return token
+        raise
+    # URS 响应两种形态都见过：{"access_token": "..."}（字符串）与
+    # {"access_token": {"token": "..."}}（对象）；字符串形态解析失败会静默
+    # 回退 Basic → 云 CDN 401，故必须兼容两者。
+    token = _extract(payload)
+    if not token:
+        raise RuntimeError("URS token response missing access_token")
+    _urs_token_cache[cache_key] = (now, token)
+    return token
 
 
 def _resolve_portal_headers(
@@ -224,8 +413,10 @@ def _resolve_portal_headers(
     if not isinstance(portal_creds, dict):
         portal_creds = {}
 
-    # Prefer lazy resolve from backend config over secrets embedded in job payload.
-    # Bridge sets portal_credentials_resolve=True and omits plaintext tokens.
+    # Context-first: prefer portal_credentials already injected by the request
+    # builder (python_provider_request_builder.py sets portal_credentials_resolve=True
+    # and may inline resolved credentials). Only fall back to lazy backend import
+    # when the context is empty and the resolve flag is set.
     if (not portal_creds) and datasource_selection.get("portal_credentials_resolve"):
         try:
             from app.services.config_service import get_portal_credentials_runtime
@@ -287,10 +478,23 @@ def _resolve_portal_headers(
         value = token if token.lower().startswith("bearer ") else f"Bearer {token}"
         headers[header_name] = value
     elif auth_type == "basic" and username:
-        import base64
+        # Earthdata 云 CDN 只认 Bearer：先用账密换 URS token，失败回退 Basic
+        # （GES DISC 传统端点仍接受 Basic）。
+        bearer = ""
+        if profile in {"earthdata", "nsidc", "nsidc_data"} or wants_earthdata:
+            try:
+                bearer = _earthdata_bearer_token(username, password)
+            except Exception:  # noqa: BLE001
+                bearer = ""
+        if bearer:
+            headers["Authorization"] = f"Bearer {bearer}"
+        else:
+            import base64
 
-        raw_cred = f"{username}:{password}".encode()
-        headers["Authorization"] = f"Basic {base64.b64encode(raw_cred).decode('ascii')}"
+            raw_cred = f"{username}:{password}".encode()
+            headers["Authorization"] = (
+                f"Basic {base64.b64encode(raw_cred).decode('ascii')}"
+            )
     elif auth_type == "header" and token:
         headers[header_name] = token
     elif token:
@@ -325,6 +529,7 @@ class HttpOpenDataModule(BaseModule):
         "token_value": "",
         "force_refresh": False,
         "accept": "",
+        "use": "auto",
     }
 
     def execute(
@@ -362,27 +567,54 @@ class HttpOpenDataModule(BaseModule):
                 else f"{url}&{query.lstrip('&')}"
             )
 
-        headers = _resolve_portal_headers(
-            cred_profile=str(params.get("cred_profile") or ""),
-            datasource_selection=ds,
-            token_header=str(params.get("token_header") or ""),
-            token_value=str(params.get("token_value") or ""),
-            accept=str(params.get("accept") or ""),
-        )
-        metadata: dict[str, object] = {
-            "force_refresh": bool(params.get("force_refresh")),
-        }
-        if headers:
-            metadata["http_headers"] = headers
+        use = str(params.get("use") or "auto").strip().lower()
+        if use not in _HTTP_OPEN_DATA_USE_VALUES:
+            raise ValueError(
+                f"http_open_data: invalid use={use!r} (auto|earthaccess|legacy)"
+            )
+        cred_profile = str(params.get("cred_profile") or "").strip()
+        effective_use = "legacy"
+        if use == "earthaccess":
+            if not _earthaccess_available():
+                raise RuntimeError(
+                    "earthaccess requested (use='earthaccess') but not installed"
+                )
+            effective_use = "earthaccess"
+        elif (
+            use == "auto"
+            and _is_earthdata_family(preset, cred_profile)
+            and _earthaccess_available()
+            and _earthaccess_credentials_available(ds)
+        ):
+            effective_use = "earthaccess"
 
         target = _materialize_root(ctx)
-        source = HttpSource()
-        resource = source.locate(url, metadata=metadata)
-        materialized = source.materialize(resource, target_dir=target)
-        local_path = materialized.local_path or materialized.metadata.get("local_path")
-        if not local_path:
-            raise RuntimeError(f"HTTP open data materialize failed for {url}")
-        cache_hit = bool(materialized.metadata.get("cache_hit"))
+        if effective_use == "earthaccess":
+            local_path = str(_materialize_via_earthaccess(url, target, ds))
+            cache_hit = False
+        else:
+            headers = _resolve_portal_headers(
+                cred_profile=cred_profile,
+                datasource_selection=ds,
+                token_header=str(params.get("token_header") or ""),
+                token_value=str(params.get("token_value") or ""),
+                accept=str(params.get("accept") or ""),
+            )
+            metadata: dict[str, object] = {
+                "force_refresh": bool(params.get("force_refresh")),
+            }
+            if headers:
+                metadata["http_headers"] = headers
+
+            source = HttpSource()
+            resource = source.locate(url, metadata=metadata)
+            materialized = source.materialize(resource, target_dir=target)
+            local_path = materialized.local_path or materialized.metadata.get(
+                "local_path"
+            )
+            if not local_path:
+                raise RuntimeError(f"HTTP open data materialize failed for {url}")
+            cache_hit = bool(materialized.metadata.get("cache_hit"))
         result = _store_path_manifest(
             ctx,
             module_name=self.name,
@@ -392,7 +624,8 @@ class HttpOpenDataModule(BaseModule):
                 "url": url,
                 "preset": preset,
                 "cache_hit": cache_hit,
-                "cred_profile": str(params.get("cred_profile") or ""),
+                "cred_profile": cred_profile,
+                "use": effective_use,
             },
         )
         result["url"] = url
@@ -405,6 +638,22 @@ def _fnmatch_member(name: str, pattern: str) -> bool:
     return fnmatch.fnmatch(name.replace("\\", "/"), pattern) or fnmatch.fnmatch(
         Path(name).name, pattern
     )
+
+
+def _passthrough_basename(archive_path: Path, inputs: dict[str, object]) -> str:
+    """透传时的目标文件名：优先按来源 URL 恢复原始名。
+
+    HttpSource 物化缓存以 sha256 命名，产品文件名中的 YYYYDDD 等元信息丢失
+    （如 VNP13C1 HDF 需按文件名解析观测日期），须由 URL 还原。
+    """
+    url_hint = _coerce_path(inputs.get("url")) or ""
+    if url_hint.startswith(("http://", "https://")):
+        from urllib.parse import urlparse
+
+        base = Path(urlparse(url_hint).path).name
+        if base and "." in base:
+            return base
+    return archive_path.name
 
 
 def _find_safe_root(extract_dir: Path) -> Path | None:
@@ -449,6 +698,160 @@ def _safe_zip_extract(zf: zipfile.ZipFile, member_name: str, extract_dir: Path) 
     if not _is_safe_archive_member(member_name, extract_dir):
         raise ValueError(f"Refusing unsafe archive member path: {member_name!r}")
     zf.extract(member_name, extract_dir)
+
+
+# ─── CMR granule 检索（公共，免凭据） ─────────────────────────────────────────
+
+_CMR_GRANULE_URL = "https://cmr.earthdata.nasa.gov/search/granules.json"
+_CMR_NON_DATA_SUFFIXES = (
+    ".iso.xml",
+    ".cmr.xml",
+    ".dmrpp",
+    ".dmr",
+    ".hdr",
+    ".qa",
+    ".md5",
+    ".png",
+    ".jpg",
+    ".bmp",
+    ".txt",
+)
+
+
+def _cmr_data_links(entry: dict[str, object], link_filter: str) -> list[str]:
+    """从 CMR granule entry 提取 https 数据链接（跳过 browse/s3/元数据小文件）。"""
+    links: list[str] = []
+    for link in entry.get("links") or []:
+        if not isinstance(link, dict):
+            continue
+        href = str(link.get("href") or "").strip()
+        rel = str(link.get("rel") or "").strip()
+        if not href.startswith("https://"):
+            continue
+        if "data#" not in rel and "data" != rel:
+            continue
+        if href.lower().endswith(_CMR_NON_DATA_SUFFIXES):
+            continue
+        if "/s3credentials" in href:
+            continue
+        if link_filter and link_filter not in href:
+            continue
+        links.append(href)
+    return links
+
+
+def _norm_cmr_date(raw: str) -> str:
+    """YYYYMMDD / YYYY-MM-DD → CMR temporal 需要的 YYYY-MM-DD。"""
+    text = raw.strip()
+    if len(text) == 8 and text.isdigit():
+        return f"{text[0:4]}-{text[4:6]}-{text[6:8]}"
+    return text
+
+
+@register_module_decorator(name="cmr_granule_search")
+class CmrGranuleSearchModule(BaseModule):
+    name = "cmr_granule_search"
+    description = (
+        "NASA CMR granule 检索（公共只读，免凭据）：按产品/版本/时间/范围返回"
+        " granule 数据 URL。输出 path（首个 URL，可直连 http_open_data）与 urls 列表。"
+        "Earthdata 云 CDN 的对象名含 tile/revolution/时间戳，无法由日期路径直接"
+        "构造，须经 CMR 解析真实下载地址。"
+    )
+    input_ports = [
+        PortSpec(name="path", kind="value", data_class="string", required=False),
+    ]
+    output_ports = [
+        PortSpec(name="path", kind="value", data_class="string"),
+        PortSpec(name="urls", kind="value", data_class="string"),
+        PortSpec(name="manifest", kind="artifact", data_class="product_manifest"),
+    ]
+    default_params: dict[str, object] = {
+        "short_name": "",
+        "version": "",
+        "start_date": "",
+        "end_date": "",
+        "bounding_box": "",
+        "link_filter": "",
+        "max_results": 5,
+        "cmr_base": _CMR_GRANULE_URL,
+    }
+
+    def execute(
+        self,
+        inputs: dict[str, object],
+        params: dict[str, object],
+        ctx: NodeExecutionContext,
+    ) -> dict[str, object]:
+        import urllib.parse
+        import urllib.request
+
+        short_name = str(params.get("short_name") or "").strip()
+        if not short_name:
+            raise ValueError("cmr_granule_search requires short_name")
+        start_date = _norm_cmr_date(str(params.get("start_date") or ""))
+        end_date = _norm_cmr_date(str(params.get("end_date") or ""))
+        if not start_date:
+            raise ValueError("cmr_granule_search requires start_date")
+        if not end_date:
+            end_date = start_date
+
+        query: dict[str, str] = {
+            "short_name": short_name,
+            "page_size": str(max(1, min(int(params.get("max_results") or 5), 50))),
+            "sort_key": "-start_date",
+        }
+        version = str(params.get("version") or "").strip()
+        if version:
+            query["version"] = version
+        # temporal: 覆盖与请求区间相交的 granule（CMR 语义）
+        query["temporal"] = f"{start_date}T00:00:00Z,{end_date}T23:59:59Z"
+        bbox = str(params.get("bounding_box") or "").strip()
+        if bbox:
+            query["bounding_box"] = bbox
+        link_filter = str(params.get("link_filter") or "").strip()
+
+        base = str(params.get("cmr_base") or _CMR_GRANULE_URL).strip()
+        url = f"{base}?{urllib.parse.urlencode(query)}"
+        req = urllib.request.Request(
+            url,
+            headers={"Accept": "application/json", "User-Agent": "CGDA-Backend/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            payload = json.loads(resp.read().decode("utf-8", "replace"))
+
+        entries = (payload.get("feed") or {}).get("entry") or []
+        if isinstance(entries, dict):
+            entries = [entries]
+        urls: list[str] = []
+        titles: list[str] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            entry_links = _cmr_data_links(entry, link_filter)
+            if entry_links:
+                urls.append(entry_links[0])
+                titles.append(str(entry.get("title") or ""))
+        if not urls:
+            raise ValueError(
+                f"cmr_granule_search: no data links for {short_name} "
+                f"[{start_date}~{end_date}] (hits={len(entries)})"
+            )
+
+        result = _store_path_manifest(
+            ctx,
+            module_name=self.name,
+            path=urls[0],
+            product_type="cmr_granule_urls",
+            extra={
+                "url": urls[0],
+                "urls": urls,
+                "titles": titles,
+                "short_name": short_name,
+                "version": version,
+            },
+        )
+        result["urls"] = urls
+        return result
 
 
 def _safe_tar_extractall(
@@ -498,12 +901,20 @@ def _recurse_once_archives(extract_dir: Path) -> None:
 class ArchiveExtractModule(BaseModule):
     name = "archive_extract"
     description = (
-        "解压 zip/tar/gz/tgz 归档到目录；支持 member_glob 过滤、recurse_once 内层压缩、"
-        "Sentinel SAFE 根目录识别。不支持 7z/rar。"
+        "解压 zip/tar/gz/tgz 归档到目录；非归档数据文件（如 CMR 直下的裸 .h5/.nc）"
+        "透传复制进目录，url 输入可恢复原始文件名。支持 member_glob 过滤、"
+        "recurse_once 内层压缩、Sentinel SAFE 根目录识别。不支持 7z/rar。"
     )
     input_ports = [
         PortSpec(name="path", kind="value", data_class="string", required=False),
         PortSpec(name="data", kind="data", data_class="source", required=False),
+        PortSpec(
+            name="url",
+            kind="value",
+            data_class="string",
+            required=False,
+            description="来源 URL；透传时用于恢复原始文件名（HTTP 缓存以 sha256 命名）。",
+        ),
     ]
     output_ports = [
         PortSpec(name="path", kind="value", data_class="string"),
@@ -544,6 +955,7 @@ class ArchiveExtractModule(BaseModule):
 
         member_glob = str(params.get("member_glob") or "").strip()
         name_lower = archive_path.name.lower()
+        passthrough = False
         if name_lower.endswith(".zip"):
             with zipfile.ZipFile(archive_path, "r") as zf:
                 members = zf.namelist()
@@ -565,11 +977,20 @@ class ArchiveExtractModule(BaseModule):
             out_file = extract_dir / archive_path.stem
             with gzip.open(archive_path, "rb") as src, out_file.open("wb") as dst:
                 shutil.copyfileobj(src, dst)
-        else:
+        elif name_lower.endswith((".7z", ".rar")):
             raise ValueError(
                 f"Unsupported archive type: {archive_path.suffix}. "
                 "Supported: zip/tar/gz/tgz. 7z/rar are not supported."
             )
+        else:
+            passthrough = True
+            dest_name = _passthrough_basename(archive_path, inputs)
+            if member_glob and not _fnmatch_member(dest_name, member_glob):
+                raise FileNotFoundError(
+                    f"passthrough file {dest_name!r} does not match "
+                    f"member_glob {member_glob!r}"
+                )
+            shutil.copy2(archive_path, extract_dir / dest_name)
 
         if bool(params.get("recurse_once")):
             _recurse_once_archives(extract_dir)
@@ -577,6 +998,8 @@ class ArchiveExtractModule(BaseModule):
         result_path = extract_dir
         safe_root = _find_safe_root(extract_dir)
         extra: dict[str, object] = {"archive": str(archive_path)}
+        if passthrough:
+            extra["passthrough"] = True
         if safe_root is not None:
             result_path = safe_root
             extra["safe_root"] = str(safe_root)

@@ -7,7 +7,11 @@
 export {
   buildMapViewportSnapshot,
   estimateLngBoundsFromCenter,
+  estimateWorldSizePxFromZoom,
+  expandLngBoundsIfNearAntimeridian,
   isNearGlobalLngSpan,
+  MAPLIBRE_DEFAULT_TILE_SIZE,
+  NEAR_ANTIMERIDIAN_LNG_DEG,
   NEAR_GLOBAL_LNG_SPAN_DEG,
   normalizeLngBounds,
   preferVisibleLngBounds,

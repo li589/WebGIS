@@ -35,6 +35,7 @@ describe('parseOverlayBoundsMeta', () => {
       overview_max_zoom: 8,
       maxzoom: 12,
       tile_url_template: '/overlay-tiles/demo/{z}/{x}/{y}.png',
+      bounds_warning: null,
     })
   })
 
@@ -57,6 +58,14 @@ describe('parseOverlayBoundsMeta', () => {
     expect(meta.overview_max_zoom).toBe(-1)
     expect(meta.maxzoom).toBe(18)
     expect(meta.tile_url_template).toBeNull()
+    expect(meta.bounds_warning).toBeNull()
+  })
+
+  it('parses bounds_warning string from meta', () => {
+    const meta = parseOverlayBoundsMeta({
+      bounds_warning: 'Bounds appear to be global or out of WGS84 range',
+    })
+    expect(meta.bounds_warning).toBe('Bounds appear to be global or out of WGS84 range')
   })
 })
 

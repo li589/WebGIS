@@ -35,13 +35,17 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from collections.abc import Callable
 import contextlib
+
+from ingest._http_resume import (
+    check_disk_space as _check_disk_space,
+    format_size as _format_size,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +62,14 @@ DOWNLOAD_TIMEOUT = 3600
 MIN_DISK_FREE_GB = 5.0
 PROGRESS_INTERVAL = 2.0
 
-DEFAULT_OUTPUT_DIR = Path(r"I:\Geograph_DataSet\Soil_Moisture\SMAP")
+# 独立运行的兜底目录：经 BACKEND_DATA_ROOT 注入根（未设时退回实验室本机路径）。
+# 工作流路径不使用此默认——nsidc_smap_download 节点显式传 local_dir
+# （节点参数优先，缺省落 ctx.workspace/data_access/smap_download）。
+DEFAULT_OUTPUT_DIR = (
+    Path(os.getenv("BACKEND_DATA_ROOT", r"I:\Geograph_DataSet"))
+    / "Soil_Moisture"
+    / "SMAP"
+)
 
 # 尝试导入 earthaccess
 try:
@@ -105,16 +116,16 @@ class DownloadResult:
 
 
 def format_size(size_bytes: float) -> str:
-    """将字节数格式化为易读字符串。"""
-    if size_bytes <= 0:
-        return "0 B"
-    units = ["B", "KB", "MB", "GB", "TB"]
-    size = float(size_bytes)
-    idx = 0
-    while size >= 1024 and idx < len(units) - 1:
-        size /= 1024
-        idx += 1
-    return f"{size:.2f} {units[idx]}"
+    """将字节数格式化为易读字符串（委托共享实现，保持既有公开名）。"""
+    return _format_size(size_bytes)
+
+
+def _normalize_iso_date(value: str) -> str:
+    """``YYYYMMDD`` → ``YYYY-MM-DD``（已是 ISO 则原样返回）。"""
+    v = value.strip()
+    if len(v) == 8 and v.isdigit():
+        return f"{v[:4]}-{v[4:6]}-{v[6:8]}"
+    return v
 
 
 def load_credentials(
@@ -153,15 +164,8 @@ def load_credentials(
 def check_disk_space(
     path: Path, min_gb: float = MIN_DISK_FREE_GB
 ) -> tuple[bool, float]:
-    """检查 path 所在磁盘可用空间，返回 (是否充足, 可用 GB)。"""
-    try:
-        path.mkdir(parents=True, exist_ok=True)
-        usage = shutil.disk_usage(path)
-        free_gb = usage.free / (1024**3)
-        return free_gb >= min_gb, free_gb
-    except OSError as exc:
-        logger.error("磁盘空间检查失败: %s", exc)
-        return False, 0.0
+    """检查 path 所在磁盘可用空间（委托共享实现，保持既有公开名）。"""
+    return _check_disk_space(path, min_gb)
 
 
 # ─── 认证 ────────────────────────────────────────────────────────────────────
@@ -220,6 +224,23 @@ def test_earthdata_auth(username: str, password: str) -> bool:
 # ─── Granule 搜索 ────────────────────────────────────────────────────────────
 
 
+def _version_variants(version: str) -> list[str]:
+    """CMR ``version_id`` 惯例为 3 位零填充（SPL3SMP_E V6 = ``006``）。
+
+    用户/节点模板习惯写 "6"；原样透传会 0 命中且被误判为"该日无数据"。
+    纯数字短版本追加 zfill(3) 变体；非数字（如 GLDAS "2.1"）原样。
+    """
+    v = str(version).strip()
+    if not v:
+        return [v]
+    variants = [v]
+    if v.isdigit() and len(v) < 3:
+        padded = v.zfill(3)
+        if padded != v:
+            variants.append(padded)
+    return variants
+
+
 def search_granules(
     start_date: str,
     end_date: str,
@@ -245,12 +266,18 @@ def search_granules(
     logger.info(
         "搜索 %s V%s，时间范围 %s ~ %s", short_name, version, start_date, end_date
     )
-    if _HAS_EARTHACCESS:
-        return _search_via_earthaccess(
-            start_date, end_date, short_name, version, username, password
-        )
-    logger.warning("未安装 earthaccess，使用 requests + CMR 回退搜索路径。")
-    return _search_via_cmr(start_date, end_date, short_name, version)
+    granules: list[Granule] = []
+    for ver in _version_variants(version):
+        if _HAS_EARTHACCESS:
+            granules = _search_via_earthaccess(
+                start_date, end_date, short_name, ver, username, password
+            )
+        else:
+            logger.warning("未安装 earthaccess，使用 requests + CMR 回退搜索路径。")
+            granules = _search_via_cmr(start_date, end_date, short_name, ver)
+        if granules:
+            break
+    return granules
 
 
 def _search_via_earthaccess(
@@ -540,6 +567,10 @@ def download_smap_range(
     Returns:
         DownloadResult 统计信息
     """
+    # 节点模板/种子 {YYYYMMDD} 占位符展开后为紧凑格式；earthaccess temporal
+    # 与 CMR 查询均要求 ISO 日期，入口统一归一化。
+    start_date = _normalize_iso_date(start_date)
+    end_date = _normalize_iso_date(end_date)
     local_path = Path(local_dir)
     username, password = load_credentials(username, password)
 

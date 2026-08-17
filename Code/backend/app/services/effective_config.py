@@ -143,6 +143,32 @@ def assert_data_root_policy() -> None:
         )
 
 
+def assert_deployment_config_policy() -> None:
+    """deployment.config.json 启动一致性断言（fail-closed）。
+
+    config.py 加载期已应用覆盖并拒启损坏文件；本断言在 lifespan 阶段复查：
+    文件在启动间隙被篡改/损坏时拒绝继续服务，并输出覆盖键清单供审计。
+    """
+    from app.services import deployment_config as dc
+
+    status = dc.startup_status()
+    if not status["exists"]:
+        return
+    try:
+        dc.load_deployment_config()
+    except dc.DeploymentConfigError as exc:
+        raise RuntimeError(
+            f"deployment config became invalid during startup: {exc}"
+        ) from exc
+    applied = status.get("applied_env_keys") or []
+    if applied:
+        logger.info(
+            "Deployment config overrides applied (%d key(s)): %s",
+            len(applied),
+            ", ".join(sorted(applied)),
+        )
+
+
 def is_secrets_insecure() -> bool:
     return _secrets_insecure
 

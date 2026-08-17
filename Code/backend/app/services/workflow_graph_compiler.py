@@ -152,6 +152,7 @@ def compile_litegraph_to_workflow_definition(
     id_map: dict[int, str] = {}
     port_meta: dict[str, dict[str, list[dict[str, Any]]]] = {}
     engines_seen: set[str] = set()
+    disabled_ids: set[str] = set()
 
     for node in raw_nodes:
         if not isinstance(node, dict):
@@ -192,6 +193,9 @@ def compile_litegraph_to_workflow_definition(
             node.get("properties") if isinstance(node.get("properties"), dict) else {}
         )
         params: dict[str, Any] = {str(k): v for k, v in props.items()}
+        # 种子可用 properties.enabled=false 停用节点（如现代日期无 FY3B 数据时
+        # 禁用 FY3B 下载/转换支路）；enabled 不属于模块参数，须从 params 剥离。
+        node_enabled = bool(params.pop("enabled", True))
 
         inputs = list(template.get("inputs") or [])
         outputs = list(template.get("outputs") or [])
@@ -216,7 +220,7 @@ def compile_litegraph_to_workflow_definition(
                     ),
                     "input_bindings": {},
                     "params": params,
-                    "enabled": True,
+                    "enabled": node_enabled,
                 }
             )
         else:
@@ -231,9 +235,11 @@ def compile_litegraph_to_workflow_definition(
                     ),
                     "input_bindings": {},
                     "params": params,
-                    "enabled": True,
+                    "enabled": node_enabled,
                 }
             )
+        if not node_enabled:
+            disabled_ids.add(node_id)
 
     has_weather = bool(engines_seen & _WEATHER_ENGINES)
     has_pythonish = bool(engines_seen & _PYTHONISH_ENGINES)
@@ -257,6 +263,9 @@ def compile_litegraph_to_workflow_definition(
         from_nid = id_map.get(from_id)
         to_nid = id_map.get(to_id)
         if not from_nid or not to_nid:
+            continue
+        # 悬挂在停用节点上的边一并剔除：executor 拓扑分层对未知端点直接 KeyError。
+        if from_nid in disabled_ids or to_nid in disabled_ids:
             continue
         from_ports = port_meta[from_nid]["outputs"]
         to_ports = port_meta[to_nid]["inputs"]
@@ -284,6 +293,8 @@ def compile_litegraph_to_workflow_definition(
 
     if not compiled_nodes:
         raise WorkflowGraphCompileError("没有可编译的节点")
+    if len(compiled_nodes) == len(disabled_ids):
+        raise WorkflowGraphCompileError("全部节点均已停用：请至少启用一个节点")
 
     if target_engine == "python_provider":
         _inject_python_request_bindings(compiled_nodes, port_meta)

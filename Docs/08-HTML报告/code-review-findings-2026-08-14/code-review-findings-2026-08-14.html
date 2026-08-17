@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CGDA 代码审查报告 — 改进空间识别</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface-2: #222633;
+    --border: #2d3142;
+    --text: #e4e6eb;
+    --text-dim: #9ca3af;
+    --accent: #60a5fa;
+    --p0: #ef4444;
+    --p1: #f59e0b;
+    --p2: #3b82f6;
+    --p3: #6b7280;
+    --green: #22c55e;
+    --code-bg: #15171f;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 0;
+  }
+  .header {
+    background: linear-gradient(135deg, #1a1d27 0%, #222633 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 32px 40px;
+  }
+  .header h1 {
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .header .meta {
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 40px;
+  }
+
+  /* Summary cards */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+  .summary-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 14px;
+    text-align: center;
+  }
+  .summary-card .count {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  .summary-card .label {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+  .summary-card.p0 .count { color: var(--p0); }
+  .summary-card.p1 .count { color: var(--p1); }
+  .summary-card.p2 .count { color: var(--p2); }
+  .summary-card.p3 .count { color: var(--p3); }
+  .summary-card.fixed .count { color: var(--green); }
+
+  /* Section */
+  .section {
+    margin-bottom: 28px;
+  }
+  .section-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-title .badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .badge-p0 { background: rgba(239,68,68,0.15); color: var(--p0); }
+  .badge-p1 { background: rgba(245,158,11,0.15); color: var(--p1); }
+  .badge-p2 { background: rgba(59,130,246,0.15); color: var(--p2); }
+  .badge-p3 { background: rgba(107,114,128,0.15); color: var(--p3); }
+  .badge-fixed { background: rgba(34,197,94,0.15); color: var(--green); }
+
+  /* Finding card */
+  .finding {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 14px;
+  }
+  .finding-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+  }
+  .finding-id {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent);
+    font-family: 'Fira Code', monospace;
+  }
+  .finding-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .finding-file {
+    font-size: 12px;
+    color: var(--text-dim);
+    font-family: 'Fira Code', monospace;
+    margin-bottom: 8px;
+  }
+  .finding-desc {
+    font-size: 14px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+  .finding-desc strong {
+    color: var(--text);
+  }
+  .finding-code {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 12px;
+    overflow-x: auto;
+    margin: 8px 0;
+    color: #c4cad4;
+  }
+  .finding-code .comment { color: #6b7280; }
+  .finding-code .keyword { color: #c792ea; }
+  .finding-code .string { color: #c3e88d; }
+  .finding-code .highlight { background: rgba(239,68,68,0.15); display: inline-block; padding: 0 2px; border-radius: 2px; }
+
+  .impact-bar {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }
+  .impact-tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+  }
+  .impact-tag.security { color: var(--p0); border-color: rgba(239,68,68,0.3); }
+  .impact-tag.performance { color: var(--p1); border-color: rgba(245,158,11,0.3); }
+  .impact-tag.maintainability { color: var(--p2); border-color: rgba(59,130,246,0.3); }
+  .impact-tag.test { color: #a78bfa; border-color: rgba(167,139,250,0.3); }
+
+  .recommendation {
+    background: rgba(96,165,250,0.06);
+    border-left: 3px solid var(--accent);
+    padding: 10px 14px;
+    border-radius: 0 6px 6px 0;
+    font-size: 13px;
+    margin-top: 8px;
+  }
+  .recommendation strong { color: var(--accent); }
+
+  /* Table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 10px 0;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    color: var(--text-dim);
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td code {
+    font-family: 'Fira Code', monospace;
+    font-size: 12px;
+    color: var(--accent);
+  }
+
+  /* Fixed section */
+  .fixed-list {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .fixed-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--green);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+  .fixed-item .title { font-weight: 600; }
+  .fixed-item .desc { color: var(--text-dim); font-size: 12px; margin-top: 2px; }
+
+  .footer {
+    border-top: 1px solid var(--border);
+    padding: 20px 40px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>CGDA 代码审查报告 — 改进空间识别</h1>
+  <div class="meta">审查范围：后端服务层 / API 设计 / GEE 集成 / 前端状态管理 / 测试质量 / 技术债务 | 日期：2026-08-14</div>
+</div>
+
+<div style="max-width:1100px;margin:0 auto;padding:0 40px"><div style="padding:10px 14px;border:1px solid #f59e0b;border-left:4px solid #d97706;background:#fffbeb;border-radius:6px;font-size:12.5px;color:#92400e">
+  <b>历史快照（取证基准 2026-08-14）</b> — 本报告所列问题的修复状态以当前代码为准（报告内「已修复 9 项」为当时快照，其余条目多数已在后续迭代中处理）。仅作审查过程记录归档，不代表当前技术债务现状。
+</div></div>
+
+<div class="container">
+
+  <!-- Summary -->
+  <div class="summary-grid">
+    <div class="summary-card p0"><div class="count">2</div><div class="label">P0 阻断级</div></div>
+    <div class="summary-card p1"><div class="count">6</div><div class="label">P1 高优先级</div></div>
+    <div class="summary-card p2"><div class="count">10</div><div class="label">P2 中优先级</div></div>
+    <div class="summary-card p3"><div class="count">11</div><div class="label">P3 低优先级</div></div>
+    <div class="summary-card fixed"><div class="count">9</div><div class="label">已修复</div></div>
+  </div>
+
+  <!-- P0 -->
+  <div class="section">
+    <div class="section-title">P0 — 阻断级 <span class="badge badge-p0">必须修复</span></div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P0-1</div>
+          <div class="finding-title">test_business_regression.py 静默测试失败</div>
+          <div class="finding-file">Test/backend/test_business_regression.py</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        回归测试使用自定义 <strong>check()</strong> 函数收集断言结果，但 <strong>从不主动抛出失败</strong>。pytest 视所有测试函数为通过，即使 check 条件为 False。这意味着关键业务回归验证形同虚设——所有回归错误都被静默吞没。
+      </div>
+      <div class="finding-code">
+<span class="comment"># 问题代码：check() 仅 append 到列表，不触发 assert</span>
+_results: list[tuple[str, bool, str]] = []
+
+<span class="keyword">def</span> check(condition: bool, msg: str):
+    _results.append((inspect.stack()[1].function, condition, msg))
+    <span class="comment"># ← 缺少 assert condition, msg</span>
+
+<span class="keyword">def</span> test_regression_case1():
+    check(result == expected, <span class="string">"Value mismatch in case 1"</span>)
+    <span class="comment"># 测试始终 "通过"，即使 condition=False</span>
+      </div>
+      <div class="impact-bar">
+        <span class="impact-tag test">测试可靠性</span>
+        <span class="impact-tag">回归保护缺失</span>
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>将 <code>check()</code> 改为 <code>assert condition, msg</code>，或在函数末尾添加 <code>assert all(r[1] for r in _results)</code> 汇总断言。同时审查 <code>test_open_meteo_performance.py</code> 是否有相同模式。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P0-2</div>
+          <div class="finding-title">artifact_router.py 缺少认证与访问控制</div>
+          <div class="finding-file">Code/backend/app/api/routers/artifact_router.py</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        Artifact 下载端点 <strong>无任何认证或授权检查</strong>，任何知道 artifact_id 的未认证用户均可下载敏感产物文件。这违反了 RBAC 三角色模型（admin/standard/demo），构成信息泄露风险。
+      </div>
+      <div class="finding-code">
+@router.get(<span class="string">"/artifacts/{artifact_id}"</span>, tags=[<span class="string">"artifacts"</span>])
+<span class="keyword">def</span> get_artifact(artifact_id: str):
+    <span class="highlight"># 无认证检查、无角色验证、无所有权校验</span>
+    artifact = artifact_service.get_artifact(artifact_id)
+    <span class="keyword">return</span> FileResponse(artifact.path, filename=artifact.name)
+      </div>
+      <div class="impact-bar">
+        <span class="impact-tag security">安全漏洞</span>
+        <span class="impact-tag">RBAC 绕过</span>
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>添加 <code>Depends(get_current_user)</code> 依赖注入，校验用户角色 ≥ standard，并验证 artifact 所有权（关联到用户的工作流 run）。生产环境还需添加速率限制。
+      </div>
+    </div>
+  </div>
+
+  <!-- P1 -->
+  <div class="section">
+    <div class="section-title">P1 — 高优先级 <span class="badge badge-p1">应尽快修复</span></div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P1-1</div>
+          <div class="finding-title">重复的 Circuit Breaker 实现</div>
+          <div class="finding-file">app/weatherengine/client.py (L48-167) vs app/services/circuit_breaker.py (307 行死代码)</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        <strong>client.py</strong> 内联了一个 120 行的 <code>CircuitBreaker</code> 类（含类级 <code>_runtime_lock = RLock()</code>），而 <strong>circuit_breaker.py</strong> 中已有 307 行完整的集中式实现（含 Registry 模式），但<strong>从未被任何模块导入</strong>。两套实现参数不一致、行为各异，维护成本翻倍。
+      </div>
+      <div class="finding-code">
+<span class="comment"># client.py — 内联实现（简化的）</span>
+<span class="keyword">class</span> CircuitBreaker:
+    _runtime_lock = RLock()  <span class="comment"># 类级共享锁</span>
+    failure_threshold = 5
+    recovery_timeout = 60
+
+<span class="comment"># circuit_breaker.py — 完整但从未被导入</span>
+<span class="keyword">class</span> CircuitBreaker:
+    <span class="keyword">def</span> __init__(self, failure_threshold=5, recovery_timeout=60):
+        self.state = <span class="string">"CLOSED"</span>
+        ...
+<span class="keyword">class</span> CircuitBreakerRegistry:
+    _breakers: dict[str, CircuitBreaker] = {}
+      </div>
+      <div class="impact-bar">
+        <span class="impact-tag maintainability">代码重复</span>
+        <span class="impact-tag">死代码 307 行</span>
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>删除 client.py 内联实现，改用 circuit_breaker.py 的 <code>CircuitBreakerRegistry</code>。若 registry 实现不满足需求（如需要类级共享锁），则在 registry 基础上扩展而非另起炉灶。删除后跑 <code>pytest Test/backend/test_weatherengine_service.py -q</code> 验证。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P1-2</div>
+          <div class="finding-title">GEE Context 全局锁造成并发瓶颈</div>
+          <div class="finding-file">app/gee/core/src/webgis_gee/gee/context.py</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        <code>GeeContext</code> 使用<strong>类级</strong> <code>RLock</code>，序列化了所有 GEE 账号的初始化操作。锁在 <code>initialize()</code> 中获取后<strong>不释放</strong>，一直持有到 <code>close()</code>。这意味着账号池中的账号无法并行初始化，且一个账号的初始化会阻塞其他账号的所有操作。
+      </div>
+      <div class="finding-code">
+<span class="keyword">class</span> GeeContext:
+    _runtime_lock = RLock()  <span class="comment"># 类级，所有实例共享</span>
+
+    <span class="keyword">def</span> initialize(self) -> <span class="keyword">None</span>:
+        self._runtime_lock.acquire()
+        self._lock_acquired = <span class="keyword">True</span>
+        <span class="keyword">try</span>:
+            self._ee.Initialize(credentials=..., project=...)
+            self._initialized = <span class="keyword">True</span>
+        <span class="keyword">finally</span>:
+            <span class="comment"># 锁不释放！持有到 close()</span>
+            pass
+      </div>
+      <div class="impact-bar">
+        <span class="impact-tag performance">并发瓶颈</span>
+        <span class="impact-tag">账号池利用率低</span>
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>将锁改为实例级（<code>self._lock = RLock()</code>），仅在 <code>ee.Initialize()</code> 调用期间持有，初始化完成后立即释放。ee.Initialize 本身是线程安全的，不需要跨账号互斥。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P1-3</div>
+          <div class="finding-title">前端 25 处 no-explicit-any 类型违规</div>
+          <div class="finding-file">eslint.config.js (规则为 warn)</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        ESLint <code>@typescript-eslint/no-explicit-any</code> 规则仍有 25 处警告未修复，集中在 8 个文件中。大量 <code>any</code> 类型绕过了 TypeScript 类型安全检查，可能导致运行时错误无法在编译期捕获。
+      </div>
+      <table>
+        <tr><th>文件</th><th>次数</th><th>典型问题</th><th>可用契约类型</th></tr>
+        <tr><td><code>LayerSidebarActive.vue</code></td><td>8</td><td><code>activeLayersDisplay: any[]</code></td><td><code>LayerDescriptor</code></td></tr>
+        <tr><td><code>InfoPanelVisualTab.vue</code></td><td>5</td><td><code>analysisCharts: any[]</code></td><td><code>AnalysisChart</code></td></tr>
+        <tr><td><code>useWorkflowState.ts</code></td><td>4</td><td><code>ComputedRef&lt;any&gt;</code> ×4</td><td><code>LayerDescriptor</code> 等</td></tr>
+        <tr><td><code>LayerSidebarLibrary.vue</code></td><td>4</td><td><code>category: any</code></td><td><code>LayerCategory</code></td></tr>
+        <tr><td><code>InfoPanelMetaTab.vue</code></td><td>2</td><td><code>jobLayer: any</code></td><td><code>LayerDescriptor</code></td></tr>
+        <tr><td><code>LayerSidebarContextMenu.vue</code></td><td>1</td><td><code>any[]</code></td><td><code>ContextMenuGroup[]</code></td></tr>
+        <tr><td><code>useOverlayData.ts</code></td><td>1</td><td><code>ComputedRef&lt;any&gt;</code></td><td><code>OverlayStyleMeta</code></td></tr>
+        <tr><td><code>useWeatherPointData.ts</code></td><td>1</td><td><code>ComputedRef&lt;any&gt;</code></td><td><code>WeatherLayerRenderHint</code></td></tr>
+      </table>
+      <div class="recommendation">
+        <strong>修复策略：</strong>优先替换为已有契约类型；无现成类型的在 <code>Code/shared/contracts/</code> 定义新接口。验证：<code>cd Code/frontend && npm run lint && npm run build</code>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P1-4</div>
+          <div class="finding-title">后端 25 处 except Exception 缺少标注与日志</div>
+          <div class="finding-file">config_weather_providers.py (8) / config_api_keys.py (5) / gee_bridge_service.py (6) 等</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        25 处 <code>except Exception</code> 中，部分仅 <code>pass</code> 无日志记录，可能掩盖关键错误。未标注 <code># noqa: BLE001</code> 的宽泛捕获违反 ruff 规范。配置写入异常被静默吞没会导致数据不一致。
+      </div>
+      <table>
+        <tr><th>文件</th><th>缺标次数</th><th>风险</th></tr>
+        <tr><td><code>config_weather_providers.py</code></td><td>8</td><td>中 — 配置写入异常仅 pass</td></tr>
+        <tr><td><code>gee_bridge_service.py</code></td><td>6</td><td>中 — GEE 调用异常过宽</td></tr>
+        <tr><td><code>config_api_keys.py</code></td><td>5</td><td>中 — SQLite 异常宽泛</td></tr>
+        <tr><td><code>config_gee_accounts.py</code></td><td>3</td><td>中 — GEE 账号管理</td></tr>
+        <tr><td><code>config_routes.py</code></td><td>2</td><td>低 — 路由层</td></tr>
+        <tr><td><code>config_remote_storage.py</code></td><td>1</td><td>低 — 远程存储</td></tr>
+      </table>
+      <div class="recommendation">
+        <strong>修复策略：</strong>审查每处是否有 <code>logger.exception</code> 或 <code>logger.error</code>；有意保留的宽泛捕获添加 <code># noqa: BLE001</code>；配置写入的异常应向上传播或记录后返回明确错误。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P1-5</div>
+          <div class="finding-title">73 处 console.error/warn 未接入 useLogStore</div>
+          <div class="finding-file">前端 stores / composables / components 全局</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        前端有 73 处 <code>console.error</code> / <code>console.warn</code> 调用未通过 <code>useLogStore().logOperation()</code> 接入统一日志系统。这些日志仅在浏览器开发者工具中可见，无法被工具栏「日志」面板捕获，也无法导出供排障分析。
+      </div>
+      <div class="finding-code">
+<span class="comment"># active-layers.ts L360 — 清理失败仅 console.warn</span>
+<span class="keyword">void</span> deleteImportedRaster(overlayId).catch((err) => {
+    console.warn(<span class="string">'[layers] deleteImportedRaster failed'</span>, overlayId, err)
+    <span class="comment"># ← 应改为 safeLog('layer-cleanup', '...', err.message, 'warning')</span>
+})
+      </div>
+      <div class="impact-bar">
+        <span class="impact-tag maintainability">可观测性</span>
+        <span class="impact-tag">排障困难</span>
+      </div>
+      <div class="recommendation">
+        <strong>修复策略：</strong>按 <code>workflow-runner.ts</code> 中的 <code>safeLog</code> 模式批量替换。重点文件：<code>settings.ts</code> (L95, L361)、<code>workflow-definitions.ts</code> (L55, L72, L92)、<code>workflow-timers.ts</code> (L56, L81, L140)、<code>active-layers.ts</code> (L360, L367)、<code>run-layers.ts</code> (L370, L423)、<code>weather-tile-manager.ts</code> (L1086)。部分文件已调用 <code>useLogStore</code> 但仍保留冗余 <code>console.error</code>，应删除冗余调用。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P1-6</div>
+          <div class="finding-title">analysis-runner.ts watchRun 轮询循环内存泄漏</div>
+          <div class="finding-file">Code/frontend/src/stores/analysis-runner.ts (L327-369)</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        <code>watchRun()</code> 启动一个<strong>长达 30 分钟的 while 循环</strong>，每 1.5 秒轮询一次。通过 <code>void watchRun(...)</code> fire-and-forget 调用（L278），<strong>无 onScopeDispose、无取消令牌、无组件卸载清理</strong>。<code>sleep()</code> 辅助函数使用裸 <code>setTimeout</code>，不可取消。用户导航离开后轮询仍在后台运行，持续发起网络请求。
+      </div>
+      <div class="finding-code">
+<span class="comment"># L278 — fire-and-forget，无清理</span>
+<span class="keyword">void</span> watchRun(runId, catalogId, displayLike)
+
+<span class="comment"># L327-369 — 30分钟轮询循环</span>
+<span class="keyword">async function</span> watchRun(runId, catalogId, displayLike) {
+    <span class="keyword">const</span> deadline = Date.now() + 30 * 60 * 1000
+    <span class="keyword">while</span> (Date.now() < deadline) {
+        <span class="keyword">await</span> sleep(1500)  <span class="highlight"># ← 不可取消的 setTimeout</span>
+        <span class="keyword">const</span> run = <span class="keyword">await</span> getRun(runId)
+        <span class="keyword">if</span> (isTerminal(run.status)) <span class="keyword">break</span>
+    }
+}
+      </div>
+      <div class="impact-bar">
+        <span class="impact-tag performance">内存泄漏</span>
+        <span class="impact-tag">无效网络请求</span>
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>添加 <code>AbortController</code> 或取消标志，在 <code>cancelRun()</code> 和 <code>onScopeDispose</code> 时设置；使 <code>sleep()</code> 可取消（reject on cancel）。
+      </div>
+    </div>
+  </div>
+
+  <!-- P2 -->
+  <div class="section">
+    <div class="section-title">P2 — 中优先级 <span class="badge badge-p2">计划修复</span></div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P2-1</div>
+          <div class="finding-title">active-layers.ts visibilitySyncRaf 未在 store 销毁时清理</div>
+          <div class="finding-file">Code/frontend/src/stores/layers/active-layers.ts (L400)</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        <code>visibilitySyncRaf</code> 通过 <code>requestAnimationFrame</code> 调度瓦片可见性同步，在 <code>setAllLayerVisibility</code> 中有 <code>cancelAnimationFrame</code> 清理，但<strong>缺少 store 级别的 <code>onScopeDispose</code> 清理</strong>。若 store 被销毁（如 HMR 或测试），RAF 回调可能访问已失效的响应式状态。
+      </div>
+      <div class="finding-code">
+<span class="comment"># L439 — RAF 调度</span>
+visibilitySyncRaf = globalThis.requestAnimationFrame(() => {
+    flushVisibilitySyncToTileManager()
+})
+<span class="comment"># ← 缺少 onScopeDispose(() => cancelAnimationFrame(visibilitySyncRaf))</span>
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>在 <code>createActiveLayersSlice</code> 末尾添加 <code>onScopeDispose(() => { if (visibilitySyncRaf !== null) cancelAnimationFrame(visibilitySyncRaf) })</code>。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P2-2</div>
+          <div class="finding-title">workflow-runner.ts 大量 as 类型断言</div>
+          <div class="finding-file">Code/frontend/src/stores/layers/workflow-runner.ts</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        <code>workflow-runner.ts</code> 中有多处 <code>as Record&lt;string, unknown&gt;</code> 类型断言访问 <code>WorkflowRunStatusResponse</code> 上应已有类型的属性（如 <code>run.layer_id</code>、<code>run.command_label</code>）。这表明契约类型定义不完整，运行时若属性不存在不会在编译期报错。
+      </div>
+      <div class="finding-code">
+<span class="comment"># workflow-runner.ts — 多处类型断言</span>
+<span class="keyword">const</span> layerId = (run as Record&lt;string, unknown&gt;).layer_id <span class="keyword">as</span> string | undefined
+<span class="keyword">const</span> algoReq = (payload.algorithm_request ?? {}) <span class="keyword">as</span> Record&lt;string, unknown&gt;
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>扩展 <code>WorkflowRunStatusResponse</code> 类型定义，将 <code>layer_id</code>、<code>command_label</code> 等字段加入接口；消除不必要的 <code>as</code> 断言。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P2-3</div>
+          <div class="finding-title">多处 fire-and-forget Promise 无 .catch()</div>
+          <div class="finding-file">useWeatherCoverage.ts (L54) / workflow-timers.ts (L138) / weather-reconcile.ts (L87) / analysis-runner.ts (L278等多处)</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        多处 async 函数以 <code>void</code> fire-and-forget 方式调用但未附加 <code>.catch()</code>。reject 时产生 <strong>Unhandled Promise Rejection</strong>，仅被 <code>client-error-capture.ts</code> 以通用「未处理的 Promise 拒绝」消息捕获，丢失上下文。其中 <code>workflow-timers.ts:138</code> 尤为严重——<code>try/catch</code> 仅包裹同步 <code>import()</code>，异步的 <code>registerExternalWorkflowRun</code> 在 try 块外。
+      </div>
+      <div class="finding-code">
+<span class="comment"># workflow-timers.ts L138 — 异步调用在 try 块外</span>
+<span class="keyword">try</span> {
+    <span class="keyword">const</span> { useLayersStore } = <span class="keyword">await</span> import(<span class="string">'../../stores/layers'</span>)
+    <span class="keyword">const</span> layersStore = useLayersStore()
+    <span class="keyword">void</span> layersStore.registerExternalWorkflowRun(result.run_id, catalogIdHint)  <span class="highlight"># ← 无 .catch()</span>
+} <span class="keyword">catch</span> (err) { ... }
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>所有 fire-and-forget 调用附加 <code>.catch(err => safeLog(...))</code>；<code>workflow-timers.ts</code> 将 <code>registerExternalWorkflowRun</code> 移入 try 块或单独 catch。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P2-4</div>
+          <div class="finding-title">API 错误响应模式不一致</div>
+          <div class="finding-file">Code/backend/app/api/routers/ (多个路由文件)</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        各路由处理错误的方式不统一：部分使用 <code>HTTPException</code>，部分返回 <code>{"error": ...}</code> dict，部分使用自定义异常处理器。状态码使用也不一致——同类错误在不同路由返回不同 HTTP 状态码。
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>统一为 <code>HTTPException</code> + 标准化错误响应 schema（<code>{"detail": str, "code": str, "timestamp": str}</code>）；在 <code>app/main.py</code> 注册全局异常处理器兜底。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P2-5</div>
+          <div class="finding-title">列表端点缺少分页</div>
+          <div class="finding-file">artifact_router.py / workflow_router.py / algorithm_router.py</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        多个列表端点（如 <code>GET /artifacts</code>、<code>GET /workflow-runs</code>）返回全量数据，无 <code>limit</code>/<code>offset</code> 参数。数据量增长后将导致响应延迟和内存压力。
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>添加 <code>skip: int = 0, limit: int = 50</code> 查询参数，限制 <code>limit ≤ 100</code>。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P2-6</div>
+          <div class="finding-title">circuit_breaker.py 307 行死代码</div>
+          <div class="finding-file">Code/backend/app/services/circuit_breaker.py</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        完整的 <code>CircuitBreaker</code> + <code>CircuitBreakerRegistry</code> 实现（307 行），但<strong>全仓库无任何模块导入</strong>。与 P1-1 相关——client.py 内联了自己的实现而非复用此模块。
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>与 P1-1 一并处理：要么让 client.py 使用此模块，要么删除死代码。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P2-7</div>
+          <div class="finding-title">useTimelineSync.ts 不安全类型断言</div>
+          <div class="finding-file">Code/frontend/src/views/dashboard/useTimelineSync.ts (L341, L353)</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        <code>workflowProgressTimeSeek</code> 类型为 <code>Ref&lt;unknown&gt;</code>，watcher 中直接 <code>as { catalogId: string; timeKey: string; ... }</code> 断言<strong>无运行时形状校验</strong>。若运行时形状不匹配（如缺少 <code>timeKey</code>），将访问 <code>undefined</code> 值传入日期解析函数，导致静默 NaN 错误。
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>定义 <code>WorkflowProgressTimeSeek | null</code> 类型替代 <code>unknown</code>；添加 guard function 校验形状后再访问属性。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P2-8</div>
+          <div class="finding-title">timelineSegments computed 强制依赖追踪（9 个 void 语句）</div>
+          <div class="finding-file">Code/frontend/src/views/dashboard/useTimelineSync.ts (L475-484)</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        <code>timelineSegments</code> computed 以 9 个 <code>void xxx.value</code> 语句开头以手动强制 Vue 追踪依赖。此模式<strong>脆弱且易破坏</strong>：新增响应式源若忘记添加 void 引用则 computed 不更新；部分 void 引用冗余（值在 body 中已被直接访问）。
+      </div>
+      <div class="finding-code">
+<span class="keyword">const</span> timelineSegments = computed(() => {
+    <span class="keyword">void</span> weatherStatusVersion.value   <span class="comment"># 强制追踪</span>
+    <span class="keyword">void</span> weatherActivityVersion.value
+    <span class="keyword">void</span> currentHour.value            <span class="comment"># 冗余 — body 中已访问</span>
+    <span class="keyword">void</span> currentDate.value            <span class="comment"># 冗余</span>
+    <span class="comment"># ... 共 9 个 void 语句</span>
+    <span class="comment"># 实际逻辑</span>
+})
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>重构 computed 使其自然访问所有依赖；若必须追踪但不直接使用的依赖，添加注释说明原因。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P2-9</div>
+          <div class="finding-title">weather-tile-manager.ts 每瓦片正则解析缓存键</div>
+          <div class="finding-file">Code/frontend/src/stores/weather-tile-manager.ts (L941-955)</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        每次瓦片获取成功后，遍历该图层<strong>所有缓存瓦片</strong>并执行 3 个正则匹配（<code>/:z(\d+):/</code>、<code>/:x(\d+):/</code>、<code>/:y(\d+):/</code>）以构建 <code>buildMergeStats()</code>。50+ 缓存瓦片时，每次 fetch 触发 150+ 正则操作——而结果仅用于 debug 日志。
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>debug 日志未启用时跳过统计计算；或在缓存条目中存储坐标避免正则解析；或改为 <code>getStats()</code> 被调用时惰性计算。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P2-10</div>
+          <div class="finding-title">_http.ts GET 请求无瞬态错误重试</div>
+          <div class="finding-file">Code/frontend/src/services/_http.ts (requestJson)</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        <code>requestJson</code> 对所有请求（包括幂等 GET）在瞬态网络错误（502/503/504、网络断开）时<strong>立即失败无重试</strong>。写请求不重试是正确的，但 GET 请求（如 <code>fetchLayerCatalog()</code>、<code>getWorkflowRun()</code>）应自动重试 1-2 次以应对网络抖动，避免用户手动刷新。
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>添加 <code>retryOnTransient</code> 选项（GET/HEAD 默认 <code>true</code>），对网络错误和 502/503/504 执行 1-2 次指数退避重试。
+      </div>
+    </div>
+  </div>
+
+  <!-- P3 -->
+  <div class="section">
+    <div class="section-title">P3 — 低优先级 <span class="badge badge-p3">可延后</span></div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P3-1</div>
+          <div class="finding-title">weather-tile-concurrency.ts 模块级可变状态</div>
+          <div class="finding-file">Code/frontend/src/stores/weather-tile-concurrency.ts</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        <code>currentMaxConcurrent</code>、<code>consecutiveSuccesses</code> 等为模块级变量，跨 store 实例共享。虽有 <code>resetWeatherTileConcurrencyForTests</code> 辅助函数，但测试间状态泄漏风险仍存在。
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>封装为 class 或 Pinia store，通过依赖注入管理生命周期。当前作为单例控制器可接受，但应在文档中标注设计意图。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P3-2</div>
+          <div class="finding-title">client-error-capture.ts 事件监听器未移除</div>
+          <div class="finding-file">Code/frontend/src/utils/client-error-capture.ts (L17, L28)</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        <code>window.addEventListener('error', ...)</code> 和 <code>window.addEventListener('unhandledrejection', ...)</code> 添加后不移除。因 <code>installClientErrorCapture</code> 仅在 app 启动时调用一次，正常使用无泄漏；但 HMR 或测试中重复调用会累积监听器。
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>返回清理函数 <code>() => { window.removeEventListener(...) }</code>，或在添加前检查是否已安装。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P3-3</div>
+          <div class="finding-title">workflow-definitions.ts store 缺少测试覆盖</div>
+          <div class="finding-file">Code/frontend/src/stores/workflow-definitions.ts</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        核心 workflow 定义管理 store（CRUD 操作 + 状态管理）无任何测试覆盖。状态突变、错误处理路径、loading/error 状态转换均未验证。
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>在 <code>Test/frontend/stores/</code> 下添加 <code>workflow-definitions.spec.ts</code>，覆盖 loadSummaries/loadDetail/create/update/delete 正常与错误路径。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P3-4</div>
+          <div class="finding-title">5 处 -> dict: 缺少泛型类型注解</div>
+          <div class="finding-file">Code/backend/app/api/routers/ (runtime_router.py 等)</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        5 处路由函数返回类型为 <code>-> dict:</code> 而非 <code>-> dict[str, Any]:</code>，不符合 Python 类型注解最佳实践。
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>批量替换 <code>-> dict:</code> 为 <code>-> dict[str, Any]:</code>，需 <code>from typing import Any</code>。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P3-5</div>
+          <div class="finding-title">_http.ts 不可达的 AbortError 处理块</div>
+          <div class="finding-file">Code/frontend/src/services/_http.ts (L289-295)</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        L277 已捕获所有 <code>AbortError</code>（含外部和超时）并 throw，L289 的 <code>err instanceof DOMException && err.name === 'AbortError'</code> 检查<strong>永远不可达</strong>。该死代码块还包含不抛出异常的 log 调用，逻辑意图不明确。
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>删除 L289-295 死代码；若需单独记录超时日志，在 L277-282 块内添加。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P3-6</div>
+          <div class="finding-title">ui.ts layerTimeMemory 不必要的 deep watch</div>
+          <div class="finding-file">Code/frontend/src/stores/ui.ts (L157-167)</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        <code>watch(layerTimeMemory, ..., { deep: true })</code> 使用深监听，但 <code>rememberLayerTime()</code> 每次都用展开运算符<strong>替换整个对象引用</strong>（<code>layerTimeMemory.value = { ...layerTimeMemory.value, ... }</code>）。引用已变更，浅监听即可触发，<code>deep: true</code> 添加了不必要的深遍历开销。
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>移除 <code>{ deep: true }</code>。若未来计划改为原地突变则保留并注释说明。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P3-7</div>
+          <div class="finding-title">settings.ts loadAll() 重试逻辑重复</div>
+          <div class="finding-file">Code/frontend/src/stores/settings.ts (L190-206, L214-233)</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        <code>loadAll()</code> 中关键批次（L190-206）和延迟批次（L214-233）的重试模式<strong>完全重复</strong>：过滤失败项 → <code>setTimeout</code> 延迟 → 通过 lookup map 重试 → 合并结果。仅 loader 名称集不同。
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>提取 <code>retryFailedLoaders(results, loaderMap, delay)</code> 辅助函数，两批次共用。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P3-8</div>
+          <div class="finding-title">weather-tile-manager.ts 重试定时器模式重复 3 次</div>
+          <div class="finding-file">Code/frontend/src/stores/weather-tile-manager.ts (L986-991, L1025-1029, L1064-1068)</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        三处完全相同的重试定时器代码块（timeout / 429 / 503）：递减 <code>activeFetchCount</code>、重置 <code>request.dispatched</code>、设置 <code>retryAfter</code>、创建 <code>setTimeout</code> 并加入 <code>pendingRetryTimers</code>。仅退避值不同。
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>提取 <code>scheduleRetry(request, backoffMs)</code> 辅助函数，封装定时器创建、pending 集管理和队列触发。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P3-9</div>
+          <div class="finding-title">useTimelineSync 非响应式状态泄漏</div>
+          <div class="finding-file">Code/frontend/src/views/dashboard/useTimelineSync.ts (L126-128)</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        <code>pendingSnapCatalogIds</code> (Set)、<code>knownActiveInstanceIds</code> (Set)、<code>layerTimeTrackingReady</code> (boolean) 为普通 JS 变量，在 composable 函数体内声明。<strong>无 <code>onBeforeUnmount</code> 清理</strong>。若 composable 被多次调用（HMR、路由切换），旧实例状态在内存中持续存在。
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>若保证单生命周期，添加文档注释说明；否则在 <code>onBeforeUnmount</code> 中清理 Set 和重置标志。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P3-10</div>
+          <div class="finding-title">analysis-runner.ts as ActiveLayerDisplay 不完整断言</div>
+          <div class="finding-file">Code/frontend/src/stores/analysis-runner.ts (L377-381)</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        <code>drainQueue()</code> 构造仅含 3 个属性的 <code>displayLike</code> 对象并 <code>as ActiveLayerDisplay</code> 断言。若下游代码访问其他属性（如 <code>isImportedRaster</code>），将得到 <code>undefined</code> 而非预期的 <code>boolean</code>，导致 <code>if (display.isImportedRaster)</code> 判断错误。
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>为 <code>executeSubmit</code> 的 <code>display</code> 参数定义最小接口（仅包含实际使用的属性），或构造完整对象。
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header">
+        <div>
+          <div class="finding-id">P3-11</div>
+          <div class="finding-title">weather-sync-status.ts 静默吞没轮询错误</div>
+          <div class="finding-file">Code/frontend/src/stores/weather-sync-status.ts (L63-65)</div>
+        </div>
+      </div>
+      <div class="finding-desc">
+        <code>pollTaskOnce()</code> 的 catch 块仅 <code>{ /* keep previous state */ }</code>，<strong>不设置 <code>lastError</code></strong>。后端持续不可达时，轮询无限继续且用户无错误反馈。<code>lastError</code> 仅由 <code>refreshOverview()</code> 设置。
+      </div>
+      <div class="recommendation">
+        <strong>修复方案：</strong>在 catch 块中设置 <code>lastError</code>（如「同步状态轮询失败」），或添加连续错误计数器，N 次失败后停止轮询并通知 UI。
+      </div>
+    </div>
+  </div>
+
+  <!-- Already Fixed -->
+  <div class="section">
+    <div class="section-title">已修复项 <span class="badge badge-fixed">上一轮完成</span></div>
+    <div class="fixed-list">
+      <div class="fixed-item">
+        <div class="title">P0-1: runtime_router.py 双重编码 mojibake</div>
+        <div class="desc">GBK→UTF-8 重编码恢复中文注释，移除 BOM，修正类型注解</div>
+      </div>
+      <div class="fixed-item">
+        <div class="title">P1-1: weather-sync-status.ts 定时器清理</div>
+        <div class="desc">SYNC_POLL_INTERVAL_MS 常量 + stopPolling() 在 onBeforeUnmount 调用</div>
+      </div>
+      <div class="fixed-item">
+        <div class="title">P1-2: workflow_router.py 空 except 删除</div>
+        <div class="desc">文件中无任何 except Exception</div>
+      </div>
+      <div class="fixed-item">
+        <div class="title">P1-3: import_router.py 异常收窄</div>
+        <div class="desc">7 处收窄为具体类型，3 处兜底保留 # noqa: BLE001</div>
+      </div>
+      <div class="fixed-item">
+        <div class="title">P1-4: workflow-runner.ts 429 重试定时器清理</div>
+        <div class="desc">cleanupAllRetryTimers() + DashboardView onBeforeUnmount 调用</div>
+      </div>
+      <div class="fixed-item">
+        <div class="title">P2-3: useSidebarSearch.ts deep watch 优化</div>
+        <div class="desc">替换为 shallow watch on weather catalog IDs</div>
+      </div>
+      <div class="fixed-item">
+        <div class="title">TypeScript 类型不匹配修复</div>
+        <div class="desc">InfoPanel.vue / useWorkflowState.ts JobLayerItem | null → | undefined</div>
+      </div>
+      <div class="fixed-item">
+        <div class="title">Pinia store 测试初始化错误</div>
+        <div class="desc">workflow-runner.ts safeLog wrapper 处理无 Pinia 环境</div>
+      </div>
+      <div class="fixed-item">
+        <div class="title">MapCanvas.vue deep watch 优化</div>
+        <div class="desc">inspectPoint 改用 shallow watch</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Priority Matrix -->
+  <div class="section">
+    <div class="section-title">修复优先级矩阵</div>
+    <table>
+      <tr>
+        <th>优先级</th>
+        <th>任务 ID</th>
+        <th>影响维度</th>
+        <th>预估工时</th>
+        <th>建议顺序</th>
+      </tr>
+      <tr>
+        <td style="color:var(--p0);font-weight:700">P0</td>
+        <td>P0-1</td>
+        <td>测试可靠性</td>
+        <td>1h</td>
+        <td>1</td>
+      </tr>
+      <tr>
+        <td style="color:var(--p0);font-weight:700">P0</td>
+        <td>P0-2</td>
+        <td>安全</td>
+        <td>2h</td>
+        <td>2</td>
+      </tr>
+      <tr>
+        <td style="color:var(--p1);font-weight:700">P1</td>
+        <td>P1-1 + P2-6</td>
+        <td>可维护性 / 死代码</td>
+        <td>3h</td>
+        <td>3</td>
+      </tr>
+      <tr>
+        <td style="color:var(--p1);font-weight:700">P1</td>
+        <td>P1-2</td>
+        <td>性能 / 并发</td>
+        <td>2h</td>
+        <td>4</td>
+      </tr>
+      <tr>
+        <td style="color:var(--p1);font-weight:700">P1</td>
+        <td>P1-3</td>
+        <td>类型安全</td>
+        <td>4h</td>
+        <td>5</td>
+      </tr>
+      <tr>
+        <td style="color:var(--p1);font-weight:700">P1</td>
+        <td>P1-4</td>
+        <td>错误处理 / 合规</td>
+        <td>2h</td>
+        <td>6</td>
+      </tr>
+      <tr>
+        <td style="color:var(--p1);font-weight:700">P1</td>
+        <td>P1-5</td>
+        <td>可观测性</td>
+        <td>4h</td>
+        <td>7</td>
+      </tr>
+      <tr>
+        <td style="color:var(--p1);font-weight:700">P1</td>
+        <td>P1-6</td>
+        <td>内存泄漏</td>
+        <td>2h</td>
+        <td>8</td>
+      </tr>
+      <tr>
+        <td style="color:var(--p2);font-weight:700">P2</td>
+        <td>P2-1~P2-6</td>
+        <td>内存泄漏 / 类型安全 / API 一致性</td>
+        <td>8h</td>
+        <td>9</td>
+      </tr>
+      <tr>
+        <td style="color:var(--p2);font-weight:700">P2</td>
+        <td>P2-7~P2-10</td>
+        <td>类型安全 / 性能 / 可靠性</td>
+        <td>6h</td>
+        <td>10</td>
+      </tr>
+      <tr>
+        <td style="color:var(--p3);font-weight:700">P3</td>
+        <td>P3-1~P3-4</td>
+        <td>混合</td>
+        <td>4h</td>
+        <td>11</td>
+      </tr>
+      <tr>
+        <td style="color:var(--p3);font-weight:700">P3</td>
+        <td>P3-5~P3-11</td>
+        <td>死代码 / 性能 / 代码重复</td>
+        <td>5h</td>
+        <td>12</td>
+      </tr>
+    </table>
+  </div>
+
+</div>
+
+<div class="footer">
+  CGDA 代码审查报告 — 自动生成于 2026-08-14 | 审查范围涵盖后端服务层、API 设计、GEE 集成、前端状态管理、测试质量与技术债务
+</div>
+
+</body>
+</html>

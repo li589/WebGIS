@@ -3,7 +3,7 @@
  * 组件展示文案优先从此处引用，避免同概念多称呼。
  */
 
-export { BRAND } from './brand'
+export { BRAND, LEGACY_BRAND } from './brand'
 export { BASEMAP_COPY, basemapStyleLabel, basemapProviderShort } from './basemap'
 export { WIND_COPY, windModeUiLabel } from './wind'
 export { INSPECT_COPY } from './inspect'

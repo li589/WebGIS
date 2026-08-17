@@ -78,6 +78,23 @@ class PythonProviderRequestBuilder:
             )
 
         request_payload = dict(algorithm_request)
+
+        # Resolve workflow_name → workflow_definition so the provider takes the
+        # explicit-definition path instead of checking NAMED_WORKFLOW_BUILDERS.
+        # Uses the graph compiler to convert LiteGraph seed format → provider format.
+        wf_name = request_payload.get("workflow_name")
+        if wf_name and not request_payload.get("workflow_definition"):
+            try:
+                from app.services.workflow_request_resolver import (
+                    _compile_workflow_seed,
+                )
+
+                compiled = _compile_workflow_seed(wf_name)
+                if compiled is not None:
+                    request_payload["workflow_definition"] = compiled
+            except Exception:  # noqa: BLE001
+                logger.warning("Failed to compile workflow seed '%s'", wf_name)
+
         request_payload.setdefault("job_id", run_id)
         request_payload.setdefault("pipeline_name", "workflow")
         request_payload.setdefault(

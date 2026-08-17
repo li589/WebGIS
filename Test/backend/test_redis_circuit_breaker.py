@@ -164,3 +164,40 @@ def test_release_dedup_lock_token_compare_delete_semantics(_redis_circuit_breake
         # token 匹配：删除
         redis_client.release_dedup_lock("lock:sync:a", "token-owner")
         assert "lock:sync:a" not in storage, '"lock:sync:a" not in storage'
+
+
+# ── _max_concurrent_for_pool：本地 Open-Meteo 判定按 URL host:port 解析 ──────
+
+
+def test_max_concurrent_default_and_online_open_meteo() -> None:
+    assert redis_client._max_concurrent_for_pool("default") == 2
+    assert (
+        redis_client._max_concurrent_for_pool(
+            "https://api.open-meteo.com/v1/forecast?lat=1"
+        )
+        == 6
+    )
+
+
+def test_max_concurrent_local_open_meteo_default_port() -> None:
+    pool = "http://127.0.0.1:8080/v1/forecast?lat=1"
+    assert redis_client._max_concurrent_for_pool(pool) == 6
+
+
+def test_max_concurrent_local_open_meteo_custom_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    """H10 回归：部署机改 OPEN_METEO 宿主端口后判定不失效。"""
+    monkeypatch.setenv("BACKEND_OPEN_METEO_LOCAL_URL", "http://127.0.0.1:8090/v1/forecast")
+    assert redis_client._max_concurrent_for_pool("http://127.0.0.1:8090/v1/forecast") == 6
+    # 旧端口（8080）不再是本地源时，对 8080 的池不再放宽
+    monkeypatch.delenv("BACKEND_OPEN_METEO_LOCAL_URL", raising=False)
+    assert redis_client._max_concurrent_for_pool("http://127.0.0.1:8090/v1/forecast") == 2
+
+
+def test_max_concurrent_local_port_without_forecast_path_stays_default() -> None:
+    """同 host:port 但非 forecast 路径（其他本地服务）不得放宽。"""
+    assert redis_client._max_concurrent_for_pool("http://127.0.0.1:8080/other/api") == 2
+
+
+def test_max_concurrent_provider_id_pool_keys() -> None:
+    assert redis_client._max_concurrent_for_pool("open-meteo-local") == 6
+    assert redis_client._max_concurrent_for_pool("open_meteo_local:default") == 6

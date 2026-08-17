@@ -91,6 +91,26 @@ class TestGldasDownloadNode(unittest.TestCase):
             self.assertEqual(out["path"], str(local_dir))
             self.assertIn("manifest", out)
 
+    def test_download_with_retry_uses_shared_resume_and_atomic_replace(self) -> None:
+        from ingest import gldas_download
+
+        def fake_shared(session, url, local_path, **kwargs):  # noqa: ANN001, ARG001
+            local_path.write_bytes(b"data")
+            return True
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "a.nc4"
+            with patch.object(
+                gldas_download, "download_with_retry", side_effect=fake_shared
+            ) as mocked:
+                ok = gldas_download._download_with_retry(
+                    object(), "https://example.test/a.nc4", dest, None
+                )
+            self.assertTrue(ok)
+            mocked.assert_called_once()
+            self.assertEqual(dest.read_bytes(), b"data")
+            self.assertFalse(dest.with_suffix(dest.suffix + ".part").exists())
+
     def test_single_module_workflow_omits_missing_output_spec_extra(self) -> None:
         from datetime import datetime
 

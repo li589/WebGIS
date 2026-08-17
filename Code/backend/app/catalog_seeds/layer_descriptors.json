@@ -41,6 +41,8 @@
     ],
     "module_name": "ndvi_daily",
     "engine": "python_provider",
+    "workflow_name": "ndvi_local_read",
+    "workflow_id": "ndvi_local_read",
     "default_task_type": "ndvi_daily",
     "default_data_access_sources": {
       "NDVI_16DAY_RASTER": [
@@ -447,9 +449,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -90.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 90.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -640,6 +642,8 @@
     ],
     "module_name": "smap_daily",
     "engine": "python_provider",
+    "workflow_name": "smap_soil_moisture_local",
+    "workflow_id": "smap_soil_moisture_local",
     "default_task_type": "smap_daily",
     "default_data_access_sources": {
       "SMAP_L3_DEC2025": [
@@ -752,7 +756,7 @@
       {
         "source_id": "prod-fy_smap_station-sm_vod_omega-202512-fusion",
         "name": "多源融合土壤湿度",
-        "description": "融合SMAP/FY-3D/站点观测的土壤湿度（SM）/植被光学厚度（VOD）/动态散射反照率（ω）产品族（2025-12-01 至 2025-12-31，EASE-Grid 9km）。当前展示 SM，VOD/ω 图层补实现中。",
+        "description": "融合SMAP/FY-3D/站点观测的土壤湿度（SM）/植被光学厚度（VOD）/动态散射反照率（ω）产品族（2025-12-01 至 2025-12-31，EASE-Grid 9km）。本层展示 SM；VOD/ω 经工作流结果图层查看。",
         "url_template": "",
         "needs_auth": false,
         "needs_backend_transform": false,
@@ -808,6 +812,8 @@
     ],
     "module_name": "fy_daily",
     "engine": "python_provider",
+    "workflow_name": "fy_tb_local_read",
+    "workflow_id": "fy_tb_local_read",
     "default_task_type": "fy_daily",
     "default_data_access_sources": {
       "FY_MWRI_HDF": [
@@ -818,6 +824,16 @@
         "Soil_Moisture/FY3B",
         "Soil_Moisture/FY_MWRI"
       ]
+    },
+    "online_temporal": {
+      "enabled": true,
+      "coverage_start": "2020-01",
+      "coverage_end": null,
+      "native_step": "1d",
+      "max_batch": 8,
+      "prefetch_depth": 1,
+      "queue_tag": "temporal-fetch",
+      "priority": "low"
     },
     "run_readiness_summary": "待确认 FY MWRI 原始数据是否齐全",
     "run_readiness_notes": [
@@ -1037,10 +1053,10 @@
     "time_granularity": "static",
     "default_time_offset": 0,
     "extent": {
-      "west": 109.6,
-      "south": 20.1,
-      "east": 117.4,
-      "north": 25.6,
+      "west": -180.0,
+      "south": -85.051129,
+      "east": 180.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -1120,10 +1136,10 @@
     "time_granularity": "static",
     "default_time_offset": 0,
     "extent": {
-      "west": 109.6,
-      "south": 20.1,
-      "east": 117.4,
-      "north": 25.6,
+      "west": -180.0,
+      "south": -85.051129,
+      "east": 180.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -1272,9 +1288,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -90.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 90.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -1393,146 +1409,6 @@
     "is_admin_boundary": false
   },
   {
-    "layer_id": "era5-dwaa-cn",
-    "dataset_key": "era5_dwaa_smci_2020",
-    "display_name": "ERA5 白天热浪",
-    "description": "ERA5 DWAA SMCI 2020 白天热浪事件次数。 基于 ERA5 的白天热浪事件（2020）。",
-    "category": "climate",
-    "source_type": "algorithm_output",
-    "render_type": "raster",
-    "supported_map_modes": [
-      "2d"
-    ],
-    "supports_time": false,
-    "is_realtime": false,
-    "default_visible": false,
-    "status": "available",
-    "time_granularity": "static",
-    "default_time_offset": 0,
-    "extent": {
-      "west": 73.0,
-      "south": 15.0,
-      "east": 137.0,
-      "north": 59.0,
-      "crs": "EPSG:4326"
-    },
-    "style": {
-      "palette": "YlOrRd",
-      "unit_label": "events",
-      "opacity": 0.8
-    },
-    "capabilities": {
-      "render_strategy": "workflow_map_layer",
-      "data_domain": "climate",
-      "paint_mode": "grid_fill"
-    },
-    "tags": [
-      "era5",
-      "heatwave",
-      "dwaa",
-      "frontend-aligned"
-    ],
-    "engine": "overlay_registry",
-    "run_readiness_summary": "ERA5 白天热浪叠加层已注册",
-    "temporal_coverage": "2020",
-    "presentation": {
-      "accent_color": "#e08214",
-      "accent_glow": "rgba(224, 130, 20, 0.3)",
-      "chip_tone": "rgba(224, 130, 20, 0.16)",
-      "metric_label": "事件次数",
-      "metric_unit": "events",
-      "metric_precision": 0,
-      "update_label": "静态数据",
-      "source_label": "ERA5 DWAA SMCI 2020"
-    },
-    "sources": [
-      {
-        "source_id": "era5-dwaa-cn",
-        "name": "ERA5 白天热浪",
-        "description": "ERA5 基于 SMCI（土壤湿度指数）指标的白天热浪事件累积计数（2020 全年 366 天）。",
-        "url_template": "",
-        "needs_auth": false,
-        "needs_backend_transform": false,
-        "coord_sys": "EPSG:4326",
-        "update_frequency": "静态数据"
-      }
-    ],
-    "merged_into": "era5-hazard-events",
-    "is_merged_group": false,
-    "members": [],
-    "is_admin_boundary": false
-  },
-  {
-    "layer_id": "era5-wdaa-cn",
-    "dataset_key": "era5_wdaa_smci_2020",
-    "display_name": "ERA5 夜间热浪",
-    "description": "ERA5 WDAA SMCI 2020 夜间热浪事件次数。 基于 ERA5 的夜间热浪事件（2020）。",
-    "category": "climate",
-    "source_type": "algorithm_output",
-    "render_type": "raster",
-    "supported_map_modes": [
-      "2d"
-    ],
-    "supports_time": false,
-    "is_realtime": false,
-    "default_visible": false,
-    "status": "available",
-    "time_granularity": "static",
-    "default_time_offset": 0,
-    "extent": {
-      "west": 73.0,
-      "south": 15.0,
-      "east": 137.0,
-      "north": 59.0,
-      "crs": "EPSG:4326"
-    },
-    "style": {
-      "palette": "YlGnBu",
-      "unit_label": "events",
-      "opacity": 0.8
-    },
-    "capabilities": {
-      "render_strategy": "workflow_map_layer",
-      "data_domain": "climate",
-      "paint_mode": "grid_fill"
-    },
-    "tags": [
-      "era5",
-      "heatwave",
-      "wdaa",
-      "frontend-aligned"
-    ],
-    "engine": "overlay_registry",
-    "run_readiness_summary": "ERA5 夜间热浪叠加层已注册",
-    "temporal_coverage": "2020",
-    "presentation": {
-      "accent_color": "#8073ac",
-      "accent_glow": "rgba(128, 115, 172, 0.3)",
-      "chip_tone": "rgba(128, 115, 172, 0.16)",
-      "metric_label": "事件次数",
-      "metric_unit": "events",
-      "metric_precision": 0,
-      "update_label": "静态数据",
-      "source_label": "ERA5 WDAA SMCI 2020"
-    },
-    "sources": [
-      {
-        "source_id": "era5-wdaa-cn",
-        "name": "ERA5 夜间热浪",
-        "description": "ERA5 基于 SMCI（土壤湿度指数）指标的夜间热浪事件累积计数（2020 全年 366 天）。",
-        "url_template": "",
-        "needs_auth": false,
-        "needs_backend_transform": false,
-        "coord_sys": "EPSG:4326",
-        "update_frequency": "静态数据"
-      }
-    ],
-    "merged_into": "era5-hazard-events",
-    "is_merged_group": false,
-    "members": [],
-    "is_admin_boundary": false
-  },
-  {
     "layer_id": "co2-cn",
     "dataset_key": "gosat_midlayer_co2",
     "display_name": "GOSAT CO₂ 柱浓度",
@@ -1605,7 +1481,7 @@
     "layer_id": "method-smap-omega-doy-dynamic",
     "dataset_key": "omega_sf_fenkuai_smap",
     "display_name": "SMAP 动态 ω 反演",
-    "description": "omega_sf_fenkuai 流水线产出：SMAP 亮温 + 辅助数据 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。关联种子 omega_sf_fenkuai_smap_single。 SMAP 分块反演，动态 ω（DOY）。",
+    "description": "omega_sf_fenkuai 流水线产出：SMAP 亮温 + 辅助数据 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。关联种子 omega_sf_fenkuai_smap_single。 SMAP 分块反演，动态 ω（DOY）。双温度变体见 omega_sf_fenkuai_smap_dual（GLDAS DUAL）。",
     "category": "research-group",
     "sub_category": "模型输出",
     "source_type": "algorithm_output",
@@ -1664,7 +1540,8 @@
     },
     "run_readiness_summary": "SMAP SF 块反演输入（日 .mat / 辅助库 / NDVI 气候态）按 DATA_ROOT 解析",
     "run_readiness_notes": [
-      "运行请使用 heavy 队列；默认种子时间窗见 omega_sf_fenkuai_smap_single"
+      "运行请使用 heavy 队列；默认种子时间窗见 omega_sf_fenkuai_smap_single",
+      "双温度变体 omega_sf_fenkuai_smap_dual 需 GLDAS .mat（Meteorological/Weather/GLDAS，temp_scheme=DUAL）"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "Depends on SMAP daily mats under DATA_ROOT",
@@ -1699,7 +1576,7 @@
     "layer_id": "method-fy-omega-doy-dynamic",
     "dataset_key": "omega_sf_fenkuai_fy",
     "display_name": "风云卫星 动态 ω 反演",
-    "description": "omega_sf_fenkuai 流水线产出：FY 亮温 + SMAP 辅助 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。关联种子 omega_sf_fenkuai_fy_single。 FY 分块反演，动态 ω（DOY）。",
+    "description": "omega_sf_fenkuai 流水线产出：FY 亮温 + SMAP 辅助 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。关联种子 omega_sf_fenkuai_fy_single。 FY 分块反演，动态 ω（DOY）。双温度变体见 omega_sf_fenkuai_fy_dual。",
     "category": "research-group",
     "sub_category": "模型输出",
     "source_type": "algorithm_output",
@@ -1764,7 +1641,8 @@
     },
     "run_readiness_summary": "FY SF 块反演输入（FY/SMAP/辅助库/NDVI）按 DATA_ROOT 解析",
     "run_readiness_notes": [
-      "运行请使用 heavy 队列；默认种子见 omega_sf_fenkuai_fy_single"
+      "运行请使用 heavy 队列；默认种子见 omega_sf_fenkuai_fy_single",
+      "双温度变体 omega_sf_fenkuai_fy_dual 需 GLDAS .mat（Meteorological/Weather/GLDAS，temp_scheme=DUAL）"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "Depends on FY/SMAP daily mats under DATA_ROOT",
@@ -1799,7 +1677,7 @@
     "layer_id": "method-smap-omega-doy-avg",
     "dataset_key": "omega_avg_daily_smap",
     "display_name": "SMAP 日均 ω 反演",
-    "description": "omega_avg_daily / omega_block 经典 D1→D2 链路产出。关联种子 omega_avg_daily_smap_single。 SMAP 日均 ω 反演（原 D2 链路）。",
+    "description": "omega_avg_daily / omega_block 经典 D1→D2 链路产出。关联种子 omega_avg_daily_smap_single。 SMAP 日均 ω 反演（原 D2 链路）。双温度变体见 omega_avg_daily_smap_dual / omega_avg_daily_gldas_online（GLDAS DUAL）。",
     "category": "research-group",
     "sub_category": "模型输出",
     "source_type": "algorithm_output",
@@ -1849,7 +1727,8 @@
     },
     "run_readiness_summary": "D2 日均 ω 依赖 D1 omega_block 产物目录",
     "run_readiness_notes": [
-      "请先跑 omega_block_smap_single 或确认 Inversion_Results/omega_block 就绪"
+      "请先跑 omega_block_smap_single 或确认 Inversion_Results/omega_block 就绪",
+      "双温度变体（smap_dual / gldas_online）需 GLDAS .mat（Meteorological/Weather/GLDAS，temp_scheme=DUAL）"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "Depends on omega_block outputs",
@@ -1884,7 +1763,7 @@
     "layer_id": "method-fy-omega-doy-avg",
     "dataset_key": "omega_avg_daily_fy",
     "display_name": "风云卫星 日均 ω 反演",
-    "description": "omega_avg_daily FY ORIG_TS 链路。关联种子 omega_avg_daily_fy_single。 FY 日均 ω 反演（原 D2 链路）。",
+    "description": "omega_avg_daily FY ORIG_TS 链路。关联种子 omega_avg_daily_fy_single。 FY 日均 ω 反演（原 D2 链路）。在线入口：omega_avg_daily_fy_online（NSMC auto→NAS 回退）。",
     "category": "research-group",
     "sub_category": "模型输出",
     "source_type": "algorithm_output",
@@ -1934,7 +1813,8 @@
     },
     "run_readiness_summary": "FY D2 日均 ω 依赖 D1 omega_block 产物目录",
     "run_readiness_notes": [
-      "请先跑对应 FY/SMAP D1 块反演或确认 omega_block 目录就绪"
+      "请先跑对应 FY/SMAP D1 块反演或确认 omega_block 目录就绪",
+      "在线入口 omega_avg_daily_fy_online 需 nsmc 凭证（建议多账号）与 GDAL CLI"
     ],
     "data_owner": "Lab",
     "temporal_coverage": "Depends on omega_block outputs",
@@ -1985,9 +1865,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -85.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 85.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -2067,9 +1947,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -85.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 85.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -2149,9 +2029,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -85.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 85.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -2231,9 +2111,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -85.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 85.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -2313,9 +2193,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -85.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 85.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -2395,9 +2275,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -85.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 85.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -2477,9 +2357,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -85.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 85.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -2560,9 +2440,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -90.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 90.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -2643,9 +2523,9 @@
     "default_time_offset": 0,
     "extent": {
       "west": -180.0,
-      "south": -85.0,
+      "south": -85.051129,
       "east": 180.0,
-      "north": 85.0,
+      "north": 85.051129,
       "crs": "EPSG:4326"
     },
     "style": {
@@ -2793,7 +2673,7 @@
       {
         "source_id": "prod-fy_smap_station-sm_vod_omega-202512-fusion",
         "name": "多源融合土壤湿度",
-        "description": "融合SMAP/FY-3D/站点观测的土壤湿度（SM）/植被光学厚度（VOD）/动态散射反照率（ω）产品族（2025-12-01 至 2025-12-31，EASE-Grid 9km）。当前展示 SM，VOD/ω 图层补实现中。",
+        "description": "融合SMAP/FY-3D/站点观测的土壤湿度（SM）/植被光学厚度（VOD）/动态散射反照率（ω）产品族（2025-12-01 至 2025-12-31，EASE-Grid 9km）。本层展示 SM；VOD/ω 经工作流结果图层查看。",
         "url_template": "",
         "needs_auth": false,
         "needs_backend_transform": false,
@@ -2892,89 +2772,6 @@
     "members": [
       "gpcp-precip-ts",
       "cmfd-precip-cn"
-    ],
-    "is_admin_boundary": false
-  },
-  {
-    "layer_id": "era5-hazard-events",
-    "dataset_key": "merged_era5-hazard-events",
-    "display_name": "ERA5 灾害事件",
-    "description": "ERA5 热浪事件合集，可选白天热浪 / 夜间热浪等数据源。",
-    "category": "climate",
-    "source_type": "cog",
-    "render_type": "raster",
-    "supported_map_modes": [
-      "2d"
-    ],
-    "supports_time": false,
-    "is_realtime": false,
-    "default_visible": false,
-    "status": "available",
-    "time_granularity": "static",
-    "default_time_offset": 0,
-    "extent": {
-      "west": -180.0,
-      "south": -90.0,
-      "east": 180.0,
-      "north": 90.0,
-      "crs": "EPSG:4326"
-    },
-    "style": {
-      "palette": "viridis",
-      "unit_label": "",
-      "opacity": 0.8
-    },
-    "capabilities": {
-      "render_strategy": "workflow_map_layer",
-      "data_domain": "merged",
-      "paint_mode": "grid_fill"
-    },
-    "tags": [
-      "merged-group",
-      "frontend-aligned"
-    ],
-    "engine": "overlay_registry",
-    "run_readiness_summary": "ERA5 灾害事件（多源可选，各源独立就绪）",
-    "run_readiness_notes": [
-      "合并组虚拟条目：选择源后实际使用对应成员图层数据"
-    ],
-    "presentation": {
-      "accent_color": "#e08214",
-      "accent_glow": "rgba(224, 130, 20, 0.3)",
-      "chip_tone": "rgba(224, 130, 20, 0.16)",
-      "metric_label": "事件次数",
-      "metric_unit": "events",
-      "metric_precision": 0,
-      "update_label": "静态数据",
-      "source_label": "多源可选"
-    },
-    "sources": [
-      {
-        "source_id": "era5-dwaa-cn",
-        "name": "ERA5 白天热浪",
-        "description": "ERA5 基于 SMCI（土壤湿度指数）指标的白天热浪事件累积计数（2020 全年 366 天）。",
-        "url_template": "",
-        "needs_auth": false,
-        "needs_backend_transform": false,
-        "coord_sys": "EPSG:4326",
-        "update_frequency": "静态数据"
-      },
-      {
-        "source_id": "era5-wdaa-cn",
-        "name": "ERA5 夜间热浪",
-        "description": "ERA5 基于 SMCI（土壤湿度指数）指标的夜间热浪事件累积计数（2020 全年 366 天）。",
-        "url_template": "",
-        "needs_auth": false,
-        "needs_backend_transform": false,
-        "coord_sys": "EPSG:4326",
-        "update_frequency": "静态数据"
-      }
-    ],
-    "merged_into": null,
-    "is_merged_group": true,
-    "members": [
-      "era5-dwaa-cn",
-      "era5-wdaa-cn"
     ],
     "is_admin_boundary": false
   },

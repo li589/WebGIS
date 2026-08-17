@@ -3,6 +3,7 @@
  */
 import {
   lngLatToTile,
+  TILE_KEY_PREFIX,
   tileToLngLatBounds,
   tilesInBounds,
   type LngLatBounds,
@@ -157,9 +158,11 @@ export function getMergedGeojsonForViewport(
     }
 
     // 邻近 z 缓存垫底（尤其 zoom-out 后仍保留的更高 z 瓦片）
+    // key 形如 `weather:tile:{layerId}:z...`，归属判断必须带完整前缀，
+    // 仅 `startsWith(layerId:)` 恒为 false 会让整个垫底分支失效
     const nearby: Array<{ z: number; x: number; y: number; raw: WindGeoJSON; dz: number }> = []
     for (const [cacheKey, entry] of state.tiles.entries()) {
-      if (!cacheKey.startsWith(`${layerId}:`)) continue
+      if (!cacheKey.startsWith(`${TILE_KEY_PREFIX}${layerId}:`)) continue
       const coords = parseTileCoordsFromCacheKey(cacheKey)
       if (!coords) continue
       const { z, x, y } = coords

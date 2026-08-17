@@ -8,7 +8,7 @@
     "readonly": true,
     "is_template": true,
     "linked_layer_id": null,
-    "tags": ["analysis", "fusion", "raster", "stub_v1", "sample"],
+    "tags": ["analysis", "fusion", "raster", "stub_v1", "sample", "hidden"],
     "category": "analysis",
     "resource_profile": "standard"
   },

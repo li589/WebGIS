@@ -65,6 +65,10 @@ export interface ActiveLayersSliceDeps {
   scheduleWorkspacePersist: () => void
   flushWorkspacePersistNow: () => void
   debugLog: (module: string, ...args: unknown[]) => void
+  // ── Auto-run workflow on layer add ──
+  supportsAnalysisWorkflow: (catalogId: string) => boolean
+  canRunCatalog: (catalogId: string) => boolean
+  runWorkflowForCatalog: (catalogId: string) => Promise<void>
 }
 
 export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
@@ -190,6 +194,25 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
         }, 0)
       })
     }
+
+    // 非天气分析图层（python_provider / gee）添加后自动运行工作流，
+    // 消除"待运行"状态并生成数据供点选/时序分析。
+    if (
+      !jobLayer && // 不是工作流产物回填
+      !deps.isWeatherEngineLayer(catalogId) && // 非天气图层
+      deps.supportsAnalysisWorkflow(catalogId) && // engine 为 python_provider 或 gee
+      deps.canRunCatalog(catalogId) // readiness 非 blocked
+    ) {
+      // 推迟到下一宏任务，让 Vue 先完成「已添加 ✓」UI 刷新
+      nextTick(() => {
+        window.setTimeout(() => {
+          deps.runWorkflowForCatalog(catalogId).catch((err) => {
+            deps.debugLog('addLayer', 'auto-run workflow failed for', catalogId, err)
+          })
+        }, 0)
+      })
+    }
+
     deps.scheduleWorkspacePersist()
   }
 
@@ -235,6 +258,39 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
     return layer
   }
 
+  /** 创建绘制草稿图层（空 GeoJSON，等待用户绘制要素） */
+  function addDrawDraftLayer(name: string): ActiveLayer {
+    const maxOrder = activeLayers.value.reduce((max, l) => Math.max(max, l.order), 0)
+    const instanceId = genInstanceId()
+    const catalogId = `draw-draft-${instanceId}`
+    const emptyGeojson: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
+    const payload = buildImportedVectorPayload(emptyGeojson, name, {
+      featureCount: 0,
+    })
+    const accent = assignLayerAccent('var(--accent)')
+    const layer: ActiveLayer = {
+      instanceId,
+      catalogId,
+      name: name || `绘制图层-${new Date().toLocaleString('zh-CN')}`,
+      visible: true,
+      opacity: 0.85,
+      order: maxOrder + 1,
+      isAdminBoundary: false,
+      importedVector: payload,
+      dataState: 'imported',
+      accentColor: accent.accentColor,
+      accentGlow: accent.accentGlow,
+      chipTone: accent.chipTone,
+    }
+    activeLayers.value.push(layer)
+    selectedInstanceId.value = layer.instanceId
+    if (sidebarView.value === 'empty' || sidebarView.value === 'library') {
+      sidebarView.value = 'active'
+    }
+    deps.scheduleWorkspacePersist()
+    return layer
+  }
+
   function getImportedVectorGeojson(instanceId: string): GeoJSON.FeatureCollection | null {
     const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
     return layer?.importedVector?.geojson ?? null
@@ -254,6 +310,7 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       truncated: extras?.truncated ?? layer.importedVector.truncated,
       geometryType: inferGeometryType(geojson),
       bounds: computeBounds(geojson),
+      revision: (layer.importedVector.revision ?? 0) + 1,
     }
   }
 
@@ -704,6 +761,7 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
     assignLayerAccent,
     addLayer,
     addImportedVectorLayer,
+    addDrawDraftLayer,
     getImportedVectorGeojson,
     updateImportedVectorGeojson,
     setImportedVectorStyle,

@@ -289,51 +289,6 @@
   opacity: 0;
 }
 
-.map-overlay {
-  position: absolute;
-  z-index: 21;
-  top: 0;
-  left: 0;
-  right: auto;
-  display: flex;
-  gap: 0.38rem;
-  flex-wrap: wrap;
-  padding: 0.8rem 0.8rem 0;
-  box-sizing: border-box;
-  align-content: flex-start;
-}
-
-.chip {
-  padding: 0.24rem 0.48rem;
-  border-radius: 999px;
-  background: var(--surface-raised);
-  border: 1px solid var(--border-default);
-  color: var(--text-strong);
-  font-size: var(--font-size-caption);
-}
-
-.chip.secondary {
-  color: var(--text-strong);
-  border-color: var(--border-strong);
-  background: rgba(36, 90, 170, 0.16);
-}
-
-.chip-ready {
-  color: var(--success);
-  border-color: var(--success-border);
-  background: var(--success-surface);
-}
-.chip-partial {
-  color: var(--accent-warm);
-  border-color: var(--warning-border);
-  background: var(--warning-surface);
-}
-.chip-empty {
-  color: var(--accent-strong);
-  border-color: var(--border-violet-tint);
-  background: var(--surface-violet-tint);
-}
-
 .map-note {
   position: absolute;
   z-index: 18;
@@ -639,11 +594,6 @@
 @media (max-width: 768px) {
   .map-stage {
     min-height: calc(100vh - 1rem);
-  }
-  .map-overlay {
-    top: 0;
-    left: 0;
-    padding: 0.75rem 0.75rem 0;
   }
   .map-note {
     left: 0.75rem;

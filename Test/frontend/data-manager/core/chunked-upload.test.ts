@@ -2,6 +2,8 @@
  * Manifest chunkedUpload：mock fetch 覆盖续传与并发调度（轻量）。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// 静态导入：模块 transform 不得计入测试体 5s 预算（满载机器上动态 import 会假性超时）
+import { chunkedUpload } from '@/data-manager/core/api'
 
 describe('chunkedUpload manifest', () => {
   const fetchMock = vi.fn()
@@ -30,7 +32,6 @@ describe('chunkedUpload manifest', () => {
   })
 
   it('inits resumable, uploads missing chunks, completes', async () => {
-    const { chunkedUpload } = await import('@/data-manager/core/api')
     const bytes = new Uint8Array(90).fill(1)
     const file = new File([bytes], 'demo.tif', { type: 'image/tiff' })
     const uploadId = 'up-manifest-1'
