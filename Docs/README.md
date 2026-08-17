@@ -48,6 +48,10 @@
 - **`08-HTML报告/security-audit-report/`** — 安全审计报告（13 模块审计发现）
 - **`08-HTML报告/security-upgrade-summary/`** — 安全升级总结报告
 - **`08-HTML报告/codebase-health-report/`** — 代码库健康审查报告（Brooks-Lint）
+- **`08-HTML报告/omega-algorithm-guide/`** — ω 反演算法详解与工作流指南（τ-ω 单/双温度模型 · D1/D2/SF 谱系 · 13 条工作流 2×2×2 矩阵；现行基准，对应提交 37b4fe1）
+- **`08-HTML报告/workflow-pipeline-panorama/`** — 工作流与端到端流水线全景（历史快照 2026-08-18，ω 族清单为 2×2×2 重组前状态，文内已注明）
+- **`08-HTML报告/omega-sf-migration-mapping/`** — omega_sf_fenkuai Matlab→Python 策略移植对照（历史快照 2026-08-18，工作流部分为重组前状态；Matlab 行号引用仍有效）
+- **`08-HTML报告/code-review-findings-2026-08-14/`** — 代码审查报告（历史快照 2026-08-14，问题修复状态以当前代码为准）
 - **`08-HTML报告/acceptance-evidence/`** — 结题验收证据（OpenAPI 接口清单 / 健康检查与运行日志 / 产品入库记录 / 数据可用性与数据源说明）
 
 ## 2026-08 代码对齐要点（摘要）

@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ω 反演算法详解与工作流指南 · 单/双温度 τ-ω 模型 · D1/D2/SF 谱系 · 2×2×2 矩阵</title>
+<style>
+:root{
+  --bg:#f6f7f9;--bg2:#ffffff;--ink:#1c2733;--ink2:#51606f;--ink3:#8494a4;--line:#e3e8ee;
+  --acc:#2563eb;--acc2:#0e9f6e;
+  --ok:#0e9f6e;--part:#d97706;--no:#dc2626;--na:#94a3b8;
+  --c-tc:#0e9f6e;--c-tg:#d97706;--c-tsr:#dc2626;--c-soil:#8a5a2b;
+  --mono:'Cascadia Code',Consolas,monospace;
+  --serif:Georgia,'Times New Roman',serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);font-size:13.5px;line-height:1.62}
+.wrap{max-width:1150px;margin:0 auto;padding:0 18px 60px}
+
+header{padding:26px 0 14px;border-bottom:2px solid var(--ink)}
+header h1{font-size:21px}
+header .sub{color:var(--ink2);font-size:12.5px;margin-top:4px}
+header .meta{color:var(--ink3);font-size:11.5px;margin-top:6px}
+nav{position:sticky;top:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--line);padding:8px 0;margin-bottom:18px}
+nav a{color:var(--ink2);text-decoration:none;margin-right:16px;font-size:12.5px;white-space:nowrap}
+nav a:hover{color:var(--acc)}
+section{margin-bottom:34px}
+h2{font-size:16.5px;padding-left:10px;border-left:4px solid var(--acc);margin-bottom:10px}
+h2 .no{color:var(--ink3);font-weight:600;margin-right:6px}
+h3{font-size:14px;color:var(--ink2);margin:14px 0 7px}
+h4{font-size:13px;margin-bottom:5px}
+p{margin-bottom:7px}
+.note{font-size:12px;color:var(--ink3);margin-top:5px}
+code{font-family:var(--mono);font-size:11.5px;background:#eef2f7;border-radius:3px;padding:0 4px}
+ul.tight{margin:4px 0 8px 18px}
+ul.tight li{margin:2px 0}
+
+/* 公式块 */
+.fx-block{background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:10px 14px;margin:8px 0;position:relative}
+.fx-block .fx-tag{position:absolute;top:-9px;left:10px;background:var(--bg);padding:0 8px;font-size:11px;color:var(--ink2);font-weight:600}
+.fx{font-family:var(--serif);font-size:14.5px;line-height:2.0}
+.fx i{font-style:italic}
+.fx sub,.fx sup{font-size:10.5px}
+.fx .t-tc{color:var(--c-tc);font-weight:600}
+.fx .t-tg{color:var(--c-tg);font-weight:600}
+.fx .t-ts{color:var(--c-tsr);font-weight:600}
+.fx .t-acc{color:var(--acc);font-weight:600}
+.fx .cond{font-family:var(--mono);font-size:11px;color:var(--ink3);font-style:normal;margin-left:14px}
+
+/* 提示框 */
+.callout{background:var(--bg2);border:1px solid var(--line);border-left:4px solid var(--acc2);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:12.8px}
+.callout.blue{border-left-color:var(--acc)}
+.callout b{display:block;margin-bottom:3px}
+
+/* 表格 */
+table{border-collapse:collapse;width:100%;background:var(--bg2);font-size:12.5px;margin:8px 0}
+th,td{border:1px solid var(--line);padding:4.5px 9px;text-align:left;vertical-align:top}
+th{background:#eef2f7;font-weight:600;white-space:nowrap;font-size:12px}
+td code{white-space:nowrap}
+.tbl-compact td{padding:3.5px 8px}
+
+/* 状态 */
+.st{display:inline-block;width:15px;height:15px;border-radius:50%;vertical-align:-3px;margin-right:4px;font-size:10px;color:#fff;text-align:center;line-height:15px}
+.st-ok{background:var(--ok)}.st-part{background:var(--part)}.st-no{background:var(--no)}.st-na{background:var(--na)}
+.t-ok{color:var(--ok)}.t-part{color:var(--part)}
+
+/* 双栏对比 */
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:9px 0}
+@media(max-width:920px){.duo{grid-template-columns:1fr}}
+.duo .cell{background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:11px 13px}
+.duo .cell h4{padding-bottom:6px;border-bottom:1px solid var(--line);margin-bottom:7px}
+.duo .cell.single{border-top:3px solid var(--c-tsr)}
+.duo .cell.dual{border-top:3px solid var(--c-tc)}
+.duo .cell p{font-size:12.5px}
+
+/* 2×2×2 矩阵 */
+.mx{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin:10px 0}
+@media(max-width:920px){.mx{grid-template-columns:1fr}}
+.mx .quad{background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.mx .quad h4{font-size:13.5px;margin-bottom:6px;padding-bottom:6px;border-bottom:2px solid var(--acc)}
+.mx .quad.fy h4{border-bottom-color:var(--part)}
+.mx .wf{display:flex;gap:8px;margin-top:7px}
+.mx .wfcard{flex:1;border:1px solid var(--line);border-radius:6px;padding:7px 9px;background:#fbfcfe}
+.mx .wfcard .mode{font-size:11px;font-weight:700;color:var(--acc);margin-bottom:2px}
+.mx .wfcard .id{font-family:var(--mono);font-size:10.8px;color:var(--ink3);word-break:break-all}
+.mx .wfcard .out{font-size:11.5px;color:var(--ink2);margin-top:3px}
+
+/* 变体卡 */
+.vars{display:grid;grid-template-columns:repeat(2,1fr);gap:11px;margin:10px 0}
+@media(max-width:920px){.vars{grid-template-columns:1fr}}
+.var{background:var(--bg2);border:1px solid var(--line);border-left:4px solid var(--acc2);border-radius:0 6px 6px 0;padding:9px 12px}
+.var.d1{border-left-color:var(--na)}
+.var h4{font-size:13px}
+.var .id{font-family:var(--mono);font-size:10.8px;color:var(--ink3);margin:2px 0 4px}
+.var p{font-size:12.3px;color:var(--ink2)}
+
+/* SVG 图 */
+.fig{background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:12px 14px 8px;margin:10px 0}
+.fig .cap{font-size:11.8px;color:var(--ink3);margin-top:4px;text-align:center}
+.fig svg{display:block;width:100%;height:auto}
+.sv-txt{font-family:"Segoe UI","Microsoft YaHei",sans-serif}
+.sv-mono{font-family:var(--mono)}
+.sv-ink{fill:var(--ink)}.sv-mut{fill:var(--ink2)}.sv-dim{fill:var(--ink3)}
+.sv-acc{fill:var(--acc)}.sv-grn{fill:var(--acc2)}.sv-amb{fill:var(--c-tg)}.sv-red{fill:var(--c-tsr)}.sv-soil{fill:var(--c-soil)}
+.sv-ln{stroke:var(--ink2);fill:none}
+.sv-lnacc{stroke:var(--acc);fill:none}
+.sv-box{fill:#fbfcfe;stroke:var(--ink3)}
+.sv-boxb{fill:#eff6ff;stroke:var(--acc)}
+.sv-boxg{fill:#ecfdf5;stroke:var(--acc2)}
+.sv-boxa{fill:#fffbeb;stroke:var(--c-tg)}
+.sv-boxr{fill:#fef2f2;stroke:var(--c-tsr)}
+
+/* 分支点徽标 */
+.bp{display:inline-block;font-family:var(--mono);font-size:10.5px;background:#eef2f7;border-radius:3px;padding:0 5px;color:var(--ink2)}
+
+footer{margin-top:38px;padding-top:12px;border-top:1px solid var(--line);font-size:11.8px;color:var(--ink3)}
+footer .srcs{margin-top:6px}
+footer .srcs b{color:var(--ink2)}
+footer ol{padding-left:20px;margin-top:4px}
+footer li{margin:2px 0;word-break:break-all}
+footer code{font-size:10.8px}
+
+@media print{nav{display:none}section{page-break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>ω 反演算法详解与工作流指南</h1>
+  <div class="sub">面向系统开发者的算法说明书 —— τ-ω 辐射传输模型（单温度 / 双温度）· D1/D2/SF 三族算法谱系 · SF 四步流水线 · 13 条工作流的 2×2×2 矩阵</div>
+  <div class="meta">取证基准 2026-08-18 · 事实来源：<code>algorithms/omega_sf.py</code> / <code>omega.py</code> / <code>ingest/daily_bundle.py</code> / Matlab 原型 <code>omega_sf_fenkuai.m</code>（3396 行）/ <code>workflow_seeds/system/omega*.json</code></div>
+</header>
+
+<nav>
+  <a href="#s1">1 反演在干什么</a>
+  <a href="#s2">2 τ-ω 前向模型</a>
+  <a href="#s3">3 三族算法谱系</a>
+  <a href="#s4">4 SF 四步流水线</a>
+  <a href="#s5">5 数据输入全景</a>
+  <a href="#s6">6 工作流 2×2×2</a>
+  <a href="#s7">7 Matlab→Python 移植</a>
+</nav>
+
+<!-- ═══════════════ §1 ═══════════════ -->
+<section id="s1">
+<h2><span class="no">§1</span>微波遥感反演在干什么</h2>
+
+<p>整套 ω 反演体系做的事情可以概括为一句话：<b>卫星微波辐射计测到两个数（双极化亮温），我们要从这两个数里解出一组地表物理量（土壤水分、植被状况等）</b>。这是一个典型的「反问题」——先有描述物理过程的<b>前向模型</b>（给定地表状态 → 预测亮温），再通过数值优化反推地表状态。</p>
+
+<div class="callout blue">
+  <b>开发者的直觉类比</b>
+  前向模型 = <code>predict(state) → observation</code>；反演 = <code>least_squares</code> 在参数边界内搜索使 <code>predict(x) − observation</code> 残差最小的 <code>x</code>。本系统所有反演都遵循这一模式，只是待估参数与正则项不同。
+</div>
+
+<h3>1.1 卫星测到什么（观测侧）</h3>
+<ul class="tight">
+  <li><b>亮温 TB</b>（Brightness Temperature，单位 K，典型 250–320）：微波辐射计输出的辐射测量值，经普朗克函数定标换算为等效温度。</li>
+  <li><b>双极化</b>：电场振动方向<b>垂直</b>（V）/ <b>水平</b>(H) 于观测平面各测一次，得 <code>TBv</code>、<code>TBh</code>。土壤水分对两种极化的响应不同——这正是反演的信息来源。</li>
+  <li><b>入射角 θ</b>：SMAP 恒定 40°（代码中 <code>build_tb_model_context(freq, clay, 40.0)</code> 的缺省即此）；FY 按像元序列 <code>IA</code> 逐样本传入。</li>
+</ul>
+
+<div class="fig">
+<svg viewBox="0 0 760 268" role="img" aria-label="微波遥感观测几何示意">
+  <!-- 卫星 -->
+  <g>
+    <rect x="52" y="26" width="34" height="18" rx="3" class="sv-boxb" stroke-width="1.4"/>
+    <rect x="38" y="30" width="12" height="10" fill="#dbeafe" stroke="#93c5fd" stroke-width="1"/>
+    <rect x="88" y="30" width="12" height="10" fill="#dbeafe" stroke="#93c5fd" stroke-width="1"/>
+    <text x="69" y="58" text-anchor="middle" class="sv-txt sv-mut" font-size="11.5">卫星微波辐射计</text>
+  </g>
+  <!-- 观测射线 -->
+  <line x1="69" y1="48" x2="470" y2="196" class="sv-lnacc" stroke-width="1.8"/>
+  <!-- 天底方向虚线与入射角弧 -->
+  <line x1="470" y1="196" x2="470" y2="60" class="sv-ln" stroke-width="1" stroke-dasharray="4 4"/>
+  <path d="M 470 116 A 80 80 0 0 0 435 130" class="sv-ln" stroke-width="1.2"/>
+  <text x="446" y="108" class="sv-txt sv-ink" font-size="13" font-style="italic">θ</text>
+  <text x="470" y="52" text-anchor="middle" class="sv-txt sv-dim" font-size="10.5">天底方向</text>
+  <!-- 极化标注 -->
+  <circle cx="300" cy="128" r="13" fill="#fff" stroke="#93c5fd" stroke-width="1.2"/>
+  <text x="300" y="132.5" text-anchor="middle" class="sv-txt sv-acc" font-size="11" font-weight="700">V/H</text>
+  <text x="300" y="158" text-anchor="middle" class="sv-txt sv-dim" font-size="10.5">双极化观测 TBv · TBh</text>
+  <!-- 地表结构 -->
+  <rect x="180" y="196" width="540" height="26" fill="#ecfdf5" stroke="#a7f3d0" stroke-width="1"/>
+  <text x="450" y="213" text-anchor="middle" class="sv-txt sv-grn" font-size="12" font-weight="600">植被冠层层（衰减 τ · 散射 ω）</text>
+  <rect x="180" y="222" width="540" height="30" fill="#fdf6ec" stroke="#e7d4b8" stroke-width="1"/>
+  <text x="450" y="241" text-anchor="middle" class="sv-txt sv-soil" font-size="12" font-weight="600">土壤表层（水分 SM · 粗糙度 h · 极化混合 α）</text>
+  <!-- 发射箭头 -->
+  <line x1="600" y1="218" x2="600" y2="188" class="sv-ln" stroke-width="1.4" marker-end="url(#arr)"/>
+  <defs>
+    <marker id="arr" markerWidth="7" markerHeight="7" refX="5.5" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#51606f"/></marker>
+    <marker id="arrA" markerWidth="7" markerHeight="7" refX="5.5" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#2563eb"/></marker>
+  </defs>
+  <text x="612" y="192" class="sv-txt sv-mut" font-size="10.5">地物微波发射</text>
+  <text x="70" y="250" class="sv-txt sv-dim" font-size="11">观测几何：斜视角下冠层与土壤的混合辐射进入辐射计</text>
+</svg>
+<div class="cap">图 1 · 观测几何示意：辐射计在入射角 θ 下接收经冠层调制的土壤与冠层微波发射（V/H 双极化各一个通道）</div>
+</div>
+
+<h3>1.2 要解出什么（反演目标）</h3>
+<table>
+<tr><th style="width:90px">符号</th><th style="width:170px">术语</th><th style="width:130px">单位 / 范围</th><th>物理含义（开发者视角）</th></tr>
+<tr><td class="fx"><i>SM</i></td><td>土壤水分（体积含水量）</td><td>m³/m³，约 0.02–0.5</td><td><b>最终产品之一</b>。水分越高 → 土壤介电常数越大 → 反射越强、发射越弱</td></tr>
+<tr><td class="fx"><i>τ</i>（VOD）</td><td>植被光学厚度</td><td>无量纲，≥ 0</td><td>植被「厚度」指标，对微波的消光总量；透过率 <i>γ</i> = e<sup>−τ</sup>。<b>最终产品之一</b>（DDCA 同时反演 SM 与 τ）</td></tr>
+<tr><td class="fx"><i>ω</i></td><td>单次散射反照率</td><td>0–1</td><td>冠层消光中被<b>散射</b>（而非吸收/发射）的比例。<b>本算法族的核心待估参数</b>，不可直接观测，须由时序联合优化估计</td></tr>
+<tr><td class="fx"><i>h</i></td><td>表面粗糙度参数</td><td>≥ 0</td><td>土壤表面粗糙度对镜面反射的衰减与增强调制</td></tr>
+<tr><td class="fx"><i>α</i></td><td>极化混合系数</td><td>缺省 0.1771（ALPHA0）</td><td>粗糙度引起的 V/H 极化能量交换比例，Q = max(α·h, 0)</td></tr>
+<tr><td class="fx"><i>T</i><sub>s</sub> / <i>T</i><sub>C</sub> / <i>T</i><sub>G</sub></td><td>物理温度：单温度 / 冠层 / 有效土壤</td><td>K</td><td>发射体的热力学温度乘子。单温度方案三者合一为 Ts；双温度方案拆分为 TC（冠层）与 TG（土壤）</td></tr>
+</table>
+
+<div class="callout">
+  <b>为什么 ω 需要一整个算法族</b>
+  亮温对 SM、τ、ω、h、α 是多参数耦合的，单像元单时刻两个观测方程解不出这么多未知数。策略是：<b>用时间维度换自由度</b>——假设 h/α 在一个时间块内近似不变、τ 可由 NDVI 独立估计、ω 在时间上缓变（加平滑正则），于是块内多日观测可以联合解出这组参数。三族算法（§3）就是三种不同的「时间组织 + ω 策略」。
+</div>
+</section>
+
+<!-- ═══════════════ §2 ═══════════════ -->
+<section id="s2">
+<h2><span class="no">§2</span>τ-ω 前向模型：单温度 vs 双温度</h2>
+
+<p>τ-ω 模型是微波遥感植被覆盖地表的<b>零阶辐射传输模型</b>（zero-order RT）：不做多次散射求解，只把到达传感器的辐射拆为「透过冠层的土壤发射」与「冠层自身发射/散射」两项叠加。全部前向计算按以下链条进行：</p>
+
+<table class="tbl-compact">
+<tr><th style="width:40px">层级</th><th style="width:210px">环节</th><th>输入 → 输出（实现位置）</th></tr>
+<tr><td>①</td><td>介电模型</td><td class="fx"><i>ε</i>(SM, clay, freq) —— Mironov (2015) 模型，<code>physics.mironov_dielectric_from_context</code></td></tr>
+<tr><td>②</td><td>菲涅耳反射</td><td class="fx"><i>r<sub>h</sub>, r<sub>v</sub></i>(ε, θ) —— 平滑地表反射率，<code>build_fresnel_context</code> + <code>fresnel_reflectance_from_context</code></td></tr>
+<tr><td>③</td><td>粗糙度校正</td><td class="fx"><i>r<sub>h,r</sub>, r<sub>v,r</sub></i>(r, h, α, θ) —— 见式 (2)，Q = max(α·h, 0)</td></tr>
+<tr><td>④</td><td>τ-ω 叠加</td><td class="fx"><i>TB<sub>v</sub>, TB<sub>h</sub></i>(SM, τ, ω, h, α, T, θ) —— 见式 (1)/(3)，分单温度 / 双温度两版</td></tr>
+</table>
+
+<div class="fx-block">
+<span class="fx-tag">式 (1) · 单温度前向（ORIG_TS）</span>
+<div class="fx">
+<i>TB<sub>v</sub></i> = <span class="t-ts"><i>T<sub>s</sub></i></span> · [ (1−<i>r<sub>v,r</sub></i>)·<i>γ</i> + (1−<i>ω</i>)(1−<i>γ</i>)(1+<i>r<sub>v,r</sub></i>·<i>γ</i>) ]<br>
+<i>TB<sub>h</sub></i> = <span class="t-ts"><i>T<sub>s</sub></i></span> · [ (1−<i>r<sub>h,r</sub></i>)·<i>γ</i> + (1−<i>ω</i>)(1−<i>γ</i>)(1+<i>r<sub>h,r</sub></i>·<i>γ</i>) ]
+<span class="cond">γ = e<sup>−τ</sup>；土壤发射项与冠层项共用同一温度乘子 Ts</span>
+</div>
+</div>
+
+<div class="fx-block">
+<span class="fx-tag">式 (2) · 粗糙度校正（两方案共用）</span>
+<div class="fx">
+<i>Q</i> = max(<i>α</i>·<i>h</i>, 0)，
+<i>r<sub>h,r</sub></i> = [(1−<i>Q</i>)·<i>r<sub>h</sub></i> + <i>Q</i>·<i>r<sub>v</sub></i>] · e<sup>−h·cos²θ</sup>，
+<i>r<sub>v,r</sub></i> = [(1−<i>Q</i>)·<i>r<sub>v</sub></i> + <i>Q</i>·<i>r<sub>h</sub></i>] · e<sup>−h·cos²θ</sup>
+<span class="cond">α 退化为固定 0.1771 时对应原始 F_sm.m</span>
+</div>
+</div>
+
+<div class="fx-block">
+<span class="fx-tag">式 (3) · 双温度前向（DUAL）</span>
+<div class="fx">
+<i>TB<sub>v</sub></i> = <span class="t-tg"><i>T<sub>G</sub></i></span>·(1−<i>r<sub>v,r</sub></i>)·<i>γ</i> + <span class="t-tc"><i>T<sub>C</sub></i></span>·(1−<i>ω</i>)(1−<i>γ</i>)(1+<i>r<sub>v,r</sub></i>·<i>γ</i>)<br>
+<i>TB<sub>h</sub></i> = <span class="t-tg"><i>T<sub>G</sub></i></span>·(1−<i>r<sub>h,r</sub></i>)·<i>γ</i> + <span class="t-tc"><i>T<sub>C</sub></i></span>·(1−<i>ω</i>)(1−<i>γ</i>)(1+<i>r<sub>h,r</sub></i>·<i>γ</i>)
+<span class="cond">C=1.0；土壤发射项乘 TG，冠层发射/散射项乘 TC</span>
+</div>
+</div>
+
+<p class="note">对应实现：<code>_forward_tb</code>（<code>omega_sf.py</code> L1185，Matlab <code>tb_forward_single_temp</code> L2166–2176）与 <code>_forward_tb_dual</code>（L1514，Matlab <code>tb_forward_dual_temp</code> L2245–2255）。两版除发射项温度乘子外完全共用 Mironov 介电、Fresnel 与粗糙度层。</p>
+
+<h3>2.1 单温度 vs 双温度：差别到底在哪</h3>
+
+<div class="duo">
+  <div class="cell single">
+    <h4><span class="t-ts">■</span> 单温度（temp_scheme = ORIG_TS）</h4>
+    <p><b>假设</b>：土壤表层与冠层热平衡，共用一个物理温度 Ts（直接取卫星数据自带的 <code>surface_temperature</code>，别名 <code>Ts</code>）。</p>
+    <p><b>优点</b>：不依赖外部温度数据，SMAP/FY 数据包内即含 Ts。</p>
+    <p><b>偏差来源</b>：白天太阳加热下，土壤表层与冠层温差可达数 K；用单一 Ts 乘两项会把该温差误差直接注入 SM/τ 反演结果。</p>
+  </div>
+  <div class="cell dual">
+    <h4><span class="t-tc">■</span> 双温度（temp_scheme = DUAL）</h4>
+    <p><b>假设</b>：冠层温度 TC 与有效土壤温度 TG 分离，分别乘冠层项与土壤项（式 3）。</p>
+    <p><b>数据需求</b>：须外接 GLDAS 陆面再分析，提供三温度层——地表温度 <code>Ts_gldas</code>（作 TC）、两层土壤温度 <code>Tsoil1</code>/<code>Tsoil2</code>（合成 TG，见式 4）。</p>
+    <p><b>代价</b>：多一路 GLDAS 预读、过境时刻匹配与日期交集过滤（见 2.3）。</p>
+  </div>
+</div>
+
+<div class="fig">
+<svg viewBox="0 0 880 320" role="img" aria-label="单温度与双温度前向模型对比">
+  <!-- 左：单温度 -->
+  <g>
+    <text x="220" y="20" text-anchor="middle" class="sv-txt sv-ink" font-size="13" font-weight="700">单温度 ORIG_TS：Ts 统一乘子</text>
+    <!-- 传感器 -->
+    <rect x="196" y="32" width="48" height="14" rx="3" class="sv-boxb" stroke-width="1.3"/>
+    <text x="220" y="64" text-anchor="middle" class="sv-txt sv-mut" font-size="10.5">传感器</text>
+    <!-- 冠层层 -->
+    <rect x="60" y="120" width="320" height="34" fill="#ecfdf5" stroke="#a7f3d0"/>
+    <text x="220" y="141" text-anchor="middle" class="sv-txt sv-grn" font-size="11.5">冠层：τ · ω（发射/散射项）</text>
+    <!-- 土壤 -->
+    <rect x="60" y="154" width="320" height="30" fill="#fdf6ec" stroke="#e7d4b8"/>
+    <text x="220" y="173" text-anchor="middle" class="sv-txt sv-soil" font-size="11.5">土壤：SM · h · α（发射项）</text>
+    <!-- Ts 单盒 -->
+    <rect x="188" y="214" width="64" height="26" rx="5" class="sv-boxr" stroke-width="1.5"/>
+    <text x="220" y="231" text-anchor="middle" class="sv-txt sv-red" font-size="13" font-weight="700" font-style="italic">T<tspan baseline-shift="sub" font-size="9">s</tspan></text>
+    <!-- 两条供给线 -->
+    <line x1="205" y1="214" x2="150" y2="158" class="sv-ln" stroke-width="1.3" stroke-dasharray="5 3"/>
+    <line x1="235" y1="214" x2="290" y2="158" class="sv-ln" stroke-width="1.3" stroke-dasharray="5 3"/>
+    <!-- 两个上行箭头 -->
+    <line x1="140" y1="154" x2="205" y2="50" stroke="#d97706" stroke-width="1.6" marker-end="url(#arr)"/>
+    <line x1="300" y1="120" x2="238" y2="50" stroke="#0e9f6e" stroke-width="1.6" marker-end="url(#arr)"/>
+    <text x="96" y="96" class="sv-txt sv-amb" font-size="10.5">土壤发射 ×γ ×Ts</text>
+    <text x="312" y="86" class="sv-txt sv-grn" font-size="10.5">冠层发射 ×Ts</text>
+    <text x="220" y="268" text-anchor="middle" class="sv-txt sv-dim" font-size="10.8">同一温度乘子 → 温差系统性进入反演</text>
+    <text x="220" y="286" text-anchor="middle" class="sv-mono sv-dim" font-size="10">TBv = Ts·[(1−rv,r)γ + (1−ω)(1−γ)(1+rv,r γ)]</text>
+  </g>
+  <!-- 分隔 -->
+  <line x1="440" y1="16" x2="440" y2="300" class="sv-ln" stroke-dasharray="3 5"/>
+  <!-- 右：双温度 -->
+  <g>
+    <text x="660" y="20" text-anchor="middle" class="sv-txt sv-ink" font-size="13" font-weight="700">双温度 DUAL：TG / TC 分别乘子</text>
+    <rect x="636" y="32" width="48" height="14" rx="3" class="sv-boxb" stroke-width="1.3"/>
+    <text x="660" y="64" text-anchor="middle" class="sv-txt sv-mut" font-size="10.5">传感器</text>
+    <rect x="500" y="120" width="320" height="34" fill="#ecfdf5" stroke="#a7f3d0"/>
+    <text x="660" y="141" text-anchor="middle" class="sv-txt sv-grn" font-size="11.5">冠层：τ · ω（发射/散射项）</text>
+    <rect x="500" y="154" width="320" height="30" fill="#fdf6ec" stroke="#e7d4b8"/>
+    <text x="660" y="173" text-anchor="middle" class="sv-txt sv-soil" font-size="11.5">土壤：SM · h · α（发射项）</text>
+    <!-- TG 盒 -->
+    <rect x="546" y="214" width="66" height="26" rx="5" class="sv-boxa" stroke-width="1.5"/>
+    <text x="579" y="231" text-anchor="middle" class="sv-txt sv-amb" font-size="13" font-weight="700" font-style="italic">T<tspan baseline-shift="sub" font-size="9">G</tspan></text>
+    <text x="579" y="258" text-anchor="middle" class="sv-txt sv-dim" font-size="10">GLDAS 合成（式 4）</text>
+    <!-- TC 盒 -->
+    <rect x="708" y="214" width="66" height="26" rx="5" class="sv-boxg" stroke-width="1.5"/>
+    <text x="741" y="231" text-anchor="middle" class="sv-txt sv-grn" font-size="13" font-weight="700" font-style="italic">T<tspan baseline-shift="sub" font-size="9">C</tspan></text>
+    <text x="741" y="258" text-anchor="middle" class="sv-txt sv-dim" font-size="10">GLDAS Ts_gldas</text>
+    <!-- 供给线 -->
+    <line x1="579" y1="214" x2="579" y2="188" class="sv-ln" stroke-width="1.3"/>
+    <line x1="741" y1="214" x2="741" y2="158" class="sv-ln" stroke-width="1.3"/>
+    <!-- 上行箭头 -->
+    <line x1="580" y1="154" x2="645" y2="50" stroke="#d97706" stroke-width="1.6" marker-end="url(#arr)"/>
+    <line x1="740" y1="120" x2="678" y2="50" stroke="#0e9f6e" stroke-width="1.6" marker-end="url(#arr)"/>
+    <text x="498" y="96" class="sv-txt sv-amb" font-size="10.5">土壤发射 ×γ ×TG</text>
+    <text x="752" y="86" class="sv-txt sv-grn" font-size="10.5">冠层发射 ×TC</text>
+    <text x="660" y="286" text-anchor="middle" class="sv-mono sv-dim" font-size="10">TBv = TG·(1−rv,r)γ + TC·(1−ω)(1−γ)(1+rv,r γ)</text>
+  </g>
+</svg>
+<div class="cap">图 2 · 两种温度方案的辐射分解：左图为单温度共用 Ts；右图 DUAL 将土壤发射项（琥珀色）与冠层项（绿色）分别配温</div>
+</div>
+
+<h3>2.2 TG 的三种合成模式（dual_tg_mode）</h3>
+<p>GLDAS 提供两层土壤温度，而前向模型只要一个有效土壤温度 TG，因此需要一个合成方案。实现位于 <code>ingest/daily_bundle.py</code> 的 <code>build_effective_soil_temperature_scheme</code>（L863–891）：</p>
+
+<div class="fx-block">
+<span class="fx-tag">式 (4) · PAPER_CT 模式（论文方案，缺省）</span>
+<div class="fx">
+<i>C<sub>t</sub></i> = ( <i>SM<sub>ref</sub></i> / <i>SM<sub>ref</sub><sup>*</sup></i> )<sup> <i>p</i></sup>，
+<i>T<sub>G</sub></i> = <i>T<sub>soil2</sub></i> + <i>C<sub>t</sub></i> · ( <i>T<sub>soil1</sub></i> − <i>T<sub>soil2</sub></i> )
+<span class="cond">SM<sub>ref</sub>* = ct_smref = 0.30，p = ct_exp = 0.30</span>
+</div>
+</div>
+
+<table class="tbl-compact">
+<tr><th style="width:150px">dual_tg_mode</th><th>TG 取值</th><th>语义</th></tr>
+<tr><td><code>PAPER_CT</code>（缺省）</td><td class="fx"><i>T<sub>soil2</sub></i> + <i>C<sub>t</sub></i>(<i>T<sub>soil1</sub></i>−<i>T<sub>soil2</sub></i>)</td><td>有效深度随土壤水分变化的幂律插值：越湿润（SM_ref 越大）→ Ct 越大 → TG 越靠近表层 Tsoil1；越干燥则越靠近深层 Tsoil2。物理上模拟微波采样深度对湿度的依赖</td></tr>
+<tr><td><code>TSOIL1_ONLY</code></td><td class="fx"><i>T<sub>soil1</sub></i></td><td>直接取表层土壤温度（消融实验/对照基线）</td></tr>
+<tr><td><code>TSOIL2_ONLY</code></td><td class="fx"><i>T<sub>soil2</sub></i></td><td>直接取深层土壤温度（同上）</td></tr>
+</table>
+
+<h3>2.3 GLDAS：为什么需要、怎么接</h3>
+<p><b>为什么必需</b>：双温度方案的 TC/TG 无法从 SMAP/FY 数据包获得——SMAP 自带的 Ts 恰是单温度方案要替换掉的那个量。GLDAS（Global Land Data Assimilation System，NASA 陆面再分析）以 3 小时间隔提供全球陆面状态，本系统使用其中的三温度层（<code>Ts_gldas</code>、<code>Tsoil1</code>、<code>Tsoil2</code>）。</p>
+<p><b>时间匹配（过境匹配法）</b>：卫星降轨过境发生在某<b>本地时</b> h（SMAP 06:00，FY3D/FY3B 各有独立配置项），而 GLDAS 文件打 UTC 时戳。给定研究区经度范围 [lon_min, lon_max]，某日 <code>day</code> 的目标 UTC 匹配窗口为：</p>
+
+<div class="fx-block">
+<span class="fx-tag">式 (5) · GLDAS 过境匹配 UTC 窗口</span>
+<div class="fx">
+[ <i>day</i> + <i>h</i> − <i>lon</i><sub>max</sub>/15 − <i>tol</i> ,　<i>day</i> + <i>h</i> − <i>lon</i><sub>min</sub>/15 + <i>tol</i> ]
+<span class="cond">tol = gldas_time_tol_hours = 1.6 h（缺省）；经度/15 即地方时与 UTC 的时差</span>
+</div>
+</div>
+
+<ul class="tight">
+  <li>窗口内存在 GLDAS 文件 → 该日保留，取最近邻文件读取三温度行（<code>load_dual_temperature_row_for_day</code>；线性像元索引按 loader 约定 0-based → 1-based 传递）。</li>
+  <li>整月无任何可匹配日 → 按 Matlab 原型的「日期交集」语义，该月从运行序列剔除（<code>_filter_tvec_by_gldas_days</code>，在 8 天块构建<b>之前</b>执行，保证块结构一致性）。</li>
+  <li>像元级无匹配（个别像元 NaN）→ 由反演内部的 NaN 短路掩膜自然跳过，不中断整块。</li>
+  <li><b>模板法</b>（<code>use_gldas_template=True</code>）：无法用经度窗口预判（模板不按日期命名）时保留全部日期，逐日直接按模板读取。</li>
+</ul>
+</section>
+
+<!-- ═══════════════ §3 ═══════════════ -->
+<section id="s3">
+<h2><span class="no">§3</span>三族算法谱系：D1 → D2 / SF</h2>
+
+<p>ω 的估计是一个「时间组织」问题。系统按对 ω 的处理策略分为三族，形成一条<b>预处理 → 轻量回代 / 联合反演</b>的谱系：</p>
+
+<div class="fig">
+<svg viewBox="0 0 900 312" role="img" aria-label="D1 D2 SF 三族算法谱系图">
+  <!-- 输入层 -->
+  <g>
+    <rect x="24" y="18" width="150" height="40" rx="6" class="sv-boxb" stroke-width="1.3"/>
+    <text x="99" y="34" text-anchor="middle" class="sv-txt sv-ink" font-size="11.5" font-weight="600">SMAP / FY 亮温</text>
+    <text x="99" y="49" text-anchor="middle" class="sv-mono sv-dim" font-size="9.5">TBv·TBh·IA·Ts</text>
+    <rect x="196" y="18" width="120" height="40" rx="6" class="sv-boxb" stroke-width="1.3"/>
+    <text x="256" y="34" text-anchor="middle" class="sv-txt sv-ink" font-size="11.5" font-weight="600">NDVI + 气候态</text>
+    <text x="256" y="49" text-anchor="middle" class="sv-mono sv-dim" font-size="9.5">逐日·DOY·极值</text>
+    <rect x="338" y="18" width="120" height="40" rx="6" class="sv-boxb" stroke-width="1.3"/>
+    <text x="398" y="34" text-anchor="middle" class="sv-txt sv-ink" font-size="11.5" font-weight="600">辅助库</text>
+    <text x="398" y="49" text-anchor="middle" class="sv-mono sv-dim" font-size="9.5">IGBP·clay·h·B</text>
+    <rect x="480" y="18" width="130" height="40" rx="6" class="sv-boxa" stroke-width="1.3"/>
+    <text x="545" y="34" text-anchor="middle" class="sv-txt sv-ink" font-size="11.5" font-weight="600">GLDAS（DUAL）</text>
+    <text x="545" y="49" text-anchor="middle" class="sv-mono sv-dim" font-size="9.5">TC·Tsoil1·Tsoil2</text>
+  </g>
+  <!-- D1 -->
+  <g>
+    <rect x="24" y="104" width="250" height="58" rx="7" fill="#fffbeb" stroke="#fcd34d" stroke-width="1.5"/>
+    <text x="149" y="124" text-anchor="middle" class="sv-txt sv-ink" font-size="12.5" font-weight="700">D1 · omega_block 块反演</text>
+    <text x="149" y="140" text-anchor="middle" class="sv-txt sv-mut" font-size="10.5">长时间块联合反演 h*/α* 参数图</text>
+    <text x="149" y="154" text-anchor="middle" class="sv-txt sv-mut" font-size="10.5">+ daily_omega 逐日 ω 缓存（预处理）</text>
+  </g>
+  <!-- D2 -->
+  <g>
+    <rect x="330" y="104" width="270" height="58" rx="7" class="sv-boxb" stroke-width="1.5"/>
+    <text x="465" y="124" text-anchor="middle" class="sv-txt sv-ink" font-size="12.5" font-weight="700">D2 · omega_avg 平均反演</text>
+    <text x="465" y="140" text-anchor="middle" class="sv-txt sv-mut" font-size="10.5">由 D1 输出构建多年 DOY 气候态 ω̄(DOY)</text>
+    <text x="465" y="154" text-anchor="middle" class="sv-txt sv-mut" font-size="10.5">逐日轻量 DDCA 回代（ω 固定）</text>
+  </g>
+  <!-- SF -->
+  <g>
+    <rect x="640" y="104" width="236" height="58" rx="7" class="sv-boxg" stroke-width="1.5"/>
+    <text x="758" y="124" text-anchor="middle" class="sv-txt sv-ink" font-size="12.5" font-weight="700">SF · omega_sf 动态反演</text>
+    <text x="758" y="140" text-anchor="middle" class="sv-txt sv-mut" font-size="10.5">8 天块内联合反演逐日 ω 序列</text>
+    <text x="758" y="154" text-anchor="middle" class="sv-txt sv-mut" font-size="10.5">Step0–3 流水线（§4）+ QC</text>
+  </g>
+  <!-- 连线：输入→各节点 -->
+  <line x1="99" y1="58" x2="120" y2="100" class="sv-ln" stroke-width="1.2"/>
+  <line x1="256" y1="58" x2="256" y2="100" class="sv-ln" stroke-width="1.2"/>
+  <line x1="398" y1="58" x2="380" y2="100" class="sv-ln" stroke-width="1.2"/>
+  <line x1="256" y1="58" x2="465" y2="100" class="sv-ln" stroke-width="1.2"/>
+  <line x1="398" y1="58" x2="490" y2="100" class="sv-ln" stroke-width="1.2"/>
+  <line x1="99" y1="58" x2="730" y2="100" class="sv-ln" stroke-width="1.2"/>
+  <line x1="256" y1="58" x2="758" y2="100" class="sv-ln" stroke-width="1.2"/>
+  <line x1="398" y1="58" x2="800" y2="100" class="sv-ln" stroke-width="1.2"/>
+  <line x1="545" y1="58" x2="850" y2="100" stroke="#d97706" stroke-width="1.2" class="sv-ln"/>
+  <line x1="545" y1="58" x2="530" y2="100" stroke="#d97706" stroke-width="1.2" class="sv-ln"/>
+  <!-- D1 → D2 -->
+  <line x1="274" y1="133" x2="326" y2="133" class="sv-lnacc" stroke-width="1.8" marker-end="url(#arrA)"/>
+  <text x="300" y="126" text-anchor="middle" class="sv-txt sv-acc" font-size="9.8">ω 气候态来源</text>
+  <!-- 产出层 -->
+  <g>
+    <rect x="330" y="216" width="270" height="44" rx="6" fill="#eff6ff" stroke="#93c5fd"/>
+    <text x="465" y="234" text-anchor="middle" class="sv-txt sv-ink" font-size="11.5" font-weight="600">SM / VOD 时序（气候态 ω 加持）</text>
+    <text x="465" y="250" text-anchor="middle" class="sv-txt sv-mut" font-size="10.3">稳定、便宜 · ω 无年内动态</text>
+    <rect x="640" y="216" width="236" height="44" rx="6" fill="#ecfdf5" stroke="#a7f3d0"/>
+    <text x="758" y="234" text-anchor="middle" class="sv-txt sv-ink" font-size="11.5" font-weight="600">SM / VOD / ω 逐日序列 + QC</text>
+    <text x="758" y="250" text-anchor="middle" class="sv-txt sv-mut" font-size="10.3">ω 保留年内动态 · 计算量大</text>
+  </g>
+  <line x1="465" y1="162" x2="465" y2="212" class="sv-lnacc" stroke-width="1.5" marker-end="url(#arrA)"/>
+  <line x1="758" y1="162" x2="758" y2="212" class="sv-lnacc" stroke-width="1.5" marker-end="url(#arrA)"/>
+  <!-- avg/raw 标签 -->
+  <text x="24" y="196" class="sv-txt sv-dim" font-size="11">工作流命名对应：</text>
+  <text x="118" y="196" class="sv-txt sv-acc" font-size="11" font-weight="700">「平均 avg」= D2</text>
+  <text x="228" y="196" class="sv-txt sv-grn" font-size="11" font-weight="700">「动态 raw」= SF</text>
+  <text x="24" y="286" class="sv-txt sv-dim" font-size="10.5">琥珀色连线仅双温度（DUAL）方案需要；单温度（ORIG_TS）运行不含 GLDAS 输入与 D1→D2 之外的温度依赖。</text>
+</svg>
+<div class="cap">图 3 · 算法谱系：D1 为上游预处理（产 h*/α* 图与日 ω 缓存）；D2 消费 D1 产物的气候态做轻量逐日回代；SF 独立做块内联合反演</div>
+</div>
+
+<table>
+<tr><th style="width:120px">维度</th><th>D1 · omega_block</th><th>D2 · omega_avg_daily</th><th>SF · omega_sf_fenkuai</th></tr>
+<tr><td><b>定位</b></td><td>预处理（非直接产品）</td><td>产品：平均反演（avg）</td><td>产品：动态反演（raw）</td></tr>
+<tr><td><b>ω 策略</b></td><td>长块一次性反演，输出 h*/α* 参数图 + daily_omega 缓存</td><td>固定为多年 DOY 气候态 ω̄(DOY)（由 D1 输出构建）</td><td>8 天块内联合优化逐日 ω 序列（λ_smooth 时间平滑 + 热启动）</td></tr>
+<tr><td><b>逐日计算</b></td><td>—</td><td>轻量 DDCA 回代（ω 已知，仅解 SM/τ）</td><td>Step0–3 全流水线（含 h/α、ω 反演）</td></tr>
+<tr><td><b>输出</b></td><td>h*/α* 图、daily_omega</td><td>SM / VOD 逐日</td><td>SM / VOD / ω 逐日 + QC 标记</td></tr>
+<tr><td><b>计算成本</b></td><td>高（一次性）</td><td><b>低</b></td><td><b>高</b>（每块三次 least_squares 层）</td></tr>
+<tr><td><b>实现</b></td><td><code>algorithms/omega.py</code> + <code>modules/omega_block.py</code></td><td><code>modules/omega_avg_daily.py</code></td><td><code>algorithms/omega_sf.py</code> + <code>modules/omega_sf_fenkuai.py</code></td></tr>
+</table>
+
+<div class="callout">
+  <b>「平均 avg / 动态 raw」的准确语义</b>
+  用户语言中的「平均」指 <b>ω 取气候态平均值</b>（D2：ω 在同 DOY 的多年样本上平均后固定），「动态」指 <b>ω 保留并逐块反演真实时序</b>（SF）。两者反演的 SM/VOD 都是逐日产品——差别只在 ω（以及连带的质量控制路径），不在时间分辨率。
+</div>
+</section>
+
+<!-- ═══════════════ §4 ═══════════════ -->
+<section id="s4">
+<h2><span class="no">§4</span>SF 动态反演：四步流水线</h2>
+
+<p>SF（<code>omega_sf_fenkuai</code>）按像元、按 8 天块执行以下四步（单像元核心对应 Matlab <code>run_one_pixel_core_preloaded</code> L928–1424；Python 实现位于 <code>omega_sf.py</code> L895 起）：</p>
+
+<div class="fig">
+<svg viewBox="0 0 960 252" role="img" aria-label="SF 四步流水线">
+  <defs>
+    <marker id="arrB" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2563eb"/></marker>
+  </defs>
+  <!-- Step 0 -->
+  <rect x="14" y="26" width="196" height="96" rx="7" class="sv-box" stroke-width="1.4"/>
+  <text x="112" y="46" text-anchor="middle" class="sv-txt sv-ink" font-size="12.5" font-weight="700">Step 0 · τ 初始化</text>
+  <text x="112" y="64" text-anchor="middle" class="sv-txt sv-mut" font-size="10.5">τ*(t) = τ(NDVI, NDVI_max/min</text>
+  <text x="112" y="78" text-anchor="middle" class="sv-txt sv-mut" font-size="10.5">气候态极值, IGBP, B, SF, IA)</text>
+  <text x="112" y="98" text-anchor="middle" class="sv-txt sv-dim" font-size="10">植被光学厚度经验初始化</text>
+  <!-- Step 1 -->
+  <rect x="246" y="26" width="208" height="96" rx="7" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.4"/>
+  <text x="350" y="46" text-anchor="middle" class="sv-txt sv-ink" font-size="12.5" font-weight="700">Step 1 · 低 τ 样本 → h/α</text>
+  <text x="350" y="64" text-anchor="middle" class="sv-txt sv-mut" font-size="10.5">低 τ 样本联合 least_squares</text>
+  <text x="350" y="78" text-anchor="middle" class="sv-txt sv-mut" font-size="10.5">优化 [h, α]，残差 = V/H 双极化</text>
+  <text x="350" y="92" text-anchor="middle" class="sv-txt sv-mut" font-size="10.5">+ √λ_α·(α−α₀) 正则尾项</text>
+  <text x="350" y="112" text-anchor="middle" class="sv-mono" font-size="9.5" fill="#2563eb">DUAL 分支 · omega_sf.py ~L699</text>
+  <!-- Step 2 -->
+  <rect x="490" y="26" width="208" height="96" rx="7" fill="#fffbeb" stroke="#fcd34d" stroke-width="1.4"/>
+  <text x="594" y="46" text-anchor="middle" class="sv-txt sv-ink" font-size="12.5" font-weight="700">Step 2 · 8 天块 ω 识别</text>
+  <text x="594" y="64" text-anchor="middle" class="sv-txt sv-mut" font-size="10.5">逐块单变量 least_squares(ω)</text>
+  <text x="594" y="78" text-anchor="middle" class="sv-txt sv-mut" font-size="10.5">尾项 √λ_smooth·(ω−ω_prev)</text>
+  <text x="594" y="92" text-anchor="middle" class="sv-txt sv-mut" font-size="10.5">初值热启动：ω_prev 或 ω₀</text>
+  <text x="594" y="112" text-anchor="middle" class="sv-mono" font-size="9.5" fill="#d97706">DUAL 分支 · omega_sf.py ~L1082</text>
+  <!-- Step 3 -->
+  <rect x="734" y="26" width="212" height="96" rx="7" fill="#ecfdf5" stroke="#a7f3d0" stroke-width="1.4"/>
+  <text x="840" y="46" text-anchor="middle" class="sv-txt sv-ink" font-size="12.5" font-weight="700">Step 3 · 逐日 DDCA</text>
+  <text x="840" y="64" text-anchor="middle" class="sv-txt sv-mut" font-size="10.5">逐日 least_squares [SM, τ]</text>
+  <text x="840" y="78" text-anchor="middle" class="sv-txt sv-mut" font-size="10.5">残差 [ΔTBv, ΔTBh, λ_τ(τ−τ_ini)]</text>
+  <text x="840" y="92" text-anchor="middle" class="sv-txt sv-mut" font-size="10.5">边界 SM∈[0.02,φ]，τ∈[0,5]</text>
+  <text x="840" y="112" text-anchor="middle" class="sv-mono" font-size="9.5" fill="#0e9f6e">DUAL 分支 · omega_sf.py ~L838</text>
+  <!-- 箭头 -->
+  <line x1="210" y1="74" x2="242" y2="74" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrB)"/>
+  <line x1="454" y1="74" x2="486" y2="74" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrB)"/>
+  <line x1="698" y1="74" x2="730" y2="74" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrB)"/>
+  <!-- 输入输出 -->
+  <rect x="14" y="156" width="932" height="30" rx="5" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="480" y="175" text-anchor="middle" class="sv-txt sv-mut" font-size="10.8">输入（每像元时序）：TBv · TBh · IA · Ts（ORIG_TS）或 TC/TG（DUAL）· SM_ref（参考土壤水分）· NDVI · SF · 辅助静态参数（clay、porosity、B、IGBP、h_static）</text>
+  <rect x="14" y="198" width="932" height="30" rx="5" fill="#f0fdf4" stroke="#bbf7d0"/>
+  <text x="480" y="217" text-anchor="middle" class="sv-txt sv-mut" font-size="10.8">输出：逐日 SM / VOD（τ）+ 块级 ω 序列 + h*/α* + QC 标记（NaN 短路：任一输入缺测的样本/像元自动跳过）</text>
+</svg>
+<div class="cap">图 4 · SF 四步流水线：蓝→琥珀→绿的底色标识各步主产物；三处「DUAL 分支」标注即单/双温度切换点（由 <code>temp_scheme</code> 参数控制）</div>
+</div>
+
+<h3>4.1 各步细节</h3>
+<table>
+<tr><th style="width:70px">步骤</th><th style="width:180px">待估参数</th><th>残差构造与求解器</th><th style="width:210px">关键控制参数</th></tr>
+<tr><td><b>Step 0</b></td><td class="fx"><i>τ*</i>(t)（非优化，经验式）</td><td>由 NDVI 时序、NDVI 气候态极值（<code>ndvi_max/min</code>）、IGBP 土地覆盖类型、B 参数、SF 与入射角序列计算（<code>tau_from_ndvi</code>，矢量化）</td><td><code>b_param</code>、IGBP 分支参数</td></tr>
+<tr><td><b>Step 1</b></td><td class="fx">[<i>h</i>, <i>α</i>]（标量，全块共用）</td><td>低 τ 样本（<span class="fx"><i>τ</i> ≤ <i>τ</i><sub>min</sub> + frac·(<i>τ</i><sub>max</sub>−<i>τ</i><sub>min</sub>)</span>）上 <code>scipy.least_squares</code>，残差按 V/H 权重堆叠 + 正则尾项 <span class="fx">√<i>λ</i><sub>α</sub>·(<i>α</i>−<i>α</i>₀)</span>；结果广播为逐样本序列</td><td><code>tau_rel_frac</code>、<code>kmin</code>、<code>lambda_alpha</code>、<code>alpha0</code></td></tr>
+<tr><td><b>Step 2</b></td><td class="fx"><i>ω</i>（每块一个）</td><td>块内逐样本调用前向模型堆叠残差 + 平滑尾项 <span class="fx">√<i>λ</i><sub>smooth</sub>·(<i>ω</i>−<i>ω</i><sub>prev</sub>)</span>；初值取前块解（热启动）或 <span class="fx"><i>ω</i>₀</span>；块间隔 gap &gt; block_days+2 天则重置 <span class="fx"><i>ω</i><sub>prev</sub></span></td><td><code>block_days</code>(=8)、<code>lambda_smooth</code>、<code>omega0</code>、<code>bounds_omega</code>、<code>max_nfev=100</code></td></tr>
+<tr><td><b>Step 3</b></td><td class="fx">[<i>SM</i>(t), <i>τ</i>(t)] 逐日</td><td>DDCA：每日 <code>least_squares</code> 解两参数，第三残差 <span class="fx"><i>λ</i><sub>τ</sub>·(<i>τ</i>−<i>τ</i><sub>ini</sub>)</span> 将解拉向 Step 0 初始值；<span class="fx"><i>SM</i>∈[0.02, <i>φ</i>]（<i>φ</i>=porosity），<i>τ</i>∈[0,5]</span></td><td><code>lambda_tau</code>、porosity 边界</td></tr>
+</table>
+
+<h3>4.2 单/双温度的三个分支点</h3>
+<p>流水线结构对两种温度方案<b>完全同构</b>——唯一差异是前向算子与温度输入。切换由参数 <code>temp_scheme</code>（<code>ORIG_TS</code> / <code>DUAL</code>）控制，三处接线：</p>
+<table class="tbl-compact">
+<tr><th style="width:90px">接线点</th><th style="width:280px">ORIG_TS（单温度）</th><th>DUAL（双温度）</th></tr>
+<tr><td>Step 1（~L699）</td><td><code>_resid_halpha_single_temp</code>（ts 序列）</td><td><code>_resid_halpha_dual_temp</code>（tc/tg 序列）</td></tr>
+<tr><td>Step 2（~L1082）</td><td><code>_resid_omega_block_single_temp</code></td><td><code>_resid_omega_block_dual_temp</code></td></tr>
+<tr><td>Step 3（~L838）</td><td><code>_ddca_single_temp</code> 路径</td><td><code>_ddca_dual_temp</code>（残差 <code>_f_sm_dual_temp</code>）</td></tr>
+</table>
+<p class="note">DUAL 的有效性掩膜同步扩展：<code>ok_base</code> 将 Ts 有限性检查替换为 TC 与 TG 双序列有限性（TG 依赖 SM_ref 与 Tsoil1/Tsoil2，见式 4）；TG 在像元核心内即时合成（<code>build_effective_soil_temperature_scheme</code>）。DUAL 运行前，日期向量已按 GLDAS 可匹配性过滤（§2.3），<code>_preload_chunk</code> 返回 10 键（ORIG_TS 为 7 键），多余三键即 TC/Tsoil1/Tsoil2。</p>
+</section>
+
+<!-- ═══════════════ §5 ═══════════════ -->
+<section id="s5">
+<h2><span class="no">§5</span>数据输入全景</h2>
+
+<table>
+<tr><th style="width:150px">数据类别</th><th style="width:200px">来源 / 路径约定</th><th>提供内容与别名（<code>daily_bundle</code> 别名解析）</th></tr>
+<tr><td><b>亮温 TB 主源</b></td><td>SMAP L3（<code>tb_source=SMAP</code>）</td><td>L 波段 1.4 GHz；降轨过境本地时 06:00（<code>smap_desc_local_hour</code>）；恒定入射角 40°；别名 <code>TBv/TBh/IA</code>（或 <code>tb_v_corrected/tb_h_corrected/Theta</code>）</td></tr>
+<tr><td></td><td>FY3B / FY3D MWRI（<code>tb_source=FY</code>，<code>fy_platform=3B|3D</code>）</td><td>多频微波成像仪亮温，X/K 波段与 SMAP 存在系统性偏差（建模时经偏差匹配处理）；降轨本地时独立配置（<code>fy3b_desc_local_hour</code> / <code>fy3d_desc_local_hour</code>）；在线源经 NSMC 自动→NAS 回退链</td></tr>
+<tr><td><b>参考土壤水分</b></td><td>SMAP L3 SM</td><td><code>sm_dca/SM/sm</code>——Step 1/2 中作为已知量（sm_ref）固定使用，兼作 PAPER_CT 的湿度权重</td></tr>
+<tr><td><b>植被指数</b></td><td>NDVI 逐日文件 + DOY 气候态（<code>NDVI_clim</code>）+ 极值文件</td><td>Step 0 的 τ 初始化输入；气候态极值 <code>ndvi_max/ndvi_min</code> 参与 NDVI→τ 经验式</td></tr>
+<tr><td><b>辅助静态库</b></td><td><code>anc_root</code>（<code>IGBP_9km_12.mat</code> 等）</td><td>IGBP 土地覆盖类型（Step 0 分支）、黏土粒级 <code>clay</code>（Mironov 介电）、孔隙度 <code>porosity</code>（SM 上界）、反照率/B 参数/静态 h；lat/lon 网格（GLDAS 过境匹配与 bbox 裁剪依赖）</td></tr>
+<tr><td><b>GLDAS（仅 DUAL）</b></td><td><code>gldas_mat_folder</code>（本地 .mat 序列）或 GLDAS 在线</td><td>三温度层：Ts_gldas→TC、Tsoil1/Tsoil2→TG（式 4）；过境匹配 1.6 h 容差（式 5）</td></tr>
+</table>
+
+<p class="note">别名机制：<code>daily_bundle.py</code> 对每个物理量维护候选变量名元组（如 <code>tbv_aliases=("TBv","tbv","tb_v_corrected")</code>），以兼容不同上游 .mat 打包习惯；数据源目录键同样有映射表（如 <code>gldas_mat → gldas_mat_folder</code>）。</p>
+</section>
+
+<!-- ═══════════════ §6 ═══════════════ -->
+<section id="s6">
+<h2><span class="no">§6</span>工作流矩阵：2×2×2 与 13 条种子</h2>
+
+<h3>6.1 命名规则</h3>
+<div class="fx-block">
+<span class="fx-tag">命名模板（2026-08-18 起）</span>
+<div class="fx" style="font-family:var(--mono);font-size:13px;font-style:normal">
+[SMAP | 风云] ω [平均 | 动态]反演 [·双温度] （本地 | 在线）<br>
+<span class="cond">三个正交维度：卫星源 × ω 时间策略（平均=D2 / 动态=SF）× 数据获取方式（本地数据包 / 在线拉取）；「·双温度」为可选后缀，标注 DUAL 温度方案</span>
+</div>
+</div>
+
+<h3>6.2 核心矩阵（2×2×2 = 8 条）</h3>
+<div class="mx">
+  <div class="quad">
+    <h4>SMAP × 平均（D2）</h4>
+    <div class="wf">
+      <div class="wfcard"><div class="mode">本地</div><div class="id">omega_avg_daily_smap_single</div><div class="out">SMAP L3 数据包 + D1 ω 气候态</div></div>
+      <div class="wfcard"><div class="mode">在线</div><div class="id">omega_avg_daily_smap_online</div><div class="out">SMAP 在线拉取，余同左</div></div>
+    </div>
+  </div>
+  <div class="quad">
+    <h4>SMAP × 动态（SF）</h4>
+    <div class="wf">
+      <div class="wfcard"><div class="mode">本地</div><div class="id">omega_sf_fenkuai_smap_single</div><div class="out">Step0–3 全流水线，块级 ω</div></div>
+      <div class="wfcard"><div class="mode">在线</div><div class="id">omega_sf_fenkuai_smap_online</div><div class="out">SMAP 在线拉取，余同左</div></div>
+    </div>
+  </div>
+  <div class="quad fy">
+    <h4>风云 × 平均（D2）</h4>
+    <div class="wf">
+      <div class="wfcard"><div class="mode">本地</div><div class="id">omega_avg_daily_fy_single</div><div class="out">FY3B/3D 本地数据包</div></div>
+      <div class="wfcard"><div class="mode">在线</div><div class="id">omega_avg_daily_fy_online</div><div class="out">NSMC 自动 → NAS 回退（FY3B 停用支路）</div></div>
+    </div>
+  </div>
+  <div class="quad fy">
+    <h4>风云 × 动态（SF）</h4>
+    <div class="wf">
+      <div class="wfcard"><div class="mode">本地</div><div class="id">omega_sf_fenkuai_fy_single</div><div class="out">FY 恒入射角序列 IA 逐样本</div></div>
+      <div class="wfcard"><div class="mode">在线</div><div class="id">omega_sf_fenkuai_fy_online</div><div class="out">NSMC 自动 → NAS 回退</div></div>
+    </div>
+  </div>
+</div>
+
+<h3>6.3 矩阵外变体（5 条）</h3>
+<div class="vars">
+  <div class="var d1">
+    <h4>D1 预处理（上游必需）</h4>
+    <div class="id">omega_block_smap_single · ω 块反演·D1 预处理（SMAP 本地）</div>
+    <p>不属产品矩阵；为 D2 平均反演提供 h*/α* 图与 daily_omega 缓存（§3）。</p>
+  </div>
+  <div class="var">
+    <h4>双温度 · 平均（本地）</h4>
+    <div class="id">omega_avg_daily_smap_dual · SMAP ω 平均反演·双温度（本地）</div>
+    <p>D2 + GLDAS 本地 .mat 三温度（temp_scheme=DUAL, dual_tg_mode=PAPER_CT）。</p>
+  </div>
+  <div class="var">
+    <h4>双温度 · 平均（GLDAS 在线）</h4>
+    <div class="id">omega_avg_daily_gldas_online · SMAP ω 平均反演·双温度（GLDAS 在线）</div>
+    <p>同上，GLDAS 走在线获取。</p>
+  </div>
+  <div class="var">
+    <h4>双温度 · 动态（SMAP）</h4>
+    <div class="id">omega_sf_fenkuai_smap_dual · SMAP ω 动态反演·双温度（本地）</div>
+    <p>SF 流水线三处分支全部切 DUAL（§4.2）；种子含 GLDAS 数据源节点。</p>
+  </div>
+  <div class="var">
+    <h4>双温度 · 动态（风云）</h4>
+    <div class="id">omega_sf_fenkuai_fy_dual · 风云 ω 动态反演·双温度（本地）</div>
+    <p>同上，FY 平台过境本地时独立配置。</p>
+  </div>
+</div>
+
+<h3>6.4 全量 13 条对照表</h3>
+<table>
+<tr><th style="width:250px">workflow_id（不变契约）</th><th>显示名（_meta.name）</th><th style="width:70px">族</th><th style="width:90px">温度</th><th style="width:70px">获取</th></tr>
+<tr><td><code>omega_avg_daily_smap_single</code></td><td>SMAP ω 平均反演（本地）</td><td>D2</td><td>ORIG_TS</td><td>本地</td></tr>
+<tr><td><code>omega_avg_daily_smap_online</code></td><td>SMAP ω 平均反演（在线）</td><td>D2</td><td>ORIG_TS</td><td>在线</td></tr>
+<tr><td><code>omega_avg_daily_fy_single</code></td><td>风云 ω 平均反演（本地）</td><td>D2</td><td>ORIG_TS</td><td>本地</td></tr>
+<tr><td><code>omega_avg_daily_fy_online</code></td><td>风云 ω 平均反演（在线）</td><td>D2</td><td>ORIG_TS</td><td>在线</td></tr>
+<tr><td><code>omega_sf_fenkuai_smap_single</code></td><td>SMAP ω 动态反演（本地）</td><td>SF</td><td>ORIG_TS</td><td>本地</td></tr>
+<tr><td><code>omega_sf_fenkuai_smap_online</code></td><td>SMAP ω 动态反演（在线）</td><td>SF</td><td>ORIG_TS</td><td>在线</td></tr>
+<tr><td><code>omega_sf_fenkuai_fy_single</code></td><td>风云 ω 动态反演（本地）</td><td>SF</td><td>ORIG_TS</td><td>本地</td></tr>
+<tr><td><code>omega_sf_fenkuai_fy_online</code></td><td>风云 ω 动态反演（在线）</td><td>SF</td><td>ORIG_TS</td><td>在线</td></tr>
+<tr><td><code>omega_block_smap_single</code></td><td>ω 块反演·D1 预处理（SMAP 本地）</td><td>D1</td><td>ORIG_TS</td><td>本地</td></tr>
+<tr><td><code>omega_avg_daily_smap_dual</code></td><td>SMAP ω 平均反演·双温度（本地）</td><td>D2</td><td>DUAL</td><td>本地</td></tr>
+<tr><td><code>omega_avg_daily_gldas_online</code></td><td>SMAP ω 平均反演·双温度（GLDAS 在线）</td><td>D2</td><td>DUAL</td><td>在线</td></tr>
+<tr><td><code>omega_sf_fenkuai_smap_dual</code></td><td>SMAP ω 动态反演·双温度（本地）</td><td>SF</td><td>DUAL</td><td>本地</td></tr>
+<tr><td><code>omega_sf_fenkuai_fy_dual</code></td><td>风云 ω 动态反演·双温度（本地）</td><td>SF</td><td>DUAL</td><td>本地</td></tr>
+</table>
+<p class="note">图层目录映射：前端 catalog 的 <code>method-smap-omega-doy-avg</code> / <code>method-smap-omega-doy-dynamic</code> / <code>method-fy-omega-doy-avg</code> / <code>method-fy-omega-doy-dynamic</code> 四个方法条目聚合上述入口（<code>workflow_name</code> 字段按全库约定存 id）。种子 <code>workflow_id</code> 为稳定契约，不受显示名重命名影响。</p>
+</section>
+
+<!-- ═══════════════ §7 ═══════════════ -->
+<section id="s7">
+<h2><span class="no">§7</span>Matlab → Python 移植状态</h2>
+
+<h3>7.1 函数级对照（双温度族，2026-08-18 补齐）</h3>
+<table>
+<tr><th style="width:290px">Matlab（omega_sf_fenkuai.m）</th><th>Python（algorithms/omega_sf.py）</th><th style="width:120px">状态</th></tr>
+<tr><td><code>tb_forward_single_temp</code> L2166–2176</td><td><code>_forward_tb</code> L1185</td><td><span class="st st-ok">✓</span>对齐</td></tr>
+<tr><td><code>resid_halpha_single_temp</code> L2116–2127</td><td><code>_resid_halpha_single_temp</code> L1279</td><td><span class="st st-ok">✓</span>对齐</td></tr>
+<tr><td><code>tb_forward_dual_temp</code> L2245–2255</td><td><code>_forward_tb_dual</code> L1514</td><td><span class="st st-ok">✓</span>2026-08-18 移植</td></tr>
+<tr><td><code>resid_halpha_dual_temp</code> L2195–2206</td><td><code>_resid_halpha_dual_temp</code> L1586</td><td><span class="st st-ok">✓</span>2026-08-18 移植</td></tr>
+<tr><td><code>resid_omega_block_dual_temp</code> L2208–2222</td><td><code>_resid_omega_block_dual_temp</code> L1635</td><td><span class="st st-ok">✓</span>2026-08-18 移植</td></tr>
+<tr><td><code>DDCA_dual_temp</code> L2224–2229</td><td><code>_ddca_dual_temp</code> L1724（残差 <code>_f_sm_dual_temp</code> L1686 ↔ <code>F_sm_dual_temp</code> L2231–2243）</td><td><span class="st st-ok">✓</span>2026-08-18 移植</td></tr>
+<tr><td><code>run_one_pixel_core_preloaded</code> L928–1424</td><td>单像元核心 L895 起（Step0–3 + 三处 DUAL 接线）</td><td><span class="st st-ok">✓</span>分支接通</td></tr>
+<tr><td><code>lsqnonlin</code>（各步优化器）</td><td><code>scipy.optimize.least_squares</code>（有限差分 Jacobian、同边界语义）</td><td><span class="st st-ok">✓</span>等价替换</td></tr>
+<tr><td>GLDAS 日期交集（主脚本）</td><td><code>_filter_tvec_by_gldas_days</code> L4167（经度窗口预判 + 8 天块前过滤）</td><td><span class="st st-ok">✓</span>语义对齐</td></tr>
+</table>
+
+<h3>7.2 基础设施复用与性能</h3>
+<ul class="tight">
+  <li>GLDAS 预读完全复用 <code>ingest/daily_bundle.py</code>（AVG 族既有链路）：<code>load_dual_temperature_row_for_day</code> / <code>build_gldas_file_index</code> / TG 合成，SF 与 AVG 双温度共享同一实现，无双份维护。</li>
+  <li><code>pick_gldas_file_indices</code> 已向量化（NumPy searchsorted 二分匹配），消除纯 Python 循环，大网格（数万像元 × 数百日）匹配从分钟级降至亚秒级。</li>
+  <li>AVG 模块数据源键映射补 <code>gldas_mat → gldas_mat_folder</code>（<code>modules/omega_avg_daily.py</code>），种子可用 <code>gldas_mat</code> 简键。</li>
+</ul>
+
+<h3>7.3 测试保障（全绿，ORIG_TS golden 数值不变）</h3>
+<table class="tbl-compact">
+<tr><th style="width:330px">测试文件</th><th>覆盖</th></tr>
+<tr><td><code>Test/algorithms/test_omega_sf_dual_temp.py</code></td><td>13 用例：双温度前向与 <code>omega.py</code> 数学层一致性、残差形状与正则尾项、GLDAS 三温度合成 roundtrip、DUAL/ORIG_TS 分支互斥、全 NaN 短路、真值恢复</td></tr>
+<tr><td><code>Test/algorithms/test_omega_sf_e2e.py</code></td><td>ORIG_TS 端到端 golden 回归（重构后数值逐位不变）</td></tr>
+<tr><td><code>Test/algorithms/test_omega_sf_q4_parity.py</code></td><td>与 Matlab 原型 Q4 场景数值对齐</td></tr>
+<tr><td><code>Test/algorithms/test_omega_sf_io_contract.py</code></td><td>I/O 契约：DUAL 10 键 / ORIG_TS 7 键、GLDAS 日行加载</td></tr>
+<tr><td><code>Test/backend/test_omega_avg_daily_module.py</code></td><td>AVG 模块（含 gldas 键解析用例）</td></tr>
+<tr><td><code>Test/backend/test_system_seeds_compile.py</code></td><td>13 条 ω 种子编译守卫（含双温度种子）</td></tr>
+<tr><td><code>Test/backend/test_workflow_graph_compiler.py</code></td><td>种子 → 可执行图编译</td></tr>
+</table>
+
+<h3>7.4 状态总结</h3>
+<ul class="tight">
+  <li><span class="st st-ok">✓</span><b>单温度（ORIG_TS）</b>：SF/D1/D2 全量移植并长期运行，golden 与 parity 双重守卫。</li>
+  <li><span class="st st-ok">✓</span><b>双温度（DUAL）</b>：AVG 族既有；SF 族三函数 + 三接线 + GLDAS 预读于 2026-08-18 补齐，13 条种子全部落位。</li>
+  <li><span class="st st-part">◐</span><b>注意事项</b>：DUAL 运行额外依赖 GLDAS 数据目录与经度网格（IGBP .mat 内附或 lat_lon 回退）；无匹配月份被剔除属预期行为（对齐 Matlab 日期交集），非数据丢失。</li>
+</ul>
+</section>
+
+<footer>
+  <div>ω 反演算法详解与工作流指南 · 取证基准 2026-08-18 · 本文档随代码演进，公式与行号以仓库现实现为准</div>
+  <div class="srcs">
+    <b>事实来源（仓库内文件）</b>
+    <ol>
+      <li><code>Code/algorithms/providers/Python/algorithms/omega_sf.py</code> —— SF 反演核心：单/双温度前向与残差函数、四步流水线、GLDAS 预读</li>
+      <li><code>Code/algorithms/providers/Python/algorithms/omega.py</code> —— D1/D2 数学层与 AVG 族双温度基线</li>
+      <li><code>Code/algorithms/providers/Python/ingest/daily_bundle.py</code> —— GLDAS 索引/匹配/TG 合成/别名解析（L863–891 合成方案）</li>
+      <li><code>Code/algorithms/providers/Python/modules/omega_avg_daily.py</code> —— D2 平均反演模块（DOY 气候态 + 逐日 DDCA）</li>
+      <li><code>Code/algorithms/providers/Matlab/omega_sf_fenkuai.m</code> —— Matlab 原型（3396 行，行号引用基准）</li>
+      <li><code>Code/backend/workflow_seeds/system/omega*.json</code> —— 13 条工作流种子（显示名实测枚举）</li>
+      <li><code>Docs/02-架构设计/工作流预设与端到端流水线盘点.md</code> · <code>Docs/03-规范协议/workflow_seed_conventions.md</code> —— 清单与命名约定</li>
+      <li><code>../omega-sf-migration-mapping/omega-sf-migration-mapping.html</code> —— 逐实验移植对照明细（姊妹文档，工作流部分为重组前历史快照）</li>
+    </ol>
+  </div>
+</footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CGDA 工作流与端到端流水线全景 · 2026-08-18</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --ink:#1c2733; --ink-2:#51606f; --ink-3:#8494a4;
+  --line:#e3e8ee; --accent:#2563eb;
+  --v-variant:#2563eb; --v-unique:#0e9f6e; --v-demo:#7c3aed; --v-smoke:#94a3b8;
+  --mono:'Cascadia Code',Consolas,'Courier New',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Segoe UI","Microsoft YaHei",-apple-system,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.55}
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px 80px}
+header{padding:34px 0 18px;border-bottom:2px solid var(--ink)}
+header h1{font-size:22px;letter-spacing:.5px}
+header .sub{color:var(--ink-2);margin-top:4px;font-size:13px}
+nav{position:sticky;top:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 0;margin-bottom:22px}
+nav a{color:var(--ink-2);text-decoration:none;margin-right:22px;font-size:13px}
+nav a:hover{color:var(--accent)}
+section{margin-bottom:44px}
+h2{font-size:17px;padding-left:10px;border-left:4px solid var(--accent);margin-bottom:14px}
+h3{font-size:14px;color:var(--ink-2);margin:18px 0 8px}
+.note{font-size:12.5px;color:var(--ink-3);margin-top:8px}
+
+/* KPI */
+.kpis{display:flex;gap:12px;flex-wrap:wrap}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 18px;min-width:128px}
+.kpi b{font-size:26px;font-weight:700;display:block}
+.kpi span{font-size:12px;color:var(--ink-2)}
+.kpi.hl b{color:var(--accent)}
+
+/* verdict bar */
+.vbar{display:flex;height:26px;border-radius:6px;overflow:hidden;font-size:12px;color:#fff;margin:12px 0 6px}
+.vbar div{display:flex;align-items:center;justify-content:center;white-space:nowrap}
+.vlegend{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-2);margin-bottom:8px}
+.vlegend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+
+/* family table */
+table{border-collapse:collapse;width:100%;background:var(--panel);font-size:13px}
+th,td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}
+th{background:#eef2f7;font-weight:600;white-space:nowrap}
+td.num,th.num{text-align:right;font-family:var(--mono)}
+.fam-cell i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:7px;vertical-align:-1px}
+
+/* matrix */
+.mx-panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;overflow-x:auto}
+.mx{display:grid;gap:0;position:relative}
+.mx .cell{width:13px;height:13px;border-radius:2px}
+.mx .lab{font-family:var(--mono);font-size:9.5px;color:var(--ink-2);align-self:center;white-space:nowrap;padding-left:6px}
+.mx .top{font-family:var(--mono);font-size:9px;color:var(--ink-3);text-align:center;align-self:end;padding-bottom:2px}
+.mx .fam{width:4px;height:13px;border-radius:1px;margin-right:2px}
+#tip{position:fixed;z-index:99;background:#111c2b;color:#fff;font-size:12px;padding:6px 10px;border-radius:6px;pointer-events:none;display:none;max-width:340px;font-family:var(--mono)}
+.mx-scale{display:flex;gap:10px;align-items:center;font-size:11.5px;color:var(--ink-2);margin-top:10px;flex-wrap:wrap}
+.mx-scale .sw{width:22px;height:11px;border-radius:2px;display:inline-block;margin-right:3px;vertical-align:-1px}
+
+/* pairs */
+.pair{display:grid;grid-template-columns:52px 1fr 1fr 74px;gap:8px;align-items:center;padding:5px 10px;border-bottom:1px solid var(--line);font-size:12.5px}
+.pair .sim{font-family:var(--mono);font-weight:700;text-align:right}
+.pair .bar{grid-column:2/5;height:5px;background:#eef2f7;border-radius:3px;overflow:hidden;margin-top:-3px}
+.pair .bar i{display:block;height:100%;border-radius:3px}
+.pgroup{background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-bottom:14px;overflow:hidden}
+.pgroup h4{font-size:13.5px;padding:10px 14px 6px}
+.pgroup p{font-size:12.5px;color:var(--ink-2);padding:0 14px 10px}
+
+/* cards */
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.controls button{border:1px solid var(--line);background:var(--panel);border-radius:20px;padding:5px 14px;font-size:12.5px;cursor:pointer;color:var(--ink-2)}
+.controls button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.controls input{border:1px solid var(--line);border-radius:20px;padding:6px 14px;font-size:13px;min-width:220px;background:var(--panel)}
+.fam-sec{margin-bottom:26px}
+.fam-head{display:flex;align-items:baseline;gap:10px;padding:8px 0 6px;border-bottom:2px solid var(--line);margin-bottom:12px}
+.fam-head b{font-size:15px}
+.fam-head span{font-size:12px;color:var(--ink-3)}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:900px){.cards{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--famc,#94a3b8);border-radius:8px;padding:13px 15px;position:relative}
+.card.hid{opacity:.62;background:#f4f6f8}
+.card .ttl{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:2px}
+.card .ttl b{font-size:13.5px}
+.card .ttl code{font-family:var(--mono);font-size:11.5px;color:var(--ink-3)}
+.badge{font-size:10.5px;border-radius:10px;padding:1px 9px;color:#fff;white-space:nowrap;align-self:center}
+.b-variant{background:var(--v-variant)} .b-unique{background:var(--v-unique)}
+.b-demo{background:var(--v-demo)} .b-smoke{background:var(--v-smoke)}
+.b-pipe{background:#b45309} .b-hid{background:#dc2626}
+.card .desc{font-size:12.5px;color:var(--ink-2);margin:4px 0 8px}
+.meta{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.meta em{font-style:normal;font-size:10.5px;color:var(--ink-3);border:1px solid var(--line);border-radius:3px;padding:0 5px}
+.chain{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:6px 0}
+.chip{font-family:var(--mono);font-size:10.5px;border-radius:3px;padding:1px 6px;border:1px solid transparent;white-space:nowrap}
+.ch-data{background:#e8f0fe;color:#1d4ed8;border-color:#c7dbfc}
+.ch-module{background:#fef3c7;color:#92400e;border-color:#fde68a}
+.ch-download{background:#ede9fe;color:#5b21b6;border-color:#ddd6fe}
+.ch-out{background:#d1fae5;color:#065f46;border-color:#a7f3d0}
+.ch-op{background:#ffedd5;color:#9a3412;border-color:#fed7aa}
+.ch-other{background:#f1f5f9;color:#475569;border-color:#e2e8f0}
+.arrow{color:var(--ink-3);font-size:10px}
+.io{font-size:12px;margin-top:6px}
+.io table{font-size:11.5px}
+.io td,.io th{padding:3px 8px}
+.io code{font-family:var(--mono);font-size:10.5px;color:var(--ink-2);word-break:break-all}
+details{margin-top:6px;font-size:12px}
+summary{cursor:pointer;color:var(--accent);font-size:12px}
+details pre{background:#f1f5f9;border-radius:6px;padding:8px 10px;font-family:var(--mono);font-size:10.5px;overflow-x:auto;margin-top:5px;max-height:260px;overflow-y:auto}
+.cleanup{display:flex;gap:12px;flex-wrap:wrap}
+.cleanup div{background:var(--panel);border:1px dashed #fca5a5;border-radius:8px;padding:10px 14px;font-size:12.5px;flex:1;min-width:260px}
+.cleanup b{color:#b91c1c}
+footer{margin-top:50px;padding-top:14px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-3)}
+@media(max-width:720px){.pair{grid-template-columns:44px 1fr 60px}.pair .b{display:none}}
+</style>
+</head>
+<body>
+<div id="tip"></div>
+<div class="wrap">
+
+<header>
+  <h1>CGDA 工作流与端到端流水线全景</h1>
+  <div class="sub">盘点基准：2026-08-18 · <code style="font-family:var(--mono)">Code/backend/workflow_seeds/system/</code>（两轮冗余清理后）· 相似度 = 节点链最长公共子序列（LCS）比率</div>
+</header>
+
+<div style="margin:14px 0 0;padding:10px 14px;border:1px solid #f59e0b;border-left:4px solid #d97706;background:#fffbeb;border-radius:6px;font-size:12.5px;color:#92400e">
+  <b>历史快照（2026-08-18 01:54 生成）</b> — 本报告的 ω 族工作流清单与显示名取自当日稍后完成的 2×2×2 重组命名（提交 <code>37b4fe1</code>）<u>之前</u>的状态：SF 族当时 4 条，重组后为 6 条（含双温度 2 条），ω 族合计 13 条。现行命名与完整清单以 <a href="../omega-algorithm-guide/omega-algorithm-guide.html">《ω 反演算法详解与工作流指南》</a> §6 为准；非 ω 族条目仍与现状一致。
+</div>
+
+<nav>
+  <a href="#s1">概览</a><a href="#s2">参数矩阵家族</a><a href="#s3">重复度矩阵</a><a href="#s4">重复聚类判定</a><a href="#s5">逐条详情</a><a href="#s6">清理记录</a>
+</nav>
+
+<section id="s1">
+  <h2>一、概览</h2>
+  <div class="kpis" id="kpis"></div>
+  <h3>处置状态分布</h3>
+  <div class="vbar" id="vbar"></div>
+  <div class="vlegend">
+    <span><i style="background:var(--v-variant)"></i>科研对照变体——同家族不同实验条件，有意保留</span>
+    <span><i style="background:var(--v-unique)"></i>功能唯一——无重复</span>
+    <span><i style="background:var(--v-demo)"></i>演示样例——门户/天气演示定位</span>
+    <span><i style="background:var(--v-smoke)"></i>烟测载体——编译烟测用，已加 hidden 隐藏出用户列表</span>
+  </div>
+  <h3>家族清单（12 组）</h3>
+  <div id="famtable"></div>
+  <p class="note">判定依据：节点链结构 + dataset_key / 图层产物 + 消费端引用核实（详见「重复聚类判定」）。相似度仅度量<b>结构</b>同构，不计参数差异——同链不同参即高相似。</p>
+</section>
+
+<section id="s2">
+  <h2>二、参数矩阵家族（重复的主体）</h2>
+  <p style="font-size:13px;color:var(--ink-2);margin-bottom:10px">系统重复度的主体是两个「科研对照实验矩阵」：核心算法节点完全一致，仅在<b>卫星源 × 温度方案 × 数据获取方式</b>上展开变体，用于论文对照实验。这不是冗余，但代价是：核心模块参数契约变更时需同步 5+4 份 JSON。</p>
+  <div id="matrixD2"></div>
+  <div id="matrixSF"></div>
+</section>
+
+<section id="s3">
+  <h2>三、重复度矩阵（47×47 节点链相似度）</h2>
+  <div class="mx-panel">
+    <div class="mx" id="mx"></div>
+    <div class="mx-scale">
+      <span>相似度</span>
+      <span><i class="sw" style="background:#eef2f7;border:1px solid #e3e8ee"></i>&lt;0.5</span>
+      <span><i class="sw" style="background:#fde8c8"></i>0.5–0.7</span>
+      <span><i class="sw" style="background:#fbc07d"></i>0.7–0.85</span>
+      <span><i class="sw" style="background:#ef7043"></i>0.85–0.95</span>
+      <span><i class="sw" style="background:#c81e1e"></i>≥0.95</span>
+      <span>｜行首色条 = 家族 · 悬停查看种子对</span>
+    </div>
+  </div>
+  <p class="note">高相似集中在两个家族块内部（D2 / SF 反演），以及跨家族的「下载头 + 模块 + 输出」公共尾部。右上↔左下对称。</p>
+</section>
+
+<section id="s4">
+  <h2>四、重复聚类判定（相似度 ≥ 0.70 的种子对）</h2>
+  <div id="pairs"></div>
+</section>
+
+<section id="s5">
+  <h2>五、逐条详情（按家族分组）</h2>
+  <div class="controls">
+    <button data-f="all" class="on">全部 47</button>
+    <button data-f="visible">仅用户可见 38</button>
+    <button data-f="pipeline">仅端到端流水线 10</button>
+    <button data-f="hidden">已隐藏 9</button>
+    <input id="q" type="text" placeholder="搜索 workflow_id / 名称 / 家族…">
+  </div>
+  <div id="cards"></div>
+</section>
+
+<section id="s6">
+  <h2>六、清理记录（2026-08-18）</h2>
+  <div class="cleanup">
+    <div><b>今日移除 · fy_tb_nas_read / fy_tb_nsmc_online</b><br>fy_tb_online_read 的 auto NSMC→NAS 回退在功能上覆盖两者；三兄弟同产图层 ref-fy-tb-202512-mwri。git 历史可恢复。</div>
+    <div><b>今日隐藏 · 9 条 stub_v1 烟测</b><br>fusion×2 / preprocess×2 / stats×5，输入均为 smoke_* 哨兵路径，实为编译烟测载体；与 analysis_* 正式版功能重叠。加 hidden 标记后不再出现在用户列表，按 id 直取仍可用。</div>
+    <div><b>昨日移除 · archive 6 条 v1 烟测</b><br>5 条 gis_* 组合 + raster_histogram_basic（commit 4ae0724），与 analysis_* 单元流重复。</div>
+    <div><b>补齐 · 2 条双温度种子输出契约</b><br>omega_avg_daily_smap_dual / gldas_online 补 output/map_layer 节点与 extra.outputs 的 VOD（commit 4ae0724）。</div>
+  </div>
+</section>
+
+<footer>
+  数据来源：种子 JSON 全量解析（workflow_id / _meta / nodes / links / extra）+ 节点链 LCS 相似度计算 · 生成于 2026-08-18 ·
+  佐证文档：<code>Docs/02-架构设计/工作流预设与端到端流水线盘点.md</code> · 本页为只读展示，数据已内嵌，可直接离线打开。
+</footer>
+</div>
+
+<script>
+const DATA = {"seeds":[{"id":"analysis_buffer","name":"Analysis: buffer","desc":"data/source → gis/buffer_analysis","category":"analysis","tags":["analysis","gis","ui-panel","buffer"],"engine":"python_provider","linked_layer":null,"profile":"standard","chain":["data/source","gis/buffer_analysis"],"inputs":[{"key":"input_path","path":"{DATA_ROOT}/_runtime/smoke_points.geojson"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"InfoPanel 单步 GIS 分析","verdict":"unique","verdict_label":"功能唯一","hidden":false,"pipeline":false},{"id":"analysis_clip","name":"Analysis: raster clip","desc":"data/source + bbox → preprocess/clip","category":"analysis","tags":["analysis","gis","ui-panel","preprocess","raster"],"engine":"python_provider","linked_layer":null,"profile":"heavy","chain":["data/source","data/bbox","preprocess/clip"],"inputs":[{"key":"input_path","path":"{DATA_ROOT}/_runtime/smoke_stub.tif"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"InfoPanel 单步 GIS 分析","verdict":"unique","verdict_label":"功能唯一","hidden":false,"pipeline":false},{"id":"analysis_contour","name":"Analysis: contour","desc":"data/source → gis/contour","category":"analysis","tags":["analysis","gis","contour","ui-panel"],"engine":"python_provider","linked_layer":null,"profile":"standard","chain":["data/source","gis/contour"],"inputs":[{"key":"input_path","path":"{DATA_ROOT}/_runtime/smoke_stub.tif"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"InfoPanel 单步 GIS 分析","verdict":"unique","verdict_label":"功能唯一","hidden":false,"pipeline":false},{"id":"analysis_histogram","name":"Analysis: histogram","desc":"data/source → stats/histogram → viz/chart_generate","category":"analysis","tags":["analysis","histogram","chart","ui-panel","raster"],"engine":"python_provider","linked_layer":null,"profile":"standard","chain":["data/source","stats/histogram","viz/chart_generate"],"inputs":[{"key":"input_path","path":"{DATA_ROOT}/_runtime/smoke_stub.tif"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"InfoPanel 单步 GIS 分析","verdict":"unique","verdict_label":"功能唯一","hidden":false,"pipeline":false},{"id":"analysis_raster_calc","name":"Analysis: raster calculator","desc":"data/source → gis/raster_calculator","category":"analysis","tags":["analysis","gis","raster","calculator","ui-panel"],"engine":"python_provider","linked_layer":null,"profile":"standard","chain":["data/source","gis/raster_calculator"],"inputs":[{"key":"input_path","path":"{DATA_ROOT}/_runtime/smoke_stub.tif"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"InfoPanel 单步 GIS 分析","verdict":"unique","verdict_label":"功能唯一","hidden":false,"pipeline":false},{"id":"analysis_raster_to_vector","name":"Analysis: raster to vector","desc":"data/source → gis/raster_to_vector","category":"analysis","tags":["analysis","gis","raster","vector","ui-panel"],"engine":"python_provider","linked_layer":null,"profile":"standard","chain":["data/source","gis/raster_to_vector"],"inputs":[{"key":"input_path","path":"{DATA_ROOT}/_runtime/smoke_stub.tif"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"InfoPanel 单步 GIS 分析","verdict":"unique","verdict_label":"功能唯一","hidden":false,"pipeline":false},{"id":"analysis_reclassify","name":"Analysis: reclassify","desc":"data/source → gis/reclassify","category":"analysis","tags":["analysis","gis","ui-panel","raster"],"engine":"python_provider","linked_layer":null,"profile":"standard","chain":["data/source","gis/reclassify"],"inputs":[{"key":"input_path","path":"{DATA_ROOT}/_runtime/smoke_stub.tif"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"InfoPanel 单步 GIS 分析","verdict":"unique","verdict_label":"功能唯一","hidden":false,"pipeline":false},{"id":"analysis_slope_aspect","name":"Analysis: slope/aspect","desc":"data/source → gis/slope_aspect","category":"analysis","tags":["analysis","gis","dem","slope","aspect","ui-panel"],"engine":"python_provider","linked_layer":null,"profile":"standard","chain":["data/source","gis/slope_aspect"],"inputs":[{"key":"input_path","path":"{DATA_ROOT}/_runtime/smoke_dem.tif"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"InfoPanel 单步 GIS 分析","verdict":"unique","verdict_label":"功能唯一","hidden":false,"pipeline":false},{"id":"analysis_vector_to_raster","name":"Analysis: vector to raster","desc":"data/source → gis/vector_to_raster","category":"analysis","tags":["analysis","gis","vector","raster","ui-panel"],"engine":"python_provider","linked_layer":null,"profile":"standard","chain":["data/source","gis/vector_to_raster"],"inputs":[{"key":"input_path","path":"{DATA_ROOT}/_runtime/smoke_vector.geojson"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"InfoPanel 单步 GIS 分析","verdict":"unique","verdict_label":"功能唯一","hidden":false,"pipeline":false},{"id":"analysis_watershed","name":"Analysis: watershed","desc":"data/source(DEM) + data/source(pour_points) → gis/watershed","category":"analysis","tags":["analysis","gis","dem","watershed","ui-panel"],"engine":"python_provider","linked_layer":null,"profile":"heavy","chain":["data/source","data/source","gis/watershed"],"inputs":[{"key":"input_path","path":"{DATA_ROOT}/_runtime/smoke_dem.tif"},{"key":"pour_points_path","path":"{DATA_ROOT}/_runtime/smoke_pour_points.geojson"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"InfoPanel 单步 GIS 分析","verdict":"unique","verdict_label":"功能唯一","hidden":false,"pipeline":false},{"id":"analysis_zonal_stats","name":"Analysis: zonal statistics","desc":"raster + zones → gis/zonal_statistics","category":"analysis","tags":["analysis","gis","ui-panel","zonal"],"engine":"python_provider","linked_layer":null,"profile":"standard","chain":["data/source","data/source","gis/zonal_statistics"],"inputs":[{"key":"input_path","path":"{DATA_ROOT}/_runtime/smoke_stub.tif"},{"key":"zones_path","path":"{DATA_ROOT}/_runtime/smoke_zones.geojson"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"InfoPanel 单步 GIS 分析","verdict":"unique","verdict_label":"功能唯一","hidden":false,"pipeline":false},{"id":"cds_era5_reanalysis_download","name":"CDS 再分析下载（ERA5 cdsapi）","desc":"cds_download（cdsapi 主路径 → legacy 直链回退）→ 本地 GRIB + 产物清单。","category":"data_access","tags":["sample","download"],"engine":"python_provider","linked_layer":null,"profile":"","chain":["download/cds_download"],"inputs":[],"outputs":[],"extra_outputs":[],"params":{},"prereq":"ecmwf_cds 凭据（CDS Personal Access Key，设置 → 远程与存储 → 开放门户）或 BACKEND_CDS_API_KEY 环境变量","family":"再分析/数值预报下载","verdict":"unique","verdict_label":"功能唯一","hidden":false,"pipeline":false},{"id":"cdse_sentinel_download","name":"CDSE 产品下载（Sentinel OData）","desc":"cdse_download（OData $value 主路径 → legacy 公共直链回退）→ 本地产品目录 + 产物清单。","category":"data_access","tags":["sample","download"],"engine":"python_provider","linked_layer":null,"profile":"","chain":["download/cdse_download"],"inputs":[],"outputs":[],"extra_outputs":[],"params":{},"prereq":"copernicus 凭据（CDSE 账号，设置 → 远程与存储 → 开放门户）；legacy 直链为公共数据免凭据","family":"再分析/数值预报下载","verdict":"unique","verdict_label":"功能唯一","hidden":false,"pipeline":false},{"id":"fusion_idw_interpolate_basic","name":"Fusion IDW interpolate","desc":"IDW interpolate smoke point samples to a raster","category":"analysis","tags":["analysis","fusion","raster","stub_v1","sample","hidden"],"engine":"python_provider","linked_layer":null,"profile":"heavy","chain":["data/source","data/bbox","fusion/spatial_interpolate"],"inputs":[{"key":"points_path","path":"{DATA_ROOT}/_runtime/smoke_points.geojson"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"stub_v1 烟测（已隐藏）","verdict":"smoke","verdict_label":"烟测载体（已隐藏）","hidden":true,"pipeline":false},{"id":"fusion_multi_source_merge_basic","name":"Fusion multi-source merge","desc":"Weighted merge of two smoke rasters","category":"analysis","tags":["analysis","fusion","raster","stub_v1","sample","hidden"],"engine":"python_provider","linked_layer":null,"profile":"standard","chain":["data/source","data/source","fusion/multi_source_merge"],"inputs":[{"key":"primary_path","path":"{DATA_ROOT}/_runtime/smoke_stub.tif"},{"key":"secondary_path","path":"{DATA_ROOT}/_runtime/smoke_stub_b.tif"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"stub_v1 烟测（已隐藏）","verdict":"smoke","verdict_label":"烟测载体（已隐藏）","hidden":true,"pipeline":false},{"id":"fy_tb_local_read","name":"本地 FY MWRI 亮温（硬盘路径）","desc":"本地 data_source → 提取/转换。提取 MWRI 多波段亮温并转换为 .mat。","category":"data_access","tags":["sample","local"],"engine":"python_provider","linked_layer":"ref-fy-tb-202512-mwri","profile":"","chain":["data/source","extract/variable","format/convert"],"inputs":[{"key":"FY_MWRI_HDF","path":"{DATA_ROOT}/FY"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"FY 亮温接入","verdict":"variant","verdict_label":"科研对照变体","hidden":false,"pipeline":false},{"id":"fy_tb_online_read","name":"FY MWRI 亮温（专业下载模块·自动回退）","desc":"fy_download (auto: NSMC→NAS) → fy_preprocess → 输出地图图层。","category":"data_access","tags":["sample","download"],"engine":"python_provider","linked_layer":"ref-fy-tb-202512-mwri","profile":"","chain":["download/fy_download","download/fy_preprocess","output/map_layer"],"inputs":[],"outputs":[{"layer":"ref-fy-tb-202512-mwri","name":""}],"extra_outputs":[],"params":{},"prereq":"nsmc 凭证（NSMC 门户）和/或 nas_profile 凭证（SMB NAS）","family":"FY 亮温接入","verdict":"variant","verdict_label":"科研对照变体","hidden":false,"pipeline":false},{"id":"ndvi_gee_read","name":"NDVI 植被指数（GEE 在线获取）","desc":"GEE NDVI export → 输出地图图层。","category":"data_access","tags":["sample","gee"],"engine":"gee","linked_layer":"ndvi","profile":"","chain":["gee/export","output/map_layer"],"inputs":[],"outputs":[{"layer":"ndvi","name":""}],"extra_outputs":[],"params":{},"prereq":"GEE 账号（SA JSON 凭证，通过 GeeBridgeService 账号池管理）","family":"NDVI 接入","verdict":"variant","verdict_label":"科研对照变体","hidden":false,"pipeline":false},{"id":"ndvi_local_read","name":"本地 NDVI 植被指数（硬盘路径）","desc":"本地 data_source → ndvi_daily 模块处理 → 输出地图图层。","category":"data_access","tags":["sample","local"],"engine":"python_provider","linked_layer":"ndvi","profile":"","chain":["data/source","module/ndvi_daily","output/map_layer"],"inputs":[{"key":"NDVI_16DAY_RASTER","path":"{DATA_ROOT}/NDVI"}],"outputs":[{"layer":"ndvi","name":""}],"extra_outputs":[],"params":{"module/ndvi_daily":{"rescale":"-1,1","nodata":-9999}},"prereq":"","family":"NDVI 接入","verdict":"variant","verdict_label":"科研对照变体","hidden":false,"pipeline":false},{"id":"ndvi_online_read","name":"NDVI 植被指数（NASA CMR 检索 + Earthdata 下载）","desc":"cmr_granule_search → http_open_data（earthdata 凭证）→ archive/extract（裸 .h5 透传）→ ndvi_hdf_preprocess → ndvi_daily → 输出地图图层。","category":"data_access","tags":["sample","download"],"engine":"python_provider","linked_layer":"ndvi","profile":"","chain":["download/cmr_search","download/http_open_data","archive/extract","module/ndvi_hdf_preprocess","module/ndvi_daily","output/map_layer"],"inputs":[],"outputs":[{"layer":"ndvi","name":""}],"extra_outputs":[],"params":{},"prereq":"下载步骤需 earthdata 凭证（NASA Earthdata 账号）；CMR 检索免凭据","family":"NDVI 接入","verdict":"variant","verdict_label":"科研对照变体","hidden":false,"pipeline":false},{"id":"nomads_gfs_grib_download","name":"NOMADS GRIB2 下载（GFS herbie）","desc":"nomads_grib_download（herbie 主路径 → NOMADS 直连回退）→ 本地 GRIB2 + 产物清单。","category":"data_access","tags":["sample","download"],"engine":"python_provider","linked_layer":null,"profile":"","chain":["download/nomads_grib_download"],"inputs":[],"outputs":[],"extra_outputs":[],"params":{},"prereq":"开放数据免凭据；herbie 主路径需依赖可用，缺失时自动回退 legacy 直连","family":"再分析/数值预报下载","verdict":"unique","verdict_label":"功能唯一","hidden":false,"pipeline":false},{"id":"omega_avg_daily_fy_single","name":"avg-ω 逐日反演（FY 单温度）","desc":"D1 omega_block 输出 → D2 DOY 气候态 + 逐日 DDCA 回代（FY_SINGLE + ORIG_TS，FY3B→FY3D match）。","category":"inversion","tags":["pipeline","omega_avg"],"engine":"python_provider","linked_layer":"method-fy-omega-doy-avg","profile":"","chain":["data/source","data/source","data/source","data/source","data/source","data/source","data/source","module/omega_avg_daily","output/map_layer"],"inputs":[{"key":"omega_block_output","path":"Inversion_Results/omega_block"},{"key":"fy3d_folder","path":"Soil_Moisture/FY3D"},{"key":"fy3b_folder","path":"Soil_Moisture/FY3B"},{"key":"smap_daily_mat","path":"Soil_Moisture/SMAP_Origin_Data"},{"key":"ancillary_mat","path":"Soil_Moisture/SMAP_Auxiliary_Data"},{"key":"ndvi_daily_mat","path":"Ecological_Vegetation/NDVI/NDVIday"},{"key":"ndvi_clim_folder","path":"Soil_Moisture/SMAP_Auxiliary_Data/NDVI_clim"}],"outputs":[{"layer":"method-fy-omega-doy-avg","name":"avg-ω 逐日反演（FY 单温度）"}],"extra_outputs":["SM","VOD","OMEGA"],"params":{"module/omega_avg_daily":{"target_year":2025,"tb_source":"FY","fy_platform":"3D","sm_source":"SMAP","temp_scheme":"ORIG_TS","ndvi_mode":"DOY_CLIM","sf_mode":"STATIC","avg_build_start_year":2025,"avg_build_end_year":2025,"freq_ghz":1.4,"lambda_tau":20.0,"pixel_chunk_size":200000,"enable_parallel":true}},"prereq":"D1 omega_block（tb_source=FY）+ FY3D/FY3B 逐日 .mat + SMAP 辅助 .mat；本地联调默认对齐 2025-11/12 窗口","family":"D2 avg-ω 逐日反演","verdict":"variant","verdict_label":"科研对照变体","hidden":false,"pipeline":true},{"id":"omega_avg_daily_gldas_online","name":"avg-ω 逐日反演（GLDAS 在线拉取 + DUAL 双温度）","desc":"gldas_download（GES DISC / earthdata）→ gldas_nc4_to_mat（Ts_gldas/Tsoil*）→ D2 avg-omega DUAL；本地 D1/SMAP/anc/NDVI 数据源并联。","category":"inversion","tags":["pipeline","omega_avg","gldas_online"],"engine":"python_provider","linked_layer":"method-smap-omega-doy-avg","profile":"","chain":["download/gldas_download","download/gldas_nc4_to_mat","data/source","data/source","data/source","data/source","data/source","module/omega_avg_daily","output/map_layer","data/time_range"],"inputs":[{"key":"omega_block_output","path":"Inversion_Results/omega_block"},{"key":"smap_daily_mat","path":"Soil_Moisture/SMAP_Origin_Data"},{"key":"ancillary_mat","path":"Soil_Moisture/SMAP_Auxiliary_Data"},{"key":"ndvi_clim_folder","path":"Soil_Moisture/SMAP_Auxiliary_Data/NDVI_clim"},{"key":"gldas_mat","path":"Meteorological/Weather/GLDAS"}],"outputs":[{"layer":"method-smap-omega-doy-avg","name":"avg-ω 逐日反演（GLDAS 在线拉取 + DUAL 双温度）"}],"extra_outputs":["SM","VOD","OMEGA"],"params":{"module/omega_avg_daily":{"target_year":2025,"tb_source":"SMAP","sm_source":"SMAP","temp_scheme":"DUAL","ndvi_mode":"DOY_CLIM","sf_mode":"STATIC","use_gldas_template":true,"dual_tg_mode":"PAPER_CT","ct_smref":0.3,"ct_exp":0.3,"avg_build_start_year":2025,"avg_build_end_year":2025,"freq_ghz":1.4,"lambda_tau":20.0,"pixel_chunk_size":200000,"enable_parallel":true}},"prereq":"earthdata 凭证 + D1 omega_block；gldas_nc4_to_mat 产出 Ts_gldas/Tsoil1_gldas/Tsoil2_gldas","family":"D2 avg-ω 逐日反演","verdict":"variant","verdict_label":"科研对照变体","hidden":false,"pipeline":true},{"id":"omega_avg_daily_smap_dual","name":"avg-ω 逐日反演（SMAP 双温度 GLDAS）","desc":"D1 omega_block 输出 → D2 DOY 气候态 + 逐日 DDCA 回代（SMAP_SINGLE + DUAL 温度，GLDAS Ct/TG）。","category":"inversion","tags":["pipeline","omega_avg"],"engine":"python_provider","linked_layer":"method-smap-omega-doy-avg","profile":"","chain":["data/source","data/source","data/source","data/source","data/source","data/source","data/source","module/omega_avg_daily","output/map_layer"],"inputs":[{"key":"omega_block_output","path":"Inversion_Results/omega_block"},{"key":"smap_daily_mat","path":"Soil_Moisture/SMAP_Origin_Data"},{"key":"ancillary_mat","path":"Soil_Moisture/SMAP_Auxiliary_Data"},{"key":"gldas_mat","path":"Meteorological/Weather/GLDAS"},{"key":"gldas_template_mat","path":"Meteorological/Weather/GLDAS_UTC_TEMPLATE/gldas_utc_template_global.mat"},{"key":"ndvi_daily_mat","path":"Ecological_Vegetation/NDVI/NDVIday"},{"key":"ndvi_clim_folder","path":"Soil_Moisture/SMAP_Auxiliary_Data/NDVI_clim"}],"outputs":[{"layer":"method-smap-omega-doy-avg","name":"avg-ω 逐日反演（SMAP 双温度 GLDAS）"}],"extra_outputs":["SM","VOD","OMEGA"],"params":{"module/omega_avg_daily":{"target_year":2025,"tb_source":"SMAP","sm_source":"SMAP","temp_scheme":"DUAL","ndvi_mode":"DOY_CLIM","sf_mode":"STATIC","use_gldas_template":true,"dual_tg_mode":"PAPER_CT","ct_smref":0.3,"ct_exp":0.3,"avg_build_start_year":2025,"avg_build_end_year":2025,"freq_ghz":1.4,"lambda_tau":20.0,"pixel_chunk_size":200000,"enable_parallel":true}},"prereq":"D1 omega_block + GLDAS .mat（Ts_gldas/Tsoil1_gldas/Tsoil2_gldas）+ 可选 gldas_utc_template_global.mat；本地联调默认对齐 2025 SMAP 窗口","family":"D2 avg-ω 逐日反演","verdict":"variant","verdict_label":"科研对照变体","hidden":false,"pipeline":true},{"id":"omega_avg_daily_smap_online","name":"avg-ω 逐日反演（SMAP 在线拉取 + ORIG_TS）","desc":"nsidc_smap_download（CMR+云 CDN，earthdata 凭证）→ smap_daily（.h5→YYYYMMDD.mat）→ D2 avg-omega 逐日反演（ORIG_TS）→ SM/VOD/OMEGA 三图层。","category":"inversion","tags":["pipeline","omega_avg"],"engine":"python_provider","linked_layer":"method-smap-omega-doy-avg","profile":"","chain":["download/nsidc_smap_download","module/smap_daily","data/source","data/source","data/source","data/source","data/source","module/omega_avg_daily","output/map_layer"],"inputs":[{"key":"omega_block_output","path":"Inversion_Results/omega_block"},{"key":"smap_daily_mat","path":"Soil_Moisture/SMAP_Origin_Data"},{"key":"ancillary_mat","path":"Soil_Moisture/SMAP_Auxiliary_Data"},{"key":"ndvi_daily_mat","path":"Ecological_Vegetation/NDVI/NDVIday"},{"key":"ndvi_clim_folder","path":"Soil_Moisture/SMAP_Auxiliary_Data/NDVI_clim"}],"outputs":[{"layer":"method-smap-omega-doy-avg","name":"avg-ω 逐日反演（SMAP 在线拉取）"}],"extra_outputs":["SM","VOD","OMEGA"],"params":{"module/omega_avg_daily":{"target_year":2023,"tb_source":"SMAP","sm_source":"SMAP","temp_scheme":"ORIG_TS","ndvi_mode":"DAILY_FILE","sf_mode":"STATIC","avg_build_start_year":2015,"avg_build_end_year":2025,"freq_ghz":1.4,"lambda_tau":20.0,"pixel_chunk_size":200000,"enable_parallel":true}},"prereq":"earthdata 凭证 + D1 omega_block + 本地 anc/NDVI .mat","family":"D2 avg-ω 逐日反演","verdict":"variant","verdict_label":"科研对照变体","hidden":false,"pipeline":true},{"id":"omega_avg_daily_smap_single","name":"avg-ω 逐日反演（SMAP 单温度）","desc":"D1 omega_block 输出 → D2 DOY 气候态 + 逐日 DDCA 回代（SMAP_SINGLE + ORIG_TS）。","category":"inversion","tags":["pipeline","omega_avg"],"engine":"python_provider","linked_layer":"method-smap-omega-doy-avg","profile":"","chain":["data/source","data/source","data/source","data/source","data/source","module/omega_avg_daily","data/time_range","output/map_layer"],"inputs":[{"key":"omega_block_output","path":"Inversion_Results/omega_block"},{"key":"smap_daily_mat","path":"Soil_Moisture/SMAP_Origin_Data"},{"key":"ancillary_mat","path":"Soil_Moisture/SMAP_Auxiliary_Data"},{"key":"ndvi_daily_mat","path":"Ecological_Vegetation/NDVI/NDVIday"},{"key":"ndvi_clim_folder","path":"Soil_Moisture/SMAP_Auxiliary_Data/NDVI_clim"}],"outputs":[{"layer":"method-smap-omega-doy-avg","name":"avg-ω 逐日反演（SMAP 单温度）"}],"extra_outputs":["SM","VOD","OMEGA"],"params":{"module/omega_avg_daily":{"target_year":2025,"tb_source":"SMAP","sm_source":"SMAP","temp_scheme":"ORIG_TS","ndvi_mode":"DOY_CLIM","sf_mode":"STATIC","avg_build_start_year":2025,"avg_build_end_year":2025,"freq_ghz":1.4,"lambda_tau":20.0,"pixel_chunk_size":200000,"enable_parallel":true}},"prereq":"D1 omega_block 必须先运行并产出 omega_block_*.mat + daily_omega/；本地联调默认对齐 SMAP 2025-12 窗口","family":"D2 avg-ω 逐日反演","verdict":"variant","verdict_label":"科研对照变体","hidden":false,"pipeline":true},{"id":"omega_block_smap_single","name":"D1 omega_block（SMAP 单温度）","desc":"SMAP 亮温 + 辅助/NDVI → timeseries_bundle → omega_block（daily_omega + h/alpha）。","category":"inversion","tags":["pipeline","omega_block","d1"],"engine":"python_provider","linked_layer":"method-smap-omega-doy-avg","profile":"","chain":["data/source","data/source","data/source","data/source","module/timeseries_bundle","module/omega_block","data/time_range"],"inputs":[{"key":"smap_daily_mat","path":"Soil_Moisture/SMAP_Origin_Data"},{"key":"ancillary_mat","path":"Soil_Moisture/SMAP_Auxiliary_Data"},{"key":"ndvi_clim_folder","path":"Soil_Moisture/SMAP_Auxiliary_Data/NDVI_clim"},{"key":"ndvi_daily_mat","path":"Ecological_Vegetation/NDVI/NDVIday"}],"outputs":[],"extra_outputs":["OMEGA","SM","VOD"],"params":{"module/timeseries_bundle":{"tb_source":"SMAP","sm_source":"SMAP","temp_scheme":"ORIG_TS","ndvi_mode":"DOY_CLIM","sf_mode":"STATIC"},"module/omega_block":{"mode":"dh","write_daily_files":true,"freq_ghz":1.4,"n_workers":8}},"prereq":"SMAP 逐日 .mat + 辅助库；产出应落到 Inversion_Results/omega_block","family":"反演基础（D1）","verdict":"unique","verdict_label":"功能唯一","hidden":false,"pipeline":true},{"id":"omega_sf_fenkuai_fy_online","name":"SF 块反演在线全流程（FY 单温度）","desc":"fy_download FY3D+FY3B（NSMC 多账号并行）→ fy_daily（HDF→YYYYMMDD.mat）→ omega_sf_fenkuai → SM/VOD/OMEGA 三图层。","category":"inversion","tags":["pipeline","sf_inversion","online"],"engine":"python_provider","linked_layer":"method-fy-omega-doy-dynamic","profile":"","chain":["download/fy_download","download/fy_download","module/fy_daily","module/fy_daily","data/source","data/source","data/source","data/source","data/source","module/omega_sf_fenkuai","data/time_range","data/bbox","output/map_layer"],"inputs":[{"key":"smap_folder","path":"Soil_Moisture/SMAP_Origin_Data"},{"key":"anc_root","path":"Soil_Moisture/SMAP_Auxiliary_Data"},{"key":"fy3d_folder","path":"Soil_Moisture/FY3D"},{"key":"fy3b_folder","path":"Soil_Moisture/FY3B"},{"key":"ndvi_clim_folder","path":"Soil_Moisture/SMAP_Auxiliary_Data/NDVI_clim"}],"outputs":[{"layer":"method-fy-omega-doy-dynamic","name":"SF 块反演在线全流程（FY 单温度）"}],"extra_outputs":["SM","VOD","OMEGA"],"params":{"module/fy_daily":{"orbit_mode":"MWRID","band_ids":[1,2],"execute_commands":true,"spatial_mode":"global","overlap_option":"average"},"module/omega_sf_fenkuai":{"tb_source":"FY","fy_platform":"3D","sm_source":"SMAP","temp_scheme":"ORIG_TS","sf_mode":"INVERTED_DAILY","sf_invert_mode":"POINT1","ndvi_mode":"DOY_CLIM","omega_fixed_mode":"PFT","run_domain":"GLOBAL","match_enable":true,"match_method":"bias","block_days":8,"start_date":"20251101","end_date":"20251231","max_pixels":0,"enable_parallel":true,"pixel_chunk_size":200000}},"prereq":"nsmc 凭证（建议配置多账号轮换）+ nas_profile（远程与存储 FileBrowser 凭据）+ GDAL CLI（gdal_translate/gdalwarp/gdalbuildvrt，经 PATH 或 algorithm_params.gdal_bin 指定）+ 本地 SMAP 逐日 .mat/辅助库/NDVI 气候态","family":"SF 块反演全流程","verdict":"variant","verdict_label":"科研对照变体","hidden":false,"pipeline":true},{"id":"omega_sf_fenkuai_fy_single","name":"SF 块反演全流程（FY 单温度）","desc":"FY3D/FY3B 亮温 + SMAP 辅助 → 8-day 分块 SF 倒推 → 块级 h/alpha/OMEGA 优化 → DDCA SM/VOD 反演。输出 SM/VOD/OMEGA 三图层。","category":"inversion","tags":["pipeline","sf_inversion"],"engine":"python_provider","linked_layer":"method-fy-omega-doy-dynamic","profile":"","chain":["data/source","data/source","data/source","data/source","data/source","data/source","module/omega_sf_fenkuai","data/time_range","data/bbox","output/map_layer"],"inputs":[{"key":"smap_folder","path":"Soil_Moisture/SMAP_Origin_Data"},{"key":"anc_root","path":"Soil_Moisture/SMAP_Auxiliary_Data"},{"key":"fy3d_folder","path":"Soil_Moisture/FY3D"},{"key":"fy3b_folder","path":"Soil_Moisture/FY3B"},{"key":"ndvi_clim_folder","path":"Soil_Moisture/SMAP_Auxiliary_Data/NDVI_clim"},{"key":"gldas_mat_folder","path":"Meteorological/Weather/GLDAS"}],"outputs":[{"layer":"method-fy-omega-doy-dynamic","name":"SF 块反演全流程（FY 单温度）"}],"extra_outputs":["SM","VOD","OMEGA"],"params":{"module/omega_sf_fenkuai":{"tb_source":"FY","fy_platform":"3D","sm_source":"SMAP","temp_scheme":"ORIG_TS","sf_mode":"INVERTED_DAILY","sf_invert_mode":"POINT1","ndvi_mode":"DOY_CLIM","omega_fixed_mode":"PFT","run_domain":"GLOBAL","match_enable":true,"match_method":"bias","block_days":8,"start_date":"20251101","end_date":"20251231","max_pixels":0,"enable_parallel":true,"pixel_chunk_size":200000}},"prereq":"SMAP 逐日 .mat + FY3D/FY3B 逐日 TB .mat + 辅助库（IGBP_9km_12 等）","family":"SF 块反演全流程","verdict":"variant","verdict_label":"科研对照变体","hidden":false,"pipeline":true},{"id":"omega_sf_fenkuai_smap_online","name":"SF 块反演在线全流程（SMAP 单温度）","desc":"nsidc_smap_download（earthdata）→ smap_daily（h5→mat）→ omega_sf_fenkuai → SM/VOD/OMEGA 三图层。","category":"inversion","tags":["pipeline","sf_inversion","online"],"engine":"python_provider","linked_layer":"method-smap-omega-doy-dynamic","profile":"","chain":["download/nsidc_smap_download","module/smap_daily","data/source","data/source","data/source","module/omega_sf_fenkuai","data/time_range","data/bbox","output/map_layer"],"inputs":[{"key":"smap_folder","path":"Soil_Moisture/SMAP_Origin_Data"},{"key":"anc_root","path":"Soil_Moisture/SMAP_Auxiliary_Data"},{"key":"ndvi_clim_folder","path":"Soil_Moisture/SMAP_Auxiliary_Data/NDVI_clim"}],"outputs":[{"layer":"method-smap-omega-doy-dynamic","name":"SF 块反演在线全流程（SMAP 单温度）"}],"extra_outputs":["SM","VOD","OMEGA"],"params":{"module/omega_sf_fenkuai":{"tb_source":"SMAP","sm_source":"SMAP","temp_scheme":"ORIG_TS","sf_mode":"INVERTED_DAILY","sf_invert_mode":"POINT1","ndvi_mode":"DOY_CLIM","omega_fixed_mode":"PFT","run_domain":"GLOBAL","block_days":8,"start_date":"20251201","end_date":"20251231","max_pixels":0,"freq_ghz":1.4,"enable_parallel":true,"max_workers":8,"pixel_chunk_size":200000}},"prereq":"earthdata 凭证 + 本地辅助库（IGBP_9km_12 等）+ NDVI DOY 气候态","family":"SF 块反演全流程","verdict":"variant","verdict_label":"科研对照变体","hidden":false,"pipeline":true},{"id":"omega_sf_fenkuai_smap_single","name":"SF 块反演全流程（SMAP 单温度）","desc":"SMAP 亮温 + 辅助数据 → 8-day 分块 SF 倒推 → 块级 h/alpha/OMEGA 优化 → DDCA SM/VOD 反演。输出 SM/VOD/OMEGA 三图层。","category":"inversion","tags":["pipeline","sf_inversion"],"engine":"python_provider","linked_layer":"method-smap-omega-doy-dynamic","profile":"","chain":["data/source","data/source","data/source","module/omega_sf_fenkuai","data/time_range","data/bbox","output/map_layer"],"inputs":[{"key":"smap_folder","path":"Soil_Moisture/SMAP_Origin_Data"},{"key":"anc_root","path":"Soil_Moisture/SMAP_Auxiliary_Data"},{"key":"ndvi_clim_folder","path":"Soil_Moisture/SMAP_Auxiliary_Data/NDVI_clim"}],"outputs":[{"layer":"method-smap-omega-doy-dynamic","name":"SF 块反演全流程（SMAP 单温度）"}],"extra_outputs":["SM","VOD","OMEGA"],"params":{"module/omega_sf_fenkuai":{"tb_source":"SMAP","sm_source":"SMAP","temp_scheme":"ORIG_TS","sf_mode":"INVERTED_DAILY","sf_invert_mode":"POINT1","ndvi_mode":"DOY_CLIM","omega_fixed_mode":"PFT","run_domain":"GLOBAL","block_days":8,"start_date":"20251201","end_date":"20251231","max_pixels":0,"freq_ghz":1.4,"enable_parallel":true,"max_workers":8,"pixel_chunk_size":200000}},"prereq":"SMAP 逐日 .mat + 辅助库（IGBP_9km_12 等）","family":"SF 块反演全流程","verdict":"variant","verdict_label":"科研对照变体","hidden":false,"pipeline":true},{"id":"open_data_esa_product_sample","name":"欧空局产品下载样例（SAFE/ZIP）","desc":"esa_download + copernicus 凭证 → archive_extract（SAFE 识别）。","category":"data_access","tags":["sample","download"],"engine":"common","linked_layer":null,"profile":"","chain":["download/http_open_data","archive/extract","output/map_layer"],"inputs":[],"outputs":[{"layer":"remote-sensing","name":""}],"extra_outputs":[],"params":{},"prereq":"","family":"开放门户演示样例","verdict":"demo","verdict_label":"演示样例","hidden":false,"pipeline":false},{"id":"open_data_nasa_earthdata_sample","name":"NASA Earthdata 开放数据样例","desc":"nasa_earthdata + earthdata 凭证 → archive_extract。","category":"data_access","tags":["sample","download"],"engine":"common","linked_layer":null,"profile":"","chain":["download/http_open_data","archive/extract","extract/variable"],"inputs":[],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"开放门户演示样例","verdict":"demo","verdict_label":"演示样例","hidden":false,"pipeline":false},{"id":"open_data_noaa_grib_sample","name":"NOAA 开放数据样例（下载→提取）","desc":"NOAA NOMADS → 可选解压 → 提取变量。请替换 relative_path。","category":"data_access","tags":["sample","download"],"engine":"common","linked_layer":null,"profile":"","chain":["download/http_open_data","archive/extract","extract/variable","format/convert"],"inputs":[],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"开放门户演示样例","verdict":"demo","verdict_label":"演示样例","hidden":false,"pipeline":false},{"id":"open_data_nsidc_smap_sample","name":"NSIDC/SMAP 开放数据样例","desc":"nsidc_smap_download（CMR+云 CDN，earthdata 凭证）→ extract/variable → format_convert(mat)。","category":"data_access","tags":["sample","download"],"engine":"common","linked_layer":"ref-smap-sm-202512-l3","profile":"","chain":["download/nsidc_smap_download","extract/variable","format/convert"],"inputs":[],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"开放门户演示样例","verdict":"demo","verdict_label":"演示样例","hidden":false,"pipeline":false},{"id":"preprocess_clip_reproject_basic","name":"Preprocess clip + reproject","desc":"Clip then reproject a smoke GeoTIFF","category":"analysis","tags":["analysis","preprocess","raster","stub_v1","sample","hidden"],"engine":"python_provider","linked_layer":null,"profile":"heavy","chain":["data/source","data/bbox","preprocess/clip","preprocess/reproject"],"inputs":[{"key":"input_path","path":"{DATA_ROOT}/_runtime/smoke_stub.tif"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"stub_v1 烟测（已隐藏）","verdict":"smoke","verdict_label":"烟测载体（已隐藏）","hidden":true,"pipeline":false},{"id":"preprocess_mask_resample_basic","name":"Preprocess mask + resample","desc":"Mask then resample smoke GeoTIFFs","category":"analysis","tags":["analysis","preprocess","raster","stub_v1","sample","hidden"],"engine":"python_provider","linked_layer":null,"profile":"heavy","chain":["data/source","data/source","preprocess/mask","preprocess/resample"],"inputs":[{"key":"input_path","path":"{DATA_ROOT}/_runtime/smoke_stub.tif"},{"key":"mask_path","path":"{DATA_ROOT}/_runtime/smoke_stub_b.tif"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"stub_v1 烟测（已隐藏）","verdict":"smoke","verdict_label":"烟测载体（已隐藏）","hidden":true,"pipeline":false},{"id":"raster_timeseries_curve","name":"Raster timeseries curve (generic)","desc":"data/source → module/statistics(mode=timeseries) → viz/chart_generate","category":"analysis","tags":["analysis","timeseries","chart","raster"],"engine":"python_provider","linked_layer":null,"profile":"","chain":["data/source","module/statistics","viz/chart_generate"],"inputs":[{"key":"input_path","path":"{DATA_ROOT}"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"栅格分析","verdict":"unique","verdict_label":"功能唯一","hidden":false,"pipeline":false},{"id":"raster_zonal_stats_aligned","name":"Raster zonal stats (aligned grids)","desc":"data/source → module/statistics(mode=zonal)","category":"analysis","tags":["analysis","zonal","statistics","raster"],"engine":"python_provider","linked_layer":null,"profile":"","chain":["data/source","module/statistics"],"inputs":[{"key":"input_path","path":"{DATA_ROOT}"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"栅格分析","verdict":"unique","verdict_label":"功能唯一","hidden":false,"pipeline":false},{"id":"smap_soil_moisture_local","name":"本地 SMAP 土壤湿度（硬盘路径）","desc":"本地 data_source → 提取/转换。与开放下载模板互补。","category":"data_access","tags":["sample","local"],"engine":"python_provider","linked_layer":"ref-smap-sm-202512-l3","profile":"","chain":["data/source","extract/variable","format/convert"],"inputs":[{"key":"SMAP_L3","path":"{DATA_ROOT}/SMAP"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"SMAP 接入","verdict":"unique","verdict_label":"功能唯一","hidden":false,"pipeline":false},{"id":"stats_correlation_basic","name":"Stats correlation basic","desc":"Pearson correlation of two smoke timeseries","category":"analysis","tags":["analysis","stats","timeseries","stub_v1","sample","hidden"],"engine":"python_provider","linked_layer":null,"profile":"standard","chain":["data/source","data/source","stats/correlation"],"inputs":[{"key":"x_path","path":"{DATA_ROOT}/_runtime/smoke_timeseries.json"},{"key":"y_path","path":"{DATA_ROOT}/_runtime/smoke_timeseries_b.json"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"stub_v1 烟测（已隐藏）","verdict":"smoke","verdict_label":"烟测载体（已隐藏）","hidden":true,"pipeline":false},{"id":"stats_correlation_report_basic","name":"Stats correlation + report","desc":"Pearson correlation then HTML report export","category":"analysis","tags":["analysis","stats","report","stub_v1","sample","hidden"],"engine":"python_provider","linked_layer":null,"profile":"standard","chain":["data/source","data/source","stats/correlation","viz/report_export"],"inputs":[{"key":"x_path","path":"{DATA_ROOT}/_runtime/smoke_timeseries.json"},{"key":"y_path","path":"{DATA_ROOT}/_runtime/smoke_timeseries_b.json"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"stub_v1 烟测（已隐藏）","verdict":"smoke","verdict_label":"烟测载体（已隐藏）","hidden":true,"pipeline":false},{"id":"stats_mean_summary_report_basic","name":"Stats mean + summary report","desc":"Spatial mean then statistics summary and HTML report","category":"analysis","tags":["analysis","statistics","report","stub_v1","sample","hidden"],"engine":"python_provider","linked_layer":null,"profile":"standard","chain":["data/source","stats/spatial_mean","viz/statistics_summary","viz/report_export"],"inputs":[{"key":"input_path","path":"{DATA_ROOT}/_runtime/smoke_stub.tif"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"stub_v1 烟测（已隐藏）","verdict":"smoke","verdict_label":"烟测载体（已隐藏）","hidden":true,"pipeline":false},{"id":"stats_summary_chart_basic","name":"Stats summary + chart","desc":"Raster statistics summary then bar chart from table_spec","category":"analysis","tags":["analysis","statistics","chart","stub_v1","sample","hidden"],"engine":"python_provider","linked_layer":null,"profile":"standard","chain":["data/source","viz/statistics_summary","viz/chart_generate"],"inputs":[{"key":"input_path","path":"{DATA_ROOT}/_runtime/smoke_stub.tif"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"stub_v1 烟测（已隐藏）","verdict":"smoke","verdict_label":"烟测载体（已隐藏）","hidden":true,"pipeline":false},{"id":"stats_trend_anomaly_basic","name":"Stats trend + anomaly","desc":"Linear trend and z-score anomalies on smoke timeseries","category":"analysis","tags":["analysis","stats","timeseries","stub_v1","sample","hidden"],"engine":"python_provider","linked_layer":null,"profile":"standard","chain":["data/source","stats/temporal_trend","stats/anomaly_detect"],"inputs":[{"key":"timeseries_path","path":"{DATA_ROOT}/_runtime/smoke_timeseries.json"}],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"stub_v1 烟测（已隐藏）","verdict":"smoke","verdict_label":"烟测载体（已隐藏）","hidden":true,"pipeline":false},{"id":"weather_temperature_grid_demo","name":"温度网格渲染（天气 demo）","desc":"weather/forecast_fetch → weather/grid_fetch → weather/temperature_render","category":"weather","tags":["demo","weather"],"engine":"weather","linked_layer":"temperature","profile":"","chain":["weather/forecast_fetch","weather/grid_fetch","weather/temperature_render"],"inputs":[],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"天气演示","verdict":"demo","verdict_label":"演示样例","hidden":false,"pipeline":false},{"id":"weather_wind_field_demo","name":"风场渲染（天气 demo）","desc":"weather/grid_fetch → weather/wind_field_render","category":"weather","tags":["demo","weather"],"engine":"weather","linked_layer":"wind-field","profile":"","chain":["weather/grid_fetch","weather/wind_field_render"],"inputs":[],"outputs":[],"extra_outputs":[],"params":{},"prereq":"","family":"天气演示","verdict":"demo","verdict_label":"演示样例","hidden":false,"pipeline":false}],"matrix":[[0.0,0.4,0.5,0.4,0.5,0.5,0.5,0.5,0.5,0.4,0.4,0.0,0.0,0.4,0.4,0.4,0.0,0.0,0.4,0.0,0.0,0.182,0.167,0.182,0.182,0.2,0.222,0.133,0.167,0.182,0.222,0.0,0.0,0.0,0.0,0.333,0.333,0.4,0.5,0.4,0.4,0.333,0.333,0.4,0.4,0.0,0.0],[0.4,0.0,0.4,0.333,0.4,0.4,0.4,0.4,0.4,0.333,0.333,0.0,0.0,0.667,0.333,0.333,0.0,0.0,0.333,0.0,0.0,0.167,0.154,0.167,0.167,0.182,0.2,0.25,0.308,0.333,0.4,0.0,0.0,0.0,0.0,0.857,0.286,0.333,0.4,0.333,0.333,0.286,0.286,0.333,0.333,0.0,0.0],[0.5,0.4,0.0,0.4,0.5,0.5,0.5,0.5,0.5,0.4,0.4,0.0,0.0,0.4,0.4,0.4,0.0,0.0,0.4,0.0,0.0,0.182,0.167,0.182,0.182,0.2,0.222,0.133,0.167,0.182,0.222,0.0,0.0,0.0,0.0,0.333,0.333,0.4,0.5,0.4,0.4,0.333,0.333,0.4,0.4,0.0,0.0],[0.4,0.333,0.4,0.0,0.4,0.4,0.4,0.4,0.4,0.333,0.333,0.0,0.0,0.333,0.333,0.333,0.0,0.0,0.333,0.0,0.0,0.167,0.154,0.167,0.167,0.182,0.2,0.125,0.154,0.167,0.2,0.0,0.0,0.0,0.0,0.286,0.286,0.667,0.4,0.333,0.333,0.286,0.286,0.667,0.333,0.0,0.0],[0.5,0.4,0.5,0.4,0.0,0.5,0.5,0.5,0.5,0.4,0.4,0.0,0.0,0.4,0.4,0.4,0.0,0.0,0.4,0.0,0.0,0.182,0.167,0.182,0.182,0.2,0.222,0.133,0.167,0.182,0.222,0.0,0.0,0.0,0.0,0.333,0.333,0.4,0.5,0.4,0.4,0.333,0.333,0.4,0.4,0.0,0.0],[0.5,0.4,0.5,0.4,0.5,0.0,0.5,0.5,0.5,0.4,0.4,0.0,0.0,0.4,0.4,0.4,0.0,0.0,0.4,0.0,0.0,0.182,0.167,0.182,0.182,0.2,0.222,0.133,0.167,0.182,0.222,0.0,0.0,0.0,0.0,0.333,0.333,0.4,0.5,0.4,0.4,0.333,0.333,0.4,0.4,0.0,0.0],[0.5,0.4,0.5,0.4,0.5,0.5,0.0,0.5,0.5,0.4,0.4,0.0,0.0,0.4,0.4,0.4,0.0,0.0,0.4,0.0,0.0,0.182,0.167,0.182,0.182,0.2,0.222,0.133,0.167,0.182,0.222,0.0,0.0,0.0,0.0,0.333,0.333,0.4,0.5,0.4,0.4,0.333,0.333,0.4,0.4,0.0,0.0],[0.5,0.4,0.5,0.4,0.5,0.5,0.5,0.0,0.5,0.4,0.4,0.0,0.0,0.4,0.4,0.4,0.0,0.0,0.4,0.0,0.0,0.182,0.167,0.182,0.182,0.2,0.222,0.133,0.167,0.182,0.222,0.0,0.0,0.0,0.0,0.333,0.333,0.4,0.5,0.4,0.4,0.333,0.333,0.4,0.4,0.0,0.0],[0.5,0.4,0.5,0.4,0.5,0.5,0.5,0.5,0.0,0.4,0.4,0.0,0.0,0.4,0.4,0.4,0.0,0.0,0.4,0.0,0.0,0.182,0.167,0.182,0.182,0.2,0.222,0.133,0.167,0.182,0.222,0.0,0.0,0.0,0.0,0.333,0.333,0.4,0.5,0.4,0.4,0.333,0.333,0.4,0.4,0.0,0.0],[0.4,0.333,0.4,0.333,0.4,0.4,0.4,0.4,0.4,0.0,0.667,0.0,0.0,0.333,0.667,0.333,0.0,0.0,0.333,0.0,0.0,0.333,0.308,0.333,0.333,0.364,0.4,0.25,0.308,0.333,0.4,0.0,0.0,0.0,0.0,0.286,0.571,0.333,0.4,0.333,0.667,0.571,0.286,0.333,0.333,0.0,0.0],[0.4,0.333,0.4,0.333,0.4,0.4,0.4,0.4,0.4,0.667,0.0,0.0,0.0,0.333,0.667,0.333,0.0,0.0,0.333,0.0,0.0,0.333,0.308,0.333,0.333,0.364,0.4,0.25,0.308,0.333,0.4,0.0,0.0,0.0,0.0,0.286,0.571,0.333,0.4,0.333,0.667,0.571,0.286,0.333,0.333,0.0,0.0],[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],[0.4,0.667,0.4,0.333,0.4,0.4,0.4,0.4,0.4,0.333,0.333,0.0,0.0,0.0,0.333,0.333,0.0,0.0,0.333,0.0,0.0,0.167,0.154,0.167,0.167,0.182,0.2,0.25,0.308,0.333,0.4,0.0,0.0,0.0,0.0,0.571,0.286,0.333,0.4,0.333,0.333,0.286,0.286,0.333,0.333,0.0,0.0],[0.4,0.333,0.4,0.333,0.4,0.4,0.4,0.4,0.4,0.667,0.667,0.0,0.0,0.333,0.0,0.333,0.0,0.0,0.333,0.0,0.0,0.333,0.308,0.333,0.333,0.364,0.4,0.25,0.308,0.333,0.4,0.0,0.0,0.0,0.0,0.286,0.571,0.333,0.4,0.333,0.667,0.571,0.286,0.333,0.333,0.0,0.0],[0.4,0.333,0.4,0.333,0.4,0.4,0.4,0.4,0.4,0.333,0.333,0.0,0.0,0.333,0.333,0.0,0.0,0.0,0.333,0.0,0.0,0.167,0.154,0.167,0.167,0.182,0.2,0.125,0.154,0.167,0.2,0.0,0.333,0.571,0.667,0.286,0.286,0.333,0.4,1.0,0.333,0.286,0.286,0.333,0.333,0.0,0.0],[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.4,0.333,0.222,0.0,0.167,0.154,0.167,0.167,0.182,0.0,0.25,0.154,0.167,0.2,0.333,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.4,0.0,0.4,0.25,0.0,0.182,0.167,0.182,0.182,0.2,0.0,0.133,0.167,0.182,0.222,0.4,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],[0.4,0.333,0.4,0.333,0.4,0.4,0.4,0.4,0.4,0.333,0.333,0.0,0.0,0.333,0.333,0.333,0.333,0.4,0.0,0.444,0.0,0.333,0.308,0.333,0.333,0.364,0.2,0.25,0.308,0.333,0.4,0.333,0.0,0.0,0.0,0.286,0.286,0.333,0.4,0.333,0.333,0.286,0.286,0.333,0.333,0.0,0.0],[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.222,0.25,0.444,0.0,0.0,0.133,0.125,0.133,0.133,0.143,0.0,0.105,0.125,0.133,0.154,0.667,0.444,0.4,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],[0.182,0.167,0.182,0.167,0.182,0.182,0.182,0.182,0.182,0.333,0.333,0.0,0.0,0.167,0.333,0.167,0.167,0.182,0.333,0.133,0.0,0.0,0.737,1.0,0.778,0.824,0.5,0.545,0.737,0.444,0.5,0.167,0.0,0.0,0.0,0.154,0.308,0.167,0.182,0.167,0.333,0.308,0.154,0.167,0.167,0.0,0.0],[0.167,0.154,0.167,0.154,0.167,0.167,0.167,0.167,0.167,0.308,0.308,0.0,0.0,0.154,0.308,0.154,0.154,0.167,0.308,0.125,0.0,0.737,0.0,0.737,0.737,0.778,0.588,0.522,0.6,0.421,0.471,0.154,0.0,0.0,0.0,0.143,0.286,0.154,0.167,0.154,0.308,0.286,0.143,0.154,0.154,0.0,0.0],[0.182,0.167,0.182,0.167,0.182,0.182,0.182,0.182,0.182,0.333,0.333,0.0,0.0,0.167,0.333,0.167,0.167,0.182,0.333,0.133,0.0,1.0,0.737,0.0,0.778,0.824,0.5,0.545,0.737,0.444,0.5,0.167,0.0,0.0,0.0,0.154,0.308,0.167,0.182,0.167,0.333,0.308,0.154,0.167,0.167,0.0,0.0],[0.182,0.167,0.182,0.167,0.182,0.182,0.182,0.182,0.182,0.333,0.333,0.0,0.0,0.167,0.333,0.167,0.167,0.182,0.333,0.133,0.0,0.778,0.737,0.778,0.0,0.824,0.5,0.545,0.632,0.667,0.5,0.167,0.0,0.0,0.167,0.154,0.308,0.167,0.182,0.167,0.333,0.308,0.154,0.167,0.167,0.0,0.0],[0.2,0.182,0.2,0.182,0.2,0.2,0.2,0.2,0.2,0.364,0.364,0.0,0.0,0.182,0.364,0.182,0.182,0.2,0.364,0.143,0.0,0.824,0.778,0.824,0.824,0.0,0.667,0.667,0.778,0.588,0.667,0.182,0.0,0.0,0.0,0.167,0.333,0.182,0.2,0.182,0.364,0.333,0.167,0.182,0.182,0.0,0.0],[0.222,0.2,0.222,0.2,0.222,0.222,0.222,0.222,0.222,0.4,0.4,0.0,0.0,0.2,0.4,0.2,0.0,0.0,0.2,0.0,0.0,0.5,0.588,0.5,0.5,0.667,0.0,0.5,0.588,0.5,0.571,0.0,0.0,0.0,0.0,0.182,0.364,0.2,0.222,0.2,0.4,0.364,0.182,0.2,0.2,0.0,0.0],[0.133,0.25,0.133,0.125,0.133,0.133,0.133,0.133,0.133,0.25,0.25,0.0,0.0,0.25,0.25,0.125,0.25,0.133,0.25,0.105,0.0,0.545,0.522,0.545,0.545,0.667,0.5,0.0,0.783,0.636,0.7,0.125,0.0,0.0,0.0,0.235,0.235,0.125,0.133,0.125,0.25,0.235,0.118,0.125,0.125,0.0,0.0],[0.167,0.308,0.167,0.154,0.167,0.167,0.167,0.167,0.167,0.308,0.308,0.0,0.0,0.308,0.308,0.154,0.154,0.167,0.308,0.125,0.0,0.737,0.6,0.737,0.632,0.778,0.588,0.783,0.0,0.737,0.824,0.154,0.0,0.0,0.0,0.286,0.286,0.154,0.167,0.154,0.308,0.286,0.143,0.154,0.154,0.0,0.0],[0.182,0.333,0.182,0.167,0.182,0.182,0.182,0.182,0.182,0.333,0.333,0.0,0.0,0.333,0.333,0.167,0.167,0.182,0.333,0.133,0.0,0.444,0.421,0.444,0.667,0.588,0.5,0.636,0.737,0.0,0.875,0.167,0.0,0.0,0.167,0.308,0.308,0.167,0.182,0.167,0.333,0.308,0.154,0.167,0.167,0.0,0.0],[0.222,0.4,0.222,0.2,0.222,0.222,0.222,0.222,0.222,0.4,0.4,0.0,0.0,0.4,0.4,0.2,0.2,0.222,0.4,0.154,0.0,0.5,0.471,0.5,0.5,0.667,0.571,0.7,0.824,0.875,0.0,0.2,0.0,0.0,0.0,0.364,0.364,0.2,0.222,0.2,0.4,0.364,0.182,0.2,0.2,0.0,0.0],[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.333,0.4,0.333,0.667,0.0,0.167,0.154,0.167,0.167,0.182,0.0,0.125,0.154,0.167,0.2,0.0,0.667,0.571,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.333,0.0,0.0,0.0,0.444,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.667,0.0,0.857,0.333,0.0,0.0,0.0,0.0,0.333,0.0,0.0,0.0,0.0,0.0,0.0,0.0],[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.571,0.0,0.0,0.0,0.4,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.571,0.857,0.0,0.571,0.0,0.0,0.0,0.0,0.571,0.0,0.0,0.0,0.0,0.0,0.0,0.0],[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.667,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.167,0.0,0.0,0.0,0.0,0.167,0.0,0.0,0.333,0.571,0.0,0.0,0.0,0.0,0.0,0.667,0.0,0.0,0.0,0.0,0.0,0.0,0.0],[0.333,0.857,0.333,0.286,0.333,0.333,0.333,0.333,0.333,0.286,0.286,0.0,0.0,0.571,0.286,0.286,0.0,0.0,0.286,0.0,0.0,0.154,0.143,0.154,0.154,0.167,0.182,0.235,0.286,0.308,0.364,0.0,0.0,0.0,0.0,0.0,0.25,0.286,0.333,0.286,0.286,0.25,0.25,0.286,0.286,0.0,0.0],[0.333,0.286,0.333,0.286,0.333,0.333,0.333,0.333,0.333,0.571,0.571,0.0,0.0,0.286,0.571,0.286,0.0,0.0,0.286,0.0,0.0,0.308,0.286,0.308,0.308,0.333,0.364,0.235,0.286,0.308,0.364,0.0,0.0,0.0,0.0,0.25,0.0,0.286,0.333,0.286,0.571,0.5,0.25,0.286,0.286,0.0,0.0],[0.4,0.333,0.4,0.667,0.4,0.4,0.4,0.4,0.4,0.333,0.333,0.0,0.0,0.333,0.333,0.333,0.0,0.0,0.333,0.0,0.0,0.167,0.154,0.167,0.167,0.182,0.2,0.125,0.154,0.167,0.2,0.0,0.0,0.0,0.0,0.286,0.286,0.0,0.8,0.333,0.333,0.286,0.286,0.667,0.333,0.0,0.0],[0.5,0.4,0.5,0.4,0.5,0.5,0.5,0.5,0.5,0.4,0.4,0.0,0.0,0.4,0.4,0.4,0.0,0.0,0.4,0.0,0.0,0.182,0.167,0.182,0.182,0.2,0.222,0.133,0.167,0.182,0.222,0.0,0.0,0.0,0.0,0.333,0.333,0.8,0.0,0.4,0.4,0.333,0.333,0.4,0.4,0.0,0.0],[0.4,0.333,0.4,0.333,0.4,0.4,0.4,0.4,0.4,0.333,0.333,0.0,0.0,0.333,0.333,1.0,0.0,0.0,0.333,0.0,0.0,0.167,0.154,0.167,0.167,0.182,0.2,0.125,0.154,0.167,0.2,0.0,0.333,0.571,0.667,0.286,0.286,0.333,0.4,0.0,0.333,0.286,0.286,0.333,0.333,0.0,0.0],[0.4,0.333,0.4,0.333,0.4,0.4,0.4,0.4,0.4,0.667,0.667,0.0,0.0,0.333,0.667,0.333,0.0,0.0,0.333,0.0,0.0,0.333,0.308,0.333,0.333,0.364,0.4,0.25,0.308,0.333,0.4,0.0,0.0,0.0,0.0,0.286,0.571,0.333,0.4,0.333,0.0,0.857,0.286,0.333,0.333,0.0,0.0],[0.333,0.286,0.333,0.286,0.333,0.333,0.333,0.333,0.333,0.571,0.571,0.0,0.0,0.286,0.571,0.286,0.0,0.0,0.286,0.0,0.0,0.308,0.286,0.308,0.308,0.333,0.364,0.235,0.286,0.308,0.364,0.0,0.0,0.0,0.0,0.25,0.5,0.286,0.333,0.286,0.857,0.0,0.5,0.286,0.286,0.0,0.0],[0.333,0.286,0.333,0.286,0.333,0.333,0.333,0.333,0.333,0.286,0.286,0.0,0.0,0.286,0.286,0.286,0.0,0.0,0.286,0.0,0.0,0.154,0.143,0.154,0.154,0.167,0.182,0.118,0.143,0.154,0.182,0.0,0.0,0.0,0.0,0.25,0.25,0.286,0.333,0.286,0.286,0.5,0.0,0.571,0.286,0.0,0.0],[0.4,0.333,0.4,0.667,0.4,0.4,0.4,0.4,0.4,0.333,0.333,0.0,0.0,0.333,0.333,0.333,0.0,0.0,0.333,0.0,0.0,0.167,0.154,0.167,0.167,0.182,0.2,0.125,0.154,0.167,0.2,0.0,0.0,0.0,0.0,0.286,0.286,0.667,0.4,0.333,0.333,0.286,0.571,0.0,0.333,0.0,0.0],[0.4,0.333,0.4,0.333,0.4,0.4,0.4,0.4,0.4,0.333,0.333,0.0,0.0,0.333,0.333,0.333,0.0,0.0,0.333,0.0,0.0,0.167,0.154,0.167,0.167,0.182,0.2,0.125,0.154,0.167,0.2,0.0,0.0,0.0,0.0,0.286,0.286,0.333,0.4,0.333,0.333,0.286,0.286,0.333,0.0,0.0,0.0],[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.4],[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.4,0.0]]};
+const S = DATA.seeds, M = DATA.matrix;
+
+/* ---------- 家族排序与配色 ---------- */
+const FAM_ORDER = ["D2 avg-ω 逐日反演","SF 块反演全流程","反演基础（D1）","FY 亮温接入","NDVI 接入","SMAP 接入","再分析/数值预报下载","开放门户演示样例","天气演示","InfoPanel 单步 GIS 分析","栅格分析","stub_v1 烟测（已隐藏）"];
+const FAM_COLOR = ["#2563eb","#7c3aed","#0e9f6e","#0891b2","#ca8a04","#dc2626","#db2777","#65a30d","#475569","#ea580c","#0d9488","#94a3b8"];
+const famIdx = f => { const i = FAM_ORDER.indexOf(f); return i < 0 ? FAM_ORDER.length : i; };
+const famColor = f => { const i = famIdx(f); return FAM_COLOR[Math.min(i, FAM_COLOR.length-1)]; };
+S.forEach(s => s.fc = famColor(s.family));
+const order = S.map((s,i)=>i).sort((a,b)=> famIdx(S[a].family)-famIdx(S[b].family) || S[a].id.localeCompare(S[b].id));
+
+/* ---------- 概览 ---------- */
+const nVis = S.filter(s=>!s.hidden).length, nPipe = S.filter(s=>s.pipeline).length;
+document.getElementById('kpis').innerHTML = [
+  [S.length,'系统种子总数',0],[nVis,'用户可见','',1],[nPipe,'端到端流水线（tags=pipeline）',1],
+  [S.length-nVis,'已隐藏烟测',0],[5+4,'科研对照矩阵变体',0],[2+9+6,'本轮已清理/隐藏',0]
+].map(([v,l,hl])=>`<div class="kpi${hl?' hl':''}"><b>${v}</b><span>${l}</span></div>`).join('');
+
+const vc = {variant:0,unique:0,demo:0,smoke:0}, vcol = {variant:'var(--v-variant)',unique:'var(--v-unique)',demo:'var(--v-demo)',smoke:'var(--v-smoke)'}, vname = {variant:'科研对照变体',unique:'功能唯一',demo:'演示样例',smoke:'烟测载体（已隐藏）'};
+S.forEach(s=>vc[s.verdict]++);
+document.getElementById('vbar').innerHTML = Object.keys(vc).map(k=>`<div style="width:${vc[k]/S.length*100}%;background:${vcol[k]}">${vc[k]>=3?vc[k]+' · '+vname[k]:''}</div>`).join('');
+
+const famRows = FAM_ORDER.map(f=>{
+  const items = S.filter(s=>s.family===f);
+  const vs = [...new Set(items.map(s=>s.verdict_label))];
+  const pipes = items.filter(s=>s.pipeline).length;
+  return `<tr><td class="fam-cell"><i style="background:${famColor(f)}"></i>${f}</td><td class="num">${items.length}</td><td class="num">${pipes||''}</td><td>${vs.join(' / ')}</td><td>${items.map(s=>`<code style="font-family:var(--mono);font-size:11px">${s.id}</code>`).join('、')}</td></tr>`;
+}).join('');
+document.getElementById('famtable').innerHTML = `<table><tr><th>家族</th><th class="num">条数</th><th class="num">端到端</th><th>判定</th><th>成员</th></tr>${famRows}</table>`;
+
+/* ---------- 参数矩阵表 ---------- */
+const byId = Object.fromEntries(S.map(s=>[s.id,s]));
+const d2Rows = [
+  ['omega_avg_daily_smap_single','SMAP','单温度 ORIG_TS','本地 .mat','method-smap-omega-doy-avg'],
+  ['omega_avg_daily_smap_online','SMAP','单温度 ORIG_TS','SMAP 在线（NSIDC CMR）','method-smap-omega-doy-avg'],
+  ['omega_avg_daily_smap_dual','SMAP','双温度 PAPER_CT（GLDAS Ct/TG）','本地 .mat','method-smap-omega-doy-avg'],
+  ['omega_avg_daily_gldas_online','SMAP','双温度 PAPER_CT','GLDAS 在线（GES DISC）','method-smap-omega-doy-avg'],
+  ['omega_avg_daily_fy_single','FY（FY3D→FY3B）','单温度 ORIG_TS','本地 HDF','method-fy-omega-doy-avg'],
+];
+const sfRows = [
+  ['omega_sf_fenkuai_smap_single','SMAP','本地 8-day 分块','—','method-smap-omega-doy-dynamic'],
+  ['omega_sf_fenkuai_smap_online','SMAP','本地 8-day 分块','nsidc_smap_download（SMAP 在线）','method-smap-omega-doy-dynamic'],
+  ['omega_sf_fenkuai_fy_single','FY','本地 FY3D/FY3B TB','—','method-fy-omega-doy-dynamic'],
+  ['omega_sf_fenkuai_fy_online','FY','在线 NSMC 多账号并行','fy_download ×2（FY3D+FY3B，需 GDAL CLI）','method-fy-omega-doy-dynamic'],
+];
+const mkMatrixTable = (title, cols, rows, note) => `
+  <h3>${title}</h3>
+  <table><tr><th>workflow_id</th>${cols.map(c=>`<th>${c}</th>`).join('')}</tr>
+  ${rows.map(r=>`<tr><td><code style="font-family:var(--mono);font-size:11.5px">${r[0]}</code>${byId[r[0]].pipeline?' <span class="badge b-pipe">端到端</span>':''}</td>${r.slice(1).map(x=>`<td>${x}</td>`).join('')}</tr>`).join('')}
+  </table><p class="note">${note}</p>`;
+document.getElementById('matrixD2').innerHTML = mkMatrixTable('D2 avg-ω 逐日反演（5 变体 = 卫星源 × 温度方案 × 获取方式）',['卫星源','温度方案','数据获取','发布图层'],d2Rows,'核心节点 module/omega_avg_daily 完全一致，差异仅在数据源节点、下载头与 algorithm_params（temp_scheme / source 等）。');
+document.getElementById('matrixSF').innerHTML = mkMatrixTable('SF 块反演全流程（4 变体 = 卫星源 × 获取方式）',['卫星源','TB 输入','前置下载头','发布图层'],sfRows,'核心节点 module/omega_sf_fenkuai 完全一致；online 变体只是把 data/source 换成 download→source 链。');
+
+/* ---------- 相似度矩阵 ---------- */
+const N = order.length, mx = document.getElementById('mx');
+let html = `<div class="top" style="grid-column:1"></div>`;
+order.forEach((oi,k)=>html += `<div class="top">${(k+1)%5===0||k===0?k+1:''}</div>`);
+order.forEach((oi,k)=>{
+  html += `<div class="fam" style="background:${S[oi].fc}" title="${S[oi].family}"></div>`;
+  order.forEach((oj,j)=>{
+    if(k===j){ html += `<div class="cell" style="background:#dfe6ee"></div>`; return; }
+    const v = M[oi][oj];
+    let bg = '';
+    if(v>=.95) bg='#c81e1e'; else if(v>=.85) bg='#ef7043'; else if(v>=.7) bg='#fbc07d'; else if(v>=.5) bg='#fde8c8'; else bg='';
+    html += `<div class="cell" data-i="${oi}" data-j="${oj}" style="${bg?'background:'+bg:''};cursor:crosshair"></div>`;
+  });
+  const nm = S[oi].id.length>30? S[oi].id.slice(0,29)+'…':S[oi].id;
+  html += `<div class="lab" data-i="${oi}">${k+1}. ${nm}${S[oi].hidden?' ◌':''}</div>`;
+});
+mx.style.gridTemplateColumns = `10px repeat(${N},13px) max-content`;
+mx.innerHTML = html;
+const tip = document.getElementById('tip');
+mx.addEventListener('mousemove', e=>{
+  const t = e.target.closest('[data-i]');
+  if(!t){ tip.style.display='none'; return; }
+  const a = S[+t.dataset.i], b = S[+t.dataset.j];
+  tip.innerHTML = `<b>${a.id}</b><br><b>${b.id}</b><br>相似度 ${M[+t.dataset.i][+t.dataset.j].toFixed(2)}｜${a.family} ↔ ${b.family}`;
+  tip.style.display='block';
+  tip.style.left = Math.min(e.clientX+14, innerWidth-360)+'px';
+  tip.style.top = (e.clientY+14)+'px';
+});
+mx.addEventListener('mouseleave', ()=>tip.style.display='none');
+
+/* ---------- 重复聚类 ---------- */
+const GROUPS = [
+  ['A · 科研对照变体（有意保留，非冗余）','D2（5 条）与 SF（4 条）家族内部高相似：核心算法节点一致，仅实验条件（源/温度方案/在线获取）不同，服务论文对照实验。NDVI 三条（本地/GEE/在线）与 FY 两条（本地/在线）同理——同一下游的不同获取通道。','variant'],
+  ['B · 模板复用（结构同构，数据不同 → 正常）','如 fy_tb_local_read ↔ smap_soil_moisture_local 相似度 1.00：同为「data/source → extract → convert」三节点模板，读取的是完全不同的数据集。结构复用是设计，不是重复。','unique'],
+  ['C · 真冗余（已处置）','stub_v1 烟测 9 条与 analysis_* 正式版功能重叠（clip/histogram/zonal 等均有 ui-panel 版）→ 已加 hidden 隐藏；fy_tb_nas_read / fy_tb_nsmc_online 被 fy_tb_online_read 的 auto 回退覆盖 → 今日移除；archive 6 条 v1 组合样例 → 昨日移除。','smoke'],
+  ['D · 演示样例（定位冗余，价值存疑但测试承重）','open_data_* 4 条彼此 0.86 相似、且与流水线下载头重复，属门户能力演示；test_open_portal_data_access 断言其存在，暂保留。weather demo 2 条已由环境开关控制（生产禁演示）。','demo'],
+];
+let pairsAll = [];
+for(let i=0;i<S.length;i++) for(let j=i+1;j<S.length;j++) if(M[i][j]>=0.70) pairsAll.push([M[i][j],i,j]);
+pairsAll.sort((a,b)=>b[0]-a[0]);
+const pairRow = ([v,i,j]) => `
+  <div class="pair">
+    <span class="sim" style="color:${v>=.85?'#c81e1e':v>=.7?'#ea580c':'#64748b'}">${v.toFixed(2)}</span>
+    <span><i class="fam-sw" style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;background:${S[i].fc}"></i><code style="font-family:var(--mono);font-size:11px">${S[i].id}</code>${S[i].hidden?' <span class="badge b-hid">隐</span>':''}</span>
+    <span class="b"><i style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;background:${S[j].fc}"></i><code style="font-family:var(--mono);font-size:11px">${S[j].id}</code>${S[j].hidden?' <span class="badge b-hid">隐</span>':''}</span>
+    <span class="b" style="color:var(--ink-3);font-size:11px">${S[i].family===S[j].family?'同家族':'跨家族'}</span>
+    <div class="bar"><i style="width:${v*100}%;background:${v>=.85?'#c81e1e':v>=.7?'#f59e0b':'#cbd5e1'}"></i></div>
+  </div>`;
+document.getElementById('pairs').innerHTML = GROUPS.map(([t,d])=>`<div class="pgroup"><h4>${t}</h4><p>${d}</p></div>`).join('')
+  + `<div class="pgroup"><h4>全部高相似对（≥0.70，共 ${pairsAll.length} 对，按相似度降序）</h4>${pairsAll.map(pairRow).join('')}</div>`;
+
+/* ---------- 详情卡片 ---------- */
+const chipCls = t => t.startsWith('data/')?'ch-data':t.startsWith('module/')?'ch-module':t.startsWith('download/')?'ch-download':t.startsWith('output/')?'ch-out':/^(preprocess|stats|fusion|analysis|extract|format|weather)\//.test(t)?'ch-op':'ch-other';
+const chipTxt = t => t.split('/').pop();
+const cardHTML = s => `
+  <div class="card${s.hidden?' hid':''}" data-id="${s.id}" data-hidden="${s.hidden}" data-pipe="${s.pipeline}" data-txt="${(s.id+' '+s.name+' '+s.family).toLowerCase()}" style="--famc:${s.fc}">
+    <div class="ttl"><b>${s.name}</b><code>${s.id}</code>
+      <span class="badge b-${s.verdict}">${s.verdict_label}</span>
+      ${s.pipeline?'<span class="badge b-pipe">端到端</span>':''}
+      ${s.hidden?'<span class="badge b-hid">已隐藏</span>':''}
+    </div>
+    <div class="desc">${s.desc}</div>
+    <div class="meta">
+      ${s.category?`<em>category: ${s.category}</em>`:''}
+      ${s.engine?`<em>engine: ${s.engine}</em>`:''}
+      ${s.profile?`<em>profile: ${s.profile}</em>`:''}
+      ${s.linked_layer?`<em>layer: ${s.linked_layer}</em>`:''}
+      ${s.tags.filter(t=>t!=='hidden').map(t=>`<em>#${t}</em>`).join('')}
+    </div>
+    <div class="chain">${s.chain.map((t,i)=>`${i?'<span class="arrow">→</span>':''}<span class="chip ${chipCls(t)}" title="${t}">${chipTxt(t)}</span>`).join('')}</div>
+    ${s.inputs.length?`<div class="io"><b style="font-size:11.5px;color:var(--ink-3)">输入契约</b><table>${s.inputs.map(x=>`<tr><td style="white-space:nowrap"><code>${x.key}</code></td><td><code>${x.path||'—'}</code></td></tr>`).join('')}</table></div>`:''}
+    ${(s.outputs.length||s.extra_outputs.length)?`<div class="io"><b style="font-size:11.5px;color:var(--ink-3)">输出</b><table>${s.outputs.map(o=>`<tr><td><code>${o.layer}</code></td><td>${o.name||''}</td></tr>`).join('')}${s.extra_outputs.length?`<tr><td style="white-space:nowrap"><code>extra.outputs</code></td><td>${s.extra_outputs.join(' / ')}</td></tr>`:''}</table></div>`:''}
+    ${s.prereq?`<div class="io"><b style="font-size:11.5px;color:#b45309">前置</b> <span style="font-size:12px">${s.prereq}</span></div>`:''}
+    ${Object.keys(s.params).length?`<details><summary>algorithm_params（${Object.keys(s.params).length} 组）</summary>${Object.entries(s.params).map(([k,v])=>`<b style="font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">${k}</b><pre>${JSON.stringify(v,null,1)}</pre>`).join('')}</details>`:''}
+  </div>`;
+
+const cardsBox = document.getElementById('cards');
+cardsBox.innerHTML = FAM_ORDER.map(f=>{
+  const items = S.filter(s=>s.family===f).sort((a,b)=>a.id.localeCompare(b.id));
+  if(!items.length) return '';
+  return `<div class="fam-sec"><div class="fam-head"><i style="width:12px;height:12px;border-radius:3px;background:${famColor(f)};align-self:center"></i><b>${f}</b><span>${items.length} 条 · ${[...new Set(items.map(s=>s.verdict_label))].join(' / ')}</span></div><div class="cards">${items.map(cardHTML).join('')}</div></div>`;
+}).join('');
+
+let curF = 'all';
+const applyFilter = ()=>{
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  document.querySelectorAll('.card').forEach(c=>{
+    const okF = curF==='all' || (curF==='visible'&&c.dataset.hidden==='false') || (curF==='pipeline'&&c.dataset.pipe==='true') || (curF==='hidden'&&c.dataset.hidden==='true');
+    const okQ = !q || c.dataset.txt.includes(q);
+    c.style.display = okF&&okQ ? '' : 'none';
+  });
+  document.querySelectorAll('.fam-sec').forEach(sec=>{
+    const any = [...sec.querySelectorAll('.card')].some(c=>c.style.display!=='none');
+    sec.style.display = any?'':'none';
+  });
+};
+document.querySelectorAll('.controls button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.controls button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); curF = b.dataset.f; applyFilter();
+});
+document.getElementById('q').oninput = applyFilter;
+</script>
+</body>
+</html>

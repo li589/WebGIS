@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>omega_sf_fenkuai 策略移植对照 · Matlab → Python → 工作流</title>
+<style>
+:root{
+  --bg:#f6f7f9;--panel:#fff;--ink:#1c2733;--ink2:#51606f;--ink3:#8494a4;--line:#e3e8ee;--acc:#2563eb;
+  --ok:#0e9f6e;--part:#d97706;--no:#dc2626;--na:#94a3b8;
+  --mono:'Cascadia Code',Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);font-size:13.5px;line-height:1.55}
+.wrap{max-width:1240px;margin:0 auto;padding:0 20px 70px}
+header{padding:30px 0 16px;border-bottom:2px solid var(--ink)}
+header h1{font-size:21px}
+header .sub{color:var(--ink2);font-size:12.5px;margin-top:4px}
+nav{position:sticky;top:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--line);padding:9px 0;margin-bottom:20px}
+nav a{color:var(--ink2);text-decoration:none;margin-right:20px;font-size:12.5px}
+nav a:hover{color:var(--acc)}
+section{margin-bottom:40px}
+h2{font-size:16.5px;padding-left:10px;border-left:4px solid var(--acc);margin-bottom:12px}
+h3{font-size:14px;color:var(--ink2);margin:16px 0 8px}
+.note{font-size:12px;color:var(--ink3);margin-top:6px}
+code{font-family:var(--mono);font-size:11.5px;background:#eef2f7;border-radius:3px;padding:0 4px}
+
+/* 状态标记 */
+.st{display:inline-block;width:15px;height:15px;border-radius:50%;vertical-align:-3px;margin-right:4px;font-size:10px;color:#fff;text-align:center;line-height:15px}
+.st-ok{background:var(--ok)} .st-part{background:var(--part)} .st-no{background:var(--no)} .st-na{background:var(--na)}
+.st-txt{font-size:11.5px;font-weight:600}
+.t-ok{color:var(--ok)} .t-part{color:var(--part)} .t-no{color:var(--no)} .t-na{color:var(--na)}
+
+/* 漏斗 */
+.funnel{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:10px}
+.fbox{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px}
+.fbox h4{font-size:13.5px;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.fbox .big{font-size:30px;font-weight:700}
+.fbox ul{list-style:none;font-size:12px;color:var(--ink2);margin-top:8px}
+.fbox li{padding:2px 0}
+.farrow{display:flex;align-items:center;justify-content:center;color:var(--ink3);font-size:20px}
+
+table{border-collapse:collapse;width:100%;background:var(--panel);font-size:12.5px}
+th,td{border:1px solid var(--line);padding:5px 9px;text-align:left;vertical-align:top}
+th{background:#eef2f7;font-weight:600;white-space:nowrap;font-size:12px}
+td code{white-space:nowrap}
+
+/* exp 卡 */
+.exps{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+@media(max-width:1000px){.exps{grid-template-columns:1fr 1fr}}
+.expcard{background:var(--panel);border:1px solid var(--line);border-top:4px solid var(--na);border-radius:8px;padding:12px}
+.expcard.base{border-top-color:var(--ok)}
+.expcard h4{font-size:13.5px;margin-bottom:2px}
+.expcard .em{font-family:var(--mono);font-size:11px;color:var(--ink3)}
+.expcard ul{list-style:none;font-size:11.8px;color:var(--ink2);margin-top:8px}
+.expcard li{padding:2.5px 0;border-bottom:1px dashed #eef1f5}
+.expcard li:last-child{border:none}
+.expcard .port{margin-top:8px;font-size:11.5px;font-weight:600}
+
+/* 数据流 */
+.flow{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;overflow-x:auto}
+.flowrow{display:flex;align-items:stretch;gap:8px;min-width:900px}
+.fnode{border:1.5px solid var(--line);border-radius:6px;padding:8px 10px;font-size:11.8px;min-width:120px;background:#fbfcfe}
+.fnode b{display:block;font-size:12px;margin-bottom:3px}
+.fnode span{color:var(--ink2);font-size:11px}
+.fnode.src{border-color:#93c5fd;background:#eff6ff}
+.fnode.algo{border-color:#fcd34d;background:#fffbeb}
+.fnode.out{border-color:#6ee7b7;background:#ecfdf5}
+.fnode.dark{border-color:#fca5a5;background:#fef2f2}
+.fjoin{display:flex;align-items:center;color:var(--ink3);font-size:16px}
+
+/* gap 判定 */
+.gap{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:900px){.gap{grid-template-columns:1fr}}
+.gapcard{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--na);border-radius:8px;padding:12px 14px}
+.gapcard.add{border-left-color:var(--ok)}
+.gapcard.skip{border-left-color:var(--part)}
+.gapcard h4{font-size:13.5px;margin-bottom:4px}
+.gapcard p{font-size:12.3px;color:var(--ink2)}
+.gapcard .tag{font-size:10.5px;border-radius:10px;padding:1px 8px;color:#fff;white-space:nowrap;margin-left:6px;vertical-align:2px}
+footer{margin-top:44px;padding-top:12px;border-top:1px solid var(--line);font-size:11.8px;color:var(--ink3)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>omega_sf_fenkuai 策略移植对照</h1>
+  <div class="sub">Matlab 源码（<code>Code/algorithms/providers/Matlab/omega_sf_fenkuai.m</code>，3396 行）→ Python 算法提供器（<code>algorithms/omega_sf.py</code> + <code>modules/omega_sf_fenkuai.py</code>）→ 工作流预设（SF 家族 4 条）· 取证基准 2026-08-18</div>
+</header>
+
+<div style="margin:14px 0 0;padding:10px 14px;border:1px solid #f59e0b;border-left:4px solid #d97706;background:#fffbeb;border-radius:6px;font-size:12.5px;color:#92400e">
+  <b>历史快照（2026-08-18 02:18 生成）</b> — 本对照表的工作流部分基于当日稍后完成的 2×2×2 重组（提交 <code>37b4fe1</code>）<u>之前</u>的种子状态：文中「SF 家族 4 条」重组后为 6 条（新增双温度 <code>omega_sf_fenkuai_smap_dual</code> / <code>omega_sf_fenkuai_fy_dual</code>，SF 双温度函数已于同日移植落库，见 <a href="../omega-algorithm-guide/omega-algorithm-guide.html">《ω 反演算法详解与工作流指南》</a> §4/§7）。Matlab 函数级行号引用不受重组影响，仍然有效。
+</div>
+
+<nav>
+  <a href="#s1">总览漏斗</a><a href="#s2">Matlab 策略全景</a><a href="#s3">EXP 实验模式</a><a href="#s4">数据流契约</a><a href="#s5">移植状态矩阵</a><a href="#s6">工作流映射与增删判定</a>
+</nav>
+
+<section id="s1">
+  <h2>一、总览：策略空间三层收敛</h2>
+  <div class="funnel">
+    <div class="fbox">
+      <h4>Matlab 策略空间</h4>
+      <div class="big">18 <span style="font-size:12px;font-weight:400;color:var(--ink3)">维开关</span></div>
+      <ul>
+        <li>实验模式 4 种（Exp0/1a/1b/2）</li>
+        <li>数据源 6 维（TB源×平台×匹配×SM源×HQ模式×域）</li>
+        <li>物理方案 8 维（温度×SF×NDVI×VWC2×ω固定×权重×SPIKE×QC）</li>
+        <li>运行控制 4 维（候选筛选/分片/并行/块长）</li>
+      </ul>
+    </div>
+    <div class="farrow">→</div>
+    <div class="fbox">
+      <h4>Python 移植</h4>
+      <div class="big"><span class="t-ok">12</span> <span style="font-size:12px;font-weight:400">全</span> · <span class="t-part">2</span> <span style="font-size:12px;font-weight:400">部分</span> · <span class="t-no">4</span> <span style="font-size:12px;font-weight:400">未移植</span></div>
+      <ul>
+        <li>数据源与物理方案主体全量镜像</li>
+        <li>DUAL 温度：声明未实现（无 dual 残差、GLDAS 不读取）</li>
+        <li>Exp1a/1b/2 语义未移植（无率定缓存、无 L-curve）</li>
+        <li>SPIKE / YEARFILE_HQFIX / QC 细项未移植</li>
+        <li>新增：断点续跑、取消、逐 run 隔离输出、bbox 抽样</li>
+      </ul>
+    </div>
+    <div class="farrow">→</div>
+    <div class="fbox">
+      <h4>工作流覆盖（SF 家族 4 条）</h4>
+      <div class="big">4 <span style="font-size:12px;font-weight:400;color:var(--ink3)">= 2 源 × 2 获取</span></div>
+      <ul>
+        <li>SMAP 本地 / SMAP+NSIDC 在线</li>
+        <li>FY3D 本地（match bias）/ FY+NSMC 在线</li>
+        <li>全部 ORIG_TS 单温度、INVERTED_DAILY、DOY_CLIM</li>
+        <li>等价 Matlab 默认组合（Exp0 语义）</li>
+      </ul>
+    </div>
+  </div>
+  <p class="note">结论先行：<b>SF 家族 4 条工作流互不冗余</b>（源×获取两维正交展开）；真正的缺口在"温度方案 DUAL"与"实验模式 Exp1/2"——前者算法未实现、后者率定产物链未移植，见第六节增删判定。</p>
+</section>
+
+<section id="s2">
+  <h2>二、Matlab CFG 策略全景（L21–248）</h2>
+  <h3>数据源策略</h3>
+  <table>
+    <tr><th>开关</th><th>取值（默认加粗）</th><th>语义</th><th>行号</th></tr>
+    <tr><td><code>TB_SOURCE</code></td><td><b>FY</b> / SMAP</td><td>亮温主源；决定频率（FY 10.65 GHz / SMAP 1.41 GHz）</td><td>L72, L198</td></tr>
+    <tr><td><code>FY_PLATFORM</code></td><td><b>3D</b> / 3B</td><td>FY 平台选择（3B 可作主源或匹配参考）</td><td>L77</td></tr>
+    <tr><td><code>MATCH_*</code></td><td>ENABLE=<b>true</b>；METHOD=<b>bias</b>/none/cdf；窗口 2019 全年；min_valid_n=20；CDF_EXTRAP</td><td>FY3B→FY3D 交叉定标匹配（逐像元逐极化拟合 bias 或 CDF 映射）</td><td>L78–85</td></tr>
+    <tr><td><code>SM_SOURCE</code></td><td><b>SMAP</b> / ISMN / DDCA</td><td>参考土壤水分来源（GLOBAL 域禁 ISMN）</td><td>L75</td></tr>
+    <tr><td><code>SMAP_HQ_MODE</code></td><td><b>LOWTAU</b> / YEARFILE_HQFIX</td><td>SMAP 路 h/Q：低τ反演，或读年 h 图 + Q 固定 0.1771</td><td>L87–94</td></tr>
+    <tr><td><code>RUN_DOMAIN</code></td><td><b>GLOBAL</b> / ISMN</td><td>全球网格 or ISMN 站点验证域（含 CSV/ISMN_ALL 列表模式、n_per_class=5 候选筛选）</td><td>L69, L96–98, L143–148</td></tr>
+  </table>
+  <h3>物理方案策略</h3>
+  <table>
+    <tr><th>开关</th><th>取值（默认加粗）</th><th>语义</th><th>行号</th></tr>
+    <tr><td><code>TEMP_SCHEME</code></td><td><b>ORIG_TS</b> / DUAL</td><td>单温度（原文件 Ts）or GLDAS 双温度（Ct/TG）；DUAL 下 TG 模式 PAPER_CT（Ct=CT_SMREF^CT_EXP，0.30/0.30）/ TSOIL1_ONLY / TSOIL2_ONLY；GLDAS 时间容差 1.6 h，过境本地时→UTC</td><td>L116–141</td></tr>
+    <tr><td><code>SF_MODE</code></td><td>STATIC / <b>INVERTED_DAILY</b></td><td>茎干因子：静态气候态 or 逐日 NDVI 倒推</td><td>L31</td></tr>
+    <tr><td><code>SF_INVERT_MODE</code></td><td><b>POINT1</b> / NDVIMIN</td><td>SF 倒推归一化：(NDVI−0.1)/0.9 or (NDVI−NDVI_min)/(1−NDVI_min)</td><td>L34–36</td></tr>
+    <tr><td><code>NDVI_MODE</code></td><td>DAILY_FILE / <b>DOY_CLIM</b></td><td>反演用 NDVI：逐日文件 or DOY 气候态（2015–2025）</td><td>L42–49</td></tr>
+    <tr><td><code>TAU_VWC2_MODE</code></td><td>NDVIMIN / <b>POINT1</b></td><td>τ-VWC2 归一化公式（同上两式）</td><td>L51–54</td></tr>
+    <tr><td><code>OMEGA_FIXED_MODE</code></td><td><b>PFT</b> / PIXEL</td><td>固定 ω 的粒度：PFT 类中位数 or 逐像元（产物均来自 Exp0）</td><td>L184–186</td></tr>
+    <tr><td><code>WEIGHT_MODE</code></td><td><b>EQUAL</b></td><td>V/H 极化残差权重（Exp0 产物 weights_from_exp0.mat）</td><td>L191–192</td></tr>
+    <tr><td><code>SPIKE.*</code></td><td>enable=<b>true</b>；apply_to=<b>ALL</b>/FY/SMAP/NONE；默认阈值 25 K；站点级覆盖</td><td>Tb 孤立坏点删除（逐站阈值可覆盖）</td><td>L107–114</td></tr>
+  </table>
+  <h3>运行控制与反演参数</h3>
+  <table>
+    <tr><th>参数组</th><th>内容</th><th>行号</th></tr>
+    <tr><td>分块</td><td><code>block_days=8</code>（VIIRS 8 天块，<code>make_viirs8_blocks</code>）</td><td>L217, L2813</td></tr>
+    <tr><td>反演参数</td><td>KMIN=2 · ALPHA0=0.1771 · BOUNDS_H [0,3] · BOUNDS_ALPHA [0.05,0.35] · OMEGA0=0.12 · BOUNDS_OMEGA [0,1] · LAMBDA_SMOOTH=1 · LAMBDA_TAU=20 · LAMBDA_ALPHA=1 · TAU_REL_FRAC=0.05</td><td>L206–216</td></tr>
+    <tr><td>QC</td><td>ENABLE · NMIN=3 · COND_THR=1e6 · SMIN_REL_THR=1e-6 · DOMEGA=1e-3 · DTAU=1e-2 · DH=1e-2（含 Jacobian 条件数诊断）</td><td>L219–226, L2274–2496</td></tr>
+    <tr><td>采样/分片</td><td>GLOBAL SAMPLE n=50000 seed42 · SHARD roundrobin/contiguous · PAR 56 workers · CHUNK 20 万像元</td><td>L150–168</td></tr>
+    <tr><td>优化器</td><td>lsqnonlin，MaxIter 400，FunTol/StepTol 1e-6（h/α 与 ω 两级）</td><td>L577–582</td></tr>
+  </table>
+</section>
+
+<section id="s3">
+  <h2>三、EXP 实验模式：四段率定-复用链</h2>
+  <p style="font-size:12.8px;color:var(--ink2);margin-bottom:10px">EXP 是 Matlab 中<b>一族递进实验设计</b>：Exp0 是率定基线，其产物（ω_pft / ω_pixel / 逐像元 h*/α* 率定）被后续实验复用，形成"率定一次、复用多次"的链路。</p>
+  <div class="exps">
+    <div class="expcard base">
+      <h4>Exp0 · 率定基线（默认）</h4>
+      <div class="em">CFG.EXP="Exp0"</div>
+      <ul>
+        <li>低 τ 样本 lsqnonlin 反演逐像元 h*/α*</li>
+        <li>逐 8 天块反演 ω（λ=LAMBDA_SMOOTH=1 固定）</li>
+        <li><b>产 ω_pft / ω_pixel 全局文件</b>（L789–798）</li>
+        <li><b>存逐像元率定</b> exp0_calib/*.mat（L1066–68）</li>
+        <li>后续 DDCA → 逐日 SM/VOD</li>
+      </ul>
+      <div class="port t-ok">Python：✓ 已移植（唯一实现的模式）</div>
+    </div>
+    <div class="expcard">
+      <h4>Exp1a · 全复用</h4>
+      <div class="em">CFG.EXP="Exp1a"</div>
+      <ul>
+        <li>h*/α* 直接读 Exp0 逐像元率定（缺文件即 error，L3167–70）</li>
+        <li>ω 固定（PFT/PIXEL，来自 Exp0 产物）</li>
+        <li>不反演 h/α/ω，纯前向 SM/VOD</li>
+        <li>用途：率定敏感性 / 快速重放</li>
+      </ul>
+      <div class="port t-no">Python：✗ 未移植（无 exp0_calib 读写）</div>
+    </div>
+    <div class="expcard">
+      <h4>Exp1b · 半复用</h4>
+      <div class="em">CFG.EXP="Exp1b"</div>
+      <ul>
+        <li>h*/α* 仍走低 τ 反演，但 ω_low 用 Exp0 固定 ω 代替反照率先验（L1033–37）</li>
+        <li>ω 固定来自 Exp0 产物</li>
+        <li>用途：检验固定 ω 下 h/α 的稳定性</li>
+      </ul>
+      <div class="port t-no">Python：✗ 未移植</div>
+    </div>
+    <div class="expcard">
+      <h4>Exp2 · L-curve 正则调参</h4>
+      <div class="em">CFG.EXP="Exp2"</div>
+      <ul>
+        <li>λ 扫描 10⁰–10⁶（7 点），每 λ 全年块 ω 序列（L1105–92）</li>
+        <li>misfit–roughness L 曲线拐点自动选 λ*（<code>pick_lcurve_corner</code>，L3078）</li>
+        <li>保存 λ–ω 序列矩阵 omega_by_lambda_block</li>
+        <li>用途：平滑正则的数据驱动选择</li>
+      </ul>
+      <div class="port t-no">Python：✗ 未移植（无 lambda_list / 拐点）</div>
+    </div>
+  </div>
+  <p class="note">Python 端 <code>retrieve_omega_sf_daily</code> 启动横幅硬编码打印 <code>EXP=Exp0</code>（omega_sf.py L2701）；ω 固定加载仅实现 PFT 路径（读 omega_pft_from_exp0.mat，L2530–50）——即 Python 把"Exp0 产率定物 → 下一轮固定 ω"这一最小闭环保留了，但 Exp1a/1b/2 的实验分支没有展开。</p>
+</section>
+
+<section id="s4">
+  <h2>四、数据流契约（Matlab 输入 → 输出）</h2>
+  <div class="flow">
+    <div class="flowrow">
+      <div class="fnode src"><b>输入数据</b><span>SMAP L3 .mat（TB/Ts/SM/IA）<br>FY3D/FY3B MWRI .mat<br>NDVI 逐日 + DOY 气候态<br>辅助库（LC/砂黏土/反照率/CF/BD/H/B）<br>GLDAS 温度 .mat（DUAL）<br>DDCA SM / ISMN（备选）</span></div>
+      <div class="fjoin">→</div>
+      <div class="fnode"><b>预读</b><span>时间交集 ∩ TB∩NDVI∩SMref<br>VIIRS 8 天分块<br>chunk 20 万像元<br>NDVI clim 缓存 / 匹配模型预建</span></div>
+      <div class="fjoin">→</div>
+      <div class="fnode algo"><b>Step 0 τ</b><span>Tau(NDVI, VWC2 公式模式)<br>低 τ 阈值 TAU_REL_FRAC</span></div>
+      <div class="fjoin">→</div>
+      <div class="fnode algo"><b>Step 1 h*/α*</b><span>低 τ 样本 lsqnonlin<br>或 Exp1a 读率定<br>或 SMAP 年图 HQFIX</span></div>
+      <div class="fjoin">→</div>
+      <div class="fnode algo"><b>Step 2 块 ω</b><span>逐 8 天块 lsqnonlin<br>λ 平滑 + 前块热启动<br>或 Exp2 L-curve 选 λ<br>或 Exp1a/1b 固定 ω</span></div>
+      <div class="fjoin">→</div>
+      <div class="fnode algo"><b>Step 3 DDCA</b><span>逐日 SM/VOD 反演<br>单温度 or 双温度前向</span></div>
+      <div class="fjoin">→</div>
+      <div class="fnode out"><b>输出</b><span>逐站点/像元 .mat（SM/VOD/OMEGA/inv_info/QC）<br>块级网格（单变量快存）<br>Exp0: ω_pft + ω_pixel + exp0_calib</span></div>
+    </div>
+  </div>
+  <p class="note">QC 全程伴行（块级条件数 condK、smin、|Δω|/|Δτ|/|Δh| 阈值剔除）；SPIKE 在预读后、τ 之前对 TBv/TBh 做孤立尖峰删除。</p>
+</section>
+
+<section id="s5">
+  <h2>五、移植状态矩阵（18 维逐项判定）</h2>
+  <table>
+    <tr><th>策略维度</th><th>Matlab 取值空间</th><th>Python 移植状态</th><th>证据（omega_sf.py / 模块）</th></tr>
+    <tr><td><code>tb_source</code></td><td>FY / SMAP</td><td><span class="st st-ok">✓</span><span class="st-txt t-ok">全</span></td><td>config L88；freq 属性 L130</td></tr>
+    <tr><td><code>fy_platform</code></td><td>3D / 3B</td><td><span class="st st-ok">✓</span><span class="st-txt t-ok">全</span></td><td>config L90</td></tr>
+    <tr><td><code>match_*</code>（FY3B→3D 匹配）</td><td>none/bias/cdf + 外推 + 最小样本</td><td><span class="st st-ok">✓</span><span class="st-txt t-ok">全</span></td><td><code>match_fy3b_to_fy3d</code> L356、<code>apply_match_correction</code> L459（含 CDF）</td></tr>
+    <tr><td><code>sm_source</code></td><td>SMAP / ISMN / DDCA</td><td><span class="st st-part">◐</span><span class="st-txt t-part">部分</span></td><td>SMAP ✓、DDCA ✓（L2923）；ISMN 未移植（GLOBAL 域不适用）</td></tr>
+    <tr><td><code>smap_hq_mode</code></td><td>LOWTAU / YEARFILE_HQFIX</td><td><span class="st st-part">◐</span><span class="st-txt t-part">声明未实现</span></td><td>config L113 仅有字段；无 h_year 年图读取逻辑（全文件唯一出现处）</td></tr>
+    <tr><td><code>run_domain</code></td><td>GLOBAL / ISMN（+CSV 列表/候选筛选）</td><td><span class="st st-part">◐</span><span class="st-txt t-part">GLOBAL only</span></td><td>GLOBAL 全量 ✓；ISMN 站点域/候选筛选未移植（工作流定位全球网格）</td></tr>
+    <tr><td><code>temp_scheme</code></td><td>ORIG_TS / DUAL（PAPER_CT 等 3 子模式）</td><td><span class="st st-no">✗</span><span class="st-txt t-no">DUAL 未实现</span></td><td>仅 <code>_resid_halpha_single_temp</code> / <code>_resid_omega_block_single_temp</code> / <code>_ddca_single_temp</code>（L1144/1207/1313），无 dual 变体；<code>gldas_mat_folder</code> 形参存在但不读取（仅 L2660/2688 文档）</td></tr>
+    <tr><td><code>sf_mode</code></td><td>STATIC / INVERTED_DAILY</td><td><span class="st st-ok">✓</span><span class="st-txt t-ok">全</span></td><td>config L95</td></tr>
+    <tr><td><code>sf_invert_mode</code></td><td>POINT1 / NDVIMIN</td><td><span class="st st-ok">✓</span><span class="st-txt t-ok">全</span></td><td>config L96；<code>build_sf_row_daily</code> L188</td></tr>
+    <tr><td><code>ndvi_mode</code></td><td>DAILY_FILE / DOY_CLIM</td><td><span class="st st-ok">✓</span><span class="st-txt t-ok">全</span></td><td>config L99</td></tr>
+    <tr><td><code>tau_vwc2_mode</code></td><td>NDVIMIN / POINT1</td><td><span class="st st-ok">✓</span><span class="st-txt t-ok">全</span></td><td>config L100</td></tr>
+    <tr><td><code>omega_fixed_mode</code></td><td>PFT / PIXEL</td><td><span class="st st-part">◐</span><span class="st-txt t-part">PFT 闭环</span></td><td>两者生成 ✓（L487/513）；固定加载仅 PFT（L2530–50 读 omega_pft_from_exp0.mat）</td></tr>
+    <tr><td><code>weight_mode</code></td><td>EQUAL（weights_from_exp0）</td><td><span class="st st-ok">✓</span><span class="st-txt t-ok">等价</span></td><td>硬编码 wV=wH=1（L663/936 注释明示 EQUAL）</td></tr>
+    <tr><td><code>exp</code> 实验模式</td><td>Exp0 / Exp1a / Exp1b / Exp2</td><td><span class="st st-no">✗</span><span class="st-txt t-no">仅 Exp0</span></td><td>横幅硬编码 EXP=Exp0（L2701）；无 exp0_calib 读写、无 lambda_list/L-curve</td></tr>
+    <tr><td><code>spike</code> 坏点删除</td><td>enable/apply_to/阈值/站点覆盖</td><td><span class="st st-no">✗</span><span class="st-txt t-no">未移植</span></td><td>全包无 <code>remove_isolated_spikes</code> 对应实现</td></tr>
+    <tr><td>QC 细项</td><td>NMIN + COND/SMIN/Δω/Δτ/Δh 阈值</td><td><span class="st st-part">◐</span><span class="st-txt t-part">部分</span></td><td>qc_enable/qc_nmin ✓（L151–52）；COND_THR/SMIN_REL/Δ 阈值未移植</td></tr>
+    <tr><td>反演参数/分块/优化器</td><td>KMIN…LAMBDA_TAU、block_days=8、lsqnonlin 容差</td><td><span class="st st-ok">✓</span><span class="st-txt t-ok">全镜像</span></td><td>config L116–126；<code>make_viirs8_blocks</code> L294</td></tr>
+    <tr><td>并行/分片</td><td>56 workers、chunk 20 万、SHARD</td><td><span class="st st-ok">✓</span><span class="st-txt t-ok">工作流化替代</span></td><td>进程池 + pixel_chunk_size=200000（L137）；SHARD 由 Celery 任务分发替代；<b>新增</b>断点续跑 checkpoint、取消标志、逐 run 隔离输出、bbox/max_pixels 抽样（工作流层超集）</td></tr>
+  </table>
+  <p class="note">统计：全 12 · 部分 4（sm_source / smap_hq_mode / run_domain / omega_fixed_mode / qc 细项归并为部分）· 未移植 3（DUAL、Exp1/2、SPIKE）。Python 另有 5 项 Matlab 没有的工程能力（checkpoint 续跑、cancel、run 隔离、block cache、进度回调）。</p>
+</section>
+
+<section id="s6">
+  <h2>六、工作流映射与增删判定</h2>
+  <h3>现有 4 条 SF 工作流 = Matlab 组合的显式实例</h3>
+  <table>
+    <tr><th>工作流</th><th>tb_source</th><th>platform</th><th>match</th><th>temp_scheme</th><th>对应 Matlab 组合</th><th>冗余判定</th></tr>
+    <tr><td><code>omega_sf_fenkuai_smap_single</code></td><td>SMAP</td><td>—</td><td>—</td><td>ORIG_TS</td><td>SMAP+LOWTAU+ORIG_TS（L1.41 GHz）</td><td><span class="t-ok">保留</span>：SMAP 源唯一入口</td></tr>
+    <tr><td><code>omega_sf_fenkuai_smap_online</code></td><td>SMAP</td><td>—</td><td>—</td><td>ORIG_TS</td><td>同上 + NSIDC 在线获取头</td><td><span class="t-ok">保留</span>：获取维正交（与上仅差下载头，链相似 0.88）</td></tr>
+    <tr><td><code>omega_sf_fenkuai_fy_single</code></td><td>FY</td><td>3D</td><td>bias</td><td>ORIG_TS</td><td><b>Matlab 默认组合</b>（FY+3D+bias+ORIG_TS，10.65 GHz）</td><td><span class="t-ok">保留</span>：主实验路径</td></tr>
+    <tr><td><code>omega_sf_fenkuai_fy_online</code></td><td>FY</td><td>3D</td><td>bias</td><td>ORIG_TS</td><td>同上 + NSMC 多账号在线获取头</td><td><span class="t-ok">保留</span>：获取维正交</td></tr>
+  </table>
+  <p class="note">四条共享同一 <code>module/omega_sf_fenkuai</code> 节点（同算法同版本），差异仅在数据源节点/下载头与 algorithm_params——这是"一算法多实例"的正确形态，不构成冗余。</p>
+
+  <h3>Matlab 支持但工作流未覆盖的策略点（gap）</h3>
+  <div class="gap">
+    <div class="gapcard">
+      <h4>G1 · SF + DUAL 双温度<span class="tag" style="background:var(--no)">算法未实现</span></h4>
+      <p>Matlab 的 resid_*_dual_temp 全套存在；D2 家族（omega_avg_daily_smap_dual / gldas_online）已证明双温度实验价值。但 <code>omega_sf.py</code> 无 dual 残差、GLDAS 文件夹不读取。<b>若需此工作流，先补算法移植</b>（可复用 D2 的 GLDAS 加载与双温度组织，工作量集中在 3 个 residual/forward 函数 + 温度预读）。</p>
+    </div>
+    <div class="gapcard">
+      <h4>G2 · Exp1a / Exp1b / Exp2<span class="tag" style="background:var(--no)">率定链未移植</span></h4>
+      <p>依赖 exp0_calib 逐像元率定缓存（Exp1a/1b）与 λ L-curve 扫描（Exp2）。Python 目前只有 Exp0 单模式。若科研上需要"率定一次、多实验复用"或正则调参敏感性，需移植对应分支；否则维持现状（每次全量率定）。</p>
+    </div>
+    <div class="gapcard skip">
+      <h4>G3 · 参数点变体<span class="tag" style="background:var(--part)">不建议建工作流</span></h4>
+      <p>SF_MODE=STATIC、NDVI_MODE=DAILY_FILE、SF_INVERT/TAU_VWC2=NDVIMIN、omega_fixed_mode=PIXEL、FY_PLATFORM=3B 直读——算法已支持，属<b>同一工作流的参数覆盖</b>（高级参数面板可改），建独立工作流只会复制矩阵、无新链路。</p>
+    </div>
+    <div class="gapcard skip">
+      <h4>G4 · ISMN 域 / SPIKE / HQFIX<span class="tag" style="background:var(--na)">暂缓</span></h4>
+      <p>ISMN 站点验证域与 SHARD 为 HPC 批处理场景，工作流已用 Celery+bbox/max_pixels 替代其定位；SPIKE 坏点删除与 YEARFILE_HQFIX 属数据质控增强，待实际数据出现坏点问题再移植更合算（YAGNI）。</p>
+    </div>
+  </div>
+
+  <h3>增删结论</h3>
+  <table>
+    <tr><th>动作</th><th>对象</th><th>理由</th></tr>
+    <tr><td><b>删</b></td><td>无</td><td>4 条 SF 工作流两维（源 × 获取）正交，无冗余可删</td></tr>
+    <tr><td><b>增（可选）</b></td><td>SF+DUAL 变体（fy_dual / smap_dual）</td><td>补齐温度方案实验矩阵，与 D2 家族对齐；<b>前置条件：移植 dual 残差 + GLDAS 读取</b></td></tr>
+    <tr><td><b>增（远期）</b></td><td>Exp1a/Exp2 率定复用流</td><td>需要 exp0_calib 缓存与 L-curve 先落地；当前全量率定可接受</td></tr>
+    <tr><td><b>改参数即可</b></td><td>STATIC/DAILY_FILE/NDVIMIN/PIXEL/3B 等</td><td>algorithm_params 已透传，走高级参数面板，不新增工作流</td></tr>
+  </table>
+</section>
+
+<footer>
+  取证方法：Matlab 源码逐段阅读（CFG L21–248 / 像元核心 L928–1424 / exp0 后处理 L789–798 / 函数清单 L806–3434）× Python 全文检索（omega_sf.py 3400+ 行 + modules 壳）× 4 条 SF 种子 algorithm_params 比对 · 行号均为当前仓库版本 · 本页自包含可离线打开。
+</footer>
+</div>
+</body>
+</html>
