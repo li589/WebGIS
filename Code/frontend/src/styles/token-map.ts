@@ -29,6 +29,7 @@ export const EXEMPT_PATHS = [
   'src/components/map/imported-layer-module.ts',
   'src/components/workflow/litegraph-ui-overrides.css',
   'src/components/workflow/litegraph-setup.ts',
+  'src/components/info-panel/echarts-theme.ts',
   'src/components/info-panel/useLayerSymbology.ts',
   'src/stores/layers/catalog.ts',
   'src/stores/layers/catalog-builders.ts',

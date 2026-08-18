@@ -145,7 +145,11 @@ export function createWorkflowRunDomain(
       bindings.flushWorkspacePersistNow = fns.flushWorkspacePersistNow
     },
   })
-  const { hydrateWorkspaceFromSnapshot, hydrateVectorLayersFromSnapshot } = workspaceHydrate
+  const {
+    hydrateWorkspaceFromSnapshot,
+    hydrateVectorLayersFromSnapshot,
+    setWorkspaceHydrationGuard,
+  } = workspaceHydrate
 
   // ── refreshActiveWeatherWorkflows (cross-domain orchestration) ──
   async function refreshActiveWeatherWorkflows(expectedViewportEpoch?: number) {
@@ -324,6 +328,7 @@ export function createWorkflowRunDomain(
     forgetTrackedWorkflowRun: forgetTrackedWorkflowRunImpl,
     hydrateWorkspaceFromSnapshot,
     hydrateVectorLayersFromSnapshot,
+    setWorkspaceHydrationGuard,
     refreshActiveWeatherWorkflows,
   }
 }

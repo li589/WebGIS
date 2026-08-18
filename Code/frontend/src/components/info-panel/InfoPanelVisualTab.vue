@@ -17,6 +17,7 @@ import AppButton from '../ui/AppButton.vue'
 import MultiOverlayBarChart from './MultiOverlayBarChart.vue'
 import MultiLayerTimeSeriesChart from './MultiLayerTimeSeriesChart.vue'
 import AnalysisResultCharts from './AnalysisResultCharts.vue'
+import AutoStatsCard from './AutoStatsCard.vue'
 
 const props = defineProps<{
   displayLayer: ActiveLayerDisplay
@@ -176,6 +177,9 @@ function enterInspectTools() {
 </script>
 
 <template>
+  <!-- ── visual Tab：导入矢量自动统计（几何 + 可见栅格） ─────────── -->
+  <AutoStatsCard v-if="displayLayer.isImported" :display-layer="displayLayer" />
+
   <!-- ── visual Tab：工作流图表结果 ─────────────────────────────── -->
   <section v-if="hasAnalysisCharts" v-show="true" id="workflow-charts" class="analysis-section">
     <AnalysisResultCharts :charts="analysisCharts" :tables="analysisTables" />

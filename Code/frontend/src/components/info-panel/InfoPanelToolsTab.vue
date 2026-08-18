@@ -16,6 +16,7 @@ import AnalysisResultCharts from './AnalysisResultCharts.vue'
 import BasemapFeatureExtractCard from './BasemapFeatureExtractCard.vue'
 import ToolCatalogGrid from './tools/ToolCatalogGrid.vue'
 import ToolRunPage from './tools/ToolRunPage.vue'
+import PageBackButton from './tools/PageBackButton.vue'
 import {
   initFormValues,
   phaseLabelFor,
@@ -79,6 +80,16 @@ const phaseBadges = computed<Record<string, string>>(() => {
     if (label) badges[tool.tool_id] = label
   }
   return badges
+})
+
+/** 各工具不可用原因（后端 disabled_reason 优先，前端数据前置条件兜底）→ 网格卡片引导 */
+const blockedReasons = computed<Record<string, string>>(() => {
+  const reasons: Record<string, string> = {}
+  for (const tool of tools.value) {
+    const reason = tool.disabled_reason || runDisabledReasonFor(tool, runContext.value)
+    if (reason) reasons[tool.tool_id] = reason
+  }
+  return reasons
 })
 
 /** 当前工作区已导入矢量层（供分区统计 overlay id 下拉建议） */
@@ -231,7 +242,12 @@ const activeToolRunHint = computed(() => {
       <p v-if="runner.toolsError" class="tool-error">{{ runner.toolsError }}</p>
       <p v-if="runner.toolsLoading" class="tool-hint">加载工具目录…</p>
 
-      <ToolCatalogGrid :tools="tools" :phase-badges="phaseBadges" @select="onGridSelect" />
+      <ToolCatalogGrid
+        :tools="tools"
+        :phase-badges="phaseBadges"
+        :blocked-reasons="blockedReasons"
+        @select="onGridSelect"
+      />
 
       <div v-if="hasResults" class="result-block">
         <div class="section-kicker">分析结果</div>
@@ -273,9 +289,7 @@ const activeToolRunHint = computed(() => {
     <template v-else-if="page.kind === 'extract'">
       <div class="tool-page-card">
         <div class="tool-page-head">
-          <button type="button" class="page-back" @click="page = { kind: 'list' }">
-            ← 工具列表
-          </button>
+          <PageBackButton label="工具列表" @back="page = { kind: 'list' }" />
           <span class="tool-kicker">basemap</span>
           <h4 class="tool-title">底图要素提取</h4>
           <p class="tool-note">
@@ -317,21 +331,6 @@ const activeToolRunHint = computed(() => {
   display: grid;
   gap: 0.15rem;
   margin-bottom: 0.5rem;
-}
-
-.page-back {
-  justify-self: start;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: var(--font-size-caption);
-  cursor: pointer;
-  padding: 0;
-  margin-bottom: 0.2rem;
-}
-
-.page-back:hover {
-  color: var(--accent, #3b82f6);
 }
 
 .tool-kicker {

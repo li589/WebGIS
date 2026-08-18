@@ -12,6 +12,7 @@ import {
   canRunTool,
 } from './tool-page-model'
 import AppButton from '../../ui/AppButton.vue'
+import PageBackButton from './PageBackButton.vue'
 
 defineProps<{
   tool: AnalysisToolDescriptor
@@ -56,7 +57,7 @@ function onNumberFieldInput(key: string, evt: Event): void {
 <template>
   <div class="tool-page">
     <div class="tool-page-head">
-      <button type="button" class="page-back" @click="emit('back')">← 工具列表</button>
+      <PageBackButton @back="emit('back')" />
       <span class="tool-kicker">{{ tool.category }}</span>
       <h4 class="tool-title">{{ tool.title }}</h4>
       <p class="tool-note">{{ tool.description }}</p>
@@ -177,21 +178,6 @@ function onNumberFieldInput(key: string, evt: Event): void {
   display: grid;
   gap: 0.15rem;
   margin-bottom: 0.5rem;
-}
-
-.page-back {
-  justify-self: start;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: var(--font-size-caption);
-  cursor: pointer;
-  padding: 0;
-  margin-bottom: 0.2rem;
-}
-
-.page-back:hover {
-  color: var(--accent, #3b82f6);
 }
 
 .tool-kicker {

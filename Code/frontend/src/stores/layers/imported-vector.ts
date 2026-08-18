@@ -11,6 +11,34 @@ export type ImportedGeometryType =
   | 'GeometryCollection'
   | 'Unknown'
 
+export interface ImportedVectorStyle {
+  color?: string
+  width?: number
+  radius?: number
+  fillOpacity?: number
+}
+
+/**
+ * 导入/绘制矢量的默认样式单一真源。
+ * 地图渲染（imported-layer-module）与 InfoPanel 样式 Tab 的兜底值必须读这里，
+ * 避免两处硬编码漂移导致「面板初值 ≠ 地图实际渲染」。
+ * color 以创建图层时解析到的 --success 实色写入（MapLibre paint 不支持 var()）。
+ */
+export const IMPORTED_VECTOR_STYLE_DEFAULTS: Required<ImportedVectorStyle> = {
+  color: '#9ff8cf',
+  width: 2,
+  radius: 4,
+  fillOpacity: 0.25,
+}
+
+/** 解析当前主题下的 --success 实色（无 DOM 环境时退回常量），供默认色写入 payload 与面板兜底共用 */
+export function resolveImportedVectorDefaultColor(): string {
+  if (typeof document === 'undefined') return IMPORTED_VECTOR_STYLE_DEFAULTS.color
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--success')
+  const value = raw.trim()
+  return value || IMPORTED_VECTOR_STYLE_DEFAULTS.color
+}
+
 export interface ImportedVectorPayload {
   geojson: GeoJSON.FeatureCollection
   geometryType: ImportedGeometryType
@@ -25,12 +53,7 @@ export interface ImportedVectorPayload {
   /** geojson 替换次数：驱动地图 watcher 检测同 featureCount 下的数据变更 */
   revision?: number
   /** 用户自定义矢量样式 */
-  style?: {
-    color?: string
-    width?: number
-    radius?: number
-    fillOpacity?: number
-  }
+  style?: ImportedVectorStyle
 }
 
 export function inferGeometryType(fc: GeoJSON.FeatureCollection): ImportedGeometryType {
@@ -99,6 +122,11 @@ export function buildImportedVectorPayload(
     bounds: computeBounds(geojson),
     fileName,
     backendLayerId: options?.backendLayerId,
+    // 创建图层即写实默认样式：地图渲染与面板初值天然一致
+    style: {
+      ...IMPORTED_VECTOR_STYLE_DEFAULTS,
+      color: resolveImportedVectorDefaultColor(),
+    },
   }
 }
 

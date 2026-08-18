@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +17,8 @@ import numpy as np
 import rasterio
 from rasterio.features import geometry_mask
 from rasterio.warp import transform_geom
+
+logger = logging.getLogger(__name__)
 
 EMPTY_STATS = {
     "mean": None,
@@ -113,6 +117,12 @@ def compute_zonal_stats(
                 }
             )
         except Exception as e:
+            logger.warning(
+                "zonal stats raster read failed: layer=%s path=%s err=%s",
+                layer_id,
+                raster_path,
+                e,
+            )
             results.append(
                 {
                     "layer_id": layer_id,
@@ -135,6 +145,17 @@ def geojson_geom_dict(geojson: dict) -> dict:
 
 def _find_raster_path(layer_id: str, data_root: Path, desc: dict) -> Optional[Path]:
     """根据图层描述符查找栅格文件路径"""
+    resolved = _resolve_raster_path(layer_id, data_root, desc)
+    logger.info(
+        "zonal stats path resolve: layer=%s data_root=%s -> %s",
+        layer_id,
+        data_root,
+        resolved,
+    )
+    return resolved
+
+
+def _resolve_raster_path(layer_id: str, data_root: Path, desc: dict) -> Optional[Path]:
     paths = desc.get("paths", [])
     if isinstance(paths, list):
         for p in paths:
@@ -149,4 +170,36 @@ def _find_raster_path(layer_id: str, data_root: Path, desc: dict) -> Optional[Pa
         if candidate.exists():
             return candidate
 
-    return None
+    return _find_imported_raster_path(layer_id)
+
+
+def _find_imported_raster_path(layer_id: str) -> Optional[Path]:
+    """导入栅格（imported-*）位于 OUTPUT_ROOT/imports/<layer_id>/，不在 data_root 下。
+
+    优先读 bounds.json 的 meta.source_filename，回退到目录内任意 tif。
+    """
+    if not layer_id.startswith("imported-"):
+        return None
+    try:
+        from app.data_io.services.paths import IMPORTS_DIR
+    except Exception:
+        return None
+
+    dest_dir = IMPORTS_DIR / layer_id
+    if not dest_dir.is_dir():
+        return None
+
+    bounds_path = dest_dir / "bounds.json"
+    if bounds_path.is_file():
+        try:
+            meta = json.loads(bounds_path.read_text(encoding="utf-8")).get("meta") or {}
+            name = meta.get("source_filename")
+            if name:
+                candidate = dest_dir / Path(str(name)).name
+                if candidate.is_file():
+                    return candidate
+        except (OSError, json.JSONDecodeError, ValueError):
+            pass
+
+    tifs = sorted(dest_dir.glob("*.tif")) + sorted(dest_dir.glob("*.tiff"))
+    return tifs[0] if tifs else None

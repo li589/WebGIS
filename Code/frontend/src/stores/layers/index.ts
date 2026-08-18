@@ -216,5 +216,6 @@ export const useLayersStore = defineStore('layers', () => {
     // ── External workflow tracking ──
     registerExternalWorkflowRun: workflowRun.registerExternalWorkflowRun,
     restoreActiveWorkflows: workflowRun.restoreActiveWorkflows,
+    setWorkspaceHydrationGuard: workflowRun.setWorkspaceHydrationGuard,
   }
 })

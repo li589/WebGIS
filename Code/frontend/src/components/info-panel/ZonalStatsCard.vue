@@ -1,8 +1,10 @@
 <script setup lang="ts">
 /**
- * 分区统计结果卡片 — 面要素绘制后实时显示各栅格图层统计。
+ * 自动统计卡片 — 面要素绘制后实时统计。
  *
- * 显示：图层名、均值、最大值、最小值、像元数、标准差
+ * 几何统计（前端即算，球面测地线近似）：测地线面积、周长
+ * 栅格统计（对可见栅格图层调 /analysis/zonal-stats/sync）：
+ * 均值、最大值、最小值、像元数、标准差
  */
 import { computed, ref, watch } from 'vue'
 import { AlertCircle, RefreshCw } from '../ui/icons'
@@ -11,6 +13,7 @@ import { useLayersStore } from '../../stores/layers'
 import { useUiStore } from '../../stores/ui'
 import { resolveApiUrl } from '../../services/_http'
 import { applyApiFetchDefaults } from '../../services/http-credentials'
+import { formatArea, formatLength, geodesicAreaM2, geodesicPerimeterM } from '../map/geometry-stats'
 
 interface ZonalStatItem {
   layer_id: string
@@ -50,6 +53,14 @@ const lastPolygonFeature = computed(() => {
   return polys ?? null
 })
 
+// 几何统计：测地线面积与周长（纯前端计算，不依赖栅格）
+const geomAreaM2 = computed(() =>
+  lastPolygonFeature.value ? geodesicAreaM2(lastPolygonFeature.value.geometry) : 0,
+)
+const geomPerimeterM = computed(() =>
+  lastPolygonFeature.value ? geodesicPerimeterM(lastPolygonFeature.value.geometry) : 0,
+)
+
 const overlayLayers = computed(() => {
   return layersStore.activeLayers.filter(
     (l) => l.visible && (l.importedRaster || l.dataState === 'catalog'),
@@ -68,7 +79,11 @@ async function fetchStats() {
     (l) => l.importedRaster?.overlayLayerId ?? l.catalogId,
   )
   if (overlayLayerIds.length === 0) {
-    if (seq === statsSeq) error.value = '没有可统计的栅格图层'
+    // 无栅格不算错误：几何统计仍在展示，仅提示栅格部分不可用
+    if (seq === statsSeq) {
+      stats.value = []
+      error.value = null
+    }
     return
   }
 
@@ -135,7 +150,7 @@ function formatValue(val: number | null): string {
   <Transition name="zonal-stats">
     <div v-if="visible" class="zonal-stats-card">
       <div class="zonal-stats-header">
-        <h4 class="zonal-stats-title">区域统计</h4>
+        <h4 class="zonal-stats-title">自动统计</h4>
         <button
           class="zonal-stats-refresh"
           :disabled="loading"
@@ -146,9 +161,21 @@ function formatValue(val: number | null): string {
         </button>
       </div>
 
+      <!-- 几何统计（测地线，球面近似） -->
+      <div class="geom-stats">
+        <div class="geom-stat">
+          <span class="geom-label">测地线面积</span>
+          <strong class="geom-value">{{ formatArea(geomAreaM2) }}</strong>
+        </div>
+        <div class="geom-stat">
+          <span class="geom-label">周长</span>
+          <strong class="geom-value">{{ formatLength(geomPerimeterM) }}</strong>
+        </div>
+      </div>
+
       <div v-if="loading" class="zonal-stats-loading">
         <span class="loading-dot"></span>
-        <span>正在计算区域统计…</span>
+        <span>正在统计可见栅格…</span>
       </div>
 
       <div v-else-if="error" class="zonal-stats-error">
@@ -157,7 +184,9 @@ function formatValue(val: number | null): string {
         <button class="zonal-stats-retry" @click="fetchStats">重试</button>
       </div>
 
-      <div v-else-if="stats.length === 0" class="zonal-stats-empty">暂无统计结果</div>
+      <div v-else-if="stats.length === 0" class="zonal-stats-empty">
+        导入栅格图层后可自动统计选区像元数与最大/最小值
+      </div>
 
       <div v-else class="zonal-stats-table-wrap">
         <table class="zonal-stats-table">
@@ -212,6 +241,35 @@ function formatValue(val: number | null): string {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
+}
+
+/* 几何统计行：测地线面积 / 周长 */
+.geom-stats {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.geom-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+}
+
+.geom-label {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.geom-value {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
 }
 
 .zonal-stats-title {

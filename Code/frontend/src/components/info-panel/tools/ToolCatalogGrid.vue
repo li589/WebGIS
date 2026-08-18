@@ -2,10 +2,14 @@
 /**
  * 工具目录网格：后端目录工具 + 本地交互工具（底图要素提取）统一入口。
  * 响应式网格（窄 1–2 列、宽 3–4 列），整块可收回。
+ * 禁用/受阻卡片直接在卡片内展示原因；缺栅格数据时附「去导入数据」引导。
  */
 import { computed, ref, watch } from 'vue'
-import { ChevronDown, ChevronUp } from '../../ui/icons'
+import { AlertTriangle, ChevronDown, ChevronUp, Upload } from '../../ui/icons'
 import type { AnalysisToolDescriptor } from '../../../services/analysis-api'
+import { openDataWorkspace } from '../../../data-manager/core/workspace-store'
+import { useAuthStore } from '../../../stores/auth'
+import { needsRasterImportHint } from './tool-page-model'
 
 export interface ToolGridEntry {
   id: string
@@ -13,6 +17,8 @@ export interface ToolGridEntry {
   description: string
   enabled: boolean
   disabledReason?: string | null
+  /** 前端补充的不可运行原因（后端 enabled 但本地无数据等） */
+  blockedReason?: string | null
   /** 运行中/已完成等角标文案 */
   phaseBadge?: string
 }
@@ -20,11 +26,14 @@ export interface ToolGridEntry {
 const props = defineProps<{
   tools: AnalysisToolDescriptor[]
   phaseBadges?: Record<string, string>
+  blockedReasons?: Record<string, string>
 }>()
 
 const emit = defineEmits<{
   select: [entryId: string]
 }>()
+
+const authStore = useAuthStore()
 
 const collapsed = ref(false)
 
@@ -35,6 +44,7 @@ const entries = computed<ToolGridEntry[]>(() => {
     description: tool.description,
     enabled: tool.enabled,
     disabledReason: tool.disabled_reason,
+    blockedReason: props.blockedReasons?.[tool.tool_id] ?? null,
     phaseBadge: props.phaseBadges?.[tool.tool_id],
   }))
   return [
@@ -47,6 +57,10 @@ const entries = computed<ToolGridEntry[]>(() => {
     },
   ]
 })
+
+function openImportRaster() {
+  openDataWorkspace({ tab: 'import', importKind: 'raster' })
+}
 
 // 图层切换后重置收回态，避免新图层工具被隐藏
 watch(
@@ -66,22 +80,49 @@ watch(
     </button>
 
     <div v-show="!collapsed" class="tool-grid">
-      <button
+      <div
         v-for="entry in entries"
         :key="entry.id"
-        type="button"
         class="tool-cell"
         :class="{ 'tool-cell--disabled': !entry.enabled }"
-        :title="entry.disabledReason || entry.description"
-        :disabled="!entry.enabled"
-        @click="emit('select', entry.id)"
       >
-        <span class="tool-cell-title">
-          {{ entry.title }}
-          <em v-if="entry.phaseBadge" class="tool-cell-badge">{{ entry.phaseBadge }}</em>
+        <button
+          type="button"
+          class="tool-cell-main"
+          :title="entry.description"
+          :disabled="!entry.enabled"
+          @click="emit('select', entry.id)"
+        >
+          <span class="tool-cell-title">
+            {{ entry.title }}
+            <em v-if="entry.phaseBadge" class="tool-cell-badge">{{ entry.phaseBadge }}</em>
+          </span>
+          <span class="tool-cell-desc">{{ entry.description }}</span>
+        </button>
+
+        <span v-if="entry.blockedReason || entry.disabledReason" class="tool-cell-reason">
+          <AlertTriangle :size="12" aria-hidden="true" />
+          <span>{{ entry.blockedReason || entry.disabledReason }}</span>
         </span>
-        <span class="tool-cell-desc">{{ entry.description }}</span>
-      </button>
+
+        <button
+          v-if="needsRasterImportHint(entry.blockedReason || entry.disabledReason)"
+          type="button"
+          class="tool-cell-cta"
+          :disabled="!authStore.canWrite"
+          :title="
+            authStore.canWrite
+              ? '打开数据工作台导入栅格'
+              : authStore.isDemo
+                ? '演示账户数据传输受限，请联系管理员开启'
+                : '只读账户无法导入数据'
+          "
+          @click.stop="openImportRaster"
+        >
+          <Upload :size="12" aria-hidden="true" />
+          去导入数据
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -123,26 +164,36 @@ watch(
 .tool-cell {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 0.2rem;
+  gap: 0.25rem;
   padding: 0.45rem 0.5rem;
   border: 1px solid var(--border-default);
   border-radius: 0.5rem;
   background: var(--surface-raised);
+}
+
+.tool-cell--disabled .tool-cell-main {
+  opacity: 0.55;
+}
+
+.tool-cell-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  border: none;
+  padding: 0;
+  background: transparent;
   color: var(--text-primary);
   cursor: pointer;
   text-align: left;
-  transition:
-    border-color 0.15s ease,
-    background 0.15s ease;
+  min-width: 0;
 }
 
-.tool-cell:hover:not(:disabled) {
-  border-color: var(--accent, #3b82f6);
+.tool-cell-main:hover:not(:disabled) {
+  color: var(--accent);
 }
 
-.tool-cell--disabled {
-  opacity: 0.45;
+.tool-cell-main:disabled {
   cursor: not-allowed;
 }
 
@@ -158,7 +209,7 @@ watch(
   font-style: normal;
   font-size: var(--font-size-caption);
   font-weight: 400;
-  color: var(--accent, #3b82f6);
+  color: var(--accent);
 }
 
 .tool-cell-desc {
@@ -168,5 +219,46 @@ watch(
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.tool-cell-reason {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.25rem;
+  padding: 0.22rem 0.35rem;
+  border-radius: 0.35rem;
+  background: var(--warning-surface);
+  border: 1px solid var(--warning-border);
+  color: var(--warning);
+  font-size: var(--font-size-caption);
+  line-height: 1.35;
+}
+
+.tool-cell-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  justify-self: start;
+  padding: 0.22rem 0.5rem;
+  border: 1px solid var(--border-accent);
+  border-radius: 0.35rem;
+  background: var(--accent-surface);
+  color: var(--accent);
+  font-size: var(--font-size-caption);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.tool-cell-cta:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.tool-cell-cta:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

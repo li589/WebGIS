@@ -57,9 +57,17 @@ export interface WorkspaceHydrateSliceDeps {
 export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
   const weatherTileManager = useWeatherTileManager()
   let workspacePersistTimer: ReturnType<typeof setTimeout> | null = null
+  /**
+   * boot 水合保护：DashboardView 启动序列（工作区远端同步 + 快照恢复）期间，
+   * MapCanvas 草稿恢复等早期变更会在矢量图层恢复完成前触发快照落盘，
+   * 把尚未恢复的导入图层从快照中永久抹掉（并被同步推送放大到远端）。
+   * 保护期内跳过 flush，保留 boot 前快照；释放时补一次落盘捕获期间改动。
+   */
+  let hydrationGuard = false
 
   function flushWorkspacePersistNow() {
     if (typeof window === 'undefined') return
+    if (hydrationGuard) return
     if (workspacePersistTimer != null) {
       window.clearTimeout(workspacePersistTimer)
       workspacePersistTimer = null
@@ -75,6 +83,11 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
       workspacePersistTimer = null
       flushWorkspacePersistNow()
     }, 400)
+  }
+
+  function setWorkspaceHydrationGuard(active: boolean) {
+    hydrationGuard = active
+    if (!active) scheduleWorkspacePersist()
   }
 
   deps.bindPersistFns({ scheduleWorkspacePersist, flushWorkspacePersistNow })
@@ -340,6 +353,7 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
   return {
     scheduleWorkspacePersist,
     flushWorkspacePersistNow,
+    setWorkspaceHydrationGuard,
     restoreCatalogLayerFromSnapshot,
     restoreRunGroupsFromSnapshot,
     hydrateWorkspaceFromSnapshot,

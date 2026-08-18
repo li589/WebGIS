@@ -61,10 +61,17 @@ const workflowOutputStore = useWorkflowOutputLayersStore()
 
 uiLoading.showImmediate('初始化地图数据...')
 void workspace.ensureRuntimeLayerCatalog().finally(() => uiLoading.hideImmediate())
-// 先完成跨设备工作区同步（远端较新时接管 localStorage），再从快照恢复图层
+// 先完成跨设备工作区同步（远端较新时接管 localStorage），再从快照恢复图层。
+// 全程开启水合保护：防止 MapCanvas 草稿恢复的早期落盘在矢量图层恢复前
+// 重写快照，把未恢复的导入图层永久抹掉（见 workspace-hydrate 注释）。
 void (async () => {
-  await syncWorkspaceOnBoot()
-  void workflowRun.restoreActiveWorkflows()
+  workflowRun.setWorkspaceHydrationGuard(true)
+  try {
+    await syncWorkspaceOnBoot()
+    await workflowRun.restoreActiveWorkflows()
+  } finally {
+    workflowRun.setWorkspaceHydrationGuard(false)
+  }
 })()
 
 // Dashboard 卸载时清理所有 429 重试定时器，防止已取消的工作流被重新提交

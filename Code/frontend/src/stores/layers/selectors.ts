@@ -176,5 +176,6 @@ export function useWorkflowRun() {
     cleanupUnproducedRunLayers: store.cleanupUnproducedRunLayers,
     registerExternalWorkflowRun: store.registerExternalWorkflowRun,
     restoreActiveWorkflows: store.restoreActiveWorkflows,
+    setWorkspaceHydrationGuard: store.setWorkspaceHydrationGuard,
   }
 }

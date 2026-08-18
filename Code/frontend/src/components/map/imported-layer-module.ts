@@ -1,4 +1,5 @@
 import type { ImportedGeometryType } from '../../stores/layers/imported-vector'
+import { IMPORTED_VECTOR_STYLE_DEFAULTS } from '../../stores/layers/imported-vector'
 import {
   Popup,
   type ExpressionSpecification,
@@ -184,7 +185,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
           filter: ['==', '$type', 'Polygon'],
           paint: {
             'fill-color': fillColor,
-            'fill-opacity': 0.25,
+            'fill-opacity': IMPORTED_VECTOR_STYLE_DEFAULTS.fillOpacity,
           },
           layout: { visibility: 'visible' },
         },
@@ -201,7 +202,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
           source: sourceId,
           paint: {
             'line-color': fillColor,
-            'line-width': 2,
+            'line-width': IMPORTED_VECTOR_STYLE_DEFAULTS.width,
             'line-opacity': 0.9,
           },
           layout: { visibility: 'visible' },
@@ -219,7 +220,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
           source: sourceId,
           filter: ['==', '$type', 'Point'],
           paint: {
-            'circle-radius': 4,
+            'circle-radius': IMPORTED_VECTOR_STYLE_DEFAULTS.radius,
             'circle-color': fillColor,
             'circle-stroke-width': 1,
             'circle-stroke-color': '#0a233a',
@@ -382,7 +383,11 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
       const layer = options.map.getLayer(layerId) as LayerSpecification | undefined
       if (!layer) continue
       if (layer.type === 'fill') {
-        options.map.setPaintProperty(layerId, 'fill-opacity', 0.25 * opacity)
+        options.map.setPaintProperty(
+          layerId,
+          'fill-opacity',
+          IMPORTED_VECTOR_STYLE_DEFAULTS.fillOpacity * opacity,
+        )
       } else if (layer.type === 'line') {
         options.map.setPaintProperty(layerId, 'line-opacity', 0.9 * opacity)
       } else if (layer.type === 'circle') {
@@ -395,9 +400,10 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
     const info = loaded.get(id)
     if (!info) return
     const color = style.color || resolveThemeColor('--success', FALLBACK_SUCCESS)
-    const width = style.width ?? 2
-    const radius = style.radius ?? 4
-    const fillOpacity = (style.fillOpacity ?? 0.25) * baseOpacity
+    const width = style.width ?? IMPORTED_VECTOR_STYLE_DEFAULTS.width
+    const radius = style.radius ?? IMPORTED_VECTOR_STYLE_DEFAULTS.radius
+    const fillOpacity =
+      (style.fillOpacity ?? IMPORTED_VECTOR_STYLE_DEFAULTS.fillOpacity) * baseOpacity
     for (const layerId of info.layerIds) {
       const layer = options.map.getLayer(layerId) as LayerSpecification | undefined
       if (!layer) continue
