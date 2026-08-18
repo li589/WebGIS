@@ -15,39 +15,40 @@ from datetime import UTC
 
 logger = logging.getLogger(__name__)
 
+
+def _derive_layer_sets_from_specs() -> (
+    tuple[frozenset[str], frozenset[str], frozenset[str]]
+):
+    """Derive SURFACE/HEIGHT/PRESSURE layer ID sets from WEATHER_LAYER_SPECS.
+
+    Single source of truth: ``constants.WEATHER_LAYER_SPECS`` carries
+    ``layer_kind`` ("surface" / "height" / "pressure") on every spec. The
+    three frozensets below are derived from it so new layers only need to be
+    added once (in the specs dict).
+    """
+    from app.weatherengine.constants import WEATHER_LAYER_SPECS
+
+    surface: set[str] = set()
+    height: set[str] = set()
+    pressure: set[str] = set()
+    for layer_id, spec in WEATHER_LAYER_SPECS.items():
+        kind = getattr(spec, "layer_kind", "surface")
+        if kind == "height":
+            height.add(layer_id)
+        elif kind == "pressure":
+            pressure.add(layer_id)
+        else:
+            surface.add(layer_id)
+    return frozenset(surface), frozenset(height), frozenset(pressure)
+
+
 # Near-surface layers with real commercial API fields.
-SURFACE_LAYER_IDS: frozenset[str] = frozenset(
-    {
-        "wind-field",
-        "temperature",
-        "precipitation",
-        "humidity",
-        "pressure",
-        "visibility",
-        "cloud-cover",
-        "dewpoint",
-    }
-)
-
-# Hub-height AGL layers: commercial APIs lack true values → power-law / near-surface proxy.
-HEIGHT_LAYER_IDS: frozenset[str] = frozenset(
-    {
-        "wind-field-80m",
-        "wind-field-120m",
-        "wind-field-180m",
-        "temperature-80m",
-        "temperature-120m",
-        "temperature-180m",
-    }
-)
-
-# Pressure-level winds: sparse/unavailable on WeatherAPI & OpenWeather One Call.
-PRESSURE_LAYER_IDS: frozenset[str] = frozenset(
-    {
-        "wind-field-850hPa",
-        "wind-field-500hPa",
-        "wind-field-200hPa",
-    }
+# Derived from WEATHER_LAYER_SPECS (layer_kind="surface") — single source of truth.
+SURFACE_LAYER_IDS: frozenset[str]
+HEIGHT_LAYER_IDS: frozenset[str]
+PRESSURE_LAYER_IDS: frozenset[str]
+SURFACE_LAYER_IDS, HEIGHT_LAYER_IDS, PRESSURE_LAYER_IDS = (
+    _derive_layer_sets_from_specs()
 )
 
 COMMERCIAL_LAYER_IDS: frozenset[str] = (

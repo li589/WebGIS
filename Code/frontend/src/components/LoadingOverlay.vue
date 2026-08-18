@@ -321,10 +321,10 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
   animation: progress-slide 1.6s ease-in-out infinite;
 }
 
-/* compact 顶栏 */
+/* compact：条带贴视口顶端；文案单独下移，避免盖住顶栏 */
 .loading-compact {
   position: fixed;
-  top: 96px;
+  top: 0;
   left: 0;
   right: 0;
   z-index: calc(var(--z-loading) - 1);
@@ -349,8 +349,8 @@ const { isVisible, message, mode } = storeToRefs(uiLoading)
 
 .compact-msg {
   align-self: center;
-  margin-top: var(--space-2);
-  padding: var(--space-1) var(--space-2);
+  margin-top: calc(96px + var(--space-2));
+  padding: var(--space-1) var(--space-4);
   border-radius: var(--radius-pill);
   background: var(--surface-1);
   border: 1px solid var(--border-accent);

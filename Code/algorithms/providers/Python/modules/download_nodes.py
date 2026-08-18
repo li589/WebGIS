@@ -101,6 +101,66 @@ def _store_path_manifest(
     return {"manifest": artifact, "path": path_str}
 
 
+_OUTFILE_TYPE_NAMES: dict[str, int] = {
+    "gtiff": 0,
+    "geotiff": 0,
+    "tif": 0,
+    "tiff": 0,
+    "netcdf": 1,
+    "nc": 1,
+    "hdf5": 2,
+    "h5": 2,
+    "hdf": 2,
+}
+
+
+def _coerce_outfile_type(value: object) -> int:
+    """Coerce outfile_type to int (0:GTiff, 1:NetCDF, 2:HDF5).
+
+    Accepts ints, numeric strings ("0"/"1"/"2"), and format names
+    ("hdf5"/"netcdf"/"gtiff" etc.) so seed JSON can use either form.
+    """
+    if isinstance(value, int):
+        return value
+    text = str(value or "2").strip().lower()
+    if text in _OUTFILE_TYPE_NAMES:
+        return _OUTFILE_TYPE_NAMES[text]
+    try:
+        return int(text)
+    except ValueError:
+        return 2  # default to HDF5
+
+
+_SPATIAL_EXTENT_NAMES: dict[str, int] = {
+    "global": 0,
+    "world": 0,
+    "point": 1,
+    "single_point": 1,
+    "bbox": 2,
+    "rectangle": 2,
+    "rect": 2,
+    "shapefile": 3,
+    "shp": 3,
+}
+
+
+def _coerce_spatial_extent(value: object) -> int:
+    """Coerce spatial_extent to int (0:global, 1:point, 2:rect, 3:shapefile).
+
+    Accepts ints, numeric strings, and descriptive names so seed JSON can
+    use either form.
+    """
+    if isinstance(value, int):
+        return value
+    text = str(value or "0").strip().lower()
+    if text in _SPATIAL_EXTENT_NAMES:
+        return _SPATIAL_EXTENT_NAMES[text]
+    try:
+        return int(text)
+    except ValueError:
+        return 0  # default to global
+
+
 # ─── SSH 远程同步节点 ─────────────────────────────────────────────────────────
 
 _SSH_SYNC_LEGACY_SERVERS = frozenset({"hpc", "win11", "nas"})
@@ -742,6 +802,13 @@ class FyPreprocessModule(BaseModule):
     )
     input_ports = [
         PortSpec(
+            name="data",
+            kind="data",
+            data_class="string",
+            required=False,
+            description="上游数据目录（如 fy_download.path）；命中时优先于 input_dir 参数。",
+        ),
+        PortSpec(
             name="datasource_selection",
             kind="config",
             data_class="dict",
@@ -767,6 +834,20 @@ class FyPreprocessModule(BaseModule):
         "spatial_extent": 0,
     }
 
+    @staticmethod
+    def _coerce_upstream_dir(value: object) -> str:
+        """上游端口值（str / {path,uri} dict / ArtifactRef）→ 目录字符串。"""
+        if value is None:
+            return ""
+        if isinstance(value, dict):
+            for key in ("path", "uri", "input_dir", "local_path"):
+                text = str(value.get(key) or "").strip()
+                if text:
+                    return text
+            return ""
+        uri = getattr(value, "uri", None)
+        return str(uri if uri else value).strip()
+
     def execute(
         self,
         inputs: dict[str, object],
@@ -778,6 +859,9 @@ class FyPreprocessModule(BaseModule):
         ds = dict(inputs.get("datasource_selection", {}))
         ap = dict(inputs.get("algorithm_params", {}))
         resolved = {**self.default_params, **params, **ap, **ds}
+        upstream_dir = self._coerce_upstream_dir(inputs.get("data"))
+        if upstream_dir:
+            resolved["input_dir"] = upstream_dir
 
         satellite = str(resolved.get("satellite") or "FY3D").upper()
         input_dir = str(resolved.get("input_dir") or "").strip()
@@ -787,8 +871,8 @@ class FyPreprocessModule(BaseModule):
         orbit_mode = str(resolved.get("orbit_mode") or "MWRID")
         band_ids_raw = resolved.get("band_ids")
         band_ids = list(band_ids_raw) if band_ids_raw else [1, 2]
-        outfile_type = int(resolved.get("outfile_type") or 2)
-        spatial_extent = int(resolved.get("spatial_extent") or 0)
+        outfile_type = _coerce_outfile_type(resolved.get("outfile_type", 2))
+        spatial_extent = _coerce_spatial_extent(resolved.get("spatial_extent", 0))
 
         if not input_dir:
             raise ValueError("fy_preprocess requires input_dir")

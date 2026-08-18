@@ -169,6 +169,67 @@ class DataAccessNodesTests(unittest.TestCase):
             self.assertEqual(out["data"]["input_dir"], "D:/data/SMAP")
             self.assertEqual(out["path"], "D:/data/SMAP")
 
+    def test_http_open_data_earthaccess_auth_fallback_to_legacy(self) -> None:
+        """earthaccess 登录失败（如账号需重置密码）时回退 legacy 匿名下载。
+
+        公开对象（lp-prod-public 等）匿名 GET 可达，账号状态不应阻断免登录下载。
+        """
+        import sys
+        import unittest.mock as mock
+        from types import SimpleNamespace as NS
+
+        algo_root = Path(__file__).resolve().parents[2] / "Code" / "algorithms" / "providers" / "Python"
+        sys.path.insert(0, str(algo_root))
+        import modules.data_access_nodes as dan
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+
+            class _FakeHttpSource:
+                def __init__(self) -> None:
+                    self.seen_metadata: dict | None = None
+
+                def locate(self, url, metadata=None):
+                    self.seen_metadata = metadata
+                    return NS(url=url)
+
+                def materialize(self, resource, target_dir=None):
+                    assert target_dir is not None
+                    local = Path(target_dir) / "a.jpg"
+                    local.parent.mkdir(parents=True, exist_ok=True)
+                    local.write_bytes(b"\xff\xd8\xff\xe0jpeg")
+                    return NS(local_path=str(local), metadata={"cache_hit": False})
+
+            fake_source = _FakeHttpSource()
+            with (
+                mock.patch.object(dan, "_earthaccess_available", lambda: True),
+                mock.patch.object(
+                    dan,
+                    "_materialize_via_earthaccess",
+                    side_effect=RuntimeError(
+                        'Authentication with Earthdata Login failed: '
+                        '{"error":"invalid_account_status"}'
+                    ),
+                ),
+                mock.patch("data_access.sources.http.HttpSource", return_value=fake_source),
+            ):
+                out = self.registry.get_module("http_open_data").execute(
+                    {},
+                    {
+                        "base_url": "https://data.example.test/",
+                        "relative_path": "a.jpg",
+                        "use": "earthaccess",
+                        "cred_profile": "",
+                    },
+                    _ctx(workspace),
+                )
+
+            self.assertTrue(str(out["path"]).endswith("a.jpg"))
+            self.assertIn("legacy(earthaccess_auth_fallback", str(out["use"]))
+            self.assertIn("invalid_account_status", str(out["use"]))
+            self.assertFalse(fake_source.seen_metadata.get("http_headers"))
+
     def test_output_map_layer_accepts_manifest_on_data_port(self) -> None:
         """Seeds wire module.manifest → map_layer.data (single LiteGraph slot)."""
         from workflow.schemas import ArtifactRef

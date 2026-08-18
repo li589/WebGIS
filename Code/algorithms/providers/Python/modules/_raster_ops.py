@@ -86,6 +86,38 @@ def _coerce_path(value: object | None) -> str | None:
     return None
 
 
+_GEOJSON_SUFFIXES = {".json", ".geojson"}
+
+
+def _datasource_map(
+    inputs: dict[str, object], ctx: NodeExecutionContext
+) -> dict[str, str]:
+    """Flattened single-module path: dataset paths arrive via request-level
+    datasource_selection (data/source dataset_key → path), not via ports."""
+    ds = inputs.get("datasource_selection")
+    if not isinstance(ds, dict):
+        req = getattr(ctx, "request", None)
+        ds = getattr(req, "datasource_selection", None)
+    if not isinstance(ds, dict):
+        return {}
+    return {
+        str(k): str(v).strip()
+        for k, v in ds.items()
+        if isinstance(v, (str, Path)) and str(v).strip()
+    }
+
+
+def _ds_key_paths(ds: dict[str, str], keys: Sequence[str]) -> list[str]:
+    """Key-specific dataset paths: "primary" → primary_path / primary."""
+    out: list[str] = []
+    for key in keys:
+        for cand in (f"{key}_path", key):
+            val = ds.get(cand)
+            if val:
+                out.append(val)
+    return out
+
+
 def _path_from_manifest_payload(payload: object) -> str | None:
     if isinstance(payload, ProductManifest) and payload.products:
         for prod in payload.products:
@@ -135,11 +167,11 @@ def resolve_raster_path(
         if coerced:
             candidates.append(coerced)
 
-    ds = inputs.get("datasource_selection")
-    if isinstance(ds, dict):
-        for key in ("input_path", "path", "uri"):
-            if ds.get(key):
-                candidates.append(str(ds[key]))
+    ds = _datasource_map(inputs, ctx)
+    candidates.extend(_ds_key_paths(ds, keys))
+    for key in ("input_path", "path", "uri"):
+        if ds.get(key):
+            candidates.append(str(ds[key]))
 
     for key in ("path", "input_path", "raster"):
         if params.get(key):
@@ -243,6 +275,18 @@ def resolve_geojson(
             except Exception:
                 pass
 
+    ds = _datasource_map(inputs, ctx)
+    for raw in _ds_key_paths(ds, keys):
+        p = Path(raw.replace("file:///", "").replace("file://", ""))
+        if p.exists() and p.suffix.lower() in _GEOJSON_SUFFIXES:
+            return json.loads(p.read_text(encoding="utf-8"))
+    for key in ("input_path", "path", "uri"):
+        raw = ds.get(key)
+        if raw:
+            p = Path(raw.replace("file:///", "").replace("file://", ""))
+            if p.exists() and p.suffix.lower() in _GEOJSON_SUFFIXES:
+                return json.loads(p.read_text(encoding="utf-8"))
+
     for key in ("geojson_path", "path", "vector"):
         if params.get(key):
             p = Path(str(params[key]))
@@ -253,28 +297,40 @@ def resolve_geojson(
 
 
 def parse_bbox(value: object | None) -> tuple[float, float, float, float] | None:
-    """Parse bbox as (west, south, east, north)."""
+    """Parse bbox as (west, south, east, north).
+
+    Accepts 4-number sequences, dicts (west/south/east/north, minx/miny/maxx/maxy,
+    or xmin/ymin/xmax/ymax as emitted by request.region), RegionSpec-like objects
+    (``.value`` dict from request.region / bbox node outputs), and rasterio-like
+    objects exposing ``.bounds``.
+    """
     if value is None:
         return None
     if isinstance(value, (list, tuple)) and len(value) >= 4:
         return (float(value[0]), float(value[1]), float(value[2]), float(value[3]))
     if isinstance(value, dict):
-        if all(k in value for k in ("west", "south", "east", "north")):
-            return (
-                float(value["west"]),
-                float(value["south"]),
-                float(value["east"]),
-                float(value["north"]),
-            )
-        if all(k in value for k in ("minx", "miny", "maxx", "maxy")):
-            return (
-                float(value["minx"]),
-                float(value["miny"]),
-                float(value["maxx"]),
-                float(value["maxy"]),
-            )
+        for x0, y0, x1, y1 in (
+            ("west", "south", "east", "north"),
+            ("minx", "miny", "maxx", "maxy"),
+            ("xmin", "ymin", "xmax", "ymax"),
+        ):
+            if all(k in value for k in (x0, y0, x1, y1)):
+                return (
+                    float(value[x0]),
+                    float(value[y0]),
+                    float(value[x1]),
+                    float(value[y1]),
+                )
         if "bbox" in value:
             return parse_bbox(value["bbox"])
+    inner = getattr(value, "value", None)
+    if inner is not None and not isinstance(inner, (str, bytes)):
+        parsed = parse_bbox(inner)
+        if parsed is not None:
+            return parsed
+    bounds = getattr(value, "bounds", None)
+    if isinstance(bounds, (list, tuple)) and len(bounds) >= 4:
+        return (float(bounds[0]), float(bounds[1]), float(bounds[2]), float(bounds[3]))
     text = str(value).strip()
     if text:
         parts = [p.strip() for p in text.replace(";", ",").split(",") if p.strip()]
@@ -844,6 +900,15 @@ def load_timeseries_payload(
                     return json.loads(Path(found).read_text(encoding="utf-8"))
             except Exception:
                 pass
+
+    ds = _datasource_map(inputs, ctx)
+    for raw in [*_ds_key_paths(ds, keys), ds.get("input_path", "")]:
+        if not raw:
+            continue
+        p = Path(raw.replace("file:///", "").replace("file://", ""))
+        if p.exists() and p.suffix.lower() == ".json":
+            return json.loads(p.read_text(encoding="utf-8"))
+
     raise RasterOpsValidationError(
         "Need timeseries payload {times, values} via port or JSON path"
     )

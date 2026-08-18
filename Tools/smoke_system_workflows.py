@@ -457,6 +457,202 @@ def discover_nasa_lpdaac_smoke_target() -> dict[str, str] | None:
         return None
 
 
+def portal_creds_ready(
+    portal_keys: tuple[str, ...],
+    env_vars: tuple[str, ...] = (),
+) -> bool:
+    """True when any env var or runtime portal store entry has usable creds.
+
+    Portal store keys follow portal credential_profile conventions (e.g.
+    "earthdata", "nsmc", "copernicus", "ecmwf_cds"); entries disabled via
+    enabled=false are ignored.
+    """
+    for var in env_vars:
+        if os.environ.get(var):
+            return True
+    try:
+        backend_root = REPO_ROOT / "Code" / "backend"
+        if str(backend_root) not in sys.path:
+            sys.path.insert(0, str(backend_root))
+        os.environ.setdefault("ENVIRONMENT", "development")
+        from app.services.config_service import get_portal_credentials_runtime
+
+        store = get_portal_credentials_runtime() or {}
+        for key in portal_keys:
+            entry = store.get(key)
+            if not isinstance(entry, dict) or entry.get("enabled") is False:
+                continue
+            if str(entry.get("token") or entry.get("access_token") or "").strip():
+                return True
+            user = str(entry.get("username") or "").strip()
+            pw = str(entry.get("password") or entry.get("secret") or "").strip()
+            if user and pw:
+                return True
+            # Multi-account rotation entries (e.g. nsmc accounts[]).
+            for acc in entry.get("accounts") or []:
+                if not isinstance(acc, dict):
+                    continue
+                if str(acc.get("token") or "").strip():
+                    return True
+                a_user = str(acc.get("username") or "").strip()
+                a_pw = str(acc.get("password") or "").strip()
+                if a_user and a_pw:
+                    return True
+        return False
+    except Exception:  # noqa: BLE001
+        return False
+
+
+_ED_CREDS_PROBE_CACHE: tuple[bool, str] | None = None
+
+
+def earthdata_creds_probe() -> tuple[bool | None, str]:
+    """Validate stored Earthdata basic creds against URS (token list endpoint).
+
+    Returns (valid, detail): True creds work; False creds rejected (e.g.
+    invalid_account_status → password reset required); None undeterminable
+    (no basic creds — token-based auth can't be probed cheaply — or network
+    error). Cached for the process lifetime.
+    """
+    global _ED_CREDS_PROBE_CACHE
+    if _ED_CREDS_PROBE_CACHE is not None:
+        return _ED_CREDS_PROBE_CACHE
+    result: tuple[bool | None, str] = (None, "probe not run")
+    try:
+        backend_root = REPO_ROOT / "Code" / "backend"
+        if str(backend_root) not in sys.path:
+            sys.path.insert(0, str(backend_root))
+        os.environ.setdefault("ENVIRONMENT", "development")
+        from app.services.config_service import get_portal_credentials_runtime
+
+        store = get_portal_credentials_runtime() or {}
+        entry = store.get("earthdata")
+        if not isinstance(entry, dict) or entry.get("enabled") is False:
+            result = (None, "no earthdata entry")
+        else:
+            token = str(entry.get("token") or entry.get("access_token") or "").strip()
+            if token:
+                result = (None, "token-based creds; probe skipped")
+            else:
+                import base64
+                import urllib.request
+
+                user = str(entry.get("username") or "").strip()
+                pw = str(entry.get("password") or entry.get("secret") or "").strip()
+                if not (user and pw):
+                    result = (None, "no basic user/password stored")
+                else:
+                    basic = base64.b64encode(f"{user}:{pw}".encode()).decode()
+                    req = urllib.request.Request(
+                        "https://urs.earthdata.nasa.gov/api/users/tokens",
+                        headers={
+                            "Authorization": f"Basic {basic}",
+                            "Accept": "application/json",
+                        },
+                    )
+                    try:
+                        with urllib.request.urlopen(req, timeout=15) as resp:
+                            resp.read()
+                        result = (True, "URS accepted basic creds")
+                    except urllib.error.HTTPError as exc:
+                        body = exc.read().decode("utf-8", "replace")[:160]
+                        result = (False, f"URS HTTP {exc.code}: {body}")
+                    except Exception as exc:  # noqa: BLE001
+                        result = (None, f"probe error: {exc}")
+    except Exception as exc:  # noqa: BLE001
+        result = (None, f"probe error: {exc}")
+    _ED_CREDS_PROBE_CACHE = result
+    return result
+
+
+def _earthdata_blocker_if_invalid() -> str | None:
+    """Preflight blocker when stored Earthdata creds are provably invalid."""
+    valid, detail = earthdata_creds_probe()
+    if valid is False:
+        return f"blocked:creds (Earthdata rejected: {detail})"
+    return None
+
+
+def gee_accounts_ready(
+    base: str, *, api_key: str | None
+) -> tuple[bool, str]:
+    """Probe GET /config/gee/accounts → (ready, detail)."""
+    code, body = _http_json(
+        "GET", f"{base}/config/gee/accounts", timeout=30, api_key=api_key
+    )
+    if code == 200 and isinstance(body, list):
+        enabled = [
+            a
+            for a in body
+            if isinstance(a, dict) and a.get("enabled") is not False
+        ]
+        return bool(enabled), f"accounts={len(body)} enabled={len(enabled)}"
+    detail = ""
+    if isinstance(body, dict):
+        detail = str(body.get("detail") or body)[:120]
+    return False, f"probe HTTP {code} {detail}".strip()
+
+
+def patch_download_window(
+    definition: dict[str, Any], start_ymd: str, end_ymd: str
+) -> dict[str, Any]:
+    """Replace {YYYYMMDD}/{YYYY-MM-DD} in download-node date keys with a window."""
+    out = json.loads(json.dumps(definition))
+    for node in out.get("nodes") or []:
+        if not isinstance(node, dict):
+            continue
+        ntype = str(node.get("type") or "")
+        props = node.get("properties")
+        if not isinstance(props, dict):
+            continue
+        if not (
+            ntype.startswith("download/")
+            or ntype in ("download/cmr_search", "search_portal")
+        ):
+            continue
+        for key in ("start_date", "end_date"):
+            if str(props.get(key) or "").strip() in ("{YYYYMMDD}", "{YYYY-MM-DD}"):
+                props[key] = start_ymd if key == "start_date" else end_ymd
+    return out
+
+
+def patch_placeholder_token(
+    definition: dict[str, Any], token: str, value: str
+) -> dict[str, Any]:
+    """Deep-replace a literal placeholder token inside every node property."""
+
+    def walk(obj: Any) -> Any:
+        if isinstance(obj, str):
+            return obj.replace(token, value)
+        if isinstance(obj, list):
+            return [walk(v) for v in obj]
+        if isinstance(obj, dict):
+            return {k: walk(v) for k, v in obj.items()}
+        return obj
+
+    out = json.loads(json.dumps(definition))
+    for node in out.get("nodes") or []:
+        if isinstance(node, dict) and isinstance(node.get("properties"), dict):
+            node["properties"] = walk(node["properties"])
+    return out
+
+
+def patch_node_property(
+    definition: dict[str, Any], key: str, value: Any, *, node_type: str = ""
+) -> dict[str, Any]:
+    out = json.loads(json.dumps(definition))
+    for node in out.get("nodes") or []:
+        if not isinstance(node, dict):
+            continue
+        if node_type and str(node.get("type") or "") != node_type:
+            continue
+        props = node.get("properties")
+        if isinstance(props, dict) and key in props:
+            props[key] = value
+            break
+    return out
+
+
 def path_exists_under_data(*parts: str) -> bool:
     return (DATA_ROOT.joinpath(*parts)).exists()
 
@@ -821,16 +1017,25 @@ def preflight_block(workflow_id: str, definition: dict[str, Any]) -> str | None:
             if discover_nasa_lpdaac_smoke_target() is None:
                 return "blocked:config (LP DAAC browse sample unreachable)"
             return None
-        # NSIDC: need earthdata portal + curated path (granules too large for light smoke)
-        if workflow_id == "open_data_nsidc_smap_sample":
-            if not earthdata_portal_ready():
-                return "blocked:creds (no Earthdata portal username/password/token)"
-            return (
-                "blocked:runtime (Earthdata ready; NSIDC SMAP granules too large "
-                "for light smoke — needs curated small path)"
-            )
         if workflow_id == "open_data_esa_product_sample":
-            return "blocked:creds (copernicus profile) + REPLACE_* path"
+            if not portal_creds_ready(
+                ("copernicus", "esa_copernicus"),
+                env_vars=("BACKEND_COPERNICUS_TOKEN",),
+            ):
+                return "blocked:creds (copernicus profile; seed UUID is a real 5MB S2 L2A sample)"
+            return None
+    # NSIDC: granules too large for light smoke regardless of placeholders —
+    # gate outside the placeholder branch (seed has none, gate must still apply).
+    if workflow_id == "open_data_nsidc_smap_sample":
+        if not earthdata_portal_ready():
+            return "blocked:creds (no Earthdata portal username/password/token)"
+        invalid = _earthdata_blocker_if_invalid()
+        if invalid:
+            return invalid
+        return (
+            "blocked:runtime (Earthdata ready; NSIDC SMAP granules too large "
+            "for light smoke — needs curated small path)"
+        )
     if workflow_id == "omega_avg_daily_gldas_online":
         mat_dir = DATA_ROOT / "Meteorological" / "Weather" / "GLDAS"
         has_mat = mat_dir.is_dir() and any(mat_dir.glob("*.mat"))
@@ -841,6 +1046,9 @@ def preflight_block(workflow_id: str, definition: dict[str, Any]) -> str | None:
                 return (
                     "blocked:data (GLDAS .nc4 present; run gldas_nc4_to_mat first)"
                 )
+            invalid = _earthdata_blocker_if_invalid()
+            if invalid:
+                return invalid + " — GLDAS GES DISC 下载需要有效 Earthdata"
             return "blocked:data (no GLDAS .mat; need download + nc4→mat)"
     if workflow_id == "omega_avg_daily_smap_online":
         # Template is download→avg with date placeholders; needs h5→mat bridge.
@@ -879,6 +1087,66 @@ def preflight_block(workflow_id: str, definition: dict[str, Any]) -> str | None:
                 "blocked:data (no Inversion_Results/omega_block/omega_block_*.mat — "
                 "run D1 omega_block first)"
             )
+    if workflow_id == "omega_avg_daily_fy_online" and not portal_creds_ready(
+        ("nsmc", "cma_nsmc"),
+        env_vars=("BACKEND_NSMC_USERNAME", "NSMC_USERNAME"),
+    ):
+        return "blocked:creds (fy_download head needs nsmc portal)"
+    if workflow_id == "cds_era5_reanalysis_download" and not portal_creds_ready(
+        ("ecmwf_cds",),
+        env_vars=("BACKEND_CDS_API_KEY", "CDS_API_KEY"),
+    ):
+        return "blocked:creds (no ecmwf_cds portal key / BACKEND_CDS_API_KEY)"
+    if workflow_id == "cdse_sentinel_download" and not portal_creds_ready(
+        ("copernicus", "esa_copernicus"),
+        env_vars=("BACKEND_COPERNICUS_USERNAME", "COPERNICUS_USERNAME"),
+    ):
+        return "blocked:creds (no copernicus portal account)"
+    if workflow_id == "fy_tb_online_read" and not portal_creds_ready(
+        ("nsmc", "cma_nsmc", "nas_profile"),
+        env_vars=("BACKEND_NSMC_USERNAME", "NSMC_USERNAME"),
+    ):
+        return "blocked:creds (fy_download auto needs nsmc or nas creds)"
+    if workflow_id == "fy_tb_online_read":
+        # fy_preprocess requires GDAL CLI (gdal_translate/gdalwarp/gdalbuildvrt)
+        import shutil as _shutil
+
+        if not (_shutil.which("gdal_translate") or _shutil.which("gdal_translate.exe")):
+            return (
+                "blocked:deps (fy_preprocess requires GDAL CLI: "
+                "gdal_translate/gdalwarp not on PATH)"
+            )
+    if workflow_id == "ndvi_online_read" and not portal_creds_ready(
+        ("earthdata",),
+        env_vars=("BACKEND_EARTHDATA_TOKEN", "EARTHDATA_TOKEN"),
+    ):
+        return "blocked:creds (download step needs earthdata)"
+    if workflow_id == "ndvi_online_read":
+        invalid = _earthdata_blocker_if_invalid()
+        if invalid:
+            return invalid
+    if workflow_id in ("omega_sf_fenkuai_fy_online",) and not portal_creds_ready(
+        ("nsmc", "cma_nsmc"),
+        env_vars=("BACKEND_NSMC_USERNAME", "NSMC_USERNAME"),
+    ):
+        return "blocked:creds (fy_download head needs nsmc portal)"
+    if workflow_id in ("omega_sf_fenkuai_smap_online",) and not portal_creds_ready(
+        ("earthdata",),
+        env_vars=("BACKEND_EARTHDATA_TOKEN", "EARTHDATA_TOKEN"),
+    ):
+        return "blocked:creds (nsidc_smap_download needs earthdata)"
+    if workflow_id in ("omega_sf_fenkuai_smap_online",):
+        invalid = _earthdata_blocker_if_invalid()
+        if invalid:
+            return invalid
+    if workflow_id in (
+        "omega_sf_fenkuai_smap_dual",
+        "omega_sf_fenkuai_fy_dual",
+    ):
+        gldas_dir = DATA_ROOT / "Meteorological" / "Weather" / "GLDAS"
+        has_gldas = gldas_dir.is_dir() and any(gldas_dir.glob("*.mat"))
+        if not has_gldas:
+            return "blocked:data (no GLDAS .mat for DUAL temp_scheme fenkuai)"
     # Fenkuai: allow when SMAP (and FY if needed) data exist; light-smoke caps
     # applied in prepare_overrides (max_pixels + short window + small bbox).
     if workflow_id.startswith("omega_sf_fenkuai_"):
@@ -968,6 +1236,7 @@ def ensure_stub_v1_fixtures() -> dict[str, Path]:
     points_gj = runtime / "smoke_points.geojson"
     pour_gj = runtime / "smoke_pour_points.geojson"
     zones_gj = runtime / "smoke_zones.geojson"
+    vector_gj = runtime / "smoke_vector.geojson"
     timeseries_json = runtime / "smoke_timeseries.json"
     timeseries_b_json = runtime / "smoke_timeseries_b.json"
     out: dict[str, Path] = {}
@@ -1108,6 +1377,50 @@ def ensure_stub_v1_fixtures() -> dict[str, Path]:
     if zones_gj.is_file():
         out["zones"] = zones_gj
 
+    if not vector_gj.is_file():
+        # Polygon FC inside smoke_stub.tif extent (100–102E / 28–30N) for
+        # analysis_vector_to_raster rasterization smoke.
+        vector = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                [100.2, 28.2],
+                                [101.2, 28.2],
+                                [101.2, 29.2],
+                                [100.2, 29.2],
+                                [100.2, 28.2],
+                            ]
+                        ],
+                    },
+                    "properties": {"id": 1, "value": 7.0},
+                },
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                [100.8, 28.8],
+                                [101.8, 28.8],
+                                [101.8, 29.8],
+                                [100.8, 29.8],
+                                [100.8, 28.8],
+                            ]
+                        ],
+                    },
+                    "properties": {"id": 2, "value": 12.0},
+                },
+            ],
+        }
+        vector_gj.write_text(json.dumps(vector), encoding="utf-8")
+    if vector_gj.is_file():
+        out["vector"] = vector_gj
+
     if not timeseries_json.is_file():
         series = {
             "times": [
@@ -1148,6 +1461,82 @@ def ensure_stub_v1_fixtures() -> dict[str, Path]:
     if timeseries_b_json.is_file():
         out["timeseries_b"] = timeseries_b_json
 
+    return out
+
+
+def ensure_synthetic_open_fixtures() -> dict[str, Path]:
+    """Synthetic datasets for local-read seeds whose seed paths are absent.
+
+    - FY MWRI HDF5 with Brightness_Temperature bands (fy_tb_local_read; the
+      seed default {DATA_ROOT}/FY has no local counterpart).
+    - 16-day NDVI GeoTIFFs (ndvi_local_read; {DATA_ROOT}/NDVI missing).
+    """
+    synthetic = DATA_ROOT / "_runtime" / "synthetic"
+    out: dict[str, Path] = {}
+    fy_dir = synthetic / "fy_mwri"
+    fy_h5 = fy_dir / "FY3D_20251101_MWRI.hdf5"
+    if not fy_h5.is_file():
+        try:
+            import h5py
+            import numpy as np
+
+            fy_dir.mkdir(parents=True, exist_ok=True)
+            rng = np.random.default_rng(2026)
+            bands, rows, cols = 2, 24, 48
+            tb = np.stack(
+                [
+                    240.0 + 20.0 * np.sin(np.linspace(0, np.pi, cols))[None, :],
+                    200.0 + 15.0 * np.cos(np.linspace(0, np.pi, cols))[None, :],
+                ]
+            ).repeat(rows, axis=1).reshape(bands, rows, cols)
+            tb += rng.normal(0, 0.5, size=tb.shape)
+            with h5py.File(fy_h5, "w") as h5:
+                ds = h5.create_dataset(
+                    "Brightness_Temperature", data=tb.astype(np.float32)
+                )
+                ds.attrs["units"] = "K"
+                ds.attrs["description"] = "synthetic FY MWRI TB (smoke fixture)"
+                h5.attrs["Satellite"] = "FY3D"
+                h5.attrs["synthetic_smoke_fixture"] = True
+        except Exception as exc:  # noqa: BLE001
+            _log(f"synthetic FY MWRI fixture skipped: {exc}")
+    if fy_h5.is_file():
+        out["fy_mwri_h5"] = fy_h5
+
+    ndvi_dir = synthetic / "ndvi_16day"
+    try:
+        import numpy as np
+        import rasterio
+        from rasterio.transform import from_origin
+
+        ndvi_dir.mkdir(parents=True, exist_ok=True)
+        for date in ("20250101", "20250117", "20250202"):
+            tif = ndvi_dir / f"NDVI_{date}.tif"
+            if tif.is_file():
+                continue
+            rows, cols = 16, 16
+            yy, xx = np.mgrid[0:rows, 0:cols]
+            base = 0.3 + 0.4 * (xx + yy) / (rows + cols)
+            seasonal = 0.1 * np.sin(int(date[4:6]) / 12.0 * np.pi)
+            data = np.clip(base + seasonal, 0.0, 1.0)
+            transform = from_origin(100.0, 32.0, 0.05, 0.05)
+            with rasterio.open(
+                tif,
+                "w",
+                driver="GTiff",
+                height=rows,
+                width=cols,
+                count=1,
+                dtype="float64",
+                crs="EPSG:4326",
+                transform=transform,
+            ) as dst:
+                dst.write(data, 1)
+        tifs = sorted(ndvi_dir.glob("NDVI_*.tif"))
+        if len(tifs) >= 2:
+            out["ndvi_16day_dir"] = ndvi_dir
+    except Exception as exc:  # noqa: BLE001
+        _log(f"synthetic NDVI fixture skipped: {exc}")
     return out
 
 
@@ -1207,15 +1596,19 @@ def prepare_overrides(
     if workflow_id == "open_data_nasa_earthdata_sample":
         target = discover_nasa_lpdaac_smoke_target()
         if target is not None:
-            overrides["definition"] = build_http_open_data_download_only(
+            defn = build_http_open_data_download_only(
                 definition,
                 preset="nasa_earthdata",
                 relative_path=target["relative_path"],
-                cred_profile="earthdata",
+                cred_profile="",
             )
+            for node in defn.get("nodes") or []:
+                if str(node.get("type") or "") == "download/http_open_data":
+                    node.setdefault("properties", {})["use"] = "legacy"
+            overrides["definition"] = defn
             overrides["_note"] = (
-                f"NASA LP DAAC {target['label']} download-only "
-                "(archive/extract/variable skipped)"
+                f"NASA LP DAAC {target['label']} download-only, anonymous legacy "
+                "(lp-prod-public 免登录；earthaccess 账号状态不阻断冒烟)"
             )
     if workflow_id == "smap_soil_moisture_local":
         # Seed uses {DATA_ROOT}/SMAP; local layout is Soil_Moisture/SMAP
@@ -1326,6 +1719,7 @@ def prepare_overrides(
         defn = patch_bbox(
             defn, west=110.0, south=20.0, east=115.0, north=25.0
         )
+        defn = patch_download_window(defn, "20251203", "20251210")
         overrides["definition"] = defn
         overrides["time_range"] = {
             "start_at": "2025-12-03T00:00:00",
@@ -1390,6 +1784,107 @@ def prepare_overrides(
             "smoke_points.geojson / smoke_pour_points.geojson / smoke_zones.geojson / "
             "smoke_timeseries.json / smoke_timeseries_b.json)"
         )
+    # ── X-group mappings (seeds not in hardcoded batches) ──────────────────────
+    if workflow_id == "fy_tb_local_read":
+        syn = ensure_synthetic_open_fixtures()
+        h5 = syn.get("fy_mwri_h5")
+        if h5 is not None:
+            p = str(h5).replace("\\", "/")
+            overrides["definition"] = patch_node_path(definition, 1, p)
+            overrides["datasource_selection"] = {"input_path": p}
+            overrides["_note"] = (
+                "synthetic FY MWRI HDF5 (Brightness_Temperature) under "
+                "{DATA_ROOT}/_runtime/synthetic/fy_mwri (seed default {DATA_ROOT}/FY absent)"
+            )
+        else:
+            overrides["_note"] = "synthetic FY HDF unavailable; seed path likely missing"
+    if workflow_id == "ndvi_local_read":
+        syn = ensure_synthetic_open_fixtures()
+        ndvi_dir = syn.get("ndvi_16day_dir")
+        if ndvi_dir is not None:
+            p = str(ndvi_dir).replace("\\", "/")
+            overrides["definition"] = patch_node_path(definition, 1, p)
+            overrides["datasource_selection"] = {"input_dir": p}
+            overrides["time_range"] = {
+                "start_at": "2025-01-01T00:00:00",
+                "end_at": "2025-02-28T00:00:00",
+                "granularity": "day",
+            }
+            overrides["_note"] = (
+                "synthetic 16-day NDVI GeoTIFFs (3 scenes, 2025-01/02) under "
+                "{DATA_ROOT}/_runtime/synthetic/ndvi_16day"
+            )
+        else:
+            overrides["_note"] = "synthetic NDVI dir unavailable; seed path likely missing"
+    if workflow_id == "nomads_gfs_grib_download":
+        defn = patch_node_property(
+            definition, "date", "latest", node_type="download/nomads_grib_download"
+        )
+        overrides["definition"] = defn
+        overrides["_note"] = "date={YYYYMMDD}→latest; search_string=:TMP:2 m subset"
+    if workflow_id == "cds_era5_reanalysis_download":
+        from datetime import timedelta
+
+        # ERA5 single-levels publishes with ~5-day lag; request 7 days back to
+        # stay inside the guaranteed-available window.
+        era5_date = (datetime.now(timezone.utc) - timedelta(days=7)).strftime(
+            "%Y-%m-%d"
+        )
+        defn = patch_placeholder_token(definition, "{YYYY-MM-DD}", era5_date)
+        overrides["definition"] = defn
+        overrides["_note"] = (
+            f"request date {era5_date} (UTC-7d, ERA5 ~5d publish lag); "
+            "cdsapi queue may take minutes"
+        )
+    if workflow_id == "cdse_sentinel_download":
+        defn = patch_placeholder_token(definition, "{YYYY-MM-DD}", "2025-06-01")
+        defn = patch_node_property(defn, "max_products", 1)
+        overrides["definition"] = defn
+        overrides["_note"] = (
+            "odata_filter day 2025-06-01 (S2 L2A acquisitions guaranteed); "
+            "max_products 2→1"
+        )
+    if workflow_id == "fy_tb_online_read":
+        # Seed has no start_date/end_date keys (only satellite/data_source/band_ids/orbit_mode);
+        # patch_download_window only replaces existing placeholders, so inject directly.
+        defn = json.loads(json.dumps(definition))
+        for node in defn.get("nodes") or []:
+            if not isinstance(node, dict):
+                continue
+            ntype = str(node.get("type") or "")
+            if ntype in ("download/fy_download", "download/fy_preprocess"):
+                props = node.setdefault("properties", {})
+                props["start_date"] = "20251203"
+                props["end_date"] = "20251203"
+        overrides["definition"] = defn
+        overrides["time_range"] = {
+            "start_at": "2025-12-03T00:00:00",
+            "end_at": "2025-12-03T23:59:59",
+            "granularity": "day",
+        }
+        overrides["_note"] = (
+            "single day 2025-12-03 (NAS fy3dhdf2425 window); auto NSMC→NAS fallback"
+        )
+    if workflow_id == "ndvi_online_read":
+        defn = patch_download_window(definition, "20250501", "20250516")
+        defn = patch_node_property(defn, "max_results", 1)
+        overrides["definition"] = defn
+        overrides["time_range"] = {
+            "start_at": "2025-05-01T00:00:00",
+            "end_at": "2025-05-16T23:59:59",
+            "granularity": "day",
+        }
+        overrides["_note"] = (
+            "VNP13C1 16-day window 2025-05-01..16, max_results 5→1 "
+            "(one ~30MB granule)"
+        )
+    if workflow_id == "omega_avg_daily_fy_online":
+        defn = overrides.get("definition") or definition
+        overrides["definition"] = patch_download_window(defn, "20251203", "20251205")
+        overrides["_note"] = (
+            str(overrides.get("_note") or "")
+            + "; fy_download {YYYYMMDD}→20251203..05 (aligns D2 window)"
+        ).lstrip("; ")
     return overrides
 
 
@@ -1499,6 +1994,16 @@ def submit_and_poll(
         _log(f"[{batch}] {workflow_id}: skipped — {block}")
         return row
 
+    meta = definition.get("_meta") if isinstance(definition.get("_meta"), dict) else {}
+    engine = str(meta.get("engine") or "")
+    if engine == "gee":
+        gee_ready, gee_detail = gee_accounts_ready(base, api_key=api_key)
+        if not gee_ready:
+            row.status = "skipped"
+            row.blocker = f"blocked:gee-not-configured ({gee_detail})"
+            _log(f"[{batch}] {workflow_id}: skipped — {row.blocker}")
+            return row
+
     # Soft data checks for omega (still attempt if core dirs exist)
     if workflow_id.startswith("omega_"):
         missing: list[str] = []
@@ -1527,8 +2032,6 @@ def submit_and_poll(
     overrides = prepare_overrides(workflow_id, definition)
     note = overrides.pop("_note", None)
     compiled_graph = None
-    meta = definition.get("_meta") if isinstance(definition.get("_meta"), dict) else {}
-    engine = str(meta.get("engine") or "")
     needs_compile = engine == "weather" or engine in ("python_provider", "common")
     if needs_compile:
         defn_for_compile = overrides.get("definition") or definition
@@ -1625,6 +2128,19 @@ def render_markdown(rows: list[Row], *, infra: dict[str, Any]) -> str:
             "## Notes",
             "",
             "- Batch A is weather tile hot path (not a system seed).",
+            "- Batch X = every system seed not in a hardcoded batch; runner",
+            "  mappings patch dates/paths per seed (directory scan is the",
+            "  source of truth, batches are ordering hints only).",
+            "- Template seeds with `{YYYYMMDD}` / `{YYYY-MM-DD}` date",
+            "  placeholders get concrete windows patched at submit time",
+            "  (cds/cdse/nomads/ndvi_online/fy_online heads).",
+            "- Cred-gated seeds (cds/cdse/nsmc/earthdata heads) are skipped",
+            "  as `blocked:creds` when the portal store + env are empty;",
+            "  `ndvi_gee_read` probes GEE accounts and skips as",
+            "  `blocked:gee-not-configured` when none are enabled.",
+            "- `fy_tb_local_read` / `ndvi_local_read` run on synthetic",
+            "  fixtures under `{DATA_ROOT}/_runtime/synthetic/` (seed default",
+            "  paths `{DATA_ROOT}/FY` / `{DATA_ROOT}/NDVI` have no local data).",
             "- Open-data seeds with `REPLACE_*` placeholders were skipped as "
             "`blocked:config` / `blocked:creds` (no forged portal paths), except "
             "`open_data_noaa_grib_sample` (live NOMADS filter probe) and "
@@ -1745,6 +2261,12 @@ def main() -> int:
         )
     else:
         _log("stub_v1 fixtures: none (Batch G may skip/fail)")
+    syn_fx = ensure_synthetic_open_fixtures()
+    if syn_fx:
+        _log(
+            "synthetic fixtures: "
+            + ", ".join(f"{k}={v}" for k, v in syn_fx.items())
+        )
     gldas_conv = ensure_gldas_nc4_converted()
     if gldas_conv.get("converted") or gldas_conv.get("error"):
         _log(f"GLDAS nc4→mat preflight: {gldas_conv}")
@@ -1794,7 +2316,7 @@ def main() -> int:
                 )
             )
 
-    # Ensure all seed files appear even if not in batches
+    # Ensure all seed files appear even if not in batches ("X" group).
     seed_ids = sorted(p.stem for p in SEEDS_DIR.glob("*.json"))
     seen = {r.workflow_id for r in rows}
     for wid in seed_ids:
@@ -1802,13 +2324,16 @@ def main() -> int:
             continue
         if allow is not None and wid not in allow:
             continue
+        if args.skip_omega and wid.startswith("omega_"):
+            continue
+        timeout_s = args.omega_timeout if wid.startswith("omega_") else args.timeout
         rows.append(
             submit_and_poll(
                 base,
                 wid,
                 "X",
                 api_key=api_key,
-                timeout_s=args.timeout,
+                timeout_s=timeout_s,
                 dry_run=args.dry_run,
             )
         )

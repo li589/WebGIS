@@ -71,7 +71,7 @@ class UniversalDataReader:
 
     def _detect_format(self) -> str:
         ext = self.path.suffix.lower()
-        if ext in (".h5", ".hdf", ".he5"):
+        if ext in (".h5", ".hdf", ".he5", ".hdf5"):
             return "hdf5"
         if ext == ".nc":
             return "netcdf"

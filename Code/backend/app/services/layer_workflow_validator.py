@@ -8,6 +8,7 @@
 3. ``python_provider`` 图层无 ``workflow_name`` 时，记录 warning
 4. ``overlay_registry`` 图层不应有 ``workflow_id``（warning）
 5. 天气图层（``source_type=weather``）不应有 ``workflow_id``（warning）
+6. seed 节点 ``properties.layer_id`` 若存在，对应图层必须存在（error）
 
 本模块仅读取文件系统，不依赖 Redis / DB / 运行时 settings，可在 CI 与单测中
 直接调用。
@@ -38,6 +39,7 @@ CODE_MISSING_LINKED_LAYER = "missing_linked_layer"
 CODE_PYTHON_PROVIDER_NO_WORKFLOW_NAME = "python_provider_missing_workflow_name"
 CODE_OVERLAY_REGISTRY_HAS_WORKFLOW_ID = "overlay_registry_has_workflow_id"
 CODE_WEATHER_LAYER_HAS_WORKFLOW_ID = "weather_layer_has_workflow_id"
+CODE_NODE_LAYER_ID_DANGLING = "node_layer_id_dangling"
 
 
 @dataclass
@@ -117,6 +119,7 @@ def validate_layer_workflow_links() -> list[ValidationIssue]:
     - **warning**: ``python_provider`` 图层缺少 ``workflow_name``。
     - **warning**: ``overlay_registry`` 图层设置了 ``workflow_id``。
     - **warning**: 天气图层（``source_type=weather``）设置了 ``workflow_id``。
+    - **error**: seed 节点 ``properties.layer_id`` 引用的图层不在 catalog 中。
 
     Returns:
         ``ValidationIssue`` 列表，包含所有 error 与 warning 级别的校验结果。
@@ -229,5 +232,30 @@ def validate_layer_workflow_links() -> list[ValidationIssue]:
                         workflow_id=wf_id,
                     )
                 )
+
+        # Rule 6: 节点级 properties.layer_id 引用的图层必须存在
+        nodes = seed.get("nodes")
+        if isinstance(nodes, list):
+            for node in nodes:
+                if not isinstance(node, dict):
+                    continue
+                properties = node.get("properties")
+                if not isinstance(properties, dict):
+                    continue
+                node_layer_id = properties.get("layer_id")
+                if node_layer_id and node_layer_id not in layer_ids:
+                    issues.append(
+                        ValidationIssue(
+                            level="error",
+                            code=CODE_NODE_LAYER_ID_DANGLING,
+                            message=(
+                                f"工作流 seed '{wf_id}' 节点 {node.get('id')} "
+                                f"的 properties.layer_id '{node_layer_id}' "
+                                f"对应的图层不存在于 catalog"
+                            ),
+                            layer_id=node_layer_id,
+                            workflow_id=wf_id,
+                        )
+                    )
 
     return issues

@@ -589,10 +589,18 @@ class HttpOpenDataModule(BaseModule):
             effective_use = "earthaccess"
 
         target = _materialize_root(ctx)
+        local_path: str | None = None
+        cache_hit = False
+        use_note = effective_use
         if effective_use == "earthaccess":
-            local_path = str(_materialize_via_earthaccess(url, target, ds))
-            cache_hit = False
-        else:
+            try:
+                local_path = str(_materialize_via_earthaccess(url, target, ds))
+            except Exception as exc:  # noqa: BLE001
+                # 公开对象（lp-prod-public 等）匿名 GET 可达；earthaccess 登录
+                # 失败（token 过期 / 需重置密码）不应阻断免登录下载，回退 legacy。
+                # 受保护对象随后会因 401/403 失败并保留原始下载错误语义。
+                use_note = f"legacy(earthaccess_auth_fallback: {str(exc)[:160]})"
+        if local_path is None:
             headers = _resolve_portal_headers(
                 cred_profile=cred_profile,
                 datasource_selection=ds,
@@ -625,10 +633,11 @@ class HttpOpenDataModule(BaseModule):
                 "preset": preset,
                 "cache_hit": cache_hit,
                 "cred_profile": cred_profile,
-                "use": effective_use,
+                "use": use_note,
             },
         )
         result["url"] = url
+        result["use"] = use_note
         return result
 
 
