@@ -138,7 +138,20 @@ def _env_runtime_overlays() -> dict[str, dict[str, Any]]:
             "source": "env",
         }
     cp = os.getenv("BACKEND_COPERNICUS_TOKEN", "").strip()
-    if cp:
+    cp_user = os.getenv("BACKEND_COPERNICUS_USERNAME", "").strip()
+    cp_pass = os.getenv("BACKEND_COPERNICUS_PASSWORD", "").strip()
+    if cp_user and cp_pass:
+        # CDSE 主路径：账密经 OIDC password grant 换 Bearer（算法侧
+        # _cdse_bearer_token / cdse_download 模块负责交换）；静态 token
+        # 有效期仅 ~10 min，账密才是可长跑的 env 形态。
+        out["copernicus"] = {
+            "enabled": True,
+            "auth_type": "basic",
+            "username": cp_user,
+            "password": cp_pass,
+            "source": "env",
+        }
+    elif cp:
         out["copernicus"] = {
             "enabled": True,
             "auth_type": "bearer",

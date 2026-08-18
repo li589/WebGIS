@@ -71,12 +71,27 @@ def build_date_keys(start_time: datetime, end_time: datetime) -> list[str]:
     return keys
 
 
+_FY_HDF_SUFFIXES = frozenset({".hdf", ".hdf5"})
+_DEFAULT_HDF_PATTERN = "*.HDF"
+
+
 def discover_fy_orbit_files(
-    input_dir: str | Path, pattern: str = "*.HDF"
+    input_dir: str | Path, pattern: str = _DEFAULT_HDF_PATTERN
 ) -> list[FyOrbitFile]:
     input_dir = Path(input_dir)
+    if pattern == _DEFAULT_HDF_PATTERN:
+        # 默认模式大小写不敏感并接受 .hdf/.hdf5 变体（Linux glob 区分大小写；
+        # .hdf5 是 HDF5 生态与合成 fixture 的常见命名）。显式传入的 pattern
+        # （如 "*.tif" 回退）保持精确语义。
+        candidates: list[Path] = sorted(
+            p
+            for p in input_dir.iterdir()
+            if p.is_file() and p.suffix.lower() in _FY_HDF_SUFFIXES
+        )
+    else:
+        candidates = sorted(input_dir.glob(pattern))
     files: list[FyOrbitFile] = []
-    for file_path in sorted(input_dir.glob(pattern)):
+    for file_path in candidates:
         file_name = file_path.name
         try:
             files.append(

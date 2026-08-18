@@ -1,3 +1,12 @@
+"""Temperature grid render node — GeoJSON from grid or point fallback.
+
+N1 收敛审查结论：保留独立实现，不并入 ``ScalarGridRenderNode``。温度层的
+grid builder 需按 layer_id 动态解析高度层后缀（temperature-2m/80m/120m/180m
+→ ``temperature_2m`` / ``temperature_80m`` ... 变量名），数据提取路径与
+单指标标量层有实质差异（``build_temperature_geojson_from_grid`` vs
+``build_scalar_geojson_from_grid``）；point 回退亦为温度场专属模拟。
+"""
+
 from __future__ import annotations
 
 import logging

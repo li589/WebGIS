@@ -54,7 +54,11 @@ _FORCE_GDAL_BIN = r"C:\OSGeo4W\bin"
 
 
 def _resolve_gdal_bins() -> tuple[str, str, str, str, str]:
-    """定位 GDAL 可执行文件（gdal_translate / gdalbuildvrt / gdalwarp / gdalinfo）。"""
+    """定位 GDAL 可执行文件（gdal_translate / gdalbuildvrt / gdalwarp / gdalinfo）。
+
+    解析顺序：环境变量 ``CGDA_GDAL_BIN`` → 历史 OSGeo4W 默认 → QGIS 官方
+    安装目录（``C:\\Program Files\\QGIS*\\bin``，取最高版本）→ conda → PATH。
+    """
 
     def _ok(p: str | None) -> bool:
         return bool(p) and os.path.exists(p)
@@ -70,10 +74,24 @@ def _resolve_gdal_bins() -> tuple[str, str, str, str, str]:
             return t, b, w, i, prefix
         return None
 
-    fb = (_FORCE_GDAL_BIN or "").strip().rstrip("/\\")
+    def _qgis_candidates() -> list[str]:
+        # QGIS 官方安装布局：C:\Program Files\QGIS <ver>\bin（自带全套 GDAL CLI）。
+        import glob as _glob
+
+        roots = _glob.glob(r"C:\Program Files\QGIS*\bin") + _glob.glob(
+            r"C:\Program Files (x86)\QGIS*\bin"
+        )
+        return sorted(roots, reverse=True)
+
+    fb = os.environ.get("CGDA_GDAL_BIN", "").strip().rstrip("/\\")
     found = _try_prefix(fb)
     if found:
         return found
+
+    for prefix in (_FORCE_GDAL_BIN, *_qgis_candidates()):
+        found = _try_prefix(prefix)
+        if found:
+            return found
 
     cp = os.environ.get("CONDA_PREFIX", "")
     found = _try_prefix(os.path.join(cp, "Library", "bin"))
@@ -1027,8 +1045,8 @@ class FyPreprocessor:
         )
 
         # 构造日期列表
-        start = datetime.strptime(start_date, "%Y-%m-%d")
-        end = datetime.strptime(end_date, "%Y-%m-%d")
+        start = parse_fy_date(start_date)
+        end = parse_fy_date(end_date)
         date_keys = build_date_keys(start, end)
         if not date_keys:
             logger.warning("输入的时间范围无效")
@@ -1108,3 +1126,15 @@ def build_date_keys(start_time: datetime, end_time: datetime) -> list[str]:
         keys.append(current.strftime("%Y%m%d"))
         current += timedelta(days=1)
     return keys
+
+
+def parse_fy_date(value: str) -> datetime:
+    """解析 ``YYYY-MM-DD`` / ``YYYY.MM.DD`` / ``YYYYMMDD`` 日期输入。
+
+    种子 ``{YYYYMMDD}`` 占位符展开后为紧凑格式，与
+    ``fy_download._iter_date_range`` 的宽容策略保持一致。
+    """
+    v = str(value).strip()
+    if len(v) == 8 and v.isdigit():
+        return datetime.strptime(v, "%Y%m%d")
+    return datetime.strptime(v.replace(".", "-"), "%Y-%m-%d")

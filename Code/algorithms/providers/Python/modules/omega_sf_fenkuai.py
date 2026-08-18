@@ -112,7 +112,9 @@ def _resolve_grid_shape(
 
 
 @register_module_decorator(
-    name="omega_sf_fenkuai", aliases=["omega_sf_fenkuai_pipeline"]
+    name="omega_sf_fenkuai",
+    aliases=["omega_sf_fenkuai_pipeline"],
+    template_overrides={"phase": "inversion"},
 )
 class OmegaSfFenkuaiModule(BaseModule):
     name = "omega_sf_fenkuai"

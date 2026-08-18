@@ -466,10 +466,14 @@ def portal_creds_ready(
     Portal store keys follow portal credential_profile conventions (e.g.
     "earthdata", "nsmc", "copernicus", "ecmwf_cds"); entries disabled via
     enabled=false are ignored.
+
+    Env vars are checked AFTER importing config_service: the import loads
+    backend .env into os.environ (load_dotenv side effect), mirroring the
+    worker-visible credential sources (DB store + backend .env + shared
+    shell). Checking before the import missed .env-only tokens and let
+    smoke-shell-only tokens greenlight runs the workers could not auth.
     """
-    for var in env_vars:
-        if os.environ.get(var):
-            return True
+    store: dict[str, Any] = {}
     try:
         backend_root = REPO_ROOT / "Code" / "backend"
         if str(backend_root) not in sys.path:
@@ -478,29 +482,32 @@ def portal_creds_ready(
         from app.services.config_service import get_portal_credentials_runtime
 
         store = get_portal_credentials_runtime() or {}
-        for key in portal_keys:
-            entry = store.get(key)
-            if not isinstance(entry, dict) or entry.get("enabled") is False:
-                continue
-            if str(entry.get("token") or entry.get("access_token") or "").strip():
-                return True
-            user = str(entry.get("username") or "").strip()
-            pw = str(entry.get("password") or entry.get("secret") or "").strip()
-            if user and pw:
-                return True
-            # Multi-account rotation entries (e.g. nsmc accounts[]).
-            for acc in entry.get("accounts") or []:
-                if not isinstance(acc, dict):
-                    continue
-                if str(acc.get("token") or "").strip():
-                    return True
-                a_user = str(acc.get("username") or "").strip()
-                a_pw = str(acc.get("password") or "").strip()
-                if a_user and a_pw:
-                    return True
-        return False
     except Exception:  # noqa: BLE001
-        return False
+        store = {}
+    for var in env_vars:
+        if os.environ.get(var):
+            return True
+    for key in portal_keys:
+        entry = store.get(key)
+        if not isinstance(entry, dict) or entry.get("enabled") is False:
+            continue
+        if str(entry.get("token") or entry.get("access_token") or "").strip():
+            return True
+        user = str(entry.get("username") or "").strip()
+        pw = str(entry.get("password") or entry.get("secret") or "").strip()
+        if user and pw:
+            return True
+        # Multi-account rotation entries (e.g. nsmc accounts[]).
+        for acc in entry.get("accounts") or []:
+            if not isinstance(acc, dict):
+                continue
+            if str(acc.get("token") or "").strip():
+                return True
+            a_user = str(acc.get("username") or "").strip()
+            a_pw = str(acc.get("password") or "").strip()
+            if a_user and a_pw:
+                return True
+    return False
 
 
 _ED_CREDS_PROBE_CACHE: tuple[bool, str] | None = None
@@ -1017,13 +1024,25 @@ def preflight_block(workflow_id: str, definition: dict[str, Any]) -> str | None:
             if discover_nasa_lpdaac_smoke_target() is None:
                 return "blocked:config (LP DAAC browse sample unreachable)"
             return None
-        if workflow_id == "open_data_esa_product_sample":
-            if not portal_creds_ready(
-                ("copernicus", "esa_copernicus"),
-                env_vars=("BACKEND_COPERNICUS_TOKEN",),
-            ):
-                return "blocked:creds (copernicus profile; seed UUID is a real 5MB S2 L2A sample)"
-            return None
+    # ESA: CDSE $value download needs copernicus bearer creds regardless of
+    # placeholders — gate outside the placeholder branch (seed has none, so the
+    # in-branch check never ran and no-cred hosts submitted straight into 401).
+    if workflow_id == "open_data_esa_product_sample":
+        if not portal_creds_ready(
+            ("copernicus", "esa_copernicus"),
+            env_vars=(
+                "BACKEND_COPERNICUS_TOKEN",
+                "BACKEND_COPERNICUS_USERNAME",
+                "BACKEND_COPERNICUS_PASSWORD",
+            ),
+        ):
+            return (
+                "blocked:creds (copernicus profile missing; CDSE $value needs "
+                "OIDC bearer auth — configure 设置页 copernicus "
+                "username/password, or BACKEND_COPERNICUS_USERNAME/PASSWORD, "
+                "or BACKEND_COPERNICUS_TOKEN)"
+            )
+        return None
     # NSIDC: granules too large for light smoke regardless of placeholders —
     # gate outside the placeholder branch (seed has none, gate must still apply).
     if workflow_id == "open_data_nsidc_smap_sample":
@@ -1099,7 +1118,11 @@ def preflight_block(workflow_id: str, definition: dict[str, Any]) -> str | None:
         return "blocked:creds (no ecmwf_cds portal key / BACKEND_CDS_API_KEY)"
     if workflow_id == "cdse_sentinel_download" and not portal_creds_ready(
         ("copernicus", "esa_copernicus"),
-        env_vars=("BACKEND_COPERNICUS_USERNAME", "COPERNICUS_USERNAME"),
+        env_vars=(
+            "BACKEND_COPERNICUS_TOKEN",
+            "BACKEND_COPERNICUS_USERNAME",
+            "BACKEND_COPERNICUS_PASSWORD",
+        ),
     ):
         return "blocked:creds (no copernicus portal account)"
     if workflow_id == "fy_tb_online_read" and not portal_creds_ready(
@@ -1108,14 +1131,23 @@ def preflight_block(workflow_id: str, definition: dict[str, Any]) -> str | None:
     ):
         return "blocked:creds (fy_download auto needs nsmc or nas creds)"
     if workflow_id == "fy_tb_online_read":
-        # fy_preprocess requires GDAL CLI (gdal_translate/gdalwarp/gdalbuildvrt)
-        import shutil as _shutil
+        # fy_preprocess requires GDAL CLI (gdal_translate/gdalwarp/gdalbuildvrt).
+        # Mirror the worker-side resolver: CGDA_GDAL_BIN env → OSGeo4W → QGIS
+        # install dirs → conda → PATH (shutil.which alone misses QGIS-only hosts).
+        try:
+            provider_root = REPO_ROOT / "Code" / "algorithms" / "providers" / "Python"
+            if str(provider_root) not in sys.path:
+                sys.path.insert(0, str(provider_root))
+            from ingest.fy_preprocess import _resolve_gdal_bins
 
-        if not (_shutil.which("gdal_translate") or _shutil.which("gdal_translate.exe")):
+            _resolve_gdal_bins()
+        except FileNotFoundError:
             return (
                 "blocked:deps (fy_preprocess requires GDAL CLI: "
-                "gdal_translate/gdalwarp not on PATH)"
+                "CGDA_GDAL_BIN/OSGeo4W/QGIS/conda/PATH all missing)"
             )
+        except Exception:  # noqa: BLE001
+            return None
     if workflow_id == "ndvi_online_read" and not portal_creds_ready(
         ("earthdata",),
         env_vars=("BACKEND_EARTHDATA_TOKEN", "EARTHDATA_TOKEN"),

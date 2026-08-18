@@ -49,7 +49,11 @@ def _resolve_omega_datasource_selection(
     return resolved
 
 
-@register_module_decorator(name="omega_block", aliases=["omega_block_pipeline"])
+@register_module_decorator(
+    name="omega_block",
+    aliases=["omega_block_pipeline"],
+    template_overrides={"phase": "inversion"},
+)
 class OmegaBlockModule(BaseModule):
     name = "omega_block"
     description = (

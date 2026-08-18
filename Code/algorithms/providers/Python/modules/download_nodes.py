@@ -227,7 +227,7 @@ def _resolve_profile_server_config(profile_id: str) -> object:
     )
 
 
-@register_module_decorator(name="ssh_sync")
+@register_module_decorator(name="ssh_sync", template_overrides={"phase": "download"})
 class SshSyncModule(BaseModule):
     name = "ssh_sync"
     description = (
@@ -406,7 +406,9 @@ class SshSyncModule(BaseModule):
 # ─── NSIDC SMAP 下载节点 ──────────────────────────────────────────────────────
 
 
-@register_module_decorator(name="nsidc_smap_download")
+@register_module_decorator(
+    name="nsidc_smap_download", template_overrides={"phase": "download"}
+)
 class NsidcSmapDownloadModule(BaseModule):
     name = "nsidc_smap_download"
     description = (
@@ -544,7 +546,9 @@ class NsidcSmapDownloadModule(BaseModule):
 # ─── GLDAS 下载节点 ───────────────────────────────────────────────────────────
 
 
-@register_module_decorator(name="gldas_download")
+@register_module_decorator(
+    name="gldas_download", template_overrides={"phase": "download"}
+)
 class GldasDownloadModule(BaseModule):
     name = "gldas_download"
     description = (
@@ -793,7 +797,9 @@ class GldasNc4ToMatModule(BaseModule):
 # ─── FY 预处理节点 ────────────────────────────────────────────────────────────
 
 
-@register_module_decorator(name="fy_preprocess")
+@register_module_decorator(
+    name="fy_preprocess", template_overrides={"phase": "preprocess"}
+)
 class FyPreprocessModule(BaseModule):
     name = "fy_preprocess"
     description = (

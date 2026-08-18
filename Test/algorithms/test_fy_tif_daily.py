@@ -175,5 +175,48 @@ class TestFyDailyModuleTifBranch(unittest.TestCase):
             )
 
 
+class TestHdfExtensionTolerance(unittest.TestCase):
+    """discover_fy_orbit_files 默认模式应大小写不敏感并接受 .hdf/.hdf5 变体。"""
+
+    def test_hdf5_and_case_variants_discovered(self) -> None:
+        from ingest.fy import discover_fy_orbit_files
+
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "raw"
+            raw.mkdir()
+            for name in (
+                "FY3D_GBAL_L1_20251227_MWRID_0.HDF",
+                "FY3D_GBAL_L1_20251228_MWRID_0.hdf",
+                "FY3D_GBAL_L1_20251229_MWRID_0.hdf5",
+            ):
+                (raw / name).write_bytes(b"")
+            files = discover_fy_orbit_files(raw)
+            self.assertEqual(
+                [f.file_name for f in files],
+                [
+                    "FY3D_GBAL_L1_20251227_MWRID_0.HDF",
+                    "FY3D_GBAL_L1_20251228_MWRID_0.hdf",
+                    "FY3D_GBAL_L1_20251229_MWRID_0.hdf5",
+                ],
+            )
+            self.assertEqual(
+                [f.date_key for f in files],
+                ["20251227", "20251228", "20251229"],
+            )
+            self.assertTrue(all(f.orbit_type == "MWRID" for f in files))
+
+    def test_explicit_pattern_stays_exact(self) -> None:
+        from ingest.fy import discover_fy_orbit_files
+
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "raw"
+            raw.mkdir()
+            (raw / "FY3D_GBAL_L1_20251227_MWRID_0.HDF").write_bytes(b"")
+            (raw / "FY3D_GBAL_L1_20251227_MWRID_0.tif").write_bytes(b"")
+            files = discover_fy_orbit_files(raw, pattern="*.tif")
+            self.assertEqual(len(files), 1)
+            self.assertTrue(files[0].file_name.endswith(".tif"))
+
+
 if __name__ == "__main__":
     unittest.main()

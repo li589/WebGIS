@@ -3,7 +3,7 @@
     "kind": "system",
     "engine": "common",
     "name": "欧空局产品下载样例（SAFE/ZIP）",
-    "description": "目的：经 Copernicus CDSE OData 下载产品包并识别 Sentinel SAFE。前置：设置页 copernicus 凭证（或 BACKEND_COPERNICUS_TOKEN）。默认对象为真实小样例：S2B L2A T43FEB 2025-06-01（约 5 MB，CDSE 目录最小产品之一），凭证就绪即可直接跑通下载→SAFE 解压；换产品时改 relative_path 为 Products(<UUID>)/$value（UUID 经 cdse_sentinel_download 检索或 CDSE 浏览器获取）。产出：SAFE 根目录（若存在）或解压目录。",
+    "description": "目的：经 Copernicus CDSE OData 下载产品包并识别 Sentinel SAFE。前置：设置页 copernicus 账号密码（OIDC 换 Bearer 主路径）或 BACKEND_COPERNICUS_USERNAME/PASSWORD、BACKEND_COPERNICUS_TOKEN（静态 token 仅 ~10 min 有效）。默认对象为真实小样例：S2B L2A T43FEB 2025-06-01（约 5 MB，CDSE 目录最小产品之一），凭证就绪即可直接跑通下载→SAFE 解压；换产品时改 relative_path 为 Products(<UUID>)/$value（UUID 经 cdse_sentinel_download 检索或 CDSE 浏览器获取）。产出：SAFE 根目录（若存在）或解压目录。",
     "author": "system",
     "readonly": true,
     "is_template": true,

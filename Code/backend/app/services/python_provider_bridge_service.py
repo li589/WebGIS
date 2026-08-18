@@ -93,8 +93,39 @@ def _clear_event_context() -> None:
     _thread_local.run_id = None
 
 
+_STAGE_PHASE_CACHE: dict[str, str | None] = {}
+
+
+def _declared_module_phase(stage: str) -> str | None:
+    """读模块 registry 的 phase 声明（stage 名即模块名/别名时命中）。
+
+    声明缺失、stage 为子步骤名或 provider 不可导入时返回 None，
+    由 substring 匹配兜底。同一 stage 只查询一次 registry。
+    """
+    if not stage:
+        return None
+    if stage in _STAGE_PHASE_CACHE:
+        return _STAGE_PHASE_CACHE[stage]
+    phase: str | None = None
+    try:
+        with _python_provider_import_path(Path(settings.python_provider_root)):
+            registry = importlib.import_module("modules.registry")
+            phase = registry.get_module_phase(stage)
+    except Exception:  # noqa: BLE001
+        phase = None
+    _STAGE_PHASE_CACHE[stage] = phase
+    return phase
+
+
 def _classify_stage(stage: str) -> str:
-    """将算法 stage 名称映射为前端阶段分类。"""
+    """将算法 stage 名称映射为前端阶段分类。
+
+    优先读模块 phase 声明（N4 声明化）；未声明或未注册的 stage
+    回退 substring 匹配（历史行为）。
+    """
+    declared = _declared_module_phase(stage)
+    if declared:
+        return declared
     stage_lower = stage.lower()
     if any(k in stage_lower for k in ("ssh_sync", "nsidc", "download", "sync")):
         return "download"

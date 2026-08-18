@@ -394,6 +394,29 @@ def _earthdata_bearer_token(username: str, password: str) -> str:
     return token
 
 
+# CDSE OIDC token：copernicus 账密换 Bearer（access_token 有效期 ~10 min）。
+# 交换与缓存镜像 _earthdata_bearer_token 的 URS 模式；静态 token 条目
+# （BACKEND_COPERNICUS_TOKEN / 门户 token）有效期短，账密交换才是主路径。
+_CDSE_TOKEN_TTL_SECONDS = 9 * 60
+_cdse_token_cache: dict[str, tuple[float, str]] = {}
+
+
+def _cdse_bearer_token(username: str, password: str) -> str:
+    """copernicus 账密换 CDSE OIDC Bearer（进程内缓存，失败抛异常）。"""
+    import time
+
+    from ingest.cdse_download import exchange_cdse_token
+
+    cache_key = f"{username}:{password}"
+    now = time.monotonic()
+    cached = _cdse_token_cache.get(cache_key)
+    if cached and now - cached[0] < _CDSE_TOKEN_TTL_SECONDS:
+        return cached[1]
+    token = exchange_cdse_token(username, password)
+    _cdse_token_cache[cache_key] = (now, token)
+    return token
+
+
 def _resolve_portal_headers(
     *,
     cred_profile: str,
@@ -473,6 +496,18 @@ def _resolve_portal_headers(
     header_name = (
         str(entry.get("token_header") or "Authorization").strip() or "Authorization"
     )
+
+    # Copernicus 家族（CDSE $value 下载）：有账密则优先 OIDC 交换 Bearer
+    # （CDSE 不接受 Basic；静态 token 有效期仅 ~10 min）。交换失败回退
+    # 静态 token / 既有分支语义。
+    if profile in _PORTAL_CRED_ALIASES["copernicus"] and username and password:
+        try:
+            headers["Authorization"] = (
+                f"Bearer {_cdse_bearer_token(username, password)}"
+            )
+            return headers
+        except Exception:  # noqa: BLE001
+            pass
 
     if auth_type in {"bearer", "token"} and token:
         value = token if token.lower().startswith("bearer ") else f"Bearer {token}"

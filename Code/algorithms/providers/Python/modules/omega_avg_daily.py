@@ -123,7 +123,11 @@ def _find_omega_block_mat(omega_block_dir: str | Path) -> Path | None:
     return None
 
 
-@register_module_decorator(name="omega_avg_daily", aliases=["omega_avg_daily_pipeline"])
+@register_module_decorator(
+    name="omega_avg_daily",
+    aliases=["omega_avg_daily_pipeline"],
+    template_overrides={"phase": "inversion"},
+)
 class OmegaAvgDailyModule(BaseModule):
     name = "omega_avg_daily"
     description = (

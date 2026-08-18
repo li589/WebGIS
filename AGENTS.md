@@ -89,6 +89,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | 天气瓦片 | `app/weatherengine/tile_service.py`、`app/api/weather_tile_routes.py` | `Env/Python312/python.exe -m pytest Test/backend/test_weather_tile_service.py -q`（仓库根执行）；再 `python launch.py start fastapi` 后请求 `/weather/tiles/{layer_id}/{z}/{x}/{y}` |
 | 天气工作流编译 | `app/services/workflow_graph_compiler.py`、`workflow_seeds/system/weather_*.json` | `Env/Python312/python.exe -m pytest Test/backend/test_workflow_graph_compiler.py -q` |
 | 天气点查 / 引擎 | `app/weatherengine/service.py`、`fetch_gateway.py`、`providers/` | `Env/Python312/python.exe -m pytest Test/backend/test_weather_point_service.py Test/backend/test_weatherengine_service.py Test/backend/test_fetch_gateway.py -q` |
+| 天气标量网格渲染节点 | `app/weatherengine/nodes/scalar_grid_render.py`（参数化基类）、`*_grid_render.py` 薄壳 | `Env/Python312/python.exe -m pytest Test/backend/test_scalar_grid_render_nodes.py Test/backend/test_weatherengine_service.py Test/backend/test_weather_point_service.py Test/backend/test_weather_tile_service.py -q` |
 | 工作流运行 | `app/services/workflow/`、`app/api/routers/workflow_router.py` | `Env/Python312/python.exe -m pytest Test/backend/test_workflow_routes.py Test/backend/test_interaction_hub.py Test/backend/test_business_regression.py -q` |
 | 工作流定时器 | `app/services/workflow_timer_service.py`、`workflow_timer_router.py`、`workflow_timer_tasks.py`；FE `WorkflowTimerPanel.vue` | `Env/Python312/python.exe -m pytest Test/backend/test_workflow_timer_service.py Test/backend/test_celery_tasks.py -q`（真实 cron 需 Beat + standard worker）；FE：`cd Code/frontend && npm run test -- workflow-timer` |
 | 配置 / 鉴权 | `app/api/config_routes.py`、`app/services/config_service.py`、`credential_resolver.py` | `Env/Python312/python.exe -m pytest Test/backend/test_config_security.py Test/backend/test_api_keys_basemap.py Test/backend/test_auth.py -q` |
@@ -109,6 +110,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | 前后端契约 / OpenAPI | `Code/frontend/openapi.json`、`Code/shared/contracts/` | `cd Code/frontend && npm run check:openapi` |
 | 图层目录漂移 | FE `catalog.ts` LAYER_LIBRARY ↔ BE `catalog_seeds/*_descriptors.json` | `cd Code/frontend && npm run check:catalog` |
 | Python 算法包 | `Code/algorithms/providers/Python/` | `pre-commit run --all-files`（ruff + mypy 覆盖 `algorithms/`） |
+| 算法模块 phase 声明 / 阶段分类 | `providers/Python/modules/*` 的 `template_overrides={"phase": ...}`、`backend/services/python_provider_bridge_service.py`（`_classify_stage`） | `Env/Python312/python.exe -m pytest Test/backend/test_module_phase_classification.py Test/backend/test_node_template_compile_coverage.py -q` |
 | 任意提交前 | 全仓库 | `pre-commit run --all-files`（ruff / mypy / eslint / prettier / 契约检查） |
 
 后端/算法测试集中在仓库根 `Test/`（后端 `Test/backend/`、算法 `Test/algorithms/`），在仓库根用 `Env/Python312/python.exe -m pytest Test/backend` 执行，需 `REDIS_URL` 与 `ENVIRONMENT=test`（见 `.github/workflows/ci.yml`）。前端测试在 `Test/frontend/`，由 `Code/frontend/vite.config.ts` 的 `test.include` 跨出 root 加载。CI 质量门：pre-commit（全量）→ pytest → vitest → check:openapi。

@@ -217,3 +217,38 @@ def test_portal_accounts_upsert_roundtrip():
         repo=repo, encryption_key=_VALID_KEY
     )["nsmc"]
     assert public["account_count"] == 0
+
+
+def test_copernicus_env_overlay_prefers_userpass(monkeypatch):
+    """.env 账密 overlay 优先于 token：CDSE 主路径是 OIDC 账密交换。"""
+    repo = _DictRepo()
+    monkeypatch.setenv("BACKEND_COPERNICUS_USERNAME", "cdse-user")
+    monkeypatch.setenv("BACKEND_COPERNICUS_PASSWORD", "cdse-pass")
+    monkeypatch.setenv("BACKEND_COPERNICUS_TOKEN", "stale-static-token")
+    try:
+        store = portal_mod.load_portal_credentials_secret(
+            repo=repo, encryption_key=_VALID_KEY
+        )
+        entry = store["copernicus"]
+        assert entry["auth_type"] == "basic"
+        assert entry["username"] == "cdse-user"
+        assert entry["password"] == "cdse-pass"
+        assert "token" not in entry
+    finally:
+        monkeypatch.delenv("BACKEND_COPERNICUS_USERNAME", raising=False)
+        monkeypatch.delenv("BACKEND_COPERNICUS_PASSWORD", raising=False)
+        monkeypatch.delenv("BACKEND_COPERNICUS_TOKEN", raising=False)
+
+
+def test_copernicus_env_overlay_token_only(monkeypatch):
+    """仅 token 时维持静态 Bearer overlay（向后兼容）。"""
+    repo = _DictRepo()
+    monkeypatch.setenv("BACKEND_COPERNICUS_TOKEN", "env-token")
+    try:
+        entry = portal_mod.load_portal_credentials_secret(
+            repo=repo, encryption_key=_VALID_KEY
+        )["copernicus"]
+        assert entry["auth_type"] == "bearer"
+        assert entry["token"] == "env-token"
+    finally:
+        monkeypatch.delenv("BACKEND_COPERNICUS_TOKEN", raising=False)
