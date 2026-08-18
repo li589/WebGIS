@@ -12,8 +12,11 @@ These are repository / blob-level tests (no HTTP, no Redis), so they run anywher
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
+from app.services import portal_catalog as portal_catalog_mod
 from app.services import portal_credentials as portal_mod
 from app.services.api_keys_repository import ApiKeysRepository
 
@@ -252,3 +255,95 @@ def test_copernicus_env_overlay_token_only(monkeypatch):
         assert entry["token"] == "env-token"
     finally:
         monkeypatch.delenv("BACKEND_COPERNICUS_TOKEN", raising=False)
+
+
+def test_portal_id_key_projects_to_profile_key():
+    """键归一：portal_id 键（如 esa_copernicus）存储投影到 credential_profile
+    规范键（copernicus）——目录徽标/回填/worker 解析统一读规范键。"""
+    repo = _DictRepo()
+    portal_mod.upsert_portal_credential(
+        repo=repo,
+        encryption_key=_VALID_KEY,
+        portal_id="esa_copernicus",
+        payload={
+            "enabled": True,
+            "auth_type": "basic",
+            "username": "cdse-user",
+            "password": "cdse-pass",
+        },
+    )
+    store = portal_mod.load_portal_credentials_secret(
+        repo=repo, encryption_key=_VALID_KEY
+    )
+    # 原键保留（向后兼容）+ 规范键投影
+    assert store["esa_copernicus"]["password"] == "cdse-pass"
+    projected = store["copernicus"]
+    assert projected["username"] == "cdse-user"
+    assert projected["password"] == "cdse-pass"
+    assert projected["auth_type"] == "basic"
+    assert projected["source"] == "db"
+
+
+def test_profile_dedicated_key_wins_over_alias_projection():
+    """规范 profile 专键条目优先，不被 portal_id 别名投影覆盖。"""
+    repo = _DictRepo()
+    portal_mod.upsert_portal_credential(
+        repo=repo,
+        encryption_key=_VALID_KEY,
+        portal_id="esa_download",
+        payload={"auth_type": "basic", "username": "alias-user", "password": "alias-pass"},
+    )
+    portal_mod.upsert_portal_credential(
+        repo=repo,
+        encryption_key=_VALID_KEY,
+        portal_id="copernicus",
+        payload={"auth_type": "basic", "username": "direct-user", "password": "direct-pass"},
+    )
+    store = portal_mod.load_portal_credentials_secret(
+        repo=repo, encryption_key=_VALID_KEY
+    )
+    assert store["copernicus"]["username"] == "direct-user"
+
+
+def test_delete_profile_key_purges_alias_residue():
+    """清除规范键时同步清除别名键残留——否则归一投影让「清除凭据」失效且
+    密文残留（secret 清除必须彻底）。"""
+    repo = _DictRepo()
+    portal_mod.upsert_portal_credential(
+        repo=repo,
+        encryption_key=_VALID_KEY,
+        portal_id="esa_copernicus",
+        payload={"auth_type": "basic", "username": "u", "password": "p"},
+    )
+    portal_mod.delete_portal_credential(
+        repo=repo, encryption_key=_VALID_KEY, portal_id="copernicus"
+    )
+    raw = repo.get_json("portal_credentials", {})
+    assert "esa_copernicus" not in raw
+    assert "copernicus" not in raw
+    store = portal_mod.load_portal_credentials_secret(
+        repo=repo, encryption_key=_VALID_KEY
+    )
+    assert "copernicus" not in store or not store["copernicus"].get("password")
+
+
+def test_portal_catalog_reports_credentials_for_alias_stored_entry():
+    """端到端：portal_id 键存储后目录徽标（has_credentials）转绿。"""
+    from app.core.config import settings
+
+    repo = _DictRepo()
+    portal_mod.upsert_portal_credential(
+        repo=repo,
+        encryption_key=_VALID_KEY,
+        portal_id="esa_copernicus",
+        payload={"auth_type": "basic", "username": "u", "password": "p"},
+    )
+    prev_key = settings.gee_credentials_encryption_key
+    object.__setattr__(settings, "gee_credentials_encryption_key", _VALID_KEY)
+    try:
+        with patch.object(portal_catalog_mod, "_repo", return_value=repo):
+            entries = {e["portal_id"]: e for e in portal_catalog_mod.get_portal_catalog()}
+    finally:
+        object.__setattr__(settings, "gee_credentials_encryption_key", prev_key)
+    assert entries["esa_copernicus"]["has_credentials"] is True
+    assert entries["esa_download"]["has_credentials"] is True

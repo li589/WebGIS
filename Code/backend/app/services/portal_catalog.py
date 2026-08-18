@@ -439,6 +439,23 @@ def known_portal_ids(*, repo: Any = None) -> set[str]:
     return ids
 
 
+def portal_profile_aliases(*, repo: Any = None) -> dict[str, str]:
+    """portal_id → credential_profile 别名表（共享凭据族的规范键归一用）。
+
+    前端凭据对话框按 portal_id 保存（如 ``esa_copernicus``/``cdse``），而目录
+    状态徽标、凭据回填与 worker 运行时解析都按 credential_profile（如
+    ``copernicus``）查询。本表供 ``load_portal_credentials_secret`` 把
+    portal_id 键的存储投影到规范键，消除写入/读取键错位。仅含 profile
+    非空且不等于自身 portal_id 的条目。
+    """
+    r = repo if repo is not None else _repo()
+    return {
+        pid: d.cred_key()
+        for pid, d in list_portal_defs(repo=r).items()
+        if d.credential_profile and d.credential_profile != pid
+    }
+
+
 def preset_labels_from_catalog(*, repo: Any = None) -> dict[str, str]:
     """目录生成的 preset 标签（供 open_data_preset_labels 合并，键名向后兼容）。"""
     return {pid: d.name for pid, d in list_portal_defs(repo=repo).items()}
