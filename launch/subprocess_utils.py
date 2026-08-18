@@ -8,8 +8,12 @@ Extracted from the original ``launch.py``. Provides:
 - Open-Meteo volume name resolution from ``data-sync/.env``.
 - Docker named-volume ensure (``ensure_named_volume``).
 - Project initialisation (``ensure_project_initialized``).
+- Cross-platform process enumeration by command line
+  (``enumerate_cmdline_rows``, ``list_matching_processes``).
 - Cross-platform process termination by command-line patterns
-  (``terminate_by_cmdline_patterns``).
+  (``terminate_by_cmdline_patterns``, ``tree_kill_pid``).
+- Termination verification (``wait_for_pattern_exit``).
+- Port liveness / owner lookup (``port_listening``, ``netstat_listening_pids``).
 - PID liveness check (``pid_alive``).
 - Node.js / Vite resolution (``resolve_nodejs``, ``frontend_dev_command``).
 """
@@ -18,8 +22,10 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -203,6 +209,7 @@ def _resolve_windows_tool(name: str) -> str:
         "pwsh": [rf"{sysroot}\System32\WindowsPowerShell\v1.0\powershell.exe"],
         "taskkill": [rf"{sysroot}\System32\taskkill.exe"],
         "docker": [rf"{sysroot}\System32\docker.exe"],
+        "netstat": [rf"{sysroot}\System32\netstat.exe"],
     }
     for cand in candidates.get(name, []):
         if Path(cand).is_file():
@@ -210,17 +217,52 @@ def _resolve_windows_tool(name: str) -> str:
     return name
 
 
-def terminate_by_cmdline_patterns(patterns: list[str]) -> None:
-    """按命令行子串终止进程（Windows: CIM/WMI/taskkill 回退；Linux: pkill -f）。"""
-    if not patterns:
-        return
+_ENUM_OK_SENTINEL = "__ENUM__|OK"
+_ENUM_FAIL_SENTINEL = "__ENUM__|FAIL"
+
+
+def _run_capture_text(cmd: list[str], timeout: float) -> str | None:
+    """运行命令并解码 stdout（容错 zh-CN 控制台 GBK 输出）。
+
+    ``subprocess.run(text=True)`` 强制 UTF-8 解码，在 OEM 代码页为 cp936 的
+    中文 Windows 上会让读取线程抛 ``UnicodeDecodeError``、stdout 全损——
+    2026-08-16 世代堆积事故的又一诱因（枚举输出被吞 → 清扫 no-op）。
+    此处按字节捕获：先严格 UTF-8，失败回退本地 ANSI 代码页 + replace。
+    """
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=timeout, **hidden_kwargs())
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+    data = r.stdout or b""
+    if isinstance(data, str):
+        return data
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        import locale
+
+        return data.decode(locale.getpreferredencoding(False), errors="replace")
+
+
+def enumerate_cmdline_rows() -> tuple[bool, list[tuple[int, str]]]:
+    """枚举全部进程，返回 ``(枚举是否可信, [(pid, cmdline), ...])``。
+
+    Windows 经 PowerShell CIM/WMI；PowerShell 脚本开头强制 UTF-8 输出、
+    末尾输出哨兵行（``__ENUM__|OK`` / ``__ENUM__|FAIL``），用于区分
+    「无匹配」与「枚举本身失败（PATH 缺 System32 / WMI 异常 / 解码失败）」
+    ——后者在 2026-08-16 事故中曾让清扫静默 no-op。
+    POSIX 用 ``ps -eo pid=,args=``。
+    """
+    rows: list[tuple[int, str]] = []
     if IS_WINDOWS:
         ps_script = r"""
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $ErrorActionPreference = 'SilentlyContinue'
 $rows = @()
 try {
   $rows = @(Get-CimInstance Win32_Process | Select-Object ProcessId, CommandLine)
-} catch {
+} catch { $rows = @() }
+if (-not $rows -or $rows.Count -eq 0) {
   try { $rows = @(Get-WmiObject Win32_Process | Select-Object ProcessId, CommandLine) } catch { $rows = @() }
 }
 $rows | ForEach-Object {
@@ -228,52 +270,175 @@ $rows | ForEach-Object {
     '{0}|{1}' -f $_.ProcessId, ($_.CommandLine -replace '[\r\n]+',' ')
   }
 }
+if ($rows -and $rows.Count -gt 0) { '__ENUM__|OK' } else { '__ENUM__|FAIL' }
 """
-        try:
-            r = subprocess.run(
-                [
-                    _resolve_windows_tool("powershell"),
-                    "-NoProfile",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-Command",
-                    ps_script,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                **hidden_kwargs(),
-            )
-            lines = (r.stdout or "").splitlines()
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            lines = []
-
-        my_pid = os.getpid()
+        out = _run_capture_text(
+            [
+                _resolve_windows_tool("powershell"),
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                ps_script,
+            ],
+            timeout=30,
+        )
+        if out is None:
+            return False, []
+        lines = out.splitlines()
+        ok = False
         for line in lines:
-            if "|" not in line:
+            stripped = line.strip()
+            if stripped == _ENUM_OK_SENTINEL:
+                ok = True
                 continue
-            pid_s, _, cmdline = line.partition("|")
+            if stripped == _ENUM_FAIL_SENTINEL:
+                continue
+            if "|" not in stripped:
+                continue
+            pid_s, _, cmdline = stripped.partition("|")
             try:
                 pid = int(pid_s.strip())
             except ValueError:
                 continue
-            if pid == my_pid:
-                continue
-            if any(pat in cmdline for pat in patterns):
-                subprocess.run(
-                    [_resolve_windows_tool("taskkill"), "/PID", str(pid), "/T", "/F"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    **hidden_kwargs(),
-                )
-        return
+            rows.append((pid, cmdline))
+        return ok, rows
 
-    for pat in patterns:
+    try:
+        r = subprocess.run(
+            ["ps", "-eo", "pid=,args="],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return False, []
+    for line in (r.stdout or "").splitlines():
+        parts = line.strip().split(None, 1)
+        if len(parts) != 2:
+            continue
+        try:
+            rows.append((int(parts[0]), parts[1]))
+        except ValueError:
+            continue
+    return True, rows
+
+
+def list_matching_processes(patterns: list[str]) -> tuple[bool, list[tuple[int, str]]]:
+    """按命令行子串筛选存活进程（不击杀）。返回 ``(枚举是否可信, 匹配行)``。"""
+    ok, rows = enumerate_cmdline_rows()
+    if not ok:
+        return False, []
+    my_pid = os.getpid()
+    return True, [
+        (pid, cmdline)
+        for pid, cmdline in rows
+        if pid != my_pid and any(pat in cmdline for pat in patterns)
+    ]
+
+
+def tree_kill_pid(pid: int) -> None:
+    """按 PID 整树强杀（Windows: taskkill /T /F；POSIX: SIGKILL）。"""
+    if IS_WINDOWS:
         subprocess.run(
-            ["pkill", "-f", pat],
+            [_resolve_windows_tool("taskkill"), "/PID", str(pid), "/T", "/F"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            **hidden_kwargs(),
         )
+        return
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+
+
+def terminate_by_cmdline_patterns(patterns: list[str]) -> int:
+    """按命令行子串终止进程树（Windows: taskkill /T /F；POSIX: pkill -f）。
+
+    返回已对其发出击杀命令的进程数；Windows 枚举不可用时返回 ``-1``
+    （此时清扫为 no-op，调用方须用 :func:`wait_for_pattern_exit` 复核）。
+    """
+    if not patterns:
+        return 0
+    if IS_WINDOWS:
+        ok, matches = list_matching_processes(patterns)
+        if not ok:
+            log.error(
+                "Sweep",
+                "进程枚举失败（powershell CIM/WMI 均不可用），本轮命令行清扫 no-op",
+            )
+            return -1
+        for pid, _cmdline in matches:
+            tree_kill_pid(pid)
+        return len(matches)
+
+    killed = 0
+    for pat in patterns:
+        try:
+            r = subprocess.run(
+                ["pkill", "-f", pat],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except (FileNotFoundError, OSError):
+            continue
+        if r.returncode == 0:
+            killed += 1
+    return killed
+
+
+def wait_for_pattern_exit(
+    patterns: list[str], timeout: float = 10.0
+) -> list[int] | None:
+    """轮询等待匹配进程全部退出。
+
+    返回仍存活的 PID 列表（空列表 = 已清洁）；枚举不可用（无法验证）时
+    返回 ``None``，调用方应视为「不可信」而非「成功」。
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        ok, matches = list_matching_processes(patterns)
+        if not ok:
+            return None
+        if not matches:
+            return []
+        if time.monotonic() >= deadline:
+            return [pid for pid, _cmdline in matches]
+        time.sleep(0.5)
+
+
+def port_listening(host: str, port: int) -> bool:
+    """TCP 探测端口是否被监听（connect 成功即视为监听）。"""
+    import socket
+
+    try:
+        with socket.create_connection((host, port), timeout=1.0):
+            return True
+    except OSError:
+        return False
+
+
+def netstat_listening_pids(port: int) -> list[int]:
+    """Windows netstat 查询端口监听属主 PID（去重；非 Windows 返回空）。"""
+    if not IS_WINDOWS:
+        return []
+    out = _run_capture_text(
+        [_resolve_windows_tool("netstat"), "-ano", "-p", "tcp"], timeout=20
+    )
+    if out is None:
+        return []
+    pids: list[int] = []
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 5 and parts[3] == "LISTENING":
+            local = parts[1]
+            if local.rsplit(":", 1)[-1] == str(port):
+                try:
+                    pids.append(int(parts[4]))
+                except ValueError:
+                    continue
+    return list(dict.fromkeys(pids))
 
 
 def pid_alive(pid: int) -> bool:

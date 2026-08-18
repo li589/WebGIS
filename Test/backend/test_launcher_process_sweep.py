@@ -5,10 +5,14 @@
 进程；当运行终端 PATH 缺 System32 时枚举静默返回空，清扫变 no-op，旧世代
 FastAPI/Worker 堆叠（单日 5 世代约 50 进程），端口 8000 由最老僵尸应答，
 ``wait_for_fastapi`` 被旧进程"HTTP 就绪"骗过，代码修复看似不生效。
+
+本轮修复新增：枚举哨兵（区分「无匹配」与「枚举失败」）、整树击杀、
+spawn 孤儿子进程清除、死亡验证与升级、端口属主核对、未清洁则中止重启。
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
@@ -23,6 +27,7 @@ from launch import commands as launch_commands  # noqa: E402
 from launch.subprocess_utils import (  # noqa: E402
     _resolve_windows_tool,
     terminate_by_cmdline_patterns,
+    wait_for_pattern_exit,
 )
 
 
@@ -37,7 +42,10 @@ def _strip_system32_env() -> dict[str, str]:
 def test_resolve_windows_tool_prefers_absolute_system32_path() -> None:
     sysroot = os.environ.get("SystemRoot", "C:\\Windows")
     ps = _resolve_windows_tool("powershell")
-    assert ps.lower() == f"{sysroot}\\system32\\windowspowershell\\v1.0\\powershell.exe".lower()
+    assert (
+        ps.lower()
+        == f"{sysroot}\\system32\\windowspowershell\\v1.0\\powershell.exe".lower()
+    )
     tk = _resolve_windows_tool("taskkill")
     assert tk.lower() == f"{sysroot}\\system32\\taskkill.exe".lower()
     # 未知工具名回退裸名（交由 shell 解析）
@@ -49,40 +57,276 @@ def test_terminate_uses_absolute_tools_under_stripped_path() -> None:
 
     def fake_run(cmd, *args, **kwargs):
         if cmd and cmd[0].endswith("powershell.exe"):
-            row = f"999999|py.exe D:\\repo\\Code\\backend\\start_fastapi.py"
+            row = (
+                "999999|py.exe D:\\repo\\Code\\backend\\start_fastapi.py\n"
+                "__ENUM__|OK"
+            )
             return mock.Mock(stdout=row, returncode=0)
         calls.append(list(cmd))
         return mock.Mock(returncode=0)
 
     with mock.patch.dict(os.environ, _strip_system32_env(), clear=True):
         with mock.patch.object(subprocess, "run", side_effect=fake_run):
-            terminate_by_cmdline_patterns(["start_fastapi.py"])
+            killed = terminate_by_cmdline_patterns(["start_fastapi.py"])
 
+    assert killed == 1, "枚举可信且命中 1 个进程"
     assert calls, "taskkill must be invoked through absolute path even without PATH"
     for cmd in calls:
         assert Path(cmd[0]).is_absolute(), f"taskkill 必须用绝对路径: {cmd[0]}"
+        assert cmd[1:4] == ["/PID", "999999", "/T"]
+
+
+def test_terminate_returns_minus1_when_enum_sentinel_missing() -> None:
+    """PowerShell 无 OK 哨兵 = 枚举不可信，清扫必须显式 no-op 而非误报成功。"""
+
+    def fake_run(cmd, *args, **kwargs):
+        if cmd and cmd[0].endswith("powershell.exe"):
+            # 模拟 2026-08-16：WMI 异常，只有行数据但无哨兵（不可信）
+            return mock.Mock(stdout="999999|py.exe start_fastapi.py", returncode=0)
+        raise AssertionError("枚举不可信时不得调用 taskkill")
+
+    with mock.patch.dict(os.environ, _strip_system32_env(), clear=True):
+        with mock.patch.object(subprocess, "run", side_effect=fake_run):
+            killed = terminate_by_cmdline_patterns(["start_fastapi.py"])
+    assert killed == -1
+
+
+def test_terminate_skips_non_matching_rows() -> None:
+    taskkill_calls: list[list[str]] = []
+
+    def fake_run(cmd, *args, **kwargs):
+        if cmd and cmd[0].endswith("powershell.exe"):
+            return mock.Mock(
+                stdout=(
+                    "111|py.exe D:\\repo\\start_fastapi.py\n"
+                    "222|py.exe D:\\repo\\unrelated_server.py\n"
+                    "__ENUM__|OK"
+                ),
+                returncode=0,
+            )
+        taskkill_calls.append(list(cmd))
+        return mock.Mock(returncode=0)
+
+    with mock.patch.object(subprocess, "run", side_effect=fake_run):
+        killed = terminate_by_cmdline_patterns(["start_fastapi.py"])
+
+    assert killed == 1
+    assert len(taskkill_calls) == 1
+    assert taskkill_calls[0][2] == "111"
+
+
+def test_wait_for_pattern_exit_states(monkeypatch) -> None:
+    from launch import subprocess_utils as su
+
+    # 清洁：立即返回空列表
+    monkeypatch.setattr(su, "list_matching_processes", lambda pats: (True, []))
+    assert wait_for_pattern_exit(["x"], timeout=0.1) == []
+    # 存活：超时后返回存活 PID
+    monkeypatch.setattr(
+        su, "list_matching_processes", lambda pats: (True, [(111, "cmd x")])
+    )
+    assert wait_for_pattern_exit(["x"], timeout=0.1) == [111]
+    # 枚举不可用：返回 None（不可信，调用方不得当作成功）
+    monkeypatch.setattr(su, "list_matching_processes", lambda pats: (False, []))
+    assert wait_for_pattern_exit(["x"], timeout=0.1) is None
 
 
 def test_stop_backend_sweeps_pid_file_entries(monkeypatch, tmp_path) -> None:
     pid_file = tmp_path / "launcher_pids.json"
     pid_file.write_text(
-        json.dumps({"fastapi": 111, "worker-realtime": 222, "beat": 333, "frontend": 444}),
+        json.dumps(
+            {"fastapi": 111, "worker-realtime": 222, "beat": 333, "frontend": 444}
+        ),
         encoding="utf-8",
     )
     killed: list[int] = []
 
     monkeypatch.setattr(launch_commands, "PID_FILE", pid_file)
-    monkeypatch.setattr(launch_commands, "terminate_by_cmdline_patterns", lambda pats: None)
+    monkeypatch.setattr(
+        launch_commands, "terminate_by_cmdline_patterns", lambda pats: 0
+    )
+    monkeypatch.setattr(launch_commands, "_terminate_cgda_spawn_children", lambda: 0)
+    monkeypatch.setattr(launch_commands, "_verify_backend_stop", lambda: True)
 
     def fake_kill(pid: int, sig) -> None:
         killed.append(pid)
 
     monkeypatch.setattr(os, "kill", fake_kill)
-    launch_commands._stop_backend_app_processes()
+    assert launch_commands._stop_backend_app_processes() is True
 
     assert set(killed) == {111, 222, 333}, "backend 世代进程须按 PID 文件兜底 SIGTERM"
-    remaining = json.loads(pid_file.read_text(encoding="utf-8")) if pid_file.exists() else {}
+    remaining = (
+        json.loads(pid_file.read_text(encoding="utf-8")) if pid_file.exists() else {}
+    )
     assert remaining == {"frontend": 444}, "非 backend 条目（frontend）应保留"
+
+
+def test_stop_backend_propagates_unclean_result(monkeypatch, tmp_path) -> None:
+    """验证不通过时必须返回 False（restart 据此中止，防止世代堆叠）。"""
+    pid_file = tmp_path / "launcher_pids.json"
+    pid_file.write_text(json.dumps({"fastapi": 111}), encoding="utf-8")
+    monkeypatch.setattr(launch_commands, "PID_FILE", pid_file)
+    monkeypatch.setattr(
+        launch_commands, "terminate_by_cmdline_patterns", lambda pats: 0
+    )
+    monkeypatch.setattr(launch_commands, "_terminate_cgda_spawn_children", lambda: 0)
+    monkeypatch.setattr(launch_commands, "_verify_backend_stop", lambda: False)
+    monkeypatch.setattr(os, "kill", lambda pid, sig: None)
+
+    assert launch_commands._stop_backend_app_processes() is False
+
+
+def test_restart_backend_aborts_when_stop_unclean(monkeypatch) -> None:
+    monkeypatch.setattr(launch_commands, "ensure_project_initialized", lambda: None)
+    monkeypatch.setattr(launch_commands, "_stop_backend_app_processes", lambda: False)
+    started: list[object] = []
+    monkeypatch.setattr(
+        launch_commands,
+        "_start_backend_app_processes",
+        lambda args: started.append(args) or 0,
+    )
+    args = argparse.Namespace(
+        clean_cache=False, component="backend", debug=False, frontend_port=5175
+    )
+    rc = launch_commands.cmd_restart(args)
+    assert rc == 1, "清扫未验证通过时必须中止重启"
+    assert not started, "不得在脏进程面上启动新世代"
+
+
+def test_verify_backend_stop_escalates_then_fails_on_survivors(monkeypatch) -> None:
+    sweeps: list[list[str]] = []
+    monkeypatch.setattr(
+        launch_commands,
+        "wait_for_pattern_exit",
+        lambda pats, timeout=10.0: [111],
+    )
+    monkeypatch.setattr(
+        launch_commands,
+        "terminate_by_cmdline_patterns",
+        lambda pats: sweeps.append(pats) or 0,
+    )
+    monkeypatch.setattr(launch_commands, "_terminate_cgda_spawn_children", lambda: 0)
+    monkeypatch.setattr(launch_commands, "port_listening", lambda h, p: False)
+
+    assert launch_commands._verify_backend_stop() is False
+    assert sweeps, "存活时必须升级击杀一轮"
+
+
+def test_verify_backend_stop_fails_when_port_still_busy(monkeypatch) -> None:
+    monkeypatch.setattr(
+        launch_commands, "wait_for_pattern_exit", lambda pats, timeout=10.0: []
+    )
+    monkeypatch.setattr(launch_commands, "port_listening", lambda h, p: True)
+    monkeypatch.setattr(
+        launch_commands, "_kill_port_owner_if_backend", lambda port: True
+    )
+    assert launch_commands._verify_backend_stop() is False
+
+
+def test_verify_backend_stop_enum_unavailable_falls_back_to_pid_file(
+    monkeypatch, tmp_path
+) -> None:
+    """枚举不可用时按 PID 文件条目树杀兜底；仍存活则判不清洁。"""
+    pid_file = tmp_path / "launcher_pids.json"
+    pid_file.write_text(json.dumps({"fastapi": 111, "frontend": 444}), encoding="utf-8")
+    monkeypatch.setattr(launch_commands, "PID_FILE", pid_file)
+    monkeypatch.setattr(
+        launch_commands, "wait_for_pattern_exit", lambda pats, timeout=10.0: None
+    )
+    tree_killed: list[int] = []
+    monkeypatch.setattr(
+        launch_commands, "tree_kill_pid", lambda pid: tree_killed.append(pid)
+    )
+    monkeypatch.setattr(launch_commands, "pid_alive", lambda pid: True)
+    monkeypatch.setattr(launch_commands, "port_listening", lambda h, p: False)
+
+    assert launch_commands._verify_backend_stop() is False
+    assert tree_killed == [111], "只兜底 backend 条目，不动 frontend"
+
+
+def test_terminate_cgda_spawn_children_uses_marker_pair(monkeypatch) -> None:
+    """spawn 孤儿判定 = spawn_main + Env/Python312 解释器，二者缺一不杀。"""
+    monkeypatch.setattr(
+        launch_commands,
+        "python_executable",
+        lambda: "D:\\repo\\Env\\Python312\\python.exe",
+    )
+    monkeypatch.setattr(
+        launch_commands,
+        "enumerate_cmdline_rows",
+        lambda: (
+            True,
+            [
+                (
+                    1,
+                    "D:\\repo\\Env\\Python312\\python.exe -c "
+                    "from multiprocessing.spawn import spawn_main",
+                ),
+                (
+                    2,
+                    "C:\\Other\\python.exe -c "
+                    "from multiprocessing.spawn import spawn_main",
+                ),
+                (3, "D:\\repo\\Env\\Python312\\python.exe -m pytest"),
+            ],
+        ),
+    )
+    tree_killed: list[int] = []
+    monkeypatch.setattr(
+        launch_commands, "tree_kill_pid", lambda pid: tree_killed.append(pid)
+    )
+
+    killed = launch_commands._terminate_cgda_spawn_children()
+    assert killed == 1
+    assert tree_killed == [1]
+
+
+def test_kill_port_owner_skips_unrelated_process(monkeypatch) -> None:
+    """端口属主是无关进程时只告警不击杀。"""
+    monkeypatch.setattr(launch_commands, "IS_WINDOWS", True)
+    monkeypatch.setattr(launch_commands, "netstat_listening_pids", lambda port: [777])
+    monkeypatch.setattr(
+        launch_commands,
+        "enumerate_cmdline_rows",
+        lambda: (True, [(777, "C:\\tools\\other-dev-server.exe --port 8000")]),
+    )
+    monkeypatch.setattr(
+        launch_commands,
+        "python_executable",
+        lambda: "D:\\repo\\Env\\Python312\\python.exe",
+    )
+    tree_killed: list[int] = []
+    monkeypatch.setattr(
+        launch_commands, "tree_kill_pid", lambda pid: tree_killed.append(pid)
+    )
+
+    assert launch_commands._kill_port_owner_if_backend(8000) is False
+    assert tree_killed == [], "无关进程不得自动击杀"
+
+
+def test_kill_port_owner_kills_cgda_process(monkeypatch) -> None:
+    monkeypatch.setattr(launch_commands, "IS_WINDOWS", True)
+    monkeypatch.setattr(launch_commands, "netstat_listening_pids", lambda port: [888])
+    monkeypatch.setattr(
+        launch_commands,
+        "enumerate_cmdline_rows",
+        lambda: (
+            True,
+            [(888, "D:\\repo\\Env\\Python312\\python.exe -c spawn_main uvicorn")],
+        ),
+    )
+    monkeypatch.setattr(
+        launch_commands,
+        "python_executable",
+        lambda: "D:\\repo\\Env\\Python312\\python.exe",
+    )
+    tree_killed: list[int] = []
+    monkeypatch.setattr(
+        launch_commands, "tree_kill_pid", lambda pid: tree_killed.append(pid)
+    )
+
+    assert launch_commands._kill_port_owner_if_backend(8000) is True
+    assert tree_killed == [888]
 
 
 def test_start_backend_fails_when_fastapi_died_but_port_answers(monkeypatch) -> None:
@@ -95,11 +339,11 @@ def test_start_backend_fails_when_fastapi_died_but_port_answers(monkeypatch) -> 
     pm.processes = {"fastapi": dead_proc, "beat": alive_proc}
 
     monkeypatch.setattr(launch_commands, "redis_running", lambda: True)
-    monkeypatch.setattr(launch_commands.ProcessManager, "__new__", lambda cls, *a, **k: pm)
+    monkeypatch.setattr(
+        launch_commands.ProcessManager, "__new__", lambda cls, *a, **k: pm
+    )
     monkeypatch.setattr(pm, "wait_for_fastapi", lambda max_wait=30: True)
     monkeypatch.setattr(pm, "save_pids", lambda merge=False: None)
-
-    import argparse
 
     rc = launch_commands._start_backend_app_processes(
         argparse.Namespace(debug=False, frontend_port=5175)
