@@ -10,11 +10,12 @@ logger = logging.getLogger(__name__)
 try:
     from celery import Celery
     from celery.schedules import crontab
-    from celery.signals import task_failure, worker_ready
+    from celery.signals import task_failure, worker_process_init, worker_ready
 except ImportError:  # pragma: no cover - optional dependency during bootstrap
     Celery = None
     crontab = None
     task_failure = None
+    worker_process_init = None
     worker_ready = None
 
 
@@ -124,6 +125,41 @@ if celery_available:
     # FastAPI registers weather providers in lifespan; Celery workers are a
     # separate process and must bootstrap the same registry or weather DAG
     # nodes fail with "provider is not registered" while /weather/tiles still works.
+    def _bootstrap_worker_runtime() -> None:
+        """P-C：worker 侧应用 DB 持久化配置（provider 覆盖 / runtime overrides / celery 时限）。
+
+        worker_ready 覆盖 solo 池与主进程；worker_process_init 覆盖 prefork 子进程。
+        任一步失败仅告警，不阻断 worker 启动（DB 不可用时保持 env/code 默认）。
+        """
+        try:
+            from app.services.config_weather_providers import (
+                apply_persisted_provider_overrides,
+            )
+
+            apply_persisted_provider_overrides()
+        except Exception:
+            logger.exception(
+                "worker init: failed to apply persisted weather provider overrides"
+            )
+        try:
+            from app.services.effective_config import (
+                get_celery_task_soft_time_limit,
+                get_celery_task_time_limit,
+                hydrate_effective_config,
+            )
+            from app.services.weather_engine_settings import (
+                invalidate_weather_default_model_cache,
+            )
+
+            hydrate_effective_config()
+            invalidate_weather_default_model_cache()
+            celery_app.conf.update(
+                task_soft_time_limit=get_celery_task_soft_time_limit(),
+                task_time_limit=get_celery_task_time_limit(),
+            )
+        except Exception:
+            logger.exception("worker init: failed to apply runtime config overrides")
+
     if worker_ready is not None:
 
         @worker_ready.connect
@@ -139,6 +175,13 @@ if celery_available:
                 logger.exception(
                     "Failed to register weather providers in Celery worker"
                 )
+            _bootstrap_worker_runtime()
+
+    if worker_process_init is not None:
+
+        @worker_process_init.connect
+        def _on_worker_process_init(**kwargs):  # type: ignore[no-untyped-def]
+            _bootstrap_worker_runtime()
 
     beat_schedule: dict[str, dict[str, Any]] = {}
     if settings.weather_schedule_enabled and crontab is not None:

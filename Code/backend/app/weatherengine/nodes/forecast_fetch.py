@@ -48,7 +48,11 @@ class ForecastFetchNode(BaseNode):
             model = inputs.get("model") or weather_default_model()
             forecast_hours = coerce_int(inputs.get("forecast_hours"))
             if not forecast_hours:
-                forecast_hours = settings.weather_refresh_forecast_hours
+                from app.services.effective_config import (
+                    get_weather_refresh_forecast_hours,
+                )
+
+                forecast_hours = get_weather_refresh_forecast_hours()
             provider_id = inputs.get("provider_id") or inputs.get("provider")
 
             payload, cache_status, resolved_provider = fetch_point_forecast(

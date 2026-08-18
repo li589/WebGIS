@@ -10,6 +10,10 @@ from uuid import uuid4
 from app.core.config import settings
 from app.weatherengine.default_model import weather_default_model
 from app.services.api_config import api_config_manager, ApiProvider, DataType
+from app.services.effective_config import (
+    get_weather_cache_ttl_seconds,
+    get_weather_refresh_forecast_hours,
+)
 from app.services.workflow_execution import WorkflowExecutionResult
 from app.weatherengine.constants import DEFAULT_LAYER_ID, WEATHER_LAYER_SPECS
 from app.weatherengine.nodes._utils import compute_dynamic_resolution
@@ -616,8 +620,8 @@ class WeatherEngineService(WeatherRenderMixin):
                 longitude=settings.weather_default_longitude,
                 place_name=settings.weather_default_place_name,
                 model=weather_default_model(),
-                forecast_hours=settings.weather_refresh_forecast_hours,
-                cache_ttl_seconds=settings.weather_cache_ttl_seconds,
+                forecast_hours=get_weather_refresh_forecast_hours(),
+                cache_ttl_seconds=get_weather_cache_ttl_seconds(),
             )
             refreshed.append(
                 {

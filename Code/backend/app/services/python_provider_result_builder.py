@@ -31,7 +31,7 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 from uuid import uuid4
 
-from app.core.config import settings
+from app.services.effective_config import get_provider_series_chunk_size
 from app.services.result_storage import result_storage_service
 from shared.contracts.api_contracts import (
     ResultKind,
@@ -439,7 +439,7 @@ class PythonProviderResultBuilder:
         else:
             point_count = len(flat_y)
 
-        chunk_limit = int(getattr(settings, "provider_series_chunk_size", 500) or 500)
+        chunk_limit = get_provider_series_chunk_size()
         if result_kind is ResultKind.chart and point_count > chunk_limit:
             items = []
             if series and isinstance(series[0], dict):

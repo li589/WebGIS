@@ -94,7 +94,7 @@ const editableParams = computed<EditableParam[]>(() => [
     max: 7200,
     unit: '秒',
     group: '工作流与并发',
-    description: '任务软时间限制，超时后任务将被终止',
+    description: '任务软时间限制；更新对新启动的 worker 生效',
   },
   {
     key: 'celery_task_time_limit',
@@ -104,7 +104,7 @@ const editableParams = computed<EditableParam[]>(() => [
     max: 7200,
     unit: '秒',
     group: '工作流与并发',
-    description: '任务硬时间限制，超时后强制终止',
+    description: '任务硬时间限制；更新对新启动的 worker 生效',
   },
   {
     key: 'workflow_node_parallelism',
@@ -132,7 +132,7 @@ const editableParams = computed<EditableParam[]>(() => [
     max: 65536,
     unit: 'MB',
     group: '工作流与并发',
-    description: '声明值，仅作调度准入参考；运行中超限不会kill（0=不限制）',
+    description: '预留：值仅保存展示，暂未接入调度准入（0=不限制）',
   },
   {
     key: 'task_cpu_budget_cores',
@@ -142,7 +142,7 @@ const editableParams = computed<EditableParam[]>(() => [
     max: 64,
     unit: '核',
     group: '工作流与并发',
-    description: '声明值，仅作调度准入参考；不硬限制运行中任务CPU（0=不限制）',
+    description: '预留：值仅保存展示，暂未接入调度准入（0=不限制）',
   },
   // 缓存与性能
   {
@@ -173,7 +173,7 @@ const editableParams = computed<EditableParam[]>(() => [
     max: 48,
     unit: '小时',
     group: '缓存与性能',
-    description: '天气预报数据拉取时长',
+    description: '天气预报数据拉取时长；API 进程即时生效，worker 重启后生效',
   },
   {
     key: 'result_inline_max_bytes',

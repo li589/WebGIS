@@ -80,7 +80,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 
 6. **生产禁止演示开关**：勿开启 `BACKEND_DEMO_SOURCES_ENABLED` / `BACKEND_NODE_STUBS_VISIBLE`；机构交付核对见 `Docs/04-执行部署/delivery-checklist.md`。
 
-7. **地理数据根**：`BACKEND_DATA_ROOT`（及 `BACKEND_OUTPUT_ROOT`）为算法 / overlay / 图层 readiness 真源；**禁止**代码静默回退盘符。production 空根拒启。前端设置 → 数据源可改并调度 `restart backend`。
+7. **地理数据根**：`BACKEND_DATA_ROOT`（及 `BACKEND_OUTPUT_ROOT`）为算法 / overlay / 图层 readiness 真源；**禁止**代码静默回退盘符。production 空根拒启。前端修改入口已收敛至部署配置中心 `/deployment`（仅 admin，`PUT /config/deployment` 三步状态机 preview→apply→`POST /config/service/restart`）；设置页 `PathConfigSection` 为只读展示（含 `pending_restart` 徽章）。
 
 ## "改 X 则跑 Y" 映射
 
@@ -92,9 +92,10 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | 工作流运行 | `app/services/workflow/`、`app/api/routers/workflow_router.py` | `Env/Python312/python.exe -m pytest Test/backend/test_workflow_routes.py Test/backend/test_interaction_hub.py Test/backend/test_business_regression.py -q` |
 | 工作流定时器 | `app/services/workflow_timer_service.py`、`workflow_timer_router.py`、`workflow_timer_tasks.py`；FE `WorkflowTimerPanel.vue` | `Env/Python312/python.exe -m pytest Test/backend/test_workflow_timer_service.py Test/backend/test_celery_tasks.py -q`（真实 cron 需 Beat + standard worker）；FE：`cd Code/frontend && npm run test -- workflow-timer` |
 | 配置 / 鉴权 | `app/api/config_routes.py`、`app/services/config_service.py`、`credential_resolver.py` | `Env/Python312/python.exe -m pytest Test/backend/test_config_security.py Test/backend/test_api_keys_basemap.py Test/backend/test_auth.py -q` |
+| runtime 调优键 / worker 配置同步 | `services/workflow/runtime_status_service.py`（PATCH 白名单+校验器）、`services/effective_config.py`（快照投影+getter）、`core/celery_app.py`（`_bootstrap_worker_runtime` worker 钩子）；治理见 `Docs/03-规范协议/配置文件治理说明.md` | `Env/Python312/python.exe -m pytest Test/backend/test_runtime_config_effect.py Test/backend/test_concurrency_config.py -q`；语义：PATCH 后 FastAPI 进程即时生效，worker 需新世代（`launch.py restart backend`） |
 | 部署配置中心 | `app/services/deployment_config.py`、`app/api/config_routes.py`（`/config/deployment*`）、`app/core/config.py`（json→.env 加载链）；FE `DeploymentConfigView.vue`、`router.ts`；治理见 `Docs/03-规范协议/配置文件治理说明.md` | `Env/Python312/python.exe -m pytest Test/backend/test_deployment_config.py Test/backend/test_config_security.py -q`；FE：`cd Code/frontend && npm run test -- deployment-config auth-router` |
 | 错误处理 / 可观测性 | `app/main.py`（全局异常）、`runtime_status_service.py`；FE `_http.ts`、`LogPanel`、`SystemStatusSettings` | `Env/Python312/python.exe -m pytest Test/backend/test_error_handlers.py Test/backend/test_interaction_hub.py -q`；`cd Code/frontend && npm run test -- _http auth-router` |
-| 数据根 / 图层就绪 | `BACKEND_DATA_ROOT`、`env_file_upsert.py`、`service_restart.py`、`catalog_seeds/layer_descriptors.json`；FE `DataSourceSettings.vue` | `Env/Python312/python.exe -m pytest Test/backend/test_data_source_paths.py Test/backend/test_data_root_policy.py -q`；改路径后 `launch.py restart backend`，再 `GET /layers` 看 `run_readiness` |
+| 数据根 / 图层就绪 | `BACKEND_DATA_ROOT`、`env_file_upsert.py`、`service_restart.py`、`catalog_seeds/layer_descriptors.json`；FE `DeploymentConfigView.vue`（`/deployment` 修改入口，`PathConfigSection` 只读） | `Env/Python312/python.exe -m pytest Test/backend/test_data_source_paths.py Test/backend/test_data_root_policy.py -q`；改路径后 `launch.py restart backend`，再 `GET /layers` 看 `run_readiness` |
 | GEE | `app/gee/`、`app/services/gee_bridge_service.py` | `Env/Python312/python.exe -m pytest Test/backend/test_gee_bridge_service.py -q` |
 | 统一瓦片（底图） | `app/api/tile_routes.py`、`tile_provider_registry.py`、`tile_proxy_service.py`（天地图须用服务端 UA `CGDA-Backend/1.0`；街道=`tianditu-vec`+`tianditu-cva` overlay） | `Env/Python312/python.exe -m pytest Test/backend/test_unified_tile_service.py Test/backend/test_api_keys_basemap.py -q`；联调抽样 `GET /unified-tiles/tianditu-vec/{z}/{x}/{y}` 与 `…/tianditu-cva/…` 应 200 |
 | 栅格导入 / CRS | `app/api/routers/import_router.py` | `Env/Python312/python.exe -m pytest Test/backend/test_import_raster_crs.py Test/backend/test_crs_detector.py -q` |

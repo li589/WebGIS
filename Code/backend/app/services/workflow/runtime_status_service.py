@@ -59,7 +59,9 @@ def _rollup_overall_health(
 
 
 # 仅允许已接线字段；幽灵 key（如 demo_snapshot_provider、default_queue）禁止写入。
-# frontend scope 暂无消费方，保留空集合占位以支持未来扩展
+# frontend scope 暂无消费方，保留空集合占位以支持未来扩展。
+# task_memory_budget_mb / task_cpu_budget_cores 为预留键：值入库+快照可读，
+# 消费方（调度准入）待算法执行器接入后接线（见 .ai/progress/2026-08-18-config-effect-verification.md）。
 ALLOWED_RUNTIME_CONFIG_KEYS: dict[str, set[str]] = {
     "frontend": set(),
     "backend": {
@@ -78,6 +80,10 @@ ALLOWED_RUNTIME_CONFIG_KEYS: dict[str, set[str]] = {
         "result_inline_max_bytes",
         "celery_task_soft_time_limit",
         "celery_task_time_limit",
+        "workflow_node_parallelism",
+        "algorithm_max_parallel_workers",
+        "task_memory_budget_mb",
+        "task_cpu_budget_cores",
     },
     "workflow": set(),
 }
@@ -101,6 +107,10 @@ RUNTIME_CONFIG_VALUE_VALIDATORS: dict[str, dict[str, tuple]] = {
         "result_inline_max_bytes": ("int", 4096, 1048576),
         "celery_task_soft_time_limit": ("int", 60, 7200),
         "celery_task_time_limit": ("int", 120, 7200),
+        "workflow_node_parallelism": ("int", 1, 16),
+        "algorithm_max_parallel_workers": ("int", 0, 64),
+        "task_memory_budget_mb": ("int", 0, 65536),
+        "task_cpu_budget_cores": ("int", 0, 64),
     },
 }
 

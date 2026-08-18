@@ -25,7 +25,12 @@ from datetime import datetime
 from uuid import uuid4
 
 from algorithms.providers.base import ProviderExecutionResult
-from app.core.config import settings
+from app.services.effective_config import (
+    get_provider_max_hotspots,
+    get_provider_max_series_points,
+    get_provider_series_chunk_size,
+    get_provider_table_chunk_size,
+)
 from app.services.layer_catalog import get_layer_descriptor
 from app.services.result_storage import result_storage_service
 from shared.contracts.api_contracts import (
@@ -56,8 +61,8 @@ class ProviderResultBuilder:
         any truncation occurred so operators can spot oversized providers.
         """
         diagnostics = list(provider_result.diagnostics)
-        hotspots = provider_result.hotspots[: settings.provider_max_hotspots]
-        series = provider_result.series[: settings.provider_max_series_points]
+        hotspots = provider_result.hotspots[: get_provider_max_hotspots()]
+        series = provider_result.series[: get_provider_max_series_points()]
 
         if len(provider_result.hotspots) > len(hotspots):
             diagnostics.append(
@@ -207,11 +212,12 @@ class ProviderResultBuilder:
     ) -> None:
         """Append a table result_ref, spilling to chunks if oversized.
 
-        Chunk threshold is ``settings.provider_table_chunk_size``. When
+        Chunk threshold is ``provider_table_chunk_size`` (runtime snapshot). When
         spilt, ``result_storage_service.build_chunked_reference`` returns
         a manifest-style ref + per-chunk diagnostics.
         """
-        if len(provider_result.hotspots) > settings.provider_table_chunk_size:
+        table_chunk_size = get_provider_table_chunk_size()
+        if len(provider_result.hotspots) > table_chunk_size:
             chunked_ref, chunked_diagnostics = (
                 result_storage_service.build_chunked_reference(
                     run_id=run_id,
@@ -220,7 +226,7 @@ class ProviderResultBuilder:
                     mime_type="application/json",
                     updated_at=requested_at,
                     items=provider_result.hotspots,
-                    chunk_size=settings.provider_table_chunk_size,
+                    chunk_size=table_chunk_size,
                     manifest_payload={
                         "columns": ["name", "lng", "lat", "risk_score"],
                         "row_count": len(provider_result.hotspots),
@@ -257,9 +263,10 @@ class ProviderResultBuilder:
         """Append a chart result_ref, spilling to chunks if oversized.
 
         Chart x-axis = series labels, y-axis = series values. Chunk
-        threshold is ``settings.provider_series_chunk_size``.
+        threshold is ``provider_series_chunk_size`` (runtime snapshot).
         """
-        if len(provider_result.series) > settings.provider_series_chunk_size:
+        series_chunk_size = get_provider_series_chunk_size()
+        if len(provider_result.series) > series_chunk_size:
             chunked_ref, chunked_diagnostics = (
                 result_storage_service.build_chunked_reference(
                     run_id=run_id,
@@ -268,7 +275,7 @@ class ProviderResultBuilder:
                     mime_type="application/json",
                     updated_at=requested_at,
                     items=provider_result.series,
-                    chunk_size=settings.provider_series_chunk_size,
+                    chunk_size=series_chunk_size,
                     manifest_payload={
                         "chart_type": "line",
                         "series_name": provider_result.layer_id,

@@ -11,9 +11,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.core.config import settings
 from app.weatherengine.default_model import weather_default_model
-from app.services.effective_config import get_weather_cache_ttl_seconds
+from app.services.effective_config import (
+    get_weather_cache_ttl_seconds,
+    get_weather_refresh_forecast_hours,
+)
 from app.weatherengine.constants import WEATHER_LAYER_SPECS, WeatherLayerSpec
 from app.weatherengine.provider_base import WeatherProvider
 from app.weatherengine.provider_ids import normalize_provider_id
@@ -181,7 +183,7 @@ def fetch_point_forecast(
     )
     provider = resolve_provider_for_layer(layer_id, provider_id=provider_id)
     resolved_model = model or spec.preferred_model or weather_default_model()
-    resolved_hours = forecast_hours or settings.weather_refresh_forecast_hours
+    resolved_hours = forecast_hours or get_weather_refresh_forecast_hours()
     resolved_ttl = (
         ttl_seconds if ttl_seconds is not None else get_weather_cache_ttl_seconds()
     )

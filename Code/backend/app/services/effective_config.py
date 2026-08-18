@@ -316,6 +316,7 @@ def hydrate_effective_config() -> RuntimeSnapshot:
         )
         _snapshot = snap
         _hydrated = True
+        _apply_runtime_log_level(snap.log_level)
         logger.info(
             "Effective config hydrated: keys=%s executor=%s weather_ttl=%s secrets_insecure=%s",
             sorted(api_keys.keys()),
@@ -437,6 +438,22 @@ def get_provider_max_series_points() -> int:
     return get_runtime_snapshot().provider_max_series_points
 
 
+def get_weather_refresh_forecast_hours() -> int:
+    return get_runtime_snapshot().weather_refresh_forecast_hours
+
+
+def get_provider_table_chunk_size() -> int:
+    return get_runtime_snapshot().provider_table_chunk_size
+
+
+def get_provider_series_chunk_size() -> int:
+    return get_runtime_snapshot().provider_series_chunk_size
+
+
+def get_result_inline_max_bytes() -> int:
+    return get_runtime_snapshot().result_inline_max_bytes
+
+
 def get_celery_task_soft_time_limit() -> int:
     return get_runtime_snapshot().celery_task_soft_time_limit
 
@@ -465,5 +482,20 @@ def get_task_memory_budget_mb() -> int:
 
 
 def get_task_cpu_budget_cores() -> int:
-    """单任务 CPU 预算核数（声明值，0=不限制）。调度准入参考，非硬 kill。"""
+    """单任务 CPU 预算核数（声明值，0=不限制）。调度准入参考，非硬限制。"""
     return get_runtime_snapshot().task_cpu_budget_cores
+
+
+def _apply_runtime_log_level(level: str) -> None:
+    """将快照 log_level 应用到当前进程根 logger（P-A：PATCH 后即时生效）。
+
+    仅动根 logger，不触碰 uvicorn/celery 专属 logger 的独立级别；test 环境跳过，
+    避免干扰 pytest 的日志捕获与断言。
+    """
+    if (config.settings.environment or "").lower() in ("test", "testing"):
+        return
+    resolved = getattr(logging, str(level).upper(), None)
+    if not isinstance(resolved, int):
+        logger.warning("Ignoring invalid runtime log_level: %r", level)
+        return
+    logging.getLogger().setLevel(resolved)
