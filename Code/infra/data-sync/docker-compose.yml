@@ -24,7 +24,9 @@ services:
   # Writes AWS Open Data forecast DB into shared volume; cgda-open-meteo reads it.
   # -------------------------------------------------------------------------
   open-meteo-sync:
-    image: ${OPEN_METEO_IMAGE:-public.ecr.aws/w5w8t1y7/openmeteo:latest}
+    # 供应链加固（2026-08-20 审计）：digest 固定防 tag 被覆盖投毒；
+    # 上游更新时显式换 digest（保留 OPEN_METEO_IMAGE 变量覆盖逃生门）。
+    image: ${OPEN_METEO_IMAGE:-public.ecr.aws/w5w8t1y7/openmeteo@sha256:65268afd77a3a126762cd60595cec2bbb7cfff1b932b96ce4ab7ffe595536665}
     profiles: ["sync"]
     volumes:
       - open-meteo-data:/app/data
