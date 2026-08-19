@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -94,10 +95,6 @@ def _store_path_manifest(
     return {"manifest": artifact, "path": path_str}
 
 
-class _DownloadError(Exception):
-    """Raised when a download source fails."""
-
-
 # NSMC 单账号限额/频控：HTTP 401/403/429、门户中文频控提示或英文提示后进入冷却。
 _ACCOUNT_COOLDOWN_SECONDS = 600.0
 _account_cooldown_until: dict[str, float] = {}
@@ -133,6 +130,42 @@ def _nsmc_accounts(entry: dict[str, object]) -> list[dict[str, str]]:
 
 def _account_key(account: dict[str, str]) -> str:
     return account["token"] or account["username"] or "anonymous"
+
+
+def _parse_int_param(
+    resolved: dict[str, object], key: str, default: int, *, minimum: int | None = None
+) -> int:
+    """解析整型节点参数：None/缺失/非法回退默认值（显式 0 保留）。"""
+    raw = resolved.get(key)
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    if minimum is not None and value < minimum:
+        return default
+    return value
+
+
+def _parse_float_param(
+    resolved: dict[str, object],
+    key: str,
+    default: float,
+    *,
+    minimum: float | None = None,
+) -> float:
+    """解析浮点节点参数：None/缺失/非法回退默认值（显式 0 保留）。"""
+    raw = resolved.get(key)
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return default
+    if minimum is not None and value < minimum:
+        return default
+    return value
 
 
 def _nsmc_session_file() -> Path | None:
@@ -209,8 +242,6 @@ def _download_from_nsmc(
             f"max {max_files_per_day} files/day): "
             f"{satellite}/{orbit_mode} {day} -> {target_dir}",
         )
-
-    import time
 
     now = time.monotonic()
     ordered = sorted(
@@ -508,15 +539,12 @@ class FYDownloadModule(BaseModule):
 
         orbit_mode = str(resolved.get("orbit_mode") or "MWRID").upper()
         # NSMC 账号限额保护：默认每日仅拉 2 个轨道文件（防频控），可经
-        # 种子/algorithm_params 覆盖；下载请求节流间隔默认 5s。
-        try:
-            max_files_per_day = int(resolved.get("max_files_per_day") or 2)
-        except (TypeError, ValueError):
-            max_files_per_day = 2
-        try:
-            download_interval = float(resolved.get("download_interval") or 5.0)
-        except (TypeError, ValueError):
-            download_interval = 5.0
+        # 种子/algorithm_params 覆盖；下载请求节流间隔默认 5s（显式 0
+        # 表示不节流，不被默认值短路覆盖）。
+        max_files_per_day = _parse_int_param(resolved, "max_files_per_day", 2)
+        download_interval = _parse_float_param(
+            resolved, "download_interval", 5.0, minimum=0.0
+        )
 
         sources_to_try: list[str] = []
         if data_source == "nsmc":
