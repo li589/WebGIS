@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>上传内容过大</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        font-family: system-ui, sans-serif;
+        background: #060d18;
+        color: #d8e6f5;
+      }
+      main {
+        max-width: 28rem;
+        padding: 2rem;
+        text-align: center;
+        border: 1px solid rgba(255, 200, 100, 0.25);
+        border-radius: 0.75rem;
+        background: rgba(38, 26, 8, 0.35);
+      }
+      h1 {
+        margin: 0 0 0.75rem;
+        color: #ffd090;
+        font-size: 1.25rem;
+      }
+      p {
+        margin: 0;
+        color: #9fb6cc;
+        line-height: 1.5;
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>上传内容超过大小限制</h1>
+      <p>单次请求体不能超过 200 MB（HTTP 413）。请压缩数据、裁剪范围，或使用分块 / 断点续传上传。</p>
+    </main>
+  </body>
+</html>

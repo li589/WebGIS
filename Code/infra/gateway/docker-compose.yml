@@ -24,6 +24,7 @@ services:
       - "5175:5175"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./snippets:/etc/nginx/snippets/cgda:ro
       - ./maintenance:/etc/nginx/maintenance:ro
       - ../../frontend/dist:/usr/share/nginx/html:ro
     extra_hosts:
