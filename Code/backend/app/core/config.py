@@ -71,6 +71,20 @@ def _default_ui_restart_enabled() -> bool:
     return env in {"development", "dev"}
 
 
+def _default_docs_enabled() -> bool:
+    """交互式 API 文档（/docs /redoc）暴露开关（安全审计 2026-08-20）。
+
+    显式 ``BACKEND_DOCS_ENABLED`` 优先；否则仅 development/dev 默认开启
+    （fail-secure：production/test 默认不暴露交互文档接口面）。
+    ``/openapi.json`` 不受此开关影响（保持开放供工具调用）。
+    """
+    raw = os.getenv("BACKEND_DOCS_ENABLED")
+    if raw is not None and str(raw).strip() != "":
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+    env = (os.getenv("BACKEND_ENV") or "production").lower()
+    return env in {"development", "dev"}
+
+
 def _default_gee_api_account_management_enabled() -> bool:
     """Production default OFF; development ON unless explicitly overridden."""
     raw = os.getenv("BACKEND_GEE_API_ACCOUNT_MANAGEMENT_ENABLED")
@@ -437,6 +451,11 @@ class Settings:
     output_root: str = os.getenv("BACKEND_OUTPUT_ROOT", "")
     # 前端设置页「重启后端」（FastAPI+Worker+Beat）；默认仅 development 开启
     ui_restart_enabled: bool = _default_ui_restart_enabled()
+    # 交互式 API 文档（/docs /redoc）按环境默认禁用（production/test 默认
+    # False，BACKEND_DOCS_ENABLED 可覆盖）；/openapi.json 不受影响。
+    # 注意 frozen dataclass 字段默认值 import 时求值——测试须用
+    # dataclasses.replace 显式构造变体。
+    docs_enabled: bool = _default_docs_enabled()
 
     # ---- GEE 引擎配置 ----
     # 是否启用 GEE 引擎桥接（False 时 gee_bridge_service.supports 永远返回 False）

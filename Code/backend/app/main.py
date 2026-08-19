@@ -157,11 +157,18 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    # 安全审计 2026-08-20：交互式文档（/docs /redoc）按环境默认禁用
+    # （production/test 默认 404，BACKEND_DOCS_ENABLED 可覆盖）。
+    # /openapi.json 保持开放（供工具调用）；export_openapi.py /
+    # check_openapi_drift.py 直接调用 app.openapi()，与路由无关，不受影响。
+    _docs_enabled = settings.docs_enabled
     app = FastAPI(
         title=settings.service_name,
         version="0.1.0",
         description="Minimal backend service for the geographic analysis platform.",
         lifespan=lifespan,
+        docs_url="/docs" if _docs_enabled else None,
+        redoc_url="/redoc" if _docs_enabled else None,
     )
 
     # P2-11: 注册统一瓦片提供者（BaseMap + Weather）—— 从模块级移入 create_app()
