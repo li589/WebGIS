@@ -140,38 +140,48 @@ onBeforeUnmount(() => {
 
 .sidebar-toggle {
   position: absolute;
-  top: 0.42rem;
+  top: 0.55rem;
   z-index: 10;
   width: 1.2rem;
   height: 1.6rem;
+  padding: 0;
   border: 1px solid var(--border-default);
-  border-radius: 0.32rem;
+  border-radius: 0.4rem;
   background: var(--surface-1);
   color: var(--text-muted);
-  font-size: var(--font-size-caption);
+  font-size: 0.6rem;
+  line-height: 1;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: var(--elevation-1);
   transition:
-    color 0.16s ease,
-    border-color 0.16s ease,
-    background 0.16s ease;
+    color 0.22s ease,
+    border-color 0.22s ease,
+    background 0.22s ease,
+    box-shadow 0.22s ease,
+    top 0.22s ease,
+    right 0.22s ease,
+    transform 0.22s ease;
 }
 
 .sidebar-toggle:hover {
-  color: var(--accent-warm);
-  border-color: var(--warning-border);
+  color: var(--accent);
+  border-color: var(--border-accent);
   background: var(--surface-2);
+  box-shadow: var(--elevation-2);
 }
 
 .left-toggle {
-  right: 0.3rem;
+  right: 0.25rem;
 }
 
-.editor-sidebar.collapsed .sidebar-toggle {
+/* 收起态：按钮在窄轨道内水平 + 垂直居中（与右侧对称） */
+.editor-sidebar.left.collapsed .sidebar-toggle {
   top: 50%;
-  transform: translateY(-50%);
+  right: 50%;
+  transform: translate(50%, -50%);
 }
 
 .editor-sidebar.left:not(.collapsed) :deep(.list-header) {

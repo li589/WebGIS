@@ -166,7 +166,7 @@
 .active-layer-tag {
   font-size: var(--font-size-caption);
   font-weight: 600;
-  color: var(--surface-base);
+  color: var(--text-strong);
   background: var(--surface-1);
   border: 1px solid var(--surface-hover);
   padding: 0.15rem 0.5rem;

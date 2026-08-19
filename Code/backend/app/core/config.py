@@ -212,11 +212,11 @@ class StorageConfig:
 
 @dataclass(frozen=True)
 class Settings:
-    # 2026-08 品牌更名：旧名 "Comprehensive Geographic Data Analysis Backend"（CGDA/CGDAS）。
-    # 回退方案见前端 src/ui-copy/brand.ts 品牌沿革注释。
+    # 平台品牌为 SGFS（星地融合），但后端服务保留 CGDA 技术标识（仓库本名），
+    # About 页「后端服务」/ 常规配置「服务名称」均取此值。
     service_name: str = os.getenv(
         "BACKEND_SERVICE_NAME",
-        "Star-Ground Fusion Soil Data Platform Backend",
+        "Comprehensive Geographic Data Analysis System (CGDA) Backend",
     )
     # 发布就绪修复（P0-1）：默认 environment 反转为 "production"（fail-secure）。
     # 此前默认 "development" 会在未配置 API Key 时静默放行所有写接口（见 app/api/deps.py）。

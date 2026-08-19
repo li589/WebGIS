@@ -180,8 +180,13 @@ const showCancelledBadge = computed(
 .tone-idle {
   color: var(--text-faint);
 }
+/* 空闲态圆点：text-secondary 填充 + accent 描边外环，
+   暗/浅主题均用语义 token，保证在 sunken 底上轮廓清晰可辨 */
 .tone-idle .wf-dot {
-  background: var(--surface-sunken);
+  background: var(--text-secondary);
+  box-shadow:
+    inset 0 0 0 1.5px var(--surface-sunken),
+    0 0 0 1.5px var(--border-accent);
 }
 
 /* ── Tone: active (running) — pulsing glow + rotating shimmer ───────────── */

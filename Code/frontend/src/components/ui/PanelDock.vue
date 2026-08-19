@@ -164,7 +164,11 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 </script>
 
 <template>
-  <div class="panel-anchor" :class="anchorClass" :style="effectiveFrameStyle">
+  <div
+    class="panel-anchor"
+    :class="[anchorClass, { 'panel-anchor--hidden': !visible }]"
+    :style="effectiveFrameStyle"
+  >
     <!-- 隐藏态：恢复胶囊 -->
     <button
       v-if="!visible"
@@ -289,6 +293,12 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 .panel-anchor--dock-right {
   max-width: calc(100vw - 1.6rem);
   margin-inline-start: auto;
+}
+
+/* 隐藏态：anchor 收缩到恢复胶囊本身宽度（去掉 200px min-width 占位），
+   使 dock-right 面板的胶囊右缘与顶栏右缘对齐、dock-left 的胶囊左缘与顶栏左缘对齐 */
+.panel-anchor--hidden {
+  min-width: 0;
 }
 
 .panel-anchor--dock-right :deep(.panel-dock__frame) {

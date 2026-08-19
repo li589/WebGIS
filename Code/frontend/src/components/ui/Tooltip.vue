@@ -78,7 +78,7 @@ onUnmounted(() => {
     </div>
     <transition name="tooltip-fade">
       <div
-        v-if="showTooltip"
+        v-if="showTooltip && text"
         class="tooltip-box"
         :class="[`tooltip-${position}`]"
         :style="{ maxWidth }"

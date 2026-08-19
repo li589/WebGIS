@@ -1119,7 +1119,11 @@ defineExpose({
 }
 
 .header-icon {
-  font-size: 0.92rem;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
   color: var(--accent);
 }
 

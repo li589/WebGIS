@@ -177,6 +177,14 @@ function onStyleChange(style: BasemapStyle) {
   }
 }
 
+function onViewModeChange(value: string | number) {
+  const next = value === '3d' ? '3d' : '2d'
+  if (next !== uiStore.viewMode) {
+    uiStore.setViewMode(next)
+    logStore.logOperation('view-mode-switch', `切换到${next.toUpperCase()}视图`)
+  }
+}
+
 function setInteractionMode(mode: 'move' | 'select' | 'measure' | 'draw') {
   uiStore.setInteractionMode(mode)
   const label =
@@ -358,17 +366,17 @@ function sourcePillLabel(source: TileSourceConfig): string {
         <!-- 时间标签 -->
         <Chip class="time-chip">{{ hourLabel }}</Chip>
 
-        <!-- 2D/3D 视图切换 -->
-        <button
-          class="dim-toggle"
-          :class="{ 'dim-toggle--3d': uiStore.viewMode === '3d' }"
-          type="button"
-          :title="uiStore.viewMode === '2d' ? '切换到3D地球视图' : '切换到2D平面视图'"
-          @click="uiStore.toggleViewMode()"
-        >
-          <component :is="uiStore.viewMode === '2d' ? Map : Globe" :size="12" class="dim-icon" />
-          <span>{{ uiStore.viewMode === '2d' ? '2D' : '3D' }}</span>
-        </button>
+        <!-- 2D/3D 视图切换（分段控件，与底图风格选择器同一交互语言） -->
+        <SegmentedControl
+          class="dim-seg"
+          :model-value="uiStore.viewMode"
+          :options="[
+            { value: '2d', label: '2D', icon: Map },
+            { value: '3d', label: '3D', icon: Globe },
+          ]"
+          size="xs"
+          @change="onViewModeChange"
+        />
 
         <!-- API Key 锁定警告 -->
         <Chip v-if="currentSourceLocked" variant="warning">

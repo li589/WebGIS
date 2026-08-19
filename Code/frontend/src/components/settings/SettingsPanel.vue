@@ -437,19 +437,37 @@ onUnmounted(() => {
 }
 
 .close-btn {
-  width: 1.4rem;
-  height: 1.4rem;
+  /* grid + place-items 双轴居中；显式 padding:0 抹掉 UA 默认按钮内边距，
+     避免 hover 高亮框与叉号出现视觉偏移 */
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
   border: none;
-  border-radius: 0.5rem;
+  border-radius: 0.42rem;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   font-size: var(--font-size-caption);
+  line-height: 0;
+  flex: none;
+  transition:
+    background-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft);
+}
+
+.close-btn svg {
+  flex: none;
 }
 
 .close-btn:hover {
-  background: var(--border-subtle);
+  background: var(--surface-hover);
   color: var(--text-primary);
+}
+
+.close-btn:active {
+  background: var(--border-subtle);
 }
 
 .settings-body {

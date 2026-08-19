@@ -14,6 +14,14 @@ import { defineStore } from 'pinia'
 
 export type DrawMode = 'polygon' | 'rectangle' | 'line'
 
+/** 绘制工具栏在地图舞台（.map-stage）内的几何（px，供属性表联动定位） */
+export interface DrawToolbarRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 export interface DrawVertex {
   lng: number
   lat: number
@@ -75,6 +83,19 @@ export const useDrawStore = defineStore('draw', () => {
   const draftLayerId = ref<string | null>(null)
   const draftLayerName = ref<string>('')
   const editingLayerId = ref<string | null>(null)
+
+  // ── 绘制工具栏几何（工具栏 ↔ 属性表联动）──────────────────────────────
+  // 均相对 .map-stage（工具栏与属性表共同的 offsetParent）
+  const toolbarRect = ref<DrawToolbarRect | null>(null)
+  const shellSize = ref({ width: 0, height: 0 })
+
+  function setToolbarRect(rect: DrawToolbarRect | null) {
+    toolbarRect.value = rect
+  }
+
+  function setShellSize(width: number, height: number) {
+    shellSize.value = { width, height }
+  }
 
   let draftLoaded = false
 
@@ -254,6 +275,10 @@ export const useDrawStore = defineStore('draw', () => {
     draftLayerId,
     draftLayerName,
     editingLayerId,
+    toolbarRect,
+    shellSize,
+    setToolbarRect,
+    setShellSize,
     setDrawMode,
     addVertex,
     undoLastVertex,
