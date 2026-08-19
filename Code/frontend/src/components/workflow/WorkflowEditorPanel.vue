@@ -48,6 +48,7 @@ import WorkflowTimerPanel from './WorkflowTimerPanel.vue'
 import PipelineLauncher from './PipelineLauncher.vue'
 import NodeCacheDialog from './NodeCacheDialog.vue'
 import AppSelect from '../ui/AppSelect.vue'
+import { useUnsavedChangesGuard } from '../../composables/useUnsavedChangesGuard'
 import { WORKFLOW_COPY } from '../../ui-copy'
 import {
   validateWorkflowBeforeRun,
@@ -94,6 +95,11 @@ const nodeCacheDialogOpen = ref(false)
 const saving = ref(false)
 const saveError = ref<string | null>(null)
 const dirty = ref(false)
+
+// 未保存修改的页面离开拦截（有定义、非只读、dirty、非保存中——与保存按钮可用条件一致）
+useUnsavedChangesGuard(
+  () => hasDefinition.value && !isReadonly.value && dirty.value && !saving.value,
+)
 
 // 运行状态
 const running = ref(false)
