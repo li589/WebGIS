@@ -247,7 +247,7 @@ def _fetch_from_nas(
     if satellite != "FY3D":
         raise ValueError(
             f"NAS source only holds FY3D daily files (got {satellite}); "
-            "FY3B retired in 2020 and has no modern-date data"
+            "FY3B retired in 2020; FY3F raw ORBA HDF 需经 NSMC 门户或本地目录供给"
         )
 
     date_ymd = date_path.replace(".", "").replace("-", "")
@@ -336,6 +336,13 @@ class FYDownloadModule(BaseModule):
         resolved = {**self.default_params, **params, **ap, **ds}
 
         satellite = str(resolved.get("satellite") or "FY3D").upper()
+        # 简写别名归一（fy_platform 风格 "3F" → "FY3F"）
+        if satellite == "3B":
+            satellite = "FY3B"
+        elif satellite == "3D":
+            satellite = "FY3D"
+        elif satellite == "3F":
+            satellite = "FY3F"
         data_source = str(resolved.get("data_source") or "auto").lower()
         start_date = str(resolved.get("start_date") or "").strip()
         end_date = str(resolved.get("end_date") or "").strip()

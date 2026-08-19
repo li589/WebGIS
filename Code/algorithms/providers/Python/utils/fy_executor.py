@@ -39,6 +39,31 @@ def inject_geoloc_metadata_to_vrt(
     return target_vrt
 
 
+def extract_tb_channel_to_h5(
+    source_hdf: str | Path,
+    h5_group_path: str,
+    channel_index: int,
+    target_h5: str | Path,
+) -> Path:
+    """FY-3F 3D TB 抽通道 → 2D 临时 HDF5（参照 FY3F_MWRI_mosaic.py 先例）。
+
+    GDAL 将 (scanline, pixel, channel) 3D 数据集暴露为转置多波段栅格，
+    ``-b`` 无法选通道；先经 h5py 抽取为 2D 再走 gdal_translate。
+    """
+    import h5py
+
+    source_hdf = Path(source_hdf)
+    target_h5 = Path(target_h5)
+    target_h5.parent.mkdir(parents=True, exist_ok=True)
+    with (
+        h5py.File(source_hdf, "r") as src,
+        h5py.File(target_h5, "w") as dst,
+    ):
+        tb_2d = src[h5_group_path][:, :, channel_index]
+        dst.create_dataset("TB", data=tb_2d)
+    return target_h5
+
+
 def execute_fy_command_steps(
     steps: list[FyCommandStep],
     logger: Any | None = None,
@@ -62,6 +87,40 @@ def execute_fy_command_steps(
                 logger.emit_progress(
                     "fy_execute", index / total_steps, f"Completed {step.name}"
                 )
+            continue
+
+        if step.command.startswith("EXTRACT_TB_CHANNEL"):
+            try:
+                extract_tb_channel_to_h5(
+                    source_hdf=step.metadata["source_hdf"],
+                    h5_group_path=step.metadata["h5_group_path"],
+                    channel_index=int(step.metadata["channel_index"]),
+                    target_h5=step.metadata["target_h5"],
+                )
+                returncode = 0
+                stderr = ""
+            except Exception as exc:  # noqa: BLE001
+                returncode = 1
+                stderr = str(exc)
+            results.append(
+                {
+                    "name": step.name,
+                    "returncode": returncode,
+                    "stderr": stderr,
+                    "outputs": list(step.outputs),
+                }
+            )
+            if logger is not None:
+                if returncode == 0:
+                    logger.emit_progress(
+                        "fy_execute", index / total_steps, f"Completed {step.name}"
+                    )
+                else:
+                    logger.emit_error(
+                        "fy_execute", f"{step.name} failed", {"stderr": stderr}
+                    )
+            if returncode != 0 and stop_on_error:
+                raise RuntimeError(f"FY command step failed: {step.name}\n{stderr}")
             continue
 
         process = subprocess.run(
