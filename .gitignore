@@ -162,6 +162,11 @@ vitest_run.log
 # Generated test/verification reports (large dataset_inventory/scan/checkpoint dumps, up to ~188MB). Keep local, NOT in git.
 Test/reports/
 
+# Test/debug 数据文件（payload 快照与 run 备份，不入库；.py 探查脚本正常入库）
+Test/debug/*.backup.json
+Test/debug/v2r_api_payload.json
+Test/debug/payload_*.json
+
 # Local pytest temp dirs under Code/ (created by manual verification runs, e.g. .pytest_tmp_full)
 .pytest_tmp_*/
 

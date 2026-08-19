@@ -391,6 +391,86 @@ describe('runWorkflowForCatalog', () => {
   })
 })
 
+describe('workflow variant preference (X2 online/local 反演切换)', () => {
+  const VARIANT_CATALOG_ID = 'method-fy-omega-doy-dynamic'
+  const VARIANT_DESCRIPTOR = {
+    layer_id: VARIANT_CATALOG_ID,
+    display_name: 'FY 动态 ω 反演',
+    workflow_id: 'omega_sf_fenkuai_fy_online',
+    workflow_variants: {
+      online: { workflow_id: 'omega_sf_fenkuai_fy_online', label: '在线反演' },
+      local: { workflow_id: 'omega_sf_fenkuai_fy_single', label: '本地反演' },
+    },
+  } as unknown as LayerDescriptor
+
+  function makeVariantDeps(overrides: Partial<WorkflowRunnerDeps> = {}) {
+    return makeDeps({
+      getRuntimeLayerCatalog: () => ({ [VARIANT_CATALOG_ID]: VARIANT_DESCRIPTOR }),
+      ...overrides,
+    })
+  }
+
+  it('sets / gets / clears preference per catalog', () => {
+    const runner = createWorkflowRunner(makeVariantDeps())
+    expect(runner.getWorkflowVariantPreference(VARIANT_CATALOG_ID)).toBeUndefined()
+    runner.setWorkflowVariantPreference(VARIANT_CATALOG_ID, 'local')
+    expect(runner.getWorkflowVariantPreference(VARIANT_CATALOG_ID)).toBe('local')
+    runner.setWorkflowVariantPreference(VARIANT_CATALOG_ID, null)
+    expect(runner.getWorkflowVariantPreference(VARIANT_CATALOG_ID)).toBeUndefined()
+  })
+
+  it('injects preferred variant seed when no explicit workflowVariant option', async () => {
+    const deps = makeVariantDeps()
+    vi.mocked(submitWorkflow).mockResolvedValue({
+      run_id: 'run-variant',
+      created_at: '2026-01-01T00:00:00Z',
+      message: 'accepted',
+    } as never)
+
+    const runner = createWorkflowRunner(deps)
+    runner.setWorkflowVariantPreference(VARIANT_CATALOG_ID, 'local')
+    await runner.runWorkflowForCatalog(VARIANT_CATALOG_ID)
+
+    const buildCall = vi.mocked(deps.buildWorkflowPayloadForCatalog).mock.calls[0]
+    expect(buildCall?.[5]).toMatchObject({
+      workflow_entry_name: 'omega_sf_fenkuai_fy_single',
+    })
+  })
+
+  it('explicit workflowVariant option overrides stored preference', async () => {
+    const deps = makeVariantDeps()
+    vi.mocked(submitWorkflow).mockResolvedValue({
+      run_id: 'run-variant',
+      created_at: '2026-01-01T00:00:00Z',
+      message: 'accepted',
+    } as never)
+
+    const runner = createWorkflowRunner(deps)
+    runner.setWorkflowVariantPreference(VARIANT_CATALOG_ID, 'local')
+    await runner.runWorkflowForCatalog(VARIANT_CATALOG_ID, { workflowVariant: 'online' })
+
+    const buildCall = vi.mocked(deps.buildWorkflowPayloadForCatalog).mock.calls[0]
+    expect(buildCall?.[5]).toMatchObject({
+      workflow_entry_name: 'omega_sf_fenkuai_fy_online',
+    })
+  })
+
+  it('no preference → descriptor default path (no variant injection)', async () => {
+    const deps = makeVariantDeps()
+    vi.mocked(submitWorkflow).mockResolvedValue({
+      run_id: 'run-default',
+      created_at: '2026-01-01T00:00:00Z',
+      message: 'accepted',
+    } as never)
+
+    const runner = createWorkflowRunner(deps)
+    await runner.runWorkflowForCatalog(VARIANT_CATALOG_ID)
+
+    const buildCall = vi.mocked(deps.buildWorkflowPayloadForCatalog).mock.calls[0]
+    expect(buildCall?.[5]).toBeUndefined()
+  })
+})
+
 describe('scheduleWorkflowRetry', () => {
   it('stops retrying after MAX_WORKFLOW_429_RETRIES (6)', async () => {
     const deps = makeDeps()

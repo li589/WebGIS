@@ -432,6 +432,49 @@
   white-space: nowrap;
   max-width: 100%;
 }
+.variant-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.04rem 0.06rem;
+  min-width: 0;
+}
+.variant-label {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.variant-segmented {
+  display: inline-flex;
+  padding: 0.12rem;
+  gap: 0.12rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border-default);
+  background: var(--surface-raised);
+}
+.variant-seg-btn {
+  border: none;
+  border-radius: 0.38rem;
+  padding: 0.18rem 0.52rem;
+  font-size: var(--font-size-caption);
+  line-height: 1.35;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+.variant-seg-btn:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+.variant-seg-btn.active {
+  color: var(--accent-strong);
+  background: var(--surface-blue-tint);
+  font-weight: 600;
+}
 .wf-progress-bar {
   position: relative;
   height: 4px;

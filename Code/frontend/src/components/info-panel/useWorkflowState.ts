@@ -2,7 +2,7 @@ import { computed, type ComputedRef } from 'vue'
 
 import type { ActiveLayerDisplay, JobLayerItem, LayerHotspot } from '../../stores/layers/types'
 import type { LayerTileStats } from '../../stores/weather-tile-types'
-import { useLayerWorkspace } from '../../stores/layers/selectors'
+import { useLayerWorkspace, useWorkflowRun } from '../../stores/layers/selectors'
 import { ANALYSIS_COPY } from '../../ui-copy'
 import { resolveWeatherWorkflowStage } from '../../utils/weather-tile-readiness'
 import {
@@ -35,6 +35,13 @@ export interface WorkflowStateOptions {
   resultModel: ComputedRef<ResultDisplayModel | null>
 }
 
+/** X2 工作流变体展示模型（ω 反演「在线/本地」切换）；descriptor 未声明变体时为 null。 */
+export type WorkflowVariantView = {
+  defaultKey: string
+  selectedKey: string
+  options: { key: string; label: string }[]
+}
+
 export function useWorkflowState(options: WorkflowStateOptions) {
   const {
     displayLayer,
@@ -54,6 +61,41 @@ export function useWorkflowState(options: WorkflowStateOptions) {
   } = options
 
   const workspace = useLayerWorkspace()
+  const workflowRun = useWorkflowRun()
+
+  const workflowVariants = computed<WorkflowVariantView | null>(() => {
+    const cid = displayLayer.value.catalogId
+    if (!cid || !canRunWorkflow.value) return null
+    const descriptor = workspace.resolveEffectiveDescriptor(cid)
+    const variants = descriptor?.workflow_variants
+    if (!variants || Object.keys(variants).length === 0) return null
+    const defaultKey =
+      Object.entries(variants).find(([, v]) => v.workflow_id === descriptor?.workflow_id)?.[0] ??
+      'online'
+    const options = Object.entries(variants).map(([key, v]) => ({
+      key,
+      label: v.label ?? (key === 'online' ? '在线反演' : '本地反演'),
+    }))
+    const backendId = workspace.resolveBackendLayerId(cid)
+    const preference =
+      workflowRun.workflowVariantPreference.value[backendId] ??
+      workflowRun.workflowVariantPreference.value[cid]
+    return { defaultKey, selectedKey: preference ?? defaultKey, options }
+  })
+
+  /** 切换「反演来源」变体：写入偏好并按新变体重提工作流（旧 run 由提交层独占清理处理）。 */
+  async function switchWorkflowVariant(variantKey: string) {
+    const cid = displayLayer.value.catalogId
+    if (!cid) return
+    const view = workflowVariants.value
+    if (!view || variantKey === view.selectedKey) return
+    workflowRun.setWorkflowVariantPreference(cid, variantKey as 'online' | 'local')
+    try {
+      await workflowRun.runWorkflowForCatalog(cid)
+    } catch (error) {
+      console.warn('[InfoPanel] switchWorkflowVariant re-run failed:', error)
+    }
+  }
 
   // ── 分析摘要 ──────────────────────────────────────────────────────────────
 
@@ -257,6 +299,8 @@ export function useWorkflowState(options: WorkflowStateOptions) {
     workflowStage,
     workflowMeta,
     workflowProgress,
+    workflowVariants,
+    switchWorkflowVariant,
     latestEventMessage,
     hasRealSelection,
     sparseVisualHint,

@@ -177,6 +177,9 @@ export const useLayersStore = defineStore('layers', () => {
     updateRunGroupFromJob: workflowRun.updateRunGroupFromJob,
     // ── Actions: workflow ──
     runWorkflowForCatalog: workflowRun.runWorkflowForCatalog,
+    workflowVariantPreference: workflowRun.workflowVariantPreference,
+    getWorkflowVariantPreference: workflowRun.getWorkflowVariantPreference,
+    setWorkflowVariantPreference: workflowRun.setWorkflowVariantPreference,
     cancelWorkflowRunForJob: workflowRun.cancelWorkflowRunForJob,
     retryWorkflowRunForJob: workflowRun.retryWorkflowRunForJob,
     cleanupAllRetryTimers: workflowRun.cleanupAllRetryTimers,

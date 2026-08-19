@@ -859,7 +859,7 @@ def build_payload(
         # Do NOT set layer_id: linked_layer_id often points at a different module
         # (e.g. omega_block seed → method-smap-omega-doy-avg) and trip submit-time 422.
         ds = overrides.get("datasource_selection")
-        if not isinstance(ds, dict):
+        if not isinstance(ds, dict) or not ds:
             ds = extract_datasource_selection(defn)
         algo_params = dict(parameters)
         for node in defn.get("nodes") or []:

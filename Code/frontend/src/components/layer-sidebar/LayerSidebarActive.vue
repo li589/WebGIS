@@ -100,7 +100,11 @@ const emit = defineEmits<{
             <strong class="group-title">{{
               runGroupOf(row.groupId)?.title || LAYERS_COPY.computingGroup
             }}</strong>
-            <span class="group-status-chip">{{ groupStatusLabel(row.groupId) }}</span>
+            <span
+              class="group-status-chip"
+              :class="`group-status-chip--${runGroupOf(row.groupId)?.status ?? 'computing'}`"
+              >{{ groupStatusLabel(row.groupId) }}</span
+            >
             <span
               v-if="typeof runGroupOf(row.groupId)?.progress === 'number'"
               class="group-progress-track"

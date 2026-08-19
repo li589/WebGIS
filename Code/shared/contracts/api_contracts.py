@@ -157,6 +157,23 @@ class OnlineTemporalCapability(BaseModel):
     """提交优先级（'low' | 'normal'），预取用 low 避免抢占用户操作。"""
 
 
+class WorkflowVariantDef(BaseModel):
+    """工作流变体定义（X2：同一图层的多执行形态，如在线/本地反演）。
+
+    LayerDescriptor.workflow_variants 以变体键（"online" / "local"）映射到具体种子；
+    前端据此在分析框渲染「反演来源」切换控件，默认提交 descriptor.workflow_id
+    所指变体（约定为默认变体）。
+    """
+
+    workflow_id: str
+    """变体对应的 workflow 种子 id（如 omega_sf_fenkuai_fy_online）。"""
+    label: str | None = None
+    """变体展示名（如 "在线反演" / "本地反演"）；缺省时前端按变体键回退显示。"""
+    credential_profile: str | None = None
+    """在线变体所需门户凭据 profile（"nsmc" / "earthdata" 等）；
+    readiness 二元语义据此判定在线变体可用性。"""
+
+
 class LayerDescriptor(BaseModel):
     layer_id: str
     dataset_key: str
@@ -218,6 +235,9 @@ class LayerDescriptor(BaseModel):
     """是否为行政区边界图层。"""
     online_temporal: OnlineTemporalCapability | None = None
     """在线时间获取能力声明。None 表示该图层不支持在线历史时间获取。"""
+    workflow_variants: dict[str, WorkflowVariantDef] | None = None
+    """工作流变体（X2）。键为变体名（"online" / "local"），值为对应种子定义；
+    None 表示单变体图层（仅 descriptor.workflow_id 一条执行路径）。"""
 
 
 class LayerCatalogResponse(BaseModel):

@@ -253,6 +253,29 @@ function queryDefaultOverlaySeries() {
                 wf.workflowMeta.value.name
               }}</span>
             </div>
+            <div
+              v-if="wf.workflowVariants.value"
+              class="variant-switch-row"
+              role="radiogroup"
+              aria-label="反演来源"
+            >
+              <span class="variant-label">反演来源</span>
+              <div class="variant-segmented">
+                <button
+                  v-for="opt in wf.workflowVariants.value.options"
+                  :key="opt.key"
+                  type="button"
+                  class="variant-seg-btn"
+                  :class="{ active: opt.key === wf.workflowVariants.value.selectedKey }"
+                  role="radio"
+                  :aria-checked="opt.key === wf.workflowVariants.value.selectedKey"
+                  :title="`切换为${opt.label}并重新运行`"
+                  @click="wf.switchWorkflowVariant(opt.key)"
+                >
+                  {{ opt.label }}
+                </button>
+              </div>
+            </div>
           </template>
 
           <div v-if="wf.showWorkflowStageRow.value" class="workflow-stage-row">

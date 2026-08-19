@@ -9,9 +9,11 @@
  *  - 提交簇：runWorkflowForCatalog / interruptWorkflowForCatalog /
  *    scheduleWorkflowRetry / cancelWorkflowRunForJob / retryWorkflowRunForJob
  *
- * 不持有 reactive 状态——store 状态经 deps getter / 写回调注入；
- * runtime-api / 纯函数模块直接 import（无 store 依赖）。
+ * 除 X2 变体偏好（workflowVariantPreference）外不持有 reactive 状态——store 状态经
+ * deps getter / 写回调注入；runtime-api / 纯函数模块直接 import（无 store 依赖）。
  */
+import { ref } from 'vue'
+
 import {
   cancelWorkflowRun,
   getWorkflowEvents,
@@ -51,6 +53,54 @@ import type {
 
 function debugLog(module: string, ...args: unknown[]) {
   probeDebugLog(`[${performance.now().toFixed(1)}ms] [LayersStore:${module}]`, ...args)
+}
+
+interface WorkflowVariantLike {
+  workflow_id?: string
+  label?: string | null
+}
+
+interface WorkflowVariantsHost {
+  workflow_variants?: Record<string, WorkflowVariantLike> | null
+}
+
+/**
+ * X2 变体解析：按 workflowVariant 从 descriptor.workflow_variants 取种子 id，
+ * 注入 algorithm_request.workflow_entry_name（后端提交边界优先级最高的 workflow 键）。
+ *
+ * - variant 未指定或 descriptor 无变体声明 → 原样返回 algorithmRequest（默认变体语义）；
+ * - 显式 algorithmRequest.workflow_entry_name / workflow_name 已存在时不覆盖
+ *   （画布/编辑器提交优先）；
+ * - 变体键声明缺失 → 记 warning 并回退默认（不阻断提交）。
+ */
+function resolveVariantAlgorithmRequest(
+  runtimeLayerCatalog: Record<string, LayerDescriptor | undefined>,
+  backendLayerId: string,
+  workflowVariant: 'online' | 'local' | undefined,
+  algorithmRequest: Record<string, unknown> | undefined,
+  catalogName: string,
+): Record<string, unknown> | undefined {
+  if (!workflowVariant) return algorithmRequest
+  const variants = (runtimeLayerCatalog[backendLayerId] as WorkflowVariantsHost | undefined)
+    ?.workflow_variants
+  const variant = variants?.[workflowVariant]
+  if (!variant?.workflow_id) {
+    debugLog(
+      'runWorkflow',
+      catalogName,
+      `variant "${workflowVariant}" not declared, falling back to default workflow`,
+    )
+    return algorithmRequest
+  }
+  const hasExplicitWorkflow =
+    algorithmRequest &&
+    (typeof algorithmRequest.workflow_entry_name === 'string' ||
+      typeof algorithmRequest.workflow_name === 'string')
+  if (hasExplicitWorkflow) return algorithmRequest
+  return {
+    ...(algorithmRequest ?? {}),
+    workflow_entry_name: variant.workflow_id,
+  }
 }
 
 /**
@@ -222,7 +272,31 @@ export interface WorkflowRunnerDeps
     WorkflowBusinessDeps,
     WorkflowSnapshotDeps {}
 
+export type WorkflowVariantKey = 'online' | 'local'
+
 export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
+  /**
+   * X2 变体偏好（catalogId → 变体键）。分析框切换「反演来源」后写入；
+   * runWorkflowForCatalog 未显式传 workflowVariant 时按此解析，
+   * 使时间轴/重试等后续提交路径沿用用户选择（默认 descriptor 在线变体）。
+   */
+  const workflowVariantPreference = ref<Record<string, WorkflowVariantKey>>({})
+
+  function getWorkflowVariantPreference(catalogId: string): WorkflowVariantKey | undefined {
+    return workflowVariantPreference.value[catalogId]
+  }
+
+  function setWorkflowVariantPreference(
+    catalogId: string,
+    variant: WorkflowVariantKey | null,
+  ): void {
+    if (variant === null) {
+      delete workflowVariantPreference.value[catalogId]
+    } else {
+      workflowVariantPreference.value[catalogId] = variant
+    }
+  }
+
   function rememberTrackedWorkflowRun(catalogId: string, jobLayer: JobLayerItem) {
     // 乐观提交 ID 不是后端真 run，禁止写入恢复列表（否则会 404 / 误点重试）
     if (deps.isLocalSubmitJobId(jobLayer.jobId)) return
@@ -845,6 +919,9 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       /** 显式控制是否复用节点/块缓存（缺省不注入，算法默认 reuse_block_cache=True）。
        *  false=全量重算，规避复用旧输出目录带来的时间片污染。 */
       reuseBlockCache?: boolean
+      /** X2 工作流变体（ω 反演在线/本地）：按 descriptor.workflow_variants
+       *  解析对应种子并注入 workflow_entry_name；缺省走 descriptor 默认变体。 */
+      workflowVariant?: 'online' | 'local'
     } = {},
   ) {
     if (deps.submittingCatalogIds.has(catalogId)) {
@@ -857,6 +934,11 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
 
     const backendLayerId = deps.resolveBackendLayerId(catalogId)
     const isOutputLayer = backendLayerId !== catalogId
+    // 显式 option 优先，其次 store 偏好（backend id 与 catalog id 双查），缺省走 descriptor 默认变体
+    const effectiveVariant =
+      options.workflowVariant ??
+      getWorkflowVariantPreference(backendLayerId) ??
+      getWorkflowVariantPreference(catalogId)
     const runtimeLayerCatalog = deps.getRuntimeLayerCatalog()
     const catalogName = isOutputLayer
       ? (deps.getLayerLibrary().find((l) => l.catalogId === catalogId)?.name ?? catalogId)
@@ -952,9 +1034,28 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         requestedOutputs,
         requestBBox,
         backendLayerId,
-        options.algorithmRequest,
+        resolveVariantAlgorithmRequest(
+          deps.getRuntimeLayerCatalog(),
+          backendLayerId,
+          effectiveVariant,
+          options.algorithmRequest,
+          catalogName,
+        ),
         options.weatherRequest,
       )
+      if (effectiveVariant && payload.algorithm_request) {
+        const algoRequest = payload.algorithm_request as Record<string, unknown>
+        const refreshedCatalog = deps.getRuntimeLayerCatalog()
+        if (
+          !options.commandLabel &&
+          typeof algoRequest.workflow_entry_name === 'string' &&
+          algoRequest.workflow_entry_name !== refreshedCatalog[backendLayerId]?.workflow_id
+        ) {
+          payload.command_label = `运行 ${catalogName} 分析 · ${
+            effectiveVariant === 'local' ? '本地反演' : '在线反演'
+          }`
+        }
+      }
       if (options.timeRange && typeof options.timeRange === 'object') {
         payload.time_range = options.timeRange
       }
@@ -1310,6 +1411,9 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     cleanupAllRetryTimers,
     rememberTrackedWorkflowRun,
     forgetTrackedWorkflowRun,
+    workflowVariantPreference,
+    getWorkflowVariantPreference,
+    setWorkflowVariantPreference,
     // 内部辅助不导出：resolveRestoredCatalogId / hydrateJobLayerFromEvents /
     //   resolveRestoreWorkflowBridge / ensureRestoredRunGroup
   }

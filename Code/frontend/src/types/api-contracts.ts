@@ -5670,6 +5670,10 @@ export interface components {
              */
             is_admin_boundary: boolean;
             online_temporal?: components["schemas"]["OnlineTemporalCapability"] | null;
+            /** Workflow Variants */
+            workflow_variants?: {
+                [key: string]: components["schemas"]["WorkflowVariantDef"];
+            } | null;
         };
         /** LayerDisplayNameBody */
         LayerDisplayNameBody: {
@@ -8359,6 +8363,22 @@ export interface components {
             saveback_terminal_plans?: {
                 [key: string]: components["schemas"]["SavebackTerminalPlanPayload"];
             };
+        };
+        /**
+         * WorkflowVariantDef
+         * @description 工作流变体定义（X2：同一图层的多执行形态，如在线/本地反演）。
+         *
+         *     LayerDescriptor.workflow_variants 以变体键（"online" / "local"）映射到具体种子；
+         *     前端据此在分析框渲染「反演来源」切换控件，默认提交 descriptor.workflow_id
+         *     所指变体（约定为默认变体）。
+         */
+        WorkflowVariantDef: {
+            /** Workflow Id */
+            workflow_id: string;
+            /** Label */
+            label?: string | null;
+            /** Credential Profile */
+            credential_profile?: string | null;
         };
         /** WorkspaceGetResponse */
         WorkspaceGetResponse: {

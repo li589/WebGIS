@@ -1521,8 +1521,19 @@
     ],
     "module_name": "omega_sf_fenkuai",
     "engine": "python_provider",
-    "workflow_name": "omega_sf_fenkuai_smap_single",
-    "workflow_id": "omega_sf_fenkuai_smap_single",
+    "workflow_name": "omega_sf_fenkuai_smap_online",
+    "workflow_id": "omega_sf_fenkuai_smap_online",
+    "workflow_variants": {
+      "online": {
+        "workflow_id": "omega_sf_fenkuai_smap_online",
+        "label": "在线反演",
+        "credential_profile": "earthdata"
+      },
+      "local": {
+        "workflow_id": "omega_sf_fenkuai_smap_single",
+        "label": "本地反演"
+      }
+    },
     "default_task_type": "omega_sf_fenkuai",
     "default_data_access_sources": {
       "smap_folder": [
@@ -1537,6 +1548,16 @@
         "ndvi_clim_dir",
         "Ecological_Vegetation/NDVI/climatology"
       ]
+    },
+    "online_temporal": {
+      "enabled": true,
+      "coverage_start": "2015-04",
+      "coverage_end": null,
+      "native_step": "1d",
+      "max_batch": 8,
+      "prefetch_depth": 1,
+      "queue_tag": "temporal-fetch",
+      "priority": "low"
     },
     "run_readiness_summary": "SMAP SF 块反演输入（日 .mat / 辅助库 / NDVI 气候态）按 DATA_ROOT 解析",
     "run_readiness_notes": [
@@ -1616,8 +1637,19 @@
     ],
     "module_name": "omega_sf_fenkuai",
     "engine": "python_provider",
-    "workflow_name": "omega_sf_fenkuai_fy_single",
-    "workflow_id": "omega_sf_fenkuai_fy_single",
+    "workflow_name": "omega_sf_fenkuai_fy_online",
+    "workflow_id": "omega_sf_fenkuai_fy_online",
+    "workflow_variants": {
+      "online": {
+        "workflow_id": "omega_sf_fenkuai_fy_online",
+        "label": "在线反演",
+        "credential_profile": "nsmc"
+      },
+      "local": {
+        "workflow_id": "omega_sf_fenkuai_fy_single",
+        "label": "本地反演"
+      }
+    },
     "default_task_type": "omega_sf_fenkuai",
     "default_data_access_sources": {
       "smap_folder": [
@@ -1638,6 +1670,16 @@
       "fy3b_folder": [
         "Soil_Moisture/FY3B"
       ]
+    },
+    "online_temporal": {
+      "enabled": true,
+      "coverage_start": "2017-01",
+      "coverage_end": null,
+      "native_step": "1d",
+      "max_batch": 8,
+      "prefetch_depth": 1,
+      "queue_tag": "temporal-fetch",
+      "priority": "low"
     },
     "run_readiness_summary": "FY SF 块反演输入（FY/SMAP/辅助库/NDVI）按 DATA_ROOT 解析",
     "run_readiness_notes": [
@@ -1717,13 +1759,34 @@
     ],
     "module_name": "omega_avg_daily",
     "engine": "python_provider",
-    "workflow_name": "omega_avg_daily_smap_single",
-    "workflow_id": "omega_avg_daily_smap_single",
+    "workflow_name": "omega_avg_daily_smap_online",
+    "workflow_id": "omega_avg_daily_smap_online",
+    "workflow_variants": {
+      "online": {
+        "workflow_id": "omega_avg_daily_smap_online",
+        "label": "在线反演",
+        "credential_profile": "earthdata"
+      },
+      "local": {
+        "workflow_id": "omega_avg_daily_smap_single",
+        "label": "本地反演"
+      }
+    },
     "default_task_type": "omega_avg_daily",
     "default_data_access_sources": {
       "omega_block_dir": [
         "Inversion_Results/omega_block"
       ]
+    },
+    "online_temporal": {
+      "enabled": true,
+      "coverage_start": "2015-04",
+      "coverage_end": null,
+      "native_step": "1d",
+      "max_batch": 8,
+      "prefetch_depth": 1,
+      "queue_tag": "temporal-fetch",
+      "priority": "low"
     },
     "run_readiness_summary": "D2 日均 ω 依赖 D1 omega_block 产物目录",
     "run_readiness_notes": [
@@ -1803,13 +1866,34 @@
     ],
     "module_name": "omega_avg_daily",
     "engine": "python_provider",
-    "workflow_name": "omega_avg_daily_fy_single",
-    "workflow_id": "omega_avg_daily_fy_single",
+    "workflow_name": "omega_avg_daily_fy_online",
+    "workflow_id": "omega_avg_daily_fy_online",
+    "workflow_variants": {
+      "online": {
+        "workflow_id": "omega_avg_daily_fy_online",
+        "label": "在线反演",
+        "credential_profile": "nsmc"
+      },
+      "local": {
+        "workflow_id": "omega_avg_daily_fy_single",
+        "label": "本地反演"
+      }
+    },
     "default_task_type": "omega_avg_daily",
     "default_data_access_sources": {
       "omega_block_dir": [
         "Inversion_Results/omega_block"
       ]
+    },
+    "online_temporal": {
+      "enabled": true,
+      "coverage_start": "2017-01",
+      "coverage_end": null,
+      "native_step": "1d",
+      "max_batch": 8,
+      "prefetch_depth": 1,
+      "queue_tag": "temporal-fetch",
+      "priority": "low"
     },
     "run_readiness_summary": "FY D2 日均 ω 依赖 D1 omega_block 产物目录",
     "run_readiness_notes": [

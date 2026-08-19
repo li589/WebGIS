@@ -107,6 +107,23 @@ def infer_resource_profile(
     return current or WorkflowResourceProfile.standard
 
 
+def _workflow_seed_definition(workflow_name: str) -> dict[str, Any] | None:
+    """按 workflow_name 读取种子定义（X2 变体路由场景）。
+
+    layer_id-only 提交在受理阶段由 resolver 物化 ``algorithm_request.workflow_name``
+    （无 workflow_definition / module_name 可查）；此时回读种子图判定 heavy 模块，
+    保证 ω 在线/本地链路进入 heavy 队列。读取失败按无定义处理（fail-open）。
+    """
+    try:
+        from app.services import workflow_definition_service  # 延迟导入避免环
+    except Exception:  # pragma: no cover - 防御性
+        return None
+    try:
+        return workflow_definition_service.get_definition(workflow_name)
+    except Exception:
+        return None
+
+
 def apply_resource_profile_to_payload(
     payload: WorkflowSubmitRequest,
     *,
@@ -129,6 +146,17 @@ def apply_resource_profile_to_payload(
         if isinstance(graph, dict) and "nodes" not in graph:
             # May be wrapped
             graph = graph if "nodes" in graph else definition
+
+    # X2 变体路由：layer_id-only 提交在受理时物化 workflow_name（无 definition/
+    # module_name 可查）；回读种子图判定 heavy，确保 ω 链路进 heavy 队列。
+    if graph is None and module_hint is None and payload.algorithm_request is not None:
+        algo = payload.algorithm_request
+        if isinstance(algo, dict):
+            wf_name = algo.get("workflow_name")
+        else:
+            wf_name = getattr(algo, "workflow_name", None)
+        if wf_name:
+            graph = _workflow_seed_definition(str(wf_name))
 
     if meta is None and isinstance(graph, dict):
         maybe_meta = graph.get("_meta")

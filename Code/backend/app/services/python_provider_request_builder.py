@@ -87,11 +87,22 @@ class PythonProviderRequestBuilder:
             try:
                 from app.services.workflow_request_resolver import (
                     _compile_workflow_seed,
+                    _expand_data_root_placeholders,
+                    _expand_date_placeholders,
+                    _get_ref_date_from_payload,
                 )
 
                 compiled = _compile_workflow_seed(wf_name)
                 if compiled is not None:
-                    request_payload["workflow_definition"] = compiled
+                    # 种子模板含 {YYYYMMDD}/{DATA_ROOT} 字面占位符（种子同步仅展开
+                    # DATA_ROOT，日期占位符保留至提交边界）：在此按提交时间窗展开，
+                    # 与画布 workflow_definition 路径的展开行为对齐（AD11）。
+                    ref_date = _get_ref_date_from_payload(payload)
+                    request_payload["workflow_definition"] = (
+                        _expand_data_root_placeholders(
+                            _expand_date_placeholders(compiled, ref_date)
+                        )
+                    )
             except Exception:  # noqa: BLE001
                 logger.warning("Failed to compile workflow seed '%s'", wf_name)
 

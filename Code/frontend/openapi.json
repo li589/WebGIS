@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Star-Ground Fusion Soil Data Platform Backend",
+    "title": "Comprehensive Geographic Data Analysis System (CGDA) Backend",
     "description": "Minimal backend service for the geographic analysis platform.",
     "version": "0.1.0"
   },
@@ -15411,6 +15411,20 @@
                 "type": "null"
               }
             ]
+          },
+          "workflow_variants": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/WorkflowVariantDef"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Variants"
           }
         },
         "type": "object",
@@ -22263,6 +22277,42 @@
         ],
         "title": "WorkflowValidationResponse",
         "description": "Route-friendly validation response with typed terminal plan projections."
+      },
+      "WorkflowVariantDef": {
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "title": "Workflow Id"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "credential_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Profile"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_id"
+        ],
+        "title": "WorkflowVariantDef",
+        "description": "工作流变体定义（X2：同一图层的多执行形态，如在线/本地反演）。\n\nLayerDescriptor.workflow_variants 以变体键（\"online\" / \"local\"）映射到具体种子；\n前端据此在分析框渲染「反演来源」切换控件，默认提交 descriptor.workflow_id\n所指变体（约定为默认变体）。"
       },
       "WorkspaceGetResponse": {
         "properties": {

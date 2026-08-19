@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import dataclasses
+import json
 from datetime import datetime
 from typing import Any
 from unittest.mock import patch
 
+from app.core import config as core_config
 from app.services.workflow.submission_service import WorkflowSubmissionService
 from app.services.workflow_request_resolver import (
     describe_layer_run_readiness,
@@ -26,8 +29,10 @@ def test_unresolved_default_datasets_remains_blocked() -> None:
     ):
         readiness = describe_layer_run_readiness("ref-fy-tb-202512-mwri")
 
-    assert readiness is not None, 'readiness is not None'
-    assert readiness["run_readiness"] == "blocked", 'readiness["run_readiness"] == "blocked"'
+    assert readiness is not None, "readiness is not None"
+    assert (
+        readiness["run_readiness"] == "blocked"
+    ), 'readiness["run_readiness"] == "blocked"'
     # 数据源未就绪时 describe_layer_run_readiness 追加 “缺少默认数据集” note
     notes_text = "\n".join(readiness["run_readiness_notes"])
     assert "缺少默认数据集" in notes_text, '"缺少默认数据集" in notes_text'
@@ -75,31 +80,100 @@ def test_normalize_fills_time_range_from_canvas_when_layer_missing() -> None:
     ):
         normalized = normalize_workflow_submit_request(payload)
 
-    assert normalized.time_range is not None, 'normalized.time_range is not None'
+    assert normalized.time_range is not None, "normalized.time_range is not None"
     assert normalized.time_range is not None
-    assert normalized.time_range.start_at == datetime(2025, 12, 1, 0, 0, 0), 'normalized.time_range.start_at == datetime(2025, 12, 1, 0, 0, 0)'
-    assert normalized.time_range.end_at == datetime(2025, 12, 31, 0, 0, 0), 'normalized.time_range.end_at == datetime(2025, 12, 31, 0, 0, 0)'
+    assert normalized.time_range.start_at == datetime(
+        2025, 12, 1, 0, 0, 0
+    ), "normalized.time_range.start_at == datetime(2025, 12, 1, 0, 0, 0)"
+    assert normalized.time_range.end_at == datetime(
+        2025, 12, 31, 0, 0, 0
+    ), "normalized.time_range.end_at == datetime(2025, 12, 31, 0, 0, 0)"
     algo = normalized.algorithm_request or {}
-    assert algo.get("module_name") == "omega_sf_fenkuai", 'algo.get("module_name") == "omega_sf_fenkuai"'
+    assert (
+        algo.get("module_name") == "omega_sf_fenkuai"
+    ), 'algo.get("module_name") == "omega_sf_fenkuai"'
 
 
 def test_normalize_fills_time_range_from_seed_via_restored_layer() -> None:
-    """关联图层重新入库后，仅 layer_id 提交也应从种子补齐 time_range。"""
+    """关联图层重新入库后，仅 layer_id 提交也应从种子补齐 time_range。
+
+    X2 变体路由后，无显式变体选择的 layer_id 提交翻译为默认在线变体
+    （workflow_name），不再走 setdefault(module_name) 裸模块路径。
+    """
     payload = WorkflowSubmitRequest(
         command_type=WorkflowCommandType.analysis,
         command_label="run layer",
         layer_id="method-smap-omega-doy-dynamic",
-        map_context=RuntimeMapContext(
-            active_layer_id="method-smap-omega-doy-dynamic"
-        ),
+        map_context=RuntimeMapContext(active_layer_id="method-smap-omega-doy-dynamic"),
     )
     normalized = normalize_workflow_submit_request(payload)
-    assert normalized.time_range is not None, 'normalized.time_range is not None'
-    assert normalized.time_range is not None
-    assert normalized.time_range.start_at.year == 2025, 'normalized.time_range.start_at.year == 2025'
-    assert normalized.time_range.start_at.month == 12, 'normalized.time_range.start_at.month == 12'
+    assert normalized.time_range is not None, "normalized.time_range is not None"
+    assert (
+        normalized.time_range.start_at.year == 2025
+    ), "normalized.time_range.start_at.year == 2025"
+    assert (
+        normalized.time_range.start_at.month == 12
+    ), "normalized.time_range.start_at.month == 12"
     algo = normalized.algorithm_request or {}
-    assert algo.get("module_name") == "omega_sf_fenkuai", 'algo.get("module_name") == "omega_sf_fenkuai"'
+    assert (
+        algo.get("workflow_name") == "omega_sf_fenkuai_smap_online"
+    ), 'algo.get("workflow_name") == "omega_sf_fenkuai_smap_online"'
+    assert "module_name" not in algo, '"module_name" not in algo (variant seed path)'
+
+
+def test_normalize_explicit_local_variant_routes_to_local_seed() -> None:
+    """FE 分析框切换本地反演：workflow_entry_name（已声明变体）翻译为 workflow_name。"""
+    payload = WorkflowSubmitRequest(
+        command_type=WorkflowCommandType.analysis,
+        command_label="run FY SF local",
+        layer_id="method-fy-omega-doy-dynamic",
+        map_context=RuntimeMapContext(active_layer_id="method-fy-omega-doy-dynamic"),
+        algorithm_request={"workflow_entry_name": "omega_sf_fenkuai_fy_single"},
+    )
+    normalized = normalize_workflow_submit_request(payload)
+    algo = normalized.algorithm_request or {}
+    assert (
+        algo.get("workflow_name") == "omega_sf_fenkuai_fy_single"
+    ), 'algo.get("workflow_name") == "omega_sf_fenkuai_fy_single"'
+    assert (
+        "module_name" not in algo
+    ), '"module_name" not in algo（变体种子路径，不得 setdefault 回裸模块）'
+    assert normalized.time_range is not None, "time_range 应从本地变体种子补齐"
+    assert normalized.time_range.start_at.year == 2025
+    assert normalized.time_range.start_at.month == 11
+
+
+def test_normalize_undeclared_variant_entry_keeps_module_path() -> None:
+    """workflow_entry_name 未匹配已声明变体（如 _dual 种子）→ 不路由，回落模块路径。"""
+    payload = WorkflowSubmitRequest(
+        command_type=WorkflowCommandType.analysis,
+        command_label="run FY SF dual",
+        layer_id="method-fy-omega-doy-dynamic",
+        map_context=RuntimeMapContext(active_layer_id="method-fy-omega-doy-dynamic"),
+        algorithm_request={"workflow_entry_name": "omega_sf_fenkuai_fy_dual"},
+    )
+    normalized = normalize_workflow_submit_request(payload)
+    algo = normalized.algorithm_request or {}
+    assert (
+        algo.get("module_name") == "omega_sf_fenkuai"
+    ), "未声明变体应回落裸模块路径（descriptor.module_name 兜底）"
+    assert "workflow_name" not in algo
+
+
+def test_normalize_layer_without_variants_keeps_module_path() -> None:
+    """无 workflow_variants 声明的 python_provider 图层维持既有模块路径（兼容）。"""
+    payload = WorkflowSubmitRequest(
+        command_type=WorkflowCommandType.analysis,
+        command_label="run ndvi",
+        layer_id="ndvi",
+        map_context=RuntimeMapContext(active_layer_id="ndvi"),
+    )
+    normalized = normalize_workflow_submit_request(payload)
+    algo = normalized.algorithm_request or {}
+    assert (
+        algo.get("module_name") == "ndvi_daily"
+    ), 'algo.get("module_name") == "ndvi_daily"（无变体图层不注入 workflow_name）'
+    assert "workflow_name" not in algo
 
 
 def test_normalize_multi_module_keeps_definition_without_module_name() -> None:
@@ -132,7 +206,9 @@ def test_normalize_multi_module_keeps_definition_without_module_name() -> None:
         # Synthetic descriptor path needs entry keys — workflow_definition present.
         normalized = normalize_workflow_submit_request(payload)
     algo = normalized.algorithm_request or {}
-    assert isinstance(algo.get("workflow_definition"), dict), 'isinstance(algo.get("workflow_definition"), dict)'
+    assert isinstance(
+        algo.get("workflow_definition"), dict
+    ), 'isinstance(algo.get("workflow_definition"), dict)'
     assert "module_name" not in algo, '"module_name" not in algo'
 
 
@@ -192,12 +268,12 @@ def test_normalize_single_download_node_keeps_definition() -> None:
         normalized = normalize_workflow_submit_request(payload)
 
     algo = normalized.algorithm_request or {}
-    assert isinstance(algo.get("workflow_definition"), dict), (
-        "single download node canvas must keep workflow_definition"
-    )
-    assert "module_name" not in algo, (
-        "download pipeline must not be flattened into descriptor module_name"
-    )
+    assert isinstance(
+        algo.get("workflow_definition"), dict
+    ), "single download node canvas must keep workflow_definition"
+    assert (
+        "module_name" not in algo
+    ), "download pipeline must not be flattened into descriptor module_name"
 
 
 def test_normalize_compiled_download_node_keeps_definition() -> None:
@@ -239,7 +315,12 @@ def test_normalize_compiled_download_node_keeps_definition() -> None:
                     },
                 ],
                 "edges": [
-                    {"from_node": "n1", "from_port": "path", "to_node": "n2", "to_port": "data"}
+                    {
+                        "from_node": "n1",
+                        "from_port": "path",
+                        "to_node": "n2",
+                        "to_port": "data",
+                    }
                 ],
             },
             "time_range": {
@@ -265,18 +346,19 @@ def test_normalize_compiled_download_node_keeps_definition() -> None:
         normalized = normalize_workflow_submit_request(payload)
 
     algo = normalized.algorithm_request or {}
-    assert isinstance(algo.get("workflow_definition"), dict), (
-        "compiled single download node must keep workflow_definition"
-    )
-    assert "module_name" not in algo, (
-        "compiled download pipeline must not be flattened into descriptor module_name"
-    )
+    assert isinstance(
+        algo.get("workflow_definition"), dict
+    ), "compiled single download node must keep workflow_definition"
+    assert (
+        "module_name" not in algo
+    ), "compiled download pipeline must not be flattened into descriptor module_name"
 
 
-def test_fy_single_descriptor_uses_accepted_fy_dataset_keys(
-    tmp_path, request
-) -> None:
-    """method-fy-omega-doy-dynamic 不得注入模板不接受的 fy_folder。
+def test_fy_single_descriptor_uses_accepted_fy_dataset_keys(tmp_path, request) -> None:
+    """显式 module_name 提交（编辑器路径）不得注入模板不接受的 fy_folder。
+
+    X2 变体路由后，显式 module_name 阻断变体翻译、维持裸模块路径及其
+    accepted_data_access 映射尾部，此处继续守护 fy_folder 422 回归。
 
     数据依赖隔离：在 tmp 数据根中自建 descriptor.default_data_access_sources
     的全部候选目录，不依赖机器上的真实机构数据（BACKEND_DATA_ROOT 指向）。
@@ -307,14 +389,18 @@ def test_fy_single_descriptor_uses_accepted_fy_dataset_keys(
         command_type=WorkflowCommandType.analysis,
         command_label="run FY SF",
         layer_id="method-fy-omega-doy-dynamic",
-        map_context=RuntimeMapContext(
-            active_layer_id="method-fy-omega-doy-dynamic"
-        ),
+        map_context=RuntimeMapContext(active_layer_id="method-fy-omega-doy-dynamic"),
         requested_outputs=["json", "map_layer"],
+        algorithm_request={"module_name": "omega_sf_fenkuai"},
     )
     normalized = normalize_workflow_submit_request(payload)
     algo = normalized.algorithm_request or {}
-    assert algo.get("module_name") == "omega_sf_fenkuai", 'algo.get("module_name") == "omega_sf_fenkuai"'
+    assert (
+        algo.get("module_name") == "omega_sf_fenkuai"
+    ), 'algo.get("module_name") == "omega_sf_fenkuai"'
+    assert (
+        "workflow_name" not in algo
+    ), '"workflow_name" not in algo (explicit module path)'
     ds = algo.get("datasource_selection") or {}
     data_access = ds.get("_data_access_requests") or {}
     assert "fy_folder" not in data_access, '"fy_folder" not in data_access'
@@ -413,3 +499,118 @@ def test_merged_group_readiness_all_blocked_and_missing_member() -> None:
     assert readiness["run_readiness"] == "blocked"
     assert readiness["unresolved_default_datasets"] == []
     assert any("m-missing" in note for note in readiness["run_readiness_notes"])
+
+
+def test_normalize_expands_data_root_placeholder_in_flattened_selection(
+    tmp_path,
+) -> None:
+    """AD11 回归：compile 直传画布的字面 ``{DATA_ROOT}`` 须在提交边界展开。
+
+    种子同步落盘时展开占位符，但 ``/workflow-definitions/compile`` 直传的
+    画布定义保留字面 ``{DATA_ROOT}/...``；单模块展平路径的
+    datasource_selection 若不展开，worker 侧算法将收到不可解析路径。
+    """
+    geoj = tmp_path / "smoke_vector.geojson"
+    geoj.write_text('{"type":"FeatureCollection","features":[]}', encoding="utf-8")
+    payload = WorkflowSubmitRequest(
+        command_type=WorkflowCommandType.analysis,
+        command_label="run canvas v2r",
+        algorithm_request={
+            "workflow_definition": {
+                "nodes": [
+                    {
+                        "id": 1,
+                        "type": "data/source",
+                        "properties": {
+                            "dataset_key": "input_path",
+                            "path": "{DATA_ROOT}/smoke_vector.geojson",
+                        },
+                    },
+                    {
+                        "id": 2,
+                        "type": "module/gis_vector_to_raster",
+                        "properties": {
+                            "module_name": "gis_vector_to_raster",
+                            "algorithm_params": {"pixel_size": 0.01},
+                        },
+                    },
+                ],
+                "links": [[1, 1, 0, 2, 1]],
+            },
+            "workflow_entry_name": "gis_vector_to_raster",
+        },
+    )
+    patched = dataclasses.replace(core_config.settings, data_root=str(tmp_path))
+    with (
+        patch(
+            "app.services.workflow_request_resolver.get_layer_descriptor",
+            return_value=None,
+        ),
+        patch(
+            "app.services.workflow_request_resolver._resolve_data_access_source_uri",
+            return_value=None,
+        ),
+        patch.object(core_config, "settings", patched),
+    ):
+        normalized = normalize_workflow_submit_request(payload)
+
+    algo = normalized.algorithm_request or {}
+    ds = algo.get("datasource_selection") or {}
+    assert ds.get("input_path") == f"{tmp_path.as_posix()}/smoke_vector.geojson"
+    assert "{DATA_ROOT" not in json.dumps(algo, default=str)
+
+
+def test_normalize_expands_data_root_placeholder_in_kept_graph(tmp_path) -> None:
+    """AD11 回归（保留图路径）：多模块 DAG 保留的 workflow_definition
+    节点属性中的 ``{DATA_ROOT_WIN}`` 同样须展开为 data_root 绝对路径。"""
+    tif = tmp_path / "smoke_input.tif"
+    tif.write_bytes(b"")
+    payload = WorkflowSubmitRequest(
+        command_type=WorkflowCommandType.analysis,
+        command_label="run canvas graph",
+        algorithm_request={
+            "workflow_definition": {
+                "nodes": [
+                    {
+                        "id": 1,
+                        "type": "data/source",
+                        "properties": {
+                            "dataset_key": "input_path",
+                            "path": "{DATA_ROOT_WIN}\\smoke_input.tif",
+                        },
+                    },
+                    {
+                        "id": 2,
+                        "type": "stats/histogram",
+                        "properties": {"bins": 10},
+                    },
+                    {
+                        "id": 3,
+                        "type": "viz/chart_generate",
+                        "properties": {"chart_type": "bar"},
+                    },
+                ],
+                "links": [[1, 1, 0, 2, 1], [2, 2, 0, 3, 1]],
+            }
+        },
+    )
+    patched = dataclasses.replace(core_config.settings, data_root=str(tmp_path))
+    with (
+        patch(
+            "app.services.workflow_request_resolver.get_layer_descriptor",
+            return_value=None,
+        ),
+        patch(
+            "app.services.workflow_request_resolver._resolve_data_access_source_uri",
+            return_value=None,
+        ),
+        patch.object(core_config, "settings", patched),
+    ):
+        normalized = normalize_workflow_submit_request(payload)
+
+    algo = normalized.algorithm_request or {}
+    ds = algo.get("datasource_selection") or {}
+    assert str(ds.get("input_path", "")).endswith("\\smoke_input.tif")
+    wd = algo.get("workflow_definition")
+    assert isinstance(wd, dict), "多模块 DAG 应保留 workflow_definition"
+    assert "{DATA_ROOT" not in json.dumps(algo, default=str)

@@ -1032,6 +1032,35 @@ h2 {
   white-space: nowrap;
 }
 
+/* 组状态四态配色（纯样式，不动 ActiveRunLayerGroup 状态机）：
+   computing 蓝 / ready 绿 / failed 红 / cancelled 灰（回落基础样式）。 */
+.group-status-chip--computing {
+  color: var(--info, var(--accent));
+  background: var(--info-surface, transparent);
+  border-radius: 999px;
+  padding: 0 0.42rem;
+}
+
+.group-status-chip--ready {
+  color: var(--success);
+  background: var(--success-surface);
+  border-radius: 999px;
+  padding: 0 0.42rem;
+}
+
+.group-status-chip--failed {
+  color: var(--danger);
+  background: var(--danger-surface);
+  border-radius: 999px;
+  padding: 0 0.42rem;
+}
+
+.group-status-chip--cancelled {
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 0 0.42rem;
+}
+
 .group-progress-track {
   width: 2.4rem;
   height: 0.28rem;
