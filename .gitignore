@@ -170,6 +170,9 @@ Test/debug/payload_*.json
 # Local pytest temp dirs under Code/ (created by manual verification runs, e.g. .pytest_tmp_full)
 .pytest_tmp_*/
 
+# NSMC online-pull probe session state (plaintext portal creds; never commit)
+.pytest_nsmc_probe/
+
 # Windows NUL redirect artifact
 nul
 
