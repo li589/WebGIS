@@ -1,8 +1,8 @@
 """风云卫星数据专用下载模块。
 
 支持多源回退策略：
-    - ``nsmc`` — 通过 NSMC 门户 HTTP 下载 FY-3 MWRI HDF 亮温数据
-    - ``nas``  — 通过 NAS FileBrowser REST 直连拉取已落盘的 FY3D 数据
+    - ``nsmc`` — 经 NSMC 新门户（DataPortal API）在线下载 FY-3 MWRI HDF 亮温数据
+    - ``nas``  — 通过 NAS FileBrowser REST 直连拉取已落盘的 FY3D/FY3F 数据
     - ``auto`` — 优先 NSMC，失败自动回退 NAS
 
 输出 ``path``（含数据文件的本地目录）和 ``manifest``（ProductManifest），
@@ -98,10 +98,12 @@ class _DownloadError(Exception):
     """Raised when a download source fails."""
 
 
-# NSMC 单账号限额：HTTP 401/403/429 后进入冷却，期间优先其他账号。
+# NSMC 单账号限额/频控：HTTP 401/403/429、门户中文频控提示或英文提示后进入冷却。
 _ACCOUNT_COOLDOWN_SECONDS = 600.0
 _account_cooldown_until: dict[str, float] = {}
-_ACCOUNT_LIMIT_RE = re.compile(r"\b(401|403|429)\b")
+_ACCOUNT_LIMIT_RE = re.compile(
+    r"\b(401|403|429)\b|频率过于频繁|下载频繁|too often|rate.?limit", re.IGNORECASE
+)
 
 
 def _nsmc_accounts(entry: dict[str, object]) -> list[dict[str, str]]:
@@ -133,6 +135,21 @@ def _account_key(account: dict[str, str]) -> str:
     return account["token"] or account["username"] or "anonymous"
 
 
+def _nsmc_session_file() -> Path | None:
+    """NSMC 会话持久化路径（工作流节点与 Tools/nsmc_online_probe.py 共享）。
+
+    优先级：``CGDA_NSMC_SESSION_FILE`` > ``<BACKEND_DATA_ROOT>/_runtime/cache/
+    nsmc_session.json`` > 不持久化（每次运行重新登录）。
+    """
+    explicit = os.getenv("CGDA_NSMC_SESSION_FILE", "").strip()
+    if explicit:
+        return Path(explicit)
+    data_root = os.getenv("BACKEND_DATA_ROOT", "").strip()
+    if data_root:
+        return Path(data_root) / "_runtime" / "cache" / "nsmc_session.json"
+    return None
+
+
 def _download_from_nsmc(
     ctx: NodeExecutionContext,
     *,
@@ -140,63 +157,92 @@ def _download_from_nsmc(
     date_path: str,
     ds: dict[str, object],
     target_dir: Path,
+    orbit_mode: str = "MWRID",
+    max_files_per_day: int = 2,
+    download_interval: float = 5.0,
 ) -> Path:
-    """Download FY HDF data from NSMC portal via HttpSource.
+    """经 NSMC 新门户（DataPortal API）在线下载当日 MWRI 轨道 HDF。
 
-    多账号轮换：优先非冷却账号；HTTP 401/403/429（限额/拒绝）标记冷却并
-    切换下一账号；全部耗尽抛可诊断错误（auto 模式由上层回退 NAS）。
-    鉴权头遵循门户目录 token_header（cma_nsmc 为自定义 ``token`` 头）。
+    2026-08-20 重写：旧 ``{base}/{SAT}/MWRID/{date}/`` 直链已 404（旧
+    PortalSite asmx 同步废弃）。新链路 = RSA 登录（fy4 center，验证码）→
+    tokensync 跨域会话 → subfile 检索 → POST 表单直下（详见
+    ``ingest/nsmc_portal.py`` 模块文档）。
+
+    账号限额保护：
+    - 单账号默认每日每产品只拉 ``max_files_per_day`` 个轨道文件（防频控），
+      种子/algorithm_params 可覆盖；
+    - 下载请求按 ``download_interval`` 秒节流；
+    - HTTP 401/403/429 或频控错误 → 账号进入 600s 冷却并切换下一账号
+      （auto 模式由上层回退 NAS）。
     """
-    import time
-    from urllib.parse import urljoin
-
-    from data_access.sources.http import HttpSource
+    from ingest.nsmc_portal import (
+        NSMC_PRODUCT_TEMPLATES,
+        NsmcCaptchaRequired,
+        NsmcDownloadError,
+        NsmcPortalClient,
+    )
     from modules.download_nodes import _resolve_portal_entry
 
-    # open_data_presets 真源：app/services/portal_catalog.py 的 cma_nsmc（base_url）。
-    # fallback 仅在 ds 未注入 presets（本地裸跑）时生效，须与真源保持一致。
-    ds_presets = ds.get("open_data_presets")
-    presets: dict[str, str] = {}
-    if isinstance(ds_presets, dict):
-        presets = {str(k): str(v) for k, v in ds_presets.items()}
-    base = presets.get("cma_nsmc", "https://satellite.nsmc.org.cn/")
+    template = NSMC_PRODUCT_TEMPLATES.get((satellite, orbit_mode))
+    if template is None:
+        raise ValueError(
+            f"NSMC online 暂不支持 {satellite}/{orbit_mode}；"
+            f"可用组合: {sorted(NSMC_PRODUCT_TEMPLATES)}"
+        )
 
-    rel = f"{satellite.upper()}/MWRID/{date_path}/"
-    url = urljoin(base if base.endswith("/") else base + "/", rel.lstrip("/"))
-
+    day = date_path.replace(".", "-")
     nsmc_entry = _resolve_portal_entry(ds, "nsmc") or _resolve_portal_entry(
         ds, "cma_nsmc"
     )
     accounts = _nsmc_accounts(nsmc_entry) if nsmc_entry else []
     if not accounts:
-        accounts = [{"username": "", "token": "", "password": ""}]
-    token_header = str((nsmc_entry or {}).get("token_header") or "token").strip()
+        raise NsmcDownloadError(
+            "NSMC 在线下载需要门户凭据（portal entry 'cma_nsmc' accounts），"
+            "请在前端设置页配置"
+        )
+    session_file = _nsmc_session_file()
 
     if ctx.logger_adapter is not None:
         ctx.logger_adapter.emit_stage_start(
             "fy_download:nsmc",
-            f"NSMC download ({len(accounts)} account(s)): {url} -> {target_dir}",
+            f"NSMC online ({len(accounts)} account(s), "
+            f"max {max_files_per_day} files/day): "
+            f"{satellite}/{orbit_mode} {day} -> {target_dir}",
         )
 
-    source = HttpSource()
+    import time
+
     now = time.monotonic()
     ordered = sorted(
         accounts, key=lambda acc: _account_cooldown_until.get(_account_key(acc), 0.0)
     )
     failures: list[str] = []
+    last_error: Exception | None = None
     for account in ordered:
         key = _account_key(account)
         cooldown = _account_cooldown_until.get(key, 0.0)
         if cooldown > now:
             failures.append(f"{key}: cooling down ({int(cooldown - now)}s left)")
             continue
-        metadata: dict[str, object] = {"force_refresh": False}
-        if account["token"]:
-            metadata["http_headers"] = {token_header: account["token"]}
+        client = NsmcPortalClient(
+            session_file=session_file,
+            username=account["username"],
+            password=account["password"] or account["token"],
+            download_interval=download_interval,
+        )
         try:
-            resource = source.locate(url, metadata=metadata)
-            local_path = source.materialize(resource, target_dir=target_dir)
-        except Exception as exc:  # noqa: BLE001
+            client.ensure_session()
+            files = client.search_daily_files(
+                template, day, max_files=max_files_per_day
+            )
+        except NsmcCaptchaRequired as exc:
+            # 验证码依赖人工预热，不属于账号问题：直接抛可诊断错误
+            raise ValueError(
+                f"NSMC 需要验证码登录且无自动识别能力。请先执行 "
+                f"Tools/nsmc_online_probe.py prepare && login --code <验证码> "
+                f"预热共享会话（{session_file}）后重试。原因: {exc}"
+            ) from exc
+        except NsmcDownloadError as exc:
             message = str(exc)
             if _ACCOUNT_LIMIT_RE.search(message):
                 _account_cooldown_until[key] = (
@@ -206,23 +252,93 @@ def _download_from_nsmc(
                     f"{key}: limited ({message[:160]}; "
                     f"cooldown {int(_ACCOUNT_COOLDOWN_SECONDS)}s)"
                 )
+                last_error = exc
                 continue
             raise
+
+        if not files:
+            raise NsmcDownloadError(
+                f"NSMC {satellite}/{orbit_mode} {day} 无匹配文件"
+                f"（template={template}）"
+            )
+
+        downloaded: list[str] = []
+        try:
+            for item in files[:max_files_per_day]:
+                filename = str(item["ARCHIVENAME"])
+                dest = target_dir / filename
+                if dest.exists() and dest.stat().st_size > 0:
+                    downloaded.append(filename)
+                    continue
+                client.download_file(
+                    filename, dest, center_flag=str(item.get("CNETERFLAG") or "1")
+                )
+                downloaded.append(filename)
+        except NsmcDownloadError as exc:
+            message = str(exc)
+            if _ACCOUNT_LIMIT_RE.search(message):
+                _account_cooldown_until[key] = (
+                    time.monotonic() + _ACCOUNT_COOLDOWN_SECONDS
+                )
+                failures.append(f"{key}: limited during download ({message[:160]})")
+                last_error = exc
+                continue
+            raise
+
         if ctx.logger_adapter is not None:
             ctx.logger_adapter.emit_stage_end(
                 "fy_download:nsmc",
-                f"Downloaded to: {local_path}",
+                f"Downloaded {len(downloaded)} file(s): " + ", ".join(downloaded[:5]),
             )
-        return (
-            Path(local_path.uri.replace("file://", ""))
-            if hasattr(local_path, "uri")
-            else target_dir
-        )
+        return target_dir
 
     raise RuntimeError(
         "NSMC all accounts exhausted for "
-        f"{url}: {'; '.join(failures) or 'no account available'}"
+        f"{satellite}/{orbit_mode} {day}: "
+        + ("; ".join(failures) or f"last error: {last_error}" or "no account available")
     )
+
+
+def _fetch_fy3f_tif_fallback(
+    ctx: NodeExecutionContext,
+    *,
+    server,
+    token: str,
+    remote_dir: str,
+    date_ymd: str,
+    target_dir: Path,
+) -> Path:
+    """FY3F 合并 HDF 缺失时的单极化 TIF 对回退（10V + 10H）。
+
+    NAS 3Ffinal 目录同时存在 FY3F_GBAL_L1_10V/10H_YYYYMMDD_ORBA_0.tif
+    逐日单极化文件（与 fy.py 的 ``*.tif`` 回退分支输入契约一致）。
+    """
+    from ingest.remote_sync import _filebrowser_download
+
+    if ctx.logger_adapter is not None:
+        ctx.logger_adapter.emit_progress(
+            "fy_download:nas",
+            0.5,
+            f"FY3F 合并 HDF 缺失，回退单极化 TIF 对: {remote_dir} ({date_ymd})",
+        )
+    last_local: Path | None = None
+    for band in ("10V", "10H"):
+        remote_name = f"FY3F_GBAL_L1_{band}_{date_ymd}_ORBA_0.tif"
+        remote_path = f"{remote_dir.rstrip('/')}/{remote_name}"
+        local_path = target_dir / remote_name
+        if local_path.exists() and local_path.stat().st_size > 0:
+            last_local = local_path
+            continue
+        ok = _filebrowser_download(
+            server.filebrowser_url, token, remote_path, local_path, remote_size=0
+        )
+        if not ok or not local_path.exists() or local_path.stat().st_size == 0:
+            local_path.unlink(missing_ok=True)
+            raise RuntimeError(f"NAS FileBrowser download failed: {remote_path}")
+        last_local = local_path
+    if last_local is None:
+        raise RuntimeError(f"NAS FY3F TIF 回退亦无文件: {remote_dir} ({date_ymd})")
+    return last_local
 
 
 def _fetch_from_nas(
@@ -233,34 +349,53 @@ def _fetch_from_nas(
     ds: dict[str, object],
     target_dir: Path,
 ) -> Path:
-    """从 NAS FileBrowser 直连拉取 FY3D 逐日 MWRI GeoTIFF。
+    """从 NAS FileBrowser 直连拉取 FY3D/FY3F 逐日数据（免目录列举）。
 
     2026-08-17 实测修正：NAS 侧唯一可用凭据是 FileBrowser profile
     （``nas_profile``，protocol=filebrowser），旧 smb:// RemoteSource 路径因
     协议不匹配永远失败。FileBrowser 目录含 3600+ 文件、列举 >30s 会超时，
     故按既知文件名走 ``GET /api/raw/{path}`` 直连下载（免列举）。
-    FY3B 无 2020 年后数据（卫星退役），非 FY3D 直接报错由上层处理。
+
+    2026-08-20 扩展 FY3F：NAS ``/Chenhaojun/Data/3Ffinal`` 实测有 224 天
+    （2023-12-01..2024-08-09）逐日双极化合并 HDF
+    （``FY3F_GBAL_L1_ORBA_10V10H_YYYYMMDD_ORBA.hdf``，TBv+TBh 单文件），
+    命名与 ingest/fy.py 的 HDF 轨道识别（ORBA 升轨 + 8 位日期 + FY3F）
+    兼容，可直接供 fy_preprocess 消费；HDF 缺失时回退 10H/10V 单极化
+    TIF 对。FY3B 无 2020 年后数据（卫星退役）。
     """
     from ingest.remote_sync import _filebrowser_download, filebrowser_login
     from modules.download_nodes import _resolve_profile_server_config
 
-    if satellite != "FY3D":
-        raise ValueError(
-            f"NAS source only holds FY3D daily files (got {satellite}); "
-            "FY3B retired in 2020; FY3F raw ORBA HDF 需经 NSMC 门户或本地目录供给"
-        )
-
     date_ymd = date_path.replace(".", "").replace("-", "")
-    remote_dir = (
-        str(ds.get("nas_remote_path") or os.getenv("CGDA_FY_NAS_PATH") or "").strip()
-        or "/Chenhaojun/Data/fy3dhdf2425"
-    )
-    # 每日每波段一个文件（FY3D_GBAL_L1_10V_YYYYMMDD_MWRID_0.tif / 10H_…）；
-    # omega 反演需 TBv+TBh 双极化，只拉 10H 会导致 fy_daily 缺 V 极化。
-    band_names = ("10V", "10H")
-    remote_names = tuple(
-        f"FY3D_GBAL_L1_{band}_{date_ymd}_MWRID_0.tif" for band in band_names
-    )
+
+    # 按卫星分派（远端目录, 逐日既知文件名）——免列举直连。
+    if satellite == "FY3D":
+        remote_dir = (
+            str(
+                ds.get("nas_remote_path") or os.getenv("CGDA_FY_NAS_PATH") or ""
+            ).strip()
+            or "/Chenhaojun/Data/fy3dhdf2425"
+        )
+        # 每日每波段一个文件（FY3D_GBAL_L1_10V_YYYYMMDD_MWRID_0.tif / 10H_…）；
+        # omega 反演需 TBv+TBh 双极化，只拉 10H 会导致 fy_daily 缺 V 极化。
+        band_names = ("10V", "10H")
+        remote_names = tuple(
+            f"FY3D_GBAL_L1_{band}_{date_ymd}_MWRID_0.tif" for band in band_names
+        )
+    elif satellite == "FY3F":
+        remote_dir = (
+            str(
+                ds.get("nas_remote_path") or os.getenv("CGDA_FY3F_NAS_PATH") or ""
+            ).strip()
+            or "/Chenhaojun/Data/3Ffinal"
+        )
+        band_names = ("10V10H",)
+        remote_names = (f"FY3F_GBAL_L1_ORBA_10V10H_{date_ymd}_ORBA.hdf",)
+    else:
+        raise ValueError(
+            f"NAS source only holds FY3D/FY3F daily files (got {satellite}); "
+            "FY3B retired in 2020; 其它卫星请经 NSMC 在线或本地目录供给"
+        )
     profile_id = str(ds.get("nas_profile") or "").strip() or "nas_profile"
 
     if ctx.logger_adapter is not None:
@@ -284,6 +419,17 @@ def _fetch_from_nas(
         )
         if not ok or not local_path.exists() or local_path.stat().st_size == 0:
             local_path.unlink(missing_ok=True)
+            # FY3F 合并 HDF 缺失时回退 10V/10H 单极化 TIF 对（同 FY3D 回退交付）
+            if satellite == "FY3F" and remote_name.endswith(".hdf"):
+                last_local_path = _fetch_fy3f_tif_fallback(
+                    ctx,
+                    server=server,
+                    token=token,
+                    remote_dir=remote_dir,
+                    date_ymd=date_ymd,
+                    target_dir=target_dir,
+                )
+                break
             raise RuntimeError(f"NAS FileBrowser download failed: {remote_path}")
         last_local_path = local_path
 
@@ -323,6 +469,9 @@ class FYDownloadModule(BaseModule):
         "local_dir": "",
         "band_ids": [1, 2],
         "orbit_mode": "MWRID",
+        # NSMC 在线限额保护（详见 _download_from_nsmc docstring）
+        "max_files_per_day": 2,
+        "download_interval": 5.0,
     }
 
     def execute(
@@ -357,6 +506,18 @@ class FYDownloadModule(BaseModule):
         if not days:
             raise ValueError("fy_download requires start_date")
 
+        orbit_mode = str(resolved.get("orbit_mode") or "MWRID").upper()
+        # NSMC 账号限额保护：默认每日仅拉 2 个轨道文件（防频控），可经
+        # 种子/algorithm_params 覆盖；下载请求节流间隔默认 5s。
+        try:
+            max_files_per_day = int(resolved.get("max_files_per_day") or 2)
+        except (TypeError, ValueError):
+            max_files_per_day = 2
+        try:
+            download_interval = float(resolved.get("download_interval") or 5.0)
+        except (TypeError, ValueError):
+            download_interval = 5.0
+
         sources_to_try: list[str] = []
         if data_source == "nsmc":
             sources_to_try = ["nsmc"]
@@ -380,6 +541,9 @@ class FYDownloadModule(BaseModule):
                             date_path=date_path,
                             ds=ds,
                             target_dir=target_dir,
+                            orbit_mode=orbit_mode,
+                            max_files_per_day=max_files_per_day,
+                            download_interval=download_interval,
                         )
                     else:
                         _fetch_from_nas(

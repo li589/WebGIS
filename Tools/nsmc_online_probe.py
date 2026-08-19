@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import re
 import sys
@@ -286,6 +287,35 @@ def cmd_search(args: argparse.Namespace) -> None:
     _ = csrf
 
 
+def _shared_session_file() -> Path | None:
+    """与算法包 modules/fy_download._nsmc_session_file 同一优先级逻辑。"""
+    explicit = os.getenv("CGDA_NSMC_SESSION_FILE", "").strip()
+    if explicit:
+        return Path(explicit)
+    data_root = os.getenv("BACKEND_DATA_ROOT", "").strip()
+    if data_root:
+        return Path(data_root) / "_runtime" / "cache" / "nsmc_session.json"
+    return None
+
+
+def cmd_export(args: argparse.Namespace) -> None:
+    """把已登录会话导出到 CGDA 共享会话文件（fy_download 节点复用）。"""
+    state = load_state()
+    shared = _shared_session_file()
+    if shared is None:
+        raise SystemExit(
+            "未配置共享会话路径：设置 CGDA_NSMC_SESSION_FILE 或 BACKEND_DATA_ROOT"
+        )
+    payload = {
+        "username": state["account"]["username"],
+        "cookies": state.get("cookies", {}),
+        "saved_at": time.time(),
+    }
+    shared.parent.mkdir(parents=True, exist_ok=True)
+    shared.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    log(f"已导出会话（{state['account']['username']}）-> {shared}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -297,6 +327,9 @@ def main() -> None:
     p = sub.add_parser("login")
     p.add_argument("--code", required=True)
     p.set_defaults(func=cmd_login)
+
+    p = sub.add_parser("export")
+    p.set_defaults(func=cmd_export)
 
     p = sub.add_parser("quota")
     p.set_defaults(func=cmd_quota)
