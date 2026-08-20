@@ -278,8 +278,11 @@ _PORTAL_CRED_ALIASES: dict[str, tuple[str, ...]] = {
 
 # URS token 交换：Earthdata 云 CDN（lp-prod-protected / nsidc-cumulus-prod-protected）
 # 只认 Bearer token，不认 Basic。basic 凭据经 URS 换 token 后可用。
-_URS_TOKEN_URL = "https://urs.earthdata.nasa.gov/api/users/token"
-_URS_TOKENS_URL = "https://urs.earthdata.nasa.gov/api/users/tokens"
+from ingest.endpoints import (  # noqa: E402
+    URS_TOKEN_URL as _URS_TOKEN_URL,
+    URS_TOKENS_URL as _URS_TOKENS_URL,
+)
+
 _URS_TOKEN_TTL_SECONDS = 100 * 60  # URS token 有效期 2h，提前 20 分钟过期
 _urs_token_cache: dict[str, tuple[float, str]] = {}
 
@@ -746,7 +749,8 @@ def _safe_zip_extract(zf: zipfile.ZipFile, member_name: str, extract_dir: Path) 
 
 # ─── CMR granule 检索（公共，免凭据） ─────────────────────────────────────────
 
-_CMR_GRANULE_URL = "https://cmr.earthdata.nasa.gov/search/granules.json"
+from ingest.endpoints import CMR_GRANULES_JSON as _CMR_GRANULE_URL  # noqa: E402
+
 _CMR_NON_DATA_SUFFIXES = (
     ".iso.xml",
     ".cmr.xml",

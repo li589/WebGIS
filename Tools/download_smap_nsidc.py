@@ -48,11 +48,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from data_root import resolve_data_root
 
 # ─── 常量 ────────────────────────────────────────────────────────────────────
 
-DEFAULT_OUTPUT_DIR = Path(r"I:\Geograph_DataSet\Soil_Moisture\SMAP")
-LOG_DIR = Path(r"I:\Geograph_DataSet\_runtime\logs")
+DEFAULT_OUTPUT_DIR = resolve_data_root() / "Soil_Moisture" / "SMAP"
+LOG_DIR = resolve_data_root() / "_runtime" / "logs"
 
 # 回退默认凭据（建议通过环境变量 EARTHDATA_USERNAME / EARTHDATA_PASSWORD 覆盖）
 DEFAULT_USERNAME = "Rejoyce"

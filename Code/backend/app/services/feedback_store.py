@@ -262,6 +262,17 @@ class FeedbackStore:
             raise FileNotFoundError(f"report not found: {report_id}")
         _atomic_write_json(report_dir / "response.json", response)
 
+    def delete_report(self, report_id: str) -> bool:
+        """删除反馈目录（admin 调用；reportId 白名单校验天然防穿越）。
+
+        返回 False 表示目录不存在或删除失败（如 Windows 文件被占用）。
+        """
+        report_dir = self._dir(report_id)  # 非法编号抛 ValueError
+        if not report_dir.exists():
+            return False
+        shutil.rmtree(report_dir, ignore_errors=True)
+        return not report_dir.exists()
+
     # ---- 内部 ----
     @staticmethod
     def _inner_report(payload: dict[str, Any]) -> dict[str, Any]:

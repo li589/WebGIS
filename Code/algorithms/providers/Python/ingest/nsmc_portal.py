@@ -52,11 +52,17 @@ _SSL_CONTEXT = ssl.create_default_context()
 _SSL_CONTEXT.check_hostname = False
 _SSL_CONTEXT.verify_mode = ssl.CERT_NONE
 
-_PORTAL_BASE = "https://satellite.nsmc.org.cn/DataPortal"
-_HOME_URL = _PORTAL_BASE + "/cn/home/index.html"
-_LOGIN_ENTRY = _PORTAL_BASE + "/v1/data/user/login"
-_CENTER_BASE = "http://fy4.nsmc.org.cn/center/v1/user"
-_TOKENSYNC = "https://data.nsmc.org.cn/portalsite/sup/user/tokensync.aspx"
+# 门户端点单点定义（ingest/endpoints.py，env 可覆盖：CGDA_NSMC_*）
+from ingest.endpoints import (  # noqa: E402
+    NSMC_CENTER_BASE as _CENTER_BASE,
+    NSMC_HOME_URL as _HOME_URL,
+    NSMC_LOGIN_ENTRY as _LOGIN_ENTRY,
+    NSMC_PORTAL_BASE as _PORTAL_BASE,
+    NSMC_TOKENSYNC_URL as _TOKENSYNC,
+)
+
+# 网络超时（硬编码清理 E1：env 可覆盖，默认原值）
+_DOWNLOAD_TIMEOUT = float(os.getenv("CGDA_DOWNLOAD_TIMEOUT", "600"))
 
 _UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) CGDA-DataNode"
 
@@ -445,7 +451,7 @@ class NsmcPortalClient:
                     "Content-Type": "application/x-www-form-urlencoded",
                     "Referer": _PORTAL_BASE + "/cn/data/dataset.html",
                 },
-                timeout=600.0,
+                timeout=_DOWNLOAD_TIMEOUT,
             )
         finally:
             self._last_download_ts = time.monotonic()

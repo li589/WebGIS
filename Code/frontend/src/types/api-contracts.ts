@@ -212,6 +212,109 @@ export interface paths {
         patch: operations["update_permission_mode_auth_users__user_id__permission_mode_patch"];
         trace?: never;
     };
+    "/feedback/api/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Reports */
+        get: operations["list_reports_feedback_api_reports_get"];
+        put?: never;
+        /**
+         * Upload Report
+         * @description 接收用户导出的反馈 JSON（multipart 单文件），落盘并返回访问 token。
+         */
+        post: operations["upload_report_feedback_api_reports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/feedback/api/reports/{report_id}/response": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Report Response
+         * @description 用户端进展查询：编号 + 上传时返回的 token（防编号枚举）。
+         */
+        get: operations["get_report_response_feedback_api_reports__report_id__response_get"];
+        /**
+         * Put Report Response
+         * @description 发布/更新处理进展（写入 response.json；用户端轮询可见）。
+         */
+        put: operations["put_report_response_feedback_api_reports__report_id__response_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/feedback/api/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Feedback Session
+         * @description 认证探测：成功返回身份信息（处理台据此启用服务端模式）。
+         */
+        get: operations["feedback_session_feedback_api_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/feedback/api/reports/{report_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Report */
+        get: operations["get_report_feedback_api_reports__report_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Report
+         * @description 删除一条服务端反馈（含附件与进展，不可恢复）。
+         */
+        delete: operations["delete_report_feedback_api_reports__report_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/feedback/api/reports/{report_id}/attachments/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Attachment */
+        get: operations["download_attachment_feedback_api_reports__report_id__attachments__name__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/layers": {
         parameters: {
             query?: never;
@@ -3185,6 +3288,95 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config/remote-datasets/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Remote Dataset Grants
+         * @description 数据集授权条目 + 门户能力徽标。
+         */
+        get: operations["list_remote_dataset_grants_config_remote_datasets_grants_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/remote-datasets/grants/{grant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upsert Remote Dataset Grant
+         * @description 新增/更新数据集授权（UNIQUE(portal_id, dataset_key) 幂等合并）。
+         */
+        put: operations["upsert_remote_dataset_grant_config_remote_datasets_grants__grant_id__put"];
+        post?: never;
+        /**
+         * Delete Remote Dataset Grant
+         * @description 删除数据集授权（删除后该数据集在管控门户内不可访问）。
+         */
+        delete: operations["delete_remote_dataset_grant_config_remote_datasets_grants__grant_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/remote-datasets/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Remote Dataset Policy
+         * @description 各门户远程数据集访问策略投影（编辑器过滤用）。
+         *
+         *     未列出的门户 = 未管控（放行）；列出的门户 managed=true，
+         *     compatible=true 表示站点兼容模式全放行，datasets 为白名单。
+         */
+        get: operations["get_remote_dataset_policy_config_remote_datasets_policy_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/remote-sources/migrate-legacy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Migrate Legacy Remote Sources Endpoint
+         * @description 手动重跑存量迁移（dry_run/safe 查询参数）。
+         *
+         *     幂等：已完成的迁移再次调用返回 already_done=True。
+         */
+        post: operations["migrate_legacy_remote_sources_endpoint_config_remote_sources_migrate_legacy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config/about": {
         parameters: {
             query?: never;
@@ -3402,13 +3594,13 @@ export interface paths {
         };
         /**
          * List Timers
-         * @description 列出全部定时器，可选按 workflow_id 过滤。
+         * @description 列出定时器（非 admin 登录用户仅见本人创建的）。
          */
         get: operations["list_timers_workflow_timers_get"];
         put?: never;
         /**
          * Create Timer
-         * @description 创建定时器。
+         * @description 创建定时器（记录归属 owner_user_id）。
          *
          *     请求体字段：
          *     - workflow_id (str, 必填)
@@ -4224,6 +4416,14 @@ export interface components {
         };
         /** Body_upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post */
         Body_upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+        };
+        /** Body_upload_report_feedback_api_reports_post */
+        Body_upload_report_feedback_api_reports_post: {
             /**
              * File
              * Format: binary
@@ -5828,6 +6028,30 @@ export interface components {
          * @enum {string}
          */
         MapMode: "2d" | "3d";
+        /**
+         * MigrationReport
+         * @description 存量迁移报告（GET /config/remote-sources/migrate-legacy）。
+         */
+        MigrationReport: {
+            /** Dry Run */
+            dry_run: boolean;
+            /** Total */
+            total: number;
+            /** Migrated To Grants */
+            migrated_to_grants: number;
+            /** Upgraded Site Compatible */
+            upgraded_site_compatible: number;
+            /** Kept Legacy */
+            kept_legacy: number;
+            /** Already Done */
+            already_done: boolean;
+            /** Safe Mode */
+            safe_mode: boolean;
+            /** Details */
+            details?: {
+                [key: string]: unknown;
+            }[];
+        };
         /** MinioPublicConfig */
         MinioPublicConfig: {
             /** Endpoint */
@@ -6280,6 +6504,46 @@ export interface components {
                 [key: string]: components["schemas"]["PortalCredentialPublic"];
             };
         };
+        /**
+         * PortalSearchDatasetItem
+         * @description 在线检索结果条目（数据集级，plan 阶段 2 数据集化改造）。
+         *
+         *     dataset_key 为白名单主键（CMR short_name / CDSE 任务_产品模式 / CDS collection id）；
+         *     extra 携带 provider 特定信息（version/data_center/count/sample_product_id/data_link 等）。
+         */
+        PortalSearchDatasetItem: {
+            /** Dataset Key */
+            dataset_key: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Time Start
+             * @default
+             */
+            time_start: string;
+            /**
+             * Time End
+             * @default
+             */
+            time_end: string;
+            /**
+             * Provider Kind
+             * @default
+             */
+            provider_kind: string;
+            /** Extra */
+            extra?: {
+                [key: string]: unknown;
+            };
+        };
         /** PortalSearchResponse */
         PortalSearchResponse: {
             /** Portal Id */
@@ -6297,50 +6561,7 @@ export interface components {
              */
             count: number;
             /** Items */
-            items?: components["schemas"]["PortalSearchResultItem"][];
-        };
-        /** PortalSearchResultItem */
-        PortalSearchResultItem: {
-            /**
-             * Title
-             * @default
-             */
-            title: string;
-            /**
-             * Granule Id
-             * @default
-             */
-            granule_id: string;
-            /**
-             * Producer Granule Id
-             * @default
-             */
-            producer_granule_id: string;
-            /**
-             * Size Bytes
-             * @default 0
-             */
-            size_bytes: number;
-            /**
-             * Time Start
-             * @default
-             */
-            time_start: string;
-            /**
-             * Time End
-             * @default
-             */
-            time_end: string;
-            /**
-             * Data Link
-             * @default
-             */
-            data_link: string;
-            /**
-             * Browse Link
-             * @default
-             */
-            browse_link: string;
+            items?: components["schemas"]["PortalSearchDatasetItem"][];
         };
         /** PortalTestResponse */
         PortalTestResponse: {
@@ -6533,6 +6754,179 @@ export interface components {
             items?: components["schemas"]["RemoteEntryItem"][];
         };
         /**
+         * RemoteDatasetGrant
+         * @description 「具体数据集选取模式」授权条目 + 门户能力徽标。
+         */
+        RemoteDatasetGrant: {
+            /** Grant Id */
+            grant_id: string;
+            /** Portal Id */
+            portal_id: string;
+            /** Dataset Key */
+            dataset_key: string;
+            /**
+             * Dataset Title
+             * @default
+             */
+            dataset_title: string;
+            /**
+             * Dataset Description
+             * @default
+             */
+            dataset_description: string;
+            /**
+             * Provider Kind
+             * @default
+             */
+            provider_kind: string;
+            /**
+             * Time Start
+             * @default
+             */
+            time_start: string;
+            /**
+             * Time End
+             * @default
+             */
+            time_end: string;
+            /**
+             * Path Prefix
+             * @default
+             */
+            path_prefix: string;
+            /**
+             * Search Meta
+             * @default {}
+             */
+            search_meta: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Archived
+             * @default false
+             */
+            archived: boolean;
+            /**
+             * Migrated From
+             * @default
+             */
+            migrated_from: string;
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
+            ref?: components["schemas"]["RemoteSourceRefBadge"] | null;
+            /**
+             * Ref Exists
+             * @default false
+             */
+            ref_exists: boolean;
+        };
+        /**
+         * RemoteDatasetGrantUpsertRequest
+         * @description PUT /config/remote-datasets/grants/{grant_id} body.
+         *
+         *     grant_id 可省略（由 portal_id/dataset_key 派生）；
+         *     UNIQUE(portal_id, dataset_key) 冲突时幂等合并到既有条目。
+         */
+        RemoteDatasetGrantUpsertRequest: {
+            /** Portal Id */
+            portal_id: string;
+            /** Dataset Key */
+            dataset_key: string;
+            /**
+             * Dataset Title
+             * @default
+             */
+            dataset_title: string;
+            /**
+             * Dataset Description
+             * @default
+             */
+            dataset_description: string;
+            /**
+             * Provider Kind
+             * @default
+             */
+            provider_kind: string;
+            /**
+             * Time Start
+             * @default
+             */
+            time_start: string;
+            /**
+             * Time End
+             * @default
+             */
+            time_end: string;
+            /**
+             * Path Prefix
+             * @default
+             */
+            path_prefix: string;
+            /**
+             * Search Meta
+             * @default {}
+             */
+            search_meta: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+        };
+        /**
+         * RemoteDatasetPolicy
+         * @description 单门户的远程数据集访问策略投影（GET /config/remote-datasets/policy）。
+         *
+         *     未出现在列表中的门户 = 未管控 → 消费方放行。
+         */
+        RemoteDatasetPolicy: {
+            /** Portal Id */
+            portal_id: string;
+            /**
+             * Managed
+             * @default true
+             */
+            managed: boolean;
+            /**
+             * Compatible
+             * @default false
+             */
+            compatible: boolean;
+            /** Datasets */
+            datasets?: components["schemas"]["RemoteDatasetPolicyDataset"][];
+        };
+        /**
+         * RemoteDatasetPolicyDataset
+         * @description 策略投影中的单条数据集（编辑器下拉/校验用）。
+         */
+        RemoteDatasetPolicyDataset: {
+            /**
+             * Grant Id
+             * @default
+             */
+            grant_id: string;
+            /** Dataset Key */
+            dataset_key: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /** Path Prefix */
+            path_prefix?: string[];
+        };
+        /**
          * RemoteEntryItem
          * @description 远程目录条目（浏览/搜索通用）。
          */
@@ -6656,6 +7050,16 @@ export interface components {
              */
             cache_policy: string;
             /**
+             * Access Mode
+             * @default legacy
+             */
+            access_mode: string;
+            /**
+             * Archived
+             * @default false
+             */
+            archived: boolean;
+            /**
              * Created At
              * @default
              */
@@ -6722,6 +7126,16 @@ export interface components {
              * @default standard
              */
             cache_policy: string;
+            /**
+             * Access Mode
+             * @default legacy
+             */
+            access_mode: string;
+            /**
+             * Archived
+             * @default false
+             */
+            archived: boolean;
         };
         /** RemoteStorageDeletedResponse */
         RemoteStorageDeletedResponse: {
@@ -8875,6 +9289,251 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_reports_feedback_api_reports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    upload_report_feedback_api_reports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_report_feedback_api_reports_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_report_response_feedback_api_reports__report_id__response_get: {
+        parameters: {
+            query?: {
+                token?: string;
+            };
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_report_response_feedback_api_reports__report_id__response_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    feedback_session_feedback_api_session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    get_report_feedback_api_reports__report_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_report_feedback_api_reports__report_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_attachment_feedback_api_reports__report_id__attachments__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -14051,6 +14710,144 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_remote_dataset_grants_config_remote_datasets_grants_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteDatasetGrant"][];
+                };
+            };
+        };
+    };
+    upsert_remote_dataset_grant_config_remote_datasets_grants__grant_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemoteDatasetGrantUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteDatasetGrant"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_remote_dataset_grant_config_remote_datasets_grants__grant_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_remote_dataset_policy_config_remote_datasets_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteDatasetPolicy"][];
+                };
+            };
+        };
+    };
+    migrate_legacy_remote_sources_endpoint_config_remote_sources_migrate_legacy_post: {
+        parameters: {
+            query?: {
+                dry_run?: boolean;
+                safe?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationReport"];
                 };
             };
             /** @description Validation Error */

@@ -584,6 +584,52 @@ def delete_remote_source_entry(remote_source_id: str) -> bool:
     return get_remote_source_registry().delete(remote_source_id)
 
 
+def list_remote_dataset_grants() -> list[dict[str, Any]]:
+    """数据集授权条目 + 门户徽标（plan 阶段 1）。"""
+    from app.services.remote_dataset_grants import list_grants_with_badges
+
+    return list_grants_with_badges()
+
+
+def upsert_remote_dataset_grant(
+    grant_id: str, payload: dict[str, Any]
+) -> dict[str, Any]:
+    from app.services.remote_dataset_grants import (
+        RemoteDatasetGrantsError,
+        get_remote_dataset_grants,
+    )
+
+    try:
+        return get_remote_dataset_grants().upsert(
+            grant_id=grant_id,
+            portal_id=str(payload.get("portal_id") or ""),
+            dataset_key=str(payload.get("dataset_key") or ""),
+            dataset_title=str(payload.get("dataset_title") or ""),
+            dataset_description=str(payload.get("dataset_description") or ""),
+            provider_kind=str(payload.get("provider_kind") or ""),
+            time_start=str(payload.get("time_start") or ""),
+            time_end=str(payload.get("time_end") or ""),
+            path_prefix=str(payload.get("path_prefix") or ""),
+            search_meta=str(payload.get("search_meta") or "{}"),
+            enabled=bool(payload.get("enabled", True)),
+        )
+    except RemoteDatasetGrantsError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def delete_remote_dataset_grant(grant_id: str) -> bool:
+    from app.services.remote_dataset_grants import get_remote_dataset_grants
+
+    return get_remote_dataset_grants().delete(grant_id)
+
+
+def get_remote_dataset_policy() -> list[dict[str, Any]]:
+    """远程数据集访问策略投影（编辑器过滤/提交校验消费，plan §3）。"""
+    from app.services.remote_dataset_grants import build_remote_dataset_policy
+
+    return build_remote_dataset_policy()
+
+
 def schedule_ui_backend_restart(
     components: list[str] | None = None,
 ) -> dict[str, Any]:

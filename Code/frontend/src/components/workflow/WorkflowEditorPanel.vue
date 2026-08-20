@@ -96,6 +96,9 @@ const saving = ref(false)
 const saveError = ref<string | null>(null)
 const dirty = ref(false)
 
+// 是否存在当前工作流定义（须在 useUnsavedChangesGuard 之前声明，避免 TDZ）
+const hasDefinition = computed(() => currentDefinition.value !== null)
+
 // 未保存修改的页面离开拦截（有定义、非只读、dirty、非保存中——与保存按钮可用条件一致）
 useUnsavedChangesGuard(
   () => hasDefinition.value && !isReadonly.value && dirty.value && !saving.value,
@@ -178,7 +181,6 @@ const selectedNodeIssues = computed<ValidationIssue[]>(() => {
   return issuesByNode.value.get(selectedNode.value.id) ?? []
 })
 
-const hasDefinition = computed(() => currentDefinition.value !== null)
 const canSave = computed(
   () => hasDefinition.value && !isReadonly.value && dirty.value && !saving.value,
 )

@@ -42,6 +42,7 @@ import {
   fetchRemoteSources,
   upsertRemoteSource,
   deleteRemoteSource,
+  toggleRemoteSourceAccessMode as _toggleRemoteSourceAccessModeApi,
   upsertRemoteStorageProfile,
   deleteRemoteStorageProfile,
   toggleRemoteStorageProfile,
@@ -566,6 +567,15 @@ export const useSettingsStore = defineStore('settings', () => {
     await loadRemoteSources()
   }
 
+  /** Phase 4：切换远程数据源的访问模式（legacy ↔ site_compatible） */
+  async function toggleRemoteSourceAccessMode(
+    remoteSourceId: string,
+    accessMode: 'legacy' | 'site_compatible',
+  ) {
+    await _toggleRemoteSourceAccessModeApi(remoteSourceId, accessMode)
+    await loadRemoteSources()
+  }
+
   async function saveWeatherDefaultModel(defaultModel: string) {
     const updated = await updateWeatherDefaultModel(defaultModel)
     weatherConfig.value = { ...(weatherConfig.value ?? ({} as WeatherConfig)), ...updated }
@@ -649,5 +659,6 @@ export const useSettingsStore = defineStore('settings', () => {
     loadRemoteSources,
     saveRemoteSource,
     removeRemoteSource,
+    toggleRemoteSourceAccessMode,
   }
 })

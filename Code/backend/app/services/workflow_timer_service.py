@@ -37,8 +37,25 @@ import contextlib
 
 logger = logging.getLogger(__name__)
 
-# Cron / 日期模板墙钟时区（存储仍为 UTC ISO）
-TIMER_TZ = ZoneInfo("Asia/Shanghai")
+
+# Cron / 日期模板墙钟时区（存储仍为 UTC ISO）。
+# D4：时区经 settings.timer_timezone（env BACKEND_TIMER_TZ）可配，默认
+# Asia/Shanghai。模块导入时求值一次；非法值回退默认并告警（启动即暴露）。
+def _resolve_timer_tz() -> ZoneInfo:
+    tz_name = (getattr(settings, "timer_timezone", None) or "").strip()
+    if not tz_name:
+        return ZoneInfo("Asia/Shanghai")
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        logger.warning(
+            "[TimerService] invalid BACKEND_TIMER_TZ=%r, falling back to Asia/Shanghai",
+            tz_name,
+        )
+        return ZoneInfo("Asia/Shanghai")
+
+
+TIMER_TZ = _resolve_timer_tz()
 
 # claim 后若进程在 mark_fired 前崩溃，CLAIMED 哨兵超过此时长则回收为立即到期。
 # 600s 覆盖 tick() 内同步 submit_workflow 的最坏耗时（payload 构建 + 容量预留 +

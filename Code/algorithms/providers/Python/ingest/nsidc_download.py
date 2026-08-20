@@ -21,7 +21,8 @@ SPL3SMP_E 数据下载函数，供工作流 ``nsidc_smap_download`` 节点调用
     result = download_smap_range(
         start_date="2023-01-01",
         end_date="2023-01-31",
-        local_dir=r"I:\Geograph_DataSet\Soil_Moisture\SMAP",
+        # 独立运行需设置 BACKEND_DATA_ROOT（本机示例值）：
+        local_dir=os.environ["BACKEND_DATA_ROOT"] + r"\Soil_Moisture\SMAP",
     )
 
 凭据策略：
@@ -42,6 +43,7 @@ from typing import Any
 from collections.abc import Callable
 import contextlib
 
+from ingest.endpoints import CMR_GRANULES_UMM_JSON, URS_PROFILE_URL
 from ingest._http_resume import (
     check_disk_space as _check_disk_space,
     format_size as _format_size,
@@ -54,22 +56,32 @@ logger = logging.getLogger(__name__)
 SHORT_NAME = "SPL3SMP_E"
 VERSION = "6"
 
-MAX_RETRIES = 3
+# 网络运行参数（硬编码清理 E1：env 可覆盖，默认值与原值一致；慢速网络/
+# HPC 隧道场景按需调整）：
+MAX_RETRIES = int(os.getenv("CGDA_DOWNLOAD_RETRIES", "3"))
 INITIAL_BACKOFF = 2.0
 CHUNK_SIZE = 262144  # 256 KB
-REQUEST_TIMEOUT = 60
-DOWNLOAD_TIMEOUT = 3600
-MIN_DISK_FREE_GB = 5.0
+REQUEST_TIMEOUT = int(os.getenv("CGDA_HTTP_TIMEOUT", "60"))
+DOWNLOAD_TIMEOUT = int(os.getenv("CGDA_DOWNLOAD_TIMEOUT", "3600"))
+MIN_DISK_FREE_GB = float(os.getenv("CGDA_MIN_DISK_FREE_GB", "5.0"))
 PROGRESS_INTERVAL = 2.0
 
-# 独立运行的兜底目录：经 BACKEND_DATA_ROOT 注入根（未设时退回实验室本机路径）。
+# 独立运行的兜底目录：必须设置 BACKEND_DATA_ROOT（对齐 dataset_config 的
+# 「禁止静默回退盘符」决策——Linux 上回退 I:\ 会生成字面量目录名）。
 # 工作流路径不使用此默认——nsidc_smap_download 节点显式传 local_dir
 # （节点参数优先，缺省落 ctx.workspace/data_access/smap_download）。
-DEFAULT_OUTPUT_DIR = (
-    Path(os.getenv("BACKEND_DATA_ROOT", r"I:\Geograph_DataSet"))
-    / "Soil_Moisture"
-    / "SMAP"
-)
+
+
+def _default_output_dir() -> Path:
+    root = os.getenv("BACKEND_DATA_ROOT", "").strip()
+    if not root:
+        raise RuntimeError(
+            "BACKEND_DATA_ROOT is not set. NSIDC standalone fallback output "
+            "dir requires it (workflow paths unaffected: node passes "
+            "local_dir explicitly)."
+        )
+    return Path(root) / "Soil_Moisture" / "SMAP"
+
 
 # 尝试导入 earthaccess
 try:
@@ -207,7 +219,7 @@ def test_earthdata_auth(username: str, password: str) -> bool:
         session = requests.Session()
         session.auth = HTTPBasicAuth(username, password)
         resp = session.get(
-            "https://urs.earthdata.nasa.gov/profile",
+            URS_PROFILE_URL,
             timeout=REQUEST_TIMEOUT,
             allow_redirects=True,
         )
@@ -344,7 +356,7 @@ def _search_via_cmr(
     """使用 CMR UMM-JSON API 搜索 granule（earthaccess 不可用时回退）。"""
     import requests  # type: ignore
 
-    cmr_url = "https://cmr.earthdata.nasa.gov/search/granules.umm_json"
+    cmr_url = CMR_GRANULES_UMM_JSON
     temporal = f"{start_date}T00:00:00Z,{end_date}T23:59:59Z"
     granules: list[Granule] = []
     page_num = 1
@@ -540,7 +552,7 @@ def _download_with_retry(
 def download_smap_range(
     start_date: str,
     end_date: str,
-    local_dir: str | Path = DEFAULT_OUTPUT_DIR,
+    local_dir: str | Path | None = None,
     *,
     version: str = VERSION,
     short_name: str = SHORT_NAME,
@@ -571,7 +583,7 @@ def download_smap_range(
     # 与 CMR 查询均要求 ISO 日期，入口统一归一化。
     start_date = _normalize_iso_date(start_date)
     end_date = _normalize_iso_date(end_date)
-    local_path = Path(local_dir)
+    local_path = Path(local_dir) if local_dir is not None else _default_output_dir()
     username, password = load_credentials(username, password)
 
     result = DownloadResult(local_dir=str(local_path))

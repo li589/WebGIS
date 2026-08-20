@@ -31,7 +31,7 @@
         "data_source": "auto",
         "start_date": "{YYYYMMDD}",
         "end_date": "{YYYYMMDD}",
-        "local_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\FY3D\\raw",
+        "local_dir": "{DATA_ROOT}/Soil_Moisture/FY3D/raw",
         "band_ids": "1,2",
         "orbit_mode": "MWRID"
       }
@@ -49,7 +49,7 @@
         "data_source": "auto",
         "start_date": "{YYYYMMDD}",
         "end_date": "{YYYYMMDD}",
-        "local_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\FY3B\\raw",
+        "local_dir": "{DATA_ROOT}/Soil_Moisture/FY3B/raw",
         "band_ids": "1,2",
         "orbit_mode": "MWRID"
       }
@@ -62,7 +62,7 @@
         140
       ],
       "properties": {
-        "output_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\FY3D",
+        "output_dir": "{DATA_ROOT}/Soil_Moisture/FY3D",
         "algorithm_params": {
           "orbit_mode": "MWRID",
           "band_ids": [
@@ -84,7 +84,7 @@
       ],
       "properties": {
         "enabled": false,
-        "output_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\FY3B",
+        "output_dir": "{DATA_ROOT}/Soil_Moisture/FY3B",
         "algorithm_params": {
           "orbit_mode": "MWRID",
           "band_ids": [
@@ -185,8 +185,8 @@
           "match_enable": true,
           "match_method": "bias",
           "block_days": 8,
-          "start_date": "20251101",
-          "end_date": "20251231",
+          "start_date": "{YYYYMMDD}",
+          "end_date": "{YYYYMMDD}",
           "max_pixels": 0,
           "enable_parallel": true,
           "pixel_chunk_size": 200000
@@ -201,8 +201,8 @@
         40
       ],
       "properties": {
-        "start_at": "2025-11-01T00:00:00",
-        "end_at": "2025-12-31T00:00:00",
+        "start_at": "{YYYY-MM-DD}T00:00:00",
+        "end_at": "{YYYY-MM-DD}T00:00:00",
         "resolution_unit": "day",
         "resolution_step": 1,
         "granularity": "day",
@@ -250,7 +250,7 @@
         "data_source": "nsmc",
         "start_date": "{YYYYMMDD}",
         "end_date": "{YYYYMMDD}",
-        "local_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\FY3F\\raw",
+        "local_dir": "{DATA_ROOT}/Soil_Moisture/FY3F/raw",
         "band_ids": "1,2",
         "orbit_mode": "ORBA"
       }
@@ -264,7 +264,7 @@
       ],
       "properties": {
         "enabled": false,
-        "output_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\FY3F",
+        "output_dir": "{DATA_ROOT}/Soil_Moisture/FY3F",
         "algorithm_params": {
           "orbit_mode": "ORBA",
           "band_ids": [

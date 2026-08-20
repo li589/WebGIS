@@ -48,9 +48,10 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from data_root import resolve_data_root
 
 # Output root
-_OUT_ROOT = Path(r"I:\Geograph_DataSet\ProjectOutput\2023-01_Omega_Inversion\_overlays")
+_OUT_ROOT = resolve_data_root() / "ProjectOutput" / "2023-01_Omega_Inversion" / "_overlays"
 _CHINA_BBOX = (73.0, 15.0, 137.0, 59.0)
 
 # extent 模式：auto = 按任务表声明；global/china = CLI 强制覆盖（诊断用）
@@ -72,10 +73,10 @@ def _extent_res_deg(extent: str, china_deg: float = 0.1, global_deg: float = 0.2
     return global_deg if extent == "global" else china_deg
 
 # ── Phase 1.6: 课题组时间序列源数据目录（与 overlay_registry.py 同步）──────────
-_INVERSION_RESULTS_ROOT = Path(r"I:\Geograph_DataSet\Inversion_Results")
+_INVERSION_RESULTS_ROOT = resolve_data_root() / "Inversion_Results"
 _OMEGA_SMAP_AVG_DIR = _INVERSION_RESULTS_ROOT / "smap_avg"
 _OMEGA_FY_AVG_DIR = _INVERSION_RESULTS_ROOT / "fy_avg"
-_SOIL_DDCA_H_DIR = Path(r"I:\Geograph_DataSet\Soil_Moisture\DDCA\DDCA_DH\H")
+_SOIL_DDCA_H_DIR = resolve_data_root() / "Soil_Moisture" / "DDCA" / "DDCA_DH" / "H"
 _LANDSCAPE_METRICS_MAT = (
     _INVERSION_RESULTS_ROOT / "Landscape_Metrics_LandOnly_9KM_2020.mat"
 )
@@ -815,7 +816,7 @@ def export_smap_ts() -> None:
 
 def export_gpcp_ts() -> None:
     print("\n=== GPCP precipitation time series ===")
-    gpcp_dir = Path(r"I:\Geograph_DataSet\Weather\Precipitation\Precipitation\dataset")
+    gpcp_dir = resolve_data_root() / "Weather" / "Precipitation" / "Precipitation" / "dataset"
     if not gpcp_dir.exists():
         print("  [SKIP] Directory not found")
         return
@@ -995,10 +996,10 @@ def export_dem_rewarp() -> None:
 def export_gebco_dem() -> None:
     print("\n=== GEBCO 2024 DEM (China) ===")
     # 与 overlay_registry._GEBCO_NC 对齐
-    nc_path = Path(r"I:\Geograph_DataSet\Geological\DEM\GEBCO_2024.nc")
+    nc_path = resolve_data_root() / "Geological" / "DEM" / "GEBCO_2024.nc"
     if not nc_path.exists():
         # 旧路径兼容
-        alt = Path(r"I:\Geograph_DataSet\DEM\GEBCO_2024.nc")
+        alt = resolve_data_root() / "DEM" / "GEBCO_2024.nc"
         nc_path = alt if alt.exists() else nc_path
     if not nc_path.exists():
         print("  [SKIP] File not found")
@@ -1051,7 +1052,7 @@ def export_gebco_dem() -> None:
 
 def export_cmfd_precip() -> None:
     print("\n=== CMFD Precipitation (China 1km) ===")
-    tif_path = Path(r"I:\Geograph_DataSet\Precipitation\pre_2002_01.tif")
+    tif_path = resolve_data_root() / "Precipitation" / "pre_2002_01.tif"
     if not tif_path.exists():
         print("  [SKIP] File not found")
         return
@@ -1102,7 +1103,7 @@ def export_cmfd_precip() -> None:
 
 def export_clcd() -> None:
     print("\n=== CLCD 1997 (China) ===")
-    tif_path = Path(r"I:\Geograph_DataSet\LandCover\CLCD_v01_1997.tif")
+    tif_path = resolve_data_root() / "LandCover" / "CLCD_v01_1997.tif"
     if not tif_path.exists():
         print("  [SKIP] File not found")
         return
@@ -1484,7 +1485,7 @@ def export_omega_fy_ts() -> None:
 
 def export_forest_ratio() -> None:
     print("\n=== Forest Ratio 9KM 2020 ===")
-    mat_path = Path(r"I:\Geograph_DataSet\Inversion_Results\Forest_Ratio_9KM_2020.mat")
+    mat_path = resolve_data_root() / "Inversion_Results" / "Forest_Ratio_9KM_2020.mat"
     if not mat_path.exists():
         print("  [SKIP] File not found")
         return
@@ -1542,7 +1543,7 @@ def export_forest_ratio() -> None:
 #     旧版 aux_*/ 目录为全球范围未重投影导出（地理定位错误），由本节取代
 # ──────────────────────────────────────────────────────────────────────────────
 
-_SMAP_AUX_DATA_DIR = Path(r"I:\Geograph_DataSet\Soil_Moisture\SMAP_Auxiliary_Data")
+_SMAP_AUX_DATA_DIR = resolve_data_root() / "Soil_Moisture" / "SMAP_Auxiliary_Data"
 
 
 def _smap_aux_continuous_range(data: np.ndarray) -> tuple[float, float]:

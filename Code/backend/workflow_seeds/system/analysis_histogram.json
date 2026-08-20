@@ -8,7 +8,13 @@
     "readonly": true,
     "is_template": true,
     "linked_layer_id": null,
-    "tags": ["analysis", "histogram", "chart", "ui-panel", "raster"],
+    "tags": [
+      "analysis",
+      "histogram",
+      "chart",
+      "ui-panel",
+      "raster"
+    ],
     "category": "analysis",
     "resource_profile": "standard"
   },
@@ -17,9 +23,29 @@
   "description": "data/source → stats/histogram → viz/chart_generate",
   "nodes": [
     {
+      "id": 4,
+      "type": "data/time_range",
+      "pos": [
+        80,
+        60
+      ],
+      "properties": {
+        "start_at": "2026-08-01T00:00:00",
+        "end_at": "2026-08-31T00:00:00",
+        "resolution_unit": "day",
+        "resolution_step": 1,
+        "granularity": "day",
+        "bind_timeline": true,
+        "timezone": "UTC"
+      }
+    },
+    {
       "id": 1,
       "type": "data/source",
-      "pos": [80, 160],
+      "pos": [
+        80,
+        160
+      ],
       "properties": {
         "path": "{DATA_ROOT}/_runtime/smoke_stub.tif",
         "dataset_key": "input_path"
@@ -28,7 +54,10 @@
     {
       "id": 2,
       "type": "stats/histogram",
-      "pos": [380, 160],
+      "pos": [
+        380,
+        160
+      ],
       "properties": {
         "bins": 50,
         "band": 0,
@@ -40,7 +69,10 @@
     {
       "id": 3,
       "type": "viz/chart_generate",
-      "pos": [680, 160],
+      "pos": [
+        680,
+        160
+      ],
       "properties": {
         "chart_type": "histogram",
         "title": "Raster Histogram",
@@ -51,7 +83,19 @@
     }
   ],
   "links": [
-    [1, 1, 2, 2, 2],
-    [2, 2, 0, 3, 2]
+    [
+      1,
+      1,
+      2,
+      2,
+      2
+    ],
+    [
+      2,
+      2,
+      0,
+      3,
+      2
+    ]
   ]
 }

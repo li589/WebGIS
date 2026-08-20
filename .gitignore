@@ -179,3 +179,6 @@ nul
 # Local pipeline-health/stub inventory dry-run outputs (never commit)
 _pipeline_health_static.json
 _stub_inventory.json
+
+# B3 出库（阶段 B 去硬编码）：含内网拓扑与账号信息的运维同步脚本，仅本地使用
+Tools/sync_server_data.py

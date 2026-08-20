@@ -33,8 +33,9 @@ sys.path.insert(
 )
 
 from universal_reader import UniversalDataReader, CHINA_BBOX
+from data_root import resolve_data_root
 
-DATA_ROOT = Path("I:/Geograph_DataSet")
+DATA_ROOT = resolve_data_root()
 REPORT_PATH = Path(__file__).resolve().parent / "reports" / "dataset_verification.json"
 
 

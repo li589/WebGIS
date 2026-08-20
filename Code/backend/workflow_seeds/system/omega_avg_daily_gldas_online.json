@@ -27,9 +27,9 @@
         80
       ],
       "properties": {
-        "start_date": "20251227",
-        "end_date": "20251231",
-        "local_dir": "{DATA_ROOT_WIN}\\Meteorological\\Weather\\GLDAS_Download",
+        "start_date": "{YYYYMMDD}",
+        "end_date": "{YYYYMMDD}",
+        "local_dir": "{DATA_ROOT}/Meteorological/Weather/GLDAS_Download",
         "version": "2.1",
         "short_name": "GLDAS_NOAH025_3H",
         "dry_run": false,
@@ -44,9 +44,9 @@
         80
       ],
       "properties": {
-        "input_dir": "{DATA_ROOT_WIN}\\Meteorological\\Weather\\GLDAS_Download",
-        "output_dir": "{DATA_ROOT_WIN}\\Meteorological\\Weather\\GLDAS",
-        "ancillary_mat": "{DATA_ROOT_WIN}\\Soil_Moisture\\SMAP_Auxiliary_Data\\IGBP_9km_12.mat",
+        "input_dir": "{DATA_ROOT}/Meteorological/Weather/GLDAS_Download",
+        "output_dir": "{DATA_ROOT}/Meteorological/Weather/GLDAS",
+        "ancillary_mat": "{DATA_ROOT}/Soil_Moisture/SMAP_Auxiliary_Data/IGBP_9km_12.mat",
         "skip_existing": true,
         "dry_run": false,
         "max_files": 8
@@ -167,8 +167,8 @@
         -40
       ],
       "properties": {
-        "start_at": "2025-12-27T00:00:00",
-        "end_at": "2025-12-31T00:00:00",
+        "start_at": "{YYYY-MM-DD}T00:00:00",
+        "end_at": "{YYYY-MM-DD}T00:00:00",
         "resolution_unit": "day",
         "resolution_step": 1,
         "granularity": "day",

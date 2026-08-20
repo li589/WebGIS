@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import re
+import sys
 import tempfile
 from datetime import datetime, UTC
 from pathlib import Path
@@ -59,13 +60,19 @@ def _json_escape(value: str) -> str:
     return json.dumps(value)[1:-1]
 
 
+# 平台常量（模块级以便测试 monkeypatch；硬编码清理 A3）
+_IS_WINDOWS = sys.platform == "win32"
+
+
 def _expand_seed_placeholders(content: str) -> str:
     """展开种子中的 ``{DATA_ROOT}`` / ``{DATA_ROOT_WIN}``（去硬编码批 1）。"""
     from app.core.config import settings
 
     root = (getattr(settings, "data_root", None) or "").strip()
     root_posix = root.replace("\\", "/")
-    root_win = root.replace("/", "\\")
+    # 跨平台（硬编码清理 A3）：非 Windows 下 {DATA_ROOT_WIN} 退化为 posix
+    # root（占位符名保留兼容旧种子）——反斜杠展开在 Linux 生成非法路径。
+    root_win = root_posix.replace("/", "\\") if _IS_WINDOWS else root_posix
     return content.replace("{DATA_ROOT_WIN}", _json_escape(root_win)).replace(
         "{DATA_ROOT}", _json_escape(root_posix)
     )

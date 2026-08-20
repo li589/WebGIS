@@ -40,7 +40,7 @@
         140
       ],
       "properties": {
-        "output_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\SMAP_Origin_Data"
+        "output_dir": "{DATA_ROOT}/Soil_Moisture/SMAP_Origin_Data"
       }
     },
     {

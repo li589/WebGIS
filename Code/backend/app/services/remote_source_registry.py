@@ -66,7 +66,25 @@ class RemoteSourceRegistryRepository:
                 )
                 """
             )
+            # 数据集化改造（阶段 3/6）：additive 扩列（幂等）
+            self._ensure_column(conn, "access_mode", "TEXT NOT NULL DEFAULT 'legacy'")
+            self._ensure_column(conn, "archived", "INTEGER NOT NULL DEFAULT 0")
             conn.commit()
+
+    @staticmethod
+    def _ensure_column(conn, column: str, ddl_type: str) -> None:
+        """SQLite ALTER ADD COLUMN 幂等保护（缺列才加）。"""
+        cols = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(remote_sources)").fetchall()
+        }
+        if column in cols:
+            return
+        try:
+            conn.execute(f"ALTER TABLE remote_sources ADD COLUMN {column} {ddl_type}")
+        except sqlite3.OperationalError:
+            # 并发初始化（多 worker）时另一进程已加列
+            pass
 
     @staticmethod
     def _row_to_entry(row: sqlite3.Row) -> dict[str, Any]:

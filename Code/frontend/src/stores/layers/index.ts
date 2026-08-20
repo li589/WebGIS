@@ -65,6 +65,8 @@
 import { watch } from 'vue'
 import { defineStore } from 'pinia'
 
+import type { FeatureCollection } from 'geojson'
+import { useDrawStore, type DrawFeature } from '../draw-store'
 import { LAYER_CATEGORIES } from './catalog'
 import { createCrossDomainBindings } from './bindings'
 import { createWorkspaceDomain } from './workspace-domain'
@@ -99,6 +101,32 @@ export const useLayersStore = defineStore('layers', () => {
   watch(workspace.currentHour, (hour) => {
     viewport.flushWeatherTileViewports(hour)
   })
+
+  // ── Watch: draw features → sync importedVector（O4 绘制图层元数据实时读）──
+  // 绘制要素原本只存在 draw-store（工具条/属性表正确），但 ActiveLayer.importedVector
+  // 停留在创建时的空 GeoJSON（featureCount=0 / geometryType undefined）→
+  // 元数据 Tab 显示 Unknown/0 要素。此处把 draw-store 要素单向同步回 importedVector
+  // （updateImportedVectorGeojson 会重推 featureCount/geometryType/bounds/revision），
+  // 元数据/导出/属性表全部自动恢复正确。
+  const drawStore = useDrawStore()
+  watch(
+    () => [drawStore.features, drawStore.editingLayerId, drawStore.draftLayerId] as const,
+    ([feats, editingId, draftId]) => {
+      const targetId = editingId ?? draftId
+      if (!targetId) return
+      const geojson: FeatureCollection = {
+        type: 'FeatureCollection',
+        features: (feats as DrawFeature[]).map((f, i) => ({
+          type: 'Feature' as const,
+          id: i + 1,
+          geometry: f.geometry,
+          properties: f.properties ?? {},
+        })),
+      }
+      workspace.updateImportedVectorGeojson(targetId, geojson)
+    },
+    { deep: true },
+  )
 
   // ── Backward-compatible flat return ──
   // All 84+ members from the three domains are exposed through the single

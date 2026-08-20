@@ -149,11 +149,23 @@ CODEBUDDY_SESSION_ID= CLAUDE_SESSION_ID= CODEBUDDY_SAFE_DELETE_SANDBOX= Env/Pyth
 - **Gateway 代理**：与 `vite.config.ts` 对齐（含 `/auth`、`/overlay-tiles`、`/health`）。
 - 运维排障：`Docs/07-工程保障/error-handling-and-observability.md`。
 
+## 问题反馈 → AI 修复闭环
+
+用户经 `/feedback/` 反馈中心上传的服务端反馈，落盘于 `BACKEND_DATA_ROOT/_runtime/feedback/CGDA-BUG-*/`。**编码会话开始或用户提到"反馈/问题/报错"时，先扫描是否有待处理反馈**：
+
+```powershell
+Env\Python312\python.exe Tools/feedback_triage.py --open    # AI 待办（未受理/未修复）
+Env\Python312\python.exe Tools/feedback_triage.py --show CGDA-BUG-YYYYMMDD-XXXX   # 单条完整内容
+```
+
+处理 SOP（扫描 → 分析 → 定位修复 → 测试 → 提交 → 处理台发布进展闭环）见 **`.ai/rules/feedback-triage.md`**（单一真源）；被指派处理具体反馈时加载提示词 **`.ai/prompts/feedback-fix.md`**。
+
 ## AI 知识库（`.ai/`，本地专用，不上传 GitHub）
 
 所有 AI 提示 / 技能 / 计划 / 进度 / 记忆集中在仓库根 **`.ai/`**，根目录表面仅保留 `AGENTS.md`、`CLAUDE.md`、`README.md` 三份文档，公开文档在 `Docs/`。
 
-- `.ai/rules/` —— **约定单一真源**：`project-conventions.md`（运行时/launch/改X则跑Y/高风险区/命名/提交）、`qingtian-decision-policy.md`（QingTian 决策策略）、`git-commit-message.md`（Conventional Commits）。各 AI 工具（Cursor/Trae/Copilot）的规则文件仅作指针，指向此处。
+- `.ai/rules/` —— **约定单一真源**：`project-conventions.md`（运行时/launch/改X则跑Y/高风险区/命名/提交）、`feedback-triage.md`（问题反馈→AI 修复闭环）、`qingtian-decision-policy.md`（QingTian 决策策略）、`git-commit-message.md`（Conventional Commits）。各 AI 工具（Cursor/Trae/Copilot）的规则文件仅作指针，指向此处。
+- `.ai/prompts/` —— 任务提示词模板：`feedback-fix.md`（处理用户反馈的规范化工作流）。
 - `.ai/skills/` —— 可复用技能：`workflow-design`（种子命名/分类/标记与定时器）、`omega-sf-inversion`（FY/SMAP 反演+Matlab 一致性校验）、`multi-source-data-ingestion`（校园SSH/NAS/NSIDC/Earthdata）、`runtime-and-verify`（运行时与验证命令）、`contract-openapi-drift`（契约/OpenAPI 漂移防护）。
 - `.ai/plans/` —— 计划。
 - `.ai/progress/` —— 进度 / 验证追踪（FY-SMAP 系列、`ui-verification-steps.md`）。

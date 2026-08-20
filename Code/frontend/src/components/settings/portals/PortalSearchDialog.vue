@@ -1,13 +1,15 @@
 <script setup lang="ts">
 /**
- * PortalSearchDialog — 门户在线检索（当前 CMR 能力）。
+ * PortalSearchDialog — 门户在线检索（数据集级，plan 阶段 2 数据集化改造）。
  *
- * 结果条目可「添加为远程数据源」（kind=portal），remote_path 存 granule 相对路径或 collection 目录。
+ * 检索结果每行是一个数据集（collection/产品集），点「添加数据集授权」
+ * 写入 remote_dataset_grants 白名单——添加后该门户仅授权数据集可在
+ * 工作流中访问（未授权数据集将被提交校验拒绝）。
  */
 
 import { ref, watch } from 'vue'
-import type { PortalCatalogEntry, PortalSearchResultItem } from '../../../types/api-reexports'
-import { searchPortal, upsertRemoteSource } from '../../../services/settings-api'
+import type { PortalCatalogEntry, PortalSearchDatasetItem } from '../../../types/api-reexports'
+import { searchPortal, upsertRemoteDatasetGrant } from '../../../services/settings-api'
 
 const props = defineProps<{
   visible: boolean
@@ -16,13 +18,13 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
-  added: [remoteSourceId: string]
+  added: [grantId: string]
 }>()
 
 const query = ref('')
 const searching = ref(false)
 const errorMsg = ref('')
-const items = ref<PortalSearchResultItem[]>([])
+const items = ref<PortalSearchDatasetItem[]>([])
 const count = ref(0)
 const adding = ref('')
 const addMsg = ref('')
@@ -36,7 +38,7 @@ async function runSearch() {
     const res = await searchPortal(props.portal.portal_id, query.value.trim())
     items.value = res.items ?? []
     count.value = res.count ?? 0
-    if (!items.value.length) errorMsg.value = '无结果（检查关键词，如短名 MOD09GQ 或关键词）'
+    if (!items.value.length) errorMsg.value = '无结果（检查关键词，如 GLDAS、SMAP L4、Sentinel）'
   } catch (e) {
     errorMsg.value = (e as Error).message
     items.value = []
@@ -45,22 +47,27 @@ async function runSearch() {
   }
 }
 
-async function addAsSource(item: PortalSearchResultItem) {
+async function addGrant(item: PortalSearchDatasetItem) {
   if (!props.portal) return
-  const granule = item.producer_granule_id || item.granule_id || item.title
-  const alias = `${props.portal.portal_id}-${granule}`.replace(/[^\w.-]+/g, '-').slice(0, 80)
-  adding.value = alias
+  const datasetKey = item.dataset_key || item.title
+  const grantId = `${props.portal.portal_id}__${datasetKey}`.slice(0, 120)
+  adding.value = grantId
   addMsg.value = ''
   try {
-    await upsertRemoteSource(alias, {
-      kind: 'portal',
-      ref_id: props.portal.portal_id,
-      remote_path: granule,
-      display_name: item.title || granule,
-      cache_policy: 'standard',
+    await upsertRemoteDatasetGrant(grantId, {
+      portal_id: props.portal.portal_id,
+      dataset_key: datasetKey,
+      dataset_title: item.title || datasetKey,
+      dataset_description: item.description || '',
+      provider_kind: item.provider_kind || '',
+      time_start: item.time_start || '',
+      time_end: item.time_end || '',
+      path_prefix: '',
+      search_meta: JSON.stringify(item.extra ?? {}),
+      enabled: true,
     })
-    addMsg.value = `已添加远程数据源「${alias}」`
-    emit('added', alias)
+    addMsg.value = `已授权数据集「${datasetKey}」——该门户的未授权数据集将不可在工作流中访问`
+    emit('added', grantId)
   } catch (e) {
     addMsg.value = (e as Error).message
   } finally {
@@ -86,14 +93,14 @@ watch(
     <div v-if="visible && portal" class="ps-overlay" @click.self="emit('close')">
       <div class="ps-dialog" role="dialog" aria-modal="true">
         <div class="ps-header">
-          <span class="ps-title">在线检索 · {{ portal.name }}</span>
+          <span class="ps-title">在线检索（数据集） · {{ portal.name }}</span>
           <button type="button" class="ps-close" aria-label="关闭" @click="emit('close')">×</button>
         </div>
 
         <div class="ps-searchbar">
           <input
             v-model="query"
-            placeholder="granule 关键词或短名（如 MOD09GQ、SMAP L4）"
+            placeholder="数据集关键词（如 GLDAS、SMAP L4、Sentinel-2）"
             @keyup.enter="runSearch"
           />
           <button type="button" class="btn primary" :disabled="searching" @click="runSearch">
@@ -103,39 +110,34 @@ watch(
 
         <div class="ps-body">
           <div v-if="errorMsg" class="ps-state error">{{ errorMsg }}</div>
-          <div v-else-if="!items.length" class="ps-state">输入关键词后检索</div>
-          <div v-else class="ps-meta">共 {{ count }} 条，展示前 {{ items.length }} 条</div>
+          <div v-else-if="!items.length" class="ps-state">输入关键词后检索数据集</div>
+          <div v-else class="ps-meta">共 {{ count }} 个数据集，展示前 {{ items.length }} 个</div>
           <div class="ps-list">
             <div v-for="(row, i) in items" :key="i" class="ps-row">
               <div class="ps-row-main">
-                <span class="ps-row-title">{{ row.title || row.granule_id }}</span>
-                <code class="ps-row-id">{{ row.producer_granule_id || row.granule_id }}</code>
+                <span class="ps-row-title">{{ row.title || row.dataset_key }}</span>
+                <code class="ps-row-id">{{ row.dataset_key }}</code>
               </div>
+              <p v-if="row.description" class="ps-row-desc">{{ row.description }}</p>
               <div class="ps-row-meta">
                 <span v-if="row.time_start"
                   >{{ row.time_start }}{{ row.time_end ? ` ~ ${row.time_end}` : '' }}</span
                 >
-                <span v-if="row.size_bytes"
-                  >· {{ (row.size_bytes / 1024 / 1024).toFixed(1) }} MB</span
-                >
+                <span v-if="row.extra && row.extra.count"> · {{ row.extra.count }} 个产品</span>
+                <span v-if="row.extra && row.extra.version"> · v{{ row.extra.version }}</span>
               </div>
               <div class="ps-row-actions">
                 <a
-                  v-if="row.data_link"
-                  :href="row.data_link"
+                  v-if="row.extra && row.extra.data_link"
+                  :href="String(row.extra.data_link)"
                   target="_blank"
                   rel="noopener noreferrer"
                   class="ps-link"
                 >
-                  数据链接
+                  数据集主页
                 </a>
-                <button
-                  type="button"
-                  class="btn"
-                  :disabled="adding !== ''"
-                  @click="addAsSource(row)"
-                >
-                  添加为远程数据源
+                <button type="button" class="btn" :disabled="adding !== ''" @click="addGrant(row)">
+                  添加数据集授权
                 </button>
               </div>
             </div>
@@ -259,6 +261,15 @@ watch(
 .ps-row-id {
   color: var(--accent-strong);
   font-size: var(--font-size-caption);
+}
+.ps-row-desc {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .ps-row-meta {
   color: var(--text-disabled);

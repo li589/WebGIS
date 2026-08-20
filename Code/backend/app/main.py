@@ -94,6 +94,25 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001 — 同步失败不应阻断启动
         logger.exception("Failed to sync dataset registry on startup")
 
+    # 远程数据源存量迁移：文件级条目 → 数据集授权/站点兼容（失败仅告警，幂等）
+    try:
+        from app.services.remote_source_migration import (
+            migrate_legacy_remote_sources,
+        )
+
+        migration_report = migrate_legacy_remote_sources()
+        mg = migration_report.get("migrated_to_grants", 0)
+        sc = migration_report.get("upgraded_site_compatible", 0)
+        if mg or sc:
+            logger.info(
+                "[RemoteSourceMigration] startup: %d grants, %d site_compatible, %d legacy",
+                mg,
+                sc,
+                migration_report.get("kept_legacy", 0),
+            )
+    except Exception:  # noqa: BLE001 — 迁移失败不应阻断启动
+        logger.exception("Failed to migrate legacy remote sources on startup")
+
     # 预热 psutil CPU 采样：cpu_percent(interval=None) 首次调用返回 0.0（psutil 语义），
     # 提前调用一次使后续 get_resource_usage() 能拿到真实值
     try:

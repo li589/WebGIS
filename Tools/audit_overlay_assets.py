@@ -20,11 +20,12 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from data_root import resolve_data_root
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _BACKEND_ROOT = _REPO_ROOT / "Code" / "backend"
 _REPORT_PATH = _REPO_ROOT / "Tools" / "reports" / "overlay_audit_report.md"
-_DATA_ROOT = Path(r"I:\Geograph_DataSet")
+_DATA_ROOT = resolve_data_root()
 
 if str(_BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(_BACKEND_ROOT))

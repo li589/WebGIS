@@ -29,6 +29,9 @@
 
 * { box-sizing: border-box; }
 
+/* 通用图片/视频防溢出护栏（.attach-thumb img 等类选择器特异性更高，不受影响） */
+img, video { max-width: 100%; height: auto; }
+
 /* 显式隐藏优先级：保证 .maint-banner { display:flex } 等不覆盖 HTML hidden 属性 */
 [hidden] { display: none !important; }
 
@@ -36,6 +39,7 @@ html, body { margin: 0; padding: 0; }
 
 body {
   min-height: 100vh;
+  min-height: 100dvh; /* 移动端地址栏收起/展开时防止跳动 */
   font-family: var(--font);
   font-size: 15px;
   line-height: 1.6;
@@ -78,6 +82,7 @@ kbd {
   position: sticky;
   top: 0;
   z-index: 40;
+  padding-top: env(safe-area-inset-top); /* 刘海屏安全区 */
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   background: rgba(7, 16, 24, 0.78);
@@ -93,7 +98,7 @@ kbd {
   gap: 1rem;
   flex-wrap: wrap;
 }
-.brand { display: flex; align-items: center; gap: 0.7rem; }
+.brand { display: flex; align-items: center; gap: 0.7rem; min-width: 0; }
 .brand-mark {
   display: grid;
   place-items: center;
@@ -103,13 +108,14 @@ kbd {
   color: var(--accent);
   background: var(--accent-soft);
   border: 1px solid var(--line-strong);
+  flex: none;
 }
 .brand-mark svg { width: 1.35rem; height: 1.35rem; }
-.brand-text { display: flex; flex-direction: column; line-height: 1.3; }
-.brand-text strong { font-size: 0.98rem; letter-spacing: 0.02em; }
-.brand-text small { color: var(--muted); font-size: 0.72rem; letter-spacing: 0.14em; }
+.brand-text { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
+.brand-text strong { font-size: 0.98rem; letter-spacing: 0.02em; white-space: nowrap; }
+.brand-text small { color: var(--muted); font-size: 0.72rem; letter-spacing: 0.14em; white-space: nowrap; }
 
-.top-tools { display: flex; align-items: center; gap: 0.9rem; }
+.top-tools { display: flex; align-items: center; gap: 0.9rem; min-width: 0; flex-wrap: wrap; }
 .pill {
   display: inline-flex;
   align-items: center;
@@ -158,7 +164,7 @@ kbd {
   align-items: start;
 }
 .col-main { min-width: 0; }
-.col-side { display: flex; flex-direction: column; gap: 1.1rem; position: sticky; top: 4.4rem; }
+.col-side { display: flex; flex-direction: column; gap: 1.1rem; position: sticky; top: 4.4rem; min-width: 0; }
 
 /* ---------- 选项卡 ---------- */
 .tabs {
@@ -721,9 +727,19 @@ select.field-input option { background: #0d1a28; color: var(--ink); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .field-input:focus-visible, .btn:focus-visible, .tab:focus-visible { outline-offset: 0; }
 
-@media (max-width: 1080px) {
+@media (max-width: 1024px) {
   .layout { grid-template-columns: 1fr; }
   .col-side { position: static; }
+}
+@media (max-width: 768px) {
+  .topbar-inner { padding: 0.65rem 1rem; }
+  .layout { padding: 1.25rem 1rem 2.2rem; }
+  .panel { padding: 1.3rem 1.15rem; }
+  .dropzone { padding: 1.25rem 0.9rem; }
+  /* 触控目标放大 */
+  .btn { min-height: 2.5rem; }
+  .seg-btn span { min-height: 2.4rem; display: inline-flex; align-items: center; }
+  .icon-btn { width: 2rem; height: 2rem; }
 }
 @media (max-width: 640px) {
   .panel { padding: 1.1rem 1rem; }
@@ -734,6 +750,36 @@ select.field-input option { background: #0d1a28; color: var(--ink); }
   .success-actions .btn { flex: 1; justify-content: center; }
   .attach-card { grid-template-columns: 2.6rem 1fr auto; }
   .attach-thumb { width: 2.6rem; height: 2.6rem; }
+  /* 手机：主操作按钮铺满、严重程度分段等宽、工具条/页脚改列 */
+  .form-actions .btn { flex: 1 1 auto; justify-content: center; }
+  .segmented { width: 100%; }
+  .seg-btn { flex: 1; }
+  .seg-btn span { width: 100%; justify-content: center; }
+  .reports-toolbar { flex-direction: column; align-items: stretch; }
+  .reports-toolbar .toolbar-btns { justify-content: space-between; }
+  .toolbar-btns .btn { flex: 1; justify-content: center; }
+  .page-footer { flex-direction: column; gap: 0.4rem; }
+}
+@media (max-width: 480px) {
+  .topbar-inner { padding: 0.55rem 0.8rem; }
+  .brand-mark { width: 2.2rem; height: 2.2rem; }
+  .brand-text strong { font-size: 0.92rem; }
+  .brand-text small { font-size: 0.64rem; letter-spacing: 0.1em; }
+  .layout { padding: 0.9rem 0.75rem 1.6rem; }
+  .panel { padding: 1rem 0.85rem; }
+  .tab { padding: 0.6rem 0.85rem 0.55rem; font-size: 0.86rem; }
+  .tab-count { min-width: 1.2rem; padding: 0 0.3rem; }
+  .dropzone { padding: 1.1rem 0.7rem; }
+  .dropzone p { font-size: 0.84rem; }
+  .attach-card { grid-template-columns: 2.3rem 1fr auto; gap: 0.6rem; padding: 0.55rem 0.6rem; }
+  .attach-thumb { width: 2.3rem; height: 2.3rem; }
+  .attach-preview { max-height: 9rem; }
+  .success-id { font-size: 1rem; padding: 0.35rem 0.85rem; }
+  .maint-banner { margin-top: 0.75rem; padding: 0.65rem 0.8rem; }
+  .card-title { padding: 0.75rem 0.9rem 0.65rem; }
+  .card-body { padding: 0.85rem 0.9rem 0.95rem; }
+  .kv { font-size: 0.8rem; }
+  .page-footer { padding: 0 0.8rem 1.8rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

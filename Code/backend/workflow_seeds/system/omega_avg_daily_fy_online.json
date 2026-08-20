@@ -31,7 +31,7 @@
         "data_source": "auto",
         "start_date": "{YYYYMMDD}",
         "end_date": "{YYYYMMDD}",
-        "local_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\FY3D\\raw",
+        "local_dir": "{DATA_ROOT}/Soil_Moisture/FY3D/raw",
         "band_ids": "1,2",
         "orbit_mode": "MWRID"
       }
@@ -49,7 +49,7 @@
         "data_source": "auto",
         "start_date": "{YYYYMMDD}",
         "end_date": "{YYYYMMDD}",
-        "local_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\FY3B\\raw",
+        "local_dir": "{DATA_ROOT}/Soil_Moisture/FY3B/raw",
         "band_ids": "1,2",
         "orbit_mode": "MWRID"
       }
@@ -62,7 +62,7 @@
         140
       ],
       "properties": {
-        "output_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\FY3D",
+        "output_dir": "{DATA_ROOT}/Soil_Moisture/FY3D",
         "algorithm_params": {
           "orbit_mode": "MWRID",
           "band_ids": [
@@ -84,7 +84,7 @@
       ],
       "properties": {
         "enabled": false,
-        "output_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\FY3B",
+        "output_dir": "{DATA_ROOT}/Soil_Moisture/FY3B",
         "algorithm_params": {
           "orbit_mode": "MWRID",
           "band_ids": [

@@ -421,6 +421,9 @@ class RemoteSourceEntry(BaseModel):
     remote_path: str = ""
     display_name: str = ""
     cache_policy: str = "standard"
+    # Phase 4：访问模式（legacy/site_compatible）+ 归档标记
+    access_mode: str = "legacy"
+    archived: bool = False
     created_at: str = ""
     updated_at: str = ""
     ref: RemoteSourceRefBadge | None = None
@@ -437,6 +440,94 @@ class RemoteSourceUpsertRequest(BaseModel):
     remote_path: str = ""
     display_name: str = ""
     cache_policy: str = "standard"
+    # Phase 4：访问模式（legacy/site_compatible）+ 归档
+    access_mode: str = "legacy"
+    archived: bool = False
+
+
+class RemoteDatasetGrant(BaseModel):
+    """「具体数据集选取模式」授权条目 + 门户能力徽标。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    grant_id: str
+    portal_id: str
+    dataset_key: str
+    dataset_title: str = ""
+    dataset_description: str = ""
+    provider_kind: str = ""
+    time_start: str = ""
+    time_end: str = ""
+    path_prefix: str = ""
+    search_meta: str = "{}"
+    enabled: bool = True
+    archived: bool = False
+    migrated_from: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+    ref: RemoteSourceRefBadge | None = None
+    ref_exists: bool = False
+
+
+class RemoteDatasetGrantUpsertRequest(BaseModel):
+    """PUT /config/remote-datasets/grants/{grant_id} body.
+
+    grant_id 可省略（由 portal_id/dataset_key 派生）；
+    UNIQUE(portal_id, dataset_key) 冲突时幂等合并到既有条目。
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    portal_id: str
+    dataset_key: str
+    dataset_title: str = ""
+    dataset_description: str = ""
+    provider_kind: str = ""
+    time_start: str = ""
+    time_end: str = ""
+    path_prefix: str = ""
+    search_meta: str = "{}"
+    enabled: bool = True
+
+
+class RemoteDatasetPolicyDataset(BaseModel):
+    """策略投影中的单条数据集（编辑器下拉/校验用）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    grant_id: str = ""
+    dataset_key: str
+    title: str = ""
+    path_prefix: list[str] = Field(default_factory=list)
+
+
+class RemoteDatasetPolicy(BaseModel):
+    """单门户的远程数据集访问策略投影（GET /config/remote-datasets/policy）。
+
+    未出现在列表中的门户 = 未管控 → 消费方放行。
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    portal_id: str
+    managed: bool = True
+    compatible: bool = False
+    datasets: list[RemoteDatasetPolicyDataset] = Field(default_factory=list)
+
+
+class MigrationReport(BaseModel):
+    """存量迁移报告（GET /config/remote-sources/migrate-legacy）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    dry_run: bool
+    total: int
+    migrated_to_grants: int
+    upgraded_site_compatible: int
+    kept_legacy: int
+    already_done: bool
+    safe_mode: bool
+    details: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class DataCacheEntry(BaseModel):
@@ -787,15 +878,22 @@ class PortalTestResponse(BaseModel):
     tested_url: str = ""
 
 
-class PortalSearchResultItem(BaseModel):
+class PortalSearchDatasetItem(BaseModel):
+    """在线检索结果条目（数据集级，plan 阶段 2 数据集化改造）。
+
+    dataset_key 为白名单主键（CMR short_name / CDSE 任务_产品模式 / CDS collection id）；
+    extra 携带 provider 特定信息（version/data_center/count/sample_product_id/data_link 等）。
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    dataset_key: str
     title: str = ""
-    granule_id: str = ""
-    producer_granule_id: str = ""
-    size_bytes: int = 0
+    description: str = ""
     time_start: str = ""
     time_end: str = ""
-    data_link: str = ""
-    browse_link: str = ""
+    provider_kind: str = ""
+    extra: dict[str, Any] = Field(default_factory=dict)
 
 
 class PortalSearchResponse(BaseModel):
@@ -803,7 +901,7 @@ class PortalSearchResponse(BaseModel):
     query: str
     page_size: int = 20
     count: int = 0
-    items: list[PortalSearchResultItem] = Field(default_factory=list)
+    items: list[PortalSearchDatasetItem] = Field(default_factory=list)
 
 
 class DataCacheEvictRequest(BaseModel):

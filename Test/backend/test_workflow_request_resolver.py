@@ -614,3 +614,39 @@ def test_normalize_expands_data_root_placeholder_in_kept_graph(tmp_path) -> None
     wd = algo.get("workflow_definition")
     assert isinstance(wd, dict), "多模块 DAG 应保留 workflow_definition"
     assert "{DATA_ROOT" not in json.dumps(algo, default=str)
+
+
+def test_expand_data_root_win_posix_platform(monkeypatch) -> None:
+    """硬编码清理 A3：非 Windows 平台 {DATA_ROOT_WIN} 退化为 posix root。
+
+    原实现 ``root.replace("/", "\\\\")`` 在 Linux data_root 下生成含
+    反斜杠的非法路径（POSIX 反斜杠是普通文件名字符）。
+    """
+    from types import SimpleNamespace
+
+    from app.services import workflow_request_resolver as resolver
+
+    monkeypatch.setattr(resolver, "_IS_WINDOWS", False)
+    monkeypatch.setattr(
+        "app.core.config.settings", SimpleNamespace(data_root="/srv/geodata")
+    )
+    out = resolver._expand_data_root_placeholders(
+        {"local_dir": "{DATA_ROOT_WIN}/Soil_Moisture/FY3D/raw"}
+    )
+    assert out["local_dir"] == "/srv/geodata/Soil_Moisture/FY3D/raw"
+    assert "\\" not in out["local_dir"]
+
+
+def test_expand_data_root_win_windows_platform(monkeypatch) -> None:
+    """Windows 平台 {DATA_ROOT_WIN} 仍展开为反斜杠路径（行为回归）。"""
+    from types import SimpleNamespace
+
+    from app.services import workflow_request_resolver as resolver
+
+    monkeypatch.setattr(resolver, "_IS_WINDOWS", True)
+    monkeypatch.setattr(
+        "app.core.config.settings", SimpleNamespace(data_root="I:/Geograph_DataSet")
+    )
+    out = resolver._expand_data_root_placeholders({"d": "{DATA_ROOT_WIN}/SMAP"})
+    # root 部分反斜杠化；模板字面正斜杠原样保留（Windows 混合分隔符合法）
+    assert out["d"] == "I:\\Geograph_DataSet/SMAP"

@@ -41,7 +41,7 @@
         140
       ],
       "properties": {
-        "output_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\SMAP_Origin_Data"
+        "output_dir": "{DATA_ROOT}/Soil_Moisture/SMAP_Origin_Data"
       }
     },
     {
@@ -103,8 +103,8 @@
           "omega_fixed_mode": "PFT",
           "run_domain": "GLOBAL",
           "block_days": 8,
-          "start_date": "20251201",
-          "end_date": "20251231",
+          "start_date": "{YYYYMMDD}",
+          "end_date": "{YYYYMMDD}",
           "max_pixels": 0,
           "freq_ghz": 1.4,
           "enable_parallel": true,
@@ -121,8 +121,8 @@
         40
       ],
       "properties": {
-        "start_at": "2025-12-01T00:00:00",
-        "end_at": "2025-12-31T00:00:00",
+        "start_at": "{YYYY-MM-DD}T00:00:00",
+        "end_at": "{YYYY-MM-DD}T00:00:00",
         "resolution_unit": "day",
         "resolution_step": 1,
         "granularity": "day",

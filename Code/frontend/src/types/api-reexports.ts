@@ -182,7 +182,7 @@ export type PortalCatalogResponse = Schema<'PortalCatalogResponse'>
 export type PortalUpsertRequest = Schema<'PortalUpsertRequest'>
 export type PortalTestResponse = Schema<'PortalTestResponse'>
 export type PortalSearchResponse = Schema<'PortalSearchResponse'>
-export type PortalSearchResultItem = Schema<'PortalSearchResultItem'>
+export type PortalSearchDatasetItem = Schema<'PortalSearchDatasetItem'>
 
 // ── 可用数据集 / 远程数据源注册表（Phase C） ─────────────────────────────────
 
@@ -192,6 +192,13 @@ export type DatasetRescanResponse = Schema<'DatasetRescanResponse'>
 export type RemoteSourceEntry = Schema<'RemoteSourceEntry'>
 export type RemoteSourceRefBadge = Schema<'RemoteSourceRefBadge'>
 export type RemoteSourceUpsertRequest = Schema<'RemoteSourceUpsertRequest'>
+
+// ── 远程数据集授权（数据集化改造阶段 1） ─────────────────────────────────────
+
+export type RemoteDatasetGrant = Schema<'RemoteDatasetGrant'>
+export type RemoteDatasetGrantUpsertRequest = Schema<'RemoteDatasetGrantUpsertRequest'>
+export type RemoteDatasetPolicy = Schema<'RemoteDatasetPolicy'>
+export type RemoteDatasetPolicyDataset = Schema<'RemoteDatasetPolicyDataset'>
 
 export type DeletedResponse = Schema<'DeletedResponse'>
 

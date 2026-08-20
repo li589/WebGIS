@@ -9,12 +9,12 @@ import { computed } from 'vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { BarChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent } from 'echarts/components'
+import { GridComponent, TooltipComponent, TitleComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
 import { useEchartsThemeName } from './echarts-theme'
 import { resolveCanvasColor } from '../workflow/canvas-theme'
 
-use([CanvasRenderer, BarChart, GridComponent, TooltipComponent])
+use([CanvasRenderer, BarChart, GridComponent, TooltipComponent, TitleComponent])
 
 export interface OverlayBarItem {
   layerId: string

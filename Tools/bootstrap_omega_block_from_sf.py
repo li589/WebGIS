@@ -18,6 +18,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 from scipy.io import loadmat, savemat
+from data_root import resolve_data_root
 
 _BLOCK_NAME_RE = re.compile(r"^(?P<start>\d{8})_(?P<end>\d{8})\.mat$")
 
@@ -167,12 +168,12 @@ def main() -> int:
     parser.add_argument(
         "--anc-root",
         type=Path,
-        default=Path(r"I:\Geograph_DataSet\Soil_Moisture\SMAP_Auxiliary_Data"),
+        default=resolve_data_root() / "Soil_Moisture" / "SMAP_Auxiliary_Data",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path(r"I:\Geograph_DataSet\Inversion_Results\omega_block"),
+        default=resolve_data_root() / "Inversion_Results" / "omega_block",
     )
     parser.add_argument("--alpha-fill", type=float, default=0.05)
     args = parser.parse_args()

@@ -94,6 +94,7 @@ nginx 在 `location ^~ /feedback/` 内嵌套 `location ^~ /feedback/api/` 反代
 | `/feedback/api/reports/{id}` | GET | admin | 完整报告 + 附件清单 + 进展 |
 | `/feedback/api/reports/{id}/attachments/{name}` | GET | admin | 附件下载 |
 | `/feedback/api/reports/{id}/response` | PUT | admin | 发布/更新处理进展 |
+| `/feedback/api/reports/{id}` | DELETE | admin | 删除一条反馈（含附件与进展，不可恢复） |
 
 **鉴权**：admin 会话 cookie（工程师登录主应用后同域自动携带）/ admin 用户 API Token / `backend_auth` 服务密钥（`X-API-Key`），复用 `credential_resolver`；开发旁路（dev_bypass）仅 standard 角色，天然被拒。
 
@@ -108,9 +109,18 @@ nginx 在 `location ^~ /feedback/` 内嵌套 `location ^~ /feedback/api/` 反代
 | 用户提交 | 表单数据（含附件）存**浏览器本地 IndexedDB**（localStorage 降级），生成编号 `CGDA-BUG-YYYYMMDD-XXXX` |
 | 交给开发者 | **在线轨**：后端在线时一键「上传到服务器」（工程师自动可见）／**离线轨**：「复制 Markdown」或「导出 JSON」经 IM/邮件转发 |
 | 开发者追问 / 修复进展 / 受理人 | **在线轨**：处理台直接发布（`PUT response`，服务端权威存储）／**离线轨**：`data/announcements.json` 的 `responses`（按 `reportId` 匹配）；两轨页面每 60 秒拉取合并（服务端优先） |
+| **AI 消费与规范化修复** | 服务端反馈落盘 `_runtime/feedback/` 后，AI 编码助手经 `Tools/feedback_triage.py` 扫描/读取 → 分析 → 修复 → 提交 → 处理台或 `PUT response` 发布进展闭环（见下节） |
 | 系统维护信息 | `announcements.json` 的 `maintenance.active=true` 时页面顶部显示维护横幅 |
 | 联系方式 | `announcements.json` 的 `maintainer` 字段，展示在侧栏「支持渠道」 |
 | 后端健康 | 页面轮询 `/health`（30 秒），仅作状态提示；后端不可用时自动降级离线轨，反馈功能不受影响 |
+
+## AI 消费环（反馈 → 规范化修复）
+
+服务端反馈是**权威存储**，AI 编码助手可直接读取并进入问题分析与规范化修复：
+
+1. **扫描**：`Env\Python312\python.exe Tools/feedback_triage.py --open`（未受理/未修复待办）、`--count`（统计）、`--show <id>`（单条完整内容：描述/复现/期望/实际/环境/提交人/进展）。脚本只读、纯标准库，路径自动解析（`BACKEND_FEEDBACK_DIR` → `BACKEND_DATA_ROOT/_runtime/feedback` → 项目现行 DATA_ROOT）。
+2. **修复**：遵守 `.ai/rules/feedback-triage.md`（SOP）与 `.ai/rules/project-conventions.md`（硬约定）；被指派处理反馈时加载 `.ai/prompts/feedback-fix.md`。
+3. **闭环**：修复提交（`fix(<scope>): 修复反馈 CGDA-BUG-xxxx：…`）后，在处理台 `/feedback/console.html` 或经 `PUT /feedback/api/reports/{id}/response` 发布进展（状态/受理人/时间线/回复），用户端 60 秒内可见，`--open` 待办随之消失。
 
 ## 运维操作：发布公告 / 回复反馈
 

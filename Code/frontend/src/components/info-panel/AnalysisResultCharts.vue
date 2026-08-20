@@ -12,6 +12,7 @@ import {
   TooltipComponent,
   LegendComponent,
   DataZoomComponent,
+  TitleComponent,
 } from 'echarts/components'
 import VChart from 'vue-echarts'
 import { useEchartsThemeName } from './echarts-theme'
@@ -25,6 +26,7 @@ use([
   TooltipComponent,
   LegendComponent,
   DataZoomComponent,
+  TitleComponent,
 ])
 
 export interface AnalysisChartSeries {

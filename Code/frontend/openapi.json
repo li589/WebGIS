@@ -574,6 +574,329 @@
         }
       }
     },
+    "/feedback/api/reports": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "List Reports",
+        "operationId": "list_reports_feedback_api_reports_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Reports Feedback Api Reports Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Upload Report",
+        "description": "接收用户导出的反馈 JSON（multipart 单文件），落盘并返回访问 token。",
+        "operationId": "upload_report_feedback_api_reports_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_report_feedback_api_reports_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Upload Report Feedback Api Reports Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/feedback/api/reports/{report_id}/response": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Get Report Response",
+        "description": "用户端进展查询：编号 + 上传时返回的 token（防编号枚举）。",
+        "operationId": "get_report_response_feedback_api_reports__report_id__response_get",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Report Id"
+            }
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Report Response Feedback Api Reports  Report Id  Response Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Put Report Response",
+        "description": "发布/更新处理进展（写入 response.json；用户端轮询可见）。",
+        "operationId": "put_report_response_feedback_api_reports__report_id__response_put",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Report Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Put Report Response Feedback Api Reports  Report Id  Response Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/feedback/api/session": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Feedback Session",
+        "description": "认证探测：成功返回身份信息（处理台据此启用服务端模式）。",
+        "operationId": "feedback_session_feedback_api_session_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Feedback Session Feedback Api Session Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/feedback/api/reports/{report_id}": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Get Report",
+        "operationId": "get_report_feedback_api_reports__report_id__get",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Report Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Report Feedback Api Reports  Report Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Delete Report",
+        "description": "删除一条服务端反馈（含附件与进展，不可恢复）。",
+        "operationId": "delete_report_feedback_api_reports__report_id__delete",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Report Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Report Feedback Api Reports  Report Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/feedback/api/reports/{report_id}/attachments/{name}": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Download Attachment",
+        "operationId": "download_attachment_feedback_api_reports__report_id__attachments__name__get",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Report Id"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/layers": {
       "get": {
         "tags": [
@@ -9019,6 +9342,231 @@
         }
       }
     },
+    "/config/remote-datasets/grants": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "List Remote Dataset Grants",
+        "description": "数据集授权条目 + 门户能力徽标。",
+        "operationId": "list_remote_dataset_grants_config_remote_datasets_grants_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RemoteDatasetGrant"
+                  },
+                  "type": "array",
+                  "title": "Response List Remote Dataset Grants Config Remote Datasets Grants Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/config/remote-datasets/grants/{grant_id}": {
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Upsert Remote Dataset Grant",
+        "description": "新增/更新数据集授权（UNIQUE(portal_id, dataset_key) 幂等合并）。",
+        "operationId": "upsert_remote_dataset_grant_config_remote_datasets_grants__grant_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "grant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Grant Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteDatasetGrantUpsertRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteDatasetGrant"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete Remote Dataset Grant",
+        "description": "删除数据集授权（删除后该数据集在管控门户内不可访问）。",
+        "operationId": "delete_remote_dataset_grant_config_remote_datasets_grants__grant_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "grant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Grant Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/remote-datasets/policy": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get Remote Dataset Policy",
+        "description": "各门户远程数据集访问策略投影（编辑器过滤用）。\n\n未列出的门户 = 未管控（放行）；列出的门户 managed=true，\ncompatible=true 表示站点兼容模式全放行，datasets 为白名单。",
+        "operationId": "get_remote_dataset_policy_config_remote_datasets_policy_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RemoteDatasetPolicy"
+                  },
+                  "type": "array",
+                  "title": "Response Get Remote Dataset Policy Config Remote Datasets Policy Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/config/remote-sources/migrate-legacy": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Migrate Legacy Remote Sources Endpoint",
+        "description": "手动重跑存量迁移（dry_run/safe 查询参数）。\n\n幂等：已完成的迁移再次调用返回 already_done=True。",
+        "operationId": "migrate_legacy_remote_sources_endpoint_config_remote_sources_migrate_legacy_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "dry_run",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Dry Run"
+            }
+          },
+          {
+            "name": "safe",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Safe"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/config/about": {
       "get": {
         "tags": [
@@ -9556,7 +10104,7 @@
           "workflow-timer"
         ],
         "summary": "List Timers",
-        "description": "列出全部定时器，可选按 workflow_id 过滤。",
+        "description": "列出定时器（非 admin 登录用户仅见本人创建的）。",
         "operationId": "list_timers_workflow_timers_get",
         "security": [
           {
@@ -9611,7 +10159,7 @@
           "workflow-timer"
         ],
         "summary": "Create Timer",
-        "description": "创建定时器。\n\n请求体字段：\n- workflow_id (str, 必填)\n- name (str, 必填)\n- trigger_type ('cron' | 'interval' | 'event', 必填)\n- trigger_config (dict, 必填, 格式依 trigger_type 而定)\n- payload_overrides (dict, 可选)\n- enabled (bool, 可选, 默认 true)",
+        "description": "创建定时器（记录归属 owner_user_id）。\n\n请求体字段：\n- workflow_id (str, 必填)\n- name (str, 必填)\n- trigger_type ('cron' | 'interval' | 'event', 必填)\n- trigger_config (dict, 必填, 格式依 trigger_type 而定)\n- payload_overrides (dict, 可选)\n- enabled (bool, 可选, 默认 true)",
         "operationId": "create_timer_workflow_timers_post",
         "security": [
           {
@@ -11602,6 +12150,20 @@
           "file"
         ],
         "title": "Body_upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post"
+      },
+      "Body_upload_report_feedback_api_reports_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_report_feedback_api_reports_post"
       },
       "BoundingBox": {
         "properties": {
@@ -15828,6 +16390,58 @@
         ],
         "title": "MapMode"
       },
+      "MigrationReport": {
+        "properties": {
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "migrated_to_grants": {
+            "type": "integer",
+            "title": "Migrated To Grants"
+          },
+          "upgraded_site_compatible": {
+            "type": "integer",
+            "title": "Upgraded Site Compatible"
+          },
+          "kept_legacy": {
+            "type": "integer",
+            "title": "Kept Legacy"
+          },
+          "already_done": {
+            "type": "boolean",
+            "title": "Already Done"
+          },
+          "safe_mode": {
+            "type": "boolean",
+            "title": "Safe Mode"
+          },
+          "details": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dry_run",
+          "total",
+          "migrated_to_grants",
+          "upgraded_site_compatible",
+          "kept_legacy",
+          "already_done",
+          "safe_mode"
+        ],
+        "title": "MigrationReport",
+        "description": "存量迁移报告（GET /config/remote-sources/migrate-legacy）。"
+      },
       "MinioPublicConfig": {
         "properties": {
           "endpoint": {
@@ -16735,6 +17349,50 @@
         ],
         "title": "PortalCredentialsMapResponse"
       },
+      "PortalSearchDatasetItem": {
+        "properties": {
+          "dataset_key": {
+            "type": "string",
+            "title": "Dataset Key"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": ""
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "time_start": {
+            "type": "string",
+            "title": "Time Start",
+            "default": ""
+          },
+          "time_end": {
+            "type": "string",
+            "title": "Time End",
+            "default": ""
+          },
+          "provider_kind": {
+            "type": "string",
+            "title": "Provider Kind",
+            "default": ""
+          },
+          "extra": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Extra"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset_key"
+        ],
+        "title": "PortalSearchDatasetItem",
+        "description": "在线检索结果条目（数据集级，plan 阶段 2 数据集化改造）。\n\ndataset_key 为白名单主键（CMR short_name / CDSE 任务_产品模式 / CDS collection id）；\nextra 携带 provider 特定信息（version/data_center/count/sample_product_id/data_link 等）。"
+      },
       "PortalSearchResponse": {
         "properties": {
           "portal_id": {
@@ -16757,7 +17415,7 @@
           },
           "items": {
             "items": {
-              "$ref": "#/components/schemas/PortalSearchResultItem"
+              "$ref": "#/components/schemas/PortalSearchDatasetItem"
             },
             "type": "array",
             "title": "Items"
@@ -16769,52 +17427,6 @@
           "query"
         ],
         "title": "PortalSearchResponse"
-      },
-      "PortalSearchResultItem": {
-        "properties": {
-          "title": {
-            "type": "string",
-            "title": "Title",
-            "default": ""
-          },
-          "granule_id": {
-            "type": "string",
-            "title": "Granule Id",
-            "default": ""
-          },
-          "producer_granule_id": {
-            "type": "string",
-            "title": "Producer Granule Id",
-            "default": ""
-          },
-          "size_bytes": {
-            "type": "integer",
-            "title": "Size Bytes",
-            "default": 0
-          },
-          "time_start": {
-            "type": "string",
-            "title": "Time Start",
-            "default": ""
-          },
-          "time_end": {
-            "type": "string",
-            "title": "Time End",
-            "default": ""
-          },
-          "data_link": {
-            "type": "string",
-            "title": "Data Link",
-            "default": ""
-          },
-          "browse_link": {
-            "type": "string",
-            "title": "Browse Link",
-            "default": ""
-          }
-        },
-        "type": "object",
-        "title": "PortalSearchResultItem"
       },
       "PortalTestResponse": {
         "properties": {
@@ -17377,6 +17989,226 @@
         ],
         "title": "RemoteBrowseResponse"
       },
+      "RemoteDatasetGrant": {
+        "properties": {
+          "grant_id": {
+            "type": "string",
+            "title": "Grant Id"
+          },
+          "portal_id": {
+            "type": "string",
+            "title": "Portal Id"
+          },
+          "dataset_key": {
+            "type": "string",
+            "title": "Dataset Key"
+          },
+          "dataset_title": {
+            "type": "string",
+            "title": "Dataset Title",
+            "default": ""
+          },
+          "dataset_description": {
+            "type": "string",
+            "title": "Dataset Description",
+            "default": ""
+          },
+          "provider_kind": {
+            "type": "string",
+            "title": "Provider Kind",
+            "default": ""
+          },
+          "time_start": {
+            "type": "string",
+            "title": "Time Start",
+            "default": ""
+          },
+          "time_end": {
+            "type": "string",
+            "title": "Time End",
+            "default": ""
+          },
+          "path_prefix": {
+            "type": "string",
+            "title": "Path Prefix",
+            "default": ""
+          },
+          "search_meta": {
+            "type": "string",
+            "title": "Search Meta",
+            "default": "{}"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "archived": {
+            "type": "boolean",
+            "title": "Archived",
+            "default": false
+          },
+          "migrated_from": {
+            "type": "string",
+            "title": "Migrated From",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At",
+            "default": ""
+          },
+          "ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RemoteSourceRefBadge"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ref_exists": {
+            "type": "boolean",
+            "title": "Ref Exists",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "grant_id",
+          "portal_id",
+          "dataset_key"
+        ],
+        "title": "RemoteDatasetGrant",
+        "description": "「具体数据集选取模式」授权条目 + 门户能力徽标。"
+      },
+      "RemoteDatasetGrantUpsertRequest": {
+        "properties": {
+          "portal_id": {
+            "type": "string",
+            "title": "Portal Id"
+          },
+          "dataset_key": {
+            "type": "string",
+            "title": "Dataset Key"
+          },
+          "dataset_title": {
+            "type": "string",
+            "title": "Dataset Title",
+            "default": ""
+          },
+          "dataset_description": {
+            "type": "string",
+            "title": "Dataset Description",
+            "default": ""
+          },
+          "provider_kind": {
+            "type": "string",
+            "title": "Provider Kind",
+            "default": ""
+          },
+          "time_start": {
+            "type": "string",
+            "title": "Time Start",
+            "default": ""
+          },
+          "time_end": {
+            "type": "string",
+            "title": "Time End",
+            "default": ""
+          },
+          "path_prefix": {
+            "type": "string",
+            "title": "Path Prefix",
+            "default": ""
+          },
+          "search_meta": {
+            "type": "string",
+            "title": "Search Meta",
+            "default": "{}"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "portal_id",
+          "dataset_key"
+        ],
+        "title": "RemoteDatasetGrantUpsertRequest",
+        "description": "PUT /config/remote-datasets/grants/{grant_id} body.\n\ngrant_id 可省略（由 portal_id/dataset_key 派生）；\nUNIQUE(portal_id, dataset_key) 冲突时幂等合并到既有条目。"
+      },
+      "RemoteDatasetPolicy": {
+        "properties": {
+          "portal_id": {
+            "type": "string",
+            "title": "Portal Id"
+          },
+          "managed": {
+            "type": "boolean",
+            "title": "Managed",
+            "default": true
+          },
+          "compatible": {
+            "type": "boolean",
+            "title": "Compatible",
+            "default": false
+          },
+          "datasets": {
+            "items": {
+              "$ref": "#/components/schemas/RemoteDatasetPolicyDataset"
+            },
+            "type": "array",
+            "title": "Datasets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "portal_id"
+        ],
+        "title": "RemoteDatasetPolicy",
+        "description": "单门户的远程数据集访问策略投影（GET /config/remote-datasets/policy）。\n\n未出现在列表中的门户 = 未管控 → 消费方放行。"
+      },
+      "RemoteDatasetPolicyDataset": {
+        "properties": {
+          "grant_id": {
+            "type": "string",
+            "title": "Grant Id",
+            "default": ""
+          },
+          "dataset_key": {
+            "type": "string",
+            "title": "Dataset Key"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": ""
+          },
+          "path_prefix": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Path Prefix"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset_key"
+        ],
+        "title": "RemoteDatasetPolicyDataset",
+        "description": "策略投影中的单条数据集（编辑器下拉/校验用）。"
+      },
       "RemoteEntryItem": {
         "properties": {
           "name": {
@@ -17615,6 +18447,16 @@
             "title": "Cache Policy",
             "default": "standard"
           },
+          "access_mode": {
+            "type": "string",
+            "title": "Access Mode",
+            "default": "legacy"
+          },
+          "archived": {
+            "type": "boolean",
+            "title": "Archived",
+            "default": false
+          },
           "created_at": {
             "type": "string",
             "title": "Created At",
@@ -17746,6 +18588,16 @@
             "type": "string",
             "title": "Cache Policy",
             "default": "standard"
+          },
+          "access_mode": {
+            "type": "string",
+            "title": "Access Mode",
+            "default": "legacy"
+          },
+          "archived": {
+            "type": "boolean",
+            "title": "Archived",
+            "default": false
           }
         },
         "type": "object",

@@ -14,6 +14,7 @@ FastAPI；后端宕机/维护期时前端自动降级为本地导出链路，不
 - ``GET  /feedback/api/reports/{rid}/response?token=``     用户凭上传时获得的
   token 查询自己反馈的处理进展（防编号枚举）。
 - ``PUT  /feedback/api/reports/{rid}/response``            admin：发布/更新进展。
+- ``DELETE /feedback/api/reports/{rid}``                   admin：删除一条反馈（含附件与进展）。
 
 鉴权复用 credential_resolver（session cookie / X-API-Key 用户 Token /
 服务密钥），不使用 Security() 声明以避免 openapi 安全契约漂移（F14 闸门）。
@@ -271,3 +272,21 @@ async def put_report_response(
         admin.get("username"),
     )
     return {"ok": True, "reportId": report_id, "response": response_obj}
+
+
+@router.delete("/reports/{report_id}")
+def delete_report(
+    report_id: str, admin: dict = Depends(_require_feedback_admin)
+) -> dict:
+    """删除一条服务端反馈（含附件与进展，不可恢复）。"""
+    if not validate_report_id(report_id):
+        raise HTTPException(status_code=404, detail="反馈不存在。")
+    store = get_feedback_store()
+    if not store.exists(report_id):
+        raise HTTPException(status_code=404, detail="反馈不存在。")
+    if not store.delete_report(report_id):
+        raise HTTPException(
+            status_code=500, detail="删除失败（文件可能被占用），请稍后重试。"
+        )
+    logger.info("feedback deleted report_id=%s by=%s", report_id, admin.get("username"))
+    return {"ok": True, "reportId": report_id}

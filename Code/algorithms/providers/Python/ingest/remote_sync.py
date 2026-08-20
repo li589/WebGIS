@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import posixpath
 import re
 import stat
@@ -43,10 +44,15 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
 from collections.abc import Callable, Iterator
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
+
+# 网络超时（硬编码清理 E1：env 可覆盖，默认原值）
+_HTTP_TIMEOUT = float(os.getenv("CGDA_HTTP_TIMEOUT", "30"))
+_DOWNLOAD_TIMEOUT_SFTP = float(os.getenv("CGDA_DOWNLOAD_TIMEOUT", "300"))
 
 logger = logging.getLogger(__name__)
 
@@ -108,15 +114,18 @@ class ServerConfig:
 
     @staticmethod
     def for_hpc_tunnel(
-        host: str = "127.0.0.1",
-        port: int = 2222,
-        username: str = "likr6008",
-        key_filename: str = "",
+        host: str, port: int, username: str, key_filename: str = ""
     ) -> ServerConfig:
         """Cloudflare 隧道方式连接 HPC。
 
-        默认值为本机实验室兜底（可被参数覆盖）；生产走 profile 注入。
+        生产连接参数走 profile 注入（download_nodes.py 显式传参）；
+        历史实验室兜底默认值（账号/主机）已按硬编码清理决策移除，
+        缺参即抛错。
         """
+        if not host or not username:
+            raise ValueError(
+                "for_hpc_tunnel 需要 host/username 显式传入（实验室兜底默认值已移除）"
+            )
         key = key_filename or str(Path.home() / ".ssh" / "seahpc_key")
         return ServerConfig(
             server_type="hpc",
@@ -128,12 +137,13 @@ class ServerConfig:
 
     @staticmethod
     def for_hpc_direct(
-        host: str = "172.16.98.184",
-        port: int = 22,
-        username: str = "likr6008",
-        key_filename: str = "",
+        host: str, port: int, username: str, key_filename: str = ""
     ) -> ServerConfig:
-        """校园网内直连 HPC（默认值为实验室兜底，可被参数覆盖）。"""
+        """校园网内直连 HPC（host/username 必填；生产走 profile 注入）。"""
+        if not host or not username:
+            raise ValueError(
+                "for_hpc_direct 需要 host/username 显式传入（实验室兜底默认值已移除）"
+            )
         return ServerConfig(
             server_type="hpc",
             host=host,
@@ -143,11 +153,12 @@ class ServerConfig:
         )
 
     @staticmethod
-    def for_win11(
-        ssh_alias: str = "win11-lab",
-        username: str = "qiujianqiu",
-    ) -> ServerConfig:
-        """经 SSH 配置别名连接 Win11 跳板机（默认值为实验室兜底）。"""
+    def for_win11(ssh_alias: str, username: str) -> ServerConfig:
+        """经 SSH 配置别名连接 Win11 跳板机（别名/账号必填；生产走 profile 注入）。"""
+        if not ssh_alias or not username:
+            raise ValueError(
+                "for_win11 需要 ssh_alias/username 显式传入（实验室兜底默认值已移除）"
+            )
         return ServerConfig(
             server_type="win11",
             host=ssh_alias,
@@ -447,7 +458,7 @@ def filebrowser_login(
         },
         method="POST",
     )
-    with urlopen(req, timeout=30) as resp:
+    with urlopen(req, timeout=_HTTP_TIMEOUT) as resp:
         token = resp.read().decode("utf-8").strip().strip('"')
     logger.info("FileBrowser 登录成功: %s", url)
     return token
@@ -476,7 +487,7 @@ def _filebrowser_list_dir(
         },
         method="GET",
     )
-    with urlopen(req, timeout=30) as resp:
+    with urlopen(req, timeout=_HTTP_TIMEOUT) as resp:
         data = json.loads(resp.read().decode("utf-8"))
 
     # FileBrowser 根目录返回 dict，子目录返回 list
@@ -552,7 +563,7 @@ def _filebrowser_download(
 
     mode = "ab" if resume_offset > 0 else "wb"
     try:
-        with urlopen(req, timeout=300) as resp:
+        with urlopen(req, timeout=_DOWNLOAD_TIMEOUT_SFTP) as resp:
             with open(local_path, mode) as lfile:
                 downloaded = resume_offset
                 while True:

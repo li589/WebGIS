@@ -254,6 +254,9 @@ class Settings:
     # （bootstrap_auth 等已做并发竞争兜底）。生产可设 BACKEND_FASTAPI_WORKERS=2+。
     fastapi_workers: int = max(1, int(os.getenv("BACKEND_FASTAPI_WORKERS", "1")))
     workflow_executor: str = os.getenv("BACKEND_WORKFLOW_EXECUTOR", "sync")
+    # 工作流定时器墙钟时区（D4：cron/日期模板求值时区；下次触发存 UTC）。
+    # 合法值见 zoneinfo.available_timezones()（如 Asia/Shanghai、UTC）。
+    timer_timezone: str = os.getenv("BACKEND_TIMER_TZ", "Asia/Shanghai")
     redis_url: str = os.getenv("BACKEND_REDIS_URL", "redis://127.0.0.1:6379/0")
     celery_broker_url: str = os.getenv("BACKEND_CELERY_BROKER_URL", redis_url)
     celery_result_backend: str = os.getenv("BACKEND_CELERY_RESULT_BACKEND", redis_url)

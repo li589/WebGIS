@@ -22,6 +22,9 @@ from shared.contracts.api_contracts import WorkflowCommandType, WorkflowSubmitRe
 
 logger = logging.getLogger(__name__)
 
+# 平台常量（模块级以便测试 monkeypatch；硬编码清理 A3）
+_IS_WINDOWS = sys.platform == "win32"
+
 _ALGORITHM_ENTRY_KEYS: tuple[str, ...] = (
     "module_name",
     "workflow_name",
@@ -72,8 +75,13 @@ def _expand_data_root_placeholders(value: Any) -> Any:
         root = (getattr(config.settings, "data_root", None) or "").strip()
         if not root:
             return value
-        return value.replace("{DATA_ROOT_WIN}", root.replace("/", "\\")).replace(
-            "{DATA_ROOT}", root.replace("\\", "/")
+        root_posix = root.replace("\\", "/")
+        # 跨平台（硬编码清理 A3）：非 Windows 下 {DATA_ROOT_WIN} 退化为
+        # posix root（占位符名保留兼容旧种子/画布定义）——原
+        # root.replace("/", "\\") 在 Linux data_root 下生成含反斜杠的非法路径。
+        root_win = root_posix.replace("/", "\\") if _IS_WINDOWS else root_posix
+        return value.replace("{DATA_ROOT_WIN}", root_win).replace(
+            "{DATA_ROOT}", root_posix
         )
     if isinstance(value, dict):
         return {k: _expand_data_root_placeholders(v) for k, v in value.items()}

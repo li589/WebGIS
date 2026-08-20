@@ -57,7 +57,6 @@ export type {
   PortalCredentialUpsertRequest,
   PortalCredentialsMapResponse,
   PortalSearchResponse,
-  PortalSearchResultItem,
   PortalTestResponse,
   PortalUpsertRequest,
   ReloadResultResponse,
@@ -71,6 +70,9 @@ export type {
   RemoteLayerUrisUpdateResponse,
   RemoteSearchRequest,
   RemoteSearchResponse,
+  RemoteDatasetGrant,
+  RemoteDatasetGrantUpsertRequest,
+  RemoteDatasetPolicy,
   RemoteSourceEntry,
   RemoteSourceKind,
   RemoteSourceRefBadge,
@@ -167,6 +169,9 @@ import type {
   RemoteLayerUrisUpdateResponse,
   RemoteSearchRequest,
   RemoteSearchResponse,
+  RemoteDatasetGrant,
+  RemoteDatasetGrantUpsertRequest,
+  RemoteDatasetPolicy,
   RemoteSourceEntry,
   RemoteSourceUpsertRequest,
   RemoteStorageDeletedResponse,
@@ -761,6 +766,48 @@ export function deleteRemoteSource(remoteSourceId: string): Promise<DeletedRespo
   return settingsFetch(`/config/remote-sources/${encodeURIComponent(remoteSourceId)}`, {
     method: 'DELETE',
   })
+}
+
+// ── Phase 4：远程数据源访问模式切换 ─────────────────────────────────────────
+
+export function toggleRemoteSourceAccessMode(
+  remoteSourceId: string,
+  accessMode: string,
+): Promise<RemoteSourceEntry> {
+  // 先获取现有条目，再用 upsert 更新 access_mode（保持其他字段不变）
+  return settingsFetch(
+    `/config/remote-sources/${encodeURIComponent(remoteSourceId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ access_mode: accessMode }),
+    },
+  )
+}
+
+// ── 远程数据集授权（「具体数据集选取模式」白名单） ──────────────────────────
+
+export function fetchRemoteDatasetGrants(): Promise<RemoteDatasetGrant[]> {
+  return settingsFetch('/config/remote-datasets/grants')
+}
+
+export function upsertRemoteDatasetGrant(
+  grantId: string,
+  payload: RemoteDatasetGrantUpsertRequest,
+): Promise<RemoteDatasetGrant> {
+  return settingsFetch(`/config/remote-datasets/grants/${encodeURIComponent(grantId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteRemoteDatasetGrant(grantId: string): Promise<DeletedResponse> {
+  return settingsFetch(`/config/remote-datasets/grants/${encodeURIComponent(grantId)}`, {
+    method: 'DELETE',
+  })
+}
+
+export function fetchRemoteDatasetPolicy(): Promise<RemoteDatasetPolicy[]> {
+  return settingsFetch('/config/remote-datasets/policy')
 }
 
 export function fetchAboutInfo(): Promise<AboutInfo> {

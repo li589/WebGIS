@@ -307,6 +307,50 @@ class TestAdminEndpoints:
         assert put.status_code == 404
 
 
+class TestAdminDelete:
+    def test_unauthenticated_rejected(self):
+        from app.main import create_app
+
+        with TestClient(create_app()) as anon:
+            resp = anon.delete("/feedback/api/reports/CGDA-BUG-20260820-TEST")
+            assert resp.status_code == 401
+
+    def test_delete_unknown_report(self, fb_client):
+        resp = fb_client.delete("/feedback/api/reports/CGDA-BUG-20260820-NOPE")
+        assert resp.status_code == 404
+        resp2 = fb_client.delete("/feedback/api/reports/not-a-valid-id")
+        assert resp2.status_code == 404
+
+    def test_delete_report_removes_dir_and_list(self, fb_client, tmp_path):
+        _upload(fb_client, _export())
+        rid = "CGDA-BUG-20260820-TEST"
+        assert (tmp_path / "feedback" / rid).is_dir()
+
+        resp = fb_client.delete(f"/feedback/api/reports/{rid}")
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {"ok": True, "reportId": rid}
+        assert not (tmp_path / "feedback" / rid).exists()
+
+        lst = fb_client.get("/feedback/api/reports")
+        assert lst.status_code == 200
+        assert lst.json()["reports"] == []
+
+    def test_delete_published_report(self, fb_client, tmp_path):
+        """删除带进展的反馈：response.json 一并移除，用户端 token 查询转 404。"""
+        up = _upload(fb_client, _export()).json()
+        rid = up["reportId"]
+        put = fb_client.put(
+            f"/feedback/api/reports/{rid}/response", json={"status": "fixed"}
+        )
+        assert put.status_code == 200
+        assert (tmp_path / "feedback" / rid / "response.json").is_file()
+
+        assert fb_client.delete(f"/feedback/api/reports/{rid}").status_code == 200
+        assert not (tmp_path / "feedback" / rid).exists()
+        q = fb_client.get(f"/feedback/api/reports/{rid}/response?token={up['token']}")
+        assert q.status_code == 404
+
+
 class TestStoreUnit:
     def test_report_id_validation(self):
         from app.services.feedback_store import validate_report_id

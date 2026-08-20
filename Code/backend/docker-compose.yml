@@ -18,7 +18,8 @@ services:
   # Redis — Celery broker / result backend / 缓存
   # ----------------------------------------------------------
   redis:
-    image: redis:7-alpine
+    # B4 供应链 pin：锁定 7.4.10（2026-07 拉取 digest sha256:e7723ff73d96…）
+    image: redis:7.4.10-alpine
     container_name: cgda-redis
     restart: unless-stopped
     ports:
@@ -40,7 +41,8 @@ services:
   #   注: 宿主机端口改为 9100/9101 以避开 Hyper-V 保留端口 8963-9062
   # ----------------------------------------------------------
   minio:
-    image: minio/minio:latest
+    # B4 供应链 pin：latest → 精确版本（digest sha256:14cea493d9a3…）
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: cgda-minio
     restart: unless-stopped
     ports:
@@ -67,7 +69,8 @@ services:
   # MinIO 初始化 — 创建桶（非阻塞，等待 MinIO 就绪后执行一次）
   # ----------------------------------------------------------
   minio-init:
-    image: minio/mc:latest
+    # B4 供应链 pin：latest → 精确版本（digest sha256:a7fe349ef4bd…）
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
     container_name: cgda-minio-init
     depends_on:
       minio:
@@ -93,7 +96,9 @@ services:
   #   勿 bind Windows/项目路径（errno 95）。同步见 Code/infra/data-sync。
   # ----------------------------------------------------------
   open-meteo:
-    image: ${OPEN_METEO_IMAGE:-public.ecr.aws/w5w8t1y7/openmeteo:latest}
+    # B4 供应链 pin：ECR 私有镜像仅 latest tag → digest pin（2026-07-11 拉取）；
+    # 升级时改 OPEN_METEO_IMAGE 或更新此 digest。
+    image: ${OPEN_METEO_IMAGE:-public.ecr.aws/w5w8t1y7/openmeteo@sha256:65268afd77a3a126762cd60595cec2bbb7cfff1b932b96ce4ab7ffe595536665}
     container_name: cgda-open-meteo
     restart: unless-stopped
     ports:

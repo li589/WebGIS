@@ -7,7 +7,9 @@ import time
 import urllib.request
 from pathlib import Path
 
-ROOT = r"I:/Geograph_DataSet/Soil_Moisture"
+from data_root import resolve_data_root
+
+ROOT = str(resolve_data_root() / "Soil_Moisture")
 OUT = Path(__file__).resolve().parents[1] / "Code" / "backend" / ".data" / "omega_sf_q4_smoke"
 
 
@@ -29,7 +31,7 @@ def main() -> None:
             "datasource_selection": {
                 "smap_folder": ROOT + "/SMAP_Origin_Data",
                 "anc_root": ROOT + "/SMAP_Auxiliary_Data",
-                "ndvi_clim_folder": r"I:/Geograph_DataSet/Ecological_Vegetation/NDVI/climatology",
+                "ndvi_clim_folder": str(resolve_data_root() / "Ecological_Vegetation" / "NDVI" / "climatology"),
             },
             "algorithm_params": {
                 "tb_source": "SMAP",

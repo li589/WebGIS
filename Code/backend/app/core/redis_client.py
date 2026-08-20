@@ -91,6 +91,12 @@ def get_redis_client() -> redis.Redis | None:
             settings.redis_url,
             socket_connect_timeout=_SOCKET_CONNECT_TIMEOUT,
             socket_timeout=_SOCKET_TIMEOUT,
+            # 硬编码清理 E1：连接池后台每 30s ping stale 连接并清理，
+            # 避免长连接断开后连接池内残留坏连接导致单次操作卡 socket_timeout。
+            health_check_interval=30,
+            # 单次操作遇 socket-level timeout 时自动重试一次（与熔断器互不冲突：
+            # 一次重试成功算成功，仍失败则计入 _consecutive_failures）。
+            retry_on_timeout=True,
             decode_responses=True,
         )
         client.ping()

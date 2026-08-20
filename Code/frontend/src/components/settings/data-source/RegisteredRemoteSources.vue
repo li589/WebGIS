@@ -33,6 +33,21 @@ async function remove(id: string) {
     busy.value = false
   }
 }
+
+/** Phase 4：切换访问模式（legacy ↔ site_compatible） */
+async function toggleAccessMode(id: string, current: string) {
+  const newMode: 'legacy' | 'site_compatible' =
+    current === 'site_compatible' ? 'legacy' : 'site_compatible'
+  busy.value = true
+  errMsg.value = ''
+  try {
+    await settingsStore.toggleRemoteSourceAccessMode(id, newMode)
+  } catch (e) {
+    errMsg.value = (e as Error).message
+  } finally {
+    busy.value = false
+  }
+}
 </script>
 
 <template>
@@ -54,6 +69,7 @@ async function remove(id: string) {
         <span>类型</span>
         <span>引用源</span>
         <span>远端路径</span>
+        <span>访问模式</span>
         <span>缓存策略</span>
         <span>操作</span>
       </div>
@@ -77,6 +93,19 @@ async function remove(id: string) {
           </template>
         </span>
         <span class="path" :title="r.remote_path">{{ r.remote_path || '（整源）' }}</span>
+        <span>
+          <button
+            type="button"
+            class="btn access-mode-toggle"
+            :disabled="busy"
+            :title="`切换到 ${r.access_mode === 'site_compatible' ? 'legacy' : 'site_compatible'} 模式`"
+            @click="toggleAccessMode(r.remote_source_id, r.access_mode)"
+          >
+            <span class="mode-badge" :class="r.access_mode === 'site_compatible' ? 'compatible' : 'legacy'">
+              {{ r.access_mode === 'site_compatible' ? '兼容' : '标准' }}
+            </span>
+          </button>
+        </span>
         <span>{{ r.cache_policy }}</span>
         <span class="ops">
           <button
@@ -119,7 +148,7 @@ async function remove(id: string) {
 }
 .row {
   display: grid;
-  grid-template-columns: 9rem 3.6rem 1fr 10rem 4.2rem 3.6rem;
+  grid-template-columns: 9rem 3.6rem 1fr 10rem 5rem 4.2rem 3.6rem;
   gap: 0.4rem;
   align-items: center;
   padding: 0.3rem 0.5rem;
@@ -179,5 +208,37 @@ async function remove(id: string) {
   border-color: var(--danger-border);
   background: var(--danger-surface);
   color: var(--danger);
+}
+.access-mode-toggle {
+  padding: 0.15rem 0.35rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
+  cursor: pointer;
+  border-radius: 0.25rem;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
+}
+.access-mode-toggle:hover:not(:disabled) {
+  background: var(--surface-default);
+  border-color: var(--accent-strong);
+}
+.access-mode-toggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.mode-badge {
+  display: inline-block;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.mode-badge.compatible {
+  background: var(--success-surface);
+  color: var(--success);
+}
+.mode-badge.legacy {
+  background: var(--warning-surface, #fff3cd);
+  color: var(--warning, #856404);
 }
 </style>

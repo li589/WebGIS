@@ -19,10 +19,11 @@ from algorithms.omega import (
     execute_omega_retrieval,
 )
 from ingest.mat_bundle import load_mat_file
+from data_root import resolve_data_root
 
 
 def main() -> None:
-    root = Path(r"I:\Geograph_DataSet")
+    root = resolve_data_root()
     ts_path = (
         root
         / "_runtime"

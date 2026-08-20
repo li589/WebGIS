@@ -43,7 +43,11 @@ def test_expanded_seed_is_valid_json(
     expanded = svc._expand_seed_placeholders(_SEED_TEMPLATE)
     parsed = json.loads(expanded)  # 关键断言：不得抛 JSONDecodeError
     props = parsed["nodes"][0]["properties"]
-    assert props["local_dir"].endswith("\\Meteorological\\GLDAS")
+    if svc._IS_WINDOWS:
+        assert props["local_dir"].endswith("\\Meteorological\\GLDAS")
+    else:
+        # 硬编码清理 A3：非 Windows 下 {DATA_ROOT_WIN} 退化为 posix 分隔符
+        assert props["local_dir"].endswith("/Meteorological/GLDAS")
     assert props["path"].endswith("/SMAP")
 
 
@@ -51,11 +55,35 @@ def test_windows_placeholder_yields_backslash_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_data_root(monkeypatch, "I:/Geograph_DataSet")
+    if not svc._IS_WINDOWS:
+        pytest.skip("Windows 反斜杠展开仅在 win32 生效")
     parsed = json.loads(svc._expand_seed_placeholders(_SEED_TEMPLATE))
     assert (
         parsed["nodes"][0]["properties"]["local_dir"]
         == "I:\\Geograph_DataSet\\Meteorological\\GLDAS"
     )
+
+
+def test_posix_platform_win_placeholder_uses_posix_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """硬编码清理 A3：Linux data_root + {DATA_ROOT_WIN} → 占位符退化为 posix root。
+
+    原 ``root.replace("/", "\\\\")`` 在 Linux 下生成 ``\\srv\\geodata\\...``
+    （POSIX 下反斜杠是文件名字符）→ 目录必不匹配。
+
+    退化语义：占位符展开不再注入反斜杠（root 部分 posix 化）；模板中
+    **字面**反斜杠不在占位符职责内（仓库种子已统一为 ``{DATA_ROOT}/``
+    posix 模板，旧式 ``{DATA_ROOT_WIN}\\\\`` 模板已随 A3 清除）。
+    """
+    monkeypatch.setattr(svc, "_IS_WINDOWS", False)
+    _patch_data_root(monkeypatch, "/srv/geodata")
+    parsed = json.loads(svc._expand_seed_placeholders(_SEED_TEMPLATE))
+    local_dir = parsed["nodes"][0]["properties"]["local_dir"]
+    # 占位符 root 部分必须 posix（无反斜杠注入；模板字面 "\\" 紧随其后）
+    assert local_dir.startswith("/srv/geodata")
+    # 模板字面 ``\\\\``（JSON 转义反斜杠）保留原样，不由占位符退化负责
+    assert "\\srv" not in local_dir and not local_dir.startswith("\\")
 
 
 def test_posix_placeholder_normalizes_separators(

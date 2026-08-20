@@ -13,6 +13,8 @@
 from __future__ import annotations
 
 import logging
+
+from ingest.endpoints import CMR_GRANULES_UMM_JSON
 import os
 import time
 from pathlib import Path
@@ -165,7 +167,7 @@ def _search_via_cmr(
 ) -> list[Granule]:
     import requests  # type: ignore
 
-    cmr_url = "https://cmr.earthdata.nasa.gov/search/granules.umm_json"
+    cmr_url = CMR_GRANULES_UMM_JSON
     temporal = f"{start_date}T00:00:00Z,{end_date}T23:59:59Z"
     granules: list[Granule] = []
     page_num = 1

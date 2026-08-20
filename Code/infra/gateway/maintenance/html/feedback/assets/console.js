@@ -1014,6 +1014,38 @@
       body.appendChild(replies);
     }
     body.appendChild(renderServerComposer(id, response));
+
+    // 危险操作：删除服务端反馈（两步确认，不可恢复）
+    var delBtn = el('button', {
+      class: 'btn btn-danger btn-sm', type: 'button', html: ICONS.trash + '<span>删除该条服务端反馈</span>',
+      onclick: function () {
+        var label = delBtn.querySelector('span');
+        if (!delBtn.classList.contains('armed')) {
+          delBtn.classList.add('armed');
+          if (label) label.textContent = ' 确认删除？（不可恢复）';
+          setTimeout(function () {
+            delBtn.classList.remove('armed');
+            if (label) label.textContent = ' 删除该条服务端反馈';
+          }, 4000);
+          return;
+        }
+        delBtn.disabled = true;
+        apiFetch('/reports/' + encodeURIComponent(id), { method: 'DELETE' }, 12000)
+          .then(function (r) {
+            if (!r.ok) throw new Error('http-' + r.status);
+            delete serverOpenCards[id];
+            toast('已删除服务端反馈 ' + id, 'ok');
+            return loadServerList();
+          })
+          .catch(function () {
+            delBtn.disabled = false;
+            delBtn.classList.remove('armed');
+            if (label) label.textContent = ' 删除该条服务端反馈';
+            toast('删除失败（认证过期或后端不可用）', 'err');
+          });
+      }
+    });
+    body.appendChild(section('危险操作', delBtn));
     return body;
   }
 

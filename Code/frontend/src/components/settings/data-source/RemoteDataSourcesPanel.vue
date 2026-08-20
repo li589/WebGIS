@@ -146,6 +146,8 @@ async function confirmAdd() {
       remote_path: addDialog.remotePath.trim(),
       display_name: addDialog.name,
       cache_policy: 'standard',
+      access_mode: 'legacy',
+      archived: false,
     })
     addDialog.visible = false
   } catch (e) {

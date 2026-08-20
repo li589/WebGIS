@@ -18,8 +18,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from data_root import resolve_data_root
 
-ROOT = Path(r"I:\Geograph_DataSet")
+ROOT = resolve_data_root()
 
 # (旧目录名, 新目录名, 是否需要先删除空的新目录)
 RENAME_PLAN = [

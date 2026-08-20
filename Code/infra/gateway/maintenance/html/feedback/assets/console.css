@@ -60,7 +60,8 @@
 }
 .console-card-head:hover { background: rgba(126, 184, 232, 0.05); }
 .console-card-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.console-card.open .console-card-head { border-bottom: 1px solid var(--line); }
+.console-card.open .console-card-head,
+.server-card.open .console-card-head { border-bottom: 1px solid var(--line); }
 .card-id-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .published-chip {
   display: inline-flex;
@@ -89,7 +90,8 @@
 
 /* 详情 */
 .console-card-body { display: none; padding: 1rem 1.1rem 1.2rem; }
-.console-card.open .console-card-body { display: block; animation: rise 0.25s var(--ease) both; }
+.console-card.open .console-card-body,
+.server-card.open .console-card-body { display: block; animation: rise 0.25s var(--ease) both; }
 .detail-section { margin-bottom: 1rem; }
 .detail-section h4 {
   margin: 0 0 0.45rem;
@@ -229,8 +231,34 @@
 }
 
 /* 响应式 */
+@media (max-width: 900px) {
+  .composer .form-row { grid-template-columns: 1fr 1fr; }
+}
 @media (max-width: 760px) {
-  .composer .form-row { grid-template-columns: 1fr; }
-  .console-toolbar .search { max-width: none; }
+  .composer .form-row { grid-template-columns: 1fr; } /* 覆盖 900px 档 */
+  .console-toolbar .search { flex: 1 1 100%; max-width: none; }
   .toolbar-btns { margin-left: 0; }
+}
+@media (max-width: 640px) {
+  .console-layout { padding: 1.1rem 1rem 2rem; }
+  .console-toolbar { gap: 0.5rem; }
+  .console-toolbar .filter { flex: 1 1 100%; }
+  .toolbar-btns { width: 100%; }
+  .env-grid { grid-template-columns: 1fr; }
+  .auth-actions { flex-direction: column; align-items: stretch; }
+  .token-input { width: 100%; max-width: none; }
+  .auth-actions .btn { width: 100%; justify-content: center; }
+  .composer-actions .btn { flex: 1; justify-content: center; }
+  .pending-list li { flex-wrap: wrap; }
+  .attach-row { align-items: flex-start; }
+}
+@media (max-width: 480px) {
+  .console-layout { padding: 0.9rem 0.75rem 1.6rem; }
+  .console-intro h2 { font-size: 1.05rem; }
+  .console-card-head { padding: 0.85rem 0.9rem; }
+  .console-card-body { padding: 0.85rem 0.9rem 1rem; }
+  .composer { padding: 0.8rem 0.8rem 0.9rem; }
+  .card-title-line { font-size: 0.95rem; }
+  .env-grid { gap: 0.2rem 0.8rem; font-size: 0.76rem; }
+  .steps { font-size: 0.8rem; }
 }

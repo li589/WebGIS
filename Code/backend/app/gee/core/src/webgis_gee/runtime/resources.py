@@ -264,7 +264,15 @@ class RedisResourceQuotaCoordinator(ResourceQuotaCoordinator):
             raise ImportError(
                 "redis package is required for RedisResourceQuotaCoordinator"
             ) from exc
-        return redis.Redis.from_url(redis_url)
+        # 长期持有的协调器连接：加短超时 + stale 连接自愈（对齐 app.core.redis_client
+        # 的 E1 加固模式），避免底层 socket 断开后连接池残留坏连接导致操作长时间卡顿。
+        return redis.Redis.from_url(
+            redis_url,
+            socket_connect_timeout=2.0,
+            socket_timeout=2.0,
+            health_check_interval=30,
+            retry_on_timeout=True,
+        )
 
 
 class ResourceManagedStorageBackend(StorageBackend):

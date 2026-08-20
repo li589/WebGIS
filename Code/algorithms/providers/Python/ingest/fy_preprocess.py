@@ -47,17 +47,36 @@ import contextlib
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# GDAL 可执行文件定位
+# GDAL 可执行文件定位（跨平台：Windows OSGeo4W/QGIS/conda 布局 + Linux
+# conda/PATH；env CGDA_GDAL_BIN 两平台均优先生效）
 # ---------------------------------------------------------------------------
 
-_FORCE_GDAL_BIN = r"C:\OSGeo4W\bin"
+_FORCE_GDAL_BIN = r"C:\OSGeo4W\bin"  # 仅 Windows 探测（历史 OSGeo4W 布局）
+_IS_WINDOWS = os.name == "nt"
+_GDAL_SUFFIX = ".exe" if _IS_WINDOWS else ""
+
+
+def _qgis_candidates() -> list[str]:
+    """QGIS 官方安装布局候选（仅 Windows：``C:\\Program Files\\QGIS*\\bin``）。"""
+    if not _IS_WINDOWS:
+        return []
+    import glob as _glob
+
+    roots = _glob.glob(r"C:\Program Files\QGIS*\bin") + _glob.glob(
+        r"C:\Program Files (x86)\QGIS*\bin"
+    )
+    return sorted(roots, reverse=True)
 
 
 def _resolve_gdal_bins() -> tuple[str, str, str, str, str]:
     """定位 GDAL 可执行文件（gdal_translate / gdalbuildvrt / gdalwarp / gdalinfo）。
 
-    解析顺序：环境变量 ``CGDA_GDAL_BIN`` → 历史 OSGeo4W 默认 → QGIS 官方
-    安装目录（``C:\\Program Files\\QGIS*\\bin``，取最高版本）→ conda → PATH。
+    解析顺序（按平台）：
+    - 环境变量 ``CGDA_GDAL_BIN``（两平台均优先，指向含 GDAL CLI 的 bin 目录）
+    - Windows：历史 OSGeo4W 默认 → QGIS 官方安装目录
+      （``C:\\Program Files\\QGIS*\\bin``，取最高版本）→ conda（Library/bin）
+    - Linux/macOS：conda（``$CONDA_PREFIX/bin`` 与解释器同级 bin）
+    - PATH（``shutil.which``，两平台）
     """
 
     def _ok(p: str | None) -> bool:
@@ -66,44 +85,39 @@ def _resolve_gdal_bins() -> tuple[str, str, str, str, str]:
     def _try_prefix(prefix: str) -> tuple[str, str, str, str, str] | None:
         if not prefix or not os.path.isdir(prefix):
             return None
-        t = os.path.join(prefix, "gdal_translate.exe")
-        b = os.path.join(prefix, "gdalbuildvrt.exe")
-        w = os.path.join(prefix, "gdalwarp.exe")
-        i = os.path.join(prefix, "gdalinfo.exe")
+        t = os.path.join(prefix, "gdal_translate" + _GDAL_SUFFIX)
+        b = os.path.join(prefix, "gdalbuildvrt" + _GDAL_SUFFIX)
+        w = os.path.join(prefix, "gdalwarp" + _GDAL_SUFFIX)
+        i = os.path.join(prefix, "gdalinfo" + _GDAL_SUFFIX)
         if all(map(_ok, [t, b, w, i])):
             return t, b, w, i, prefix
         return None
-
-    def _qgis_candidates() -> list[str]:
-        # QGIS 官方安装布局：C:\Program Files\QGIS <ver>\bin（自带全套 GDAL CLI）。
-        import glob as _glob
-
-        roots = _glob.glob(r"C:\Program Files\QGIS*\bin") + _glob.glob(
-            r"C:\Program Files (x86)\QGIS*\bin"
-        )
-        return sorted(roots, reverse=True)
 
     fb = os.environ.get("CGDA_GDAL_BIN", "").strip().rstrip("/\\")
     found = _try_prefix(fb)
     if found:
         return found
 
-    for prefix in (_FORCE_GDAL_BIN, *_qgis_candidates()):
-        found = _try_prefix(prefix)
+    if _IS_WINDOWS:
+        for prefix in (_FORCE_GDAL_BIN, *_qgis_candidates()):
+            found = _try_prefix(prefix)
+            if found:
+                return found
+
+    # conda：Windows 为 <prefix>/Library/bin；Linux 为 <prefix>/bin。
+    cp = os.environ.get("CONDA_PREFIX", "")
+    conda_candidates = [
+        os.path.join(cp, "Library", "bin"),
+        os.path.join(cp, "bin"),
+    ]
+    exe = os.path.abspath(sys.executable)
+    exe_base = os.path.dirname(os.path.dirname(exe))
+    conda_candidates.append(os.path.join(exe_base, "Library", "bin"))
+    conda_candidates.append(os.path.join(exe_base, "bin"))
+    for cand in conda_candidates:
+        found = _try_prefix(cand)
         if found:
             return found
-
-    cp = os.environ.get("CONDA_PREFIX", "")
-    found = _try_prefix(os.path.join(cp, "Library", "bin"))
-    if found:
-        return found
-
-    exe = os.path.abspath(sys.executable)
-    found = _try_prefix(
-        os.path.join(os.path.dirname(os.path.dirname(exe)), "Library", "bin")
-    )
-    if found:
-        return found
 
     t = shutil.which("gdal_translate") or shutil.which("gdal_translate.exe")
     b = shutil.which("gdalbuildvrt") or shutil.which("gdalbuildvrt.exe")
@@ -113,7 +127,12 @@ def _resolve_gdal_bins() -> tuple[str, str, str, str, str]:
         return t, b, w, i, os.path.dirname(t)
 
     raise FileNotFoundError(
-        "GDAL executables not found. Tried OSGeo4W, conda, and PATH."
+        "GDAL executables not found. "
+        + (
+            "Tried CGDA_GDAL_BIN, OSGeo4W, QGIS, conda and PATH."
+            if _IS_WINDOWS
+            else "Tried CGDA_GDAL_BIN, conda($CONDA_PREFIX/bin) and PATH."
+        )
     )
 
 

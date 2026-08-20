@@ -128,6 +128,10 @@ from shared.contracts.config_contracts import (
     RemoteFailoverResponse,
     RemoteSourceEntry,
     RemoteSourceUpsertRequest,
+    RemoteDatasetGrant,
+    RemoteDatasetGrantUpsertRequest,
+    RemoteDatasetPolicy,
+    MigrationReport,
     ServiceRestartRequest,
     ServiceRestartResponse,
     TestResultResponse,
@@ -1174,6 +1178,90 @@ async def delete_remote_source(remote_source_id: str):
             status_code=404, detail=f"Remote source '{remote_source_id}' not found"
         )
     return DeletedResponse(deleted=True)
+
+
+# ── 远程数据集授权（「具体数据集选取模式」白名单，plan 阶段 1） ─────────────
+
+
+@router.get(
+    "/remote-datasets/grants",
+    response_model=list[RemoteDatasetGrant],
+    dependencies=[Depends(require_config_read_access)],
+)
+async def list_remote_dataset_grants():
+    """数据集授权条目 + 门户能力徽标。"""
+    return config_service.list_remote_dataset_grants()
+
+
+@router.put(
+    "/remote-datasets/grants/{grant_id}",
+    response_model=RemoteDatasetGrant,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def upsert_remote_dataset_grant(
+    grant_id: str, payload: RemoteDatasetGrantUpsertRequest
+):
+    """新增/更新数据集授权（UNIQUE(portal_id, dataset_key) 幂等合并）。"""
+    try:
+        return config_service.upsert_remote_dataset_grant(
+            grant_id, payload.model_dump()
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/remote-datasets/grants/{grant_id}",
+    response_model=DeletedResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def delete_remote_dataset_grant(grant_id: str):
+    """删除数据集授权（删除后该数据集在管控门户内不可访问）。"""
+    if not config_service.delete_remote_dataset_grant(grant_id):
+        raise HTTPException(
+            status_code=404, detail=f"Remote dataset grant '{grant_id}' not found"
+        )
+    return DeletedResponse(deleted=True)
+
+
+@router.get(
+    "/remote-datasets/policy",
+    response_model=list[RemoteDatasetPolicy],
+    dependencies=[Depends(require_config_read_access)],
+)
+async def get_remote_dataset_policy():
+    """各门户远程数据集访问策略投影（编辑器过滤用）。
+
+    未列出的门户 = 未管控（放行）；列出的门户 managed=true，
+    compatible=true 表示站点兼容模式全放行，datasets 为白名单。
+    """
+    return config_service.get_remote_dataset_policy()
+
+
+# ── 存量迁移 ──────────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/remote-sources/migrate-legacy",
+    response_model=MigrationReport,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def migrate_legacy_remote_sources_endpoint(
+    dry_run: bool = False,
+    safe: bool = False,
+):
+    """手动重跑存量迁移（dry_run/safe 查询参数）。
+
+    幂等：已完成的迁移再次调用返回 already_done=True。
+    """
+    from app.services.remote_source_migration import (
+        migrate_legacy_remote_sources,
+    )
+
+    report = await anyio.to_thread.run_sync(
+        lambda: migrate_legacy_remote_sources(dry_run=dry_run, safe=safe),
+    )
+    return report
 
 
 # ── 关于 ──────────────────────────────────────────────────────────────────────

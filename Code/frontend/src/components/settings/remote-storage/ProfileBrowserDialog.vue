@@ -200,6 +200,8 @@ async function addCurrentDirAsSource() {
       remote_path: currentPath.value,
       display_name: props.profile.display_name || props.profile.profile_id,
       cache_policy: 'standard',
+      access_mode: 'legacy',
+      archived: false,
     })
     addMsg.value = `已添加远程数据源「${alias}」`
     addAlias.value = ''
