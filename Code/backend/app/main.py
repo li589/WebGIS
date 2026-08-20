@@ -16,6 +16,7 @@ from app.api.routers import (
     analysis_router,
     artifact_router,
     data_io_router,
+    feedback_router,
     health_router,
     import_router,
     layer_router,
@@ -232,11 +233,13 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def write_rate_limit_middleware(request: Request, call_next):
         from app.api.rate_limit import (
+            check_feedback_upload_rate_limit,
             check_login_rate_limit,
             check_weather_tile_rate_limit,
             check_write_rate_limit,
             client_ip,
             rate_limited_response,
+            should_rate_limit_feedback_upload,
             should_rate_limit_login,
             should_rate_limit_weather_tile,
             should_rate_limit_write,
@@ -274,6 +277,15 @@ def create_app() -> FastAPI:
                     return rate_limited_response(
                         result.retry_after_seconds,
                         message="天气瓦片请求过于频繁，请稍后再试。",
+                        request_id=request_id,
+                    )
+            # 问题反馈匿名上传（公开写面，无鉴权）：更严阈值，防灌盘
+            if should_rate_limit_feedback_upload(path, method):
+                result = check_feedback_upload_rate_limit(client_ip(request))
+                if not result.allowed:
+                    return rate_limited_response(
+                        result.retry_after_seconds,
+                        message="反馈上传过于频繁，请稍后再试。",
                         request_id=request_id,
                     )
         return await call_next(request)
@@ -368,6 +380,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(auth_router)
+    app.include_router(feedback_router)
     app.include_router(layer_router)
     app.include_router(workflow_router)
     app.include_router(analysis_router)

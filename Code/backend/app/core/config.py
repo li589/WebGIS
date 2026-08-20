@@ -43,6 +43,8 @@ DEFAULT_PYTHON_PROVIDER_ROOT = (
     BACKEND_ROOT.parent / "algorithms" / "providers" / "Python"
 )
 DEFAULT_PYTHON_PROVIDER_WORKSPACE = _RUNTIME_ROOT / "python_provider"
+# 问题反馈服务端存储目录（用户反馈页/工程师处理台经 /feedback/api/* 读写）
+DEFAULT_FEEDBACK_DIR = _RUNTIME_ROOT / "feedback"
 
 # ---- 命名常量（提取自原内联魔数，便于维护与审阅）----
 # 结果内联返回上限：小于此字节数的产物直接内联在响应中
@@ -449,6 +451,8 @@ class Settings:
     data_root: str = os.getenv("BACKEND_DATA_ROOT", "")
     # 产物输出根目录（算法产物的写入路径，必须通过环境变量配置）
     output_root: str = os.getenv("BACKEND_OUTPUT_ROOT", "")
+    # 问题反馈服务端存储目录（/feedback/api/* 的落盘根；网关反馈页双轨的在线轨）
+    feedback_dir: str = os.getenv("BACKEND_FEEDBACK_DIR", str(DEFAULT_FEEDBACK_DIR))
     # 前端设置页「重启后端」（FastAPI+Worker+Beat）；默认仅 development 开启
     ui_restart_enabled: bool = _default_ui_restart_enabled()
     # 交互式 API 文档（/docs /redoc）按环境默认禁用（production/test 默认

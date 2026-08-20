@@ -62,6 +62,8 @@ export default defineConfig(({ mode }) => {
         '/auth': { target: apiTarget, changeOrigin: true },
         '/workspace': { target: apiTarget, changeOrigin: true },
         '/analysis': { target: apiTarget, changeOrigin: true },
+        // 问题反馈 API（与网关 /feedback/api/* 同路径；静态反馈页仅在 gateway 剖面）
+        '/feedback/api': { target: apiTarget, changeOrigin: true },
         '/health': { target: apiTarget, changeOrigin: true },
       },
       allowedHosts: ['geoflow.cgdas.dpdns.org'],

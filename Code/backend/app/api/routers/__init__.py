@@ -20,6 +20,7 @@ from app.api.routers.weather_router import router as weather_router
 from app.api.routers.provider_router import router as provider_router
 from app.api.routers.artifact_router import router as artifact_router
 from app.api.routers.import_router import router as import_router
+from app.api.routers.feedback_router import router as feedback_router
 from app.data_io.api.router import router as data_io_router
 from app.api.routers.analysis_router import router as analysis_router
 from app.api.routers.zonal_stats_router import router as zonal_stats_router
@@ -35,6 +36,7 @@ __all__ = [
     "provider_router",
     "artifact_router",
     "import_router",
+    "feedback_router",
     "data_io_router",
     "analysis_router",
     "zonal_stats_router",

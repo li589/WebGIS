@@ -1,0 +1,56 @@
+{
+  "$comment": "CGDA 问题反馈中心 · 公告与处理进展数据（运维维护）。页面每 60 秒拉取本文件并合并展示；responses 按 reportId 匹配用户本机的反馈记录。status 取值：received|in_progress|needs_info|fixed|closed|rejected。",
+  "version": 1,
+  "updatedAt": "2026-08-20T06:00:00+08:00",
+  "maintainer": {
+    "name": "CGDA 运维组",
+    "email": "cgda-ops@example.org",
+    "phone": "",
+    "im": "企业微信 · CGDA 支持群",
+    "hours": "工作日 09:00 - 18:00"
+  },
+  "maintenance": {
+    "active": false,
+    "title": "系统维护中",
+    "message": "正在执行版本升级，前台页面临时关闭；后台任务（工作流、数据同步）继续运行。",
+    "window": ""
+  },
+  "announcements": [
+    {
+      "id": "ann-20260820-01",
+      "type": "info",
+      "title": "问题反馈中心上线",
+      "body": "反馈页不依赖后端：提交内容保存在本机浏览器，请通过「复制 Markdown」或「导出 JSON」发给开发者；处理进展与追问会自动同步到「我的反馈」。",
+      "author": "CGDA 运维组",
+      "publishedAt": "2026-08-20 06:00"
+    },
+    {
+      "id": "ann-20260819-02",
+      "type": "fix",
+      "title": "天气瓦片 8 级缩放加载异常已修复",
+      "body": "8 月 19 日 22:00 已修复部分浏览器下 8 级缩放天气瓦片不渲染的问题并重启网关。如仍可复现，请携带截图提交反馈。",
+      "author": "后端组",
+      "publishedAt": "2026-08-19 22:10"
+    }
+  ],
+  "responses": [
+    {
+      "reportId": "CGDA-BUG-20260819-A1B2",
+      "status": "in_progress",
+      "updatedAt": "2026-08-19 23:30",
+      "assignee": { "name": "李工", "role": "后端工程师" },
+      "timeline": [
+        { "status": "received", "at": "2026-08-19 21:40", "note": "已受理，正在定位" },
+        { "status": "in_progress", "at": "2026-08-19 23:30", "note": "确认为瓦片缓存键冲突，预计 8 月 20 日修复" }
+      ],
+      "replies": [
+        {
+          "author": "李工",
+          "role": "后端工程师",
+          "body": "请问该问题是否只在叠加「气温」图层时出现？切换到「降水」图层时是否正常？",
+          "at": "2026-08-19 22:05"
+        }
+      ]
+    }
+  ]
+}

@@ -197,6 +197,14 @@ _tile_limiter = RateLimiter(
     name="tile",
 )
 
+# 问题反馈匿名上传（/feedback/api/reports，multipart）：公开写面且无鉴权，
+# 较写接口更严（默认 5 次/分钟/IP），防灌垃圾文件占满磁盘。
+_feedback_upload_limiter = RateLimiter(
+    int(os.getenv("BACKEND_FEEDBACK_UPLOAD_RATE_LIMIT_PER_MINUTE", "5")),
+    timedelta(minutes=1),
+    name="feedback-upload",
+)
+
 
 def client_ip(request) -> str:  # type: ignore[no-untyped-def]
     """解析限流用客户端 IP。
@@ -265,6 +273,22 @@ def check_weather_tile_rate_limit(ip: str) -> RateLimitResult:
     if not result.allowed:
         logger.warning(
             "天气瓦片限流触发 ip=%s retry_after=%ss",
+            ip,
+            result.retry_after_seconds,
+        )
+    return result
+
+
+def should_rate_limit_feedback_upload(path: str, method: str) -> bool:
+    """问题反馈匿名上传限流（仅 POST /feedback/api/reports 精确匹配）。"""
+    return method == "POST" and path == "/feedback/api/reports"
+
+
+def check_feedback_upload_rate_limit(ip: str) -> RateLimitResult:
+    result = _feedback_upload_limiter.check(ip)
+    if not result.allowed:
+        logger.warning(
+            "反馈上传限流触发 ip=%s retry_after=%ss",
             ip,
             result.retry_after_seconds,
         )
