@@ -51,13 +51,15 @@ describe('ui store 统一时间持久化', () => {
   it('统一模式选定时刻变化：持久化写入 localStorage', async () => {
     const store = setupStorage({ [UNIFIED_FLAG_KEY]: '1' })
     const ui = await makeUiStore()
-    ui.setHour(9)
+    // 与当前时刻错开（避免整点运行时 setHour 值不变 → watch 不触发）
+    const targetHour = (ui.currentHour + 7) % 24
+    ui.setHour(targetHour)
     await nextTick() // watch 异步 flush
     const saved = store.get(UNIFIED_TIME_KEY)
     expect(saved).toBeTruthy()
     expect(JSON.parse(saved!)).toEqual({
       dateKey: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-      hour: 9,
+      hour: targetHour,
     })
   })
 

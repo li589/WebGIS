@@ -513,7 +513,16 @@ def _data_join(*parts: str) -> Path:
 
 _PROJECT_OUTPUT = _data_join("ProjectOutput", "2023-01_Omega_Inversion")
 _DEM_DIR = _data_join("Geological", "DEM", "ETOPO_2022")
+# GPCP 月降水 NetCDF：优先历史声明路径，回退实际磁盘位置（2026-08-20
+# 图层核对发现布局漂移——数据实际在 Weather/Precipitation/Precipitation/
+# dataset，336 个月文件；旧路径缺失导致点查询与时间采样失效）。
 _GPCP_DIR = _data_join("Meteorological", "Precipitation", "GPCP", "dataset")
+if not _GPCP_DIR.exists():
+    _fallback = _data_join(
+        "Meteorological", "Weather", "Precipitation", "Precipitation", "dataset"
+    )
+    if _fallback.exists():
+        _GPCP_DIR = _fallback
 _STAGE2_ALIGNED = _PROJECT_OUTPUT / "stage2_aligned"
 _OMEGA_SOURCE = _data_join("Inversion_Results", "smap_avg", "doy_017.mat")
 _DEM_SOURCE_TIF = _DEM_DIR / "ETOPO_2022_v1_60s_N90W180_surface.tif"

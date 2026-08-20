@@ -64,6 +64,40 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
    * 保护期内跳过 flush，保留 boot 前快照；释放时补一次落盘捕获期间改动。
    */
   let hydrationGuard = false
+  /**
+   * 恢复失败（网络抖动/后端重启/鉴权过期）的矢量图层条目：并回快照保留，
+   * 下次刷新重试——否则 guard 释放后的首次 flush 会以 activeLayers 重建
+   * 快照，把本轮未恢复的条目永久抹除（数据丢失 bug 2026-08-20 修复）。
+   * 条目在成功恢复（backendLayerId 出现在 activeLayers）或用户明确移除
+   * （dismissed 登记）后自动出队。
+   */
+  let pendingRetryVectorLayers: PersistedVectorLayer[] = []
+
+  function reconcilePendingRetryVectors(snapshot: ReturnType<typeof buildWorkspaceSnapshot>) {
+    if (!pendingRetryVectorLayers.length) return
+    const activeBackendIds = new Set(
+      deps
+        .getActiveLayers()
+        .map((l) => l.importedVector?.backendLayerId)
+        .filter((id): id is string => Boolean(id)),
+    )
+    const snapBackendIds = new Set(
+      (snapshot.vectorLayers ?? []).map((v) => v.backendLayerId).filter(Boolean),
+    )
+    const retained: PersistedVectorLayer[] = []
+    for (const saved of pendingRetryVectorLayers) {
+      if (!saved.backendLayerId) continue
+      if (activeBackendIds.has(saved.backendLayerId) || isVectorDismissed(saved.backendLayerId)) {
+        continue // 已成功恢复或用户已删除 → 不再保留
+      }
+      if (!snapBackendIds.has(saved.backendLayerId)) {
+        snapshot.vectorLayers = [...(snapshot.vectorLayers ?? []), saved]
+        snapBackendIds.add(saved.backendLayerId)
+      }
+      retained.push(saved)
+    }
+    pendingRetryVectorLayers = retained
+  }
 
   function flushWorkspacePersistNow() {
     if (typeof window === 'undefined') return
@@ -72,7 +106,9 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
       window.clearTimeout(workspacePersistTimer)
       workspacePersistTimer = null
     }
-    saveWorkspaceSnapshot(buildWorkspaceSnapshot(deps.getActiveLayers(), deps.getRunLayerGroups()))
+    const snapshot = buildWorkspaceSnapshot(deps.getActiveLayers(), deps.getRunLayerGroups())
+    reconcilePendingRetryVectors(snapshot)
+    saveWorkspaceSnapshot(snapshot)
     scheduleWorkspaceSyncPush()
   }
 
@@ -342,7 +378,16 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
         existingBackendIds.add(saved.backendLayerId)
       } catch (err) {
         console.warn('[layers] restore vector layer failed', saved.backendLayerId, err)
+        // 保留快照条目待下次刷新重试（防瞬时故障导致图层永久丢失）
+        pendingRetryVectorLayers.push(saved)
       }
+    }
+
+    if (pendingRetryVectorLayers.length) {
+      console.warn(
+        '[layers] %d vector layer(s) failed to restore; kept in snapshot for retry',
+        pendingRetryVectorLayers.length,
+      )
     }
 
     if (activeLayers.length && deps.getSidebarView() === 'empty') {

@@ -226,11 +226,21 @@ export const useDrawStore = defineStore('draw', () => {
     if (draftLoaded) return false
     draftLoaded = true
     const draft = loadDraftFromStorage()
-    if (!draft || draft.features.length === 0) return false
+    if (!draft) return false
+    // 与 persistDraft 契约对称：空要素且非编辑会话的草稿视为已废弃，
+    // 清除残留（防 localStorage 永久堆积无效草稿）。
+    if (draft.features.length === 0 && !draft.editingLayerId) {
+      clearDraftStorage()
+      return false
+    }
     features.value = draft.features
     drawMode.value = draft.drawMode
     draftLayerName.value = draft.draftLayerName
-    editingLayerId.value = draft.editingLayerId
+    // editingLayerId 不跨会话恢复：刷新后图层 instanceId 全部重新生成
+    // （workspace-hydrate genInstanceId），旧 id 在新会话必然失效——
+    // 恢复它会被 MapCanvas 孤儿安全网 watcher 误杀（clearDraft 清空
+    // 未保存要素）。未保存的编辑要素降级为普通草稿保留。
+    editingLayerId.value = null
     return true
   }
 
