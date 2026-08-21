@@ -1112,8 +1112,10 @@ register_overlay(
         bounds_filename="landscape_metrics_overlay_bounds.json",
         category="static",
         palette="cividis",
+        # 数据分位（2026-08-21 实测 p50=0.41/p95=1.34/p99=1.61/max=2.22）：
+        # 上限用 p99=1.6 提升 0~1.3 主值域的色阶分辨率（旧 2.0 全域发暗）
         vmin=0.0,
-        vmax=2.0,
+        vmax=1.6,
         unit="SHDI",
         opacity=0.8,
         source_path=_LANDSCAPE_METRICS_MAT,

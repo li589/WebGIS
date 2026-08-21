@@ -16,3 +16,5 @@ typing_extensions==4.15.0
 psutil==7.2.2
 # 栅格输出 preview PNG（output._generate_preview_from_array 依赖）
 matplotlib==3.11.0
+# NSMC 门户验证码自动识别（ingest/nsmc_portal.py 可选依赖；缺失时回退人工预热）
+ddddocr==1.6.1
