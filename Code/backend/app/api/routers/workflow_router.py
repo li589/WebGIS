@@ -20,6 +20,7 @@ from app.services.workflow.service_container import (
     submission_service,
 )
 from app.services.workflow.submission_service import WorkflowValidationError
+from shared.remote_sources.access_control import RemoteAccessDeniedError
 from shared.contracts.api_contracts import (
     WorkflowAcceptedResponse,
     WorkflowEventsResponse,
@@ -130,6 +131,14 @@ def submit_workflow(
             role=_cred.role if _cred else None,
         )
         return accepted
+    except RemoteAccessDeniedError as exc:
+        # #56 提交期远程数据集访问预校验拒绝：403 + C403001（统一鉴权类错误码）。
+        # 必须在 ValueError 之前捕获（RemoteAccessDeniedError 继承 Exception）。
+        raise ApiError(
+            AUTH_ERROR,
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"远程数据集访问被拒绝：{exc.reason}",
+        ) from exc
     except WorkflowValidationError as exc:
         # 提交期参数预校验失败：返回 422 + 结构化字段级错误，
         # 供前端定位具体表单字段。必须在 ValueError 之前捕获

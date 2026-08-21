@@ -23,6 +23,7 @@ from app.core.config import settings
 from app.core.logging import ensure_logging_configured, log_context
 from app.services.workflow_request_resolver import (
     _normalize_algorithm_request,
+    _normalize_request,
     _python_provider_import_path,
     normalize_workflow_submit_request,
 )
@@ -165,6 +166,7 @@ class WorkflowSubmissionService:
         request_json = json.dumps(payload.model_dump(mode="json"), ensure_ascii=False)
         run_class = resolve_workflow_run_class(payload)
         with log_context(run_id=run_id):
+            self._validate_remote_dataset_access(payload)
             self._validate_requested_outputs(payload)
             self._validate_request_params(payload)
             logger.info(
@@ -661,6 +663,112 @@ class WorkflowSubmissionService:
             raise ValueError(
                 f"Requested outputs exceed limit: count={len(payload.requested_outputs)}, limit={limit}"
             )
+
+    def _validate_remote_dataset_access(self, payload: WorkflowSubmitRequest) -> None:
+        """提交期远程数据集访问预校验（#56）。
+
+        遍历 ``datasource_selection._data_access_requests[*].selector.uris``，
+        逐 URI 构建 AccessPolicyContext 并执行 check_remote_access，
+        把越权数据集请求在提交阶段即拒绝（而非下载执行时）。
+
+        三态语义：
+        - 明确拒绝（RemoteAccessDeniedError）→ fail-closed：附 dataset
+          上下文 re-raise，由 router 转为 403；
+        - 基础设施异常（registry 读失败等）→ fail-open + warning（与
+          下载链 ``_build_access_policy_context`` 降级语义一致）；
+        - 非 REMOTE_SCHEMES（http/file 直链或本地路径）→ 确定性跳过
+          （非降级，不触发 registry）。
+        """
+        from urllib.parse import urlparse
+
+        uris_by_dataset = self._collect_remote_dataset_uris(payload)
+        if not uris_by_dataset:
+            return
+
+        try:
+            from app.services.remote_dataset_grants import get_remote_dataset_grants
+            from app.services.remote_source_registry import get_remote_source_registry
+            from shared.remote_sources.access_control import (
+                build_policy_context_from_uri,
+                check_remote_access,
+            )
+            from shared.remote_sources.uri import REMOTE_SCHEMES
+
+            sources_reg = get_remote_source_registry()
+            grants_reg = get_remote_dataset_grants()
+        except Exception:  # noqa: BLE001 — 基础设施不可用 → fail-open
+            logger.warning(
+                "Remote dataset access validation skipped: registry unavailable",
+                exc_info=True,
+            )
+            return
+
+        for dataset, uris in uris_by_dataset.items():
+            for uri in uris:
+                if "://" not in uri:
+                    continue  # 本地路径 / dataset key：不涉远程访问
+                scheme = (urlparse(uri).scheme or "").lower()
+                if scheme not in REMOTE_SCHEMES:
+                    continue  # http/file 等直链：确定性跳过
+                try:
+                    ctx = build_policy_context_from_uri(
+                        uri,
+                        source_registry=sources_reg,
+                        grants_registry=grants_reg,
+                    )
+                    check_remote_access(uri, ctx)
+                except Exception as exc:  # noqa: BLE001
+                    from shared.remote_sources.access_control import (
+                        RemoteAccessDeniedError,
+                    )
+
+                    if isinstance(exc, RemoteAccessDeniedError):
+                        # 明确拒绝 → fail-closed，附 dataset 上下文
+                        raise RemoteAccessDeniedError(
+                            uri,
+                            f"dataset '{dataset}' not in authorized grants: {exc.reason}",
+                        ) from exc
+                    # 基础设施异常（registry 读失败/URI 解析异常等）→ fail-open
+                    logger.warning(
+                        "Remote dataset access check degraded for dataset=%s uri=%s",
+                        dataset,
+                        uri,
+                        exc_info=True,
+                    )
+                    continue
+
+    @staticmethod
+    def _collect_remote_dataset_uris(
+        payload: WorkflowSubmitRequest,
+    ) -> dict[str, list[str]]:
+        """从 normalize 后的 payload 提取 dataset → 远程 URI 列表映射。
+
+        数据源：``algorithm_request.datasource_selection._data_access_requests``
+        （normalize 阶段已合并 default 数据集请求，见
+        ``workflow_request_resolver`` 的 ``_build_default_data_access_requests``）。
+        """
+        algo_req = _normalize_algorithm_request(payload.algorithm_request)
+        datasource_selection = _normalize_request(
+            algo_req.get("datasource_selection")
+        )
+        data_access_requests = _normalize_request(
+            datasource_selection.get("_data_access_requests")
+        )
+        if not isinstance(data_access_requests, dict):
+            return {}
+        result: dict[str, list[str]] = {}
+        for dataset, request in data_access_requests.items():
+            if not isinstance(request, dict):
+                continue
+            selector = request.get("selector")
+            if not isinstance(selector, dict):
+                continue
+            uris = [
+                u for u in (selector.get("uris") or []) if isinstance(u, str) and u
+            ]
+            if uris:
+                result[str(dataset)] = uris
+        return result
 
     def _validate_request_params(self, payload: WorkflowSubmitRequest) -> None:
         """提交期参数预校验。仅校验可静态检查的参数，不阻塞未知的可选参数。

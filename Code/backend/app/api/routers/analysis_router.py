@@ -13,12 +13,14 @@ from app.api.deps import (
 from app.services.analysis_run_service import AnalysisRunError, submit_analysis_run
 from app.services.analysis_tool_catalog import get_tool, list_tools_for_layer
 from app.services.workflow.submission_service import WorkflowValidationError
+from app.api.error_codes import AUTH_ERROR, ApiError
 from shared.contracts.api_contracts import (
     AnalysisRunRequest,
     AnalysisToolDescriptor,
     AnalysisToolListResponse,
     WorkflowAcceptedResponse,
 )
+from shared.remote_sources.access_control import RemoteAccessDeniedError
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -77,6 +79,13 @@ def create_analysis_run(
             user_id=_cred.user_id if _cred else None,
             role=_cred.role if _cred else None,
         )
+    except RemoteAccessDeniedError as exc:
+        # #56 提交期远程数据集访问预校验拒绝：403 + C403001。
+        raise ApiError(
+            AUTH_ERROR,
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"远程数据集访问被拒绝：{exc.reason}",
+        ) from exc
     except AnalysisRunError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except WorkflowValidationError as exc:
