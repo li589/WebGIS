@@ -784,7 +784,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         (k): k is string => Boolean(k),
       )
       for (const key of keys) {
-        const extra = catalog[key]?.workflowExtra
+        const extra = catalog[key]?.workflow_extra
         if (extra && typeof extra === 'object') return extra
       }
       return undefined
@@ -801,11 +801,12 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
               .filter(([k, v]) => k && typeof v === 'string'),
           )
         : catalogLabels) || {}
+    const mergedLabelMap: Record<string, string> = mergedLabels as Record<string, string>
     const configuredTargets = expectedOutputTargets(restoreDef).length
       ? expectedOutputTargets(restoreDef)
       : tags.map((tag) => ({
           productTag: tag,
-          name: mergedLabels[tag] ?? productTagLabel(tag),
+          name: mergedLabelMap[tag] ?? productTagLabel(tag),
         }))
     const configuredGroupTitle = extraTitle
     const groupId =
@@ -1517,7 +1518,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           .find((l) => l.catalogId === targetId || resolveInversionCatalogId(l.catalogId) === targetId)
         const timeList = layer?.importedRaster?.timeList ?? []
         const timeLabel =
-          layer?.importedRaster?.defaultTime ??
+          layer?.importedRaster?.effectiveTimeLabel ??
           (timeList.length ? timeList[timeList.length - 1] : undefined)
         if (timeLabel && deps.alignTimelineToProduct) {
           deps.alignTimelineToProduct(String(timeLabel))

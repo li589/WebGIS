@@ -14,6 +14,7 @@
  * as deps. Reverse-direction cross-domain calls go through ``CrossDomainBindings``.
  */
 import { debugLog as probeDebugLog } from '../../utils/perf-probe'
+import { useUiStore } from '../ui'
 import { createRunLayersSlice } from './run-layers'
 import { createPointWeatherSlice } from './point-weather'
 import { createWorkflowPoller } from './workflow-poller'
@@ -278,6 +279,7 @@ export function createWorkflowRunDomain(
     restoreActiveWorkflows,
     registerExternalWorkflowRun,
     runWorkflowForCatalog,
+    autoAttachProductsForNewLayer,
     cancelWorkflowRunForJob,
     retryWorkflowRunForJob,
     cleanupAllRetryTimers,

@@ -5829,6 +5829,10 @@ export interface components {
             workflow_definition?: {
                 [key: string]: unknown;
             } | null;
+            /** Workflow Extra */
+            workflow_extra?: {
+                [key: string]: unknown;
+            } | null;
             /** Default Task Type */
             default_task_type?: string | null;
             /** Default Data Access Sources */

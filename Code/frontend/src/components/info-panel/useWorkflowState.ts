@@ -67,14 +67,17 @@ export function useWorkflowState(options: WorkflowStateOptions) {
     const cid = displayLayer.value.catalogId
     if (!cid || !canRunWorkflow.value) return null
     const descriptor = workspace.resolveEffectiveDescriptor(cid)
-    const variants = descriptor?.workflow_variants
+    const variants = descriptor?.workflow_variants as Record<
+      string,
+      { workflow_id?: string | null; label?: string } | undefined
+    > | null
     if (!variants || Object.keys(variants).length === 0) return null
     const defaultKey =
-      Object.entries(variants).find(([, v]) => v.workflow_id === descriptor?.workflow_id)?.[0] ??
+      Object.entries(variants).find(([, v]) => v?.workflow_id === descriptor?.workflow_id)?.[0] ??
       'online'
     const options = Object.entries(variants).map(([key, v]) => ({
       key,
-      label: v.label ?? (key === 'online' ? '在线反演' : '本地反演'),
+      label: v?.label ?? (key === 'online' ? '在线反演' : '本地反演'),
     }))
     const backendId = workspace.resolveBackendLayerId(cid)
     const preference =

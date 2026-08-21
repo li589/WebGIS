@@ -15838,6 +15838,18 @@
             ],
             "title": "Workflow Definition"
           },
+          "workflow_extra": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Extra"
+          },
           "default_task_type": {
             "anyOf": [
               {

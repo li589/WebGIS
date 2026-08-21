@@ -294,6 +294,22 @@ class ProcessManager:
                 proc.wait(timeout=5)
         self.processes.clear()
 
+    @staticmethod
+    def _poll_proc(proc: Any) -> int | None:
+        """兼容 subprocess.Popen 与 psutil.Process 的存活探测。
+
+        返回 None=仍在运行；退出码（psutil 拿不到精确码时用 -1 占位）。
+        2026-08-22 修复：外部重启把监视句柄切到 psutil.Process 后，
+        ``proc.poll()`` 抛 AttributeError 使 monitor 主循环整体崩溃
+        （用户实测 launch 退出码 1）。
+        """
+        if hasattr(proc, "poll"):
+            return proc.poll()
+        try:
+            return None if proc.is_running() else -1
+        except Exception:
+            return -1
+
     def monitor(self) -> None:
         """监控所有进程，有进程异常退出时报告。
 
@@ -304,7 +320,7 @@ class ProcessManager:
         仅当 pid 文件未变（真正崩溃/被杀）才报异常退出。
         """
         for name, proc in list(self.processes.items()):
-            rc = proc.poll()
+            rc = self._poll_proc(proc)
             if rc is None:
                 continue
             if self._shutting_down:
@@ -312,7 +328,7 @@ class ProcessManager:
 
             new_pid = self._external_pid_for(name)
             if new_pid is not None:
-                self.processes[name] = new_pid  # psutil.Process，可 poll
+                self.processes[name] = new_pid  # psutil.Process，is_running 探测
                 log.info(
                     "Monitor",
                     f"{name} 已被外部重启（旧 pid 退出 code={rc}），"

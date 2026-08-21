@@ -198,6 +198,9 @@ class LayerDescriptor(BaseModel):
     workflow_name: str | None = None
     workflow_id: str | None = None
     workflow_definition: dict[str, Any] | None = None
+    # 需求2（2026-08-22）：工作流中文命名配置（group_title / output_labels），
+    # 由种子 extra / descriptor workflow_extra 透传，前端建组优先读取。
+    workflow_extra: dict[str, Any] | None = None
     default_task_type: str | None = None
     default_data_access_sources: dict[str, list[str]] = Field(default_factory=dict)
     run_readiness: str = "ready"

@@ -75,6 +75,8 @@ export interface DrawModule {
   applyDrawMode: () => void
   syncFromStore: () => void
   dispose: () => void
+  /** 数据层后添加时整体置顶（报障 2026-08-22 绘制遮挡） */
+  bringToFront: () => void
 }
 
 export function createDrawModule(options: CreateDrawModuleOptions): DrawModule {
