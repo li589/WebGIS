@@ -146,7 +146,7 @@
         "Ecological_Vegetation/Biomass/ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc"
       ]
     },
-    "run_readiness_summary": "全国地上生物量数据已就绪（ESA CCI BIOMASS L4）；以本地叠加层展示，非 python_provider 可运行分析",
+    "run_readiness_summary": "生物量密度已配置本地数据读取工作流（本地叠加，可运行刷新）",
     "run_readiness_notes": [
       "静态/产品叠加层：请加载图层查看；勿从图层面板提交分析工作流",
       "数据源: ESA CCI BIOMASS L4 地上生物量"
@@ -179,7 +179,15 @@
     "merged_into": null,
     "is_merged_group": false,
     "members": [],
-    "is_admin_boundary": false
+    "is_admin_boundary": false,
+    "workflow_name": "static_local_read_biomass",
+    "run_readiness": "ready",
+    "workflow_extra": {
+      "group_title": "生物量密度",
+      "output_labels": {
+        "result": "生物量密度"
+      }
+    }
   },
   {
     "layer_id": "landcover-cn",
@@ -230,7 +238,7 @@
         "Ecological_Vegetation/LandCover/MCD12Q1_2021.tif"
       ]
     },
-    "run_readiness_summary": "MODIS 土地覆盖数据已就绪（MCD12Q1）；以本地叠加层展示，非 python_provider 可运行分析",
+    "run_readiness_summary": "土地利用覆被已配置本地数据读取工作流（本地叠加，可运行刷新）",
     "run_readiness_notes": [
       "静态/产品叠加层：请加载图层查看；勿从图层面板提交分析工作流",
       "数据源: MODIS MCD12Q1 土地覆盖"
@@ -263,7 +271,15 @@
     "merged_into": null,
     "is_merged_group": false,
     "members": [],
-    "is_admin_boundary": false
+    "is_admin_boundary": false,
+    "workflow_name": "static_local_read_landcover",
+    "run_readiness": "ready",
+    "workflow_extra": {
+      "group_title": "土地利用覆被",
+      "output_labels": {
+        "result": "土地利用覆被"
+      }
+    }
   },
   {
     "layer_id": "clcd-cn",
@@ -313,7 +329,7 @@
         "Ecological_Vegetation/LandCover/CLCD_v01_1997.tif"
       ]
     },
-    "run_readiness_summary": "CLCD 中国土地覆盖数据已就绪；以本地叠加层展示，非 python_provider 可运行分析",
+    "run_readiness_summary": "CLCD 土地利用已配置本地数据读取工作流（本地叠加，可运行刷新）",
     "run_readiness_notes": [
       "静态/产品叠加层：请加载图层查看；勿从图层面板提交分析工作流",
       "数据源: CLCD 中国土地覆盖（1997）"
@@ -346,7 +362,15 @@
     "merged_into": null,
     "is_merged_group": false,
     "members": [],
-    "is_admin_boundary": false
+    "is_admin_boundary": false,
+    "workflow_name": "static_local_read_clcd",
+    "run_readiness": "ready",
+    "workflow_extra": {
+      "group_title": "CLCD 土地利用",
+      "output_labels": {
+        "result": "CLCD 土地利用"
+      }
+    }
   },
   {
     "layer_id": "hfp-cn",
@@ -395,7 +419,7 @@
         "Socio_Economic/HumanFootprint"
       ]
     },
-    "run_readiness_summary": "人类足迹指数数据已就绪（HFP）；以本地叠加层展示，非 python_provider 可运行分析",
+    "run_readiness_summary": "人类足迹指数 HFP已配置本地数据读取工作流（本地叠加，可运行刷新）",
     "run_readiness_notes": [
       "静态/产品叠加层：请加载图层查看；勿从图层面板提交分析工作流",
       "数据源: 人类足迹指数 HFP"
@@ -428,7 +452,15 @@
     "merged_into": null,
     "is_merged_group": false,
     "members": [],
-    "is_admin_boundary": false
+    "is_admin_boundary": false,
+    "workflow_name": "static_local_read_hfp",
+    "run_readiness": "ready",
+    "workflow_extra": {
+      "group_title": "人类足迹指数 HFP",
+      "output_labels": {
+        "result": "人类足迹指数 HFP"
+      }
+    }
   },
   {
     "layer_id": "dem-etopo",
@@ -479,7 +511,7 @@
         "Geological/DEM/ETOPO_2022"
       ]
     },
-    "run_readiness_summary": "全球地形高程数据已就绪（ETOPO1）；以本地叠加层展示，非 python_provider 可运行分析",
+    "run_readiness_summary": "ETOPO 地形高程已配置本地数据读取工作流（本地叠加，可运行刷新）",
     "run_readiness_notes": [
       "静态/产品叠加层：请加载图层查看；勿从图层面板提交分析工作流",
       "数据源: ETOPO1 全球地形高程"
@@ -512,7 +544,15 @@
     "merged_into": null,
     "is_merged_group": false,
     "members": [],
-    "is_admin_boundary": false
+    "is_admin_boundary": false,
+    "workflow_name": "static_local_read_dem_etopo",
+    "run_readiness": "ready",
+    "workflow_extra": {
+      "group_title": "ETOPO 地形高程",
+      "output_labels": {
+        "result": "ETOPO 地形高程"
+      }
+    }
   },
   {
     "layer_id": "gebco-dem-cn",
@@ -563,7 +603,7 @@
         "Geological/DEM/GEBCO_2024.nc"
       ]
     },
-    "run_readiness_summary": "海底地形数据已就绪（GEBCO 2024）；以本地叠加层展示，非 python_provider 可运行分析",
+    "run_readiness_summary": "GEBCO 海底地形已配置本地数据读取工作流（本地叠加，可运行刷新）",
     "run_readiness_notes": [
       "静态/产品叠加层：请加载图层查看；勿从图层面板提交分析工作流",
       "数据源: GEBCO 2024 海底地形"
@@ -596,7 +636,15 @@
     "merged_into": null,
     "is_merged_group": false,
     "members": [],
-    "is_admin_boundary": false
+    "is_admin_boundary": false,
+    "workflow_name": "static_local_read_gebco",
+    "run_readiness": "ready",
+    "workflow_extra": {
+      "group_title": "GEBCO 海底地形",
+      "output_labels": {
+        "result": "GEBCO 海底地形"
+      }
+    }
   },
   {
     "layer_id": "ref-smap-sm-202512-l3",
@@ -1083,7 +1131,7 @@
         "Inversion_Results/Forest_Ratio_9KM_2020.mat"
       ]
     },
-    "run_readiness_summary": "森林覆盖率数据已就绪（9km，2020）；以本地叠加层展示，非 python_provider 可运行分析",
+    "run_readiness_summary": "森林覆盖率已配置本地数据读取工作流（本地叠加，可运行刷新）",
     "run_readiness_notes": [
       "静态/产品叠加层：请加载图层查看；勿从图层面板提交分析工作流",
       "数据源: 全球 9km 森林覆盖比例（2020）"
@@ -1115,7 +1163,15 @@
     "merged_into": null,
     "is_merged_group": false,
     "members": [],
-    "is_admin_boundary": false
+    "is_admin_boundary": false,
+    "workflow_name": "static_local_read_forest",
+    "run_readiness": "ready",
+    "workflow_extra": {
+      "group_title": "森林覆盖率",
+      "output_labels": {
+        "result": "森林覆盖率"
+      }
+    }
   },
   {
     "layer_id": "landscape-metrics-9km",
@@ -1240,7 +1296,7 @@
       "frontend-aligned"
     ],
     "engine": "overlay_registry",
-    "run_readiness_summary": "干旱指数 AI 叠加层已注册",
+    "run_readiness_summary": "干旱指数 AI已配置本地数据读取工作流（本地叠加，可运行刷新）",
     "temporal_coverage": "Static Climate Product",
     "presentation": {
       "accent_color": "#c4a35a",
@@ -1267,7 +1323,15 @@
     "merged_into": null,
     "is_merged_group": false,
     "members": [],
-    "is_admin_boundary": false
+    "is_admin_boundary": false,
+    "workflow_name": "static_local_read_aridity",
+    "run_readiness": "ready",
+    "workflow_extra": {
+      "group_title": "干旱指数 AI",
+      "output_labels": {
+        "result": "干旱指数 AI"
+      }
+    }
   },
   {
     "layer_id": "gpcp-precip-ts",
@@ -1310,7 +1374,7 @@
       "frontend-aligned"
     ],
     "engine": "overlay_registry",
-    "run_readiness_summary": "GPCP 月降水时间序列已注册",
+    "run_readiness_summary": "GPCP 月降水已配置本地数据读取工作流（本地叠加，可运行刷新）",
     "temporal_coverage": "Monthly sample series",
     "presentation": {
       "accent_color": "#5b8def",
@@ -1337,7 +1401,15 @@
     "merged_into": "precipitation-static",
     "is_merged_group": false,
     "members": [],
-    "is_admin_boundary": false
+    "is_admin_boundary": false,
+    "workflow_name": "static_local_read_gpcp",
+    "run_readiness": "ready",
+    "workflow_extra": {
+      "group_title": "GPCP 月降水",
+      "output_labels": {
+        "result": "GPCP 月降水"
+      }
+    }
   },
   {
     "layer_id": "cmfd-precip-cn",
@@ -1379,7 +1451,7 @@
       "frontend-aligned"
     ],
     "engine": "overlay_registry",
-    "run_readiness_summary": "CMFD 降水叠加层已注册",
+    "run_readiness_summary": "CMFD 区域降水已配置本地数据读取工作流（本地叠加，可运行刷新）",
     "temporal_coverage": "2002-01 sample",
     "presentation": {
       "accent_color": "#3a9bd9",
@@ -1406,7 +1478,15 @@
     "merged_into": "precipitation-static",
     "is_merged_group": false,
     "members": [],
-    "is_admin_boundary": false
+    "is_admin_boundary": false,
+    "workflow_name": "static_local_read_cmfd",
+    "run_readiness": "ready",
+    "workflow_extra": {
+      "group_title": "CMFD 区域降水",
+      "output_labels": {
+        "result": "CMFD 区域降水"
+      }
+    }
   },
   {
     "layer_id": "co2-cn",
@@ -1448,7 +1528,7 @@
       "frontend-aligned"
     ],
     "engine": "overlay_registry",
-    "run_readiness_summary": "CO₂ 柱浓度叠加层已注册",
+    "run_readiness_summary": "GOSAT CO₂ 柱浓度已配置本地数据读取工作流（本地叠加，可运行刷新）",
     "temporal_coverage": "Static Mean Product",
     "presentation": {
       "accent_color": "#d6604d",
@@ -1475,7 +1555,15 @@
     "merged_into": null,
     "is_merged_group": false,
     "members": [],
-    "is_admin_boundary": false
+    "is_admin_boundary": false,
+    "workflow_name": "static_local_read_co2",
+    "run_readiness": "ready",
+    "workflow_extra": {
+      "group_title": "GOSAT CO₂ 柱浓度",
+      "output_labels": {
+        "result": "GOSAT CO₂ 柱浓度"
+      }
+    }
   },
   {
     "layer_id": "method-smap-omega-doy-dynamic",

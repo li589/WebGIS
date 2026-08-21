@@ -1716,7 +1716,20 @@ class _OverlayRegistryPopulator:
         layer_id: str,
         descriptor: Any,
     ) -> WorkflowSubmitRequest:
-        # overlay_registry 图层不走工作流提交
+        # 需求2（2026-08-22）：overlay_registry 静态图层配置了本地读工作流
+        # （descriptor.workflow_name → static_local_read_* 种子）时，提交按
+        # python_provider 种子路径翻译，让"运行"入口统一走工作流；未配置
+        # 的 overlay 图层维持 display-only 行为（不走工作流提交）。
+        # 先注入 workflow_name：静态图层无 module_name，不注入会被
+        # _populate_python_provider_request 的入口守卫直接 return。
+        workflow_name = getattr(descriptor, "workflow_name", None)
+        if workflow_name:
+            algo = _normalize_algorithm_request(payload.algorithm_request)
+            algo.setdefault("workflow_name", str(workflow_name))
+            injected = payload.model_copy(update={"algorithm_request": algo})
+            return _populate_python_provider_request(
+                payload=injected, descriptor=descriptor
+            )
         return payload
 
     def describe_resolution(
