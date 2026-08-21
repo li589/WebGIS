@@ -9,6 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from app.data_io.services._meta_io import save_json_atomic
 from app.data_io.services.archive_safe import safe_extract_archive
 from app.data_io.services.dbf_encoding import (
     shapefile_to_geojson_with_fallback,
@@ -327,9 +328,7 @@ def _write_layer(
         **preserved,
         **(extra_meta or {}),
     }
-    (dest / "meta.json").write_text(
-        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    save_json_atomic(dest / "meta.json", meta)
     return {
         "layer_id": layer_id,
         "feature_count": len(features),

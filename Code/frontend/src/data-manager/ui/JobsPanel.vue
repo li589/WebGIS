@@ -79,9 +79,14 @@ function hasActiveJobs(): boolean {
 
 function scheduleNext() {
   if (timer) clearTimeout(timer)
+  if (disposed) return
   const delay = hasActiveJobs() ? POLL_ACTIVE_MS : POLL_IDLE_MS
   timer = setTimeout(async () => {
+    // 卸载可能发生在 refresh 在飞期间：clearTimeout 对已消费的句柄无效，
+    // 回调入口必须再查 disposed，否则轮询链在组件销毁后自续（U-3）
+    if (disposed) return
     await refresh()
+    if (disposed) return
     scheduleNext()
   }, delay)
 }
@@ -90,7 +95,10 @@ onMounted(() => {
   void refresh().then(() => scheduleNext())
 })
 
+let disposed = false
+
 onUnmounted(() => {
+  disposed = true
   if (timer) clearTimeout(timer)
 })
 </script>

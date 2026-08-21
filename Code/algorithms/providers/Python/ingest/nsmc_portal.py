@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import random
 import re
@@ -46,11 +47,36 @@ import urllib.request
 from http.cookiejar import CookieJar
 from pathlib import Path
 
-# NSMC 站点证书链自签（实测 CERTIFICATE_VERIFY_FAILED），客户端统一降级为
-# 不校验（公开数据门户，无敏感上行流量）。SSRF 面与 HttpSource 现状一致。
-_SSL_CONTEXT = ssl.create_default_context()
-_SSL_CONTEXT.check_hostname = False
-_SSL_CONTEXT.verify_mode = ssl.CERT_NONE
+# NSMC 站点证书链自签（实测 CERTIFICATE_VERIFY_FAILED）。安审 2026-08-21
+# H-5：对齐 data_access/sources/http.py 的统一口径——域名命中
+# CGDA_HTTP_INSECURE_HOSTS（默认含 NSMC 门户）才降级为不校验，env 置空
+# 可恢复严格校验；降级时记 warning 便于审计。
+_INSECURE_HOSTS_DEFAULT = "fy4.nsmc.org.cn,satellite.nsmc.org.cn,data.nsmc.org.cn"
+
+
+def _insecure_hosts() -> set[str]:
+    raw = os.getenv("CGDA_HTTP_INSECURE_HOSTS")
+    if raw is None:
+        raw = _INSECURE_HOSTS_DEFAULT
+    return {h.strip().lower() for h in raw.split(",") if h.strip()}
+
+
+def _nsmc_ssl_context() -> ssl.SSLContext:
+    hosts = _insecure_hosts()
+    nsmc_hosts = {h for h in ("fy4.nsmc.org.cn", "satellite.nsmc.org.cn", "data.nsmc.org.cn") if h in hosts}
+    if not nsmc_hosts:
+        return ssl.create_default_context()  # 严格校验
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    logging.getLogger(__name__).warning(
+        "NSMC portal TLS verification disabled for hosts: %s "
+        "(CGDA_HTTP_INSECURE_HOSTS)", ",".join(sorted(nsmc_hosts))
+    )
+    return ctx
+
+
+_SSL_CONTEXT = _nsmc_ssl_context()
 
 # 门户端点单点定义（ingest/endpoints.py，env 可覆盖：CGDA_NSMC_*）
 from ingest.endpoints import (  # noqa: E402

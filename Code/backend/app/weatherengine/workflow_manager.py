@@ -10,6 +10,7 @@ from datetime import datetime, UTC
 from enum import Enum
 from collections.abc import Callable, Awaitable
 import asyncio
+import inspect
 import logging
 import threading
 
@@ -46,7 +47,7 @@ class ManagedWorkflow:
     run_id: str | None = None
     bbox: dict | None = None  # 空间范围 {"min_lng", "max_lng", "min_lat", "max_lat"}
     metadata: dict = field(default_factory=dict)
-    cancel_callback: Callable[[], Awaitable[None]] | None = None
+    cancel_callback: Callable[[], None] | None = None
 
 
 class WorkflowLifecycleManager:
@@ -83,7 +84,7 @@ class WorkflowLifecycleManager:
         priority: WorkflowPriority,
         bbox: dict | None = None,
         metadata: dict | None = None,
-        cancel_callback: Callable[[], Awaitable[None]] | None = None,
+        cancel_callback: Callable[[], None] | None = None,
     ) -> str:
         """提交工作流，自动处理旧工作流替换（同步版本）
 
@@ -138,7 +139,7 @@ class WorkflowLifecycleManager:
         priority: WorkflowPriority,
         bbox: dict | None = None,
         metadata: dict | None = None,
-        cancel_callback: Callable[[], Awaitable[None]] | None = None,
+        cancel_callback: Callable[[], None] | None = None,
     ) -> str:
         """提交工作流，自动处理旧工作流替换（异步版本）"""
         async with self._get_async_lock():
@@ -238,16 +239,29 @@ class WorkflowLifecycleManager:
             if w.workflow_id != workflow.workflow_id
         ]
 
-        # 调用取消回调
+        # 调用取消回调（同步直调）
+        # 安审 2026-08-21 C-1：唯一调用方（weather_bridge_service）传入的是同步
+        # 回调；此前 asyncio.get_event_loop()/create_task 在 Celery/线程池上下文
+        # 抛 RuntimeError 被吞成 warning（取消语义静默失效），事件循环线程内
+        # create_task(None) 抛 TypeError 中断提交。契约改为 Callable[[], None]，
+        # 直调并兼容遗留 Awaitable 返回值（fire-and-forget，不等待）。
         if workflow.cancel_callback:
             try:
-                # 尝试调用异步回调
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.create_task(workflow.cancel_callback())
-                else:
-                    loop.run_until_complete(workflow.cancel_callback())
-            except Exception as e:
+                result = workflow.cancel_callback()
+                if inspect.isawaitable(result):
+                    # 遗留 async 回调：尽力派发到运行中的 loop，无 loop 则告警
+                    try:
+                        loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        loop = None
+                    if loop is not None:
+                        loop.create_task(result)
+                    else:
+                        logger.warning(
+                            "[WorkflowLifecycleManager] async cancel callback "
+                            "dropped: no running event loop"
+                        )
+            except Exception as e:  # noqa: BLE001
                 # Sprint 3.5: 编程 bug 必须向上传播；cancel_callback 中的网络/API 失败降级为 warning。
                 if isinstance(
                     e, (AttributeError, NameError, TypeError, ImportError, SyntaxError)
@@ -431,7 +445,7 @@ def submit_weather_workflow(
     priority: WorkflowPriority = WorkflowPriority.VIEWPORT,
     bbox: dict | None = None,
     metadata: dict | None = None,
-    cancel_callback: Callable[[], Awaitable[None]] | None = None,
+    cancel_callback: Callable[[], None] | None = None,
 ) -> str:
     """便捷函数：提交天气工作流"""
     return workflow_lifecycle_manager.submit_workflow(

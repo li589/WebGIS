@@ -291,6 +291,11 @@ export function createOverlayImageModule(
   const knownOverlayIds = ref<string[]>([])
   const overlayTimeStates = ref<OverlayTimeState[]>([])
   const loadedOverlays = new Map<string, LoadedOverlay>()
+  // 安审 2026-08-21 U-2：setOverlayTime 并发版本号（按层）。时间轴 watch 无
+  // 防抖 + 播放 2s 步进 + _fetchTimedBounds 网络延迟 → 旧时间片响应后到
+  // 覆盖 currentTime/overlayTimeStates，且 linkTime 联动会把过期时间扩散
+  // 到全部联动层。取号-校验：过期请求在写回与联动前直接丢弃。
+  const overlayTimeReqSeq = new Map<string, number>()
   const loadingOverlays = new Set<string>()
   /** 加载过程中用户切换显隐时记住最新意图，避免 hide 被 in-flight load 覆盖 */
   const desiredVisibility = new Map<string, boolean>()
@@ -893,7 +898,12 @@ export function createOverlayImageModule(
     if (!loaded) return
     if (loaded.category !== 'time-series') return
 
+    const seq = (overlayTimeReqSeq.get(layerId) ?? 0) + 1
+    overlayTimeReqSeq.set(layerId, seq)
+    const isStale = () => (overlayTimeReqSeq.get(layerId) ?? 0) !== seq
+
     const timedBounds = await _fetchTimedBounds(layerId, time)
+    if (isStale()) return // 更新的时间切换已接管，丢弃过期响应
     if (!timedBounds) {
       // 时间块被服务端过滤/重建后，旧标签可能不再可用。自动切回当前可用默认块，
       // 避免时间轴从6块收敛为5块后图层因 404 消失。
@@ -949,7 +959,7 @@ export function createOverlayImageModule(
     }
 
     // 联动其他时间序列图层（关闭本层联动标志避免递归）
-    if (linkTimeEnabled.value) {
+    if (linkTimeEnabled.value && !isStale()) {
       const others = overlayTimeStates.value.filter(
         (s) => s.layerId !== layerId && s.category === 'time-series' && s.currentTime !== time,
       )
@@ -957,6 +967,7 @@ export function createOverlayImageModule(
         linkTimeEnabled.value = false
         try {
           for (const other of others) {
+            if (isStale()) break // 本层已有更新切换：停止扩散过期时间
             const nearest = _findNearestTime(other.timeList, time)
             if (nearest && nearest !== other.currentTime) {
               await setOverlayTime(other.layerId, nearest)

@@ -148,8 +148,13 @@ class WorkflowRunner:
         """执行单个节点，返回其输出字典。
 
         ``node_outputs`` 为已完成节点的只读快照（并行模式下同层节点互不依赖，
-        仅读之前层结果）。线程安全：本方法不写共享可变状态，每个节点拥有独立
-        的 NodeExecutionContext.workspace 与 artifact 路径。
+        仅读之前层结果）。线程安全：本方法不写共享可变状态。
+
+        安审 2026-08-21 H-3 更正：workspace 为 run 级共享（所有节点同一路径，
+        artifact 才按 node_id 隔离）。同层并行（node_parallelism>1）时同型
+        下载节点会写同一 ``data_access/*`` 子目录——现有系统种子每类下载
+        节点仅一个，该约束暂由种子设计保证；若未来种子引入同层同型并行
+        下载节点，须改为 workspace/node_id 派生。
         """
         node = node_map[node_id]
         executor_cls = get_node_executor(node.node_type)

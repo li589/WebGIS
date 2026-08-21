@@ -11,7 +11,7 @@
  * - 当前时间轴段的 state === 'fetchable' 时触发
  * - 用户拖动时间轴（非播放状态）时触发；播放中不自动获取
  */
-import { computed, watch, type ComputedRef, type Ref } from 'vue'
+import { computed, onScopeDispose, watch, type ComputedRef, type Ref } from 'vue'
 import type { TimelineAvailabilitySegment } from '../../utils/layer-timeline'
 import { useOnlineTemporalOrchestrator } from '../../stores/layers/online-temporal-orchestrator'
 import type { useLayerWorkspace, useWorkflowRun } from '../../stores/layers/selectors'
@@ -147,7 +147,16 @@ export function useOnlineTemporalIntegration(deps: OnlineTemporalIntegrationDeps
         cleanupTimer = null
       }
     },
+    // immediate：工作区快照恢复场景挂载时选中层已支持在线获取，定时器须立即启动
+    { immediate: true },
   )
+  // 路由离开仪表盘时清掉闭包里的 interval（watcher 随组件销毁但 interval 不会）
+  onScopeDispose(() => {
+    if (cleanupTimer) {
+      clearInterval(cleanupTimer)
+      cleanupTimer = null
+    }
+  })
 
   return {
     orchestrator,

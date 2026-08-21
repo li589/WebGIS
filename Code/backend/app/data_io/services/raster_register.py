@@ -10,6 +10,7 @@ from typing import Any
 
 from rasterio.warp import transform_bounds as _transform_bounds
 
+from app.data_io.services._meta_io import save_bytes_atomic, save_json_atomic
 from app.services.crs import crs_detector
 from app.data_io.services.paths import (
     IMPORTS_DIR,
@@ -129,7 +130,7 @@ def register_geotiff_as_imported(
             width=min(2048, width),
             height=min(2048, height),
         )
-        png_path.write_bytes(png_bytes)
+        save_bytes_atomic(png_path, png_bytes)
     except Exception as exc:
         shutil.rmtree(dest_dir, ignore_errors=True)
         raise RuntimeError(f"预览生成失败: {exc}") from exc
@@ -180,12 +181,8 @@ def register_geotiff_as_imported(
     meta["default_time"] = default_time
     meta["current_time"] = default_time
     bounds_data = {"bounds": bounds, "meta": meta}
-    (dest_dir / "bounds.json").write_text(
-        json.dumps(bounds_data, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    (dest_dir / "meta.json").write_text(
-        json.dumps(
-            {
+    save_json_atomic(dest_dir / "bounds.json", bounds_data)
+    meta_payload = {
                 "layer_id": layer_id,
                 "kind": "raster",
                 "source_filename": filename,
@@ -210,12 +207,8 @@ def register_geotiff_as_imported(
                         "current_time",
                     }
                 },
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+            }
+    save_json_atomic(dest_dir / "meta.json", meta_payload)
 
     register_overlay(
         OverlaySpec(
@@ -324,7 +317,7 @@ def confirm_imported_raster_crs(
     new_bounds: list[float] = [float(west), float(south), float(east), float(north)]
 
     png_path = dest_dir / "preview.png"
-    png_path.write_bytes(png_bytes)
+    save_bytes_atomic(png_path, png_bytes)
 
     bounds_data["bounds"] = new_bounds
     meta["crs"] = "EPSG:4326"
@@ -332,9 +325,7 @@ def confirm_imported_raster_crs(
     meta["applied_lng_offset"] = lng_offset
     meta["applied_lat_offset"] = lat_offset
     bounds_data["meta"] = meta
-    bounds_path.write_text(
-        json.dumps(bounds_data, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    save_json_atomic(bounds_path, bounds_data)
 
     # 局部导入，避免进程热重载/旧模块缓存导致 NameError
     from app.services.overlay_registry import (

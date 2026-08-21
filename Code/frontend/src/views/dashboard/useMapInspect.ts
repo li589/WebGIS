@@ -154,14 +154,21 @@ export function useMapInspect(
       .filter((v): v is OverlayPointValue => v !== null)
 
     // 并行获取所有可见 overlay 图层的时序与选中图层时序
+    // 安审 2026-08-21 U-1：seq 必须传入子函数，写回前校验，否则旧点响应
+    // 后到会覆盖新点的时序数据（点 A 慢响应覆盖点 B → 图表与选点静默不一致）
     await Promise.all([
-      fetchAllOverlaySeries(lng, lat, states),
-      fetchSelectedOverlaySeries(lng, lat),
+      fetchAllOverlaySeries(lng, lat, states, seq),
+      fetchSelectedOverlaySeries(lng, lat, seq),
     ])
   }
 
   /** 获取所有可见 overlay 图层在选点处的完整时序（非仅选中层） */
-  async function fetchAllOverlaySeries(lng: number, lat: number, states: OverlayTimeState[]) {
+  async function fetchAllOverlaySeries(
+    lng: number,
+    lat: number,
+    states: OverlayTimeState[],
+    seq?: number,
+  ) {
     const seriesMap: Record<string, OverlayPointValue[]> = {}
     const tasks = states
       .filter((s) => s.category === 'time-series' && s.timeList.length > 0)
@@ -174,10 +181,11 @@ export function useMapInspect(
           .filter((v): v is OverlayPointValue => v !== null)
       })
     await Promise.all(tasks)
+    if (seq !== undefined && seq !== overlayPointFetchSeq) return
     allOverlayTimeSeries.value = seriesMap
   }
 
-  async function fetchSelectedOverlaySeries(lng: number, lat: number) {
+  async function fetchSelectedOverlaySeries(lng: number, lat: number, seq?: number) {
     const selectedActive = workspace.activeLayers.value.find(
       (l) => l.instanceId === selectedLayerDisplay.value?.instanceId,
     )
@@ -192,16 +200,19 @@ export function useMapInspect(
       times = state?.timeList ?? []
     }
     if (!selectedOverlayId || times.length === 0) {
-      selectedOverlayTimeSeries.value = []
-      logStore.logOperation(
-        'overlay-series-error',
-        `无法加载点时序：当前图层无可用时间块（${selectedLayerDisplay.value?.name ?? '未选择'}）`,
-      )
+      if (seq === undefined || seq === overlayPointFetchSeq) {
+        selectedOverlayTimeSeries.value = []
+        logStore.logOperation(
+          'overlay-series-error',
+          `无法加载点时序：当前图层无可用时间块（${selectedLayerDisplay.value?.name ?? '未选择'}）`,
+        )
+      }
       return
     }
     const seriesResults = await Promise.allSettled(
       times.map((time) => getOverlayValue(selectedOverlayId, lng, lat, time)),
     )
+    if (seq !== undefined && seq !== overlayPointFetchSeq) return
     selectedOverlayTimeSeries.value = seriesResults
       .map((r) => (r.status === 'fulfilled' ? r.value : null))
       .filter((v): v is OverlayPointValue => v !== null)

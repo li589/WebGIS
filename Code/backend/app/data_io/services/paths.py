@@ -31,6 +31,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from app.data_io.services._meta_io import save_json_atomic
 from app.core.config import settings
 import contextlib
 
@@ -201,9 +202,7 @@ def update_imported_layer_display_name(
             meta = {}
     meta["display_name"] = name
     meta["label"] = name
-    meta_path.write_text(
-        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    save_json_atomic(meta_path, meta)
 
     bounds_path = dest / "bounds.json"
     if bounds_path.exists():
@@ -218,9 +217,7 @@ def update_imported_layer_display_name(
                 inner["label"] = name
             else:
                 bounds_data["meta"] = {"display_name": name, "label": name}
-            bounds_path.write_text(
-                json.dumps(bounds_data, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
+            save_json_atomic(bounds_path, bounds_data)
 
     return {"layer_id": lid, "display_name": name, "kind": meta.get("kind")}
 

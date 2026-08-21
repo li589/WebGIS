@@ -448,106 +448,6 @@ def _get_download_session(username: str, password: str) -> Any:
     return session
 
 
-def _download_single(
-    session: Any,
-    url: str,
-    local_path: Path,
-    progress_callback: Callable[[int, int], None] | None = None,
-) -> tuple[bool, int]:
-    """流式下载单个文件，支持断点续传。
-
-    Returns:
-        (是否成功, 本次下载字节数)
-    """
-    local_path.parent.mkdir(parents=True, exist_ok=True)
-    existing = local_path.stat().st_size if local_path.exists() else 0
-
-    headers: dict[str, str] = {}
-    if existing > 0:
-        headers["Range"] = f"bytes={existing}-"
-        logger.info("  断点续传: 从 %s 开始", format_size(existing))
-
-    resp = session.get(
-        url,
-        headers=headers,
-        stream=True,
-        timeout=DOWNLOAD_TIMEOUT,
-        allow_redirects=True,
-    )
-
-    if resp.status_code == 416:
-        resp.close()
-        logger.info("  本地文件已完成，跳过")
-        return True, 0
-
-    if resp.status_code not in (200, 206):
-        resp.close()
-        raise RuntimeError(f"HTTP {resp.status_code} 下载失败: {url}")
-
-    mode = "ab" if resp.status_code == 206 else "wb"
-    if mode == "wb" and existing > 0:
-        existing = 0
-
-    content_length = int(resp.headers.get("Content-Length", 0))
-    total = content_length + existing
-    downloaded = 0
-    last_report = time.time()
-
-    try:
-        with open(local_path, mode) as f:
-            for chunk in resp.iter_content(chunk_size=CHUNK_SIZE):
-                if not chunk:
-                    continue
-                f.write(chunk)
-                downloaded += len(chunk)
-                now = time.time()
-                if now - last_report >= PROGRESS_INTERVAL:
-                    cur = existing + downloaded
-                    logger.info(
-                        "  下载中 %s: %s / %s",
-                        local_path.name,
-                        format_size(cur),
-                        format_size(total) if total else "?",
-                    )
-                    last_report = now
-                if progress_callback:
-                    progress_callback(downloaded, total)
-    finally:
-        resp.close()
-
-    return True, downloaded
-
-
-def _download_with_retry(
-    session: Any,
-    url: str,
-    local_path: Path,
-    expected_size_mb: float | None = None,
-    progress_callback: Callable[[int, int], None] | None = None,
-) -> bool:
-    """带重试（指数退避）的下载封装。"""
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            ok, _ = _download_single(session, url, local_path, progress_callback)
-            if ok:
-                final_size = local_path.stat().st_size if local_path.exists() else 0
-                if final_size <= 0:
-                    raise RuntimeError("下载后文件大小为 0")
-                return True
-        except Exception as exc:
-            logger.warning("  尝试 %d/%d 失败: %s", attempt, MAX_RETRIES, exc)
-            if attempt < MAX_RETRIES:
-                backoff = INITIAL_BACKOFF * (2 ** (attempt - 1))
-                logger.info("  等待 %.1fs 后重试...", backoff)
-                time.sleep(backoff)
-            else:
-                logger.error("  已达最大重试次数，放弃: %s", local_path.name)
-                return False
-    return False
-
-
-# ─── 主 API ──────────────────────────────────────────────────────────────────
-
 
 def download_smap_range(
     start_date: str,
@@ -665,7 +565,13 @@ def download_smap_range(
             if progress_callback:
                 progress_callback(i, len(todo), dl)
 
-        success = _download_with_retry(session, g.url, fp, g.size_mb, file_progress)
+        # 安审 2026-08-21 H-1：改用共享 _http_resume 续传 + .part 临时文件
+        # 原子替换（gldas_download 同款）——半成品不再落为 .h5 本名，避免被
+        # 上方「已存在即跳过」的增量过滤误判为已完成。
+        part = fp.with_suffix(fp.suffix + ".part")
+        success = download_with_retry(
+            session, g.url, part, progress_callback=file_progress
+        ) and (part.replace(fp) or True)
         if success:
             result.downloaded += 1
             result.downloaded_bytes += fp.stat().st_size
