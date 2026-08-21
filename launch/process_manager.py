@@ -11,7 +11,9 @@ flag) that must not be shared across launches.
 
 from __future__ import annotations
 
+import json
 import platform
+import psutil
 import signal
 import subprocess
 import sys
@@ -293,22 +295,65 @@ class ProcessManager:
         self.processes.clear()
 
     def monitor(self) -> None:
-        """监控所有进程，有进程异常退出时报告。"""
+        """监控所有进程，有进程异常退出时报告。
+
+        兼容外部重启（2026-08-22 用户报障）：在其它终端 ``launch.py restart
+        backend`` 等操作会替换 pid 文件里的进程。本监视器持有的旧 proc 退出
+        时先读 pid 文件——若该服务的 pid 已变更且新 pid 存活，判定为「外部
+        重启」：INFO 提示一次并把监视句柄切到新进程，不再刷红色 ERROR；
+        仅当 pid 文件未变（真正崩溃/被杀）才报异常退出。
+        """
         for name, proc in list(self.processes.items()):
             rc = proc.poll()
-            if rc is not None:
-                if self._shutting_down:
-                    continue
-                log.error("Monitor", f"{name} 异常退出 (code={rc})")
-                log_file = LOG_DIR / f"{name}.log"
-                if name.startswith("worker-"):
-                    log_file = LOG_DIR / f"worker-{name.replace('worker-', '')}.log"
-                if log_file.exists():
-                    lines = log_file.read_text(
-                        encoding="utf-8", errors="replace"
-                    ).splitlines()
-                    tail = "\n".join(lines[-5:]) if lines else "(空日志)"
-                    log.error("Monitor", f"{name} 日志尾部:\n{tail}")
+            if rc is None:
+                continue
+            if self._shutting_down:
+                continue
+
+            new_pid = self._external_pid_for(name)
+            if new_pid is not None:
+                self.processes[name] = new_pid  # psutil.Process，可 poll
+                log.info(
+                    "Monitor",
+                    f"{name} 已被外部重启（旧 pid 退出 code={rc}），"
+                    f"监视切换到新 pid={new_pid.pid}",
+                )
+                continue
+
+            log.error("Monitor", f"{name} 异常退出 (code={rc})")
+            log_file = LOG_DIR / f"{name}.log"
+            if name.startswith("worker-"):
+                log_file = LOG_DIR / f"worker-{name.replace('worker-', '')}.log"
+            if log_file.exists():
+                lines = log_file.read_text(
+                    encoding="utf-8", errors="replace"
+                ).splitlines()
+                tail = "\n".join(lines[-5:]) if lines else "(空日志)"
+                log.error("Monitor", f"{name} 日志尾部:\n{tail}")
+
+    def _external_pid_for(self, name: str):
+        """读 pid 文件：该服务 pid 已变更且新 pid 存活时返回其 psutil 句柄。
+
+        pid 文件不存在/解析失败/服务名缺失/pid 未变，均返回 None（真异常）。
+        """
+        try:
+            data = json.loads(PID_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        recorded = data.get(name)
+        if not isinstance(recorded, int):
+            return None
+        old_pid = self.processes.get(name)
+        old_pid_val = old_pid.pid if old_pid is not None else None
+        if recorded == old_pid_val:
+            return None  # pid 未变：真异常退出
+        try:
+            proc = psutil.Process(recorded)
+            if proc.is_running():
+                return proc
+        except Exception:
+            return None
+        return None
 
     def install_signal_handlers(self) -> None:
         """安装信号处理器，Ctrl+C 优雅退出。"""

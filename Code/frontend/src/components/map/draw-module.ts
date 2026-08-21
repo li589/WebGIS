@@ -516,6 +516,24 @@ export function createDrawModule(options: CreateDrawModuleOptions): DrawModule {
     }
   }
 
+  /** 绘制相关层整体置顶（数据层后添加会压过绘制层，报障 2026-08-22）。 */
+  function bringToFront(): void {
+    const order = [
+      LAYER_FEATURES_FILL,
+      LAYER_FEATURES_LINE,
+      LAYER_PREVIEW_PATH,
+      LAYER_PREVIEW,
+      LAYER_VERTICES,
+    ]
+    for (const layerId of order) {
+      try {
+        if (map.getLayer(layerId)) map.moveLayer(layerId)
+      } catch {
+        // map 已销毁/层并发移除：忽略
+      }
+    }
+  }
+
   function dispose(): void {
     for (const { event, handler } of registeredHandlers.splice(0)) {
       map.off(event, handler as (ev: MapMouseEvent & object) => void)
@@ -540,6 +558,7 @@ export function createDrawModule(options: CreateDrawModuleOptions): DrawModule {
     bindEvents,
     applyDrawMode,
     syncFromStore: syncAll,
+    bringToFront,
     dispose,
   }
 }

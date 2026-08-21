@@ -16,7 +16,11 @@ describe('map-canvas-module-bundle', () => {
     }
     const selectedLayerFocusModule = {}
     const measureModule = { applyMeasureMode: vi.fn(), syncFromStore: vi.fn() }
-    const drawModule = { applyDrawMode: vi.fn(), syncFromStore: vi.fn() }
+    const drawModule = {
+      applyDrawMode: vi.fn(),
+      syncFromStore: vi.fn(),
+      bringToFront: vi.fn(),
+    }
     const syncAdminOverlay = vi.fn()
     const runtimeOptions: {
       onTileSourceChange?: (sourceId: 'esri-street') => void
