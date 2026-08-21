@@ -16,6 +16,7 @@ from app.data_io.services.paths import (
     assert_quota_available,
     dir_size_bytes,
     ensure_imports_root,
+    safe_import_child,
 )
 from app.services.geo_math import overlay_safe_wgs84_bounds
 from app.services.overlay_registry import (
@@ -50,7 +51,8 @@ def register_geotiff_as_imported(
     src_size = src_path.stat().st_size if src_path.exists() else 0
 
     layer_id = layer_id or f"imported-{uuid.uuid4().hex[:12]}"
-    dest_dir = IMPORTS_DIR / layer_id
+    # 安审 2026-08-21 S-2：layer_id 可能透传自调用方，统一走防穿越收敛点
+    dest_dir = safe_import_child(layer_id)
     replace_bytes = 0
     replaced = False
     if dest_dir.exists():
@@ -261,7 +263,8 @@ def confirm_imported_raster_crs(
     if not layer_id.startswith("imported-"):
         raise ValueError("仅允许确认 imported-* 图层")
 
-    dest_dir = IMPORTS_DIR / layer_id
+    # 安审 2026-08-21 S-2：layer_id 来自 body，须防路径穿越（写 preview/bounds）
+    dest_dir = safe_import_child(layer_id)
     bounds_path = dest_dir / "bounds.json"
     if not bounds_path.exists():
         raise FileNotFoundError(f"导入图层不存在: {layer_id}")
@@ -276,7 +279,8 @@ def confirm_imported_raster_crs(
     if not source_filename:
         raise RuntimeError("bounds.json 缺少 source_filename 元数据")
 
-    src_path = dest_dir / source_filename
+    # 安审 2026-08-21 S-3：source_filename 来自 meta（可被构造），归一为纯文件名
+    src_path = dest_dir / Path(str(source_filename)).name
     if not src_path.exists():
         raise FileNotFoundError(f"源 TIF 文件不存在: {source_filename}")
 

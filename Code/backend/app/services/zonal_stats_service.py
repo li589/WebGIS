@@ -381,11 +381,14 @@ def _find_imported_raster_path(layer_id: str) -> Optional[Path]:
     if not layer_id.startswith("imported-"):
         return None
     try:
-        from app.data_io.services.paths import IMPORTS_DIR
+        from app.data_io.services.paths import safe_import_child
     except Exception:
         return None
 
-    dest_dir = IMPORTS_DIR / layer_id
+    try:
+        dest_dir = safe_import_child(layer_id)  # 安审 2026-08-21：防路径穿越
+    except ValueError:
+        return None
     if not dest_dir.is_dir():
         return None
 

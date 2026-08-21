@@ -141,6 +141,40 @@ def get_quota_usage() -> dict[str, Any]:
     }
 
 
+def safe_import_child(child_id: str, *, root: Path | None = None) -> Path:
+    """校验并拼接 imports 根（或指定 root）下的子路径，防路径穿越。
+
+    安审 2026-08-21（S-1/S-2/P2-1）统一收敛点：
+    - child_id 必须是纯目录名（``Path(child_id).name == child_id``），
+      显式拒绝 ``..``、``/``、``\\``（Windows 路径分隔符，URL 参数
+      ``%5C`` 解码后可注入）与 ``_`` 前缀系统目录（_staging/_jobs 等）；
+    - resolve 后必须仍在 root 内（双保险）。
+
+    Raises:
+        ValueError: 校验失败。
+    """
+    target_root = root if root is not None else IMPORTS_DIR
+    raw = str(child_id or "").strip()
+    if (
+        not raw
+        or Path(raw).name != raw
+        or ".." in raw
+        or "/" in raw
+        or "\\" in raw
+        or raw.startswith("_")
+    ):
+        raise ValueError(f"非法 id: {child_id!r}")
+    dest = target_root / raw
+    try:
+        resolved = dest.resolve()
+        root_resolved = target_root.resolve()
+        if not resolved.is_relative_to(root_resolved):
+            raise ValueError(f"路径越界: {child_id!r}")
+    except OSError as exc:  # resolve 失败（如网络盘暂不可达）→ fail-closed
+        raise ValueError(f"路径校验失败: {child_id!r}") from exc
+    return dest
+
+
 def update_imported_layer_display_name(
     layer_id: str, display_name: str
 ) -> dict[str, Any]:
@@ -152,7 +186,7 @@ def update_imported_layer_display_name(
         raise ValueError("仅支持导入图层重命名")
     if not name:
         raise ValueError("显示名不能为空")
-    dest = IMPORTS_DIR / lid
+    dest = safe_import_child(lid)
     if not dest.is_dir():
         raise FileNotFoundError(f"导入图层不存在: {lid}")
 
