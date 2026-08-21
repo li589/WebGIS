@@ -21,6 +21,8 @@ const props = defineProps<{
   weatherSourceSparseHint: (catalogId: string) => boolean
   getCatalogJobStatus: (catalogId: string) => string | undefined
   getCatalogRunBlockReason: (catalogId: string) => string | null
+  getCatalogAddBlockReason: (catalogId: string) => string | null
+  isOverlayDisplayOnlyLayer: (catalogId: string) => boolean
   getCatalogSemanticNote: (catalogId: string) => string | null
   catalogSemanticNoteClass: (catalogId: string) => string
   getCategoryMeta: (categoryId: string) => LayerCategory | undefined
@@ -301,7 +303,7 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
               v-if="!isAdded(effectiveSourceId(item))"
               class="add-btn"
               :disabled="isAdded(effectiveSourceId(item))"
-              :title="getCatalogRunBlockReason(effectiveSourceId(item)) ?? ''"
+              :title="getCatalogAddBlockReason(effectiveSourceId(item)) ?? ''"
               @click="addCatalogItemWithSource(item)"
             >
               + 添加

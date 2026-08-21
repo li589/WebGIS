@@ -58,6 +58,10 @@ export interface CatalogRuntimeSlice {
   resolveEffectiveDescriptor: (catalogId: string) => LayerDescriptor | null
   getCatalogWorkflowEngine: (catalogId: string) => string | null
   supportsAnalysisWorkflow: (catalogId: string) => boolean
+  /** overlay 静态/时间序列图层（engine=overlay_registry 或空）：无工作流但有 PNG 缓存。 */
+  isOverlayDisplayOnlyLayer: (catalogId: string) => boolean
+  /** 添加路径独立语义：overlay 图层永不阻断。运行按钮仍走 getCatalogRunBlockReason。 */
+  getCatalogAddBlockReason: (catalogId: string) => string | null
   getCatalogRunBlockReason: (catalogId: string) => string | null
   canRunCatalog: (catalogId: string) => boolean
   isWeatherEngineLayer: (catalogId: string) => boolean
@@ -324,6 +328,20 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     return engine === 'python_provider' || engine === 'gee'
   }
 
+  /** overlay 静态/时间序列图层（engine=overlay_registry 或空）：无工作流引擎，但有 PNG 缓存可显示。 */
+  function isOverlayDisplayOnlyLayer(catalogId: string): boolean {
+    const backendLayerId = resolveBackendLayerId(catalogId)
+    if (isWeatherEngineLayer(backendLayerId) || isWeatherEngineLayer(catalogId)) return false
+    const engine = getCatalogWorkflowEngine(backendLayerId) || getCatalogWorkflowEngine(catalogId) || ''
+    return engine === 'overlay_registry' || engine === ''
+  }
+
+  /** 添加路径独立语义：overlay 图层永不阻断（其 PNG 缓存由 map-canvas 自动加载）。 */
+  function getCatalogAddBlockReason(catalogId: string): string | null {
+    if (isOverlayDisplayOnlyLayer(catalogId)) return null
+    return getCatalogRunBlockReason(catalogId)
+  }
+
   function getCatalogRunBlockReason(catalogId: string) {
     const backendLayerId = resolveBackendLayerId(catalogId)
     if (isWeatherEngineLayer(backendLayerId) || isWeatherEngineLayer(catalogId)) {
@@ -397,6 +415,8 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     resolveEffectiveDescriptor,
     getCatalogWorkflowEngine,
     supportsAnalysisWorkflow,
+    isOverlayDisplayOnlyLayer,
+    getCatalogAddBlockReason,
     getCatalogRunBlockReason,
     canRunCatalog,
     isWeatherEngineLayer,

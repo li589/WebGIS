@@ -82,6 +82,8 @@ export function useLayerWorkspace() {
     setCurrentHour: store.setCurrentHour,
     ensureRuntimeLayerCatalog: store.ensureRuntimeLayerCatalog,
     getCatalogRunBlockReason: store.getCatalogRunBlockReason,
+    getCatalogAddBlockReason: store.getCatalogAddBlockReason,
+    isOverlayDisplayOnlyLayer: store.isOverlayDisplayOnlyLayer,
     canRunCatalog: store.canRunCatalog,
     supportsAnalysisWorkflow: store.supportsAnalysisWorkflow,
     isWeatherEngineLayer: store.isWeatherEngineLayer,

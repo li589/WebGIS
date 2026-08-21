@@ -213,6 +213,8 @@ export const useLayersStore = defineStore('layers', () => {
     cleanupAllRetryTimers: workflowRun.cleanupAllRetryTimers,
     stopWorkflowPolling: workflowRun.stopWorkflowPolling,
     getCatalogRunBlockReason: workspace.getCatalogRunBlockReason,
+    getCatalogAddBlockReason: workspace.getCatalogAddBlockReason,
+    isOverlayDisplayOnlyLayer: workspace.isOverlayDisplayOnlyLayer,
     canRunCatalog: workspace.canRunCatalog,
     supportsAnalysisWorkflow: workspace.supportsAnalysisWorkflow,
     isWeatherEngineLayer: workspace.isWeatherEngineLayer,

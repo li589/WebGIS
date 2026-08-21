@@ -118,6 +118,14 @@ function getCatalogRunBlockReason(catalogId: string): string | null {
   return workspace.getCatalogRunBlockReason(catalogId)
 }
 
+function getCatalogAddBlockReason(catalogId: string): string | null {
+  return workspace.getCatalogAddBlockReason(catalogId)
+}
+
+function isOverlayDisplayOnlyLayer(catalogId: string): boolean {
+  return workspace.isOverlayDisplayOnlyLayer(catalogId)
+}
+
 function supportsOnlineTemporal(catalogId: string): boolean {
   return workspace.supportsOnlineTemporal(catalogId)
 }
@@ -127,6 +135,10 @@ function getCatalogItem(catalogId: string) {
 }
 
 function getCatalogSemanticNote(catalogId: string): string | null {
+  // overlay 静态/时间序列图层：天然有 PNG 缓存，添加/显示路径不阻断
+  if (isOverlayDisplayOnlyLayer(catalogId)) {
+    return '静态叠加：已加载缓存影像'
+  }
   const blockReason = getCatalogRunBlockReason(catalogId)
   if (blockReason) return blockReason
   const model = weatherEngine.defaultModel
@@ -364,6 +376,8 @@ onMounted(() => {
       :weather-source-sparse-hint="weatherProviders.weatherSourceSparseHint"
       :get-catalog-job-status="getCatalogJobStatus"
       :get-catalog-run-block-reason="getCatalogRunBlockReason"
+      :get-catalog-add-block-reason="getCatalogAddBlockReason"
+      :is-overlay-display-only-layer="isOverlayDisplayOnlyLayer"
       :get-catalog-semantic-note="getCatalogSemanticNote"
       :catalog-semantic-note-class="catalogSemanticNoteClass"
       :get-category-meta="getCategoryMeta"
