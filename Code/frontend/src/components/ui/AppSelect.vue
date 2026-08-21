@@ -225,6 +225,15 @@ function onBlur(e: FocusEvent) {
   cursor: not-allowed;
 }
 
+/* 下拉弹出面板（原生 option 列表）配色：Chromium 系尊重 option 的
+ * background/color——深浅两种主题下均保证面板背景与文字对比度
+ * （报障 2026-08-22：选源下拉文字不清晰，白底浅字）。 */
+.app-select-native option {
+  background: var(--bg-elevated, #fff);
+  color: var(--text-primary, #1f2328);
+  font-family: inherit;
+}
+
 .app-select-native::placeholder {
   color: var(--text-muted);
 }

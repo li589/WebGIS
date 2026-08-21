@@ -937,6 +937,68 @@ def export_gpcp_rewarp() -> None:
     print(f"  Re-warped {n_fixed} PNG(s)")
 
 
+def export_china_rewarp() -> None:
+    """把中国窗口等经纬资产 PNG 原地重变形为 Mercator 线性（2026-08-22）。
+
+    背景：thematic（hfp/aridity/landcover）与 clcd 资产是 2026-07 旧版等经纬
+    渲染 + WGS84 矩形 bounds；MapLibre ImageSource 在 Mercator 平面插值，
+    等纬度图像在中高纬偏北（用户实测 HFP ~190km、AI 干旱指数/CLCD 同症）。
+
+    修法：源行纬度均匀 [s,n] → 重采样为 Mercator-y 均匀行（最近邻），
+    bounds 四角保持 WGS84 不变（MapLibre 转 Mercator 后与行对齐）。
+    """
+    print("\n=== China-window asset re-warp (equirect -> mercator-linear) ===")
+    from PIL import Image
+
+    targets = [
+        ("thematic/hfp_overlay.png", "hfp-cn"),
+        ("thematic/aridity_overlay.png", "aridity-cn"),
+        ("thematic/landcover_overlay.png", "landcover-cn"),
+        ("clcd/clcd_overlay.png", "clcd-cn"),
+        ("gebco_dem/gebco_dem_overlay.png", "gebco-dem-cn"),
+    ]
+    n_fixed = 0
+    for rel, layer_id in targets:
+        png = _OUT_ROOT / rel
+        bounds_json = png.with_name(png.stem + "_bounds.json")
+        if not png.exists():
+            print(f"  [SKIP] {rel} not found")
+            continue
+        try:
+            bj = json.loads(bounds_json.read_text(encoding="utf-8"))
+            if bj.get("rewarped"):
+                print(f"  [SKIP] {rel}: already re-warped (idempotent guard)")
+                continue
+            bounds = bj["bounds"]
+        except Exception as exc:
+            print(f"  [SKIP] {rel}: bad bounds json ({exc})")
+            continue
+        w, s, e, n = (float(v) for v in bounds)
+        img = Image.open(png)
+        arr = np.asarray(img)
+        h = arr.shape[0]
+
+        def merc_y(lat_deg: float) -> float:
+            t = np.deg2rad(np.clip(lat_deg, -_MERCATOR_MAX_LAT, _MERCATOR_MAX_LAT))
+            return float(np.log(np.tan(np.pi / 4 + t / 2)))
+
+        y_s, y_n = merc_y(s), merc_y(n)
+        # 目标行中心（Mercator y 均匀）反解纬度
+        y_centers = y_s + (np.arange(h) + 0.5) / h * (y_n - y_s)
+        tgt_lat = np.rad2deg(2 * np.arctan(np.exp(y_centers)) - np.pi / 2)
+        # 源行索引（等纬度，j=0 = 北边界 n）
+        src_rows = np.clip(((n - tgt_lat) / (n - s) * h).round().astype(int), 0, h - 1)
+        warped = arr[src_rows, :]
+        Image.fromarray(warped).save(png)
+        # bounds 保持 WGS84 四角不变（重采样已补偿 Mercator 拉伸）；
+        # 写 rewarped 标记防二次重采样（幂等保护）
+        bj["rewarped"] = True
+        bounds_json.write_text(json.dumps(bj, ensure_ascii=False, indent=2), encoding="utf-8")
+        n_fixed += 1
+        print(f"  [OK] {rel} re-warped ({h} rows, bounds [{w:.2f},{s:.2f},{e:.2f},{n:.2f}])")
+    print(f"  Re-warped {n_fixed} PNG(s)")
+
+
 def export_dem_rewarp() -> None:
     """把既有 DEM 资产 PNG（等经纬 ±90° 旧格式）原地重变形为 Mercator 线性。
 
@@ -1103,7 +1165,8 @@ def export_cmfd_precip() -> None:
 
 def export_clcd() -> None:
     print("\n=== CLCD 1997 (China) ===")
-    tif_path = resolve_data_root() / "LandCover" / "CLCD_v01_1997.tif"
+    # 与 overlay_registry._CLCD_TIF 路径对齐（旧 LandCover/ 路径已失效）
+    tif_path = resolve_data_root() / "Ecological_Vegetation" / "LandCover" / "CLCD_v01_1997.tif"
     if not tif_path.exists():
         print("  [SKIP] File not found")
         return
@@ -1954,6 +2017,8 @@ def _build_task_table() -> list[dict]:
          "extent": "native", "layers": ["gpcp-precip-ts"]},
         {"key": "gpcp-rewarp", "name": "GPCP Re-warp", "func": export_gpcp_rewarp,
          "extent": "native", "layers": ["gpcp-precip-ts"]},
+        {"key": "china-rewarp", "name": "China Re-warp", "func": export_china_rewarp,
+         "extent": "native", "layers": ["landcover-cn", "hfp-cn", "aridity-cn", "clcd-cn"]},
         {"key": "dem-rewarp", "name": "DEM Re-warp", "func": export_dem_rewarp,
          "extent": "native", "layers": ["dem-etopo"]},
         {"key": "gebco-dem", "name": "GEBCO DEM", "func": export_gebco_dem,
