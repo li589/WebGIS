@@ -247,7 +247,7 @@
       "properties": {
         "enabled": false,
         "satellite": "FY3F",
-        "data_source": "nsmc",
+        "data_source": "auto",
         "start_date": "{YYYYMMDD}",
         "end_date": "{YYYYMMDD}",
         "local_dir": "{DATA_ROOT}/Soil_Moisture/FY3F/raw",
