@@ -268,6 +268,8 @@ export interface WorkflowStateWriterDeps {
     runId?: string,
     opts?: { forceBind?: boolean },
   ) => Promise<number>
+  /** 产物绑定后把时间轴对齐到该产物的时间块（需求1 批次2，可选注入） */
+  alignTimelineToProduct?: (timeLabel: string) => void
 }
 
 /** 业务判定 / 载荷构建接口 */
@@ -1437,10 +1439,61 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     }
   }
 
+  /** 新添加图层后自动载入已有产物/缓存（需求1 批次2，2026-08-21）。
+   *
+   * 拉最近成功 run，若某 run 的 layer_id（经反演映射收敛后）匹配新图层
+   * catalogId，则物化产物 overlay 并绑到该图层——与刷新恢复
+   * （restoreActiveWorkflows）的 autoDiscovered 行为对齐，但触发点为
+   * 用户从目录添加图层。无产物 run 时静默跳过（用户随后可手动运行）。
+   */
+  async function autoAttachProductsForNewLayer(catalogId: string): Promise<number> {
+    const targetId = resolveInversionCatalogId(catalogId)
+    let runs: Awaited<ReturnType<typeof listRecentSucceededRuns>> = []
+    try {
+      runs = await listRecentSucceededRuns(20)
+    } catch {
+      return 0 // 目录/网络不可用：静默（添加图层本身不应因此报错）
+    }
+    // 同一图层取最新成功 run（列表已按创建时间倒序）
+    const match = runs.find(
+      (r) => resolveInversionCatalogId(r.layer_id || '') === targetId,
+    )
+    if (!match) return 0
+    try {
+      ensureRestoredRunGroup(match.run_id, targetId, undefined)
+      const bound = await deps.attachAlgorithmProductOverlays(
+        match.result_refs,
+        targetId,
+        match.run_id,
+        { forceBind: true },
+      )
+      if (bound > 0) {
+        deps.cleanupUnproducedRunLayers(match.run_id, { succeeded: true })
+        deps.scheduleWorkspacePersist()
+        // 时间轴自动对齐：取该图层产物的最新时间块（需求1——载入时
+        // 时间轴自动切换到当前有数据的时间点）
+        const layer = deps
+          .getActiveLayers()
+          .find((l) => l.catalogId === targetId || resolveInversionCatalogId(l.catalogId) === targetId)
+        const timeList = layer?.importedRaster?.timeList ?? []
+        const timeLabel =
+          layer?.importedRaster?.defaultTime ??
+          (timeList.length ? timeList[timeList.length - 1] : undefined)
+        if (timeLabel && deps.alignTimelineToProduct) {
+          deps.alignTimelineToProduct(String(timeLabel))
+        }
+      }
+      return bound
+    } catch {
+      return 0
+    }
+  }
+
   return {
     restoreActiveWorkflows,
     registerExternalWorkflowRun,
     runWorkflowForCatalog,
+    autoAttachProductsForNewLayer,
     cancelWorkflowRunForJob,
     retryWorkflowRunForJob,
     interruptWorkflowForCatalog,

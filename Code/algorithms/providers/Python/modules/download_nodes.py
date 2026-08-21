@@ -354,11 +354,16 @@ class SshSyncModule(BaseModule):
             )
 
         def _progress_cb(current: int, total: int, downloaded: int) -> None:
+            from ingest._http_resume import format_speed, get_last_speed_bps
+
+            _bps = get_last_speed_bps()
+            _speed = f" [{format_speed(_bps)}]" if _bps else ""
             if ctx.logger_adapter is not None:
                 ctx.logger_adapter.emit_progress(
                     "ssh_sync",
                     current / total if total else 0.0,
-                    f"File {current}/{total}",
+                    f"File {current}/{total}{_speed}",
+                    {"speed_bps": _bps, "downloaded_items": current, "total_items": total},
                 )
 
         result = sync_dataset(
@@ -485,11 +490,16 @@ class NsidcSmapDownloadModule(BaseModule):
             )
 
         def _progress_cb(current: int, total: int, downloaded: int) -> None:
+            from ingest._http_resume import format_speed, get_last_speed_bps
+
+            _bps = get_last_speed_bps()
+            _speed = f" [{format_speed(_bps)}]" if _bps else ""
             if ctx.logger_adapter is not None:
                 ctx.logger_adapter.emit_progress(
                     "nsidc_smap_download",
                     current / total if total else 0.0,
-                    f"Granule {current}/{total}",
+                    f"Granule {current}/{total}{_speed}",
+                    {"speed_bps": _bps, "downloaded_items": current, "total_items": total},
                 )
 
         result = download_smap_range(
@@ -625,11 +635,16 @@ class GldasDownloadModule(BaseModule):
             )
 
         def _progress_cb(current: int, total: int, downloaded: int) -> None:
+            from ingest._http_resume import format_speed, get_last_speed_bps
+
+            _bps = get_last_speed_bps()
+            _speed = f" [{format_speed(_bps)}]" if _bps else ""
             if ctx.logger_adapter is not None:
                 ctx.logger_adapter.emit_progress(
                     "gldas_download",
                     current / total if total else 0.0,
-                    f"Granule {current}/{total}",
+                    f"Granule {current}/{total}{_speed}",
+                    {"speed_bps": _bps, "downloaded_items": current, "total_items": total},
                 )
 
         result = download_gldas_range(

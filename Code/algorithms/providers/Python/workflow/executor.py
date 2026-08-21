@@ -22,6 +22,45 @@ class WorkflowResult:
     execution_order: list[str] = field(default_factory=list)
 
 
+class _ScopedProgressLogger:
+    """节点内进度加权代理（需求3 批次2，2026-08-21）。
+
+    节点执行中模块发出的 ``emit_progress``（stage 为模块自身名，如
+    fy_download 的 day 级进度）原样转发保留节点详情视角；同时把
+    ``[0,1]`` 节点内进度映射到该节点在整体 workflow.dispatch 的区间
+    ``[base, base+span]`` 再发一条，长下载节点期间整体百分比持续更新
+    而非纹丝不动。stage 以 ``workflow.`` 开头的内部事件不重复映射。
+    """
+
+    def __init__(self, inner, base: float, span: float) -> None:
+        self._inner = inner
+        self._base = base
+        self._span = span
+
+    def emit_progress(self, stage, progress, message, detail=None) -> None:
+        if self._inner is None:
+            return
+        self._inner.emit_progress(stage, progress, message, detail)
+        if str(stage).startswith("workflow."):
+            return
+        try:
+            frac = max(0.0, min(1.0, float(progress)))
+        except (TypeError, ValueError):
+            return
+        overall = min(0.999, self._base + frac * self._span)
+        self._inner.emit_progress("workflow.dispatch", overall, message, detail)
+
+    def __getattr__(self, name):  # 其余事件透传
+        inner = object.__getattribute__(self, "_inner")
+        if inner is None:
+            # inner 为 None（纯进度包装场景）：其余事件静默 no-op
+            def _noop(*args, **kwargs):
+                return None
+
+            return _noop
+        return getattr(inner, name)
+
+
 class WorkflowRunner:
     def __init__(
         self,
@@ -76,6 +115,7 @@ class WorkflowRunner:
                             request,
                             runtime_context,
                             node_outputs,
+                            progress_base=(completed / total_nodes, 1 / total_nodes),
                         )
                         node_outputs[node_id] = outputs
                         execution_order.append(node_id)
@@ -100,6 +140,10 @@ class WorkflowRunner:
                                 request,
                                 runtime_context,
                                 snapshot,
+                                progress_base=(
+                                    completed / total_nodes,
+                                    1 / total_nodes,
+                                ),
                             ): node_id
                             for node_id in layer
                         }
@@ -144,6 +188,7 @@ class WorkflowRunner:
         request: JobRequest,
         runtime_context: RuntimeContext,
         node_outputs: dict[str, dict[str, object]],
+        progress_base: tuple[float, float] | None = None,
     ) -> dict[str, object]:
         """执行单个节点，返回其输出字典。
 
@@ -166,6 +211,17 @@ class WorkflowRunner:
             node_outputs=node_outputs,
             edges=definition.edges,
         )
+        # 需求3 批次2：节点内进度（如 fy_download 的 day 级）加权映射到整体
+        # workflow.dispatch 区间，避免长下载节点期间整体百分比纹丝不动。
+        node_logger = (
+            _ScopedProgressLogger(
+                self.logger_adapter,
+                progress_base[0],
+                progress_base[1],
+            )
+            if progress_base is not None and self.logger_adapter is not None
+            else self.logger_adapter
+        )
         node_ctx = NodeExecutionContext(
             workflow_id=definition.workflow_id,
             node_id=node.node_id,
@@ -174,7 +230,7 @@ class WorkflowRunner:
             workspace=Path(runtime_context.workspace),
             artifact_store=self.artifact_store,
             datasource_adapter=self.datasource_adapter,
-            logger_adapter=self.logger_adapter,
+            logger_adapter=node_logger,
             product_sink=self.product_sink,
         )
         stage_name = f"workflow.node.{node.node_id}"

@@ -220,6 +220,8 @@ function addCatalogItem(catalogId: string, isAdminBoundary = false) {
     `添加图层「${catalogId}」`,
     isAdminBoundary ? '行政区边界' : undefined,
   )
+  // 需求1 批次2：添加后自动载入该图层最近一次成功 run 的产物/缓存
+  void workflowRun.autoAttachProductsForNewLayer(catalogId)
 }
 
 function addAllInCategory(

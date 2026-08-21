@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -24,6 +25,27 @@ DEFAULT_MAX_RETRIES = 3
 DEFAULT_INITIAL_BACKOFF = 2.0
 DEFAULT_MIN_DISK_FREE_GB = 5.0
 PROGRESS_INTERVAL = 2.0
+
+# 需求3 批次2：线程本地「最近下载速率」，模块层（download_nodes/
+# fy_download）emit_progress 时经 get_last_speed_bps() 读出放进 detail
+# 供前端显示总下载网速。多 worker 并发时各线程互不干扰。
+_speed_tls = threading.local()
+
+
+def get_last_speed_bps() -> float | None:
+    """返回当前线程最近一次下载的瞬时速率（字节/秒），无样本时 None。"""
+    return getattr(_speed_tls, "bps", None)
+
+
+def format_speed(bps: float | None) -> str:
+    """速率格式化：1.8 MB/s / 356 KB/s。"""
+    if bps is None or bps <= 0:
+        return ""
+    if bps >= 1024 * 1024:
+        return f"{bps / 1024 / 1024:.1f} MB/s"
+    if bps >= 1024:
+        return f"{bps / 1024:.0f} KB/s"
+    return f"{bps:.0f} B/s"
 
 
 def format_size(size_bytes: float) -> str:
@@ -104,6 +126,7 @@ def download_resumable(
     total = content_length + existing
     downloaded = 0
     last_report = time.time()
+    last_report_bytes = 0
 
     try:
         with open(local_path, mode) as f:
@@ -115,13 +138,24 @@ def download_resumable(
                 now = time.time()
                 if now - last_report >= PROGRESS_INTERVAL:
                     cur = existing + downloaded
+                    elapsed = now - last_report
+                    bps = (
+                        (downloaded - last_report_bytes) / elapsed
+                        if elapsed > 0 and downloaded >= last_report_bytes
+                        else None
+                    )
+                    if bps is not None:
+                        _speed_tls.bps = bps
+                    speed_txt = f" ({format_speed(bps)})" if bps else ""
                     logger.info(
-                        "  下载中 %s: %s / %s",
+                        "  下载中 %s: %s / %s%s",
                         local_path.name,
                         format_size(cur),
                         format_size(total) if total else "?",
+                        speed_txt,
                     )
                     last_report = now
+                    last_report_bytes = downloaded
                 if progress_callback:
                     progress_callback(downloaded, total)
     finally:
