@@ -107,7 +107,11 @@ def download_via_herbie(
     target_dir: Path,
     overwrite: bool,
 ) -> Path:
-    """主路径：herbie 物化单个 GRIB2（或字段子集），返回本地路径。"""
+    """主路径：herbie 物化单个 GRIB2（或字段子集），返回本地路径。
+
+    默认源全部失败时（如 RDA 无 .idx 或网络不可达），回退 ``use='aws'``
+    重试一次——AWS Open Data 源提供完整 index 且全球可达。
+    """
     if not _HAS_HERBIE:
         raise RuntimeError(
             "herbie is not installed; run pip install herbie-data or switch "
@@ -118,17 +122,33 @@ def download_via_herbie(
         kwargs["product"] = product.strip()
     if member.strip():
         kwargs["member"] = member.strip()
-    h = Herbie(
-        date=cycle.strftime("%Y-%m-%d %H:%M"),
-        model=model.strip(),
-        fxx=int(fxx),
-        save_dir=target_dir,
-        overwrite=overwrite,
-        verbose=False,
-        **kwargs,
-    )
     search = search_string.strip() or None
-    return h.download(searchString=search, errors="raise")
+    try:
+        h = Herbie(
+            date=cycle.strftime("%Y-%m-%d %H:%M"),
+            model=model.strip(),
+            fxx=int(fxx),
+            save_dir=target_dir,
+            overwrite=overwrite,
+            verbose=False,
+            **kwargs,
+        )
+        return h.download(searchString=search, errors="raise")
+    except Exception as first_err:  # noqa: BLE001 — 默认源失败回退 AWS
+        logger.warning(
+            "NOMADS herbie 默认源失败（%s），回退 use='aws' 重试", first_err
+        )
+        h = Herbie(
+            date=cycle.strftime("%Y-%m-%d %H:%M"),
+            model=model.strip(),
+            fxx=int(fxx),
+            save_dir=target_dir,
+            overwrite=overwrite,
+            verbose=False,
+            use="aws",
+            **kwargs,
+        )
+        return h.download(searchString=search, errors="raise")
 
 
 def download_via_legacy(
