@@ -117,14 +117,38 @@ const INVERSION_RUN_CATALOG_MAP: Array<{ pattern: RegExp; catalogId: string }> =
   { pattern: /omega[-_]avg[-_]daily[-_]?smap/i, catalogId: 'method-smap-omega-doy-avg' },
 ]
 
+/** 裸 id（无 fy/smap 记号）兜底判组：含 smap 字样归 SMAP 组，含 fy/风云归 FY 组。 */
+const BARE_INVERSION_HINT_MAP: Array<{ pattern: RegExp; catalogId: string }> = [
+  { pattern: /smap/i, catalogId: 'method-smap-omega-doy-dynamic' },
+  { pattern: /fy|风云/i, catalogId: 'method-fy-omega-doy-dynamic' },
+]
+
 /** 匹配反演 run（fenkuai 动态链 / avg 逐日链 / omega_pixel）的 layer_id 识别。 */
 export const INVERSION_RUN_LAYER_PATTERN =
   /omega[-_]sf[-_]fenkuai|omega[-_]avg[-_]daily|omega_sf_omega_pixel/i
 
-/** 英文反演 workflow/layer id → 目录 id；非反演 id 原样返回。 */
+/** 英文反演 workflow/layer id → 目录 id；非反演 id 原样返回。
+ *
+ * 历史 run 存在裸 layer_id（omega-sf-fenkuai / omega-avg-daily，无 fy/smap
+ * 后缀）——四条主映射均不命中。此处兜底：裸 fenkuai/avg id 按 id 内的
+ * smap/fy 提示归组，无提示默认并入 SMAP 组（2026-08 前的裸 id 多为
+ * smap 链提交），避免英文占位图层复活。
+ */
 export function resolveInversionCatalogId(layerId: string): string {
   for (const entry of INVERSION_RUN_CATALOG_MAP) {
     if (entry.pattern.test(layerId)) return entry.catalogId
+  }
+  if (/^omega[-_]sf[-_]fenkuai$/i.test(layerId.trim())) {
+    for (const hint of BARE_INVERSION_HINT_MAP) {
+      if (hint.pattern.test(layerId)) return hint.catalogId
+    }
+    return 'method-smap-omega-doy-dynamic'
+  }
+  if (/^omega[-_]avg[-_]daily$/i.test(layerId.trim())) {
+    for (const hint of BARE_INVERSION_HINT_MAP) {
+      if (hint.pattern.test(layerId)) return hint.catalogId
+    }
+    return 'method-smap-omega-doy-avg'
   }
   return layerId
 }
@@ -157,10 +181,21 @@ export function loadTrackedWorkflowRuns(): TrackedWorkflowRun[] {
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    return parsed.filter(
+    const runs = parsed.filter(
       (item): item is TrackedWorkflowRun =>
         !!item && typeof item.runId === 'string' && typeof item.catalogId === 'string',
     )
+    // 一次性迁移：旧版本存的英文 catalogId（omega-sf-fenkuai 等）收敛到
+    // method-* 目录成员，并回写 localStorage（安审 2026-08-21）
+    const migrated = runs.map((item) =>
+      item.catalogId !== resolveInversionCatalogId(item.catalogId)
+        ? { ...item, catalogId: resolveInversionCatalogId(item.catalogId) }
+        : item,
+    )
+    if (migrated.some((item, i) => item.catalogId !== runs[i].catalogId)) {
+      window.localStorage.setItem(TRACKED_RUNS_STORAGE_KEY, JSON.stringify(migrated))
+    }
+    return migrated
   } catch {
     return []
   }
@@ -361,7 +396,9 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
   function resolveRestoredCatalogId(runLayerId: string | null | undefined, runId: string): string {
     const layerId = (runLayerId || '').trim()
     const tracked = loadTrackedWorkflowRuns().find((item) => item.runId === runId)
-    if (tracked?.catalogId) return tracked.catalogId
+    // 旧版本 tracked 里可能存了裸英文 id（omega-sf-fenkuai 等），统一过
+    // 映射收敛到 method-* 目录成员，避免英文占位图层复活（安审 2026-08-21）
+    if (tracked?.catalogId) return resolveInversionCatalogId(tracked.catalogId)
     if (layerId) {
       const outputStore = useWorkflowOutputLayersStore()
       const match = outputStore.entries.find(
