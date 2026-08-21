@@ -8,6 +8,7 @@ the launcher touches.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -49,20 +50,46 @@ DEFAULT_OPEN_METEO_VOLUME = "backend_open-meteo-data"
 IS_WINDOWS = sys.platform == "win32"
 
 # ─── 服务定义 ────────────────────────────────────────────────────────────────
-# 7 个 Celery Worker 队列
-CELERY_WORKERS: list[dict[str, str]] = [
-    {"name": "realtime", "queues": "realtime"},
-    {"name": "standard", "queues": "standard"},
-    {"name": "heavy", "queues": "heavy"},
-    {"name": "batch", "queues": "batch"},
-    {"name": "download", "queues": "download-realtime,download-standard"},
-    {"name": "gee", "queues": "gee-realtime,gee-standard,gee-heavy,gee-batch"},
+# 7 个 Celery Worker 队列（instances=该队列的并发 worker 进程数）。
+#
+# 并发设计（2026-08-21 需求4：工作流并发执行）：
+# - Windows 下 celery prefork 不可用、默认 solo 池单进程串行 → 同队列一次
+#   只能跑一个任务（用户观察「仅能运行单个工作流，其余排队」的根因）。
+# - 解法：每队列按 instances 启动 N 个独立 worker 进程（进程级真并行，
+#   规避 Windows pool 兼容性）。standard/heavy 是工作流主队列，默认 2。
+# - 单实例保持旧 pid key（worker-{name}）；多实例为 worker-{name}-{i}。
+# - env 覆盖：CGDA_WORKER_INSTANCES_{NAME}（如 CGDA_WORKER_INSTANCES_HEAVY=3）。
+# - 节点级并行（层内同层节点）另有 CGDA_WORKFLOW_NODE_PARALLELISM（默认 1）；
+#   资源分配统一经 resource_profile（heavy/standard）路由队列。
+CELERY_WORKERS: list[dict[str, object]] = [
+    {"name": "realtime", "queues": "realtime", "instances": 1},
+    {"name": "standard", "queues": "standard", "instances": 2},
+    {"name": "heavy", "queues": "heavy", "instances": 2},
+    {"name": "batch", "queues": "batch", "instances": 1},
+    {"name": "download", "queues": "download-realtime,download-standard", "instances": 1},
+    {"name": "gee", "queues": "gee-realtime,gee-standard,gee-heavy,gee-batch", "instances": 1},
     {
         "name": "weather",
         "queues": "weather-realtime,weather-standard,weather-heavy,weather-batch",
+        "instances": 1,
     },
 ]
-VALID_WORKER_NAMES = [w["name"] for w in CELERY_WORKERS]
+VALID_WORKER_NAMES = [str(w["name"]) for w in CELERY_WORKERS]
+
+
+def worker_instance_count(worker_name: str) -> int:
+    """读取某队列的 worker 进程数（env CGDA_WORKER_INSTANCES_<NAME> 可覆盖）。"""
+    for w in CELERY_WORKERS:
+        if str(w["name"]) == worker_name:
+            default = int(w.get("instances", 1) or 1)  # type: ignore[arg-type]
+            raw = os.getenv(f"CGDA_WORKER_INSTANCES_{worker_name.upper()}")
+            if raw and raw.strip():
+                try:
+                    return max(1, int(raw.strip()))
+                except ValueError:
+                    return default
+            return default
+    return 1
 
 # ─── 日志系统常量 ────────────────────────────────────────────────────────────
 _LAUNCHER_LOG_MAX_BYTES = 5 * 1024 * 1024

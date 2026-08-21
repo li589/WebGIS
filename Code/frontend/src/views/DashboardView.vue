@@ -167,7 +167,6 @@ const {
   timelineAvailabilityLabel,
   timelineObservationLabel,
   activeLayerGranularity,
-  isLayerLocked,
   timelineSegments,
 } = useTimelineSync(
   uiStore,
@@ -450,7 +449,6 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
             :play-interval-ms="playIntervalMs"
             :granularity="hasTimelineLayer ? activeLayerGranularity : 'hour'"
             :active-layer-name="timelineLayerName"
-            :is-layer-locked="isLayerLocked"
             :online-fetch-in-progress="
               onlineTemporal.orchestrator.currentFetchStatus.value?.status === 'in-flight' ||
               onlineTemporal.orchestrator.currentFetchStatus.value?.status === 'submitting'

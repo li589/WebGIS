@@ -56,12 +56,21 @@ class ProcessManager:
         return hidden_kwargs()
 
     def start_celery_workers(self, worker_names: list[str] | None = None) -> None:
-        """启动 Celery Worker。worker_names 为 None 时启动全部 7 个。"""
+        """启动 Celery Worker。worker_names 为 None 时启动全部队列。
+
+        每队列按 instances（env CGDA_WORKER_INSTANCES_<NAME> 可覆盖）启动
+        N 个独立进程——Windows solo 池下单进程串行是「同时只能跑一个工作流」
+        的根因；多实例实现进程级真并行（2026-08-21 需求4）。
+        """
+        from launch.constants import worker_instance_count
+
         if worker_names is None:
             workers_to_start = CELERY_WORKERS
             log.banner(f"启动 Celery Workers ({len(workers_to_start)} 个队列)")
         else:
-            workers_to_start = [w for w in CELERY_WORKERS if w["name"] in worker_names]
+            workers_to_start = [
+                w for w in CELERY_WORKERS if str(w["name"]) in worker_names
+            ]
             log.banner(f"启动 Celery Workers ({len(workers_to_start)} 个)")
 
         py = python_executable()
@@ -69,38 +78,54 @@ class ProcessManager:
         hostname = platform.node()
         env = child_env()
 
+        total = 0
         for w in workers_to_start:
-            name = w["name"]
-            queues = w["queues"]
-            log_file = LOG_DIR / f"worker-{name}.log"
-            log.info("Worker", f"启动 worker-{name} (queues={queues})")
+            name = str(w["name"])
+            queues = str(w["queues"])
+            instances = worker_instance_count(name)
+            for idx in range(1, instances + 1):
+                # 单实例保持旧 pid key（worker-{name}）；多实例 worker-{name}-{i}
+                proc_key = f"worker-{name}" if idx == 1 else f"worker-{name}-{idx}"
+                log_file = (
+                    LOG_DIR / f"worker-{name}.log"
+                    if idx == 1
+                    else LOG_DIR / f"worker-{name}-{idx}.log"
+                )
+                log.info(
+                    "Worker",
+                    f"启动 {proc_key} (queues={queues}, 实例 {idx}/{instances})",
+                )
 
-            rotate_subprocess_log_if_needed(log_file)
-            if not log_file.exists():
-                log_file.write_text("", encoding="utf-8")
+                rotate_subprocess_log_if_needed(log_file)
+                if not log_file.exists():
+                    log_file.write_text("", encoding="utf-8")
 
-            proc = subprocess.Popen(
-                [
-                    py,
-                    worker_script,
-                    "worker",
-                    f"--loglevel={self._loglevel}",
-                    f"--queues={queues}",
-                    f"--hostname=worker-{name}@{hostname}",
-                    "-f",
-                    str(log_file),
-                ],
-                cwd=str(BACKEND_DIR),
-                env=env,
-                stdout=open(log_file, "a", encoding="utf-8"),
-                stderr=subprocess.STDOUT,
-                **self._proc_kwargs(),
-            )
-            self.processes[f"worker-{name}"] = proc
+                proc = subprocess.Popen(
+                    [
+                        py,
+                        worker_script,
+                        "worker",
+                        f"--loglevel={self._loglevel}",
+                        f"--queues={queues}",
+                        f"--hostname={proc_key}@{hostname}",
+                        "-f",
+                        str(log_file),
+                    ],
+                    cwd=str(BACKEND_DIR),
+                    # 每进程独立 app 日志文件：多实例并发写同一 RotatingFileHandler
+                    # 在 Windows 轮转时 PermissionError 互杀（app/core/logging.py）
+                    env={**env, "CGDA_LOG_FILE_ROLE": proc_key},
+                    stdout=open(log_file, "a", encoding="utf-8"),
+                    stderr=subprocess.STDOUT,
+                    **self._proc_kwargs(),
+                )
+                self.processes[proc_key] = proc
+                total += 1
 
         log.ok(
             "Worker",
-            f"{len(workers_to_start)} 个 Worker 已启动，日志: .data/logs/worker-*.log",
+            f"{total} 个 Worker 已启动（{len(workers_to_start)} 个队列），"
+            "日志: .data/logs/worker-*.log",
         )
 
     def start_celery_beat(self) -> None:

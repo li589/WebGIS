@@ -24,7 +24,6 @@ const props = withDefaults(
     playIntervalMs?: number
     granularity?: TimeGranularity
     activeLayerName?: string
-    isLayerLocked?: boolean
     /** 当前段是否正在在线获取中 */
     onlineFetchInProgress?: boolean
   }>(),
@@ -33,7 +32,6 @@ const props = withDefaults(
     unifiedTimeLock: true,
     isPlaying: false,
     playIntervalMs: DEFAULT_PLAY_INTERVAL_MS,
-    isLayerLocked: false,
     activeLayerName: '',
     onlineFetchInProgress: false,
   },
@@ -45,7 +43,6 @@ const emit = defineEmits<{
   changeDate: [date: Date]
   togglePlay: []
   toggleUnifiedTime: []
-  toggleLayerLock: []
   changePlayInterval: [ms: number]
   /** 用户点击可在线获取段时触发 */
   fetchSegment: [segment: TimelineAvailabilitySegment]
@@ -598,32 +595,6 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
         </div>
 
         <div class="divider" aria-hidden="true"></div>
-
-        <!-- 图层时间独立锁定开关 -->
-        <button
-          class="action-btn lock-btn"
-          type="button"
-          :class="{ 'lock-btn--locked': isLayerLocked }"
-          :title="
-            isLayerLocked
-              ? '已锁定本图层时间记忆：切回时恢复锁定时刻；播放/拖动仍用全局时刻驱动地图（点击解除）'
-              : '未锁定记忆：切层时按图层记忆模式读写时刻（点击锁定当前时刻）'
-          "
-          @click="emit('toggleLayerLock')"
-        >
-          <svg v-if="isLayerLocked" viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M8 1a3.5 3.5 0 0 0-3.5 3.5V6H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-.5V4.5A3.5 3.5 0 0 0 8 1zm2 5H6V4.5a2 2 0 1 1 4 0V6z"
-            />
-          </svg>
-          <svg v-else viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M11 6V4.5a3.5 3.5 0 1 0-7 0v.5h1.5v-.5a2 2 0 1 1 4 0V6H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-1z"
-            />
-          </svg>
-        </button>
 
         <!-- 全局统一时间 Link 按钮 -->
         <button
