@@ -427,7 +427,12 @@ def _fetch_from_nas(
             f"NAS source only holds FY3D/FY3F daily files (got {satellite}); "
             "FY3B retired in 2020; 其它卫星请经 NSMC 在线或本地目录供给"
         )
-    profile_id = str(ds.get("nas_profile") or "").strip() or "nas_profile"
+    # NAS FileBrowser profile：dataset 配置可经 nas_profile 覆盖；默认对齐
+    # 「远程与存储」面板实际登记的 profile_id（nas-filebrowser，2026-08-21
+    # 实测旧默认 "nas_profile" 在凭据库中不存在，导致 NSMC 回退 NAS 恒失败）。
+    profile_id = (
+        str(ds.get("nas_profile") or "").strip() or "nas-filebrowser"
+    )
 
     if ctx.logger_adapter is not None:
         ctx.logger_adapter.emit_stage_start(
