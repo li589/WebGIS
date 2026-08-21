@@ -73,7 +73,8 @@ class UniversalDataReader:
         ext = self.path.suffix.lower()
         if ext in (".h5", ".hdf", ".he5", ".hdf5"):
             return "hdf5"
-        if ext == ".nc":
+        if ext in (".nc", ".nc4"):
+            # .nc4 为 netCDF4 格式（如 GPCP 月降水 GPCPMON_L3_*_V3.2.nc4）
             return "netcdf"
         if ext in (".tif", ".tiff"):
             return "geotiff"
