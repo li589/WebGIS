@@ -39,6 +39,8 @@ import {
 import { WorkflowValidationError } from '../../services/_http'
 import {
   explicitExpectedOutputTags,
+  expectedOutputTargets,
+  groupTitleFromDefinition,
   productTagLabel,
   type WorkflowDefLike,
 } from '../../utils/workflow-expected-outputs'
@@ -766,15 +768,46 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         .filter((t): t is string => Boolean(t))
       return tags.length ? Array.from(new Set(tags)) : []
     }
-    const defTags = explicitExpectedOutputTags(
-      workflowDefinitionForRestore(
-        existingGroup?.workflowId || bridge.workflowId,
-        existingGroup?.sourceLayerId || bridge.sourceLayerId,
-        catalogId,
-      ),
+    // 需求2（2026-08-22）：组名/成员名优先取工作流定义（种子/画布流水线）
+    // 的 extra.group_title / extra.output_labels 中文配置；descriptor 经
+    // catalog 通道携带的 workflowExtra 同效。未配置才落 tracked/catalog 名
+    // 与 productTagLabel 固定映射兜底。
+    const restoreDef = workflowDefinitionForRestore(
+      existingGroup?.workflowId || bridge.workflowId,
+      existingGroup?.sourceLayerId || bridge.sourceLayerId,
+      catalogId,
     )
+    const defTags = explicitExpectedOutputTags(restoreDef)
+    const catalogExtra = (() => {
+      const catalog = deps.getRuntimeLayerCatalog()
+      const keys = [bridge.sourceLayerId, catalogId, tracked?.catalogId].filter(
+        (k): k is string => Boolean(k),
+      )
+      for (const key of keys) {
+        const extra = catalog[key]?.workflowExtra
+        if (extra && typeof extra === 'object') return extra
+      }
+      return undefined
+    })()
+    const extraTitle = groupTitleFromDefinition(restoreDef) ?? catalogExtra?.group_title
     const layerTags = memberTagsFromLayers()
     const tags = layerTags.length ? layerTags : defTags.length ? defTags : LEGACY_RESTORE_TAGS
+    const catalogLabels = catalogExtra?.output_labels
+    const mergedLabels: Record<string, string> =
+      (Array.isArray(catalogLabels)
+        ? Object.fromEntries(
+            catalogLabels
+              .map((v, i) => [defTags[i] ?? tags[i], v] as [string, unknown])
+              .filter(([k, v]) => k && typeof v === 'string'),
+          )
+        : catalogLabels) || {}
+    const configuredTargets = expectedOutputTargets(restoreDef).length
+      ? expectedOutputTargets(restoreDef)
+      : tags.map((tag) => ({
+          productTag: tag,
+          name: mergedLabels[tag] ?? productTagLabel(tag),
+        }))
+    const configuredGroupTitle = extraTitle
     const groupId =
       existingGroup?.groupId ||
       tracked?.groupId ||
@@ -897,8 +930,15 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     }
 
     const created = deps.createRunLayerGroup({
-      title: options.title || tracked?.name || bridge.title || '工作流运行',
-      targets: tags.map((tag) => ({ name: productTagLabel(tag), productTag: tag })),
+      title:
+        configuredGroupTitle ||
+        options.title ||
+        tracked?.name ||
+        bridge.title ||
+        '工作流运行',
+      targets: configuredTargets.length
+        ? configuredTargets
+        : tags.map((tag) => ({ name: productTagLabel(tag), productTag: tag })),
       sourceLayerId,
       workflowId,
       memberCatalogIds,

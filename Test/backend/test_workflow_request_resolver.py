@@ -99,6 +99,9 @@ def test_normalize_fills_time_range_from_seed_via_restored_layer() -> None:
 
     X2 变体路由后，无显式变体选择的 layer_id 提交翻译为默认在线变体
     （workflow_name），不再走 setdefault(module_name) 裸模块路径。
+    种子 time_range 为 {YYYY-MM-DD} 占位符时按提交当天展开（2026-08-22
+    根因修复：占位符 fromisoformat 解析失败曾致 time_range 静默 None →
+    下游参数校验报无效）。
     """
     payload = WorkflowSubmitRequest(
         command_type=WorkflowCommandType.analysis,
@@ -108,12 +111,12 @@ def test_normalize_fills_time_range_from_seed_via_restored_layer() -> None:
     )
     normalized = normalize_workflow_submit_request(payload)
     assert normalized.time_range is not None, "normalized.time_range is not None"
+    from datetime import date as _date
+
+    today = _date.today()
     assert (
-        normalized.time_range.start_at.year == 2025
-    ), "normalized.time_range.start_at.year == 2025"
-    assert (
-        normalized.time_range.start_at.month == 12
-    ), "normalized.time_range.start_at.month == 12"
+        normalized.time_range.start_at.date() == today
+    ), "占位符种子默认展开为提交当天"
     algo = normalized.algorithm_request or {}
     assert (
         algo.get("workflow_name") == "omega_sf_fenkuai_smap_online"

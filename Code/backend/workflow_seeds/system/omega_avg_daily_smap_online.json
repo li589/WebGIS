@@ -220,6 +220,12 @@
     "notes": "模板种子：start_date/end_date 含 YYYYMMDD 占位符，运行前替换（granule URL 由 nsidc_smap_download 内部经 CMR 动态解析）。smap_daily 将 .h5 转为 YYYYMMDD.mat（含 TBv/TBh/IA/Ts/vwc/SM）落盘 DATA_ROOT/Soil_Moisture/SMAP_Origin_Data，反演经 data/source smap_daily_mat 读取同目录；omega_avg_daily 产出 SM/VOD/OMEGA 三产品经 output/map_layer 发布到 avg 图层。",
     "has_time_range_node": false,
     "has_bbox_node": false,
-    "has_output_node": true
+    "has_output_node": true,
+    "group_title": "SMAP ω 反演产物（平均）",
+    "output_labels": {
+      "SM": "土壤水分",
+      "VOD": "植被光学厚度",
+      "OMEGA": "反演参数 ω"
+    }
   }
 }

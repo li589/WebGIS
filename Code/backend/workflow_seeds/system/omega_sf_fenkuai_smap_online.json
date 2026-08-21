@@ -228,6 +228,12 @@
       "VOD",
       "OMEGA"
     ],
-    "notes": "模板种子：start_date/end_date 含 YYYYMMDD 占位符，运行前替换。smap_daily 落盘 DATA_ROOT/Soil_Moisture/SMAP_Origin_Data（规范目录），反演经 data/source smap_folder 读取同目录，形成下载→反演跨 run 解耦。"
+    "notes": "模板种子：start_date/end_date 含 YYYYMMDD 占位符，运行前替换。smap_daily 落盘 DATA_ROOT/Soil_Moisture/SMAP_Origin_Data（规范目录），反演经 data/source smap_folder 读取同目录，形成下载→反演跨 run 解耦。",
+    "group_title": "SMAP ω 反演产物（动态）",
+    "output_labels": {
+      "SM": "土壤水分",
+      "VOD": "植被光学厚度",
+      "OMEGA": "反演参数 ω"
+    }
   }
 }

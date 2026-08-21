@@ -63,6 +63,58 @@ export function explicitExpectedOutputTags(def: WorkflowDefLike | null | undefin
   return []
 }
 
+/** 工作流定义的中文组名（extra.group_title）；未配置返回 undefined */
+export function groupTitleFromDefinition(
+  def: WorkflowDefLike | null | undefined,
+): string | undefined {
+  const raw = def?.extra?.group_title
+  if (typeof raw === 'string' && raw.trim()) return raw.trim()
+  return undefined
+}
+
+/**
+ * 工作流定义的产出显示名映射（extra.output_labels）。
+ *
+ * 形态一（推荐，按 tag 键）：``{ "SM": "土壤水分", "VOD": "植被光学厚度" }``
+ * 形态二（数组，与 extra.outputs 对齐）：``["土壤水分", "植被光学厚度"]``
+ * 未配置返回空对象——由 productTagLabel 固定映射兜底。
+ */
+export function outputLabelsFromDefinition(
+  def: WorkflowDefLike | null | undefined,
+): Record<string, string> {
+  const raw = def?.extra?.output_labels
+  if (Array.isArray(raw)) {
+    const tags = explicitExpectedOutputTags(def)
+    const map: Record<string, string> = {}
+    raw.forEach((label, i) => {
+      if (typeof label === 'string' && label.trim() && tags[i]) {
+        map[tags[i]] = label.trim()
+      }
+    })
+    return map
+  }
+  if (raw && typeof raw === 'object') {
+    const map: Record<string, string> = {}
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof v === 'string' && v.trim()) map[k] = v.trim()
+    }
+    return map
+  }
+  return {}
+}
+
+/** 产出标签 + 显示名（extra.output_labels 优先，productTagLabel 兜底） */
+export function expectedOutputTargets(
+  def: WorkflowDefLike | null | undefined,
+): Array<{ name: string; productTag: string }> {
+  const tags = explicitExpectedOutputTags(def)
+  const labels = outputLabelsFromDefinition(def)
+  return tags.map((tag) => ({
+    productTag: tag,
+    name: labels[tag] ?? productTagLabel(tag),
+  }))
+}
+
 /**
  * 预期产出标签列表；至少返回 ['result']（单产出也进计算组）。
  */

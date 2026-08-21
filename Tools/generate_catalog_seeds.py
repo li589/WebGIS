@@ -151,6 +151,13 @@ def transform_descriptor(desc: dict[str, Any]) -> dict[str, Any]:
     if source_reference is not None:
         item["sourceReference"] = source_reference
 
+    # 需求2（2026-08-22）：工作流中文命名配置透传——descriptor 的
+    # workflow_extra（group_title/output_labels）由种子 extra 复制而来，
+    # 前端建组时优先读取；未配置走 productTagLabel/id 兜底。
+    workflow_extra = desc.get("workflow_extra")
+    if isinstance(workflow_extra, dict) and workflow_extra:
+        item["workflowExtra"] = workflow_extra
+
     return item
 
 

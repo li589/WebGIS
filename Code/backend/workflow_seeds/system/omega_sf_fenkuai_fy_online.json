@@ -383,6 +383,12 @@
     "notes": "模板种子：start_date/end_date 含 YYYYMMDD 占位符，运行前替换。data_source=auto：优先 NSMC 门户在线（多账号轮换 + 额度冷却；历史日期门户 404），失败回退 NAS FileBrowser（/Chenhaojun/Data/fy3dhdf2425 逐日 FY3D TIF，凭据走远程与存储 nas_profile）。FY3B 支路默认停用（properties.enabled=false，FY3B 卫星 2020 年退役、无现代日期数据；反演回退匹配在 fy3b_folder 为空时自动跳过）——历史日期回补可在画布重新启用节点 2/4。fy_daily 单轨道日落盘规范名 YYYYMMDD.mat 供 fy3d_folder/fy3b_folder 读取。temp_scheme=DUAL 时另行接入 GLDAS（见 omega_avg_daily_gldas_online）。",
     "has_time_range_node": true,
     "has_bbox_node": true,
-    "has_output_node": true
+    "has_output_node": true,
+    "group_title": "风云 ω 反演产物（动态）",
+    "output_labels": {
+      "SM": "土壤水分",
+      "VOD": "植被光学厚度",
+      "OMEGA": "反演参数 ω"
+    }
   }
 }

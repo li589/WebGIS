@@ -500,7 +500,27 @@ def _node_module_name(node: dict[str, Any]) -> str:
     return str(node.get("node_type") or "")
 
 
-def _extract_time_range_from_nodes(nodes: list[Any] | None):
+def _expand_seed_date_placeholder(value: str, ref: Any) -> str:
+    """展开种子 time_range 节点的日期占位符（无 ref 时用当天）。
+
+    在线种子的 start/end 常为 ``{YYYY-MM-DD}T00:00:00`` 字面占位符
+    （默认=提交当天）。此前 ``_extract_time_range_from_nodes`` 直接
+    ``fromisoformat`` 解析占位符抛 ValueError → time_range 静默 None →
+    layer_id-only 提交缺 time_range → 下游参数校验报一堆无效
+    （用户报障 2026-08-22「流水线配置时间范围后运行直接出错」根因）。
+    """
+    from datetime import date as _date
+
+    if "{YYYY-MM-DD}" in value:
+        base = ref if isinstance(ref, _date) else _date.today()
+        return value.replace("{YYYY-MM-DD}", base.isoformat())
+    if "{YYYYMMDD}" in value:
+        base = ref if isinstance(ref, _date) else _date.today()
+        return value.replace("{YYYYMMDD}", base.strftime("%Y%m%d"))
+    return value
+
+
+def _extract_time_range_from_nodes(nodes: list[Any] | None, ref_date: Any = None):
     """从 data/time_range（或编译后的 time_range 模块）节点提取 TimeRange。"""
     if not nodes:
         return None
@@ -519,8 +539,12 @@ def _extract_time_range_from_nodes(nodes: list[Any] | None):
             end_str = props.get("end_at")
             if not start_str or not end_str:
                 continue
-            start_dt = datetime.fromisoformat(str(start_str))
-            end_dt = datetime.fromisoformat(str(end_str))
+            start_dt = datetime.fromisoformat(
+                _expand_seed_date_placeholder(str(start_str), ref_date)
+            )
+            end_dt = datetime.fromisoformat(
+                _expand_seed_date_placeholder(str(end_str), ref_date)
+            )
             granularity_str = str(props.get("granularity") or "day")
             try:
                 granularity = TimeGranularity(granularity_str)
@@ -883,6 +907,14 @@ def _compile_workflow_seed(workflow_name: str) -> dict[str, Any] | None:
         )
 
         _filter_invalid_edges(compiled)
+
+        # 透传种子 extra（outputs/group_title/output_labels 等）到 compiled
+        # workflow_definition——前端建组命名（extra.group_title/output_labels
+        # 中文配置，2026-08-22 需求2）与产出标签推导依赖该字段；此前编译器
+        # 丢弃 extra，配置静默失效。
+        seed_extra = definition.get("extra")
+        if isinstance(seed_extra, dict) and seed_extra:
+            compiled["extra"] = dict(seed_extra)
 
         return compiled
     except Exception:

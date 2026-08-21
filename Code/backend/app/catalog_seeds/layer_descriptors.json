@@ -1591,7 +1591,15 @@
     "merged_into": "smap-omega-inversion",
     "is_merged_group": false,
     "members": [],
-    "is_admin_boundary": false
+    "is_admin_boundary": false,
+    "workflow_extra": {
+      "group_title": "SMAP ω 反演产物（动态）",
+      "output_labels": {
+        "SM": "土壤水分",
+        "VOD": "植被光学厚度",
+        "OMEGA": "反演参数 ω"
+      }
+    }
   },
   {
     "layer_id": "method-fy-omega-doy-dynamic",
@@ -1713,13 +1721,21 @@
     "merged_into": "fy-omega-inversion",
     "is_merged_group": false,
     "members": [],
-    "is_admin_boundary": false
+    "is_admin_boundary": false,
+    "workflow_extra": {
+      "group_title": "风云 ω 反演产物（动态）",
+      "output_labels": {
+        "SM": "土壤水分",
+        "VOD": "植被光学厚度",
+        "OMEGA": "反演参数 ω"
+      }
+    }
   },
   {
     "layer_id": "method-smap-omega-doy-avg",
     "dataset_key": "omega_avg_daily_smap",
-    "display_name": "SMAP 日均 ω 反演",
-    "description": "omega_avg_daily / omega_block 经典 D1→D2 链路产出。关联种子 omega_avg_daily_smap_single。 SMAP 日均 ω 反演（原 D2 链路）。双温度变体见 omega_avg_daily_smap_dual / omega_avg_daily_gldas_online（GLDAS DUAL）。",
+    "display_name": "SMAP 平均 ω 反演",
+    "description": "omega_avg_daily / omega_block 经典 D1→D2 链路产出。关联种子 omega_avg_daily_smap_single。 SMAP 平均 ω 反演（原 D2 链路）。双温度变体见 omega_avg_daily_smap_dual / omega_avg_daily_gldas_online（GLDAS DUAL）。",
     "category": "research-group",
     "sub_category": "模型输出",
     "source_type": "algorithm_output",
@@ -1788,7 +1804,7 @@
       "queue_tag": "temporal-fetch",
       "priority": "low"
     },
-    "run_readiness_summary": "D2 日均 ω 依赖 D1 omega_block 产物目录",
+    "run_readiness_summary": "D2 平均 ω 依赖 D1 omega_block 产物目录",
     "run_readiness_notes": [
       "请先跑 omega_block_smap_single 或确认 Inversion_Results/omega_block 就绪",
       "双温度变体（smap_dual / gldas_online）需 GLDAS .mat（Meteorological/Weather/GLDAS，temp_scheme=DUAL）"
@@ -1803,13 +1819,13 @@
       "metric_unit": "",
       "metric_precision": 3,
       "update_label": "按工作流运行",
-      "source_label": "SMAP 日均反演"
+      "source_label": "SMAP 平均反演"
     },
     "sources": [
       {
         "source_id": "method-smap-omega-doy-avg",
-        "name": "SMAP 日均 ω 反演",
-        "description": "omega_avg_daily / omega_block 经典 D1→D2 链路：SMAP 日均 ω 反演。",
+        "name": "SMAP 平均 ω 反演",
+        "description": "omega_avg_daily / omega_block 经典 D1→D2 链路：SMAP 平均 ω 反演。",
         "url_template": "",
         "needs_auth": false,
         "needs_backend_transform": false,
@@ -1820,13 +1836,21 @@
     "merged_into": "smap-omega-inversion",
     "is_merged_group": false,
     "members": [],
-    "is_admin_boundary": false
+    "is_admin_boundary": false,
+    "workflow_extra": {
+      "group_title": "SMAP ω 反演产物（平均）",
+      "output_labels": {
+        "SM": "土壤水分",
+        "VOD": "植被光学厚度",
+        "OMEGA": "反演参数 ω"
+      }
+    }
   },
   {
     "layer_id": "method-fy-omega-doy-avg",
     "dataset_key": "omega_avg_daily_fy",
-    "display_name": "风云卫星 日均 ω 反演",
-    "description": "omega_avg_daily FY ORIG_TS 链路。关联种子 omega_avg_daily_fy_single。 FY 日均 ω 反演（原 D2 链路）。在线入口：omega_avg_daily_fy_online（NSMC auto→NAS 回退）。",
+    "display_name": "风云卫星 平均 ω 反演",
+    "description": "omega_avg_daily FY ORIG_TS 链路。关联种子 omega_avg_daily_fy_single。 FY 平均 ω 反演（原 D2 链路）。在线入口：omega_avg_daily_fy_online（NSMC auto→NAS 回退）。",
     "category": "research-group",
     "sub_category": "模型输出",
     "source_type": "algorithm_output",
@@ -1895,7 +1919,7 @@
       "queue_tag": "temporal-fetch",
       "priority": "low"
     },
-    "run_readiness_summary": "FY D2 日均 ω 依赖 D1 omega_block 产物目录",
+    "run_readiness_summary": "FY D2 平均 ω 依赖 D1 omega_block 产物目录",
     "run_readiness_notes": [
       "请先跑对应 FY/SMAP D1 块反演或确认 omega_block 目录就绪",
       "在线入口 omega_avg_daily_fy_online 需 nsmc 凭证（建议多账号）与 GDAL CLI"
@@ -1910,13 +1934,13 @@
       "metric_unit": "",
       "metric_precision": 3,
       "update_label": "按工作流运行",
-      "source_label": "FY 日均反演"
+      "source_label": "FY 平均反演"
     },
     "sources": [
       {
         "source_id": "method-fy-omega-doy-avg",
-        "name": "风云卫星 日均 ω 反演",
-        "description": "omega_avg_daily FY ORIG_TS 链路：经典 D1→D2 日均 ω 反演。",
+        "name": "风云卫星 平均 ω 反演",
+        "description": "omega_avg_daily FY ORIG_TS 链路：经典 D1→D2 平均 ω 反演。",
         "url_template": "",
         "needs_auth": false,
         "needs_backend_transform": false,
@@ -1927,7 +1951,15 @@
     "merged_into": "fy-omega-inversion",
     "is_merged_group": false,
     "members": [],
-    "is_admin_boundary": false
+    "is_admin_boundary": false,
+    "workflow_extra": {
+      "group_title": "风云 ω 反演产物（平均）",
+      "output_labels": {
+        "SM": "土壤水分",
+        "VOD": "植被光学厚度",
+        "OMEGA": "反演参数 ω"
+      }
+    }
   },
   {
     "layer_id": "smap-aux-albedo",
@@ -2863,7 +2895,7 @@
     "layer_id": "fy-omega-inversion",
     "dataset_key": "merged_fy-omega-inversion",
     "display_name": "风云 ω 反演",
-    "description": "风云卫星 ω 反演合集，可选动态反演 / 日均反演等数据源。",
+    "description": "风云卫星 ω 反演合集，可选动态反演 / 平均反演等数据源。",
     "category": "research-group",
     "source_type": "cog",
     "render_type": "raster",
@@ -2925,8 +2957,8 @@
       },
       {
         "source_id": "method-fy-omega-doy-avg",
-        "name": "风云卫星 日均 ω 反演",
-        "description": "omega_avg_daily FY ORIG_TS 链路：经典 D1→D2 日均 ω 反演。",
+        "name": "风云卫星 平均 ω 反演",
+        "description": "omega_avg_daily FY ORIG_TS 链路：经典 D1→D2 平均 ω 反演。",
         "url_template": "",
         "needs_auth": false,
         "needs_backend_transform": false,
@@ -2947,7 +2979,7 @@
     "layer_id": "smap-omega-inversion",
     "dataset_key": "merged_smap-omega-inversion",
     "display_name": "SMAP ω 反演",
-    "description": "SMAP ω 反演合集，可选动态反演 / 日均反演等数据源。",
+    "description": "SMAP ω 反演合集，可选动态反演 / 平均反演等数据源。",
     "category": "research-group",
     "source_type": "cog",
     "render_type": "raster",
@@ -3009,8 +3041,8 @@
       },
       {
         "source_id": "method-smap-omega-doy-avg",
-        "name": "SMAP 日均 ω 反演",
-        "description": "omega_avg_daily / omega_block 经典 D1→D2 链路：SMAP 日均 ω 反演。",
+        "name": "SMAP 平均 ω 反演",
+        "description": "omega_avg_daily / omega_block 经典 D1→D2 链路：SMAP 平均 ω 反演。",
         "url_template": "",
         "needs_auth": false,
         "needs_backend_transform": false,

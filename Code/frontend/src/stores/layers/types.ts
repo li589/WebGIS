@@ -55,6 +55,12 @@ export interface LayerCatalogItem {
   isAdminBoundary?: boolean
   /** 若此条目已合并到某个多源条目，此处记录目标 catalogId（运行时目录中隐藏本条目） */
   mergedInto?: string
+  /** 需求2（2026-08-22）：工作流中文命名配置（group_title/output_labels） */
+  workflowExtra?: {
+    group_title?: string
+    output_labels?: Record<string, string> | string[]
+    [key: string]: unknown
+  }
   /** X1: 标记此条目为合并组虚拟条目（含 members 列表，自身不对应实际数据） */
   isMergedGroup?: boolean
   /** X1: 合并组成员的 catalogId 列表（仅 isMergedGroup=true 时有效） */
