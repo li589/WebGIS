@@ -5,14 +5,20 @@ import logging
 from typing import Any
 from collections.abc import Callable
 
-from algorithms.providers.base import ProviderExecutionPayload, ProviderExecutionResult
+from algorithms.providers.base import (
+    MAX_PARAMETER_KEYS,
+    ProviderExecutionPayload,
+    ProviderExecutionResult,
+)
 
 logger = logging.getLogger(__name__)
 
 # Module name prefixes that resolve_algorithm_callable is permitted to load.
 # P0-3: prevents arbitrary code execution via import_module.
 _ALLOWED_MODULE_PREFIXES = ("algorithms.",)
-_MAX_PARAMETER_KEYS = 64  # P0-5: prevent parameter dict DoS
+# P0-5 上限真源为 algorithms.providers.base.MAX_PARAMETER_KEYS
+# （ProviderExecutionPayload.__post_init__ 构造即校验）；此处保留别名兼容。
+_MAX_PARAMETER_KEYS = MAX_PARAMETER_KEYS
 
 
 def _validate_module_name(module_name: str) -> None:
