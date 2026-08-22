@@ -61,7 +61,11 @@ def _normalize_array(data: np.ndarray) -> tuple[np.ndarray, bool]:
     if data.ndim == 2:
         return data[np.newaxis, :, :], True
     if data.ndim == 3:
-        if data.shape[0] in (1, 3, 4) and data.shape[2] in (1, 3, 4):
+        band_like = (1, 3, 4)
+        # E-4：仅当末位像通道数且首位明显不是（高/宽远大于通道数）才转置。
+        # 两端都像通道数（如 (3, H, 3) 窄条带 band-first）时保守按 band-first 处理，
+        # 不转置——原启发式会把这类数据静默转置成错波段。
+        if data.shape[2] in band_like and data.shape[0] not in band_like:
             data = np.transpose(data, (2, 0, 1))
         return data, data.shape[0] == 1
     raise ValueError(f"不支持的数组维度: {data.ndim}D，仅支持 2D 或 3D 数组")
@@ -100,6 +104,9 @@ def _check_matplotlib() -> Any:
     """检查并导入 matplotlib 相关模块，失败时给出友好提示。"""
     try:
         import matplotlib
+
+        # E-3：强制 Agg 后端（无头环境/worker 线程安全），须在 pyplot 导入前设置
+        matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         from matplotlib import cm
 
@@ -436,15 +443,18 @@ class PreviewGenerator:
         from io import BytesIO
 
         buf = BytesIO()
-        fig.savefig(
-            buf,
-            format="png",
-            dpi=100,
-            bbox_inches="tight",
-            facecolor="white",
-            edgecolor="none",
-        )
-        plt.close(fig)
+        try:
+            fig.savefig(
+                buf,
+                format="png",
+                dpi=100,
+                bbox_inches="tight",
+                facecolor="white",
+                edgecolor="none",
+            )
+        finally:
+            # E-3：close 放 finally——savefig 抛异常时 figure 不泄漏
+            plt.close(fig)
         png_bytes = buf.getvalue()
         if len(png_bytes) == 0:
             raise OSError("预览图生成失败，缓冲区为空")

@@ -49,6 +49,10 @@ class WorkflowExecutor:
 
         for node_id in order:
             node_spec = node_map[node_id]
+            # C-6：跳过停用节点（compiler 已剔除悬挂其上的边，下游不会引用其输出）
+            if not getattr(node_spec, "enabled", True):
+                logger.info("Node skipped (disabled): %s", node_id)
+                continue
             try:
                 node_cls = self._registry.get(node_spec.node_type)
                 input_ports = self._resolve_input_ports(node_spec, node_cls)

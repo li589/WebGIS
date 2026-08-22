@@ -155,8 +155,12 @@ def _generate_preview_from_array(
     size: tuple[int, int] = (512, 512),
 ) -> bool:
     """使用 matplotlib 生成伪彩色预览图（独立函数，不依赖 PreviewGenerator）"""
+    fig = None
     try:
         import matplotlib
+
+        # E-3：强制 Agg 后端（无头环境/worker 线程安全），须在 pyplot 导入前设置
+        matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         import numpy as np
 
@@ -192,10 +196,18 @@ def _generate_preview_from_array(
         fig.savefig(
             output_path, format="png", bbox_inches="tight", dpi=100, facecolor="white"
         )
-        plt.close(fig)
         return True
     except Exception:
         return False
+    finally:
+        # E-3：close 放 finally——任何路径（含异常）figure 不泄漏
+        if fig is not None:
+            try:
+                import matplotlib.pyplot as plt
+
+                plt.close(fig)
+            except Exception:  # noqa: BLE001 — 关闭失败不影响主流程
+                pass
 
 
 def _contains_non_ascii(text: str) -> bool:

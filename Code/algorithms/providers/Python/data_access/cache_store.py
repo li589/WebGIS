@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import shutil
 import time
+import uuid
 from hashlib import sha256
 from pathlib import Path
 
@@ -90,7 +91,11 @@ class CacheStore:
         target_path = self.resolve_cache_path(resource)
         target_path.parent.mkdir(parents=True, exist_ok=True)
         # Atomic replace avoids concurrent readers seeing a partial/truncated file.
-        tmp_path = target_path.with_suffix(target_path.suffix + f".{os.getpid()}.tmp")
+        # E-5：tmp 名加 pid+uuid——仅 pid 时同进程并发写同 key 会互相踩 tmp 文件
+        # （copy2 与 os.replace 交叉），坏文件入缓存
+        tmp_path = target_path.with_suffix(
+            target_path.suffix + f".{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp"
+        )
         try:
             shutil.copy2(source, tmp_path)
             os.replace(tmp_path, target_path)

@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,8 @@ from app.tasks.cleanup_tasks import (
     execute_cache_cleanup,
     execute_workflow_runs_cleanup,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/cleanup", tags=["cleanup"])
 
@@ -175,8 +178,8 @@ def get_cleanup_stats() -> CleanupStatsResponse:
                 )
                 row = cursor.fetchone()
                 terminal_counts[terminal_status] = int(row[0]) if row else 0
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 — 统计失败不阻断主响应，但须留痕（B-9）
+        logger.exception("[CleanupRouter] terminal status 统计失败（返回部分统计）")
 
     return CleanupStatsResponse(
         cache_stats=cache_stats,

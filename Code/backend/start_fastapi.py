@@ -1,6 +1,6 @@
 """FastAPI 启动脚本，确保 shared / webgis_gee 模块在 Python 路径中。
 
-多进程说明：``BACKEND_FASTAPI_WORKERS``（settings.fastapi_workers，默认 2）控制
+多进程说明：``BACKEND_FASTAPI_WORKERS``（settings.fastapi_workers，默认 1）控制
 uvicorn worker 数。Windows 下 uvicorn 多进程使用 ``multiprocessing`` spawn，子进程
 会重新导入本模块顶层代码（sys.path 注入，无害），因此必须调用
 ``multiprocessing.freeze_support()`` 且把 ``uvicorn.run`` 放在
@@ -28,11 +28,21 @@ from app.core.config import settings
 
 
 def main() -> None:
+    env = (settings.environment or "").lower()
+    # A-4：BACKEND_RELOAD 默认 true 仅服务开发热重载；production 一律禁用
+    # （watchfiles 常驻开销 + 部署目录文件变动会不可控地重启 worker）
+    reload = settings.reload and settings.fastapi_workers <= 1
+    if env not in {"development", "dev", "test", "testing"} and reload:
+        reload = False
+        print(
+            "[start_fastapi] production 环境忽略 BACKEND_RELOAD=true（热重载已禁用）",
+            flush=True,
+        )
     uvicorn.run(
         "app.main:app",
         host=settings.host,
         port=settings.port,
-        reload=settings.reload if settings.fastapi_workers <= 1 else False,
+        reload=reload,
         workers=settings.fastapi_workers,
     )
 

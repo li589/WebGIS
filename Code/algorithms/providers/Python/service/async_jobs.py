@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -224,10 +225,14 @@ class FileAsyncJobRegistry:
 
     def _write_snapshot(self, snapshot: AsyncJobSnapshot) -> None:
         payload = _snapshot_to_dict(snapshot)
-        self._get_snapshot_path(snapshot.submission_id).write_text(
+        path = self._get_snapshot_path(snapshot.submission_id)
+        # E-7: 临时文件+原子替换——write_text 直写截断后坏 JSON 会炸读取方
+        tmp_path = path.with_suffix(path.suffix + f".tmp.{os.getpid()}")
+        tmp_path.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
             encoding="utf-8",
         )
+        os.replace(tmp_path, path)
 
     def _get_snapshot_path(self, submission_id: str) -> Path:
         return self._root_dir / f"{submission_id}.json"

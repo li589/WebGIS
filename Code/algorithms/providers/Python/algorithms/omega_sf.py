@@ -28,9 +28,11 @@ r"""SF 块反演算法核心逻辑（从 Matlab ``omega_sf_fenkuai.m`` 迁移）
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import math
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -2024,10 +2026,18 @@ def _save_chunk_checkpoint(
                 for r in all_results
             ],
         }
-        with path.open("w", encoding="utf-8") as fh:
+        # E-6: 临时文件+原子替换——直写 `open("w")` 截断旧 checkpoint 后崩溃，
+        # resume 会静默全量重算；tmp 先落全量再 replace 保证任一时刻文件完整
+        tmp_path = path.with_suffix(
+            path.suffix + f".tmp.{os.getpid()}"
+        )
+        with tmp_path.open("w", encoding="utf-8") as fh:
             json.dump(payload, fh, allow_nan=True)
+        os.replace(tmp_path, path)
     except Exception:
         logger.warning("[CHECKPOINT] 写入失败: %s", path, exc_info=True)
+        with contextlib.suppress(OSError):
+            tmp_path.unlink(missing_ok=True)
 
 
 def _assemble_block_grids(

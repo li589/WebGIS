@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import time
@@ -35,11 +36,30 @@ from app.data_io.services._meta_io import save_json_atomic
 from app.core.config import settings
 import contextlib
 
-_OUTPUT_ROOT = (
-    Path(settings.output_root)
-    if settings.output_root
-    else Path.cwd() / "imports_output"
-)
+logger = logging.getLogger(__name__)
+
+
+def _resolve_output_root() -> Path:
+    """A-3：output_root 解析——production 空值 fail-fast，dev 兜底须显式告警。"""
+    if settings.output_root:
+        return Path(settings.output_root)
+    env = (settings.environment or "").lower()
+    if env not in {"development", "dev", "test", "testing"}:
+        # 生产空根若静默 CWD 兜底，导入产物会落入仓库/工作目录
+        raise RuntimeError(
+            "BACKEND_OUTPUT_ROOT is required outside development "
+            "(imports storage would silently fall back to the process CWD)."
+        )
+    fallback = Path.cwd() / "imports_output"
+    logger.warning(
+        "[paths] BACKEND_OUTPUT_ROOT 未配置，data_io 导入产物回退 CWD：%s"
+        "（生产环境将拒绝启动，请显式配置）",
+        fallback,
+    )
+    return fallback
+
+
+_OUTPUT_ROOT = _resolve_output_root()
 IMPORTS_DIR = _OUTPUT_ROOT / "imports"
 STAGING_DIR = IMPORTS_DIR / "_staging"
 JOBS_DIR = IMPORTS_DIR / "_jobs"
