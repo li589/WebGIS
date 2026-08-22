@@ -1,6 +1,8 @@
 /**
  * 导入矢量图层的几何推断 / 导出工具。
  */
+import { markRaw } from 'vue'
+
 export type ImportedGeometryType =
   | 'Point'
   | 'LineString'
@@ -40,6 +42,12 @@ export function resolveImportedVectorDefaultColor(): string {
 }
 
 export interface ImportedVectorPayload {
+  /**
+   * 图层 GeoJSON（D-4：markRaw 非深响应式——80MB 导入的百万级
+   * features/coordinates 不再逐个建 Proxy）。更新必须**整体替换引用**
+   * （走 `updateImportedVectorGeojson`，revision 自增驱动地图 watcher），
+   * 严禁就地修改内部（静默不触发 UI 更新）。
+   */
   geojson: GeoJSON.FeatureCollection
   geometryType: ImportedGeometryType
   featureCount: number
@@ -116,7 +124,8 @@ export function buildImportedVectorPayload(
   options?: { backendLayerId?: string; featureCount?: number },
 ): ImportedVectorPayload {
   return {
-    geojson,
+    // D-4：markRaw 豁免深响应式——大 GeoJSON 不进 proxy 树
+    geojson: markRaw(geojson),
     geometryType: inferGeometryType(geojson),
     featureCount: options?.featureCount ?? geojson.features.length,
     bounds: computeBounds(geojson),

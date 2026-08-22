@@ -2,7 +2,7 @@
  * Active layer list CRUD / display / import slice.
  * Public API re-exported via useLayersStore().
  */
-import { computed, nextTick, ref } from 'vue'
+import { computed, markRaw, nextTick, ref } from 'vue'
 
 import type { LayerDescriptor } from '../../services/runtime-api'
 import { deleteImportedRaster } from '../../services/data-import'
@@ -305,7 +305,8 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
     if (!layer?.importedVector) return
     layer.importedVector = {
       ...layer.importedVector,
-      geojson,
+      // D-4：替换时同样 markRaw（传入对象可能未标记，进入 proxy 树前豁免）
+      geojson: markRaw(geojson),
       featureCount: extras?.featureCount ?? geojson.features.length,
       truncated: extras?.truncated ?? layer.importedVector.truncated,
       geometryType: inferGeometryType(geojson),
