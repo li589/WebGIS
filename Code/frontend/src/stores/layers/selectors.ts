@@ -16,30 +16,28 @@
  * workspace.addLayer('catalog-id')                       // action
  * ```
  */
-import { storeToRefs } from 'pinia'
+import { toRef } from 'vue'
+// storeToRefs（pinia 3.0.4 + vue 3.5.38）在遍历 store 时对 undefined 属性
+// 访问 .effect 不防御会抛 TypeError；改用 toRef 逐字段包裹（2026-08-22）。
 import { useLayersStore } from './index'
 
 /** Workspace domain: layer CRUD, catalog, shared state. */
 export function useLayerWorkspace() {
   const store = useLayersStore()
-  const {
-    // State (as Refs)
-    activeLayers,
-    sidebarView,
-    selectedInstanceId,
-    currentHour,
-    isSubmitting,
-    runtimeLayerCatalogLoading,
-    // Computed (as ComputedRefs)
-    activeLayersDisplay,
-    selectedLayerDisplay,
-    activeLayerCount,
-    sidebarViewLabel,
-    catalogJobStatus,
-    catalogRunReadiness,
-    // Data (as Refs)
-    layerLibrary,
-  } = storeToRefs(store)
+  // 逐字段 toRef 包裹（替代 storeToRefs）：见文件头注释
+  const activeLayers = toRef(store, 'activeLayers')
+  const sidebarView = toRef(store, 'sidebarView')
+  const selectedInstanceId = toRef(store, 'selectedInstanceId')
+  const currentHour = toRef(store, 'currentHour')
+  const isSubmitting = toRef(store, 'isSubmitting')
+  const runtimeLayerCatalogLoading = toRef(store, 'runtimeLayerCatalogLoading')
+  const activeLayersDisplay = toRef(store, 'activeLayersDisplay')
+  const selectedLayerDisplay = toRef(store, 'selectedLayerDisplay')
+  const activeLayerCount = toRef(store, 'activeLayerCount')
+  const sidebarViewLabel = toRef(store, 'sidebarViewLabel')
+  const catalogJobStatus = toRef(store, 'catalogJobStatus')
+  const catalogRunReadiness = toRef(store, 'catalogRunReadiness')
+  const layerLibrary = toRef(store, 'layerLibrary')
 
   return {
     // Reactive state (Refs / ComputedRefs)
@@ -102,14 +100,12 @@ export function useLayerWorkspace() {
 /** Viewport domain: weather viewport, wind display, map state. */
 export function useLayerViewport() {
   const store = useLayersStore()
-  const {
-    particleFlowCatalogId,
-    windDisplayMode,
-    currentMapCenter,
-    currentMapBBox,
-    currentMapZoom,
-    smoothRendering,
-  } = storeToRefs(store)
+  const particleFlowCatalogId = toRef(store, 'particleFlowCatalogId')
+  const windDisplayMode = toRef(store, 'windDisplayMode')
+  const currentMapCenter = toRef(store, 'currentMapCenter')
+  const currentMapBBox = toRef(store, 'currentMapBBox')
+  const currentMapZoom = toRef(store, 'currentMapZoom')
+  const smoothRendering = toRef(store, 'smoothRendering')
 
   return {
     // Reactive state (Refs)
@@ -134,17 +130,16 @@ export function useLayerViewport() {
 /** Workflow-run domain: job layers, polling, runner, point weather. */
 export function useWorkflowRun() {
   const store = useLayersStore()
-  const {
-    runLayerGroups,
-    jobLayers,
-    workflowError,
-    workflowProgressTimeSeek,
-    workflowSummary,
-    workflowVariantPreference,
-    pointWeather,
-    pointWeatherLoading,
-    pointWeatherError,
-  } = storeToRefs(store)
+  // 逐字段 toRef 包裹（替代 storeToRefs）：见文件头注释
+  const runLayerGroups = toRef(store, 'runLayerGroups')
+  const jobLayers = toRef(store, 'jobLayers')
+  const workflowError = toRef(store, 'workflowError')
+  const workflowProgressTimeSeek = toRef(store, 'workflowProgressTimeSeek')
+  const workflowSummary = toRef(store, 'workflowSummary')
+  const workflowVariantPreference = toRef(store, 'workflowVariantPreference')
+  const pointWeather = toRef(store, 'pointWeather')
+  const pointWeatherLoading = toRef(store, 'pointWeatherLoading')
+  const pointWeatherError = toRef(store, 'pointWeatherError')
 
   return {
     // Reactive state (Refs)
