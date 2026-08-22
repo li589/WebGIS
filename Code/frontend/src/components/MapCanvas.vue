@@ -152,8 +152,15 @@ function fitToLayerExtent(instanceId: string): boolean {
   if (!bounds && layer?.importedVector) {
     const mod = state.resources.nonWeatherLayerSyncModule?.importedLayerModule
     if (mod) {
-      mod.fitLayers([instanceId])
-      return true
+      // 相机操作失败不得炸断用户操作链（坏 bounds 数据防御）
+      try {
+        mod.fitLayers([instanceId])
+        return true
+      } catch (error) {
+        console.warn('[MapCanvas] fitLayers failed', error)
+        showToast('该图层坐标超出地理范围，无法定位', true, 3500)
+        return false
+      }
     }
   }
 

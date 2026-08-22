@@ -86,6 +86,10 @@ export function computeBounds(
       const lng = coords[i]
       const lat = coords[i + 1]
       if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue
+      // 世界范围过滤：投影坐标系（米制坐标远超 ±90/±180）或坏坐标不计入
+      // bounds——否则下游 fitBounds 抛 Invalid LngLat 炸断初始化链
+      // （2026-08-23 分析面板/底图消失事故根因）
+      if (Math.abs(lng) > 180 || Math.abs(lat) > 90) continue
       hasCoord = true
       if (lng < minLng) minLng = lng
       if (lat < minLat) minLat = lat

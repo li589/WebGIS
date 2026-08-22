@@ -93,6 +93,10 @@ function _collectBounds(fc: GeoJSON.FeatureCollection): [number, number, number,
       const lng = coords[0] as number
       const lat = coords[1] as number
       if (!Number.isFinite(lng) || !Number.isFinite(lat)) return
+      // 世界范围过滤：投影坐标系（米制坐标远超 ±90/±180）或坏坐标不计入
+      // bounds——否则 fitBounds 抛 Invalid LngLat 炸断 onMapLoad 初始化链
+      // （分析面板/底图全不显示的 2026-08-23 事故根因）
+      if (Math.abs(lng) > 180 || Math.abs(lat) > 90) return
       lngs.push(lng)
       minLat = Math.min(minLat, lat)
       maxLat = Math.max(maxLat, lat)
@@ -532,10 +536,19 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
       minLat -= pad
       maxLat += pad
     }
+    // 兜底 clamp：bounds 可能来自历史持久化数据（_collectBounds 过滤前的
+    // 旧值），聚合后仍可能超界——夹到 Web Mercator 合法范围，绝不让
+    // fitBounds 抛 Invalid LngLat 炸断调用链
+    const clampedWest = Math.max(-180, Math.min(180, minLng))
+    const clampedEast = Math.max(-180, Math.min(180, maxLng))
+    // Web Mercator 纬度上限 ~85.05°
+    const clampedSouth = Math.max(-85, Math.min(85, minLat))
+    const clampedNorth = Math.max(-85, Math.min(85, maxLat))
+    if (clampedEast <= clampedWest || clampedNorth <= clampedSouth) return
     options.map.fitBounds(
       [
-        [minLng, minLat],
-        [maxLng, maxLat],
+        [clampedWest, clampedSouth],
+        [clampedEast, clampedNorth],
       ],
       { padding: 48, maxZoom: 14, duration: 600 },
     )

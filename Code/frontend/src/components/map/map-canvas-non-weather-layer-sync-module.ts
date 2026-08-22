@@ -155,7 +155,13 @@ export function createMapCanvasNonWeatherLayerSyncModule(
       importedLayerModule.removeLayer(staleId)
     }
     if (opts.fitNew && newlyAdded.length > 0) {
-      importedLayerModule.fitLayers(newlyAdded)
+      // 相机操作失败不得中断图层栈应用（2026-08-23 事故：fitBounds 抛
+      // Invalid LngLat 炸穿 onMapLoad → 底图/分析面板全部不渲染）
+      try {
+        importedLayerModule.fitLayers(newlyAdded)
+      } catch (error) {
+        console.warn('[NonWeatherLayerSync] fitLayers failed (skipped)', error)
+      }
     }
     applyLayerStackOrder()
   }
