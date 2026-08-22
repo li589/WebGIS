@@ -48,6 +48,17 @@ def resolve_provider_for_layer(
     - Else: registry priority order, honoring ``exclude``.
     Legacy ``open-meteo`` is normalized to ``open-meteo-online``.
     """
+    # C-1（2026-08-23）：跨进程 provider 配置版本检查点——多 worker 下
+    # 其他进程 ≤5s 感知 update/delete 并重放 DB 覆盖（Redis 不可用则降级）。
+    try:
+        from app.services.config_weather_providers import (
+            maybe_refresh_provider_overrides,
+        )
+
+        maybe_refresh_provider_overrides()
+    except Exception:  # noqa: BLE001 — 版本检查是尽力而为，失败不阻塞取数
+        logger.debug("weather provider override refresh skipped", exc_info=True)
+
     registry = get_registry()
     if provider_id:
         pid = normalize_provider_id(str(provider_id).strip())
@@ -92,6 +103,16 @@ def list_providers_for_layer(
         commercial_data_quality,
         commercial_layer_hint,
     )
+
+    # C-1：与 resolve_provider_for_layer 同一检查点，UI 选源列表跨进程保鲜
+    try:
+        from app.services.config_weather_providers import (
+            maybe_refresh_provider_overrides,
+        )
+
+        maybe_refresh_provider_overrides()
+    except Exception:  # noqa: BLE001 — 尽力而为
+        logger.debug("weather provider override refresh skipped", exc_info=True)
 
     registry = get_registry()
     rows: list[dict[str, Any]] = []

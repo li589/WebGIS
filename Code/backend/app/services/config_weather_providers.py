@@ -11,12 +11,74 @@
 from __future__ import annotations
 
 import logging
+import time
 from functools import lru_cache
 from typing import Any
 
+from redis import RedisError
+
 from app.core.config import settings
+from app.core.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
+
+
+# ── 跨进程配置版本戳（C-1，2026-08-23）───────────────────────────────────────
+# 多 worker（BACKEND_FASTAPI_WORKERS>1 / Celery）下，update 只改写库与本进程
+# registry，其余进程靠此版本戳在 ≤TTL 秒内感知并重放 DB 覆盖。
+# Redis 不可用时整体退化为原"重启生效"行为（get_redis_client 返回 None）。
+
+_PROVIDER_CONFIG_VERSION_KEY = "cgda:weather:provider_config_version"
+_OVERRIDE_REFRESH_TTL_SECONDS = 5.0
+_override_refresh_state: dict[str, Any] = {
+    "version": None,
+    "checked_at": 0.0,
+}
+
+
+def _bump_provider_config_version() -> None:
+    """DB 写入后递增 Redis 版本戳，通知其他进程重放覆盖。尽力而为。"""
+    client = get_redis_client()
+    if client is None:
+        return
+    try:
+        client.incr(_PROVIDER_CONFIG_VERSION_KEY)
+    except RedisError as exc:
+        logger.debug("[WeatherProviders] bump version failed: %s", exc)
+
+
+def maybe_refresh_provider_overrides(*, force: bool = False) -> None:
+    """短 TTL 检查 Redis 版本戳；变化则把 DB 覆盖重放到本进程 registry。
+
+    取数热路径入口调用（fetch_gateway.resolve_provider_for_layer 等）；
+    TTL 窗口内为纯进程内时间比较，零网络开销。
+    """
+    now = time.monotonic()
+    if (
+        not force
+        and (now - float(_override_refresh_state["checked_at"]))
+        < _OVERRIDE_REFRESH_TTL_SECONDS
+    ):
+        return
+    _override_refresh_state["checked_at"] = now
+    client = get_redis_client()
+    if client is None:
+        return
+    try:
+        raw = client.get(_PROVIDER_CONFIG_VERSION_KEY)
+    except RedisError as exc:
+        logger.debug("[WeatherProviders] read version failed: %s", exc)
+        return
+    version = int(raw) if raw else 0
+    if version != _override_refresh_state["version"]:
+        _override_refresh_state["version"] = version
+        apply_persisted_provider_overrides()
+
+
+def reset_provider_override_refresh_state() -> None:
+    """测试辅助：清空版本戳缓存（配合 lru_cache 清理避免跨测试污染）。"""
+    _override_refresh_state["version"] = None
+    _override_refresh_state["checked_at"] = 0.0
 
 
 # ── 天气源 Provider 管理 ──────────────────────────────────────────────────────
@@ -275,8 +337,10 @@ def update_weather_provider(
         priority=new_priority,
         config=new_config,
     )
+    # C-1：通知其他 worker/Celery 进程重放 DB 覆盖
+    _bump_provider_config_version()
 
-    # 同步到 registry 运行时
+    # 同步到 registry 运行时（本进程）
     registry.set_enabled(provider_id, new_enabled)
     registry.set_priority(provider_id, new_priority)
 
@@ -361,6 +425,8 @@ def delete_weather_provider(provider_id: str) -> bool:
     repo = _get_weather_providers_repository()
     deleted = repo.delete_provider(provider_id)
     if deleted:
+        # C-1：通知其他进程回退到代码默认配置
+        _bump_provider_config_version()
         registry = _get_weather_registry()
         provider = registry.get_provider(provider_id)
         if provider is not None:
