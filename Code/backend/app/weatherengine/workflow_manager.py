@@ -8,7 +8,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime, UTC
 from enum import Enum
-from collections.abc import Callable, Awaitable
+from collections.abc import Callable
 import asyncio
 import inspect
 import logging

@@ -140,7 +140,7 @@ class SQLiteConnectionPool:
         try:
             self._pool.put_nowait(conn)
         except Exception:
-            with contextlib.suppress(Exception):
+            with suppress(Exception):
                 conn.close()
 
     def close_all(self, *, quiet: bool = False) -> None:

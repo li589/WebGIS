@@ -17,7 +17,9 @@ repos:
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
-        files: ^(Code/backend/app|Code/algorithms/providers/Python)/.+\.py$
+        # lint 覆盖全量一方 Python（含 shared 契约层与运维脚本）——2026-08-22
+        # 审查发现 49994c4 批量修复引入 2 个 F821 NameError 回归却未被门禁拦截。
+        files: ^(Code/backend/app|Code/backend/scripts|Code/algorithms/providers/Python|Code/shared)/.+\.py$
       - id: ruff-format
         files: ^(Code/backend/app|Code/algorithms/providers/Python)/.+\.py$
 

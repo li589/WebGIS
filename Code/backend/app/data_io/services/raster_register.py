@@ -13,7 +13,6 @@ from rasterio.warp import transform_bounds as _transform_bounds
 from app.data_io.services._meta_io import save_bytes_atomic, save_json_atomic
 from app.services.crs import crs_detector
 from app.data_io.services.paths import (
-    IMPORTS_DIR,
     assert_quota_available,
     dir_size_bytes,
     ensure_imports_root,
@@ -183,31 +182,31 @@ def register_geotiff_as_imported(
     bounds_data = {"bounds": bounds, "meta": meta}
     save_json_atomic(dest_dir / "bounds.json", bounds_data)
     meta_payload = {
-                "layer_id": layer_id,
-                "kind": "raster",
-                "source_filename": filename,
-                "time_list": time_list,
-                "default_time": default_time,
-                "native_step": native_step,
-                "follow_policy": follow_policy,
-                "temporal_kind": meta.get("temporal_kind"),
-                "temporal_source": meta.get("temporal_source"),
-                **{
-                    k: v
-                    for k, v in extra.items()
-                    if k
-                    not in {
-                        "time_list",
-                        "default_time",
-                        "native_step",
-                        "follow_policy",
-                        "temporal_kind",
-                        "temporal_source",
-                        "category",
-                        "current_time",
-                    }
-                },
+        "layer_id": layer_id,
+        "kind": "raster",
+        "source_filename": filename,
+        "time_list": time_list,
+        "default_time": default_time,
+        "native_step": native_step,
+        "follow_policy": follow_policy,
+        "temporal_kind": meta.get("temporal_kind"),
+        "temporal_source": meta.get("temporal_source"),
+        **{
+            k: v
+            for k, v in extra.items()
+            if k
+            not in {
+                "time_list",
+                "default_time",
+                "native_step",
+                "follow_policy",
+                "temporal_kind",
+                "temporal_source",
+                "category",
+                "current_time",
             }
+        },
+    }
     save_json_atomic(dest_dir / "meta.json", meta_payload)
 
     register_overlay(

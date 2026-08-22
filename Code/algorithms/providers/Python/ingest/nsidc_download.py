@@ -46,6 +46,7 @@ import contextlib
 from ingest.endpoints import CMR_GRANULES_UMM_JSON, URS_PROFILE_URL
 from ingest._http_resume import (
     check_disk_space as _check_disk_space,
+    download_with_retry,
     format_size as _format_size,
 )
 
@@ -446,7 +447,6 @@ def _get_download_session(username: str, password: str) -> Any:
     session.auth = HTTPBasicAuth(username, password)
     session.headers.update({"User-Agent": "cgda-nsidc-download/1.0"})
     return session
-
 
 
 def download_smap_range(

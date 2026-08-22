@@ -20,12 +20,15 @@ import logging
 import random
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse, unquote
 
 from app.core.config import settings
 from app.services.object_store import object_store
+
+if TYPE_CHECKING:
+    from shared.remote_sources.access_control import AccessPolicyContext
 
 logger = logging.getLogger(__name__)
 

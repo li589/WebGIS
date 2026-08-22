@@ -135,7 +135,7 @@ def migrate(db_path: Path, dry_run: bool = False) -> int:
                 role = row["role"]
                 if role not in VALID_NEW_ROLES:
                     print(f"  [WARN] users 表中存在未知角色 '{role}' ({row['c']} rows)")
-                    print(f"         建议手动检查并迁移到 standard 或 demo")
+                    print("         建议手动检查并迁移到 standard 或 demo")
 
         if not dry_run and total_affected > 0:
             conn.commit()

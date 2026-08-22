@@ -15,8 +15,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from shared.remote_sources.uri import ParsedRemoteUri
-
 logger = logging.getLogger(__name__)
 
 

@@ -5,11 +5,15 @@ from __future__ import annotations
 import hashlib
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from shared.remote_sources.limits import DEFAULT_MAX_REMOTE_BYTES
 from shared.remote_sources.protocol import RemoteAuth, RemoteStat
 from shared.remote_sources.registry import get_default_transport_registry
 from shared.remote_sources.uri import build_connectivity_probe_uri
+
+if TYPE_CHECKING:
+    from shared.remote_sources.access_control import AccessPolicyContext
 
 logger = logging.getLogger(__name__)
 
