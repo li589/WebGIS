@@ -780,8 +780,8 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     const defTags = explicitExpectedOutputTags(restoreDef)
     const catalogExtra = (() => {
       const catalog = deps.getRuntimeLayerCatalog()
-      const keys = [bridge.sourceLayerId, catalogId, tracked?.catalogId].filter(
-        (k): k is string => Boolean(k),
+      const keys = [bridge.sourceLayerId, catalogId, tracked?.catalogId].filter((k): k is string =>
+        Boolean(k),
       )
       for (const key of keys) {
         const extra = catalog[key]?.workflow_extra
@@ -931,12 +931,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     }
 
     const created = deps.createRunLayerGroup({
-      title:
-        configuredGroupTitle ||
-        options.title ||
-        tracked?.name ||
-        bridge.title ||
-        '工作流运行',
+      title: configuredGroupTitle || options.title || tracked?.name || bridge.title || '工作流运行',
       targets: configuredTargets.length
         ? configuredTargets
         : tags.map((tag) => ({ name: productTagLabel(tag), productTag: tag })),
@@ -1489,16 +1484,14 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
    */
   async function autoAttachProductsForNewLayer(catalogId: string): Promise<number> {
     const targetId = resolveInversionCatalogId(catalogId)
-    let runs: Awaited<ReturnType<typeof listRecentSucceededRuns>> = []
+    let runs: Awaited<ReturnType<typeof listRecentSucceededRuns>>
     try {
       runs = await listRecentSucceededRuns(20)
     } catch {
       return 0 // 目录/网络不可用：静默（添加图层本身不应因此报错）
     }
     // 同一图层取最新成功 run（列表已按创建时间倒序）
-    const match = runs.find(
-      (r) => resolveInversionCatalogId(r.layer_id || '') === targetId,
-    )
+    const match = runs.find((r) => resolveInversionCatalogId(r.layer_id || '') === targetId)
     if (!match) return 0
     try {
       ensureRestoredRunGroup(match.run_id, targetId, undefined)
@@ -1515,7 +1508,9 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         // 时间轴自动切换到当前有数据的时间点）
         const layer = deps
           .getActiveLayers()
-          .find((l) => l.catalogId === targetId || resolveInversionCatalogId(l.catalogId) === targetId)
+          .find(
+            (l) => l.catalogId === targetId || resolveInversionCatalogId(l.catalogId) === targetId,
+          )
         const timeList = layer?.importedRaster?.timeList ?? []
         const timeLabel =
           layer?.importedRaster?.effectiveTimeLabel ??

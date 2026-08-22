@@ -7,8 +7,7 @@
  *
  * 拆分历史：原 1659 行 → CSS 提取(-196) → composable 提取(-1050)
  */
-import { computed, defineAsyncComponent, onBeforeUnmount, ref } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, defineAsyncComponent, onBeforeUnmount, ref, toRef } from 'vue'
 import { Globe } from '../components/ui/icons'
 import { useDataImportFlow } from '../data-manager/core/workspace-store'
 
@@ -80,15 +79,13 @@ onBeforeUnmount(() => {
   teardownWorkspaceSync()
 })
 
-const {
-  tileSourceId,
-  currentHour,
-  currentDate,
-  hourLabel,
-  isPlaying,
-  playIntervalMs,
-  unifiedTimeLock,
-} = storeToRefs(uiStore)
+const tileSourceId = toRef(uiStore, 'tileSourceId')
+const currentHour = toRef(uiStore, 'currentHour')
+const currentDate = toRef(uiStore, 'currentDate')
+const hourLabel = toRef(uiStore, 'hourLabel')
+const isPlaying = toRef(uiStore, 'isPlaying')
+const playIntervalMs = toRef(uiStore, 'playIntervalMs')
+const unifiedTimeLock = toRef(uiStore, 'unifiedTimeLock')
 const { selectedLayerDisplay, isSubmitting, selectedInstanceId } = workspace
 const {
   workflowError,
@@ -97,8 +94,8 @@ const {
   pointWeatherLoading,
   pointWeatherError,
 } = workflowRun
-const { statusVersion: weatherStatusVersion, activityVersion: weatherActivityVersion } =
-  storeToRefs(weatherTileManager)
+const weatherStatusVersion = toRef(weatherTileManager, 'statusVersion')
+const weatherActivityVersion = toRef(weatherTileManager, 'activityVersion')
 
 const activeLayer = computed(() => selectedLayerDisplay.value ?? buildFallbackActiveLayerDisplay())
 

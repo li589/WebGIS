@@ -4,11 +4,13 @@
  * - hero：全屏地球 + 卫星轨道（启动 / 大面板）
  * - compact：顶栏细进度条（普通 API 等）
  */
-import { storeToRefs } from 'pinia'
+import { toRef } from 'vue'
 import { useUiLoadingStore } from '../stores/ui-loading'
 
 const uiLoading = useUiLoadingStore()
-const { isVisible, message, mode } = storeToRefs(uiLoading)
+const isVisible = toRef(uiLoading, 'isVisible')
+const message = toRef(uiLoading, 'message')
+const mode = toRef(uiLoading, 'mode')
 </script>
 
 <template>

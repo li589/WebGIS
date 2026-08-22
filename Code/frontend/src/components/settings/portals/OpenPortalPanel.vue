@@ -6,8 +6,7 @@
  * 地址覆盖（builtin）或完整编辑（custom）/ 自定义门户增删。
  */
 
-import { computed, reactive, ref } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, reactive, ref, toRef } from 'vue'
 import type { PortalCatalogEntry, PortalUpsertRequest } from '../../../types/api-reexports'
 import { useSettingsStore } from '../../../stores/settings'
 import AppSelect from '../../ui/AppSelect.vue'
@@ -16,7 +15,7 @@ import PortalCredentialDialog from './PortalCredentialDialog.vue'
 import PortalSearchDialog from './PortalSearchDialog.vue'
 
 const settingsStore = useSettingsStore()
-const { portalCatalog } = storeToRefs(settingsStore)
+const portalCatalog = toRef(settingsStore, 'portalCatalog')
 
 const credVisible = ref(false)
 const credPortal = ref<PortalCatalogEntry | null>(null)

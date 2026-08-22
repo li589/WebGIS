@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, ref, toRef } from 'vue'
 import { useSettingsStore } from '../../stores/settings'
 import { BRAND } from '../../ui-copy'
 import Tooltip from '../ui/Tooltip.vue'
 import SystemStatusSettings from './SystemStatusSettings.vue'
 
 const settingsStore = useSettingsStore()
-const { aboutInfo, weatherConfig, geeRuntimeConfig, dataSourceConfig } = storeToRefs(settingsStore)
+const aboutInfo = toRef(settingsStore, 'aboutInfo')
+const weatherConfig = toRef(settingsStore, 'weatherConfig')
+const geeRuntimeConfig = toRef(settingsStore, 'geeRuntimeConfig')
+const dataSourceConfig = toRef(settingsStore, 'dataSourceConfig')
 
 const selectedNode = ref<string | null>(null)
 

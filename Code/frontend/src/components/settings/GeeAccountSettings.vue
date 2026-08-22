@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, reactive, ref, toRef } from 'vue'
 import { Globe } from '../ui/icons'
 import { useSettingsStore } from '../../stores/settings'
 import type { GeeAccountItem } from '../../services/settings-api'
 
 const settingsStore = useSettingsStore()
-const { geeAccounts, geeRuntimeConfig } = storeToRefs(settingsStore)
+const geeAccounts = toRef(settingsStore, 'geeAccounts')
+const geeRuntimeConfig = toRef(settingsStore, 'geeRuntimeConfig')
 
 // ── 添加账户表单 ────────────────────────────────────────────────────────────
 

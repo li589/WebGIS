@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, reactive, ref, toRef } from 'vue'
 import { useSettingsStore } from '../../stores/settings'
 import { useAuthStore } from '../../stores/auth'
 import type { ApiKeyHistoryItem, ApiKeyItem } from '../../services/settings-api'
@@ -19,7 +18,8 @@ import {
 
 const settingsStore = useSettingsStore()
 const authStore = useAuthStore()
-const { apiKeys, apiKeyHistory } = storeToRefs(settingsStore)
+const apiKeys = toRef(settingsStore, 'apiKeys')
+const apiKeyHistory = toRef(settingsStore, 'apiKeyHistory')
 
 const writeKeyDraft = ref('')
 const writeKeyLocalSet = ref(hasBackendWriteApiKey())

@@ -775,13 +775,10 @@ export function toggleRemoteSourceAccessMode(
   accessMode: string,
 ): Promise<RemoteSourceEntry> {
   // 先获取现有条目，再用 upsert 更新 access_mode（保持其他字段不变）
-  return settingsFetch(
-    `/config/remote-sources/${encodeURIComponent(remoteSourceId)}`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({ access_mode: accessMode }),
-    },
-  )
+  return settingsFetch(`/config/remote-sources/${encodeURIComponent(remoteSourceId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ access_mode: accessMode }),
+  })
 }
 
 // ── 远程数据集授权（「具体数据集选取模式」白名单） ──────────────────────────

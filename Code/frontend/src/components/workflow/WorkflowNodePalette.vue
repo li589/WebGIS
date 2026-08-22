@@ -5,8 +5,7 @@
  * 节点面板：显示所有可用的节点模板，支持搜索、引擎过滤、分类折叠、收藏夹、最近使用。
  * 用户可以点击节点添加到画布，或拖拽到画布上。
  */
-import { computed, ref, watch, onBeforeUnmount, type Component } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, ref, watch, onBeforeUnmount, toRef, type Component } from 'vue'
 import {
   Star,
   Clock,
@@ -36,7 +35,8 @@ const emit = defineEmits<{
 }>()
 
 const store = useWorkflowDefinitionsStore()
-const { nodeTemplates, templatesByCategory } = storeToRefs(store)
+const nodeTemplates = toRef(store, 'nodeTemplates')
+const templatesByCategory = toRef(store, 'templatesByCategory')
 
 const searchQuery = ref('')
 const activeEngineFilter = ref<string>('all')

@@ -210,6 +210,7 @@ export const useLayersStore = defineStore('layers', () => {
     setWorkflowVariantPreference: workflowRun.setWorkflowVariantPreference,
     cancelWorkflowRunForJob: workflowRun.cancelWorkflowRunForJob,
     retryWorkflowRunForJob: workflowRun.retryWorkflowRunForJob,
+    autoAttachProductsForNewLayer: workflowRun.autoAttachProductsForNewLayer,
     cleanupAllRetryTimers: workflowRun.cleanupAllRetryTimers,
     stopWorkflowPolling: workflowRun.stopWorkflowPolling,
     getCatalogRunBlockReason: workspace.getCatalogRunBlockReason,

@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, onMounted, toRef, watch } from 'vue'
 import {
   Settings,
   ScrollText,
@@ -61,9 +60,10 @@ const weatherTileManager = useWeatherTileManager()
 const weatherSyncStatus = useWeatherSyncStatusStore()
 const { isMobile } = useBreakpoint()
 const { workflowSummary } = useWorkflowRun()
-const { activityVersion, statusVersion } = storeToRefs(weatherTileManager)
-const { apiKeys } = storeToRefs(settingsStore)
-const { syncInProgress } = storeToRefs(weatherSyncStatus)
+const activityVersion = toRef(weatherTileManager, 'activityVersion')
+const statusVersion = toRef(weatherTileManager, 'statusVersion')
+const apiKeys = toRef(settingsStore, 'apiKeys')
+const syncInProgress = toRef(weatherSyncStatus, 'syncInProgress')
 
 onMounted(() => {
   if (authStore.isAuthenticated && apiKeys.value.length === 0) {

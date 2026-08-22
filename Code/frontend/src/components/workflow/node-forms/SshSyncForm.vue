@@ -28,10 +28,7 @@ import type {
 } from '../../../types/api-reexports'
 import RemoteDirBrowser from './RemoteDirBrowser.vue'
 import ParamCombobox from '../ParamCombobox.vue'
-import {
-  authorizedPrefixesForSource,
-  filterSourcesByDatasetPolicy,
-} from './remote-source-policy'
+import { authorizedPrefixesForSource, filterSourcesByDatasetPolicy } from './remote-source-policy'
 import {
   type FormErrors,
   isoToYyyymmdd,
@@ -182,12 +179,12 @@ const selectableSources = computed(() =>
 /** 当前选中源的授权前缀提示（legacy 模式下展示，引导用户填已授权路径）。 */
 const selectedSourcePrefixHint = computed(() => {
   if (!selectedSourceId.value) return ''
-  const entry = registeredSources.value.find(
-    (s) => s.remote_source_id === selectedSourceId.value,
-  )
+  const entry = registeredSources.value.find((s) => s.remote_source_id === selectedSourceId.value)
   if (!entry || entry.access_mode === 'site_compatible') return ''
   const prefixes = authorizedPrefixesForSource(entry, datasetPolicy.value)
-  return prefixes.length ? `已授权前缀：${prefixes.slice(0, 3).join('、')}${prefixes.length > 3 ? '…' : ''}` : ''
+  return prefixes.length
+    ? `已授权前缀：${prefixes.slice(0, 3).join('、')}${prefixes.length > 3 ? '…' : ''}`
+    : ''
 })
 
 /** 选中已注册数据源：快捷填充 server_type（引用的 profile）+ remote_path。 */
@@ -356,10 +353,7 @@ function toggleFilter(ext: string) {
         </button>
       </div>
       <span v-if="selectedSourcePrefixHint" class="field-hint">{{ selectedSourcePrefixHint }}</span>
-      <span
-        v-else-if="registeredSources.length > selectableSources.length"
-        class="field-hint"
-      >
+      <span v-else-if="registeredSources.length > selectableSources.length" class="field-hint">
         已按数据集授权过滤 {{ registeredSources.length - selectableSources.length }} 个未授权源
       </span>
     </div>

@@ -57,6 +57,22 @@ export default tseslint.config(
       // ── 严格但实用的规则 ──────────────────────────────────────────────
       'no-console': ['warn', { allow: ['warn', 'error'] }],  // 允许 warn/error，警告 info/log
       'no-debugger': 'error',
+      // 完全审查 2026-08-22（D-1）：Pinia 3.0.4 的 storeToRefs 遍历时对
+      // undefined 值属性访问 .effect 直接崩溃（2026-08-22 整页白屏事故）。
+      // 一律改用 toRef(store, key) 逐字段包裹（先例：stores/layers/selectors.ts）。
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'pinia',
+              importNames: ['storeToRefs'],
+              message:
+                '项目禁用 storeToRefs（Pinia 3.0.4 undefined 属性 .effect 崩溃）；请用 toRef(store, key) 逐字段包裹',
+            },
+          ],
+        },
+      ],
       'no-undef': 'off',  // TypeScript 已通过 vue-tsc 检查未定义变量，避免误报浏览器全局
       'no-unused-vars': 'off',  // 由 @typescript-eslint/no-unused-vars 接管
       '@typescript-eslint/no-unused-vars': [

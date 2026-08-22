@@ -6,12 +6,11 @@
  * ref 徽标来自后端附带的引用源能力信息；引用源已删除时标记失效，可删除条目。
  */
 
-import { ref } from 'vue'
-import { storeToRefs } from 'pinia'
+import { ref, toRef } from 'vue'
 import { useSettingsStore } from '../../../stores/settings'
 
 const settingsStore = useSettingsStore()
-const { remoteSourceRegistry } = storeToRefs(settingsStore)
+const remoteSourceRegistry = toRef(settingsStore, 'remoteSourceRegistry')
 
 const busy = ref(false)
 const errMsg = ref('')
@@ -101,7 +100,10 @@ async function toggleAccessMode(id: string, current: string) {
             :title="`切换到 ${r.access_mode === 'site_compatible' ? 'legacy' : 'site_compatible'} 模式`"
             @click="toggleAccessMode(r.remote_source_id, r.access_mode)"
           >
-            <span class="mode-badge" :class="r.access_mode === 'site_compatible' ? 'compatible' : 'legacy'">
+            <span
+              class="mode-badge"
+              :class="r.access_mode === 'site_compatible' ? 'compatible' : 'legacy'"
+            >
               {{ r.access_mode === 'site_compatible' ? '兼容' : '标准' }}
             </span>
           </button>

@@ -7,8 +7,7 @@
  * 底部为已注册「可访问远程数据源」表（remote-source registry）。
  */
 
-import { computed, reactive, ref } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, reactive, ref, toRef } from 'vue'
 import { useSettingsStore } from '../../../stores/settings'
 import type { PortalCatalogEntry, RemoteStorageProfile } from '../../../types/api-reexports'
 import { PROTOCOL_META } from '../remote-storage/protocols'
@@ -18,7 +17,8 @@ import RemoteSourceCard, { type RemoteSourceCardData } from './RemoteSourceCard.
 import RegisteredRemoteSources from './RegisteredRemoteSources.vue'
 
 const settingsStore = useSettingsStore()
-const { remoteStorageProfiles, portalCatalog } = storeToRefs(settingsStore)
+const remoteStorageProfiles = toRef(settingsStore, 'remoteStorageProfiles')
+const portalCatalog = toRef(settingsStore, 'portalCatalog')
 
 // ── 分组数据 ───────────────────────────────────────────────────────────────
 

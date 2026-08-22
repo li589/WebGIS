@@ -352,7 +352,8 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
   function isOverlayDisplayOnlyLayer(catalogId: string): boolean {
     const backendLayerId = resolveBackendLayerId(catalogId)
     if (isWeatherEngineLayer(backendLayerId) || isWeatherEngineLayer(catalogId)) return false
-    const engine = getCatalogWorkflowEngine(backendLayerId) || getCatalogWorkflowEngine(catalogId) || ''
+    const engine =
+      getCatalogWorkflowEngine(backendLayerId) || getCatalogWorkflowEngine(catalogId) || ''
     if (engine !== 'overlay_registry' && engine !== '') return false
     return !getCatalogWorkflowName(catalogId)
   }

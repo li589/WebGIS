@@ -228,9 +228,7 @@ export function createWorkflowRunDomain(
     // 需求1 批次2：产物载入后把时间轴对齐到有数据的时间块。
     // 兼容 YYYY-MM-DD / YYYYMMDD / YYYY-MM-DD_HHmm / ISO 等标签格式。
     alignTimelineToProduct: (timeLabel: string) => {
-      const m = /^(\d{4})[-_/]?(\d{2})[-_/]?(\d{2})(?:[-_T ]+(\d{2}))?/.exec(
-        timeLabel.trim(),
-      )
+      const m = /^(\d{4})[-_/]?(\d{2})[-_/]?(\d{2})(?:[-_T ]+(\d{2}))?/.exec(timeLabel.trim())
       if (!m) return
       const [, y, mo, d, hh] = m
       const date = new Date(Number(y), Number(mo) - 1, Number(d))
@@ -346,6 +344,9 @@ export function createWorkflowRunDomain(
     runWorkflowForCatalog,
     cancelWorkflowRunForJob,
     retryWorkflowRunForJob,
+    // 安审 2026-08-22（fdd6833 同类断线）：runWorkflowForCatalog 族必须
+    // 一路透传到 selectors.useWorkflowRun()，否则 LayerSidebar 添加图层即崩
+    autoAttachProductsForNewLayer,
     cleanupAllRetryTimers,
     workflowVariantPreference,
     getWorkflowVariantPreference,

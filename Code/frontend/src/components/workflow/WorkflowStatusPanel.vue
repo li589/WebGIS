@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount, watch, type Component } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, ref, onMounted, onBeforeUnmount, watch, toRef, type Component } from 'vue'
 import { Download, Settings, Microscope, Package, Circle, AlertTriangle, Cloud } from '../ui/icons'
 import { useLayerWorkspace, useWorkflowRun } from '../../stores/layers/selectors'
 import { useWeatherTileManager } from '../../stores/weather-tile-manager'
@@ -14,8 +13,9 @@ const workflowRun = useWorkflowRun()
 const { workflowError } = workflowRun
 const weatherTileManager = useWeatherTileManager()
 const weatherSyncStatus = useWeatherSyncStatusStore()
-const { activityVersion, statusVersion } = storeToRefs(weatherTileManager)
-const { syncInProgress } = storeToRefs(weatherSyncStatus)
+const activityVersion = toRef(weatherTileManager, 'activityVersion')
+const statusVersion = toRef(weatherTileManager, 'statusVersion')
+const syncInProgress = toRef(weatherSyncStatus, 'syncInProgress')
 const emit = defineEmits<{ close: [] }>()
 
 const eventStageFilter = ref('')

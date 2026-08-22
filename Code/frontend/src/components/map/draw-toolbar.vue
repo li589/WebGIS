@@ -11,8 +11,7 @@
  * 定位协议：位置相对 .map-stage（offsetParent），x/y 均可拖拽；
  * 几何（位置+尺寸）实时写入 drawStore.toolbarRect，供属性表联动跟随。
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
 import { Square, Hexagon, Minus, Undo2, Trash2, Save, Table2 } from '../ui/icons'
 import IconButton from '../ui/IconButton.vue'
 import { useDrawStore } from '../../stores/draw-store'
@@ -20,7 +19,11 @@ import { useUiStore } from '../../stores/ui'
 
 const drawStore = useDrawStore()
 const uiStore = useUiStore()
-const { drawMode, features, activeVertices, isDrawing, undoStack } = storeToRefs(drawStore)
+const drawMode = toRef(drawStore, 'drawMode')
+const features = toRef(drawStore, 'features')
+const activeVertices = toRef(drawStore, 'activeVertices')
+const isDrawing = toRef(drawStore, 'isDrawing')
+const undoStack = toRef(drawStore, 'undoStack')
 
 const visible = computed(() => uiStore.interactionMode === 'draw')
 

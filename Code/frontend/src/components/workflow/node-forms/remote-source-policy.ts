@@ -19,7 +19,10 @@ import type { RemoteDatasetPolicy, RemoteSourceEntry } from '../../../types/api-
 
 /** 归一化路径：去首尾空白、去首尾斜杠、小写比较（大小写不敏感对齐后端 startswith 语义）。 */
 function normalizePath(p: string): string {
-  return p.trim().replace(/^\/+|\/+$/g, '').toLowerCase()
+  return p
+    .trim()
+    .replace(/^\/+|\/+$/g, '')
+    .toLowerCase()
 }
 
 /** 判断 a 与 b 是否有双向子树交集（互为祖先或相等）。 */

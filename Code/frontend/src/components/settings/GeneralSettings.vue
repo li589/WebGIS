@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, ref, toRef, watch } from 'vue'
 import { useSettingsStore } from '../../stores/settings'
 import { useWeatherTileManager } from '../../stores/weather-tile-manager'
 import type { RuntimeConfigPatch } from '../../services/settings-api'
@@ -8,7 +7,7 @@ import AppSelect from '../ui/AppSelect.vue'
 
 const settingsStore = useSettingsStore()
 const weatherTileManager = useWeatherTileManager()
-const { generalConfig } = storeToRefs(settingsStore)
+const generalConfig = toRef(settingsStore, 'generalConfig')
 
 // ── 只读系统信息 ──────────────────────────────────────────────────────────
 const readonlyItems = computed(() => {

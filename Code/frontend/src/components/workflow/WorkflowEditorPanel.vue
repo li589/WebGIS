@@ -14,8 +14,7 @@
  * 左右面板已拆分为 WorkflowLeftSidebar / WorkflowRightSidebar 独立组件。
  * 顶部工具栏：保存 / 排列 / 适配视图 / 清空 / 运行
  */
-import { onMounted, onBeforeUnmount, ref, shallowRef, computed, nextTick } from 'vue'
-import { storeToRefs } from 'pinia'
+import { onMounted, onBeforeUnmount, ref, shallowRef, computed, nextTick, toRef } from 'vue'
 import {
   Hexagon,
   Settings,
@@ -76,7 +75,10 @@ const emit = defineEmits<{
 }>()
 
 const store = useWorkflowDefinitionsStore()
-const { nodeTemplates, currentDefinition, isReadonly, error } = storeToRefs(store)
+const nodeTemplates = toRef(store, 'nodeTemplates')
+const currentDefinition = toRef(store, 'currentDefinition')
+const isReadonly = toRef(store, 'isReadonly')
+const error = toRef(store, 'error')
 const logStore = useLogStore()
 
 // 选中节点状态

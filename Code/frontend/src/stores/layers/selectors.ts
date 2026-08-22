@@ -169,6 +169,7 @@ export function useWorkflowRun() {
     setWorkflowVariantPreference: store.setWorkflowVariantPreference,
     cancelWorkflowRunForJob: store.cancelWorkflowRunForJob,
     retryWorkflowRunForJob: store.retryWorkflowRunForJob,
+    autoAttachProductsForNewLayer: store.autoAttachProductsForNewLayer,
     cleanupAllRetryTimers: store.cleanupAllRetryTimers,
     stopWorkflowPolling: store.stopWorkflowPolling,
     fetchPointWeather: store.fetchPointWeather,

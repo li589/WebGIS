@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { MapChromeNavigationControl } from './map/map-chrome-controls'
 
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, toRef, watch } from 'vue'
 
 import { AlertTriangle } from './ui/icons'
 import DrawToolbar from './map/draw-toolbar.vue'
@@ -65,8 +64,8 @@ const settingsStore = useSettingsStore()
 const drawStore = useDrawStore()
 const logStore = useLogStore()
 const weatherTileManager = useWeatherTileManager()
-const { statusVersion: weatherStatusVersion, activityVersion: weatherActivityVersion } =
-  storeToRefs(weatherTileManager)
+const weatherStatusVersion = toRef(weatherTileManager, 'statusVersion')
+const weatherActivityVersion = toRef(weatherTileManager, 'activityVersion')
 
 const props = defineProps<{
   tileSourceId: TileSourceId
