@@ -156,15 +156,24 @@ export function usePanelDragResize(options: UsePanelDragResizeOptions): PanelDra
 
   const visible = ref(persistedState?.visible ?? true)
   const collapsed = ref(persistedState?.collapsed ?? defaultCollapsed)
+  // 恢复路径同样 clamp：拖拽中的 clamp 不覆盖持久化值——越界 offset（异常
+  // 写入/旧版本数据）一旦持久化，面板每次刷新都跑到屏幕外回不来
+  // （2026-08-23 "分析面板消失"排查发现的恢复缺口）
   const offsetX = ref(
-    !visible.value && typeof persistedState?.pillOffsetX === 'number'
-      ? persistedState.pillOffsetX
-      : (persistedState?.offsetX ?? 0),
+    clampPanelOffset(
+      !visible.value && typeof persistedState?.pillOffsetX === 'number'
+        ? persistedState.pillOffsetX
+        : (persistedState?.offsetX ?? 0),
+      maxOffsetX,
+    ),
   )
   const offsetY = ref(
-    !visible.value && typeof persistedState?.pillOffsetY === 'number'
-      ? persistedState.pillOffsetY
-      : (persistedState?.offsetY ?? 0),
+    clampPanelOffset(
+      !visible.value && typeof persistedState?.pillOffsetY === 'number'
+        ? persistedState.pillOffsetY
+        : (persistedState?.offsetY ?? 0),
+      maxOffsetY,
+    ),
   )
   const panelWidth = ref(persistedState?.width ?? defaultWidth)
   const panelHeight = ref(persistedState?.height ?? defaultHeight)
