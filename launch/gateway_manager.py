@@ -36,6 +36,8 @@ def gateway_running() -> bool:
             ["docker", "inspect", "-f", "{{.State.Status}}", GATEWAY_CONTAINER],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
             **hidden_kwargs(),
         )
@@ -66,6 +68,10 @@ def ensure_frontend_dist(*, rebuild: bool = False) -> bool:
             cwd=str(FRONTEND_DIR),
             capture_output=True,
             text=True,
+            # npm/vite 输出恒为 UTF-8；Windows 默认 GBK 解码会崩 reader 线程，
+            # 吞掉构建输出（真失败时也看不到错误）。2026-08-23 修复。
+            encoding="utf-8",
+            errors="replace",
             timeout=600,
             **hidden_kwargs(),
         )
@@ -126,6 +132,8 @@ def start_gateway_infra(*, rebuild_frontend: bool = False) -> bool:
             cwd=str(GATEWAY_DIR),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=120,
             **hidden_kwargs(),
         )

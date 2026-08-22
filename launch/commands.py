@@ -98,6 +98,8 @@ def _regenerate_catalog_seeds() -> None:
             cwd=str(SCRIPT_DIR),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=120,
             **hidden_kwargs(),
         )
@@ -422,6 +424,8 @@ def cmd_status() -> int:
             ["docker", "inspect", "-f", "{{.State.Status}}", cid],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             **hidden_kwargs(),
         )
         state = r.stdout.strip() if r.returncode == 0 else "未运行"
@@ -1290,6 +1294,8 @@ def cmd_flush(args: argparse.Namespace) -> int:
             ["docker", "exec", "cgda-redis", "redis-cli", "DBSIZE"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=10,
             **hidden_kwargs(),
         )
@@ -1346,6 +1352,8 @@ def cmd_flush(args: argparse.Namespace) -> int:
             ["docker", "exec", "cgda-redis", "redis-cli", "FLUSHDB"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=10,
             **hidden_kwargs(),
         )

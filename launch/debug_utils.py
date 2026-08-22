@@ -96,6 +96,8 @@ def print_debug_info() -> None:
                 ["docker", "version", "--format", "{{.Server.Version}}"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=5,
                 **hidden_kwargs(),
             )
