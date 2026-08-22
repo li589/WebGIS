@@ -123,6 +123,7 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
     resolveEffectiveDescriptor,
     supportsAnalysisWorkflow,
     getCatalogRunBlockReason,
+    getCatalogAddBlockReason,
     canRunCatalog,
     isWeatherEngineLayer,
     supportsMapLayerResult,
@@ -131,6 +132,10 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
     supportsOnlineTemporal,
     getOnlineTemporalConfig,
     getLayerPrimaryMetric,
+    getCatalogWorkflowEngine,
+    getRuntimeLayerDescriptor,
+    isOverlayDisplayOnlyLayer,
+    setRuntimeLayerCatalog,
   } = catalog
 
   function setCurrentHour(hour: number) {
@@ -188,6 +193,7 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
     resolveEffectiveDescriptor,
     supportsAnalysisWorkflow,
     getCatalogRunBlockReason,
+    getCatalogAddBlockReason,
     canRunCatalog,
     isWeatherEngineLayer,
     supportsMapLayerResult,
@@ -196,6 +202,10 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
     supportsOnlineTemporal,
     getOnlineTemporalConfig,
     getLayerPrimaryMetric,
+    getCatalogWorkflowEngine,
+    getRuntimeLayerDescriptor,
+    isOverlayDisplayOnlyLayer,
+    setRuntimeLayerCatalog,
   }
 }
 
