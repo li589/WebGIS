@@ -1,15 +1,15 @@
 @echo off
 REM ============================================================
-REM  CGDA ä¸€é”®å¯åŠ¨ (Windows)
-REM  å¼ºåˆ¶ä½¿ç”¨ä»“åº“å†… Env\Python312\python.exeï¼ˆæœ¬åœ°è”è°ƒå”¯ä¸€è§£é‡Šå™¨ï¼‰
+REM  CGDA Ò»¼üÆô¶¯ (Windows)
+REM  Ç¿ÖÆÊ¹ÓÃ²Ö¿âÄÚ Env\Python312\python.exe£¨±¾µØÁªµ÷Î¨Ò»½âÊÍÆ÷£©
 REM
-REM  ã€é‡è¦ã€‘Docker Desktop ä¸æœ¬ç»ˆç«¯å»ºè®®ä»¥ç®¡ç†å‘˜èº«ä»½è¿è¡Œï¼›
-REM  å¦åˆ™å¯èƒ½å‡ºç°é•œåƒæ— æ³•è®¿é—®ã€volume/é…ç½®è¯»å–å¤±è´¥ç­‰é—®é¢˜ã€‚
-REM  é»˜è®¤å¯åŠ¨ä¸å« Nginxï¼ˆæ—¥å¸¸å…¥å£ Vite:5175 + FastAPI:8000ï¼‰ã€‚
-REM  å¯é€‰åŒåŸŸç½‘å…³: start.bat start gatewayï¼ˆè§ Code\infra\gateway\README.mdï¼‰
+REM  ¡¾ÖØÒª¡¿Docker Desktop Óë±¾ÖÕ¶Ë½¨ÒéÒÔ¹ÜÀíÔ±Éí·İÔËĞĞ£»
+REM  ·ñÔò¿ÉÄÜ³öÏÖ¾µÏñÎŞ·¨·ÃÎÊ¡¢volume/ÅäÖÃ¶ÁÈ¡Ê§°ÜµÈÎÊÌâ¡£
+REM  Ä¬ÈÏÆô¶¯²»º¬ Nginx£¨ÈÕ³£Èë¿Ú Vite:5175 + FastAPI:8000£©¡£
+REM  ¿ÉÑ¡Í¬ÓòÍø¹Ø: start.bat start gateway£¨¼û Code\infra\gateway\README.md£©
 REM
-REM  ç”¨æ³•:
-REM    start.bat                         â†’ start all
+REM  ÓÃ·¨:
+REM    start.bat                         ¡ú start all
 REM    start.bat start [component] ...
 REM    start.bat start gateway
 REM    start.bat stop | stop gateway | status | restart | logs | flush | sync
@@ -19,15 +19,15 @@ set "SCRIPT_DIR=%~dp0"
 set "ENV_PY=%SCRIPT_DIR%Env\Python312\python.exe"
 
 if not exist "%ENV_PY%" (
-    echo [ERROR] æœªæ‰¾åˆ°æœ¬åœ°è”è°ƒè§£é‡Šå™¨:
+    echo [ERROR] Î´ÕÒµ½±¾µØÁªµ÷½âÊÍÆ÷:
     echo         %ENV_PY%
-    echo         æœ¬ä»“åº“å¿…é¡»ä½¿ç”¨ Env\Python312ï¼Œè¯·å‹¿æ”¹ç”¨ç³»ç»Ÿ PATH ä¸­çš„ pythonã€‚
+    echo         ±¾²Ö¿â±ØĞëÊ¹ÓÃ Env\Python312£¬ÇëÎğ¸ÄÓÃÏµÍ³ PATH ÖĞµÄ python¡£
     pause
     exit /b 1
 )
 
 echo [INFO] Python: %ENV_PY%
-echo [INFO] Windows: è¯·ç¡®è®¤ Docker Desktop ä»¥ç®¡ç†å‘˜èº«ä»½è¿è¡Œï¼ˆé•œåƒ/é…ç½®è®¿é—®ä¾èµ–æ­¤æƒé™ï¼‰
+echo [INFO] Windows: ÇëÈ·ÈÏ Docker Desktop ÒÔ¹ÜÀíÔ±Éí·İÔËĞĞ£¨¾µÏñ/ÅäÖÃ·ÃÎÊÒÀÀµ´ËÈ¨ÏŞ£©
 
 if "%~1"=="" (
     "%ENV_PY%" "%SCRIPT_DIR%launch.py" start
@@ -38,7 +38,7 @@ if "%~1"=="" (
 set "ERR=%ERRORLEVEL%"
 if not "%ERR%"=="0" (
     echo.
-    echo [ERROR] å¯åŠ¨å™¨è¿”å›é”™è¯¯ç  %ERR%
+    echo [ERROR] Æô¶¯Æ÷·µ»Ø´íÎóÂë %ERR%
     pause
 )
 endlocal & exit /b %ERR%
