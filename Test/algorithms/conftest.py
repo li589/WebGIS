@@ -11,6 +11,14 @@ import os
 import sys
 from pathlib import Path
 
+# 测试隔离防御：剔除超出 Windows 环境变量合法上限（32767 字符）的巨型变量
+# （如 AI 会话注入的 ACC_PRODUCT_CONFIG_V3 ~481KB）。它会让
+# ``unittest.mock.patch.dict(os.environ, ...)`` 退出时写回超限炸
+# ``ValueError: the environment variable is longer than 32767 characters``，
+# 也会波及子进程 spawn（与 git 提交须 ``env -u`` 同源）。被测系统不消费该变量。
+for _oversized_env_key in [k for k, v in os.environ.items() if len(v) > 32760]:
+    os.environ.pop(_oversized_env_key, None)
+
 # conftest 位于 <repo>/Test/algorithms/conftest.py → parents[2] = 仓库根
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ALGO_ROOT = _REPO_ROOT / "Code" / "algorithms" / "providers" / "Python"
