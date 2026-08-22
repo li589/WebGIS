@@ -1,0 +1,149 @@
+/* 右拉抽屉：遮罩 + 白色面板，translateX 滑入 */
+.drawer-mask {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0);
+  z-index: 30;
+  visibility: hidden;
+  transition: background 0.2s ease, visibility 0.2s;
+}
+.drawer-mask.show {
+  visibility: visible;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.drawer {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 72vw;
+  max-width: 320px;
+  background: #ffffff;
+  z-index: 31;
+  border-radius: 14px 0 0 14px;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(105%);
+  transition: transform 0.22s ease;
+  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+.drawer.show {
+  transform: translateX(0);
+}
+
+.drawer-head {
+  padding: 18px 16px 10px;
+  display: flex;
+  flex-direction: column;
+}
+.drawer-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: #0c447c;
+}
+.drawer-count {
+  margin-top: 3px;
+  font-size: 11px;
+  color: #888780;
+}
+
+.drawer-list {
+  flex: 1;
+  height: 100%;
+}
+
+.layer-item {
+  position: relative;
+  margin: 0 10px 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f7f8fa;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+.layer-item.active {
+  background: #e6f1fb;
+}
+.layer-hover {
+  opacity: 0.75;
+}
+
+.layer-main {
+  flex: 1;
+  min-width: 0;
+}
+.layer-name-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+.layer-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #2c2c2a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.layer-item.active .layer-name {
+  color: #0c447c;
+}
+.layer-time-badge {
+  flex-shrink: 0;
+  margin-left: 6px;
+  font-size: 9px;
+  color: #185fa5;
+  background: rgba(24, 95, 165, 0.1);
+  border-radius: 7px;
+  padding: 1px 6px;
+}
+.layer-time-badge.static {
+  color: #888780;
+  background: rgba(136, 135, 128, 0.12);
+}
+
+.layer-desc {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  color: #888780;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.layer-check {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #185fa5;
+  margin-left: 8px;
+  position: relative;
+}
+.layer-check::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2.5px;
+  width: 4px;
+  height: 8px;
+  border: solid #ffffff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.drawer-empty {
+  padding: 30px 0;
+  text-align: center;
+  font-size: 12px;
+  color: #888780;
+}

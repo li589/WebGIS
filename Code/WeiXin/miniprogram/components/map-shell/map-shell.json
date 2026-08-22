@@ -1,8 +1,0 @@
-{
-  "component": true,
-  "usingComponents": {
-    "logo-badge": "/components/logo-badge/logo-badge",
-    "scale-bar": "/components/scale-bar/scale-bar",
-    "timeline": "/components/timeline/timeline"
-  }
-}

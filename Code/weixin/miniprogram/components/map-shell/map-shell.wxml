@@ -24,13 +24,37 @@
   <!-- 数据图层叠加画布：同层渲染，pointer-events:none 透传手势到底图 -->
   <canvas type="2d" id="overlayCanvas" class="overlay-canvas" disable-scroll="{{true}}"></canvas>
 
-  <!-- 顶部 colorbar 占位（M2 接入真实色带） -->
-  <view class="colorbar-shell">
-    <view class="colorbar-empty">Colorbar · M2 接入</view>
-  </view>
+  <!-- 顶部自动 colorbar（palette/vmin/vmax/unit 来自 overlay-bounds） -->
+  <colorbar
+    class="colorbar-slot"
+    visible="{{colorbar.visible}}"
+    title="{{colorbar.title}}"
+    unit="{{colorbar.unit}}"
+    palette-id="{{colorbar.paletteId}}"
+    vmin="{{colorbar.vmin}}"
+    vmax="{{colorbar.vmax}}"
+  />
 
   <!-- 左上角 logo（无文字） -->
   <logo-badge class="logo-slot" />
+
+  <!-- 右侧图层分组符号竖条 -->
+  <layer-rail
+    class="rail-slot"
+    categories="{{railCategories}}"
+    active-id="{{railActiveId}}"
+    bind:select="onRailSelect"
+  />
+
+  <!-- 右拉图层抽屉 -->
+  <layer-drawer
+    visible="{{drawerVisible}}"
+    group="{{drawerGroup}}"
+    active-layer-id="{{activeLayer.id}}"
+    loading="{{drawerLoading}}"
+    bind:select="onDrawerSelect"
+    bind:close="onDrawerClose"
+  />
 
   <!-- 左下角比例尺 -->
   <scale-bar class="scale-slot" meters-per-pixel="{{metersPerPixel}}" />
@@ -40,7 +64,7 @@
     <text>{{satellite ? '街道' : '影像'}}</text>
   </view>
 
-  <!-- 底部全宽时间轴（hour / day / month / static 四模式） -->
+  <!-- 底部全宽时间轴（hour / day / month / static 由图层时间能力驱动） -->
   <timeline
     class="timeline-slot"
     mode="{{timeline.mode}}"
@@ -48,11 +72,15 @@
     current="{{timeline.current}}"
     bind:change="onTimelineChange"
     bind:toggle="onTimelineToggle"
-    bind:modecycle="onTimelineModeCycle"
   />
 
-  <!-- M0 调试 HUD：对齐验证数据 -->
+  <!-- 状态 HUD（图层/瓦片进度） -->
   <view class="debug-hud" wx:if="{{debugHud}}">
     <text>{{debugHud}}</text>
+  </view>
+
+  <!-- 错误横幅 -->
+  <view class="banner" wx:if="{{banner}}" bindtap="onBannerTap">
+    <text>{{banner}}</text>
   </view>
 </view>

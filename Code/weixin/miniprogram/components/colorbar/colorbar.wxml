@@ -1,0 +1,28 @@
+<view class="cbar" wx:if="{{visible}}">
+  <view class="cbar-row">
+    <text class="cbar-title">{{title}}</text>
+    <text class="cbar-unit">{{unit}}</text>
+  </view>
+  <view class="cbar-strip-bg">
+    <block wx:if="{{discrete}}">
+      <view
+        wx:for="{{swatches}}"
+        wx:key="index"
+        class="cbar-swatch"
+        style="background: {{item}};"
+      ></view>
+    </block>
+    <view wx:else class="cbar-strip" style="background: {{gradient}};"></view>
+  </view>
+  <view class="cbar-ticks" wx:if="{{!discrete}}">
+    <text
+      wx:for="{{tickLabels}}"
+      wx:key="index"
+      class="cbar-tick t{{index}}"
+    >{{item}}</text>
+  </view>
+  <view class="cbar-ticks" wx:else>
+    <text class="cbar-tick t0">{{classStart}}</text>
+    <text class="cbar-tick tlast">{{classEnd}}</text>
+  </view>
+</view>

@@ -26,38 +26,37 @@
   pointer-events: none;
 }
 
-/* ---- 顶部 colorbar 占位 ---- */
-.colorbar-shell {
+/* ---- 顶部 colorbar ---- */
+.colorbar-slot {
   position: absolute;
   top: calc(12px + env(safe-area-inset-top));
   left: 12px;
-  right: 12px;
-  height: 40px;
+  right: 64px;
   z-index: 10;
-  background: rgba(255, 255, 255, 0.94);
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.colorbar-empty {
-  font-size: 11px;
-  color: #888780;
 }
 
-/* ---- logo 插槽（组件自带样式，此处仅定位） ---- */
+/* ---- logo ---- */
 .logo-slot {
   position: absolute;
-  top: calc(64px + env(safe-area-inset-top));
+  top: calc(72px + env(safe-area-inset-top));
   left: 12px;
   z-index: 10;
 }
 
-/* ---- 比例尺插槽 ---- */
+/* ---- 右侧分组 rail：垂直居中偏右 ---- */
+.rail-slot {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+}
+
+/* ---- 左下比例尺 ---- */
 .scale-slot {
   position: absolute;
   left: 12px;
-  bottom: 120px;
+  bottom: 130px;
   z-index: 10;
 }
 
@@ -65,7 +64,7 @@
 .basemap-toggle {
   position: absolute;
   right: 12px;
-  bottom: 120px;
+  bottom: 130px;
   z-index: 10;
   width: 64px;
   height: 36px;
@@ -82,7 +81,7 @@
   opacity: 0.7;
 }
 
-/* ---- 底部时间轴插槽 ---- */
+/* ---- 底部时间轴 ---- */
 .timeline-slot {
   position: absolute;
   left: 0;
@@ -91,20 +90,36 @@
   z-index: 10;
 }
 
-/* ---- M0 调试 HUD ---- */
+/* ---- 状态 HUD ---- */
 .debug-hud {
   position: absolute;
   left: 12px;
-  bottom: 160px;
+  bottom: 190px;
   z-index: 20;
-  max-width: 70vw;
-  background: rgba(14, 22, 33, 0.82);
+  max-width: 62vw;
+  background: rgba(14, 22, 33, 0.78);
   border-radius: 8px;
-  padding: 6px 10px;
+  padding: 5px 9px;
 }
 .debug-hud text {
   font-size: 10px;
   color: #7ee0a8;
   font-family: monospace;
   white-space: pre-wrap;
+}
+
+/* ---- 错误横幅 ---- */
+.banner {
+  position: absolute;
+  top: calc(64px + env(safe-area-inset-top));
+  left: 12px;
+  right: 12px;
+  z-index: 40;
+  background: rgba(226, 75, 74, 0.92);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+.banner text {
+  font-size: 11px;
+  color: #ffffff;
 }

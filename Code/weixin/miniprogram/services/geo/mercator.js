@@ -82,10 +82,10 @@ function visibleTiles(centerGcj, z, canvasW, canvasH, margin) {
 }
 
 /**
- * 视口（GCJ-02 中心 + z + 画布尺寸）→ WGS-84 经纬度范围。
- * 用于向 WGS-84 瓦片服务（overlay-tiles）请求正确的瓦片集合。
+ * 视口（GCJ-02 中心 + z + 画布尺寸）→ GCJ-02 经纬度范围。
+ * 调用方需经 gcj02→wgs84 转换后才能用于 WGS-84 瓦片服务（见 map-shell._scheduleTiles）。
  */
-function viewportWgsBounds(centerGcj, z, canvasW, canvasH) {
+function viewportBounds(centerGcj, z, canvasW, canvasH) {
   var world = worldSize(z);
   var c = project(centerGcj.lng, centerGcj.lat, world);
   var corners = [
@@ -144,6 +144,6 @@ module.exports = {
   unproject: unproject,
   metersPerPixel: metersPerPixel,
   visibleTiles: visibleTiles,
-  viewportWgsBounds: viewportWgsBounds,
+  viewportBounds: viewportBounds,
   wgsTilesForBounds: wgsTilesForBounds
 };

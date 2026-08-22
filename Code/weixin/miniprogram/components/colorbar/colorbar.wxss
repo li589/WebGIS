@@ -1,0 +1,64 @@
+/* 顶部 colorbar：白底半透明条，标题 + 渐变带 + 刻度 */
+.cbar {
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 10px;
+  padding: 7px 12px 5px;
+}
+
+.cbar-row {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.cbar-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: #2c2c2a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 70%;
+}
+.cbar-unit {
+  font-size: 10px;
+  color: #888780;
+}
+
+.cbar-strip-bg {
+  margin-top: 5px;
+  height: 10px;
+  border-radius: 3px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: row;
+}
+.cbar-strip {
+  flex: 1;
+  height: 10px;
+}
+.cbar-swatch {
+  flex: 1;
+  height: 10px;
+}
+
+.cbar-ticks {
+  position: relative;
+  height: 12px;
+  margin-top: 1px;
+}
+.cbar-tick {
+  position: absolute;
+  top: 0;
+  font-size: 9px;
+  color: #888780;
+  transform: translateX(-50%);
+}
+.cbar-tick.t0 {
+  left: 0%;
+  transform: none;
+}
+.cbar-tick.tlast {
+  left: 100%;
+  transform: translateX(-100%);
+}

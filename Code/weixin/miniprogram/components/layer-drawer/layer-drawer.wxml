@@ -1,0 +1,31 @@
+<view class="drawer-mask {{visible ? 'show' : ''}}" bindtap="onMaskTap" catchtouchmove="noop"></view>
+<view class="drawer {{visible ? 'show' : ''}}" catchtouchmove="noop">
+  <view class="drawer-head">
+    <text class="drawer-title">{{group.name || '图层'}}</text>
+    <text class="drawer-count">{{group.layers.length || 0}} 个图层</text>
+  </view>
+  <scroll-view class="drawer-list" scroll-y enhanced show-scrollbar="{{false}}">
+    <view
+      wx:for="{{group.layers}}"
+      wx:key="layerId"
+      class="layer-item {{activeLayerId === item.layerId ? 'active' : ''}}"
+      data-id="{{item.layerId}}"
+      bindtap="onSelect"
+      hover-class="layer-hover"
+    >
+      <view class="layer-main">
+        <view class="layer-name-row">
+          <text class="layer-name">{{item.displayName}}</text>
+          <text class="layer-time-badge {{item.supportsTime ? '' : 'static'}}">
+            {{item.supportsTime ? (item.timeGranularity === 'month' ? '逐月' : '逐日') : '静态'}}
+          </text>
+        </view>
+        <text class="layer-desc">{{item.description}}</text>
+      </view>
+      <view class="layer-check" wx:if="{{activeLayerId === item.layerId}}"></view>
+    </view>
+    <view wx:if="{{!group.layers.length}}" class="drawer-empty">
+      <text>{{loading ? '加载中…' : '该分组暂无可用图层'}}</text>
+    </view>
+  </scroll-view>
+</view>

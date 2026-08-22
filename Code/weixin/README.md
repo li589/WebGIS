@@ -3,7 +3,7 @@
 > 仅前端工程，适配 CGDA FastAPI 后端；数据图层 + 腾讯底图 + 时间轴**纯显示**。
 > 设计方案：`.ai/plans/2026-08-22-weixin-miniprogram-design.md`
 
-## 当前状态：M0 ✅ M1 ✅ M3-UI ✅（2026-08-22）
+## 当前状态：M0 ✅ M1 ✅ M2 ✅ M3-UI ✅（2026-08-22）
 
 ### M0 spike 验收结果（模拟器实测）
 
@@ -42,6 +42,26 @@
 
 **模拟器验收**：四模式 + 播放推进（实测 current 0→45）+ 中段（current=24）拖动视觉均通过。
 
+### M2 图层链路
+
+完整接入后端 CGDA FastAPI（127.0.0.1:8000）：
+- `services/api.js`：POST /auth/login（开发预填账号）→ 会话 cookie；GET /layers + /categories + /overlays + /overlay-bounds + /overlay-tiles 自动 401 重登
+- `services/catalog.js`：目录归一为「分组 rail + 抽屉」，**加载时并行拉所有 overlay-bounds 标注 xyz 能力并按 `supports_xyz_tiles` 二次过滤**（后端 GDAL XYZ 切片能力薄，非 COG 缺金字塔的图层会被隐藏）
+- `services/palettes.js`：24 套色带逐色对齐后端 `raster_preview_service._PALETTES`（色块从后端 dump，色带与瓦片渲染严格一致）
+- `services/tiles.js`：视口 WGS-84 瓦片集合 → 并发≤6 队列 → 文件缓存（userData/tiles/，LRU 400 上限）→ Image onload
+- 瓦片绘制：每片四角 WGS-84 → GCJ-02 → P() 投影到屏幕，与底图严格同链路（含火星偏移，0.3px 实测已涵盖）
+- `components/layer-rail`：右侧分组符号竖条 + 计数徽标
+- `components/layer-drawer`：右滑抽屉（遮罩 + 72vw 白卡 + 名称/描述/时间能力徽章）
+- `components/colorbar`：palette/vmin/vmax/unit 自动；离散色（tab10）用色块，连续色用渐变条 + 5 刻度
+
+**模拟器验收（实测）**：
+- 默认图层 dem-etopo（全局 ETOPO 高程，terrain 渐变）→ 30/30 瓦片全加载
+- 切 CLCD 土地利用（土地覆盖，discrete tab10）→ 离散色块可视，30/30 加载
+- 切 CMFD 区域降水（climate，YlGnBu 渐变）→ 30/30 加载
+- 切 CO₂ 柱浓度（climate，RdYlGn_r 渐变）→ 30/30 加载
+
+**后端 XYZ 能力现状（限制说明）**：本机后端仅 4 个图层带 `supports_xyz_tiles=true`：dem-etopo / co2-cn / cmfd-precip-cn / clcd-cn，**且全部 static 无 time_list**。所以当前 rail 仅显示 3 个分类（C/L/T），所有图层 time 轴均收为静态模式。后续图层接 COG 概述金字塔（`supplemental_overviews` 或 fsspec range request）即可让更多 time-series 图层进入 rail，时间轴动态切换能力已就绪（`_buildTimelineFromTimeList` 支持 YYYYMM/YYYYMMDD 解析）。
+
 ## 技术决策备忘
 
 1. **ES6 JS 起步，非 TS**：M0/M1 优先零工具链风险跑通同层渲染验证；模块结构已按 TS 规划组织（`services/geo`、`store`），M2 评审是否迁移（迁移 = 重命名 + 补类型注解）。
@@ -67,18 +87,29 @@
 miniprogram/
 ├─ pages/index/            # 唯一主页面（全屏地图应用）
 ├─ components/
-│  ├─ map-shell/           # 核心：map + canvas 叠加 + 对齐引擎 + M0 自检 + 时间轴宿主
+│  ├─ map-shell/           # 核心：map + canvas 叠加 + 对齐引擎 + 瓦片调度 + M0 自检 + 时间轴宿主
 │  ├─ logo-badge/          # 左上 logo（纯 CSS）
 │  ├─ scale-bar/           # 左下比例尺
-│  └─ timeline/            # 底部全宽时间轴（hour/day/month/static）
-├─ services/geo/
-│  ├─ gcj02.js             # GCJ-02 ↔ WGS-84
-│  └─ mercator.js          # 投影 + 米/像素 + 视口瓦片集合（M2 调度器用）
-└─ store/index.js          # 轻量 pub/sub（M2 起用）
+│  ├─ timeline/            # 底部全宽时间轴（hour/day/month/static，由图层时间能力驱动）
+│  ├─ layer-rail/          # 右侧分组符号竖条
+│  ├─ layer-drawer/        # 右滑图层抽屉
+│  └─ colorbar/            # 顶部自动色带
+├─ services/
+│  ├─ api.js               # 后端客户端（鉴权 / 目录 / 边界 / 瓦片）
+│  ├─ catalog.js           # 目录归一 + xyz 能力标注 + 二次过滤
+│  ├─ tiles.js             # 瓦片调度器（并发队列 + 文件缓存 LRU）
+│  ├─ palettes.js          # 色带表（与后端 _PALETTES 同源）
+│  ├─ geo/
+│  │  ├─ gcj02.js          # GCJ-02 ↔ WGS-84
+│  │  └─ mercator.js       # 投影 + 米/像素 + 视口瓦片集合
+│  └─ (deprecated) store/index.js  # 轻量 pub/sub（已并入组件 props，后续移除）
+└─ store/index.js          # 轻量 pub/sub（M2 未启用，M3 用作事件总线预留）
 ```
 
-## 下一步（M2）
+## 下一步（M3+）
 
-图层链路：`GET /layers` → 右侧分组 rail + 抽屉 → `/overlay-tiles` PNG 瓦片 canvas 叠加（mercator.visibleTiles 已备）→ colorbar 自动。
-- 切换图层时把图层的 `supports_time` / `time_granularity` / time_list 喂给 `timeline` 组件（替换 demo 数据）
-- colorbar 自动从 overlay-bounds 的 palette/vmin/vmax 渲染
+- 接 COG 概述金字塔（`supplemental_overviews` / range request），释放更多 time-series 图层进 rail
+- 天气层（GeoJSON wind/precip particles）渲染：M3 weather tiles 接入
+- 点取值（M4）：点击地图 → 瓦片在 WGS-84 坐标系反查最近像素 → 调 `/overlay-value` 拉精确值
+- 手势期间 canvas 连续同步（M3 优化）
+- JS → TS 迁移（M2 评审）
