@@ -1,0 +1,7 @@
+<view class="scale-bar" wx:if="{{barWidth > 0}}">
+  <view class="bar">
+    <view class="seg seg-a" style="width: {{halfWidth}}px;"></view>
+    <view class="seg seg-b" style="width: {{halfWidth}}px;"></view>
+  </view>
+  <text class="label">{{label}}</text>
+</view>

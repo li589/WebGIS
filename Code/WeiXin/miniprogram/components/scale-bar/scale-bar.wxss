@@ -1,0 +1,28 @@
+.scale-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.bar {
+  display: flex;
+  flex-direction: row;
+  height: 3px;
+  border-left: 1px solid #ffffff;
+  border-right: 1px solid #ffffff;
+  border-bottom: 1px solid #ffffff;
+}
+.seg {
+  height: 3px;
+}
+.seg-a {
+  background: #ffffff;
+}
+.seg-b {
+  background: rgba(255, 255, 255, 0.45);
+}
+.label {
+  margin-top: 2px;
+  font-size: 10px;
+  color: #ffffff;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
+}

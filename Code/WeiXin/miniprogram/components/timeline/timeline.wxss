@@ -1,0 +1,185 @@
+/* Windy 式底部时间轴：白底半透明、蓝色强调、主刻度带分组标签 */
+.tl {
+  background: rgba(255, 255, 255, 0.97);
+  padding: 10px 16px 6px;
+  padding-bottom: calc(6px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  user-select: none;
+}
+
+/* ---- 头部：播放 + 当前时间 + 模式标签 ---- */
+.tl-head {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 38px;
+}
+
+.tl-play {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 0.5px solid #b5d4f4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.tl-play.on {
+  background: #185fa5;
+  border-color: #185fa5;
+}
+.tl-play.disabled {
+  opacity: 0.35;
+}
+.tl-play-icon.play {
+  width: 0;
+  height: 0;
+  margin-left: 3px;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 8px solid #185fa5;
+}
+.tl-play.on .tl-play-icon.play {
+  border-left-color: #ffffff;
+}
+.tl-play-icon.pause {
+  width: 8px;
+  height: 11px;
+  border-left: 2.5px solid #ffffff;
+  border-right: 2.5px solid #ffffff;
+  margin-left: 0;
+}
+
+.tl-caption {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  margin-left: 12px;
+  overflow: hidden;
+}
+.tl-main {
+  font-size: 17px;
+  font-weight: 500;
+  color: #0c447c;
+  white-space: nowrap;
+}
+.tl-sub {
+  font-size: 11px;
+  color: #888780;
+  margin-left: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tl-mode {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #185fa5;
+  background: #e6f1fb;
+  border-radius: 9px;
+  padding: 3px 9px;
+  margin-left: 8px;
+}
+
+/* ---- 轨道 ---- */
+.tl-track {
+  position: relative;
+  height: 42px;
+  margin-top: 2px;
+}
+
+.tl-rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 12px;
+  height: 3px;
+  border-radius: 2px;
+  background: #d3d1c7;
+}
+.tl-fill {
+  position: absolute;
+  left: 0;
+  top: 12px;
+  height: 3px;
+  border-radius: 2px;
+  background: #185fa5;
+}
+
+.tl-tick {
+  position: absolute;
+  top: 9px;
+  width: 1px;
+  height: 9px;
+  background: #b4b2a9;
+  transform: translateX(-0.5px);
+}
+.tl-tick.major {
+  top: 6px;
+  height: 15px;
+  width: 2px;
+  background: #5f5e5a;
+  transform: translateX(-1px);
+}
+
+.tl-tick-label {
+  position: absolute;
+  top: 26px;
+  font-size: 9px;
+  color: #888780;
+  white-space: nowrap;
+}
+.tl-tick-label.center,
+.tl-tick-label {
+  transform: translateX(-50%);
+}
+.tl-tick-label.left {
+  transform: none;
+}
+.tl-tick-label.right {
+  transform: translateX(-100%);
+}
+
+.tl-thumb {
+  position: absolute;
+  top: 13.5px;
+  width: 0;
+  height: 0;
+}
+.tl-thumb-dot {
+  position: absolute;
+  left: -7px;
+  top: -7px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2.5px solid #185fa5;
+  box-sizing: border-box;
+}
+
+/* ---- 静态模式 ---- */
+.tl-static .tl-caption .tl-main {
+  color: #5f5e5a;
+}
+.tl-static-note {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 30px;
+  margin-top: 6px;
+}
+.tl-static-note text {
+  font-size: 11px;
+  color: #888780;
+  margin: 0 10px;
+  white-space: nowrap;
+}
+.tl-static-line {
+  flex: 1;
+  height: 0.5px;
+  background: #d3d1c7;
+}

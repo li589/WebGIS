@@ -1,0 +1,58 @@
+<view class="shell">
+  <!-- 底图：腾讯原生 map（街道 / 影像），禁旋转与倾斜，保证 mercator 对齐成立 -->
+  <map
+    id="cgdaMap"
+    class="map"
+    latitude="{{center.latitude}}"
+    longitude="{{center.longitude}}"
+    scale="{{scale}}"
+    markers="{{markers}}"
+    enable-satellite="{{satellite}}"
+    enable-rotate="{{false}}"
+    enable-overlooking="{{false}}"
+    enable-skew="{{false}}"
+    enable-3D="{{false}}"
+    enable-zoom="{{true}}"
+    enable-scroll="{{true}}"
+    show-compass="{{false}}"
+    show-scale="{{false}}"
+    bindregionchange="onRegionChange"
+    bindupdated="onMapUpdated"
+    bindtap="onMapTap"
+  ></map>
+
+  <!-- 数据图层叠加画布：同层渲染，pointer-events:none 透传手势到底图 -->
+  <canvas type="2d" id="overlayCanvas" class="overlay-canvas" disable-scroll="{{true}}"></canvas>
+
+  <!-- 顶部 colorbar 占位（M2 接入真实色带） -->
+  <view class="colorbar-shell">
+    <view class="colorbar-empty">Colorbar · M2 接入</view>
+  </view>
+
+  <!-- 左上角 logo（无文字） -->
+  <logo-badge class="logo-slot" />
+
+  <!-- 左下角比例尺 -->
+  <scale-bar class="scale-slot" meters-per-pixel="{{metersPerPixel}}" />
+
+  <!-- 右下角：底图切换（街道 ⇄ 影像） -->
+  <view class="basemap-toggle" bindtap="toggleSatellite" hover-class="btn-hover">
+    <text>{{satellite ? '街道' : '影像'}}</text>
+  </view>
+
+  <!-- 底部全宽时间轴（hour / day / month / static 四模式） -->
+  <timeline
+    class="timeline-slot"
+    mode="{{timeline.mode}}"
+    ticks="{{timeline.ticks}}"
+    current="{{timeline.current}}"
+    bind:change="onTimelineChange"
+    bind:toggle="onTimelineToggle"
+    bind:modecycle="onTimelineModeCycle"
+  />
+
+  <!-- M0 调试 HUD：对齐验证数据 -->
+  <view class="debug-hud" wx:if="{{debugHud}}">
+    <text>{{debugHud}}</text>
+  </view>
+</view>

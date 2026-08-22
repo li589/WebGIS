@@ -1,0 +1,35 @@
+<view class="tl {{mode === 'static' ? 'tl-static' : ''}}">
+  <view class="tl-head">
+    <view class="tl-play {{mode === 'static' ? 'disabled' : ''}} {{playing ? 'on' : ''}}" bindtap="onPlayTap">
+      <view class="tl-play-icon {{playing ? 'pause' : 'play'}}"></view>
+    </view>
+    <view class="tl-caption">
+      <text class="tl-main">{{mainLabel}}</text>
+      <text class="tl-sub">{{subLabel}}</text>
+    </view>
+    <view class="tl-mode" bindtap="onModeTap">{{modeLabel}}</view>
+  </view>
+
+  <view class="tl-track" bindtouchstart="onTrackTouch" bindtouchmove="onTrackTouch">
+    <block wx:if="{{mode !== 'static'}}">
+      <view class="tl-rail"></view>
+      <view class="tl-fill" style="width: {{pct}}%;"></view>
+      <block wx:for="{{ticks}}" wx:key="index">
+        <view class="tl-tick {{item.major ? 'major' : ''}}" style="left: {{item.pos}}%;"></view>
+        <view
+          wx:if="{{item.majorLabel}}"
+          class="tl-tick-label {{item.align}}"
+          style="left: {{item.pos}}%;"
+        >{{item.majorLabel}}</view>
+      </block>
+      <view class="tl-thumb" style="left: {{pct}}%;">
+        <view class="tl-thumb-dot"></view>
+      </view>
+    </block>
+    <view wx:else class="tl-static-note">
+      <view class="tl-static-line"></view>
+      <text>静态图层 · 无时间维度</text>
+      <view class="tl-static-line"></view>
+    </view>
+  </view>
+</view>

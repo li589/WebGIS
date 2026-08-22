@@ -1,0 +1,4 @@
+<view class="logo">
+  <view class="logo-orbit"></view>
+  <view class="logo-dot"></view>
+</view>

@@ -1,0 +1,110 @@
+.shell {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #0e1621;
+}
+
+.map {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+/* 叠加层：覆盖底图但不拦截手势（同层渲染下 CSS 生效） */
+.overlay-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* ---- 顶部 colorbar 占位 ---- */
+.colorbar-shell {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top));
+  left: 12px;
+  right: 12px;
+  height: 40px;
+  z-index: 10;
+  background: rgba(255, 255, 255, 0.94);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.colorbar-empty {
+  font-size: 11px;
+  color: #888780;
+}
+
+/* ---- logo 插槽（组件自带样式，此处仅定位） ---- */
+.logo-slot {
+  position: absolute;
+  top: calc(64px + env(safe-area-inset-top));
+  left: 12px;
+  z-index: 10;
+}
+
+/* ---- 比例尺插槽 ---- */
+.scale-slot {
+  position: absolute;
+  left: 12px;
+  bottom: 120px;
+  z-index: 10;
+}
+
+/* ---- 底图切换按钮 ---- */
+.basemap-toggle {
+  position: absolute;
+  right: 12px;
+  bottom: 120px;
+  z-index: 10;
+  width: 64px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.94);
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #0c447c;
+  font-weight: 500;
+}
+.btn-hover {
+  opacity: 0.7;
+}
+
+/* ---- 底部时间轴插槽 ---- */
+.timeline-slot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+}
+
+/* ---- M0 调试 HUD ---- */
+.debug-hud {
+  position: absolute;
+  left: 12px;
+  bottom: 160px;
+  z-index: 20;
+  max-width: 70vw;
+  background: rgba(14, 22, 33, 0.82);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.debug-hud text {
+  font-size: 10px;
+  color: #7ee0a8;
+  font-family: monospace;
+  white-space: pre-wrap;
+}

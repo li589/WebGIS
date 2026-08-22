@@ -1,0 +1,7 @@
+{
+  "navigationStyle": "custom",
+  "disableScroll": true,
+  "usingComponents": {
+    "map-shell": "/components/map-shell/map-shell"
+  }
+}
