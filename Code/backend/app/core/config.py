@@ -332,6 +332,13 @@ class Settings:
     weather_schedule_enabled: bool = (
         os.getenv("BACKEND_WEATHER_SCHEDULE_ENABLED", "true").lower() == "true"
     )
+    # 天气瓦片渲染并发槽位（每进程）。注意部署形态：总上游并发 = 槽位 × 持有进程数
+    # （FastAPI worker 的 async 槽 + Celery weather worker 的 sync 槽，各持一份实例）。
+    # 默认 6 对自托管 Open-Meteo 容器无压力；接入商业天气源（限流）时按进程数调低。
+    # 重启生效（进程启动时读取）。
+    weather_tile_max_concurrent: int = max(
+        1, int(os.getenv("BACKEND_WEATHER_TILE_MAX_CONCURRENT", "6"))
+    )
     # Phase 2: Open-Meteo 本地数据自动同步（Celery Beat）
     # ECMWF IFS 每 6 小时更新初始场（00/06/12/18 UTC），同步在更新后 1-2 小时触发
     open_meteo_sync_enabled: bool = (

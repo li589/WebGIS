@@ -40,7 +40,9 @@ _WEB_MERCATOR_MAX_LAT = 85.0511287798066
 _MIN_TILE_ZOOM = 0
 _MAX_TILE_ZOOM = 12
 
-# 全局并发槽位：与前端 AIMD cap / Open-Meteo API pool 对齐，减少 429
+# 全局并发槽位（每进程，C-2 可配置化）：与前端 AIMD cap / Open-Meteo API pool 对齐，
+# 减少 429。实际值经 settings.weather_tile_max_concurrent（env
+# BACKEND_WEATHER_TILE_MAX_CONCURRENT）配置——注意总上游并发 = 槽位 × 持有进程数。
 _DEFAULT_MAX_CONCURRENT_TILE_REQUESTS = 6
 
 # 内存 LRU 缓存上限（每个服务实例）
@@ -291,12 +293,17 @@ class WeatherTileService:
         self,
         *,
         engine_service: WeatherEngineService | None = None,
-        max_concurrent: int = _DEFAULT_MAX_CONCURRENT_TILE_REQUESTS,
+        max_concurrent: int | None = None,
         in_memory_cache_max: int = _IN_MEMORY_TILE_CACHE_MAX,
     ) -> None:
         # 延迟导入以避免 WeatherEngineService ↔ tile_service 循环依赖
         from app.weatherengine.service import WeatherEngineService
 
+        if max_concurrent is None:
+            # C-2：槽位可配置（重启生效）；显式传参优先（测试用）
+            from app.core.config import settings as _settings
+
+            max_concurrent = _settings.weather_tile_max_concurrent
         self._engine = engine_service or WeatherEngineService()
         self._semaphore = asyncio.Semaphore(max_concurrent)
         # sync workflow（weather_tile_render）与 async REST 共用同一并发上限，避免绕过闸
@@ -304,6 +311,9 @@ class WeatherTileService:
         self._max_concurrent = max_concurrent
         self._in_memory_cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._in_memory_cache_max = in_memory_cache_max
+        # C-4：事件循环线程（async REST）与 anyio/Celery 线程池（sync render）并发
+        # 读写同一 LRU，OrderedDict 非线程安全（mutated during iteration）——统一加锁。
+        self._cache_lock = threading.Lock()
 
     def _build_geojson(
         self,
@@ -531,9 +541,10 @@ class WeatherTileService:
         return geojson, "miss"
 
     def _read_memory_cache(self, key: str) -> dict[str, Any] | None:
-        if key in self._in_memory_cache:
-            self._in_memory_cache.move_to_end(key)
-            return self._in_memory_cache[key]
+        with self._cache_lock:
+            if key in self._in_memory_cache:
+                self._in_memory_cache.move_to_end(key)
+                return self._in_memory_cache[key]
         return None
 
     def peek_cached_tile(
@@ -620,9 +631,10 @@ class WeatherTileService:
             # 退回内存：任意 hour 匹配前缀
             prefix = f"{_TILE_REDIS_KEY_PREFIX}{layer_id}:z{z}:x{x}:y{y}:h"
             suffix = f":m{model_part}:p{provider_part}"
-            for key, value in self._in_memory_cache.items():
-                if key.startswith(prefix) and key.endswith(suffix):
-                    return value
+            with self._cache_lock:
+                for key, value in self._in_memory_cache.items():
+                    if key.startswith(prefix) and key.endswith(suffix):
+                        return value
             return None
 
         try:
@@ -691,10 +703,11 @@ class WeatherTileService:
         return best
 
     def _write_memory_cache(self, key: str, value: dict[str, Any]) -> None:
-        self._in_memory_cache[key] = value
-        self._in_memory_cache.move_to_end(key)
-        while len(self._in_memory_cache) > self._in_memory_cache_max:
-            self._in_memory_cache.popitem(last=False)
+        with self._cache_lock:
+            self._in_memory_cache[key] = value
+            self._in_memory_cache.move_to_end(key)
+            while len(self._in_memory_cache) > self._in_memory_cache_max:
+                self._in_memory_cache.popitem(last=False)
 
     async def get_tile(
         self,

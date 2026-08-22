@@ -291,9 +291,8 @@ def get_overlay_tile(
         _logger.warning(
             "overlay tile render failed %s z=%s", layer_id, z, exc_info=True
         )
-        raise HTTPException(
-            status_code=500, detail=f"Tile render failed: {exc}"
-        ) from exc
+        # B-7：500 固定文案（不回显 exc，防内部信息泄露；真因走日志 exc_info）
+        raise HTTPException(status_code=500, detail="Tile render failed") from exc
     return Response(
         content=png,
         media_type="image/png",

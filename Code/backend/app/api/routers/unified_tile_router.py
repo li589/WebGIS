@@ -59,7 +59,8 @@ async def get_unified_tile(
         logger.exception(
             "[UnifiedTileRoutes] failed to generate tile for layer=%s", layer_id
         )
-        raise HTTPException(status_code=503, detail=f"Tile unavailable: {exc}") from exc
+        # B-7：503 固定文案（不回显 exc；真因走日志）
+        raise HTTPException(status_code=503, detail="Tile unavailable") from exc
 
     headers = dict(tile.extra_headers)
     if tile.cache_status:

@@ -902,7 +902,11 @@ async def restart_backend_service(request: ServiceRestartRequest | None = None):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        # B-7：500 固定文案（不回显 exc；真因走日志）
+        logger.exception("[ConfigRoutes] schedule_ui_backend_restart failed")
+        raise HTTPException(
+            status_code=500, detail="Backend restart scheduling failed"
+        ) from exc
 
 
 @router.get(

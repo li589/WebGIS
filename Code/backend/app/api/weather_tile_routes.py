@@ -88,9 +88,9 @@ async def get_weather_tile(
         raise HTTPException(status_code=422, detail=f"no usable data: {exc}") from exc
     except Exception as exc:
         logger.exception("[WeatherTileRoutes] failed to generate tile")
-        raise HTTPException(
-            status_code=503, detail=f"Weather tile unavailable: {exc}"
-        ) from exc
+        # B-7：503 固定文案（不回显 exc；真因走日志。上方 422 的
+        # "no usable data" 是前端契约，勿动）
+        raise HTTPException(status_code=503, detail="Weather tile unavailable") from exc
 
     meta = geojson.get("_tile_meta") if isinstance(geojson, dict) else None
     resolved_provider = None
