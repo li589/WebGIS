@@ -173,6 +173,57 @@ def _build_sync_command(domains: str | None = None) -> list[str]:
     return cmd
 
 
+def kill_orphan_sync_containers() -> int:
+    """C-5：强制清除孤儿 sync 容器，返回清除数量。
+
+    ``subprocess.run(timeout=...)`` 超时（或 worker 被 hard time_limit 杀）只终止
+    ``docker compose run`` **客户端**；run 出的容器在 daemon 里继续跑（已实验
+    实证：客户端 SIGKILL 后容器仍 Up），继续写 shared volume 并与下轮 sync 并发。
+
+    注意：``docker compose stop/rm <service>`` 对 run 创建的容器**无效**（实验
+    证伪，compose 只管理 up 创建的服务容器）——须按 compose project/service
+    label 精确定位后 ``docker rm -f``。调用前提：**已持同步锁**（正常 sync 的
+    容器不会被误杀，因为互斥锁保证了拿锁时不存在合法的进行中 sync）。
+    """
+    project = settings.open_meteo_sync_compose_project
+    list_cmd = [
+        "docker",
+        "ps",
+        "-q",
+        "--filter",
+        f"label=com.docker.compose.project={project}",
+        "--filter",
+        "label=com.docker.compose.service=open-meteo-sync",
+    ]
+    try:
+        listing = subprocess.run(
+            list_cmd, capture_output=True, text=True, timeout=15, check=False
+        )
+        cids = [c.strip() for c in (listing.stdout or "").splitlines() if c.strip()]
+        for cid in cids:
+            kill = subprocess.run(
+                ["docker", "rm", "-f", cid],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if kill.returncode != 0:
+                logger.warning(
+                    "C-5 orphan cleanup: docker rm -f %s failed: %s",
+                    cid,
+                    (kill.stderr or "")[-200:],
+                )
+        if cids:
+            logger.warning(
+                "C-5: removed %d orphan sync container(s): %s", len(cids), cids
+            )
+        return len(cids)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        logger.warning("C-5 orphan cleanup skipped: %s", exc)
+        return 0
+
+
 def _ensure_sync_volume() -> None:
     """Ensure shared named volume exists (data-sync compose marks it external)."""
     vol = "backend_open-meteo-data"
@@ -249,6 +300,10 @@ def execute_open_meteo_sync(domains: str | None = None) -> dict[str, Any]:
         }
 
     try:
+        # C-5 防御：拿锁成功说明无进行中的合法 sync——此时仍存在的 run 容器
+        # 只能是上次超时/worker 被杀遗留的孤儿，先清掉再起新 sync，
+        # 避免新旧容器并发写同一 volume。
+        kill_orphan_sync_containers()
         _ensure_sync_volume()
         cmd = _build_sync_command(domains=domains_eff)
         logger.info("Open-Meteo sync starting: %s", " ".join(cmd))
@@ -272,6 +327,10 @@ def execute_open_meteo_sync(domains: str | None = None) -> dict[str, Any]:
                 "docker command not found; ensure Docker is installed"
             ) from exc
         except subprocess.TimeoutExpired as exc:
+            # C-5：subprocess.run 超时只杀了 compose 客户端，run 容器已成孤儿
+            # 继续写 volume——释锁（finally）前必须先清掉，否则下轮 sync 拿锁
+            # 后与孤儿并发写。
+            kill_orphan_sync_containers()
             record_open_meteo_sync_result(
                 ok=False,
                 domains=domains_eff,
