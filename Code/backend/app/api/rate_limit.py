@@ -171,6 +171,7 @@ _write_limiter = RateLimiter(
 )
 
 # 需限流的写路径前缀（含 workflow 提交/取消/重试，防容量池滥用）
+# P3 补齐：/workspace（PUT 布局持久化）、/analysis（POST 提交分析）此前漏限流
 _WRITE_LIMITED_PREFIXES = (
     "/config",
     "/import",
@@ -179,6 +180,8 @@ _WRITE_LIMITED_PREFIXES = (
     "/runtime",
     "/workflow-timers",
     "/weather/sync",
+    "/workspace",
+    "/analysis",
 )
 _WRITE_METHODS = ("POST", "PUT", "DELETE", "PATCH")
 

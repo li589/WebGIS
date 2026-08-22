@@ -383,41 +383,13 @@ class WorkflowRunner:
             return node_outputs[node_id][port_name]
         raise ValueError(f"Unsupported binding syntax: {binding}")
 
-    def _topological_sort(
-        self, node_map: dict[str, object], edges: list[WorkflowEdge]
-    ) -> list[str]:
-        indegree = {node_id: 0 for node_id in node_map}
-        adjacency: dict[str, list[str]] = {node_id: [] for node_id in node_map}
-        for edge in edges:
-            if edge.from_node not in node_map or edge.to_node not in node_map:
-                raise KeyError(
-                    f"Workflow edge references unknown node: {edge.from_node} -> {edge.to_node}"
-                )
-            adjacency[edge.from_node].append(edge.to_node)
-            indegree[edge.to_node] += 1
-
-        ready = sorted([node_id for node_id, degree in indegree.items() if degree == 0])
-        ordered: list[str] = []
-        while ready:
-            node_id = ready.pop(0)
-            ordered.append(node_id)
-            for target in adjacency[node_id]:
-                indegree[target] -= 1
-                if indegree[target] == 0:
-                    ready.append(target)
-            ready.sort()
-        if len(ordered) != len(node_map):
-            raise ValueError("Workflow contains a cycle")
-        return ordered
-
     def _topological_layers(
         self, node_map: dict[str, object], edges: list[WorkflowEdge]
     ) -> list[list[str]]:
         """拓扑分层：每层是互不依赖的就绪节点（可安全并行）。
 
-        与 ``_topological_sort`` 的区别：sort 每轮取一个节点产出线性序；
-        layers 每轮取全部 indegree=0 节点产出分层，同层节点无边连接可并行。
-        线性 DAG（每层 1 节点）两者序一致。
+        每轮取全部 indegree=0 节点产出分层，同层节点无边连接可并行；
+        线性 DAG（每层 1 节点）退化为线性序。
         """
         indegree = {node_id: 0 for node_id in node_map}
         adjacency: dict[str, list[str]] = {node_id: [] for node_id in node_map}

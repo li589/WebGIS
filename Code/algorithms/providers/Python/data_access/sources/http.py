@@ -195,9 +195,14 @@ def _load_sidecar(local_path: Path) -> dict[str, str]:
 def _save_sidecar(local_path: Path, payload: dict[str, str]) -> None:
     meta_path = _meta_sidecars(local_path)
     try:
-        meta_path.write_text(
+        # P3 原子写：并发读（另一 worker 正在读 sidecar 元数据）与崩溃中断
+        # 都会读到半截 JSON——先写临时文件再 os.replace 原子换名
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = meta_path.with_suffix(meta_path.suffix + ".tmp")
+        tmp_path.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+        os.replace(tmp_path, meta_path)
     except OSError as exc:
         logger.warning("Failed to write HTTP cache sidecar %s: %s", meta_path, exc)
 

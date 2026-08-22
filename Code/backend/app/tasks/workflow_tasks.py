@@ -27,6 +27,11 @@ _NO_BRIDGE_MESSAGE = (
 # 避免每次 dispatch_workflow_task 新建/销毁 ThreadPoolExecutor
 _dispatch_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
+# 工作流任务专用限时（P3：handle_workflow_timeout 曾引用全局默认
+# celery_task_soft_time_limit=300s 报错文案，与 per-task 实际值 7200s 错位）
+WORKFLOW_TASK_SOFT_TIME_LIMIT = 7200
+WORKFLOW_TASK_TIME_LIMIT = 7500
+
 # m22 修复：统一的 bridge-channel 映射表
 # 顺序即优先级，与 resolve_workflow_channel 共享同一数据源
 _BRIDGE_CHAIN: list[tuple[Any, str]] = [
@@ -214,8 +219,8 @@ if celery_available and celery_app is not None:
         acks_on_failure_or_timeout=False,
         # 算法反演工作流（如 omega_sf 块反演）可能运行数十分钟到数小时，
         # 全局默认 300s/360s 远不够。此处设置 per-task 超时为 2 小时 / 2 小时 5 分钟。
-        soft_time_limit=7200,
-        time_limit=7500,
+        soft_time_limit=WORKFLOW_TASK_SOFT_TIME_LIMIT,
+        time_limit=WORKFLOW_TASK_TIME_LIMIT,
     )
     def process_workflow_run_task(run_id: str, payload_data: dict[str, Any]) -> None:
         from app.services.workflow.service_container import submission_service

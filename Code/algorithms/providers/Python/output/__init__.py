@@ -51,6 +51,7 @@ from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from path_utils import local_path_to_uri
 
 if TYPE_CHECKING:
     import numpy as np
@@ -343,7 +344,7 @@ class RasterPublisher:
         result: dict[str, Any] = {
             "name": name,
             "cog_path": str(cog_path),
-            "cog_uri": f"file://{cog_path.resolve()}",
+            "cog_uri": local_path_to_uri(cog_path, resolve=True),
             "shape": (height, width),
             "dtype": str(data.dtype),
             "crs": self.crs,
@@ -369,9 +370,9 @@ class RasterPublisher:
                 )
                 result.update(cog_result)
                 result["cog_path"] = str(cog_path)
-                result["cog_uri"] = f"file://{cog_path.resolve()}"
+                result["cog_uri"] = local_path_to_uri(cog_path, resolve=True)
                 result["path"] = str(cog_path)
-                result["uri"] = f"file://{cog_path.resolve()}"
+                result["uri"] = local_path_to_uri(cog_path, resolve=True)
             except Exception as e:
                 logger.warning(f"COG 写出失败: {e}，跳过 COG 输出")
                 # 回退：写入普通 GeoTIFF
@@ -402,7 +403,9 @@ class RasterPublisher:
                         title=description or name,
                     )
                     result["preview_path"] = str(preview_path)
-                    result["preview_uri"] = f"file://{preview_path.resolve()}"
+                    result["preview_uri"] = local_path_to_uri(
+                        preview_path, resolve=True
+                    )
                     result["preview_size"] = preview_result.get("size_bytes", 0)
                 except Exception as e:
                     logger.warning(f"预览图生成失败: {e}，使用备用方法")
@@ -416,7 +419,9 @@ class RasterPublisher:
                     )
                     if ok:
                         result["preview_path"] = str(preview_path)
-                        result["preview_uri"] = f"file://{preview_path.resolve()}"
+                        result["preview_uri"] = local_path_to_uri(
+                            preview_path, resolve=True
+                        )
                         result["preview_size"] = preview_path.stat().st_size
             else:
                 ok = _generate_preview_from_array(
@@ -429,7 +434,9 @@ class RasterPublisher:
                 )
                 if ok:
                     result["preview_path"] = str(preview_path)
-                    result["preview_uri"] = f"file://{preview_path.resolve()}"
+                    result["preview_uri"] = local_path_to_uri(
+                        preview_path, resolve=True
+                    )
                     result["preview_size"] = preview_path.stat().st_size
 
         return result
@@ -481,7 +488,7 @@ class RasterPublisher:
                     dst.update_tags(UNIT=result["unit"])
 
             result["path"] = str(output_path)
-            result["uri"] = f"file://{output_path.resolve()}"
+            result["uri"] = local_path_to_uri(output_path, resolve=True)
             result["size_bytes"] = output_path.stat().st_size
             return result
         except ImportError:
@@ -492,7 +499,7 @@ class RasterPublisher:
             np.save(np_path, data)
             logger.warning(f"rasterio 不可用，栅格保存为 numpy 格式: {np_path}")
             result["path"] = str(np_path)
-            result["uri"] = f"file://{np_path.resolve()}"
+            result["uri"] = local_path_to_uri(np_path, resolve=True)
             result["size_bytes"] = np_path.stat().st_size
             result["warning"] = "rasterio 不可用，数据保存为 numpy 格式"
             return result
@@ -564,7 +571,7 @@ class TablePublisher:
                 abs_path = self.output_dir / Path(result["path"]).name
                 result["name"] = name
                 result["path"] = str(abs_path)
-                result["uri"] = f"file://{abs_path.resolve()}"
+                result["uri"] = local_path_to_uri(abs_path, resolve=True)
                 result["format"] = "Parquet"
                 result["description"] = description
                 result["metadata"] = meta
@@ -595,7 +602,7 @@ class TablePublisher:
                 result = {
                     "name": name,
                     "path": str(csv_path),
-                    "uri": f"file://{csv_path.resolve()}",
+                    "uri": local_path_to_uri(csv_path, resolve=True),
                     "rows": len(df),
                     "columns": list(df.columns),
                     "size_bytes": csv_path.stat().st_size,
@@ -608,7 +615,7 @@ class TablePublisher:
         result = {
             "name": name,
             "path": str(parquet_path),
-            "uri": f"file://{parquet_path.resolve()}",
+            "uri": local_path_to_uri(parquet_path, resolve=True),
             "rows": len(df),
             "columns": list(df.columns),
             "size_bytes": parquet_path.stat().st_size,
@@ -671,13 +678,13 @@ class ManifestPublisher:
             "name": name,
             "type": layer_type,
             "path": path,
-            "uri": uri or f"file://{Path(path).resolve()}" if path else "",
+            "uri": uri or local_path_to_uri(path, resolve=True) if path else "",
             "var_name": var_name,
             "unit": unit,
             "description": description,
             "preview": {
                 "path": preview_path,
-                "uri": preview_uri or f"file://{Path(preview_path).resolve()}"
+                "uri": preview_uri or local_path_to_uri(preview_path, resolve=True)
                 if preview_path
                 else "",
             },
@@ -708,7 +715,7 @@ class ManifestPublisher:
             "name": name,
             "type": layer_type,
             "path": path,
-            "uri": uri or f"file://{Path(path).resolve()}" if path else "",
+            "uri": uri or local_path_to_uri(path, resolve=True) if path else "",
             "description": description,
             "rows": rows,
             "columns": columns or [],
@@ -733,7 +740,7 @@ class ManifestPublisher:
             "name": name,
             "type": "mat",
             "path": path,
-            "uri": uri or f"file://{Path(path).resolve()}" if path else "",
+            "uri": uri or local_path_to_uri(path, resolve=True) if path else "",
             "variable": variable,
             "description": description,
             "size_bytes": size_bytes,
@@ -757,7 +764,7 @@ class ManifestPublisher:
             "name": name,
             "type": "json",
             "path": path,
-            "uri": uri or f"file://{Path(path).resolve()}" if path else "",
+            "uri": uri or local_path_to_uri(path, resolve=True) if path else "",
             "description": description,
             "size_bytes": size_bytes,
         }
@@ -804,7 +811,7 @@ class ManifestPublisher:
             json.dump(manifest, f, ensure_ascii=False, indent=2)
 
         manifest["manifest_path"] = str(manifest_path)
-        manifest["manifest_uri"] = f"file://{manifest_path.resolve()}"
+        manifest["manifest_uri"] = local_path_to_uri(manifest_path, resolve=True)
         return manifest
 
     @property

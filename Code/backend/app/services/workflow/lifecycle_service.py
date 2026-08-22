@@ -14,7 +14,6 @@ from datetime import datetime, UTC
 import logging
 
 from app.core.celery_app import revoke_task
-from app.core.config import settings
 from app.services.workflow.cancel_paths import (
     workflow_cancel_flag_path,
     workflow_cancel_tmp_dir,
@@ -181,10 +180,14 @@ class WorkflowLifecycleService:
         created_at: datetime,
     ) -> None:
         """Celery 软超时：进入 failed 状态，标记为超时原因（不可重试）。"""
+        # P3：引用工作流任务的实际 per-task 限时（7200s），而非全局默认
+        # celery_task_soft_time_limit（300s）——报错文案与真实限额错位会误导排障
+        from app.tasks.workflow_tasks import WORKFLOW_TASK_SOFT_TIME_LIMIT
+
         current_attempt = payload.retry_attempt or 1
         exc = TimeoutError(
             f"Workflow execution exceeded soft time limit "
-            f"({settings.celery_task_soft_time_limit}s) and was terminated."
+            f"({WORKFLOW_TASK_SOFT_TIME_LIMIT}s) and was terminated."
         )
         category = FailureCategory.terminal_failure
         self.finalize_workflow_failure(

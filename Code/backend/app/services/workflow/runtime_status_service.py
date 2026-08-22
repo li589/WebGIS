@@ -44,6 +44,19 @@ _HEALTH_RANK = {
 _RESOURCE_TTL_SECONDS = 5
 _resource_cache: dict[str, Any] = {}
 
+# Redis 统计采集 TTL：info + dbsize + 两次 SCAN（weather:* / weather:lock:*）
+# 有全库扫描开销，高频轮询下加短缓存（P3：/runtime/status 每次全量 SCAN）
+_REDIS_STATS_TTL_SECONDS = 10
+_redis_stats_cache: dict[str, Any] = {}
+
+
+def _mask_redis_url(url: str) -> str:
+    """脱敏 Redis URL（P3：/runtime/status 曾原样返回 settings.redis_url，
+    密码可含在 URL 中被前端/日志侧泄露）。仅保留 scheme/host/port/db。"""
+    import re
+
+    return re.sub(r"(redis(?:s)?://:)[^@]+(@)", r"\1***\2", url)
+
 
 def _rollup_overall_health(
     services: list[BackendServiceStatus],
@@ -503,7 +516,14 @@ class RuntimeStatusService:
             return f"Redis 连接异常：{exc}"
 
     def _collect_redis_stats(self) -> dict[str, Any]:
-        """收集 Redis 缓存运行时统计快照。"""
+        """收集 Redis 缓存运行时统计快照（10s TTL 缓存，含脱敏 URL）。"""
+        now = time.monotonic()
+        cached = _redis_stats_cache.get("value")
+        if (
+            cached is not None
+            and now - _redis_stats_cache.get("ts", 0.0) < _REDIS_STATS_TTL_SECONDS
+        ):
+            return cached
         client = get_redis_client()
         if client is None:
             return {"available": False, "reason": "client_unavailable"}
@@ -514,9 +534,10 @@ class RuntimeStatusService:
 
             weather_keys = len(scan_keys(client, "weather:*"))
             dedup_lock_keys = len(scan_keys(client, "weather:lock:*"))
-            return {
+            result = {
                 "available": True,
-                "url": settings.redis_url,
+                # P3 脱敏：原样返回 settings.redis_url 会暴露内嵌密码
+                "url": _mask_redis_url(settings.redis_url),
                 "db_size": dbsize,
                 "weather_cache_keys": weather_keys - dedup_lock_keys,
                 "dedup_lock_keys": dedup_lock_keys,
@@ -528,5 +549,7 @@ class RuntimeStatusService:
                 "connected_clients": info.get("connected_clients"),
                 "uptime_in_seconds": info.get("uptime_in_seconds"),
             }
+            _redis_stats_cache.update({"value": result, "ts": now})
+            return result
         except Exception as exc:  # pragma: no cover - 防御性兜底
             return {"available": False, "error": str(exc)}

@@ -99,6 +99,8 @@ def _load_layer_descriptors() -> dict:
         elif isinstance(data, dict):
             descriptors.update({k: v for k, v in data.items() if isinstance(v, dict)})
     except Exception:
-        logger.debug("加载图层描述符失败: %s", seed_file, exc_info=True)
+        # P3：seed 描述符加载失败回退默认值——warning 级别让生产可见
+        # （原 debug 默认不落盘，配置异常被静默吞掉）
+        logger.warning("加载图层描述符失败（回退默认值）: %s", seed_file, exc_info=True)
 
     return descriptors
