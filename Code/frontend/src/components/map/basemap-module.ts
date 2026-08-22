@@ -270,12 +270,12 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
         options.map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'none')
         options.map.setPaintProperty(TILE_LAYER_ID, 'raster-opacity', 0)
       }
-      // 清空底图瓦片 URL，避免仅 visibility 被其它逻辑改回 visible 时残留旧图
-      const existingSource = options.map.getSource(TILE_SOURCE_ID) as RasterTileSource | undefined
-      if (existingSource && existingSource.type === 'raster') {
-        existingSource.setTiles([])
-        options.map.triggerRepaint()
-      }
+      // 空白模式只做 visibility/opacity 隐藏，**不**清空 tiles：
+      // setTiles([]) 会走 maplibre loadTile 的空 URL 异常路径，快速切换（尤其
+      // none→真实源）时 tile 状态机竞态 → painter 的 texture.bind() 读 undefined
+      // 持续崩溃（vendor-maplibre 内部无守卫，见 2026-08-22 用户日志 56 条）。
+      // 切回真实源时 switchTileSource 必 setTiles([新 url])，无旧图残留风险。
+      options.map.triggerRepaint()
       hideOverlay()
       // 空白模式下卸掉注记 overlay 源，避免残留
       syncOverlayLayer(undefined, false)
