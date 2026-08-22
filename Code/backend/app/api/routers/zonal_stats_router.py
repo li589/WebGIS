@@ -5,14 +5,19 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+import anyio
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.api.deps import require_workflow_run_access
 from app.core.config import settings
 from app.services.zonal_stats_service import compute_zonal_stats
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["analysis"])
 
@@ -44,6 +49,8 @@ class ZonalStatsSyncResponse(BaseModel):
     "/analysis/zonal-stats/sync",
     response_model=ZonalStatsSyncResponse,
     summary="同步分区统计",
+    # 安审 2026-08-22（B-6）：重计算端点纳入鉴权（此前匿名可触发 DoS）
+    dependencies=[Depends(require_workflow_run_access)],
 )
 async def sync_zonal_stats(body: ZonalStatsSyncRequest) -> ZonalStatsSyncResponse:
     """对指定面要素区域内的栅格图层进行同步统计（均值/最值/像元数/标准差）。"""
@@ -52,19 +59,25 @@ async def sync_zonal_stats(body: ZonalStatsSyncRequest) -> ZonalStatsSyncRespons
         raise HTTPException(status_code=500, detail="数据根目录未配置")
     data_root = Path(data_root_str)
 
-    try:
+    def _compute() -> list[dict]:
         layer_descriptors = _load_layer_descriptors()
-        results = compute_zonal_stats(
+        return compute_zonal_stats(
             geojson=body.geojson,
             overlay_layer_ids=body.overlay_layer_ids,
             data_root=data_root,
             layer_descriptors=layer_descriptors,
         )
+
+    try:
+        # 安审 2026-08-22（B-6）：CPU/IO 密集计算卸载到线程池，避免阻塞事件循环
+        results = await anyio.to_thread.run_sync(_compute)
         return ZonalStatsSyncResponse(results=[LayerZonalStats(**r) for r in results])
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"分区统计失败: {e}") from e
+        # 安审 2026-08-22（B-6）：500 不回显内部异常文本，细节留日志
+        logger.exception("分区统计失败")
+        raise HTTPException(status_code=500, detail="分区统计失败") from e
 
 
 def _load_layer_descriptors() -> dict:
@@ -86,6 +99,6 @@ def _load_layer_descriptors() -> dict:
         elif isinstance(data, dict):
             descriptors.update({k: v for k, v in data.items() if isinstance(v, dict)})
     except Exception:
-        pass
+        logger.debug("加载图层描述符失败: %s", seed_file, exc_info=True)
 
     return descriptors

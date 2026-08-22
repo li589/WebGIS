@@ -60,7 +60,9 @@ def _read_raster_stats(raster_path: Path, geojson_geom: dict, band: int = 1) -> 
                     src.bounds.right,
                     src.bounds.top,
                     transform=src.transform,
-                ).round_offsets().round_lengths()
+                )
+                .round_offsets()
+                .round_lengths()
             )
             if win.width <= 0 or win.height <= 0:
                 return dict(EMPTY_STATS)  # 几何与栅格无交集
@@ -312,7 +314,9 @@ def compute_zonal_stats(
     return results
 
 
-def _try_overlay_source_stats(layer_id: str, geom: dict) -> tuple[Optional[dict], Optional[str]]:
+def _try_overlay_source_stats(
+    layer_id: str, geom: dict
+) -> tuple[Optional[dict], Optional[str]]:
     """尝试用 overlay_registry 的源数据做分区统计；图层不存在时返回 (None, None)。"""
     try:
         from app.services.overlay_registry import get_overlay_spec
@@ -356,6 +360,9 @@ def _find_raster_path(layer_id: str, data_root: Path, desc: dict) -> Optional[Pa
 
 
 def _resolve_raster_path(layer_id: str, data_root: Path, desc: dict) -> Optional[Path]:
+    # 安审 2026-08-22（B-6）：layer_id 纯名称校验，防 catalog 分支路径穿越
+    if not layer_id or ".." in layer_id or "/" in layer_id or "\\" in layer_id:
+        return None
     paths = desc.get("paths", [])
     if isinstance(paths, list):
         for p in paths:

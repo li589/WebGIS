@@ -35,6 +35,7 @@ from app.data_io.services.paths import (
     STAGING_DIR,
     assert_quota_available,
     ensure_imports_root,
+    safe_import_child,
 )
 from app.data_io.services.upload_validation import (
     UploadValidationError,
@@ -123,7 +124,7 @@ def init_resumable(
 
 def _load_meta(upload_id: str) -> tuple[Path, dict[str, Any]]:
     """加载 manifest 模式的 meta.json（含 mode 校验）。"""
-    dest = STAGING_DIR / upload_id
+    dest = safe_import_child(upload_id, root=STAGING_DIR)
     meta = _io_load_meta(dest)
     if meta.get("mode") != "manifest":
         raise ValueError(f"上传会话非 manifest 模式: {upload_id}")
@@ -153,7 +154,7 @@ def upload_chunk_by_index(
     Returns:
         ``{upload_id, chunk_index, received_chunks, total_chunks, complete}``
     """
-    dest = STAGING_DIR / upload_id
+    dest = safe_import_child(upload_id, root=STAGING_DIR)
 
     with _meta_lock(dest):
         dest, meta = _load_meta(upload_id)
@@ -244,7 +245,7 @@ def complete_resumable(upload_id: str) -> dict[str, Any]:
 
     幂等：若已完成，直接返回已有结果。
     """
-    dest = STAGING_DIR / upload_id
+    dest = safe_import_child(upload_id, root=STAGING_DIR)
     # 持锁防与 upload_chunk_by_index 并发（块写入与 complete 拼接/清理竞争）
     # 及双 complete 竞争，与 upload_chunk_by_index 的锁对称。
     with _meta_lock(dest):
@@ -338,7 +339,7 @@ def complete_resumable(upload_id: str) -> dict[str, Any]:
 
 def _discard_resumable(upload_id: str) -> None:
     """清理 manifest 模式上传目录。"""
-    dest = STAGING_DIR / upload_id
+    dest = safe_import_child(upload_id, root=STAGING_DIR)
     if dest.exists():
         import shutil
 

@@ -20,6 +20,7 @@ from app.data_io.services.paths import (
     PREVIEW_FEATURE_LIMIT,
     assert_quota_available,
     ensure_imports_root,
+    safe_import_child,
 )
 
 
@@ -342,14 +343,14 @@ def _write_layer(
 
 
 def load_vector_meta(layer_id: str) -> dict[str, Any]:
-    meta_path = IMPORTS_DIR / layer_id / "meta.json"
+    meta_path = safe_import_child(layer_id) / "meta.json"
     if not meta_path.exists():
         raise FileNotFoundError(f"矢量图层不存在: {layer_id}")
     return json.loads(meta_path.read_text(encoding="utf-8"))
 
 
 def load_vector_geojson(layer_id: str, *, preview: bool = False) -> dict[str, Any]:
-    dest = IMPORTS_DIR / layer_id
+    dest = safe_import_child(layer_id)
     path = dest / ("preview.geojson" if preview else "data.geojson")
     if not path.exists():
         raise FileNotFoundError(f"矢量数据不存在: {layer_id}")
@@ -486,7 +487,7 @@ def patch_feature_attribute(
     if not isinstance(props, dict):
         raise ValueError("要素属性无效")
     props[field] = value
-    dest = IMPORTS_DIR / layer_id
+    dest = safe_import_child(layer_id)
     _write_layer(
         layer_id=layer_id,
         dest=dest,
@@ -510,7 +511,7 @@ def batch_set_feature_attribute(
             continue
         props[field] = value
         updated += 1
-    dest = IMPORTS_DIR / layer_id
+    dest = safe_import_child(layer_id)
     _write_layer(
         layer_id=layer_id,
         dest=dest,
@@ -529,7 +530,7 @@ def add_vector_field(layer_id: str, name: str, default: Any = "") -> dict[str, A
         props = feat.setdefault("properties", {})
         if isinstance(props, dict) and name not in props:
             props[name] = default
-    dest = IMPORTS_DIR / layer_id
+    dest = safe_import_child(layer_id)
     result = _write_layer(
         layer_id=layer_id,
         dest=dest,
@@ -548,7 +549,7 @@ def delete_vector_field(layer_id: str, name: str) -> dict[str, Any]:
         props = feat.get("properties")
         if isinstance(props, dict) and name in props:
             props.pop(name, None)
-    dest = IMPORTS_DIR / layer_id
+    dest = safe_import_child(layer_id)
     result = _write_layer(
         layer_id=layer_id,
         dest=dest,
@@ -567,7 +568,7 @@ def rename_vector_field(layer_id: str, old_name: str, new_name: str) -> dict[str
         if not isinstance(props, dict) or old_name not in props:
             continue
         props[new_name] = props.pop(old_name)
-    dest = IMPORTS_DIR / layer_id
+    dest = safe_import_child(layer_id)
     result = _write_layer(
         layer_id=layer_id,
         dest=dest,
