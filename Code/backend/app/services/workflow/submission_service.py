@@ -34,6 +34,10 @@ from app.services.workflow.transition_builder import (
     use_celery_executor,
 )
 from app.services.workflow.follow_up_dispatch_service import FollowUpDispatchService
+from app.services.workflow.execution_lock import (
+    LockAcquireResult,
+    WorkflowExecutionLock,
+)
 from app.services.workflow.run_class import (
     RUN_CLASS_BUSINESS,
     RUN_CLASS_WEATHER_TILE,
@@ -122,6 +126,7 @@ class WorkflowSubmissionService:
         persistence: WorkflowPersistenceService | None = None,
         transitions: WorkflowTransitionBuilder | None = None,
         follow_up: FollowUpDispatchService | None = None,
+        execution_lock: WorkflowExecutionLock | None = None,
     ) -> None:
         self._repository = repository or SQLiteWorkflowRepository()
         self._persistence = persistence or WorkflowPersistenceService(self._repository)
@@ -129,6 +134,13 @@ class WorkflowSubmissionService:
         self._follow_up = follow_up or FollowUpDispatchService(
             self._repository, self._persistence, self._transitions
         )
+        if execution_lock is not None:
+            self._execution_lock = execution_lock
+        else:
+            from app.core.redis_client import get_redis_client
+            from app.services.workflow.execution_lock import WorkflowExecutionLock
+
+            self._execution_lock = WorkflowExecutionLock(get_redis_client)
         self._lifecycle: WorkflowLifecycleService | None = None
 
     def set_lifecycle_service(self, lifecycle: WorkflowLifecycleService) -> None:
@@ -360,6 +372,14 @@ class WorkflowSubmissionService:
             )
             return
 
+        # C-3 执行互斥锁：慢 broker 迟到消息 + Beat 2min 重派 → 同 run 双消息，
+        # running 重投若直接重执行会与原 worker 并发（产物覆盖/事件重复）。
+        # 持有者存活 → 跳过；持有者死亡（原 worker 崩溃）→ 接管（保留 acks_late
+        # 语义）；Redis 不可用 → fail-open 按原行为执行。
+        lock_result = self._acquire_execution_lock(run_id)
+        if lock_result.state == "blocked":
+            return
+
         # C5：at-least-once 重投追踪（审查 H2）。
         # acks_late 保证 worker 崩溃后任务重投，但幂等检查仅挡终态。
         # running 状态的重投意味着原 worker 已死亡——记录 retry 次数与诊断信息，
@@ -397,65 +417,103 @@ class WorkflowSubmissionService:
         now = datetime.now(UTC)
         created_at = current_run.created_at if current_run is not None else now
 
-        with log_context(run_id=run_id):
-            try:
-                running_at = datetime.now(UTC)
-                logger.info("Workflow execution started")
-                self._persistence.save_run_status(
-                    run_status=self._transitions.build_running_transition(
+        try:
+            with log_context(run_id=run_id):
+                try:
+                    running_at = datetime.now(UTC)
+                    logger.info("Workflow execution started")
+                    self._persistence.save_run_status(
+                        run_status=self._transitions.build_running_transition(
+                            run_id=run_id,
+                            payload=payload,
+                            created_at=created_at,
+                            updated_at=running_at,
+                            status_url=self._transitions.workflow_status_url(run_id),
+                            events_url=self._transitions.workflow_events_url(run_id),
+                            executor_metadata={
+                                **existing_meta,
+                                "started_at": running_at.isoformat(),
+                                "worker_task_name": "app.tasks.workflow_tasks.process_workflow_run",
+                                "execution_retry_count": retry_count,
+                            },
+                        )
+                    )
+                    self._persistence.record_event(
+                        run_id=run_id,
+                        channel=EventChannel.system,
+                        message="任务层开始调用业务服务。",
+                        progress=35,
+                        payload={
+                            "executor": "app.tasks.workflow_tasks.execute_workflow_task"
+                        },
+                        created_at=running_at,
+                    )
+
+                    execution = execute_workflow_task(
+                        run_id=run_id,
+                        payload=payload,
+                        requested_at=running_at,
+                        event_factory=self._make_persisting_event_factory(run_id),
+                    )
+                    self.lifecycle.finalize_workflow_success(
+                        run_id=run_id,
+                        payload=payload,
+                        execution=execution,
+                        requested_at=running_at,
+                    )
+                    logger.info("Workflow execution finished")
+                except SoftTimeLimitExceeded:
+                    logger.warning("Workflow execution soft-time-limit exceeded")
+                    self.lifecycle.handle_workflow_timeout(
                         run_id=run_id,
                         payload=payload,
                         created_at=created_at,
-                        updated_at=running_at,
-                        status_url=self._transitions.workflow_status_url(run_id),
-                        events_url=self._transitions.workflow_events_url(run_id),
-                        executor_metadata={
-                            **existing_meta,
-                            "started_at": running_at.isoformat(),
-                            "worker_task_name": "app.tasks.workflow_tasks.process_workflow_run",
-                            "execution_retry_count": retry_count,
-                        },
                     )
-                )
-                self._persistence.record_event(
-                    run_id=run_id,
-                    channel=EventChannel.system,
-                    message="任务层开始调用业务服务。",
-                    progress=35,
-                    payload={
-                        "executor": "app.tasks.workflow_tasks.execute_workflow_task"
-                    },
-                    created_at=running_at,
-                )
+                except Exception as exc:
+                    logger.exception("Workflow execution failed")
+                    self.lifecycle.handle_workflow_failure(
+                        run_id=run_id,
+                        payload=payload,
+                        created_at=created_at,
+                        exc=exc,
+                    )
+        finally:
+            # C-3：正常结束释放锁（值匹配 CAS，防误删接管者）；崩溃则等 TTL。
+            if lock_result.state in ("acquired", "takeover"):
+                self._execution_lock.release(run_id, lock_result.token)
 
-                execution = execute_workflow_task(
-                    run_id=run_id,
-                    payload=payload,
-                    requested_at=running_at,
-                    event_factory=self._make_persisting_event_factory(run_id),
-                )
-                self.lifecycle.finalize_workflow_success(
-                    run_id=run_id,
-                    payload=payload,
-                    execution=execution,
-                    requested_at=running_at,
-                )
-                logger.info("Workflow execution finished")
-            except SoftTimeLimitExceeded:
-                logger.warning("Workflow execution soft-time-limit exceeded")
-                self.lifecycle.handle_workflow_timeout(
-                    run_id=run_id,
-                    payload=payload,
-                    created_at=created_at,
-                )
-            except Exception as exc:
-                logger.exception("Workflow execution failed")
-                self.lifecycle.handle_workflow_failure(
-                    run_id=run_id,
-                    payload=payload,
-                    created_at=created_at,
-                    exc=exc,
-                )
+    def _acquire_execution_lock(self, run_id: str) -> LockAcquireResult:
+        """获取执行互斥锁并按结果记录事件（blocked 已含事件记录）。"""
+        result = self._execution_lock.acquire(run_id)
+        if result.state == "blocked":
+            logger.info(
+                "[ExecutionLock] run %s duplicate delivery blocked (holder=%s)",
+                run_id,
+                result.holder,
+            )
+            self._persistence.record_event(
+                run_id=run_id,
+                channel=EventChannel.system,
+                level=LogLevel.warning,
+                message="重复投递已被执行互斥锁拦截（同一 run 的消息正在其他 worker 执行）",
+                progress=5,
+                payload={
+                    "lock_state": result.state,
+                    "holder": result.holder,
+                },
+                created_at=datetime.now(UTC),
+            )
+        elif result.state == "takeover":
+            self._persistence.record_event(
+                run_id=run_id,
+                channel=EventChannel.system,
+                level=LogLevel.warning,
+                message="原执行 worker 已崩溃，本 worker 接管执行（执行互斥锁）",
+                progress=5,
+                payload={"lock_state": result.state, "holder": result.holder},
+                created_at=datetime.now(UTC),
+            )
+        return result
 
     def _make_persisting_event_factory(self, run_id: str):
         """Create event_factory that persists immediately for UI mid-run progress.
@@ -748,9 +806,7 @@ class WorkflowSubmissionService:
         ``workflow_request_resolver`` 的 ``_build_default_data_access_requests``）。
         """
         algo_req = _normalize_algorithm_request(payload.algorithm_request)
-        datasource_selection = _normalize_request(
-            algo_req.get("datasource_selection")
-        )
+        datasource_selection = _normalize_request(algo_req.get("datasource_selection"))
         data_access_requests = _normalize_request(
             datasource_selection.get("_data_access_requests")
         )
@@ -763,9 +819,7 @@ class WorkflowSubmissionService:
             selector = request.get("selector")
             if not isinstance(selector, dict):
                 continue
-            uris = [
-                u for u in (selector.get("uris") or []) if isinstance(u, str) and u
-            ]
+            uris = [u for u in (selector.get("uris") or []) if isinstance(u, str) and u]
             if uris:
                 result[str(dataset)] = uris
         return result
