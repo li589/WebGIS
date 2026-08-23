@@ -791,7 +791,21 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     })()
     const extraTitle = groupTitleFromDefinition(restoreDef) ?? catalogExtra?.group_title
     const layerTags = memberTagsFromLayers()
-    const tags = layerTags.length ? layerTags : defTags.length ? defTags : LEGACY_RESTORE_TAGS
+    // 需求2 后的新种子（带 extra 配置）但无显式 outputs 时 → 单产出语义
+    //（'result'，与 resolveExpectedOutputTags 的"至少一个产出"约定一致）；
+    // 纯旧 run（无 extra 元数据）才回退 SM/VOD/OMEGA 兼容。静态图层
+    //（干旱指数 AI 等）此前误落 LEGACY 三件套 → 组员错、产物游离不进组。
+    const hasExtraMeta = Boolean(
+      restoreDef?.extra &&
+      (restoreDef.extra.group_title || restoreDef.extra.output_labels || restoreDef.extra.outputs),
+    )
+    const tags = layerTags.length
+      ? layerTags
+      : defTags.length
+        ? defTags
+        : hasExtraMeta
+          ? ['result']
+          : LEGACY_RESTORE_TAGS
     const catalogLabels = catalogExtra?.output_labels
     const mergedLabels: Record<string, string> =
       (Array.isArray(catalogLabels)
@@ -1231,6 +1245,14 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       deps.activeWorkflowCatalogIds.add(catalogId)
       // 工作流提交成功，清除 429 重试计数
       deps.workflowRetryCounts.delete(catalogId)
+      // 提交即建占位计算组（需求2：产物应成组显示）。此前只在恢复轮询路径
+      // 建组——图层面板直跑的工作流产物物化时查不到组 → 图层游离不进组。
+      // targets 由种子 extra（group_title/output_labels）推导；无元数据时
+      // 单产出 'result' 语义（ensureRestoredRunGroup 内部处理）。
+      ensureRestoredRunGroup(accepted.run_id, catalogId, undefined, {
+        createPlaceholders: true,
+        title: catalogName,
+      })
       void deps.startPolling(accepted.run_id, catalogId, options.expectedViewportEpoch)
       return accepted.run_id
     } catch (error) {

@@ -2,6 +2,12 @@ import { ref } from 'vue'
 import { showToast } from '../../data-manager/core/workspace-store'
 import { overlaySafeWgs84Bounds } from '../../services/geo-math'
 import { buildOverlayStyleQuery } from './layer-symbology'
+import {
+  addBandedImageSources,
+  needsBanding,
+  removeBandedLayers,
+  syncBandedLayerPaint,
+} from './overlay-image-bands'
 import type { ImageSourceSpecification } from 'maplibre-gl'
 
 type MapInstance = import('maplibre-gl').Map
@@ -404,6 +410,8 @@ export function createOverlayImageModule(
     if (options.map.getSource(sourceId)) {
       options.map.removeSource(sourceId)
     }
+    // 条带化残留（大跨度 overlay 的 Mercator 校正层）一并清理
+    removeBandedLayers(options.map, sourceId, rasterLayerId)
   }
 
   function _boundsToCoordinates(
@@ -537,6 +545,28 @@ export function createOverlayImageModule(
     })
   }
 
+  /**
+   * 重建条带 layer（image URL/bounds 变化后调用——条带图随主图刷新）。
+   * 主 layer 若被条带隐藏，重建后仍由条带承担渲染。
+   */
+  function _rebuildBandsIfNeeded(
+    loaded: LoadedOverlay,
+    url: string,
+    bounds: [number, number, number, number],
+  ) {
+    if (loaded.renderMode === 'raster-xyz' || !needsBanding(bounds)) {
+      removeBandedLayers(options.map, loaded.sourceId, loaded.rasterLayerId)
+      return
+    }
+    removeBandedLayers(options.map, loaded.sourceId, loaded.rasterLayerId)
+    void addBandedImageSources(options.map, loaded.sourceId, loaded.rasterLayerId, url, bounds, {
+      opacity: loaded.opacity,
+      extraPaint: { 'raster-resampling': 'nearest' },
+    }).catch(() => {
+      /* 重建失败：主 layer 单图渲染降级 */
+    })
+  }
+
   function _addRasterLayer(
     rasterLayerId: string,
     sourceId: string,
@@ -590,6 +620,16 @@ export function createOverlayImageModule(
     loaded.renderMode = mode
     if (loaded.bounds) {
       _ensureFootprint(layerId, loaded.bounds, visible && mode === 'image')
+      if (mode === 'image') {
+        _rebuildBandsIfNeeded(
+          loaded,
+          _previewUrl(layerId, loaded.currentTime, loaded.style),
+          loaded.bounds,
+        )
+      } else {
+        // 切到瓦片模式：清条带残留
+        removeBandedLayers(options.map, sourceId, rasterLayerId)
+      }
     }
   }
 
@@ -769,6 +809,17 @@ export function createOverlayImageModule(
       _addRasterLayer(rasterLayerId, sourceId, opacity, visibleNow)
       _ensureFootprint(layerId, bounds, visibleNow && renderMode === 'image')
 
+      // P3（2026-08-23）：大纬度跨度 overlay 条带化——MapLibre image source 四角
+      // 线性插值在 Mercator 高纬明显错位（纵向拉伸+偏移）；切带后带内误差 < 像素级。
+      if (renderMode !== 'raster-xyz' && needsBanding(bounds)) {
+        void addBandedImageSources(options.map, sourceId, rasterLayerId, url, bounds, {
+          opacity,
+          extraPaint: { 'raster-resampling': 'nearest' },
+        }).catch(() => {
+          /* 条带化失败：主 layer 保持单图渲染（现状降级） */
+        })
+      }
+
       loadedOverlays.set(layerId, {
         layerId,
         sourceId,
@@ -944,6 +995,7 @@ export function createOverlayImageModule(
       if (!source) return
       const newUrl = _previewUrl(layerId, time, loaded.style)
       _applyImageSourceUpdate(source, newUrl, timedBounds)
+      if (timedBounds) _rebuildBandsIfNeeded(loaded, newUrl, timedBounds)
     }
 
     loaded.currentTime = time
@@ -1041,6 +1093,11 @@ export function createOverlayImageModule(
       _previewUrl(layerId, loaded.currentTime, loaded.style),
       loaded.bounds,
     )
+    _rebuildBandsIfNeeded(
+      loaded,
+      _previewUrl(layerId, loaded.currentTime, loaded.style),
+      loaded.bounds,
+    )
   }
 
   function setOverlayOpacity(layerId: string, opacity: number) {
@@ -1050,6 +1107,7 @@ export function createOverlayImageModule(
     const clamped = Math.max(0, Math.min(1, opacity))
     loaded.opacity = clamped
     options.map.setPaintProperty(loaded.rasterLayerId, 'raster-opacity', clamped)
+    syncBandedLayerPaint(options.map, loaded.rasterLayerId, { opacity: clamped })
     overlayTimeStates.value = overlayTimeStates.value.map((s) =>
       s.layerId === layerId ? { ...s, opacity: clamped } : s,
     )
@@ -1065,6 +1123,10 @@ export function createOverlayImageModule(
         'visibility',
         visible ? 'visible' : 'none',
       )
+    }
+    // 条带 layer 的可见性同步（主 layer 被条带覆盖隐藏时由条带承担渲染）
+    if (loaded.renderMode !== 'raster-xyz') {
+      syncBandedLayerPaint(options.map, loaded.rasterLayerId, { visible })
     }
     if (options.map.getLayer(loaded.footprintLayerId)) {
       options.map.setLayoutProperty(

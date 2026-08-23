@@ -384,6 +384,18 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
   /** 「未生成可显示图层」横幅的延迟确认 timer（runId 去重）。 */
   const emptyOverlayConfirmTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
+  /** 横幅限时自动消失 timer（用户反馈：提示应显示一段时间而非常驻）。 */
+  let workflowErrorAutoDismissTimer: ReturnType<typeof setTimeout> | null = null
+
+  /** 写入限时横幅：限时显示时长后自动清除（消息未变时）。 */
+  function setTransientWorkflowError(message: string) {
+    workflowError.value = message
+    if (workflowErrorAutoDismissTimer) clearTimeout(workflowErrorAutoDismissTimer)
+    workflowErrorAutoDismissTimer = setTimeout(() => {
+      if (workflowError.value === message) workflowError.value = null
+    }, WORKFLOW_COPY.noMapLayersBannerTtl)
+  }
+
   /**
    * succeeded 但本次 materialize 为空时，延迟二次确认再写横幅。
    * 产物登记与 succeeded 事件存在传播竞态——直接写横幅会误报（图层稍后到达）。
@@ -403,7 +415,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           } catch {
             // 重查失败：保持横幅（真异常时可见提示优于静默）
           }
-          workflowError.value = emptyMsg
+          setTransientWorkflowError(emptyMsg)
         })()
       }, 2500),
     )
@@ -496,7 +508,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       if (emptyMsg) {
         // 延迟二次确认：materialize 结果有传播延迟（succeeded 事件先到、
         // 产物登记后到的竞态）——2.5s 后重查仍空才写「未生成可显示图层」横幅
-        scheduleEmptyOverlayConfirm(runId, emptyMsg)
+        scheduleEmptyOverlayConfirm(runId!, emptyMsg)
       }
       return 0
     }
@@ -560,10 +572,17 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         const name = entry.name.toUpperCase()
         return Boolean(tag) && (name.includes(tag) || name.endsWith(`_${tag}`))
       })
+      // 图层名不得暴露产物文件名（xxx.tif 等）——后端 materialize title
+      // 可能取自文件名时剥扩展名；空值继续向后兜底。
+      const cleanTitle = (item.title || '')
+        .replace(/^Algorithm Map Layer:\s*/i, '')
+        .replace(/\s*[\/\\][^\/\\]*$/, '') // 路径段：只留文件名
+        .replace(/\.(tif|tiff|png|jpe?g|mat|nc|zip|shp)$/i, '')
+        .trim()
       const displayName =
         matchingOutput?.name ||
         (tag ? productTagLabel(tag) : '') ||
-        item.title.replace(/^Algorithm Map Layer:\s*/i, '') ||
+        cleanTitle ||
         item.productTag ||
         item.overlayLayerId
 

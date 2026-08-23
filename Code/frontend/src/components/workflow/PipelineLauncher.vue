@@ -163,8 +163,10 @@ function applyDatePreset(preset: DatePreset) {
 
 /** WorkflowDefinitionMeta 未声明 tags 字段，运行时后端会返回，安全读取 */
 function readMetaTags(def: WorkflowDefinition): string[] {
-  const meta = def._meta as unknown as Record<string, unknown>
-  const tags = meta.tags
+  // _meta 本身可能缺失（种子未带 meta 块）——可选链防
+  // "Cannot read properties of undefined (reading 'tags')"
+  const meta = def._meta as unknown as Record<string, unknown> | undefined
+  const tags = meta?.tags
   return Array.isArray(tags) ? tags.filter((t): t is string => typeof t === 'string') : []
 }
 
