@@ -886,6 +886,24 @@ class PythonProviderResultBuilder:
             if safe_layer_id
             else f"imported-gis-{run_id[-8:]}-{index:02d}"
         )
+        # 产物 palette 对齐静态层（2026-08-24 用户需求）：generic raster 产物
+        # 此前写死 viridis——静态层 descriptor 配了 style.palette（如 aridity-cn
+        # 的 brg、hfp-cn 的 hfp-ramp，共 35 层）时，同层"静态 overlay→产物
+        # overlay"首次换源也会换色。现优先取 descriptor.style.palette 对齐。
+        product_palette = "viridis"
+        if raw_layer_id:
+            try:
+                from app.services.layer_catalog import get_layer_descriptor
+
+                descriptor = get_layer_descriptor(raw_layer_id)
+                hint = getattr(descriptor, "style", None) if descriptor else None
+                hint_palette = getattr(hint, "palette", None) if hint else None
+                if hint_palette and str(hint_palette).strip():
+                    product_palette = str(hint_palette).strip()
+            except Exception:
+                logger.debug(
+                    "layer descriptor palette lookup failed for %s", raw_layer_id
+                )
         try:
             from app.data_io.services.raster_commit import commit_algorithm_geotiff
 
@@ -896,8 +914,9 @@ class PythonProviderResultBuilder:
                 conflict_policy="overwrite",
                 time_start=time_start,
                 time_end=time_end,
-                # R1：与下方 render_hint.palette 对齐，注册侧不再落 wind-blue
-                palette="viridis",
+                # R1：与下方 render_hint.palette 对齐，注册侧不再落 wind-blue；
+                # palette 优先取静态层 descriptor.style.palette（见上方对齐注释）
+                palette=product_palette,
                 extra_meta={
                     "analysis_product": True,
                     "variable_id": variable,
@@ -934,7 +953,7 @@ class PythonProviderResultBuilder:
         render_hint = WeatherLayerRenderHint(
             layer_id=payload.layer_id or overlay_id,
             paint_mode="grid_fill",
-            palette="viridis",
+            palette=product_palette,
             primary_metric=variable,
             unit_label=label,
             opacity=0.8,

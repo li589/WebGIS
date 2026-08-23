@@ -115,6 +115,44 @@ def test_stable_id_sanitizes_illegal_chars(raster_product, tmp_path, monkeypatch
     assert assets["overlay_layer_id"] == "imported-analysis_test-00"
 
 
+def test_product_palette_aligns_with_descriptor(raster_product, tmp_path, monkeypatch):
+    """产物 palette 对齐静态层 descriptor.style.palette（用户需求 2026-08-24）。
+
+    aridity-cn 在 layer_descriptors.json 配了 style.palette='brg'——产物注册
+    的 overlay palette 与 render_hint.palette 都应取 'brg'（而非写死 viridis）。
+    """
+    imports_root = tmp_path / "imports"
+    from app.data_io.services import paths as import_paths
+    from app.data_io.services import raster_commit as commit_mod
+    from app.data_io.services import raster_register as register_mod
+
+    for mod in (import_paths, register_mod, commit_mod):
+        if hasattr(mod, "IMPORTS_DIR"):
+            monkeypatch.setattr(mod, "IMPORTS_DIR", imports_root)
+    monkeypatch.setattr(import_paths, "IMPORTS_DIR", imports_root)
+    import_paths.ensure_imports_root()
+
+    from app.services.python_provider_result_builder import PythonProviderResultBuilder
+
+    builder = PythonProviderResultBuilder()
+    now = datetime.now(timezone.utc)
+    refs = builder.build_product_map_layer_refs(
+        run_id="run-palette-ddd44404",
+        requested_at=now,
+        payload=_payload("aridity-cn"),
+        result_dto={"products": [raster_product]},
+    )
+    assert refs, "aridity-cn 产物应成功注册"
+    hint = refs[0].inline_data["render_hint"]
+    assert hint["palette"] == "brg", f"render_hint.palette 应对齐 descriptor brg，实际 {hint['palette']}"
+    # 注册侧 overlay palette 也应同步（读缓存 spec）
+    import json
+    bounds_file = import_paths.IMPORTS_DIR / "imported-aridity-cn-00" / "bounds.json"
+    assert bounds_file.exists(), "产物 overlay bounds.json 应存在"
+    meta = json.loads(bounds_file.read_text(encoding="utf-8"))["meta"]
+    assert meta.get("palette") == "brg", f"注册 meta.palette 应对齐 brg，实际 {meta.get('palette')}"
+
+
 def test_run_derived_id_without_layer_id(raster_product, tmp_path, monkeypatch):
     """无 layer_id（画布/临时运行）：保留原 run 派生 id（不回归旧行为面）。"""
     imports_root = tmp_path / "imports"
