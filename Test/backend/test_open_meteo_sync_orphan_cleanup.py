@@ -18,7 +18,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.tasks import open_meteo_sync_tasks as sync_mod
+from app.services import open_meteo_sync_executor as sync_mod
 
 
 class _FakeCompleted:

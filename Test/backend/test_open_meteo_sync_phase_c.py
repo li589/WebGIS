@@ -117,7 +117,7 @@ def test_sync_unavailable_without_docker() -> None:
 
 
 def test_execute_accepts_domains_override() -> None:
-    from app.tasks import open_meteo_sync_tasks as tasks
+    from app.services import open_meteo_sync_executor as tasks
 
     fake = MagicMock()
     fake.returncode = 0

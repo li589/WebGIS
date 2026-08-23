@@ -444,14 +444,12 @@ def _resolve_portal_headers(
     # and may inline resolved credentials). Only fall back to lazy backend import
     # when the context is empty and the resolve flag is set.
     if (not portal_creds) and datasource_selection.get("portal_credentials_resolve"):
-        try:
-            from app.services.config_service import get_portal_credentials_runtime
+        # P3 分层收口（2026-08-23）：经 _backend_bridge 边界桥解析门户凭据
+        from _backend_bridge import get_portal_credentials
 
-            resolved = get_portal_credentials_runtime()
-            if isinstance(resolved, dict):
-                portal_creds = resolved
-        except Exception:  # noqa: BLE001
-            portal_creds = {}
+        resolved = get_portal_credentials()
+        if isinstance(resolved, dict):
+            portal_creds = resolved
 
     profile = cred_profile.strip().lower()
     if not profile:

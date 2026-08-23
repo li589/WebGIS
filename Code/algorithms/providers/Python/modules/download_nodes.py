@@ -37,14 +37,12 @@ def _resolve_portal_entry(
     if not isinstance(portal_creds, dict):
         portal_creds = {}
     if (not portal_creds) and datasource_selection.get("portal_credentials_resolve"):
-        try:
-            from app.services.config_service import get_portal_credentials_runtime
+        # P3 分层收口（2026-08-23）：经 _backend_bridge 边界桥解析门户凭据
+        from _backend_bridge import get_portal_credentials
 
-            resolved = get_portal_credentials_runtime()
-            if isinstance(resolved, dict):
-                portal_creds = resolved
-        except Exception:  # noqa: BLE001
-            portal_creds = {}
+        resolved = get_portal_credentials()
+        if isinstance(resolved, dict):
+            portal_creds = resolved
     entry = portal_creds.get(portal_key)
     if not isinstance(entry, dict) or entry.get("enabled") is False:
         return {}
@@ -174,7 +172,8 @@ def _resolve_profile_server_config(profile_id: str) -> object:
     """
     from ingest.remote_sync import ServerConfig
 
-    from app.services.config_remote_storage import get_remote_storage_repository
+    # P3 分层收口（2026-08-23）：经 _backend_bridge 边界桥获取远程存储仓库
+    from _backend_bridge import get_remote_storage_repository
 
     repo = get_remote_storage_repository()
     bundle = repo.get_secret_bundle(profile_id)
@@ -363,7 +362,11 @@ class SshSyncModule(BaseModule):
                     "ssh_sync",
                     current / total if total else 0.0,
                     f"File {current}/{total}{_speed}",
-                    {"speed_bps": _bps, "downloaded_items": current, "total_items": total},
+                    {
+                        "speed_bps": _bps,
+                        "downloaded_items": current,
+                        "total_items": total,
+                    },
                 )
 
         result = sync_dataset(
@@ -499,7 +502,11 @@ class NsidcSmapDownloadModule(BaseModule):
                     "nsidc_smap_download",
                     current / total if total else 0.0,
                     f"Granule {current}/{total}{_speed}",
-                    {"speed_bps": _bps, "downloaded_items": current, "total_items": total},
+                    {
+                        "speed_bps": _bps,
+                        "downloaded_items": current,
+                        "total_items": total,
+                    },
                 )
 
         result = download_smap_range(
@@ -644,7 +651,11 @@ class GldasDownloadModule(BaseModule):
                     "gldas_download",
                     current / total if total else 0.0,
                     f"Granule {current}/{total}{_speed}",
-                    {"speed_bps": _bps, "downloaded_items": current, "total_items": total},
+                    {
+                        "speed_bps": _bps,
+                        "downloaded_items": current,
+                        "total_items": total,
+                    },
                 )
 
         result = download_gldas_range(

@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from app.core import redis_client
-from app.tasks import open_meteo_sync_tasks
+from app.services import open_meteo_sync_executor as open_meteo_sync_tasks
 from app.weatherengine.client import replace_with_retry, unique_cache_tmp_path
 
 

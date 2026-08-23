@@ -120,11 +120,15 @@ def trigger_sync(domains_override: str | None) -> dict:
 
     from app.core.celery_app import celery_available
     from app.core.config import settings
-    from app.tasks.open_meteo_sync_tasks import (
+
+    # P3 分层（2026-08-23）：执行逻辑改从 services 层 executor 正向导入，
+    # 消除 services→tasks 侧向导入；sync_open_meteo_data 为 Celery 任务对象
+    # 派发所需（编排必需的最小 tasks 依赖）。
+    from app.services.open_meteo_sync_executor import (
         execute_open_meteo_sync,
         is_open_meteo_sync_locked,
-        sync_open_meteo_data,
     )
+    from app.tasks.open_meteo_sync_tasks import sync_open_meteo_data
     from app.weatherengine.supported_models import is_supported_weather_model
 
     # ── 域校验 ───────────────────────────────────────────────────────────
