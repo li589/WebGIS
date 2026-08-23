@@ -108,8 +108,13 @@ export async function addBandedImageSources(
 
   let created = 0
   for (let i = 0; i < bandCount; i++) {
-    const lat0 = s + (span * i) / bandCount
-    const lat1 = s + (span * (i + 1)) / bandCount
+    // 2026-08-24 带序方向修复：图像自顶向下 = 自北向南（PNG row0=北），
+    // 第 i 带的图像内容对应纬段 [n - span*(i+1)/N, n - span*i/N]。
+    // 此前 lat0 = s + span*i/N 把第 0 带（最北图像内容）贴到最南带——
+    // 带序整体南北颠倒 + 逐带错位 = CSP 修复后首次真实渲染暴露的
+    // "条带样乱数据"（此前条带被 CSP 拦截从未真正显示过）。
+    const lat1 = n - (span * i) / bandCount // 带上缘（北）
+    const lat0 = n - (span * (i + 1)) / bandCount // 带下缘（南）
     const y0 = Math.floor((imgH * i) / bandCount)
     const y1 = i === bandCount - 1 ? imgH : Math.ceil((imgH * (i + 1)) / bandCount)
     const bandH = y1 - y0
