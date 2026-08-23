@@ -638,6 +638,15 @@ class PythonProviderResultBuilder:
                     time_start=time_start,
                     time_end=time_end,
                 )
+            # R2 修复：白名单外的 product type 此前静默丢弃（返回 None），
+            # 新算法产物忘记登记 _MAPPABLE_PRODUCTS 时无任何可观测信号。
+            logger.warning(
+                "Unmappable workflow product dropped: type=%r index=%d run_id=%s "
+                "(not in _MAPPABLE_PRODUCTS and tags not raster/cog)",
+                product_type,
+                index,
+                run_id,
+            )
             return None
 
         uri = str(
@@ -766,6 +775,8 @@ class PythonProviderResultBuilder:
                 upload_id=f"wf-{run_id[-8:]}-{index}",
                 grid_preset=str(config["grid_preset"]),
                 auto_confirm=True,
+                # R1：与下方 render_hint.palette 对齐，注册侧不再落 wind-blue
+                palette=str(config.get("palette") or "cividis"),
             )
         except Exception:
             logger.exception(
@@ -867,6 +878,8 @@ class PythonProviderResultBuilder:
                 conflict_policy="overwrite",
                 time_start=time_start,
                 time_end=time_end,
+                # R1：与下方 render_hint.palette 对齐，注册侧不再落 wind-blue
+                palette="viridis",
                 extra_meta={
                     "analysis_product": True,
                     "variable_id": variable,

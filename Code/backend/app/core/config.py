@@ -543,6 +543,12 @@ class Settings:
     weather_workflow_enabled: bool = (
         os.getenv("BACKEND_WEATHER_WORKFLOW_ENABLED", "true").lower() == "true"
     )
+    # 是否启用旧 monolithic weather engine 作为 bridge 链末位的 layer-based fallback
+    # （False 时 WeatherEngineService.supports 永远返回 False；默认 True 保持现状，
+    #  生产收敛时可置 False，强制天气工作流只走 weather_bridge / 瓦片主路径）
+    weather_engine_fallback_enabled: bool = (
+        os.getenv("BACKEND_WEATHER_ENGINE_FALLBACK_ENABLED", "true").lower() == "true"
+    )
     # 天气工作流队列（独立队列，避免与 algorithm/gee 队列混用）
     workflow_queue_weather_realtime: str = os.getenv(
         "BACKEND_WORKFLOW_QUEUE_WEATHER_REALTIME", "weather-realtime"

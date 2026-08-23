@@ -68,6 +68,11 @@ class WeatherEngineService(WeatherRenderMixin):
         return self._active_provider
 
     def supports(self, payload: WorkflowSubmitRequest) -> bool:
+        # 与 weather_bridge / provider_workflow 对齐 enabled flag：
+        # False 时不再作为 layer-based fallback 接管 workflow-runs
+        #（收敛到 weather_bridge / 瓦片主路径，见工程决策纪要 §5）
+        if not settings.weather_engine_fallback_enabled:
+            return False
         layer_id = payload.layer_id or payload.map_context.active_layer_id
         return bool(layer_id and layer_id in WEATHER_LAYER_SPECS)
 

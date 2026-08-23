@@ -90,6 +90,9 @@ if celery_available:
         },
         # task_queue_max_priority 须与 priority_steps 最大值一致
         task_queue_max_priority=9,
+        # 兜底默认队列：任何遗漏显式 queue 的新任务落到 standard（有 worker 监听），
+        # 避免静默落到无消费者消费的默认 "celery" 队列导致任务永久堆积。
+        task_default_queue=settings.workflow_queue_standard,
         # Beat / 运维任务必须落到 launch.py 实际监听的队列（勿用默认 celery）
         task_routes={
             "app.tasks.open_meteo_sync_tasks.sync_open_meteo_data": {
