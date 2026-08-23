@@ -165,6 +165,28 @@ def _load_source_grid(spec: Any, time: str | None) -> np.ndarray | None:
         return None
     suffix = src_path.suffix.lower()
     if suffix in {".tif", ".tiff", ".geotiff", ".cog"}:
+        # 巨型源（CLCD 类 stripped 无 overview）优先复用 tile 服务的进程内
+        # 降采样金字塔：直读（哪怕 out_shape 降采样）都要扫全文件行 strip
+        # （CLCD 实测 113s/次），金字塔一次构建后瓦片/重着色全部秒级。
+        try:
+            from app.services.overlay_tile_service import _source_pyramid
+
+            pyramid = _source_pyramid(
+                str(src_path), 1, src_path.stat().st_mtime_ns
+            )
+        except Exception:
+            pyramid = None
+        if pyramid is not None:
+            p_arr, p_transform, p_crs, _l, _b, _r, _t = pyramid
+            clip = _layer_wgs84_window(spec, time)
+            if clip is not None:
+                values = _reproject_geographic_to_mercator_linear(
+                    p_arr, p_transform, p_crs, clip
+                )
+                return values
+            # 无窗口对齐信息时直接返回金字塔网格（几何按窗口 Mercator 规则
+            # 不可知；此情况罕见——静态/导入层均有 bounds.json）
+            return p_arr
         try:
             import rasterio
             from rasterio.enums import Resampling

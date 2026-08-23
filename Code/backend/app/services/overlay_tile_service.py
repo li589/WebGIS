@@ -5,6 +5,8 @@ from __future__ import annotations
 import io
 import logging
 import math
+import threading
+from collections import OrderedDict
 from functools import lru_cache
 from typing import Any
 
@@ -26,6 +28,82 @@ _MAX_ZOOM = 18
 _TILE_SIZE = 256
 # <0：有 GeoTIFF 时直接走 XYZ 瓦片，避免 1024px overview PNG 被放大后模糊/闪没
 _OVERVIEW_MAX_ZOOM = -1.0
+# 巨型源（任一边 > 该值）启用降采样金字塔：无 overview/未分块（stripped）
+# 的源每行是一个 strip，任何窗口 warp 都要整行读盘——CLCD_v01（228579×
+# 131361、821MB、stripped、无 overview）单个 z2 瓦片 warp 实测 >8 分钟，
+# 前端低层级十几张瓦片只有个别在网关超时前完成 = 用户看到"只显示海南
+# 广西一带条带"（2026-08-24 报障）。低层级瓦片改从一次性降采样网格渲染。
+_PYRAMID_TRIGGER_EDGE = 4096
+_PYRAMID_MAX_EDGE = 4096
+# 金字塔构建串行锁 + 手动 LRU：并发瓦片请求 miss 时同时触发多次全图
+# 降采样读（CLCD 821MB × N 线程同时扫盘）。全程持锁串行构建，首个请求
+# 构建、其余等待后命中缓存（lru_cache 无法与锁组合——miss 调用本身即执行）。
+_PYRAMID_BUILD_LOCK = threading.Lock()
+_PYRAMID_CACHE: "OrderedDict[tuple[str, int, int], Any]" = OrderedDict()
+
+
+def _source_pyramid(
+    source_path: str,
+    band: int,
+    mtime_ns: int,
+) -> tuple[np.ndarray, Any, str, float, float, float, float] | None:
+    """巨型源的进程内降采样金字塔（CLCD 报障修复）。
+
+    Returns:
+        ``(values, transform, crs, left, bottom, right, top)``；源不大或读取
+        失败返回 None（走直读路径）。按 (path, band, mtime) 缓存；首次构建
+        需一次全图降采样读（CLCD ~2 分钟，后续瓦片/样式全部秒级命中）。
+        categorical 数据用 nearest 保类别不被平均出假值。
+    """
+    key = (source_path, int(band), int(mtime_ns))
+    with _PYRAMID_BUILD_LOCK:
+        if key in _PYRAMID_CACHE:
+            _PYRAMID_CACHE.move_to_end(key)
+            return _PYRAMID_CACHE[key]
+        result = _build_source_pyramid(source_path, band)
+        _PYRAMID_CACHE[key] = result
+        while len(_PYRAMID_CACHE) > 8:
+            _PYRAMID_CACHE.popitem(last=False)
+        return result
+
+
+def _build_source_pyramid(
+    source_path: str,
+    band: int,
+) -> tuple[np.ndarray, Any, str, float, float, float, float] | None:
+    try:
+        import rasterio
+        from rasterio.enums import Resampling
+        from rasterio.transform import Affine
+
+        with rasterio.open(source_path) as src:
+            h, w = src.height, src.width
+            if max(h, w) <= _PYRAMID_TRIGGER_EDGE:
+                return None
+            scale = _PYRAMID_MAX_EDGE / max(h, w)
+            oh = max(1, int(round(h * scale)))
+            ow = max(1, int(round(w * scale)))
+            data = src.read(
+                min(band, src.count),
+                out_shape=(oh, ow),
+                resampling=Resampling.nearest,
+                masked=True,
+            )
+            arr = np.ma.filled(np.ma.asarray(data).astype(np.float32), np.nan)
+            transform = src.transform * Affine.scale(w / ow, h / oh)
+            b = src.bounds
+            return (
+                arr,
+                transform,
+                str(src.crs or "EPSG:4326"),
+                float(b.left),
+                float(b.bottom),
+                float(b.right),
+                float(b.top),
+            )
+    except Exception:
+        logger.warning("source pyramid build failed: %s", source_path, exc_info=True)
+        return None
 
 
 def overview_max_zoom() -> float:
@@ -119,6 +197,7 @@ def render_geotiff_tile_png(
     max_value: float | None = None,
     nodata_mode: str | None = "transparent",
     nodata_color: str | None = None,
+    source_mtime_ns: int | None = None,
 ) -> bytes:
     """Warp a GeoTIFF window into a 256×256 Web Mercator PNG tile."""
     import rasterio
@@ -142,6 +221,63 @@ def render_geotiff_tile_png(
         nodata_mode=nodata_mode,
         nodata_color=nodata_color,
     )
+
+    # ── 巨型源低层级路径：从一次性降采样金字塔 warp（CLCD 报障修复）──
+    # 仅当瓦片所需分辨率粗于金字塔分辨率（不放大）时使用；深缩放窗口小，
+    # 直读源更快也更清晰。
+    pyramid = None
+    if source_mtime_ns is not None:
+        pyramid = _source_pyramid(source_path, int(band), int(source_mtime_ns))
+    if pyramid is not None:
+        p_arr, p_transform, p_crs, p_left, p_bottom, p_right, p_top = pyramid
+        try:
+            pw, pb, pr, pt = transform_bounds(
+                "EPSG:4326", p_crs, west, south, east, north, densify_pts=21
+            )
+        except Exception:
+            pw, pb, pr, pt = west, south, east, north
+        if pr < p_left or pw > p_right or pt < p_bottom or pb > p_top:
+            img = Image.fromarray(
+                _apply_palette(dst, np.zeros_like(dst, dtype=bool), **style_kw),
+                mode="RGBA",
+            )
+            buf = io.BytesIO()
+            img.save(buf, format="PNG", optimize=True)
+            return buf.getvalue()
+        # 金字塔单像素跨度（源 CRS 单位）
+        p_res_x = (p_right - p_left) / p_arr.shape[1]
+        p_res_y = (p_top - p_bottom) / p_arr.shape[0]
+        tile_span_x = pr - pw
+        tile_span_y = pt - pb
+        if tile_span_x > 0 and tile_span_y > 0:
+            need_res_x = tile_span_x / _TILE_SIZE
+            need_res_y = tile_span_y / _TILE_SIZE
+            if need_res_x >= p_res_x and need_res_y >= p_res_y:
+                try:
+                    m_left, m_bottom, m_right, m_top = transform_bounds(
+                        "EPSG:4326", "EPSG:3857", west, south, east, north,
+                        densify_pts=21,
+                    )
+                except Exception:
+                    m_left, m_bottom, m_right, m_top = west, south, east, north
+                dst_transform = from_bounds(
+                    m_left, m_bottom, m_right, m_top, _TILE_SIZE, _TILE_SIZE
+                )
+                reproject(
+                    source=p_arr,
+                    destination=dst,
+                    src_transform=p_transform,
+                    src_crs=p_crs,
+                    dst_transform=dst_transform,
+                    dst_crs="EPSG:3857",
+                    resampling=Resampling.bilinear,
+                    src_nodata=np.nan,
+                    dst_nodata=np.nan,
+                )
+                valid = np.isfinite(dst)
+                rgba = _apply_palette(dst, valid, **style_kw)
+                return encode_rgba_png(rgba)
+        # 分辨率不够（深缩放）：落到下方直读源路径
 
     with rasterio.open(source_path) as src:
         src_crs = src.crs or "EPSG:4326"
@@ -269,6 +405,7 @@ def _cached_tile(
         max_value=max_value,
         nodata_mode=nodata_mode,
         nodata_color=nodata_color or None,
+        source_mtime_ns=mtime_ns,
     )
 
 

@@ -921,7 +921,15 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       }
       if (!group.sourceLayerId) group.sourceLayerId = sourceLayerId
       if (!group.workflowId) group.workflowId = workflowId
-      if (options?.title) group.title = options.title
+      // 组名优先中文配置（种子/画布流水线 extra.group_title）；无配置时
+      // 技术名（jobLayer/entry 名）仅兜底。已存在的组每次恢复/轮询均以
+      // 中文配置纠偏——旧快照/历史 run 的技术名组标题由此自动纠正
+      // （2026-08-24 组名中文化报障）。
+      if (configuredGroupTitle) {
+        group.title = configuredGroupTitle
+      } else if (options?.title) {
+        group.title = options.title
+      }
     }
 
     if (existingGroup) {
@@ -950,7 +958,9 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       const group: ActiveRunLayerGroup = {
         groupId,
         runId,
-        title: options?.title || tracked?.name || bridge.title || '工作流产物',
+        // 中文配置优先（extra.group_title），技术名兜底
+        title:
+          configuredGroupTitle || options?.title || tracked?.name || '工作流产物',
         status: options?.createPlaceholders ? 'computing' : 'ready',
         memberInstanceIds: seedMembers.map((m) => m.instanceId),
         dissolvable: !options?.createPlaceholders,
@@ -968,7 +978,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     }
 
     const created = deps.createRunLayerGroup({
-      title: configuredGroupTitle || options.title || tracked?.name || bridge.title || '工作流运行',
+      title: configuredGroupTitle || options.title || tracked?.name || '工作流运行',
       targets: configuredTargets.length
         ? configuredTargets
         : tags.map((tag) => ({ name: productTagLabel(tag), productTag: tag })),

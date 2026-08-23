@@ -233,16 +233,21 @@ def normalize_nodata_mode(raw: str | None) -> NodataMode:
 
 
 def _mask_invalid_raster(numpy, band, *, nodata: float | None = None):
-    """Mask nodata + non-finite samples so voids become transparent."""
-    masked = numpy.ma.array(band, copy=False)
-    invalid = ~numpy.isfinite(numpy.ma.filled(masked, numpy.nan))
+    """Mask nodata + non-finite samples so voids become transparent.
+
+    2026-08-24 CLCD 报障：整型源（uint8 分类数据）上 ``filled(nan)`` 会抛
+    TypeError（NaN 无法转 int dtype）→ 注册 preview 渲染整链失败。先
+    astype(float64)（MaskedArray 保 mask）再做 NaN 填充，任意 dtype 安全。
+    """
+    arr = numpy.ma.asarray(band)
+    arrf = arr.astype("float64")
+    invalid = ~numpy.isfinite(numpy.ma.filled(arrf, numpy.nan))
     if nodata is not None and numpy.isfinite(nodata):
         invalid = invalid | numpy.isclose(
-            numpy.ma.filled(masked, nodata), float(nodata), equal_nan=False
+            numpy.ma.filled(arrf, float(nodata)), float(nodata), equal_nan=False
         )
-    if numpy.ma.isMaskedArray(masked):
-        invalid = invalid | numpy.ma.getmaskarray(masked)
-    return numpy.ma.array(numpy.ma.filled(masked, numpy.nan), mask=invalid)
+    invalid = invalid | numpy.ma.getmaskarray(arr)
+    return numpy.ma.array(numpy.ma.filled(arrf, numpy.nan), mask=invalid)
 
 
 def _colorize_masked_band(
@@ -261,13 +266,23 @@ def _colorize_masked_band(
         # ._source_value_range / _apply_palette）一致改用 p2/p98 百分位。
         # 此前用全量 min/max——与瓦片 p2/p98 两套基准，image↔瓦片模式切换
         # 时同数据色阶突变；且 min/max 受极值敏感（火点/异常值压扁整体色阶）。
+        # filled(nan) 前先转 float：整型源（uint8 分类）会抛 TypeError
+        #（2026-08-24 CLCD 注册失败根因之一）。
         if count >= 100:
-            min_value = float(numpy.nanpercentile(masked_array.filled(numpy.nan), 2))
+            min_value = float(
+                numpy.nanpercentile(
+                    numpy.ma.filled(masked_array.astype("float64"), numpy.nan), 2
+                )
+            )
         else:
             min_value = float(masked_array.min()) if count else 0.0
     if max_value is None:
         if count >= 100:
-            max_value = float(numpy.nanpercentile(masked_array.filled(numpy.nan), 98))
+            max_value = float(
+                numpy.nanpercentile(
+                    numpy.ma.filled(masked_array.astype("float64"), numpy.nan), 98
+                )
+            )
         else:
             max_value = (
                 float(masked_array.max()) if count else max(float(min_value) + 1.0, 1.0)
@@ -492,7 +507,30 @@ class RasterPreviewService:
             src_transform = dataset.transform
             src_width = dataset.width
             src_height = dataset.height
-            src_band = dataset.read(1, masked=True)
+            # 2026-08-24 CLCD 报障：巨型源（CLCD_v01 228579×131361 / 821MB、
+            # stripped 无 overview）全分辨率 read(1) 要分配 ~30GB → 注册在
+            # preview 渲染一步死掉（imports 目录只剩源文件、无 bounds.json/
+            # preview.png = "工作流完成但图层不显示"）。超过 2048 边一律降
+            # 采样读（nearest 保类别），transform 按比例缩放；warp 精度对
+            # ≤2048 预览无损。
+            if max(src_width, src_height) > 2048:
+                from rasterio.enums import Resampling as _Resampling
+                from rasterio.transform import Affine as _Affine
+
+                _scale = 2048.0 / max(src_width, src_height)
+                _oh = max(1, int(round(src_height * _scale)))
+                _ow = max(1, int(round(src_width * _scale)))
+                src_band = dataset.read(
+                    1,
+                    out_shape=(_oh, _ow),
+                    resampling=_Resampling.nearest,
+                    masked=True,
+                )
+                src_transform = src_transform * _Affine.scale(
+                    src_width / _ow, src_height / _oh
+                )
+            else:
+                src_band = dataset.read(1, masked=True)
             src_nodata = dataset.nodata
             if src_nodata is None:
                 # Float science rasters often store voids as NaN without nodata tag.
