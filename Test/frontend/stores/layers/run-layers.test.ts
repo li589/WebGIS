@@ -1004,6 +1004,10 @@ describe("reconcileOmegaBlockLayers", () => {
     const orphan = makeLayer({
       name: "OMEGA_BLOCK",
       dataState: "imported",
+      // 快照水合产物层：原组已清理但归属字段保留（用户手动导入层无此字段，
+      // 会被 reconcileOmegaBlockLayers 的"用户静态层保护"跳过——见测试
+      // run-group-flash-fix.test.ts）。有 runGroupProductTag 才走并入。
+      runGroupProductTag: "OMEGA",
       importedRaster: { overlayLayerId: "ov-om", nativeStep: null },
     });
     activeLayers.push(placeholder, orphan);
@@ -1020,6 +1024,8 @@ describe("reconcileOmegaBlockLayers", () => {
     const orphan = makeLayer({
       name: "OMEGA_BLOCK",
       dataState: "imported",
+      // 同上：模拟快照水合产物层（保留归属字段），未入组仅改显示名
+      runGroupProductTag: "OMEGA",
       importedRaster: { overlayLayerId: "ov-om", nativeStep: null },
     });
     activeLayers.push(orphan);

@@ -776,6 +776,11 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       // 只处理名为 OMEGA_BLOCK 的游离层
       const orphanName = String(orphan.name || orphan.importedRaster?.fileName || '').toUpperCase()
       if (!orphanName.includes('OMEGA_BLOCK')) continue
+      // 保护用户静态层：仅当该层归属某个工作流计算组（有 runGroupId 或
+      // runGroupProductTag，即后端产物经工作流物化）才并入组内占位。用户手动
+      // 导入/添加的 OMEGA_BLOCK .mat（无任何 run 组归属）是用户自己的图层，
+      // 不得被改名/并入/摘除 —— 否则用户静态层被吞（2026-08-23 症状一）。
+      if (!orphan.runGroupId && !orphan.runGroupProductTag) continue
       const placeholder = deps
         .getActiveLayers()
         .find(

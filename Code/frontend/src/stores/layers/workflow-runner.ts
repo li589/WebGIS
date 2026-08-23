@@ -750,7 +750,12 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     runId: string,
     catalogId: string,
     tracked?: TrackedWorkflowRun,
-    options?: { createPlaceholders?: boolean; title?: string },
+    options?: {
+      createPlaceholders?: boolean
+      title?: string
+      /** 调用来源：'submit' 为提交即建组（新种子/画布流水线），'restore' 为旧 run 恢复 2026-08-23 */
+      source?: 'submit' | 'restore'
+    },
   ) {
     const bridge = resolveRestoreWorkflowBridge(
       String(tracked?.catalogId || catalogId),
@@ -804,11 +809,16 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       restoreDef?.extra &&
       (restoreDef.extra.group_title || restoreDef.extra.output_labels || restoreDef.extra.outputs),
     )
+    // 提交路径（source='submit'）禁止落 LEGACY_RESTORE_TAGS（SM/VOD/OMEGA）：
+    // 该三件套是旧实验室 seed 的恢复兜底，新提交的 run 无 manifest 时也应是
+    // 单产出 'result' 语义——否则提交瞬间建 3 个错误占位成员（静态图层闪现
+    // + 越权反演图层组的根因之一，2026-08-23）。恢复路径保持原兜底链不变。
+    const isSubmitPath = options?.source === 'submit'
     const tags = layerTags.length
       ? layerTags
       : defTags.length
         ? defTags
-        : hasExtraMeta
+        : hasExtraMeta || isSubmitPath
           ? ['result']
           : LEGACY_RESTORE_TAGS
     const catalogLabels = catalogExtra?.output_labels
@@ -1265,6 +1275,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       ensureRestoredRunGroup(accepted.run_id, catalogId, undefined, {
         createPlaceholders: true,
         title: catalogName,
+        source: 'submit',
       })
       void deps.startPolling(accepted.run_id, catalogId, options.expectedViewportEpoch)
       return accepted.run_id
@@ -1519,6 +1530,12 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
    */
   async function autoAttachProductsForNewLayer(catalogId: string): Promise<number> {
     const targetId = resolveInversionCatalogId(catalogId)
+    // 保护用户静态图层：仅当该 catalog 具备 map-layer-result capability 才去
+    // attach 反演产物。对纯静态/展示型图层（干旱指数 AI 等）执行会误把反演
+    // run 产物并进用户静态层 → 静态图层闪现 + 越权图层组（2026-08-23）。
+    if (!deps.supportsMapLayerResult(targetId) && !deps.supportsMapLayerResult(catalogId)) {
+      return 0
+    }
     let runs: Awaited<ReturnType<typeof listRecentSucceededRuns>>
     try {
       runs = await listRecentSucceededRuns(20)
