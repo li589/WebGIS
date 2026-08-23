@@ -31,6 +31,8 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 from uuid import uuid4
 
+import numpy as np
+
 from app.services.effective_config import get_provider_series_chunk_size
 from app.services.result_storage import result_storage_service
 from shared.contracts.api_contracts import (
@@ -74,6 +76,83 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
 }
 
 _SINGLE_DAY_MAT_RE = re.compile(r"^\d{8}\.mat$", re.IGNORECASE)
+
+
+def _infer_mat_data_variable(path: Path) -> str | None:
+    """从 v5 .mat 推断唯一 2D 数据变量名（排除 lat/lon 坐标轴）。
+
+    static_local_read 产物的 .mat 常带 lat(1,N)/lon(1,N) 坐标变量，数据变量
+    是唯一的 N×M 2D 数组。返回该变量名；无唯一 2D 变量或读取失败返回 None。
+    """
+    if not path.exists() or path.suffix.lower() != ".mat":
+        return None
+    candidates: list[str] = []
+    try:
+        import scipy.io as sio
+
+        data = sio.loadmat(str(path), squeeze_me=True)
+    except Exception:
+        try:
+            import h5py
+
+            with h5py.File(str(path), "r") as f:
+                for key in f.keys():
+                    node = f[key]
+                    shape = getattr(node, "shape", ())
+                    if len(shape) == 2 and shape[0] > 1 and shape[1] > 1:
+                        if key.lower() not in ("lat", "latitude", "lon", "longitude"):
+                            candidates.append(key)
+            return candidates[0] if len(candidates) == 1 else None
+        except Exception:
+            return None
+    for key, value in data.items():
+        if key.startswith("__"):
+            continue
+        if isinstance(value, np.ndarray) and value.ndim == 2:
+            if 1 not in value.shape and key.lower() not in (
+                "lat",
+                "latitude",
+                "lon",
+                "longitude",
+            ):
+                candidates.append(key)
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _read_mat_latlon_bounds(path: Path) -> list[float] | None:
+    """读 v5 .mat 的 lat/lon 变量推导 [west, south, east, north] bounds。
+
+    .mat 数据变量不含地理参考，_load_mat_2d 只返回数组——若无 lat/lon，
+    commit_science_raster_variable 会把 (176,256) 贴成默认全球网格（实测
+    aridity 中国区数据被贴成 -173.8~180/0~88 全球 bounds，南北拉伸根源）。
+    读取失败或坐标缺失返回 None（调用方回退 preset 匹配）。
+    """
+    if not path.exists() or path.suffix.lower() != ".mat":
+        return None
+    try:
+        import scipy.io as sio
+
+        data = sio.loadmat(
+            str(path), squeeze_me=True, variable_names=["lat", "lon", "latitude", "longitude"]
+        )
+    except Exception:
+        return None
+    lat = data.get("lat", data.get("latitude"))
+    lon = data.get("lon", data.get("longitude"))
+    try:
+        lat_arr = np.atleast_1d(np.asarray(lat, dtype=np.float64))
+        lon_arr = np.atleast_1d(np.asarray(lon, dtype=np.float64))
+    except Exception:
+        return None
+    if lat_arr.size < 2 or lon_arr.size < 2:
+        return None
+    if not (np.isfinite(lat_arr).all() and np.isfinite(lon_arr).all()):
+        return None
+    south, north = float(lat_arr.min()), float(lat_arr.max())
+    west, east = float(lon_arr.min()), float(lon_arr.max())
+    if not (-90 <= south < north <= 90 and -180 <= west < east <= 180):
+        return None
+    return [west, south, east, north]
 
 # MIME types for the three standard algorithm artifact kinds. Indexed by
 # the artifact_name key used in result_dto.artifacts.
@@ -861,7 +940,23 @@ class PythonProviderResultBuilder:
             return None
         suffix = local_path.suffix.lower()
         if suffix not in {".tif", ".tiff", ".geotiff", ".cog"}:
-            return None
+            # 2026-08-24 缺陷修复：static_local_read_*（如 aridity-cn）的
+            # map_layer 产物是 .mat（"工作流已完成但图层不显示"根因——
+            # generic 分支此前只收 GeoTIFF 后缀，.mat 直接丢弃）。科学格式
+            # 走 commit_science_raster_variable 通道（抽变量→GeoTIFF→注册，
+            # 与 ω 的 .mat 产物同一管线），下方统一处理。
+            if suffix not in {".mat", ".nc", ".h5", ".hdf", ".he5"}:
+                return None
+            return self._build_science_mat_map_layer_ref(
+                run_id=run_id,
+                requested_at=requested_at,
+                payload=payload,
+                product=product,
+                index=index,
+                local_path=local_path,
+                time_start=time_start,
+                time_end=time_end,
+            )
 
         tags = as_dict(product.get("tags"))
         variable = str(product.get("variable") or tags.get("variable") or "raster")
@@ -961,6 +1056,142 @@ class PythonProviderResultBuilder:
                 f"product={product.get('type') or 'raster'}",
                 f"overlay={overlay_id}",
                 "native_crs",
+            ],
+        )
+        return WorkflowResultReference(
+            result_id=f"algorithm-map-{index}-{run_id[-8:]}",
+            result_kind=ResultKind.map_layer,
+            title=f"Algorithm Map Layer: {label}",
+            mime_type="application/json",
+            inline_data={
+                "render_hint": render_hint.model_dump(mode="json"),
+                "layer_assets": {
+                    "overlay_layer_id": overlay_id,
+                    "cog_url": f"/overlay-preview/{overlay_id}",
+                    "cog_preview_url": f"/overlay-preview/{overlay_id}",
+                    "cog_bbox": cog_bbox,
+                    "product_tag": label,
+                    "source_path": str(local_path),
+                    "time_list": registered.get("time_list") or [],
+                    "default_time": registered.get("default_time"),
+                    "native_step": registered.get("native_step"),
+                },
+            },
+            updated_at=requested_at,
+        )
+
+    def _build_science_mat_map_layer_ref(
+        self,
+        *,
+        run_id: str,
+        requested_at: datetime,
+        payload: WorkflowSubmitRequest,
+        product: dict[str, Any],
+        index: int,
+        local_path: Path,
+        time_start: str | None = None,
+        time_end: str | None = None,
+    ) -> WorkflowResultReference | None:
+        """.mat/.nc/.hdf 科学格式 map_layer 产物：抽变量→GeoTIFF→注册 overlay。
+
+        2026-08-24：static_local_read_*（aridity-cn 等）的 map_layer 产物是
+        .mat，generic 分支只收 GeoTIFF 后缀导致静默丢弃（"工作流已完成但
+        图层不显示"）。走 commit_science_raster_variable 与 ω 的 .mat 产物
+        同一管线：稳定 id imported-{layer_id}-{index}、palette 对齐 descriptor。
+        variable 优先 product.variable/tags.variable，缺省时若 .mat 含唯一
+        2D 数据变量（排除 lat/lon 坐标轴）自动选用。
+        """
+        tags = as_dict(product.get("tags"))
+        label = str(
+            tags.get("layer") or product.get("name") or local_path.stem or "GIS"
+        )[:64]
+        variable = str(product.get("variable") or tags.get("variable") or "").strip()
+        if not variable and local_path.suffix.lower() == ".mat":
+            variable = _infer_mat_data_variable(local_path) or local_path.stem
+
+        raw_layer_id = str(getattr(payload, "layer_id", "") or "").strip()
+        safe_layer_id = re.sub(r"[^A-Za-z0-9._-]+", "_", raw_layer_id)
+        # commit_science_raster_variable 内部用 stable_import_layer_id(source_name,
+        # variable, grid, time) 生成层 id——source_name 不含 run_id（改用
+        # layer_id+stem）即可让同层重跑命中同一稳定 id（overwrite 语义）。
+        stable_source_name = (
+            f"{safe_layer_id}_{local_path.stem}" if safe_layer_id else local_path.stem
+        )
+        # palette 对齐静态层 descriptor（与 generic 分支同规则）
+        product_palette = "viridis"
+        if raw_layer_id:
+            try:
+                from app.services.layer_catalog import get_layer_descriptor
+
+                descriptor = get_layer_descriptor(raw_layer_id)
+                hint = getattr(descriptor, "style", None) if descriptor else None
+                hint_palette = getattr(hint, "palette", None) if hint else None
+                if hint_palette and str(hint_palette).strip():
+                    product_palette = str(hint_palette).strip()
+            except Exception:
+                logger.debug(
+                    "layer descriptor palette lookup failed for %s", raw_layer_id
+                )
+
+        try:
+            from app.data_io.services.raster_commit import (
+                commit_science_raster_variable,
+            )
+
+            # .mat 内嵌 lat/lon（如 aridity 15~55N/70~140E）→ 推导 bounds
+            # 精确贴图；缺坐标则回退 preset 匹配（EASE 等固定网格）。
+            mat_bounds = (
+                _read_mat_latlon_bounds(local_path)
+                if local_path.suffix.lower() == ".mat"
+                else None
+            )
+            registered = commit_science_raster_variable(
+                local_path,
+                variable_id=variable,
+                source_name=stable_source_name,
+                upload_id=f"wf-{run_id[-8:]}-{index}",
+                auto_confirm=True,
+                palette=product_palette,
+                bounds=mat_bounds,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to publish science mat map_layer path=%s variable=%s",
+                local_path,
+                variable,
+            )
+            return None
+
+        overlay_id = str(registered.get("layer_id") or "").strip()
+        if not overlay_id:
+            return None
+
+        bounds = registered.get("bounds")
+        cog_bbox = None
+        if (
+            isinstance(bounds, (list, tuple))
+            and len(bounds) == 4
+            and all(isinstance(v, (int, float)) for v in bounds)
+        ):
+            cog_bbox = {
+                "west": float(bounds[0]),
+                "south": float(bounds[1]),
+                "east": float(bounds[2]),
+                "north": float(bounds[3]),
+                "crs": "EPSG:4326",
+            }
+
+        render_hint = WeatherLayerRenderHint(
+            layer_id=payload.layer_id or overlay_id,
+            paint_mode="grid_fill",
+            palette=product_palette,
+            primary_metric=variable,
+            unit_label=label,
+            opacity=0.8,
+            notes=[
+                f"product={product.get('type') or 'map_layer'}",
+                f"overlay={overlay_id}",
+                f"variable={variable}",
             ],
         )
         return WorkflowResultReference(

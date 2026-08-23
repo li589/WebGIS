@@ -216,3 +216,73 @@ def test_colorize_small_sample_keeps_minmax():
     # 4 样本 < 100 → min/max 路径：min=0 → 黑，max=3 → 白
     assert red[0, 0] == 0
     assert red[1, 1] == 255
+
+
+def test_mat_map_layer_product_registers_overlay(tmp_path, monkeypatch):
+    """.mat map_layer 产物（static_local_read/aridity-cn 形态）注册 overlay。
+
+    2026-08-24："工作流已完成但图层不显示"根因——generic 分支只收 GeoTIFF
+    后缀，.mat 产物静默丢弃。现 .mat 走 commit_science_raster_variable 管线，
+    自动推断唯一 2D 数据变量（排除 lat/lon），palette 对齐 descriptor。
+    """
+    imports_root = tmp_path / "imports"
+    from app.data_io.services import paths as import_paths
+    from app.data_io.services import raster_commit as commit_mod
+    from app.data_io.services import raster_register as register_mod
+
+    for mod in (import_paths, register_mod, commit_mod):
+        if hasattr(mod, "IMPORTS_DIR"):
+            monkeypatch.setattr(mod, "IMPORTS_DIR", imports_root)
+    monkeypatch.setattr(import_paths, "IMPORTS_DIR", imports_root)
+    import_paths.ensure_imports_root()
+
+    import scipy.io as sio
+
+    mat = tmp_path / "aridity_025.mat"
+    sio.savemat(
+        str(mat),
+        {
+            "aridity": np.linspace(0, 1, 176 * 256).reshape(176, 256),
+            "lat": np.linspace(15, 55, 176),
+            "lon": np.linspace(70, 140, 256),
+        },
+    )
+
+    from app.services.python_provider_result_builder import PythonProviderResultBuilder
+
+    builder = PythonProviderResultBuilder()
+    now = datetime.now(timezone.utc)
+    refs = builder.build_product_map_layer_refs(
+        run_id="run-matmap-eee55505",
+        requested_at=now,
+        payload=_payload("aridity-cn"),
+        result_dto={
+            "products": [
+                {
+                    "name": "aridity_025.mat",
+                    "type": "map_layer",
+                    "uri": str(mat),
+                    "tags": {"module": "output_map_layer"},
+                }
+            ]
+        },
+    )
+    assert refs, ".mat map_layer 产物应注册出 map_layer ref（不再静默丢弃）"
+    assets = refs[0].inline_data["layer_assets"]
+    hint = refs[0].inline_data["render_hint"]
+    assert assets["overlay_layer_id"], "overlay id 应非空"
+    assert hint["palette"] == "brg", (
+        f"palette 应对齐 aridity descriptor brg，实际 {hint['palette']}"
+    )
+    # overlay 目录应真实存在（注册成功）
+    overlay_dir = imports_root / assets["overlay_layer_id"]
+    assert overlay_dir.is_dir()
+    # bounds 应精确反映 .mat 内嵌 lat/lon（15~55N / 70~140E），非默认全球网格
+    import json
+
+    bounds_meta = json.loads((overlay_dir / "bounds.json").read_text(encoding="utf-8"))
+    b = bounds_meta["bounds"]
+    assert abs(b[0] - 70) < 0.2, f"west 应对齐 lon.min 70，实际 {b[0]}"
+    assert abs(b[2] - 140) < 0.2, f"east 应对齐 lon.max 140，实际 {b[2]}"
+    assert abs(b[1] - 15) < 0.2, f"south 应对齐 lat.min 15，实际 {b[1]}"
+    assert abs(b[3] - 55) < 0.2, f"north 应对齐 lat.max 55，实际 {b[3]}"
