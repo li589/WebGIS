@@ -173,7 +173,15 @@ describe("basemap-module", () => {
 
     expect(setTileLoadFailed).toHaveBeenLastCalledWith(false);
     expect(setTileFailedProvider).toHaveBeenLastCalledWith(null);
-    expect(source.setTiles).toHaveBeenCalledWith([
+    // 2026-08-24 修复：熔断/重试路径重建源（removeSource abort 全部挂起瓦片
+    // 请求，立即释放同源连接池——/unified-tiles 代理与 API 同源，浏览器
+    // HTTP/1.1 每源仅 6 条并发连接），不再走 setTiles（旧请求会继续占连接
+    // 直到超时 = "切底图卡一段时间"根因）。
+    expect(source.setTiles).not.toHaveBeenCalled();
+    // 旧源已删除、新源以当前 urlTemplate 重建（瓦片命中 HTTP 缓存不重复下载）
+    expect(sources.has("tile-base")).toBe(true);
+    expect(sources.get("tile-base")).not.toBe(source);
+    expect(sources.get("tile-base").tiles).toEqual([
       "https://example.com/{z}/{x}/{y}.png",
     ]);
     expect(map.triggerRepaint).toHaveBeenCalled();
@@ -182,6 +190,136 @@ describe("basemap-module", () => {
       "visibility",
       "visible",
     );
+  });
+
+  it("switching away from a failing source recreates the source (aborts hanging requests)", () => {
+    // 2026-08-24 复发报障：全部底图源经 /unified-tiles 代理（同源），浏览器
+    // 每源 6 条并发连接。源 A 挂起时占满连接池，旧实现 setTiles 不中止挂
+    // 请求 → 新源 B 的瓦片请求排在 A 的超时请求之后 → 切换"卡一段时间"。
+    // 修复：异常态（熔断/错误窗口内/外来错误）切换必须 removeSource 重建
+    // （abort 全部挂起请求、立即释放连接），健康切换保留 setTiles 平滑淡出。
+    const { map, sources } = createMapMock();
+    const source = { type: "raster", setTiles: vi.fn() };
+    sources.set("tile-base", source);
+    map.getLayer = () => ({ id: "tile-base-raster" });
+
+    const module = createBasemapModule({
+      map,
+      getTileConfig: (sourceId) =>
+        sourceId === "esri-street"
+          ? {
+              id: "esri-street",
+              provider: "Esri",
+              style: "street",
+              urlTemplate: "https://esri.example/{z}/{x}/{y}.png",
+            }
+          : sourceId === "bing-road"
+            ? {
+                id: "bing-road",
+                provider: "Bing",
+                style: "street",
+                urlTemplate: "https://bing.example/{z}/{x}/{y}.png",
+              }
+            : undefined,
+      getCurrentTileSourceId: () => "bing-road",
+      setTileLoadFailed: vi.fn(),
+      setTileFailedProvider: vi.fn(),
+      setSourceTransitioning: vi.fn(),
+      getFailoverCandidates: () => [],
+      dependencies: { now: () => 1000 },
+    });
+
+    // 旧源 Esri 请求失败（未到熔断阈值：仅 3 条错误进窗口）
+    for (let index = 0; index < 3; index += 1) module.handleTileError("Esri");
+
+    // 用户切到 bing-road：错误窗口非空 → 必须重建（abort 挂起请求）
+    module.switchTileSource("bing-road");
+
+    expect(source.setTiles).not.toHaveBeenCalled();
+    expect(sources.get("tile-base")).not.toBe(source);
+    expect(sources.get("tile-base").tiles).toEqual([
+      "https://bing.example/{z}/{x}/{y}.png",
+    ]);
+  });
+
+  it("switching between healthy sources keeps setTiles (smooth fade)", () => {
+    const { map, sources } = createMapMock();
+    const source = { type: "raster", setTiles: vi.fn() };
+    sources.set("tile-base", source);
+    map.getLayer = () => ({ id: "tile-base-raster" });
+
+    const module = createBasemapModule({
+      map,
+      getTileConfig: (sourceId) =>
+        sourceId === "esri-street"
+          ? {
+              id: "esri-street",
+              provider: "Esri",
+              style: "street",
+              urlTemplate: "https://esri.example/{z}/{x}/{y}.png",
+            }
+          : sourceId === "bing-road"
+            ? {
+                id: "bing-road",
+                provider: "Bing",
+                style: "street",
+                urlTemplate: "https://bing.example/{z}/{x}/{y}.png",
+              }
+            : undefined,
+      getCurrentTileSourceId: () => "esri-street",
+      setTileLoadFailed: vi.fn(),
+      setTileFailedProvider: vi.fn(),
+      setSourceTransitioning: vi.fn(),
+      dependencies: { now: () => 1000 },
+    });
+
+    // 无任何错误：健康切换走 setTiles（旧瓦片平滑淡出到新瓦片）
+    module.switchTileSource("bing-road");
+    expect(source.setTiles).toHaveBeenCalledWith([
+      "https://bing.example/{z}/{x}/{y}.png",
+    ]);
+    expect(sources.get("tile-base")).toBe(source);
+  });
+
+  it("foreign (old-provider) errors after switching also trigger recreate on next switch", () => {
+    // 用户已切走后旧源迟到失败：归因检查跳过（不进熔断窗口），但证明旧
+    // 请求挂起中——下一次切换仍须重建中止
+    const { map, sources } = createMapMock();
+    const source = { type: "raster", setTiles: vi.fn() };
+    sources.set("tile-base", source);
+    map.getLayer = () => ({ id: "tile-base-raster" });
+
+    const module = createBasemapModule({
+      map,
+      getTileConfig: (sourceId) =>
+        sourceId === "esri-street"
+          ? {
+              id: "esri-street",
+              provider: "Esri",
+              style: "street",
+              urlTemplate: "https://esri.example/{z}/{x}/{y}.png",
+            }
+          : sourceId === "bing-road"
+            ? {
+                id: "bing-road",
+                provider: "Bing",
+                style: "street",
+                urlTemplate: "https://bing.example/{z}/{x}/{y}.png",
+              }
+            : undefined,
+      getCurrentTileSourceId: () => "bing-road",
+      setTileLoadFailed: vi.fn(),
+      setTileFailedProvider: vi.fn(),
+      setSourceTransitioning: vi.fn(),
+      dependencies: { now: () => 1000 },
+    });
+
+    // 旧源 Esri 迟到失败（当前已是 bing-road → 归因跳过）
+    module.handleTileError("Esri");
+
+    module.switchTileSource("esri-street");
+    expect(source.setTiles).not.toHaveBeenCalled();
+    expect(sources.get("tile-base")).not.toBe(source);
   });
 
   it("parses map error events for the managed tile source only", () => {
