@@ -1908,6 +1908,24 @@ def _checkpoint_path(output_dir: str | Path) -> Path:
     return Path(output_dir) / ".omega_sf_chunk_checkpoint.json"
 
 
+def _chunks_checkpoint_dir(output_dir: str | Path) -> Path:
+    """P3 增量 checkpoint（2026-08-23）：每 chunk 一个文件的目录。
+
+    旧单文件全量重写是 O(N·chunks) 总 IO（每 chunk 完成都重序列化全部
+    结果），且 JSON 全量超 500MB 即失效拒载。增量目录下每 chunk 只写
+    自身结果（O(N) 总 IO），单文件只有几 MB。
+    """
+    return Path(output_dir) / ".omega_sf_chunks"
+
+
+def _chunks_meta_path(chunks_dir: Path) -> Path:
+    return chunks_dir / "meta.json"
+
+
+def _chunk_file_path(chunks_dir: Path, chunk_index: int) -> Path:
+    return chunks_dir / f"chunk_{int(chunk_index):04d}.json"
+
+
 def _assert_checkpoint_path_safe(path: Path, output_dir: str | Path) -> Path:
     """G4-02: 校验检查点路径归属，防止路径遍历导致加载外部恶意文件。
 
@@ -1956,88 +1974,159 @@ def _load_chunk_checkpoint(
 ) -> tuple[set[int], list[Any]] | None:
     """加载块/chunk 检查点；日期范围不一致则忽略。
 
+    P3 增量化（2026-08-23）：优先读 ``.omega_sf_chunks/`` 增量目录（每 chunk
+    一个文件）；旧单文件 ``.omega_sf_chunk_checkpoint.json`` 仍兼容读取——
+    读到后 rename 为 ``.done`` 防重复消费（旧结果并入内存 all_results，
+    completed 集合防重跑；增量保存只写新完成 chunk 的文件，二者键不同不冲突）。
+
     G4-02: pickle.load → safe deserialization 防 RCE
     使用 json.load 替代 pickle.load，JSON 无法携带可执行代码，
     从根本上消除反序列化 RCE 风险。同时校验路径归属，防止路径遍历。
-    文件大小超过 500MB 视为异常并拒绝加载（JSON 文本格式较 pickle 二进制更大）。
     """
+    done: set[int] = set()
+    results: list[Any] = []
+    loaded_any = False
+
+    # ── 1) 增量目录（新格式）─────────────────────────────────────────
+    chunks_dir = _chunks_checkpoint_dir(output_dir)
+    if chunks_dir.is_dir():
+        try:
+            _assert_checkpoint_path_safe(chunks_dir, output_dir)
+            meta_path = _chunks_meta_path(chunks_dir)
+            if meta_path.is_file():
+                with meta_path.open("r", encoding="utf-8") as fh:
+                    meta = json.load(fh)
+                if (
+                    isinstance(meta, dict)
+                    and meta.get("start_date") == start_date
+                    and meta.get("end_date") == end_date
+                ):
+                    # 单个 chunk 文件仅几 MB；500MB 防御上限针对整个目录
+                    for cf in sorted(chunks_dir.glob("chunk_*.json")):
+                        if cf.stat().st_size > 500 * 1024 * 1024:
+                            logger.warning(
+                                "[CHECKPOINT] chunk 文件异常过大，跳过: %s", cf
+                            )
+                            continue
+                        with cf.open("r", encoding="utf-8") as fh:
+                            payload = json.load(fh)
+                        if not isinstance(payload, dict):
+                            continue
+                        ci = payload.get("chunk_index")
+                        if not isinstance(ci, int):
+                            continue
+                        done.add(ci)
+                        for r in payload.get("results") or []:
+                            if isinstance(r, dict):
+                                results.append(_jsonable_to_pixel_result(r))
+                        loaded_any = True
+        except Exception:
+            logger.warning(
+                "[CHECKPOINT] 增量目录加载失败，忽略: %s", chunks_dir, exc_info=True
+            )
+            done, results, loaded_any = set(), [], False
+
+    # ── 2) 旧单文件（兼容迁移）───────────────────────────────────────
     path = _checkpoint_path(output_dir)
-    if not path.exists():
+    if path.exists():
+        try:
+            _assert_checkpoint_path_safe(path, output_dir)
+            if path.stat().st_size > 500 * 1024 * 1024:
+                logger.warning(
+                    "[CHECKPOINT] 检查点文件异常过大（%d bytes），跳过加载",
+                    path.stat().st_size,
+                )
+            else:
+                with path.open("r", encoding="utf-8") as fh:
+                    payload = json.load(fh)
+                if isinstance(payload, dict) and (
+                    payload.get("start_date") == start_date
+                    and payload.get("end_date") == end_date
+                ):
+                    done.update(int(i) for i in (payload.get("completed_chunks") or []))
+                    raw_results = payload.get("all_results") or []
+                    results.extend(
+                        _jsonable_to_pixel_result(r) if isinstance(r, dict) else r
+                        for r in raw_results
+                    )
+                    loaded_any = True
+                # 已消费的旧文件改名防重复（结果已在内存，增量保存不会重写它）
+                migrated = path.with_suffix(path.suffix + ".done")
+                with contextlib.suppress(OSError):
+                    os.replace(path, migrated)
+        except Exception:
+            logger.warning("[CHECKPOINT] 旧格式加载失败，忽略: %s", path, exc_info=True)
+
+    if not loaded_any:
         return None
-    # G4-02: 路径归属校验 — 确保检查点文件在 output_dir 内
-    try:
-        _assert_checkpoint_path_safe(path, output_dir)
-    except ValueError:
-        logger.warning("[CHECKPOINT] 路径归属校验失败，跳过加载: %s", path)
-        return None
-    # Guard against abnormally large checkpoint files (possible corruption/DoS)
-    if path.stat().st_size > 500 * 1024 * 1024:
-        logger.warning(
-            "[CHECKPOINT] 检查点文件异常过大（%d bytes），跳过加载", path.stat().st_size
-        )
-        return None
-    try:
-        # G4-02: pickle.load → json.load，消除反序列化 RCE 风险
-        with path.open("r", encoding="utf-8") as fh:
-            payload = json.load(fh)
-        if not isinstance(payload, dict):
-            return None
-        if (
-            payload.get("start_date") != start_date
-            or payload.get("end_date") != end_date
-        ):
-            return None
-        done = {int(i) for i in (payload.get("completed_chunks") or [])}
-        raw_results = payload.get("all_results") or []
-        results: list[Any] = [
-            _jsonable_to_pixel_result(r) if isinstance(r, dict) else r
-            for r in raw_results
-        ]
-        return done, results
-    except Exception:
-        logger.warning("[CHECKPOINT] 加载失败，忽略: %s", path, exc_info=True)
-        return None
+    return done, results
 
 
-def _save_chunk_checkpoint(
+def _append_chunk_checkpoint(
     output_dir: str | Path,
     *,
     start_date: str,
     end_date: str,
-    completed_chunks: set[int],
-    all_results: list[Any],
+    chunk_index: int,
+    chunk_results: list[Any],
 ) -> None:
-    path = _checkpoint_path(output_dir)
-    # G4-02: 路径归属校验 — 确保检查点文件在 output_dir 内
+    """P3 增量保存：只写本 chunk 的结果文件（O(单 chunk)）。
+
+    替代旧 ``_save_chunk_checkpoint`` 的全量重写（O(全部累积结果)/次）。
+    meta.json 只在目录首次创建时写一次（日期窗口标识）；chunk 文件
+    tmp+os.replace 原子落盘。
+    """
+    chunks_dir = _chunks_checkpoint_dir(output_dir)
     try:
-        _assert_checkpoint_path_safe(path, output_dir)
+        _assert_checkpoint_path_safe(chunks_dir, output_dir)
     except ValueError:
-        logger.warning("[CHECKPOINT] 路径归属校验失败，跳过写入: %s", path)
+        logger.warning("[CHECKPOINT] 路径归属校验失败，跳过增量写入: %s", chunks_dir)
         return
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # G4-02: pickle.dump → json.dump，消除反序列化 RCE 风险
+        chunks_dir.mkdir(parents=True, exist_ok=True)
+        meta_path = _chunks_meta_path(chunks_dir)
+        if not meta_path.exists():
+            meta_tmp = meta_path.with_suffix(meta_path.suffix + f".tmp.{os.getpid()}")
+            with meta_tmp.open("w", encoding="utf-8") as fh:
+                json.dump({"start_date": start_date, "end_date": end_date}, fh)
+            os.replace(meta_tmp, meta_path)
+
+        chunk_path = _chunk_file_path(chunks_dir, chunk_index)
+        tmp_path = chunk_path.with_suffix(chunk_path.suffix + f".tmp.{os.getpid()}")
         payload = {
-            "start_date": start_date,
-            "end_date": end_date,
-            "completed_chunks": sorted(completed_chunks),
-            "all_results": [
+            "chunk_index": int(chunk_index),
+            "results": [
                 _pixel_result_to_jsonable(r) if isinstance(r, PixelResult) else r
-                for r in all_results
+                for r in chunk_results
             ],
         }
-        # E-6: 临时文件+原子替换——直写 `open("w")` 截断旧 checkpoint 后崩溃，
-        # resume 会静默全量重算；tmp 先落全量再 replace 保证任一时刻文件完整
-        tmp_path = path.with_suffix(
-            path.suffix + f".tmp.{os.getpid()}"
-        )
         with tmp_path.open("w", encoding="utf-8") as fh:
             json.dump(payload, fh, allow_nan=True)
-        os.replace(tmp_path, path)
+        os.replace(tmp_path, chunk_path)
     except Exception:
-        logger.warning("[CHECKPOINT] 写入失败: %s", path, exc_info=True)
+        logger.warning(
+            "[CHECKPOINT] 增量写入失败（chunk %d）: %s",
+            chunk_index,
+            chunks_dir,
+            exc_info=True,
+        )
+
+
+def _cleanup_chunk_checkpoint(output_dir: str | Path) -> None:
+    """成功完成后清理检查点（增量目录 + 旧单文件及其 .done 迁移残留）。
+
+    此前成功后检查点永久残留（下次同日期运行会误 resume 到旧结果
+    之外的重复计算窗口）。
+    """
+    import shutil
+
+    chunks_dir = _chunks_checkpoint_dir(output_dir)
+    with contextlib.suppress(OSError):
+        shutil.rmtree(chunks_dir, ignore_errors=True)
+    legacy = _checkpoint_path(output_dir)
+    for suffix in ("", ".done"):
         with contextlib.suppress(OSError):
-            tmp_path.unlink(missing_ok=True)
+            legacy.with_suffix(legacy.suffix + suffix).unlink(missing_ok=True)
 
 
 def _assemble_block_grids(
@@ -2565,6 +2654,7 @@ def _chunk_progressive_write(
     max_valid_pixels: int,
     progress_callback: Any,
     reuse_block_cache: bool,
+    chunk_results: list[Any] | None = None,
 ) -> None:
     """Checkpoint 保存 + 进度回调 + 渐进写盘。
 
@@ -2582,14 +2672,16 @@ def _chunk_progressive_write(
         max_valid_pixels: 最大有效像元数
         progress_callback: 进度回调
         reuse_block_cache: 是否复用缓存
+        chunk_results: 本 chunk 新增的像元结果（增量 checkpoint 用）
     """
     if reuse_block_cache and output_dir:
-        _save_chunk_checkpoint(
+        # P3 增量化：只写本 chunk 结果文件（旧全量重写 O(N)/次 → O(单 chunk)/次）
+        _append_chunk_checkpoint(
             output_dir,
             start_date=config.start_date,
             end_date=config.end_date,
-            completed_chunks=state.completed_chunks,
-            all_results=state.all_results,
+            chunk_index=ci,
+            chunk_results=chunk_results or [],
         )
 
     _emit_progress(
@@ -2842,6 +2934,7 @@ def _process_one_chunk(
         max_valid_pixels,
         progress_callback,
         reuse_block_cache,
+        chunk_results=list(batch_results),
     )
 
     # 测试模式：检查像元限制
@@ -3317,6 +3410,12 @@ def retrieve_omega_sf_daily(
         )
         if state.stop:
             break
+
+    # P3（2026-08-23）：正常走完（含 max_valid_pixels 达标的提前终止）即清理
+    # 检查点——成功后残留会让下次同日期运行误 resume。异常/取消路径不经过
+    # 此处，检查点保留供续算。
+    if reuse_block_cache and output_dir:
+        _cleanup_chunk_checkpoint(output_dir)
 
     _emit_progress(
         progress_callback,
