@@ -904,10 +904,16 @@ export function createOverlayImageModule(
 
     const visibleSet = new Set(visibleOverlayLayerIds)
 
-    // 1) 移除真正从 activeLayers 列表消失的图层（用户删除图层）
+    // 1) 移除真正从 activeLayers 列表消失的图层（用户删除图层）。
+    // 2026-08-24 地图闪现修复：先把本轮要新增的 overlay 全部加载就绪，再移除
+    // 不在 active 列表的旧 id——此前"先删后加"，静态层绑定产物 overlay 时
+    //（catalogId→imported-* id 变更）删旧是同步的、加新要等两次网络往返，
+    // 中间空窗=地图图层一闪而过；若新源加载失败则永久消失。
+    const activeSet = new Set(activeOverlayLayerIds)
+    const toRemove: string[] = []
     for (const layerId of Array.from(loadedOverlays.keys())) {
-      if (!activeOverlayLayerIds.includes(layerId)) {
-        _removeOverlay(layerId)
+      if (!activeSet.has(layerId)) {
+        toRemove.push(layerId)
       }
     }
 
@@ -938,6 +944,11 @@ export function createOverlayImageModule(
           ),
         ),
       )
+    }
+
+    // 3) 新源就绪后再移除被替换/删除的旧 id（无空窗）。
+    for (const layerId of toRemove) {
+      _removeOverlay(layerId)
     }
   }
 
