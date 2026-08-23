@@ -15,7 +15,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def _backend_available() -> bool:
@@ -42,6 +45,11 @@ def resolve_remote_credentials(uri: str) -> dict[str, Any] | None:
     except ImportError:
         return None
     except Exception:
+        # 保留根因可见（凭据 profile 配置错误/解密失败等）——
+        # 回顾审查 2026-08-23：静默吞异常会让故障排查只看到通用错误
+        logger.warning(
+            "backend_bridge: remote auth resolve failed for %s", uri, exc_info=True
+        )
         return None
 
 
@@ -60,6 +68,9 @@ def get_portal_credentials() -> dict[str, Any] | None:
     except ImportError:
         return None
     except Exception:
+        logger.warning(
+            "backend_bridge: portal credentials resolve failed", exc_info=True
+        )
         return None
 
 

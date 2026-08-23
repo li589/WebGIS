@@ -4,6 +4,7 @@ import { overlaySafeWgs84Bounds } from '../../services/geo-math'
 import { buildOverlayStyleQuery } from './layer-symbology'
 import {
   addBandedImageSources,
+  BAND_ID_INFIX,
   needsBanding,
   removeBandedLayers,
   syncBandedLayerPaint,
@@ -545,6 +546,13 @@ export function createOverlayImageModule(
     })
   }
 
+  /** 当前地图上是否存在该 overlay 的条带 layer（主 layer 应保持隐藏的信号）。 */
+  function _hasBandLayers(rasterLayerId: string): boolean {
+    const style = options.map.getStyle()
+    if (!style?.layers) return false
+    return style.layers.some((l) => l.id.startsWith(`${rasterLayerId}${BAND_ID_INFIX}`))
+  }
+
   /**
    * 重建条带 layer（image URL/bounds 变化后调用——条带图随主图刷新）。
    * 主 layer 若被条带隐藏，重建后仍由条带承担渲染。
@@ -559,11 +567,20 @@ export function createOverlayImageModule(
       return
     }
     removeBandedLayers(options.map, loaded.sourceId, loaded.rasterLayerId)
+    // 重建期（图片加载是异步）先恢复主 layer 顶替显示，避免删旧条带到
+    // 新条带就绪之间出现空白窗口；addBandedImageSources 建好条带后会
+    // 重新隐藏主 layer（回顾审查 2026-08-23 发现的闪空问题）。
+    if (
+      (desiredVisibility.get(loaded.layerId) ?? true) &&
+      options.map.getLayer(loaded.rasterLayerId)
+    ) {
+      options.map.setLayoutProperty(loaded.rasterLayerId, 'visibility', 'visible')
+    }
     void addBandedImageSources(options.map, loaded.sourceId, loaded.rasterLayerId, url, bounds, {
       opacity: loaded.opacity,
       extraPaint: { 'raster-resampling': 'nearest' },
     }).catch(() => {
-      /* 重建失败：主 layer 单图渲染降级 */
+      /* 重建失败：主 layer 单图渲染降级（已恢复 visible） */
     })
   }
 
@@ -1088,16 +1105,9 @@ export function createOverlayImageModule(
         }
       | undefined
     if (!source || !loaded.bounds) return
-    _applyImageSourceUpdate(
-      source,
-      _previewUrl(layerId, loaded.currentTime, loaded.style),
-      loaded.bounds,
-    )
-    _rebuildBandsIfNeeded(
-      loaded,
-      _previewUrl(layerId, loaded.currentTime, loaded.style),
-      loaded.bounds,
-    )
+    const nextUrl = _previewUrl(layerId, loaded.currentTime, loaded.style)
+    _applyImageSourceUpdate(source, nextUrl, loaded.bounds)
+    _rebuildBandsIfNeeded(loaded, nextUrl, loaded.bounds)
   }
 
   function setOverlayOpacity(layerId: string, opacity: number) {
@@ -1117,11 +1127,14 @@ export function createOverlayImageModule(
     desiredVisibility.set(layerId, visible)
     const loaded = loadedOverlays.get(layerId)
     if (!loaded) return
+    // 条带 layer 存在时由条带承担渲染——主 layer 必须保持隐藏，
+    // 否则与条带双份叠加（透明度视觉翻倍，回顾审查 2026-08-23 发现）
+    const hasBands = _hasBandLayers(loaded.rasterLayerId)
     if (options.map.getLayer(loaded.rasterLayerId)) {
       options.map.setLayoutProperty(
         loaded.rasterLayerId,
         'visibility',
-        visible ? 'visible' : 'none',
+        visible && !hasBands ? 'visible' : 'none',
       )
     }
     // 条带 layer 的可见性同步（主 layer 被条带覆盖隐藏时由条带承担渲染）

@@ -1056,7 +1056,7 @@ register_overlay(
     )
 )
 
-# MeanCarbonDioxide（中国区域）
+# MeanCarbonDioxide（全球 GOSAT L3；2026-08-23 资产重导出后同步 p1/p99）
 register_overlay(
     OverlaySpec(
         layer_id="co2-cn",
@@ -1065,8 +1065,8 @@ register_overlay(
         bounds_filename="co2_overlay_bounds.json",
         category="static",
         palette="RdYlGn_r",
-        vmin=386.0,
-        vmax=391.0,
+        vmin=385.97,
+        vmax=390.01,
         unit="ppm",
         opacity=0.8,
         source_path=_CO2_TIF,

@@ -34,6 +34,7 @@ import logging
 import math
 import os
 import re
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -2086,13 +2087,19 @@ def _append_chunk_checkpoint(
         chunks_dir.mkdir(parents=True, exist_ok=True)
         meta_path = _chunks_meta_path(chunks_dir)
         if not meta_path.exists():
-            meta_tmp = meta_path.with_suffix(meta_path.suffix + f".tmp.{os.getpid()}")
+            # tmp 名含 uuid：同 pid 多线程（节点级并行若未来波及 chunk 循环）
+            # 下唯一化，避免交错写损坏（回顾审查 2026-08-23）
+            meta_tmp = meta_path.with_suffix(
+                meta_path.suffix + f".tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}"
+            )
             with meta_tmp.open("w", encoding="utf-8") as fh:
                 json.dump({"start_date": start_date, "end_date": end_date}, fh)
             os.replace(meta_tmp, meta_path)
 
         chunk_path = _chunk_file_path(chunks_dir, chunk_index)
-        tmp_path = chunk_path.with_suffix(chunk_path.suffix + f".tmp.{os.getpid()}")
+        tmp_path = chunk_path.with_suffix(
+            chunk_path.suffix + f".tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}"
+        )
         payload = {
             "chunk_index": int(chunk_index),
             "results": [

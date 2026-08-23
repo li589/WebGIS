@@ -122,7 +122,10 @@ export async function parseShpWithWorker(arrayBuffer: ArrayBuffer): Promise<{
       worker.terminate()
       resolve(null) // Worker 脚本加载失败等：回退主线程
     }
-    worker.postMessage(arrayBuffer, [arrayBuffer])
+    // 传副本而非 transfer：transfer 会 detach 主线程 buffer，超时/onerror
+    // 回退主线程时 arrayBuffer 已不可用（回顾审查 2026-08-23 发现）。
+    // 80MB 复制 ~几十 ms，远小于解析耗时，可接受。
+    worker.postMessage(arrayBuffer.slice(0))
   })
 }
 
@@ -165,7 +168,8 @@ export async function parseVectorFile(file: File): Promise<ParsedVectorImport> {
       layerCount = fromWorker.layerCount
     } else {
       const shpjs = (await import('shpjs')).default
-      const result = await shpjs(arrayBuffer.slice(0))
+      // arrayBuffer 原件未 transfer（Worker 收到的是副本），可直接使用
+      const result = await shpjs(arrayBuffer)
       const normalized = normalizeShpResult(result)
       geojson = normalized.geojson
       layerCount = normalized.layerCount
