@@ -152,6 +152,7 @@ def commit_science_raster_variable(
     conflict_policy: ConflictPolicy = "overwrite",
     temporal_meta: dict[str, Any] | None = None,
     palette: str | None = None,
+    cell_registration: str | None = None,
 ) -> dict[str, Any]:
     tmp_dir = import_paths.IMPORTS_DIR / "_tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -189,6 +190,9 @@ def commit_science_raster_variable(
         "conflict_policy": conflict_policy,
         **(temporal_meta or {}),
     }
+    if cell_registration:
+        # 像元配准（P1.5）：bounds 的 Area/Point 语义，供下游导出/校正参考
+        extra_meta["cell_registration"] = cell_registration
     result = register_geotiff_as_imported(
         out_tif,
         source_filename=f"{Path(base_name).stem}_{safe_var}.tif",

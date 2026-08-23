@@ -308,51 +308,64 @@ def _bounds_from_centers(lat_1d, lon_1d):
     return (west, south, east, north)
 
 
-# EASE-Grid 2.0 9km 标准定义（NSIDC）
+# ── EASE / Mercator 共享几何与重投影（2026-08-24 P2 收敛）───────────────────
+# 唯一真源：Code/backend/app/data_io/services/{grid_presets,grid_reproject}.py。
+# 通过 importlib 按文件路径直接加载（不触发 app 包初始化链），Tools 可独立
+# 运行；本地不再保留任何 EASE 常数 / 重投影副本。
 # 注意：500m 网格的像素尺寸 = 500.4475m；9km 标称 = 18 × 500.4475 = 9008.0552m
-# 早期硬编码 9000.879 是错误的（差 7.18m/像素，1624 行累计偏差 11.6km）
+# （早期硬编码 9000.879 是错误的，差 7.18m/像素，1624 行累计偏差 11.6km）。
+import importlib.util as _ilu
+
+
+def _load_shared_module(name: str):
+    """按文件路径加载后端共享纯依赖模块（grid_presets / grid_reproject）。"""
+    mod_path = (
+        Path(__file__).resolve().parents[1]
+        / "Code"
+        / "backend"
+        / "app"
+        / "data_io"
+        / "services"
+        / f"{name}.py"
+    )
+    if not mod_path.is_file():
+        raise RuntimeError(f"shared module not found: {mod_path}")
+    spec = _ilu.spec_from_file_location(f"_cgda_shared_{name}", mod_path)
+    mod = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+_grid_presets = _load_shared_module("grid_presets")
+_grid_reproject = _load_shared_module("grid_reproject")
+
+EASE_UL_BY_CRS = _grid_presets.EASE_UL_BY_CRS
+GRID_PRESETS = _grid_presets.GRID_PRESETS
+ease_grid_transform = _grid_presets.ease_grid_transform
+ease_grid_from_shape = _grid_presets.ease_grid_from_shape
+
 _EASE_GRID_9K_CRS = "EPSG:6933"
-_EASE_GRID_9K_PIXEL_SIZE = 9008.0552  # 米（= 18 × 500.4475，NSIDC 标准）
+_EASE_GRID_9K_PIXEL_SIZE = float(
+    GRID_PRESETS["ease2-global-9km"]["resolution"]
+)  # 米（= 18 × 500.4475，NSIDC 标准）
 
-# EASE-Grid 2.0 上左角（米）：同一 CRS 各分辨率共享角点（500m 基准网格对齐）
-# 出处：NSIDC EASE-Grid 2.0 https://nsidc.org/data/ease/ease_grid2.html
-# 半球 LAEA（6931/6932）官方角点 (-9,000,000, 9,000,000)；
-# EASE-Grid 1.0（3408/3409/3410）为球体 R=6371228 网格，角点不可与 2.0 混用：
-#   - 1.0 半球 25km：721×721 × 25067.525 m，UL 同 (-9,000,000, 9,000,000)
-#   - 1.0 全球：x ∈ ±17,334,194（lon=±180），y 由分辨率对齐（约 ±7,356,861）
-_EASE_GRID_UL_BY_CRS: dict[str, tuple[float, float]] = {
-    "EPSG:6933": (-17367530.45, 7314540.83),
-    "EPSG:6931": (-9000000.0, 9000000.0),
-    "EPSG:6932": (-9000000.0, 9000000.0),
-    "EPSG:3408": (-9000000.0, 9000000.0),
-    "EPSG:3409": (-9000000.0, 9000000.0),
-    "EPSG:3410": (-17334193.94, 7356860.29),
-}
-
-# Web Mercator（EPSG:3857）纬度极限：MapLibre ImageSource 四角无法表示 ±90°，
-# 超出即渲染失败（GPCP 全球 bounds (-180,-90,180,90) 图层不显示的根因）
-_MERCATOR_MAX_LAT = 85.0511287798066
-_MERCATOR_MAX_Y = 20037508.342789244
-_METERS_PER_DEGREE_EQUATOR = 111319.49079327358
+# Mercator 常数与重投影实现（与后端 overlay 链共享同一份）
+_MERCATOR_MAX_LAT = _grid_reproject.MERCATOR_MAX_LAT
+_MERCATOR_MAX_Y = _grid_reproject.MERCATOR_MAX_Y
+_METERS_PER_DEGREE_EQUATOR = _grid_reproject.METERS_PER_DEGREE_EQUATOR
+_reproject_to_mercator_linear = _grid_reproject.reproject_to_mercator_linear
 
 
 def _ease_grid_transform(
     src_crs: str = _EASE_GRID_9K_CRS, resolution_m: float = _EASE_GRID_9K_PIXEL_SIZE
 ):
-    """按 (CRS, 分辨率) 返回 EASE-Grid 仿射变换（rasterio 约定）。
+    """按 (CRS, 分辨率) 返回 EASE-Grid 仿射变换（委托共享真源 grid_presets）。
 
     覆盖 EASE-Grid 2.0 全球（6933）与半球 LAEA（6931/6932），以及
     NSIDC EASE-Grid 1.0（3408/3409/3410，球体 R=6371228）。角点查
-    ``_EASE_GRID_UL_BY_CRS``；1.0 与 2.0 角点不同，不可混用。
+    ``EASE_UL_BY_CRS``；1.0 与 2.0 角点不同，不可混用。
     """
-    from rasterio.transform import from_origin
-
-    ul = _EASE_GRID_UL_BY_CRS.get(src_crs)
-    if ul is None:
-        raise ValueError(
-            f"No EASE-Grid preset for {src_crs}; known: {sorted(_EASE_GRID_UL_BY_CRS)}"
-        )
-    return from_origin(ul[0], ul[1], resolution_m, resolution_m)
+    return ease_grid_transform(src_crs, resolution_m)
 
 
 def _ease_grid_9k_transform():
@@ -402,71 +415,11 @@ def _ease_grid_9k_transform_from_mat(mat_dict):
         return None
 
 
-def _reproject_to_mercator_linear(
-    data,
-    src_transform,
-    src_crs,
-    target_resolution=0.25,
-    clip_bounds=None,
-    resampling="nearest",
-):
-    """重投影任意投影栅格到 Web Mercator 线性网格（行/列在 3857 平面均匀）。
-
-    为什么目标不是等经纬（EPSG:4326）：MapLibre ``ImageSource`` 以 4 角坐标
-    在 Mercator 平面做双线性插值渲染。等经纬图像的行按纬度均匀分布，而
-    Mercator y 对纬度非线性 → 中高纬渲染偏移可达十几度；±90° 角点甚至
-    无法表示。把行重采样为 Mercator y 均匀后，四角线性插值即地理精确，
-    南北极边界自动收敛到 ±85.0511°（Mercator 全幅）。
-
-    Args:
-        data: (n_lat, n_lon) 2D 源数组
-        src_transform / src_crs: 源栅格仿射变换与 CRS
-        target_resolution: 输出分辨率（度，赤道处；1 度 = 111319.49 米）
-        clip_bounds: (west, south, east, north) WGS84 裁剪窗口；
-                     None = 全球全幅（-180 ~ 180, ±85.0511）
-    Returns:
-        (out_data, (west, south, east, north)) — bounds 为角点精确反算的经纬度
-    """
-    from pyproj import Transformer
-    from rasterio.enums import Resampling
-    from rasterio.transform import from_origin
-    from rasterio.warp import reproject
-
-    res_m = target_resolution * _METERS_PER_DEGREE_EQUATOR
-    if clip_bounds is None:
-        west_m = south_m = -_MERCATOR_MAX_Y
-        east_m = north_m = _MERCATOR_MAX_Y
-    else:
-        west, south, east, north = clip_bounds
-        fwd = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
-        west_m, south_m = fwd.transform(west, max(south, -_MERCATOR_MAX_LAT))
-        east_m, north_m = fwd.transform(east, min(north, _MERCATOR_MAX_LAT))
-
-    width = max(1, int(round((east_m - west_m) / res_m)))
-    height = max(1, int(round((north_m - south_m) / res_m)))
-    dst_transform = from_origin(west_m, north_m, res_m, res_m)
-
-    dst_data = np.full((height, width), np.nan, dtype=np.float64)
-    reproject(
-        source=data,
-        destination=dst_data,
-        src_transform=src_transform,
-        src_crs=src_crs,
-        dst_transform=dst_transform,
-        dst_crs="EPSG:3857",
-        resampling=(
-            Resampling.bilinear
-            if resampling == "bilinear"
-            else Resampling.nearest  # 分类数据最近邻；连续量可传 "bilinear"
-        ),
-        src_nodata=np.nan,
-        dst_nodata=np.nan,
-    )
-
-    inv = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
-    w, s = inv.transform(west_m, south_m)
-    e, n = inv.transform(east_m, north_m)
-    return dst_data, (float(w), float(s), float(e), float(n))
+# _reproject_to_mercator_linear 已下沉为共享实现（上方 importlib 别名），
+# 签名不变：(data, src_transform, src_crs, target_resolution=0.25,
+# clip_bounds=None, resampling="nearest") → (out_data, (w, s, e, n))。
+# 为什么目标是 Mercator 线性而非等经纬：MapLibre ImageSource 以 4 角坐标
+# 在 Mercator 平面双线性插值渲染，等经纬图像在中高纬会偏移十几度。
 
 
 def _reproject_ease_to_wgs84(

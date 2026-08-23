@@ -23,6 +23,7 @@ from typing import Any
 import numpy as np
 import rasterio
 from pyproj import Transformer
+from app.data_io.services.grid_presets import EASE_UL_BY_CRS, GRID_PRESETS
 from app.services.errors import (
     OverlayConfigError,
     OverlayNotFoundError,
@@ -238,11 +239,11 @@ class OverlaySpec:
             out = float(val)
             return out if np.isfinite(out) else None
 
-    # EASE-Grid 2.0 9km 标准参数（与 export_overlay_assets.py 同步）
+    # EASE-Grid 2.0 9km 标准参数——唯一真源 grid_presets.py（P2 收敛，
+    # 原 2026-08 之前此处为独立硬编码副本）
     _EASE_GRID_9K_CRS = "EPSG:6933"
-    _EASE_GRID_9K_PIXEL_SIZE = 9008.0552  # 米
-    _EASE_GRID_9K_UL_X = -17367530.45  # 上左角 x（米）
-    _EASE_GRID_9K_UL_Y = 7314540.83  # 上左角 y（米）
+    _EASE_GRID_9K_PIXEL_SIZE = float(GRID_PRESETS["ease2-global-9km"]["resolution"])  # 米
+    _EASE_GRID_9K_UL_X, _EASE_GRID_9K_UL_Y = EASE_UL_BY_CRS["EPSG:6933"]  # 上左角（米）
 
     def _sample_mat_ease_grid(
         self, src_path: Path, variable: str, lng: float, lat: float

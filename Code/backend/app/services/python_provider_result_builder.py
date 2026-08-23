@@ -119,22 +119,29 @@ def _infer_mat_data_variable(path: Path) -> str | None:
     return candidates[0] if len(candidates) == 1 else None
 
 
-def _read_mat_latlon_bounds(path: Path) -> list[float] | None:
+def _read_mat_latlon_bounds(path: Path) -> tuple[list[float], str] | None:
     """读 v5 .mat 的 lat/lon 变量推导 [west, south, east, north] bounds。
 
     .mat 数据变量不含地理参考，_load_mat_2d 只返回数组——若无 lat/lon，
     commit_science_raster_variable 会把 (176,256) 贴成默认全球网格（实测
     aridity 中国区数据被贴成 -173.8~180/0~88 全球 bounds，南北拉伸根源）。
     读取失败或坐标缺失返回 None（调用方回退 preset 匹配）。
+
+    像元配准（2026-08-24 P1.5）：坐标向量长度 == 数据维度 → CF 中心坐标
+    （PixelIsPoint），bounds 四边外扩半步长（此前直接 min/max，中心坐标源
+    整体少算半像元）；长度 == 维度+1 → 边缘坐标（PixelIsArea），min/max
+    即 bounds。判定见 cell_registration.coords_to_area_bounds。
+
+    Returns:
+        ([west, south, east, north], cell_registration) — registration 为
+        "area" | "point"，供 commit 链写入 bounds.json meta 传递。
     """
     if not path.exists() or path.suffix.lower() != ".mat":
         return None
     try:
         import scipy.io as sio
 
-        data = sio.loadmat(
-            str(path), squeeze_me=True, variable_names=["lat", "lon", "latitude", "longitude"]
-        )
+        data = sio.loadmat(str(path), squeeze_me=True)
     except Exception:
         return None
     lat = data.get("lat", data.get("latitude"))
@@ -144,15 +151,31 @@ def _read_mat_latlon_bounds(path: Path) -> list[float] | None:
         lon_arr = np.atleast_1d(np.asarray(lon, dtype=np.float64))
     except Exception:
         return None
-    if lat_arr.size < 2 or lon_arr.size < 2:
+
+    # 数据变量形状（用于配准判定）：优先推断的数据变量，退而求其次取
+    # 与坐标同长度约束的任一 2D 变量。
+    data_shape: tuple[int, ...] | None = None
+    var_name = _infer_mat_data_variable(path)
+    candidate = data.get(var_name) if var_name else None
+    if candidate is None:
+        for key, value in data.items():
+            if key.startswith("__"):
+                continue
+            arr = np.atleast_1d(np.asarray(value))
+            if arr.ndim == 2:
+                candidate = arr
+                break
+    if candidate is not None:
+        arr = np.asarray(candidate)
+        if arr.ndim == 2:
+            data_shape = tuple(arr.shape)
+
+    from app.data_io.services.cell_registration import coords_to_area_bounds
+
+    normalized = coords_to_area_bounds(lat_arr, lon_arr, data_shape)
+    if normalized is None:
         return None
-    if not (np.isfinite(lat_arr).all() and np.isfinite(lon_arr).all()):
-        return None
-    south, north = float(lat_arr.min()), float(lat_arr.max())
-    west, east = float(lon_arr.min()), float(lon_arr.max())
-    if not (-90 <= south < north <= 90 and -180 <= west < east <= 180):
-        return None
-    return [west, south, east, north]
+    return normalized
 
 # MIME types for the three standard algorithm artifact kinds. Indexed by
 # the artifact_name key used in result_dto.artifacts.
@@ -1140,11 +1163,13 @@ class PythonProviderResultBuilder:
 
             # .mat 内嵌 lat/lon（如 aridity 15~55N/70~140E）→ 推导 bounds
             # 精确贴图；缺坐标则回退 preset 匹配（EASE 等固定网格）。
-            mat_bounds = (
-                _read_mat_latlon_bounds(local_path)
-                if local_path.suffix.lower() == ".mat"
-                else None
-            )
+            # bounds 已做像元配准归一化（中心坐标源外扩半格，P1.5）。
+            mat_registration: str | None = None
+            mat_bounds: list[float] | None = None
+            if local_path.suffix.lower() == ".mat":
+                mat_normalized = _read_mat_latlon_bounds(local_path)
+                if mat_normalized is not None:
+                    mat_bounds, mat_registration = mat_normalized
             registered = commit_science_raster_variable(
                 local_path,
                 variable_id=variable,
@@ -1153,6 +1178,7 @@ class PythonProviderResultBuilder:
                 auto_confirm=True,
                 palette=product_palette,
                 bounds=mat_bounds,
+                cell_registration=mat_registration,
             )
         except Exception:
             logger.exception(
