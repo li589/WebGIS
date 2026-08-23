@@ -408,6 +408,7 @@ def _reproject_to_mercator_linear(
     src_crs,
     target_resolution=0.25,
     clip_bounds=None,
+    resampling="nearest",
 ):
     """重投影任意投影栅格到 Web Mercator 线性网格（行/列在 3857 平面均匀）。
 
@@ -453,7 +454,11 @@ def _reproject_to_mercator_linear(
         src_crs=src_crs,
         dst_transform=dst_transform,
         dst_crs="EPSG:3857",
-        resampling=Resampling.nearest,  # 分类数据用最近邻；连续数据可改 bilinear
+        resampling=(
+            Resampling.bilinear
+            if resampling == "bilinear"
+            else Resampling.nearest  # 分类数据最近邻；连续量可传 "bilinear"
+        ),
         src_nodata=np.nan,
         dst_nodata=np.nan,
     )
@@ -1364,32 +1369,57 @@ def export_era5_wdaa() -> None:
 
 
 def export_co2() -> None:
-    print("\n=== MeanCarbonDioxide (China) ===")
+    """MeanCarbonDioxide 全球层（GOSAT L3 粗网格 2.5°x2.0°）。
+
+    2026-08-23 重写：
+    - 源路径修正（原 I:\\Geograph_DataSet\\CO2\\... 已失效，实际位于
+      Atmospheric\\CO2\\MidLayerCO2Column\\TIF\\，此前 File-not-found 一直
+      SKIP，07-18 旧资产未再更新）。
+    - 重投影到 Mercator 线性网格（_reproject_to_mercator_linear）——旧资产
+      直接用源 bounds（north=90 超 Mercator 上限 85.051）贴图导致南北
+      大范围拉伸。
+    - bilinear 重采样：源 2.5° 粗网格的连续量（CO₂ ppm）线性插值合理，
+      缓解瓦片块状感（nearest 会放大块状）。
+    - vmin/vmax 用源数据 p1/p99（386-391 为旧数据范围，实测 370-407）。
+    """
+    print("\n=== MeanCarbonDioxide (global, GOSAT L3) ===")
     tif_path = Path(
-        r"I:\Geograph_DataSet\CO2\MidLayerCO2Column\TIF\MeanCarbonDioxide.tif"
+        r"I:\Geograph_DataSet\Atmospheric\CO2\MidLayerCO2Column\TIF\MeanCarbonDioxide.tif"
     )
     if not tif_path.exists():
-        print("  [SKIP] File not found")
+        print(f"  [SKIP] File not found: {tif_path}")
         return
 
     import rasterio
 
     out_dir = _OUT_ROOT / "co2"
-    bounds = _CHINA_BBOX
 
     with rasterio.open(tif_path) as src:
         data = src.read(1).astype(np.float64)
-        west, south, east, north = src.bounds
+        src_transform = src.transform
+        src_crs = src.crs or "EPSG:4326"
+        print(
+            f"  source: {data.shape}, bounds={tuple(round(b, 2) for b in src.bounds)}, "
+            f"range={np.nanmin(data):.2f}~{np.nanmax(data):.2f} ppm"
+        )
 
-    print(
-        f"  Data shape: {data.shape}, range: {np.nanmin(data):.2f} to {np.nanmax(data):.2f} ppm"
+    # 全球全幅 Mercator 线性网格；north=90 由管线 clamp 到 85.051
+    data, bounds = _reproject_to_mercator_linear(
+        data,
+        src_transform,
+        str(src_crs),
+        target_resolution=0.25,
+        clip_bounds=None,
+        resampling="bilinear",
     )
-    _render_png(data, out_dir / "co2_overlay.png", cmap="RdYlGn_r", vmin=386, vmax=391)
-    _write_bounds(
-        out_dir / "co2_overlay_bounds.json",
-        "co2-cn",
-        (float(west), float(south), float(east), float(north)),
+    print(f"  reprojected (mercator-linear): {data.shape}, bounds={bounds}")
+
+    vmin, vmax = _smap_aux_continuous_range(data)
+    print(f"  display range (p1/p99): vmin={vmin}, vmax={vmax}")
+    _render_png(
+        data, out_dir / "co2_overlay.png", cmap="RdYlGn_r", vmin=vmin, vmax=vmax
     )
+    _write_bounds(out_dir / "co2_overlay_bounds.json", "co2-cn", bounds)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -26,6 +26,29 @@ export function needsBanding(bounds: [number, number, number, number]): boolean 
   return bounds[3] - bounds[1] >= MIN_SPAN_FOR_BANDING
 }
 
+/**
+ * 判断 PNG 是否已是 Mercator 线性网格（行按 Mercator y 均匀，如
+ * export_overlay_assets._reproject_to_mercator_linear 的产物——全球层
+ * 1440x1440，行距为 Mercator y 均匀）。这类 PNG 直接按 bounds 贴四角
+ * 即地理精确，**不得条带化**（条带化会把 Mercator 线性行误当等纬度行
+ * 切带 → 南北大范围拉伸错位，2026-08-23 smap-aux-* 回归教训）。
+ *
+ * 判据：等经纬网格期望高 = 宽 × lat_span / lon_span；实际高明显偏离
+ *（全球层实际 1440 vs 等经纬期望 ~680）即 Mercator 线性。
+ */
+export function isMercatorLinearPng(
+  bounds: [number, number, number, number],
+  imgW: number,
+  imgH: number,
+): boolean {
+  const lonSpan = bounds[2] - bounds[0]
+  const latSpan = bounds[3] - bounds[1]
+  if (lonSpan <= 0 || latSpan <= 0 || !imgW || !imgH) return false
+  const eqLatHeight = (imgW * latSpan) / lonSpan
+  if (eqLatHeight <= 0) return false
+  return Math.abs(imgH - eqLatHeight) / imgH > 0.12
+}
+
 function _loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image()
@@ -73,6 +96,9 @@ export async function addBandedImageSources(
   const imgW = img.naturalWidth
   const imgH = img.naturalHeight
   if (!imgW || !imgH) return 0
+
+  // Mercator 线性 PNG（后端已重投影）：直接贴 bounds 即精确，跳过条带化
+  if (isMercatorLinearPng(bounds, imgW, imgH)) return 0
 
   const masterLayer = map.getLayer(rasterLayerId)
   if (!masterLayer) return 0
