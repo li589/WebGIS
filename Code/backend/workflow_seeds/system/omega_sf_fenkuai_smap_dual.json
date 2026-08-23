@@ -221,6 +221,12 @@
     "notes": "SMAP 双温度方案：temp_scheme=DUAL（dual_tg_mode=PAPER_CT，Ct=(SM_ref/0.30)^0.30 幂律），GLDAS 按 SMAP 过境本地时（06:00）±1.6h 匹配；无 GLDAS 匹配的日期自动剔除并记日志。无 GLDAS 模板时走过境匹配（use_gldas_template=false）。",
     "has_time_range_node": true,
     "has_bbox_node": true,
-    "has_output_node": true
+    "has_output_node": true,
+    "group_title": "SMAP 双源 ω 分块反演产物",
+    "output_labels": {
+      "SM": "土壤水分",
+      "VOD": "植被光学厚度",
+      "OMEGA": "反演参数 ω"
+    }
   }
 }

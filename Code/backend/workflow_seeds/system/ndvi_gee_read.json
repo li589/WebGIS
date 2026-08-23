@@ -87,6 +87,10 @@
     "scheme": "GEE_MODIS_NDVI",
     "pipeline": "GEE export MOD13A2 NDVI → map_layer",
     "prerequisite": "GEE 账号（SA JSON 凭证，通过 GeeBridgeService 账号池管理）",
-    "notes": "GEE 引擎工作流。使用 MODIS MOD13A2（1km 16-day NDVI），也可切换为 VIIRS VNP13A1。导出由 GeeBridgeService._execute_workflow() 提交，结果通过 _build_result_refs() 返回 map_layer。priority=low 建议用于大范围合成。"
+    "notes": "GEE 引擎工作流。使用 MODIS MOD13A2（1km 16-day NDVI），也可切换为 VIIRS VNP13A1。导出由 GeeBridgeService._execute_workflow() 提交，结果通过 _build_result_refs() 返回 map_layer。priority=low 建议用于大范围合成。",
+    "group_title": "NDVI 植被指数（GEE）",
+    "output_labels": {
+      "result": "NDVI 植被指数"
+    }
   }
 }

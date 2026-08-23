@@ -8,7 +8,14 @@
     "readonly": true,
     "is_template": true,
     "linked_layer_id": null,
-    "tags": ["analysis", "fusion", "raster", "stub_v1", "sample", "hidden"],
+    "tags": [
+      "analysis",
+      "fusion",
+      "raster",
+      "stub_v1",
+      "sample",
+      "hidden"
+    ],
     "category": "analysis",
     "resource_profile": "heavy"
   },
@@ -19,7 +26,10 @@
     {
       "id": 1,
       "type": "data/source",
-      "pos": [60, 160],
+      "pos": [
+        60,
+        160
+      ],
       "properties": {
         "path": "{DATA_ROOT}/_runtime/smoke_points.geojson",
         "dataset_key": "points_path"
@@ -28,7 +38,10 @@
     {
       "id": 2,
       "type": "data/bbox",
-      "pos": [60, 320],
+      "pos": [
+        60,
+        320
+      ],
       "properties": {
         "west": 112.9,
         "south": 22.9,
@@ -40,7 +53,10 @@
     {
       "id": 3,
       "type": "fusion/spatial_interpolate",
-      "pos": [400, 180],
+      "pos": [
+        400,
+        180
+      ],
       "properties": {
         "method": "idw",
         "power": 2.0,
@@ -51,7 +67,25 @@
     }
   ],
   "links": [
-    [1, 1, 2, 3, 1],
-    [2, 2, 0, 3, 2]
-  ]
+    [
+      1,
+      1,
+      2,
+      3,
+      1
+    ],
+    [
+      2,
+      2,
+      0,
+      3,
+      2
+    ]
+  ],
+  "extra": {
+    "group_title": "IDW 空间插值",
+    "output_labels": {
+      "result": "插值结果栅格"
+    }
+  }
 }

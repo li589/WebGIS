@@ -57,6 +57,10 @@
     }
   ],
   "extra": {
-    "purpose": "weather_editor_demo"
+    "purpose": "weather_editor_demo",
+    "group_title": "风场演示",
+    "output_labels": {
+      "result": "风场结果"
+    }
   }
 }

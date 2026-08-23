@@ -200,6 +200,12 @@
       "OMEGA"
     ],
     "notes": "单温度方案用 Ts（SMAP 地表温度）；NDVI 用 DOY 气候态（本地 NDVIday 仅到 2023）。DOY 气候态从 avg_build_start_year~avg_build_end_year 的逐日 OMEGA 构建。产物发 SM/VOD/OMEGA 三个时间序列图层（并入「SMAP ω 反演」合并组 avg 成员）。",
-    "has_output_node": true
+    "has_output_node": true,
+    "group_title": "SMAP ω 反演产物（单源平均）",
+    "output_labels": {
+      "SM": "土壤水分",
+      "VOD": "植被光学厚度",
+      "OMEGA": "反演参数 ω"
+    }
   }
 }

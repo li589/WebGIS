@@ -97,5 +97,11 @@
       3,
       2
     ]
-  ]
+  ],
+  "extra": {
+    "group_title": "直方图统计",
+    "output_labels": {
+      "result": "直方图结果"
+    }
+  }
 }

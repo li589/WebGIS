@@ -8,7 +8,12 @@
     "readonly": true,
     "is_template": true,
     "linked_layer_id": null,
-    "tags": ["analysis", "zonal", "statistics", "raster"],
+    "tags": [
+      "analysis",
+      "zonal",
+      "statistics",
+      "raster"
+    ],
     "category": "analysis"
   },
   "workflow_id": "raster_zonal_stats_aligned",
@@ -18,7 +23,10 @@
     {
       "id": 1,
       "type": "data/source",
-      "pos": [80, 160],
+      "pos": [
+        80,
+        160
+      ],
       "properties": {
         "path": "{DATA_ROOT}",
         "dataset_key": "input_path",
@@ -28,7 +36,10 @@
     {
       "id": 2,
       "type": "module/statistics",
-      "pos": [420, 160],
+      "pos": [
+        420,
+        160
+      ],
       "properties": {
         "mode": "zonal",
         "variable": "",
@@ -38,6 +49,18 @@
     }
   ],
   "links": [
-    [1, 1, 2, 2, 2]
-  ]
+    [
+      1,
+      1,
+      2,
+      2,
+      2
+    ]
+  ],
+  "extra": {
+    "group_title": "对齐分区统计",
+    "output_labels": {
+      "result": "分区统计结果"
+    }
+  }
 }

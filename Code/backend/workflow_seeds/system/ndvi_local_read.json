@@ -107,6 +107,10 @@
   ],
   "extra": {
     "purpose": "local_disk_pipeline",
-    "notes": "VIIRS 9km 逐月 NDVI 本地读取与处理链路。"
+    "notes": "VIIRS 9km 逐月 NDVI 本地读取与处理链路。",
+    "group_title": "NDVI 植被指数（本地）",
+    "output_labels": {
+      "result": "NDVI 植被指数"
+    }
   }
 }

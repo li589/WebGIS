@@ -8,7 +8,13 @@
     "readonly": true,
     "is_template": true,
     "linked_layer_id": null,
-    "tags": ["analysis", "gis", "dem", "watershed", "ui-panel"],
+    "tags": [
+      "analysis",
+      "gis",
+      "dem",
+      "watershed",
+      "ui-panel"
+    ],
     "category": "analysis",
     "resource_profile": "heavy"
   },
@@ -19,7 +25,10 @@
     {
       "id": 1,
       "type": "data/source",
-      "pos": [60, 100],
+      "pos": [
+        60,
+        100
+      ],
       "properties": {
         "path": "{DATA_ROOT}/_runtime/smoke_dem.tif",
         "dataset_key": "input_path"
@@ -28,7 +37,10 @@
     {
       "id": 2,
       "type": "data/source",
-      "pos": [60, 280],
+      "pos": [
+        60,
+        280
+      ],
       "properties": {
         "path": "{DATA_ROOT}/_runtime/smoke_pour_points.geojson",
         "dataset_key": "pour_points_path"
@@ -37,7 +49,10 @@
     {
       "id": 3,
       "type": "gis/watershed",
-      "pos": [400, 180],
+      "pos": [
+        400,
+        180
+      ],
       "properties": {
         "flow_direction": "d8",
         "fill_threshold": 0.01,
@@ -46,7 +61,25 @@
     }
   ],
   "links": [
-    [1, 1, 2, 3, 1],
-    [2, 2, 2, 3, 2]
-  ]
+    [
+      1,
+      1,
+      2,
+      3,
+      1
+    ],
+    [
+      2,
+      2,
+      2,
+      3,
+      2
+    ]
+  ],
+  "extra": {
+    "group_title": "流域分析",
+    "output_labels": {
+      "result": "流域分析结果"
+    }
+  }
 }

@@ -174,10 +174,16 @@
     "pipeline": "timeseries_bundle → omega_block → daily_omega + omega_block_*.mat",
     "prerequisite": "SMAP 逐日 .mat + 辅助库；产出应落到 Inversion_Results/omega_block",
     "outputs": [
-      "OMEGA",
       "SM",
-      "VOD"
+      "VOD",
+      "OMEGA"
     ],
-    "notes": "timeseries.output_path → omega_block.input_mat；data/source 由 request.datasource_selection 聚合（不再 fan-in 到模块端口）。时间窗默认 2025-12-03..31（对齐本地 SMAP Dec）。"
+    "notes": "timeseries.output_path → omega_block.input_mat；data/source 由 request.datasource_selection 聚合（不再 fan-in 到模块端口）。时间窗默认 2025-12-03..31（对齐本地 SMAP Dec）。",
+    "group_title": "SMAP ω 分块反演产物",
+    "output_labels": {
+      "SM": "土壤水分",
+      "VOD": "植被光学厚度",
+      "OMEGA": "反演参数 ω"
+    }
   }
 }

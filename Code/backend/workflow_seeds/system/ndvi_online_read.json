@@ -176,6 +176,10 @@
     "cred_profile": "earthdata",
     "pipeline": "CMR granule search (public) → earthdata download → extract H5 → ndvi_hdf_preprocess (9 km GeoTIFF) → ndvi_daily → map_layer",
     "prerequisite": "下载步骤需 earthdata 凭证（NASA Earthdata 账号）；CMR 检索免凭据",
-    "notes": "模板种子：start_date/end_date 含 YYYYMMDD 占位符，运行前由 resolver 替换。产品为 VIIRS VNP13C1（0.05° CMG 16-day NDVI，HDF5）——与 A1/A2 Matlab 预处理管线的 CMG 网格一致；granule URL 由 CMR 动态解析（云 CDN 对象名不可直接构造）。archive/extract 对裸 .h5 走透传并按 url 恢复原始文件名（观测日期 YYYYDDD 自文件名解析）。"
+    "notes": "模板种子：start_date/end_date 含 YYYYMMDD 占位符，运行前由 resolver 替换。产品为 VIIRS VNP13C1（0.05° CMG 16-day NDVI，HDF5）——与 A1/A2 Matlab 预处理管线的 CMG 网格一致；granule URL 由 CMR 动态解析（云 CDN 对象名不可直接构造）。archive/extract 对裸 .h5 走透传并按 url 恢复原始文件名（观测日期 YYYYDDD 自文件名解析）。",
+    "group_title": "NDVI 植被指数（在线）",
+    "output_labels": {
+      "result": "NDVI 植被指数"
+    }
   }
 }

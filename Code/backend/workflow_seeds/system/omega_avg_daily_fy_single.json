@@ -226,6 +226,12 @@
       "OMEGA"
     ],
     "notes": "FY 方案：build_daily_bundle_for_date 按 fy_platform=3D/3B 从 fy3d_folder/fy3b_folder 加载 TB；SMAP .mat 仅提供 Ts/vwc/SM_ref 辅助量；NDVI 用 DOY 气候态。产物发 SM/VOD/OMEGA 三个时间序列图层（并入「风云 ω 反演」合并组 avg 成员）。",
-    "has_output_node": true
+    "has_output_node": true,
+    "group_title": "风云 ω 反演产物（单日）",
+    "output_labels": {
+      "SM": "土壤水分",
+      "VOD": "植被光学厚度",
+      "OMEGA": "反演参数 ω"
+    }
   }
 }

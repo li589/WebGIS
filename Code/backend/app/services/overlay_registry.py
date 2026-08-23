@@ -780,82 +780,53 @@ def list_overlay_ids() -> list[str]:
     return sorted(ids)
 
 
-# ─── 静态图层 ─────────────────────────────────────────────────────────────────
+# ─── 静态图层（配置驱动，P1-B 2026-08-24）─────────────────────────────────────
+# 22 个静态层注册数据化到 app/catalog_seeds/overlay_assets.json（palette/
+# vmin/vmax/源路径等纯配置以 JSON 为单一真源，加图层零代码）。
+# 时序层（time_list 运行时目录扫描）与 imported-* 动态导入仍走代码注册。
 
-# DEM ETOPO_2022 bed topography（全球）
-register_overlay(
-    OverlaySpec(
-        layer_id="dem-etopo",
-        overlay_dir=_OVERLAY_PNG_ROOT / "dem",
-        png_filename="etopo_bed_overlay.png",
-        bounds_filename="etopo_bed_overlay_bounds.json",
-        category="static",
-        palette="terrain",
-        vmin=-8000.0,
-        vmax=8000.0,
-        unit="m",
-        opacity=0.85,
-        source_path=_DEM_SOURCE_TIF,
-        source_reader="geotiff",
-    )
-)
+_OVERLAY_ASSETS_PATH = Path(__file__).resolve().parent.parent / "catalog_seeds" / "overlay_assets.json"
 
-# MCD12Q1 土地覆盖（中国区域 0.25°）
-register_overlay(
-    OverlaySpec(
-        layer_id="landcover-cn",
-        overlay_dir=_OVERLAY_PNG_ROOT / "thematic",
-        png_filename="landcover_overlay.png",
-        bounds_filename="landcover_overlay_bounds.json",
-        category="static",
-        palette="igbp",
-        vmin=0.0,
-        vmax=17.0,
-        unit="IGBP class",
-        opacity=0.8,
-        source_path=_STAGE2_ALIGNED / "landcover_025.mat",
-        source_variable="landcover",
-        source_reader="mat",
-    )
-)
 
-# Human Footprint 2018（中国区域 0.25°）
-register_overlay(
-    OverlaySpec(
-        layer_id="hfp-cn",
-        overlay_dir=_OVERLAY_PNG_ROOT / "thematic",
-        png_filename="hfp_overlay.png",
-        bounds_filename="hfp_overlay_bounds.json",
-        category="static",
-        palette="hot",
-        vmin=0.0,
-        vmax=50.0,
-        unit="HFP score",
-        opacity=0.8,
-        source_path=_STAGE2_ALIGNED / "hfp_025.mat",
-        source_variable="hfp",
-        source_reader="mat",
-    )
-)
+def _register_static_overlays_from_config() -> None:
+    """从 catalog_seeds/overlay_assets.json 批量注册静态叠加层。
 
-# Aridity Index（中国区域 0.25°）
-register_overlay(
-    OverlaySpec(
-        layer_id="aridity-cn",
-        overlay_dir=_OVERLAY_PNG_ROOT / "thematic",
-        png_filename="aridity_overlay.png",
-        bounds_filename="aridity_overlay_bounds.json",
-        category="static",
-        palette="brg",
-        vmin=0.0,
-        vmax=2.0,
-        unit="AI",
-        opacity=0.8,
-        source_path=_STAGE2_ALIGNED / "aridity_025.mat",
-        source_variable="aridity",
-        source_reader="mat",
-    )
-)
+    JSON 字段与 OverlaySpec 一一对应；``overlay_subdir`` 相对
+    ``_OVERLAY_PNG_ROOT``，``source_path_rel`` 相对 settings.data_root
+    （正斜杠分隔，加载时经 ``_data_join`` 动态拼接——未配置 data_root 时
+    与原硬编码常量同样得到占位路径，行为等价）。
+    """
+    try:
+        raw = json.loads(_OVERLAY_ASSETS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise OverlayConfigError(f"overlay_assets.json load failed: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise OverlayConfigError("overlay_assets.json must be an object keyed by layer_id")
+
+    for layer_id, entry in raw.items():
+        if not isinstance(entry, dict):
+            raise OverlayConfigError(f"overlay_assets.json entry '{layer_id}' must be an object")
+        rel = entry.get("source_path_rel")
+        spec = OverlaySpec(
+            layer_id=str(layer_id),
+            overlay_dir=_OVERLAY_PNG_ROOT / str(entry["overlay_subdir"]),
+            category="static",
+            png_filename=entry.get("png_filename"),
+            bounds_filename=entry.get("bounds_filename"),
+            palette=str(entry.get("palette") or "viridis"),
+            vmin=entry.get("vmin"),
+            vmax=entry.get("vmax"),
+            unit=str(entry.get("unit") or ""),
+            opacity=float(entry.get("opacity", 0.7)),
+            crs=str(entry.get("crs") or "EPSG:4326"),
+            source_path=_data_join(*str(rel).split("/")) if rel else None,
+            source_variable=entry.get("source_variable"),
+            source_reader=str(entry.get("source_reader") or "auto"),
+        )
+        register_overlay(spec)
+
+
+_register_static_overlays_from_config()
 
 
 # ─── 时间序列图层 ────────────────────────────────────────────────────────────
@@ -947,133 +918,12 @@ _SMAP_AUX_VI_V_QA_MAT = _data_join(
 )
 
 
-# GEBCO 2024 DEM（中国区域）
-register_overlay(
-    OverlaySpec(
-        layer_id="gebco-dem-cn",
-        overlay_dir=_OVERLAY_PNG_ROOT / "gebco_dem",
-        png_filename="gebco_dem_overlay.png",
-        bounds_filename="gebco_dem_overlay_bounds.json",
-        category="static",
-        palette="terrain",
-        vmin=-2000.0,
-        vmax=6000.0,
-        unit="m",
-        opacity=0.85,
-        source_path=_GEBCO_NC,
-        source_variable="elevation",
-        source_reader="netcdf",
-    )
-)
 
-# CMFD 降水（中国 1km，2002-01）
-register_overlay(
-    OverlaySpec(
-        layer_id="cmfd-precip-cn",
-        overlay_dir=_OVERLAY_PNG_ROOT / "cmfd_precip",
-        png_filename="cmfd_precip_overlay.png",
-        bounds_filename="cmfd_precip_overlay_bounds.json",
-        category="static",
-        palette="YlGnBu",
-        vmin=0.0,
-        vmax=400.0,
-        unit="mm",
-        opacity=0.8,
-        source_path=_CMFD_TIF,
-        source_reader="geotiff",
-    )
-)
 
-# CLCD 1997 土地覆盖（中国）
-register_overlay(
-    OverlaySpec(
-        layer_id="clcd-cn",
-        overlay_dir=_OVERLAY_PNG_ROOT / "clcd",
-        png_filename="clcd_overlay.png",
-        bounds_filename="clcd_overlay_bounds.json",
-        category="static",
-        palette="tab10",
-        vmin=1.0,
-        vmax=9.0,
-        unit="class",
-        opacity=0.85,
-        source_path=_CLCD_TIF,
-        source_reader="geotiff",
-    )
-)
 
-# ESACCI BIOMASS 2020（中国区域）
-register_overlay(
-    OverlaySpec(
-        layer_id="biomass-cn",
-        overlay_dir=_OVERLAY_PNG_ROOT / "biomass",
-        png_filename="biomass_overlay.png",
-        bounds_filename="biomass_overlay_bounds.json",
-        category="static",
-        palette="YlGn",
-        vmin=0.0,
-        vmax=300.0,
-        unit="Mg/ha",
-        opacity=0.85,
-        source_path=_BIOMASS_NC,
-        source_variable="agb",
-        source_reader="netcdf",
-    )
-)
 
-# ERA5 DWAA SMCI 2020（白天热浪事件计数）
-register_overlay(
-    OverlaySpec(
-        layer_id="era5-dwaa-cn",
-        overlay_dir=_OVERLAY_PNG_ROOT / "era5_dwaa",
-        png_filename="era5_dwaa_overlay.png",
-        bounds_filename="era5_dwaa_overlay_bounds.json",
-        category="static",
-        palette="YlOrRd",
-        vmin=0.0,
-        vmax=10.0,
-        unit="events",
-        opacity=0.8,
-        source_path=_ERA5_DWAA_TIF,
-        source_reader="geotiff",
-    )
-)
 
-# ERA5 WDAA SMCI 2020（夜间热浪事件计数）
-register_overlay(
-    OverlaySpec(
-        layer_id="era5-wdaa-cn",
-        overlay_dir=_OVERLAY_PNG_ROOT / "era5_wdaa",
-        png_filename="era5_wdaa_overlay.png",
-        bounds_filename="era5_wdaa_overlay_bounds.json",
-        category="static",
-        palette="YlGnBu",
-        vmin=0.0,
-        vmax=15.0,
-        unit="events",
-        opacity=0.8,
-        source_path=_ERA5_WDAA_TIF,
-        source_reader="geotiff",
-    )
-)
 
-# MeanCarbonDioxide（全球 GOSAT L3；2026-08-23 资产重导出后同步 p1/p99）
-register_overlay(
-    OverlaySpec(
-        layer_id="co2-cn",
-        overlay_dir=_OVERLAY_PNG_ROOT / "co2",
-        png_filename="co2_overlay.png",
-        bounds_filename="co2_overlay_bounds.json",
-        category="static",
-        palette="RdYlGn_r",
-        vmin=385.97,
-        vmax=390.01,
-        unit="ppm",
-        opacity=0.8,
-        source_path=_CO2_TIF,
-        source_reader="geotiff",
-    )
-)
 
 # Soil DDCA 时间序列（中国 9km，2015-04-01 至 2015-05-17，60 天采样）
 register_overlay(
@@ -1105,44 +955,7 @@ register_overlay(
 _LANDSCAPE_METRICS_MAT = (
     _INVERSION_RESULTS_ROOT / "Landscape_Metrics_LandOnly_9KM_2020.mat"
 )
-register_overlay(
-    OverlaySpec(
-        layer_id="landscape-metrics-9km",
-        overlay_dir=_OVERLAY_PNG_ROOT / "landscape_metrics",
-        png_filename="landscape_metrics_overlay.png",
-        bounds_filename="landscape_metrics_overlay_bounds.json",
-        category="static",
-        palette="cividis",
-        # 数据分位（2026-08-21 实测 p50=0.41/p95=1.34/p99=1.61/max=2.22）：
-        # 上限用 p99=1.6 提升 0~1.3 主值域的色阶分辨率（旧 2.0 全域发暗）
-        vmin=0.0,
-        vmax=1.6,
-        unit="SHDI",
-        opacity=0.8,
-        source_path=_LANDSCAPE_METRICS_MAT,
-        source_variable="SHDI",
-        source_reader="mat",
-    )
-)
 
-# Forest Ratio 9KM 2020（全球 9km）
-register_overlay(
-    OverlaySpec(
-        layer_id="forest-ratio",
-        overlay_dir=_OVERLAY_PNG_ROOT / "forest_ratio",
-        png_filename="forest_ratio_overlay.png",
-        bounds_filename="forest_ratio_overlay_bounds.json",
-        category="static",
-        palette="YlGn",
-        vmin=0.0,
-        vmax=1.0,
-        unit="ratio",
-        opacity=0.85,
-        source_path=_FOREST_RATIO_MAT,
-        source_variable="Forest_Ratio",
-        source_reader="mat",
-    )
-)
 
 
 # SMAP 辅助数据（Soil_Moisture/SMAP_Auxiliary_Data，静态参数场）
@@ -1150,176 +963,14 @@ register_overlay(
 # 注意：VI_v_qa.mat 为 v5 格式（scipy 可读），其余为 v7.3 HDF5；reader 统一 "mat"，
 # 由 source_reader 按实际格式自动适配（h5py/scipy）。
 
-# Albedo — 地表反照率（EASE-Grid 9km）
-register_overlay(
-    OverlaySpec(
-        layer_id="smap-aux-albedo",
-        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_albedo",
-        png_filename="smap_aux_albedo_overlay.png",
-        bounds_filename="smap_aux_albedo_overlay_bounds.json",
-        category="static",
-        palette="YlOrRd",
-        vmin=0.0,
-        vmax=0.0985,
-        unit="",
-        opacity=0.8,
-        source_path=_SMAP_AUX_ALBEDO_MAT,
-        source_variable="ALBEDO",
-        source_reader="mat",
-    )
-)
 
-# BD — 土壤容重（EASE-Grid 9km）
-register_overlay(
-    OverlaySpec(
-        layer_id="smap-aux-bd",
-        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_bd",
-        png_filename="smap_aux_bd_overlay.png",
-        bounds_filename="smap_aux_bd_overlay_bounds.json",
-        category="static",
-        palette="YlOrBr",
-        vmin=0.6051,
-        vmax=1.5449,
-        unit="g/cm³",
-        opacity=0.8,
-        source_path=_SMAP_AUX_BD_MAT,
-        source_variable="BD",
-        source_reader="mat",
-    )
-)
 
-# SF — SMAP 辅助参数场（EASE-Grid 9km；全球分位 p1~p99 = 0.1057~19.5637，非 0–1 分数，语义待课题组确认）
-register_overlay(
-    OverlaySpec(
-        layer_id="smap-aux-sf",
-        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_sf",
-        png_filename="smap_aux_sf_overlay.png",
-        bounds_filename="smap_aux_sf_overlay_bounds.json",
-        category="static",
-        palette="YlGn",
-        vmin=0.1057,
-        vmax=19.5637,
-        unit="",
-        opacity=0.8,
-        source_path=_SMAP_AUX_SF_MAT,
-        source_variable="SF",
-        source_reader="mat",
-    )
-)
 
-# B — B 参数（EASE-Grid 9km）
-register_overlay(
-    OverlaySpec(
-        layer_id="smap-aux-b",
-        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_b",
-        png_filename="smap_aux_b_overlay.png",
-        bounds_filename="smap_aux_b_overlay_bounds.json",
-        category="static",
-        palette="RdBu",
-        vmin=0.0,
-        vmax=0.1286,
-        unit="",
-        opacity=0.8,
-        source_path=_SMAP_AUX_B_MAT,
-        source_variable="B",
-        source_reader="mat",
-    )
-)
 
-# CF — 粘粒分数（EASE-Grid 9km）
-register_overlay(
-    OverlaySpec(
-        layer_id="smap-aux-cf",
-        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_cf",
-        png_filename="smap_aux_cf_overlay.png",
-        bounds_filename="smap_aux_cf_overlay_bounds.json",
-        category="static",
-        palette="PuBu",
-        vmin=0.0004,
-        vmax=0.3854,
-        unit="fraction",
-        opacity=0.8,
-        source_path=_SMAP_AUX_CF_MAT,
-        source_variable="CF",
-        source_reader="mat",
-    )
-)
 
-# H — H 参数（EASE-Grid 9km）
-register_overlay(
-    OverlaySpec(
-        layer_id="smap-aux-h",
-        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_h",
-        png_filename="smap_aux_h_overlay.png",
-        bounds_filename="smap_aux_h_overlay_bounds.json",
-        category="static",
-        palette="Oranges",
-        vmin=0.1561,
-        vmax=1.8143,
-        unit="",
-        opacity=0.8,
-        source_path=_SMAP_AUX_H_MAT,
-        source_variable="H",
-        source_reader="mat",
-    )
-)
 
-# IGBP 土地覆盖分类（EASE-Grid 9km，1~17 类）
-register_overlay(
-    OverlaySpec(
-        layer_id="smap-aux-igbp",
-        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_igbp",
-        png_filename="smap_aux_igbp_overlay.png",
-        bounds_filename="smap_aux_igbp_overlay_bounds.json",
-        category="static",
-        palette="igbp-landcover-ramp",
-        vmin=1,
-        vmax=17,
-        unit="class",
-        opacity=0.8,
-        source_path=_SMAP_AUX_IGBP_MAT,
-        source_variable="IGBP_9km_12",
-        source_reader="mat",
-    )
-)
 
-# Koppen 气候分类（0.083° 全球网格，1~30 类）
-register_overlay(
-    OverlaySpec(
-        layer_id="smap-aux-koppen",
-        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_koppen",
-        png_filename="smap_aux_koppen_overlay.png",
-        bounds_filename="smap_aux_koppen_overlay_bounds.json",
-        category="static",
-        palette="Set3",
-        vmin=1,
-        vmax=30,
-        unit="class",
-        opacity=0.8,
-        source_path=_SMAP_AUX_KOPPEN_MAT,
-        source_variable="Koppen",
-        source_reader="mat",
-    )
-)
 
-# VI/NDVI 均值（v5 格式，shape (1624, 3856)，注意轴序与 EASE-Grid 9km 其余场相反）
-register_overlay(
-    OverlaySpec(
-        layer_id="smap-aux-vi-qa",
-        overlay_dir=_OVERLAY_PNG_ROOT / "smap_aux_vi_qa",
-        png_filename="smap_aux_vi_qa_overlay.png",
-        bounds_filename="smap_aux_vi_qa_overlay_bounds.json",
-        category="static",
-        palette="RdYlGn",
-        vmin=0.0709,
-        vmax=0.8596,
-        unit="",
-        opacity=0.8,
-        source_path=_SMAP_AUX_VI_V_QA_MAT,
-        source_variable="NDVI_v_mean",
-        source_reader="mat",
-    )
-)
 
 
 # ─── Phase 2: 课题组 VOD/SM/Omega 2025-12 产品族 ──────────────────────────────

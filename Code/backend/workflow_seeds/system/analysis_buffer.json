@@ -8,7 +8,12 @@
     "readonly": true,
     "is_template": true,
     "linked_layer_id": null,
-    "tags": ["analysis", "gis", "ui-panel", "buffer"],
+    "tags": [
+      "analysis",
+      "gis",
+      "ui-panel",
+      "buffer"
+    ],
     "category": "analysis",
     "resource_profile": "standard"
   },
@@ -19,7 +24,10 @@
     {
       "id": 1,
       "type": "data/source",
-      "pos": [60, 160],
+      "pos": [
+        60,
+        160
+      ],
       "properties": {
         "path": "{DATA_ROOT}/_runtime/smoke_points.geojson",
         "dataset_key": "input_path",
@@ -29,7 +37,10 @@
     {
       "id": 2,
       "type": "gis/buffer_analysis",
-      "pos": [380, 160],
+      "pos": [
+        380,
+        160
+      ],
       "properties": {
         "distance_unit": "meters",
         "segments": 16,
@@ -37,5 +48,19 @@
       }
     }
   ],
-  "links": [[1, 1, 2, 2, 1]]
+  "links": [
+    [
+      1,
+      1,
+      2,
+      2,
+      1
+    ]
+  ],
+  "extra": {
+    "group_title": "缓冲区分析",
+    "output_labels": {
+      "result": "缓冲区结果"
+    }
+  }
 }
