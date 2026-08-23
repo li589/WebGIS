@@ -5,6 +5,9 @@ import { getBackendWriteApiKey, withWriteAuthHeaders } from './backend-auth'
 import { applyApiFetchDefaults } from './http-credentials'
 import { resolveApiUrl } from './_http'
 import type { CRSOption } from '@/services/crs'
+import { normalizeShpResult } from './shp-normalize'
+
+export { normalizeShpResult }
 
 export const MAX_RASTER_UPLOAD_BYTES = 100 * 1024 * 1024
 export const MAX_CLIENT_FILE_BYTES = 80 * 1024 * 1024
@@ -64,60 +67,63 @@ export function validateImportFile(file: File, kind: ImportKind): void {
   }
 }
 
-export function normalizeShpResult(result: unknown): {
+/** SHP/ZIP 后台解析的超时（大文件解压+解析的保守上限）。 */
+const SHP_WORKER_TIMEOUT_MS = 120_000
+
+interface ShpWorkerResponse {
+  ok: boolean
+  geojson?: GeoJSON.FeatureCollection
+  layerCount?: number
+  error?: string
+}
+
+/**
+ * SHP/ZIP 解析（P3 Worker 化，2026-08-23）。
+ *
+ * 大文件（可达 80MB）的 shpjs 解析是重 CPU 任务，主线程执行会冻结
+ * UI——改由后台 Worker 完成（arrayBuffer transferable 零拷贝传入，
+ * 仅回传轻量 GeoJSON）。
+ *
+ * 返回 null 表示应回退主线程（Worker 不可用/创建失败/加载失败/超时）；
+ * Worker 内的**业务解析错误**直接抛出（主线程重放同样会失败）。
+ * 导出供测试直接验证 Worker 路径行为。
+ */
+export async function parseShpWithWorker(arrayBuffer: ArrayBuffer): Promise<{
   geojson: GeoJSON.FeatureCollection
   layerCount: number
-} {
-  if (Array.isArray(result)) {
-    const collections = result.filter((item): item is GeoJSON.FeatureCollection =>
-      Boolean(
-        item &&
-        typeof item === 'object' &&
-        Array.isArray((item as GeoJSON.FeatureCollection).features),
-      ),
-    )
-    if (collections.length === 0) {
-      throw new Error('ZIP/SHP 解析后未找到有效图层')
-    }
-    return {
-      layerCount: collections.length,
-      geojson: {
-        type: 'FeatureCollection',
-        features: collections.flatMap((c) => c.features),
-      },
-    }
+} | null> {
+  if (typeof Worker === 'undefined') return null
+  let worker: Worker
+  try {
+    worker = new Worker(new URL('../workers/shp-parse.worker.ts', import.meta.url), {
+      type: 'module',
+    })
+  } catch {
+    return null
   }
-  if (
-    result &&
-    typeof result === 'object' &&
-    Array.isArray((result as GeoJSON.FeatureCollection).features)
-  ) {
-    return { layerCount: 1, geojson: result as GeoJSON.FeatureCollection }
-  }
-  if (result && typeof result === 'object') {
-    const collections = Object.entries(result as Record<string, unknown>)
-      .filter(
-        ([key, value]) =>
-          !key.endsWith('_null') &&
-          Boolean(
-            value &&
-            typeof value === 'object' &&
-            Array.isArray((value as GeoJSON.FeatureCollection).features),
-          ),
-      )
-      .map(([, value]) => value as GeoJSON.FeatureCollection)
-    if (collections.length === 0) {
-      throw new Error('ZIP/SHP 解析后未找到有效图层')
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      worker.terminate()
+      resolve(null) // 超时回退主线程（终止的 worker 不泄漏）
+    }, SHP_WORKER_TIMEOUT_MS)
+    worker.onmessage = (event: MessageEvent<ShpWorkerResponse>) => {
+      clearTimeout(timer)
+      worker.terminate()
+      const data = event.data
+      if (data && data.ok && data.geojson && typeof data.layerCount === 'number') {
+        resolve({ geojson: data.geojson, layerCount: data.layerCount })
+      } else {
+        // Worker 内 shpjs/normalize 抛的业务错误：主线程重放同样失败，直接抛
+        reject(new Error((data && data.error) || 'SHP 解析失败'))
+      }
     }
-    return {
-      layerCount: collections.length,
-      geojson: {
-        type: 'FeatureCollection',
-        features: collections.flatMap((c) => c.features),
-      },
+    worker.onerror = () => {
+      clearTimeout(timer)
+      worker.terminate()
+      resolve(null) // Worker 脚本加载失败等：回退主线程
     }
-  }
-  throw new Error('无法识别的 SHP 解析结果')
+    worker.postMessage(arrayBuffer, [arrayBuffer])
+  })
 }
 
 export async function parseVectorFile(file: File): Promise<ParsedVectorImport> {
@@ -152,11 +158,18 @@ export async function parseVectorFile(file: File): Promise<ParsedVectorImport> {
     }
   } else if (ext === 'shp' || ext === 'zip') {
     const arrayBuffer = await file.arrayBuffer()
-    const shpjs = (await import('shpjs')).default
-    const result = await shpjs(arrayBuffer)
-    const normalized = normalizeShpResult(result)
-    geojson = normalized.geojson
-    layerCount = normalized.layerCount
+    // P3：优先后台 Worker 解析（大文件防 UI 冻结）；不可用时回退主线程
+    const fromWorker = await parseShpWithWorker(arrayBuffer)
+    if (fromWorker) {
+      geojson = fromWorker.geojson
+      layerCount = fromWorker.layerCount
+    } else {
+      const shpjs = (await import('shpjs')).default
+      const result = await shpjs(arrayBuffer.slice(0))
+      const normalized = normalizeShpResult(result)
+      geojson = normalized.geojson
+      layerCount = normalized.layerCount
+    }
   } else {
     throw new Error(`不支持的矢量格式: .${ext}`)
   }
