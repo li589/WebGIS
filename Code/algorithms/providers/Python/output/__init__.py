@@ -52,6 +52,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from path_utils import local_path_to_uri
+from viz_lock import locked_plot
 
 if TYPE_CHECKING:
     import numpy as np
@@ -146,6 +147,7 @@ def _estimate_bounds_from_transform(
     return (west, south, east, north)
 
 
+@locked_plot
 def _generate_preview_from_array(
     arr: np.ndarray,
     output_path: Path,

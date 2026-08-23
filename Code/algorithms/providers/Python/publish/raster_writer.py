@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from viz_lock import locked_plot
+
 import warnings
 from functools import lru_cache
 from pathlib import Path
@@ -340,6 +342,7 @@ class PreviewGenerator:
         self.output_dir = Path(output_dir)
         self.size = size  # (width, height)
 
+    @locked_plot
     def generate_bytes(
         self,
         data: np.ndarray,

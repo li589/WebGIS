@@ -16,6 +16,8 @@ matplotlib.use("Agg")  # 使用 Agg 后端，避免 GUI 依赖
 import matplotlib.pyplot as plt
 import numpy as np
 
+from viz_lock import locked_plot
+
 # 尝试导入 cartopy (可选，用于地理投影); 不可用时回退到普通 matplotlib
 try:
     import cartopy.crs as ccrs
@@ -96,6 +98,7 @@ class DataVisualization:
             fig.savefig(output_path, dpi=150, bbox_inches="tight")
         plt.close(fig)
 
+    @locked_plot
     def plot_spatial_map(
         self,
         data: np.ndarray,
@@ -195,6 +198,7 @@ class DataVisualization:
         fig.tight_layout()
         self._save_or_show(fig, output_path)
 
+    @locked_plot
     def plot_timeseries(
         self,
         data: np.ndarray,
@@ -248,6 +252,7 @@ class DataVisualization:
 
         self._save_or_show(fig, output_path)
 
+    @locked_plot
     def plot_scatter(
         self,
         x: np.ndarray,
@@ -298,6 +303,7 @@ class DataVisualization:
 
         self._save_or_show(fig, output_path)
 
+    @locked_plot
     def plot_histogram(
         self,
         data: np.ndarray,

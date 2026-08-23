@@ -7,6 +7,8 @@ Optional matplotlib PNG is written as a file product (not the primary path).
 
 from __future__ import annotations
 
+from viz_lock import locked_plot
+
 import json
 from pathlib import Path
 from typing import Any
@@ -92,6 +94,7 @@ def _normalize_chart(
     }
 
 
+@locked_plot
 def _maybe_write_png(
     chart: dict[str, Any],
     out_path: Path,

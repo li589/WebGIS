@@ -584,11 +584,18 @@ class GisContourModule(BaseModule):
         transform = bundle.transform
         ys = np.arange(bundle.height)
         xs = np.arange(bundle.width)
-        # contour in array index space
-        fig, ax = plt.subplots()
-        cs = ax.contour(xs, ys, data, levels=levels)
+        # contour in array index space（P3：pyplot 全局态进程内互斥，节点级
+        # 并行下防串图/关错图；等值线几何计算在锁外保持并行）
+        from viz_lock import plot_lock
+
+        with plot_lock:
+            fig, ax = plt.subplots()
+            cs = ax.contour(xs, ys, data, levels=levels)
+            seg_levels = list(cs.levels)
+            allsegs = [list(seg) for seg in cs.allsegs]
+            plt.close(fig)
         features = []
-        for level, segs in zip(cs.levels, cs.allsegs, strict=False):
+        for level, segs in zip(seg_levels, allsegs, strict=False):
             for seg in segs:
                 if len(seg) < 2:
                     continue
@@ -610,7 +617,6 @@ class GisContourModule(BaseModule):
                         "properties": {"elevation": float(level)},
                     }
                 )
-        plt.close(fig)
         out_gj = {"type": "FeatureCollection", "features": features}
         out_path = _out(ctx, "contour") / "contours.geojson"
         return store_geojson_manifest(
