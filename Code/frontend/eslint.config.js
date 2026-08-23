@@ -105,17 +105,17 @@ export default tseslint.config(
 
   // ── P3 god-facade 收口（2026-08-23）：layers store 直连禁令 ────────
   // 外部消费方一律经 selector composables（useLayerWorkspace/useLayerViewport/
-  // useWorkflowRun，stores/layers/selectors.ts）。例外 = 整店传递过渡名单
-  //（MapCanvas/LayerSidebar 侧栏三件套——地图与侧栏模块仍需完整实例，
-  // 待窄接口专项收口）+ layers 内部。
+  // useWorkflowRun，stores/layers/selectors.ts）。例外 = MapCanvas（地图模块
+  // bundle 经 LayersStoreLike 窄接口消费完整 store 实例）+ layers 内部。
+  // 侧栏三件套已于 2026-08-23 窄接口收口（sidebar-layers-deps.ts），
+  // 不再需要白名单。
   {
     files: ['src/**/*.{ts,tsx,vue}'],
     ignores: [
       'src/stores/layers/**',
-      // 整店传递过渡白名单（P3 下一批窄接口收口对象）
+      // 整店传递白名单（地图 bundle 窄接口 LayersStoreLike 已就位，
+      // 传递完整实例是接口实现而非 god-facade）
       'src/components/MapCanvas.vue',
-      'src/components/LayerSidebar.vue',
-      'src/components/layer-sidebar/**',
     ],
     rules: {
       'no-restricted-imports': [

@@ -1,9 +1,9 @@
-import { ref, computed, onMounted, onUnmounted, type ComputedRef, type Ref } from 'vue'
-import { useLayersStore } from '../../stores/layers'
+import { ref, computed, onMounted, onUnmounted, type Ref } from 'vue'
 import { useUiStore } from '../../stores/ui'
 import { useLogStore } from '../../stores/log'
 import { useOverlaySymbologyStore } from '../../stores/overlay-symbology'
 import type { ActiveLayerDisplay, ActiveRunLayerGroup } from '../../stores/layers/types'
+import type { SidebarLayersDeps } from './sidebar-layers-deps'
 import { LAYERS_COPY } from '../../ui-copy'
 import {
   openDataWorkspace,
@@ -34,7 +34,7 @@ export interface ContextMenuState {
  *
  * @param activeLayersDisplay - ComputedRef of the display-ordered active layers
  * @param runLayerGroups - ComputedRef of the active run layer groups
- * @param layersStore - The layers store instance
+ * @param layersDeps - Narrow layers dependencies (see sidebar-layers-deps.ts)
  * @param uiStore - The UI store instance (analysis focus requests)
  * @param logStore - The log store instance (operation logging)
  * @param overlaySymbologyStore - The overlay symbology store (metadata prefetch)
@@ -45,9 +45,9 @@ export interface ContextMenuState {
  * @param runGroupOf - Lookup a run group by groupId
  */
 export function useSidebarContextMenu(
-  activeLayersDisplay: ComputedRef<ActiveLayerDisplay[]>,
+  activeLayersDisplay: Ref<ActiveLayerDisplay[]>,
   _runLayerGroups: Ref<ActiveRunLayerGroup[]>,
-  layersStore: ReturnType<typeof useLayersStore>,
+  layersDeps: SidebarLayersDeps,
   uiStore: ReturnType<typeof useUiStore>,
   logStore: ReturnType<typeof useLogStore>,
   overlaySymbologyStore: ReturnType<typeof useOverlaySymbologyStore>,
@@ -101,7 +101,7 @@ export function useSidebarContextMenu(
       const g = runGroupOf(contextMenu.value.groupId)
       if (!g) return []
       const members = g.memberInstanceIds
-        .map((id) => layersStore.activeLayers.find((l) => l.instanceId === id))
+        .map((id) => layersDeps.activeLayers.value.find((l) => l.instanceId === id))
         .filter(Boolean)
       return buildGroupContextMenu({
         dissolvable: g.dissolvable,
@@ -115,8 +115,8 @@ export function useSidebarContextMenu(
       !layer.isImported &&
       !layer.isImportedRaster &&
       !layer.isAdminBoundary &&
-      layersStore.canRunCatalog(layer.catalogId)
-    const raw = layersStore.activeLayers.find((l) => l.instanceId === layer.instanceId)
+      layersDeps.canRunCatalog(layer.catalogId)
+    const raw = layersDeps.activeLayers.value.find((l) => l.instanceId === layer.instanceId)
     const isExportPending = Boolean(
       raw?.runGroupId &&
       !raw.importedRaster?.overlayLayerId &&
@@ -133,7 +133,7 @@ export function useSidebarContextMenu(
       hasJobReport: Boolean(layer.jobLayer?.reportSummary),
       canRunWorkflow: canRun,
       canDissolveGroup: Boolean(
-        layer.runGroupId && layersStore.findRunGroupById(layer.runGroupId)?.dissolvable,
+        layer.runGroupId && layersDeps.findRunGroupById(layer.runGroupId)?.dissolvable,
       ),
     })
   })
@@ -159,7 +159,7 @@ export function useSidebarContextMenu(
 
   function openExportPanelForActive() {
     if (!contextMenu.value?.instanceId) return
-    const active = layersStore.activeLayers.find(
+    const active = layersDeps.activeLayers.value.find(
       (l) => l.instanceId === contextMenu.value?.instanceId,
     )
     if (!active) {
@@ -183,7 +183,7 @@ export function useSidebarContextMenu(
     format: 'geojson' | 'csv' | 'shp-zip' | 'png' | 'tif' | 'nc' | 'mat',
   ) {
     if (!contextMenu.value) return
-    const active = layersStore.activeLayers.find(
+    const active = layersDeps.activeLayers.value.find(
       (l) => l.instanceId === contextMenu.value?.instanceId,
     )
     if (!active) {
@@ -231,7 +231,7 @@ export function useSidebarContextMenu(
       closeContextMenu()
       return
     }
-    layersStore.setLayerDisplayName(id, trimmed)
+    layersDeps.setLayerDisplayName(id, trimmed)
     logStore.logOperation('layer-rename', `重命名图层「${trimmed}」`)
     closeContextMenu()
   }
@@ -262,13 +262,13 @@ export function useSidebarContextMenu(
         case 'toggleGroupVisible': {
           const members = g?.memberInstanceIds ?? []
           const anyVisible = members.some(
-            (id) => layersStore.activeLayers.find((l) => l.instanceId === id)?.visible,
+            (id) => layersDeps.activeLayers.value.find((l) => l.instanceId === id)?.visible,
           )
           for (const id of members) {
-            const layer = layersStore.activeLayers.find((l) => l.instanceId === id)
+            const layer = layersDeps.activeLayers.value.find((l) => l.instanceId === id)
             if (!layer) continue
             if (layer.visible === anyVisible) {
-              layersStore.toggleLayerVisibility(id)
+              layersDeps.toggleLayerVisibility(id)
             }
           }
           closeContextMenu()
@@ -276,7 +276,7 @@ export function useSidebarContextMenu(
         }
         case 'dissolveGroup':
           if (g?.dissolvable) {
-            layersStore.dissolveRunGroup(groupId)
+            layersDeps.dissolveRunGroup(groupId)
             logStore.logOperation('layer-dissolve-group', `拆分计算组 ${groupId}`)
           }
           closeContextMenu()
@@ -284,7 +284,7 @@ export function useSidebarContextMenu(
         case 'removeGroup': {
           const members = [...(g?.memberInstanceIds ?? [])]
           for (const id of members) {
-            layersStore.removeLayer(id)
+            layersDeps.removeLayer(id)
           }
           logStore.logOperation('layer-remove-group', `移除计算组 ${groupId}`)
           closeContextMenu()
@@ -302,7 +302,7 @@ export function useSidebarContextMenu(
         zoomToLayerFromMenu()
         return
       case 'toggleVisible':
-        layersStore.toggleLayerVisibility(id)
+        layersDeps.toggleLayerVisibility(id)
         closeContextMenu()
         return
       case 'viewDetails':
@@ -310,11 +310,11 @@ export function useSidebarContextMenu(
         closeContextMenu()
         return
       case 'bringToFront':
-        layersStore.bringLayerToFront(id)
+        layersDeps.bringLayerToFront(id)
         closeContextMenu()
         return
       case 'sendToBack':
-        layersStore.sendLayerToBack(id)
+        layersDeps.sendLayerToBack(id)
         closeContextMenu()
         return
       case 'rename':
@@ -364,7 +364,7 @@ export function useSidebarContextMenu(
       case 'runWorkflow': {
         const layer = activeLayersDisplay.value.find((l) => l.instanceId === id)
         if (layer) {
-          void layersStore.runWorkflowForCatalog(layer.catalogId)
+          void layersDeps.runWorkflowForCatalog(layer.catalogId)
         }
         closeContextMenu()
         return
@@ -373,7 +373,7 @@ export function useSidebarContextMenu(
         // 不使用节点缓存：全量重算，规避复用旧输出目录带来的时间片污染
         const layer = activeLayersDisplay.value.find((l) => l.instanceId === id)
         if (layer) {
-          void layersStore.runWorkflowForCatalog(layer.catalogId, { reuseBlockCache: false })
+          void layersDeps.runWorkflowForCatalog(layer.catalogId, { reuseBlockCache: false })
         }
         closeContextMenu()
         return
@@ -381,7 +381,7 @@ export function useSidebarContextMenu(
       case 'dissolveGroup': {
         const layer = activeLayersDisplay.value.find((l) => l.instanceId === id)
         if (layer?.runGroupId) {
-          layersStore.dissolveRunGroup(layer.runGroupId)
+          layersDeps.dissolveRunGroup(layer.runGroupId)
           logStore.logOperation('layer-dissolve-group', `拆分计算组 ${layer.runGroupId}`)
         }
         closeContextMenu()

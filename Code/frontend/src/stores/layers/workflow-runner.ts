@@ -789,7 +789,12 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       }
       return undefined
     })()
-    const extraTitle = groupTitleFromDefinition(restoreDef) ?? catalogExtra?.group_title
+    // 类型收窄：catalogExtra（workflow_extra）是宽 Record<string, unknown>，
+    // 取值处显式判型（type-check 债清理 2026-08-23）
+    const rawCatalogTitle = catalogExtra?.group_title
+    const extraTitle =
+      groupTitleFromDefinition(restoreDef) ??
+      (typeof rawCatalogTitle === 'string' && rawCatalogTitle.trim() ? rawCatalogTitle : undefined)
     const layerTags = memberTagsFromLayers()
     // 需求2 后的新种子（带 extra 配置）但无显式 outputs 时 → 单产出语义
     //（'result'，与 resolveExpectedOutputTags 的"至少一个产出"约定一致）；
@@ -807,15 +812,23 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           ? ['result']
           : LEGACY_RESTORE_TAGS
     const catalogLabels = catalogExtra?.output_labels
-    const mergedLabels: Record<string, string> =
-      (Array.isArray(catalogLabels)
+    const mergedLabels: Record<string, string> = Array.isArray(catalogLabels)
+      ? Object.fromEntries(
+          catalogLabels
+            .map((v, i) => [defTags[i] ?? tags[i], v] as [string, unknown])
+            .filter(
+              (entry): entry is [string, string] =>
+                Boolean(entry[0]) && typeof entry[1] === 'string',
+            ),
+        )
+      : catalogLabels && typeof catalogLabels === 'object'
         ? Object.fromEntries(
-            catalogLabels
-              .map((v, i) => [defTags[i] ?? tags[i], v] as [string, unknown])
-              .filter(([k, v]) => k && typeof v === 'string'),
+            Object.entries(catalogLabels as Record<string, unknown>).filter(
+              (entry): entry is [string, string] => typeof entry[1] === 'string',
+            ),
           )
-        : catalogLabels) || {}
-    const mergedLabelMap: Record<string, string> = mergedLabels as Record<string, string>
+        : {}
+    const mergedLabelMap: Record<string, string> = mergedLabels
     const configuredTargets = expectedOutputTargets(restoreDef).length
       ? expectedOutputTargets(restoreDef)
       : tags.map((tag) => ({

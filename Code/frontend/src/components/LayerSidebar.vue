@@ -11,7 +11,7 @@ import { computed, nextTick, ref, watch, onMounted } from 'vue'
 import { Diamond } from './ui/icons'
 
 import { useLayerWorkspace, useWorkflowRun } from '../stores/layers/selectors'
-import { useLayersStore } from '../stores/layers'
+import type { SidebarDragDeps, SidebarLayersDeps } from './layer-sidebar/sidebar-layers-deps'
 import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
 import { useDrawStore } from '../stores/draw-store'
@@ -43,7 +43,6 @@ const emit = defineEmits<{
 // ── Store 设置 ──────────────────────────────────────────────────────────────
 const workspace = useLayerWorkspace()
 const workflowRun = useWorkflowRun()
-const layersStore = useLayersStore() // 内部 composable 需完整 store 实例
 const uiStore = useUiStore()
 const logStore = useLogStore()
 const drawStore = useDrawStore()
@@ -67,6 +66,25 @@ const { runLayerGroups } = workflowRun
 
 const layerCategories = workspace.layerCategories
 
+// ── 侧栏 composable 的 layers 窄依赖（P3 收口：不再传递整店实例）──────────
+const sidebarLayersDeps: SidebarLayersDeps = {
+  activeLayers,
+  canRunCatalog: workspace.canRunCatalog,
+  bringLayerToFront: workspace.bringLayerToFront,
+  sendLayerToBack: workspace.sendLayerToBack,
+  removeLayer: workspace.removeLayer,
+  setLayerDisplayName: workspace.setLayerDisplayName,
+  toggleLayerVisibility: workspace.toggleLayerVisibility,
+  dissolveRunGroup: workflowRun.dissolveRunGroup,
+  findRunGroupById: workflowRun.findRunGroupById,
+  runWorkflowForCatalog: workflowRun.runWorkflowForCatalog,
+}
+
+const sidebarDragDeps: SidebarDragDeps = {
+  reorderLayers: workflowRun.reorderLayers,
+  moveRunGroupBlock: workflowRun.moveRunGroupBlock,
+}
+
 // ── Composable 调用 ──────────────────────────────────────────────────────────
 
 const weatherProviders = useSidebarWeatherProviders()
@@ -77,14 +95,14 @@ const search = useSidebarSearch(
   weatherProviders.ensureWeatherProviders,
 )
 
-const drag = useSidebarDragReorder(activeLayersDisplay, runLayerGroups, layersStore)
+const drag = useSidebarDragReorder(activeLayersDisplay, runLayerGroups, sidebarDragDeps)
 
 const symbology = useSidebarSymbology(overlaySymbologyStore)
 
 const ctxMenu = useSidebarContextMenu(
   activeLayersDisplay,
   runLayerGroups,
-  layersStore,
+  sidebarLayersDeps,
   uiStore,
   logStore,
   overlaySymbologyStore,
