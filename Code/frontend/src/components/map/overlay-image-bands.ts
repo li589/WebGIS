@@ -21,6 +21,9 @@ const MIN_SPAN_FOR_BANDING = 8
 /** 条带 layer/source 的 id 后缀模式（清理时识别）。 */
 export const BAND_ID_INFIX = '__b'
 
+/** 活跃条带 object URL 登记（removeBandedLayers 时统一 revoke，防内存泄漏）。 */
+const _bandObjectUrls = new Set<string>()
+
 /** 判断 bounds 是否需要条带化（大纬度跨度才需要）。 */
 export function needsBanding(bounds: [number, number, number, number]): boolean {
   return bounds[3] - bounds[1] >= MIN_SPAN_FOR_BANDING
@@ -118,14 +121,23 @@ export async function addBandedImageSources(
     const ctx = canvas.getContext('2d')
     if (!ctx) continue
     ctx.drawImage(img, 0, y0, imgW, bandH, 0, 0, imgW, bandH)
-    const dataUrl = canvas.toDataURL('image/png')
+    // 2026-08-24 CSP 闪现修复：data: URL 会被 CSP connect-src 'self' 拦截
+    //（MapLibre image source 经 fetch 加载——data: 走 connect-src，报
+    // "Refused to connect"→条带全部加载失败→主 layer 已隐藏→地图图层
+    // 一闪而过的真凶）。改用 canvas.toBlob + object URL（blob:），配合
+    // CSP connect-src 放行 blob:（同源 canvas 产物，无注入面）。
+    const bandUrl = await new Promise<string | null>((resolve) => {
+      canvas.toBlob((blob) => resolve(blob ? URL.createObjectURL(blob) : null), 'image/png')
+    })
+    if (!bandUrl) continue
+    _bandObjectUrls.add(bandUrl)
 
     const bid = `${sourceId}${BAND_ID_INFIX}${i}`
     const blid = `${rasterLayerId}${BAND_ID_INFIX}${i}`
     if (!map.getSource(bid)) {
       map.addSource(bid, {
         type: 'image',
-        url: dataUrl,
+        url: bandUrl,
         coordinates: [
           [w, lat1],
           [e, lat1],
@@ -199,4 +211,10 @@ export function removeBandedLayers(
   for (const id of bandSourceIds) {
     if (map.getSource(id)) map.removeSource(id)
   }
+  // 条带全部清除：revoke 全部 object URL（canvas 产物生命周期与条带一致）
+  if (bandLayerIds.length === 0 && bandSourceIds.length === 0) return
+  for (const url of _bandObjectUrls) {
+    URL.revokeObjectURL(url)
+  }
+  _bandObjectUrls.clear()
 }

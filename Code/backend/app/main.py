@@ -238,7 +238,8 @@ def create_app() -> FastAPI:
                 "script-src 'self'; "
                 "style-src 'self' 'unsafe-inline'; "
                 "img-src 'self' data: blob: https:; "
-                "connect-src 'self' https:; "
+                # blob: 为 MapLibre image source 加载 canvas 条带 object URL 所需
+                "connect-src 'self' blob: https:; "
                 "font-src 'self' data:; "
                 "frame-ancestors 'none'"
             )
