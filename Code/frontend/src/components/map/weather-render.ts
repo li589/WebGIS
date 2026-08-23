@@ -299,13 +299,32 @@ export function resolveCanonicalPaletteId(palette: string | null | undefined): s
   return resolvePaletteId(palette)
 }
 
-/** 判断两个色带 ID 是否同一条（含别名） */
+/**
+ * 严格版 canonical 解析：未知色带原样返回，**不做 thermal-orange 兜底**。
+ *
+ * 2026-08-24 三联报障 C：后端色带全集（brg/cividis/plasma/hot/terrain/
+ * ylgnbu/ylorrd 等）大于前端可选集；旧 resolvePaletteId 把未知后端色带
+ * 兜底成 thermal-orange，导致「当前/默认配色」误判为热力橙红——用户显式
+ * 选热力橙红时被 paletteIdsEqual 判为"等于默认"而存 null（吞掉覆盖），
+ * 后端继续按原色带（如 viridis）渲染 = 「热力橙红和 Viridis 显示一样」。
+ * 渲染路径（粒子/图例）仍用 resolvePaletteId 兜底保证可见性；默认/相等
+ * 判定一律走本严格版。
+ */
+export function resolveCanonicalPaletteIdStrict(
+  palette: string | null | undefined,
+): string {
+  if (!palette) return ''
+  const key = PALETTE_ALIASES[palette] ?? palette
+  return WEATHER_PALETTES[key] ? key : palette
+}
+
+/** 判断两个色带 ID 是否同一条（含别名；未知 ID 按原文比较，不兜底） */
 export function paletteIdsEqual(
   a: string | null | undefined,
   b: string | null | undefined,
 ): boolean {
   if (!a || !b) return false
-  return resolvePaletteId(a) === resolvePaletteId(b)
+  return resolveCanonicalPaletteIdStrict(a) === resolveCanonicalPaletteIdStrict(b)
 }
 
 function getPaletteDefinition(palette: string): WeatherPaletteDefinition {

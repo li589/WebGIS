@@ -110,6 +110,55 @@ def _style_requested(
     return False
 
 
+def _layer_wgs84_window(spec: Any, time: str | None) -> tuple[float, float, float, float] | None:
+    """读图层 bounds.json 的 WGS84 窗口（recolor Mercator 线性对齐的裁剪窗）。
+
+    烘焙 preview.png（导入链 render_cog_preview_reprojected target=3857 /
+    Tools _reproject_to_mercator_linear）均为 Web Mercator 内容、bounds.json
+    报其 WGS84 四角。recolor 输出必须贴同一窗口做 Mercator 线性重采样，
+    否则四角线性插值下中高纬错位（"动态重着色后图层变形/不清晰"根因）。
+    """
+    try:
+        from app.services.overlay_registry import read_bounds
+
+        data = read_bounds(spec.layer_id, time)
+        raw = data.get("bounds") if isinstance(data, dict) else None
+        if (
+            isinstance(raw, (list, tuple))
+            and len(raw) == 4
+            and all(isinstance(v, (int, float)) and np.isfinite(v) for v in raw)
+        ):
+            w, s, e, n = (float(v) for v in raw)
+            if w < e and s < n:
+                return (w, s, e, n)
+    except Exception:
+        logger.debug("layer bounds read failed for %s", getattr(spec, "layer_id", "?"))
+    return None
+
+
+def _reproject_geographic_to_mercator_linear(
+    values: np.ndarray,
+    src_transform: Any,
+    src_crs: str,
+    clip_bounds: tuple[float, float, float, float] | None,
+) -> np.ndarray:
+    """地理/任意 CRS 栅格 → 窗口 Mercator 线性网格（失败原样返回）。"""
+    try:
+        out, _bounds = reproject_to_mercator_linear(
+            values,
+            src_transform,
+            src_crs,
+            clip_bounds=clip_bounds,
+        )
+        return out
+    except Exception:
+        logger.warning(
+            "overlay geographic->Mercator reproject failed (keep native grid)",
+            exc_info=True,
+        )
+        return values
+
+
 def _load_source_grid(spec: Any, time: str | None) -> np.ndarray | None:
     src_path = spec.resolve_source_path(time)
     if src_path is None or not src_path.is_file():
@@ -121,8 +170,6 @@ def _load_source_grid(spec: Any, time: str | None) -> np.ndarray | None:
             from rasterio.enums import Resampling
 
             with rasterio.open(src_path) as ds:
-                h = min(int(ds.height), _MAX_PREVIEW_EDGE)
-                w = min(int(ds.width), _MAX_PREVIEW_EDGE)
                 # keep aspect
                 scale = min(
                     _MAX_PREVIEW_EDGE / max(ds.height, 1),
@@ -137,7 +184,23 @@ def _load_source_grid(spec: Any, time: str | None) -> np.ndarray | None:
                     resampling=Resampling.bilinear,
                     masked=True,
                 )
-                return np.ma.filled(np.ma.array(band), np.nan).astype(np.float32)
+                values = np.ma.filled(np.ma.array(band), np.nan).astype(np.float32)
+                # 2026-08-24 三联报障 D：重着色输出必须与烘焙 preview 同为
+                # 窗口 Mercator 线性网格（导入链烘焙走 3857 重投影）；否则
+                # 换源后中高纬四角插值错位（"变不清晰"）。out_shape 读取时
+                # transform 需按比例缩放。
+                if ds.crs is not None:
+                    from rasterio.transform import Affine
+
+                    src_transform = ds.transform * Affine.scale(
+                        ds.width / ow, ds.height / oh
+                    )
+                    clip = _layer_wgs84_window(spec, time)
+                    if clip is not None:
+                        values = _reproject_geographic_to_mercator_linear(
+                            values, src_transform, str(ds.crs), clip
+                        )
+                return values
         except Exception:
             logger.warning("overlay geotiff load failed %s", src_path, exc_info=True)
             return None
@@ -157,7 +220,19 @@ def _load_source_grid(spec: Any, time: str | None) -> np.ndarray | None:
         # preset；行非纬度均匀）先重投影为 Mercator 线性网格，与烘焙资产
         # 几何一致（bounds ±85.0511 全幅）。非 EASE 形状原样返回，重投影
         # 失败时回退通用路径。
+        shape_before = values.shape
         values = _reproject_ease_to_mercator_linear(values)
+        # 2026-08-24 三联报障 D（续）：非 EASE 的等经纬 .mat/.nc 源（如
+        # aridity/hfp/landcover 中国区 0.25°）同样要对齐烘焙几何——行重采样
+        # 为窗口 Mercator y 均匀。仅当 1D 均匀 lat/lon 与地理 CRS 时执行
+        # （EASE 已对齐的网格不再二次重投影）。
+        if values.shape == shape_before:
+            values = _reproject_mat_grid_to_mercator_linear(
+                values, data_array, spec, time
+            )
+        values = _reproject_mat_grid_to_mercator_linear(
+            values, data_array, spec, time
+        )
         # Downsample large grids for preview —— 全覆盖均匀重采样（nearest）。
         # 旧实现 ``values[::rs, ::cs][:oh, :ow]`` 在 scale≈0.53 时 rs=cs=1，
         # 退化为左上角纯裁剪（全球 EASE 网格只显示 53%×53% 再拉伸全屏的根因）。
@@ -173,6 +248,66 @@ def _load_source_grid(spec: Any, time: str | None) -> np.ndarray | None:
     except Exception:
         logger.warning("overlay source load failed %s", src_path, exc_info=True)
         return None
+
+
+def _reproject_mat_grid_to_mercator_linear(
+    values: np.ndarray,
+    data_array: Any,
+    spec: Any,
+    time: str | None,
+) -> np.ndarray:
+    """带 1D lat/lon 的等经纬网格 → 窗口 Mercator 线性网格（不对齐时原样返回）。
+
+    中心坐标（Point）源按半步长外扩为边缘（PixelIsArea）后建仿射；
+    curvilinear（2D lat/lon）或投影 CRS 非 4326/4490 时跳过（保持旧行为）。
+    """
+    try:
+        lat = getattr(data_array, "lat", None)
+        lon = getattr(data_array, "lon", None)
+        if lat is None or lon is None:
+            return values
+        lat_arr = np.atleast_1d(np.asarray(lat, dtype=np.float64))
+        lon_arr = np.atleast_1d(np.asarray(lon, dtype=np.float64))
+        if lat_arr.ndim != 1 or lon_arr.ndim != 1:
+            return values  # 2D curvilinear 网格不处理
+        n_lat, n_lon = values.shape
+        if lat_arr.size < 2 or lon_arr.size < 2:
+            return values
+        crs_raw = str(getattr(data_array, "crs", "") or "").strip().upper()
+        if crs_raw not in {"", "EPSG:4326", "4326", "EPSG:4490", "4490"}:
+            return values
+        clip = _layer_wgs84_window(spec, time)
+        if clip is None:
+            return values  # 无窗口无法对齐烘焙几何，保持旧行为
+        from app.data_io.services.cell_registration import coords_to_area_bounds
+
+        normalized = coords_to_area_bounds(lat_arr, lon_arr, (n_lat, n_lon))
+        if normalized is None:
+            return values
+        (west, south, east, north), _reg = normalized
+        from rasterio.transform import from_origin
+
+        src_transform = from_origin(
+            west,
+            north,
+            (east - west) / n_lon,
+            (north - south) / n_lat,
+        )
+        # 源坐标覆盖必须包含目标窗口（含容差），否则重投影输出空白
+        tol = max((east - west) * 0.01, (north - south) * 0.01)
+        if (
+            west > clip[0] + tol
+            or east < clip[2] - tol
+            or south > clip[1] + tol
+            or north < clip[3] - tol
+        ):
+            return values
+        return _reproject_geographic_to_mercator_linear(
+            values, src_transform, "EPSG:4326", clip
+        )
+    except Exception:
+        logger.warning("overlay mat grid align failed", exc_info=True)
+        return values
 
 
 def render_overlay_preview_styled(

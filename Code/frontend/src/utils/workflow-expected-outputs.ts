@@ -133,9 +133,13 @@ export function defaultProductLayerNames(
 }
 
 /**
- * 产品标签 → TOC 短显示名（单一事实来源）。
+ * 产物标签 → 图层短显示名（单一事实来源）。
  * 内部 productTag 仍用 SM/VOD/OMEGA 原文；全称见 PRODUCT_TAG_DESCRIPTIONS。
  * 见 Docs/03-规范协议/layer-naming.md
+ *
+ * 2026-08-24 三联报障（续）：未知 tag 透传前剥数据扩展名——normalizeProductTag
+ * 全串大写后，产物文件名 tag（landcover_025.mat → LANDCOVER_025.MAT）曾以
+ * 大写文件名整体泄漏成图层显示名。
  */
 export const PRODUCT_TAG_LABELS: Record<string, string> = {
   SM: 'SM',
@@ -152,8 +156,15 @@ export const PRODUCT_TAG_DESCRIPTIONS: Record<string, string> = {
   result: '工作流产出变量',
 }
 
+/** 剥常见数据文件扩展名（大写/小写均匹配） */
+function stripDataExtension(name: string): string {
+  return name.replace(/\.(TIF|TIFF|PNG|JPE?G|MAT|NC|HDF5?|HE5|ZIP|SHP|CSV|TAR|GZ)$/i, '')
+}
+
 export function productTagLabel(tag: string): string {
-  return PRODUCT_TAG_LABELS[tag] ?? tag
+  const known = PRODUCT_TAG_LABELS[tag]
+  if (known) return known
+  return stripDataExtension(tag)
 }
 
 export function productTagDescription(tag: string): string {

@@ -22,7 +22,7 @@ import {
   hasRenderableSymbology,
   isMapLinkedPalette,
   paletteIdsEqual,
-  resolveCanonicalPaletteId,
+  resolveCanonicalPaletteIdStrict,
 } from '../map/layer-symbology'
 import {
   resolveEffectiveLayerSymbology,
@@ -159,7 +159,9 @@ export function useLayerSymbology(
     styleRenderHint.value ? buildWeatherLegendGradient(styleRenderHint.value) : '',
   )
   const currentPaletteId = computed(() =>
-    resolveCanonicalPaletteId(
+    // 严格版：后端专属科学色带（brg/plasma/terrain 等）不兜底成 thermal-orange，
+    // 选择器如实不高亮（2026-08-24 三联报障 C）
+    resolveCanonicalPaletteIdStrict(
       displayLayer.value?.paletteOverride ?? styleRenderHint.value?.palette ?? '',
     ),
   )
@@ -233,7 +235,10 @@ export function useLayerSymbology(
 
   function handleSelectPalette(paletteId: string) {
     if (!canEditPalette.value) return
-    const defaultId = resolveCanonicalPaletteId(
+    // 严格版默认判定：层注册色带（如 brg/viridis）不在前端可选集时不与
+    // 任何选项相等——用户显式选择一律写入覆盖（2026-08-24 三联报障 C：
+    // 旧兜底映射曾把"选热力橙红"误判为"恢复默认"存 null 吞掉）
+    const defaultId = resolveCanonicalPaletteIdStrict(
       displayLayer.value?.defaultPalette ?? overlayStyleMeta.value?.palette ?? '',
     )
     const target = paletteIdsEqual(paletteId, defaultId) ? null : paletteId

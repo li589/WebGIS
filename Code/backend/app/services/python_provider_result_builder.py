@@ -119,6 +119,43 @@ def _infer_mat_data_variable(path: Path) -> str | None:
     return candidates[0] if len(candidates) == 1 else None
 
 
+def _resolve_product_display_label(
+    raw_layer_id: str,
+    tags: dict[str, Any],
+    product: dict[str, Any],
+    local_path: Path,
+) -> str:
+    """产物图层显示名：目录 descriptor 显示名 > tags.layer > 产物名（剥扩展名）> stem。
+
+    2026-08-24 三联报障（续）：product.name 常为源文件名（如 landcover_025.mat），
+    前端 normalizeProductTag 全串大写 + productTagLabel 未知 tag 透传后，
+    文件名会整体泄漏成图层显示名（「LANDCOVER_025.MAT」）。descriptor
+    显示名优先从根上消除技术文件名；产物名/stem 兜底时一律剥数据扩展名。
+    """
+    if raw_layer_id:
+        try:
+            from app.services.layer_catalog import get_layer_descriptor
+
+            descriptor = get_layer_descriptor(raw_layer_id)
+            display_name = (
+                getattr(descriptor, "display_name", None) if descriptor else None
+            )
+            if display_name and str(display_name).strip():
+                return str(display_name).strip()[:64]
+        except Exception:
+            logger.debug("layer descriptor lookup failed for %s", raw_layer_id)
+    for candidate in (tags.get("layer"), product.get("name")):
+        if candidate and str(candidate).strip():
+            name = re.sub(
+                r"\.(tif|tiff|png|jpe?g|mat|nc|hdf5?|he5|zip|shp|csv)$",
+                "",
+                str(candidate).strip(),
+                flags=re.IGNORECASE,
+            )
+            return name[:64]
+    return str(local_path.stem)[:64]
+
+
 def _read_mat_latlon_bounds(path: Path) -> tuple[list[float], str] | None:
     """读 v5 .mat 的 lat/lon 变量推导 [west, south, east, north] bounds。
 
@@ -983,9 +1020,8 @@ class PythonProviderResultBuilder:
 
         tags = as_dict(product.get("tags"))
         variable = str(product.get("variable") or tags.get("variable") or "raster")
-        label = str(
-            tags.get("layer") or product.get("name") or local_path.stem or "GIS"
-        )[:64]
+        raw_layer_id = str(getattr(payload, "layer_id", "") or "").strip()
+        label = _resolve_product_display_label(raw_layer_id, tags, product, local_path)
         # 2026-08-24 三联报障 A：产物 overlay id 稳定化。此前恒为
         # imported-gis-{run_id[-8:]}-{index}——每次运行生成新 id，前端
         # syncOverlays 视为"旧层移除+新层添加"，两次网络往返之间存在空窗
@@ -997,7 +1033,6 @@ class PythonProviderResultBuilder:
         # layer_id 需 sanitize：含 :/\ 等非法 chars 会让 safe_import_child 把
         # 其当路径分隔符（Windows 报"目录名称无效"，2026-08-24 实测
         # analysis:test → mkdir imports/imported-analysis:test-00 失败）。
-        raw_layer_id = str(getattr(payload, "layer_id", "") or "").strip()
         safe_layer_id = re.sub(r"[^A-Za-z0-9._-]+", "_", raw_layer_id)
         stable_layer_id = (
             f"imported-{safe_layer_id}-{index:02d}"
@@ -1125,14 +1160,12 @@ class PythonProviderResultBuilder:
         2D 数据变量（排除 lat/lon 坐标轴）自动选用。
         """
         tags = as_dict(product.get("tags"))
-        label = str(
-            tags.get("layer") or product.get("name") or local_path.stem or "GIS"
-        )[:64]
+        raw_layer_id = str(getattr(payload, "layer_id", "") or "").strip()
+        label = _resolve_product_display_label(raw_layer_id, tags, product, local_path)
         variable = str(product.get("variable") or tags.get("variable") or "").strip()
         if not variable and local_path.suffix.lower() == ".mat":
             variable = _infer_mat_data_variable(local_path) or local_path.stem
 
-        raw_layer_id = str(getattr(payload, "layer_id", "") or "").strip()
         safe_layer_id = re.sub(r"[^A-Za-z0-9._-]+", "_", raw_layer_id)
         # commit_science_raster_variable 内部用 stable_import_layer_id(source_name,
         # variable, grid, time) 生成层 id——source_name 不含 run_id（改用
