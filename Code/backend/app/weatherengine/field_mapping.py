@@ -485,6 +485,13 @@ def append_hourly_series(
 
 
 # 格心落在 (i+0.5)*res；半开归属避免邻瓦共点。浮点边界用极小 eps。
+#
+# 与 geo_math.pixel_center_axis 的语义差异（2026-08-24 架构审查 P3-6 结论：
+# **不合并**）：本处是**全球对齐**格网——i 为全局格指数（west/res 起算），
+# 保证相邻瓦片边缘格块严格分割（无缝）；geo_math 版是**窗口边缘对齐**
+# （res=span/count，与 from_bounds Affine 一致）。两者服务不同链路
+# （瓦片分割 vs 栅格配准），互换会破坏各自语义。改动任一公式时须对照
+# geo_math golden 测试（Test/backend/test_geo_math_golden.py）。
 _GRID_AXIS_EPS = 1e-9
 
 
