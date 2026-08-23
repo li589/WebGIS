@@ -574,8 +574,9 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       })
       // 图层名不得暴露产物文件名（xxx.tif 等）——后端 materialize title
       // 可能取自文件名时剥扩展名；空值继续向后兜底。
+      // R4：前缀剥两类——map_layer 产物（Algorithm Map Layer）与 file 产物（Algorithm Output）
       const cleanTitle = (item.title || '')
-        .replace(/^Algorithm Map Layer:\s*/i, '')
+        .replace(/^Algorithm (?:Map Layer|Output):\s*/i, '')
         .replace(/\s*[/\\][^/\\]*$/, '') // 路径段：只留文件名
         .replace(/\.(tif|tiff|png|jpe?g|mat|nc|zip|shp)$/i, '')
         .trim()
@@ -715,8 +716,9 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         continue
       }
 
-      // F3：兜底新增图层命名——技术名（Algorithm Map Layer 标题 / overlay id）之前
+      // F3：兜底新增图层命名——技术名（Algorithm 标题 / overlay id）之前
       // 优先工作流显示名，避免游离图层直出英文技术名
+      // R4：前缀剥两类——map_layer 产物（Algorithm Map Layer）与 file 产物（Algorithm Output）
       const workflowDisplayName = runId
         ? jobLayers.value.find((j) => j.jobId === runId)?.name
         : undefined
@@ -724,7 +726,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         matchingOutput?.name ||
         (tag ? productTagLabel(tag) : '') ||
         workflowDisplayName ||
-        item.title.replace(/^Algorithm Map Layer:\s*/i, '') ||
+        item.title.replace(/^Algorithm (?:Map Layer|Output):\s*/i, '') ||
         item.overlayLayerId
       const added = deps.addImportedRasterLayer(freeLayerName, item.overlayLayerId, item.bounds, {
         sourceCrs: item.sourceCrs,

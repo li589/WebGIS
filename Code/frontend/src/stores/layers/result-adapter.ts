@@ -479,7 +479,9 @@ export function normalizeProductTag(raw: string | null | undefined): string {
   const tag = String(raw || '')
     .trim()
     .toUpperCase()
-    .replace(/^ALGORITHM MAP LAYER:\s*/i, '')
+    // R4：技术前缀剥两类——map_layer 产物（Algorithm Map Layer）与 file 产物（Algorithm Output），
+    // 否则未识别 title 会作为 tag 原样泄漏成图层名（productTagLabel 未知 tag 透传）
+    .replace(/^ALGORITHM (?:MAP LAYER|OUTPUT):\s*/i, '')
   if (!tag) return ''
   if (tag === 'OMEGA_BLOCK' || tag.startsWith('OMEGA_BLOCK') || tag.includes('OMEGA_BLOCK')) {
     return 'OMEGA'

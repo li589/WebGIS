@@ -46,6 +46,7 @@ def register_geotiff_as_imported(
     layer_id: str | None = None,
     extra_meta: dict[str, Any] | None = None,
     replace_existing: bool = False,
+    palette: str = "wind-blue",
 ) -> dict[str, Any]:
     ensure_imports_root()
     src_size = src_path.stat().st_size if src_path.exists() else 0
@@ -125,7 +126,7 @@ def register_geotiff_as_imported(
     try:
         png_bytes = raster_preview_service.render_cog_preview(
             cog_path=stored,
-            palette="wind-blue",
+            palette=palette,
             width=min(2048, width),
             height=min(2048, height),
         )
@@ -153,7 +154,7 @@ def register_geotiff_as_imported(
     meta = {
         "layer_id": layer_id,
         "category": "static",
-        "palette": "wind-blue",
+        "palette": palette,
         "vmin": None,
         "vmax": None,
         "unit": "",
@@ -218,7 +219,7 @@ def register_geotiff_as_imported(
             category="static",
             time_list=time_list,
             default_time=default_time,
-            palette="wind-blue",
+            palette=palette,
             opacity=0.7,
             crs=source_crs,
             source_path=stored,
@@ -283,9 +284,11 @@ def confirm_imported_raster_crs(
         "EPSG:6933",
         "6933",
     } or grid_preset.startswith("ease2")
+    # R1：沿用注册时的 palette（confirm 重渲染不得把色带重置回 wind-blue）
+    registered_palette = str(meta.get("palette") or "wind-blue")
     png_bytes, mercator_bounds = raster_preview_service.render_cog_preview_reprojected(
         cog_path=src_path,
-        palette="wind-blue",
+        palette=registered_palette,
         width=2048,
         height=2048,
         source_crs=source_crs,
@@ -350,7 +353,7 @@ def confirm_imported_raster_crs(
             category="static",
             time_list=time_list,
             default_time=default_time,
-            palette="wind-blue",
+            palette=registered_palette,
             opacity=0.7,
             crs="EPSG:4326",
             source_path=src_path,

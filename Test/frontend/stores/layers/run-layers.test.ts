@@ -884,6 +884,27 @@ describe("attachAlgorithmProductOverlays", () => {
     expect(group.memberInstanceIds).toContain(added!.instanceId);
   });
 
+  it("R4：Algorithm Output 前缀标题不泄漏为图层名", async () => {
+    // file 类产物 title 形态是 "Algorithm Output: {label}"（区别于 map_layer 的
+    // "Algorithm Map Layer:"）——normalizeProductTag 未剥此前缀时，title 会
+    // 作为未知 tag 经 productTagLabel 透传成图层名（大写技术前缀泄漏）。
+    const { slice } = setup();
+    mockMaterialize([
+      { overlay_layer_id: "ov-out", title: "Algorithm Output: 月降水" },
+    ]);
+    const count = await slice.attachAlgorithmProductOverlays(
+      [],
+      "cat-src",
+      "run-r4",
+    );
+    expect(count).toBe(1);
+    const added = activeLayers.find(
+      (l) => l.importedRaster?.overlayLayerId === "ov-out",
+    );
+    expect(added).toBeTruthy();
+    expect(added!.name).toBe("月降水");
+  });
+
   it("succeeded 空产物延迟二次确认后写入可见空态横幅", async () => {
     vi.useFakeTimers();
     const { slice } = setup();
