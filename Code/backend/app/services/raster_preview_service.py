@@ -181,20 +181,46 @@ _PALETTES: dict[str, list[tuple[int, int, int]]] = {
 }
 
 _PALETTE_ALIASES: dict[str, str] = {
+    # matplotlib 经典名 → 实现键
     "YlGnBu": "ylgnbu",
     "ylgnbu": "ylgnbu",
     "YlGn": "ylgn",
     "YlOrRd": "ylorrd",
     "RdYlGn_r": "rdylgn_r",
+    "RdYlGn": "rdylgn_r",
+    "RdBu": "red-blue",
+    "YlOrBr": "ylorrd",
+    "PuBu": "blues",
+    "Oranges": "reds",
+    "Set3": "tab10",
+    # descriptor 语义 ramp 名（catalog_seeds/layer_descriptors.json 的
+    # style.palette）→ 实现键。映射目标对齐 overlay_registry 的 de-facto
+    # 显示配色，保证"静态 overlay ↔ 产物 overlay ↔ 重着色"三链路同色。
+    # 语义 ramp 本身无独立色带定义（仅命名），长期方案见
+    # Docs/05-专题研究/其它专题/图层登记配置与代码复用审查-2026-08-24.md。
     "elevation-terrain-ramp": "terrain",
+    "gebco-terrain-ramp": "terrain",
     "spectral-ramp": "spectral",
+    "igbp": "tab10",
+    "igbp-landcover-ramp": "tab10",
+    "clcd-landcover-ramp": "tab10",
+    "hfp-ramp": "hot",
+    "forest-ramp": "greens",
+    "ndvi-ramp": "greens",
+    "biomass-ramp": "ylgn",
+    "soil-moisture-ramp": "magenta-yellow",
+    "station-ramp": "magenta-yellow",
+    "bright-temp-ramp": "thermal-orange",
 }
 
 
 def resolve_palette_id(palette: str | None) -> str:
     raw = (palette or "").strip() or "viridis"
     aliased = _PALETTE_ALIASES.get(raw) or _PALETTE_ALIASES.get(raw.lower())
-    key = aliased or raw.lower() if raw.lower() in _PALETTES else raw
+    if aliased:
+        key = aliased
+    else:
+        key = raw.lower() if raw.lower() in _PALETTES else raw
     if key in _PALETTES:
         return key
     if raw in _PALETTES:
