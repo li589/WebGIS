@@ -60,6 +60,7 @@ export function useLayerWorkspace() {
     addLayer: store.addLayer,
     addImportedVectorLayer: store.addImportedVectorLayer,
     addImportedRasterLayer: store.addImportedRasterLayer,
+    addDrawDraftLayer: store.addDrawDraftLayer,
     getImportedVectorGeojson: store.getImportedVectorGeojson,
     updateImportedVectorGeojson: store.updateImportedVectorGeojson,
     setImportedVectorStyle: store.setImportedVectorStyle,

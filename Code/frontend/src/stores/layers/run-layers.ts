@@ -576,7 +576,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       // 可能取自文件名时剥扩展名；空值继续向后兜底。
       const cleanTitle = (item.title || '')
         .replace(/^Algorithm Map Layer:\s*/i, '')
-        .replace(/\s*[\/\\][^\/\\]*$/, '') // 路径段：只留文件名
+        .replace(/\s*[/\\][^/\\]*$/, '') // 路径段：只留文件名
         .replace(/\.(tif|tiff|png|jpe?g|mat|nc|zip|shp)$/i, '')
         .trim()
       const displayName =

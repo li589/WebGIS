@@ -8,7 +8,7 @@
  */
 import { computed, ref, watch } from 'vue'
 import { AlertCircle, RefreshCw } from '../ui/icons'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerWorkspace } from '../../stores/layers/selectors'
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
 import { resolveApiUrl } from '../../services/_http'
 import { applyApiFetchDefaults } from '../../services/http-credentials'
@@ -30,10 +30,10 @@ interface ZonalStatsResponse {
 
 const props = defineProps<{ displayLayer: ActiveLayerDisplay }>()
 
-const layersStore = useLayersStore()
+const { activeLayers } = useLayerWorkspace()
 
 const payload = computed(() => {
-  const layer = layersStore.activeLayers.find((l) => l.instanceId === props.displayLayer.instanceId)
+  const layer = activeLayers.value.find((l) => l.instanceId === props.displayLayer.instanceId)
   return layer?.importedVector ?? null
 })
 
@@ -46,7 +46,7 @@ const summary = computed(() => {
 
 /** 可见栅格图层 id 列表（与地图浮卡「自动统计」同筛选口径） */
 const overlayLayerIds = computed(() =>
-  layersStore.activeLayers
+  activeLayers.value
     .filter((l) => l.visible && (l.importedRaster || l.dataState === 'catalog'))
     .map((l) => l.importedRaster?.overlayLayerId ?? l.catalogId),
 )

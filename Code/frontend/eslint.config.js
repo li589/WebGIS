@@ -23,8 +23,8 @@ export default tseslint.config(
     ignores: [
       'dist/**',
       'node_modules/**',
-      'src/types/api-contracts.ts',     // OpenAPI 自动生成
-      'src/types/api-reexports.ts',     // 自动生成
+      'src/types/api-contracts.ts', // OpenAPI 自动生成
+      'src/types/api-reexports.ts', // 自动生成
       'vite.config.ts',
       'vitest.config.ts',
     ],
@@ -46,16 +46,16 @@ export default tseslint.config(
       ecmaVersion: 'latest',
       sourceType: 'module',
       globals: {
-        ...globals.browser,   // window, document, HTMLElement, AbortController 等
-        ...globals.es2021,    // Promise, Set, Map 等内置对象
+        ...globals.browser, // window, document, HTMLElement, AbortController 等
+        ...globals.es2021, // Promise, Set, Map 等内置对象
       },
       parserOptions: {
-        parser: tseslint.parser,  // Vue 文件中 <script lang="ts"> 用 TS parser
+        parser: tseslint.parser, // Vue 文件中 <script lang="ts"> 用 TS parser
       },
     },
     rules: {
       // ── 严格但实用的规则 ──────────────────────────────────────────────
-      'no-console': ['warn', { allow: ['warn', 'error'] }],  // 允许 warn/error，警告 info/log
+      'no-console': ['warn', { allow: ['warn', 'error'] }], // 允许 warn/error，警告 info/log
       'no-debugger': 'error',
       // 完全审查 2026-08-22（D-1）：Pinia 3.0.4 的 storeToRefs 遍历时对
       // undefined 值属性访问 .effect 直接崩溃（2026-08-22 整页白屏事故）。
@@ -73,8 +73,8 @@ export default tseslint.config(
           ],
         },
       ],
-      'no-undef': 'off',  // TypeScript 已通过 vue-tsc 检查未定义变量，避免误报浏览器全局
-      'no-unused-vars': 'off',  // 由 @typescript-eslint/no-unused-vars 接管
+      'no-undef': 'off', // TypeScript 已通过 vue-tsc 检查未定义变量，避免误报浏览器全局
+      'no-unused-vars': 'off', // 由 @typescript-eslint/no-unused-vars 接管
       '@typescript-eslint/no-unused-vars': [
         'error',
         {
@@ -83,15 +83,15 @@ export default tseslint.config(
           caughtErrorsIgnorePattern: '^_',
         },
       ],
-      '@typescript-eslint/no-explicit-any': 'warn',  // 警告而非错误，逐步收紧
+      '@typescript-eslint/no-explicit-any': 'warn', // 警告而非错误，逐步收紧
       // 关闭 consistent-type-imports：现有代码大量使用 import() 类型表达式（如 JSDoc），
       // 强制 inline-type-imports 会产生大量噪音。改用 vue-tsc 做类型检查即可。
       '@typescript-eslint/consistent-type-imports': 'off',
 
       // ── Vue 规则 ──────────────────────────────────────────────────────
-      'vue/multi-word-component-names': 'off',  // 允许单词组件名（如 Views.vue）
-      'vue/no-v-html': 'off',                   // 项目内可信内容
-      'vue/require-default-prop': 'off',        // TS 类型已表达可选性
+      'vue/multi-word-component-names': 'off', // 允许单词组件名（如 Views.vue）
+      'vue/no-v-html': 'off', // 项目内可信内容
+      'vue/require-default-prop': 'off', // TS 类型已表达可选性
       'vue/attribute-hyphenation': ['error', 'always'],
       'vue/component-name-in-template-casing': ['error', 'PascalCase'],
       // attributes-order 与现有代码风格不一致（项目习惯 class 在前），
@@ -100,6 +100,39 @@ export default tseslint.config(
 
       // ── 关闭与 Prettier 冲突的规则 ────────────────────────────────────
       // eslint-config-prettier 已在最后 disable，这里不重复
+    },
+  },
+
+  // ── P3 god-facade 收口（2026-08-23）：layers store 直连禁令 ────────
+  // 外部消费方一律经 selector composables（useLayerWorkspace/useLayerViewport/
+  // useWorkflowRun，stores/layers/selectors.ts）。例外 = 整店传递过渡名单
+  //（MapCanvas/LayerSidebar 侧栏三件套——地图与侧栏模块仍需完整实例，
+  // 待窄接口专项收口）+ layers 内部。
+  {
+    files: ['src/**/*.{ts,tsx,vue}'],
+    ignores: [
+      'src/stores/layers/**',
+      // 整店传递过渡白名单（P3 下一批窄接口收口对象）
+      'src/components/MapCanvas.vue',
+      'src/components/LayerSidebar.vue',
+      'src/components/layer-sidebar/**',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          // regex 锚定行尾：只禁 layers store 入口（./layers、../stores/layers、
+          // …/layers/index），不误伤 layers/types、layers/selectors 等子模块
+          patterns: [
+            {
+              regex: '(^|\\/)layers$|(^|\\/)layers/index$',
+              importNames: ['useLayersStore'],
+              message:
+                'layers store 直连已收口：请经 selector composables 导入（stores/layers/selectors.ts 的 useLayerWorkspace/useLayerViewport/useWorkflowRun）',
+            },
+          ],
+        },
+      ],
     },
   },
 

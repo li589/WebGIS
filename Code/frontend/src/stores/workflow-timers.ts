@@ -129,20 +129,18 @@ export const useWorkflowTimersStore = defineStore('workflow-timers', () => {
       // 将触发的 run 注册到 layers store 进行状态跟踪
       if (result.run_id) {
         try {
-          const { useLayersStore } = await import('./layers')
-          const layersStore = useLayersStore()
+          const { useWorkflowRun } = await import('./layers/selectors')
+          const { registerExternalWorkflowRun } = useWorkflowRun()
           const catalogIdHint = timers.value.find((t) => t.timer_id === timerId)?.payload_overrides
             ?.layer_id
-          void layersStore
-            .registerExternalWorkflowRun(result.run_id, catalogIdHint)
-            .catch((err) => {
-              useLogStore().logOperation(
-                'workflow-error',
-                '定时器触发的工作流运行注册失败',
-                String(err),
-                'warn',
-              )
-            })
+          void registerExternalWorkflowRun(result.run_id, catalogIdHint).catch((err) => {
+            useLogStore().logOperation(
+              'workflow-error',
+              '定时器触发的工作流运行注册失败',
+              String(err),
+              'warn',
+            )
+          })
         } catch (err) {
           useLogStore().logOperation(
             'workflow-error',

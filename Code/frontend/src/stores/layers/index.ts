@@ -128,10 +128,14 @@ export const useLayersStore = defineStore('layers', () => {
     { deep: true },
   )
 
-  // ── Backward-compatible flat return ──
-  // All 84+ members from the three domains are exposed through the single
-  // store. Consumers can migrate to selector composables (./selectors.ts)
-  // for a narrower API.
+  // ── Flat return（P3 收口后的定位，2026-08-23）──
+  // 本 return 不再是公共 API——已降级为 **selectors 的底座**：
+  // 1. selectors.ts 的 toRef(store, key) / store.xxx 经由此面取成员；
+  // 2. 整店传递白名单（MapCanvas / LayerSidebar 侧栏三件套，见
+  //    eslint no-restricted-imports 配置）仍需完整实例——窄接口专项收口对象；
+  // 3. 外部直连已被 eslint 禁令阻止（pattern: layers store 入口），
+  //    新消费方一律经 useLayerWorkspace/useLayerViewport/useWorkflowRun。
+  // 成员面与 selectors 依赖面保持一致（收窄无收益且破坏底座契约）。
   /**
    * @deprecated 逐步迁移到 selector composables（`./selectors.ts`）。
    * 新代码请使用 useLayerWorkspace() / useLayerViewport() / useWorkflowRun()。

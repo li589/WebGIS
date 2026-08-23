@@ -8,7 +8,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
 import { useAnalysisRunnerStore } from '../../stores/analysis-runner'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerViewport, useLayerWorkspace } from '../../stores/layers/selectors'
 import { isShowAnalysisResultOnMapEnabled } from '../../services/settings-local'
 import type { AnalysisToolDescriptor } from '../../services/analysis-api'
 import AppButton from '../ui/AppButton.vue'
@@ -43,7 +43,8 @@ const emit = defineEmits<{
 }>()
 
 const runner = useAnalysisRunnerStore()
-const layers = useLayersStore()
+const { currentMapBBox: mapBBoxRef } = useLayerViewport()
+const { activeLayersDisplay } = useLayerWorkspace()
 
 const page = ref<ToolPage>({ kind: 'list' })
 const formValues = reactive<Record<string, unknown>>({})
@@ -60,7 +61,7 @@ const selectedTool = computed<AnalysisToolDescriptor | null>(() => {
 const runContext = computed(() => ({
   displayLayer: props.displayLayer,
   selectedMapPoint: props.selectedMapPoint,
-  hasMapBBox: Boolean(layers.currentMapBBox),
+  hasMapBBox: Boolean(mapBBoxRef.value),
 }))
 
 const runState = computed(() => {
@@ -94,7 +95,7 @@ const blockedReasons = computed<Record<string, string>>(() => {
 
 /** 当前工作区已导入矢量层（供分区统计 overlay id 下拉建议） */
 const importedVectorOptions = computed(() =>
-  layers.activeLayersDisplay
+  activeLayersDisplay.value
     .filter((layer) => layer.importedVectorBackendLayerId)
     .map((layer) => ({ id: layer.importedVectorBackendLayerId as string, label: layer.name })),
 )
@@ -113,7 +114,7 @@ const analysisTables = computed(() => props.displayLayer.jobLayer?.analysisTable
 const hasResults = computed(
   () => analysisCharts.value.length > 0 || analysisTables.value.length > 0,
 )
-const currentMapBBox = computed(() => layers.currentMapBBox)
+const currentMapBBox = computed(() => mapBBoxRef.value)
 
 async function refreshTools() {
   await runner.loadToolsForDisplay(props.displayLayer, {
@@ -168,7 +169,7 @@ async function onRun() {
   const params = sanitizeFormValues(formValues)
   let bbox = null as null | { west: number; south: number; east: number; north: number }
   if (tool.tool_id === 'gis.clip') {
-    const cb = layers.currentMapBBox
+    const cb = mapBBoxRef.value
     if (cb) {
       bbox = { west: cb.west, south: cb.south, east: cb.east, north: cb.north }
       params.west = cb.west

@@ -9,7 +9,7 @@
 import { computed, ref, watch } from 'vue'
 import { AlertCircle, RefreshCw } from '../ui/icons'
 import { useDrawStore } from '../../stores/draw-store'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { useUiStore } from '../../stores/ui'
 import { resolveApiUrl } from '../../services/_http'
 import { applyApiFetchDefaults } from '../../services/http-credentials'
@@ -33,7 +33,7 @@ interface ZonalStatsResponse {
 
 const drawStore = useDrawStore()
 const uiStore = useUiStore()
-const layersStore = useLayersStore()
+const { activeLayers } = useLayerWorkspace()
 
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -62,7 +62,7 @@ const geomPerimeterM = computed(() =>
 )
 
 const overlayLayers = computed(() => {
-  return layersStore.activeLayers.filter(
+  return activeLayers.value.filter(
     (l) => l.visible && (l.importedRaster || l.dataState === 'catalog'),
   )
 })
