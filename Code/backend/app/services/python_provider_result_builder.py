@@ -868,12 +868,30 @@ class PythonProviderResultBuilder:
         label = str(
             tags.get("layer") or product.get("name") or local_path.stem or "GIS"
         )[:64]
+        # 2026-08-24 三联报障 A：产物 overlay id 稳定化。此前恒为
+        # imported-gis-{run_id[-8:]}-{index}——每次运行生成新 id，前端
+        # syncOverlays 视为"旧层移除+新层添加"，两次网络往返之间存在空窗
+        # （静态图层"一闪而过"的根因）。带 layer_id 的 run（图层直跑场景）
+        # 改用稳定 id imported-{layer_id}-{index}，conflict_policy=overwrite
+        # 下同层重跑覆盖同一 overlay，前端同 id 仅更新 URL 无空窗。
+        # 多产物按 index 区分；同层互斥（_cancel_exclusive_analysis_runs）
+        # 已防并发覆盖竞态。无 layer_id（画布/临时运行）保留原 run 派生 id。
+        # layer_id 需 sanitize：含 :/\ 等非法 chars 会让 safe_import_child 把
+        # 其当路径分隔符（Windows 报"目录名称无效"，2026-08-24 实测
+        # analysis:test → mkdir imports/imported-analysis:test-00 失败）。
+        raw_layer_id = str(getattr(payload, "layer_id", "") or "").strip()
+        safe_layer_id = re.sub(r"[^A-Za-z0-9._-]+", "_", raw_layer_id)
+        stable_layer_id = (
+            f"imported-{safe_layer_id}-{index:02d}"
+            if safe_layer_id
+            else f"imported-gis-{run_id[-8:]}-{index:02d}"
+        )
         try:
             from app.data_io.services.raster_commit import commit_algorithm_geotiff
 
             registered = commit_algorithm_geotiff(
                 local_path,
-                layer_id=f"imported-gis-{run_id[-8:]}-{index:02d}",
+                layer_id=stable_layer_id,
                 source_name=f"{run_id[-8:]}_{local_path.name}",
                 conflict_policy="overwrite",
                 time_start=time_start,

@@ -257,11 +257,21 @@ def _colorize_masked_band(
 ):
     count = int(masked_array.count()) if hasattr(masked_array, "count") else 0
     if min_value is None:
-        min_value = float(masked_array.min()) if count else 0.0
+        # 2026-08-24 统一归一化基准：与瓦片路径（overlay_tile_service
+        # ._source_value_range / _apply_palette）一致改用 p2/p98 百分位。
+        # 此前用全量 min/max——与瓦片 p2/p98 两套基准，image↔瓦片模式切换
+        # 时同数据色阶突变；且 min/max 受极值敏感（火点/异常值压扁整体色阶）。
+        if count >= 100:
+            min_value = float(numpy.nanpercentile(masked_array.filled(numpy.nan), 2))
+        else:
+            min_value = float(masked_array.min()) if count else 0.0
     if max_value is None:
-        max_value = (
-            float(masked_array.max()) if count else max(float(min_value) + 1.0, 1.0)
-        )
+        if count >= 100:
+            max_value = float(numpy.nanpercentile(masked_array.filled(numpy.nan), 98))
+        else:
+            max_value = (
+                float(masked_array.max()) if count else max(float(min_value) + 1.0, 1.0)
+            )
     if not numpy.isfinite(min_value):
         min_value = 0.0
     if not numpy.isfinite(max_value) or max_value <= min_value:
