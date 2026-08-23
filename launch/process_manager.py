@@ -277,10 +277,16 @@ class ProcessManager:
         log.debug("Launcher", f"PID 文件已保存: {PID_FILE} ({len(pids)} 个进程)")
 
     def stop_all(self) -> None:
-        """停止所有子进程。"""
+        """停止所有子进程。
+
+        兼容 subprocess.Popen 与 psutil.Process 两种句柄：monitor() 检测到
+        外部重启时会把句柄替换成 psutil.Process（无 poll() 方法，且其
+        wait(timeout) 超时抛 psutil.TimeoutExpired 而非 subprocess.TimeoutExpired），
+        因此存活探测与超时捕获都必须双兼容，否则 Ctrl+C 优雅停止会崩。
+        """
         log.banner("停止所有服务")
         for name, proc in reversed(list(self.processes.items())):
-            if proc.poll() is not None:
+            if self._poll_proc(proc) is not None:
                 log.info("Stop", f"{name} 已退出")
                 continue
             log.info("Stop", f"停止 {name} (pid={proc.pid})...")
@@ -288,10 +294,13 @@ class ProcessManager:
             try:
                 proc.wait(timeout=10)
                 log.ok("Stop", f"{name} 已停止")
-            except subprocess.TimeoutExpired:
+            except (subprocess.TimeoutExpired, psutil.TimeoutExpired):
                 log.warn("Stop", f"{name} 10s 内未退出，强制 kill")
                 proc.kill()
-                proc.wait(timeout=5)
+                try:
+                    proc.wait(timeout=5)
+                except (subprocess.TimeoutExpired, psutil.TimeoutExpired):
+                    log.warn("Stop", f"{name} kill 后仍未退出")
         self.processes.clear()
 
     @staticmethod

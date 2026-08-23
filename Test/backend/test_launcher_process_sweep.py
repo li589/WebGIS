@@ -349,3 +349,68 @@ def test_start_backend_fails_when_fastapi_died_but_port_answers(monkeypatch) -> 
         argparse.Namespace(debug=False, frontend_port=5175)
     )
     assert rc != 0, "fastapi 进程已退出时须返回失败而非 0"
+
+
+def test_stop_all_skips_exited_psutil_handle() -> None:
+    """已退出的 psutil.Process 句柄：直接跳过，不得调 poll/terminate。"""
+    import psutil as psutil_mod
+
+    from launch.process_manager import ProcessManager
+
+    exited = mock.Mock(spec=psutil_mod.Process)
+    exited.is_running.return_value = False
+    exited.pid = 9999
+
+    # 用 object.__new__ 绕过 __init__：本文件前序测试 monkeypatch 过
+    # ProcessManager.__new__，直接实例化会踩到撤销残留
+    pm = object.__new__(ProcessManager)
+    pm.processes = {"beat": exited}
+    pm.stop_all()
+
+    exited.terminate.assert_not_called()
+    exited.wait.assert_not_called()
+    assert pm.processes == {}
+
+
+def test_stop_all_terminates_alive_psutil_handle() -> None:
+    """monitor 外部重启切到 psutil.Process 后，Ctrl+C 停止须能正常 terminate。"""
+    import psutil as psutil_mod
+
+    from launch.process_manager import ProcessManager
+
+    alive = mock.Mock(spec=psutil_mod.Process)
+    alive.is_running.return_value = True
+    alive.pid = 1111
+    alive.wait.side_effect = [0]  # terminate 后 10s 内正常退出
+
+    pm = object.__new__(ProcessManager)
+    pm.processes = {"fastapi": alive}
+    pm.stop_all()
+
+    alive.terminate.assert_called_once()
+    alive.kill.assert_not_called()
+    assert pm.processes == {}
+
+
+def test_stop_all_escalates_kill_on_psutil_timeout() -> None:
+    """psutil wait 超时抛 psutil.TimeoutExpired 时必须升级 kill（回归：此前
+    只捕获 subprocess.TimeoutExpired，psutil 句柄超时会二次崩溃）。"""
+    import psutil as psutil_mod
+
+    from launch.process_manager import ProcessManager
+
+    alive = mock.Mock(spec=psutil_mod.Process)
+    alive.is_running.return_value = True
+    alive.pid = 2222
+    alive.wait.side_effect = [
+        psutil_mod.TimeoutExpired(10),  # terminate 后 10s 未退出
+        None,  # kill 后退出
+    ]
+
+    pm = object.__new__(ProcessManager)
+    pm.processes = {"fastapi": alive}
+    pm.stop_all()
+
+    alive.terminate.assert_called_once()
+    alive.kill.assert_called_once()
+    assert pm.processes == {}
