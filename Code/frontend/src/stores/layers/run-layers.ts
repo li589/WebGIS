@@ -335,6 +335,10 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
   ) {
     const now = new Date().toISOString()
     const msg = formatProgressiveSyncMessage(count, hadError)
+    // 图层已渐进物化成功 → 清除「未生成可显示图层」误报横幅
+    if (!hadError && count > 0 && workflowError.value === WORKFLOW_COPY.noMapLayers) {
+      workflowError.value = null
+    }
     const job = jobLayers.value.find((j) => j.jobId === runId)
     if (job) {
       job.progressiveOverlayCount = count
@@ -375,6 +379,34 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     } finally {
       progressiveMaterializeInFlight.delete(runId)
     }
+  }
+
+  /** 「未生成可显示图层」横幅的延迟确认 timer（runId 去重）。 */
+  const emptyOverlayConfirmTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+  /**
+   * succeeded 但本次 materialize 为空时，延迟二次确认再写横幅。
+   * 产物登记与 succeeded 事件存在传播竞态——直接写横幅会误报（图层稍后到达）。
+   */
+  function scheduleEmptyOverlayConfirm(runId: string, emptyMsg: string) {
+    if (emptyOverlayConfirmTimers.has(runId)) return
+    emptyOverlayConfirmTimers.set(
+      runId,
+      setTimeout(() => {
+        emptyOverlayConfirmTimers.delete(runId)
+        // 重查前若图层已物化（其它路径清了横幅/绑定了图层）则不再写
+        if (workflowError.value === WORKFLOW_COPY.noMapLayers) return
+        void (async () => {
+          try {
+            const retry = await materializeWorkflowMapLayers(runId)
+            if (retry.layers && retry.layers.length > 0) return // 产物已就绪，不写横幅
+          } catch {
+            // 重查失败：保持横幅（真异常时可见提示优于静默）
+          }
+          workflowError.value = emptyMsg
+        })()
+      }, 2500),
+    )
   }
 
   /** Attach algorithm-published overlays so the map shows SM/VOD/OMEGA content. */
@@ -461,11 +493,18 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         emptyMessage: WORKFLOW_COPY.noMapLayers,
         runStatus,
       })
-      if (emptyMsg) workflowError.value = emptyMsg
+      if (emptyMsg) {
+        // 延迟二次确认：materialize 结果有传播延迟（succeeded 事件先到、
+        // 产物登记后到的竞态）——2.5s 后重查仍空才写「未生成可显示图层」横幅
+        scheduleEmptyOverlayConfirm(runId, emptyMsg)
+      }
       return 0
     }
     imports = imports.filter((item) => opts?.forceBind || !isOverlayDismissed(item.overlayLayerId))
     if (!imports.length) return 0
+    // 图层已成功物化 → 清除「未生成可显示图层」误报横幅（succeeded 事件先到、
+    // materialize 结果后到的竞态窗口）
+    if (workflowError.value === WORKFLOW_COPY.noMapLayers) workflowError.value = null
 
     const outputStore = useWorkflowOutputLayersStore()
     for (const item of imports) {

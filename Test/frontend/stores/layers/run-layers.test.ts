@@ -765,13 +765,18 @@ describe('attachAlgorithmProductOverlays', () => {
     expect(group.memberInstanceIds).toContain(added!.instanceId)
   })
 
-  it('succeeded 空产物写入可见空态横幅', async () => {
+  it('succeeded 空产物延迟二次确认后写入可见空态横幅', async () => {
+    vi.useFakeTimers()
     const { slice } = setup()
     slice.setJobLayers([makeJob({ jobId: 'run-ok', catalogId: 'cat-1', status: 'succeeded' })])
-    mockMaterialize([])
+    mockMaterialize([]) // 二次确认仍空 → 写横幅
     const count = await slice.attachAlgorithmProductOverlays([], 'cat-1', 'run-ok')
     expect(count).toBe(0)
+    // 延迟确认窗口内不写横幅（succeeded 事件先到、产物登记后到的竞态防护）
+    expect(slice.workflowError.value).toBeNull()
+    await vi.advanceTimersByTimeAsync(2_500)
     expect(slice.workflowError.value).toBe(WORKFLOW_COPY.noMapLayers)
+    vi.useRealTimers()
   })
 
   it('running 空产物清除残留空态横幅', async () => {

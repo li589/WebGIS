@@ -199,6 +199,9 @@
   overflow-x: hidden;
   overflow-y: auto;
   display: grid;
+  /* 单列轨道受容器约束：隐式轨道会被子项 min-content 撑宽（元数据页
+     长值/诊断文本导致右侧显示被裁，2026-08-23） */
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.48rem;
   padding: 0.42rem 0.42rem 0.5rem;
   align-content: start;
@@ -1705,6 +1708,8 @@
 /* ── 增强信息展示：元数据 / 历史对比 / 叠加分析 ─────────────────────────── */
 .info-card {
   display: grid;
+  /* 同 .panel-scroll：单列隐式轨道防 min-content 撑宽（2026-08-23） */
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.32rem;
   padding: var(--info-card-padding-y) var(--info-card-padding-x);
   border-radius: var(--info-card-radius);
