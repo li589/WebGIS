@@ -702,6 +702,13 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
             .find((layer) => layer.catalogId === preferredCatalogId && !layer.isAdminBoundary)
 
       if (existingActive && !existingActive.importedRaster) {
+        // 2026-08-24 三联报障 B：绑定产物 overlay 到用户层时保留用户已选定的
+        // 配色/量程覆盖（分析框 paletteOverride 等）——产物 overlay 与静态
+        // catalog overlay 的注册 palette 可能不同，若不保留，渲染源切换后
+        // 用户配色会突变回产物默认色（"一开始一个颜色然后突然换配色"）。
+        const userPalette = existingActive.paletteOverride ?? null
+        const userVmin = existingActive.vminOverride ?? null
+        const userVmax = existingActive.vmaxOverride ?? null
         existingActive.importedRaster = buildImportedRasterPayload(item.overlayLayerId, {
           bounds: item.bounds,
           fileName: displayName,
@@ -711,6 +718,9 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           followPolicy: timeList?.length ? 'containing' : undefined,
         })
         existingActive.dataState = 'imported'
+        if (userPalette) existingActive.paletteOverride = userPalette
+        if (userVmin != null) existingActive.vminOverride = userVmin
+        if (userVmax != null) existingActive.vmaxOverride = userVmax
         if (!existingActive.name) existingActive.name = displayName
         if (existingActive.runGroupId) refreshRunGroupDissolvable(existingActive.runGroupId)
         continue

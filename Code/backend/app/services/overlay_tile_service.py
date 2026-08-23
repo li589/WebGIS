@@ -192,6 +192,51 @@ def render_geotiff_tile_png(
     return encode_rgba_png(rgba)
 
 
+@lru_cache(maxsize=128)
+def _source_value_range(
+    source_path: str,
+    band: int,
+    mtime_ns: int,
+) -> tuple[float | None, float | None]:
+    """Compute the source-wide 2/98 percentile value range (cached by mtime).
+
+    2026-08-24 修复：_apply_palette 此前在 vmin/vmax=None 时按**单个瓦片自身**
+    数据范围归一化——每个瓦片各自拉伸不同色阶，拼接处数值不连续、接缝可见
+    （用户报障"瓦片之间拼接可见，细看是数据不连续"）。现改为缺省时回退到
+    **全源统一范围**：读源全图一次（降采样以控内存），2/98 百分位，按
+    (path, band, mtime) 缓存，所有瓦片共享同一归一化基准。
+    """
+    _ = mtime_ns
+    try:
+        import rasterio
+        from rasterio.enums import Resampling
+
+        with rasterio.open(source_path) as src:
+            h = max(1, min(src.height, 1024))
+            w = max(1, min(src.width, 1024))
+            data = src.read(
+                min(band, src.count),
+                out_shape=(h, w),
+                resampling=Resampling.bilinear,
+                masked=True,
+            )
+        vals = np.asarray(data, dtype=np.float64)
+        vals = vals[np.isfinite(vals)]
+        if vals.size == 0:
+            return None, None
+        vmin = float(np.nanpercentile(vals, 2))
+        vmax = float(np.nanpercentile(vals, 98))
+        if not np.isfinite(vmin) or not np.isfinite(vmax) or vmax <= vmin:
+            vmin = float(np.nanmin(vals))
+            vmax = float(np.nanmax(vals))
+        if not np.isfinite(vmin) or not np.isfinite(vmax) or vmax <= vmin:
+            return None, None
+        return vmin, vmax
+    except Exception:
+        logger.warning("source value range failed: %s", source_path, exc_info=True)
+        return None, None
+
+
 @lru_cache(maxsize=512)
 def _cached_tile(
     source_path: str,
@@ -206,7 +251,13 @@ def _cached_tile(
     nodata_mode: str,
     nodata_color: str,
 ) -> bytes:
-    _ = mtime_ns
+    if min_value is None or max_value is None:
+        # 缺省范围回退全源统一范围（防逐瓦片归一化拼接不连续）
+        gmin, gmax = _source_value_range(source_path, band, mtime_ns)
+        if min_value is None:
+            min_value = gmin
+        if max_value is None:
+            max_value = gmax
     return render_geotiff_tile_png(
         source_path,
         z,

@@ -884,6 +884,37 @@ describe("attachAlgorithmProductOverlays", () => {
     expect(group.memberInstanceIds).toContain(added!.instanceId);
   });
 
+  it("三联B：产物绑定用户层时保留已选配色/量程覆盖", async () => {
+    // 渲染源从静态 catalog overlay 切到产物 overlay 时，用户在分析框选定的
+    // paletteOverride/vminOverride/vmaxOverride 必须保留——否则配色突变回
+    // 产物注册默认色（2026-08-24 报障"一开始一个颜色然后突然换配色"）。
+    const { slice } = setup();
+    const target = makeLayer({
+      catalogId: "cat-user",
+      paletteOverride: "cividis",
+      vminOverride: 0.2,
+      vmaxOverride: 0.8,
+    });
+    activeLayers.push(target);
+    // 与既有 "优先绑定到 wf-out" 测试同型：经 extractOverlayImports 驱动，
+    // 不依赖 materialize 空态确认路径
+    vi.mocked(extractOverlayImportsFromResultRefs).mockReturnValue([
+      { overlayLayerId: "ov-prod", title: "SM", productTag: "SM" },
+    ]);
+    const count = await slice.attachAlgorithmProductOverlays(
+      [{ title: "x" }] as Parameters<
+        typeof extractOverlayImportsFromResultRefs
+      >[0],
+      "cat-user",
+    );
+    expect(count).toBe(1);
+    expect(target.importedRaster?.overlayLayerId).toBe("ov-prod");
+    expect(target.dataState).toBe("imported");
+    expect(target.paletteOverride).toBe("cividis");
+    expect(target.vminOverride).toBe(0.2);
+    expect(target.vmaxOverride).toBe(0.8);
+  });
+
   it("R4：Algorithm Output 前缀标题不泄漏为图层名", async () => {
     // file 类产物 title 形态是 "Algorithm Output: {label}"（区别于 map_layer 的
     // "Algorithm Map Layer:"）——normalizeProductTag 未剥此前缀时，title 会
