@@ -67,7 +67,6 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
     scheduleWorkspacePersist: () => bindings.scheduleWorkspacePersist(),
     flushWorkspacePersistNow: () => bindings.flushWorkspacePersistNow(),
     debugLog,
-    supportsAnalysisWorkflow: (catalogId) => catalog.supportsAnalysisWorkflow(catalogId),
     canRunCatalog: (catalogId) => catalog.canRunCatalog(catalogId),
     runWorkflowForCatalog: (catalogId) => bindings.runWorkflowForCatalog(catalogId),
   })

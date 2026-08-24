@@ -107,6 +107,51 @@ def _get_client_ip(request: Request) -> str:
 
 
 @router.post(
+    "/overlay-asset-workflows/{layer_id}",
+    tags=["workflow"],
+    response_model=WorkflowAcceptedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def submit_overlay_asset_workflow(
+    layer_id: str,
+    force_rebake: bool = False,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> WorkflowAcceptedResponse:
+    """统一图层资产工作流入口：检查烘焙资产，陈旧/缺失则触发重烘。
+
+    静态 overlay 与普通分析图层一样返回 WorkflowAcceptedResponse，前端统一
+    轮询/恢复；fresh 资产立即 succeeded，stale/missing 资产创建 accepted run
+    并由 Celery worker 后台执行烘焙。
+    """
+    from app.core.celery_app import celery_app
+    from app.services.overlay_asset_workflow_service import (
+        overlay_asset_workflow_service,
+    )
+    from shared.contracts.api_contracts import ExecutionStatus
+
+    _cred = cred if isinstance(cred, CredentialContext) else None
+    if _cred is not None:
+        check_resource_access(_cred, "layer", layer_id)
+    try:
+        accepted = overlay_asset_workflow_service.create_or_reuse_run(
+            layer_id,
+            user_id=_cred.user_id if _cred else None,
+            role=_cred.role if _cred else None,
+            force_rebake=force_rebake,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    if accepted.status != ExecutionStatus.succeeded:
+        celery_app.send_task(
+            "app.tasks.asset_bake_tasks.run_overlay_asset_workflow",
+            args=[accepted.run_id],
+            queue=getattr(config.settings, "workflow_queue_batch", "batch"),
+        )
+    return accepted
+
+
+@router.post(
     "/workflow-runs",
     tags=["workflow"],
     response_model=WorkflowAcceptedResponse,

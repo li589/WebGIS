@@ -27,6 +27,19 @@ export function submitWorkflow(payload: WorkflowSubmitRequest) {
   })
 }
 
+/** 统一图层资产工作流：检查烘焙资产，陈旧/缺失则后台重烘。 */
+export function submitOverlayAssetWorkflow(layerId: string, forceRebake = false) {
+  const suffix = forceRebake ? '?force_rebake=true' : ''
+  return requestJson<WorkflowAcceptedResponse>(
+    `/overlay-asset-workflows/${encodeURIComponent(layerId)}${suffix}`,
+    {
+      method: 'POST',
+      body: '{}',
+      timeoutMs: 120000,
+    },
+  )
+}
+
 export function fetchLayerCatalog() {
   return requestJson<LayerCatalogResponse>('/layers', {
     timeoutMs: 120000,

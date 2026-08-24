@@ -21,6 +21,7 @@ import {
   listActiveWorkflowRuns,
   listRecentSucceededRuns,
   retryWorkflowRun,
+  submitOverlayAssetWorkflow,
   submitWorkflow,
 } from '../../services/runtime-api'
 import type { BoundingBox, LayerDescriptor, WorkflowEvent } from '../../services/runtime-api'
@@ -1115,7 +1116,44 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         !hasCanvasDefinition &&
         !deps.supportsAnalysisWorkflow(backendLayerId)
       ) {
-        throw new Error(`${catalogName} 未配置分析工作流引擎，无法提交 /workflow-runs`)
+        // 2026-08-24 统一图层生命周期：overlay_registry 静态资产也走
+        // /overlay-asset-workflows，先查烘焙版本，陈旧/缺失由 Celery 后台重烘。
+        const submitJobId = localSubmitJobId(catalogId)
+        deps.upsertJobLayer(catalogId, {
+          jobId: submitJobId,
+          catalogId,
+          name: catalogName,
+          commandType: 'analysis',
+          status: 'queued',
+          progress: 5,
+          createdAt: submitStartedAt,
+          updatedAt: new Date().toISOString(),
+          message: '正在检查图层资产…',
+          metrics: [],
+          reportSummary: '正在检查图层资产…',
+          resultUrl: undefined,
+        })
+        const accepted = await submitOverlayAssetWorkflow(backendLayerId)
+        deps.removeJobLayerById(submitJobId)
+        deps.upsertJobLayer(catalogId, {
+          jobId: accepted.run_id,
+          catalogId,
+          name: catalogName,
+          commandType: 'analysis',
+          status: accepted.status === 'succeeded' ? 'succeeded' : 'queued',
+          progress: accepted.status === 'succeeded' ? 100 : 12,
+          createdAt: accepted.created_at,
+          updatedAt: accepted.created_at,
+          message: accepted.message,
+          metrics: [],
+          reportSummary: accepted.message,
+          resultUrl: undefined,
+        })
+        if (accepted.status !== 'succeeded') {
+          deps.activeWorkflowCatalogIds.add(catalogId)
+          void deps.startPolling(accepted.run_id, catalogId, options.expectedViewportEpoch)
+        }
+        return accepted.run_id
       }
 
       const supportsMapLayer = deps.supportsMapLayerResult(backendLayerId)

@@ -67,7 +67,6 @@ export interface ActiveLayersSliceDeps {
   flushWorkspacePersistNow: () => void
   debugLog: (module: string, ...args: unknown[]) => void
   // ── Auto-run workflow on layer add ──
-  supportsAnalysisWorkflow: (catalogId: string) => boolean
   canRunCatalog: (catalogId: string) => boolean
   runWorkflowForCatalog: (catalogId: string) => Promise<void>
 }
@@ -196,12 +195,12 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       })
     }
 
-    // 非天气分析图层（python_provider / gee）添加后自动运行工作流，
-    // 消除"待运行"状态并生成数据供点选/时序分析。
+    // 统一图层生命周期：所有非导入图层添加后都提交资产/分析工作流。
+    // - python_provider/gee 图层走分析工作流
+    // - overlay_registry 静态图层走资产检查/烘焙工作流（runWorkflowForCatalog 内分流）
     if (
       !jobLayer && // 不是工作流产物回填
       !deps.isWeatherEngineLayer(catalogId) && // 非天气图层
-      deps.supportsAnalysisWorkflow(catalogId) && // engine 为 python_provider 或 gee
       deps.canRunCatalog(catalogId) // readiness 非 blocked
     ) {
       // 推迟到下一宏任务，让 Vue 先完成「已添加 ✓」UI 刷新
@@ -377,6 +376,19 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       sidebarView.value = 'active'
     }
     deps.scheduleWorkspacePersist()
+    // 统一图层生命周期：目录 overlay 添加即登记图层资产工作流，
+    // 显示“资产检查/更新中/就绪”，陈旧或缺失时后台重烘。
+    if (!layer.importedRaster && !layer.importedVector && !layer.isAdminBoundary) {
+      void deps.runWorkflowForCatalog(layer.catalogId).catch((err) => {
+        console.warn('[layers] asset workflow submit failed', layer.catalogId, err)
+        safeLog(
+          'client-error',
+          '图层资产工作流提交失败',
+          `catalog=${layer.catalogId} err=${String(err)}`,
+          'warn',
+        )
+      })
+    }
     return layer
   }
 

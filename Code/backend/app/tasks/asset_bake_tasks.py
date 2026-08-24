@@ -107,3 +107,17 @@ def rebake_stale_overlay_assets() -> dict[str, object]:
         "rebaked": stale_tasks,
         "remaining": remaining,
     }
+
+
+@celery_app.task(name="app.tasks.asset_bake_tasks.run_overlay_asset_workflow")
+def run_overlay_asset_workflow(run_id: str) -> dict[str, object]:
+    """执行单个 overlay 图层资产工作流 run（API 创建后由 worker 消费）。
+
+    与标准 workflow run 共用状态模型：API 只创建 accepted；worker 在这里
+    转 running、调用烘焙工具、按 bake_version 复核并写回 succeeded/failed。
+    """
+    from app.services.overlay_asset_workflow_service import (
+        overlay_asset_workflow_service,
+    )
+
+    return overlay_asset_workflow_service.run_asset_workflow(run_id)
