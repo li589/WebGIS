@@ -168,6 +168,18 @@ class OverlayAssetWorkflowService:
     def __init__(self, repository: SQLiteWorkflowRepository | None = None) -> None:
         self._repository = repository or SQLiteWorkflowRepository()
 
+    def get_asset_state(self, layer_id: str) -> dict[str, Any]:
+        """公开资产状态查询（图层平台子系统：GET /layer-assets/{layer_id}）。
+
+        Raises:
+            ValueError: 图层未注册（404 语义）。
+        """
+        from app.services.overlay_registry import get_overlay_spec
+
+        if get_overlay_spec(layer_id) is None:
+            raise ValueError(f"Unknown overlay layer: {layer_id}")
+        return _read_asset_state(layer_id)
+
     def create_or_reuse_run(
         self,
         layer_id: str,
@@ -209,6 +221,9 @@ class OverlayAssetWorkflowService:
                 request_json=request_json,
                 run_class="asset",
                 user_id=user_id,
+                workflow_kind="asset_bake",
+                layer_id=layer_id,
+                progress=100,
             )
             return WorkflowAcceptedResponse(
                 run_id=run_id,
@@ -220,9 +235,10 @@ class OverlayAssetWorkflowService:
             )
 
         # Reuse an active run for the same layer/task to avoid duplicate bakes.
-        for existing in self._repository.list_runs():
-            if existing.layer_id != layer_id:
-                continue
+        # 图层平台子系统 v5：走 layer_id 索引查询，替代全表 list_runs() 内存过滤。
+        for existing in self._repository.list_runs_by_layer(
+            layer_id, limit=10, workflow_kind="asset_bake"
+        ):
             if existing.command_label != _ASSET_WORKFLOW_COMMAND_LABEL:
                 continue
             if existing.status in {
@@ -265,6 +281,9 @@ class OverlayAssetWorkflowService:
             request_json=request_json,
             run_class="asset",
             user_id=user_id,
+            workflow_kind="asset_bake",
+            layer_id=layer_id,
+            progress=5,
         )
         return WorkflowAcceptedResponse(
             run_id=run_id,
@@ -309,7 +328,13 @@ class OverlayAssetWorkflowService:
                 updated_at=_utc_now(),
                 asset_state=_read_asset_state(layer_id),
             )
-            self._repository.save_run(failed, run_class="asset")
+            self._repository.save_run(
+                failed,
+                run_class="asset",
+                workflow_kind="asset_bake",
+                layer_id=layer_id,
+                progress=100,
+            )
             return {"status": "failed", "run_id": run_id, "error": message}
 
         started = _utc_now()
@@ -325,6 +350,9 @@ class OverlayAssetWorkflowService:
                 asset_state=_read_asset_state(layer_id),
             ),
             run_class="asset",
+            workflow_kind="asset_bake",
+            layer_id=layer_id,
+            progress=25,
         )
 
         cmd = [sys.executable, str(_BAKE_TOOL), "--tasks", task_key]
@@ -350,7 +378,13 @@ class OverlayAssetWorkflowService:
                 asset_state=_read_asset_state(layer_id),
                 diagnostics=[str(exc)],
             )
-            self._repository.save_run(failed, run_class="asset")
+            self._repository.save_run(
+                failed,
+                run_class="asset",
+                workflow_kind="asset_bake",
+                layer_id=layer_id,
+                progress=100,
+            )
             return {"status": "failed", "run_id": run_id, "error": str(exc)}
 
         completed = _utc_now()
@@ -382,6 +416,9 @@ class OverlayAssetWorkflowService:
                 diagnostics=diagnostics,
             ),
             run_class="asset",
+            workflow_kind="asset_bake",
+            layer_id=layer_id,
+            progress=100 if ok else 92,
         )
         return {"status": final_status.value, "run_id": run_id, "asset_state": state}
 
