@@ -32,6 +32,7 @@ vi.mock('@/services/runtime-api', () => ({
   listActiveWorkflowRuns: vi.fn(),
   listRecentSucceededRuns: vi.fn(),
   retryWorkflowRun: vi.fn(),
+  submitOverlayAssetWorkflow: vi.fn(),
 }))
 
 vi.mock('@/stores/workflow-output-layers', () => ({
@@ -82,6 +83,7 @@ import {
   listActiveWorkflowRuns,
   listRecentSucceededRuns,
   retryWorkflowRun,
+  submitOverlayAssetWorkflow,
 } from '@/services/runtime-api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -179,6 +181,7 @@ function makeDeps(overrides: Partial<WorkflowRunnerDeps> = {}): WorkflowRunnerDe
     ensureRuntimeLayerCatalog: vi.fn(async () => {}),
     getCatalogRunBlockReason: vi.fn(() => null),
     supportsAnalysisWorkflow: vi.fn(() => true),
+    isOverlayDisplayOnlyLayer: vi.fn(() => false),
     supportsMapLayerResult: vi.fn(() => false),
     buildWorkflowPayloadForCatalog: vi.fn(() => ({})),
     activateWeatherTileViewport: vi.fn(),
@@ -388,6 +391,49 @@ describe('runWorkflowForCatalog', () => {
     // Clean up timer
     const timer = deps.workflowRetryTimers.get('cat-1')
     if (timer !== undefined) clearTimeout(timer)
+  })
+
+  // 2026-08-25 回归修复：overlay_registry 静态图层（ERA5 热浪/柯本/土壤容重等）
+  // 曾因 supportsAnalysisWorkflow 反转落入通用 analysis 提交 → 后端 no_bridge 误报失败。
+  // 锁定：overlay 图层必须走 /overlay-asset-workflows 资产检查，不走通用提交。
+  it('overlay_display_only layers submit asset workflow, not generic analysis', async () => {
+    const deps = makeDeps({
+      isOverlayDisplayOnlyLayer: vi.fn(() => true),
+      supportsAnalysisWorkflow: vi.fn(() => true),
+    })
+    vi.mocked(submitOverlayAssetWorkflow).mockResolvedValue({
+      run_id: 'run-asset-1',
+      status: 'succeeded',
+      message: '图层资产已就绪。',
+      created_at: '2026-01-01T00:00:00Z',
+    } as never)
+
+    const runner = createWorkflowRunner(deps)
+    const runId = await runner.runWorkflowForCatalog('cat-1')
+
+    expect(runId).toBe('run-asset-1')
+    expect(submitOverlayAssetWorkflow).toHaveBeenCalledOnce()
+    expect(submitOverlayAssetWorkflow).toHaveBeenCalledWith('cat-1')
+    // 关键回归锁：通用 analysis 提交路径不得被触发
+    expect(submitWorkflow).not.toHaveBeenCalled()
+  })
+
+  it('non-overlay layers still submit generic analysis workflow', async () => {
+    const deps = makeDeps({
+      isOverlayDisplayOnlyLayer: vi.fn(() => false),
+      supportsAnalysisWorkflow: vi.fn(() => true),
+    })
+    vi.mocked(submitWorkflow).mockResolvedValue({
+      run_id: 'run-analysis-1',
+      created_at: '2026-01-01T00:00:00Z',
+      message: 'accepted',
+    } as never)
+
+    const runner = createWorkflowRunner(deps)
+    await runner.runWorkflowForCatalog('cat-1')
+
+    expect(submitWorkflow).toHaveBeenCalledOnce()
+    expect(submitOverlayAssetWorkflow).not.toHaveBeenCalled()
   })
 })
 

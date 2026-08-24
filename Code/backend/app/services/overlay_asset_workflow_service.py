@@ -317,7 +317,32 @@ class OverlayAssetWorkflowService:
         layer_id = str(run.layer_id or "")
         task_key = _layer_to_task().get(layer_id)
         if not task_key:
-            message = f"图层 {layer_id} 未配置资产烘焙任务。"
+            # 无烘焙任务的图层（如柯本/土壤容重/SHDI 等科研参考层，
+            # 资产由数据导入流程管理）：PNG/bounds 文件存在即按现状显示，
+            # 不算运行失败——否则用户看到「图层正常显示却报运行失败」
+            # （2026-08-25 反馈）。仅资产文件缺失时才真正失败。
+            state = _read_asset_state(layer_id)
+            if state.get("png_exists") and state.get("bounds_exists"):
+                message = f"图层 {layer_id} 无自动烘焙任务，现有资产按现状显示。"
+                ok_run = _status_payload(
+                    run_id=run_id,
+                    layer_id=layer_id,
+                    status=ExecutionStatus.succeeded,
+                    progress=100,
+                    message=message,
+                    created_at=run.created_at,
+                    updated_at=_utc_now(),
+                    asset_state=state,
+                )
+                self._repository.save_run(
+                    ok_run,
+                    run_class="asset",
+                    workflow_kind="asset_bake",
+                    layer_id=layer_id,
+                    progress=100,
+                )
+                return {"status": "succeeded", "run_id": run_id}
+            message = f"图层 {layer_id} 未配置资产烘焙任务且资产文件缺失。"
             failed = _status_payload(
                 run_id=run_id,
                 layer_id=layer_id,
@@ -326,7 +351,7 @@ class OverlayAssetWorkflowService:
                 message=message,
                 created_at=run.created_at,
                 updated_at=_utc_now(),
-                asset_state=_read_asset_state(layer_id),
+                asset_state=state,
             )
             self._repository.save_run(
                 failed,

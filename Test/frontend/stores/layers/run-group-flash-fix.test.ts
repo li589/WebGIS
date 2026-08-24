@@ -182,6 +182,7 @@ function makeDeps(overrides: Partial<WorkflowRunnerDeps> = {}): WorkflowRunnerDe
     ensureRuntimeLayerCatalog: vi.fn(async () => {}),
     getCatalogRunBlockReason: vi.fn(() => null),
     supportsAnalysisWorkflow: vi.fn(() => true),
+    isOverlayDisplayOnlyLayer: vi.fn(() => false),
     supportsMapLayerResult: vi.fn(() => true),
     buildWorkflowPayloadForCatalog: vi.fn(() => ({})),
     activateWeatherTileViewport: vi.fn(),

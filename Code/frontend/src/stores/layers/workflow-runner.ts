@@ -284,6 +284,8 @@ export interface WorkflowBusinessDeps {
   ensureRuntimeLayerCatalog: (force?: boolean) => Promise<void>
   getCatalogRunBlockReason: (catalogId: string) => string | null
   supportsAnalysisWorkflow: (catalogId: string) => boolean
+  /** overlay 静态/时间序列图层（PNG 资产直显，走 /overlay-asset-workflows）。 */
+  isOverlayDisplayOnlyLayer: (catalogId: string) => boolean
   supportsMapLayerResult: (catalogId: string) => boolean
   buildWorkflowPayloadForCatalog: (
     catalogId: string,
@@ -1114,7 +1116,11 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       if (
         !isOutputLayer &&
         !hasCanvasDefinition &&
-        !deps.supportsAnalysisWorkflow(backendLayerId)
+        // 2026-08-25 回归修复：ed0ad3c 起 supportsAnalysisWorkflow 对 overlay_registry
+        // 也返回 true（readiness/分析面板需要），故资产分支判定不能再用取反——
+        // 否则 overlay 静态图层落入通用 analysis 提交 → 后端无 bridge → 误报
+        // 「未找到匹配的工作流引擎」。改用 isOverlayDisplayOnlyLayer 显式判定。
+        deps.isOverlayDisplayOnlyLayer(backendLayerId)
       ) {
         // 2026-08-24 统一图层生命周期：overlay_registry 静态资产也走
         // /overlay-asset-workflows，先查烘焙版本，陈旧/缺失由 Celery 后台重烘。

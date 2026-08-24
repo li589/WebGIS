@@ -248,6 +248,7 @@ export function createWorkflowRunDomain(
     ensureRuntimeLayerCatalog: (force) => workspace.ensureRuntimeLayerCatalog(force),
     getCatalogRunBlockReason: (catalogId) => workspace.getCatalogRunBlockReason(catalogId),
     supportsAnalysisWorkflow: (catalogId) => workspace.supportsAnalysisWorkflow(catalogId),
+    isOverlayDisplayOnlyLayer: (catalogId) => workspace.isOverlayDisplayOnlyLayer(catalogId),
     supportsMapLayerResult: (catalogId) => workspace.supportsMapLayerResult(catalogId),
     buildWorkflowPayloadForCatalog: (
       catalogId,

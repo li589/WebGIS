@@ -261,10 +261,31 @@ const { handleRunWorkflowFromEditor } = useWorkflowEditorRun(
 )
 
 // ── 异步组件 ──────────────────────────────────────────────────────────────
-const ScreenshotExport = defineAsyncComponent(() => import('../components/ScreenshotExport.vue'))
-const SettingsPanel = defineAsyncComponent(() => import('../components/settings/SettingsPanel.vue'))
+// chunk 加载失败（弱网/刷新竞态）时 loader promise reject，组件永不挂载，
+// usePanelManager 的 showImmediate 将无人配对 hideImmediate → 顶栏光带
+// 永久加载（2026-08-25 反馈）。此处统一兜底关 loading 后再抛出。
+function withLoadingGuard<T>(loader: () => Promise<T>) {
+  return async (): Promise<T> => {
+    try {
+      return await loader()
+    } catch (err) {
+      try {
+        uiLoading.hideImmediate()
+      } catch {
+        /* store 未就绪时忽略 */
+      }
+      throw err
+    }
+  }
+}
+const ScreenshotExport = defineAsyncComponent(
+  withLoadingGuard(() => import('../components/ScreenshotExport.vue')),
+)
+const SettingsPanel = defineAsyncComponent(
+  withLoadingGuard(() => import('../components/settings/SettingsPanel.vue')),
+)
 const WorkflowEditorPanel = defineAsyncComponent(
-  () => import('../components/workflow/WorkflowEditorPanel.vue'),
+  withLoadingGuard(() => import('../components/workflow/WorkflowEditorPanel.vue')),
 )
 
 // ── 面板尺寸 ──────────────────────────────────────────────────────────────

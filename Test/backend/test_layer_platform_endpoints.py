@@ -327,3 +327,104 @@ def test_run_workflow_template_overrides(no_auth, mock_submit, monkeypatch) -> N
     assert resp.auto_display is False
     assert mock_submit[0].resource_profile.value == "light"
     assert mock_submit[0].parameters["auto_display"] is False
+
+
+# ── 2026-08-25 反馈修复：无烘焙任务图层的资产工作流语义 ───────────────────────
+
+
+def _make_asset_service_run(repo, layer_id: str) -> str:
+    """在仓储中预置一条 accepted 状态的资产 run，返回 run_id。"""
+    from datetime import UTC, datetime
+
+    from shared.contracts.api_contracts import (
+        ExecutionStatus,
+        WorkflowCommandType,
+        WorkflowRunStatusResponse,
+    )
+
+    run_id = f"asset-bake-test-{layer_id}"
+    now = datetime.now(UTC)
+    repo.save_run(
+        WorkflowRunStatusResponse(
+            run_id=run_id,
+            command_type=WorkflowCommandType.custom,
+            command_label="图层资产检查",
+            layer_id=layer_id,
+            status=ExecutionStatus.accepted,
+            progress=0,
+            message="已受理",
+            created_at=now,
+            updated_at=now,
+        ),
+        request_json="{}",
+        run_class="asset",
+        workflow_kind="asset_bake",
+    )
+    return run_id
+
+
+def test_asset_workflow_no_task_with_files_succeeds(monkeypatch) -> None:
+    """无烘焙任务但 PNG/bounds 存在 → succeeded（按现状显示，不报失败）。"""
+    from app.services import overlay_asset_workflow_service as svc
+    from app.services.overlay_asset_workflow_service import (
+        OverlayAssetWorkflowService,
+    )
+    from app.services.workflow_repository import SQLiteWorkflowRepository
+
+    # smap-aux-koppen（柯本）不在 _LAYER_TO_TASK 中
+    monkeypatch.setattr(
+        svc,
+        "_read_asset_state",
+        lambda layer_id: {
+            "layer_id": layer_id,
+            "png_exists": True,
+            "bounds_exists": True,
+            "bake_version": None,
+            "asset_state": "stale",
+        },
+    )
+    repo = SQLiteWorkflowRepository()
+    run_id = _make_asset_service_run(repo, "smap-aux-koppen")
+    try:
+        service = OverlayAssetWorkflowService(repository=repo)
+        result = service.run_asset_workflow(run_id)
+        assert result["status"] == "succeeded"
+        run = repo.get_run(run_id)
+        assert run is not None
+        assert run.status.value == "succeeded"
+        assert "按现状显示" in (run.message or "")
+    finally:
+        repo.close()
+
+
+def test_asset_workflow_no_task_missing_files_fails(monkeypatch) -> None:
+    """无烘焙任务且资产文件缺失 → failed（真缺资产才报失败）。"""
+    from app.services import overlay_asset_workflow_service as svc
+    from app.services.overlay_asset_workflow_service import (
+        OverlayAssetWorkflowService,
+    )
+    from app.services.workflow_repository import SQLiteWorkflowRepository
+
+    monkeypatch.setattr(
+        svc,
+        "_read_asset_state",
+        lambda layer_id: {
+            "layer_id": layer_id,
+            "png_exists": False,
+            "bounds_exists": False,
+            "bake_version": None,
+            "asset_state": "missing",
+        },
+    )
+    repo = SQLiteWorkflowRepository()
+    run_id = _make_asset_service_run(repo, "smap-aux-koppen")
+    try:
+        service = OverlayAssetWorkflowService(repository=repo)
+        result = service.run_asset_workflow(run_id)
+        assert result["status"] == "failed"
+        run = repo.get_run(run_id)
+        assert run is not None
+        assert run.status.value == "failed"
+        assert "资产文件缺失" in (run.message or "")
+    finally:
+        repo.close()
