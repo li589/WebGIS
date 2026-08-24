@@ -140,9 +140,19 @@ def generate_ts(data: dict) -> str:
         lines.append("  },")
     lines.append("}")
     lines.append("")
+    # 双端别名合并：后端别名（语义 ramp/matplotlib 经典名 → 实现键）为基底，
+    # 前端目录历史别名优先覆盖——P3-D（2026-08-24）：此前 backend_aliases
+    # 不下发前端，descriptor 语义名（hfp-ramp 等）在前端被误兜底
+    # thermal-orange；合并后前端渲染与后端 resolve 结果一致。
+    merged_aliases: dict[str, str] = {}
+    merged_aliases.update(data.get("backend_aliases", {}))
+    merged_aliases.update(data.get("frontend_aliases", {}))
     lines.append("export const GENERATED_PALETTE_ALIASES: Record<string, string> = {")
-    for key in sorted(data["frontend_aliases"]):
-        lines.append(f"  '{key}': '{data['frontend_aliases'][key]}',")
+    for key in merged_aliases:
+        lines.append(
+            f"  {json.dumps(key, ensure_ascii=False)}: "
+            f"{json.dumps(merged_aliases[key], ensure_ascii=False)},"
+        )
     lines.append("}")
     lines.append("")
     return "\n".join(lines)

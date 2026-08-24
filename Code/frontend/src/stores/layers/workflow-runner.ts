@@ -601,7 +601,10 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           ) {
             ensureRestoredRunGroup(run.run_id, catalogId, trackedItem, {
               createPlaceholders: true,
-              title: jobLayer.name || bridge.title || '工作流运行',
+              // bridge.title 为死分支（resolveRestoreWorkflowBridge 从不返回
+              // title），已移除；组名最终由 configuredGroupTitle 中文配置
+              // 纠偏（2026-08-24 P3-B）
+              title: jobLayer.name || '工作流运行',
             })
           }
           deps.activeWorkflowCatalogIds.add(catalogId)
