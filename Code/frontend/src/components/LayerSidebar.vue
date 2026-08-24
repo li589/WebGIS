@@ -11,6 +11,8 @@ import { computed, nextTick, ref, watch, onMounted } from 'vue'
 import { Diamond } from './ui/icons'
 
 import { useLayerWorkspace, useLayerLifecycle, useWorkflowRun } from '../stores/layers/selectors'
+import { fetchWorkflowTemplates, runWorkflowTemplate } from '../services/runtime-api'
+import type { WorkflowTemplateSummary } from '../services/runtime-api'
 import type { SidebarDragDeps, SidebarLayersDeps } from './layer-sidebar/sidebar-layers-deps'
 import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
@@ -167,6 +169,49 @@ function getLifecycleBadge(
   if (!entry || entry.lifecycleState === 'unknown') return null
   const label = LIFECYCLE_BADGE_LABELS[entry.lifecycleState] ?? entry.lifecycleState
   return { state: entry.lifecycleState, label, message: entry.message }
+}
+
+// ── 课题组工作流模板（图层平台子系统 P2-1）──────────────────────────────
+const labTemplates = ref<WorkflowTemplateSummary[]>([])
+const labTemplateSubmittingIds = ref<Set<string>>(new Set())
+
+async function loadLabTemplates() {
+  try {
+    const resp = await fetchWorkflowTemplates()
+    labTemplates.value = resp.items ?? []
+  } catch {
+    // 模板接口不可用（如旧后端）→ 静默降级为无模板区
+    labTemplates.value = []
+  }
+}
+
+async function handleRunLabTemplate(workflowId: string) {
+  if (labTemplateSubmittingIds.value.has(workflowId)) return
+  const tpl = labTemplates.value.find((t) => t.workflow_id === workflowId)
+  if (!tpl) return
+
+  labTemplateSubmittingIds.value = new Set([...labTemplateSubmittingIds.value, workflowId])
+  try {
+    const accepted = await runWorkflowTemplate(workflowId)
+    logStore.logOperation(
+      'lab-template',
+      `模板「${tpl.name}」已提交（run ${accepted.run_id}）${
+        tpl.auto_display && tpl.linked_layer_id ? '，完成后自动上图' : ''
+      }`,
+    )
+    // 纳入既有轮询链：状态拉取 + jobLayer upsert + 终态物化
+    await workflowRun.registerExternalWorkflowRun(
+      accepted.run_id,
+      tpl.linked_layer_id ?? undefined,
+    )
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    logStore.logOperation('lab-template', `模板「${tpl.name}」提交失败：${message}`)
+  } finally {
+    const next = new Set(labTemplateSubmittingIds.value)
+    next.delete(workflowId)
+    labTemplateSubmittingIds.value = next
+  }
 }
 
 function getCatalogItem(catalogId: string) {
@@ -375,6 +420,8 @@ watch(
 
 onMounted(() => {
   search.prefetchVisibleWeatherProviders()
+  // 课题组模板列表懒加载（接口不可用时静默降级）
+  void loadLabTemplates()
 })
 </script>
 
@@ -427,6 +474,8 @@ onMounted(() => {
       :get-primary-source-name="getPrimarySourceName"
       :supports-online-temporal="supportsOnlineTemporal"
       :org-label="orgLabel"
+      :lab-templates="labTemplates"
+      :lab-template-submitting-ids="labTemplateSubmittingIds"
       @update:search-query="search.searchQuery.value = $event"
       @update:selected-sub-category="search.selectedSubCategory.value = $event"
       @ensure-weather-providers="weatherProviders.ensureWeatherProviders"
@@ -434,6 +483,7 @@ onMounted(() => {
       @add-all-in-category="addAllInCategory"
       @add-catalog-item="addCatalogItem"
       @toggle-category="toggleCategory"
+      @run-lab-template="handleRunLabTemplate"
     />
 
     <!-- ── ACTIVE STATE ───────────────────────────────────────────────── -->

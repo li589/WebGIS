@@ -14,6 +14,7 @@
 import { computed, onScopeDispose, watch, type ComputedRef, type Ref } from 'vue'
 import type { TimelineAvailabilitySegment } from '../../utils/layer-timeline'
 import { useOnlineTemporalOrchestrator } from '../../stores/layers/online-temporal-orchestrator'
+import { syncLayerAssetOnline } from '../../services/runtime-api'
 import type { useLayerWorkspace, useWorkflowRun } from '../../stores/layers/selectors'
 import type { JobLayerItem } from '../../stores/layers/types'
 
@@ -34,6 +35,11 @@ export function useOnlineTemporalIntegration(deps: OnlineTemporalIntegrationDeps
     getOnlineTemporalConfig: (catalogId) => deps.workspace.getOnlineTemporalConfig(catalogId),
     runWorkflowForCatalog: (catalogId, options) =>
       deps.workflowRun.runWorkflowForCatalog(catalogId, options),
+    // P2：优先走后端统一在线同步入口（去重/队列/预算语义后端承担），
+    // 不可用时编排器自动回退 runWorkflowForCatalog 直提路径。
+    syncLayerAssetOnline: (catalogId, body) => syncLayerAssetOnline(catalogId, body),
+    registerExternalWorkflowRun: (runId, catalogIdHint) =>
+      deps.workflowRun.registerExternalWorkflowRun(runId, catalogIdHint),
     selectedCatalogId: deps.selectedCatalogId,
     currentDate: deps.currentDate,
     currentHour: deps.currentHour,
