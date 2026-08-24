@@ -132,3 +132,69 @@ def test_static_overlay_unaffected(tmp_path: Path) -> None:
     assert spec.resolve_bounds(None).name == "bounds.json"
     # Static layers ignore the time param entirely.
     assert spec.resolve_bounds("../../etc/passwd").name == "bounds.json"
+
+
+# ── P2-4：direct 源图层（仅 GeoTIFF/COG + bounds.json，无烘焙 preview） ──────
+
+
+def _make_direct_overlay_dir(tmp_path, *, with_preview: bool, with_source: bool):
+    """构造 imported-* overlay 目录：bounds.json + 可选 source.tif/preview.png。"""
+    import json as _json
+
+    dest = tmp_path / "imports" / "imported-direct-test"
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "bounds.json").write_text(
+        _json.dumps({"bounds": [100.0, 30.0, 110.0, 40.0], "meta": {"palette": "viridis"}}),
+        encoding="utf-8",
+    )
+    if with_source:
+        (dest / "source.tif").write_bytes(b"")
+    if with_preview:
+        (dest / "preview.png").write_bytes(b"")
+    return dest
+
+
+def test_direct_source_overlay_registers_without_preview(monkeypatch, tmp_path) -> None:
+    """仅有 source GeoTIFF + bounds.json（无 preview.png）→ 允许注册（P2-4）。"""
+    from app.services import overlay_registry as reg
+
+    dest = _make_direct_overlay_dir(tmp_path, with_preview=False, with_source=True)
+    monkeypatch.setattr(
+        "app.data_io.services.paths.IMPORTS_DIR", tmp_path / "imports"
+    )
+    reg.unregister_overlay("imported-direct-test")
+    spec = reg._try_load_imported_overlay("imported-direct-test")
+    assert spec is not None
+    assert spec.png_filename is None
+    assert spec.source_path is not None
+    assert spec.source_path.name == "source.tif"
+    reg.unregister_overlay("imported-direct-test")
+
+
+def test_no_preview_no_source_still_rejected(monkeypatch, tmp_path) -> None:
+    """无 preview 且无 source → 仍拒绝注册（原行为不回退）。"""
+    from app.services import overlay_registry as reg
+
+    _make_direct_overlay_dir(tmp_path, with_preview=False, with_source=False)
+    monkeypatch.setattr(
+        "app.data_io.services.paths.IMPORTS_DIR", tmp_path / "imports"
+    )
+    reg.unregister_overlay("imported-direct-test")
+    assert reg._try_load_imported_overlay("imported-direct-test") is None
+
+
+def test_bounds_meta_reports_has_overview_false(monkeypatch, tmp_path) -> None:
+    """direct 源图层的 bounds meta 带 has_overview=False（前端全程瓦片判定）。"""
+    from app.services import overlay_registry as reg
+
+    _make_direct_overlay_dir(tmp_path, with_preview=False, with_source=True)
+    monkeypatch.setattr(
+        "app.data_io.services.paths.IMPORTS_DIR", tmp_path / "imports"
+    )
+    reg.unregister_overlay("imported-direct-test")
+    spec = reg._try_load_imported_overlay("imported-direct-test")
+    assert spec is not None
+    meta = spec.meta_dict()
+    # has_overview 在 get_overlay_bounds_meta 注入；spec 层验证 png_filename 为 None
+    assert spec.png_filename is None
+    reg.unregister_overlay("imported-direct-test")

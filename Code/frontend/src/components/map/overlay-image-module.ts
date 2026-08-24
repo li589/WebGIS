@@ -160,6 +160,8 @@ interface LoadedOverlay {
   /** image = overview PNG; raster-xyz = zoom-aware tiles */
   renderMode: 'image' | 'raster-xyz'
   supportsXyzTiles: boolean
+  /** P2-4：direct 源图层无烘焙 overview PNG → 全程 raster-xyz */
+  hasOverview: boolean
   overviewMaxZoom: number
   maxZoom: number
   tileUrlTemplate: string | null
@@ -187,6 +189,8 @@ export interface OverlayBoundsMeta {
   opacity: number
   supports_recolor: boolean
   supports_xyz_tiles: boolean
+  /** P2-4：direct 源图层为 false（无烘焙 overview PNG） */
+  has_overview: boolean
   overview_max_zoom: number
   maxzoom: number
   tile_url_template: string | null
@@ -219,6 +223,8 @@ export function parseOverlayBoundsMeta(raw: unknown): OverlayBoundsMeta {
   const opacity = _overlayMetaFiniteNumber(meta.opacity) ?? 0.7
   const supports_recolor = Boolean(meta.supports_recolor)
   const supports_xyz_tiles = Boolean(meta.supports_xyz_tiles)
+  // P2-4：direct 源图层无烘焙 overview PNG（缺省 true 向后兼容旧 meta）
+  const has_overview = meta.has_overview === undefined ? true : Boolean(meta.has_overview)
   const overview_max_zoom =
     _overlayMetaFiniteNumber(meta.overview_max_zoom) ?? DEFAULT_OVERVIEW_MAX_ZOOM
   const maxzoom = _overlayMetaFiniteNumber(meta.maxzoom) ?? DEFAULT_TILE_MAX_ZOOM
@@ -237,6 +243,7 @@ export function parseOverlayBoundsMeta(raw: unknown): OverlayBoundsMeta {
     opacity,
     supports_recolor,
     supports_xyz_tiles,
+    has_overview,
     overview_max_zoom,
     maxzoom,
     tile_url_template,
@@ -331,8 +338,11 @@ export function createOverlayImageModule(
     zoom: number,
     overviewMaxZoom: number,
     supportsXyz: boolean,
+    hasOverview = true,
   ): 'image' | 'raster-xyz' {
     if (!supportsXyz) return 'image'
+    // P2-4：direct 源图层无 overview PNG → 全程动态 XYZ 瓦片
+    if (!hasOverview) return 'raster-xyz'
     // hysteresis applied by caller using current mode
     return zoom <= overviewMaxZoom ? 'image' : 'raster-xyz'
   }
@@ -342,8 +352,10 @@ export function createOverlayImageModule(
     current: 'image' | 'raster-xyz',
     overviewMaxZoom: number,
     supportsXyz: boolean,
+    hasOverview = true,
   ): 'image' | 'raster-xyz' {
     if (!supportsXyz) return 'image'
+    if (!hasOverview) return 'raster-xyz'
     if (current === 'image') {
       return zoom > overviewMaxZoom + OVERVIEW_HYSTERESIS ? 'raster-xyz' : 'image'
     }
@@ -659,6 +671,7 @@ export function createOverlayImageModule(
         loaded.renderMode,
         loaded.overviewMaxZoom,
         loaded.supportsXyzTiles,
+        loaded.hasOverview,
       )
       if (next !== loaded.renderMode) {
         void _switchRenderMode(loaded, next)
@@ -813,7 +826,7 @@ export function createOverlayImageModule(
       const tileUrlTemplate = meta.tile_url_template ?? `/overlay-tiles/${layerId}/{z}/{x}/{y}.png`
 
       const zoom = options.map.getZoom()
-      const renderMode = _desiredMode(zoom, overviewMaxZoom, supportsXyzTiles)
+      const renderMode = _desiredMode(zoom, overviewMaxZoom, supportsXyzTiles, meta.has_overview)
       const { sourceId, rasterLayerId, footprintSourceId, footprintLayerId } = _ids(layerId)
 
       if (renderMode === 'raster-xyz' && supportsXyzTiles) {
@@ -847,6 +860,7 @@ export function createOverlayImageModule(
         currentTime,
         renderMode,
         supportsXyzTiles,
+        hasOverview: meta.has_overview,
         overviewMaxZoom,
         maxZoom,
         tileUrlTemplate: supportsXyzTiles ? tileUrlTemplate : null,

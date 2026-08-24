@@ -681,13 +681,8 @@ def _try_load_imported_overlay(layer_id: str) -> OverlaySpec | None:
         meta.get("category")
         or ("time-series" if (time_list or has_time_previews) else "static")
     )
-    # 时序层通常只有 preview_{time}.png，无根目录 preview.png
-    if category == "time-series":
-        if not has_time_previews and not has_static_preview:
-            return None
-    elif not has_static_preview:
-        return None
 
+    # source 解析提前（P2-4 direct 源判定需要；原顺序在 preview 判定之后）
     source_filename = meta.get("source_filename")
     source_path = dest_dir / str(source_filename) if source_filename else None
     if source_path is not None and not source_path.is_file():
@@ -699,6 +694,16 @@ def _try_load_imported_overlay(layer_id: str) -> OverlaySpec | None:
         )
         if candidates:
             source_path = candidates[0]
+
+    # 时序层通常只有 preview_{time}.png，无根目录 preview.png
+    if category == "time-series":
+        if not has_time_previews and not has_static_preview:
+            return None
+    elif not has_static_preview:
+        # P2-4 direct 源图层：无烘焙 preview.png 但有 GeoTIFF 源
+        # （含 .cog）→ 允许注册，前端全程走动态 XYZ 瓦片渲染。
+        if source_path is None:
+            return None
 
     if not time_list and has_time_previews:
         time_list = sorted(
@@ -781,7 +786,11 @@ def list_overlay_ids() -> list[str]:
                 has_preview = (child / "preview.png").is_file() or any(
                     child.glob("preview_*.png")
                 )
-                if has_preview:
+                # P2-4：direct 源图层（仅 source GeoTIFF/COG + bounds.json）也算可注册
+                has_source = any(child.glob("source*.tif")) or any(
+                    child.glob("source*.tiff")
+                )
+                if has_preview or has_source:
                     ids.add(child.name)
     except Exception:
         pass
@@ -1038,6 +1047,8 @@ def read_bounds(layer_id: str, time: str | None = None) -> dict[str, Any]:
     )
     meta.update(tile_meta_fields(layer_id))
     meta["supports_xyz_tiles"] = supports_tiles
+    # P2-4：direct 源图层无烘焙 overview PNG，前端据此全程走动态 XYZ 瓦片
+    meta["has_overview"] = spec.png_filename is not None
     from app.services.overlay_recolor import overlay_supports_recolor
 
     meta["supports_recolor"] = overlay_supports_recolor(layer_id, time)
