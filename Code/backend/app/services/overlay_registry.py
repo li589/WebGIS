@@ -97,6 +97,13 @@ class OverlaySpec:
     source_variable: str | None = None
     """读取的变量名（HDF5/NetCDF/MAT）。GeoTIFF 忽略。"""
 
+    source_band: int = 1
+    """GeoTIFF 多波段源用于 XYZ 瓦片/动态预览的波段（1-based）。
+    ERA5 DWAA/WDAA 源是 366 个逐日事件标识波段，事件次数已由烘焙脚本合成；
+    交互式瓦片不能用默认 band=1（首日为 nodata=255），必须按图层显式选择
+    有代表意义的事件波段（本项目统一取夏季事件峰值的 2020-07-01 波段 183）。
+    """
+
     source_reader: str = "auto"
     """auto | mat | netcdf | geotiff | hdf5。auto 按文件扩展名判断。"""
 
@@ -168,6 +175,7 @@ class OverlaySpec:
             "time_list": list(self.time_list),
             "default_time": self.default_time,
             "current_time": self.default_time,
+            "source_band": self.source_band,
         }
 
     def resolve_source_path(self, time: str | None = None) -> Path | None:
@@ -821,6 +829,7 @@ def _register_static_overlays_from_config() -> None:
             crs=str(entry.get("crs") or "EPSG:4326"),
             source_path=_data_join(*str(rel).split("/")) if rel else None,
             source_variable=entry.get("source_variable"),
+            source_band=int(entry.get("source_band", 1)),
             source_reader=str(entry.get("source_reader") or "auto"),
         )
         register_overlay(spec)

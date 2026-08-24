@@ -165,6 +165,7 @@ def _load_source_grid(spec: Any, time: str | None) -> np.ndarray | None:
         return None
     suffix = src_path.suffix.lower()
     if suffix in {".tif", ".tiff", ".geotiff", ".cog"}:
+        band = int(getattr(spec, "source_band", 1) or 1)
         # 巨型源（CLCD 类 stripped 无 overview）优先复用 tile 服务的进程内
         # 降采样金字塔：直读（哪怕 out_shape 降采样）都要扫全文件行 strip
         # （CLCD 实测 113s/次），金字塔一次构建后瓦片/重着色全部秒级。
@@ -172,7 +173,7 @@ def _load_source_grid(spec: Any, time: str | None) -> np.ndarray | None:
             from app.services.overlay_tile_service import _source_pyramid
 
             pyramid = _source_pyramid(
-                str(src_path), 1, src_path.stat().st_mtime_ns
+                str(src_path), band, src_path.stat().st_mtime_ns
             )
         except Exception:
             pyramid = None
@@ -200,13 +201,13 @@ def _load_source_grid(spec: Any, time: str | None) -> np.ndarray | None:
                 )
                 oh = max(1, int(round(ds.height * scale)))
                 ow = max(1, int(round(ds.width * scale)))
-                band = ds.read(
-                    1,
+                band_data = ds.read(
+                    min(band, ds.count),
                     out_shape=(oh, ow),
                     resampling=Resampling.bilinear,
                     masked=True,
                 )
-                values = np.ma.filled(np.ma.array(band), np.nan).astype(np.float32)
+                values = np.ma.filled(np.ma.array(band_data), np.nan).astype(np.float32)
                 # 2026-08-24 三联报障 D：重着色输出必须与烘焙 preview 同为
                 # 窗口 Mercator 线性网格（导入链烘焙走 3857 重投影）；否则
                 # 换源后中高纬四角插值错位（"变不清晰"）。out_shape 读取时
@@ -252,9 +253,6 @@ def _load_source_grid(spec: Any, time: str | None) -> np.ndarray | None:
             values = _reproject_mat_grid_to_mercator_linear(
                 values, data_array, spec, time
             )
-        values = _reproject_mat_grid_to_mercator_linear(
-            values, data_array, spec, time
-        )
         # Downsample large grids for preview —— 全覆盖均匀重采样（nearest）。
         # 旧实现 ``values[::rs, ::cs][:oh, :ow]`` 在 scale≈0.53 时 rs=cs=1，
         # 退化为左上角纯裁剪（全球 EASE 网格只显示 53%×53% 再拉伸全屏的根因）。

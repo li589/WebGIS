@@ -84,12 +84,17 @@ def _build_source_pyramid(
             oh = max(1, int(round(h * scale)))
             ow = max(1, int(round(w * scale)))
             data = src.read(
-                min(band, src.count),
+                min(int(band), src.count),
                 out_shape=(oh, ow),
                 resampling=Resampling.nearest,
                 masked=True,
             )
             arr = np.ma.filled(np.ma.asarray(data).astype(np.float32), np.nan)
+            # 多波段逐日事件源（ERA5 DWAA/WDAA）：255 是 nodata 哨兵。
+            # 某些环境 rasterio 不暴露 nodata 元数据，必须显式转 NaN，
+            # 否则金字塔低层级瓦片会把全图染成不透明数据。
+            if src.count > 1:
+                arr = np.where(arr == 255, np.nan, arr)
             transform = src.transform * Affine.scale(w / ow, h / oh)
             b = src.bounds
             return (
@@ -274,6 +279,7 @@ def render_geotiff_tile_png(
                     src_nodata=np.nan,
                     dst_nodata=np.nan,
                 )
+                # 金字塔路径在 _build_source_pyramid 已过滤多波段 nodata 哨兵；直接渲染。
                 valid = np.isfinite(dst)
                 rgba = _apply_palette(dst, valid, **style_kw)
                 return encode_rgba_png(rgba)
@@ -310,7 +316,7 @@ def render_geotiff_tile_png(
             m_left, m_bottom, m_right, m_top, _TILE_SIZE, _TILE_SIZE
         )
         reproject(
-            source=rasterio.band(src, min(band, src.count)),
+            source=rasterio.band(src, min(int(band), src.count)),
             destination=dst,
             src_transform=src.transform,
             src_crs=src_crs,
@@ -322,6 +328,10 @@ def render_geotiff_tile_png(
         )
         if src_nodata is not None:
             dst = np.where(dst == src_nodata, np.nan, dst)
+        # 多波段逐日事件源即使源 nodata 元数据缺失，仍把填充哨兵 255 识别为空值；
+        # 否则 band 1 全 255 会被调色为不透明数据（ERA5 图空白/全盖）。
+        if src.count > 1:
+            dst = np.where(dst == 255, np.nan, dst)
 
     valid = np.isfinite(dst)
     rgba = _apply_palette(dst, valid, **style_kw)

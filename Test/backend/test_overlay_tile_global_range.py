@@ -110,3 +110,79 @@ def test_explicit_min_max_bypasses_global_range(global_tif: Path) -> None:
     )
     rgba = np.asarray(Image.open(__import__("io").BytesIO(png)).convert("RGBA"))
     assert (rgba[..., 3] > 0).any(), "显式范围内瓦片应有可见像素"
+
+
+def _write_daily_event_tif(path: Path) -> None:
+    """多波段逐日事件源：band1 全 255（nodata），band2 有局部事件 1。"""
+    import rasterio
+    from rasterio.transform import from_bounds
+
+    width, height = 144, 72
+    band1 = np.full((height, width), 255, dtype="uint8")
+    band2 = np.full((height, width), 255, dtype="uint8")
+    band2[24:48, 72:96] = 1  # 东北象限事件
+    transform = from_bounds(-180, -85.0511287798066, 180, 85.0511287798066, width, height)
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        width=width,
+        height=height,
+        count=2,
+        dtype="uint8",
+        crs="EPSG:4326",
+        transform=transform,
+        nodata=255,
+    ) as dst:
+        dst.write(band1, 1)
+        dst.write(band2, 2)
+
+
+@pytest.fixture()
+def daily_event_tif(tmp_path: Path) -> Path:
+    src = tmp_path / "daily_event.tif"
+    _write_daily_event_tif(src)
+    return src
+
+
+def test_multiband_daily_event_tile_uses_selected_band(daily_event_tif: Path) -> None:
+    """ERA5 366 波段源回归：不能用默认 band1（全 255）出全图数据。
+
+    修复：OverlaySpec.source_band 传入瓦片/动态预览；多波段源显式把 255
+    识别为 nodata。选中 band2 时瓦片应有局部事件像素，其余透明。
+    """
+    from app.services.overlay_tile_service import _cached_tile
+
+    _cached_tile.cache_clear()
+    png = render_overlay_tile(
+        str(daily_event_tif),
+        2,
+        2,
+        1,
+        band=2,
+        palette="viridis",
+        min_value=0.0,
+        max_value=2.0,
+    )
+    rgba = np.asarray(Image.open(__import__("io").BytesIO(png)).convert("RGBA"))
+    visible = rgba[..., 3] > 0
+    assert visible.any(), "选中事件波段应有可见像素"
+    assert visible.mean() < 0.6, "事件像素不应铺满全图（255 必须按 nodata 过滤）"
+
+
+def test_multiband_daily_event_default_band_filters_nodata(daily_event_tif: Path) -> None:
+    """默认 band1 全 255 时必须输出全透明，而不是把 nodata 染成数据。"""
+    from app.services.overlay_tile_service import _cached_tile
+
+    _cached_tile.cache_clear()
+    png = render_overlay_tile(
+        str(daily_event_tif),
+        2,
+        2,
+        1,
+        palette="viridis",
+        min_value=0.0,
+        max_value=2.0,
+    )
+    rgba = np.asarray(Image.open(__import__("io").BytesIO(png)).convert("RGBA"))
+    assert not (rgba[..., 3] > 0).any(), "band1 全 255 应全部按 nodata 透明"

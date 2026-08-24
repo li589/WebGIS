@@ -277,6 +277,7 @@ def get_overlay_tile(
             z,
             x,
             y,
+            band=spec.source_band,
             palette=palette or spec.palette or "viridis",
             min_value=min_value if min_value is not None else spec.vmin,
             max_value=max_value if max_value is not None else spec.vmax,

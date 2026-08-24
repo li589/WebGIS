@@ -110,6 +110,7 @@
     "unit": "events",
     "opacity": 0.8,
     "source_reader": "geotiff",
+    "source_band": 183,
     "source_path_rel": "Hazards/DWAA_result/DW_T7/ERA5_2020_DW_SMCI.tif"
   },
   "era5-wdaa-cn": {
@@ -122,6 +123,7 @@
     "unit": "events",
     "opacity": 0.8,
     "source_reader": "geotiff",
+    "source_band": 183,
     "source_path_rel": "Hazards/DWAA_result/WD_T7/ERA5_2020_WD_SMCI.tif"
   },
   "co2-cn": {
