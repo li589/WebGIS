@@ -45,6 +45,64 @@ def _store_manifest(
     return {"manifest": artifact}
 
 
+def _align_window_to_available(
+    algorithm_params: dict[str, object],
+    smap_folder: str,
+    ctx: NodeExecutionContext,
+) -> dict[str, object]:
+    """请求窗口与本地 SMAP 数据零交集时，对齐到最新可用窗（数据现实优先）。
+
+    与 ``algorithms.omega_sf._build_time_series`` 的容错语义一致：有交集时
+    不调整（缺失日由逐像元反演自然 NaN 处理，与 Matlab 行为一致）；
+    零交集时以本地最新可用日为端点回退一个请求窗长度，避免直接失败。
+    """
+    from datetime import datetime, timedelta
+
+    start_raw = str(algorithm_params.get("start_date") or "").strip()
+    end_raw = str(algorithm_params.get("end_date") or "").strip()
+    if len(start_raw) < 8 or len(end_raw) < 8:
+        return algorithm_params
+
+    try:
+        from algorithms.omega_sf import _scan_folder_dates
+
+        available = _scan_folder_dates(smap_folder)
+    except Exception:
+        return algorithm_params
+    if not available:
+        return algorithm_params
+
+    try:
+        start = datetime.strptime(start_raw[:8], "%Y%m%d")
+        end = datetime.strptime(end_raw[:8], "%Y%m%d")
+    except ValueError:
+        return algorithm_params
+
+    if any(start <= t <= end for t in available):
+        return algorithm_params  # 有交集：保持请求窗口
+
+    latest = max(available)
+    window_days = max((end - start).days, 7)  # 至少 8 天（含端点）
+    new_end = latest
+    new_start = new_end - timedelta(days=window_days)
+
+    message = (
+        f"时间窗自动对齐：请求 {start:%Y%m%d}~{end:%Y%m%d} 本地无数据，"
+        f"回退到最新可用窗 {new_start:%Y%m%d}~{new_end:%Y%m%d}"
+        f"（本地最新 {latest:%Y%m%d}；机器时钟与数据可用性不匹配时以数据为准）"
+    )
+    if ctx.logger_adapter is not None:
+        try:
+            ctx.logger_adapter.emit_stage_start("omega_sf_fenkuai", message)
+        except Exception:
+            pass
+
+    aligned = dict(algorithm_params)
+    aligned["start_date"] = f"{new_start:%Y%m%d}"
+    aligned["end_date"] = f"{new_end:%Y%m%d}"
+    return aligned
+
+
 # omega_sf 专有数据源键映射（daily bundle 键复用 bundles.py 的映射）
 _OMEGA_SF_DATASOURCE_KEY_MAP: dict[str, tuple[str, ...]] = {
     "fy3d_folder": ("fy3d_folder", "fy_daily_mat", "daily_mat_sources"),
@@ -174,6 +232,17 @@ class OmegaSfFenkuaiModule(BaseModule):
                 f"omega_sf_fenkuai requires datasource_selection keys: "
                 f"{', '.join(sorted(missing_keys))}"
             )
+
+        # 数据现实优先（2026-08-25）：请求窗口与本地 SMAP 数据零交集时
+        # 自动对齐到最新可用窗——机器时钟超前（离线演示机）或数据发布
+        # 滞后时，按当天展开的默认窗会完全落在本地数据之外，反演直接
+        # 报「SMAP 文件夹无可用日期数据」。对齐后用户链路（添加→运行
+        # →产出图层组）不受环境影响。
+        algorithm_params = _align_window_to_available(
+            algorithm_params,
+            str(datasource_selection["smap_folder"]),
+            ctx,
+        )
 
         # 构建配置
         config = OmegaSfConfig.from_params(algorithm_params)
