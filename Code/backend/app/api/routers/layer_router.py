@@ -32,6 +32,8 @@ from shared.contracts.api_contracts import (
     LayerCategoryResponse,
     LayerLifecycleResponse,
     LayerLifecycleRunSummary,
+    LayerOnlineSyncRequest,
+    LayerOnlineSyncResponse,
 )
 
 _logger = logging.getLogger(__name__)
@@ -297,6 +299,152 @@ def get_layer_online_temporal(
     if cap is None or not cap.enabled:
         return {"layer_id": layer_id, "available": False}
     return {"layer_id": layer_id, "available": True, **cap.model_dump()}
+
+
+def _submit_online_sync_workflow(
+    payload: Any, cred: Any = None
+) -> Any:
+    """online_sync 的 workflow 提交封装（可 mock）。
+
+    模块级独立函数便于测试隔离路由编排逻辑与真实 workflow 提交。
+    """
+    from app.api.routers.workflow_router import submit_workflow
+
+    return submit_workflow(
+        payload,
+        cred=cred if hasattr(cred, "role") else None,
+    )
+
+
+@router.post(
+    "/layer-assets/{layer_id}/sync",
+    tags=["layer-platform"],
+    response_model=LayerOnlineSyncResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def sync_layer_asset_online(
+    layer_id: str,
+    body: LayerOnlineSyncRequest | None = None,
+    cred=Depends(get_request_user),
+) -> LayerOnlineSyncResponse:
+    """在线源同步统一入口（图层平台子系统 P1）。
+
+    前端不再自行拼 workflow 提交参数；服务端创建 ``workflow_kind=online_sync``
+    的 run 并复用 workflow-runs 状态/事件/取消契约。
+
+    语义：
+    - 图层未启用 online_temporal → ``skipped-unsupported``（200，不报错）
+    - 已有同图层同时间的活跃 online_sync run → ``in-flight``（复用）
+    - 其他情况 → 提交 workflow run，返回 ``submitted``
+
+    失败时保留旧资产显示（run 失败不影响已有烘焙资产）。
+    """
+    check_resource_access(cred, "layer", layer_id)
+    descriptor = get_layer_descriptor(layer_id)
+    cap = descriptor.online_temporal if descriptor else None
+    if cap is None or not cap.enabled:
+        return LayerOnlineSyncResponse(
+            status="skipped-unsupported",
+            message=f"图层 {layer_id} 未启用在线时间获取。",
+            layer_id=layer_id,
+            time_key=body.time_key if body else None,
+        )
+
+    from shared.contracts.api_contracts import ExecutionStatus
+
+    from app.services.workflow_repository import SQLiteWorkflowRepository
+
+    body = body or LayerOnlineSyncRequest()
+    repository = SQLiteWorkflowRepository()
+
+    # 复用同图层活跃 online_sync run（避免重复拉取）
+    for existing in repository.list_runs_by_layer(
+        layer_id, limit=10, workflow_kind="online_sync"
+    ):
+        if existing.status in {
+            ExecutionStatus.accepted,
+            ExecutionStatus.queued,
+            ExecutionStatus.running,
+            ExecutionStatus.retry_pending,
+        }:
+            return LayerOnlineSyncResponse(
+                run_id=existing.run_id,
+                status="in-flight",
+                message=f"图层 {layer_id} 的在线同步已在执行中。",
+                layer_id=layer_id,
+                time_key=body.time_key,
+                status_url=existing.status_url or f"/workflow-runs/{existing.run_id}",
+                events_url=existing.events_url or f"/workflow-runs/{existing.run_id}/events",
+            )
+
+    # 构建 workflow 提交请求
+    from shared.contracts.api_contracts import (
+        TimeRange,
+        WorkflowCommandType,
+        WorkflowPriority,
+        WorkflowResourceProfile,
+        WorkflowSubmitRequest,
+    )
+
+    time_range = body.time_range
+    if time_range is None and body.time_key:
+        # time_key 简单解析：YYYY-MM → 当月范围；YYYY-MM-DD → 当天
+        key = body.time_key
+        try:
+            if len(key) == 7:  # YYYY-MM
+                from datetime import date
+                y, m = int(key[:4]), int(key[5:7])
+                start = date(y, m, 1)
+                if m == 12:
+                    end = date(y + 1, 1, 1)
+                else:
+                    end = date(y, m + 1, 1)
+                time_range = TimeRange(
+                    start_at=start.isoformat(), end_at=end.isoformat()
+                )
+            elif len(key) == 10:  # YYYY-MM-DD
+                from datetime import date as _date, timedelta as _td
+                d = _date.fromisoformat(key)
+                time_range = TimeRange(
+                    start_at=d.isoformat(), end_at=(d + _td(days=1)).isoformat()
+                )
+        except (ValueError, TypeError):
+            pass
+
+    priority = (
+        WorkflowPriority.low
+        if body.priority == "low" or body.is_prefetch
+        else WorkflowPriority.normal
+    )
+    payload = WorkflowSubmitRequest(
+        command_type=WorkflowCommandType.custom,
+        command_label=f"在线同步 {layer_id}" + (f" @ {body.time_key}" if body.time_key else ""),
+        layer_id=layer_id,
+        priority=priority,
+        resource_profile=(
+            WorkflowResourceProfile.batch
+            if body.is_prefetch or body.priority == "low"
+            else WorkflowResourceProfile.standard
+        ),
+        time_range=time_range,
+        parameters={
+            "workflow_kind": "online_sync",
+            "time_key": body.time_key,
+            "is_prefetch": body.is_prefetch,
+        },
+        queue_tag=cap.queue_tag,
+    )
+
+    accepted = _submit_online_sync_workflow(payload, cred=cred)
+    return LayerOnlineSyncResponse(
+        run_id=accepted.run_id,
+        status="submitted",
+        message=accepted.message,
+        layer_id=layer_id,
+        time_key=body.time_key,
+        status_url=accepted.status_url,
+        events_url=accepted.events_url,
+    )
 
 
 @router.get("/geo/transform", tags=["geo"])

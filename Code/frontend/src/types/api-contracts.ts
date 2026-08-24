@@ -424,6 +424,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/layer-assets/{layer_id}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Layer Asset Online
+         * @description 在线源同步统一入口（图层平台子系统 P1）。
+         *
+         *     前端不再自行拼 workflow 提交参数；服务端创建 ``workflow_kind=online_sync``
+         *     的 run 并复用 workflow-runs 状态/事件/取消契约。
+         *
+         *     语义：
+         *     - 图层未启用 online_temporal → ``skipped-unsupported``（200，不报错）
+         *     - 已有同图层同时间的活跃 online_sync run → ``in-flight``（复用）
+         *     - 其他情况 → 提交 workflow run，返回 ``submitted``
+         *
+         *     失败时保留旧资产显示（run 失败不影响已有烘焙资产）。
+         */
+        post: operations["sync_layer_asset_online_layer_assets__layer_id__sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/geo/transform": {
         parameters: {
             query?: never;
@@ -6034,6 +6064,49 @@ export interface components {
             updated_at: string;
         };
         /**
+         * LayerOnlineSyncRequest
+         * @description 在线源同步请求（POST /layer-assets/{layer_id}/sync，图层平台子系统 P1）。
+         *
+         *     统一入口：在线时间获取/在线源拉取不再让前端自行拼 workflow 提交参数。
+         *     服务端据此创建 ``workflow_kind=online_sync`` 的 run，并复用现有
+         *     workflow-runs 状态/事件/取消契约。失败时保留旧资产显示。
+         */
+        LayerOnlineSyncRequest: {
+            /** Time Key */
+            time_key?: string | null;
+            time_range?: components["schemas"]["TimeRange"] | null;
+            /**
+             * Is Prefetch
+             * @default false
+             */
+            is_prefetch: boolean;
+            /**
+             * Priority
+             * @default normal
+             */
+            priority: string;
+        };
+        /**
+         * LayerOnlineSyncResponse
+         * @description 在线源同步响应：复用 WorkflowAcceptedResponse 语义。
+         */
+        LayerOnlineSyncResponse: {
+            /** Run Id */
+            run_id?: string | null;
+            /** Status */
+            status: string;
+            /** Message */
+            message: string;
+            /** Layer Id */
+            layer_id: string;
+            /** Time Key */
+            time_key?: string | null;
+            /** Status Url */
+            status_url?: string | null;
+            /** Events Url */
+            events_url?: string | null;
+        };
+        /**
          * LayerPresentation
          * @description X1: 图层 UI 呈现元数据 — 后端下发，前端消费的唯一真源。
          *
@@ -9824,6 +9897,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_layer_asset_online_layer_assets__layer_id__sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["LayerOnlineSyncRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayerOnlineSyncResponse"];
                 };
             };
             /** @description Validation Error */

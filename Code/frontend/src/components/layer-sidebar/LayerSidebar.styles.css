@@ -1554,3 +1554,40 @@ h2 {
 .layer-sidebar-container::-webkit-scrollbar-thumb:hover {
   background: var(--border-strong);
 }
+
+/* ── 图层平台子系统 P1：侧栏生命周期徽标 ────────────────────────────────── */
+.lifecycle-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.36rem;
+  border-radius: 0.24rem;
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+}
+
+.lifecycle-badge-fresh {
+  color: var(--status-success, #3fb27f);
+  border-color: color-mix(in srgb, var(--status-success, #3fb27f) 40%, transparent);
+  background: color-mix(in srgb, var(--status-success, #3fb27f) 12%, transparent);
+}
+
+.lifecycle-badge-stale,
+.lifecycle-badge-missing {
+  color: var(--status-warning, #d9a441);
+  border-color: color-mix(in srgb, var(--status-warning, #d9a441) 40%, transparent);
+  background: color-mix(in srgb, var(--status-warning, #d9a441) 12%, transparent);
+}
+
+.lifecycle-badge-updating {
+  color: var(--accent, #5ad5ff);
+  border-color: color-mix(in srgb, var(--accent, #5ad5ff) 40%, transparent);
+  background: color-mix(in srgb, var(--accent, #5ad5ff) 12%, transparent);
+}
+
+.lifecycle-badge-failed {
+  color: var(--status-danger, #e85d5d);
+  border-color: color-mix(in srgb, var(--status-danger, #e85d5d) 40%, transparent);
+  background: color-mix(in srgb, var(--status-danger, #e85d5d) 12%, transparent);
+}

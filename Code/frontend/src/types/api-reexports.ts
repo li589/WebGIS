@@ -80,6 +80,11 @@ export type LayerAssetStateResponse = Schema<'LayerAssetStateResponse'>
 export type LayerLifecycleRunSummary = Schema<'LayerLifecycleRunSummary'>
 export type LayerLifecycleResponse = Schema<'LayerLifecycleResponse'>
 
+// ── 图层平台子系统：在线源同步（P1，2026-08-25） ─────────────────────────────
+
+export type LayerOnlineSyncRequest = Schema<'LayerOnlineSyncRequest'>
+export type LayerOnlineSyncResponse = Schema<'LayerOnlineSyncResponse'>
+
 // ── Weather 相关 ──────────────────────────────────────────────────────────
 
 export type WeatherLayerRenderHint = Schema<'WeatherLayerRenderHint'>

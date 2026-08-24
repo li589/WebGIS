@@ -773,6 +773,43 @@ class LayerLifecycleResponse(BaseModel):
     updated_at: datetime
 
 
+class LayerOnlineSyncRequest(BaseModel):
+    """在线源同步请求（POST /layer-assets/{layer_id}/sync，图层平台子系统 P1）。
+
+    统一入口：在线时间获取/在线源拉取不再让前端自行拼 workflow 提交参数。
+    服务端据此创建 ``workflow_kind=online_sync`` 的 run，并复用现有
+    workflow-runs 状态/事件/取消契约。失败时保留旧资产显示。
+    """
+
+    time_key: str | None = None
+    """目标时间块 key（如 '2023-01' / '2023-01-15'）；缺省=图层 default_time。"""
+
+    time_range: TimeRange | None = None
+    """显式时间范围；与 time_key 至少给一个。"""
+
+    is_prefetch: bool = False
+    """是否预获取（低优先级，达到并发上限可跳过）。"""
+
+    priority: str = "normal"
+    """'low' | 'normal'；预获取通常 low。"""
+
+
+class LayerOnlineSyncResponse(BaseModel):
+    """在线源同步响应：复用 WorkflowAcceptedResponse 语义。"""
+
+    run_id: str | None = None
+    """已创建或复用的 run id；skip 原因为 cooldown/succeeded 时为既有 run。"""
+
+    status: str
+    """submitted | in-flight | cooldown | succeeded | skipped-unsupported"""
+
+    message: str
+    layer_id: str
+    time_key: str | None = None
+    status_url: str | None = None
+    events_url: str | None = None
+
+
 class WeatherLayerRenderHint(BaseModel):
     layer_id: str
     paint_mode: str = "point_symbol"

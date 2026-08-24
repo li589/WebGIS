@@ -11,6 +11,7 @@ import type {
   LayerCatalogResponse,
   LayerCategoryResponse,
   LayerLifecycleResponse,
+  LayerOnlineSyncResponse,
   WeatherPointResponse,
   WorkflowSubmitRequest,
 } from '../types/api-reexports'
@@ -46,6 +47,25 @@ export function fetchLayerLifecycle(layerId: string) {
   return requestJson<LayerLifecycleResponse>(
     `/layers/${encodeURIComponent(layerId)}/lifecycle`,
     { silent: true, timeoutMs: 30000 },
+  )
+}
+
+/** 图层平台子系统 P1：在线源同步统一入口（workflow_kind=online_sync）。 */
+export function syncLayerAssetOnline(
+  layerId: string,
+  options?: { timeKey?: string; isPrefetch?: boolean; priority?: 'low' | 'normal' },
+) {
+  return requestJson<LayerOnlineSyncResponse>(
+    `/layer-assets/${encodeURIComponent(layerId)}/sync`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        time_key: options?.timeKey ?? null,
+        is_prefetch: options?.isPrefetch ?? false,
+        priority: options?.priority ?? 'normal',
+      }),
+      timeoutMs: 120000,
+    },
   )
 }
 
