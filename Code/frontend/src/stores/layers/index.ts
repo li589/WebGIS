@@ -72,6 +72,7 @@ import { createCrossDomainBindings } from './bindings'
 import { createWorkspaceDomain } from './workspace-domain'
 import { createViewportDomain } from './viewport-domain'
 import { createWorkflowRunDomain } from './workflow-run-domain'
+import { createLifecycleDomain } from './lifecycle-domain'
 
 export const useLayersStore = defineStore('layers', () => {
   // ── Cross-domain bindings (populated by domain modules) ──
@@ -95,6 +96,24 @@ export const useLayersStore = defineStore('layers', () => {
   // ── 3. Workflow-run domain (runLayers + pointWeather + poller + runner + hydrate) ──
   // Created after workspace + viewport; populates workflow-run-side bindings.
   const workflowRun = createWorkflowRunDomain(bindings, workspace, viewport)
+
+  // ── 4. Lifecycle domain（图层平台子系统 P0）──
+  // 聚合「资产 + 工作流 + 时间轴」为统一生命周期视图；在 workflow-run 之后创建，
+  // 读取 jobLayers 与 overlayTimeStates（MapCanvas 双写过渡期经 bindings 注入）。
+  const lifecycle = createLifecycleDomain({
+    bindings,
+    getJobLayers: () => workflowRun.jobLayers.value,
+  })
+  // 图层添加后刷新 lifecycle（后端真源；失败静默走本地推导）
+  watch(
+    () => workspace.activeLayers.value.length,
+    () => {
+      const ids = workspace.activeLayers.value
+        .filter((l) => !l.importedRaster && !l.importedVector && !l.isAdminBoundary)
+        .map((l) => l.catalogId)
+      if (ids.length > 0) void lifecycle.refreshAll(ids)
+    },
+  )
 
   // ── Watch: currentHour → flush weather tile viewports ──
   // 小时变化是离散用户操作，需立即执行；取消挂起的视口防抖，避免用旧 hour 覆盖。
@@ -167,9 +186,13 @@ export const useLayersStore = defineStore('layers', () => {
     sidebarViewLabel: workspace.sidebarViewLabel,
     catalogJobStatus: workspace.catalogJobStatus,
     catalogRunReadiness: workspace.catalogRunReadiness,
+    // ── Computed: lifecycle（图层平台子系统 P0）──
+    layerLifecycle: lifecycle.layerLifecycle,
     // ── Data ──
     layerLibrary: workspace.layerLibrary,
     layerCategories: LAYER_CATEGORIES,
+    // ── Actions: lifecycle（图层平台子系统 P0）──
+    refreshLayerLifecycle: lifecycle.refreshLayerLifecycle,
     // ── Actions: workspace ──
     addLayer: workspace.addLayer,
     addImportedVectorLayer: workspace.addImportedVectorLayer,

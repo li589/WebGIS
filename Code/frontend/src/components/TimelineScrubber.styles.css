@@ -549,3 +549,42 @@
   color: var(--text-secondary);
   font-weight: 500;
 }
+
+/* ── 图层平台子系统 P0：生命周期徽标（叠加显示，不占 caption 三列布局） ── */
+.lifecycle-badge {
+  grid-column: 1 / -1;
+  justify-self: center;
+  margin-top: 0.15rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  border: 1px solid transparent;
+}
+
+.lifecycle-badge-fresh {
+  color: var(--status-success, #3fb27f);
+  border-color: color-mix(in srgb, var(--status-success, #3fb27f) 40%, transparent);
+  background: color-mix(in srgb, var(--status-success, #3fb27f) 12%, transparent);
+}
+
+.lifecycle-badge-stale,
+.lifecycle-badge-missing {
+  color: var(--status-warning, #d9a441);
+  border-color: color-mix(in srgb, var(--status-warning, #d9a441) 40%, transparent);
+  background: color-mix(in srgb, var(--status-warning, #d9a441) 12%, transparent);
+}
+
+.lifecycle-badge-updating {
+  color: var(--accent, #5ad5ff);
+  border-color: color-mix(in srgb, var(--accent, #5ad5ff) 40%, transparent);
+  background: color-mix(in srgb, var(--accent, #5ad5ff) 12%, transparent);
+}
+
+.lifecycle-badge-failed {
+  color: var(--status-danger, #e85d5d);
+  border-color: color-mix(in srgb, var(--status-danger, #e85d5d) 40%, transparent);
+  background: color-mix(in srgb, var(--status-danger, #e85d5d) 12%, transparent);
+}

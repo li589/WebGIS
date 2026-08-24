@@ -10,6 +10,7 @@ import type {
   WorkflowRunViewResponse,
   LayerCatalogResponse,
   LayerCategoryResponse,
+  LayerLifecycleResponse,
   WeatherPointResponse,
   WorkflowSubmitRequest,
 } from '../types/api-reexports'
@@ -37,6 +38,14 @@ export function submitOverlayAssetWorkflow(layerId: string, forceRebake = false)
       body: '{}',
       timeoutMs: 120000,
     },
+  )
+}
+
+/** 图层平台子系统 P0：图层生命周期聚合查询（资产 + 最近 run + 时间轴）。 */
+export function fetchLayerLifecycle(layerId: string) {
+  return requestJson<LayerLifecycleResponse>(
+    `/layers/${encodeURIComponent(layerId)}/lifecycle`,
+    { silent: true, timeoutMs: 30000 },
   )
 }
 

@@ -182,3 +182,22 @@ export function useWorkflowRun() {
     setWorkspaceHydrationGuard: store.setWorkspaceHydrationGuard,
   }
 }
+
+/**
+ * 图层平台子系统 P0：图层生命周期 selector。
+ *
+ * 返回 layerId → LayerLifecycleEntry 的响应式 Map（fresh/stale/updating/missing/failed），
+ * 时间轴与图层卡片统一从此处读取生命周期状态，不再自行拼接
+ * jobLayer / overlayTimeStates / 资产状态。
+ */
+export function useLayerLifecycle() {
+  const store = useLayersStore()
+  const layerLifecycle = toRef(store, 'layerLifecycle')
+
+  return {
+    layerLifecycle,
+    refreshLayerLifecycle: store.refreshLayerLifecycle,
+    /** 便捷读取：单图层生命周期条目（无数据时返回 null）。 */
+    getLifecycle: (layerId: string) => layerLifecycle.value.get(layerId) ?? null,
+  }
+}

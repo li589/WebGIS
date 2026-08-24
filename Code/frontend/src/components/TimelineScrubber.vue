@@ -26,6 +26,10 @@ const props = withDefaults(
     activeLayerName?: string
     /** 当前段是否正在在线获取中 */
     onlineFetchInProgress?: boolean
+    /** 图层平台子系统 P0：图层生命周期状态（fresh/stale/updating/missing/failed） */
+    lifecycleState?: 'fresh' | 'stale' | 'updating' | 'missing' | 'failed' | 'unknown'
+    /** lifecycle 状态提示文案（后端 message 或本地推导） */
+    lifecycleMessage?: string | null
   }>(),
   {
     granularity: 'hour',
@@ -34,6 +38,8 @@ const props = withDefaults(
     playIntervalMs: DEFAULT_PLAY_INTERVAL_MS,
     activeLayerName: '',
     onlineFetchInProgress: false,
+    lifecycleState: 'unknown',
+    lifecycleMessage: null,
   },
 )
 
@@ -133,6 +139,22 @@ const progressPercent = computed(() => {
 
 const liveLabel = computed(() => `${props.availabilityLabel}`)
 const coverageCaption = computed(() => props.coverageSourceLabel?.trim() || '数据覆盖')
+
+// ── 图层平台子系统 P0：生命周期徽标（叠加显示，不替换旧渲染） ────────────────
+const LIFECYSTATE_LABELS: Record<string, string> = {
+  fresh: '资产就绪',
+  stale: '资产陈旧',
+  updating: '更新中',
+  missing: '资产缺失',
+  failed: '更新失败',
+  unknown: '',
+}
+const lifecycleBadgeLabel = computed(
+  () => LIFECYSTATE_LABELS[props.lifecycleState] ?? '',
+)
+const lifecycleBadgeClass = computed(() => `lifecycle-badge-${props.lifecycleState}`)
+/** unknown 不显示徽标（保持旧行为） */
+const showLifecycleBadge = computed(() => props.lifecycleState !== 'unknown')
 
 /** 过长图层名中间省略，保留前缀与后缀便于辨认 */
 const displayLayerName = computed(() => truncateMiddle(props.activeLayerName?.trim() || '', 28))
@@ -641,6 +663,14 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
         }}</span>
         <strong class="availability-caption-status">{{ nearestSegment.availabilityLabel }}</strong>
         <span class="availability-caption-side availability-live">{{ liveLabel }}</span>
+        <!-- 图层平台子系统 P0：生命周期徽标（叠加，不改既有可用性显示） -->
+        <span
+          v-if="showLifecycleBadge"
+          class="lifecycle-badge"
+          :class="lifecycleBadgeClass"
+          :title="props.lifecycleMessage || lifecycleBadgeLabel"
+          >{{ lifecycleBadgeLabel }}</span
+        >
       </div>
 
       <!-- 可用性切片条：fetchable 段可点击触发在线获取 -->
