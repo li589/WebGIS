@@ -199,11 +199,15 @@ const emit = defineEmits<{
               </button>
             </div>
 
-            <div v-if="hasColorSymbology(row.layer)" class="layer-legend">
+            <!-- 图例行（2026-08-25 UX 简化）：单位已挪入状态行；仅当有
+                 vmin/vmax 刻度时渲染（无刻度时色带行无信息量，省一行高度）。 -->
+            <div
+              v-if="hasColorSymbology(row.layer) && (getSymbologyVmin(row.layer) || getSymbologyVmax(row.layer))"
+              class="layer-legend"
+            >
               <div class="legend-ramp" :style="getColorRampStyle(row.layer)"></div>
               <div class="legend-labels">
                 <span class="legend-min">{{ getSymbologyVmin(row.layer) }}</span>
-                <span class="legend-unit">{{ getSymbologyUnit(row.layer) }}</span>
                 <span class="legend-max">{{ getSymbologyVmax(row.layer) }}</span>
               </div>
             </div>
@@ -259,6 +263,14 @@ const emit = defineEmits<{
                   {{ LAYERS_COPY.viewReport }}
                 </button>
               </template>
+              <!-- 单位（2026-08-25 UX 简化）：从图例行挪入状态行，
+                   相对整个图层条水平居中（绝对定位，不随左右内容挤压）。 -->
+              <span
+                v-if="getSymbologyUnit(row.layer)"
+                class="layer-metric-unit"
+                :title="`图层计量单位：${getSymbologyUnit(row.layer)}`"
+                >{{ getSymbologyUnit(row.layer) }}</span
+              >
               <span class="order-hint"
                 >顺序
                 {{

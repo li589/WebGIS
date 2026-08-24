@@ -1246,12 +1246,25 @@ h2 {
 /* ── Layer row bottom (底行状态信息) ────────────────────────────────────── */
 .layer-row-bottom {
   --layer-meta-size: 0.72rem;
+  position: relative; /* 单位徽标绝对居中的定位基准 */
   display: flex;
   align-items: center;
   gap: 0.3rem;
   flex-wrap: wrap;
   padding-top: 0.16rem;
   border-top: 1px solid var(--border-subtle);
+}
+
+/* 单位（2026-08-25 UX 简化：从图例行挪入状态行）——相对整个图层条
+   水平居中（left:50% 位移），不随左右徽标挤压漂移。 */
+.layer-metric-unit {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--text-muted);
+  font-size: var(--layer-meta-size);
+  letter-spacing: 0.02em;
+  pointer-events: none; /* 不遮挡左右交互元素 */
 }
 
 .availability-chip {
