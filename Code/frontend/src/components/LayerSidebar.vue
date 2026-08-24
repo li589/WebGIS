@@ -11,6 +11,8 @@ import { computed, nextTick, ref, watch, onMounted } from 'vue'
 import { Diamond } from './ui/icons'
 
 import { useLayerWorkspace, useLayerLifecycle, useWorkflowRun } from '../stores/layers/selectors'
+import type { ActiveLayerDisplay } from '../stores/layers/types'
+import { deriveDataStatus } from '../utils/layer-data-status'
 import type { SidebarDragDeps, SidebarLayersDeps } from './layer-sidebar/sidebar-layers-deps'
 import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
@@ -167,6 +169,35 @@ function getLifecycleBadge(
   if (!entry || entry.lifecycleState === 'unknown') return null
   const label = LIFECYCLE_BADGE_LABELS[entry.lifecycleState] ?? entry.lifecycleState
   return { state: entry.lifecycleState, label, message: entry.message }
+}
+
+// ── 统一数据状态徽标（2026-08-25 UX 简化）────────────────────────────────
+// 三源（availability/lifecycle/job）归并为单枚五态徽标（运行中/排队中/
+// 异常/完成/旧数据），替代「数据异常/资产陈旧/失败」三枚堆叠——"资产"
+// 术语对地理研究者无意义，统一语义见 utils/layer-data-status.ts。
+function isStaticDataLayer(catalogId: string): boolean {
+  const item = layerLibrary.value.find((l) => l.catalogId === catalogId)
+  if (!item) return false
+  return (
+    String(item.updateLabel || '').includes('静态') || item.supportsTime === false
+  )
+}
+
+function getUnifiedDataStatus(
+  layer: ActiveLayerDisplay,
+): ReturnType<typeof deriveDataStatus> {
+  const badge = getLifecycleBadge(layer.catalogId)
+  const job = layer.jobLayer
+  return deriveDataStatus({
+    jobStatus: job?.status ?? null,
+    jobProgress: typeof job?.progress === 'number' ? job.progress : null,
+    availabilityState: layer.availabilityState,
+    availabilityLabel: layer.availabilityLabel,
+    availabilityDescription: layer.availabilityDescription ?? null,
+    lifecycleState: badge?.state ?? null,
+    lifecycleMessage: badge?.message ?? null,
+    isStaticLayer: isStaticDataLayer(layer.catalogId),
+  })
 }
 
 // ── 添加即运行（2026-08-25 UX 简化）─────────────────────────────────────
@@ -478,7 +509,7 @@ onMounted(() => {
       :availability-class="availabilityClass"
       :get-category-name="getCategoryName"
       :supports-online-temporal="supportsOnlineTemporal"
-      :get-lifecycle-badge="getLifecycleBadge"
+      :get-unified-data-status="getUnifiedDataStatus"
       @select-item="selectItem"
       @zoom-to-item="zoomToItem"
       @toggle-visibility="toggleVisibility"

@@ -1278,6 +1278,45 @@ h2 {
   background: var(--surface-violet-tint);
 }
 
+/* ── 统一数据状态徽标（2026-08-25 UX 简化：三源归并五态） ──────────────
+   运行中（蓝）/排队中（灰）/异常（红）/完成（绿）/旧数据（橙，暖色提示
+   非故障）。替代 availability-chip + lifecycle-badge + job-status-badge
+   三枚堆叠。 */
+.data-status-badge {
+  padding: 0.06rem 0.3rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-default);
+  background: var(--border-subtle);
+  font-size: var(--layer-meta-size);
+  font-weight: 600;
+}
+
+.data-status-running {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-surface);
+}
+.data-status-queued {
+  color: var(--text-secondary);
+  border-color: var(--border-default);
+  background: var(--surface-hover);
+}
+.data-status-error {
+  color: var(--danger, #e5484d);
+  border-color: var(--danger-border, rgba(229, 72, 77, 0.4));
+  background: var(--danger-surface, rgba(229, 72, 77, 0.12));
+}
+.data-status-done {
+  color: var(--success);
+  border-color: var(--success-border);
+  background: var(--success-surface);
+}
+.data-status-stale {
+  color: var(--accent-warm);
+  border-color: var(--warning-border);
+  background: var(--warning-surface);
+}
+
 .order-hint {
   color: var(--text-disabled);
   font-size: var(--layer-meta-size);

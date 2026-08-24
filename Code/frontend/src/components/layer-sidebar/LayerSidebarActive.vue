@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { LAYERS_COPY } from '../../ui-copy'
 import { productTagDescription } from '../../utils/workflow-expected-outputs'
+import type { DataStatusBadge } from '../../utils/layer-data-status'
 import { CircleDot, Circle, X, Menu } from '../ui/icons'
 import type { ActiveLayerDisplay, ActiveRunLayerGroup } from '../../stores/layers/types'
 import type { ActiveTocRow } from './useSidebarDragReorder'
@@ -22,10 +23,12 @@ defineProps<{
   availabilityClass: (state: string) => string
   getCategoryName: (categoryId: string) => string
   supportsOnlineTemporal: (catalogId: string) => boolean
-  /** 图层平台子系统 P1：layerId → lifecycle 状态徽标（null/缺省=不渲染）。 */
-  getLifecycleBadge?: (
-    catalogId: string,
-  ) => { state: string; label: string; message: string | null } | null
+  /**
+   * 统一数据状态徽标（2026-08-25 UX 简化）：归并 availability/lifecycle/job
+   * 三源为单枚五态徽标（运行中/排队中/异常/完成/旧数据）+ 查看报告。
+   * null = 不渲染。
+   */
+  getUnifiedDataStatus: (layer: ActiveLayerDisplay) => DataStatusBadge | null
 }>()
 
 const emit = defineEmits<{
@@ -206,25 +209,22 @@ const emit = defineEmits<{
             </div>
 
             <div class="layer-row-bottom">
+              <!-- 统一数据状态徽标（2026-08-25 UX 简化）：三源归并为
+                   五态（运行中/排队中/异常/完成/旧数据）——去掉
+                   「数据异常/资产陈旧/失败」堆叠与「资产」术语。 -->
               <span
-                class="availability-chip"
-                :class="availabilityClass(row.layer.availabilityState)"
+                v-if="getUnifiedDataStatus(row.layer)"
+                class="data-status-badge"
+                :class="`data-status-${getUnifiedDataStatus(row.layer)!.state}`"
+                :title="getUnifiedDataStatus(row.layer)!.title ?? undefined"
               >
-                {{ row.layer.availabilityLabel }}
+                {{ getUnifiedDataStatus(row.layer)!.label }}
               </span>
               <span
                 v-if="supportsOnlineTemporal(row.layer.catalogId)"
                 class="online-fetch-badge"
                 title="此图层支持在线获取历史时间数据"
                 >在线</span
-              >
-              <!-- 图层平台子系统 P1：生命周期徽标（fresh/stale/updating/missing/failed） -->
-              <span
-                v-if="getLifecycleBadge?.(row.layer.catalogId)"
-                class="lifecycle-badge"
-                :class="`lifecycle-badge-${getLifecycleBadge!(row.layer.catalogId)!.state}`"
-                :title="getLifecycleBadge!(row.layer.catalogId)!.message || getLifecycleBadge!(row.layer.catalogId)!.label"
-                >{{ getLifecycleBadge!(row.layer.catalogId)!.label }}</span
               >
               <span v-if="row.layer.isAdminBoundary" class="admin-tip-inline">边界 · 静态矢量</span>
               <span v-else-if="row.layer.isImported" class="admin-tip-inline"
@@ -250,30 +250,6 @@ const emit = defineEmits<{
                 }}</span
               >
               <template v-if="row.layer.jobLayer">
-                <span
-                  class="job-status-badge"
-                  :class="`job-${row.layer.jobLayer.status}`"
-                  :title="row.layer.jobLayer.message || undefined"
-                >
-                  {{
-                    row.layer.jobLayer.status === 'running'
-                      ? typeof row.layer.jobLayer.progress === 'number' &&
-                        row.layer.jobLayer.progress > 0
-                        ? `运行中 ${row.layer.jobLayer.progress}%`
-                        : '运行中'
-                      : row.layer.jobLayer.status === 'queued'
-                        ? '排队中'
-                        : row.layer.jobLayer.status === 'retry_pending'
-                          ? '等待重试'
-                          : row.layer.jobLayer.status === 'succeeded'
-                            ? '已完成'
-                            : row.layer.jobLayer.status === 'failed'
-                              ? '失败'
-                              : row.layer.jobLayer.status === 'cancelled'
-                                ? '已取消'
-                                : row.layer.jobLayer.status
-                  }}
-                </span>
                 <button
                   v-if="row.layer.jobLayer.reportSummary"
                   class="job-report-hint"

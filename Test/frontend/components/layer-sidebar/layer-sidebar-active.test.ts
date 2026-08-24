@@ -62,6 +62,7 @@ const mountSidebarProps = {
   availabilityClass: () => 'ok',
   getCategoryName: () => '辅助数据',
   supportsOnlineTemporal: () => false,
+  getUnifiedDataStatus: () => null,
 }
 
 function mountSidebar() {
@@ -125,33 +126,40 @@ describe('LayerSidebarActive 拖拽手柄化', () => {
   })
 })
 
-describe('LayerSidebarActive 生命周期徽标（图层平台子系统 P1）', () => {
-  it('getLifecycleBadge 返回状态时渲染徽标', () => {
+describe('LayerSidebarActive 统一数据状态徽标（2026-08-25 UX 简化）', () => {
+  it('getUnifiedDataStatus 返回状态时渲染单枚徽标（五态 class + 文案）', () => {
     const wrapper = mount(LayerSidebarActive, {
       props: {
         ...(mountSidebarProps as Record<string, unknown>),
-        getLifecycleBadge: (catalogId: string) =>
-          catalogId === 'catalog-1'
-            ? { state: 'updating', label: '更新中', message: '图层资产正在检查或更新。' }
-            : null,
+        getUnifiedDataStatus: (layer: { catalogId: string }) =>
+          layer.catalogId === 'catalog-1'
+            ? { state: 'running', label: '运行中 42%', title: '正在烘焙图层资产' }
+            : { state: 'stale', label: '旧数据', title: '数据可用但非最新' },
       },
     })
-    const badge = wrapper.find('.lifecycle-badge')
+    const badge = wrapper.find('.data-status-badge')
     expect(badge.exists()).toBe(true)
-    expect(badge.classes()).toContain('lifecycle-badge-updating')
-    expect(badge.text()).toBe('更新中')
+    expect(badge.classes()).toContain('data-status-running')
+    expect(badge.text()).toBe('运行中 42%')
+    expect(badge.attributes('title')).toBe('正在烘焙图层资产')
   })
 
-  it('getLifecycleBadge 未传或返回 null 时不渲染徽标', () => {
-    const withoutProp = mountSidebar()
-    expect(withoutProp.find('.lifecycle-badge').exists()).toBe(false)
+  it('getUnifiedDataStatus 返回 null 时不渲染徽标', () => {
+    const wrapper = mountSidebar()
+    expect(wrapper.find('.data-status-badge').exists()).toBe(false)
+  })
 
-    const withNull = mount(LayerSidebarActive, {
+  it('旧三枚徽标（availability-chip/lifecycle-badge/job-status-badge）已从条目移除', () => {
+    const wrapper = mount(LayerSidebarActive, {
       props: {
         ...(mountSidebarProps as Record<string, unknown>),
-        getLifecycleBadge: () => null,
+        getUnifiedDataStatus: () => ({ state: 'done', label: '完成' }),
       },
     })
-    expect(withNull.find('.lifecycle-badge').exists()).toBe(false)
+    // 统一徽标取代三枚堆叠；模板不再渲染旧类名
+    expect(wrapper.find('.availability-chip').exists()).toBe(false)
+    expect(wrapper.find('.lifecycle-badge').exists()).toBe(false)
+    expect(wrapper.find('.job-status-badge').exists()).toBe(false)
+    expect(wrapper.find('.data-status-badge').exists()).toBe(true)
   })
 })
