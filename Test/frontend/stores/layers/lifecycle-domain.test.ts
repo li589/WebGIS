@@ -40,10 +40,8 @@ function makeJobLayer(overrides: Partial<JobLayerItem> = {}): JobLayerItem {
   } as JobLayerItem
 }
 
-function makeBindings(overlayStates: Array<{ layerId: string; timeList: string[]; currentTime: string | null }>) {
-  const bindings = createCrossDomainBindings()
-  bindings.getOverlayTimeStates = () => overlayStates
-  return bindings
+function makeBindings(_overlayStates: Array<{ layerId: string; timeList: string[]; currentTime: string | null }> = []) {
+  return createCrossDomainBindings()
 }
 
 describe('lifecycle-domain', () => {

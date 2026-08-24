@@ -24,7 +24,7 @@ import type { TileSourceId } from '../services/api-config'
 import type { OverlayTimeState } from '../components/map/overlay-image-module'
 import { useUiStore } from '../stores/ui'
 import { useUiLoadingStore } from '../stores/ui-loading'
-import { useLayerWorkspace, useWorkflowRun } from '../stores/layers/selectors'
+import { useLayerWorkspace, useLayerLifecycle, useWorkflowRun } from '../stores/layers/selectors'
 import { syncWorkspaceOnBoot, teardownWorkspaceSync } from '../stores/layers/workspace-sync'
 import { useLogStore } from '../stores/log'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
@@ -51,6 +51,7 @@ import { useOnlineTemporalIntegration } from './dashboard/useOnlineTemporalInteg
 const uiStore = useUiStore()
 const workspace = useLayerWorkspace()
 const workflowRun = useWorkflowRun()
+const lifecycle = useLayerLifecycle()
 const logStore = useLogStore()
 const uiLoading = useUiLoadingStore()
 const weatherTileManager = useWeatherTileManager()
@@ -183,6 +184,13 @@ const {
   workflowProgressTimeSeek,
   analysisPanelRef,
 )
+
+// ── 图层平台子系统：选中图层生命周期（时间轴徽标数据源） ──
+const selectedLayerLifecycle = computed(() => {
+  const catalogId = selectedCatalogId.value
+  if (!catalogId) return null
+  return lifecycle.getLifecycle(catalogId)
+})
 
 // ── Online Temporal Integration ──
 // 在线时间获取编排器：当用户选中 fetchable 段时自动触发工作流获取数据
@@ -450,6 +458,8 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
               onlineTemporal.orchestrator.currentFetchStatus.value?.status === 'in-flight' ||
               onlineTemporal.orchestrator.currentFetchStatus.value?.status === 'submitting'
             "
+            :lifecycle-state="selectedLayerLifecycle?.lifecycleState ?? 'unknown'"
+            :lifecycle-message="selectedLayerLifecycle?.message ?? null"
             @step="handleTimelineStep"
             @change-hour="handleTimelineChange"
             @change-date="handleTimelineDateChange"

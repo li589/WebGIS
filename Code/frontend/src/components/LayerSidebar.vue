@@ -10,7 +10,7 @@
 import { computed, nextTick, ref, watch, onMounted } from 'vue'
 import { Diamond } from './ui/icons'
 
-import { useLayerWorkspace, useWorkflowRun } from '../stores/layers/selectors'
+import { useLayerWorkspace, useLayerLifecycle, useWorkflowRun } from '../stores/layers/selectors'
 import type { SidebarDragDeps, SidebarLayersDeps } from './layer-sidebar/sidebar-layers-deps'
 import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
@@ -63,6 +63,9 @@ const {
 } = workspace
 
 const { runLayerGroups } = workflowRun
+
+// 图层平台子系统 P1：生命周期查询（侧栏徽标数据源）
+const lifecycle = useLayerLifecycle()
 
 const layerCategories = workspace.layerCategories
 
@@ -146,6 +149,24 @@ function isOverlayDisplayOnlyLayer(catalogId: string): boolean {
 
 function supportsOnlineTemporal(catalogId: string): boolean {
   return workspace.supportsOnlineTemporal(catalogId)
+}
+
+// ── 图层平台子系统 P1：生命周期徽标（lifecycle 域 → 侧栏卡片） ──
+const LIFECYCLE_BADGE_LABELS: Record<string, string> = {
+  fresh: '资产就绪',
+  stale: '资产陈旧',
+  updating: '更新中',
+  missing: '资产缺失',
+  failed: '更新失败',
+}
+
+function getLifecycleBadge(
+  catalogId: string,
+): { state: string; label: string; message: string | null } | null {
+  const entry = lifecycle.getLifecycle(catalogId)
+  if (!entry || entry.lifecycleState === 'unknown') return null
+  const label = LIFECYCLE_BADGE_LABELS[entry.lifecycleState] ?? entry.lifecycleState
+  return { state: entry.lifecycleState, label, message: entry.message }
 }
 
 function getCatalogItem(catalogId: string) {
@@ -433,6 +454,7 @@ onMounted(() => {
       :availability-class="availabilityClass"
       :get-category-name="getCategoryName"
       :supports-online-temporal="supportsOnlineTemporal"
+      :get-lifecycle-badge="getLifecycleBadge"
       @select-item="selectItem"
       @zoom-to-item="zoomToItem"
       @toggle-visibility="toggleVisibility"

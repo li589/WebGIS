@@ -22,6 +22,10 @@ defineProps<{
   availabilityClass: (state: string) => string
   getCategoryName: (categoryId: string) => string
   supportsOnlineTemporal: (catalogId: string) => boolean
+  /** 图层平台子系统 P1：layerId → lifecycle 状态徽标（null/缺省=不渲染）。 */
+  getLifecycleBadge?: (
+    catalogId: string,
+  ) => { state: string; label: string; message: string | null } | null
 }>()
 
 const emit = defineEmits<{
@@ -213,6 +217,14 @@ const emit = defineEmits<{
                 class="online-fetch-badge"
                 title="此图层支持在线获取历史时间数据"
                 >在线</span
+              >
+              <!-- 图层平台子系统 P1：生命周期徽标（fresh/stale/updating/missing/failed） -->
+              <span
+                v-if="getLifecycleBadge?.(row.layer.catalogId)"
+                class="lifecycle-badge"
+                :class="`lifecycle-badge-${getLifecycleBadge!(row.layer.catalogId)!.state}`"
+                :title="getLifecycleBadge!(row.layer.catalogId)!.message || getLifecycleBadge!(row.layer.catalogId)!.label"
+                >{{ getLifecycleBadge!(row.layer.catalogId)!.label }}</span
               >
               <span v-if="row.layer.isAdminBoundary" class="admin-tip-inline">边界 · 静态矢量</span>
               <span v-else-if="row.layer.isImported" class="admin-tip-inline"

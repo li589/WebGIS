@@ -58,15 +58,8 @@ export interface CrossDomainBindings {
   // ── workspace → workflow-run (auto-run on layer add) ──
   runWorkflowForCatalog: (catalogId: string) => Promise<void>
 
-  // ── lifecycle 域（图层平台子系统 P0）：地图 overlay 时间状态回传 ──
-  /** MapCanvas 双写过渡：overlay-image-module 的 overlayTimeStates 透传（无地图时返回空数组）。 */
-  getOverlayTimeStates: () => Array<{
-    layerId: string
-    category: string
-    timeList: string[]
-    currentTime: string | null
-  }>
-  /** lifecycle 域→workflow-run：刷新某图层 lifecycle 后触发资产工作流（可选）。 */
+  // ── lifecycle 域（图层平台子系统）──
+  /** lifecycle 域刷新某图层后回调（保留扩展点；当前为 no-op stub）。 */
   onLifecycleRefreshed: (layerId: string, lifecycleState: string) => void
 }
 
@@ -103,7 +96,6 @@ export function createCrossDomainBindings(): CrossDomainBindings {
     onCatalogLoaded: () => {},
     onWorkflowViewportRefresh: () => {},
     runWorkflowForCatalog: () => Promise.resolve(),
-    getOverlayTimeStates: () => [],
     onLifecycleRefreshed: () => {},
   }
 }

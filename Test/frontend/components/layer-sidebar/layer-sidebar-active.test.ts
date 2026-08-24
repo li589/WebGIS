@@ -23,6 +23,7 @@ const styles = readFileSync(
 function makeLayer(overrides: Partial<ActiveLayerDisplay> = {}): ActiveLayerDisplay {
   return {
     instanceId: 'inst-1',
+    catalogId: 'catalog-1',
     name: '柯本气候分类',
     runGroupId: 'grp-1',
     visible: true,
@@ -37,33 +38,35 @@ const rows: ActiveTocRow[] = [
   { kind: 'layer', layer, key: 'inst-1', indented: true },
 ]
 
+const mountSidebarProps = {
+  activeLayersDisplay: [layer],
+  activeTocRows: rows,
+  selectedInstanceId: 'inst-1',
+  dragOverInstanceId: null,
+  dragOverGroupId: null,
+  runGroupOf: (groupId: string) =>
+    groupId === 'grp-1'
+      ? ({
+          groupId: 'grp-1',
+          title: '运行组',
+          status: 'ready',
+          memberInstanceIds: ['inst-1'],
+        } as never)
+      : null,
+  groupStatusLabel: () => '就绪',
+  hasColorSymbology: () => false,
+  getColorRampStyle: () => ({}),
+  getSymbologyUnit: () => '',
+  getSymbologyVmin: () => '',
+  getSymbologyVmax: () => '',
+  availabilityClass: () => 'ok',
+  getCategoryName: () => '辅助数据',
+  supportsOnlineTemporal: () => false,
+}
+
 function mountSidebar() {
   return mount(LayerSidebarActive, {
-    props: {
-      activeLayersDisplay: [layer],
-      activeTocRows: rows,
-      selectedInstanceId: 'inst-1',
-      dragOverInstanceId: null,
-      dragOverGroupId: null,
-      runGroupOf: (groupId: string) =>
-        groupId === 'grp-1'
-          ? ({
-              groupId: 'grp-1',
-              title: '运行组',
-              status: 'ready',
-              memberInstanceIds: ['inst-1'],
-            } as never)
-          : null,
-      groupStatusLabel: () => '就绪',
-      hasColorSymbology: () => false,
-      getColorRampStyle: () => ({}),
-      getSymbologyUnit: () => '',
-      getSymbologyVmin: () => '',
-      getSymbologyVmax: () => '',
-      availabilityClass: () => 'ok',
-      getCategoryName: () => '辅助数据',
-      supportsOnlineTemporal: () => false,
-    },
+    props: mountSidebarProps,
   })
 }
 
@@ -119,5 +122,36 @@ describe('LayerSidebarActive 拖拽手柄化', () => {
     expect(block('.drag-handle-wrap')).toContain('user-select: none')
     expect(block('.layer-name')).toContain('user-select: text')
     expect(block('.group-title')).toContain('user-select: text')
+  })
+})
+
+describe('LayerSidebarActive 生命周期徽标（图层平台子系统 P1）', () => {
+  it('getLifecycleBadge 返回状态时渲染徽标', () => {
+    const wrapper = mount(LayerSidebarActive, {
+      props: {
+        ...(mountSidebarProps as Record<string, unknown>),
+        getLifecycleBadge: (catalogId: string) =>
+          catalogId === 'catalog-1'
+            ? { state: 'updating', label: '更新中', message: '图层资产正在检查或更新。' }
+            : null,
+      },
+    })
+    const badge = wrapper.find('.lifecycle-badge')
+    expect(badge.exists()).toBe(true)
+    expect(badge.classes()).toContain('lifecycle-badge-updating')
+    expect(badge.text()).toBe('更新中')
+  })
+
+  it('getLifecycleBadge 未传或返回 null 时不渲染徽标', () => {
+    const withoutProp = mountSidebar()
+    expect(withoutProp.find('.lifecycle-badge').exists()).toBe(false)
+
+    const withNull = mount(LayerSidebarActive, {
+      props: {
+        ...(mountSidebarProps as Record<string, unknown>),
+        getLifecycleBadge: () => null,
+      },
+    })
+    expect(withNull.find('.lifecycle-badge').exists()).toBe(false)
   })
 })
