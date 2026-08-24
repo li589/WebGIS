@@ -53,9 +53,9 @@ def _descriptor_palette(layer_id: str, desc: dict) -> str | None:
 # 语义名（渲染经别名表解析为 greens/spectral）。新漂移出现即 CI 红。
 KNOWN_PALETTE_MISMATCH: dict[str, tuple[str, str]] = {}
 
-# 预存目录缺口：overlay 注册了但无 descriptor（P1 之前即如此；补目录
-# 条目涉及前端目录展示，列 TODO 待拍板，非本次数据化范围）。
-KNOWN_MISSING_DESCRIPTOR: set[str] = {"era5-dwaa-cn", "era5-wdaa-cn"}
+# 预存目录缺口已清零（2026-08-24 补 era5-dwaa/wdaa descriptor：
+# ERA5 白天/夜间热浪事件，语义源自 Docs/03-规范协议/数据源与工作流对照说明）。
+KNOWN_MISSING_DESCRIPTOR: set[str] = set()
 
 
 class TestOverlayAssetsConsistency:

@@ -1412,6 +1412,92 @@
     }
   },
   {
+    "layer_id": "era5-dwaa-cn",
+    "dataset_key": "era5_dwaa_smci_2020",
+    "display_name": "ERA5 白天热浪事件",
+    "description": "ERA5 衍生白天热浪（DWAA）事件次数，2020 年中国区域 0.25°（源层为逐日事件标识 0/1/255，叠加为事件次数合成）。",
+    "category": "climate",
+    "source_type": "algorithm_output",
+    "render_type": "raster",
+    "supported_map_modes": [
+      "2d"
+    ],
+    "supports_time": false,
+    "is_realtime": false,
+    "default_visible": false,
+    "status": "available",
+    "time_granularity": "static",
+    "default_time_offset": 0,
+    "extent": {
+      "west": 73.0,
+      "south": 18.0,
+      "east": 135.0,
+      "north": 54.0,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "YlOrRd",
+      "unit_label": "次",
+      "opacity": 0.8
+    },
+    "capabilities": {
+      "render_strategy": "workflow_map_layer",
+      "data_domain": "climate",
+      "paint_mode": "grid_fill"
+    },
+    "tags": [
+      "era5",
+      "heatwave",
+      "hazard",
+      "dwaa",
+      "frontend-aligned"
+    ],
+    "engine": "overlay_registry"
+  },
+  {
+    "layer_id": "era5-wdaa-cn",
+    "dataset_key": "era5_wdaa_smci_2020",
+    "display_name": "ERA5 夜间热浪事件",
+    "description": "ERA5 衍生夜间热浪（WDAA）事件次数，2020 年中国区域 0.25°（源层为逐日事件标识 0/1/255，叠加为事件次数合成）。",
+    "category": "climate",
+    "source_type": "algorithm_output",
+    "render_type": "raster",
+    "supported_map_modes": [
+      "2d"
+    ],
+    "supports_time": false,
+    "is_realtime": false,
+    "default_visible": false,
+    "status": "available",
+    "time_granularity": "static",
+    "default_time_offset": 0,
+    "extent": {
+      "west": 73.0,
+      "south": 18.0,
+      "east": 135.0,
+      "north": 54.0,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "YlGnBu",
+      "unit_label": "次",
+      "opacity": 0.8
+    },
+    "capabilities": {
+      "render_strategy": "workflow_map_layer",
+      "data_domain": "climate",
+      "paint_mode": "grid_fill"
+    },
+    "tags": [
+      "era5",
+      "heatwave",
+      "hazard",
+      "wdaa",
+      "frontend-aligned"
+    ],
+    "engine": "overlay_registry"
+  },
+  {
     "layer_id": "cmfd-precip-cn",
     "dataset_key": "cmfd_precip_cn",
     "display_name": "CMFD 区域降水",
