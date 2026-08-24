@@ -34,6 +34,14 @@ function extractWorkflowEntryName(run: WorkflowRunStatusResponse) {
   return typeof entryName === 'string' && entryName.trim() ? entryName : undefined
 }
 
+/** 工作流内部 entry id 不得泄漏到图层库运行条目名。 */
+function isTechnicalWorkflowEntryName(name: string | undefined): boolean {
+  if (!name) return false
+  return /^(?:omega[-_]sf[-_]fenkuai|omega[-_]avg[-_]daily|static_local_read|analysis_|preprocess_|fusion_|stats_)/i.test(
+    name,
+  )
+}
+
 function extractReportSummary(
   resultRefs: WorkflowResultReference[] | undefined,
   fallbackMessage: string,
@@ -443,7 +451,9 @@ export async function buildJobLayer(
   const analysisTables = extractAnalysisTables(run.result_refs)
   return {
     jobId: run.run_id,
-    name: entryName ?? catalogName,
+    // workflow_entry_name 是机器路由 id（omega_sf_fenkuai_* 等），只能
+    // 作为内部字段，不能作为图层库运行条目显示名；优先 catalog 中文名。
+    name: !isTechnicalWorkflowEntryName(entryName) && entryName ? entryName : catalogName,
     commandType: run.command_type,
     status,
     progress: run.progress,

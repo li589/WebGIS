@@ -52,6 +52,12 @@ from data_root import resolve_data_root
 
 # Output root
 _OUT_ROOT = resolve_data_root() / "ProjectOutput" / "2023-01_Omega_Inversion" / "_overlays"
+
+# 资产烘焙版本：改动渲染几何/行序等影响已有 PNG 正确性的逻辑时递增，
+# 后端 asset_bake_tasks 据此自动重烘陈旧资产。版本史：
+#   1 = 初版（thematic 族存在行序上下翻转 bug）
+#   2 = 行序修复（2026-08-24，imshow origin 校准 + thematic 重烘）
+BAKE_VERSION = 2
 _CHINA_BBOX = (73.0, 15.0, 137.0, 59.0)
 
 # extent 模式：auto = 按任务表声明；global/china = CLI 强制覆盖（诊断用）
@@ -249,6 +255,11 @@ def _write_bounds(
         "layer_id": layer_id,
         "bounds": list(bounds),  # [west, south, east, north]
         "crs": "EPSG:4326",
+        # 资产烘焙版本（自愈机制用）：app/tasks/asset_bake_tasks.py 启动/定期
+        # 校验 bake_version < BAKE_VERSION 的资产并自动重烘（2026-08-24：
+        # 旧版行序翻转 PNG 曾靠手工重烘修复——资产新鲜度不再依赖外部操作）。
+        # 版本史：1=初版（存在行序翻转 bug）；2=行序修复（imshow origin 校准）
+        "bake_version": BAKE_VERSION,
     }
     text = json.dumps(data, indent=2)
     tmp_path = bounds_path.parent / f"{bounds_path.name}.tmp_{os.getpid()}.json"

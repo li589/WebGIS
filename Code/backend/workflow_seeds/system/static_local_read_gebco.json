@@ -1,4 +1,8 @@
 {
+  "_meta": {
+    "resource_profile": "heavy",
+    "note": "GEBCO_2024.nc 源 6.95GB，整文件读取属重资源任务（2026-08-24 反馈#5：standard 2 槽被占满阻塞后续工作流）"
+  },
   "workflow_id": "static_local_read_gebco",
   "name": "GEBCO 海底地形 本地数据读取",
   "description": "GEBCO 海底地形 静态本地数据直读工作流：data/source 指向源数据，output/map_layer 发布为产物图层（2026-08-22 需求2：所有图层配置工作流）。",

@@ -33,6 +33,7 @@ if celery_available:
             "app.tasks.open_meteo_sync_tasks",
             "app.tasks.workflow_timer_tasks",
             "app.tasks.cleanup_tasks",
+            "app.tasks.asset_bake_tasks",
             "app.tasks.import_tasks",
             "app.data_io.tasks.import_jobs",
         ],
@@ -216,6 +217,14 @@ if celery_available:
             "task": "app.tasks.workflow_timer_tasks.tick_workflow_timers",
             "schedule": crontab(minute="*"),
             "options": {"queue": settings.workflow_queue_standard},
+        }
+    # 叠加层烘焙资产自愈：每日校验 bake_version 陈旧资产并自动重烘
+    # （2026-08-24 用户意见#1：资产新鲜度不依赖外部手工操作）
+    if crontab is not None:
+        beat_schedule["rebake-stale-overlay-assets"] = {
+            "task": "app.tasks.asset_bake_tasks.rebake_stale_overlay_assets",
+            "schedule": crontab(minute=17, hour=3),
+            "options": {"queue": settings.workflow_queue_batch},
         }
     # 长期运行清理任务：避免 SQLite 与缓存文件无限增长
     # - workflow runs 保留 30 天，每天 03:00 UTC 清理

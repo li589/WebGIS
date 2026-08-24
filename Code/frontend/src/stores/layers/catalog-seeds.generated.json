@@ -1080,6 +1080,48 @@
       }
     },
     {
+      "catalogId": "era5-hazards-cn",
+      "name": "ERA5 灾害事件",
+      "category": "climate",
+      "subCategory": "灾害事件",
+      "metricLabel": "热浪事件",
+      "metricUnit": "次",
+      "metricPrecision": 0,
+      "updateLabel": "2020 年",
+      "sourceLabel": "白天/夜间可选",
+      "accentColor": "#e85d75",
+      "accentGlow": "rgba(232,93,117,0.3)",
+      "chipTone": "rgba(232,93,117,0.16)",
+      "sources": [
+        {
+          "id": "era5-dwaa-cn",
+          "name": "白天热浪事件（DWAA）",
+          "description": "ERA5 衍生白天热浪事件，2020 年中国区域 0.25°。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "年度"
+        },
+        {
+          "id": "era5-wdaa-cn",
+          "name": "夜间热浪事件（WDAA）",
+          "description": "ERA5 衍生夜间热浪事件，2020 年中国区域 0.25°。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "年度"
+        }
+      ],
+      "isMergedGroup": true,
+      "members": [
+        "era5-dwaa-cn",
+        "era5-wdaa-cn"
+      ],
+      "isAdminBoundary": false
+    },
+    {
       "catalogId": "era5-dwaa-cn",
       "name": "ERA5 白天热浪事件",
       "category": "climate",
@@ -1094,7 +1136,8 @@
       "sources": [],
       "isMergedGroup": false,
       "members": [],
-      "isAdminBoundary": false
+      "isAdminBoundary": false,
+      "mergedInto": "era5-hazards-cn"
     },
     {
       "catalogId": "era5-wdaa-cn",
@@ -1111,7 +1154,8 @@
       "sources": [],
       "isMergedGroup": false,
       "members": [],
-      "isAdminBoundary": false
+      "isAdminBoundary": false,
+      "mergedInto": "era5-hazards-cn"
     },
     {
       "catalogId": "cmfd-precip-cn",

@@ -29,7 +29,16 @@ describe("overlay banding 判据", () => {
     expect(isMercatorLinearPng(bounds, 1440, 1440)).toBe(true); // …Mercator 线性，跳过
   });
 
-  it("等经纬全球层（GPCP 类 1440x720）→ 需要条带化", () => {
+  it("GPCP 全球 Mercator 线性网格（720x720）→ 不得条带化", () => {
+    const bounds: [number, number, number, number] = [
+      -180, -85.0511287798066, 180, 85.0511287798066,
+    ];
+    // GPCP 导出器 target_resolution=0.5 产出 720x720；旧判据把正方形
+    // 误判为等纬，进入条带化后图层空白/错位。
+    expect(isMercatorLinearPng(bounds, 720, 720)).toBe(true);
+  });
+
+  it("等经纬全球层（旧格式 1440x720）→ 需要条带化", () => {
     const bounds: [number, number, number, number] = [-180, -90, 180, 90];
     expect(isMercatorLinearPng(bounds, 1440, 720)).toBe(false);
   });

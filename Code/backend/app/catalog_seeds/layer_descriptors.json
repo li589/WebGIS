@@ -1412,6 +1412,93 @@
     }
   },
   {
+    "layer_id": "era5-hazards-cn",
+    "dataset_key": "merged_era5_hazards_2020",
+    "display_name": "ERA5 灾害事件",
+    "description": "ERA5 2020 年白天/夜间热浪事件合集，可在下拉源选择白天热浪（DWAA）或夜间热浪（WDAA）事件。",
+    "category": "climate",
+    "sub_category": "灾害事件",
+    "source_type": "algorithm_output",
+    "render_type": "raster",
+    "supported_map_modes": [
+      "2d"
+    ],
+    "supports_time": false,
+    "is_realtime": false,
+    "default_visible": false,
+    "status": "available",
+    "time_granularity": "static",
+    "default_time_offset": 0,
+    "extent": {
+      "west": 73.0,
+      "south": 18.0,
+      "east": 135.0,
+      "north": 54.0,
+      "crs": "EPSG:4326"
+    },
+    "style": {
+      "palette": "YlOrRd",
+      "unit_label": "次",
+      "opacity": 0.8
+    },
+    "capabilities": {
+      "render_strategy": "workflow_map_layer",
+      "data_domain": "hazard",
+      "paint_mode": "grid_fill"
+    },
+    "tags": [
+      "era5",
+      "hazard",
+      "heatwave",
+      "merged-group",
+      "frontend-aligned"
+    ],
+    "engine": "overlay_registry",
+    "run_readiness_summary": "ERA5 白天/夜间热浪事件已就绪（多源可选）",
+    "run_readiness_notes": [
+      "合并组虚拟条目：选择源后实际使用对应成员图层数据"
+    ],
+    "presentation": {
+      "accent_color": "#e85d75",
+      "accent_glow": "rgba(232,93,117,0.3)",
+      "chip_tone": "rgba(232,93,117,0.16)",
+      "metric_label": "热浪事件",
+      "metric_unit": "次",
+      "metric_precision": 0,
+      "update_label": "2020 年",
+      "source_label": "白天/夜间可选"
+    },
+    "sources": [
+      {
+        "source_id": "era5-dwaa-cn",
+        "name": "白天热浪事件（DWAA）",
+        "description": "ERA5 衍生白天热浪事件，2020 年中国区域 0.25°。",
+        "url_template": "",
+        "needs_auth": false,
+        "needs_backend_transform": false,
+        "coord_sys": "EPSG:4326",
+        "update_frequency": "年度"
+      },
+      {
+        "source_id": "era5-wdaa-cn",
+        "name": "夜间热浪事件（WDAA）",
+        "description": "ERA5 衍生夜间热浪事件，2020 年中国区域 0.25°。",
+        "url_template": "",
+        "needs_auth": false,
+        "needs_backend_transform": false,
+        "coord_sys": "EPSG:4326",
+        "update_frequency": "年度"
+      }
+    ],
+    "merged_into": null,
+    "is_merged_group": true,
+    "members": [
+      "era5-dwaa-cn",
+      "era5-wdaa-cn"
+    ],
+    "is_admin_boundary": false
+  },
+  {
     "layer_id": "era5-dwaa-cn",
     "dataset_key": "era5_dwaa_smci_2020",
     "display_name": "ERA5 白天热浪事件",
@@ -1452,7 +1539,8 @@
       "dwaa",
       "frontend-aligned"
     ],
-    "engine": "overlay_registry"
+    "engine": "overlay_registry",
+    "merged_into": "era5-hazards-cn"
   },
   {
     "layer_id": "era5-wdaa-cn",
@@ -1495,7 +1583,8 @@
       "wdaa",
       "frontend-aligned"
     ],
-    "engine": "overlay_registry"
+    "engine": "overlay_registry",
+    "merged_into": "era5-hazards-cn"
   },
   {
     "layer_id": "cmfd-precip-cn",

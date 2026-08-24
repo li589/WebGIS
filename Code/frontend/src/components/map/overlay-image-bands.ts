@@ -49,6 +49,16 @@ export function isMercatorLinearPng(
   if (lonSpan <= 0 || latSpan <= 0 || !imgW || !imgH) return false
   const eqLatHeight = (imgW * latSpan) / lonSpan
   if (eqLatHeight <= 0) return false
+  // 全球 ±85.0511°、正方形/近正方形 PNG 是本项目导出器的 Mercator
+  // 线性全幅资产（GPCP 720×720 是典型；实际高度恰好接近等纬期望值，
+  // 旧判据误判为等纬 → 条带化 → 全球降水图空白/错位）。全球范围的
+  // 3857 行间距由导出契约保证，直接四角贴图，不得条带化。
+  const isGlobalMercatorWindow =
+    Math.abs(bounds[0] + 180) < 0.01 &&
+    Math.abs(bounds[2] - 180) < 0.01 &&
+    Math.abs(Math.abs(bounds[1]) - 85.0511288) < 0.01 &&
+    Math.abs(Math.abs(bounds[3]) - 85.0511288) < 0.01
+  if (isGlobalMercatorWindow && imgW === imgH) return true
   return Math.abs(imgH - eqLatHeight) / imgH > 0.12
 }
 
