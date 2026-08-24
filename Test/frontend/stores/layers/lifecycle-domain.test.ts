@@ -83,14 +83,14 @@ describe('lifecycle-domain', () => {
     expect(entry?.message).toBe('图层资产已就绪。')
   })
 
-  it('仅本地信号：overlayTimeStates 有时间块 → fresh；活跃 jobLayer → updating', async () => {
-    const bindings = makeBindings([
-      { layerId: 'gpcp-precip-ts', timeList: ['202301', '202302'], currentTime: '202301' },
-    ])
+  it('仅本地信号：overlay 时间状态有时间块 → fresh；活跃 jobLayer → updating', async () => {
     const domain = createLifecycleDomain({
-      bindings,
+      bindings: makeBindings([]),
       getJobLayers: () => [makeJobLayer({ catalogId: 'gebco-dem-cn', status: 'queued', progress: 12 })],
     })
+    domain.setMapOverlayTimeStates([
+      { layerId: 'gpcp-precip-ts', category: 'time-series', timeList: ['202301', '202302'], currentTime: '202301' },
+    ])
     await nextTick()
 
     const withTimeline = domain.layerLifecycle.value.get('gpcp-precip-ts')
@@ -104,13 +104,13 @@ describe('lifecycle-domain', () => {
   })
 
   it('活跃 jobLayer + overlay 时间块并存：updating 优先', async () => {
-    const bindings = makeBindings([
-      { layerId: 'aridity-cn', timeList: ['t1'], currentTime: 't1' },
-    ])
     const domain = createLifecycleDomain({
-      bindings,
+      bindings: makeBindings([]),
       getJobLayers: () => [makeJobLayer({ catalogId: 'aridity-cn', status: 'running' })],
     })
+    domain.setMapOverlayTimeStates([
+      { layerId: 'aridity-cn', category: 'time-series', timeList: ['t1'], currentTime: 't1' },
+    ])
     await nextTick()
 
     // 注意：本地条目在 overlayStates 分支，活跃 job 同 catalogId 时 overlay 优先建条目
@@ -132,9 +132,12 @@ describe('lifecycle-domain', () => {
   it('refreshLayerLifecycle 网络失败：静默，保留本地推导', async () => {
     _mockedFetch.mockRejectedValueOnce(new Error('network down'))
     const domain = createLifecycleDomain({
-      bindings: makeBindings([{ layerId: 'hfp-cn', timeList: [], currentTime: null }]),
+      bindings: makeBindings([]),
       getJobLayers: () => [],
     })
+    domain.setMapOverlayTimeStates([
+      { layerId: 'hfp-cn', category: 'static', timeList: [], currentTime: null },
+    ])
     await expect(domain.refreshLayerLifecycle('hfp-cn')).resolves.toBeUndefined()
     await nextTick()
 
@@ -167,5 +170,28 @@ describe('lifecycle-domain', () => {
     await domain.refreshLayerLifecycle('co2-cn')
 
     expect(onRefreshed).toHaveBeenCalledWith('co2-cn', 'stale')
+  })
+
+  it('P1 双写：setMapOverlayTimeStates 更新可用时间块与当前时间', async () => {
+    const domain = createLifecycleDomain({
+      bindings: makeBindings([]),
+      getJobLayers: () => [],
+    })
+    domain.setMapOverlayTimeStates([
+      { layerId: 'gpcp-precip-ts', category: 'time-series', timeList: ['202301', '202302'], currentTime: '202302' },
+    ])
+    await nextTick()
+
+    const entry = domain.layerLifecycle.value.get('gpcp-precip-ts')
+    expect(entry?.availableTimes).toEqual(['202301', '202302'])
+    expect(entry?.currentTime).toBe('202302')
+    expect(entry?.lifecycleState).toBe('fresh')
+
+    // 更新当前时间 → 响应式联动
+    domain.setMapOverlayTimeStates([
+      { layerId: 'gpcp-precip-ts', category: 'time-series', timeList: ['202301', '202302'], currentTime: '202301' },
+    ])
+    await nextTick()
+    expect(domain.layerLifecycle.value.get('gpcp-precip-ts')?.currentTime).toBe('202301')
   })
 })

@@ -38,6 +38,15 @@ interface LayersStoreLike {
     zoom?: number,
     options?: { immediate?: boolean },
   ) => void
+  /** P1 lifecycle 双写：把地图 overlay 时间状态回传给 layers lifecycle 域。 */
+  setMapOverlayTimeStates?: (
+    states: Array<{
+      layerId: string
+      category: string
+      timeList: string[]
+      currentTime: string | null
+    }>,
+  ) => void
 }
 
 interface WeatherTileManagerLike {
@@ -190,6 +199,7 @@ export function createMapCanvasModuleBundle(
     getActiveLayers: () => options.layersStore.activeLayers,
     getActiveVisibleCatalogIds: () =>
       options.layersStore.activeLayersDisplay.filter((l) => l.visible).map((l) => l.catalogId),
+    onOverlayTimeStatesChanged: (states) => options.layersStore.setMapOverlayTimeStates?.(states),
   })
 
   const hotspotPinsModule = createHotspotPinsModuleImpl({

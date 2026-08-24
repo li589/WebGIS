@@ -48,6 +48,15 @@ export interface LifecycleDomain {
   refreshLayerLifecycle: (layerId: string) => Promise<void>
   /** 批量刷新（图层添加后触发）。 */
   refreshAll: (layerIds: string[]) => Promise<void>
+  /** MapCanvas 双写：接收地图 overlay 时间状态真源（P1）。 */
+  setMapOverlayTimeStates: (
+    states: Array<{
+      layerId: string
+      category: string
+      timeList: string[]
+      currentTime: string | null
+    }>,
+  ) => void
 }
 
 interface LifecycleDomainDeps {
@@ -77,11 +86,20 @@ function deriveLocalState(
 export function createLifecycleDomain(deps: LifecycleDomainDeps): LifecycleDomain {
   const { bindings } = deps
   const serverLifecycle = ref<Record<string, LayerLifecycleResponse>>({})
+  // P1：MapCanvas 双写过来的地图 overlay 时间状态真源（替代 bindings 空 stub）。
+  const mapOverlayTimeStates = ref<
+    Array<{
+      layerId: string
+      category: string
+      timeList: string[]
+      currentTime: string | null
+    }>
+  >([])
 
   const layerLifecycle = computed(() => {
     const map = new Map<string, LayerLifecycleEntry>()
     const overlayStates = new Map(
-      bindings.getOverlayTimeStates().map((s) => [s.layerId, s]),
+      mapOverlayTimeStates.value.map((s) => [s.layerId, s]),
     )
 
     // 1) 后端真源条目
@@ -158,10 +176,28 @@ export function createLifecycleDomain(deps: LifecycleDomainDeps): LifecycleDomai
     await Promise.allSettled(layerIds.map((id) => refreshLayerLifecycle(id)))
   }
 
+  function setMapOverlayTimeStates(
+    states: Array<{
+      layerId: string
+      category: string
+      timeList: string[]
+      currentTime: string | null
+    }>,
+  ): void {
+    // 深拷贝时间列表，避免与地图模块共享数组引用导致响应式追踪混乱。
+    mapOverlayTimeStates.value = states.map((s) => ({
+      layerId: s.layerId,
+      category: s.category,
+      timeList: [...s.timeList],
+      currentTime: s.currentTime,
+    }))
+  }
+
   return {
     layerLifecycle,
     serverLifecycle,
     refreshLayerLifecycle,
     refreshAll,
+    setMapOverlayTimeStates,
   }
 }

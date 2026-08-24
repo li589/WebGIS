@@ -191,8 +191,9 @@ export const useLayersStore = defineStore('layers', () => {
     // ── Data ──
     layerLibrary: workspace.layerLibrary,
     layerCategories: LAYER_CATEGORIES,
-    // ── Actions: lifecycle（图层平台子系统 P0）──
+    // ── Actions: lifecycle（图层平台子系统 P0/P1）──
     refreshLayerLifecycle: lifecycle.refreshLayerLifecycle,
+    setMapOverlayTimeStates: lifecycle.setMapOverlayTimeStates,
     // ── Actions: workspace ──
     addLayer: workspace.addLayer,
     addImportedVectorLayer: workspace.addImportedVectorLayer,
