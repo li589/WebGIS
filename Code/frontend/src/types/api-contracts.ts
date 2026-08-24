@@ -3570,6 +3570,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config/online-sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Online Source Credentials
+         * @description 聚合各在线源凭证就绪状态（只报配置布尔，永不回显明文值）。
+         */
+        get: operations["list_online_source_credentials_config_online_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workflow-definitions/node-templates": {
         parameters: {
             query?: never;
@@ -6435,6 +6455,48 @@ export interface components {
             parameter_aliases?: {
                 [key: string]: string;
             };
+        };
+        /**
+         * OnlineSourceCredentialStatus
+         * @description 单个在线数据源的凭证就绪状态（GET /config/online-sources）。
+         *
+         *     图层平台子系统 P2-3：统一凭证可见性聚合。不迁移各源凭证存储
+         *     （GEE=加密 SQLite 账号池；SSH HPC/Earthdata/FileBrowser=.env），
+         *     仅收口「配置了没有 / 可用不可用」的管理可见性。
+         */
+        OnlineSourceCredentialStatus: {
+            /** Source Id */
+            source_id: string;
+            /** Display Name */
+            display_name: string;
+            /** Kind */
+            kind: string;
+            /** Configured */
+            configured: boolean;
+            /** Detail */
+            detail: string;
+            /** Account Count */
+            account_count?: number | null;
+            /** Enabled Count */
+            enabled_count?: number | null;
+            /** Last Tested At */
+            last_tested_at?: string | null;
+            /** Last Test Status */
+            last_test_status?: string | null;
+            /** Fields */
+            fields?: {
+                [key: string]: boolean;
+            };
+        };
+        /**
+         * OnlineSourcesResponse
+         * @description 统一在线源凭证状态响应。
+         */
+        OnlineSourcesResponse: {
+            /** Sources */
+            sources?: components["schemas"]["OnlineSourceCredentialStatus"][];
+            /** Count */
+            count: number;
         };
         /**
          * OnlineTemporalCapability
@@ -15461,6 +15523,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_online_source_credentials_config_online_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnlineSourcesResponse"];
                 };
             };
         };

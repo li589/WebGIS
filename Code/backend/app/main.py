@@ -31,6 +31,7 @@ from app.api.routers.unified_tile_router import router as unified_tile_router
 from app.api.weather_tile_routes import router as weather_tile_router
 from app.api.gee_config_routes import router as gee_config_router
 from app.api.config_routes import router as config_router
+from app.api.routers.online_sources_router import router as online_sources_router
 from app.api.routers.workflow_definition_router import (
     router as workflow_definition_router,
 )
@@ -415,6 +416,7 @@ def create_app() -> FastAPI:
     app.include_router(weather_tile_router)
     app.include_router(gee_config_router)
     app.include_router(config_router)
+    app.include_router(online_sources_router)
     app.include_router(workflow_definition_router)
     app.include_router(workflow_timer_router)
     app.include_router(cleanup_router)

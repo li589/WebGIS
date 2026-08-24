@@ -9957,6 +9957,33 @@
         ]
       }
     },
+    "/config/online-sources": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "List Online Source Credentials",
+        "description": "聚合各在线源凭证就绪状态（只报配置布尔，永不回显明文值）。",
+        "operationId": "list_online_source_credentials_config_online_sources_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnlineSourcesResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
     "/workflow-definitions/node-templates": {
       "get": {
         "tags": [
@@ -17309,6 +17336,112 @@
           "node_type"
         ],
         "title": "NodeSpec"
+      },
+      "OnlineSourceCredentialStatus": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "account_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Count"
+          },
+          "enabled_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled Count"
+          },
+          "last_tested_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Tested At"
+          },
+          "last_test_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Test Status"
+          },
+          "fields": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Fields"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "display_name",
+          "kind",
+          "configured",
+          "detail"
+        ],
+        "title": "OnlineSourceCredentialStatus",
+        "description": "单个在线数据源的凭证就绪状态（GET /config/online-sources）。\n\n图层平台子系统 P2-3：统一凭证可见性聚合。不迁移各源凭证存储\n（GEE=加密 SQLite 账号池；SSH HPC/Earthdata/FileBrowser=.env），\n仅收口「配置了没有 / 可用不可用」的管理可见性。"
+      },
+      "OnlineSourcesResponse": {
+        "properties": {
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/OnlineSourceCredentialStatus"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count"
+        ],
+        "title": "OnlineSourcesResponse",
+        "description": "统一在线源凭证状态响应。"
       },
       "OnlineTemporalCapability": {
         "properties": {

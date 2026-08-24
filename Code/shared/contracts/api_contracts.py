@@ -1099,3 +1099,48 @@ class AnalysisRunRequest(BaseModel):
     bbox: BoundingBox | None = None
     params: dict[str, Any] = Field(default_factory=dict)
     show_on_map: bool = True
+
+
+class OnlineSourceCredentialStatus(BaseModel):
+    """单个在线数据源的凭证就绪状态（GET /config/online-sources）。
+
+    图层平台子系统 P2-3：统一凭证可见性聚合。不迁移各源凭证存储
+    （GEE=加密 SQLite 账号池；SSH HPC/Earthdata/FileBrowser=.env），
+    仅收口「配置了没有 / 可用不可用」的管理可见性。
+    """
+
+    source_id: str
+    """gee | ssh_hpc | earthdata | filebrowser"""
+
+    display_name: str
+
+    kind: str
+    """account_pool=加密账号池；env_credential=环境变量凭证"""
+
+    configured: bool
+    """该源已具备可用凭证（账号池有启用账号 / 必需 env 字段齐全）"""
+
+    detail: str
+    """人类可读的就绪描述（不含任何明文密钥）"""
+
+    account_count: int | None = None
+    """账号池类：总账号数"""
+
+    enabled_count: int | None = None
+    """账号池类：启用账号数"""
+
+    last_tested_at: str | None = None
+    """账号池类：最近一次凭证测试时间"""
+
+    last_test_status: str | None = None
+    """账号池类：最近测试结果 ok/failed"""
+
+    fields: dict[str, bool] = Field(default_factory=dict)
+    """env 凭证类：字段名 → 是否已配置（只报布尔，不回显值）"""
+
+
+class OnlineSourcesResponse(BaseModel):
+    """统一在线源凭证状态响应。"""
+
+    sources: list[OnlineSourceCredentialStatus] = Field(default_factory=list)
+    count: int

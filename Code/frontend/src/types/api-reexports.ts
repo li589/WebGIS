@@ -92,6 +92,11 @@ export type WorkflowTemplateListResponse = Schema<'WorkflowTemplateListResponse'
 export type WorkflowTemplateRunRequest = Schema<'WorkflowTemplateRunRequest'>
 export type WorkflowTemplateRunResponse = Schema<'WorkflowTemplateRunResponse'>
 
+// ── 图层平台子系统：统一在线源凭证状态（P2-3，2026-08-25） ────────────────────
+
+export type OnlineSourceCredentialStatus = Schema<'OnlineSourceCredentialStatus'>
+export type OnlineSourcesResponse = Schema<'OnlineSourcesResponse'>
+
 // ── Weather 相关 ──────────────────────────────────────────────────────────
 
 export type WeatherLayerRenderHint = Schema<'WeatherLayerRenderHint'>
