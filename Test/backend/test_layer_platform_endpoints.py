@@ -137,6 +137,21 @@ def mock_submit(monkeypatch):
     return submitted
 
 
+def _clear_active_online_sync_runs(layer_id: str) -> None:
+    """物理清理测试仓储中残留的 online_sync run（仓储跨测试轮次持久，
+    reuses 预置的 queued run 会让后续轮次的 parsing 测试误入复用分支；
+    不可用 save_run 覆写成 cancelled——终态守卫会拦截后续同 run_id 预置）。"""
+    from app.services.workflow_repository import SQLiteWorkflowRepository
+
+    repo = SQLiteWorkflowRepository()
+    with repo._connect() as connection:  # noqa: SLF001 - 测试专用物理清理
+        connection.execute(
+            "DELETE FROM workflow_runs WHERE layer_id = ? AND workflow_kind = ?",
+            (layer_id, "online_sync"),
+        )
+    repo.close()
+
+
 
 def test_online_sync_skipped_for_unsupported_layer(no_auth) -> None:
     """未启用 online_temporal 的图层返回 skipped-unsupported（不报错）。"""
@@ -155,6 +170,7 @@ def test_online_sync_time_key_month_parsing(no_auth, mock_submit) -> None:
     from shared.contracts.api_contracts import LayerOnlineSyncRequest
 
     # ndvi 启用了 online_temporal（1M 步长）
+    _clear_active_online_sync_runs("ndvi")
     resp = sync_layer_asset_online(
         "ndvi",
         body=LayerOnlineSyncRequest(time_key="2023-01"),
@@ -165,6 +181,8 @@ def test_online_sync_time_key_month_parsing(no_auth, mock_submit) -> None:
     assert resp.time_key == "2023-01"
     assert resp.run_id is not None
     assert resp.status_url is not None
+    # P1 遗留修复：analysis 类型（submission normalize 才会填充 engine request）
+    assert mock_submit[0].command_type.value == "analysis"
 
 
 def test_online_sync_reuses_active_run(no_auth, mock_submit) -> None:
@@ -183,12 +201,15 @@ def test_online_sync_reuses_active_run(no_auth, mock_submit) -> None:
         WorkflowRunStatusResponse,
     )
 
-    # 预置活跃 online_sync run（workflow_kind 经 executor_metadata 自动提取）
+    # 预置活跃 online_sync run（唯一 run_id：防跨轮残留 + 终态守卫拦截覆盖）
+    import uuid as _uuid
+
+    preset_run_id = f"run-existing-online-sync-{_uuid.uuid4().hex[:8]}"
     repo = SQLiteWorkflowRepository()
     now = datetime.now(UTC)
     repo.save_run(
         WorkflowRunStatusResponse(
-            run_id="run-existing-online-sync",
+            run_id=preset_run_id,
             command_type=WorkflowCommandType.custom,
             layer_id="ndvi",
             status=ExecutionStatus.queued,
@@ -209,7 +230,7 @@ def test_online_sync_reuses_active_run(no_auth, mock_submit) -> None:
         cred=None,
     )
     assert second.status == "in-flight"
-    assert second.run_id == "run-existing-online-sync"
+    assert second.run_id == preset_run_id
     assert len(mock_submit) == 0
 
 
@@ -218,6 +239,7 @@ def test_online_sync_response_contract(no_auth, mock_submit) -> None:
     from app.api.routers.layer_router import sync_layer_asset_online
     from shared.contracts.api_contracts import LayerOnlineSyncRequest
 
+    _clear_active_online_sync_runs("ndvi")
     resp = sync_layer_asset_online(
         "ndvi",
         body=LayerOnlineSyncRequest(time_key="2023-04", is_prefetch=True),
@@ -291,6 +313,12 @@ def test_run_workflow_template_builds_payload(no_auth, mock_submit, monkeypatch)
 
     assert len(mock_submit) == 1
     payload = mock_submit[0]
+    # P1 遗留修复：analysis 类型 + workflow_name 入口（custom 会 no bridge）
+    assert payload.command_type.value == "analysis"
+    ar = payload.algorithm_request
+    ar_dict = ar if isinstance(ar, dict) else ar.model_dump()
+    assert ar_dict["workflow_name"] == "lab.test"
+    assert ar_dict["algorithm_params"]["region"] == "cn"
     assert payload.parameters["workflow_kind"] == "lab_template"
     assert payload.parameters["workflow_template_id"] == "lab.test"
     assert payload.parameters["region"] == "cn"

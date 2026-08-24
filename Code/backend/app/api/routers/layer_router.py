@@ -421,7 +421,11 @@ def sync_layer_asset_online(
         else WorkflowPriority.normal
     )
     payload = WorkflowSubmitRequest(
-        command_type=WorkflowCommandType.custom,
+        # command_type 必须为 analysis：submission_service 的
+        # normalize_workflow_submit_request 仅对 analysis 按 layer_id
+        # 填充 engine request（algorithm_request），否则 Celery 端
+        # no bridge 匹配 → 「未找到匹配的工作流引擎」（P1 遗留，2026-08-25 修复）
+        command_type=WorkflowCommandType.analysis,
         command_label=f"在线同步 {layer_id}" + (f" @ {body.time_key}" if body.time_key else ""),
         layer_id=layer_id,
         priority=priority,
@@ -436,7 +440,9 @@ def sync_layer_asset_online(
             "time_key": body.time_key,
             "is_prefetch": body.is_prefetch,
         },
-        queue_tag=cap.queue_tag,
+        # 注：不用 cap.queue_tag（"temporal-fetch"）——queue_tag 校验只接受
+        # 已注册队列名或 '<channel>-<slot>' 模式，自定义标签会 400；
+        # 优先级分流已由 resource_profile=batch 承担。
     )
 
     accepted = _submit_online_sync_workflow(payload, cred=cred)
@@ -554,12 +560,19 @@ def run_workflow_template(
     }.get(resource_profile_str, WorkflowResourceProfile.standard)
 
     payload = WorkflowSubmitRequest(
-        command_type=WorkflowCommandType.custom,
+        # analysis + algorithm_request.workflow_name（模板种子 id）：
+        # python_provider bridge 的 ALGORITHM_REQUEST_ENTRY_KEYS 含
+        # workflow_name，据此路由到对应模块执行；custom 类型会 no bridge。
+        command_type=WorkflowCommandType.analysis,
         command_label=f"课题组模板 {meta.get('name', workflow_id)}",
         layer_id=linked_layer_id,
         priority=WorkflowPriority.normal,
         resource_profile=resource_profile,
         time_range=body.time_range,
+        algorithm_request={
+            "workflow_name": workflow_id,
+            "algorithm_params": dict(body.parameters),
+        },
         parameters={
             "workflow_kind": "lab_template",
             "workflow_template_id": workflow_id,
