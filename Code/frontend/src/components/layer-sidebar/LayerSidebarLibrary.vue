@@ -309,9 +309,12 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
               + 添加
             </button>
             <!-- 2026-08-25 UX 简化：添加即自动运行/加载，中间态徽标全部隐藏；
-                 仅失败时可见（报错必须呈现），成功后回到「已添加」。 -->
+                 仅失败时可见（报错必须呈现），成功后回到「已添加」。
+                 注意：徽标链必须保持 v-else-if / v-else 挂在上方 add-btn 的
+                 v-if 链上——拆成独立 v-if 会让「已添加」无条件显示
+                 （2026-08-25 刷新后全库假「已添加」报障根因）。 -->
             <span
-              v-if="getCatalogJobStatus(effectiveSourceId(item)) === 'failed'"
+              v-else-if="getCatalogJobStatus(effectiveSourceId(item)) === 'failed'"
               class="job-status-chip job-status-failed"
               :title="getCatalogRunBlockReason(effectiveSourceId(item)) ?? ''"
             >
