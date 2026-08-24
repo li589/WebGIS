@@ -55,6 +55,8 @@ const props = withDefaults(
     handlePosition?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
     /** 是否显示缩放手柄 */
     showResizeHandle?: boolean
+    /** 高度随内容自适应（fit-content + min/max 钳制） */
+    autoHeight?: boolean
     /** 内容区溢出策略 */
     bodyOverflow?: 'auto' | 'hidden'
     /** 布局位置提示（影响圆角裁剪） */
@@ -75,6 +77,7 @@ const props = withDefaults(
     resizable: true,
     handlePosition: 'bottom-right',
     showResizeHandle: true,
+    autoHeight: false,
     bodyOverflow: 'auto',
     position: 'float',
   },
@@ -115,6 +118,7 @@ const {
   resizable: props.resizable,
   handlePosition: props.handlePosition,
   showResizeHandle: props.showResizeHandle,
+  autoHeight: props.autoHeight,
 })
 
 const _viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1280)

@@ -30,9 +30,9 @@ withDefaults(
     defaultCollapsed: false,
     maxOffsetX: 140,
     maxOffsetY: 70,
-    // 2026-08-25 用户反馈：内框下边缘偶尔被裁（body-overflow hidden +
-    // 高度上限 260 不足）——加高默认/最小/最大高度，并把 body 溢出改为
-    // auto（内容超出时滚动兜底而非裁切）。
+    // 2026-08-25 用户反馈两轮收敛：①内框下边缘被裁 → body-overflow auto；
+    // ②固定高度（235/210~330）导致外框过高留大空 → auto-height
+    // （fit-content + maxHeight 330 钳制）：高度随内容变化，无空隙无裁切。
     defaultWidth: 720,
     defaultHeight: 235,
     minWidth: 500,
@@ -61,6 +61,7 @@ withDefaults(
     :min-height="minHeight"
     :max-width="maxWidth"
     :max-height="maxHeight"
+    auto-height
     body-overflow="auto"
   >
     <slot />

@@ -54,6 +54,12 @@ export interface UsePanelDragResizeOptions {
   handlePosition?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
   /** 是否显示缩放手柄 */
   showResizeHandle?: boolean
+  /**
+   * 高度随内容自适应（2026-08-25）：true 时高度不取固定 px，而是
+   * `fit-content`（由 min/maxHeight 钳制）——适合内容高度可变的
+   * 面板（时间轴等），避免固定高度留大空或裁切。
+   */
+  autoHeight?: boolean
 }
 
 interface PersistedPanelState {
@@ -149,6 +155,7 @@ export function usePanelDragResize(options: UsePanelDragResizeOptions): PanelDra
     resizable = true,
     handlePosition = 'bottom-right',
     showResizeHandle = true,
+    autoHeight = false,
   } = options
 
   // ── 从 localStorage 恢复状态 ────────────────────────────────────────
@@ -269,10 +276,17 @@ export function usePanelDragResize(options: UsePanelDragResizeOptions): PanelDra
     const w = panelWidth.value > 0 ? panelWidth.value : defaultWidth
     const h = panelHeight.value > 0 ? panelHeight.value : defaultHeight
     if (w > 0) style.width = `${clampPanelWidth(w)}px`
-    if (h > 0) style.height = `${clampPanelHeight(h)}px`
+    if (autoHeight) {
+      // 高度随内容：fit-content + min/max 钳制（防过扁/溢出屏幕）
+      style.height = 'fit-content'
+    } else if (h > 0) {
+      style.height = `${clampPanelHeight(h)}px`
+    }
     style.minWidth = `${resolvedMinWidth.value}px`
     style.maxWidth = `${resolvedMaxWidth.value}px`
-    style.minHeight = `${resolvedMinHeight.value}px`
+    if (!autoHeight) {
+      style.minHeight = `${resolvedMinHeight.value}px`
+    }
     style.maxHeight = `${resolvedMaxHeight.value}px`
     return style
   })
