@@ -3,9 +3,8 @@ import { ref, watch } from 'vue'
 import { LAYERS_COPY, INSPECT_COPY } from '../../ui-copy'
 import { Info, Lock, Settings, Check } from '../ui/icons'
 import type { LayerCategory, RuntimeLayerLibraryItem } from '../../stores/layers/types'
-import type { WeatherProviderForLayer, WorkflowTemplateSummary } from '../../services/runtime-api'
+import type { WeatherProviderForLayer } from '../../services/runtime-api'
 import AppSelect from '../ui/AppSelect.vue'
-import LayerSidebarTemplates from './LayerSidebarTemplates.vue'
 
 const props = defineProps<{
   searchQuery: string
@@ -32,10 +31,6 @@ const props = defineProps<{
   getPrimarySourceName: (catalogId: string) => string
   supportsOnlineTemporal: (catalogId: string) => boolean
   orgLabel: string
-  /** 图层平台子系统 P2-1：课题组模板列表（空数组=不渲染模板区）。 */
-  labTemplates: WorkflowTemplateSummary[]
-  /** 正在提交的模板 workflow_id 集合。 */
-  labTemplateSubmittingIds: Set<string>
 }>()
 
 const emit = defineEmits<{
@@ -46,7 +41,6 @@ const emit = defineEmits<{
   addAllInCategory: [items: RuntimeLayerLibraryItem[]]
   addCatalogItem: [catalogId: string]
   toggleCategory: [categoryId: string]
-  runLabTemplate: [workflowId: string]
 }>()
 
 // ── 多源合并条目的源选择状态（禁止在 render 路径里写入）──────────────────────
@@ -164,14 +158,7 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
             {{ sub === 'all' ? '全部' : sub }}
           </button>
         </div>
-        <!-- 课题组工作流模板区（P2-1）：一键运行 → 轮询 → 自动上图 -->
-        <LayerSidebarTemplates
-          v-if="group.category.id === 'research-group'"
-          :templates="labTemplates"
-          :submitting-ids="labTemplateSubmittingIds"
-          @run-template="emit('runLabTemplate', $event)"
-        />
-        <div v-if="group.items.length === 0 && labTemplates.length === 0" class="empty-subcategory-hint">
+        <div v-if="group.items.length === 0" class="empty-subcategory-hint">
           暂无匹配【{{ selectedSubCategory === 'all' ? '全部' : selectedSubCategory }}】的{{
             orgLabel
           }}图层
@@ -321,42 +308,14 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
             >
               + 添加
             </button>
-            <!-- 已添加：显示工作流状态徽标 -->
+            <!-- 2026-08-25 UX 简化：添加即自动运行/加载，中间态徽标全部隐藏；
+                 仅失败时可见（报错必须呈现），成功后回到「已添加」。 -->
             <span
-              v-else-if="getCatalogJobStatus(effectiveSourceId(item)) === 'running'"
-              class="job-status-chip job-status-running"
-            >
-              <span class="spin-dot" aria-hidden="true"></span>运行中
-            </span>
-            <span
-              v-else-if="getCatalogJobStatus(effectiveSourceId(item)) === 'queued'"
-              class="job-status-chip job-status-queued"
-            >
-              排队中
-            </span>
-            <span
-              v-else-if="getCatalogJobStatus(effectiveSourceId(item)) === 'retry_pending'"
-              class="job-status-chip job-status-queued"
-            >
-              等待重试
-            </span>
-            <span
-              v-else-if="getCatalogJobStatus(effectiveSourceId(item)) === 'succeeded'"
-              class="job-status-chip job-status-succeeded"
-            >
-              已就绪 <Check :size="14" aria-hidden="true" />
-            </span>
-            <span
-              v-else-if="getCatalogJobStatus(effectiveSourceId(item)) === 'failed'"
+              v-if="getCatalogJobStatus(effectiveSourceId(item)) === 'failed'"
               class="job-status-chip job-status-failed"
+              :title="getCatalogRunBlockReason(effectiveSourceId(item)) ?? ''"
             >
               运行失败
-            </span>
-            <span
-              v-else-if="getCatalogJobStatus(effectiveSourceId(item)) === 'cancelled'"
-              class="job-status-chip job-status-cancelled"
-            >
-              已取消
             </span>
             <span v-else class="added-label">已添加 <Check :size="14" aria-hidden="true" /></span>
           </div>

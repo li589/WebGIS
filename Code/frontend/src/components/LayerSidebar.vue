@@ -11,8 +11,6 @@ import { computed, nextTick, ref, watch, onMounted } from 'vue'
 import { Diamond } from './ui/icons'
 
 import { useLayerWorkspace, useLayerLifecycle, useWorkflowRun } from '../stores/layers/selectors'
-import { fetchWorkflowTemplates, runWorkflowTemplate } from '../services/runtime-api'
-import type { WorkflowTemplateSummary } from '../services/runtime-api'
 import type { SidebarDragDeps, SidebarLayersDeps } from './layer-sidebar/sidebar-layers-deps'
 import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
@@ -171,46 +169,27 @@ function getLifecycleBadge(
   return { state: entry.lifecycleState, label, message: entry.message }
 }
 
-// ── 课题组工作流模板（图层平台子系统 P2-1）──────────────────────────────
-const labTemplates = ref<WorkflowTemplateSummary[]>([])
-const labTemplateSubmittingIds = ref<Set<string>>(new Set())
-
-async function loadLabTemplates() {
+// ── 添加即运行（2026-08-25 UX 简化）─────────────────────────────────────
+// 点击「+ 添加」后自动完成一切：
+// 1. 优先附加既有产物/缓存（成功 run 产物直接上图）
+// 2. 无产物 → 自动提交工作流（内部分流：overlay→资产工作流重烘；
+//    python_provider→分析运行；weather→瓦片视口按需加载），
+//    轮询持续到产出或报错，终态由 poller 物化/呈现
+// 3. 时间轴按需加载由 online-temporal-orchestrator 承担
+async function ensureLayerDataOrRun(catalogId: string): Promise<void> {
   try {
-    const resp = await fetchWorkflowTemplates()
-    labTemplates.value = resp.items ?? []
+    const attached = await workflowRun.autoAttachProductsForNewLayer(catalogId)
+    if (attached > 0) return // 已有缓存/数据，直接显示
   } catch {
-    // 模板接口不可用（如旧后端）→ 静默降级为无模板区
-    labTemplates.value = []
+    // 附加失败不阻断自动运行（后端目录不可用等）
   }
-}
-
-async function handleRunLabTemplate(workflowId: string) {
-  if (labTemplateSubmittingIds.value.has(workflowId)) return
-  const tpl = labTemplates.value.find((t) => t.workflow_id === workflowId)
-  if (!tpl) return
-
-  labTemplateSubmittingIds.value = new Set([...labTemplateSubmittingIds.value, workflowId])
   try {
-    const accepted = await runWorkflowTemplate(workflowId)
-    logStore.logOperation(
-      'lab-template',
-      `模板「${tpl.name}」已提交（run ${accepted.run_id}）${
-        tpl.auto_display && tpl.linked_layer_id ? '，完成后自动上图' : ''
-      }`,
-    )
-    // 纳入既有轮询链：状态拉取 + jobLayer upsert + 终态物化
-    await workflowRun.registerExternalWorkflowRun(
-      accepted.run_id,
-      tpl.linked_layer_id ?? undefined,
-    )
+    await workflowRun.runWorkflowForCatalog(catalogId, {})
   } catch (err) {
+    // 预期内的提示性错误静默（天气瓦片提示/无引擎等）；
+    // 真实运行失败由 jobLayer 失败态 + 库卡片「运行失败」徽标呈现
     const message = err instanceof Error ? err.message : String(err)
-    logStore.logOperation('lab-template', `模板「${tpl.name}」提交失败：${message}`)
-  } finally {
-    const next = new Set(labTemplateSubmittingIds.value)
-    next.delete(workflowId)
-    labTemplateSubmittingIds.value = next
+    logStore.logOperation('layer-add', `图层「${catalogId}」自动运行未启动：${message}`)
   }
 }
 
@@ -304,8 +283,8 @@ function addCatalogItem(catalogId: string, isAdminBoundary = false) {
     `添加图层「${catalogId}」`,
     isAdminBoundary ? '行政区边界' : undefined,
   )
-  // 需求1 批次2：添加后自动载入该图层最近一次成功 run 的产物/缓存
-  void workflowRun.autoAttachProductsForNewLayer(catalogId)
+  // 2026-08-25 添加即运行：有缓存/产物直接附加；无则自动提交工作流
+  void ensureLayerDataOrRun(catalogId)
 }
 
 function addAllInCategory(
@@ -420,8 +399,6 @@ watch(
 
 onMounted(() => {
   search.prefetchVisibleWeatherProviders()
-  // 课题组模板列表懒加载（接口不可用时静默降级）
-  void loadLabTemplates()
 })
 </script>
 
@@ -474,8 +451,6 @@ onMounted(() => {
       :get-primary-source-name="getPrimarySourceName"
       :supports-online-temporal="supportsOnlineTemporal"
       :org-label="orgLabel"
-      :lab-templates="labTemplates"
-      :lab-template-submitting-ids="labTemplateSubmittingIds"
       @update:search-query="search.searchQuery.value = $event"
       @update:selected-sub-category="search.selectedSubCategory.value = $event"
       @ensure-weather-providers="weatherProviders.ensureWeatherProviders"
@@ -483,7 +458,6 @@ onMounted(() => {
       @add-all-in-category="addAllInCategory"
       @add-catalog-item="addCatalogItem"
       @toggle-category="toggleCategory"
-      @run-lab-template="handleRunLabTemplate"
     />
 
     <!-- ── ACTIVE STATE ───────────────────────────────────────────────── -->
