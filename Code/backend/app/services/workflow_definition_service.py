@@ -138,6 +138,10 @@ def _ensure_dirs() -> None:
     _sync_system_seeds()
 
 
+# get_definition 首读惰性同步标记（每进程一次）
+_SEED_SYNC_DONE = False
+
+
 def _validate_id(workflow_id: str) -> None:
     """校验 workflow_id 格式，防路径穿越。"""
     if not _ID_PATTERN.match(workflow_id):
@@ -302,7 +306,21 @@ def list_definitions() -> list[dict[str, Any]]:
 
 
 def get_definition(workflow_id: str) -> dict[str, Any] | None:
-    """获取单个工作流定义的完整内容。"""
+    """获取单个工作流定义的完整内容。
+
+    首次读取前惰性同步 system 种子（2026-08-25 修复）：此前同步仅在
+    list/create 路径触发，服务重启后若无人访问列表页，种子修复
+    （如 ω 反演默认时间窗 {TODAY-10}~{TODAY-3}）到不了运行时定义目录，
+    读路径永远拿到旧内容——「改了种子不生效」的根因。每进程只同步
+    一次；同步幂等（内容相同跳过），多 worker 竞态无害。
+    """
+    global _SEED_SYNC_DONE
+    if not _SEED_SYNC_DONE:
+        try:
+            _ensure_dirs()
+        except OSError as exc:
+            logger.warning("Seed sync on first read failed: %s", exc)
+        _SEED_SYNC_DONE = True
     path = _resolve_file(workflow_id)
     if path is None:
         return None

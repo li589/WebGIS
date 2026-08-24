@@ -503,19 +503,38 @@ def _node_module_name(node: dict[str, Any]) -> str:
 def _expand_seed_date_placeholder(value: str, ref: Any) -> str:
     """展开种子 time_range 节点的日期占位符（无 ref 时用当天）。
 
-    在线种子的 start/end 常为 ``{YYYY-MM-DD}T00:00:00`` 字面占位符
-    （默认=提交当天）。此前 ``_extract_time_range_from_nodes`` 直接
-    ``fromisoformat`` 解析占位符抛 ValueError → time_range 静默 None →
-    layer_id-only 提交缺 time_range → 下游参数校验报一堆无效
-    （用户报障 2026-08-22「流水线配置时间范围后运行直接出错」根因）。
+    支持的占位符：
+    - ``{YYYY-MM-DD}`` / ``{YYYYMMDD}``：提交当天（历史行为）。
+    - ``{TODAY}`` / ``{TODAY-Nd}`` / ``{TODAY+Nd}``：提交当天 ± N 天的
+      回看/前看窗口（2026-08-25 增）。在线种子的数据源常有发布滞后
+      （SMAP NSIDC 3 级产品滞后约 2-3 天），默认窗口=当天会导致
+      下载器无可下日期 → 反演「SMAP 文件夹无可用日期数据」失败
+      （用户报障 ω 反演链路）。
+
+    此前 ``_extract_time_range_from_nodes`` 直接 ``fromisoformat`` 解析
+    占位符抛 ValueError → time_range 静默 None → layer_id-only 提交缺
+    time_range → 下游参数校验报一堆无效（用户报障 2026-08-22「流水线
+    配置时间范围后运行直接出错」根因）。
     """
     from datetime import date as _date
+    from datetime import timedelta as _timedelta
+
+    base = ref if isinstance(ref, _date) else _date.today()
+
+    if "{TODAY" in value:
+        import re as _re
+
+        def _sub(match: "_re.Match[str]") -> str:
+            sign = -1 if match.group(1) == "-" else 1
+            days = int(match.group(2) or 0)
+            return (base + _timedelta(days=sign * days)).isoformat()
+
+        # {TODAY} / {TODAY-10} / {TODAY+5d}（d 后缀可选）
+        value = _re.sub(r"\{TODAY(?:([+-])(\d+)d?)?\}", _sub, value)
 
     if "{YYYY-MM-DD}" in value:
-        base = ref if isinstance(ref, _date) else _date.today()
         return value.replace("{YYYY-MM-DD}", base.isoformat())
     if "{YYYYMMDD}" in value:
-        base = ref if isinstance(ref, _date) else _date.today()
         return value.replace("{YYYYMMDD}", base.strftime("%Y%m%d"))
     return value
 

@@ -99,9 +99,10 @@ def test_normalize_fills_time_range_from_seed_via_restored_layer() -> None:
 
     X2 变体路由后，无显式变体选择的 layer_id 提交翻译为默认在线变体
     （workflow_name），不再走 setdefault(module_name) 裸模块路径。
-    种子 time_range 为 {YYYY-MM-DD} 占位符时按提交当天展开（2026-08-22
-    根因修复：占位符 fromisoformat 解析失败曾致 time_range 静默 None →
-    下游参数校验报无效）。
+    种子 time_range 占位符展开（2026-08-22 根因修复：占位符
+    fromisoformat 解析失败曾致 time_range 静默 None → 下游参数校验
+    报无效；2026-08-25 起 smap 在线种子默认窗为 {TODAY-10}~{TODAY-3}
+    8 天回看——SMAP NSIDC 产品发布滞后，默认=当天会无可下日期）。
     """
     payload = WorkflowSubmitRequest(
         command_type=WorkflowCommandType.analysis,
@@ -112,11 +113,16 @@ def test_normalize_fills_time_range_from_seed_via_restored_layer() -> None:
     normalized = normalize_workflow_submit_request(payload)
     assert normalized.time_range is not None, "normalized.time_range is not None"
     from datetime import date as _date
+    from datetime import timedelta as _timedelta
 
     today = _date.today()
+    # 在线种子默认窗：TODAY-10 ~ TODAY-3（8 天回看，避开产品发布滞后）
     assert (
-        normalized.time_range.start_at.date() == today
-    ), "占位符种子默认展开为提交当天"
+        normalized.time_range.start_at.date() == today - _timedelta(days=10)
+    ), "种子默认窗口 start=TODAY-10"
+    assert (
+        normalized.time_range.end_at.date() == today - _timedelta(days=3)
+    ), "种子默认窗口 end=TODAY-3"
     algo = normalized.algorithm_request or {}
     assert (
         algo.get("workflow_name") == "omega_sf_fenkuai_smap_online"
@@ -653,3 +659,64 @@ def test_expand_data_root_win_windows_platform(monkeypatch) -> None:
     out = resolver._expand_data_root_placeholders({"d": "{DATA_ROOT_WIN}/SMAP"})
     # root 部分反斜杠化；模板字面正斜杠原样保留（Windows 混合分隔符合法）
     assert out["d"] == "I:\\Geograph_DataSet/SMAP"
+
+
+# ── 2026-08-25：{TODAY±N} 回看窗口占位符（ω 反演默认窗口修复） ─────────────
+
+
+class TestTodayPlaceholder:
+    """在线种子默认时间窗支持回看（数据源发布滞后），无回看时默认=当天
+    导致 NSIDC 无可下日期 → 反演「SMAP 文件夹无可用日期数据」失败。"""
+
+    def test_today_plain(self):
+        from datetime import date
+
+        from app.services.workflow_request_resolver import (
+            _expand_seed_date_placeholder as ex,
+        )
+
+        ref = date(2026, 8, 25)
+        assert ex("{TODAY}T00:00:00", ref) == "2026-08-25T00:00:00"
+
+    def test_today_minus_days(self):
+        from datetime import date
+
+        from app.services.workflow_request_resolver import (
+            _expand_seed_date_placeholder as ex,
+        )
+
+        ref = date(2026, 8, 25)
+        assert ex("{TODAY-10}T00:00:00", ref) == "2026-08-15T00:00:00"
+        assert ex("{TODAY-10d}T00:00:00", ref) == "2026-08-15T00:00:00"
+        assert ex("{TODAY-3}T00:00:00", ref) == "2026-08-22T00:00:00"
+
+    def test_today_plus_days(self):
+        from datetime import date
+
+        from app.services.workflow_request_resolver import (
+            _expand_seed_date_placeholder as ex,
+        )
+
+        ref = date(2026, 8, 25)
+        assert ex("{TODAY+5}T00:00:00", ref) == "2026-08-30T00:00:00"
+
+    def test_legacy_placeholders_unchanged(self):
+        from datetime import date
+
+        from app.services.workflow_request_resolver import (
+            _expand_seed_date_placeholder as ex,
+        )
+
+        ref = date(2026, 8, 25)
+        assert ex("{YYYY-MM-DD}T00:00:00", ref) == "2026-08-25T00:00:00"
+        assert ex("2026-01-01T00:00:00", ref) == "2026-01-01T00:00:00"
+
+    def test_month_boundary_rollover(self):
+        from datetime import date
+
+        from app.services.workflow_request_resolver import (
+            _expand_seed_date_placeholder as ex,
+        )
+
+        ref = date(2026, 8, 3)
+        assert ex("{TODAY-10}T00:00:00", ref) == "2026-07-24T00:00:00"

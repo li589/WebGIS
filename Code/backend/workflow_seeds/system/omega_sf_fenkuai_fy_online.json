@@ -201,8 +201,8 @@
         40
       ],
       "properties": {
-        "start_at": "{YYYY-MM-DD}T00:00:00",
-        "end_at": "{YYYY-MM-DD}T00:00:00",
+        "start_at": "{TODAY-10}T00:00:00",
+        "end_at": "{TODAY-3}T00:00:00",
         "resolution_unit": "day",
         "resolution_step": 1,
         "granularity": "day",
