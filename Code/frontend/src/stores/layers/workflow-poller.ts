@@ -195,6 +195,22 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
                     : typeof detailRaw.moduleName === 'string'
                       ? detailRaw.moduleName
                       : undefined,
+                // 下载进度（2026-08-25 下载可视化）：算法包 download_nodes
+                // 的 detail 透传（速度/文件数/累计字节）
+                speed_bps:
+                  typeof detailRaw.speed_bps === 'number' ? detailRaw.speed_bps : null,
+                downloaded_items:
+                  typeof detailRaw.downloaded_items === 'number'
+                    ? detailRaw.downloaded_items
+                    : undefined,
+                total_items:
+                  typeof detailRaw.total_items === 'number'
+                    ? detailRaw.total_items
+                    : undefined,
+                downloaded_bytes:
+                  typeof detailRaw.downloaded_bytes === 'number'
+                    ? detailRaw.downloaded_bytes
+                    : undefined,
               }
             : undefined
         if (

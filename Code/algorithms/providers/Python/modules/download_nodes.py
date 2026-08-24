@@ -15,12 +15,59 @@
 from __future__ import annotations
 
 import re
+import time
 from pathlib import Path
 
 from contracts.product import ProductManifest, ProductRef
 from modules.base import BaseModule
 from modules.registry import register_module_decorator
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
+
+# 下载进度 emit 节流间隔（秒）：_http_resume 每 256KB chunk 回调一次，
+# 不节流会形成 node_progress 事件风暴（每 MB 4 个事件全部落库转发）。
+_DOWNLOAD_EMIT_INTERVAL = 2.0
+
+
+def _make_download_progress_cb(
+    logger_adapter: object | None,
+    stage: str,
+):
+    """构造统一下载进度回调（2026-08-25 下载进度可视化优化）。
+
+    消费 ingest 下载器的 (current_file, total_files, downloaded_bytes)：
+    - 2s 节流（含文件边界立即上报）
+    - message: 文件 i/N · 已下载 bytes · 网速
+    - detail: speed_bps / downloaded_items / total_items / downloaded_bytes
+      （前端 WorkflowStatusPanel 渲染为「文件 2/5 · 156.3 MB · 1.8 MB/s」）
+    """
+    from ingest._http_resume import format_size, format_speed, get_last_speed_bps
+
+    last_emit = [0.0]
+
+    def _cb(current: int, total: int, downloaded: int) -> None:
+        now = time.monotonic()
+        is_file_boundary = current != getattr(_cb, "_last_file", 0)  # noqa: SLF001
+        if not is_file_boundary and now - last_emit[0] < _DOWNLOAD_EMIT_INTERVAL:
+            return
+        last_emit[0] = now
+        _cb._last_file = current  # type: ignore[attr-defined]  # noqa: SLF001
+        if logger_adapter is None:
+            return
+        bps = get_last_speed_bps()
+        speed_txt = f" · {format_speed(bps)}" if bps else ""
+        logger_adapter.emit_progress(
+            stage,
+            current / total if total else 0.0,
+            f"文件 {current}/{total} · 已下载 {format_size(downloaded)}{speed_txt}",
+            {
+                "speed_bps": bps,
+                "downloaded_items": current,
+                "total_items": total,
+                "downloaded_bytes": downloaded,
+            },
+        )
+
+    return _cb
 
 
 def _resolve_portal_entry(
@@ -352,22 +399,10 @@ class SshSyncModule(BaseModule):
                 f"Sync {remote_path} -> {local_path} ({server_type})",
             )
 
-        def _progress_cb(current: int, total: int, downloaded: int) -> None:
-            from ingest._http_resume import format_speed, get_last_speed_bps
-
-            _bps = get_last_speed_bps()
-            _speed = f" [{format_speed(_bps)}]" if _bps else ""
-            if ctx.logger_adapter is not None:
-                ctx.logger_adapter.emit_progress(
-                    "ssh_sync",
-                    current / total if total else 0.0,
-                    f"File {current}/{total}{_speed}",
-                    {
-                        "speed_bps": _bps,
-                        "downloaded_items": current,
-                        "total_items": total,
-                    },
-                )
+        # 下载进度可视化（2026-08-25）：bytes + 网速 + 2s 节流
+        # （此前每 256KB chunk 无节流 emit + 忽略 downloaded bytes，
+        #  前端只见 items 进度卡 0% 忽然结束）
+        _progress_cb = _make_download_progress_cb(ctx.logger_adapter, "ssh_sync")
 
         result = sync_dataset(
             server_config=config,
@@ -492,22 +527,9 @@ class NsidcSmapDownloadModule(BaseModule):
                 f"{start_date} ~ {end_date} -> {local_dir}",
             )
 
-        def _progress_cb(current: int, total: int, downloaded: int) -> None:
-            from ingest._http_resume import format_speed, get_last_speed_bps
-
-            _bps = get_last_speed_bps()
-            _speed = f" [{format_speed(_bps)}]" if _bps else ""
-            if ctx.logger_adapter is not None:
-                ctx.logger_adapter.emit_progress(
-                    "nsidc_smap_download",
-                    current / total if total else 0.0,
-                    f"Granule {current}/{total}{_speed}",
-                    {
-                        "speed_bps": _bps,
-                        "downloaded_items": current,
-                        "total_items": total,
-                    },
-                )
+        _progress_cb = _make_download_progress_cb(
+            ctx.logger_adapter, "nsidc_smap_download"
+        )
 
         result = download_smap_range(
             start_date=start_date,
@@ -641,22 +663,9 @@ class GldasDownloadModule(BaseModule):
                 f"{start_date} ~ {end_date} -> {local_dir}",
             )
 
-        def _progress_cb(current: int, total: int, downloaded: int) -> None:
-            from ingest._http_resume import format_speed, get_last_speed_bps
-
-            _bps = get_last_speed_bps()
-            _speed = f" [{format_speed(_bps)}]" if _bps else ""
-            if ctx.logger_adapter is not None:
-                ctx.logger_adapter.emit_progress(
-                    "gldas_download",
-                    current / total if total else 0.0,
-                    f"Granule {current}/{total}{_speed}",
-                    {
-                        "speed_bps": _bps,
-                        "downloaded_items": current,
-                        "total_items": total,
-                    },
-                )
+        _progress_cb = _make_download_progress_cb(
+            ctx.logger_adapter, "gldas_download"
+        )
 
         result = download_gldas_range(
             start_date=start_date,

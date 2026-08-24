@@ -319,6 +319,32 @@ function getCategoryName(categoryId: string): string {
   return cat?.name ?? categoryId
 }
 
+/** 分类计数悬停说明（▶✓✕ 符号语义） */
+function categoryTooltip(cat: { running: number; succeeded: number; failed: number; total: number }): string {
+  return `运行 ${cat.running} · 完成 ${cat.succeeded} · 失败 ${cat.failed} · 共 ${cat.total} 项`
+}
+
+/** 下载速率格式化：1835008 → "1.8 MB/s"（与算法包 format_speed 同规则） */
+function formatSpeed(bps: number | null | undefined): string {
+  if (!bps || bps <= 0) return ''
+  if (bps >= 1024 * 1024) return `${(bps / 1024 / 1024).toFixed(1)} MB/s`
+  if (bps >= 1024) return `${(bps / 1024).toFixed(0)} KB/s`
+  return `${bps.toFixed(0)} B/s`
+}
+
+/** 字节数格式化：156000000 → "148.8 MB"（与算法包 format_size 同规则） */
+function formatBytes(bytes: number | null | undefined): string {
+  if (!bytes || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let size = bytes
+  let idx = 0
+  while (size >= 1024 && idx < units.length - 1) {
+    size /= 1024
+    idx++
+  }
+  return `${idx === 0 ? size : size.toFixed(1)} ${units[idx]}`
+}
+
 /** 节点阶段图标映射 */
 const STAGE_ICONS: Record<string, Component> = {
   download: Download,
@@ -563,21 +589,23 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <!-- 分类统计 -->
+      <!-- 分类统计（2026-08-25 修复「两个 1 重复计数」观感：三色数字
+           无标签并排，成功数+总数看起来像重复。改为符号前缀：
+           ▶运行 ✓完成 ✕失败 + /总数，仅显示 >0 的项） -->
       <section v-if="categoryBreakdown.length > 1" class="wf-category-stats">
         <div v-for="cat in categoryBreakdown" :key="cat.category" class="wf-category-stat-item">
           <span class="wf-category-stat-name">{{ getCategoryName(cat.category) }}</span>
-          <span class="wf-category-stat-counts">
-            <span v-if="cat.running > 0" class="wf-cat-count" style="color: var(--accent)">{{
-              cat.running
-            }}</span>
-            <span v-if="cat.succeeded > 0" class="wf-cat-count" style="color: var(--success)">{{
-              cat.succeeded
-            }}</span>
-            <span v-if="cat.failed > 0" class="wf-cat-count" style="color: var(--danger)">{{
-              cat.failed
-            }}</span>
-            <span class="wf-cat-count-total">{{ cat.total }}</span>
+          <span class="wf-category-stat-counts" :title="categoryTooltip(cat)">
+            <span v-if="cat.running > 0" class="wf-cat-count" style="color: var(--accent)"
+              >▶{{ cat.running }}</span
+            >
+            <span v-if="cat.succeeded > 0" class="wf-cat-count" style="color: var(--success)"
+              >✓{{ cat.succeeded }}</span
+            >
+            <span v-if="cat.failed > 0" class="wf-cat-count" style="color: var(--danger)"
+              >✕{{ cat.failed }}</span
+            >
+            <span class="wf-cat-count-total">/{{ cat.total }}</span>
           </span>
         </div>
       </section>
@@ -828,10 +856,22 @@ onBeforeUnmount(() => {
                     (np.detail.chunksTotal ||
                       np.detail.pixelsTotal ||
                       np.detail.blocksTotal ||
-                      np.detail.dateStart)
+                      np.detail.dateStart ||
+                      np.detail.downloaded_items != null ||
+                      np.detail.speed_bps)
                   "
                   class="node-progress-detail"
                 >
+                  <!-- 下载进度（2026-08-25）：文件 i/N · 已下载 bytes · 网速 -->
+                  <span v-if="np.detail.downloaded_items != null" class="download-progress-detail">
+                    文件 {{ np.detail.downloaded_items ?? 0 }}/{{ np.detail.total_items ?? '?' }}
+                    <template v-if="np.detail.downloaded_bytes">
+                      · {{ formatBytes(np.detail.downloaded_bytes) }}
+                    </template>
+                    <template v-if="np.detail.speed_bps">
+                      · {{ formatSpeed(np.detail.speed_bps) }}
+                    </template>
+                  </span>
                   <span v-if="np.detail.blocksTotal">
                     块 {{ np.detail.blocksDone ?? 0 }}/{{ np.detail.blocksTotal
                     }}<template v-if="np.detail.dateStart && np.detail.dateEnd">

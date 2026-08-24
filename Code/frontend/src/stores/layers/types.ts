@@ -179,6 +179,14 @@ export interface NodeProgress {
     blockId?: string
     productTag?: string
     moduleName?: string
+    /** 下载进度（2026-08-25 下载可视化）：瞬时速率（字节/秒） */
+    speed_bps?: number | null
+    /** 已完成下载的文件数 */
+    downloaded_items?: number
+    /** 待下载文件总数 */
+    total_items?: number
+    /** 累计已下载字节数 */
+    downloaded_bytes?: number
   }
 }
 
