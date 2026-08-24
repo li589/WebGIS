@@ -751,7 +751,7 @@ describe('restoreActiveWorkflows / ensureRestoredRunGroup（F2 manifest 成员�
     expect(memberTags).toEqual(['NDVI'])
   })
 
-  it('无 manifest 时回退 SM/VOD/OMEGA 兼容标签', async () => {
+  it('无 manifest 时回退单产出 result（LEGACY 三件套已退役 2026-08-24）', async () => {
     const deps = setupRestore(null)
     const runner = createWorkflowRunner(deps)
     await runner.restoreActiveWorkflows()
@@ -761,6 +761,8 @@ describe('restoreActiveWorkflows / ensureRestoredRunGroup（F2 manifest 成员�
     const memberTags = group!.memberInstanceIds
       .map((id) => deps.getActiveLayers().find((l) => l.instanceId === id)?.runGroupProductTag)
       .filter(Boolean)
-    expect(memberTags.sort()).toEqual(['OMEGA', 'SM', 'VOD'])
+    // 退役决策：旧 run 快照不再回退 SM/VOD/OMEGA 三占位——
+    // 61 种子全带 extra 中文配置，无 manifest 一律单产出 'result' 语义
+    expect(memberTags.sort()).toEqual(['result'])
   })
 })

@@ -27,9 +27,11 @@ describe('layer-naming', () => {
     )
   })
 
-  it('recognizes default and legacy product labels', () => {
+  it('recognizes default product labels（LEGACY 旧长标签已退役 2026-08-24）', () => {
     expect(isDefaultProductDisplayName('SM', 'SM', 'SM')).toBe(true)
-    expect(isDefaultProductDisplayName('SM（土壤湿度）', 'SM', 'SM')).toBe(true)
+    // 旧长标签「SM（土壤湿度）」不再视为默认名——LEGACY 表已删，
+    // 退役后旧持久化名视为用户自定义名，不再被渐进失败路径覆盖
+    expect(isDefaultProductDisplayName('SM（土壤湿度）', 'SM', 'SM')).toBe(false)
     expect(isDefaultProductDisplayName('SM（部分）', 'SM', 'SM')).toBe(true)
     expect(isDefaultProductDisplayName('ω', 'OMEGA', 'ω')).toBe(true)
     expect(isDefaultProductDisplayName('我的反演层', 'SM', 'SM')).toBe(false)

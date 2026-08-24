@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  LEGACY_RESTORE_TAGS,
-  PRODUCT_TAG_MERGE_RULES,
-  mergeProductTag,
-} from '@/stores/layers/layer-naming'
+import { PRODUCT_TAG_MERGE_RULES, mergeProductTag } from '@/stores/layers/layer-naming'
 import { normalizeProductTag } from '@/stores/layers/result-adapter'
 
 describe('productTag 归并规则表（P2-A 表化回归锁，2026-08-24）', () => {
@@ -17,11 +13,13 @@ describe('productTag 归并规则表（P2-A 表化回归锁，2026-08-24）', ()
     expect(mergeProductTag('SMAP-OMEGA')).toBe('OMEGA')
   })
 
-  it('SM/VOD 后缀变体归并', () => {
+  it('SM/VOD 精确 tag 透传（LEGACY 退役 2026-08-24：变体后缀归并已删）', () => {
+    // 现行种子产物 tag 为精确值 SM/VOD/OMEGA（extra.outputs），透传即可
     expect(mergeProductTag('SM')).toBe('SM')
     expect(mergeProductTag('VOD')).toBe('VOD')
-    expect(mergeProductTag('Smap_SM')).toBe('SM')
-    expect(mergeProductTag('FY-VOD')).toBe('VOD')
+    // 旧 run 变体后缀（XX_SM/XX-VOD）不再归并——退役决策见 layer-naming 注释
+    expect(mergeProductTag('Smap_SM')).toBe('Smap_SM')
+    expect(mergeProductTag('FY-VOD')).toBe('FY-VOD')
   })
 
   it('未知 tag 透传（不误归并）', () => {
@@ -38,8 +36,7 @@ describe('productTag 归并规则表（P2-A 表化回归锁，2026-08-24）', ()
     expect(normalizeProductTag('')).toBe('')
   })
 
-  it('规则表与 LEGACY 三件套一致（退役期 2026-10-23 见 layer-naming 注释）', () => {
-    const canonicals = PRODUCT_TAG_MERGE_RULES.map((r) => r.canonical)
-    expect([...LEGACY_RESTORE_TAGS].sort()).toEqual([...new Set(canonicals)].sort())
+  it('规则表仅含现行归并（OMEGA），无 LEGACY 残留', () => {
+    expect(PRODUCT_TAG_MERGE_RULES.map((r) => r.canonical)).toEqual(['OMEGA'])
   })
 })

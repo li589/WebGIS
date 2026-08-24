@@ -31,7 +31,6 @@ import { forgetDismissedLayer, isRunDismissed } from './workspace-persist'
 import { getCatalogDisplayName, isTerminalStatus } from './catalog-builders'
 import { normalizeWorkflowProgress } from './workflow-progress'
 import { resolveRestoreWorkflowBridge as resolveRestoreWorkflowBridgeFromCatalog } from './restore-workflow-bridge'
-import { LEGACY_RESTORE_TAGS as LEGACY_RESTORE_TAGS_FROM_NAMING } from './layer-naming'
 import { claimOrphanWorkflowRun, isSubmitTimeoutError } from '../../utils/workflow-submit-reconcile'
 import {
   formatWorkflowValidationError,
@@ -725,10 +724,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     }
   }
 
-  /** 旧 run 恢复兜底占位标签（无 manifest/工作流定义时的兼容行为） */
-  // 旧 run 恢复兜底 tag——共享自 layer-naming（含退役观察期约定，
-  // 到期 2026-10-23 无回归可整体删除，P2-B 退役机制）
-  const LEGACY_RESTORE_TAGS = LEGACY_RESTORE_TAGS_FROM_NAMING
+  /** 旧 run 恢复兜底占位标签——LEGACY 三件套已退役（2026-08-24，交付前清理） */
 
   /** 从 runtime 图层目录解析工作流定义（descriptor 携带 workflow_definition） */
   function workflowDefinitionForRestore(
@@ -808,25 +804,15 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       (typeof rawCatalogTitle === 'string' && rawCatalogTitle.trim() ? rawCatalogTitle : undefined)
     const layerTags = memberTagsFromLayers()
     // 需求2 后的新种子（带 extra 配置）但无显式 outputs 时 → 单产出语义
-    //（'result'，与 resolveExpectedOutputTags 的"至少一个产出"约定一致）；
-    // 纯旧 run（无 extra 元数据）才回退 SM/VOD/OMEGA 兼容。静态图层
-    //（干旱指数 AI 等）此前误落 LEGACY 三件套 → 组员错、产物游离不进组。
-    const hasExtraMeta = Boolean(
-      restoreDef?.extra &&
-      (restoreDef.extra.group_title || restoreDef.extra.output_labels || restoreDef.extra.outputs),
-    )
-    // 提交路径（source='submit'）禁止落 LEGACY_RESTORE_TAGS（SM/VOD/OMEGA）：
-    // 该三件套是旧实验室 seed 的恢复兜底，新提交的 run 无 manifest 时也应是
-    // 单产出 'result' 语义——否则提交瞬间建 3 个错误占位成员（静态图层闪现
-    // + 越权反演图层组的根因之一，2026-08-23）。恢复路径保持原兜底链不变。
-    const isSubmitPath = options?.source === 'submit'
+    //（'result'，与 resolveExpectedOutputTags 的"至少一个产出"约定一致）。
+    // LEGACY 三件套（SM/VOD/OMEGA）恢复兜底已于 2026-08-24 交付前退役：
+    // 61 种子全部携带 group_title/outputs 中文配置，纯旧 run 快照不再
+    // 回退三占位——旧组产物经 result-adapter 游离层兜底链展示。
     const tags = layerTags.length
       ? layerTags
       : defTags.length
         ? defTags
-        : hasExtraMeta || isSubmitPath
-          ? ['result']
-          : LEGACY_RESTORE_TAGS
+        : ['result']
     const catalogLabels = catalogExtra?.output_labels
     const mergedLabels: Record<string, string> = Array.isArray(catalogLabels)
       ? Object.fromEntries(
