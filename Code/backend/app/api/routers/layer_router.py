@@ -27,8 +27,11 @@ from app.services.overlay_registry import (
 )
 from app.services.workflow_request_resolver import describe_layer_run_readiness
 from shared.contracts.api_contracts import (
+    LayerAssetStateResponse,
     LayerCatalogResponse,
     LayerCategoryResponse,
+    LayerLifecycleResponse,
+    LayerLifecycleRunSummary,
 )
 
 _logger = logging.getLogger(__name__)
@@ -156,6 +159,126 @@ def list_layer_categories() -> LayerCategoryResponse:
     前端 ``LAYER_CATEGORIES`` 静态表仅在 API 不可用时作离线兜底。
     """
     return get_layer_category_response()
+
+
+# ── 图层平台子系统 P0：资产状态与生命周期聚合接口（2026-08-24） ───────────────
+
+
+def _layer_asset_state_response(layer_id: str, state: dict[str, Any]) -> LayerAssetStateResponse:
+    from app.services.overlay_asset_workflow_service import _layer_to_task
+
+    return LayerAssetStateResponse(
+        layer_id=layer_id,
+        asset_state=str(state.get("asset_state") or "missing"),
+        bake_version=state.get("bake_version"),
+        current_bake_version=int(state.get("current_bake_version") or 0),
+        png_exists=bool(state.get("png_exists")),
+        bounds_exists=bool(state.get("bounds_exists")),
+        category=str(state.get("category") or "static"),
+        time_list=[str(t) for t in (state.get("time_list") or [])],
+        default_time=state.get("default_time"),
+        asset_task=_layer_to_task().get(layer_id),
+    )
+
+
+def _compute_lifecycle_state(
+    asset_state: str, recent_runs: list[Any]
+) -> tuple[str, str | None]:
+    """由资产状态 + 最近 run 推导统一生命周期状态与提示文案。"""
+    active_statuses = {"accepted", "queued", "running", "retry_pending"}
+    if any(r.status in active_statuses for r in recent_runs):
+        return "updating", "图层资产正在检查或更新。"
+    if asset_state == "fresh":
+        return "fresh", "图层资产已就绪。"
+    if asset_state == "stale":
+        return "stale", "图层资产陈旧，可触发重新烘焙。"
+    if asset_state == "missing":
+        return "missing", "图层资产缺失，需要烘焙后显示。"
+    if any(r.status == "failed" for r in recent_runs[:3]):
+        return "failed", "最近一次资产/工作流运行失败。"
+    return asset_state, None
+
+
+@router.get(
+    "/layer-assets/{layer_id}", tags=["layer-platform"], response_model=LayerAssetStateResponse
+)
+def get_layer_asset_state(
+    layer_id: str,
+    cred=Depends(get_request_user),
+) -> LayerAssetStateResponse:
+    """图层烘焙资产状态查询（图层平台子系统 P0）。
+
+    返回 asset_state（missing/unversioned/stale/fresh）、bake_version、
+    时间轴元数据与可用烘焙任务 key。前端 lifecycle 域以本接口为真源。
+    """
+    check_resource_access(cred, "layer", layer_id)
+    from app.services.overlay_asset_workflow_service import (
+        overlay_asset_workflow_service,
+    )
+
+    try:
+        state = overlay_asset_workflow_service.get_asset_state(layer_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+    return _layer_asset_state_response(layer_id, state)
+
+
+@router.get(
+    "/layers/{layer_id}/lifecycle",
+    tags=["layer-platform"],
+    response_model=LayerLifecycleResponse,
+)
+def get_layer_lifecycle(
+    layer_id: str,
+    limit: int = Query(default=5, ge=1, le=20),
+    cred=Depends(get_request_user),
+) -> LayerLifecycleResponse:
+    """图层生命周期聚合视图（图层平台子系统 P0）。
+
+    聚合资产状态 + 最近 run（workflow_kind/layer_id 索引查询）+ 时间轴元数据，
+    前端不再自行拼接 jobLayer / overlayTimeStates / asset_state。
+    """
+    check_resource_access(cred, "layer", layer_id)
+    from app.services.overlay_asset_workflow_service import (
+        overlay_asset_workflow_service,
+    )
+
+    try:
+        state = overlay_asset_workflow_service.get_asset_state(layer_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+
+    asset = _layer_asset_state_response(layer_id, state)
+    from app.services.workflow_repository import SQLiteWorkflowRepository
+
+    repository = SQLiteWorkflowRepository()
+    runs = repository.list_runs_by_layer(layer_id, limit=limit)
+    recent = [
+        LayerLifecycleRunSummary(
+            run_id=r.run_id,
+            workflow_kind=(r.executor_metadata or {}).get("workflow_kind"),
+            status=r.status.value,
+            progress=r.progress,
+            message=r.message,
+            updated_at=r.updated_at,
+        )
+        for r in runs
+    ]
+    lifecycle_state, message = _compute_lifecycle_state(asset.asset_state, runs)
+    from datetime import UTC, datetime as _dt
+
+    return LayerLifecycleResponse(
+        layer_id=layer_id,
+        asset=asset,
+        recent_runs=recent,
+        lifecycle_state=lifecycle_state,
+        message=message,
+        updated_at=runs[0].updated_at if runs else _dt.now(UTC),
+    )
 
 
 @router.get("/layers/{layer_id}/online-temporal", tags=["catalog"])

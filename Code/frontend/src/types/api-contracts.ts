@@ -355,6 +355,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/layer-assets/{layer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Layer Asset State
+         * @description 图层烘焙资产状态查询（图层平台子系统 P0）。
+         *
+         *     返回 asset_state（missing/unversioned/stale/fresh）、bake_version、
+         *     时间轴元数据与可用烘焙任务 key。前端 lifecycle 域以本接口为真源。
+         */
+        get: operations["get_layer_asset_state_layer_assets__layer_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/layers/{layer_id}/lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Layer Lifecycle
+         * @description 图层生命周期聚合视图（图层平台子系统 P0）。
+         *
+         *     聚合资产状态 + 最近 run（workflow_kind/layer_id 索引查询）+ 时间轴元数据，
+         *     前端不再自行拼接 jobLayer / overlayTimeStates / asset_state。
+         */
+        get: operations["get_layer_lifecycle_layers__layer_id__lifecycle_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/layers/{layer_id}/online-temporal": {
         parameters: {
             query?: never;
@@ -526,6 +572,30 @@ export interface paths {
         get: operations["get_overlay_value_overlay_value__layer_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/overlay-asset-workflows/{layer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit Overlay Asset Workflow
+         * @description 统一图层资产工作流入口：检查烘焙资产，陈旧/缺失则触发重烘。
+         *
+         *     静态 overlay 与普通分析图层一样返回 WorkflowAcceptedResponse，前端统一
+         *     轮询/恢复；fresh 资产立即 succeeded，stale/missing 资产创建 accepted run
+         *     并由 Celery worker 后台执行烘焙。
+         */
+        post: operations["submit_overlay_asset_workflow_overlay_asset_workflows__layer_id__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5707,6 +5777,41 @@ export interface components {
             /** Groups */
             groups?: components["schemas"]["BatchGroupBody"][];
         };
+        /**
+         * LayerAssetStateResponse
+         * @description 单图层烘焙资产状态（GET /layer-assets/{layer_id}）。
+         */
+        LayerAssetStateResponse: {
+            /** Layer Id */
+            layer_id: string;
+            /** Asset State */
+            asset_state: string;
+            /** Bake Version */
+            bake_version?: number | null;
+            /** Current Bake Version */
+            current_bake_version: number;
+            /**
+             * Png Exists
+             * @default false
+             */
+            png_exists: boolean;
+            /**
+             * Bounds Exists
+             * @default false
+             */
+            bounds_exists: boolean;
+            /**
+             * Category
+             * @default static
+             */
+            category: string;
+            /** Time List */
+            time_list?: string[];
+            /** Default Time */
+            default_time?: string | null;
+            /** Asset Task */
+            asset_task?: string | null;
+        };
         /** LayerCapabilities */
         LayerCapabilities: {
             /** Render Strategy */
@@ -5883,6 +5988,50 @@ export interface components {
         LayerDisplayNameBody: {
             /** Display Name */
             display_name: string;
+        };
+        /**
+         * LayerLifecycleResponse
+         * @description 图层生命周期聚合视图（GET /layers/{layer_id}/lifecycle）。
+         *
+         *     前端不再自行拼接 jobLayer/overlayTimeStates/asset_state，
+         *     统一从本响应读取「资产 + 最近 run + 时间轴」状态。
+         */
+        LayerLifecycleResponse: {
+            /** Layer Id */
+            layer_id: string;
+            asset: components["schemas"]["LayerAssetStateResponse"];
+            /** Recent Runs */
+            recent_runs?: components["schemas"]["LayerLifecycleRunSummary"][];
+            /** Lifecycle State */
+            lifecycle_state: string;
+            /** Message */
+            message?: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * LayerLifecycleRunSummary
+         * @description lifecycle 聚合中的最近 run 摘要（不含完整 payload）。
+         */
+        LayerLifecycleRunSummary: {
+            /** Run Id */
+            run_id: string;
+            /** Workflow Kind */
+            workflow_kind?: string | null;
+            /** Status */
+            status: string;
+            /** Progress */
+            progress: number;
+            /** Message */
+            message?: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /**
          * LayerPresentation
@@ -9591,6 +9740,70 @@ export interface operations {
             };
         };
     };
+    get_layer_asset_state_layer_assets__layer_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayerAssetStateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_layer_lifecycle_layers__layer_id__lifecycle_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayerLifecycleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_layer_online_temporal_layers__layer_id__online_temporal_get: {
         parameters: {
             query?: never;
@@ -9857,6 +10070,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_overlay_asset_workflow_overlay_asset_workflows__layer_id__post: {
+        parameters: {
+            query?: {
+                force_rebake?: boolean;
+            };
+            header?: never;
+            path: {
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowAcceptedResponse"];
                 };
             };
             /** @description Validation Error */

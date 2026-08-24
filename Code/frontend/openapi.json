@@ -945,6 +945,114 @@
         }
       }
     },
+    "/layer-assets/{layer_id}": {
+      "get": {
+        "tags": [
+          "layer-platform"
+        ],
+        "summary": "Get Layer Asset State",
+        "description": "图层烘焙资产状态查询（图层平台子系统 P0）。\n\n返回 asset_state（missing/unversioned/stale/fresh）、bake_version、\n时间轴元数据与可用烘焙任务 key。前端 lifecycle 域以本接口为真源。",
+        "operationId": "get_layer_asset_state_layer_assets__layer_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "layer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Layer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerAssetStateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/layers/{layer_id}/lifecycle": {
+      "get": {
+        "tags": [
+          "layer-platform"
+        ],
+        "summary": "Get Layer Lifecycle",
+        "description": "图层生命周期聚合视图（图层平台子系统 P0）。\n\n聚合资产状态 + 最近 run（workflow_kind/layer_id 索引查询）+ 时间轴元数据，\n前端不再自行拼接 jobLayer / overlayTimeStates / asset_state。",
+        "operationId": "get_layer_lifecycle_layers__layer_id__lifecycle_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "layer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Layer Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 20,
+              "minimum": 1,
+              "default": 5,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerLifecycleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/layers/{layer_id}/online-temporal": {
       "get": {
         "tags": [
@@ -1652,6 +1760,64 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Get Overlay Value Overlay Value  Layer Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/overlay-asset-workflows/{layer_id}": {
+      "post": {
+        "tags": [
+          "workflow"
+        ],
+        "summary": "Submit Overlay Asset Workflow",
+        "description": "统一图层资产工作流入口：检查烘焙资产，陈旧/缺失则触发重烘。\n\n静态 overlay 与普通分析图层一样返回 WorkflowAcceptedResponse，前端统一\n轮询/恢复；fresh 资产立即 succeeded，stale/missing 资产创建 accepted run\n并由 Celery worker 后台执行烘焙。",
+        "operationId": "submit_overlay_asset_workflow_overlay_asset_workflows__layer_id__post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "layer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Layer Id"
+            }
+          },
+          {
+            "name": "force_rebake",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Force Rebake"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowAcceptedResponse"
                 }
               }
             }
@@ -6198,7 +6364,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/gee/config/limits": {
@@ -6220,7 +6391,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/gee/config/status": {
@@ -6242,7 +6418,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/gee/config/environment": {
@@ -6262,7 +6443,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/config/general": {
@@ -10733,7 +10919,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/workspace": {
@@ -15478,6 +15669,85 @@
         "type": "object",
         "title": "ImportBatchBody"
       },
+      "LayerAssetStateResponse": {
+        "properties": {
+          "layer_id": {
+            "type": "string",
+            "title": "Layer Id"
+          },
+          "asset_state": {
+            "type": "string",
+            "title": "Asset State"
+          },
+          "bake_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bake Version"
+          },
+          "current_bake_version": {
+            "type": "integer",
+            "title": "Current Bake Version"
+          },
+          "png_exists": {
+            "type": "boolean",
+            "title": "Png Exists",
+            "default": false
+          },
+          "bounds_exists": {
+            "type": "boolean",
+            "title": "Bounds Exists",
+            "default": false
+          },
+          "category": {
+            "type": "string",
+            "title": "Category",
+            "default": "static"
+          },
+          "time_list": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Time List"
+          },
+          "default_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Time"
+          },
+          "asset_task": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Task"
+          }
+        },
+        "type": "object",
+        "required": [
+          "layer_id",
+          "asset_state",
+          "current_bake_version"
+        ],
+        "title": "LayerAssetStateResponse",
+        "description": "单图层烘焙资产状态（GET /layer-assets/{layer_id}）。"
+      },
       "LayerCapabilities": {
         "properties": {
           "render_strategy": {
@@ -16029,6 +16299,105 @@
           "display_name"
         ],
         "title": "LayerDisplayNameBody"
+      },
+      "LayerLifecycleResponse": {
+        "properties": {
+          "layer_id": {
+            "type": "string",
+            "title": "Layer Id"
+          },
+          "asset": {
+            "$ref": "#/components/schemas/LayerAssetStateResponse"
+          },
+          "recent_runs": {
+            "items": {
+              "$ref": "#/components/schemas/LayerLifecycleRunSummary"
+            },
+            "type": "array",
+            "title": "Recent Runs"
+          },
+          "lifecycle_state": {
+            "type": "string",
+            "title": "Lifecycle State"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "layer_id",
+          "asset",
+          "lifecycle_state",
+          "updated_at"
+        ],
+        "title": "LayerLifecycleResponse",
+        "description": "图层生命周期聚合视图（GET /layers/{layer_id}/lifecycle）。\n\n前端不再自行拼接 jobLayer/overlayTimeStates/asset_state，\n统一从本响应读取「资产 + 最近 run + 时间轴」状态。"
+      },
+      "LayerLifecycleRunSummary": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "workflow_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Kind"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "progress": {
+            "type": "integer",
+            "title": "Progress"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "status",
+          "progress",
+          "updated_at"
+        ],
+        "title": "LayerLifecycleRunSummary",
+        "description": "lifecycle 聚合中的最近 run 摘要（不含完整 payload）。"
       },
       "LayerPresentation": {
         "properties": {

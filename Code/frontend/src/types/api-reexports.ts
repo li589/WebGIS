@@ -74,6 +74,12 @@ export type LayerCatalogResponse = Schema<'LayerCatalogResponse'>
 export type LayerCategoryDef = Schema<'LayerCategoryDef'>
 export type LayerCategoryResponse = Schema<'LayerCategoryResponse'>
 
+// ── 图层平台子系统：资产状态与生命周期（P0，2026-08-24） ───────────────────
+
+export type LayerAssetStateResponse = Schema<'LayerAssetStateResponse'>
+export type LayerLifecycleRunSummary = Schema<'LayerLifecycleRunSummary'>
+export type LayerLifecycleResponse = Schema<'LayerLifecycleResponse'>
+
 // ── Weather 相关 ──────────────────────────────────────────────────────────
 
 export type WeatherLayerRenderHint = Schema<'WeatherLayerRenderHint'>

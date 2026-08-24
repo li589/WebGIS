@@ -718,6 +718,61 @@ class WorkflowRunViewResponse(BaseModel):
     updated_at: datetime
 
 
+# ── 图层平台子系统：资产状态与生命周期聚合契约（P0，2026-08-24） ─────────────
+
+
+class LayerAssetStateResponse(BaseModel):
+    """单图层烘焙资产状态（GET /layer-assets/{layer_id}）。"""
+
+    layer_id: str
+    asset_state: str
+    """missing | unversioned | stale | fresh"""
+
+    bake_version: int | None = None
+    current_bake_version: int
+
+    png_exists: bool = False
+    bounds_exists: bool = False
+
+    category: str = "static"
+    """static | time-series"""
+
+    time_list: list[str] = Field(default_factory=list)
+    default_time: str | None = None
+
+    asset_task: str | None = None
+    """可用的烘焙任务 key；None 表示该图层暂未配置烘焙任务。"""
+
+
+class LayerLifecycleRunSummary(BaseModel):
+    """lifecycle 聚合中的最近 run 摘要（不含完整 payload）。"""
+
+    run_id: str
+    workflow_kind: str | None = None
+    status: str
+    progress: int
+    message: str | None = None
+    updated_at: datetime
+
+
+class LayerLifecycleResponse(BaseModel):
+    """图层生命周期聚合视图（GET /layers/{layer_id}/lifecycle）。
+
+    前端不再自行拼接 jobLayer/overlayTimeStates/asset_state，
+    统一从本响应读取「资产 + 最近 run + 时间轴」状态。
+    """
+
+    layer_id: str
+    asset: LayerAssetStateResponse
+    recent_runs: list[LayerLifecycleRunSummary] = Field(default_factory=list)
+
+    lifecycle_state: str
+    """fresh | stale | updating | missing | failed"""
+
+    message: str | None = None
+    updated_at: datetime
+
+
 class WeatherLayerRenderHint(BaseModel):
     layer_id: str
     paint_mode: str = "point_symbol"
