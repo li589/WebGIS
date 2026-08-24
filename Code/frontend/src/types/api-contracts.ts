@@ -454,6 +454,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workflows/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workflow Templates
+         * @description 课题组工作流模板列表（图层平台子系统 P1）。
+         *
+         *     聚合 workflow_seeds/system + workflow_definitions/user 中
+         *     ``is_template=true`` 或 tags 含 "template"/"lab" 的定义；
+         *     前端课题组入口据此渲染「一键运行」面板。
+         */
+        get: operations["list_workflow_templates_workflows_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflows/templates/{workflow_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Workflow Template
+         * @description 课题组工作流模板一键运行（图层平台子系统 P1）。
+         *
+         *     按模板定义构建 WorkflowSubmitRequest 并提交；
+         *     完成后若 auto_display=true 且 linked_layer_id 非空，
+         *     由 workflow-runs 轮询链自动 materialize-map-layers 上图。
+         */
+        post: operations["run_workflow_template_workflows_templates__workflow_id__runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/geo/transform": {
         parameters: {
             query?: never;
@@ -8992,6 +9040,109 @@ export interface components {
             /** Retry Attempt */
             retry_attempt?: number | null;
         };
+        /** WorkflowTemplateListResponse */
+        WorkflowTemplateListResponse: {
+            /** Items */
+            items?: components["schemas"]["WorkflowTemplateSummary"][];
+            /** Count */
+            count: number;
+        };
+        /**
+         * WorkflowTemplateRunRequest
+         * @description 模板一键运行请求（POST /workflows/templates/{workflow_id}/runs）。
+         */
+        WorkflowTemplateRunRequest: {
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            };
+            time_range?: components["schemas"]["TimeRange"] | null;
+            /** Resource Profile */
+            resource_profile?: string | null;
+            /** Auto Display */
+            auto_display?: boolean | null;
+        };
+        /**
+         * WorkflowTemplateRunResponse
+         * @description 模板一键运行响应：复用 WorkflowAcceptedResponse 语义。
+         */
+        WorkflowTemplateRunResponse: {
+            /** Run Id */
+            run_id: string;
+            /** Status */
+            status: string;
+            /** Message */
+            message: string;
+            /** Workflow Id */
+            workflow_id: string;
+            /** Linked Layer Id */
+            linked_layer_id?: string | null;
+            /**
+             * Auto Display
+             * @default true
+             */
+            auto_display: boolean;
+            /** Status Url */
+            status_url?: string | null;
+            /** Events Url */
+            events_url?: string | null;
+        };
+        /**
+         * WorkflowTemplateSummary
+         * @description 课题组工作流模板摘要（GET /workflows/templates）。
+         *
+         *     从 workflow_seeds/system + workflow_definitions/user 聚合；
+         *     is_template=true 或 tags 含 "template"/"lab" 的定义视为课题组模板。
+         */
+        WorkflowTemplateSummary: {
+            /** Workflow Id */
+            workflow_id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Engine
+             * @default unknown
+             */
+            engine: string;
+            /** Linked Layer Id */
+            linked_layer_id?: string | null;
+            /**
+             * Auto Display
+             * @default true
+             */
+            auto_display: boolean;
+            /**
+             * Resource Profile
+             * @default standard
+             */
+            resource_profile: string;
+            /**
+             * Is Template
+             * @default true
+             */
+            is_template: boolean;
+            /**
+             * Readonly
+             * @default false
+             */
+            readonly: boolean;
+            /**
+             * Kind
+             * @default system
+             */
+            kind: string;
+            /**
+             * Node Count
+             * @default 0
+             */
+            node_count: number;
+            /** Tags */
+            tags?: string[];
+            /** Updated At */
+            updated_at?: string | null;
+        };
         /**
          * WorkflowValidationResponse
          * @description Route-friendly validation response with typed terminal plan projections.
@@ -9932,6 +10083,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LayerOnlineSyncResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_workflow_templates_workflows_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTemplateListResponse"];
+                };
+            };
+        };
+    };
+    run_workflow_template_workflows_templates__workflow_id__runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["WorkflowTemplateRunRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTemplateRunResponse"];
                 };
             };
             /** @description Validation Error */

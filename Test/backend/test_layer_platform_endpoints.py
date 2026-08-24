@@ -130,6 +130,10 @@ def mock_submit(monkeypatch):
 
     layer_router_mod = importlib.import_module("app.api.routers.layer_router")
     monkeypatch.setattr(layer_router_mod, "_submit_online_sync_workflow", _fake_submit)
+    # 模板路径直接调用 workflow_router.submit_workflow（模块级 import），
+    # 需同时拦截（run_workflow_template 内部 from-import 会绑定到 patch 后的对象）
+    wf_router_mod = importlib.import_module("app.api.routers.workflow_router")
+    monkeypatch.setattr(wf_router_mod, "submit_workflow", _fake_submit)
     return submitted
 
 
@@ -225,3 +229,101 @@ def test_online_sync_response_contract(no_auth, mock_submit) -> None:
     assert "layer_id" in data
     assert "time_key" in data
     assert data["status"] in {"submitted", "in-flight", "cooldown", "succeeded", "skipped-unsupported"}
+
+
+# ── 图层平台子系统 P1：课题组工作流模板一键显示 ───────────────────────────────
+
+
+def test_list_workflow_templates_filters_templates(no_auth) -> None:
+    """模板列表只返回 is_template=true 或 tags 含 template/lab 的定义。"""
+    from app.api.routers.layer_router import list_workflow_templates
+
+    resp = list_workflow_templates(cred=None)
+    assert isinstance(resp.count, int)
+    # 系统种子中默认无 is_template 标记，列表可能为空——契约完整性即可
+    for item in resp.items:
+        assert item.is_template is True or any(
+            t in {"template", "lab", "课题组"} for t in item.tags
+        )
+
+
+def test_run_workflow_template_not_found(no_auth) -> None:
+    """未知模板 id 返回 404。"""
+    import pytest
+    from fastapi import HTTPException
+
+    from app.api.routers.layer_router import run_workflow_template
+
+    with pytest.raises(HTTPException) as ctx:
+        run_workflow_template("no-such-template-xyz", body=None, cred=None)
+    assert ctx.value.status_code == 404
+
+
+def test_run_workflow_template_builds_payload(no_auth, mock_submit, monkeypatch) -> None:
+    """模板运行构建 WorkflowSubmitRequest（workflow_kind=lab_template）。"""
+    from app.api.routers.layer_router import run_workflow_template
+    from shared.contracts.api_contracts import WorkflowTemplateRunRequest
+
+    # 造一个临时模板定义（patch get_definition）
+    fake_def = {
+        "workflow_id": "lab.test",
+        "_meta": {
+            "name": "测试模板",
+            "linked_layer_id": "aridity-cn",
+            "auto_display": True,
+            "resource_profile": "heavy",
+            "is_template": True,
+        },
+    }
+    import app.services.workflow_definition_service as wds
+
+    monkeypatch.setattr(wds, "get_definition", lambda _id: fake_def)
+
+    resp = run_workflow_template(
+        "lab.test",
+        body=WorkflowTemplateRunRequest(parameters={"region": "cn"}),
+        cred=None,
+    )
+    assert resp.status == "submitted"
+    assert resp.workflow_id == "lab.test"
+    assert resp.linked_layer_id == "aridity-cn"
+    assert resp.auto_display is True
+
+    assert len(mock_submit) == 1
+    payload = mock_submit[0]
+    assert payload.parameters["workflow_kind"] == "lab_template"
+    assert payload.parameters["workflow_template_id"] == "lab.test"
+    assert payload.parameters["region"] == "cn"
+    assert payload.layer_id == "aridity-cn"
+    assert payload.resource_profile.value == "heavy"
+
+
+def test_run_workflow_template_overrides(no_auth, mock_submit, monkeypatch) -> None:
+    """请求可覆盖模板默认 resource_profile 与 auto_display。"""
+    from app.api.routers.layer_router import run_workflow_template
+    from shared.contracts.api_contracts import WorkflowTemplateRunRequest
+
+    fake_def = {
+        "workflow_id": "lab.override",
+        "_meta": {
+            "name": "覆盖测试",
+            "linked_layer_id": "ndvi",
+            "auto_display": True,
+            "resource_profile": "batch",
+            "is_template": True,
+        },
+    }
+    import app.services.workflow_definition_service as wds
+
+    monkeypatch.setattr(wds, "get_definition", lambda _id: fake_def)
+
+    resp = run_workflow_template(
+        "lab.override",
+        body=WorkflowTemplateRunRequest(
+            resource_profile="realtime", auto_display=False
+        ),
+        cred=None,
+    )
+    assert resp.auto_display is False
+    assert mock_submit[0].resource_profile.value == "light"
+    assert mock_submit[0].parameters["auto_display"] is False

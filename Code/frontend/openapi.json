@@ -1168,6 +1168,98 @@
         }
       }
     },
+    "/workflows/templates": {
+      "get": {
+        "tags": [
+          "layer-platform"
+        ],
+        "summary": "List Workflow Templates",
+        "description": "课题组工作流模板列表（图层平台子系统 P1）。\n\n聚合 workflow_seeds/system + workflow_definitions/user 中\n``is_template=true`` 或 tags 含 \"template\"/\"lab\" 的定义；\n前端课题组入口据此渲染「一键运行」面板。",
+        "operationId": "list_workflow_templates_workflows_templates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowTemplateListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/workflows/templates/{workflow_id}/runs": {
+      "post": {
+        "tags": [
+          "layer-platform"
+        ],
+        "summary": "Run Workflow Template",
+        "description": "课题组工作流模板一键运行（图层平台子系统 P1）。\n\n按模板定义构建 WorkflowSubmitRequest 并提交；\n完成后若 auto_display=true 且 linked_layer_id 非空，\n由 workflow-runs 轮询链自动 materialize-map-layers 上图。",
+        "operationId": "run_workflow_template_workflows_templates__workflow_id__runs_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workflow Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/WorkflowTemplateRunRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowTemplateRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/geo/transform": {
       "get": {
         "tags": [
@@ -23651,6 +23743,231 @@
           "command_type"
         ],
         "title": "WorkflowSubmitRequest"
+      },
+      "WorkflowTemplateListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowTemplateSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count"
+        ],
+        "title": "WorkflowTemplateListResponse"
+      },
+      "WorkflowTemplateRunRequest": {
+        "properties": {
+          "parameters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Parameters"
+          },
+          "time_range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimeRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resource_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Profile"
+          },
+          "auto_display": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Display"
+          }
+        },
+        "type": "object",
+        "title": "WorkflowTemplateRunRequest",
+        "description": "模板一键运行请求（POST /workflows/templates/{workflow_id}/runs）。"
+      },
+      "WorkflowTemplateRunResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "workflow_id": {
+            "type": "string",
+            "title": "Workflow Id"
+          },
+          "linked_layer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Layer Id"
+          },
+          "auto_display": {
+            "type": "boolean",
+            "title": "Auto Display",
+            "default": true
+          },
+          "status_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Url"
+          },
+          "events_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "status",
+          "message",
+          "workflow_id"
+        ],
+        "title": "WorkflowTemplateRunResponse",
+        "description": "模板一键运行响应：复用 WorkflowAcceptedResponse 语义。"
+      },
+      "WorkflowTemplateSummary": {
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "title": "Workflow Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "engine": {
+            "type": "string",
+            "title": "Engine",
+            "default": "unknown"
+          },
+          "linked_layer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Layer Id"
+          },
+          "auto_display": {
+            "type": "boolean",
+            "title": "Auto Display",
+            "default": true
+          },
+          "resource_profile": {
+            "type": "string",
+            "title": "Resource Profile",
+            "default": "standard"
+          },
+          "is_template": {
+            "type": "boolean",
+            "title": "Is Template",
+            "default": true
+          },
+          "readonly": {
+            "type": "boolean",
+            "title": "Readonly",
+            "default": false
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "default": "system"
+          },
+          "node_count": {
+            "type": "integer",
+            "title": "Node Count",
+            "default": 0
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_id",
+          "name"
+        ],
+        "title": "WorkflowTemplateSummary",
+        "description": "课题组工作流模板摘要（GET /workflows/templates）。\n\n从 workflow_seeds/system + workflow_definitions/user 聚合；\nis_template=true 或 tags 含 \"template\"/\"lab\" 的定义视为课题组模板。"
       },
       "WorkflowValidationResponse": {
         "properties": {

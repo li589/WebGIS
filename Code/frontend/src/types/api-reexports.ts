@@ -85,6 +85,13 @@ export type LayerLifecycleResponse = Schema<'LayerLifecycleResponse'>
 export type LayerOnlineSyncRequest = Schema<'LayerOnlineSyncRequest'>
 export type LayerOnlineSyncResponse = Schema<'LayerOnlineSyncResponse'>
 
+// ── 图层平台子系统：课题组工作流模板（P1，2026-08-25） ───────────────────────
+
+export type WorkflowTemplateSummary = Schema<'WorkflowTemplateSummary'>
+export type WorkflowTemplateListResponse = Schema<'WorkflowTemplateListResponse'>
+export type WorkflowTemplateRunRequest = Schema<'WorkflowTemplateRunRequest'>
+export type WorkflowTemplateRunResponse = Schema<'WorkflowTemplateRunResponse'>
+
 // ── Weather 相关 ──────────────────────────────────────────────────────────
 
 export type WeatherLayerRenderHint = Schema<'WeatherLayerRenderHint'>

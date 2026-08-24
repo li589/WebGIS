@@ -34,6 +34,10 @@ from shared.contracts.api_contracts import (
     LayerLifecycleRunSummary,
     LayerOnlineSyncRequest,
     LayerOnlineSyncResponse,
+    WorkflowTemplateListResponse,
+    WorkflowTemplateRunRequest,
+    WorkflowTemplateRunResponse,
+    WorkflowTemplateSummary,
 )
 
 _logger = logging.getLogger(__name__)
@@ -442,6 +446,136 @@ def sync_layer_asset_online(
         message=accepted.message,
         layer_id=layer_id,
         time_key=body.time_key,
+        status_url=accepted.status_url,
+        events_url=accepted.events_url,
+    )
+
+
+# ── 图层平台子系统 P1：课题组工作流模板一键显示 ─────────────────────────────
+
+
+@router.get(
+    "/workflows/templates",
+    tags=["layer-platform"],
+    response_model=WorkflowTemplateListResponse,
+)
+def list_workflow_templates(
+    cred=Depends(get_request_user),
+) -> WorkflowTemplateListResponse:
+    """课题组工作流模板列表（图层平台子系统 P1）。
+
+    聚合 workflow_seeds/system + workflow_definitions/user 中
+    ``is_template=true`` 或 tags 含 "template"/"lab" 的定义；
+    前端课题组入口据此渲染「一键运行」面板。
+    """
+    from app.services.workflow_definition_service import list_definitions
+
+    items: list[WorkflowTemplateSummary] = []
+    for item in list_definitions():
+        meta = item if isinstance(item, dict) else {}
+        tags = [str(t) for t in (meta.get("tags") or [])]
+        is_template = bool(meta.get("is_template", False)) or any(
+            t in {"template", "lab", "课题组"} for t in tags
+        )
+        if not is_template:
+            continue
+        items.append(
+            WorkflowTemplateSummary(
+                workflow_id=str(meta.get("workflow_id") or ""),
+                name=str(meta.get("name") or meta.get("workflow_id") or ""),
+                description=meta.get("description"),
+                engine=str(meta.get("engine") or "unknown"),
+                linked_layer_id=meta.get("linked_layer_id"),
+                auto_display=bool(meta.get("auto_display", True)),
+                resource_profile=str(meta.get("resource_profile") or "standard"),
+                is_template=bool(meta.get("is_template", True)),
+                readonly=bool(meta.get("readonly", False)),
+                kind=str(meta.get("kind") or "system"),
+                node_count=int(meta.get("node_count") or 0),
+                tags=tags,
+                updated_at=meta.get("updated_at"),
+            )
+        )
+    return WorkflowTemplateListResponse(items=items, count=len(items))
+
+
+@router.post(
+    "/workflows/templates/{workflow_id}/runs",
+    tags=["layer-platform"],
+    response_model=WorkflowTemplateRunResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def run_workflow_template(
+    workflow_id: str,
+    body: WorkflowTemplateRunRequest | None = None,
+    cred=Depends(get_request_user),
+) -> WorkflowTemplateRunResponse:
+    """课题组工作流模板一键运行（图层平台子系统 P1）。
+
+    按模板定义构建 WorkflowSubmitRequest 并提交；
+    完成后若 auto_display=true 且 linked_layer_id 非空，
+    由 workflow-runs 轮询链自动 materialize-map-layers 上图。
+    """
+    check_resource_access(cred, "workflow", workflow_id)
+    from app.services.workflow_definition_service import get_definition
+
+    definition = get_definition(workflow_id)
+    if definition is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow template not found: {workflow_id}",
+        )
+
+    meta = definition.get("_meta", {}) if isinstance(definition, dict) else {}
+    linked_layer_id = meta.get("linked_layer_id")
+    auto_display = bool(meta.get("auto_display", True))
+    resource_profile_str = str(meta.get("resource_profile") or "standard")
+
+    body = body or WorkflowTemplateRunRequest()
+    if body.resource_profile is not None:
+        resource_profile_str = body.resource_profile
+    if body.auto_display is not None:
+        auto_display = body.auto_display
+
+    # 构建提交请求
+    from shared.contracts.api_contracts import (
+        WorkflowCommandType,
+        WorkflowPriority,
+        WorkflowResourceProfile,
+        WorkflowSubmitRequest,
+    )
+
+    resource_profile = {
+        "light": WorkflowResourceProfile.light,
+        "realtime": WorkflowResourceProfile.light,  # realtime 别名映射到 light
+        "standard": WorkflowResourceProfile.standard,
+        "heavy": WorkflowResourceProfile.heavy,
+        "batch": WorkflowResourceProfile.batch,
+    }.get(resource_profile_str, WorkflowResourceProfile.standard)
+
+    payload = WorkflowSubmitRequest(
+        command_type=WorkflowCommandType.custom,
+        command_label=f"课题组模板 {meta.get('name', workflow_id)}",
+        layer_id=linked_layer_id,
+        priority=WorkflowPriority.normal,
+        resource_profile=resource_profile,
+        time_range=body.time_range,
+        parameters={
+            "workflow_kind": "lab_template",
+            "workflow_template_id": workflow_id,
+            "auto_display": auto_display,
+            **body.parameters,
+        },
+    )
+
+    accepted = _submit_online_sync_workflow(payload, cred=cred)
+    return WorkflowTemplateRunResponse(
+        run_id=accepted.run_id,
+        status="submitted",
+        message=accepted.message,
+        workflow_id=workflow_id,
+        linked_layer_id=linked_layer_id,
+        auto_display=auto_display,
         status_url=accepted.status_url,
         events_url=accepted.events_url,
     )

@@ -14,6 +14,8 @@ import type {
   LayerOnlineSyncResponse,
   WeatherPointResponse,
   WorkflowSubmitRequest,
+  WorkflowTemplateListResponse,
+  WorkflowTemplateRunResponse,
 } from '../types/api-reexports'
 // Sprint 3.6: requestJson / resolveApiUrl 已抽取到 _http.ts 统一维护
 import { requestJson, resolveApiUrl } from './_http'
@@ -63,6 +65,38 @@ export function syncLayerAssetOnline(
         time_key: options?.timeKey ?? null,
         is_prefetch: options?.isPrefetch ?? false,
         priority: options?.priority ?? 'normal',
+      }),
+      timeoutMs: 120000,
+    },
+  )
+}
+
+/** 图层平台子系统 P1：课题组工作流模板列表。 */
+export function fetchWorkflowTemplates() {
+  return requestJson<WorkflowTemplateListResponse>('/workflows/templates', {
+    timeoutMs: 30000,
+  })
+}
+
+/** 图层平台子系统 P1：模板一键运行（完成后自动上图）。 */
+export function runWorkflowTemplate(
+  workflowId: string,
+  options?: {
+    parameters?: Record<string, unknown>
+    timeRange?: { start_at: string; end_at: string }
+    resourceProfile?: string
+    autoDisplay?: boolean
+  },
+) {
+  return requestJson<WorkflowTemplateRunResponse>(
+    `/workflows/templates/${encodeURIComponent(workflowId)}/runs`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        parameters: options?.parameters ?? {},
+        time_range: options?.timeRange ?? null,
+        resource_profile: options?.resourceProfile ?? null,
+        auto_display: options?.autoDisplay ?? null,
       }),
       timeoutMs: 120000,
     },

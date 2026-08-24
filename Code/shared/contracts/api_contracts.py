@@ -810,6 +810,71 @@ class LayerOnlineSyncResponse(BaseModel):
     events_url: str | None = None
 
 
+# ── 图层平台子系统 P1：课题组工作流模板一键显示 ─────────────────────────────
+
+
+class WorkflowTemplateSummary(BaseModel):
+    """课题组工作流模板摘要（GET /workflows/templates）。
+
+    从 workflow_seeds/system + workflow_definitions/user 聚合；
+    is_template=true 或 tags 含 "template"/"lab" 的定义视为课题组模板。
+    """
+
+    workflow_id: str
+    name: str
+    description: str | None = None
+    engine: str = "unknown"
+    """python_provider | gee | weather | analysis"""
+
+    linked_layer_id: str | None = None
+    """模板完成后自动上图的目标图层（None=仅运行不上图）"""
+
+    auto_display: bool = True
+    """完成后是否自动 materialize-map-layers"""
+
+    resource_profile: str = "standard"
+    """light | standard | heavy | batch（realtime 为 light 别名）"""
+
+    is_template: bool = True
+    readonly: bool = False
+    kind: str = "system"
+    node_count: int = 0
+    tags: list[str] = Field(default_factory=list)
+    updated_at: str | None = None
+
+
+class WorkflowTemplateListResponse(BaseModel):
+    items: list[WorkflowTemplateSummary] = Field(default_factory=list)
+    count: int
+
+
+class WorkflowTemplateRunRequest(BaseModel):
+    """模板一键运行请求（POST /workflows/templates/{workflow_id}/runs）。"""
+
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    """模板参数覆盖（与种子 defaults 合并）。"""
+
+    time_range: TimeRange | None = None
+    resource_profile: str | None = None
+    """覆盖模板默认资源档位。"""
+
+    auto_display: bool | None = None
+    """覆盖模板默认 auto_display。"""
+
+
+class WorkflowTemplateRunResponse(BaseModel):
+    """模板一键运行响应：复用 WorkflowAcceptedResponse 语义。"""
+
+    run_id: str
+    status: str
+    message: str
+    workflow_id: str
+    linked_layer_id: str | None = None
+    auto_display: bool = True
+    status_url: str | None = None
+    events_url: str | None = None
+
+
 class WeatherLayerRenderHint(BaseModel):
     layer_id: str
     paint_mode: str = "point_symbol"
