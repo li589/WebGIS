@@ -199,7 +199,12 @@ const trackStyle = computed(() => ({
 }))
 
 function isTickActive(tick: TimelineAvailabilitySegment): boolean {
-  if (isStatic.value) return true
+  // 事件时间轴（2026-08-25）：static 多段时按观测年份高亮，单段保持全选
+  if (isStatic.value) {
+    return props.timelineSegments.length > 1
+      ? segmentIndex(tick) === props.currentDate.getFullYear()
+      : true
+  }
   const idx = segmentIndex(tick)
   if (props.granularity === 'month') return idx === props.currentDate.getMonth()
   if (props.granularity === 'day') return idx === props.currentDate.getDate()
@@ -321,6 +326,13 @@ function handleTickClick(tickIndex: number) {
     return
   }
   if (props.granularity === 'year') {
+    const newDate = new Date(props.currentDate)
+    newDate.setFullYear(Math.round(tickIndex))
+    emit('changeDate', newDate)
+    return
+  }
+  if (props.granularity === 'static') {
+    // 事件时间轴（2026-08-25）：static 图层的事件年刻度，点击跳转观测年份
     const newDate = new Date(props.currentDate)
     newDate.setFullYear(Math.round(tickIndex))
     emit('changeDate', newDate)

@@ -175,8 +175,22 @@ export function usePanelDragResize(options: UsePanelDragResizeOptions): PanelDra
       maxOffsetY,
     ),
   )
-  const panelWidth = ref(persistedState?.width ?? defaultWidth)
-  const panelHeight = ref(persistedState?.height ?? defaultHeight)
+  // 恢复路径同样 clamp 尺寸（2026-08-25 时间轴裁切修复的同类缺口）：
+  // 持久化的旧 width/height 若低于新版 minHeight（或超出 maxHeight），
+  // 面板每次刷新都恢复旧尺寸且 resizable=false 时无法手动拉高——
+  // 与 offset 越界持久化是同一类「永久性异常状态」问题。
+  // 注意：此处不能调用 clampPanelWidth/Height（其依赖的 resolvedMin/Max
+  // computed 在后方定义，TDZ）；直接用 options 的 min/max 立即值。
+  const panelWidth = ref(
+    clampPanelDim(persistedState?.width ?? defaultWidth, Math.max(220, minWidth), maxWidth),
+  )
+  const panelHeight = ref(
+    clampPanelDim(
+      persistedState?.height ?? defaultHeight,
+      Math.max(120, minHeight),
+      maxHeight,
+    ),
+  )
   const userResized = ref(Boolean(persistedState?.width || persistedState?.height))
   const persistTimer = ref<number | null>(null)
 

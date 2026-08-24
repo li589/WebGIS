@@ -552,3 +552,64 @@ describe('analysisFocusRequest', () => {
     expect(h.showPanel).toHaveBeenCalled()
   })
 })
+
+// ── 事件时间轴（2026-08-25 用户反馈）：静态图层带事件时间 → 年刻度轴 ────────
+
+describe('静态图层事件时间轴', () => {
+  it('overlay meta 带事件 time_list → 生成事件年刻度（事件年 ready）', () => {
+    const layer = makeLayer({
+      catalogId: 'cat-era5-dwaa',
+      dataState: 'imported',
+      importedRaster: { overlayLayerId: 'ov-era5', nativeStep: null },
+    })
+    const h = setupSync({ layers: [layer], selectedCatalogId: 'cat-era5-dwaa' })
+    h.overlayTimeStates.value = [
+      {
+        layerId: 'ov-era5',
+        category: 'static',
+        timeList: ['2020'],
+        currentTime: null,
+        palette: 'YlOrRd',
+        vmin: 0,
+        vmax: 10,
+        unit: 'events',
+        opacity: 0.8,
+        bounds: [73, 15, 137, 59],
+      },
+    ]
+    expect(h.sync.activeLayerGranularity.value).toBe('static')
+    const segs = h.sync.timelineSegments.value
+    // 事件年 2020 前后各留一年 → [2019, 2020, 2021]
+    expect(segs.map((s) => s.label)).toEqual(['2019', '2020', '2021'])
+    const eventSeg = segs.find((s) => s.label === '2020')
+    expect(eventSeg?.state).toBe('ready')
+    expect(eventSeg?.availabilityLabel).toContain('事件时间')
+    expect(segs.find((s) => s.label === '2019')?.state).toBe('empty')
+  })
+
+  it('无事件 time_list → 保持原「静态」单段', () => {
+    const layer = makeLayer({
+      catalogId: 'cat-static-plain',
+      dataState: 'imported',
+      importedRaster: { overlayLayerId: 'ov-plain', nativeStep: null },
+    })
+    const h = setupSync({ layers: [layer], selectedCatalogId: 'cat-static-plain' })
+    h.overlayTimeStates.value = [
+      {
+        layerId: 'ov-plain',
+        category: 'static',
+        timeList: [],
+        currentTime: null,
+        palette: 'viridis',
+        vmin: null,
+        vmax: null,
+        unit: '',
+        opacity: 0.7,
+        bounds: [0, 0, 1, 1],
+      },
+    ]
+    const segs = h.sync.timelineSegments.value
+    expect(segs).toHaveLength(1)
+    expect(segs[0].label).toBe('静态')
+  })
+})

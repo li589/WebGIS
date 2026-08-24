@@ -455,11 +455,11 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
           :max-offset-x="140"
           :max-offset-y="70"
           :default-width="720"
-          :default-height="205"
+          :default-height="235"
           :min-width="460"
-          :min-height="195"
+          :min-height="210"
           :max-width="980"
-          :max-height="260"
+          :max-height="330"
         >
           <TimelineScrubber
             :current-hour="currentHour"

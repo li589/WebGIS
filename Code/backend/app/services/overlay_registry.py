@@ -836,6 +836,14 @@ def _register_static_overlays_from_config() -> None:
         if not isinstance(entry, dict):
             raise OverlayConfigError(f"overlay_assets.json entry '{layer_id}' must be an object")
         rel = entry.get("source_path_rel")
+        # 事件时间（2026-08-25 用户反馈）：静态图层若声明 time_list（事件
+        # 年份/日期，如 ERA5 2020 灾害事件），时间轴显示事件时间而非「静态」。
+        raw_time_list = entry.get("time_list")
+        time_list = (
+            [str(t) for t in raw_time_list if str(t)]
+            if isinstance(raw_time_list, list)
+            else []
+        )
         spec = OverlaySpec(
             layer_id=str(layer_id),
             overlay_dir=_OVERLAY_PNG_ROOT / str(entry["overlay_subdir"]),
@@ -852,6 +860,7 @@ def _register_static_overlays_from_config() -> None:
             source_variable=entry.get("source_variable"),
             source_band=int(entry.get("source_band", 1)),
             source_reader=str(entry.get("source_reader") or "auto"),
+            time_list=time_list,
         )
         register_overlay(spec)
 

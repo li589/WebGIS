@@ -491,6 +491,35 @@ export function useTimelineSync(
 
     const gran = activeLayerGranularity.value
     if (gran === 'static') {
+      // 事件时间轴（2026-08-25 用户反馈）：静态图层若带事件时间（overlay
+      // meta time_list，如 ERA5 2020 灾害事件），按事件年份生成年刻度轴，
+      // 事件年标记就绪；无事件时间才回落笼统的「静态」单段。
+      const oid = selectedActiveLayer.value?.importedRaster?.overlayLayerId
+      const eventTimes = oid
+        ? (overlayTimeStates.value.find((s) => s.layerId === oid)?.timeList ?? [])
+        : []
+      const eventYears = [
+        ...new Set(
+          eventTimes
+            .map((t) => /^\d{4}/.exec(String(t))?.[0])
+            .filter((y): y is string => Boolean(y))
+            .map(Number),
+        ),
+      ].sort((a, b) => a - b)
+      if (eventYears.length > 0) {
+        const start = Math.max(1, eventYears[0] - 1)
+        const end = eventYears[eventYears.length - 1] + 1
+        return Array.from({ length: end - start + 1 }, (_, idx): TimelineAvailabilitySegment => {
+          const year = start + idx
+          const isEvent = eventYears.includes(year)
+          return {
+            index: year,
+            label: String(year),
+            state: isEvent ? 'ready' : 'empty',
+            availabilityLabel: isEvent ? `事件时间 ${year} · 资产就绪` : '无事件',
+          }
+        })
+      }
       return generateTimelineSegments(currentDate.value, 'static')
     }
 
