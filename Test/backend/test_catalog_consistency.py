@@ -17,6 +17,8 @@
 from __future__ import annotations
 
 import json
+import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -47,12 +49,9 @@ def _descriptor_palette(layer_id: str, desc: dict) -> str | None:
 
 
 # 已知 palette 漂移（descriptor 语义名 vs assets 显式显示名）。
-# AST 提取真值（2026-08-24）：biomass/cmfd 经别名解析后已一致，真实漂移
-# 仅 2 处。消除漂移须先对齐两处配置，再删除豁免（审查报告 P1-A）。
-KNOWN_PALETTE_MISMATCH: dict[str, tuple[str, str]] = {
-    "forest-ratio": ("greens", "ylgn"),
-    "landscape-metrics-9km": ("spectral", "cividis"),
-}
+# 2026-08-24 P2 对齐后清零：forest-ratio/landscape 已统一到 descriptor
+# 语义名（渲染经别名表解析为 greens/spectral）。新漂移出现即 CI 红。
+KNOWN_PALETTE_MISMATCH: dict[str, tuple[str, str]] = {}
 
 # 预存目录缺口：overlay 注册了但无 descriptor（P1 之前即如此；补目录
 # 条目涉及前端目录展示，列 TODO 待拍板，非本次数据化范围）。
@@ -120,6 +119,85 @@ class TestOverlayAssetsConsistency:
             if (resolve_palette_id(dp), resolve_palette_id(ap)) != (rd, ra):
                 stale.append(layer_id)
         assert not stale, f"waiver 已过期（漂移已修复或变化），请删除: {stale}"
+
+
+class TestPaletteSingleSource:
+    """P2-E 色带单源：palettes.json 为前后端唯一真源。"""
+
+    def _palettes_json(self) -> dict:
+        return json.loads((_CATALOG_SEEDS / "palettes.json").read_text(encoding="utf-8"))
+
+    def test_palette_definitions_complete(self) -> None:
+        data = self._palettes_json()
+        palettes = data["palettes"]
+        assert len(palettes) >= 24, f"色带条数异常: {len(palettes)}"
+        assert "viridis" in palettes and "thermal-orange" in palettes
+        exposed = [k for k, v in palettes.items() if v.get("exposed")]
+        assert len(exposed) == 9, f"选择器可见条数变化（原 9）: {exposed}"
+        for key, entry in palettes.items():
+            colors = entry.get("colors") or []
+            assert colors and all(
+                isinstance(c, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", c) for c in colors
+            ), f"{key}: 色值非法"
+            assert entry.get("label"), f"{key}: 缺 label"
+            assert entry.get("type") in {"sequential", "diverging", "qualitative"}
+
+    def test_backend_aliases_cover_semantic_ramps(self) -> None:
+        """descriptor 语义 ramp 名必须可解析（别名表不能丢映射）。"""
+        aliases = self._palettes_json()["backend_aliases"]
+        required = [
+            "elevation-terrain-ramp",
+            "gebco-terrain-ramp",
+            "spectral-ramp",
+            "igbp",
+            "igbp-landcover-ramp",
+            "clcd-landcover-ramp",
+            "hfp-ramp",
+            "forest-ramp",
+            "ndvi-ramp",
+            "biomass-ramp",
+            "soil-moisture-ramp",
+            "station-ramp",
+            "bright-temp-ramp",
+        ]
+        missing = [name for name in required if name not in aliases]
+        assert not missing, f"backend_aliases 丢失语义 ramp 映射: {missing}"
+
+    def test_frontend_generated_ts_in_sync(self) -> None:
+        """前端生成物与真源同步（重跑 Tools/generate_palette_config.py 应零 diff）。"""
+        import subprocess
+        import tempfile
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(_BACKEND.parent.parent / "Tools" / "generate_palette_config.py"),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=_BACKEND.parent.parent,
+            encoding="utf-8",
+        )
+        assert result.returncode == 0, result.stderr
+        generated_path = (
+            _BACKEND.parent / "frontend" / "src" / "data" / "weather-palettes-generated.ts"
+        )
+        # 脚本幂等：重跑后已跟踪的生成物无未暂存修改（`??` untracked 为首次
+        # 提交前新文件的正常状态，不算失步）。
+        git_status = subprocess.run(
+            ["git", "status", "--porcelain", str(generated_path)],
+            capture_output=True,
+            text=True,
+            cwd=_BACKEND.parent.parent,
+        )
+        modified = [
+            line
+            for line in git_status.stdout.splitlines()
+            if line.strip() and not line.startswith("??")
+        ]
+        assert not modified, (
+            f"生成物与 palettes.json 不同步（重跑脚本或禁止手改生成物）: {modified}"
+        )
 
 
 class TestWorkflowSeedConsistency:

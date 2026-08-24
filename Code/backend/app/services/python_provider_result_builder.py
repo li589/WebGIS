@@ -156,6 +156,28 @@ def _resolve_product_display_label(
     return str(local_path.stem)[:64]
 
 
+def _lookup_layer_style_palette(raw_layer_id: str | None) -> str | None:
+    """descriptor.style.palette 统一查找（P2-D 收敛，2026-08-24）。
+
+    generic raster / science-mat 两个 commit 分支共用；产物 palette 对齐
+    静态层 descriptor 配置（见 _build_generic_raster_map_layer_ref 内注释）。
+    无 layer_id / 无 descriptor / 查找异常均返回 None（调用方用自身默认）。
+    """
+    if not raw_layer_id:
+        return None
+    try:
+        from app.services.layer_catalog import get_layer_descriptor
+
+        descriptor = get_layer_descriptor(raw_layer_id)
+        hint = getattr(descriptor, "style", None) if descriptor else None
+        palette = getattr(hint, "palette", None) if hint else None
+        if palette and str(palette).strip():
+            return str(palette).strip()
+    except Exception:
+        logger.debug("layer descriptor style lookup failed for %s", raw_layer_id)
+    return None
+
+
 def _read_mat_latlon_bounds(path: Path) -> tuple[list[float], str] | None:
     """读 v5 .mat 的 lat/lon 变量推导 [west, south, east, north] bounds。
 
@@ -1044,19 +1066,9 @@ class PythonProviderResultBuilder:
         # 的 brg、hfp-cn 的 hfp-ramp，共 35 层）时，同层"静态 overlay→产物
         # overlay"首次换源也会换色。现优先取 descriptor.style.palette 对齐。
         product_palette = "viridis"
-        if raw_layer_id:
-            try:
-                from app.services.layer_catalog import get_layer_descriptor
-
-                descriptor = get_layer_descriptor(raw_layer_id)
-                hint = getattr(descriptor, "style", None) if descriptor else None
-                hint_palette = getattr(hint, "palette", None) if hint else None
-                if hint_palette and str(hint_palette).strip():
-                    product_palette = str(hint_palette).strip()
-            except Exception:
-                logger.debug(
-                    "layer descriptor palette lookup failed for %s", raw_layer_id
-                )
+        aligned = _lookup_layer_style_palette(raw_layer_id)
+        if aligned:
+            product_palette = aligned
         try:
             from app.data_io.services.raster_commit import commit_algorithm_geotiff
 
@@ -1173,21 +1185,11 @@ class PythonProviderResultBuilder:
         stable_source_name = (
             f"{safe_layer_id}_{local_path.stem}" if safe_layer_id else local_path.stem
         )
-        # palette 对齐静态层 descriptor（与 generic 分支同规则）
+        # palette 对齐静态层 descriptor（与 generic 分支同规则，P2-D 收敛）
         product_palette = "viridis"
-        if raw_layer_id:
-            try:
-                from app.services.layer_catalog import get_layer_descriptor
-
-                descriptor = get_layer_descriptor(raw_layer_id)
-                hint = getattr(descriptor, "style", None) if descriptor else None
-                hint_palette = getattr(hint, "palette", None) if hint else None
-                if hint_palette and str(hint_palette).strip():
-                    product_palette = str(hint_palette).strip()
-            except Exception:
-                logger.debug(
-                    "layer descriptor palette lookup failed for %s", raw_layer_id
-                )
+        aligned = _lookup_layer_style_palette(raw_layer_id)
+        if aligned:
+            product_palette = aligned
 
         try:
             from app.data_io.services.raster_commit import (

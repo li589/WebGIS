@@ -1,217 +1,40 @@
 from __future__ import annotations
 
+import contextlib
 import importlib
+import json
 import re
 from pathlib import Path
 from typing import Literal
-import contextlib
 
 NodataMode = Literal["transparent", "solid"]
 
 
-def _hex_stops(*hexes: str) -> list[tuple[int, int, int]]:
-    out: list[tuple[int, int, int]] = []
-    for raw in hexes:
-        h = raw.lstrip("#")
-        if len(h) != 6:
-            continue
-        out.append((int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)))
-    return out
+
+# P2-E（2026-08-24）色带单源：定义与别名以 catalog_seeds/palettes.json 为
+# 唯一真源（前端 src/data/weather-palettes.generated.ts 由
+# Tools/generate_palette_config.py 从同一 JSON 生成），消除前后端双维护
+# 漂移。改色带只改 JSON + 跑脚本，禁止在代码里加色带。
+_PALETTES_PATH = Path(__file__).resolve().parent.parent / "catalog_seeds" / "palettes.json"
 
 
-# 与前端 WEATHER_PALETTES id 对齐；未知 id 回落 viridis。
-_PALETTES: dict[str, list[tuple[int, int, int]]] = {
-    "thermal-orange": _hex_stops(
-        "0b1a6e",
-        "1b3cff",
-        "2a5fff",
-        "2f8cff",
-        "36c5ff",
-        "4ad4d0",
-        "5ad9c4",
-        "7ce7b0",
-        "a8e87a",
-        "c8e86a",
-        "ffe066",
-        "ffd166",
-        "ff9f4a",
-        "ff7b54",
-        "ff4d4d",
-        "e83070",
-        "c01888",
-    ),
-    "precip-cyan": _hex_stops(
-        "061018",
-        "0b1c30",
-        "123048",
-        "16324f",
-        "1a4a7a",
-        "1c6dd0",
-        "1ea0ef",
-        "1ec8ff",
-        "48e0ff",
-        "70f0ff",
-        "9af8f0",
-        "b7fff5",
-        "d8fffb",
-        "e8ffff",
-        "ffffff",
-    ),
-    "wind-blue": _hex_stops(
-        "6271b8",
-        "3d6ea3",
-        "4a94aa",
-        "4a9294",
-        "4d8e7c",
-        "6b9148",
-        "a89438",
-        "d07a3a",
-        "c94e4e",
-        "a83d7a",
-        "7a3d9e",
-        "5c4d6e",
-    ),
-    "magenta-yellow": _hex_stops(
-        "1a102a", "5b1f7a", "b832e0", "ff5e9a", "ffb347", "fff2a6"
-    ),
-    "viridis": _hex_stops("440154", "414487", "2a788e", "22a884", "7ad151", "fde725"),
-    "cividis": [
-        (0, 32, 77),
-        (40, 86, 119),
-        (102, 131, 122),
-        (170, 166, 102),
-        (224, 201, 90),
-        (253, 231, 55),
-    ],
-    "spectral": _hex_stops(
-        "9e0142",
-        "d53e4f",
-        "f46d43",
-        "fdae61",
-        "fee08b",
-        "e6f598",
-        "abdda4",
-        "66c2a5",
-        "3288bd",
-    ),
-    "blues": _hex_stops(
-        "f7fbff",
-        "deebf7",
-        "c6dbef",
-        "9ecae1",
-        "6baed6",
-        "4292c6",
-        "2171b5",
-        "084594",
-    ),
-    "reds": _hex_stops(
-        "fff5f0",
-        "fee0d2",
-        "fcbba1",
-        "fc9272",
-        "fb6a4a",
-        "ef3b2c",
-        "cb181d",
-        "99000d",
-    ),
-    "greens": _hex_stops(
-        "0d2818",
-        "1a4d2e",
-        "2d6a4f",
-        "40916c",
-        "52b788",
-        "74c69d",
-        "95d5b2",
-        "b7e4c7",
-    ),
-    "yellow-red": _hex_stops(
-        "ffffcc",
-        "ffeda0",
-        "fed976",
-        "feb24c",
-        "fd8d3c",
-        "fc4e2a",
-        "e31a1c",
-        "b10026",
-    ),
-    "blue-green": _hex_stops(
-        "08306b", "2171b5", "6baed6", "66c2a4", "41ab5d", "238b45"
-    ),
-    "red-blue": _hex_stops(
-        "b2182b", "ef8a62", "fddbc7", "f7f7f7", "d1e5f0", "67a9cf", "2166ac"
-    ),
-    "purple-orange": _hex_stops(
-        "2d1b3d", "542466", "8c2d80", "c63e6c", "f08050", "ffb347", "ffe066"
-    ),
-    "dark-rainbow": _hex_stops(
-        "1a0033", "003380", "0066cc", "00cc66", "cccc00", "cc6600", "cc0000"
-    ),
-    "ylgnbu": [
-        (255, 255, 217),
-        (199, 233, 180),
-        (127, 205, 187),
-        (65, 182, 196),
-        (29, 145, 192),
-        (8, 29, 88),
-    ],
-    # matplotlib / overlay_registry aliases
-    "plasma": _hex_stops("0d0887", "6a00a8", "b12a90", "e16462", "fca636", "f0f921"),
-    "hot": _hex_stops("000000", "8b0000", "ff0000", "ffff00", "ffffff"),
-    "terrain": _hex_stops("333399", "00aa88", "88cc44", "ddcc66", "c4a35a", "ffffff"),
-    "tab10": _hex_stops(
-        "1f77b4",
-        "ff7f0e",
-        "2ca02c",
-        "d62728",
-        "9467bd",
-        "8c564b",
-        "e377c2",
-        "7f7f7f",
-        "bcbd22",
-        "17becf",
-    ),
-    "ylgn": _hex_stops("ffffe5", "f7fcb9", "d9f0a3", "addd8e", "78c679", "238443"),
-    "ylorrd": _hex_stops(
-        "ffffcc", "ffeda0", "fed976", "feb24c", "fd8d3c", "f03b20", "bd0026"
-    ),
-    "brg": _hex_stops("0000ff", "ff00ff", "ff0000", "ffff00", "00ff00"),
-    "rdylgn_r": _hex_stops(
-        "006837", "31a354", "78c679", "c2e699", "ffffcc", "fdae61", "f46d43", "a50026"
-    ),
-}
+def _load_palettes_from_config() -> tuple[dict[str, list[tuple[int, int, int]]], dict[str, str]]:
+    def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
+        value = hex_str.lstrip("#")
+        return (int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16))
 
-_PALETTE_ALIASES: dict[str, str] = {
-    # matplotlib 经典名 → 实现键
-    "YlGnBu": "ylgnbu",
-    "ylgnbu": "ylgnbu",
-    "YlGn": "ylgn",
-    "YlOrRd": "ylorrd",
-    "RdYlGn_r": "rdylgn_r",
-    "RdYlGn": "rdylgn_r",
-    "RdBu": "red-blue",
-    "YlOrBr": "ylorrd",
-    "PuBu": "blues",
-    "Oranges": "reds",
-    "Set3": "tab10",
-    # descriptor 语义 ramp 名（catalog_seeds/layer_descriptors.json 的
-    # style.palette）→ 实现键。映射目标对齐 overlay_registry 的 de-facto
-    # 显示配色，保证"静态 overlay ↔ 产物 overlay ↔ 重着色"三链路同色。
-    # 语义 ramp 本身无独立色带定义（仅命名），长期方案见
-    # Docs/05-专题研究/其它专题/图层登记配置与代码复用审查-2026-08-24.md。
-    "elevation-terrain-ramp": "terrain",
-    "gebco-terrain-ramp": "terrain",
-    "spectral-ramp": "spectral",
-    "igbp": "tab10",
-    "igbp-landcover-ramp": "tab10",
-    "clcd-landcover-ramp": "tab10",
-    "hfp-ramp": "hot",
-    "forest-ramp": "greens",
-    "ndvi-ramp": "greens",
-    "biomass-ramp": "ylgn",
-    "soil-moisture-ramp": "magenta-yellow",
-    "station-ramp": "magenta-yellow",
-    "bright-temp-ramp": "thermal-orange",
-}
+    raw = json.loads(_PALETTES_PATH.read_text(encoding="utf-8"))
+    palettes = {
+        str(key): [_hex_to_rgb(c) for c in entry["colors"]]
+        for key, entry in raw.get("palettes", {}).items()
+    }
+    aliases = {str(k): str(v) for k, v in raw.get("backend_aliases", {}).items()}
+    if not palettes or "viridis" not in palettes:
+        raise ValueError("palettes.json invalid: viridis baseline missing")
+    return palettes, aliases
+
+
+_PALETTES, _PALETTE_ALIASES = _load_palettes_from_config()
 
 
 def resolve_palette_id(palette: str | None) -> str:

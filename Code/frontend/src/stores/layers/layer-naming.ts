@@ -24,6 +24,57 @@ export const LEGACY_PRODUCT_TAG_LABELS: Record<string, string> = {
   result: '计算结果',
 }
 
+/**
+ * productTag 归并规则表（P2-A 表化，2026-08-24）。
+ *
+ * 此前 OMEGA_BLOCK/OMEGA_PIXEL/SM/VOD 归并以 if 分支散落
+ * result-adapter.normalizeProductTag（5 分支）与 workflow-runner
+ * LEGACY 三件套——本质是元数据可表达的东西。新增产品族只改此表，
+ * 不再新增 if 分支。
+ */
+export interface ProductTagMergeRule {
+  /** 归并后的规范 tag */
+  canonical: string
+  /** 精确相等匹配 */
+  equals?: string[]
+  /** 后缀匹配（_ 或 - 连接的变体，如 XX_OMEGA） */
+  endsWith?: string[]
+  /** 子串匹配（变体 tag，如 OMEGA_BLOCK_20251201） */
+  includes?: string[]
+}
+
+export const PRODUCT_TAG_MERGE_RULES: ProductTagMergeRule[] = [
+  {
+    canonical: 'OMEGA',
+    equals: ['OMEGA'],
+    endsWith: ['_OMEGA', '-OMEGA'],
+    includes: ['OMEGA_BLOCK', 'OMEGA_PIXEL', 'OMEGA_PIX'],
+  },
+  { canonical: 'SM', equals: ['SM'], endsWith: ['_SM', '-SM'] },
+  { canonical: 'VOD', equals: ['VOD'], endsWith: ['_VOD', '-VOD'] },
+]
+
+/**
+ * 旧 run 恢复兜底 tag（SM/VOD/OMEGA 三件套）。
+ *
+ * **退役观察期**：仅服务旧实验室 run 快照恢复；2026-08-24 起 60 天
+ * （2026-10-23）无旧快照恢复回归后可整体删除：删本常量、
+ * PRODUCT_TAG_MERGE_RULES 的 SM/VOD 行、LEGACY_PRODUCT_TAG_LABELS、
+ * isDefaultProductDisplayName 旧标签分支及 workflow-runner 的
+ * LEGACY_RESTORE_TAGS 回退链（提交路径已禁止落此兜底，2026-08-23）。
+ */
+export const LEGACY_RESTORE_TAGS: readonly string[] = ['SM', 'VOD', 'OMEGA']
+
+/** productTag 归并（查表驱动，规则见 PRODUCT_TAG_MERGE_RULES）。 */
+export function mergeProductTag(tag: string): string {
+  for (const rule of PRODUCT_TAG_MERGE_RULES) {
+    if (rule.equals?.includes(tag)) return rule.canonical
+    if (rule.endsWith?.some((suffix) => tag.endsWith(suffix))) return rule.canonical
+    if (rule.includes?.some((fragment) => tag.includes(fragment))) return rule.canonical
+  }
+  return tag
+}
+
 export function isRuntimeCatalogId(catalogId: string): boolean {
   const id = catalogId.trim()
   if (!id) return false

@@ -31,6 +31,7 @@ import { forgetDismissedLayer, isRunDismissed } from './workspace-persist'
 import { getCatalogDisplayName, isTerminalStatus } from './catalog-builders'
 import { normalizeWorkflowProgress } from './workflow-progress'
 import { resolveRestoreWorkflowBridge as resolveRestoreWorkflowBridgeFromCatalog } from './restore-workflow-bridge'
+import { LEGACY_RESTORE_TAGS as LEGACY_RESTORE_TAGS_FROM_NAMING } from './layer-naming'
 import { claimOrphanWorkflowRun, isSubmitTimeoutError } from '../../utils/workflow-submit-reconcile'
 import {
   formatWorkflowValidationError,
@@ -722,7 +723,9 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
   }
 
   /** 旧 run 恢复兜底占位标签（无 manifest/工作流定义时的兼容行为） */
-  const LEGACY_RESTORE_TAGS = ['SM', 'VOD', 'OMEGA']
+  // 旧 run 恢复兜底 tag——共享自 layer-naming（含退役观察期约定，
+  // 到期 2026-10-23 无回归可整体删除，P2-B 退役机制）
+  const LEGACY_RESTORE_TAGS = LEGACY_RESTORE_TAGS_FROM_NAMING
 
   /** 从 runtime 图层目录解析工作流定义（descriptor 携带 workflow_definition） */
   function workflowDefinitionForRestore(

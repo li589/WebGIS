@@ -47,8 +47,13 @@ describe('三联报障 C：色带默认/相等判定不兜底 thermal-orange', (
     expect(resolveCanonicalPaletteIdStrict('viridis')).toBe('viridis')
   })
 
-  it('渲染版仍兜底 thermal-orange（可见性语义保留）', () => {
-    expect(resolveCanonicalPaletteId('brg')).toBe('thermal-orange')
+  it('渲染版：后端独有色带直接解析，未知名仍兜底（P2-E 单源后语义）', () => {
+    // 2026-08-24 P2-E 色带单源前：前端仅 9 条，brg 被误当未知名兜底
+    // thermal-orange（错误渲染）；单源后前端含全量 24 条定义，brg 正确
+    // 解析为自身（aridity-cn 等静态层渲染色终与后端一致）。未知名的
+    // 可见性兜底语义保留。
+    expect(resolveCanonicalPaletteId('brg')).toBe('brg')
+    expect(resolveCanonicalPaletteId('totally-unknown-palette')).toBe('thermal-orange')
   })
 
   it('未知后端色带 ≠ 任何前端可选项（显式选择必写覆盖）', () => {

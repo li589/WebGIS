@@ -7,6 +7,7 @@ import type {
 } from '../../services/runtime-api'
 import type { JobLayerItem, JobLayerMapLayerPayload } from './types'
 import type { ActiveLayer, ActiveLayerDisplay, RuntimeLayerLibraryItem } from './types'
+import { mergeProductTag } from './layer-naming'
 import { asRecord, extractLayerHotspots, formatClockLabel } from './catalog-builders'
 import {
   localizeWorkflowDiagnostics,
@@ -474,7 +475,8 @@ export async function buildJobLayer(
   }
 }
 
-/** 产品标签归一：OMEGA_BLOCK / OMEGA_PIXEL → OMEGA，便于绑入计算组 */
+/** 产品标签归一：查表归并（OMEGA_BLOCK/PIXEL→OMEGA 等，规则见
+ * layer-naming.PRODUCT_TAG_MERGE_RULES——P2-A 表化，2026-08-24） */
 export function normalizeProductTag(raw: string | null | undefined): string {
   const tag = String(raw || '')
     .trim()
@@ -483,16 +485,7 @@ export function normalizeProductTag(raw: string | null | undefined): string {
     // 否则未识别 title 会作为 tag 原样泄漏成图层名（productTagLabel 未知 tag 透传）
     .replace(/^ALGORITHM (?:MAP LAYER|OUTPUT):\s*/i, '')
   if (!tag) return ''
-  if (tag === 'OMEGA_BLOCK' || tag.startsWith('OMEGA_BLOCK') || tag.includes('OMEGA_BLOCK')) {
-    return 'OMEGA'
-  }
-  if (tag === 'OMEGA_PIXEL' || tag.includes('OMEGA_PIXEL') || tag.includes('OMEGA_PIX')) {
-    return 'OMEGA'
-  }
-  if (tag === 'OMEGA' || tag.endsWith('_OMEGA') || tag.endsWith('-OMEGA')) return 'OMEGA'
-  if (tag === 'SM' || tag.endsWith('_SM') || tag.endsWith('-SM')) return 'SM'
-  if (tag === 'VOD' || tag.endsWith('_VOD') || tag.endsWith('-VOD')) return 'VOD'
-  return tag
+  return mergeProductTag(tag)
 }
 
 /** 从 jobLayer 提取真实数据显示数据 */

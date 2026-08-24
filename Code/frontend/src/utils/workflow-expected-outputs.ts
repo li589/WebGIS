@@ -3,6 +3,8 @@
  * 优先级：extra.outputs → 节点 main_layers → 默认 ['result']
  */
 
+import { stripDataExtension } from './workflow-result-naming'
+
 export type WorkflowDefLike = {
   workflow_id?: string
   extra?: Record<string, unknown> | null
@@ -157,9 +159,7 @@ export const PRODUCT_TAG_DESCRIPTIONS: Record<string, string> = {
 }
 
 /** 剥常见数据文件扩展名（大写/小写均匹配） */
-function stripDataExtension(name: string): string {
-  return name.replace(/\.(TIF|TIFF|PNG|JPE?G|MAT|NC|HDF5?|HE5|ZIP|SHP|CSV|TAR|GZ)$/i, '')
-}
+// stripDataExtension 收敛至 workflow-result-naming（P2-C，2026-08-24）
 
 export function productTagLabel(tag: string): string {
   const known = PRODUCT_TAG_LABELS[tag]
