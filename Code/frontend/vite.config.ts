@@ -56,6 +56,13 @@ export default defineConfig(({ mode }) => {
         '/overlay-preview': { target: apiTarget, changeOrigin: true },
         '/overlay-bounds': { target: apiTarget, changeOrigin: true },
         '/overlay-value': { target: apiTarget, changeOrigin: true },
+        // 图层平台 P0：统一图层资产工作流（POST）。缺代理时 POST 打到 Vite
+        // dev server 自身 → 405 Method Not Allowed（添加图层直接报错）。
+        '/overlay-asset-workflows': { target: apiTarget, changeOrigin: true },
+        // 图层平台 P1：在线源同步（POST /layer-assets/{id}/sync）与课题组
+        // 模板（GET/POST /workflows/templates*）。缺代理同上 405/HTML 假响应。
+        '/layer-assets': { target: apiTarget, changeOrigin: true },
+        '/workflows': { target: apiTarget, changeOrigin: true },
         '/overlays': { target: apiTarget, changeOrigin: true },
         '/import': { target: apiTarget, changeOrigin: true },
         '/export': { target: apiTarget, changeOrigin: true },
