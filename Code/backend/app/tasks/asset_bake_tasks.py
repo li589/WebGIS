@@ -24,7 +24,7 @@ _BAKE_TOOL = _REPO_ROOT / "Tools" / "export_overlay_assets.py"
 
 # 当前烘焙版本（与工具 BAKE_VERSION 同步维护；不从 Tools import——避免
 # app 运行时依赖 Tools 脚本的 import 副作用[matplotlib 后端设置等]）。
-CURRENT_BAKE_VERSION = 2
+CURRENT_BAKE_VERSION = 4
 
 # layer_id → 烘焙 task key（与 Tools._build_task_table 的 layers 声明对应；
 # 多层共享 task 时去重合并，一次 subprocess 重烘全部陈旧层）。
@@ -33,6 +33,8 @@ _LAYER_TO_TASK: dict[str, str] = {
     "landcover-cn": "thematic",
     "hfp-cn": "thematic",
     "aridity-cn": "thematic",
+    "era5-dwaa-cn": "era5-dwaa",
+    "era5-wdaa-cn": "era5-wdaa",
     "omega-output": "omega-ts",
     "ref-smap-sm-202512-l3": "smap-ts",
     "gpcp-precip-ts": "gpcp-ts",

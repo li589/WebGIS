@@ -320,42 +320,27 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     return isWeatherEngineCatalogId(catalogId, getRuntimeLayerDescriptor(catalogId))
   }
 
-  /** 图层的 workflow_name（descriptor 优先；overlay_registry 静态图层也可配置本地读工作流）。 */
-  function getCatalogWorkflowName(catalogId: string): string | null {
-    const backendLayerId = resolveBackendLayerId(catalogId)
-    const descriptor =
-      getRuntimeLayerDescriptor(backendLayerId) ?? getRuntimeLayerDescriptor(catalogId)
-    const wf = descriptor?.workflow_name
-    if (wf) return wf
-    const libItem =
-      layerLibraryMap.value.get(backendLayerId) ?? layerLibraryMap.value.get(catalogId)
-    return libItem?.workflowName ?? null
-  }
-
   function supportsAnalysisWorkflow(catalogId: string): boolean {
     const backendLayerId = resolveBackendLayerId(catalogId)
     if (isWeatherEngineLayer(backendLayerId) || isWeatherEngineLayer(catalogId)) return false
     const engine = getCatalogWorkflowEngine(backendLayerId) || getCatalogWorkflowEngine(catalogId)
     if (engine === 'python_provider' || engine === 'gee') return true
-    // 需求2（2026-08-22）：overlay_registry 静态图层配置了本地读工作流
-    // （descriptor.workflow_name → static_local_read_* 种子）后同样可运行，
-    // 不再显示"未配置分析工作流引擎"。
-    if (engine === 'overlay_registry' || engine === '') {
-      return Boolean(getCatalogWorkflowName(catalogId))
-    }
+    // overlay_registry 是预烘焙地图资产：添加即由 map image source 显示，
+    // 不得因为遗留 static_local_read_* 定义而自动提交工作流。尤其 GEBCO
+    // 源文件 6.95GB，自动读取会令用户误以为添加图层卡死甚至触发会话问题。
+    // 若需重烘，走后端 asset bake 任务，不走交互式工作流。
+    if (engine === 'overlay_registry' || engine === '') return false
     return false
   }
 
-  /** overlay 静态/时间序列图层：engine=overlay_registry 且**未配置工作流**
-   * （有 PNG 缓存可显示但无运行入口）。已配置 static_local_read 工作流的
-   * 图层不再视为 display-only。 */
+  /** overlay 静态/时间序列图层一律是显示型资产。其 PNG/bounds 已由 bake
+   * 任务生成；workflow_name 仅保留为历史兼容/离线运维，不构成 UI 自动运行入口。 */
   function isOverlayDisplayOnlyLayer(catalogId: string): boolean {
     const backendLayerId = resolveBackendLayerId(catalogId)
     if (isWeatherEngineLayer(backendLayerId) || isWeatherEngineLayer(catalogId)) return false
     const engine =
       getCatalogWorkflowEngine(backendLayerId) || getCatalogWorkflowEngine(catalogId) || ''
-    if (engine !== 'overlay_registry' && engine !== '') return false
-    return !getCatalogWorkflowName(catalogId)
+    return engine === 'overlay_registry' || engine === ''
   }
 
   /** 添加路径独立语义：overlay 图层永不阻断（其 PNG 缓存由 map-canvas 自动加载）。 */

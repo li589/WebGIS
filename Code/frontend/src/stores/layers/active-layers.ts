@@ -56,6 +56,7 @@ export interface ActiveLayersSliceDeps {
   enableParticleIfUnset: (catalogId: string) => void
   clearWindForCatalog: (catalogId: string) => void
   stopWorkflowPolling: (jobId: string) => void
+  cancelWorkflowRunForJob: (jobId: string, catalogId: string) => Promise<unknown>
   forgetTrackedWorkflowRun: (runId: string) => void
   saveTrackedWorkflowRuns: (runs: unknown[]) => void
   getWorkflowRetryTimers: () => Map<string, number>
@@ -404,7 +405,16 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
     const runIdHint = layer.jobLayer?.jobId || groupBeforeRemove?.runId
 
     if (layer.jobLayer?.jobId) {
-      deps.stopWorkflowPolling(layer.jobLayer.jobId)
+      const jobId = layer.jobLayer.jobId
+      deps.stopWorkflowPolling(jobId)
+      // 删除运行中图层必须取消后端 run；仅停轮询会留下活跃任务，任务完成后
+      // restore/auto-attach 会把图层重新挂回（用户反馈#7）。取消请求异步发出，
+      // 本地 UI 先移除；后端取消接口幂等，失败只记日志不阻塞删除。
+      if (!['succeeded', 'failed', 'cancelled'].includes(layer.jobLayer.status)) {
+        void deps.cancelWorkflowRunForJob(jobId, layer.catalogId).catch((err) => {
+          console.warn('[layers] cancel removed workflow failed', jobId, err)
+        })
+      }
     }
     const retryTimer = deps.getWorkflowRetryTimers().get(layer.catalogId)
     if (retryTimer !== undefined) {
@@ -449,7 +459,9 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       overlayLayerId: overlayId,
       catalogId: isLocalImport(layer) ? undefined : layer.catalogId,
       vectorBackendLayerId: layer.importedVector?.backendLayerId,
-      runId: undefined,
+      // 持久化真实 runId：否则刷新恢复会重新发现仍在运行/稍后完成的 run，
+      // 造成“移除后过一会儿又出现”。
+      runId: runIdHint,
     })
 
     deps.clearWindForCatalog(layer.catalogId)

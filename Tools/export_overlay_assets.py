@@ -57,7 +57,10 @@ _OUT_ROOT = resolve_data_root() / "ProjectOutput" / "2023-01_Omega_Inversion" / 
 # 后端 asset_bake_tasks 据此自动重烘陈旧资产。版本史：
 #   1 = 初版（thematic 族存在行序上下翻转 bug）
 #   2 = 行序修复（2026-08-24，imshow origin 校准 + thematic 重烘）
-BAKE_VERSION = 2
+#   3 = 中国区域静态层（thematic/ERA5）后端 Mercator 线性重投影，
+#       不再依赖浏览器条带补偿（2026-08-24 真实地图偏移复现修复）
+#   4 = GPCP 低值透明 + Blues 对比度修复（2026-08-24 真实白屏复现）
+BAKE_VERSION = 4
 _CHINA_BBOX = (73.0, 15.0, 137.0, 59.0)
 
 # extent 模式：auto = 按任务表声明；global/china = CLI 强制覆盖（诊断用）
@@ -595,11 +598,26 @@ def export_thematic_layers() -> None:
         else:
             bounds = _CHINA_BBOX  # fallback
             print(f"  [WARN] {fname} has no lat/lon, using _CHINA_BBOX fallback")
-        print(f"  {layer_id}: {data.shape}, bounds={bounds}")
+        # ImageSource 在 Web Mercator 平面插值；不能把等经纬数组直接写 PNG
+        # 再依赖前端条带补偿（条带异步失败即回退成数百公里南偏/拉伸）。
+        # 以 .mat 的真实像元外边界构建源 Affine，在烘焙阶段一次性重投影为
+        # Mercator-y 线性资产，浏览器仅做单张 image source 贴图即可精确显示。
+        from rasterio.transform import from_bounds
+
+        src_transform = from_bounds(*bounds, data.shape[1], data.shape[0])
+        data, mercator_bounds = _reproject_to_mercator_linear(
+            data,
+            src_transform,
+            "EPSG:4326",
+            target_resolution=0.25,
+            clip_bounds=bounds,
+            resampling="nearest" if varname == "landcover" else "bilinear",
+        )
+        print(f"  {layer_id}: mercator={data.shape}, bounds={mercator_bounds}")
         _render_png(
             data, out_dir / f"{varname}_overlay.png", cmap=cmap, vmin=vmin, vmax=vmax
         )
-        _write_bounds(out_dir / f"{varname}_overlay_bounds.json", layer_id, bounds)
+        _write_bounds(out_dir / f"{varname}_overlay_bounds.json", layer_id, mercator_bounds)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -787,6 +805,8 @@ def export_gpcp_ts() -> None:
     print("\n=== GPCP precipitation time series ===")
     gpcp_dir = resolve_data_root() / "Weather" / "Precipitation" / "Precipitation" / "dataset"
     if not gpcp_dir.exists():
+        gpcp_dir = resolve_data_root() / "Meteorological" / "Weather" / "Precipitation" / "Precipitation" / "dataset"
+    if not gpcp_dir.exists():
         print("  [SKIP] Directory not found")
         return
 
@@ -832,9 +852,13 @@ def export_gpcp_ts() -> None:
         )
 
         print(f"  {tag}: {arr.shape}, range={np.nanmin(arr):.2f}-{np.nanmax(arr):.2f}")
+        # GPCP 月降水大面积低值（中位数约 1 mm/day）。YlGnBu 的最低端
+        # 接近白色，叠加 0.8 opacity 会把底图整块洗白；将近零降水透明，
+        # 并使用深色起始的 Blues，确保有效降水与底图均可辨。
+        arr[arr <= 0.05] = np.nan
         vmax = float(np.nanpercentile(arr, 99))
         _render_png(
-            arr, out_dir / f"gpcp_{tag}.png", cmap="YlGnBu", vmin=0, vmax=max(vmax, 10)
+            arr, out_dir / f"gpcp_{tag}.png", cmap="Blues", vmin=0.05, vmax=max(vmax, 10)
         )
         _write_bounds(out_dir / f"gpcp_{tag}_bounds.json", "gpcp-precip-ts", bounds)
 
@@ -1268,7 +1292,13 @@ def export_era5_dwaa() -> None:
         # 使用 window_bounds 获取窗口的地理边界 (west, south, east, north)
         # 注意: 不能用 xy(offset="ll")/xy(offset="ur"), 那样会取像素内边沿导致整体偏移 1 个像素
         actual_bounds = tuple(float(v) for v in src.window_bounds(win))
+        src_transform = src.window_transform(win)
+        src_crs = str(src.crs) if src.crs else "EPSG:4326"
 
+    # 后端烘焙为 Mercator 线性行；避免浏览器端条带化失败时图层南偏/拉伸。
+    event_count, actual_bounds = _reproject_to_mercator_linear(
+        event_count, src_transform, src_crs, target_resolution=0.25, clip_bounds=actual_bounds
+    )
     print(
         f"  Event count shape: {event_count.shape}, max events: {np.nanmax(event_count):.0f}"
     )
@@ -1310,7 +1340,13 @@ def export_era5_wdaa() -> None:
         # 使用 window_bounds 获取窗口的地理边界 (west, south, east, north)
         # 注意: 不能用 xy(offset="ll")/xy(offset="ur"), 那样会取像素内边沿导致整体偏移 1 个像素
         actual_bounds = tuple(float(v) for v in src.window_bounds(win))
+        src_transform = src.window_transform(win)
+        src_crs = str(src.crs) if src.crs else "EPSG:4326"
 
+    # 后端烘焙为 Mercator 线性行；避免浏览器端条带化失败时图层南偏/拉伸。
+    event_count, actual_bounds = _reproject_to_mercator_linear(
+        event_count, src_transform, src_crs, target_resolution=0.25, clip_bounds=actual_bounds
+    )
     print(
         f"  Event count shape: {event_count.shape}, max events: {np.nanmax(event_count):.0f}"
     )

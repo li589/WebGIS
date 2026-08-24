@@ -153,7 +153,8 @@ export function useMapInspect(
       .map((r) => (r.status === 'fulfilled' ? r.value : null))
       .filter((v): v is OverlayPointValue => v !== null)
 
-    // 并行获取所有可见 overlay 图层的时序与选中图层时序
+    // 并行获取所有可见 overlay 图层的时序与选中图层时序。
+    // GPCP 等大时序另走按需查询，避免一次点击扇出 24 个 NetCDF 读取而触发 502。
     // 安审 2026-08-21 U-1：seq 必须传入子函数，写回前校验，否则旧点响应
     // 后到会覆盖新点的时序数据（点 A 慢响应覆盖点 B → 图表与选点静默不一致）
     await Promise.all([
@@ -173,8 +174,11 @@ export function useMapInspect(
     const tasks = states
       .filter((s) => s.category === 'time-series' && s.timeList.length > 0)
       .map(async (s) => {
+        // GPCP 单帧 NetCDF 读取已足够重；点击地图不自动扫完全部采样月。
+        // 保留当前值，完整曲线仅对短时序或用户明确选中的图层按需查询。
+        const times = s.layerId === 'gpcp-precip-ts' ? [s.currentTime ?? s.timeList[0]!].filter(Boolean) : s.timeList
         const results = await Promise.allSettled(
-          s.timeList.map((time) => getOverlayValue(s.layerId, lng, lat, time)),
+          times.map((time) => getOverlayValue(s.layerId, lng, lat, time)),
         )
         seriesMap[s.layerId] = results
           .map((r) => (r.status === 'fulfilled' ? r.value : null))
@@ -209,8 +213,14 @@ export function useMapInspect(
       }
       return
     }
+    // 选中 GPCP 时也只先展示当前采样月；完整时序要显式走专用聚合 API，
+    // 不能在交互事件里并发打开 24 个 NetCDF 文件。
+    const queryTimes =
+      selectedOverlayId === 'gpcp-precip-ts'
+        ? [overlayTimeStates.value.find((s) => s.layerId === selectedOverlayId)?.currentTime ?? times[0]!]
+        : times
     const seriesResults = await Promise.allSettled(
-      times.map((time) => getOverlayValue(selectedOverlayId, lng, lat, time)),
+      queryTimes.map((time) => getOverlayValue(selectedOverlayId, lng, lat, time)),
     )
     if (seq !== undefined && seq !== overlayPointFetchSeq) return
     selectedOverlayTimeSeries.value = seriesResults

@@ -295,6 +295,7 @@ export function createWorkflowRunDomain(
   }
   bindings.getJobLayers = () => jobLayers.value
   bindings.stopWorkflowPolling = (jobId) => stopWorkflowPolling(jobId)
+  bindings.cancelWorkflowRunForJob = (jobId, catalogId) => cancelWorkflowRunForJob(jobId, catalogId)
   bindings.forgetTrackedWorkflowRun = (runId) => forgetTrackedWorkflowRunImpl(runId)
   bindings.rememberTrackedWorkflowRun = (catalogId, jobLayer) =>
     rememberTrackedWorkflowRunImpl(catalogId, jobLayer)

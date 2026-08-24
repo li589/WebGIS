@@ -32,6 +32,7 @@ export interface CrossDomainBindings {
   setRunLayerGroups: (groups: ActiveRunLayerGroup[]) => void
   getJobLayers: () => JobLayerItem[]
   stopWorkflowPolling: (jobId: string) => void
+  cancelWorkflowRunForJob: (jobId: string, catalogId: string) => Promise<unknown>
   forgetTrackedWorkflowRun: (runId: string) => void
   rememberTrackedWorkflowRun: (catalogId: string, jobLayer: JobLayerItem) => void
   scheduleWorkspacePersist: () => void
@@ -76,6 +77,7 @@ export function createCrossDomainBindings(): CrossDomainBindings {
     setRunLayerGroups: () => {},
     getJobLayers: () => [],
     stopWorkflowPolling: () => {},
+    cancelWorkflowRunForJob: () => Promise.resolve(),
     forgetTrackedWorkflowRun: () => {},
     rememberTrackedWorkflowRun: () => {},
     scheduleWorkspacePersist: () => {},
