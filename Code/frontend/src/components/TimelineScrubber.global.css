@@ -5,10 +5,10 @@
   border-radius: 0.55rem;
   border: 1px solid var(--border-strong);
   background: linear-gradient(180deg, var(--surface-2), var(--surface-2));
-  box-shadow: 0 12px 28px rgba(1, 8, 16, 0.45);
+  box-shadow: var(--elevation-3);
   backdrop-filter: blur(14px);
   color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-sans);
 }
 
 .play-interval-menu-title {
@@ -35,12 +35,12 @@
 }
 
 .play-interval-option:hover {
-  background: rgba(56, 189, 248, 0.12);
-  color: var(--surface-base);
+  background: var(--accent-surface);
+  color: var(--accent-strong);
 }
 
 .play-interval-option.active {
-  background: rgba(56, 189, 248, 0.18);
+  background: var(--accent-surface);
   color: var(--accent);
 }
 

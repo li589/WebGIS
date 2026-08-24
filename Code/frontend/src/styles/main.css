@@ -29,27 +29,19 @@ body,
 }
 
 /*
- * App 外圈底色（#app padding 露出的一周）：冷青蓝雾，禁止用文字色做渐变终点。
+ * App 外圈底色（#app padding 露出的一周）：统一由 tokens 的 --app-shell-bg 控制。
  * 旧浅色曾写成 surface-base → text-primary → text-secondary，等于把深蓝字色当底，
- * 视觉上像「蓝色反转成脏橙褐」。必须写死冷色 hex，并只用 html[data-theme] 选择器。
+ * 视觉上像「蓝色反转成脏橙褐」。深色为近黑深蓝壳，浅色为冷白青蓝壳，禁止暖米黄底。
  */
 html {
   color-scheme: dark;
-  background:
-    radial-gradient(ellipse 90% 60% at 12% -10%, rgba(90, 180, 255, 0.22), transparent 55%),
-    radial-gradient(ellipse 70% 50% at 92% 110%, rgba(56, 130, 220, 0.16), transparent 50%),
-    radial-gradient(ellipse 50% 40% at 50% 40%, rgba(20, 40, 70, 0.35), transparent 70%),
-    linear-gradient(165deg, #07101c 0%, #0a1524 48%, #08111c 100%);
+  background: var(--app-shell-bg);
 }
 
 html[data-theme='light'] {
   color-scheme: light;
   color: var(--text-primary);
-  background:
-    radial-gradient(ellipse 90% 60% at 10% -8%, rgba(80, 160, 235, 0.38), transparent 56%),
-    radial-gradient(ellipse 70% 50% at 94% 108%, rgba(60, 130, 200, 0.26), transparent 52%),
-    radial-gradient(ellipse 55% 45% at 48% 42%, rgba(190, 220, 245, 0.7), transparent 72%),
-    linear-gradient(165deg, #b9d0e8 0%, #cfe0f2 46%, #bfd4ea 100%);
+  background: var(--app-shell-bg);
 }
 
 html,

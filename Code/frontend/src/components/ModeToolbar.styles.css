@@ -95,7 +95,7 @@
   padding: 0 4px;
   border-radius: var(--radius-pill);
   background: var(--danger);
-  color: #fff8f5;
+  color: var(--text-strong);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-bold);
   line-height: 1;

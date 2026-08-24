@@ -60,6 +60,17 @@
   --accent-surface: rgba(90, 213, 255, 0.12);
   --accent-border: rgba(90, 213, 255, 0.3);
 
+  /* ═══ 数据分类语义色（天气 / 栅格 / 矢量） ═══ */
+  --category-weather: #67d4ff;
+  --category-weather-surface: rgba(103, 212, 255, 0.14);
+  --category-weather-border: rgba(103, 212, 255, 0.3);
+  --category-raster: #7fe0a6;
+  --category-raster-surface: rgba(127, 224, 166, 0.14);
+  --category-raster-border: rgba(127, 224, 166, 0.3);
+  --category-vector: #ffc878;
+  --category-vector-surface: rgba(255, 200, 120, 0.14);
+  --category-vector-border: rgba(255, 200, 120, 0.3);
+
   /* ═══ 颜色：语义化表面色（蓝/紫 tint，用于信息区隔） ═══ */
   --surface-blue-tint: rgba(90, 162, 255, 0.1);
   --border-blue-tint: rgba(90, 162, 255, 0.16);
@@ -182,12 +193,37 @@
   --accent-glow-sm: 0 0 8px var(--accent-surface);
   --accent-glow-md: 0 0 16px var(--accent-surface);
 
+  /* ═══ 应用背景（保留十六进制实底：避免透明叠层在地图/高亮数据下发灰） ═══ */
+  --app-shell-bg:
+    radial-gradient(ellipse 90% 60% at 12% -10%, rgba(90, 180, 255, 0.22), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 92% 110%, rgba(56, 130, 220, 0.16), transparent 50%),
+    radial-gradient(ellipse 50% 40% at 50% 40%, rgba(20, 40, 70, 0.35), transparent 70%),
+    linear-gradient(165deg, #07101c 0%, #0a1524 48%, #08111c 100%);
+
+  /* ═══ 地图检查点标记 ═══ */
+  --inspect-dot-fill: #ffb070;
+  --inspect-dot-ring: #f0faff;
+  --inspect-dot-glow: rgba(255, 184, 77, 0.75);
+
+  /* ═══ 数据分类语义色（天气 / 栅格 / 矢量） ═══ */
+  --category-weather: #67d4ff;
+  --category-weather-surface: rgba(103, 212, 255, 0.14);
+  --category-weather-border: rgba(103, 212, 255, 0.3);
+  --category-raster: #7fe0a6;
+  --category-raster-surface: rgba(127, 224, 166, 0.14);
+  --category-raster-border: rgba(127, 224, 166, 0.3);
+  --category-vector: #ffc878;
+  --category-vector-surface: rgba(255, 200, 120, 0.14);
+  --category-vector-border: rgba(255, 200, 120, 0.3);
+
   /* ═══ 动效（扩展：编排延迟） ═══ */
   --motion-stagger-step: 30ms;
   --motion-enter-delay: 100ms;
 
   /* ═══ 触控目标最小值 ═══ */
   --touch-min: 36px;
+  --select-panel-bg: #102235;
+  --select-panel-text: #f0faff;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -205,7 +241,7 @@
   --text-disabled: #b0bccc;
 
   /* 品牌 / 强调（加深以保证浅底对比度，WCAG AA ≥ 4.5:1） */
-  --accent: #0078a0;
+  --accent: #006f94;
   --accent-strong: #005a82;
   --accent-warm: #a5650f;
   --accent-blue-deep: #1a5fcc; /* 浅底加深保证对比度 */
@@ -225,7 +261,7 @@
   --success-surface: rgba(10, 122, 78, 0.1);
   --success-border: rgba(10, 122, 78, 0.3);
 
-  --warning: #a55a08;
+  --warning: #9a5205;
   --warning-surface: rgba(165, 90, 8, 0.1);
   --warning-border: rgba(165, 90, 8, 0.3);
 
@@ -239,6 +275,17 @@
 
   --accent-surface: rgba(10, 143, 196, 0.1);
   --accent-border: rgba(10, 143, 196, 0.3);
+
+  /* 数据分类语义色（天气 / 栅格 / 矢量；浅底加深保证 AA） */
+  --category-weather: #0a5f9f;
+  --category-weather-surface: rgba(10, 95, 159, 0.1);
+  --category-weather-border: rgba(10, 95, 159, 0.26);
+  --category-raster: #0a6f46;
+  --category-raster-surface: rgba(10, 111, 70, 0.1);
+  --category-raster-border: rgba(10, 111, 70, 0.26);
+  --category-vector: #9c5c00;
+  --category-vector-surface: rgba(156, 92, 0, 0.1);
+  --category-vector-border: rgba(156, 92, 0, 0.26);
 
   /* 语义化表面色（浅底加深） */
   --surface-blue-tint: rgba(30, 100, 180, 0.08);
@@ -280,6 +327,31 @@
   --elevation-2: 0 6px 18px rgba(20, 50, 90, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.95);
   --elevation-3: 0 16px 40px rgba(20, 50, 90, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.98);
   --elevation-modal: 0 28px 64px rgba(20, 50, 90, 0.16), inset 0 1px 0 rgba(255, 255, 255, 1);
+
+  /* 数据分类语义色（天气 / 栅格 / 矢量；浅底加深保证 AA） */
+  --category-weather: #0a5f9f;
+  --category-weather-surface: rgba(10, 95, 159, 0.1);
+  --category-weather-border: rgba(10, 95, 159, 0.26);
+  --category-raster: #0a6f46;
+  --category-raster-surface: rgba(10, 111, 70, 0.1);
+  --category-raster-border: rgba(10, 111, 70, 0.26);
+  --category-vector: #9c5c00;
+  --category-vector-surface: rgba(156, 92, 0, 0.1);
+  --category-vector-border: rgba(156, 92, 0, 0.26);
+
+  /* 应用背景（浅色：冷白青蓝壳层，不发米黄） */
+  --app-shell-bg:
+    radial-gradient(ellipse 90% 60% at 10% -8%, rgba(80, 160, 235, 0.38), transparent 56%),
+    radial-gradient(ellipse 70% 50% at 94% 108%, rgba(60, 130, 200, 0.26), transparent 52%),
+    radial-gradient(ellipse 55% 45% at 48% 42%, rgba(190, 220, 245, 0.7), transparent 72%),
+    linear-gradient(165deg, #b9d0e8 0%, #cfe0f2 46%, #bfd4ea 100%);
+
+  /* 地图检查点标记（浅底深填、亮描边保证可辨） */
+  --inspect-dot-fill: #c45a0a;
+  --inspect-dot-ring: #f0faff;
+  --inspect-dot-glow: rgba(196, 90, 10, 0.55);
+  --select-panel-bg: #ffffff;
+  --select-panel-text: #142536;
 
   /* 焦点环（浅色版本） */
   --accent-focus-ring: rgba(10, 143, 196, 0.12);

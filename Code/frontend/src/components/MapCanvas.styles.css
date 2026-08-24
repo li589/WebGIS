@@ -472,7 +472,7 @@
 
 .tile-retry-btn:hover {
   background: var(--danger);
-  color: #fff8f5;
+  color: var(--text-strong);
 }
 
 /* 天气瓦片加载指示器 */
@@ -750,16 +750,16 @@
   height: 0.75rem;
   border-radius: 50%;
   /* 深色模式：浅橙填充 + 浅色描边 */
-  background: #ffb070;
-  border: 2px solid #f0faff;
-  box-shadow: 0 0 8px rgba(255, 184, 77, 0.75);
+  background: var(--inspect-dot-fill);
+  border: 2px solid var(--inspect-dot-ring);
+  box-shadow: 0 0 8px var(--inspect-dot-glow);
 }
 
 /* 浅色模式：更深填充，仍用浅色边缘（与深色模式一致） */
 :global([data-theme='light']) :deep(.inspect-dot) {
-  background: #c45a0a;
-  border-color: #f0faff;
-  box-shadow: 0 0 8px rgba(196, 90, 10, 0.55);
+  background: var(--inspect-dot-fill);
+  border-color: var(--inspect-dot-ring);
+  box-shadow: 0 0 8px var(--inspect-dot-glow);
 }
 :deep(.geo-dot) {
   position: absolute;

@@ -44,11 +44,11 @@
   border-radius: 50%;
   margin-bottom: 0.35rem;
   background:
-    radial-gradient(circle at 35% 30%, rgba(125, 211, 252, 0.35), transparent 55%),
-    radial-gradient(circle at 70% 65%, rgba(56, 189, 248, 0.12), transparent 60%),
+    radial-gradient(circle at 35% 30%, var(--accent-border), transparent 55%),
+    radial-gradient(circle at 70% 65%, var(--accent-surface), transparent 60%),
     var(--surface-raised);
   border: 1px solid var(--border-default);
-  box-shadow: inset 0 0 24px rgba(56, 189, 248, 0.08);
+  box-shadow: inset 0 0 24px var(--accent-surface);
 }
 
 .analysis-idle-kicker {
@@ -670,8 +670,8 @@
 .subsection-count {
   font-size: 10px;
   font-weight: 500;
-  color: var(--text-tertiary, #9ab);
-  background: var(--surface-hover, rgba(255, 255, 255, 0.06));
+  color: var(--text-muted);
+  background: var(--surface-hover);
   padding: 0.1rem 0.35rem;
   border-radius: 3px;
 }
@@ -697,19 +697,19 @@
   border-radius: 4px;
 }
 .category-badge--weather {
-  background: rgba(79, 195, 247, 0.15);
-  color: var(--accent);
-  border: 1px solid rgba(79, 195, 247, 0.25);
+  background: var(--category-weather-surface);
+  color: var(--category-weather);
+  border: 1px solid var(--category-weather-border);
 }
 .category-badge--raster {
-  background: rgba(129, 199, 132, 0.15);
-  color: #66bb6a;
-  border: 1px solid rgba(129, 199, 132, 0.25);
+  background: var(--category-raster-surface);
+  color: var(--category-raster);
+  border: 1px solid var(--category-raster-border);
 }
 .category-badge--vector {
-  background: rgba(255, 183, 77, 0.15);
-  color: #ffb74d;
-  border: 1px solid rgba(255, 183, 77, 0.25);
+  background: var(--category-vector-surface);
+  color: var(--category-vector);
+  border: 1px solid var(--category-vector-border);
 }
 .category-count {
   font-size: var(--font-size-caption);
@@ -963,9 +963,9 @@
   color: var(--text-secondary);
 }
 .wind-mode-seg-btn.active {
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.38), rgba(99, 102, 241, 0.3));
+  background: linear-gradient(135deg, var(--accent-border), var(--surface-violet-tint));
   color: var(--text-strong);
-  box-shadow: inset 0 0 8px rgba(110, 200, 255, 0.18);
+  box-shadow: inset 0 0 8px var(--accent-surface);
 }
 .wind-mode-seg-btn.active[data-mode='off'],
 .wind-mode-seg-btn.active.off {

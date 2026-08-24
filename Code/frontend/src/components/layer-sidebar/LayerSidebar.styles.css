@@ -749,9 +749,9 @@ h2 {
   align-items: center;
   padding: 0.1rem 0.36rem;
   border-radius: 0.24rem;
-  background: rgba(59, 130, 246, 0.12);
-  border: 1px solid rgba(59, 130, 246, 0.3);
-  color: rgb(96, 165, 250);
+  background: var(--category-weather-surface);
+  border: 1px solid var(--category-weather-border);
+  color: var(--category-weather);
   font-size: var(--font-size-caption);
   font-weight: 500;
   white-space: nowrap;
@@ -906,7 +906,7 @@ h2 {
   gap: 0.18rem;
   padding: 0.3rem 0.42rem;
   border: 1px solid var(--border-strong);
-  border-left: 3px solid var(--accent, #67d4ff);
+  border-left: 3px solid var(--accent);
   border-radius: var(--sidebar-soft-radius);
   background: var(--surface-1);
   color: var(--text-primary);

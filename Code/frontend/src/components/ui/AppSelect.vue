@@ -229,16 +229,11 @@ function onBlur(e: FocusEvent) {
  * background/color——深浅两种主题下均保证面板背景与文字对比度
  * （报障 2026-08-22：选源下拉文字不清晰，白底浅字）。 */
 .app-select-native option {
-  /* 原生下拉菜单不可靠地继承 rgba surface / color-scheme；使用不透明的
-   * 主题对应色，避免深色模式下 option 文字与系统弹层背景混色不可读。 */
-  background: #102235;
-  color: #f0faff;
+  /* 原生下拉菜单不可靠地继承 rgba surface / color-scheme；使用主题
+   * 专属不透明背景与文字，避免深色模式下 option 与系统弹层混色不可读。 */
+  background: var(--select-panel-bg);
+  color: var(--select-panel-text);
   font-family: inherit;
-}
-
-:global(html[data-theme='light']) .app-select-native option {
-  background: #ffffff;
-  color: #142536;
 }
 
 .app-select-native::placeholder {
