@@ -1,46 +1,70 @@
-# 图层平台结构化框架与统一工作流
+# 图层平台子系统 P1 完成
 
-## 当前已完成
+## 本轮交付（三个 commit，已推送 dev）
 
-- 静态图层已纳入统一资产工作流：`POST /overlay-asset-workflows/{layer_id}`。
-- 工作流先检查烘焙资产和 `bake_version`，fresh 立即 succeeded，stale/missing 由 Celery 后台烘焙。
-- 大数据源不进入交互直读：GEBCO 等重资产只通过后台烘焙/资产接口显示。
-- 前端添加目录图层统一走 `runWorkflowForCatalog`，分析图层走分析工作流，静态 overlay 自动分流到资产工作流。
-- ERA5 多波段瓦片波段链已修复：DWAA/WDAA 统一使用 `source_band=183`。
-- 深浅主题视觉系统已 token 化，双主题对比度回归通过。
+### 1. `e04a950` — 双写真源 + 侧栏徽标 + online_sync 统一入口
+- **lifecycle 真源接通**：lifecycle 域自持 `mapOverlayTimeStates` ref，MapCanvas sync 模块经 `onOverlayTimeStatesChanged` 双写（`setMapOverlayTimeStates`），废弃 bindings 空 stub
+- **侧栏生命周期徽标**：图层卡片显示 fresh/stale/updating/missing/failed，复用 TimelineScrubber 同款样式
+- **POST /layer-assets/{layer_id}/sync**：`workflow_kind=online_sync` 统一入口
+  - 未启用 online_temporal → `skipped-unsupported`（200，不报错）
+  - 同图层活跃 online_sync run → `in-flight` 复用（不重复提交）
+  - `time_key` YYYY-MM / YYYY-MM-DD 自动解析为 time_range
+  - prefetch/low 优先级走 batch 队列
 
-## 新框架
+### 2. `dc19964` — 课题组工作流模板一键显示入口
+- **GET /workflows/templates**：聚合 workflow_seeds/system + workflow_definitions/user 中 `is_template=true` 或 tags 含 template/lab 的定义
+- **POST /workflows/templates/{id}/runs**：按模板定义构建 WorkflowSubmitRequest（`workflow_kind=lab_template`），支持 parameters/time_range/resource_profile/auto_display 覆盖
+- 系统种子（analysis_buffer 等）已有 `is_template` 标记，入口直接可用
 
-已新增 `Docs/03-架构设计/图层平台结构化框架-2026-08-24.md`，定义：
+### 3. 契约链闭环
+- 新增契约：LayerOnlineSyncRequest/Response、WorkflowTemplateSummary/ListResponse/RunRequest/RunResponse
+- export_openapi（206 paths）→ gen:types → api-reexports → check:openapi 全部通过
 
-- LayerDescriptor / LayerAsset / LayerLifecycle / WorkflowRun / RenderBinding / DataSource 六类领域对象。
-- 图层接入分类：analysis、asset、weather、online、imported、maintenance。
-- 工作流分类：analysis、asset_bake、online_sync、ingest、download、weather_viewport、maintenance。
-- 大数据硬规则：交互请求不读大源；大数据必须走烘焙、金字塔、瓦片或 COG；更新必须 bump bake_version。
-- 在线数据流程：在线源同步 → 版本快照 → 资产烘焙 → 地图刷新 → 时间轴更新。
-- 课题组工作流一键显示契约：模板化参数 → run → result_refs → materialize-map-layers → 自动上图/时间轴同步。
+## 验证
 
-## 当前系统到框架的映射
+| 检查 | 结果 |
+|---|---|
+| 后端接口测试 | 12 + 12 全绿 |
+| 前端 vitest | 1330 测试全绿 |
+| type-check | 0 error |
+| build | 通过 |
+| check:openapi | 206 paths 通过 |
+| 冒烟 | templates 返回模板列表；sync 对未启用图层返回 skipped-unsupported |
 
-已具备：
+## 后端已重启生效
 
-- 统一 run 状态模型。
-- 资产工作流入口。
-- `bake_version` 资产版本。
-- 大数据交互保护。
-- 删除运行中图层时取消 run 并防回弹。
+新接口立即可用：
+- `GET /layer-assets/{layer_id}`（P0）
+- `GET /layers/{layer_id}/lifecycle`（P0）
+- `POST /layer-assets/{layer_id}/sync`（P1）
+- `GET /workflows/templates`（P1）
+- `POST /workflows/templates/{id}/runs`（P1）
 
-待补强：
+## 后续 P2 建议
 
-1. run 显式写入 `workflow_kind`。
-2. 增加 `GET /layer-assets/{layer_id}`。
-3. 增加 `GET /layers/{layer_id}/lifecycle`。
-4. 渲染几何元数据显式化，逐步替代宽高启发式。
-5. 时间轴读取 lifecycle，显示 fresh/stale/updating。
-6. 在线源接入统一为 sync job + asset workflow。
+1. 前端课题组面板 UI（模板列表 + 一键运行按钮 + 完成后自动上图轮询链）
+2. online_sync 前端编排器接入新接口（替换现有直接 runWorkflowForCatalog 路径）
+3. 在线源凭证管理（GEE 账号池 / 门户凭证统一）
+4. 大数据 COG/瓦片服务接入新图层类型
 
-## 最新提交
+## P2 完成情况（2026-08-25）
 
-- `ed0ad3c feat(layers): 统一图层资产工作流与烘焙调度`
-- 已推送 `dev`
-- MATLAB 原始算法目录继续保留，未纳入本轮。
+四项全部落地：P2-1 模板面板（LayerSidebarTemplates + 自动上图轮询链）、
+P2-2 编排器接入统一 online_sync 入口（三分支语义映射 + 自动回退）、
+P2-3 统一在线源凭证状态（GET /config/online-sources，四源聚合只报布尔）、
+P2-4 direct 源图层（COG/GeoTIFF 免烘焙直通动态瓦片）。
+
+### 子系统职责边界（COG/瓦片服务架构归位，2026-08-25）
+
+| 职责 | 归属 | 落点 |
+| --- | --- | --- |
+| COG/瓦片服务**接入**（源文件入库、direct 源形态判定、bounds/元数据生成） | 数据源管理子系统 | `app/data_io/services/direct_source.py`（`find_direct_source` 单一真源 + `register_direct_geotiff` 接入 API） |
+| 图层的**显示、渲染、加载**（注册表、瓦片渲染、前端 image/raster 模式切换） | 图层平台子系统 | `app/services/overlay_registry.py`（lazy-load 委托 data_io 判定）、`overlay_tile_service.py`、前端 `overlay-image-module.ts` |
+| 分析调用编排 | 图层平台子系统 | workflow bridge 链 + 编排器（见 P2-2） |
+
+依赖方向：`data_io.direct_source → overlay_registry`（注册，与 raster_register 同向）；
+`overlay_registry → data_io.direct_source` 仅函数内延迟 import（委托判定，规避循环）。
+
+direct 源接入方式：`register_direct_geotiff(src_path, layer_id=..., palette=...)`
+（Python API），或手工在 `IMPORTS_DIR/imported-<id>/` 放 `source.tif/.cog` +
+`bounds.json`（lazy-load 自动识别）。

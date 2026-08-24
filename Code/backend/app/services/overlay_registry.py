@@ -682,26 +682,33 @@ def _try_load_imported_overlay(layer_id: str) -> OverlaySpec | None:
         or ("time-series" if (time_list or has_time_previews) else "static")
     )
 
-    # source 解析提前（P2-4 direct 源判定需要；原顺序在 preview 判定之后）
-    source_filename = meta.get("source_filename")
-    source_path = dest_dir / str(source_filename) if source_filename else None
-    if source_path is not None and not source_path.is_file():
-        source_path = None
-    if source_path is None:
-        # Fall back to any source_*.tif / source.tif
-        candidates = sorted(dest_dir.glob("source*.tif")) + sorted(
-            dest_dir.glob("source*.tiff")
-        )
-        if candidates:
-            source_path = candidates[0]
+    # source 解析：形态判定委托数据源管理子系统（2026-08-25 架构归位——
+    # COG/瓦片服务接入归 data_io，图层平台只管显示/渲染/加载）。
+    # 延迟 import 规避循环依赖（data_io.raster_register → 本模块）。
+    try:
+        from app.data_io.services.direct_source import find_direct_source
+    except Exception:
+        find_direct_source = None  # type: ignore[assignment]
+    if find_direct_source is not None:
+        source_path = find_direct_source(dest_dir, meta)
+    else:  # data_io 不可用（极端环境）：保守回退旧 glob 行为
+        source_filename = meta.get("source_filename")
+        source_path = dest_dir / str(source_filename) if source_filename else None
+        if source_path is not None and not source_path.is_file():
+            source_path = None
+        if source_path is None:
+            candidates = sorted(dest_dir.glob("source*.tif")) + sorted(
+                dest_dir.glob("source*.tiff")
+            )
+            source_path = candidates[0] if candidates else None
 
     # 时序层通常只有 preview_{time}.png，无根目录 preview.png
     if category == "time-series":
         if not has_time_previews and not has_static_preview:
             return None
     elif not has_static_preview:
-        # P2-4 direct 源图层：无烘焙 preview.png 但有 GeoTIFF 源
-        # （含 .cog）→ 允许注册，前端全程走动态 XYZ 瓦片渲染。
+        # direct 源图层：无烘焙 preview.png 但有 GeoTIFF/COG 源
+        # （data_io.direct_source 判定）→ 允许注册，前端全程动态瓦片渲染。
         if source_path is None:
             return None
 
@@ -786,10 +793,15 @@ def list_overlay_ids() -> list[str]:
                 has_preview = (child / "preview.png").is_file() or any(
                     child.glob("preview_*.png")
                 )
-                # P2-4：direct 源图层（仅 source GeoTIFF/COG + bounds.json）也算可注册
-                has_source = any(child.glob("source*.tif")) or any(
-                    child.glob("source*.tiff")
-                )
+                # direct 源判定委托数据源管理子系统（架构归位 2026-08-25）
+                try:
+                    from app.data_io.services.direct_source import find_direct_source
+
+                    has_source = find_direct_source(child, None) is not None
+                except Exception:
+                    has_source = any(child.glob("source*.tif")) or any(
+                        child.glob("source*.tiff")
+                    )
                 if has_preview or has_source:
                     ids.add(child.name)
     except Exception:
