@@ -1,0 +1,91 @@
+"""僵尸工作流 run 回收任务回归锁（2026-08-25「任务长期卡排队中」根治）。
+
+场景：Redis/Docker 重启或 worker 停机时 Celery 队列任务丢失，run 状态
+停在 accepted/queued 永不推进。回收任务扫描超时无推进的 stuck run 并
+CAS 标记 failed（可重试）；未超时/已推进的不动。
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+
+import pytest
+
+from app.core.config import settings
+from app.services.workflow_repository import SQLiteWorkflowRepository
+from app.tasks.workflow_reclaim_tasks import reclaim_stuck_workflow_runs
+from shared.contracts.api_contracts import (
+    ClientIdentity,
+    ExecutionStatus,
+    WorkflowCommandType,
+    WorkflowRunStatusResponse,
+)
+
+
+def _make_run(run_id: str, status: ExecutionStatus, updated_at: datetime) -> WorkflowRunStatusResponse:
+    return WorkflowRunStatusResponse(
+        run_id=run_id,
+        command_type=WorkflowCommandType.analysis,
+        status=status,
+        progress=10,
+        message="test",
+        created_at=updated_at,
+        updated_at=updated_at,
+        client=ClientIdentity(),
+    )
+
+
+@pytest.fixture()
+def repo(tmp_path, monkeypatch):
+    """隔离的 SQLite 仓库（避免触碰真实 .data 库）。"""
+    repository = SQLiteWorkflowRepository(state_dir=tmp_path)
+    monkeypatch.setattr(
+        "app.tasks.workflow_reclaim_tasks.SQLiteWorkflowRepository",
+        lambda: repository,
+    )
+    return repository
+
+
+def test_reclaims_stuck_accepted_run(repo, monkeypatch):
+    """accepted 超时无推进 → CAS 标记 failed + 可重试消息。"""
+    stuck_at = datetime.now(UTC) - timedelta(seconds=3600)
+    repo.save_run(_make_run("run-stuck-1", ExecutionStatus.accepted, stuck_at))
+    # 未超时的 queued run 不应被回收
+    fresh_at = datetime.now(UTC) - timedelta(seconds=60)
+    repo.save_run(_make_run("run-fresh-1", ExecutionStatus.queued, fresh_at))
+
+    # settings 为 frozen dataclass；默认阈值即 1800s，无需 patch
+    result = reclaim_stuck_workflow_runs()
+
+    assert result["reclaimed"] == ["run-stuck-1"]
+    reclaimed = repo.get_run("run-stuck-1")
+    assert reclaimed.status == ExecutionStatus.failed
+    assert "任务派发丢失" in reclaimed.message
+    # 未超时 run 保持 queued
+    assert repo.get_run("run-fresh-1").status == ExecutionStatus.queued
+
+
+def test_terminal_runs_untouched(repo, monkeypatch):
+    """终态 run（succeeded/failed/cancelled）不参与回收。"""
+    old = datetime.now(UTC) - timedelta(seconds=7200)
+    repo.save_run(_make_run("run-done", ExecutionStatus.succeeded, old))
+    repo.save_run(_make_run("run-dead", ExecutionStatus.failed, old))
+
+    # settings 为 frozen dataclass；默认阈值即 1800s，无需 patch
+    result = reclaim_stuck_workflow_runs()
+
+    assert result["reclaimed"] == []
+    assert repo.get_run("run-done").status == ExecutionStatus.succeeded
+    assert repo.get_run("run-dead").status == ExecutionStatus.failed
+
+
+def test_running_runs_not_stuck_classified(repo, monkeypatch):
+    """running 状态不属 stuck 集（长任务运行中由别的超时机制管）。"""
+    old = datetime.now(UTC) - timedelta(seconds=7200)
+    repo.save_run(_make_run("run-long", ExecutionStatus.running, old))
+
+    # settings 为 frozen dataclass；默认阈值即 1800s，无需 patch
+    result = reclaim_stuck_workflow_runs()
+
+    assert result["reclaimed"] == []
+    assert repo.get_run("run-long").status == ExecutionStatus.running

@@ -427,6 +427,12 @@ class Settings:
     workflow_queue_analysis_batch: str = os.getenv(
         "BACKEND_WORKFLOW_QUEUE_ANALYSIS_BATCH", workflow_queue_batch
     )
+    # 僵尸 run 回收阈值（秒）：accepted/queued 无事件推进超过此时长 →
+    # beat 回收任务 CAS 标记 failed（2026-08-25「任务长期卡排队中」根治；
+    # 默认 30 分钟——下载/重算队列长等待属正常，仅无任何推进才回收）。
+    workflow_stuck_reclaim_seconds: int = int(
+        os.getenv("BACKEND_WORKFLOW_STUCK_RECLAIM_SECONDS", "1800")
+    )
     workflow_queue_algorithm_realtime: str = os.getenv(
         "BACKEND_WORKFLOW_QUEUE_ALGORITHM_REALTIME", workflow_queue_realtime
     )

@@ -710,8 +710,22 @@ def _stop_backend_app_processes() -> bool:
 def _start_backend_app_processes(args: argparse.Namespace) -> int:
     """启动 worker → beat → fastapi（不进入监控循环）。"""
     pm = ProcessManager(debug=args.debug, frontend_port=args.frontend_port)
+    # 2026-08-25 自愈：Redis 不可达时自动拉起 Docker 栈（幂等）——
+    # 此前仅 warn 后照常启动，broker 缺失下 worker 全部 crash-loop /
+    # 任务派发 500（「任务长期卡排队中」根因之一）。
     if not redis_running():
-        log.warn("Launcher", "Redis 未检测到；worker/beat/fastapi 可能失败")
+        log.warn("Launcher", "Redis 未运行，自动拉起 Docker 基础设施（自愈）...")
+        if start_docker_infra(
+            start_open_meteo=not getattr(args, "no_open_meteo", False)
+        ):
+            wait_for_redis(max_wait=30)
+            wait_for_minio(max_wait=30)
+        else:
+            log.error(
+                "Launcher",
+                "Docker 基础设施拉起失败；worker/beat/fastapi 可能失败"
+                "（排查: docker ps / launch.py start docker）",
+            )
     pm.start_celery_workers()
     pm.start_celery_beat()
     pm.start_fastapi()
@@ -745,6 +759,21 @@ def cmd_restart(args: argparse.Namespace) -> int:
     if component == "backend":
         log.banner("重启 backend（FastAPI + Worker + Beat）")
         ensure_project_initialized()
+        # 2026-08-25 Redis 反复"挂掉"根因修复：restart gateway/全量 restart 走
+        # cmd_stop() 会 stop_docker_infra() 停掉 Redis/MinIO；且 restart backend
+        # 从不检查 Redis——worker 在 broker 缺失下启动 → 任务派发 500/卡 accepted。
+        # 自愈：Redis 不可达时自动拉起 Docker 栈（compose up -d 幂等）。
+        if not redis_running():
+            log.warn(
+                "Restart", "Redis 未运行，自动拉起 Docker 基础设施（自愈）..."
+            )
+            if not start_docker_infra(
+                start_open_meteo=not getattr(args, "no_open_meteo", False)
+            ):
+                log.error("Restart", "Docker 基础设施拉起失败，继续重启（worker 将 crash-loop 重连）")
+            else:
+                wait_for_redis(max_wait=30)
+                wait_for_minio(max_wait=30)
         clean = _stop_backend_app_processes()
         if not clean:
             log.error(
@@ -764,6 +793,19 @@ def cmd_restart(args: argparse.Namespace) -> int:
         _regenerate_catalog_seeds()
         time.sleep(2)
         return _start_backend_app_processes(args)
+
+    if component == "gateway":
+        # 2026-08-25 修复：此前 restart gateway 落入全量分支 → cmd_stop() 停掉
+        # Docker 栈（Redis/MinIO）后只重启 gateway 不恢复 Docker——Redis 反复
+        # "挂掉"的根因。gateway 重启应精准：只 stop/start gateway 容器。
+        log.banner("重启 gateway（Nginx，不动 Docker 基础设施/backend）")
+        stop_gateway_infra()
+        time.sleep(1)
+        if not start_gateway_infra():
+            log.error("Restart", "Nginx Gateway 重启失败")
+            return 1
+        log.ok("Restart", "Gateway 已重启")
+        return 0
 
     log.banner("重启 CGDA 服务")
     cmd_stop()

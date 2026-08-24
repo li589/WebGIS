@@ -218,6 +218,15 @@ if celery_available:
             "schedule": crontab(minute="*"),
             "options": {"queue": settings.workflow_queue_standard},
         }
+    # 僵尸 run 回收（2026-08-25）：accepted/queued 超时无推进 → CAS 标记
+    # failed（Redis/worker 重启丢任务后 run 永远卡「排队中」的根治）。
+    # 每 5 分钟扫描，阈值见 settings.workflow_stuck_reclaim_seconds（默认 30min）。
+    if crontab is not None:
+        beat_schedule["reclaim-stuck-workflow-runs"] = {
+            "task": "app.tasks.workflow_reclaim_tasks.reclaim_stuck_workflow_runs",
+            "schedule": crontab(minute="*/5"),
+            "options": {"queue": settings.workflow_queue_standard},
+        }
     # 叠加层烘焙资产自愈：每日校验 bake_version 陈旧资产并自动重烘
     # （2026-08-24 用户意见#1：资产新鲜度不依赖外部手工操作）
     if crontab is not None:
