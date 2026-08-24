@@ -482,8 +482,11 @@ def _reproject_ease_to_wgs84(
 
 def export_dem_etopo() -> None:
     print("\n=== DEM ETOPO_2022 ===")
+    # 2026-08-25 路径修复：实际文件在 Geological/DEM/ETOPO_2022/ 下
+    # （此前缺 Geological 层 → [SKIP] File not found → 资产永远 stale，
+# 图层逐一验证报障定位）
     tif_path = Path(
-        r"I:\Geograph_DataSet\DEM\ETOPO_2022\ETOPO_2022_v1_60s_N90W180_surface.tif"
+        r"I:\Geograph_DataSet\Geological\DEM\ETOPO_2022\ETOPO_2022_v1_60s_N90W180_surface.tif"
     )
     if not tif_path.exists():
         print("  [SKIP] File not found")

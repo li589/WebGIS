@@ -787,9 +787,17 @@ class PythonProviderResultBuilder:
         config = _MAPPABLE_PRODUCTS.get(product_type)
         if config is None:
             # Generic GIS / preprocess GeoTIFF products (native CRS/bounds).
-            if product_type in {"raster", "map_layer"} or str(
-                as_dict(product.get("tags")).get("kind") or ""
-            ).lower() in {"raster", "cog"}:
+            # tags.module=output_map_layer（2026-08-25 图层逐一验证发现）：
+            # static_local_read_*（ETOPO/GEBCO/DEM 等静态读取层）的产物
+            # 无 type、无 tags.kind，仅带 module=output_map_layer——此前
+            # 白名单不命中被静默丢弃 → run succeeded 但物化 0 层 →
+            # 前端「数据异常/失败」。同为 generic raster 通道处理。
+            product_tags = as_dict(product.get("tags"))
+            if (
+                product_type in {"raster", "map_layer"}
+                or str(product_tags.get("kind") or "").lower() in {"raster", "cog"}
+                or str(product_tags.get("module") or "").lower() == "output_map_layer"
+            ):
                 return self._build_generic_raster_map_layer_ref(
                     run_id=run_id,
                     requested_at=requested_at,

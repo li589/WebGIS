@@ -15,7 +15,7 @@
         120
       ],
       "properties": {
-        "path": "{DATA_ROOT}/Geological/DEM/ETOPO_2022_v1_60s_N90W180_surface.tif",
+        "path": "{DATA_ROOT}/Geological/DEM/ETOPO_2022/ETOPO_2022_v1_60s_N90W180_surface.tif",
         "dataset_key": "STATIC_LOCAL_DEM_ETOPO"
       }
     },
