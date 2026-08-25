@@ -18805,6 +18805,22 @@
                 "type": "null"
               }
             ]
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "auto_chain_message": {
+            "type": "string",
+            "title": "Auto Chain Message",
+            "default": ""
           }
         },
         "type": "object",
@@ -18812,7 +18828,7 @@
           "remote_source"
         ],
         "title": "RegisterAndAddResponse",
-        "description": "register-and-add 响应：注册结果 + 数据集记录 + 工作流提示。"
+        "description": "register-and-add 响应：注册结果 + 数据集记录 + 工作流提示。\n\nauto_chain 生效（hint.layer_id 存在）时 run_id 非空——已自动提交\n「下载→预处理→烘焙→入图层库」工作流，前端可轮询 run 状态。"
       },
       "ReloadResultResponse": {
         "properties": {
@@ -23154,6 +23170,17 @@
           "node_type": {
             "type": "string",
             "title": "Node Type"
+          },
+          "layer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layer Id"
           },
           "dataset_keys": {
             "items": {

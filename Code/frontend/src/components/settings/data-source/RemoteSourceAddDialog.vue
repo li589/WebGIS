@@ -191,12 +191,16 @@ async function doRegister(addToLayer: boolean) {
       })
       const hint = resp.workflow_hint
       emit('registered-and-added', alias, layerDatasetKeys)
-      if (hint) {
+      if (resp.run_id) {
+        // 自动链已触发（Wave 3）：工作流后台执行「下载→预处理→烘焙→入图层库」
+        okMsg.value = `${resp.auto_chain_message || '已自动提交图层工作流'}（运行 ID: ${resp.run_id.slice(0, 8)}…，可在「工作流」面板查看进度）`
+      } else if (hint) {
         const paramPreview = Object.entries(hint.params ?? {})
           .slice(0, 4)
           .map(([k, v]) => `${k}=${String(v)}`)
           .join(' ')
-        okMsg.value = `已注册并记录 ${layerDatasetKeys.length} 个数据集（${layerDatasetKeys.join('、')}）——到「工作流」添加 ${hint.node_type} 节点运行下载链即可上图（参数建议：${paramPreview}；自动链开发中）`
+        okMsg.value = resp.auto_chain_message ||
+          `已注册并记录 ${layerDatasetKeys.length} 个数据集（${layerDatasetKeys.join('、')}）——到「工作流」添加 ${hint.node_type} 节点运行下载链即可上图（参数建议：${paramPreview}）`
       } else {
         okMsg.value = '已注册——数据可经工作流自动访问'
       }

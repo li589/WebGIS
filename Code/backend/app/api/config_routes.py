@@ -1247,6 +1247,57 @@ async def get_remote_dataset_policy():
 # ── 注册并添加到图层（原子端点，2026-08-25 P2/Wave 2） ───────────────────────
 
 
+def _resolve_layer_time_range(layer_id: str):
+    """解析种子层的数据时间覆盖 → WorkflowSubmitRequest.time_range。
+
+    仅在 available_datasets 注册表**精确匹配**（dataset_id / logical_name）
+    时返回窗口——'YYYY-MM-DD~YYYY-MM-DD' 是磁盘实际数据窗口；
+    匹配不到返回 None（模块全量转换/默认时间轴），**不硬猜**：
+    实测教训——descriptor 的 temporal_coverage（如 ref-smap-sm 的
+    2025-12）可能与磁盘实际文件（2023-01）不一致，猜错窗口会把
+    输入文件全部过滤掉（"No SMAP HDF5 files found"）。
+    """
+    from datetime import UTC, datetime
+
+    from shared.contracts.api_contracts import TimeGranularity, TimeRange
+
+    def _parse_pair(text: str):
+        import re
+
+        dates = re.findall(r"\d{4}-\d{2}-\d{2}", text)
+        if len(dates) >= 2:
+            start = datetime.strptime(dates[0], "%Y-%m-%d").replace(tzinfo=UTC)
+            end = datetime.strptime(dates[1], "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59, tzinfo=UTC
+            )
+            if start <= end:
+                return TimeRange(
+                    start_at=start, end_at=end, granularity=TimeGranularity.day
+                )
+        return None
+
+    try:
+        from app.services.layer_catalog import get_layer_descriptor
+
+        descriptor = get_layer_descriptor(layer_id)
+        if descriptor is None:
+            return None
+        dataset_key = str(getattr(descriptor, "dataset_key", "") or "")
+        if not dataset_key:
+            return None
+        from app.services.config_service import list_available_datasets
+
+        for ds in list_available_datasets():
+            if (
+                ds.get("dataset_id") == dataset_key
+                or ds.get("logical_name", "").lower() == dataset_key.lower()
+            ):
+                return _parse_pair(str(ds.get("time_range") or ""))
+    except Exception:  # noqa: BLE001 — 解析失败 → None（全量）
+        pass
+    return None
+
+
 @router.post(
     "/remote-sources/register-and-add",
     response_model=RegisterAndAddResponse,
@@ -1310,10 +1361,65 @@ async def register_and_add_remote_source(payload: RegisterAndAddRequest):
     if payload.kind == "portal":
         hint = build_workflow_hint(payload.ref_id, payload.dataset_keys)
 
+    # 4) 自动链（Wave 3）：有种子层映射 → 自动提交该层工作流
+    # 「下载→预处理→烘焙→入图层库」由现有 python_provider 管线完成。
+    # 提交失败（容量满/队列异常）不阻断注册——降级为 hint 引导手动运行。
+    run_id: str | None = None
+    auto_chain_message = ""
+    if hint is not None and hint.get("layer_id"):
+        try:
+            from shared.contracts.api_contracts import (
+                ClientIdentity,
+                WorkflowCommandType,
+                WorkflowSubmitRequest,
+            )
+
+            from app.services.workflow.service_container import (
+                submission_service,
+            )
+
+            layer_id = str(hint["layer_id"])
+            # 注意：不注入 hint.params（下载节点参数 short_name/start_date
+            # 等与 layer 工作流参数体系不同——python_provider bridge 按
+            # layer 配置自组装；实测注入 start_date 会让 SMAP 提取模块
+            # 日期解析失败 'NoneType'.start）。与前端正常跑层保持一致：
+            # 空 parameters + 默认输出。
+            # time_range 取数据集实际时间覆盖（smap.py 等提取模块按
+            # start/end 过滤输入文件——实测缺省会 NoneType.start 崩溃）。
+            time_range = _resolve_layer_time_range(layer_id)
+            accepted = submission_service.submit_workflow(
+                WorkflowSubmitRequest(
+                    command_type=WorkflowCommandType.analysis,
+                    command_label=f"一键添加到图层：{payload.display_name or payload.alias}",
+                    layer_id=layer_id,
+                    requested_outputs=["json"],
+                    time_range=time_range,
+                    client=ClientIdentity(page="settings", view_id="data-source"),
+                )
+            )
+            run_id = accepted.run_id
+            auto_chain_message = (
+                f"已自动提交图层「{layer_id}」工作流，产物烘焙完成后入图层库"
+            )
+        except Exception:  # noqa: BLE001 — 自动链失败降级（注册本身已成功）
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "register-and-add: auto chain submit failed for %s",
+                payload.ref_id,
+                exc_info=True,
+            )
+            auto_chain_message = (
+                "自动提交工作流失败（容量满或队列繁忙）——已注册，"
+                "请稍后在图层库手动运行该层"
+            )
+
     return RegisterAndAddResponse(
         remote_source=entry,
         grants=grants,  # type: ignore[arg-type] — dict 条目经 pydantic 转换
         workflow_hint=hint,
+        run_id=run_id,
+        auto_chain_message=auto_chain_message,
     )
 
 

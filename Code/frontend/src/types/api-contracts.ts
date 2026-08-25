@@ -7115,12 +7115,22 @@ export interface components {
         /**
          * RegisterAndAddResponse
          * @description register-and-add 响应：注册结果 + 数据集记录 + 工作流提示。
+         *
+         *     auto_chain 生效（hint.layer_id 存在）时 run_id 非空——已自动提交
+         *     「下载→预处理→烘焙→入图层库」工作流，前端可轮询 run 状态。
          */
         RegisterAndAddResponse: {
             remote_source: components["schemas"]["RemoteSourceEntry"];
             /** Grants */
             grants?: components["schemas"]["RemoteDatasetGrant"][];
             workflow_hint?: components["schemas"]["WorkflowHint"] | null;
+            /** Run Id */
+            run_id?: string | null;
+            /**
+             * Auto Chain Message
+             * @default
+             */
+            auto_chain_message: string;
         };
         /** ReloadResultResponse */
         ReloadResultResponse: {
@@ -8894,6 +8904,8 @@ export interface components {
             workflow: string;
             /** Node Type */
             node_type: string;
+            /** Layer Id */
+            layer_id?: string | null;
             /** Dataset Keys */
             dataset_keys?: string[];
             /** Params */

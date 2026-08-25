@@ -558,19 +558,29 @@ class WorkflowHint(BaseModel):
 
     workflow: str
     node_type: str
+    # 有种子层（engine=python_provider）时非空——自动链直接提交该层工作流
+    layer_id: str | None = None
     dataset_keys: list[str] = Field(default_factory=list)
     params: dict[str, Any] = Field(default_factory=dict)
     auto_chain_ready: bool = False
 
 
 class RegisterAndAddResponse(BaseModel):
-    """register-and-add 响应：注册结果 + 数据集记录 + 工作流提示。"""
+    """register-and-add 响应：注册结果 + 数据集记录 + 工作流提示。
+
+    auto_chain 生效（hint.layer_id 存在）时 run_id 非空——已自动提交
+    「下载→预处理→烘焙→入图层库」工作流，前端可轮询 run 状态。
+    """
 
     model_config = ConfigDict(extra="ignore")
 
     remote_source: RemoteSourceEntry
     grants: list["RemoteDatasetGrant"] = Field(default_factory=list)
     workflow_hint: WorkflowHint | None = None
+    # 自动链提交的 workflow run（未提交/提交失败降级时为 None）
+    run_id: str | None = None
+    # 自动链提交失败原因（降级提示用；成功时为空）
+    auto_chain_message: str = ""
 
 
 class DataCacheEntry(BaseModel):

@@ -794,6 +794,35 @@ def cmd_restart(args: argparse.Namespace) -> int:
         time.sleep(2)
         return _start_backend_app_processes(args)
 
+    if component == "fastapi":
+        # 2026-08-25 修复：此前 restart fastapi 落入全量分支（cmd_stop 停 Docker
+        # 栈后仅 start fastapi 不清旧进程）——新旧进程共存同端口，请求随机打到
+        # 旧进程（代码更新后行为分裂，本日 NSIDC/GLDAS access_mode 排查实证）。
+        # 语义收敛：restart fastapi = 完整 backend 清扫+重启（worker/beat 也需
+        # 消费新代码），且不动 Docker/gateway。
+        log.banner("重启 backend（FastAPI + Worker + Beat）")
+        ensure_project_initialized()
+        if not redis_running():
+            log.warn("Restart", "Redis 未运行，自动拉起 Docker 基础设施（自愈）...")
+            if not start_docker_infra(
+                start_open_meteo=not getattr(args, "no_open_meteo", False)
+            ):
+                log.error(
+                    "Restart", "Docker 基础设施拉起失败，继续重启（worker 将 crash-loop 重连）"
+                )
+            else:
+                wait_for_redis(max_wait=30)
+                wait_for_minio(max_wait=30)
+        clean = _stop_backend_app_processes()
+        if not clean:
+            log.error(
+                "Restart", "旧 backend 进程未清扫干净，已中止重启以防世代堆叠"
+            )
+            return 1
+        _regenerate_catalog_seeds()
+        time.sleep(2)
+        return _start_backend_app_processes(args)
+
     if component == "gateway":
         # 2026-08-25 修复：此前 restart gateway 落入全量分支 → cmd_stop() 停掉
         # Docker 栈（Redis/MinIO）后只重启 gateway 不恢复 Docker——Redis 反复
