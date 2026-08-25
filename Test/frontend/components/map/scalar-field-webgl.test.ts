@@ -94,6 +94,54 @@ describe('scalar-field-grid', () => {
     const range = resolveScalarValueRange([-10, 0, 40], null)
     expect(range).toEqual({ min: -10, max: 40 })
   })
+
+  // 2026-08-25 平滑渲染修复：后端标量层 tile（temperature/humidity 等）的
+  // feature 是网格单元 Polygon（PixelIsArea，带 row/col/resolution 属性），
+  // 而风场 tile 是 Point——buildScalarGridFromGeoJSON 此前只认 Point，导致
+  // 标量层 WebGL 连续面永远建不出网格（1350 个 feature 全部被跳过）。
+  it('builds grid from Polygon cell features (backend scalar tiles)', () => {
+    const cell = (west: number, south: number, res: number) => {
+      const east = west + res
+      const north = south + res
+      return [
+        [west, south],
+        [east, south],
+        [east, north],
+        [west, north],
+        [west, south],
+      ]
+    }
+    const geo = {
+      type: 'FeatureCollection' as const,
+      features: [
+        { lon: 110, lat: 20, value: 10 },
+        { lon: 111, lat: 20, value: 12 },
+        { lon: 110, lat: 21, value: 14 },
+        { lon: 111, lat: 21, value: 16 },
+      ].map((p) => ({
+        type: 'Feature' as const,
+        properties: {
+          temperature_2m: p.value,
+          height: '2m',
+          unit: 'C',
+          row: 0,
+          col: 0,
+          resolution: 1,
+          grid_resolution: 1,
+        },
+        geometry: { type: 'Polygon' as const, coordinates: [cell(p.lon, p.lat, 1)] },
+      })),
+    }
+    const grid = buildScalarGridFromGeoJSON(geo, 'temperature_2m')
+    expect(grid).not.toBeNull()
+    expect(grid!.rows).toBe(2)
+    expect(grid!.cols).toBe(2)
+    // 质心即格点：值按单元中心归位
+    expect(grid!.points[1][0].value).toBe(10) // 西南
+    expect(grid!.points[1][1].value).toBe(12) // 东南
+    expect(grid!.points[0][0].value).toBe(14) // 西北（row0=北）
+    expect(grid!.points[0][1].value).toBe(16) // 东北
+  })
 })
 
 describe('scalar-field-webgl-texture', () => {
