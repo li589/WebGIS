@@ -1072,11 +1072,11 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           (options.weatherRequest as { workflow_id?: string }).workflow_id),
       )
       // 天气图层默认走瓦片管道；编辑器编译出 weather 画布时走 weather_request
+      // （2026-08-25 用户反馈）：瓦片视口刷新静默触发即可——此前 throw 提示
+      // 文案会经 setWorkflowError 显示在分析框，属噪音，已移除。
       if (deps.isWeatherEngineLayer(backendLayerId) && !hasEditorWeather) {
         deps.activateWeatherTileViewport(catalogId)
-        throw new Error(
-          `${catalogName} 为天气引擎图层：由瓦片按需加载，已触发当前视口刷新。请查看地图与「工作流状态」中的天气瓦片进度，无需提交分析工作流。`,
-        )
+        return undefined
       }
       let runtimeCatalogReady = false
       try {
@@ -1327,11 +1327,6 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       return accepted.run_id
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : '提交 workflow 失败'
-      // 天气瓦片路径：已触发刷新，不算失败作业
-      if (/天气引擎图层|瓦片按需加载/.test(errMsg)) {
-        deps.setWorkflowError(errMsg)
-        throw error
-      }
       if (isSubmitTimeoutError(error)) {
         try {
           const activeRuns = await listActiveWorkflowRuns()

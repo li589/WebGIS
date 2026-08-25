@@ -4,6 +4,7 @@ import {
   syncWeatherGridFillOverlay as syncWeatherGridFillOverlayRenderer,
   syncWeatherPointOverlay as syncWeatherPointOverlayRenderer,
 } from './weather-overlay-renderers'
+import { buildWeatherOverlayIds } from './weather-overlay-maplibre'
 import type { WindParticleControllerContract } from './wind-particle-controller-contract'
 import type { ScalarFieldWebGLController } from './scalar-field-webgl-controller'
 import type { WindDisplayMode } from './wind-display-mode'
@@ -37,7 +38,25 @@ export function createWeatherOverlayServices(
       syncWeatherCogOverlayRenderer(options.map, overlayState)
     },
     syncWeatherGridFillOverlay(overlayState: WeatherOverlayState) {
+      // 防双层叠加（2026-08-25 用户反馈：降水量移动时色块颜色深度变化）：
+      // 每次视口刷新 grid fill renderer 会无条件把 fill 设为 visible——若
+      // 标量 WebGL 平滑面已隐藏 fill，这个窗口期 fill+WebGL 双层半透明
+      // 叠加 → 色深闪烁。平滑模式下 fill 已隐藏时保持隐藏；WebGL 让位/
+      // 失败路径（removeCatalogArtifacts）会删除 fill，下一轮 grid sync
+      // 重建并正常显示（回退链不受影响）。
+      const ids = buildWeatherOverlayIds(overlayState.catalogId)
+      const fillLayer = options.map.getLayer(ids.fillLayerId) as
+        | { layout?: { visibility?: string } }
+        | undefined
+      const fillWasHiddenByWebGL = fillLayer?.layout?.visibility === 'none'
       syncWeatherGridFillOverlayRenderer(options.map, overlayState)
+      const smoothActive = options.getSmoothRendering?.() ?? true
+      if (smoothActive && fillWasHiddenByWebGL) {
+        const restored = options.map.getLayer(ids.fillLayerId)
+        if (restored) {
+          options.map.setLayoutProperty(ids.fillLayerId, 'visibility', 'none')
+        }
+      }
     },
     syncWeatherPointOverlay(overlayState: WeatherOverlayState) {
       syncWeatherPointOverlayRenderer(options.map, overlayState)

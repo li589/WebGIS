@@ -835,18 +835,32 @@ export function createOverlayImageModule(
         _addImageSource(sourceId, url, bounds)
       }
 
-      const visibleNow = desiredVisibility.get(layerId) ?? initiallyVisible
-      _addRasterLayer(rasterLayerId, sourceId, opacity, visibleNow)
-      _ensureFootprint(layerId, bounds, visibleNow && renderMode === 'image')
-
       // P3（2026-08-23）：大纬度跨度 overlay 条带化——MapLibre image source 四角
       // 线性插值在 Mercator 高纬明显错位（纵向拉伸+偏移）；切带后带内误差 < 像素级。
-      if (renderMode !== 'raster-xyz' && needsBanding(bounds)) {
+      // 初始加载（2026-08-25 柯本反馈）：条带模式下主 layer（preview 单图）先
+      // 隐藏到条带就绪——否则用户先看到南北拉伸的单图、条带完成后跳变为正常
+      // （"一开始拉伸很快恢复"闪变根因）。条带 fetch 与 MapLibre image source
+      // 下载同一 preview URL 并发，空窗与图片下载期重叠、几乎无感；条带化
+      // 失败时降级恢复主 layer（拉伸但可用，好于空白）。
+      const bandingNeeded = renderMode !== 'raster-xyz' && needsBanding(bounds)
+      const visibleNow = desiredVisibility.get(layerId) ?? initiallyVisible
+      _addRasterLayer(rasterLayerId, sourceId, opacity, visibleNow && !bandingNeeded)
+      _ensureFootprint(layerId, bounds, visibleNow && renderMode === 'image')
+
+      if (bandingNeeded) {
         void addBandedImageSources(options.map, sourceId, rasterLayerId, url, bounds, {
           opacity,
           extraPaint: { 'raster-resampling': 'nearest' },
         }).catch(() => {
-          /* 条带化失败：主 layer 保持单图渲染（现状降级） */
+          /* 条带化失败：恢复主 layer 单图渲染（降级——单图直贴有高纬形变但可用） */
+          if (options.map.getLayer(rasterLayerId)) {
+            const fallbackVisible = desiredVisibility.get(layerId) ?? initiallyVisible
+            options.map.setLayoutProperty(
+              rasterLayerId,
+              'visibility',
+              fallbackVisible ? 'visible' : 'none',
+            )
+          }
         })
       }
 
