@@ -132,6 +132,8 @@ from shared.contracts.config_contracts import (
     RemoteDatasetGrantUpsertRequest,
     RemoteDatasetPolicy,
     MigrationReport,
+    RegisterAndAddRequest,
+    RegisterAndAddResponse,
     ServiceRestartRequest,
     ServiceRestartResponse,
     TestResultResponse,
@@ -1240,6 +1242,79 @@ async def get_remote_dataset_policy():
     compatible=true 表示站点兼容模式全放行，datasets 为白名单。
     """
     return config_service.get_remote_dataset_policy()
+
+
+# ── 注册并添加到图层（原子端点，2026-08-25 P2/Wave 2） ───────────────────────
+
+
+@router.post(
+    "/remote-sources/register-and-add",
+    response_model=RegisterAndAddResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def register_and_add_remote_source(payload: RegisterAndAddRequest):
+    """原子完成「注册 + 数据集记录 + 工作流编排提示」。
+
+    - 注册 remote_source（统一 site_compatible 整源——兼容模式弃用）；
+    - dataset_keys 逐条写 remote_dataset_grants（一键上图选集记录，
+      不限制整源访问）；
+    - 门户有工作流映射时返回 workflow_hint（节点类型/建议参数——
+      Wave 3 接全自动「下载→预处理→入图层库」链，当前引导工作流编排）。
+    """
+    from app.services.portal_workflow_map import build_workflow_hint
+
+    try:
+        # 1) 注册（整源 site_compatible）
+        entry = config_service.upsert_remote_source_entry(
+            payload.alias,
+            {
+                "kind": payload.kind,
+                "ref_id": payload.ref_id,
+                "remote_path": payload.remote_path,
+                "display_name": payload.display_name or payload.alias,
+                "cache_policy": "standard",
+                "access_mode": "site_compatible",
+                "archived": False,
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # 2) 数据集记录（选集；门户类才有 dataset 概念）
+    grants: list[dict] = []
+    if payload.kind == "portal" and payload.dataset_keys:
+        for key in payload.dataset_keys:
+            grant_id = f"{payload.ref_id}__{key}"[:120]
+            try:
+                grants.append(
+                    config_service.upsert_remote_dataset_grant(
+                        grant_id,
+                        {
+                            "portal_id": payload.ref_id,
+                            "dataset_key": key,
+                            "dataset_title": key,
+                            "dataset_description": "",
+                            "enabled": True,
+                        },
+                    )
+                )
+            except Exception:  # noqa: BLE001 — 单条记录失败不阻断整体注册
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "register-and-add: grant upsert failed for %s", grant_id
+                )
+
+    # 3) 工作流编排提示（无映射门户 → None）
+    hint = None
+    if payload.kind == "portal":
+        hint = build_workflow_hint(payload.ref_id, payload.dataset_keys)
+
+    return RegisterAndAddResponse(
+        remote_source=entry,
+        grants=grants,  # type: ignore[arg-type] — dict 条目经 pydantic 转换
+        workflow_hint=hint,
+    )
 
 
 # ── 存量迁移 ──────────────────────────────────────────────────────────────────

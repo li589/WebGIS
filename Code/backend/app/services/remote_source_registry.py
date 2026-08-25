@@ -114,6 +114,7 @@ class RemoteSourceRegistryRepository:
         remote_path: str = "",
         display_name: str = "",
         cache_policy: str = "standard",
+        access_mode: str = "legacy",
     ) -> dict[str, Any]:
         rid = str(remote_source_id or "").strip()
         if not rid:
@@ -129,6 +130,10 @@ class RemoteSourceRegistryRepository:
                 "Invalid cache_policy: "
                 f"{cache_policy}; expected one of {sorted(VALID_CACHE_POLICIES)}"
             )
+        if access_mode not in ("legacy", "site_compatible"):
+            raise RemoteSourceRegistryError(
+                f"Invalid access_mode: {access_mode}; expected legacy|site_compatible"
+            )
 
         existing = self.get(rid)
         now = _now_iso()
@@ -137,14 +142,15 @@ class RemoteSourceRegistryRepository:
                 """
                 INSERT INTO remote_sources (
                     remote_source_id, kind, ref_id, remote_path, display_name,
-                    cache_policy, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    cache_policy, access_mode, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(remote_source_id) DO UPDATE SET
                     kind = excluded.kind,
                     ref_id = excluded.ref_id,
                     remote_path = excluded.remote_path,
                     display_name = excluded.display_name,
                     cache_policy = excluded.cache_policy,
+                    access_mode = excluded.access_mode,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -154,6 +160,7 @@ class RemoteSourceRegistryRepository:
                     str(remote_path or "").strip(),
                     str(display_name or "").strip(),
                     cache_policy,
+                    access_mode,
                     (existing or {}).get("created_at") or now,
                     now,
                 ),

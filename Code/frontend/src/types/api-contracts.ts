@@ -3503,6 +3503,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config/remote-sources/register-and-add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register And Add Remote Source
+         * @description 原子完成「注册 + 数据集记录 + 工作流编排提示」。
+         *
+         *     - 注册 remote_source（统一 site_compatible 整源——兼容模式弃用）；
+         *     - dataset_keys 逐条写 remote_dataset_grants（一键上图选集记录，
+         *       不限制整源访问）；
+         *     - 门户有工作流映射时返回 workflow_hint（节点类型/建议参数——
+         *       Wave 3 接全自动「下载→预处理→入图层库」链，当前引导工作流编排）。
+         */
+        post: operations["register_and_add_remote_source_config_remote_sources_register_and_add_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config/remote-sources/migrate-legacy": {
         parameters: {
             query?: never;
@@ -7056,6 +7082,46 @@ export interface components {
             /** Upload Id */
             upload_id: string;
         };
+        /**
+         * RegisterAndAddRequest
+         * @description POST /config/remote-sources/register-and-add body（2026-08-25 P2）。
+         *
+         *     原子完成「注册 + 数据集记录 + 工作流编排提示」：
+         *     - 注册 remote_source（统一 site_compatible 整源）；
+         *     - dataset_keys 逐条写入 remote_dataset_grants（一键上图选集记录，
+         *       不限制整源访问——用户决策 2026-08-25）；
+         *     - 有门户→工作流映射时返回 workflow_hint（Wave 2 引导/后续自动链）。
+         */
+        RegisterAndAddRequest: {
+            /** Alias */
+            alias: string;
+            /** Kind */
+            kind: string;
+            /** Ref Id */
+            ref_id: string;
+            /**
+             * Display Name
+             * @default
+             */
+            display_name: string;
+            /**
+             * Remote Path
+             * @default
+             */
+            remote_path: string;
+            /** Dataset Keys */
+            dataset_keys?: string[];
+        };
+        /**
+         * RegisterAndAddResponse
+         * @description register-and-add 响应：注册结果 + 数据集记录 + 工作流提示。
+         */
+        RegisterAndAddResponse: {
+            remote_source: components["schemas"]["RemoteSourceEntry"];
+            /** Grants */
+            grants?: components["schemas"]["RemoteDatasetGrant"][];
+            workflow_hint?: components["schemas"]["WorkflowHint"] | null;
+        };
         /** ReloadResultResponse */
         ReloadResultResponse: {
             /** Success */
@@ -8818,6 +8884,27 @@ export interface components {
             saveback_terminal_plans?: {
                 [key: string]: components["schemas"]["SavebackTerminalPlanPayload"];
             };
+        };
+        /**
+         * WorkflowHint
+         * @description 门户→工作流映射的编排提示（portal_workflow_map.build_workflow_hint）。
+         */
+        WorkflowHint: {
+            /** Workflow */
+            workflow: string;
+            /** Node Type */
+            node_type: string;
+            /** Dataset Keys */
+            dataset_keys?: string[];
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Auto Chain Ready
+             * @default false
+             */
+            auto_chain_ready: boolean;
         };
         /**
          * WorkflowJobPayload
@@ -15451,6 +15538,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RemoteDatasetPolicy"][];
+                };
+            };
+        };
+    };
+    register_and_add_remote_source_config_remote_sources_register_and_add_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterAndAddRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegisterAndAddResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

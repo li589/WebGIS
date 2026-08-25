@@ -573,6 +573,9 @@ def upsert_remote_source_entry(
             remote_path=str(payload.get("remote_path") or ""),
             display_name=str(payload.get("display_name") or ""),
             cache_policy=str(payload.get("cache_policy") or "standard"),
+            # 2026-08-25：透传 access_mode（此前被静默丢弃——PUT 请求里的
+            # access_mode 字段从未生效，注册一直落 legacy 默认值）
+            access_mode=str(payload.get("access_mode") or "legacy"),
         )
     except RemoteSourceRegistryError as exc:
         raise ValueError(str(exc)) from exc

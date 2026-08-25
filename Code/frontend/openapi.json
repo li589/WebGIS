@@ -9851,6 +9851,53 @@
         ]
       }
     },
+    "/config/remote-sources/register-and-add": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Register And Add Remote Source",
+        "description": "原子完成「注册 + 数据集记录 + 工作流编排提示」。\n\n- 注册 remote_source（统一 site_compatible 整源——兼容模式弃用）；\n- dataset_keys 逐条写 remote_dataset_grants（一键上图选集记录，\n  不限制整源访问）；\n- 门户有工作流映射时返回 workflow_hint（节点类型/建议参数——\n  Wave 3 接全自动「下载→预处理→入图层库」链，当前引导工作流编排）。",
+        "operationId": "register_and_add_remote_source_config_remote_sources_register_and_add_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterAndAddRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterAndAddResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
     "/config/remote-sources/migrate-legacy": {
       "post": {
         "tags": [
@@ -18696,6 +18743,77 @@
         ],
         "title": "RasterInspectBody"
       },
+      "RegisterAndAddRequest": {
+        "properties": {
+          "alias": {
+            "type": "string",
+            "title": "Alias"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "ref_id": {
+            "type": "string",
+            "title": "Ref Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name",
+            "default": ""
+          },
+          "remote_path": {
+            "type": "string",
+            "title": "Remote Path",
+            "default": ""
+          },
+          "dataset_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dataset Keys"
+          }
+        },
+        "type": "object",
+        "required": [
+          "alias",
+          "kind",
+          "ref_id"
+        ],
+        "title": "RegisterAndAddRequest",
+        "description": "POST /config/remote-sources/register-and-add body（2026-08-25 P2）。\n\n原子完成「注册 + 数据集记录 + 工作流编排提示」：\n- 注册 remote_source（统一 site_compatible 整源）；\n- dataset_keys 逐条写入 remote_dataset_grants（一键上图选集记录，\n  不限制整源访问——用户决策 2026-08-25）；\n- 有门户→工作流映射时返回 workflow_hint（Wave 2 引导/后续自动链）。"
+      },
+      "RegisterAndAddResponse": {
+        "properties": {
+          "remote_source": {
+            "$ref": "#/components/schemas/RemoteSourceEntry"
+          },
+          "grants": {
+            "items": {
+              "$ref": "#/components/schemas/RemoteDatasetGrant"
+            },
+            "type": "array",
+            "title": "Grants"
+          },
+          "workflow_hint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowHint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "remote_source"
+        ],
+        "title": "RegisterAndAddResponse",
+        "description": "register-and-add 响应：注册结果 + 数据集记录 + 工作流提示。"
+      },
       "ReloadResultResponse": {
         "properties": {
           "success": {
@@ -23026,6 +23144,42 @@
         ],
         "title": "WorkflowExecutionResponse",
         "description": "Stable API response model for workflow execution routes."
+      },
+      "WorkflowHint": {
+        "properties": {
+          "workflow": {
+            "type": "string",
+            "title": "Workflow"
+          },
+          "node_type": {
+            "type": "string",
+            "title": "Node Type"
+          },
+          "dataset_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dataset Keys"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "auto_chain_ready": {
+            "type": "boolean",
+            "title": "Auto Chain Ready",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow",
+          "node_type"
+        ],
+        "title": "WorkflowHint",
+        "description": "门户→工作流映射的编排提示（portal_workflow_map.build_workflow_hint）。"
       },
       "WorkflowJobPayload": {
         "properties": {

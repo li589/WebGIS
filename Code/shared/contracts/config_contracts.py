@@ -530,6 +530,49 @@ class MigrationReport(BaseModel):
     details: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class RegisterAndAddRequest(BaseModel):
+    """POST /config/remote-sources/register-and-add body（2026-08-25 P2）。
+
+    原子完成「注册 + 数据集记录 + 工作流编排提示」：
+    - 注册 remote_source（统一 site_compatible 整源）；
+    - dataset_keys 逐条写入 remote_dataset_grants（一键上图选集记录，
+      不限制整源访问——用户决策 2026-08-25）；
+    - 有门户→工作流映射时返回 workflow_hint（Wave 2 引导/后续自动链）。
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    alias: str
+    kind: str  # 'portal' | 'storage_profile'
+    ref_id: str
+    display_name: str = ""
+    remote_path: str = ""
+    # 选中数据集（空 = 整源注册，或用映射默认数据集）
+    dataset_keys: list[str] = Field(default_factory=list)
+
+
+class WorkflowHint(BaseModel):
+    """门户→工作流映射的编排提示（portal_workflow_map.build_workflow_hint）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    workflow: str
+    node_type: str
+    dataset_keys: list[str] = Field(default_factory=list)
+    params: dict[str, Any] = Field(default_factory=dict)
+    auto_chain_ready: bool = False
+
+
+class RegisterAndAddResponse(BaseModel):
+    """register-and-add 响应：注册结果 + 数据集记录 + 工作流提示。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    remote_source: RemoteSourceEntry
+    grants: list["RemoteDatasetGrant"] = Field(default_factory=list)
+    workflow_hint: WorkflowHint | None = None
+
+
 class DataCacheEntry(BaseModel):
     model_config = ConfigDict(extra="ignore")
 

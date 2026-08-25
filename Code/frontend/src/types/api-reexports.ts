@@ -215,6 +215,10 @@ export type DatasetRescanResponse = Schema<'DatasetRescanResponse'>
 export type RemoteSourceEntry = Schema<'RemoteSourceEntry'>
 export type RemoteSourceRefBadge = Schema<'RemoteSourceRefBadge'>
 export type RemoteSourceUpsertRequest = Schema<'RemoteSourceUpsertRequest'>
+// 注册并添加到图层（原子端点，2026-08-25 P2/Wave 2）
+export type RegisterAndAddRequest = Schema<'RegisterAndAddRequest'>
+export type RegisterAndAddResponse = Schema<'RegisterAndAddResponse'>
+export type WorkflowHint = Schema<'WorkflowHint'>
 
 // ── 远程数据集授权（数据集化改造阶段 1） ─────────────────────────────────────
 

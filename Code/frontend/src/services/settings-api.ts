@@ -172,6 +172,8 @@ import type {
   RemoteDatasetGrant,
   RemoteDatasetGrantUpsertRequest,
   RemoteDatasetPolicy,
+  RegisterAndAddRequest,
+  RegisterAndAddResponse,
   RemoteSourceEntry,
   RemoteSourceUpsertRequest,
   RemoteStorageDeletedResponse,
@@ -758,6 +760,19 @@ export function upsertRemoteSource(
 ): Promise<RemoteSourceEntry> {
   return settingsFetch(`/config/remote-sources/${encodeURIComponent(remoteSourceId)}`, {
     method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+/**
+ * 注册并添加到图层（原子端点，2026-08-25 P2/Wave 2）：
+ * 注册（site_compatible 整源）+ 数据集记录（grants）+ 工作流编排提示。
+ */
+export function registerAndAddRemoteSource(
+  payload: RegisterAndAddRequest,
+): Promise<RegisterAndAddResponse> {
+  return settingsFetch('/config/remote-sources/register-and-add', {
+    method: 'POST',
     body: JSON.stringify(payload),
   })
 }

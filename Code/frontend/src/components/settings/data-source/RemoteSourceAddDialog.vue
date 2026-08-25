@@ -22,7 +22,7 @@ import type {
   PortalSearchDatasetItem,
   RemoteStorageProfile,
 } from '../../../types/api-reexports'
-import { searchPortal, upsertRemoteDatasetGrant } from '../../../services/settings-api'
+import { searchPortal, registerAndAddRemoteSource } from '../../../services/settings-api'
 import { useSettingsStore } from '../../../stores/settings'
 import ProfileBrowserDialog from '../remote-storage/ProfileBrowserDialog.vue'
 import { PORTAL_WORKFLOW_MAP } from './portal-workflow-map'
@@ -171,7 +171,37 @@ async function doRegister(addToLayer: boolean) {
   busy.value = addToLayer ? 'register-add' : 'register'
   errorMsg.value = ''
   okMsg.value = ''
+  // 一键上图目标数据集：用户选集优先；不可检索门户用映射默认数据集
+  const layerDatasetKeys =
+    selectedCount.value > 0
+      ? [...selectedKeys.value]
+      : (addLayerMapping.value?.defaultDatasetKeys ?? [])
   try {
+    if (addToLayer) {
+      // 原子端点（2026-08-25 Wave 2）：注册 site_compatible + grants 记录
+      // + 工作流编排提示（workflow_hint：节点类型/建议参数）一步完成。
+      // Wave 3 接全自动「下载→预处理→入图层库」链（auto_chain_ready）。
+      const resp = await registerAndAddRemoteSource({
+        alias,
+        kind: props.kind === 'portal' ? 'portal' : 'storage_profile',
+        ref_id: props.refId,
+        display_name: props.name,
+        remote_path: form.remotePath.trim(),
+        dataset_keys: layerDatasetKeys,
+      })
+      const hint = resp.workflow_hint
+      emit('registered-and-added', alias, layerDatasetKeys)
+      if (hint) {
+        const paramPreview = Object.entries(hint.params ?? {})
+          .slice(0, 4)
+          .map(([k, v]) => `${k}=${String(v)}`)
+          .join(' ')
+        okMsg.value = `已注册并记录 ${layerDatasetKeys.length} 个数据集（${layerDatasetKeys.join('、')}）——到「工作流」添加 ${hint.node_type} 节点运行下载链即可上图（参数建议：${paramPreview}；自动链开发中）`
+      } else {
+        okMsg.value = '已注册——数据可经工作流自动访问'
+      }
+      return
+    }
     await settingsStore.saveRemoteSource(alias, {
       kind: props.kind === 'portal' ? 'portal' : 'storage_profile',
       ref_id: props.refId,
@@ -182,43 +212,11 @@ async function doRegister(addToLayer: boolean) {
       access_mode: 'site_compatible',
       archived: false,
     })
-    // 一键上图目标数据集：用户选集优先；不可检索门户用映射默认数据集
-    const layerDatasetKeys =
-      selectedCount.value > 0
-        ? [...selectedKeys.value]
-        : (addLayerMapping.value?.defaultDatasetKeys ?? [])
-    // 选中数据集 → 记录授权条目（一键上图选择记录，不限制整源访问）
-    if (layerDatasetKeys.length > 0 && props.kind === 'portal') {
-      const portalId = props.refId
-      for (const key of layerDatasetKeys) {
-        const grantId = `${portalId}__${key}`.slice(0, 120)
-        const item = searchState.items.find((x) => (x.dataset_key || x.title) === key)
-        await upsertRemoteDatasetGrant(grantId, {
-          portal_id: portalId,
-          dataset_key: key,
-          dataset_title: item?.title || key,
-          dataset_description: item?.description || '',
-          provider_kind: item?.provider_kind || '',
-          time_start: item?.time_start || '',
-          time_end: item?.time_end || '',
-          path_prefix: '',
-          search_meta: JSON.stringify(item?.extra ?? {}),
-          enabled: true,
-        })
-      }
-    }
-    if (addToLayer) {
-      // P2（Wave 2 待接自动下载链）：当前记录选集并提示走工作流。
-      // 全自动「下载→预处理→产物入图层库」由 portal_workflow_map 驱动。
-      emit('registered-and-added', alias, layerDatasetKeys)
-      okMsg.value = `已注册并记录 ${layerDatasetKeys.length} 个数据集（${layerDatasetKeys.join('、')}）——到「工作流」中运行对应下载链即可上图（自动链开发中）`
-    } else {
-      emit('registered', alias)
-      okMsg.value = selectedCount.value
-        ? `已注册；已选 ${selectedCount.value} 个数据集仅记录（可稍后一键上图）`
-        : '已注册为整源——数据可经工作流自动访问'
-    }
-    if (!addToLayer) emit('close')
+    emit('registered', alias)
+    okMsg.value = selectedCount.value
+      ? `已注册；已选 ${selectedCount.value} 个数据集仅记录（可稍后一键上图）`
+      : '已注册为整源——数据可经工作流自动访问'
+    emit('close')
   } catch (e) {
     errorMsg.value = (e as Error).message
   } finally {
