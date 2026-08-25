@@ -8,7 +8,7 @@
  * 语义已收敛为整源注册（site_compatible 唯一形态，用户无需感知）。
  */
 
-import { computed, onMounted, ref, toRef } from 'vue'
+import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useSettingsStore } from '../../../stores/settings'
 import {
   fetchRemoteDatasetGrants,
@@ -39,6 +39,15 @@ async function loadGrants() {
 }
 
 onMounted(loadGrants)
+
+// 注册/删除后注册表条目数变化 → 重新拉取 grants（否则新注册的数据集
+// 记录不显示在「已选数据集」列——2026-08-25 浏览器实测发现）
+watch(
+  () => remoteSourceRegistry.value.length,
+  () => {
+    void loadGrants()
+  },
+)
 
 const grantsByPortal = computed(() => {
   const map = new Map<string, string[]>()

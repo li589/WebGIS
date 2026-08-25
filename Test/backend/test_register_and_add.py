@@ -24,7 +24,7 @@ def test_portal_workflow_map_entries():
         "nsidc_data",
         "nasa_gldas",
         "nasa_ges_disc",
-        "cds_era5",
+        "ecmwf_cds",
         "esa_copernicus",
         "esa_download",
         "noaa_nomads",

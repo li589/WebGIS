@@ -31,7 +31,7 @@ export const PORTAL_WORKFLOW_MAP: Record<string, PortalWorkflowMapping> = {
     defaultDatasetKeys: ['GLDAS_NOAH025_3H'],
   },
   // CDS — ERA5 再分析
-  cds_era5: {
+  ecmwf_cds: {
     workflow: 'cds_download',
     defaultDatasetKeys: ['reanalysis-era5-land'],
   },

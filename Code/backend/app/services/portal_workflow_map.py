@@ -51,7 +51,7 @@ PORTAL_WORKFLOW_MAP: dict[str, dict[str, Any]] = {
         "default_params": {"short_name": "GLDAS_NOAH025_3H", "version": "2.1"},
     },
     # CDS — ERA5 再分析（暂无种子层）
-    "cds_era5": {
+    "ecmwf_cds": {
         "workflow": "cds_download",
         "node_type": "download/cds_download",
         "default_dataset_keys": ["reanalysis-era5-land"],

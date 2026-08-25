@@ -1245,7 +1245,7 @@
         {
           "id": "method-smap-omega-doy-dynamic",
           "name": "SMAP 动态 ω 反演",
-          "description": "omega_sf_fenkuai 流水线：SMAP 亮温 + 辅助数据 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。",
+          "description": "SMAP 亮温与多源辅助数据联合反演：8 天合成产出 SM / VOD / ω 三个图层。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1285,7 +1285,7 @@
         {
           "id": "method-fy-omega-doy-dynamic",
           "name": "风云卫星 动态 ω 反演",
-          "description": "omega_sf_fenkuai 流水线：FY 亮温 + SMAP 辅助 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。",
+          "description": "风云卫星亮温与 SMAP 辅助数据联合反演：8 天合成产出 SM / VOD / ω 三个图层。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1789,7 +1789,7 @@
         {
           "id": "method-fy-omega-doy-dynamic",
           "name": "风云卫星 动态 ω 反演",
-          "description": "omega_sf_fenkuai 流水线：FY 亮温 + SMAP 辅助 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。",
+          "description": "风云 ω 反演合集：动态反演 / 平均反演等多数据源可选。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1799,7 +1799,7 @@
         {
           "id": "method-fy-omega-doy-avg",
           "name": "风云卫星 平均 ω 反演",
-          "description": "omega_avg_daily FY ORIG_TS 链路：经典 D1→D2 平均 ω 反演。",
+          "description": "风云 ω 反演合集：动态反演 / 平均反演等多数据源可选。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1831,7 +1831,7 @@
         {
           "id": "method-smap-omega-doy-dynamic",
           "name": "SMAP 动态 ω 反演",
-          "description": "omega_sf_fenkuai 流水线：SMAP 亮温 + 辅助数据 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。",
+          "description": "SMAP ω 反演合集：动态反演 / 平均反演等多数据源可选。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1841,7 +1841,7 @@
         {
           "id": "method-smap-omega-doy-avg",
           "name": "SMAP 平均 ω 反演",
-          "description": "omega_avg_daily / omega_block 经典 D1→D2 链路：SMAP 平均 ω 反演。",
+          "description": "SMAP ω 反演合集：动态反演 / 平均反演等多数据源可选。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
