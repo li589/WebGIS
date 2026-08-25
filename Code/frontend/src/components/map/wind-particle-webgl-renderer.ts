@@ -128,8 +128,14 @@ const MAX_WORLD_WRAP_DRAWS = 12
  * 此时相邻世界副本才是实际可见的副本。抽离为纯函数以便单测。
  */
 export function computeWorldWrapOffsets(matrix: ArrayLike<number>): number[] {
-  const w = matrix[0]
-  const tx = matrix[12]
+  // MapLibre 5 getProjectionDataForCustomLayer().mainMatrix 在部分版本返回
+  // pixel viewport 矩阵（m[0]/m[12] 与 m[15] 同量纲），而旧测试/旧 MapLibre
+  // 返回已归一化 clip 矩阵（m[15]≈0/1）。统一归一化到 clip 量纲；否则 IDL
+  // 处 m[0]≈5983、m[12]≈-1.66 会被当成 clip matrix，计算出 [0]，粒子
+  // 全部投到 clip x=3..6 屏外（风场 canvas 存在但完全透明）。
+  const matrixScale = Number.isFinite(matrix[15]) && Math.abs(matrix[15]) > 1 ? 1 / matrix[15] : 1
+  const w = matrix[0] * matrixScale
+  const tx = matrix[12] * matrixScale
   if (!Number.isFinite(w) || !Number.isFinite(tx) || w <= 0) return [0]
   // 最小 k：副本右缘 tx+(k+1)·w > -1；最大 k：副本左缘 tx+k·w < 1
   // （+0 把 Math.ceil 可能产生的 -0 归一化，避免偏移数组出现 -0）
@@ -495,6 +501,14 @@ export class WindParticleWebGLLayer {
     const fromTransform = transform?.getProjectionDataForCustomLayer?.(false)?.mainMatrix
     if (fromTransform && typeof fromTransform[0] === 'number') {
       this.matrix.set(fromTransform)
+      // MapLibre 5 返回的 mainMatrix 可能是 pixel viewport 矩阵（m[15]=viewport
+      // height），而 shader 的 lngLatToMercator 输出是 [0,1] normalized 坐标，
+      // 必须把整矩阵归一到 clip 量纲；否则 IDL 视口 m[0]≈5983、m[12]≈-1.66
+      // 将粒子投到 clip x≈3..6 屏外（canvas 存在但全透明）。
+      if (Math.abs(this.matrix[15]) > 1) {
+        const scale = 1 / this.matrix[15]
+        for (let i = 0; i < 16; i += 1) this.matrix[i] *= scale
+      }
       this.hasMatrix = true
       return true
     }

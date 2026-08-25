@@ -343,17 +343,20 @@ describe('B6 computeWorldWrapOffsets（反子午线世界包裹）', () => {
     expect(computeWorldWrapOffsets(m)).toEqual([0])
   })
 
-  it('粒子绘制应与色场使用同一套 wrap offsets（日界线半屏）', () => {
-    // 回归：uploadParticlePointBuffer 按 offsets 复制 NDC；色场 drawWindField 已循环 offsets。
-    // 此处锁定 offsets 在「主世界偏出屏幕」时非平凡，避免粒子只画主副本。
+  it('MapLibre pixel mainMatrix 归一化后仍覆盖 IDL 相邻副本', () => {
     const m = new Float32Array(16)
-    m[0] = 1.0
-    m[12] = -0.5
+    // 实测 MapLibre 5 mainMatrix：m[0]/m[12] 与 m[15]=viewportHeight 同量纲。
+    // 未归一化时 w=5983、tx=-1.66 → 误判为单 world；归一化后
+    // w≈4.86、tx≈-0.001 → 必须绘制相邻 world offset。
+    m[0] = 5983.4678
+    m[12] = -1.6621
+    m[15] = 1230
     const offsets = computeWorldWrapOffsets(m)
     expect(offsets.length).toBeGreaterThan(1)
     expect(offsets).toContain(0)
   })
 })
+
 
 describe('extractMercatorProjectionMatrix（MapLibre 5）', () => {
   it('优先使用 defaultProjectionData.mainMatrix', () => {
