@@ -272,7 +272,9 @@ export function useWorkflowState(options: WorkflowStateOptions) {
 
   const weatherTopLines = computed(() => {
     if (!hasRealSelection.value || !isRealtimeWeatherLayer.value) return [] as string[]
-    const lines: string[] = [ANALYSIS_COPY.weatherAutoLoad]
+    // 2026-08-25 用户反馈：分析框顶部「瓦片按视口自动加载，无需手动提交工作流」
+    // 提示性文案属噪音——已移除（保留瓦片进度等可观测信息）。
+    const lines: string[] = []
     const stats = tileStats.value
     if (stats) {
       lines.push(ANALYSIS_COPY.weatherTileLine(stats.cached, stats.visible, stats.pending))
