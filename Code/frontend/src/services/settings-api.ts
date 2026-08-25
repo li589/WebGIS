@@ -207,7 +207,11 @@ import type {
   WeatherProviderUpdateRequest,
 } from '../types/api-reexports'
 
-async function settingsFetch<T>(path: string, init?: RequestInit): Promise<T> {
+async function settingsFetch<T>(
+  path: string,
+  init?: RequestInit,
+  timeoutMs = 15_000,
+): Promise<T> {
   const url = resolveApiUrl(path)
   const method = (init?.method ?? 'GET').toUpperCase()
   let headers: Record<string, string> = {
@@ -219,7 +223,7 @@ async function settingsFetch<T>(path: string, init?: RequestInit): Promise<T> {
   headers = withWriteAuthHeaders(headers, method, true)
 
   const controller = new AbortController()
-  const timeoutId = window.setTimeout(() => controller.abort(), 15_000)
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetch(
       url,
@@ -831,7 +835,9 @@ export function fetchRuntimeConfig(): Promise<RuntimeConfigSnapshotResponse> {
 }
 
 export function fetchRuntimeStatus(): Promise<RuntimeStatusResponse> {
-  return settingsFetch('/runtime/status')
+  // /runtime/status 会扫描 Redis、Celery 与活跃运行库；它是诊断接口，
+  // 超时不能影响当前登录会话，也不应把短暂诊断失败误判为 401。
+  return settingsFetch('/runtime/status', undefined, 30_000)
 }
 
 export function fetchRuntimeResources(): Promise<ResourceUsageResponse> {

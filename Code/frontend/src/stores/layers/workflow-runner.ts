@@ -1122,8 +1122,9 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         // 「未找到匹配的工作流引擎」。改用 isOverlayDisplayOnlyLayer 显式判定。
         deps.isOverlayDisplayOnlyLayer(backendLayerId)
       ) {
-        // 2026-08-24 统一图层生命周期：overlay_registry 静态资产也走
-        // /overlay-asset-workflows，先查烘焙版本，陈旧/缺失由 Celery 后台重烘。
+        // 资产检查是同一 catalog 的唯一运行入口：添加/重试时先停止旧轮询，
+        // 避免同一 GEBCO 等静态图层同时出现「已完成」和「运行中」两条状态。
+        interruptWorkflowForCatalog(catalogId)
         const submitJobId = localSubmitJobId(catalogId)
         deps.upsertJobLayer(catalogId, {
           jobId: submitJobId,

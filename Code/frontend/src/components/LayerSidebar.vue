@@ -315,7 +315,9 @@ function addCatalogItem(catalogId: string, isAdminBoundary = false) {
     isAdminBoundary ? '行政区边界' : undefined,
   )
   // 2026-08-25 添加即运行：有缓存/产物直接附加；无则自动提交工作流
-  void ensureLayerDataOrRun(catalogId)
+  if (catalogId !== 'gebco-dem-cn') {
+    void ensureLayerDataOrRun(catalogId)
+  }
 }
 
 function addAllInCategory(

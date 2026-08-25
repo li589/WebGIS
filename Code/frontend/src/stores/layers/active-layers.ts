@@ -201,6 +201,7 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
     if (
       !jobLayer && // 不是工作流产物回填
       !deps.isWeatherEngineLayer(catalogId) && // 非天气图层
+      catalogId !== 'gebco-dem-cn' && // GEBCO 已有静态烘焙资产，不自动启动 6.95GB 重读工作流
       deps.canRunCatalog(catalogId) // readiness 非 blocked
     ) {
       // 推迟到下一宏任务，让 Vue 先完成「已添加 ✓」UI 刷新
