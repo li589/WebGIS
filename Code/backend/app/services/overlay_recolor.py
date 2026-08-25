@@ -250,6 +250,19 @@ def _load_source_grid(spec: Any, time: str | None) -> np.ndarray | None:
         # 为窗口 Mercator y 均匀。仅当 1D 均匀 lat/lon 与地理 CRS 时执行
         # （EASE 已对齐的网格不再二次重投影）。
         if values.shape == shape_before:
+            # 2026-08-25 柯本"显示偏扁"根因：mat v7.3（HDF）源读取时
+            # read_variable 只取主变量，data_array.lat/lon 为 None——
+            # _reproject_mat_grid_to_mercator_linear 直接原样返回，重着色
+            # preview 输出等经纬 ±90 几何（烘焙版是 Mercator 线性 ±85.05）
+            # → 前端 isMercatorLinearPng 误判等经纬 → 条带化 → 纵向压扁。
+            # 修复：从 .mat 同文件探测规则 2D lat/lon 坐标对（lat_*/lon_*）
+            # 补齐坐标后走统一重投影。
+            if getattr(data_array, "lat", None) is None or getattr(data_array, "lon", None) is None:
+                probed = _probe_mat_grid_coordinates(src_path, values)
+                if probed is not None:
+                    from types import SimpleNamespace
+
+                    data_array = SimpleNamespace(lat=probed[0], lon=probed[1], crs="")
             values = _reproject_mat_grid_to_mercator_linear(
                 values, data_array, spec, time
             )
@@ -268,6 +281,78 @@ def _load_source_grid(spec: Any, time: str | None) -> np.ndarray | None:
     except Exception:
         logger.warning("overlay source load failed %s", src_path, exc_info=True)
         return None
+
+
+def _probe_mat_grid_coordinates(
+    src_path: Path, values: np.ndarray
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """探测 .mat 源中与 values 同 shape（含转置）的规则 2D lat/lon 坐标对。
+
+    SMAP 辅助数据等 mat 源把坐标存为 lat_*/lon_* 2D 数组（规则网格：
+    lat 每行常数、lon 每列常数）。read_variable 只取主变量拿不到它们，
+    导致重着色 preview 几何与烘焙版不一致（2026-08-25 柯本"显示偏扁"）。
+    h5py 读 matlab v7.3 会转置（列主序）——同时尝试原方向与转置方向。
+    返回 (lat_1d, lon_1d)；探测失败返回 None。
+    """
+    candidates: dict[str, np.ndarray] = {}
+    try:
+        try:
+            import h5py
+
+            with h5py.File(str(src_path), "r") as f:
+                for key in f.keys():
+                    if key.startswith("__"):
+                        continue
+                    d = f[key]
+                    if getattr(d, "ndim", 0) == 2:
+                        candidates[key] = np.asarray(d)
+        except OSError:
+            # 非 v7.3（v7 以下）用 scipy
+            import scipy.io as sio
+
+            m = sio.loadmat(str(src_path))
+            for k, v in m.items():
+                if k.startswith("__"):
+                    continue
+                arr = np.asarray(v)
+                if arr.ndim == 2:
+                    candidates[k] = arr
+    except Exception:
+        logger.warning("overlay mat coord probe failed %s", src_path, exc_info=True)
+        return None
+
+    lat_key = next((k for k in candidates if "lat" in k.lower()), None)
+    lon_key = next((k for k in candidates if "lon" in k.lower()), None)
+    if lat_key is None or lon_key is None or lat_key == lon_key:
+        return None
+
+    lat_arr = candidates[lat_key]
+    lon_arr = candidates[lon_key]
+    for la, lo in ((lat_arr, lon_arr), (lat_arr.T, lon_arr.T)):
+        if la.shape != values.shape or lo.shape != values.shape:
+            continue
+        if la.shape[0] < 2 or la.shape[1] < 2:
+            continue
+        # 规则网格：lat 每行常数、lon 每列常数（取首行/列差分近似比对）
+        if not np.allclose(la, la[:, :1]):
+            continue
+        if not np.allclose(lo, lo[:1, :]):
+            continue
+        lat1 = la[:, 0].astype(np.float64)
+        lon1 = lo[0, :].astype(np.float64)
+        if lat1.size != values.shape[0] or lon1.size != values.shape[1]:
+            continue
+        # 纬度覆盖合理（|lat|<=90）且单调；经度同理
+        if not (np.all(np.abs(lat1) <= 90.0) and np.all(np.abs(lon1) <= 180.0)):
+            continue
+        lat_diff = np.diff(lat1)
+        lon_diff = np.diff(lon1)
+        if not (np.all(lat_diff > 0) or np.all(lat_diff < 0)):
+            continue
+        if not (np.all(lon_diff > 0) or np.all(lon_diff < 0)):
+            continue
+        return lat1, lon1
+    return None
 
 
 def _reproject_mat_grid_to_mercator_linear(
