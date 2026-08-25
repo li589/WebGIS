@@ -1,13 +1,12 @@
-/** InfoPanel 顶部 Tab 栏 + 阶段标签。纯展示，样式自洽（不依赖父级 scoped CSS）。 */
+/** InfoPanel 顶部 Tab 栏。纯展示，样式自洽（不依赖父级 scoped CSS）。
+ * 2026-08-25 用户反馈：原「图层名 · 阶段标签」指示行移到 panel-topline
+ * 顶摘要行（右对齐）——此处只保留 Tabs。 */
 <script setup lang="ts">
 import Tabs from '../ui/Tabs.vue'
 import type { AnalysisTabId } from './analysis-tab-focus'
 
 defineProps<{
   activeTab: AnalysisTabId
-  stageLabel: string
-  /** 选中图层名；与阶段短标签合成显示为「图层名 · 叠加图层」 */
-  layerName?: string
 }>()
 
 const emit = defineEmits<{
@@ -36,14 +35,6 @@ function onTabChange(value: string) {
       :model-value="activeTab"
       @update:model-value="onTabChange"
     />
-    <div class="panel-stage-row">
-      <span
-        class="readiness readiness--inline"
-        :title="layerName ? `${layerName} · ${stageLabel}` : stageLabel"
-      >
-        <template v-if="layerName">{{ layerName }} · </template>{{ stageLabel }}
-      </span>
-    </div>
   </div>
 </template>
 
@@ -75,25 +66,5 @@ function onTabChange(value: string) {
   align-items: center;
   justify-content: center;
   text-align: center;
-}
-
-.panel-stage-row {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0 var(--space-1);
-}
-
-.readiness--inline {
-  flex: 0 1 auto;
-  max-width: 100%;
-  padding: 0.12rem 0.32rem;
-  font-size: var(--font-size-caption);
-  color: var(--text-muted);
-  background: var(--surface-sunken);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-pill);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 </style>

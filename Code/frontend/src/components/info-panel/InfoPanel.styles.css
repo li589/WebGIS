@@ -291,6 +291,26 @@
   padding: 0.12rem 0.06rem 0.02rem;
   min-width: 0;
 }
+/* 2026-08-25：原 TopBar 右上角「图层名 · 阶段标签」指示移到顶摘要行
+   （右对齐 pill，替代已删除的天气摘要/静态提示/工作流引擎行）。 */
+.panel-stage-row--topline {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 var(--space-1);
+}
+.panel-stage-row--topline .readiness--inline {
+  flex: 0 1 auto;
+  max-width: 100%;
+  padding: 0.12rem 0.32rem;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .panel-header {
   display: flex;
   justify-content: space-between;

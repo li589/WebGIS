@@ -212,12 +212,7 @@ function queryDefaultOverlaySeries() {
     </div>
 
     <template v-else>
-      <InfoPanelTopBar
-        :active-tab="activeTab"
-        :stage-label="stageLabel"
-        :layer-name="displayLayer.name"
-        @update:active-tab="setActiveTab"
-      />
+      <InfoPanelTopBar :active-tab="activeTab" @update:active-tab="setActiveTab" />
 
       <div ref="analysisScrollEl" class="panel-scroll">
         <!-- 顶摘要行 -->
@@ -227,31 +222,22 @@ function queryDefaultOverlaySeries() {
             <span class="error-message">{{ workflowError }}</span>
           </div>
 
-          <div v-if="isRealtimeWeatherLayer" class="analysis-context-card">
-            <p class="analysis-context-line">
-              {{ displayLayer.name }}
-              <span v-if="wf.weatherTopLines.value[0]"> · {{ wf.weatherTopLines.value[0] }}</span>
-            </p>
+          <!-- 2026-08-25 用户反馈：原 TopBar 右上角「图层名 · 阶段标签」
+               指示移到这里（右对齐）；同时删除原顶摘要行的图层信息行
+               （天气摘要「瓦片按视口自动加载…」/静态提示行/工作流引擎
+               「⚡Python 处理器 xxx」）——图层名与摘要重复且属噪音。 -->
+          <div class="panel-stage-row panel-stage-row--topline">
+            <span
+              class="readiness readiness--inline"
+              :title="`${displayLayer.name} · ${stageLabel}`"
+            >
+              {{ displayLayer.name }} · {{ stageLabel }}
+            </span>
           </div>
 
-          <div v-else-if="!wf.canRunWorkflow.value" class="analysis-context-card">
-            <p class="analysis-context-line">
-              {{ displayLayer.name }} · {{ wf.staticTopHint.value }}
-            </p>
-          </div>
-
-          <template v-else>
+          <template v-if="wf.canRunWorkflow.value">
             <div v-if="wf.runBlockedReason.value" class="run-block-hint">
               {{ wf.runBlockedReason.value }}
-            </div>
-            <div v-if="wf.workflowMeta.value.engineLabel" class="workflow-meta-row">
-              <span class="wf-engine-icon" aria-hidden="true">{{
-                wf.workflowMeta.value.engineIcon
-              }}</span>
-              <span class="wf-engine-label">{{ wf.workflowMeta.value.engineLabel }}</span>
-              <span v-if="wf.workflowMeta.value.name" class="wf-name">{{
-                wf.workflowMeta.value.name
-              }}</span>
             </div>
             <div
               v-if="wf.workflowVariants.value"

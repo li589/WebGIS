@@ -289,15 +289,37 @@ const WorkflowEditorPanel = defineAsyncComponent(
 )
 
 // ── 面板尺寸 ──────────────────────────────────────────────────────────────
-const sidePanelDimensions = Object.freeze({
+// 2026-08-25 用户反馈：图层/分析面板纵向拉伸要能拉到主界面最底——
+// maxHeight 随视口高度动态计算（overlay 顶部 9.5rem=152px + 12px 底部
+// 呼吸余量）；小屏（结果 < 540）保持原 540 下限，行为不回退。
+function computeSidePanelMaxHeight(): number {
+  if (typeof window === 'undefined') return 540
+  return Math.max(540, window.innerHeight - 152 - 12)
+}
+const sidePanelMaxHeight = ref(computeSidePanelMaxHeight())
+function handleSidePanelResize(): void {
+  sidePanelMaxHeight.value = computeSidePanelMaxHeight()
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('resize', handleSidePanelResize)
+}
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', handleSidePanelResize)
+  }
+})
+const sidePanelDimensions = computed(() => ({
   defaultHeight: 372,
   minHeight: 236,
-  maxHeight: 540,
+  maxHeight: sidePanelMaxHeight.value,
   minWidth: 280,
   maxWidth: 420,
-})
-const layerPanelDimensions = Object.freeze({ ...sidePanelDimensions, defaultWidth: 292 })
-const analysisPanelDimensions = Object.freeze({ ...sidePanelDimensions, defaultWidth: 304 })
+}))
+const layerPanelDimensions = computed(() => ({ ...sidePanelDimensions.value, defaultWidth: 292 }))
+const analysisPanelDimensions = computed(() => ({
+  ...sidePanelDimensions.value,
+  defaultWidth: 304,
+}))
 
 // ── 内联 handler ──────────────────────────────────────────────────────────
 function handleTileSourceChange(sourceId: TileSourceId) {
