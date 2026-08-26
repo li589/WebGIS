@@ -64,10 +64,24 @@ onBeforeUnmount(() => {
 })
 
 const MODES: Array<{ id: ScreenshotMode; label: string; icon: string; desc: string }> = [
-  { id: 'shell', label: '带外壳', icon: '▣', desc: '当前界面，含外层背景与全部模块' },
-  { id: 'bare', label: '无外壳', icon: '▤', desc: '仅界面内部内容，保留面板与信息框' },
-  { id: 'clean', label: '无控件', icon: '▥', desc: '移除全部控件，保留光影、主图和叠加层' },
-  { id: 'pure', label: '纯净', icon: '◇', desc: '仅底图、比例尺和叠加层，无其他装饰' },
+  {
+    id: 'shell',
+    label: '带外壳',
+    icon: '▣',
+    desc: '完整界面：含底图、叠加层与全部 UI 模块（面板、工具栏、缩放控件等）',
+  },
+  {
+    id: 'clean',
+    label: '无控件',
+    icon: '▤',
+    desc: '底图 + 叠加层 + 仅比例尺，其余控件与 UI 全部移除',
+  },
+  {
+    id: 'pure',
+    label: '纯净',
+    icon: '◇',
+    desc: '仅底图与叠加层，连比例尺也不保留',
+  },
 ]
 
 const FORMATS: Array<{ id: ScreenshotFormat; label: string; icon: string }> = [
@@ -75,7 +89,7 @@ const FORMATS: Array<{ id: ScreenshotFormat; label: string; icon: string }> = [
   { id: 'pdf', label: 'PDF 文档', icon: '◰' },
 ]
 
-const selectedMode = ref<ScreenshotMode>('bare')
+const selectedMode = ref<ScreenshotMode>('shell')
 const selectedFormat = ref<ScreenshotFormat>('png')
 
 const canCapture = computed(() => !!props.mapStageEl && !isCapturing.value)
@@ -341,7 +355,7 @@ async function capture() {
 
       <!-- Mode selection -->
       <div class="section-label">截图模式</div>
-      <div class="mode-grid">
+      <div class="mode-stack">
         <button
           v-for="m in MODES"
           :key="m.id"
@@ -351,8 +365,10 @@ async function capture() {
           @click.prevent="selectedMode = m.id"
         >
           <span class="mode-icon" aria-hidden="true">{{ m.icon }}</span>
-          <span class="mode-label">{{ m.label }}</span>
-          <span class="mode-desc">{{ m.desc }}</span>
+          <span class="mode-body">
+            <span class="mode-label">{{ m.label }}</span>
+            <span class="mode-desc">{{ m.desc }}</span>
+          </span>
         </button>
       </div>
 
@@ -468,17 +484,17 @@ async function capture() {
   font-weight: var(--font-weight-medium);
 }
 
-.mode-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+.mode-stack {
+  display: flex;
+  flex-direction: column;
   gap: var(--space-2);
 }
 
 .mode-btn {
   display: grid;
-  grid-template-rows: auto auto auto;
+  grid-template-columns: auto 1fr;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-3);
   padding: var(--space-3);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
@@ -511,15 +527,22 @@ async function capture() {
   line-height: 1.2;
 }
 
+.mode-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .mode-label {
-  font-size: var(--font-size-caption);
+  font-size: var(--font-size-body);
   font-weight: var(--font-weight-semibold);
 }
 
 .mode-desc {
   font-size: var(--font-size-caption);
   color: var(--text-faint);
-  line-height: 1.3;
+  line-height: 1.4;
   opacity: 0.8;
 }
 
@@ -712,10 +735,6 @@ async function capture() {
 
   .screenshot-panel {
     width: 100%;
-  }
-
-  .mode-grid {
-    grid-template-columns: 1fr;
   }
 }
 </style>

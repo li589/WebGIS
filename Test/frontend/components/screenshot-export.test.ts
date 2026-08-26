@@ -57,10 +57,13 @@ function fakeEl(partial: Record<string, unknown> = {}): HTMLElement {
 
 describe('screenshot-export helpers', () => {
   it('supports valid screenshot modes and formats', () => {
-    const validModes: ScreenshotMode[] = ['shell', 'bare', 'clean', 'pure']
+    const validModes: ScreenshotMode[] = ['shell', 'clean', 'pure']
     const validFormats: ScreenshotFormat[] = ['png', 'pdf']
 
     expect(validModes).toContain('shell')
+    expect(validModes).toContain('clean')
+    expect(validModes).toContain('pure')
+    expect(validModes).not.toContain('bare')
     expect(validFormats).toContain('png')
   })
 
@@ -71,7 +74,6 @@ describe('screenshot-export helpers', () => {
     const els = { dashboardEl: dashboard, mapShellEl: shell, mapStageEl: stage }
 
     expect(resolveCaptureElement('shell', els)).toBe(dashboard)
-    expect(resolveCaptureElement('bare', els)).toBe(shell)
     expect(resolveCaptureElement('clean', els)).toBe(shell)
     expect(resolveCaptureElement('pure', els)).toBe(stage)
     expect(resolveCaptureElement('shell', { ...els, mapStageEl: null })).toBeNull()
@@ -229,7 +231,7 @@ describe('screenshot-export helpers', () => {
     })
 
     prepareCloneForCapture(clonedDoc, {
-      mode: 'bare',
+      mode: 'clean',
       paintSnapshots: new Map(),
       realToolbar,
     })

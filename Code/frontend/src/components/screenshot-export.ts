@@ -9,7 +9,7 @@
  * Base Color -> Map Snapshot -> UI Canvas.
  */
 
-export type ScreenshotMode = 'shell' | 'bare' | 'clean' | 'pure'
+export type ScreenshotMode = 'shell' | 'clean' | 'pure'
 export type ScreenshotFormat = 'png' | 'pdf'
 
 /**
@@ -41,11 +41,14 @@ export const CLEAN_IGNORE_SELECTORS = [
   '.map-loading',
   '.map-skeleton',
   '.maplibregl-ctrl-bottom-right',
-  '.maplibregl-ctrl-bottom-left',
 ] as const
 
+/**
+ * 纯净模式（pure）额外忽略：连比例尺一并去掉，只留底图/叠加层。
+ */
 export const PURE_IGNORE_SELECTORS = [
   ...CLEAN_IGNORE_SELECTORS,
+  '.maplibregl-ctrl-bottom-left',
   '.map-fog',
   '.time-sheen',
   '.time-band',
@@ -97,7 +100,7 @@ export function resolveCaptureElement(
   if (mode === 'shell') {
     return els.dashboardEl ?? els.mapShellEl ?? els.mapStageEl
   }
-  if (mode === 'bare' || mode === 'clean') {
+  if (mode === 'clean') {
     return els.mapShellEl ?? els.mapStageEl
   }
   return els.mapStageEl
@@ -454,6 +457,19 @@ export function prepareCloneForCapture(
       clonedStage.style.borderRadius = '0'
       clonedStage.style.boxShadow = 'none'
     }
+  }
+
+  // 2026-08-27 修正：缩放/指南针控件的 box-shadow 在 html2canvas
+  // 2× scale 渲染时模糊半径被放大，截图里边框/阴影异常宽阔。
+  // 截屏时仅保留 1px 描边、移除阴影（不影响实际显示）。
+  if (options.mode === 'shell' || options.mode === 'clean') {
+    clonedDoc
+      .querySelectorAll('.map-custom-nav-ctrl, .map-custom-nav-ctrl .map-nav-btn')
+      .forEach((node) => {
+        const el = node as HTMLElement
+        el.style.setProperty('box-shadow', 'none', 'important')
+        el.style.setProperty('outline', 'none', 'important')
+      })
   }
 
   // 2. Pin overlay positions in the CLONE (not live DOM) using stamped data attributes.
