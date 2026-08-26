@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { MapChromeNavigationControl } from './map/map-chrome-controls'
+import type { Map as MapInstance } from 'maplibre-gl'
 
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, toRef, watch } from 'vue'
 
@@ -371,9 +372,60 @@ watch(
   { immediate: true },
 )
 
+// map 实例在 onMounted 异步创建；watch 先登记，创建后立即 apply，时间轴变化时仅更新光照。
+watch(
+  [() => props.globeProjection, () => props.currentHour, mapReady],
+  ([enabled, hour, ready]) => {
+    const map = state.resources.map
+    if (map && ready) applyGlobeScene(map, enabled === true, hour)
+  },
+  { immediate: true },
+)
+
 // ─── Time-of-day visual vars ─────────────────────────────────────────────────
 
 const timeVisualState = computed(() => buildMapStageTimeVisualState(props.currentHour))
+
+/**
+ * Globe 专属视觉层：原生天空大气 + 温和昼夜光照。
+ * 只在 3D 模式打开，2D 模式恢复默认，避免常规地图承担额外样式更新。
+ */
+function applyGlobeScene(map: MapInstance, enabled: boolean, hour: number): void {
+  try {
+    if (!enabled) {
+      map.setSky?.({})
+      map.setLight?.({ anchor: 'viewport', color: '#ffffff', intensity: 0.5 })
+      return
+    }
+    const normalizedHour = ((hour % 24) + 24) % 24
+    const daylight = Math.max(0, Math.cos(((normalizedHour - 12) / 12) * Math.PI))
+    const twilight = 1 - daylight
+    // 太阳方位每小时推进 15°，正午位于视口南侧；值域遵循 MapLibre LightSpecification。
+    const azimuth = 180 - (normalizedHour - 12) * 15
+    const elevation = 22 + daylight * 42
+    const warm = Math.round(255 - twilight * 28)
+    const green = Math.round(244 - twilight * 56)
+    const blue = Math.round(224 - twilight * 40)
+    map.setLight?.({
+      anchor: 'map',
+      color: `rgb(${warm}, ${green}, ${blue})`,
+      intensity: 0.55 + daylight * 0.35,
+      position: [1, azimuth, elevation],
+    })
+    map.setSky?.({
+      'sky-color': daylight > 0.45 ? '#8cc9ee' : '#102c46',
+      'horizon-color': daylight > 0.45 ? '#d4ebf5' : '#1a4a63',
+      'fog-color': daylight > 0.45 ? '#9bd4ed' : '#12334d',
+      'fog-ground-blend': 0.35,
+      'horizon-fog-blend': 0.92,
+      'sky-horizon-blend': 0.8,
+      'atmosphere-blend': 0.78,
+    })
+  } catch (error) {
+    // 旧样式/旧 MapLibre 版本不支持天空参数时，不影响地图主体渲染。
+    debugLog('[MapCanvas] globe scene style unavailable', error)
+  }
+}
 
 // ─── Map init ────────────────────────────────────────────────────────────────
 

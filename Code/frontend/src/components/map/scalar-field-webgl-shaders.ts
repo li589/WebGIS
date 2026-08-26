@@ -1,29 +1,52 @@
 /**
  * 标量场 WebGL 着色器：Mercator 场四边形 + 双纹理 LUT 混合。
+ *  - mercator 模式：u_matrix * vec4(merc, 0, 1)
+ *  - globe 模式（u_useGlobe=1）：u_matrix * vec4(sphere3D, 1) 配合 mainMatrix(true) 矩阵；
+ *    fragment 按 v_globeRim 边缘羽化 + 背面剔除，消灭"矩形色底硬边"。
  */
-import { MERCATOR_INVERSE_GLSL, MERCATOR_PROJECTION_GLSL } from './wind-particle-webgl-shaders'
+import {
+  GLOBE_SPHERE_GLSL,
+  MERCATOR_INVERSE_GLSL,
+  MERCATOR_PROJECTION_GLSL,
+} from './wind-particle-webgl-shaders'
 
 export { MERCATOR_PROJECTION_GLSL, lngLatToMercatorNormalized } from './wind-particle-webgl-shaders'
 
 export const SCALAR_FIELD_VERTEX_SHADER = /* glsl */ `
   attribute vec2 a_lnglat;
   uniform mat4 u_matrix;
+  uniform float u_useGlobe;
   varying vec2 v_merc;
+  varying float v_globeRim;
   ${MERCATOR_PROJECTION_GLSL}
+  ${GLOBE_SPHERE_GLSL}
   void main() {
     vec2 merc = lngLatToMercator(a_lnglat.x, a_lnglat.y);
     v_merc = merc;
-    gl_Position = u_matrix * vec4(merc, 0.0, 1.0);
+    if (u_useGlobe > 0.5) {
+      vec3 sphere = lngLatToGlobeSphere(a_lnglat.x, a_lnglat.y);
+      vec4 clip = u_matrix * vec4(sphere, 1.0);
+      gl_Position = clip;
+      v_globeRim = length(clip.xy / clip.w) * (clip.w > 0.0 ? 1.0 : -1.0);
+    } else {
+      gl_Position = u_matrix * vec4(merc, 0.0, 1.0);
+      v_globeRim = -1.0;
+    }
   }
 `
 
 /**
  * 双标量纹理 + 256×1 LUT。
  * u_blend=0 → 仅 texA；u_blend=1 → 仅 texB；中间线性混合归一化值后再查 LUT。
+ * globe 模式额外按 v_globeRim 边缘羽化（0.85→1.05）并丢弃背面像素。
  */
 export const SCALAR_FIELD_FRAGMENT_SHADER = /* glsl */ `
+  // 默认精度 mediump；u_useGlobe 显式 highp 与 vertex 对齐避免 GLSL link 失败。
   precision mediump float;
+  precision mediump int;
+  uniform highp float u_useGlobe;
   varying vec2 v_merc;
+  varying float v_globeRim;
   uniform sampler2D u_fieldA;
   uniform sampler2D u_fieldB;
   uniform sampler2D u_palette;
@@ -47,6 +70,12 @@ export const SCALAR_FIELD_FRAGMENT_SHADER = /* glsl */ `
       gl_FragColor = vec4(0.55, 0.58, 0.62, 0.20 * u_opacity);
       return;
     }
+    // globe 模式：背面剔除 + 地平线羽化
+    if (u_useGlobe > 0.5) {
+      if (v_globeRim < 0.0) discard;
+      float edgeFade = 1.0 - smoothstep(0.88, 1.06, v_globeRim);
+      if (edgeFade <= 0.0) discard;
+    }
     vec2 lnglat = mercatorToLngLat(v_merc);
     vec2 uv = fieldUv(lnglat.x, lnglat.y);
     if (uv.x < -0.002 || uv.x > 1.002 || uv.y < -0.002 || uv.y > 1.002) {
@@ -69,7 +98,12 @@ export const SCALAR_FIELD_FRAGMENT_SHADER = /* glsl */ `
     float dither = (fract(sin(dot(uvClamped, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * 0.004;
     t = clamp(t + dither, 0.0, 1.0);
     vec4 color = texture2D(u_palette, vec2(t, 0.5));
-    gl_FragColor = vec4(color.rgb, color.a * softMask * u_opacity);
+    float alpha = color.a * softMask * u_opacity;
+    if (u_useGlobe > 0.5) {
+      float edgeFade = 1.0 - smoothstep(0.88, 1.06, v_globeRim);
+      alpha *= edgeFade;
+    }
+    gl_FragColor = vec4(color.rgb, alpha);
   }
 `
 

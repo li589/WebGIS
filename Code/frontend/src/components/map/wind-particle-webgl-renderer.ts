@@ -198,6 +198,7 @@ export class WindParticleWebGLLayer {
   private fieldUniformWindBounds: WebGLUniformLocation | null = null
   private fieldUniformMaxWind: WebGLUniformLocation | null = null
   private fieldUniformOpacity: WebGLUniformLocation | null = null
+  private fieldUniformUseGlobe: WebGLUniformLocation | null = null
   private fieldQuadBuffer: WebGLBuffer | null = null
   private windTexture: WebGLTexture | null = null
 
@@ -258,6 +259,8 @@ export class WindParticleWebGLLayer {
   /** 缓存的 modelViewProjectionMatrix（16 元素列主序），render() 时更新 */
   private matrix = new Float32Array(16)
   private hasMatrix = false
+  /** 当前投影模式（'globe' / 'mercator'）—— 跟随 map.getProjection() 切换 */
+  private useGlobe = false
   private readonly lastDrawnMatrix = new Float32Array(16)
   private hasLastDrawnMatrix = false
   /** 世界包裹绘制时的临时矩阵（避免每帧分配） */
@@ -289,7 +292,9 @@ export class WindParticleWebGLLayer {
     const now = performance.now()
     const idle =
       !this.mapMoving && this.lastMoveEndAt > 0 && now - this.lastMoveEndAt >= IDLE_AFTER_MOVE_MS
-    const minFrameMs = idle ? MS_PER_30FPS_FRAME : MS_PER_60FPS_FRAME
+    // globe 的球面矩阵 + 背面剔除比 mercator 更昂贵；交互期降到 30fps，
+    // 但保留足够平滑的粒子运动。停止交互后沿用原有 idle 30fps 策略。
+    const minFrameMs = this.useGlobe || idle ? MS_PER_30FPS_FRAME : MS_PER_60FPS_FRAME
     if (this.lastFrameTime > 0 && now - this.lastFrameTime < minFrameMs - 1) {
       return
     }
@@ -416,6 +421,7 @@ export class WindParticleWebGLLayer {
       this.fieldUniformWindBounds = gl.getUniformLocation(this.fieldProgram, 'u_windBounds')
       this.fieldUniformMaxWind = gl.getUniformLocation(this.fieldProgram, 'u_maxWind')
       this.fieldUniformOpacity = gl.getUniformLocation(this.fieldProgram, 'u_opacity')
+      this.fieldUniformUseGlobe = gl.getUniformLocation(this.fieldProgram, 'u_useGlobe')
     }
     this.fieldQuadBuffer = gl.createBuffer()
     this.windTexture = gl.createTexture()
@@ -498,7 +504,13 @@ export class WindParticleWebGLLayer {
         }
       }
     )?.transform
-    const fromTransform = transform?.getProjectionDataForCustomLayer?.(false)?.mainMatrix
+    // 跟随 MapLibre 当前投影：globe 模式传 true 拿"单位球 → clip"矩阵，
+    // mercator 模式传 false 拿"mercator [0,1]² → clip"矩阵。两种矩阵的输入
+    // 维度不同（3D 球面 vs 2D mercator），由 uploadParticlePointBuffer /
+    // drawWindField 分支处理。
+    const isGlobe = this.map?.getProjection?.()?.type === 'globe'
+    this.useGlobe = isGlobe
+    const fromTransform = transform?.getProjectionDataForCustomLayer?.(isGlobe)?.mainMatrix
     if (fromTransform && typeof fromTransform[0] === 'number') {
       this.matrix.set(fromTransform)
       // MapLibre 5 返回的 mainMatrix 可能是 pixel viewport 矩阵（m[15]=viewport
@@ -1105,8 +1117,10 @@ export class WindParticleWebGLLayer {
     const { west, south, east, north } = this.windBounds
     const m = this.matrix
     const pixels = this.particlePosPixels
-    // 与 drawWindField 相同：屏幕可见的每个世界副本各投一次，避免日界线附近半屏无粒子
-    const wrapOffsets = computeWorldWrapOffsets(m)
+    // world wrap 只在 mercator 模式有意义：globe 是真实球面，矩阵物理上不接受
+    // "世界副本偏移"（matrix[12] += 1 只会把球面平移出屏，不在原地环绕）。
+    // globe 模式我们让背后的粒子直接 NDC=(2,2) 推出裁剪空间，让 fragment 不绘制。
+    const wrapOffsets = this.useGlobe ? [0] : computeWorldWrapOffsets(m)
     const capacity = this.particleCount * wrapOffsets.length * 3
     if (this.particleClipData.length < capacity) {
       this.particleClipData = new Float32Array(capacity)
@@ -1114,24 +1128,61 @@ export class WindParticleWebGLLayer {
     const out = this.particleClipData
     let write = 0
 
-    for (let i = 0; i < this.particleCount; i++) {
-      const p = i * 4
-      const [nx, ny] = decodePositionBytes(pixels[p], pixels[p + 1], pixels[p + 2], pixels[p + 3])
-      const lon = west + (east - west) * nx
-      const lat = north + (south - north) * ny
-      const [mercX, mercY] = lngLatToMercatorNormalized(lon, lat)
-      const baseX = m[0] * mercX + m[4] * mercY + m[12]
-      const baseY = m[1] * mercX + m[5] * mercY + m[13]
-      const w = m[3] * mercX + m[7] * mercY + m[15]
-      const invW = w !== 0 ? 1 / w : 0
-      const clipY = baseY * invW
-      for (const offset of wrapOffsets) {
-        // matrix[12] += offset ⇒ clipX += offset * invW（与 field 世界包裹一致）
+    if (this.useGlobe) {
+      // 经纬度 → 单位球坐标 → mainMatrix(true) → 透视除法 → NDC
+      const DEG2RAD = Math.PI / 180
+      for (let i = 0; i < this.particleCount; i++) {
+        const p = i * 4
+        const [nx, ny] = decodePositionBytes(pixels[p], pixels[p + 1], pixels[p + 2], pixels[p + 3])
+        const lon = west + (east - west) * nx
+        const lat = north + (south - north) * ny
+        const latC = Math.max(-85.051129, Math.min(85.051129, lat))
+        const lonR = lon * DEG2RAD
+        const latR = latC * DEG2RAD
+        const cosLat = Math.cos(latR)
+        const sx = cosLat * Math.sin(lonR)
+        const sy = Math.sin(latR)
+        const sz = cosLat * Math.cos(lonR)
+        // 列主序矩阵：mainMatrix * vec4(sx,sy,sz,1)
+        const cx = m[0] * sx + m[4] * sy + m[8] * sz + m[12]
+        const cy = m[1] * sx + m[5] * sy + m[9] * sz + m[13]
+        const cw = m[3] * sx + m[7] * sy + m[11] * sz + m[15]
+        if (cw <= 0) {
+          // 镜头背面：把 NDC 推到 clip 空间外，gl_PointSize 仍占像素但位置裁掉
+          const o = write * 3
+          out[o] = 2.0
+          out[o + 1] = 2.0
+          out[o + 2] = 0
+          write += 1
+          continue
+        }
+        const invW = 1 / cw
         const o = write * 3
-        out[o] = (baseX + offset) * invW
-        out[o + 1] = clipY
+        out[o] = cx * invW
+        out[o + 1] = cy * invW
         out[o + 2] = 0
         write += 1
+      }
+    } else {
+      for (let i = 0; i < this.particleCount; i++) {
+        const p = i * 4
+        const [nx, ny] = decodePositionBytes(pixels[p], pixels[p + 1], pixels[p + 2], pixels[p + 3])
+        const lon = west + (east - west) * nx
+        const lat = north + (south - north) * ny
+        const [mercX, mercY] = lngLatToMercatorNormalized(lon, lat)
+        const baseX = m[0] * mercX + m[4] * mercY + m[12]
+        const baseY = m[1] * mercX + m[5] * mercY + m[13]
+        const w = m[3] * mercX + m[7] * mercY + m[15]
+        const invW = w !== 0 ? 1 / w : 0
+        const clipY = baseY * invW
+        for (const offset of wrapOffsets) {
+          // matrix[12] += offset ⇒ clipX += offset * invW（与 field 世界包裹一致）
+          const o = write * 3
+          out[o] = (baseX + offset) * invW
+          out[o + 1] = clipY
+          out[o + 2] = 0
+          write += 1
+        }
       }
     }
 
@@ -1159,13 +1210,21 @@ export class WindParticleWebGLLayer {
     )
     gl.uniform1f(this.fieldUniformMaxWind, WIND_TEXTURE_MAX_WIND)
     gl.uniform1f(this.fieldUniformOpacity, FIELD_OPACITY)
-    // 世界包裹：屏幕可见的每个世界副本各画一次，消除反子午线附近的半球空白
-    const offsets = computeWorldWrapOffsets(this.matrix)
-    for (const offset of offsets) {
-      this.tempMatrix.set(this.matrix)
-      this.tempMatrix[12] += offset
-      gl.uniformMatrix4fv(this.fieldUniformMatrix, false, this.tempMatrix)
+    gl.uniform1f(this.fieldUniformUseGlobe, this.useGlobe ? 1 : 0)
+    // world wrap 只在 mercator 模式有意义：globe 模式是世界唯一的真实球面，
+    // 不存在"世界副本"，且 3D 球面坐标 × 偏移 matrix[12] 物理上不对。
+    if (this.useGlobe) {
+      gl.uniformMatrix4fv(this.fieldUniformMatrix, false, this.matrix)
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+    } else {
+      // 世界包裹：屏幕可见的每个世界副本各画一次，消除反子午线附近的半球空白
+      const offsets = computeWorldWrapOffsets(this.matrix)
+      for (const offset of offsets) {
+        this.tempMatrix.set(this.matrix)
+        this.tempMatrix[12] += offset
+        gl.uniformMatrix4fv(this.fieldUniformMatrix, false, this.tempMatrix)
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+      }
     }
   }
 

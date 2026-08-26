@@ -61,6 +61,9 @@ export class ScalarFieldWebGLLayer {
   private uBlend: WebGLUniformLocation | null = null
   private uOpacity: WebGLUniformLocation | null = null
   private uPlaceholder: WebGLUniformLocation | null = null
+  private uUseGlobe: WebGLUniformLocation | null = null
+  /** 当前投影模式（跟随 map.getProjection() 切换） */
+  private useGlobe = false
   private quadBuffer: WebGLBuffer | null = null
   /** 灰底占位 quad（视口 bounds）：数据未到的区域淡灰打底，数据 quad 覆盖上色 */
   private viewportQuadBuffer: WebGLBuffer | null = null
@@ -157,6 +160,7 @@ export class ScalarFieldWebGLLayer {
     this.uBlend = gl.getUniformLocation(this.program, 'u_blend')
     this.uOpacity = gl.getUniformLocation(this.program, 'u_opacity')
     this.uPlaceholder = gl.getUniformLocation(this.program, 'u_placeholder')
+    this.uUseGlobe = gl.getUniformLocation(this.program, 'u_useGlobe')
 
     this.quadBuffer = gl.createBuffer()
     this.viewportQuadBuffer = gl.createBuffer()
@@ -195,7 +199,10 @@ export class ScalarFieldWebGLLayer {
         }
       }
     )?.transform
-    const fromTransform = transform?.getProjectionDataForCustomLayer?.(false)?.mainMatrix
+    // 跟随 MapLibre 当前投影：globe → mainMatrix(true) 单位球→clip 矩阵；
+    // mercator → mainMatrix(false) mercator→clip 矩阵。两种矩阵的 vertex 输入维度不同。
+    this.useGlobe = this.map?.getProjection?.()?.type === 'globe'
+    const fromTransform = transform?.getProjectionDataForCustomLayer?.(this.useGlobe)?.mainMatrix
     if (fromTransform && typeof fromTransform[0] === 'number') {
       for (let i = 0; i < 16; i++) this.matrix[i] = Number(fromTransform[i])
       this.hasMatrix = true
@@ -439,10 +446,12 @@ export class ScalarFieldWebGLLayer {
     gl.useProgram(this.program)
     gl.enableVertexAttribArray(this.attribLngLat)
     gl.uniform1f(this.uOpacity, this.opacity)
+    gl.uniform1f(this.uUseGlobe, this.useGlobe ? 1 : 0)
 
-    // 世界包裹：屏幕可见的每个世界副本各画一次（v_merc 由各片元自身插值得到，
-    // 与绘制次数无关；副本仅需平移 matrix[12]），消除反子午线/低缩放下的半球空白
-    const offsets = computeWorldWrapOffsets(this.matrix)
+    // globe 模式是世界唯一的真实球面，不存在"世界副本"（matrix[12] += 1 物理上
+    // 仅把球平移出屏，不在原地环绕）；mercator 模式继续按世界包裹扩列以消除
+    // 反子午线附近的半球空白。
+    const offsets = this.useGlobe ? [0] : computeWorldWrapOffsets(this.matrix)
 
     // Pass 1：灰底占位（视口 bounds）——数据未到的区域淡灰打底
     if (this.viewportBounds && this.viewportQuadBuffer) {

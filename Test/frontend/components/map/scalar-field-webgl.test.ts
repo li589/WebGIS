@@ -9,6 +9,7 @@ import {
 import {
   clampBlend,
   SCALAR_FIELD_FRAGMENT_SHADER,
+  SCALAR_FIELD_VERTEX_SHADER,
 } from '@/components/map/scalar-field-webgl-shaders'
 import {
   buildPressureIsobarLevels,
@@ -173,6 +174,15 @@ describe('scalar-field-webgl-shaders', () => {
   it('does not feather data-quad edges, so world copies meet at IDL without a transparent seam', () => {
     expect(SCALAR_FIELD_FRAGMENT_SHADER).not.toContain('* feather')
     expect(SCALAR_FIELD_FRAGMENT_SHADER).toContain('float softMask = smoothstep(0.008, 0.06, mask);')
+  })
+})
+
+describe('scalar globe shader contract', () => {
+  it('supports globe projection and edge fade', () => {
+    expect(SCALAR_FIELD_VERTEX_SHADER).toContain('u_useGlobe')
+    expect(SCALAR_FIELD_VERTEX_SHADER).toContain('lngLatToGlobeSphere')
+    expect(SCALAR_FIELD_FRAGMENT_SHADER).toContain('v_globeRim')
+    expect(SCALAR_FIELD_FRAGMENT_SHADER).toContain('edgeFade')
   })
 })
 

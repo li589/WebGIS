@@ -20,6 +20,7 @@ import {
   bearing,
   type LngLat,
 } from './measure-geo'
+import { isGlobeProjection, isLngLatOnGlobeVisibleSide } from './canvas-utils'
 import type { MeasurePoint } from '../../stores/ui'
 
 /** 标签显示的最小像素距离阈值：段在屏幕上的投影长度低于此值时隐藏标签 */
@@ -236,11 +237,22 @@ export class MeasureCanvas {
     const { segments, total } = computeSegments(lngLatPoints)
 
     // 绘制每段中点的距离 + 角度标签
+    const onGlobe = isGlobeProjection(this.map)
     for (let i = 0; i < segments.length; i++) {
       const seg = segments[i]
       const p1 = screenPoints[i]
       const p2 = screenPoints[i + 1]
+      const geo1 = this.points[i]
+      const geo2 = this.points[i + 1]
 
+      // globe 模式下不在球背面绘制距离标签，避免标签漂浮在不可见区域。
+      if (
+        onGlobe &&
+        (!isLngLatOnGlobeVisibleSide(this.map, geo1.lng, geo1.lat) ||
+          !isLngLatOnGlobeVisibleSide(this.map, geo2.lng, geo2.lat))
+      ) {
+        continue
+      }
       if (!shouldShowLabel(p1, p2)) continue
 
       const midScreen: ScreenPoint = {
@@ -267,7 +279,16 @@ export class MeasureCanvas {
       const lastPoint = screenPoints[screenPoints.length - 1]
       const hoverScreen = this.projectToCanvas(this.hoverPoint.lng, this.hoverPoint.lat)
 
-      // 虚线预览
+      const lastGeo = this.points[this.points.length - 1]
+      const hoverGeo = this.hoverPoint
+      const previewHiddenOnGlobe =
+        onGlobe &&
+        (!isLngLatOnGlobeVisibleSide(this.map, lastGeo.lng, lastGeo.lat) ||
+          !isLngLatOnGlobeVisibleSide(this.map, hoverGeo.lng, hoverGeo.lat) ||
+          Math.abs(lastGeo.lng - hoverGeo.lng) > 180)
+
+      if (!previewHiddenOnGlobe) {
+        // 虚线预览
       ctx.save()
       ctx.strokeStyle = PREVIEW_STROKE
       ctx.lineWidth = 1.5
@@ -302,6 +323,7 @@ export class MeasureCanvas {
           FONT_SIZE_BEARING,
           LABEL_FILL_PREVIEW,
         )
+      }
       }
     }
 
