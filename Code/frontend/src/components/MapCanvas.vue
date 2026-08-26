@@ -72,6 +72,8 @@ const props = defineProps<{
   currentHour: number
   /** 地图点查选中坐标（持久标记，非定位标记） */
   inspectPoint?: { lng: number; lat: number } | null
+  /** 实验性 3D：true 时地图切 globe 投影（外观设置勾选「启用3D视图」后生效） */
+  globeProjection?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -345,6 +347,28 @@ watch(
   () => {
     setTimeout(applyBasemapSuppression, 120)
   },
+)
+
+// ─── 实验性 3D：globe 投影切换 ──────────────────────────────────────────────
+// 外观设置勾选「启用3D视图（实验测试）」且顶栏处于 3D 模式时切 globe；
+// 关闭或切回 2D 时恢复 mercator。地图实例保持不变，全部图层与叠加层保留。
+watch(
+  [() => props.globeProjection, mapReady],
+  ([on, ready]) => {
+    if (!ready || _isUnmounted) return
+    const map = state.resources.map
+    if (!map) return
+    const target = on ? 'globe' : 'mercator'
+    try {
+      const current = map.getProjection?.()
+      if (current?.type === target) return
+      map.setProjection({ type: target })
+      debugLog('MapCanvas', 'setProjection', target)
+    } catch (err) {
+      console.warn('[MapCanvas] setProjection failed:', err)
+    }
+  },
+  { immediate: true },
 )
 
 // ─── Time-of-day visual vars ─────────────────────────────────────────────────

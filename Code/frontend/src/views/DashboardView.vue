@@ -21,6 +21,10 @@ import TimelinePanel from '../components/TimelinePanel.vue'
 import TimelineScrubber from '../components/TimelineScrubber.vue'
 import WorkflowStatusPanel from '../components/workflow/WorkflowStatusPanel.vue'
 import type { TileSourceId } from '../services/api-config'
+import {
+  is3DViewExperimentalEnabled,
+  subscribe3DViewExperimental,
+} from '../services/settings-local'
 import type { OverlayTimeState } from '../components/map/overlay-image-module'
 import { useUiStore } from '../stores/ui'
 import { useUiLoadingStore } from '../stores/ui-loading'
@@ -78,6 +82,8 @@ void (async () => {
 onBeforeUnmount(() => {
   workflowRun.cleanupAllRetryTimers()
   teardownWorkspaceSync()
+  _unsubscribe3DView?.()
+  _unsubscribe3DView = null
 })
 
 const tileSourceId = toRef(uiStore, 'tileSourceId')
@@ -192,6 +198,21 @@ const selectedLayerLifecycle = computed(() => {
   if (!catalogId) return null
   return lifecycle.getLifecycle(catalogId)
 })
+
+// ── 实验性 3D 视图（外观设置勾选）──
+// 勾选后 3D 模式复用现有 MapCanvas 并切 globe 投影；未勾选时保持「尚未实现」遮罩。
+const enable3DView = ref(is3DViewExperimentalEnabled())
+let _unsubscribe3DView: (() => void) | null = null
+{
+  _unsubscribe3DView = subscribe3DViewExperimental(() => {
+    enable3DView.value = is3DViewExperimentalEnabled()
+  })
+}
+/** 3D 模式下是否直接显示真实地图（globe 投影） */
+const showGlobeMap = computed(
+  () => uiStore.viewMode === '2d' || (uiStore.viewMode === '3d' && enable3DView.value),
+)
+const globeProjectionOn = computed(() => uiStore.viewMode === '3d' && enable3DView.value)
 
 // ── Online Temporal Integration ──
 // 在线时间获取编排器：当用户选中 fetchable 段时自动触发工作流获取数据
@@ -365,11 +386,12 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
       @drop="onMapShellDrop"
     >
       <MapCanvas
-        v-if="uiStore.viewMode === '2d'"
+        v-if="showGlobeMap"
         ref="mapCanvasRef"
         :tile-source-id="tileSourceId"
         :current-hour="currentHour"
         :inspect-point="selectedMapPoint"
+        :globe-projection="globeProjectionOn"
         @visible-hotspots-change="handleVisibleHotspotsChange"
         @hotspot-select="handleHotspotSelect"
         @map-point-select="handleMapPointSelect"
@@ -395,6 +417,9 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
             已保留当前图层状态，3D 渲染器上线后将继续使用「{{ activeLayer.name }}」
           </p>
           <p class="placeholder-3d-hint">点击顶栏「2D」按钮可返回平面地图</p>
+          <p class="placeholder-3d-hint">
+            可在 设置 → 外观 → 地图显示 勾选「启用3D视图（实验测试）」提前体验地球投影
+          </p>
         </div>
       </div>
 

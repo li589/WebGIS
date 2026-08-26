@@ -8,9 +8,11 @@
 import { ref } from 'vue'
 import { useThemeStore, type ThemePreference } from '../../stores/theme'
 import {
+  is3DViewExperimentalEnabled,
   isMapDistributionChromeEnabled,
-  setMapDistributionChromeEnabled,
   isShowAnalysisResultOnMapEnabled,
+  set3DViewExperimentalEnabled,
+  setMapDistributionChromeEnabled,
   setShowAnalysisResultOnMapEnabled,
 } from '../../services/settings-local'
 import SegmentedControl from '../ui/SegmentedControl.vue'
@@ -37,6 +39,14 @@ function onShowAnalysisResultOnMapChange(event: Event) {
   const checked = (event.target as HTMLInputElement).checked
   showAnalysisResultOnMap.value = checked
   setShowAnalysisResultOnMapEnabled(checked)
+}
+
+const enable3DView = ref(is3DViewExperimentalEnabled())
+
+function onEnable3DViewChange(event: Event) {
+  const checked = (event.target as HTMLInputElement).checked
+  enable3DView.value = checked
+  set3DViewExperimentalEnabled(checked)
 }
 
 function onThemeChange(value: string | number) {
@@ -115,6 +125,14 @@ if (typeof window !== 'undefined') {
         />
         <span>成功后在地图显示分析结果图层（默认开）</span>
       </label>
+      <label class="toggle-row">
+        <input type="checkbox" :checked="enable3DView" @change="onEnable3DViewChange" />
+        <span>启用3D视图（实验测试）</span>
+      </label>
+      <p class="section-hint hint-3d">
+        开启后，顶栏切换到 3D 模式时地图将以地球投影显示全部图层，不再显示「尚未实现」遮罩提示。
+        实验功能：部分叠加层在球面投影下的表现尚未充分验证，遇到异常可关闭本项并切回 2D。
+      </p>
     </section>
 
     <!-- 动效偏好 -->
@@ -176,5 +194,9 @@ if (typeof window !== 'undefined') {
   height: 16px;
   cursor: pointer;
   accent-color: var(--accent);
+}
+
+.hint-3d {
+  margin-top: -0.25rem;
 }
 </style>

@@ -281,6 +281,97 @@ describe("basemap-module", () => {
     expect(sources.get("tile-base")).toBe(source);
   });
 
+  it("recreates source when tiles are still loading (slow, no errors yet)", () => {
+    // 2026-08-27 复发报障补充：网络半死不活时，旧源瓦片请求"慢而未超时"——
+    // 没有 error 事件 → 错误窗口法看不到。setTiles 不中止这些在途请求，
+    // 新源瓦片请求继续排在同源 6 连接池队尾 → 底图"一段时间不变化"。
+    // 修复：isSourceLoaded()=false（源仍有 loading 态 tile）也触发重建。
+    const { map, sources } = createMapMock();
+    const source = { type: "raster", setTiles: vi.fn() };
+    sources.set("tile-base", source);
+    map.getLayer = () => ({ id: "tile-base-raster" });
+    // 模拟：主源仍有在途请求（isSourceLoaded=false）
+    map.isSourceLoaded = (id: string) => id !== "tile-base";
+
+    const module = createBasemapModule({
+      map,
+      getTileConfig: (sourceId) =>
+        sourceId === "esri-street"
+          ? {
+              id: "esri-street",
+              provider: "Esri",
+              style: "street",
+              urlTemplate: "https://esri.example/{z}/{x}/{y}.png",
+            }
+          : sourceId === "bing-road"
+            ? {
+                id: "bing-road",
+                provider: "Bing",
+                style: "street",
+                urlTemplate: "https://bing.example/{z}/{x}/{y}.png",
+              }
+            : undefined,
+      getCurrentTileSourceId: () => "bing-road",
+      setTileLoadFailed: vi.fn(),
+      setTileFailedProvider: vi.fn(),
+      setSourceTransitioning: vi.fn(),
+      getFailoverCandidates: () => [],
+      dependencies: { now: () => 1000 },
+    });
+
+    // 无任何错误事件，但主源在途 → 必须重建（abort 挂起请求）
+    module.switchTileSource("bing-road");
+    expect(source.setTiles).not.toHaveBeenCalled();
+    expect(sources.get("tile-base")).not.toBe(source);
+    expect(sources.get("tile-base").tiles).toEqual([
+      "https://bing.example/{z}/{x}/{y}.png",
+    ]);
+  });
+
+  it("recreates source when only the overlay source still has pending requests", () => {
+    // 注记 overlay 与主源同走 /unified-tiles 代理、共占连接池：
+    // overlay 在途时同样要重建（overlay 源卸载 → 挂起请求 abort）
+    const { map, sources } = createMapMock();
+    const source = { type: "raster", setTiles: vi.fn() };
+    sources.set("tile-base", source);
+    sources.set("tile-base-overlay", { type: "raster", setTiles: vi.fn() });
+    map.getLayer = () => ({ id: "tile-base-raster" });
+    // 主源已就绪，仅 overlay 有在途请求
+    map.isSourceLoaded = (id: string) => id !== "tile-base-overlay";
+
+    const module = createBasemapModule({
+      map,
+      getTileConfig: (sourceId) =>
+        sourceId === "esri-street"
+          ? {
+              id: "esri-street",
+              provider: "Esri",
+              style: "street",
+              urlTemplate: "https://esri.example/{z}/{x}/{y}.png",
+              overlayUrlTemplate: "https://esri.example/overlay/{z}/{x}/{y}.png",
+            }
+          : sourceId === "bing-road"
+            ? {
+                id: "bing-road",
+                provider: "Bing",
+                style: "street",
+                urlTemplate: "https://bing.example/{z}/{x}/{y}.png",
+              }
+            : undefined,
+      getCurrentTileSourceId: () => "bing-road",
+      setTileLoadFailed: vi.fn(),
+      setTileFailedProvider: vi.fn(),
+      setSourceTransitioning: vi.fn(),
+      getFailoverCandidates: () => [],
+      dependencies: { now: () => 1000 },
+    });
+
+    module.switchTileSource("bing-road");
+    // overlay 在途 → 整体重建（主源 setTiles 不应被调用）
+    expect(source.setTiles).not.toHaveBeenCalled();
+    expect(sources.get("tile-base")).not.toBe(source);
+  });
+
   it("foreign (old-provider) errors after switching also trigger recreate on next switch", () => {
     // 用户已切走后旧源迟到失败：归因检查跳过（不进熔断窗口），但证明旧
     // 请求挂起中——下一次切换仍须重建中止

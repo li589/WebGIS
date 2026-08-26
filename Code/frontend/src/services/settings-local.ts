@@ -33,6 +33,11 @@ export interface SettingsUiLocal {
   remoteStorageTab?: string
   /** 「数据源」二级 tab：local（本地数据源）| remote（远程数据源） */
   dataSourceTab?: string
+  /**
+   * 实验性 3D 视图（默认关闭）。开启后顶栏切到 3D 时地图以
+   * MapLibre globe 投影显示真实图层，不再显示「尚未实现」遮罩。
+   */
+  enable3DView?: boolean
 }
 
 function safeGet(storage: Storage, key: string): string | null {
@@ -192,6 +197,31 @@ export function isShowAnalysisResultOnMapEnabled(): boolean {
 
 export function setShowAnalysisResultOnMapEnabled(on: boolean): void {
   saveSettingsUiLocal({ ...loadSettingsUiLocal(), showAnalysisResultOnMap: on })
+}
+
+/** 实验性 3D 视图默认关闭；显式 true 时开启。 */
+export function is3DViewExperimentalEnabled(): boolean {
+  return loadSettingsUiLocal().enable3DView === true
+}
+
+const d3ViewListeners = new Set<() => void>()
+
+export function subscribe3DViewExperimental(listener: () => void): () => void {
+  d3ViewListeners.add(listener)
+  return () => {
+    d3ViewListeners.delete(listener)
+  }
+}
+
+export function set3DViewExperimentalEnabled(on: boolean): void {
+  saveSettingsUiLocal({ ...loadSettingsUiLocal(), enable3DView: on })
+  for (const listener of d3ViewListeners) {
+    try {
+      listener()
+    } catch {
+      // ignore listener errors
+    }
+  }
 }
 
 /** Clear local preferences only — does not touch server-side key history. */

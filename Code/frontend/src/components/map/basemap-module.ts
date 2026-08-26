@@ -262,6 +262,37 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
   }
 
   /**
+   * 源是否有仍在途（未完成/未失败）的瓦片网络请求。
+   *
+   * ``map.isSourceLoaded(id)`` 为 false 表示该源仍有 tile 处于 loading
+   * 态。错误窗口法只能看到「已报错」的请求；慢而未超时的挂起请求不产生
+   * error 事件 → 走 setTiles 平滑路径 → 新源请求仍被旧源挂起请求阻塞
+   * （2026-08-27 复发报障补充：网络半死不活时切源「一段时间不变化」）。
+   * 主源与注记 overlay 源同走代理、共占连接池，两者任一在途都须重建。
+   */
+  function hasPendingTileRequests(): boolean {
+    if (typeof options.map.isSourceLoaded !== 'function') return false
+    for (const sourceId of [TILE_SOURCE_ID, TILE_OVERLAY_SOURCE_ID]) {
+      if (!options.map.getSource(sourceId)) continue
+      try {
+        if (!options.map.isSourceLoaded(sourceId)) return true
+      } catch {
+        // 源尚在样式装载中等瞬态：保守视为无在途（保持既有行为）
+      }
+    }
+    return false
+  }
+
+  function dropOverlaySource(): void {
+    if (options.map.getLayer(TILE_OVERLAY_LAYER_ID)) {
+      options.map.removeLayer(TILE_OVERLAY_LAYER_ID)
+    }
+    if (options.map.getSource(TILE_OVERLAY_SOURCE_ID)) {
+      options.map.removeSource(TILE_OVERLAY_SOURCE_ID)
+    }
+  }
+
+  /**
    * 重建底图源+图层（先删后建）。
    *
    * ``removeSource`` 触发 MapLibre 中止该源全部 in-flight 瓦片请求
@@ -279,6 +310,10 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     if (map.getSource(TILE_SOURCE_ID)) {
       map.removeSource(TILE_SOURCE_ID)
     }
+    // 注记 overlay 与主源同走 /unified-tiles 代理（共占同源 6 连接池）：
+    // 重建时一并卸载，其挂起请求随之 abort；随后 syncOverlayLayer(cfg,true)
+    // 以新配置原样重建（overlayUrlTemplate 未变时瓦片命中 HTTP 缓存）。
+    dropOverlaySource()
     ensureTileLayer(sourceId)
   }
 
@@ -309,6 +344,9 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
   function switchTileSource(sourceId: TileSourceId) {
     // 先快照异常态再 reset（reset 会清空错误窗口/熔断标记——重建判定依赖它）
     const hadUnresolvedErrors = hasUnresolvedTileErrors()
+    // 慢而未报错的在途请求（isSourceLoaded=false）：同样必须重建，否则
+    // 新源请求排队在旧源挂起请求之后 →「切了底图一段时间不变化」
+    const hadPendingRequests = hasPendingTileRequests()
     resetTileErrorState()
     pendingFailoverSourceId = null
 
@@ -339,10 +377,10 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
 
     const existingSource = options.map.getSource(TILE_SOURCE_ID) as RasterTileSource | undefined
     if (existingSource && existingSource.type === 'raster') {
-      if (hadUnresolvedErrors) {
+      if (hadUnresolvedErrors || hadPendingRequests) {
         // 慢/挂源切换：重建源以 abort 全部挂起瓦片请求，立即释放同源连接
-        // 池给新源（见 hasUnresolvedTileErrors 注释）；否则 setTiles 只换
-        // URL 模板，新源请求会排在旧源挂起请求之后 → 切换被拖住。
+        // 池给新源（见 hasUnresolvedTileErrors / hasPendingTileRequests 注释）；
+        // 否则 setTiles 只换 URL 模板，新源请求会排在旧源挂起请求之后 → 切换被拖住。
         recreateTileSource(sourceId)
       } else {
         existingSource.setTiles([cfg.urlTemplate])
