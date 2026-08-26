@@ -1,3 +1,6 @@
 {
-  "component": true
+  "component": true,
+  "usingComponents": {
+    "date-strip": "/components/date-strip/date-strip"
+  }
 }

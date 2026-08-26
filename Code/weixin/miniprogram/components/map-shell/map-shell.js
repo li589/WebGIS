@@ -43,7 +43,9 @@ Component({
       vmin: 0,
       vmax: 1
     },
-    timeline: { mode: 'static', ticks: [], current: 0 }
+    timeline: { mode: 'static', ticks: [], current: 0 },
+    // 时间轴当前高度（px），由 timeline 组件 collapse 事件驱动；用于 HUD/比例尺/影像按钮的联动位置
+    tlHeight: 128
   },
 
   lifetimes: {
@@ -145,6 +147,11 @@ Component({
       var layerId = e.detail.layerId;
       this.setData({ drawerVisible: false });
       this.selectLayer(layerId);
+    },
+
+    /** right-tool-bar 选中图层事件接入：调 selectLayer 完成加载 */
+    onToolBarSelect: function (e) {
+      this.selectLayer(e.detail.layerId);
     },
 
     selectLayer: function (layerId) {
@@ -283,6 +290,12 @@ Component({
       console.log('[map-shell] timeline playing =', e.detail.playing);
     },
 
+    /** 时间轴折叠/展开：同步更新 tlHeight，让比例尺/HUD/影像按钮跟随贴紧 */
+    onTimelineCollapse: function (e) {
+      var h = (e.detail && e.detail.height) || 128;
+      this.setData({ tlHeight: h });
+    },
+
     /** M2 后时间轴模式由图层驱动；此入口保留给自动化验证 */
     demoTimeline: function () {
       return this.data.timeline;
@@ -395,6 +408,91 @@ Component({
 
     toggleSatellite: function () {
       this.setData({ satellite: !this.data.satellite });
+    },
+
+    /* ================= 左侧工具栏：地图操作（M3+ 新增） ================= */
+
+    /** 放大地图：scale + 1（上限 20） */
+    onZoomIn: function () {
+      var s = Math.min((this._scale || 12) + 1, 20);
+      this._scale = s;
+      this.setData({ scale: s });
+    },
+
+    /** 缩小地图：scale - 1（下限 3） */
+    onZoomOut: function () {
+      var s = Math.max((this._scale || 12) - 1, 3);
+      this._scale = s;
+      this.setData({ scale: s });
+    },
+
+    /** 重置视角正北（本项目禁旋转倾斜，此方法为保险入口） */
+    onResetNorth: function () {
+      var mc = wx.createMapContext('cgdaMap', this);
+      mc.setRotate && mc.setRotate({ rotate: 0 });
+      mc.setSkew && mc.setSkew({ skew: 0 });
+    },
+
+    /** 定位到用户当前位置：
+     *  首次调用 wx.getLocation 微信会自动弹授权窗；
+     *  若用户曾拒绝过（errMsg 含 auth deny/denied），引导去设置页开启权限；
+     *  其他失败（无 GPS 信号等）用 toast 简单提示。 */
+    onLocate: function () {
+      var self = this;
+      wx.getLocation({
+        type: 'gcj02',
+        success: function (res) {
+          var mc = wx.createMapContext('cgdaMap', self);
+          mc.moveToLocation({
+            latitude: res.latitude,
+            longitude: res.longitude,
+            success: function () {
+              self._centerGcj = { lat: res.latitude, lng: res.longitude };
+              mc.getScale({
+                success: function (s) {
+                  self._scale = s.scale;
+                  self._updateScaleBar();
+                  self._drawOverlay('locate');
+                  self._scheduleTiles();
+                }
+              });
+            },
+            fail: function () {
+              self.setData({ banner: '地图移动失败，请稍后再试' });
+            }
+          });
+        },
+        fail: function (err) {
+          var msg = (err && err.errMsg) || '';
+          if (msg.indexOf('auth deny') >= 0 || msg.indexOf('auth denied') >= 0) {
+            // 用户曾经拒绝过定位授权 → 引导去设置页开启
+            wx.showModal({
+              title: '需要定位权限',
+              content: '检测到您未授权定位，是否前往设置页开启定位权限？',
+              confirmText: '去设置',
+              cancelText: '取消',
+              success: function (m) {
+                if (m.confirm) {
+                  wx.openSetting({
+                    success: function (s) {
+                      if (s.authSetting && s.authSetting['scope.userLocation']) {
+                        // 用户在设置页开启了权限，自动重新定位
+                        self.onLocate();
+                      }
+                    }
+                  });
+                }
+              }
+            });
+          } else {
+            wx.showToast({
+              title: '定位失败，请检查设备 GPS',
+              icon: 'none',
+              duration: 2000
+            });
+          }
+        }
+      });
     },
 
     /* ================= M0 自检（对齐验证，保留） ================= */

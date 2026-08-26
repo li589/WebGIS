@@ -38,29 +38,37 @@
   <!-- 左上角 logo（无文字） -->
   <logo-badge class="logo-slot" />
 
-  <!-- 右侧图层分组符号竖条 -->
-  <layer-rail
+  <!-- 左上角竖向地图操作工具栏：放大/缩小/指南针/定位（logo-badge 正下方） -->
+  <left-tool-bar
+    class="ltb-slot"
+    bind:zoomin="onZoomIn"
+    bind:zoomout="onZoomOut"
+    bind:resetnorth="onResetNorth"
+    bind:locate="onLocate"
+  />
+
+  <!-- 右侧竖向图层大类导航栏：点击图标 → 紧贴左侧弹出图层面板 -->
+  <right-tool-bar
     class="rail-slot"
     categories="{{railCategories}}"
-    active-id="{{railActiveId}}"
-    bind:select="onRailSelect"
-  />
-
-  <!-- 右拉图层抽屉 -->
-  <layer-drawer
-    visible="{{drawerVisible}}"
-    group="{{drawerGroup}}"
     active-layer-id="{{activeLayer.id}}"
-    loading="{{drawerLoading}}"
-    bind:select="onDrawerSelect"
-    bind:close="onDrawerClose"
+    bind:select="onToolBarSelect"
   />
 
-  <!-- 左下角比例尺 -->
-  <scale-bar class="scale-slot" meters-per-pixel="{{metersPerPixel}}" />
+  <!-- 左下角比例尺：紧贴时间轴顶部（+12px 呼吸） -->
+  <scale-bar
+    class="scale-slot"
+    style="bottom: calc({{tlHeight}}px + 12px);"
+    meters-per-pixel="{{metersPerPixel}}"
+  />
 
-  <!-- 右下角：底图切换（街道 ⇄ 影像） -->
-  <view class="basemap-toggle" bindtap="toggleSatellite" hover-class="btn-hover">
+  <!-- 右下角：底图切换（街道 ⇄ 影像），与比例尺同高 -->
+  <view
+    class="basemap-toggle"
+    style="bottom: calc({{tlHeight}}px + 12px);"
+    bindtap="toggleSatellite"
+    hover-class="btn-hover"
+  >
     <text>{{satellite ? '街道' : '影像'}}</text>
   </view>
 
@@ -72,10 +80,15 @@
     current="{{timeline.current}}"
     bind:change="onTimelineChange"
     bind:toggle="onTimelineToggle"
+    bind:collapse="onTimelineCollapse"
   />
 
-  <!-- 状态 HUD（图层/瓦片进度） -->
-  <view class="debug-hud" wx:if="{{debugHud}}">
+  <!-- 状态 HUD（图层/瓦片进度）：贴比例尺上方（+41px 间距，对应比例尺盒高矮 4px 的补偿） -->
+  <view
+    class="debug-hud"
+    style="bottom: calc({{tlHeight}}px + 53px);"
+    wx:if="{{debugHud}}"
+  >
     <text>{{debugHud}}</text>
   </view>
 

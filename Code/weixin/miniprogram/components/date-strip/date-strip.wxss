@@ -1,0 +1,63 @@
+/* date-strip —— 横向滑动日期选择条（简约风，居中 C 位） */
+.ds {
+  width: 94%;
+  margin: 4px auto 4px;
+  height: 48px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 10px;
+  box-sizing: border-box;
+  padding: 3px 0;
+}
+
+.ds-viewport {
+  width: 100%;
+  height: 100%;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.ds-content {
+  display: inline-flex;
+  flex-direction: row;
+  height: 100%;
+  align-items: stretch;
+}
+
+.ds-cell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 100%;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.ds-weekday {
+  font-size: 10px;
+  color: #8e8c83;
+  line-height: 1.2;
+}
+.ds-day {
+  font-size: 18px;
+  font-weight: 500;
+  color: #2a2a2a;
+  line-height: 1.2;
+  margin: 1px 0;
+}
+.ds-month {
+  font-size: 9px;
+  color: #8e8c83;
+  line-height: 1;
+}
+
+/* 选中态：蓝色高亮 */
+.ds-cell.active .ds-day {
+  color: #185fa5;
+  font-weight: 600;
+}
+.ds-cell.active .ds-weekday,
+.ds-cell.active .ds-month {
+  color: #185fa5;
+}

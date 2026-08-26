@@ -1,8 +1,17 @@
-/* 顶部 colorbar：白底半透明条，标题 + 渐变带 + 刻度 */
+/* 顶部 colorbar：windy.app 移动端贴顶横条样式
+   - 贴顶全宽，半透明深色底（不挡视野）
+   - 薄色带 8px + 标题左 + 单位右
+   - 刻度行紧贴色带下方
+*/
+
 .cbar {
-  background: rgba(255, 255, 255, 0.96);
-  border-radius: 10px;
-  padding: 7px 12px 5px;
+  background: rgba(14, 22, 33, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 6px 14px 5px;
+  padding-top: calc(6px + env(safe-area-inset-top));
+  box-sizing: border-box;
+  color: #ffffff;
 }
 
 .cbar-row {
@@ -14,7 +23,7 @@
 .cbar-title {
   font-size: 12px;
   font-weight: 500;
-  color: #2c2c2a;
+  color: #f5f6f7;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -22,37 +31,39 @@
 }
 .cbar-unit {
   font-size: 10px;
-  color: #888780;
+  color: #a8b2bf;
 }
 
 .cbar-strip-bg {
   margin-top: 5px;
-  height: 10px;
-  border-radius: 3px;
+  height: 8px;
+  border-radius: 2px;
   overflow: hidden;
   display: flex;
   flex-direction: row;
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.1);
 }
 .cbar-strip {
   flex: 1;
-  height: 10px;
+  height: 8px;
 }
 .cbar-swatch {
   flex: 1;
-  height: 10px;
+  height: 8px;
 }
 
 .cbar-ticks {
   position: relative;
   height: 12px;
-  margin-top: 1px;
+  margin-top: 2px;
 }
 .cbar-tick {
   position: absolute;
   top: 0;
   font-size: 9px;
-  color: #888780;
+  color: #a8b2bf;
   transform: translateX(-50%);
+  font-family: -apple-system, "Helvetica Neue", monospace;
 }
 .cbar-tick.t0 {
   left: 0%;

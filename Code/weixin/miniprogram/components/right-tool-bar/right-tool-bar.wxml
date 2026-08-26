@@ -1,0 +1,74 @@
+<view class="rtb">
+  <!-- 竖向工具栏：贴右边缘 -->
+  <view class="rtb-bar">
+    <view
+      wx:for="{{displayCategories}}"
+      wx:key="id"
+      class="rtb-icon {{expandedCatId === item.id ? 'active' : ''}}"
+      data-id="{{item.id}}"
+      data-name="{{item.name}}"
+      data-index="{{index}}"
+      bindtap="onIconTap"
+      hover-class="rtb-hover"
+    >
+      <!-- 命中 SVG base64 图标；未命中回落首字母 -->
+      <view
+        wx:if="{{displayCatIcons[index]}}"
+        class="rtb-icon-svg"
+        style="background-image: url('data:image/svg+xml;base64,{{displayCatIcons[index]}}');"
+      ></view>
+      <text wx:else class="rtb-icon-fallback">{{item.icon || item.id}}</text>
+
+      <view class="rtb-badge" wx:if="{{item.count < 100}}">{{item.count}}</view>
+    </view>
+  </view>
+
+  <!-- 遮罩：点击收起面板 -->
+  <view
+    class="rtb-mask {{expandedCatId ? 'show' : ''}}"
+    bindtap="onMaskTap"
+    catchtouchmove="noop"
+  ></view>
+
+  <!-- 标签面板：紧贴工具栏左侧弹出，top 对齐被点击图标的 top -->
+  <view
+    class="rtb-panel {{expandedCatId ? 'show' : ''}}"
+    style="top: {{panelTop}}px;"
+    catchtouchmove="noop"
+  >
+    <view class="rtb-panel-head">
+      <view class="rtb-panel-title-row">
+        <text class="rtb-panel-title">{{expandedCatName}}</text>
+        <text class="rtb-demo-tag" wx:if="{{isFallback}}">演示</text>
+      </view>
+      <text class="rtb-panel-count">{{expandedCatLayers.length || 0}} 个图层</text>
+    </view>
+    <scroll-view class="rtb-panel-list" scroll-y enhanced show-scrollbar="{{false}}">
+      <view
+        wx:for="{{expandedCatLayers}}"
+        wx:key="layerId"
+        class="rtb-layer-item {{activeLayerId === item.layerId ? 'active' : ''}} {{loadingLayerId === item.layerId ? 'loading' : ''}}"
+        data-id="{{item.layerId}}"
+        bindtap="onLayerTap"
+        hover-class="rtb-layer-hover"
+      >
+        <view class="rtb-layer-main">
+          <view class="rtb-layer-name-row">
+            <text class="rtb-layer-name">{{item.displayName}}</text>
+            <view class="rtb-layer-time-badge {{item.supportsTime ? '' : 'static'}}">
+              <text>{{item.supportsTime ? (item.timeGranularity === 'month' ? '逐月' : (item.timeGranularity === 'hour' ? '逐小时' : '逐日')) : '静态'}}</text>
+            </view>
+          </view>
+          <text class="rtb-layer-desc" wx:if="{{item.description}}">{{item.description}}</text>
+        </view>
+        <view class="rtb-loading" wx:if="{{loadingLayerId === item.layerId}}">
+          <text>加载中</text>
+        </view>
+        <view class="rtb-check" wx:elif="{{activeLayerId === item.layerId}}"></view>
+      </view>
+      <view wx:if="{{!expandedCatLayers.length}}" class="rtb-empty">
+        <text>该分组暂无可用图层</text>
+      </view>
+    </scroll-view>
+  </view>
+</view>

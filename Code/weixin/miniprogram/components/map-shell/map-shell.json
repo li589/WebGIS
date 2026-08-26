@@ -4,8 +4,8 @@
     "logo-badge": "/components/logo-badge/logo-badge",
     "scale-bar": "/components/scale-bar/scale-bar",
     "timeline": "/components/timeline/timeline",
-    "layer-rail": "/components/layer-rail/layer-rail",
-    "layer-drawer": "/components/layer-drawer/layer-drawer",
+    "right-tool-bar": "/components/right-tool-bar/right-tool-bar",
+    "left-tool-bar": "/components/left-tool-bar/left-tool-bar",
     "colorbar": "/components/colorbar/colorbar"
   }
 }

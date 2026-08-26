@@ -1,35 +1,148 @@
-<view class="tl {{mode === 'static' ? 'tl-static' : ''}}">
-  <view class="tl-head">
-    <view class="tl-play {{mode === 'static' ? 'disabled' : ''}} {{playing ? 'on' : ''}}" bindtap="onPlayTap">
-      <view class="tl-play-icon {{playing ? 'pause' : 'play'}}"></view>
-    </view>
-    <view class="tl-caption">
-      <text class="tl-main">{{mainLabel}}</text>
-      <text class="tl-sub">{{subLabel}}</text>
-    </view>
-    <view class="tl-mode" bindtap="onModeTap">{{modeLabel}}</view>
+<view class="tl {{displayMode === 'static' ? 'tl-static' : ''}} {{collapsed ? 'tl-collapsed' : ''}}">
+  <!-- 折叠/展开按钮 -->
+  <view class="tl-handle" bindtap="onToggleCollapse">
+    <view class="tl-handle-arrow {{collapsed ? 'up' : 'down'}}"></view>
   </view>
 
-  <view class="tl-track" bindtouchstart="onTrackTouch" bindtouchmove="onTrackTouch">
-    <block wx:if="{{mode !== 'static'}}">
-      <view class="tl-rail"></view>
-      <view class="tl-fill" style="width: {{pct}}%;"></view>
-      <block wx:for="{{ticks}}" wx:key="index">
-        <view class="tl-tick {{item.major ? 'major' : ''}}" style="left: {{item.pos}}%;"></view>
-        <view
-          wx:if="{{item.majorLabel}}"
-          class="tl-tick-label {{item.align}}"
-          style="left: {{item.pos}}%;"
-        >{{item.majorLabel}}</view>
-      </block>
-      <view class="tl-thumb" style="left: {{pct}}%;">
-        <view class="tl-thumb-dot"></view>
+  <!-- 以下内容折叠时隐藏 -->
+  <block wx:if="{{!collapsed}}">
+    <!-- 第一层：头部控制栏 -->
+    <view class="tl-head">
+      <view class="tl-play {{displayMode === 'static' ? 'disabled' : ''}} {{playing ? 'on' : ''}}" bindtap="onPlayTap">
+        <view class="tl-play-icon {{playing ? 'pause' : 'play'}}"></view>
       </view>
+      <view class="tl-caption">
+        <text class="tl-main">{{mainLabel}}</text>
+        <text class="tl-sub">{{subLabel}}{{timezoneLabel ? '  ·  ' + timezoneLabel : ''}}{{isFallback ? '  ·  演示' : ''}}</text>
+      </view>
+      <view class="tl-cal-btn" bindtap="onCalendarTap">
+        <view class="tl-cal-icon"></view>
+      </view>
+      <view class="tl-mode" bindtap="onModeTap">{{modeLabel}}</view>
+    </view>
+
+    <!-- 日期横向滑动选择条（中间今天，两边前后一天，滑动切换） -->
+    <date-strip />
+
+    <!-- 第二/三/四层：时间轴主体 -->
+    <block wx:if="{{displayMode !== 'static'}}">
+      <scroll-view
+        class="tl-viewport"
+        scroll-x="true"
+        enable-flex="true"
+        scroll-left="{{scrollLeft}}"
+        scroll-with-animation="{{scrollWithAnim}}"
+        enhanced="true"
+        show-scrollbar="false"
+        bindscroll="onScroll"
+      >
+        <view class="tl-content">
+          <view
+            wx:for="{{displayTicks}}"
+            wx:key="index"
+            id="tl-{{index}}"
+            class="tl-tick-cell"
+            data-index="{{index}}"
+            bindtap="onTickTap"
+          >
+            <!-- 第二层：间断日期标签（仅日期起始 tick 显示） -->
+            <view wx:if="{{item.dateHeader}}" class="tl-date-header">{{item.dateHeader}}</view>
+            <view wx:else class="tl-date-header tl-date-empty"></view>
+
+            <!-- 第三层：水平基准圆点标线（虚线在 .tl-content::before；圆点在此） -->
+            <view class="tl-baseline">
+              <view class="tl-baseline-dot {{item.major ? 'major' : 'minor'}} {{displayCurrent === index ? 'active' : ''}}"></view>
+            </view>
+
+            <!-- 第四层：小时方框按钮（仅 major 渲染方框；minor 留空只有上方圆点） -->
+            <view wx:if="{{item.major}}" class="tl-tick-box {{displayCurrent === index ? 'active' : ''}}">
+              <text class="tl-tick-num">{{item.majorLabel}}</text>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
     </block>
     <view wx:else class="tl-static-note">
       <view class="tl-static-line"></view>
       <text>静态图层 · 无时间维度</text>
       <view class="tl-static-line"></view>
     </view>
+  </block>
+
+  <!-- 日历弹层：贴时间轴上方半屏面板 -->
+  <view wx:if="{{calendarOpen}}" class="cal-mask" bindtap="onCalendarClose" catchtouchmove="onCalendarStop">
+    <view class="cal-panel" catchtap="onCalendarStop">
+
+      <!-- 月份视图 -->
+      <block wx:if="{{calendarView === 'month'}}">
+        <view class="cal-header">
+          <view class="cal-nav" bindtap="onCalPrevMonth">‹</view>
+          <view class="cal-title" bindtap="onCalYearClick">{{calendarHeader}}</view>
+          <view class="cal-nav" bindtap="onCalNextMonth">›</view>
+        </view>
+        <view class="cal-weekdays">
+          <text class="cal-wd">日</text>
+          <text class="cal-wd">一</text>
+          <text class="cal-wd">二</text>
+          <text class="cal-wd">三</text>
+          <text class="cal-wd">四</text>
+          <text class="cal-wd">五</text>
+          <text class="cal-wd">六</text>
+        </view>
+        <view class="cal-grid">
+          <block wx:for="{{calendarRows}}" wx:for-item="row" wx:key="*this" wx:for-index="ri">
+            <view class="cal-row">
+              <block wx:for="{{row}}" wx:for-item="cell" wx:key="dateKey">
+                <view class="cal-cell {{cell.inMonth ? '' : 'out'}} {{cell.isToday ? 'today' : ''}} {{cell.isSelected ? 'selected' : ''}}" data-key="{{cell.dateKey}}" bindtap="onCalDateSelect">
+                  <text>{{cell.day}}</text>
+                </view>
+              </block>
+            </view>
+          </block>
+        </view>
+      </block>
+
+      <!-- 月份选择 -->
+      <block wx:if="{{calendarView === 'monthPicker'}}">
+        <view class="cal-header">
+          <view class="cal-nav" bindtap="onCalPrevYear">‹</view>
+          <view class="cal-title" bindtap="onCalPickYearClick">{{calendarHeader}}</view>
+          <view class="cal-nav" bindtap="onCalNextYear">›</view>
+        </view>
+        <view class="cal-grid cal-grid-3">
+          <block wx:for="{{monthPickerRows}}" wx:for-item="row" wx:key="*this">
+            <view class="cal-row cal-row-3">
+              <block wx:for="{{row}}" wx:for-item="cell" wx:key="month">
+                <view class="cal-cell cal-cell-month {{cell.isCurrent ? 'selected' : ''}}" data-month="{{cell.month}}" bindtap="onCalMonthPick">
+                  <text>{{cell.label}}</text>
+                </view>
+              </block>
+            </view>
+          </block>
+        </view>
+      </block>
+
+      <!-- 年份选择（十年网格） -->
+      <block wx:if="{{calendarView === 'yearPicker'}}">
+        <view class="cal-header">
+          <view class="cal-nav" bindtap="onCalPrevDecade">‹</view>
+          <view class="cal-title">{{calendarHeader}}</view>
+          <view class="cal-nav" bindtap="onCalNextDecade">›</view>
+        </view>
+        <view class="cal-grid cal-grid-5">
+          <block wx:for="{{yearPickerRows}}" wx:for-item="row" wx:key="*this">
+            <view class="cal-row cal-row-5">
+              <block wx:for="{{row}}" wx:for-item="cell" wx:key="year">
+                <view class="cal-cell cal-cell-year {{cell.isCurrent ? 'selected' : ''}}" data-year="{{cell.year}}" bindtap="onCalYearPick">
+                  <text>{{cell.year}}</text>
+                </view>
+              </block>
+            </view>
+          </block>
+        </view>
+      </block>
+
+    </view>
   </view>
+
 </view>

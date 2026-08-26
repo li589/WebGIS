@@ -6,5 +6,11 @@
     "backgroundTextStyle": "dark"
   },
   "sitemapLocation": "sitemap.json",
-  "lazyCodeLoading": "requiredComponents"
+  "lazyCodeLoading": "requiredComponents",
+  "permission": {
+    "scope.userLocation": {
+      "desc": "用于在地图上显示您的当前位置"
+    }
+  },
+  "requiredPrivateInfos": ["getLocation"]
 }

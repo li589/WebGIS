@@ -1,7 +1,11 @@
-<view class="scale-bar" wx:if="{{barWidth > 0}}">
-  <view class="bar">
-    <view class="seg seg-a" style="width: {{halfWidth}}px;"></view>
-    <view class="seg seg-b" style="width: {{halfWidth}}px;"></view>
+<view class="scale-bar-wrap" wx:if="{{barWidth > 0}}">
+  <view class="scale-bar">
+    <!-- 文字在上，线在下 -->
+    <text class="label">{{label}}</text>
+    <view class="ruler" style="width: {{barWidth}}px;">
+      <view class="ruler-tip left"></view>
+      <view class="ruler-line"></view>
+      <view class="ruler-tip right"></view>
+    </view>
   </view>
-  <text class="label">{{label}}</text>
 </view>
