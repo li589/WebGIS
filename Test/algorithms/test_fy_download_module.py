@@ -725,6 +725,27 @@ class TestFetchFromNasFileBrowser(unittest.TestCase):
             msg=f"unexpected remote: {seen['remote']}",
         )
 
+    def test_nas_missing_date_explains_archive_availability(self) -> None:
+        import modules.fy_download as fy
+
+        def _missing(*args, **kwargs):
+            return False
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with (
+                patch("modules.download_nodes._resolve_profile_server_config", return_value=self._server()),
+                patch("ingest.remote_sync.filebrowser_login", return_value="tok"),
+                patch("ingest.remote_sync._filebrowser_download", side_effect=_missing),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "requested date/file may not be available"):
+                    fy._fetch_from_nas(
+                        _ctx(Path(tmp) / "ws"),
+                        satellite="FY3D",
+                        date_path="2026.08.26",
+                        ds={},
+                        target_dir=Path(tmp) / "out",
+                    )
+
 
 if __name__ == "__main__":
     unittest.main()

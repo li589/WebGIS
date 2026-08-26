@@ -111,6 +111,16 @@ class FailureClassifier:
             return FailureCategory.not_found
         if any(
             kw in message
+            for kw in (
+                "requested date/file may not be available",
+                "requested date is not available",
+                "日期数据不可用",
+                "目标日期无数据",
+            )
+        ):
+            return FailureCategory.not_found
+        if any(
+            kw in message
             for kw in ("permission", "forbidden", "403", "unauthorized", "401", "权限")
         ):
             return FailureCategory.permission_denied

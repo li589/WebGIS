@@ -43,7 +43,16 @@ def test_raster_ops_data_and_file_not_found() -> None:
     assert FailureClassifier.classify(FileNotFoundError("nope")) == FailureCategory.not_found, 'FailureClassifier.classify(FileNotFoundError("nope")) == FailureCategory.not_found'
 
 
-def test_memory_and_disk_oserror() -> None:
+def test_nas_date_unavailable_is_not_retryable() -> None:
+    exc = RuntimeError(
+        "NAS FileBrowser download failed: /fy/FY3D.tif. "
+        "The requested date/file may not be available on NAS; verify the FY3D archive date."
+    )
+    assert FailureClassifier.classify(exc) == FailureCategory.not_found
+    assert not FailureClassifier.is_retryable(exc)
+
+
+
     assert FailureClassifier.classify(MemoryError("oom")) == FailureCategory.terminal_failure, 'FailureClassifier.classify(MemoryError("oom")) == FailureCategory.terminal_failure'
     disk = OSError(errno.ENOSPC, "No space left on device")
     assert FailureClassifier.classify(disk) == FailureCategory.terminal_failure, 'FailureClassifier.classify(disk) == FailureCategory.terminal_failure'

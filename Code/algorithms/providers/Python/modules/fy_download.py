@@ -455,7 +455,6 @@ def _fetch_from_nas(
         )
         if not ok or not local_path.exists() or local_path.stat().st_size == 0:
             local_path.unlink(missing_ok=True)
-            # FY3F 合并 HDF 缺失时回退 10V/10H 单极化 TIF 对（同 FY3D 回退交付）
             if satellite == "FY3F" and remote_name.endswith(".hdf"):
                 last_local_path = _fetch_fy3f_tif_fallback(
                     ctx,
@@ -466,8 +465,11 @@ def _fetch_from_nas(
                     target_dir=target_dir,
                 )
                 break
-            raise RuntimeError(f"NAS FileBrowser download failed: {remote_path}")
-        last_local_path = local_path
+            raise RuntimeError(
+                f"NAS FileBrowser download failed: {remote_path}. "
+                "The requested date/file may not be available on NAS; "
+                "verify the FY3D archive date and NAS path before retrying."
+            )
 
     if ctx.logger_adapter is not None:
         fetched = ", ".join(str(target_dir / name) for name in remote_names)
