@@ -93,13 +93,15 @@ describe('resolveGlobeLighting', () => {
     expect(night.intensity).toBeLessThan(noon.intensity)
   })
 
-  it('亮色底图色温更白（减少暖色叠加到白底）', () => {
+  it('亮色底图色温更冷暗（color 整体压暗，乘到白底上避免过曝）', () => {
     const light = resolveGlobeLighting(18, 'light', 'auto')!
     const dark = resolveGlobeLighting(18, 'dark', 'auto')!
-    // 同一时刻，亮色底图的 green 分量应更高（更接近白）
-    const lightGreen = Number(/rgb\(\d+, (\d+), \d+\)/.exec(light.color)![1])
-    const darkGreen = Number(/rgb\(\d+, (\d+), \d+\)/.exec(dark.color)![1])
-    expect(lightGreen).toBeGreaterThanOrEqual(darkGreen)
+    // 亮色底图 RGB 各分量应明显低于暗色底图（伽马压制策略）
+    const lightRgb = /rgb\((\d+), (\d+), (\d+)\)/.exec(light.color)!.slice(1).map(Number)
+    const darkRgb = /rgb\((\d+), (\d+), (\d+)\)/.exec(dark.color)!.slice(1).map(Number)
+    for (let i = 0; i < 3; i++) {
+      expect(lightRgb[i]).toBeLessThan(darkRgb[i])
+    }
   })
 })
 

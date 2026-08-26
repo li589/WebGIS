@@ -126,6 +126,19 @@
 
 .map-shell--3d .map-host {
   filter: saturate(1.08) contrast(1.04);
+  /* Globe 模式兜底色：仅覆盖中国等区域的高德/百度底图拖到南半球时无瓦片返回，
+     球面会露出 .map-host 默认的浅色背景导致"整个球变白"。这里给 .map-host 显式
+     深空蓝兜底色，让无瓦片区域与球外深空无缝衔接，避免视觉割裂。 */
+  background:
+    radial-gradient(circle at 50% 48%, rgba(60, 130, 180, 0.10), transparent 48%),
+    linear-gradient(180deg, #0d2436 0%, #0a1d2e 56%, #061422 100%);
+}
+
+:root[data-theme='light'] .map-shell--3d .map-host {
+  /* 浅色主题：兜底色改为浅蓝灰，避免与浅色 UI 冲突 */
+  background:
+    radial-gradient(circle at 50% 48%, rgba(120, 160, 200, 0.08), transparent 48%),
+    linear-gradient(180deg, #dde6ef 0%, #cad4e0 56%, #b9c6d5 100%);
 }
 
 .map-shell--3d .map-fog {
