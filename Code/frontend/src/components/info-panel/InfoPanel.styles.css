@@ -1041,14 +1041,18 @@
   color: var(--text-primary);
   white-space: nowrap;
 }
-.weather-provider-select {
+.weather-provider-row .app-select,
+.weather-provider-row .app-select-wrap {
   min-width: 0;
-  border: 1px solid var(--border-accent);
-  border-radius: 0.48rem;
-  background: var(--surface-1);
+  width: 100%;
+}
+.weather-provider-row .app-select-wrap select {
   color: var(--text-primary);
-  font-size: var(--font-size-caption);
-  padding: 0.26rem 0.4rem;
+  background: var(--surface-1);
+}
+.weather-provider-row .app-select-wrap select option {
+  color: var(--text-strong);
+  background: var(--surface-1);
 }
 .weather-provider-error {
   margin: 0;

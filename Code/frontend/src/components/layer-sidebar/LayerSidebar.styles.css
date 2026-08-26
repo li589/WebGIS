@@ -532,9 +532,16 @@ h2 {
   display: flex;
   align-items: center;
   gap: 0.35rem;
+  width: 100%;
   min-width: 0;
 }
 
+.weather-src-label .app-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.weather-src-label .app-select-wrap,
 .weather-src-select {
   flex: 1;
   min-width: 0;
@@ -542,8 +549,8 @@ h2 {
   padding: 0.18rem 0.32rem;
   border-radius: 6px;
   border: 1px solid var(--surface-hover);
-  background: var(--surface-sunken);
-  color: inherit;
+  background: var(--surface-1);
+  color: var(--text-primary);
 }
 
 .src-sparse-hint {
