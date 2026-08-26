@@ -99,6 +99,7 @@ const weatherStatusVersion = toRef(weatherTileManager, 'statusVersion')
 const weatherActivityVersion = toRef(weatherTileManager, 'activityVersion')
 
 const activeLayer = computed(() => selectedLayerDisplay.value ?? buildFallbackActiveLayerDisplay())
+const has3dCompatibleLayer = computed(() => Boolean(activeLayer.value.instanceId))
 
 const stageLabel = computed(() => {
   const layer = activeLayer.value
@@ -375,12 +376,25 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
         @overlay-time-update="handleOverlayTimeUpdate"
       />
 
-      <div v-else class="view-placeholder-3d">
+      <div v-else class="view-placeholder-3d" :class="{ 'view-placeholder-3d--layer-ready': has3dCompatibleLayer }">
+        <div class="placeholder-3d-stars" aria-hidden="true">
+          <i v-for="n in 10" :key="n" :style="{ '--star-index': n }"></i>
+        </div>
+        <div class="placeholder-3d-orbit orbit--one" aria-hidden="true"></div>
+        <div class="placeholder-3d-orbit orbit--two" aria-hidden="true"></div>
+        <div class="placeholder-3d-planet" aria-hidden="true">
+          <div class="planet-grid"></div>
+          <div class="planet-glow"></div>
+        </div>
         <div class="placeholder-3d-inner">
-          <div class="placeholder-3d-icon"><Globe :size="48" aria-hidden="true" /></div>
+          <div class="placeholder-3d-icon"><Globe :size="20" aria-hidden="true" /></div>
+          <div class="placeholder-3d-kicker"><span class="kicker-spark" aria-hidden="true">✦</span> 实验性视图</div>
           <h2 class="placeholder-3d-title">3D 地球视图</h2>
           <p class="placeholder-3d-desc">该功能尚未实现</p>
-          <p class="placeholder-3d-hint">点击顶栏「3D」按钮可返回 2D 平面地图</p>
+          <p v-if="has3dCompatibleLayer" class="placeholder-3d-layer-note">
+            已保留当前图层状态，3D 渲染器上线后将继续使用「{{ activeLayer.name }}」
+          </p>
+          <p class="placeholder-3d-hint">点击顶栏「2D」按钮可返回平面地图</p>
         </div>
       </div>
 
