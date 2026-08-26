@@ -919,7 +919,16 @@ defineExpose({
         <main v-else class="editor-canvas-area">
           <div v-if="!hasDefinition" class="canvas-placeholder">
             <div class="placeholder-content">
-              <Hexagon :size="48" class="placeholder-icon" aria-hidden="true" />
+              <div class="placeholder-orbit" aria-hidden="true">
+                <span class="orbit-ring orbit-ring--outer"></span>
+                <span class="orbit-ring orbit-ring--inner"></span>
+                <span class="flow-node flow-node--source"></span>
+                <span class="flow-node flow-node--transform"></span>
+                <span class="flow-node flow-node--output"></span>
+                <span class="flow-link flow-link--source"></span>
+                <span class="flow-link flow-link--output"></span>
+                <span class="flow-core"></span>
+              </div>
               <h2 class="placeholder-title">工作流编辑器</h2>
               <p class="placeholder-text">从左侧选择工作流或范例，也可点击「新建」创建空白流</p>
               <p class="placeholder-hint">
@@ -1348,25 +1357,74 @@ defineExpose({
 }
 
 .placeholder-content {
+  width: min(34rem, calc(100% - 2rem));
   text-align: center;
   color: var(--text-disabled);
 }
 
-.placeholder-icon {
-  font-size: 3.2rem;
-  opacity: 0.3;
+.placeholder-orbit {
+  position: relative;
+  width: 8.5rem;
+  height: 5.5rem;
+  margin: 0 auto 1rem;
+  filter: drop-shadow(0 10px 24px color-mix(in srgb, var(--accent) 14%, transparent));
+}
+.orbit-ring {
+  position: absolute;
+  inset: 0.6rem 1.2rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 50%;
+  transform: rotate(-18deg) skewX(-14deg);
+}
+.orbit-ring--inner {
+  inset: 1.15rem 2.1rem;
+  border-color: color-mix(in srgb, var(--accent-strong) 42%, transparent);
+  transform: rotate(24deg) skewX(10deg);
+}
+.flow-node,
+.flow-core {
+  position: absolute;
   display: block;
-  margin-bottom: 0.72rem;
-  animation: placeholder-float 3s ease-in-out infinite;
+  border-radius: 0.35rem;
+  border: 1px solid var(--accent-border);
+  background: var(--surface-2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 9%, transparent), 0 5px 14px rgb(0 0 0 / 0.18);
+}
+.flow-node {
+  width: 1.05rem;
+  height: 0.78rem;
+}
+.flow-node--source { left: 0.55rem; top: 2.3rem; }
+.flow-node--transform { left: 3.72rem; top: 0.45rem; border-radius: 50%; }
+.flow-node--output { right: 0.55rem; top: 2.3rem; }
+.flow-link {
+  position: absolute;
+  height: 1px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: 0.78;
+}
+.flow-link--source { left: 1.42rem; top: 2.7rem; width: 2.45rem; transform: rotate(-30deg); }
+.flow-link--output { left: 4.72rem; top: 1.16rem; width: 2.48rem; transform: rotate(30deg); }
+.flow-core {
+  left: 3.78rem;
+  top: 2.3rem;
+  width: 0.92rem;
+  height: 0.92rem;
+  border-radius: 50%;
+  border-color: var(--accent-strong);
+  background: var(--accent-surface);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 11%, transparent), 0 0 22px color-mix(in srgb, var(--accent) 36%, transparent);
+  animation: core-pulse 2.8s ease-in-out infinite;
+}
+@keyframes core-pulse {
+  0%, 100% { transform: scale(0.92); opacity: 0.76; }
+  50% { transform: scale(1.08); opacity: 1; }
 }
 
-@keyframes placeholder-float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-6px);
+@media (prefers-reduced-motion: reduce) {
+  .flow-core {
+    animation: none;
   }
 }
 

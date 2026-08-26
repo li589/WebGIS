@@ -202,22 +202,43 @@ async function saveTileSource() {
       </div>
     </template>
 
-    <RegisteredRemoteSources />
-
     <section class="tile-source-section">
-      <h4 class="group-title">添加在线 WMTS / XYZ 瓦片源</h4>
+      <div class="tile-section-head">
+        <div>
+          <h4 class="group-title">添加在线 WMTS / XYZ 瓦片源</h4>
+          <p class="section-hint">登记后可作为统一地图瓦片源使用，支持公开 HTTPS 模板。</p>
+        </div>
+        <span class="section-kicker">在线图层</span>
+      </div>
       <div class="tile-form">
-        <input v-model="tileForm.sourceId" placeholder="源 ID，如 nasa-xyz" />
-        <input v-model="tileForm.displayName" placeholder="显示名称" />
-        <select v-model="tileForm.serviceType">
-          <option value="xyz">XYZ</option>
-          <option value="wmts">WMTS</option>
-        </select>
-        <input v-model="tileForm.urlTemplate" class="wide" placeholder="https://example.org/{z}/{x}/{y}.png" />
-        <input v-if="tileForm.serviceType === 'wmts'" v-model="tileForm.layer" placeholder="WMTS layer" />
-        <button type="button" class="primary-btn" @click="saveTileSource">保存瓦片源</button>
+        <label class="tile-field">
+          <span>源 ID</span>
+          <input v-model="tileForm.sourceId" placeholder="如 nasa-xyz" />
+        </label>
+        <label class="tile-field">
+          <span>显示名称</span>
+          <input v-model="tileForm.displayName" placeholder="地图瓦片源名称" />
+        </label>
+        <label class="tile-field">
+          <span>服务类型</span>
+          <select v-model="tileForm.serviceType">
+            <option value="xyz">XYZ</option>
+            <option value="wmts">WMTS</option>
+          </select>
+        </label>
+        <label class="tile-field tile-field--wide">
+          <span>瓦片地址模板</span>
+          <input v-model="tileForm.urlTemplate" placeholder="https://example.org/{z}/{x}/{y}.png" />
+        </label>
+        <label v-if="tileForm.serviceType === 'wmts'" class="tile-field">
+          <span>WMTS 图层</span>
+          <input v-model="tileForm.layer" placeholder="图层标识" />
+        </label>
+        <button type="button" class="primary-btn tile-submit" @click="saveTileSource">保存瓦片源</button>
       </div>
     </section>
+
+    <RegisteredRemoteSources />
 
     <section v-if="onlineTileSources.length" class="tile-source-section">
       <h4 class="group-title">在线 WMTS / XYZ 瓦片源（{{ onlineTileSources.length }}）</h4>
@@ -305,32 +326,91 @@ async function saveTileSource() {
   font-size: var(--font-size-body);
 }
 .tile-source-section {
-  margin-top: 1rem;
+  margin-top: 0.65rem;
+  padding: 0.85rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.62rem;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-surface) 72%, transparent), transparent 58%),
+    var(--surface-2);
+}
+.tile-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.7rem;
+}
+.section-kicker {
+  flex: none;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  background: var(--accent-surface);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 .tile-form {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.4rem;
+  gap: 0.55rem;
+  align-items: end;
 }
-.tile-form .wide {
+.tile-field {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.tile-field span {
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+}
+.tile-field--wide {
   grid-column: 1 / -1;
 }
 .tile-form input,
 .tile-form select {
   min-width: 0;
-  border: 1px solid var(--border-subtle);
-  border-radius: 0.3rem;
-  padding: 0.35rem 0.45rem;
+  min-height: 2.15rem;
+  border: 1px solid var(--border-default);
+  border-radius: 0.38rem;
+  padding: 0.42rem 0.55rem;
   background: var(--surface-sunken);
   color: var(--text-primary);
+  font: inherit;
+  font-size: var(--font-size-caption);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.tile-form input:focus,
+.tile-form select:focus {
+  outline: none;
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-surface);
 }
 .primary-btn {
+  min-height: 2.15rem;
   border: 1px solid var(--accent-border);
   color: var(--accent-strong);
   background: var(--accent-surface);
-  border-radius: 0.3rem;
-  padding: 0.3rem 0.55rem;
+  border-radius: 0.38rem;
+  padding: 0.42rem 0.75rem;
+  font: inherit;
+  font-size: var(--font-size-caption);
+  font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+.primary-btn:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-surface) 72%, var(--accent) 28%);
+  transform: translateY(-1px);
+}
+.primary-btn:active {
+  transform: translateY(0);
 }
 .registered-row {
   display: flex;
@@ -367,5 +447,16 @@ async function saveTileSource() {
   border-radius: 0.3rem;
   padding: 0.25rem 0.5rem;
   cursor: pointer;
+}
+@media (max-width: 44rem) {
+  .tile-form {
+    grid-template-columns: 1fr;
+  }
+  .tile-field--wide {
+    grid-column: auto;
+  }
+  .tile-submit {
+    width: 100%;
+  }
 }
 </style>
