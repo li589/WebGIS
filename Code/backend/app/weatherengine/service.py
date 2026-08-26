@@ -258,6 +258,10 @@ class WeatherEngineService(WeatherRenderMixin):
 
         current = payload.get("current") or {}
         hourly = payload.get("hourly") or {}
+        # 点查链路复用瓦片链路的轮毂高度外推：本地代理（gfs）无 80/120/180m 风/温度
+        # 真值时，从 10m 风/温度按 Hellmann 指数 / 环境递减率外推填入 current/hourly，
+        # 避免 summary 显示 "--" 且 hourly 折线有数值（与瓦片渲染行为一致）。
+        _extrapolate_hub_height_point(current, hourly, layer_id)
         hourly_times = hourly.get("time") or []
         hourly_rows: list[WeatherPointHourlyEntry] = []
         for index, time_value in enumerate(hourly_times[: max(1, forecast_hours)]):
@@ -284,9 +288,11 @@ class WeatherEngineService(WeatherRenderMixin):
         pl_wind_direction_200 = pick_series_value(hourly, "wind_direction_200hPa", 0)
         pl_temperature_200 = pick_series_value(hourly, "temperature_200hPa", 0)
 
-        # metric_value 优先从 current 取；气压层变量不在 current 段，回退到 hourly 首小时
+        # metric_value 优先从 current 取；open-meteo 当前段仅含 2m/10m 部分变量，
+        # 其余（如 wind_speed_80m/120m/180m、temperature_80m/120m/180m）只能从 hourly[0] 取。
+        # 气压层变量同列，已默认走 hourly[0]，此处统一回退（不再受 pressure_levels 门控限制）。
         metric_value = current.get(spec.primary_metric)
-        if metric_value is None and spec.pressure_levels:
+        if metric_value is None:
             metric_value = pick_series_value(hourly, spec.primary_metric, 0)
         summary = spec.summary_template.format(
             value=metric_value if metric_value is not None else "--",
@@ -663,3 +669,98 @@ class WeatherEngineService(WeatherRenderMixin):
 
 
 weather_engine_service = WeatherEngineService()
+
+
+# 点查链路：层 → (目标高度 m, 类型)
+_POINT_LAYER_TO_HEIGHT_M: dict[str, tuple[int, str]] = {
+    "wind-field-80m": (80, "wind"),
+    "wind-field-120m": (120, "wind"),
+    "wind-field-180m": (180, "wind"),
+    "temperature-80m": (80, "temperature"),
+    "temperature-120m": (120, "temperature"),
+    "temperature-180m": (180, "temperature"),
+}
+
+
+def _extrapolate_hub_height_point(
+    current: dict[str, Any],
+    hourly: dict[str, Any],
+    layer_id: str,
+) -> None:
+    """点查链路的轮毂高度外推：与瓦片链路 ``ensure_hub_height_*_in_grid_arrays`` 对齐。
+
+    本地代理（gfs）通常不提供 ``wind_speed_80m/120m/180m`` 与
+    ``temperature_80m/120m/180m`` 真值，但提供 10m 风/2m 温度。
+    当前段单值按 Hellmann 指数/环境递减率外推填充；hourly 段按各时刻独立外推。
+    所有写入就地修改，原值为 None 才覆盖（保留模型直供数据）。
+    """
+    try:
+        from app.weatherengine.field_mapping import (
+            extrapolate_temperature_lapse_rate,
+            extrapolate_wind_speed_power_law,
+        )
+    except Exception:  # noqa: BLE001 — 模块缺失不应阻塞点查
+        return
+
+    height_spec = _POINT_LAYER_TO_HEIGHT_M.get(layer_id)
+    if height_spec is None:
+        return
+    target_h, kind = height_spec  # kind: 'wind' | 'temperature'
+
+    if kind == "wind":
+        speed_key = f"wind_speed_{int(target_h)}m"
+        dir_key = f"wind_direction_{int(target_h)}m"
+        base_speed = current.get("wind_speed_10m")
+        if current.get(speed_key) is None and base_speed is not None:
+            current[speed_key] = extrapolate_wind_speed_power_law(
+                base_speed, target_height_m=float(target_h)
+            )
+        if current.get(dir_key) is None and current.get("wind_direction_10m") is not None:
+            current[dir_key] = current.get("wind_direction_10m")
+
+        # hourly 段：基序列可能整列为 null（gfs 代理无 10m 真值）；
+        # 用 current 首值（若已外推）作常数回退，避免 hourly 折线全空。
+        hourly_base = hourly.get("wind_speed_10m")
+        hourly_speed = hourly.get(speed_key)
+        if (
+            not isinstance(hourly_base, list)
+            or not hourly_base
+            or not any(v is not None for v in hourly_base)
+        ) and current.get(speed_key) is not None:
+            hourly_base = [current.get("wind_speed_10m")] * len(hourly.get("time") or [])
+        if isinstance(hourly_base, list) and hourly_base and (
+            not isinstance(hourly_speed, list)
+            or not any(v is not None for v in hourly_speed)
+        ):
+            hourly[speed_key] = [
+                extrapolate_wind_speed_power_law(v, target_height_m=float(target_h))
+                for v in hourly_base
+            ]
+            base_dir = hourly.get("wind_direction_10m") or current.get(
+                "wind_direction_10m"
+            )
+            if isinstance(base_dir, (int, float)):
+                hourly[dir_key] = [base_dir] * len(hourly_base)
+    elif kind == "temperature":
+        temp_key = f"temperature_{int(target_h)}m"
+        base_temp = current.get("temperature_2m")
+        if current.get(temp_key) is None and base_temp is not None:
+            current[temp_key] = extrapolate_temperature_lapse_rate(
+                base_temp, target_height_m=float(target_h)
+            )
+        hourly_base = hourly.get("temperature_2m")
+        hourly_temp = hourly.get(temp_key)
+        if (
+            not isinstance(hourly_base, list)
+            or not hourly_base
+            or not any(v is not None for v in hourly_base)
+        ) and current.get("temperature_2m") is not None:
+            hourly_base = [current.get("temperature_2m")] * len(hourly.get("time") or [])
+        if isinstance(hourly_base, list) and hourly_base and (
+            not isinstance(hourly_temp, list)
+            or not any(v is not None for v in hourly_temp)
+        ):
+            hourly[temp_key] = [
+                extrapolate_temperature_lapse_rate(v, target_height_m=float(target_h))
+                for v in hourly_base
+            ]
