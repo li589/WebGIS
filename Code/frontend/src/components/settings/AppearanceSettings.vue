@@ -8,12 +8,18 @@
 import { ref } from 'vue'
 import { useThemeStore, type ThemePreference } from '../../stores/theme'
 import {
+  getGlobeBackgroundMode,
+  getGlobeDaylightMode,
   is3DViewExperimentalEnabled,
   isMapDistributionChromeEnabled,
   isShowAnalysisResultOnMapEnabled,
   set3DViewExperimentalEnabled,
+  setGlobeBackgroundMode,
+  setGlobeDaylightMode,
   setMapDistributionChromeEnabled,
   setShowAnalysisResultOnMapEnabled,
+  type GlobeBackgroundMode,
+  type GlobeDaylightMode,
 } from '../../services/settings-local'
 import SegmentedControl from '../ui/SegmentedControl.vue'
 
@@ -47,6 +53,33 @@ function onEnable3DViewChange(event: Event) {
   const checked = (event.target as HTMLInputElement).checked
   enable3DView.value = checked
   set3DViewExperimentalEnabled(checked)
+}
+
+const globeBackground = ref<GlobeBackgroundMode>(getGlobeBackgroundMode())
+
+const globeBackgroundOptions = [
+  { value: 'auto', label: '跟随主题' },
+  { value: 'starfield', label: '星图' },
+  { value: 'minimal', label: '极简' },
+]
+
+function onGlobeBackgroundChange(value: string | number) {
+  globeBackground.value = value as GlobeBackgroundMode
+  setGlobeBackgroundMode(globeBackground.value)
+}
+
+const globeDaylight = ref<GlobeDaylightMode>(getGlobeDaylightMode())
+
+const globeDaylightOptions = [
+  { value: 'auto', label: '自动' },
+  { value: 'soft', label: '柔和' },
+  { value: 'standard', label: '标准' },
+  { value: 'off', label: '关闭' },
+]
+
+function onGlobeDaylightChange(value: string | number) {
+  globeDaylight.value = value as GlobeDaylightMode
+  setGlobeDaylightMode(globeDaylight.value)
 }
 
 function onThemeChange(value: string | number) {
@@ -133,6 +166,35 @@ if (typeof window !== 'undefined') {
         开启后，顶栏切换到 3D 模式时地图将以地球投影显示全部图层，不再显示「尚未实现」遮罩提示。
         实验功能：部分叠加层在球面投影下的表现尚未充分验证，遇到异常可关闭本项并切回 2D。
       </p>
+
+      <!-- 3D 场景偏好（仅在启用 3D 视图时展示） -->
+      <div v-if="enable3DView" class="globe-scene-options">
+        <div class="scene-option">
+          <span class="scene-option-label">3D 背景</span>
+          <SegmentedControl
+            :model-value="globeBackground"
+            :options="globeBackgroundOptions"
+            size="xs"
+            @change="onGlobeBackgroundChange"
+          />
+        </div>
+        <p class="section-hint">
+          3D 模式下地球背后的深空背景。「跟随主题」在深色界面显示星图/银河，浅色界面淡化为柔和微尘。
+        </p>
+        <div class="scene-option">
+          <span class="scene-option-label">3D 光影</span>
+          <SegmentedControl
+            :model-value="globeDaylight"
+            :options="globeDaylightOptions"
+            size="xs"
+            @change="onGlobeDaylightChange"
+          />
+        </div>
+        <p class="section-hint">
+          球面昼夜光照。「自动」按当前底图调节：街道/矢量等亮色底图自动压低直射避免过曝，
+          影像/暗色底图保留立体光影。「柔和」整体减淡，「关闭」停用昼夜效果。
+        </p>
+      </div>
     </section>
 
     <!-- 动效偏好 -->
@@ -198,5 +260,30 @@ if (typeof window !== 'undefined') {
 
 .hint-3d {
   margin-top: -0.25rem;
+}
+
+.globe-scene-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-sunken);
+}
+
+.scene-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.scene-option-label {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  white-space: nowrap;
 }
 </style>

@@ -110,11 +110,18 @@
 }
 
 /* Globe 模式专属视觉层：大气边缘辉光与深空底色；默认不增加绘制，
-   仅由 DashboardView 的 map-shell--3d 类激活。 */
+   仅由 DashboardView 的 map-shell--3d 类激活。
+   主题感知：浅色主题（data-theme="light"）下用柔和浅蓝灰渐变，避免深空与浅色 UI 冲突。 */
 .map-shell--3d .map-stage {
   background:
     radial-gradient(circle at 50% 48%, rgba(80, 180, 220, 0.12), transparent 34%),
     linear-gradient(180deg, #07141f 0%, #091d2b 56%, #04101b 100%);
+}
+
+:root[data-theme='light'] .map-shell--3d .map-stage {
+  background:
+    radial-gradient(circle at 50% 48%, rgba(140, 175, 210, 0.10), transparent 38%),
+    linear-gradient(180deg, #e7edf4 0%, #d6dfeb 56%, #c5d1e0 100%);
 }
 
 .map-shell--3d .map-host {
@@ -127,6 +134,14 @@
     linear-gradient(180deg, rgba(2, 10, 18, 0.14), rgba(2, 10, 18, 0.08));
   mix-blend-mode: screen;
   opacity: 0.9;
+}
+
+:root[data-theme='light'] .map-shell--3d .map-fog {
+  background:
+    radial-gradient(ellipse at 50% 48%, transparent 32%, rgba(110, 150, 195, 0.08) 70%, rgba(150, 185, 220, 0.18) 100%),
+    linear-gradient(180deg, rgba(220, 230, 240, 0.10), rgba(220, 230, 240, 0.06));
+  mix-blend-mode: normal;
+  opacity: 0.85;
 }
 
 @media (prefers-reduced-motion: reduce) {

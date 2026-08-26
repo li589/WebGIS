@@ -6,6 +6,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, toRef, watch } f
 
 import { AlertTriangle } from './ui/icons'
 import DrawToolbar from './map/draw-toolbar.vue'
+import GlobeStarfield from './map/GlobeStarfield.vue'
 import ZonalStatsCard from './info-panel/ZonalStatsCard.vue'
 import VectorAttributeTable from './info-panel/VectorAttributeTable.vue'
 import { useLayersStore } from '../stores/layers'
@@ -46,7 +47,17 @@ import { isGlobalMapViewport } from '../utils/map-viewport'
 import {
   isMapDistributionChromeEnabled,
   subscribeMapDistributionChrome,
+  getGlobeBackgroundMode,
+  getGlobeDaylightMode,
+  subscribeGlobeScene,
+  type GlobeBackgroundMode,
+  type GlobeDaylightMode,
 } from '../services/settings-local'
+import {
+  classifyBasemapBrightness,
+  resolveGlobeLighting,
+  resolveGlobeSky,
+} from './map/globe-scene-utils'
 import { useThemeStore } from '../stores/theme'
 import { resolveSurfaceColor } from './map/map-canvas-map-options'
 import {
@@ -372,10 +383,32 @@ watch(
   { immediate: true },
 )
 
-// map 实例在 onMounted 异步创建；watch 先登记，创建后立即 apply，时间轴变化时仅更新光照。
+// ─── 3D globe 场景偏好（背景星图 / 昼夜光影档位）────────────────────────────
+
+const globeProjectionOn = computed(() => props.globeProjection === true)
+const globeBackgroundMode = ref<GlobeBackgroundMode>(getGlobeBackgroundMode())
+const globeDaylightMode = ref<GlobeDaylightMode>(getGlobeDaylightMode())
+let _unsubscribeGlobeScene: (() => void) | null = null
+_unsubscribeGlobeScene = subscribeGlobeScene(() => {
+  globeBackgroundMode.value = getGlobeBackgroundMode()
+  globeDaylightMode.value = getGlobeDaylightMode()
+})
+onBeforeUnmount(() => {
+  _unsubscribeGlobeScene?.()
+  _unsubscribeGlobeScene = null
+})
+
+// map 实例在 onMounted 异步创建；watch 先登记，创建后立即 apply，
+// 时间轴 / 底图源 / 光影档位变化时仅更新光照与天空。
 watch(
-  [() => props.globeProjection, () => props.currentHour, mapReady],
-  ([enabled, hour, ready]) => {
+  [
+    () => props.globeProjection,
+    () => props.currentHour,
+    () => props.tileSourceId,
+    globeDaylightMode,
+    mapReady,
+  ],
+  ([enabled, hour, , , ready]) => {
     const map = state.resources.map
     if (map && ready) applyGlobeScene(map, enabled === true, hour)
   },
@@ -387,8 +420,11 @@ watch(
 const timeVisualState = computed(() => buildMapStageTimeVisualState(props.currentHour))
 
 /**
- * Globe 专属视觉层：原生天空大气 + 温和昼夜光照。
+ * Globe 专属视觉层：原生天空大气 + 底图亮度自适应的昼夜光照。
  * 只在 3D 模式打开，2D 模式恢复默认，避免常规地图承担额外样式更新。
+ *
+ * 亮色底图（街道/矢量/地形）在太阳直射下会过曝发白：按底图 style 分类
+ * （globe-scene-utils）压低直射强度与太阳高度角；影像/暗色底图保留立体光影。
  */
 function applyGlobeScene(map: MapInstance, enabled: boolean, hour: number): void {
   try {
@@ -397,29 +433,29 @@ function applyGlobeScene(map: MapInstance, enabled: boolean, hour: number): void
       map.setLight?.({ anchor: 'viewport', color: '#ffffff', intensity: 0.5 })
       return
     }
-    const normalizedHour = ((hour % 24) + 24) % 24
-    const daylight = Math.max(0, Math.cos(((normalizedHour - 12) / 12) * Math.PI))
-    const twilight = 1 - daylight
-    // 太阳方位每小时推进 15°，正午位于视口南侧；值域遵循 MapLibre LightSpecification。
-    const azimuth = 180 - (normalizedHour - 12) * 15
-    const elevation = 22 + daylight * 42
-    const warm = Math.round(255 - twilight * 28)
-    const green = Math.round(244 - twilight * 56)
-    const blue = Math.round(224 - twilight * 40)
-    map.setLight?.({
-      anchor: 'map',
-      color: `rgb(${warm}, ${green}, ${blue})`,
-      intensity: 0.55 + daylight * 0.35,
-      position: [1, azimuth, elevation],
-    })
+    const basemapStyle = TILE_SOURCE_MAP.get(props.tileSourceId)?.style
+    const brightness = classifyBasemapBrightness(basemapStyle)
+    const light = resolveGlobeLighting(hour, brightness, globeDaylightMode.value)
+    if (light) {
+      map.setLight?.({
+        anchor: 'map',
+        color: light.color,
+        intensity: light.intensity,
+        position: [1, light.azimuth, light.elevation],
+      })
+    } else {
+      // 光影关闭：恢复默认光照，只保留天空大气
+      map.setLight?.({ anchor: 'viewport', color: '#ffffff', intensity: 0.5 })
+    }
+    const sky = resolveGlobeSky(hour, brightness)
     map.setSky?.({
-      'sky-color': daylight > 0.45 ? '#8cc9ee' : '#102c46',
-      'horizon-color': daylight > 0.45 ? '#d4ebf5' : '#1a4a63',
-      'fog-color': daylight > 0.45 ? '#9bd4ed' : '#12334d',
-      'fog-ground-blend': 0.35,
-      'horizon-fog-blend': 0.92,
-      'sky-horizon-blend': 0.8,
-      'atmosphere-blend': 0.78,
+      'sky-color': sky.skyColor,
+      'horizon-color': sky.horizonColor,
+      'fog-color': sky.fogColor,
+      'fog-ground-blend': sky.fogGroundBlend,
+      'horizon-fog-blend': sky.horizonFogBlend,
+      'sky-horizon-blend': sky.skyHorizonBlend,
+      'atmosphere-blend': sky.atmosphereBlend,
     })
   } catch (error) {
     // 旧样式/旧 MapLibre 版本不支持天空参数时，不影响地图主体渲染。
@@ -884,6 +920,9 @@ async function handleLocateMe() {
     :class="stageAppearanceModel.stageClassNames"
     :style="stageAppearanceModel.stageStyleVars"
   >
+    <!-- 3D globe 深空星图背景层（2D 时淡出；在地图画布之下） -->
+    <GlobeStarfield :mode="globeBackgroundMode" :active="globeProjectionOn" />
+
     <div ref="mapContainer" class="map-host" :class="stageAppearanceModel.mapHostClassNames"></div>
 
     <!-- Skeleton -->

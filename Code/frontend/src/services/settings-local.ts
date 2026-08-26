@@ -38,6 +38,16 @@ export interface SettingsUiLocal {
    * MapLibre globe 投影显示真实图层，不再显示「尚未实现」遮罩。
    */
   enable3DView?: boolean
+  /**
+   * 3D globe 背景模式（默认 auto）：
+   * auto=跟随主题（暗色=星图 / 浅色=淡化微尘）；starfield=始终完整星图；minimal=极简渐变。
+   */
+  globeBackground?: 'auto' | 'starfield' | 'minimal'
+  /**
+   * 3D globe 昼夜光影档位（默认 auto）：
+   * auto=随底图亮度自适应（亮色底图压低直射防过曝）；soft=整体柔和；standard=标准；off=关闭。
+   */
+  globeDaylight?: 'auto' | 'soft' | 'standard' | 'off'
 }
 
 function safeGet(storage: Storage, key: string): string | null {
@@ -222,6 +232,51 @@ export function set3DViewExperimentalEnabled(on: boolean): void {
       // ignore listener errors
     }
   }
+}
+
+// ─── 3D globe 场景偏好（背景星图 / 昼夜光影）──────────────────────────────
+
+export type GlobeBackgroundMode = 'auto' | 'starfield' | 'minimal'
+export type GlobeDaylightMode = 'auto' | 'soft' | 'standard' | 'off'
+
+/** 3D 背景默认 auto（跟随主题：暗色=星图 / 浅色=淡化微尘）。 */
+export function getGlobeBackgroundMode(): GlobeBackgroundMode {
+  return loadSettingsUiLocal().globeBackground ?? 'auto'
+}
+
+/** 3D 昼夜光影默认 auto（随底图亮度自适应，亮色底图压低直射防过曝）。 */
+export function getGlobeDaylightMode(): GlobeDaylightMode {
+  return loadSettingsUiLocal().globeDaylight ?? 'auto'
+}
+
+const globeSceneListeners = new Set<() => void>()
+
+/** 订阅 3D 背景与光影偏好变化（返回取消订阅函数）。 */
+export function subscribeGlobeScene(listener: () => void): () => void {
+  globeSceneListeners.add(listener)
+  return () => {
+    globeSceneListeners.delete(listener)
+  }
+}
+
+function notifyGlobeSceneListeners(): void {
+  for (const listener of globeSceneListeners) {
+    try {
+      listener()
+    } catch {
+      // ignore listener errors
+    }
+  }
+}
+
+export function setGlobeBackgroundMode(mode: GlobeBackgroundMode): void {
+  saveSettingsUiLocal({ ...loadSettingsUiLocal(), globeBackground: mode })
+  notifyGlobeSceneListeners()
+}
+
+export function setGlobeDaylightMode(mode: GlobeDaylightMode): void {
+  saveSettingsUiLocal({ ...loadSettingsUiLocal(), globeDaylight: mode })
+  notifyGlobeSceneListeners()
 }
 
 /** Clear local preferences only — does not touch server-side key history. */
