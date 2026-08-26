@@ -9,7 +9,7 @@
  * 底部为已注册「可访问远程数据源」表（remote-source registry）。
  */
 
-import { computed, ref, toRef } from 'vue'
+import { computed, reactive, ref, toRef } from 'vue'
 import { useSettingsStore } from '../../../stores/settings'
 import type { PortalCatalogEntry, RemoteStorageProfile } from '../../../types/api-reexports'
 import { PROTOCOL_META } from '../remote-storage/protocols'
@@ -20,6 +20,23 @@ import RegisteredRemoteSources from './RegisteredRemoteSources.vue'
 const settingsStore = useSettingsStore()
 const remoteStorageProfiles = toRef(settingsStore, 'remoteStorageProfiles')
 const portalCatalog = toRef(settingsStore, 'portalCatalog')
+const onlineTileSources = toRef(settingsStore, 'onlineTileSources')
+const tileForm = reactive({
+  sourceId: '',
+  displayName: '',
+  serviceType: 'xyz' as 'wmts' | 'xyz',
+  urlTemplate: '',
+  layer: '',
+  style: 'default',
+  tileMatrixSet: '',
+  imageFormat: 'image/png',
+  coordinateSystem: 'EPSG:3857',
+})
+
+async function removeOnlineTileSource(sourceId: string) {
+  if (!window.confirm(`确定删除在线瓦片源「${sourceId}」？`)) return
+  await settingsStore.removeOnlineTileSource(sourceId)
+}
 
 // ── 分组数据 ───────────────────────────────────────────────────────────────
 
@@ -120,6 +137,27 @@ async function onRegisteredAndAdded() {
   // P2：注册并添加到图层——刷新注册表；工作流状态面板将显示下载/处理进度
   await settingsStore.loadRemoteSources()
 }
+
+async function saveTileSource() {
+  const sourceId = tileForm.sourceId.trim()
+  if (!sourceId || !tileForm.displayName.trim() || !tileForm.urlTemplate.trim()) return
+  await settingsStore.saveOnlineTileSource(sourceId, {
+    display_name: tileForm.displayName.trim(),
+    service_type: tileForm.serviceType,
+    url_template: tileForm.urlTemplate.trim(),
+    layer: tileForm.layer.trim(),
+    style: tileForm.style.trim() || 'default',
+    tile_matrix_set: tileForm.tileMatrixSet.trim(),
+    image_format: tileForm.imageFormat.trim() || 'image/png',
+    coordinate_system: tileForm.coordinateSystem.trim() || 'EPSG:3857',
+    auth_ref: null,
+    enabled: true,
+  })
+  tileForm.sourceId = ''
+  tileForm.displayName = ''
+  tileForm.urlTemplate = ''
+  tileForm.layer = ''
+}
 </script>
 
 <template>
@@ -165,6 +203,35 @@ async function onRegisteredAndAdded() {
     </template>
 
     <RegisteredRemoteSources />
+
+    <section class="tile-source-section">
+      <h4 class="group-title">添加在线 WMTS / XYZ 瓦片源</h4>
+      <div class="tile-form">
+        <input v-model="tileForm.sourceId" placeholder="源 ID，如 nasa-xyz" />
+        <input v-model="tileForm.displayName" placeholder="显示名称" />
+        <select v-model="tileForm.serviceType">
+          <option value="xyz">XYZ</option>
+          <option value="wmts">WMTS</option>
+        </select>
+        <input v-model="tileForm.urlTemplate" class="wide" placeholder="https://example.org/{z}/{x}/{y}.png" />
+        <input v-if="tileForm.serviceType === 'wmts'" v-model="tileForm.layer" placeholder="WMTS layer" />
+        <button type="button" class="primary-btn" @click="saveTileSource">保存瓦片源</button>
+      </div>
+    </section>
+
+    <section v-if="onlineTileSources.length" class="tile-source-section">
+      <h4 class="group-title">在线 WMTS / XYZ 瓦片源（{{ onlineTileSources.length }}）</h4>
+      <div class="registered-list">
+        <div v-for="source in onlineTileSources" :key="source.source_id" class="registered-row">
+          <div>
+            <strong>{{ source.display_name }}</strong>
+            <span class="muted">{{ source.service_type.toUpperCase() }} · {{ source.coordinate_system }} · {{ source.config_status === 'configured' ? '已配置' : '配置无效' }}</span>
+            <code>{{ source.url_template }}</code>
+          </div>
+          <button type="button" class="danger-btn" @click="removeOnlineTileSource(source.source_id)">删除</button>
+        </div>
+      </div>
+    </section>
 
     <!-- 融合式「添加数据源」对话框（检索多选/目录浏览/仅注册三形态） -->
     <RemoteSourceAddDialog
@@ -237,8 +304,68 @@ async function onRegisteredAndAdded() {
   color: var(--text-strong);
   font-size: var(--font-size-body);
 }
-.req {
-  color: var(--danger);
-  font-style: normal;
+.tile-source-section {
+  margin-top: 1rem;
+}
+.tile-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+.tile-form .wide {
+  grid-column: 1 / -1;
+}
+.tile-form input,
+.tile-form select {
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.3rem;
+  padding: 0.35rem 0.45rem;
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+}
+.primary-btn {
+  border: 1px solid var(--accent-border);
+  color: var(--accent-strong);
+  background: var(--accent-surface);
+  border-radius: 0.3rem;
+  padding: 0.3rem 0.55rem;
+  cursor: pointer;
+}
+.registered-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.4rem;
+  background: var(--surface-sunken);
+}
+.registered-row > div {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.registered-row code {
+  max-width: 48rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+.muted {
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
+}
+
+.danger-btn {
+  flex: none;
+  border: 1px solid var(--danger-border, var(--border-subtle));
+  color: var(--danger, #e85d5d);
+  background: transparent;
+  border-radius: 0.3rem;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
 }
 </style>

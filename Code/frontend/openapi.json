@@ -8520,6 +8520,138 @@
         }
       }
     },
+    "/config/online-tile-sources": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "List Online Tile Sources",
+        "operationId": "list_online_tile_sources_config_online_tile_sources_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OnlineTileSource"
+                  },
+                  "type": "array",
+                  "title": "Response List Online Tile Sources Config Online Tile Sources Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/config/online-tile-sources/{source_id}": {
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Upsert Online Tile Source",
+        "operationId": "upsert_online_tile_source_config_online_tile_sources__source_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnlineTileSourceUpsertRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnlineTileSource"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete Online Tile Source",
+        "operationId": "delete_online_tile_source_config_online_tile_sources__source_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/config/data-source": {
       "get": {
         "tags": [
@@ -13309,6 +13441,13 @@
               }
             ],
             "title": "Workflow Hint"
+          },
+          "online_tile_sources": {
+            "items": {
+              "$ref": "#/components/schemas/OnlineTileSource"
+            },
+            "type": "array",
+            "title": "Online Tile Sources"
           }
         },
         "type": "object",
@@ -17549,6 +17688,190 @@
         "title": "OnlineTemporalCapability",
         "description": "在线时间获取能力声明。\n\n标记图层支持\"用户选时间点 → 自动在线获取 → 动态刷新\"流程。\nNone 表示该图层不支持在线历史时间获取。"
       },
+      "OnlineTileSource": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "service_type": {
+            "type": "string",
+            "enum": [
+              "wmts",
+              "xyz"
+            ],
+            "title": "Service Type"
+          },
+          "url_template": {
+            "type": "string",
+            "title": "Url Template"
+          },
+          "layer": {
+            "type": "string",
+            "title": "Layer",
+            "default": ""
+          },
+          "style": {
+            "type": "string",
+            "title": "Style",
+            "default": "default"
+          },
+          "tile_matrix_set": {
+            "type": "string",
+            "title": "Tile Matrix Set",
+            "default": ""
+          },
+          "image_format": {
+            "type": "string",
+            "title": "Image Format",
+            "default": "image/png"
+          },
+          "coordinate_system": {
+            "type": "string",
+            "title": "Coordinate System",
+            "default": "EPSG:3857"
+          },
+          "auth_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Ref"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At",
+            "default": ""
+          },
+          "last_test_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Test Status"
+          },
+          "last_tested_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Tested At"
+          },
+          "config_status": {
+            "type": "string",
+            "title": "Config Status",
+            "default": "configured"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "display_name",
+          "service_type",
+          "url_template"
+        ],
+        "title": "OnlineTileSource",
+        "description": "用户注册的 WMTS/XYZ 在线瓦片源（不包含明文密钥）。"
+      },
+      "OnlineTileSourceUpsertRequest": {
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "service_type": {
+            "type": "string",
+            "enum": [
+              "wmts",
+              "xyz"
+            ],
+            "title": "Service Type"
+          },
+          "url_template": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Url Template"
+          },
+          "layer": {
+            "type": "string",
+            "title": "Layer",
+            "default": ""
+          },
+          "style": {
+            "type": "string",
+            "title": "Style",
+            "default": "default"
+          },
+          "tile_matrix_set": {
+            "type": "string",
+            "title": "Tile Matrix Set",
+            "default": ""
+          },
+          "image_format": {
+            "type": "string",
+            "title": "Image Format",
+            "default": "image/png"
+          },
+          "coordinate_system": {
+            "type": "string",
+            "title": "Coordinate System",
+            "default": "EPSG:3857"
+          },
+          "auth_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Ref"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "display_name",
+          "service_type",
+          "url_template"
+        ],
+        "title": "OnlineTileSourceUpsertRequest",
+        "description": "PUT /config/online-tile-sources/{source_id} body."
+      },
       "OpenDataPresetsUpdateRequest": {
         "properties": {
           "open_data_presets": {
@@ -20741,6 +21064,11 @@
           "coord_system": {
             "type": "string",
             "title": "Coord System"
+          },
+          "service_type": {
+            "type": "string",
+            "title": "Service Type",
+            "default": "builtin"
           }
         },
         "type": "object",

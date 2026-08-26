@@ -2996,6 +2996,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config/online-tile-sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Online Tile Sources */
+        get: operations["list_online_tile_sources_config_online_tile_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/online-tile-sources/{source_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Upsert Online Tile Source */
+        put: operations["upsert_online_tile_source_config_online_tile_sources__source_id__put"];
+        post?: never;
+        /** Delete Online Tile Source */
+        delete: operations["delete_online_tile_source_config_online_tile_sources__source_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config/data-source": {
         parameters: {
             query?: never;
@@ -4922,6 +4957,8 @@ export interface components {
             static_cache?: components["schemas"]["StaticCacheSummary"] | null;
             /** Workflow Hint */
             workflow_hint?: string | null;
+            /** Online Tile Sources */
+            online_tile_sources?: components["schemas"]["OnlineTileSource"][];
         };
         /**
          * DataSourcePathsUpdateRequest
@@ -6567,6 +6604,121 @@ export interface components {
              */
             priority: string;
         };
+        /**
+         * OnlineTileSource
+         * @description 用户注册的 WMTS/XYZ 在线瓦片源（不包含明文密钥）。
+         */
+        OnlineTileSource: {
+            /** Source Id */
+            source_id: string;
+            /** Display Name */
+            display_name: string;
+            /**
+             * Service Type
+             * @enum {string}
+             */
+            service_type: "wmts" | "xyz";
+            /** Url Template */
+            url_template: string;
+            /**
+             * Layer
+             * @default
+             */
+            layer: string;
+            /**
+             * Style
+             * @default default
+             */
+            style: string;
+            /**
+             * Tile Matrix Set
+             * @default
+             */
+            tile_matrix_set: string;
+            /**
+             * Image Format
+             * @default image/png
+             */
+            image_format: string;
+            /**
+             * Coordinate System
+             * @default EPSG:3857
+             */
+            coordinate_system: string;
+            /** Auth Ref */
+            auth_ref?: string | null;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
+            /** Last Test Status */
+            last_test_status?: string | null;
+            /** Last Tested At */
+            last_tested_at?: string | null;
+            /**
+             * Config Status
+             * @default configured
+             */
+            config_status: string;
+        };
+        /**
+         * OnlineTileSourceUpsertRequest
+         * @description PUT /config/online-tile-sources/{source_id} body.
+         */
+        OnlineTileSourceUpsertRequest: {
+            /** Display Name */
+            display_name: string;
+            /**
+             * Service Type
+             * @enum {string}
+             */
+            service_type: "wmts" | "xyz";
+            /** Url Template */
+            url_template: string;
+            /**
+             * Layer
+             * @default
+             */
+            layer: string;
+            /**
+             * Style
+             * @default default
+             */
+            style: string;
+            /**
+             * Tile Matrix Set
+             * @default
+             */
+            tile_matrix_set: string;
+            /**
+             * Image Format
+             * @default image/png
+             */
+            image_format: string;
+            /**
+             * Coordinate System
+             * @default EPSG:3857
+             */
+            coordinate_system: string;
+            /** Auth Ref */
+            auth_ref?: string | null;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+        };
         /** OpenDataPresetsUpdateRequest */
         OpenDataPresetsUpdateRequest: {
             /** Open Data Presets */
@@ -8078,6 +8230,11 @@ export interface components {
             requires_transform: boolean;
             /** Coord System */
             coord_system: string;
+            /**
+             * Service Type
+             * @default builtin
+             */
+            service_type: string;
         };
         /** TileProvidersResponse */
         TileProvidersResponse: {
@@ -14673,6 +14830,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RemoteStorageHistoryDeletedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_online_tile_sources_config_online_tile_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnlineTileSource"][];
+                };
+            };
+        };
+    };
+    upsert_online_tile_source_config_online_tile_sources__source_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OnlineTileSourceUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnlineTileSource"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_online_tile_source_config_online_tile_sources__source_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResponse"];
                 };
             };
             /** @description Validation Error */

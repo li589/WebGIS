@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -319,6 +319,46 @@ class PortalCredentialPublic(BaseModel):
     account_count: int = 0
 
 
+class OnlineTileSource(BaseModel):
+    """用户注册的 WMTS/XYZ 在线瓦片源（不包含明文密钥）。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    source_id: str
+    display_name: str
+    service_type: Literal["wmts", "xyz"]
+    url_template: str
+    layer: str = ""
+    style: str = "default"
+    tile_matrix_set: str = ""
+    image_format: str = "image/png"
+    coordinate_system: str = "EPSG:3857"
+    auth_ref: str | None = None
+    enabled: bool = True
+    created_at: str = ""
+    updated_at: str = ""
+    last_test_status: str | None = None
+    last_tested_at: str | None = None
+    config_status: str = "configured"
+
+
+class OnlineTileSourceUpsertRequest(BaseModel):
+    """PUT /config/online-tile-sources/{source_id} body."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    display_name: str = Field(..., min_length=1, max_length=120)
+    service_type: Literal["wmts", "xyz"]
+    url_template: str = Field(..., min_length=1, max_length=2000)
+    layer: str = ""
+    style: str = "default"
+    tile_matrix_set: str = ""
+    image_format: str = "image/png"
+    coordinate_system: str = "EPSG:3857"
+    auth_ref: str | None = None
+    enabled: bool = True
+
+
 class DataSourceConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -344,6 +384,7 @@ class DataSourceConfig(BaseModel):
     remote_layer_data_uris: dict[str, Any] = Field(default_factory=dict)
     static_cache: StaticCacheSummary | None = None
     workflow_hint: str | None = None
+    online_tile_sources: list[OnlineTileSource] = Field(default_factory=list)
 
 
 class AvailableDatasetEntry(BaseModel):

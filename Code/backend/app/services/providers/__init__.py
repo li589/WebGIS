@@ -4,6 +4,7 @@
 """
 
 from app.services.providers.basemap_tile_provider import BaseMapTileProvider
+from app.services.online_tile_source_service import OnlineTileProvider
 from app.services.tile_provider_registry import tile_provider_registry
 
 _registered = False
@@ -18,4 +19,5 @@ def register_default_providers() -> None:
     if hasattr(tile_provider_registry, "clear"):
         tile_provider_registry.clear()
     tile_provider_registry.register(BaseMapTileProvider())
+    tile_provider_registry.register(OnlineTileProvider())
     _registered = True

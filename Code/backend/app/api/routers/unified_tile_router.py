@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Query, Response
 
 from app.services.tile_provider_registry import tile_provider_registry
 from app.services.tile_proxy_service import TILE_URL_TEMPLATES
+from app.services.config_service import list_online_tile_sources
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,10 @@ async def get_unified_tile(
     t: int | None = Query(default=None, description="客户端缓存 bust，不参与业务"),
 ) -> Response:
     """获取底图栅格瓦片。"""
-    if layer_id not in TILE_URL_TEMPLATES:
+    if layer_id not in TILE_URL_TEMPLATES and not any(
+        item.get("source_id") == layer_id and item.get("enabled") is not False
+        for item in list_online_tile_sources()
+    ):
         raise HTTPException(
             status_code=404,
             detail=(

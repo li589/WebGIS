@@ -98,6 +98,8 @@ from shared.contracts.config_contracts import (
     GeeAccountToggleResponse,
     GeeRuntimeConfig,
     GeneralConfig,
+    OnlineTileSource,
+    OnlineTileSourceUpsertRequest,
     OpenDataPresetsUpdateRequest,
     OpenDataPresetsUpdateResponse,
     PortalCatalogEntry,
@@ -786,6 +788,38 @@ async def delete_remote_storage_history_entry(profile_id: str, history_id: int):
 async def clear_remote_storage_history(profile_id: str):
     deleted = config_service.clear_remote_storage_history(profile_id)
     return RemoteStorageHistoryClearResponse(profile_id=profile_id, deleted=deleted)
+
+
+@router.get(
+    "/online-tile-sources",
+    response_model=list[OnlineTileSource],
+    dependencies=[Depends(require_config_read_access)],
+)
+async def list_online_tile_sources():
+    return config_service.list_online_tile_sources()
+
+
+@router.put(
+    "/online-tile-sources/{source_id}",
+    response_model=OnlineTileSource,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def upsert_online_tile_source(source_id: str, payload: OnlineTileSourceUpsertRequest):
+    try:
+        return config_service.upsert_online_tile_source(source_id, payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/online-tile-sources/{source_id}",
+    response_model=DeletedResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def delete_online_tile_source(source_id: str):
+    if not config_service.delete_online_tile_source(source_id):
+        raise HTTPException(status_code=404, detail=f"Online tile source '{source_id}' not found")
+    return DeletedResponse(deleted=True)
 
 
 # ── 数据源配置 ────────────────────────────────────────────────────────────────

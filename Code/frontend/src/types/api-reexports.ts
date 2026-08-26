@@ -140,6 +140,8 @@ export type WeatherProviderPriorityResponse = Schema<'WeatherProviderPriorityRes
 export type WeatherProviderDeletedResponse = Schema<'WeatherProviderDeletedResponse'>
 
 export type DataSourceConfig = Schema<'DataSourceConfig'>
+export type OnlineTileSource = Schema<'OnlineTileSource'>
+export type OnlineTileSourceUpsertRequest = Schema<'OnlineTileSourceUpsertRequest'>
 export type DataSourcePathsUpdateRequest = Schema<'DataSourcePathsUpdateRequest'>
 export type DataSourcePathsUpdateResponse = Schema<'DataSourcePathsUpdateResponse'>
 export type DiscoveredDataset = Schema<'DiscoveredDataset'>

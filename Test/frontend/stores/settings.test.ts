@@ -36,6 +36,7 @@ vi.mock('@/services/settings-api', () => {
     setWeatherProviderPriority: vi.fn(),
     deleteWeatherProvider: vi.fn(),
     fetchDataSourceConfig: vi.fn(),
+    fetchOnlineTileSources: vi.fn(),
     fetchAboutInfo: vi.fn(),
     updateRuntimeConfig: vi.fn(),
     fetchRemoteStorageProfiles: vi.fn(),
@@ -92,6 +93,7 @@ function mockAllResolve() {
   api.fetchWeatherConfig.mockResolvedValue({ default_model: 'best_match' } as never)
   api.fetchWeatherProviders.mockResolvedValue([{ provider_id: 'p1' }] as never)
   api.fetchDataSourceConfig.mockResolvedValue({ data_root: 'I:/test' } as never)
+  api.fetchOnlineTileSources.mockResolvedValue([] as never)
   api.fetchRemoteStorageProfiles.mockResolvedValue([{ profile_id: 'r1' }] as never)
   api.fetchPortalCatalog.mockResolvedValue({ portals: [{ portal_id: 'po1' }] } as never)
   api.fetchAvailableDatasets.mockResolvedValue([{ dataset_id: 'd1' }] as never)

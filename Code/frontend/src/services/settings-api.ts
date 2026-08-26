@@ -48,9 +48,8 @@ export type {
   GeeRuntimeConfig,
   GeneralConfig,
   MapAoiPreset,
-  MinioPublicConfig,
-  OpenDataPresetsUpdateRequest,
-  OpenDataPresetsUpdateResponse,
+  OnlineTileSource,
+  OnlineTileSourceUpsertRequest,
   PortalCatalogEntry,
   PortalCatalogResponse,
   PortalCredentialPublic,
@@ -151,6 +150,8 @@ import type {
   GeeAccountToggleResponse,
   GeeRuntimeConfig,
   GeneralConfig,
+  OnlineTileSource,
+  OnlineTileSourceUpsertRequest,
   OpenDataPresetsUpdateRequest,
   OpenDataPresetsUpdateResponse,
   PortalCatalogEntry,
@@ -286,6 +287,25 @@ async function settingsFetch<T>(
   }
 }
 
+export function fetchOnlineTileSources(): Promise<OnlineTileSource[]> {
+  return settingsFetch('/config/online-tile-sources')
+}
+
+export function upsertOnlineTileSource(
+  sourceId: string,
+  payload: OnlineTileSourceUpsertRequest,
+): Promise<OnlineTileSource> {
+  return settingsFetch(`/config/online-tile-sources/${encodeURIComponent(sourceId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteOnlineTileSource(sourceId: string): Promise<DeletedResponse> {
+  return settingsFetch(`/config/online-tile-sources/${encodeURIComponent(sourceId)}`, {
+    method: 'DELETE',
+  })
+}
 export function fetchGeneralConfig(): Promise<GeneralConfig> {
   return settingsFetch('/config/general')
 }
