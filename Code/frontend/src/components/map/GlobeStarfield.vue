@@ -15,6 +15,12 @@ const props = defineProps<{
   mode: 'auto' | 'starfield' | 'minimal'
   /** 是否处于 3D globe 模式（控制显隐） */
   active: boolean
+  /**
+   * 隐藏银河云气带（保留星点/亮星/深空天体）。
+   * 3D晨昏「自然/无」档传入 true：银河 S 型白带横穿屏幕左上，
+   * 这两个模式下"左上较亮区域不应显示"；「标准」档保留银河。
+   */
+  suppressGalaxy?: boolean
 }>()
 
 const themeStore = useThemeStore()
@@ -28,14 +34,14 @@ const effectiveMode = computed<StarfieldMode>(() => {
 })
 
 watch(
-  effectiveMode,
-  (mode) => {
+  [effectiveMode, () => props.suppressGalaxy],
+  ([mode, suppressGalaxy]) => {
     if (mode === 'minimal') {
       bgUrl.value = ''
       return
     }
     try {
-      const canvas = renderStarfieldCanvas({ mode })
+      const canvas = renderStarfieldCanvas({ mode, suppressGalaxy })
       bgUrl.value = canvas.toDataURL('image/png')
     } catch {
       // canvas 不可用（极端环境）时退化为纯渐变背景

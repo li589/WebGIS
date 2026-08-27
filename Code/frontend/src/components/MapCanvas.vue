@@ -520,63 +520,88 @@ function applyBasemapBrightness(map: MapInstance, globeEnabled: boolean): void {
   }
 }
 
-// ─── Globe raster 昼夜遮罩（"自然"晨昏样式，跟随时间轴+日期） ───────────────��
+// ─── Globe raster 昼夜遮罩（"自然"晨昏样式，跟随时间轴+日期） ────────────────
 
 /**
  * OSM 等 raster 瓦片没有 MapLibre 光照属性，必须单独绘制夜半球遮罩。
  * 真实太空观感（globe-scene-utils.buildNightHemisphereGeoJSON）：
  * - 弯曲晨昏线：按太阳赤纬精确求解纬度边界，极昼/极夜随日期自然出现
- * - 夜侧均匀暗化（全夜核统一暗度）+ 晨昏线 18° 窄过渡带渐隐，无彩色条带
+ * - 夜侧均匀暗化（单一 night-core 多边形，硬边）
+ * - **line-blur 羽化过渡**：晨昏线 terminator 用原生 line-blur 宽线
+ *   向两侧像素级羽化（替代多档条纹——档边界渲染下可见，用户反馈"好多线"）
  * - 仅「自然」档显示；「标准」=固定质感不画晨昏线；「无」=完全不画
  *
  * ⚠️ MapLibre 表达式规范：['zoom'] 只能作为**顶层** step/interpolate 的 input，
- * 不能嵌套在 ['*', zoomInterp, tierInterp] 乘法里（校验失败且错误只走
- * error 事件不 throw，静默拒绝 addLayer——曾导致晨昏线完全不渲染）。
- * 因此拆两个合规 layer：core（顶层 zoom interpolate）+ transition（顶层 tier 数据驱动）。
+ * 不能嵌套在乘法里（校验失败静默拒绝 addLayer——错误只走 error 事件不 throw）。
  */
 const NIGHT_HEMISPHERE_SOURCE_ID = 'globe-night-hemisphere'
 const NIGHT_CORE_LAYER_ID = 'globe-night-core-fill'
 const NIGHT_TRANSITION_LAYER_ID = 'globe-night-transition-fill'
+const TERMINATOR_LINE_LAYER_ID = 'globe-terminator-line'
 const LEGACY_NIGHT_LAYER_ID = 'globe-night-hemisphere-fill'
 const TWILIGHT_GLOW_LAYER_ID = 'globe-twilight-glow-fill'
 
-/** 全夜核 opacity：顶层 zoom interpolate（规范合法）。 */
+/** 夜核 fill opacity：顶层 zoom interpolate（规范合法）。 */
 function nightCoreOpacityExpression(): unknown {
   return ['interpolate', ['linear'], ['zoom'], 0, 0.5, 3, 0.58]
 }
 
-/** 过渡带 opacity：顶层 tier 数据驱动（规范合法），贴晨昏线最淡向核渐暗。 */
-function nightTransitionOpacityExpression(): unknown {
-  return ['interpolate', ['linear'], ['get', 'tier'], 0, 0.03, 35, 0.45]
+/** 晨昏线 line-width：顶层 zoom interpolate。 */
+function terminatorWidthExpression(): unknown {
+  return ['interpolate', ['linear'], ['zoom'], 0, 26, 2, 16, 4, 9]
+}
+
+/** 晨昏线 line-blur：顶层 zoom interpolate（向两侧羽化溶解 fill 硬边）。 */
+function terminatorBlurExpression(): unknown {
+  return ['interpolate', ['linear'], ['zoom'], 0, 20, 2, 13, 4, 7]
 }
 
 /** addLayer 后验证 layer 真的进入 style（MapLibre 表达式校验失败不 throw）。 */
-function ensureFillLayer(
-  map: MapInstance,
-  layerId: string,
-  filter: unknown[],
-  opacityExpression: unknown,
-): void {
-  if (!map.getLayer(layerId)) {
+function ensureNightLayers(map: MapInstance): void {
+  // 夜核 fill（单一多边形，硬边，统一暗度）
+  if (!map.getLayer(NIGHT_CORE_LAYER_ID)) {
     map.addLayer({
-      id: layerId,
+      id: NIGHT_CORE_LAYER_ID,
       type: 'fill',
       source: NIGHT_HEMISPHERE_SOURCE_ID,
-      filter: filter as never,
+      filter: ['==', ['get', 'hemisphere'], 'night-core'],
       paint: {
         'fill-color': '#0a1626',
-        'fill-opacity': opacityExpression as never,
+        'fill-opacity': nightCoreOpacityExpression() as never,
       },
       layout: { visibility: 'visible' },
     } as never)
-    // 表达式校验失败时 addLayer 静默拒绝（错误只走 error 事件）——必须验证
-    if (!map.getLayer(layerId)) {
-      console.warn(`[MapCanvas] 夜半球图层 ${layerId} 创建失败（表达式校验被拒绝）`)
+    if (!map.getLayer(NIGHT_CORE_LAYER_ID)) {
+      console.warn('[MapCanvas] 夜半球 core 图层创建失败（表达式校验被拒绝）')
       return
     }
   }
-  map.setLayoutProperty(layerId, 'visibility', 'visible')
-  map.setPaintProperty(layerId, 'fill-opacity', opacityExpression as never)
+  map.setLayoutProperty(NIGHT_CORE_LAYER_ID, 'visibility', 'visible')
+  map.setPaintProperty(NIGHT_CORE_LAYER_ID, 'fill-opacity', nightCoreOpacityExpression() as never)
+
+  // 晨昏线 line-blur 羽化（宽线高模糊 → 平滑过渡，无条纹）
+  if (!map.getLayer(TERMINATOR_LINE_LAYER_ID)) {
+    map.addLayer({
+      id: TERMINATOR_LINE_LAYER_ID,
+      type: 'line',
+      source: NIGHT_HEMISPHERE_SOURCE_ID,
+      filter: ['==', ['get', 'hemisphere'], 'terminator'],
+      paint: {
+        'line-color': '#0a1626',
+        'line-width': terminatorWidthExpression() as never,
+        'line-blur': terminatorBlurExpression() as never,
+        'line-opacity': 0.5,
+      },
+      layout: { visibility: 'visible', 'line-cap': 'round' },
+    } as never)
+    if (!map.getLayer(TERMINATOR_LINE_LAYER_ID)) {
+      console.warn('[MapCanvas] 晨昏线 blur 图层创建失败（表达式校验被拒绝）')
+      return
+    }
+  }
+  map.setLayoutProperty(TERMINATOR_LINE_LAYER_ID, 'visibility', 'visible')
+  map.setPaintProperty(TERMINATOR_LINE_LAYER_ID, 'line-width', terminatorWidthExpression() as never)
+  map.setPaintProperty(TERMINATOR_LINE_LAYER_ID, 'line-blur', terminatorBlurExpression() as never)
 }
 
 function applyNightHemisphere(
@@ -590,6 +615,7 @@ function applyNightHemisphere(
     if (!globeEnabled || globeDaylightMode.value !== 'natural') {
       for (const layerId of [
         NIGHT_CORE_LAYER_ID,
+        TERMINATOR_LINE_LAYER_ID,
         NIGHT_TRANSITION_LAYER_ID,
         LEGACY_NIGHT_LAYER_ID,
         TWILIGHT_GLOW_LAYER_ID,
@@ -609,27 +635,17 @@ function applyNightHemisphere(
     } else if (!map.getSource(NIGHT_HEMISPHERE_SOURCE_ID)) {
       map.addSource(NIGHT_HEMISPHERE_SOURCE_ID, { type: 'geojson', data: data as never })
     }
-    // 旧版单 layer 残留隐藏（表达式拆层前版本）
-    if (map.getLayer(LEGACY_NIGHT_LAYER_ID)) {
-      map.setLayoutProperty(LEGACY_NIGHT_LAYER_ID, 'visibility', 'none')
-    }
-    if (map.getLayer(TWILIGHT_GLOW_LAYER_ID)) {
-      map.setLayoutProperty(TWILIGHT_GLOW_LAYER_ID, 'visibility', 'none')
-    }
-    // 全夜核（tier 36）：统一暗度
-    ensureFillLayer(
-      map,
-      NIGHT_CORE_LAYER_ID,
-      ['all', ['==', ['get', 'hemisphere'], 'night'], ['==', ['get', 'tier'], 36]],
-      nightCoreOpacityExpression(),
-    )
-    // 过渡带（tier 0-35）：向晨昏线渐隐
-    ensureFillLayer(
-      map,
+    // 旧版图层残留隐藏（条纹过渡带/单 layer/twilight 历史版本）
+    for (const layerId of [
       NIGHT_TRANSITION_LAYER_ID,
-      ['all', ['==', ['get', 'hemisphere'], 'night'], ['<', ['get', 'tier'], 36]],
-      nightTransitionOpacityExpression(),
-    )
+      LEGACY_NIGHT_LAYER_ID,
+      TWILIGHT_GLOW_LAYER_ID,
+    ]) {
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, 'visibility', 'none')
+      }
+    }
+    ensureNightLayers(map)
   } catch (error) {
     debugLog('[MapCanvas] applyNightHemisphere unavailable', error)
   }
@@ -1096,8 +1112,13 @@ async function handleLocateMe() {
     :class="stageAppearanceModel.stageClassNames"
     :style="stageAppearanceModel.stageStyleVars"
   >
-    <!-- 3D globe 深空星图背景层（2D 时淡出；在地图画布之下） -->
-    <GlobeStarfield :mode="globeBackgroundMode" :active="globeProjectionOn" />
+    <!-- 3D globe 深空星图背景层（2D 时淡出；在地图画布之下）
+         suppress-galaxy：「自然/无」档隐藏银河白带（左上亮来源），「标准」档保留 -->
+    <GlobeStarfield
+      :mode="globeBackgroundMode"
+      :active="globeProjectionOn"
+      :suppress-galaxy="globeDaylightMode !== 'standard'"
+    />
 
     <div ref="mapContainer" class="map-host" :class="stageAppearanceModel.mapHostClassNames"></div>
 
@@ -1117,8 +1138,13 @@ async function handleLocateMe() {
          避免"两条晨昏线"；v-if 比 CSS display:none 可靠，不受缓存/级联影响） -->
     <div v-if="!globeProjectionOn" class="time-sheen"></div>
     <div v-if="!globeProjectionOn" class="time-band"></div>
-    <div class="weather-overlay"></div>
-    <div class="grid-overlay"></div>
+    <!-- weather/grid-overlay 的方向性光斑与网格是 2D 氛围层：
+         「自然/无」档隐藏（亮暗只由晨昏线/统一亮度负责），「标准」档保留质感 -->
+    <div
+      v-if="!globeProjectionOn || globeDaylightMode === 'standard'"
+      class="weather-overlay"
+    ></div>
+    <div v-if="!globeProjectionOn" class="grid-overlay"></div>
 
     <!-- Loading indicator -->
     <div v-if="stageStatusModel.showLoading" class="map-loading">

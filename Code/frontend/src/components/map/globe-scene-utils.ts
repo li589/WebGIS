@@ -79,11 +79,10 @@ export interface NightHemisphereGeoJSON {
   type: 'FeatureCollection'
   features: Array<{
     type: 'Feature'
-    properties: { hemisphere: 'night'; tier: number }
-    geometry: {
-      type: 'Polygon'
-      coordinates: number[][][]
-    }
+    properties: { hemisphere: 'night-core' | 'terminator' }
+    geometry:
+      | { type: 'Polygon'; coordinates: number[][][] }
+      | { type: 'LineString'; coordinates: number[][] }
   }>
 }
 
@@ -106,16 +105,16 @@ function terminatorLatitude(lonDeg: number, subsolarLon: number, declDeg: number
 }
 
 /**
- * 生成夜半球经纬度多边形（真实太空观感的"自然"晨昏样式）：
+ * 生成夜半球经纬度几何（真实太空观感的"自然"晨昏样式）：
  *
  * - **弯曲晨昏线**：按太阳赤纬精确求解晨昏线纬度边界 φc(λ)，
  *   极昼/极夜随日期自然出现（NASA Blue Marble 式球面形态）
- * - **夜侧均匀暗化**：全夜核区（距晨昏线 >18°）统一高不透明度，
- *   明暗分界清晰可辨（修正"看不出哪边暗哪边亮"）
- * - **窄过渡带**：晨昏线附近 18° 内 12 档渐隐（每档 1.5°），
- *   互不重叠（MapLibre fill stencil 去重使嵌套叠加无效），
- *   无彩色条带——太空摄影中晨昏线就是平滑的明暗渐变
- * - antimeridian 拆分：多边形沿 ±180° 切割成合法 ring
+ * - **夜侧均匀暗化**：单一 night-core 多边形（h<0 全暗区，硬边），
+ *   明暗分界清晰可辨
+ * - **line-blur 羽化过渡**：晨昏线 terminator 用 MapLibre 原生
+ *   line-blur 宽线渲染（向两侧像素级羽化扩散），彻底取代多档
+ *   条纹方案（档边界在渲染下可见、用户反馈"好多线"）
+ * - antimeridian 拆分：多边形/线都沿 ±180° 切割成合法几何
  */
 export function buildNightHemisphereGeoJSON(
   hour: number,
@@ -127,8 +126,6 @@ export function buildNightHemisphereGeoJSON(
   const nightCenter = subsolarLon + 180
   const southNight = decl >= 0 // δ≥0：夜侧偏南；δ<0：夜侧偏北
 
-  const TRANSITION_BANDS = 36 // 过渡带档数（18° / 0.5°，平滑无条纹）
-  const BAND_STEP = 0.5
   const LON_STEP = 3 // 晨昏线经度采样步长
   const features: NightHemisphereGeoJSON['features'] = []
 
@@ -136,32 +133,30 @@ export function buildNightHemisphereGeoJSON(
   const normLon = (lon: number) => ((lon + 540) % 360) - 180
 
   /**
-   * 按"夜侧纬度偏移"构造一个带多边形：
-   * bandOffset = 距晨昏线的偏移（度，向夜侧），带下沿 = 上沿 - BAND_STEP。
+   * 构造夜核多边形（全暗区）：上沿 = φc 晨昏线曲线，下沿 = 极点侧 ±90°。
    * 沿 λ ∈ [nightCenter-90, nightCenter+90] 采样 φc(λ)，
-   * 多边形 = [上沿曲线(λ 递增)] + [下沿曲线(λ 递减)] 闭合。
-   * 极点侧开放到 ±90°（isCore=true 的全夜核）。
+   * 多边形 = [上沿曲线(λ 递增)] + [下沿极点线(λ 递减)] 闭合。
    */
-  const pushBand = (bandOffset: number, tier: number, isCore: boolean) => {
+  const pushNightCore = () => {
     const lonStart = nightCenter - 90
     const lonEnd = nightCenter + 90
-    const upPts: number[][] = [] // 上沿（晨昏线侧）
-    const dnPts: number[][] = [] // 下沿（夜心侧）
+    const equinox = Math.abs(decl) < 0.5
+    const upPts: number[][] = [] // 上沿（晨昏线）
+    const dnPts: number[][] = [] // 下沿（极点侧）
     for (let lon = lonStart; lon <= lonEnd + 1e-9; lon += LON_STEP) {
       const phiC = terminatorLatitude(lon, subsolarLon, decl)
       // δ>0：夜侧在南（φ 更小）；δ<0：夜侧在北（φ 更大）
-      // 双向 clamp：极昼区（up 越过极点）形成零宽退化段，不产生越界纬度
-      const up = southNight
-        ? Math.max(Math.min(phiC - bandOffset, 90), -90)
-        : Math.min(Math.max(phiC + bandOffset, -90), 90)
-      const dn = isCore
-        ? southNight ? -90 : 90
+      // 二分日（|δ|<0.5°）：夜侧 = 全纬度经度带（φc 恒 0，不能用 φ<φc 判定）
+      const up = equinox
+        ? 90
         : southNight
-          ? Math.max(phiC - (bandOffset + BAND_STEP), -90)
-          : Math.min(phiC + (bandOffset + BAND_STEP), 90)
-      // 该经度段无夜侧（极昼）则跳过；下沿被 clamp 到极点时整段恒夜仍生成
-      const hasNight = southNight ? up > dn : up < dn
-      if (!hasNight && !isCore) continue
+          ? Math.max(Math.min(phiC, 90), -90)
+          : Math.min(Math.max(phiC, -90), 90)
+      const dn = equinox ? -90 : southNight ? -90 : 90
+      // 极昼经度段（up 越过极点退化）跳过——该经度整段无夜侧；
+      // 二分日恒有夜侧（全纬度经度带，decl 浮点符号不影响判定）
+      const hasNight = equinox ? true : southNight ? up > dn : up < dn
+      if (!hasNight) continue
       upPts.push([lon, up])
       dnPts.push([lon, dn])
     }
@@ -171,7 +166,7 @@ export function buildNightHemisphereGeoJSON(
     const rings: number[][][] = []
     let upCur: number[][] = []
     let dnCur: number[][] = []
-    const flush = (boundaryLon: number | null) => {
+    const flush = () => {
       if (upCur.length >= 3) {
         const ring = [...upCur]
         for (let i = dnCur.length - 1; i >= 0; i--) ring.push(dnCur[i])
@@ -180,7 +175,6 @@ export function buildNightHemisphereGeoJSON(
       }
       upCur = []
       dnCur = []
-      void boundaryLon
     }
     for (let i = 0; i < upPts.length; i++) {
       const [lon, up] = upPts[i]
@@ -197,14 +191,12 @@ export function buildNightHemisphereGeoJSON(
           // 前段在 +180 闭合、新段从 -180 起（norm>0 的递减情形反之）
           const boundary = norm > 0 ? 180 : -180
           const prevBoundary = norm > 0 ? -180 : 180
-          // 当前段在 prevBoundary 闭合（纬度线性插值到边界）
           const frac = (prevBoundary - prevLon) / (lon - prevLon)
           const upB = prevUp + (up - prevUp) * frac
           const dnB = prevDn + (dn - prevDn) * frac
           upCur.push([prevBoundary, upB])
           dnCur.push([prevBoundary, dnB])
-          flush(prevBoundary)
-          // 新段从 boundary 起
+          flush()
           upCur.push([boundary, upB])
           dnCur.push([boundary, dnB])
         }
@@ -212,25 +204,60 @@ export function buildNightHemisphereGeoJSON(
       upCur.push([norm, up])
       dnCur.push([norm, dn])
     }
-    flush(null)
+    flush()
 
     for (const ring of rings) {
       features.push({
         type: 'Feature',
-        properties: { hemisphere: 'night', tier },
+        properties: { hemisphere: 'night-core' },
         geometry: { type: 'Polygon', coordinates: [ring] },
       })
     }
   }
 
-  // 过渡带：tier 0（贴晨昏线，最淡）→ tier 11（最靠近全夜核）
-  // opacity 在 fill layer 按 tier 数据驱动插值（tier 越大越暗）
-  for (let t = 0; t < TRANSITION_BANDS; t++) {
-    pushBand(t * BAND_STEP, t, false)
+  /**
+   * 构造晨昏线 linestring（line-blur 羽化的载体）：
+   * - δ≥0.5°：φc(λ) 曲线（夜侧经度范围），antimeridian 拆段
+   * - δ<0.5°（二分日）：退化为两条经线线段（λn±90，φ 从 -90 到 90）
+   */
+  const pushTerminatorLines = () => {
+    const lines: number[][][] = []
+    if (Math.abs(decl) < 0.5) {
+      // 二分日：晨昏线 = 两条经线（夜心 ±90°）
+      const lonW = normLon(nightCenter - 90)
+      const lonE = normLon(nightCenter + 90)
+      lines.push([[lonW, -90], [lonW, 90]])
+      lines.push([[lonE, -90], [lonE, 90]])
+    } else {
+      // φc 曲线：按经度连续采样，在 antimeridian 跳变处断开
+      let cur: number[][] = []
+      const flush = () => {
+        if (cur.length >= 2) lines.push(cur)
+        cur = []
+      }
+      let prevNorm: number | null = null
+      for (let lon = nightCenter - 90; lon <= nightCenter + 90 + 1e-9; lon += LON_STEP) {
+        const phiC = terminatorLatitude(lon, subsolarLon, decl)
+        const norm = normLon(lon)
+        if (prevNorm !== null && Math.abs(norm - prevNorm) > 180) {
+          flush()
+        }
+        cur.push([norm, phiC])
+        prevNorm = norm
+      }
+      flush()
+    }
+    for (const line of lines) {
+      features.push({
+        type: 'Feature',
+        properties: { hemisphere: 'terminator' },
+        geometry: { type: 'LineString', coordinates: line },
+      })
+    }
   }
-  // 全夜核区（距晨昏线 ≥18° 直到夜心）：tier = TRANSITION_BANDS，opacity 最高
-  pushBand(TRANSITION_BANDS * BAND_STEP, TRANSITION_BANDS, true)
 
+  pushNightCore()
+  pushTerminatorLines()
   return { type: 'FeatureCollection', features }
 }
 

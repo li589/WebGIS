@@ -28,6 +28,12 @@ export interface StarfieldOptions {
   height?: number
   /** 随机种子（默认随机；测试注入固定种子保证稳定） */
   seed?: number
+  /**
+   * 隐藏银河云气带（保留星点/亮星/深空天体）。
+   * 3D晨昏「自然/无」档使用：银河 S 型白带横穿屏幕左上，
+   * 用户反馈这两个模式下"左上较亮区域不应显示"；「标准」档保留。
+   */
+  suppressGalaxy?: boolean
 }
 
 // ─── 真实亮星表（J2000.0）─────────────────────────────────────────────────
@@ -446,11 +452,13 @@ export function renderStarfieldCanvas(options: StarfieldOptions): HTMLCanvasElem
   // 1) 深空底色（近黑微蓝的垂直渐变）
   drawDeepSpaceBase(ctx, width, height, theme)
 
-  // 2) 银河云气（低分辨率逐像素 fBm + 面亮度模型，双线性放大成柔和云气）
-  drawGalacticHaze(ctx, width, height, theme, visual, noiseSeed)
+  if (!options.suppressGalaxy) {
+    // 2) 银河云气（低分辨率逐像素 fBm + 面亮度模型，双线性放大成柔和云气）
+    drawGalacticHaze(ctx, width, height, theme, visual, noiseSeed)
 
-  // 3) 银河亮云团（恒星形成区，沿真实银经位置的大尺度亮云）
-  drawStarFormingRegions(ctx, width, height, rng, theme, visual)
+    // 3) 银河亮云团（恒星形成区，沿真实银经位置的大尺度亮云）
+    drawStarFormingRegions(ctx, width, height, rng, theme, visual)
+  }
 
   // 4) 深空天体（真实位置）
   if (visual.showDeepSky) drawDeepSkyObjects(ctx, width, height, theme)

@@ -153,76 +153,110 @@ describe('subsolarLongitude / subsolarDeclination / buildNightHemisphereGeoJSON�
     expect(solsticeWinter).toBeGreaterThanOrEqual(-23.45)
   })
 
-  it('夜半球中心 = 太阳下点 + 180°；昼侧经度不落入夜半球（二分日）', () => {
-    // 二分日（δ≈0，退化矩形带）：hour=12 UTC → 太阳下点 0°、夜中心 180°
-    const json = buildNightHemisphereGeoJSON(12, new Date(Date.UTC(2026, 2, 20)), 0)
+  it('夜半球中心 = 太阳下点 + 180°；昼侧经度不落入夜核（二分日）', () => {
+    // 二分日（Cooper 模型 δ=0，年内第 81 天）：hour=12 UTC → 太阳下点 0°、夜中心 180°
+    const json = buildNightHemisphereGeoJSON(12, new Date(Date.UTC(2026, 2, 22)), 0)
     expect(json.type).toBe('FeatureCollection')
-    const lons = json.features.flatMap((f) =>
-      f.geometry.coordinates[0].map((pt) => pt[0]),
-    )
-    // 0° 经线（hour=12 UTC 的昼侧中央）不应出现在夜半球边界上
-    expect(lons.some((lon) => Math.abs(lon) < 1)).toBe(false)
-    // 180° 必在夜半球内
-    expect(lons.some((lon) => Math.abs(lon) === 180)).toBe(true)
+    const coreLons = json.features
+      .filter((f) => f.properties.hemisphere === 'night-core')
+      .flatMap((f) => f.geometry.coordinates[0].map((pt) => pt[0]))
+    // 0° 经线（hour=12 UTC 的昼侧中央）不应出现在夜核边界上
+    expect(coreLons.some((lon) => Math.abs(lon) < 1)).toBe(false)
+    // 180° 必在夜核内
+    expect(coreLons.some((lon) => Math.abs(lon) === 180)).toBe(true)
   })
 
-  it('所有 ring 经度在 [-180,180]、纬度在 [-90,90]、环闭合（含 antimeridian 拆分）', () => {
-    for (const hour of [0, 3, 6, 9, 12, 15, 18, 21, 23.5]) {
-      const json = buildNightHemisphereGeoJSON(hour, new Date(Date.UTC(2026, 5, 21)))
-      expect(json.features.length).toBeGreaterThan(0)
-      for (const feature of json.features) {
-        const ring = feature.geometry.coordinates[0]
-        for (const [lon, lat] of ring) {
-          expect(lon).toBeGreaterThanOrEqual(-180)
-          expect(lon).toBeLessThanOrEqual(180)
-          expect(lat).toBeGreaterThanOrEqual(-90)
-          expect(lat).toBeLessThanOrEqual(90)
-        }
-        const first = ring[0]
-        const last = ring[ring.length - 1]
-        expect(first[0]).toBe(last[0])
-        expect(first[1]).toBe(last[1])
-      }
-    }
-  })
-
-  it('晨昏线随日期弯曲：夏至夜侧偏南（北半球高纬无夜侧段），冬至相反', () => {
-    // 夏至（δ>0）：北半球高纬（如 φ=70°N）在夜心经度上应为昼（极昼）——
-    // 夜侧上沿在北半球高纬处低于 70°
-    const summer = buildNightHemisphereGeoJSON(12, new Date(Date.UTC(2026, 5, 21)))
-    const summerLats = summer.features.flatMap((f) =>
-      f.geometry.coordinates[0].map((pt) => pt[1]),
-    )
-    // 全部夜侧边界纬度 < 66.5°（北极圈极昼：夜侧不触及北纬 66.5° 以上）
-    expect(Math.max(...summerLats)).toBeLessThan(66.6)
-
-    // 冬至（δ<0）：夜侧边界纬度 > -66.5°（南极圈极昼）
-    const winter = buildNightHemisphereGeoJSON(12, new Date(Date.UTC(2026, 11, 21)))
-    const winterLats = winter.features.flatMap((f) =>
-      f.geometry.coordinates[0].map((pt) => pt[1]),
-    )
-    expect(Math.min(...winterLats)).toBeGreaterThan(-66.6)
-  })
-
-  it('结构 = 36 档过渡带（tier 0-35）+ 全夜核（tier 36），无 twilight 彩色条带', () => {
-    const json = buildNightHemisphereGeoJSON(6, new Date(Date.UTC(2026, 2, 20)))
-    const tiers = new Set(json.features.map((f) => f.properties.tier))
-    expect(tiers.has(0)).toBe(true)
-    expect(tiers.has(36)).toBe(true)
-    expect(Math.max(...tiers)).toBe(36)
-    // 无 twilight feature（用户明确不要红色宽带）
+  it('结构 = night-core 多边形（硬边全暗区）+ terminator linestring（line-blur 羽化载体）', () => {
+    // 非二分日（δ≠0，φc 曲线路径）
+    const json = buildNightHemisphereGeoJSON(6, new Date(Date.UTC(2026, 5, 21)))
+    const cores = json.features.filter((f) => f.properties.hemisphere === 'night-core')
+    const terms = json.features.filter((f) => f.properties.hemisphere === 'terminator')
+    expect(cores.length).toBeGreaterThan(0)
+    expect(terms.length).toBeGreaterThan(0)
+    for (const c of cores) expect(c.geometry.type).toBe('Polygon')
+    for (const t of terms) expect(t.geometry.type).toBe('LineString')
+    // 无过渡带 tier 条纹（用户反馈"好多线"——条纹方案已废弃）
+    expect(json.features.some((f) => 'tier' in f.properties)).toBe(false)
+    // 无 twilight 彩色条带
     expect(
       json.features.some((f) => (f.properties as { hemisphere?: string }).hemisphere === 'twilight'),
     ).toBe(false)
   })
 
-  it('带间互不重叠（纬度方向相邻，面积总和有界）', () => {
-    // 同一经度列上，相邻带的纬度区间应相邻而非重叠（抽查几何）
-    const json = buildNightHemisphereGeoJSON(6, new Date(Date.UTC(2026, 2, 20)))
-    // tier 0（贴晨昏线最淡）与 tier 36（全夜核最暗）都存在
-    const t0 = json.features.filter((f) => f.properties.tier === 0)
-    const tCore = json.features.filter((f) => f.properties.tier === 36)
-    expect(t0.length).toBeGreaterThan(0)
-    expect(tCore.length).toBeGreaterThan(0)
+  it('二分日 terminator 退化为两条经线线段（λn±90），夜核覆盖全纬度', () => {
+    // Cooper 模型 δ=0 的日子：年内第 81 天（2026-03-22）
+    const json = buildNightHemisphereGeoJSON(12, new Date(Date.UTC(2026, 2, 22)), 0)
+    const terms = json.features.filter((f) => f.properties.hemisphere === 'terminator')
+    expect(terms.length).toBe(2)
+    for (const t of terms) {
+      const line = t.geometry.coordinates as number[][]
+      // 经线线段：经度恒定，纬度从 -90 到 90
+      expect(line[0][0]).toBe(line[line.length - 1][0])
+      const lats = line.map((pt) => pt[1])
+      expect(Math.min(...lats)).toBe(-90)
+      expect(Math.max(...lats)).toBe(90)
+    }
+    const termLons = terms.map((t) => (t.geometry.coordinates as number[][])[0][0])
+    expect(Math.abs(Math.abs(termLons[0] - termLons[1]) - 180)).toBeLessThan(1)
+    // 二分日夜核 = 全纬度经度带（φc 恒 0 时不能用 φ<φc 判定，否则夜半球丢失一半）
+    const coreLats = json.features
+      .filter((f) => f.properties.hemisphere === 'night-core')
+      .flatMap((f) => f.geometry.coordinates[0].map((pt) => pt[1]))
+    expect(Math.min(...coreLats)).toBe(-90)
+    expect(Math.max(...coreLats)).toBe(90)
+  })
+
+  it('所有几何坐标在 [-180,180]×[-90,90]，polygon ring 闭合（含 antimeridian 拆分）', () => {
+    for (const hour of [0, 3, 6, 9, 12, 15, 18, 21, 23.5]) {
+      const json = buildNightHemisphereGeoJSON(hour, new Date(Date.UTC(2026, 5, 21)))
+      expect(json.features.length).toBeGreaterThan(0)
+      for (const feature of json.features) {
+        // Polygon: coordinates[0]=ring；LineString: coordinates=点列
+        const pts = (
+          feature.geometry.type === 'Polygon'
+            ? feature.geometry.coordinates[0]
+            : feature.geometry.coordinates
+        ) as number[][]
+        for (const [lon, lat] of pts) {
+          expect(lon).toBeGreaterThanOrEqual(-180)
+          expect(lon).toBeLessThanOrEqual(180)
+          expect(lat).toBeGreaterThanOrEqual(-90)
+          expect(lat).toBeLessThanOrEqual(90)
+        }
+        if (feature.geometry.type === 'Polygon') {
+          const first = pts[0]
+          const last = pts[pts.length - 1]
+          expect(first[0]).toBe(last[0])
+          expect(first[1]).toBe(last[1])
+        }
+      }
+    }
+  })
+
+  it('晨昏线随日期弯曲：夏至夜侧偏南（北半球高纬无夜侧段），冬至相反', () => {
+    // 夏至（δ>0）：夜核边界不触及北纬 66.5° 以上（北极圈极昼）
+    const summer = buildNightHemisphereGeoJSON(12, new Date(Date.UTC(2026, 5, 21)))
+    const summerCoreLats = summer.features
+      .filter((f) => f.properties.hemisphere === 'night-core')
+      .flatMap((f) => f.geometry.coordinates[0].map((pt) => pt[1]))
+    expect(Math.max(...summerCoreLats)).toBeLessThan(66.6)
+
+    // 冬至（δ<0）：夜核边界不触及南纬 66.5° 以下（南极圈极昼）
+    const winter = buildNightHemisphereGeoJSON(12, new Date(Date.UTC(2026, 11, 21)))
+    const winterCoreLats = winter.features
+      .filter((f) => f.properties.hemisphere === 'night-core')
+      .flatMap((f) => f.geometry.coordinates[0].map((pt) => pt[1]))
+    expect(Math.min(...winterCoreLats)).toBeGreaterThan(-66.6)
+  })
+
+  it('terminator 曲线沿晨昏线纬度边界 φc(λ)（非平直）', () => {
+    // 夏至：φc 曲线在夜心经度处达最高纬度（北半球），两侧递减——弯曲形态
+    const json = buildNightHemisphereGeoJSON(12, new Date(Date.UTC(2026, 5, 21)), 0)
+    const terms = json.features.filter((f) => f.properties.hemisphere === 'terminator')
+    const allLats = terms.flatMap((t) => (t.geometry.coordinates as number[][]).map((pt) => pt[1]))
+    const minLat = Math.min(...allLats)
+    const maxLat = Math.max(...allLats)
+    // 曲线有显著纬度变化（弯曲，非直线）
+    expect(maxLat - minLat).toBeGreaterThan(30)
   })
 })
