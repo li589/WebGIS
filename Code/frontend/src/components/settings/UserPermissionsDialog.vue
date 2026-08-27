@@ -10,6 +10,14 @@
  *  - 工作流（workflow）显式允许/拒绝
  *
  * 仅当 isAdmin 时才允许打开（按钮在前一层已禁用，且后端权限点 require_admin）。
+ *
+ * 资源 ID 建议列表为"动态优先 + 静态兜底"：
+ *  - 打开对话框时优先按需并行 fetch 后端目录（`/layers`、`/provider/workflows`、
+ *    `/algorithm/workflows`）拿到全量资源元数据（admin 透明）
+ *  - 任一端点失败时回退到模块顶部静态 SUGGESTED_*（保留向后兼容能力）
+ *  - 后端 list_layers 端点对 admin 跳过 ACL 过滤，因此 admin 能在权限配置
+ *    中看到所有图层（含 standard 用户因黑名单而不可见的层），其他角色
+ *    在前一层已被禁用打不开本对话框，不存在越权获取目录的风险。
  */
 import { computed, ref, watch } from 'vue'
 import IconButton from '../ui/IconButton.vue'
@@ -106,6 +114,83 @@ function suggestionsFor(type: ResourceType) {
   return SUGGESTED_WORKFLOWS
 }
 
+// ─── 动态资源目录（按需 fetch 后端 + 失败 fallback 静态） ──────────────────
+
+interface DynamicResources {
+  layers: Array<{ id: string; label: string }>
+  providers: Array<{ id: string; label: string }>
+  workflows: Array<{ id: string; label: string }>
+}
+
+const dynamicResources = ref<DynamicResources | null>(null)
+const dynamicResourcesError = ref<string | null>(null)
+
+async function fetchDynamicResources(): Promise<DynamicResources | null> {
+  const safeFetch = async (
+    url: string,
+    success: (data: unknown) => void,
+  ): Promise<boolean> => {
+    try {
+      const resp = await fetch(url, { credentials: 'same-origin' })
+      if (!resp.ok) return false
+      const json = await resp.json()
+      success(json)
+      return true
+    } catch (err) {
+      console.warn(`[permissions] dynamic fetch ${url} failed`, err)
+      return false
+    }
+  }
+
+  let layers: DynamicResources['layers'] = []
+  let providers: DynamicResources['providers'] = []
+  let workflows: DynamicResources['workflows'] = []
+
+  // /layers — 取可见 items 的 id+title
+  const layerOk = await safeFetch('/layers', (data) => {
+    const items = (data as { items?: Array<{ layer_id?: string; title?: string; category?: string }> })?.items ?? []
+    layers = items
+      .map((i) => ({ id: i.layer_id ?? '', label: i.title ?? i.layer_id ?? '' }))
+      .filter((i) => i.id)
+  })
+
+  // /provider/workflows — 任何登录用户可见（仅是 provider 注册表 layer id 列表，无敏感字段）
+  const providerOk = await safeFetch('/provider/workflows', (data) => {
+    const list = (data as { body?: { workflows?: Array<{ name?: string; description?: string }> } })?.body?.workflows ?? []
+    providers = list
+      .map((w) => ({ id: w.name ?? '', label: w.description ?? w.name ?? '' }))
+      .filter((p) => p.id)
+  })
+
+  // /algorithm/workflows — workflow 模板（任意登录用户可见，仅名称/描述）
+  const algoOk = await safeFetch('/algorithm/workflows', (data) => {
+    const list = (data as { body?: { workflows?: Array<{ name?: string; description?: string }> } })?.body?.workflows ?? []
+    workflows = list
+      .map((w) => ({ id: w.name ?? '', label: w.description ?? w.name ?? '' }))
+      .filter((w) => w.id)
+  })
+
+  if (layerOk || providerOk || algoOk) {
+    return {
+      layers: layers.length ? layers : SUGGESTED_LAYERS,
+      providers: providers.length ? providers : SUGGESTED_PROVIDERS,
+      workflows: workflows.length ? workflows : SUGGESTED_WORKFLOWS,
+    }
+  }
+  dynamicResourcesError.value = '后端目录加载失败，已使用静态建议列表'
+  return null
+}
+
+const dynamicSuggestionsFor = (type: ResourceType): Array<{ id: string; label: string }> => {
+  const dyn = dynamicResources.value
+  if (!dyn) return suggestionsFor(type)
+  if (type === 'layer') return dyn.layers
+  if (type === 'data_source') return dyn.providers
+  return dyn.workflows
+}
+
+const showSuggestionList = computed(() => dynamicSuggestionsFor(newType.value))
+
 const records = ref<PermissionRecord[]>([])
 const mode = ref<PermissionMode>('open')
 const loading = ref(false)
@@ -123,7 +208,6 @@ const canEdit = computed(() => {
   // 当前管理员不能修改自己（避免自降级）
   return props.user.role !== 'admin'
 })
-const showSuggestionList = computed(() => suggestionsFor(newType.value))
 
 async function load() {
   if (!props.user) return
@@ -150,7 +234,13 @@ watch(
       records.value = []
       error.value = null
       message.value = null
+      dynamicResources.value = null
+      dynamicResourcesError.value = null
       void load()
+      // 资源目录与权限记录并行加载，互不阻塞；失败 fallback 静态列表
+      void fetchDynamicResources().then((res) => {
+        if (res) dynamicResources.value = res
+      })
     }
   },
 )
@@ -322,7 +412,14 @@ function close() {
             </button>
           </div>
           <details v-if="canEdit" class="upd-suggestions">
-            <summary>常用资源 ID（点击填入）</summary>
+            <summary>
+              常用资源 ID（点击填入）——
+              {{ dynamicResources
+                ? '来自后端目录（最新）'
+                : dynamicResourcesError
+                  ? '后端目录加载失败，已使用静态兜底列表'
+                  : '加载后端目录中…' }}
+            </summary>
             <div class="upd-suggestion-grid">
               <button
                 v-for="s in showSuggestionList"

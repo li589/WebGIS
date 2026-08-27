@@ -59,7 +59,8 @@ function clamp(v: number, min: number, max: number): number {
  *   （亮度乘到瓦片上时整体压暗约 15%，避免白底+直射=全白的过曝）
  * - 影像/地形：×0.78 + 50° + 近白偏暖
  * - 暗色底图：×1.0 + 64° + 暖白（保留立体光影冲击）
- * - soft 档再 ×0.72 整体压低；off 返回 null（不设置自定义光照）
+ * - soft 档：强度 ×0.55 + 光色整体压暗 ~12% + 太阳高度角抬高（光线更平柔），
+ *   三重叠加确保与标准档肉眼可辨；off 返回 null（不设置自定义光照）
  */
 export function resolveGlobeLighting(
   hour: number,
@@ -70,30 +71,33 @@ export function resolveGlobeLighting(
   const daylight = daylightFactor(hour)
   const twilight = 1 - daylight
   const azimuth = 180 - ((((hour % 24) + 24) % 24) - 12) * 15
+  const isSoft = mode === 'soft'
 
   const brightnessScale =
     brightness === 'light' ? 0.5 : brightness === 'dark' ? 1.0 : 0.78
-  const modeScale = mode === 'soft' ? 0.72 : 1.0
+  const modeScale = isSoft ? 0.55 : 1.0
   // 直射强度：正午 0.95、夜间 0.4 的基准随底图/档位缩放（亮色底图上限更严）
   const intensity = clamp((0.4 + daylight * 0.55) * brightnessScale * modeScale, 0.18, 1.0)
 
-  // 太阳高度：亮色底图更低更斜（柔和长影），暗色底图更高（强立体感）
-  const elevationBase = brightness === 'light' ? 10 : brightness === 'dark' ? 20 : 16
+  // 太阳高度：亮色底图更低更斜（柔和长影），暗色底图更高（强立体感）；
+  // soft 档整体抬高 8°（光线更平、阴影更淡）
+  const elevationBase = (brightness === 'light' ? 10 : brightness === 'dark' ? 20 : 16) + (isSoft ? 8 : 0)
   const elevationRange = brightness === 'light' ? 26 : brightness === 'dark' ? 44 : 34
   const elevation = elevationBase + daylight * elevationRange
 
   // 光照色温 = MapLibre light color，会直接乘到瓦片像素上。
   // 亮色底图用「偏冷白」rgb(215, 226, 232)（RGB 整体低于暗色底图）：
   // 乘以亮瓦片后整体压暗 ~15% 抑制伽马过曝，同时保持色温变化（夜间冷蓝、晨昏暖橙）。
-  // 暗色底图保留近白偏暖以维持立体感。
+  // 暗色底图保留近白偏暖以维持立体感。soft 档再整体压暗 12%（柔化高光）。
+  const softDim = isSoft ? 0.88 : 1.0
   const lightBase = brightness === 'light'
     ? { warm: 213, green: 224, blue: 230 }
     : brightness === 'dark'
       ? { warm: 255, green: 246, blue: 232 }
       : { warm: 244, green: 240, blue: 232 }
-  const warm = Math.round(lightBase.warm - twilight * (lightBase.warm === 255 ? 28 : 24))
-  const green = Math.round(lightBase.green - twilight * 56)
-  const blue = Math.round(lightBase.blue - twilight * 40)
+  const warm = Math.round((lightBase.warm - twilight * (lightBase.warm === 255 ? 28 : 24)) * softDim)
+  const green = Math.round((lightBase.green - twilight * 56) * softDim)
+  const blue = Math.round((lightBase.blue - twilight * 40) * softDim)
   const color = `rgb(${warm}, ${green}, ${blue})`
 
   return { intensity, color, azimuth, elevation }

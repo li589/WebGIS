@@ -59,7 +59,7 @@ import {
   resolveGlobeSky,
 } from './map/globe-scene-utils'
 import { useThemeStore } from '../stores/theme'
-import { resolveSurfaceColor } from './map/map-canvas-map-options'
+import { resolveGlobeBackgroundColor } from './map/map-canvas-map-options'
 import {
   dataWorkspaceHighlight,
   dataWorkspaceZoomRequest,
@@ -294,13 +294,26 @@ const unsubscribeMapChrome = subscribeMapDistributionChrome(() => {
 
 // ─── 主题切换时更新 MapLibre 背景色 ──────────────────────────────────────────
 const themeStore = useThemeStore()
+
+/** 按当前投影模式更新 background layer 颜色（globe=球面深空蓝兜底/浅蓝灰；2D=surface-1）。 */
+function applyBackgroundColor(): void {
+  const map = state.resources.map
+  if (map && mapReady.value) {
+    map.setPaintProperty(
+      'background',
+      'background-color',
+      resolveGlobeBackgroundColor(
+        props.globeProjection === true,
+        themeStore.mode === 'light',
+      ),
+    )
+  }
+}
+
 watch(
   () => themeStore.mode,
   () => {
-    const map = state.resources.map
-    if (map && mapReady.value) {
-      map.setPaintProperty('background', 'background-color', resolveSurfaceColor())
-    }
+    applyBackgroundColor()
   },
 )
 
@@ -379,6 +392,8 @@ watch(
     } catch (err) {
       console.warn('[MapCanvas] setProjection failed:', err)
     }
+    // 投影切换后同步 background 颜色（globe=深空蓝球面兜底；2D=surface-1）
+    applyBackgroundColor()
   },
   { immediate: true },
 )
