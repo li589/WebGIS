@@ -72,8 +72,43 @@ def build_retrieval_workflow_definition(request: JobRequest) -> WorkflowDefiniti
     )
 
 
+def build_duxin_sme_workflow_definition(request: JobRequest) -> WorkflowDefinition:
+    """DuXin 时序土壤水分估算单节点 preset（module: duxin_time_series_sme）。
+
+    输入 .mat（obsv_data + inc_ang）经 datasource_selection.input_file /
+    input_dir 或上游 data 边提供；algorithm_params 透传 polarization /
+    num_step / epsilon 边界。
+    """
+    return WorkflowDefinition(
+        workflow_id="duxin_sme_workflow",
+        name="duxin_sme_workflow",
+        description=(
+            "DuXin time-series SAR soil moisture estimation "
+            "(alpha retrieval → LUT dielectric inversion → Topp model)."
+        ),
+        nodes=[
+            WorkflowNodeSpec(
+                node_id="duxin_sme",
+                node_type="module",
+                input_bindings={
+                    "datasource_selection": "request:datasource_selection",
+                    "algorithm_params": "request:algorithm_params",
+                    "output_spec_extra": "request:output_spec_extra",
+                },
+                params={"module_name": "duxin_time_series_sme"},
+            )
+        ],
+        edges=[],
+        outputs=[
+            WorkflowOutputSpec(name="final_manifest", source="node:duxin_sme.manifest")
+        ],
+        metadata={"generated_from": "workflow.presets", "module": "duxin_time_series_sme"},
+    )
+
+
 NAMED_WORKFLOW_BUILDERS = {
     "retrieval_workflow": build_retrieval_workflow_definition,
+    "duxin_sme_workflow": build_duxin_sme_workflow_definition,
 }
 
 
