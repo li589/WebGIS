@@ -568,6 +568,10 @@ function ensureNightLayers(map: MapInstance): void {
       paint: {
         'fill-color': '#0a1626',
         'fill-opacity': nightCoreOpacityExpression() as never,
+        // 同色描边：antimeridian 拆分的两个 ring 边界边在球面上是同一条线，
+        // fill 边缘抗锯齿各自半透明会在日期变更线附近透出底图细线——
+        // 同色 outline 覆盖接缝（MapLibre 相邻多边形接缝的标准解法）
+        'fill-outline-color': '#0a1626',
       },
       layout: { visibility: 'visible' },
     } as never)
@@ -578,6 +582,7 @@ function ensureNightLayers(map: MapInstance): void {
   }
   map.setLayoutProperty(NIGHT_CORE_LAYER_ID, 'visibility', 'visible')
   map.setPaintProperty(NIGHT_CORE_LAYER_ID, 'fill-opacity', nightCoreOpacityExpression() as never)
+  map.setPaintProperty(NIGHT_CORE_LAYER_ID, 'fill-outline-color', '#0a1626')
 
   // 晨昏线 line-blur 羽化（宽线高模糊 → 平滑过渡，无条纹）
   if (!map.getLayer(TERMINATOR_LINE_LAYER_ID)) {
@@ -592,7 +597,7 @@ function ensureNightLayers(map: MapInstance): void {
         'line-blur': terminatorBlurExpression() as never,
         'line-opacity': 0.5,
       },
-      layout: { visibility: 'visible', 'line-cap': 'round' },
+      layout: { visibility: 'visible', 'line-cap': 'round', 'line-join': 'round' },
     } as never)
     if (!map.getLayer(TERMINATOR_LINE_LAYER_ID)) {
       console.warn('[MapCanvas] 晨昏线 blur 图层创建失败（表达式校验被拒绝）')

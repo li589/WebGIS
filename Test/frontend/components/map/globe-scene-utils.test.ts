@@ -260,3 +260,26 @@ describe('subsolarLongitude / subsolarDeclination / buildNightHemisphereGeoJSON�
     expect(maxLat - minLat).toBeGreaterThan(30)
   })
 })
+
+describe('晨昏线渲染质量（折点/平滑性/采样密度）', () => {
+  it('terminator 采样密度 ≥90 点/180°（1° 步长）且最大转角 <0.15 rad（无折点）', () => {
+    const json = buildNightHemisphereGeoJSON(20, new Date(Date.UTC(2026, 7, 28)), 8)
+    const terms = json.features.filter((f) => f.properties.hemisphere === 'terminator')
+    expect(terms.length).toBeGreaterThan(0)
+    for (const t of terms) {
+      const pts = t.geometry.coordinates as number[][]
+      // 1° 步长：180° 范围 ≥ 90 点
+      expect(pts.length).toBeGreaterThanOrEqual(90)
+      // 相邻线段方向变化角（转角）应极小——折点会表现为局部大转角
+      let maxTurn = 0
+      for (let i = 2; i < pts.length; i++) {
+        const a1 = Math.atan2(pts[i - 1][1] - pts[i - 2][1], pts[i - 1][0] - pts[i - 2][0])
+        const a2 = Math.atan2(pts[i][1] - pts[i - 1][1], pts[i][0] - pts[i - 1][0])
+        let d = Math.abs(a2 - a1)
+        if (d > Math.PI) d = 2 * Math.PI - d
+        maxTurn = Math.max(maxTurn, d)
+      }
+      expect(maxTurn).toBeLessThan(0.15)
+    }
+  })
+})

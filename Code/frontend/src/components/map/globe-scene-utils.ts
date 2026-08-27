@@ -126,7 +126,7 @@ export function buildNightHemisphereGeoJSON(
   const nightCenter = subsolarLon + 180
   const southNight = decl >= 0 // δ≥0：夜侧偏南；δ<0：夜侧偏北
 
-  const LON_STEP = 3 // 晨昏线经度采样步长
+  const LON_STEP = 1 // 晨昏线经度采样步长（1°：消除折点，高 zoom 下曲线平滑圆润）
   const features: NightHemisphereGeoJSON['features'] = []
 
   /** 归一化经度到 [-180, 180) */
