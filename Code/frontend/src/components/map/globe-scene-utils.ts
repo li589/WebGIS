@@ -133,79 +133,55 @@ export function buildNightHemisphereGeoJSON(
   const normLon = (lon: number) => ((lon + 540) % 360) - 180
 
   /**
-   * 构造夜核多边形（全暗区）：上沿 = φc 晨昏线曲线，下沿 = 极点侧 ±90°。
-   * 沿 λ ∈ [nightCenter-90, nightCenter+90] 采样 φc(λ)，
-   * 多边形 = [上沿曲线(λ 递增)] + [下沿极点线(λ 递减)] 闭合。
+   * 构造夜核多边形（全暗区）。
+   *
+   * **完整晨昏圈构造**（非二分日）：夜半球边界 = 完整晨昏线大圆
+   * （360° 一圈：夜侧北弧 + 昼侧南弧在赤道交点 λs±90 处连续衔接），
+   * 极点侧用极线闭合（极夜覆盖全经度，不只是夜侧经度）。
+   * ——旧的"仅夜侧经度弧段 + 赤道交点垂直边"构造会在 λs±90 处
+   * 产生经向直边折点（用户反馈：大西洋/美洲海域各一个明显折点，
+   * 晨昏线圈像被截成两段弧），且漏掉昼侧经度的南/北半球夜区。
+   *
+   * 二分日（|δ|<0.5°）：夜侧 = 全纬度经度带（φc 恒 0 退化）。
    */
   const pushNightCore = () => {
+    const equinox = Math.abs(decl) < 0.5
+    const poleLat = southNight ? -90 : 90
+
+    if (!equinox) {
+      // 完整晨昏圈：从赤道交点（λs+90）起绕 360° 连续采样 φc
+      const startLon = nightCenter - 90
+      const curve: number[][] = []
+      for (let lon = startLon; lon <= startLon + 360 + 1e-9; lon += LON_STEP) {
+        curve.push([lon, terminatorLatitude(lon, subsolarLon, decl)])
+      }
+      if (curve.length < 4) return
+      // antimeridian 拆分（段内曲线 + 极点侧极线闭合）
+      const rings = splitClosedRingAtAntimeridian(curve, poleLat)
+      for (const ring of rings) {
+        features.push({
+          type: 'Feature',
+          properties: { hemisphere: 'night-core' },
+          geometry: { type: 'Polygon', coordinates: [ring] },
+        })
+      }
+      return
+    }
+
+    // 二分日：夜侧经度带全纬度（矩形带）
     const lonStart = nightCenter - 90
     const lonEnd = nightCenter + 90
-    const equinox = Math.abs(decl) < 0.5
     const upPts: number[][] = [] // 上沿（晨昏线）
     const dnPts: number[][] = [] // 下沿（极点侧）
     for (let lon = lonStart; lon <= lonEnd + 1e-9; lon += LON_STEP) {
-      const phiC = terminatorLatitude(lon, subsolarLon, decl)
-      // δ>0：夜侧在南（φ 更小）；δ<0：夜侧在北（φ 更大）
-      // 二分日（|δ|<0.5°）：夜侧 = 全纬度经度带（φc 恒 0，不能用 φ<φc 判定）
-      const up = equinox
-        ? 90
-        : southNight
-          ? Math.max(Math.min(phiC, 90), -90)
-          : Math.min(Math.max(phiC, -90), 90)
-      const dn = equinox ? -90 : southNight ? -90 : 90
-      // 极昼经度段（up 越过极点退化）跳过——该经度整段无夜侧；
-      // 二分日恒有夜侧（全纬度经度带，decl 浮点符号不影响判定）
-      const hasNight = equinox ? true : southNight ? up > dn : up < dn
-      if (!hasNight) continue
-      upPts.push([lon, up])
-      dnPts.push([lon, dn])
+      upPts.push([lon, 90])
+      dnPts.push([lon, -90])
     }
     if (upPts.length < 3) return
-
-    // 按 antimeridian 切分：点列经度连续（未归一化），在跨 ±180 处插值切段
-    const rings: number[][][] = []
-    let upCur: number[][] = []
-    let dnCur: number[][] = []
-    const flush = () => {
-      if (upCur.length >= 3) {
-        const ring = [...upCur]
-        for (let i = dnCur.length - 1; i >= 0; i--) ring.push(dnCur[i])
-        ring.push([...upCur[0]])
-        rings.push(ring)
-      }
-      upCur = []
-      dnCur = []
-    }
-    for (let i = 0; i < upPts.length; i++) {
-      const [lon, up] = upPts[i]
-      const dn = dnPts[i][1]
-      const norm = normLon(lon)
-      if (i > 0) {
-        const prevNorm = normLon(upPts[i - 1][0])
-        // 经度跳变（跨 antimeridian）：在边界处插值闭合当前段
-        if (Math.abs(norm - prevNorm) > 180) {
-          const prevLon = upPts[i - 1][0]
-          const prevUp = upPts[i - 1][1]
-          const prevDn = dnPts[i - 1][1]
-          // 采样经度递增：跳变时 norm<0（从 +178 跳到 -178），
-          // 前段在 +180 闭合、新段从 -180 起（norm>0 的递减情形反之）
-          const boundary = norm > 0 ? 180 : -180
-          const prevBoundary = norm > 0 ? -180 : 180
-          const frac = (prevBoundary - prevLon) / (lon - prevLon)
-          const upB = prevUp + (up - prevUp) * frac
-          const dnB = prevDn + (dn - prevDn) * frac
-          upCur.push([prevBoundary, upB])
-          dnCur.push([prevBoundary, dnB])
-          flush()
-          upCur.push([boundary, upB])
-          dnCur.push([boundary, dnB])
-        }
-      }
-      upCur.push([norm, up])
-      dnCur.push([norm, dn])
-    }
-    flush()
-
+    const rings = splitClosedRingAtAntimeridian(
+      [...upPts, ...dnPts.slice().reverse()],
+      0,
+    )
     for (const ring of rings) {
       features.push({
         type: 'Feature',
@@ -216,8 +192,55 @@ export function buildNightHemisphereGeoJSON(
   }
 
   /**
+   * 把闭合 ring 点列（经度连续未归一化，可能跨任意 antimeridian）
+   * 拆为 [-180,180] 内的合法 ring 列表。
+   * 每段闭合：段尾下到极点（poleLat）→ 沿极线横到段首经度 → 上到段首点。
+   * poleLat 传 0 时极点闭合退化为直连（二分日上下沿已含极线）。
+   */
+  const splitClosedRingAtAntimeridian = (pts: number[][], poleLat: number): number[][][] => {
+    const rings: number[][][] = []
+    let cur: number[][] = []
+    const flushSeg = () => {
+      if (cur.length >= 3) {
+        const ring = [...cur]
+        if (poleLat === 0) {
+          ring.push([...cur[0]])
+        } else {
+          ring.push([cur[cur.length - 1][0], poleLat])
+          ring.push([cur[0][0], poleLat])
+          ring.push([...cur[0]])
+        }
+        rings.push(ring)
+      }
+      cur = []
+    }
+    for (let i = 0; i < pts.length; i++) {
+      const [lon, lat] = pts[i]
+      const norm = normLon(lon)
+      if (i > 0 && Math.abs(norm - normLon(pts[i - 1][0])) > 180) {
+        // 经度跳变（跨 antimeridian）：在边界处插值闭合当前段。
+        // ⚠️ 闭合点必须在**绝对经度空间**计算：normLon(180+360k) 会映射到
+        // -180（而非 +180），直接用归一化边界算 frac 会外插出越界纬度。
+        const [prevLon, prevLat] = pts[i - 1]
+        const prevNorm = normLon(prevLon)
+        const k = Math.floor((Math.min(prevLon, lon) + 180) / 360)
+        const lambdaB = 180 + 360 * k // 区间内的 antimeridian 绝对经度
+        const frac = (lambdaB - prevLon) / (lon - prevLon)
+        const latB = prevLat + (lat - prevLat) * frac
+        // 显示经度：跳变两侧一正一负——前段闭合取 prevNorm 侧、新段起点取 norm 侧
+        cur.push([prevNorm > 0 ? 180 : -180, latB])
+        flushSeg()
+        cur.push([norm > 0 ? 180 : -180, latB])
+      }
+      cur.push([norm, lat])
+    }
+    flushSeg()
+    return rings
+  }
+
+  /**
    * 构造晨昏线 linestring（line-blur 羽化的载体）：
-   * - δ≥0.5°：φc(λ) 曲线（夜侧经度范围），antimeridian 拆段
+   * - δ≥0.5°：完整晨昏圈曲线（360° 连续大圆），antimeridian 断开
    * - δ<0.5°（二分日）：退化为两条经线线段（λn±90，φ 从 -90 到 90）
    */
   const pushTerminatorLines = () => {
@@ -229,14 +252,15 @@ export function buildNightHemisphereGeoJSON(
       lines.push([[lonW, -90], [lonW, 90]])
       lines.push([[lonE, -90], [lonE, 90]])
     } else {
-      // φc 曲线：按经度连续采样，在 antimeridian 跳变处断开
+      // 完整晨昏圈：从赤道交点起绕 360°，在 antimeridian 跳变处断开
+      const startLon = nightCenter - 90
       let cur: number[][] = []
       const flush = () => {
         if (cur.length >= 2) lines.push(cur)
         cur = []
       }
       let prevNorm: number | null = null
-      for (let lon = nightCenter - 90; lon <= nightCenter + 90 + 1e-9; lon += LON_STEP) {
+      for (let lon = startLon; lon <= startLon + 360 + 1e-9; lon += LON_STEP) {
         const phiC = terminatorLatitude(lon, subsolarLon, decl)
         const norm = normLon(lon)
         if (prevNorm !== null && Math.abs(norm - prevNorm) > 180) {
