@@ -519,16 +519,22 @@ function applyBasemapBrightness(map: MapInstance, globeEnabled: boolean): void {
 
 /**
  * OSM 等 raster 瓦片没有 MapLibre 光照属性，必须单独绘制夜半球遮罩。
- * 遮罩不是两个极区圆圈：它是随时间轴旋转的半球，并用渐变边界模拟晨昏线。
+ * 设计参考旧 CSS time-sheen 的柔和光晕风格，但位置地理正确：
+ * - 夜半球：60 层嵌套矩形（每层外扩 1.5°），单层 ~0.01 透明度复合渐变，
+ *   夜心 ≈0.45、晨昏边缘 ≈0.01，视觉连续无缝
+ * - 晨昏暖光带：晨昏线两侧 ±7° 橙色辉光（日出日落的晨昏光）
  */
 const NIGHT_HEMISPHERE_SOURCE_ID = 'globe-night-hemisphere'
 const NIGHT_HEMISPHERE_LAYER_ID = 'globe-night-hemisphere-fill'
+const TWILIGHT_GLOW_LAYER_ID = 'globe-twilight-glow-fill'
 
 function applyNightHemisphere(map: MapInstance, globeEnabled: boolean, hour: number): void {
   try {
     if (!globeEnabled) {
-      if (map.getLayer(NIGHT_HEMISPHERE_LAYER_ID)) {
-        map.setLayoutProperty(NIGHT_HEMISPHERE_LAYER_ID, 'visibility', 'none')
+      for (const layerId of [NIGHT_HEMISPHERE_LAYER_ID, TWILIGHT_GLOW_LAYER_ID]) {
+        if (map.getLayer(layerId)) {
+          map.setLayoutProperty(layerId, 'visibility', 'none')
+        }
       }
       return
     }
@@ -542,20 +548,43 @@ function applyNightHemisphere(map: MapInstance, globeEnabled: boolean, hour: num
       map.addSource(NIGHT_HEMISPHERE_SOURCE_ID, { type: 'geojson', data: data as never })
     }
     if (!map.getLayer(NIGHT_HEMISPHERE_LAYER_ID)) {
+      // 夜半球深蓝遮罩：filter 只画 night features，60 层嵌套复合渐变
       map.addLayer({
         id: NIGHT_HEMISPHERE_LAYER_ID,
         type: 'fill',
         source: NIGHT_HEMISPHERE_SOURCE_ID,
+        filter: ['==', ['get', 'hemisphere'], 'night'],
         paint: {
-          // 单层低透明度 × 5 层嵌套叠加：夜心复合 ≈0.44、晨昏边缘 ≈0.11，
-          // 连续平滑的晨昏渐变（保留底图纹理，不糊成纯色）
-          'fill-color': '#061522',
-          'fill-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.115, 3, 0.16],
+          'fill-color': '#0a1626',
+          'fill-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.008, 3, 0.012],
         },
         layout: { visibility: 'visible' },
       } as never)
     } else {
       map.setLayoutProperty(NIGHT_HEMISPHERE_LAYER_ID, 'visibility', 'visible')
+    }
+    if (!map.getLayer(TWILIGHT_GLOW_LAYER_ID)) {
+      // 晨昏暖光带：晨昏线两侧橙红辉光（模拟日出日落光），两层宽度柔边
+      map.addLayer({
+        id: TWILIGHT_GLOW_LAYER_ID,
+        type: 'fill',
+        source: NIGHT_HEMISPHERE_SOURCE_ID,
+        filter: ['==', ['get', 'hemisphere'], 'twilight'],
+        paint: {
+          // 内层（tier 1）更窄更亮，外层（tier 0）宽而淡——柔化光带边缘
+          'fill-color': '#ff9a5c',
+          'fill-opacity': [
+            'match',
+            ['get', 'tier'],
+            1,
+            0.16,
+            0.07,
+          ],
+        },
+        layout: { visibility: 'visible' },
+      } as never)
+    } else {
+      map.setLayoutProperty(TWILIGHT_GLOW_LAYER_ID, 'visibility', 'visible')
     }
   } catch (error) {
     debugLog('[MapCanvas] applyNightHemisphere unavailable', error)
@@ -1036,8 +1065,10 @@ async function handleLocateMe() {
     <!-- Atmosphere layers -->
     <div class="map-fog"></div>
     <div class="basemap-transition-mask"></div>
-    <div class="time-sheen"></div>
-    <div class="time-band"></div>
+    <!-- 3D globe 下不渲染屏幕空间时间铬层（昼夜统一由地理夜半球遮罩负责，
+         避免"两条晨昏线"；v-if 比 CSS display:none 可靠，不受缓存/级联影响） -->
+    <div v-if="!globeProjectionOn" class="time-sheen"></div>
+    <div v-if="!globeProjectionOn" class="time-band"></div>
     <div class="weather-overlay"></div>
     <div class="grid-overlay"></div>
 

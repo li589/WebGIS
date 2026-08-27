@@ -63,7 +63,7 @@ export interface NightHemisphereGeoJSON {
   type: 'FeatureCollection'
   features: Array<{
     type: 'Feature'
-    properties: { hemisphere: 'night'; tier: number }
+    properties: { hemisphere: 'night' | 'twilight'; tier: number }
     geometry: {
       type: 'Polygon'
       coordinates: number[][][]
@@ -75,15 +75,17 @@ export interface NightHemisphereGeoJSON {
  * 生成夜半球经纬度多边形（按 180° 经线拆分，避免 GeoJSON 跨日期变更线）。
  * 太阳赤纬取 0° 时夜半球是经度跨度 180° 的半球，极点始终位于边界两侧。
  *
- * 晨昏渐变（替代 CSS time-sheen 在 globe 下的屏幕空间渐变）：
- * 5 层嵌套矩形（从夜心 ±18° 到整个夜半球 ±90°，每层外扩 18°），
- * 全部同一 fill-opacity —— 半透明嵌套叠加使夜心最暗（≈0.44 复合），
- * 向晨昏线逐层递减到单层（≈0.11），形成连续平滑的晨昏过渡。
+ * 晨昏渐变（参考旧 CSS time-sheen 的柔和光晕风格，但位置地理正确）：
+ * - night：60 层嵌套矩形（夜心 ±1.5° 起每层外扩 1.5° 至 ±90°），
+ *   单层 fill-opacity ≈0.01——嵌套复合后夜心 ≈0.45、晨昏边缘 ≈0.01，
+ *   1.5° 步长在视觉上完全连续无缝（替代旧 5 层 18° 的粗糙阶梯）
+ * - twilight：晨昏线两侧 ±7° 的暖橙光带（两层不同宽度做柔边），
+ *   模拟日出日落时晨昏线的橙红色辉光（旧 time-sheen 的暖光精华）
  */
 export function buildNightHemisphereGeoJSON(hour: number): NightHemisphereGeoJSON {
   const nightCenter = subsolarLongitude(hour) + 180
-  const TIER_COUNT = 5
-  const bandStep = 90 / TIER_COUNT // 每层外扩 18°
+  const TIER_COUNT = 60
+  const bandStep = 90 / TIER_COUNT // 每层外扩 1.5°
   const makeRing = (west: number, east: number): number[][] => [
     [west, -90],
     [east, -90],
@@ -91,40 +93,46 @@ export function buildNightHemisphereGeoJSON(hour: number): NightHemisphereGeoJSO
     [west, 90],
     [west, -90],
   ]
-  const features: NightHemisphereGeoJSON['features'] = []
-  for (let t = 0; t < TIER_COUNT; t++) {
-    // 层 t 的半宽：(t+1)*18°；夜心规范化到 [-180,180] 再拆 antimeridian
-    const halfWidth = (t + 1) * bandStep
-    const center = ((nightCenter + 540) % 360) - 180
-    const west = center - halfWidth
-    const east = center + halfWidth
-    // 层未触及 antimeridian：单矩形
-    if (west >= -180 && east <= 180) {
-      features.push({
-        type: 'Feature',
-        properties: { hemisphere: 'night', tier: t },
-        geometry: { type: 'Polygon', coordinates: [makeRing(west, east)] },
-      })
-      continue
-    }
-    // 跨 antimeridian：拆两段（east 规范化 270°→-90°，避免覆盖全经度）
-    const westPart = Math.max(-180, west)
-    const eastNorm = east > 180 ? east - 360 : east
-    if (westPart < 180) {
-      features.push({
-        type: 'Feature',
-        properties: { hemisphere: 'night', tier: t },
-        geometry: { type: 'Polygon', coordinates: [makeRing(westPart, 180)] },
-      })
-    }
-    if (eastNorm > -180) {
-      features.push({
-        type: 'Feature',
-        properties: { hemisphere: 'night', tier: t },
-        geometry: { type: 'Polygon', coordinates: [makeRing(-180, eastNorm)] },
-      })
+  /** 把 [west, east] 矩形（可跨任意多个 antimeridian）拆为 [-180,180] 内的合法 ring 列表 */
+  const pushRect = (
+    west: number,
+    east: number,
+    props: { hemisphere: 'night' | 'twilight'; tier: number },
+    features: NightHemisphereGeoJSON['features'],
+  ) => {
+    if (east - west <= 0) return
+    let w = west
+    while (w < east) {
+      // w 所在的 360° 周期（[-180,180] 显示区的平移副本）
+      const k = Math.floor((w + 180) / 360)
+      const right = k * 360 + 180
+      const segEnd = Math.min(east, right)
+      // 段 [w, segEnd] 平移回显示区 [-180, 180]
+      const shift = -k * 360
+      const dispW = w + shift
+      const dispE = segEnd + shift
+      if (dispE > dispW) {
+        features.push({
+          type: 'Feature',
+          properties: { ...props },
+          geometry: { type: 'Polygon', coordinates: [makeRing(dispW, dispE)] },
+        })
+      }
+      w = segEnd
     }
   }
+
+  const features: NightHemisphereGeoJSON['features'] = []
+  const center = ((nightCenter + 540) % 360) - 180
+  for (let t = 0; t < TIER_COUNT; t++) {
+    const halfWidth = (t + 1) * bandStep
+    pushRect(center - halfWidth, center + halfWidth, { hemisphere: 'night', tier: t }, features)
+  }
+  // 晨昏暖光带：晨昏线（center ±90°）两侧各 ~7°，两层宽度做柔边
+  pushRect(center + 90 - 11, center + 90 + 11, { hemisphere: 'twilight', tier: 0 }, features)
+  pushRect(center + 90 - 5, center + 90 + 5, { hemisphere: 'twilight', tier: 1 }, features)
+  pushRect(center - 90 - 11, center - 90 + 11, { hemisphere: 'twilight', tier: 0 }, features)
+  pushRect(center - 90 - 5, center - 90 + 5, { hemisphere: 'twilight', tier: 1 }, features)
   return { type: 'FeatureCollection', features }
 }
 
