@@ -71,10 +71,9 @@ function onGlobeBackgroundChange(value: string | number) {
 const globeDaylight = ref<GlobeDaylightMode>(getGlobeDaylightMode())
 
 const globeDaylightOptions = [
-  { value: 'auto', label: '自动' },
-  { value: 'soft', label: '柔和' },
   { value: 'standard', label: '标准' },
-  { value: 'off', label: '关闭' },
+  { value: 'natural', label: '自然' },
+  { value: 'off', label: '无' },
 ]
 
 function onGlobeDaylightChange(value: string | number) {
@@ -191,8 +190,7 @@ if (typeof window !== 'undefined') {
           />
         </div>
         <p class="section-hint">
-          球面昼夜光照。「自动」按当前底图调节：街道/矢量等亮色底图自动压低直射避免过曝，
-          影像/暗色底图保留立体光影。「柔和」整体减淡，「关闭」停用昼夜效果。
+          3D晨昏样式：「标准」保留当前固定明暗质感，不绘制晨昏线；「自然」按时间轴绘制真实夜半球和晨昏过渡；「无」取消地球亮暗效果。
         </p>
       </div>
     </section>

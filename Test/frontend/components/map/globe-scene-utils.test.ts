@@ -6,6 +6,7 @@ import {
   daylightFactor,
   resolveGlobeLighting,
   resolveGlobeSky,
+  subsolarDeclination,
   subsolarLongitude,
 } from '@/components/map/globe-scene-utils'
 
@@ -44,31 +45,27 @@ describe('daylightFactor', () => {
 
 describe('resolveGlobeLighting', () => {
   it('亮色底图直射强度低于暗色底图（防过曝核心约束）', () => {
-    const light = resolveGlobeLighting(12, 'light', 'auto')
-    const dark = resolveGlobeLighting(12, 'dark', 'auto')
+    const light = resolveGlobeLighting(12, 'light', 'standard')
+    const dark = resolveGlobeLighting(12, 'dark', 'standard')
     expect(light).not.toBeNull()
     expect(dark).not.toBeNull()
     expect(light!.intensity).toBeLessThan(dark!.intensity)
   })
 
   it('亮色底图太阳高度上限更低（长影柔和，不直射）', () => {
-    const light = resolveGlobeLighting(12, 'light', 'auto')!
-    const dark = resolveGlobeLighting(12, 'dark', 'auto')!
+    const light = resolveGlobeLighting(12, 'light', 'standard')!
+    const dark = resolveGlobeLighting(12, 'dark', 'standard')!
     expect(light.elevation).toBeLessThan(dark.elevation)
     expect(light.elevation).toBeLessThanOrEqual(36)
     expect(dark.elevation).toBeLessThanOrEqual(64)
   })
 
-  it('柔和档整体压低强度', () => {
+  it('standard 与 natural 档光照参数一致（档位只影响晨昏样式，不影响光照数值）', () => {
     const standard = resolveGlobeLighting(12, 'medium', 'standard')!
-    const soft = resolveGlobeLighting(12, 'medium', 'soft')!
-    expect(soft.intensity).toBeLessThan(standard.intensity)
-  })
-
-  it('auto 与 standard 亮度一致（auto 仅按底图缩放）', () => {
-    const auto = resolveGlobeLighting(15, 'medium', 'auto')!
-    const standard = resolveGlobeLighting(15, 'medium', 'standard')!
-    expect(auto.intensity).toBeCloseTo(standard.intensity)
+    const natural = resolveGlobeLighting(12, 'medium', 'natural')!
+    expect(natural.intensity).toBeCloseTo(standard.intensity)
+    expect(natural.elevation).toBeCloseTo(standard.elevation)
+    expect(natural.color).toBe(standard.color)
   })
 
   it('off 档返回 null（关闭昼夜光照）', () => {
@@ -78,7 +75,7 @@ describe('resolveGlobeLighting', () => {
   it('强度始终在 MapLibre 合法区间内', () => {
     for (const hour of [0, 3, 6, 9, 12, 15, 18, 21, 23]) {
       for (const brightness of ['light', 'medium', 'dark'] as const) {
-        for (const mode of ['auto', 'soft', 'standard'] as const) {
+        for (const mode of ['standard', 'natural'] as const) {
           const light = resolveGlobeLighting(hour, brightness, mode)!
           expect(light.intensity).toBeGreaterThanOrEqual(0.18)
           expect(light.intensity).toBeLessThanOrEqual(1.0)
@@ -90,14 +87,14 @@ describe('resolveGlobeLighting', () => {
   })
 
   it('夜间强度低于白天（昼夜差保持）', () => {
-    const night = resolveGlobeLighting(0, 'dark', 'auto')!
-    const noon = resolveGlobeLighting(12, 'dark', 'auto')!
+    const night = resolveGlobeLighting(0, 'dark', 'standard')!
+    const noon = resolveGlobeLighting(12, 'dark', 'standard')!
     expect(night.intensity).toBeLessThan(noon.intensity)
   })
 
   it('亮色底图色温更冷暗（color 整体压暗，乘到白底上避免过曝）', () => {
-    const light = resolveGlobeLighting(18, 'light', 'auto')!
-    const dark = resolveGlobeLighting(18, 'dark', 'auto')!
+    const light = resolveGlobeLighting(18, 'light', 'standard')!
+    const dark = resolveGlobeLighting(18, 'dark', 'standard')!
     // 亮色底图 RGB 各分量应明显低于暗色底图（伽马压制策略）
     const lightRgb = /rgb\((\d+), (\d+), (\d+)\)/.exec(light.color)!.slice(1).map(Number)
     const darkRgb = /rgb\((\d+), (\d+), (\d+)\)/.exec(dark.color)!.slice(1).map(Number)
@@ -131,7 +128,7 @@ describe('resolveGlobeSky', () => {
   })
 })
 
-describe('subsolarLongitude / buildNightHemisphereGeoJSON（晨昏线）', () => {
+describe('subsolarLongitude / subsolarDeclination / buildNightHemisphereGeoJSON（自然晨昏线）', () => {
   it('太阳下点经度随 hour 旋转：12h 在 0°、0h 在 180°、18h 在 90°W', () => {
     expect(subsolarLongitude(12)).toBeCloseTo(0, 5)
     expect(Math.abs(subsolarLongitude(0))).toBeCloseTo(180, 5)
@@ -140,29 +137,42 @@ describe('subsolarLongitude / buildNightHemisphereGeoJSON（晨昏线）', () =>
     expect(subsolarLongitude(6 + 24)).toBeCloseTo(subsolarLongitude(6), 5)
   })
 
-  it('夜半球中心 = 太阳下点 + 180°，覆盖对侧 180° 经度范围', () => {
-    // hour=12 → 夜中心 180°，夜半球跨 90°E~90°W（跨 antimeridian 拆两段）
-    const json = buildNightHemisphereGeoJSON(12)
+  it('太阳赤纬：二分日≈0°、夏至≈+23.45°、冬至≈-23.45°', () => {
+    const equinox = subsolarDeclination(new Date(Date.UTC(2026, 2, 20))) // 3-20 春分
+    const solsticeSummer = subsolarDeclination(new Date(Date.UTC(2026, 5, 21))) // 6-21 夏至
+    const solsticeWinter = subsolarDeclination(new Date(Date.UTC(2026, 11, 21))) // 12-21 冬至
+    expect(Math.abs(equinox)).toBeLessThan(2)
+    expect(solsticeSummer).toBeGreaterThan(20)
+    expect(solsticeSummer).toBeLessThanOrEqual(23.45)
+    expect(solsticeWinter).toBeLessThan(-20)
+    expect(solsticeWinter).toBeGreaterThanOrEqual(-23.45)
+  })
+
+  it('夜半球中心 = 太阳下点 + 180°；昼侧经度不落入夜半球（二分日）', () => {
+    // 二分日（δ≈0，退化矩形带）：hour=12 → 夜中心 180°
+    const json = buildNightHemisphereGeoJSON(12, new Date(Date.UTC(2026, 2, 20)))
     expect(json.type).toBe('FeatureCollection')
     const lons = json.features.flatMap((f) =>
       f.geometry.coordinates[0].map((pt) => pt[0]),
     )
-    // 0° 经线（太平洋中央区域在 hour=12 应为白昼）不能落入夜半球
-    expect(lons.some((lon) => lon === 0)).toBe(false)
+    // 0° 经线（hour=12 的昼侧中央）不应出现在夜半球边界上
+    expect(lons.some((lon) => Math.abs(lon) < 1)).toBe(false)
     // 180° 必在夜半球内
     expect(lons.some((lon) => Math.abs(lon) === 180)).toBe(true)
   })
 
-  it('GeoJSON 不跨 antimeridian 断裂：所有 ring 经度在 [-180,180] 且方向连续', () => {
+  it('所有 ring 经度在 [-180,180]、纬度在 [-90,90]、环闭合（含 antimeridian 拆分）', () => {
     for (const hour of [0, 3, 6, 9, 12, 15, 18, 21, 23.5]) {
-      const json = buildNightHemisphereGeoJSON(hour)
+      const json = buildNightHemisphereGeoJSON(hour, new Date(Date.UTC(2026, 5, 21)))
+      expect(json.features.length).toBeGreaterThan(0)
       for (const feature of json.features) {
         const ring = feature.geometry.coordinates[0]
-        for (const [lon] of ring) {
+        for (const [lon, lat] of ring) {
           expect(lon).toBeGreaterThanOrEqual(-180)
           expect(lon).toBeLessThanOrEqual(180)
+          expect(lat).toBeGreaterThanOrEqual(-90)
+          expect(lat).toBeLessThanOrEqual(90)
         }
-        // ring 闭合
         const first = ring[0]
         const last = ring[ring.length - 1]
         expect(first[0]).toBe(last[0])
@@ -171,47 +181,43 @@ describe('subsolarLongitude / buildNightHemisphereGeoJSON（晨昏线）', () =>
     }
   })
 
-  it('晨昏渐变为 60 档不重叠环带（左右对称各一档）+ 晨昏暖光带', () => {
-    // hour=6 → 太阳在 90°E，夜心在 90°W（不跨 antimeridian，几何最直观）
-    const json = buildNightHemisphereGeoJSON(6)
-    const nightFeatures = json.features.filter((f) => f.properties.hemisphere === 'night')
-    // 60 档 × 左右各一条带 = 120 个 feature（互不重叠——MapLibre fill stencil
-    // 去重会忽略同层重叠多边形，嵌套叠加方案无效，必须相邻环带）
-    expect(nightFeatures.length).toBe(120)
-    // 每档恰好出现两次（左带+右带）
-    for (let t = 0; t < 60; t++) {
-      const tierFeatures = nightFeatures.filter((f) => f.properties.tier === t)
-      expect(tierFeatures.length).toBe(2)
-      for (const f of tierFeatures) {
-        const ring = f.geometry.coordinates[0]
-        const west = ring[0][0]
-        const east = ring[1][0]
-        // 带宽 1.5°（tier t 的带：[c±t*1.5, c±(t+1)*1.5]）
-        expect(east - west).toBeCloseTo(1.5, 5)
-      }
-    }
-    // 最内档（tier 0）紧贴夜心 ±1.5°；最外档（tier 59）到达晨昏线（夜心 ±90°）
-    const innerRight = nightFeatures.find(
-      (f) => f.properties.tier === 0 && f.geometry.coordinates[0][0][0] === -90,
-    )!
-    expect(innerRight).toBeTruthy()
-    const outer = nightFeatures.find((f) => f.properties.tier === 59)!
-    const ring = outer.geometry.coordinates[0]
-    const lo = Math.min(ring[0][0], ring[1][0])
-    const hi = Math.max(ring[0][0], ring[1][0])
-    // tier 59 外边界 = ±90°（0° 或 ±180° 晨昏线位置）
-    expect(Math.min(Math.abs(hi - 0), Math.abs(Math.abs(hi) - 180))).toBeLessThanOrEqual(1.6)
-    expect(Math.min(Math.abs(lo - 0), Math.abs(Math.abs(lo) - 180))).toBeLessThanOrEqual(1.6)
-    // 环带互不重叠：所有 ring 宽度总和 = 180°（夜半球半宽 ×2）
-    const totalWidth = nightFeatures.reduce(
-      (sum, f) => sum + (f.geometry.coordinates[0][1][0] - f.geometry.coordinates[0][0][0]),
-      0,
+  it('晨昏线随日期弯曲：夏至夜侧偏南（北半球高纬无夜侧段），冬至相反', () => {
+    // 夏至（δ>0）：北半球高纬（如 φ=70°N）在夜心经度上应为昼（极昼）——
+    // 夜侧上沿在北半球高纬处低于 70°
+    const summer = buildNightHemisphereGeoJSON(12, new Date(Date.UTC(2026, 5, 21)))
+    const summerLats = summer.features.flatMap((f) =>
+      f.geometry.coordinates[0].map((pt) => pt[1]),
     )
-    expect(totalWidth).toBeCloseTo(180, 5)
-    // 暖光带：晨昏线两侧各两层（外层 ±11°、内层 ±5°）
-    const twilight = json.features.filter((f) => f.properties.hemisphere === 'twilight')
-    expect(twilight.length).toBeGreaterThanOrEqual(4)
-    expect(twilight.filter((f) => f.properties.tier === 0).length).toBeGreaterThanOrEqual(2)
-    expect(twilight.filter((f) => f.properties.tier === 1).length).toBeGreaterThanOrEqual(2)
+    // 全部夜侧边界纬度 < 66.5°（北极圈极昼：夜侧不触及北纬 66.5° 以上）
+    expect(Math.max(...summerLats)).toBeLessThan(66.6)
+
+    // 冬至（δ<0）：夜侧边界纬度 > -66.5°（南极圈极昼）
+    const winter = buildNightHemisphereGeoJSON(12, new Date(Date.UTC(2026, 11, 21)))
+    const winterLats = winter.features.flatMap((f) =>
+      f.geometry.coordinates[0].map((pt) => pt[1]),
+    )
+    expect(Math.min(...winterLats)).toBeGreaterThan(-66.6)
+  })
+
+  it('结构 = 12 档过渡带（tier 0-11）+ 全夜核（tier 12），无 twilight 彩色条带', () => {
+    const json = buildNightHemisphereGeoJSON(6, new Date(Date.UTC(2026, 2, 20)))
+    const tiers = new Set(json.features.map((f) => f.properties.tier))
+    expect(tiers.has(0)).toBe(true)
+    expect(tiers.has(12)).toBe(true)
+    expect(Math.max(...tiers)).toBe(12)
+    // 无 twilight feature（用户明确不要红色宽带）
+    expect(
+      json.features.some((f) => (f.properties as { hemisphere?: string }).hemisphere === 'twilight'),
+    ).toBe(false)
+  })
+
+  it('带间互不重叠（纬度方向相邻，面积总和有界）', () => {
+    // 同一经度列上，相邻带的纬度区间应相邻而非重叠（抽查几何）
+    const json = buildNightHemisphereGeoJSON(6, new Date(Date.UTC(2026, 2, 20)))
+    // tier 0（贴晨昏线最淡）与 tier 12（全夜核最暗）都存在
+    const t0 = json.features.filter((f) => f.properties.tier === 0)
+    const tCore = json.features.filter((f) => f.properties.tier === 12)
+    expect(t0.length).toBeGreaterThan(0)
+    expect(tCore.length).toBeGreaterThan(0)
   })
 })

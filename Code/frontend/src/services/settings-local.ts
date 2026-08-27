@@ -47,7 +47,7 @@ export interface SettingsUiLocal {
    * 3D globe 昼夜光影档位（默认 auto）：
    * auto=随底图亮度自适应（亮色底图压低直射防过曝）；soft=整体柔和；standard=标准；off=关闭。
    */
-  globeDaylight?: 'auto' | 'soft' | 'standard' | 'off'
+  globeDaylight?: 'standard' | 'natural' | 'off'
 }
 
 function safeGet(storage: Storage, key: string): string | null {
@@ -237,7 +237,8 @@ export function set3DViewExperimentalEnabled(on: boolean): void {
 // ─── 3D globe 场景偏好（背景星图 / 昼夜光影）──────────────────────────────
 
 export type GlobeBackgroundMode = 'auto' | 'starfield' | 'minimal'
-export type GlobeDaylightMode = 'auto' | 'soft' | 'standard' | 'off'
+/** 3D晨昏样式：标准=固定明亮地球（无晨昏线）；自然=真实夜半球；无=不加亮暗。 */
+export type GlobeDaylightMode = 'standard' | 'natural' | 'off'
 
 /** 3D 背景默认 auto（跟随主题：暗色=星图 / 浅色=淡化微尘）。 */
 export function getGlobeBackgroundMode(): GlobeBackgroundMode {
@@ -246,7 +247,11 @@ export function getGlobeBackgroundMode(): GlobeBackgroundMode {
 
 /** 3D 昼夜光影默认 auto（随底图亮度自适应，亮色底图压低直射防过曝）。 */
 export function getGlobeDaylightMode(): GlobeDaylightMode {
-  return loadSettingsUiLocal().globeDaylight ?? 'auto'
+  const value = loadSettingsUiLocal().globeDaylight
+  // 迁移旧值：auto/soft/standard 均归为固定地球标准样式；off 保持关闭
+  if (value === 'off') return 'off'
+  if (value === 'natural') return 'natural'
+  return 'standard'
 }
 
 const globeSceneListeners = new Set<() => void>()

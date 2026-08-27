@@ -390,6 +390,7 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
         ref="mapCanvasRef"
         :tile-source-id="tileSourceId"
         :current-hour="currentHour"
+        :current-date="currentDate"
         :inspect-point="selectedMapPoint"
         :globe-projection="globeProjectionOn"
         @visible-hotspots-change="handleVisibleHotspotsChange"

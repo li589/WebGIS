@@ -59,11 +59,23 @@ export function subsolarLongitude(hour: number): number {
   return ((12 - normalized) * 15 + 540) % 360 - 180
 }
 
+/**
+ * 太阳赤纬（度），Cooper 近似：δ = 23.45° × sin(360° × (284 + n) / 365)。
+ * n = 年内第几天。精度约 ±1°，对晨昏线视觉完全足够。
+ * date 缺省时取当前日期。
+ */
+export function subsolarDeclination(date?: Date): number {
+  const d = date ?? new Date()
+  const start = Date.UTC(d.getUTCFullYear(), 0, 0)
+  const dayOfYear = Math.floor((d.getTime() - start) / 86400000)
+  return 23.45 * Math.sin(((360 * (284 + dayOfYear)) / 365) * (Math.PI / 180))
+}
+
 export interface NightHemisphereGeoJSON {
   type: 'FeatureCollection'
   features: Array<{
     type: 'Feature'
-    properties: { hemisphere: 'night' | 'twilight'; tier: number }
+    properties: { hemisphere: 'night'; tier: number }
     geometry: {
       type: 'Polygon'
       coordinates: number[][][]
@@ -72,72 +84,145 @@ export interface NightHemisphereGeoJSON {
 }
 
 /**
- * 生成夜半球经纬度多边形（按 180° 经线拆分，避免 GeoJSON 跨日期变更线）。
- * 太阳赤纬取 0° 时夜半球是经度跨度 180° 的半球，极点始终位于边界两侧。
- *
- * ⚠️ 实现约束（MapLibre fill 的 stencil 去重）：同一 fill layer 内
- * 重叠的多边形只会被绘制一次——**嵌套/叠加矩形做渐变的方案无效**
- * （曾导致"阴面完全看不见，只剩一条淡红带"）。
- * 因此这里生成 60 档**互不重叠**的相邻环带（夜心左右对称各一条），
- * 每档 opacity 由 fill layer 的数据驱动表达式按 tier 插值
- * （夜心 tier=0 最暗 → 晨昏线 tier=59 最淡），1.5° 档差视觉连续无缝。
- *
- * twilight：晨昏线两侧 ±11°/±5° 两层宽度的暖橙光带（日出日落辉光）。
+ * 晨昏线纬度边界（真实球面几何，不是经度矩形）：
+ * 点 (φ, λ) 位于晨昏线上 ⟺ 太阳高度角 h = 0：
+ *   cosφ·cosδ·cos(λ-λs) + sinφ·sinδ = 0
+ * 解出边界纬度（δ≠0 时）：
+ *   φc(λ) = atan(-cosδ·cos(λ-λs) / sinδ)
+ * δ>0（北夏）：夜侧 = φ < φc(λ)（南极极夜、北极极昼自然出现）
+ * δ<0（北冬）：夜侧 = φ > φc(λ)
+ * δ=0（二分日）：退化为经度跨度 180° 的矩形带（φc 恒 0）
  */
-export function buildNightHemisphereGeoJSON(hour: number): NightHemisphereGeoJSON {
-  const nightCenter = subsolarLongitude(hour) + 180
-  const TIER_COUNT = 60
-  const bandStep = 90 / TIER_COUNT // 每档 1.5°
-  const makeRing = (west: number, east: number): number[][] => [
-    [west, -90],
-    [east, -90],
-    [east, 90],
-    [west, 90],
-    [west, -90],
-  ]
-  /** 把 [west, east] 矩形（可跨任意多个 antimeridian）拆为 [-180,180] 内的合法 ring 列表 */
-  const pushRect = (
-    west: number,
-    east: number,
-    props: { hemisphere: 'night' | 'twilight'; tier: number },
-    features: NightHemisphereGeoJSON['features'],
-  ) => {
-    if (east - west <= 0) return
-    let w = west
-    while (w < east) {
-      // w 所在的 360° 周期（[-180,180] 显示区的平移副本）
-      const k = Math.floor((w + 180) / 360)
-      const right = k * 360 + 180
-      const segEnd = Math.min(east, right)
-      // 段 [w, segEnd] 平移回显示区 [-180, 180]
-      const shift = -k * 360
-      const dispW = w + shift
-      const dispE = segEnd + shift
-      if (dispE > dispW) {
-        features.push({
-          type: 'Feature',
-          properties: { ...props },
-          geometry: { type: 'Polygon', coordinates: [makeRing(dispW, dispE)] },
-        })
+function terminatorLatitude(lonDeg: number, subsolarLon: number, declDeg: number): number {
+  if (Math.abs(declDeg) < 0.5) return 0
+  const declRad = (declDeg * Math.PI) / 180
+  const hourRad = ((lonDeg - subsolarLon) * Math.PI) / 180
+  const ratio = (-Math.cos(declRad) * Math.cos(hourRad)) / Math.sin(declRad)
+  return (Math.atan(ratio) * 180) / Math.PI
+}
+
+/**
+ * 生成夜半球经纬度多边形（真实太空观感的"自然"晨昏样式）：
+ *
+ * - **弯曲晨昏线**：按太阳赤纬精确求解晨昏线纬度边界 φc(λ)，
+ *   极昼/极夜随日期自然出现（NASA Blue Marble 式球面形态）
+ * - **夜侧均匀暗化**：全夜核区（距晨昏线 >18°）统一高不透明度，
+ *   明暗分界清晰可辨（修正"看不出哪边暗哪边亮"）
+ * - **窄过渡带**：晨昏线附近 18° 内 12 档渐隐（每档 1.5°），
+ *   互不重叠（MapLibre fill stencil 去重使嵌套叠加无效），
+ *   无彩色条带——太空摄影中晨昏线就是平滑的明暗渐变
+ * - antimeridian 拆分：多边形沿 ±180° 切割成合法 ring
+ */
+export function buildNightHemisphereGeoJSON(hour: number, date?: Date): NightHemisphereGeoJSON {
+  const subsolarLon = subsolarLongitude(hour)
+  const decl = subsolarDeclination(date)
+  const nightCenter = subsolarLon + 180
+  const southNight = decl >= 0 // δ≥0：夜侧偏南；δ<0：夜侧偏北
+
+  const TRANSITION_BANDS = 12 // 过渡带档数（18° / 1.5°）
+  const BAND_STEP = 1.5
+  const LON_STEP = 3 // 晨昏线经度采样步长
+  const features: NightHemisphereGeoJSON['features'] = []
+
+  /** 归一化经度到 [-180, 180) */
+  const normLon = (lon: number) => ((lon + 540) % 360) - 180
+
+  /**
+   * 按"夜侧纬度偏移"构造一个带多边形：
+   * bandOffset = 距晨昏线的偏移（度，向夜侧），带下沿 = 上沿 - BAND_STEP。
+   * 沿 λ ∈ [nightCenter-90, nightCenter+90] 采样 φc(λ)，
+   * 多边形 = [上沿曲线(λ 递增)] + [下沿曲线(λ 递减)] 闭合。
+   * 极点侧开放到 ±90°（isCore=true 的全夜核）。
+   */
+  const pushBand = (bandOffset: number, tier: number, isCore: boolean) => {
+    const lonStart = nightCenter - 90
+    const lonEnd = nightCenter + 90
+    const upPts: number[][] = [] // 上沿（晨昏线侧）
+    const dnPts: number[][] = [] // 下沿（夜心侧）
+    for (let lon = lonStart; lon <= lonEnd + 1e-9; lon += LON_STEP) {
+      const phiC = terminatorLatitude(lon, subsolarLon, decl)
+      // δ>0：夜侧在南（φ 更小）；δ<0：夜侧在北（φ 更大）
+      // 双向 clamp：极昼区（up 越过极点）形成零宽退化段，不产生越界纬度
+      const up = southNight
+        ? Math.max(Math.min(phiC - bandOffset, 90), -90)
+        : Math.min(Math.max(phiC + bandOffset, -90), 90)
+      const dn = isCore
+        ? southNight ? -90 : 90
+        : southNight
+          ? Math.max(phiC - (bandOffset + BAND_STEP), -90)
+          : Math.min(phiC + (bandOffset + BAND_STEP), 90)
+      // 该经度段无夜侧（极昼）则跳过；下沿被 clamp 到极点时整段恒夜仍生成
+      const hasNight = southNight ? up > dn : up < dn
+      if (!hasNight && !isCore) continue
+      upPts.push([lon, up])
+      dnPts.push([lon, dn])
+    }
+    if (upPts.length < 3) return
+
+    // 按 antimeridian 切分：点列经度连续（未归一化），在跨 ±180 处插值切段
+    const rings: number[][][] = []
+    let upCur: number[][] = []
+    let dnCur: number[][] = []
+    const flush = (boundaryLon: number | null) => {
+      if (upCur.length >= 3) {
+        const ring = [...upCur]
+        for (let i = dnCur.length - 1; i >= 0; i--) ring.push(dnCur[i])
+        ring.push([...upCur[0]])
+        rings.push(ring)
       }
-      w = segEnd
+      upCur = []
+      dnCur = []
+      void boundaryLon
+    }
+    for (let i = 0; i < upPts.length; i++) {
+      const [lon, up] = upPts[i]
+      const dn = dnPts[i][1]
+      const norm = normLon(lon)
+      if (i > 0) {
+        const prevNorm = normLon(upPts[i - 1][0])
+        // 经度跳变（跨 antimeridian）：在边界处插值闭合当前段
+        if (Math.abs(norm - prevNorm) > 180) {
+          const prevLon = upPts[i - 1][0]
+          const prevUp = upPts[i - 1][1]
+          const prevDn = dnPts[i - 1][1]
+          // 采样经度递增：跳变时 norm<0（从 +178 跳到 -178），
+          // 前段在 +180 闭合、新段从 -180 起（norm>0 的递减情形反之）
+          const boundary = norm > 0 ? 180 : -180
+          const prevBoundary = norm > 0 ? -180 : 180
+          // 当前段在 prevBoundary 闭合（纬度线性插值到边界）
+          const frac = (prevBoundary - prevLon) / (lon - prevLon)
+          const upB = prevUp + (up - prevUp) * frac
+          const dnB = prevDn + (dn - prevDn) * frac
+          upCur.push([prevBoundary, upB])
+          dnCur.push([prevBoundary, dnB])
+          flush(prevBoundary)
+          // 新段从 boundary 起
+          upCur.push([boundary, upB])
+          dnCur.push([boundary, dnB])
+        }
+      }
+      upCur.push([norm, up])
+      dnCur.push([norm, dn])
+    }
+    flush(null)
+
+    for (const ring of rings) {
+      features.push({
+        type: 'Feature',
+        properties: { hemisphere: 'night', tier },
+        geometry: { type: 'Polygon', coordinates: [ring] },
+      })
     }
   }
 
-  const features: NightHemisphereGeoJSON['features'] = []
-  const center = ((nightCenter + 540) % 360) - 180
-  for (let t = 0; t < TIER_COUNT; t++) {
-    const inner = t * bandStep
-    const outer = (t + 1) * bandStep
-    // 左右对称的两条相邻带（互不重叠）：tier 越大离夜心越远越淡
-    pushRect(center + inner, center + outer, { hemisphere: 'night', tier: t }, features)
-    pushRect(center - outer, center - inner, { hemisphere: 'night', tier: t }, features)
+  // 过渡带：tier 0（贴晨昏线，最淡）→ tier 11（最靠近全夜核）
+  // opacity 在 fill layer 按 tier 数据驱动插值（tier 越大越暗）
+  for (let t = 0; t < TRANSITION_BANDS; t++) {
+    pushBand(t * BAND_STEP, t, false)
   }
-  // 晨昏暖光带：晨昏线（center ±90°）两侧各两层宽度做柔边
-  pushRect(center + 90 - 11, center + 90 + 11, { hemisphere: 'twilight', tier: 0 }, features)
-  pushRect(center + 90 - 5, center + 90 + 5, { hemisphere: 'twilight', tier: 1 }, features)
-  pushRect(center - 90 - 11, center - 90 + 11, { hemisphere: 'twilight', tier: 0 }, features)
-  pushRect(center - 90 - 5, center - 90 + 5, { hemisphere: 'twilight', tier: 1 }, features)
+  // 全夜核区（距晨昏线 ≥18° 直到夜心）：tier = TRANSITION_BANDS，opacity 最高
+  pushBand(TRANSITION_BANDS * BAND_STEP, TRANSITION_BANDS, true)
+
   return { type: 'FeatureCollection', features }
 }
 
@@ -146,13 +231,12 @@ function clamp(v: number, min: number, max: number): number {
 }
 
 /**
- * 解析光照参数。
+ * 解析光照参数（当前仅测试使用；globe 模式已停用 setLight——
+ * raster 瓦片不吃 light，昼夜由夜半球遮罩负责）。
  * - 亮色底图：直射强度 ×0.5 + 太阳高度上限 36°（柔和长影）+ light color 偏冷白
- *   （亮度乘到瓦片上时整体压暗约 15%，避免白底+直射=全白的过曝）
  * - 影像/地形：×0.78 + 50° + 近白偏暖
  * - 暗色底图：×1.0 + 64° + 暖白（保留立体光影冲击）
- * - soft 档：强度 ×0.55 + 光色整体压暗 ~12% + 太阳高度角抬高（光线更平柔），
- *   三重叠加确保与标准档肉眼可辨；off 返回 null（不设置自定义光照）
+ * - off 返回 null（不设置自定义光照）
  */
 export function resolveGlobeLighting(
   hour: number,
@@ -163,33 +247,29 @@ export function resolveGlobeLighting(
   const daylight = daylightFactor(hour)
   const twilight = 1 - daylight
   const azimuth = 180 - ((((hour % 24) + 24) % 24) - 12) * 15
-  const isSoft = mode === 'soft'
 
   const brightnessScale =
     brightness === 'light' ? 0.5 : brightness === 'dark' ? 1.0 : 0.78
-  const modeScale = isSoft ? 0.55 : 1.0
-  // 直射强度：正午 0.95、夜间 0.4 的基准随底图/档位缩放（亮色底图上限更严）
-  const intensity = clamp((0.4 + daylight * 0.55) * brightnessScale * modeScale, 0.18, 1.0)
+  // 直射强度：正午 0.95、夜间 0.4 的基准随底图缩放（亮色底图上限更严）
+  const intensity = clamp((0.4 + daylight * 0.55) * brightnessScale, 0.18, 1.0)
 
-  // 太阳高度：亮色底图更低更斜（柔和长影），暗色底图更高（强立体感）；
-  // soft 档整体抬高 8°（光线更平、阴影更淡）
-  const elevationBase = (brightness === 'light' ? 10 : brightness === 'dark' ? 20 : 16) + (isSoft ? 8 : 0)
+  // 太阳高度：亮色底图更低更斜（柔和长影），暗色底图更高（强立体感）
+  const elevationBase = brightness === 'light' ? 10 : brightness === 'dark' ? 20 : 16
   const elevationRange = brightness === 'light' ? 26 : brightness === 'dark' ? 44 : 34
   const elevation = elevationBase + daylight * elevationRange
 
   // 光照色温 = MapLibre light color，会直接乘到瓦片像素上。
   // 亮色底图用「偏冷白」rgb(215, 226, 232)（RGB 整体低于暗色底图）：
   // 乘以亮瓦片后整体压暗 ~15% 抑制伽马过曝，同时保持色温变化（夜间冷蓝、晨昏暖橙）。
-  // 暗色底图保留近白偏暖以维持立体感。soft 档再整体压暗 12%（柔化高光）。
-  const softDim = isSoft ? 0.88 : 1.0
+  // 暗色底图保留近白偏暖以维持立体感。
   const lightBase = brightness === 'light'
     ? { warm: 213, green: 224, blue: 230 }
     : brightness === 'dark'
       ? { warm: 255, green: 246, blue: 232 }
       : { warm: 244, green: 240, blue: 232 }
-  const warm = Math.round((lightBase.warm - twilight * (lightBase.warm === 255 ? 28 : 24)) * softDim)
-  const green = Math.round((lightBase.green - twilight * 56) * softDim)
-  const blue = Math.round((lightBase.blue - twilight * 40) * softDim)
+  const warm = Math.round(lightBase.warm - twilight * (lightBase.warm === 255 ? 28 : 24))
+  const green = Math.round(lightBase.green - twilight * 56)
+  const blue = Math.round(lightBase.blue - twilight * 40)
   const color = `rgb(${warm}, ${green}, ${blue})`
 
   return { intensity, color, azimuth, elevation }
