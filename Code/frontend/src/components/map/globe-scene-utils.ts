@@ -50,13 +50,17 @@ export interface GlobeSkyParams {
 }
 
 /**
- * 时间轴小时对应的太阳下点经度（简化无日期模型，太阳赤纬取 0°）。
- * hour=12 时太阳位于 0° 经线；hour=0 时位于 180° 经线。
- * 该值只用于 raster 底图的昼夜遮罩，避免误把 MapLibre light 当成 raster 光照。
+ * 太阳下点经度（本地时间模型）。
+ * hour 是**本地时间轴小时**（如中国 UTC+8 的 12:00 = UTC 04:00），
+ * 必须先换算 UTC 再按下点公式：utcHour = hour - tzOffset，
+ * subsolarLon = (12 - utcHour) × 15°。
+ * 北京时间正午（hour=12, tz=+8）：太阳下点 120°E（杭州附近）✓
+ * tzOffsetHours 缺省取运行环境本地时区（浏览器/Node）。
  */
-export function subsolarLongitude(hour: number): number {
-  const normalized = ((hour % 24) + 24) % 24
-  return ((12 - normalized) * 15 + 540) % 360 - 180
+export function subsolarLongitude(hour: number, tzOffsetHours?: number): number {
+  const tz = tzOffsetHours ?? -new Date().getTimezoneOffset() / 60
+  const utcHour = (((hour - tz) % 24) + 24) % 24
+  return ((12 - utcHour) * 15 + 540) % 360 - 180
 }
 
 /**
@@ -113,14 +117,18 @@ function terminatorLatitude(lonDeg: number, subsolarLon: number, declDeg: number
  *   无彩色条带——太空摄影中晨昏线就是平滑的明暗渐变
  * - antimeridian 拆分：多边形沿 ±180° 切割成合法 ring
  */
-export function buildNightHemisphereGeoJSON(hour: number, date?: Date): NightHemisphereGeoJSON {
-  const subsolarLon = subsolarLongitude(hour)
+export function buildNightHemisphereGeoJSON(
+  hour: number,
+  date?: Date,
+  tzOffsetHours?: number,
+): NightHemisphereGeoJSON {
+  const subsolarLon = subsolarLongitude(hour, tzOffsetHours)
   const decl = subsolarDeclination(date)
   const nightCenter = subsolarLon + 180
   const southNight = decl >= 0 // δ≥0：夜侧偏南；δ<0：夜侧偏北
 
-  const TRANSITION_BANDS = 12 // 过渡带档数（18° / 1.5°）
-  const BAND_STEP = 1.5
+  const TRANSITION_BANDS = 36 // 过渡带档数（18° / 0.5°，平滑无条纹）
+  const BAND_STEP = 0.5
   const LON_STEP = 3 // 晨昏线经度采样步长
   const features: NightHemisphereGeoJSON['features'] = []
 

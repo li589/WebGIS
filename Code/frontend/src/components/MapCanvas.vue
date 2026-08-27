@@ -457,13 +457,18 @@ function applyGlobeScene(map: MapInstance, enabled: boolean, hour: number): void
     applyBasemapBrightness(map, enabled)
     applyNightHemisphere(map, enabled, hour, props.currentDate)
     if (!enabled || globeDaylightMode.value === 'off') {
-      // 非 globe 或「无」档：恢复默认大气（不加任何亮暗效果）
+      // 非 globe 或「无」档：恢复默认大气（整体亮度统一，不加任何亮暗效果）
       map.setSky?.({})
       return
     }
     const basemapStyle = TILE_SOURCE_MAP.get(props.tileSourceId)?.style
     const brightness = classifyBasemapBrightness(basemapStyle)
-    const sky = resolveGlobeSky(hour, brightness)
+    // sky 固定化（用户定调）：
+    // - 「标准」固定白天大气（不随时间轴变化的立体地球质感）
+    // - 「自然」固定夜间深空大气（地球的亮暗完全由晨昏线负责，
+    //   天空不再叠加随时间变化的方向性亮色）
+    const skyAnchorHour = globeDaylightMode.value === 'natural' ? 0 : 12
+    const sky = resolveGlobeSky(skyAnchorHour, brightness)
     map.setSky?.({
       'sky-color': sky.skyColor,
       'horizon-color': sky.horizonColor,
@@ -515,7 +520,7 @@ function applyBasemapBrightness(map: MapInstance, globeEnabled: boolean): void {
   }
 }
 
-// ─── Globe raster 昼夜遮罩（"自然"晨昏样式，跟随时间轴+日期） ────────────────
+// ─── Globe raster 昼夜遮罩（"自然"晨昏样式，跟随时间轴+日期） ───────────────��
 
 /**
  * OSM 等 raster 瓦片没有 MapLibre 光照属性，必须单独绘制夜半球遮罩。
@@ -523,19 +528,55 @@ function applyBasemapBrightness(map: MapInstance, globeEnabled: boolean): void {
  * - 弯曲晨昏线：按太阳赤纬精确求解纬度边界，极昼/极夜随日期自然出现
  * - 夜侧均匀暗化（全夜核统一暗度）+ 晨昏线 18° 窄过渡带渐隐，无彩色条带
  * - 仅「自然」档显示；「标准」=固定质感不画晨昏线；「无」=完全不画
+ *
+ * ⚠️ MapLibre 表达式规范：['zoom'] 只能作为**顶层** step/interpolate 的 input，
+ * 不能嵌套在 ['*', zoomInterp, tierInterp] 乘法里（校验失败且错误只走
+ * error 事件不 throw，静默拒绝 addLayer——曾导致晨昏线完全不渲染）。
+ * 因此拆两个合规 layer：core（顶层 zoom interpolate）+ transition（顶层 tier 数据驱动）。
  */
 const NIGHT_HEMISPHERE_SOURCE_ID = 'globe-night-hemisphere'
-const NIGHT_HEMISPHERE_LAYER_ID = 'globe-night-hemisphere-fill'
+const NIGHT_CORE_LAYER_ID = 'globe-night-core-fill'
+const NIGHT_TRANSITION_LAYER_ID = 'globe-night-transition-fill'
+const LEGACY_NIGHT_LAYER_ID = 'globe-night-hemisphere-fill'
 const TWILIGHT_GLOW_LAYER_ID = 'globe-twilight-glow-fill'
 
-/** 夜半球 fill-opacity 表达式（tier 0 贴晨昏线最淡 → tier 12 全夜核最暗）。 */
-function nightFillOpacityExpression(): unknown {
-  return [
-    '*',
-    ['interpolate', ['linear'], ['zoom'], 0, 0.5, 3, 0.58],
-    // tier 插值：0（晨昏线边）→ 0.12（淡过渡），12（全夜核）→ 1.0（全暗）
-    ['interpolate', ['linear'], ['get', 'tier'], 0, 0.12, 11, 0.75, 12, 1.0],
-  ]
+/** 全夜核 opacity：顶层 zoom interpolate（规范合法）。 */
+function nightCoreOpacityExpression(): unknown {
+  return ['interpolate', ['linear'], ['zoom'], 0, 0.5, 3, 0.58]
+}
+
+/** 过渡带 opacity：顶层 tier 数据驱动（规范合法），贴晨昏线最淡向核渐暗。 */
+function nightTransitionOpacityExpression(): unknown {
+  return ['interpolate', ['linear'], ['get', 'tier'], 0, 0.03, 35, 0.45]
+}
+
+/** addLayer 后验证 layer 真的进入 style（MapLibre 表达式校验失败不 throw）。 */
+function ensureFillLayer(
+  map: MapInstance,
+  layerId: string,
+  filter: unknown[],
+  opacityExpression: unknown,
+): void {
+  if (!map.getLayer(layerId)) {
+    map.addLayer({
+      id: layerId,
+      type: 'fill',
+      source: NIGHT_HEMISPHERE_SOURCE_ID,
+      filter: filter as never,
+      paint: {
+        'fill-color': '#0a1626',
+        'fill-opacity': opacityExpression as never,
+      },
+      layout: { visibility: 'visible' },
+    } as never)
+    // 表达式校验失败时 addLayer 静默拒绝（错误只走 error 事件）——必须验证
+    if (!map.getLayer(layerId)) {
+      console.warn(`[MapCanvas] 夜半球图层 ${layerId} 创建失败（表达式校验被拒绝）`)
+      return
+    }
+  }
+  map.setLayoutProperty(layerId, 'visibility', 'visible')
+  map.setPaintProperty(layerId, 'fill-opacity', opacityExpression as never)
 }
 
 function applyNightHemisphere(
@@ -547,7 +588,12 @@ function applyNightHemisphere(
   try {
     // 仅「自然」档显示昼夜遮罩；「标准」固定质感不画；「无」完全不画
     if (!globeEnabled || globeDaylightMode.value !== 'natural') {
-      for (const layerId of [NIGHT_HEMISPHERE_LAYER_ID, TWILIGHT_GLOW_LAYER_ID]) {
+      for (const layerId of [
+        NIGHT_CORE_LAYER_ID,
+        NIGHT_TRANSITION_LAYER_ID,
+        LEGACY_NIGHT_LAYER_ID,
+        TWILIGHT_GLOW_LAYER_ID,
+      ]) {
         if (map.getLayer(layerId)) {
           map.setLayoutProperty(layerId, 'visibility', 'none')
         }
@@ -563,26 +609,27 @@ function applyNightHemisphere(
     } else if (!map.getSource(NIGHT_HEMISPHERE_SOURCE_ID)) {
       map.addSource(NIGHT_HEMISPHERE_SOURCE_ID, { type: 'geojson', data: data as never })
     }
-    if (!map.getLayer(NIGHT_HEMISPHERE_LAYER_ID)) {
-      map.addLayer({
-        id: NIGHT_HEMISPHERE_LAYER_ID,
-        type: 'fill',
-        source: NIGHT_HEMISPHERE_SOURCE_ID,
-        filter: ['==', ['get', 'hemisphere'], 'night'],
-        paint: {
-          'fill-color': '#0a1626',
-          'fill-opacity': nightFillOpacityExpression() as never,
-        },
-        layout: { visibility: 'visible' },
-      } as never)
-    } else {
-      map.setLayoutProperty(NIGHT_HEMISPHERE_LAYER_ID, 'visibility', 'visible')
-      map.setPaintProperty(
-        NIGHT_HEMISPHERE_LAYER_ID,
-        'fill-opacity',
-        nightFillOpacityExpression() as never,
-      )
+    // 旧版单 layer 残留隐藏（表达式拆层前版本）
+    if (map.getLayer(LEGACY_NIGHT_LAYER_ID)) {
+      map.setLayoutProperty(LEGACY_NIGHT_LAYER_ID, 'visibility', 'none')
     }
+    if (map.getLayer(TWILIGHT_GLOW_LAYER_ID)) {
+      map.setLayoutProperty(TWILIGHT_GLOW_LAYER_ID, 'visibility', 'none')
+    }
+    // 全夜核（tier 36）：统一暗度
+    ensureFillLayer(
+      map,
+      NIGHT_CORE_LAYER_ID,
+      ['all', ['==', ['get', 'hemisphere'], 'night'], ['==', ['get', 'tier'], 36]],
+      nightCoreOpacityExpression(),
+    )
+    // 过渡带（tier 0-35）：向晨昏线渐隐
+    ensureFillLayer(
+      map,
+      NIGHT_TRANSITION_LAYER_ID,
+      ['all', ['==', ['get', 'hemisphere'], 'night'], ['<', ['get', 'tier'], 36]],
+      nightTransitionOpacityExpression(),
+    )
   } catch (error) {
     debugLog('[MapCanvas] applyNightHemisphere unavailable', error)
   }
@@ -620,6 +667,10 @@ onMounted(async () => {
       }),
     )
     state.resources.map = mapInstance
+    // 调试诊断口：浏览器控制台排查 globe/光照/图层状态用（perf-probe 惯例，只读引用）
+    if (typeof window !== 'undefined') {
+      ;(window as unknown as Record<string, unknown>).__cgdaMap = mapInstance
+    }
     const moduleBundle = createMapCanvasModuleBundle({
       map: mapInstance,
       layersStore,

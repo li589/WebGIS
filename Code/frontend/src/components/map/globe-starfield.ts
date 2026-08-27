@@ -256,7 +256,9 @@ export function starfieldVisual(theme: 'dark' | 'light'): StarfieldVisual {
       bgStarAlphaMin: 0.1,
       bgStarAlphaMax: 0.85,
       glowStarBoost: 1.15,
-      galaxyAlphaMax: 0.85,
+      // 银河云气整体压暗（0.85→0.5）：S 型白带横穿屏幕左上时过于抢眼，
+      // 用户反馈"左上边很亮、应整体亮度统一"——银河仍可辨认但不再刺眼
+      galaxyAlphaMax: 0.5,
       galaxyDustAlpha: 0.55,
       dustBandCount: 3,
       showDeepSky: true,

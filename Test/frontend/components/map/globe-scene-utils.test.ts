@@ -129,12 +129,17 @@ describe('resolveGlobeSky', () => {
 })
 
 describe('subsolarLongitude / subsolarDeclination / buildNightHemisphereGeoJSON（自然晨昏线）', () => {
-  it('太阳下点经度随 hour 旋转：12h 在 0°、0h 在 180°、18h 在 90°W', () => {
-    expect(subsolarLongitude(12)).toBeCloseTo(0, 5)
-    expect(Math.abs(subsolarLongitude(0))).toBeCloseTo(180, 5)
-    expect(subsolarLongitude(18)).toBeCloseTo(-90, 5)
+  it('太阳下点经度按本地时区换算：UTC 正午在 0°、北京正午在 120°E、北京午夜在 60°W', () => {
+    // UTC（tz=0）：hour=12 → 0°；hour=0 → ±180；hour=18 → 90°W
+    expect(subsolarLongitude(12, 0)).toBeCloseTo(0, 5)
+    expect(Math.abs(subsolarLongitude(0, 0))).toBeCloseTo(180, 5)
+    expect(subsolarLongitude(18, 0)).toBeCloseTo(-90, 5)
+    // 北京时间（tz=+8）：正午 12:00 = UTC 04:00 → 太阳下点 120°E（杭州附近）
+    expect(subsolarLongitude(12, 8)).toBeCloseTo(120, 5)
+    // 北京午夜 00:00 = UTC 昨日 16:00 → 太阳下点 60°W
+    expect(subsolarLongitude(0, 8)).toBeCloseTo(-60, 5)
     // 周期性：hour 与 hour+24 等价
-    expect(subsolarLongitude(6 + 24)).toBeCloseTo(subsolarLongitude(6), 5)
+    expect(subsolarLongitude(6 + 24, 8)).toBeCloseTo(subsolarLongitude(6, 8), 5)
   })
 
   it('太阳赤纬：二分日≈0°、夏至≈+23.45°、冬至≈-23.45°', () => {
@@ -149,13 +154,13 @@ describe('subsolarLongitude / subsolarDeclination / buildNightHemisphereGeoJSON�
   })
 
   it('夜半球中心 = 太阳下点 + 180°；昼侧经度不落入夜半球（二分日）', () => {
-    // 二分日（δ≈0，退化矩形带）：hour=12 → 夜中心 180°
-    const json = buildNightHemisphereGeoJSON(12, new Date(Date.UTC(2026, 2, 20)))
+    // 二分日（δ≈0，退化矩形带）：hour=12 UTC → 太阳下点 0°、夜中心 180°
+    const json = buildNightHemisphereGeoJSON(12, new Date(Date.UTC(2026, 2, 20)), 0)
     expect(json.type).toBe('FeatureCollection')
     const lons = json.features.flatMap((f) =>
       f.geometry.coordinates[0].map((pt) => pt[0]),
     )
-    // 0° 经线（hour=12 的昼侧中央）不应出现在夜半球边界上
+    // 0° 经线（hour=12 UTC 的昼侧中央）不应出现在夜半球边界上
     expect(lons.some((lon) => Math.abs(lon) < 1)).toBe(false)
     // 180° 必在夜半球内
     expect(lons.some((lon) => Math.abs(lon) === 180)).toBe(true)
@@ -199,12 +204,12 @@ describe('subsolarLongitude / subsolarDeclination / buildNightHemisphereGeoJSON�
     expect(Math.min(...winterLats)).toBeGreaterThan(-66.6)
   })
 
-  it('结构 = 12 档过渡带（tier 0-11）+ 全夜核（tier 12），无 twilight 彩色条带', () => {
+  it('结构 = 36 档过渡带（tier 0-35）+ 全夜核（tier 36），无 twilight 彩色条带', () => {
     const json = buildNightHemisphereGeoJSON(6, new Date(Date.UTC(2026, 2, 20)))
     const tiers = new Set(json.features.map((f) => f.properties.tier))
     expect(tiers.has(0)).toBe(true)
-    expect(tiers.has(12)).toBe(true)
-    expect(Math.max(...tiers)).toBe(12)
+    expect(tiers.has(36)).toBe(true)
+    expect(Math.max(...tiers)).toBe(36)
     // 无 twilight feature（用户明确不要红色宽带）
     expect(
       json.features.some((f) => (f.properties as { hemisphere?: string }).hemisphere === 'twilight'),
@@ -214,9 +219,9 @@ describe('subsolarLongitude / subsolarDeclination / buildNightHemisphereGeoJSON�
   it('带间互不重叠（纬度方向相邻，面积总和有界）', () => {
     // 同一经度列上，相邻带的纬度区间应相邻而非重叠（抽查几何）
     const json = buildNightHemisphereGeoJSON(6, new Date(Date.UTC(2026, 2, 20)))
-    // tier 0（贴晨昏线最淡）与 tier 12（全夜核最暗）都存在
+    // tier 0（贴晨昏线最淡）与 tier 36（全夜核最暗）都存在
     const t0 = json.features.filter((f) => f.properties.tier === 0)
-    const tCore = json.features.filter((f) => f.properties.tier === 12)
+    const tCore = json.features.filter((f) => f.properties.tier === 36)
     expect(t0.length).toBeGreaterThan(0)
     expect(tCore.length).toBeGreaterThan(0)
   })
