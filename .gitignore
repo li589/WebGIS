@@ -182,3 +182,6 @@ _stub_inventory.json
 
 # B3 出库（阶段 B 去硬编码）：含内网拓扑与账号信息的运维同步脚本，仅本地使用
 Tools/sync_server_data.py
+
+# CodeGraph 本地索引缓存（IDE/工具生成，不入库）
+.codegraph/

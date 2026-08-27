@@ -409,8 +409,7 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
           <div class="planet-glow"></div>
         </div>
         <div class="placeholder-3d-inner">
-          <div class="placeholder-3d-icon"><Globe :size="20" aria-hidden="true" /></div>
-          <div class="placeholder-3d-kicker"><span class="kicker-spark" aria-hidden="true">✦</span> 实验性视图</div>
+          <div class="placeholder-3d-icon"><Globe :size="30" aria-hidden="true" /></div>
           <h2 class="placeholder-3d-title">3D 地球视图</h2>
           <p class="placeholder-3d-desc">该功能尚未实现</p>
           <p v-if="has3dCompatibleLayer" class="placeholder-3d-layer-note">
