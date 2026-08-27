@@ -201,7 +201,8 @@ export function buildNightHemisphereGeoJSON(
   /**
    * 把闭合 ring 点列（经度连续未归一化，可能跨任意 antimeridian）
    * 拆为 [-180,180] 内的合法 ring 列表。
-   * 每段闭合：段尾下到极点（poleLat）→ 沿极线横到段首经度 → 上到段首点。
+   * 每段闭合：段尾下到极点（极线段两端用同一经度——globe 投影下极点顶点重合，
+   * 避免双经度极线段在地球边缘产生法线不连续的"溢出毛刺"）→ 上到段首点。
    * poleLat 传 0 时极点闭合退化为直连（二分日上下沿已含极线）。
    */
   const splitClosedRingAtAntimeridian = (pts: number[][], poleLat: number): number[][][] => {
@@ -213,8 +214,10 @@ export function buildNightHemisphereGeoJSON(
         if (poleLat === 0) {
           ring.push([...cur[0]])
         } else {
-          ring.push([cur[cur.length - 1][0], poleLat])
-          ring.push([cur[0][0], poleLat])
+          // 极线段两端用段首经度（顶点重合 → globe 投影极点单点收敛）
+          const poleLon = cur[0][0]
+          ring.push([poleLon, poleLat])
+          ring.push([poleLon, poleLat])
           ring.push([...cur[0]])
         }
         rings.push(ring)
@@ -226,18 +229,21 @@ export function buildNightHemisphereGeoJSON(
       const norm = normLon(lon)
       if (i > 0 && Math.abs(norm - normLon(pts[i - 1][0])) > 180) {
         // 经度跳变（跨 antimeridian）：在边界处插值闭合当前段。
-        // ⚠️ 闭合点必须在**绝对经度空间**计算：normLon(180+360k) 会映射到
-        // -180（而非 +180），直接用归一化边界算 frac 会外插出越界纬度。
+        // ⚠️ 闭合点必须在**绝对经度空间**计算 frac（normLon(180+360k) 映射 -180，
+        // 直接用归一化边界算 frac 会外插出越界纬度）。
+        // ⚠️ 显示经度统一到段首经度（cur[0][0] 或首个点的 norm）：避免段1 末点
+        // 与段2 首点跨 ±180，shoelace 公式不 wrap 经度，跨期经度差 359 会算成
+        // 虚假面积；也让极线段两顶点重合（globe 投影极点单点收敛，消除
+        // 边缘溢出毛刺）。
         const [prevLon, prevLat] = pts[i - 1]
-        const prevNorm = normLon(prevLon)
         const k = Math.floor((Math.min(prevLon, lon) + 180) / 360)
         const lambdaB = 180 + 360 * k // 区间内的 antimeridian 绝对经度
         const frac = (lambdaB - prevLon) / (lon - prevLon)
         const latB = prevLat + (lat - prevLat) * frac
-        // 显示经度：跳变两侧一正一负——前段闭合取 prevNorm 侧、新段起点取 norm 侧
-        cur.push([prevNorm > 0 ? 180 : -180, latB])
+        const disp = cur[0]?.[0] ?? (normLon(pts[0][0]) < 0 ? -180 : 180)
+        cur.push([disp, latB])
         flushSeg()
-        cur.push([norm > 0 ? 180 : -180, latB])
+        cur.push([disp, latB])
       }
       cur.push([norm, lat])
     }
