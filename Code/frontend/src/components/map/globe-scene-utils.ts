@@ -142,6 +142,12 @@ export function buildNightHemisphereGeoJSON(
    * 产生经向直边折点（用户反馈：大西洋/美洲海域各一个明显折点，
    * 晨昏线圈像被截成两段弧），且漏掉昼侧经度的南/北半球夜区。
    *
+   * **曲线起点对齐 antimeridian**（λ=180+360k）：ring 的起终点闭合边
+   * （下极点/上极点的垂直边）全部落在日期变更线上（与拆分接缝重合，
+   * fill-outline-color 覆盖后不可见）——若起终点在赤道交点，闭合边会
+   * 从赤道交点垂到极点形成可见细线（用户反馈：放远时毛刺 +
+   * 南半球视角偶见"赤道交点连到南极"的细线）。
+   *
    * 二分日（|δ|<0.5°）：夜侧 = 全纬度经度带（φc 恒 0 退化）。
    */
   const pushNightCore = () => {
@@ -149,14 +155,15 @@ export function buildNightHemisphereGeoJSON(
     const poleLat = southNight ? -90 : 90
 
     if (!equinox) {
-      // 完整晨昏圈：从赤道交点（λs+90）起绕 360° 连续采样 φc
-      const startLon = nightCenter - 90
+      // 完整晨昏圈：起点对齐 antimeridian（≥ nightCenter-90 的最小 180+360k）
+      const startLon =
+        180 + 360 * Math.ceil((nightCenter - 90 - 180) / 360)
       const curve: number[][] = []
       for (let lon = startLon; lon <= startLon + 360 + 1e-9; lon += LON_STEP) {
         curve.push([lon, terminatorLatitude(lon, subsolarLon, decl)])
       }
       if (curve.length < 4) return
-      // antimeridian 拆分（段内曲线 + 极点侧极线闭合）
+      // antimeridian 拆分（段内曲线 + 极点侧极线闭合，闭合边均在 antimeridian）
       const rings = splitClosedRingAtAntimeridian(curve, poleLat)
       for (const ring of rings) {
         features.push({
@@ -252,8 +259,10 @@ export function buildNightHemisphereGeoJSON(
       lines.push([[lonW, -90], [lonW, 90]])
       lines.push([[lonE, -90], [lonE, 90]])
     } else {
-      // 完整晨昏圈：从赤道交点起绕 360°，在 antimeridian 跳变处断开
-      const startLon = nightCenter - 90
+      // 完整晨昏圈：起点对齐 antimeridian（与夜核一致——断口在日期变更线，
+      // 与拆分接缝/闭合边重合，视觉上不显眼）
+      const startLon =
+        180 + 360 * Math.ceil((nightCenter - 90 - 180) / 360)
       let cur: number[][] = []
       const flush = () => {
         if (cur.length >= 2) lines.push(cur)

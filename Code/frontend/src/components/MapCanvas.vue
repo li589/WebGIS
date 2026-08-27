@@ -618,6 +618,7 @@ function applyNightHemisphere(
   try {
     // 仅「自然」档显示昼夜遮罩；「标准」固定质感不画；「无」完全不画
     if (!globeEnabled || globeDaylightMode.value !== 'natural') {
+      cancelNightAnimation()
       for (const layerId of [
         NIGHT_CORE_LAYER_ID,
         TERMINATOR_LINE_LAYER_ID,
@@ -631,29 +632,95 @@ function applyNightHemisphere(
       }
       return
     }
-    const data = buildNightHemisphereGeoJSON(hour, date)
-    const source = map.getSource(NIGHT_HEMISPHERE_SOURCE_ID) as
-      | import('maplibre-gl').GeoJSONSource
-      | undefined
-    if (source && 'setData' in source) {
-      source.setData(data as never)
-    } else if (!map.getSource(NIGHT_HEMISPHERE_SOURCE_ID)) {
-      map.addSource(NIGHT_HEMISPHERE_SOURCE_ID, { type: 'geojson', data: data as never })
-    }
-    // 旧版图层残留隐藏（条纹过渡带/单 layer/twilight 历史版本）
-    for (const layerId of [
-      NIGHT_TRANSITION_LAYER_ID,
-      LEGACY_NIGHT_LAYER_ID,
-      TWILIGHT_GLOW_LAYER_ID,
-    ]) {
-      if (map.getLayer(layerId)) {
-        map.setLayoutProperty(layerId, 'visibility', 'none')
-      }
-    }
-    ensureNightLayers(map)
+    // 时间轴切换动画：hour 变化时晨昏线平滑旋转（非直接跳变）
+    startNightAnimation(map, hour, date)
   } catch (error) {
     debugLog('[MapCanvas] applyNightHemisphere unavailable', error)
   }
+}
+
+// ─── 夜半球切换动画（晨昏线随时间轴平滑旋转） ────────────────────────────────
+
+/** 动画时长（ms）：拖动时间轴时晨昏线旋转的过渡时间 */
+const NIGHT_ANIM_DURATION = 450
+/** 当前展示的插值小时（动画中间态） */
+let nightAnimCurrentHour: number | null = null
+let nightAnimRaf = 0
+let nightAnimState: { from: number; to: number; start: number; map: MapInstance } | null = null
+
+/** 立即应用夜半球几何（不做动画，动画帧/初次应用共用）。 */
+function applyNightHemisphereImmediate(map: MapInstance, hour: number, date?: Date): void {
+  const data = buildNightHemisphereGeoJSON(hour, date)
+  const source = map.getSource(NIGHT_HEMISPHERE_SOURCE_ID) as
+    | import('maplibre-gl').GeoJSONSource
+    | undefined
+  if (source && 'setData' in source) {
+    source.setData(data as never)
+  } else if (!map.getSource(NIGHT_HEMISPHERE_SOURCE_ID)) {
+    map.addSource(NIGHT_HEMISPHERE_SOURCE_ID, { type: 'geojson', data: data as never })
+  }
+  // 旧版图层残留隐藏（条纹过渡带/单 layer/twilight 历史版本）
+  for (const layerId of [
+    NIGHT_TRANSITION_LAYER_ID,
+    LEGACY_NIGHT_LAYER_ID,
+    TWILIGHT_GLOW_LAYER_ID,
+  ]) {
+    if (map.getLayer(layerId)) {
+      map.setLayoutProperty(layerId, 'visibility', 'none')
+    }
+  }
+  ensureNightLayers(map)
+}
+
+/** 取消进行中的夜半球动画。 */
+function cancelNightAnimation(): void {
+  if (nightAnimRaf) cancelAnimationFrame(nightAnimRaf)
+  nightAnimRaf = 0
+  nightAnimState = null
+}
+
+/**
+ * 启动晨昏线旋转动画：从当前插值位置平滑过渡到目标 hour。
+ * - 最短路径回绕（23→0 走 +1h 而非 -23h）
+ * - 快速连续切换时从当前位置直接续接（不闪烁）
+ * - 每帧重建 GeoJSON（~360 点曲线，计算成本 <2ms，60fps 流畅）
+ */
+function startNightAnimation(map: MapInstance, targetHour: number, date?: Date): void {
+  const from = nightAnimCurrentHour ?? targetHour
+  // 最短路径：delta ∈ [-12, 12)
+  const delta = (((targetHour - from + 36) % 24) + 24) % 24 - 12
+  const to = from + delta
+  if (Math.abs(delta) < 0.01) {
+    // 无变化：直接应用（初次挂载/相同时刻）
+    cancelNightAnimation()
+    nightAnimCurrentHour = targetHour
+    applyNightHemisphereImmediate(map, targetHour, date)
+    return
+  }
+  cancelNightAnimation()
+  nightAnimState = { from, to, start: performance.now(), map }
+  const step = () => {
+    const st = nightAnimState
+    if (!st) return
+    const t = Math.min(1, (performance.now() - st.start) / NIGHT_ANIM_DURATION)
+    // smoothstep 缓动（先加速后减速，自然的旋转节奏）
+    const eased = t * t * (3 - 2 * t)
+    const hour = st.from + (st.to - st.from) * eased
+    nightAnimCurrentHour = hour
+    try {
+      applyNightHemisphereImmediate(st.map, hour, date)
+    } catch (error) {
+      debugLog('[MapCanvas] night animation frame failed', error)
+    }
+    if (t < 1) {
+      nightAnimRaf = requestAnimationFrame(step)
+    } else {
+      nightAnimRaf = 0
+      nightAnimState = null
+      nightAnimCurrentHour = ((targetHour % 24) + 24) % 24
+    }
+  }
+  nightAnimRaf = requestAnimationFrame(step)
 }
 
 // ─── Map init ────────────────────────────────────────────────────────────────
@@ -876,6 +943,7 @@ onBeforeUnmount(() => {
   overlayImageModule = null
   _clearLocationMarker()
   _clearInspectMarker()
+  cancelNightAnimation()
   if (locateErrorTimer) {
     clearTimeout(locateErrorTimer)
     locateErrorTimer = null
