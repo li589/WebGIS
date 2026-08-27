@@ -75,17 +75,19 @@ export interface NightHemisphereGeoJSON {
  * 生成夜半球经纬度多边形（按 180° 经线拆分，避免 GeoJSON 跨日期变更线）。
  * 太阳赤纬取 0° 时夜半球是经度跨度 180° 的半球，极点始终位于边界两侧。
  *
- * 晨昏渐变（参考旧 CSS time-sheen 的柔和光晕风格，但位置地理正确）：
- * - night：60 层嵌套矩形（夜心 ±1.5° 起每层外扩 1.5° 至 ±90°），
- *   单层 fill-opacity ≈0.01——嵌套复合后夜心 ≈0.45、晨昏边缘 ≈0.01，
- *   1.5° 步长在视觉上完全连续无缝（替代旧 5 层 18° 的粗糙阶梯）
- * - twilight：晨昏线两侧 ±7° 的暖橙光带（两层不同宽度做柔边），
- *   模拟日出日落时晨昏线的橙红色辉光（旧 time-sheen 的暖光精华）
+ * ⚠️ 实现约束（MapLibre fill 的 stencil 去重）：同一 fill layer 内
+ * 重叠的多边形只会被绘制一次——**嵌套/叠加矩形做渐变的方案无效**
+ * （曾导致"阴面完全看不见，只剩一条淡红带"）。
+ * 因此这里生成 60 档**互不重叠**的相邻环带（夜心左右对称各一条），
+ * 每档 opacity 由 fill layer 的数据驱动表达式按 tier 插值
+ * （夜心 tier=0 最暗 → 晨昏线 tier=59 最淡），1.5° 档差视觉连续无缝。
+ *
+ * twilight：晨昏线两侧 ±11°/±5° 两层宽度的暖橙光带（日出日落辉光）。
  */
 export function buildNightHemisphereGeoJSON(hour: number): NightHemisphereGeoJSON {
   const nightCenter = subsolarLongitude(hour) + 180
   const TIER_COUNT = 60
-  const bandStep = 90 / TIER_COUNT // 每层外扩 1.5°
+  const bandStep = 90 / TIER_COUNT // 每档 1.5°
   const makeRing = (west: number, east: number): number[][] => [
     [west, -90],
     [east, -90],
@@ -125,10 +127,13 @@ export function buildNightHemisphereGeoJSON(hour: number): NightHemisphereGeoJSO
   const features: NightHemisphereGeoJSON['features'] = []
   const center = ((nightCenter + 540) % 360) - 180
   for (let t = 0; t < TIER_COUNT; t++) {
-    const halfWidth = (t + 1) * bandStep
-    pushRect(center - halfWidth, center + halfWidth, { hemisphere: 'night', tier: t }, features)
+    const inner = t * bandStep
+    const outer = (t + 1) * bandStep
+    // 左右对称的两条相邻带（互不重叠）：tier 越大离夜心越远越淡
+    pushRect(center + inner, center + outer, { hemisphere: 'night', tier: t }, features)
+    pushRect(center - outer, center - inner, { hemisphere: 'night', tier: t }, features)
   }
-  // 晨昏暖光带：晨昏线（center ±90°）两侧各 ~7°，两层宽度做柔边
+  // 晨昏暖光带：晨昏线（center ±90°）两侧各两层宽度做柔边
   pushRect(center + 90 - 11, center + 90 + 11, { hemisphere: 'twilight', tier: 0 }, features)
   pushRect(center + 90 - 5, center + 90 + 5, { hemisphere: 'twilight', tier: 1 }, features)
   pushRect(center - 90 - 11, center - 90 + 11, { hemisphere: 'twilight', tier: 0 }, features)

@@ -171,31 +171,44 @@ describe('subsolarLongitude / buildNightHemisphereGeoJSON（晨昏线）', () =>
     }
   })
 
-  it('晨昏渐变为 60 层嵌套 + 晨昏暖光带：夜心被全部层覆盖、最外层恰达夜半球边界（±90°）', () => {
+  it('晨昏渐变为 60 档不重叠环带（左右对称各一档）+ 晨昏暖光带', () => {
     // hour=6 → 太阳在 90°E，夜心在 90°W（不跨 antimeridian，几何最直观）
     const json = buildNightHemisphereGeoJSON(6)
-    // night 层：60 层且 tier 0..59 顺序（跨 antimeridian 会拆更多 feature）
     const nightFeatures = json.features.filter((f) => f.properties.hemisphere === 'night')
-    expect(nightFeatures.length).toBe(60)
-    expect(nightFeatures.map((f) => f.properties.tier)).toEqual(
-      Array.from({ length: 60 }, (_, i) => i),
-    )
-    for (const f of nightFeatures) {
-      const ring = f.geometry.coordinates[0]
-      const west = ring[0][0]
-      const east = ring[1][0]
-      const expectedHalf = (f.properties.tier + 1) * 1.5
-      expect(east - west).toBeCloseTo(expectedHalf * 2, 5)
-      // 夜心 -90° 必须在层内
-      expect(west <= -90 && -90 <= east).toBe(true)
+    // 60 档 × 左右各一条带 = 120 个 feature（互不重叠——MapLibre fill stencil
+    // 去重会忽略同层重叠多边形，嵌套叠加方案无效，必须相邻环带）
+    expect(nightFeatures.length).toBe(120)
+    // 每档恰好出现两次（左带+右带）
+    for (let t = 0; t < 60; t++) {
+      const tierFeatures = nightFeatures.filter((f) => f.properties.tier === t)
+      expect(tierFeatures.length).toBe(2)
+      for (const f of tierFeatures) {
+        const ring = f.geometry.coordinates[0]
+        const west = ring[0][0]
+        const east = ring[1][0]
+        // 带宽 1.5°（tier t 的带：[c±t*1.5, c±(t+1)*1.5]）
+        expect(east - west).toBeCloseTo(1.5, 5)
+      }
     }
-    // 最外层边界 = 夜心 ±90°（= -180° 与 0°，即晨昏线位置）
+    // 最内档（tier 0）紧贴夜心 ±1.5°；最外档（tier 59）到达晨昏线（夜心 ±90°）
+    const innerRight = nightFeatures.find(
+      (f) => f.properties.tier === 0 && f.geometry.coordinates[0][0][0] === -90,
+    )!
+    expect(innerRight).toBeTruthy()
     const outer = nightFeatures.find((f) => f.properties.tier === 59)!
-    const outerWest = outer.geometry.coordinates[0][0][0]
-    const outerEast = outer.geometry.coordinates[0][1][0]
-    expect(outerWest).toBeCloseTo(-180, 5)
-    expect(outerEast).toBeCloseTo(0, 5)
-    // 暖光带：晨昏线两侧各两层（外层 ±11°、内层 ±5°；跨 antimeridian 会拆成更多 feature）
+    const ring = outer.geometry.coordinates[0]
+    const lo = Math.min(ring[0][0], ring[1][0])
+    const hi = Math.max(ring[0][0], ring[1][0])
+    // tier 59 外边界 = ±90°（0° 或 ±180° 晨昏线位置）
+    expect(Math.min(Math.abs(hi - 0), Math.abs(Math.abs(hi) - 180))).toBeLessThanOrEqual(1.6)
+    expect(Math.min(Math.abs(lo - 0), Math.abs(Math.abs(lo) - 180))).toBeLessThanOrEqual(1.6)
+    // 环带互不重叠：所有 ring 宽度总和 = 180°（夜半球半宽 ×2）
+    const totalWidth = nightFeatures.reduce(
+      (sum, f) => sum + (f.geometry.coordinates[0][1][0] - f.geometry.coordinates[0][0][0]),
+      0,
+    )
+    expect(totalWidth).toBeCloseTo(180, 5)
+    // 暖光带：晨昏线两侧各两层（外层 ±11°、内层 ±5°）
     const twilight = json.features.filter((f) => f.properties.hemisphere === 'twilight')
     expect(twilight.length).toBeGreaterThanOrEqual(4)
     expect(twilight.filter((f) => f.properties.tier === 0).length).toBeGreaterThanOrEqual(2)

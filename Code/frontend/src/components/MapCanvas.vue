@@ -56,7 +56,6 @@ import {
 import {
   buildNightHemisphereGeoJSON,
   classifyBasemapBrightness,
-  resolveGlobeLighting,
   resolveGlobeSky,
 } from './map/globe-scene-utils'
 import { TILE_LAYER_ID } from './map/basemap-module'
@@ -438,15 +437,17 @@ watch(
 const timeVisualState = computed(() => buildMapStageTimeVisualState(props.currentHour))
 
 /**
- * Globe 专属视觉层：原生天空大气 + 底图亮度自适应的昼夜光照。
+ * Globe 专属视觉层：原生天空大气 + raster 昼夜遮罩。
  * 只在 3D 模式打开，2D 模式恢复默认，避免常规地图承担额外样式更新。
  *
+ * ⚠️ globe 模式下**不再 setLight**：light 的 azimuth 公式是"视口相对方位"，
+ * 对 globe 语义错误（且 raster 瓦片本身不吃 light，只会对 vector 数据层
+ * 产生方向错误的阴影）——昼夜统一由夜半球遮罩（applyNightHemisphere）
+ * 与 raster-brightness 压制（applyBasemapBrightness）负责。
+ *
  * 亮色底图（街道/矢量/地形）在太阳直射下会过曝发白：
- * 1) 按底图 style 分类（globe-scene-utils）压低直射强度与太阳高度角；
- * 2) 直接压底图 raster 图层的 brightness-max（对瓦片像素的硬约束，
- *    比 light color 乘法更直接——亮色底图白天段 raster-brightness-max
- *    ≈ 0.80，soft 档再降至 0.72，从根源上压掉"阳面过曝发白"）；
- * 3) 影像/暗色底图保留立体光影（brightness-max = 1）。
+ * 直接压底图 raster 图层的 brightness-max（对瓦片像素的硬约束）：
+ * 亮色底图白天段 ≈ 0.80，soft 档再降至 0.72；影像/暗色底图保留 1.0。
  */
 function applyGlobeScene(map: MapInstance, enabled: boolean, hour: number): void {
   try {
@@ -454,23 +455,10 @@ function applyGlobeScene(map: MapInstance, enabled: boolean, hour: number): void
     applyNightHemisphere(map, enabled, hour)
     if (!enabled) {
       map.setSky?.({})
-      map.setLight?.({ anchor: 'viewport', color: '#ffffff', intensity: 0.5 })
       return
     }
     const basemapStyle = TILE_SOURCE_MAP.get(props.tileSourceId)?.style
     const brightness = classifyBasemapBrightness(basemapStyle)
-    const light = resolveGlobeLighting(hour, brightness, globeDaylightMode.value)
-    if (light) {
-      map.setLight?.({
-        anchor: 'map',
-        color: light.color,
-        intensity: light.intensity,
-        position: [1, light.azimuth, light.elevation],
-      })
-    } else {
-      // 光影关闭：恢复默认光照，只保留天空大气
-      map.setLight?.({ anchor: 'viewport', color: '#ffffff', intensity: 0.5 })
-    }
     const sky = resolveGlobeSky(hour, brightness)
     map.setSky?.({
       'sky-color': sky.skyColor,
@@ -530,7 +518,8 @@ const TWILIGHT_GLOW_LAYER_ID = 'globe-twilight-glow-fill'
 
 function applyNightHemisphere(map: MapInstance, globeEnabled: boolean, hour: number): void {
   try {
-    if (!globeEnabled) {
+    // 光影关闭（off 档）或非 globe：不显示昼夜遮罩
+    if (!globeEnabled || globeDaylightMode.value === 'off') {
       for (const layerId of [NIGHT_HEMISPHERE_LAYER_ID, TWILIGHT_GLOW_LAYER_ID]) {
         if (map.getLayer(layerId)) {
           map.setLayoutProperty(layerId, 'visibility', 'none')
@@ -547,8 +536,12 @@ function applyNightHemisphere(map: MapInstance, globeEnabled: boolean, hour: num
     } else if (!map.getSource(NIGHT_HEMISPHERE_SOURCE_ID)) {
       map.addSource(NIGHT_HEMISPHERE_SOURCE_ID, { type: 'geojson', data: data as never })
     }
+    // soft 档整体更淡（×0.7）
+    const softScale = globeDaylightMode.value === 'soft' ? 0.7 : 1.0
     if (!map.getLayer(NIGHT_HEMISPHERE_LAYER_ID)) {
-      // 夜半球深蓝遮罩：filter 只画 night features，60 层嵌套复合渐变
+      // 夜半球深蓝遮罩：60 档互不重叠相邻环带（⚠️ MapLibre fill 的 stencil
+      // 去重会忽略同层重叠多边形，嵌套叠加方案无效），
+      // opacity 由 tier 数据驱动：夜心(tier 0)最暗 → 晨昏边缘(tier 59)渐隐
       map.addLayer({
         id: NIGHT_HEMISPHERE_LAYER_ID,
         type: 'fill',
@@ -556,12 +549,31 @@ function applyNightHemisphere(map: MapInstance, globeEnabled: boolean, hour: num
         filter: ['==', ['get', 'hemisphere'], 'night'],
         paint: {
           'fill-color': '#0a1626',
-          'fill-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.008, 3, 0.012],
+          'fill-opacity': [
+            '*',
+            softScale,
+            [
+              '*',
+              ['interpolate', ['linear'], ['zoom'], 0, 0.42, 3, 0.5],
+              // tier 衰减：0 → 1.0（夜心），59 → 0.04（晨昏边缘渐隐）
+              ['interpolate', ['linear'], ['get', 'tier'], 0, 1.0, 59, 0.04],
+            ],
+          ],
         },
         layout: { visibility: 'visible' },
       } as never)
     } else {
       map.setLayoutProperty(NIGHT_HEMISPHERE_LAYER_ID, 'visibility', 'visible')
+      // softScale 在 addLayer 时固化，档位切换后需同步刷新 paint 表达式
+      map.setPaintProperty(NIGHT_HEMISPHERE_LAYER_ID, 'fill-opacity', [
+        '*',
+        softScale,
+        [
+          '*',
+          ['interpolate', ['linear'], ['zoom'], 0, 0.42, 3, 0.5],
+          ['interpolate', ['linear'], ['get', 'tier'], 0, 1.0, 59, 0.04],
+        ],
+      ] as never)
     }
     if (!map.getLayer(TWILIGHT_GLOW_LAYER_ID)) {
       // 晨昏暖光带：晨昏线两侧橙红辉光（模拟日出日落光），两层宽度柔边
@@ -574,17 +586,26 @@ function applyNightHemisphere(map: MapInstance, globeEnabled: boolean, hour: num
           // 内层（tier 1）更窄更亮，外层（tier 0）宽而淡——柔化光带边缘
           'fill-color': '#ff9a5c',
           'fill-opacity': [
-            'match',
-            ['get', 'tier'],
-            1,
-            0.16,
-            0.07,
+            '*',
+            softScale,
+            [
+              'match',
+              ['get', 'tier'],
+              1,
+              0.12,
+              0.05,
+            ],
           ],
         },
         layout: { visibility: 'visible' },
       } as never)
     } else {
       map.setLayoutProperty(TWILIGHT_GLOW_LAYER_ID, 'visibility', 'visible')
+      map.setPaintProperty(TWILIGHT_GLOW_LAYER_ID, 'fill-opacity', [
+        '*',
+        softScale,
+        ['match', ['get', 'tier'], 1, 0.12, 0.05],
+      ] as never)
     }
   } catch (error) {
     debugLog('[MapCanvas] applyNightHemisphere unavailable', error)
