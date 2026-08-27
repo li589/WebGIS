@@ -54,6 +54,7 @@ import {
   type GlobeDaylightMode,
 } from '../services/settings-local'
 import {
+  buildNightHemisphereGeoJSON,
   classifyBasemapBrightness,
   resolveGlobeLighting,
   resolveGlobeSky,
@@ -315,11 +316,7 @@ watch(
   () => themeStore.mode,
   () => {
     applyBackgroundColor()
-    // 极地冰冠颜色随主题刷新（globe 模式下才可见）
-    const map = state.resources.map
-    if (map && mapReady.value) {
-      applyPolarCaps(map, props.globeProjection === true)
-    }
+    // 昼夜遮罩层在主题切换时无需改色（fill-color 固定深色半透明）
   },
 )
 
@@ -454,7 +451,7 @@ const timeVisualState = computed(() => buildMapStageTimeVisualState(props.curren
 function applyGlobeScene(map: MapInstance, enabled: boolean, hour: number): void {
   try {
     applyBasemapBrightness(map, enabled)
-    applyPolarCaps(map, enabled)
+    applyNightHemisphere(map, enabled, hour)
     if (!enabled) {
       map.setSky?.({})
       map.setLight?.({ anchor: 'viewport', color: '#ffffff', intensity: 0.5 })
@@ -518,102 +515,50 @@ function applyBasemapBrightness(map: MapInstance, globeEnabled: boolean): void {
   }
 }
 
-// ─── Globe 极地冰冠（极点无瓦片区的观感修复） ────────────────────────────────
+// ─── Globe raster 昼夜遮罩（跟随时间轴） ─────────────────────────────────────
 
 /**
- * Web Mercator 瓦片只覆盖 ±85.05° 纬度：globe 模式下视口移到极点时，
- * 球面大部分区域无瓦片 → 直接露出 background 兜底色 → 用户看到"纯色球"。
- * 商用 globe（Google Earth 等）的通用做法是给极区覆盖特征面：
- * - 北极：北冰洋深蓝（84°-90°）
- * - 南极：冰盖白（-84°- -90°，同时天然改善"南半球白球"观感——
- *   高德等仅覆盖中国的底图在南极露出的本来就是这片冰冠）
- * fill 面紧贴底图瓦片之上，仅 globe 模式显示。
+ * OSM 等 raster 瓦片没有 MapLibre 光照属性，必须单独绘制夜半球遮罩。
+ * 遮罩不是两个极区圆圈：它是随时间轴旋转的半球，并用渐变边界模拟晨昏线。
  */
-const POLAR_CAP_SOURCE_ID = 'polar-caps'
-const POLAR_CAP_NORTH_LAYER_ID = 'polar-cap-north'
-const POLAR_CAP_SOUTH_LAYER_ID = 'polar-cap-south'
+const NIGHT_HEMISPHERE_SOURCE_ID = 'globe-night-hemisphere'
+const NIGHT_HEMISPHERE_LAYER_ID = 'globe-night-hemisphere-fill'
 
-const _POLAR_CAP_GEOJSON = {
-  type: 'FeatureCollection' as const,
-  features: [
-    {
-      type: 'Feature' as const,
-      properties: { cap: 'north' },
-      geometry: {
-        type: 'Polygon' as const,
-        coordinates: [
-          [[-180, 83.6], [-180, 90], [180, 90], [180, 83.6], [-180, 83.6]],
-        ],
-      },
-    },
-    {
-      type: 'Feature' as const,
-      properties: { cap: 'south' },
-      geometry: {
-        type: 'Polygon' as const,
-        coordinates: [
-          [[-180, -90], [-180, -83.6], [180, -83.6], [180, -90], [-180, -90]],
-        ],
-      },
-    },
-  ],
-}
-
-function applyPolarCaps(map: MapInstance, globeEnabled: boolean): void {
+function applyNightHemisphere(map: MapInstance, globeEnabled: boolean, hour: number): void {
   try {
     if (!globeEnabled) {
-      // 2D 模式隐藏（mercator 视口通常看不到极冠，但保险起见移除显示）
-      for (const layerId of [POLAR_CAP_NORTH_LAYER_ID, POLAR_CAP_SOUTH_LAYER_ID]) {
-        if (map.getLayer(layerId)) {
-          map.setLayoutProperty(layerId, 'visibility', 'none')
-        }
+      if (map.getLayer(NIGHT_HEMISPHERE_LAYER_ID)) {
+        map.setLayoutProperty(NIGHT_HEMISPHERE_LAYER_ID, 'visibility', 'none')
       }
       return
     }
-    if (!map.getSource(POLAR_CAP_SOURCE_ID)) {
-      map.addSource(POLAR_CAP_SOURCE_ID, {
-        type: 'geojson',
-        data: _POLAR_CAP_GEOJSON as never,
-      })
+    const data = buildNightHemisphereGeoJSON(hour)
+    const source = map.getSource(NIGHT_HEMISPHERE_SOURCE_ID) as
+      | import('maplibre-gl').GeoJSONSource
+      | undefined
+    if (source && 'setData' in source) {
+      source.setData(data as never)
+    } else if (!map.getSource(NIGHT_HEMISPHERE_SOURCE_ID)) {
+      map.addSource(NIGHT_HEMISPHERE_SOURCE_ID, { type: 'geojson', data: data as never })
     }
-    const isLight = themeStore.mode === 'light'
-    // 北极：北冰洋深蓝（暗色主题更深）；南极：冰盖白
-    const northColor = isLight ? '#7fa3c2' : '#2c4a63'
-    const southColor = isLight ? '#f2f6f9' : '#e4ecf2'
-    // 图层位置：底图之上、首个数据层之下（避免盖住数据叠加层）
-    const excludeIds = new Set([
-      'background',
-      TILE_LAYER_ID,
-      'tile-base-overlay-raster',
-      POLAR_CAP_NORTH_LAYER_ID,
-      POLAR_CAP_SOUTH_LAYER_ID,
-    ])
-    const firstDataLayer = (map.getStyle().layers ?? []).find(
-      (l) => !excludeIds.has(l.id),
-    )
-    const beforeLayerId = firstDataLayer?.id
-    const ensureCapLayer = (layerId: string, filter: string, color: string) => {
-      if (!map.getLayer(layerId)) {
-        map.addLayer(
-          {
-            id: layerId,
-            type: 'fill',
-            source: POLAR_CAP_SOURCE_ID,
-            filter: ['==', ['get', 'cap'], filter],
-            paint: { 'fill-color': color },
-            layout: { visibility: 'visible' },
-          },
-          beforeLayerId,
-        )
-      } else {
-        map.setPaintProperty(layerId, 'fill-color', color)
-        map.setLayoutProperty(layerId, 'visibility', 'visible')
-      }
+    if (!map.getLayer(NIGHT_HEMISPHERE_LAYER_ID)) {
+      map.addLayer({
+        id: NIGHT_HEMISPHERE_LAYER_ID,
+        type: 'fill',
+        source: NIGHT_HEMISPHERE_SOURCE_ID,
+        paint: {
+          // 半透明夜侧：保留 OSM 地理纹理，不再把半球盖成纯色；
+          // opacity 由时间轴动态计算，晨昏附近自动减弱。
+          'fill-color': '#061522',
+          'fill-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.25, 2, 0.34, 5, 0.42],
+        },
+        layout: { visibility: 'visible' },
+      } as never)
+    } else {
+      map.setLayoutProperty(NIGHT_HEMISPHERE_LAYER_ID, 'visibility', 'visible')
     }
-    ensureCapLayer(POLAR_CAP_NORTH_LAYER_ID, 'north', northColor)
-    ensureCapLayer(POLAR_CAP_SOUTH_LAYER_ID, 'south', southColor)
   } catch (error) {
-    debugLog('[MapCanvas] applyPolarCaps unavailable', error)
+    debugLog('[MapCanvas] applyNightHemisphere unavailable', error)
   }
 }
 

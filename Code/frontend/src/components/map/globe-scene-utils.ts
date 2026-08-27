@@ -49,6 +49,60 @@ export interface GlobeSkyParams {
   atmosphereBlend: number
 }
 
+/**
+ * 时间轴小时对应的太阳下点经度（简化无日期模型，太阳赤纬取 0°）。
+ * hour=12 时太阳位于 0° 经线；hour=0 时位于 180° 经线。
+ * 该值只用于 raster 底图的昼夜遮罩，避免误把 MapLibre light 当成 raster 光照。
+ */
+export function subsolarLongitude(hour: number): number {
+  const normalized = ((hour % 24) + 24) % 24
+  return ((12 - normalized) * 15 + 540) % 360 - 180
+}
+
+export interface NightHemisphereGeoJSON {
+  type: 'FeatureCollection'
+  features: Array<{
+    type: 'Feature'
+    properties: { hemisphere: 'night' }
+    geometry: {
+      type: 'Polygon'
+      coordinates: number[][][]
+    }
+  }>
+}
+
+/**
+ * 生成夜半球经纬度多边形（按 180° 经线拆分，避免 GeoJSON 跨日期变更线）。
+ * 太阳赤纬取 0° 时夜半球是经度跨度 180° 的半球，极点始终位于边界两侧。
+ */
+export function buildNightHemisphereGeoJSON(hour: number): NightHemisphereGeoJSON {
+  const nightCenter = subsolarLongitude(hour) + 180
+  const start = ((nightCenter - 90 + 540) % 360) - 180
+  const end = ((nightCenter + 90 + 540) % 360) - 180
+  const polygons: number[][][] = []
+  const makePolygon = (west: number, east: number) => [
+    [west, -90],
+    [east, -90],
+    [east, 90],
+    [west, 90],
+    [west, -90],
+  ]
+  if (start < end) {
+    polygons.push(makePolygon(start, end))
+  } else {
+    // 跨越 ±180° 时拆成两个 polygon，避免 MapLibre 走反向大弧线
+    polygons.push(makePolygon(start, 180), makePolygon(-180, end))
+  }
+  return {
+    type: 'FeatureCollection',
+    features: polygons.map((coordinates) => ({
+      type: 'Feature',
+      properties: { hemisphere: 'night' },
+      geometry: { type: 'Polygon', coordinates: [coordinates] },
+    })),
+  }
+}
+
 function clamp(v: number, min: number, max: number): number {
   return v < min ? min : v > max ? max : v
 }

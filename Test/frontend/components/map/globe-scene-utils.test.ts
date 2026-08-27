@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildNightHemisphereGeoJSON,
   classifyBasemapBrightness,
   daylightFactor,
   resolveGlobeLighting,
   resolveGlobeSky,
+  subsolarLongitude,
 } from '@/components/map/globe-scene-utils'
 
 describe('classifyBasemapBrightness', () => {
@@ -125,6 +127,47 @@ describe('resolveGlobeSky', () => {
       expect(sky.skyColor).toMatch(/^#[0-9a-f]{6}$/)
       expect(sky.fogGroundBlend).toBeGreaterThan(0)
       expect(sky.fogGroundBlend).toBeLessThanOrEqual(1)
+    }
+  })
+})
+
+describe('subsolarLongitude / buildNightHemisphereGeoJSON（晨昏线）', () => {
+  it('太阳下点经度随 hour 旋转：12h 在 0°、0h 在 180°、18h 在 90°W', () => {
+    expect(subsolarLongitude(12)).toBeCloseTo(0, 5)
+    expect(Math.abs(subsolarLongitude(0))).toBeCloseTo(180, 5)
+    expect(subsolarLongitude(18)).toBeCloseTo(-90, 5)
+    // 周期性：hour 与 hour+24 等价
+    expect(subsolarLongitude(6 + 24)).toBeCloseTo(subsolarLongitude(6), 5)
+  })
+
+  it('夜半球中心 = 太阳下点 + 180°，覆盖对侧 180° 经度范围', () => {
+    // hour=12 → 夜中心 180°，夜半球跨 90°E~90°W（跨 antimeridian 拆两段）
+    const json = buildNightHemisphereGeoJSON(12)
+    expect(json.type).toBe('FeatureCollection')
+    const lons = json.features.flatMap((f) =>
+      f.geometry.coordinates[0].map((pt) => pt[0]),
+    )
+    // 0° 经线（太平洋中央区域在 hour=12 应为白昼）不能落入夜半球
+    expect(lons.some((lon) => lon === 0)).toBe(false)
+    // 180° 必在夜半球内
+    expect(lons.some((lon) => Math.abs(lon) === 180)).toBe(true)
+  })
+
+  it('GeoJSON 不跨 antimeridian 断裂：所有 ring 经度在 [-180,180] 且方向连续', () => {
+    for (const hour of [0, 3, 6, 9, 12, 15, 18, 21, 23.5]) {
+      const json = buildNightHemisphereGeoJSON(hour)
+      for (const feature of json.features) {
+        const ring = feature.geometry.coordinates[0]
+        for (const [lon] of ring) {
+          expect(lon).toBeGreaterThanOrEqual(-180)
+          expect(lon).toBeLessThanOrEqual(180)
+        }
+        // ring 闭合
+        const first = ring[0]
+        const last = ring[ring.length - 1]
+        expect(first[0]).toBe(last[0])
+        expect(first[1]).toBe(last[1])
+      }
     }
   })
 })
