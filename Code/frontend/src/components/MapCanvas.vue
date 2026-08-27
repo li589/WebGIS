@@ -58,6 +58,7 @@ import {
   resolveGlobeLighting,
   resolveGlobeSky,
 } from './map/globe-scene-utils'
+import { TILE_LAYER_ID } from './map/basemap-module'
 import { useThemeStore } from '../stores/theme'
 import { resolveGlobeBackgroundColor } from './map/map-canvas-map-options'
 import {
@@ -314,6 +315,11 @@ watch(
   () => themeStore.mode,
   () => {
     applyBackgroundColor()
+    // 极地冰冠颜色随主题刷新（globe 模式下才可见）
+    const map = state.resources.map
+    if (map && mapReady.value) {
+      applyPolarCaps(map, props.globeProjection === true)
+    }
   },
 )
 
@@ -438,11 +444,17 @@ const timeVisualState = computed(() => buildMapStageTimeVisualState(props.curren
  * Globe 专属视觉层：原生天空大气 + 底图亮度自适应的昼夜光照。
  * 只在 3D 模式打开，2D 模式恢复默认，避免常规地图承担额外样式更新。
  *
- * 亮色底图（街道/矢量/地形）在太阳直射下会过曝发白：按底图 style 分类
- * （globe-scene-utils）压低直射强度与太阳高度角；影像/暗色底图保留立体光影。
+ * 亮色底图（街道/矢量/地形）在太阳直射下会过曝发白：
+ * 1) 按底图 style 分类（globe-scene-utils）压低直射强度与太阳高度角；
+ * 2) 直接压底图 raster 图层的 brightness-max（对瓦片像素的硬约束，
+ *    比 light color 乘法更直接——亮色底图白天段 raster-brightness-max
+ *    ≈ 0.80，soft 档再降至 0.72，从根源上压掉"阳面过曝发白"）；
+ * 3) 影像/暗色底图保留立体光影（brightness-max = 1）。
  */
 function applyGlobeScene(map: MapInstance, enabled: boolean, hour: number): void {
   try {
+    applyBasemapBrightness(map, enabled)
+    applyPolarCaps(map, enabled)
     if (!enabled) {
       map.setSky?.({})
       map.setLight?.({ anchor: 'viewport', color: '#ffffff', intensity: 0.5 })
@@ -475,6 +487,133 @@ function applyGlobeScene(map: MapInstance, enabled: boolean, hour: number): void
   } catch (error) {
     // 旧样式/旧 MapLibre 版本不支持天空参数时，不影响地图主体渲染。
     debugLog('[MapCanvas] globe scene style unavailable', error)
+  }
+}
+
+/**
+ * 底图 raster 亮度压制（globe 模式专属）。
+ * 亮色底图阳面"过曝发白"的主修：直接限制瓦片像素最大亮度。
+ * - 亮色底图 + 标准：raster-brightness-max = 0.80
+ * - 亮色底图 + 柔和：0.72（进一步压）
+ * - 影像/暗色底图：1.0（保留原始对比）
+ * - 2D / globe 关闭：恢复 1.0
+ */
+function applyBasemapBrightness(map: MapInstance, globeEnabled: boolean): void {
+  try {
+    if (!map.getLayer?.(TILE_LAYER_ID)) return
+    let brightnessMax = 1.0
+    if (globeEnabled) {
+      const basemapStyle = TILE_SOURCE_MAP.get(props.tileSourceId)?.style
+      const brightness = classifyBasemapBrightness(basemapStyle)
+      if (brightness === 'light') {
+        brightnessMax = globeDaylightMode.value === 'soft' ? 0.72 : 0.8
+      }
+    }
+    const current = map.getPaintProperty?.(TILE_LAYER_ID, 'raster-brightness-max')
+    if (current !== brightnessMax) {
+      map.setPaintProperty(TILE_LAYER_ID, 'raster-brightness-max', brightnessMax)
+    }
+  } catch (error) {
+    debugLog('[MapCanvas] applyBasemapBrightness unavailable', error)
+  }
+}
+
+// ─── Globe 极地冰冠（极点无瓦片区的观感修复） ────────────────────────────────
+
+/**
+ * Web Mercator 瓦片只覆盖 ±85.05° 纬度：globe 模式下视口移到极点时，
+ * 球面大部分区域无瓦片 → 直接露出 background 兜底色 → 用户看到"纯色球"。
+ * 商用 globe（Google Earth 等）的通用做法是给极区覆盖特征面：
+ * - 北极：北冰洋深蓝（84°-90°）
+ * - 南极：冰盖白（-84°- -90°，同时天然改善"南半球白球"观感——
+ *   高德等仅覆盖中国的底图在南极露出的本来就是这片冰冠）
+ * fill 面紧贴底图瓦片之上，仅 globe 模式显示。
+ */
+const POLAR_CAP_SOURCE_ID = 'polar-caps'
+const POLAR_CAP_NORTH_LAYER_ID = 'polar-cap-north'
+const POLAR_CAP_SOUTH_LAYER_ID = 'polar-cap-south'
+
+const _POLAR_CAP_GEOJSON = {
+  type: 'FeatureCollection' as const,
+  features: [
+    {
+      type: 'Feature' as const,
+      properties: { cap: 'north' },
+      geometry: {
+        type: 'Polygon' as const,
+        coordinates: [
+          [[-180, 83.6], [-180, 90], [180, 90], [180, 83.6], [-180, 83.6]],
+        ],
+      },
+    },
+    {
+      type: 'Feature' as const,
+      properties: { cap: 'south' },
+      geometry: {
+        type: 'Polygon' as const,
+        coordinates: [
+          [[-180, -90], [-180, -83.6], [180, -83.6], [180, -90], [-180, -90]],
+        ],
+      },
+    },
+  ],
+}
+
+function applyPolarCaps(map: MapInstance, globeEnabled: boolean): void {
+  try {
+    if (!globeEnabled) {
+      // 2D 模式隐藏（mercator 视口通常看不到极冠，但保险起见移除显示）
+      for (const layerId of [POLAR_CAP_NORTH_LAYER_ID, POLAR_CAP_SOUTH_LAYER_ID]) {
+        if (map.getLayer(layerId)) {
+          map.setLayoutProperty(layerId, 'visibility', 'none')
+        }
+      }
+      return
+    }
+    if (!map.getSource(POLAR_CAP_SOURCE_ID)) {
+      map.addSource(POLAR_CAP_SOURCE_ID, {
+        type: 'geojson',
+        data: _POLAR_CAP_GEOJSON as never,
+      })
+    }
+    const isLight = themeStore.mode === 'light'
+    // 北极：北冰洋深蓝（暗色主题更深）；南极：冰盖白
+    const northColor = isLight ? '#7fa3c2' : '#2c4a63'
+    const southColor = isLight ? '#f2f6f9' : '#e4ecf2'
+    // 图层位置：底图之上、首个数据层之下（避免盖住数据叠加层）
+    const excludeIds = new Set([
+      'background',
+      TILE_LAYER_ID,
+      'tile-base-overlay-raster',
+      POLAR_CAP_NORTH_LAYER_ID,
+      POLAR_CAP_SOUTH_LAYER_ID,
+    ])
+    const firstDataLayer = (map.getStyle().layers ?? []).find(
+      (l) => !excludeIds.has(l.id),
+    )
+    const beforeLayerId = firstDataLayer?.id
+    const ensureCapLayer = (layerId: string, filter: string, color: string) => {
+      if (!map.getLayer(layerId)) {
+        map.addLayer(
+          {
+            id: layerId,
+            type: 'fill',
+            source: POLAR_CAP_SOURCE_ID,
+            filter: ['==', ['get', 'cap'], filter],
+            paint: { 'fill-color': color },
+            layout: { visibility: 'visible' },
+          },
+          beforeLayerId,
+        )
+      } else {
+        map.setPaintProperty(layerId, 'fill-color', color)
+        map.setLayoutProperty(layerId, 'visibility', 'visible')
+      }
+    }
+    ensureCapLayer(POLAR_CAP_NORTH_LAYER_ID, 'north', northColor)
+    ensureCapLayer(POLAR_CAP_SOUTH_LAYER_ID, 'south', southColor)
+  } catch (error) {
+    debugLog('[MapCanvas] applyPolarCaps unavailable', error)
   }
 }
 

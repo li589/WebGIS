@@ -9,7 +9,8 @@ type RasterSourceSpecification = import('maplibre-gl').RasterSourceSpecification
 type RasterTileSource = import('maplibre-gl').RasterTileSource
 
 const TILE_SOURCE_ID = 'tile-base'
-const TILE_LAYER_ID = 'tile-base-raster'
+/** 底图 raster 图层 id：MapCanvas 的 globe 光影（raster-brightness 压制）需要引用 */
+export const TILE_LAYER_ID = 'tile-base-raster'
 const TILE_OVERLAY_SOURCE_ID = 'tile-base-overlay'
 const TILE_OVERLAY_LAYER_ID = 'tile-base-overlay-raster'
 const TILE_ERROR_WINDOW_MS = 5000

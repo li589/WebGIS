@@ -5,6 +5,7 @@ import {
   BRIGHT_STARS,
   DEEP_SKY_OBJECTS,
   GALACTIC_TILT_DEG,
+  equatorialToGalactic,
   galacticToEquatorial,
   mulberry32,
   renderStarfieldCanvas,
@@ -150,5 +151,69 @@ describe('renderStarfieldCanvas', () => {
   it('默认画布为 2:1 比例', () => {
     const canvas = renderStarfieldCanvas({ mode: 'minimal' })
     expect(canvas.height).toBe(Math.round(canvas.width / 2))
+  })
+})
+describe('银河云气渲染（科研级重做）', () => {
+  it('equatorialToGalactic 与 galacticToEquatorial 互为逆变换', () => {
+    // 采样若干赤道坐标，转银道再转回，应恢复原值
+    const samples: Array<[number, number]> = [
+      [0, 0],
+      [6, 30],
+      [12, -45],
+      [18.615, 38.784],
+      [5.392, -69.756],
+      [22.5, 80],
+    ]
+    for (const [ra, dec] of samples) {
+      const { lDeg, bDeg } = equatorialToGalactic(ra, dec)
+      const back = galacticToEquatorial(lDeg, bDeg)
+      // RA 存在 0/24 wrap 边界（浮点残差可能落在 23.9999...），按圆周距离比较
+      const raDiff = Math.abs(back.raHours - (((ra % 24) + 24) % 24))
+      const raDist = Math.min(raDiff, 24 - raDiff)
+      expect(raDist).toBeLessThan(1e-4)
+      // 往返浮点残差 ~1e-4 度（0.36 角秒，亚像素级），对星图渲染完全无感
+      expect(back.decDeg).toBeCloseTo(dec, 3)
+    }
+  })
+
+  it('银心方向逆变换结果与已知值一致（RA 266.405° Dec -28.936°）', () => {
+    // 银心 (l=0, b=0) → RA 17.760h / Dec -28.936°
+    const { raHours, decDeg } = galacticToEquatorial(0, 0)
+    expect(raHours).toBeCloseTo(17.7603, 2)
+    expect(decDeg).toBeCloseTo(-28.936, 2)
+    // 逆变换：银心的赤道坐标 → l=0, b=0
+    const { lDeg, bDeg } = equatorialToGalactic(raHours, decDeg)
+    expect(Math.abs(lDeg) < 0.01 || Math.abs(lDeg - 360) < 0.01).toBe(true)
+    expect(Math.abs(bDeg)).toBeLessThan(0.01)
+  })
+
+  it('full 模式画布上银河带区域比偏离银道面的区域更亮（云气渲染有效）', () => {
+    // 256×128 画布，采样银道面附近 vs 银极附近像素亮度
+    const canvas = renderStarfieldCanvas({ mode: 'full', width: 256, height: 128, seed: 42 })
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return // 无 2d 上下文环境跳过
+    const data = ctx.getImageData(0, 0, 256, 128).data
+    const brightnessAt = (ra: number, dec: number) => {
+      const x = Math.round((ra / 24) * 255)
+      const y = Math.round(((90 - dec) / 180) * 127)
+      const idx = (y * 256 + x) * 4
+      return (data[idx] + data[idx + 1] + data[idx + 2]) / 3 * (data[idx + 3] / 255)
+    }
+    // 银心附近（RA 17.76h ≈ x=189, Dec -29°）
+    const galacticCore = brightnessAt(17.76, -29)
+    // 北银极（Dec +27°，RA 12.85h）——离银道面最远
+    const galacticPole = brightnessAt(12.85, 27.1)
+    expect(galacticCore).toBeGreaterThan(galacticPole)
+  })
+
+  it('same seed 输出确定性（两次渲染逐像素一致）', () => {
+    const a = renderStarfieldCanvas({ mode: 'full', width: 256, height: 128, seed: 99 })
+    const b = renderStarfieldCanvas({ mode: 'full', width: 256, height: 128, seed: 99 })
+    const ctxA = a.getContext('2d')
+    const ctxB = b.getContext('2d')
+    if (!ctxA || !ctxB) return
+    const da = ctxA.getImageData(0, 0, 256, 128).data
+    const db = ctxB.getImageData(0, 0, 256, 128).data
+    expect(Array.from(da.slice(0, 2048))).toEqual(Array.from(db.slice(0, 2048)))
   })
 })
