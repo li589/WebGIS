@@ -170,4 +170,27 @@ describe('subsolarLongitude / buildNightHemisphereGeoJSON（晨昏线）', () =>
       }
     }
   })
+
+  it('晨昏渐变为 5 层嵌套：夜心被全部层覆盖、最外层恰达夜半球边界（±90°）', () => {
+    // hour=6 → 太阳在 90°E，夜心在 90°W（不跨 antimeridian，几何最直观）
+    const json = buildNightHemisphereGeoJSON(6)
+    // 5 层且每层 ring 宽度 = 2*(t+1)*18°
+    const tiers = json.features.map((f) => f.properties.tier)
+    expect(tiers).toEqual([0, 1, 2, 3, 4])
+    for (const f of json.features) {
+      const ring = f.geometry.coordinates[0]
+      const west = ring[0][0]
+      const east = ring[1][0]
+      const expectedHalf = (f.properties.tier + 1) * 18
+      expect(east - west).toBeCloseTo(expectedHalf * 2, 5)
+      // 夜心 -90° 必须在层内
+      expect(west <= -90 && -90 <= east).toBe(true)
+    }
+    // 最外层边界 = 夜心 ±90°（= 0° 与 180°，即晨昏线位置）
+    const outer = json.features.find((f) => f.properties.tier === 4)!
+    const outerWest = outer.geometry.coordinates[0][0][0]
+    const outerEast = outer.geometry.coordinates[0][1][0]
+    expect(outerWest).toBeCloseTo(-180, 5)
+    expect(outerEast).toBeCloseTo(0, 5)
+  })
 })

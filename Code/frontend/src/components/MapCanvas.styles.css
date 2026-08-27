@@ -133,6 +133,14 @@
      见 MapCanvas 的 globe 背景色解析（resolveGlobeBackgroundColor）。 */
 }
 
+/* 3D 模式禁用 CSS 屏幕空间时间铬层（time-sheen/time-band）：
+   它们基于 --horizon-position 的屏幕坐标渐变，在 globe 下与地理无关，
+   会和夜半球遮罩（globe-night-hemisphere-fill）叠出"两条晨昏线"。
+   globe 的昼夜/晨昏渐变统一由地理空间的夜半球遮罩负责。 */
+.map-shell--3d :is(.time-sheen, .time-band) {
+  display: none;
+}
+
 .map-shell--3d .map-fog {
   background:
     radial-gradient(ellipse at 50% 48%, transparent 30%, rgba(20, 126, 168, 0.10) 69%, rgba(74, 203, 231, 0.28) 100%),

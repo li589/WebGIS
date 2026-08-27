@@ -63,7 +63,7 @@ export interface NightHemisphereGeoJSON {
   type: 'FeatureCollection'
   features: Array<{
     type: 'Feature'
-    properties: { hemisphere: 'night' }
+    properties: { hemisphere: 'night'; tier: number }
     geometry: {
       type: 'Polygon'
       coordinates: number[][][]
@@ -74,33 +74,58 @@ export interface NightHemisphereGeoJSON {
 /**
  * 生成夜半球经纬度多边形（按 180° 经线拆分，避免 GeoJSON 跨日期变更线）。
  * 太阳赤纬取 0° 时夜半球是经度跨度 180° 的半球，极点始终位于边界两侧。
+ *
+ * 晨昏渐变（替代 CSS time-sheen 在 globe 下的屏幕空间渐变）：
+ * 5 层嵌套矩形（从夜心 ±18° 到整个夜半球 ±90°，每层外扩 18°），
+ * 全部同一 fill-opacity —— 半透明嵌套叠加使夜心最暗（≈0.44 复合），
+ * 向晨昏线逐层递减到单层（≈0.11），形成连续平滑的晨昏过渡。
  */
 export function buildNightHemisphereGeoJSON(hour: number): NightHemisphereGeoJSON {
   const nightCenter = subsolarLongitude(hour) + 180
-  const start = ((nightCenter - 90 + 540) % 360) - 180
-  const end = ((nightCenter + 90 + 540) % 360) - 180
-  const polygons: number[][][] = []
-  const makePolygon = (west: number, east: number) => [
+  const TIER_COUNT = 5
+  const bandStep = 90 / TIER_COUNT // 每层外扩 18°
+  const makeRing = (west: number, east: number): number[][] => [
     [west, -90],
     [east, -90],
     [east, 90],
     [west, 90],
     [west, -90],
   ]
-  if (start < end) {
-    polygons.push(makePolygon(start, end))
-  } else {
-    // 跨越 ±180° 时拆成两个 polygon，避免 MapLibre 走反向大弧线
-    polygons.push(makePolygon(start, 180), makePolygon(-180, end))
+  const features: NightHemisphereGeoJSON['features'] = []
+  for (let t = 0; t < TIER_COUNT; t++) {
+    // 层 t 的半宽：(t+1)*18°；夜心规范化到 [-180,180] 再拆 antimeridian
+    const halfWidth = (t + 1) * bandStep
+    const center = ((nightCenter + 540) % 360) - 180
+    const west = center - halfWidth
+    const east = center + halfWidth
+    // 层未触及 antimeridian：单矩形
+    if (west >= -180 && east <= 180) {
+      features.push({
+        type: 'Feature',
+        properties: { hemisphere: 'night', tier: t },
+        geometry: { type: 'Polygon', coordinates: [makeRing(west, east)] },
+      })
+      continue
+    }
+    // 跨 antimeridian：拆两段（east 规范化 270°→-90°，避免覆盖全经度）
+    const westPart = Math.max(-180, west)
+    const eastNorm = east > 180 ? east - 360 : east
+    if (westPart < 180) {
+      features.push({
+        type: 'Feature',
+        properties: { hemisphere: 'night', tier: t },
+        geometry: { type: 'Polygon', coordinates: [makeRing(westPart, 180)] },
+      })
+    }
+    if (eastNorm > -180) {
+      features.push({
+        type: 'Feature',
+        properties: { hemisphere: 'night', tier: t },
+        geometry: { type: 'Polygon', coordinates: [makeRing(-180, eastNorm)] },
+      })
+    }
   }
-  return {
-    type: 'FeatureCollection',
-    features: polygons.map((coordinates) => ({
-      type: 'Feature',
-      properties: { hemisphere: 'night' },
-      geometry: { type: 'Polygon', coordinates: [coordinates] },
-    })),
-  }
+  return { type: 'FeatureCollection', features }
 }
 
 function clamp(v: number, min: number, max: number): number {

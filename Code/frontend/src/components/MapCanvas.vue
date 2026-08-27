@@ -547,10 +547,10 @@ function applyNightHemisphere(map: MapInstance, globeEnabled: boolean, hour: num
         type: 'fill',
         source: NIGHT_HEMISPHERE_SOURCE_ID,
         paint: {
-          // 半透明夜侧：保留 OSM 地理纹理，不再把半球盖成纯色；
-          // opacity 由时间轴动态计算，晨昏附近自动减弱。
+          // 单层低透明度 × 5 层嵌套叠加：夜心复合 ≈0.44、晨昏边缘 ≈0.11，
+          // 连续平滑的晨昏渐变（保留底图纹理，不糊成纯色）
           'fill-color': '#061522',
-          'fill-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.25, 2, 0.34, 5, 0.42],
+          'fill-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.115, 3, 0.16],
         },
         layout: { visibility: 'visible' },
       } as never)
