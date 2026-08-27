@@ -196,7 +196,7 @@ function onPermDialogUpdated(userId: number, mode: string) {
     <section class="settings-section">
       <h3 class="section-title">个人 API Token</h3>
       <div class="create-form token-form">
-        <input v-model="tokenLabel" type="text" placeholder="���签（可选）" />
+        <input v-model="tokenLabel" type="text" placeholder="标签（可选）" />
         <button type="button" class="primary-btn" :disabled="!auth.canWrite" @click="createToken">
           创建 Token
         </button>
@@ -291,7 +291,6 @@ function onPermDialogUpdated(userId: number, mode: string) {
               <button
                 type="button"
                 class="secondary-btn perm-btn"
-                :disabled="u.id === auth.user?.id"
                 @click="openPermDialog(u.id, u.username, u.role, u.permission_mode)"
               >
                 权限

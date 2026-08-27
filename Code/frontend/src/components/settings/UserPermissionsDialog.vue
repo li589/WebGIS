@@ -250,7 +250,7 @@ function close() {
         </header>
 
         <p v-if="!canEdit" class="upd-locked">
-          管理员账户的权限不可在此处调整（避免自降级锁定）。
+          管理员账户拥有全部权限，此处配置仅作查看（避免自降级锁定）。
         </p>
 
         <section class="upd-section">
