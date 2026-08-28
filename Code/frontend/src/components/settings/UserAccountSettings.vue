@@ -48,7 +48,7 @@ const ROLE_LABEL: Record<UserRole, string> = {
 }
 
 const themeSelectOptions = computed(() =>
-  auth.themes.map((t) => ({
+  (auth.themes ?? []).map((t) => ({
     label: `${t.name_zh}${t.is_primary ? '（主）' : ''}`,
     value: String(t.id),
   })),
@@ -69,7 +69,8 @@ onMounted(() => {
   if (auth.isAdmin) {
     void auth.loadUsers()
     void auth.loadThemes().then(() => {
-      const primary = auth.themes.find((t) => t.is_primary) ?? auth.themes[0]
+      const list = auth.themes ?? []
+      const primary = list.find((t) => t.is_primary) ?? list[0]
       if (primary && newThemeId.value == null) newThemeId.value = primary.id
     })
   }
@@ -189,7 +190,7 @@ function openPermDialog(
   themeId?: number | null,
 ) {
   if (!auth.isAdmin) return
-  const theme = themeId != null ? auth.themes.find((t) => t.id === themeId) : null
+  const theme = themeId != null ? (auth.themes ?? []).find((t) => t.id === themeId) : null
   permDialogUser.value = {
     id: userId,
     username,

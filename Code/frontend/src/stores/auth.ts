@@ -171,7 +171,11 @@ export const useAuthStore = defineStore('auth', () => {
   async function loadThemes() {
     themesLoading.value = true
     try {
-      themes.value = await listThemes()
+      const data = await listThemes()
+      themes.value = Array.isArray(data) ? data : []
+    } catch (err) {
+      themes.value = []
+      throw err
     } finally {
       themesLoading.value = false
     }

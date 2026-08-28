@@ -52,13 +52,18 @@ const clearApiKey = ref(false)
 const modelOptions = ref<string[]>([])
 const modelsManualHint = ref<string | null>(null)
 
-const globalProfiles = computed(() => profiles.value.filter((p) => p.scope === 'global'))
-const personalProfiles = computed(() => profiles.value.filter((p) => p.scope === 'personal'))
-const selected = computed(
-  () =>
-    profiles.value.find((p) => p.id === selectedId.value && p.scope === selectedScope.value) ??
-    null,
+const globalProfiles = computed(() =>
+  (profiles.value ?? []).filter((p) => p.scope === 'global'),
 )
+const personalProfiles = computed(() =>
+  (profiles.value ?? []).filter((p) => p.scope === 'personal'),
+)
+const selected = computed(() => {
+  const list = profiles.value ?? []
+  return (
+    list.find((p) => p.id === selectedId.value && p.scope === selectedScope.value) ?? null
+  )
+})
 const canEditSelected = computed(() => {
   if (!selected.value) return false
   if (selected.value.scope === 'global') return canManageGlobal.value
@@ -77,29 +82,33 @@ function onCompanionChange(event: Event) {
   setAgentCompanionEnabled(checked)
 }
 
-function applyBundle(bundle: {
+function applyBundle(bundle: Partial<{
   active_profile_id: string
   active_scope: AgentScope
   can_manage_global: boolean
   can_manage_personal: boolean
   profiles: AgentProfile[]
   presets: AgentPreset[]
-}) {
-  profiles.value = bundle.profiles
-  presets.value = bundle.presets
-  activeProfileId.value = bundle.active_profile_id
-  activeScope.value = bundle.active_scope
-  canManageGlobal.value = bundle.can_manage_global
-  canManagePersonal.value = bundle.can_manage_personal
-  createScope.value = bundle.can_manage_personal
+}> | null | undefined) {
+  const list = Array.isArray(bundle?.profiles) ? bundle!.profiles! : []
+  const presetList = Array.isArray(bundle?.presets) ? bundle!.presets! : []
+  profiles.value = list
+  presets.value = presetList
+  activeProfileId.value = String(bundle?.active_profile_id || list[0]?.id || '')
+  activeScope.value = (bundle?.active_scope === 'personal' ? 'personal' : 'global') as AgentScope
+  canManageGlobal.value = Boolean(bundle?.can_manage_global)
+  canManagePersonal.value = Boolean(bundle?.can_manage_personal)
+  createScope.value = canManagePersonal.value
     ? 'personal'
-    : bundle.can_manage_global
+    : canManageGlobal.value
       ? 'global'
       : 'personal'
   const still =
-    bundle.profiles.find((p) => p.id === selectedId.value && p.scope === selectedScope.value) ||
-    bundle.profiles.find((p) => p.id === bundle.active_profile_id && p.scope === bundle.active_scope) ||
-    bundle.profiles[0]
+    list.find((p) => p.id === selectedId.value && p.scope === selectedScope.value) ||
+    list.find(
+      (p) => p.id === activeProfileId.value && p.scope === activeScope.value,
+    ) ||
+    list[0]
   if (still) {
     selectedId.value = still.id
     selectedScope.value = still.scope

@@ -108,8 +108,19 @@ export function postAgentChat(body: AgentChatRequest): Promise<AgentChatResponse
   })
 }
 
-export function fetchAgentConfig(): Promise<AgentConfigBundle> {
-  return requestJson<AgentConfigBundle>('/agent/config', { sensitiveGet: true })
+export async function fetchAgentConfig(): Promise<AgentConfigBundle> {
+  const raw = await requestJson<Partial<AgentConfigBundle> & Record<string, unknown>>(
+    '/agent/config',
+    { sensitiveGet: true },
+  )
+  return {
+    active_profile_id: String(raw?.active_profile_id ?? ''),
+    active_scope: raw?.active_scope === 'personal' ? 'personal' : 'global',
+    can_manage_global: Boolean(raw?.can_manage_global),
+    can_manage_personal: Boolean(raw?.can_manage_personal),
+    profiles: Array.isArray(raw?.profiles) ? raw.profiles : [],
+    presets: Array.isArray(raw?.presets) ? raw.presets : [],
+  }
 }
 
 export function createAgentProfile(body: {

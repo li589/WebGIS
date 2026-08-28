@@ -42,10 +42,12 @@ const newType = ref<ResourceType>('layer')
 const newId = ref('')
 const newPerm = ref<PermissionValue>('allow')
 
-const selected = computed(() => auth.themes.find((t) => t.id === selectedId.value) ?? null)
+const selected = computed(
+  () => (auth.themes ?? []).find((t) => t.id === selectedId.value) ?? null,
+)
 
 const themeOptions = computed(() =>
-  auth.themes.map((t) => ({
+  (auth.themes ?? []).map((t) => ({
     label: `${t.name_zh}${t.is_primary ? '（主入口）' : ''}`,
     value: String(t.id),
   })),
@@ -55,10 +57,11 @@ async function refresh() {
   error.value = null
   try {
     await auth.loadThemes()
-    if (selectedId.value == null && auth.themes[0]) {
-      selectedId.value = auth.themes[0].id
-    } else if (selectedId.value != null && !auth.themes.some((t) => t.id === selectedId.value)) {
-      selectedId.value = auth.themes[0]?.id ?? null
+    const list = auth.themes ?? []
+    if (selectedId.value == null && list[0]) {
+      selectedId.value = list[0].id
+    } else if (selectedId.value != null && !list.some((t) => t.id === selectedId.value)) {
+      selectedId.value = list[0]?.id ?? null
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : '加载主题失败'
