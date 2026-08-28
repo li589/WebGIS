@@ -64,7 +64,13 @@ async function refresh() {
       selectedId.value = list[0]?.id ?? null
     }
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '加载主题失败'
+    const msg = err instanceof Error ? err.message : '加载主题失败'
+    if (/404|Not Found/i.test(msg)) {
+      error.value =
+        '主题 API 返回 404（路由未加载）。请执行：Env\\Python312\\python.exe launch.py restart fastapi，然后硬刷新页面。'
+    } else {
+      error.value = msg
+    }
   }
 }
 

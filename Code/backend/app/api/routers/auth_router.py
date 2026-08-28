@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
@@ -25,6 +26,8 @@ from app.services.permission_repository import (
     PermissionInput,
     get_permission_repository,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -627,9 +630,17 @@ def get_primary_theme_public() -> ThemePublicBrand:
 
 @router.get("/themes", response_model=list[ThemePublic])
 def list_themes(_admin: CredentialContext = Depends(require_admin)) -> list[ThemePublic]:
-    from app.services.theme_repository import get_theme_repository
+    """List all product themes (admin session required)."""
+    try:
+        from app.services.theme_repository import get_theme_repository
 
-    return [_public_theme(t) for t in get_theme_repository().list_themes()]
+        return [_public_theme(t) for t in get_theme_repository().list_themes()]
+    except Exception as exc:
+        logger.exception("list_themes failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list themes: {exc}",
+        ) from exc
 
 
 @router.post("/themes", response_model=ThemePublic, status_code=status.HTTP_201_CREATED)

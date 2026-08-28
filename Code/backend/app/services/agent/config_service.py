@@ -154,6 +154,11 @@ def _load_store_unlocked(path: Path, *, personal: bool = False) -> dict[str, Any
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(data, dict) and isinstance(data.get("profiles"), list):
+                # Global store must always keep ≥1 profile (demo fallback).
+                if not personal and len(data["profiles"]) == 0:
+                    store = _empty_store()
+                    _save_store_unlocked(path, store)
+                    return store
                 return data
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning("Failed to load %s: %s", path, exc)

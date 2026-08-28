@@ -103,6 +103,10 @@ function applyBundle(bundle: Partial<{
     : canManageGlobal.value
       ? 'global'
       : 'personal'
+  // Admin default: create into global when both scopes available
+  if (canManageGlobal.value) {
+    createScope.value = 'global'
+  }
   const still =
     list.find((p) => p.id === selectedId.value && p.scope === selectedScope.value) ||
     list.find(
@@ -136,6 +140,19 @@ async function loadConfig() {
   error.value = null
   try {
     applyBundle(await fetchAgentConfig())
+    if (!profiles.value.length && canManageGlobal.value) {
+      // Admin safety net: ensure at least a demo global profile exists
+      try {
+        await createAgentProfile({ preset_id: 'demo', scope: 'global', name: '演示（无网）' })
+        applyBundle(await fetchAgentConfig())
+      } catch {
+        /* keep empty; error shown below if still empty */
+      }
+    }
+    if (!profiles.value.length) {
+      error.value =
+        '未加载到任何配置档。请确认已登录管理员，并执行 launch.py restart fastapi 后硬刷新。'
+    }
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -307,6 +324,7 @@ onMounted(() => {
       <div v-else class="profile-layout">
         <aside class="profile-list">
           <div class="group-label">全局（管理员）</div>
+          <p v-if="!globalProfiles.length" class="status-line">暂无全局配置档</p>
           <button
             v-for="p in globalProfiles"
             :key="`g-${p.id}`"
