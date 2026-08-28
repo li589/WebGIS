@@ -133,35 +133,34 @@ export function buildNightHemisphereGeoJSON(
   const normLon = (lon: number) => ((lon + 540) % 360) - 180
 
   /**
-   * 构造夜核多边形（全暗区）—— **单 ring 方案 + 极圈内缩**。
+   * 构造夜核多边形（全暗区）—— **单 ring + 固定相位 + 极圈内缩**。
    *
    * 关键教训（按时间顺序）：
-   * 1) 极线段两点（[段首经度, poleLat]×2）顶点重合：poleLat=±90 时 globe 投影
-   *    在极点附近产生跨背面三角形 → 南极视口整球变纯色 / 夜半球阴影区域 / 圆圈伪影
-   *    （用户实测反馈）。修：poleLat 内缩到 ±89.5°——避开极点（极点重合是 bug 根源），
-   *    89.5° 顶点重合无跨背面问题（不是退化点）。极冠洞 0.5°（<2px 视觉不可见）。
-   * 2) 不能用 360 梯形带（每块独立 fill）：相邻梯形共享经线边 = 各自 fill 边缘抗锯齿
-   *    独立渲染 → 360 条经线全部可见 → 整球被 fill 边缘覆盖（更严重的"整球纯色" bug）。
-   *    必须单 ring（连续 fill，共享边是内部边不可见）。
-   * 3) 极线段顶点重合（89.5° 侧，非极点）：globe 投影正常，无跨背面三角形。
-   *
-   * 极线段顶点重合 = 长度 0 边（不渲染）+ 极冠洞（0.5° 视觉无感）+ 消除整球纯色。
-   * 极冠"洞"在 equator 视角下完全不可见（90° 弯，0.5°≈55km 在 zoom 0 下 <2px）。
+   * 1) 极线段两点顶点重合在**极点**（±90）：globe 投影产生跨背面三角形 →
+   *    南极视口整球变纯色 / 阴影 / 圆圈。修：poleLat 内缩（不接触极点）。
+   * 2) 不能用 360 梯形带（每块独立 fill）：相邻梯形共享经线边 = 各自 fill 边缘
+   *    抗锯齿独立渲染 → 360 条经线全部可见。必须单 ring。
+   * 3) **startLon 不能随 nightCenter 计算跳变**：ceil() 在 nightCenter 跨过临界值时
+   *    使 startLon 跳 360° → 动画每帧顶点序列相位乱跳 → GPU 缓冲全量重建 →
+   *    时间轴切换时夜半球"混乱地变"（用户实测反馈）。修：**startLon 固定 180**
+   *    （完整 360° 圈在任意相位数学等价，固定相位使顶点序列稳定）。
+   * 4) 极冠洞（内缩量）在夜半球内露出亮底图：南极视角可见亮圈。
+   *    内缩量 0.1°（89.9°）时洞 <1px 不可见。
    */
   const pushNightCore = () => {
     const equinox = Math.abs(decl) < 0.5
-    // 极圈内缩 89.5°：避开极点（极点重合顶点是 globe 渲染跨背面三角形的根源）
-    const poleLat = southNight ? -89.5 : 89.5
+    // 极圈内缩 89.9°：避开极点 + 洞 0.1°（<1px 不可见）
+    const poleLat = southNight ? -89.9 : 89.9
 
     if (!equinox) {
-      // 完整晨昏圈（360°）：单 ring + 极线极点内缩
-      const startLon = 180 + 360 * Math.ceil((nightCenter - 90 - 180) / 360)
+      // 完整晨昏圈（360°）：固定相位起点（顶点序列稳定，动画平滑）
+      const startLon = 180
       const curve: number[][] = []
       for (let lon = startLon; lon <= startLon + 360 + 1e-9; lon += LON_STEP) {
         curve.push([lon, terminatorLatitude(lon, subsolarLon, decl)])
       }
       if (curve.length < 4) return
-      // antimeridian 拆分：闭合边（极线段两点）落在段首经度（89.5°S，非极点）
+      // antimeridian 拆分：闭合边（极线段两点）落在段首经度（89.9°S，非极点）
       const rings = splitClosedRingAtAntimeridian(curve, poleLat)
       for (const ring of rings) {
         features.push({
@@ -180,8 +179,8 @@ export function buildNightHemisphereGeoJSON(
     const upPts: number[][] = []
     const dnPts: number[][] = []
     for (let lon = lonStart; lon <= lonEnd + 1e-9; lon += LON_STEP) {
-      upPts.push([lon, 89.5])
-      dnPts.push([lon, -89.5])
+      upPts.push([lon, 89.9])
+      dnPts.push([lon, -89.9])
     }
     if (upPts.length < 3) return
     const rings = splitClosedRingAtAntimeridian(
@@ -256,10 +255,8 @@ export function buildNightHemisphereGeoJSON(
       lines.push([[lonW, -90], [lonW, 90]])
       lines.push([[lonE, -90], [lonE, 90]])
     } else {
-      // 完整晨昏圈：起点对齐 antimeridian（与夜核一致——断口在日期变更线，
-      // 与拆分接缝/闭合边重合，视觉上不显眼）
-      const startLon =
-        180 + 360 * Math.ceil((nightCenter - 90 - 180) / 360)
+      // 完整晨昏圈：固定相位起点（与夜核一致——顶点序列稳定，动画平滑不闪烁）
+      const startLon = 180
       let cur: number[][] = []
       const flush = () => {
         if (cur.length >= 2) lines.push(cur)

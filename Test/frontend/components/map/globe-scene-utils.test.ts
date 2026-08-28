@@ -202,8 +202,8 @@ describe('subsolarLongitude / subsolarDeclination / buildNightHemisphereGeoJSON�
     const coreLats = json.features
       .filter((f) => f.properties.hemisphere === 'night-core')
       .flatMap((f) => f.geometry.coordinates[0].map((pt) => pt[1]))
-    expect(Math.min(...coreLats)).toBe(-89.5)
-    expect(Math.max(...coreLats)).toBe(89.5)
+    expect(Math.min(...coreLats)).toBe(-89.9)
+    expect(Math.max(...coreLats)).toBe(89.9)
   })
 
   it('所有几何坐标在 [-180,180]×[-90,90]，polygon ring 闭合（含 antimeridian 拆分）', () => {
