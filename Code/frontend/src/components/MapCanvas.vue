@@ -541,19 +541,22 @@ const TERMINATOR_LINE_LAYER_ID = 'globe-terminator-line'
 const LEGACY_NIGHT_LAYER_ID = 'globe-night-hemisphere-fill'
 const TWILIGHT_GLOW_LAYER_ID = 'globe-twilight-glow-fill'
 
-/** 夜核 fill opacity：顶层 zoom interpolate（规范合法）。 */
+/** 夜核 fill opacity：顶层 zoom interpolate（规范合法）。
+ * zoom 0 全球视图下 opacity 0.4（减轻"阴影覆盖"感，看起来像"晨昏过渡"而非"切一半"）。 */
 function nightCoreOpacityExpression(): unknown {
-  return ['interpolate', ['linear'], ['zoom'], 0, 0.5, 3, 0.58]
+  return ['interpolate', ['linear'], ['zoom'], 0, 0.4, 3, 0.55]
 }
 
-/** 晨昏线 line-width：顶层 zoom interpolate。 */
+/** 晨昏线 line-width：顶层 zoom interpolate。
+ * zoom 0 时 20px 宽（配合 blur 20px 形成 20px 过渡带——物理正确的晨昏过渡覆盖昼夜两侧）。 */
 function terminatorWidthExpression(): unknown {
-  return ['interpolate', ['linear'], ['zoom'], 0, 26, 2, 16, 4, 9]
+  return ['interpolate', ['linear'], ['zoom'], 0, 20, 2, 12, 4, 7, 8, 3]
 }
 
-/** 晨昏线 line-blur：顶层 zoom interpolate（向两侧羽化溶解 fill 硬边）。 */
+/** 晨昏线 line-blur：顶层 zoom interpolate。
+ * zoom 0 时 blur 20px——fill 边缘羽化 20px（看起来像"晨昏线过渡"而非"切一半"）。 */
 function terminatorBlurExpression(): unknown {
-  return ['interpolate', ['linear'], ['zoom'], 0, 20, 2, 13, 4, 7]
+  return ['interpolate', ['linear'], ['zoom'], 0, 20, 2, 10, 4, 5, 8, 2]
 }
 
 /** addLayer 后验证 layer 真的进入 style（MapLibre 表达式校验失败不 throw）。 */
@@ -656,7 +659,16 @@ function applyNightHemisphereImmediate(map: MapInstance, hour: number, date?: Da
   if (source && 'setData' in source) {
     source.setData(data as never)
   } else if (!map.getSource(NIGHT_HEMISPHERE_SOURCE_ID)) {
-    map.addSource(NIGHT_HEMISPHERE_SOURCE_ID, { type: 'geojson', data: data as never })
+    // maxzoom:3 + tolerance:0.8 —— 夜半球是宏观效果（全球/区域视图），
+    // 不需要 z18 默认切片（默认切片 = 数百瓦片，动画每帧重建时 worker
+    // 处理速度 < 帧率 → 任务积压 → 渲染滞后/混乱——用户实测反馈
+    // "上午正常下午完全乱"，下午夜半球跨 antimeridian 切片更多积压更严重）。
+    map.addSource(NIGHT_HEMISPHERE_SOURCE_ID, {
+      type: 'geojson',
+      data: data as never,
+      maxzoom: 3,
+      tolerance: 0.8,
+    } as never)
   }
   // 旧版图层残留隐藏（条纹过渡带/单 layer/twilight 历史版本）
   for (const layerId of [
@@ -681,8 +693,10 @@ function cancelNightAnimation(): void {
 /**
  * 启动晨昏线旋转动画：从当前插值位置平滑过渡到目标 hour。
  * - 最短路径回绕（23→0 走 +1h 而非 -23h）
- * - 快速连续切换时从当前位置直接续接（不闪烁）
- * - 每帧重建 GeoJSON（~360 点曲线，计算成本 <2ms，60fps 流畅）
+ * - 快速连续切换时从当前位置直接续接（不闪烁、不重启动画）
+ * - **帧节流 50ms**：MapLibre GeoJSON setData 每帧重建三角剖分+切片，
+ *   worker 处理速度 < 60fps 时任务积压 → 渲染滞后/混乱。
+ *   450ms / 50ms ≈ 9 帧（人类感知阈值 12fps 上，视觉仍平滑）
  */
 function startNightAnimation(map: MapInstance, targetHour: number, date?: Date): void {
   const from = nightAnimCurrentHour ?? targetHour
@@ -698,18 +712,26 @@ function startNightAnimation(map: MapInstance, targetHour: number, date?: Date):
   }
   cancelNightAnimation()
   nightAnimState = { from, to, start: performance.now(), map }
+  let lastApplyTime = 0
+  const FRAME_INTERVAL = 50 // ms —— 每帧最小间隔（节流）
   const step = () => {
     const st = nightAnimState
     if (!st) return
-    const t = Math.min(1, (performance.now() - st.start) / NIGHT_ANIM_DURATION)
+    const now = performance.now()
+    const t = Math.min(1, (now - st.start) / NIGHT_ANIM_DURATION)
     // smoothstep 缓动（先加速后减速，自然的旋转节奏）
     const eased = t * t * (3 - 2 * t)
     const hour = st.from + (st.to - st.from) * eased
     nightAnimCurrentHour = hour
-    try {
-      applyNightHemisphereImmediate(st.map, hour, date)
-    } catch (error) {
-      debugLog('[MapCanvas] night animation frame failed', error)
+    // 节流：帧间隔 < FRAME_INTERVAL 时跳过本次重算（末帧除外，保证最终位置精确）
+    const isFinalFrame = t >= 1
+    if (isFinalFrame || now - lastApplyTime >= FRAME_INTERVAL) {
+      lastApplyTime = now
+      try {
+        applyNightHemisphereImmediate(st.map, hour, date)
+      } catch (error) {
+        debugLog('[MapCanvas] night animation frame failed', error)
+      }
     }
     if (t < 1) {
       nightAnimRaf = requestAnimationFrame(step)
