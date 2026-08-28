@@ -198,12 +198,12 @@ describe('subsolarLongitude / subsolarDeclination / buildNightHemisphereGeoJSON�
     }
     const termLons = terms.map((t) => (t.geometry.coordinates as number[][])[0][0])
     expect(Math.abs(Math.abs(termLons[0] - termLons[1]) - 180)).toBeLessThan(1)
-    // 二分日夜核 = 全纬度经度带（φc 恒 0 时不能用 φ<φc 判定，否则夜半球丢失一半）
+    // 二分日夜核 = 夜侧经度带全纬度（极冠洞 0.5° ×2 = 1° 在赤道两侧，<2px 忽略）
     const coreLats = json.features
       .filter((f) => f.properties.hemisphere === 'night-core')
       .flatMap((f) => f.geometry.coordinates[0].map((pt) => pt[1]))
-    expect(Math.min(...coreLats)).toBe(-90)
-    expect(Math.max(...coreLats)).toBe(90)
+    expect(Math.min(...coreLats)).toBe(-89.5)
+    expect(Math.max(...coreLats)).toBe(89.5)
   })
 
   it('所有几何坐标在 [-180,180]×[-90,90]，polygon ring 闭合（含 antimeridian 拆分）', () => {
