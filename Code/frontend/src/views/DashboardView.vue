@@ -17,14 +17,18 @@ import LayerSidebar from '../components/LayerSidebar.vue'
 import MapCanvas from '../components/MapCanvas.vue'
 import ModeToolbar from '../components/ModeToolbar.vue'
 import LogPanel from '../components/toolbar/LogPanel.vue'
+import AgentCompanion from '../components/agent/AgentCompanion.vue'
 import TimelinePanel from '../components/TimelinePanel.vue'
 import TimelineScrubber from '../components/TimelineScrubber.vue'
 import WorkflowStatusPanel from '../components/workflow/WorkflowStatusPanel.vue'
 import type { TileSourceId } from '../services/api-config'
 import {
   is3DViewExperimentalEnabled,
+  isAgentCompanionEnabled,
   subscribe3DViewExperimental,
+  subscribeAgentCompanion,
 } from '../services/settings-local'
+import { importLazyChunk } from '../utils/lazy-chunk'
 import type { OverlayTimeState } from '../components/map/overlay-image-module'
 import { useUiStore } from '../stores/ui'
 import { useUiLoadingStore } from '../stores/ui-loading'
@@ -84,6 +88,8 @@ onBeforeUnmount(() => {
   teardownWorkspaceSync()
   _unsubscribe3DView?.()
   _unsubscribe3DView = null
+  _unsubscribeAgentCompanion?.()
+  _unsubscribeAgentCompanion = null
 })
 
 const tileSourceId = toRef(uiStore, 'tileSourceId')
@@ -214,6 +220,14 @@ const showGlobeMap = computed(
 )
 const globeProjectionOn = computed(() => uiStore.viewMode === '3d' && enable3DView.value)
 
+const agentCompanionEnabled = ref(isAgentCompanionEnabled())
+let _unsubscribeAgentCompanion: (() => void) | null = null
+{
+  _unsubscribeAgentCompanion = subscribeAgentCompanion(() => {
+    agentCompanionEnabled.value = isAgentCompanionEnabled()
+  })
+}
+
 // ── Online Temporal Integration ──
 // 在线时间获取编排器：当用户选中 fetchable 段时自动触发工作流获取数据
 const onlineTemporal = useOnlineTemporalIntegration({
@@ -289,7 +303,7 @@ const { handleRunWorkflowFromEditor } = useWorkflowEditorRun(
 function withLoadingGuard<T>(loader: () => Promise<T>) {
   return async (): Promise<T> => {
     try {
-      return await loader()
+      return await importLazyChunk(loader)
     } catch (err) {
       try {
         uiLoading.hideImmediate()
@@ -352,9 +366,10 @@ function handleLayerSelect(layerId: string) {
   if (selectedInstanceId.value !== layerId) workspace.selectLayer(layerId)
   logStore.logOperation('layer-select', `选中图层: ${layerId}`)
 }
-function handleZoomToLayer(instanceId: string) {
-  if (mapCanvasRef.value?.fitToLayerExtent?.(instanceId))
-    logStore.logOperation('layer-zoom', `缩放到图层: ${instanceId}`)
+function handleZoomToLayer(instanceId: string): boolean {
+  const ok = Boolean(mapCanvasRef.value?.fitToLayerExtent?.(instanceId))
+  if (ok) logStore.logOperation('layer-zoom', `缩放到图层: ${instanceId}`)
+  return ok
 }
 function handleToggleLayerVisibility(instanceId: string) {
   workspace.toggleLayerVisibility(instanceId)
@@ -553,6 +568,11 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
           />
         </TimelinePanel>
       </div>
+
+      <AgentCompanion
+        v-if="agentCompanionEnabled"
+        :fit-to-layer-extent="handleZoomToLayer"
+      />
     </section>
 
     <ScreenshotExport

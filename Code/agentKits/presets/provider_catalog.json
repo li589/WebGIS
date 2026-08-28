@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "presets": [
+    {
+      "id": "demo",
+      "name": "演示（无网）",
+      "provider_kind": "demo",
+      "protocol": "demo",
+      "base_url": "",
+      "model": "demo-rules",
+      "context_window_input": 4000,
+      "context_window_output": 2000,
+      "needs_api_key": false
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama（本地）",
+      "provider_kind": "ollama",
+      "protocol": "openai",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "model": "qwen2.5",
+      "context_window_input": 8192,
+      "context_window_output": 4096,
+      "needs_api_key": false
+    },
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "provider_kind": "openai",
+      "protocol": "openai",
+      "base_url": "https://api.openai.com/v1",
+      "model": "gpt-4o-mini",
+      "context_window_input": 128000,
+      "context_window_output": 16384,
+      "needs_api_key": true
+    },
+    {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "provider_kind": "anthropic",
+      "protocol": "anthropic",
+      "base_url": "https://api.anthropic.com",
+      "model": "claude-sonnet-4-20250514",
+      "context_window_input": 200000,
+      "context_window_output": 8192,
+      "needs_api_key": true
+    },
+    {
+      "id": "google",
+      "name": "Google AI (OpenAI 兼容)",
+      "provider_kind": "google",
+      "protocol": "openai",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "model": "gemini-2.0-flash",
+      "context_window_input": 128000,
+      "context_window_output": 8192,
+      "needs_api_key": true
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "provider_kind": "openrouter",
+      "protocol": "openai",
+      "base_url": "https://openrouter.ai/api/v1",
+      "model": "openai/gpt-4o-mini",
+      "context_window_input": 128000,
+      "context_window_output": 16384,
+      "needs_api_key": true
+    },
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "provider_kind": "deepseek",
+      "protocol": "openai",
+      "base_url": "https://api.deepseek.com/v1",
+      "model": "deepseek-chat",
+      "context_window_input": 64000,
+      "context_window_output": 8192,
+      "needs_api_key": true
+    },
+    {
+      "id": "dashscope",
+      "name": "通义千问（DashScope）",
+      "provider_kind": "dashscope",
+      "protocol": "openai",
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "model": "qwen-plus",
+      "context_window_input": 128000,
+      "context_window_output": 8192,
+      "needs_api_key": true
+    },
+    {
+      "id": "zhipu",
+      "name": "智谱 GLM",
+      "provider_kind": "zhipu",
+      "protocol": "openai",
+      "base_url": "https://open.bigmodel.cn/api/paas/v4",
+      "model": "glm-4-flash",
+      "context_window_input": 128000,
+      "context_window_output": 4096,
+      "needs_api_key": true
+    },
+    {
+      "id": "moonshot",
+      "name": "Moonshot（Kimi）",
+      "provider_kind": "moonshot",
+      "protocol": "openai",
+      "base_url": "https://api.moonshot.cn/v1",
+      "model": "moonshot-v1-128k",
+      "context_window_input": 128000,
+      "context_window_output": 8192,
+      "needs_api_key": true
+    },
+    {
+      "id": "siliconflow",
+      "name": "硅基流动",
+      "provider_kind": "siliconflow",
+      "protocol": "openai",
+      "base_url": "https://api.siliconflow.cn/v1",
+      "model": "Qwen/Qwen2.5-7B-Instruct",
+      "context_window_input": 32768,
+      "context_window_output": 4096,
+      "needs_api_key": true
+    },
+    {
+      "id": "custom_openai",
+      "name": "自定义（OpenAI 兼容）",
+      "provider_kind": "custom",
+      "protocol": "openai",
+      "base_url": "",
+      "model": "",
+      "context_window_input": 8192,
+      "context_window_output": 4096,
+      "needs_api_key": true
+    },
+    {
+      "id": "custom_anthropic",
+      "name": "自定义（Anthropic 兼容）",
+      "provider_kind": "custom",
+      "protocol": "anthropic",
+      "base_url": "",
+      "model": "",
+      "context_window_input": 8192,
+      "context_window_output": 4096,
+      "needs_api_key": true
+    }
+  ]
+}

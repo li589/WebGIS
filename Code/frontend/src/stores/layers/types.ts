@@ -198,6 +198,8 @@ export interface JobLayerItem {
   /** 关联的图层目录 ID（用于面板列表展示与重试/取消操作） */
   catalogId?: string
   commandType: string
+  /** 人类可读命令标签（优先于 commandType 枚举展示） */
+  commandLabel?: string
   status: JobStatus
   /** 0-100 */
   progress: number
@@ -237,6 +239,8 @@ export interface JobLayerItem {
   diagnostics?: string[]
   /** 面向 UI 的诊断摘要 */
   diagnosticNotes?: string[]
+  /** 折叠区技术日志（烘焙工具 stdout 等，默认不进主诊断） */
+  techLogs?: string[]
   /** 最近一次已消费的事件游标 */
   lastEventId?: string
   /** 最近一次事件时间 */

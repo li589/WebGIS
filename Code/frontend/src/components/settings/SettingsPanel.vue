@@ -14,6 +14,7 @@ import {
   Database,
   Info,
   Palette,
+  Bot,
 } from '../ui/icons'
 
 import { useAuthStore } from '../../stores/auth'
@@ -22,6 +23,7 @@ import { useUiLoadingStore } from '../../stores/ui-loading'
 import { loadSettingsUiLocal, saveSettingsUiLocal } from '../../services/settings-local'
 import GeneralSettings from './GeneralSettings.vue'
 import AppearanceSettings from './AppearanceSettings.vue'
+import AgentSettings from './AgentSettings.vue'
 import ApiKeySettings from './ApiKeySettings.vue'
 import GeeAccountSettings from './GeeAccountSettings.vue'
 import WeatherProviderSettings from './WeatherProviderSettings.vue'
@@ -49,6 +51,7 @@ function openDeploymentCenter() {
 type SettingsTab =
   | 'general'
   | 'appearance'
+  | 'agent'
   | 'accounts'
   | 'api-keys'
   | 'gee-accounts'
@@ -61,6 +64,7 @@ type SettingsTab =
 const TAB_IDS: SettingsTab[] = [
   'general',
   'appearance',
+  'agent',
   'accounts',
   'api-keys',
   'gee-accounts',
@@ -82,6 +86,7 @@ const activeTab = ref<SettingsTab>(savedTab && TAB_IDS.includes(savedTab) ? save
 const tabComponents = shallowRef<Record<SettingsTab, Component>>({
   general: GeneralSettings,
   appearance: AppearanceSettings,
+  agent: AgentSettings,
   accounts: UserAccountSettings,
   'api-keys': ApiKeySettings,
   'gee-accounts': GeeAccountSettings,
@@ -95,6 +100,7 @@ const tabComponents = shallowRef<Record<SettingsTab, Component>>({
 const ALL_TABS: Array<{ id: SettingsTab; label: string; icon: Component }> = [
   { id: 'general', label: SETTINGS_COPY.tabGeneral, icon: LayoutGrid },
   { id: 'appearance', label: SETTINGS_COPY.tabAppearance, icon: Palette },
+  { id: 'agent', label: SETTINGS_COPY.tabAgent, icon: Bot },
   { id: 'accounts', label: '账户', icon: User },
   { id: 'api-keys', label: SETTINGS_COPY.tabApiKeys, icon: Key },
   { id: 'gee-accounts', label: SETTINGS_COPY.tabGee, icon: Globe },

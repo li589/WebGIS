@@ -41,7 +41,6 @@ import { useWeatherSyncStatusStore } from '../stores/weather-sync-status'
 import { useBreakpoint } from '../composables/useBreakpoint'
 import { mergeWorkflowSummaryWithWeather } from '../utils/workflow-status-merge'
 import {
-  BRAND,
   BASEMAP_COPY,
   basemapStyleLabel,
   basemapProviderShort,
@@ -56,6 +55,7 @@ const uiStore = useUiStore()
 const logStore = useLogStore()
 const settingsStore = useSettingsStore()
 const authStore = useAuthStore()
+const brand = computed(() => authStore.resolvedBrand)
 const weatherTileManager = useWeatherTileManager()
 const weatherSyncStatus = useWeatherSyncStatusStore()
 const { isMobile } = useBreakpoint()
@@ -222,10 +222,18 @@ function sourcePillLabel(source: TileSourceConfig): string {
     <!-- 左侧：品牌 + 主工具 -->
     <div class="toolbar-left">
       <div class="brand">
-        <BrandMark :size="30" />
+        <img
+          v-if="brand.logoUrl"
+          class="brand-logo-img"
+          :src="brand.logoUrl"
+          :alt="brand.abbr"
+          width="30"
+          height="30"
+        />
+        <BrandMark v-else :size="30" />
         <div class="brand-copy">
-          <p class="brand-eyebrow">{{ BRAND.eyebrow }}</p>
-          <h1 class="brand-name">{{ BRAND.shortName }}</h1>
+          <p class="brand-eyebrow">{{ brand.eyebrow }}</p>
+          <h1 class="brand-name">{{ brand.shortName }}</h1>
         </div>
       </div>
 

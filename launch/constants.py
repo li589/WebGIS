@@ -46,6 +46,8 @@ DEFAULT_MAX_SNAPSHOTS = 5
 
 # ─── 默认值 ──────────────────────────────────────────────────────────────────
 DEFAULT_FRONTEND_PORT = 5175
+# Gateway --vite 剖面：对外仍 :5175，Vite 本机监听此端口，由 Nginx 反代 + HMR WS
+VITE_BEHIND_GATEWAY_PORT = 5174
 DEFAULT_OPEN_METEO_VOLUME = "backend_open-meteo-data"
 IS_WINDOWS = sys.platform == "win32"
 

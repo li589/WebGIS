@@ -5,6 +5,7 @@ import { useLayerWorkspace, useWorkflowRun } from '../../stores/layers/selectors
 import { useWeatherTileManager } from '../../stores/weather-tile-manager'
 import { useWeatherSyncStatusStore } from '../../stores/weather-sync-status'
 import { mergeWorkflowSummaryWithWeather } from '../../utils/workflow-status-merge'
+import { formatWorkflowCommandChip } from '../../utils/workflow-error-messages'
 import type { JobStatus } from '../../stores/layers/types'
 import { WORKFLOW_COPY } from '../../ui-copy'
 
@@ -696,9 +697,22 @@ onBeforeUnmount(() => {
               <div class="wf-item-name">
                 <span class="wf-item-dot" :style="{ background: item.accentColor }"></span>
                 <span class="wf-item-title">{{ item.name }}</span>
-                <span v-if="item.jobLayer.commandType" class="wf-item-cmd">{{
-                  item.jobLayer.commandType
-                }}</span>
+                <span
+                  v-if="
+                    formatWorkflowCommandChip(
+                      item.jobLayer.commandType,
+                      item.jobLayer.commandLabel,
+                    ) &&
+                    formatWorkflowCommandChip(
+                      item.jobLayer.commandType,
+                      item.jobLayer.commandLabel,
+                    ) !== item.name
+                  "
+                  class="wf-item-cmd"
+                  >{{
+                    formatWorkflowCommandChip(item.jobLayer.commandType, item.jobLayer.commandLabel)
+                  }}</span
+                >
               </div>
               <span
                 class="wf-item-status"
@@ -791,6 +805,20 @@ onBeforeUnmount(() => {
                 }}
               </button>
             </ul>
+
+            <!-- 技术日志（默认折叠，避免烘焙工具 stdout 淹没主状态） -->
+            <details
+              v-if="item.jobLayer.techLogs?.length"
+              class="wf-tech-logs"
+            >
+              <summary>技术日志（{{ item.jobLayer.techLogs.length }}）</summary>
+              <pre
+                v-for="(log, idx) in item.jobLayer.techLogs"
+                :key="`${item.jobLayer.jobId}-tech-${idx}`"
+                class="wf-tech-log-body"
+                >{{ log }}</pre
+              >
+            </details>
 
             <!-- 事件消息（可展开，支持阶段过滤） -->
             <ul
@@ -1611,6 +1639,35 @@ onBeforeUnmount(() => {
   color: var(--text-secondary);
   font-size: var(--font-size-caption);
   line-height: 1.4;
+}
+
+.wf-tech-logs {
+  margin: 0.4rem 0 0;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
+  padding: 0.35rem 0.55rem;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+}
+
+.wf-tech-logs summary {
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.wf-tech-log-body {
+  margin: 0.4rem 0 0;
+  max-height: 12rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
 }
 
 .wf-item-progressive-error {

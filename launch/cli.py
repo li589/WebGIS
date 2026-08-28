@@ -20,6 +20,7 @@ from launch.commands import (
     cmd_clean_cache,
     cmd_flush,
     cmd_logs,
+    cmd_reload,
     cmd_reset_db,
     cmd_restart,
     cmd_start,
@@ -52,7 +53,7 @@ def _add_start_restart_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--vite",
         action="store_true",
-        help="前台用 Vite 开发服务器（HMR）；默认用 Nginx Gateway 同域入口",
+        help="Gateway 同域入口 + 背后 Vite HMR（对外仍 :5175；Vite 本机 :5174）",
     )
     p.add_argument("--no-docker", action="store_true", help="不启动 Docker 容器")
     p.add_argument(
@@ -87,7 +88,12 @@ def _add_start_restart_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--clean-cache",
         action="store_true",
-        help="启动/重启前先执行 clean-cache（清 __pycache__ 与 Vite .vite；非 flush）",
+        help="强制启动/重启前清理全部本地编译缓存（pycache+Vite；非 flush）",
+    )
+    p.add_argument(
+        "--no-clean-cache",
+        action="store_true",
+        help="跳过默认的本地编译缓存清理（start/restart 按组件矩阵自动 clean）",
     )
 
 
@@ -100,23 +106,28 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "示例:\n"
             "  python launch.py start                      # 启动全部（含 Nginx Gateway :5175）\n"
-            "  python launch.py start --vite               # 全部启动，前台改用 Vite HMR（与 Gateway 互斥）\n"
+            "  python launch.py start --vite               # Gateway 同域 + Vite HMR（入口仍 :5175）\n"
             "  python launch.py start docker               # 仅 Redis + MinIO + Open-Meteo API\n"
             "  python launch.py sync                       # 跑 data-sync open-meteo-sync\n"
-            "  python launch.py start gateway              # 仅 Nginx 同域入口 :5175\n"
+            "  python launch.py start gateway              # 仅 Nginx 同域入口 :5175（静态 dist）\n"
+            "  python launch.py start gateway --vite       # Gateway HMR 剖面 + 本机 Vite :5174\n"
             "  python launch.py start gateway --rebuild-frontend\n"
+            "  python launch.py reload gateway             # Nginx 配置热重载（nginx -s reload）\n"
             "  python launch.py stop gateway               # 仅停 Nginx Gateway\n"
             "  python launch.py start worker:weather       # 仅启动 weather Worker\n"
             "  python launch.py start fastapi --debug      # 调试模式启动 FastAPI\n"
-            "  python launch.py start --frontend-port 3000 # 仅 --vite 时生效\n"
-            "  python launch.py restart                    # 全量重启（默认含 Gateway）\n"
-            "  python launch.py restart --clean-cache      # 清本地编译缓存后再全量重启\n"
+            "  python launch.py start frontend             # 仅 Vite 直连（默认 :5175，停 Gateway）\n"
+            "  python launch.py start --frontend-port 3000 # 仅 start frontend 时生效\n"
+            "  python launch.py restart                    # 全量重启（默认按矩阵 clean-cache）\n"
+            "  python launch.py restart backend            # 重启 backend（默认清 pycache）\n"
+            "  python launch.py start --no-clean-cache     # 跳过默认本地编译缓存清理\n"
+            "  python launch.py start --clean-cache        # 强制 pycache+Vite 全清后再启\n"
             "  python launch.py logs fastapi -n 100        # 查看 FastAPI 最后 100 行日志\n"
             "  python launch.py logs worker:all            # 查看所有 Worker 日志\n"
-            "  python launch.py flush                      # 清空 Redis + 文件缓存（需确认）\n"
+            "  python launch.py flush                      # 清空 Redis + 文件缓存（需确认；永不自动）\n"
             "  python launch.py flush --dry-run            # 预览将要清空的对象，不执行\n"
             "  python launch.py flush --yes                # 跳过确认直接执行\n"
-            "  python launch.py clean-cache                # 清 __pycache__ + Vite .vite（不碰 Redis）\n"
+            "  python launch.py clean-cache                # 手动清 __pycache__ + Vite .vite（不碰 Redis）\n"
             "  python launch.py reset-db                   # 清空 workflow_state，自动快照 + 重 seed\n"
             "  python launch.py reset-db --yes             # 跳过确认直接执行\n"
             "  python launch.py reset-db --clear-user      # 同时清空用户自定义工作流\n"
@@ -143,6 +154,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     # status
     sub.add_parser("status", help="查看服务状态")
+
+    # reload（配置热重载；当前仅 gateway）
+    p_reload = sub.add_parser(
+        "reload",
+        help="热重载组件配置（gateway → nginx -s reload，不重建容器）",
+    )
+    p_reload.add_argument(
+        "component",
+        nargs="?",
+        default="gateway",
+        help="组件: gateway（默认）",
+    )
 
     # restart
     p_restart = sub.add_parser("restart", help="重启服务")
@@ -243,6 +266,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return cmd_stop(args)
     if command == "status":
         return cmd_status()
+    if command == "reload":
+        return cmd_reload(args)
     if command == "restart":
         return cmd_restart(args)
     if command == "logs":

@@ -574,6 +574,367 @@
         }
       }
     },
+    "/auth/themes/primary/public": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Get Primary Theme Public",
+        "operationId": "get_primary_theme_public_auth_themes_primary_public_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemePublicBrand"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/themes": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "List Themes",
+        "operationId": "list_themes_auth_themes_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ThemePublic"
+                  },
+                  "type": "array",
+                  "title": "Response List Themes Auth Themes Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Create Theme",
+        "operationId": "create_theme_auth_themes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateThemeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemePublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/themes/{theme_id}": {
+      "patch": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Update Theme",
+        "operationId": "update_theme_auth_themes__theme_id__patch",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateThemeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemePublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Delete Theme",
+        "operationId": "delete_theme_auth_themes__theme_id__delete",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/themes/{theme_id}/permissions": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "List Theme Permissions",
+        "operationId": "list_theme_permissions_auth_themes__theme_id__permissions_get",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ThemePermissionRecord"
+                  },
+                  "title": "Response List Theme Permissions Auth Themes  Theme Id  Permissions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Set Theme Permissions",
+        "operationId": "set_theme_permissions_auth_themes__theme_id__permissions_put",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPermissionsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ThemePermissionRecord"
+                  },
+                  "title": "Response Set Theme Permissions Auth Themes  Theme Id  Permissions Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/themes/{theme_id}/logo": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Upload Theme Logo",
+        "operationId": "upload_theme_logo_auth_themes__theme_id__logo_post",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_theme_logo_auth_themes__theme_id__logo_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemePublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Get Theme Logo",
+        "description": "Serve theme logo (public — login page may need primary logo without session).",
+        "operationId": "get_theme_logo_auth_themes__theme_id__logo_get",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/feedback/api/reports": {
       "get": {
         "tags": [
@@ -11362,6 +11723,403 @@
         }
       }
     },
+    "/agent/config": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Get Agent Config",
+        "operationId": "get_agent_config_agent_config_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConfigBundleResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Put Agent Config Legacy",
+        "operationId": "put_agent_config_legacy_agent_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentConfigUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConfigResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/agent/config/profiles": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Create Agent Profile",
+        "operationId": "create_agent_profile_agent_config_profiles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentProfileCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfilePublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/agent/config/profiles/{profile_id}": {
+      "put": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Update Agent Profile",
+        "operationId": "update_agent_profile_agent_config_profiles__profile_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentProfileUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfilePublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Delete Agent Profile",
+        "operationId": "delete_agent_profile_agent_config_profiles__profile_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "global",
+                "personal"
+              ],
+              "type": "string",
+              "default": "personal",
+              "title": "Scope"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConfigBundleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/config/active": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Set Active Agent Profile",
+        "operationId": "set_active_agent_profile_agent_config_active_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentActiveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConfigBundleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/agent/config/use-global": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Use Global Agent Profile",
+        "description": "Clear personal active so chat falls back to global active.",
+        "operationId": "use_global_agent_profile_agent_config_use_global_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConfigBundleResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/agent/models/refresh": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Refresh Agent Models",
+        "operationId": "refresh_agent_models_agent_models_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentModelsRefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentModelsRefreshResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/agent/chat": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Chat",
+        "operationId": "agent_chat_agent_chat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentChatResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
     "/gee/workflows:validate": {
       "post": {
         "tags": [
@@ -11620,6 +12378,701 @@
           "description"
         ],
         "title": "AboutModule"
+      },
+      "AgentActiveRequest": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Profile Id"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "personal"
+            ],
+            "title": "Scope",
+            "default": "personal"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id"
+        ],
+        "title": "AgentActiveRequest"
+      },
+      "AgentChatRequest": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 0,
+            "title": "Message"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "client_context": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "AgentChatRequest"
+      },
+      "AgentChatResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "reply": {
+            "type": "string",
+            "title": "Reply"
+          },
+          "ui_intents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentUiIntent"
+            },
+            "type": "array",
+            "title": "Ui Intents"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider",
+            "default": "demo"
+          },
+          "profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Id"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentTokenUsage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/AgentStep"
+            },
+            "type": "array",
+            "title": "Steps"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "reply"
+        ],
+        "title": "AgentChatResponse"
+      },
+      "AgentConfigBundleResponse": {
+        "properties": {
+          "active_profile_id": {
+            "type": "string",
+            "title": "Active Profile Id"
+          },
+          "active_scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "personal"
+            ],
+            "title": "Active Scope",
+            "default": "global"
+          },
+          "can_manage_global": {
+            "type": "boolean",
+            "title": "Can Manage Global",
+            "default": false
+          },
+          "can_manage_personal": {
+            "type": "boolean",
+            "title": "Can Manage Personal",
+            "default": false
+          },
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/AgentProfilePublic"
+            },
+            "type": "array",
+            "title": "Profiles"
+          },
+          "presets": {
+            "items": {
+              "$ref": "#/components/schemas/AgentPresetPublic"
+            },
+            "type": "array",
+            "title": "Presets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "active_profile_id"
+        ],
+        "title": "AgentConfigBundleResponse"
+      },
+      "AgentConfigResponse": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "mock",
+              "ollama",
+              "openai_compatible"
+            ],
+            "title": "Provider",
+            "default": "mock"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url",
+            "default": "http://127.0.0.1:11434/v1"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": "qwen2.5"
+          },
+          "has_api_key": {
+            "type": "boolean",
+            "title": "Has Api Key",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "AgentConfigResponse"
+      },
+      "AgentConfigUpdateRequest": {
+        "properties": {
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "mock",
+                  "ollama",
+                  "openai_compatible"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "clear_api_key": {
+            "type": "boolean",
+            "title": "Clear Api Key",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "AgentConfigUpdateRequest"
+      },
+      "AgentModelsRefreshRequest": {
+        "properties": {
+          "profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Id"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "global",
+                  "personal"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          }
+        },
+        "type": "object",
+        "title": "AgentModelsRefreshRequest"
+      },
+      "AgentModelsRefreshResponse": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Models"
+          },
+          "manual": {
+            "type": "boolean",
+            "title": "Manual",
+            "default": false
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id"
+        ],
+        "title": "AgentModelsRefreshResponse"
+      },
+      "AgentPresetPublic": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "provider_kind": {
+            "type": "string",
+            "title": "Provider Kind"
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "anthropic",
+              "demo"
+            ],
+            "title": "Protocol"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url",
+            "default": ""
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          },
+          "context_window_input": {
+            "type": "integer",
+            "title": "Context Window Input",
+            "default": 8192
+          },
+          "context_window_output": {
+            "type": "integer",
+            "title": "Context Window Output",
+            "default": 4096
+          },
+          "needs_api_key": {
+            "type": "boolean",
+            "title": "Needs Api Key",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "provider_kind",
+          "protocol"
+        ],
+        "title": "AgentPresetPublic"
+      },
+      "AgentProfileCreateRequest": {
+        "properties": {
+          "preset_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Preset Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "personal"
+            ],
+            "title": "Scope",
+            "default": "personal"
+          }
+        },
+        "type": "object",
+        "required": [
+          "preset_id"
+        ],
+        "title": "AgentProfileCreateRequest"
+      },
+      "AgentProfilePublic": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "provider_kind": {
+            "type": "string",
+            "title": "Provider Kind"
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "anthropic",
+              "demo"
+            ],
+            "title": "Protocol"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url",
+            "default": ""
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          },
+          "context_window_input": {
+            "type": "integer",
+            "title": "Context Window Input",
+            "default": 8192
+          },
+          "context_window_output": {
+            "type": "integer",
+            "title": "Context Window Output",
+            "default": 4096
+          },
+          "preset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset Id"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "personal"
+            ],
+            "title": "Scope",
+            "default": "global"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": false
+          },
+          "has_api_key": {
+            "type": "boolean",
+            "title": "Has Api Key",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "provider_kind",
+          "protocol"
+        ],
+        "title": "AgentProfilePublic"
+      },
+      "AgentProfileUpdateRequest": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "personal"
+            ],
+            "title": "Scope",
+            "default": "personal"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "openai",
+                  "anthropic",
+                  "demo"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "context_window_input": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2000000.0,
+                "minimum": 256.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window Input"
+          },
+          "context_window_output": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 512000.0,
+                "minimum": 64.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window Output"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "clear_api_key": {
+            "type": "boolean",
+            "title": "Clear Api Key",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "AgentProfileUpdateRequest"
+      },
+      "AgentStep": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "thought",
+              "tool",
+              "tool_result"
+            ],
+            "title": "Type",
+            "default": "thought"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "summary"
+        ],
+        "title": "AgentStep"
+      },
+      "AgentTokenUsage": {
+        "properties": {
+          "prompt_tokens": {
+            "type": "integer",
+            "title": "Prompt Tokens",
+            "default": 0
+          },
+          "completion_tokens": {
+            "type": "integer",
+            "title": "Completion Tokens",
+            "default": 0
+          },
+          "total_tokens": {
+            "type": "integer",
+            "title": "Total Tokens",
+            "default": 0
+          },
+          "estimated": {
+            "type": "boolean",
+            "title": "Estimated",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "AgentTokenUsage"
+      },
+      "AgentUiIntent": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "args": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Args"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "AgentUiIntent"
       },
       "AlgorithmOutputSpec": {
         "properties": {
@@ -12719,6 +14172,20 @@
         ],
         "title": "Body_upload_report_feedback_api_reports_post"
       },
+      "Body_upload_theme_logo_auth_themes__theme_id__logo_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_theme_logo_auth_themes__theme_id__logo_post"
+      },
       "BoundingBox": {
         "properties": {
           "west": {
@@ -13071,6 +14538,69 @@
         "title": "ConfirmRequest",
         "description": "``POST /import/raster/confirm`` 请求体。\n\n用户在前端确认对话框中选定源 CRS（可覆盖检测结果）并设置偏移后提交。"
       },
+      "CreateThemeRequest": {
+        "properties": {
+          "slug": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 2,
+            "title": "Slug"
+          },
+          "name_zh": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name Zh"
+          },
+          "full_name_zh": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Full Name Zh"
+          },
+          "name_en": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name En"
+          },
+          "abbr": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Abbr"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Description",
+            "default": ""
+          },
+          "default_permission_mode": {
+            "type": "string",
+            "enum": [
+              "open",
+              "whitelist"
+            ],
+            "title": "Default Permission Mode",
+            "default": "open"
+          },
+          "is_primary": {
+            "type": "boolean",
+            "title": "Is Primary",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "slug",
+          "name_zh",
+          "full_name_zh",
+          "name_en",
+          "abbr"
+        ],
+        "title": "CreateThemeRequest"
+      },
       "CreateTokenRequest": {
         "properties": {
           "label": {
@@ -13123,6 +14653,17 @@
             ],
             "title": "Role",
             "default": "standard"
+          },
+          "theme_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theme Id"
           }
         },
         "type": "object",
@@ -21047,6 +22588,168 @@
         ],
         "title": "TestResultResponse"
       },
+      "ThemePermissionRecord": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "theme_id": {
+            "type": "integer",
+            "title": "Theme Id"
+          },
+          "resource_type": {
+            "type": "string",
+            "title": "Resource Type"
+          },
+          "resource_id": {
+            "type": "string",
+            "title": "Resource Id"
+          },
+          "permission": {
+            "type": "string",
+            "title": "Permission"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "theme_id",
+          "resource_type",
+          "resource_id",
+          "permission",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ThemePermissionRecord"
+      },
+      "ThemePublic": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "name_zh": {
+            "type": "string",
+            "title": "Name Zh"
+          },
+          "full_name_zh": {
+            "type": "string",
+            "title": "Full Name Zh"
+          },
+          "name_en": {
+            "type": "string",
+            "title": "Name En"
+          },
+          "abbr": {
+            "type": "string",
+            "title": "Abbr"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
+          "default_permission_mode": {
+            "type": "string",
+            "title": "Default Permission Mode",
+            "default": "open"
+          },
+          "is_primary": {
+            "type": "boolean",
+            "title": "Is Primary",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "slug",
+          "name_zh",
+          "full_name_zh",
+          "name_en",
+          "abbr"
+        ],
+        "title": "ThemePublic"
+      },
+      "ThemePublicBrand": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "name_zh": {
+            "type": "string",
+            "title": "Name Zh"
+          },
+          "full_name_zh": {
+            "type": "string",
+            "title": "Full Name Zh"
+          },
+          "name_en": {
+            "type": "string",
+            "title": "Name En"
+          },
+          "abbr": {
+            "type": "string",
+            "title": "Abbr"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "slug",
+          "name_zh",
+          "full_name_zh",
+          "name_en",
+          "abbr"
+        ],
+        "title": "ThemePublicBrand",
+        "description": "Unauthenticated primary-theme branding for the login page."
+      },
       "TileProviderInfo": {
         "properties": {
           "id": {
@@ -21310,6 +23013,102 @@
         "title": "TransformPointRequest",
         "description": "``POST /import/transform-point`` 请求体。"
       },
+      "UpdateThemeRequest": {
+        "properties": {
+          "name_zh": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Zh"
+          },
+          "full_name_zh": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name Zh"
+          },
+          "name_en": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name En"
+          },
+          "abbr": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Abbr"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "default_permission_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "whitelist"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Permission Mode"
+          },
+          "is_primary": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Primary"
+          }
+        },
+        "type": "object",
+        "title": "UpdateThemeRequest"
+      },
       "UpdateUserRequest": {
         "properties": {
           "password": {
@@ -21351,6 +23150,17 @@
               }
             ],
             "title": "Enabled"
+          },
+          "theme_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theme Id"
           }
         },
         "type": "object",
@@ -21499,6 +23309,27 @@
             "type": "string",
             "title": "Permission Mode",
             "default": "open"
+          },
+          "theme_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theme Id"
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThemePublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

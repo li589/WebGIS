@@ -100,4 +100,5 @@ export {
   DollarSign,
   Gift,
   HelpCircle,
+  Bot,
 } from 'lucide-vue-next'

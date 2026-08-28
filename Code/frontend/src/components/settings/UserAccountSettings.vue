@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import {
@@ -12,6 +12,7 @@ import {
 import { useAuthStore } from '../../stores/auth'
 import AppSelect from '../ui/AppSelect.vue'
 import UserPermissionsDialog from './UserPermissionsDialog.vue'
+import ThemeManagerSettings from './ThemeManagerSettings.vue'
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -21,6 +22,7 @@ const router = useRouter()
 const newUsername = ref('')
 const newPassword = ref('')
 const newRole = ref<UserRole>('standard')
+const newThemeId = ref<number | null>(null)
 const tokenLabel = ref('')
 const tokens = ref<AuthToken[]>([])
 const tokensLoading = ref(false)
@@ -28,12 +30,14 @@ const createdToken = ref<string | null>(null)
 const message = ref<string | null>(null)
 const error = ref<string | null>(null)
 
-// 权限配置对话框：被「操作」列的「权限」按钮打开（仅管理员）
+// 权限覆盖对话框：被「操作」列的「权限覆盖」按钮打开（仅管理员）
 interface UserPermDialogUser {
   id: number
   username: string
   role: UserRole
   permission_mode?: string
+  theme_id?: number | null
+  theme_name?: string | null
 }
 const permDialogUser = ref<UserPermDialogUser | null>(null)
 
@@ -42,6 +46,13 @@ const ROLE_LABEL: Record<UserRole, string> = {
   standard: '标准用户',
   demo: '演示',
 }
+
+const themeSelectOptions = computed(() =>
+  auth.themes.map((t) => ({
+    label: `${t.name_zh}${t.is_primary ? '（主）' : ''}`,
+    value: String(t.id),
+  })),
+)
 
 async function loadTokens() {
   tokensLoading.value = true
@@ -55,7 +66,13 @@ async function loadTokens() {
 }
 
 onMounted(() => {
-  if (auth.isAdmin) void auth.loadUsers()
+  if (auth.isAdmin) {
+    void auth.loadUsers()
+    void auth.loadThemes().then(() => {
+      const primary = auth.themes.find((t) => t.is_primary) ?? auth.themes[0]
+      if (primary && newThemeId.value == null) newThemeId.value = primary.id
+    })
+  }
   void loadTokens()
 })
 
@@ -78,7 +95,7 @@ async function createAccount() {
     return
   }
   try {
-    await auth.addUser(username, newPassword.value, newRole.value)
+    await auth.addUser(username, newPassword.value, newRole.value, newThemeId.value)
     message.value = '用户已创建'
     newUsername.value = ''
     newPassword.value = ''
@@ -138,6 +155,17 @@ async function changeRole(userId: number, role: UserRole) {
   }
 }
 
+async function changeTheme(userId: number, themeIdRaw: string) {
+  error.value = null
+  const themeId = Number(themeIdRaw)
+  if (!Number.isFinite(themeId)) return
+  try {
+    await auth.patchUser(userId, { theme_id: themeId })
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '更新主题失败'
+  }
+}
+
 async function removeAccount(userId: number, username: string) {
   if (!window.confirm(`确定删除用户 ${username}？`)) return
   error.value = null
@@ -152,15 +180,24 @@ async function removeAccount(userId: number, username: string) {
   }
 }
 
-/** 打开「用户权限配置」对话框（管理员专属） */
+/** 打开「用户权限覆盖」对话框（管理员专属） */
 function openPermDialog(
   userId: number,
   username: string,
   role: UserRole,
   permissionMode?: string,
+  themeId?: number | null,
 ) {
   if (!auth.isAdmin) return
-  permDialogUser.value = { id: userId, username, role, permission_mode: permissionMode }
+  const theme = themeId != null ? auth.themes.find((t) => t.id === themeId) : null
+  permDialogUser.value = {
+    id: userId,
+    username,
+    role,
+    permission_mode: permissionMode,
+    theme_id: themeId,
+    theme_name: theme?.name_zh ?? null,
+  }
 }
 
 function onPermDialogUpdated(userId: number, mode: string) {
@@ -242,6 +279,12 @@ function onPermDialogUpdated(userId: number, mode: string) {
             { label: '演示', value: 'demo' },
           ]"
         />
+        <AppSelect
+          v-if="themeSelectOptions.length"
+          :model-value="newThemeId != null ? String(newThemeId) : ''"
+          :options="themeSelectOptions"
+          @change="(val) => (newThemeId = Number(val))"
+        />
         <button type="button" class="primary-btn" @click="createAccount">创建用户</button>
       </div>
 
@@ -251,6 +294,7 @@ function onPermDialogUpdated(userId: number, mode: string) {
           <tr>
             <th>用户名</th>
             <th>角色</th>
+            <th>主题</th>
             <th>状态</th>
             <th>权限模式</th>
             <th>操作</th>
@@ -272,6 +316,15 @@ function onPermDialogUpdated(userId: number, mode: string) {
               />
             </td>
             <td>
+              <AppSelect
+                v-if="themeSelectOptions.length"
+                :model-value="u.theme_id != null ? String(u.theme_id) : ''"
+                :options="themeSelectOptions"
+                @change="(val) => changeTheme(u.id, String(val))"
+              />
+              <span v-else>—</span>
+            </td>
+            <td>
               <label class="enabled-toggle">
                 <input
                   type="checkbox"
@@ -291,9 +344,11 @@ function onPermDialogUpdated(userId: number, mode: string) {
               <button
                 type="button"
                 class="secondary-btn perm-btn"
-                @click="openPermDialog(u.id, u.username, u.role, u.permission_mode)"
+                @click="
+                  openPermDialog(u.id, u.username, u.role, u.permission_mode, u.theme_id)
+                "
               >
-                权限
+                权限覆盖
               </button>
               <button
                 v-if="u.id !== auth.user?.id"
@@ -308,6 +363,8 @@ function onPermDialogUpdated(userId: number, mode: string) {
         </tbody>
       </table>
     </section>
+
+    <ThemeManagerSettings v-if="auth.isAdmin" />
 
     <UserPermissionsDialog
       :open="permDialogUser !== null"

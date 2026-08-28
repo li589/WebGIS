@@ -9,6 +9,7 @@ export const SETTINGS_COPY = {
   tabOpenMeteo: 'Open-Meteo',
   tabRemoteStorage: '远程与存储',
   tabDataSource: '数据源',
+  tabAgent: 'Agent 配置',
   tabSystemStatus: '系统与关于',
   openLog: '打开系统设置',
 } as const

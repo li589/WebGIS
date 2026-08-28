@@ -4,6 +4,8 @@
  * Legacy local-only keys are treated as persist=true on first read (compat).
  */
 
+import { readScopedItem, writeScopedItem } from './user-local-isolation'
+
 const WRITE_KEY_LOCAL = 'cgda.backend_write_api_key'
 const WRITE_KEY_SESSION = 'cgda.backend_write_api_key'
 const WRITE_KEY_PERSIST = 'cgda.backend_write_api_key_persist'
@@ -44,10 +46,20 @@ export interface SettingsUiLocal {
    */
   globeBackground?: 'auto' | 'starfield' | 'minimal'
   /**
-   * 3D globe 昼夜光影档位（默认 auto）：
-   * auto=随底图亮度自适应（亮色底图压低直射防过曝）；soft=整体柔和；standard=标准；off=关闭。
+   * 3D globe 昼夜光影档位（默认 natural）：
+   * natural=真实夜半球；standard=固定明亮地球；off=关闭。
    */
   globeDaylight?: 'standard' | 'natural' | 'off'
+  /**
+   * Agent 伴侣挂件位置（地图舞台像素坐标 + 左右贴边态）。
+   */
+  agentCompanion?: {
+    x: number
+    y: number
+    dock: 'left' | 'right' | 'none'
+  }
+  /** 是否在主前端显示 Agent 伴侣挂件（默认 true；仅 Web，不含小程序） */
+  agentCompanionEnabled?: boolean
 }
 
 function safeGet(storage: Storage, key: string): string | null {
@@ -160,7 +172,7 @@ export function patchApiKeyPref(keyName: string, patch: Partial<ApiKeyLocalPref>
 }
 
 export function loadSettingsUiLocal(): SettingsUiLocal {
-  const raw = safeGet(localStorage, SETTINGS_UI)
+  const raw = readScopedItem(SETTINGS_UI) ?? safeGet(localStorage, SETTINGS_UI)
   if (!raw) return {}
   try {
     return (JSON.parse(raw) as SettingsUiLocal) ?? {}
@@ -172,7 +184,7 @@ export function loadSettingsUiLocal(): SettingsUiLocal {
 /** 合并写入 settings UI 偏好，避免切 Tab 等场景冲掉其它字段（如 mapDistributionChrome）。 */
 export function saveSettingsUiLocal(ui: SettingsUiLocal): void {
   const merged: SettingsUiLocal = { ...loadSettingsUiLocal(), ...ui }
-  safeSet(localStorage, SETTINGS_UI, JSON.stringify(merged))
+  writeScopedItem(SETTINGS_UI, JSON.stringify(merged))
 }
 
 /** 地图分布淡底默认开启；显式 false 时关闭。 */
@@ -245,13 +257,14 @@ export function getGlobeBackgroundMode(): GlobeBackgroundMode {
   return loadSettingsUiLocal().globeBackground ?? 'auto'
 }
 
-/** 3D 昼夜光影默认 auto（随底图亮度自适应，亮色底图压低直射防过曝）。 */
+/** 3D 昼夜光影默认 natural（真实夜半球晨昏线）。 */
 export function getGlobeDaylightMode(): GlobeDaylightMode {
-  const value = loadSettingsUiLocal().globeDaylight
-  // 迁移旧值：auto/soft/standard 均归为固定地球标准样式；off 保持关闭
+  const value = loadSettingsUiLocal().globeDaylight as string | undefined
   if (value === 'off') return 'off'
+  if (value === 'standard') return 'standard'
   if (value === 'natural') return 'natural'
-  return 'standard'
+  // 未设置或 legacy auto/soft → natural
+  return 'natural'
 }
 
 const globeSceneListeners = new Set<() => void>()
@@ -282,6 +295,63 @@ export function setGlobeBackgroundMode(mode: GlobeBackgroundMode): void {
 export function setGlobeDaylightMode(mode: GlobeDaylightMode): void {
   saveSettingsUiLocal({ ...loadSettingsUiLocal(), globeDaylight: mode })
   notifyGlobeSceneListeners()
+}
+
+export type AgentCompanionDock = 'left' | 'right' | 'none'
+
+export interface AgentCompanionPosition {
+  x: number
+  y: number
+  dock: AgentCompanionDock
+}
+
+export function getAgentCompanionPosition(): AgentCompanionPosition | null {
+  const raw = loadSettingsUiLocal().agentCompanion
+  if (
+    raw &&
+    typeof raw.x === 'number' &&
+    typeof raw.y === 'number' &&
+    (raw.dock === 'left' || raw.dock === 'right' || raw.dock === 'none')
+  ) {
+    return { x: raw.x, y: raw.y, dock: raw.dock }
+  }
+  return null
+}
+
+export function setAgentCompanionPosition(pos: AgentCompanionPosition): void {
+  saveSettingsUiLocal({
+    ...loadSettingsUiLocal(),
+    agentCompanion: { x: pos.x, y: pos.y, dock: pos.dock },
+  })
+}
+
+/** 主前端 Agent 伴侣默认开启；显式 false 时隐藏。 */
+export function isAgentCompanionEnabled(): boolean {
+  return loadSettingsUiLocal().agentCompanionEnabled !== false
+}
+
+const agentCompanionListeners = new Set<() => void>()
+
+export function subscribeAgentCompanion(listener: () => void): () => void {
+  agentCompanionListeners.add(listener)
+  return () => {
+    agentCompanionListeners.delete(listener)
+  }
+}
+
+function notifyAgentCompanionListeners(): void {
+  for (const listener of agentCompanionListeners) {
+    try {
+      listener()
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+export function setAgentCompanionEnabled(enabled: boolean): void {
+  saveSettingsUiLocal({ ...loadSettingsUiLocal(), agentCompanionEnabled: enabled })
+  notifyAgentCompanionListeners()
 }
 
 /** Clear local preferences only — does not touch server-side key history. */

@@ -225,15 +225,30 @@ class PermissionRepository:
     # ------------------------------------------------------------------
 
     def get_permission_mode(self, user_id: int) -> str:
-        """Return the user's permission mode ('open' or 'whitelist')."""
+        """Return effective permission mode (user override, else theme default)."""
         with self._pool.connection() as conn:
             row = conn.execute(
-                "SELECT permission_mode FROM users WHERE id=?", (user_id,)
+                "SELECT permission_mode, theme_id FROM users WHERE id=?",
+                (user_id,),
             ).fetchone()
         if row is None:
             return "open"
-        mode = str(row["permission_mode"]) if isinstance(row, dict) else str(row[0])
-        return mode if mode in _VALID_MODES else "open"
+        raw_mode = row["permission_mode"] if isinstance(row, dict) else row[0]
+        mode = str(raw_mode) if raw_mode is not None else ""
+        if mode in _VALID_MODES:
+            return mode
+        # Inherit theme default when user mode missing/invalid
+        theme_id = row["theme_id"] if isinstance(row, dict) else None
+        if theme_id is not None:
+            try:
+                from app.services.theme_repository import get_theme_repository
+
+                theme = get_theme_repository().get_by_id(int(theme_id))
+                if theme and theme.default_permission_mode in _VALID_MODES:
+                    return theme.default_permission_mode
+            except Exception:
+                logger.debug("theme mode lookup failed for user %s", user_id, exc_info=True)
+        return "open"
 
     def set_permission_mode(self, user_id: int, mode: str) -> None:
         if mode not in _VALID_MODES:
@@ -247,17 +262,51 @@ class PermissionRepository:
         invalidate_access_cache(user_id)
 
     # ------------------------------------------------------------------
-    # Access check
+    # Access check (theme defaults ⊕ user overrides)
     # ------------------------------------------------------------------
+
+    def _user_theme_id(self, user_id: int) -> int | None:
+        with self._pool.connection() as conn:
+            row = conn.execute(
+                "SELECT theme_id FROM users WHERE id=?", (user_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        tid = row["theme_id"] if isinstance(row, dict) else row[0]
+        return int(tid) if tid is not None else None
+
+    def _theme_perm_map(
+        self, theme_id: int | None, resource_type: str
+    ) -> dict[str, str]:
+        if theme_id is None:
+            return {}
+        with self._pool.connection() as conn:
+            rows = conn.execute(
+                "SELECT resource_id, permission FROM theme_resource_permissions "
+                "WHERE theme_id=? AND resource_type=?",
+                (theme_id, resource_type),
+            ).fetchall()
+        return {str(r["resource_id"]): str(r["permission"]) for r in rows}
+
+    def _merged_permission(
+        self,
+        user_perm: str | None,
+        theme_perm: str | None,
+        mode: str,
+    ) -> bool:
+        """User override wins; else theme; else mode default."""
+        effective = user_perm if user_perm is not None else theme_perm
+        if mode == "whitelist":
+            return effective == "allow"
+        # open: deny only on explicit deny
+        return effective != "deny"
 
     def check_resource_access(
         self, user_id: int, resource_type: str, resource_id: str
     ) -> bool:
         """Check if *user_id* may access ``resource_type/resource_id``.
 
-        Logic:
-        * ``open`` mode: allowed unless a ``deny`` record exists.
-        * ``whitelist`` mode: allowed only if an ``allow`` record exists.
+        Merge: user override > theme default > mode (open/whitelist).
         """
         cache_key = (user_id, resource_type, resource_id)
         cached = _cache_get(cache_key)
@@ -265,18 +314,24 @@ class PermissionRepository:
             return cached
 
         mode = self.get_permission_mode(user_id)
+        theme_id = self._user_theme_id(user_id)
         with self._pool.connection() as conn:
-            row = conn.execute(
+            user_row = conn.execute(
                 "SELECT permission FROM user_resource_permissions "
                 "WHERE user_id=? AND resource_type=? AND resource_id=?",
                 (user_id, resource_type, resource_id),
             ).fetchone()
+            theme_row = None
+            if theme_id is not None:
+                theme_row = conn.execute(
+                    "SELECT permission FROM theme_resource_permissions "
+                    "WHERE theme_id=? AND resource_type=? AND resource_id=?",
+                    (theme_id, resource_type, resource_id),
+                ).fetchone()
 
-        if mode == "whitelist":
-            result = row is not None and str(row["permission"]) == "allow"
-        else:
-            # open (black-list): denied only if explicit deny record
-            result = not (row is not None and str(row["permission"]) == "deny")
+        user_perm = str(user_row["permission"]) if user_row is not None else None
+        theme_perm = str(theme_row["permission"]) if theme_row is not None else None
+        result = self._merged_permission(user_perm, theme_perm, mode)
 
         _cache_set(cache_key, result)
         return result
@@ -290,25 +345,33 @@ class PermissionRepository:
         """Return the subset of *resource_ids* the user may access.
 
         More efficient than calling ``check_resource_access`` per item:
-        loads all permission records for the user+type in one query.
+        loads user + theme permission maps for the type in two queries.
         """
         if not resource_ids:
             return []
         mode = self.get_permission_mode(user_id)
+        theme_id = self._user_theme_id(user_id)
         with self._pool.connection() as conn:
             rows = conn.execute(
                 "SELECT resource_id, permission FROM user_resource_permissions "
                 "WHERE user_id=? AND resource_type=?",
                 (user_id, resource_type),
             ).fetchall()
-        perm_map: dict[str, str] = {
+        user_map: dict[str, str] = {
             str(r["resource_id"]): str(r["permission"]) for r in rows
         }
+        theme_map = self._theme_perm_map(theme_id, resource_type)
 
-        if mode == "whitelist":
-            return [rid for rid in resource_ids if perm_map.get(rid) == "allow"]
-        # open mode: exclude only explicit deny
-        return [rid for rid in resource_ids if perm_map.get(rid) != "deny"]
+        out: list[str] = []
+        for rid in resource_ids:
+            user_perm = user_map.get(rid)
+            theme_perm = theme_map.get(rid)
+            # .get returns None if missing — distinguish from missing vs present
+            u = user_perm if rid in user_map else None
+            t = theme_perm if rid in theme_map else None
+            if self._merged_permission(u, t, mode):
+                out.append(rid)
+        return out
 
 
 # ---------------------------------------------------------------------------
@@ -323,3 +386,12 @@ def get_permission_repository() -> PermissionRepository:
     if _repo is None:
         _repo = PermissionRepository()
     return _repo
+
+
+def reset_permission_repository_for_tests() -> None:
+    """Drop singleton + access cache so pytest fixtures can patch a fresh DB."""
+    global _repo
+    if _repo is not None:
+        _repo.close()
+    _repo = None
+    invalidate_access_cache(None)

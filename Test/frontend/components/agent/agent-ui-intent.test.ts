@@ -1,0 +1,100 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ref } from 'vue'
+
+const activeLayers = ref<
+  Array<{
+    instanceId: string
+    catalogId: string
+    visible: boolean
+    opacity: number
+    isAdminBoundary?: boolean
+    name?: string
+  }>
+>([])
+
+const toggleLayerVisibility = vi.fn((instanceId: string) => {
+  const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
+  if (layer) layer.visible = !layer.visible
+})
+const setLayerOpacity = vi.fn((instanceId: string, opacity: number) => {
+  const layer = activeLayers.value.find((l) => l.instanceId === instanceId)
+  if (layer) layer.opacity = opacity
+})
+const addLayer = vi.fn((catalogId: string) => {
+  activeLayers.value.push({
+    instanceId: `inst-${catalogId}`,
+    catalogId,
+    visible: true,
+    opacity: 1,
+  })
+})
+const selectLayer = vi.fn()
+const setSidebarView = vi.fn()
+
+vi.mock('@/stores/layers/selectors', () => ({
+  useLayerWorkspace: () => ({
+    activeLayers,
+    toggleLayerVisibility,
+    setLayerOpacity,
+    addLayer,
+    selectLayer,
+    setSidebarView,
+  }),
+}))
+
+describe('executeAgentUiIntent', () => {
+  beforeEach(() => {
+    activeLayers.value = [
+      {
+        instanceId: 'i1',
+        catalogId: 'cmfd-precip-cn',
+        visible: false,
+        opacity: 1,
+      },
+    ]
+    vi.clearAllMocks()
+  })
+
+  it('toggles visibility on when requested', async () => {
+    const { executeAgentUiIntent } = await import('@/components/agent/agent-ui-intent')
+    const result = executeAgentUiIntent({
+      name: 'set_layer_visibility',
+      args: { catalog_id: 'cmfd-precip-cn', visible: true },
+    })
+    expect(result.ok).toBe(true)
+    expect(toggleLayerVisibility).toHaveBeenCalledWith('i1')
+    expect(activeLayers.value[0]?.visible).toBe(true)
+  })
+
+  it('adds layer when missing then shows it', async () => {
+    activeLayers.value = []
+    const { executeAgentUiIntent } = await import('@/components/agent/agent-ui-intent')
+    const result = executeAgentUiIntent({
+      name: 'set_layer_visibility',
+      args: { catalog_id: 'dem-etopo', visible: true },
+    })
+    expect(addLayer).toHaveBeenCalledWith('dem-etopo')
+    expect(result.ok).toBe(true)
+  })
+
+  it('sets opacity', async () => {
+    const { executeAgentUiIntent } = await import('@/components/agent/agent-ui-intent')
+    const result = executeAgentUiIntent({
+      name: 'set_layer_opacity',
+      args: { catalog_id: 'cmfd-precip-cn', opacity: 0.5 },
+    })
+    expect(result.ok).toBe(true)
+    expect(setLayerOpacity).toHaveBeenCalledWith('i1', 0.5)
+  })
+
+  it('fits layer via handler', async () => {
+    const fit = vi.fn(() => true)
+    const { executeAgentUiIntent } = await import('@/components/agent/agent-ui-intent')
+    const result = executeAgentUiIntent(
+      { name: 'fit_layer', args: { catalog_id: 'cmfd-precip-cn' } },
+      { fitToLayerExtent: fit },
+    )
+    expect(result.ok).toBe(true)
+    expect(fit).toHaveBeenCalledWith('i1')
+  })
+})

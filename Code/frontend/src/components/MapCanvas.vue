@@ -54,10 +54,15 @@ import {
   type GlobeDaylightMode,
 } from '../services/settings-local'
 import {
-  buildNightHemisphereGeoJSON,
   classifyBasemapBrightness,
   resolveGlobeSky,
 } from './map/globe-scene-utils'
+import { quantizeNightMaskHour } from './map/globe-night-mask'
+import {
+  ensureGlobeNightMaskLayerOnMap,
+  GlobeNightMaskLayer,
+  removeLegacyNightMaskRaster,
+} from './map/globe-night-mask-layer'
 import { TILE_LAYER_ID } from './map/basemap-module'
 import { useThemeStore } from '../stores/theme'
 import { resolveGlobeBackgroundColor } from './map/map-canvas-map-options'
@@ -437,7 +442,13 @@ watch(
 
 // ─── Time-of-day visual vars ─────────────────────────────────────────────────
 
-const timeVisualState = computed(() => buildMapStageTimeVisualState(props.currentHour))
+/** 3D「自然」档冻结屏幕空间时间 CSS 变量，避免 --horizon-position / --stage-glow-spread 随时间轴变化形成"圈在动" */
+const timeVisualState = computed(() => {
+  if (globeProjectionOn.value && globeDaylightMode.value === 'natural') {
+    return buildMapStageTimeVisualState(12)
+  }
+  return buildMapStageTimeVisualState(props.currentHour)
+})
 
 /**
  * Globe 专属视觉层：原生天空大气 + raster 昼夜遮罩。
@@ -461,14 +472,20 @@ function applyGlobeScene(map: MapInstance, enabled: boolean, hour: number): void
       map.setSky?.({})
       return
     }
+    if (globeDaylightMode.value === 'natural') {
+      // 自然档：关闭球缘大气（atmosphere-blend>0 会在背景形成固定亮圈；
+      // setSky({}) 在 MapLibre 5.x 会回落到默认大气，须显式 blend=0）
+      map.setSky?.({
+        'atmosphere-blend': 0,
+        'sky-horizon-blend': 0,
+        'horizon-fog-blend': 0,
+        'fog-ground-blend': 0,
+      })
+      return
+    }
     const basemapStyle = TILE_SOURCE_MAP.get(props.tileSourceId)?.style
     const brightness = classifyBasemapBrightness(basemapStyle)
-    // sky 固定化（用户定调）：
-    // - 「标准」固定白天大气（不随时间轴变化的立体地球质感）
-    // - 「自然」固定夜间深空大气（地球的亮暗完全由晨昏线负责，
-    //   天空不再叠加随时间变化的方向性亮色）
-    const skyAnchorHour = globeDaylightMode.value === 'natural' ? 0 : 12
-    const sky = resolveGlobeSky(skyAnchorHour, brightness)
+    const sky = resolveGlobeSky(12, brightness)
     map.setSky?.({
       'sky-color': sky.skyColor,
       'horizon-color': sky.horizonColor,
@@ -495,8 +512,8 @@ function applyGlobeScene(map: MapInstance, enabled: boolean, hour: number): void
 /**
  * 底图 raster 亮度压制（globe 模式专属）。
  * 亮色底图阳面"过曝发白"的主修：直接限制瓦片像素最大亮度。
- * - 亮色底图 + 标准/自然：raster-brightness-max = 0.80
- * - 亮色底图 + 无（off 档）：1.0（完全不加亮暗效果）
+ * - 亮色底图 + 标准：raster-brightness-max = 0.80（左上立体压亮）
+ * - 自然 / 无：1.0（自然档昼夜仅由遮罩负责，不加瓦片光影）
  * - 影像/暗色底图：1.0（保留原始对比）
  * - 2D / globe 关闭：恢复 1.0
  */
@@ -504,7 +521,7 @@ function applyBasemapBrightness(map: MapInstance, globeEnabled: boolean): void {
   try {
     if (!map.getLayer?.(TILE_LAYER_ID)) return
     let brightnessMax = 1.0
-    if (globeEnabled && globeDaylightMode.value !== 'off') {
+    if (globeEnabled && globeDaylightMode.value === 'standard') {
       const basemapStyle = TILE_SOURCE_MAP.get(props.tileSourceId)?.style
       const brightness = classifyBasemapBrightness(basemapStyle)
       if (brightness === 'light') {
@@ -520,95 +537,61 @@ function applyBasemapBrightness(map: MapInstance, globeEnabled: boolean): void {
   }
 }
 
-// ─── Globe raster 昼夜遮罩（"自然"晨昏样式，跟随时间轴+日期） ────────────────
+// ─── Globe「自然」档：WebGL 球面夜半球（硬边暗/亮，无 image source 扭曲） ───
 
-/**
- * OSM 等 raster 瓦片没有 MapLibre 光照属性，必须单独绘制夜半球遮罩。
- * 真实太空观感（globe-scene-utils.buildNightHemisphereGeoJSON）：
- * - 弯曲晨昏线：按太阳赤纬精确求解纬度边界，极昼/极夜随日期自然出现
- * - 夜侧均匀暗化（单一 night-core 多边形，硬边）
- * - **line-blur 羽化过渡**：晨昏线 terminator 用原生 line-blur 宽线
- *   向两侧像素级羽化（替代多档条纹——档边界渲染下可见，用户反馈"好多线"）
- * - 仅「自然」档显示；「标准」=固定质感不画晨昏线；「无」=完全不画
- *
- * ⚠️ MapLibre 表达式规范：['zoom'] 只能作为**顶层** step/interpolate 的 input，
- * 不能嵌套在乘法里（校验失败静默拒绝 addLayer——错误只走 error 事件不 throw）。
- */
-const NIGHT_HEMISPHERE_SOURCE_ID = 'globe-night-hemisphere'
-const NIGHT_CORE_LAYER_ID = 'globe-night-core-fill'
-const NIGHT_TRANSITION_LAYER_ID = 'globe-night-transition-fill'
-const TERMINATOR_LINE_LAYER_ID = 'globe-terminator-line'
-const LEGACY_NIGHT_LAYER_ID = 'globe-night-hemisphere-fill'
-const TWILIGHT_GLOW_LAYER_ID = 'globe-twilight-glow-fill'
-
-/** 夜核 fill opacity：顶层 zoom interpolate（规范合法）。
- * zoom 0 全球视图下 opacity 0.4（减轻"阴影覆盖"感，看起来像"晨昏过渡"而非"切一半"）。 */
-function nightCoreOpacityExpression(): unknown {
-  return ['interpolate', ['linear'], ['zoom'], 0, 0.4, 3, 0.55]
+function nightMaskCacheKey(hour: number, date?: Date): string {
+  const day = date ? date.toISOString().slice(0, 10) : 'today'
+  return `${quantizeNightMaskHour(hour).toFixed(2)}|${day}`
 }
 
-/** 晨昏线 line-width：顶层 zoom interpolate。
- * zoom 0 时 20px 宽（配合 blur 20px 形成 20px 过渡带——物理正确的晨昏过渡覆盖昼夜两侧）。 */
-function terminatorWidthExpression(): unknown {
-  return ['interpolate', ['linear'], ['zoom'], 0, 20, 2, 12, 4, 7, 8, 3]
-}
+let lastNightMaskKey = ''
 
-/** 晨昏线 line-blur：顶层 zoom interpolate。
- * zoom 0 时 blur 20px——fill 边缘羽化 20px（看起来像"晨昏线过渡"而非"切一半"）。 */
-function terminatorBlurExpression(): unknown {
-  return ['interpolate', ['linear'], ['zoom'], 0, 20, 2, 10, 4, 5, 8, 2]
-}
+function applyNightHemisphereNow(
+  map: MapInstance,
+  globeEnabled: boolean,
+  hour: number,
+  date?: Date,
+): void {
+  removeLegacyNightMaskRaster(map)
 
-/** addLayer 后验证 layer 真的进入 style（MapLibre 表达式校验失败不 throw）。 */
-function ensureNightLayers(map: MapInstance): void {
-  // 夜核 fill（单一多边形，硬边，统一暗度）
-  if (!map.getLayer(NIGHT_CORE_LAYER_ID)) {
-    map.addLayer({
-      id: NIGHT_CORE_LAYER_ID,
-      type: 'fill',
-      source: NIGHT_HEMISPHERE_SOURCE_ID,
-      filter: ['==', ['get', 'hemisphere'], 'night-core'],
-      paint: {
-        'fill-color': '#0a1626',
-        'fill-opacity': nightCoreOpacityExpression() as never,
-        // 之前用 fill-outline-color 同色描边盖 antimeridian 拆分接缝细线；
-        // 完整晨昏圈对齐 antimeridian 后 ring 起终点都在日期变更线上（无接缝），
-        // outline 反而把闭合边（antimeridian 垂直闭合段 + 极线极地伪影）描成
-        // 高纬/南极"毛刺"——移除。接缝无、描边无、毛刺无。
-      },
-      layout: { visibility: 'visible' },
-    } as never)
-    if (!map.getLayer(NIGHT_CORE_LAYER_ID)) {
-      console.warn('[MapCanvas] 夜半球 core 图层创建失败（表达式校验被拒绝）')
+  const applyLayerState = (layer: GlobeNightMaskLayer) => {
+    if (!globeEnabled || globeDaylightMode.value !== 'natural') {
+      layer.setVisible(false)
+      lastNightMaskKey = ''
       return
     }
-  }
-  map.setLayoutProperty(NIGHT_CORE_LAYER_ID, 'visibility', 'visible')
-  map.setPaintProperty(NIGHT_CORE_LAYER_ID, 'fill-opacity', nightCoreOpacityExpression() as never)
-
-  // 晨昏线 line-blur 羽化（宽线高模糊 → 平滑过渡，无条纹）
-  if (!map.getLayer(TERMINATOR_LINE_LAYER_ID)) {
-    map.addLayer({
-      id: TERMINATOR_LINE_LAYER_ID,
-      type: 'line',
-      source: NIGHT_HEMISPHERE_SOURCE_ID,
-      filter: ['==', ['get', 'hemisphere'], 'terminator'],
-      paint: {
-        'line-color': '#0a1626',
-        'line-width': terminatorWidthExpression() as never,
-        'line-blur': terminatorBlurExpression() as never,
-        'line-opacity': 0.5,
-      },
-      layout: { visibility: 'visible', 'line-cap': 'round', 'line-join': 'round' },
-    } as never)
-    if (!map.getLayer(TERMINATOR_LINE_LAYER_ID)) {
-      console.warn('[MapCanvas] 晨昏线 blur 图层创建失败（表达式校验被拒绝）')
-      return
+    const cacheKey = nightMaskCacheKey(hour, date)
+    if (cacheKey !== lastNightMaskKey) {
+      lastNightMaskKey = cacheKey
+      layer.setSunState(quantizeNightMaskHour(hour), date)
+    }
+    layer.setVisible(true)
+    try {
+      map.triggerRepaint()
+    } catch {
+      /* ignore */
     }
   }
-  map.setLayoutProperty(TERMINATOR_LINE_LAYER_ID, 'visibility', 'visible')
-  map.setPaintProperty(TERMINATOR_LINE_LAYER_ID, 'line-width', terminatorWidthExpression() as never)
-  map.setPaintProperty(TERMINATOR_LINE_LAYER_ID, 'line-blur', terminatorBlurExpression() as never)
+
+  const layer = ensureGlobeNightMaskLayerOnMap(map, applyLayerState)
+  applyLayerState(layer)
+}
+
+/** 每帧合并一次更新，避免拖动时间轴时连续 setSunState */
+let nightMaskRaf = 0
+let pendingNightMask: {
+  map: MapInstance
+  globeEnabled: boolean
+  hour: number
+  date?: Date
+} | null = null
+
+function cancelPendingNightMask(): void {
+  if (nightMaskRaf) {
+    cancelAnimationFrame(nightMaskRaf)
+    nightMaskRaf = 0
+  }
+  pendingNightMask = null
 }
 
 function applyNightHemisphere(
@@ -618,130 +601,32 @@ function applyNightHemisphere(
   date?: Date,
 ): void {
   try {
-    // 仅「自然」档显示昼夜遮罩；「标准」固定质感不画；「无」完全不画
     if (!globeEnabled || globeDaylightMode.value !== 'natural') {
-      cancelNightAnimation()
-      for (const layerId of [
-        NIGHT_CORE_LAYER_ID,
-        TERMINATOR_LINE_LAYER_ID,
-        NIGHT_TRANSITION_LAYER_ID,
-        LEGACY_NIGHT_LAYER_ID,
-        TWILIGHT_GLOW_LAYER_ID,
-      ]) {
-        if (map.getLayer(layerId)) {
-          map.setLayoutProperty(layerId, 'visibility', 'none')
-        }
-      }
+      cancelPendingNightMask()
+      applyNightHemisphereNow(map, globeEnabled, hour, date)
       return
     }
-    // 时间轴切换动画：hour 变化时晨昏线平滑旋转（非直接跳变）
-    startNightAnimation(map, hour, date)
+    pendingNightMask = { map, globeEnabled, hour, date }
+    if (nightMaskRaf) return
+    nightMaskRaf = requestAnimationFrame(() => {
+      nightMaskRaf = 0
+      const pending = pendingNightMask
+      pendingNightMask = null
+      if (!pending) return
+      try {
+        applyNightHemisphereNow(
+          pending.map,
+          pending.globeEnabled,
+          pending.hour,
+          pending.date,
+        )
+      } catch (error) {
+        debugLog('[MapCanvas] applyNightHemisphere unavailable', error)
+      }
+    })
   } catch (error) {
     debugLog('[MapCanvas] applyNightHemisphere unavailable', error)
   }
-}
-
-// ─── 夜半球切换动画（晨昏线随时间轴平滑旋转） ────────────────────────────────
-
-/** 动画时长（ms）：拖动时间轴时晨昏线旋转的过渡时间 */
-const NIGHT_ANIM_DURATION = 450
-/** 当前展示的插值小时（动画中间态） */
-let nightAnimCurrentHour: number | null = null
-let nightAnimRaf = 0
-let nightAnimState: { from: number; to: number; start: number; map: MapInstance } | null = null
-
-/** 立即应用夜半球几何（不做动画，动画帧/初次应用共用）。 */
-function applyNightHemisphereImmediate(map: MapInstance, hour: number, date?: Date): void {
-  const data = buildNightHemisphereGeoJSON(hour, date)
-  const source = map.getSource(NIGHT_HEMISPHERE_SOURCE_ID) as
-    | import('maplibre-gl').GeoJSONSource
-    | undefined
-  if (source && 'setData' in source) {
-    source.setData(data as never)
-  } else if (!map.getSource(NIGHT_HEMISPHERE_SOURCE_ID)) {
-    // maxzoom:3 + tolerance:0.8 —— 夜半球是宏观效果（全球/区域视图），
-    // 不需要 z18 默认切片（默认切片 = 数百瓦片，动画每帧重建时 worker
-    // 处理速度 < 帧率 → 任务积压 → 渲染滞后/混乱——用户实测反馈
-    // "上午正常下午完全乱"，下午夜半球跨 antimeridian 切片更多积压更严重）。
-    map.addSource(NIGHT_HEMISPHERE_SOURCE_ID, {
-      type: 'geojson',
-      data: data as never,
-      maxzoom: 3,
-      tolerance: 0.8,
-    } as never)
-  }
-  // 旧版图层残留隐藏（条纹过渡带/单 layer/twilight 历史版本）
-  for (const layerId of [
-    NIGHT_TRANSITION_LAYER_ID,
-    LEGACY_NIGHT_LAYER_ID,
-    TWILIGHT_GLOW_LAYER_ID,
-  ]) {
-    if (map.getLayer(layerId)) {
-      map.setLayoutProperty(layerId, 'visibility', 'none')
-    }
-  }
-  ensureNightLayers(map)
-}
-
-/** 取消进行中的夜半球动画。 */
-function cancelNightAnimation(): void {
-  if (nightAnimRaf) cancelAnimationFrame(nightAnimRaf)
-  nightAnimRaf = 0
-  nightAnimState = null
-}
-
-/**
- * 启动晨昏线旋转动画：从当前插值位置平滑过渡到目标 hour。
- * - 最短路径回绕（23→0 走 +1h 而非 -23h）
- * - 快速连续切换时从当前位置直接续接（不闪烁、不重启动画）
- * - **帧节流 50ms**：MapLibre GeoJSON setData 每帧重建三角剖分+切片，
- *   worker 处理速度 < 60fps 时任务积压 → 渲染滞后/混乱。
- *   450ms / 50ms ≈ 9 帧（人类感知阈值 12fps 上，视觉仍平滑）
- */
-function startNightAnimation(map: MapInstance, targetHour: number, date?: Date): void {
-  const from = nightAnimCurrentHour ?? targetHour
-  // 最短路径：delta ∈ [-12, 12)
-  const delta = (((targetHour - from + 36) % 24) + 24) % 24 - 12
-  const to = from + delta
-  if (Math.abs(delta) < 0.01) {
-    // 无变化：直接应用（初次挂载/相同时刻）
-    cancelNightAnimation()
-    nightAnimCurrentHour = targetHour
-    applyNightHemisphereImmediate(map, targetHour, date)
-    return
-  }
-  cancelNightAnimation()
-  nightAnimState = { from, to, start: performance.now(), map }
-  let lastApplyTime = 0
-  const FRAME_INTERVAL = 50 // ms —— 每帧最小间隔（节流）
-  const step = () => {
-    const st = nightAnimState
-    if (!st) return
-    const now = performance.now()
-    const t = Math.min(1, (now - st.start) / NIGHT_ANIM_DURATION)
-    // smoothstep 缓动（先加速后减速，自然的旋转节奏）
-    const eased = t * t * (3 - 2 * t)
-    const hour = st.from + (st.to - st.from) * eased
-    nightAnimCurrentHour = hour
-    // 节流：帧间隔 < FRAME_INTERVAL 时跳过本次重算（末帧除外，保证最终位置精确）
-    const isFinalFrame = t >= 1
-    if (isFinalFrame || now - lastApplyTime >= FRAME_INTERVAL) {
-      lastApplyTime = now
-      try {
-        applyNightHemisphereImmediate(st.map, hour, date)
-      } catch (error) {
-        debugLog('[MapCanvas] night animation frame failed', error)
-      }
-    }
-    if (t < 1) {
-      nightAnimRaf = requestAnimationFrame(step)
-    } else {
-      nightAnimRaf = 0
-      nightAnimState = null
-      nightAnimCurrentHour = ((targetHour % 24) + 24) % 24
-    }
-  }
-  nightAnimRaf = requestAnimationFrame(step)
 }
 
 // ─── Map init ────────────────────────────────────────────────────────────────
@@ -959,12 +844,12 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   _isUnmounted = true
+  cancelPendingNightMask()
   unsubscribeMapChrome()
   teardownBinder.dispose()
   overlayImageModule = null
   _clearLocationMarker()
   _clearInspectMarker()
-  cancelNightAnimation()
   if (locateErrorTimer) {
     clearTimeout(locateErrorTimer)
     locateErrorTimer = null
@@ -1203,7 +1088,10 @@ async function handleLocateMe() {
   <section
     ref="mapStageRef"
     class="map-stage"
-    :class="stageAppearanceModel.stageClassNames"
+    :class="[
+      stageAppearanceModel.stageClassNames,
+      { 'map-stage--globe-natural': globeProjectionOn && globeDaylightMode === 'natural' },
+    ]"
     :style="stageAppearanceModel.stageStyleVars"
   >
     <!-- 3D globe 深空星图背景层（2D 时淡出；在地图画布之下）

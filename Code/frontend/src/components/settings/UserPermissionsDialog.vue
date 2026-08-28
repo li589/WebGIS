@@ -1,23 +1,13 @@
 <script setup lang="ts">
 /**
- * 用户权限配置对话框（管理员专属）
+ * 用户权限覆盖对话框（管理员专属）
  *
- * 由设置-账户-用户管理列表的"操作"列打开，
- * 用于集中管理某用户的资源权限：
+ * 由设置-账户-用户管理列表的「权限覆盖」按钮打开。
+ * 此处配置的是**用户级覆盖**（优先于主题默认 ACL）：
  *  - 权限模式（开放/白名单）
- *  - 数据图层（layer）显式允许/拒绝
- *  - 数据源（data_source）显式允许/拒绝
- *  - 工作流（workflow）显式允许/拒绝
+ *  - 数据图层 / 数据源 / 工作流 的显式允许/拒绝
  *
- * 仅当 isAdmin 时才允许打开（按钮在前一层已禁用，且后端权限点 require_admin）。
- *
- * 资源 ID 建议列表为"动态优先 + 静态兜底"：
- *  - 打开对话框时优先按需并行 fetch 后端目录（`/layers`、`/provider/workflows`、
- *    `/algorithm/workflows`）拿到全量资源元数据（admin 透明）
- *  - 任一端点失败时回退到模块顶部静态 SUGGESTED_*（保留向后兼容能力）
- *  - 后端 list_layers 端点对 admin 跳过 ACL 过滤，因此 admin 能在权限配置
- *    中看到所有图层（含 standard 用户因黑名单而不可见的层），其他角色
- *    在前一层已被禁用打不开本对话框，不存在越权获取目录的风险。
+ * 主题默认 ACL 请在「主题管理」中配置。
  */
 import { computed, ref, watch } from 'vue'
 import IconButton from '../ui/IconButton.vue'
@@ -38,6 +28,8 @@ interface UserRow {
   username: string
   role: 'admin' | 'standard' | 'demo'
   permission_mode?: string
+  theme_id?: number | null
+  theme_name?: string | null
 }
 
 const props = defineProps<{
@@ -327,10 +319,13 @@ function close() {
       <div class="upd-dialog" role="dialog" aria-modal="true" aria-labelledby="upd-title">
         <header class="upd-header">
           <div>
-            <p class="upd-kicker">用户权限配置</p>
+            <p class="upd-kicker">用户权限覆盖</p>
             <h2 id="upd-title" class="upd-title">
               {{ user?.username }}<span v-if="user?.role === 'admin'" class="upd-tag">管理员</span>
             </h2>
+            <p v-if="user?.theme_name" class="upd-inherit">
+              继承自主题：{{ user.theme_name }}（用户覆盖优先于主题默认 ACL）
+            </p>
           </div>
           <IconButton size="sm" label="关闭" @click="close">
             <template #icon>
@@ -533,6 +528,11 @@ function close() {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+.upd-inherit {
+  margin: 0.35rem 0 0;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
 }
 .upd-tag {
   font-size: 0.7rem;

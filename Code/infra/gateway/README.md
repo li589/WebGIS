@@ -2,17 +2,40 @@
 
 | 剖面 | 对外端口 | 前端 | 后端 |
 |------|----------|------|------|
-| **gateway（默认）** | Nginx `:5175` | 静态 `Code/frontend/dist` | FastAPI `:8000`（Nginx 反代，同路径无 `/api` 前缀） |
-| **vite（开发 HMR）** | Vite `:5175` | `npm run dev` / `launch.py start --vite` | FastAPI `:8000`（Vite path proxy） |
+| **gateway（默认）** | Nginx `:5175` | 静态 `Code/frontend/dist` | FastAPI `:8000`（Nginx 反代） |
+| **gateway + HMR（`--vite`）** | Nginx `:5175` | 反代本机 Vite `:5174`（HMR / WS） | FastAPI `:8000`（Nginx 反代） |
+| **frontend only** | Vite `:5175` | `launch.py start frontend`（直连，停 Gateway） | Vite path proxy → `:8000` |
 
-`start` / `restart`（全量）**默认启 Gateway**；与 Vite 互斥（同端口 5175）。
+`start` / `restart`（全量）**默认启静态 Gateway**；`start --vite` = **同域入口不变**，背后挂 Vite HMR（不再互斥停 Gateway）。
 
 ## 状态
 
 - **默认 `launch.py start` / `restart` 会启动 Nginx Gateway**（需 Docker；Windows 需管理员）。
-- 本地改前端要热更新：`Env\Python312\python.exe launch.py start --vite`（会先停 Gateway）。
-- 仅 Gateway：`launch.py start gateway`（`--rebuild-frontend` 强制 `npm run build`）。
+- 本地前端热更新：`Env\Python312\python.exe launch.py start --vite`（入口仍 `http://localhost:5175`）。
+- 仅静态 Gateway：`launch.py start gateway`（`--rebuild-frontend` 强制 `npm run build`）。
+- 配置热重载：`launch.py reload gateway`（`nginx -t` + `nginx -s reload`，不重建容器）。
 - 停止：`launch.py stop gateway`（或 `launch.py stop` 一并停）。
+
+### 静态剖面缓存契约
+
+- `index.html` / `/`：`Cache-Control: no-store`（rebuild 后浏览器总能拿到新 chunk 引用）。
+- `/assets/*`：content-hash 可 `immutable`；**缺失文件必须真 404**，禁止 SPA `try_files` 回退成 HTML（否则动态 import 报 Failed to fetch module）。
+- 前端 `importLazyChunk` 对 stale chunk 最多硬刷新一次。
+- 联调分层与排障顺序：仓库根 [`Docs/07-工程保障/联调缓存与生效边界.md`](../../../Docs/07-工程保障/联调缓存与生效边界.md)。`launch.py start`/`restart` 默认按矩阵清理本地编译缓存，**永不**自动 `flush`。
+
+### HMR 剖面（手动 compose）
+
+```powershell
+cd Code\infra\gateway
+# 先在本机启动 Vite :5174（VITE_BEHIND_GATEWAY=1）
+docker compose -p gateway -f docker-compose.yml -f docker-compose.hmr.yml up -d --force-recreate
+```
+
+切回静态：
+
+```powershell
+docker compose -p gateway -f docker-compose.yml up -d --force-recreate
+```
 
 ## Windows 注意
 
@@ -64,7 +87,8 @@ docker compose -p gateway down
 | 上传体超限（API XHR 场景） | 413 | JSON `{"detail": …}`（`@json413`，保持前端错误契约） |
 | 上传体超限（浏览器表单直发场景） | 413 | `413.html` |
 | 维护模式开启（仅前台） | 503 | `maintenance.html`（API 反代不受影响） |
-| SPA 深链接刷新 | — | `try_files` 兜底 `index.html` 200 |
+| SPA 深链接刷新 | — | `try_files` 兜底 `index.html` 200（`Cache-Control: no-store`） |
+| 缺失的 Vite `/assets/*`（旧 hash） | 404 | **不**回退 SPA；`immutable` 长缓存（有 hash 才可） |
 
 **设计决策**：API 反代**不开** `proxy_intercept_errors`——应用层错误 JSON（`request_id` / `error_code` / `Retry-After`）原样透传，由前端 `_http.ts` 统一解析；`error_page` 仅接管 nginx 自生错误。注意 `error_page` 不跨级继承，各 location 显式声明完整集合。
 
@@ -98,7 +122,7 @@ snippets/
 
 | 步骤 | 操作 |
 |------|------|
-| 启用 | 创建空文件 `maintenance/on`，再 `docker exec cgda-gateway-nginx nginx -s reload` |
+| 启用 | 创建空文件 `maintenance/on`，再 `launch.py reload gateway`（或 `docker exec cgda-gateway-nginx nginx -s reload`） |
 | 关闭 | 删除 `maintenance/on`，再 reload |
 | 预览 | 访问 `/maintenance.html` |
 

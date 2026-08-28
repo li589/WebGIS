@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  buildNightHemisphereGeoJSON,
   classifyBasemapBrightness,
   daylightFactor,
   resolveGlobeLighting,
@@ -128,7 +127,7 @@ describe('resolveGlobeSky', () => {
   })
 })
 
-describe('subsolarLongitude / subsolarDeclination / buildNightHemisphereGeoJSON（自然晨昏线）', () => {
+describe('subsolarLongitude / subsolarDeclination', () => {
   it('太阳下点经度按本地时区换算：UTC 正午在 0°、北京正午在 120°E、北京午夜在 60°W', () => {
     // UTC（tz=0）：hour=12 → 0°；hour=0 → ±180；hour=18 → 90°W
     expect(subsolarLongitude(12, 0)).toBeCloseTo(0, 5)
@@ -151,135 +150,5 @@ describe('subsolarLongitude / subsolarDeclination / buildNightHemisphereGeoJSON�
     expect(solsticeSummer).toBeLessThanOrEqual(23.45)
     expect(solsticeWinter).toBeLessThan(-20)
     expect(solsticeWinter).toBeGreaterThanOrEqual(-23.45)
-  })
-
-  it('夜半球中心 = 太阳下点 + 180°；昼侧经度不落入夜核（二分日）', () => {
-    // 二分日（Cooper 模型 δ=0，年内第 81 天）：hour=12 UTC → 太阳下点 0°、夜中心 180°
-    const json = buildNightHemisphereGeoJSON(12, new Date(Date.UTC(2026, 2, 22)), 0)
-    expect(json.type).toBe('FeatureCollection')
-    const coreLons = json.features
-      .filter((f) => f.properties.hemisphere === 'night-core')
-      .flatMap((f) => f.geometry.coordinates[0].map((pt) => pt[0]))
-    // 0° 经线（hour=12 UTC 的昼侧中央）不应出现在夜核边界上
-    expect(coreLons.some((lon) => Math.abs(lon) < 1)).toBe(false)
-    // 180° 必在夜核内
-    expect(coreLons.some((lon) => Math.abs(lon) === 180)).toBe(true)
-  })
-
-  it('结构 = night-core 多边形（硬边全暗区）+ terminator linestring（line-blur 羽化载体）', () => {
-    // 非二分日（δ≠0，φc 曲线路径）
-    const json = buildNightHemisphereGeoJSON(6, new Date(Date.UTC(2026, 5, 21)))
-    const cores = json.features.filter((f) => f.properties.hemisphere === 'night-core')
-    const terms = json.features.filter((f) => f.properties.hemisphere === 'terminator')
-    expect(cores.length).toBeGreaterThan(0)
-    expect(terms.length).toBeGreaterThan(0)
-    for (const c of cores) expect(c.geometry.type).toBe('Polygon')
-    for (const t of terms) expect(t.geometry.type).toBe('LineString')
-    // 无过渡带 tier 条纹（用户反馈"好多线"——条纹方案已废弃）
-    expect(json.features.some((f) => 'tier' in f.properties)).toBe(false)
-    // 无 twilight 彩色条带
-    expect(
-      json.features.some((f) => (f.properties as { hemisphere?: string }).hemisphere === 'twilight'),
-    ).toBe(false)
-  })
-
-  it('二分日 terminator 退化为两条经线线段（λn±90），夜核覆盖全纬度', () => {
-    // Cooper 模型 δ=0 的日子：年内第 81 天（2026-03-22）
-    const json = buildNightHemisphereGeoJSON(12, new Date(Date.UTC(2026, 2, 22)), 0)
-    const terms = json.features.filter((f) => f.properties.hemisphere === 'terminator')
-    expect(terms.length).toBe(2)
-    for (const t of terms) {
-      const line = t.geometry.coordinates as number[][]
-      // 经线线段：经度恒定，纬度从 -90 到 90
-      expect(line[0][0]).toBe(line[line.length - 1][0])
-      const lats = line.map((pt) => pt[1])
-      expect(Math.min(...lats)).toBe(-90)
-      expect(Math.max(...lats)).toBe(90)
-    }
-    const termLons = terms.map((t) => (t.geometry.coordinates as number[][])[0][0])
-    expect(Math.abs(Math.abs(termLons[0] - termLons[1]) - 180)).toBeLessThan(1)
-    // 二分日夜核 = 夜侧经度带全纬度（极冠洞 0.5° ×2 = 1° 在赤道两侧，<2px 忽略）
-    const coreLats = json.features
-      .filter((f) => f.properties.hemisphere === 'night-core')
-      .flatMap((f) => f.geometry.coordinates[0].map((pt) => pt[1]))
-    expect(Math.min(...coreLats)).toBe(-89.9)
-    expect(Math.max(...coreLats)).toBe(89.9)
-  })
-
-  it('所有几何坐标在 [-180,180]×[-90,90]，polygon ring 闭合（含 antimeridian 拆分）', () => {
-    for (const hour of [0, 3, 6, 9, 12, 15, 18, 21, 23.5]) {
-      const json = buildNightHemisphereGeoJSON(hour, new Date(Date.UTC(2026, 5, 21)))
-      expect(json.features.length).toBeGreaterThan(0)
-      for (const feature of json.features) {
-        // Polygon: coordinates[0]=ring；LineString: coordinates=点列
-        const pts = (
-          feature.geometry.type === 'Polygon'
-            ? feature.geometry.coordinates[0]
-            : feature.geometry.coordinates
-        ) as number[][]
-        for (const [lon, lat] of pts) {
-          expect(lon).toBeGreaterThanOrEqual(-180)
-          expect(lon).toBeLessThanOrEqual(180)
-          expect(lat).toBeGreaterThanOrEqual(-90)
-          expect(lat).toBeLessThanOrEqual(90)
-        }
-        if (feature.geometry.type === 'Polygon') {
-          const first = pts[0]
-          const last = pts[pts.length - 1]
-          expect(first[0]).toBe(last[0])
-          expect(first[1]).toBe(last[1])
-        }
-      }
-    }
-  })
-
-  it('晨昏线随日期弯曲：夏至夜侧偏南（北半球高纬无夜侧段），冬至相反', () => {
-    // 夏至（δ>0）：夜核边界不触及北纬 66.5° 以上（北极圈极昼）
-    const summer = buildNightHemisphereGeoJSON(12, new Date(Date.UTC(2026, 5, 21)))
-    const summerCoreLats = summer.features
-      .filter((f) => f.properties.hemisphere === 'night-core')
-      .flatMap((f) => f.geometry.coordinates[0].map((pt) => pt[1]))
-    expect(Math.max(...summerCoreLats)).toBeLessThan(66.6)
-
-    // 冬至（δ<0）：夜核边界不触及南纬 66.5° 以下（南极圈极昼）
-    const winter = buildNightHemisphereGeoJSON(12, new Date(Date.UTC(2026, 11, 21)))
-    const winterCoreLats = winter.features
-      .filter((f) => f.properties.hemisphere === 'night-core')
-      .flatMap((f) => f.geometry.coordinates[0].map((pt) => pt[1]))
-    expect(Math.min(...winterCoreLats)).toBeGreaterThan(-66.6)
-  })
-
-  it('terminator 曲线沿晨昏线纬度边界 φc(λ)（非平直）', () => {
-    // 夏至：φc 曲线在夜心经度处达最高纬度（北半球），两侧递减——弯曲形态
-    const json = buildNightHemisphereGeoJSON(12, new Date(Date.UTC(2026, 5, 21)), 0)
-    const terms = json.features.filter((f) => f.properties.hemisphere === 'terminator')
-    const allLats = terms.flatMap((t) => (t.geometry.coordinates as number[][]).map((pt) => pt[1]))
-    const minLat = Math.min(...allLats)
-    const maxLat = Math.max(...allLats)
-    // 曲线有显著纬度变化（弯曲，非直线）
-    expect(maxLat - minLat).toBeGreaterThan(30)
-  })
-})
-
-describe('晨昏线渲染质量（折点/平滑性/采样密度）', () => {
-  it('terminator 采样密度 ≥90 点/180°（1° 步长）且最大转角 <0.15 rad（无折点）', () => {
-    const json = buildNightHemisphereGeoJSON(20, new Date(Date.UTC(2026, 7, 28)), 8)
-    const terms = json.features.filter((f) => f.properties.hemisphere === 'terminator')
-    expect(terms.length).toBeGreaterThan(0)
-    for (const t of terms) {
-      const pts = t.geometry.coordinates as number[][]
-      // 1° 步长：180° 范围 ≥ 90 点
-      expect(pts.length).toBeGreaterThanOrEqual(90)
-      // 相邻线段方向变化角（转角）应极小——折点会表现为局部大转角
-      let maxTurn = 0
-      for (let i = 2; i < pts.length; i++) {
-        const a1 = Math.atan2(pts[i - 1][1] - pts[i - 2][1], pts[i - 1][0] - pts[i - 2][0])
-        const a2 = Math.atan2(pts[i][1] - pts[i - 1][1], pts[i][0] - pts[i - 1][0])
-        let d = Math.abs(a2 - a1)
-        if (d > Math.PI) d = 2 * Math.PI - d
-        maxTurn = Math.max(maxTurn, d)
-      }
-      expect(maxTurn).toBeLessThan(0.15)
-    }
   })
 })

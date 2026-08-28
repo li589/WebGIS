@@ -14,7 +14,8 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, model_validator
 
-from app.api.deps import require_data_transfer_access
+from app.api.deps import get_request_user, require_data_transfer_access
+from app.services.credential_resolver import CredentialContext
 from app.data_io.services import paths as import_paths
 from app.data_io.services.paths import QuotaExceededError
 from app.data_io.services.document import (
@@ -400,16 +401,44 @@ async def upload_discard(upload_id: str) -> dict[str, Any]:
 
 
 @router.get("/import/jobs", dependencies=[Depends(require_data_transfer_access)])
-async def import_jobs_list(limit: int = 20) -> dict[str, Any]:
-    return {"items": list_jobs(limit=limit)}
+async def import_jobs_list(
+    limit: int = 20,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
+    include_all = cred is not None and cred.role == "admin"
+    owner = None if include_all else (int(cred.user_id) if cred and cred.user_id else None)
+    # Non-admin without user_id (service key): empty list (fail-closed)
+    if not include_all and owner is None:
+        return {"items": []}
+    return {
+        "items": list_jobs(
+            limit=limit, owner_user_id=owner, include_all=include_all
+        )
+    }
+
+
+def _deny_job_if_not_owner(job: dict[str, Any], cred: CredentialContext | None) -> None:
+    if cred is not None and cred.role == "admin":
+        return
+    owner = job.get("owner_user_id")
+    if owner is None:
+        # Legacy unscoped jobs: admin-only after isolation
+        raise HTTPException(status_code=403, detail="无权访问该导入任务")
+    if cred is None or cred.user_id is None or int(cred.user_id) != int(owner):
+        raise HTTPException(status_code=403, detail="无权访问该导入任务")
 
 
 @router.get(
     "/import/jobs/{job_id}", dependencies=[Depends(require_data_transfer_access)]
 )
-async def import_job_status(job_id: str) -> dict[str, Any]:
+async def import_job_status(
+    job_id: str,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     try:
-        return get_job(job_id)
+        job = get_job(job_id)
+        _deny_job_if_not_owner(job, cred)
+        return job
     except FileNotFoundError as exc:
         raise _http_err(exc) from exc
 
@@ -417,8 +446,13 @@ async def import_job_status(job_id: str) -> dict[str, Any]:
 @router.post(
     "/import/jobs/{job_id}/cancel", dependencies=[Depends(require_data_transfer_access)]
 )
-async def import_job_cancel(job_id: str) -> dict[str, Any]:
+async def import_job_cancel(
+    job_id: str,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     try:
+        job = get_job(job_id)
+        _deny_job_if_not_owner(job, cred)
         return cancel_job(job_id)
     except FileNotFoundError as exc:
         raise _http_err(exc) from exc
@@ -428,9 +462,13 @@ async def import_job_cancel(job_id: str) -> dict[str, Any]:
     "/import/jobs/{job_id}/download",
     dependencies=[Depends(require_data_transfer_access)],
 )
-async def import_job_download(job_id: str) -> FileResponse:
+async def import_job_download(
+    job_id: str,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> FileResponse:
     try:
         job = get_job(job_id)
+        _deny_job_if_not_owner(job, cred)
     except FileNotFoundError as exc:
         raise _http_err(exc) from exc
     result = job.get("result") or {}

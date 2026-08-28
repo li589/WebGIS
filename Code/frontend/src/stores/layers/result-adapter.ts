@@ -10,6 +10,7 @@ import type { ActiveLayer, ActiveLayerDisplay, RuntimeLayerLibraryItem } from '.
 import { mergeProductTag } from './layer-naming'
 import { asRecord, extractLayerHotspots, formatClockLabel } from './catalog-builders'
 import {
+  extractWorkflowTechLogs,
   localizeWorkflowDiagnostics,
   localizeWorkflowErrorMessage,
 } from '../../utils/workflow-error-messages'
@@ -421,10 +422,18 @@ export async function buildJobLayer(
           typeof item === 'string' &&
           item.trim() &&
           !item.startsWith('validation_') &&
-          !item.startsWith('error_message='),
+          !item.startsWith('error_message=') &&
+          !item.startsWith('reason=') && // 与主 message 重复
+          !item.startsWith('bake_log='),
       ),
     ),
-  ].filter((note, index, arr) => arr.indexOf(note) === index)
+  ].filter((note, index, arr) => {
+    if (!note) return false
+    // 勿与主消息重复
+    if (run.message && note === run.message.trim()) return false
+    return arr.indexOf(note) === index
+  })
+  const techLogs = extractWorkflowTechLogs(rawDiagnostics)
   const previousJobLayer = options.previousJobLayer
   const resultView: WorkflowRunViewResponse | null = shouldFetchWorkflowRunView(run)
     ? await getWorkflowRunView(run.run_id).catch(() => previousJobLayer?.resultView ?? null)
@@ -455,6 +464,7 @@ export async function buildJobLayer(
     // 作为内部字段，不能作为图层库运行条目显示名；优先 catalog 中文名。
     name: !isTechnicalWorkflowEntryName(entryName) && entryName ? entryName : catalogName,
     commandType: run.command_type,
+    commandLabel: run.command_label ?? undefined,
     status,
     progress: run.progress,
     createdAt: run.created_at,
@@ -470,6 +480,7 @@ export async function buildJobLayer(
     mapLayerPayload,
     diagnostics: run.diagnostics ?? [],
     diagnosticNotes,
+    techLogs: techLogs.length ? techLogs : previousJobLayer?.techLogs,
     retryOfRunId:
       typeof run.executor_metadata?.retry_of_run_id === 'string'
         ? run.executor_metadata.retry_of_run_id

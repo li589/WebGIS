@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "note": "Schema-only placeholders; not executed in mock v1.",
+  "tools": [
+    {
+      "name": "search_layers",
+      "description": "Search layer catalog by keyword.",
+      "args": {
+        "type": "object",
+        "required": ["query"],
+        "properties": {
+          "query": { "type": "string" },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 50, "default": 10 }
+        }
+      }
+    },
+    {
+      "name": "run_workflow",
+      "description": "Submit a workflow-run for a catalog layer (requires confirmation).",
+      "args": {
+        "type": "object",
+        "required": ["catalog_id"],
+        "properties": {
+          "catalog_id": { "type": "string" },
+          "params": { "type": "object" }
+        }
+      }
+    }
+  ]
+}

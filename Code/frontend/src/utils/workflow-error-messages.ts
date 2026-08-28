@@ -15,6 +15,35 @@ const ERROR_CODE_MESSAGES: Record<string, string> = {
   transient_failure: '工作流瞬态失败，系统将自动重试。',
 }
 
+const ASSET_STATE_ZH: Record<string, string> = {
+  fresh: '已就绪',
+  stale: '版本陈旧',
+  missing: '缺失',
+  unversioned: '无版本元数据',
+  updating: '更新中',
+}
+
+const COMMAND_TYPE_ZH: Record<string, string> = {
+  analysis: '分析',
+  layer_preview: '图层预览',
+  export: '导出',
+  refresh_data: '刷新数据',
+  sync_demo: '演示同步',
+  custom: '自定义',
+}
+
+/** 状态芯片：优先中文 command_label，避免裸露 custom 等枚举。 */
+export function formatWorkflowCommandChip(
+  commandType: string | null | undefined,
+  commandLabel?: string | null,
+): string {
+  const label = (commandLabel || '').trim()
+  if (label) return label
+  const raw = (commandType || '').trim()
+  if (!raw) return ''
+  return COMMAND_TYPE_ZH[raw] || raw
+}
+
 /** Translate a single diagnostic line (may include error_code= prefix). */
 export function localizeWorkflowDiagnostic(line: string): string {
   const trimmed = line.trim()
@@ -28,6 +57,40 @@ export function localizeWorkflowDiagnostic(line: string): string {
   if (trimmed.startsWith('error_message=')) {
     const raw = trimmed.slice('error_message='.length).trim()
     return localizeWorkflowErrorMessage(raw)
+  }
+
+  if (trimmed.startsWith('asset_state=')) {
+    const key = trimmed.slice('asset_state='.length).trim()
+    return `资产状态：${ASSET_STATE_ZH[key] || key}`
+  }
+  if (trimmed.startsWith('reason=')) {
+    return trimmed.slice('reason='.length).trim()
+  }
+  if (trimmed.startsWith('remaining_stale=')) {
+    const raw = trimmed.slice('remaining_stale='.length).trim()
+    if (!raw || raw === '[]' || raw === 'set()') return ''
+    return `仍陈旧的烘焙任务：${raw}`
+  }
+  if (trimmed.startsWith('returncode=')) {
+    const code = trimmed.slice('returncode='.length).trim()
+    if (code === '0') return ''
+    return `烘焙进程退出码：${code}`
+  }
+  if (trimmed.startsWith('bake_log=')) {
+    return ''
+  }
+  if (trimmed.startsWith('bake_version=')) {
+    return trimmed
+  }
+
+  if (
+    trimmed.includes('Overlay Assets Export Tool') ||
+    (trimmed.includes('====') && (trimmed.includes('[SKIP]') || trimmed.includes('Summary:')))
+  ) {
+    if (/\[SKIP\].*File not found/i.test(trimmed) || /\[SKIP\].*未找到/.test(trimmed)) {
+      return '源数据文件未找到，烘焙已跳过'
+    }
+    return ''
   }
 
   return trimmed
@@ -54,7 +117,33 @@ export function localizeWorkflowErrorMessage(message: string): string {
 
 export function localizeWorkflowDiagnostics(lines: string[] | undefined): string[] {
   if (!lines?.length) return []
-  return lines.map((line) => localizeWorkflowDiagnostic(line)).filter(Boolean)
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const line of lines) {
+    const note = localizeWorkflowDiagnostic(line)
+    if (!note || seen.has(note)) continue
+    seen.add(note)
+    out.push(note)
+  }
+  return out
+}
+
+/** 技术日志（bake_log= / 旧版整段工具输出），供状态面板折叠区使用。 */
+export function extractWorkflowTechLogs(lines: string[] | undefined): string[] {
+  if (!lines?.length) return []
+  const logs: string[] = []
+  for (const line of lines) {
+    const trimmed = (line || '').trim()
+    if (!trimmed) continue
+    if (trimmed.startsWith('bake_log=')) {
+      logs.push(trimmed.slice('bake_log='.length).trim())
+      continue
+    }
+    if (trimmed.includes('Overlay Assets Export Tool') || trimmed.startsWith('====')) {
+      logs.push(trimmed)
+    }
+  }
+  return logs
 }
 
 /** 把提交期 422 issues 拼成状态面板可读文案（通用句 + 字段明细）。 */

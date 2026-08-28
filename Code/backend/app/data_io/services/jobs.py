@@ -7,6 +7,7 @@ import logging
 import threading
 import time
 import uuid
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 from collections.abc import Callable
@@ -17,6 +18,13 @@ logger = logging.getLogger(__name__)
 
 JobHandler = Callable[[dict[str, Any]], dict[str, Any]]
 
+_job_owner_ctx: ContextVar[int | None] = ContextVar("import_job_owner", default=None)
+
+
+def set_import_job_owner(user_id: int | None) -> None:
+    """Stamp the current request's user onto newly created import jobs."""
+    _job_owner_ctx.set(user_id)
+
 
 def _job_path(job_id: str) -> Path:
     ensure_imports_root()
@@ -25,9 +33,12 @@ def _job_path(job_id: str) -> Path:
     return safe.with_name(safe.name + ".json")
 
 
-def create_job(*, kind: str, payload: dict[str, Any]) -> str:
+def create_job(
+    *, kind: str, payload: dict[str, Any], owner_user_id: int | None = None
+) -> str:
     ensure_imports_root()
     job_id = f"job-{uuid.uuid4().hex[:16]}"
+    owner = owner_user_id if owner_user_id is not None else _job_owner_ctx.get()
     record = {
         "job_id": job_id,
         "kind": kind,
@@ -37,6 +48,7 @@ def create_job(*, kind: str, payload: dict[str, Any]) -> str:
         "payload": payload,
         "result": None,
         "error": None,
+        "owner_user_id": owner,
         "created_at": time.time(),
         "updated_at": time.time(),
     }
@@ -71,7 +83,15 @@ def get_job(job_id: str) -> dict[str, Any]:
     return record
 
 
-def list_jobs(*, limit: int = 20) -> list[dict[str, Any]]:
+def list_jobs(
+    *, limit: int = 20, owner_user_id: int | None = None, include_all: bool = False
+) -> list[dict[str, Any]]:
+    """List recent jobs.
+
+    When ``include_all`` is False and ``owner_user_id`` is set, only jobs owned
+    by that user (or legacy jobs without owner) are returned. Admin callers
+    should pass ``include_all=True``.
+    """
     ensure_imports_root()
     items: list[dict[str, Any]] = []
     for path in sorted(
@@ -81,6 +101,11 @@ def list_jobs(*, limit: int = 20) -> list[dict[str, Any]]:
             record = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
+        if not include_all and owner_user_id is not None:
+            job_owner = record.get("owner_user_id")
+            # Legacy jobs without owner: hide from non-owner lists (fail-closed)
+            if job_owner is None or int(job_owner) != int(owner_user_id):
+                continue
         items.append(
             {
                 "job_id": record.get("job_id"),
@@ -90,6 +115,7 @@ def list_jobs(*, limit: int = 20) -> list[dict[str, Any]]:
                 "message": record.get("message"),
                 "error": record.get("error"),
                 "created_at": record.get("created_at"),
+                "owner_user_id": record.get("owner_user_id"),
             }
         )
         if len(items) >= max(1, min(limit, 100)):
@@ -149,12 +175,13 @@ def enqueue_job(
     handler: JobHandler | None = None,
     *,
     force_async: bool = False,
+    owner_user_id: int | None = None,
 ) -> dict[str, Any]:
     """创建任务：优先 Celery；不可用则线程或同步执行。
 
     ``handler`` 仅同步路径需要；异步走 Celery ``_dispatch(kind, payload)``。
     """
-    job_id = create_job(kind=kind, payload=payload)
+    job_id = create_job(kind=kind, payload=payload, owner_user_id=owner_user_id)
 
     def _run() -> None:
         if handler is None:

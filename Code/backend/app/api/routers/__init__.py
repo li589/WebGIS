@@ -25,6 +25,7 @@ from app.data_io.api.router import router as data_io_router
 from app.api.routers.analysis_router import router as analysis_router
 from app.api.routers.zonal_stats_router import router as zonal_stats_router
 from app.api.routers.workspace_router import router as workspace_router
+from app.api.routers.agent_router import router as agent_router
 
 __all__ = [
     "health_router",
@@ -41,4 +42,5 @@ __all__ = [
     "analysis_router",
     "zonal_stats_router",
     "workspace_router",
+    "agent_router",
 ]

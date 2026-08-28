@@ -12,6 +12,12 @@
 import { ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
+import {
+  readScopedItem,
+  removeScopedItem,
+  writeScopedItem,
+} from '../services/user-local-isolation'
+
 export type DrawMode = 'polygon' | 'rectangle' | 'line'
 
 /** 绘制工具栏在地图舞台（.map-stage）内的几何（px，供属性表联动定位） */
@@ -45,7 +51,7 @@ interface DrawDraft {
 
 function saveDraftToStorage(draft: DrawDraft): void {
   try {
-    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft))
+    writeScopedItem(DRAFT_STORAGE_KEY, JSON.stringify(draft))
   } catch {
     /* quota exceeded, ignore */
   }
@@ -53,7 +59,7 @@ function saveDraftToStorage(draft: DrawDraft): void {
 
 function loadDraftFromStorage(): DrawDraft | null {
   try {
-    const raw = localStorage.getItem(DRAFT_STORAGE_KEY)
+    const raw = readScopedItem(DRAFT_STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as DrawDraft
     if (parsed.version !== 1) return null
@@ -65,7 +71,7 @@ function loadDraftFromStorage(): DrawDraft | null {
 
 function clearDraftStorage(): void {
   try {
-    localStorage.removeItem(DRAFT_STORAGE_KEY)
+    removeScopedItem(DRAFT_STORAGE_KEY)
   } catch {
     /* ignore */
   }

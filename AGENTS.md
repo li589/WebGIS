@@ -23,7 +23,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | `Env/Python312/` | **本地联调唯一 Python 运行时**（Windows: `python.exe`） | 依赖与后端/Worker 必须与此一致 |
 | `launch.py` | 跨平台一键启动器（自动切换到 Env/Python312） | — |
 
-后端路由入口：`app/api/routers/__init__.py` 注册各域 router（health / layer / workflow / runtime / weather / algorithm / provider / artifact / import）；瓦片另走 `app/api/tile_routes.py`（底图 `/unified-tiles`）与 `app/api/weather_tile_routes.py`（天气 `/weather/tiles`）；配置写操作走 `app/api/config_routes.py`。
+后端路由入口：`app/api/routers/__init__.py` 注册各域 router（health / layer / workflow / runtime / weather / algorithm / provider / artifact / import / **agent**）；瓦片另走 `app/api/tile_routes.py`（底图 `/unified-tiles`）与 `app/api/weather_tile_routes.py`（天气 `/weather/tiles`）；配置写操作走 `app/api/config_routes.py`。地图助手多配置档见 `Docs/07-工程保障/agent-profiles.md`。
 
 ## Python 环境（硬约定）
 
@@ -39,7 +39,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 - **Docker Desktop 与运行启动命令的终端必须以管理员身份运行。**
 - **否则启动可能会失败**（Docker 未就绪、compose 失败、镜像/volume 访问异常等）。
 - 否则还可能出现：**镜像无法访问/拉取**、named volume 或引擎配置读失败、部分容器起不全。
-- 默认联调/演示入口为 **Nginx Gateway** `:5175`（静态 `Code/frontend/dist` + 反代 API）；与 Vite HMR 互斥。本地改前端热更新用 `launch.py start --vite` 或 `start frontend`。
+- 默认联调/演示入口为 **Nginx Gateway** `:5175`（静态 `Code/frontend/dist` + 反代 API）。本地前端 HMR：`launch.py start --vite`（入口仍 `:5175`，背后 Vite `:5174`）；无 Docker 仅改前端可用 `start frontend`（直连 Vite，会停 Gateway）。
 
 ## 命令指针（launch.py）
 
@@ -48,7 +48,8 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | 命令 | 作用 |
 |------|------|
 | `start.bat` 或 `Env\Python312\python.exe launch.py start` | 启动全部（Docker + FastAPI + 7 Worker + Beat + **Nginx Gateway**） |
-| `Env\Python312\python.exe launch.py start --vite` | 同上，但前台改用 Vite HMR（会停 Gateway） |
+| `Env\Python312\python.exe launch.py start --vite` | 同上，Gateway 同域 + 背后 Vite HMR（入口仍 `:5175`，Vite `:5174`） |
+| `Env\Python312\python.exe launch.py reload gateway` | Nginx 配置热重载（`nginx -t` + `nginx -s reload`，不重建容器） |
 | `Env\Python312\python.exe launch.py start <component>` | 单组件：`docker` / `fastapi` / `beat` / `worker` / `worker:<name>` / `frontend` / `gateway` / `backend` |
 | `Env\Python312\python.exe launch.py start gateway` | 仅 Nginx 同域入口 `:5175`（`--rebuild-frontend` 可强制 rebuild dist） |
 | `Env\Python312\python.exe launch.py restart` | 全量重启（**默认含 Gateway**）；改前端后建议加 `--rebuild-frontend` |
@@ -57,12 +58,14 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | `… launch.py stop gateway` | 仅停 Nginx Gateway |
 | `… launch.py status` | 查看服务状态（Docker / FastAPI :8000 / 前端 :5175 / Gateway / Worker PID / volume） |
 | `… launch.py logs [component] [-n N]` | 查看日志 |
-| `… launch.py flush` | 清空 Redis DB + 应用天气文件缓存（**见高风险区**） |
-| `… launch.py clean-cache` | 清理 `__pycache__` / `*.pyc` 与 Vite `node_modules/.vite`（**不**碰 Redis；代码更新后推荐） |
-| `… launch.py start\|restart --clean-cache` | 启动/重启前先执行 `clean-cache` |
+| `… launch.py flush` | 清空 Redis DB + 应用天气文件缓存（**见高风险区**；**永不**由 start/restart 自动执行） |
+| `… launch.py clean-cache` | 手动清理 `__pycache__` / `.pyc` 与 Vite `.vite`（**不**碰 Redis） |
+| `… launch.py start\|restart` | **默认**按组件矩阵自动 clean；`--no-clean-cache` 跳过；`--clean-cache` 强制全清本地编译缓存 |
 | `… launch.py sync [job]` | 数据面一次性同步（默认 `open-meteo-sync`） |
 
-服务地址：FastAPI `http://127.0.0.1:8000`（docs `/docs`）、前端入口 `http://localhost:5175`（默认 Nginx Gateway；`--vite` 时为 Vite）、Open-Meteo API `http://127.0.0.1:8080`、Redis `:6379`、MinIO `:9100`（Console `:9101`）。
+服务地址：FastAPI `http://127.0.0.1:8000`（docs `/docs`）、前端入口 `http://localhost:5175`（默认 Nginx Gateway 静态；`--vite` 时同域 HMR）、Open-Meteo API `http://127.0.0.1:8080`、Redis `:6379`、MinIO `:9100`（Console `:9101`）。
+
+联调缓存分层与排障：`Docs/07-工程保障/联调缓存与生效边界.md`。
 
 ## 高风险区
 
@@ -74,7 +77,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 
 3. **GEE / 共享加密主密钥**：`BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY` 须为 **64 hex chars（32-byte）**，启动时校验；同一把 key 加密 GEE SA、API keys、天气 provider、远程存储、门户凭据。非 development 缺 key 拒启；空 IV 明文行在生产拒绝解密。GEE API 账号管理 production 默认关闭。涉及 `/config/gee/accounts*` 与 `/gee/config`。
 
-4. **flush（清缓存）**：`Env\Python312\python.exe launch.py flush` 执行 Redis `FLUSHDB` + 删除 `Code/backend/.data/cache/weather` 与 `weatherengine` 目录。会清空队列、缓存与限流/断路器状态，影响在线服务；**不**删 Open-Meteo Docker volume。仅在排障或强制刷新天气缓存时使用，勿在正常联调中随意执行。代码更新 / 模块导入怪错 / Vite 插件异常请用 **`launch.py clean-cache`**（只清本地 `__pycache__` 与 Vite `.vite`），再 `restart`；两者勿混用。
+4. **flush（清缓存）**：`Env\Python312\python.exe launch.py flush` 执行 Redis `FLUSHDB` + 删除 `Code/backend/.data/cache/weather` 与 `weatherengine` 目录。会清空队列、缓存与限流/断路器状态，影响在线服务；**不**删 Open-Meteo Docker volume。仅在排障或强制刷新天气缓存时使用，勿在正常联调中随意执行。**start/restart 永不自动 flush**。代码更新请依赖默认矩阵 clean 或手动 `clean-cache`；两者勿混用。详见 `Docs/07-工程保障/联调缓存与生效边界.md`。
 
 5. **Open-Meteo volume**：named volume `backend_open-meteo-data`（名可经 `Code/infra/data-sync/.env` 的 `OPEN_METEO_DATA_VOLUME` 覆盖），落在 Docker Desktop VHDX 内（`I:\Docker\DockerDesktop`）。**勿用 Windows 路径 bind mount** 替代。API 在 backend 运行栈（容器 `cgda-open-meteo`）；同步在 `Code/infra/data-sync`（`-p data-sync`）。两栈共享同一 volume 但 compose project 不同，改动 compose 时勿混用 project 名。
 

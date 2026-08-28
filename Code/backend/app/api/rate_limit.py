@@ -298,6 +298,29 @@ def check_feedback_upload_rate_limit(ip: str) -> RateLimitResult:
     return result
 
 
+# Agent chat：独立滑动窗口（默认 30/分钟/IP），与写接口限流键分离。
+_agent_chat_limiter = RateLimiter(
+    int(os.getenv("BACKEND_AGENT_CHAT_RATE_LIMIT_PER_MINUTE", "30")),
+    timedelta(minutes=1),
+    name="agent_chat",
+)
+
+
+def should_rate_limit_agent_chat(path: str, method: str) -> bool:
+    return method == "POST" and (path == "/agent/chat" or path.startswith("/agent/chat/"))
+
+
+def check_agent_chat_rate_limit(ip: str) -> RateLimitResult:
+    result = _agent_chat_limiter.check(ip)
+    if not result.allowed:
+        logger.warning(
+            "Agent chat 限流触发 ip=%s retry_after=%ss",
+            ip,
+            result.retry_after_seconds,
+        )
+    return result
+
+
 def rate_limited_response(
     retry_after_seconds: int,
     *,

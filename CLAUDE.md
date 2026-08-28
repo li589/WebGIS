@@ -13,12 +13,14 @@
 ## 常用命令
 
 - 全栈启动：`Env\Python312\python.exe launch.py start`（默认含 Nginx Gateway）
-- Vite HMR：`… launch.py start --vite`
+- Vite HMR（同域）：`… launch.py start --vite`（入口 `:5175`，背后 Vite `:5174`）
+- 网关配置热重载：`… launch.py reload gateway`
 - 单组件：`… launch.py start <docker|fastapi|beat|worker|worker:<name>|frontend|gateway|backend>`
 - 仅重启后端进程组（改数据根后）：`… launch.py restart backend`
 - 状态/日志：`… launch.py status` / `logs [component] [-n N]`
 - 数据同步：`… launch.py sync [job]`
-- 清缓存（仅排障）：`… launch.py flush`（高风险，清 Redis + 天气缓存）
+- 清业务缓存（仅排障）：`… launch.py flush`（高风险，清 Redis + 天气缓存；**不会**由 start/restart 自动执行）
+- 本地编译缓存：`start`/`restart` **默认**按组件矩阵清理；`--no-clean-cache` 跳过；手册 `Docs/07-工程保障/联调缓存与生效边界.md`
 - 后端单测：`cd Code/backend && pytest tests/<对应用例> -q`（需 `REDIS_URL` + `ENVIRONMENT=test`）
 - 前端：`cd Code/frontend && npm run test && npm run lint && npm run build`
 - 契约：`cd Code/frontend && npm run check:openapi`

@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "intents": [
+    {
+      "name": "set_layer_visibility",
+      "description": "Show or hide a map layer by catalog_id.",
+      "args": {
+        "type": "object",
+        "required": ["catalog_id", "visible"],
+        "properties": {
+          "catalog_id": { "type": "string" },
+          "visible": { "type": "boolean" }
+        }
+      }
+    },
+    {
+      "name": "set_layer_opacity",
+      "description": "Set layer opacity (0..1) by catalog_id.",
+      "args": {
+        "type": "object",
+        "required": ["catalog_id", "opacity"],
+        "properties": {
+          "catalog_id": { "type": "string" },
+          "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    {
+      "name": "fit_layer",
+      "description": "Fit map viewport to a layer extent.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "catalog_id": { "type": "string" },
+          "instance_id": { "type": "string" }
+        },
+        "anyOf": [{ "required": ["catalog_id"] }, { "required": ["instance_id"] }]
+      }
+    },
+    {
+      "name": "list_active_layers",
+      "description": "Ask client to describe active layers (reply uses client_context).",
+      "args": { "type": "object", "properties": {} }
+    }
+  ]
+}

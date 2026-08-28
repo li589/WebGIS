@@ -27,6 +27,7 @@ import {
 import type { BoundingBox, LayerDescriptor, WorkflowEvent } from '../../services/runtime-api'
 import { useWorkflowOutputLayersStore } from '../workflow-output-layers'
 import { useLogStore } from '../log'
+import { readScopedItem, writeScopedItem } from '../../services/user-local-isolation'
 import { buildJobLayer } from './result-adapter'
 import { forgetDismissedLayer, isRunDismissed } from './workspace-persist'
 import { getCatalogDisplayName, isTerminalStatus } from './catalog-builders'
@@ -180,7 +181,7 @@ export interface TrackedWorkflowRun {
 export function loadTrackedWorkflowRuns(): TrackedWorkflowRun[] {
   if (typeof window === 'undefined') return []
   try {
-    const raw = window.localStorage.getItem(TRACKED_RUNS_STORAGE_KEY)
+    const raw = readScopedItem(TRACKED_RUNS_STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
@@ -196,7 +197,7 @@ export function loadTrackedWorkflowRuns(): TrackedWorkflowRun[] {
         : item,
     )
     if (migrated.some((item, i) => item.catalogId !== runs[i].catalogId)) {
-      window.localStorage.setItem(TRACKED_RUNS_STORAGE_KEY, JSON.stringify(migrated))
+      writeScopedItem(TRACKED_RUNS_STORAGE_KEY, JSON.stringify(migrated))
     }
     return migrated
   } catch {
@@ -208,7 +209,7 @@ export function saveTrackedWorkflowRuns(runs: TrackedWorkflowRun[]) {
   if (typeof window === 'undefined') return
   try {
     // Keep recent 40 entries
-    window.localStorage.setItem(TRACKED_RUNS_STORAGE_KEY, JSON.stringify(runs.slice(0, 40)))
+    writeScopedItem(TRACKED_RUNS_STORAGE_KEY, JSON.stringify(runs.slice(0, 40)))
   } catch {
     // ignore quota errors
   }

@@ -229,6 +229,14 @@ def require_data_transfer_access(
     """数据上传/下载权限：admin + standard 无限制；demo 受全局开关管控。"""
     ctx = resolve_credential(request, x_api_key)
     if ctx is not None and can_data_transfer(ctx):
+        try:
+            from app.data_io.services.jobs import set_import_job_owner
+
+            set_import_job_owner(
+                int(ctx.user_id) if ctx.user_id is not None else None
+            )
+        except Exception:
+            logger.debug("set_import_job_owner failed", exc_info=True)
         return
     if ctx is not None and ctx.role == "demo":
         raise ApiError(

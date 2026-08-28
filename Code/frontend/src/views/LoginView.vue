@@ -21,8 +21,13 @@ const submitting = ref(false)
 const retrying = ref(false)
 
 const devHint = computed(() => (import.meta.env.DEV ? auth.config?.dev_prefill : null))
+const brandAbbr = computed(() => auth.resolvedBrand.abbr || BRAND.abbr)
+const brandShort = computed(() => auth.resolvedBrand.shortName || BRAND.shortName)
+const brandEn = computed(() => auth.resolvedBrand.displayNameEn || BRAND.displayNameEn)
+const brandLogo = computed(() => auth.resolvedBrand.logoUrl)
 
 onMounted(() => {
+  void auth.loadPrimaryTheme()
   if (devHint.value) {
     username.value = devHint.value.username
     password.value = devHint.value.password
@@ -187,13 +192,14 @@ async function submit() {
     <div class="login-card">
       <div class="brand-block">
         <div class="brand-mark" aria-hidden="true">
-          <BrandMark :size="56" />
+          <img v-if="brandLogo" class="brand-logo-img" :src="brandLogo" alt="" />
+          <BrandMark v-else :size="56" />
           <span class="mark-ring-outer"></span>
         </div>
-        <p class="brand-abbr">{{ BRAND.abbr }}</p>
+        <p class="brand-abbr">{{ brandAbbr }}</p>
         <div class="brand-names">
-          <h1>{{ BRAND.shortName }}</h1>
-          <span class="brand-name-en">{{ BRAND.displayNameEn }}</span>
+          <h1>{{ brandShort }}</h1>
+          <span class="brand-name-en">{{ brandEn }}</span>
         </div>
       </div>
       <div class="brand-divider" aria-hidden="true"></div>

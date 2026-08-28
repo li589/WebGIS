@@ -10,6 +10,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const apiTarget = env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+  const behindGateway = ['1', 'true', 'yes', 'on'].includes(
+    (env.VITE_BEHIND_GATEWAY || process.env.VITE_BEHIND_GATEWAY || '')
+      .trim()
+      .toLowerCase(),
+  )
+  const gatewayPort = Number(env.VITE_GATEWAY_PORT || process.env.VITE_GATEWAY_PORT || 5175)
+  const hideOverlay = ['1', 'true', 'yes', 'on'].includes(
+    (env.VITE_HIDE_ERROR_OVERLAY || '').trim().toLowerCase(),
+  )
+
   const config = {
     plugins: [vue()],
     resolve: {
@@ -20,11 +30,23 @@ export default defineConfig(({ mode }) => {
     server: {
       // 机构演示/临时排障：设 VITE_HIDE_ERROR_OVERLAY=1 关闭红屏叠加层，避免把源码片段打到屏幕上。
       // 日常本地开发默认保持 overlay，便于立刻看到编译/运行错误。
-      hmr: {
-        overlay: !['1', 'true', 'yes', 'on'].includes(
-          (env.VITE_HIDE_ERROR_OVERLAY || '').trim().toLowerCase(),
-        ),
-      },
+      // Gateway HMR：浏览器连 :5175，Vite 本机 :5174；HMR WS 经网关回连。
+      ...(behindGateway
+        ? {
+            strictPort: true,
+            origin: `http://localhost:${gatewayPort}`,
+          }
+        : {}),
+      hmr: behindGateway
+        ? {
+            protocol: 'ws' as const,
+            host: 'localhost',
+            clientPort: gatewayPort,
+            overlay: !hideOverlay,
+          }
+        : {
+            overlay: !hideOverlay,
+          },
       fs: {
         // 允许加载仓库根下的 Test/frontend/（测试已迁出 src/）。
         allow: [path.resolve(__dirname, '../..')],
@@ -34,6 +56,7 @@ export default defineConfig(({ mode }) => {
         // 注意：前端 runtime-api.ts 中所有请求路径均无 /api 前缀，
         // 因此 proxy 改为拦截实际使用的路径（与 runtime-api.ts 保持一致）。
         // /api 例外：remote browser（/api/remote/*）在 remote_browser_router 挂载。
+        // Gateway HMR 剖面下 API 由 Nginx 优先反代；此处保留以便直连 :5174 排障。
         '/api': { target: apiTarget, changeOrigin: true },
         '/workflow-runs': { target: apiTarget, changeOrigin: true },
         '/workflow-definitions': { target: apiTarget, changeOrigin: true },
@@ -69,11 +92,12 @@ export default defineConfig(({ mode }) => {
         '/auth': { target: apiTarget, changeOrigin: true },
         '/workspace': { target: apiTarget, changeOrigin: true },
         '/analysis': { target: apiTarget, changeOrigin: true },
+        '/agent': { target: apiTarget, changeOrigin: true },
         // 问题反馈 API（与网关 /feedback/api/* 同路径；静态反馈页仅在 gateway 剖面）
         '/feedback/api': { target: apiTarget, changeOrigin: true },
         '/health': { target: apiTarget, changeOrigin: true },
       },
-      allowedHosts: ['geoflow.cgdas.dpdns.org'],
+      allowedHosts: ['geoflow.cgdas.dpdns.org', 'localhost', '127.0.0.1'],
     },
     build: {
       // MapLibre is large even when isolated, so raise the warning threshold

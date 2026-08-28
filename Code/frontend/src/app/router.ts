@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import { useAuthStore } from '../stores/auth'
+import { importLazyChunk } from '../utils/lazy-chunk'
 import { safeRedirect } from './safe-redirect'
 import { EXTRA_ROUTES, NOT_FOUND_ROUTE, SPA_ROUTES } from './route-paths'
 
@@ -8,8 +9,8 @@ export { safeRedirect }
 
 /** SPA 业务路由 → 视图组件（懒加载）。未列出的路由名回退 Dashboard。 */
 const ROUTE_VIEWS: Record<string, () => Promise<typeof import('../views/DashboardView.vue')>> = {
-  dashboard: () => import('../views/DashboardView.vue'),
-  'deployment-config': () => import('../views/DeploymentConfigView.vue'),
+  dashboard: () => importLazyChunk(() => import('../views/DashboardView.vue')),
+  'deployment-config': () => importLazyChunk(() => import('../views/DeploymentConfigView.vue')),
 }
 
 /** 路由级 meta（当前仅 requiresAdmin：UX 层守卫，后端 API 才是安全边界）。 */
@@ -23,7 +24,7 @@ export const router = createRouter({
     {
       path: EXTRA_ROUTES[0].path, // /login
       name: EXTRA_ROUTES[0].name,
-      component: () => import('../views/LoginView.vue'),
+      component: () => importLazyChunk(() => import('../views/LoginView.vue')),
       meta: { public: true },
     },
     // SPA 业务路由由 route-paths.ts 单一真源驱动：新增页面只需登记 SPA_ROUTES，
@@ -31,13 +32,15 @@ export const router = createRouter({
     ...SPA_ROUTES.map((route) => ({
       path: route.path,
       name: route.name,
-      component: ROUTE_VIEWS[route.name] ?? (() => import('../views/DashboardView.vue')),
+      component:
+        ROUTE_VIEWS[route.name] ??
+        (() => importLazyChunk(() => import('../views/DashboardView.vue'))),
       meta: ROUTE_META[route.name],
     })),
     {
       path: NOT_FOUND_ROUTE.path, // /:pathMatch(.*)*
       name: NOT_FOUND_ROUTE.name,
-      component: () => import('../views/NotFoundView.vue'),
+      component: () => importLazyChunk(() => import('../views/NotFoundView.vue')),
     },
   ],
 })

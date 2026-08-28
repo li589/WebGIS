@@ -28,6 +28,14 @@
   flex: none;
 }
 
+.brand-logo-img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  border-radius: 6px;
+  flex: none;
+}
+
 /* 品牌 Logo 由 BrandMark.vue 组件渲染（自带深空底与辉光） */
 
 .brand-copy {

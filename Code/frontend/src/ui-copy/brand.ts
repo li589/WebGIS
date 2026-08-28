@@ -1,12 +1,13 @@
 /**
  * 产品品牌文案 — 与 About / 工具栏 / 登录页保持同一套；可用 VITE_BRAND_* 构建期白标覆盖。
+ * 登录后可被用户绑定主题的运行时字段覆盖（见 auth store activeTheme）。
  *
  * ── 品牌沿革 ──────────────────────────────────────────────────────────────
  * 2026-08 验收更名：由「综合地理态势分析系统」（代号 CGDA/CGDAS）更名为
- * 「星地融合土壤水分监测与干旱预警系统」。
+ * 「星地融合土壤水分监测与干旱预警数据分析与可视化系统」。
  *   - 浏览器标签栏（document.title）：中文全称
  *   - 界面显示：以「星地融合土壤数据平台」+ 英文缩写 SGFS 为主
- *   - 英文显示名：Star-Ground Fusion Soil Data Platform
+ *   - 英文显示名：Satellite-Ground Fusion Soil Data Platform
  *
  * 回退方案：将 BRAND 各字段恢复为下方 LEGACY_BRAND 的取值即可（favicon 与
  * 登录页视觉需同步换回 git 历史中 public/favicon.svg 的 CGDA 版本）。
@@ -23,9 +24,12 @@ export const BRAND = {
   /** 工具栏/登录页短标题（界面主显示名） */
   shortName: envTrim('VITE_BRAND_SHORT_NAME') ?? '星地融合土壤数据平台',
   /** About / 浏览器标签栏中文全称 */
-  fullName: envTrim('VITE_BRAND_FULL_NAME') ?? '星地融合土壤水分监测与干旱预警系统',
+  fullName:
+    envTrim('VITE_BRAND_FULL_NAME') ??
+    '星地融合土壤水分监测与干旱预警数据分析与可视化系统',
   /** 英文显示名 */
-  displayNameEn: envTrim('VITE_BRAND_DISPLAY_NAME_EN') ?? 'Star-Ground Fusion Soil Data Platform',
+  displayNameEn:
+    envTrim('VITE_BRAND_DISPLAY_NAME_EN') ?? 'Satellite-Ground Fusion Soil Data Platform',
   /** 英文缩写（界面主标识，替代旧技术代号） */
   abbr: envTrim('VITE_BRAND_ABBR') ?? 'SGFS',
   /** 眉题（缩写展示，弱化） */

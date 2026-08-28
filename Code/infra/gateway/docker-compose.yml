@@ -4,13 +4,15 @@
 #   - 静态：Code/frontend/dist
 #   - 反代：宿主机 FastAPI 127.0.0.1:8000（容器内 host.docker.internal:8000）
 #
-# 与日常 Vite 开发互斥（同端口 5175）。
-# 默认 launch.py start / restart 会启动 Gateway；本地 HMR 用 start --vite。
+# 与日常 Vite 开发：``launch.py start --vite`` = Gateway :5175 + 背后 Vite :5174（HMR）。
+# 默认静态 dist；仅 ``start frontend`` 仍直连 Vite 独占端口。
 #
 # Windows: Docker Desktop 与终端须管理员身份运行。
 #
 # 启动:
 #   Env\Python312\python.exe launch.py start gateway
+#   Env\Python312\python.exe launch.py start --vite
+#   Env\Python312\python.exe launch.py reload gateway
 # 停止:
 #   Env\Python312\python.exe launch.py stop gateway
 #   或随 launch.py stop 一并停止

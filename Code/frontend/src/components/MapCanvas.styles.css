@@ -149,6 +149,19 @@
   opacity: 0.9;
 }
 
+/* 「自然」档：屏幕空间大气辉光圆会与地理夜半球边界叠成"几个圈在动"，仅保留地理遮罩 */
+.map-shell--3d .map-stage--globe-natural .map-fog {
+  opacity: 0;
+}
+
+.map-shell--3d .map-stage--globe-natural.map-stage {
+  background: linear-gradient(180deg, #07141f 0%, #091d2b 56%, #04101b 100%);
+}
+
+:root[data-theme='light'] .map-shell--3d .map-stage--globe-natural.map-stage {
+  background: linear-gradient(180deg, #e7edf4 0%, #d6dfeb 56%, #c5d1e0 100%);
+}
+
 :root[data-theme='light'] .map-shell--3d .map-fog {
   background:
     radial-gradient(ellipse at 50% 48%, transparent 32%, rgba(110, 150, 195, 0.08) 70%, rgba(150, 185, 220, 0.18) 100%),

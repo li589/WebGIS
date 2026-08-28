@@ -12,6 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers import (
+    agent_router,
     algorithm_router,
     analysis_router,
     artifact_router,
@@ -254,12 +255,14 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def write_rate_limit_middleware(request: Request, call_next):
         from app.api.rate_limit import (
+            check_agent_chat_rate_limit,
             check_feedback_upload_rate_limit,
             check_login_rate_limit,
             check_weather_tile_rate_limit,
             check_write_rate_limit,
             client_ip,
             rate_limited_response,
+            should_rate_limit_agent_chat,
             should_rate_limit_feedback_upload,
             should_rate_limit_login,
             should_rate_limit_weather_tile,
@@ -307,6 +310,14 @@ def create_app() -> FastAPI:
                     return rate_limited_response(
                         result.retry_after_seconds,
                         message="反馈上传过于频繁，请稍后再试。",
+                        request_id=request_id,
+                    )
+            if should_rate_limit_agent_chat(path, method):
+                result = check_agent_chat_rate_limit(client_ip(request))
+                if not result.allowed:
+                    return rate_limited_response(
+                        result.retry_after_seconds,
+                        message="Agent 对话过于频繁，请稍后再试。",
                         request_id=request_id,
                     )
         return await call_next(request)
@@ -422,6 +433,7 @@ def create_app() -> FastAPI:
     app.include_router(cleanup_router)
     app.include_router(zonal_stats_router)
     app.include_router(workspace_router)
+    app.include_router(agent_router)
 
     # 挂载 GEE engine router，使 /gee/* 路由正式接入 FastAPI
     # 路由前缀已在 create_gee_router 内部定义为 /gee

@@ -5,6 +5,11 @@
 import type { ActiveLayer, ActiveRunLayerGroup } from './types'
 import type { ImportedRasterPayload } from './imported-raster'
 import type { ImportedVectorPayload } from './imported-vector'
+import {
+  readScopedItem,
+  removeScopedItem,
+  writeScopedItem,
+} from '../../services/user-local-isolation'
 
 const STORAGE_KEY = 'geo:active-layers-workspace:v1'
 const DISMISSED_STORAGE_KEY = 'geo:dismissed-layers:v1'
@@ -102,7 +107,7 @@ function pushUnique(list: string[], value: string | undefined | null) {
 export function loadDismissedLayers(): DismissedLayersRegistry {
   if (typeof window === 'undefined') return emptyDismissed()
   try {
-    const raw = window.localStorage.getItem(DISMISSED_STORAGE_KEY)
+    const raw = readScopedItem(DISMISSED_STORAGE_KEY)
     if (!raw) return emptyDismissed()
     const parsed = JSON.parse(raw) as Partial<DismissedLayersRegistry>
     return {
@@ -127,7 +132,7 @@ export function loadDismissedLayers(): DismissedLayersRegistry {
 function saveDismissedLayers(registry: DismissedLayersRegistry): void {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.setItem(DISMISSED_STORAGE_KEY, JSON.stringify(registry))
+    writeScopedItem(DISMISSED_STORAGE_KEY, JSON.stringify(registry))
   } catch {
     /* quota / private mode */
   }
@@ -365,7 +370,7 @@ export function buildWorkspaceSnapshot(
 export function saveWorkspaceSnapshot(snapshot: WorkspaceSnapshot): void {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))
+    writeScopedItem(STORAGE_KEY, JSON.stringify(snapshot))
   } catch {
     /* quota / private mode */
   }
@@ -374,7 +379,7 @@ export function saveWorkspaceSnapshot(snapshot: WorkspaceSnapshot): void {
 export function loadWorkspaceSnapshot(): WorkspaceSnapshot | null {
   if (typeof window === 'undefined') return null
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
+    const raw = readScopedItem(STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as WorkspaceSnapshot
     if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.layers)) return null
@@ -418,7 +423,7 @@ function migrateSnapshot(snapshot: WorkspaceSnapshot): WorkspaceSnapshot {
 export function clearWorkspaceSnapshot(): void {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.removeItem(STORAGE_KEY)
+    removeScopedItem(STORAGE_KEY)
   } catch {
     /* ignore */
   }

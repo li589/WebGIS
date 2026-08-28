@@ -112,7 +112,96 @@ def _read_asset_state(layer_id: str) -> dict[str, Any]:
     return state
 
 
-def _new_run_id(layer_id: str) -> str:
+def _asset_state_zh(state: str | None) -> str:
+    mapping = {
+        "fresh": "已就绪",
+        "stale": "版本陈旧",
+        "missing": "缺失",
+        "unversioned": "无版本元数据",
+        "updating": "更新中",
+    }
+    key = (state or "").strip()
+    return mapping.get(key, key or "未知")
+
+
+def _summarize_bake_tool_output(stdout: str, stderr: str) -> tuple[str | None, list[str]]:
+    """从烘焙工具输出提取用户可读原因与短要点（不含整段日志）。"""
+    text = f"{stdout or ''}\n{stderr or ''}"
+    notes: list[str] = []
+    skip_missing = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if "[SKIP]" in line and ("File not found" in line or "未找到" in line):
+            skip_missing = True
+            # 「=== CMFD Precipitation === [SKIP] File not found」
+            label = line
+            for token in ("===", "[SKIP]", "File not found"):
+                label = label.replace(token, " ")
+            label = " ".join(label.split()).strip(" -:")
+            notes.append(
+                f"源数据文件未找到，已跳过烘焙"
+                + (f"（{label}）" if label else "")
+            )
+        elif line.startswith("Summary:") and "FAIL" in line.upper():
+            notes.append(f"烘焙汇总：{line[len('Summary:'):].strip()}")
+    reason: str | None = None
+    if skip_missing:
+        reason = "源数据文件缺失，未能生成叠加图资产"
+    return reason, notes[:4]
+
+
+def _format_bake_failure_message(
+    *,
+    asset_state: dict[str, Any],
+    returncode: int,
+    stdout: str,
+    stderr: str,
+    remaining_stale: list[str],
+) -> tuple[str, list[str]]:
+    """返回 (主消息, UI 诊断要点)。完整日志单独放入 bake_log= 键。"""
+    state_key = str(asset_state.get("asset_state") or "unknown")
+    state_zh = _asset_state_zh(state_key)
+    tool_reason, tool_notes = _summarize_bake_tool_output(stdout, stderr)
+
+    if returncode != 0:
+        message = tool_reason or f"图层资产烘焙进程失败（退出码 {returncode}）"
+    elif tool_reason:
+        message = f"{tool_reason}（当前资产：{state_zh}）"
+    elif remaining_stale:
+        message = (
+            f"烘焙后仍有陈旧任务：{', '.join(remaining_stale[:5])}"
+            f"（当前资产：{state_zh}）"
+        )
+    elif state_key == "missing":
+        message = "图层叠加图资产仍缺失，请检查数据源路径与烘焙配置。"
+    elif state_key == "stale":
+        message = (
+            f"图层资产版本仍陈旧"
+            f"（bake_version={asset_state.get('bake_version')}，"
+            f"需要≥{asset_state.get('current_bake_version')}）。"
+        )
+    elif state_key == "unversioned":
+        message = "叠加图存在但缺少 bake_version 元数据，请重新烘焙。"
+    else:
+        message = f"图层资产未就绪（当前状态：{state_zh}）。"
+
+    diagnostics: list[str] = [
+        f"asset_state={state_key}",
+        f"reason={message}",
+        *tool_notes,
+    ]
+    if remaining_stale:
+        diagnostics.append(f"remaining_stale={remaining_stale}")
+    if returncode != 0:
+        diagnostics.append(f"returncode={returncode}")
+    # 完整工具输出仅作排障附件，前端默认折叠/过滤
+    log_tail = ((stdout or "") + ("\n" + stderr if stderr else ""))[-1200:].strip()
+    if log_tail:
+        diagnostics.append(f"bake_log={log_tail}")
+    return message, diagnostics
+
     safe = "".join(ch if ch.isalnum() else "-" for ch in layer_id.lower())[:24]
     return f"asset-bake-{safe}-{uuid.uuid4().hex[:8]}"
 
@@ -416,18 +505,21 @@ class OverlayAssetWorkflowService:
         state = _read_asset_state(layer_id)
         stale = sorted(_find_stale_bake_tasks())
         ok = result.returncode == 0 and state["asset_state"] == "fresh"
-        message = (
-            f"图层资产已更新（bake_version={state['bake_version']}）。"
-            if ok
-            else "图层资产烘焙未完成或仍被标记为陈旧。"
-        )
+        if ok:
+            message = f"图层资产已更新（bake_version={state['bake_version']}）。"
+            diagnostics = [
+                f"asset_state={state['asset_state']}",
+                f"bake_version={state['bake_version']}",
+            ]
+        else:
+            message, diagnostics = _format_bake_failure_message(
+                asset_state=state,
+                returncode=int(result.returncode),
+                stdout=result.stdout or "",
+                stderr=result.stderr or "",
+                remaining_stale=list(stale),
+            )
         final_status = ExecutionStatus.succeeded if ok else ExecutionStatus.failed
-        diagnostics = [
-            f"returncode={result.returncode}",
-            f"remaining_stale={stale}",
-            (result.stdout or "")[-1200:],
-            (result.stderr or "")[-1200:],
-        ]
         self._repository.save_run(
             _status_payload(
                 run_id=run_id,

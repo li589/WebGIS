@@ -212,6 +212,98 @@ export interface paths {
         patch: operations["update_permission_mode_auth_users__user_id__permission_mode_patch"];
         trace?: never;
     };
+    "/auth/themes/primary/public": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Primary Theme Public */
+        get: operations["get_primary_theme_public_auth_themes_primary_public_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/themes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Themes */
+        get: operations["list_themes_auth_themes_get"];
+        put?: never;
+        /** Create Theme */
+        post: operations["create_theme_auth_themes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/themes/{theme_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Theme */
+        delete: operations["delete_theme_auth_themes__theme_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Theme */
+        patch: operations["update_theme_auth_themes__theme_id__patch"];
+        trace?: never;
+    };
+    "/auth/themes/{theme_id}/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Theme Permissions */
+        get: operations["list_theme_permissions_auth_themes__theme_id__permissions_get"];
+        /** Set Theme Permissions */
+        put: operations["set_theme_permissions_auth_themes__theme_id__permissions_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/themes/{theme_id}/logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Theme Logo
+         * @description Serve theme logo (public — login page may need primary logo without session).
+         */
+        get: operations["get_theme_logo_auth_themes__theme_id__logo_get"];
+        put?: never;
+        /** Upload Theme Logo */
+        post: operations["upload_theme_logo_auth_themes__theme_id__logo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/feedback/api/reports": {
         parameters: {
             query?: never;
@@ -4098,6 +4190,130 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Agent Config */
+        get: operations["get_agent_config_agent_config_get"];
+        /** Put Agent Config Legacy */
+        put: operations["put_agent_config_legacy_agent_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/config/profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Agent Profile */
+        post: operations["create_agent_profile_agent_config_profiles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/config/profiles/{profile_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Agent Profile */
+        put: operations["update_agent_profile_agent_config_profiles__profile_id__put"];
+        post?: never;
+        /** Delete Agent Profile */
+        delete: operations["delete_agent_profile_agent_config_profiles__profile_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/config/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Active Agent Profile */
+        post: operations["set_active_agent_profile_agent_config_active_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/config/use-global": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Use Global Agent Profile
+         * @description Clear personal active so chat falls back to global active.
+         */
+        post: operations["use_global_agent_profile_agent_config_use_global_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/models/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Agent Models */
+        post: operations["refresh_agent_models_agent_models_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Agent Chat */
+        post: operations["agent_chat_agent_chat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/gee/workflows:validate": {
         parameters: {
             query?: never;
@@ -4211,6 +4427,310 @@ export interface components {
             name: string;
             /** Description */
             description: string;
+        };
+        /** AgentActiveRequest */
+        AgentActiveRequest: {
+            /** Profile Id */
+            profile_id: string;
+            /**
+             * Scope
+             * @default personal
+             * @enum {string}
+             */
+            scope: "global" | "personal";
+        };
+        /** AgentChatRequest */
+        AgentChatRequest: {
+            /** Message */
+            message: string;
+            /** Session Id */
+            session_id?: string | null;
+            /** Client Context */
+            client_context?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** AgentChatResponse */
+        AgentChatResponse: {
+            /** Session Id */
+            session_id: string;
+            /** Reply */
+            reply: string;
+            /** Ui Intents */
+            ui_intents?: components["schemas"]["AgentUiIntent"][];
+            /**
+             * Provider
+             * @default demo
+             */
+            provider: string;
+            /** Profile Id */
+            profile_id?: string | null;
+            usage?: components["schemas"]["AgentTokenUsage"] | null;
+            /** Steps */
+            steps?: components["schemas"]["AgentStep"][];
+        };
+        /** AgentConfigBundleResponse */
+        AgentConfigBundleResponse: {
+            /** Active Profile Id */
+            active_profile_id: string;
+            /**
+             * Active Scope
+             * @default global
+             * @enum {string}
+             */
+            active_scope: "global" | "personal";
+            /**
+             * Can Manage Global
+             * @default false
+             */
+            can_manage_global: boolean;
+            /**
+             * Can Manage Personal
+             * @default false
+             */
+            can_manage_personal: boolean;
+            /** Profiles */
+            profiles?: components["schemas"]["AgentProfilePublic"][];
+            /** Presets */
+            presets?: components["schemas"]["AgentPresetPublic"][];
+        };
+        /** AgentConfigResponse */
+        AgentConfigResponse: {
+            /**
+             * Provider
+             * @default mock
+             * @enum {string}
+             */
+            provider: "mock" | "ollama" | "openai_compatible";
+            /**
+             * Base Url
+             * @default http://127.0.0.1:11434/v1
+             */
+            base_url: string;
+            /**
+             * Model
+             * @default qwen2.5
+             */
+            model: string;
+            /**
+             * Has Api Key
+             * @default false
+             */
+            has_api_key: boolean;
+        };
+        /** AgentConfigUpdateRequest */
+        AgentConfigUpdateRequest: {
+            /** Provider */
+            provider?: ("mock" | "ollama" | "openai_compatible") | null;
+            /** Base Url */
+            base_url?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Api Key */
+            api_key?: string | null;
+            /**
+             * Clear Api Key
+             * @default false
+             */
+            clear_api_key: boolean;
+        };
+        /** AgentModelsRefreshRequest */
+        AgentModelsRefreshRequest: {
+            /** Profile Id */
+            profile_id?: string | null;
+            /** Scope */
+            scope?: ("global" | "personal") | null;
+        };
+        /** AgentModelsRefreshResponse */
+        AgentModelsRefreshResponse: {
+            /** Profile Id */
+            profile_id: string;
+            /** Models */
+            models?: string[];
+            /**
+             * Manual
+             * @default false
+             */
+            manual: boolean;
+            /** Error */
+            error?: string | null;
+        };
+        /** AgentPresetPublic */
+        AgentPresetPublic: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Provider Kind */
+            provider_kind: string;
+            /**
+             * Protocol
+             * @enum {string}
+             */
+            protocol: "openai" | "anthropic" | "demo";
+            /**
+             * Base Url
+             * @default
+             */
+            base_url: string;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /**
+             * Context Window Input
+             * @default 8192
+             */
+            context_window_input: number;
+            /**
+             * Context Window Output
+             * @default 4096
+             */
+            context_window_output: number;
+            /**
+             * Needs Api Key
+             * @default true
+             */
+            needs_api_key: boolean;
+        };
+        /** AgentProfileCreateRequest */
+        AgentProfileCreateRequest: {
+            /** Preset Id */
+            preset_id: string;
+            /** Name */
+            name?: string | null;
+            /**
+             * Scope
+             * @default personal
+             * @enum {string}
+             */
+            scope: "global" | "personal";
+        };
+        /** AgentProfilePublic */
+        AgentProfilePublic: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Provider Kind */
+            provider_kind: string;
+            /**
+             * Protocol
+             * @enum {string}
+             */
+            protocol: "openai" | "anthropic" | "demo";
+            /**
+             * Base Url
+             * @default
+             */
+            base_url: string;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /**
+             * Context Window Input
+             * @default 8192
+             */
+            context_window_input: number;
+            /**
+             * Context Window Output
+             * @default 4096
+             */
+            context_window_output: number;
+            /** Preset Id */
+            preset_id?: string | null;
+            /**
+             * Scope
+             * @default global
+             * @enum {string}
+             */
+            scope: "global" | "personal";
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Has Api Key
+             * @default false
+             */
+            has_api_key: boolean;
+        };
+        /** AgentProfileUpdateRequest */
+        AgentProfileUpdateRequest: {
+            /**
+             * Scope
+             * @default personal
+             * @enum {string}
+             */
+            scope: "global" | "personal";
+            /** Name */
+            name?: string | null;
+            /** Protocol */
+            protocol?: ("openai" | "anthropic" | "demo") | null;
+            /** Base Url */
+            base_url?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Context Window Input */
+            context_window_input?: number | null;
+            /** Context Window Output */
+            context_window_output?: number | null;
+            /** Api Key */
+            api_key?: string | null;
+            /**
+             * Clear Api Key
+             * @default false
+             */
+            clear_api_key: boolean;
+        };
+        /** AgentStep */
+        AgentStep: {
+            /**
+             * Type
+             * @default thought
+             * @enum {string}
+             */
+            type: "thought" | "tool" | "tool_result";
+            /** Summary */
+            summary: string;
+            /** Detail */
+            detail?: string | null;
+        };
+        /** AgentTokenUsage */
+        AgentTokenUsage: {
+            /**
+             * Prompt Tokens
+             * @default 0
+             */
+            prompt_tokens: number;
+            /**
+             * Completion Tokens
+             * @default 0
+             */
+            completion_tokens: number;
+            /**
+             * Total Tokens
+             * @default 0
+             */
+            total_tokens: number;
+            /**
+             * Estimated
+             * @default false
+             */
+            estimated: boolean;
+        };
+        /** AgentUiIntent */
+        AgentUiIntent: {
+            /** Name */
+            name: string;
+            /** Args */
+            args?: {
+                [key: string]: unknown;
+            };
         };
         /** AlgorithmOutputSpec */
         AlgorithmOutputSpec: {
@@ -4659,6 +5179,14 @@ export interface components {
              */
             file: string;
         };
+        /** Body_upload_theme_logo_auth_themes__theme_id__logo_post */
+        Body_upload_theme_logo_auth_themes__theme_id__logo_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+        };
         /** BoundingBox */
         BoundingBox: {
             /** West */
@@ -4805,6 +5333,35 @@ export interface components {
              */
             lat_offset: number;
         };
+        /** CreateThemeRequest */
+        CreateThemeRequest: {
+            /** Slug */
+            slug: string;
+            /** Name Zh */
+            name_zh: string;
+            /** Full Name Zh */
+            full_name_zh: string;
+            /** Name En */
+            name_en: string;
+            /** Abbr */
+            abbr: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Default Permission Mode
+             * @default open
+             * @enum {string}
+             */
+            default_permission_mode: "open" | "whitelist";
+            /**
+             * Is Primary
+             * @default false
+             */
+            is_primary: boolean;
+        };
         /** CreateTokenRequest */
         CreateTokenRequest: {
             /** Label */
@@ -4824,6 +5381,8 @@ export interface components {
              * @enum {string}
              */
             role: "admin" | "standard" | "demo";
+            /** Theme Id */
+            theme_id?: number | null;
         };
         /** DataCacheEntry */
         DataCacheEntry: {
@@ -8220,6 +8779,80 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** ThemePermissionRecord */
+        ThemePermissionRecord: {
+            /** Id */
+            id: number;
+            /** Theme Id */
+            theme_id: number;
+            /** Resource Type */
+            resource_type: string;
+            /** Resource Id */
+            resource_id: string;
+            /** Permission */
+            permission: string;
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
+        };
+        /** ThemePublic */
+        ThemePublic: {
+            /** Id */
+            id: number;
+            /** Slug */
+            slug: string;
+            /** Name Zh */
+            name_zh: string;
+            /** Full Name Zh */
+            full_name_zh: string;
+            /** Name En */
+            name_en: string;
+            /** Abbr */
+            abbr: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Logo Url */
+            logo_url?: string | null;
+            /**
+             * Default Permission Mode
+             * @default open
+             */
+            default_permission_mode: string;
+            /**
+             * Is Primary
+             * @default false
+             */
+            is_primary: boolean;
+        };
+        /**
+         * ThemePublicBrand
+         * @description Unauthenticated primary-theme branding for the login page.
+         */
+        ThemePublicBrand: {
+            /** Id */
+            id: number;
+            /** Slug */
+            slug: string;
+            /** Name Zh */
+            name_zh: string;
+            /** Full Name Zh */
+            full_name_zh: string;
+            /** Name En */
+            name_en: string;
+            /** Abbr */
+            abbr: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Logo Url */
+            logo_url?: string | null;
+        };
         /** TileProviderInfo */
         TileProviderInfo: {
             /** Id */
@@ -8334,6 +8967,23 @@ export interface components {
              */
             lat_offset: number;
         };
+        /** UpdateThemeRequest */
+        UpdateThemeRequest: {
+            /** Name Zh */
+            name_zh?: string | null;
+            /** Full Name Zh */
+            full_name_zh?: string | null;
+            /** Name En */
+            name_en?: string | null;
+            /** Abbr */
+            abbr?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Default Permission Mode */
+            default_permission_mode?: ("open" | "whitelist") | null;
+            /** Is Primary */
+            is_primary?: boolean | null;
+        };
         /** UpdateUserRequest */
         UpdateUserRequest: {
             /** Password */
@@ -8342,6 +8992,8 @@ export interface components {
             role?: ("admin" | "standard" | "demo") | null;
             /** Enabled */
             enabled?: boolean | null;
+            /** Theme Id */
+            theme_id?: number | null;
         };
         /** UploadCompleteBody */
         UploadCompleteBody: {
@@ -8395,6 +9047,9 @@ export interface components {
              * @default open
              */
             permission_mode: string;
+            /** Theme Id */
+            theme_id?: number | null;
+            theme?: components["schemas"]["ThemePublic"] | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -9984,6 +10639,275 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_primary_theme_public_auth_themes_primary_public_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemePublicBrand"];
+                };
+            };
+        };
+    };
+    list_themes_auth_themes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemePublic"][];
+                };
+            };
+        };
+    };
+    create_theme_auth_themes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateThemeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_theme_auth_themes__theme_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                theme_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_theme_auth_themes__theme_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                theme_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateThemeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_theme_permissions_auth_themes__theme_id__permissions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                theme_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemePermissionRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_theme_permissions_auth_themes__theme_id__permissions_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                theme_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPermissionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemePermissionRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_theme_logo_auth_themes__theme_id__logo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                theme_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_theme_logo_auth_themes__theme_id__logo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                theme_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_theme_logo_auth_themes__theme_id__logo_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemePublic"];
                 };
             };
             /** @description Validation Error */
@@ -16774,6 +17698,279 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    get_agent_config_agent_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentConfigBundleResponse"];
+                };
+            };
+        };
+    };
+    put_agent_config_legacy_agent_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentConfigUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_agent_profile_agent_config_profiles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentProfileCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfilePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_agent_profile_agent_config_profiles__profile_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentProfileUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfilePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_agent_profile_agent_config_profiles__profile_id__delete: {
+        parameters: {
+            query?: {
+                scope?: "global" | "personal";
+            };
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentConfigBundleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_active_agent_profile_agent_config_active_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentActiveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentConfigBundleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    use_global_agent_profile_agent_config_use_global_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentConfigBundleResponse"];
+                };
+            };
+        };
+    };
+    refresh_agent_models_agent_models_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentModelsRefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentModelsRefreshResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_chat_agent_chat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentChatRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentChatResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

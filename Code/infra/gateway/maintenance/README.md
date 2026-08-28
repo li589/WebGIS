@@ -152,4 +152,4 @@ nginx 在 `location ^~ /feedback/` 内嵌套 `location ^~ /feedback/api/` 反代
 
 ## 与 Vite 开发剖面
 
-日常 `launch.py start` / `restart` **默认走 Gateway**。本地 HMR：`launch.py start --vite`（会停 Gateway）。若在 Vite 下不想看到红屏源码叠加层，可设 `VITE_HIDE_ERROR_OVERLAY=1`。
+日常 `launch.py start` / `restart` **默认走静态 Gateway**。本地 HMR：`launch.py start --vite`（入口仍 `:5175`，背后 Vite `:5174`）。配置热重载：`launch.py reload gateway`。若不想看到红屏源码叠加层，可设 `VITE_HIDE_ERROR_OVERLAY=1`。

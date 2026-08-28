@@ -27,6 +27,7 @@ _UPDATABLE_COLUMNS = frozenset(
         "enabled",
         "max_concurrent_workflows",
         "permission_mode",
+        "theme_id",
     }
 )
 
@@ -115,6 +116,10 @@ class UserRepository:
                 "CREATE INDEX IF NOT EXISTS idx_permissions_user_type "
                 "ON user_resource_permissions(user_id, resource_type)"
             )
+            try:
+                conn.execute("ALTER TABLE users ADD COLUMN theme_id INTEGER")
+            except sqlite3.OperationalError:
+                pass
             conn.commit()
 
     def close(self) -> None:
@@ -141,7 +146,8 @@ class UserRepository:
     def list_users(self) -> list[dict[str, Any]]:
         with self._pool.connection() as conn:
             rows = conn.execute(
-                "SELECT id, username, role, enabled, created_at, updated_at "
+                "SELECT id, username, role, enabled, created_at, updated_at, "
+                "permission_mode, theme_id "
                 "FROM users ORDER BY id ASC"
             ).fetchall()
         return [dict(r) for r in rows]
@@ -168,22 +174,54 @@ class UserRepository:
         username: str,
         password: str,
         role: UserRole = "standard",
+        theme_id: int | None = None,
     ) -> dict[str, Any]:
         name = username.strip()
         if not name:
             raise ValueError("username is required")
         if role not in VALID_ROLES:
             raise ValueError(f"invalid role: {role}")
+        resolved_theme_id = theme_id
+        permission_mode = "open"
+        if resolved_theme_id is None:
+            try:
+                from app.services.theme_repository import get_theme_repository
+
+                primary = get_theme_repository().get_primary()
+                resolved_theme_id = primary.id
+                permission_mode = primary.default_permission_mode
+            except Exception:
+                resolved_theme_id = None
+        else:
+            try:
+                from app.services.theme_repository import get_theme_repository
+
+                theme = get_theme_repository().get_by_id(resolved_theme_id)
+                if theme is not None:
+                    permission_mode = theme.default_permission_mode
+            except Exception:
+                pass
         now = datetime.now(UTC).isoformat()
         pwd_hash = hash_password(password)
         with self._pool.connection() as conn:
             try:
                 cur = conn.execute(
                     """
-                    INSERT INTO users (username, password_hash, role, enabled, created_at, updated_at)
-                    VALUES (?, ?, ?, 1, ?, ?)
+                    INSERT INTO users (
+                        username, password_hash, role, enabled,
+                        created_at, updated_at, theme_id, permission_mode
+                    )
+                    VALUES (?, ?, ?, 1, ?, ?, ?, ?)
                     """,
-                    (name, pwd_hash, role, now, now),
+                    (
+                        name,
+                        pwd_hash,
+                        role,
+                        now,
+                        now,
+                        resolved_theme_id,
+                        permission_mode,
+                    ),
                 )
             except sqlite3.IntegrityError as exc:
                 raise ValueError("username already exists") from exc
@@ -202,6 +240,7 @@ class UserRepository:
         enabled: bool | None = None,
         max_concurrent_workflows: int | None = None,
         permission_mode: str | None = None,
+        theme_id: int | None = None,
     ) -> dict[str, Any] | None:
         user = self.get_by_id(user_id)
         if not user:
@@ -226,6 +265,9 @@ class UserRepository:
         if permission_mode is not None:
             fields.append("permission_mode=?")
             params.append(permission_mode)
+        if theme_id is not None:
+            fields.append("theme_id=?")
+            params.append(theme_id)
         # 注入防线：拼接的列名必须全部在白名单内（见模块级 _UPDATABLE_COLUMNS），
         # 用显式检查而非 assert，避免 python -O 下失效。
         if not set(fields) <= {f"{c}=?" for c in _UPDATABLE_COLUMNS}:

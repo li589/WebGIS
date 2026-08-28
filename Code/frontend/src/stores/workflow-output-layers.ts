@@ -9,6 +9,8 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 
+import { readScopedItem, writeScopedItem } from '../services/user-local-isolation'
+
 /** 工作流产出图层在图层面板中的二级分类（research-group 子类） */
 export const WORKFLOW_OUTPUT_SUBCATEGORY = '模型输出' as const
 
@@ -38,7 +40,7 @@ const STORAGE_KEY = 'geo:workflow-output-layers:v1'
 function loadFromStorage(): WorkflowOutputLayerEntry[] {
   if (typeof window === 'undefined') return []
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
+    const raw = readScopedItem(STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
@@ -58,7 +60,7 @@ function loadFromStorage(): WorkflowOutputLayerEntry[] {
 function saveToStorage(entries: WorkflowOutputLayerEntry[]) {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(entries))
+    writeScopedItem(STORAGE_KEY, JSON.stringify(entries))
   } catch {
     // localStorage 满或不可用时静默降级
   }

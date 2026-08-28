@@ -2,8 +2,7 @@
  * Globe 3D 场景参数解析（纯函数，可单测）。
  *
  * 目标：按「底图亮度 + 用户光影档位」解析 MapLibre light/sky 参数。
- * 核心问题：亮色底图（街道/矢量/地形）在太阳直射下会过曝发白；
- * 影像/暗色底图则更需要高对比来体现球面立体感。
+ * 「自然」档昼夜分界见 globe-night-mask.ts（光栅遮罩，非本文件）。
  */
 import type { BasemapStyle } from '../../services/api-config'
 import type { GlobeDaylightMode } from '../../services/settings-local'
@@ -54,8 +53,6 @@ export interface GlobeSkyParams {
  * hour 是**本地时间轴小时**（如中国 UTC+8 的 12:00 = UTC 04:00），
  * 必须先换算 UTC 再按下点公式：utcHour = hour - tzOffset，
  * subsolarLon = (12 - utcHour) × 15°。
- * 北京时间正午（hour=12, tz=+8）：太阳下点 120°E（杭州附近）✓
- * tzOffsetHours 缺省取运行环境本地时区（浏览器/Node）。
  */
 export function subsolarLongitude(hour: number, tzOffsetHours?: number): number {
   const tz = tzOffsetHours ?? -new Date().getTimezoneOffset() / 60
@@ -65,8 +62,6 @@ export function subsolarLongitude(hour: number, tzOffsetHours?: number): number 
 
 /**
  * 太阳赤纬（度），Cooper 近似：δ = 23.45° × sin(360° × (284 + n) / 365)。
- * n = 年内第几天。精度约 ±1°，对晨昏线视觉完全足够。
- * date 缺省时取当前日期。
  */
 export function subsolarDeclination(date?: Date): number {
   const d = date ?? new Date()
@@ -75,230 +70,12 @@ export function subsolarDeclination(date?: Date): number {
   return 23.45 * Math.sin(((360 * (284 + dayOfYear)) / 365) * (Math.PI / 180))
 }
 
-export interface NightHemisphereGeoJSON {
-  type: 'FeatureCollection'
-  features: Array<{
-    type: 'Feature'
-    properties: { hemisphere: 'night-core' | 'terminator' }
-    geometry:
-      | { type: 'Polygon'; coordinates: number[][][] }
-      | { type: 'LineString'; coordinates: number[][] }
-  }>
-}
-
-/**
- * 晨昏线纬度边界（真实球面几何，不是经度矩形）：
- * 点 (φ, λ) 位于晨昏线上 ⟺ 太阳高度角 h = 0：
- *   cosφ·cosδ·cos(λ-λs) + sinφ·sinδ = 0
- * 解出边界纬度（δ≠0 时）：
- *   φc(λ) = atan(-cosδ·cos(λ-λs) / sinδ)
- * δ>0（北夏）：夜侧 = φ < φc(λ)（南极极夜、北极极昼自然出现）
- * δ<0（北冬）：夜侧 = φ > φc(λ)
- * δ=0（二分日）：退化为经度跨度 180° 的矩形带（φc 恒 0）
- */
-function terminatorLatitude(lonDeg: number, subsolarLon: number, declDeg: number): number {
-  if (Math.abs(declDeg) < 0.5) return 0
-  const declRad = (declDeg * Math.PI) / 180
-  const hourRad = ((lonDeg - subsolarLon) * Math.PI) / 180
-  const ratio = (-Math.cos(declRad) * Math.cos(hourRad)) / Math.sin(declRad)
-  return (Math.atan(ratio) * 180) / Math.PI
-}
-
-/**
- * 生成夜半球经纬度几何（真实太空观感的"自然"晨昏样式）：
- *
- * - **弯曲晨昏线**：按太阳赤纬精确求解晨昏线纬度边界 φc(λ)，
- *   极昼/极夜随日期自然出现（NASA Blue Marble 式球面形态）
- * - **夜侧均匀暗化**：单一 night-core 多边形（h<0 全暗区，硬边），
- *   明暗分界清晰可辨
- * - **line-blur 羽化过渡**：晨昏线 terminator 用 MapLibre 原生
- *   line-blur 宽线渲染（向两侧像素级羽化扩散），彻底取代多档
- *   条纹方案（档边界在渲染下可见、用户反馈"好多线"）
- * - antimeridian 拆分：多边形/线都沿 ±180° 切割成合法几何
- */
-export function buildNightHemisphereGeoJSON(
-  hour: number,
-  date?: Date,
-  tzOffsetHours?: number,
-): NightHemisphereGeoJSON {
-  const subsolarLon = subsolarLongitude(hour, tzOffsetHours)
-  const decl = subsolarDeclination(date)
-  const nightCenter = subsolarLon + 180
-  const southNight = decl >= 0 // δ≥0：夜侧偏南；δ<0：夜侧偏北
-
-  const LON_STEP = 1 // 晨昏线经度采样步长（1°：消除折点，高 zoom 下曲线平滑圆润）
-  const features: NightHemisphereGeoJSON['features'] = []
-
-  /** 归一化经度到 [-180, 180) */
-  const normLon = (lon: number) => ((lon + 540) % 360) - 180
-
-  /**
-   * 构造夜核多边形（全暗区）—— **单 ring + 固定相位 + 极圈内缩**。
-   *
-   * 关键教训（按时间顺序）：
-   * 1) 极线段两点顶点重合在**极点**（±90）：globe 投影产生跨背面三角形 →
-   *    南极视口整球变纯色 / 阴影 / 圆圈。修：poleLat 内缩（不接触极点）。
-   * 2) 不能用 360 梯形带（每块独立 fill）：相邻梯形共享经线边 = 各自 fill 边缘
-   *    抗锯齿独立渲染 → 360 条经线全部可见。必须单 ring。
-   * 3) **startLon 不能随 nightCenter 计算跳变**：ceil() 在 nightCenter 跨过临界值时
-   *    使 startLon 跳 360° → 动画每帧顶点序列相位乱跳 → GPU 缓冲全量重建 →
-   *    时间轴切换时夜半球"混乱地变"（用户实测反馈）。修：**startLon 固定 180**
-   *    （完整 360° 圈在任意相位数学等价，固定相位使顶点序列稳定）。
-   * 4) 极冠洞（内缩量）在夜半球内露出亮底图：南极视角可见亮圈。
-   *    内缩量 0.1°（89.9°）时洞 <1px 不可见。
-   */
-  const pushNightCore = () => {
-    const equinox = Math.abs(decl) < 0.5
-    // 极圈内缩 89.9°：避开极点 + 洞 0.1°（<1px 不可见）
-    const poleLat = southNight ? -89.9 : 89.9
-
-    if (!equinox) {
-      // 完整晨昏圈（360°）：固定相位起点（顶点序列稳定，动画平滑）
-      const startLon = 180
-      const curve: number[][] = []
-      for (let lon = startLon; lon <= startLon + 360 + 1e-9; lon += LON_STEP) {
-        curve.push([lon, terminatorLatitude(lon, subsolarLon, decl)])
-      }
-      if (curve.length < 4) return
-      // antimeridian 拆分：闭合边（极线段两点）落在段首经度（89.9°S，非极点）
-      const rings = splitClosedRingAtAntimeridian(curve, poleLat)
-      for (const ring of rings) {
-        features.push({
-          type: 'Feature',
-          properties: { hemisphere: 'night-core' },
-          geometry: { type: 'Polygon', coordinates: [ring] },
-        })
-      }
-      return
-    }
-
-    // 二分日：夜侧经度带全纬度（上下边都用极圈内缩，无 north/south 偏好；
-    // decl 浮点符号在 equinox 附近不可靠，不能据此区分南北）
-    const lonStart = nightCenter - 90
-    const lonEnd = nightCenter + 90
-    const upPts: number[][] = []
-    const dnPts: number[][] = []
-    for (let lon = lonStart; lon <= lonEnd + 1e-9; lon += LON_STEP) {
-      upPts.push([lon, 89.9])
-      dnPts.push([lon, -89.9])
-    }
-    if (upPts.length < 3) return
-    const rings = splitClosedRingAtAntimeridian(
-      [...upPts, ...dnPts.slice().reverse()],
-      0,
-    )
-    for (const ring of rings) {
-      features.push({
-        type: 'Feature',
-        properties: { hemisphere: 'night-core' },
-        geometry: { type: 'Polygon', coordinates: [ring] },
-      })
-    }
-  }
-
-  /**
-   * 把闭合 ring 点列（经度连续未归一化）拆为 [-180,180] 内的合法 ring 列表。
-   * 段闭合：段尾下到极圈（poleLat，**非极点 ±89.5°，避免 globe 跨背面三角形**）→
-   * 极线段两端用同一经度（顶点重合 + 非极点 → 无渲染伪影）→ 上到段首点。
-   * poleLat 传 0 时极点闭合退化为直连（二分日上下沿已含极线）。
-   */
-  const splitClosedRingAtAntimeridian = (pts: number[][], poleLat: number): number[][][] => {
-    const rings: number[][][] = []
-    let cur: number[][] = []
-    const flushSeg = () => {
-      if (cur.length >= 3) {
-        const ring = [...cur]
-        if (poleLat === 0) {
-          ring.push([...cur[0]])
-        } else {
-          // 极线段两端用段首经度（顶点重合）→ globe 投影下长度 0 边不渲染
-          const poleLon = cur[0][0]
-          ring.push([poleLon, poleLat])
-          ring.push([poleLon, poleLat])
-          ring.push([...cur[0]])
-        }
-        rings.push(ring)
-      }
-      cur = []
-    }
-    for (let i = 0; i < pts.length; i++) {
-      const [lon, lat] = pts[i]
-      const norm = normLon(lon)
-      if (i > 0 && Math.abs(norm - normLon(pts[i - 1][0])) > 180) {
-        const [prevLon, prevLat] = pts[i - 1]
-        const k = Math.floor((Math.min(prevLon, lon) + 180) / 360)
-        const lambdaB = 180 + 360 * k
-        const frac = (lambdaB - prevLon) / (lon - prevLon)
-        const latB = prevLat + (lat - prevLat) * frac
-        const disp = cur[0]?.[0] ?? (normLon(pts[0][0]) < 0 ? -180 : 180)
-        cur.push([disp, latB])
-        flushSeg()
-        cur.push([disp, latB])
-      }
-      cur.push([norm, lat])
-    }
-    flushSeg()
-    return rings
-  }
-
-  /**
-   * 构造晨昏线 linestring（line-blur 羽化的载体）：
-   * - δ≥0.5°：完整晨昏圈曲线（360° 连续大圆），antimeridian 断开
-   * - δ<0.5°（二分日）：退化为两条经线线段（λn±90，φ 从 -90 到 90）
-   */
-  const pushTerminatorLines = () => {
-    const lines: number[][][] = []
-    if (Math.abs(decl) < 0.5) {
-      // 二分日：晨昏线 = 两条经线（夜心 ±90°）
-      const lonW = normLon(nightCenter - 90)
-      const lonE = normLon(nightCenter + 90)
-      lines.push([[lonW, -90], [lonW, 90]])
-      lines.push([[lonE, -90], [lonE, 90]])
-    } else {
-      // 完整晨昏圈：固定相位起点（与夜核一致——顶点序列稳定，动画平滑不闪烁）
-      const startLon = 180
-      let cur: number[][] = []
-      const flush = () => {
-        if (cur.length >= 2) lines.push(cur)
-        cur = []
-      }
-      let prevNorm: number | null = null
-      for (let lon = startLon; lon <= startLon + 360 + 1e-9; lon += LON_STEP) {
-        const phiC = terminatorLatitude(lon, subsolarLon, decl)
-        const norm = normLon(lon)
-        if (prevNorm !== null && Math.abs(norm - prevNorm) > 180) {
-          flush()
-        }
-        cur.push([norm, phiC])
-        prevNorm = norm
-      }
-      flush()
-    }
-    for (const line of lines) {
-      features.push({
-        type: 'Feature',
-        properties: { hemisphere: 'terminator' },
-        geometry: { type: 'LineString', coordinates: line },
-      })
-    }
-  }
-
-  pushNightCore()
-  pushTerminatorLines()
-  return { type: 'FeatureCollection', features }
-}
-
 function clamp(v: number, min: number, max: number): number {
   return v < min ? min : v > max ? max : v
 }
 
 /**
- * 解析光照参数（当前仅测试使用；globe 模式已停用 setLight——
- * raster 瓦片不吃 light，昼夜由夜半球遮罩负责）。
- * - 亮色底图：直射强度 ×0.5 + 太阳高度上限 36°（柔和长影）+ light color 偏冷白
- * - 影像/地形：×0.78 + 50° + 近白偏暖
- * - 暗色底图：×1.0 + 64° + 暖白（保留立体光影冲击）
- * - off 返回 null（不设置自定义光照）
+ * 解析光照参数（当前仅测试使用；globe 模式已停用 setLight）。
  */
 export function resolveGlobeLighting(
   hour: number,
@@ -312,18 +89,12 @@ export function resolveGlobeLighting(
 
   const brightnessScale =
     brightness === 'light' ? 0.5 : brightness === 'dark' ? 1.0 : 0.78
-  // 直射强度：正午 0.95、夜间 0.4 的基准随底图缩放（亮色底图上限更严）
   const intensity = clamp((0.4 + daylight * 0.55) * brightnessScale, 0.18, 1.0)
 
-  // 太阳高度：亮色底图更低更斜（柔和长影），暗色底图更高（强立体感）
   const elevationBase = brightness === 'light' ? 10 : brightness === 'dark' ? 20 : 16
   const elevationRange = brightness === 'light' ? 26 : brightness === 'dark' ? 44 : 34
   const elevation = elevationBase + daylight * elevationRange
 
-  // 光照色温 = MapLibre light color，会直接乘到瓦片像素上。
-  // 亮色底图用「偏冷白」rgb(215, 226, 232)（RGB 整体低于暗色底图）：
-  // 乘以亮瓦片后整体压暗 ~15% 抑制伽马过曝，同时保持色温变化（夜间冷蓝、晨昏暖橙）。
-  // 暗色底图保留近白偏暖以维持立体感。
   const lightBase = brightness === 'light'
     ? { warm: 213, green: 224, blue: 230 }
     : brightness === 'dark'
@@ -339,8 +110,6 @@ export function resolveGlobeLighting(
 
 /**
  * 解析天空大气参数（MapLibre sky）。
- * 白天亮色底图用更柔和的雾蓝（避免亮面反射发白），暗色底图用饱和天蓝。
- * 夜间统一深空蓝黑，制造「球外深空」氛围。
  */
 export function resolveGlobeSky(
   hour: number,

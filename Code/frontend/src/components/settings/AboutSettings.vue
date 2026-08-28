@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, toRef } from 'vue'
 import { useSettingsStore } from '../../stores/settings'
-import { BRAND } from '../../ui-copy'
+import { useAuthStore } from '../../stores/auth'
 import Tooltip from '../ui/Tooltip.vue'
 import SystemStatusSettings from './SystemStatusSettings.vue'
 
 const settingsStore = useSettingsStore()
+const authStore = useAuthStore()
+const brand = computed(() => authStore.resolvedBrand)
 const aboutInfo = toRef(settingsStore, 'aboutInfo')
 const weatherConfig = toRef(settingsStore, 'weatherConfig')
 const geeRuntimeConfig = toRef(settingsStore, 'geeRuntimeConfig')
@@ -28,7 +30,7 @@ type ArchNode = {
 // 后端 FastAPI + Celery（Worker/Beat）；数据面含 Open-Meteo 与 MinIO。
 const archTree = computed((): ArchNode[] => [
   {
-    name: BRAND.fullName,
+    name: brand.value.fullName,
     level: 0,
     children: [
       {
@@ -146,7 +148,7 @@ const browserEngine = detectBrowserEngine()
       <div v-if="aboutInfo" class="about-info">
         <div class="info-row">
           <span class="info-label">项目名称</span>
-          <span class="info-value">{{ BRAND.displayNameEn }}</span>
+          <span class="info-value">{{ brand.displayNameEn }}</span>
         </div>
         <div class="info-row">
           <span class="info-label">版本</span>

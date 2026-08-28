@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import require_admin, require_session, session_cookie_secure
@@ -41,24 +42,75 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=256)
 
 
+class ThemePublic(BaseModel):
+    id: int
+    slug: str
+    name_zh: str
+    full_name_zh: str
+    name_en: str
+    abbr: str
+    description: str = ""
+    logo_url: str | None = None
+    default_permission_mode: str = "open"
+    is_primary: bool = False
+
+
+class ThemePublicBrand(BaseModel):
+    """Unauthenticated primary-theme branding for the login page."""
+
+    id: int
+    slug: str
+    name_zh: str
+    full_name_zh: str
+    name_en: str
+    abbr: str
+    description: str = ""
+    logo_url: str | None = None
+
+
 class UserPublic(BaseModel):
     id: int
     username: str
     role: Literal["admin", "standard", "demo"]
     enabled: bool = True
     permission_mode: str = "open"
+    theme_id: int | None = None
+    theme: ThemePublic | None = None
 
 
 class CreateUserRequest(BaseModel):
     username: str = Field(min_length=1, max_length=128)
     password: str = Field(min_length=8, max_length=256)
     role: Literal["admin", "standard", "demo"] = "standard"
+    theme_id: int | None = None
 
 
 class UpdateUserRequest(BaseModel):
     password: str | None = Field(default=None, min_length=8, max_length=256)
     role: Literal["admin", "standard", "demo"] | None = None
     enabled: bool | None = None
+    theme_id: int | None = None
+
+
+class CreateThemeRequest(BaseModel):
+    slug: str = Field(min_length=2, max_length=64)
+    name_zh: str = Field(min_length=1, max_length=128)
+    full_name_zh: str = Field(min_length=1, max_length=256)
+    name_en: str = Field(min_length=1, max_length=256)
+    abbr: str = Field(min_length=1, max_length=32)
+    description: str = Field(default="", max_length=2000)
+    default_permission_mode: Literal["open", "whitelist"] = "open"
+    is_primary: bool = False
+
+
+class UpdateThemeRequest(BaseModel):
+    name_zh: str | None = Field(default=None, min_length=1, max_length=128)
+    full_name_zh: str | None = Field(default=None, min_length=1, max_length=256)
+    name_en: str | None = Field(default=None, min_length=1, max_length=256)
+    abbr: str | None = Field(default=None, min_length=1, max_length=32)
+    description: str | None = Field(default=None, max_length=2000)
+    default_permission_mode: Literal["open", "whitelist"] | None = None
+    is_primary: bool | None = None
 
 
 class CreateTokenRequest(BaseModel):
@@ -84,13 +136,48 @@ class TokenPublic(BaseModel):
     expires_at: str | None = None
 
 
+def _theme_logo_url(theme_id: int, logo_path: str | None) -> str | None:
+    if not logo_path:
+        return None
+    return f"/auth/themes/{theme_id}/logo"
+
+
+def _public_theme(theme) -> ThemePublic:
+    return ThemePublic(
+        id=theme.id,
+        slug=theme.slug,
+        name_zh=theme.name_zh,
+        full_name_zh=theme.full_name_zh,
+        name_en=theme.name_en,
+        abbr=theme.abbr,
+        description=theme.description,
+        logo_url=_theme_logo_url(theme.id, theme.logo_path),
+        default_permission_mode=theme.default_permission_mode,
+        is_primary=theme.is_primary,
+    )
+
+
 def _public_user(row: dict) -> UserPublic:
+    from app.services.theme_repository import get_theme_repository
+
+    theme_id = row.get("theme_id")
+    theme_public: ThemePublic | None = None
+    if theme_id is not None:
+        theme = get_theme_repository().get_by_id(int(theme_id))
+        if theme is not None:
+            theme_public = _public_theme(theme)
+    elif row.get("role") == "admin":
+        theme = get_theme_repository().get_primary()
+        theme_public = _public_theme(theme)
+        theme_id = theme.id
     return UserPublic(
         id=int(row["id"]),
         username=str(row["username"]),
         role=str(row["role"]),  # type: ignore[arg-type]
         enabled=bool(row.get("enabled", 1)),
         permission_mode=str(row.get("permission_mode", "open")),
+        theme_id=int(theme_id) if theme_id is not None else None,
+        theme=theme_public,
     )
 
 
@@ -214,6 +301,7 @@ def create_user(
             username=body.username,
             password=body.password,
             role=body.role,
+            theme_id=body.theme_id,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -240,12 +328,20 @@ def update_user(
                 detail="Cannot change your own role.",
             )
     _ensure_not_last_admin(user_id, body.role, body.enabled is False)
+    if body.theme_id is not None:
+        from app.services.theme_repository import get_theme_repository
+
+        if get_theme_repository().get_by_id(body.theme_id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Theme not found."
+            )
     try:
         user = get_user_repository().update_user(
             user_id,
             password=body.password,
             role=body.role,
             enabled=body.enabled,
+            theme_id=body.theme_id,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -255,7 +351,12 @@ def update_user(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found."
         )
-    if body.password is not None or body.enabled is False or body.role is not None:
+    if (
+        body.password is not None
+        or body.enabled is False
+        or body.role is not None
+        or body.theme_id is not None
+    ):
         session_service.revoke_sessions_for_user(user_id)
     return _public_user(user)
 
@@ -500,3 +601,232 @@ def update_permission_mode(
     repo = get_permission_repository()
     repo.set_permission_mode(user_id, body.mode)
     return {"user_id": user_id, "permission_mode": body.mode}
+
+
+# ---------------------------------------------------------------------------
+# Themes (admin CRUD + public primary brand)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/themes/primary/public", response_model=ThemePublicBrand)
+def get_primary_theme_public() -> ThemePublicBrand:
+    from app.services.theme_repository import get_theme_repository
+
+    theme = get_theme_repository().get_primary()
+    return ThemePublicBrand(
+        id=theme.id,
+        slug=theme.slug,
+        name_zh=theme.name_zh,
+        full_name_zh=theme.full_name_zh,
+        name_en=theme.name_en,
+        abbr=theme.abbr,
+        description=theme.description,
+        logo_url=_theme_logo_url(theme.id, theme.logo_path),
+    )
+
+
+@router.get("/themes", response_model=list[ThemePublic])
+def list_themes(_admin: CredentialContext = Depends(require_admin)) -> list[ThemePublic]:
+    from app.services.theme_repository import get_theme_repository
+
+    return [_public_theme(t) for t in get_theme_repository().list_themes()]
+
+
+@router.post("/themes", response_model=ThemePublic, status_code=status.HTTP_201_CREATED)
+def create_theme(
+    body: CreateThemeRequest,
+    _admin: CredentialContext = Depends(require_admin),
+) -> ThemePublic:
+    from app.services.theme_repository import get_theme_repository
+
+    try:
+        theme = get_theme_repository().create_theme(
+            slug=body.slug,
+            name_zh=body.name_zh,
+            full_name_zh=body.full_name_zh,
+            name_en=body.name_en,
+            abbr=body.abbr,
+            description=body.description,
+            default_permission_mode=body.default_permission_mode,
+            is_primary=body.is_primary,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    return _public_theme(theme)
+
+
+@router.patch("/themes/{theme_id}", response_model=ThemePublic)
+def update_theme(
+    theme_id: int,
+    body: UpdateThemeRequest,
+    _admin: CredentialContext = Depends(require_admin),
+) -> ThemePublic:
+    from app.services.theme_repository import get_theme_repository
+
+    try:
+        theme = get_theme_repository().update_theme(
+            theme_id,
+            name_zh=body.name_zh,
+            full_name_zh=body.full_name_zh,
+            name_en=body.name_en,
+            abbr=body.abbr,
+            description=body.description,
+            default_permission_mode=body.default_permission_mode,
+            is_primary=body.is_primary,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    if theme is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Theme not found."
+        )
+    return _public_theme(theme)
+
+
+@router.delete("/themes/{theme_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_theme(
+    theme_id: int,
+    _admin: CredentialContext = Depends(require_admin),
+) -> Response:
+    from app.services.theme_repository import get_theme_repository
+
+    try:
+        ok = get_theme_repository().delete_theme(theme_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Theme not found."
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class ThemePermissionRecord(BaseModel):
+    id: int
+    theme_id: int
+    resource_type: str
+    resource_id: str
+    permission: str
+    created_at: str
+    updated_at: str
+
+
+@router.get(
+    "/themes/{theme_id}/permissions",
+    response_model=list[ThemePermissionRecord],
+)
+def list_theme_permissions(
+    theme_id: int,
+    _admin: CredentialContext = Depends(require_admin),
+) -> list[ThemePermissionRecord]:
+    from app.services.theme_repository import get_theme_repository
+
+    repo = get_theme_repository()
+    if repo.get_by_id(theme_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Theme not found."
+        )
+    return [
+        ThemePermissionRecord(
+            id=p.id,
+            theme_id=p.theme_id,
+            resource_type=p.resource_type,
+            resource_id=p.resource_id,
+            permission=p.permission,
+            created_at=p.created_at,
+            updated_at=p.updated_at,
+        )
+        for p in repo.get_theme_permissions(theme_id)
+    ]
+
+
+@router.put(
+    "/themes/{theme_id}/permissions",
+    response_model=list[ThemePermissionRecord],
+)
+def set_theme_permissions(
+    theme_id: int,
+    body: SetPermissionsRequest,
+    _admin: CredentialContext = Depends(require_admin),
+) -> list[ThemePermissionRecord]:
+    from app.services.theme_repository import get_theme_repository
+
+    repo = get_theme_repository()
+    try:
+        records = repo.set_theme_permissions(
+            theme_id,
+            [
+                PermissionInput(
+                    resource_type=p.resource_type,
+                    resource_id=p.resource_id,
+                    permission=p.permission,
+                )
+                for p in body.permissions
+            ],
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    return [
+        ThemePermissionRecord(
+            id=p.id,
+            theme_id=p.theme_id,
+            resource_type=p.resource_type,
+            resource_id=p.resource_id,
+            permission=p.permission,
+            created_at=p.created_at,
+            updated_at=p.updated_at,
+        )
+        for p in records
+    ]
+
+
+@router.post("/themes/{theme_id}/logo", response_model=ThemePublic)
+async def upload_theme_logo(
+    theme_id: int,
+    _admin: CredentialContext = Depends(require_admin),
+    file: UploadFile = File(...),
+) -> ThemePublic:
+    from app.services.theme_repository import get_theme_repository
+
+    content = await file.read()
+    try:
+        theme = get_theme_repository().save_logo(
+            theme_id,
+            filename=file.filename or "logo.png",
+            content=content,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    return _public_theme(theme)
+
+
+@router.get("/themes/{theme_id}/logo")
+def get_theme_logo(theme_id: int) -> FileResponse:
+    """Serve theme logo (public — login page may need primary logo without session)."""
+    from app.services.theme_repository import get_theme_repository
+
+    path = get_theme_repository().resolve_logo_path(theme_id)
+    if path is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Logo not found."
+        )
+    media = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".svg": "image/svg+xml",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+    }.get(path.suffix.lower(), "application/octet-stream")
+    return FileResponse(path, media_type=media)
+

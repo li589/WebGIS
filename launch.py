@@ -46,7 +46,9 @@ Windows 联调：Docker Desktop 与终端须**以管理员身份运行**，否�
     frontend            仅启动前端 Vite 开发服务器
     gateway             仅启动 Nginx 同域入口（静态 dist）
 
-默认 ``start`` / ``restart``（全量）启 **Nginx Gateway**；本地 HMR 用 ``start --vite``。
+默认 ``start`` / ``restart``（全量）启 **Nginx Gateway**；本地 HMR 用 ``start --vite``
+（Gateway 同域入口 :5175 + 背后 Vite :5174）。配置热重载：``reload gateway``。
+start/restart 默认按组件矩阵自动 ``clean-cache``（``--no-clean-cache`` 可跳过；**永不**自动 flush）。
 
 完整示例见 ``Env\\Python312\\python.exe launch.py --help``。
 Windows: start.bat / stop.bat    Linux/macOS: ./start.sh / ./stop.sh

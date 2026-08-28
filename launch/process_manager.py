@@ -27,6 +27,7 @@ from launch.constants import (
     FRONTEND_DIR,
     LOG_DIR,
     PID_FILE,
+    VITE_BEHIND_GATEWAY_PORT,
 )
 from launch.logging_setup import log, rotate_subprocess_log_if_needed
 from launch.subprocess_utils import (
@@ -40,11 +41,28 @@ from launch.subprocess_utils import (
 class ProcessManager:
     """管理所有子进程的生命周期。"""
 
-    def __init__(self, debug: bool = False, frontend_port: int = DEFAULT_FRONTEND_PORT):
+    def __init__(
+        self,
+        debug: bool = False,
+        frontend_port: int = DEFAULT_FRONTEND_PORT,
+        *,
+        behind_gateway: bool = False,
+    ):
         self.processes: dict[str, subprocess.Popen] = {}
         self._shutting_down = False
         self.debug = debug
-        self.frontend_port = frontend_port
+        self.behind_gateway = behind_gateway
+        if behind_gateway:
+            self.frontend_port = VITE_BEHIND_GATEWAY_PORT
+        else:
+            self.frontend_port = frontend_port
+
+    def _frontend_env(self) -> dict[str, str]:
+        env = child_env()
+        if self.behind_gateway:
+            env["VITE_BEHIND_GATEWAY"] = "1"
+            env["VITE_GATEWAY_PORT"] = str(DEFAULT_FRONTEND_PORT)
+        return env
 
     @property
     def _loglevel(self) -> str:
@@ -183,7 +201,11 @@ class ProcessManager:
 
     def start_frontend(self) -> None:
         """启动前端 Vite 开发服务器。"""
-        log.info("Frontend", f"启动前端 Vite 开发服务器 (port={self.frontend_port})...")
+        mode = "behind Gateway HMR" if self.behind_gateway else "direct"
+        log.info(
+            "Frontend",
+            f"启动前端 Vite 开发服务器 (port={self.frontend_port}, {mode})...",
+        )
         cmd = frontend_dev_command(self.frontend_port)
         if not cmd:
             log.error("Frontend", "未找到 pnpm/npx，请安装 Node.js 并确保在 PATH 中")
@@ -192,18 +214,25 @@ class ProcessManager:
         rotate_subprocess_log_if_needed(log_file)
         if not log_file.exists():
             log_file.write_text("", encoding="utf-8")
+        fe_env = self._frontend_env()
         try:
             proc = subprocess.Popen(
                 cmd,
                 cwd=str(FRONTEND_DIR),
-                env=child_env(),
+                env=fe_env,
                 stdout=open(log_file, "a", encoding="utf-8"),
                 stderr=subprocess.STDOUT,
                 **self._proc_kwargs(),
             )
             self.processes["frontend"] = proc
             log.ok("Frontend", f"Vite 已启动（{cmd[0]}）")
-            log.info("Frontend", f"  URL:  http://localhost:{self.frontend_port}")
+            if self.behind_gateway:
+                log.info(
+                    "Frontend",
+                    f"  本机: http://127.0.0.1:{self.frontend_port}  → 公开入口 http://localhost:{DEFAULT_FRONTEND_PORT}",
+                )
+            else:
+                log.info("Frontend", f"  URL:  http://localhost:{self.frontend_port}")
             log.info("Frontend", f"  日志: {log_file}")
         except FileNotFoundError:
             fallback = None
@@ -229,7 +258,7 @@ class ProcessManager:
                 proc = subprocess.Popen(
                     fallback,
                     cwd=str(FRONTEND_DIR),
-                    env=child_env(),
+                    env=fe_env,
                     stdout=open(log_file, "a", encoding="utf-8"),
                     stderr=subprocess.STDOUT,
                     **self._proc_kwargs(),

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  extractWorkflowTechLogs,
+  formatWorkflowCommandChip,
   formatWorkflowValidationError,
   localizeWorkflowDiagnostic,
   localizeWorkflowDiagnostics,
@@ -25,11 +27,46 @@ describe('localizeWorkflowDiagnostic', () => {
   it('unwraps error_message= prefix', () => {
     expect(localizeWorkflowDiagnostic('error_message=no workflow bridge matched')).toContain('引擎')
   })
+
+  it('maps asset_state and hides noise keys', () => {
+    expect(localizeWorkflowDiagnostic('asset_state=missing')).toBe('资产状态：缺失')
+    expect(localizeWorkflowDiagnostic('returncode=0')).toBe('')
+    expect(localizeWorkflowDiagnostic('remaining_stale=[]')).toBe('')
+    expect(localizeWorkflowDiagnostic('bake_log=huge dump')).toBe('')
+  })
+
+  it('compresses legacy overlay export dumps', () => {
+    const dump =
+      '==== Overlay Assets Export Tool === [SKIP] File not found === Summary: [OK]'
+    expect(localizeWorkflowDiagnostic(dump)).toContain('源数据文件未找到')
+  })
 })
 
 describe('localizeWorkflowDiagnostics', () => {
   it('filters empty lines', () => {
-    expect(localizeWorkflowDiagnostics(['', 'error_code=compile_error'])).toEqual(['工作流图编译失败。'])
+    expect(localizeWorkflowDiagnostics(['', 'error_code=compile_error'])).toEqual([
+      '工作流图编译失败。',
+    ])
+  })
+})
+
+describe('formatWorkflowCommandChip', () => {
+  it('prefers command_label over enum', () => {
+    expect(formatWorkflowCommandChip('custom', '图层资产工作流')).toBe('图层资产工作流')
+    expect(formatWorkflowCommandChip('custom')).toBe('自定义')
+    expect(formatWorkflowCommandChip('analysis')).toBe('分析')
+  })
+})
+
+describe('extractWorkflowTechLogs', () => {
+  it('extracts bake_log and legacy dumps', () => {
+    expect(
+      extractWorkflowTechLogs([
+        'asset_state=missing',
+        'bake_log=line1\nline2',
+        '==== Overlay Assets Export Tool ===',
+      ]),
+    ).toEqual(['line1\nline2', '==== Overlay Assets Export Tool ==='])
   })
 })
 
