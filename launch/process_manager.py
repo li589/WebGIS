@@ -384,6 +384,8 @@ class ProcessManager:
                 ).splitlines()
                 tail = "\n".join(lines[-5:]) if lines else "(空日志)"
                 log.error("Monitor", f"{name} 日志尾部:\n{tail}")
+            # 已退出进程从监视表移除，避免每 5s 重复刷同一 ERROR
+            self.processes.pop(name, None)
 
     def _external_pid_for(self, name: str):
         """读 pid 文件：该服务 pid 已变更且新 pid 存活时返回其 psutil 句柄。

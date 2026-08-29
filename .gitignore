@@ -62,6 +62,7 @@ screenshot*.png
 temp.txt
 
 # Celery beat schedule runtime files
+celerybeat-schedule
 celerybeat-schedule.*
 celerybeat.pid
 
