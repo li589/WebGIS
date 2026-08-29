@@ -35,7 +35,7 @@ _ALLOWED_INTENTS = frozenset(
         "list_active_layers",
     }
 )
-_SERVER_TOOLS = frozenset({"search_layers"})
+_SERVER_TOOLS = frozenset({"search_layers", "run_workflow"})
 
 _CLIENT_CONTEXT_MAX_CHARS = 4000
 _CLIENT_CONTEXT_MAX_LAYERS = 40
@@ -221,10 +221,31 @@ def _build_system(
         "## Tools\n"
         "- UI intents (client-executed): set_layer_visibility, set_layer_opacity, "
         "fit_layer, list_active_layers\n"
-        "- Server tools (executed here): search_layers\n"
-        "- Do NOT call run_workflow"
+        "- Server tools: search_layers (immediate); run_workflow "
+        "(creates a confirmation ticket — user must approve before submit)\n"
+        "- Prefer search_layers before run_workflow; never claim a run was submitted "
+        "until confirmation is approved"
     )
     return "\n\n".join(parts)
+
+
+def _confirmation_from_tool_result(tres: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(tres, dict):
+        return None
+    if not tres.get("needs_confirmation"):
+        return None
+    cid = str(tres.get("confirmation_id") or "").strip()
+    if not cid:
+        return None
+    return {
+        "confirmation_id": cid,
+        "action": "run_workflow",
+        "expires_at": str(tres.get("expires_at") or ""),
+        "summary": tres.get("summary")
+        if isinstance(tres.get("summary"), dict)
+        else {},
+        "message": str(tres.get("message") or ""),
+    }
 
 
 def _normalize_intents(raw: list[Any]) -> list[dict[str, Any]]:
@@ -280,7 +301,7 @@ def _intents_from_tool_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]
 
 
 def _server_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [c for c in calls if c.get("name") in _SERVER_TOOLS or c.get("name") == "run_workflow"]
+    return [c for c in calls if c.get("name") in _SERVER_TOOLS]
 
 
 def _intents_from_anthropic_content(
@@ -371,6 +392,7 @@ def run_chat(
 
     history = load_history(user_id=user_id, session_id=sid)
     steps: list[dict[str, Any]] = []
+    client_context = sanitize_client_context(client_context)
 
     if protocol == "demo":
         steps.append(
@@ -405,10 +427,61 @@ def run_chat(
                 }
             )
 
+        confirmations: list[dict[str, Any]] = []
+        # Demo heuristic: propose run_workflow confirmation when user asks to run.
+        if any(
+            k in message
+            for k in ("运行工作流", "跑工作流", "提交工作流", "run workflow", "执行工作流")
+        ):
+            catalog_guess = ""
+            ctx_ids: list[str] = []
+            if isinstance(client_context, dict):
+                raw_ids = client_context.get("active_catalog_ids")
+                if isinstance(raw_ids, list):
+                    ctx_ids = [str(x) for x in raw_ids if x]
+                if not ctx_ids:
+                    raw_layers = client_context.get("active_layers")
+                    if isinstance(raw_layers, list):
+                        for layer in raw_layers:
+                            if isinstance(layer, dict) and layer.get("catalog_id"):
+                                ctx_ids.append(str(layer["catalog_id"]))
+            if ctx_ids:
+                catalog_guess = ctx_ids[0]
+            if catalog_guess:
+                steps.append(
+                    {
+                        "type": "tool",
+                        "summary": f"run_workflow({catalog_guess})",
+                    }
+                )
+                wf_res = execute_server_tool(
+                    "run_workflow",
+                    {"catalog_id": catalog_guess},
+                    cred=cred,
+                )
+                steps.append(
+                    {
+                        "type": "tool_result",
+                        "summary": "待确认"
+                        if wf_res.get("needs_confirmation")
+                        else "工具返回",
+                        "detail": json.dumps(wf_res, ensure_ascii=False)[:800],
+                    }
+                )
+                conf = _confirmation_from_tool_result(wf_res)
+                if conf:
+                    confirmations.append(conf)
+
         result = mock_chat(
             message, session_id=sid, client_context=client_context
         )
         reply = str(result["reply"])
+        if confirmations:
+            reply = (
+                f"{reply}\n\n已生成工作流确认卡，请点击「确认提交」后才会真正排队。"
+                if reply
+                else "已生成工作流确认卡，请点击「确认提交」后才会真正排队。"
+            )
         if history:
             reply = f"（已结合此前 {len(history)//2} 轮对话）\n{reply}"
         usage = {
@@ -432,6 +505,7 @@ def run_chat(
             "profile_id": profile_id,
             "usage": usage,
             "steps": steps,
+            "confirmations": confirmations,
         }
 
     model = str(profile.get("model") or "").strip()
@@ -473,6 +547,7 @@ def run_chat(
             reply, intents, server_calls = _intents_from_anthropic_content(
                 data.get("content")
             )
+            confirmations: list[dict[str, Any]] = []
             if server_calls:
                 tool_result_blocks: list[dict[str, Any]] = []
                 for sc in server_calls:
@@ -488,10 +563,15 @@ def run_chat(
                     steps.append(
                         {
                             "type": "tool_result",
-                            "summary": "工具返回",
+                            "summary": "待确认"
+                            if tres.get("needs_confirmation")
+                            else "工具返回",
                             "detail": json.dumps(tres, ensure_ascii=False)[:800],
                         }
                     )
+                    conf = _confirmation_from_tool_result(tres)
+                    if conf:
+                        confirmations.append(conf)
                     tool_result_blocks.append(
                         {
                             "type": "tool_result",
@@ -550,6 +630,7 @@ def run_chat(
                 "profile_id": profile_id,
                 "usage": usage,
                 "steps": steps,
+                "confirmations": confirmations,
             }
 
         # OpenAI-compatible
@@ -577,6 +658,7 @@ def run_chat(
         intents = _intents_from_tool_calls(calls)
         server_calls = _server_calls(calls)
         reply = str(message_obj.get("content") or "").strip()
+        confirmations: list[dict[str, Any]] = []
 
         if server_calls:
             messages_oai.append(message_obj)
@@ -593,10 +675,15 @@ def run_chat(
                 steps.append(
                     {
                         "type": "tool_result",
-                        "summary": "工具返回",
+                        "summary": "待确认"
+                        if tres.get("needs_confirmation")
+                        else "工具返回",
                         "detail": json.dumps(tres, ensure_ascii=False)[:800],
                     }
                 )
+                conf = _confirmation_from_tool_result(tres)
+                if conf:
+                    confirmations.append(conf)
                 messages_oai.append(
                     {
                         "role": "tool",
@@ -656,6 +743,7 @@ def run_chat(
             "profile_id": profile_id,
             "usage": usage,
             "steps": steps,
+            "confirmations": confirmations,
         }
     except LlmClientError:
         raise

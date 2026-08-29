@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "note": "Schema-only placeholders; not executed in mock v1.",
+  "note": "search_layers executes immediately; run_workflow creates a confirmation ticket (Phase B).",
   "tools": [
     {
       "name": "search_layers",
-      "description": "Search layer catalog by keyword.",
+      "description": "Search layer catalog by keyword (read-only, ACL filtered).",
       "args": {
         "type": "object",
         "required": ["query"],
@@ -16,13 +16,17 @@
     },
     {
       "name": "run_workflow",
-      "description": "Submit a workflow-run for a catalog layer (requires confirmation).",
+      "description": "Prepare a workflow-run for a catalog layer. Does NOT submit until the user confirms via confirmation card.",
       "args": {
         "type": "object",
         "required": ["catalog_id"],
         "properties": {
-          "catalog_id": { "type": "string" },
-          "params": { "type": "object" }
+          "catalog_id": { "type": "string", "description": "Layer catalog id" },
+          "workflow_id": {
+            "type": "string",
+            "description": "Optional workflow seed id; defaults to layer descriptor workflow_id"
+          },
+          "params": { "type": "object", "description": "Optional algorithm parameters" }
         }
       }
     }

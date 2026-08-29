@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel, Field
 
-from app.api.deps import get_request_user, require_write_access
+from app.api.deps import check_resource_access, get_request_user, require_write_access
 from app.api.error_codes import (
     AUTH_ERROR,
     NOT_FOUND_ERROR,
@@ -15,6 +16,8 @@ from app.api.error_codes import (
     VALIDATION_ERROR,
     ApiError,
 )
+
+logger = logging.getLogger(__name__)
 from app.core import config
 from app.services.agent import config_service
 from app.services.agent.clients.openai_compat import LlmClientError
@@ -47,6 +50,14 @@ class AgentStep(BaseModel):
     detail: str | None = None
 
 
+class AgentConfirmation(BaseModel):
+    confirmation_id: str
+    action: str = "run_workflow"
+    expires_at: str = ""
+    summary: dict[str, Any] = Field(default_factory=dict)
+    message: str = ""
+
+
 class AgentChatRequest(BaseModel):
     message: str = Field(min_length=0, max_length=4000)
     session_id: str | None = Field(default=None, max_length=128)
@@ -61,6 +72,21 @@ class AgentChatResponse(BaseModel):
     profile_id: str | None = None
     usage: AgentTokenUsage | None = None
     steps: list[AgentStep] = Field(default_factory=list)
+    confirmations: list[AgentConfirmation] = Field(default_factory=list)
+
+
+class AgentConfirmRequest(BaseModel):
+    confirmation_id: str = Field(min_length=8, max_length=64)
+    decision: Literal["approve", "reject"] = "approve"
+
+
+class AgentConfirmResponse(BaseModel):
+    confirmation_id: str
+    status: str
+    summary: dict[str, Any] = Field(default_factory=dict)
+    run_id: str | None = None
+    status_url: str | None = None
+    message: str = ""
 
 
 class AgentProfilePublic(BaseModel):
@@ -447,6 +473,19 @@ def agent_chat(
         for s in (result.get("steps") or [])
         if isinstance(s, dict)
     ]
+    confirmations = [
+        AgentConfirmation(
+            confirmation_id=str(c.get("confirmation_id") or ""),
+            action=str(c.get("action") or "run_workflow"),
+            expires_at=str(c.get("expires_at") or ""),
+            summary=dict(c.get("summary") or {})
+            if isinstance(c.get("summary"), dict)
+            else {},
+            message=str(c.get("message") or ""),
+        )
+        for c in (result.get("confirmations") or [])
+        if isinstance(c, dict) and c.get("confirmation_id")
+    ]
     return AgentChatResponse(
         session_id=str(result["session_id"]),
         reply=str(result["reply"]),
@@ -459,4 +498,87 @@ def agent_chat(
         profile_id=result.get("profile_id"),
         usage=usage,
         steps=steps,
+        confirmations=confirmations,
+    )
+
+
+@router.post("/confirm", response_model=AgentConfirmResponse)
+def agent_confirm(
+    payload: AgentConfirmRequest,
+    cred: CredentialContext | None = Depends(get_request_user),
+    _write_ok: None = Depends(require_write_access),
+) -> AgentConfirmResponse:
+    """Approve or reject a pending Agent confirmation ticket (Phase B)."""
+    _require_profile_write(cred)
+    uid, role = _cred_meta(cred)
+    from app.services.agent.agent_confirm import consume_confirmation
+    from shared.contracts.api_contracts import WorkflowSubmitRequest
+
+    try:
+        consumed = consume_confirmation(
+            payload.confirmation_id,
+            user_id=uid,
+            role=role,
+            decision=payload.decision,
+        )
+    except ValueError as exc:
+        raise _value_error(exc) from exc
+
+    if consumed.get("status") == "rejected":
+        return AgentConfirmResponse(
+            confirmation_id=payload.confirmation_id,
+            status="rejected",
+            summary=dict(consumed.get("summary") or {}),
+            message="已取消提交",
+        )
+
+    raw_payload = consumed.get("submit_payload")
+    if not isinstance(raw_payload, dict):
+        raise ApiError(
+            VALIDATION_ERROR,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="确认票据缺少提交快照",
+        )
+
+    try:
+        submit_req = WorkflowSubmitRequest.model_validate(raw_payload)
+    except Exception as exc:
+        raise ApiError(
+            VALIDATION_ERROR,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"提交快照无效: {exc}",
+        ) from exc
+
+    if submit_req.layer_id:
+        check_resource_access(cred, "layer", submit_req.layer_id)
+
+    from app.services.workflow.service_container import submission_service
+
+    try:
+        accepted = submission_service.submit_workflow(
+            submit_req,
+            user_id=uid,
+            role=role,
+        )
+    except ValueError as exc:
+        raise ApiError(
+            VALIDATION_ERROR,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    logger.info(
+        "Agent confirmation approved confirmation_id=%s run_id=%s user=%s",
+        payload.confirmation_id,
+        accepted.run_id,
+        uid,
+    )
+
+    return AgentConfirmResponse(
+        confirmation_id=payload.confirmation_id,
+        status="approved",
+        summary=dict(consumed.get("summary") or {}),
+        run_id=accepted.run_id,
+        status_url=accepted.status_url,
+        message=f"已提交工作流 {accepted.run_id}",
     )

@@ -408,6 +408,178 @@ def test_search_layers_runtime():
     assert blocked["ok"] is False
 
 
+def test_run_workflow_creates_confirmation_ticket(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    import app.core.config as cfg_mod
+    from app.core.config import Settings
+    from app.services.agent import agent_confirm as ac
+    from app.services.agent.server_tools_runtime import execute_server_tool
+
+    data = tmp_path / "data"
+    data.mkdir()
+    cfg_mod.settings = replace(Settings(), data_root=str(data), environment="test")
+    monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
+    monkeypatch.setattr(ac, "settings", cfg_mod.settings)
+
+    class _Cred:
+        role = "admin"
+        user_id = 1
+        source = "session"
+
+    class _Demo:
+        role = "demo"
+        user_id = 9
+        source = "session"
+
+    denied = execute_server_tool(
+        "run_workflow",
+        {"catalog_id": "ndvi", "workflow_id": "ndvi_local_read"},
+        cred=_Demo(),
+    )
+    assert denied["ok"] is False
+
+    out = execute_server_tool(
+        "run_workflow",
+        {"catalog_id": "ndvi", "workflow_id": "ndvi_local_read", "params": {"a": 1}},
+        cred=_Cred(),
+    )
+    assert out["ok"] is True
+    assert out.get("needs_confirmation") is True
+    cid = out["confirmation_id"]
+    assert cid
+    ticket = ac.get_confirmation(cid)
+    assert ticket is not None
+    assert ticket["status"] == "pending"
+    assert ticket["submit_payload"]["layer_id"] == "ndvi"
+
+
+def test_agent_confirm_approve_reject_and_expire(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from datetime import UTC, datetime, timedelta
+    from unittest.mock import MagicMock
+
+    import app.core.config as cfg_mod
+    from app.core.config import Settings
+    from app.services.agent import agent_confirm as ac
+
+    data = tmp_path / "data"
+    data.mkdir()
+    cfg_mod.settings = replace(Settings(), data_root=str(data), environment="test")
+    monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
+    monkeypatch.setattr(ac, "settings", cfg_mod.settings)
+
+    ticket = ac.create_confirmation(
+        action="run_workflow",
+        summary={"catalog_id": "ndvi", "workflow_id": "ndvi_local_read"},
+        submit_payload={"layer_id": "ndvi", "command_type": "analysis"},
+        user_id=1,
+        role="standard",
+    )
+    cid = ticket["confirmation_id"]
+
+    # Wrong user cannot consume
+    with pytest.raises(ValueError, match="无权"):
+        ac.consume_confirmation(cid, user_id=2, role="standard", decision="approve")
+
+    rejected = ac.consume_confirmation(
+        cid, user_id=1, role="standard", decision="reject"
+    )
+    assert rejected["status"] == "rejected"
+
+    ticket2 = ac.create_confirmation(
+        action="run_workflow",
+        summary={"catalog_id": "ndvi"},
+        submit_payload={"layer_id": "ndvi", "command_type": "analysis"},
+        user_id=1,
+        role="standard",
+    )
+    path = ac._path_for(ticket2["confirmation_id"])
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["expires_at"] = (datetime.now(UTC) - timedelta(seconds=5)).isoformat()
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    with pytest.raises(ValueError, match="过期"):
+        ac.consume_confirmation(
+            ticket2["confirmation_id"],
+            user_id=1,
+            role="standard",
+            decision="approve",
+        )
+
+
+def test_agent_chat_run_workflow_confirmation_and_confirm_api(
+    agent_client: TestClient, tmp_path, monkeypatch
+):
+    """E2E: demo chat emits confirmation; reject/approve via /agent/confirm."""
+    from dataclasses import replace
+    from unittest.mock import MagicMock
+
+    import app.core.config as cfg_mod
+    from app.services.agent import agent_confirm as ac
+    from app.services.agent import config_service as cs
+    from app.services.agent import session_store as ss
+
+    # create_app may re-bind DATA_ROOT via deployment.config.json — isolate Agent stores.
+    data = tmp_path / "agent-iso"
+    data.mkdir(exist_ok=True)
+    new_settings = replace(cfg_mod.settings, data_root=str(data))
+    cfg_mod.settings = new_settings
+    monkeypatch.setattr("app.core.config.settings", new_settings)
+    monkeypatch.setattr(cs, "settings", new_settings)
+    monkeypatch.setattr(ac, "settings", new_settings)
+    monkeypatch.setattr(ss, "settings", new_settings)
+    cs._save_store_unlocked(cs._global_profiles_path(), cs._empty_store())
+
+    _login(agent_client, "testadmin", "test-pass-123")
+    chat = agent_client.post(
+        "/agent/chat",
+        json={
+            "message": "运行工作流",
+            "client_context": {"active_catalog_ids": ["ndvi"]},
+        },
+    )
+    assert chat.status_code == 200, chat.text
+    body = chat.json()
+    assert body.get("provider") == "demo", body
+    assert body.get("confirmations"), body
+    conf = body["confirmations"][0]
+    cid = conf["confirmation_id"]
+    assert conf.get("summary", {}).get("catalog_id") == "ndvi"
+
+    reject = agent_client.post(
+        "/agent/confirm",
+        json={"confirmation_id": cid, "decision": "reject"},
+    )
+    assert reject.status_code == 200, reject.text
+    assert reject.json()["status"] == "rejected"
+
+    chat2 = agent_client.post(
+        "/agent/chat",
+        json={
+            "message": "提交工作流",
+            "client_context": {"active_catalog_ids": ["ndvi"]},
+        },
+    )
+    assert chat2.status_code == 200, chat2.text
+    cid2 = chat2.json()["confirmations"][0]["confirmation_id"]
+
+    fake = MagicMock()
+    fake.run_id = "run-testapprove01"
+    fake.status_url = "/workflow-runs/run-testapprove01"
+
+    with patch(
+        "app.services.workflow.service_container.submission_service.submit_workflow",
+        return_value=fake,
+    ):
+        ok = agent_client.post(
+            "/agent/confirm",
+            json={"confirmation_id": cid2, "decision": "approve"},
+        )
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["status"] == "approved"
+    assert ok.json()["run_id"] == "run-testapprove01"
+
+
 def test_mock_orchestrator_unit():
     from app.services.agent.mock_orchestrator import mock_chat
 

@@ -21,6 +21,14 @@ export interface AgentStep {
   detail?: string | null
 }
 
+export interface AgentConfirmation {
+  confirmation_id: string
+  action?: string
+  expires_at?: string
+  summary?: Record<string, unknown>
+  message?: string
+}
+
 export interface AgentChatClientContext {
   active_catalog_ids?: string[]
   active_layers?: Array<{
@@ -44,6 +52,21 @@ export interface AgentChatResponse {
   profile_id?: string | null
   usage?: AgentTokenUsage | null
   steps?: AgentStep[]
+  confirmations?: AgentConfirmation[]
+}
+
+export interface AgentConfirmRequest {
+  confirmation_id: string
+  decision: 'approve' | 'reject'
+}
+
+export interface AgentConfirmResponse {
+  confirmation_id: string
+  status: string
+  summary?: Record<string, unknown>
+  run_id?: string | null
+  status_url?: string | null
+  message?: string
 }
 
 export interface AgentProfile {
@@ -103,6 +126,13 @@ export interface AgentModelsRefreshResult {
 
 export function postAgentChat(body: AgentChatRequest): Promise<AgentChatResponse> {
   return requestJson<AgentChatResponse>('/agent/chat', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function confirmAgentAction(body: AgentConfirmRequest): Promise<AgentConfirmResponse> {
+  return requestJson<AgentConfirmResponse>('/agent/confirm', {
     method: 'POST',
     body: JSON.stringify(body),
   })
