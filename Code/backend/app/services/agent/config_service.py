@@ -90,7 +90,25 @@ def _empty_personal_store() -> dict[str, Any]:
     return {"active_profile_id": "", "profiles": []}
 
 
+def _archive_legacy_path(path: Path) -> None:
+    """Rename one-shot legacy files so they cannot re-seed polluted stores."""
+    if not path.exists():
+        return
+    bak = path.with_name(path.name + ".migrated.bak")
+    try:
+        if bak.exists():
+            bak.unlink()
+        path.replace(bak)
+    except OSError as exc:
+        logger.warning("Failed to archive legacy %s: %s", path, exc)
+
+
 def _migrate_legacy_single_config() -> dict[str, Any] | None:
+    """Convert old flat agent_config.json → profiles store.
+
+    Mock/demo legacy configs are discarded (clean demo only). Real ollama /
+    openai_compatible keys become a single optional profile beside demo.
+    """
     legacy = _legacy_config_path()
     if not legacy.exists():
         return None
@@ -101,7 +119,11 @@ def _migrate_legacy_single_config() -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
 
-    provider = str(raw.get("provider") or "mock").strip()
+    provider = str(raw.get("provider") or "mock").strip().lower()
+    # Demo / mock / empty → stock demo only (do not keep "迁移自旧配置" clutter).
+    if provider in {"", "mock", "demo"}:
+        return _empty_store()
+
     protocol = "demo"
     provider_kind = "demo"
     preset_id = "demo"
@@ -109,11 +131,16 @@ def _migrate_legacy_single_config() -> dict[str, Any] | None:
         protocol, provider_kind, preset_id = "openai", "ollama", "ollama"
     elif provider == "openai_compatible":
         protocol, provider_kind, preset_id = "openai", "custom", "custom_openai"
+    else:
+        # Unknown legacy provider → ignore and seed demo.
+        return _empty_store()
 
-    pid = _new_id() if protocol != "demo" else "demo"
+    pid = _new_id()
     profile: dict[str, Any] = {
         "id": pid,
-        "name": f"迁移自旧配置 ({provider})",
+        "name": str(
+            (get_preset(preset_id) or {}).get("name") or provider_kind or "LLM"
+        ),
         "provider_kind": provider_kind,
         "protocol": protocol,
         "base_url": str(raw.get("base_url") or "").strip(),
@@ -124,10 +151,52 @@ def _migrate_legacy_single_config() -> dict[str, Any] | None:
         "api_key_ciphertext": raw.get("api_key_ciphertext"),
         "api_key_iv": raw.get("api_key_iv"),
     }
-    store: dict[str, Any] = {"active_profile_id": pid, "profiles": [profile]}
-    if protocol != "demo":
-        store["profiles"].insert(0, _default_demo_profile())
-    return store
+    return {
+        "active_profile_id": "demo",
+        "profiles": [_default_demo_profile(), profile],
+    }
+
+
+def _normalize_global_store(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Drop migration leftovers; keep a clean demo slot; dedupe by id.
+
+    Returns (store, changed).
+    """
+    profiles_in = [p for p in (data.get("profiles") or []) if isinstance(p, dict)]
+    changed = False
+    kept: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for p in profiles_in:
+        name = str(p.get("name") or "")
+        pid = str(p.get("id") or "")
+        if name.startswith("迁移自旧配置"):
+            changed = True
+            continue
+        if not pid or pid in seen_ids:
+            changed = True
+            continue
+        seen_ids.add(pid)
+        if pid == "demo":
+            # Always re-materialize demo from preset (fixes corrupted migrations).
+            demo = _default_demo_profile()
+            if p != demo:
+                changed = True
+            kept.append(demo)
+        else:
+            kept.append(p)
+
+    if not any(str(p.get("id")) == "demo" for p in kept):
+        kept.insert(0, _default_demo_profile())
+        changed = True
+
+    active = str(data.get("active_profile_id") or "")
+    ids = {str(p.get("id")) for p in kept}
+    if active not in ids:
+        active = "demo"
+        changed = True
+
+    out = {"active_profile_id": active, "profiles": kept}
+    return out, changed
 
 
 def _ensure_global_migrated() -> None:
@@ -139,12 +208,14 @@ def _ensure_global_migrated() -> None:
     if flat.exists():
         try:
             shutil.copy2(flat, dest)
+            _archive_legacy_path(flat)
             return
         except OSError as exc:
             logger.warning("Failed to migrate agent_profiles.json: %s", exc)
     migrated = _migrate_legacy_single_config()
     if migrated is not None:
         _save_store_unlocked(dest, migrated)
+        _archive_legacy_path(_legacy_config_path())
         return
     _save_store_unlocked(dest, _empty_store())
 
@@ -158,6 +229,11 @@ def _load_store_unlocked(path: Path, *, personal: bool = False) -> dict[str, Any
                 if not personal and len(data["profiles"]) == 0:
                     store = _empty_store()
                     _save_store_unlocked(path, store)
+                    return store
+                if not personal:
+                    store, changed = _normalize_global_store(data)
+                    if changed:
+                        _save_store_unlocked(path, store)
                     return store
                 return data
         except (OSError, json.JSONDecodeError) as exc:
@@ -410,14 +486,25 @@ def create_profile_from_preset(
             and preset_id == "demo"
             and any(str(p.get("id")) == "demo" for p in profiles)
         ):
+            demo = _default_demo_profile()
+            repaired: list[dict[str, Any]] = []
             for p in profiles:
                 if str(p.get("id")) == "demo":
-                    return _public_profile(
-                        p,
-                        active_id=str(store.get("active_profile_id") or ""),
-                        scope=scope,
-                        effective_active=False,
-                    )
+                    repaired.append(demo)
+                else:
+                    repaired.append(p)
+            store["profiles"] = repaired
+            if store.get("active_profile_id") not in {
+                str(x.get("id")) for x in repaired
+            }:
+                store["active_profile_id"] = "demo"
+            _save_store_unlocked(path, store)
+            return _public_profile(
+                demo,
+                active_id=str(store.get("active_profile_id") or "demo"),
+                scope=scope,
+                effective_active=str(store.get("active_profile_id") or "") == "demo",
+            )
         profile = {
             "id": pid,
             "name": (name or "").strip() or str(preset.get("name") or preset_id),

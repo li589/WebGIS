@@ -185,6 +185,104 @@ def test_provider_catalog_json_loads():
     assert "ollama" in ids
 
 
+def test_normalize_drops_legacy_migration_and_repairs_demo():
+    from app.services.agent.config_service import (
+        _default_demo_profile,
+        _normalize_global_store,
+    )
+
+    dirty = {
+        "active_profile_id": "deadbeef",
+        "profiles": [
+            {
+                "id": "demo",
+                "name": "迁移自旧配置 (mock)",
+                "provider_kind": "demo",
+                "protocol": "demo",
+                "base_url": "http://127.0.0.1:11434/v1",
+                "model": "qwen2.5",
+                "context_window_input": 8192,
+                "context_window_output": 4096,
+                "preset_id": "demo",
+                "api_key_ciphertext": "sk-test",
+                "api_key_iv": "",
+            },
+            {
+                "id": "aaaa",
+                "name": "DeepSeek",
+                "provider_kind": "deepseek",
+                "protocol": "openai",
+                "base_url": "https://api.deepseek.com/v1",
+                "model": "deepseek-chat",
+                "context_window_input": 64000,
+                "context_window_output": 8192,
+                "preset_id": "deepseek",
+            },
+            {
+                "id": "aaaa",
+                "name": "DeepSeek dup",
+                "provider_kind": "deepseek",
+                "protocol": "openai",
+                "base_url": "https://api.deepseek.com/v1",
+                "model": "deepseek-chat",
+                "context_window_input": 64000,
+                "context_window_output": 4096,
+                "preset_id": "deepseek",
+            },
+        ],
+    }
+    store, changed = _normalize_global_store(dirty)
+    assert changed is True
+    assert store["active_profile_id"] == "demo"
+    ids = [p["id"] for p in store["profiles"]]
+    assert ids.count("demo") == 1
+    assert ids.count("aaaa") == 1
+    demo = next(p for p in store["profiles"] if p["id"] == "demo")
+    assert demo == _default_demo_profile()
+    assert not any(str(p.get("name") or "").startswith("迁移自旧配置") for p in store["profiles"])
+
+
+def test_mock_legacy_migrates_to_demo_only(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    import app.core.config as cfg_mod
+    from app.core.config import Settings
+
+    data = tmp_path / "data"
+    data.mkdir()
+    runtime = data / "_runtime"
+    runtime.mkdir()
+    (runtime / "agent_config.json").write_text(
+        json.dumps(
+            {
+                "provider": "mock",
+                "base_url": "http://127.0.0.1:11434/v1",
+                "model": "qwen2.5",
+                "api_key_ciphertext": "sk-test",
+                "api_key_iv": "",
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg_mod.settings = replace(Settings(), data_root=str(data), environment="test")
+    monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
+
+    from app.services.agent import config_service as cs
+
+    monkeypatch.setattr(cs, "settings", cfg_mod.settings)
+    dest = data / "_runtime" / "agent" / "global_profiles.json"
+    assert not dest.exists()
+    cs._ensure_global_migrated()
+    assert dest.exists()
+    store = json.loads(dest.read_text(encoding="utf-8"))
+    assert store["active_profile_id"] == "demo"
+    assert len(store["profiles"]) == 1
+    assert store["profiles"][0]["id"] == "demo"
+    assert store["profiles"][0]["name"] == "演示（无网）"
+    assert not (runtime / "agent_config.json").exists()
+    assert (runtime / "agent_config.json.migrated.bak").exists()
+
+
 def test_global_admin_vs_standard_personal(agent_client: TestClient):
     # Service key cannot create personal (no user_id) → 403
     bad = agent_client.post(
