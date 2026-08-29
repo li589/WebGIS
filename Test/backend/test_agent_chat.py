@@ -422,3 +422,103 @@ def test_should_rate_limit_agent_chat():
 
     assert should_rate_limit_agent_chat("/agent/chat", "POST") is True
     assert should_rate_limit_agent_chat("/agent/config", "POST") is False
+
+
+def test_should_rate_limit_agent_models_refresh():
+    from app.api.rate_limit import should_rate_limit_agent_models_refresh
+
+    assert should_rate_limit_agent_models_refresh("/agent/models/refresh", "POST") is True
+    assert should_rate_limit_agent_models_refresh("/agent/models/refresh/", "POST") is True
+    assert should_rate_limit_agent_models_refresh("/agent/chat", "POST") is False
+
+
+def test_standard_cannot_refresh_global_models(agent_client: TestClient):
+    """M-1: non-admin must not drive global profile outbound refresh."""
+    _login(agent_client, "stduser", "std-pass-123")
+    r = agent_client.post(
+        "/agent/models/refresh",
+        json={"profile_id": "demo", "scope": "global"},
+    )
+    assert r.status_code == 403
+
+
+def test_leaving_demo_revalidates_base_url(tmp_path, monkeypatch):
+    """W-2: switching protocol demo → openai must validate existing base_url."""
+    from dataclasses import replace
+
+    import app.core.config as cfg_mod
+    from app.core.config import Settings
+    from app.services.agent import config_service as cs
+
+    data = tmp_path / "data"
+    data.mkdir()
+    cfg_mod.settings = replace(Settings(), data_root=str(data), environment="test")
+    monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
+    monkeypatch.setattr(cs, "settings", cfg_mod.settings)
+
+    store = {
+        "active_profile_id": "demo",
+        "profiles": [
+            {
+                "id": "demo",
+                "name": "演示（无网）",
+                "provider_kind": "demo",
+                "protocol": "demo",
+                "base_url": "http://169.254.169.254/",
+                "model": "demo-rules",
+                "context_window_input": 4000,
+                "context_window_output": 2000,
+                "preset_id": "demo",
+            }
+        ],
+    }
+    path = data / "_runtime" / "agent" / "global_profiles.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(store), encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        cs.update_profile(
+            "demo",
+            scope="global",
+            user_id=1,
+            role="admin",
+            protocol="openai",
+        )
+
+
+def test_session_store_ttl_and_cap(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from datetime import UTC, datetime, timedelta
+
+    import app.core.config as cfg_mod
+    from app.core.config import Settings
+
+    monkeypatch.setenv("BACKEND_AGENT_SESSION_TTL_HOURS", "1")
+    monkeypatch.setenv("BACKEND_AGENT_MAX_SESSIONS_PER_USER", "2")
+
+    import importlib
+
+    import app.services.agent.session_store as ss
+
+    importlib.reload(ss)
+
+    data = tmp_path / "data"
+    data.mkdir()
+    cfg_mod.settings = replace(Settings(), data_root=str(data), environment="test")
+    monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
+    monkeypatch.setattr(ss, "settings", cfg_mod.settings)
+
+    uid = 42
+    ss.append_turn(user_id=uid, session_id="s1", user_message="a", assistant_message="a1")
+    ss.append_turn(user_id=uid, session_id="s2", user_message="b", assistant_message="b1")
+    ss.append_turn(user_id=uid, session_id="s3", user_message="c", assistant_message="c1")
+    root = Path(data) / "_runtime" / "agent" / "sessions" / str(uid)
+    files = list(root.glob("*.json"))
+    assert len(files) <= 2
+
+    old = (datetime.now(UTC) - timedelta(hours=5)).isoformat()
+    for f in root.glob("*.json"):
+        raw = json.loads(f.read_text(encoding="utf-8"))
+        raw["updated_at"] = old
+        f.write_text(json.dumps(raw), encoding="utf-8")
+    assert ss.load_history(user_id=uid, session_id="s3") == []

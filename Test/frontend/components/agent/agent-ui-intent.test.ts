@@ -30,6 +30,7 @@ const addLayer = vi.fn((catalogId: string) => {
 })
 const selectLayer = vi.fn()
 const setSidebarView = vi.fn()
+const getCatalogAddBlockReason = vi.fn((_catalogId: string) => null as string | null)
 
 vi.mock('@/stores/layers/selectors', () => ({
   useLayerWorkspace: () => ({
@@ -39,6 +40,7 @@ vi.mock('@/stores/layers/selectors', () => ({
     addLayer,
     selectLayer,
     setSidebarView,
+    getCatalogAddBlockReason,
   }),
 }))
 
@@ -75,6 +77,18 @@ describe('executeAgentUiIntent', () => {
     })
     expect(addLayer).toHaveBeenCalledWith('dem-etopo')
     expect(result.ok).toBe(true)
+  })
+
+  it('refuses to add when catalog is blocked', async () => {
+    activeLayers.value = []
+    getCatalogAddBlockReason.mockReturnValueOnce('无权限')
+    const { executeAgentUiIntent } = await import('@/components/agent/agent-ui-intent')
+    const result = executeAgentUiIntent({
+      name: 'set_layer_visibility',
+      args: { catalog_id: 'secret-layer', visible: true },
+    })
+    expect(result.ok).toBe(false)
+    expect(addLayer).not.toHaveBeenCalled()
   })
 
   it('sets opacity', async () => {

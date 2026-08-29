@@ -8,7 +8,13 @@ from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_request_user, require_write_access
-from app.api.error_codes import AUTH_ERROR, ApiError
+from app.api.error_codes import (
+    AUTH_ERROR,
+    NOT_FOUND_ERROR,
+    UPSTREAM_ERROR,
+    VALIDATION_ERROR,
+    ApiError,
+)
 from app.core import config
 from app.services.agent import config_service
 from app.services.agent.clients.openai_compat import LlmClientError
@@ -179,7 +185,7 @@ def _perm_error(exc: AgentPermissionError) -> ApiError:
 
 def _value_error(exc: ValueError) -> ApiError:
     return ApiError(
-        AUTH_ERROR,
+        VALIDATION_ERROR,
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         detail=str(exc),
     )
@@ -371,12 +377,24 @@ def refresh_agent_models(
     bundle = config_service.get_config_bundle(user_id=uid, role=role)
     pid = (payload.profile_id or bundle["active_profile_id"]).strip()
     scope: AgentScopeLiteral = payload.scope or bundle.get("active_scope") or "global"
+    if scope == "global" and role != "admin":
+        raise ApiError(
+            AUTH_ERROR,
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="仅管理员可刷新全局配置档的模型列表。",
+        )
     raw = config_service.get_profile_raw(pid, scope=scope, user_id=uid)
     if raw is None and scope == "personal":
         raw = config_service.get_profile_raw(pid, scope="global", user_id=uid)
+        if raw is not None and role != "admin":
+            raise ApiError(
+                AUTH_ERROR,
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="仅管理员可刷新全局配置档的模型列表。",
+            )
     if raw is None:
         raise ApiError(
-            AUTH_ERROR,
+            NOT_FOUND_ERROR,
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"配置档不存在: {pid}",
         )
@@ -407,13 +425,13 @@ def agent_chat(
         )
     except ValueError as exc:
         raise ApiError(
-            AUTH_ERROR,
+            VALIDATION_ERROR,
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
     except LlmClientError as exc:
         raise ApiError(
-            AUTH_ERROR,
+            UPSTREAM_ERROR,
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc

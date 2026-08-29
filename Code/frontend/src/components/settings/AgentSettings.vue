@@ -20,6 +20,8 @@ import {
   isAgentCompanionEnabled,
   setAgentCompanionEnabled,
 } from '../../services/settings-local'
+import IconButton from '../ui/IconButton.vue'
+import { RefreshCw } from '../ui/icons'
 
 const companionEnabled = ref(isAgentCompanionEnabled())
 
@@ -394,7 +396,7 @@ onMounted(() => {
           <div class="editor-toolbar">
             <button
               type="button"
-              class="btn-secondary"
+              class="btn-secondary btn-sm"
               :disabled="
                 activating ||
                 (selected.id === activeProfileId && selected.scope === activeScope)
@@ -411,7 +413,7 @@ onMounted(() => {
             </button>
             <button
               type="button"
-              class="btn-danger"
+              class="btn-danger btn-sm"
               :disabled="saving || !canEditSelected"
               @click="onDelete"
             >
@@ -460,14 +462,20 @@ onMounted(() => {
                   <datalist id="agent-model-options">
                     <option v-for="m in modelOptions" :key="m" :value="m" />
                   </datalist>
-                  <button
-                    type="button"
-                    class="btn-secondary"
+                  <IconButton
+                    size="sm"
+                    label="刷新模型"
                     :disabled="refreshingModels || !canEditSelected"
                     @click="onRefreshModels"
                   >
-                    {{ refreshingModels ? '刷新中…' : '刷新模型' }}
-                  </button>
+                    <template #icon>
+                      <RefreshCw
+                        :size="14"
+                        :class="{ spinning: refreshingModels }"
+                        aria-hidden="true"
+                      />
+                    </template>
+                  </IconButton>
                 </div>
                 <span v-if="modelsManualHint" class="field-hint">{{ modelsManualHint }}</span>
               </label>
@@ -514,7 +522,7 @@ onMounted(() => {
           <div class="actions">
             <button
               type="button"
-              class="btn-save"
+              class="btn-save btn-sm"
               :disabled="saving || !canEditSelected"
               @click="saveProfile"
             >
@@ -755,15 +763,15 @@ onMounted(() => {
   min-width: 0;
 }
 
-.model-row .btn-secondary {
+.model-row :deep(.icon-btn) {
   flex-shrink: 0;
-  white-space: nowrap;
+  align-self: center;
 }
 
 .actions {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.5rem;
   flex-wrap: wrap;
   padding-top: 0.15rem;
 }
@@ -771,15 +779,40 @@ onMounted(() => {
 .btn-save,
 .btn-secondary,
 .btn-danger {
-  border-radius: 8px;
-  font-size: var(--font-size-caption);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.75rem;
   font-weight: 600;
-  padding: 0.42rem 0.8rem;
+  padding: 0.32rem 0.65rem;
   cursor: pointer;
-  font: inherit;
-  line-height: 1.35;
-  min-height: 2.15rem;
+  line-height: 1.3;
+  min-height: 1.85rem;
   box-sizing: border-box;
+}
+
+.btn-sm {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.2rem 0.48rem;
+  min-height: 1.5rem;
+  border-radius: 5px;
+  letter-spacing: 0.01em;
+}
+
+.spinning {
+  animation: agent-refresh-spin 0.8s linear infinite;
+}
+
+@keyframes agent-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinning {
+    animation: none;
+  }
 }
 
 .btn-save {

@@ -45,6 +45,10 @@ export function executeAgentUiIntent(
 
     let resolved = resolveInstanceId(catalogId, undefined)
     if (!resolved.instanceId) {
+      const block = workspace.getCatalogAddBlockReason?.(catalogId) ?? null
+      if (block) {
+        return { ok: false, message: block }
+      }
       workspace.addLayer(catalogId)
       resolved = resolveInstanceId(catalogId, undefined)
     }

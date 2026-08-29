@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import uuid
 from pathlib import Path
 from typing import Any
@@ -36,50 +37,88 @@ _ALLOWED_INTENTS = frozenset(
 )
 _SERVER_TOOLS = frozenset({"search_layers"})
 
+_CLIENT_CONTEXT_MAX_CHARS = 4000
+_CLIENT_CONTEXT_MAX_LAYERS = 40
+
+_kits_lock = threading.Lock()
+_prompt_cache: tuple[float | None, str] | None = None
+_ui_intents_cache: tuple[float | None, list[dict[str, Any]]] | None = None
+
 
 def _kits_root() -> Path:
     return Path(__file__).resolve().parents[4] / "agentKits"
 
 
-def load_system_prompt() -> str:
-    path = _kits_root() / "prompts" / "system.md"
+def _file_mtime(path: Path) -> float | None:
     try:
-        return path.read_text(encoding="utf-8")
+        return path.stat().st_mtime if path.is_file() else None
     except OSError:
-        return (
-            "You are CGDA map companion. Reply in Chinese. "
-            "Use tools for layer visibility/opacity/fit and search_layers when appropriate."
-        )
+        return None
+
+
+def load_system_prompt() -> str:
+    global _prompt_cache
+    path = _kits_root() / "prompts" / "system.md"
+    mtime = _file_mtime(path)
+    with _kits_lock:
+        if (
+            _prompt_cache is not None
+            and _prompt_cache[0] == mtime
+            and mtime is not None
+        ):
+            return _prompt_cache[1]
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            text = (
+                "You are CGDA map companion. Reply in Chinese. "
+                "Use tools for layer visibility/opacity/fit and search_layers when appropriate."
+            )
+            mtime = None
+        _prompt_cache = (mtime, text)
+        return text
 
 
 def load_ui_intent_tools_openai() -> list[dict[str, Any]]:
+    global _ui_intents_cache
     path = _kits_root() / "tools" / "ui_intents.json"
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
-    intents = data.get("intents") if isinstance(data, dict) else None
-    if not isinstance(intents, list):
-        return []
-    tools: list[dict[str, Any]] = []
-    for item in intents:
-        if not isinstance(item, dict):
-            continue
-        name = str(item.get("name") or "").strip()
-        if name not in _ALLOWED_INTENTS:
-            continue
-        tools.append(
-            {
-                "type": "function",
-                "function": {
-                    "name": name,
-                    "description": str(item.get("description") or name),
-                    "parameters": item.get("args")
-                    or {"type": "object", "properties": {}},
-                },
-            }
-        )
-    return tools
+    mtime = _file_mtime(path)
+    with _kits_lock:
+        if (
+            _ui_intents_cache is not None
+            and _ui_intents_cache[0] == mtime
+            and mtime is not None
+        ):
+            return [dict(t) for t in _ui_intents_cache[1]]
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            _ui_intents_cache = (mtime, [])
+            return []
+        intents = data.get("intents") if isinstance(data, dict) else None
+        if not isinstance(intents, list):
+            _ui_intents_cache = (mtime, [])
+            return []
+        tools: list[dict[str, Any]] = []
+        for item in intents:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            if name not in _ALLOWED_INTENTS:
+                continue
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": str(item.get("description") or name),
+                        "parameters": item.get("args")
+                        or {"type": "object", "properties": {}},
+                    },
+                }
+            )
+        _ui_intents_cache = (mtime, tools)
+        return [dict(t) for t in tools]
 
 
 def load_ui_intent_tools_anthropic() -> list[dict[str, Any]]:
@@ -105,6 +144,56 @@ def _all_tools_anthropic() -> list[dict[str, Any]]:
     return load_ui_intent_tools_anthropic() + load_server_tools_anthropic()
 
 
+def sanitize_client_context(client_context: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Whitelist keys and bound size before prompt injection (W-5)."""
+    if not client_context or not isinstance(client_context, dict):
+        return None
+    cleaned: dict[str, Any] = {}
+    if "active_catalog_ids" in client_context:
+        ids = client_context.get("active_catalog_ids")
+        if isinstance(ids, list):
+            cleaned["active_catalog_ids"] = [
+                str(x)[:128] for x in ids[:_CLIENT_CONTEXT_MAX_LAYERS] if x is not None
+            ]
+    if "active_layers" in client_context:
+        layers = client_context.get("active_layers")
+        if isinstance(layers, list):
+            slim: list[dict[str, str]] = []
+            for item in layers[:_CLIENT_CONTEXT_MAX_LAYERS]:
+                if not isinstance(item, dict):
+                    continue
+                entry: dict[str, str] = {}
+                for key in ("catalog_id", "instance_id", "name"):
+                    if key in item and item[key] is not None:
+                        entry[key] = str(item[key])[:256]
+                if entry:
+                    slim.append(entry)
+            cleaned["active_layers"] = slim
+    if not cleaned:
+        return None
+    try:
+        blob = json.dumps(cleaned, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return None
+    if len(blob) > _CLIENT_CONTEXT_MAX_CHARS:
+        while (
+            len(blob) > _CLIENT_CONTEXT_MAX_CHARS
+            and isinstance(cleaned.get("active_layers"), list)
+            and cleaned["active_layers"]
+        ):
+            cleaned["active_layers"].pop()
+            blob = json.dumps(cleaned, ensure_ascii=False)
+        if len(blob) > _CLIENT_CONTEXT_MAX_CHARS and isinstance(
+            cleaned.get("active_catalog_ids"), list
+        ):
+            while (
+                len(blob) > _CLIENT_CONTEXT_MAX_CHARS and cleaned["active_catalog_ids"]
+            ):
+                cleaned["active_catalog_ids"].pop()
+                blob = json.dumps(cleaned, ensure_ascii=False)
+    return cleaned
+
+
 def _build_system(
     client_context: dict[str, Any] | None,
     *,
@@ -112,9 +201,10 @@ def _build_system(
 ) -> str:
     system = load_system_prompt()
     parts: list[str] = [system]
-    if client_context:
+    safe_ctx = sanitize_client_context(client_context)
+    if safe_ctx:
         try:
-            blob = json.dumps(client_context, ensure_ascii=False)[:4000]
+            blob = json.dumps(safe_ctx, ensure_ascii=False)[:_CLIENT_CONTEXT_MAX_CHARS]
             parts.append(f"## Current client_context\n```json\n{blob}\n```")
         except (TypeError, ValueError):
             pass

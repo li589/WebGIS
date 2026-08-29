@@ -131,17 +131,33 @@ def catalog_summary(*, cred: Any = None, limit: int = 40) -> list[dict[str, str]
 
 
 def load_server_tools_openai() -> list[dict[str, Any]]:
-    """OpenAI tool defs for allowed server tools only."""
+    """OpenAI tool defs for allowed server tools only (mtime-cached)."""
     import json
     from pathlib import Path
 
     path = Path(__file__).resolve().parents[4] / "agentKits" / "tools" / "server_tools.json"
     try:
+        mtime = path.stat().st_mtime if path.is_file() else None
+    except OSError:
+        mtime = None
+
+    cache = getattr(load_server_tools_openai, "_cache", None)
+    if (
+        isinstance(cache, tuple)
+        and len(cache) == 2
+        and cache[0] == mtime
+        and mtime is not None
+    ):
+        return [dict(t) for t in cache[1]]
+
+    try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
+        load_server_tools_openai._cache = (mtime, [])  # type: ignore[attr-defined]
         return []
     tools_raw = data.get("tools") if isinstance(data, dict) else None
     if not isinstance(tools_raw, list):
+        load_server_tools_openai._cache = (mtime, [])  # type: ignore[attr-defined]
         return []
     out: list[dict[str, Any]] = []
     for item in tools_raw:
@@ -161,7 +177,8 @@ def load_server_tools_openai() -> list[dict[str, Any]]:
                 },
             }
         )
-    return out
+    load_server_tools_openai._cache = (mtime, out)  # type: ignore[attr-defined]
+    return [dict(t) for t in out]
 
 
 def load_server_tools_anthropic() -> list[dict[str, Any]]:

@@ -305,6 +305,13 @@ _agent_chat_limiter = RateLimiter(
     name="agent_chat",
 )
 
+# Agent models/refresh：独立限流（默认 20/分钟/IP），防外呼放大。
+_agent_models_refresh_limiter = RateLimiter(
+    int(os.getenv("BACKEND_AGENT_MODELS_REFRESH_RATE_LIMIT_PER_MINUTE", "20")),
+    timedelta(minutes=1),
+    name="agent_models_refresh",
+)
+
 
 def should_rate_limit_agent_chat(path: str, method: str) -> bool:
     return method == "POST" and (path == "/agent/chat" or path.startswith("/agent/chat/"))
@@ -315,6 +322,21 @@ def check_agent_chat_rate_limit(ip: str) -> RateLimitResult:
     if not result.allowed:
         logger.warning(
             "Agent chat 限流触发 ip=%s retry_after=%ss",
+            ip,
+            result.retry_after_seconds,
+        )
+    return result
+
+
+def should_rate_limit_agent_models_refresh(path: str, method: str) -> bool:
+    return method == "POST" and path.rstrip("/") == "/agent/models/refresh"
+
+
+def check_agent_models_refresh_rate_limit(ip: str) -> RateLimitResult:
+    result = _agent_models_refresh_limiter.check(ip)
+    if not result.allowed:
+        logger.warning(
+            "Agent models/refresh 限流触发 ip=%s retry_after=%ss",
             ip,
             result.retry_after_seconds,
         )

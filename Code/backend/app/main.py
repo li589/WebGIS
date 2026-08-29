@@ -256,6 +256,7 @@ def create_app() -> FastAPI:
     async def write_rate_limit_middleware(request: Request, call_next):
         from app.api.rate_limit import (
             check_agent_chat_rate_limit,
+            check_agent_models_refresh_rate_limit,
             check_feedback_upload_rate_limit,
             check_login_rate_limit,
             check_weather_tile_rate_limit,
@@ -263,6 +264,7 @@ def create_app() -> FastAPI:
             client_ip,
             rate_limited_response,
             should_rate_limit_agent_chat,
+            should_rate_limit_agent_models_refresh,
             should_rate_limit_feedback_upload,
             should_rate_limit_login,
             should_rate_limit_weather_tile,
@@ -318,6 +320,14 @@ def create_app() -> FastAPI:
                     return rate_limited_response(
                         result.retry_after_seconds,
                         message="Agent 对话过于频繁，请稍后再试。",
+                        request_id=request_id,
+                    )
+            if should_rate_limit_agent_models_refresh(path, method):
+                result = check_agent_models_refresh_rate_limit(client_ip(request))
+                if not result.allowed:
+                    return rate_limited_response(
+                        result.retry_after_seconds,
+                        message="模型列表刷新过于频繁，请稍后再试。",
                         request_id=request_id,
                     )
         return await call_next(request)

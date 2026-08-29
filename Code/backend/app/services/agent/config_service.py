@@ -569,6 +569,12 @@ def update_profile(
             if proto not in _VALID_PROTOCOLS:
                 raise ValueError(f"无效协议: {protocol}")
             target["protocol"] = proto
+            # Leaving demo → non-demo must re-validate existing base_url (W-2).
+            if proto != "demo" and base_url is None:
+                target["base_url"] = validate_agent_base_url(
+                    str(target.get("base_url") or ""),
+                    protocol=proto,
+                )
         if base_url is not None:
             proto = str(target.get("protocol") or "openai")
             target["base_url"] = validate_agent_base_url(base_url, protocol=proto)

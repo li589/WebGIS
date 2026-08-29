@@ -35,3 +35,14 @@ Provider 默认 URL / 模型目录保存在 [`Code/agentKits/presets/provider_ca
 | POST | `/agent/chat` | LLM/演示 + `ui_intents` + `steps` + `usage` |
 
 生产环境对 chat 按 IP 限流（`BACKEND_AGENT_CHAT_RATE_LIMIT_PER_MINUTE`，默认 30）。
+`POST /agent/models/refresh` 另有独立限流（`BACKEND_AGENT_MODELS_REFRESH_RATE_LIMIT_PER_MINUTE`，默认 20）；**仅 admin** 可刷新 `scope=global` 的配置档。
+
+会话文件带 TTL（`BACKEND_AGENT_SESSION_TTL_HOURS`，默认 24）与每用户数量上限（`BACKEND_AGENT_MAX_SESSIONS_PER_USER`，默认 40）。
+
+## 后续升级
+
+切片 A 之后的 **配置加固 / 工作流确认卡 / 多跳工具 / 流式** 任务拆分见 AI 工作区计划：
+
+[`.ai/plans/2026-08-29-agent-capability-upgrade.md`](../../.ai/plans/2026-08-29-agent-capability-upgrade.md)
+
+（该文件位于本地 `.ai/`，默认不随公开仓同步；审查对照见 [代码审查 — Agent 子系统](../06-代码审查/code-review-2026-08-29-agent-subsystem.md)。）
