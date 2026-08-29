@@ -408,6 +408,179 @@ def test_search_layers_runtime():
     assert blocked["ok"] is False
 
 
+def test_list_workflows_and_get_layer_meta():
+    from app.services.agent.server_tools_runtime import (
+        ALLOWED_SERVER_TOOLS,
+        execute_server_tool,
+    )
+
+    assert "list_workflows" in ALLOWED_SERVER_TOOLS
+    assert "get_layer_meta" in ALLOWED_SERVER_TOOLS
+
+    class _Cred:
+        role = "admin"
+        user_id = 1
+        source = "session"
+
+    wf = execute_server_tool("list_workflows", {"limit": 10}, cred=_Cred())
+    assert wf["ok"] is True
+    assert isinstance(wf.get("workflows"), list)
+
+    meta = execute_server_tool(
+        "get_layer_meta", {"catalog_id": "ndvi"}, cred=_Cred()
+    )
+    assert meta["ok"] is True
+    assert meta["layer"]["layer_id"] == "ndvi"
+    assert "workflow_id" in meta["layer"]
+
+    missing = execute_server_tool(
+        "get_layer_meta", {"catalog_id": ""}, cred=_Cred()
+    )
+    assert missing["ok"] is False
+
+
+def test_agent_openai_multihop_tools_mocked(agent_client: TestClient, monkeypatch):
+    monkeypatch.setenv("BACKEND_AGENT_MAX_TOOL_HOPS", "4")
+    _login(agent_client, "testadmin", "test-pass-123")
+    create = agent_client.post(
+        "/agent/config/profiles",
+        json={"preset_id": "openai", "scope": "global"},
+    )
+    pid = create.json()["id"]
+    agent_client.put(
+        f"/agent/config/profiles/{pid}",
+        json={"scope": "global", "api_key": "sk-test"},
+    )
+    agent_client.post(
+        "/agent/config/active",
+        json={"profile_id": pid, "scope": "global"},
+    )
+
+    hop1 = {
+        "choices": [
+            {
+                "message": {
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "t1",
+                            "function": {
+                                "name": "list_workflows",
+                                "arguments": json.dumps({"limit": 5}),
+                            },
+                        }
+                    ],
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 8, "completion_tokens": 2, "total_tokens": 10},
+    }
+    hop2 = {
+        "choices": [
+            {
+                "message": {
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "t2",
+                            "function": {
+                                "name": "get_layer_meta",
+                                "arguments": json.dumps({"catalog_id": "ndvi"}),
+                            },
+                        }
+                    ],
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15},
+    }
+    final = {
+        "choices": [
+            {
+                "message": {
+                    "content": "已查到工作流与 NDVI 图层元数据。",
+                    "tool_calls": [],
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 20, "completion_tokens": 8, "total_tokens": 28},
+    }
+
+    with patch(
+        "app.services.agent.clients.openai_compat.chat_completions",
+        side_effect=[hop1, hop2, final],
+    ) as mock_llm:
+        res = agent_client.post(
+            "/agent/chat",
+            json={"message": "查一下工作流再看 ndvi 元数据"},
+        )
+    assert res.status_code == 200
+    body = res.json()
+    assert "NDVI" in body["reply"] or "元数据" in body["reply"]
+    assert mock_llm.call_count == 3
+    tool_steps = [s for s in body["steps"] if s.get("type") == "tool"]
+    assert len(tool_steps) >= 2
+    hop_thoughts = [
+        s
+        for s in body["steps"]
+        if s.get("type") == "thought" and "工具跳" in str(s.get("summary") or "")
+    ]
+    assert len(hop_thoughts) >= 2
+
+
+def test_agent_openai_multihop_cap(agent_client: TestClient, monkeypatch):
+    monkeypatch.setenv("BACKEND_AGENT_MAX_TOOL_HOPS", "1")
+    _login(agent_client, "testadmin", "test-pass-123")
+    create = agent_client.post(
+        "/agent/config/profiles",
+        json={"preset_id": "openai", "scope": "global"},
+    )
+    pid = create.json()["id"]
+    agent_client.put(
+        f"/agent/config/profiles/{pid}",
+        json={"scope": "global", "api_key": "sk-test"},
+    )
+    agent_client.post(
+        "/agent/config/active",
+        json={"profile_id": pid, "scope": "global"},
+    )
+
+    always_tool = {
+        "choices": [
+            {
+                "message": {
+                    "content": "继续",
+                    "tool_calls": [
+                        {
+                            "id": "tx",
+                            "function": {
+                                "name": "list_workflows",
+                                "arguments": "{}",
+                            },
+                        }
+                    ],
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+    }
+
+    with patch(
+        "app.services.agent.clients.openai_compat.chat_completions",
+        side_effect=[always_tool, always_tool, always_tool],
+    ) as mock_llm:
+        res = agent_client.post("/agent/chat", json={"message": "无限工具"})
+    assert res.status_code == 200
+    body = res.json()
+    # initial + 1 follow-up after hop 1; no further hops
+    assert mock_llm.call_count == 2
+    assert any(
+        "上限" in str(s.get("summary") or "")
+        for s in body["steps"]
+        if s.get("type") == "thought"
+    )
+
+
 def test_run_workflow_creates_confirmation_ticket(tmp_path, monkeypatch):
     from dataclasses import replace
 

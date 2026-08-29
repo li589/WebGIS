@@ -15,12 +15,13 @@ Provider 默认 URL / 模型目录保存在 [`Code/agentKits/presets/provider_ca
 
 对话解析顺序：若当前用户有个人 `active_profile_id` → 用个人档；否则回退全局启用档。`demo` 角色只读。API Key 加密存储，响应永不回传明文。
 
-## 能力（切片 A + Phase B）
+## 能力（切片 A + Phase B + Phase C）
 
 - 短会话记忆（每用户/session 最近约 12 轮）
 - 每次 chat 注入活动图层 + 可访问目录摘要 + 工具清单
-- 只读 `search_layers` 服务端真实执行
+- 只读工具：`search_layers` / `list_workflows` / `get_layer_meta`（ACL 过滤，立即执行）
 - `run_workflow` 创建确认票据；对话内确认卡批准后才提交 `workflow-runs`
+- 有界多跳工具循环（`BACKEND_AGENT_MAX_TOOL_HOPS`，默认 4）
 - 响应 `steps` / `usage`；可选 `confirmations` 供前端确认卡
 
 ## API
@@ -43,9 +44,11 @@ Provider 默认 URL / 模型目录保存在 [`Code/agentKits/presets/provider_ca
 
 确认票据 TTL：`BACKEND_AGENT_CONFIRM_TTL_SECONDS`（默认 600）。`run_workflow` 仅创建票据，**批准后**才提交 `workflow-runs`；`demo` 角色无法确认写操作。
 
+多跳上限：`BACKEND_AGENT_MAX_TOOL_HOPS`（默认 4，钳制 1～8）；每跳记入 `steps`（`thought` / `tool` / `tool_result`）。
+
 ## 后续升级
 
-切片 A 之后的 **配置加固 / 工作流确认卡 / 多跳工具 / 流式** 任务拆分见 AI 工作区计划：
+切片 A / P0 / B / C 之后的 **SSE 流式（Phase D）** 任务拆分见 AI 工作区计划：
 
 [`.ai/plans/2026-08-29-agent-capability-upgrade.md`](../../.ai/plans/2026-08-29-agent-capability-upgrade.md)
 

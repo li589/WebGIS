@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "search_layers executes immediately; run_workflow creates a confirmation ticket (Phase B).",
+  "note": "Read tools execute immediately; run_workflow creates a confirmation ticket (Phase B). Multi-hop tool loops capped by BACKEND_AGENT_MAX_TOOL_HOPS (Phase C).",
   "tools": [
     {
       "name": "search_layers",
@@ -11,6 +11,31 @@
         "properties": {
           "query": { "type": "string" },
           "limit": { "type": "integer", "minimum": 1, "maximum": 50, "default": 10 }
+        }
+      }
+    },
+    {
+      "name": "list_workflows",
+      "description": "List available workflow definitions/templates (read-only). Optional keyword filter.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Optional keyword matched against workflow id/name/tags"
+          },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 50, "default": 20 }
+        }
+      }
+    },
+    {
+      "name": "get_layer_meta",
+      "description": "Get metadata for one catalog layer (read-only, ACL filtered).",
+      "args": {
+        "type": "object",
+        "required": ["catalog_id"],
+        "properties": {
+          "catalog_id": { "type": "string", "description": "Layer catalog id" }
         }
       }
     },

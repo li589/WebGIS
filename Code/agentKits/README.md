@@ -11,8 +11,9 @@ CGDA AI 助手的**共享契约层**（工具 schema、提示词、Provider 预�
 ## 两类能力
 
 1. **服务端 tools**（`server_tools.json`）：由后端执行。
-   - **`search_layers`**：只读、经 ACL 过滤，立即执行。
-   - **`run_workflow`**：创建确认票据（`needs_confirmation`），须经 `POST /agent/confirm` 批准后才提交 `workflow-runs`。
+   - **只读（立即执行，ACL）**：`search_layers`、`list_workflows`、`get_layer_meta`
+   - **写（确认卡）**：`run_workflow` → 创建确认票据，须经 `POST /agent/confirm` 批准后才提交 `workflow-runs`
+   - **有界多跳**：同一轮对话可连续工具调用，上限 `BACKEND_AGENT_MAX_TOOL_HOPS`（默认 4，范围 1～8）
 2. **UI intents**（`ui_intents.json`）：后端建议、**前端执行**（显隐、透明度、缩放到图层）。地图状态只存在于客户端；前端应对 `catalog_id` 做可添加性校验。
 
 运行时：`Code/backend/app/services/agent/` + `POST /agent/chat` + `/agent/config*`（全局 admin / 个人档）；

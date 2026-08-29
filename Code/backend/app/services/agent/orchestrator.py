@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import uuid
 from pathlib import Path
@@ -17,6 +18,7 @@ from app.services.agent.config_service import (
 )
 from app.services.agent.mock_orchestrator import mock_chat
 from app.services.agent.server_tools_runtime import (
+    ALLOWED_SERVER_TOOLS,
     catalog_summary,
     execute_server_tool,
     load_server_tools_anthropic,
@@ -35,10 +37,19 @@ _ALLOWED_INTENTS = frozenset(
         "list_active_layers",
     }
 )
-_SERVER_TOOLS = frozenset({"search_layers", "run_workflow"})
+_SERVER_TOOLS = ALLOWED_SERVER_TOOLS
 
 _CLIENT_CONTEXT_MAX_CHARS = 4000
 _CLIENT_CONTEXT_MAX_LAYERS = 40
+
+
+def _max_tool_hops() -> int:
+    """Bounded multi-hop tool rounds (Phase C). Env: BACKEND_AGENT_MAX_TOOL_HOPS."""
+    raw = os.getenv("BACKEND_AGENT_MAX_TOOL_HOPS", "4")
+    try:
+        return max(1, min(8, int(raw)))
+    except (TypeError, ValueError):
+        return 4
 
 _kits_lock = threading.Lock()
 _prompt_cache: tuple[float | None, str] | None = None
@@ -548,7 +559,16 @@ def run_chat(
                 data.get("content")
             )
             confirmations: list[dict[str, Any]] = []
-            if server_calls:
+            max_hops = _max_tool_hops()
+            for hop in range(1, max_hops + 1):
+                if not server_calls:
+                    break
+                steps.append(
+                    {
+                        "type": "thought",
+                        "summary": f"工具跳 {hop}/{max_hops}",
+                    }
+                )
                 tool_result_blocks: list[dict[str, Any]] = []
                 for sc in server_calls:
                     steps.append(
@@ -579,31 +599,33 @@ def run_chat(
                             "content": json.dumps(tres, ensure_ascii=False),
                         }
                     )
-                # One-hop follow-up
-                follow_messages = list(messages)
-                follow_messages.append(
+                messages.append(
                     {"role": "assistant", "content": data.get("content")}
                 )
-                follow_messages.append(
-                    {"role": "user", "content": tool_result_blocks}
-                )
-                data2 = anthropic_compat.messages_create(
+                messages.append({"role": "user", "content": tool_result_blocks})
+                data = anthropic_compat.messages_create(
                     base_url=base_url,
                     api_key=api_key,
                     model=model,
                     system=system,
-                    messages=follow_messages,
+                    messages=messages,
                     tools=_all_tools_anthropic() or None,
                     max_tokens=max_out,
                 )
-                reply2, intents2, _ = _intents_from_anthropic_content(
-                    data2.get("content")
+                reply2, intents2, server_calls = _intents_from_anthropic_content(
+                    data.get("content")
                 )
                 if reply2:
                     reply = reply2
                 if intents2:
                     intents = intents2
-                data = data2
+            if server_calls:
+                steps.append(
+                    {
+                        "type": "thought",
+                        "summary": f"已达工具跳上限 {max_hops}，停止继续调用工具",
+                    }
+                )
 
             if not reply and not intents:
                 reply = "（模型未返回文本）"
@@ -659,8 +681,18 @@ def run_chat(
         server_calls = _server_calls(calls)
         reply = str(message_obj.get("content") or "").strip()
         confirmations: list[dict[str, Any]] = []
+        max_hops = _max_tool_hops()
+        oai_key = api_key or ("ollama" if provider_kind == "ollama" else None)
 
-        if server_calls:
+        for hop in range(1, max_hops + 1):
+            if not server_calls:
+                break
+            steps.append(
+                {
+                    "type": "thought",
+                    "summary": f"工具跳 {hop}/{max_hops}",
+                }
+            )
             messages_oai.append(message_obj)
             for sc in server_calls:
                 steps.append(
@@ -691,29 +723,34 @@ def run_chat(
                         "content": json.dumps(tres, ensure_ascii=False),
                     }
                 )
-            data2 = openai_compat.chat_completions(
+            data = openai_compat.chat_completions(
                 base_url=base_url,
-                api_key=api_key or ("ollama" if provider_kind == "ollama" else None),
+                api_key=oai_key,
                 model=model,
                 messages=messages_oai,
                 tools=_all_tools_openai() or None,
                 max_tokens=max_out,
             )
-            choices2 = data2.get("choices")
-            message_obj2: dict[str, Any] = {}
-            if isinstance(choices2, list) and choices2:
-                first2 = choices2[0]
-                if isinstance(first2, dict) and isinstance(
-                    first2.get("message"), dict
-                ):
-                    message_obj2 = first2["message"]
-            reply = str(message_obj2.get("content") or reply).strip()
-            more_intents = _intents_from_tool_calls(
-                _parse_openai_tool_calls(message_obj2)
-            )
+            choices = data.get("choices")
+            message_obj = {}
+            if isinstance(choices, list) and choices:
+                first = choices[0]
+                if isinstance(first, dict) and isinstance(first.get("message"), dict):
+                    message_obj = first["message"]
+            reply = str(message_obj.get("content") or reply).strip()
+            calls = _parse_openai_tool_calls(message_obj)
+            more_intents = _intents_from_tool_calls(calls)
             if more_intents:
                 intents = more_intents
-            data = data2
+            server_calls = _server_calls(calls)
+
+        if server_calls:
+            steps.append(
+                {
+                    "type": "thought",
+                    "summary": f"已达工具跳上限 {max_hops}，停止继续调用工具",
+                }
+            )
 
         if not reply and not intents:
             reply = "（模型未返回文本）"

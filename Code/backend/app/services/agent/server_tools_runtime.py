@@ -1,4 +1,4 @@
-"""Server tool runtime for Agent (search_layers read-only; run_workflow via confirmation)."""
+"""Server tool runtime for Agent (read tools immediate; run_workflow via confirmation)."""
 
 from __future__ import annotations
 
@@ -7,8 +7,11 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Tools exposed to the model (run_workflow returns needs_confirmation, does not submit).
-_ALLOWED_TOOLS = frozenset({"search_layers", "run_workflow"})
+# Read tools execute immediately; write tools create confirmation tickets (Phase B/C).
+_READ_TOOLS = frozenset({"search_layers", "list_workflows", "get_layer_meta"})
+_WRITE_TOOLS = frozenset({"run_workflow"})
+_ALLOWED_TOOLS = _READ_TOOLS | _WRITE_TOOLS
+ALLOWED_SERVER_TOOLS = _ALLOWED_TOOLS
 
 
 def execute_server_tool(
@@ -23,6 +26,10 @@ def execute_server_tool(
         return {"ok": False, "error": f"未知或未授权的服务端工具: {tool}"}
     if tool == "search_layers":
         return _search_layers(args, cred=cred)
+    if tool == "list_workflows":
+        return _list_workflows(args, cred=cred)
+    if tool == "get_layer_meta":
+        return _get_layer_meta(args, cred=cred)
     if tool == "run_workflow":
         return _prepare_run_workflow(args, cred=cred)
     return {"ok": False, "error": f"未实现: {tool}"}
@@ -142,6 +149,88 @@ def _prepare_run_workflow(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
     }
 
 
+def _list_workflows(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
+    """List workflow definitions (read-only), optional keyword filter + ACL."""
+    query = str(args.get("query") or "").strip().casefold()
+    try:
+        limit = int(args.get("limit") or 20)
+    except (TypeError, ValueError):
+        limit = 20
+    limit = max(1, min(50, limit))
+
+    try:
+        from app.services.workflow_definition_service import list_definitions
+    except Exception as exc:
+        logger.exception("list_workflows import failed")
+        return {"ok": False, "error": f"无法加载工作流列表: {exc}"}
+
+    candidates: list[dict[str, Any]] = []
+    for item in list_definitions() or []:
+        if not isinstance(item, dict):
+            continue
+        wid = str(item.get("workflow_id") or "").strip()
+        if not wid:
+            continue
+        name = str(item.get("name") or wid)
+        tags = item.get("tags") or []
+        tag_s = " ".join(str(t) for t in tags) if isinstance(tags, list) else str(tags)
+        blob = f"{wid} {name} {tag_s} {item.get('engine') or ''}".casefold()
+        if query and query not in blob:
+            continue
+        candidates.append(
+            {
+                "workflow_id": wid,
+                "name": name,
+                "engine": str(item.get("engine") or ""),
+                "linked_layer_id": item.get("linked_layer_id"),
+                "is_template": bool(item.get("is_template", False)),
+                "kind": str(item.get("kind") or ""),
+            }
+        )
+
+    accessible = set(
+        _filter_resource_ids(
+            [c["workflow_id"] for c in candidates],
+            cred,
+            resource_type="workflow",
+        )
+    )
+    hits = [c for c in candidates if c["workflow_id"] in accessible][:limit]
+    return {"ok": True, "count": len(hits), "workflows": hits}
+
+
+def _get_layer_meta(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
+    """Return safe metadata for one catalog layer (ACL filtered)."""
+    catalog_id = str(args.get("catalog_id") or "").strip()
+    if not catalog_id:
+        return {"ok": False, "error": "catalog_id 不能为空"}
+
+    accessible = _filter_ids([catalog_id], cred)
+    if catalog_id not in set(accessible):
+        return {"ok": False, "error": f"无权访问图层: {catalog_id}"}
+
+    from app.services.layer_catalog import get_layer_descriptor
+
+    desc = get_layer_descriptor(catalog_id)
+    if desc is None:
+        return {"ok": False, "error": f"未找到图层: {catalog_id}"}
+
+    tags = getattr(desc, "tags", None) or []
+    if not isinstance(tags, list):
+        tags = [str(tags)]
+    return {
+        "ok": True,
+        "layer": {
+            "layer_id": str(getattr(desc, "layer_id", "") or catalog_id),
+            "display_name": str(getattr(desc, "display_name", "") or catalog_id),
+            "description": str(getattr(desc, "description", "") or "")[:500],
+            "workflow_id": str(getattr(desc, "workflow_id", "") or ""),
+            "status": str(getattr(desc, "status", "") or ""),
+            "tags": [str(t)[:64] for t in tags[:20]],
+        },
+    }
+
+
 def _search_layers(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
     query = str(args.get("query") or "").strip()
     try:
@@ -192,25 +281,34 @@ def _search_layers(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
 
 
 def _filter_ids(layer_ids: list[str], cred: Any) -> list[str]:
+    return _filter_resource_ids(layer_ids, cred, resource_type="layer")
+
+
+def _filter_resource_ids(
+    resource_ids: list[str],
+    cred: Any,
+    *,
+    resource_type: str,
+) -> list[str]:
     if cred is None:
-        return list(layer_ids)
+        return list(resource_ids)
     role = getattr(cred, "role", None)
     if role == "admin":
-        return list(layer_ids)
+        return list(resource_ids)
     user_id = getattr(cred, "user_id", None)
     source = getattr(cred, "source", None)
     if user_id is None:
         if source in {"service_key", "dev_bypass"}:
-            return list(layer_ids)
+            return list(resource_ids)
         return []
     try:
         from app.services.permission_repository import get_permission_repository
 
         return get_permission_repository().batch_filter_accessible(
-            int(user_id), "layer", layer_ids
+            int(user_id), resource_type, resource_ids
         )
     except Exception:
-        logger.exception("ACL filter failed for search_layers")
+        logger.exception("ACL filter failed for %s", resource_type)
         return []
 
 
