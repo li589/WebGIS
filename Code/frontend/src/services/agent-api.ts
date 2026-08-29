@@ -1,4 +1,6 @@
-import { requestJson } from './_http'
+import { requestJson, resolveApiUrl } from './_http'
+import { handleSessionExpired, isAuthBootstrapPath } from './session-expired'
+import { withWriteAuthHeaders } from './backend-auth'
 
 export type AgentProtocol = 'openai' | 'anthropic' | 'demo'
 export type AgentScope = 'global' | 'personal'
@@ -129,6 +131,151 @@ export function postAgentChat(body: AgentChatRequest): Promise<AgentChatResponse
     method: 'POST',
     body: JSON.stringify(body),
   })
+}
+
+export interface AgentStreamHandlers {
+  onToken?: (text: string) => void
+  onStep?: (step: AgentStep) => void
+  onIntent?: (intent: AgentUiIntent) => void
+  onDone?: (res: AgentChatResponse) => void
+  onError?: (detail: string) => void
+}
+
+/**
+ * POST /agent/chat/stream — SSE (token / step / intent / done / error).
+ * Falls through to caller on transport failure; parse errors raise.
+ */
+export async function streamAgentChat(
+  body: AgentChatRequest,
+  handlers: AgentStreamHandlers = {},
+  init?: { signal?: AbortSignal; timeoutMs?: number },
+): Promise<AgentChatResponse> {
+  const timeoutMs = init?.timeoutMs ?? 180_000
+  const controller = new AbortController()
+  const timeoutId = globalThis.setTimeout(() => {
+    controller.abort(new DOMException(`请求超时（${timeoutMs}ms）`, 'AbortError'))
+  }, timeoutMs)
+
+  let signal: AbortSignal = controller.signal
+  if (init?.signal && typeof AbortSignal.any === 'function') {
+    signal = AbortSignal.any([init.signal, controller.signal])
+  } else if (init?.signal) {
+    const external = init.signal
+    if (external.aborted) controller.abort(external.reason)
+    else {
+      external.addEventListener('abort', () => controller.abort(external.reason), {
+        once: true,
+      })
+    }
+  }
+
+  const headers = withWriteAuthHeaders(
+    {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    },
+    'POST',
+  )
+
+  try {
+    const response = await fetch(resolveApiUrl('/agent/chat/stream'), {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+      body: JSON.stringify(body),
+      signal,
+    })
+
+    if (!response.ok) {
+      let detail = `HTTP ${response.status}`
+      try {
+        const errBody = await response.json()
+        const rec = errBody && typeof errBody === 'object' ? (errBody as Record<string, unknown>) : null
+        detail =
+          (rec && typeof rec.detail === 'string' && rec.detail) ||
+          (rec && typeof rec.user_message === 'string' && rec.user_message) ||
+          detail
+      } catch {
+        /* ignore */
+      }
+      if (response.status === 401 && !isAuthBootstrapPath('/agent/chat/stream')) {
+        handleSessionExpired()
+      }
+      throw new Error(detail)
+    }
+
+    if (!response.body) {
+      throw new Error('流式响应无 body')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let final: AgentChatResponse | null = null
+    let streamError: string | null = null
+
+    const dispatchBlock = (rawEvent: string, rawData: string) => {
+      let data: Record<string, unknown>
+      try {
+        data = JSON.parse(rawData) as Record<string, unknown>
+      } catch {
+        return
+      }
+      const event = rawEvent || 'message'
+      if (event === 'token') {
+        const text = typeof data.text === 'string' ? data.text : ''
+        if (text) handlers.onToken?.(text)
+      } else if (event === 'step') {
+        handlers.onStep?.({
+          type: (data.type as AgentStep['type']) || 'thought',
+          summary: String(data.summary || ''),
+          detail: typeof data.detail === 'string' ? data.detail : null,
+        })
+      } else if (event === 'intent') {
+        handlers.onIntent?.({
+          name: String(data.name || ''),
+          args: (data.args as Record<string, unknown>) || {},
+        })
+      } else if (event === 'done') {
+        final = data as unknown as AgentChatResponse
+        handlers.onDone?.(final)
+      } else if (event === 'error') {
+        streamError = String(data.detail || '流式对话失败')
+        handlers.onError?.(streamError)
+      }
+    }
+
+    const flushBuffer = (chunk: string) => {
+      buffer += chunk
+      // SSE events separated by blank line
+      for (;;) {
+        const sep = buffer.indexOf('\n\n')
+        if (sep < 0) break
+        const block = buffer.slice(0, sep)
+        buffer = buffer.slice(sep + 2)
+        let evName = 'message'
+        const dataLines: string[] = []
+        for (const line of block.split('\n')) {
+          if (line.startsWith('event:')) evName = line.slice(6).trim()
+          else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
+        }
+        if (dataLines.length) dispatchBlock(evName, dataLines.join('\n'))
+      }
+    }
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      flushBuffer(decoder.decode(value, { stream: true }))
+    }
+    flushBuffer(decoder.decode())
+
+    if (streamError) throw new Error(streamError)
+    if (!final) throw new Error('流式对话未收到 done 事件')
+    return final
+  } finally {
+    globalThis.clearTimeout(timeoutId)
+  }
 }
 
 export function confirmAgentAction(body: AgentConfirmRequest): Promise<AgentConfirmResponse> {

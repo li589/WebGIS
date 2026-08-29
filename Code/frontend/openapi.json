@@ -601,6 +601,7 @@
           "auth"
         ],
         "summary": "List Themes",
+        "description": "List all product themes (admin session required).",
         "operationId": "list_themes_auth_themes_get",
         "responses": {
           "200": {
@@ -12120,6 +12121,96 @@
         ]
       }
     },
+    "/agent/chat/stream": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Chat Stream",
+        "description": "SSE chat stream (Phase D). Events: token, step, intent, done, error.",
+        "operationId": "agent_chat_stream_agent_chat_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "SSE stream: token | step | intent | done | error",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/agent/confirm": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Confirm",
+        "description": "Approve or reject a pending Agent confirmation ticket (Phase B).",
+        "operationId": "agent_confirm_agent_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConfirmResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
     "/gee/workflows:validate": {
       "post": {
         "tags": [
@@ -12491,6 +12582,13 @@
             },
             "type": "array",
             "title": "Steps"
+          },
+          "confirmations": {
+            "items": {
+              "$ref": "#/components/schemas/AgentConfirmation"
+            },
+            "type": "array",
+            "title": "Confirmations"
           }
         },
         "type": "object",
@@ -12639,6 +12737,113 @@
         },
         "type": "object",
         "title": "AgentConfigUpdateRequest"
+      },
+      "AgentConfirmRequest": {
+        "properties": {
+          "confirmation_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 8,
+            "title": "Confirmation Id"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "reject"
+            ],
+            "title": "Decision",
+            "default": "approve"
+          }
+        },
+        "type": "object",
+        "required": [
+          "confirmation_id"
+        ],
+        "title": "AgentConfirmRequest"
+      },
+      "AgentConfirmResponse": {
+        "properties": {
+          "confirmation_id": {
+            "type": "string",
+            "title": "Confirmation Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "status_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Url"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "confirmation_id",
+          "status"
+        ],
+        "title": "AgentConfirmResponse"
+      },
+      "AgentConfirmation": {
+        "properties": {
+          "confirmation_id": {
+            "type": "string",
+            "title": "Confirmation Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action",
+            "default": "run_workflow"
+          },
+          "expires_at": {
+            "type": "string",
+            "title": "Expires At",
+            "default": ""
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "confirmation_id"
+        ],
+        "title": "AgentConfirmation"
       },
       "AgentModelsRefreshRequest": {
         "properties": {

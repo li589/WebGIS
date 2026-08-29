@@ -15,13 +15,14 @@ Provider 默认 URL / 模型目录保存在 [`Code/agentKits/presets/provider_ca
 
 对话解析顺序：若当前用户有个人 `active_profile_id` → 用个人档；否则回退全局启用档。`demo` 角色只读。API Key 加密存储，响应永不回传明文。
 
-## 能力（切片 A + Phase B + Phase C）
+## 能力（切片 A + Phase B + Phase C + Phase D）
 
 - 短会话记忆（每用户/session 最近约 12 轮）
 - 每次 chat 注入活动图层 + 可访问目录摘要 + 工具清单
 - 只读工具：`search_layers` / `list_workflows` / `get_layer_meta`（ACL 过滤，立即执行）
 - `run_workflow` 创建确认票据；对话内确认卡批准后才提交 `workflow-runs`
 - 有界多跳工具循环（`BACKEND_AGENT_MAX_TOOL_HOPS`，默认 4）
+- **SSE 流式**：`POST /agent/chat/stream`（`token` / `step` / `intent` / `done` / `error`）；前端失败自动回退 `/agent/chat`
 - 响应 `steps` / `usage`；可选 `confirmations` 供前端确认卡
 
 ## API
@@ -35,6 +36,7 @@ Provider 默认 URL / 模型目录保存在 [`Code/agentKits/presets/provider_ca
 | POST | `/agent/config/use-global` | 清除个人启用，回退全局 |
 | POST | `/agent/models/refresh` | 拉模型列表 |
 | POST | `/agent/chat` | LLM/演示 + `ui_intents` + `steps` + `usage` + 可选 `confirmations` |
+| POST | `/agent/chat/stream` | SSE 流式（同请求体）；事件 `token`/`step`/`intent`/`done`/`error` |
 | POST | `/agent/confirm` | 批准/拒绝危险操作票据（`run_workflow`）；写权限 required |
 
 生产环境对 chat 按 IP 限流（`BACKEND_AGENT_CHAT_RATE_LIMIT_PER_MINUTE`，默认 30）。
@@ -46,9 +48,11 @@ Provider 默认 URL / 模型目录保存在 [`Code/agentKits/presets/provider_ca
 
 多跳上限：`BACKEND_AGENT_MAX_TOOL_HOPS`（默认 4，钳制 1～8）；每跳记入 `steps`（`thought` / `tool` / `tool_result`）。
 
+Gateway：`/agent/chat/stream` 单独 `location ^~`（`proxy_buffering off`，读超时 600s，`X-Accel-Buffering: no`）。
+
 ## 后续升级
 
-切片 A / P0 / B / C 之后的 **SSE 流式（Phase D）** 任务拆分见 AI 工作区计划：
+升级路线（P0～D）已基本落地；后续增量见 AI 工作区计划：
 
 [`.ai/plans/2026-08-29-agent-capability-upgrade.md`](../../.ai/plans/2026-08-29-agent-capability-upgrade.md)
 

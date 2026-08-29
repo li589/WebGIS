@@ -4,8 +4,11 @@ import { X } from '../ui/icons'
 import {
   confirmAgentAction,
   postAgentChat,
+  streamAgentChat,
   type AgentChatResponse,
   type AgentConfirmation,
+  type AgentStep,
+  type AgentUiIntent,
 } from '../../services/agent-api'
 import { useLayerWorkspace } from '../../stores/layers/selectors'
 import {
@@ -190,25 +193,9 @@ async function resolveConfirmation(
   }
 }
 
-async function send() {
-  const text = input.value.trim()
-  if (!text || sending.value) return
-  input.value = ''
-  errorText.value = null
-  messages.value.push({
-    id: `u-${Date.now()}`,
-    role: 'user',
-    text,
-  })
-  void scrollToBottom()
-  sending.value = true
-  try {
-    const res: AgentChatResponse = await postAgentChat({
-      message: text,
-      session_id: sessionId.value,
-      client_context: buildClientContext(),
-    })
+  async function applyChatResult(res: AgentChatResponse, assistantId: string) {
     sessionId.value = res.session_id
+    const msg = messages.value.find((m) => m.id === assistantId)
     const pending: PendingConfirmation[] | undefined = res.confirmations?.length
       ? res.confirmations.map((c) => ({
           ...c,
@@ -216,19 +203,31 @@ async function send() {
         }))
       : undefined
     if (pending?.length) startExpiryTick()
-    messages.value.push({
-      id: `a-${Date.now()}`,
-      role: 'assistant',
-      text: res.reply,
-      usage: res.usage
+    if (msg) {
+      msg.text = res.reply || msg.text
+      msg.usage = res.usage
         ? {
             total_tokens: res.usage.total_tokens,
             estimated: res.usage.estimated,
           }
-        : null,
-      steps: res.steps?.length ? res.steps : undefined,
-      confirmations: pending,
-    })
+        : null
+      if (res.steps?.length) msg.steps = res.steps
+      if (pending?.length) msg.confirmations = pending
+    } else {
+      messages.value.push({
+        id: assistantId,
+        role: 'assistant',
+        text: res.reply,
+        usage: res.usage
+          ? {
+              total_tokens: res.usage.total_tokens,
+              estimated: res.usage.estimated,
+            }
+          : null,
+        steps: res.steps?.length ? res.steps : undefined,
+        confirmations: pending,
+      })
+    }
     if (res.ui_intents?.length) {
       const results = executeAgentUiIntents(res.ui_intents, {
         fitToLayerExtent: props.fitToLayerExtent,
@@ -244,18 +243,84 @@ async function send() {
         })
       }
     }
-  } catch (err) {
-    errorText.value = err instanceof Error ? err.message : String(err)
-    messages.value.push({
-      id: `e-${Date.now()}`,
-      role: 'system',
-      text: `请求失败：${errorText.value}`,
-    })
-  } finally {
-    sending.value = false
-    void scrollToBottom()
   }
-}
+
+  async function send() {
+    const text = input.value.trim()
+    if (!text || sending.value) return
+    input.value = ''
+    errorText.value = null
+    messages.value.push({
+      id: `u-${Date.now()}`,
+      role: 'user',
+      text,
+    })
+    const assistantId = `a-${Date.now()}`
+    messages.value.push({
+      id: assistantId,
+      role: 'assistant',
+      text: '',
+      steps: [],
+    })
+    void scrollToBottom()
+    sending.value = true
+
+    const req = {
+      message: text,
+      session_id: sessionId.value,
+      client_context: buildClientContext(),
+    }
+
+    const onStep = (step: AgentStep) => {
+      const msg = messages.value.find((m) => m.id === assistantId)
+      if (!msg) return
+      if (!msg.steps) msg.steps = []
+      msg.steps.push(step)
+      void scrollToBottom()
+    }
+    const onToken = (chunk: string) => {
+      const msg = messages.value.find((m) => m.id === assistantId)
+      if (!msg) return
+      msg.text = `${msg.text || ''}${chunk}`
+      void scrollToBottom()
+    }
+
+    try {
+      let res: AgentChatResponse
+      try {
+        res = await streamAgentChat(req, {
+          onToken,
+          onStep,
+          onIntent: (_intent: AgentUiIntent) => {
+            /* applied from done payload */
+          },
+        })
+      } catch (_streamErr) {
+        // Fallback to non-stream chat (Gateway / older backend / parse failure).
+        const msg = messages.value.find((m) => m.id === assistantId)
+        if (msg) {
+          msg.text = ''
+          msg.steps = []
+        }
+        res = await postAgentChat(req)
+      }
+      await applyChatResult(res, assistantId)
+    } catch (err) {
+      errorText.value = err instanceof Error ? err.message : String(err)
+      const msg = messages.value.find((m) => m.id === assistantId)
+      if (msg && !msg.text) {
+        messages.value = messages.value.filter((m) => m.id !== assistantId)
+      }
+      messages.value.push({
+        id: `e-${Date.now()}`,
+        role: 'system',
+        text: `请求失败：${errorText.value}`,
+      })
+    } finally {
+      sending.value = false
+      void scrollToBottom()
+    }
+  }
 
 function onKeydown(ev: KeyboardEvent) {
   if (ev.key === 'Enter' && !ev.shiftKey) {
@@ -290,8 +355,10 @@ function onKeydown(ev: KeyboardEvent) {
         class="agent-chat-bubble"
         :class="`agent-chat-bubble--${msg.role}`"
       >
-        <pre class="agent-chat-text">{{ msg.text }}</pre>
-        <details v-if="msg.steps?.length" class="agent-chat-steps">
+        <pre class="agent-chat-text">{{
+          msg.text || (sending && msg.role === 'assistant' ? '…' : '')
+        }}</pre>
+        <details v-if="msg.steps?.length" class="agent-chat-steps" open>
           <summary>过程（{{ msg.steps.length }}）</summary>
           <ul>
             <li v-for="(step, idx) in msg.steps" :key="idx">

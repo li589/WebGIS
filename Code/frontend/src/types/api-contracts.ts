@@ -236,7 +236,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Themes */
+        /**
+         * List Themes
+         * @description List all product themes (admin session required).
+         */
         get: operations["list_themes_auth_themes_get"];
         put?: never;
         /** Create Theme */
@@ -4314,6 +4317,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/chat/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Agent Chat Stream
+         * @description SSE chat stream (Phase D). Events: token, step, intent, done, error.
+         */
+        post: operations["agent_chat_stream_agent_chat_stream_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Agent Confirm
+         * @description Approve or reject a pending Agent confirmation ticket (Phase B).
+         */
+        post: operations["agent_confirm_agent_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/gee/workflows:validate": {
         parameters: {
             query?: never;
@@ -4468,6 +4511,8 @@ export interface components {
             usage?: components["schemas"]["AgentTokenUsage"] | null;
             /** Steps */
             steps?: components["schemas"]["AgentStep"][];
+            /** Confirmations */
+            confirmations?: components["schemas"]["AgentConfirmation"][];
         };
         /** AgentConfigBundleResponse */
         AgentConfigBundleResponse: {
@@ -4533,6 +4578,61 @@ export interface components {
              * @default false
              */
             clear_api_key: boolean;
+        };
+        /** AgentConfirmRequest */
+        AgentConfirmRequest: {
+            /** Confirmation Id */
+            confirmation_id: string;
+            /**
+             * Decision
+             * @default approve
+             * @enum {string}
+             */
+            decision: "approve" | "reject";
+        };
+        /** AgentConfirmResponse */
+        AgentConfirmResponse: {
+            /** Confirmation Id */
+            confirmation_id: string;
+            /** Status */
+            status: string;
+            /** Summary */
+            summary?: {
+                [key: string]: unknown;
+            };
+            /** Run Id */
+            run_id?: string | null;
+            /** Status Url */
+            status_url?: string | null;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+        };
+        /** AgentConfirmation */
+        AgentConfirmation: {
+            /** Confirmation Id */
+            confirmation_id: string;
+            /**
+             * Action
+             * @default run_workflow
+             */
+            action: string;
+            /**
+             * Expires At
+             * @default
+             */
+            expires_at: string;
+            /** Summary */
+            summary?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Message
+             * @default
+             */
+            message: string;
         };
         /** AgentModelsRefreshRequest */
         AgentModelsRefreshRequest: {
@@ -17961,6 +18061,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentChatResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_chat_stream_agent_chat_stream_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentChatRequest"];
+            };
+        };
+        responses: {
+            /** @description SSE stream: token | step | intent | done | error */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_confirm_agent_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentConfirmResponse"];
                 };
             };
             /** @description Validation Error */

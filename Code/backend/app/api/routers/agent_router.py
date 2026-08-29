@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import queue
+import threading
+from collections.abc import Iterator
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Request, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import check_resource_access, get_request_user, require_write_access
@@ -462,6 +467,15 @@ def agent_chat(
             detail=str(exc),
         ) from exc
 
+    return _chat_result_to_response(result)
+
+
+def _sse_pack(event: str, data: dict[str, Any]) -> str:
+    payload = json.dumps(data, ensure_ascii=False, default=str)
+    return f"event: {event}\ndata: {payload}\n\n"
+
+
+def _chat_result_to_response(result: dict[str, Any]) -> AgentChatResponse:
     usage_raw = result.get("usage")
     usage = AgentTokenUsage(**usage_raw) if isinstance(usage_raw, dict) else None
     steps = [
@@ -499,6 +513,99 @@ def agent_chat(
         usage=usage,
         steps=steps,
         confirmations=confirmations,
+    )
+
+
+@router.post(
+    "/chat/stream",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": "SSE stream: token | step | intent | done | error",
+            "content": {"text/event-stream": {}},
+        }
+    },
+)
+def agent_chat_stream(
+    payload: AgentChatRequest,
+    request: Request,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> StreamingResponse:
+    """SSE chat stream (Phase D). Events: token, step, intent, done, error."""
+    _require_agent_access(request, cred)
+    uid, _role = _cred_meta(cred)
+
+    def event_iter() -> Iterator[str]:
+        q: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
+
+        def on_event(kind: str, data: dict[str, Any]) -> None:
+            q.put((kind, data))
+
+        def worker() -> None:
+            try:
+                result = run_chat(
+                    payload.message,
+                    session_id=payload.session_id,
+                    client_context=payload.client_context,
+                    user_id=uid,
+                    cred=cred,
+                    on_event=on_event,
+                )
+                done = _chat_result_to_response(result).model_dump(mode="json")
+                q.put(("done", done))
+            except ValueError as exc:
+                q.put(
+                    (
+                        "error",
+                        {
+                            "error_code": VALIDATION_ERROR,
+                            "detail": str(exc),
+                            "status_code": 422,
+                        },
+                    )
+                )
+            except LlmClientError as exc:
+                q.put(
+                    (
+                        "error",
+                        {
+                            "error_code": UPSTREAM_ERROR,
+                            "detail": str(exc),
+                            "status_code": 502,
+                        },
+                    )
+                )
+            except Exception as exc:
+                logger.exception("agent chat stream failed")
+                q.put(
+                    (
+                        "error",
+                        {
+                            "error_code": UPSTREAM_ERROR,
+                            "detail": f"模型调用失败：{exc}",
+                            "status_code": 502,
+                        },
+                    )
+                )
+            finally:
+                q.put(None)
+
+        threading.Thread(target=worker, daemon=True, name="agent-chat-stream").start()
+        while True:
+            item = q.get()
+            if item is None:
+                break
+            kind, data = item
+            yield _sse_pack(kind, data)
+
+    return StreamingResponse(
+        event_iter(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

@@ -867,3 +867,70 @@ def test_session_store_ttl_and_cap(tmp_path, monkeypatch):
         raw["updated_at"] = old
         f.write_text(json.dumps(raw), encoding="utf-8")
     assert ss.load_history(user_id=uid, session_id="s3") == []
+
+
+def test_agent_chat_stream_sse_demo(agent_client: TestClient):
+    _login(agent_client, "testadmin", "test-pass-123")
+    # Earlier tests may leave a non-demo global profile active (shared data root).
+    act = agent_client.post(
+        "/agent/config/active",
+        json={"profile_id": "demo", "scope": "global"},
+    )
+    assert act.status_code == 200, act.text
+    events: list[tuple[str, dict]] = []
+    with agent_client.stream(
+        "POST",
+        "/agent/chat/stream",
+        json={"message": "打开 CMFD 降水"},
+    ) as res:
+        assert res.status_code == 200
+        assert "text/event-stream" in (res.headers.get("content-type") or "")
+        buf = ""
+        for chunk in res.iter_text():
+            buf += chunk
+        blocks = [b for b in buf.split("\n\n") if b.strip()]
+        for block in blocks:
+            ev = "message"
+            data_lines: list[str] = []
+            for line in block.split("\n"):
+                if line.startswith("event:"):
+                    ev = line[6:].strip()
+                elif line.startswith("data:"):
+                    data_lines.append(line[5:].lstrip())
+            if not data_lines:
+                continue
+            events.append((ev, json.loads("\n".join(data_lines))))
+
+    kinds = [e[0] for e in events]
+    assert "done" in kinds, events
+    assert "token" in kinds
+    assert "intent" in kinds
+    done = next(d for k, d in events if k == "done")
+    assert done["reply"]
+    assert done["ui_intents"]
+    assert done["ui_intents"][0]["name"] == "set_layer_visibility"
+    tokens = "".join(d.get("text", "") for k, d in events if k == "token")
+    assert tokens == done["reply"]
+
+
+def test_agent_chat_stream_error_event(agent_client: TestClient, monkeypatch):
+    _login(agent_client, "testadmin", "test-pass-123")
+
+    def boom(*_a, **_k):
+        raise ValueError("故意失败")
+
+    # Use the submodule object — package __init__ aliases `agent_router` to APIRouter,
+    # so string path "app.api.routers.agent_router.run_chat" resolves incorrectly.
+    import importlib
+
+    ar_mod = importlib.import_module("app.api.routers.agent_router")
+    monkeypatch.setattr(ar_mod, "run_chat", boom)
+    with agent_client.stream(
+        "POST",
+        "/agent/chat/stream",
+        json={"message": "hi"},
+    ) as res:
+        assert res.status_code == 200
+        text = "".join(res.iter_text())
+    assert "event: error" in text
+    assert "故意失败" in text

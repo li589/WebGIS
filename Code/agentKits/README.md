@@ -24,5 +24,7 @@ CGDA AI 助手的**共享契约层**（工具 schema、提示词、Provider 预�
 
 - 字段 `snake_case`
 - 危险写操作（跑工作流）须确认卡（Phase B）
+- 有界多跳：`BACKEND_AGENT_MAX_TOOL_HOPS`（默认 4）
+- 流式：`POST /agent/chat/stream` SSE；前端失败回退 `/agent/chat`
 - 密钥不进本目录
 - prompts / tools JSON 由运行时按 mtime 缓存，改文件即热更新

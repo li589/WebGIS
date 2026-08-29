@@ -7,6 +7,7 @@ import logging
 import os
 import threading
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,8 @@ _SERVER_TOOLS = ALLOWED_SERVER_TOOLS
 _CLIENT_CONTEXT_MAX_CHARS = 4000
 _CLIENT_CONTEXT_MAX_LAYERS = 40
 
+EventCallback = Callable[[str, dict[str, Any]], None]
+
 
 def _max_tool_hops() -> int:
     """Bounded multi-hop tool rounds (Phase C). Env: BACKEND_AGENT_MAX_TOOL_HOPS."""
@@ -50,6 +53,51 @@ def _max_tool_hops() -> int:
         return max(1, min(8, int(raw)))
     except (TypeError, ValueError):
         return 4
+
+
+class _EventSteps(list):
+    """Step list that emits SSE ``step`` events on append (Phase D)."""
+
+    def __init__(self, emit: EventCallback | None = None) -> None:
+        super().__init__()
+        self._emit = emit
+
+    def append(self, step: Any) -> None:  # type: ignore[override]
+        super().append(step)
+        if self._emit and isinstance(step, dict):
+            _emit_safe(self._emit, "step", dict(step))
+
+
+def _emit_safe(emit: EventCallback | None, kind: str, data: dict[str, Any]) -> None:
+    if not emit:
+        return
+    try:
+        emit(kind, data)
+    except Exception:
+        logger.exception("agent on_event(%s) failed", kind)
+
+
+def _token_chunks(text: str, *, size: int = 12) -> list[str]:
+    t = text or ""
+    if not t:
+        return []
+    return [t[i : i + size] for i in range(0, len(t), size)]
+
+
+def _emit_stream_tail(
+    emit: EventCallback | None,
+    *,
+    reply: str,
+    ui_intents: list[Any],
+) -> None:
+    """Pseudo-stream reply tokens + intent events for SSE consumers."""
+    if not emit:
+        return
+    for chunk in _token_chunks(reply):
+        _emit_safe(emit, "token", {"text": chunk})
+    for intent in ui_intents:
+        if isinstance(intent, dict):
+            _emit_safe(emit, "intent", dict(intent))
 
 _kits_lock = threading.Lock()
 _prompt_cache: tuple[float | None, str] | None = None
@@ -385,6 +433,7 @@ def run_chat(
     client_context: dict[str, Any] | None = None,
     user_id: int | None = None,
     cred: Any = None,
+    on_event: EventCallback | None = None,
 ) -> dict[str, Any]:
     sid = (session_id or "").strip() or uuid.uuid4().hex
     profile = get_effective_profile_raw(user_id=user_id)
@@ -402,7 +451,7 @@ def run_chat(
         )
 
     history = load_history(user_id=user_id, session_id=sid)
-    steps: list[dict[str, Any]] = []
+    steps: list[dict[str, Any]] = _EventSteps(on_event)
     client_context = sanitize_client_context(client_context)
 
     if protocol == "demo":
@@ -508,16 +557,19 @@ def run_chat(
             user_message=message,
             assistant_message=reply,
         )
-        return {
+        ui_intents = result.get("ui_intents") or []
+        out = {
             "session_id": str(result["session_id"]),
             "reply": reply,
-            "ui_intents": result.get("ui_intents") or [],
+            "ui_intents": ui_intents,
             "provider": "demo",
             "profile_id": profile_id,
             "usage": usage,
-            "steps": steps,
+            "steps": list(steps),
             "confirmations": confirmations,
         }
+        _emit_stream_tail(on_event, reply=reply, ui_intents=ui_intents)
+        return out
 
     model = str(profile.get("model") or "").strip()
     if not model:
@@ -644,16 +696,18 @@ def run_chat(
                 user_message=message,
                 assistant_message=reply,
             )
-            return {
+            out = {
                 "session_id": sid,
                 "reply": reply,
                 "ui_intents": intents,
                 "provider": provider_kind,
                 "profile_id": profile_id,
                 "usage": usage,
-                "steps": steps,
+                "steps": list(steps),
                 "confirmations": confirmations,
             }
+            _emit_stream_tail(on_event, reply=reply, ui_intents=intents)
+            return out
 
         # OpenAI-compatible
         messages_oai: list[dict[str, Any]] = [{"role": "system", "content": system}]
@@ -772,16 +826,18 @@ def run_chat(
             user_message=message,
             assistant_message=reply,
         )
-        return {
+        out = {
             "session_id": sid,
             "reply": reply,
             "ui_intents": intents,
             "provider": provider_kind,
             "profile_id": profile_id,
             "usage": usage,
-            "steps": steps,
+            "steps": list(steps),
             "confirmations": confirmations,
         }
+        _emit_stream_tail(on_event, reply=reply, ui_intents=intents)
+        return out
     except LlmClientError:
         raise
     except Exception as exc:
