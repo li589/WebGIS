@@ -421,28 +421,34 @@ function onSelectTheme(val: string) {
 .theme-manager {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.85rem;
+  max-width: 52rem;
 }
 
 .section-title {
   margin: 0;
   font-size: var(--font-size-body);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--font-weight-medium, 600);
+  color: var(--text-primary);
 }
 
 .section-hint {
   margin: 0;
   font-size: var(--font-size-caption);
+  line-height: 1.5;
   color: var(--text-secondary);
 }
 
 .ok {
   color: var(--success);
   margin: 0;
+  font-size: var(--font-size-caption);
 }
 .err {
   color: var(--danger);
   margin: 0;
+  font-size: var(--font-size-caption);
+  line-height: 1.45;
 }
 
 .toolbar-row,
@@ -451,24 +457,39 @@ function onSelectTheme(val: string) {
 .perm-form {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.45rem;
   align-items: center;
 }
 
 .form-grid {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: 0.5rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: var(--radius-lg, 10px);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
 }
 
 .form-grid input,
 .form-grid textarea {
-  padding: 0.4rem 0.55rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 0.4rem;
-  background: var(--surface-1);
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--surface-2, var(--surface-1));
   color: var(--text-primary);
   font-family: inherit;
+  font-size: var(--font-size-caption);
+  line-height: 1.4;
+  min-height: 2.15rem;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.form-grid input:focus,
+.form-grid textarea:focus {
+  outline: 2px solid var(--accent-focus-ring);
+  border-color: var(--accent-border);
 }
 
 .meta-row {
@@ -476,6 +497,7 @@ function onSelectTheme(val: string) {
   align-items: center;
   gap: 0.5rem;
   font-size: var(--font-size-caption);
+  min-height: 1.6rem;
 }
 
 .meta-label {
@@ -483,29 +505,33 @@ function onSelectTheme(val: string) {
 }
 
 .pill {
-  padding: 0.1rem 0.45rem;
-  border-radius: 999px;
+  padding: 0.12rem 0.35rem;
+  border-radius: 4px;
   background: var(--accent-surface);
-  color: var(--accent);
-  font-size: var(--font-size-caption);
+  color: var(--accent-strong);
+  font-size: 0.65rem;
+  font-weight: 600;
 }
 
 .logo-preview {
   width: 40px;
   height: 40px;
   object-fit: contain;
-  border-radius: 6px;
+  border-radius: 8px;
   border: 1px solid var(--border-subtle);
 }
 
 .file-btn {
   cursor: pointer;
+  font-size: var(--font-size-caption);
 }
 
 .sub-title {
-  margin: 0.4rem 0 0;
+  margin: 0.45rem 0 0;
   font-size: var(--font-size-caption);
-  font-weight: var(--font-weight-semibold);
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
 }
 
 .user-table {
@@ -517,40 +543,51 @@ function onSelectTheme(val: string) {
 .user-table th,
 .user-table td {
   text-align: left;
-  padding: 0.35rem 0.4rem;
+  padding: 0.4rem 0.45rem;
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .primary-btn,
 .secondary-btn,
 .danger-btn {
-  padding: 0.35rem 0.75rem;
-  border-radius: 0.4rem;
-  border: 1px solid var(--border-subtle);
+  padding: 0.42rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-default);
   font-family: inherit;
   font-size: var(--font-size-caption);
+  font-weight: 600;
+  line-height: 1.35;
+  min-height: 2.15rem;
+  box-sizing: border-box;
   cursor: pointer;
 }
 
 .primary-btn {
-  background: var(--accent);
-  color: var(--surface-1);
-  border-color: transparent;
+  background: var(--accent-surface);
+  color: var(--accent-strong);
+  border-color: var(--accent-border);
 }
 
 .secondary-btn {
-  background: var(--surface-1);
+  background: var(--surface-2, var(--surface-1));
   color: var(--text-primary);
 }
 
 .danger-btn {
   background: transparent;
   color: var(--danger);
-  border-color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger, #c44) 55%, var(--border-default));
+}
+
+.primary-btn:disabled,
+.secondary-btn:disabled,
+.danger-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .loading {
   font-size: var(--font-size-caption);
-  color: var(--text-secondary);
+  color: var(--text-muted);
 }
 </style>

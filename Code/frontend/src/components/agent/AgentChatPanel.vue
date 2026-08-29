@@ -245,11 +245,11 @@ function onKeydown(ev: KeyboardEvent) {
   position: fixed;
   z-index: 1601;
   pointer-events: auto;
-  min-width: 320px;
-  min-height: 280px;
-  width: min(420px, calc(100vw - 24px));
+  min-width: 340px;
+  min-height: 300px;
+  width: min(440px, calc(100vw - 24px));
   max-width: min(720px, calc(100vw - 24px));
-  max-height: min(560px, calc(100vh - 96px));
+  max-height: min(580px, calc(100vh - 96px));
   display: flex;
   flex-direction: column;
   border-radius: 16px;
@@ -286,37 +286,38 @@ function onKeydown(ev: KeyboardEvent) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.7rem 0.85rem;
+  padding: 0.6rem 0.85rem;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--surface-3);
   flex-shrink: 0;
+  min-height: 2.65rem;
 }
 
 .agent-chat-title {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  font-size: 0.9rem;
+  font-size: var(--font-size-body);
   font-weight: 600;
-  color: var(--text-strong);
+  color: var(--text-primary);
 }
 
 .agent-chat-dot {
-  width: 0.5rem;
-  height: 0.5rem;
+  width: 0.4rem;
+  height: 0.4rem;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 .agent-chat-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 1.6rem;
+  height: 1.6rem;
   border: none;
-  border-radius: 8px;
+  border-radius: 7px;
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
@@ -335,17 +336,17 @@ function onKeydown(ev: KeyboardEvent) {
 .agent-chat-list {
   flex: 1;
   overflow: auto;
-  padding: 0.85rem;
+  padding: 0.75rem 0.85rem;
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  min-height: 200px;
+  min-height: 180px;
 }
 
 .agent-chat-bubble {
   max-width: 92%;
-  padding: 0.55rem 0.7rem;
-  border-radius: 12px;
+  padding: 0.5rem 0.65rem;
+  border-radius: 10px;
   border: 1px solid var(--border-subtle);
   background: var(--surface-1);
   animation: agent-bubble-msg 200ms ease-out;
@@ -376,7 +377,7 @@ function onKeydown(ev: KeyboardEvent) {
   align-self: stretch;
   background: var(--surface-sunken);
   color: var(--text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--font-size-caption);
 }
 
 .agent-chat-text {
@@ -384,39 +385,49 @@ function onKeydown(ev: KeyboardEvent) {
   white-space: pre-wrap;
   word-break: break-word;
   font-family: inherit;
-  font-size: 0.8375rem;
+  font-size: var(--font-size-caption);
   line-height: 1.5;
 }
 
 .agent-chat-usage {
   margin-top: 0.35rem;
   font-size: 0.65rem;
+  letter-spacing: 0.02em;
   opacity: 0.65;
 }
 
 .agent-chat-steps {
-  margin-top: 0.4rem;
-  font-size: 0.7rem;
-  opacity: 0.85;
+  margin-top: 0.45rem;
+  font-size: var(--font-size-caption);
+  line-height: 1.45;
+  opacity: 0.9;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 0.4rem;
 }
 
 .agent-chat-steps summary {
   cursor: pointer;
   user-select: none;
+  color: var(--text-secondary);
+  font-weight: 500;
 }
 
 .agent-chat-steps ul {
-  margin: 0.35rem 0 0;
-  padding-left: 1.1rem;
+  margin: 0.3rem 0 0;
+  padding-left: 1rem;
+  color: var(--text-muted);
 }
 
 .agent-chat-step-detail {
-  margin: 0.2rem 0 0;
+  margin: 0.15rem 0 0.25rem;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: inherit;
-  font-size: 0.65rem;
-  opacity: 0.8;
+  font-size: 0.625rem;
+  line-height: 1.35;
+  opacity: 0.85;
+  max-height: 6rem;
+  overflow: auto;
 }
 
 .agent-chat-footer {
@@ -427,6 +438,7 @@ function onKeydown(ev: KeyboardEvent) {
   border-top: 1px solid var(--border-subtle);
   background: var(--surface-3);
   flex-shrink: 0;
+  align-items: end;
 }
 
 .agent-chat-input {
@@ -435,10 +447,11 @@ function onKeydown(ev: KeyboardEvent) {
   border: 1px solid var(--border-default);
   background: var(--surface-1);
   color: var(--text-primary);
-  padding: 0.5rem 0.6rem;
+  padding: 0.5rem 0.65rem;
   font: inherit;
-  font-size: 0.8375rem;
-  min-height: 4.5rem;
+  font-size: var(--font-size-caption);
+  line-height: 1.45;
+  min-height: 3.9rem;
 }
 
 .agent-chat-input:focus {
@@ -449,12 +462,12 @@ function onKeydown(ev: KeyboardEvent) {
 .agent-chat-send {
   align-self: end;
   min-width: 3.75rem;
-  height: 2.4rem;
+  height: 2.35rem;
   border-radius: 10px;
   border: 1px solid var(--accent-border);
   background: var(--accent-surface);
   color: var(--accent-strong);
-  font-size: 0.8375rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   cursor: pointer;
   transition: transform 140ms ease, background 140ms ease, opacity 140ms ease;

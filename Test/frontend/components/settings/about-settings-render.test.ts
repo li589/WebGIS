@@ -106,7 +106,7 @@ describe('AboutSettings 项目信息', () => {
     expect(rows).toHaveLength(5)
 
     expect(rows[0].find('.info-label').text()).toBe('项目名称')
-    expect(rows[0].find('.info-value').text()).toBe('Star-Ground Fusion Soil Data Platform')
+    expect(rows[0].find('.info-value').text()).toBe('Satellite-Ground Fusion Soil Data Platform')
 
     expect(rows[1].find('.info-label').text()).toBe('版本')
     expect(rows[1].find('.info-value').text()).toBe('0.1.0')

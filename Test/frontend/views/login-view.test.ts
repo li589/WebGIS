@@ -43,7 +43,7 @@ describe('LoginView 品牌锁版', () => {
     const names = wrapper.find('.brand-names')
     expect(names.exists()).toBe(true)
     expect(names.find('h1').text()).toBe('星地融合土壤数据平台')
-    expect(names.find('.brand-name-en').text()).toBe('Star-Ground Fusion Soil Data Platform')
+    expect(names.find('.brand-name-en').text()).toBe('Satellite-Ground Fusion Soil Data Platform')
     const h1 = names.find('h1').element
     const en = names.find('.brand-name-en').element
     expect(h1.compareDocumentPosition(en) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)

@@ -489,12 +489,12 @@ watch(open, (v) => {
 
 .agent-companion-bubble {
   position: absolute;
-  top: -18px;
+  top: -20px;
   right: 100%;
-  margin-right: 6px;
-  padding: 0.15rem 0.45rem;
+  margin-right: 8px;
+  padding: 0.2rem 0.5rem;
   border-radius: 8px;
-  font-size: 0.65rem;
+  font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--accent-strong);

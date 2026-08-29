@@ -316,8 +316,7 @@ onMounted(() => {
     <section class="settings-section">
       <h3 class="section-title">模型配置档</h3>
       <p class="section-hint">
-        全局档由管理员维护；个人档仅本人可写。对话优先使用你启用的个人档，否则回退全局启用档。预设 URL 来自
-        agentKits/presets/provider_catalog.json。
+        全局档由管理员维护；个人档仅本人可写。对话优先个人启用档，否则回退全局。
       </p>
 
       <div v-if="loading" class="status-line">加载配置中…</div>
@@ -535,27 +534,28 @@ onMounted(() => {
 .agent-settings {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1.35rem;
+  max-width: 52rem;
 }
 
 .settings-section {
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
+  gap: 0.55rem;
 }
 
 .section-title {
   margin: 0;
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--text-strong);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-medium, 600);
+  color: var(--text-primary);
 }
 
 .section-hint {
   margin: 0;
   font-size: var(--font-size-caption);
   line-height: 1.5;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .toggle-row {
@@ -563,14 +563,23 @@ onMounted(() => {
   align-items: center;
   gap: 0.5rem;
   color: var(--text-primary);
-  font-size: 0.875rem;
+  font-size: var(--font-size-body);
   cursor: pointer;
+  min-height: 1.75rem;
+}
+
+.toggle-row input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
 }
 
 .profile-layout {
   display: grid;
-  grid-template-columns: minmax(140px, 220px) 1fr;
-  gap: 1rem;
+  grid-template-columns: minmax(176px, 212px) minmax(0, 1fr);
+  gap: 0.85rem 1rem;
   align-items: start;
 }
 
@@ -583,32 +592,47 @@ onMounted(() => {
 .profile-list {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.35rem;
+  padding: 0.65rem;
+  border-radius: var(--radius-lg, 10px);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-sunken, var(--surface-1));
+  max-height: min(30rem, 72vh);
+  overflow: auto;
 }
 
 .group-label {
-  margin-top: 0.35rem;
-  font-size: 0.7rem;
+  margin: 0.5rem 0 0.2rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
+}
+
+.group-label:first-child {
+  margin-top: 0;
 }
 
 .profile-chip {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.35rem;
+  gap: 0.4rem;
   text-align: left;
   border-radius: 8px;
-  border: 1px solid var(--border-default);
+  border: 1px solid transparent;
   background: var(--surface-1);
   color: var(--text-primary);
   padding: 0.45rem 0.55rem;
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-caption);
+  line-height: 1.35;
   cursor: pointer;
+  min-height: 2.15rem;
+}
+
+.profile-chip:hover {
+  border-color: var(--border-default);
 }
 
 .profile-chip.selected {
@@ -616,67 +640,103 @@ onMounted(() => {
   background: var(--accent-surface);
 }
 
+.chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
 .chip-badge {
   flex-shrink: 0;
   font-size: 0.65rem;
+  font-weight: 600;
   color: var(--accent-strong);
+  padding: 0.12rem 0.35rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent-surface) 80%, transparent);
 }
 
 .preset-create {
-  margin-top: 0.5rem;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.35rem;
 }
 
 .profile-editor {
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.75rem 0.85rem;
+  border-radius: var(--radius-lg, 10px);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
 }
 
 .editor-toolbar {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.45rem;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .field-grid {
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
+  gap: 0.6rem;
 }
 
 .field-row-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.65rem;
+  gap: 0.6rem;
+}
+
+@media (max-width: 560px) {
+  .field-row-2 {
+    grid-template-columns: 1fr;
+  }
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.28rem;
 }
 
 .field-label {
   font-size: var(--font-size-caption);
+  font-weight: 500;
   color: var(--text-secondary);
 }
 
 .field-hint {
   font-size: var(--font-size-caption);
+  line-height: 1.4;
   color: var(--text-muted);
 }
 
 .field-input {
   border-radius: 8px;
   border: 1px solid var(--border-default);
-  background: var(--surface-1);
+  background: var(--surface-2, var(--surface-1));
   color: var(--text-primary);
   padding: 0.45rem 0.6rem;
   font: inherit;
-  font-size: 0.875rem;
+  font-size: var(--font-size-caption);
+  line-height: 1.4;
+  min-height: 2.15rem;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.field-input:focus {
+  outline: 2px solid var(--accent-focus-ring);
+  border-color: var(--accent-border);
 }
 
 .field-input:disabled {
@@ -686,7 +746,8 @@ onMounted(() => {
 
 .model-row {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.45rem;
+  align-items: stretch;
 }
 
 .model-row .field-input {
@@ -694,22 +755,31 @@ onMounted(() => {
   min-width: 0;
 }
 
+.model-row .btn-secondary {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.65rem;
   flex-wrap: wrap;
+  padding-top: 0.15rem;
 }
 
 .btn-save,
 .btn-secondary,
 .btn-danger {
   border-radius: 8px;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-caption);
   font-weight: 600;
-  padding: 0.45rem 0.85rem;
+  padding: 0.42rem 0.8rem;
   cursor: pointer;
   font: inherit;
+  line-height: 1.35;
+  min-height: 2.15rem;
+  box-sizing: border-box;
 }
 
 .btn-save {
@@ -720,12 +790,12 @@ onMounted(() => {
 
 .btn-secondary {
   border: 1px solid var(--border-default);
-  background: var(--surface-1);
+  background: var(--surface-2, var(--surface-1));
   color: var(--text-primary);
 }
 
 .btn-danger {
-  border: 1px solid var(--danger, #c44);
+  border: 1px solid color-mix(in srgb, var(--danger, #c44) 55%, var(--border-default));
   background: transparent;
   color: var(--danger, #c44);
 }
@@ -746,11 +816,13 @@ onMounted(() => {
 .status-line {
   color: var(--text-muted);
   font-size: var(--font-size-caption);
+  margin: 0.1rem 0;
 }
 
 .error-line {
-  margin: 0;
+  margin: 0.35rem 0 0;
   color: var(--danger);
   font-size: var(--font-size-caption);
+  line-height: 1.45;
 }
 </style>
