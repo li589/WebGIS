@@ -7,7 +7,6 @@ import logging
 import threading
 import time
 import uuid
-from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 from collections.abc import Callable
@@ -17,14 +16,6 @@ from app.data_io.services.paths import JOBS_DIR, ensure_imports_root, safe_impor
 logger = logging.getLogger(__name__)
 
 JobHandler = Callable[[dict[str, Any]], dict[str, Any]]
-
-_job_owner_ctx: ContextVar[int | None] = ContextVar("import_job_owner", default=None)
-
-
-def set_import_job_owner(user_id: int | None) -> None:
-    """Stamp the current request's user onto newly created import jobs."""
-    _job_owner_ctx.set(user_id)
-
 
 def _job_path(job_id: str) -> Path:
     ensure_imports_root()
@@ -36,9 +27,18 @@ def _job_path(job_id: str) -> Path:
 def create_job(
     *, kind: str, payload: dict[str, Any], owner_user_id: int | None = None
 ) -> str:
+    """创建导入任务。
+
+    ``owner_user_id`` **必须由调用方显式传入**（通常来自端点的凭据）。
+    本模块不接受任何隐式上下文（ContextVar 等）——2026-08-29 审查 C-1：
+    曾由同步依赖用 ContextVar 传递属主，因 FastAPI 在线程池执行同步依赖，
+    ``set()`` 不回传事件循环，导致属主恒为 ``None``、提交者被自己的任务 403。
+
+    ``owner_user_id=None`` 表示无主任务：会被 ``list_jobs`` 过滤、
+    被 ``_deny_job_if_not_owner`` 拒绝（fail-closed，仅管理员可见）。
+    """
     ensure_imports_root()
     job_id = f"job-{uuid.uuid4().hex[:16]}"
-    owner = owner_user_id if owner_user_id is not None else _job_owner_ctx.get()
     record = {
         "job_id": job_id,
         "kind": kind,
@@ -48,7 +48,7 @@ def create_job(
         "payload": payload,
         "result": None,
         "error": None,
-        "owner_user_id": owner,
+        "owner_user_id": owner_user_id,
         "created_at": time.time(),
         "updated_at": time.time(),
     }
@@ -89,8 +89,12 @@ def list_jobs(
     """List recent jobs.
 
     When ``include_all`` is False and ``owner_user_id`` is set, only jobs owned
-    by that user (or legacy jobs without owner) are returned. Admin callers
-    should pass ``include_all=True``.
+    by that user are returned. Admin callers should pass ``include_all=True``.
+
+    **无主任务一律不返回**（fail-closed）：此前本 docstring 误称"legacy 无主任务
+    也会返回"，与实现相反。实现是对的——无主任务可能属于任何调用者（例如
+    service key / dev bypass 提交的任务），暴露给非管理员即越权。
+    **请勿按旧文档把这段改成返回无主任务。**
     """
     ensure_imports_root()
     items: list[dict[str, Any]] = []

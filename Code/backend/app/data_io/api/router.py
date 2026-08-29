@@ -417,6 +417,21 @@ async def import_jobs_list(
     }
 
 
+def _owner_user_id(cred: CredentialContext | None) -> int | None:
+    """从凭据取属主 user_id。
+
+    返回 ``None`` 表示无主任务（service key / dev bypass / 未登录等无 user_id 的
+    调用者）。无主任务会被 ``list_jobs`` 过滤、被 ``_deny_job_if_not_owner``
+    拒绝，属既有 fail-closed 设计，并非缺陷。
+
+    属主必须这样显式下传，不得借助任何隐式上下文——详见 ``deps.require_data_transfer_access``
+    的 docstring（2026-08-29 审查 C-1）。
+    """
+    if cred is None or cred.user_id is None:
+        return None
+    return int(cred.user_id)
+
+
 def _deny_job_if_not_owner(job: dict[str, Any], cred: CredentialContext | None) -> None:
     if cred is not None and cred.role == "admin":
         return
@@ -495,9 +510,13 @@ async def import_job_download(
 
 
 @router.post("/import/batch", dependencies=[Depends(require_data_transfer_access)])
-async def import_batch(body: ImportBatchBody) -> dict[str, Any]:
+async def import_batch(
+    body: ImportBatchBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     if not body.groups:
         raise HTTPException(status_code=400, detail="groups 不能为空")
+    owner = _owner_user_id(cred)
     batch_id = f"batch-{uuid.uuid4().hex[:12]}"
     job_ids: list[str] = []
     try:
@@ -515,6 +534,7 @@ async def import_batch(body: ImportBatchBody) -> dict[str, Any]:
                         "source_name": source_name,
                     },
                     force_async=True,
+                    owner_user_id=owner,
                 )
                 job_ids.append(job["job_id"])
             elif kind == "document":
@@ -522,6 +542,7 @@ async def import_batch(body: ImportBatchBody) -> dict[str, Any]:
                     "document",
                     {"path": str(paths[0]), "source_name": source_name},
                     force_async=True,
+                    owner_user_id=owner,
                 )
                 job_ids.append(job["job_id"])
             elif kind == "raster":
@@ -535,6 +556,7 @@ async def import_batch(body: ImportBatchBody) -> dict[str, Any]:
                         "source_name": source_name,
                     },
                     force_async=True,
+                    owner_user_id=owner,
                 )
                 job_ids.append(job["job_id"])
             else:
@@ -550,9 +572,13 @@ async def import_batch(body: ImportBatchBody) -> dict[str, Any]:
 
 
 @router.post("/import/vector", dependencies=[Depends(require_data_transfer_access)])
-async def import_vector(body: VectorImportBody) -> dict[str, Any]:
+async def import_vector(
+    body: VectorImportBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     if not body.upload_ids:
         raise HTTPException(status_code=400, detail="upload_ids 不能为空")
+    owner = _owner_user_id(cred)
     try:
         paths = [resolve_upload_path(uid) for uid in body.upload_ids]
         total = sum(p.stat().st_size for p in paths)
@@ -571,6 +597,7 @@ async def import_vector(body: VectorImportBody) -> dict[str, Any]:
                 },
                 handler,
                 force_async=True,
+                owner_user_id=owner,
             )
             return {"job_id": job["job_id"], "status": job["status"], "async": True}
 
@@ -805,7 +832,11 @@ async def raster_inspect(body: RasterInspectBody) -> dict[str, Any]:
 @router.post(
     "/import/raster/commit", dependencies=[Depends(require_data_transfer_access)]
 )
-async def raster_commit(body: RasterCommitBody) -> dict[str, Any]:
+async def raster_commit(
+    body: RasterCommitBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
+    owner = _owner_user_id(cred)
     try:
         path = resolve_upload_path(body.upload_id)
         ext = path.suffix.lower()
@@ -847,6 +878,7 @@ async def raster_commit(body: RasterCommitBody) -> dict[str, Any]:
                     "native_step": body.native_step,
                 },
                 force_async=True,
+                owner_user_id=owner,
             )
             return {"async": True, "job_id": job["job_id"], "status": job["status"]}
         return {"async": False, **_raster_commit_sync(body)}
@@ -930,7 +962,12 @@ async def document_ops(session_id: str, body: DocumentOpsBody) -> dict[str, Any]
     "/import/document/{session_id}/commit",
     dependencies=[Depends(require_data_transfer_access)],
 )
-async def document_commit(session_id: str, body: DocumentCommitBody) -> dict[str, Any]:
+async def document_commit(
+    session_id: str,
+    body: DocumentCommitBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
+    owner = _owner_user_id(cred)
     try:
         payload = {
             "session_id": session_id,
@@ -943,7 +980,9 @@ async def document_commit(session_id: str, body: DocumentCommitBody) -> dict[str
             "swap_xy": body.swap_xy,
         }
         if body.async_mode:
-            job = enqueue_job("document_commit", payload, force_async=True)
+            job = enqueue_job(
+                "document_commit", payload, force_async=True, owner_user_id=owner
+            )
             return {"async": True, "job_id": job["job_id"], "status": job["status"]}
         result = commit_document_session(
             session_id,
@@ -991,9 +1030,13 @@ async def export_layer_endpoint(body: ExportBody) -> Response:
 
 
 @router.post("/export/batch", dependencies=[Depends(require_data_transfer_access)])
-async def export_batch_endpoint(body: ExportBatchBody) -> Response:
+async def export_batch_endpoint(
+    body: ExportBatchBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> Response:
     if not body.layer_ids:
         raise HTTPException(status_code=400, detail="layer_ids 不能为空")
+    owner = _owner_user_id(cred)
     force_async = body.async_mode or len(body.layer_ids) > 2
     bbox_payload = body.bbox.model_dump() if body.bbox else None
     try:
@@ -1011,6 +1054,7 @@ async def export_batch_endpoint(body: ExportBatchBody) -> Response:
                     "fields": body.fields,
                 },
                 force_async=True,
+                owner_user_id=owner,
             )
             return Response(
                 content=json.dumps(
