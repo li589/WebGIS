@@ -29,6 +29,7 @@ import {
 import { fieldMapForNodeType } from '../../../composables/node-form-system-settings-map'
 import { WORKFLOW_COPY } from '../../../ui-copy/workflow'
 import AppSelect from '../../ui/AppSelect.vue'
+import { useOnlinePlanParamSync } from '../../../composables/useOnlinePlanParamSync'
 
 const NODE_TYPE = 'download/fy_preprocess'
 const PATH_FIELD_MAP = fieldMapForNodeType(NODE_TYPE)
@@ -41,6 +42,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update-property': [key: string, value: unknown]
 }>()
+
+const { pushFormParamToPlan, pullPlanParamsForForm } = useOnlinePlanParamSync()
 
 const DEFAULTS = {
   satellite: 'FY3D',
@@ -85,6 +88,11 @@ function resync() {
 watch(() => props.node, resync, { immediate: true })
 
 onMounted(async () => {
+  const planParams = pullPlanParamsForForm()
+  if (planParams?.orbit_mode != null) {
+    form.orbit_mode = planParams.orbit_mode
+    emit('update-property', 'orbit_mode', planParams.orbit_mode)
+  }
   try {
     const defaults = await loadSystemPathDefaults()
     const filled = fillPathFieldsFromSystemSettings(form, defaults, PATH_FIELD_MAP, {
@@ -112,6 +120,7 @@ function update(key: string, value: unknown) {
   form[key] = value
   validateForm()
   emit('update-property', key, value)
+  pushFormParamToPlan(key, value)
 }
 </script>
 

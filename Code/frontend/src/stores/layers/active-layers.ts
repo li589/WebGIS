@@ -19,6 +19,7 @@ import {
   isRuntimeCatalogId,
   normalizeDisplayName,
 } from './layer-naming'
+import { isEnglishInversionCatalogId } from './inversion-catalog'
 import { projectActiveLayersDisplay } from './display-projection'
 import { rememberDismissedLayer } from './workspace-persist'
 import { MERGED_LAYER_GROUPS } from './catalog'
@@ -116,7 +117,12 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
     return allocateLayerAccent(usedLayerAccentColors(), preferred)
   }
 
-  function addLayer(catalogId: string, isAdminBoundary = false, jobLayer?: JobLayerItem) {
+  function addLayer(
+    catalogId: string,
+    isAdminBoundary = false,
+    jobLayer?: JobLayerItem,
+    options?: { skipAutoRun?: boolean },
+  ) {
     // 行政边界不再作为可添加数据集
     if (isAdminBoundary || catalogId === 'admin-boundary' || catalogId === 'admin-boundary-cn') {
       return
@@ -198,7 +204,11 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
     // 统一图层生命周期：所有非导入图层添加后都提交资产/分析工作流。
     // - python_provider/gee 图层走分析工作流
     // - overlay_registry 静态图层走资产检查/烘焙工作流（runWorkflowForCatalog 内分流）
+    // skipAutoRun：侧栏 ensureLayerDataOrRun 已负责「先 attach 再按需跑」，
+    // 若此处再 setTimeout 开跑会与 attach/建组竞态，易落成 imported-omega_* 游离层
+    // 污染 TOC/图层库观感（2026-08-30 审计）。
     if (
+      !options?.skipAutoRun &&
       !jobLayer && // 不是工作流产物回填
       !deps.isWeatherEngineLayer(catalogId) && // 非天气图层
       catalogId !== 'gebco-dem-cn' && // GEBCO 已有静态烘焙资产，不自动启动 6.95GB 重读工作流
@@ -356,11 +366,18 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       followPolicy: options?.followPolicy,
     })
     const accent = assignLayerAccent('#7eb8e0')
+    // 反演 overlay 技术 id（omega_sf_fenkuai_* / imported-omega_*）禁止作为
+    // catalogId/显示名——否则 TOC/图层库观感会出现一堆英文技术名（2026-08-30）。
+    // overlay 真源仍保留在 importedRaster.overlayLayerId，地图加载不依赖 catalogId。
+    const safeCatalogId = isEnglishInversionCatalogId(overlayLayerId)
+      ? `imported-${instanceId}`
+      : overlayLayerId
+    const rawName = name.replace(/\.(tif|tiff)$/i, '') || name
+    const safeName = isEnglishInversionCatalogId(rawName) ? '反演产物' : rawName
     const layer: ActiveLayer = {
       instanceId,
-      // catalogId 与后端 overlay_layer_id 对齐，便于 overlay-image-module 加载
-      catalogId: overlayLayerId,
-      name: name.replace(/\.(tif|tiff)$/i, '') || name,
+      catalogId: safeCatalogId,
+      name: safeName,
       visible: true,
       opacity: 0.7,
       order: maxOrder + 1,

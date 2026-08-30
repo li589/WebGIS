@@ -1465,6 +1465,56 @@
         }
       }
     },
+    "/layers/{layer_id}/data-coverage": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Get Layer Data Coverage",
+        "description": "双通道可用性：在线覆盖窗 + 本地资产 time_list（计划会话 / 色带）。\n\n- ``channels.online``：来自 descriptor.online_temporal（未启用则 available=false）\n- ``channels.local``：来自 overlay 资产 state.time_list；取失败时 dates=[]",
+        "operationId": "get_layer_data_coverage_layers__layer_id__data_coverage_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "layer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Layer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Layer Data Coverage Layers  Layer Id  Data Coverage Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/layer-assets/{layer_id}/sync": {
       "post": {
         "tags": [
@@ -10473,6 +10523,74 @@
         }
       }
     },
+    "/config/data-input-policies": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get Data Input Policies",
+        "description": "只读投影：时间窗对齐 / 本地优先源路由等策略（seed + runtime 覆盖）。",
+        "operationId": "get_data_input_policies_config_data_input_policies_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Put Data Input Policies",
+        "description": "写入 runtime 覆盖（原子写）。同 id 覆盖 seed；热载生效，无需重启后端。",
+        "operationId": "put_data_input_policies_config_data_input_policies_put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "body",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "title": "Body"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/config/cache/invalidate-templates": {
       "post": {
         "tags": [
@@ -18279,6 +18397,28 @@
             },
             "type": "array",
             "title": "Run Readiness Notes"
+          },
+          "online_ready": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Online Ready"
+          },
+          "local_ready": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Ready"
           },
           "data_owner": {
             "anyOf": [

@@ -161,7 +161,12 @@ export function getWorkflowRunView(runId: string) {
   return requestJson<WorkflowRunViewResponse>(`/workflow-runs/${runId}/view`, { silent: true })
 }
 
-export function materializeWorkflowMapLayers(runId: string) {
+export function materializeWorkflowMapLayers(
+  runId: string,
+  options?: { silent?: boolean },
+) {
+  // 默认 silent：渐进物化与失败竞态下的 409（retry_pending/failed）属预期，
+  // 勿写入「Request failed」用户日志；显式 silent:false 仅用于调试。
   return requestJson<{
     run_id: string
     layers: Array<{
@@ -181,6 +186,7 @@ export function materializeWorkflowMapLayers(runId: string) {
     method: 'POST',
     body: '{}',
     timeoutMs: 300000,
+    silent: options?.silent !== false,
   })
 }
 

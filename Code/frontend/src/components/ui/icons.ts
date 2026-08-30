@@ -21,6 +21,7 @@ export {
   Settings,
   User,
   RefreshCw,
+  Plus,
   ArrowRight,
   ArrowLeft,
   Undo2,

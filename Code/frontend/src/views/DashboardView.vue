@@ -7,7 +7,7 @@
  *
  * 拆分历史：原 1659 行 → CSS 提取(-196) → composable 提取(-1050)
  */
-import { computed, defineAsyncComponent, onBeforeUnmount, ref, toRef } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, toRef, watch } from 'vue'
 import { Globe } from '../components/ui/icons'
 import { useDataImportFlow } from '../data-manager/core/workspace-store'
 
@@ -16,6 +16,8 @@ import InfoPanel from '../components/InfoPanel.vue'
 import LayerSidebar from '../components/LayerSidebar.vue'
 import MapCanvas from '../components/MapCanvas.vue'
 import ModeToolbar from '../components/ModeToolbar.vue'
+import TimelineActionBanner from '../components/TimelineActionBanner.vue'
+import OnlinePlanPanel from '../components/OnlinePlanPanel.vue'
 import LogPanel from '../components/toolbar/LogPanel.vue'
 import AgentCompanion from '../components/agent/AgentCompanion.vue'
 import TimelinePanel from '../components/TimelinePanel.vue'
@@ -54,6 +56,7 @@ import { useTimelineControls } from './dashboard/useTimelineControls'
 import { useFileDrop } from './dashboard/useFileDrop'
 import { useWorkflowEditorRun } from './dashboard/useWorkflowEditorRun'
 import { useOnlineTemporalIntegration } from './dashboard/useOnlineTemporalIntegration'
+import { useTimelineActionConfirm } from './dashboard/useTimelineActionConfirm'
 
 // ── Store 设置 ────────────────────────────────────────────────────────────
 const uiStore = useUiStore()
@@ -228,8 +231,52 @@ let _unsubscribeAgentCompanion: (() => void) | null = null
   })
 }
 
+const {
+  banner: timelineActionBanner,
+  handleReuse: handleTimelineReuse,
+  handleRerun: handleTimelineRerun,
+  handleCancelConfirm: handleTimelineCancelConfirm,
+  handleDismissNotice: handleTimelineDismissNotice,
+  handleDismissRecovery: handleTimelineDismissRecovery,
+  handleSwitchOnlineRerun: handleTimelineSwitchOnline,
+  handleOpenPlan: handleTimelineOpenPlan,
+  syncWorkflowTimelineNow,
+} = useTimelineActionConfirm({
+  workspace,
+  workflowRun,
+  uiStore,
+  selectedCatalogId,
+  currentDate,
+  currentHour,
+  activeLayerGranularity,
+  isPlaying,
+  logOperation: (tag, message) => logStore.logOperation(tag, message),
+  syncBoundWorkflowTimeline: (range) => {
+    if (!workflowEditorOpen.value) return
+    const n = workflowEditorRef.value?.applyBoundMainTimeline?.({
+      start_at: range.start_at,
+      end_at: range.end_at,
+    })
+    if (n && n > 0) {
+      logStore.logOperation(
+        'timeline-wf-sync',
+        `同步工作流时间窗 ×${n} · ${range.timeKey}`,
+      )
+    }
+  },
+})
+
+// 打开工作流编辑器后对齐一次 bind_timeline 时间窗（定义/画布就绪后）
+watch(workflowEditorOpen, (open) => {
+  if (!open) return
+  void nextTick(() => {
+    window.setTimeout(() => syncWorkflowTimelineNow(), 120)
+  })
+})
+
 // ── Online Temporal Integration ──
 // 在线时间获取编排器：当用户选中 fetchable 段时自动触发工作流获取数据
+// 顶栏确认卡打开时暂停自动提交，避免与用户确认重跑双通道抢跑
 const onlineTemporal = useOnlineTemporalIntegration({
   workspace,
   workflowRun,
@@ -239,6 +286,7 @@ const onlineTemporal = useOnlineTemporalIntegration({
   activeLayerGranularity,
   timelineSegments,
   isPlaying,
+  pauseAutoFetch: toRef(timelineActionBanner, 'hasConfirm'),
   logOperation: (tag, message) => logStore.logOperation(tag, message),
 })
 
@@ -459,6 +507,18 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
           @open-log="logOpen = true"
         />
       </div>
+
+      <!-- 左下角浮层：图层面板下 / 比例尺上；Teleport 到 body 并置顶，可拖动 -->
+      <TimelineActionBanner
+        @reuse="handleTimelineReuse"
+        @rerun="handleTimelineRerun"
+        @cancel="handleTimelineCancelConfirm"
+        @dismiss-notice="handleTimelineDismissNotice"
+        @switch-online="handleTimelineSwitchOnline"
+        @open-plan="handleTimelineOpenPlan"
+        @dismiss-recovery="handleTimelineDismissRecovery"
+      />
+      <OnlinePlanPanel />
 
       <div class="overlay overlay-left">
         <PanelDock

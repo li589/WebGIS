@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  extractFailureCategory,
   extractWorkflowTechLogs,
   formatWorkflowCommandChip,
   formatWorkflowValidationError,
+  isCoverageGapFailure,
   localizeWorkflowDiagnostic,
   localizeWorkflowDiagnostics,
   localizeWorkflowErrorMessage,
@@ -67,6 +69,51 @@ describe('extractWorkflowTechLogs', () => {
         '==== Overlay Assets Export Tool ===',
       ]),
     ).toEqual(['line1\nline2', '==== Overlay Assets Export Tool ==='])
+  })
+})
+
+describe('extractFailureCategory / isCoverageGapFailure', () => {
+  it('parses failure_category= and error_code= from diagnostics', () => {
+    expect(
+      extractFailureCategory({
+        diagnostics: ['failure_category=coverage_gap', 'retryable=False'],
+      }),
+    ).toBe('coverage_gap')
+    expect(
+      extractFailureCategory({
+        diagnostics: ['error_code=coverage_gap 时间窗零交集'],
+      }),
+    ).toBe('coverage_gap')
+    expect(
+      extractFailureCategory({
+        message: 'error_code=coverage_gap 本地无数据',
+      }),
+    ).toBe('coverage_gap')
+  })
+
+  it('detects coverage_gap via category, token, or Chinese fallback', () => {
+    expect(isCoverageGapFailure({ failureCategory: 'coverage_gap' })).toBe(true)
+    expect(
+      isCoverageGapFailure({
+        diagnostics: ['failure_category=coverage_gap'],
+        message: '工作流执行失败',
+      }),
+    ).toBe(true)
+    expect(
+      isCoverageGapFailure({
+        message: '时间窗与本地 SMAP 零交集（未启用对齐）',
+      }),
+    ).toBe(true)
+    expect(
+      isCoverageGapFailure({
+        message:
+          'No FY HDF files found in I:\\Geograph_DataSet\\Soil_Moisture\\FY3D',
+        failureCategory: 'transient_upstream',
+      }),
+    ).toBe(true)
+    expect(isCoverageGapFailure({ message: '工作流执行失败，请查看服务端日志。' })).toBe(
+      false,
+    )
   })
 })
 

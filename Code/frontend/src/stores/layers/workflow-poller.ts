@@ -91,6 +91,8 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
     let lastEventAt = jobLayer.lastEventAt
     // 节点级进度累计：保留已有节点，按 node_id 合并最新阶段
     const nextNodeProgress: NodeProgress[] = [...(jobLayer.nodeProgress ?? [])]
+    /** 本批事件是否见过块产物信号；批末再按最终 status 决定是否物化，避免 running→retry_pending 竞态 409 */
+    let sawProgressiveOverlaySignal = false
 
     for (const event of events) {
       if (typeof event.progress === 'number') {
@@ -218,18 +220,8 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
           detail?.phase === 'block_refresh' ||
           detail?.phase === 'artifact'
         ) {
-          // progressive overlay sync (throttled inside helper).
-          // Skip when run is already failed/cancelled — hydrate replay of historical
-          // block_commit events must not POST materialize (BE returns 409).
-          const progressiveCatalogId = jobLayer.catalogId
-          const canMaterialize =
-            nextStatus === 'succeeded' ||
-            nextStatus === 'running' ||
-            nextStatus === 'queued' ||
-            nextStatus === 'retry_pending'
-          if (progressiveCatalogId && canMaterialize) {
-            void deps.syncProgressiveBlockOverlays(jobLayer.jobId, progressiveCatalogId)
-          }
+          // 仅记信号；批末按最终 nextStatus 决定是否物化（避免同批内 running→retry_pending）
+          sawProgressiveOverlaySignal = true
           if (detail.dateStart && detail.dateEnd) {
             nextMessage = `块 ${detail.blocksDone ?? '?'}/${detail.blocksTotal ?? '?'} · ${detail.dateStart}–${detail.dateEnd}`
           } else {
@@ -287,6 +279,14 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
       lastEventId = event.event_id
       lastEventAt = event.created_at
       nextUpdatedAt = event.created_at
+    }
+
+    // 批末：仅当最终状态仍可物化时触发渐进同步（失败进入 retry_pending 则跳过）
+    // FE JobStatus 无 accepted（服务端 accepted → queued）
+    const canMaterialize =
+      nextStatus === 'succeeded' || nextStatus === 'running' || nextStatus === 'queued'
+    if (sawProgressiveOverlaySignal && jobLayer.catalogId && canMaterialize) {
+      void deps.syncProgressiveBlockOverlays(jobLayer.jobId, jobLayer.catalogId)
     }
 
     const eventMessages = mergeRecentEventMessages(jobLayer.eventMessages, events)
@@ -492,7 +492,10 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
             current.status === 'retry_pending')
         ) {
           nextActivityAt = Date.now()
-          void deps.syncProgressiveBlockOverlays(jobId, catalogId)
+          // retry_pending：仅续活轮询，禁止 materialize（BE 会 409）
+          if (current.status !== 'retry_pending') {
+            void deps.syncProgressiveBlockOverlays(jobId, catalogId)
+          }
         }
       }
     } catch (error) {

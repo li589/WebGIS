@@ -29,6 +29,7 @@ import {
   WORKFLOW_OUTPUT_SUBCATEGORY,
 } from '../workflow-output-layers'
 import { isWeatherEngineCatalogId } from './weather-session'
+import { isEnglishInversionCatalogId, resolveInversionCatalogId } from './inversion-catalog'
 import type {
   ActiveLayer,
   ActiveRunLayerGroup,
@@ -154,29 +155,47 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     const researchCategory = LAYER_CATEGORIES.find((c) => c.id === 'research-group')
     const researchAccent = researchCategory?.accentColor ?? '#ff6f91'
     const researchChip = researchCategory?.chipTone ?? 'rgba(255, 111, 145, 0.16)'
-    const outputItems: RuntimeLayerLibraryItem[] = outputStore.entries.map((entry) => ({
-      catalogId: entry.localId,
-      name: entry.name,
-      category: 'research-group',
-      subCategory: WORKFLOW_OUTPUT_SUBCATEGORY,
-      metricLabel: '产出',
-      metricUnit: '',
-      metricPrecision: 1,
-      updateLabel: '工作流驱动',
-      sourceLabel: `工作流: ${entry.sourceWorkflowId}`,
-      accentColor: researchAccent,
-      accentGlow: 'rgba(255, 111, 145, 0.28)',
-      chipTone: researchChip,
-      sources: [],
-      description: `模型输出 · 源图层: ${entry.sourceLayerId}`,
-      engine: entry.engine,
-      workflowName: entry.name,
-      runReadiness: 'ready',
-      runReadinessSummary: '工作流产出图层，可运行源工作流刷新数据',
-      runReadinessNotes: [],
-      backendStatus: 'sample',
-      supportsTime: false,
-    }))
+    // 仅滤显示名/localId 污染；sourceWorkflowId 是机器路由键，不进卡片名
+    const outputItems: RuntimeLayerLibraryItem[] = outputStore.entries
+      .filter(
+        (entry) =>
+          !isEnglishInversionCatalogId(entry.name) && !isEnglishInversionCatalogId(entry.localId),
+      )
+      .map((entry) => {
+        // 勿把 omega_sf_fenkuai_* 写进 sourceLabel / description（库卡片副文案）
+        const sourceLabel = isEnglishInversionCatalogId(entry.sourceWorkflowId)
+          ? '工作流产出'
+          : `工作流: ${entry.sourceWorkflowId}`
+        const mappedSource = resolveInversionCatalogId(entry.sourceLayerId)
+        const sourceLayerLabel = isEnglishInversionCatalogId(entry.sourceLayerId)
+          ? mappedSource.startsWith('method-')
+            ? mappedSource
+            : '反演目录图层'
+          : entry.sourceLayerId
+        return {
+          catalogId: entry.localId,
+          name: entry.name,
+          category: 'research-group' as const,
+          subCategory: WORKFLOW_OUTPUT_SUBCATEGORY,
+          metricLabel: '产出',
+          metricUnit: '',
+          metricPrecision: 1,
+          updateLabel: '工作流驱动',
+          sourceLabel,
+          accentColor: researchAccent,
+          accentGlow: 'rgba(255, 111, 145, 0.28)',
+          chipTone: researchChip,
+          sources: [],
+          description: `模型输出 · 源图层: ${sourceLayerLabel}`,
+          engine: entry.engine,
+          workflowName: entry.name,
+          runReadiness: 'ready' as const,
+          runReadinessSummary: '工作流产出图层，可运行源工作流刷新数据',
+          runReadinessNotes: [],
+          backendStatus: 'sample' as const,
+          supportsTime: false,
+        }
+      })
 
     const isDatasetLibraryItem = (item: RuntimeLayerLibraryItem) =>
       item.category !== 'boundary' &&
@@ -187,6 +206,7 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     return items
       .concat(outputItems)
       .filter(isDatasetLibraryItem)
+      .filter((item) => !isEnglishInversionCatalogId(item.catalogId) && !isEnglishInversionCatalogId(item.name))
       .sort((a, b) => {
         const categoryOrderA = CATEGORY_INDEX_BY_ID.get(a.category) ?? Number.MAX_SAFE_INTEGER
         const categoryOrderB = CATEGORY_INDEX_BY_ID.get(b.category) ?? Number.MAX_SAFE_INTEGER

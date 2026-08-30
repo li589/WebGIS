@@ -10,6 +10,7 @@
  */
 import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import type { useUiStore } from '../../stores/ui'
+import { useTimelineActionBannerStore } from '../../stores/timeline-action-banner'
 import { useLayerWorkspace, useWorkflowRun } from '../../stores/layers/selectors'
 import type { useLogStore } from '../../stores/log'
 import type { useWeatherTileManager } from '../../stores/weather-tile-manager'
@@ -161,6 +162,8 @@ export function useTimelineSync(
     const layer = workspace.activeLayers.value.find((l) => l.catalogId === layerCatalogId)
     const scienceSnap = snapTargetFromLayer(layer)
     if (!scienceSnap) return
+    // 程序化 snap 抑制顶栏确认，避免 add→snap→confirm→reuse 循环
+    useTimelineActionBannerStore().suppressConfirm(3_500)
     uiStore.applyDateHour(scienceSnap.date, scienceSnap.hour)
     uiStore.applyTimelineFromLayerGranularity(scienceSnap.granularity)
     uiStore.rememberLayerTime(layerCatalogId)
@@ -225,15 +228,9 @@ export function useTimelineSync(
         if (!ids.includes(id)) knownActiveInstanceIds.delete(id)
       }
       if (added.length === 0) return
+      // 产品约定：添加图层强制独立记忆，再 snap 到最新有数据时刻
       if (unifiedTimeLock.value) {
-        if (
-          added.some(
-            (id) => workspace.activeLayers.value.find((l) => l.instanceId === id)?.importedRaster,
-          )
-        ) {
-          refreshImportedRasterEffectiveTimes()
-        }
-        return
+        uiStore.setUnifiedTimeLock(false)
       }
       for (const instanceId of added) {
         const layer = workspace.activeLayers.value.find((l) => l.instanceId === instanceId)
@@ -241,11 +238,13 @@ export function useTimelineSync(
         if (layer.importedRaster?.timeList?.length) {
           pendingSnapCatalogIds.add(layer.catalogId)
           snapTimelineToLayerLatest(layer.catalogId, `新加科学图层 ${layer.catalogId} → 最新切片`)
+          uiStore.rememberLayerTime(layer.catalogId, { force: true })
           break
         }
         if (!workspace.isWeatherEngineLayer(layer.catalogId)) continue
         pendingSnapCatalogIds.add(layer.catalogId)
         snapTimelineToLatestValid(`新加图层 ${layer.catalogId} → 最新有效时次`)
+        uiStore.rememberLayerTime(layer.catalogId, { force: true })
         break
       }
     },

@@ -22,6 +22,8 @@ class RequestTemplateSpec:
         default_factory=dict
     )
     notes: str | None = None
+    # key → hard|soft|optional（additive；未列出的键按 required/optional 旧语义）
+    datasource_severity: dict[str, str] = field(default_factory=dict)
 
 
 MODULE_REQUEST_TEMPLATES: dict[str, RequestTemplateSpec] = {

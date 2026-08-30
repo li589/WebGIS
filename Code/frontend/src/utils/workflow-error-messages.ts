@@ -13,6 +13,7 @@ const ERROR_CODE_MESSAGES: Record<string, string> = {
   no_bridge: '未找到匹配的工作流引擎，请检查图层与请求参数。',
   terminal_failure: '工作流执行失败（不可自动重试）。',
   transient_failure: '工作流瞬态失败，系统将自动重试。',
+  coverage_gap: '请求时间窗本地无可用数据。',
 }
 
 const ASSET_STATE_ZH: Record<string, string> = {
@@ -144,6 +145,44 @@ export function extractWorkflowTechLogs(lines: string[] | undefined): string[] {
     }
   }
   return logs
+}
+
+/** 从 diagnostics / message 解析 failure_category / error_code（如 coverage_gap）。 */
+export function extractFailureCategory(options: {
+  diagnostics?: string[] | null
+  message?: string | null
+}): string | undefined {
+  for (const line of options.diagnostics ?? []) {
+    const trimmed = String(line || '').trim()
+    if (!trimmed) continue
+    const cat = trimmed.match(/^failure_category=([a-z0-9_]+)/i)
+    if (cat?.[1]) return cat[1].toLowerCase()
+    const code = trimmed.match(/(?:^|\s)error_code=([a-z0-9_]+)/i)
+    if (code?.[1]) return code[1].toLowerCase()
+  }
+  const msg = String(options.message || '')
+  const fromMsg = msg.match(/(?:^|\s)error_code=([a-z0-9_]+)/i)
+  if (fromMsg?.[1]) return fromMsg[1].toLowerCase()
+  return undefined
+}
+
+/** 是否为本地缺数（coverage_gap）；兼容中文「零交集」兜底。 */
+export function isCoverageGapFailure(job: {
+  failureCategory?: string | null
+  diagnostics?: string[] | null
+  message?: string | null
+  reportSummary?: string | null
+}): boolean {
+  if (job.failureCategory === 'coverage_gap') return true
+  const fromDiag = extractFailureCategory({
+    diagnostics: job.diagnostics,
+    message: job.message,
+  })
+  if (fromDiag === 'coverage_gap') return true
+  const blob = `${job.message || ''} ${job.reportSummary || ''} ${(job.diagnostics || []).join(' ')}`
+  return /零交集|本地无数据|coverage_gap|no overlapping dates|zero intersection|no fy hdf|hdf files found|files found in|no files found|no matching files/i.test(
+    blob,
+  )
 }
 
 /** 把提交期 422 issues 拼成状态面板可读文案（通用句 + 字段明细）。 */

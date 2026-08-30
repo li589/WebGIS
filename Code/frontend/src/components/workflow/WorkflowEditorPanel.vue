@@ -538,6 +538,24 @@ function notifyRunOutcome(ok: boolean, message?: string) {
   }
 }
 
+/**
+ * 主界面时间轴停稳后：同步打开画布中 bind_timeline 的 time_range 节点。
+ * 只读种子图不写脏标记以外的持久化；可编辑图标 dirty。
+ */
+function applyBoundMainTimeline(range: { start_at: string; end_at: string }): number {
+  if (!hasDefinition.value || !canvasRef.value) return 0
+  const changed =
+    (
+      canvasRef.value as {
+        applyBoundMainTimeline?: (r: { start_at: string; end_at: string }) => number
+      }
+    ).applyBoundMainTimeline?.(range) ?? 0
+  if (changed > 0 && !isReadonly.value) {
+    dirty.value = true
+  }
+  return changed
+}
+
 function clearRunStatusTimers() {
   if (_runStatusTimer2 !== null) {
     clearTimeout(_runStatusTimer2)
@@ -657,6 +675,7 @@ function handleClose() {
 
 defineExpose({
   notifyRunOutcome,
+  applyBoundMainTimeline,
 })
 </script>
 

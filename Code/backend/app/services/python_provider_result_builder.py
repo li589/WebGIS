@@ -1344,7 +1344,14 @@ class PythonProviderResultBuilder:
 
         if run_status is None:
             raise ValueError(f"Workflow run not found: {run_id}")
-        if run_status.status not in {"succeeded", "running", "accepted", "queued"}:
+        if run_status.status not in {
+            "succeeded",
+            "running",
+            "accepted",
+            "queued",
+        }:
+            # retry_pending / failed / cancelled：故意拒绝。前端不得在
+            # retry_pending 期间 POST materialize（否则会稳定 409，与缓存无关）。
             raise ValueError(
                 f"Workflow run cannot materialize overlays: {run_status.status}"
             )

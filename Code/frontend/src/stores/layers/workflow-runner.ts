@@ -28,6 +28,17 @@ import type { BoundingBox, LayerDescriptor, WorkflowEvent } from '../../services
 import { useWorkflowOutputLayersStore } from '../workflow-output-layers'
 import { useLogStore } from '../log'
 import { readScopedItem, writeScopedItem } from '../../services/user-local-isolation'
+import {
+  fetchDataInputPolicies,
+  INPUT_KEY_SOURCE_ROUTE_LOCAL_FIRST,
+} from '../../services/data-input-policies-api'
+import { fetchLayerDataCoverage } from '../../services/layer-coverage-api'
+import {
+  decideSourceRoute,
+  descriptorEligibleForSourceRoute,
+  inferDefaultVariant,
+  resolveSourceRoutePolicyMode,
+} from '../../utils/source-route-policy'
 import { buildJobLayer } from './result-adapter'
 import { forgetDismissedLayer, isRunDismissed } from './workspace-persist'
 import { getCatalogDisplayName, isTerminalStatus } from './catalog-builders'
@@ -48,6 +59,12 @@ import {
 } from '../../utils/workflow-expected-outputs'
 import { debugLog as probeDebugLog } from '../../utils/perf-probe'
 import { WORKFLOW_COPY } from '../../ui-copy/workflow'
+import {
+  INVERSION_RUN_LAYER_PATTERN,
+  isEnglishInversionCatalogId,
+  resolveInversionCatalogId,
+  sanitizeRunGroupTitle,
+} from './inversion-catalog'
 import type {
   ActiveLayer,
   ActiveRunLayerGroup,
@@ -55,8 +72,62 @@ import type {
   RuntimeLayerLibraryItem,
 } from './types'
 
+export {
+  INVERSION_RUN_LAYER_PATTERN,
+  isEnglishInversionCatalogId,
+  resolveInversionCatalogId,
+  sanitizeRunGroupTitle,
+} from './inversion-catalog'
+
 function debugLog(module: string, ...args: unknown[]) {
   probeDebugLog(`[${performance.now().toFixed(1)}ms] [LayersStore:${module}]`, ...args)
+}
+
+/**
+ * 分析提交缺省 time_range 时，从主界面时间轴补齐（避免 fy_daily 等模块
+ * 收到 time_range=None 后炸成 NoneType.start）。
+ */
+async function resolveDefaultTimeRangeFromTimeline(options: {
+  supportsTime: boolean
+  nativeStep: string | null | undefined
+  granularity?: string | null
+}): Promise<{ start_at: string; end_at: string; granularity: string } | null> {
+  if (!options.supportsTime) return null
+  try {
+    const { useUiStore } = await import('../ui')
+    const { buildTimeKey, buildTimeRangeFromKey } = await import('./online-temporal-orchestrator')
+    const ui = useUiStore()
+    const granRaw = options.granularity || ui.activeTimeGranularity || 'day'
+    const gran =
+      granRaw === 'hour' ||
+      granRaw === 'day' ||
+      granRaw === 'month' ||
+      granRaw === 'year' ||
+      granRaw === 'static'
+        ? granRaw
+        : 'day'
+    if (gran === 'static') return null
+    const nativeStep = options.nativeStep || (gran === 'hour' ? '1h' : '1d')
+    const timeKey = buildTimeKey(ui.currentDate, ui.currentHour, gran)
+    return buildTimeRangeFromKey(timeKey, nativeStep, gran)
+  } catch {
+    return null
+  }
+}
+
+/** 从 runtime descriptor 取 native_step（含 online_temporal 嵌套）。 */
+function resolveCatalogNativeStep(
+  descriptor: Record<string, unknown> | null | undefined,
+): string | null {
+  if (!descriptor) return null
+  const top = descriptor.native_step
+  if (typeof top === 'string' && top.trim()) return top.trim()
+  const ot = descriptor.online_temporal
+  if (ot && typeof ot === 'object') {
+    const nested = (ot as { native_step?: unknown }).native_step
+    if (typeof nested === 'string' && nested.trim()) return nested.trim()
+  }
+  return null
 }
 
 interface WorkflowVariantLike {
@@ -105,56 +176,6 @@ function resolveVariantAlgorithmRequest(
     ...(algorithmRequest ?? {}),
     workflow_entry_name: variant.workflow_id,
   }
-}
-
-/**
- * 反演历史 run 的英文 workflow id / layer_id → 图层目录 id（合并组成员）。
- *
- * 历史 run 的 layer_id 直接落 workflow_id（omega_sf_fenkuai_* 等），
- * catalog 无此条目时会以英文 id 回退显示（占位图层）。此处统一映射到
- * method-*-omega-doy-* 目录成员，使恢复产物并入「风云/SMAP ω 反演」组。
- */
-const INVERSION_RUN_CATALOG_MAP: Array<{ pattern: RegExp; catalogId: string }> = [
-  { pattern: /omega[-_]sf[-_]fenkuai[-_]?fy/i, catalogId: 'method-fy-omega-doy-dynamic' },
-  { pattern: /omega[-_]sf[-_]fenkuai[-_]?smap/i, catalogId: 'method-smap-omega-doy-dynamic' },
-  { pattern: /omega[-_]avg[-_]daily[-_]?fy/i, catalogId: 'method-fy-omega-doy-avg' },
-  { pattern: /omega[-_]avg[-_]daily[-_]?smap/i, catalogId: 'method-smap-omega-doy-avg' },
-]
-
-/** 裸 id（无 fy/smap 记号）兜底判组：含 smap 字样归 SMAP 组，含 fy/风云归 FY 组。 */
-const BARE_INVERSION_HINT_MAP: Array<{ pattern: RegExp; catalogId: string }> = [
-  { pattern: /smap/i, catalogId: 'method-smap-omega-doy-dynamic' },
-  { pattern: /fy|风云/i, catalogId: 'method-fy-omega-doy-dynamic' },
-]
-
-/** 匹配反演 run（fenkuai 动态链 / avg 逐日链 / omega_pixel）的 layer_id 识别。 */
-export const INVERSION_RUN_LAYER_PATTERN =
-  /omega[-_]sf[-_]fenkuai|omega[-_]avg[-_]daily|omega_sf_omega_pixel/i
-
-/** 英文反演 workflow/layer id → 目录 id；非反演 id 原样返回。
- *
- * 历史 run 存在裸 layer_id（omega-sf-fenkuai / omega-avg-daily，无 fy/smap
- * 后缀）——四条主映射均不命中。此处兜底：裸 fenkuai/avg id 按 id 内的
- * smap/fy 提示归组，无提示默认并入 SMAP 组（2026-08 前的裸 id 多为
- * smap 链提交），避免英文占位图层复活。
- */
-export function resolveInversionCatalogId(layerId: string): string {
-  for (const entry of INVERSION_RUN_CATALOG_MAP) {
-    if (entry.pattern.test(layerId)) return entry.catalogId
-  }
-  if (/^omega[-_]sf[-_]fenkuai$/i.test(layerId.trim())) {
-    for (const hint of BARE_INVERSION_HINT_MAP) {
-      if (hint.pattern.test(layerId)) return hint.catalogId
-    }
-    return 'method-smap-omega-doy-dynamic'
-  }
-  if (/^omega[-_]avg[-_]daily$/i.test(layerId.trim())) {
-    for (const hint of BARE_INVERSION_HINT_MAP) {
-      if (hint.pattern.test(layerId)) return hint.catalogId
-    }
-    return 'method-smap-omega-doy-avg'
-  }
-  return layerId
 }
 
 /** Safely log to useLogStore; no-ops if Pinia is not active (e.g., in tests) */
@@ -258,6 +279,8 @@ export interface WorkflowStateWriterDeps {
   setWorkflowError: (message: string | null) => void
   scheduleWorkspacePersist: () => void
   cleanupUnproducedRunLayers: (runId: string, opts?: { succeeded?: boolean }) => void
+  /** 丢弃探测失败的 run 组 UI（不删后端 overlay） */
+  discardRunGroupUi?: (runId: string) => void
   createRunLayerGroup: (options: {
     title: string
     targets: Array<{ name: string; productTag: string }>
@@ -288,6 +311,21 @@ export interface WorkflowBusinessDeps {
   /** overlay 静态/时间序列图层（PNG 资产直显，走 /overlay-asset-workflows）。 */
   isOverlayDisplayOnlyLayer: (catalogId: string) => boolean
   supportsMapLayerResult: (catalogId: string) => boolean
+  /**
+   * 源路由 allow_with_confirm：本地缺数需用户确认改走在线时回调（展示 Banner）。
+   * 未注入则 runner 抛错提示。
+   */
+  onSourceRouteConfirmOnline?: (payload: {
+    catalogId: string
+    timeKey: string | null
+    message: string
+  }) => void
+  /** 源路由静默改走在线时的短提示（可选） */
+  onSourceRouteSilentOnline?: (payload: {
+    catalogId: string
+    timeKey: string | null
+    message: string
+  }) => void
   buildWorkflowPayloadForCatalog: (
     catalogId: string,
     catalogName: string,
@@ -319,31 +357,51 @@ export type WorkflowVariantKey = 'online' | 'local'
 
 export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
   /**
-   * X2 变体偏好（catalogId → 变体键）。分析框切换「反演来源」后写入；
-   * runWorkflowForCatalog 未显式传 workflowVariant 时按此解析，
-   * 使时间轴/重试等后续提交路径沿用用户选择（默认 descriptor 在线变体）。
+   * X2 变体偏好（catalogId → 变体键）。分析框切换「数据来源」后写入；
+   * runWorkflowForCatalog 未显式传 workflowVariant 时按此解析。
+   * pinned=true：用户手动钉死，跳过源路由自动策略。
    */
   const workflowVariantPreference = ref<Record<string, WorkflowVariantKey>>({})
+  const workflowVariantPinned = ref<Record<string, boolean>>({})
 
   function getWorkflowVariantPreference(catalogId: string): WorkflowVariantKey | undefined {
     return workflowVariantPreference.value[catalogId]
   }
 
+  function isWorkflowVariantPinned(catalogId: string): boolean {
+    return Boolean(workflowVariantPinned.value[catalogId])
+  }
+
   function setWorkflowVariantPreference(
     catalogId: string,
     variant: WorkflowVariantKey | null,
+    opts?: { pinned?: boolean },
   ): void {
     if (variant === null) {
       delete workflowVariantPreference.value[catalogId]
-    } else {
-      workflowVariantPreference.value[catalogId] = variant
+      delete workflowVariantPinned.value[catalogId]
+      return
     }
+    workflowVariantPreference.value[catalogId] = variant
+    if (opts?.pinned === true) {
+      workflowVariantPinned.value[catalogId] = true
+    } else if (opts?.pinned === false) {
+      delete workflowVariantPinned.value[catalogId]
+    }
+  }
+
+  /** InfoPanel「自动」：清除钉死与偏好，回落源路由策略 */
+  function clearWorkflowVariantPin(catalogId: string): void {
+    delete workflowVariantPreference.value[catalogId]
+    delete workflowVariantPinned.value[catalogId]
   }
 
   function rememberTrackedWorkflowRun(catalogId: string, jobLayer: JobLayerItem) {
     // 乐观提交 ID 不是后端真 run，禁止写入恢复列表（否则会 404 / 误点重试）
     if (deps.isLocalSubmitJobId(jobLayer.jobId)) return
-    if (isTerminalStatus(jobLayer.status) && jobLayer.status === 'cancelled') {
+    // 刷新后只需续接「进行中」：成功/失败/取消从跟踪表剔除，避免挤占名额
+    // 且与状态指示器「运行中必须保留、已成功无所谓」对齐。
+    if (isTerminalStatus(jobLayer.status)) {
       forgetTrackedWorkflowRun(jobLayer.jobId)
       return
     }
@@ -460,12 +518,13 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         autoDiscovered?: boolean
       }> = []
 
-      // 先收集最近成功的 omega 反演 run（列表按创建时间倒序），
-      // 同一工作流（command_label）只保留最新成功 run；
-      // 同时建立「工作流 → 最新成功 run」映射，用于压制同工作流的僵尸活跃 run。
+      // 先收集最近成功的 omega 反演 run（列表按创建时间倒序）。
+      // 关键键：按「映射后的 method-* 目录 id」去重，每目录只保留最新一条。
+      // 旧实现按 command_label 去重——每次时间窗不同就会灌入多组历史 run，
+      // 添加 SMAP/风云 ω 后 TOC/库被 omega_sf_fenkuai_* 历史组淹没（2026-08-30）。
       const recentSucceeded = await listRecentSucceededRuns(20).catch(() => [])
       const succeededByWorkflow = new Set<string>()
-      const seenWorkflowLabels = new Set<string>()
+      const seenInversionCatalogs = new Set<string>()
       for (const run of recentSucceeded) {
         const layerId = String(run.layer_id || '')
         // 仅恢复 omega 反演（fenkuai 动态链 / avg 逐日链）等算法产物 run，
@@ -473,8 +532,9 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         if (!INVERSION_RUN_LAYER_PATTERN.test(layerId)) continue
         const workflowKey = String(run.command_label || layerId)
         succeededByWorkflow.add(workflowKey)
-        if (seenWorkflowLabels.has(workflowKey)) continue
-        seenWorkflowLabels.add(workflowKey)
+        const mappedCatalog = resolveInversionCatalogId(layerId)
+        if (seenInversionCatalogs.has(mappedCatalog)) continue
+        seenInversionCatalogs.add(mappedCatalog)
         forgetDismissedLayer({ runId: run.run_id })
         if (!candidates.some((c) => c.runId === run.run_id)) {
           candidates.push({
@@ -486,12 +546,9 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       }
 
       for (const run of activeRuns) {
-        // 同一工作流已有成功产物时，不再恢复其 running/queued 占位
-        // （worker 重启后僵尸 running run 会永远卡在占位组，展示陈旧中间块）。
-        // 但本机 tracked 的进行中 run 必须恢复，否则刷新丢失多图层计算组。
-        const workflowKey = String(run.command_label || run.layer_id || '')
-        const isTrackedActive = tracked.some((t) => t.runId === run.run_id)
-        if (workflowKey && succeededByWorkflow.has(workflowKey) && !isTrackedActive) continue
+        // 后端 active_only 的非终态 run 一律进入候选——状态指示器在刷新后
+        // 必须能续接「运行中/排队」。同工作流已有成功产物时的「僵尸 running」
+        // 防护下移到建组阶段，不再在此丢弃 jobLayer/轮询。
         candidates.push({
           runId: run.run_id,
           catalogIdHint: run.layer_id || undefined,
@@ -507,9 +564,11 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         }
       }
 
-      // 清掉残留的乐观提交占位（排队幽灵）
+      // 清掉残留的乐观提交占位（排队幽灵）。
+      // 保留终态 failed：否则 restore 会抹掉 local-submit 失败行，只剩
+      // workflowError 横幅 → 分析框有 500 文案、状态指示器却无「失败」徽标。
       for (const job of [...deps.getJobLayers()]) {
-        if (deps.isLocalSubmitJobId(job.jobId)) {
+        if (deps.isLocalSubmitJobId(job.jobId) && !isTerminalStatus(job.status)) {
           deps.removeJobLayerById(job.jobId)
         }
       }
@@ -517,6 +576,28 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       for (const candidate of candidates) {
         if (seen.has(candidate.runId)) continue
         seen.add(candidate.runId)
+        if (candidate.autoDiscovered) {
+          // 无对应 method-* 活动层时不自动灌入历史反演 run——否则 TOC/库会被
+          // 历史组淹没；添加图层走 autoAttachProductsForNewLayer（仅最新/指定时刻）。
+          const mapped = resolveInversionCatalogId(candidate.catalogIdHint || '')
+          const hasActive = deps
+            .getActiveLayers()
+            .some(
+              (l) =>
+                l.catalogId === mapped || resolveInversionCatalogId(l.catalogId) === mapped,
+            )
+          if (!hasActive) continue
+          // 该目录已有计算组（快照/autoAttach 已建）→ 不再灌入第二条历史 run
+          const alreadyGrouped = deps.getRunLayerGroups().some((g) => {
+            const src = String(g.sourceLayerId || '')
+            return (
+              src === mapped ||
+              resolveInversionCatalogId(src) === mapped ||
+              resolveInversionCatalogId(String(g.workflowId || '')) === mapped
+            )
+          })
+          if (alreadyGrouped) continue
+        }
         if (isRunDismissed(candidate.runId)) {
           forgetTrackedWorkflowRun(candidate.runId)
           continue
@@ -542,13 +623,11 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           continue
         }
 
-        // 非终态且同工作流已有成功版本 → 跳过（防止僵尸 running 重建占位组）
-        // tracked 进行中 run 例外：刷新后必须续接占位组/轮询。
-        if (run.status !== 'succeeded') {
-          const workflowKey = String(run.command_label || run.layer_id || '')
-          const isTrackedActive = tracked.some((t) => t.runId === candidate.runId)
-          if (workflowKey && succeededByWorkflow.has(workflowKey) && !isTrackedActive) {
-            forgetTrackedWorkflowRun(candidate.runId)
+        // 终态：清跟踪表。成功产物仅 autoDiscover 路径进指示器/绑层；
+        // 刷新后指示器优先保证「运行中」，已成功不强制回填。
+        if (isTerminalStatus(String(run.status))) {
+          forgetTrackedWorkflowRun(candidate.runId)
+          if (!(run.status === 'succeeded' && candidate.autoDiscovered)) {
             continue
           }
         }
@@ -557,7 +636,10 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           run.layer_id || candidate.catalogIdHint,
           run.run_id,
         )
-        let jobLayer = await buildJobLayer(run, catalogId, {
+        const catalogDisplayName =
+          deps.getRuntimeLayerCatalog()[catalogId]?.display_name ??
+          getCatalogDisplayName(catalogId)
+        let jobLayer = await buildJobLayer(run, catalogDisplayName, {
           previousJobLayer: existing,
         })
         jobLayer = await hydrateJobLayerFromEvents(jobLayer)
@@ -592,15 +674,23 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           const layerId = String(run.layer_id || catalogId)
           const bridge = resolveRestoreWorkflowBridge(layerId, catalogId, trackedItem)
           const hasHydratedGroup = deps.getRunLayerGroups().some((g) => g.runId === run.run_id)
+          const workflowKey = String(run.command_label || run.layer_id || '')
+          // 僵尸防护：同工作流已有成功产物且非本机 tracked → 仍写入指示器/轮询，
+          // 但不重建 TOC 占位组（避免陈旧中间块淹没侧栏）。
+          const skipZombieGroup =
+            Boolean(workflowKey) &&
+            succeededByWorkflow.has(workflowKey) &&
+            !trackedItem
           // 有 bridge / tracked 组 / 已水合组 / wf-run 占位时均重建或补全计算组
           if (
-            bridge.workflowId ||
-            bridge.sourceLayerId ||
-            catalogId.startsWith('wf-run-') ||
-            catalogId.startsWith('wf-out-') ||
-            Boolean(trackedItem?.groupId) ||
-            (trackedItem?.memberCatalogIds?.length ?? 0) > 0 ||
-            hasHydratedGroup
+            !skipZombieGroup &&
+            (bridge.workflowId ||
+              bridge.sourceLayerId ||
+              catalogId.startsWith('wf-run-') ||
+              catalogId.startsWith('wf-out-') ||
+              Boolean(trackedItem?.groupId) ||
+              (trackedItem?.memberCatalogIds?.length ?? 0) > 0 ||
+              hasHydratedGroup)
           ) {
             ensureRestoredRunGroup(run.run_id, catalogId, trackedItem, {
               createPlaceholders: true,
@@ -616,11 +706,14 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           jobLayer.status === 'succeeded' &&
           (candidate.autoDiscovered || !isRunDismissed(run.run_id))
         ) {
-          // 确保计算组结构存在，便于 attach 绑到产物成员
+          // 必须建占位组成员（createPlaceholders），否则 attach 会落成
+          // catalogId=imported-omega_sf_fenkuai_* 的游离层，侧栏/库视图
+          // 泄漏英文技术名（2026-08-30 图层库污染）。
           ensureRestoredRunGroup(
             run.run_id,
             catalogId,
             tracked.find((t) => t.runId === run.run_id),
+            { createPlaceholders: true, source: 'restore' },
           )
           // 自动发现的 run 强制绑定数据（绕过用户此前可能点过的"移除"标记），
           // 保证"有图层就有内容"；用户主动移除的 tracked run 仍保持被移除状态。
@@ -656,6 +749,8 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           }
         }
       }
+      // 恢复末再 scrub：剔除误建的英文反演游离层 / 纠偏组标题（attach 竞态兜底）
+      deps.reconcileOmegaBlockLayers()
       deps.scheduleWorkspacePersist()
     } catch (err) {
       console.error('[layers] restoreActiveWorkflows failed:', err)
@@ -807,17 +902,42 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       groupTitleFromDefinition(restoreDef) ??
       (typeof rawCatalogTitle === 'string' && rawCatalogTitle.trim() ? rawCatalogTitle : undefined)
     const layerTags = memberTagsFromLayers()
-    // 需求2 后的新种子（带 extra 配置）但无显式 outputs 时 → 单产出语义
-    //（'result'，与 resolveExpectedOutputTags 的"至少一个产出"约定一致）。
-    // LEGACY 三件套（SM/VOD/OMEGA）恢复兜底已于 2026-08-24 交付前退役：
-    // 61 种子全部携带 group_title/outputs 中文配置，纯旧 run 快照不再
-    // 回退三占位——旧组产物经 result-adapter 游离层兜底链展示。
+    const catalogLabels = catalogExtra?.output_labels
+    // descriptor.workflow_extra.output_labels 的键即产物槽（SM/VOD/OMEGA）；
+    // 无完整 workflow_definition.extra.outputs 时仍须建三槽，否则 attach
+    // 会落成 imported-omega_sf_fenkuai_* 游离层污染 TOC/库。
+    const labelsFromExtraKeys =
+      catalogLabels && typeof catalogLabels === 'object' && !Array.isArray(catalogLabels)
+        ? Object.keys(catalogLabels as Record<string, unknown>).filter(
+            (k) => typeof (catalogLabels as Record<string, unknown>)[k] === 'string' && k.trim(),
+          )
+        : []
+    // 需求2 后的新种子（带 extra 配置）但无显式 outputs 时 → 优先 output_labels 键。
+    // 反演目录（method-*-omega-* / 英文 workflow id）无元数据时回退 SM/VOD/OMEGA，
+    // 禁止只建 'result' 槽导致 attach 落成 imported-omega_* 游离层。
+    // 注意：勿引用未定义标识符——method-* 路径上前两项 pattern 为 false，
+    // 若再求值未声明变量会 ReferenceError，占位组建失败 → 英文 overlay 泄漏（2026-08-30）。
+    const inversionProbeIds = [
+      catalogId,
+      bridge.sourceLayerId,
+      tracked?.catalogId,
+      existingGroup?.sourceLayerId,
+      existingGroup?.workflowId,
+    ]
+      .map((v) => String(v || '').trim())
+      .filter(Boolean)
+    const inversionFallback =
+      inversionProbeIds.some((id) => INVERSION_RUN_LAYER_PATTERN.test(id)) ||
+      inversionProbeIds.some((id) => /^method-(?:fy|smap)-omega-/i.test(id))
     const tags = layerTags.length
       ? layerTags
       : defTags.length
         ? defTags
-        : ['result']
-    const catalogLabels = catalogExtra?.output_labels
+        : labelsFromExtraKeys.length
+          ? labelsFromExtraKeys
+          : inversionFallback
+            ? ['SM', 'VOD', 'OMEGA']
+            : ['result']
     const mergedLabels: Record<string, string> = Array.isArray(catalogLabels)
       ? Object.fromEntries(
           catalogLabels
@@ -851,8 +971,10 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         ? tracked.memberCatalogIds
         : tags.map((tag) => `wf-run-${groupId}-${String(tag).toLowerCase()}`)
 
-    // 无 descriptor/workflow 元数据时做通用 restore，禁止写死实验室 seed id
-    const sourceLayerId = existingGroup?.sourceLayerId || bridge.sourceLayerId || catalogId
+    // 无 descriptor/workflow 元数据时做通用 restore，禁止写死实验室 seed id。
+    // sourceLayerId 若仍是英文 workflow id，收敛到 method-*，避免组挂在技术名上。
+    const rawSourceLayerId = existingGroup?.sourceLayerId || bridge.sourceLayerId || catalogId
+    const sourceLayerId = resolveInversionCatalogId(String(rawSourceLayerId || catalogId))
     const workflowId = existingGroup?.workflowId || bridge.workflowId || ''
 
     /** 渐进/部分水合后补全缺失产品槽（勿因组已存在而直接 return） */
@@ -923,8 +1045,10 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       // （2026-08-24 组名中文化报障）。
       if (configuredGroupTitle) {
         group.title = configuredGroupTitle
-      } else if (options?.title) {
+      } else if (options?.title && !isEnglishInversionCatalogId(options.title)) {
         group.title = options.title
+      } else if (group.title && isEnglishInversionCatalogId(group.title)) {
+        group.title = configuredGroupTitle || '反演产物'
       }
     }
 
@@ -954,9 +1078,11 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       const group: ActiveRunLayerGroup = {
         groupId,
         runId,
-        // 中文配置优先（extra.group_title），技术名兜底
-        title:
-          configuredGroupTitle || options?.title || tracked?.name || '工作流产物',
+        // 中文配置优先（extra.group_title）；英文技术名不得落入组标题
+        title: sanitizeRunGroupTitle(
+          configuredGroupTitle || options?.title || tracked?.name,
+          '工作流产物',
+        ),
         status: options?.createPlaceholders ? 'computing' : 'ready',
         memberInstanceIds: seedMembers.map((m) => m.instanceId),
         dissolvable: !options?.createPlaceholders,
@@ -974,7 +1100,10 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     }
 
     const created = deps.createRunLayerGroup({
-      title: configuredGroupTitle || options.title || tracked?.name || '工作流运行',
+      title: sanitizeRunGroupTitle(
+        configuredGroupTitle || options?.title || tracked?.name,
+        '反演产物',
+      ),
       targets: configuredTargets.length
         ? configuredTargets
         : tags.map((tag) => ({ name: productTagLabel(tag), productTag: tag })),
@@ -1052,11 +1181,13 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
 
     const backendLayerId = deps.resolveBackendLayerId(catalogId)
     const isOutputLayer = backendLayerId !== catalogId
-    // 显式 option 优先，其次 store 偏好（backend id 与 catalog id 双查），缺省走 descriptor 默认变体
-    const effectiveVariant =
+    // 显式 option 优先；钉死偏好次之；否则源路由策略；最后未钉死 preference
+    let effectiveVariant: WorkflowVariantKey | undefined =
       options.workflowVariant ??
-      getWorkflowVariantPreference(backendLayerId) ??
-      getWorkflowVariantPreference(catalogId)
+      (isWorkflowVariantPinned(backendLayerId)
+        ? getWorkflowVariantPreference(backendLayerId)
+        : undefined) ??
+      (isWorkflowVariantPinned(catalogId) ? getWorkflowVariantPreference(catalogId) : undefined)
     const runtimeLayerCatalog = deps.getRuntimeLayerCatalog()
     const catalogName = isOutputLayer
       ? (deps.getLayerLibrary().find((l) => l.catalogId === catalogId)?.name ?? catalogId)
@@ -1107,6 +1238,117 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
             options.algorithmRequest.workflow_name)) ||
         (options.weatherRequest && options.weatherRequest.workflow),
       )
+
+      // 源路由：无显式 variant / 未钉死时，按 data-coverage + 策略选 local|online
+      if (effectiveVariant === undefined && !hasCanvasDefinition) {
+        const descriptor =
+          runtimeLayerCatalog[backendLayerId] ?? runtimeLayerCatalog[catalogId] ?? null
+        const eligible = descriptorEligibleForSourceRoute(
+          descriptor as { workflow_variants?: Record<string, { workflow_id?: string }> },
+        )
+        if (eligible) {
+          let routeTimeKey: string | null = null
+          const tr = options.timeRange as { start_at?: string } | undefined
+          if (tr?.start_at) {
+            routeTimeKey = String(tr.start_at).slice(0, 10)
+          } else {
+            try {
+              const { useUiStore } = await import('../ui')
+              const { buildTimeKey } = await import('./online-temporal-orchestrator')
+              const ui = useUiStore()
+              const granRaw =
+                (descriptor as { time_granularity?: string } | null)?.time_granularity ||
+                ui.activeTimeGranularity ||
+                'day'
+              const gran =
+                granRaw === 'hour' ||
+                granRaw === 'day' ||
+                granRaw === 'month' ||
+                granRaw === 'year' ||
+                granRaw === 'static'
+                  ? granRaw
+                  : 'day'
+              if (gran !== 'static') {
+                routeTimeKey = buildTimeKey(ui.currentDate, ui.currentHour, gran)
+              }
+            } catch {
+              /* ignore */
+            }
+          }
+          try {
+            const [policiesDoc, coverage] = await Promise.all([
+              fetchDataInputPolicies().catch(() => null),
+              fetchLayerDataCoverage(backendLayerId).catch(() =>
+                fetchLayerDataCoverage(catalogId).catch(() => null),
+              ),
+            ])
+            const mode = resolveSourceRoutePolicyMode(policiesDoc?.policies ?? [], {
+              layerId: backendLayerId,
+              module: (descriptor as { module_name?: string } | null)?.module_name,
+              workflowId:
+                (descriptor as { workflow_id?: string } | null)?.workflow_id ??
+                (descriptor as { workflow_name?: string } | null)?.workflow_name,
+            })
+            const onlineBlocked =
+              (descriptor as { online_ready?: boolean | null } | null)?.online_ready ===
+              false
+            const decision = decideSourceRoute({
+              mode,
+              eligible: true,
+              coverage,
+              timeKey: routeTimeKey,
+              onlineBlocked,
+              hasExplicitCanvasWorkflow: false,
+              defaultVariant: inferDefaultVariant(
+                descriptor as {
+                  workflow_id?: string
+                  workflow_variants?: Record<string, { workflow_id?: string }>
+                },
+              ),
+            })
+            if (decision.action === 'confirm_online') {
+              const message =
+                '本地时间窗无数据，按策略需确认后改走在线获取。'
+              deps.onSourceRouteConfirmOnline?.({
+                catalogId,
+                timeKey: routeTimeKey,
+                message,
+              })
+              if (!deps.onSourceRouteConfirmOnline) {
+                throw new Error(message)
+              }
+              return undefined
+            }
+            if (decision.action === 'use') {
+              effectiveVariant = decision.variant
+              if (
+                decision.variant === 'online' &&
+                (decision.reason.startsWith('local_miss') ||
+                  decision.reason.startsWith('default_online'))
+              ) {
+                deps.onSourceRouteSilentOnline?.({
+                  catalogId,
+                  timeKey: routeTimeKey,
+                  message: '已按源路由策略改走在线获取。',
+                })
+              }
+              debugLog(
+                'runWorkflow',
+                catalogId,
+                `source_route ${INPUT_KEY_SOURCE_ROUTE_LOCAL_FIRST}`,
+                decision,
+              )
+            }
+          } catch (routeErr) {
+            if (routeErr instanceof Error && routeErr.message.includes('需确认')) throw routeErr
+            debugLog('runWorkflow', catalogId, 'source_route skipped', String(routeErr))
+          }
+        }
+        if (effectiveVariant === undefined) {
+          effectiveVariant =
+            getWorkflowVariantPreference(backendLayerId) ?? getWorkflowVariantPreference(catalogId)
+        }
+      }
       const blockedReason =
         runtimeCatalogReady && !isOutputLayer && !hasCanvasDefinition
           ? deps.getCatalogRunBlockReason(backendLayerId)
@@ -1211,23 +1453,61 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           typeof algoRequest.workflow_entry_name === 'string' &&
           algoRequest.workflow_entry_name !== refreshedCatalog[backendLayerId]?.workflow_id
         ) {
-          payload.command_label = `运行 ${catalogName} 分析 · ${
-            effectiveVariant === 'local' ? '本地反演' : '在线反演'
-          }`
+          const variantLabels = (
+            refreshedCatalog[backendLayerId] as WorkflowVariantsHost | undefined
+          )?.workflow_variants
+          const variantLabel =
+            effectiveVariant === 'local'
+              ? variantLabels?.local?.label?.trim() || '本地读取'
+              : variantLabels?.online?.label?.trim() || '在线获取'
+          payload.command_label = `运行 ${catalogName} 分析 · ${variantLabel}`
         }
       }
+      const catalogNative =
+        resolveCatalogNativeStep(
+          runtimeLayerCatalog[backendLayerId] as Record<string, unknown> | undefined,
+        ) ??
+        resolveCatalogNativeStep(
+          runtimeLayerCatalog[catalogId] as Record<string, unknown> | undefined,
+        )
       if (options.timeRange && typeof options.timeRange === 'object') {
         payload.time_range = options.timeRange
+      } else {
+        // 图层库/侧栏「运行」常不带 time_range；时间轴当前窗补齐，避免后端 None.start
+        const libItem = deps.getLayerLibrary().find((l) => l.catalogId === catalogId)
+        const rt =
+          (runtimeLayerCatalog[backendLayerId] as
+            | {
+                supports_time?: boolean
+                time_granularity?: string
+                native_step?: string
+                online_temporal?: { native_step?: string }
+              }
+            | undefined) ??
+          (runtimeLayerCatalog[catalogId] as
+            | {
+                supports_time?: boolean
+                time_granularity?: string
+                native_step?: string
+                online_temporal?: { native_step?: string }
+              }
+            | undefined)
+        const supportsTime = libItem?.supportsTime ?? rt?.supports_time ?? true
+        const filled = await resolveDefaultTimeRangeFromTimeline({
+          supportsTime: supportsTime !== false,
+          nativeStep: catalogNative ?? rt?.native_step ?? rt?.online_temporal?.native_step,
+          // 目录条目未投影 timeGranularity；粒度以 runtime descriptor 为准
+          granularity: rt?.time_granularity,
+        })
+        if (filled) {
+          payload.time_range = filled
+          debugLog('runWorkflow', catalogId, 'injected timeline time_range', filled)
+        }
       }
       const algoParams =
         options.algorithmRequest && typeof options.algorithmRequest.algorithm_params === 'object'
           ? (options.algorithmRequest.algorithm_params as Record<string, unknown>)
           : null
-      const catalogNative =
-        (runtimeLayerCatalog[backendLayerId] as { native_step?: string } | undefined)
-          ?.native_step ??
-        (runtimeLayerCatalog[catalogId] as { native_step?: string } | undefined)?.native_step ??
-        null
       const coverage = buildExpectedCoverageForSubmit({
         timeRange: options.timeRange,
         payloadTimeRange: payload.time_range as Record<string, unknown> | undefined,
@@ -1570,8 +1850,14 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
    * catalogId，则物化产物 overlay 并绑到该图层——与刷新恢复
    * （restoreActiveWorkflows）的 autoDiscovered 行为对齐，但触发点为
    * 用户从目录添加图层。无产物 run 时静默跳过（用户随后可手动运行）。
+   *
+   * ``preferredTimeKey``：优先复用覆盖该时刻的成功产物；否则回退到该 catalog
+   * 最新成功 run（添加图层场景）。
    */
-  async function autoAttachProductsForNewLayer(catalogId: string): Promise<number> {
+  async function autoAttachProductsForNewLayer(
+    catalogId: string,
+    options?: { preferredTimeKey?: string | null },
+  ): Promise<number> {
     const targetId = resolveInversionCatalogId(catalogId)
     // 保护用户静态图层：仅当该 catalog 具备 map-layer-result capability 才去
     // attach 反演产物。对纯静态/展示型图层（干旱指数 AI 等）执行会误把反演
@@ -1585,39 +1871,109 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     } catch {
       return 0 // 目录/网络不可用：静默（添加图层本身不应因此报错）
     }
-    // 同一图层取最新成功 run（列表已按创建时间倒序）
-    const match = runs.find((r) => resolveInversionCatalogId(r.layer_id || '') === targetId)
-    if (!match) return 0
-    try {
-      ensureRestoredRunGroup(match.run_id, targetId, undefined)
-      const bound = await deps.attachAlgorithmProductOverlays(
-        match.result_refs,
-        targetId,
-        match.run_id,
-        { forceBind: true },
-      )
-      if (bound > 0) {
-        deps.cleanupUnproducedRunLayers(match.run_id, { succeeded: true })
-        deps.scheduleWorkspacePersist()
-        // 时间轴自动对齐：取该图层产物的最新时间块（需求1——载入时
-        // 时间轴自动切换到当前有数据的时间点）
-        const layer = deps
+    const catalogRuns = runs.filter(
+      (r) => resolveInversionCatalogId(r.layer_id || '') === targetId,
+    )
+    if (!catalogRuns.length) return 0
+
+    const preferred = options?.preferredTimeKey?.trim() || null
+    // 先试最新 run；若指定 timeKey，物化后按 time_list 过滤——无覆盖则继续试下一 run
+    const ordered = preferred ? catalogRuns : catalogRuns.slice(0, 1)
+
+    for (const match of ordered) {
+      try {
+        // 建 SM/VOD/ω 占位组再绑产物，禁止游离层以 overlay 技术 id 进 TOC/库
+        ensureRestoredRunGroup(match.run_id, targetId, undefined, {
+          createPlaceholders: true,
+          source: 'restore',
+        })
+        const bound = await deps.attachAlgorithmProductOverlays(
+          match.result_refs,
+          targetId,
+          match.run_id,
+          { forceBind: true },
+        )
+        if (bound <= 0) {
+          deps.discardRunGroupUi?.(match.run_id)
+          continue
+        }
+
+        // 时间覆盖看 run 组成员产物，不是 method-* 父卡（父卡通常无 importedRaster）
+        const group = deps.getRunLayerGroups().find((g) => g.runId === match.run_id)
+        const memberTimeList = deps
+          .getActiveLayers()
+          .filter((l) => (group ? l.runGroupId === group.groupId : false))
+          .flatMap((l) => l.importedRaster?.timeList ?? [])
+        const parentLayer = deps
           .getActiveLayers()
           .find(
-            (l) => l.catalogId === targetId || resolveInversionCatalogId(l.catalogId) === targetId,
+            (l) =>
+              l.catalogId === targetId || resolveInversionCatalogId(l.catalogId) === targetId,
           )
-        const timeList = layer?.importedRaster?.timeList ?? []
-        const timeLabel =
-          layer?.importedRaster?.effectiveTimeLabel ??
-          (timeList.length ? timeList[timeList.length - 1] : undefined)
-        if (timeLabel && deps.alignTimelineToProduct) {
-          deps.alignTimelineToProduct(String(timeLabel))
+        const timeList =
+          memberTimeList.length > 0
+            ? memberTimeList
+            : (parentLayer?.importedRaster?.timeList ?? [])
+        if (preferred) {
+          const { timeListCoversTimeKey } = await import('../../utils/time-key-coverage')
+          if (!timeListCoversTimeKey(timeList, preferred)) {
+            // 该 run 不覆盖目标时刻：丢弃本轮探测组 UI，试下一成功 run
+            deps.discardRunGroupUi?.(match.run_id)
+            continue
+          }
         }
+
+        deps.cleanupUnproducedRunLayers(match.run_id, { succeeded: true })
+        deps.scheduleWorkspacePersist()
+        // 时间轴：有 preferred 用 preferred；否则跳到产物最新时间块
+        if (preferred && deps.alignTimelineToProduct) {
+          deps.alignTimelineToProduct(preferred)
+        } else {
+          const timeLabel =
+            parentLayer?.importedRaster?.effectiveTimeLabel ??
+            (timeList.length ? timeList[timeList.length - 1] : undefined)
+          if (timeLabel && deps.alignTimelineToProduct) {
+            deps.alignTimelineToProduct(String(timeLabel))
+          }
+        }
+        return bound
+      } catch {
+        deps.discardRunGroupUi?.(match.run_id)
+        continue
       }
-      return bound
-    } catch {
-      return 0
     }
+    return 0
+  }
+
+  /** 查询同 catalog 是否已有覆盖 timeKey 的成功产物（不绑层，供确认卡决策）。 */
+  async function hasReusableProductsForTime(
+    catalogId: string,
+    timeKey: string,
+  ): Promise<boolean> {
+    const targetId = resolveInversionCatalogId(catalogId)
+    if (!deps.supportsMapLayerResult(targetId) && !deps.supportsMapLayerResult(catalogId)) {
+      return false
+    }
+    // 先看已绑定图层
+    const { timeListCoversTimeKey } = await import('../../utils/time-key-coverage')
+    const existing = deps
+      .getActiveLayers()
+      .find(
+        (l) =>
+          (l.catalogId === targetId || resolveInversionCatalogId(l.catalogId) === targetId) &&
+          timeListCoversTimeKey(l.importedRaster?.timeList, timeKey),
+      )
+    if (existing) return true
+
+    let runs: Awaited<ReturnType<typeof listRecentSucceededRuns>>
+    try {
+      runs = await listRecentSucceededRuns(20)
+    } catch {
+      return false
+    }
+    // 轻量：仅检查 result_refs / 事件不足以拿 time_list；依赖已物化层或添加后再判。
+    // 有同 catalog 成功 run 即提示「可能可复用」，确认时再 autoAttach 精确匹配。
+    return runs.some((r) => resolveInversionCatalogId(r.layer_id || '') === targetId)
   }
 
   return {
@@ -1625,6 +1981,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     registerExternalWorkflowRun,
     runWorkflowForCatalog,
     autoAttachProductsForNewLayer,
+    hasReusableProductsForTime,
     cancelWorkflowRunForJob,
     retryWorkflowRunForJob,
     interruptWorkflowForCatalog,
@@ -1635,6 +1992,8 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     workflowVariantPreference,
     getWorkflowVariantPreference,
     setWorkflowVariantPreference,
+    isWorkflowVariantPinned,
+    clearWorkflowVariantPin,
     // 内部辅助不导出：resolveRestoredCatalogId / hydrateJobLayerFromEvents /
     //   resolveRestoreWorkflowBridge / ensureRestoredRunGroup
   }

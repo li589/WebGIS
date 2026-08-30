@@ -297,6 +297,47 @@ export function useNodeOperations(
     }
   }
 
+  /**
+   * 将主界面时间轴窗口写入 bind_timeline 的 time_range 节点（现场改 properties + widget）。
+   * @returns 实际更新的节点数
+   */
+  function applyBoundMainTimeline(range: { start_at: string; end_at: string }): number {
+    if (!graphInstance.value) return 0
+    const start = String(range.start_at || '').trim()
+    const end = String(range.end_at || '').trim()
+    if (!start || !end) return 0
+
+    let changed = 0
+    for (const node of getGraphNodes(graphInstance.value)) {
+      const ntype = String(node.type ?? '')
+      const props = { ...((node.properties ?? {}) as Record<string, unknown>) }
+      const isTimeRange =
+        ntype === 'data/time_range' ||
+        ntype.endsWith('/time_range') ||
+        props.module_name === 'time_range'
+      if (!isTimeRange) continue
+      if (props.bind_timeline === false || props.bind_timeline === 'false') continue
+      if (String(props.start_at ?? '') === start && String(props.end_at ?? '') === end) continue
+
+      node.properties = { ...props, start_at: start, end_at: end }
+      const widgets = (
+        node as { widgets?: Array<{ name?: string; value?: unknown }> }
+      ).widgets
+      if (widgets) {
+        for (const w of widgets) {
+          if (w.name === 'start_at') w.value = start
+          if (w.name === 'end_at') w.value = end
+        }
+      }
+      changed += 1
+    }
+    if (changed > 0) {
+      canvasInstance.value?.setDirty(true, true)
+      emitChange()
+    }
+    return changed
+  }
+
   return {
     selectAllNodes,
     copySelectedNodes,
@@ -309,5 +350,6 @@ export function useNodeOperations(
     fitView,
     addNodeByType,
     removeNode,
+    applyBoundMainTimeline,
   }
 }

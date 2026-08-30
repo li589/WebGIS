@@ -206,6 +206,10 @@ class LayerDescriptor(BaseModel):
     run_readiness: str = "ready"
     run_readiness_summary: str | None = None
     run_readiness_notes: list[str] = Field(default_factory=list)
+    """变体图层：在线门户凭据是否就绪（由 describe_layer_run_readiness 投影）。"""
+    online_ready: bool | None = None
+    """变体图层：本地默认数据源是否可解析。"""
+    local_ready: bool | None = None
     # ── 课题组数据集元数据扩展（Phase 1：扩展和细化）──────────────────────────────
     # 用于课题组数据集的归属、时间范围与数据源引用追踪；其他图层可留空。
     data_owner: str | None = None
@@ -285,6 +289,7 @@ class FailureCategory(str, Enum):
     # ---- 终态：不可重试 ----
     validation_error = "validation_error"
     not_found = "not_found"
+    coverage_gap = "coverage_gap"
     permission_denied = "permission_denied"
     contract_violation = "contract_violation"
     terminal_failure = "terminal_failure"
@@ -1144,3 +1149,46 @@ class OnlineSourcesResponse(BaseModel):
 
     sources: list[OnlineSourceCredentialStatus] = Field(default_factory=list)
     count: int
+
+
+class DataInputPolicyItem(BaseModel):
+    """单条数据输入策略（时间窗对齐 / 源路由等；GET|PUT /config/data-input-policies）。"""
+
+    id: str
+    scope: str
+    """module | workflow_id | layer_id | *"""
+
+    scope_id: str | None = None
+    input_key: str
+    """time_window_align_on_zero_intersection | source_route_local_first"""
+
+    mode: str
+    """deny | allow_with_confirm | allow_silent
+    （source_route_local_first：silent=自动选源；confirm=缺本地时确认改在线；deny=仅手动）"""
+
+    notes: str | None = None
+
+
+class DataInputPoliciesResponse(BaseModel):
+    """数据输入策略投影（seed ≺ runtime 合并后）。"""
+
+    version: int = 1
+    policies: list[DataInputPolicyItem] = Field(default_factory=list)
+    """合并后的生效表（seed ≺ runtime）。"""
+
+    runtime_override_present: bool = False
+    seed_policies: list[DataInputPolicyItem] = Field(default_factory=list)
+    """仅种子文件条目（只读参考；勿整表写回 runtime）。"""
+
+    runtime_policies: list[DataInputPolicyItem] = Field(default_factory=list)
+    """仅 runtime 覆盖文件条目；PUT 应只写此层。"""
+
+
+class DataInputPoliciesUpdateRequest(BaseModel):
+    """写入 runtime 覆盖（仅 overrides；同 id 覆盖 seed；热载无需重启）。
+
+    勿把 GET.policies（合并表）原样 PUT——会固化 seed、阻断后续种子更新。
+    """
+
+    version: int = 1
+    policies: list[DataInputPolicyItem] = Field(default_factory=list)

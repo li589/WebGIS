@@ -64,7 +64,7 @@ interface LifecycleDomainDeps {
   getJobLayers: () => JobLayerItem[]
 }
 
-const ACTIVE_JOB_STATUSES = new Set(['queued', 'running', 'retry_pending', 'accepted'])
+const ACTIVE_JOB_STATUSES = new Set(['queued', 'running', 'retry_pending'])
 
 /** 由本地信号（jobLayer + overlayTimeStates）推导生命周期状态。 */
 function deriveLocalState(

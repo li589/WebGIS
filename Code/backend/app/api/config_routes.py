@@ -52,9 +52,12 @@
 - DELETE /config/remote-sources/{remote_source_id} — 删除别名（admin）
 - POST /config/service/restart — 调度重启 FastAPI+Worker+Beat
 - GET /config/about — 项目信息
+- GET /config/data-input-policies — 数据输入策略（时间窗对齐 / 源路由；seed+runtime）
+- PUT /config/data-input-policies — 写入 runtime 策略覆盖（admin；热载无需重启）
 """
 
 import logging
+from typing import Any
 
 import anyio
 import json
@@ -68,6 +71,7 @@ from app.api.deps import (
 )
 from app.services import config_service
 from app.services import deployment_config as dc
+from shared.contracts.api_contracts import DataInputPoliciesUpdateRequest
 from shared.contracts.config_contracts import (
     AboutInfo,
     ApiKeyDeletedResponse,
@@ -1490,6 +1494,85 @@ async def migrate_legacy_remote_sources_endpoint(
 async def get_about_info():
     """获取项目信息。"""
     return config_service.get_about_info()
+
+
+# ── 数据输入策略（时间窗对齐 / 源路由）────────────────────────────────────────
+
+
+def _data_input_policies_response(doc: dict):
+    from shared.contracts.api_contracts import (
+        DataInputPoliciesResponse,
+        DataInputPolicyItem,
+    )
+
+    def _items(raw_list: object) -> list:
+        out = []
+        for p in raw_list or []:
+            if not isinstance(p, dict):
+                continue
+            out.append(
+                DataInputPolicyItem(
+                    id=str(p["id"]),
+                    scope=str(p["scope"]),
+                    scope_id=p.get("scope_id"),
+                    input_key=str(p["input_key"]),
+                    mode=str(p["mode"]),
+                    notes=p.get("notes"),
+                )
+            )
+        return out
+
+    return DataInputPoliciesResponse(
+        version=int(doc.get("version") or 1),
+        policies=_items(doc.get("policies")),
+        runtime_override_present=bool(doc.get("runtime_override_present")),
+        seed_policies=_items(doc.get("seed_policies")),
+        runtime_policies=_items(doc.get("runtime_policies")),
+    )
+
+
+@router.get(
+    "/data-input-policies",
+    response_model=None,
+    dependencies=[Depends(require_config_read_access)],
+)
+async def get_data_input_policies():
+    """只读投影：时间窗对齐 / 本地优先源路由等策略（seed + runtime 覆盖）。"""
+    from app.services.data_input_policy_service import load_data_input_policies
+
+    return _data_input_policies_response(load_data_input_policies())
+
+
+@router.put(
+    "/data-input-policies",
+    response_model=None,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def put_data_input_policies(body: Any):
+    """写入 runtime 覆盖（原子写）。同 id 覆盖 seed；热载生效，无需重启后端。"""
+    from app.services.data_input_policy_service import save_runtime_data_input_policies
+    from shared.contracts.api_contracts import DataInputPoliciesUpdateRequest
+
+    try:
+        parsed = (
+            body
+            if isinstance(body, DataInputPoliciesUpdateRequest)
+            else DataInputPoliciesUpdateRequest.model_validate(body)
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        doc = save_runtime_data_input_policies(
+            version=int(parsed.version),
+            policies=[p.model_dump() for p in parsed.policies],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to write data_input_policies: {exc}"
+        ) from exc
+    return _data_input_policies_response(doc)
 
 
 # ── 缓存管理 ──────────────────────────────────────────────────────────────────

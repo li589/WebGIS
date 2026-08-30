@@ -43,6 +43,17 @@
   "engine": "python_provider",
   "workflow_name": "ndvi_local_read",
   "workflow_id": "ndvi_local_read",
+  "workflow_variants": {
+   "online": {
+    "workflow_id": "ndvi_online_read",
+    "label": "在线获取",
+    "credential_profile": "earthdata"
+   },
+   "local": {
+    "workflow_id": "ndvi_local_read",
+    "label": "本地读取"
+   }
+  },
   "default_task_type": "ndvi_daily",
   "default_data_access_sources": {
    "NDVI_16DAY_RASTER": [
@@ -53,9 +64,10 @@
     "Ecological_Vegetation/NDVI/VIIRS"
    ]
   },
-  "run_readiness_summary": "植被指数基础数据已就绪（VIIRS 逐月 NDVI）",
+  "run_readiness_summary": "植被指数：本地 GeoTIFF 或 Earthdata 在线获取（源路由策略自动选择）",
   "run_readiness_notes": [
-   "数据源优先: Ecological_Vegetation/NDVI/NDVIday 或 VIIRS；预处理 GeoTIFF 目录 VIIRS_9km_tif 可选"
+   "本地优先：Ecological_Vegetation/NDVI/VIIRS_9km_tif（*.tif）；缺数时走 ndvi_online_read（需 earthdata）",
+   "源路由策略热载：GET/PUT /config/data-input-policies（source_route_local_first）"
   ],
   "data_owner": "NOAA/NESDIS",
   "temporal_coverage": "2000-01 to 2025-06 (Monthly)",
@@ -862,6 +874,16 @@
   "engine": "python_provider",
   "workflow_name": "fy_tb_local_read",
   "workflow_id": "fy_tb_local_read",
+  "workflow_variants": {
+   "local": {
+    "workflow_id": "fy_tb_local_read",
+    "label": "本地读取"
+   },
+   "online": {
+    "workflow_id": "fy_tb_online_read",
+    "label": "在线获取"
+   }
+  },
   "default_task_type": "fy_daily",
   "default_data_access_sources": {
    "FY_MWRI_HDF": [

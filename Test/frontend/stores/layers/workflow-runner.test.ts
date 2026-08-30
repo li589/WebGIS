@@ -266,6 +266,15 @@ describe('rememberTrackedWorkflowRun', () => {
     expect(loadTrackedWorkflowRuns()).toHaveLength(0)
   })
 
+  it('forgets succeeded runs so only in-flight runs survive refresh', () => {
+    const deps = makeDeps()
+    const runner = createWorkflowRunner(deps)
+    runner.rememberTrackedWorkflowRun('cat-1', makeJobLayer({ jobId: 'run-1', status: 'running' }))
+    expect(loadTrackedWorkflowRuns()).toHaveLength(1)
+    runner.rememberTrackedWorkflowRun('cat-1', makeJobLayer({ jobId: 'run-1', status: 'succeeded' }))
+    expect(loadTrackedWorkflowRuns()).toHaveLength(0)
+  })
+
   it('adds a real run to the tracking list', () => {
     const deps = makeDeps()
     const runner = createWorkflowRunner(deps)
@@ -280,7 +289,7 @@ describe('rememberTrackedWorkflowRun', () => {
     const deps = makeDeps()
     const runner = createWorkflowRunner(deps)
     runner.rememberTrackedWorkflowRun('cat-1', makeJobLayer({ jobId: 'run-1', status: 'running' }))
-    runner.rememberTrackedWorkflowRun('cat-1', makeJobLayer({ jobId: 'run-1', status: 'succeeded' }))
+    runner.rememberTrackedWorkflowRun('cat-1', makeJobLayer({ jobId: 'run-1', status: 'queued' }))
     const loaded = loadTrackedWorkflowRuns()
     expect(loaded).toHaveLength(1)
     expect(loaded[0].runId).toBe('run-1')
@@ -810,5 +819,67 @@ describe('restoreActiveWorkflows / ensureRestoredRunGroup（F2 manifest 成员�
     // 退役决策：旧 run 快照不再回退 SM/VOD/OMEGA 三占位——
     // 61 种子全带 extra 中文配置，无 manifest 一律单产出 'result' 语义
     expect(memberTags.sort()).toEqual(['result'])
+  })
+
+  it('同工作流已有成功产物时仍恢复未跟踪的 running run 到指示器', async () => {
+    const deps = makeDeps()
+    const catalog = deps.getRuntimeLayerCatalog()
+    catalog['method-omega-fy'] = {
+      layer_id: 'method-omega-fy',
+      dataset_key: 'ds',
+      display_name: '风云ω',
+      description: '',
+      category: 'analysis',
+      source_type: 'imported' as never,
+      render_type: 'raster' as never,
+      supported_map_modes: ['2d'] as never,
+      extent: { west: 116, south: 39, east: 117, north: 40 },
+      workflow_id: 'wf-fy',
+      workflow_definition: null,
+    } as LayerDescriptor
+
+    vi.mocked(listRecentSucceededRuns).mockResolvedValue([
+      {
+        run_id: 'run-old-ok',
+        layer_id: 'omega_sf_fenkuai_fy',
+        command_label: '反演',
+        status: 'succeeded',
+        result_refs: [],
+      },
+    ] as never)
+    vi.mocked(listActiveWorkflowRuns).mockResolvedValue([
+      {
+        run_id: 'run-new-active',
+        layer_id: 'omega_sf_fenkuai_fy',
+        command_label: '反演',
+        status: 'running',
+      },
+    ] as never)
+    vi.mocked(getWorkflowRun).mockImplementation(async (runId: string) => {
+      if (runId === 'run-new-active') {
+        return {
+          run_id: 'run-new-active',
+          layer_id: 'omega_sf_fenkuai_fy',
+          command_label: '反演',
+          status: 'running',
+          result_refs: [],
+        } as never
+      }
+      return {
+        run_id: runId,
+        layer_id: 'omega_sf_fenkuai_fy',
+        command_label: '反演',
+        status: 'succeeded',
+        result_refs: [],
+      } as never
+    })
+    vi.mocked(getWorkflowEvents).mockResolvedValue({ items: [] } as never)
+
+    const runner = createWorkflowRunner(deps)
+    await runner.restoreActiveWorkflows()
+
+    const jobs = deps.getJobLayers()
+    expect(jobs.some((j) => j.jobId === 'run-new-active' && j.status === 'running')).toBe(true)
+    expect(deps.startPolling).toHaveBeenCalledWith('run-new-active', expect.any(String))
   })
 })

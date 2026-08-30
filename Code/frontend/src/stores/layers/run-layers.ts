@@ -18,6 +18,7 @@ import { resolveEmptyOverlayWorkflowError } from './materialize-empty'
 import { productTagLabel } from '../../utils/workflow-expected-outputs'
 import { cleanProductDisplayName } from '../../utils/workflow-result-naming'
 import { isDefaultProductDisplayName } from './layer-naming'
+import { isEnglishInversionCatalogId, resolveInversionCatalogId, sanitizeRunGroupTitle } from './inversion-catalog'
 import {
   timelineTargetFromWorkflowTimeKey,
   type WorkflowProgressTimeSeekHint,
@@ -33,7 +34,12 @@ import type {
 
 export interface RunLayersSliceDeps {
   getActiveLayers: () => ActiveLayer[]
-  addLayer: (catalogId: string, isAdminBoundary?: boolean, jobLayer?: JobLayerItem) => void
+  addLayer: (
+    catalogId: string,
+    isAdminBoundary?: boolean,
+    jobLayer?: JobLayerItem,
+    options?: { skipAutoRun?: boolean },
+  ) => void
   removeLayer: (instanceId: string) => void
   assignLayerAccent: (preferred?: string | null) => {
     accentColor: string
@@ -134,15 +140,18 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       if (layer.status in counts) counts[layer.status as keyof typeof counts]++
     }
     const active = counts.running + counts.queued + counts.retry_pending
+    const orphanError = Boolean(workflowError.value) && counts.failed === 0
+    // 提交失败若只写入了 workflowError、job 行已被清掉，仍按失败呈现指示器
+    const failed = counts.failed + (orphanError ? 1 : 0)
     let overall: WorkflowSummary['overall'] = 'idle'
     let tone: WorkflowSummary['tone'] = 'idle'
     if (active > 0) {
       overall = 'active'
       tone = 'active'
-    } else if (counts.failed > 0 && counts.succeeded > 0) {
+    } else if (failed > 0 && counts.succeeded > 0) {
       overall = 'mixed'
       tone = 'warning'
-    } else if (counts.failed > 0) {
+    } else if (failed > 0) {
       overall = 'failed'
       tone = 'error'
     } else if (counts.succeeded > 0) {
@@ -150,11 +159,11 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       tone = 'success'
     }
     return {
-      total: layers.length,
+      total: layers.length + (orphanError ? 1 : 0),
       running: counts.running,
       queued: counts.queued,
       succeeded: counts.succeeded,
-      failed: counts.failed,
+      failed,
       cancelled: counts.cancelled,
       retryPending: counts.retry_pending,
       overall,
@@ -209,6 +218,8 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
   }
 
   function syncJobLayerToActiveLayer(catalogId: string, jobLayer: JobLayerItem) {
+    // 英文反演 workflow id 不得直接成为活跃层 catalogId（会以技术名进 TOC）
+    const resolvedCatalogId = resolveInversionCatalogId(catalogId)
     const existingRealLayer = deps
       .getActiveLayers()
       .find((layer) => layer.jobLayer?.jobId === jobLayer.jobId)
@@ -220,7 +231,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
 
     const existingCatalogLayer = deps
       .getActiveLayers()
-      .find((layer) => layer.catalogId === catalogId && !layer.isAdminBoundary)
+      .find((layer) => layer.catalogId === resolvedCatalogId && !layer.isAdminBoundary)
     if (existingCatalogLayer) {
       existingCatalogLayer.jobLayer = jobLayer
       existingCatalogLayer.dataState = 'real'
@@ -228,28 +239,30 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       return
     }
 
-    deps.addLayer(catalogId, false, jobLayer)
+    deps.addLayer(resolvedCatalogId, false, jobLayer)
   }
 
   function upsertJobLayer(catalogId: string, jobLayer: JobLayerItem) {
+    const resolvedCatalogId = resolveInversionCatalogId(catalogId)
     // 确保 catalogId 被记录在 jobLayer 上，便于面板列表展示孤儿工作流（无活跃图层时）
-    const enrichedJobLayer: JobLayerItem = jobLayer.catalogId
-      ? jobLayer
-      : { ...jobLayer, catalogId }
+    const enrichedJobLayer: JobLayerItem = {
+      ...jobLayer,
+      catalogId: resolveInversionCatalogId(jobLayer.catalogId || resolvedCatalogId),
+    }
     const existingIndex = jobLayers.value.findIndex((item) => item.jobId === enrichedJobLayer.jobId)
     if (existingIndex >= 0) {
       jobLayers.value.splice(existingIndex, 1, enrichedJobLayer)
     } else {
       jobLayers.value.unshift(enrichedJobLayer)
     }
-    syncJobLayerToActiveLayer(catalogId, enrichedJobLayer)
-    deps.rememberTrackedWorkflowRun(catalogId, enrichedJobLayer)
-    updateRunGroupForCatalog(catalogId, enrichedJobLayer)
+    syncJobLayerToActiveLayer(resolvedCatalogId, enrichedJobLayer)
+    deps.rememberTrackedWorkflowRun(resolvedCatalogId, enrichedJobLayer)
+    updateRunGroupForCatalog(resolvedCatalogId, enrichedJobLayer)
     if (isTerminalStatus(enrichedJobLayer.status)) {
       if (enrichedJobLayer.status === 'cancelled' || enrichedJobLayer.status === 'failed') {
         // local-submit 失败时按 catalog 找组清理占位；真 run 按 runId
         if (deps.isLocalSubmitJobId(enrichedJobLayer.jobId)) {
-          const layer = deps.getActiveLayers().find((l) => l.catalogId === catalogId)
+          const layer = deps.getActiveLayers().find((l) => l.catalogId === resolvedCatalogId)
           if (layer?.runGroupId) {
             const g = runLayerGroups.value.find((x) => x.groupId === layer.runGroupId)
             if (g && !g.runId) {
@@ -362,6 +375,17 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
   /** 运行中块产物增量物化（节流）。 */
   async function syncProgressiveBlockOverlays(runId: string, catalogId: string) {
     if (!runId) return
+    const job = jobLayers.value.find((j) => j.jobId === runId)
+    // 与 BE materialize allowlist 对齐；retry_pending 禁止 POST（409）
+    // FE JobStatus 无 accepted：服务端 accepted 在 poller/adapter 已映射为 queued
+    if (
+      job &&
+      job.status !== 'succeeded' &&
+      job.status !== 'running' &&
+      job.status !== 'queued'
+    ) {
+      return
+    }
     const now = Date.now()
     const last = progressiveMaterializeAt.get(runId) ?? 0
     if (now - last < 8_000) return
@@ -434,55 +458,66 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     let imports = extractOverlayImportsFromResultRefs(resultRefs)
     let materializedLayers: Awaited<ReturnType<typeof materializeWorkflowMapLayers>>['layers'] = []
     if ((!imports.length || runId) && runId) {
-      try {
-        const materialized = await materializeWorkflowMapLayers(runId)
-        materializedLayers = materialized.layers ?? []
-        if (!imports.length) {
-          imports = materializedLayers
-            .filter((layer) => typeof layer.overlay_layer_id === 'string' && layer.overlay_layer_id)
-            .map((layer) => {
-              const rawBounds = layer.bounds
-              const bounds =
-                Array.isArray(rawBounds) &&
-                rawBounds.length === 4 &&
-                rawBounds.every((v) => typeof v === 'number' && Number.isFinite(v))
-                  ? ([rawBounds[0], rawBounds[1], rawBounds[2], rawBounds[3]] as [
-                      number,
-                      number,
-                      number,
-                      number,
-                    ])
-                  : undefined
-              return {
-                overlayLayerId: layer.overlay_layer_id,
-                title: layer.title || layer.overlay_layer_id,
-                productTag: layer.product_tag || undefined,
-                bounds,
-                sourceCrs: layer.source_crs || undefined,
-                timeList: layer.time_list || undefined,
-                nativeStep: layer.native_step || undefined,
-                defaultTime: layer.default_time || undefined,
-              }
-            })
-        }
-      } catch (error) {
-        const errMsg = error instanceof Error ? error.message : String(error)
-        console.warn('[layers] materializeWorkflowMapLayers failed', runId, error)
-        safeLog(
-          'workflow-error',
-          '工作流地图图层物化失败',
-          `run=${runId} err=${String(error)}`,
-          'warn',
-        )
-        // Failed/cancelled runs correctly get 409 from BE — do not pin a yellow banner.
-        const isNonMaterializableConflict =
-          /\b409\b/.test(errMsg) ||
-          /cannot materialize/i.test(errMsg) ||
-          /ExecutionStatus\.(failed|cancelled)/i.test(errMsg)
-        if (!isNonMaterializableConflict) {
-          // 发布就绪修复（P0-9）：其它 materialize 失败落到 workflowError，
-          // 避免"工作流显示 succeeded 但地图无图层、无任何错误提示"。
-          workflowError.value = `工作流结果图层加载失败：${errMsg}`
+      // 发起前再读本地 status：失败进入 retry_pending 后勿 POST（仍可能与 HTTP 在途竞态）
+      const liveStatus = jobLayers.value.find((j) => j.jobId === runId)?.status
+      const canMaterializeNow =
+        !liveStatus ||
+        liveStatus === 'succeeded' ||
+        liveStatus === 'running' ||
+        liveStatus === 'queued'
+      if (!canMaterializeNow) {
+        // 仅用已有 result_refs 绑定；不打 materialize
+      } else {
+        try {
+          const materialized = await materializeWorkflowMapLayers(runId)
+          materializedLayers = materialized.layers ?? []
+          if (!imports.length) {
+            imports = materializedLayers
+              .filter((layer) => typeof layer.overlay_layer_id === 'string' && layer.overlay_layer_id)
+              .map((layer) => {
+                const rawBounds = layer.bounds
+                const bounds =
+                  Array.isArray(rawBounds) &&
+                  rawBounds.length === 4 &&
+                  rawBounds.every((v) => typeof v === 'number' && Number.isFinite(v))
+                    ? ([rawBounds[0], rawBounds[1], rawBounds[2], rawBounds[3]] as [
+                        number,
+                        number,
+                        number,
+                        number,
+                      ])
+                    : undefined
+                return {
+                  overlayLayerId: layer.overlay_layer_id,
+                  title: layer.title || layer.overlay_layer_id,
+                  productTag: layer.product_tag || undefined,
+                  bounds,
+                  sourceCrs: layer.source_crs || undefined,
+                  timeList: layer.time_list || undefined,
+                  nativeStep: layer.native_step || undefined,
+                  defaultTime: layer.default_time || undefined,
+                }
+              })
+          }
+        } catch (error) {
+          const errMsg = error instanceof Error ? error.message : String(error)
+          // Failed/cancelled/retry_pending → 409 属失败切换竞态，预期软失败
+          const isNonMaterializableConflict =
+            /\b409\b/.test(errMsg) ||
+            /cannot materialize/i.test(errMsg) ||
+            /ExecutionStatus\.(failed|cancelled|retry_pending)/i.test(errMsg)
+          if (!isNonMaterializableConflict) {
+            console.warn('[layers] materializeWorkflowMapLayers failed', runId, error)
+            safeLog(
+              'workflow-error',
+              '工作流地图图层物化失败',
+              `run=${runId} err=${String(error)}`,
+              'warn',
+            )
+            // 发布就绪修复（P0-9）：其它 materialize 失败落到 workflowError，
+            // 避免"工作流显示 succeeded 但地图无图层、无任何错误提示"。
+            workflowError.value = `工作流结果图层加载失败：${errMsg}`
+          }
         }
       }
     }
@@ -577,12 +612,16 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       // 可能取自文件名时剥扩展名；空值继续向后兜底。
       // R4 前缀剥两类，统一收敛至 cleanProductDisplayName（P2-C）
       const cleanTitle = cleanProductDisplayName(item.title || '')
+      const safeCleanTitle =
+        cleanTitle && !isEnglishInversionCatalogId(cleanTitle) ? cleanTitle : ''
       const displayName =
         matchingOutput?.name ||
         (tag ? productTagLabel(tag) : '') ||
-        cleanTitle ||
-        item.productTag ||
-        item.overlayLayerId
+        safeCleanTitle ||
+        (item.productTag && !isEnglishInversionCatalogId(item.productTag)
+          ? item.productTag
+          : '') ||
+        productTagLabel(tag || 'result')
 
       // Bind only within this run's computing group (never cross-run by tag alone).
       const groupByRun = runId ? runLayerGroups.value.find((g) => g.runId === runId) : undefined
@@ -723,18 +762,104 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         continue
       }
 
-      // F3：兜底新增图层命名——技术名（Algorithm 标题 / overlay id）之前
-      // 优先工作流显示名，避免游离图层直出英文技术名
-      // R4：前缀剥两类——map_layer 产物（Algorithm Map Layer）与 file 产物（Algorithm Output）
+      // F3：兜底新增图层命名——禁止 overlay / 英文 workflow id 泄漏为 TOC 名
       const workflowDisplayName = runId
         ? jobLayers.value.find((j) => j.jobId === runId)?.name
         : undefined
+      const safeWorkflowName =
+        workflowDisplayName && !isEnglishInversionCatalogId(workflowDisplayName)
+          ? workflowDisplayName
+          : ''
       const freeLayerName =
         matchingOutput?.name ||
         (tag ? productTagLabel(tag) : '') ||
-        workflowDisplayName ||
-        cleanProductDisplayName(item.title) ||
-        item.overlayLayerId
+        safeWorkflowName ||
+        safeCleanTitle ||
+        productTagLabel(tag || 'result')
+
+      // 组存在但 tag 槽缺失（常见：占位仅 result、产物为 SM/VOD/OMEGA）：
+      // 补建 wf-run-* 成员再绑定，禁止 catalogId=imported-omega_sf_fenkuai_*。
+      if (groupByRun && tag) {
+        const slotTag = tag
+        const safeCid = `wf-run-${groupByRun.groupId}-${String(slotTag).toLowerCase()}`
+        let slot =
+          deps
+            .getActiveLayers()
+            .find(
+              (layer) =>
+                layer.runGroupId === groupByRun.groupId &&
+                normalizeProductTag(layer.runGroupProductTag) === slotTag,
+            ) || deps.getActiveLayers().find((layer) => layer.catalogId === safeCid)
+        if (!slot) {
+          const accent = deps.assignLayerAccent(undefined)
+          const maxOrder = deps.getActiveLayers().reduce((max, l) => Math.max(max, l.order), -1)
+          slot = {
+            instanceId: deps.genInstanceId(),
+            catalogId: safeCid,
+            name: freeLayerName,
+            visible: true,
+            opacity: 1,
+            order: maxOrder + 1,
+            isAdminBoundary: false,
+            dataState: 'catalog',
+            accentColor: accent.accentColor,
+            accentGlow: accent.accentGlow,
+            chipTone: accent.chipTone,
+            runGroupId: groupByRun.groupId,
+            runGroupProductTag: slotTag,
+            runGroupLocked: groupByRun.status === 'computing',
+          }
+          deps.getActiveLayers().push(slot)
+          if (!groupByRun.memberInstanceIds.includes(slot.instanceId)) {
+            groupByRun.memberInstanceIds.push(slot.instanceId)
+          }
+        }
+        slot.importedRaster = buildImportedRasterPayload(item.overlayLayerId, {
+          bounds: item.bounds,
+          fileName: slot.name || freeLayerName,
+          sourceCrs: item.sourceCrs,
+          nativeStep: nativeStep || (timeList?.length ? '8d' : null),
+          timeList,
+          followPolicy: timeList?.length ? 'containing' : undefined,
+        })
+        slot.dataState = 'imported'
+        if (!slot.name || isEnglishInversionCatalogId(slot.name)) {
+          slot.name = freeLayerName
+        }
+        slot.runGroupId = groupByRun.groupId
+        slot.runGroupProductTag = slot.runGroupProductTag || slotTag
+        if (!groupByRun.memberInstanceIds.includes(slot.instanceId)) {
+          groupByRun.memberInstanceIds.push(slot.instanceId)
+        }
+        refreshRunGroupDissolvable(groupByRun.groupId)
+        deps.scheduleWorkspacePersist()
+        continue
+      }
+
+      // 无计算组时不要用 imported-omega_* 当 catalogId 建游离层——
+      // 归到目录 method-*（若可解析）或跳过建层、仅保留组内绑定路径。
+      if (isEnglishInversionCatalogId(item.overlayLayerId)) {
+        const mapped = resolveInversionCatalogId(item.overlayLayerId)
+        const catalogTarget = deps
+          .getActiveLayers()
+          .find((layer) => layer.catalogId === mapped && !layer.isAdminBoundary)
+        if (catalogTarget && !catalogTarget.importedRaster) {
+          catalogTarget.importedRaster = buildImportedRasterPayload(item.overlayLayerId, {
+            bounds: item.bounds,
+            fileName: freeLayerName,
+            sourceCrs: item.sourceCrs,
+            nativeStep: nativeStep || (timeList?.length ? '8d' : null),
+            timeList,
+            followPolicy: timeList?.length ? 'containing' : undefined,
+          })
+          catalogTarget.dataState = 'imported'
+          if (!catalogTarget.name || isEnglishInversionCatalogId(catalogTarget.name)) {
+            catalogTarget.name = freeLayerName
+          }
+          deps.scheduleWorkspacePersist()
+        }
+        continue
+      }
       const added = deps.addImportedRasterLayer(freeLayerName, item.overlayLayerId, item.bounds, {
         sourceCrs: item.sourceCrs,
         nativeStep: nativeStep || (timeList?.length ? '8d' : null),
@@ -764,8 +889,51 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       }
     }
     reconcileOmegaBlockLayers()
+    scrubEnglishInversionFreeLayers()
     deps.scheduleWorkspacePersist()
     return imports.length
+  }
+
+  /** 清掉误以英文反演 overlay/workflow id 为 catalogId/显示名的游离层（不删后端 overlay）。 */
+  function scrubEnglishInversionFreeLayers() {
+    const layers = deps.getActiveLayers()
+    for (let i = layers.length - 1; i >= 0; i--) {
+      const layer = layers[i]!
+      // 显示名整段仍是技术 id：就地改写（含已在组内的成员）
+      if (layer.name && isEnglishInversionCatalogId(layer.name)) {
+        const tag = normalizeProductTag(layer.runGroupProductTag || '') || 'result'
+        layer.name = productTagLabel(tag)
+      }
+      if (!isEnglishInversionCatalogId(layer.catalogId)) continue
+      // 已在计算组内且 catalogId 仍是技术 id：改写为安全 wf-run id，保留产物
+      if (layer.runGroupId) {
+        const tag = normalizeProductTag(layer.runGroupProductTag || layer.name) || 'result'
+        const safeCid = `wf-run-${layer.runGroupId}-${tag.toLowerCase()}`
+        layer.catalogId = safeCid
+        if (!layer.name || isEnglishInversionCatalogId(layer.name)) {
+          layer.name = productTagLabel(tag)
+        }
+        continue
+      }
+      // 无组游离层：丢弃 UI 条目（产物可经 restore/autoAttach 再绑）
+      layers.splice(i, 1)
+    }
+    // 组标题若落成 omega_sf_fenkuai_* 等技术名，纠偏为中文目录名或通用名
+    for (const group of runLayerGroups.value) {
+      if (!group.title || !isEnglishInversionCatalogId(group.title)) continue
+      const mapped = resolveInversionCatalogId(group.title)
+      const libName =
+        mapped !== group.title
+          ? deps.getActiveLayers().find((l) => l.catalogId === mapped)?.name
+          : undefined
+      group.title =
+        (libName && !isEnglishInversionCatalogId(libName) ? libName : '') ||
+        (group.sourceLayerId
+          ? deps.getActiveLayers().find((l) => l.catalogId === group.sourceLayerId)?.name
+          : '') ||
+        '反演产物'
+      if (isEnglishInversionCatalogId(group.title)) group.title = '反演产物'
+    }
   }
 
   /** 把游离的 OMEGA_BLOCK 并入组内 OMEGA 占位，去掉重复条目（不删后端文件） */
@@ -821,6 +989,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       }
       if (placeholder.runGroupId) refreshRunGroupDissolvable(placeholder.runGroupId)
     }
+    scrubEnglishInversionFreeLayers()
   }
 
   function reorderLayers(fromIndex: number, toIndex: number) {
@@ -904,10 +1073,13 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       const catalogId =
         options.memberCatalogIds?.[i] ||
         `wf-run-${groupId}-${String(t.productTag || 'result').toLowerCase()}`
+      // 成员显示名：英文技术 id / 空串 → productTag 中文/短名
+      const memberName =
+        t.name && !isEnglishInversionCatalogId(t.name) ? t.name : productTagLabel(t.productTag)
       const layer: ActiveLayer = {
         instanceId: deps.genInstanceId(),
         catalogId,
-        name: t.name,
+        name: memberName,
         visible: true,
         opacity: 1,
         order: maxOrder + options.targets.length - i,
@@ -928,7 +1100,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     runLayerGroups.value.push({
       groupId,
       runId: '',
-      title: options.title,
+      title: sanitizeRunGroupTitle(options.title, '反演产物'),
       status: 'computing',
       memberInstanceIds,
       dissolvable: false,
@@ -1075,6 +1247,28 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     deps.scheduleWorkspacePersist()
   }
 
+  /**
+   * 丢弃探测用 run 组的 UI 条目（不删后端 overlay）。
+   * autoAttach 按 preferredTimeKey 试跑多条成功 run 时，未命中的探测组必须清掉，
+   * 否则 TOC/库会残留多组 SM/VOD/ω 或英文技术名占位。
+   */
+  function discardRunGroupUi(runId: string) {
+    if (!runId) return
+    const g = runLayerGroups.value.find((x) => x.runId === runId)
+    if (!g) return
+    const layers = deps.getActiveLayers()
+    for (const instanceId of [...g.memberInstanceIds]) {
+      const idx = layers.findIndex((l) => l.instanceId === instanceId)
+      if (idx < 0) continue
+      // 仅摘 UI：清空 raster 引用后再 splice，避免走 removeLayer 的后端删除
+      layers[idx]!.importedRaster = undefined
+      layers.splice(idx, 1)
+    }
+    runLayerGroups.value = runLayerGroups.value.filter((x) => x.groupId !== g.groupId)
+    scrubEnglishInversionFreeLayers()
+    deps.scheduleWorkspacePersist()
+  }
+
   function reorderWithinRunGroup(groupId: string, fromMemberIndex: number, toMemberIndex: number) {
     const g = runLayerGroups.value.find((x) => x.groupId === groupId)
     if (!g) return
@@ -1161,6 +1355,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     refreshRunGroupDissolvable,
     updateRunGroupFromJob,
     dissolveRunGroup,
+    discardRunGroupUi,
     reorderWithinRunGroup,
     moveRunGroupBlock,
     findRunGroupByMember,

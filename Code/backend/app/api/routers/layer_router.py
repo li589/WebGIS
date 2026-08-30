@@ -149,6 +149,8 @@ def list_layers(cred=Depends(get_request_user)) -> LayerCatalogResponse:
                     "run_readiness_notes": readiness.get(
                         "run_readiness_notes", descriptor.run_readiness_notes
                     ),
+                    "online_ready": readiness.get("online_ready", descriptor.online_ready),
+                    "local_ready": readiness.get("local_ready", descriptor.local_ready),
                 }
             )
         )
@@ -303,6 +305,58 @@ def get_layer_online_temporal(
     if cap is None or not cap.enabled:
         return {"layer_id": layer_id, "available": False}
     return {"layer_id": layer_id, "available": True, **cap.model_dump()}
+
+
+@router.get("/layers/{layer_id}/data-coverage", tags=["catalog"])
+def get_layer_data_coverage(
+    layer_id: str,
+    cred=Depends(get_request_user),
+) -> dict[str, Any]:
+    """双通道可用性：在线覆盖窗 + 本地资产 time_list（计划会话 / 色带）。
+
+    - ``channels.online``：来自 descriptor.online_temporal（未启用则 available=false）
+    - ``channels.local``：来自 overlay 资产 state.time_list；取失败时 dates=[]
+    """
+    check_resource_access(cred, "layer", layer_id)
+    descriptor = get_layer_descriptor(layer_id)
+    cap = descriptor.online_temporal if descriptor else None
+    online: dict[str, Any]
+    if cap is None or not cap.enabled:
+        online = {
+            "available": False,
+            "coverage_start": None,
+            "coverage_end": None,
+            "native_step": None,
+        }
+    else:
+        online = {
+            "available": True,
+            "coverage_start": cap.coverage_start,
+            "coverage_end": cap.coverage_end,
+            "native_step": cap.native_step,
+        }
+
+    local_dates: list[str] = []
+    try:
+        from app.services.overlay_asset_workflow_service import (
+            overlay_asset_workflow_service,
+        )
+
+        state = overlay_asset_workflow_service.get_asset_state(layer_id)
+        local_dates = [str(t) for t in (state.get("time_list") or []) if t]
+    except Exception:
+        local_dates = []
+
+    return {
+        "layer_id": layer_id,
+        "channels": {
+            "online": online,
+            "local": {
+                "available": len(local_dates) > 0,
+                "dates": local_dates,
+            },
+        },
+    }
 
 
 def _submit_online_sync_workflow(

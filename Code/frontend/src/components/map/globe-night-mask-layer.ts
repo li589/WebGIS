@@ -37,9 +37,12 @@ export class GlobeNightMaskLayer {
   private uDeclDeg: WebGLUniformLocation | null = null
   private uNightRgb: WebGLUniformLocation | null = null
   private uNightAlpha: WebGLUniformLocation | null = null
+  private uCamDir: WebGLUniformLocation | null = null
 
   private subsolarLon = 0
   private declDeg = 0
+  /** 相机朝向（单位球面），供片元着色器 u_camDir */
+  private camDir: [number, number, number] = [0, 0, 1]
   private visible = false
   private needsRedraw = true
 
@@ -97,14 +100,20 @@ export class GlobeNightMaskLayer {
     this.gl = gl
 
     try {
-      this.program = linkProgram(gl, GLOBE_NIGHT_MASK_VERTEX_SHADER, GLOBE_NIGHT_MASK_FRAGMENT_SHADER)
-      this.attribLngLat = gl.getAttribLocation(this.program, 'a_lnglat')
-      this.uMatrix = gl.getUniformLocation(this.program, 'u_matrix')
-      this.uSubsolarLon = gl.getUniformLocation(this.program, 'u_subsolarLon')
-      this.uDeclDeg = gl.getUniformLocation(this.program, 'u_declDeg')
-      this.uNightRgb = gl.getUniformLocation(this.program, 'u_nightRgb')
-      this.uNightAlpha = gl.getUniformLocation(this.program, 'u_nightAlpha')
-      this.uCamDir = gl.getUniformLocation(this.program, 'u_camDir')
+      const program = linkProgram(
+        gl,
+        GLOBE_NIGHT_MASK_VERTEX_SHADER,
+        GLOBE_NIGHT_MASK_FRAGMENT_SHADER,
+      )
+      if (!program) throw new Error('globe-night-mask program link failed')
+      this.program = program
+      this.attribLngLat = gl.getAttribLocation(program, 'a_lnglat')
+      this.uMatrix = gl.getUniformLocation(program, 'u_matrix')
+      this.uSubsolarLon = gl.getUniformLocation(program, 'u_subsolarLon')
+      this.uDeclDeg = gl.getUniformLocation(program, 'u_declDeg')
+      this.uNightRgb = gl.getUniformLocation(program, 'u_nightRgb')
+      this.uNightAlpha = gl.getUniformLocation(program, 'u_nightAlpha')
+      this.uCamDir = gl.getUniformLocation(program, 'u_camDir')
 
       const mesh = buildGlobeNightMesh()
       this.meshVertexCount = mesh.length / 2

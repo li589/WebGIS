@@ -49,12 +49,13 @@ def _align_window_to_available(
     algorithm_params: dict[str, object],
     smap_folder: str,
     ctx: NodeExecutionContext,
+    *,
+    allow_align: bool,
 ) -> dict[str, object]:
-    """请求窗口与本地 SMAP 数据零交集时，对齐到最新可用窗（数据现实优先）。
+    """请求窗口与本地 SMAP 数据零交集时，可选对齐到最新可用窗。
 
-    与 ``algorithms.omega_sf._build_time_series`` 的容错语义一致：有交集时
-    不调整（缺失日由逐像元反演自然 NaN 处理，与 Matlab 行为一致）；
-    零交集时以本地最新可用日为端点回退一个请求窗长度，避免直接失败。
+    仅当 ``allow_align=True``（来自 relax_flags 或策略 allow_silent）时改窗；
+    否则 raise ``ValueError``（``error_code=coverage_gap``）fail-closed。
     """
     from datetime import datetime, timedelta
 
@@ -80,6 +81,20 @@ def _align_window_to_available(
 
     if any(start <= t <= end for t in available):
         return algorithm_params  # 有交集：保持请求窗口
+
+    if not allow_align:
+        message = (
+            "error_code=coverage_gap "
+            f"时间窗与本地 SMAP 零交集（请求 {start:%Y%m%d}~{end:%Y%m%d}，"
+            f"本地最新 {max(available):%Y%m%d}）；未启用对齐放宽。"
+        )
+        if ctx.logger_adapter is not None:
+            try:
+                ctx.logger_adapter.emit_stage_start("omega_sf_fenkuai", message)
+            except Exception:
+                pass
+        # fail-closed：缺数不可静默继续，供桥接层归类为 coverage_gap
+        raise ValueError(message)
 
     latest = max(available)
     window_days = max((end - start).days, 7)  # 至少 8 天（含端点）
@@ -172,7 +187,16 @@ def _resolve_grid_shape(
 @register_module_decorator(
     name="omega_sf_fenkuai",
     aliases=["omega_sf_fenkuai_pipeline"],
-    template_overrides={"phase": "inversion"},
+    template_overrides={
+        "phase": "inversion",
+        "datasource_severity": {
+            "time_window_align_on_zero_intersection": "soft",
+            "smap_folder": "hard",
+            "anc_root": "hard",
+            "fy3d_folder": "hard",
+            "fy3b_folder": "hard",
+        },
+    },
 )
 class OmegaSfFenkuaiModule(BaseModule):
     name = "omega_sf_fenkuai"
@@ -200,6 +224,18 @@ class OmegaSfFenkuaiModule(BaseModule):
         ),
         PortSpec(
             name="output_spec_extra", kind="config", data_class="dict", required=False
+        ),
+        PortSpec(
+            name="time_window_align_on_zero_intersection",
+            kind="config",
+            data_class="bool",
+            required=False,
+            severity="soft",
+            description=(
+                "When request window has zero intersection with local SMAP dates, "
+                "align to the latest available window (requires relax_flags or "
+                "allow_silent policy)."
+            ),
         ),
     ]
     output_ports = [
@@ -233,15 +269,18 @@ class OmegaSfFenkuaiModule(BaseModule):
                 f"{', '.join(sorted(missing_keys))}"
             )
 
-        # 数据现实优先（2026-08-25）：请求窗口与本地 SMAP 数据零交集时
-        # 自动对齐到最新可用窗——机器时钟超前（离线演示机）或数据发布
-        # 滞后时，按当天展开的默认窗会完全落在本地数据之外，反演直接
-        # 报「SMAP 文件夹无可用日期数据」。对齐后用户链路（添加→运行
-        # →产出图层组）不受环境影响。
+        # 时间窗对齐仅在 relax_flags / 策略 allow_silent 时启用（默认 fail-closed）
+        relax_flags = algorithm_params.get("relax_flags")
+        if not isinstance(relax_flags, dict):
+            relax_flags = {}
+        allow_align = bool(
+            relax_flags.get("time_window_align_on_zero_intersection") is True
+        )
         algorithm_params = _align_window_to_available(
             algorithm_params,
             str(datasource_selection["smap_folder"]),
             ctx,
+            allow_align=allow_align,
         )
 
         # 构建配置

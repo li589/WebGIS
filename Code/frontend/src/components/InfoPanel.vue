@@ -233,6 +233,15 @@ function queryDefaultOverlaySeries() {
             >
               {{ displayLayer.name }} · {{ stageLabel }}
             </span>
+            <button
+              v-if="wf.onlinePlanPending.value"
+              type="button"
+              class="plan-pending-chip"
+              :title="wf.onlinePlanPendingTitle"
+              @click="wf.openOnlinePlanSession()"
+            >
+              {{ wf.onlinePlanPendingLabel }}
+            </button>
           </div>
 
           <template v-if="wf.canRunWorkflow.value">
@@ -243,9 +252,9 @@ function queryDefaultOverlaySeries() {
               v-if="wf.workflowVariants.value"
               class="variant-switch-row"
               role="radiogroup"
-              aria-label="反演来源"
+              aria-label="数据来源"
             >
-              <span class="variant-label">反演来源</span>
+              <span class="variant-label">数据来源</span>
               <div class="variant-segmented">
                 <button
                   v-for="opt in wf.workflowVariants.value.options"
@@ -255,7 +264,11 @@ function queryDefaultOverlaySeries() {
                   :class="{ active: opt.key === wf.workflowVariants.value.selectedKey }"
                   role="radio"
                   :aria-checked="opt.key === wf.workflowVariants.value.selectedKey"
-                  :title="`切换为${opt.label}并重新运行`"
+                  :title="
+                    opt.key === 'auto'
+                      ? '按源路由策略：本地有数走本地，否则走在线'
+                      : `切换为${opt.label}并重新运行`
+                  "
                   @click="wf.switchWorkflowVariant(opt.key)"
                 >
                   {{ opt.label }}

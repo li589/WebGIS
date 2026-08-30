@@ -47,8 +47,13 @@ export function useWorkflowEditorRun(
 
     const targets = target.targets?.length
       ? target.targets
-      : [{ name: target.name ?? `产出 ${workflowId}`, productTag: 'result' }]
-    const groupTitle = target.groupTitle || `${workflowId} · 计算中`
+      : [{ name: target.name ?? `产出`, productTag: 'result' }]
+    // 组标题禁止落成 omega_sf_fenkuai_* 等机器 id
+    const rawGroupTitle = target.groupTitle || (target.name ? `${target.name} · 计算中` : '')
+    const groupTitle =
+      rawGroupTitle && !/omega[-_]sf[-_]fenkuai|omega[-_]avg[-_]daily/i.test(rawGroupTitle)
+        ? rawGroupTitle
+        : '反演产物 · 计算中'
 
     let memberCatalogIds: string[] | undefined
     if (target.mode === 'new') {

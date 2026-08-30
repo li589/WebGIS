@@ -3,6 +3,8 @@
  * 稳定目录 layer_id 不在此重命名；仅提供前缀判断与显示名规范化。
  */
 
+import { isEnglishInversionCatalogId } from './inversion-catalog'
+
 export const LAYER_ID_PREFIX = {
   ref: 'ref-',
   prod: 'prod-',
@@ -125,6 +127,7 @@ export function collectLayerDisplayNameKeys(layer: {
 /**
  * UI 显示名回退链：显式名 → 持久化 → 目录名 → dataset_key → layer_id → 未命名。
  * 见 Docs/03-规范协议/layer-naming.md
+ * 英文反演技术 id（omega_sf_fenkuai_* / imported-omega_*）不得出现在显示名链中。
  */
 export function resolveLayerDisplayLabel(options: {
   name?: string | null
@@ -145,7 +148,9 @@ export function resolveLayerDisplayLabel(options: {
   ]
   for (const c of candidates) {
     const t = typeof c === 'string' ? c.trim() : ''
-    if (t) return t
+    if (!t) continue
+    if (isEnglishInversionCatalogId(t)) continue
+    return t
   }
   return '未命名图层'
 }

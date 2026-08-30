@@ -16,6 +16,7 @@ import { deriveDataStatus } from '../utils/layer-data-status'
 import type { SidebarDragDeps, SidebarLayersDeps } from './layer-sidebar/sidebar-layers-deps'
 import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
+import { useTimelineActionBannerStore } from '../stores/timeline-action-banner'
 import { useDrawStore } from '../stores/draw-store'
 import { useOverlaySymbologyStore } from '../stores/overlay-symbology'
 import { useWeatherSourcePrefsStore } from '../stores/weather-source-prefs'
@@ -23,6 +24,7 @@ import { isWeatherLayerUnsupportedByModel } from '../stores/weather-tile-manager
 import { useWeatherEngineStore } from '../stores/weather-engine'
 import { LAYERS_COPY } from '../ui-copy'
 import { ORG_LABEL } from '../ui-copy/brand'
+import { useOnlinePlanSessionStore } from '../stores/online-plan-session'
 
 // ── Composables ───────────────────────────────────────────────────────────
 import { useSidebarWeatherProviders } from './layer-sidebar/useSidebarWeatherProviders'
@@ -47,6 +49,7 @@ const workspace = useLayerWorkspace()
 const workflowRun = useWorkflowRun()
 const uiStore = useUiStore()
 const logStore = useLogStore()
+const onlinePlan = useOnlinePlanSessionStore()
 const drawStore = useDrawStore()
 const overlaySymbologyStore = useOverlaySymbologyStore()
 const weatherSourcePrefs = useWeatherSourcePrefsStore()
@@ -153,6 +156,62 @@ function supportsOnlineTemporal(catalogId: string): boolean {
   return workspace.supportsOnlineTemporal(catalogId)
 }
 
+function getSourceRouteBadge(
+  catalogId: string,
+): { key: string; label: string; title: string } | null {
+  const desc = workspace.resolveEffectiveDescriptor?.(catalogId) as {
+    workflow_variants?: Record<string, { workflow_id?: string } | undefined>
+  } | null
+  const variants = desc?.workflow_variants
+  if (!variants?.local?.workflow_id || !variants?.online?.workflow_id) return null
+  const backendId = workspace.resolveBackendLayerId(catalogId)
+  const pinned =
+    Boolean(workflowRun.isWorkflowVariantPinned?.(backendId)) ||
+    Boolean(workflowRun.isWorkflowVariantPinned?.(catalogId))
+  const pref =
+    workflowRun.getWorkflowVariantPreference?.(catalogId) ??
+    workflowRun.getWorkflowVariantPreference?.(backendId)
+  if (!pinned) {
+    return {
+      key: 'auto',
+      label: '自动',
+      title: '源路由自动：本地有数走本地，否则走在线（点击切换本地→在线→自动）',
+    }
+  }
+  if (pref === 'online') {
+    return { key: 'online', label: '在线', title: '已钉死在线（点击切回自动）' }
+  }
+  return { key: 'local', label: '本地', title: '已钉死本地（点击切换为在线）' }
+}
+
+function cycleSourceRoute(catalogId: string) {
+  const badge = getSourceRouteBadge(catalogId)
+  if (!badge) return
+  const backendId = workspace.resolveBackendLayerId(catalogId)
+  if (badge.key === 'auto') {
+    workflowRun.setWorkflowVariantPreference(catalogId, 'local', { pinned: true })
+    if (backendId !== catalogId) {
+      workflowRun.setWorkflowVariantPreference(backendId, 'local', { pinned: true })
+    }
+  } else if (badge.key === 'local') {
+    workflowRun.setWorkflowVariantPreference(catalogId, 'online', { pinned: true })
+    if (backendId !== catalogId) {
+      workflowRun.setWorkflowVariantPreference(backendId, 'online', { pinned: true })
+    }
+  } else {
+    workflowRun.clearWorkflowVariantPin?.(catalogId)
+    if (backendId !== catalogId) workflowRun.clearWorkflowVariantPin?.(backendId)
+  }
+}
+
+function isOnlinePlanPending(catalogId: string): boolean {
+  return onlinePlan.isCatalogPendingPlan(catalogId)
+}
+
+function openOnlinePlan() {
+  onlinePlan.openSession()
+}
+
 // ── 图层平台子系统 P1：生命周期徽标（lifecycle 域 → 侧栏卡片） ──
 const LIFECYCLE_BADGE_LABELS: Record<string, string> = {
   fresh: '资产就绪',
@@ -208,9 +267,19 @@ function getUnifiedDataStatus(
 //    轮询持续到产出或报错，终态由 poller 物化/呈现
 // 3. 时间轴按需加载由 online-temporal-orchestrator 承担
 async function ensureLayerDataOrRun(catalogId: string): Promise<void> {
+  // 添加即切到图层独立记忆，再挂产物 / 按轴时刻开跑
+  uiStore.setUnifiedTimeLock(false)
+  if (uiStore.isLayerTimeLocked(catalogId)) {
+    uiStore.toggleLayerTimeLock(catalogId)
+  }
+  // 添加后 snap / attach 会改时间轴——抑制确认卡，避免自触发
+  useTimelineActionBannerStore().suppressConfirm(4_000)
   try {
     const attached = await workflowRun.autoAttachProductsForNewLayer(catalogId)
-    if (attached > 0) return // 已有缓存/数据，直接显示
+    if (attached > 0) {
+      uiStore.rememberLayerTime(catalogId, { force: true })
+      return // 已有缓存/数据，直接显示
+    }
   } catch {
     // 附加失败不阻断自动运行（后端目录不可用等）
   }
@@ -218,7 +287,7 @@ async function ensureLayerDataOrRun(catalogId: string): Promise<void> {
     await workflowRun.runWorkflowForCatalog(catalogId, {})
   } catch (err) {
     // 预期内的提示性错误静默（天气瓦片提示/无引擎等）；
-    // 真实运行失败由 jobLayer 失败态 + 库卡片「运行失败」徽标呈现
+    // 真实运行失败由 jobLayer 失败态 + 顶栏 notice 呈现
     const message = err instanceof Error ? err.message : String(err)
     logStore.logOperation('layer-add', `图层「${catalogId}」自动运行未启动：${message}`)
   }
@@ -308,7 +377,9 @@ function openActive() {
 
 function addCatalogItem(catalogId: string, isAdminBoundary = false) {
   if (!isAdminBoundary && isAdded(catalogId)) return
-  workspace.addLayer(catalogId, isAdminBoundary)
+  // skipAutoRun：由下方 ensureLayerDataOrRun 统一「先复用产物 / 再提交」，
+  // 避免 addLayer 内置 setTimeout 再跑一遍造成双提交与游离层泄漏
+  workspace.addLayer(catalogId, isAdminBoundary, undefined, { skipAutoRun: true })
   logStore.logOperation(
     'layer-add',
     `添加图层「${catalogId}」`,
@@ -511,7 +582,11 @@ onMounted(() => {
       :availability-class="availabilityClass"
       :get-category-name="getCategoryName"
       :supports-online-temporal="supportsOnlineTemporal"
+      :get-source-route-badge="getSourceRouteBadge"
+      :cycle-source-route="cycleSourceRoute"
       :get-unified-data-status="getUnifiedDataStatus"
+      :is-online-plan-pending="isOnlinePlanPending"
+      :open-online-plan="openOnlinePlan"
       @select-item="selectItem"
       @zoom-to-item="zoomToItem"
       @toggle-visibility="toggleVisibility"

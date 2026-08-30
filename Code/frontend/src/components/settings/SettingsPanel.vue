@@ -203,6 +203,26 @@ const panelStyle = computed(() => ({ width: `${panelWidthPx.value}px` }))
 let resizeStartX = 0
 let resizeStartWidth = 0
 const isResizing = ref(false)
+/** pointerup 落在蒙层时浏览器会合成 click → 误触发 @click.self 关面板 */
+let suppressOverlayClose = false
+let suppressOverlayCloseTimer: ReturnType<typeof setTimeout> | null = null
+let resizeCaptureEl: Element | null = null
+let resizePointerId: number | null = null
+
+function onOverlayClick() {
+  if (suppressOverlayClose || isResizing.value) return
+  emit('close')
+}
+
+function armOverlayCloseSuppress() {
+  suppressOverlayClose = true
+  if (suppressOverlayCloseTimer !== null) clearTimeout(suppressOverlayCloseTimer)
+  // click 通常紧跟 pointerup；稍延后清除，覆盖同帧 / 下一任务队列派发
+  suppressOverlayCloseTimer = setTimeout(() => {
+    suppressOverlayClose = false
+    suppressOverlayCloseTimer = null
+  }, 100)
+}
 
 function onResizePointerMove(event: PointerEvent) {
   if (!isResizing.value) return
@@ -214,22 +234,45 @@ function onResizePointerMove(event: PointerEvent) {
 function stopResize() {
   if (!isResizing.value) return
   isResizing.value = false
+  if (resizeCaptureEl && resizePointerId !== null) {
+    try {
+      resizeCaptureEl.releasePointerCapture(resizePointerId)
+    } catch {
+      /* capture 可能已释放 */
+    }
+  }
+  resizeCaptureEl = null
+  resizePointerId = null
   window.removeEventListener('pointermove', onResizePointerMove)
   window.removeEventListener('pointerup', stopResize)
   window.removeEventListener('pointercancel', stopResize)
   document.body.style.cursor = ''
   document.body.style.userSelect = ''
+  armOverlayCloseSuppress()
   saveSettingsUiLocal({ ...loadSettingsUiLocal(), panelWidthPx: panelWidthPx.value })
 }
 
 function onResizePointerDown(event: PointerEvent) {
   if (event.button !== 0) return
   event.preventDefault()
+  event.stopPropagation()
   isResizing.value = true
   resizeStartX = event.clientX
   resizeStartWidth = panelWidthPx.value
   document.body.style.cursor = 'ew-resize'
   document.body.style.userSelect = 'none'
+  const target = event.currentTarget
+  if (target instanceof Element) {
+    resizeCaptureEl = target
+    resizePointerId = event.pointerId
+    try {
+      target.setPointerCapture(event.pointerId)
+    } catch {
+      /* 部分环境不支持 capture，仍靠 window 监听 */
+      resizeCaptureEl = null
+      resizePointerId = null
+    }
+  }
   window.addEventListener('pointermove', onResizePointerMove)
   window.addEventListener('pointerup', stopResize)
   window.addEventListener('pointercancel', stopResize)
@@ -241,12 +284,13 @@ function onWindowResize() {
 
 onUnmounted(() => {
   stopResize()
+  if (suppressOverlayCloseTimer !== null) clearTimeout(suppressOverlayCloseTimer)
   window.removeEventListener('resize', onWindowResize)
 })
 </script>
 
 <template>
-  <div class="settings-overlay" @click.self="emit('close')">
+  <div class="settings-overlay" @click.self="onOverlayClick">
     <div
       class="settings-panel"
       :class="{ 'settings-panel--resizing': isResizing }"
@@ -259,6 +303,7 @@ onUnmounted(() => {
         aria-orientation="vertical"
         aria-label="调整设置面板宽度"
         @pointerdown="onResizePointerDown"
+        @click.stop
       />
       <div class="settings-header">
         <Settings :size="18" class="header-icon" aria-hidden="true" />

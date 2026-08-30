@@ -19,6 +19,7 @@ export function usePanelManager(
   const workflowEditorOpen = ref(false)
   const workflowEditorRef = ref<{
     notifyRunOutcome?: (ok: boolean, message?: string) => void
+    applyBoundMainTimeline?: (range: { start_at: string; end_at: string }) => number
   } | null>(null)
   const analysisPanelRef = ref<{ showPanel: () => void } | null>(null)
 

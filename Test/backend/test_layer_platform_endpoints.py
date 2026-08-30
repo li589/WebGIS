@@ -456,3 +456,29 @@ def test_asset_workflow_no_task_missing_files_fails(monkeypatch) -> None:
         assert "资产文件缺失" in (run.message or "")
     finally:
         repo.close()
+
+
+def test_layer_data_coverage_dual_channels(no_auth, monkeypatch) -> None:
+    """GET /layers/{id}/data-coverage 返回 online + local 双通道。"""
+    from app.main import app
+
+    class _FakeState:
+        @staticmethod
+        def get_asset_state(layer_id: str):
+            return {"time_list": ["2025-01-01", "2025-01-02"], "asset_state": "fresh"}
+
+    monkeypatch.setattr(
+        "app.services.overlay_asset_workflow_service.overlay_asset_workflow_service",
+        _FakeState(),
+    )
+
+    client = TestClient(app)
+    resp = client.get("/layers/aridity-cn/data-coverage")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["layer_id"] == "aridity-cn"
+    assert "channels" in body
+    assert "online" in body["channels"]
+    assert "local" in body["channels"]
+    assert body["channels"]["local"]["dates"] == ["2025-01-01", "2025-01-02"]
+    assert body["channels"]["local"]["available"] is True

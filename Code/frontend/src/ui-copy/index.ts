@@ -8,6 +8,7 @@ export { BASEMAP_COPY, basemapStyleLabel, basemapProviderShort } from './basemap
 export { WIND_COPY, windModeUiLabel } from './wind'
 export { INSPECT_COPY } from './inspect'
 export { LAYERS_COPY } from './layers'
+export { ONLINE_PLAN_COPY } from './online-plan'
 export { WORKFLOW_COPY } from './workflow'
 export { ANALYSIS_COPY } from './analysis'
 export { MAP_COPY } from './map'

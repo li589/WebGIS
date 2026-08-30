@@ -163,6 +163,7 @@ class ProviderManifest:
                         template.accepted_data_access_datasets
                     ),
                     "notes": template.notes,
+                    "datasource_severity": dict(template.datasource_severity),
                 }
             )
 

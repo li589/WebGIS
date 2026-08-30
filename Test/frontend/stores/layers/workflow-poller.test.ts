@@ -297,6 +297,36 @@ describe('applyWorkflowEventsToJobLayer', () => {
     expect(deps.syncProgressiveBlockOverlays).not.toHaveBeenCalled()
   })
 
+  it('block_commit + retry_pending：跳过物化（BE 会 409）', () => {
+    const { poller, deps } = setupDeps()
+    poller.applyWorkflowEventsToJobLayer(makeJobLayer({ status: 'retry_pending' }), [
+      makeEvent({
+        payload: {
+          node_progress: { node_id: 'n1', detail: { phase: 'block_commit' } },
+        },
+      }),
+    ])
+    expect(deps.syncProgressiveBlockOverlays).not.toHaveBeenCalled()
+  })
+
+  it('同批 block_commit 后转入 retry_pending：批末不物化', () => {
+    const { poller, deps } = setupDeps()
+    poller.applyWorkflowEventsToJobLayer(makeJobLayer({ status: 'running' }), [
+      makeEvent({
+        payload: {
+          node_progress: {
+            node_id: 'n1',
+            detail: { phase: 'block_commit', date_start: '2024-05-01', date_end: '2024-05-08' },
+          },
+        },
+      }),
+      makeEvent({
+        payload: { status: 'retry_pending' },
+      }),
+    ])
+    expect(deps.syncProgressiveBlockOverlays).not.toHaveBeenCalled()
+  })
+
   it('无 date 区间的 block_commit 回退到 formatProgressShell 消息', () => {
     const { poller } = setupDeps()
     const result = poller.applyWorkflowEventsToJobLayer(makeJobLayer({ message: '' }), [

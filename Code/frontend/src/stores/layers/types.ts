@@ -265,6 +265,11 @@ export interface JobLayerItem {
   inFlightTimeKeys?: string[]
   /** 明确失败的时间键 */
   failedTimeKeys?: string[]
+  /**
+   * 结构化失败类别（从 diagnostics 的 failure_category= / error_code= 解析）。
+   * 例如 coverage_gap 供时间轴恢复卡「切换在线重跑」。
+   */
+  failureCategory?: string
 }
 
 // ─── Active layer (已添加图层) ────────────────────────────────────────────────

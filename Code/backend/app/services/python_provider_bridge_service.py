@@ -414,13 +414,24 @@ class PythonProviderBridgeService:
                 or response_body.get("user_message")
                 or "Python provider job service returned an error."
             )
-            # 失败分类修复：区分 4xx（终态）/ 5xx（瞬态）/ 429（限流）
-            # 修复前：所有 HTTP >= 400 都抛 ValueError（被分类为 terminal_failure，永不重试）
-            # 修复后：5xx/429 抛 BridgeExecutionError(transient_*)，hub 会自动重试
+            # 失败分类：优先按响应文案判定缺数/校验等终态，避免「本地无文件」
+            # 被 job HTTP 500 一律打成 transient_upstream → hub 空转重试 3 次、
+            # 前端永远等不到 coverage_gap 恢复卡 / 计划框。
             from app.services.bridge_protocol import BridgeExecutionError
             from app.services.failure_classifier import FailureClassifier
+            from shared.contracts.api_contracts import FailureCategory
 
-            category = FailureClassifier._classify_http_status(response.status_code)
+            msg_category = FailureClassifier.classify(RuntimeError(developer_message))
+            if msg_category in (
+                FailureCategory.coverage_gap,
+                FailureCategory.not_found,
+                FailureCategory.validation_error,
+                FailureCategory.permission_denied,
+                FailureCategory.contract_violation,
+            ):
+                category = msg_category
+            else:
+                category = FailureClassifier._classify_http_status(response.status_code)
             raise BridgeExecutionError(
                 category=category,
                 message=developer_message,

@@ -285,6 +285,33 @@ describe('autoAttachProductsForNewLayer capability 守卫', () => {
     expect(listRecentSucceededRuns).toHaveBeenCalledOnce()
     expect(deps.attachAlgorithmProductOverlays).toHaveBeenCalled()
   })
+
+  it('method-* ω 目录：ensureRestoredRunGroup 不抛错，建 SM/VOD/OMEGA 槽（防英文 overlay 泄漏）', async () => {
+    const deps = makeDeps({ supportsMapLayerResult: vi.fn(() => true) })
+    vi.mocked(deps.attachAlgorithmProductOverlays).mockResolvedValue(3)
+    vi.mocked(listRecentSucceededRuns).mockResolvedValue([
+      {
+        run_id: 'run-smap-ok',
+        layer_id: 'omega_sf_fenkuai_smap_online',
+        command_label: 'SMAP',
+        created_at: '2026-01-01T00:00:00Z',
+        status: 'succeeded',
+        result_refs: [{ kind: 'artifact' }],
+      },
+    ] as never)
+    const runner = createWorkflowRunner(deps)
+
+    const bound = await runner.autoAttachProductsForNewLayer('method-smap-omega-doy-dynamic')
+
+    expect(bound).toBe(3)
+    expect(deps.createRunLayerGroup).toHaveBeenCalled()
+    const targets = vi.mocked(deps.createRunLayerGroup).mock.calls[0]![0].targets
+    expect(targets.map((t) => t.productTag).sort()).toEqual(['OMEGA', 'SM', 'VOD'])
+    // 组 source 须收敛到 method-*，不得挂英文 workflow id
+    expect(vi.mocked(deps.createRunLayerGroup).mock.calls[0]![0].sourceLayerId).toBe(
+      'method-smap-omega-doy-dynamic',
+    )
+  })
 })
 
 // ── ③ reconcileOmegaBlockLayers 孤儿合并保护用户静态层 ─────────────────────

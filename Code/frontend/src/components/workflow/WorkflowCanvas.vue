@@ -126,6 +126,7 @@ const {
   fitView,
   addNodeByType,
   removeNode,
+  applyBoundMainTimeline,
 } = useNodeOperations(
   graphInstance,
   canvasInstance,
@@ -964,6 +965,7 @@ defineExpose({
   fitView,
   addNodeByType,
   removeNode,
+  applyBoundMainTimeline,
   isReady,
   disposeLiteGraphFloatingUi,
 })

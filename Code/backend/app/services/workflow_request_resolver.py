@@ -444,6 +444,12 @@ def describe_layer_run_readiness(layer_id: str) -> dict[str, Any] | None:
         "run_readiness_summary": summary,
         "run_readiness_notes": notes,
         "unresolved_default_datasets": unresolved_default_datasets,
+        "online_ready": (
+            None if variant_result is None else bool(variant_result.get("online_ready"))
+        ),
+        "local_ready": (
+            None if variant_result is None else bool(variant_result.get("local_ready"))
+        ),
     }
 
 
@@ -1215,6 +1221,42 @@ def _populate_python_provider_request(
         algorithm_request["algorithm_params"] = _expand_date_placeholders(
             algorithm_request["algorithm_params"], _ref_date
         )
+
+    # 策略 allow_silent：自动注入 relax_flags（用户确认路径由 FE 显式传入）
+    try:
+        from app.services.data_input_policy_service import (
+            INPUT_KEY_TIME_WINDOW_ALIGN,
+            resolve_policy_mode,
+        )
+
+        params = algorithm_request.get("algorithm_params")
+        if not isinstance(params, dict):
+            params = {}
+            algorithm_request["algorithm_params"] = params
+        relax = params.get("relax_flags")
+        if not isinstance(relax, dict):
+            relax = {}
+            params["relax_flags"] = relax
+        if INPUT_KEY_TIME_WINDOW_ALIGN not in relax:
+            mode = resolve_policy_mode(
+                INPUT_KEY_TIME_WINDOW_ALIGN,
+                module=str(
+                    algorithm_request.get("module_name") or descriptor_module or ""
+                )
+                or None,
+                workflow_id=str(
+                    algorithm_request.get("workflow_entry_name")
+                    or algorithm_request.get("workflow_name")
+                    or descriptor_workflow
+                    or ""
+                )
+                or None,
+                layer_id=str(getattr(descriptor, "layer_id", "") or "") or None,
+            )
+            if mode == "allow_silent":
+                relax[INPUT_KEY_TIME_WINDOW_ALIGN] = True
+    except Exception:
+        logger.debug("Failed to apply data_input_policies relax_flags", exc_info=True)
 
     datasource_selection = _normalize_request(
         algorithm_request.get("datasource_selection")

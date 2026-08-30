@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LAYERS_COPY } from '../../ui-copy'
+import { LAYERS_COPY, ONLINE_PLAN_COPY } from '../../ui-copy'
 import { productTagDescription } from '../../utils/workflow-expected-outputs'
 import type { DataStatusBadge } from '../../utils/layer-data-status'
 import { CircleDot, Circle, X, Menu } from '../ui/icons'
@@ -23,12 +23,19 @@ defineProps<{
   availabilityClass: (state: string) => string
   getCategoryName: (categoryId: string) => string
   supportsOnlineTemporal: (catalogId: string) => boolean
+  getSourceRouteBadge?: (
+    catalogId: string,
+  ) => { key: string; label: string; title: string } | null
+  cycleSourceRoute?: (catalogId: string) => void
   /**
    * 统一数据状态徽标（2026-08-25 UX 简化）：归并 availability/lifecycle/job
    * 三源为单枚五态徽标（运行中/排队中/异常/完成/旧数据）+ 查看报告。
    * null = 不渲染。
    */
   getUnifiedDataStatus: (layer: ActiveLayerDisplay) => DataStatusBadge | null
+  /** P2：在线计划会话待决策（只读，不改 job status） */
+  isOnlinePlanPending?: (catalogId: string) => boolean
+  openOnlinePlan?: () => void
 }>()
 
 const emit = defineEmits<{
@@ -224,6 +231,25 @@ const emit = defineEmits<{
               >
                 {{ getUnifiedDataStatus(row.layer)!.label }}
               </span>
+              <button
+                v-if="isOnlinePlanPending?.(row.layer.catalogId)"
+                type="button"
+                class="plan-pending-badge"
+                :title="ONLINE_PLAN_COPY.pendingBadgeTitle"
+                @click.stop="openOnlinePlan?.()"
+              >
+                {{ ONLINE_PLAN_COPY.pendingBadge }}
+              </button>
+              <button
+                v-if="getSourceRouteBadge?.(row.layer.catalogId)"
+                type="button"
+                class="source-route-badge"
+                :class="`source-route-${getSourceRouteBadge?.(row.layer.catalogId)?.key}`"
+                :title="getSourceRouteBadge?.(row.layer.catalogId)?.title"
+                @click.stop="cycleSourceRoute?.(row.layer.catalogId)"
+              >
+                {{ getSourceRouteBadge?.(row.layer.catalogId)?.label }}
+              </button>
               <span
                 v-if="supportsOnlineTemporal(row.layer.catalogId)"
                 class="online-fetch-badge"

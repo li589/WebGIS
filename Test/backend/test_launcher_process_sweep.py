@@ -365,6 +365,7 @@ def test_stop_all_skips_exited_psutil_handle() -> None:
     # ProcessManager.__new__，直接实例化会踩到撤销残留
     pm = object.__new__(ProcessManager)
     pm.processes = {"beat": exited}
+    pm._awaiting_external_restart = {}
     pm.stop_all()
 
     exited.terminate.assert_not_called()
@@ -385,6 +386,7 @@ def test_stop_all_terminates_alive_psutil_handle() -> None:
 
     pm = object.__new__(ProcessManager)
     pm.processes = {"fastapi": alive}
+    pm._awaiting_external_restart = {}
     pm.stop_all()
 
     alive.terminate.assert_called_once()
@@ -409,8 +411,137 @@ def test_stop_all_escalates_kill_on_psutil_timeout() -> None:
 
     pm = object.__new__(ProcessManager)
     pm.processes = {"fastapi": alive}
+    pm._awaiting_external_restart = {}
     pm.stop_all()
 
     alive.terminate.assert_called_once()
     alive.kill.assert_called_once()
     assert pm.processes == {}
+
+
+def test_monitor_adopts_new_pid_from_file_on_external_restart(
+    monkeypatch, tmp_path
+) -> None:
+    """外部 restart 写新 PID 后，旧进程退出应 INFO 接管，不得 ERROR。"""
+    import psutil as psutil_mod
+
+    from launch import process_manager as pm_mod
+    from launch.process_manager import ProcessManager
+
+    pid_file = tmp_path / "launcher_pids.json"
+    pid_file.write_text(json.dumps({"fastapi": 99901}), encoding="utf-8")
+    monkeypatch.setattr(pm_mod, "PID_FILE", pid_file)
+
+    old = mock.Mock()
+    old.poll.return_value = 1
+    old.pid = 10001
+
+    new_proc = mock.Mock(spec=psutil_mod.Process)
+    new_proc.pid = 99901
+    new_proc.is_running.return_value = True
+
+    monkeypatch.setattr(
+        pm_mod.psutil, "Process", lambda pid: new_proc if pid == 99901 else mock.Mock()
+    )
+    # 避免走 cmdline 枚举
+    monkeypatch.setattr(
+        ProcessManager, "_discover_backend_process", lambda self, name: None
+    )
+
+    errors: list[str] = []
+    infos: list[str] = []
+    monkeypatch.setattr(
+        pm_mod.log, "error", lambda *a, **k: errors.append(str(a))
+    )
+    monkeypatch.setattr(pm_mod.log, "info", lambda *a, **k: infos.append(str(a)))
+
+    pm = object.__new__(ProcessManager)
+    pm.processes = {"fastapi": old}
+    pm._awaiting_external_restart = {}
+    pm._shutting_down = False
+    pm.monitor()
+
+    assert pm.processes["fastapi"] is new_proc
+    assert not errors
+    assert any("外部重启" in msg for msg in infos)
+
+
+def test_monitor_grace_then_adopting_via_cmdline(monkeypatch, tmp_path) -> None:
+    """PID 文件空窗：先宽限；下次 poll 用 cmdline 发现新进程并接管。"""
+    import psutil as psutil_mod
+
+    from launch import process_manager as pm_mod
+    from launch.process_manager import ProcessManager
+
+    pid_file = tmp_path / "launcher_pids.json"
+    # stop 已清掉 backend 条目
+    pid_file.write_text(json.dumps({"frontend": 1}), encoding="utf-8")
+    monkeypatch.setattr(pm_mod, "PID_FILE", pid_file)
+    monkeypatch.setattr(pm_mod, "_EXTERNAL_RESTART_GRACE_S", 90.0)
+
+    old = mock.Mock()
+    old.poll.return_value = 1
+    old.pid = 10001
+
+    infos: list[str] = []
+    errors: list[str] = []
+    monkeypatch.setattr(pm_mod.log, "info", lambda *a, **k: infos.append(str(a)))
+    monkeypatch.setattr(
+        pm_mod.log, "error", lambda *a, **k: errors.append(str(a))
+    )
+    monkeypatch.setattr(
+        ProcessManager, "_discover_backend_process", lambda self, name: None
+    )
+
+    pm = object.__new__(ProcessManager)
+    pm.processes = {"fastapi": old}
+    pm._awaiting_external_restart = {}
+    pm._shutting_down = False
+    pm.monitor()
+
+    assert "fastapi" not in pm.processes
+    assert "fastapi" in pm._awaiting_external_restart
+    assert not errors
+    assert any("等待外部重启" in msg for msg in infos)
+
+    new_proc = mock.Mock(spec=psutil_mod.Process)
+    new_proc.pid = 20002
+    new_proc.is_running.return_value = True
+    monkeypatch.setattr(
+        ProcessManager, "_discover_backend_process", lambda self, name: new_proc
+    )
+
+    pm.monitor()
+    assert pm.processes["fastapi"] is new_proc
+    assert "fastapi" not in pm._awaiting_external_restart
+    assert not errors
+
+
+def test_monitor_grace_timeout_reports_error(monkeypatch, tmp_path) -> None:
+    """宽限超时仍无替换进程 → 才报异常退出。"""
+    from launch import process_manager as pm_mod
+    from launch.process_manager import ProcessManager
+
+    pid_file = tmp_path / "launcher_pids.json"
+    pid_file.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(pm_mod, "PID_FILE", pid_file)
+    monkeypatch.setattr(
+        ProcessManager, "_discover_backend_process", lambda self, name: None
+    )
+    monkeypatch.setattr(
+        ProcessManager, "_external_pid_for", lambda self, name: None
+    )
+
+    errors: list[str] = []
+    monkeypatch.setattr(
+        pm_mod.log, "error", lambda *a, **k: errors.append(" ".join(str(x) for x in a))
+    )
+    monkeypatch.setattr(pm_mod.log, "info", lambda *a, **k: None)
+
+    pm = object.__new__(ProcessManager)
+    pm.processes = {}
+    pm._awaiting_external_restart = {"beat": 0.0}  # 已过期
+    pm._shutting_down = False
+    pm.monitor()
+
+    assert any("宽限已过" in e or "异常退出" in e for e in errors)

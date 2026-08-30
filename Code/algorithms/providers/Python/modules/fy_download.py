@@ -20,6 +20,7 @@ from pathlib import Path
 from contracts.product import ProductManifest, ProductRef
 from modules.base import BaseModule
 from modules.registry import register_module_decorator
+from utils.request_time import resolve_time_bounds
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
 
 _MAX_RANGE_DAYS = 366
@@ -535,6 +536,25 @@ class FYDownloadModule(BaseModule):
         end_date = str(resolved.get("end_date") or "").strip()
         local_dir = str(resolved.get("local_dir") or "").strip()
 
+        # 分析框/图层提交常只带 job_request.time_range，种子节点未注入 start_date。
+        # 与 fy_daily 对齐：缺参时从 time_range 回填，避免误报 requires start_date
+        # 并被 HTTP 500 打成 transient_upstream 空转重试。
+        if not start_date:
+            try:
+                start_dt, end_dt = resolve_time_bounds(
+                    time_range=ctx.request.time_range,
+                    algorithm_params=ap,
+                    module_label="fy_download",
+                )
+                start_date = start_dt.strftime("%Y%m%d")
+                end_date = end_date or end_dt.strftime("%Y%m%d")
+            except ValueError as exc:
+                raise ValueError(
+                    "fy_download requires start_date "
+                    "(set algorithm_params.start_date or job_request.time_range); "
+                    f"{exc}"
+                ) from exc
+
         if not local_dir:
             local_dir = str(ctx.workspace / "data_access" / "fy_download")
         target_dir = Path(local_dir)
@@ -542,7 +562,10 @@ class FYDownloadModule(BaseModule):
 
         days = _iter_date_range(start_date, end_date)
         if not days:
-            raise ValueError("fy_download requires start_date")
+            raise ValueError(
+                "fy_download requires start_date "
+                "(set algorithm_params.start_date or job_request.time_range)"
+            )
 
         orbit_mode = str(resolved.get("orbit_mode") or "MWRID").upper()
         # NSMC 账号限额保护：默认每日仅拉 2 个轨道文件（防频控），可经

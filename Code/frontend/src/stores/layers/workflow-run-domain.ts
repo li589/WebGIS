@@ -15,6 +15,7 @@
  */
 import { debugLog as probeDebugLog } from '../../utils/perf-probe'
 import { useUiStore } from '../ui'
+import { useTimelineActionBannerStore } from '../timeline-action-banner'
 import { createRunLayersSlice } from './run-layers'
 import { createPointWeatherSlice } from './point-weather'
 import { createWorkflowPoller } from './workflow-poller'
@@ -39,8 +40,8 @@ export function createWorkflowRunDomain(
   // ── runLayersSlice ──
   const runLayersSlice = createRunLayersSlice({
     getActiveLayers: () => workspace.activeLayers.value,
-    addLayer: (catalogId, isAdminBoundary, jobLayer) =>
-      workspace.addLayer(catalogId, isAdminBoundary, jobLayer),
+    addLayer: (catalogId, isAdminBoundary, jobLayer, options) =>
+      workspace.addLayer(catalogId, isAdminBoundary, jobLayer, options),
     removeLayer: (instanceId) => workspace.removeLayer(instanceId),
     assignLayerAccent: (preferred) => workspace.assignLayerAccent(preferred),
     setSelectedInstanceId: (id) => {
@@ -76,6 +77,7 @@ export function createWorkflowRunDomain(
     createRunLayerGroup,
     bindRunIdToGroup,
     cleanupUnproducedRunLayers,
+    discardRunGroupUi,
     refreshRunGroupDissolvable,
     updateRunGroupFromJob,
     dissolveRunGroup,
@@ -221,6 +223,7 @@ export function createWorkflowRunDomain(
     },
     scheduleWorkspacePersist: () => bindings.scheduleWorkspacePersist(),
     cleanupUnproducedRunLayers: (runId, opts) => cleanupUnproducedRunLayers(runId, opts),
+    discardRunGroupUi: (runId) => discardRunGroupUi(runId),
     createRunLayerGroup: (options) => createRunLayerGroup(options),
     bindRunIdToGroup: (groupId, runId) => bindRunIdToGroup(groupId, runId),
     attachAlgorithmProductOverlays: (refs, catalogId, runId, opts) =>
@@ -234,6 +237,8 @@ export function createWorkflowRunDomain(
       const date = new Date(Number(y), Number(mo) - 1, Number(d))
       if (Number.isNaN(date.getTime())) return
       try {
+        // 产物对齐改轴为程序化操作，抑制顶栏确认卡，避免 snap↔confirm 循环
+        useTimelineActionBannerStore().suppressConfirm(3_500)
         const ui = useUiStore()
         ui.setDate(date)
         if (hh !== undefined) ui.setHour(Number(hh))
@@ -269,6 +274,29 @@ export function createWorkflowRunDomain(
         weatherRequest,
       ),
     activateWeatherTileViewport: (catalogId) => viewport.activateWeatherTileViewport(catalogId),
+    onSourceRouteConfirmOnline: ({ catalogId, timeKey, message }) => {
+      try {
+        useTimelineActionBannerStore().showRecovery({
+          catalogId,
+          message,
+          timeKey,
+          offers: ['switch_online', 'open_plan'],
+        })
+      } catch {
+        /* Pinia 未就绪 */
+      }
+    },
+    onSourceRouteSilentOnline: ({ catalogId, message }) => {
+      try {
+        useTimelineActionBannerStore().showNotice({
+          message,
+          catalogId,
+          tone: 'info',
+        })
+      } catch {
+        /* Pinia 未就绪 */
+      }
+    },
     hydrateWorkspaceFromSnapshot: () => hydrateWorkspaceFromSnapshot(),
     hydrateVectorLayersFromSnapshot: (instanceIdMap) =>
       hydrateVectorLayersFromSnapshot(instanceIdMap),
@@ -279,12 +307,16 @@ export function createWorkflowRunDomain(
     registerExternalWorkflowRun,
     runWorkflowForCatalog,
     autoAttachProductsForNewLayer,
+    hasReusableProductsForTime,
     cancelWorkflowRunForJob,
     retryWorkflowRunForJob,
+    interruptWorkflowForCatalog,
     cleanupAllRetryTimers,
     workflowVariantPreference,
     getWorkflowVariantPreference,
     setWorkflowVariantPreference,
+    isWorkflowVariantPinned,
+    clearWorkflowVariantPin,
     rememberTrackedWorkflowRun: rememberTrackedWorkflowRunImpl,
     forgetTrackedWorkflowRun: forgetTrackedWorkflowRunImpl,
   } = workflowRunner
@@ -327,6 +359,7 @@ export function createWorkflowRunDomain(
     createRunLayerGroup,
     bindRunIdToGroup,
     cleanupUnproducedRunLayers,
+    discardRunGroupUi,
     refreshRunGroupDissolvable,
     updateRunGroupFromJob,
     dissolveRunGroup,
@@ -349,10 +382,14 @@ export function createWorkflowRunDomain(
     // 安审 2026-08-22（fdd6833 同类断线）：runWorkflowForCatalog 族必须
     // 一路透传到 selectors.useWorkflowRun()，否则 LayerSidebar 添加图层即崩
     autoAttachProductsForNewLayer,
+    hasReusableProductsForTime,
+    interruptWorkflowForCatalog,
     cleanupAllRetryTimers,
     workflowVariantPreference,
     getWorkflowVariantPreference,
     setWorkflowVariantPreference,
+    isWorkflowVariantPinned,
+    clearWorkflowVariantPin,
     rememberTrackedWorkflowRun: rememberTrackedWorkflowRunImpl,
     forgetTrackedWorkflowRun: forgetTrackedWorkflowRunImpl,
     hydrateWorkspaceFromSnapshot,

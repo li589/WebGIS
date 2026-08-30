@@ -107,7 +107,9 @@ export function paintNightHemisphereMaskCanvas(
   const ctx = sharedNightMaskCanvas.getContext('2d')
   if (!ctx) throw new Error('canvas 2d unavailable')
   const pixels = buildNightMaskPixels(width, height, hour, date, tzOffsetHours)
-  ctx.putImageData(new ImageData(pixels, width, height), 0, 0)
+  const imageData = ctx.createImageData(width, height)
+  imageData.data.set(pixels)
+  ctx.putImageData(imageData, 0, 0)
   return sharedNightMaskCanvas
 }
 
@@ -125,7 +127,9 @@ export function buildNightHemisphereMaskDataUrl(
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('canvas 2d unavailable')
   const pixels = buildNightMaskPixels(width, height, hour, date, tzOffsetHours)
-  ctx.putImageData(new ImageData(pixels, width, height), 0, 0)
+  const imageData = ctx.createImageData(width, height)
+  imageData.data.set(pixels)
+  ctx.putImageData(imageData, 0, 0)
   return canvas.toDataURL('image/png')
 }
 

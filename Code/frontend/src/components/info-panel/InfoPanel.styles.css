@@ -295,7 +295,10 @@
    （右对齐 pill，替代已删除的天气摘要/静态提示/工作流引擎行）。 */
 .panel-stage-row--topline {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 0.4rem;
+  flex-wrap: wrap;
   padding: 0 var(--space-1);
 }
 .panel-stage-row--topline .readiness--inline {
@@ -426,6 +429,21 @@
 .stage-copy {
   color: var(--text-muted);
   font-size: var(--font-size-caption);
+}
+.plan-pending-chip {
+  margin-left: 0.15rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.24rem;
+  border: 1px solid var(--accent-border, var(--border-strong));
+  background: var(--accent-surface, var(--surface-2));
+  color: var(--accent-strong, var(--text-strong));
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  cursor: pointer;
+  font: inherit;
+}
+.plan-pending-chip:hover {
+  background: var(--surface-hover, var(--surface-2));
 }
 .workflow-meta-row {
   display: flex;

@@ -202,6 +202,8 @@ def _format_bake_failure_message(
         diagnostics.append(f"bake_log={log_tail}")
     return message, diagnostics
 
+
+def _new_run_id(layer_id: str) -> str:
     safe = "".join(ch if ch.isalnum() else "-" for ch in layer_id.lower())[:24]
     return f"asset-bake-{safe}-{uuid.uuid4().hex[:8]}"
 

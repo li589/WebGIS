@@ -712,6 +712,15 @@ describe("syncProgressiveBlockOverlays", () => {
     await slice.syncProgressiveBlockOverlays("", "cat-1");
     expect(materializeWorkflowMapLayers).not.toHaveBeenCalled();
   });
+
+  it("retry_pending 状态不触发物化（对齐 BE 409）", async () => {
+    const { slice } = setup();
+    slice.setJobLayers([
+      makeJob({ jobId: "run-1", catalogId: "cat-1", status: "retry_pending" }),
+    ]);
+    await slice.syncProgressiveBlockOverlays("run-1", "cat-1");
+    expect(materializeWorkflowMapLayers).not.toHaveBeenCalled();
+  });
 });
 
 // ── attachAlgorithmProductOverlays ────────────────────────────────────────────

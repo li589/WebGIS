@@ -10,6 +10,7 @@ import type { ActiveLayer, ActiveLayerDisplay, RuntimeLayerLibraryItem } from '.
 import { mergeProductTag } from './layer-naming'
 import { asRecord, extractLayerHotspots, formatClockLabel } from './catalog-builders'
 import {
+  extractFailureCategory,
   extractWorkflowTechLogs,
   localizeWorkflowDiagnostics,
   localizeWorkflowErrorMessage,
@@ -456,6 +457,10 @@ export async function buildJobLayer(
     }
   }
   const localizedMessage = localizeWorkflowErrorMessage(run.message)
+  const failureCategory = extractFailureCategory({
+    diagnostics: rawDiagnostics,
+    message: run.message,
+  })
   const analysisCharts = await extractAnalysisCharts(run.result_refs)
   const analysisTables = extractAnalysisTables(run.result_refs)
   return {
@@ -481,6 +486,7 @@ export async function buildJobLayer(
     diagnostics: run.diagnostics ?? [],
     diagnosticNotes,
     techLogs: techLogs.length ? techLogs : previousJobLayer?.techLogs,
+    failureCategory: failureCategory ?? previousJobLayer?.failureCategory,
     retryOfRunId:
       typeof run.executor_metadata?.retry_of_run_id === 'string'
         ? run.executor_metadata.retry_of_run_id

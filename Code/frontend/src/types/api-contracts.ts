@@ -519,6 +519,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/layers/{layer_id}/data-coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Layer Data Coverage
+         * @description 双通道可用性：在线覆盖窗 + 本地资产 time_list（计划会话 / 色带）。
+         *
+         *     - ``channels.online``：来自 descriptor.online_temporal（未启用则 available=false）
+         *     - ``channels.local``：来自 overlay 资产 state.time_list；取失败时 dates=[]
+         */
+        get: operations["get_layer_data_coverage_layers__layer_id__data_coverage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/layer-assets/{layer_id}/sync": {
         parameters: {
             query?: never;
@@ -3701,6 +3724,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config/data-input-policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Data Input Policies
+         * @description 只读投影：时间窗对齐 / 本地优先源路由等策略（seed + runtime 覆盖）。
+         */
+        get: operations["get_data_input_policies_config_data_input_policies_get"];
+        /**
+         * Put Data Input Policies
+         * @description 写入 runtime 覆盖（原子写）。同 id 覆盖 seed；热载生效，无需重启后端。
+         */
+        put: operations["put_data_input_policies_config_data_input_policies_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config/cache/invalidate-templates": {
         parameters: {
             query?: never;
@@ -6773,6 +6820,10 @@ export interface components {
             run_readiness_summary?: string | null;
             /** Run Readiness Notes */
             run_readiness_notes?: string[];
+            /** Online Ready */
+            online_ready?: boolean | null;
+            /** Local Ready */
+            local_ready?: boolean | null;
             /** Data Owner */
             data_owner?: string | null;
             /** Temporal Coverage */
@@ -11371,6 +11422,39 @@ export interface operations {
         };
     };
     get_layer_online_temporal_layers__layer_id__online_temporal_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_layer_data_coverage_layers__layer_id__data_coverage_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -16902,6 +16986,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AboutInfo"];
+                };
+            };
+        };
+    };
+    get_data_input_policies_config_data_input_policies_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    put_data_input_policies_config_data_input_policies_put: {
+        parameters: {
+            query: {
+                body: unknown;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

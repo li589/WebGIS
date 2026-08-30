@@ -10,6 +10,7 @@ import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 
 import { readScopedItem, writeScopedItem } from '../services/user-local-isolation'
+import { isEnglishInversionCatalogId } from './layers/inversion-catalog'
 
 /** 工作流产出图层在图层面板中的二级分类（research-group 子类） */
 export const WORKFLOW_OUTPUT_SUBCATEGORY = '模型输出' as const
@@ -37,6 +38,18 @@ export interface WorkflowOutputLayerEntry {
 
 const STORAGE_KEY = 'geo:workflow-output-layers:v1'
 
+function isPollutingOutputEntry(item: {
+  name?: string
+  localId?: string
+}): boolean {
+  // 仅拦「显示名 / localId」泄漏英文技术 id。
+  // sourceWorkflowId / sourceLayerId 本就是机器路由键（omega_sf_fenkuai_*），
+  // 必须允许保留——否则编辑器无法为反演工作流登记产出卡，且会把合法中文名条目滤掉。
+  return (
+    isEnglishInversionCatalogId(item.name) || isEnglishInversionCatalogId(item.localId)
+  )
+}
+
 function loadFromStorage(): WorkflowOutputLayerEntry[] {
   if (typeof window === 'undefined') return []
   try {
@@ -48,6 +61,7 @@ function loadFromStorage(): WorkflowOutputLayerEntry[] {
       .filter((item): item is WorkflowOutputLayerEntry => {
         return item && typeof item.localId === 'string' && typeof item.sourceLayerId === 'string'
       })
+      .filter((item) => !isPollutingOutputEntry(item))
       .map((item) => ({
         ...item,
         group: WORKFLOW_OUTPUT_SUBCATEGORY,
@@ -108,9 +122,14 @@ export const useWorkflowOutputLayersStore = defineStore('workflow-output-layers'
     sourceLayerId: string
     engine: string
   }): WorkflowOutputLayerEntry {
+    const safeName = params.name.trim() || `产出图层 ${new Date().toLocaleString()}`
+    // 显示名若落成英文技术 id，就地改写；不因 sourceWorkflowId 为机器键而拒绝创建
+    const displayName = isEnglishInversionCatalogId(safeName)
+      ? `产出图层 ${new Date().toLocaleString()}`
+      : safeName
     const entry: WorkflowOutputLayerEntry = {
       localId: `wf-out-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name: params.name.trim() || `产出图层 ${new Date().toLocaleString()}`,
+      name: displayName,
       group: WORKFLOW_OUTPUT_SUBCATEGORY,
       sourceWorkflowId: params.sourceWorkflowId,
       sourceLayerId: params.sourceLayerId,

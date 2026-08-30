@@ -27,6 +27,8 @@ interface OnlineTemporalIntegrationDeps {
   activeLayerGranularity: ComputedRef<string>
   timelineSegments: ComputedRef<TimelineAvailabilitySegment[]>
   isPlaying: Ref<boolean>
+  /** 顶栏确认卡打开时为 true：暂停 auto-fetch，避免与确认重跑抢跑 */
+  pauseAutoFetch?: Ref<boolean> | ComputedRef<boolean>
   logOperation: (tag: string, message: string) => void
 }
 
@@ -75,6 +77,7 @@ export function useOnlineTemporalIntegration(deps: OnlineTemporalIntegrationDeps
   /** 当前段是否为 fetchable 且尚未触发获取 */
   const shouldAutoFetch = computed(() => {
     if (deps.isPlaying.value) return false
+    if (deps.pauseAutoFetch?.value) return false
     if (!orchestrator.currentLayerSupportsOnline.value) return false
     const seg = currentSegment.value
     if (!seg || seg.state !== 'fetchable') return false
@@ -93,6 +96,7 @@ export function useOnlineTemporalIntegration(deps: OnlineTemporalIntegrationDeps
     // 延迟 300ms 触发，避免快速拖动时频繁提交
     setTimeout(() => {
       if (!shouldAutoFetch.value) return
+      if (deps.pauseAutoFetch?.value) return
       void orchestrator.triggerOnlineFetch(catalogId, timeKey)
     }, 300)
   })

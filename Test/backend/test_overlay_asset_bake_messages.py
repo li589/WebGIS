@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.services.overlay_asset_workflow_service import (
     _format_bake_failure_message,
+    _new_run_id,
     _summarize_bake_tool_output,
 )
 
@@ -53,3 +54,9 @@ def test_format_bake_failure_nonzero_returncode() -> None:
     assert "退出码 2" in message or "失败" in message
     assert any("returncode=2" in d for d in diagnostics)
     assert any("remaining_stale=" in d for d in diagnostics)
+
+
+def test_new_run_id_stable_prefix() -> None:
+    rid = _new_run_id("aridity-cn")
+    assert rid.startswith("asset-bake-aridity-cn-")
+    assert len(rid) > len("asset-bake-aridity-cn-")

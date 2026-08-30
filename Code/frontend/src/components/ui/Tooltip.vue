@@ -17,11 +17,14 @@ const props = withDefaults(
     delayMs?: number
     /** 最大宽度 */
     maxWidth?: string
+    /** 允许换行显示完整长文案（默认单行） */
+    wrap?: boolean
   }>(),
   {
     position: 'top',
     delayMs: 200,
     maxWidth: '240px',
+    wrap: false,
   },
 )
 
@@ -80,7 +83,7 @@ onUnmounted(() => {
       <div
         v-if="showTooltip && text"
         class="tooltip-box"
-        :class="[`tooltip-${position}`]"
+        :class="[`tooltip-${position}`, { 'tooltip-wrap': wrap }]"
         :style="{ maxWidth }"
         role="tooltip"
       >
@@ -118,6 +121,12 @@ onUnmounted(() => {
   pointer-events: none;
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+
+.tooltip-box.tooltip-wrap {
+  white-space: pre-wrap;
+  text-align: left;
+  max-width: min(22rem, 80vw);
 }
 
 /* 位置变体 */

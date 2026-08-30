@@ -764,6 +764,53 @@ h2 {
   white-space: nowrap;
 }
 
+.source-route-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.36rem;
+  border-radius: 0.24rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-2, var(--surface-sunken));
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  font: inherit;
+}
+.source-route-badge:hover {
+  background: var(--surface-hover, var(--surface-2));
+}
+.source-route-auto {
+  border-color: var(--accent-border, var(--border-strong));
+  background: var(--accent-surface, var(--surface-2));
+  color: var(--accent-strong, var(--text-strong));
+}
+.source-route-online {
+  background: var(--category-weather-surface);
+  border-color: var(--category-weather-border);
+  color: var(--category-weather);
+}
+
+.plan-pending-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.36rem;
+  border-radius: 0.24rem;
+  border: 1px solid var(--accent-border, var(--border-strong));
+  background: var(--accent-surface, var(--surface-2));
+  color: var(--accent-strong, var(--text-strong));
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  font: inherit;
+}
+
+.plan-pending-badge:hover {
+  background: var(--surface-hover, var(--surface-2));
+}
+
 .add-btn {
   padding: 0.18rem 0.46rem;
   border: 1px solid var(--border-accent);
