@@ -28,6 +28,7 @@ const clickPulse = ref(false)
 const stageOffset = ref({ left: 0, top: 0 })
 
 const rootRef = ref<HTMLElement | null>(null)
+const wrapRef = ref<HTMLElement | null>(null)
 let dragMoved = false
 let pointerId: number | null = null
 let startClientX = 0
@@ -36,6 +37,7 @@ let originX = 0
 let originY = 0
 let greetingTimer: number | null = null
 let clickPulseTimer: number | null = null
+let hoverLeaveTimer: number | null = null
 
 function resolveStageEl(): HTMLElement | null {
   return (
@@ -85,22 +87,27 @@ const dockExpanded = computed(
   () => open.value || hovered.value || dragging.value || greeting.value,
 )
 
-const visualX = computed(() => {
-  const offset = dockExpanded.value ? 0 : companionDockOffset(dock.value)
-  return x.value + offset
-})
+/**
+ * 命中层始终停在逻辑坐标 (x,y)，不随 peek 位移——避免边缘 hover 时
+ * 视觉平移导致 pointerleave/enter 振荡闪烁。
+ */
+const wrapStyle = computed(() => ({
+  width: `${COMPANION_SIZE_PX}px`,
+  height: `${COMPANION_SIZE_PX}px`,
+  transform: `translate3d(${stageOffset.value.left + x.value}px, ${stageOffset.value.top + y.value}px, 0)`,
+}))
 
-const style = computed(() => {
+/** 仅视觉 peek：在命中层内平移，命中矩形不动 */
+const visualPeekStyle = computed(() => {
+  const offset = dockExpanded.value ? 0 : companionDockOffset(dock.value)
   const dragFx = dragging.value ? ' scale(1.08) rotate(-4deg)' : ''
   return {
-    width: `${COMPANION_SIZE_PX}px`,
-    height: `${COMPANION_SIZE_PX}px`,
-    transform: `translate3d(${stageOffset.value.left + visualX.value}px, ${stageOffset.value.top + y.value}px, 0)${dragFx}`,
+    transform: `translate3d(${offset}px, 0, 0)${dragFx}`,
   }
 })
 
 const panelAnchor = computed(() => ({
-  x: stageOffset.value.left + visualX.value,
+  x: stageOffset.value.left + x.value,
   y: stageOffset.value.top + y.value,
   dock: dock.value,
   viewport: true as const,
@@ -125,8 +132,21 @@ function playClickPulse() {
 }
 
 function onHoverEnter() {
+  if (hoverLeaveTimer != null) {
+    window.clearTimeout(hoverLeaveTimer)
+    hoverLeaveTimer = null
+  }
   stageSize()
   hovered.value = true
+}
+
+function onHoverLeave() {
+  if (hoverLeaveTimer != null) window.clearTimeout(hoverLeaveTimer)
+  // 短延迟：peek 动画/子元素空隙不立刻收起
+  hoverLeaveTimer = window.setTimeout(() => {
+    hovered.value = false
+    hoverLeaveTimer = null
+  }, 180)
 }
 
 function onPointerDown(ev: PointerEvent) {
@@ -151,12 +171,12 @@ function onPointerMove(ev: PointerEvent) {
   const dx = ev.clientX - startClientX
   const dy = ev.clientY - startClientY
   if (isCompanionDragGesture(dx, dy)) dragMoved = true
-  const snapped = snapCompanionPosition(
-    { x: originX + dx, y: originY + dy },
-    stageSize(),
-  )
-  x.value = snapped.x
-  y.value = snapped.y
+  // 拖动中只钳制舞台，不贴边吸附，避免打开对话时左右乱跳
+  const stage = stageSize()
+  const maxX = Math.max(0, stage.width - COMPANION_SIZE_PX)
+  const maxY = Math.max(0, stage.height - COMPANION_SIZE_PX)
+  x.value = Math.min(maxX, Math.max(0, originX + dx))
+  y.value = Math.min(maxY, Math.max(0, originY + dy))
   dock.value = 'none'
 }
 
@@ -169,10 +189,20 @@ function onPointerUp(ev: PointerEvent) {
   } catch {
     /* ignore */
   }
-  const snapped = snapCompanionPosition({ x: x.value, y: y.value }, stageSize())
-  x.value = snapped.x
-  y.value = snapped.y
-  dock.value = snapped.dock
+  const stage = stageSize()
+  if (open.value) {
+    // 对话打开时保持自由位置，不贴边，避免面板与挂件抢位跳动
+    const maxX = Math.max(0, stage.width - COMPANION_SIZE_PX)
+    const maxY = Math.max(0, stage.height - COMPANION_SIZE_PX)
+    x.value = Math.min(maxX, Math.max(0, x.value))
+    y.value = Math.min(maxY, Math.max(0, y.value))
+    dock.value = 'none'
+  } else {
+    const snapped = snapCompanionPosition({ x: x.value, y: y.value }, stage)
+    x.value = snapped.x
+    y.value = snapped.y
+    dock.value = snapped.dock
+  }
   persist()
   if (!dragMoved) {
     playClickPulse()
@@ -185,7 +215,11 @@ function onResize() {
   const snapped = snapCompanionPosition({ x: x.value, y: y.value }, stageSize())
   x.value = snapped.x
   y.value = snapped.y
-  if (dock.value !== 'none') dock.value = snapped.dock
+  if (open.value) {
+    dock.value = 'none'
+  } else if (dock.value !== 'none') {
+    dock.value = snapped.dock
+  }
   persist()
 }
 
@@ -199,6 +233,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
   if (greetingTimer != null) window.clearTimeout(greetingTimer)
   if (clickPulseTimer != null) window.clearTimeout(clickPulseTimer)
+  if (hoverLeaveTimer != null) window.clearTimeout(hoverLeaveTimer)
 })
 
 watch(open, (v) => {
@@ -209,6 +244,9 @@ watch(open, (v) => {
     } else if (dock.value === 'left') {
       x.value = 8
     }
+    // 打开后改为自由拖动坐标，避免贴边 peek 与面板布局冲突
+    dock.value = 'none'
+    persist()
   }
 })
 </script>
@@ -216,53 +254,62 @@ watch(open, (v) => {
 <template>
   <Teleport to="body">
     <div ref="rootRef" class="agent-companion-root">
-      <button
-        type="button"
-        class="agent-companion"
-        :class="{
-          'agent-companion--dragging': dragging,
-          'agent-companion--docked': dock !== 'none' && !open && !hovered,
-          'agent-companion--dock-peek': dock !== 'none' && !dockExpanded,
-          'agent-companion--dock-left': dock === 'left',
-          'agent-companion--dock-right': dock === 'right',
-          'agent-companion--open': open,
-          'agent-companion--greet': greeting,
-          'agent-companion--click': clickPulse,
-          'agent-companion--hover': hovered && !dragging,
-        }"
-        :style="style"
-        :aria-label="open ? '关闭地图助手' : '打开地图助手'"
-        :aria-expanded="open"
-        @pointerdown="onPointerDown"
-        @pointermove="onPointerMove"
-        @pointerup="onPointerUp"
-        @pointercancel="onPointerUp"
+      <!-- 命中层固定在逻辑坐标；视觉 peek 只动内部，消除边缘闪烁 -->
+      <div
+        ref="wrapRef"
+        class="agent-companion-wrap"
+        :class="{ 'agent-companion-wrap--dragging': dragging }"
+        :style="wrapStyle"
         @pointerenter="onHoverEnter"
-        @pointerleave="hovered = false"
+        @pointerleave="onHoverLeave"
       >
-        <span class="agent-companion-aura" aria-hidden="true" />
-        <span class="agent-companion-ring" aria-hidden="true" />
-        <span class="agent-companion-ripple" aria-hidden="true" />
-        <span class="agent-companion-body" aria-hidden="true">
-          <span class="agent-companion-antenna" />
-          <span class="agent-companion-visor">
-            <i class="agent-companion-eye" />
-            <i class="agent-companion-eye" />
+        <button
+          type="button"
+          class="agent-companion"
+          :class="{
+            'agent-companion--dragging': dragging,
+            'agent-companion--docked': dock !== 'none' && !open && !hovered,
+            'agent-companion--dock-peek': dock !== 'none' && !dockExpanded,
+            'agent-companion--dock-left': dock === 'left',
+            'agent-companion--dock-right': dock === 'right',
+            'agent-companion--open': open,
+            'agent-companion--greet': greeting,
+            'agent-companion--click': clickPulse,
+            'agent-companion--hover': hovered && !dragging,
+          }"
+          :style="visualPeekStyle"
+          :aria-label="open ? '关闭地图助手' : '打开地图助手'"
+          :aria-expanded="open"
+          @pointerdown="onPointerDown"
+          @pointermove="onPointerMove"
+          @pointerup="onPointerUp"
+          @pointercancel="onPointerUp"
+        >
+          <span class="agent-companion-aura" aria-hidden="true" />
+          <span class="agent-companion-ring" aria-hidden="true" />
+          <span class="agent-companion-ripple" aria-hidden="true" />
+          <span class="agent-companion-body" aria-hidden="true">
+            <span class="agent-companion-antenna" />
+            <span class="agent-companion-visor">
+              <i class="agent-companion-eye" />
+              <i class="agent-companion-eye" />
+            </span>
+            <span class="agent-companion-mouth" />
+            <span class="agent-companion-badge" />
           </span>
-          <span class="agent-companion-mouth" />
-          <span class="agent-companion-badge" />
-        </span>
-        <span
-          v-if="dock !== 'none' && !dockExpanded"
-          class="agent-companion-tab"
-          aria-hidden="true"
-        />
-        <span v-if="greeting && !open" class="agent-companion-bubble" aria-hidden="true">Hi</span>
-      </button>
+          <span
+            v-if="dock !== 'none' && !dockExpanded"
+            class="agent-companion-tab"
+            aria-hidden="true"
+          />
+          <span v-if="greeting && !open" class="agent-companion-bubble" aria-hidden="true">Hi</span>
+        </button>
+      </div>
 
       <AgentChatPanel
         :open="open"
         :anchor="panelAnchor"
+        :dragging="dragging"
         :fit-to-layer-extent="fitToLayerExtent"
         @close="open = false"
       />
@@ -275,15 +322,26 @@ watch(open, (v) => {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  /* 高于设置/日志/工作流面板，避免被侧栏与浮层盖住 */
   z-index: 1600;
+}
+
+.agent-companion-wrap {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: auto;
+  /* 命中层移动时不播过渡，避免与 peek 视觉过渡叠加 */
+  transition: none;
+  will-change: transform;
+  touch-action: none;
 }
 
 .agent-companion {
   --agent-size: 56px;
   position: absolute;
-  left: 0;
-  top: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: auto;
   border: 1px solid color-mix(in srgb, var(--accent-border) 70%, var(--border-default));
   border-radius: 20px;
@@ -309,6 +367,14 @@ watch(open, (v) => {
   touch-action: none;
   user-select: none;
   overflow: visible;
+}
+
+.agent-companion-wrap--dragging .agent-companion,
+.agent-companion--dragging {
+  transition:
+    opacity 120ms ease,
+    box-shadow 120ms ease,
+    filter 120ms ease;
 }
 
 .agent-companion--dock-peek {
@@ -337,11 +403,6 @@ watch(open, (v) => {
   box-shadow:
     0 22px 48px rgba(0, 0, 0, 0.4),
     0 0 32px color-mix(in srgb, var(--accent) 35%, transparent);
-  /* 拖动时关闭 transform 过渡，避免滞后 */
-  transition:
-    opacity 120ms ease,
-    box-shadow 120ms ease,
-    filter 120ms ease;
 }
 
 .agent-companion--click .agent-companion-body {

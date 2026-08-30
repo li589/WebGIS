@@ -15,6 +15,7 @@ import type { useUiStore } from '../../stores/ui'
 import type { LayerHotspot } from '../../stores/layers/types'
 import type { OverlayTimeState } from '../../components/map/overlay-image-module'
 import { getOverlayValue, type OverlayPointValue } from '../../services/runtime-api'
+import { setAgentMapPoint } from '../../stores/agent-map-point'
 import type MapCanvas from '../../components/MapCanvas.vue'
 
 interface SelectedLayerLike {
@@ -66,6 +67,7 @@ export function useMapInspect(
 
   function handleMapPointSelect(point: { lng: number; lat: number }) {
     selectedMapPoint.value = point
+    setAgentMapPoint(point)
     logStore.logOperation(
       'map-point-select',
       `查询点 (${point.lng.toFixed(4)}, ${point.lat.toFixed(4)})`,
@@ -81,6 +83,7 @@ export function useMapInspect(
 
   function clearMapPointInspect() {
     selectedMapPoint.value = null
+    setAgentMapPoint(null)
     workflowRun.clearPointWeather()
     overlayPointValues.value = []
     selectedOverlayTimeSeries.value = []

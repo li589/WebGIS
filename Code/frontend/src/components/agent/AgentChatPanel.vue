@@ -16,10 +16,15 @@ import {
   AGENT_CHAT_PANEL_WIDTH_PX,
   COMPANION_SIZE_PX,
 } from '../../composables/useAgentCompanionPosition'
+import { renderAgentMarkdown } from '../../utils/agent-markdown'
 import { executeAgentUiIntents } from './agent-ui-intent'
+import { agentMapPoint } from '../../stores/agent-map-point'
+import 'katex/dist/katex.min.css'
 
 const props = defineProps<{
   open: boolean
+  /** 挂件拖动中：面板位置跟随但不播过渡，避免拖影卡顿 */
+  dragging?: boolean
   anchor: {
     x: number
     y: number
@@ -44,6 +49,8 @@ interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
   text: string
+  /** 助手消息的消毒 HTML；流式中为空，结束后再填 */
+  html?: string
   usage?: {
     total_tokens: number
     estimated?: boolean
@@ -56,21 +63,36 @@ interface ChatMessage {
   confirmations?: PendingConfirmation[]
 }
 
+const WELCOME_TEXT = '你好，我是地图助手。试试「打开 CMFD 降水」或「有哪些活动图层」。'
+
 const workspace = useLayerWorkspace()
 const messages = ref<ChatMessage[]>([
   {
     id: 'welcome',
     role: 'assistant',
-    text: '你好，我是地图助手。试试「打开 CMFD 降水」或「有哪些活动图层」。',
+    text: WELCOME_TEXT,
+    html: renderAgentMarkdown(WELCOME_TEXT),
   },
 ])
+
+function finalizeAssistantHtml(msg: ChatMessage) {
+  if (msg.role !== 'assistant') return
+  msg.html = msg.text ? renderAgentMarkdown(msg.text) : ''
+}
 const input = ref('')
 const sending = ref(false)
 const sessionId = ref<string | null>(null)
 const listRef = ref<HTMLElement | null>(null)
+const inputRef = ref<HTMLTextAreaElement | null>(null)
 const errorText = ref<string | null>(null)
 const nowMs = ref(Date.now())
+const streamingId = ref<string | null>(null)
 let tickTimer: ReturnType<typeof setInterval> | null = null
+let scrollRaf: number | null = null
+let streamTextRaf: number | null = null
+let pendingStreamText: { id: string; text: string } | null = null
+/** 用户上滚阅读时不强制吸底 */
+let stickToBottom = true
 
 function startExpiryTick() {
   if (tickTimer != null) return
@@ -84,6 +106,8 @@ onUnmounted(() => {
     clearInterval(tickTimer)
     tickTimer = null
   }
+  if (scrollRaf != null) cancelAnimationFrame(scrollRaf)
+  if (streamTextRaf != null) cancelAnimationFrame(streamTextRaf)
 })
 
 const panelStyle = computed(() => {
@@ -117,7 +141,11 @@ const panelStyle = computed(() => {
 
 function buildClientContext() {
   const layers = workspace.activeLayers.value.filter((l) => !l.isAdminBoundary)
-  return {
+  const ctx: {
+    active_catalog_ids: string[]
+    active_layers: Array<{ catalog_id: string; instance_id?: string; name?: string }>
+    map_point?: { lng: number; lat: number }
+  } = {
     active_catalog_ids: layers.map((l) => l.catalogId).filter(Boolean),
     active_layers: layers.map((l) => ({
       catalog_id: l.catalogId,
@@ -125,7 +153,18 @@ function buildClientContext() {
       name: l.name || l.catalogId,
     })),
   }
+  const pt = agentMapPoint.value
+  if (pt) {
+    ctx.map_point = { lng: pt.lng, lat: pt.lat }
+  }
+  return ctx
 }
+
+const mapPointLabel = computed(() => {
+  const pt = agentMapPoint.value
+  if (!pt) return null
+  return `${pt.lng.toFixed(4)}, ${pt.lat.toFixed(4)}`
+})
 
 function remainingSeconds(expiresAt?: string): number | null {
   if (!expiresAt) return null
@@ -142,18 +181,77 @@ function confirmSummaryLabel(c: PendingConfirmation): string {
   return name || wf || c.action || 'run_workflow'
 }
 
-async function scrollToBottom() {
-  await nextTick()
+function onListScroll() {
   const el = listRef.value
-  if (el) el.scrollTop = el.scrollHeight
+  if (!el) return
+  const gap = el.scrollHeight - el.scrollTop - el.clientHeight
+  stickToBottom = gap < 48
+}
+
+function scheduleScrollToBottom(force = false) {
+  if (!force && !stickToBottom) return
+  if (scrollRaf != null) return
+  scrollRaf = requestAnimationFrame(() => {
+    scrollRaf = null
+    const el = listRef.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
+}
+
+async function scrollToBottom() {
+  stickToBottom = true
+  await nextTick()
+  scheduleScrollToBottom(true)
+}
+
+function flushStreamText() {
+  streamTextRaf = null
+  const pending = pendingStreamText
+  pendingStreamText = null
+  if (!pending) return
+  const msg = messages.value.find((m) => m.id === pending.id)
+  if (msg) {
+    msg.text = pending.text
+    msg.html = undefined
+  }
+  scheduleScrollToBottom()
+}
+
+function appendStreamChunk(assistantId: string, chunk: string) {
+  const msg = messages.value.find((m) => m.id === assistantId)
+  if (!msg) return
+  const base =
+    pendingStreamText?.id === assistantId ? pendingStreamText.text : msg.text || ''
+  pendingStreamText = { id: assistantId, text: `${base}${chunk}` }
+  if (streamTextRaf == null) {
+    streamTextRaf = requestAnimationFrame(flushStreamText)
+  }
+}
+
+function autosizeInput() {
+  const el = inputRef.value
+  if (!el) return
+  el.style.height = 'auto'
+  const max = 120
+  el.style.height = `${Math.min(max, Math.max(40, el.scrollHeight))}px`
 }
 
 watch(
   () => props.open,
   (open) => {
-    if (open) void scrollToBottom()
+    if (open) {
+      void scrollToBottom()
+      void nextTick(() => {
+        autosizeInput()
+        inputRef.value?.focus()
+      })
+    }
   },
 )
+
+watch(input, () => {
+  void nextTick(() => autosizeInput())
+})
 
 async function resolveConfirmation(
   msgId: string,
@@ -193,134 +291,143 @@ async function resolveConfirmation(
   }
 }
 
-  async function applyChatResult(res: AgentChatResponse, assistantId: string) {
-    sessionId.value = res.session_id
-    const msg = messages.value.find((m) => m.id === assistantId)
-    const pending: PendingConfirmation[] | undefined = res.confirmations?.length
-      ? res.confirmations.map((c) => ({
-          ...c,
-          status: 'pending' as const,
-        }))
-      : undefined
-    if (pending?.length) startExpiryTick()
-    if (msg) {
-      msg.text = res.reply || msg.text
-      msg.usage = res.usage
+async function applyChatResult(res: AgentChatResponse, assistantId: string) {
+  sessionId.value = res.session_id
+  const msg = messages.value.find((m) => m.id === assistantId)
+  const pending: PendingConfirmation[] | undefined = res.confirmations?.length
+    ? res.confirmations.map((c) => ({
+        ...c,
+        status: 'pending' as const,
+      }))
+    : undefined
+  if (pending?.length) startExpiryTick()
+  if (msg) {
+    msg.text = res.reply || msg.text
+    msg.usage = res.usage
+      ? {
+          total_tokens: res.usage.total_tokens,
+          estimated: res.usage.estimated,
+        }
+      : null
+    if (res.steps?.length) msg.steps = res.steps
+    if (pending?.length) msg.confirmations = pending
+    finalizeAssistantHtml(msg)
+  } else {
+    const created: ChatMessage = {
+      id: assistantId,
+      role: 'assistant',
+      text: res.reply,
+      usage: res.usage
         ? {
             total_tokens: res.usage.total_tokens,
             estimated: res.usage.estimated,
           }
-        : null
-      if (res.steps?.length) msg.steps = res.steps
-      if (pending?.length) msg.confirmations = pending
-    } else {
-      messages.value.push({
-        id: assistantId,
-        role: 'assistant',
-        text: res.reply,
-        usage: res.usage
-          ? {
-              total_tokens: res.usage.total_tokens,
-              estimated: res.usage.estimated,
-            }
-          : null,
-        steps: res.steps?.length ? res.steps : undefined,
-        confirmations: pending,
-      })
+        : null,
+      steps: res.steps?.length ? res.steps : undefined,
+      confirmations: pending,
     }
-    if (res.ui_intents?.length) {
-      const results = executeAgentUiIntents(res.ui_intents, {
-        fitToLayerExtent: props.fitToLayerExtent,
-      })
-      const notes = results
-        .filter((r) => r.message)
-        .map((r) => (r.ok ? `✓ ${r.message}` : `✗ ${r.message}`))
-      if (notes.length) {
-        messages.value.push({
-          id: `s-${Date.now()}`,
-          role: 'system',
-          text: notes.join('\n'),
-        })
-      }
-    }
+    finalizeAssistantHtml(created)
+    messages.value.push(created)
   }
-
-  async function send() {
-    const text = input.value.trim()
-    if (!text || sending.value) return
-    input.value = ''
-    errorText.value = null
-    messages.value.push({
-      id: `u-${Date.now()}`,
-      role: 'user',
-      text,
+  if (res.ui_intents?.length) {
+    const results = executeAgentUiIntents(res.ui_intents, {
+      fitToLayerExtent: props.fitToLayerExtent,
     })
-    const assistantId = `a-${Date.now()}`
-    messages.value.push({
-      id: assistantId,
-      role: 'assistant',
-      text: '',
-      steps: [],
-    })
-    void scrollToBottom()
-    sending.value = true
-
-    const req = {
-      message: text,
-      session_id: sessionId.value,
-      client_context: buildClientContext(),
-    }
-
-    const onStep = (step: AgentStep) => {
-      const msg = messages.value.find((m) => m.id === assistantId)
-      if (!msg) return
-      if (!msg.steps) msg.steps = []
-      msg.steps.push(step)
-      void scrollToBottom()
-    }
-    const onToken = (chunk: string) => {
-      const msg = messages.value.find((m) => m.id === assistantId)
-      if (!msg) return
-      msg.text = `${msg.text || ''}${chunk}`
-      void scrollToBottom()
-    }
-
-    try {
-      let res: AgentChatResponse
-      try {
-        res = await streamAgentChat(req, {
-          onToken,
-          onStep,
-          onIntent: (_intent: AgentUiIntent) => {
-            /* applied from done payload */
-          },
-        })
-      } catch (_streamErr) {
-        // Fallback to non-stream chat (Gateway / older backend / parse failure).
-        const msg = messages.value.find((m) => m.id === assistantId)
-        if (msg) {
-          msg.text = ''
-          msg.steps = []
-        }
-        res = await postAgentChat(req)
-      }
-      await applyChatResult(res, assistantId)
-    } catch (err) {
-      errorText.value = err instanceof Error ? err.message : String(err)
-      const msg = messages.value.find((m) => m.id === assistantId)
-      if (msg && !msg.text) {
-        messages.value = messages.value.filter((m) => m.id !== assistantId)
-      }
+    const notes = results
+      .filter((r) => r.message)
+      .map((r) => (r.ok ? `✓ ${r.message}` : `✗ ${r.message}`))
+    if (notes.length) {
       messages.value.push({
-        id: `e-${Date.now()}`,
+        id: `s-${Date.now()}`,
         role: 'system',
-        text: `请求失败：${errorText.value}`,
+        text: notes.join('\n'),
       })
-    } finally {
-      sending.value = false
-      void scrollToBottom()
     }
   }
+}
+
+async function send() {
+  const text = input.value.trim()
+  if (!text || sending.value) return
+  input.value = ''
+  void nextTick(() => autosizeInput())
+  errorText.value = null
+  messages.value.push({
+    id: `u-${Date.now()}`,
+    role: 'user',
+    text,
+  })
+  const assistantId = `a-${Date.now()}`
+  messages.value.push({
+    id: assistantId,
+    role: 'assistant',
+    text: '',
+    steps: [],
+  })
+  void scrollToBottom()
+  sending.value = true
+  streamingId.value = assistantId
+
+  const req = {
+    message: text,
+    session_id: sessionId.value,
+    client_context: buildClientContext(),
+  }
+
+  const onStep = (step: AgentStep) => {
+    const msg = messages.value.find((m) => m.id === assistantId)
+    if (!msg) return
+    if (!msg.steps) msg.steps = []
+    msg.steps.push(step)
+    scheduleScrollToBottom()
+  }
+  const onToken = (chunk: string) => {
+    appendStreamChunk(assistantId, chunk)
+  }
+
+  try {
+    let res: AgentChatResponse
+    try {
+      res = await streamAgentChat(req, {
+        onToken,
+        onStep,
+        onIntent: (_intent: AgentUiIntent) => {
+          /* applied from done payload */
+        },
+      })
+    } catch (_streamErr) {
+      pendingStreamText = null
+      if (streamTextRaf != null) {
+        cancelAnimationFrame(streamTextRaf)
+        streamTextRaf = null
+      }
+      const msg = messages.value.find((m) => m.id === assistantId)
+      if (msg) {
+        msg.text = ''
+        msg.html = undefined
+        msg.steps = []
+      }
+      res = await postAgentChat(req)
+    }
+    flushStreamText()
+    await applyChatResult(res, assistantId)
+  } catch (err) {
+    errorText.value = err instanceof Error ? err.message : String(err)
+    const msg = messages.value.find((m) => m.id === assistantId)
+    if (msg && !msg.text) {
+      messages.value = messages.value.filter((m) => m.id !== assistantId)
+    }
+    messages.value.push({
+      id: `e-${Date.now()}`,
+      role: 'system',
+      text: `请求失败：${errorText.value}`,
+    })
+  } finally {
+    sending.value = false
+    streamingId.value = null
+    void scrollToBottom()
+  }
+}
 
 function onKeydown(ev: KeyboardEvent) {
   if (ev.key === 'Enter' && !ev.shiftKey) {
@@ -334,6 +441,7 @@ function onKeydown(ev: KeyboardEvent) {
   <aside
     v-if="open"
     class="agent-chat-panel"
+    :class="{ 'agent-chat-panel--dragging': dragging }"
     :style="panelStyle"
     role="dialog"
     aria-label="地图助手对话"
@@ -348,22 +456,30 @@ function onKeydown(ev: KeyboardEvent) {
       </button>
     </header>
 
-    <div ref="listRef" class="agent-chat-list">
+    <div ref="listRef" class="agent-chat-list" @scroll.passive="onListScroll">
       <div
         v-for="msg in messages"
         :key="msg.id"
         class="agent-chat-bubble"
-        :class="`agent-chat-bubble--${msg.role}`"
+        :class="[
+          `agent-chat-bubble--${msg.role}`,
+          msg.id === streamingId ? 'agent-chat-bubble--streaming' : '',
+        ]"
       >
-        <pre class="agent-chat-text">{{
+        <div
+          v-if="msg.role === 'assistant' && msg.html != null && msg.html !== ''"
+          class="agent-chat-md agent-scroll"
+          v-html="msg.html"
+        />
+        <pre v-else class="agent-chat-text agent-scroll">{{
           msg.text || (sending && msg.role === 'assistant' ? '…' : '')
         }}</pre>
-        <details v-if="msg.steps?.length" class="agent-chat-steps" open>
+        <details v-if="msg.steps?.length" class="agent-chat-steps">
           <summary>过程（{{ msg.steps.length }}）</summary>
           <ul>
             <li v-for="(step, idx) in msg.steps" :key="idx">
               <strong>{{ step.type }}</strong> — {{ step.summary }}
-              <pre v-if="step.detail" class="agent-chat-step-detail">{{ step.detail }}</pre>
+              <pre v-if="step.detail" class="agent-chat-step-detail agent-scroll">{{ step.detail }}</pre>
             </li>
           </ul>
         </details>
@@ -389,7 +505,7 @@ function onKeydown(ev: KeyboardEvent) {
             <button
               type="button"
               class="agent-confirm-approve"
-              :disabled="card.busy || (remainingSeconds(card.expires_at) === 0)"
+              :disabled="card.busy || remainingSeconds(card.expires_at) === 0"
               @click="resolveConfirmation(msg.id, card.confirmation_id, 'approve')"
             >
               确认提交
@@ -412,13 +528,23 @@ function onKeydown(ev: KeyboardEvent) {
     </div>
 
     <footer class="agent-chat-footer">
+      <div class="agent-chat-context" aria-live="polite">
+        <span v-if="mapPointLabel" class="agent-chat-chip" title="地图选点将随对话一并发送">
+          选点 {{ mapPointLabel }}
+        </span>
+        <span v-else class="agent-chat-chip agent-chat-chip--muted">
+          地图点击选点后可查坐标与图层值
+        </span>
+      </div>
       <textarea
+        ref="inputRef"
         v-model="input"
         class="agent-chat-input"
-        rows="3"
-        placeholder="输入指令，Enter 发送"
+        rows="1"
+        placeholder="输入指令，Enter 发送 · Shift+Enter 换行"
         :disabled="sending"
         @keydown="onKeydown"
+        @input="autosizeInput"
       />
       <button
         type="button"
@@ -438,8 +564,8 @@ function onKeydown(ev: KeyboardEvent) {
   position: fixed;
   z-index: 1601;
   pointer-events: auto;
-  min-width: 340px;
-  min-height: 300px;
+  min-width: 320px;
+  min-height: 280px;
   width: min(440px, calc(100vw - 24px));
   max-width: min(720px, calc(100vw - 24px));
   max-height: min(580px, calc(100vh - 96px));
@@ -456,6 +582,13 @@ function onKeydown(ev: KeyboardEvent) {
   backdrop-filter: blur(12px);
   resize: both;
   animation: agent-panel-in 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.agent-chat-panel--dragging {
+  animation: none;
+  transition: none;
+  /* 拖动跟随：减少重绘毛边 */
+  will-change: left, top;
 }
 
 @keyframes agent-panel-in {
@@ -533,7 +666,50 @@ function onKeydown(ev: KeyboardEvent) {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  min-height: 180px;
+  min-height: 140px;
+  overscroll-behavior: contain;
+}
+
+/* 浅/深主题滚动条：跟设置面板同一套 token */
+.agent-scroll,
+.agent-chat-list,
+.agent-chat-input {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-accent) var(--border-subtle);
+}
+
+.agent-scroll::-webkit-scrollbar,
+.agent-chat-list::-webkit-scrollbar,
+.agent-chat-input::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.agent-scroll::-webkit-scrollbar-track,
+.agent-chat-list::-webkit-scrollbar-track,
+.agent-chat-input::-webkit-scrollbar-track {
+  background: var(--border-subtle);
+  border-radius: 4px;
+}
+
+.agent-scroll::-webkit-scrollbar-thumb,
+.agent-chat-list::-webkit-scrollbar-thumb,
+.agent-chat-input::-webkit-scrollbar-thumb {
+  background: var(--border-accent);
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.agent-scroll::-webkit-scrollbar-thumb:hover,
+.agent-chat-list::-webkit-scrollbar-thumb:hover,
+.agent-chat-input::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+.agent-scroll::-webkit-scrollbar-corner,
+.agent-chat-list::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .agent-chat-bubble {
@@ -542,6 +718,31 @@ function onKeydown(ev: KeyboardEvent) {
   border-radius: 10px;
   border: 1px solid var(--border-subtle);
   background: var(--surface-1);
+  /* 长列表：远离视口的气泡降低绘制成本 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 72px;
+}
+
+.agent-chat-bubble--user {
+  align-self: flex-end;
+  background: var(--accent-surface);
+  border-color: var(--accent-border);
+  animation: agent-bubble-msg 200ms ease-out;
+}
+
+.agent-chat-bubble--assistant {
+  align-self: flex-start;
+}
+
+.agent-chat-bubble--assistant:not(.agent-chat-bubble--streaming) {
+  animation: agent-bubble-msg 200ms ease-out;
+}
+
+.agent-chat-bubble--system {
+  align-self: stretch;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
   animation: agent-bubble-msg 200ms ease-out;
 }
 
@@ -556,30 +757,158 @@ function onKeydown(ev: KeyboardEvent) {
   }
 }
 
-.agent-chat-bubble--user {
-  align-self: flex-end;
-  background: var(--accent-surface);
-  border-color: var(--accent-border);
-}
-
-.agent-chat-bubble--assistant {
-  align-self: flex-start;
-}
-
-.agent-chat-bubble--system {
-  align-self: stretch;
-  background: var(--surface-sunken);
-  color: var(--text-secondary);
-  font-size: var(--font-size-caption);
-}
-
 .agent-chat-text {
   margin: 0;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
   font-family: inherit;
   font-size: var(--font-size-caption);
   line-height: 1.5;
+  max-height: min(42vh, 320px);
+  overflow: auto;
+}
+
+.agent-chat-md {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-height: min(42vh, 360px);
+  overflow: auto;
+  color: var(--text-primary);
+}
+
+.agent-chat-md :deep(:first-child) {
+  margin-top: 0;
+}
+
+.agent-chat-md :deep(:last-child) {
+  margin-bottom: 0;
+}
+
+.agent-chat-md :deep(p),
+.agent-chat-md :deep(ul),
+.agent-chat-md :deep(ol),
+.agent-chat-md :deep(blockquote),
+.agent-chat-md :deep(pre),
+.agent-chat-md :deep(table) {
+  margin: 0.4em 0;
+}
+
+.agent-chat-md :deep(h1),
+.agent-chat-md :deep(h2),
+.agent-chat-md :deep(h3),
+.agent-chat-md :deep(h4) {
+  margin: 0.55em 0 0.3em;
+  font-size: 1.05em;
+  font-weight: 650;
+  line-height: 1.35;
+  color: var(--text-primary);
+}
+
+.agent-chat-md :deep(ul),
+.agent-chat-md :deep(ol) {
+  padding-left: 1.25em;
+}
+
+.agent-chat-md :deep(li + li) {
+  margin-top: 0.15em;
+}
+
+.agent-chat-md :deep(a) {
+  color: var(--accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.agent-chat-md :deep(blockquote) {
+  margin-left: 0;
+  padding: 0.25em 0.65em;
+  border-left: 3px solid var(--border-accent);
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--surface-sunken) 70%, transparent);
+}
+
+.agent-chat-md :deep(code) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+}
+
+.agent-chat-md :deep(pre) {
+  max-height: min(28vh, 220px);
+  overflow: auto;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-accent) var(--border-subtle);
+}
+
+.agent-chat-md :deep(pre)::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.agent-chat-md :deep(pre)::-webkit-scrollbar-thumb {
+  background: var(--border-accent);
+  border-radius: 4px;
+}
+
+.agent-chat-md :deep(pre code) {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre;
+  display: block;
+  overflow-x: auto;
+}
+
+.agent-chat-md :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8em;
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.agent-chat-md :deep(th),
+.agent-chat-md :deep(td) {
+  border: 1px solid var(--border-subtle);
+  padding: 0.25em 0.45em;
+  text-align: left;
+}
+
+.agent-chat-md :deep(th) {
+  background: var(--surface-3);
+  font-weight: 600;
+}
+
+.agent-chat-md :deep(.katex) {
+  font-size: 1.05em;
+  color: inherit;
+}
+
+.agent-chat-md :deep(.katex-display) {
+  margin: 0.55em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  padding: 0.15em 0;
+}
+
+.agent-chat-md :deep(.katex-display > .katex) {
+  white-space: normal;
 }
 
 .agent-chat-usage {
@@ -614,12 +943,13 @@ function onKeydown(ev: KeyboardEvent) {
 .agent-chat-step-detail {
   margin: 0.15rem 0 0.25rem;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
   font-family: inherit;
   font-size: 0.625rem;
   line-height: 1.35;
   opacity: 0.85;
-  max-height: 6rem;
+  max-height: 5rem;
   overflow: auto;
 }
 
@@ -704,13 +1034,45 @@ function onKeydown(ev: KeyboardEvent) {
 
 .agent-chat-footer {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 0.55rem;
-  padding: 0.7rem 0.85rem 0.85rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  gap: 0.4rem 0.5rem;
+  padding: 0.55rem 0.75rem 0.75rem;
   border-top: 1px solid var(--border-subtle);
   background: var(--surface-3);
   flex-shrink: 0;
   align-items: end;
+}
+
+.agent-chat-context {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.agent-chat-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  border: 1px solid var(--accent-border);
+  background: color-mix(in srgb, var(--accent-surface) 55%, var(--surface-1));
+  color: var(--accent-strong);
+  font-size: 0.65rem;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-chat-chip--muted {
+  border-color: var(--border-subtle);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
 }
 
 .agent-chat-input {
@@ -719,11 +1081,15 @@ function onKeydown(ev: KeyboardEvent) {
   border: 1px solid var(--border-default);
   background: var(--surface-1);
   color: var(--text-primary);
-  padding: 0.5rem 0.65rem;
+  padding: 0.55rem 0.7rem;
   font: inherit;
   font-size: var(--font-size-caption);
-  line-height: 1.45;
-  min-height: 3.9rem;
+  line-height: 1.4;
+  min-height: 2.5rem;
+  max-height: 7.5rem;
+  height: 2.5rem;
+  box-sizing: border-box;
+  overflow-y: auto;
 }
 
 .agent-chat-input:focus {
@@ -732,9 +1098,11 @@ function onKeydown(ev: KeyboardEvent) {
 }
 
 .agent-chat-send {
+  box-sizing: border-box;
   align-self: end;
-  min-width: 3.75rem;
-  height: 2.35rem;
+  min-width: 3.5rem;
+  height: 2.5rem;
+  padding: 0 0.85rem;
   border-radius: 10px;
   border: 1px solid var(--accent-border);
   background: var(--accent-surface);

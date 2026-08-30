@@ -38,6 +38,8 @@ export interface AgentChatClientContext {
     instance_id?: string
     name?: string
   }>
+  /** WGS84 map pick; used by sample_layer_point when lng/lat omitted */
+  map_point?: { lng: number; lat: number } | null
 }
 
 export interface AgentChatRequest {

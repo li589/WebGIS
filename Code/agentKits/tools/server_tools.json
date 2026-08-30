@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "note": "Read tools execute immediately; run_workflow creates a confirmation ticket (Phase B). Multi-hop tool loops capped by BACKEND_AGENT_MAX_TOOL_HOPS (Phase C).",
+  "version": 2,
+  "note": "Read tools execute immediately; run_workflow creates a confirmation ticket. Multi-hop capped by BACKEND_AGENT_MAX_TOOL_HOPS. web_search gated by BACKEND_AGENT_WEB_SEARCH_ENABLED.",
   "tools": [
     {
       "name": "search_layers",
@@ -30,12 +30,54 @@
     },
     {
       "name": "get_layer_meta",
-      "description": "Get metadata for one catalog layer (read-only, ACL filtered).",
+      "description": "Get detailed metadata for one catalog layer (read-only, ACL filtered): description, readiness, extent, workflow binding, tags.",
       "args": {
         "type": "object",
         "required": ["catalog_id"],
         "properties": {
           "catalog_id": { "type": "string", "description": "Layer catalog id" }
+        }
+      }
+    },
+    {
+      "name": "get_workflow_meta",
+      "description": "Get detailed info for one workflow definition (read-only, ACL): description, engine, node summary, linked layer.",
+      "args": {
+        "type": "object",
+        "required": ["workflow_id"],
+        "properties": {
+          "workflow_id": { "type": "string", "description": "Workflow definition id" }
+        }
+      }
+    },
+    {
+      "name": "sample_layer_point",
+      "description": "Sample raster/overlay (or weather) value at a map point. Uses args lng/lat, or client_context.map_point if omitted. Optional catalog_id; otherwise samples active layers from client_context.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "lng": { "type": "number", "description": "Longitude (WGS84)" },
+          "lat": { "type": "number", "description": "Latitude (WGS84)" },
+          "catalog_id": {
+            "type": "string",
+            "description": "Optional single layer; if omitted sample active layers"
+          },
+          "time": {
+            "type": "string",
+            "description": "Optional time key (e.g. YYYYMMDD) for time-series overlays"
+          }
+        }
+      }
+    },
+    {
+      "name": "web_search",
+      "description": "Search the public web (DuckDuckGo Instant Answer + Wikipedia fallback) for background knowledge. Not for private/intranet data.",
+      "args": {
+        "type": "object",
+        "required": ["query"],
+        "properties": {
+          "query": { "type": "string" },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 8, "default": 5 }
         }
       }
     },

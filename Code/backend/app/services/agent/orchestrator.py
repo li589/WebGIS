@@ -228,6 +228,26 @@ def sanitize_client_context(client_context: dict[str, Any] | None) -> dict[str, 
                 if entry:
                     slim.append(entry)
             cleaned["active_layers"] = slim
+    if "map_point" in client_context:
+        mp = client_context.get("map_point")
+        if isinstance(mp, dict):
+            lng_v: float | None = None
+            lat_v: float | None = None
+            try:
+                lng_v = float(mp.get("lng", mp.get("lon", mp.get("longitude"))))
+                lat_v = float(mp.get("lat", mp.get("latitude")))
+            except (TypeError, ValueError):
+                pass
+            if (
+                lng_v is not None
+                and lat_v is not None
+                and -180.0 <= lng_v <= 180.0
+                and -90.0 <= lat_v <= 90.0
+            ):
+                cleaned["map_point"] = {
+                    "lng": round(lng_v, 6),
+                    "lat": round(lat_v, 6),
+                }
     if not cleaned:
         return None
     try:
@@ -280,8 +300,12 @@ def _build_system(
         "## Tools\n"
         "- UI intents (client-executed): set_layer_visibility, set_layer_opacity, "
         "fit_layer, list_active_layers\n"
-        "- Server tools: search_layers (immediate); run_workflow "
-        "(creates a confirmation ticket — user must approve before submit)\n"
+        "- Server read tools (immediate): search_layers, list_workflows, get_layer_meta, "
+        "get_workflow_meta, sample_layer_point, web_search\n"
+        "- Server write: run_workflow (confirmation ticket — user must approve before submit)\n"
+        "- Prefer get_layer_meta / get_workflow_meta for details; sample_layer_point for "
+        "map coordinates + layer values (use client_context.map_point when user selected a point); "
+        "web_search for public background knowledge only\n"
         "- Prefer search_layers before run_workflow; never claim a run was submitted "
         "until confirmation is approved"
     )
@@ -488,7 +512,10 @@ def run_chat(
                 }
             )
             tool_res = execute_server_tool(
-                "search_layers", {"query": q, "limit": 8}, cred=cred
+                "search_layers",
+                {"query": q, "limit": 8},
+                cred=cred,
+                client_context=client_context,
             )
             steps.append(
                 {
@@ -529,6 +556,7 @@ def run_chat(
                     "run_workflow",
                     {"catalog_id": catalog_guess},
                     cred=cred,
+                    client_context=client_context,
                 )
                 steps.append(
                     {
@@ -542,6 +570,131 @@ def run_chat(
                 conf = _confirmation_from_tool_result(wf_res)
                 if conf:
                     confirmations.append(conf)
+
+        # Demo: sample map point / layer values
+        if any(
+            k in message
+            for k in ("点值", "采样", "坐标", "这个点", "查数值", "sample", "point value")
+        ):
+            steps.append({"type": "tool", "summary": "sample_layer_point"})
+            sample_res = execute_server_tool(
+                "sample_layer_point",
+                {},
+                cred=cred,
+                client_context=client_context,
+            )
+            steps.append(
+                {
+                    "type": "tool_result",
+                    "summary": f"采样 {sample_res.get('count', 0)} 层"
+                    if sample_res.get("ok")
+                    else "采样失败",
+                    "detail": json.dumps(sample_res, ensure_ascii=False)[:800],
+                }
+            )
+
+        # Demo: layer / workflow detail
+        if any(
+            k in message
+            for k in ("图层详情", "图层信息", "layer detail", "layer meta")
+        ):
+            catalog_guess = ""
+            if isinstance(client_context, dict):
+                raw_ids = client_context.get("active_catalog_ids")
+                if isinstance(raw_ids, list) and raw_ids:
+                    catalog_guess = str(raw_ids[0])
+            if catalog_guess:
+                steps.append(
+                    {"type": "tool", "summary": f"get_layer_meta({catalog_guess})"}
+                )
+                lm = execute_server_tool(
+                    "get_layer_meta",
+                    {"catalog_id": catalog_guess},
+                    cred=cred,
+                    client_context=client_context,
+                )
+                steps.append(
+                    {
+                        "type": "tool_result",
+                        "summary": "图层元数据"
+                        if lm.get("ok")
+                        else "图层元数据失败",
+                        "detail": json.dumps(lm, ensure_ascii=False)[:800],
+                    }
+                )
+
+        # Demo: workflow detail
+        if any(k in message for k in ("工作流详情", "工作流信息", "workflow detail")):
+            steps.append(
+                {"type": "tool", "summary": "list_workflows"}
+            )
+            lw = execute_server_tool(
+                "list_workflows",
+                {"limit": 5},
+                cred=cred,
+                client_context=client_context,
+            )
+            steps.append(
+                {
+                    "type": "tool_result",
+                    "summary": f"工作流 {lw.get('count', 0)} 条",
+                    "detail": json.dumps(lw, ensure_ascii=False)[:800],
+                }
+            )
+            # If user mentions a specific id-like token, try get_workflow_meta
+            wid_guess = ""
+            for token in message.replace("，", " ").replace(",", " ").split():
+                t = token.strip()
+                if t and ("_" in t or t.startswith("wf") or t.endswith("_workflow")):
+                    wid_guess = t[:128]
+                    break
+            if not wid_guess and isinstance(lw, dict):
+                wfs = lw.get("workflows")
+                if isinstance(wfs, list) and wfs and isinstance(wfs[0], dict):
+                    wid_guess = str(wfs[0].get("workflow_id") or "")
+            if wid_guess:
+                steps.append(
+                    {"type": "tool", "summary": f"get_workflow_meta({wid_guess})"}
+                )
+                wm = execute_server_tool(
+                    "get_workflow_meta",
+                    {"workflow_id": wid_guess},
+                    cred=cred,
+                    client_context=client_context,
+                )
+                steps.append(
+                    {
+                        "type": "tool_result",
+                        "summary": "工作流元数据"
+                        if wm.get("ok")
+                        else "工作流元数据失败",
+                        "detail": json.dumps(wm, ensure_ascii=False)[:800],
+                    }
+                )
+
+        # Demo: web search
+        if any(k in message for k in ("搜索一下", "联网搜索", "在线搜索", "web search", "搜一下")):
+            q = message
+            for prefix in ("搜索一下", "联网搜索", "在线搜索", "web search", "搜一下"):
+                if message.casefold().startswith(prefix.casefold()):
+                    q = message[len(prefix) :].strip() or message
+                    break
+            steps.append({"type": "tool", "summary": f"web_search({q[:40]})"})
+            ws = execute_server_tool(
+                "web_search",
+                {"query": q, "limit": 5},
+                cred=cred,
+                client_context=client_context,
+            )
+            steps.append(
+                {
+                    "type": "tool_result",
+                    "summary": f"搜索 {ws.get('count', 0)} 条"
+                    if ws.get("ok")
+                    else "搜索失败",
+                    "detail": json.dumps(ws, ensure_ascii=False)[:800],
+                }
+            )
 
         result = mock_chat(
             message, session_id=sid, client_context=client_context
@@ -641,7 +794,10 @@ def run_chat(
                         }
                     )
                     tres = execute_server_tool(
-                        str(sc["name"]), dict(sc.get("args") or {}), cred=cred
+                        str(sc["name"]),
+                        dict(sc.get("args") or {}),
+                        cred=cred,
+                        client_context=client_context,
                     )
                     steps.append(
                         {
@@ -767,7 +923,10 @@ def run_chat(
                     }
                 )
                 tres = execute_server_tool(
-                    str(sc["name"]), dict(sc.get("args") or {}), cred=cred
+                    str(sc["name"]),
+                    dict(sc.get("args") or {}),
+                    cred=cred,
+                    client_context=client_context,
                 )
                 steps.append(
                     {

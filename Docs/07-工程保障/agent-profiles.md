@@ -15,15 +15,20 @@ Provider 默认 URL / 模型目录保存在 [`Code/agentKits/presets/provider_ca
 
 对话解析顺序：若当前用户有个人 `active_profile_id` → 用个人档；否则回退全局启用档。`demo` 角色只读。API Key 加密存储，响应永不回传明文。
 
-## 能力（切片 A + Phase B + Phase C + Phase D）
+## 能力（切片 A + Phase B + Phase C + Phase D + 只读扩展）
 
 - 短会话记忆（每用户/session 最近约 12 轮）
-- 每次 chat 注入活动图层 + 可访问目录摘要 + 工具清单
-- 只读工具：`search_layers` / `list_workflows` / `get_layer_meta`（ACL 过滤，立即执行）
+- 每次 chat 注入活动图层 + 可选地图选点 `map_point` + 可访问目录摘要 + 工具清单
+- 只读工具（ACL 过滤，立即执行）：
+  - `search_layers` / `list_workflows`
+  - `get_layer_meta` / `get_workflow_meta`（图层/工作流详细信息）
+  - `sample_layer_point`（坐标 + overlay/天气图层数值；可用 `lng`/`lat` 或 `client_context.map_point`）
+  - `web_search`（DuckDuckGo Instant Answer + Wikipedia 回退；`BACKEND_AGENT_WEB_SEARCH_ENABLED`，默认开）
 - `run_workflow` 创建确认票据；对话内确认卡批准后才提交 `workflow-runs`
 - 有界多跳工具循环（`BACKEND_AGENT_MAX_TOOL_HOPS`，默认 4）
 - **SSE 流式**：`POST /agent/chat/stream`（`token` / `step` / `intent` / `done` / `error`）；前端失败自动回退 `/agent/chat`
 - 响应 `steps` / `usage`；可选 `confirmations` 供前端确认卡
+- 前端伴侣面板展示当前地图选点，并随 `client_context.map_point` 发送
 
 ## API
 

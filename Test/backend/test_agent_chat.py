@@ -1017,3 +1017,111 @@ def test_agent_chat_stream_error_event(agent_client: TestClient, monkeypatch):
         text = "".join(res.iter_text())
     assert "event: error" in text
     assert "故意失败" in text
+
+
+def test_get_workflow_meta_and_sample_and_web_search(monkeypatch):
+    from app.services.agent.server_tools_runtime import (
+        ALLOWED_SERVER_TOOLS,
+        execute_server_tool,
+    )
+    from app.services.agent import web_search as web_search_mod
+
+    assert "get_workflow_meta" in ALLOWED_SERVER_TOOLS
+    assert "sample_layer_point" in ALLOWED_SERVER_TOOLS
+    assert "web_search" in ALLOWED_SERVER_TOOLS
+
+    class _Cred:
+        role = "admin"
+        user_id = 1
+        source = "session"
+
+    lw = execute_server_tool("list_workflows", {"limit": 5}, cred=_Cred())
+    assert lw["ok"] is True
+    workflows = lw.get("workflows") or []
+    if workflows:
+        wid = workflows[0]["workflow_id"]
+        meta = execute_server_tool(
+            "get_workflow_meta", {"workflow_id": wid}, cred=_Cred()
+        )
+        assert meta["ok"] is True
+        assert meta["workflow"]["workflow_id"] == wid
+        assert "nodes" in meta["workflow"]
+
+    missing_wf = execute_server_tool(
+        "get_workflow_meta", {"workflow_id": ""}, cred=_Cred()
+    )
+    assert missing_wf["ok"] is False
+
+    no_point = execute_server_tool(
+        "sample_layer_point",
+        {"catalog_id": "ndvi"},
+        cred=_Cred(),
+        client_context={},
+    )
+    assert no_point["ok"] is False
+
+    sampled = execute_server_tool(
+        "sample_layer_point",
+        {"catalog_id": "ndvi"},
+        cred=_Cred(),
+        client_context={"map_point": {"lng": 113.3, "lat": 23.1}},
+    )
+    assert sampled["ok"] is True
+    assert sampled["lng"] == 113.3
+    assert sampled["lat"] == 23.1
+    assert sampled["count"] >= 1
+    assert isinstance(sampled.get("samples"), list)
+
+    from_ctx_layers = execute_server_tool(
+        "sample_layer_point",
+        {},
+        cred=_Cred(),
+        client_context={
+            "map_point": {"lng": 113.3, "lat": 23.1},
+            "active_catalog_ids": ["ndvi"],
+        },
+    )
+    assert from_ctx_layers["ok"] is True
+    assert from_ctx_layers["count"] >= 1
+
+    monkeypatch.setenv("BACKEND_AGENT_WEB_SEARCH_ENABLED", "false")
+    disabled = execute_server_tool("web_search", {"query": "降水"}, cred=_Cred())
+    assert disabled["ok"] is False
+    assert "关闭" in str(disabled.get("error") or "")
+
+    monkeypatch.setenv("BACKEND_AGENT_WEB_SEARCH_ENABLED", "true")
+
+    def _fake_run(query: str, *, limit: int = 5):
+        return {
+            "ok": True,
+            "query": query,
+            "count": 1,
+            "results": [
+                {"title": "t", "snippet": "s", "url": "https://example.com/x"}
+            ],
+            "sources": ["test"],
+        }
+
+    monkeypatch.setattr(web_search_mod, "run_web_search", _fake_run)
+    ws = execute_server_tool("web_search", {"query": "CMFD"}, cred=_Cred())
+    assert ws["ok"] is True
+    assert ws["count"] == 1
+
+
+def test_sanitize_client_context_keeps_map_point():
+    from app.services.agent.orchestrator import sanitize_client_context
+
+    cleaned = sanitize_client_context(
+        {
+            "active_catalog_ids": ["ndvi"],
+            "map_point": {"lng": 113.264385, "lat": 23.12911},
+            "noise": {"x": 1},
+        }
+    )
+    assert cleaned is not None
+    assert cleaned["map_point"]["lng"] == 113.264385
+    assert cleaned["map_point"]["lat"] == 23.12911
+    assert "noise" not in cleaned
+
+    bad = sanitize_client_context({"map_point": {"lng": 999, "lat": 0}})
+    assert bad is None or "map_point" not in (bad or {})

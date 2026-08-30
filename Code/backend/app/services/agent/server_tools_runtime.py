@@ -8,7 +8,16 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # Read tools execute immediately; write tools create confirmation tickets (Phase B/C).
-_READ_TOOLS = frozenset({"search_layers", "list_workflows", "get_layer_meta"})
+_READ_TOOLS = frozenset(
+    {
+        "search_layers",
+        "list_workflows",
+        "get_layer_meta",
+        "get_workflow_meta",
+        "sample_layer_point",
+        "web_search",
+    }
+)
 _WRITE_TOOLS = frozenset({"run_workflow"})
 _ALLOWED_TOOLS = _READ_TOOLS | _WRITE_TOOLS
 ALLOWED_SERVER_TOOLS = _ALLOWED_TOOLS
@@ -19,6 +28,7 @@ def execute_server_tool(
     args: dict[str, Any],
     *,
     cred: Any = None,
+    client_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Execute an allowed server tool. Unknown tools return ok=False."""
     tool = (name or "").strip()
@@ -30,6 +40,12 @@ def execute_server_tool(
         return _list_workflows(args, cred=cred)
     if tool == "get_layer_meta":
         return _get_layer_meta(args, cred=cred)
+    if tool == "get_workflow_meta":
+        return _get_workflow_meta(args, cred=cred)
+    if tool == "sample_layer_point":
+        return _sample_layer_point(args, cred=cred, client_context=client_context)
+    if tool == "web_search":
+        return _web_search(args)
     if tool == "run_workflow":
         return _prepare_run_workflow(args, cred=cred)
     return {"ok": False, "error": f"未实现: {tool}"}
@@ -218,16 +234,322 @@ def _get_layer_meta(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
     tags = getattr(desc, "tags", None) or []
     if not isinstance(tags, list):
         tags = [str(tags)]
+    extent = getattr(desc, "extent", None)
+    extent_out: dict[str, float] | None = None
+    if extent is not None:
+        try:
+            extent_out = {
+                "west": float(extent.west),
+                "south": float(extent.south),
+                "east": float(extent.east),
+                "north": float(extent.north),
+            }
+        except (TypeError, ValueError, AttributeError):
+            extent_out = None
+    notes = getattr(desc, "run_readiness_notes", None) or []
+    if not isinstance(notes, list):
+        notes = [str(notes)]
     return {
         "ok": True,
         "layer": {
             "layer_id": str(getattr(desc, "layer_id", "") or catalog_id),
             "display_name": str(getattr(desc, "display_name", "") or catalog_id),
             "description": str(getattr(desc, "description", "") or "")[:500],
-            "workflow_id": str(getattr(desc, "workflow_id", "") or ""),
+            "category": str(getattr(desc, "category", "") or ""),
             "status": str(getattr(desc, "status", "") or ""),
+            "workflow_id": str(getattr(desc, "workflow_id", "") or ""),
+            "workflow_name": str(getattr(desc, "workflow_name", "") or ""),
+            "engine": str(getattr(desc, "engine", "") or ""),
+            "run_readiness": str(getattr(desc, "run_readiness", "") or ""),
+            "run_readiness_summary": str(
+                getattr(desc, "run_readiness_summary", "") or ""
+            )[:300]
+            or None,
+            "run_readiness_notes": [str(n)[:160] for n in notes[:8]],
+            "supports_time": bool(getattr(desc, "supports_time", False)),
+            "is_realtime": bool(getattr(desc, "is_realtime", False)),
+            "temporal_coverage": str(getattr(desc, "temporal_coverage", "") or "")
+            or None,
+            "extent": extent_out,
             "tags": [str(t)[:64] for t in tags[:20]],
         },
+    }
+
+
+def _get_workflow_meta(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
+    """Return safe workflow definition summary (ACL filtered)."""
+    workflow_id = str(args.get("workflow_id") or "").strip()
+    if not workflow_id:
+        return {"ok": False, "error": "workflow_id 不能为空"}
+
+    accessible = _filter_resource_ids(
+        [workflow_id], cred, resource_type="workflow"
+    )
+    if workflow_id not in set(accessible):
+        return {"ok": False, "error": f"无权访问工作流: {workflow_id}"}
+
+    from app.services.workflow_definition_service import get_definition, list_definitions
+
+    listing = None
+    for item in list_definitions() or []:
+        if isinstance(item, dict) and str(item.get("workflow_id") or "") == workflow_id:
+            listing = item
+            break
+
+    definition = get_definition(workflow_id)
+    if definition is None and listing is None:
+        return {"ok": False, "error": f"未找到工作流: {workflow_id}"}
+
+    nodes_raw = (definition or {}).get("nodes") if isinstance(definition, dict) else None
+    node_summaries: list[dict[str, str]] = []
+    if isinstance(nodes_raw, list):
+        for node in nodes_raw[:40]:
+            if not isinstance(node, dict):
+                continue
+            props = node.get("properties") if isinstance(node.get("properties"), dict) else {}
+            node_summaries.append(
+                {
+                    "id": str(node.get("id") or "")[:64],
+                    "type": str(node.get("type") or props.get("type") or "")[:64],
+                    "title": str(
+                        props.get("title")
+                        or props.get("name")
+                        or node.get("id")
+                        or ""
+                    )[:120],
+                }
+            )
+
+    meta = (definition or {}).get("_meta") if isinstance(definition, dict) else None
+    if not isinstance(meta, dict):
+        meta = {}
+    tags = (listing or {}).get("tags") if listing else meta.get("tags")
+    if not isinstance(tags, list):
+        tags = []
+
+    return {
+        "ok": True,
+        "workflow": {
+            "workflow_id": workflow_id,
+            "name": str(
+                (listing or {}).get("name")
+                or (definition or {}).get("name")
+                or workflow_id
+            ),
+            "description": str(
+                (listing or {}).get("description")
+                or (definition or {}).get("description")
+                or ""
+            )[:800],
+            "engine": str((listing or {}).get("engine") or meta.get("engine") or ""),
+            "kind": str((listing or {}).get("kind") or meta.get("kind") or ""),
+            "category": str(
+                (listing or {}).get("category") or meta.get("category") or ""
+            ),
+            "linked_layer_id": (listing or {}).get("linked_layer_id")
+            or meta.get("linked_layer_id"),
+            "is_template": bool(
+                (listing or {}).get("is_template", meta.get("is_template", False))
+            ),
+            "tags": [str(t)[:64] for t in tags[:20]],
+            "node_count": len(node_summaries)
+            or int((listing or {}).get("node_count") or 0),
+            "nodes": node_summaries,
+        },
+    }
+
+
+def _web_search(args: dict[str, Any]) -> dict[str, Any]:
+    from app.services.agent.web_search import run_web_search
+
+    try:
+        limit = int(args.get("limit") or 5)
+    except (TypeError, ValueError):
+        limit = 5
+    return run_web_search(str(args.get("query") or ""), limit=limit)
+
+
+def _parse_lng_lat(
+    args: dict[str, Any],
+    client_context: dict[str, Any] | None,
+) -> tuple[float, float] | dict[str, Any]:
+    """Resolve WGS84 point from args or client_context.map_point."""
+    lng = args.get("lng", args.get("lon", args.get("longitude")))
+    lat = args.get("lat", args.get("latitude"))
+    if lng is None or lat is None:
+        mp = None
+        if isinstance(client_context, dict):
+            mp = client_context.get("map_point")
+        if isinstance(mp, dict):
+            lng = mp.get("lng", mp.get("lon", mp.get("longitude")))
+            lat = mp.get("lat", mp.get("latitude"))
+    try:
+        lng_f = float(lng)
+        lat_f = float(lat)
+    except (TypeError, ValueError):
+        return {
+            "ok": False,
+            "error": "需要有效的 lng/lat，或先在地图上选点（client_context.map_point）",
+        }
+    if not (-180.0 <= lng_f <= 180.0 and -90.0 <= lat_f <= 90.0):
+        return {"ok": False, "error": "坐标超出 WGS84 范围"}
+    return lng_f, lat_f
+
+
+def _sample_layer_point(
+    args: dict[str, Any],
+    *,
+    cred: Any,
+    client_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Sample overlay/weather value(s) at a map point."""
+    parsed = _parse_lng_lat(args, client_context)
+    if isinstance(parsed, dict):
+        return parsed
+    lng, lat = parsed
+    time_key = str(args.get("time") or "").strip() or None
+
+    catalog_id = str(args.get("catalog_id") or "").strip()
+    targets: list[str] = []
+    if catalog_id:
+        targets = [catalog_id]
+    elif isinstance(client_context, dict):
+        raw_ids = client_context.get("active_catalog_ids")
+        if isinstance(raw_ids, list):
+            targets = [str(x).strip() for x in raw_ids if str(x).strip()]
+        if not targets:
+            raw_layers = client_context.get("active_layers")
+            if isinstance(raw_layers, list):
+                for layer in raw_layers:
+                    if isinstance(layer, dict) and layer.get("catalog_id"):
+                        cid = str(layer["catalog_id"]).strip()
+                        if cid and cid not in targets:
+                            targets.append(cid)
+    targets = targets[:8]
+    if not targets:
+        return {
+            "ok": False,
+            "lng": lng,
+            "lat": lat,
+            "error": "未指定 catalog_id，且客户端无活动图层",
+        }
+
+    accessible = set(_filter_ids(targets, cred))
+    samples: list[dict[str, Any]] = []
+    for lid in targets:
+        if lid not in accessible:
+            samples.append(
+                {"catalog_id": lid, "ok": False, "error": "无权访问该图层"}
+            )
+            continue
+        samples.append(_sample_one_layer(lid, lng=lng, lat=lat, time=time_key))
+
+    return {
+        "ok": True,
+        "lng": lng,
+        "lat": lat,
+        "time": time_key,
+        "count": len(samples),
+        "samples": samples,
+    }
+
+
+def _sample_one_layer(
+    catalog_id: str,
+    *,
+    lng: float,
+    lat: float,
+    time: str | None,
+) -> dict[str, Any]:
+    from app.services.layer_catalog import get_layer_descriptor
+    from app.services.overlay_registry import get_overlay_spec
+    from app.weatherengine.constants import WEATHER_LAYER_SPECS
+
+    display = catalog_id
+    desc = get_layer_descriptor(catalog_id)
+    if desc is not None:
+        display = str(getattr(desc, "display_name", "") or catalog_id)
+
+    spec = get_overlay_spec(catalog_id)
+    if spec is not None:
+        try:
+            raw = spec.resolve_value(lng, lat, time)
+            return {
+                "ok": True,
+                "kind": "overlay",
+                "catalog_id": catalog_id,
+                "display_name": display,
+                "value": raw.get("value"),
+                "unit": raw.get("unit"),
+                "time": raw.get("time"),
+                "error": raw.get("error"),
+            }
+        except Exception as exc:
+            logger.exception("overlay sample failed for %s", catalog_id)
+            return {
+                "ok": False,
+                "kind": "overlay",
+                "catalog_id": catalog_id,
+                "display_name": display,
+                "error": f"overlay 采样失败: {exc}",
+            }
+
+    if catalog_id in WEATHER_LAYER_SPECS:
+        try:
+            from app.weatherengine.service import weather_engine_service
+
+            wx = weather_engine_service.get_point_weather(
+                layer_id=catalog_id,
+                latitude=lat,
+                longitude=lng,
+                forecast_hours=1,
+            )
+            payload = wx.model_dump(mode="json") if hasattr(wx, "model_dump") else {}
+            current = payload.get("current") if isinstance(payload, dict) else None
+            summary: dict[str, Any] = {
+                "ok": True,
+                "kind": "weather",
+                "catalog_id": catalog_id,
+                "display_name": display,
+                "provider": payload.get("provider") if isinstance(payload, dict) else None,
+                "model": payload.get("model") if isinstance(payload, dict) else None,
+            }
+            if isinstance(current, dict):
+                # Keep a small subset of numeric/string fields
+                slim: dict[str, Any] = {}
+                for key, val in list(current.items())[:24]:
+                    if isinstance(val, (int, float, str, bool)) or val is None:
+                        slim[str(key)[:64]] = val
+                summary["current"] = slim
+                # Prefer a primary scalar if present
+                for key in (
+                    "temperature_2m",
+                    "precipitation",
+                    "wind_speed_10m",
+                    "relative_humidity_2m",
+                    "visibility",
+                ):
+                    if key in slim:
+                        summary["value"] = slim[key]
+                        summary["metric"] = key
+                        break
+            return summary
+        except Exception as exc:
+            logger.warning("weather point sample failed for %s: %s", catalog_id, exc)
+            return {
+                "ok": False,
+                "kind": "weather",
+                "catalog_id": catalog_id,
+                "display_name": display,
+                "error": f"天气点查失败: {exc}",
+            }
+
+    return {
+        "ok": False,
+        "kind": "unsupported",
+        "catalog_id": catalog_id,
+        "display_name": display,
+        "error": "该图层暂无 overlay/天气点采样能力",
     }
 
 
