@@ -1,0 +1,7 @@
+# Local binaries / caches — do not commit
+caddy.exe
+caddy
+*.log
+.DS_Store
+__pycache__/
+*.pyc

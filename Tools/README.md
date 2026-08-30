@@ -13,6 +13,7 @@
 - 数据下载 / 同步 / 扫描 / 校验脚本
 - overlay 资产审计与导出等运维辅助
 - 一次性重组、排查、报告与测试夹具（`test_data/`、`reports/`、`logs/`）
+- 微信小程序联调：本机 `:8000` → Cloudflare 隧道后端反代（不改小程序代码）见 `miniprogram-local-proxy/`
 
 ## 相关
 

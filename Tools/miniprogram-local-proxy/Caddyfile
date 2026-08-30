@@ -1,0 +1,11 @@
+# 微信小程序本地联调：把本机 :8000 转到 Cloudflare 隧道后端。
+# 用法：将 caddy.exe 放在本目录后执行  .\caddy.exe run --config .\Caddyfile
+# 或运行  .\start-caddy.ps1
+#
+# 若上游主机名变更，请同步改下面两处 api.cgdas.dpdns.org。
+
+:8000 {
+	reverse_proxy https://api.cgdas.dpdns.org {
+		header_up Host api.cgdas.dpdns.org
+	}
+}
