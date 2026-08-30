@@ -2,7 +2,7 @@
 /**
  * AgentSettings — 全局(admin) / 个人 配置档分组 + 伴侣开关。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   createAgentProfile,
   deleteAgentProfile,
@@ -21,7 +21,7 @@ import {
   setAgentCompanionEnabled,
 } from '../../services/settings-local'
 import IconButton from '../ui/IconButton.vue'
-import { RefreshCw } from '../ui/icons'
+import { Plus, RefreshCw } from '../ui/icons'
 
 const companionEnabled = ref(isAgentCompanionEnabled())
 
@@ -53,6 +53,19 @@ const hasApiKey = ref(false)
 const clearApiKey = ref(false)
 const modelOptions = ref<string[]>([])
 const modelsManualHint = ref<string | null>(null)
+const modelsLoaded = ref(false)
+const modelPickerOpen = ref(false)
+const modelFilter = ref('')
+
+const canPickModel = computed(
+  () => modelsLoaded.value && modelOptions.value.length > 0 && canEditSelected.value,
+)
+const filteredModelOptions = computed(() => {
+  const q = modelFilter.value.trim().toLowerCase()
+  const list = modelOptions.value
+  if (!q) return list
+  return list.filter((m) => m.toLowerCase().includes(q))
+})
 
 const globalProfiles = computed(() =>
   (profiles.value ?? []).filter((p) => p.scope === 'global'),
@@ -133,9 +146,32 @@ function applySelected(profile: AgentProfile | null) {
   apiKeyInput.value = ''
   clearApiKey.value = false
   modelsManualHint.value = null
+  modelOptions.value = []
+  modelsLoaded.value = false
+  modelPickerOpen.value = false
+  modelFilter.value = ''
 }
 
 watch(selected, (p) => applySelected(p), { immediate: true })
+
+watch(baseUrl, () => {
+  // Unsaved Base URL edits invalidate the last refresh result.
+  if (!modelsLoaded.value && !modelOptions.value.length && !modelPickerOpen.value) return
+  modelsLoaded.value = false
+  modelOptions.value = []
+  modelPickerOpen.value = false
+  modelFilter.value = ''
+  modelsManualHint.value = null
+})
+
+watch([apiKeyInput, clearApiKey], () => {
+  if (!modelsLoaded.value && !modelOptions.value.length) return
+  // Draft key changes mean the previous list may be for a different credential.
+  modelsLoaded.value = false
+  modelOptions.value = []
+  modelPickerOpen.value = false
+  modelsManualHint.value = null
+})
 
 async function loadConfig() {
   loading.value = true
@@ -284,21 +320,75 @@ async function onRefreshModels() {
   refreshingModels.value = true
   error.value = null
   modelsManualHint.value = null
+  modelPickerOpen.value = false
   try {
-    const res = await refreshAgentModels(selected.value.id, selected.value.scope)
-    modelOptions.value = res.models
-    if (res.manual || res.error) {
-      modelsManualHint.value = res.error || '该站点未提供模型列表，请手动填写模型名。'
+    const res = await refreshAgentModels(selected.value.id, selected.value.scope, {
+      base_url: baseUrl.value,
+      api_key: clearApiKey.value ? null : apiKeyInput.value,
+    })
+    modelOptions.value = Array.isArray(res.models) ? res.models : []
+    modelsLoaded.value = true
+    if (res.error || (res.manual && !modelOptions.value.length)) {
+      modelsManualHint.value =
+        res.error || '该站点未提供模型列表，请手动填写模型名。'
+      modelPickerOpen.value = false
+    } else if (!modelOptions.value.length) {
+      modelsManualHint.value = '未返回可用模型，请检查 Base URL / API Key 后重试，或手动填写。'
+      modelPickerOpen.value = false
+    } else {
+      modelsManualHint.value = `已加载 ${modelOptions.value.length} 个模型，点「+」从列表选择。`
+      // 刷新成功后直接展开列表，减少多一步点击
+      modelPickerOpen.value = true
+      modelFilter.value = ''
     }
   } catch (err) {
-    modelsManualHint.value = err instanceof Error ? err.message : String(err)
+    modelsLoaded.value = false
+    modelOptions.value = []
+    modelPickerOpen.value = false
+    const msg = err instanceof Error ? err.message : String(err)
+    modelsManualHint.value = msg.includes('500')
+      ? `${msg}（若刚更新后端，请 launch.py restart fastapi 后再试）`
+      : msg
   } finally {
     refreshingModels.value = false
   }
 }
 
+function toggleModelPicker() {
+  if (!canPickModel.value) return
+  modelPickerOpen.value = !modelPickerOpen.value
+  if (modelPickerOpen.value) modelFilter.value = ''
+}
+
+function pickModel(m: string) {
+  model.value = m
+  modelPickerOpen.value = false
+  modelFilter.value = ''
+}
+
+function onDocPointerDown(ev: PointerEvent) {
+  if (!modelPickerOpen.value) return
+  const t = ev.target
+  if (!(t instanceof Element)) return
+  if (t.closest('.model-row') || t.closest('.model-picker')) return
+  modelPickerOpen.value = false
+}
+
+function onDocKeydown(ev: KeyboardEvent) {
+  if (ev.key === 'Escape' && modelPickerOpen.value) {
+    modelPickerOpen.value = false
+  }
+}
+
 onMounted(() => {
   void loadConfig()
+  document.addEventListener('pointerdown', onDocPointerDown, true)
+  document.addEventListener('keydown', onDocKeydown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', onDocPointerDown, true)
+  document.removeEventListener('keydown', onDocKeydown)
 })
 </script>
 
@@ -456,15 +546,12 @@ onMounted(() => {
                     v-model="model"
                     type="text"
                     class="field-input"
-                    list="agent-model-options"
+                    placeholder="模型名"
                     :disabled="!canEditSelected"
                   />
-                  <datalist id="agent-model-options">
-                    <option v-for="m in modelOptions" :key="m" :value="m" />
-                  </datalist>
                   <IconButton
                     size="sm"
-                    label="刷新模型"
+                    label="刷新模型列表"
                     :disabled="refreshingModels || !canEditSelected"
                     @click="onRefreshModels"
                   >
@@ -476,8 +563,53 @@ onMounted(() => {
                       />
                     </template>
                   </IconButton>
+                  <IconButton
+                    size="sm"
+                    :label="
+                      canPickModel
+                        ? '从列表选择模型'
+                        : modelsLoaded
+                          ? '暂无可用模型，请手动填写或重新刷新'
+                          : '请先刷新加载模型列表'
+                    "
+                    :disabled="!canPickModel"
+                    :active="modelPickerOpen"
+                    @click="toggleModelPicker"
+                  >
+                    <template #icon>
+                      <Plus :size="14" aria-hidden="true" />
+                    </template>
+                  </IconButton>
+                </div>
+                <div v-if="modelPickerOpen && canPickModel" class="model-picker" role="listbox">
+                  <input
+                    v-model="modelFilter"
+                    type="search"
+                    class="field-input model-picker-filter"
+                    placeholder="筛选模型…"
+                    aria-label="筛选模型"
+                  />
+                  <ul class="model-picker-list">
+                    <li v-if="!filteredModelOptions.length" class="model-picker-empty">
+                      无匹配模型
+                    </li>
+                    <li
+                      v-for="m in filteredModelOptions"
+                      :key="m"
+                      class="model-picker-item"
+                      :class="{ 'model-picker-item--active': m === model }"
+                      role="option"
+                      :aria-selected="m === model"
+                      @click="pickModel(m)"
+                    >
+                      {{ m }}
+                    </li>
+                  </ul>
                 </div>
                 <span v-if="modelsManualHint" class="field-hint">{{ modelsManualHint }}</span>
+                <span v-else-if="!modelsLoaded" class="field-hint"
+                  >请先点刷新加载可用模型，再点「+」选择。</span
+                >
               </label>
               <div class="field-row-2">
                 <label class="field">
@@ -766,6 +898,67 @@ onMounted(() => {
 .model-row :deep(.icon-btn) {
   flex-shrink: 0;
   align-self: center;
+}
+
+.model-picker {
+  margin-top: 0.4rem;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--surface-elevated, var(--surface-1));
+  color: var(--text-primary);
+  box-shadow:
+    0 12px 32px color-mix(in srgb, #000 28%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--border-subtle) 80%, transparent);
+  overflow: hidden;
+  max-width: 100%;
+  z-index: 20;
+  position: relative;
+}
+
+.model-picker-filter {
+  border: none !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+  border-radius: 0 !important;
+  background: var(--surface-2) !important;
+  color: var(--text-primary) !important;
+}
+
+.model-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0;
+  max-height: min(20rem, 48vh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--surface-elevated, var(--surface-1));
+  scrollbar-gutter: stable;
+}
+
+.model-picker-item {
+  padding: 0.45rem 0.75rem;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
+  cursor: pointer;
+  word-break: break-all;
+  line-height: 1.4;
+  border-left: 2px solid transparent;
+}
+
+.model-picker-item:hover {
+  background: var(--surface-hover, var(--surface-2));
+}
+
+.model-picker-item--active {
+  background: var(--accent-surface);
+  color: var(--accent-strong);
+  font-weight: 600;
+  border-left-color: var(--accent);
+}
+
+.model-picker-empty {
+  padding: 0.65rem 0.75rem;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
 }
 
 .actions {

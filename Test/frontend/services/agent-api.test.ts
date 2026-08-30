@@ -18,6 +18,7 @@ import { requestJson } from '@/services/_http'
 import {
   createAgentProfile,
   fetchAgentConfig,
+  refreshAgentModels,
   setActiveAgentProfile,
   streamAgentChat,
   useGlobalAgentProfile,
@@ -109,6 +110,27 @@ describe('agent-api profiles isolation', () => {
     expect(mockRequest).toHaveBeenCalledWith('/agent/config/use-global', {
       method: 'POST',
       body: '{}',
+    })
+  })
+
+  it('refreshAgentModels posts draft base_url and api_key', async () => {
+    mockRequest.mockResolvedValueOnce({
+      profile_id: 'p1',
+      models: ['m1', 'm2'],
+      manual: false,
+    })
+    await refreshAgentModels('p1', 'global', {
+      base_url: ' http://127.0.0.1:11434/v1 ',
+      api_key: ' sk-x ',
+    })
+    expect(mockRequest).toHaveBeenCalledWith('/agent/models/refresh', {
+      method: 'POST',
+      body: JSON.stringify({
+        profile_id: 'p1',
+        scope: 'global',
+        base_url: 'http://127.0.0.1:11434/v1',
+        api_key: 'sk-x',
+      }),
     })
   })
 })

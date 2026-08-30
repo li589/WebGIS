@@ -400,14 +400,18 @@ def _intents_from_anthropic_content(
     )
 
 
-def refresh_models_for_profile(profile: dict[str, Any]) -> dict[str, Any]:
+def refresh_models_for_profile(
+    profile: dict[str, Any],
+    *,
+    api_key_override: str | None = None,
+) -> dict[str, Any]:
     protocol = str(profile.get("protocol") or "demo")
     if protocol == "demo":
         return {"models": ["demo-rules"], "manual": False}
     base_url = str(profile.get("base_url") or "").strip()
     if not base_url:
         return {"models": [], "manual": True, "error": "未配置 base_url"}
-    api_key = get_profile_api_key(profile)
+    api_key = (api_key_override or "").strip() or get_profile_api_key(profile)
     kind = str(profile.get("provider_kind") or "")
     try:
         if kind == "ollama":
@@ -424,6 +428,13 @@ def refresh_models_for_profile(profile: dict[str, Any]) -> dict[str, Any]:
         return {"models": models, "manual": False}
     except LlmClientError as exc:
         return {"models": [], "manual": True, "error": str(exc)}
+    except Exception as exc:
+        logger.exception("refresh_models_for_profile failed")
+        return {
+            "models": [],
+            "manual": True,
+            "error": f"刷新模型列表失败：{exc}",
+        }
 
 
 def run_chat(

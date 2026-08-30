@@ -787,6 +787,89 @@ def test_standard_cannot_refresh_global_models(agent_client: TestClient):
     assert r.status_code == 403
 
 
+def test_admin_refresh_demo_models_ok(agent_client: TestClient):
+    _login(agent_client, "testadmin", "test-pass-123")
+    r = agent_client.post(
+        "/agent/models/refresh",
+        json={"profile_id": "demo", "scope": "global"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "demo-rules" in body["models"]
+    assert body.get("error") in (None, "")
+
+
+def test_admin_refresh_openai_upstream_error_is_200(agent_client: TestClient):
+    """Upstream / SSRF failures must not become HTTP 500."""
+    _login(agent_client, "testadmin", "test-pass-123")
+    create = agent_client.post(
+        "/agent/config/profiles",
+        json={"preset_id": "openai", "scope": "global"},
+    )
+    assert create.status_code == 200, create.text
+    pid = create.json()["id"]
+    agent_client.put(
+        f"/agent/config/profiles/{pid}",
+        json={
+            "scope": "global",
+            "base_url": "http://127.0.0.1:9/v1",
+            "api_key": "sk-test",
+        },
+    )
+    with patch(
+        "app.services.agent.clients.openai_compat.list_models",
+        side_effect=Exception("boom"),
+    ):
+        r = agent_client.post(
+            "/agent/models/refresh",
+            json={"profile_id": pid, "scope": "global"},
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["models"] == []
+    assert body["manual"] is True
+    assert body.get("error")
+
+
+def test_admin_refresh_passes_draft_api_key(agent_client: TestClient):
+    """Unsaved API key in the settings form must be usable for refresh."""
+    _login(agent_client, "testadmin", "test-pass-123")
+    create = agent_client.post(
+        "/agent/config/profiles",
+        json={"preset_id": "openai", "scope": "global"},
+    )
+    assert create.status_code == 200, create.text
+    pid = create.json()["id"]
+    agent_client.put(
+        f"/agent/config/profiles/{pid}",
+        json={"scope": "global", "base_url": "http://127.0.0.1:9/v1"},
+    )
+    captured: dict[str, object] = {}
+
+    def _fake_list_models(*, base_url: str, api_key: str | None, timeout: float = 30.0):
+        captured["base_url"] = base_url
+        captured["api_key"] = api_key
+        return ["draft-model-a", "draft-model-b"]
+
+    with patch(
+        "app.services.agent.clients.openai_compat.list_models",
+        side_effect=_fake_list_models,
+    ):
+        r = agent_client.post(
+            "/agent/models/refresh",
+            json={
+                "profile_id": pid,
+                "scope": "global",
+                "base_url": "http://127.0.0.1:9/v1",
+                "api_key": "sk-draft-unsaved",
+            },
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["models"] == ["draft-model-a", "draft-model-b"]
+    assert captured.get("api_key") == "sk-draft-unsaved"
+
+
 def test_leaving_demo_revalidates_base_url(tmp_path, monkeypatch):
     """W-2: switching protocol demo → openai must validate existing base_url."""
     from dataclasses import replace

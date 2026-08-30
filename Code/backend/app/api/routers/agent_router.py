@@ -156,6 +156,9 @@ class AgentActiveRequest(BaseModel):
 class AgentModelsRefreshRequest(BaseModel):
     profile_id: str | None = Field(default=None, max_length=64)
     scope: AgentScopeLiteral | None = None
+    # Optional draft overrides so unsaved Base URL / API Key edits can refresh.
+    base_url: str | None = Field(default=None, max_length=512)
+    api_key: str | None = Field(default=None, max_length=2048)
 
 
 class AgentModelsRefreshResponse(BaseModel):
@@ -429,12 +432,27 @@ def refresh_agent_models(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"配置档不存在: {pid}",
         )
-    result = refresh_models_for_profile(raw)
+    raw_for_refresh = dict(raw)
+    draft_url = (payload.base_url or "").strip()
+    if draft_url:
+        raw_for_refresh["base_url"] = draft_url
+    draft_key = (payload.api_key or "").strip() or None
+    try:
+        result = refresh_models_for_profile(
+            raw_for_refresh, api_key_override=draft_key
+        )
+    except Exception as exc:
+        logger.exception("agent models refresh crashed profile=%s", pid)
+        result = {
+            "models": [],
+            "manual": True,
+            "error": f"刷新模型列表失败：{exc}",
+        }
     return AgentModelsRefreshResponse(
         profile_id=pid,
-        models=list(result.get("models") or []),
+        models=[str(m) for m in (result.get("models") or []) if m is not None],
         manual=bool(result.get("manual")),
-        error=result.get("error"),
+        error=str(result["error"]) if result.get("error") else None,
     )
 
 

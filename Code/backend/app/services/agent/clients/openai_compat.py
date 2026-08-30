@@ -7,9 +7,8 @@ import logging
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin
-from urllib.request import Request
 
-from app.core.ssrf import default_allow_private, safe_urlopen
+from app.core.ssrf import SSRFBlockedError, default_allow_private, safe_urlopen
 
 logger = logging.getLogger(__name__)
 
@@ -46,18 +45,24 @@ def _request_json(
     data = None
     if body is not None:
         data = json.dumps(body).encode("utf-8")
-    req = Request(url, data=data, headers=headers, method=method)
     try:
+        # Agent LLM 出站允许环回（本机 Ollama）；safe_urlopen 首参必须是 URL 字符串。
         with safe_urlopen(
-            req,
+            url,
             timeout=timeout,
+            headers=headers,
+            data=data,
+            method=method,
             allow_private=default_allow_private(),
+            allow_loopback=True,
         ) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
             if not raw.strip():
                 return {}
             parsed = json.loads(raw)
             return parsed if isinstance(parsed, dict) else {"data": parsed}
+    except SSRFBlockedError as exc:
+        raise LlmClientError(f"模型地址被安全策略阻断：{exc}") from exc
     except HTTPError as exc:
         detail = ""
         try:
@@ -72,6 +77,8 @@ def _request_json(
         raise LlmClientError(f"无法连接模型服务：{exc.reason}") from exc
     except TimeoutError as exc:
         raise LlmClientError("模型服务请求超时") from exc
+    except OSError as exc:
+        raise LlmClientError(f"无法连接模型服务：{exc}") from exc
     except json.JSONDecodeError as exc:
         raise LlmClientError("模型服务返回非 JSON") from exc
 

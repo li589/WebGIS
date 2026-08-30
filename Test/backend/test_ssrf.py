@@ -35,6 +35,20 @@ def test_validate_blocks_loopback() -> None:
         validate_outbound_url("http://127.0.0.1:6379/")
 
 
+def test_validate_allows_loopback_when_opted_in() -> None:
+    """Agent LLM（本机 Ollama）可显式放行环回。"""
+    url = validate_outbound_url("http://127.0.0.1:11434/v1", allow_loopback=True)
+    assert url.startswith("http://127.0.0.1:11434")
+
+
+def test_resolve_rejects_non_string_url() -> None:
+    """Mis-passing urllib.request.Request must fail closed (not AttributeError)."""
+    from urllib.request import Request
+
+    with pytest.raises(SSRFBlockedError, match="必须是字符串"):
+        resolve_outbound_target(Request("http://127.0.0.1:9/"))  # type: ignore[arg-type]
+
+
 def test_validate_blocks_link_local() -> None:
     with pytest.raises(SSRFBlockedError, match="阻断"):
         validate_outbound_url("http://169.254.169.254/latest/meta-data/")

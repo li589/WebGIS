@@ -373,9 +373,15 @@ export function useGlobalAgentProfile(): Promise<AgentConfigBundle> {
 export function refreshAgentModels(
   profileId?: string,
   scope?: AgentScope,
+  options?: { base_url?: string | null; api_key?: string | null },
 ): Promise<AgentModelsRefreshResult> {
   return requestJson<AgentModelsRefreshResult>('/agent/models/refresh', {
     method: 'POST',
-    body: JSON.stringify({ profile_id: profileId ?? null, scope: scope ?? null }),
+    body: JSON.stringify({
+      profile_id: profileId ?? null,
+      scope: scope ?? null,
+      base_url: options?.base_url?.trim() || null,
+      api_key: options?.api_key?.trim() || null,
+    }),
   })
 }
