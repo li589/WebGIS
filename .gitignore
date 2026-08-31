@@ -35,6 +35,7 @@ Desktop.ini
 *.log
 *.tmp
 *.temp
+tmp.txt
 
 # Data outputs
 *.sqlite3
