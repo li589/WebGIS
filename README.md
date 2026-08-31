@@ -1,197 +1,293 @@
-# Comprehensive Geographic Data Analysis System
+# CGDA — 综合地理数据分析系统
 
-## 项目定位
+Comprehensive Geographic Data Analysis System（CGDA）是一套面向**地理科研人员**与**工程开发者**的 Web 地理数据分析平台：在浏览器中完成地图可视化、多源数据接入、工作流编排与算法产物展示，支持本地数据、Google Earth Engine（GEE）、Open-Meteo 及商业天气源等。
 
-CGDA 是**面向课题组与大气研究院研究员**的科研数据分析平台（初代发布定位），以 2D 平面地图（MapLibre）为主链路，统一承载：
+---
 
-- `2D 平面地图模式`（主链路）；`3D 地球模式`（Cesium，实验性，非默认主链）
-- 多源数据接入：本地数据、Google Earth Engine（GEE）、Open-Meteo 等公共数据接口
-- 动态时空结果展示与回传
-- 多课题组算法模块化接入（workflow 编排）
+## 你能用它做什么
 
-本仓库已从"方案与原型阶段"进入"工程化落地阶段"：`workflow-runs` 主链、天气瓦片渲染、Celery/Redis/MinIO 基础设施与架构拆分均已具备可运行实现。
+### 地理科研人员
 
-## 发布边界（初代）
+- **地图浏览与叠加**：MapLibre 2D 主舞台，底图切换、行政区边界、栅格/矢量图层叠加
+- **天气分析**：点查预报、网格场、标准 z/x/y 天气瓦片；风场粒子/风羽/等值线等 Canvas 叠加
+- **工作流分析**：LiteGraph 可视化编辑器编排下载、预处理、反演、统计等节点（如 ω 反演、NDVI、FY/SMAP 等课题组算法）
+- **时空结果展示**：时间轴驱动图层、InfoPanel 分析工具、产物预览与导出
+- **多源数据**：本地磁盘、GEE、Open-Meteo（在线/自托管）、WeatherAPI、OpenWeather 等
 
-- **目标用户**：本课题组 + 大气研究院研究员，访问量小；可能有临时展出演示需求
-- **部署形态**：单机构部署、SQLite 元数据；支持多用户 RBAC（admin / operator / viewer）与会话 Cookie + 个人 API Token
-- **鉴权层次**：浏览器默认 **HttpOnly 会话 Cookie**（`cgda_session`）；脚本/CI 用服务密钥 `backend_auth`（角色由 `BACKEND_API_KEY_ROLE` 决定，默认 operator）；用户可在「设置 → 账户」创建个人 API Token（继承账户角色）
-- **写鉴权**：production 默认 fail-closed；development 且 `BACKEND_API_KEYS_ENABLED=false` 时仅 **loopback** 可旁路，局域网调试需显式 `BACKEND_DEV_AUTH_BYPASS=true`
-- **敏感配置读**：`GET /config/api-keys|gee/*|weather*|remote-storage|data-source*|data-cache/overview` 与写接口同级鉴权；`/config/general` 与 `/config/about` 仍公开。已登录 operator/admin 通过会话鉴权；可选在浏览器粘贴服务密钥（`sessionStorage` / `localStorage`）
-- **加密主密钥**：`BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY` 须为 **64 位 hex（32 字节）**；同一把 key 加密 GEE SA / API keys / 天气 provider / 远程存储 / 门户凭据（泄露 blast radius 大）。非 development 缺 key 拒启
-- **GEE 账号 API 管理**：production 默认关闭；development 默认开启（`BACKEND_GEE_API_ACCOUNT_MANAGEMENT_ENABLED` 可覆盖）
-- **UI 重启后端**：始终重启 FastAPI+Worker+Beat（请求体 `components` 仅校验、不选子集）；门禁 `BACKEND_UI_RESTART_ENABLED`（默认仅 development）
-- **演示模式**：`demo://` 占位数据源仅 development 默认可用；展出演示需以 production 运行时设 `BACKEND_DEMO_SOURCES_ENABLED=true`
-- **占位节点**：未实现执行器的节点模板在 production 节点面板默认隐藏（`BACKEND_NODE_STUBS_VISIBLE=true` 可显示）
-- **写接口限流**：`/config`、`/import`、`/workflow-runs` 写方法默认 120 次/分钟/IP；天气瓦片 GET 另有宽松限流（`BACKEND_WEATHER_TILE_RATE_LIMIT_PER_MINUTE`，默认 240）；development/test 旁路
-- **会话过期**：使用中 API 返回 401 时前端自动跳转登录页；工具栏「日志」可导出错误记录（含 `request_id`）
-- **Gateway 模式（默认）**：`launch.py start` / `restart` 默认启 Nginx 同域入口 `:5175`（静态 dist + 反代 `/auth`、`/overlay-tiles`、`/health` 等，与 Vite proxy 对齐）。本地 HMR 用 `start --vite`。见 `Code/infra/gateway/README.md`
+### 工程开发者
 
-## 当前仓库结构
+- **前后端分离 + 协议先行**：`Code/shared/contracts` 为单一契约来源，OpenAPI 自动生成前端类型
+- **工作流主链**：`workflow-runs` API + Celery 多队列异步执行 + SQLite 运行态持久化
+- **算法插件化**：`Code/algorithms` Python 包经 provider bridge 接入，模块可独立演进
+- **默认同域入口**：Nginx Gateway `:5175` 静态前端 + 反代 FastAPI，便于联调与演示
+
+> 3D 地球（Cesium）依赖已引入，当前默认主链仍为 **2D-first**，Cesium 为实验性能力。
+
+---
+
+## 系统架构
+
+```text
+浏览器 (Vue 3 + MapLibre)
+    │  HTTP
+    ▼
+Nginx Gateway :5175 ──► FastAPI :8000
+                            │
+              ┌─────────────┼─────────────┐
+              ▼             ▼             ▼
+         Celery Workers   weatherengine   GEE bridge
+         (7 队列)         (点查/瓦片)      (可选)
+              │
+              ▼
+    Python 算法包 + 本地/MinIO 产物存储
+              │
+    Redis (队列/缓存) · SQLite (运行态) · MinIO (对象) · Open-Meteo API
+```
+
+**基础设施分两栈**：
+
+| 栈 | 路径 | 内容 |
+|----|------|------|
+| 运行栈 | `Code/backend/docker-compose.yml` | Redis、MinIO、`cgda-open-meteo` API |
+| 数据栈 | `Code/infra/data-sync/` | Open-Meteo 一次性同步（`launch.py sync`） |
+
+一键启停与组件管理见根目录 [`launch.py`](launch.py)。
+
+---
+
+## 技术栈
+
+| 层级 | 技术 | 说明 |
+|------|------|------|
+| 前端 | Vue 3、TypeScript、Vite、Pinia | Node **22**（见 `Code/frontend/package.json`） |
+| 2D 地图 | MapLibre GL JS + Canvas 叠加 | 当前主路径 |
+| 3D | CesiumJS、vue-cesium | 已打包，非默认主链 |
+| API | FastAPI | 统一 REST 入口，`/docs` 交互文档 |
+| 任务队列 | Celery + Redis | realtime / standard / heavy / batch / download / gee / weather |
+| 算法 | Python 3.12 + provider bridge | `Code/algorithms/providers/Python/` |
+| 瓦片 | 自研 unified-tiles + weather tiles | 底图 `/unified-tiles`；天气 `/weather/tiles` |
+| 元数据 | SQLite | 工作流运行态；PostGIS 为后续目标 |
+| 对象存储 | MinIO + 本地磁盘 | compose 已提供 |
+| 启动 | `launch.py` + Docker Compose | Windows 推荐 `start.bat` |
+
+---
+
+## 仓库结构
 
 ```text
 Comprehensive Geographic Data Analysis system/
-├─ .ai/         # 【本地专用，不上传 GitHub】AI 工作区：规则/技能/计划/进度/记忆/文档
-├─ Env/Python312/  # 【本地联调唯一 Python 运行时】勿用系统 PATH 的 python
-├─ Code/           # 实际工程代码（含 backend/vendor 等运行时第三方二进制）
-├─ Tools/          # 主线外辅助：外部/临时工具、下载校验脚本（禁止放主体运行模块）
-├─ launch.py       # 跨平台一键启动（会优先切换到 Env/Python312）
-├─ start.bat / start.sh   # 推荐入口（强制 Env/Python312）
-├─ stop.bat / stop.sh
-├─ README.md       # 项目说明（表面三文档之一）
-├─ AGENTS.md       # AI 编程导航（表面三文档之一）
-└─ CLAUDE.md       # Claude Code 入口（表面三文档之一）
+├─ Code/
+│  ├─ frontend/      # Vue 3 WebGIS 前端
+│  ├─ backend/       # FastAPI + Celery + weatherengine + GEE
+│  ├─ algorithms/    # Python 算法包与数据接入
+│  ├─ shared/        # 前后端共享契约
+│  └─ infra/         # gateway（Nginx）+ data-sync（气象同步）
+├─ Docs/             # 公开文档（架构、规范、部署、专题研究）
+├─ Test/             # 测试集中地（backend / frontend / algorithms）
+├─ Tools/            # 辅助脚本（非运行时主体模块）
+├─ Env/Python312/    # 本地联调唯一 Python 运行时（勿用系统 python）
+├─ launch.py         # 跨平台启动器
+├─ start.bat / start.sh
+├─ README.md         # 本文档
+├─ AGENTS.md         # 开发者/AI 导航（命令、验证、「改 X 则跑 Y」）
+└─ CLAUDE.md         # Claude Code 入口指针
 ```
 
-> 原 `Doc/` 与根目录进度/验证文档已全部并入 `.ai/`（`.ai/docs/`、` .ai/progress/`）；各 AI 工具的规则文件（`.cursor/`、`.trae/`、`.github/`）保留原位但仅作指针，完整约定见 `.ai/rules/`。
+各子目录详情见 [`Code/README.md`](Code/README.md)。
 
-## 当前工程分层
+---
 
-`Code/` 目录按职责划分为：
+## 环境要求
 
-```text
-Code/
-├─ frontend/   # Vue 3 WebGIS：MapLibre 2D 主舞台、天气叠加、工作流交互
-├─ backend/    # FastAPI + Celery：workflow 编排、天气引擎、瓦片、GEE
-├─ algorithms/ # Python 算法包、数据接入、工作流与产品输出
-├─ shared/     # 前后端共享协议与公共契约
-├─ infra/      # 数据面 compose（data-sync；与运行栈隔离）
-└─ docs/       # 面向实现与协作的补充文档
+| 组件 | 要求 |
+|------|------|
+| Python | **3.12**，使用 `Env/Python312`（Windows：`Env\Python312\python.exe`） |
+| Node.js | **22.x**（`npm >= 10`） |
+| Docker | Desktop（Windows **须管理员身份**运行 Docker 与终端） |
+| 磁盘 | 配置 `BACKEND_DATA_ROOT` 指向机构地理数据根目录 |
+
+> 勿用系统 PATH 中的 `python` 启动后端或 Worker，否则易出现依赖不一致的「环境幽灵问题」。`start.bat` 会强制使用 `Env/Python312`。
+
+---
+
+## 快速开始
+
+### 1. 克隆与依赖
+
+```powershell
+# 前端依赖（在 Code/frontend 下）
+cd Code/frontend
+npm install
+npm run build
 ```
 
-说明：基础设施分两栈——**运行** `Code/backend/docker-compose.yml`（Redis / MinIO / `cgda-open-meteo`）；**数据** `Code/infra/data-sync/`（一次性 sync，如 `open-meteo-sync`）。一键启停与同步见仓库根目录 `launch.py`。
+Python 依赖已随 `Env/Python312` 预置；若需重建，见 [`Docs/04-执行部署/本地联调环境说明.md`](Docs/04-执行部署/本地联调环境说明.md)。
 
-## 系统总体能力
+### 2. 后端配置
 
-### 前端展示
+```powershell
+copy Code\backend\.env.example Code\backend\.env
+```
 
-- `2D`（当前主路径）：MapLibre 底图、行政区边界、天气图层瓦片、风场 Canvas（粒子/风羽/等值线）
-- `3D`：Cesium / vue-cesium 已打包依赖，真实地球模式尚未作为默认主链启用
-- 统一交互：图层侧栏、时间轴、工具栏导入、截图导出、工作流状态面板、信息面板
-- 工作流编辑器：LiteGraph 画布可编译执行；支持课题组数据下载 / 解压 / 配置读取 / 变量提取节点（见 `Docs/课题组数据全链路-2026-07-21.md`）
+本地联调至少设置：
 
-### 后端与计算
+```env
+BACKEND_ENV=development
+BACKEND_DATA_ROOT=<你的地理数据根绝对路径>
+BACKEND_OUTPUT_ROOT=<产物输出根绝对路径>
+```
 
-- `FastAPI` 作为统一 API 与工作流入口
-- `Celery + Redis` 作为异步任务执行通道（多队列：realtime / weather / gee 等）
-- `Python` 算法包作为科学计算与产品生成核心
-- `weatherengine`：点查 + 网格预报 + 标准 z/x/y 天气瓦片
-- `GEE` 模块已嵌入后端，可按配置挂载
+首次使用可复制 `Code/backend/deployment.config.json.example` 为 `deployment.config.json`，或在登录后访问 **部署配置中心** `/deployment`（仅 `admin`）维护数据根与 Docker 相关项。
 
-### 数据与存储
+### 3. 启动全栈
 
-- 工作流状态：当前以 `SQLite` 持久化（`PostGIS` 仍为后续目标）
-- `MinIO`：对象/artifact 存储（compose 已提供，本地与 MinIO 双后端抽象）
-- `Redis`：队列、缓存、天气请求限流/断路器支撑
-- 本地磁盘 / `.data`：中间结果、调试输出与开发态数据
+```powershell
+# Windows：以管理员身份打开终端
+start.bat
+# 或
+Env\Python312\python.exe launch.py start
+```
 
-## 推荐技术栈
+浏览器打开 **http://localhost:5175**。默认账号见 `.env` 中 `BACKEND_ADMIN_USERNAME` / `BACKEND_ADMIN_PASSWORD`（development 可在 `.env.example` 查看说明）。
 
-| 层级 | 技术 | 当前状态 |
-| ---- | ---- | ---- |
-| 前端 | Vue 3 + TypeScript + Vite + Pinia | 已落地 |
-| 2D | MapLibre GL JS + Canvas 叠加 | 已落地（主路径） |
-| 3D | CesiumJS + vue-cesium | 依赖已引入，模式未成为主链 |
-| 大数据叠加 | deck.gl | 规划中 |
-| API | FastAPI | 已落地 |
-| 异步任务 | Celery + Redis | 已落地（经 compose / launch 启动） |
-| 算法 | Python + importlib / provider bridge | 已落地第一层 |
-| GEE | Earth Engine Python API（服务端） | 模块已落地，产线仍在完善 |
-| 空间库 | PostgreSQL + PostGIS | 规划中（现状 SQLite） |
-| 瓦片服务 | unified-tiles（自研） / Martin + TiTiler（规划） | 统一瓦片入口已落地 |
-| 对象存储 | MinIO + 本地 | MinIO compose 已落地 |
-| 启动 | launch.py + Docker Compose | 运行栈 Redis/MinIO/Open-Meteo API；数据同步 `infra/data-sync` |
+### 4. 同步 Open-Meteo 本地数据（可选）
 
-## 当前阶段建议
+```powershell
+Env\Python312\python.exe launch.py sync
+```
 
-近期排期以 `.ai/progress/2026-08-04-pending-tasks-audit.md` 与 `.ai/docs/reference/工程收口仪表盘.md` 为准：
+本地天气源依赖此步骤；在线源可在设置中配置 Provider。
 
-1. **P0**：FY/SMAP UI 人工闭环（更大样本条带上图 + `ui-verification-steps.md`）
-2. **P0**：Open-Meteo Phase B（tile-manager / coverage 与 settings `default_model` 贯通）
-3. **P1**：真实课题组数据 e2e / NAS 绿测；工作流调度 P1（dry-validate / progress 选取等）
-4. **P2–P3**：Layers god store 继续拆分；按需推进 PostGIS、TiTiler/Martin、Cesium 主链（Nginx Gateway 已为默认入口：`launch.py start`）
+---
 
-契约层面保持 `workflow-runs` / `unified-tiles` / artifact 稳定。
+## 日常命令
+
+| 命令 | 作用 |
+|------|------|
+| `start.bat` / `launch.py start` | Docker + FastAPI + 7 Worker + Beat + Nginx Gateway |
+| `launch.py start --vite` | 同上，Gateway 同域 + 背后 Vite HMR（`:5174`） |
+| `launch.py restart` | 全量重启（改前端后可用 `--rebuild-frontend`） |
+| `launch.py restart backend` | 仅重启 FastAPI + Worker + Beat（改数据根后必用） |
+| `launch.py status` / `logs [组件]` | 状态与日志 |
+| `launch.py sync` | Open-Meteo 数据面同步 |
+| `launch.py clean-cache` | 清理 `__pycache__` 与 Vite 缓存 |
+| `launch.py flush` | 清空 Redis + 天气文件缓存（**高风险**，仅排障） |
+| `stop.bat` / `launch.py stop` | 停止全部服务 |
+
+前端仅改动时：`launch.py start frontend`（直连 Vite，会停 Gateway）。
+
+完整命令表见 [`AGENTS.md`](AGENTS.md)。
+
+---
+
+## 服务地址
+
+| 服务 | 地址 |
+|------|------|
+| 前端入口（Gateway） | http://localhost:5175 |
+| FastAPI | http://127.0.0.1:8000（文档 `/docs`） |
+| Open-Meteo API | http://127.0.0.1:8080 |
+| Redis | `127.0.0.1:6379` |
+| MinIO | API `:9100`，Console `:9101` |
+
+---
+
+## 配置要点
+
+### 地理数据根
+
+- **真源**：`Code/backend/deployment.config.json`（推荐）与 `Code/backend/.env` 中的 `BACKEND_DATA_ROOT` / `BACKEND_OUTPUT_ROOT`
+- **修改入口**：前端 `/deployment`（admin）或编辑上述文件；变更后须 `launch.py restart backend`
+- **就绪检查**：`GET /layers` 返回各图层的 `run_readiness`
+
+production 未配置 `BACKEND_DATA_ROOT` 将拒绝启动；代码不会静默回退到其他盘符。
+
+### 用户与鉴权
+
+| 机制 | 说明 |
+|------|------|
+| 会话 Cookie | 浏览器默认登录方式（`cgda_session`） |
+| 个人 API Token | 设置 → 账户，继承账户角色 |
+| 服务密钥 | `X-API-Key: backend_auth`，角色由 `BACKEND_API_KEY_ROLE` 决定（默认 `standard`） |
+
+**RBAC 三角色**：`admin`（全权限）、`standard`（读写工作流，不可改高危配置）、`demo`（只读 + 受控数据传输）。
+
+production 写接口默认 fail-closed；development 且未启用 API Key 时，仅 **loopback** 可旁路鉴权。
+
+### 加密与敏感配置
+
+- `BACKEND_GEE_CREDENTIALS_ENCRYPTION_KEY`：64 位 hex（32 字节），加密 GEE 凭据、API Key、天气 Provider、远程存储等
+- 非 development 环境缺此 key 将拒启
+- 凭据轮换后建议 `launch.py restart` 使各进程生效
+
+配置治理详见 [`Docs/03-规范协议/配置文件治理说明.md`](Docs/03-规范协议/配置文件治理说明.md)。
+
+---
+
 ## 文档导航
 
-建议优先阅读：
+| 读者 | 推荐阅读 |
+|------|----------|
+| 新人 | 本文 → [`AGENTS.md`](AGENTS.md) → [`Code/README.md`](Code/README.md) |
+| 本地联调 | [`Docs/04-执行部署/本地联调环境说明.md`](Docs/04-执行部署/本地联调环境说明.md) |
+| 架构与设计 | [`Docs/02-架构设计/`](Docs/02-架构设计/) |
+| 接口与命名 | [`Docs/03-规范协议/`](Docs/03-规范协议/) · [`Code/shared/contracts/README.md`](Code/shared/contracts/README.md) |
+| 算法接入 | [`Code/algorithms/providers/Python/README.md`](Code/algorithms/providers/Python/README.md) |
+| ω 反演等工作流 | [`Docs/08-HTML报告/omega-algorithm-guide/`](Docs/08-HTML报告/omega-algorithm-guide/) |
+| 交付与生产 | [`Docs/04-执行部署/delivery-checklist.md`](Docs/04-执行部署/delivery-checklist.md) |
+| 文档总索引 | [`Docs/README.md`](Docs/README.md) |
 
-- `Code/README.md`：`Code` 目录工程总览
-- `Code/frontend/README.md`：前端工程说明
-- `Code/backend/README.md`：后端工作流与运行说明
-- `Code/shared/contracts/README.md`：共享协议说明
-- `Code/algorithms/providers/Python/README.md`：Python 算法包说明
-- `Docs/双通道接口设计总结.md`：控制流 / 数据流双通道设计
-- `.ai/docs/specs/技术栈.md`：目标架构与落地状态对照
-- `.ai/docs/specs/规范文档.md`：字段与接口命名约定
-- `.ai/README.md`：AI 工作区导航（规则/技能/计划/进度/记忆/文档）
+带日期的快照文档（如 `99-历史归档/`）仅作历史参考，以模块 README 与无日期活文档为准。
 
-带明确日期的阶段快照与实施计划（如 `.ai/docs/reference/`、`.ai/memory/archive/*`）作历史参考，不以它们覆盖上述活文档。
+---
 
-## 本地 Python 环境（必读）
+## 开发与测试
 
-**本仓库本地联调唯一解释器：`Env/Python312`。**
+### 后端 / 算法测试
 
-| 平台 | 解释器路径 | 推荐启动 |
-|------|------------|----------|
-| Windows | `Env\Python312\python.exe` | `start.bat` / `stop.bat` |
-| Linux/macOS | `Env/Python312/bin/python`（或同目录 `python3`） | `./start.sh` / `./stop.sh` |
+在仓库根目录执行（需 `REDIS_URL` 与 `ENVIRONMENT=test`）：
 
-- **不要**用系统 PATH 里的 `python` / `C:\Program Files\Python\...` 起后端与 Worker：依赖（如 `rarfile`、科学库）与 `Env/Python312` 不一致会导致导入/解压等「环境幽灵问题」。
-- `start.bat` / `stop.bat` **强制**使用上述路径；找不到则直接报错退出。
-- 若手动调用：`Env\Python312\python.exe launch.py start`。即便误用系统 `python launch.py`，启动器也会在检测到 `Env/Python312` 时自动 `exec` 切换过去。
-- `Env/Python312` 是**本地开发/联调运行时**，不是 Docker 生产镜像；交付部署另走容器/服务器环境。旧文档中「不建议作为长期交付依赖」仅指生产交付，**不表示本地应回避它**。
+```powershell
+Env\Python312\python.exe -m pytest Test/backend -q
+Env\Python312\python.exe -m pytest Test/algorithms -q
+```
 
-## Windows：Docker 必须以管理员身份运行（必读）
+### 前端测试
 
-本仓库联调依赖 Docker Desktop 拉起 Redis / MinIO / Open-Meteo 等容器。在 **Windows** 上：
+```powershell
+cd Code/frontend
+npm run test
+npm run lint
+npm run build
+npm run check:openapi
+npm run check:catalog
+```
 
-- **Docker Desktop 与启动终端（`start.bat` / PowerShell / Cursor 终端）须以「管理员身份」运行。**
-- **否则启动可能会失败**（例如报 Docker 未就绪、compose 起不全、镜像/volume 访问失败等）。
-- 非管理员时的常见症状：**镜像无法拉取/访问**、named volume / 引擎配置读失败、部分 compose 服务起不全或权限报错。
-- 排障顺序：先确认 Docker Desktop **以管理员身份**启动且引擎就绪 → 终端也提权 → 再 `launch.py start` / `restart`。
+### 提交前
 
-详见 [`Doc/本地联调环境说明.md`](Doc/本地联调环境说明.md)。
+```powershell
+pre-commit run --all-files
+```
 
-> 默认入口为 Nginx Gateway `:5175`（静态 `Code/frontend/dist` + 反代 FastAPI）。本地前端热更新：`Env\Python312\python.exe launch.py start --vite`（与 Gateway 互斥，详见 `Code/infra/gateway/README.md`）。
+「改某模块应跑哪些测试」见 [`AGENTS.md`](AGENTS.md) 中的「改 X 则跑 Y」表。
 
-## 日常联调命令
+---
 
-- `start.bat`（或 `Env\Python312\python.exe launch.py start`）— 运行栈 + FastAPI + Workers + **Nginx Gateway**
-- `Env\Python312\python.exe launch.py start --vite` — 同上，前台改 Vite HMR
-- `Env\Python312\python.exe launch.py start gateway --rebuild-frontend` — 仅 Gateway，并强制 rebuild dist
-- `Env\Python312\python.exe launch.py restart` — 全量重启（默认含 Gateway）
-- `Env\Python312\python.exe launch.py restart backend` — 仅重启 FastAPI + Worker + Beat（改数据根后必用；不动 Docker/Gateway）
-- `Env\Python312\python.exe launch.py sync` — 数据面 Open-Meteo 同步（`Code/infra/data-sync`）
-- `stop.bat` / `Env\Python312\python.exe launch.py status` / `flush` / `clean-cache`
-  - `flush`：Redis + 天气文件缓存（高风险，慎用）
-  - `clean-cache`：本地 `__pycache__` + Vite `.vite`（代码更新后推荐；可与 `restart --clean-cache` 组合）
-- 活文档应随代码结构变化同步更新；带日期的记录文档可归档保留
+## 部署与安全摘要
 
-## 地理数据根（可变）
+- **单机构部署**：SQLite 元数据 + 多用户 RBAC；Gateway 默认同域入口
+- **演示开关**：production 勿开启 `BACKEND_DEMO_SOURCES_ENABLED` / `BACKEND_NODE_STUBS_VISIBLE`
+- **Open-Meteo 数据卷**：使用 Docker named volume，Windows 上勿改为 bind mount
+- **flush**：仅排障时使用；`start`/`restart` 永不自动 flush
+- **联调缓存**：见 [`Docs/07-工程保障/联调缓存与生效边界.md`](Docs/07-工程保障/联调缓存与生效边界.md)
 
-- **真源**：`Code/backend/.env` 中的 `BACKEND_DATA_ROOT` / `BACKEND_OUTPUT_ROOT`（进程启动时读入；**禁止**代码静默回退盘符）。
-- **本机联调示例**：`I:\Geograph_DataSet`（见 `.env.example`）；他机构须改为本机绝对路径。production 未设 `BACKEND_DATA_ROOT` 将拒启。
-- **前端**：设置 → **数据源** → 编辑路径 →「保存路径」或「保存并重启后端」（调度 `launch.py restart backend`；需写鉴权 / development 旁路；`BACKEND_UI_RESTART_ENABLED` 控制门禁）。
-- **API**：`PUT /config/data-source/paths`、`POST /config/service/restart`；`GET /config/data-source` 返回生效值与 `pending_restart`。
-- 图层库「默认数据源未就绪」多因根未配或相对路径与盘上布局不一致；就绪检查见 `GET /layers` 的 `run_readiness`。
+完整交付核对清单见 [`Docs/04-执行部署/delivery-checklist.md`](Docs/04-执行部署/delivery-checklist.md)。
 
-## 运维手册（初代）
+---
 
-### 凭据轮换（P2-1）
+## 相关入口
 
-- **写鉴权密钥**（`backend_auth`）与 MinIO / GEE / 天气源凭据均缓存在进程内（`effective_config` 三层缓存 + 各 repository），**轮换后须全栈重启**才彻底生效。
-  - 写密钥轮换经配置页 upsert/toggle/delete → 进程内即时失效（`cache_clear` + `rehydrate`）；但**跨进程**（多 worker / 多 FastAPI 副本）不会即时传播，须重启所有后端进程。
-  - 安全做法：先在配置页设新密钥 → `launch.py restart` → 再撤旧密钥。
-- **凭据不入前端 bundle**（P1-1）：写密钥仅由操作员运行时经设置页写入（localStorage），不随 JS 分发。
-
-### 数据库 schema 与迁移（P2-3）
-
-- 本项目无 Alembic；`workflow_state.sqlite3` 采用 **additive-only** 迁移策略：仅向前加列 / 加表 / 加索引，不改类型、不删列、不迁数据。
-- `workflow_repository.py` 维护 `SCHEMA_VERSION` 常量与 `schema_meta` 版本表；`get_schema_version()` 可读当前 DB 版本。每次 schema 变更须递增 `SCHEMA_VERSION` 并在 `SCHEMA_CHANGES` 记录说明。
-- 发版前检查：若 `get_schema_version() < SCHEMA_VERSION`，说明 DB 落后于代码（additive 迁移会在启动时自动补齐）；若 `>`，说明运行了更新代码的 DB（不支持回滚，需从快照恢复）。
-- **备份 / 恢复**：
-  - `launch.py reset-db` 会自动在 `.data/workflow_state_snapshots/` 创建带时间戳的快照（保留最近 N 份，`--keep-snapshots` 可配）。
-  - 手动备份：`cp -r Code/backend/.data/workflow_state/ <backup>/`（须先 `launch.py stop`，Windows 下 SQLite 文件被占用无法复制）。
-  - 恢复：停服务 → 用快照覆盖 `workflow_state/` → `launch.py start`。
-- 凭据 DB（`api_keys` / `gee_credentials` / `remote_storage_credentials` / `weather_engine` 等）与 `workflow_state` 同目录，备份时一并覆盖。
+- **Gateway 说明**：[`Code/infra/gateway/README.md`](Code/infra/gateway/README.md)
+- **后端模块**：[`Code/backend/README.md`](Code/backend/README.md)
+- **前端模块**：[`Code/frontend/README.md`](Code/frontend/README.md)
+- **AI 辅助开发**：根目录 [`AGENTS.md`](AGENTS.md)（面向 coding agent 的完整导航）
