@@ -42,9 +42,7 @@ const newType = ref<ResourceType>('layer')
 const newId = ref('')
 const newPerm = ref<PermissionValue>('allow')
 
-const selected = computed(
-  () => (auth.themes ?? []).find((t) => t.id === selectedId.value) ?? null,
-)
+const selected = computed(() => (auth.themes ?? []).find((t) => t.id === selectedId.value) ?? null)
 
 const themeOptions = computed(() =>
   (auth.themes ?? []).map((t) => ({
@@ -148,8 +146,7 @@ function onNameEnBlur() {
 
 const canSubmitCreate = computed(() => {
   if (!creating.value) return false
-  const slug =
-    slugifyThemeId(draftSlug.value) || slugifyThemeId(draftNameEn.value)
+  const slug = slugifyThemeId(draftSlug.value) || slugifyThemeId(draftNameEn.value)
   return (
     slug.length >= 2 &&
     draftNameZh.value.trim().length >= 1 &&
@@ -477,7 +474,12 @@ function onSelectTheme(val: string) {
             <td>{{ p.resource_id }}</td>
             <td>{{ p.permission }}</td>
             <td>
-              <button type="button" class="danger-btn" :disabled="saving" @click="removeThemePerm(p)">
+              <button
+                type="button"
+                class="danger-btn"
+                :disabled="saving"
+                @click="removeThemePerm(p)"
+              >
                 移除
               </button>
             </td>

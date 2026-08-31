@@ -86,16 +86,8 @@ def coords_to_area_bounds(
     west, east = float(lon_sorted[0]), float(lon_sorted[-1])
 
     # 步长：中位数抗个别异常间距（近均匀网格）
-    dlat = (
-        float(np.median(np.abs(np.diff(lat_sorted))))
-        if lat_sorted.size > 1
-        else 0.0
-    )
-    dlon = (
-        float(np.median(np.abs(np.diff(lon_sorted))))
-        if lon_sorted.size > 1
-        else 0.0
-    )
+    dlat = float(np.median(np.abs(np.diff(lat_sorted)))) if lat_sorted.size > 1 else 0.0
+    dlon = float(np.median(np.abs(np.diff(lon_sorted)))) if lon_sorted.size > 1 else 0.0
 
     registration = CELL_REGISTRATION_UNKNOWN
     if data_shape is not None and len(data_shape) >= 2:

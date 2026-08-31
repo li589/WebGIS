@@ -63,7 +63,11 @@ def _insecure_hosts() -> set[str]:
 
 def _nsmc_ssl_context() -> ssl.SSLContext:
     hosts = _insecure_hosts()
-    nsmc_hosts = {h for h in ("fy4.nsmc.org.cn", "satellite.nsmc.org.cn", "data.nsmc.org.cn") if h in hosts}
+    nsmc_hosts = {
+        h
+        for h in ("fy4.nsmc.org.cn", "satellite.nsmc.org.cn", "data.nsmc.org.cn")
+        if h in hosts
+    }
     if not nsmc_hosts:
         return ssl.create_default_context()  # 严格校验
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -71,7 +75,8 @@ def _nsmc_ssl_context() -> ssl.SSLContext:
     ctx.verify_mode = ssl.CERT_NONE
     logging.getLogger(__name__).warning(
         "NSMC portal TLS verification disabled for hosts: %s "
-        "(CGDA_HTTP_INSECURE_HOSTS)", ",".join(sorted(nsmc_hosts))
+        "(CGDA_HTTP_INSECURE_HOSTS)",
+        ",".join(sorted(nsmc_hosts)),
     )
     return ctx
 

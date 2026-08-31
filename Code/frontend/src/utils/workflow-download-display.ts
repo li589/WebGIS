@@ -51,9 +51,7 @@ export function formatDownloadProgressDetail(
   const phase = String(detail.phase || '').trim()
   if (phase === 'scanning') {
     const found = detail.total_items
-    return found != null && found > 0
-      ? `正在扫描… 已发现 ${found} 个文件`
-      : '正在扫描远程目录…'
+    return found != null && found > 0 ? `正在扫描… 已发现 ${found} 个文件` : '正在扫描远程目录…'
   }
   if (phase === 'skipping' || phase === 'complete') {
     const total = detail.total_items
@@ -75,9 +73,7 @@ export function formatDownloadProgressDetail(
     const name = detail.current_item_name ? truncateName(detail.current_item_name) : '文件'
     const got = formatBytes(detail.downloaded_bytes ?? 0)
     const total =
-      detail.total_bytes != null && detail.total_bytes > 0
-        ? formatBytes(detail.total_bytes)
-        : '?'
+      detail.total_bytes != null && detail.total_bytes > 0 ? formatBytes(detail.total_bytes) : '?'
     return `${name} · ${got} / ${total}${speedPart}`
   }
 
@@ -94,8 +90,7 @@ export function formatDownloadProgressDetail(
       detail.downloaded_bytes / Math.max(current, 1) < SMALL_FILE_AVG_BYTES)
 
   if (useIndexOnly) {
-    const countPart =
-      total != null ? `文件 ${current}/${total}` : `文件 ${current}/?`
+    const countPart = total != null ? `文件 ${current}/${total}` : `文件 ${current}/?`
     if (total != null && total > MANY_FILES_THRESHOLD && current > 0 && !bytes) {
       return `${workers}批量下载 · ${countPart}${speedPart}`
     }
@@ -116,11 +111,11 @@ export function hasDownloadProgressDetail(
   if (!detail) return false
   return Boolean(
     detail.download_mode ||
-      detail.downloaded_items != null ||
-      detail.downloaded_bytes != null ||
-      detail.phase === 'scanning' ||
-      detail.phase === 'skipping' ||
-      detail.phase === 'complete' ||
-      detail.speed_bps,
+    detail.downloaded_items != null ||
+    detail.downloaded_bytes != null ||
+    detail.phase === 'scanning' ||
+    detail.phase === 'skipping' ||
+    detail.phase === 'complete' ||
+    detail.speed_bps,
   )
 }

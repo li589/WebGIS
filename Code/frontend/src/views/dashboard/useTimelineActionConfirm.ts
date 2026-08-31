@@ -55,11 +55,7 @@ export function useTimelineActionConfirm(deps: {
   isPlaying: Ref<boolean>
   logOperation: (tag: string, message: string) => void
   /** 主时间轴停稳后同步打开的工作流编辑器 bind_timeline 节点 */
-  syncBoundWorkflowTimeline?: (range: {
-    start_at: string
-    end_at: string
-    timeKey: string
-  }) => void
+  syncBoundWorkflowTimeline?: (range: { start_at: string; end_at: string; timeKey: string }) => void
 }) {
   const banner = useTimelineActionBannerStore()
   const planSession = useOnlinePlanSessionStore()
@@ -223,8 +219,7 @@ export function useTimelineActionConfirm(deps: {
   }
 
   watch(
-    () =>
-      [deps.currentDate.value.getTime(), deps.currentHour.value, deps.isPlaying.value] as const,
+    () => [deps.currentDate.value.getTime(), deps.currentHour.value, deps.isPlaying.value] as const,
     () => {
       clearDebounce()
       if (skipNextDebounce) {
@@ -271,10 +266,7 @@ export function useTimelineActionConfirm(deps: {
         typeof prevJoined === 'string' && prevJoined.includes(`${failed.jobId}:failed:`)
       if (wasAlreadyFailed && prevJoined.includes(token)) return
       lastFailedNoticeToken = token
-      const msg =
-        failed.message ||
-        failed.reportSummary ||
-        '工作流失败。可改选时间轴后重试。'
+      const msg = failed.message || failed.reportSummary || '工作流失败。可改选时间轴后重试。'
       const catalogId = failed.catalogId || ''
       if (catalogId && isEligibleCoverageGap(failed, catalogId)) {
         void handleCoverageGapEscalation(failed, catalogId, msg)
@@ -333,10 +325,12 @@ export function useTimelineActionConfirm(deps: {
     const gran = (deps.activeLayerGranularity.value || 'day') as TimeGranularity
     const cap = deps.workspace.getOnlineTemporalConfig(catalogId)
     const nativeStep = cap?.native_step || '1d'
-    const timeRange = timeKey ? buildTimeRangeFromKey(timeKey, nativeStep, gran) ?? undefined : undefined
+    const timeRange = timeKey
+      ? (buildTimeRangeFromKey(timeKey, nativeStep, gran) ?? undefined)
+      : undefined
 
     // 源路由策略：每次重新拉取，避免 admin PUT 后缓存陈旧
-    let routeMode: 'deny' | 'allow_with_confirm' | 'allow_silent' = 'deny'
+    let routeMode: 'deny' | 'allow_with_confirm' | 'allow_silent'
     try {
       policiesCache = await fetchDataInputPolicies()
       const desc = deps.workspace.resolveEffectiveDescriptor?.(catalogId) ?? null
@@ -536,7 +530,7 @@ export function useTimelineActionConfirm(deps: {
       const cap = deps.workspace.getOnlineTemporalConfig(catalogId)
       const nativeStep = cap?.native_step || '1d'
       const timeRange = timeKey
-        ? buildTimeRangeFromKey(timeKey, nativeStep, gran) ?? undefined
+        ? (buildTimeRangeFromKey(timeKey, nativeStep, gran) ?? undefined)
         : undefined
       void (async () => {
         const desc = deps.workspace.resolveEffectiveDescriptor?.(catalogId) ?? null
@@ -613,7 +607,7 @@ export function useTimelineActionConfirm(deps: {
     const key = timeKey || currentTimeKey()
     const cap = deps.workspace.getOnlineTemporalConfig(catalogId)
     const nativeStep = cap?.native_step || '1d'
-    const timeRange = key ? buildTimeRangeFromKey(key, nativeStep, gran) ?? undefined : undefined
+    const timeRange = key ? (buildTimeRangeFromKey(key, nativeStep, gran) ?? undefined) : undefined
 
     await deps.workflowRun.runWorkflowForCatalog(catalogId, {
       workflowVariant: 'online',
@@ -621,7 +615,10 @@ export function useTimelineActionConfirm(deps: {
       commandLabel: key ? `切换在线并重跑 ${key}` : '切换在线并重跑',
     })
     if (key) deps.uiStore.rememberLayerTime(catalogId, { force: true })
-    deps.logOperation('timeline-switch-online', `切换在线重跑 ${catalogId}${key ? ` @ ${key}` : ''}`)
+    deps.logOperation(
+      'timeline-switch-online',
+      `切换在线重跑 ${catalogId}${key ? ` @ ${key}` : ''}`,
+    )
     return true
   }
 

@@ -172,7 +172,10 @@ class SQLiteWorkflowRepository:
             run_status, result_dto_override=result_dto_override
         )
         kind, lid, prog = self._extract_structured_columns(
-            run_status, workflow_kind=workflow_kind, layer_id=layer_id, progress=progress
+            run_status,
+            workflow_kind=workflow_kind,
+            layer_id=layer_id,
+            progress=progress,
         )
         with self._connect() as connection:
             if request_json is not None:
@@ -755,7 +758,10 @@ class SQLiteWorkflowRepository:
             run_status, result_dto_override=result_dto_override
         )
         kind, lid, prog = self._extract_structured_columns(
-            run_status, workflow_kind=workflow_kind, layer_id=layer_id, progress=progress
+            run_status,
+            workflow_kind=workflow_kind,
+            layer_id=layer_id,
+            progress=progress,
         )
 
         for attempt in range(max_retries):

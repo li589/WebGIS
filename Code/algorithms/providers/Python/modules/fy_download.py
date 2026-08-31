@@ -357,7 +357,10 @@ def _fetch_fy3f_tif_fallback(
     逐日单极化文件（与 fy.py 的 ``*.tif`` 回退分支输入契约一致）。
     """
     from ingest.remote_sync import _filebrowser_download
-    from modules.download_nodes import _emit_download_progress, _make_multi_file_progress_cb
+    from modules.download_nodes import (
+        _emit_download_progress,
+        _make_multi_file_progress_cb,
+    )
 
     bands = ("10V", "10H")
     _progress_cb = _make_multi_file_progress_cb(ctx.logger_adapter, "fy_download:nas")
@@ -459,9 +462,7 @@ def _fetch_from_nas(
     # NAS FileBrowser profile：dataset 配置可经 nas_profile 覆盖；默认对齐
     # 「远程与存储」面板实际登记的 profile_id（nas-filebrowser，2026-08-21
     # 实测旧默认 "nas_profile" 在凭据库中不存在，导致 NSMC 回退 NAS 恒失败）。
-    profile_id = (
-        str(ds.get("nas_profile") or "").strip() or "nas-filebrowser"
-    )
+    profile_id = str(ds.get("nas_profile") or "").strip() or "nas-filebrowser"
 
     if ctx.logger_adapter is not None:
         ctx.logger_adapter.emit_stage_start(
@@ -473,7 +474,10 @@ def _fetch_from_nas(
     server = _resolve_profile_server_config(profile_id)
     token = filebrowser_login(server.filebrowser_url, server.username, server.password)
 
-    from modules.download_nodes import _make_multi_file_progress_cb, _make_skip_complete_emit
+    from modules.download_nodes import (
+        _make_multi_file_progress_cb,
+        _make_skip_complete_emit,
+    )
 
     total_files = len(remote_names)
     _progress_cb = _make_multi_file_progress_cb(ctx.logger_adapter, "fy_download:nas")
@@ -637,14 +641,16 @@ class FYDownloadModule(BaseModule):
 
         downloaded_days: list[str] = []
         used_sources: set[str] = set()
-        from modules.download_nodes import _emit_download_progress, _make_multi_file_progress_cb
+        from modules.download_nodes import (
+            _emit_download_progress,
+            _make_multi_file_progress_cb,
+        )
 
         total_days = len(days)
         _day_cb = _make_multi_file_progress_cb(ctx.logger_adapter, "fy_download")
         for day_index, day in enumerate(days):
             date_path = day.replace("-", ".")
             day_error: Exception | None = None
-            day_source = ""
             for source_name in sources_to_try:
                 try:
                     if source_name == "nsmc":
@@ -668,7 +674,6 @@ class FYDownloadModule(BaseModule):
                         )
                     downloaded_days.append(day)
                     used_sources.add(source_name)
-                    day_source = source_name
                     day_error = None
                     break
                 except Exception as exc:  # noqa: BLE001

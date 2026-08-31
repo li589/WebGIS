@@ -247,7 +247,9 @@ class PermissionRepository:
                 if theme and theme.default_permission_mode in _VALID_MODES:
                     return theme.default_permission_mode
             except Exception:
-                logger.debug("theme mode lookup failed for user %s", user_id, exc_info=True)
+                logger.debug(
+                    "theme mode lookup failed for user %s", user_id, exc_info=True
+                )
         return "open"
 
     def set_permission_mode(self, user_id: int, mode: str) -> None:

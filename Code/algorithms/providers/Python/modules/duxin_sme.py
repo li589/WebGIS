@@ -71,14 +71,20 @@ def _resolve_input_file(datasource_selection: dict[str, object]) -> Path:
     )
 
 
-def _extract_observation_stack(payload: dict[str, object]) -> tuple[np.ndarray, np.ndarray]:
+def _extract_observation_stack(
+    payload: dict[str, object],
+) -> tuple[np.ndarray, np.ndarray]:
     """从 .mat 载荷提取观测时序与入射角。"""
     obsv = get_first_available(payload, list(_OBSV_ALIASES))
     inc_ang = get_first_available(payload, list(_INC_ANG_ALIASES))
     if obsv is None:
-        raise KeyError(f"input .mat missing observation variable (tried {_OBSV_ALIASES})")
+        raise KeyError(
+            f"input .mat missing observation variable (tried {_OBSV_ALIASES})"
+        )
     if inc_ang is None:
-        raise KeyError(f"input .mat missing incidence angle variable (tried {_INC_ANG_ALIASES})")
+        raise KeyError(
+            f"input .mat missing incidence angle variable (tried {_INC_ANG_ALIASES})"
+        )
     obsv_arr = np.asarray(obsv, dtype=np.float64)
     ang_arr = np.asarray(inc_ang, dtype=np.float64)
     if obsv_arr.ndim != 3:
@@ -173,7 +179,10 @@ class DuxinTimeSeriesSmeModule(BaseModule):
     input_ports = [
         PortSpec(name="data", kind="data", data_class="source", required=False),
         PortSpec(
-            name="datasource_selection", kind="config", data_class="dict", required=False
+            name="datasource_selection",
+            kind="config",
+            data_class="dict",
+            required=False,
         ),
         PortSpec(
             name="algorithm_params", kind="config", data_class="dict", required=False

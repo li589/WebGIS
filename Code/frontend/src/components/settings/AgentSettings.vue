@@ -16,10 +16,7 @@ import {
   type AgentProtocol,
   type AgentScope,
 } from '../../services/agent-api'
-import {
-  isAgentCompanionEnabled,
-  setAgentCompanionEnabled,
-} from '../../services/settings-local'
+import { isAgentCompanionEnabled, setAgentCompanionEnabled } from '../../services/settings-local'
 import IconButton from '../ui/IconButton.vue'
 import { Plus, RefreshCw } from '../ui/icons'
 
@@ -67,17 +64,13 @@ const filteredModelOptions = computed(() => {
   return list.filter((m) => m.toLowerCase().includes(q))
 })
 
-const globalProfiles = computed(() =>
-  (profiles.value ?? []).filter((p) => p.scope === 'global'),
-)
+const globalProfiles = computed(() => (profiles.value ?? []).filter((p) => p.scope === 'global'))
 const personalProfiles = computed(() =>
   (profiles.value ?? []).filter((p) => p.scope === 'personal'),
 )
 const selected = computed(() => {
   const list = profiles.value ?? []
-  return (
-    list.find((p) => p.id === selectedId.value && p.scope === selectedScope.value) ?? null
-  )
+  return list.find((p) => p.id === selectedId.value && p.scope === selectedScope.value) ?? null
 })
 const canEditSelected = computed(() => {
   if (!selected.value) return false
@@ -97,14 +90,19 @@ function onCompanionChange(event: Event) {
   setAgentCompanionEnabled(checked)
 }
 
-function applyBundle(bundle: Partial<{
-  active_profile_id: string
-  active_scope: AgentScope
-  can_manage_global: boolean
-  can_manage_personal: boolean
-  profiles: AgentProfile[]
-  presets: AgentPreset[]
-}> | null | undefined) {
+function applyBundle(
+  bundle:
+    | Partial<{
+        active_profile_id: string
+        active_scope: AgentScope
+        can_manage_global: boolean
+        can_manage_personal: boolean
+        profiles: AgentProfile[]
+        presets: AgentPreset[]
+      }>
+    | null
+    | undefined,
+) {
   const list = Array.isArray(bundle?.profiles) ? bundle!.profiles! : []
   const presetList = Array.isArray(bundle?.presets) ? bundle!.presets! : []
   profiles.value = list
@@ -124,9 +122,7 @@ function applyBundle(bundle: Partial<{
   }
   const still =
     list.find((p) => p.id === selectedId.value && p.scope === selectedScope.value) ||
-    list.find(
-      (p) => p.id === activeProfileId.value && p.scope === activeScope.value,
-    ) ||
+    list.find((p) => p.id === activeProfileId.value && p.scope === activeScope.value) ||
     list[0]
   if (still) {
     selectedId.value = still.id
@@ -329,8 +325,7 @@ async function onRefreshModels() {
     modelOptions.value = Array.isArray(res.models) ? res.models : []
     modelsLoaded.value = true
     if (res.error || (res.manual && !modelOptions.value.length)) {
-      modelsManualHint.value =
-        res.error || '该站点未提供模型列表，请手动填写模型名。'
+      modelsManualHint.value = res.error || '该站点未提供模型列表，请手动填写模型名。'
       modelPickerOpen.value = false
     } else if (!modelOptions.value.length) {
       modelsManualHint.value = '未返回可用模型，请检查 Base URL / API Key 后重试，或手动填写。'
@@ -488,8 +483,7 @@ onUnmounted(() => {
               type="button"
               class="btn-secondary btn-sm"
               :disabled="
-                activating ||
-                (selected.id === activeProfileId && selected.scope === activeScope)
+                activating || (selected.id === activeProfileId && selected.scope === activeScope)
               "
               @click="onActivate(selected)"
             >
@@ -514,12 +508,7 @@ onUnmounted(() => {
           <div class="field-grid">
             <label class="field">
               <span class="field-label">名称</span>
-              <input
-                v-model="name"
-                type="text"
-                class="field-input"
-                :disabled="!canEditSelected"
-              />
+              <input v-model="name" type="text" class="field-input" :disabled="!canEditSelected" />
             </label>
             <label class="field">
               <span class="field-label">协议</span>

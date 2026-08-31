@@ -84,8 +84,7 @@ export function executeAgentUiIntent(
 
   if (name === 'fit_layer') {
     const catalogId = args.catalog_id != null ? String(args.catalog_id).trim() : undefined
-    const instanceIdArg =
-      args.instance_id != null ? String(args.instance_id).trim() : undefined
+    const instanceIdArg = args.instance_id != null ? String(args.instance_id).trim() : undefined
     const resolved = resolveInstanceId(catalogId, instanceIdArg)
     if (!resolved.instanceId) {
       return { ok: false, message: '未找到可定位的图层' }

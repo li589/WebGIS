@@ -101,8 +101,7 @@ function addPolicy(inputKey: string) {
 function removePolicy(id: string) {
   const existing = policies.value.find((p) => p.id === id)
   if (existing && seedIdSet.value.has(id) && isSeedUnchanged(existing)) {
-    error.value =
-      '种子策略不可删除；可改 mode 写成 runtime 覆盖，或在磁盘删 runtime 文件重置。'
+    error.value = '种子策略不可删除；可改 mode 写成 runtime 覆盖，或在磁盘删 runtime 文件重置。'
     return
   }
   policies.value = policies.value.filter((p) => p.id !== id)
@@ -202,7 +201,9 @@ onMounted(() => {
         <tbody>
           <tr v-for="p in sourceRoutePolicies" :key="p.id">
             <td class="origin">{{ originLabel(p) }}</td>
-            <td><input v-model="p.id" :disabled="!authStore.isAdmin || originLabel(p) === 'seed'" /></td>
+            <td>
+              <input v-model="p.id" :disabled="!authStore.isAdmin || originLabel(p) === 'seed'" />
+            </td>
             <td>
               <select v-model="p.scope" :disabled="!authStore.isAdmin">
                 <option v-for="s in SCOPE_OPTIONS" :key="s.value" :value="s.value">
@@ -268,7 +269,9 @@ onMounted(() => {
         <tbody>
           <tr v-for="p in alignPolicies" :key="p.id">
             <td class="origin">{{ originLabel(p) }}</td>
-            <td><input v-model="p.id" :disabled="!authStore.isAdmin || originLabel(p) === 'seed'" /></td>
+            <td>
+              <input v-model="p.id" :disabled="!authStore.isAdmin || originLabel(p) === 'seed'" />
+            </td>
             <td>
               <select v-model="p.scope" :disabled="!authStore.isAdmin">
                 <option v-for="s in SCOPE_OPTIONS" :key="s.value" :value="s.value">

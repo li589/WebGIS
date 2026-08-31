@@ -26,7 +26,11 @@ from app.services.agent.server_tools_runtime import (
     load_server_tools_openai,
 )
 from app.services.agent.session_store import append_turn, load_history
-from app.services.agent.usage import estimate_tokens, usage_from_anthropic, usage_from_openai
+from app.services.agent.usage import (
+    estimate_tokens,
+    usage_from_anthropic,
+    usage_from_openai,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +102,7 @@ def _emit_stream_tail(
     for intent in ui_intents:
         if isinstance(intent, dict):
             _emit_safe(emit, "intent", dict(intent))
+
 
 _kits_lock = threading.Lock()
 _prompt_cache: tuple[float | None, str] | None = None
@@ -203,7 +208,9 @@ def _all_tools_anthropic() -> list[dict[str, Any]]:
     return load_ui_intent_tools_anthropic() + load_server_tools_anthropic()
 
 
-def sanitize_client_context(client_context: dict[str, Any] | None) -> dict[str, Any] | None:
+def sanitize_client_context(
+    client_context: dict[str, Any] | None,
+) -> dict[str, Any] | None:
     """Whitelist keys and bound size before prompt injection (W-5)."""
     if not client_context or not isinstance(client_context, dict):
         return None
@@ -291,9 +298,7 @@ def _build_system(
         summary = catalog_summary(cred=cred, limit=40)
         if summary:
             blob = json.dumps(summary, ensure_ascii=False)[:3000]
-            parts.append(
-                f"## Catalog sample (accessible layers)\n```json\n{blob}\n```"
-            )
+            parts.append(f"## Catalog sample (accessible layers)\n```json\n{blob}\n```")
     except Exception:
         logger.exception("catalog_summary failed")
     parts.append(
@@ -324,9 +329,7 @@ def _confirmation_from_tool_result(tres: dict[str, Any]) -> dict[str, Any] | Non
         "confirmation_id": cid,
         "action": "run_workflow",
         "expires_at": str(tres.get("expires_at") or ""),
-        "summary": tres.get("summary")
-        if isinstance(tres.get("summary"), dict)
-        else {},
+        "summary": tres.get("summary") if isinstance(tres.get("summary"), dict) else {},
         "message": str(tres.get("message") or ""),
     }
 
@@ -405,9 +408,7 @@ def _intents_from_anthropic_content(
             text_parts.append(str(block.get("text") or ""))
         elif btype == "tool_use":
             name = str(block.get("name") or "")
-            args = (
-                block.get("input") if isinstance(block.get("input"), dict) else {}
-            )
+            args = block.get("input") if isinstance(block.get("input"), dict) else {}
             entry = {
                 "id": str(block.get("id") or ""),
                 "name": name,
@@ -481,9 +482,7 @@ def run_chat(
     ctx_in = int(profile.get("context_window_input") or 4000)
     max_chars = max(500, min(4000, ctx_in * 2))
     if len(message) > max_chars:
-        raise ValueError(
-            f"消息过长（上限约 {max_chars} 字符，受配置档上下文窗口限制）"
-        )
+        raise ValueError(f"消息过长（上限约 {max_chars} 字符，受配置档上下文窗口限制）")
 
     history = load_history(user_id=user_id, session_id=sid)
     steps: list[dict[str, Any]] = _EventSteps(on_event)
@@ -498,8 +497,10 @@ def run_chat(
             }
         )
         # Optional: search_layers if message looks like catalog search
-        lower = message.lower()
-        if any(k in message for k in ("搜索", "查找图层", "有哪些层", "search")) or "图层" in message:
+        if (
+            any(k in message for k in ("搜索", "查找图层", "有哪些层", "search"))
+            or "图层" in message
+        ):
             q = message
             for prefix in ("搜索", "查找图层", "查找", "search"):
                 if message.startswith(prefix):
@@ -529,7 +530,13 @@ def run_chat(
         # Demo heuristic: propose run_workflow confirmation when user asks to run.
         if any(
             k in message
-            for k in ("运行工作流", "跑工作流", "提交工作流", "run workflow", "执行工作流")
+            for k in (
+                "运行工作流",
+                "跑工作流",
+                "提交工作流",
+                "run workflow",
+                "执行工作流",
+            )
         ):
             catalog_guess = ""
             ctx_ids: list[str] = []
@@ -574,7 +581,15 @@ def run_chat(
         # Demo: sample map point / layer values
         if any(
             k in message
-            for k in ("点值", "采样", "坐标", "这个点", "查数值", "sample", "point value")
+            for k in (
+                "点值",
+                "采样",
+                "坐标",
+                "这个点",
+                "查数值",
+                "sample",
+                "point value",
+            )
         ):
             steps.append({"type": "tool", "summary": "sample_layer_point"})
             sample_res = execute_server_tool(
@@ -595,8 +610,7 @@ def run_chat(
 
         # Demo: layer / workflow detail
         if any(
-            k in message
-            for k in ("图层详情", "图层信息", "layer detail", "layer meta")
+            k in message for k in ("图层详情", "图层信息", "layer detail", "layer meta")
         ):
             catalog_guess = ""
             if isinstance(client_context, dict):
@@ -616,18 +630,14 @@ def run_chat(
                 steps.append(
                     {
                         "type": "tool_result",
-                        "summary": "图层元数据"
-                        if lm.get("ok")
-                        else "图层元数据失败",
+                        "summary": "图层元数据" if lm.get("ok") else "图层元数据失败",
                         "detail": json.dumps(lm, ensure_ascii=False)[:800],
                     }
                 )
 
         # Demo: workflow detail
         if any(k in message for k in ("工作流详情", "工作流信息", "workflow detail")):
-            steps.append(
-                {"type": "tool", "summary": "list_workflows"}
-            )
+            steps.append({"type": "tool", "summary": "list_workflows"})
             lw = execute_server_tool(
                 "list_workflows",
                 {"limit": 5},
@@ -673,7 +683,10 @@ def run_chat(
                 )
 
         # Demo: web search
-        if any(k in message for k in ("搜索一下", "联网搜索", "在线搜索", "web search", "搜一下")):
+        if any(
+            k in message
+            for k in ("搜索一下", "联网搜索", "在线搜索", "web search", "搜一下")
+        ):
             q = message
             for prefix in ("搜索一下", "联网搜索", "在线搜索", "web search", "搜一下"):
                 if message.casefold().startswith(prefix.casefold()):
@@ -696,9 +709,7 @@ def run_chat(
                 }
             )
 
-        result = mock_chat(
-            message, session_id=sid, client_context=client_context
-        )
+        result = mock_chat(message, session_id=sid, client_context=client_context)
         reply = str(result["reply"])
         if confirmations:
             reply = (
@@ -818,9 +829,7 @@ def run_chat(
                             "content": json.dumps(tres, ensure_ascii=False),
                         }
                     )
-                messages.append(
-                    {"role": "assistant", "content": data.get("content")}
-                )
+                messages.append({"role": "assistant", "content": data.get("content")})
                 messages.append({"role": "user", "content": tool_result_blocks})
                 data = anthropic_compat.messages_create(
                     base_url=base_url,
@@ -979,9 +988,7 @@ def run_chat(
         if not reply and not intents:
             reply = "（模型未返回文本）"
         if not intents:
-            fallback = mock_chat(
-                message, session_id=sid, client_context=client_context
-            )
+            fallback = mock_chat(message, session_id=sid, client_context=client_context)
             heur = fallback.get("ui_intents") or []
             if heur:
                 intents = heur

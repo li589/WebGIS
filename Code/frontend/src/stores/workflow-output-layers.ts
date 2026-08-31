@@ -38,16 +38,11 @@ export interface WorkflowOutputLayerEntry {
 
 const STORAGE_KEY = 'geo:workflow-output-layers:v1'
 
-function isPollutingOutputEntry(item: {
-  name?: string
-  localId?: string
-}): boolean {
+function isPollutingOutputEntry(item: { name?: string; localId?: string }): boolean {
   // 仅拦「显示名 / localId」泄漏英文技术 id。
   // sourceWorkflowId / sourceLayerId 本就是机器路由键（omega_sf_fenkuai_*），
   // 必须允许保留——否则编辑器无法为反演工作流登记产出卡，且会把合法中文名条目滤掉。
-  return (
-    isEnglishInversionCatalogId(item.name) || isEnglishInversionCatalogId(item.localId)
-  )
+  return isEnglishInversionCatalogId(item.name) || isEnglishInversionCatalogId(item.localId)
 }
 
 function loadFromStorage(): WorkflowOutputLayerEntry[] {

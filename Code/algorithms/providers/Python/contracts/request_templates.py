@@ -210,7 +210,11 @@ MODULE_REQUEST_TEMPLATES: dict[str, RequestTemplateSpec] = {
             "gldas_template_file",
         ),
         accepted_data_access_by_required_key={
-            "omega_block_dir": ("omega_block_dir", "omega_block_output", "daily_omega_dir"),
+            "omega_block_dir": (
+                "omega_block_dir",
+                "omega_block_output",
+                "daily_omega_dir",
+            ),
             "anc_root": ("anc_root", "ancillary_mat"),
             "smap_folder": ("smap_folder", "smap_daily_mat"),
             "ndvi_folder": ("ndvi_folder", "ndvi_daily_mat"),

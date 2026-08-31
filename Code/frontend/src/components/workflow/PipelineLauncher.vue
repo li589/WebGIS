@@ -299,9 +299,7 @@ function handleConfirmLaunch() {
     const m1 = Number(ed.slice(4, 6))
     const d1 = Number(ed.slice(6, 8))
     const spanDays =
-      Math.round(
-        (Date.UTC(y1, m1 - 1, d1) - Date.UTC(y0, m0 - 1, d0)) / (24 * 3600 * 1000),
-      ) + 1
+      Math.round((Date.UTC(y1, m1 - 1, d1) - Date.UTC(y0, m0 - 1, d0)) / (24 * 3600 * 1000)) + 1
     if (spanDays < 8) {
       dateError.value = `SMAP/FY ω 流水线至少需要 8 天（当前 ${spanDays} 天）；平均/动态 ω 按 8 天一变`
       return

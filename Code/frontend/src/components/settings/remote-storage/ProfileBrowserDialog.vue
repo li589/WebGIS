@@ -389,11 +389,7 @@ watch(
           <!-- picker 模式（融合对话框内嵌选择器）：选择当前目录回传 -->
           <div v-if="picker" class="fb-add">
             <span class="fb-add-label">当前目录：{{ currentPath }}</span>
-            <button
-              type="button"
-              class="fb-btn primary"
-              @click="emit('pathChosen', currentPath)"
-            >
+            <button type="button" class="fb-btn primary" @click="emit('pathChosen', currentPath)">
               选择此目录
             </button>
           </div>

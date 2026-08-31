@@ -151,7 +151,11 @@ export class GlobeNightMaskLayer {
     // ⚠️ 3D 投影切换（globe↔mercator）期间的过渡矩阵是中间插值——
     // 用它绘制遮罩会错乱（首帧进 3D 时"无效果"，切档位重触发才恢复）。
     // 过渡未完成时标记矩阵未就绪，rAF 循环继续重试直到过渡完成。
-    if (data && typeof data.projectionTransition === 'number' && data.projectionTransition < 0.999) {
+    if (
+      data &&
+      typeof data.projectionTransition === 'number' &&
+      data.projectionTransition < 0.999
+    ) {
       this.hasMatrix = false
       return
     }

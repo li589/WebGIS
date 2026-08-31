@@ -22,7 +22,9 @@ def _parse_date_param(value: object) -> datetime | None:
         return None
 
 
-def _extract_bounds_from_time_range(time_range: Any) -> tuple[datetime | None, datetime | None]:
+def _extract_bounds_from_time_range(
+    time_range: Any,
+) -> tuple[datetime | None, datetime | None]:
     """Accept algorithm TimeRange (.start/.end), API TimeRange (.start_at/.end_at), or dict."""
     if time_range is None:
         return None, None

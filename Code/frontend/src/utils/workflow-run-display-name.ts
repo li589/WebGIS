@@ -9,6 +9,7 @@ export type WorkflowSummaryLike = { workflow_id: string; name?: string | null }
 /** Pinia 未就绪时返回空，不阻断提交/恢复路径。 */
 export function tryWorkflowSummaries(): WorkflowSummaryLike[] {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- lazy require avoids Pinia circular import at module load
     const { useWorkflowDefinitionsStore } = require('../stores/workflow-definitions') as {
       useWorkflowDefinitionsStore: () => { summaries: WorkflowSummaryLike[] }
     }

@@ -45,8 +45,7 @@ export function sunAltitudeDeg(
   const lat = (latDeg * Math.PI) / 180
   const decl = (declDeg * Math.PI) / 180
   const hourAngle = ((lonDeg - subsolarLonDeg) * Math.PI) / 180
-  const sinH =
-    Math.sin(lat) * Math.sin(decl) + Math.cos(lat) * Math.cos(decl) * Math.cos(hourAngle)
+  const sinH = Math.sin(lat) * Math.sin(decl) + Math.cos(lat) * Math.cos(decl) * Math.cos(hourAngle)
   return (Math.asin(Math.max(-1, Math.min(1, sinH))) * 180) / Math.PI
 }
 

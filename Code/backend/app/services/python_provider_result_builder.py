@@ -119,7 +119,8 @@ def _pick_fy_display_raster(
         dated = [
             path
             for path in candidates
-            if (match := _FY_DATE_IN_NAME_RE.search(path.name)) and match.group(1) == want
+            if (match := _FY_DATE_IN_NAME_RE.search(path.name))
+            and match.group(1) == want
         ]
         if dated:
             candidates = dated
@@ -301,6 +302,7 @@ def _read_mat_latlon_bounds(path: Path) -> tuple[list[float], str] | None:
     if normalized is None:
         return None
     return normalized
+
 
 # MIME types for the three standard algorithm artifact kinds. Indexed by
 # the artifact_name key used in result_dto.artifacts.

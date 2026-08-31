@@ -284,7 +284,9 @@ def list_online_tile_sources() -> list[dict[str, Any]]:
     ]
 
 
-def upsert_online_tile_source(source_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+def upsert_online_tile_source(
+    source_id: str, payload: dict[str, Any]
+) -> dict[str, Any]:
     import re
     from datetime import datetime, UTC
     from urllib.parse import urlparse
@@ -300,17 +302,25 @@ def upsert_online_tile_source(source_id: str, payload: dict[str, Any]) -> dict[s
         raise ValueError("url_template must contain {z}, {x}, and {y} placeholders")
     if "{" in parsed.netloc or "}" in parsed.netloc:
         raise ValueError("URL host must not be templated")
-    if payload.get("service_type") == "wmts" and not str(payload.get("layer") or "").strip():
+    if (
+        payload.get("service_type") == "wmts"
+        and not str(payload.get("layer") or "").strip()
+    ):
         raise ValueError("WMTS layer is required")
     now = datetime.now(UTC).isoformat()
     items = list_online_tile_sources()
-    item = next((dict(v) for v in items if isinstance(v, dict) and v.get("source_id") == sid), None) or {
+    item = next(
+        (dict(v) for v in items if isinstance(v, dict) and v.get("source_id") == sid),
+        None,
+    ) or {
         "source_id": sid,
         "created_at": now,
     }
     item.update(payload)
     item.update({"source_id": sid, "updated_at": now, "last_test_status": None})
-    items = [v for v in items if not (isinstance(v, dict) and v.get("source_id") == sid)]
+    items = [
+        v for v in items if not (isinstance(v, dict) and v.get("source_id") == sid)
+    ]
     items.append(item)
     _research_data_repo().set_json("online_tile_sources", items)
     return item
@@ -318,7 +328,11 @@ def upsert_online_tile_source(source_id: str, payload: dict[str, Any]) -> dict[s
 
 def delete_online_tile_source(source_id: str) -> bool:
     items = list_online_tile_sources()
-    kept = [v for v in items if not (isinstance(v, dict) and v.get("source_id") == source_id)]
+    kept = [
+        v
+        for v in items
+        if not (isinstance(v, dict) and v.get("source_id") == source_id)
+    ]
     changed = len(kept) != len(items)
     if changed:
         _research_data_repo().set_json("online_tile_sources", kept)

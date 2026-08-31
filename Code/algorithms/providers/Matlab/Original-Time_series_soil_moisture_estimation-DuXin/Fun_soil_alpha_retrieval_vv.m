@@ -20,7 +20,7 @@ h = waitbar(0,waitbar_mesage);
 soil_alpha_retrieval=zeros(rows,cols,Num_step);
 
 %Introductions of MPP
-%  ----                                             ---- 
+%  ----                                             ----
 % | 1   -S1/S2       0       .      .     .     0       |
 % | 0      1      -S2/S3     .      .     .     .       |
 % | 0      0         1    -S3/S4    .     .     .       |
@@ -37,25 +37,25 @@ for ii = 1:1:rows
             MPP(kk,kk+1)=-sqrt(multi_temporal_data(ii,jj,kk)/...
                 multi_temporal_data(ii,jj,kk+1));
         end
-        
+
         %define the soil dielectric constant bounds
         epsilon_min=4;
         epsilon_max=35;
-        
+
         %low and up bound of corespond alpha coefficients
         lb=abs(double(ones(Num_step,1))*...
             alpha_calculation_VV(inc_ang(ii,jj),epsilon_min));
         ub=abs(double(ones(Num_step,1))*...
-            alpha_calculation_VV(inc_ang(ii,jj),epsilon_max));      
+            alpha_calculation_VV(inc_ang(ii,jj),epsilon_max));
         lb=double(lb);
         ub=double(ub);
-        
+
         %Solving the undetermined linear least squared regression problem
         %MPP.*Alpha_simulation=Zero_solv';
-        %Get solution of the alpha 
+        %Get solution of the alpha
         options = optimset('lsqlin');
         options.Algorithm = 'interior-point';
-        
+
         %results of Num_step alpha estimation
         x = lsqlin(MPP,Zero_solv,[],[],[],[],lb,ub,[],options);
         soil_alpha_retrieval(ii,jj,:)=x;

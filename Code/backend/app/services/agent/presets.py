@@ -45,7 +45,12 @@ _cached_path: Path | None = None
 
 def _catalog_path() -> Path:
     # Code/backend/app/services/agent -> Code/agentKits
-    return Path(__file__).resolve().parents[4] / "agentKits" / "presets" / "provider_catalog.json"
+    return (
+        Path(__file__).resolve().parents[4]
+        / "agentKits"
+        / "presets"
+        / "provider_catalog.json"
+    )
 
 
 def _normalize_preset(raw: dict[str, Any]) -> dict[str, Any] | None:

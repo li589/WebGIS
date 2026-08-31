@@ -56,9 +56,7 @@ const recoveryHasSwitchOnline = computed(() =>
   Boolean(recovery.value?.offers.includes('switch_online')),
 )
 
-const recoveryHasOpenPlan = computed(() =>
-  Boolean(recovery.value?.offers.includes('open_plan')),
-)
+const recoveryHasOpenPlan = computed(() => Boolean(recovery.value?.offers.includes('open_plan')))
 
 const recoveryPlanHint = computed(() => String(recovery.value?.planHint || '').trim())
 

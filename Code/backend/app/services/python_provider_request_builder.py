@@ -57,8 +57,10 @@ def _scrape_datasource_selection_from_definition(
         from app.core import config as _config
 
         root = (
-            getattr(_config.settings, "data_root", None) or ""
-        ).strip().replace("\\", "/")
+            (getattr(_config.settings, "data_root", None) or "")
+            .strip()
+            .replace("\\", "/")
+        )
     except Exception:  # noqa: BLE001 — settings 不可用时保留相对路径
         root = ""
     scraped: dict[str, str] = {}
@@ -78,13 +80,12 @@ def _scrape_datasource_selection_from_definition(
             scraped.setdefault(key, path)
             continue
         posix = path.replace("\\", "/")
-        is_absolute = posix.startswith("/") or (
-            len(posix) > 1 and posix[1] == ":"
-        )
+        is_absolute = posix.startswith("/") or (len(posix) > 1 and posix[1] == ":")
         if root and not is_absolute:
             posix = f"{root.rstrip('/')}/{posix}"
         scraped.setdefault(key, posix)
     return scraped
+
 
 # Keys that identify an algorithm_request as a valid Python provider entry.
 # At least one must be present for supports() to return True.

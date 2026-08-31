@@ -393,7 +393,11 @@ def get_effective_profile_raw(
                 p_store = _load_store_unlocked(p_path, personal=True)
                 p_active = str(p_store.get("active_profile_id") or "")
                 for p in p_store.get("profiles") or []:
-                    if isinstance(p, dict) and str(p.get("id")) == p_active and p_active:
+                    if (
+                        isinstance(p, dict)
+                        and str(p.get("id")) == p_active
+                        and p_active
+                    ):
                         out = dict(p)
                         out["_scope"] = "personal"
                         return out
@@ -740,7 +744,6 @@ def update_agent_config(
     else:
         raise AgentPermissionError("无权修改 Agent 配置")
 
-    raw = get_effective_profile_raw(user_id=user_id)
     # Ensure we update within the intended scope store
     with _lock:
         _ensure_global_migrated()

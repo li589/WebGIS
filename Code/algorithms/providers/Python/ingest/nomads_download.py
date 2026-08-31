@@ -140,9 +140,7 @@ def download_via_herbie(
         )
         return h.download(searchString=search, errors="raise")
     except Exception as first_err:  # noqa: BLE001 — 默认源失败回退 AWS
-        logger.warning(
-            "NOMADS herbie 默认源失败（%s），回退 use='aws' 重试", first_err
-        )
+        logger.warning("NOMADS herbie 默认源失败（%s），回退 use='aws' 重试", first_err)
         h = Herbie(
             date=cycle.strftime("%Y-%m-%d %H:%M"),
             model=model.strip(),
@@ -168,7 +166,9 @@ def download_via_legacy(
     from ingest._http_resume import download_with_retry
 
     session = requests.Session()
-    if not download_with_retry(session, url, target, progress_callback=progress_callback):
+    if not download_with_retry(
+        session, url, target, progress_callback=progress_callback
+    ):
         raise RuntimeError(f"NOMADS legacy download failed: {url}")
     return target.stat().st_size if target.exists() else 0
 
@@ -378,9 +378,7 @@ def _run_herbie(
                 result.downloaded_bytes += size
                 downloaded_bytes += size
                 if progress_callback is not None:
-                    progress_callback(
-                        idx, total, downloaded_bytes, Path(local).name
-                    )
+                    progress_callback(idx, total, downloaded_bytes, Path(local).name)
                 logger.info(
                     "NOMADS herbie 完成: %s (%s)", Path(local).name, format_size(size)
                 )

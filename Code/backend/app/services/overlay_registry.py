@@ -250,7 +250,9 @@ class OverlaySpec:
     # EASE-Grid 2.0 9km 标准参数——唯一真源 grid_presets.py（P2 收敛，
     # 原 2026-08 之前此处为独立硬编码副本）
     _EASE_GRID_9K_CRS = "EPSG:6933"
-    _EASE_GRID_9K_PIXEL_SIZE = float(GRID_PRESETS["ease2-global-9km"]["resolution"])  # 米
+    _EASE_GRID_9K_PIXEL_SIZE = float(
+        GRID_PRESETS["ease2-global-9km"]["resolution"]
+    )  # 米
     _EASE_GRID_9K_UL_X, _EASE_GRID_9K_UL_Y = EASE_UL_BY_CRS["EPSG:6933"]  # 上左角（米）
 
     def _sample_mat_ease_grid(
@@ -814,7 +816,9 @@ def list_overlay_ids() -> list[str]:
 # vmin/vmax/源路径等纯配置以 JSON 为单一真源，加图层零代码）。
 # 时序层（time_list 运行时目录扫描）与 imported-* 动态导入仍走代码注册。
 
-_OVERLAY_ASSETS_PATH = Path(__file__).resolve().parent.parent / "catalog_seeds" / "overlay_assets.json"
+_OVERLAY_ASSETS_PATH = (
+    Path(__file__).resolve().parent.parent / "catalog_seeds" / "overlay_assets.json"
+)
 
 
 def _register_static_overlays_from_config() -> None:
@@ -830,11 +834,15 @@ def _register_static_overlays_from_config() -> None:
     except (OSError, json.JSONDecodeError) as exc:
         raise OverlayConfigError(f"overlay_assets.json load failed: {exc}") from exc
     if not isinstance(raw, dict):
-        raise OverlayConfigError("overlay_assets.json must be an object keyed by layer_id")
+        raise OverlayConfigError(
+            "overlay_assets.json must be an object keyed by layer_id"
+        )
 
     for layer_id, entry in raw.items():
         if not isinstance(entry, dict):
-            raise OverlayConfigError(f"overlay_assets.json entry '{layer_id}' must be an object")
+            raise OverlayConfigError(
+                f"overlay_assets.json entry '{layer_id}' must be an object"
+            )
         rel = entry.get("source_path_rel")
         # 事件时间（2026-08-25 用户反馈）：静态图层若声明 time_list（事件
         # 年份/日期，如 ERA5 2020 灾害事件），时间轴显示事件时间而非「静态」。
@@ -958,13 +966,6 @@ _SMAP_AUX_VI_V_QA_MAT = _data_join(
 )
 
 
-
-
-
-
-
-
-
 # Soil DDCA 时间序列（中国 9km，2015-04-01 至 2015-05-17，60 天采样）
 register_overlay(
     OverlaySpec(
@@ -997,20 +998,10 @@ _LANDSCAPE_METRICS_MAT = (
 )
 
 
-
 # SMAP 辅助数据（Soil_Moisture/SMAP_Auxiliary_Data，静态参数场）
 # 与 forest-ratio 同属静态图层；按变量分别暴露为独立 overlay，便于点查询与配色。
 # 注意：VI_v_qa.mat 为 v5 格式（scipy 可读），其余为 v7.3 HDF5；reader 统一 "mat"，
 # 由 source_reader 按实际格式自动适配（h5py/scipy）。
-
-
-
-
-
-
-
-
-
 
 
 # ─── Phase 2: 课题组 VOD/SM/Omega 2025-12 产品族 ──────────────────────────────

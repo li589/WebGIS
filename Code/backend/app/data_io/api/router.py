@@ -406,14 +406,14 @@ async def import_jobs_list(
     cred: CredentialContext | None = Depends(get_request_user),
 ) -> dict[str, Any]:
     include_all = cred is not None and cred.role == "admin"
-    owner = None if include_all else (int(cred.user_id) if cred and cred.user_id else None)
+    owner = (
+        None if include_all else (int(cred.user_id) if cred and cred.user_id else None)
+    )
     # Non-admin without user_id (service key): empty list (fail-closed)
     if not include_all and owner is None:
         return {"items": []}
     return {
-        "items": list_jobs(
-            limit=limit, owner_user_id=owner, include_all=include_all
-        )
+        "items": list_jobs(limit=limit, owner_user_id=owner, include_all=include_all)
     }
 
 

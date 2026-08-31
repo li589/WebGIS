@@ -28,7 +28,6 @@ interface WeatherPaletteDefinition {
   exposed?: boolean
 }
 
-
 /** 配色方案选项列表（供 UI 选择器使用） */
 export interface WeatherPaletteOption {
   id: string
@@ -129,9 +128,7 @@ export function resolveCanonicalPaletteId(palette: string | null | undefined): s
  * 渲染路径（粒子/图例）仍用 resolvePaletteId 兜底保证可见性；默认/相等
  * 判定一律走本严格版。
  */
-export function resolveCanonicalPaletteIdStrict(
-  palette: string | null | undefined,
-): string {
+export function resolveCanonicalPaletteIdStrict(palette: string | null | undefined): string {
   if (!palette) return ''
   const key = PALETTE_ALIASES[palette] ?? palette
   return WEATHER_PALETTES[key] ? key : palette

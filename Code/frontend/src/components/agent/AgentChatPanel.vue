@@ -220,8 +220,7 @@ function flushStreamText() {
 function appendStreamChunk(assistantId: string, chunk: string) {
   const msg = messages.value.find((m) => m.id === assistantId)
   if (!msg) return
-  const base =
-    pendingStreamText?.id === assistantId ? pendingStreamText.text : msg.text || ''
+  const base = pendingStreamText?.id === assistantId ? pendingStreamText.text : msg.text || ''
   pendingStreamText = { id: assistantId, text: `${base}${chunk}` }
   if (streamTextRaf == null) {
     streamTextRaf = requestAnimationFrame(flushStreamText)
@@ -479,7 +478,9 @@ function onKeydown(ev: KeyboardEvent) {
           <ul>
             <li v-for="(step, idx) in msg.steps" :key="idx">
               <strong>{{ step.type }}</strong> — {{ step.summary }}
-              <pre v-if="step.detail" class="agent-chat-step-detail agent-scroll">{{ step.detail }}</pre>
+              <pre v-if="step.detail" class="agent-chat-step-detail agent-scroll">{{
+                step.detail
+              }}</pre>
             </li>
           </ul>
         </details>
@@ -521,8 +522,7 @@ function onKeydown(ev: KeyboardEvent) {
           </div>
         </div>
         <div v-if="msg.usage" class="agent-chat-usage">
-          tokens: {{ msg.usage.total_tokens
-          }}{{ msg.usage.estimated ? '（估算）' : '' }}
+          tokens: {{ msg.usage.total_tokens }}{{ msg.usage.estimated ? '（估算）' : '' }}
         </div>
       </div>
     </div>
@@ -647,7 +647,10 @@ function onKeydown(ev: KeyboardEvent) {
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
 }
 
 .agent-chat-close:hover {
@@ -1012,7 +1015,9 @@ function onKeydown(ev: KeyboardEvent) {
   padding: 0.35rem 0.5rem;
   font-size: var(--font-size-caption);
   cursor: pointer;
-  transition: background 140ms ease, opacity 140ms ease;
+  transition:
+    background 140ms ease,
+    opacity 140ms ease;
 }
 
 .agent-confirm-approve {
@@ -1110,7 +1115,10 @@ function onKeydown(ev: KeyboardEvent) {
   font-size: var(--font-size-caption);
   font-weight: 600;
   cursor: pointer;
-  transition: transform 140ms ease, background 140ms ease, opacity 140ms ease;
+  transition:
+    transform 140ms ease,
+    background 140ms ease,
+    opacity 140ms ease;
 }
 
 .agent-chat-send:disabled {

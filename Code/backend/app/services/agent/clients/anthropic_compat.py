@@ -112,7 +112,9 @@ def messages_create(
     )
 
 
-def list_models(*, base_url: str, api_key: str | None, timeout: float = 30.0) -> list[str]:
+def list_models(
+    *, base_url: str, api_key: str | None, timeout: float = 30.0
+) -> list[str]:
     """Best-effort; many Anthropic-compatible gateways lack models listing."""
     url = urljoin(_normalize_base(base_url), "v1/models")
     try:

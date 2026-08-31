@@ -289,41 +289,41 @@ export class MeasureCanvas {
 
       if (!previewHiddenOnGlobe) {
         // 虚线预览
-      ctx.save()
-      ctx.strokeStyle = PREVIEW_STROKE
-      ctx.lineWidth = 1.5
-      ctx.setLineDash(DASH_PATTERN)
-      ctx.beginPath()
-      ctx.moveTo(lastPoint.x, lastPoint.y)
-      ctx.lineTo(hoverScreen.x, hoverScreen.y)
-      ctx.stroke()
-      ctx.restore()
+        ctx.save()
+        ctx.strokeStyle = PREVIEW_STROKE
+        ctx.lineWidth = 1.5
+        ctx.setLineDash(DASH_PATTERN)
+        ctx.beginPath()
+        ctx.moveTo(lastPoint.x, lastPoint.y)
+        ctx.lineTo(hoverScreen.x, hoverScreen.y)
+        ctx.stroke()
+        ctx.restore()
 
-      // 预览段标签（仅当像素距离足够时）
-      if (shouldShowLabel(lastPoint, hoverScreen)) {
-        const lastLngLat: LngLat = {
-          lng: this.points[this.points.length - 1].lng,
-          lat: this.points[this.points.length - 1].lat,
+        // 预览段标签（仅当像素距离足够时）
+        if (shouldShowLabel(lastPoint, hoverScreen)) {
+          const lastLngLat: LngLat = {
+            lng: this.points[this.points.length - 1].lng,
+            lat: this.points[this.points.length - 1].lat,
+          }
+          const previewDist = haversineDistance(lastLngLat, this.hoverPoint)
+          const previewBearing = bearing(lastLngLat, this.hoverPoint)
+          const midScreen: ScreenPoint = {
+            x: (lastPoint.x + hoverScreen.x) / 2,
+            y: (lastPoint.y + hoverScreen.y) / 2,
+          }
+          this.drawLabel(
+            midScreen,
+            formatDistance(previewDist),
+            FONT_SIZE_DISTANCE,
+            LABEL_FILL_PREVIEW,
+          )
+          this.drawLabel(
+            { x: midScreen.x, y: midScreen.y + FONT_SIZE_DISTANCE + 2 },
+            formatBearing(previewBearing),
+            FONT_SIZE_BEARING,
+            LABEL_FILL_PREVIEW,
+          )
         }
-        const previewDist = haversineDistance(lastLngLat, this.hoverPoint)
-        const previewBearing = bearing(lastLngLat, this.hoverPoint)
-        const midScreen: ScreenPoint = {
-          x: (lastPoint.x + hoverScreen.x) / 2,
-          y: (lastPoint.y + hoverScreen.y) / 2,
-        }
-        this.drawLabel(
-          midScreen,
-          formatDistance(previewDist),
-          FONT_SIZE_DISTANCE,
-          LABEL_FILL_PREVIEW,
-        )
-        this.drawLabel(
-          { x: midScreen.x, y: midScreen.y + FONT_SIZE_DISTANCE + 2 },
-          formatBearing(previewBearing),
-          FONT_SIZE_BEARING,
-          LABEL_FILL_PREVIEW,
-        )
-      }
       }
     }
 

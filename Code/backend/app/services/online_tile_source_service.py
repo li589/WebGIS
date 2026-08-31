@@ -29,14 +29,18 @@ def _validate_public_host(host: str) -> None:
 
 
 def _source(source_id: str) -> dict:
-    source = next((x for x in list_online_tile_sources() if x.get("source_id") == source_id), None)
+    source = next(
+        (x for x in list_online_tile_sources() if x.get("source_id") == source_id), None
+    )
     if not source or source.get("enabled") is False:
         raise ValueError(f"Online tile source not found or disabled: {source_id}")
     parsed = urlparse(str(source.get("url_template") or ""))
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError("online tile source URL must be absolute http(s)")
     try:
-        resolve_outbound_target(f"{parsed.scheme}://{parsed.netloc}", allow_private=False)
+        resolve_outbound_target(
+            f"{parsed.scheme}://{parsed.netloc}", allow_private=False
+        )
     except SSRFBlockedError as exc:
         raise ValueError("online tile source host is blocked by SSRF policy") from exc
     return source
@@ -44,9 +48,14 @@ def _source(source_id: str) -> dict:
 
 class OnlineTileProvider:
     def matches(self, layer_id: str) -> bool:
-        return any(x.get("source_id") == layer_id and x.get("enabled") is not False for x in list_online_tile_sources())
+        return any(
+            x.get("source_id") == layer_id and x.get("enabled") is not False
+            for x in list_online_tile_sources()
+        )
 
-    async def get_tile(self, layer_id: str, z: int, x: int, y: int, **params) -> TileResponse:
+    async def get_tile(
+        self, layer_id: str, z: int, x: int, y: int, **params
+    ) -> TileResponse:
         from app.services.tile_proxy_service import tile_proxy_service
 
         source = _source(layer_id)
@@ -54,22 +63,35 @@ class OnlineTileProvider:
         url = template.format(z=z, x=x, y=y)
         parsed = urlparse(url)
         try:
-            resolve_outbound_target(f"{parsed.scheme}://{parsed.netloc}", allow_private=False)
+            resolve_outbound_target(
+                f"{parsed.scheme}://{parsed.netloc}", allow_private=False
+            )
         except SSRFBlockedError as exc:
-            raise ValueError("online tile source host is blocked by SSRF policy") from exc
+            raise ValueError(
+                "online tile source host is blocked by SSRF policy"
+            ) from exc
         if source.get("service_type") == "wmts":
             # 已注册模板必须显式包含 WMTS 的服务参数，避免把普通 URL
             # 误标成 WMTS 并静默请求错误图层。
             required = {"SERVICE=WMTS", "REQUEST=GetTile"}
             upper_template = template.upper()
-            if not required.issubset({part for part in required if part in upper_template}):
-                raise ValueError("WMTS url_template must contain SERVICE=WMTS and REQUEST=GetTile")
+            if not required.issubset(
+                {part for part in required if part in upper_template}
+            ):
+                raise ValueError(
+                    "WMTS url_template must contain SERVICE=WMTS and REQUEST=GetTile"
+                )
         data = await tile_proxy_service.fetch_external_url(
-            url, use_cache=params.get("use_cache", True), user_agent=DEFAULT_TILE_USER_AGENT
+            url,
+            use_cache=params.get("use_cache", True),
+            user_agent=DEFAULT_TILE_USER_AGENT,
         )
         content_type = str(source.get("image_format") or "image/png")
         return TileResponse(
             data=data,
             content_type=content_type,
-            extra_headers={"Cache-Control": "public, max-age=86400", "X-Tile-Provider": layer_id},
+            extra_headers={
+                "Cache-Control": "public, max-age=86400",
+                "X-Tile-Provider": layer_id,
+            },
         )

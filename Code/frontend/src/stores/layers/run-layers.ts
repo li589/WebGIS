@@ -417,12 +417,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     const job = jobLayers.value.find((j) => j.jobId === runId)
     // 与 BE materialize allowlist 对齐；retry_pending 禁止 POST（409）
     // FE JobStatus 无 accepted：服务端 accepted 在 poller/adapter 已映射为 queued
-    if (
-      job &&
-      job.status !== 'succeeded' &&
-      job.status !== 'running' &&
-      job.status !== 'queued'
-    ) {
+    if (job && job.status !== 'succeeded' && job.status !== 'running' && job.status !== 'queued') {
       return
     }
     const now = Date.now()
@@ -512,7 +507,9 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           materializedLayers = materialized.layers ?? []
           if (!imports.length) {
             imports = materializedLayers
-              .filter((layer) => typeof layer.overlay_layer_id === 'string' && layer.overlay_layer_id)
+              .filter(
+                (layer) => typeof layer.overlay_layer_id === 'string' && layer.overlay_layer_id,
+              )
               .map((layer) => {
                 const rawBounds = layer.bounds
                 const bounds =
@@ -657,9 +654,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         matchingOutput?.name ||
         (tag ? productTagLabel(tag) : '') ||
         safeCleanTitle ||
-        (item.productTag && !isEnglishInversionCatalogId(item.productTag)
-          ? item.productTag
-          : '') ||
+        (item.productTag && !isEnglishInversionCatalogId(item.productTag) ? item.productTag : '') ||
         productTagLabel(tag || 'result')
 
       // Bind only within this run's computing group (never cross-run by tag alone).

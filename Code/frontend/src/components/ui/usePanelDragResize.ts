@@ -192,11 +192,7 @@ export function usePanelDragResize(options: UsePanelDragResizeOptions): PanelDra
     clampPanelDim(persistedState?.width ?? defaultWidth, Math.max(220, minWidth), maxWidth),
   )
   const panelHeight = ref(
-    clampPanelDim(
-      persistedState?.height ?? defaultHeight,
-      Math.max(120, minHeight),
-      maxHeight,
-    ),
+    clampPanelDim(persistedState?.height ?? defaultHeight, Math.max(120, minHeight), maxHeight),
   )
   const userResized = ref(Boolean(persistedState?.width || persistedState?.height))
   const persistTimer = ref<number | null>(null)

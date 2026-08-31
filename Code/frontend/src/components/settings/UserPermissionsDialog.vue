@@ -118,10 +118,7 @@ const dynamicResources = ref<DynamicResources | null>(null)
 const dynamicResourcesError = ref<string | null>(null)
 
 async function fetchDynamicResources(): Promise<DynamicResources | null> {
-  const safeFetch = async (
-    url: string,
-    success: (data: unknown) => void,
-  ): Promise<boolean> => {
+  const safeFetch = async (url: string, success: (data: unknown) => void): Promise<boolean> => {
     try {
       const resp = await fetch(url, { credentials: 'same-origin' })
       if (!resp.ok) return false
@@ -140,7 +137,9 @@ async function fetchDynamicResources(): Promise<DynamicResources | null> {
 
   // /layers — 取可见 items 的 id+title
   const layerOk = await safeFetch('/layers', (data) => {
-    const items = (data as { items?: Array<{ layer_id?: string; title?: string; category?: string }> })?.items ?? []
+    const items =
+      (data as { items?: Array<{ layer_id?: string; title?: string; category?: string }> })
+        ?.items ?? []
     layers = items
       .map((i) => ({ id: i.layer_id ?? '', label: i.title ?? i.layer_id ?? '' }))
       .filter((i) => i.id)
@@ -148,7 +147,9 @@ async function fetchDynamicResources(): Promise<DynamicResources | null> {
 
   // /provider/workflows — 任何登录用户可见（仅是 provider 注册表 layer id 列表，无敏感字段）
   const providerOk = await safeFetch('/provider/workflows', (data) => {
-    const list = (data as { body?: { workflows?: Array<{ name?: string; description?: string }> } })?.body?.workflows ?? []
+    const list =
+      (data as { body?: { workflows?: Array<{ name?: string; description?: string }> } })?.body
+        ?.workflows ?? []
     providers = list
       .map((w) => ({ id: w.name ?? '', label: w.description ?? w.name ?? '' }))
       .filter((p) => p.id)
@@ -156,7 +157,9 @@ async function fetchDynamicResources(): Promise<DynamicResources | null> {
 
   // /algorithm/workflows — workflow 模板（任意登录用户可见，仅名称/描述）
   const algoOk = await safeFetch('/algorithm/workflows', (data) => {
-    const list = (data as { body?: { workflows?: Array<{ name?: string; description?: string }> } })?.body?.workflows ?? []
+    const list =
+      (data as { body?: { workflows?: Array<{ name?: string; description?: string }> } })?.body
+        ?.workflows ?? []
     workflows = list
       .map((w) => ({ id: w.name ?? '', label: w.description ?? w.name ?? '' }))
       .filter((w) => w.id)
@@ -244,8 +247,7 @@ async function changeMode(next: PermissionMode) {
   try {
     await updatePermissionMode(props.user.id, next)
     mode.value = next
-    message.value =
-      next === 'whitelist' ? '已切换为白名单模式' : '已切换为开放模式（黑名单）'
+    message.value = next === 'whitelist' ? '已切换为白名单模式' : '已切换为开放模式（黑名单）'
     emit('updated', props.user.id, next)
   } catch (err) {
     error.value = err instanceof Error ? err.message : '切换模式失败'
@@ -409,11 +411,13 @@ function close() {
           <details v-if="canEdit" class="upd-suggestions">
             <summary>
               常用资源 ID（点击填入）——
-              {{ dynamicResources
-                ? '来自后端目录（最新）'
-                : dynamicResourcesError
-                  ? '后端目录加载失败，已使用静态兜底列表'
-                  : '加载后端目录中…' }}
+              {{
+                dynamicResources
+                  ? '来自后端目录（最新）'
+                  : dynamicResourcesError
+                    ? '后端目录加载失败，已使用静态兜底列表'
+                    : '加载后端目录中…'
+              }}
             </summary>
             <div class="upd-suggestion-grid">
               <button
@@ -446,8 +450,12 @@ function close() {
             </thead>
             <tbody>
               <tr v-for="r in records" :key="r.id">
-                <td>{{ RESOURCE_TYPE_LABELS[r.resource_type as ResourceType] || r.resource_type }}</td>
-                <td><code class="upd-mono">{{ r.resource_id }}</code></td>
+                <td>
+                  {{ RESOURCE_TYPE_LABELS[r.resource_type as ResourceType] || r.resource_type }}
+                </td>
+                <td>
+                  <code class="upd-mono">{{ r.resource_id }}</code>
+                </td>
                 <td>
                   <span :class="['upd-pill', `upd-pill--${r.permission}`]">
                     {{ PERMISSION_LABELS[r.permission as PermissionValue] || r.permission }}
@@ -502,7 +510,9 @@ function close() {
   border: 1px solid var(--border-accent);
   border-radius: 14px;
   background: linear-gradient(165deg, var(--surface-2), var(--surface-1));
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5), 0 1px 0 rgba(136, 223, 255, 0.12) inset;
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.5),
+    0 1px 0 rgba(136, 223, 255, 0.12) inset;
   overflow: auto;
   color: var(--text-primary);
 }

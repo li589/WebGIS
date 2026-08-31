@@ -52,9 +52,8 @@ export function projectOnlinePlanParams(
   }
   for (const key of ONLINE_PLAN_PARAM_KEYS) {
     const v = source[key]
-    out[key] = v !== undefined && v !== null && String(v).trim() !== ''
-      ? v
-      : ONLINE_PLAN_PARAM_DEFAULTS[key]
+    out[key] =
+      v !== undefined && v !== null && String(v).trim() !== '' ? v : ONLINE_PLAN_PARAM_DEFAULTS[key]
   }
   return out
 }

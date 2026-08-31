@@ -30,7 +30,9 @@ export function isOverallProgressStage(nodeIdOrStage: string | null | undefined)
 
 /** Internal per-node bookkeeping stages — hide from the node-progress list. */
 export function isInternalWorkflowNodeStage(nodeIdOrStage: string | null | undefined): boolean {
-  return String(nodeIdOrStage ?? '').trim().startsWith('workflow.node.')
+  return String(nodeIdOrStage ?? '')
+    .trim()
+    .startsWith('workflow.node.')
 }
 
 /** Whether a node stage should appear in the per-node progress list (not job bar). */
@@ -52,11 +54,11 @@ function nodeProgressSortKey(node: {
   return node.progress
 }
 
-  /**
-   * Dedupe by nodeId. Legacy fallback: collapse bare module ids that share
-   * stage+label only when neither uses ``graphNode:stage`` form (avoid merging
-   * two parallel instances of the same module).
-   */
+/**
+ * Dedupe by nodeId. Legacy fallback: collapse bare module ids that share
+ * stage+label only when neither uses ``graphNode:stage`` form (avoid merging
+ * two parallel instances of the same module).
+ */
 export function dedupeNodeProgress<
   T extends {
     nodeId: string
@@ -93,7 +95,14 @@ export function dedupeNodeProgress<
 }
 
 export function filterDisplayableNodeProgress<
-  T extends { nodeId: string; nodeLabel?: string; stage?: string; progress: number; updatedAt?: string; eventId?: string },
+  T extends {
+    nodeId: string
+    nodeLabel?: string
+    stage?: string
+    progress: number
+    updatedAt?: string
+    eventId?: string
+  },
 >(nodes: T[] | null | undefined): T[] {
   return dedupeNodeProgress((nodes ?? []).filter((n) => isDisplayableNodeStage(n.nodeId)))
 }

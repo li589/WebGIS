@@ -282,13 +282,14 @@ def _get_workflow_meta(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
     if not workflow_id:
         return {"ok": False, "error": "workflow_id 不能为空"}
 
-    accessible = _filter_resource_ids(
-        [workflow_id], cred, resource_type="workflow"
-    )
+    accessible = _filter_resource_ids([workflow_id], cred, resource_type="workflow")
     if workflow_id not in set(accessible):
         return {"ok": False, "error": f"无权访问工作流: {workflow_id}"}
 
-    from app.services.workflow_definition_service import get_definition, list_definitions
+    from app.services.workflow_definition_service import (
+        get_definition,
+        list_definitions,
+    )
 
     listing = None
     for item in list_definitions() or []:
@@ -300,22 +301,25 @@ def _get_workflow_meta(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
     if definition is None and listing is None:
         return {"ok": False, "error": f"未找到工作流: {workflow_id}"}
 
-    nodes_raw = (definition or {}).get("nodes") if isinstance(definition, dict) else None
+    nodes_raw = (
+        (definition or {}).get("nodes") if isinstance(definition, dict) else None
+    )
     node_summaries: list[dict[str, str]] = []
     if isinstance(nodes_raw, list):
         for node in nodes_raw[:40]:
             if not isinstance(node, dict):
                 continue
-            props = node.get("properties") if isinstance(node.get("properties"), dict) else {}
+            props = (
+                node.get("properties")
+                if isinstance(node.get("properties"), dict)
+                else {}
+            )
             node_summaries.append(
                 {
                     "id": str(node.get("id") or "")[:64],
                     "type": str(node.get("type") or props.get("type") or "")[:64],
                     "title": str(
-                        props.get("title")
-                        or props.get("name")
-                        or node.get("id")
-                        or ""
+                        props.get("title") or props.get("name") or node.get("id") or ""
                     )[:120],
                 }
             )
@@ -438,9 +442,7 @@ def _sample_layer_point(
     samples: list[dict[str, Any]] = []
     for lid in targets:
         if lid not in accessible:
-            samples.append(
-                {"catalog_id": lid, "ok": False, "error": "无权访问该图层"}
-            )
+            samples.append({"catalog_id": lid, "ok": False, "error": "无权访问该图层"})
             continue
         samples.append(_sample_one_layer(lid, lng=lng, lat=lat, time=time_key))
 
@@ -511,7 +513,9 @@ def _sample_one_layer(
                 "kind": "weather",
                 "catalog_id": catalog_id,
                 "display_name": display,
-                "provider": payload.get("provider") if isinstance(payload, dict) else None,
+                "provider": payload.get("provider")
+                if isinstance(payload, dict)
+                else None,
                 "model": payload.get("model") if isinstance(payload, dict) else None,
             }
             if isinstance(current, dict):
@@ -667,7 +671,12 @@ def load_server_tools_openai() -> list[dict[str, Any]]:
     import json
     from pathlib import Path
 
-    path = Path(__file__).resolve().parents[4] / "agentKits" / "tools" / "server_tools.json"
+    path = (
+        Path(__file__).resolve().parents[4]
+        / "agentKits"
+        / "tools"
+        / "server_tools.json"
+    )
     try:
         mtime = path.stat().st_mtime if path.is_file() else None
     except OSError:

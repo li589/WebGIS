@@ -234,8 +234,7 @@ const _data = apiConfigData as {
 export const BASEMAP_PROVIDER_CONFIGS: BasemapProviderConfig[] = _data.basemapProviders
 export const EXTERNAL_API_CONFIGS: ExternalApiConfig[] = _data.externalApis
 export const GEE_INTEGRATION_CONFIG: GeeIntegrationConfig = _data.geeIntegration
-export const UNIFIED_INTEGRATION_CONFIG_TEMPLATE: UnifiedIntegrationConfig =
-  _data.unifiedTemplate
+export const UNIFIED_INTEGRATION_CONFIG_TEMPLATE: UnifiedIntegrationConfig = _data.unifiedTemplate
 
 export const TILE_SOURCES: TileSourceConfig[] = BASEMAP_PROVIDER_CONFIGS.flatMap((provider) =>
   provider.endpoints

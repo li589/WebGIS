@@ -808,7 +808,9 @@ async def list_online_tile_sources():
     response_model=OnlineTileSource,
     dependencies=[Depends(require_config_management_access)],
 )
-async def upsert_online_tile_source(source_id: str, payload: OnlineTileSourceUpsertRequest):
+async def upsert_online_tile_source(
+    source_id: str, payload: OnlineTileSourceUpsertRequest
+):
     try:
         return config_service.upsert_online_tile_source(source_id, payload.model_dump())
     except ValueError as exc:
@@ -822,7 +824,9 @@ async def upsert_online_tile_source(source_id: str, payload: OnlineTileSourceUps
 )
 async def delete_online_tile_source(source_id: str):
     if not config_service.delete_online_tile_source(source_id):
-        raise HTTPException(status_code=404, detail=f"Online tile source '{source_id}' not found")
+        raise HTTPException(
+            status_code=404, detail=f"Online tile source '{source_id}' not found"
+        )
     return DeletedResponse(deleted=True)
 
 
@@ -1551,7 +1555,6 @@ async def get_data_input_policies():
 async def put_data_input_policies(body: Any):
     """写入 runtime 覆盖（原子写）。同 id 覆盖 seed；热载生效，无需重启后端。"""
     from app.services.data_input_policy_service import save_runtime_data_input_policies
-    from shared.contracts.api_contracts import DataInputPoliciesUpdateRequest
 
     try:
         parsed = (

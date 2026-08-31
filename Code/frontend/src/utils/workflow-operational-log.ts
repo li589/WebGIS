@@ -49,8 +49,7 @@ export function formatOperationalLine(event: WorkflowEventLike): string {
   ].filter(Boolean)
   const prefix = prefixParts.length ? `${prefixParts.join(' ')} ` : ''
   const level = event.level && event.level !== 'info' ? `${event.level.toUpperCase()} · ` : ''
-  const ch =
-    event.channel === 'system' ? '系统 · ' : event.channel === 'status' ? '状态 · ' : ''
+  const ch = event.channel === 'system' ? '系统 · ' : event.channel === 'status' ? '状态 · ' : ''
   return `${level}${ch}${prefix}${String(event.message || '').trim()}`.trim()
 }
 

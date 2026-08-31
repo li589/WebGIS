@@ -142,7 +142,9 @@ def convert_smap_l3_directory_to_mat(
         # 跳过该文件继续转换其余——单个坏文件不应炸整条自动链；全部失败
         # 才抛错（保留原 FileNotFoundError 语义）。
         try:
-            outputs.append(convert_smap_l3_file_to_mat(file_path, output_dir, field_specs))
+            outputs.append(
+                convert_smap_l3_file_to_mat(file_path, output_dir, field_specs)
+            )
         except Exception:
             failed_files.append(file_path.name)
     if failed_files and not outputs:

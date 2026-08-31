@@ -320,9 +320,7 @@ export function useNodeOperations(
       if (String(props.start_at ?? '') === start && String(props.end_at ?? '') === end) continue
 
       node.properties = { ...props, start_at: start, end_at: end }
-      const widgets = (
-        node as { widgets?: Array<{ name?: string; value?: unknown }> }
-      ).widgets
+      const widgets = (node as { widgets?: Array<{ name?: string; value?: unknown }> }).widgets
       if (widgets) {
         for (const w of widgets) {
           if (w.name === 'start_at') w.value = start

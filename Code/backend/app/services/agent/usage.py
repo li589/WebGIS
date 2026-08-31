@@ -15,11 +15,15 @@ def estimate_tokens(text: str) -> int:
     return max(1, cjk + (other + 3) // 4)
 
 
-def usage_from_openai(data: dict[str, Any], *, prompt_fallback: str, completion_fallback: str) -> dict[str, Any]:
+def usage_from_openai(
+    data: dict[str, Any], *, prompt_fallback: str, completion_fallback: str
+) -> dict[str, Any]:
     usage = data.get("usage")
     if isinstance(usage, dict):
         prompt = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
-        completion = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+        completion = int(
+            usage.get("completion_tokens") or usage.get("output_tokens") or 0
+        )
         total = int(usage.get("total_tokens") or (prompt + completion))
         if prompt or completion:
             return {
@@ -52,4 +56,6 @@ def usage_from_anthropic(
                 "total_tokens": prompt + completion,
                 "estimated": False,
             }
-    return usage_from_openai({}, prompt_fallback=prompt_fallback, completion_fallback=completion_fallback)
+    return usage_from_openai(
+        {}, prompt_fallback=prompt_fallback, completion_fallback=completion_fallback
+    )

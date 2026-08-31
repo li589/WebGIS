@@ -24,10 +24,7 @@ import type {
  * 目录显示名：静态 LAYER_LIBRARY → 传入的 runtime 缓存 → catalogId。
  * 英文反演技术 id 不得作为显示名返回（回退「反演产物」）。
  */
-export function getCatalogDisplayName(
-  catalogId: string,
-  runtimeDisplayName?: string | null,
-) {
+export function getCatalogDisplayName(catalogId: string, runtimeDisplayName?: string | null) {
   const staticName = LAYER_LIBRARY.find((item) => item.catalogId === catalogId)?.name
   if (staticName) return staticName
   const runtime = typeof runtimeDisplayName === 'string' ? runtimeDisplayName.trim() : ''

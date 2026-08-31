@@ -120,7 +120,7 @@
 
 :root[data-theme='light'] .map-shell--3d .map-stage {
   background:
-    radial-gradient(circle at 50% 48%, rgba(140, 175, 210, 0.10), transparent 38%),
+    radial-gradient(circle at 50% 48%, rgba(140, 175, 210, 0.1), transparent 38%),
     linear-gradient(180deg, #e7edf4 0%, #d6dfeb 56%, #c5d1e0 100%);
 }
 
@@ -143,7 +143,12 @@
 
 .map-shell--3d .map-fog {
   background:
-    radial-gradient(ellipse at 50% 48%, transparent 30%, rgba(20, 126, 168, 0.10) 69%, rgba(74, 203, 231, 0.28) 100%),
+    radial-gradient(
+      ellipse at 50% 48%,
+      transparent 30%,
+      rgba(20, 126, 168, 0.1) 69%,
+      rgba(74, 203, 231, 0.28) 100%
+    ),
     linear-gradient(180deg, rgba(2, 10, 18, 0.14), rgba(2, 10, 18, 0.08));
   mix-blend-mode: screen;
   opacity: 0.9;
@@ -164,8 +169,13 @@
 
 :root[data-theme='light'] .map-shell--3d .map-fog {
   background:
-    radial-gradient(ellipse at 50% 48%, transparent 32%, rgba(110, 150, 195, 0.08) 70%, rgba(150, 185, 220, 0.18) 100%),
-    linear-gradient(180deg, rgba(220, 230, 240, 0.10), rgba(220, 230, 240, 0.06));
+    radial-gradient(
+      ellipse at 50% 48%,
+      transparent 32%,
+      rgba(110, 150, 195, 0.08) 70%,
+      rgba(150, 185, 220, 0.18) 100%
+    ),
+    linear-gradient(180deg, rgba(220, 230, 240, 0.1), rgba(220, 230, 240, 0.06));
   mix-blend-mode: normal;
   opacity: 0.85;
 }

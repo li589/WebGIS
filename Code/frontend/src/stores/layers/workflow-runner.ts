@@ -59,12 +59,7 @@ import {
 } from '../../utils/workflow-expected-outputs'
 import { debugLog as probeDebugLog } from '../../utils/perf-probe'
 import { WORKFLOW_COPY } from '../../ui-copy/workflow'
-import {
-  INVERSION_RUN_LAYER_PATTERN,
-  isEnglishInversionCatalogId,
-  resolveInversionCatalogId,
-  sanitizeRunGroupTitle,
-} from './inversion-catalog'
+import { INVERSION_RUN_LAYER_PATTERN, resolveInversionCatalogId } from './inversion-catalog'
 import {
   extractWorkflowDefinitionName,
   extractWorkflowEntryId,
@@ -72,7 +67,6 @@ import {
   resolveRunGroupTitle,
   resolveWorkflowRunDisplayName,
   tryWorkflowSummaries,
-  type WorkflowSummaryLike,
 } from '../../utils/workflow-run-display-name'
 import type {
   ActiveLayer,
@@ -611,8 +605,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           const hasActive = deps
             .getActiveLayers()
             .some(
-              (l) =>
-                l.catalogId === mapped || resolveInversionCatalogId(l.catalogId) === mapped,
+              (l) => l.catalogId === mapped || resolveInversionCatalogId(l.catalogId) === mapped,
             )
           if (!hasActive) continue
           // 该目录已有计算组（快照/autoAttach 已建）→ 不再灌入第二条历史 run
@@ -665,8 +658,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           run.run_id,
         )
         const catalogDisplayName =
-          deps.getRuntimeLayerCatalog()[catalogId]?.display_name ??
-          getCatalogDisplayName(catalogId)
+          deps.getRuntimeLayerCatalog()[catalogId]?.display_name ?? getCatalogDisplayName(catalogId)
         let jobLayer = await buildJobLayer(run, catalogDisplayName, {
           previousJobLayer: existing,
         })
@@ -705,9 +697,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           // 僵尸防护：同工作流已有成功产物且非本机 tracked → 仍写入指示器/轮询，
           // 但不重建 TOC 占位组（避免陈旧中间块淹没侧栏）。
           const skipZombieGroup =
-            Boolean(workflowKey) &&
-            succeededByWorkflow.has(workflowKey) &&
-            !trackedItem
+            Boolean(workflowKey) && succeededByWorkflow.has(workflowKey) && !trackedItem
           // 有 bridge / tracked 组 / 已水合组 / wf-run 占位时均重建或补全计算组
           if (
             !skipZombieGroup &&
@@ -1332,8 +1322,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
                 (descriptor as { workflow_name?: string } | null)?.workflow_name,
             })
             const onlineBlocked =
-              (descriptor as { online_ready?: boolean | null } | null)?.online_ready ===
-              false
+              (descriptor as { online_ready?: boolean | null } | null)?.online_ready === false
             const decision = decideSourceRoute({
               mode,
               eligible: true,
@@ -1349,8 +1338,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
               ),
             })
             if (decision.action === 'confirm_online') {
-              const message =
-                '本地时间窗无数据，按策略需确认后改走在线获取。'
+              const message = '本地时间窗无数据，按策略需确认后改走在线获取。'
               deps.onSourceRouteConfirmOnline?.({
                 catalogId,
                 timeKey: routeTimeKey,
@@ -1509,8 +1497,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       // 状态指示器 / 计算组标题：工作流种子中文名优先，禁止图层名 / wf-run-* 占位
       workflowDisplayName = resolveSubmitWorkflowDisplayName(catalogName, {
         algorithmRequest: (payload.algorithm_request ?? options.algorithmRequest) as
-          | Record<string, unknown>
-          | undefined,
+          Record<string, unknown> | undefined,
         commandLabel:
           options.commandLabel ||
           (typeof payload.command_label === 'string' ? payload.command_label : undefined),
@@ -1527,9 +1514,8 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       } else {
         // 画布/流水线常把日期写在 algorithm_params，却未带顶层 time_range；
         // 优先用 YYYYMMDD，禁止误用主时间轴「今天」盖掉流水线窗。
-        const { yyyymmddPairToTimeRange } = await import(
-          '../../composables/workflow-pipeline-params'
-        )
+        const { yyyymmddPairToTimeRange } =
+          await import('../../composables/workflow-pipeline-params')
         const apForDates =
           options.algorithmRequest &&
           typeof options.algorithmRequest.algorithm_params === 'object' &&
@@ -1955,9 +1941,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     } catch {
       return 0 // 目录/网络不可用：静默（添加图层本身不应因此报错）
     }
-    const catalogRuns = runs.filter(
-      (r) => resolveInversionCatalogId(r.layer_id || '') === targetId,
-    )
+    const catalogRuns = runs.filter((r) => resolveInversionCatalogId(r.layer_id || '') === targetId)
     if (!catalogRuns.length) return 0
 
     const preferred = options?.preferredTimeKey?.trim() || null
@@ -1991,13 +1975,10 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         const parentLayer = deps
           .getActiveLayers()
           .find(
-            (l) =>
-              l.catalogId === targetId || resolveInversionCatalogId(l.catalogId) === targetId,
+            (l) => l.catalogId === targetId || resolveInversionCatalogId(l.catalogId) === targetId,
           )
         const timeList =
-          memberTimeList.length > 0
-            ? memberTimeList
-            : (parentLayer?.importedRaster?.timeList ?? [])
+          memberTimeList.length > 0 ? memberTimeList : (parentLayer?.importedRaster?.timeList ?? [])
         if (preferred) {
           const { timeListCoversTimeKey } = await import('../../utils/time-key-coverage')
           if (!timeListCoversTimeKey(timeList, preferred)) {
@@ -2030,10 +2011,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
   }
 
   /** 查询同 catalog 是否已有覆盖 timeKey 的成功产物（不绑层，供确认卡决策）。 */
-  async function hasReusableProductsForTime(
-    catalogId: string,
-    timeKey: string,
-  ): Promise<boolean> {
+  async function hasReusableProductsForTime(catalogId: string, timeKey: string): Promise<boolean> {
     const targetId = resolveInversionCatalogId(catalogId)
     if (!deps.supportsMapLayerResult(targetId) && !deps.supportsMapLayerResult(catalogId)) {
       return false

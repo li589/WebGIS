@@ -100,7 +100,9 @@ def get_portal_workflow_mapping(portal_id: str) -> dict[str, Any] | None:
     return PORTAL_WORKFLOW_MAP.get(portal_id)
 
 
-def build_workflow_hint(portal_id: str, dataset_keys: list[str] | None = None) -> dict[str, Any] | None:
+def build_workflow_hint(
+    portal_id: str, dataset_keys: list[str] | None = None
+) -> dict[str, Any] | None:
     """构造「注册并添加到图层」的工作流编排提示。
 
     - dataset_keys 为空 → 用映射默认数据集；
@@ -114,7 +116,9 @@ def build_workflow_hint(portal_id: str, dataset_keys: list[str] | None = None) -
     mapping = get_portal_workflow_mapping(portal_id)
     if mapping is None:
         return None
-    keys = [k for k in (dataset_keys or []) if k] or list(mapping["default_dataset_keys"])
+    keys = [k for k in (dataset_keys or []) if k] or list(
+        mapping["default_dataset_keys"]
+    )
     params = {**mapping["default_params"]}
     if mapping["workflow"].endswith("_download"):
         params.update(_dates_last_days(30))

@@ -40,7 +40,10 @@ export function isPlausiblePlanTimeKey(raw: string): boolean {
 }
 
 /** time_list 项（日或块）是否覆盖轴上 timeKey。 */
-export function timeListCoversTimeKey(timeList: string[] | undefined | null, timeKey: string): boolean {
+export function timeListCoversTimeKey(
+  timeList: string[] | undefined | null,
+  timeKey: string,
+): boolean {
   if (!timeList?.length || !timeKey) return false
   const target = normalizeTimeToken(timeKey)
   if (!target) return false
@@ -48,7 +51,9 @@ export function timeListCoversTimeKey(timeList: string[] | undefined | null, tim
     const raw = String(item || '').trim()
     if (!raw) continue
     // YYYYMMDD_YYYYMMDD block
-    const block = /^(\d{4})[-_/]?(\d{2})[-_/]?(\d{2})[_-](\d{4})[-_/]?(\d{2})[-_/]?(\d{2})/.exec(raw)
+    const block = /^(\d{4})[-_/]?(\d{2})[-_/]?(\d{2})[_-](\d{4})[-_/]?(\d{2})[-_/]?(\d{2})/.exec(
+      raw,
+    )
     if (block) {
       const a = `${block[1]}${block[2]}${block[3]}`
       const b = `${block[4]}${block[5]}${block[6]}`

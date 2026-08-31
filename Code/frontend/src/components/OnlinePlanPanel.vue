@@ -5,10 +5,7 @@
  */
 import { computed, onMounted, onScopeDispose, ref, watch } from 'vue'
 import AppButton from './ui/AppButton.vue'
-import {
-  useOnlinePlanSessionStore,
-  type PlanCoverageSnapshot,
-} from '../stores/online-plan-session'
+import { useOnlinePlanSessionStore, type PlanCoverageSnapshot } from '../stores/online-plan-session'
 import { useLayerWorkspace, useWorkflowRun } from '../stores/layers/selectors'
 import { useUiStore } from '../stores/ui'
 import { buildTimeRangeFromKey } from '../stores/layers/online-temporal-orchestrator'
@@ -228,16 +225,15 @@ const orbitMode = computed({
 const failSummary = computed(() => {
   const t = activeTab.value
   if (!t) return ''
-  const parts = [
-    t.displayName || t.catalogId,
-    `失败 ${t.failCount} 次`,
-    t.lastFailMessage,
-  ].filter(Boolean)
+  const parts = [t.displayName || t.catalogId, `失败 ${t.failCount} 次`, t.lastFailMessage].filter(
+    Boolean,
+  )
   return parts.join(' · ')
 })
 
 const localDatesPreview = computed(() => {
-  const dates = coverage.value?.channels?.local?.dates ?? activeTab.value?.coverageSnapshot?.localDates ?? []
+  const dates =
+    coverage.value?.channels?.local?.dates ?? activeTab.value?.coverageSnapshot?.localDates ?? []
   return dates.slice(0, 12)
 })
 
@@ -304,10 +300,7 @@ async function refreshCoverage(catalogId: string) {
 function syncDraftFromTab() {
   const t = activeTab.value
   if (!t) return
-  draftDate.value =
-    t.timeKey ||
-    t.timeRange?.start_at?.slice(0, 10) ||
-    ''
+  draftDate.value = t.timeKey || t.timeRange?.start_at?.slice(0, 10) || ''
   confirmError.value = null
   draftError.value = null
 }
@@ -506,9 +499,7 @@ async function confirmOnlineRerun() {
         end_at: tab.timeRange.end_at,
       },
       algorithmRequest: algoParams ? { algorithm_params: algoParams } : undefined,
-      commandLabel: tab.timeKey
-        ? `计划会话在线重跑 ${tab.timeKey}`
-        : '计划会话在线重跑',
+      commandLabel: tab.timeKey ? `计划会话在线重跑 ${tab.timeKey}` : '计划会话在线重跑',
     })
     if (gen !== confirmGeneration) return
 

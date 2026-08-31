@@ -46,8 +46,7 @@ export function createWeatherOverlayServices(
       // 重建并正常显示（回退链不受影响）。
       const ids = buildWeatherOverlayIds(overlayState.catalogId)
       const fillLayer = options.map.getLayer(ids.fillLayerId) as
-        | { layout?: { visibility?: string } }
-        | undefined
+        { layout?: { visibility?: string } } | undefined
       const fillWasHiddenByWebGL = fillLayer?.layout?.visibility === 'none'
       syncWeatherGridFillOverlayRenderer(options.map, overlayState)
       const smoothActive = options.getSmoothRendering?.() ?? true

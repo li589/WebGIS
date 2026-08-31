@@ -32,32 +32,31 @@ soil_alpha_retrieval_step_i=zeros(rows,cols,Num_step);% step-i results
   for ii=1:1:M
       multi_temporal_data=obsv_data(:,:,(ii:ii+Num_step-1));
       MPP=zeros(Num_step-1,Num_step);%Define MPP matrix of observations
-    
+
       Zero_solv=zeros((Num_step-1),1);% expected solution result
-    
+
       %caculate the 'alpha' value from time series observations for each slide window
       soil_alpha_retrieval_step_i=Fun_soil_alpha_retrieval_vv(rows,cols,Num_step,...
           inc_ang,multi_temporal_data,MPP,Zero_solv);
-      
+
       % store 'alpha' value from time series observations for M step windows
       soil_alpha_retrieval_step_M(:,:,:,ii)=soil_alpha_retrieval_step_i;
   end
-  
+
   %reset invalid value to zero
   soil_alpha_retrieval_step_M(isnan(soil_alpha_retrieval_step_M)==1)=0;
-  
+
   %Create an matrix to store the M-step results of each date
   soil_alpha_retrieval_time_series=zeros(rows,cols,Num_image,M);
   for ii=1:1:M
     soil_alpha_retrieval_time_series(:,:,ii:((ii-1)+Num_step),ii)=...
         soil_alpha_retrieval_step_M(:,:,1:Num_step,ii);
   end
-  
+
   %reset the invalid value to NaN
   soil_alpha_retrieval_time_series(soil_alpha_retrieval_time_series==0)=NaN;
-  
+
   %caculate the average of M-steps result of each date
   soil_alpha_retrieval_win_average=nanmean(soil_alpha_retrieval_time_series,4);
 
 end
-

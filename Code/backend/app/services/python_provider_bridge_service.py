@@ -306,9 +306,7 @@ class _EventForwardingLoggerAdapter:
             if ui_surface == "node_progress" and not operational_message:
                 event_message = message
             resolved_channel = (
-                channel
-                if isinstance(channel, EventChannel)
-                else EventChannel(channel)
+                channel if isinstance(channel, EventChannel) else EventChannel(channel)
             )
             resolved_level = level if isinstance(level, LogLevel) else LogLevel(level)
             event_factory(

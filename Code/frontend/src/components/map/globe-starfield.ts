@@ -185,14 +185,12 @@ export const GALACTIC_TILT_DEG = 62.87175
 
 /** 银道→赤道旋转矩阵（R^T，按行主序） */
 const _G2E = [
-  -0.0548755604, 0.4941094279, -0.867666149,
-  -0.8734370902, -0.44482963, -0.1980763734,
+  -0.0548755604, 0.4941094279, -0.867666149, -0.8734370902, -0.44482963, -0.1980763734,
   -0.4838359925, 0.7469822445, 0.4559837762,
 ]
 /** 赤道→银道旋转矩阵（R = (R^T)^T，按行主序） */
 const _E2G = [
-  -0.0548755604, -0.8734370902, -0.4838359925,
-  0.4941094279, -0.44482963, 0.7469822445,
+  -0.0548755604, -0.8734370902, -0.4838359925, 0.4941094279, -0.44482963, 0.7469822445,
   -0.867666149, -0.1980763734, 0.4559837762,
 ]
 
@@ -348,9 +346,7 @@ function galaxyBandIntensity(lDeg: number, bDeg: number): { band: number; bulge:
 
   // 核球（真实：约 l∈±30°, b∈±12° 的椭球状隆起，长轴沿银道面）
   const dl = Math.min(d, 360 - lDeg) // 有符号近银心距离
-  const bulge = 0.95 * Math.exp(
-    -0.5 * ((dl / 18) ** 2 + (bDeg / 9) ** 2),
-  )
+  const bulge = 0.95 * Math.exp(-0.5 * ((dl / 18) ** 2 + (bDeg / 9) ** 2))
   return { band, bulge }
 }
 
@@ -374,20 +370,32 @@ function dustRiftIntensity(lDeg: number, bDeg: number, seed: number): number {
 function spectralColor(spectral: string): string {
   const t = spectral.charAt(0).toUpperCase()
   switch (t) {
-    case 'O': return '#a8b8ff'
-    case 'B': return '#b8c8ff'
-    case 'A': return '#dde4ff'
-    case 'F': return '#fff4e8'
-    case 'G': return '#fff0d0'
-    case 'K': return '#ffc890'
-    case 'M': return '#ffaa78'
-    default: return '#ffffff'
+    case 'O':
+      return '#a8b8ff'
+    case 'B':
+      return '#b8c8ff'
+    case 'A':
+      return '#dde4ff'
+    case 'F':
+      return '#fff4e8'
+    case 'G':
+      return '#fff0d0'
+    case 'K':
+      return '#ffc890'
+    case 'M':
+      return '#ffaa78'
+    default:
+      return '#ffffff'
   }
 }
 
 function hexToRgb(hex: string): string {
   let h = hex.replace('#', '')
-  if (h.length === 3) h = h.split('').map((c) => c + c).join('')
+  if (h.length === 3)
+    h = h
+      .split('')
+      .map((c) => c + c)
+      .join('')
   const n = parseInt(h, 16)
   return `${(n >> 16) & 0xff}, ${(n >> 8) & 0xff}, ${n & 0xff}`
 }
@@ -659,9 +667,10 @@ function drawBackgroundStars(
   visual: StarfieldVisual,
   noiseSeed: number,
 ): void {
-  const palette = theme === 'dark'
-    ? ['#ffffff', '#e8f0ff', '#cfddff', '#fff2dd', '#ffd9b8']
-    : ['#8ea0c0', '#a8b6d0', '#bcc8de']
+  const palette =
+    theme === 'dark'
+      ? ['#ffffff', '#e8f0ff', '#cfddff', '#fff2dd', '#ffd9b8']
+      : ['#8ea0c0', '#a8b6d0', '#bcc8de']
   const maxAttempts = visual.bgStarCount * 6
   let placed = 0
   let attempts = 0
@@ -761,12 +770,7 @@ function drawDiffractionSpikes(
 ): void {
   const mainLen = r * (9 + 5 * boost) // 主芒长度
   const diagLen = mainLen * 0.45 // 次芒长度
-  const spike = (
-    len: number,
-    angle: number,
-    width: number,
-    a: number,
-  ) => {
+  const spike = (len: number, angle: number, width: number, a: number) => {
     const ex = x + Math.cos(angle) * len
     const ey = y + Math.sin(angle) * len
     const grad = ctx.createLinearGradient(x, y, ex, ey)

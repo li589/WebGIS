@@ -169,12 +169,7 @@ async function saveTileSource() {
     <template v-if="storageSources.length">
       <h4 class="group-title">远程存储源（{{ storageSources.length }}）</h4>
       <div class="card-grid">
-        <RemoteSourceCard
-          v-for="s in storageSources"
-          :key="s.refId"
-          :source="s"
-          @add="openAdd"
-        />
+        <RemoteSourceCard v-for="s in storageSources" :key="s.refId" :source="s" @add="openAdd" />
       </div>
     </template>
 
@@ -234,7 +229,9 @@ async function saveTileSource() {
           <span>WMTS 图层</span>
           <input v-model="tileForm.layer" placeholder="图层标识" />
         </label>
-        <button type="button" class="primary-btn tile-submit" @click="saveTileSource">保存瓦片源</button>
+        <button type="button" class="primary-btn tile-submit" @click="saveTileSource">
+          保存瓦片源
+        </button>
       </div>
     </section>
 
@@ -246,10 +243,19 @@ async function saveTileSource() {
         <div v-for="source in onlineTileSources" :key="source.source_id" class="registered-row">
           <div>
             <strong>{{ source.display_name }}</strong>
-            <span class="muted">{{ source.service_type.toUpperCase() }} · {{ source.coordinate_system }} · {{ source.config_status === 'configured' ? '已配置' : '配置无效' }}</span>
+            <span class="muted"
+              >{{ source.service_type.toUpperCase() }} · {{ source.coordinate_system }} ·
+              {{ source.config_status === 'configured' ? '已配置' : '配置无效' }}</span
+            >
             <code>{{ source.url_template }}</code>
           </div>
-          <button type="button" class="danger-btn" @click="removeOnlineTileSource(source.source_id)">删除</button>
+          <button
+            type="button"
+            class="danger-btn"
+            @click="removeOnlineTileSource(source.source_id)"
+          >
+            删除
+          </button>
         </div>
       </div>
     </section>
@@ -331,7 +337,11 @@ async function saveTileSource() {
   border: 1px solid var(--border-subtle);
   border-radius: 0.62rem;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent-surface) 72%, transparent), transparent 58%),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--accent-surface) 72%, transparent),
+      transparent 58%
+    ),
     var(--surface-2);
 }
 .tile-section-head {
@@ -382,7 +392,9 @@ async function saveTileSource() {
   color: var(--text-primary);
   font: inherit;
   font-size: var(--font-size-caption);
-  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
 }
 .tile-form input:focus,
 .tile-form select:focus {
@@ -402,7 +414,10 @@ async function saveTileSource() {
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    transform 0.16s ease;
 }
 .primary-btn:hover {
   border-color: var(--accent);

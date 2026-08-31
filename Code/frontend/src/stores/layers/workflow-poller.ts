@@ -21,7 +21,10 @@ import {
   resolveJobOverallProgress,
 } from './workflow-progress'
 import { formatProgressShell } from '../../utils/workflow-progress-format'
-import { messageImpliesTerminalNode, extractFailureHints } from '../../utils/workflow-operational-log'
+import {
+  messageImpliesTerminalNode,
+  extractFailureHints,
+} from '../../utils/workflow-operational-log'
 import type { JobLayerItem, NodeProgress } from './types'
 
 export const EVENT_POLL_ACTIVE_INTERVAL_MS = 1200
@@ -215,16 +218,13 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
                       : undefined,
                 // 下载进度（2026-08-25 下载可视化）：算法包 download_nodes
                 // 的 detail 透传（速度/文件数/累计字节）
-                speed_bps:
-                  typeof detailRaw.speed_bps === 'number' ? detailRaw.speed_bps : null,
+                speed_bps: typeof detailRaw.speed_bps === 'number' ? detailRaw.speed_bps : null,
                 downloaded_items:
                   typeof detailRaw.downloaded_items === 'number'
                     ? detailRaw.downloaded_items
                     : undefined,
                 total_items:
-                  typeof detailRaw.total_items === 'number'
-                    ? detailRaw.total_items
-                    : undefined,
+                  typeof detailRaw.total_items === 'number' ? detailRaw.total_items : undefined,
                 downloaded_bytes:
                   typeof detailRaw.downloaded_bytes === 'number'
                     ? detailRaw.downloaded_bytes
@@ -242,9 +242,7 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
                     ? detailRaw.active_workers
                     : undefined,
                 items_display:
-                  typeof detailRaw.items_display === 'string'
-                    ? detailRaw.items_display
-                    : undefined,
+                  typeof detailRaw.items_display === 'string' ? detailRaw.items_display : undefined,
               }
             : undefined
         if (
@@ -270,9 +268,7 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
         // workflow.dispatch carries module chunk/pixel detail for the log line,
         // but its progress is already span-weighted — do not inflate with chunk %.
         const nodePct = isOverallProgressStage(np.node_id)
-          ? normalizeWorkflowProgress(
-              typeof np.progress === 'number' ? np.progress : undefined,
-            )
+          ? normalizeWorkflowProgress(typeof np.progress === 'number' ? np.progress : undefined)
           : normalizeWorkflowProgress(
               typeof np.progress === 'number' ? np.progress : undefined,
               detail,
@@ -428,8 +424,7 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
       return true
     }
     // 终态/非终态统一：事件侧字段优先保留 existing（buildJobLayer 不产出这些）
-    const mergedNodeProgress =
-      existingJobLayer?.nodeProgress ?? jobLayer.nodeProgress
+    const mergedNodeProgress = existingJobLayer?.nodeProgress ?? jobLayer.nodeProgress
     const mergedJobLayer = existingJobLayer
       ? {
           ...jobLayer,

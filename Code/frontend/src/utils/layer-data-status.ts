@@ -70,9 +70,7 @@ export function deriveDataStatus(input: DataStatusInput): DataStatusBadge | null
   // 1. 作业状态最具体，优先
   if (jobStatus === 'running') {
     const pct =
-      typeof jobProgress === 'number' && jobProgress > 0
-        ? ` ${Math.round(jobProgress)}%`
-        : ''
+      typeof jobProgress === 'number' && jobProgress > 0 ? ` ${Math.round(jobProgress)}%` : ''
     return { state: 'running', label: `运行中${pct}`, title: availabilityDescription ?? undefined }
   }
   if (jobStatus === 'queued' || jobStatus === 'retry_pending') {

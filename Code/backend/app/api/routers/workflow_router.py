@@ -140,7 +140,9 @@ def submit_overlay_asset_workflow(
             force_rebake=force_rebake,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
 
     if accepted.status != ExecutionStatus.succeeded:
         celery_app.send_task(

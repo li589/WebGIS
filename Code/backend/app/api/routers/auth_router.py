@@ -5,7 +5,16 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -629,7 +638,9 @@ def get_primary_theme_public() -> ThemePublicBrand:
 
 
 @router.get("/themes", response_model=list[ThemePublic])
-def list_themes(_admin: CredentialContext = Depends(require_admin)) -> list[ThemePublic]:
+def list_themes(
+    _admin: CredentialContext = Depends(require_admin),
+) -> list[ThemePublic]:
     """List all product themes (admin session required)."""
     try:
         from app.services.theme_repository import get_theme_repository
@@ -840,4 +851,3 @@ def get_theme_logo(theme_id: int) -> FileResponse:
         ".gif": "image/gif",
     }.get(path.suffix.lower(), "application/octet-stream")
     return FileResponse(path, media_type=media)
-

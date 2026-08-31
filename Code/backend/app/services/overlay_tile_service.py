@@ -260,7 +260,12 @@ def render_geotiff_tile_png(
             if need_res_x >= p_res_x and need_res_y >= p_res_y:
                 try:
                     m_left, m_bottom, m_right, m_top = transform_bounds(
-                        "EPSG:4326", "EPSG:3857", west, south, east, north,
+                        "EPSG:4326",
+                        "EPSG:3857",
+                        west,
+                        south,
+                        east,
+                        north,
                         densify_pts=21,
                     )
                 except Exception:

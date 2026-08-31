@@ -414,7 +414,9 @@ export async function buildJobLayer(
   options: BuildJobLayerOptions = {},
 ): Promise<JobLayerItem> {
   const status = run.status === 'accepted' ? 'queued' : run.status
-  const entryName = extractWorkflowEntryName(run)
+  const rawEntryName = extractWorkflowEntryName(run)
+  const entryName =
+    rawEntryName && !isTechnicalWorkflowEntryName(rawEntryName) ? rawEntryName : undefined
   const rawDiagnostics = run.diagnostics ?? []
   const diagnosticNotes = [
     ...extractDiagnosticNotes(run),

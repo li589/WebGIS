@@ -448,7 +448,9 @@ def _run_legacy(
     total = len(urls)
     downloaded_bytes = 0
     for i, url in enumerate(urls, start=1):
-        name = url.rstrip("/").split("?")[0].split("/")[-1] or f"cdse_legacy_{i - 1}.zip"
+        name = (
+            url.rstrip("/").split("?")[0].split("/")[-1] or f"cdse_legacy_{i - 1}.zip"
+        )
         target = target_path / name
         try:
             logger.info("CDSE legacy 下载: %s -> %s", url, target)

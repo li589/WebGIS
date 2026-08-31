@@ -16,10 +16,7 @@ import { computed, ref, type ComputedRef, type Ref } from 'vue'
 
 import type { CrossDomainBindings } from './bindings'
 import type { JobLayerItem } from './types'
-import {
-  fetchLayerLifecycle,
-  type LayerLifecycleResponse,
-} from '../../services/runtime-api'
+import { fetchLayerLifecycle, type LayerLifecycleResponse } from '../../services/runtime-api'
 
 /** 单图层生命周期聚合视图（本地信号 + 后端真源合并）。 */
 export interface LayerLifecycleEntry {
@@ -98,16 +95,15 @@ export function createLifecycleDomain(deps: LifecycleDomainDeps): LifecycleDomai
 
   const layerLifecycle = computed(() => {
     const map = new Map<string, LayerLifecycleEntry>()
-    const overlayStates = new Map(
-      mapOverlayTimeStates.value.map((s) => [s.layerId, s]),
-    )
+    const overlayStates = new Map(mapOverlayTimeStates.value.map((s) => [s.layerId, s]))
 
     // 1) 后端真源条目
     for (const [layerId, resp] of Object.entries(serverLifecycle.value)) {
       const overlay = overlayStates.get(layerId)
       map.set(layerId, {
         layerId,
-        lifecycleState: (resp.lifecycle_state as LayerLifecycleEntry['lifecycleState']) ?? 'unknown',
+        lifecycleState:
+          (resp.lifecycle_state as LayerLifecycleEntry['lifecycleState']) ?? 'unknown',
         assetState: resp.asset?.asset_state ?? null,
         bakeVersion: resp.asset?.bake_version ?? null,
         currentBakeVersion: resp.asset?.current_bake_version ?? null,

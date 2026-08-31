@@ -117,9 +117,9 @@ export function useWorkflowEditorRun(
           // start_date+end_date 推导，禁止回落主时间轴「今天」。
           topLevelTimeRange = deriveJobTimeRangeFromGraph(canvasNodes) ?? undefined
           if (!topLevelTimeRange) {
-            topLevelTimeRange = deriveJobTimeRangeFromGraph(
-              nodes as unknown as Array<Record<string, unknown>>,
-            ) ?? undefined
+            topLevelTimeRange =
+              deriveJobTimeRangeFromGraph(nodes as unknown as Array<Record<string, unknown>>) ??
+              undefined
           }
           if (engine === 'weather') {
             weatherRequest = {

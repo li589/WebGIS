@@ -12,11 +12,7 @@
 import { ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
-import {
-  readScopedItem,
-  removeScopedItem,
-  writeScopedItem,
-} from '../services/user-local-isolation'
+import { readScopedItem, removeScopedItem, writeScopedItem } from '../services/user-local-isolation'
 
 export type DrawMode = 'polygon' | 'rectangle' | 'line'
 

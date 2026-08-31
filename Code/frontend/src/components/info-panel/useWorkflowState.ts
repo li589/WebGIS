@@ -85,17 +85,14 @@ export function useWorkflowState(options: WorkflowStateOptions) {
       (hasOnline ? 'online' : 'local')
     const options = [
       ...(hasLocal && hasOnline ? [{ key: 'auto', label: '自动' }] : []),
-      ...(hasLocal
-        ? [{ key: 'local', label: variants.local?.label?.trim() || '本地读取' }]
-        : []),
+      ...(hasLocal ? [{ key: 'local', label: variants.local?.label?.trim() || '本地读取' }] : []),
       ...(hasOnline
         ? [{ key: 'online', label: variants.online?.label?.trim() || '在线获取' }]
         : []),
     ]
     const backendId = workspace.resolveBackendLayerId(cid)
     const pinned =
-      workflowRun.isWorkflowVariantPinned?.(backendId) ||
-      workflowRun.isWorkflowVariantPinned?.(cid)
+      workflowRun.isWorkflowVariantPinned?.(backendId) || workflowRun.isWorkflowVariantPinned?.(cid)
     const preference =
       workflowRun.workflowVariantPreference.value[backendId] ??
       workflowRun.workflowVariantPreference.value[cid]
@@ -128,9 +125,8 @@ export function useWorkflowState(options: WorkflowStateOptions) {
     let timeRange: Record<string, unknown> | undefined
     try {
       const { useUiStore } = await import('../../stores/ui')
-      const { buildTimeKey, buildTimeRangeFromKey } = await import(
-        '../../stores/layers/online-temporal-orchestrator'
-      )
+      const { buildTimeKey, buildTimeRangeFromKey } =
+        await import('../../stores/layers/online-temporal-orchestrator')
       const ui = useUiStore()
       const desc = workspace.resolveEffectiveDescriptor(cid) as {
         time_granularity?: string
@@ -150,7 +146,9 @@ export function useWorkflowState(options: WorkflowStateOptions) {
             : 'day'
         if (gran !== 'static') {
           const nativeStep =
-            desc?.native_step || desc?.online_temporal?.native_step || (gran === 'hour' ? '1h' : '1d')
+            desc?.native_step ||
+            desc?.online_temporal?.native_step ||
+            (gran === 'hour' ? '1h' : '1d')
           const timeKey = buildTimeKey(ui.currentDate, ui.currentHour, gran)
           const built = buildTimeRangeFromKey(timeKey, nativeStep, gran)
           if (built) timeRange = built as unknown as Record<string, unknown>
@@ -162,9 +160,7 @@ export function useWorkflowState(options: WorkflowStateOptions) {
 
     try {
       await workflowRun.runWorkflowForCatalog(cid, {
-        ...(variantKey === 'auto'
-          ? {}
-          : { workflowVariant: variantKey as 'online' | 'local' }),
+        ...(variantKey === 'auto' ? {} : { workflowVariant: variantKey as 'online' | 'local' }),
         ...(timeRange ? { timeRange } : {}),
       })
     } catch (error) {

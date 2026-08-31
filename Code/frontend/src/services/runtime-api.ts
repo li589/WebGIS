@@ -46,10 +46,10 @@ export function submitOverlayAssetWorkflow(layerId: string, forceRebake = false)
 
 /** 图层平台子系统 P0：图层生命周期聚合查询（资产 + 最近 run + 时间轴）。 */
 export function fetchLayerLifecycle(layerId: string) {
-  return requestJson<LayerLifecycleResponse>(
-    `/layers/${encodeURIComponent(layerId)}/lifecycle`,
-    { silent: true, timeoutMs: 30000 },
-  )
+  return requestJson<LayerLifecycleResponse>(`/layers/${encodeURIComponent(layerId)}/lifecycle`, {
+    silent: true,
+    timeoutMs: 30000,
+  })
 }
 
 /** 图层平台子系统 P1：在线源同步统一入口（workflow_kind=online_sync）。 */
@@ -57,18 +57,15 @@ export function syncLayerAssetOnline(
   layerId: string,
   options?: { timeKey?: string; isPrefetch?: boolean; priority?: 'low' | 'normal' },
 ) {
-  return requestJson<LayerOnlineSyncResponse>(
-    `/layer-assets/${encodeURIComponent(layerId)}/sync`,
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        time_key: options?.timeKey ?? null,
-        is_prefetch: options?.isPrefetch ?? false,
-        priority: options?.priority ?? 'normal',
-      }),
-      timeoutMs: 120000,
-    },
-  )
+  return requestJson<LayerOnlineSyncResponse>(`/layer-assets/${encodeURIComponent(layerId)}/sync`, {
+    method: 'POST',
+    body: JSON.stringify({
+      time_key: options?.timeKey ?? null,
+      is_prefetch: options?.isPrefetch ?? false,
+      priority: options?.priority ?? 'normal',
+    }),
+    timeoutMs: 120000,
+  })
 }
 
 /** 图层平台子系统 P1：课题组工作流模板列表。 */
@@ -161,10 +158,7 @@ export function getWorkflowRunView(runId: string) {
   return requestJson<WorkflowRunViewResponse>(`/workflow-runs/${runId}/view`, { silent: true })
 }
 
-export function materializeWorkflowMapLayers(
-  runId: string,
-  options?: { silent?: boolean },
-) {
+export function materializeWorkflowMapLayers(runId: string, options?: { silent?: boolean }) {
   // 默认 silent：渐进物化与失败竞态下的 409（retry_pending/failed）属预期，
   // 勿写入「Request failed」用户日志；显式 silent:false 仅用于调试。
   return requestJson<{

@@ -10,15 +10,18 @@ from typing import Literal
 NodataMode = Literal["transparent", "solid"]
 
 
-
 # P2-E（2026-08-24）色带单源：定义与别名以 catalog_seeds/palettes.json 为
 # 唯一真源（前端 src/data/weather-palettes.generated.ts 由
 # Tools/generate_palette_config.py 从同一 JSON 生成），消除前后端双维护
 # 漂移。改色带只改 JSON + 跑脚本，禁止在代码里加色带。
-_PALETTES_PATH = Path(__file__).resolve().parent.parent / "catalog_seeds" / "palettes.json"
+_PALETTES_PATH = (
+    Path(__file__).resolve().parent.parent / "catalog_seeds" / "palettes.json"
+)
 
 
-def _load_palettes_from_config() -> tuple[dict[str, list[tuple[int, int, int]]], dict[str, str]]:
+def _load_palettes_from_config() -> (
+    tuple[dict[str, list[tuple[int, int, int]]], dict[str, str]]
+):
     def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
         value = hex_str.lstrip("#")
         return (int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16))
@@ -116,7 +119,7 @@ def _colorize_masked_band(
         # 此前用全量 min/max——与瓦片 p2/p98 两套基准，image↔瓦片模式切换
         # 时同数据色阶突变；且 min/max 受极值敏感（火点/异常值压扁整体色阶）。
         # filled(nan) 前先转 float：整型源（uint8 分类）会抛 TypeError
-        #（2026-08-24 CLCD 注册失败根因之一）。
+        # （2026-08-24 CLCD 注册失败根因之一）。
         if count >= 100:
             min_value = float(
                 numpy.nanpercentile(
