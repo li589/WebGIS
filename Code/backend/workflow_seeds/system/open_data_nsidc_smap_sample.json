@@ -8,7 +8,10 @@
     "readonly": true,
     "is_template": true,
     "linked_layer_id": "ref-smap-sm-202512-l3",
-    "tags": ["sample", "download"],
+    "tags": [
+      "sample",
+      "download"
+    ],
     "category": "data_access"
   },
   "workflow_id": "open_data_nsidc_smap_sample",
@@ -18,18 +21,26 @@
     {
       "id": 1,
       "type": "download/nsidc_smap_download",
-      "pos": [80, 140],
+      "pos": [
+        80,
+        140
+      ],
       "properties": {
         "start_date": "{YYYYMMDD}",
         "end_date": "{YYYYMMDD}",
         "version": "6",
+        "short_name": "SPL3SMP_E",
+        "local_dir": "{DATA_ROOT}/Soil_Moisture/SMAP_L3_SPL3SMP_E",
         "dry_run": false
       }
     },
     {
       "id": 2,
       "type": "extract/variable",
-      "pos": [640, 140],
+      "pos": [
+        640,
+        140
+      ],
       "properties": {
         "variable": "Soil_Moisture_Retrieval_Data_AM/soil_moisture"
       }
@@ -37,7 +48,10 @@
     {
       "id": 3,
       "type": "format/convert",
-      "pos": [920, 140],
+      "pos": [
+        920,
+        140
+      ],
       "properties": {
         "target_format": "mat",
         "variable": "Soil_Moisture_Retrieval_Data_AM/soil_moisture"
@@ -45,13 +59,31 @@
     }
   ],
   "links": [
-    {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "value:string"},
-    {"0": 2, "1": 2, "2": 0, "3": 3, "4": 0, "5": "value:string"}
+    {
+      "0": 1,
+      "1": 1,
+      "2": 0,
+      "3": 2,
+      "4": 0,
+      "5": "value:string"
+    },
+    {
+      "0": 2,
+      "1": 2,
+      "2": 0,
+      "3": 3,
+      "4": 0,
+      "5": "value:string"
+    }
   ],
   "extra": {
     "purpose": "open_portal_sample",
     "portal": "nsidc_data",
     "cred_profile": "earthdata",
-    "notes": "nsidc_smap_download 输出为 .h5 目录（granule 非压缩包，无需解压节点）。与本地盘 smap_soil_moisture 系统流互补：本流走开放下载，本地流走 {DATA_ROOT}。max_files 可联调节流。"
+    "notes": "nsidc_smap_download 输出为 .h5 目录（granule 非压缩包，无需解压节点）。与本地盘 smap_soil_moisture 系统流互补：本流走开放下载，本地流走 {DATA_ROOT}。max_files 可联调节流。",
+    "group_title": "NSIDC SMAP 数据样例",
+    "output_labels": {
+      "result": "NSIDC SMAP 数据样例"
+    }
   }
 }

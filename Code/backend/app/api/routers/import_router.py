@@ -30,6 +30,7 @@ from app.data_io.services.paths import (
     MAX_UPLOAD_BYTES as _MAX_UPLOAD_BYTES,
 )
 from app.data_io.services.paths import IMPORTS_DIR as _IMPORTS_DIR
+from app.data_io.services.paths import safe_import_child as _safe_import_child
 from app.data_io.services.paths import assert_quota_available as _assert_quota_available
 from app.data_io.services.paths import QuotaExceededError as _QuotaExceededError
 from app.services.overlay_registry import (
@@ -312,8 +313,14 @@ async def delete_imported_raster(layer_id: str) -> dict[str, Any]:
     if not layer_id.startswith("imported-"):
         raise HTTPException(status_code=400, detail="仅允许删除 imported-* 图层")
 
+    # 安审 2026-08-21 S-1：layer_id 来自 URL（Windows 下 %5C 解码为 \ 可穿越），
+    # rmtree 前必须校验（对齐 data_io router delete_imported_layer 的既有校验）。
+    try:
+        dest_dir = _safe_import_child(layer_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     spec = unregister_overlay(layer_id)
-    dest_dir = _IMPORTS_DIR / layer_id
     if spec is None and not dest_dir.exists():
         raise HTTPException(status_code=404, detail=f"导入图层不存在: {layer_id}")
 

@@ -24,11 +24,13 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ingest._http_resume import check_disk_space, format_size
 
 logger = logging.getLogger(__name__)
+
+ByteStreamProgressCb = Callable[[int, int], None] | None
 
 CDS_DEFAULT_URL = "https://cds.climate.copernicus.eu/api"
 MIN_DISK_FREE_GB = 5.0
@@ -144,6 +146,7 @@ def download_via_legacy(
     target: Path,
     *,
     http_headers: dict[str, str] | None = None,
+    progress_callback: ByteStreamProgressCb = None,
 ) -> int:
     """回退路径：静态直链下载（共享续传工具），返回文件字节数。"""
     import requests
@@ -152,16 +155,24 @@ def download_via_legacy(
     if http_headers:
         session.headers.update(http_headers)
     logger.info("CDS legacy 直链下载: %s -> %s", direct_url, target)
-    if not download_resumable_with_retry(session, direct_url, target):
+    if not download_resumable_with_retry(
+        session, direct_url, target, progress_callback=progress_callback
+    ):
         raise RuntimeError(f"CDS legacy download failed: {direct_url}")
     return target.stat().st_size if target.exists() else 0
 
 
-def download_resumable_with_retry(session: Any, url: str, target: Path) -> bool:
+def download_resumable_with_retry(
+    session: Any,
+    url: str,
+    target: Path,
+    *,
+    progress_callback: ByteStreamProgressCb = None,
+) -> bool:
     """共享续传工具薄封装（便于测试替换）。"""
     from ingest._http_resume import download_with_retry
 
-    return download_with_retry(session, url, target)
+    return download_with_retry(session, url, target, progress_callback=progress_callback)
 
 
 def download_cds_dataset(
@@ -177,6 +188,7 @@ def download_cds_dataset(
     http_headers: dict[str, str] | None = None,
     force: bool = False,
     min_disk_free_gb: float = MIN_DISK_FREE_GB,
+    progress_callback: ByteStreamProgressCb = None,
 ) -> CdsDownloadResult:
     """下载单个 CDS 数据集到 ``target_dir``。
 
@@ -235,7 +247,10 @@ def download_cds_dataset(
                 "(static direct-link products only)"
             )
         result.downloaded_bytes = download_via_legacy(
-            direct_url.strip(), target_path, http_headers=http_headers
+            direct_url.strip(),
+            target_path,
+            http_headers=http_headers,
+            progress_callback=progress_callback,
         )
     else:
         if not _HAS_CDSAPI:

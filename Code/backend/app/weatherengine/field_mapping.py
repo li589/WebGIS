@@ -15,39 +15,40 @@ from datetime import UTC
 
 logger = logging.getLogger(__name__)
 
+
+def _derive_layer_sets_from_specs() -> (
+    tuple[frozenset[str], frozenset[str], frozenset[str]]
+):
+    """Derive SURFACE/HEIGHT/PRESSURE layer ID sets from WEATHER_LAYER_SPECS.
+
+    Single source of truth: ``constants.WEATHER_LAYER_SPECS`` carries
+    ``layer_kind`` ("surface" / "height" / "pressure") on every spec. The
+    three frozensets below are derived from it so new layers only need to be
+    added once (in the specs dict).
+    """
+    from app.weatherengine.constants import WEATHER_LAYER_SPECS
+
+    surface: set[str] = set()
+    height: set[str] = set()
+    pressure: set[str] = set()
+    for layer_id, spec in WEATHER_LAYER_SPECS.items():
+        kind = getattr(spec, "layer_kind", "surface")
+        if kind == "height":
+            height.add(layer_id)
+        elif kind == "pressure":
+            pressure.add(layer_id)
+        else:
+            surface.add(layer_id)
+    return frozenset(surface), frozenset(height), frozenset(pressure)
+
+
 # Near-surface layers with real commercial API fields.
-SURFACE_LAYER_IDS: frozenset[str] = frozenset(
-    {
-        "wind-field",
-        "temperature",
-        "precipitation",
-        "humidity",
-        "pressure",
-        "visibility",
-        "cloud-cover",
-        "dewpoint",
-    }
-)
-
-# Hub-height AGL layers: commercial APIs lack true values → power-law / near-surface proxy.
-HEIGHT_LAYER_IDS: frozenset[str] = frozenset(
-    {
-        "wind-field-80m",
-        "wind-field-120m",
-        "wind-field-180m",
-        "temperature-80m",
-        "temperature-120m",
-        "temperature-180m",
-    }
-)
-
-# Pressure-level winds: sparse/unavailable on WeatherAPI & OpenWeather One Call.
-PRESSURE_LAYER_IDS: frozenset[str] = frozenset(
-    {
-        "wind-field-850hPa",
-        "wind-field-500hPa",
-        "wind-field-200hPa",
-    }
+# Derived from WEATHER_LAYER_SPECS (layer_kind="surface") — single source of truth.
+SURFACE_LAYER_IDS: frozenset[str]
+HEIGHT_LAYER_IDS: frozenset[str]
+PRESSURE_LAYER_IDS: frozenset[str]
+SURFACE_LAYER_IDS, HEIGHT_LAYER_IDS, PRESSURE_LAYER_IDS = (
+    _derive_layer_sets_from_specs()
 )
 
 COMMERCIAL_LAYER_IDS: frozenset[str] = (
@@ -484,6 +485,13 @@ def append_hourly_series(
 
 
 # 格心落在 (i+0.5)*res；半开归属避免邻瓦共点。浮点边界用极小 eps。
+#
+# 与 geo_math.pixel_center_axis 的语义差异（2026-08-24 架构审查 P3-6 结论：
+# **不合并**）：本处是**全球对齐**格网——i 为全局格指数（west/res 起算），
+# 保证相邻瓦片边缘格块严格分割（无缝）；geo_math 版是**窗口边缘对齐**
+# （res=span/count，与 from_bounds Affine 一致）。两者服务不同链路
+# （瓦片分割 vs 栅格配准），互换会破坏各自语义。改动任一公式时须对照
+# geo_math golden 测试（Test/backend/test_geo_math_golden.py）。
 _GRID_AXIS_EPS = 1e-9
 
 

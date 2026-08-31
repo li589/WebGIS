@@ -15,12 +15,168 @@
 from __future__ import annotations
 
 import re
+import time
 from pathlib import Path
 
 from contracts.product import ProductManifest, ProductRef
 from modules.base import BaseModule
 from modules.registry import register_module_decorator
+from utils.request_time import resolve_time_bounds
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
+
+# 下载进度 emit 节流间隔（秒）：_http_resume 每 256KB chunk 回调一次，
+# 不节流会形成 node_progress 事件风暴（每 MB 4 个事件全部落库转发）。
+#
+# 约定：
+# - multi_file：``(current_file, total_files, downloaded_bytes[, name])``
+# - byte_stream：单文件且已知 Content-Length 时 ``(downloaded, total_bytes)``
+_DOWNLOAD_EMIT_INTERVAL = 2.0
+_MANY_FILES_INDEX_THRESHOLD = 20
+
+
+def _items_display_mode(total: int) -> str:
+    return "index" if total > _MANY_FILES_INDEX_THRESHOLD else "filename"
+
+
+def _emit_download_progress(
+    logger_adapter: object | None,
+    stage: str,
+    progress: float,
+    message: str,
+    detail: dict[str, object],
+) -> None:
+    if logger_adapter is None:
+        return
+    logger_adapter.emit_progress(stage, progress, message, detail)
+
+
+def _make_skip_complete_emit(
+    logger_adapter: object | None,
+    stage: str,
+    *,
+    total: int,
+    skipped: int,
+    downloaded: int = 0,
+) -> None:
+    """Zero todo or all-skipped: avoid 0% hanging until stage_end."""
+    if logger_adapter is None:
+        return
+    phase = "skipping" if skipped >= total and total > 0 else "complete"
+    msg = (
+        f"全部跳过 ({skipped}/{total})"
+        if phase == "skipping"
+        else f"下载完成 ({downloaded}/{total})"
+    )
+    _emit_download_progress(
+        logger_adapter,
+        stage,
+        1.0,
+        msg,
+        {
+            "download_mode": "multi_file",
+            "downloaded_items": downloaded if downloaded else skipped,
+            "total_items": total,
+            "downloaded_bytes": 0,
+            "phase": phase,
+            "items_display": _items_display_mode(max(total, 1)),
+        },
+    )
+
+
+def _make_multi_file_progress_cb(
+    logger_adapter: object | None,
+    stage: str,
+    *,
+    current_item_name: str | None = None,
+):
+    """Multi-file download: (current_file, total_files, downloaded_bytes[, name])."""
+    from ingest._http_resume import format_size, format_speed, get_last_speed_bps
+
+    last_emit = [0.0]
+
+    def _cb(current: int, total: int, downloaded: int, item_name: str | None = None) -> None:
+        now = time.monotonic()
+        is_file_boundary = current != getattr(_cb, "_last_file", 0)  # noqa: SLF001
+        if not is_file_boundary and now - last_emit[0] < _DOWNLOAD_EMIT_INTERVAL:
+            return
+        last_emit[0] = now
+        _cb._last_file = current  # type: ignore[attr-defined]  # noqa: SLF001
+        if logger_adapter is None:
+            return
+        bps = get_last_speed_bps()
+        speed_txt = f" · {format_speed(bps)}" if bps else ""
+        name = item_name or current_item_name
+        display = _items_display_mode(total) if total > 0 else "filename"
+        detail: dict[str, object] = {
+            "download_mode": "multi_file",
+            "speed_bps": bps,
+            "downloaded_items": current,
+            "total_items": total,
+            "downloaded_bytes": downloaded,
+            "phase": "downloading",
+            "items_display": display,
+        }
+        if name and display == "filename":
+            detail["current_item_name"] = str(name)
+        _emit_download_progress(
+            logger_adapter,
+            stage,
+            current / total if total else 0.0,
+            f"文件 {current}/{total} · 已下载 {format_size(downloaded)}{speed_txt}",
+            detail,
+        )
+
+    return _cb
+
+
+def _make_byte_stream_progress_cb(
+    logger_adapter: object | None,
+    stage: str,
+    *,
+    item_name: str,
+):
+    """Single-file byte stream: (downloaded, total_bytes); 2s throttle like multi_file."""
+
+    last_emit = [-_DOWNLOAD_EMIT_INTERVAL]
+
+    def _cb(downloaded: int, total: int) -> None:
+        if logger_adapter is None:
+            return
+        now = time.monotonic()
+        is_complete = total > 0 and downloaded >= total
+        if (
+            not is_complete
+            and now - last_emit[0] < _DOWNLOAD_EMIT_INTERVAL
+            and downloaded > 0
+        ):
+            return
+        last_emit[0] = now
+        from ingest._http_resume import format_size, format_speed, get_last_speed_bps
+
+        bps = get_last_speed_bps()
+        speed_txt = f" · {format_speed(bps)}" if bps else ""
+        frac = downloaded / total if total > 0 else 0.0
+        _emit_download_progress(
+            logger_adapter,
+            stage,
+            frac,
+            f"{item_name} · {format_size(downloaded)} / {format_size(total) if total else '?'}{speed_txt}",
+            {
+                "download_mode": "byte_stream",
+                "speed_bps": bps,
+                "downloaded_bytes": downloaded,
+                "total_bytes": total if total > 0 else None,
+                "current_item_name": item_name,
+                "phase": "complete" if is_complete else "downloading",
+            },
+        )
+
+    return _cb
+
+
+# Backward-compatible alias
+def _make_download_progress_cb(logger_adapter: object | None, stage: str):
+    return _make_multi_file_progress_cb(logger_adapter, stage)
 
 
 def _resolve_portal_entry(
@@ -37,14 +193,12 @@ def _resolve_portal_entry(
     if not isinstance(portal_creds, dict):
         portal_creds = {}
     if (not portal_creds) and datasource_selection.get("portal_credentials_resolve"):
-        try:
-            from app.services.config_service import get_portal_credentials_runtime
+        # P3 分层收口（2026-08-23）：经 _backend_bridge 边界桥解析门户凭据
+        from modules.provider_bridge_access import load_backend_bridge
 
-            resolved = get_portal_credentials_runtime()
-            if isinstance(resolved, dict):
-                portal_creds = resolved
-        except Exception:  # noqa: BLE001
-            portal_creds = {}
+        resolved = load_backend_bridge().get_portal_credentials()
+        if isinstance(resolved, dict):
+            portal_creds = resolved
     entry = portal_creds.get(portal_key)
     if not isinstance(entry, dict) or entry.get("enabled") is False:
         return {}
@@ -101,6 +255,66 @@ def _store_path_manifest(
     return {"manifest": artifact, "path": path_str}
 
 
+_OUTFILE_TYPE_NAMES: dict[str, int] = {
+    "gtiff": 0,
+    "geotiff": 0,
+    "tif": 0,
+    "tiff": 0,
+    "netcdf": 1,
+    "nc": 1,
+    "hdf5": 2,
+    "h5": 2,
+    "hdf": 2,
+}
+
+
+def _coerce_outfile_type(value: object) -> int:
+    """Coerce outfile_type to int (0:GTiff, 1:NetCDF, 2:HDF5).
+
+    Accepts ints, numeric strings ("0"/"1"/"2"), and format names
+    ("hdf5"/"netcdf"/"gtiff" etc.) so seed JSON can use either form.
+    """
+    if isinstance(value, int):
+        return value
+    text = str(value or "2").strip().lower()
+    if text in _OUTFILE_TYPE_NAMES:
+        return _OUTFILE_TYPE_NAMES[text]
+    try:
+        return int(text)
+    except ValueError:
+        return 2  # default to HDF5
+
+
+_SPATIAL_EXTENT_NAMES: dict[str, int] = {
+    "global": 0,
+    "world": 0,
+    "point": 1,
+    "single_point": 1,
+    "bbox": 2,
+    "rectangle": 2,
+    "rect": 2,
+    "shapefile": 3,
+    "shp": 3,
+}
+
+
+def _coerce_spatial_extent(value: object) -> int:
+    """Coerce spatial_extent to int (0:global, 1:point, 2:rect, 3:shapefile).
+
+    Accepts ints, numeric strings, and descriptive names so seed JSON can
+    use either form.
+    """
+    if isinstance(value, int):
+        return value
+    text = str(value or "0").strip().lower()
+    if text in _SPATIAL_EXTENT_NAMES:
+        return _SPATIAL_EXTENT_NAMES[text]
+    try:
+        return int(text)
+    except ValueError:
+        return 0  # default to global
+
+
 # ─── SSH 远程同步节点 ─────────────────────────────────────────────────────────
 
 _SSH_SYNC_LEGACY_SERVERS = frozenset({"hpc", "win11", "nas"})
@@ -114,9 +328,10 @@ def _resolve_profile_server_config(profile_id: str) -> object:
     """
     from ingest.remote_sync import ServerConfig
 
-    from app.services.config_remote_storage import get_remote_storage_repository
+    # P3 分层收口（2026-08-23）：经 _backend_bridge 边界桥获取远程存储仓库
+    from modules.provider_bridge_access import load_backend_bridge
 
-    repo = get_remote_storage_repository()
+    repo = load_backend_bridge().get_remote_storage_repository()
     bundle = repo.get_secret_bundle(profile_id)
     if bundle is None:
         raise ValueError(f"远程存储 profile 不存在或已禁用: {profile_id}")
@@ -167,7 +382,7 @@ def _resolve_profile_server_config(profile_id: str) -> object:
     )
 
 
-@register_module_decorator(name="ssh_sync")
+@register_module_decorator(name="ssh_sync", template_overrides={"phase": "download"})
 class SshSyncModule(BaseModule):
     name = "ssh_sync"
     description = (
@@ -293,13 +508,10 @@ class SshSyncModule(BaseModule):
                 f"Sync {remote_path} -> {local_path} ({server_type})",
             )
 
-        def _progress_cb(current: int, total: int, downloaded: int) -> None:
-            if ctx.logger_adapter is not None:
-                ctx.logger_adapter.emit_progress(
-                    "ssh_sync",
-                    current / total if total else 0.0,
-                    f"File {current}/{total}",
-                )
+        # 下载进度可视化（2026-08-25）：bytes + 网速 + 2s 节流
+        # （此前每 256KB chunk 无节流 emit + 忽略 downloaded bytes，
+        #  前端只见 items 进度卡 0% 忽然结束）
+        _progress_cb = _make_download_progress_cb(ctx.logger_adapter, "ssh_sync")
 
         result = sync_dataset(
             server_config=config,
@@ -310,6 +522,17 @@ class SshSyncModule(BaseModule):
             progress_callback=_progress_cb,
             dry_run=dry_run,
         )
+
+        if ctx.logger_adapter is not None:
+            total = result.total_files
+            if total == 0 or (result.skipped >= total and result.downloaded == 0 and total > 0):
+                _make_skip_complete_emit(
+                    ctx.logger_adapter,
+                    "ssh_sync",
+                    total=max(total, result.skipped),
+                    skipped=result.skipped,
+                    downloaded=result.downloaded,
+                )
 
         if ctx.logger_adapter is not None:
             ctx.logger_adapter.emit_stage_end(
@@ -346,7 +569,9 @@ class SshSyncModule(BaseModule):
 # ─── NSIDC SMAP 下载节点 ──────────────────────────────────────────────────────
 
 
-@register_module_decorator(name="nsidc_smap_download")
+@register_module_decorator(
+    name="nsidc_smap_download", template_overrides={"phase": "download"}
+)
 class NsidcSmapDownloadModule(BaseModule):
     name = "nsidc_smap_download"
     description = (
@@ -422,13 +647,9 @@ class NsidcSmapDownloadModule(BaseModule):
                 f"{start_date} ~ {end_date} -> {local_dir}",
             )
 
-        def _progress_cb(current: int, total: int, downloaded: int) -> None:
-            if ctx.logger_adapter is not None:
-                ctx.logger_adapter.emit_progress(
-                    "nsidc_smap_download",
-                    current / total if total else 0.0,
-                    f"Granule {current}/{total}",
-                )
+        _progress_cb = _make_download_progress_cb(
+            ctx.logger_adapter, "nsidc_smap_download"
+        )
 
         result = download_smap_range(
             start_date=start_date,
@@ -442,6 +663,17 @@ class NsidcSmapDownloadModule(BaseModule):
             max_files=max_files,
             progress_callback=_progress_cb,
         )
+
+        if ctx.logger_adapter is not None:
+            tg = result.total_granules
+            if tg == 0 or (result.skipped >= tg and result.downloaded == 0 and tg > 0):
+                _make_skip_complete_emit(
+                    ctx.logger_adapter,
+                    "nsidc_smap_download",
+                    total=max(tg, result.skipped),
+                    skipped=result.skipped,
+                    downloaded=result.downloaded,
+                )
 
         if ctx.logger_adapter is not None:
             ctx.logger_adapter.emit_stage_end(
@@ -484,7 +716,9 @@ class NsidcSmapDownloadModule(BaseModule):
 # ─── GLDAS 下载节点 ───────────────────────────────────────────────────────────
 
 
-@register_module_decorator(name="gldas_download")
+@register_module_decorator(
+    name="gldas_download", template_overrides={"phase": "download"}
+)
 class GldasDownloadModule(BaseModule):
     name = "gldas_download"
     description = (
@@ -560,13 +794,9 @@ class GldasDownloadModule(BaseModule):
                 f"{start_date} ~ {end_date} -> {local_dir}",
             )
 
-        def _progress_cb(current: int, total: int, downloaded: int) -> None:
-            if ctx.logger_adapter is not None:
-                ctx.logger_adapter.emit_progress(
-                    "gldas_download",
-                    current / total if total else 0.0,
-                    f"Granule {current}/{total}",
-                )
+        _progress_cb = _make_download_progress_cb(
+            ctx.logger_adapter, "gldas_download"
+        )
 
         result = download_gldas_range(
             start_date=start_date,
@@ -580,6 +810,17 @@ class GldasDownloadModule(BaseModule):
             max_files=max_files,
             progress_callback=_progress_cb,
         )
+
+        if ctx.logger_adapter is not None:
+            tg = result.total_granules
+            if tg == 0 or (result.skipped >= tg and result.downloaded == 0 and tg > 0):
+                _make_skip_complete_emit(
+                    ctx.logger_adapter,
+                    "gldas_download",
+                    total=max(tg, result.skipped),
+                    skipped=result.skipped,
+                    downloaded=result.downloaded,
+                )
 
         if ctx.logger_adapter is not None:
             ctx.logger_adapter.emit_stage_end(
@@ -733,7 +974,9 @@ class GldasNc4ToMatModule(BaseModule):
 # ─── FY 预处理节点 ────────────────────────────────────────────────────────────
 
 
-@register_module_decorator(name="fy_preprocess")
+@register_module_decorator(
+    name="fy_preprocess", template_overrides={"phase": "preprocess"}
+)
 class FyPreprocessModule(BaseModule):
     name = "fy_preprocess"
     description = (
@@ -741,6 +984,13 @@ class FyPreprocessModule(BaseModule):
         "多通道合并、重投影到 EPSG:4326。输出 HDF5/NetCDF/GeoTIFF。"
     )
     input_ports = [
+        PortSpec(
+            name="data",
+            kind="data",
+            data_class="string",
+            required=False,
+            description="上游数据目录（如 fy_download.path）；命中时优先于 input_dir 参数。",
+        ),
         PortSpec(
             name="datasource_selection",
             kind="config",
@@ -767,6 +1017,20 @@ class FyPreprocessModule(BaseModule):
         "spatial_extent": 0,
     }
 
+    @staticmethod
+    def _coerce_upstream_dir(value: object) -> str:
+        """上游端口值（str / {path,uri} dict / ArtifactRef）→ 目录字符串。"""
+        if value is None:
+            return ""
+        if isinstance(value, dict):
+            for key in ("path", "uri", "input_dir", "local_path"):
+                text = str(value.get(key) or "").strip()
+                if text:
+                    return text
+            return ""
+        uri = getattr(value, "uri", None)
+        return str(uri if uri else value).strip()
+
     def execute(
         self,
         inputs: dict[str, object],
@@ -778,6 +1042,9 @@ class FyPreprocessModule(BaseModule):
         ds = dict(inputs.get("datasource_selection", {}))
         ap = dict(inputs.get("algorithm_params", {}))
         resolved = {**self.default_params, **params, **ap, **ds}
+        upstream_dir = self._coerce_upstream_dir(inputs.get("data"))
+        if upstream_dir:
+            resolved["input_dir"] = upstream_dir
 
         satellite = str(resolved.get("satellite") or "FY3D").upper()
         input_dir = str(resolved.get("input_dir") or "").strip()
@@ -787,15 +1054,37 @@ class FyPreprocessModule(BaseModule):
         orbit_mode = str(resolved.get("orbit_mode") or "MWRID")
         band_ids_raw = resolved.get("band_ids")
         band_ids = list(band_ids_raw) if band_ids_raw else [1, 2]
-        outfile_type = int(resolved.get("outfile_type") or 2)
-        spatial_extent = int(resolved.get("spatial_extent") or 0)
+        outfile_type = _coerce_outfile_type(resolved.get("outfile_type", 2))
+        spatial_extent = _coerce_spatial_extent(resolved.get("spatial_extent", 0))
 
         if not input_dir:
             raise ValueError("fy_preprocess requires input_dir")
         if not output_dir:
             output_dir = str(ctx.workspace / "products" / "fy_preprocess")
+        # 与 fy_download 对齐：分析框/在线种子常只带 job_request.time_range，
+        # 节点 properties 未写 start_date/end_date，缺参时从 time_range 回填。
         if not start_date or not end_date:
-            raise ValueError("fy_preprocess requires start_date and end_date")
+            try:
+                start_dt, end_dt = resolve_time_bounds(
+                    time_range=getattr(ctx.request, "time_range", None),
+                    algorithm_params=ap,
+                    module_label="fy_preprocess",
+                )
+                if not start_date:
+                    start_date = start_dt.strftime("%Y%m%d")
+                if not end_date:
+                    end_date = end_dt.strftime("%Y%m%d")
+            except ValueError as exc:
+                raise ValueError(
+                    "fy_preprocess requires start_date and end_date "
+                    "(set algorithm_params or job_request.time_range); "
+                    f"{exc}"
+                ) from exc
+        if not start_date or not end_date:
+            raise ValueError(
+                "fy_preprocess requires start_date and end_date "
+                "(set algorithm_params or job_request.time_range)"
+            )
 
         # 构建卫星配置
         if satellite == "FY3B":
@@ -822,6 +1111,14 @@ class FyPreprocessModule(BaseModule):
             outfile_type=outfile_type,
             spatial_extent=spatial_extent,
         )
+
+        if not processed_days:
+            raise FileNotFoundError(
+                "fy_preprocess produced no output files "
+                f"for {start_date}~{end_date} under {output_dir} "
+                f"(input_dir={input_dir}). "
+                "Check GDAL HDF5 driver (QGIS GDAL_DRIVER_PATH) and source HDFs."
+            )
 
         if ctx.logger_adapter is not None:
             ctx.logger_adapter.emit_stage_end(

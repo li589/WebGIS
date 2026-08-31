@@ -22,6 +22,7 @@ from pathlib import Path  # noqa: E402
 from app.services.layer_workflow_validator import (  # noqa: E402
     CODE_MISSING_LINKED_LAYER,
     CODE_MISSING_WORKFLOW_SEED,
+    CODE_NODE_LAYER_ID_DANGLING,
     CODE_OVERLAY_REGISTRY_HAS_WORKFLOW_ID,
     CODE_PYTHON_PROVIDER_NO_WORKFLOW_NAME,
     CODE_WEATHER_LAYER_HAS_WORKFLOW_ID,
@@ -224,3 +225,76 @@ def test_overlay_registry_layers_no_workflow_id():
         "overlay_registry_has_workflow_id:\n"
         + "\n".join(i.message for i in overlay_warnings)
     )
+
+
+def test_all_seed_node_layer_ids_exist():
+    """遍历所有 workflow seeds 的节点 properties.layer_id，验证引用的图层
+    存在于 catalog（Rule 6 数据守卫）。
+    """
+    seeds = _load_workflow_seeds()
+    all_layers = _load_catalog_layers()
+    layer_ids = {
+        layer["layer_id"] for layer in all_layers if layer.get("layer_id")
+    }
+
+    referenced: list[tuple[str, str]] = []
+    for seed in seeds:
+        wf_id = seed.get("workflow_id", "<unknown>")
+        for node in seed.get("nodes") or []:
+            if not isinstance(node, dict):
+                continue
+            properties = node.get("properties")
+            if not isinstance(properties, dict):
+                continue
+            layer_id = properties.get("layer_id")
+            if layer_id:
+                referenced.append((wf_id, layer_id))
+
+    missing = [
+        f"seed '{wf_id}' 节点引用 layer_id='{layer_id}' 在 catalog 中不存在"
+        for wf_id, layer_id in referenced
+        if layer_id not in layer_ids
+    ]
+    assert not missing, (
+        "以下 seed 节点的 properties.layer_id 在 catalog 中缺失:\n"
+        + "\n".join(missing)
+    )
+
+    issues = validate_layer_workflow_links()
+    node_errors = [
+        i for i in issues
+        if i.code == CODE_NODE_LAYER_ID_DANGLING and i.level == "error"
+    ]
+    assert not node_errors, (
+        "validate_layer_workflow_links() 报告了 node_layer_id_dangling error:\n"
+        + "\n".join(i.message for i in node_errors)
+    )
+
+
+def test_node_layer_id_dangling_rule_reports_error(monkeypatch):
+    """Rule 6 行为单测：悬空的节点级 layer_id 必须被报为 error。"""
+    import app.services.layer_workflow_validator as validator_module
+
+    fake_seed = {
+        "workflow_id": "fake_dangling_node_layer",
+        "_meta": {"linked_layer_id": None},
+        "nodes": [
+            {
+                "id": 1,
+                "type": "output/map_layer",
+                "properties": {"layer_id": "definitely-not-a-layer"},
+            }
+        ],
+        "links": [],
+    }
+    monkeypatch.setattr(
+        validator_module, "_load_workflow_seeds", lambda: [fake_seed]
+    )
+    issues = validator_module.validate_layer_workflow_links()
+    dangling = [
+        i for i in issues if i.code == validator_module.CODE_NODE_LAYER_ID_DANGLING
+    ]
+    assert len(dangling) == 1
+    assert dangling[0].level == "error"
+    assert dangling[0].layer_id == "definitely-not-a-layer"
+    assert dangling[0].workflow_id == "fake_dangling_node_layer"

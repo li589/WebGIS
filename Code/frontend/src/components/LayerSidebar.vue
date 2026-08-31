@@ -10,10 +10,13 @@
 import { computed, nextTick, ref, watch, onMounted } from 'vue'
 import { Diamond } from './ui/icons'
 
-import { useLayerWorkspace, useWorkflowRun } from '../stores/layers/selectors'
-import { useLayersStore } from '../stores/layers'
+import { useLayerWorkspace, useLayerLifecycle, useWorkflowRun } from '../stores/layers/selectors'
+import type { ActiveLayerDisplay } from '../stores/layers/types'
+import { deriveDataStatus } from '../utils/layer-data-status'
+import type { SidebarDragDeps, SidebarLayersDeps } from './layer-sidebar/sidebar-layers-deps'
 import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
+import { useTimelineActionBannerStore } from '../stores/timeline-action-banner'
 import { useDrawStore } from '../stores/draw-store'
 import { useOverlaySymbologyStore } from '../stores/overlay-symbology'
 import { useWeatherSourcePrefsStore } from '../stores/weather-source-prefs'
@@ -21,6 +24,7 @@ import { isWeatherLayerUnsupportedByModel } from '../stores/weather-tile-manager
 import { useWeatherEngineStore } from '../stores/weather-engine'
 import { LAYERS_COPY } from '../ui-copy'
 import { ORG_LABEL } from '../ui-copy/brand'
+import { useOnlinePlanSessionStore } from '../stores/online-plan-session'
 
 // ── Composables ───────────────────────────────────────────────────────────
 import { useSidebarWeatherProviders } from './layer-sidebar/useSidebarWeatherProviders'
@@ -43,9 +47,9 @@ const emit = defineEmits<{
 // ── Store 设置 ──────────────────────────────────────────────────────────────
 const workspace = useLayerWorkspace()
 const workflowRun = useWorkflowRun()
-const layersStore = useLayersStore() // 内部 composable 需完整 store 实例
 const uiStore = useUiStore()
 const logStore = useLogStore()
+const onlinePlan = useOnlinePlanSessionStore()
 const drawStore = useDrawStore()
 const overlaySymbologyStore = useOverlaySymbologyStore()
 const weatherSourcePrefs = useWeatherSourcePrefsStore()
@@ -65,7 +69,29 @@ const {
 
 const { runLayerGroups } = workflowRun
 
+// 图层平台子系统 P1：生命周期查询（侧栏徽标数据源）
+const lifecycle = useLayerLifecycle()
+
 const layerCategories = workspace.layerCategories
+
+// ── 侧栏 composable 的 layers 窄依赖（P3 收口：不再传递整店实例）──────────
+const sidebarLayersDeps: SidebarLayersDeps = {
+  activeLayers,
+  canRunCatalog: workspace.canRunCatalog,
+  bringLayerToFront: workspace.bringLayerToFront,
+  sendLayerToBack: workspace.sendLayerToBack,
+  removeLayer: workspace.removeLayer,
+  setLayerDisplayName: workspace.setLayerDisplayName,
+  toggleLayerVisibility: workspace.toggleLayerVisibility,
+  dissolveRunGroup: workflowRun.dissolveRunGroup,
+  findRunGroupById: workflowRun.findRunGroupById,
+  runWorkflowForCatalog: workflowRun.runWorkflowForCatalog,
+}
+
+const sidebarDragDeps: SidebarDragDeps = {
+  reorderLayers: workflowRun.reorderLayers,
+  moveRunGroupBlock: workflowRun.moveRunGroupBlock,
+}
 
 // ── Composable 调用 ──────────────────────────────────────────────────────────
 
@@ -77,14 +103,14 @@ const search = useSidebarSearch(
   weatherProviders.ensureWeatherProviders,
 )
 
-const drag = useSidebarDragReorder(activeLayersDisplay, runLayerGroups, layersStore)
+const drag = useSidebarDragReorder(activeLayersDisplay, runLayerGroups, sidebarDragDeps)
 
 const symbology = useSidebarSymbology(overlaySymbologyStore)
 
 const ctxMenu = useSidebarContextMenu(
   activeLayersDisplay,
   runLayerGroups,
-  layersStore,
+  sidebarLayersDeps,
   uiStore,
   logStore,
   overlaySymbologyStore,
@@ -118,8 +144,153 @@ function getCatalogRunBlockReason(catalogId: string): string | null {
   return workspace.getCatalogRunBlockReason(catalogId)
 }
 
+function getCatalogAddBlockReason(catalogId: string): string | null {
+  return workspace.getCatalogAddBlockReason(catalogId)
+}
+
+function isOverlayDisplayOnlyLayer(catalogId: string): boolean {
+  return workspace.isOverlayDisplayOnlyLayer(catalogId)
+}
+
 function supportsOnlineTemporal(catalogId: string): boolean {
   return workspace.supportsOnlineTemporal(catalogId)
+}
+
+function getSourceRouteBadge(
+  catalogId: string,
+): { key: string; label: string; title: string } | null {
+  const desc = workspace.resolveEffectiveDescriptor?.(catalogId) as {
+    workflow_variants?: Record<string, { workflow_id?: string } | undefined>
+  } | null
+  const variants = desc?.workflow_variants
+  if (!variants?.local?.workflow_id || !variants?.online?.workflow_id) return null
+  const backendId = workspace.resolveBackendLayerId(catalogId)
+  const pinned =
+    Boolean(workflowRun.isWorkflowVariantPinned?.(backendId)) ||
+    Boolean(workflowRun.isWorkflowVariantPinned?.(catalogId))
+  const pref =
+    workflowRun.getWorkflowVariantPreference?.(catalogId) ??
+    workflowRun.getWorkflowVariantPreference?.(backendId)
+  if (!pinned) {
+    return {
+      key: 'auto',
+      label: '自动',
+      title: '源路由自动：本地有数走本地，否则走在线（点击切换本地→在线→自动）',
+    }
+  }
+  if (pref === 'online') {
+    return { key: 'online', label: '在线', title: '已钉死在线（点击切回自动）' }
+  }
+  return { key: 'local', label: '本地', title: '已钉死本地（点击切换为在线）' }
+}
+
+function cycleSourceRoute(catalogId: string) {
+  const badge = getSourceRouteBadge(catalogId)
+  if (!badge) return
+  const backendId = workspace.resolveBackendLayerId(catalogId)
+  if (badge.key === 'auto') {
+    workflowRun.setWorkflowVariantPreference(catalogId, 'local', { pinned: true })
+    if (backendId !== catalogId) {
+      workflowRun.setWorkflowVariantPreference(backendId, 'local', { pinned: true })
+    }
+  } else if (badge.key === 'local') {
+    workflowRun.setWorkflowVariantPreference(catalogId, 'online', { pinned: true })
+    if (backendId !== catalogId) {
+      workflowRun.setWorkflowVariantPreference(backendId, 'online', { pinned: true })
+    }
+  } else {
+    workflowRun.clearWorkflowVariantPin?.(catalogId)
+    if (backendId !== catalogId) workflowRun.clearWorkflowVariantPin?.(backendId)
+  }
+}
+
+function isOnlinePlanPending(catalogId: string): boolean {
+  return onlinePlan.isCatalogPendingPlan(catalogId)
+}
+
+function openOnlinePlan() {
+  onlinePlan.openSession()
+}
+
+// ── 图层平台子系统 P1：生命周期徽标（lifecycle 域 → 侧栏卡片） ──
+const LIFECYCLE_BADGE_LABELS: Record<string, string> = {
+  fresh: '资产就绪',
+  stale: '资产陈旧',
+  updating: '更新中',
+  missing: '资产缺失',
+  failed: '更新失败',
+}
+
+function getLifecycleBadge(
+  catalogId: string,
+): { state: string; label: string; message: string | null } | null {
+  const entry = lifecycle.getLifecycle(catalogId)
+  if (!entry || entry.lifecycleState === 'unknown') return null
+  const label = LIFECYCLE_BADGE_LABELS[entry.lifecycleState] ?? entry.lifecycleState
+  return { state: entry.lifecycleState, label, message: entry.message }
+}
+
+// ── 统一数据状态徽标（2026-08-25 UX 简化）────────────────────────────────
+// 三源（availability/lifecycle/job）归并为单枚五态徽标（运行中/排队中/
+// 异常/完成/旧数据），替代「数据异常/资产陈旧/失败」三枚堆叠——"资产"
+// 术语对地理研究者无意义，统一语义见 utils/layer-data-status.ts。
+function isStaticDataLayer(catalogId: string): boolean {
+  const item = layerLibrary.value.find((l) => l.catalogId === catalogId)
+  if (!item) return false
+  return (
+    String(item.updateLabel || '').includes('静态') || item.supportsTime === false
+  )
+}
+
+function getUnifiedDataStatus(
+  layer: ActiveLayerDisplay,
+): ReturnType<typeof deriveDataStatus> {
+  const badge = getLifecycleBadge(layer.catalogId)
+  const job = layer.jobLayer
+  return deriveDataStatus({
+    jobStatus: job?.status ?? null,
+    jobProgress: typeof job?.progress === 'number' ? job.progress : null,
+    availabilityState: layer.availabilityState,
+    availabilityLabel: layer.availabilityLabel,
+    availabilityDescription: layer.availabilityDescription ?? null,
+    lifecycleState: badge?.state ?? null,
+    lifecycleMessage: badge?.message ?? null,
+    isStaticLayer: isStaticDataLayer(layer.catalogId),
+  })
+}
+
+// ── 添加即运行（2026-08-25 UX 简化）─────────────────────────────────────
+// 点击「+ 添加」后自动完成一切：
+// 1. 优先附加既有产物/缓存（成功 run 产物直接上图）
+// 2. 无产物 → 自动提交工作流（内部分流：overlay→资产工作流重烘；
+//    python_provider→分析运行；weather→瓦片视口按需加载），
+//    轮询持续到产出或报错，终态由 poller 物化/呈现
+// 3. 时间轴按需加载由 online-temporal-orchestrator 承担
+async function ensureLayerDataOrRun(catalogId: string): Promise<void> {
+  // 添加即切到图层独立记忆，再挂产物 / 按轴时刻开跑
+  uiStore.setUnifiedTimeLock(false)
+  if (uiStore.isLayerTimeLocked(catalogId)) {
+    uiStore.toggleLayerTimeLock(catalogId)
+  }
+  // 添加后 snap / attach 会改时间轴——抑制确认卡，避免自触发
+  useTimelineActionBannerStore().suppressConfirm(4_000)
+  try {
+    const attached = await workflowRun.autoAttachProductsForNewLayer(catalogId)
+    if (attached > 0) {
+      uiStore.rememberLayerTime(catalogId, { force: true })
+      return // 已有缓存/数据，直接显示
+    }
+  } catch {
+    // 附加失败不阻断自动运行（后端目录不可用等）
+  }
+  try {
+    await workflowRun.runWorkflowForCatalog(catalogId, {})
+  } catch (err) {
+    // 预期内的提示性错误静默（天气瓦片提示/无引擎等）；
+    // 真实运行失败由 jobLayer 失败态 + 顶栏 notice 呈现
+    const message = err instanceof Error ? err.message : String(err)
+    logStore.logOperation('layer-add', `图层「${catalogId}」自动运行未启动：${message}`)
+  }
 }
 
 function getCatalogItem(catalogId: string) {
@@ -127,6 +298,10 @@ function getCatalogItem(catalogId: string) {
 }
 
 function getCatalogSemanticNote(catalogId: string): string | null {
+  // overlay 静态/时间序列图层：天然有 PNG 缓存，添加/显示路径不阻断
+  if (isOverlayDisplayOnlyLayer(catalogId)) {
+    return '静态叠加：已加载缓存影像'
+  }
   const blockReason = getCatalogRunBlockReason(catalogId)
   if (blockReason) return blockReason
   const model = weatherEngine.defaultModel
@@ -202,12 +377,18 @@ function openActive() {
 
 function addCatalogItem(catalogId: string, isAdminBoundary = false) {
   if (!isAdminBoundary && isAdded(catalogId)) return
-  workspace.addLayer(catalogId, isAdminBoundary)
+  // skipAutoRun：由下方 ensureLayerDataOrRun 统一「先复用产物 / 再提交」，
+  // 避免 addLayer 内置 setTimeout 再跑一遍造成双提交与游离层泄漏
+  workspace.addLayer(catalogId, isAdminBoundary, undefined, { skipAutoRun: true })
   logStore.logOperation(
     'layer-add',
     `添加图层「${catalogId}」`,
     isAdminBoundary ? '行政区边界' : undefined,
   )
+  // 2026-08-25 添加即运行：有缓存/产物直接附加；无则自动提交工作流
+  if (catalogId !== 'gebco-dem-cn') {
+    void ensureLayerDataOrRun(catalogId)
+  }
 }
 
 function addAllInCategory(
@@ -364,6 +545,8 @@ onMounted(() => {
       :weather-source-sparse-hint="weatherProviders.weatherSourceSparseHint"
       :get-catalog-job-status="getCatalogJobStatus"
       :get-catalog-run-block-reason="getCatalogRunBlockReason"
+      :get-catalog-add-block-reason="getCatalogAddBlockReason"
+      :is-overlay-display-only-layer="isOverlayDisplayOnlyLayer"
       :get-catalog-semantic-note="getCatalogSemanticNote"
       :catalog-semantic-note-class="catalogSemanticNoteClass"
       :get-category-meta="getCategoryMeta"
@@ -399,6 +582,11 @@ onMounted(() => {
       :availability-class="availabilityClass"
       :get-category-name="getCategoryName"
       :supports-online-temporal="supportsOnlineTemporal"
+      :get-source-route-badge="getSourceRouteBadge"
+      :cycle-source-route="cycleSourceRoute"
+      :get-unified-data-status="getUnifiedDataStatus"
+      :is-online-plan-pending="isOnlinePlanPending"
+      :open-online-plan="openOnlinePlan"
       @select-item="selectItem"
       @zoom-to-item="zoomToItem"
       @toggle-visibility="toggleVisibility"

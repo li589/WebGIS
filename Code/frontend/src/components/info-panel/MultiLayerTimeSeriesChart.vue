@@ -14,8 +14,10 @@ import {
   TooltipComponent,
   LegendComponent,
   DataZoomComponent,
+  TitleComponent,
 } from 'echarts/components'
 import VChart from 'vue-echarts'
+import { useEchartsThemeName } from './echarts-theme'
 
 use([
   CanvasRenderer,
@@ -25,6 +27,7 @@ use([
   TooltipComponent,
   LegendComponent,
   DataZoomComponent,
+  TitleComponent,
 ])
 
 export interface MultiLayerSeriesPoint {
@@ -56,6 +59,8 @@ const props = defineProps<{
   asBar?: boolean
 }>()
 
+const echartsTheme = useEchartsThemeName()
+
 /** 合并所有序列的时间标签作为共享 X 轴 */
 const xCategories = computed(() => {
   const timeSet = new Set<string>()
@@ -73,7 +78,6 @@ const showDataZoom = computed(() => xCategories.value.length > 30)
 const echartsOption = computed(() => {
   const categories = xCategories.value
   const isBar = props.asBar ?? false
-
   const seriesData = props.series.map((s) => {
     const valueMap = new Map<string, number | null>()
     for (const p of s.data) {
@@ -110,8 +114,7 @@ const echartsOption = computed(() => {
           type: 'scroll',
           selectedMode: true,
           icon: 'circle',
-          textStyle: { fontSize: 11, color: '#9ab' },
-          inactiveColor: '#556',
+          textStyle: { fontSize: 11 },
           itemWidth: 10,
           itemHeight: 10,
         }
@@ -150,7 +153,9 @@ const echartsOption = computed(() => {
 <template>
   <div class="multi-layer-chart-card">
     <VChart
+      :key="echartsTheme"
       class="multi-layer-echart"
+      :theme="echartsTheme"
       :option="echartsOption"
       autoresize
       :style="{ height: (height ?? 260) + 'px' }"

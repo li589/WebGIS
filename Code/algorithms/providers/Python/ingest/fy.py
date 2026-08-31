@@ -24,6 +24,8 @@ class FyDailyGroup:
     date_key: str
     descending_files: tuple[FyOrbitFile, ...] = ()
     ascending_files: tuple[FyOrbitFile, ...] = ()
+    # FY-3F ORBA 升轨（FY3F_MWRI-_ORBA_L1_*.HDF）
+    orba_files: tuple[FyOrbitFile, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +52,9 @@ def detect_fy_orbit_type(file_name: str) -> str:
         return "MWRID"
     if "MWRIA" in file_name:
         return "MWRIA"
+    # FY-3F MWRI L1 实测命名（FY3F_MWRI-_ORBA_L1_*.HDF）使用 ORBA 升轨标识。
+    if "ORBA" in file_name:
+        return "ORBA"
     raise ValueError(f"Cannot detect FY orbit type from file name: {file_name}")
 
 
@@ -59,6 +64,8 @@ def detect_fy_satellite(file_name: str) -> str:
         return "FY3B"
     if "FY3D" in upper_name:
         return "FY3D"
+    if "FY3F" in upper_name:
+        return "FY3F"
     return "FY3"
 
 
@@ -71,12 +78,27 @@ def build_date_keys(start_time: datetime, end_time: datetime) -> list[str]:
     return keys
 
 
+_FY_HDF_SUFFIXES = frozenset({".hdf", ".hdf5"})
+_DEFAULT_HDF_PATTERN = "*.HDF"
+
+
 def discover_fy_orbit_files(
-    input_dir: str | Path, pattern: str = "*.HDF"
+    input_dir: str | Path, pattern: str = _DEFAULT_HDF_PATTERN
 ) -> list[FyOrbitFile]:
     input_dir = Path(input_dir)
+    if pattern == _DEFAULT_HDF_PATTERN:
+        # 默认模式大小写不敏感并接受 .hdf/.hdf5 变体（Linux glob 区分大小写；
+        # .hdf5 是 HDF5 生态与合成 fixture 的常见命名）。显式传入的 pattern
+        # （如 "*.tif" 回退）保持精确语义。
+        candidates: list[Path] = sorted(
+            p
+            for p in input_dir.iterdir()
+            if p.is_file() and p.suffix.lower() in _FY_HDF_SUFFIXES
+        )
+    else:
+        candidates = sorted(input_dir.glob(pattern))
     files: list[FyOrbitFile] = []
-    for file_path in sorted(input_dir.glob(pattern)):
+    for file_path in candidates:
         file_name = file_path.name
         try:
             files.append(
@@ -98,7 +120,7 @@ def discover_fy_orbit_files(
 def group_fy_files_by_day(input_files: list[FyOrbitFile]) -> dict[str, FyDailyGroup]:
     grouped: dict[str, dict[str, list[FyOrbitFile]]] = {}
     for item in input_files:
-        grouped.setdefault(item.date_key, {"MWRID": [], "MWRIA": []})
+        grouped.setdefault(item.date_key, {"MWRID": [], "MWRIA": [], "ORBA": []})
         grouped[item.date_key][item.orbit_type].append(item)
 
     result: dict[str, FyDailyGroup] = {}
@@ -107,6 +129,7 @@ def group_fy_files_by_day(input_files: list[FyOrbitFile]) -> dict[str, FyDailyGr
             date_key=date_key,
             descending_files=tuple(orbit_map["MWRID"]),
             ascending_files=tuple(orbit_map["MWRIA"]),
+            orba_files=tuple(orbit_map["ORBA"]),
         )
     return result
 
@@ -141,6 +164,9 @@ def build_fy_daily_job_plans(
             orbit_items.append(("MWRID", group.descending_files))
         if orbit_mode in {"MWRIA", "Both"} and group.ascending_files:
             orbit_items.append(("MWRIA", group.ascending_files))
+        # FY-3F 仅 ORBA 升轨可用（B4_FY3F.m / FY3F_MWRI_mosaic.py 实测）
+        if orbit_mode in {"ORBA", "Both"} and group.orba_files:
+            orbit_items.append(("ORBA", group.orba_files))
 
         for orbit_type, files in orbit_items:
             satellite = files[0].satellite

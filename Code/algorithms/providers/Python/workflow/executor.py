@@ -22,6 +22,58 @@ class WorkflowResult:
     execution_order: list[str] = field(default_factory=list)
 
 
+class _ScopedProgressLogger:
+    """节点内进度加权代理（需求3 批次2，2026-08-21）。
+
+    节点执行中模块发出的 ``emit_progress``（stage 为模块自身名，如
+    fy_download 的 day 级进度）原样转发保留节点详情视角；同时把
+    ``[0,1]`` 节点内进度映射到该节点在整体 workflow.dispatch 的区间
+    ``[base, base+span]`` 再发一条，长下载节点期间整体百分比持续更新
+    而非纹丝不动。stage 以 ``workflow.`` 开头的内部事件不重复映射。
+    """
+
+    def __init__(self, inner, base: float, span: float, graph_node_id: str = "") -> None:
+        self._inner = inner
+        self._base = base
+        self._span = span
+        self._graph_node_id = graph_node_id
+
+    def _with_graph(self, detail):
+        if not self._graph_node_id:
+            return detail
+        merged = dict(detail or {})
+        merged.setdefault("graph_node_id", self._graph_node_id)
+        return merged
+
+    def emit_progress(self, stage, progress, message, detail=None) -> None:
+        if self._inner is None:
+            return
+        detail = self._with_graph(detail)
+        self._inner.emit_progress(stage, progress, message, detail)
+        if str(stage).startswith("workflow."):
+            return
+        try:
+            raw = float(progress)
+        except (TypeError, ValueError):
+            return
+        # Modules may emit 0–1 fractions or 0–100 percents; clamp to a fraction.
+        frac = raw / 100.0 if raw > 1.0 else raw
+        frac = max(0.0, min(1.0, frac))
+        overall = min(0.999, self._base + frac * self._span)
+        short = f"整体 {int(overall * 100)}%"
+        self._inner.emit_progress("workflow.dispatch", overall, short, None)
+
+    def __getattr__(self, name):  # 其余事件透传
+        inner = object.__getattribute__(self, "_inner")
+        if inner is None:
+            # inner 为 None（纯进度包装场景）：其余事件静默 no-op
+            def _noop(*args, **kwargs):
+                return None
+
+            return _noop
+        return getattr(inner, name)
+
+
 class WorkflowRunner:
     def __init__(
         self,
@@ -76,6 +128,7 @@ class WorkflowRunner:
                             request,
                             runtime_context,
                             node_outputs,
+                            progress_base=(completed / total_nodes, 1 / total_nodes),
                         )
                         node_outputs[node_id] = outputs
                         execution_order.append(node_id)
@@ -100,6 +153,10 @@ class WorkflowRunner:
                                 request,
                                 runtime_context,
                                 snapshot,
+                                progress_base=(
+                                    completed / total_nodes,
+                                    1 / total_nodes,
+                                ),
                             ): node_id
                             for node_id in layer
                         }
@@ -144,12 +201,18 @@ class WorkflowRunner:
         request: JobRequest,
         runtime_context: RuntimeContext,
         node_outputs: dict[str, dict[str, object]],
+        progress_base: tuple[float, float] | None = None,
     ) -> dict[str, object]:
         """执行单个节点，返回其输出字典。
 
         ``node_outputs`` 为已完成节点的只读快照（并行模式下同层节点互不依赖，
-        仅读之前层结果）。线程安全：本方法不写共享可变状态，每个节点拥有独立
-        的 NodeExecutionContext.workspace 与 artifact 路径。
+        仅读之前层结果）。线程安全：本方法不写共享可变状态。
+
+        安审 2026-08-21 H-3 更正：workspace 为 run 级共享（所有节点同一路径，
+        artifact 才按 node_id 隔离）。同层并行（node_parallelism>1）时同型
+        下载节点会写同一 ``data_access/*`` 子目录——现有系统种子每类下载
+        节点仅一个，该约束暂由种子设计保证；若未来种子引入同层同型并行
+        下载节点，须改为 workspace/node_id 派生。
         """
         node = node_map[node_id]
         executor_cls = get_node_executor(node.node_type)
@@ -161,6 +224,18 @@ class WorkflowRunner:
             node_outputs=node_outputs,
             edges=definition.edges,
         )
+        # 需求3 批次2：节点内进度（如 fy_download 的 day 级）加权映射到整体
+        # workflow.dispatch 区间，避免长下载节点期间整体百分比纹丝不动。
+        node_logger = (
+            _ScopedProgressLogger(
+                self.logger_adapter,
+                progress_base[0],
+                progress_base[1],
+                node.node_id,
+            )
+            if progress_base is not None and self.logger_adapter is not None
+            else self.logger_adapter
+        )
         node_ctx = NodeExecutionContext(
             workflow_id=definition.workflow_id,
             node_id=node.node_id,
@@ -169,7 +244,7 @@ class WorkflowRunner:
             workspace=Path(runtime_context.workspace),
             artifact_store=self.artifact_store,
             datasource_adapter=self.datasource_adapter,
-            logger_adapter=self.logger_adapter,
+            logger_adapter=node_logger,
             product_sink=self.product_sink,
         )
         stage_name = f"workflow.node.{node.node_id}"
@@ -322,41 +397,13 @@ class WorkflowRunner:
             return node_outputs[node_id][port_name]
         raise ValueError(f"Unsupported binding syntax: {binding}")
 
-    def _topological_sort(
-        self, node_map: dict[str, object], edges: list[WorkflowEdge]
-    ) -> list[str]:
-        indegree = {node_id: 0 for node_id in node_map}
-        adjacency: dict[str, list[str]] = {node_id: [] for node_id in node_map}
-        for edge in edges:
-            if edge.from_node not in node_map or edge.to_node not in node_map:
-                raise KeyError(
-                    f"Workflow edge references unknown node: {edge.from_node} -> {edge.to_node}"
-                )
-            adjacency[edge.from_node].append(edge.to_node)
-            indegree[edge.to_node] += 1
-
-        ready = sorted([node_id for node_id, degree in indegree.items() if degree == 0])
-        ordered: list[str] = []
-        while ready:
-            node_id = ready.pop(0)
-            ordered.append(node_id)
-            for target in adjacency[node_id]:
-                indegree[target] -= 1
-                if indegree[target] == 0:
-                    ready.append(target)
-            ready.sort()
-        if len(ordered) != len(node_map):
-            raise ValueError("Workflow contains a cycle")
-        return ordered
-
     def _topological_layers(
         self, node_map: dict[str, object], edges: list[WorkflowEdge]
     ) -> list[list[str]]:
         """拓扑分层：每层是互不依赖的就绪节点（可安全并行）。
 
-        与 ``_topological_sort`` 的区别：sort 每轮取一个节点产出线性序；
-        layers 每轮取全部 indegree=0 节点产出分层，同层节点无边连接可并行。
-        线性 DAG（每层 1 节点）两者序一致。
+        每轮取全部 indegree=0 节点产出分层，同层节点无边连接可并行；
+        线性 DAG（每层 1 节点）退化为线性序。
         """
         indegree = {node_id: 0 for node_id in node_map}
         adjacency: dict[str, list[str]] = {node_id: [] for node_id in node_map}

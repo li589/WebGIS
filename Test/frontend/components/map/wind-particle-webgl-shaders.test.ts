@@ -5,6 +5,9 @@ import {
   TRIANGLE_FRAGMENT_SHADER,
   TRIANGLE_VERTEX_SHADER,
   MERCATOR_PROJECTION_GLSL,
+  GLOBE_SPHERE_GLSL,
+  WIND_FIELD_VERTEX_SHADER,
+  WIND_FIELD_FRAGMENT_SHADER,
   PARTICLE_UPDATE_FRAGMENT_SHADER,
 } from '@/components/map/wind-particle-webgl-shaders'
 
@@ -55,6 +58,20 @@ describe('B1 调试着色器源码', () => {
   it('Mercator 投影助手含纬度钳制', () => {
     expect(MERCATOR_PROJECTION_GLSL).toContain('85.051129')
     expect(MERCATOR_PROJECTION_GLSL).toContain('lngLatToMercator')
+  })
+})
+
+describe('globe 投影着色器契约', () => {
+  it('暴露单位球投影助手', () => {
+    expect(GLOBE_SPHERE_GLSL).toContain('lngLatToGlobeSphere')
+    expect(GLOBE_SPHERE_GLSL).toContain('cosLat')
+  })
+
+  it('风场 shader 支持 globe 分支与边缘羽化', () => {
+    expect(WIND_FIELD_VERTEX_SHADER).toContain('u_useGlobe')
+    expect(WIND_FIELD_VERTEX_SHADER).toContain('lngLatToGlobeSphere')
+    expect(WIND_FIELD_FRAGMENT_SHADER).toContain('edgeFade')
+    expect(WIND_FIELD_FRAGMENT_SHADER).toContain('discard')
   })
 })
 

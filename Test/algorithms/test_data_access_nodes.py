@@ -169,6 +169,67 @@ class DataAccessNodesTests(unittest.TestCase):
             self.assertEqual(out["data"]["input_dir"], "D:/data/SMAP")
             self.assertEqual(out["path"], "D:/data/SMAP")
 
+    def test_http_open_data_earthaccess_auth_fallback_to_legacy(self) -> None:
+        """earthaccess 登录失败（如账号需重置密码）时回退 legacy 匿名下载。
+
+        公开对象（lp-prod-public 等）匿名 GET 可达，账号状态不应阻断免登录下载。
+        """
+        import sys
+        import unittest.mock as mock
+        from types import SimpleNamespace as NS
+
+        algo_root = Path(__file__).resolve().parents[2] / "Code" / "algorithms" / "providers" / "Python"
+        sys.path.insert(0, str(algo_root))
+        import modules.data_access_nodes as dan
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+
+            class _FakeHttpSource:
+                def __init__(self) -> None:
+                    self.seen_metadata: dict | None = None
+
+                def locate(self, url, metadata=None):
+                    self.seen_metadata = metadata
+                    return NS(url=url)
+
+                def materialize(self, resource, target_dir=None):
+                    assert target_dir is not None
+                    local = Path(target_dir) / "a.jpg"
+                    local.parent.mkdir(parents=True, exist_ok=True)
+                    local.write_bytes(b"\xff\xd8\xff\xe0jpeg")
+                    return NS(local_path=str(local), metadata={"cache_hit": False})
+
+            fake_source = _FakeHttpSource()
+            with (
+                mock.patch.object(dan, "_earthaccess_available", lambda: True),
+                mock.patch.object(
+                    dan,
+                    "_materialize_via_earthaccess",
+                    side_effect=RuntimeError(
+                        'Authentication with Earthdata Login failed: '
+                        '{"error":"invalid_account_status"}'
+                    ),
+                ),
+                mock.patch("data_access.sources.http.HttpSource", return_value=fake_source),
+            ):
+                out = self.registry.get_module("http_open_data").execute(
+                    {},
+                    {
+                        "base_url": "https://data.example.test/",
+                        "relative_path": "a.jpg",
+                        "use": "earthaccess",
+                        "cred_profile": "",
+                    },
+                    _ctx(workspace),
+                )
+
+            self.assertTrue(str(out["path"]).endswith("a.jpg"))
+            self.assertIn("legacy(earthaccess_auth_fallback", str(out["use"]))
+            self.assertIn("invalid_account_status", str(out["use"]))
+            self.assertFalse(fake_source.seen_metadata.get("http_headers"))
+
     def test_output_map_layer_accepts_manifest_on_data_port(self) -> None:
         """Seeds wire module.manifest → map_layer.data (single LiteGraph slot)."""
         from workflow.schemas import ArtifactRef
@@ -234,6 +295,139 @@ class TestResolvePortalEntry(unittest.TestCase):
             [m for m in new if m.startswith("app.")],
             f"unexpected backend import: {sorted(m for m in new if m.startswith('app.'))}",
         )
+
+
+class TestCdseBearerHeader(unittest.TestCase):
+    """copernicus 家族 header 解析：账密 OIDC 交换优先，静态 token 回退。"""
+
+    def setUp(self) -> None:
+        from modules.data_access_nodes import _cdse_token_cache
+
+        _cdse_token_cache.clear()
+
+    def _headers(self, entry: dict) -> dict:
+        from modules.data_access_nodes import _resolve_portal_headers
+
+        return _resolve_portal_headers(
+            cred_profile="copernicus",
+            datasource_selection={"portal_credentials": {"copernicus": entry}},
+            token_header="",
+            token_value="",
+            accept="",
+        )
+
+    def test_userpass_exchanges_cdse_bearer(self) -> None:
+        """账密条目（auth_type=basic）走 OIDC 交换，不做 Basic 头。"""
+        import unittest.mock as mock
+
+        import ingest.cdse_download
+
+        with mock.patch.object(
+            ingest.cdse_download, "exchange_cdse_token", return_value="OIDC-TOKEN"
+        ) as ex:
+            headers = self._headers(
+                {
+                    "enabled": True,
+                    "auth_type": "basic",
+                    "username": "cdse-user",
+                    "password": "cdse-pass",
+                }
+            )
+        ex.assert_called_once_with("cdse-user", "cdse-pass")
+        self.assertEqual(headers["Authorization"], "Bearer OIDC-TOKEN")
+
+    def test_alias_profile_esa_download_also_exchanges(self) -> None:
+        """esa_download / esa_copernicus 别名 profile 命中同一交换路径。"""
+        import unittest.mock as mock
+
+        import ingest.cdse_download
+        from modules.data_access_nodes import _resolve_portal_headers
+
+        with mock.patch.object(
+            ingest.cdse_download, "exchange_cdse_token", return_value="T2"
+        ):
+            headers = _resolve_portal_headers(
+                cred_profile="esa_download",
+                datasource_selection={
+                    "portal_credentials": {"copernicus": {"username": "u", "password": "p"}}
+                },
+                token_header="",
+                token_value="",
+                accept="",
+            )
+        self.assertEqual(headers["Authorization"], "Bearer T2")
+
+    def test_exchange_failure_falls_back_to_static_token(self) -> None:
+        """交换失败（网络/账密错）回退静态 token 条目语义。"""
+        import unittest.mock as mock
+
+        import ingest.cdse_download
+
+        with mock.patch.object(
+            ingest.cdse_download,
+            "exchange_cdse_token",
+            side_effect=RuntimeError("CDSE token exchange failed: HTTP 400"),
+        ):
+            headers = self._headers(
+                {
+                    "enabled": True,
+                    "auth_type": "bearer",
+                    "username": "u",
+                    "password": "bad",
+                    "token": "STATIC-TOKEN",
+                }
+            )
+        self.assertEqual(headers["Authorization"], "Bearer STATIC-TOKEN")
+
+    def test_token_only_entry_keeps_static_bearer(self) -> None:
+        """无账密条目（env overlay 形态）维持静态 Bearer 行为。"""
+        headers = self._headers(
+            {"enabled": True, "auth_type": "bearer", "token": "ENV-TOKEN"}
+        )
+        self.assertEqual(headers["Authorization"], "Bearer ENV-TOKEN")
+
+    def test_exchange_cached_within_ttl(self) -> None:
+        """同账密重复解析命中进程缓存，不重复打 token 端点。"""
+        import unittest.mock as mock
+
+        import ingest.cdse_download
+
+        with mock.patch.object(
+            ingest.cdse_download, "exchange_cdse_token", return_value="C"
+        ) as ex:
+            for _ in range(2):
+                headers = self._headers(
+                    {"enabled": True, "username": "cu", "password": "cp"}
+                )
+        ex.assert_called_once()
+        self.assertEqual(headers["Authorization"], "Bearer C")
+
+    def test_non_copernicus_basic_unaffected(self) -> None:
+        """earthdata basic 路径不被 copernicus 分支短路（URS/Basic 语义保留）。"""
+        import os
+        import unittest.mock as mock
+
+        from modules.data_access_nodes import _resolve_portal_headers
+
+        # 禁用真实 URS 网络交换，保持测试封闭：走 Basic 回退分支
+        with mock.patch.dict(os.environ, {"CGDA_URS_TOKEN_EXCHANGE": "0"}):
+            headers = _resolve_portal_headers(
+                cred_profile="earthdata",
+                datasource_selection={
+                    "portal_credentials": {
+                        "earthdata": {
+                            "enabled": True,
+                            "auth_type": "basic",
+                            "username": "u",
+                            "password": "p",
+                        }
+                    }
+                },
+                token_header="",
+                token_value="",
+                accept="",
+            )
+        self.assertTrue(headers.get("Authorization", "").startswith("Basic "))
 
 
 if __name__ == "__main__":

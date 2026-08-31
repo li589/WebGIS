@@ -57,6 +57,7 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
     enableParticleIfUnset: (catalogId) => bindings.enableParticleIfUnset(catalogId),
     clearWindForCatalog: (catalogId) => bindings.clearWindForCatalog(catalogId),
     stopWorkflowPolling: (jobId) => bindings.stopWorkflowPolling(jobId),
+    cancelWorkflowRunForJob: (jobId, catalogId) => bindings.cancelWorkflowRunForJob(jobId, catalogId),
     forgetTrackedWorkflowRun: (runId) => bindings.forgetTrackedWorkflowRun(runId),
     saveTrackedWorkflowRuns: (runs) => saveTrackedWorkflowRuns(runs as never),
     getWorkflowRetryTimers: () => workflowRetryTimers,
@@ -66,7 +67,6 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
     scheduleWorkspacePersist: () => bindings.scheduleWorkspacePersist(),
     flushWorkspacePersistNow: () => bindings.flushWorkspacePersistNow(),
     debugLog,
-    supportsAnalysisWorkflow: (catalogId) => catalog.supportsAnalysisWorkflow(catalogId),
     canRunCatalog: (catalogId) => catalog.canRunCatalog(catalogId),
     runWorkflowForCatalog: (catalogId) => bindings.runWorkflowForCatalog(catalogId),
   })
@@ -123,6 +123,7 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
     resolveEffectiveDescriptor,
     supportsAnalysisWorkflow,
     getCatalogRunBlockReason,
+    getCatalogAddBlockReason,
     canRunCatalog,
     isWeatherEngineLayer,
     supportsMapLayerResult,
@@ -131,6 +132,10 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
     supportsOnlineTemporal,
     getOnlineTemporalConfig,
     getLayerPrimaryMetric,
+    getCatalogWorkflowEngine,
+    getRuntimeLayerDescriptor,
+    isOverlayDisplayOnlyLayer,
+    setRuntimeLayerCatalog,
   } = catalog
 
   function setCurrentHour(hour: number) {
@@ -188,6 +193,7 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
     resolveEffectiveDescriptor,
     supportsAnalysisWorkflow,
     getCatalogRunBlockReason,
+    getCatalogAddBlockReason,
     canRunCatalog,
     isWeatherEngineLayer,
     supportsMapLayerResult,
@@ -196,6 +202,10 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
     supportsOnlineTemporal,
     getOnlineTemporalConfig,
     getLayerPrimaryMetric,
+    getCatalogWorkflowEngine,
+    getRuntimeLayerDescriptor,
+    isOverlayDisplayOnlyLayer,
+    setRuntimeLayerCatalog,
   }
 }
 

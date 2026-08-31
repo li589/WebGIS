@@ -14,8 +14,14 @@ import {
   isTerminalStatus,
   mergeRecentEventMessages,
 } from './catalog-builders'
-import { normalizeWorkflowProgress } from './workflow-progress'
+import {
+  dedupeNodeProgress,
+  isOverallProgressStage,
+  normalizeWorkflowProgress,
+  resolveJobOverallProgress,
+} from './workflow-progress'
 import { formatProgressShell } from '../../utils/workflow-progress-format'
+import { messageImpliesTerminalNode, extractFailureHints } from '../../utils/workflow-operational-log'
 import type { JobLayerItem, NodeProgress } from './types'
 
 export const EVENT_POLL_ACTIVE_INTERVAL_MS = 1200
@@ -91,10 +97,22 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
     let lastEventAt = jobLayer.lastEventAt
     // 节点级进度累计：保留已有节点，按 node_id 合并最新阶段
     const nextNodeProgress: NodeProgress[] = [...(jobLayer.nodeProgress ?? [])]
+    /** 本批事件是否见过块产物信号；批末再按最终 status 决定是否物化，避免 running→retry_pending 竞态 409 */
+    let sawProgressiveOverlaySignal = false
 
     for (const event of events) {
+      // Overall bar: only lifecycle events (no node_progress) or workflow.dispatch.
+      // Module nodes at 100% (e.g. fy_download) must not pin the job bar to 100%.
+      const eventNodeProgress = (event.payload as { node_progress?: { node_id?: string } } | null)
+        ?.node_progress
+      const eventNodeId =
+        eventNodeProgress && typeof eventNodeProgress === 'object'
+          ? eventNodeProgress.node_id
+          : undefined
       if (typeof event.progress === 'number') {
-        nextProgress = Math.max(nextProgress, normalizeWorkflowProgress(event.progress))
+        if (!eventNodeId || isOverallProgressStage(eventNodeId)) {
+          nextProgress = Math.max(nextProgress, normalizeWorkflowProgress(event.progress))
+        }
       }
       if (event.message) {
         nextMessage = event.message
@@ -195,6 +213,38 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
                     : typeof detailRaw.moduleName === 'string'
                       ? detailRaw.moduleName
                       : undefined,
+                // 下载进度（2026-08-25 下载可视化）：算法包 download_nodes
+                // 的 detail 透传（速度/文件数/累计字节）
+                speed_bps:
+                  typeof detailRaw.speed_bps === 'number' ? detailRaw.speed_bps : null,
+                downloaded_items:
+                  typeof detailRaw.downloaded_items === 'number'
+                    ? detailRaw.downloaded_items
+                    : undefined,
+                total_items:
+                  typeof detailRaw.total_items === 'number'
+                    ? detailRaw.total_items
+                    : undefined,
+                downloaded_bytes:
+                  typeof detailRaw.downloaded_bytes === 'number'
+                    ? detailRaw.downloaded_bytes
+                    : undefined,
+                download_mode:
+                  typeof detailRaw.download_mode === 'string' ? detailRaw.download_mode : undefined,
+                total_bytes:
+                  typeof detailRaw.total_bytes === 'number' ? detailRaw.total_bytes : undefined,
+                current_item_name:
+                  typeof detailRaw.current_item_name === 'string'
+                    ? detailRaw.current_item_name
+                    : undefined,
+                active_workers:
+                  typeof detailRaw.active_workers === 'number'
+                    ? detailRaw.active_workers
+                    : undefined,
+                items_display:
+                  typeof detailRaw.items_display === 'string'
+                    ? detailRaw.items_display
+                    : undefined,
               }
             : undefined
         if (
@@ -202,18 +252,8 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
           detail?.phase === 'block_refresh' ||
           detail?.phase === 'artifact'
         ) {
-          // progressive overlay sync (throttled inside helper).
-          // Skip when run is already failed/cancelled — hydrate replay of historical
-          // block_commit events must not POST materialize (BE returns 409).
-          const progressiveCatalogId = jobLayer.catalogId
-          const canMaterialize =
-            nextStatus === 'succeeded' ||
-            nextStatus === 'running' ||
-            nextStatus === 'queued' ||
-            nextStatus === 'retry_pending'
-          if (progressiveCatalogId && canMaterialize) {
-            void deps.syncProgressiveBlockOverlays(jobLayer.jobId, progressiveCatalogId)
-          }
+          // 仅记信号；批末按最终 nextStatus 决定是否物化（避免同批内 running→retry_pending）
+          sawProgressiveOverlaySignal = true
           if (detail.dateStart && detail.dateEnd) {
             nextMessage = `块 ${detail.blocksDone ?? '?'}/${detail.blocksTotal ?? '?'} · ${detail.dateStart}–${detail.dateEnd}`
           } else {
@@ -227,10 +267,32 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
             if (shell) nextMessage = shell
           }
         }
-        const nodePct = normalizeWorkflowProgress(
-          typeof np.progress === 'number' ? np.progress : undefined,
-          detail,
-        )
+        // workflow.dispatch carries module chunk/pixel detail for the log line,
+        // but its progress is already span-weighted — do not inflate with chunk %.
+        const nodePct = isOverallProgressStage(np.node_id)
+          ? normalizeWorkflowProgress(
+              typeof np.progress === 'number' ? np.progress : undefined,
+            )
+          : normalizeWorkflowProgress(
+              typeof np.progress === 'number' ? np.progress : undefined,
+              detail,
+            )
+        let displayPct = nodePct
+        let terminalHint: 'skipped' | 'complete' | undefined
+        if (detail?.phase === 'skipping') {
+          displayPct = 100
+          terminalHint = 'skipped'
+        } else if (detail?.phase === 'complete' || nodePct >= 100) {
+          displayPct = 100
+          if (detail?.phase === 'complete') terminalHint = 'complete'
+        } else if (
+          displayPct === 0 &&
+          ((typeof np.progress === 'number' && np.progress >= 100) ||
+            messageImpliesTerminalNode(typeof np.message === 'string' ? np.message : undefined))
+        ) {
+          displayPct = 100
+          terminalHint = 'complete'
+        }
         if (typeof np.node_id === 'string') {
           const eventAt = event.created_at
           const existing = nextNodeProgress.find((p) => p.nodeId === np.node_id)
@@ -239,11 +301,14 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
               stage: typeof np.stage === 'string' ? np.stage : existing.stage,
               progress:
                 typeof np.progress === 'number' || detail
-                  ? Math.max(existing.progress, nodePct)
+                  ? isOverallProgressStage(np.node_id)
+                    ? displayPct
+                    : Math.max(existing.progress, displayPct)
                   : existing.progress,
               message: typeof np.message === 'string' ? np.message : existing.message,
               artifacts: Array.isArray(np.artifacts) ? np.artifacts : existing.artifacts,
               detail: detail ?? existing.detail,
+              terminalHint: terminalHint ?? existing.terminalHint,
               updatedAt: eventAt,
               eventId: event.event_id,
             })
@@ -252,20 +317,29 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
               nodeId: np.node_id,
               nodeLabel: typeof np.node_label === 'string' ? np.node_label : np.node_id,
               stage: typeof np.stage === 'string' ? np.stage : '',
-              progress: nodePct,
+              progress: displayPct,
               message: typeof np.message === 'string' ? np.message : undefined,
               artifacts: Array.isArray(np.artifacts) ? np.artifacts : undefined,
               detail,
+              terminalHint,
               updatedAt: eventAt,
               eventId: event.event_id,
             })
           }
-          nextProgress = Math.max(nextProgress, nodePct)
-          deps.emitWorkflowProgressTimeSeek(
-            { ...jobLayer, catalogId: jobLayer.catalogId },
-            nextStatus,
-            detail,
-          )
+          // Do NOT Math.max module nodePct into job progress — fy_download@100%
+          // would pin the bar while omega has barely started. Overall comes from
+          // workflow.dispatch (handled above) / resolveJobOverallProgress below.
+          if (
+            detail?.phase === 'block_commit' ||
+            detail?.phase === 'block_refresh' ||
+            detail?.phase === 'artifact'
+          ) {
+            deps.emitWorkflowProgressTimeSeek(
+              { ...jobLayer, catalogId: jobLayer.catalogId },
+              nextStatus,
+              detail,
+            )
+          }
         }
       }
       lastEventId = event.event_id
@@ -273,18 +347,47 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
       nextUpdatedAt = event.created_at
     }
 
+    // 批末：仅当最终状态仍可物化时触发渐进同步（失败进入 retry_pending 则跳过）
+    // FE JobStatus 无 accepted（服务端 accepted → queued）
+    const canMaterialize =
+      nextStatus === 'succeeded' || nextStatus === 'running' || nextStatus === 'queued'
+    if (sawProgressiveOverlaySignal && jobLayer.catalogId && canMaterialize) {
+      void deps.syncProgressiveBlockOverlays(jobLayer.jobId, jobLayer.catalogId)
+    }
+
     const eventMessages = mergeRecentEventMessages(jobLayer.eventMessages, events)
+    const failureHints = extractFailureHints(events)
+    let dedupedNodeProgress = dedupeNodeProgress(nextNodeProgress)
+    // 作业已终态时，仍停在 0% 的显示节点（仅 start、未收到 progress）提升到完成态
+    if (isTerminalStatus(nextStatus)) {
+      dedupedNodeProgress = dedupedNodeProgress.map((node) => {
+        if (node.progress > 0 || isOverallProgressStage(node.nodeId)) return node
+        if (node.terminalHint) return { ...node, progress: 100 }
+        if (messageImpliesTerminalNode(node.message)) {
+          return { ...node, progress: 100, terminalHint: 'complete' as const }
+        }
+        // stage_end 可能已把 progress 设为 100；否则终态作业上遗留 0% 视为已完成
+        return { ...node, progress: 100, terminalHint: 'complete' as const }
+      })
+    }
+    const resolvedProgress = resolveJobOverallProgress({
+      current: nextProgress,
+      nodeProgress: dedupedNodeProgress,
+    })
 
     return {
       ...jobLayer,
       status: nextStatus,
-      progress: nextProgress,
+      progress: resolvedProgress,
       message: nextMessage,
       updatedAt: nextUpdatedAt,
       lastEventId,
       lastEventAt,
       eventMessages,
-      nodeProgress: nextNodeProgress,
+      nodeProgress: dedupedNodeProgress,
+      failureHints: failureHints.length
+        ? [...new Set([...(jobLayer.failureHints ?? []), ...failureHints])].slice(-12)
+        : jobLayer.failureHints,
       diagnosticNotes: jobLayer.diagnosticNotes,
     }
   }
@@ -324,28 +427,31 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
       deps.removeActiveCatalog(catalogId)
       return true
     }
-    const mergedJobLayer =
-      existingJobLayer && !isTerminalStatus(jobLayer.status)
-        ? {
-            ...jobLayer,
-            // Keep the higher of server snapshot vs event-derived progress
-            progress: Math.max(
-              normalizeWorkflowProgress(jobLayer.progress),
-              normalizeWorkflowProgress(existingJobLayer.progress),
-              ...(existingJobLayer.nodeProgress ?? []).map((np) =>
-                normalizeWorkflowProgress(np.progress, np.detail),
-              ),
-            ),
-            lastEventId: existingJobLayer.lastEventId,
-            lastEventAt: existingJobLayer.lastEventAt,
-            eventMessages: existingJobLayer.eventMessages,
-            nodeProgress: existingJobLayer.nodeProgress,
-            diagnosticNotes: jobLayer.diagnosticNotes,
-          }
-        : {
-            ...jobLayer,
-            progress: normalizeWorkflowProgress(jobLayer.progress),
-          }
+    // 终态/非终态统一：事件侧字段优先保留 existing（buildJobLayer 不产出这些）
+    const mergedNodeProgress =
+      existingJobLayer?.nodeProgress ?? jobLayer.nodeProgress
+    const mergedJobLayer = existingJobLayer
+      ? {
+          ...jobLayer,
+          progress: resolveJobOverallProgress({
+            current: existingJobLayer.progress,
+            snapshot: jobLayer.progress,
+            nodeProgress: mergedNodeProgress,
+          }),
+          lastEventId: existingJobLayer.lastEventId ?? jobLayer.lastEventId,
+          lastEventAt: existingJobLayer.lastEventAt ?? jobLayer.lastEventAt,
+          eventMessages: existingJobLayer.eventMessages ?? jobLayer.eventMessages,
+          nodeProgress: mergedNodeProgress,
+          failureHints: existingJobLayer.failureHints ?? jobLayer.failureHints,
+          diagnosticNotes: jobLayer.diagnosticNotes,
+        }
+      : {
+          ...jobLayer,
+          progress: resolveJobOverallProgress({
+            snapshot: jobLayer.progress,
+            nodeProgress: jobLayer.nodeProgress,
+          }),
+        }
 
     deps.upsertJobLayer(catalogId, mergedJobLayer)
     workflowLastStatusSyncAt.set(jobId, now)
@@ -476,7 +582,10 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
             current.status === 'retry_pending')
         ) {
           nextActivityAt = Date.now()
-          void deps.syncProgressiveBlockOverlays(jobId, catalogId)
+          // retry_pending：仅续活轮询，禁止 materialize（BE 会 409）
+          if (current.status !== 'retry_pending') {
+            void deps.syncProgressiveBlockOverlays(jobId, catalogId)
+          }
         }
       }
     } catch (error) {

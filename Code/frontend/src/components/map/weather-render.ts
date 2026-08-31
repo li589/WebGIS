@@ -12,6 +12,11 @@ export interface WeatherLegendStop {
   color: string
 }
 
+import {
+  GENERATED_PALETTE_ALIASES,
+  GENERATED_WEATHER_PALETTES,
+} from '../../data/weather-palettes-generated'
+
 interface WeatherPaletteDefinition {
   colors: string[]
   lineColor: string
@@ -19,190 +24,10 @@ interface WeatherPaletteDefinition {
   label: string
   /** 配色类型：sequential(递进) / diverging(发散) / qualitative(定性) */
   type: 'sequential' | 'diverging' | 'qualitative'
+  /** 是否进选择器（生成物字段；后端独有色带 false） */
+  exposed?: boolean
 }
 
-const WEATHER_PALETTES: Record<string, WeatherPaletteDefinition> = {
-  /** 更多停点 → MapLibre interpolate / 图例更平滑（对照 Windy LUT） */
-  'thermal-orange': {
-    colors: [
-      '#0b1a6e',
-      '#1b3cff',
-      '#2a5fff',
-      '#2f8cff',
-      '#36c5ff',
-      '#4ad4d0',
-      '#5ad9c4',
-      '#7ce7b0',
-      '#a8e87a',
-      '#c8e86a',
-      '#ffe066',
-      '#ffd166',
-      '#ff9f4a',
-      '#ff7b54',
-      '#ff4d4d',
-      '#e83070',
-      '#c01888',
-    ],
-    lineColor: 'rgba(255,255,255,0.08)',
-    label: '热力橙红',
-    type: 'sequential',
-  },
-  'precip-cyan': {
-    colors: [
-      '#061018',
-      '#0b1c30',
-      '#123048',
-      '#16324f',
-      '#1a4a7a',
-      '#1c6dd0',
-      '#1ea0ef',
-      '#1ec8ff',
-      '#48e0ff',
-      '#70f0ff',
-      '#9af8f0',
-      '#b7fff5',
-      '#d8fffb',
-      '#e8ffff',
-      '#ffffff',
-    ],
-    lineColor: 'rgba(150, 236, 255, 0.12)',
-    label: '降水青蓝',
-    type: 'sequential',
-  },
-  /** 对齐 Windy.com 风速色阶：蓝→青→绿→黄→橙→红→紫 */
-  'wind-blue': {
-    colors: [
-      '#6271b8',
-      '#3d6ea3',
-      '#4a94aa',
-      '#4a9294',
-      '#4d8e7c',
-      '#6b9148',
-      '#a89438',
-      '#d07a3a',
-      '#c94e4e',
-      '#a83d7a',
-      '#7a3d9e',
-      '#5c4d6e',
-    ],
-    lineColor: 'rgba(170, 228, 255, 0.12)',
-    label: '风场蓝',
-    type: 'sequential',
-  },
-  'magenta-yellow': {
-    colors: ['#1a102a', '#5b1f7a', '#b832e0', '#ff5e9a', '#ffb347', '#fff2a6'],
-    lineColor: 'rgba(255, 214, 153, 0.24)',
-    label: '品红黄',
-    type: 'diverging',
-  },
-  viridis: {
-    colors: ['#440154', '#414487', '#2a788e', '#22a884', '#7ad151', '#fde725'],
-    lineColor: 'rgba(200, 220, 100, 0.20)',
-    label: 'Viridis 科学',
-    type: 'sequential',
-  },
-  spectral: {
-    colors: [
-      '#9e0142',
-      '#d53e4f',
-      '#f46d43',
-      '#fdae61',
-      '#fee08b',
-      '#e6f598',
-      '#abdda4',
-      '#66c2a5',
-      '#3288bd',
-    ],
-    lineColor: 'rgba(255, 255, 255, 0.18)',
-    label: '光谱彩虹',
-    type: 'diverging',
-  },
-  blues: {
-    colors: [
-      '#f7fbff',
-      '#deebf7',
-      '#c6dbef',
-      '#9ecae1',
-      '#6baed6',
-      '#4292c6',
-      '#2171b5',
-      '#084594',
-    ],
-    lineColor: 'rgba(150, 200, 255, 0.22)',
-    label: '渐变蓝',
-    type: 'sequential',
-  },
-  reds: {
-    colors: [
-      '#fff5f0',
-      '#fee0d2',
-      '#fcbba1',
-      '#fc9272',
-      '#fb6a4a',
-      '#ef3b2c',
-      '#cb181d',
-      '#99000d',
-    ],
-    lineColor: 'rgba(255, 180, 150, 0.22)',
-    label: '渐变红',
-    type: 'sequential',
-  },
-  greens: {
-    // 低端加深，深色底图上低湿度/云量仍可见（避免近白糊底）
-    colors: [
-      '#0d2818',
-      '#1a4d2e',
-      '#2d6a4f',
-      '#40916c',
-      '#52b788',
-      '#74c69d',
-      '#95d5b2',
-      '#b7e4c7',
-    ],
-    lineColor: 'rgba(150, 230, 150, 0.22)',
-    label: '渐变绿',
-    type: 'sequential',
-  },
-  'yellow-red': {
-    colors: [
-      '#ffffcc',
-      '#ffeda0',
-      '#fed976',
-      '#feb24c',
-      '#fd8d3c',
-      '#fc4e2a',
-      '#e31a1c',
-      '#b10026',
-    ],
-    lineColor: 'rgba(255, 200, 100, 0.22)',
-    label: '黄红外推',
-    type: 'sequential',
-  },
-  'blue-green': {
-    colors: ['#08306b', '#2171b5', '#6baed6', '#66c2a4', '#41ab5d', '#238b45'],
-    lineColor: 'rgba(150, 220, 180, 0.22)',
-    label: '蓝绿渐变',
-    type: 'sequential',
-  },
-  'red-blue': {
-    colors: ['#b2182b', '#ef8a62', '#fddbc7', '#f7f7f7', '#d1e5f0', '#67a9cf', '#2166ac'],
-    lineColor: 'rgba(255, 255, 255, 0.20)',
-    label: '红蓝发散',
-    type: 'diverging',
-  },
-  'purple-orange': {
-    colors: ['#2d1b3d', '#542466', '#8c2d80', '#c63e6c', '#f08050', '#ffb347', '#ffe066'],
-    lineColor: 'rgba(255, 200, 120, 0.24)',
-    label: '紫橙渐变',
-    type: 'diverging',
-  },
-  'dark-rainbow': {
-    colors: ['#1a0033', '#003380', '#0066cc', '#00cc66', '#cccc00', '#cc6600', '#cc0000'],
-    lineColor: 'rgba(255, 255, 255, 0.20)',
-    label: '暗色彩虹',
-    type: 'sequential',
-  },
-}
 
 /** 配色方案选项列表（供 UI 选择器使用） */
 export interface WeatherPaletteOption {
@@ -212,9 +37,14 @@ export interface WeatherPaletteOption {
   colors: string[]
 }
 
-export const WEATHER_PALETTE_OPTIONS: WeatherPaletteOption[] = Object.entries(WEATHER_PALETTES).map(
-  ([id, def]) => ({ id, label: def.label, type: def.type, colors: def.colors }),
-)
+// P2-E 单源：色带/别名来自 weather-palettes.generated.ts（真源 catalog_seeds/palettes.json）
+const WEATHER_PALETTES: Record<string, WeatherPaletteDefinition> = GENERATED_WEATHER_PALETTES
+const PALETTE_ALIASES: Record<string, string> = GENERATED_PALETTE_ALIASES
+
+/** 选项仅含 exposed 条目（后端独有色带不进选择器，避免 UI 突变） */
+export const WEATHER_PALETTE_OPTIONS: WeatherPaletteOption[] = Object.entries(WEATHER_PALETTES)
+  .filter(([, def]) => def.exposed)
+  .map(([id, def]) => ({ id, label: def.label, type: def.type, colors: def.colors }))
 
 /** 将配色方案转换为粒子流色阶（12 色；提亮后适合深色底图描线） */
 export function paletteToParticleColors(paletteId: string): string[] {
@@ -274,17 +104,6 @@ function parseHex(hex: string): [number, number, number] | null {
 }
 
 /** 后端目录/历史命名 → 前端色带 ID（避免未知 ID 回落暗色 wind-blue 导致“看不见”） */
-const PALETTE_ALIASES: Record<string, string> = {
-  'orange-red': 'thermal-orange',
-  'blue-cyan': 'wind-blue',
-  'teal-blue': 'precip-cyan',
-  'purple-seq': 'magenta-yellow',
-  'green-seq': 'greens',
-  'amber-gray': 'yellow-red',
-  'pressure-purple': 'magenta-yellow',
-  'humidity-green': 'greens',
-  'visibility-amber': 'yellow-red',
-}
 
 function resolvePaletteId(palette: string): string {
   const key = PALETTE_ALIASES[palette] ?? palette
@@ -299,13 +118,32 @@ export function resolveCanonicalPaletteId(palette: string | null | undefined): s
   return resolvePaletteId(palette)
 }
 
-/** 判断两个色带 ID 是否同一条（含别名） */
+/**
+ * 严格版 canonical 解析：未知色带原样返回，**不做 thermal-orange 兜底**。
+ *
+ * 2026-08-24 三联报障 C：后端色带全集（brg/cividis/plasma/hot/terrain/
+ * ylgnbu/ylorrd 等）大于前端可选集；旧 resolvePaletteId 把未知后端色带
+ * 兜底成 thermal-orange，导致「当前/默认配色」误判为热力橙红——用户显式
+ * 选热力橙红时被 paletteIdsEqual 判为"等于默认"而存 null（吞掉覆盖），
+ * 后端继续按原色带（如 viridis）渲染 = 「热力橙红和 Viridis 显示一样」。
+ * 渲染路径（粒子/图例）仍用 resolvePaletteId 兜底保证可见性；默认/相等
+ * 判定一律走本严格版。
+ */
+export function resolveCanonicalPaletteIdStrict(
+  palette: string | null | undefined,
+): string {
+  if (!palette) return ''
+  const key = PALETTE_ALIASES[palette] ?? palette
+  return WEATHER_PALETTES[key] ? key : palette
+}
+
+/** 判断两个色带 ID 是否同一条（含别名；未知 ID 按原文比较，不兜底） */
 export function paletteIdsEqual(
   a: string | null | undefined,
   b: string | null | undefined,
 ): boolean {
   if (!a || !b) return false
-  return resolvePaletteId(a) === resolvePaletteId(b)
+  return resolveCanonicalPaletteIdStrict(a) === resolveCanonicalPaletteIdStrict(b)
 }
 
 function getPaletteDefinition(palette: string): WeatherPaletteDefinition {

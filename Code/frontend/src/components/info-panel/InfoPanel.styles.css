@@ -44,11 +44,11 @@
   border-radius: 50%;
   margin-bottom: 0.35rem;
   background:
-    radial-gradient(circle at 35% 30%, rgba(125, 211, 252, 0.35), transparent 55%),
-    radial-gradient(circle at 70% 65%, rgba(56, 189, 248, 0.12), transparent 60%),
+    radial-gradient(circle at 35% 30%, var(--accent-border), transparent 55%),
+    radial-gradient(circle at 70% 65%, var(--accent-surface), transparent 60%),
     var(--surface-raised);
   border: 1px solid var(--border-default);
-  box-shadow: inset 0 0 24px rgba(56, 189, 248, 0.08);
+  box-shadow: inset 0 0 24px var(--accent-surface);
 }
 
 .analysis-idle-kicker {
@@ -199,6 +199,9 @@
   overflow-x: hidden;
   overflow-y: auto;
   display: grid;
+  /* 单列轨道受容器约束：隐式轨道会被子项 min-content 撑宽（元数据页
+     长值/诊断文本导致右侧显示被裁，2026-08-23） */
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.48rem;
   padding: 0.42rem 0.42rem 0.5rem;
   align-content: start;
@@ -287,6 +290,29 @@
   gap: 0.38rem;
   padding: 0.12rem 0.06rem 0.02rem;
   min-width: 0;
+}
+/* 2026-08-25：原 TopBar 右上角「图层名 · 阶段标签」指示移到顶摘要行
+   （右对齐 pill，替代已删除的天气摘要/静态提示/工作流引擎行）。 */
+.panel-stage-row--topline {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  padding: 0 var(--space-1);
+}
+.panel-stage-row--topline .readiness--inline {
+  flex: 0 1 auto;
+  max-width: 100%;
+  padding: 0.12rem 0.32rem;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .panel-header {
   display: flex;
@@ -404,6 +430,21 @@
   color: var(--text-muted);
   font-size: var(--font-size-caption);
 }
+.plan-pending-chip {
+  margin-left: 0.15rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.24rem;
+  border: 1px solid var(--accent-border, var(--border-strong));
+  background: var(--accent-surface, var(--surface-2));
+  color: var(--accent-strong, var(--text-strong));
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  cursor: pointer;
+  font: inherit;
+}
+.plan-pending-chip:hover {
+  background: var(--surface-hover, var(--surface-2));
+}
 .workflow-meta-row {
   display: flex;
   align-items: center;
@@ -431,6 +472,49 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
+}
+.variant-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.04rem 0.06rem;
+  min-width: 0;
+}
+.variant-label {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.variant-segmented {
+  display: inline-flex;
+  padding: 0.12rem;
+  gap: 0.12rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border-default);
+  background: var(--surface-raised);
+}
+.variant-seg-btn {
+  border: none;
+  border-radius: 0.38rem;
+  padding: 0.18rem 0.52rem;
+  font-size: var(--font-size-caption);
+  line-height: 1.35;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+.variant-seg-btn:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+.variant-seg-btn.active {
+  color: var(--accent-strong);
+  background: var(--surface-blue-tint);
+  font-weight: 600;
 }
 .wf-progress-bar {
   position: relative;
@@ -624,8 +708,8 @@
 .subsection-count {
   font-size: 10px;
   font-weight: 500;
-  color: var(--text-tertiary, #9ab);
-  background: var(--surface-hover, rgba(255, 255, 255, 0.06));
+  color: var(--text-muted);
+  background: var(--surface-hover);
   padding: 0.1rem 0.35rem;
   border-radius: 3px;
 }
@@ -651,19 +735,19 @@
   border-radius: 4px;
 }
 .category-badge--weather {
-  background: rgba(79, 195, 247, 0.15);
-  color: var(--accent);
-  border: 1px solid rgba(79, 195, 247, 0.25);
+  background: var(--category-weather-surface);
+  color: var(--category-weather);
+  border: 1px solid var(--category-weather-border);
 }
 .category-badge--raster {
-  background: rgba(129, 199, 132, 0.15);
-  color: #66bb6a;
-  border: 1px solid rgba(129, 199, 132, 0.25);
+  background: var(--category-raster-surface);
+  color: var(--category-raster);
+  border: 1px solid var(--category-raster-border);
 }
 .category-badge--vector {
-  background: rgba(255, 183, 77, 0.15);
-  color: #ffb74d;
-  border: 1px solid rgba(255, 183, 77, 0.25);
+  background: var(--category-vector-surface);
+  color: var(--category-vector);
+  border: 1px solid var(--category-vector-border);
 }
 .category-count {
   font-size: var(--font-size-caption);
@@ -917,9 +1001,9 @@
   color: var(--text-secondary);
 }
 .wind-mode-seg-btn.active {
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.38), rgba(99, 102, 241, 0.3));
+  background: linear-gradient(135deg, var(--accent-border), var(--surface-violet-tint));
   color: var(--text-strong);
-  box-shadow: inset 0 0 8px rgba(110, 200, 255, 0.18);
+  box-shadow: inset 0 0 8px var(--accent-surface);
 }
 .wind-mode-seg-btn.active[data-mode='off'],
 .wind-mode-seg-btn.active.off {
@@ -975,14 +1059,18 @@
   color: var(--text-primary);
   white-space: nowrap;
 }
-.weather-provider-select {
+.weather-provider-row .app-select,
+.weather-provider-row .app-select-wrap {
   min-width: 0;
-  border: 1px solid var(--border-accent);
-  border-radius: 0.48rem;
-  background: var(--surface-1);
+  width: 100%;
+}
+.weather-provider-row .app-select-wrap select {
   color: var(--text-primary);
-  font-size: var(--font-size-caption);
-  padding: 0.26rem 0.4rem;
+  background: var(--surface-1);
+}
+.weather-provider-row .app-select-wrap select option {
+  color: var(--text-strong);
+  background: var(--surface-1);
 }
 .weather-provider-error {
   margin: 0;
@@ -1662,6 +1750,8 @@
 /* ── 增强信息展示：元数据 / 历史对比 / 叠加分析 ─────────────────────────── */
 .info-card {
   display: grid;
+  /* 同 .panel-scroll：单列隐式轨道防 min-content 撑宽（2026-08-23） */
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.32rem;
   padding: var(--info-card-padding-y) var(--info-card-padding-x);
   border-radius: var(--info-card-radius);

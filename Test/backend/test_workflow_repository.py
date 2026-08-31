@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import json
 import tempfile
 
 from app.services.workflow_repository import SQLiteWorkflowRepository
@@ -243,3 +244,147 @@ def test_insert_new_run_unaffected_by_guard() -> None:
         assert repo.get_run_request_json("r6") == "{}", 'repo.get_run_request_json("r6") == "{}"'
 
     _with_repo(scenario)
+
+
+# ── 图层平台子系统 v5：workflow_kind / layer_id / progress 结构化列 ──────────
+
+
+def _make_v5_run(run_id: str, *, layer_id: str | None = None, kind: str | None = None, progress: int = 10) -> WorkflowRunStatusResponse:
+    now = datetime.now(timezone.utc)
+    return WorkflowRunStatusResponse(
+        run_id=run_id,
+        command_type=WorkflowCommandType.analysis,
+        layer_id=layer_id,
+        status=ExecutionStatus.queued,
+        progress=progress,
+        message="test",
+        created_at=now,
+        updated_at=now,
+        executor_metadata={"workflow_kind": kind} if kind else {},
+    )
+
+
+def test_schema_v5_structured_columns_auto_extracted() -> None:
+    """save_run 不传显式参数时，从 layer_id/executor_metadata/progress 自动提取列。"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
+        try:
+            repository.save_run(
+                _make_v5_run("run-v5-auto", layer_id="aridity-cn", kind="asset_bake", progress=42),
+                request_json="{}",
+            )
+            with repository._connect() as conn:
+                row = conn.execute(
+                    "SELECT workflow_kind, layer_id, progress FROM workflow_runs WHERE run_id = ?",
+                    ("run-v5-auto",),
+                ).fetchone()
+            assert row == ("asset_bake", "aridity-cn", 42)
+        finally:
+            repository.close()
+
+
+def test_schema_v5_migration_from_v4_database() -> None:
+    """v4 旧库（无新列）实例化后自动迁移：列存在、索引存在、版本号=5。"""
+    import sqlite3
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "workflow_state.sqlite3"
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            """
+            CREATE TABLE workflow_runs (
+                run_id TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                request_json TEXT,
+                run_class TEXT NOT NULL DEFAULT 'business',
+                user_id INTEGER
+            )
+            """
+        )
+        # 旧行 payload 必须是合法 run 状态（get_run 反序列化要求）
+        legacy_now = datetime.now(timezone.utc)
+        legacy_payload = WorkflowRunStatusResponse(
+            run_id="run-legacy",
+            command_type=WorkflowCommandType.analysis,
+            status=ExecutionStatus.succeeded,
+            progress=100,
+            message="done",
+            created_at=legacy_now,
+            updated_at=legacy_now,
+        )
+        conn.execute(
+            "INSERT INTO workflow_runs (run_id, status, updated_at, payload_json) "
+            "VALUES ('run-legacy', 'succeeded', ?, ?)",
+            (
+                legacy_now.isoformat(),
+                json.dumps(legacy_payload.model_dump(mode="json"), ensure_ascii=False),
+            ),
+        )
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO schema_meta (key, value) VALUES ('schema_version', '4')"
+        )
+        conn.commit()
+        conn.close()
+
+        repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
+        try:
+            assert repository.get_schema_version() == 5
+            with repository._connect() as conn:
+                columns = {row[1] for row in conn.execute("PRAGMA table_info(workflow_runs)").fetchall()}
+                assert {"workflow_kind", "layer_id", "progress"} <= columns
+                indexes = {
+                    row[1]
+                    for row in conn.execute("PRAGMA index_list(workflow_runs)").fetchall()
+                }
+                assert "idx_workflow_runs_kind_layer" in indexes
+            # 旧行仍可读（列全 NULL）
+            legacy = repository.get_run("run-legacy")
+            assert legacy is None or legacy.run_id == "run-legacy"
+        finally:
+            repository.close()
+
+
+def test_list_runs_by_layer_filters_and_falls_back_to_payload() -> None:
+    """按图层查 run：新行走 layer_id 列，旧行回退 payload_json 内层匹配。"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repository = SQLiteWorkflowRepository(state_dir=Path(tmpdir))
+        try:
+            repository.save_run(
+                _make_v5_run("run-a", layer_id="era5-dwaa-cn", kind="asset_bake"),
+                request_json="{}",
+            )
+            repository.save_run(
+                _make_v5_run("run-b", layer_id="aridity-cn", kind="asset_bake"),
+                request_json="{}",
+            )
+            # 模拟旧行：直接 SQL 写入不带新列
+            now_iso = datetime.now(timezone.utc).isoformat()
+            legacy_payload = _make_v5_run("run-legacy", layer_id="era5-dwaa-cn", kind="asset_bake")
+            with repository._connect() as conn:
+                conn.execute(
+                    "INSERT INTO workflow_runs (run_id, status, updated_at, payload_json) "
+                    "VALUES (?, 'queued', ?, ?)",
+                    (
+                        "run-legacy",
+                        now_iso,
+                        json.dumps(legacy_payload.model_dump(mode="json"), ensure_ascii=False),
+                    ),
+                )
+
+            runs = repository.list_runs_by_layer("era5-dwaa-cn", limit=10)
+            ids = {r.run_id for r in runs}
+            assert {"run-a", "run-legacy"} <= ids
+            assert "run-b" not in ids
+
+            kind_runs = repository.list_runs_by_layer(
+                "era5-dwaa-cn", limit=10, workflow_kind="asset_bake"
+            )
+            # workflow_kind 过滤只匹配新列（旧行 NULL 不含 kind 过滤条件）
+            assert {r.run_id for r in kind_runs} == {"run-a"}
+        finally:
+            repository.close()

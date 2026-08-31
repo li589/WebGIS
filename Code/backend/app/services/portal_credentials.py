@@ -138,7 +138,20 @@ def _env_runtime_overlays() -> dict[str, dict[str, Any]]:
             "source": "env",
         }
     cp = os.getenv("BACKEND_COPERNICUS_TOKEN", "").strip()
-    if cp:
+    cp_user = os.getenv("BACKEND_COPERNICUS_USERNAME", "").strip()
+    cp_pass = os.getenv("BACKEND_COPERNICUS_PASSWORD", "").strip()
+    if cp_user and cp_pass:
+        # CDSE 主路径：账密经 OIDC password grant 换 Bearer（算法侧
+        # _cdse_bearer_token / cdse_download 模块负责交换）；静态 token
+        # 有效期仅 ~10 min，账密才是可长跑的 env 形态。
+        out["copernicus"] = {
+            "enabled": True,
+            "auth_type": "basic",
+            "username": cp_user,
+            "password": cp_pass,
+            "source": "env",
+        }
+    elif cp:
         out["copernicus"] = {
             "enabled": True,
             "auth_type": "bearer",
@@ -161,7 +174,13 @@ def load_portal_credentials_secret(
     repo: Any,
     encryption_key: str,
 ) -> dict[str, dict[str, Any]]:
-    """Return decrypted portal credential map (runtime use). DB overrides env."""
+    """Return decrypted portal credential map (runtime use). DB overrides env.
+
+    键归一：前端凭据对话框按 portal_id 保存（如 ``esa_copernicus``），而
+    目录徽标 / 回填 / worker 解析按 credential_profile（如 ``copernicus``）
+    查询。DB 条目在原键保留之外，同步投影到规范 profile 键（profile 专键
+    优先，不被别名投影覆盖），消除写入/读取键错位。
+    """
     merged: dict[str, dict[str, Any]] = {k: {} for k in PORTAL_IDS}
     for pid, entry in _env_runtime_overlays().items():
         merged[pid] = dict(entry)
@@ -170,6 +189,7 @@ def load_portal_credentials_secret(
     if not isinstance(raw, dict):
         return {k: v for k, v in merged.items() if v}
 
+    db_entries: dict[str, dict[str, Any]] = {}
     for pid, blob in raw.items():
         if not isinstance(pid, str) or not isinstance(blob, dict):
             continue
@@ -189,7 +209,23 @@ def load_portal_credentials_secret(
         entry = {**public, **secrets, "source": "db"}
         if entry.get("enabled") is None:
             entry["enabled"] = True
+        db_entries[pid] = entry
+
+    for pid, entry in db_entries.items():
         merged[pid] = entry
+
+    # 别名投影：portal_id 键 → credential_profile 规范键（仅当无 profile 专键条目）
+    try:
+        from app.services.portal_catalog import portal_profile_aliases
+
+        aliases = portal_profile_aliases(repo=repo)
+    except Exception:  # noqa: BLE001
+        aliases = {}
+    for pid, entry in db_entries.items():
+        alias = aliases.get(pid)
+        if alias and alias not in db_entries:
+            merged[alias] = entry
+
     return {k: v for k, v in merged.items() if v}
 
 
@@ -345,7 +381,20 @@ def delete_portal_credential(
 ) -> dict[str, Any]:
     portal_id = str(portal_id).strip().lower()
     raw = repo.get_json("portal_credentials", {})
-    if isinstance(raw, dict) and portal_id in raw:
+    if not isinstance(raw, dict):
+        return public_portal_credentials(repo=repo, encryption_key=encryption_key)
+    if portal_id in raw:
         del raw[portal_id]
-        repo.set_json("portal_credentials", raw)
+    # 反向归一：删除 profile 规范键时，同步清除投影到它的 portal_id 别名键
+    # 残留（历史错位存储），否则 load 的别名投影会让「清除凭据」失效且密文残留。
+    try:
+        from app.services.portal_catalog import portal_profile_aliases
+
+        aliases = portal_profile_aliases(repo=repo)
+    except Exception:  # noqa: BLE001
+        aliases = {}
+    for alias_pid, profile in aliases.items():
+        if profile == portal_id and alias_pid in raw:
+            del raw[alias_pid]
+    repo.set_json("portal_credentials", raw)
     return public_portal_credentials(repo=repo, encryption_key=encryption_key)

@@ -30,11 +30,13 @@ from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
+
+from data_root import resolve_data_root
 from typing import Any
 
 # ── 常量 ─────────────────────────────────────────────────────────────────────
 
-DEFAULT_ROOT = r"I:\Geograph_DataSet"
+DEFAULT_ROOT = str(resolve_data_root())
 OUTPUT_DIR = Path(__file__).resolve().parent / "reports"
 
 # 扩展名 → 格式分类映射

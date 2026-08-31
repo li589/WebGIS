@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, reactive, ref, toRef } from 'vue'
 import { useSettingsStore } from '../../stores/settings'
 import { useAuthStore } from '../../stores/auth'
 import type { ApiKeyHistoryItem, ApiKeyItem } from '../../services/settings-api'
@@ -19,7 +18,8 @@ import {
 
 const settingsStore = useSettingsStore()
 const authStore = useAuthStore()
-const { apiKeys, apiKeyHistory } = storeToRefs(settingsStore)
+const apiKeys = toRef(settingsStore, 'apiKeys')
+const apiKeyHistory = toRef(settingsStore, 'apiKeyHistory')
 
 const writeKeyDraft = ref('')
 const writeKeyLocalSet = ref(hasBackendWriteApiKey())
@@ -144,6 +144,11 @@ function sourceBadge(item: ApiKeyItem): string | null {
   return null
 }
 
+/** P-D：gaode/bing key 可存可启停，但瓦片代理暂未消费（预留），明确标注避免误解 */
+function isReservedKey(item: ApiKeyItem): boolean {
+  return item.key_name === 'gaode' || item.key_name === 'bing'
+}
+
 function formatWriteError(prefix: string, e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e)
   if (/401|Invalid API key|未授权|Unauthorized/i.test(msg)) {
@@ -256,6 +261,7 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
           <div class="key-card-header">
             <span class="key-name">{{ item.display_name }}</span>
             <div class="key-badges">
+              <span v-if="isReservedKey(item)" class="key-badge badge-reserve">预留</span>
               <span v-if="sourceBadge(item)" class="key-badge badge-source">{{
                 sourceBadge(item)
               }}</span>
@@ -583,6 +589,10 @@ function statusBadge(item: ApiKeyItem): { text: string; class: string } | null {
 .badge-source {
   background: var(--border-default);
   color: var(--accent-strong);
+}
+.badge-reserve {
+  background: var(--warning-surface);
+  color: var(--warning);
 }
 .key-desc {
   margin: 0 0 0.42rem;

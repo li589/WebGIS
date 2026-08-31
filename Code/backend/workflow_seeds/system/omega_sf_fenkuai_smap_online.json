@@ -30,6 +30,8 @@
         "start_date": "{YYYYMMDD}",
         "end_date": "{YYYYMMDD}",
         "version": "6",
+        "short_name": "SPL3SMP_E",
+        "local_dir": "{DATA_ROOT}/Soil_Moisture/SMAP_L3_SPL3SMP_E",
         "dry_run": false
       }
     },
@@ -41,7 +43,8 @@
         140
       ],
       "properties": {
-        "output_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\SMAP_Origin_Data"
+        "module_name": "smap_daily",
+        "output_dir": "{DATA_ROOT}/Soil_Moisture/SMAP_Origin_Data"
       }
     },
     {
@@ -103,8 +106,8 @@
           "omega_fixed_mode": "PFT",
           "run_domain": "GLOBAL",
           "block_days": 8,
-          "start_date": "20251201",
-          "end_date": "20251231",
+          "start_date": "{YYYYMMDD}",
+          "end_date": "{YYYYMMDD}",
           "max_pixels": 0,
           "freq_ghz": 1.4,
           "enable_parallel": true,
@@ -121,8 +124,8 @@
         40
       ],
       "properties": {
-        "start_at": "2025-12-01T00:00:00",
-        "end_at": "2025-12-31T00:00:00",
+        "start_at": "{TODAY-10}T00:00:00",
+        "end_at": "{TODAY-3}T00:00:00",
         "resolution_unit": "day",
         "resolution_step": 1,
         "granularity": "day",
@@ -228,6 +231,12 @@
       "VOD",
       "OMEGA"
     ],
-    "notes": "模板种子：start_date/end_date 含 YYYYMMDD 占位符，运行前替换。smap_daily 落盘 DATA_ROOT/Soil_Moisture/SMAP_Origin_Data（规范目录），反演经 data/source smap_folder 读取同目录，形成下载→反演跨 run 解耦。"
+    "notes": "模板种子：start_date/end_date 含 YYYYMMDD 占位符，运行前替换。smap_daily 落盘 DATA_ROOT/Soil_Moisture/SMAP_Origin_Data（规范目录），反演经 data/source smap_folder 读取同目录，形成下载→反演跨 run 解耦。",
+    "group_title": "SMAP ω 反演产物（动态）",
+    "output_labels": {
+      "SM": "土壤水分",
+      "VOD": "植被光学厚度",
+      "OMEGA": "反演参数 ω"
+    }
   }
 }

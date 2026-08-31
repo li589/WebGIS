@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import UTC, datetime
@@ -75,10 +76,15 @@ class FileJobQueue:
             "request": _to_jsonable(item.request),
             "enqueued_at": item.enqueued_at.isoformat(),
         }
-        self._get_pending_path(item.submission_id, item.enqueued_at).write_text(
+        path = self._get_pending_path(item.submission_id, item.enqueued_at)
+        # E-7: 临时文件+原子替换——write_text 直写截断后坏 pending 文件
+        # 会炸整个 dequeue 循环（_claim_next_pending 扫描时 json.loads 崩）
+        tmp_path = path.with_suffix(path.suffix + f".tmp.{os.getpid()}")
+        tmp_path.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
             encoding="utf-8",
         )
+        os.replace(tmp_path, path)
         return item
 
     def dequeue(self, *, timeout: float | None = None) -> QueuedJobSubmission | None:

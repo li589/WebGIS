@@ -3,25 +3,31 @@
     "kind": "system",
     "engine": "common",
     "name": "NOAA 开放数据样例（下载→提取）",
-    "description": "目的：演示 NOAA NOMADS 门户下载到本地缓存后提取变量。前置：无需凭证（公开产品）。使用前请把 relative_path 改成真实 NOMADS 对象路径。产出：缓存文件路径 + 变量摘要（需 GRIB 时安装 cfgrib）。",
+    "description": "目的：演示 NOAA NOMADS 门户下载到本地缓存后提取变量。无需凭证（公开产品）。默认对象为 filter_gfs CGI 的 2 m 温度小子集（约 200B GRIB2）；dir 中的 cycle 目录随时间滚动，运行前替换为近期 cycle 或由冒烟工具自动发现最新可用 cycle。产出：缓存文件路径 + 变量摘要（需 GRIB 时安装 cfgrib）。",
     "author": "system",
     "readonly": true,
     "is_template": true,
     "linked_layer_id": null,
-    "tags": ["sample", "download"],
+    "tags": [
+      "sample",
+      "download"
+    ],
     "category": "data_access"
   },
   "workflow_id": "open_data_noaa_grib_sample",
   "name": "NOAA 开放数据样例（下载→提取）",
-  "description": "NOAA NOMADS → 可选解压 → 提取变量。请替换 relative_path。",
+  "description": "NOAA NOMADS filter 子集下载 → 透传提取 → 变量提取（t2m）。",
   "nodes": [
     {
       "id": 1,
       "type": "download/http_open_data",
-      "pos": [80, 120],
+      "pos": [
+        80,
+        120
+      ],
       "properties": {
         "preset": "noaa_nomads",
-        "relative_path": "REPLACE_WITH_NOMADS_RELATIVE_PATH",
+        "relative_path": "cgi-bin/filter_gfs_0p25.pl?file=gfs.t00z.pgrb2.0p25.f000&lev_2_m_above_ground=on&var_TMP=on&subregion=&leftlon=113&rightlon=114&toplat=24&bottomlat=23&dir=%2Fgfs.20250815%2F00%2Fatmos",
         "cred_profile": "",
         "force_refresh": false
       }
@@ -29,7 +35,10 @@
     {
       "id": 2,
       "type": "archive/extract",
-      "pos": [360, 80],
+      "pos": [
+        360,
+        80
+      ],
       "properties": {
         "member_glob": "",
         "recurse_once": false,
@@ -39,29 +48,60 @@
     {
       "id": 3,
       "type": "extract/variable",
-      "pos": [640, 120],
+      "pos": [
+        640,
+        120
+      ],
       "properties": {
-        "variable": "REPLACE_VARIABLE_OR_SKIP_IF_RAW_FILE"
+        "variable": "t2m"
       }
     },
     {
       "id": 4,
       "type": "format/convert",
-      "pos": [920, 120],
+      "pos": [
+        920,
+        120
+      ],
       "properties": {
         "target_format": "npy",
-        "variable": ""
+        "variable": "t2m"
       }
     }
   ],
   "links": [
-    {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "value:string"},
-    {"0": 2, "1": 2, "2": 0, "3": 3, "4": 0, "5": "value:string"},
-    {"0": 3, "1": 3, "2": 0, "3": 4, "4": 0, "5": "value:string"}
+    {
+      "0": 1,
+      "1": 1,
+      "2": 0,
+      "3": 2,
+      "4": 0,
+      "5": "value:string"
+    },
+    {
+      "0": 2,
+      "1": 2,
+      "2": 0,
+      "3": 3,
+      "4": 0,
+      "5": "value:string"
+    },
+    {
+      "0": 3,
+      "1": 3,
+      "2": 0,
+      "3": 4,
+      "4": 0,
+      "5": "value:string"
+    }
   ],
   "extra": {
     "purpose": "open_portal_sample",
     "portal": "noaa_nomads",
-    "notes": "若下载结果已是单文件而非归档，可绕过 archive/extract，直接把 http_open_data.path 连到 extract/variable。"
+    "notes": "relative_path 为 filter_gfs_0p25.pl 真实子集查询（2 m 温度、1°×1° 小窗）；dir 参数中的 gfs.YYYYMMDD/HH 随 cycle 滚动，过期 404 时请更新为近期 cycle（冒烟工具会自动探测最新可用 cycle）。变量 t2m 为 cfgrib 对 TMP/2 m above ground 的 shortName，需 cfgrib+eccodes。",
+    "group_title": "NOAA GRIB 数据样例",
+    "output_labels": {
+      "result": "NOAA GRIB 数据样例"
+    }
   }
 }

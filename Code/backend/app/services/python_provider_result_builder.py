@@ -31,7 +31,9 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 from uuid import uuid4
 
-from app.core.config import settings
+import numpy as np
+
+from app.services.effective_config import get_provider_series_chunk_size
 from app.services.result_storage import result_storage_service
 from shared.contracts.api_contracts import (
     ResultKind,
@@ -74,6 +76,231 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
 }
 
 _SINGLE_DAY_MAT_RE = re.compile(r"^\d{8}\.mat$", re.IGNORECASE)
+_FY_DATE_IN_NAME_RE = re.compile(r"(20\d{6})")
+_DISPLAYABLE_RASTER_SUFFIXES = {".tif", ".tiff", ".geotiff", ".cog"}
+_SCIENCE_RASTER_SUFFIXES = {".hdf", ".h5", ".he5", ".nc", ".mat"}
+
+
+def _pick_fy_display_raster(
+    root: Path,
+    *,
+    time_start: str | None = None,
+    time_end: str | None = None,
+) -> Path | None:
+    """从 fy_preprocessed_dir 中挑一张可上图栅格（优先 GeoTIFF，其次科学格式）。
+
+    在线种子默认写出 GeoTIFF；hdf5 模式仍会保留中间 .tif。文件名常含 YYYYMMDD，
+    优先匹配 time_start；同日多波段优先 10V。
+    """
+    if not root.is_dir():
+        return None
+    geotiffs = sorted(
+        (
+            path
+            for path in root.rglob("*")
+            if path.is_file() and path.suffix.lower() in _DISPLAYABLE_RASTER_SUFFIXES
+        ),
+        key=lambda path: path.name.lower(),
+    )
+    science = sorted(
+        (
+            path
+            for path in root.rglob("*")
+            if path.is_file() and path.suffix.lower() in _SCIENCE_RASTER_SUFFIXES
+        ),
+        key=lambda path: path.name.lower(),
+    )
+    candidates = geotiffs or science
+    if not candidates:
+        return None
+
+    want = (time_start or "").replace("-", "")[:8]
+    if want and len(want) == 8:
+        dated = [
+            path
+            for path in candidates
+            if (match := _FY_DATE_IN_NAME_RE.search(path.name)) and match.group(1) == want
+        ]
+        if dated:
+            candidates = dated
+        elif time_end:
+            end_key = time_end.replace("-", "")[:8]
+            if end_key and len(end_key) == 8:
+                ranged = []
+                for path in candidates:
+                    match = _FY_DATE_IN_NAME_RE.search(path.name)
+                    if not match:
+                        continue
+                    day = match.group(1)
+                    if want <= day <= end_key:
+                        ranged.append(path)
+                if ranged:
+                    candidates = ranged
+
+    for prefer in ("10V", "10H", "18V", "18H"):
+        for path in reversed(candidates):
+            if prefer.lower() in path.name.lower():
+                return path
+    return candidates[-1]
+
+
+def _infer_mat_data_variable(path: Path) -> str | None:
+    """从 v5 .mat 推断唯一 2D 数据变量名（排除 lat/lon 坐标轴）。
+
+    static_local_read 产物的 .mat 常带 lat(1,N)/lon(1,N) 坐标变量，数据变量
+    是唯一的 N×M 2D 数组。返回该变量名；无唯一 2D 变量或读取失败返回 None。
+    """
+    if not path.exists() or path.suffix.lower() != ".mat":
+        return None
+    candidates: list[str] = []
+    try:
+        import scipy.io as sio
+
+        data = sio.loadmat(str(path), squeeze_me=True)
+    except Exception:
+        try:
+            import h5py
+
+            with h5py.File(str(path), "r") as f:
+                for key in f.keys():
+                    node = f[key]
+                    shape = getattr(node, "shape", ())
+                    if len(shape) == 2 and shape[0] > 1 and shape[1] > 1:
+                        if key.lower() not in ("lat", "latitude", "lon", "longitude"):
+                            candidates.append(key)
+            return candidates[0] if len(candidates) == 1 else None
+        except Exception:
+            return None
+    for key, value in data.items():
+        if key.startswith("__"):
+            continue
+        if isinstance(value, np.ndarray) and value.ndim == 2:
+            if 1 not in value.shape and key.lower() not in (
+                "lat",
+                "latitude",
+                "lon",
+                "longitude",
+            ):
+                candidates.append(key)
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _resolve_product_display_label(
+    raw_layer_id: str,
+    tags: dict[str, Any],
+    product: dict[str, Any],
+    local_path: Path,
+) -> str:
+    """产物图层显示名：目录 descriptor 显示名 > tags.layer > 产物名（剥扩展名）> stem。
+
+    2026-08-24 三联报障（续）：product.name 常为源文件名（如 landcover_025.mat），
+    前端 normalizeProductTag 全串大写 + productTagLabel 未知 tag 透传后，
+    文件名会整体泄漏成图层显示名（「LANDCOVER_025.MAT」）。descriptor
+    显示名优先从根上消除技术文件名；产物名/stem 兜底时一律剥数据扩展名。
+    """
+    if raw_layer_id:
+        try:
+            from app.services.layer_catalog import get_layer_descriptor
+
+            descriptor = get_layer_descriptor(raw_layer_id)
+            display_name = (
+                getattr(descriptor, "display_name", None) if descriptor else None
+            )
+            if display_name and str(display_name).strip():
+                return str(display_name).strip()[:64]
+        except Exception:
+            logger.debug("layer descriptor lookup failed for %s", raw_layer_id)
+    for candidate in (tags.get("layer"), product.get("name")):
+        if candidate and str(candidate).strip():
+            name = re.sub(
+                r"\.(tif|tiff|png|jpe?g|mat|nc|hdf5?|he5|zip|shp|csv)$",
+                "",
+                str(candidate).strip(),
+                flags=re.IGNORECASE,
+            )
+            return name[:64]
+    return str(local_path.stem)[:64]
+
+
+def _lookup_layer_style_palette(raw_layer_id: str | None) -> str | None:
+    """descriptor.style.palette 统一查找（P2-D 收敛，2026-08-24）。
+
+    generic raster / science-mat 两个 commit 分支共用；产物 palette 对齐
+    静态层 descriptor 配置（见 _build_generic_raster_map_layer_ref 内注释）。
+    无 layer_id / 无 descriptor / 查找异常均返回 None（调用方用自身默认）。
+    """
+    if not raw_layer_id:
+        return None
+    try:
+        from app.services.layer_catalog import get_layer_descriptor
+
+        descriptor = get_layer_descriptor(raw_layer_id)
+        hint = getattr(descriptor, "style", None) if descriptor else None
+        palette = getattr(hint, "palette", None) if hint else None
+        if palette and str(palette).strip():
+            return str(palette).strip()
+    except Exception:
+        logger.debug("layer descriptor style lookup failed for %s", raw_layer_id)
+    return None
+
+
+def _read_mat_latlon_bounds(path: Path) -> tuple[list[float], str] | None:
+    """读 v5 .mat 的 lat/lon 变量推导 [west, south, east, north] bounds。
+
+    .mat 数据变量不含地理参考，_load_mat_2d 只返回数组——若无 lat/lon，
+    commit_science_raster_variable 会把 (176,256) 贴成默认全球网格（实测
+    aridity 中国区数据被贴成 -173.8~180/0~88 全球 bounds，南北拉伸根源）。
+    读取失败或坐标缺失返回 None（调用方回退 preset 匹配）。
+
+    像元配准（2026-08-24 P1.5）：坐标向量长度 == 数据维度 → CF 中心坐标
+    （PixelIsPoint），bounds 四边外扩半步长（此前直接 min/max，中心坐标源
+    整体少算半像元）；长度 == 维度+1 → 边缘坐标（PixelIsArea），min/max
+    即 bounds。判定见 cell_registration.coords_to_area_bounds。
+
+    Returns:
+        ([west, south, east, north], cell_registration) — registration 为
+        "area" | "point"，供 commit 链写入 bounds.json meta 传递。
+    """
+    if not path.exists() or path.suffix.lower() != ".mat":
+        return None
+    try:
+        import scipy.io as sio
+
+        data = sio.loadmat(str(path), squeeze_me=True)
+    except Exception:
+        return None
+    lat = data.get("lat", data.get("latitude"))
+    lon = data.get("lon", data.get("longitude"))
+    try:
+        lat_arr = np.atleast_1d(np.asarray(lat, dtype=np.float64))
+        lon_arr = np.atleast_1d(np.asarray(lon, dtype=np.float64))
+    except Exception:
+        return None
+
+    # 数据变量形状（用于配准判定）：优先推断的数据变量，退而求其次取
+    # 与坐标同长度约束的任一 2D 变量。
+    data_shape: tuple[int, ...] | None = None
+    var_name = _infer_mat_data_variable(path)
+    candidate = data.get(var_name) if var_name else None
+    if candidate is None:
+        for key, value in data.items():
+            if key.startswith("__"):
+                continue
+            arr = np.atleast_1d(np.asarray(value))
+            if arr.ndim == 2:
+                candidate = arr
+                break
+    if candidate is not None:
+        arr = np.asarray(candidate)
+        if arr.ndim == 2:
+            data_shape = tuple(arr.shape)
+
+    from app.data_io.services.cell_registration import coords_to_area_bounds
+
+    normalized = coords_to_area_bounds(lat_arr, lon_arr, data_shape)
+    if normalized is None:
+        return None
+    return normalized
 
 # MIME types for the three standard algorithm artifact kinds. Indexed by
 # the artifact_name key used in result_dto.artifacts.
@@ -439,7 +666,7 @@ class PythonProviderResultBuilder:
         else:
             point_count = len(flat_y)
 
-        chunk_limit = int(getattr(settings, "provider_series_chunk_size", 500) or 500)
+        chunk_limit = get_provider_series_chunk_size()
         if result_kind is ResultKind.chart and point_count > chunk_limit:
             items = []
             if series and isinstance(series[0], dict):
@@ -625,10 +852,28 @@ class PythonProviderResultBuilder:
         product_type = str(product.get("type") or "")
         config = _MAPPABLE_PRODUCTS.get(product_type)
         if config is None:
+            if product_type == "fy_preprocessed_dir":
+                return self._build_fy_preprocessed_dir_map_layer_ref(
+                    run_id=run_id,
+                    requested_at=requested_at,
+                    payload=payload,
+                    product=product,
+                    index=index,
+                    time_start=time_start,
+                    time_end=time_end,
+                )
             # Generic GIS / preprocess GeoTIFF products (native CRS/bounds).
-            if product_type in {"raster", "map_layer"} or str(
-                as_dict(product.get("tags")).get("kind") or ""
-            ).lower() in {"raster", "cog"}:
+            # tags.module=output_map_layer（2026-08-25 图层逐一验证发现）：
+            # static_local_read_*（ETOPO/GEBCO/DEM 等静态读取层）的产物
+            # 无 type、无 tags.kind，仅带 module=output_map_layer——此前
+            # 白名单不命中被静默丢弃 → run succeeded 但物化 0 层 →
+            # 前端「数据异常/失败」。同为 generic raster 通道处理。
+            product_tags = as_dict(product.get("tags"))
+            if (
+                product_type in {"raster", "map_layer"}
+                or str(product_tags.get("kind") or "").lower() in {"raster", "cog"}
+                or str(product_tags.get("module") or "").lower() == "output_map_layer"
+            ):
                 return self._build_generic_raster_map_layer_ref(
                     run_id=run_id,
                     requested_at=requested_at,
@@ -638,6 +883,15 @@ class PythonProviderResultBuilder:
                     time_start=time_start,
                     time_end=time_end,
                 )
+            # R2 修复：白名单外的 product type 此前静默丢弃（返回 None），
+            # 新算法产物忘记登记 _MAPPABLE_PRODUCTS 时无任何可观测信号。
+            logger.warning(
+                "Unmappable workflow product dropped: type=%r index=%d run_id=%s "
+                "(not in _MAPPABLE_PRODUCTS and tags not raster/cog)",
+                product_type,
+                index,
+                run_id,
+            )
             return None
 
         uri = str(
@@ -766,6 +1020,8 @@ class PythonProviderResultBuilder:
                 upload_id=f"wf-{run_id[-8:]}-{index}",
                 grid_preset=str(config["grid_preset"]),
                 auto_confirm=True,
+                # R1：与下方 render_hint.palette 对齐，注册侧不再落 wind-blue
+                palette=str(config.get("palette") or "cividis"),
             )
         except Exception:
             logger.exception(
@@ -827,6 +1083,71 @@ class PythonProviderResultBuilder:
             updated_at=requested_at,
         )
 
+    def _build_fy_preprocessed_dir_map_layer_ref(
+        self,
+        *,
+        run_id: str,
+        requested_at: datetime,
+        payload: WorkflowSubmitRequest,
+        product: dict[str, Any],
+        index: int,
+        time_start: str | None = None,
+        time_end: str | None = None,
+    ) -> WorkflowResultReference | None:
+        """fy_preprocess 输出目录 → 挑 GeoTIFF/科学栅格 → 走 generic 上图通道。
+
+        2026-08-30：fy_tb_online_read 成功但 product_type=fy_preprocessed_dir
+        不在 _MAPPABLE_PRODUCTS，被静默丢弃 → 「已完成但地图空白」。
+        """
+        uri = str(
+            product.get("download_url")
+            or product.get("preview_url")
+            or product.get("uri")
+            or ""
+        ).strip()
+        local_path = self._uri_to_local_path(uri) if uri else None
+        if local_path is None or not local_path.is_dir():
+            logger.warning(
+                "fy_preprocessed_dir missing or not a directory: uri=%r run_id=%s",
+                uri,
+                run_id,
+            )
+            return None
+        chosen = _pick_fy_display_raster(
+            local_path, time_start=time_start, time_end=time_end
+        )
+        if chosen is None:
+            logger.warning(
+                "fy_preprocessed_dir has no displayable raster under %s run_id=%s",
+                local_path,
+                run_id,
+            )
+            return None
+        tags = as_dict(product.get("tags"))
+        synth = {
+            **product,
+            "type": "map_layer",
+            "uri": str(chosen),
+            "download_url": str(chosen),
+            "variable": product.get("variable") or "Brightness_Temperature",
+            "tags": {
+                **tags,
+                "module": "output_map_layer",
+                "kind": "raster",
+                "source_dir": str(local_path),
+                "picked_file": chosen.name,
+            },
+        }
+        return self._build_generic_raster_map_layer_ref(
+            run_id=run_id,
+            requested_at=requested_at,
+            payload=payload,
+            product=synth,
+            index=index,
+            time_start=time_start,
+            time_end=time_end,
+        )
+
     def _build_generic_raster_map_layer_ref(
         self,
         *,
@@ -846,27 +1167,85 @@ class PythonProviderResultBuilder:
             or ""
         ).strip()
         local_path = self._uri_to_local_path(uri) if uri else None
-        if local_path is None or not local_path.is_file():
+        if local_path is None:
+            return None
+        # output_map_layer 常把上游目录 path 标成 type=map_layer；目录须先挑可上图文件。
+        if local_path.is_dir():
+            chosen = _pick_fy_display_raster(
+                local_path, time_start=time_start, time_end=time_end
+            )
+            if chosen is None:
+                logger.warning(
+                    "map_layer uri is empty/unreadable directory: %s run_id=%s",
+                    local_path,
+                    run_id,
+                )
+                return None
+            local_path = chosen
+        if not local_path.is_file():
             return None
         suffix = local_path.suffix.lower()
         if suffix not in {".tif", ".tiff", ".geotiff", ".cog"}:
-            return None
+            # 2026-08-24 缺陷修复：static_local_read_*（如 aridity-cn）的
+            # map_layer 产物是 .mat（"工作流已完成但图层不显示"根因——
+            # generic 分支此前只收 GeoTIFF 后缀，.mat 直接丢弃）。科学格式
+            # 走 commit_science_raster_variable 通道（抽变量→GeoTIFF→注册，
+            # 与 ω 的 .mat 产物同一管线），下方统一处理。
+            if suffix not in {".mat", ".nc", ".h5", ".hdf", ".he5"}:
+                return None
+            return self._build_science_mat_map_layer_ref(
+                run_id=run_id,
+                requested_at=requested_at,
+                payload=payload,
+                product=product,
+                index=index,
+                local_path=local_path,
+                time_start=time_start,
+                time_end=time_end,
+            )
 
         tags = as_dict(product.get("tags"))
         variable = str(product.get("variable") or tags.get("variable") or "raster")
-        label = str(
-            tags.get("layer") or product.get("name") or local_path.stem or "GIS"
-        )[:64]
+        raw_layer_id = str(getattr(payload, "layer_id", "") or "").strip()
+        label = _resolve_product_display_label(raw_layer_id, tags, product, local_path)
+        # 2026-08-24 三联报障 A：产物 overlay id 稳定化。此前恒为
+        # imported-gis-{run_id[-8:]}-{index}——每次运行生成新 id，前端
+        # syncOverlays 视为"旧层移除+新层添加"，两次网络往返之间存在空窗
+        # （静态图层"一闪而过"的根因）。带 layer_id 的 run（图层直跑场景）
+        # 改用稳定 id imported-{layer_id}-{index}，conflict_policy=overwrite
+        # 下同层重跑覆盖同一 overlay，前端同 id 仅更新 URL 无空窗。
+        # 多产物按 index 区分；同层互斥（_cancel_exclusive_analysis_runs）
+        # 已防并发覆盖竞态。无 layer_id（画布/临时运行）保留原 run 派生 id。
+        # layer_id 需 sanitize：含 :/\ 等非法 chars 会让 safe_import_child 把
+        # 其当路径分隔符（Windows 报"目录名称无效"，2026-08-24 实测
+        # analysis:test → mkdir imports/imported-analysis:test-00 失败）。
+        safe_layer_id = re.sub(r"[^A-Za-z0-9._-]+", "_", raw_layer_id)
+        stable_layer_id = (
+            f"imported-{safe_layer_id}-{index:02d}"
+            if safe_layer_id
+            else f"imported-gis-{run_id[-8:]}-{index:02d}"
+        )
+        # 产物 palette 对齐静态层（2026-08-24 用户需求）：generic raster 产物
+        # 此前写死 viridis——静态层 descriptor 配了 style.palette（如 aridity-cn
+        # 的 brg、hfp-cn 的 hfp-ramp，共 35 层）时，同层"静态 overlay→产物
+        # overlay"首次换源也会换色。现优先取 descriptor.style.palette 对齐。
+        product_palette = "viridis"
+        aligned = _lookup_layer_style_palette(raw_layer_id)
+        if aligned:
+            product_palette = aligned
         try:
             from app.data_io.services.raster_commit import commit_algorithm_geotiff
 
             registered = commit_algorithm_geotiff(
                 local_path,
-                layer_id=f"imported-gis-{run_id[-8:]}-{index:02d}",
+                layer_id=stable_layer_id,
                 source_name=f"{run_id[-8:]}_{local_path.name}",
                 conflict_policy="overwrite",
                 time_start=time_start,
                 time_end=time_end,
+                # R1：与下方 render_hint.palette 对齐，注册侧不再落 wind-blue；
+                # palette 优先取静态层 descriptor.style.palette（见上方对齐注释）
+                palette=product_palette,
                 extra_meta={
                     "analysis_product": True,
                     "variable_id": variable,
@@ -903,7 +1282,7 @@ class PythonProviderResultBuilder:
         render_hint = WeatherLayerRenderHint(
             layer_id=payload.layer_id or overlay_id,
             paint_mode="grid_fill",
-            palette="viridis",
+            palette=product_palette,
             primary_metric=variable,
             unit_label=label,
             opacity=0.8,
@@ -911,6 +1290,133 @@ class PythonProviderResultBuilder:
                 f"product={product.get('type') or 'raster'}",
                 f"overlay={overlay_id}",
                 "native_crs",
+            ],
+        )
+        return WorkflowResultReference(
+            result_id=f"algorithm-map-{index}-{run_id[-8:]}",
+            result_kind=ResultKind.map_layer,
+            title=f"Algorithm Map Layer: {label}",
+            mime_type="application/json",
+            inline_data={
+                "render_hint": render_hint.model_dump(mode="json"),
+                "layer_assets": {
+                    "overlay_layer_id": overlay_id,
+                    "cog_url": f"/overlay-preview/{overlay_id}",
+                    "cog_preview_url": f"/overlay-preview/{overlay_id}",
+                    "cog_bbox": cog_bbox,
+                    "product_tag": label,
+                    "source_path": str(local_path),
+                    "time_list": registered.get("time_list") or [],
+                    "default_time": registered.get("default_time"),
+                    "native_step": registered.get("native_step"),
+                },
+            },
+            updated_at=requested_at,
+        )
+
+    def _build_science_mat_map_layer_ref(
+        self,
+        *,
+        run_id: str,
+        requested_at: datetime,
+        payload: WorkflowSubmitRequest,
+        product: dict[str, Any],
+        index: int,
+        local_path: Path,
+        time_start: str | None = None,
+        time_end: str | None = None,
+    ) -> WorkflowResultReference | None:
+        """.mat/.nc/.hdf 科学格式 map_layer 产物：抽变量→GeoTIFF→注册 overlay。
+
+        2026-08-24：static_local_read_*（aridity-cn 等）的 map_layer 产物是
+        .mat，generic 分支只收 GeoTIFF 后缀导致静默丢弃（"工作流已完成但
+        图层不显示"）。走 commit_science_raster_variable 与 ω 的 .mat 产物
+        同一管线：稳定 id imported-{layer_id}-{index}、palette 对齐 descriptor。
+        variable 优先 product.variable/tags.variable，缺省时若 .mat 含唯一
+        2D 数据变量（排除 lat/lon 坐标轴）自动选用。
+        """
+        tags = as_dict(product.get("tags"))
+        raw_layer_id = str(getattr(payload, "layer_id", "") or "").strip()
+        label = _resolve_product_display_label(raw_layer_id, tags, product, local_path)
+        variable = str(product.get("variable") or tags.get("variable") or "").strip()
+        if not variable and local_path.suffix.lower() == ".mat":
+            variable = _infer_mat_data_variable(local_path) or local_path.stem
+
+        safe_layer_id = re.sub(r"[^A-Za-z0-9._-]+", "_", raw_layer_id)
+        # commit_science_raster_variable 内部用 stable_import_layer_id(source_name,
+        # variable, grid, time) 生成层 id——source_name 不含 run_id（改用
+        # layer_id+stem）即可让同层重跑命中同一稳定 id（overwrite 语义）。
+        stable_source_name = (
+            f"{safe_layer_id}_{local_path.stem}" if safe_layer_id else local_path.stem
+        )
+        # palette 对齐静态层 descriptor（与 generic 分支同规则，P2-D 收敛）
+        product_palette = "viridis"
+        aligned = _lookup_layer_style_palette(raw_layer_id)
+        if aligned:
+            product_palette = aligned
+
+        try:
+            from app.data_io.services.raster_commit import (
+                commit_science_raster_variable,
+            )
+
+            # .mat 内嵌 lat/lon（如 aridity 15~55N/70~140E）→ 推导 bounds
+            # 精确贴图；缺坐标则回退 preset 匹配（EASE 等固定网格）。
+            # bounds 已做像元配准归一化（中心坐标源外扩半格，P1.5）。
+            mat_registration: str | None = None
+            mat_bounds: list[float] | None = None
+            if local_path.suffix.lower() == ".mat":
+                mat_normalized = _read_mat_latlon_bounds(local_path)
+                if mat_normalized is not None:
+                    mat_bounds, mat_registration = mat_normalized
+            registered = commit_science_raster_variable(
+                local_path,
+                variable_id=variable,
+                source_name=stable_source_name,
+                upload_id=f"wf-{run_id[-8:]}-{index}",
+                auto_confirm=True,
+                palette=product_palette,
+                bounds=mat_bounds,
+                cell_registration=mat_registration,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to publish science mat map_layer path=%s variable=%s",
+                local_path,
+                variable,
+            )
+            return None
+
+        overlay_id = str(registered.get("layer_id") or "").strip()
+        if not overlay_id:
+            return None
+
+        bounds = registered.get("bounds")
+        cog_bbox = None
+        if (
+            isinstance(bounds, (list, tuple))
+            and len(bounds) == 4
+            and all(isinstance(v, (int, float)) for v in bounds)
+        ):
+            cog_bbox = {
+                "west": float(bounds[0]),
+                "south": float(bounds[1]),
+                "east": float(bounds[2]),
+                "north": float(bounds[3]),
+                "crs": "EPSG:4326",
+            }
+
+        render_hint = WeatherLayerRenderHint(
+            layer_id=payload.layer_id or overlay_id,
+            paint_mode="grid_fill",
+            palette=product_palette,
+            primary_metric=variable,
+            unit_label=label,
+            opacity=0.8,
+            notes=[
+                f"product={product.get('type') or 'map_layer'}",
+                f"overlay={overlay_id}",
+                f"variable={variable}",
             ],
         )
         return WorkflowResultReference(
@@ -994,7 +1500,14 @@ class PythonProviderResultBuilder:
 
         if run_status is None:
             raise ValueError(f"Workflow run not found: {run_id}")
-        if run_status.status not in {"succeeded", "running", "accepted", "queued"}:
+        if run_status.status not in {
+            "succeeded",
+            "running",
+            "accepted",
+            "queued",
+        }:
+            # retry_pending / failed / cancelled：故意拒绝。前端不得在
+            # retry_pending 期间 POST materialize（否则会稳定 409，与缓存无关）。
             raise ValueError(
                 f"Workflow run cannot materialize overlays: {run_status.status}"
             )

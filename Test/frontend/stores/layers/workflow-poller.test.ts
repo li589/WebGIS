@@ -97,13 +97,16 @@ function setupDeps(initial: JobLayerItem = makeJobLayer()) {
         opts: { previousJobLayer?: JobLayerItem },
       ) => {
         const r = run as { run_id: string; status?: string; progress?: number }
+        const prev = opts.previousJobLayer
+        // 对齐真实 result-adapter：不产出事件侧字段
         return {
           ...makeJobLayer(),
-          ...(opts.previousJobLayer ?? {}),
           jobId: r.run_id,
           catalogId,
+          name: prev?.name ?? 'Test Job',
           status: (r.status as JobLayerItem['status']) ?? 'queued',
-          progress: r.progress ?? opts.previousJobLayer?.progress ?? 20,
+          progress: r.progress ?? 20,
+          mapLayerPayload: prev?.mapLayerPayload,
         }
       },
     ),
@@ -193,7 +196,26 @@ describe('applyWorkflowEventsToJobLayer', () => {
       progress: 30,
       eventId: 'evt-n1',
     })
-    expect(result.progress).toBe(30)
+    // 模块 node_progress 不再抬升作业级进度条（避免 fy_download@100% 钉死整体条）
+    expect(result.progress).toBe(10)
+    // 模块 ingest 进度不触发块 seek（仅 block_commit/block_refresh/artifact）
+    expect(deps.emitWorkflowProgressTimeSeek).not.toHaveBeenCalled()
+  })
+
+  it('block_commit 节点进度触发时间轴 seek 提示', () => {
+    const { poller, deps } = setupDeps()
+    poller.applyWorkflowEventsToJobLayer(makeJobLayer(), [
+      makeEvent({
+        event_id: 'evt-block',
+        payload: {
+          node_progress: {
+            node_id: 'omega',
+            progress: 50,
+            detail: { phase: 'block_commit', time_key: '20240501' },
+          },
+        },
+      }),
+    ])
     expect(deps.emitWorkflowProgressTimeSeek).toHaveBeenCalledTimes(1)
   })
 
@@ -297,6 +319,36 @@ describe('applyWorkflowEventsToJobLayer', () => {
     expect(deps.syncProgressiveBlockOverlays).not.toHaveBeenCalled()
   })
 
+  it('block_commit + retry_pending：跳过物化（BE 会 409）', () => {
+    const { poller, deps } = setupDeps()
+    poller.applyWorkflowEventsToJobLayer(makeJobLayer({ status: 'retry_pending' }), [
+      makeEvent({
+        payload: {
+          node_progress: { node_id: 'n1', detail: { phase: 'block_commit' } },
+        },
+      }),
+    ])
+    expect(deps.syncProgressiveBlockOverlays).not.toHaveBeenCalled()
+  })
+
+  it('同批 block_commit 后转入 retry_pending：批末不物化', () => {
+    const { poller, deps } = setupDeps()
+    poller.applyWorkflowEventsToJobLayer(makeJobLayer({ status: 'running' }), [
+      makeEvent({
+        payload: {
+          node_progress: {
+            node_id: 'n1',
+            detail: { phase: 'block_commit', date_start: '2024-05-01', date_end: '2024-05-08' },
+          },
+        },
+      }),
+      makeEvent({
+        payload: { status: 'retry_pending' },
+      }),
+    ])
+    expect(deps.syncProgressiveBlockOverlays).not.toHaveBeenCalled()
+  })
+
   it('无 date 区间的 block_commit 回退到 formatProgressShell 消息', () => {
     const { poller } = setupDeps()
     const result = poller.applyWorkflowEventsToJobLayer(makeJobLayer({ message: '' }), [
@@ -329,12 +381,12 @@ describe('applyWorkflowEventsToJobLayer', () => {
 
   it('事件消息只进 eventMessages，不回填 diagnosticNotes（避免面板双列）', () => {
     const { poller } = setupDeps()
-    const withMsg = makeEvent({ message: '下载中' })
+    const withMsg = makeEvent({ channel: 'log', message: '下载中' })
     const running = poller.applyWorkflowEventsToJobLayer(
       makeJobLayer({ status: 'running', diagnosticNotes: ['旧诊断'] }),
       [withMsg],
     )
-    expect(running.eventMessages).toEqual(['进度 · 下载中'])
+    expect(running.eventMessages).toEqual(['下载中'])
     expect(running.diagnosticNotes).toEqual(['旧诊断'])
 
     const done = poller.applyWorkflowEventsToJobLayer(
@@ -342,7 +394,7 @@ describe('applyWorkflowEventsToJobLayer', () => {
       [withMsg],
     )
     expect(done.diagnosticNotes).toEqual(['最终诊断'])
-    expect(done.eventMessages).toEqual(['进度 · 下载中'])
+    expect(done.eventMessages).toEqual(['下载中'])
   })
 })
 
@@ -409,16 +461,27 @@ describe('syncWorkflowRunSnapshot', () => {
     expect(deps.removeActiveCatalog).not.toHaveBeenCalled()
   })
 
-  it('终态 succeeded：停轮询 + 挂载产物 + 保留事件侧 nodeProgress 不丢失', async () => {
+  it('终态 succeeded：停轮询 + 挂载产物 + 保留事件侧 nodeProgress/logs/hints', async () => {
     const initial = makeJobLayer({
       progress: 60,
+      lastEventId: 'evt-live',
+      lastEventAt: '2026-01-01T03:00:00Z',
+      eventMessages: ['[nsidc] 开始', '派发到队列'],
+      failureHints: ['module_name=nsidc_smap_download'],
       nodeProgress: [
-        { nodeId: 'n1', nodeLabel: 'n1', stage: '', progress: 50, updatedAt: '', eventId: 'e' },
+        {
+          nodeId: 'n1:nsidc_smap_download',
+          nodeLabel: 'nsidc_smap_download',
+          stage: 'download',
+          progress: 100,
+          updatedAt: '2026-01-01T03:00:00Z',
+          eventId: 'evt-live',
+        },
       ],
     })
-    const { deps, poller } = setupDeps(initial)
+    const { deps, store, poller } = setupDeps(initial)
     mockedGetRun.mockResolvedValue(
-      makeRun({ status: 'succeeded', result_refs: [{ title: 'COG' }] }) as never,
+      makeRun({ status: 'succeeded', progress: 100, result_refs: [{ title: 'COG' }] }) as never,
     )
     const result = await poller.syncWorkflowRunSnapshot('run-1', 'cat-1', true)
     expect(result).toBe(true)
@@ -428,6 +491,31 @@ describe('syncWorkflowRunSnapshot', () => {
       'cat-1',
       'run-1',
     )
+    const merged = store.get('run-1')!
+    expect(merged.status).toBe('succeeded')
+    expect(merged.nodeProgress).toHaveLength(1)
+    expect(merged.nodeProgress![0]!.nodeId).toBe('n1:nsidc_smap_download')
+    expect(merged.eventMessages).toEqual(['[nsidc] 开始', '派发到队列'])
+    expect(merged.failureHints).toEqual(['module_name=nsidc_smap_download'])
+    expect(merged.lastEventId).toBe('evt-live')
+  })
+
+  it('终态 failed：同样保留事件侧字段', async () => {
+    const initial = makeJobLayer({
+      eventMessages: ['ERROR · 下载失败'],
+      failureHints: ['component=module'],
+      nodeProgress: [
+        { nodeId: 'dl', nodeLabel: 'dl', stage: 'download', progress: 40, updatedAt: '', eventId: 'e' },
+      ],
+    })
+    const { store, poller } = setupDeps(initial)
+    mockedGetRun.mockResolvedValue(makeRun({ status: 'failed', progress: 40 }) as never)
+    await poller.syncWorkflowRunSnapshot('run-1', 'cat-1', true)
+    const merged = store.get('run-1')!
+    expect(merged.status).toBe('failed')
+    expect(merged.nodeProgress?.[0]?.progress).toBe(40)
+    expect(merged.eventMessages).toEqual(['ERROR · 下载失败'])
+    expect(merged.failureHints).toEqual(['component=module'])
   })
 
   it('succeeded 但运行已被用户关闭：不重复挂载产物', async () => {

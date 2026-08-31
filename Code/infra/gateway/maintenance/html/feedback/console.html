@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="darkreader-lock" />
+    <title>反馈处理台 · CGDA</title>
+    <link rel="stylesheet" href="assets/feedback.css" />
+    <link rel="stylesheet" href="assets/console.css" />
+  </head>
+  <body>
+    <!-- 顶栏 -->
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m4 17 6-6-6-6M12 19h8" />
+            </svg>
+          </span>
+          <span class="brand-text">
+            <strong>CGDA · 反馈处理台</strong>
+            <small>工程师端 · ENGINEER CONSOLE</small>
+          </span>
+        </div>
+        <div class="top-tools">
+          <span class="pill" id="health-pill" data-state="checking" role="status">
+            <span class="dot" aria-hidden="true"></span><span id="health-text">检测后端中…</span>
+          </span>
+          <span class="clock mono" id="clock" aria-label="当前时间">—</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="console-layout">
+      <!-- 工作流说明 -->
+      <section class="panel console-intro">
+        <h2>反馈处理台</h2>
+        <p class="muted">用户反馈数据保存在<b>用户自己的浏览器</b>中（零后端设计），按以下闭环流转：</p>
+        <ol class="steps">
+          <li>用户在 <span class="mono">/feedback/</span> 提交反馈，点「<b>导出完整 JSON</b>」把文件发给你（IM / 邮件）</li>
+          <li>把收到的 <span class="mono">CGDA-BUG-*.json</span> 拖入下方导入区（或粘贴 JSON 文本）——本机留存、随时查阅</li>
+          <li>处理后在本页填写状态与回复，生成 <span class="mono">responses</span> JSON 粘贴到服务器 <span class="mono">maintenance/html/feedback/data/announcements.json</span>，用户端 60 秒内自动可见</li>
+        </ol>
+      </section>
+
+      <!-- 导入区 -->
+      <section class="panel">
+        <div class="dropzone" id="import-zone" role="button" tabindex="0"
+             aria-label="点击选择导出的 JSON 文件，或将文件拖拽到此处">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 15v3.5A2.5 2.5 0 0 1 18.5 21h-13A2.5 2.5 0 0 1 3 18.5V15M12 3v13M7.5 8.5 12 4l4.5 4.5" />
+          </svg>
+          <p>拖入用户导出的 <span class="mono">CGDA-BUG-*.json</span>，或 <span class="link">点击选择</span></p>
+          <p class="hint">数据仅解析并存入本机浏览器；支持一次导入多个文件</p>
+        </div>
+        <input type="file" id="import-input" multiple accept=".json,application/json" hidden />
+        <div class="paste-row">
+          <button class="btn btn-ghost btn-sm" type="button" id="btn-toggle-paste">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+            粘贴 JSON 文本
+          </button>
+          <span class="hint" id="import-summary">尚未导入任何反馈。</span>
+        </div>
+        <div class="paste-box" id="paste-box" hidden>
+          <textarea class="field-input mono" id="paste-area" rows="5" placeholder='把用户发来的 JSON 文本粘贴到这里（支持完整导出文件或单个 report 对象）…'></textarea>
+          <div class="paste-actions">
+            <button class="btn btn-primary btn-sm" type="button" id="btn-import-text">解析并导入</button>
+            <button class="btn btn-ghost btn-sm" type="button" id="btn-cancel-text">取消</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 服务端反馈（在线轨，admin 认证） -->
+      <section class="panel server-panel" id="server-panel">
+        <h3>
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2.5" y="4" width="19" height="7" rx="2"/><rect x="2.5" y="13" width="19" height="7" rx="2"/><path d="M6.5 7.5h.01M6.5 16.5h.01"/>
+          </svg>
+          服务端反馈（<span id="server-count">0</span>）
+          <span class="pill" id="server-state" data-state="checking"><span class="dot" aria-hidden="true"></span><span id="server-state-text">检测中…</span></span>
+        </h3>
+
+        <!-- 未认证 / 离线提示条 -->
+        <div class="auth-bar" id="server-auth-bar" hidden>
+          <p class="hint" id="auth-hint"></p>
+          <div class="auth-actions" id="auth-actions">
+            <a class="btn btn-ghost btn-sm" href="/" target="_blank" rel="noopener">打开主应用登录（admin）</a>
+            <input class="field-input token-input" id="admin-token-input" type="password" maxlength="120" placeholder="Admin API Token / 服务密钥（可选）" />
+            <button class="btn btn-primary btn-sm" type="button" id="btn-save-token">保存并连接</button>
+          </div>
+        </div>
+
+        <div id="server-list" class="reports-list" aria-live="polite"></div>
+      </section>
+
+      <!-- 收件箱工具条 -->
+      <section class="console-toolbar">
+        <input class="field-input search" id="search" type="search" placeholder="搜索编号 / 标题 / 描述 / 提交人…" maxlength="80" />
+        <select class="field-input filter" id="status-filter" aria-label="按状态过滤">
+          <option value="all">全部状态</option>
+          <option value="submitted">已提交（未受理）</option>
+          <option value="received">已受理</option>
+          <option value="in_progress">处理中</option>
+          <option value="needs_info">待补充信息</option>
+          <option value="fixed">已修复</option>
+          <option value="closed">已关闭</option>
+          <option value="rejected">不予处理</option>
+        </select>
+        <div class="toolbar-btns">
+          <button class="btn btn-ghost btn-sm" type="button" id="btn-refresh-published">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.3M21 3v6h-6"/></svg>
+            刷新已发布状态
+          </button>
+        </div>
+      </section>
+
+      <!-- 收件箱 -->
+      <section id="reports-list" class="reports-list" aria-live="polite"></section>
+
+      <!-- 待发布回复 -->
+      <section class="panel pending-panel" id="pending-panel" hidden>
+        <h3>
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 2.7 20.5 6v6c0 5-3.6 8-8.5 9.3C7.1 20 3.5 17 3.5 12V6L12 2.7Z"/>
+          </svg>
+          待发布回复（<span id="pending-count">0</span>）
+        </h3>
+        <ul class="pending-list" id="pending-list"></ul>
+        <p class="hint">
+          复制全部后，打开服务器上的 <span class="mono">Code/infra/gateway/maintenance/html/feedback/data/announcements.json</span>，
+          将内容<b>替换或追加</b>到 <span class="mono">responses</span> 数组并保存（用户端 60 秒内生效，无需 reload nginx）。
+        </p>
+        <div class="form-actions">
+          <button class="btn btn-primary btn-sm" type="button" id="btn-copy-all-responses">复制全部 responses JSON</button>
+          <button class="btn btn-danger btn-sm" type="button" id="btn-clear-responses">清空待发布</button>
+        </div>
+      </section>
+    </main>
+
+    <footer class="page-footer">
+      <p>CGDA 反馈处理台 · 数据仅存本机浏览器（IndexedDB） · <span class="mono">feedback-console/1.0</span></p>
+      <p class="muted">含敏感信息（凭据/密钥）的导出文件请勿长期保留在共享位置。</p>
+    </footer>
+
+    <div class="toast-stack" id="toast-stack" role="status" aria-live="polite"></div>
+
+    <noscript>
+      <div class="noscript-card">
+        <h2>需要启用 JavaScript</h2>
+        <p>反馈处理台需要 JavaScript 运行。若无法启用，请直接用文本编辑器打开用户发来的 JSON 文件查看。</p>
+      </div>
+    </noscript>
+
+    <script src="assets/console.js" defer></script>
+  </body>
+</html>

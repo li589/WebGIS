@@ -31,6 +31,9 @@ class PortSpec:
     description: str | None = None
     shape_hint: str | None = None
     format_hint: list[str] = field(default_factory=list)
+    # hard=缺则失败；soft=可由策略/用户确认放宽；optional=可缺省
+    # 默认：required=True → hard；required=False → optional（保持兼容）
+    severity: str | None = None
 
 
 @dataclass(slots=True)

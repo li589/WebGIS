@@ -14,6 +14,7 @@ import {
   Database,
   Info,
   Palette,
+  Bot,
 } from '../ui/icons'
 
 import { useAuthStore } from '../../stores/auth'
@@ -22,6 +23,7 @@ import { useUiLoadingStore } from '../../stores/ui-loading'
 import { loadSettingsUiLocal, saveSettingsUiLocal } from '../../services/settings-local'
 import GeneralSettings from './GeneralSettings.vue'
 import AppearanceSettings from './AppearanceSettings.vue'
+import AgentSettings from './AgentSettings.vue'
 import ApiKeySettings from './ApiKeySettings.vue'
 import GeeAccountSettings from './GeeAccountSettings.vue'
 import WeatherProviderSettings from './WeatherProviderSettings.vue'
@@ -49,6 +51,7 @@ function openDeploymentCenter() {
 type SettingsTab =
   | 'general'
   | 'appearance'
+  | 'agent'
   | 'accounts'
   | 'api-keys'
   | 'gee-accounts'
@@ -61,6 +64,7 @@ type SettingsTab =
 const TAB_IDS: SettingsTab[] = [
   'general',
   'appearance',
+  'agent',
   'accounts',
   'api-keys',
   'gee-accounts',
@@ -82,6 +86,7 @@ const activeTab = ref<SettingsTab>(savedTab && TAB_IDS.includes(savedTab) ? save
 const tabComponents = shallowRef<Record<SettingsTab, Component>>({
   general: GeneralSettings,
   appearance: AppearanceSettings,
+  agent: AgentSettings,
   accounts: UserAccountSettings,
   'api-keys': ApiKeySettings,
   'gee-accounts': GeeAccountSettings,
@@ -95,6 +100,7 @@ const tabComponents = shallowRef<Record<SettingsTab, Component>>({
 const ALL_TABS: Array<{ id: SettingsTab; label: string; icon: Component }> = [
   { id: 'general', label: SETTINGS_COPY.tabGeneral, icon: LayoutGrid },
   { id: 'appearance', label: SETTINGS_COPY.tabAppearance, icon: Palette },
+  { id: 'agent', label: SETTINGS_COPY.tabAgent, icon: Bot },
   { id: 'accounts', label: '账户', icon: User },
   { id: 'api-keys', label: SETTINGS_COPY.tabApiKeys, icon: Key },
   { id: 'gee-accounts', label: SETTINGS_COPY.tabGee, icon: Globe },
@@ -197,6 +203,26 @@ const panelStyle = computed(() => ({ width: `${panelWidthPx.value}px` }))
 let resizeStartX = 0
 let resizeStartWidth = 0
 const isResizing = ref(false)
+/** pointerup 落在蒙层时浏览器会合成 click → 误触发 @click.self 关面板 */
+let suppressOverlayClose = false
+let suppressOverlayCloseTimer: ReturnType<typeof setTimeout> | null = null
+let resizeCaptureEl: Element | null = null
+let resizePointerId: number | null = null
+
+function onOverlayClick() {
+  if (suppressOverlayClose || isResizing.value) return
+  emit('close')
+}
+
+function armOverlayCloseSuppress() {
+  suppressOverlayClose = true
+  if (suppressOverlayCloseTimer !== null) clearTimeout(suppressOverlayCloseTimer)
+  // click 通常紧跟 pointerup；稍延后清除，覆盖同帧 / 下一任务队列派发
+  suppressOverlayCloseTimer = setTimeout(() => {
+    suppressOverlayClose = false
+    suppressOverlayCloseTimer = null
+  }, 100)
+}
 
 function onResizePointerMove(event: PointerEvent) {
   if (!isResizing.value) return
@@ -208,22 +234,45 @@ function onResizePointerMove(event: PointerEvent) {
 function stopResize() {
   if (!isResizing.value) return
   isResizing.value = false
+  if (resizeCaptureEl && resizePointerId !== null) {
+    try {
+      resizeCaptureEl.releasePointerCapture(resizePointerId)
+    } catch {
+      /* capture 可能已释放 */
+    }
+  }
+  resizeCaptureEl = null
+  resizePointerId = null
   window.removeEventListener('pointermove', onResizePointerMove)
   window.removeEventListener('pointerup', stopResize)
   window.removeEventListener('pointercancel', stopResize)
   document.body.style.cursor = ''
   document.body.style.userSelect = ''
+  armOverlayCloseSuppress()
   saveSettingsUiLocal({ ...loadSettingsUiLocal(), panelWidthPx: panelWidthPx.value })
 }
 
 function onResizePointerDown(event: PointerEvent) {
   if (event.button !== 0) return
   event.preventDefault()
+  event.stopPropagation()
   isResizing.value = true
   resizeStartX = event.clientX
   resizeStartWidth = panelWidthPx.value
   document.body.style.cursor = 'ew-resize'
   document.body.style.userSelect = 'none'
+  const target = event.currentTarget
+  if (target instanceof Element) {
+    resizeCaptureEl = target
+    resizePointerId = event.pointerId
+    try {
+      target.setPointerCapture(event.pointerId)
+    } catch {
+      /* 部分环境不支持 capture，仍靠 window 监听 */
+      resizeCaptureEl = null
+      resizePointerId = null
+    }
+  }
   window.addEventListener('pointermove', onResizePointerMove)
   window.addEventListener('pointerup', stopResize)
   window.addEventListener('pointercancel', stopResize)
@@ -235,12 +284,13 @@ function onWindowResize() {
 
 onUnmounted(() => {
   stopResize()
+  if (suppressOverlayCloseTimer !== null) clearTimeout(suppressOverlayCloseTimer)
   window.removeEventListener('resize', onWindowResize)
 })
 </script>
 
 <template>
-  <div class="settings-overlay" @click.self="emit('close')">
+  <div class="settings-overlay" @click.self="onOverlayClick">
     <div
       class="settings-panel"
       :class="{ 'settings-panel--resizing': isResizing }"
@@ -253,6 +303,7 @@ onUnmounted(() => {
         aria-orientation="vertical"
         aria-label="调整设置面板宽度"
         @pointerdown="onResizePointerDown"
+        @click.stop
       />
       <div class="settings-header">
         <Settings :size="18" class="header-icon" aria-hidden="true" />
@@ -437,19 +488,37 @@ onUnmounted(() => {
 }
 
 .close-btn {
-  width: 1.4rem;
-  height: 1.4rem;
+  /* grid + place-items 双轴居中；显式 padding:0 抹掉 UA 默认按钮内边距，
+     避免 hover 高亮框与叉号出现视觉偏移 */
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
   border: none;
-  border-radius: 0.5rem;
+  border-radius: 0.42rem;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   font-size: var(--font-size-caption);
+  line-height: 0;
+  flex: none;
+  transition:
+    background-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft);
+}
+
+.close-btn svg {
+  flex: none;
 }
 
 .close-btn:hover {
-  background: var(--border-subtle);
+  background: var(--surface-hover);
   color: var(--text-primary);
+}
+
+.close-btn:active {
+  background: var(--border-subtle);
 }
 
 .settings-body {

@@ -278,8 +278,11 @@ _PORTAL_CRED_ALIASES: dict[str, tuple[str, ...]] = {
 
 # URS token 交换：Earthdata 云 CDN（lp-prod-protected / nsidc-cumulus-prod-protected）
 # 只认 Bearer token，不认 Basic。basic 凭据经 URS 换 token 后可用。
-_URS_TOKEN_URL = "https://urs.earthdata.nasa.gov/api/users/token"
-_URS_TOKENS_URL = "https://urs.earthdata.nasa.gov/api/users/tokens"
+from ingest.endpoints import (  # noqa: E402
+    URS_TOKEN_URL as _URS_TOKEN_URL,
+    URS_TOKENS_URL as _URS_TOKENS_URL,
+)
+
 _URS_TOKEN_TTL_SECONDS = 100 * 60  # URS token 有效期 2h，提前 20 分钟过期
 _urs_token_cache: dict[str, tuple[float, str]] = {}
 
@@ -394,6 +397,29 @@ def _earthdata_bearer_token(username: str, password: str) -> str:
     return token
 
 
+# CDSE OIDC token：copernicus 账密换 Bearer（access_token 有效期 ~10 min）。
+# 交换与缓存镜像 _earthdata_bearer_token 的 URS 模式；静态 token 条目
+# （BACKEND_COPERNICUS_TOKEN / 门户 token）有效期短，账密交换才是主路径。
+_CDSE_TOKEN_TTL_SECONDS = 9 * 60
+_cdse_token_cache: dict[str, tuple[float, str]] = {}
+
+
+def _cdse_bearer_token(username: str, password: str) -> str:
+    """copernicus 账密换 CDSE OIDC Bearer（进程内缓存，失败抛异常）。"""
+    import time
+
+    from ingest.cdse_download import exchange_cdse_token
+
+    cache_key = f"{username}:{password}"
+    now = time.monotonic()
+    cached = _cdse_token_cache.get(cache_key)
+    if cached and now - cached[0] < _CDSE_TOKEN_TTL_SECONDS:
+        return cached[1]
+    token = exchange_cdse_token(username, password)
+    _cdse_token_cache[cache_key] = (now, token)
+    return token
+
+
 def _resolve_portal_headers(
     *,
     cred_profile: str,
@@ -418,14 +444,12 @@ def _resolve_portal_headers(
     # and may inline resolved credentials). Only fall back to lazy backend import
     # when the context is empty and the resolve flag is set.
     if (not portal_creds) and datasource_selection.get("portal_credentials_resolve"):
-        try:
-            from app.services.config_service import get_portal_credentials_runtime
+        # P3 分层收口（2026-08-23）：经 _backend_bridge 边界桥解析门户凭据
+        from modules.provider_bridge_access import load_backend_bridge
 
-            resolved = get_portal_credentials_runtime()
-            if isinstance(resolved, dict):
-                portal_creds = resolved
-        except Exception:  # noqa: BLE001
-            portal_creds = {}
+        resolved = load_backend_bridge().get_portal_credentials()
+        if isinstance(resolved, dict):
+            portal_creds = resolved
 
     profile = cred_profile.strip().lower()
     if not profile:
@@ -473,6 +497,18 @@ def _resolve_portal_headers(
     header_name = (
         str(entry.get("token_header") or "Authorization").strip() or "Authorization"
     )
+
+    # Copernicus 家族（CDSE $value 下载）：有账密则优先 OIDC 交换 Bearer
+    # （CDSE 不接受 Basic；静态 token 有效期仅 ~10 min）。交换失败回退
+    # 静态 token / 既有分支语义。
+    if profile in _PORTAL_CRED_ALIASES["copernicus"] and username and password:
+        try:
+            headers["Authorization"] = (
+                f"Bearer {_cdse_bearer_token(username, password)}"
+            )
+            return headers
+        except Exception:  # noqa: BLE001
+            pass
 
     if auth_type in {"bearer", "token"} and token:
         value = token if token.lower().startswith("bearer ") else f"Bearer {token}"
@@ -589,10 +625,18 @@ class HttpOpenDataModule(BaseModule):
             effective_use = "earthaccess"
 
         target = _materialize_root(ctx)
+        local_path: str | None = None
+        cache_hit = False
+        use_note = effective_use
         if effective_use == "earthaccess":
-            local_path = str(_materialize_via_earthaccess(url, target, ds))
-            cache_hit = False
-        else:
+            try:
+                local_path = str(_materialize_via_earthaccess(url, target, ds))
+            except Exception as exc:  # noqa: BLE001
+                # 公开对象（lp-prod-public 等）匿名 GET 可达；earthaccess 登录
+                # 失败（token 过期 / 需重置密码）不应阻断免登录下载，回退 legacy。
+                # 受保护对象随后会因 401/403 失败并保留原始下载错误语义。
+                use_note = f"legacy(earthaccess_auth_fallback: {str(exc)[:160]})"
+        if local_path is None:
             headers = _resolve_portal_headers(
                 cred_profile=cred_profile,
                 datasource_selection=ds,
@@ -625,10 +669,11 @@ class HttpOpenDataModule(BaseModule):
                 "preset": preset,
                 "cache_hit": cache_hit,
                 "cred_profile": cred_profile,
-                "use": effective_use,
+                "use": use_note,
             },
         )
         result["url"] = url
+        result["use"] = use_note
         return result
 
 
@@ -702,7 +747,8 @@ def _safe_zip_extract(zf: zipfile.ZipFile, member_name: str, extract_dir: Path) 
 
 # ─── CMR granule 检索（公共，免凭据） ─────────────────────────────────────────
 
-_CMR_GRANULE_URL = "https://cmr.earthdata.nasa.gov/search/granules.json"
+from ingest.endpoints import CMR_GRANULES_JSON as _CMR_GRANULE_URL  # noqa: E402
+
 _CMR_NON_DATA_SUFFIXES = (
     ".iso.xml",
     ".cmr.xml",

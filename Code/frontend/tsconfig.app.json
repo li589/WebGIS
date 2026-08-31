@@ -13,7 +13,13 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    /* 2026-08-22：对齐根 tsconfig（vue-tsc --noEmit 一直按无 noImplicitAny
+     * 检查）——代码存量 124 处无注解 lambda 靠 tsbuildinfo 增量缓存侥幸
+     * 通过 vue-tsc -b；清缓存后全量报错致 build 阻断。显式关闭与项目
+     * 实际代码风格一致的隐式 any 检查（其余 strict 项保持）。 */
+    "noImplicitAny": false
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue", "src/**/*.d.ts"]
 }

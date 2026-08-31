@@ -184,7 +184,7 @@ DEFAULT_OPEN_DATA_PRESETS: dict[str, str] = {
     "nasa_ges_disc": "https://hydro1.gesdisc.eosdis.nasa.gov/",
     "nasa_gldas": "https://hydro1.gesdisc.eosdis.nasa.gov/data/GLDAS/",
     "esa_copernicus": "https://catalogue.dataspace.copernicus.eu/",
-    "esa_download": "https://download.dataspace.copernicus.eu/",
+    "esa_download": "https://download.dataspace.copernicus.eu/odata/v1/",
     "cma_nsmc": "https://satellite.nsmc.org.cn/",
     "cma_data": "https://data.nsmc.org.cn/",
 }

@@ -7,6 +7,8 @@ Optional matplotlib PNG is written as a file product (not the primary path).
 
 from __future__ import annotations
 
+from viz_lock import locked_plot
+
 import json
 from pathlib import Path
 from typing import Any
@@ -92,6 +94,7 @@ def _normalize_chart(
     }
 
 
+@locked_plot
 def _maybe_write_png(
     chart: dict[str, Any],
     out_path: Path,
@@ -110,24 +113,27 @@ def _maybe_write_png(
     fig_w = max(width, 200) / 100.0
     fig_h = max(height, 200) / 100.0
     fig, ax = plt.subplots(figsize=(fig_w, fig_h))
-    ctype = str(chart.get("chart_type") or "line")
-    for s in chart.get("series") or []:
-        x = s.get("x") or []
-        y = s.get("y") or []
-        name = str(s.get("name") or "series")
-        if ctype in {"bar", "histogram"}:
-            ax.bar(x, y, label=name, width=0.8)
-        elif ctype == "scatter":
-            ax.scatter(x, y, label=name, s=12)
-        else:
-            ax.plot(x, y, label=name)
-    ax.set_title(str(chart.get("title") or "Chart"))
-    ax.set_xlabel(str(chart.get("x_label") or ""))
-    ax.set_ylabel(str(chart.get("y_label") or ""))
-    ax.legend(loc="best")
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=100)
-    plt.close(fig)
+    try:
+        ctype = str(chart.get("chart_type") or "line")
+        for s in chart.get("series") or []:
+            x = s.get("x") or []
+            y = s.get("y") or []
+            name = str(s.get("name") or "series")
+            if ctype in {"bar", "histogram"}:
+                ax.bar(x, y, label=name, width=0.8)
+            elif ctype == "scatter":
+                ax.scatter(x, y, label=name, s=12)
+            else:
+                ax.plot(x, y, label=name)
+        ax.set_title(str(chart.get("title") or "Chart"))
+        ax.set_xlabel(str(chart.get("x_label") or ""))
+        ax.set_ylabel(str(chart.get("y_label") or ""))
+        ax.legend(loc="best")
+        fig.tight_layout()
+        fig.savefig(out_path, dpi=100)
+    finally:
+        # E-3：close 放 finally——任何路径（含异常）figure 不泄漏
+        plt.close(fig)
     return out_path
 
 

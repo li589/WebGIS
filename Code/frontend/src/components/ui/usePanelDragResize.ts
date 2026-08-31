@@ -54,6 +54,12 @@ export interface UsePanelDragResizeOptions {
   handlePosition?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
   /** 是否显示缩放手柄 */
   showResizeHandle?: boolean
+  /**
+   * 高度随内容自适应（2026-08-25）：true 时高度不取固定 px，而是
+   * `fit-content`（由 min/maxHeight 钳制）——适合内容高度可变的
+   * 面板（时间轴等），避免固定高度留大空或裁切。
+   */
+  autoHeight?: boolean
 }
 
 interface PersistedPanelState {
@@ -149,6 +155,7 @@ export function usePanelDragResize(options: UsePanelDragResizeOptions): PanelDra
     resizable = true,
     handlePosition = 'bottom-right',
     showResizeHandle = true,
+    autoHeight = false,
   } = options
 
   // ── 从 localStorage 恢复状态 ────────────────────────────────────────
@@ -156,18 +163,41 @@ export function usePanelDragResize(options: UsePanelDragResizeOptions): PanelDra
 
   const visible = ref(persistedState?.visible ?? true)
   const collapsed = ref(persistedState?.collapsed ?? defaultCollapsed)
+  // 恢复路径同样 clamp：拖拽中的 clamp 不覆盖持久化值——越界 offset（异常
+  // 写入/旧版本数据）一旦持久化，面板每次刷新都跑到屏幕外回不来
+  // （2026-08-23 "分析面板消失"排查发现的恢复缺口）
   const offsetX = ref(
-    !visible.value && typeof persistedState?.pillOffsetX === 'number'
-      ? persistedState.pillOffsetX
-      : (persistedState?.offsetX ?? 0),
+    clampPanelOffset(
+      !visible.value && typeof persistedState?.pillOffsetX === 'number'
+        ? persistedState.pillOffsetX
+        : (persistedState?.offsetX ?? 0),
+      maxOffsetX,
+    ),
   )
   const offsetY = ref(
-    !visible.value && typeof persistedState?.pillOffsetY === 'number'
-      ? persistedState.pillOffsetY
-      : (persistedState?.offsetY ?? 0),
+    clampPanelOffset(
+      !visible.value && typeof persistedState?.pillOffsetY === 'number'
+        ? persistedState.pillOffsetY
+        : (persistedState?.offsetY ?? 0),
+      maxOffsetY,
+    ),
   )
-  const panelWidth = ref(persistedState?.width ?? defaultWidth)
-  const panelHeight = ref(persistedState?.height ?? defaultHeight)
+  // 恢复路径同样 clamp 尺寸（2026-08-25 时间轴裁切修复的同类缺口）：
+  // 持久化的旧 width/height 若低于新版 minHeight（或超出 maxHeight），
+  // 面板每次刷新都恢复旧尺寸且 resizable=false 时无法手动拉高——
+  // 与 offset 越界持久化是同一类「永久性异常状态」问题。
+  // 注意：此处不能调用 clampPanelWidth/Height（其依赖的 resolvedMin/Max
+  // computed 在后方定义，TDZ）；直接用 options 的 min/max 立即值。
+  const panelWidth = ref(
+    clampPanelDim(persistedState?.width ?? defaultWidth, Math.max(220, minWidth), maxWidth),
+  )
+  const panelHeight = ref(
+    clampPanelDim(
+      persistedState?.height ?? defaultHeight,
+      Math.max(120, minHeight),
+      maxHeight,
+    ),
+  )
   const userResized = ref(Boolean(persistedState?.width || persistedState?.height))
   const persistTimer = ref<number | null>(null)
 
@@ -246,10 +276,17 @@ export function usePanelDragResize(options: UsePanelDragResizeOptions): PanelDra
     const w = panelWidth.value > 0 ? panelWidth.value : defaultWidth
     const h = panelHeight.value > 0 ? panelHeight.value : defaultHeight
     if (w > 0) style.width = `${clampPanelWidth(w)}px`
-    if (h > 0) style.height = `${clampPanelHeight(h)}px`
+    if (autoHeight) {
+      // 高度随内容：fit-content + min/max 钳制（防过扁/溢出屏幕）
+      style.height = 'fit-content'
+    } else if (h > 0) {
+      style.height = `${clampPanelHeight(h)}px`
+    }
     style.minWidth = `${resolvedMinWidth.value}px`
     style.maxWidth = `${resolvedMaxWidth.value}px`
-    style.minHeight = `${resolvedMinHeight.value}px`
+    if (!autoHeight) {
+      style.minHeight = `${resolvedMinHeight.value}px`
+    }
     style.maxHeight = `${resolvedMaxHeight.value}px`
     return style
   })

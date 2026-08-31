@@ -1,0 +1,294 @@
+/* 右侧竖向图层大类导航栏：贴右边缘竖条 + 紧贴左侧弹出的标签面板
+ * 组件自身定位由父级 .rail-slot（map-shell.wxss）统一定位，
+ * 此处 .rtb 改为 relative，避免 double-absolute + transform 冲突。 */
+
+.rtb {
+  position: relative;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* ---- 竖向工具栏：简约高级风，玻璃半透明、圆角、微阴影 ---- */
+.rtb-bar {
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(14, 22, 33, 0.10),
+              inset 0 0 0 0.5px rgba(255, 255, 255, 0.5);
+  padding: 4px 0;
+}
+
+.rtb-icon {
+  position: relative;
+  width: 44px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.18s ease;
+}
+.rtb-icon.active {
+  background: rgba(24, 95, 165, 0.10);
+}
+.rtb-hover {
+  opacity: 0.7;
+}
+
+.rtb-icon-svg {
+  width: 22px;
+  height: 22px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  /* 描边单色图标统一颜色：未激活深灰，激活时高亮色由 SVG 本身描边色决定 */
+}
+.rtb-icon-fallback {
+  font-size: 15px;
+  font-weight: 500;
+  color: #3a3f4a;
+}
+
+.rtb-badge {
+  position: absolute;
+  right: 5px;
+  top: 6px;
+  min-width: 14px;
+  height: 14px;
+  border-radius: 7px;
+  background: rgba(58, 63, 74, 0.12);
+  color: #3a3f4a;
+  font-size: 9px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  box-sizing: border-box;
+}
+.rtb-icon.active .rtb-badge {
+  background: rgba(24, 95, 165, 0.16);
+  color: #185fa5;
+}
+
+/* ---- 遮罩：收起时禁用命中，避免隐形全屏层挡住地图/其它控件 ---- */
+.rtb-mask {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0);
+  z-index: 30;
+  visibility: hidden;
+  pointer-events: none;
+  transition: background 0.2s ease, visibility 0.2s;
+}
+.rtb-mask.show {
+  visibility: visible;
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* ---- 标签面板：紧贴工具栏左侧弹出（顶部对齐工具栏）----
+ * 展开：.show 触发 animation（0.18s 滑入淡入）
+ * 收回：移除 .show → animation 移除 → 瞬间回到隐藏状态（无动画） */
+.rtb-panel {
+  position: absolute;
+  right: 45px;
+  top: 0;
+  width: 64vw;
+  max-width: 280px;
+  max-height: 60vh;
+  background: #ffffff;
+  z-index: 31;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(8px);
+  box-shadow: -2px 0 12px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+.rtb-panel.show {
+  visibility: visible;
+  animation: rtb-panel-in 0.18s ease forwards;
+}
+@keyframes rtb-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.rtb-panel-head {
+  padding: 14px 14px 8px;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 0.5px solid #f0eee8;
+}
+.rtb-panel-title-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+.rtb-panel-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: #0c447c;
+}
+.rtb-demo-tag {
+  margin-left: 8px;
+  font-size: 9px;
+  color: #ffffff;
+  background: #e8a62b;
+  border-radius: 7px;
+  padding: 2px 7px;         /* 统一徽章内边距规格 */
+  min-height: 16px;         /* 固定高度，避免文字挤成贴边 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  box-sizing: border-box;
+}
+.rtb-panel-count {
+  margin-top: 2px;
+  font-size: 10px;
+  color: #888780;
+}
+
+.rtb-panel-list {
+  flex: 1;
+  padding: 6px 8px 8px;
+  max-height: 48vh;
+}
+
+.rtb-layer-item {
+  position: relative;
+  margin-bottom: 6px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: #f7f8fa;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  transition: background 0.15s ease;
+}
+.rtb-layer-item.active {
+  background: #e6f1fb;
+}
+.rtb-layer-item.loading {
+  background: #fff4e0;
+}
+.rtb-layer-hover {
+  opacity: 0.75;
+}
+
+.rtb-layer-main {
+  flex: 1;
+  min-width: 0;
+}
+.rtb-layer-name-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+.rtb-layer-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #2c2c2a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rtb-layer-item.active .rtb-layer-name {
+  color: #0c447c;
+}
+.rtb-layer-time-badge {
+  flex-shrink: 0;
+  margin-left: 6px;
+  font-size: 9px;
+  color: #185fa5;
+  background: rgba(24, 95, 165, 0.1);
+  border-radius: 7px;
+  /* 类现在挂在 <view> 上（WXML L58 由 text 改成 view 包 text），
+     所以 flex 对齐一定生效；padding 恢复为原始的 1px 6px，
+     盒高 = 1 + 9 + 1 = 11px，与初始版本视觉大小完全一致，不放大 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 6px;
+  /* 内层文字节点也显式指定 line-height=1，避免字体基线造成微偏移 */
+}
+.rtb-layer-time-badge text {
+  display: block;
+  line-height: 1;
+}
+.rtb-layer-time-badge.static {
+  color: #888780;
+  background: rgba(136, 135, 128, 0.12);
+}
+
+.rtb-layer-desc {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  color: #888780;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.rtb-loading {
+  flex-shrink: 0;
+  margin-left: 8px;
+  font-size: 10px;
+  color: #d97706;
+  background: rgba(217, 119, 6, 0.1);
+  border-radius: 7px;
+  padding: 2px 8px;
+  min-height: 18px;         /* 10px 字，略高于 9px 的徽章 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.rtb-check {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #185fa5;
+  margin-left: 8px;
+  position: relative;
+}
+.rtb-check::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2.5px;
+  width: 4px;
+  height: 8px;
+  border: solid #ffffff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.rtb-empty {
+  padding: 30px 0;
+  text-align: center;
+  font-size: 12px;
+  color: #888780;
+}

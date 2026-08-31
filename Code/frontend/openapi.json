@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Star-Ground Fusion Soil Data Platform Backend",
+    "title": "Comprehensive Geographic Data Analysis System (CGDA) Backend",
     "description": "Minimal backend service for the geographic analysis platform.",
     "version": "0.1.0"
   },
@@ -574,6 +574,691 @@
         }
       }
     },
+    "/auth/themes/primary/public": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Get Primary Theme Public",
+        "operationId": "get_primary_theme_public_auth_themes_primary_public_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemePublicBrand"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/themes": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "List Themes",
+        "description": "List all product themes (admin session required).",
+        "operationId": "list_themes_auth_themes_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ThemePublic"
+                  },
+                  "type": "array",
+                  "title": "Response List Themes Auth Themes Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Create Theme",
+        "operationId": "create_theme_auth_themes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateThemeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemePublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/themes/{theme_id}": {
+      "patch": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Update Theme",
+        "operationId": "update_theme_auth_themes__theme_id__patch",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateThemeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemePublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Delete Theme",
+        "operationId": "delete_theme_auth_themes__theme_id__delete",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/themes/{theme_id}/permissions": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "List Theme Permissions",
+        "operationId": "list_theme_permissions_auth_themes__theme_id__permissions_get",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ThemePermissionRecord"
+                  },
+                  "title": "Response List Theme Permissions Auth Themes  Theme Id  Permissions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Set Theme Permissions",
+        "operationId": "set_theme_permissions_auth_themes__theme_id__permissions_put",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPermissionsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ThemePermissionRecord"
+                  },
+                  "title": "Response Set Theme Permissions Auth Themes  Theme Id  Permissions Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/themes/{theme_id}/logo": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Upload Theme Logo",
+        "operationId": "upload_theme_logo_auth_themes__theme_id__logo_post",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_theme_logo_auth_themes__theme_id__logo_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemePublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Get Theme Logo",
+        "description": "Serve theme logo (public — login page may need primary logo without session).",
+        "operationId": "get_theme_logo_auth_themes__theme_id__logo_get",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/feedback/api/reports": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "List Reports",
+        "operationId": "list_reports_feedback_api_reports_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Reports Feedback Api Reports Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Upload Report",
+        "description": "接收用户导出的反馈 JSON（multipart 单文件），落盘并返回访问 token。",
+        "operationId": "upload_report_feedback_api_reports_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_report_feedback_api_reports_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Upload Report Feedback Api Reports Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/feedback/api/reports/{report_id}/response": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Get Report Response",
+        "description": "用户端进展查询：编号 + 上传时返回的 token（防编号枚举）。",
+        "operationId": "get_report_response_feedback_api_reports__report_id__response_get",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Report Id"
+            }
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Report Response Feedback Api Reports  Report Id  Response Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Put Report Response",
+        "description": "发布/更新处理进展（写入 response.json；用户端轮询可见）。",
+        "operationId": "put_report_response_feedback_api_reports__report_id__response_put",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Report Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Put Report Response Feedback Api Reports  Report Id  Response Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/feedback/api/session": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Feedback Session",
+        "description": "认证探测：成功返回身份信息（处理台据此启用服务端模式）。",
+        "operationId": "feedback_session_feedback_api_session_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Feedback Session Feedback Api Session Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/feedback/api/reports/{report_id}": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Get Report",
+        "operationId": "get_report_feedback_api_reports__report_id__get",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Report Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Report Feedback Api Reports  Report Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Delete Report",
+        "description": "删除一条服务端反馈（含附件与进展，不可恢复）。",
+        "operationId": "delete_report_feedback_api_reports__report_id__delete",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Report Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Report Feedback Api Reports  Report Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/feedback/api/reports/{report_id}/attachments/{name}": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Download Attachment",
+        "operationId": "download_attachment_feedback_api_reports__report_id__attachments__name__get",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Report Id"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/layers": {
       "get": {
         "tags": [
@@ -622,6 +1307,114 @@
         }
       }
     },
+    "/layer-assets/{layer_id}": {
+      "get": {
+        "tags": [
+          "layer-platform"
+        ],
+        "summary": "Get Layer Asset State",
+        "description": "图层烘焙资产状态查询（图层平台子系统 P0）。\n\n返回 asset_state（missing/unversioned/stale/fresh）、bake_version、\n时间轴元数据与可用烘焙任务 key。前端 lifecycle 域以本接口为真源。",
+        "operationId": "get_layer_asset_state_layer_assets__layer_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "layer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Layer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerAssetStateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/layers/{layer_id}/lifecycle": {
+      "get": {
+        "tags": [
+          "layer-platform"
+        ],
+        "summary": "Get Layer Lifecycle",
+        "description": "图层生命周期聚合视图（图层平台子系统 P0）。\n\n聚合资产状态 + 最近 run（workflow_kind/layer_id 索引查询）+ 时间轴元数据，\n前端不再自行拼接 jobLayer / overlayTimeStates / asset_state。",
+        "operationId": "get_layer_lifecycle_layers__layer_id__lifecycle_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "layer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Layer Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 20,
+              "minimum": 1,
+              "default": 5,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerLifecycleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/layers/{layer_id}/online-temporal": {
       "get": {
         "tags": [
@@ -655,6 +1448,213 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Get Layer Online Temporal Layers  Layer Id  Online Temporal Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/layers/{layer_id}/data-coverage": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Get Layer Data Coverage",
+        "description": "双通道可用性：在线覆盖窗 + 本地资产 time_list（计划会话 / 色带）。\n\n- ``channels.online``：来自 descriptor.online_temporal（未启用则 available=false）\n- ``channels.local``：来自 overlay 资产 state.time_list；取失败时 dates=[]",
+        "operationId": "get_layer_data_coverage_layers__layer_id__data_coverage_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "layer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Layer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Layer Data Coverage Layers  Layer Id  Data Coverage Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/layer-assets/{layer_id}/sync": {
+      "post": {
+        "tags": [
+          "layer-platform"
+        ],
+        "summary": "Sync Layer Asset Online",
+        "description": "在线源同步统一入口（图层平台子系统 P1）。\n\n前端不再自行拼 workflow 提交参数；服务端创建 ``workflow_kind=online_sync``\n的 run 并复用 workflow-runs 状态/事件/取消契约。\n\n语义：\n- 图层未启用 online_temporal → ``skipped-unsupported``（200，不报错）\n- 已有同图层同时间的活跃 online_sync run → ``in-flight``（复用）\n- 其他情况 → 提交 workflow run，返回 ``submitted``\n\n失败时保留旧资产显示（run 失败不影响已有烘焙资产）。",
+        "operationId": "sync_layer_asset_online_layer_assets__layer_id__sync_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "layer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Layer Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/LayerOnlineSyncRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerOnlineSyncResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workflows/templates": {
+      "get": {
+        "tags": [
+          "layer-platform"
+        ],
+        "summary": "List Workflow Templates",
+        "description": "课题组工作流模板列表（图层平台子系统 P1）。\n\n聚合 workflow_seeds/system + workflow_definitions/user 中\n``is_template=true`` 或 tags 含 \"template\"/\"lab\" 的定义；\n前端课题组入口据此渲染「一键运行」面板。",
+        "operationId": "list_workflow_templates_workflows_templates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowTemplateListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/workflows/templates/{workflow_id}/runs": {
+      "post": {
+        "tags": [
+          "layer-platform"
+        ],
+        "summary": "Run Workflow Template",
+        "description": "课题组工作流模板一键运行（图层平台子系统 P1）。\n\n按模板定义构建 WorkflowSubmitRequest 并提交；\n完成后若 auto_display=true 且 linked_layer_id 非空，\n由 workflow-runs 轮询链自动 materialize-map-layers 上图。",
+        "operationId": "run_workflow_template_workflows_templates__workflow_id__runs_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workflow Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/WorkflowTemplateRunRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowTemplateRunResponse"
                 }
               }
             }
@@ -1329,6 +2329,64 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Get Overlay Value Overlay Value  Layer Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/overlay-asset-workflows/{layer_id}": {
+      "post": {
+        "tags": [
+          "workflow"
+        ],
+        "summary": "Submit Overlay Asset Workflow",
+        "description": "统一图层资产工作流入口：检查烘焙资产，陈旧/缺失则触发重烘。\n\n静态 overlay 与普通分析图层一样返回 WorkflowAcceptedResponse，前端统一\n轮询/恢复；fresh 资产立即 succeeded，stale/missing 资产创建 accepted run\n并由 Celery worker 后台执行烘焙。",
+        "operationId": "submit_overlay_asset_workflow_overlay_asset_workflows__layer_id__post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "layer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Layer Id"
+            }
+          },
+          {
+            "name": "force_rebake",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Force Rebake"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowAcceptedResponse"
                 }
               }
             }
@@ -5875,7 +6933,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/gee/config/limits": {
@@ -5897,7 +6960,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/gee/config/status": {
@@ -5919,7 +6987,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/gee/config/environment": {
@@ -5939,7 +7012,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/config/general": {
@@ -7854,6 +8932,138 @@
         }
       }
     },
+    "/config/online-tile-sources": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "List Online Tile Sources",
+        "operationId": "list_online_tile_sources_config_online_tile_sources_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OnlineTileSource"
+                  },
+                  "type": "array",
+                  "title": "Response List Online Tile Sources Config Online Tile Sources Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/config/online-tile-sources/{source_id}": {
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Upsert Online Tile Source",
+        "operationId": "upsert_online_tile_source_config_online_tile_sources__source_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnlineTileSourceUpsertRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnlineTileSource"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete Online Tile Source",
+        "operationId": "delete_online_tile_source_config_online_tile_sources__source_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/config/data-source": {
       "get": {
         "tags": [
@@ -9019,6 +10229,278 @@
         }
       }
     },
+    "/config/remote-datasets/grants": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "List Remote Dataset Grants",
+        "description": "数据集授权条目 + 门户能力徽标。",
+        "operationId": "list_remote_dataset_grants_config_remote_datasets_grants_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RemoteDatasetGrant"
+                  },
+                  "type": "array",
+                  "title": "Response List Remote Dataset Grants Config Remote Datasets Grants Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/config/remote-datasets/grants/{grant_id}": {
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Upsert Remote Dataset Grant",
+        "description": "新增/更新数据集授权（UNIQUE(portal_id, dataset_key) 幂等合并）。",
+        "operationId": "upsert_remote_dataset_grant_config_remote_datasets_grants__grant_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "grant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Grant Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteDatasetGrantUpsertRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoteDatasetGrant"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete Remote Dataset Grant",
+        "description": "删除数据集授权（删除后该数据集在管控门户内不可访问）。",
+        "operationId": "delete_remote_dataset_grant_config_remote_datasets_grants__grant_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "grant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Grant Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config/remote-datasets/policy": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get Remote Dataset Policy",
+        "description": "各门户远程数据集访问策略投影（编辑器过滤用）。\n\n未列出的门户 = 未管控（放行）；列出的门户 managed=true，\ncompatible=true 表示站点兼容模式全放行，datasets 为白名单。",
+        "operationId": "get_remote_dataset_policy_config_remote_datasets_policy_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RemoteDatasetPolicy"
+                  },
+                  "type": "array",
+                  "title": "Response Get Remote Dataset Policy Config Remote Datasets Policy Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/config/remote-sources/register-and-add": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Register And Add Remote Source",
+        "description": "原子完成「注册 + 数据集记录 + 工作流编排提示」。\n\n- 注册 remote_source（统一 site_compatible 整源——兼容模式弃用）；\n- dataset_keys 逐条写 remote_dataset_grants（一键上图选集记录，\n  不限制整源访问）；\n- 门户有工作流映射时返回 workflow_hint（节点类型/建议参数——\n  Wave 3 接全自动「下载→预处理→入图层库」链，当前引导工作流编排）。",
+        "operationId": "register_and_add_remote_source_config_remote_sources_register_and_add_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterAndAddRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterAndAddResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/config/remote-sources/migrate-legacy": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Migrate Legacy Remote Sources Endpoint",
+        "description": "手动重跑存量迁移（dry_run/safe 查询参数）。\n\n幂等：已完成的迁移再次调用返回 already_done=True。",
+        "operationId": "migrate_legacy_remote_sources_endpoint_config_remote_sources_migrate_legacy_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "dry_run",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Dry Run"
+            }
+          },
+          {
+            "name": "safe",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Safe"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/config/about": {
       "get": {
         "tags": [
@@ -9041,6 +10523,74 @@
         }
       }
     },
+    "/config/data-input-policies": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get Data Input Policies",
+        "description": "只读投影：时间窗对齐 / 本地优先源路由等策略（seed + runtime 覆盖）。",
+        "operationId": "get_data_input_policies_config_data_input_policies_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Put Data Input Policies",
+        "description": "写入 runtime 覆盖（原子写）。同 id 覆盖 seed；热载生效，无需重启后端。",
+        "operationId": "put_data_input_policies_config_data_input_policies_put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "body",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "title": "Body"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/config/cache/invalidate-templates": {
       "post": {
         "tags": [
@@ -9055,6 +10605,33 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/config/online-sources": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "List Online Source Credentials",
+        "description": "聚合各在线源凭证就绪状态（只报配置布尔，永不回显明文值）。",
+        "operationId": "list_online_source_credentials_config_online_sources_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnlineSourcesResponse"
+                }
               }
             }
           }
@@ -9556,7 +11133,7 @@
           "workflow-timer"
         ],
         "summary": "List Timers",
-        "description": "列出全部定时器，可选按 workflow_id 过滤。",
+        "description": "列出定时器（非 admin 登录用户仅见本人创建的）。",
         "operationId": "list_timers_workflow_timers_get",
         "security": [
           {
@@ -9611,7 +11188,7 @@
           "workflow-timer"
         ],
         "summary": "Create Timer",
-        "description": "创建定时器。\n\n请求体字段：\n- workflow_id (str, 必填)\n- name (str, 必填)\n- trigger_type ('cron' | 'interval' | 'event', 必填)\n- trigger_config (dict, 必填, 格式依 trigger_type 而定)\n- payload_overrides (dict, 可选)\n- enabled (bool, 可选, 默认 true)",
+        "description": "创建定时器（记录归属 owner_user_id）。\n\n请求体字段：\n- workflow_id (str, 必填)\n- name (str, 必填)\n- trigger_type ('cron' | 'interval' | 'event', 必填)\n- trigger_config (dict, 必填, 格式依 trigger_type 而定)\n- payload_overrides (dict, 可选)\n- enabled (bool, 可选, 默认 true)",
         "operationId": "create_timer_workflow_timers_post",
         "security": [
           {
@@ -10185,7 +11762,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/workspace": {
@@ -10258,6 +11840,493 @@
             "description": "Successful Response"
           }
         }
+      }
+    },
+    "/agent/config": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Get Agent Config",
+        "operationId": "get_agent_config_agent_config_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConfigBundleResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Put Agent Config Legacy",
+        "operationId": "put_agent_config_legacy_agent_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentConfigUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConfigResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/agent/config/profiles": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Create Agent Profile",
+        "operationId": "create_agent_profile_agent_config_profiles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentProfileCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfilePublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/agent/config/profiles/{profile_id}": {
+      "put": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Update Agent Profile",
+        "operationId": "update_agent_profile_agent_config_profiles__profile_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentProfileUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfilePublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Delete Agent Profile",
+        "operationId": "delete_agent_profile_agent_config_profiles__profile_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "global",
+                "personal"
+              ],
+              "type": "string",
+              "default": "personal",
+              "title": "Scope"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConfigBundleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/config/active": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Set Active Agent Profile",
+        "operationId": "set_active_agent_profile_agent_config_active_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentActiveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConfigBundleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/agent/config/use-global": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Use Global Agent Profile",
+        "description": "Clear personal active so chat falls back to global active.",
+        "operationId": "use_global_agent_profile_agent_config_use_global_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConfigBundleResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/agent/models/refresh": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Refresh Agent Models",
+        "operationId": "refresh_agent_models_agent_models_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentModelsRefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentModelsRefreshResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/agent/chat": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Chat",
+        "operationId": "agent_chat_agent_chat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentChatResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/agent/chat/stream": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Chat Stream",
+        "description": "SSE chat stream (Phase D). Events: token, step, intent, done, error.",
+        "operationId": "agent_chat_stream_agent_chat_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "SSE stream: token | step | intent | done | error",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/agent/confirm": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Confirm",
+        "description": "Approve or reject a pending Agent confirmation ticket (Phase B).",
+        "operationId": "agent_confirm_agent_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConfirmResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       }
     },
     "/gee/workflows:validate": {
@@ -10518,6 +12587,815 @@
           "description"
         ],
         "title": "AboutModule"
+      },
+      "AgentActiveRequest": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Profile Id"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "personal"
+            ],
+            "title": "Scope",
+            "default": "personal"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id"
+        ],
+        "title": "AgentActiveRequest"
+      },
+      "AgentChatRequest": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 0,
+            "title": "Message"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "client_context": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "AgentChatRequest"
+      },
+      "AgentChatResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "reply": {
+            "type": "string",
+            "title": "Reply"
+          },
+          "ui_intents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentUiIntent"
+            },
+            "type": "array",
+            "title": "Ui Intents"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider",
+            "default": "demo"
+          },
+          "profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Id"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentTokenUsage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/AgentStep"
+            },
+            "type": "array",
+            "title": "Steps"
+          },
+          "confirmations": {
+            "items": {
+              "$ref": "#/components/schemas/AgentConfirmation"
+            },
+            "type": "array",
+            "title": "Confirmations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "reply"
+        ],
+        "title": "AgentChatResponse"
+      },
+      "AgentConfigBundleResponse": {
+        "properties": {
+          "active_profile_id": {
+            "type": "string",
+            "title": "Active Profile Id"
+          },
+          "active_scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "personal"
+            ],
+            "title": "Active Scope",
+            "default": "global"
+          },
+          "can_manage_global": {
+            "type": "boolean",
+            "title": "Can Manage Global",
+            "default": false
+          },
+          "can_manage_personal": {
+            "type": "boolean",
+            "title": "Can Manage Personal",
+            "default": false
+          },
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/AgentProfilePublic"
+            },
+            "type": "array",
+            "title": "Profiles"
+          },
+          "presets": {
+            "items": {
+              "$ref": "#/components/schemas/AgentPresetPublic"
+            },
+            "type": "array",
+            "title": "Presets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "active_profile_id"
+        ],
+        "title": "AgentConfigBundleResponse"
+      },
+      "AgentConfigResponse": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "mock",
+              "ollama",
+              "openai_compatible"
+            ],
+            "title": "Provider",
+            "default": "mock"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url",
+            "default": "http://127.0.0.1:11434/v1"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": "qwen2.5"
+          },
+          "has_api_key": {
+            "type": "boolean",
+            "title": "Has Api Key",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "AgentConfigResponse"
+      },
+      "AgentConfigUpdateRequest": {
+        "properties": {
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "mock",
+                  "ollama",
+                  "openai_compatible"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "clear_api_key": {
+            "type": "boolean",
+            "title": "Clear Api Key",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "AgentConfigUpdateRequest"
+      },
+      "AgentConfirmRequest": {
+        "properties": {
+          "confirmation_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 8,
+            "title": "Confirmation Id"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "reject"
+            ],
+            "title": "Decision",
+            "default": "approve"
+          }
+        },
+        "type": "object",
+        "required": [
+          "confirmation_id"
+        ],
+        "title": "AgentConfirmRequest"
+      },
+      "AgentConfirmResponse": {
+        "properties": {
+          "confirmation_id": {
+            "type": "string",
+            "title": "Confirmation Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "status_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Url"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "confirmation_id",
+          "status"
+        ],
+        "title": "AgentConfirmResponse"
+      },
+      "AgentConfirmation": {
+        "properties": {
+          "confirmation_id": {
+            "type": "string",
+            "title": "Confirmation Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action",
+            "default": "run_workflow"
+          },
+          "expires_at": {
+            "type": "string",
+            "title": "Expires At",
+            "default": ""
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "confirmation_id"
+        ],
+        "title": "AgentConfirmation"
+      },
+      "AgentModelsRefreshRequest": {
+        "properties": {
+          "profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Id"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "global",
+                  "personal"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          }
+        },
+        "type": "object",
+        "title": "AgentModelsRefreshRequest"
+      },
+      "AgentModelsRefreshResponse": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Models"
+          },
+          "manual": {
+            "type": "boolean",
+            "title": "Manual",
+            "default": false
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id"
+        ],
+        "title": "AgentModelsRefreshResponse"
+      },
+      "AgentPresetPublic": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "provider_kind": {
+            "type": "string",
+            "title": "Provider Kind"
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "anthropic",
+              "demo"
+            ],
+            "title": "Protocol"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url",
+            "default": ""
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          },
+          "context_window_input": {
+            "type": "integer",
+            "title": "Context Window Input",
+            "default": 8192
+          },
+          "context_window_output": {
+            "type": "integer",
+            "title": "Context Window Output",
+            "default": 4096
+          },
+          "needs_api_key": {
+            "type": "boolean",
+            "title": "Needs Api Key",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "provider_kind",
+          "protocol"
+        ],
+        "title": "AgentPresetPublic"
+      },
+      "AgentProfileCreateRequest": {
+        "properties": {
+          "preset_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Preset Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "personal"
+            ],
+            "title": "Scope",
+            "default": "personal"
+          }
+        },
+        "type": "object",
+        "required": [
+          "preset_id"
+        ],
+        "title": "AgentProfileCreateRequest"
+      },
+      "AgentProfilePublic": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "provider_kind": {
+            "type": "string",
+            "title": "Provider Kind"
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "anthropic",
+              "demo"
+            ],
+            "title": "Protocol"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url",
+            "default": ""
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          },
+          "context_window_input": {
+            "type": "integer",
+            "title": "Context Window Input",
+            "default": 8192
+          },
+          "context_window_output": {
+            "type": "integer",
+            "title": "Context Window Output",
+            "default": 4096
+          },
+          "preset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset Id"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "personal"
+            ],
+            "title": "Scope",
+            "default": "global"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": false
+          },
+          "has_api_key": {
+            "type": "boolean",
+            "title": "Has Api Key",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "provider_kind",
+          "protocol"
+        ],
+        "title": "AgentProfilePublic"
+      },
+      "AgentProfileUpdateRequest": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "personal"
+            ],
+            "title": "Scope",
+            "default": "personal"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "openai",
+                  "anthropic",
+                  "demo"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "context_window_input": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2000000.0,
+                "minimum": 256.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window Input"
+          },
+          "context_window_output": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 512000.0,
+                "minimum": 64.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window Output"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "clear_api_key": {
+            "type": "boolean",
+            "title": "Clear Api Key",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "AgentProfileUpdateRequest"
+      },
+      "AgentStep": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "thought",
+              "tool",
+              "tool_result"
+            ],
+            "title": "Type",
+            "default": "thought"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "summary"
+        ],
+        "title": "AgentStep"
+      },
+      "AgentTokenUsage": {
+        "properties": {
+          "prompt_tokens": {
+            "type": "integer",
+            "title": "Prompt Tokens",
+            "default": 0
+          },
+          "completion_tokens": {
+            "type": "integer",
+            "title": "Completion Tokens",
+            "default": 0
+          },
+          "total_tokens": {
+            "type": "integer",
+            "title": "Total Tokens",
+            "default": 0
+          },
+          "estimated": {
+            "type": "boolean",
+            "title": "Estimated",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "AgentTokenUsage"
+      },
+      "AgentUiIntent": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "args": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Args"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "AgentUiIntent"
       },
       "AlgorithmOutputSpec": {
         "properties": {
@@ -11603,6 +14481,34 @@
         ],
         "title": "Body_upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post"
       },
+      "Body_upload_report_feedback_api_reports_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_report_feedback_api_reports_post"
+      },
+      "Body_upload_theme_logo_auth_themes__theme_id__logo_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_theme_logo_auth_themes__theme_id__logo_post"
+      },
       "BoundingBox": {
         "properties": {
           "west": {
@@ -11955,6 +14861,69 @@
         "title": "ConfirmRequest",
         "description": "``POST /import/raster/confirm`` 请求体。\n\n用户在前端确认对话框中选定源 CRS（可覆盖检测结果）并设置偏移后提交。"
       },
+      "CreateThemeRequest": {
+        "properties": {
+          "slug": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 2,
+            "title": "Slug"
+          },
+          "name_zh": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name Zh"
+          },
+          "full_name_zh": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Full Name Zh"
+          },
+          "name_en": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name En"
+          },
+          "abbr": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Abbr"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Description",
+            "default": ""
+          },
+          "default_permission_mode": {
+            "type": "string",
+            "enum": [
+              "open",
+              "whitelist"
+            ],
+            "title": "Default Permission Mode",
+            "default": "open"
+          },
+          "is_primary": {
+            "type": "boolean",
+            "title": "Is Primary",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "slug",
+          "name_zh",
+          "full_name_zh",
+          "name_en",
+          "abbr"
+        ],
+        "title": "CreateThemeRequest"
+      },
       "CreateTokenRequest": {
         "properties": {
           "label": {
@@ -12007,6 +14976,17 @@
             ],
             "title": "Role",
             "default": "standard"
+          },
+          "theme_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theme Id"
           }
         },
         "type": "object",
@@ -12325,6 +15305,13 @@
               }
             ],
             "title": "Workflow Hint"
+          },
+          "online_tile_sources": {
+            "items": {
+              "$ref": "#/components/schemas/OnlineTileSource"
+            },
+            "type": "array",
+            "title": "Online Tile Sources"
           }
         },
         "type": "object",
@@ -14916,6 +17903,85 @@
         "type": "object",
         "title": "ImportBatchBody"
       },
+      "LayerAssetStateResponse": {
+        "properties": {
+          "layer_id": {
+            "type": "string",
+            "title": "Layer Id"
+          },
+          "asset_state": {
+            "type": "string",
+            "title": "Asset State"
+          },
+          "bake_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bake Version"
+          },
+          "current_bake_version": {
+            "type": "integer",
+            "title": "Current Bake Version"
+          },
+          "png_exists": {
+            "type": "boolean",
+            "title": "Png Exists",
+            "default": false
+          },
+          "bounds_exists": {
+            "type": "boolean",
+            "title": "Bounds Exists",
+            "default": false
+          },
+          "category": {
+            "type": "string",
+            "title": "Category",
+            "default": "static"
+          },
+          "time_list": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Time List"
+          },
+          "default_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Time"
+          },
+          "asset_task": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Task"
+          }
+        },
+        "type": "object",
+        "required": [
+          "layer_id",
+          "asset_state",
+          "current_bake_version"
+        ],
+        "title": "LayerAssetStateResponse",
+        "description": "单图层烘焙资产状态（GET /layer-assets/{layer_id}）。"
+      },
       "LayerCapabilities": {
         "properties": {
           "render_strategy": {
@@ -15276,6 +18342,18 @@
             ],
             "title": "Workflow Definition"
           },
+          "workflow_extra": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Extra"
+          },
           "default_task_type": {
             "anyOf": [
               {
@@ -15319,6 +18397,28 @@
             },
             "type": "array",
             "title": "Run Readiness Notes"
+          },
+          "online_ready": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Online Ready"
+          },
+          "local_ready": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Ready"
           },
           "data_owner": {
             "anyOf": [
@@ -15411,6 +18511,20 @@
                 "type": "null"
               }
             ]
+          },
+          "workflow_variants": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/WorkflowVariantDef"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Variants"
           }
         },
         "type": "object",
@@ -15441,6 +18555,211 @@
           "display_name"
         ],
         "title": "LayerDisplayNameBody"
+      },
+      "LayerLifecycleResponse": {
+        "properties": {
+          "layer_id": {
+            "type": "string",
+            "title": "Layer Id"
+          },
+          "asset": {
+            "$ref": "#/components/schemas/LayerAssetStateResponse"
+          },
+          "recent_runs": {
+            "items": {
+              "$ref": "#/components/schemas/LayerLifecycleRunSummary"
+            },
+            "type": "array",
+            "title": "Recent Runs"
+          },
+          "lifecycle_state": {
+            "type": "string",
+            "title": "Lifecycle State"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "layer_id",
+          "asset",
+          "lifecycle_state",
+          "updated_at"
+        ],
+        "title": "LayerLifecycleResponse",
+        "description": "图层生命周期聚合视图（GET /layers/{layer_id}/lifecycle）。\n\n前端不再自行拼接 jobLayer/overlayTimeStates/asset_state，\n统一从本响应读取「资产 + 最近 run + 时间轴」状态。"
+      },
+      "LayerLifecycleRunSummary": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "workflow_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Kind"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "progress": {
+            "type": "integer",
+            "title": "Progress"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "status",
+          "progress",
+          "updated_at"
+        ],
+        "title": "LayerLifecycleRunSummary",
+        "description": "lifecycle 聚合中的最近 run 摘要（不含完整 payload）。"
+      },
+      "LayerOnlineSyncRequest": {
+        "properties": {
+          "time_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Key"
+          },
+          "time_range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimeRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_prefetch": {
+            "type": "boolean",
+            "title": "Is Prefetch",
+            "default": false
+          },
+          "priority": {
+            "type": "string",
+            "title": "Priority",
+            "default": "normal"
+          }
+        },
+        "type": "object",
+        "title": "LayerOnlineSyncRequest",
+        "description": "在线源同步请求（POST /layer-assets/{layer_id}/sync，图层平台子系统 P1）。\n\n统一入口：在线时间获取/在线源拉取不再让前端自行拼 workflow 提交参数。\n服务端据此创建 ``workflow_kind=online_sync`` 的 run，并复用现有\nworkflow-runs 状态/事件/取消契约。失败时保留旧资产显示。"
+      },
+      "LayerOnlineSyncResponse": {
+        "properties": {
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "layer_id": {
+            "type": "string",
+            "title": "Layer Id"
+          },
+          "time_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Key"
+          },
+          "status_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Url"
+          },
+          "events_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "message",
+          "layer_id"
+        ],
+        "title": "LayerOnlineSyncResponse",
+        "description": "在线源同步响应：复用 WorkflowAcceptedResponse 语义。"
       },
       "LayerPresentation": {
         "properties": {
@@ -15814,6 +19133,58 @@
         ],
         "title": "MapMode"
       },
+      "MigrationReport": {
+        "properties": {
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "migrated_to_grants": {
+            "type": "integer",
+            "title": "Migrated To Grants"
+          },
+          "upgraded_site_compatible": {
+            "type": "integer",
+            "title": "Upgraded Site Compatible"
+          },
+          "kept_legacy": {
+            "type": "integer",
+            "title": "Kept Legacy"
+          },
+          "already_done": {
+            "type": "boolean",
+            "title": "Already Done"
+          },
+          "safe_mode": {
+            "type": "boolean",
+            "title": "Safe Mode"
+          },
+          "details": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dry_run",
+          "total",
+          "migrated_to_grants",
+          "upgraded_site_compatible",
+          "kept_legacy",
+          "already_done",
+          "safe_mode"
+        ],
+        "title": "MigrationReport",
+        "description": "存量迁移报告（GET /config/remote-sources/migrate-legacy）。"
+      },
       "MinioPublicConfig": {
         "properties": {
           "endpoint": {
@@ -16038,6 +19409,112 @@
         ],
         "title": "NodeSpec"
       },
+      "OnlineSourceCredentialStatus": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "account_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Count"
+          },
+          "enabled_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled Count"
+          },
+          "last_tested_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Tested At"
+          },
+          "last_test_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Test Status"
+          },
+          "fields": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Fields"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "display_name",
+          "kind",
+          "configured",
+          "detail"
+        ],
+        "title": "OnlineSourceCredentialStatus",
+        "description": "单个在线数据源的凭证就绪状态（GET /config/online-sources）。\n\n图层平台子系统 P2-3：统一凭证可见性聚合。不迁移各源凭证存储\n（GEE=加密 SQLite 账号池；SSH HPC/Earthdata/FileBrowser=.env），\n仅收口「配置了没有 / 可用不可用」的管理可见性。"
+      },
+      "OnlineSourcesResponse": {
+        "properties": {
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/OnlineSourceCredentialStatus"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count"
+        ],
+        "title": "OnlineSourcesResponse",
+        "description": "统一在线源凭证状态响应。"
+      },
       "OnlineTemporalCapability": {
         "properties": {
           "enabled": {
@@ -16096,6 +19573,190 @@
         "type": "object",
         "title": "OnlineTemporalCapability",
         "description": "在线时间获取能力声明。\n\n标记图层支持\"用户选时间点 → 自动在线获取 → 动态刷新\"流程。\nNone 表示该图层不支持在线历史时间获取。"
+      },
+      "OnlineTileSource": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "service_type": {
+            "type": "string",
+            "enum": [
+              "wmts",
+              "xyz"
+            ],
+            "title": "Service Type"
+          },
+          "url_template": {
+            "type": "string",
+            "title": "Url Template"
+          },
+          "layer": {
+            "type": "string",
+            "title": "Layer",
+            "default": ""
+          },
+          "style": {
+            "type": "string",
+            "title": "Style",
+            "default": "default"
+          },
+          "tile_matrix_set": {
+            "type": "string",
+            "title": "Tile Matrix Set",
+            "default": ""
+          },
+          "image_format": {
+            "type": "string",
+            "title": "Image Format",
+            "default": "image/png"
+          },
+          "coordinate_system": {
+            "type": "string",
+            "title": "Coordinate System",
+            "default": "EPSG:3857"
+          },
+          "auth_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Ref"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At",
+            "default": ""
+          },
+          "last_test_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Test Status"
+          },
+          "last_tested_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Tested At"
+          },
+          "config_status": {
+            "type": "string",
+            "title": "Config Status",
+            "default": "configured"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "display_name",
+          "service_type",
+          "url_template"
+        ],
+        "title": "OnlineTileSource",
+        "description": "用户注册的 WMTS/XYZ 在线瓦片源（不包含明文密钥）。"
+      },
+      "OnlineTileSourceUpsertRequest": {
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "service_type": {
+            "type": "string",
+            "enum": [
+              "wmts",
+              "xyz"
+            ],
+            "title": "Service Type"
+          },
+          "url_template": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Url Template"
+          },
+          "layer": {
+            "type": "string",
+            "title": "Layer",
+            "default": ""
+          },
+          "style": {
+            "type": "string",
+            "title": "Style",
+            "default": "default"
+          },
+          "tile_matrix_set": {
+            "type": "string",
+            "title": "Tile Matrix Set",
+            "default": ""
+          },
+          "image_format": {
+            "type": "string",
+            "title": "Image Format",
+            "default": "image/png"
+          },
+          "coordinate_system": {
+            "type": "string",
+            "title": "Coordinate System",
+            "default": "EPSG:3857"
+          },
+          "auth_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Ref"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "display_name",
+          "service_type",
+          "url_template"
+        ],
+        "title": "OnlineTileSourceUpsertRequest",
+        "description": "PUT /config/online-tile-sources/{source_id} body."
       },
       "OpenDataPresetsUpdateRequest": {
         "properties": {
@@ -16721,6 +20382,50 @@
         ],
         "title": "PortalCredentialsMapResponse"
       },
+      "PortalSearchDatasetItem": {
+        "properties": {
+          "dataset_key": {
+            "type": "string",
+            "title": "Dataset Key"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": ""
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "time_start": {
+            "type": "string",
+            "title": "Time Start",
+            "default": ""
+          },
+          "time_end": {
+            "type": "string",
+            "title": "Time End",
+            "default": ""
+          },
+          "provider_kind": {
+            "type": "string",
+            "title": "Provider Kind",
+            "default": ""
+          },
+          "extra": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Extra"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset_key"
+        ],
+        "title": "PortalSearchDatasetItem",
+        "description": "在线检索结果条目（数据集级，plan 阶段 2 数据集化改造）。\n\ndataset_key 为白名单主键（CMR short_name / CDSE 任务_产品模式 / CDS collection id）；\nextra 携带 provider 特定信息（version/data_center/count/sample_product_id/data_link 等）。"
+      },
       "PortalSearchResponse": {
         "properties": {
           "portal_id": {
@@ -16743,7 +20448,7 @@
           },
           "items": {
             "items": {
-              "$ref": "#/components/schemas/PortalSearchResultItem"
+              "$ref": "#/components/schemas/PortalSearchDatasetItem"
             },
             "type": "array",
             "title": "Items"
@@ -16755,52 +20460,6 @@
           "query"
         ],
         "title": "PortalSearchResponse"
-      },
-      "PortalSearchResultItem": {
-        "properties": {
-          "title": {
-            "type": "string",
-            "title": "Title",
-            "default": ""
-          },
-          "granule_id": {
-            "type": "string",
-            "title": "Granule Id",
-            "default": ""
-          },
-          "producer_granule_id": {
-            "type": "string",
-            "title": "Producer Granule Id",
-            "default": ""
-          },
-          "size_bytes": {
-            "type": "integer",
-            "title": "Size Bytes",
-            "default": 0
-          },
-          "time_start": {
-            "type": "string",
-            "title": "Time Start",
-            "default": ""
-          },
-          "time_end": {
-            "type": "string",
-            "title": "Time End",
-            "default": ""
-          },
-          "data_link": {
-            "type": "string",
-            "title": "Data Link",
-            "default": ""
-          },
-          "browse_link": {
-            "type": "string",
-            "title": "Browse Link",
-            "default": ""
-          }
-        },
-        "type": "object",
-        "title": "PortalSearchResultItem"
       },
       "PortalTestResponse": {
         "properties": {
@@ -17293,6 +20952,93 @@
         ],
         "title": "RasterInspectBody"
       },
+      "RegisterAndAddRequest": {
+        "properties": {
+          "alias": {
+            "type": "string",
+            "title": "Alias"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "ref_id": {
+            "type": "string",
+            "title": "Ref Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name",
+            "default": ""
+          },
+          "remote_path": {
+            "type": "string",
+            "title": "Remote Path",
+            "default": ""
+          },
+          "dataset_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dataset Keys"
+          }
+        },
+        "type": "object",
+        "required": [
+          "alias",
+          "kind",
+          "ref_id"
+        ],
+        "title": "RegisterAndAddRequest",
+        "description": "POST /config/remote-sources/register-and-add body（2026-08-25 P2）。\n\n原子完成「注册 + 数据集记录 + 工作流编排提示」：\n- 注册 remote_source（统一 site_compatible 整源）；\n- dataset_keys 逐条写入 remote_dataset_grants（一键上图选集记录，\n  不限制整源访问——用户决策 2026-08-25）；\n- 有门户→工作流映射时返回 workflow_hint（Wave 2 引导/后续自动链）。"
+      },
+      "RegisterAndAddResponse": {
+        "properties": {
+          "remote_source": {
+            "$ref": "#/components/schemas/RemoteSourceEntry"
+          },
+          "grants": {
+            "items": {
+              "$ref": "#/components/schemas/RemoteDatasetGrant"
+            },
+            "type": "array",
+            "title": "Grants"
+          },
+          "workflow_hint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowHint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "auto_chain_message": {
+            "type": "string",
+            "title": "Auto Chain Message",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "remote_source"
+        ],
+        "title": "RegisterAndAddResponse",
+        "description": "register-and-add 响应：注册结果 + 数据集记录 + 工作流提示。\n\nauto_chain 生效（hint.layer_id 存在）时 run_id 非空——已自动提交\n「下载→预处理→烘焙→入图层库」工作流，前端可轮询 run 状态。"
+      },
       "ReloadResultResponse": {
         "properties": {
           "success": {
@@ -17362,6 +21108,226 @@
           "via"
         ],
         "title": "RemoteBrowseResponse"
+      },
+      "RemoteDatasetGrant": {
+        "properties": {
+          "grant_id": {
+            "type": "string",
+            "title": "Grant Id"
+          },
+          "portal_id": {
+            "type": "string",
+            "title": "Portal Id"
+          },
+          "dataset_key": {
+            "type": "string",
+            "title": "Dataset Key"
+          },
+          "dataset_title": {
+            "type": "string",
+            "title": "Dataset Title",
+            "default": ""
+          },
+          "dataset_description": {
+            "type": "string",
+            "title": "Dataset Description",
+            "default": ""
+          },
+          "provider_kind": {
+            "type": "string",
+            "title": "Provider Kind",
+            "default": ""
+          },
+          "time_start": {
+            "type": "string",
+            "title": "Time Start",
+            "default": ""
+          },
+          "time_end": {
+            "type": "string",
+            "title": "Time End",
+            "default": ""
+          },
+          "path_prefix": {
+            "type": "string",
+            "title": "Path Prefix",
+            "default": ""
+          },
+          "search_meta": {
+            "type": "string",
+            "title": "Search Meta",
+            "default": "{}"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "archived": {
+            "type": "boolean",
+            "title": "Archived",
+            "default": false
+          },
+          "migrated_from": {
+            "type": "string",
+            "title": "Migrated From",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At",
+            "default": ""
+          },
+          "ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RemoteSourceRefBadge"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ref_exists": {
+            "type": "boolean",
+            "title": "Ref Exists",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "grant_id",
+          "portal_id",
+          "dataset_key"
+        ],
+        "title": "RemoteDatasetGrant",
+        "description": "「具体数据集选取模式」授权条目 + 门户能力徽标。"
+      },
+      "RemoteDatasetGrantUpsertRequest": {
+        "properties": {
+          "portal_id": {
+            "type": "string",
+            "title": "Portal Id"
+          },
+          "dataset_key": {
+            "type": "string",
+            "title": "Dataset Key"
+          },
+          "dataset_title": {
+            "type": "string",
+            "title": "Dataset Title",
+            "default": ""
+          },
+          "dataset_description": {
+            "type": "string",
+            "title": "Dataset Description",
+            "default": ""
+          },
+          "provider_kind": {
+            "type": "string",
+            "title": "Provider Kind",
+            "default": ""
+          },
+          "time_start": {
+            "type": "string",
+            "title": "Time Start",
+            "default": ""
+          },
+          "time_end": {
+            "type": "string",
+            "title": "Time End",
+            "default": ""
+          },
+          "path_prefix": {
+            "type": "string",
+            "title": "Path Prefix",
+            "default": ""
+          },
+          "search_meta": {
+            "type": "string",
+            "title": "Search Meta",
+            "default": "{}"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "portal_id",
+          "dataset_key"
+        ],
+        "title": "RemoteDatasetGrantUpsertRequest",
+        "description": "PUT /config/remote-datasets/grants/{grant_id} body.\n\ngrant_id 可省略（由 portal_id/dataset_key 派生）；\nUNIQUE(portal_id, dataset_key) 冲突时幂等合并到既有条目。"
+      },
+      "RemoteDatasetPolicy": {
+        "properties": {
+          "portal_id": {
+            "type": "string",
+            "title": "Portal Id"
+          },
+          "managed": {
+            "type": "boolean",
+            "title": "Managed",
+            "default": true
+          },
+          "compatible": {
+            "type": "boolean",
+            "title": "Compatible",
+            "default": false
+          },
+          "datasets": {
+            "items": {
+              "$ref": "#/components/schemas/RemoteDatasetPolicyDataset"
+            },
+            "type": "array",
+            "title": "Datasets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "portal_id"
+        ],
+        "title": "RemoteDatasetPolicy",
+        "description": "单门户的远程数据集访问策略投影（GET /config/remote-datasets/policy）。\n\n未出现在列表中的门户 = 未管控 → 消费方放行。"
+      },
+      "RemoteDatasetPolicyDataset": {
+        "properties": {
+          "grant_id": {
+            "type": "string",
+            "title": "Grant Id",
+            "default": ""
+          },
+          "dataset_key": {
+            "type": "string",
+            "title": "Dataset Key"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": ""
+          },
+          "path_prefix": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Path Prefix"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset_key"
+        ],
+        "title": "RemoteDatasetPolicyDataset",
+        "description": "策略投影中的单条数据集（编辑器下拉/校验用）。"
       },
       "RemoteEntryItem": {
         "properties": {
@@ -17601,6 +21567,16 @@
             "title": "Cache Policy",
             "default": "standard"
           },
+          "access_mode": {
+            "type": "string",
+            "title": "Access Mode",
+            "default": "legacy"
+          },
+          "archived": {
+            "type": "boolean",
+            "title": "Archived",
+            "default": false
+          },
           "created_at": {
             "type": "string",
             "title": "Created At",
@@ -17732,6 +21708,16 @@
             "type": "string",
             "title": "Cache Policy",
             "default": "standard"
+          },
+          "access_mode": {
+            "type": "string",
+            "title": "Access Mode",
+            "default": "legacy"
+          },
+          "archived": {
+            "type": "boolean",
+            "title": "Archived",
+            "default": false
           }
         },
         "type": "object",
@@ -18947,6 +22933,168 @@
         ],
         "title": "TestResultResponse"
       },
+      "ThemePermissionRecord": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "theme_id": {
+            "type": "integer",
+            "title": "Theme Id"
+          },
+          "resource_type": {
+            "type": "string",
+            "title": "Resource Type"
+          },
+          "resource_id": {
+            "type": "string",
+            "title": "Resource Id"
+          },
+          "permission": {
+            "type": "string",
+            "title": "Permission"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "theme_id",
+          "resource_type",
+          "resource_id",
+          "permission",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ThemePermissionRecord"
+      },
+      "ThemePublic": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "name_zh": {
+            "type": "string",
+            "title": "Name Zh"
+          },
+          "full_name_zh": {
+            "type": "string",
+            "title": "Full Name Zh"
+          },
+          "name_en": {
+            "type": "string",
+            "title": "Name En"
+          },
+          "abbr": {
+            "type": "string",
+            "title": "Abbr"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
+          "default_permission_mode": {
+            "type": "string",
+            "title": "Default Permission Mode",
+            "default": "open"
+          },
+          "is_primary": {
+            "type": "boolean",
+            "title": "Is Primary",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "slug",
+          "name_zh",
+          "full_name_zh",
+          "name_en",
+          "abbr"
+        ],
+        "title": "ThemePublic"
+      },
+      "ThemePublicBrand": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "name_zh": {
+            "type": "string",
+            "title": "Name Zh"
+          },
+          "full_name_zh": {
+            "type": "string",
+            "title": "Full Name Zh"
+          },
+          "name_en": {
+            "type": "string",
+            "title": "Name En"
+          },
+          "abbr": {
+            "type": "string",
+            "title": "Abbr"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "slug",
+          "name_zh",
+          "full_name_zh",
+          "name_en",
+          "abbr"
+        ],
+        "title": "ThemePublicBrand",
+        "description": "Unauthenticated primary-theme branding for the login page."
+      },
       "TileProviderInfo": {
         "properties": {
           "id": {
@@ -18964,6 +23112,11 @@
           "coord_system": {
             "type": "string",
             "title": "Coord System"
+          },
+          "service_type": {
+            "type": "string",
+            "title": "Service Type",
+            "default": "builtin"
           }
         },
         "type": "object",
@@ -19205,6 +23358,102 @@
         "title": "TransformPointRequest",
         "description": "``POST /import/transform-point`` 请求体。"
       },
+      "UpdateThemeRequest": {
+        "properties": {
+          "name_zh": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Zh"
+          },
+          "full_name_zh": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name Zh"
+          },
+          "name_en": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name En"
+          },
+          "abbr": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Abbr"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "default_permission_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "whitelist"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Permission Mode"
+          },
+          "is_primary": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Primary"
+          }
+        },
+        "type": "object",
+        "title": "UpdateThemeRequest"
+      },
       "UpdateUserRequest": {
         "properties": {
           "password": {
@@ -19246,6 +23495,17 @@
               }
             ],
             "title": "Enabled"
+          },
+          "theme_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theme Id"
           }
         },
         "type": "object",
@@ -19394,6 +23654,27 @@
             "type": "string",
             "title": "Permission Mode",
             "default": "open"
+          },
+          "theme_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theme Id"
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThemePublic"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -21384,6 +25665,53 @@
         "title": "WorkflowExecutionResponse",
         "description": "Stable API response model for workflow execution routes."
       },
+      "WorkflowHint": {
+        "properties": {
+          "workflow": {
+            "type": "string",
+            "title": "Workflow"
+          },
+          "node_type": {
+            "type": "string",
+            "title": "Node Type"
+          },
+          "layer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layer Id"
+          },
+          "dataset_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dataset Keys"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "auto_chain_ready": {
+            "type": "boolean",
+            "title": "Auto Chain Ready",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow",
+          "node_type"
+        ],
+        "title": "WorkflowHint",
+        "description": "门户→工作流映射的编排提示（portal_workflow_map.build_workflow_hint）。"
+      },
       "WorkflowJobPayload": {
         "properties": {
           "workflow": {
@@ -22234,6 +26562,231 @@
         ],
         "title": "WorkflowSubmitRequest"
       },
+      "WorkflowTemplateListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowTemplateSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count"
+        ],
+        "title": "WorkflowTemplateListResponse"
+      },
+      "WorkflowTemplateRunRequest": {
+        "properties": {
+          "parameters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Parameters"
+          },
+          "time_range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimeRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resource_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Profile"
+          },
+          "auto_display": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Display"
+          }
+        },
+        "type": "object",
+        "title": "WorkflowTemplateRunRequest",
+        "description": "模板一键运行请求（POST /workflows/templates/{workflow_id}/runs）。"
+      },
+      "WorkflowTemplateRunResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "workflow_id": {
+            "type": "string",
+            "title": "Workflow Id"
+          },
+          "linked_layer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Layer Id"
+          },
+          "auto_display": {
+            "type": "boolean",
+            "title": "Auto Display",
+            "default": true
+          },
+          "status_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Url"
+          },
+          "events_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "status",
+          "message",
+          "workflow_id"
+        ],
+        "title": "WorkflowTemplateRunResponse",
+        "description": "模板一键运行响应：复用 WorkflowAcceptedResponse 语义。"
+      },
+      "WorkflowTemplateSummary": {
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "title": "Workflow Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "engine": {
+            "type": "string",
+            "title": "Engine",
+            "default": "unknown"
+          },
+          "linked_layer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Layer Id"
+          },
+          "auto_display": {
+            "type": "boolean",
+            "title": "Auto Display",
+            "default": true
+          },
+          "resource_profile": {
+            "type": "string",
+            "title": "Resource Profile",
+            "default": "standard"
+          },
+          "is_template": {
+            "type": "boolean",
+            "title": "Is Template",
+            "default": true
+          },
+          "readonly": {
+            "type": "boolean",
+            "title": "Readonly",
+            "default": false
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "default": "system"
+          },
+          "node_count": {
+            "type": "integer",
+            "title": "Node Count",
+            "default": 0
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_id",
+          "name"
+        ],
+        "title": "WorkflowTemplateSummary",
+        "description": "课题组工作流模板摘要（GET /workflows/templates）。\n\n从 workflow_seeds/system + workflow_definitions/user 聚合；\nis_template=true 或 tags 含 \"template\"/\"lab\" 的定义视为课题组模板。"
+      },
       "WorkflowValidationResponse": {
         "properties": {
           "workflow": {
@@ -22263,6 +26816,42 @@
         ],
         "title": "WorkflowValidationResponse",
         "description": "Route-friendly validation response with typed terminal plan projections."
+      },
+      "WorkflowVariantDef": {
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "title": "Workflow Id"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "credential_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Profile"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_id"
+        ],
+        "title": "WorkflowVariantDef",
+        "description": "工作流变体定义（X2：同一图层的多执行形态，如在线/本地反演）。\n\nLayerDescriptor.workflow_variants 以变体键（\"online\" / \"local\"）映射到具体种子；\n前端据此在分析框渲染「反演来源」切换控件，默认提交 descriptor.workflow_id\n所指变体（约定为默认变体）。"
       },
       "WorkspaceGetResponse": {
         "properties": {

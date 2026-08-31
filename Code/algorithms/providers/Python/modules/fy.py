@@ -15,6 +15,7 @@ from ingest.fy import build_fy_daily_job_plans, write_fy_daily_plan_json
 from modules.base import BaseModule
 from modules.registry import register_module_decorator
 from utils.fy_executor import execute_fy_command_steps
+from utils.request_time import resolve_time_bounds
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
 
 
@@ -97,6 +98,9 @@ class FyDailyModule(BaseModule):
             else:
                 datasource_selection.setdefault("input_dir", str(raw_input))
         algorithm_params = dict(inputs.get("algorithm_params", {}))
+        if ctx.request.algorithm_params:
+            # 请求级参数作底，节点/输入覆盖其上
+            algorithm_params = {**dict(ctx.request.algorithm_params), **algorithm_params}
         output_spec_extra = dict(inputs.get("output_spec_extra", {}))
 
         input_dir = _resolve_fy_input_dir(datasource_selection)
@@ -119,11 +123,16 @@ class FyDailyModule(BaseModule):
                 "fy_plan", f"Build FY daily job plan from {input_dir}"
             )
 
+        start_time, end_time = resolve_time_bounds(
+            time_range=ctx.request.time_range,
+            algorithm_params=algorithm_params,
+            module_label="fy_daily",
+        )
         plans = build_fy_daily_job_plans(
             input_dir=input_dir,
             output_root=output_root,
-            start_time=ctx.request.time_range.start,
-            end_time=ctx.request.time_range.end,
+            start_time=start_time,
+            end_time=end_time,
             orbit_mode=orbit_mode,
         )
         if not plans:

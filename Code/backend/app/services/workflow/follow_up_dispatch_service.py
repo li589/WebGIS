@@ -227,15 +227,22 @@ class FollowUpDispatchService:
         return cleaned
 
     def fail_stuck_running_workflows(self, *, max_running_seconds: int) -> int:
-        """把 running 且运行时长超过 max_running_seconds 的 run 标记为 failed。
+        """把 running 且**长时间无活动**的 run 标记为 failed。
 
         发布就绪修复（P1-4 solo 池看门狗）：``worker_pool=solo`` 时 ``time_limit``
         无法强杀卡死的任务（无子进程可 kill），卡死任务会让 run 永远停在 running。
         本方法供周期性 Beat 任务调用，纠正 UI/DB 状态。
 
+        活动时钟 = ``max(run.updated_at, 最近一条 workflow_events.created_at)``。
+        中途进度事件通常只写 events、不 bump ``updated_at``（例如 NSIDC 下载每
+        数秒一条 progress）；因此**绝不能**用「启动后的墙钟总时长」判死，否则会
+        误杀仍在干活的长下载 / 长反演。
+
+        ``max_running_seconds`` 语义为**空闲阈值**（无活动秒数），保留参数名以
+        兼容既有 Beat / 配置键。
+
         注意：仅纠正状态，**无法**释放被卡任务占用的 solo worker 线程——资源恢复
-        仍需重启该 worker。阈值应大于最长合法任务时长（workflow ``time_limit``=7500s），
-        避免误杀正常长任务。
+        仍需重启该 worker。
         """
         from datetime import timedelta
 
@@ -250,13 +257,19 @@ class FollowUpDispatchService:
                 if run.updated_at.tzinfo
                 else run.updated_at.replace(tzinfo=UTC)
             )
-            if now - updated < threshold:
+            last_event_at = self._repository.get_latest_event_created_at(run.run_id)
+            last_activity = updated
+            if last_event_at is not None and last_event_at > last_activity:
+                last_activity = last_event_at
+            idle_for = now - last_activity
+            if idle_for < threshold:
                 continue
             with log_context(run_id=run.run_id):
                 logger.warning(
                     "Marking stuck running workflow run as failed "
-                    "(updated_at=%s, threshold=%ss)",
-                    run.updated_at.isoformat(),
+                    "(last_activity_at=%s, idle_s=%.0f, threshold=%ss)",
+                    last_activity.isoformat(),
+                    idle_for.total_seconds(),
                     max_running_seconds,
                 )
                 payload = WorkflowSubmitRequest(
@@ -279,20 +292,24 @@ class FollowUpDispatchService:
                         payload=payload,
                         status=ExecutionStatus.failed,
                         progress=100,
-                        message="工作流运行时长超过看门狗阈值（疑似卡死），已标记失败。",
+                        message="工作流长时间无进度更新（疑似卡死），已标记失败。",
                         created_at=run.created_at,
                         updated_at=now,
                         result_refs=run.result_refs,
                         result_dto=run.result_dto,
                         diagnostics=[
-                            f"running 状态超过 {max_running_seconds}s（solo 池 time_limit 无法强杀）。",
+                            f"无活动超过 {max_running_seconds}s（solo 池 time_limit 无法强杀）。",
                             "error_code=workflow_stuck_running_watchdog",
                             f"last_updated_at={run.updated_at.isoformat()}",
+                            f"last_activity_at={last_activity.isoformat()}",
+                            f"idle_seconds={int(idle_for.total_seconds())}",
                         ],
                         executor_metadata={
                             **run.executor_metadata,
                             "watchdog_failed_at": now.isoformat(),
                             "cleanup_reason": "stuck_running_watchdog",
+                            "last_activity_at": last_activity.isoformat(),
+                            "idle_seconds": int(idle_for.total_seconds()),
                         },
                     )
                 )
@@ -300,11 +317,13 @@ class FollowUpDispatchService:
                     run_id=run.run_id,
                     channel=EventChannel.log,
                     level=LogLevel.warning,
-                    message="工作流运行超时（疑似卡死），已被看门狗标记失败。",
+                    message="工作流长时间无进度（疑似卡死），已被看门狗标记失败。",
                     progress=100,
                     payload={
                         "cleanup_reason": "stuck_running_watchdog",
                         "previous_status": run.status.value,
+                        "last_activity_at": last_activity.isoformat(),
+                        "idle_seconds": int(idle_for.total_seconds()),
                     },
                     created_at=now,
                 )

@@ -212,6 +212,204 @@ export interface paths {
         patch: operations["update_permission_mode_auth_users__user_id__permission_mode_patch"];
         trace?: never;
     };
+    "/auth/themes/primary/public": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Primary Theme Public */
+        get: operations["get_primary_theme_public_auth_themes_primary_public_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/themes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Themes
+         * @description List all product themes (admin session required).
+         */
+        get: operations["list_themes_auth_themes_get"];
+        put?: never;
+        /** Create Theme */
+        post: operations["create_theme_auth_themes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/themes/{theme_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Theme */
+        delete: operations["delete_theme_auth_themes__theme_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Theme */
+        patch: operations["update_theme_auth_themes__theme_id__patch"];
+        trace?: never;
+    };
+    "/auth/themes/{theme_id}/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Theme Permissions */
+        get: operations["list_theme_permissions_auth_themes__theme_id__permissions_get"];
+        /** Set Theme Permissions */
+        put: operations["set_theme_permissions_auth_themes__theme_id__permissions_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/themes/{theme_id}/logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Theme Logo
+         * @description Serve theme logo (public — login page may need primary logo without session).
+         */
+        get: operations["get_theme_logo_auth_themes__theme_id__logo_get"];
+        put?: never;
+        /** Upload Theme Logo */
+        post: operations["upload_theme_logo_auth_themes__theme_id__logo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/feedback/api/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Reports */
+        get: operations["list_reports_feedback_api_reports_get"];
+        put?: never;
+        /**
+         * Upload Report
+         * @description 接收用户导出的反馈 JSON（multipart 单文件），落盘并返回访问 token。
+         */
+        post: operations["upload_report_feedback_api_reports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/feedback/api/reports/{report_id}/response": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Report Response
+         * @description 用户端进展查询：编号 + 上传时返回的 token（防编号枚举）。
+         */
+        get: operations["get_report_response_feedback_api_reports__report_id__response_get"];
+        /**
+         * Put Report Response
+         * @description 发布/更新处理进展（写入 response.json；用户端轮询可见）。
+         */
+        put: operations["put_report_response_feedback_api_reports__report_id__response_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/feedback/api/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Feedback Session
+         * @description 认证探测：成功返回身份信息（处理台据此启用服务端模式）。
+         */
+        get: operations["feedback_session_feedback_api_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/feedback/api/reports/{report_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Report */
+        get: operations["get_report_feedback_api_reports__report_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Report
+         * @description 删除一条服务端反馈（含附件与进展，不可恢复）。
+         */
+        delete: operations["delete_report_feedback_api_reports__report_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/feedback/api/reports/{report_id}/attachments/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Attachment */
+        get: operations["download_attachment_feedback_api_reports__report_id__attachments__name__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/layers": {
         parameters: {
             query?: never;
@@ -252,6 +450,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/layer-assets/{layer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Layer Asset State
+         * @description 图层烘焙资产状态查询（图层平台子系统 P0）。
+         *
+         *     返回 asset_state（missing/unversioned/stale/fresh）、bake_version、
+         *     时间轴元数据与可用烘焙任务 key。前端 lifecycle 域以本接口为真源。
+         */
+        get: operations["get_layer_asset_state_layer_assets__layer_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/layers/{layer_id}/lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Layer Lifecycle
+         * @description 图层生命周期聚合视图（图层平台子系统 P0）。
+         *
+         *     聚合资产状态 + 最近 run（workflow_kind/layer_id 索引查询）+ 时间轴元数据，
+         *     前端不再自行拼接 jobLayer / overlayTimeStates / asset_state。
+         */
+        get: operations["get_layer_lifecycle_layers__layer_id__lifecycle_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/layers/{layer_id}/online-temporal": {
         parameters: {
             query?: never;
@@ -269,6 +513,107 @@ export interface paths {
         get: operations["get_layer_online_temporal_layers__layer_id__online_temporal_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/layers/{layer_id}/data-coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Layer Data Coverage
+         * @description 双通道可用性：在线覆盖窗 + 本地资产 time_list（计划会话 / 色带）。
+         *
+         *     - ``channels.online``：来自 descriptor.online_temporal（未启用则 available=false）
+         *     - ``channels.local``：来自 overlay 资产 state.time_list；取失败时 dates=[]
+         */
+        get: operations["get_layer_data_coverage_layers__layer_id__data_coverage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/layer-assets/{layer_id}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Layer Asset Online
+         * @description 在线源同步统一入口（图层平台子系统 P1）。
+         *
+         *     前端不再自行拼 workflow 提交参数；服务端创建 ``workflow_kind=online_sync``
+         *     的 run 并复用 workflow-runs 状态/事件/取消契约。
+         *
+         *     语义：
+         *     - 图层未启用 online_temporal → ``skipped-unsupported``（200，不报错）
+         *     - 已有同图层同时间的活跃 online_sync run → ``in-flight``（复用）
+         *     - 其他情况 → 提交 workflow run，返回 ``submitted``
+         *
+         *     失败时保留旧资产显示（run 失败不影响已有烘焙资产）。
+         */
+        post: operations["sync_layer_asset_online_layer_assets__layer_id__sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflows/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workflow Templates
+         * @description 课题组工作流模板列表（图层平台子系统 P1）。
+         *
+         *     聚合 workflow_seeds/system + workflow_definitions/user 中
+         *     ``is_template=true`` 或 tags 含 "template"/"lab" 的定义；
+         *     前端课题组入口据此渲染「一键运行」面板。
+         */
+        get: operations["list_workflow_templates_workflows_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflows/templates/{workflow_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Workflow Template
+         * @description 课题组工作流模板一键运行（图层平台子系统 P1）。
+         *
+         *     按模板定义构建 WorkflowSubmitRequest 并提交；
+         *     完成后若 auto_display=true 且 linked_layer_id 非空，
+         *     由 workflow-runs 轮询链自动 materialize-map-layers 上图。
+         */
+        post: operations["run_workflow_template_workflows_templates__workflow_id__runs_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -423,6 +768,30 @@ export interface paths {
         get: operations["get_overlay_value_overlay_value__layer_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/overlay-asset-workflows/{layer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit Overlay Asset Workflow
+         * @description 统一图层资产工作流入口：检查烘焙资产，陈旧/缺失则触发重烘。
+         *
+         *     静态 overlay 与普通分析图层一样返回 WorkflowAcceptedResponse，前端统一
+         *     轮询/恢复；fresh 资产立即 succeeded，stale/missing 资产创建 accepted run
+         *     并由 Celery worker 后台执行烘焙。
+         */
+        post: operations["submit_overlay_asset_workflow_overlay_asset_workflows__layer_id__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2745,6 +3114,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config/online-tile-sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Online Tile Sources */
+        get: operations["list_online_tile_sources_config_online_tile_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/online-tile-sources/{source_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Upsert Online Tile Source */
+        put: operations["upsert_online_tile_source_config_online_tile_sources__source_id__put"];
+        post?: never;
+        /** Delete Online Tile Source */
+        delete: operations["delete_online_tile_source_config_online_tile_sources__source_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config/data-source": {
         parameters: {
             query?: never;
@@ -3185,6 +3589,121 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config/remote-datasets/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Remote Dataset Grants
+         * @description 数据集授权条目 + 门户能力徽标。
+         */
+        get: operations["list_remote_dataset_grants_config_remote_datasets_grants_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/remote-datasets/grants/{grant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upsert Remote Dataset Grant
+         * @description 新增/更新数据集授权（UNIQUE(portal_id, dataset_key) 幂等合并）。
+         */
+        put: operations["upsert_remote_dataset_grant_config_remote_datasets_grants__grant_id__put"];
+        post?: never;
+        /**
+         * Delete Remote Dataset Grant
+         * @description 删除数据集授权（删除后该数据集在管控门户内不可访问）。
+         */
+        delete: operations["delete_remote_dataset_grant_config_remote_datasets_grants__grant_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/remote-datasets/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Remote Dataset Policy
+         * @description 各门户远程数据集访问策略投影（编辑器过滤用）。
+         *
+         *     未列出的门户 = 未管控（放行）；列出的门户 managed=true，
+         *     compatible=true 表示站点兼容模式全放行，datasets 为白名单。
+         */
+        get: operations["get_remote_dataset_policy_config_remote_datasets_policy_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/remote-sources/register-and-add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register And Add Remote Source
+         * @description 原子完成「注册 + 数据集记录 + 工作流编排提示」。
+         *
+         *     - 注册 remote_source（统一 site_compatible 整源——兼容模式弃用）；
+         *     - dataset_keys 逐条写 remote_dataset_grants（一键上图选集记录，
+         *       不限制整源访问）；
+         *     - 门户有工作流映射时返回 workflow_hint（节点类型/建议参数——
+         *       Wave 3 接全自动「下载→预处理→入图层库」链，当前引导工作流编排）。
+         */
+        post: operations["register_and_add_remote_source_config_remote_sources_register_and_add_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/remote-sources/migrate-legacy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Migrate Legacy Remote Sources Endpoint
+         * @description 手动重跑存量迁移（dry_run/safe 查询参数）。
+         *
+         *     幂等：已完成的迁移再次调用返回 already_done=True。
+         */
+        post: operations["migrate_legacy_remote_sources_endpoint_config_remote_sources_migrate_legacy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config/about": {
         parameters: {
             query?: never;
@@ -3198,6 +3717,30 @@ export interface paths {
          */
         get: operations["get_about_info_config_about_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/data-input-policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Data Input Policies
+         * @description 只读投影：时间窗对齐 / 本地优先源路由等策略（seed + runtime 覆盖）。
+         */
+        get: operations["get_data_input_policies_config_data_input_policies_get"];
+        /**
+         * Put Data Input Policies
+         * @description 写入 runtime 覆盖（原子写）。同 id 覆盖 seed；热载生效，无需重启后端。
+         */
+        put: operations["put_data_input_policies_config_data_input_policies_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -3224,6 +3767,26 @@ export interface paths {
          *     - admin 主动刷新缓存
          */
         post: operations["invalidate_template_caches_config_cache_invalidate_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/config/online-sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Online Source Credentials
+         * @description 聚合各在线源凭证就绪状态（只报配置布尔，永不回显明文值）。
+         */
+        get: operations["list_online_source_credentials_config_online_sources_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3402,13 +3965,13 @@ export interface paths {
         };
         /**
          * List Timers
-         * @description 列出全部定时器，可选按 workflow_id 过滤。
+         * @description 列出定时器（非 admin 登录用户仅见本人创建的）。
          */
         get: operations["list_timers_workflow_timers_get"];
         put?: never;
         /**
          * Create Timer
-         * @description 创建定时器。
+         * @description 创建定时器（记录归属 owner_user_id）。
          *
          *     请求体字段：
          *     - workflow_id (str, 必填)
@@ -3677,6 +4240,170 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Agent Config */
+        get: operations["get_agent_config_agent_config_get"];
+        /** Put Agent Config Legacy */
+        put: operations["put_agent_config_legacy_agent_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/config/profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Agent Profile */
+        post: operations["create_agent_profile_agent_config_profiles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/config/profiles/{profile_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Agent Profile */
+        put: operations["update_agent_profile_agent_config_profiles__profile_id__put"];
+        post?: never;
+        /** Delete Agent Profile */
+        delete: operations["delete_agent_profile_agent_config_profiles__profile_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/config/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Active Agent Profile */
+        post: operations["set_active_agent_profile_agent_config_active_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/config/use-global": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Use Global Agent Profile
+         * @description Clear personal active so chat falls back to global active.
+         */
+        post: operations["use_global_agent_profile_agent_config_use_global_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/models/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Agent Models */
+        post: operations["refresh_agent_models_agent_models_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Agent Chat */
+        post: operations["agent_chat_agent_chat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/chat/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Agent Chat Stream
+         * @description SSE chat stream (Phase D). Events: token, step, intent, done, error.
+         */
+        post: operations["agent_chat_stream_agent_chat_stream_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Agent Confirm
+         * @description Approve or reject a pending Agent confirmation ticket (Phase B).
+         */
+        post: operations["agent_confirm_agent_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/gee/workflows:validate": {
         parameters: {
             query?: never;
@@ -3790,6 +4517,367 @@ export interface components {
             name: string;
             /** Description */
             description: string;
+        };
+        /** AgentActiveRequest */
+        AgentActiveRequest: {
+            /** Profile Id */
+            profile_id: string;
+            /**
+             * Scope
+             * @default personal
+             * @enum {string}
+             */
+            scope: "global" | "personal";
+        };
+        /** AgentChatRequest */
+        AgentChatRequest: {
+            /** Message */
+            message: string;
+            /** Session Id */
+            session_id?: string | null;
+            /** Client Context */
+            client_context?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** AgentChatResponse */
+        AgentChatResponse: {
+            /** Session Id */
+            session_id: string;
+            /** Reply */
+            reply: string;
+            /** Ui Intents */
+            ui_intents?: components["schemas"]["AgentUiIntent"][];
+            /**
+             * Provider
+             * @default demo
+             */
+            provider: string;
+            /** Profile Id */
+            profile_id?: string | null;
+            usage?: components["schemas"]["AgentTokenUsage"] | null;
+            /** Steps */
+            steps?: components["schemas"]["AgentStep"][];
+            /** Confirmations */
+            confirmations?: components["schemas"]["AgentConfirmation"][];
+        };
+        /** AgentConfigBundleResponse */
+        AgentConfigBundleResponse: {
+            /** Active Profile Id */
+            active_profile_id: string;
+            /**
+             * Active Scope
+             * @default global
+             * @enum {string}
+             */
+            active_scope: "global" | "personal";
+            /**
+             * Can Manage Global
+             * @default false
+             */
+            can_manage_global: boolean;
+            /**
+             * Can Manage Personal
+             * @default false
+             */
+            can_manage_personal: boolean;
+            /** Profiles */
+            profiles?: components["schemas"]["AgentProfilePublic"][];
+            /** Presets */
+            presets?: components["schemas"]["AgentPresetPublic"][];
+        };
+        /** AgentConfigResponse */
+        AgentConfigResponse: {
+            /**
+             * Provider
+             * @default mock
+             * @enum {string}
+             */
+            provider: "mock" | "ollama" | "openai_compatible";
+            /**
+             * Base Url
+             * @default http://127.0.0.1:11434/v1
+             */
+            base_url: string;
+            /**
+             * Model
+             * @default qwen2.5
+             */
+            model: string;
+            /**
+             * Has Api Key
+             * @default false
+             */
+            has_api_key: boolean;
+        };
+        /** AgentConfigUpdateRequest */
+        AgentConfigUpdateRequest: {
+            /** Provider */
+            provider?: ("mock" | "ollama" | "openai_compatible") | null;
+            /** Base Url */
+            base_url?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Api Key */
+            api_key?: string | null;
+            /**
+             * Clear Api Key
+             * @default false
+             */
+            clear_api_key: boolean;
+        };
+        /** AgentConfirmRequest */
+        AgentConfirmRequest: {
+            /** Confirmation Id */
+            confirmation_id: string;
+            /**
+             * Decision
+             * @default approve
+             * @enum {string}
+             */
+            decision: "approve" | "reject";
+        };
+        /** AgentConfirmResponse */
+        AgentConfirmResponse: {
+            /** Confirmation Id */
+            confirmation_id: string;
+            /** Status */
+            status: string;
+            /** Summary */
+            summary?: {
+                [key: string]: unknown;
+            };
+            /** Run Id */
+            run_id?: string | null;
+            /** Status Url */
+            status_url?: string | null;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+        };
+        /** AgentConfirmation */
+        AgentConfirmation: {
+            /** Confirmation Id */
+            confirmation_id: string;
+            /**
+             * Action
+             * @default run_workflow
+             */
+            action: string;
+            /**
+             * Expires At
+             * @default
+             */
+            expires_at: string;
+            /** Summary */
+            summary?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+        };
+        /** AgentModelsRefreshRequest */
+        AgentModelsRefreshRequest: {
+            /** Profile Id */
+            profile_id?: string | null;
+            /** Scope */
+            scope?: ("global" | "personal") | null;
+        };
+        /** AgentModelsRefreshResponse */
+        AgentModelsRefreshResponse: {
+            /** Profile Id */
+            profile_id: string;
+            /** Models */
+            models?: string[];
+            /**
+             * Manual
+             * @default false
+             */
+            manual: boolean;
+            /** Error */
+            error?: string | null;
+        };
+        /** AgentPresetPublic */
+        AgentPresetPublic: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Provider Kind */
+            provider_kind: string;
+            /**
+             * Protocol
+             * @enum {string}
+             */
+            protocol: "openai" | "anthropic" | "demo";
+            /**
+             * Base Url
+             * @default
+             */
+            base_url: string;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /**
+             * Context Window Input
+             * @default 8192
+             */
+            context_window_input: number;
+            /**
+             * Context Window Output
+             * @default 4096
+             */
+            context_window_output: number;
+            /**
+             * Needs Api Key
+             * @default true
+             */
+            needs_api_key: boolean;
+        };
+        /** AgentProfileCreateRequest */
+        AgentProfileCreateRequest: {
+            /** Preset Id */
+            preset_id: string;
+            /** Name */
+            name?: string | null;
+            /**
+             * Scope
+             * @default personal
+             * @enum {string}
+             */
+            scope: "global" | "personal";
+        };
+        /** AgentProfilePublic */
+        AgentProfilePublic: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Provider Kind */
+            provider_kind: string;
+            /**
+             * Protocol
+             * @enum {string}
+             */
+            protocol: "openai" | "anthropic" | "demo";
+            /**
+             * Base Url
+             * @default
+             */
+            base_url: string;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /**
+             * Context Window Input
+             * @default 8192
+             */
+            context_window_input: number;
+            /**
+             * Context Window Output
+             * @default 4096
+             */
+            context_window_output: number;
+            /** Preset Id */
+            preset_id?: string | null;
+            /**
+             * Scope
+             * @default global
+             * @enum {string}
+             */
+            scope: "global" | "personal";
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Has Api Key
+             * @default false
+             */
+            has_api_key: boolean;
+        };
+        /** AgentProfileUpdateRequest */
+        AgentProfileUpdateRequest: {
+            /**
+             * Scope
+             * @default personal
+             * @enum {string}
+             */
+            scope: "global" | "personal";
+            /** Name */
+            name?: string | null;
+            /** Protocol */
+            protocol?: ("openai" | "anthropic" | "demo") | null;
+            /** Base Url */
+            base_url?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Context Window Input */
+            context_window_input?: number | null;
+            /** Context Window Output */
+            context_window_output?: number | null;
+            /** Api Key */
+            api_key?: string | null;
+            /**
+             * Clear Api Key
+             * @default false
+             */
+            clear_api_key: boolean;
+        };
+        /** AgentStep */
+        AgentStep: {
+            /**
+             * Type
+             * @default thought
+             * @enum {string}
+             */
+            type: "thought" | "tool" | "tool_result";
+            /** Summary */
+            summary: string;
+            /** Detail */
+            detail?: string | null;
+        };
+        /** AgentTokenUsage */
+        AgentTokenUsage: {
+            /**
+             * Prompt Tokens
+             * @default 0
+             */
+            prompt_tokens: number;
+            /**
+             * Completion Tokens
+             * @default 0
+             */
+            completion_tokens: number;
+            /**
+             * Total Tokens
+             * @default 0
+             */
+            total_tokens: number;
+            /**
+             * Estimated
+             * @default false
+             */
+            estimated: boolean;
+        };
+        /** AgentUiIntent */
+        AgentUiIntent: {
+            /** Name */
+            name: string;
+            /** Args */
+            args?: {
+                [key: string]: unknown;
+            };
         };
         /** AlgorithmOutputSpec */
         AlgorithmOutputSpec: {
@@ -4230,6 +5318,22 @@ export interface components {
              */
             file: string;
         };
+        /** Body_upload_report_feedback_api_reports_post */
+        Body_upload_report_feedback_api_reports_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+        };
+        /** Body_upload_theme_logo_auth_themes__theme_id__logo_post */
+        Body_upload_theme_logo_auth_themes__theme_id__logo_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+        };
         /** BoundingBox */
         BoundingBox: {
             /** West */
@@ -4376,6 +5480,35 @@ export interface components {
              */
             lat_offset: number;
         };
+        /** CreateThemeRequest */
+        CreateThemeRequest: {
+            /** Slug */
+            slug: string;
+            /** Name Zh */
+            name_zh: string;
+            /** Full Name Zh */
+            full_name_zh: string;
+            /** Name En */
+            name_en: string;
+            /** Abbr */
+            abbr: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Default Permission Mode
+             * @default open
+             * @enum {string}
+             */
+            default_permission_mode: "open" | "whitelist";
+            /**
+             * Is Primary
+             * @default false
+             */
+            is_primary: boolean;
+        };
         /** CreateTokenRequest */
         CreateTokenRequest: {
             /** Label */
@@ -4395,6 +5528,8 @@ export interface components {
              * @enum {string}
              */
             role: "admin" | "standard" | "demo";
+            /** Theme Id */
+            theme_id?: number | null;
         };
         /** DataCacheEntry */
         DataCacheEntry: {
@@ -4528,6 +5663,8 @@ export interface components {
             static_cache?: components["schemas"]["StaticCacheSummary"] | null;
             /** Workflow Hint */
             workflow_hint?: string | null;
+            /** Online Tile Sources */
+            online_tile_sources?: components["schemas"]["OnlineTileSource"][];
         };
         /**
          * DataSourcePathsUpdateRequest
@@ -5507,6 +6644,41 @@ export interface components {
             /** Groups */
             groups?: components["schemas"]["BatchGroupBody"][];
         };
+        /**
+         * LayerAssetStateResponse
+         * @description 单图层烘焙资产状态（GET /layer-assets/{layer_id}）。
+         */
+        LayerAssetStateResponse: {
+            /** Layer Id */
+            layer_id: string;
+            /** Asset State */
+            asset_state: string;
+            /** Bake Version */
+            bake_version?: number | null;
+            /** Current Bake Version */
+            current_bake_version: number;
+            /**
+             * Png Exists
+             * @default false
+             */
+            png_exists: boolean;
+            /**
+             * Bounds Exists
+             * @default false
+             */
+            bounds_exists: boolean;
+            /**
+             * Category
+             * @default static
+             */
+            category: string;
+            /** Time List */
+            time_list?: string[];
+            /** Default Time */
+            default_time?: string | null;
+            /** Asset Task */
+            asset_task?: string | null;
+        };
         /** LayerCapabilities */
         LayerCapabilities: {
             /** Render Strategy */
@@ -5629,6 +6801,10 @@ export interface components {
             workflow_definition?: {
                 [key: string]: unknown;
             } | null;
+            /** Workflow Extra */
+            workflow_extra?: {
+                [key: string]: unknown;
+            } | null;
             /** Default Task Type */
             default_task_type?: string | null;
             /** Default Data Access Sources */
@@ -5644,6 +6820,10 @@ export interface components {
             run_readiness_summary?: string | null;
             /** Run Readiness Notes */
             run_readiness_notes?: string[];
+            /** Online Ready */
+            online_ready?: boolean | null;
+            /** Local Ready */
+            local_ready?: boolean | null;
             /** Data Owner */
             data_owner?: string | null;
             /** Temporal Coverage */
@@ -5670,11 +6850,102 @@ export interface components {
              */
             is_admin_boundary: boolean;
             online_temporal?: components["schemas"]["OnlineTemporalCapability"] | null;
+            /** Workflow Variants */
+            workflow_variants?: {
+                [key: string]: components["schemas"]["WorkflowVariantDef"];
+            } | null;
         };
         /** LayerDisplayNameBody */
         LayerDisplayNameBody: {
             /** Display Name */
             display_name: string;
+        };
+        /**
+         * LayerLifecycleResponse
+         * @description 图层生命周期聚合视图（GET /layers/{layer_id}/lifecycle）。
+         *
+         *     前端不再自行拼接 jobLayer/overlayTimeStates/asset_state，
+         *     统一从本响应读取「资产 + 最近 run + 时间轴」状态。
+         */
+        LayerLifecycleResponse: {
+            /** Layer Id */
+            layer_id: string;
+            asset: components["schemas"]["LayerAssetStateResponse"];
+            /** Recent Runs */
+            recent_runs?: components["schemas"]["LayerLifecycleRunSummary"][];
+            /** Lifecycle State */
+            lifecycle_state: string;
+            /** Message */
+            message?: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * LayerLifecycleRunSummary
+         * @description lifecycle 聚合中的最近 run 摘要（不含完整 payload）。
+         */
+        LayerLifecycleRunSummary: {
+            /** Run Id */
+            run_id: string;
+            /** Workflow Kind */
+            workflow_kind?: string | null;
+            /** Status */
+            status: string;
+            /** Progress */
+            progress: number;
+            /** Message */
+            message?: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * LayerOnlineSyncRequest
+         * @description 在线源同步请求（POST /layer-assets/{layer_id}/sync，图层平台子系统 P1）。
+         *
+         *     统一入口：在线时间获取/在线源拉取不再让前端自行拼 workflow 提交参数。
+         *     服务端据此创建 ``workflow_kind=online_sync`` 的 run，并复用现有
+         *     workflow-runs 状态/事件/取消契约。失败时保留旧资产显示。
+         */
+        LayerOnlineSyncRequest: {
+            /** Time Key */
+            time_key?: string | null;
+            time_range?: components["schemas"]["TimeRange"] | null;
+            /**
+             * Is Prefetch
+             * @default false
+             */
+            is_prefetch: boolean;
+            /**
+             * Priority
+             * @default normal
+             */
+            priority: string;
+        };
+        /**
+         * LayerOnlineSyncResponse
+         * @description 在线源同步响应：复用 WorkflowAcceptedResponse 语义。
+         */
+        LayerOnlineSyncResponse: {
+            /** Run Id */
+            run_id?: string | null;
+            /** Status */
+            status: string;
+            /** Message */
+            message: string;
+            /** Layer Id */
+            layer_id: string;
+            /** Time Key */
+            time_key?: string | null;
+            /** Status Url */
+            status_url?: string | null;
+            /** Events Url */
+            events_url?: string | null;
         };
         /**
          * LayerPresentation
@@ -5824,6 +7095,30 @@ export interface components {
          * @enum {string}
          */
         MapMode: "2d" | "3d";
+        /**
+         * MigrationReport
+         * @description 存量迁移报告（GET /config/remote-sources/migrate-legacy）。
+         */
+        MigrationReport: {
+            /** Dry Run */
+            dry_run: boolean;
+            /** Total */
+            total: number;
+            /** Migrated To Grants */
+            migrated_to_grants: number;
+            /** Upgraded Site Compatible */
+            upgraded_site_compatible: number;
+            /** Kept Legacy */
+            kept_legacy: number;
+            /** Already Done */
+            already_done: boolean;
+            /** Safe Mode */
+            safe_mode: boolean;
+            /** Details */
+            details?: {
+                [key: string]: unknown;
+            }[];
+        };
         /** MinioPublicConfig */
         MinioPublicConfig: {
             /** Endpoint */
@@ -5935,6 +7230,48 @@ export interface components {
             };
         };
         /**
+         * OnlineSourceCredentialStatus
+         * @description 单个在线数据源的凭证就绪状态（GET /config/online-sources）。
+         *
+         *     图层平台子系统 P2-3：统一凭证可见性聚合。不迁移各源凭证存储
+         *     （GEE=加密 SQLite 账号池；SSH HPC/Earthdata/FileBrowser=.env），
+         *     仅收口「配置了没有 / 可用不可用」的管理可见性。
+         */
+        OnlineSourceCredentialStatus: {
+            /** Source Id */
+            source_id: string;
+            /** Display Name */
+            display_name: string;
+            /** Kind */
+            kind: string;
+            /** Configured */
+            configured: boolean;
+            /** Detail */
+            detail: string;
+            /** Account Count */
+            account_count?: number | null;
+            /** Enabled Count */
+            enabled_count?: number | null;
+            /** Last Tested At */
+            last_tested_at?: string | null;
+            /** Last Test Status */
+            last_test_status?: string | null;
+            /** Fields */
+            fields?: {
+                [key: string]: boolean;
+            };
+        };
+        /**
+         * OnlineSourcesResponse
+         * @description 统一在线源凭证状态响应。
+         */
+        OnlineSourcesResponse: {
+            /** Sources */
+            sources?: components["schemas"]["OnlineSourceCredentialStatus"][];
+            /** Count */
+            count: number;
+        };
+        /**
          * OnlineTemporalCapability
          * @description 在线时间获取能力声明。
          *
@@ -5976,6 +7313,121 @@ export interface components {
              * @default low
              */
             priority: string;
+        };
+        /**
+         * OnlineTileSource
+         * @description 用户注册的 WMTS/XYZ 在线瓦片源（不包含明文密钥）。
+         */
+        OnlineTileSource: {
+            /** Source Id */
+            source_id: string;
+            /** Display Name */
+            display_name: string;
+            /**
+             * Service Type
+             * @enum {string}
+             */
+            service_type: "wmts" | "xyz";
+            /** Url Template */
+            url_template: string;
+            /**
+             * Layer
+             * @default
+             */
+            layer: string;
+            /**
+             * Style
+             * @default default
+             */
+            style: string;
+            /**
+             * Tile Matrix Set
+             * @default
+             */
+            tile_matrix_set: string;
+            /**
+             * Image Format
+             * @default image/png
+             */
+            image_format: string;
+            /**
+             * Coordinate System
+             * @default EPSG:3857
+             */
+            coordinate_system: string;
+            /** Auth Ref */
+            auth_ref?: string | null;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
+            /** Last Test Status */
+            last_test_status?: string | null;
+            /** Last Tested At */
+            last_tested_at?: string | null;
+            /**
+             * Config Status
+             * @default configured
+             */
+            config_status: string;
+        };
+        /**
+         * OnlineTileSourceUpsertRequest
+         * @description PUT /config/online-tile-sources/{source_id} body.
+         */
+        OnlineTileSourceUpsertRequest: {
+            /** Display Name */
+            display_name: string;
+            /**
+             * Service Type
+             * @enum {string}
+             */
+            service_type: "wmts" | "xyz";
+            /** Url Template */
+            url_template: string;
+            /**
+             * Layer
+             * @default
+             */
+            layer: string;
+            /**
+             * Style
+             * @default default
+             */
+            style: string;
+            /**
+             * Tile Matrix Set
+             * @default
+             */
+            tile_matrix_set: string;
+            /**
+             * Image Format
+             * @default image/png
+             */
+            image_format: string;
+            /**
+             * Coordinate System
+             * @default EPSG:3857
+             */
+            coordinate_system: string;
+            /** Auth Ref */
+            auth_ref?: string | null;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
         };
         /** OpenDataPresetsUpdateRequest */
         OpenDataPresetsUpdateRequest: {
@@ -6276,6 +7728,46 @@ export interface components {
                 [key: string]: components["schemas"]["PortalCredentialPublic"];
             };
         };
+        /**
+         * PortalSearchDatasetItem
+         * @description 在线检索结果条目（数据集级，plan 阶段 2 数据集化改造）。
+         *
+         *     dataset_key 为白名单主键（CMR short_name / CDSE 任务_产品模式 / CDS collection id）；
+         *     extra 携带 provider 特定信息（version/data_center/count/sample_product_id/data_link 等）。
+         */
+        PortalSearchDatasetItem: {
+            /** Dataset Key */
+            dataset_key: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Time Start
+             * @default
+             */
+            time_start: string;
+            /**
+             * Time End
+             * @default
+             */
+            time_end: string;
+            /**
+             * Provider Kind
+             * @default
+             */
+            provider_kind: string;
+            /** Extra */
+            extra?: {
+                [key: string]: unknown;
+            };
+        };
         /** PortalSearchResponse */
         PortalSearchResponse: {
             /** Portal Id */
@@ -6293,50 +7785,7 @@ export interface components {
              */
             count: number;
             /** Items */
-            items?: components["schemas"]["PortalSearchResultItem"][];
-        };
-        /** PortalSearchResultItem */
-        PortalSearchResultItem: {
-            /**
-             * Title
-             * @default
-             */
-            title: string;
-            /**
-             * Granule Id
-             * @default
-             */
-            granule_id: string;
-            /**
-             * Producer Granule Id
-             * @default
-             */
-            producer_granule_id: string;
-            /**
-             * Size Bytes
-             * @default 0
-             */
-            size_bytes: number;
-            /**
-             * Time Start
-             * @default
-             */
-            time_start: string;
-            /**
-             * Time End
-             * @default
-             */
-            time_end: string;
-            /**
-             * Data Link
-             * @default
-             */
-            data_link: string;
-            /**
-             * Browse Link
-             * @default
-             */
-            browse_link: string;
+            items?: components["schemas"]["PortalSearchDatasetItem"][];
         };
         /** PortalTestResponse */
         PortalTestResponse: {
@@ -6495,6 +7944,56 @@ export interface components {
             /** Upload Id */
             upload_id: string;
         };
+        /**
+         * RegisterAndAddRequest
+         * @description POST /config/remote-sources/register-and-add body（2026-08-25 P2）。
+         *
+         *     原子完成「注册 + 数据集记录 + 工作流编排提示」：
+         *     - 注册 remote_source（统一 site_compatible 整源）；
+         *     - dataset_keys 逐条写入 remote_dataset_grants（一键上图选集记录，
+         *       不限制整源访问——用户决策 2026-08-25）；
+         *     - 有门户→工作流映射时返回 workflow_hint（Wave 2 引导/后续自动链）。
+         */
+        RegisterAndAddRequest: {
+            /** Alias */
+            alias: string;
+            /** Kind */
+            kind: string;
+            /** Ref Id */
+            ref_id: string;
+            /**
+             * Display Name
+             * @default
+             */
+            display_name: string;
+            /**
+             * Remote Path
+             * @default
+             */
+            remote_path: string;
+            /** Dataset Keys */
+            dataset_keys?: string[];
+        };
+        /**
+         * RegisterAndAddResponse
+         * @description register-and-add 响应：注册结果 + 数据集记录 + 工作流提示。
+         *
+         *     auto_chain 生效（hint.layer_id 存在）时 run_id 非空——已自动提交
+         *     「下载→预处理→烘焙→入图层库」工作流，前端可轮询 run 状态。
+         */
+        RegisterAndAddResponse: {
+            remote_source: components["schemas"]["RemoteSourceEntry"];
+            /** Grants */
+            grants?: components["schemas"]["RemoteDatasetGrant"][];
+            workflow_hint?: components["schemas"]["WorkflowHint"] | null;
+            /** Run Id */
+            run_id?: string | null;
+            /**
+             * Auto Chain Message
+             * @default
+             */
+            auto_chain_message: string;
+        };
         /** ReloadResultResponse */
         ReloadResultResponse: {
             /** Success */
@@ -6527,6 +8026,179 @@ export interface components {
             via: string;
             /** Items */
             items?: components["schemas"]["RemoteEntryItem"][];
+        };
+        /**
+         * RemoteDatasetGrant
+         * @description 「具体数据集选取模式」授权条目 + 门户能力徽标。
+         */
+        RemoteDatasetGrant: {
+            /** Grant Id */
+            grant_id: string;
+            /** Portal Id */
+            portal_id: string;
+            /** Dataset Key */
+            dataset_key: string;
+            /**
+             * Dataset Title
+             * @default
+             */
+            dataset_title: string;
+            /**
+             * Dataset Description
+             * @default
+             */
+            dataset_description: string;
+            /**
+             * Provider Kind
+             * @default
+             */
+            provider_kind: string;
+            /**
+             * Time Start
+             * @default
+             */
+            time_start: string;
+            /**
+             * Time End
+             * @default
+             */
+            time_end: string;
+            /**
+             * Path Prefix
+             * @default
+             */
+            path_prefix: string;
+            /**
+             * Search Meta
+             * @default {}
+             */
+            search_meta: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Archived
+             * @default false
+             */
+            archived: boolean;
+            /**
+             * Migrated From
+             * @default
+             */
+            migrated_from: string;
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
+            ref?: components["schemas"]["RemoteSourceRefBadge"] | null;
+            /**
+             * Ref Exists
+             * @default false
+             */
+            ref_exists: boolean;
+        };
+        /**
+         * RemoteDatasetGrantUpsertRequest
+         * @description PUT /config/remote-datasets/grants/{grant_id} body.
+         *
+         *     grant_id 可省略（由 portal_id/dataset_key 派生）；
+         *     UNIQUE(portal_id, dataset_key) 冲突时幂等合并到既有条目。
+         */
+        RemoteDatasetGrantUpsertRequest: {
+            /** Portal Id */
+            portal_id: string;
+            /** Dataset Key */
+            dataset_key: string;
+            /**
+             * Dataset Title
+             * @default
+             */
+            dataset_title: string;
+            /**
+             * Dataset Description
+             * @default
+             */
+            dataset_description: string;
+            /**
+             * Provider Kind
+             * @default
+             */
+            provider_kind: string;
+            /**
+             * Time Start
+             * @default
+             */
+            time_start: string;
+            /**
+             * Time End
+             * @default
+             */
+            time_end: string;
+            /**
+             * Path Prefix
+             * @default
+             */
+            path_prefix: string;
+            /**
+             * Search Meta
+             * @default {}
+             */
+            search_meta: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+        };
+        /**
+         * RemoteDatasetPolicy
+         * @description 单门户的远程数据集访问策略投影（GET /config/remote-datasets/policy）。
+         *
+         *     未出现在列表中的门户 = 未管控 → 消费方放行。
+         */
+        RemoteDatasetPolicy: {
+            /** Portal Id */
+            portal_id: string;
+            /**
+             * Managed
+             * @default true
+             */
+            managed: boolean;
+            /**
+             * Compatible
+             * @default false
+             */
+            compatible: boolean;
+            /** Datasets */
+            datasets?: components["schemas"]["RemoteDatasetPolicyDataset"][];
+        };
+        /**
+         * RemoteDatasetPolicyDataset
+         * @description 策略投影中的单条数据集（编辑器下拉/校验用）。
+         */
+        RemoteDatasetPolicyDataset: {
+            /**
+             * Grant Id
+             * @default
+             */
+            grant_id: string;
+            /** Dataset Key */
+            dataset_key: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /** Path Prefix */
+            path_prefix?: string[];
         };
         /**
          * RemoteEntryItem
@@ -6652,6 +8324,16 @@ export interface components {
              */
             cache_policy: string;
             /**
+             * Access Mode
+             * @default legacy
+             */
+            access_mode: string;
+            /**
+             * Archived
+             * @default false
+             */
+            archived: boolean;
+            /**
              * Created At
              * @default
              */
@@ -6718,6 +8400,16 @@ export interface components {
              * @default standard
              */
             cache_policy: string;
+            /**
+             * Access Mode
+             * @default legacy
+             */
+            access_mode: string;
+            /**
+             * Archived
+             * @default false
+             */
+            archived: boolean;
         };
         /** RemoteStorageDeletedResponse */
         RemoteStorageDeletedResponse: {
@@ -7238,6 +8930,80 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** ThemePermissionRecord */
+        ThemePermissionRecord: {
+            /** Id */
+            id: number;
+            /** Theme Id */
+            theme_id: number;
+            /** Resource Type */
+            resource_type: string;
+            /** Resource Id */
+            resource_id: string;
+            /** Permission */
+            permission: string;
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
+        };
+        /** ThemePublic */
+        ThemePublic: {
+            /** Id */
+            id: number;
+            /** Slug */
+            slug: string;
+            /** Name Zh */
+            name_zh: string;
+            /** Full Name Zh */
+            full_name_zh: string;
+            /** Name En */
+            name_en: string;
+            /** Abbr */
+            abbr: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Logo Url */
+            logo_url?: string | null;
+            /**
+             * Default Permission Mode
+             * @default open
+             */
+            default_permission_mode: string;
+            /**
+             * Is Primary
+             * @default false
+             */
+            is_primary: boolean;
+        };
+        /**
+         * ThemePublicBrand
+         * @description Unauthenticated primary-theme branding for the login page.
+         */
+        ThemePublicBrand: {
+            /** Id */
+            id: number;
+            /** Slug */
+            slug: string;
+            /** Name Zh */
+            name_zh: string;
+            /** Full Name Zh */
+            full_name_zh: string;
+            /** Name En */
+            name_en: string;
+            /** Abbr */
+            abbr: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Logo Url */
+            logo_url?: string | null;
+        };
         /** TileProviderInfo */
         TileProviderInfo: {
             /** Id */
@@ -7248,6 +9014,11 @@ export interface components {
             requires_transform: boolean;
             /** Coord System */
             coord_system: string;
+            /**
+             * Service Type
+             * @default builtin
+             */
+            service_type: string;
         };
         /** TileProvidersResponse */
         TileProvidersResponse: {
@@ -7347,6 +9118,23 @@ export interface components {
              */
             lat_offset: number;
         };
+        /** UpdateThemeRequest */
+        UpdateThemeRequest: {
+            /** Name Zh */
+            name_zh?: string | null;
+            /** Full Name Zh */
+            full_name_zh?: string | null;
+            /** Name En */
+            name_en?: string | null;
+            /** Abbr */
+            abbr?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Default Permission Mode */
+            default_permission_mode?: ("open" | "whitelist") | null;
+            /** Is Primary */
+            is_primary?: boolean | null;
+        };
         /** UpdateUserRequest */
         UpdateUserRequest: {
             /** Password */
@@ -7355,6 +9143,8 @@ export interface components {
             role?: ("admin" | "standard" | "demo") | null;
             /** Enabled */
             enabled?: boolean | null;
+            /** Theme Id */
+            theme_id?: number | null;
         };
         /** UploadCompleteBody */
         UploadCompleteBody: {
@@ -7408,6 +9198,9 @@ export interface components {
              * @default open
              */
             permission_mode: string;
+            /** Theme Id */
+            theme_id?: number | null;
+            theme?: components["schemas"]["ThemePublic"] | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -8066,6 +9859,29 @@ export interface components {
             };
         };
         /**
+         * WorkflowHint
+         * @description 门户→工作流映射的编排提示（portal_workflow_map.build_workflow_hint）。
+         */
+        WorkflowHint: {
+            /** Workflow */
+            workflow: string;
+            /** Node Type */
+            node_type: string;
+            /** Layer Id */
+            layer_id?: string | null;
+            /** Dataset Keys */
+            dataset_keys?: string[];
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Auto Chain Ready
+             * @default false
+             */
+            auto_chain_ready: boolean;
+        };
+        /**
          * WorkflowJobPayload
          * @description Serialized payload contract for Celery worker execution.
          */
@@ -8348,6 +10164,109 @@ export interface components {
             /** Retry Attempt */
             retry_attempt?: number | null;
         };
+        /** WorkflowTemplateListResponse */
+        WorkflowTemplateListResponse: {
+            /** Items */
+            items?: components["schemas"]["WorkflowTemplateSummary"][];
+            /** Count */
+            count: number;
+        };
+        /**
+         * WorkflowTemplateRunRequest
+         * @description 模板一键运行请求（POST /workflows/templates/{workflow_id}/runs）。
+         */
+        WorkflowTemplateRunRequest: {
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            };
+            time_range?: components["schemas"]["TimeRange"] | null;
+            /** Resource Profile */
+            resource_profile?: string | null;
+            /** Auto Display */
+            auto_display?: boolean | null;
+        };
+        /**
+         * WorkflowTemplateRunResponse
+         * @description 模板一键运行响应：复用 WorkflowAcceptedResponse 语义。
+         */
+        WorkflowTemplateRunResponse: {
+            /** Run Id */
+            run_id: string;
+            /** Status */
+            status: string;
+            /** Message */
+            message: string;
+            /** Workflow Id */
+            workflow_id: string;
+            /** Linked Layer Id */
+            linked_layer_id?: string | null;
+            /**
+             * Auto Display
+             * @default true
+             */
+            auto_display: boolean;
+            /** Status Url */
+            status_url?: string | null;
+            /** Events Url */
+            events_url?: string | null;
+        };
+        /**
+         * WorkflowTemplateSummary
+         * @description 课题组工作流模板摘要（GET /workflows/templates）。
+         *
+         *     从 workflow_seeds/system + workflow_definitions/user 聚合；
+         *     is_template=true 或 tags 含 "template"/"lab" 的定义视为课题组模板。
+         */
+        WorkflowTemplateSummary: {
+            /** Workflow Id */
+            workflow_id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Engine
+             * @default unknown
+             */
+            engine: string;
+            /** Linked Layer Id */
+            linked_layer_id?: string | null;
+            /**
+             * Auto Display
+             * @default true
+             */
+            auto_display: boolean;
+            /**
+             * Resource Profile
+             * @default standard
+             */
+            resource_profile: string;
+            /**
+             * Is Template
+             * @default true
+             */
+            is_template: boolean;
+            /**
+             * Readonly
+             * @default false
+             */
+            readonly: boolean;
+            /**
+             * Kind
+             * @default system
+             */
+            kind: string;
+            /**
+             * Node Count
+             * @default 0
+             */
+            node_count: number;
+            /** Tags */
+            tags?: string[];
+            /** Updated At */
+            updated_at?: string | null;
+        };
         /**
          * WorkflowValidationResponse
          * @description Route-friendly validation response with typed terminal plan projections.
@@ -8359,6 +10278,22 @@ export interface components {
             saveback_terminal_plans?: {
                 [key: string]: components["schemas"]["SavebackTerminalPlanPayload"];
             };
+        };
+        /**
+         * WorkflowVariantDef
+         * @description 工作流变体定义（X2：同一图层的多执行形态，如在线/本地反演）。
+         *
+         *     LayerDescriptor.workflow_variants 以变体键（"online" / "local"）映射到具体种子；
+         *     前端据此在分析框渲染「反演来源」切换控件，默认提交 descriptor.workflow_id
+         *     所指变体（约定为默认变体）。
+         */
+        WorkflowVariantDef: {
+            /** Workflow Id */
+            workflow_id: string;
+            /** Label */
+            label?: string | null;
+            /** Credential Profile */
+            credential_profile?: string | null;
         };
         /** WorkspaceGetResponse */
         WorkspaceGetResponse: {
@@ -8868,6 +10803,520 @@ export interface operations {
             };
         };
     };
+    get_primary_theme_public_auth_themes_primary_public_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemePublicBrand"];
+                };
+            };
+        };
+    };
+    list_themes_auth_themes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemePublic"][];
+                };
+            };
+        };
+    };
+    create_theme_auth_themes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateThemeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_theme_auth_themes__theme_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                theme_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_theme_auth_themes__theme_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                theme_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateThemeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_theme_permissions_auth_themes__theme_id__permissions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                theme_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemePermissionRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_theme_permissions_auth_themes__theme_id__permissions_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                theme_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPermissionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemePermissionRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_theme_logo_auth_themes__theme_id__logo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                theme_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_theme_logo_auth_themes__theme_id__logo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                theme_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_theme_logo_auth_themes__theme_id__logo_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_reports_feedback_api_reports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    upload_report_feedback_api_reports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_report_feedback_api_reports_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_report_response_feedback_api_reports__report_id__response_get: {
+        parameters: {
+            query?: {
+                token?: string;
+            };
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_report_response_feedback_api_reports__report_id__response_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    feedback_session_feedback_api_session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    get_report_feedback_api_reports__report_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_report_feedback_api_reports__report_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_attachment_feedback_api_reports__report_id__attachments__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_layers_layers_get: {
         parameters: {
             query?: never;
@@ -8908,6 +11357,70 @@ export interface operations {
             };
         };
     };
+    get_layer_asset_state_layer_assets__layer_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayerAssetStateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_layer_lifecycle_layers__layer_id__lifecycle_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayerLifecycleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_layer_online_temporal_layers__layer_id__online_temporal_get: {
         parameters: {
             query?: never;
@@ -8928,6 +11441,129 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_layer_data_coverage_layers__layer_id__data_coverage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_layer_asset_online_layer_assets__layer_id__sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["LayerOnlineSyncRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayerOnlineSyncResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_workflow_templates_workflows_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTemplateListResponse"];
+                };
+            };
+        };
+    };
+    run_workflow_template_workflows_templates__workflow_id__runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["WorkflowTemplateRunRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTemplateRunResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9174,6 +11810,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_overlay_asset_workflow_overlay_asset_workflows__layer_id__post: {
+        parameters: {
+            query?: {
+                force_rebake?: boolean;
+            };
+            header?: never;
+            path: {
+                layer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowAcceptedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -13282,6 +15951,92 @@ export interface operations {
             };
         };
     };
+    list_online_tile_sources_config_online_tile_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnlineTileSource"][];
+                };
+            };
+        };
+    };
+    upsert_online_tile_source_config_online_tile_sources__source_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OnlineTileSourceUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnlineTileSource"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_online_tile_source_config_online_tile_sources__source_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_data_source_config_config_data_source_get: {
         parameters: {
             query?: never;
@@ -14044,6 +16799,177 @@ export interface operations {
             };
         };
     };
+    list_remote_dataset_grants_config_remote_datasets_grants_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteDatasetGrant"][];
+                };
+            };
+        };
+    };
+    upsert_remote_dataset_grant_config_remote_datasets_grants__grant_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemoteDatasetGrantUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteDatasetGrant"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_remote_dataset_grant_config_remote_datasets_grants__grant_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_remote_dataset_policy_config_remote_datasets_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteDatasetPolicy"][];
+                };
+            };
+        };
+    };
+    register_and_add_remote_source_config_remote_sources_register_and_add_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterAndAddRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegisterAndAddResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    migrate_legacy_remote_sources_endpoint_config_remote_sources_migrate_legacy_post: {
+        parameters: {
+            query?: {
+                dry_run?: boolean;
+                safe?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_about_info_config_about_get: {
         parameters: {
             query?: never;
@@ -14064,6 +16990,57 @@ export interface operations {
             };
         };
     };
+    get_data_input_policies_config_data_input_policies_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    put_data_input_policies_config_data_input_policies_put: {
+        parameters: {
+            query: {
+                body: unknown;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     invalidate_template_caches_config_cache_invalidate_templates_post: {
         parameters: {
             query?: never;
@@ -14080,6 +17057,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_online_source_credentials_config_online_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnlineSourcesResponse"];
                 };
             };
         };
@@ -14936,6 +17933,345 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    get_agent_config_agent_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentConfigBundleResponse"];
+                };
+            };
+        };
+    };
+    put_agent_config_legacy_agent_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentConfigUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_agent_profile_agent_config_profiles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentProfileCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfilePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_agent_profile_agent_config_profiles__profile_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentProfileUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfilePublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_agent_profile_agent_config_profiles__profile_id__delete: {
+        parameters: {
+            query?: {
+                scope?: "global" | "personal";
+            };
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentConfigBundleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_active_agent_profile_agent_config_active_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentActiveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentConfigBundleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    use_global_agent_profile_agent_config_use_global_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentConfigBundleResponse"];
+                };
+            };
+        };
+    };
+    refresh_agent_models_agent_models_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentModelsRefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentModelsRefreshResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_chat_agent_chat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentChatRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentChatResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_chat_stream_agent_chat_stream_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentChatRequest"];
+            };
+        };
+        responses: {
+            /** @description SSE stream: token | step | intent | done | error */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_confirm_agent_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentConfirmResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

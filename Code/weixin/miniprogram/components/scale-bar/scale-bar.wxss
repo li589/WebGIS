@@ -1,0 +1,48 @@
+/* 玻璃白底容器（与 HUD/影像按钮风格统一，上下内边距减小 2px 以匹配 HUD 整体容器高度） */
+.scale-bar-wrap {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(14, 22, 33, 0.10),
+              inset 0 0 0 0.5px rgba(255, 255, 255, 0.5);
+  padding: 5px 11px;
+}
+.scale-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;    /* 文字居中到线的正下方 */
+}
+
+/* ===== 标准地图比例尺：一根整线 + 左右端头竖线 ===== */
+.ruler {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 6px;      /* 给端头竖线留出高度 */
+}
+/* 中间的主横线：1px 细实线，不分段，不换色 */
+.ruler-line {
+  flex: 1;
+  height: 0;
+  border-top: 1px solid #3a3f4a;
+}
+/* 左右端头的小竖线（向下伸出 4px，即 T 字形的立脚） */
+.ruler-tip {
+  position: absolute;
+  top: 0;
+  width: 0;
+  height: 6px;           /* 竖线全长 */
+  border-left: 1px solid #3a3f4a;
+}
+.ruler-tip.left  { left: 0; }
+.ruler-tip.right { right: 0; }
+
+/* 文字标签：在上，居中；向下微调——与下方的线间距从 3px → 1px */
+.label {
+  margin-bottom: 1px;
+  font-size: 10px;
+  color: #3a3f4a;
+  font-weight: 500;
+}

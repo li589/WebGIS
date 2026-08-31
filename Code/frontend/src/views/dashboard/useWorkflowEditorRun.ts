@@ -11,6 +11,7 @@ import {
 } from '../../stores/workflow-output-layers'
 import type { WorkflowRunTarget } from '../../components/workflow/WorkflowRunDialog.vue'
 import { useLayerWorkspace, useLayerViewport, useWorkflowRun } from '../../stores/layers/selectors'
+import { resolveRunGroupTitle } from '../../utils/workflow-run-display-name'
 
 export function useWorkflowEditorRun(
   logStore: ReturnType<typeof useLogStore>,
@@ -47,8 +48,13 @@ export function useWorkflowEditorRun(
 
     const targets = target.targets?.length
       ? target.targets
-      : [{ name: target.name ?? `产出 ${workflowId}`, productTag: 'result' }]
-    const groupTitle = target.groupTitle || `${workflowId} · 计算中`
+      : [{ name: target.name ?? `产出`, productTag: 'result' }]
+    const groupTitle = resolveRunGroupTitle({
+      configuredTitle: target.groupTitle,
+      workflowId,
+      jobName: target.name,
+      fallback: '反演产物',
+    })
 
     let memberCatalogIds: string[] | undefined
     if (target.mode === 'new') {
@@ -89,8 +95,8 @@ export function useWorkflowEditorRun(
         const { dryValidateWorkflowGraph } = await import('../../services/workflow-definition-api')
         const { WorkflowValidationError } = await import('../../services/_http')
         const { WORKFLOW_COPY } = await import('../../ui-copy/workflow')
-        const { buildTimeRangeFromProps } =
-          await import('../../components/workflow/dimension-model')
+        const { deriveJobTimeRangeFromGraph } =
+          await import('../../composables/workflow-pipeline-params')
         const graphPayload = {
           workflow_id: workflowId,
           name: workflowId,
@@ -107,23 +113,13 @@ export function useWorkflowEditorRun(
             ((def.metadata as Record<string, unknown> | undefined)?.engine as string | undefined) ??
             'python_provider'
           const canvasNodes = ((def.nodes as unknown) ?? nodes) as Array<Record<string, unknown>>
-          for (const node of canvasNodes) {
-            const props = (node.properties ?? node.params ?? {}) as Record<string, unknown>
-            const ntype = String(node.type ?? node.node_type ?? '')
-            const isTime =
-              ntype === 'data/time_range' ||
-              ntype.endsWith('/time_range') ||
-              props.module_name === 'time_range'
-            if (!isTime) continue
-            const built = buildTimeRangeFromProps(props)
-            if (built?.start_at && built?.end_at) {
-              topLevelTimeRange = {
-                start_at: built.start_at,
-                end_at: built.end_at,
-                granularity: built.granularity ?? 'day',
-              }
-              break
-            }
+          // 流水线种子常无 data/time_range：从 download/algorithm_params 的
+          // start_date+end_date 推导，禁止回落主时间轴「今天」。
+          topLevelTimeRange = deriveJobTimeRangeFromGraph(canvasNodes) ?? undefined
+          if (!topLevelTimeRange) {
+            topLevelTimeRange = deriveJobTimeRangeFromGraph(
+              nodes as unknown as Array<Record<string, unknown>>,
+            ) ?? undefined
           }
           if (engine === 'weather') {
             weatherRequest = {

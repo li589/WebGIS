@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "policies": [
+    {
+      "id": "default-source-route-local-first",
+      "scope": "*",
+      "scope_id": null,
+      "input_key": "source_route_local_first",
+      "mode": "allow_silent",
+      "notes": "声明 workflow_variants.local+online 的图层：本地覆盖命中走本地，否则走在线。热载生效，无需重启。"
+    },
+    {
+      "id": "omega-sf-fenkuai-time-window-align",
+      "scope": "module",
+      "scope_id": "omega_sf_fenkuai",
+      "input_key": "time_window_align_on_zero_intersection",
+      "mode": "allow_with_confirm",
+      "notes": "请求窗与本地 SMAP 零交集时，对齐到最新可用窗。默认需用户确认；勿静默改窗。"
+    },
+    {
+      "id": "fy-omega-dynamic-time-window-align",
+      "scope": "layer_id",
+      "scope_id": "method-fy-omega-doy-dynamic",
+      "input_key": "time_window_align_on_zero_intersection",
+      "mode": "allow_with_confirm",
+      "notes": "风云卫星动态 ω 反演：时间窗对齐需确认。"
+    },
+    {
+      "id": "smap-omega-dynamic-time-window-align",
+      "scope": "layer_id",
+      "scope_id": "method-smap-omega-doy-dynamic",
+      "input_key": "time_window_align_on_zero_intersection",
+      "mode": "allow_with_confirm",
+      "notes": "SMAP 动态 ω 反演：时间窗对齐需确认。"
+    },
+    {
+      "id": "omega-sf-fenkuai-fy-online-time-window-align",
+      "scope": "workflow_id",
+      "scope_id": "omega_sf_fenkuai_fy_online",
+      "input_key": "time_window_align_on_zero_intersection",
+      "mode": "allow_with_confirm",
+      "notes": "在线 FY fenkuai 工作流：时间窗对齐需确认。"
+    },
+    {
+      "id": "omega-sf-fenkuai-smap-online-time-window-align",
+      "scope": "workflow_id",
+      "scope_id": "omega_sf_fenkuai_smap_online",
+      "input_key": "time_window_align_on_zero_intersection",
+      "mode": "allow_with_confirm",
+      "notes": "在线 SMAP fenkuai 工作流：时间窗对齐需确认。"
+    }
+  ]
+}

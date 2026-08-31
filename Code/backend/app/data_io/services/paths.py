@@ -25,20 +25,41 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import time
 from pathlib import Path
 from typing import Any
 
+from app.data_io.services._meta_io import save_json_atomic
 from app.core.config import settings
 import contextlib
 
-_OUTPUT_ROOT = (
-    Path(settings.output_root)
-    if settings.output_root
-    else Path.cwd() / "imports_output"
-)
+logger = logging.getLogger(__name__)
+
+
+def _resolve_output_root() -> Path:
+    """A-3：output_root 解析——production 空值 fail-fast，dev 兜底须显式告警。"""
+    if settings.output_root:
+        return Path(settings.output_root)
+    env = (settings.environment or "").lower()
+    if env not in {"development", "dev", "test", "testing"}:
+        # 生产空根若静默 CWD 兜底，导入产物会落入仓库/工作目录
+        raise RuntimeError(
+            "BACKEND_OUTPUT_ROOT is required outside development "
+            "(imports storage would silently fall back to the process CWD)."
+        )
+    fallback = Path.cwd() / "imports_output"
+    logger.warning(
+        "[paths] BACKEND_OUTPUT_ROOT 未配置，data_io 导入产物回退 CWD：%s"
+        "（生产环境将拒绝启动，请显式配置）",
+        fallback,
+    )
+    return fallback
+
+
+_OUTPUT_ROOT = _resolve_output_root()
 IMPORTS_DIR = _OUTPUT_ROOT / "imports"
 STAGING_DIR = IMPORTS_DIR / "_staging"
 JOBS_DIR = IMPORTS_DIR / "_jobs"
@@ -141,6 +162,40 @@ def get_quota_usage() -> dict[str, Any]:
     }
 
 
+def safe_import_child(child_id: str, *, root: Path | None = None) -> Path:
+    """校验并拼接 imports 根（或指定 root）下的子路径，防路径穿越。
+
+    安审 2026-08-21（S-1/S-2/P2-1）统一收敛点：
+    - child_id 必须是纯目录名（``Path(child_id).name == child_id``），
+      显式拒绝 ``..``、``/``、``\\``（Windows 路径分隔符，URL 参数
+      ``%5C`` 解码后可注入）与 ``_`` 前缀系统目录（_staging/_jobs 等）；
+    - resolve 后必须仍在 root 内（双保险）。
+
+    Raises:
+        ValueError: 校验失败。
+    """
+    target_root = root if root is not None else IMPORTS_DIR
+    raw = str(child_id or "").strip()
+    if (
+        not raw
+        or Path(raw).name != raw
+        or ".." in raw
+        or "/" in raw
+        or "\\" in raw
+        or raw.startswith("_")
+    ):
+        raise ValueError(f"非法 id: {child_id!r}")
+    dest = target_root / raw
+    try:
+        resolved = dest.resolve()
+        root_resolved = target_root.resolve()
+        if not resolved.is_relative_to(root_resolved):
+            raise ValueError(f"路径越界: {child_id!r}")
+    except OSError as exc:  # resolve 失败（如网络盘暂不可达）→ fail-closed
+        raise ValueError(f"路径校验失败: {child_id!r}") from exc
+    return dest
+
+
 def update_imported_layer_display_name(
     layer_id: str, display_name: str
 ) -> dict[str, Any]:
@@ -152,7 +207,7 @@ def update_imported_layer_display_name(
         raise ValueError("仅支持导入图层重命名")
     if not name:
         raise ValueError("显示名不能为空")
-    dest = IMPORTS_DIR / lid
+    dest = safe_import_child(lid)
     if not dest.is_dir():
         raise FileNotFoundError(f"导入图层不存在: {lid}")
 
@@ -167,9 +222,7 @@ def update_imported_layer_display_name(
             meta = {}
     meta["display_name"] = name
     meta["label"] = name
-    meta_path.write_text(
-        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    save_json_atomic(meta_path, meta)
 
     bounds_path = dest / "bounds.json"
     if bounds_path.exists():
@@ -184,9 +237,7 @@ def update_imported_layer_display_name(
                 inner["label"] = name
             else:
                 bounds_data["meta"] = {"display_name": name, "label": name}
-            bounds_path.write_text(
-                json.dumps(bounds_data, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
+            save_json_atomic(bounds_path, bounds_data)
 
     return {"layer_id": lid, "display_name": name, "kind": meta.get("kind")}
 

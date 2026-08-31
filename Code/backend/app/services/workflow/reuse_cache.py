@@ -185,7 +185,8 @@ def inject_retry_reuse_params(
 
 # ─── B-N2：retry 复用目录 claim（写互斥）─────────────────────────────────────
 # 并发双 retry 解析出同一 reuse_output_dir 后，两个新 run 会同时向该目录写
-# chunk checkpoint / 块缓存（``_save_chunk_checkpoint(output_dir, ...)``）。
+# chunk checkpoint（``_append_chunk_checkpoint(output_dir, ...)``，2026-08-23
+# 起为增量目录 ``.omega_sf_chunks/``）/ 块缓存。
 # 生命周期：提交前 acquire（pending，TTL 短）→ 新 run 落库后 upgrade 为
 # ``{run_id}:{token}``（TTL 长）→ 持有者 run 终态/被清理后由下一次 acquire
 # 懒抢占（compare-and-delete）→ 提交失败/未落库则立即 release。

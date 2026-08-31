@@ -151,6 +151,8 @@ def commit_science_raster_variable(
     axis_order: str = "auto",
     conflict_policy: ConflictPolicy = "overwrite",
     temporal_meta: dict[str, Any] | None = None,
+    palette: str | None = None,
+    cell_registration: str | None = None,
 ) -> dict[str, Any]:
     tmp_dir = import_paths.IMPORTS_DIR / "_tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -188,12 +190,16 @@ def commit_science_raster_variable(
         "conflict_policy": conflict_policy,
         **(temporal_meta or {}),
     }
+    if cell_registration:
+        # 像元配准（P1.5）：bounds 的 Area/Point 语义，供下游导出/校正参考
+        extra_meta["cell_registration"] = cell_registration
     result = register_geotiff_as_imported(
         out_tif,
         source_filename=f"{Path(base_name).stem}_{safe_var}.tif",
         layer_id=layer_id,
         replace_existing=replace_existing,
         extra_meta=extra_meta,
+        palette=palette or "wind-blue",
     )
     layer_dir = import_paths.IMPORTS_DIR / result["layer_id"]
     with contextlib.suppress(OSError):
@@ -250,6 +256,7 @@ def commit_algorithm_geotiff(
     time_end: str | None = None,
     extra_meta: dict[str, Any] | None = None,
     auto_confirm: bool = True,
+    palette: str | None = None,
 ) -> dict[str, Any]:
     """算法产物 GeoTIFF 注册：与导入 commit 共用配额/冲突/时间标签语义。
 
@@ -291,6 +298,7 @@ def commit_algorithm_geotiff(
         layer_id=resolved_id,
         replace_existing=replace,
         extra_meta={**(extra_meta or {}), **temporal_meta},
+        palette=palette or "wind-blue",
     )
     result["conflict_policy"] = conflict_policy
 

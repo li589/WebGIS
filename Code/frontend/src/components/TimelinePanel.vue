@@ -30,12 +30,15 @@ withDefaults(
     defaultCollapsed: false,
     maxOffsetX: 140,
     maxOffsetY: 70,
+    // 2026-08-25 用户反馈两轮收敛：①内框下边缘被裁 → body-overflow auto；
+    // ②固定高度（235/210~330）导致外框过高留大空 → auto-height
+    // （fit-content + maxHeight 330 钳制）：高度随内容变化，无空隙无裁切。
     defaultWidth: 720,
-    defaultHeight: 205,
+    defaultHeight: 235,
     minWidth: 500,
-    minHeight: 195,
+    minHeight: 210,
     maxWidth: 980,
-    maxHeight: 260,
+    maxHeight: 330,
   },
 )
 </script>
@@ -58,7 +61,8 @@ withDefaults(
     :min-height="minHeight"
     :max-width="maxWidth"
     :max-height="maxHeight"
-    body-overflow="hidden"
+    auto-height
+    body-overflow="auto"
   >
     <slot />
   </PanelDock>

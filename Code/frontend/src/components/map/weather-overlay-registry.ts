@@ -64,11 +64,19 @@ const WEATHER_OVERLAY_RENDERERS: Record<string, WeatherOverlayRenderer> = {
   },
   heatmap: {
     canRender: hasGeojsonSource,
-    render: (state, context) => {
-      context.syncWeatherGridFillOverlay({
+    render: (state, context, overlayToken) => {
+      // 2026-08-25 平滑渲染修复：heatmap 与 grid_fill 同为标量场，但后端
+      // constants.py 给 temperature/humidity 等标量层的 paint_mode='heatmap'
+      // ——此前直接调 grid fill（MapLibre 网格），完全绕过 syncScalarField
+      // WebGL（WebGL 连续面），导致「平滑渲染-连续数值面」开关对这类图层
+      // 无效。现在与 grid_fill 同构：WebGL 优先，失败回退网格 fill。
+      const gridFillState = {
         ...state,
-        renderHint: { ...state.renderHint, paint_mode: 'grid_fill' },
-      })
+        renderHint: { ...state.renderHint, paint_mode: 'grid_fill' as const },
+      }
+      if (!context.syncScalarFieldWebGL(gridFillState, overlayToken)) {
+        context.syncWeatherGridFillOverlay(gridFillState)
+      }
       context.markRendered(state.catalogId)
     },
   },

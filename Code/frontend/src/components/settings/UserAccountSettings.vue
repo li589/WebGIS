@@ -1,25 +1,18 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import {
   createAuthToken,
   listAuthTokens,
   revokeAuthToken,
-  listUserPermissions,
-  setUserPermissions,
-  deletePermission,
-  updatePermissionMode,
   type AuthToken,
   type UserRole,
-  type PermissionRecord,
-  type PermissionItemInput,
-  type ResourceType,
-  type PermissionValue,
-  type PermissionMode,
 } from '../../services/auth-api'
 import { useAuthStore } from '../../stores/auth'
 import AppSelect from '../ui/AppSelect.vue'
+import UserPermissionsDialog from './UserPermissionsDialog.vue'
+import ThemeManagerSettings from './ThemeManagerSettings.vue'
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -29,6 +22,7 @@ const router = useRouter()
 const newUsername = ref('')
 const newPassword = ref('')
 const newRole = ref<UserRole>('standard')
+const newThemeId = ref<number | null>(null)
 const tokenLabel = ref('')
 const tokens = ref<AuthToken[]>([])
 const tokensLoading = ref(false)
@@ -36,27 +30,29 @@ const createdToken = ref<string | null>(null)
 const message = ref<string | null>(null)
 const error = ref<string | null>(null)
 
-// Phase B: Resource permissions state
-const permUserId = ref<number | null>(null)
-const permUsername = ref('')
-const permRecords = ref<PermissionRecord[]>([])
-const permMode = ref<PermissionMode>('open')
-const permLoading = ref(false)
-const newPermType = ref<ResourceType>('layer')
-const newPermId = ref('')
-const newPermValue = ref<PermissionValue>('deny')
-
-const RESOURCE_TYPE_LABELS: Record<string, string> = {
-  layer: '图层',
-  workflow: '工作流',
-  data_source: '数据源',
+// 权限覆盖对话框：被「操作」列的「权限覆盖」按钮打开（仅管理员）
+interface UserPermDialogUser {
+  id: number
+  username: string
+  role: UserRole
+  permission_mode?: string
+  theme_id?: number | null
+  theme_name?: string | null
 }
+const permDialogUser = ref<UserPermDialogUser | null>(null)
 
 const ROLE_LABEL: Record<UserRole, string> = {
   admin: '管理员',
   standard: '标准用户',
   demo: '演示',
 }
+
+const themeSelectOptions = computed(() =>
+  (auth.themes ?? []).map((t) => ({
+    label: `${t.name_zh}${t.is_primary ? '（主）' : ''}`,
+    value: String(t.id),
+  })),
+)
 
 async function loadTokens() {
   tokensLoading.value = true
@@ -70,7 +66,14 @@ async function loadTokens() {
 }
 
 onMounted(() => {
-  if (auth.isAdmin) void auth.loadUsers()
+  if (auth.isAdmin) {
+    void auth.loadUsers()
+    void auth.loadThemes().then(() => {
+      const list = auth.themes ?? []
+      const primary = list.find((t) => t.is_primary) ?? list[0]
+      if (primary && newThemeId.value == null) newThemeId.value = primary.id
+    })
+  }
   void loadTokens()
 })
 
@@ -93,7 +96,7 @@ async function createAccount() {
     return
   }
   try {
-    await auth.addUser(username, newPassword.value, newRole.value)
+    await auth.addUser(username, newPassword.value, newRole.value, newThemeId.value)
     message.value = '用户已创建'
     newUsername.value = ''
     newPassword.value = ''
@@ -153,105 +156,57 @@ async function changeRole(userId: number, role: UserRole) {
   }
 }
 
+async function changeTheme(userId: number, themeIdRaw: string) {
+  error.value = null
+  const themeId = Number(themeIdRaw)
+  if (!Number.isFinite(themeId)) return
+  try {
+    await auth.patchUser(userId, { theme_id: themeId })
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '更新主题失败'
+  }
+}
+
 async function removeAccount(userId: number, username: string) {
   if (!window.confirm(`确定删除用户 ${username}？`)) return
   error.value = null
   try {
     await auth.removeUser(userId)
     message.value = '用户已删除'
-    if (permUserId.value === userId) {
-      permUserId.value = null
+    if (permDialogUser.value?.id === userId) {
+      permDialogUser.value = null
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : '删除失败'
   }
 }
 
-// Phase B: Resource permissions management
-async function togglePermPanel(userId: number, username: string) {
-  if (permUserId.value === userId) {
-    permUserId.value = null
-    return
-  }
-  permUserId.value = userId
-  permUsername.value = username
-  error.value = null
-  message.value = null
-  await loadPermissions(userId)
-}
-
-async function loadPermissions(userId: number) {
-  permLoading.value = true
-  try {
-    permRecords.value = await listUserPermissions(userId)
-    // Read permission_mode from the user object (added to UserPublic in Phase B)
-    const user = auth.users.find((u) => u.id === userId)
-    permMode.value = (user?.permission_mode as PermissionMode) || 'open'
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '加载权限失败'
-  } finally {
-    permLoading.value = false
+/** 打开「用户权限覆盖」对话框（管理员专属） */
+function openPermDialog(
+  userId: number,
+  username: string,
+  role: UserRole,
+  permissionMode?: string,
+  themeId?: number | null,
+) {
+  if (!auth.isAdmin) return
+  const theme = themeId != null ? (auth.themes ?? []).find((t) => t.id === themeId) : null
+  permDialogUser.value = {
+    id: userId,
+    username,
+    role,
+    permission_mode: permissionMode,
+    theme_id: themeId,
+    theme_name: theme?.name_zh ?? null,
   }
 }
 
-async function changePermMode(mode: PermissionMode) {
-  if (permUserId.value === null) return
-  error.value = null
-  try {
-    await updatePermissionMode(permUserId.value, mode)
-    permMode.value = mode
-    const idx = auth.users.findIndex((u) => u.id === permUserId.value)
-    if (idx >= 0) {
-      const current = auth.users[idx]
-      auth.users[idx] = { ...current, permission_mode: mode }
-    }
-    message.value =
-      mode === 'whitelist'
-        ? '已切换为白名单模式（仅允许记录可访问）'
-        : '已切换为开放模式（无拒绝记录即可访问）'
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '切换模式失败'
+function onPermDialogUpdated(userId: number, mode: string) {
+  const idx = auth.users.findIndex((u) => u.id === userId)
+  if (idx >= 0) {
+    auth.users[idx] = { ...auth.users[idx], permission_mode: mode }
   }
-}
-
-async function addPermission() {
-  if (permUserId.value === null) return
-  const rid = newPermId.value.trim()
-  if (!rid) {
-    error.value = '请输入资源 ID'
-    return
-  }
-  error.value = null
-  try {
-    const newPerm: PermissionItemInput = {
-      resource_type: newPermType.value,
-      resource_id: rid,
-      permission: newPermValue.value,
-    }
-    const existing = permRecords.value.map((r) => ({
-      resource_type: r.resource_type as ResourceType,
-      resource_id: r.resource_id,
-      permission: r.permission as PermissionValue,
-    }))
-    const result = await setUserPermissions(permUserId.value, [...existing, newPerm])
-    permRecords.value = result
-    newPermId.value = ''
-    message.value = '权限已添加'
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '添加权限失败'
-  }
-}
-
-async function removePermission(permissionId: number) {
-  if (permUserId.value === null) return
-  error.value = null
-  try {
-    await deletePermission(permUserId.value, permissionId)
-    permRecords.value = permRecords.value.filter((r) => r.id !== permissionId)
-    message.value = '权限已删除'
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '删除权限失败'
-  }
+  message.value = '用户权限已更新'
 }
 </script>
 
@@ -325,6 +280,12 @@ async function removePermission(permissionId: number) {
             { label: '演示', value: 'demo' },
           ]"
         />
+        <AppSelect
+          v-if="themeSelectOptions.length"
+          :model-value="newThemeId != null ? String(newThemeId) : ''"
+          :options="themeSelectOptions"
+          @change="(val) => (newThemeId = Number(val))"
+        />
         <button type="button" class="primary-btn" @click="createAccount">创建用户</button>
       </div>
 
@@ -334,7 +295,9 @@ async function removePermission(permissionId: number) {
           <tr>
             <th>用户名</th>
             <th>角色</th>
+            <th>主题</th>
             <th>状态</th>
+            <th>权限模式</th>
             <th>操作</th>
           </tr>
         </thead>
@@ -354,6 +317,15 @@ async function removePermission(permissionId: number) {
               />
             </td>
             <td>
+              <AppSelect
+                v-if="themeSelectOptions.length"
+                :model-value="u.theme_id != null ? String(u.theme_id) : ''"
+                :options="themeSelectOptions"
+                @change="(val) => changeTheme(u.id, String(val))"
+              />
+              <span v-else>—</span>
+            </td>
+            <td>
               <label class="enabled-toggle">
                 <input
                   type="checkbox"
@@ -364,15 +336,20 @@ async function removePermission(permissionId: number) {
                 {{ u.enabled ? '启用' : '禁用' }}
               </label>
             </td>
+            <td class="mode-cell">
+              <span :class="['mode-pill', `mode-pill--${u.permission_mode || 'open'}`]">
+                {{ u.permission_mode === 'whitelist' ? '白名单' : '开放' }}
+              </span>
+            </td>
             <td class="action-cell">
               <button
-                v-if="u.role !== 'admin' && u.id !== auth.user?.id"
                 type="button"
                 class="secondary-btn perm-btn"
-                :class="{ active: permUserId === u.id }"
-                @click="togglePermPanel(u.id, u.username)"
+                @click="
+                  openPermDialog(u.id, u.username, u.role, u.permission_mode, u.theme_id)
+                "
               >
-                权限
+                权限覆盖
               </button>
               <button
                 v-if="u.id !== auth.user?.id"
@@ -386,80 +363,16 @@ async function removePermission(permissionId: number) {
           </tr>
         </tbody>
       </table>
-
-      <!-- Phase B: Resource permissions panel -->
-      <div v-if="permUserId !== null" class="perm-panel">
-        <h4 class="perm-panel-title">资源权限 — {{ permUsername }}</h4>
-        <p class="section-hint">
-          黑名单模式（开放）：无拒绝记录即可访问；白名单模式：仅允许记录可访问。
-        </p>
-
-        <div class="perm-mode-row">
-          <span class="perm-mode-label">权限模式：</span>
-          <AppSelect
-            :model-value="permMode"
-            :options="[
-              { label: '开放（黑名单）', value: 'open' },
-              { label: '白名单', value: 'whitelist' },
-            ]"
-            @change="(val) => changePermMode(val as PermissionMode)"
-          />
-        </div>
-
-        <div class="perm-add-form">
-          <AppSelect
-            v-model="newPermType"
-            :options="[
-              { label: '图层', value: 'layer' },
-              { label: '工作流', value: 'workflow' },
-              { label: '数据源', value: 'data_source' },
-            ]"
-          />
-          <input
-            v-model="newPermId"
-            type="text"
-            placeholder="资源 ID（图层 ID / 工作流 ID / 路径）"
-          />
-          <AppSelect
-            v-model="newPermValue"
-            :options="[
-              { label: '允许', value: 'allow' },
-              { label: '拒绝', value: 'deny' },
-            ]"
-          />
-          <button type="button" class="primary-btn" @click="addPermission">添加</button>
-        </div>
-
-        <div v-if="permLoading" class="loading">加载权限…</div>
-        <table v-else-if="permRecords.length" class="user-table perm-table">
-          <thead>
-            <tr>
-              <th>资源类型</th>
-              <th>资源 ID</th>
-              <th>权限</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in permRecords" :key="r.id">
-              <td>{{ RESOURCE_TYPE_LABELS[r.resource_type] || r.resource_type }}</td>
-              <td class="mono">{{ r.resource_id }}</td>
-              <td>
-                <span :class="r.permission === 'allow' ? 'perm-allow' : 'perm-deny'">
-                  {{ r.permission === 'allow' ? '允许' : '拒绝' }}
-                </span>
-              </td>
-              <td>
-                <button type="button" class="danger-btn" @click="removePermission(r.id)">
-                  移除
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <p v-else class="section-hint">暂无权限记录</p>
-      </div>
     </section>
+
+    <ThemeManagerSettings v-if="auth.isAdmin" />
+
+    <UserPermissionsDialog
+      :open="permDialogUser !== null"
+      :user="permDialogUser"
+      @close="permDialogUser = null"
+      @updated="onPermDialogUpdated"
+    />
   </div>
 </template>
 
@@ -477,51 +390,51 @@ async function removePermission(permissionId: number) {
   padding: 0.75rem 0.8rem;
   border-radius: 0.65rem;
   border: 1px solid var(--success-surface);
-  background: linear-gradient(135deg, var(--success-surface), var(--accent-surface));
+  background: var(--success-surface);
+  color: var(--text-strong);
 }
 
 .account-avatar {
-  width: 2.2rem;
-  height: 2.2rem;
+  width: 2.4rem;
+  height: 2.4rem;
   border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--success);
-  background: var(--success-surface);
-  border: 1px solid var(--success-border);
-  flex: none;
+  background: var(--accent);
+  color: var(--surface-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-body);
 }
 
 .account-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
   flex: 1;
-  min-width: 0;
 }
 
 .account-name {
   margin: 0;
-  font-size: var(--font-size-caption);
-  font-weight: 600;
-  color: var(--text-strong);
+  font-weight: var(--font-weight-semibold);
 }
 
 .account-role {
-  margin: 0.12rem 0 0;
+  margin: 0;
   font-size: var(--font-size-caption);
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .logout-btn {
-  flex: none;
-  padding: 0.38rem 0.55rem;
-  border-radius: 0.35rem;
-  border: 1px solid var(--danger-border);
-  background: var(--danger-surface);
-  color: var(--danger);
-  font: inherit;
-  font-size: var(--font-size-caption);
+  padding: 0.35rem 0.9rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.45rem;
+  background: var(--surface-1);
+  color: var(--text-primary);
   cursor: pointer;
+  font-family: inherit;
+  font-size: var(--font-size-caption);
+  transition: background-color var(--motion-fast) var(--ease-soft);
 }
 
 .logout-btn:hover {
@@ -531,195 +444,205 @@ async function removePermission(permissionId: number) {
 .settings-section {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: 0.6rem;
 }
 
 .section-title {
   margin: 0;
-  font-size: var(--font-size-caption);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
   color: var(--text-strong);
 }
 
 .section-hint {
   margin: 0;
   font-size: var(--font-size-caption);
-  line-height: 1.45;
-  color: var(--text-muted);
+  color: var(--text-secondary);
+  line-height: 1.5;
 }
 
 .create-form {
   display: grid;
-  grid-template-columns: minmax(8rem, 14rem) minmax(8rem, 14rem) minmax(6rem, 8rem) auto;
-  gap: 0.4rem;
+  grid-template-columns: 1fr 1fr 10rem auto;
+  gap: 0.5rem;
   align-items: center;
+}
+
+.create-form input,
+.create-form select {
+  height: 2rem;
+  padding: 0 0.55rem;
+  border: 1px solid var(--border-default);
+  border-radius: 0.4rem;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-caption);
 }
 
 .token-form {
   grid-template-columns: 1fr auto;
 }
 
-.create-form input,
-.create-form select,
-.user-table select {
-  width: 100%;
-  padding: 0.38rem 0.45rem;
-  border: 1px solid var(--border-default);
-  border-radius: 0.35rem;
-  background: var(--surface-1);
-  color: var(--text-strong);
-  font: inherit;
-  font-size: var(--font-size-caption);
-}
-
 .primary-btn,
 .secondary-btn,
 .danger-btn {
-  padding: 0.38rem 0.55rem;
-  border-radius: 0.35rem;
-  border: 1px solid var(--border-accent);
-  background: var(--accent-surface);
-  color: var(--accent-strong);
-  font: inherit;
-  font-size: var(--font-size-caption);
+  height: 2rem;
+  padding: 0 0.9rem;
+  border-radius: 0.4rem;
   cursor: pointer;
+  font-family: inherit;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
+  transition: background-color var(--motion-fast) var(--ease-soft);
+}
+
+.primary-btn {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--surface-1);
+}
+
+.primary-btn:hover:not(:disabled) {
+  background: var(--accent-border);
+}
+
+.primary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .secondary-btn {
-  align-self: flex-start;
+  border: 1px solid var(--border-default);
+  background: var(--surface-1);
+  color: var(--text-primary);
+}
+
+.secondary-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border-accent);
+}
+
+.secondary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .danger-btn {
-  border-color: var(--danger-border);
-  background: var(--danger-surface);
-  color: var(--danger);
+  border: 1px solid var(--danger, #f87171);
+  background: var(--surface-1);
+  color: var(--danger, #f87171);
+}
+
+.danger-btn:hover:not(:disabled) {
+  background: var(--danger, #f87171);
+  color: var(--text-strong);
+}
+
+.ok {
+  margin: 0;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.4rem;
+  background: var(--success-surface);
+  color: var(--success, #4ade80);
+  font-size: var(--font-size-caption);
+}
+
+.err {
+  margin: 0;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.4rem;
+  background: rgba(248, 113, 113, 0.1);
+  color: var(--danger, #f87171);
+  font-size: var(--font-size-caption);
+}
+
+.loading {
+  padding: 0.6rem;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: var(--font-size-caption);
 }
 
 .user-table {
   width: 100%;
   border-collapse: collapse;
   font-size: var(--font-size-caption);
-  color: var(--text-primary);
 }
 
 .user-table th,
 .user-table td {
-  padding: 0.35rem 0.3rem;
+  padding: 0.4rem 0.5rem;
   border-bottom: 1px solid var(--border-subtle);
   text-align: left;
+}
+
+.user-table th {
+  color: var(--text-faint);
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.7rem;
+}
+
+.user-table td {
+  color: var(--text-primary);
+  vertical-align: middle;
 }
 
 .enabled-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.3rem;
+  cursor: pointer;
 }
 
-.ok {
+.enabled-toggle input[type='checkbox'] {
   margin: 0;
-  color: var(--success);
-  font-size: var(--font-size-caption);
+}
+
+.action-cell {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.perm-btn {
+  background: var(--accent-surface);
+  color: var(--accent);
+  border-color: var(--border-accent);
+}
+
+.perm-btn:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--text-strong);
+}
+
+.mode-cell {
+  color: var(--text-secondary);
+}
+
+.mode-pill {
+  display: inline-block;
+  padding: 0.08rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: var(--font-weight-medium);
+  border: 1px solid currentColor;
+}
+
+.mode-pill--open {
+  color: var(--text-secondary);
+  background: var(--surface-1);
+}
+
+.mode-pill--whitelist {
+  color: var(--accent);
+  background: var(--accent-surface);
 }
 
 .token-plain {
+  font-family: var(--font-mono, ui-monospace, monospace);
   word-break: break-all;
-}
-
-.err {
-  margin: 0;
-  color: var(--danger);
-  font-size: var(--font-size-caption);
-}
-
-.loading {
-  font-size: var(--font-size-caption);
-  color: var(--text-muted);
-}
-
-@media (max-width: 768px) {
-  .create-form {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Phase B: Resource permissions panel */
-.action-cell {
-  display: flex;
-  gap: 0.3rem;
-}
-
-.perm-btn.active {
-  border-color: var(--accent-strong);
-  background: var(--accent-strong);
-  color: var(--surface-1);
-}
-
-.perm-panel {
-  margin-top: 0.6rem;
-  padding: 0.6rem 0.7rem;
-  border: 1px solid var(--border-default);
-  border-radius: 0.5rem;
-  background: var(--surface-1);
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.perm-panel-title {
-  margin: 0;
-  font-size: var(--font-size-caption);
-  font-weight: 600;
-  color: var(--text-strong);
-}
-
-.perm-mode-row {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.perm-mode-label {
-  font-size: var(--font-size-caption);
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.perm-add-form {
-  display: grid;
-  grid-template-columns: minmax(5rem, 7rem) 1fr minmax(4rem, 6rem) auto;
-  gap: 0.35rem;
-  align-items: center;
-}
-
-.perm-add-form input {
-  width: 100%;
-  padding: 0.38rem 0.45rem;
-  border: 1px solid var(--border-default);
-  border-radius: 0.35rem;
-  background: var(--surface-1);
-  color: var(--text-strong);
-  font: inherit;
-  font-size: var(--font-size-caption);
-}
-
-.perm-table .mono {
-  font-family: var(--font-mono);
-  font-size: 0.8em;
-  word-break: break-all;
-}
-
-.perm-allow {
-  color: var(--success);
-  font-weight: 600;
-}
-
-.perm-deny {
-  color: var(--danger);
-  font-weight: 600;
-}
-
-@media (max-width: 768px) {
-  .perm-add-form {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

@@ -339,6 +339,13 @@ export function createMeasureModule(options: CreateMeasureModuleOptions): Measur
       if (map.doubleClickZoom) map.doubleClickZoom.enable()
       if (map.boxZoom) map.boxZoom.enable()
       canvas.hide()
+      // 用户报障 2026-08-22：测量未双击确认就切换模式时，预览虚线
+      // （最后落点 → 最后 hover 点）残留在地图上且缩放/移动不消失。
+      // 切走时清 hoverPoint 并同步 GeoJSON。
+      if (options.getMeasureState().hoverPoint) {
+        options.setHoverPoint(null)
+        syncAll()
+      }
     }
   }
 

@@ -28,6 +28,14 @@
   flex: none;
 }
 
+.brand-logo-img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  border-radius: 6px;
+  flex: none;
+}
+
 /* 品牌 Logo 由 BrandMark.vue 组件渲染（自带深空底与辉光） */
 
 .brand-copy {
@@ -95,7 +103,7 @@
   padding: 0 4px;
   border-radius: var(--radius-pill);
   background: var(--danger);
-  color: #fff8f5;
+  color: var(--text-strong);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-bold);
   line-height: 1;
@@ -178,55 +186,7 @@
   outline-offset: 2px;
 }
 
-/* 2D/3D 切换按钮 */
-.dim-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  height: 24px;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--border-accent);
-  background: var(--accent-surface);
-  color: var(--accent);
-  font-size: var(--font-size-caption);
-  font-weight: var(--font-weight-medium);
-  font-family: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background-color var(--motion-fast) var(--ease-soft),
-    border-color var(--motion-fast) var(--ease-soft),
-    color var(--motion-fast) var(--ease-soft),
-    box-shadow var(--motion-fast) var(--ease-soft);
-}
-
-.dim-toggle:hover {
-  background: var(--accent);
-  color: var(--surface-base);
-  box-shadow: var(--elevation-1);
-}
-
-.dim-toggle:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.dim-toggle--3d {
-  color: var(--accent-warm);
-  border-color: var(--accent-warm-border);
-  background: var(--accent-warm-surface);
-}
-
-.dim-toggle--3d:hover {
-  background: var(--accent-warm);
-  color: var(--surface-base);
-}
-
-.dim-icon {
-  flex: none;
-  line-height: 1;
-}
+/* 2D/3D 视图切换 — 已迁移至 SegmentedControl（.dim-seg），交互态由组件自身提供 */
 
 /* Chip 在 ModeToolbar 中的定制 */
 :deep([data-ui='chip']) {
@@ -265,8 +225,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .source-btn,
-  .dim-toggle {
+  .source-btn {
     transition: none;
   }
 }

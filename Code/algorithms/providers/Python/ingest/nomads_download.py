@@ -20,11 +20,16 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ingest._http_resume import check_disk_space, format_size
 
 logger = logging.getLogger(__name__)
+
+# multi_file: (current, total, downloaded_bytes[, item_name])
+MultiFileProgressCb = Callable[[int, int, int, str | None], None] | None
+# byte_stream: (downloaded, total_bytes)
+ByteStreamProgressCb = Callable[[int, int], None] | None
 
 MIN_DISK_FREE_GB = 5.0
 _VALID_USE = frozenset({"auto", "herbie", "legacy"})
@@ -107,7 +112,11 @@ def download_via_herbie(
     target_dir: Path,
     overwrite: bool,
 ) -> Path:
-    """主路径：herbie 物化单个 GRIB2（或字段子集），返回本地路径。"""
+    """主路径：herbie 物化单个 GRIB2（或字段子集），返回本地路径。
+
+    默认源全部失败时（如 RDA 无 .idx 或网络不可达），回退 ``use='aws'``
+    重试一次——AWS Open Data 源提供完整 index 且全球可达。
+    """
     if not _HAS_HERBIE:
         raise RuntimeError(
             "herbie is not installed; run pip install herbie-data or switch "
@@ -118,22 +127,40 @@ def download_via_herbie(
         kwargs["product"] = product.strip()
     if member.strip():
         kwargs["member"] = member.strip()
-    h = Herbie(
-        date=cycle.strftime("%Y-%m-%d %H:%M"),
-        model=model.strip(),
-        fxx=int(fxx),
-        save_dir=target_dir,
-        overwrite=overwrite,
-        verbose=False,
-        **kwargs,
-    )
     search = search_string.strip() or None
-    return h.download(searchString=search, errors="raise")
+    try:
+        h = Herbie(
+            date=cycle.strftime("%Y-%m-%d %H:%M"),
+            model=model.strip(),
+            fxx=int(fxx),
+            save_dir=target_dir,
+            overwrite=overwrite,
+            verbose=False,
+            **kwargs,
+        )
+        return h.download(searchString=search, errors="raise")
+    except Exception as first_err:  # noqa: BLE001 — 默认源失败回退 AWS
+        logger.warning(
+            "NOMADS herbie 默认源失败（%s），回退 use='aws' 重试", first_err
+        )
+        h = Herbie(
+            date=cycle.strftime("%Y-%m-%d %H:%M"),
+            model=model.strip(),
+            fxx=int(fxx),
+            save_dir=target_dir,
+            overwrite=overwrite,
+            verbose=False,
+            use="aws",
+            **kwargs,
+        )
+        return h.download(searchString=search, errors="raise")
 
 
 def download_via_legacy(
     url: str,
     target: Path,
+    *,
+    progress_callback: ByteStreamProgressCb = None,
 ) -> int:
     """回退路径：共享续传工具下载直链，返回文件字节数。"""
     import requests
@@ -141,7 +168,7 @@ def download_via_legacy(
     from ingest._http_resume import download_with_retry
 
     session = requests.Session()
-    if not download_with_retry(session, url, target):
+    if not download_with_retry(session, url, target, progress_callback=progress_callback):
         raise RuntimeError(f"NOMADS legacy download failed: {url}")
     return target.stat().st_size if target.exists() else 0
 
@@ -186,6 +213,8 @@ def download_nomads_grib(
     legacy_url: str = "",
     overwrite: bool = False,
     min_disk_free_gb: float = MIN_DISK_FREE_GB,
+    progress_callback: MultiFileProgressCb = None,
+    byte_stream_callback: ByteStreamProgressCb = None,
 ) -> NomadsDownloadResult:
     """下载 NOMADS GRIB2 文件（member × fxx 笛卡尔积）到 ``target_dir``。
 
@@ -236,7 +265,15 @@ def download_nomads_grib(
                 "nomads_download: use='legacy' requires legacy_url template "
                 "(full GRIB2 or cgi-bin filter direct link)"
             )
-        _run_legacy(legacy_url, cycle, fxx_list, target_path, result)
+        _run_legacy(
+            legacy_url,
+            cycle,
+            fxx_list,
+            target_path,
+            result,
+            progress_callback=progress_callback,
+            byte_stream_callback=byte_stream_callback,
+        )
     else:
         if use_mode == "herbie" and not _HAS_HERBIE:
             raise RuntimeError(
@@ -251,7 +288,15 @@ def download_nomads_grib(
                 )
             logger.warning("未安装 herbie，auto 回退 NOMADS 直连（无字段子集过滤）。")
             result.use = "legacy"
-            _run_legacy(legacy_url, cycle, fxx_list, target_path, result)
+            _run_legacy(
+                legacy_url,
+                cycle,
+                fxx_list,
+                target_path,
+                result,
+                progress_callback=progress_callback,
+                byte_stream_callback=byte_stream_callback,
+            )
         else:
             _run_herbie(
                 cycle,
@@ -263,6 +308,7 @@ def download_nomads_grib(
                 target_path=target_path,
                 overwrite=overwrite,
                 result=result,
+                progress_callback=progress_callback,
             )
 
     return result
@@ -297,9 +343,14 @@ def _run_herbie(
     target_path: Path,
     overwrite: bool,
     result: NomadsDownloadResult,
+    progress_callback: MultiFileProgressCb = None,
 ) -> None:
+    total = len(member_list) * len(fxx_list)
+    idx = 0
+    downloaded_bytes = 0
     for member in member_list:
         for fxx in fxx_list:
+            idx += 1
             label = f"model={model} member={member or '-'} fxx={fxx:03d}"
             try:
                 logger.info("NOMADS herbie 下载: %s", label)
@@ -325,6 +376,11 @@ def _run_herbie(
                 )
                 result.downloaded += 1
                 result.downloaded_bytes += size
+                downloaded_bytes += size
+                if progress_callback is not None:
+                    progress_callback(
+                        idx, total, downloaded_bytes, Path(local).name
+                    )
                 logger.info(
                     "NOMADS herbie 完成: %s (%s)", Path(local).name, format_size(size)
                 )
@@ -340,8 +396,13 @@ def _run_legacy(
     fxx_list: list[int],
     target_path: Path,
     result: NomadsDownloadResult,
+    *,
+    progress_callback: MultiFileProgressCb = None,
+    byte_stream_callback: ByteStreamProgressCb = None,
 ) -> None:
-    for fxx in fxx_list:
+    total = len(fxx_list)
+    downloaded_bytes = 0
+    for i, fxx in enumerate(fxx_list, start=1):
         url = expand_url_template(legacy_url, cycle, fxx)
         name = url.rstrip("/").split("?")[0].split("/")[-1] or f"nomads_f{fxx:03d}"
         if not Path(name).suffix:
@@ -349,12 +410,17 @@ def _run_legacy(
         target = target_path / name
         try:
             logger.info("NOMADS legacy 下载: %s -> %s", url, target)
-            size = download_via_legacy(url, target)
+            size = download_via_legacy(
+                url, target, progress_callback=byte_stream_callback
+            )
             result.files.append(
                 NomadsFile(name=name, path=str(target), size_bytes=size, fxx=fxx)
             )
             result.downloaded += 1
             result.downloaded_bytes += size
+            downloaded_bytes += size
+            if progress_callback is not None:
+                progress_callback(i, total, downloaded_bytes, name)
         except Exception as exc:  # noqa: BLE001
             result.failed += 1
             result.errors.append(f"fxx={fxx:03d}: {exc}")

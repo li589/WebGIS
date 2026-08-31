@@ -7,7 +7,7 @@
 import { ref } from 'vue'
 import type { DrawFeature } from '../stores/draw-store'
 import { useDrawStore } from '../stores/draw-store'
-import { useLayersStore } from '../stores/layers'
+import { useLayerWorkspace } from '../stores/layers/selectors'
 import { importVectorMultipart } from '../data-manager/core/api'
 
 export interface DrawValidationIssue {
@@ -64,7 +64,7 @@ export function validateDrawFeatures(features: DrawFeature[]): DrawValidationIss
 
 export function useDrawSave() {
   const drawStore = useDrawStore()
-  const layersStore = useLayersStore()
+  const layersStore = useLayerWorkspace()
   const isSaving = ref(false)
 
   /** 先清草稿再移除草稿层：避免孤儿草稿安全网在保存流程中误触发退出绘制模式 */

@@ -11,9 +11,10 @@
  * - 当前时间轴段的 state === 'fetchable' 时触发
  * - 用户拖动时间轴（非播放状态）时触发；播放中不自动获取
  */
-import { computed, watch, type ComputedRef, type Ref } from 'vue'
+import { computed, onScopeDispose, watch, type ComputedRef, type Ref } from 'vue'
 import type { TimelineAvailabilitySegment } from '../../utils/layer-timeline'
 import { useOnlineTemporalOrchestrator } from '../../stores/layers/online-temporal-orchestrator'
+import { syncLayerAssetOnline } from '../../services/runtime-api'
 import type { useLayerWorkspace, useWorkflowRun } from '../../stores/layers/selectors'
 import type { JobLayerItem } from '../../stores/layers/types'
 
@@ -26,6 +27,8 @@ interface OnlineTemporalIntegrationDeps {
   activeLayerGranularity: ComputedRef<string>
   timelineSegments: ComputedRef<TimelineAvailabilitySegment[]>
   isPlaying: Ref<boolean>
+  /** 顶栏确认卡打开时为 true：暂停 auto-fetch，避免与确认重跑抢跑 */
+  pauseAutoFetch?: Ref<boolean> | ComputedRef<boolean>
   logOperation: (tag: string, message: string) => void
 }
 
@@ -34,6 +37,11 @@ export function useOnlineTemporalIntegration(deps: OnlineTemporalIntegrationDeps
     getOnlineTemporalConfig: (catalogId) => deps.workspace.getOnlineTemporalConfig(catalogId),
     runWorkflowForCatalog: (catalogId, options) =>
       deps.workflowRun.runWorkflowForCatalog(catalogId, options),
+    // P2：优先走后端统一在线同步入口（去重/队列/预算语义后端承担），
+    // 不可用时编排器自动回退 runWorkflowForCatalog 直提路径。
+    syncLayerAssetOnline: (catalogId, body) => syncLayerAssetOnline(catalogId, body),
+    registerExternalWorkflowRun: (runId, catalogIdHint) =>
+      deps.workflowRun.registerExternalWorkflowRun(runId, catalogIdHint),
     selectedCatalogId: deps.selectedCatalogId,
     currentDate: deps.currentDate,
     currentHour: deps.currentHour,
@@ -69,6 +77,7 @@ export function useOnlineTemporalIntegration(deps: OnlineTemporalIntegrationDeps
   /** 当前段是否为 fetchable 且尚未触发获取 */
   const shouldAutoFetch = computed(() => {
     if (deps.isPlaying.value) return false
+    if (deps.pauseAutoFetch?.value) return false
     if (!orchestrator.currentLayerSupportsOnline.value) return false
     const seg = currentSegment.value
     if (!seg || seg.state !== 'fetchable') return false
@@ -87,6 +96,7 @@ export function useOnlineTemporalIntegration(deps: OnlineTemporalIntegrationDeps
     // 延迟 300ms 触发，避免快速拖动时频繁提交
     setTimeout(() => {
       if (!shouldAutoFetch.value) return
+      if (deps.pauseAutoFetch?.value) return
       void orchestrator.triggerOnlineFetch(catalogId, timeKey)
     }, 300)
   })
@@ -147,7 +157,16 @@ export function useOnlineTemporalIntegration(deps: OnlineTemporalIntegrationDeps
         cleanupTimer = null
       }
     },
+    // immediate：工作区快照恢复场景挂载时选中层已支持在线获取，定时器须立即启动
+    { immediate: true },
   )
+  // 路由离开仪表盘时清掉闭包里的 interval（watcher 随组件销毁但 interval 不会）
+  onScopeDispose(() => {
+    if (cleanupTimer) {
+      clearInterval(cleanupTimer)
+      cleanupTimer = null
+    }
+  })
 
   return {
     orchestrator,

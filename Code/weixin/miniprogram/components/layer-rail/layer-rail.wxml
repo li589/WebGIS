@@ -1,0 +1,15 @@
+<view class="rail">
+  <view
+    wx:for="{{categories}}"
+    wx:key="id"
+    class="rail-item {{activeId === item.id ? 'active' : ''}}"
+    style="{{activeId === item.id ? 'background:' + item.chipTone + ';' : ''}}"
+    data-id="{{item.id}}"
+    data-name="{{item.name}}"
+    bindtap="onTap"
+    hover-class="rail-hover"
+  >
+    <view class="rail-icon" style="color: {{item.accentColor}};">{{item.icon}}</view>
+    <view class="rail-badge" wx:if="{{item.count < 100}}">{{item.count}}</view>
+  </view>
+</view>

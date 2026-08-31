@@ -532,9 +532,16 @@ h2 {
   display: flex;
   align-items: center;
   gap: 0.35rem;
+  width: 100%;
   min-width: 0;
 }
 
+.weather-src-label .app-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.weather-src-label .app-select-wrap,
 .weather-src-select {
   flex: 1;
   min-width: 0;
@@ -542,8 +549,8 @@ h2 {
   padding: 0.18rem 0.32rem;
   border-radius: 6px;
   border: 1px solid var(--surface-hover);
-  background: var(--surface-sunken);
-  color: inherit;
+  background: var(--surface-1);
+  color: var(--text-primary);
 }
 
 .src-sparse-hint {
@@ -749,12 +756,59 @@ h2 {
   align-items: center;
   padding: 0.1rem 0.36rem;
   border-radius: 0.24rem;
-  background: rgba(59, 130, 246, 0.12);
-  border: 1px solid rgba(59, 130, 246, 0.3);
-  color: rgb(96, 165, 250);
+  background: var(--category-weather-surface);
+  border: 1px solid var(--category-weather-border);
+  color: var(--category-weather);
   font-size: var(--font-size-caption);
   font-weight: 500;
   white-space: nowrap;
+}
+
+.source-route-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.36rem;
+  border-radius: 0.24rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-2, var(--surface-sunken));
+  color: var(--text-secondary);
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  font: inherit;
+}
+.source-route-badge:hover {
+  background: var(--surface-hover, var(--surface-2));
+}
+.source-route-auto {
+  border-color: var(--accent-border, var(--border-strong));
+  background: var(--accent-surface, var(--surface-2));
+  color: var(--accent-strong, var(--text-strong));
+}
+.source-route-online {
+  background: var(--category-weather-surface);
+  border-color: var(--category-weather-border);
+  color: var(--category-weather);
+}
+
+.plan-pending-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.36rem;
+  border-radius: 0.24rem;
+  border: 1px solid var(--accent-border, var(--border-strong));
+  background: var(--accent-surface, var(--surface-2));
+  color: var(--accent-strong, var(--text-strong));
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  font: inherit;
+}
+
+.plan-pending-badge:hover {
+  background: var(--surface-hover, var(--surface-2));
 }
 
 .add-btn {
@@ -906,7 +960,7 @@ h2 {
   gap: 0.18rem;
   padding: 0.3rem 0.42rem;
   border: 1px solid var(--border-strong);
-  border-left: 3px solid var(--accent, #67d4ff);
+  border-left: 3px solid var(--accent);
   border-radius: var(--sidebar-soft-radius);
   background: var(--surface-1);
   color: var(--text-primary);
@@ -1030,6 +1084,35 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 组状态四态配色（纯样式，不动 ActiveRunLayerGroup 状态机）：
+   computing 蓝 / ready 绿 / failed 红 / cancelled 灰（回落基础样式）。 */
+.group-status-chip--computing {
+  color: var(--info, var(--accent));
+  background: var(--info-surface, transparent);
+  border-radius: 999px;
+  padding: 0 0.42rem;
+}
+
+.group-status-chip--ready {
+  color: var(--success);
+  background: var(--success-surface);
+  border-radius: 999px;
+  padding: 0 0.42rem;
+}
+
+.group-status-chip--failed {
+  color: var(--danger);
+  background: var(--danger-surface);
+  border-radius: 999px;
+  padding: 0 0.42rem;
+}
+
+.group-status-chip--cancelled {
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 0 0.42rem;
 }
 
 .group-progress-track {
@@ -1217,12 +1300,25 @@ h2 {
 /* ── Layer row bottom (底行状态信息) ────────────────────────────────────── */
 .layer-row-bottom {
   --layer-meta-size: 0.72rem;
+  position: relative; /* 单位徽标绝对居中的定位基准 */
   display: flex;
   align-items: center;
   gap: 0.3rem;
   flex-wrap: wrap;
   padding-top: 0.16rem;
   border-top: 1px solid var(--border-subtle);
+}
+
+/* 单位（2026-08-25 UX 简化：从图例行挪入状态行）——相对整个图层条
+   水平居中（left:50% 位移），不随左右徽标挤压漂移。 */
+.layer-metric-unit {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--text-muted);
+  font-size: var(--layer-meta-size);
+  letter-spacing: 0.02em;
+  pointer-events: none; /* 不遮挡左右交互元素 */
 }
 
 .availability-chip {
@@ -1247,6 +1343,45 @@ h2 {
   color: var(--accent-warm);
   border-color: var(--border-violet-tint);
   background: var(--surface-violet-tint);
+}
+
+/* ── 统一数据状态徽标（2026-08-25 UX 简化：三源归并五态） ──────────────
+   运行中（蓝）/排队中（灰）/异常（红）/完成（绿）/旧数据（橙，暖色提示
+   非故障）。替代 availability-chip + lifecycle-badge + job-status-badge
+   三枚堆叠。 */
+.data-status-badge {
+  padding: 0.06rem 0.3rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-default);
+  background: var(--border-subtle);
+  font-size: var(--layer-meta-size);
+  font-weight: 600;
+}
+
+.data-status-running {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-surface);
+}
+.data-status-queued {
+  color: var(--text-secondary);
+  border-color: var(--border-default);
+  background: var(--surface-hover);
+}
+.data-status-error {
+  color: var(--danger, #e5484d);
+  border-color: var(--danger-border, rgba(229, 72, 77, 0.4));
+  background: var(--danger-surface, rgba(229, 72, 77, 0.12));
+}
+.data-status-done {
+  color: var(--success);
+  border-color: var(--success-border);
+  background: var(--success-surface);
+}
+.data-status-stale {
+  color: var(--accent-warm);
+  border-color: var(--warning-border);
+  background: var(--warning-surface);
 }
 
 .order-hint {
@@ -1524,4 +1659,169 @@ h2 {
 .active-layers-scroll::-webkit-scrollbar-thumb:hover,
 .layer-sidebar-container::-webkit-scrollbar-thumb:hover {
   background: var(--border-strong);
+}
+
+/* ── 图层平台子系统 P1：侧栏生命周期徽标 ────────────────────────────────── */
+.lifecycle-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.36rem;
+  border-radius: 0.24rem;
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+}
+
+.lifecycle-badge-fresh {
+  color: var(--status-success, #3fb27f);
+  border-color: color-mix(in srgb, var(--status-success, #3fb27f) 40%, transparent);
+  background: color-mix(in srgb, var(--status-success, #3fb27f) 12%, transparent);
+}
+
+.lifecycle-badge-stale,
+.lifecycle-badge-missing {
+  color: var(--status-warning, #d9a441);
+  border-color: color-mix(in srgb, var(--status-warning, #d9a441) 40%, transparent);
+  background: color-mix(in srgb, var(--status-warning, #d9a441) 12%, transparent);
+}
+
+.lifecycle-badge-updating {
+  color: var(--accent, #5ad5ff);
+  border-color: color-mix(in srgb, var(--accent, #5ad5ff) 40%, transparent);
+  background: color-mix(in srgb, var(--accent, #5ad5ff) 12%, transparent);
+}
+
+.lifecycle-badge-failed {
+  color: var(--status-danger, #e85d5d);
+  border-color: color-mix(in srgb, var(--status-danger, #e85d5d) 40%, transparent);
+  background: color-mix(in srgb, var(--status-danger, #e85d5d) 12%, transparent);
+}
+
+/* ── 课题组模板区（图层平台子系统 P2-1） ─────────────────────────────── */
+.template-section {
+  margin: 6px 0 10px;
+  padding: 8px;
+  border: 1px solid var(--accent-border, rgba(120, 160, 255, 0.25));
+  border-radius: 10px;
+  background: var(--surface-2, rgba(255, 255, 255, 0.03));
+}
+
+.template-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 8px;
+  font-size: 11px;
+  color: var(--text-secondary, #9aa4b2);
+  letter-spacing: 0.05em;
+}
+
+.template-section-icon {
+  font-size: 12px;
+}
+
+.template-section-title {
+  font-weight: 600;
+}
+
+.template-section-count {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--surface-3, rgba(255, 255, 255, 0.06));
+  font-size: 10px;
+}
+
+.template-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--surface-1, rgba(0, 0, 0, 0.12));
+  transition: background 0.15s ease;
+}
+
+.template-card + .template-card {
+  margin-top: 6px;
+}
+
+.template-card:hover {
+  background: var(--surface-3, rgba(255, 255, 255, 0.06));
+}
+
+.template-card-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.template-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.template-card-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary, #e6e9ef);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.template-card-engine {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  color: var(--text-secondary, #9aa4b2);
+  background: var(--surface-3, rgba(255, 255, 255, 0.06));
+}
+
+.template-card-desc {
+  margin: 3px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary, #9aa4b2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.template-card-meta {
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--accent, #7ea2f4);
+}
+
+.template-card-linked.none {
+  color: var(--text-secondary, #9aa4b2);
+  opacity: 0.7;
+}
+
+.template-run-btn {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--accent-border, rgba(120, 160, 255, 0.35));
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent, #7ea2f4);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.template-run-btn:hover:not(:disabled) {
+  background: var(--accent-surface, rgba(126, 162, 244, 0.12));
+}
+
+.template-run-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }

@@ -171,6 +171,7 @@ _write_limiter = RateLimiter(
 )
 
 # 需限流的写路径前缀（含 workflow 提交/取消/重试，防容量池滥用）
+# P3 补齐：/workspace（PUT 布局持久化）、/analysis（POST 提交分析）此前漏限流
 _WRITE_LIMITED_PREFIXES = (
     "/config",
     "/import",
@@ -179,6 +180,8 @@ _WRITE_LIMITED_PREFIXES = (
     "/runtime",
     "/workflow-timers",
     "/weather/sync",
+    "/workspace",
+    "/analysis",
 )
 _WRITE_METHODS = ("POST", "PUT", "DELETE", "PATCH")
 
@@ -195,6 +198,14 @@ _tile_limiter = RateLimiter(
     int(os.getenv("BACKEND_WEATHER_TILE_RATE_LIMIT_PER_MINUTE", "240")),
     timedelta(minutes=1),
     name="tile",
+)
+
+# 问题反馈匿名上传（/feedback/api/reports，multipart）：公开写面且无鉴权，
+# 较写接口更严（默认 5 次/分钟/IP），防灌垃圾文件占满磁盘。
+_feedback_upload_limiter = RateLimiter(
+    int(os.getenv("BACKEND_FEEDBACK_UPLOAD_RATE_LIMIT_PER_MINUTE", "5")),
+    timedelta(minutes=1),
+    name="feedback-upload",
 )
 
 
@@ -265,6 +276,67 @@ def check_weather_tile_rate_limit(ip: str) -> RateLimitResult:
     if not result.allowed:
         logger.warning(
             "天气瓦片限流触发 ip=%s retry_after=%ss",
+            ip,
+            result.retry_after_seconds,
+        )
+    return result
+
+
+def should_rate_limit_feedback_upload(path: str, method: str) -> bool:
+    """问题反馈匿名上传限流（仅 POST /feedback/api/reports 精确匹配）。"""
+    return method == "POST" and path == "/feedback/api/reports"
+
+
+def check_feedback_upload_rate_limit(ip: str) -> RateLimitResult:
+    result = _feedback_upload_limiter.check(ip)
+    if not result.allowed:
+        logger.warning(
+            "反馈上传限流触发 ip=%s retry_after=%ss",
+            ip,
+            result.retry_after_seconds,
+        )
+    return result
+
+
+# Agent chat：独立滑动窗口（默认 30/分钟/IP），与写接口限流键分离。
+_agent_chat_limiter = RateLimiter(
+    int(os.getenv("BACKEND_AGENT_CHAT_RATE_LIMIT_PER_MINUTE", "30")),
+    timedelta(minutes=1),
+    name="agent_chat",
+)
+
+# Agent models/refresh：独立限流（默认 20/分钟/IP），防外呼放大。
+_agent_models_refresh_limiter = RateLimiter(
+    int(os.getenv("BACKEND_AGENT_MODELS_REFRESH_RATE_LIMIT_PER_MINUTE", "20")),
+    timedelta(minutes=1),
+    name="agent_models_refresh",
+)
+
+
+def should_rate_limit_agent_chat(path: str, method: str) -> bool:
+    return method == "POST" and (path == "/agent/chat" or path.startswith("/agent/chat/"))
+
+
+def check_agent_chat_rate_limit(ip: str) -> RateLimitResult:
+    result = _agent_chat_limiter.check(ip)
+    if not result.allowed:
+        logger.warning(
+            "Agent chat 限流触发 ip=%s retry_after=%ss",
+            ip,
+            result.retry_after_seconds,
+        )
+    return result
+
+
+def should_rate_limit_agent_models_refresh(path: str, method: str) -> bool:
+    return method == "POST" and path.rstrip("/") == "/agent/models/refresh"
+
+
+def check_agent_models_refresh_rate_limit(ip: str) -> RateLimitResult:
+    result = _agent_models_refresh_limiter.check(ip)
+    if not result.allowed:
+        logger.warning(
+            "Agent models/refresh 限流触发 ip=%s retry_after=%ss",
             ip,
             result.retry_after_seconds,
         )

@@ -91,6 +91,44 @@ class RasterOpsTests(unittest.TestCase):
         self.assertEqual(remapped[0, 0], 1.0)
         self.assertEqual(remapped[1, 1], 2.0)
 
+    def test_parse_bbox_accepts_request_shapes(self) -> None:
+        import contracts.job  # noqa: F401
+        from contracts.runtime import RegionSpec
+        from modules._raster_ops import parse_bbox
+
+        expected = (100.0, 28.0, 102.0, 30.0)
+        # 序列 / 旧键 / request.region 的 xmin 键
+        self.assertEqual(parse_bbox([100.0, 28.0, 102.0, 30.0]), expected)
+        self.assertEqual(
+            parse_bbox(
+                {"west": 100.0, "south": 28.0, "east": 102.0, "north": 30.0}
+            ),
+            expected,
+        )
+        self.assertEqual(
+            parse_bbox(
+                {"xmin": 100.0, "ymin": 28.0, "xmax": 102.0, "ymax": 30.0}
+            ),
+            expected,
+        )
+        # RegionSpec 对象（bbox 节点 / request:region 绑定的原样传递）
+        self.assertEqual(
+            parse_bbox(
+                RegionSpec(
+                    kind="bbox",
+                    value={"xmin": 100.0, "ymin": 28.0, "xmax": 102.0, "ymax": 30.0},
+                )
+            ),
+            expected,
+        )
+        # rasterio 风格 .bounds 对象
+        bounds_obj = SimpleNamespace(bounds=(100.0, 28.0, 102.0, 30.0))
+        self.assertEqual(parse_bbox(bounds_obj), expected)
+        # global region（无 bbox 值）不得落回字符串解析并误抛
+        self.assertIsNone(parse_bbox(RegionSpec(kind="global", value={})))
+        # 字符串形态保持兼容
+        self.assertEqual(parse_bbox("100.0, 28.0, 102.0, 30.0"), expected)
+
 
 class StubModulesSmokeTests(unittest.TestCase):
     @classmethod

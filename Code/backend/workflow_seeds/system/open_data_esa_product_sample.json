@@ -3,25 +3,31 @@
     "kind": "system",
     "engine": "common",
     "name": "欧空局产品下载样例（SAFE/ZIP）",
-    "description": "目的：经 Copernicus 下载 CDN 拉取产品包并识别 Sentinel SAFE。前置：设置页 copernicus 凭证（或 BACKEND_COPERNICUS_TOKEN）。使用前替换 relative_path。产出：SAFE 根目录（若存在）或解压目录。",
+    "description": "目的：经 Copernicus CDSE OData 下载产品包并识别 Sentinel SAFE。前置：设置页 copernicus 账号密码（OIDC 换 Bearer 主路径）或 BACKEND_COPERNICUS_USERNAME/PASSWORD、BACKEND_COPERNICUS_TOKEN（静态 token 仅 ~10 min 有效）。默认对象为真实小样例：S2B L2A T43FEB 2025-06-01（约 5 MB，CDSE 目录最小产品之一），凭证就绪即可直接跑通下载→SAFE 解压；换产品时改 relative_path 为 Products(<UUID>)/$value（UUID 经 cdse_sentinel_download 检索或 CDSE 浏览器获取）。产出：SAFE 根目录（若存在）或解压目录。",
     "author": "system",
     "readonly": true,
     "is_template": true,
     "linked_layer_id": null,
-    "tags": ["sample", "download"],
+    "tags": [
+      "sample",
+      "download"
+    ],
     "category": "data_access"
   },
   "workflow_id": "open_data_esa_product_sample",
   "name": "欧空局产品下载样例（SAFE/ZIP）",
-  "description": "esa_download + copernicus 凭证 → archive_extract（SAFE 识别）。",
+  "description": "esa_download（CDSE OData $value）+ copernicus 凭证 → archive_extract（SAFE 识别）。",
   "nodes": [
     {
       "id": 1,
       "type": "download/http_open_data",
-      "pos": [100, 140],
+      "pos": [
+        100,
+        140
+      ],
       "properties": {
         "preset": "esa_download",
-        "relative_path": "REPLACE_WITH_COPERNICUS_PRODUCT_PATH",
+        "relative_path": "Products(b00c1904-32a9-46f7-99be-d279cfc40b1d)/$value",
         "cred_profile": "copernicus",
         "force_refresh": false
       }
@@ -29,31 +35,35 @@
     {
       "id": 2,
       "type": "archive/extract",
-      "pos": [420, 140],
+      "pos": [
+        420,
+        140
+      ],
       "properties": {
         "member_glob": "",
         "recurse_once": true,
         "output_dirname": "esa_extracted"
       }
-    },
-    {
-      "id": 3,
-      "type": "output/map_layer",
-      "pos": [740, 140],
-      "properties": {
-        "layer_id": "remote-sensing",
-        "title": "ESA product extract"
-      }
     }
   ],
   "links": [
-    {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "value:string"},
-    {"0": 2, "1": 2, "2": 0, "3": 3, "4": 0, "5": "value:string"}
+    {
+      "0": 1,
+      "1": 1,
+      "2": 0,
+      "3": 2,
+      "4": 0,
+      "5": "value:string"
+    }
   ],
   "extra": {
     "purpose": "open_portal_sample",
     "portal": "esa_download",
     "cred_profile": "copernicus",
-    "notes": "esa_copernicus 为目录/检索 base；实际文件下载用 esa_download。Sentinel 在线即时出图也可走 GEE 遥感反演图层。"
+    "notes": "esa_copernicus 为目录/检索 base；实际文件下载用 esa_download 的 OData Products(<UUID>)/$value（CDSE 免费账号）。默认 UUID 指向 2025-06-01 S2B L2A 最小产品（约 5 MB，冒烟友好）；换产品经 cdse_sentinel_download 的 OData $filter 检索或 CDSE 浏览器复制。下载→SAFE 解压产出文件目录，不是地图图层，故无 output/map_layer 节点；Sentinel 在线即时出图可走 GEE 遥感反演图层。",
+    "group_title": "ESA 开放数据样例",
+    "output_labels": {
+      "result": "ESA 数据样例"
+    }
   }
 }

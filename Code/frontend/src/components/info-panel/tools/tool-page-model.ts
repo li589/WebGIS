@@ -80,6 +80,12 @@ export function runDisabledReasonFor(
   return null
 }
 
+/** 禁用原因是否指向「缺少静态栅格数据」→ 卡片应附「去导入数据」引导 */
+export function needsRasterImportHint(reason: string | null | undefined): boolean {
+  if (!reason) return false
+  return reason.includes('静态栅格')
+}
+
 /** 按参数 schema 初始化表单值：default 优先，enum 无 default 取首个选项。 */
 export function initFormValues(tool: AnalysisToolDescriptor): Record<string, unknown> {
   const values: Record<string, unknown> = {}

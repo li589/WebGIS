@@ -18,10 +18,19 @@ from app.data_io.services.dbf_encoding import (
     resolve_export_encoding,
     truncate_to_encoded_bytes,
 )
-from app.data_io.services.paths import IMPORTS_DIR
+from app.data_io.services.paths import IMPORTS_DIR, safe_import_child
 from app.data_io.services.vector import load_vector_geojson
 
 BBoxDict = dict[str, Any]
+
+
+def _zip_safe_name(value: str) -> str:
+    """zip 条目名归一：剥离目录分量（含 Windows 反斜杠），防 zip-slip。
+
+    安审 2026-08-22（B-4）。
+    """
+    name = Path(str(value).replace("\\", "/")).name
+    return name or "unnamed"
 
 
 def list_export_encodings() -> list[dict[str, str]]:
@@ -60,7 +69,8 @@ def export_layer(
     ``fields``：矢量属性字段子集。
     """
     fmt = fmt.lower().strip()
-    dest = IMPORTS_DIR / layer_id
+    # 安审 2026-08-22（B-4）：先校验再判 exists，穿越尝试直接 ValueError→400
+    dest = safe_import_child(layer_id)
     if not dest.exists():
         # 非 IMPORTS_DIR 图层（prod-/ref-/dem 等注册表 overlay）走专用导出路径
         return _export_registry_overlay(
@@ -1218,7 +1228,7 @@ def _try_export_layers_batch_mat(
     payloads: list[dict[str, Any]] = []
     errors: list[str] = []
     for layer_id in layer_ids:
-        dest = IMPORTS_DIR / layer_id
+        dest = safe_import_child(layer_id)
         meta_path = dest / "meta.json"
         meta: dict[str, Any] = {}
         if meta_path.exists():
@@ -1360,9 +1370,9 @@ def export_layers_batch_zip(
                     fields=fields,
                 )
             except Exception as exc:  # noqa: BLE001 — 单图层导出失败写入 error.txt 跳过
-                zf.writestr(f"{layer_id}.error.txt", str(exc))
+                zf.writestr(f"{_zip_safe_name(layer_id)}.error.txt", str(exc))
                 continue
-            arcname = f"{layer_id}/{filename}"
+            arcname = f"{_zip_safe_name(layer_id)}/{_zip_safe_name(filename)}"
             zf.writestr(arcname, content)
 
     return {

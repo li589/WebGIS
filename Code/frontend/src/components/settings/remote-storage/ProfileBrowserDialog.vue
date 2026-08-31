@@ -20,11 +20,18 @@ const props = defineProps<{
   visible: boolean
   profile: RemoteStorageProfile | null
   initialPath?: string
+  /**
+   * 选择器模式（2026-08-25 数据源管理改版 P1）：嵌入「添加数据源」融合
+   * 对话框作目录选择器——隐藏内嵌「添加为远程数据源」区，改为
+   * 「选择当前目录」按钮回传 path-chosen。
+   */
+  picker?: boolean
 }>()
 
 const emit = defineEmits<{
   close: []
   added: [remoteSourceId: string]
+  pathChosen: [path: string]
 }>()
 
 const currentPath = ref('/')
@@ -200,6 +207,8 @@ async function addCurrentDirAsSource() {
       remote_path: currentPath.value,
       display_name: props.profile.display_name || props.profile.profile_id,
       cache_policy: 'standard',
+      access_mode: 'legacy',
+      archived: false,
     })
     addMsg.value = `已添加远程数据源「${alias}」`
     addAlias.value = ''
@@ -377,7 +386,18 @@ watch(
         </div>
 
         <div class="fb-footer">
-          <div class="fb-add">
+          <!-- picker 模式（融合对话框内嵌选择器）：选择当前目录回传 -->
+          <div v-if="picker" class="fb-add">
+            <span class="fb-add-label">当前目录：{{ currentPath }}</span>
+            <button
+              type="button"
+              class="fb-btn primary"
+              @click="emit('pathChosen', currentPath)"
+            >
+              选择此目录
+            </button>
+          </div>
+          <div v-else class="fb-add">
             <span class="fb-add-label">将当前目录添加为远程数据源：</span>
             <input
               v-model="addAlias"

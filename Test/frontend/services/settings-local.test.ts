@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  getGlobeDaylightMode,
+  isAgentCompanionEnabled,
   isMapDistributionChromeEnabled,
   loadSettingsUiLocal,
   saveSettingsUiLocal,
+  setAgentCompanionEnabled,
   setMapDistributionChromeEnabled,
 } from '@/services/settings-local'
 
@@ -44,5 +47,31 @@ describe('settings-local UI merge', () => {
     expect(isMapDistributionChromeEnabled()).toBe(true)
     saveSettingsUiLocal({ activeTab: 'general' })
     expect(isMapDistributionChromeEnabled()).toBe(true)
+  })
+
+  it('defaults globeDaylight to natural when unset', () => {
+    expect(getGlobeDaylightMode()).toBe('natural')
+  })
+
+  it('migrates legacy auto/soft to natural', () => {
+    saveSettingsUiLocal({ ...loadSettingsUiLocal(), globeDaylight: 'auto' as 'natural' })
+    expect(getGlobeDaylightMode()).toBe('natural')
+    saveSettingsUiLocal({ ...loadSettingsUiLocal(), globeDaylight: 'soft' as 'natural' })
+    expect(getGlobeDaylightMode()).toBe('natural')
+  })
+
+  it('respects explicit standard and off', () => {
+    saveSettingsUiLocal({ ...loadSettingsUiLocal(), globeDaylight: 'standard' })
+    expect(getGlobeDaylightMode()).toBe('standard')
+    saveSettingsUiLocal({ ...loadSettingsUiLocal(), globeDaylight: 'off' })
+    expect(getGlobeDaylightMode()).toBe('off')
+  })
+
+  it('defaults agent companion enabled and persists toggle', () => {
+    expect(isAgentCompanionEnabled()).toBe(true)
+    setAgentCompanionEnabled(false)
+    expect(isAgentCompanionEnabled()).toBe(false)
+    setAgentCompanionEnabled(true)
+    expect(isAgentCompanionEnabled()).toBe(true)
   })
 })

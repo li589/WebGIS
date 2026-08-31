@@ -5,8 +5,7 @@
  * Phase 4: 工作流定时器管理面板（编辑器主区主从布局）。
  * Cron / 日期模板墙钟语义为 Asia/Shanghai；API 存 UTC ISO。
  */
-import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
 import { AlarmClock, X, CircleSlash, Timer, Play } from '../ui/icons'
 
 import { useWorkflowTimersStore } from '../../stores/workflow-timers'
@@ -43,8 +42,11 @@ const emit = defineEmits<{ close: [] }>()
 
 const timersStore = useWorkflowTimersStore()
 const definitionsStore = useWorkflowDefinitionsStore()
-const { timers, loading, error, lastActionTimerId } = storeToRefs(timersStore)
-const { summaries } = storeToRefs(definitionsStore)
+const timers = toRef(timersStore, 'timers')
+const loading = toRef(timersStore, 'loading')
+const error = toRef(timersStore, 'error')
+const lastActionTimerId = toRef(timersStore, 'lastActionTimerId')
+const summaries = toRef(definitionsStore, 'summaries')
 
 function loadListWidth(): number {
   try {

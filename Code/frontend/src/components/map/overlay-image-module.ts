@@ -2,6 +2,13 @@ import { ref } from 'vue'
 import { showToast } from '../../data-manager/core/workspace-store'
 import { overlaySafeWgs84Bounds } from '../../services/geo-math'
 import { buildOverlayStyleQuery } from './layer-symbology'
+import {
+  addBandedImageSources,
+  BAND_ID_INFIX,
+  needsBanding,
+  removeBandedLayers,
+  syncBandedLayerPaint,
+} from './overlay-image-bands'
 import type { ImageSourceSpecification } from 'maplibre-gl'
 
 type MapInstance = import('maplibre-gl').Map
@@ -153,6 +160,8 @@ interface LoadedOverlay {
   /** image = overview PNG; raster-xyz = zoom-aware tiles */
   renderMode: 'image' | 'raster-xyz'
   supportsXyzTiles: boolean
+  /** P2-4：direct 源图层无烘焙 overview PNG → 全程 raster-xyz */
+  hasOverview: boolean
   overviewMaxZoom: number
   maxZoom: number
   tileUrlTemplate: string | null
@@ -180,6 +189,8 @@ export interface OverlayBoundsMeta {
   opacity: number
   supports_recolor: boolean
   supports_xyz_tiles: boolean
+  /** P2-4：direct 源图层为 false（无烘焙 overview PNG） */
+  has_overview: boolean
   overview_max_zoom: number
   maxzoom: number
   tile_url_template: string | null
@@ -212,6 +223,8 @@ export function parseOverlayBoundsMeta(raw: unknown): OverlayBoundsMeta {
   const opacity = _overlayMetaFiniteNumber(meta.opacity) ?? 0.7
   const supports_recolor = Boolean(meta.supports_recolor)
   const supports_xyz_tiles = Boolean(meta.supports_xyz_tiles)
+  // P2-4：direct 源图层无烘焙 overview PNG（缺省 true 向后兼容旧 meta）
+  const has_overview = meta.has_overview === undefined ? true : Boolean(meta.has_overview)
   const overview_max_zoom =
     _overlayMetaFiniteNumber(meta.overview_max_zoom) ?? DEFAULT_OVERVIEW_MAX_ZOOM
   const maxzoom = _overlayMetaFiniteNumber(meta.maxzoom) ?? DEFAULT_TILE_MAX_ZOOM
@@ -230,6 +243,7 @@ export function parseOverlayBoundsMeta(raw: unknown): OverlayBoundsMeta {
     opacity,
     supports_recolor,
     supports_xyz_tiles,
+    has_overview,
     overview_max_zoom,
     maxzoom,
     tile_url_template,
@@ -291,6 +305,11 @@ export function createOverlayImageModule(
   const knownOverlayIds = ref<string[]>([])
   const overlayTimeStates = ref<OverlayTimeState[]>([])
   const loadedOverlays = new Map<string, LoadedOverlay>()
+  // 安审 2026-08-21 U-2：setOverlayTime 并发版本号（按层）。时间轴 watch 无
+  // 防抖 + 播放 2s 步进 + _fetchTimedBounds 网络延迟 → 旧时间片响应后到
+  // 覆盖 currentTime/overlayTimeStates，且 linkTime 联动会把过期时间扩散
+  // 到全部联动层。取号-校验：过期请求在写回与联动前直接丢弃。
+  const overlayTimeReqSeq = new Map<string, number>()
   const loadingOverlays = new Set<string>()
   /** 加载过程中用户切换显隐时记住最新意图，避免 hide 被 in-flight load 覆盖 */
   const desiredVisibility = new Map<string, boolean>()
@@ -319,8 +338,11 @@ export function createOverlayImageModule(
     zoom: number,
     overviewMaxZoom: number,
     supportsXyz: boolean,
+    hasOverview = true,
   ): 'image' | 'raster-xyz' {
     if (!supportsXyz) return 'image'
+    // P2-4：direct 源图层无 overview PNG → 全程动态 XYZ 瓦片
+    if (!hasOverview) return 'raster-xyz'
     // hysteresis applied by caller using current mode
     return zoom <= overviewMaxZoom ? 'image' : 'raster-xyz'
   }
@@ -330,8 +352,10 @@ export function createOverlayImageModule(
     current: 'image' | 'raster-xyz',
     overviewMaxZoom: number,
     supportsXyz: boolean,
+    hasOverview = true,
   ): 'image' | 'raster-xyz' {
     if (!supportsXyz) return 'image'
+    if (!hasOverview) return 'raster-xyz'
     if (current === 'image') {
       return zoom > overviewMaxZoom + OVERVIEW_HYSTERESIS ? 'raster-xyz' : 'image'
     }
@@ -399,6 +423,8 @@ export function createOverlayImageModule(
     if (options.map.getSource(sourceId)) {
       options.map.removeSource(sourceId)
     }
+    // 条带化残留（大跨度 overlay 的 Mercator 校正层）一并清理
+    removeBandedLayers(options.map, sourceId, rasterLayerId)
   }
 
   function _boundsToCoordinates(
@@ -532,6 +558,44 @@ export function createOverlayImageModule(
     })
   }
 
+  /** 当前地图上是否存在该 overlay 的条带 layer（主 layer 应保持隐藏的信号）。 */
+  function _hasBandLayers(rasterLayerId: string): boolean {
+    const style = options.map.getStyle()
+    if (!style?.layers) return false
+    return style.layers.some((l) => l.id.startsWith(`${rasterLayerId}${BAND_ID_INFIX}`))
+  }
+
+  /**
+   * 重建条带 layer（image URL/bounds 变化后调用——条带图随主图刷新）。
+   * 主 layer 若被条带隐藏，重建后仍由条带承担渲染。
+   */
+  function _rebuildBandsIfNeeded(
+    loaded: LoadedOverlay,
+    url: string,
+    bounds: [number, number, number, number],
+  ) {
+    if (loaded.renderMode === 'raster-xyz' || !needsBanding(bounds)) {
+      removeBandedLayers(options.map, loaded.sourceId, loaded.rasterLayerId)
+      return
+    }
+    removeBandedLayers(options.map, loaded.sourceId, loaded.rasterLayerId)
+    // 重建期（图片加载是异步）先恢复主 layer 顶替显示，避免删旧条带到
+    // 新条带就绪之间出现空白窗口；addBandedImageSources 建好条带后会
+    // 重新隐藏主 layer（回顾审查 2026-08-23 发现的闪空问题）。
+    if (
+      (desiredVisibility.get(loaded.layerId) ?? true) &&
+      options.map.getLayer(loaded.rasterLayerId)
+    ) {
+      options.map.setLayoutProperty(loaded.rasterLayerId, 'visibility', 'visible')
+    }
+    void addBandedImageSources(options.map, loaded.sourceId, loaded.rasterLayerId, url, bounds, {
+      opacity: loaded.opacity,
+      extraPaint: { 'raster-resampling': 'nearest' },
+    }).catch(() => {
+      /* 重建失败：主 layer 单图渲染降级（已恢复 visible） */
+    })
+  }
+
   function _addRasterLayer(
     rasterLayerId: string,
     sourceId: string,
@@ -585,6 +649,16 @@ export function createOverlayImageModule(
     loaded.renderMode = mode
     if (loaded.bounds) {
       _ensureFootprint(layerId, loaded.bounds, visible && mode === 'image')
+      if (mode === 'image') {
+        _rebuildBandsIfNeeded(
+          loaded,
+          _previewUrl(layerId, loaded.currentTime, loaded.style),
+          loaded.bounds,
+        )
+      } else {
+        // 切到瓦片模式：清条带残留
+        removeBandedLayers(options.map, sourceId, rasterLayerId)
+      }
     }
   }
 
@@ -597,6 +671,7 @@ export function createOverlayImageModule(
         loaded.renderMode,
         loaded.overviewMaxZoom,
         loaded.supportsXyzTiles,
+        loaded.hasOverview,
       )
       if (next !== loaded.renderMode) {
         void _switchRenderMode(loaded, next)
@@ -751,7 +826,7 @@ export function createOverlayImageModule(
       const tileUrlTemplate = meta.tile_url_template ?? `/overlay-tiles/${layerId}/{z}/{x}/{y}.png`
 
       const zoom = options.map.getZoom()
-      const renderMode = _desiredMode(zoom, overviewMaxZoom, supportsXyzTiles)
+      const renderMode = _desiredMode(zoom, overviewMaxZoom, supportsXyzTiles, meta.has_overview)
       const { sourceId, rasterLayerId, footprintSourceId, footprintLayerId } = _ids(layerId)
 
       if (renderMode === 'raster-xyz' && supportsXyzTiles) {
@@ -760,9 +835,34 @@ export function createOverlayImageModule(
         _addImageSource(sourceId, url, bounds)
       }
 
+      // P3（2026-08-23）：大纬度跨度 overlay 条带化——MapLibre image source 四角
+      // 线性插值在 Mercator 高纬明显错位（纵向拉伸+偏移）；切带后带内误差 < 像素级。
+      // 初始加载（2026-08-25 柯本反馈）：条带模式下主 layer（preview 单图）先
+      // 隐藏到条带就绪——否则用户先看到南北拉伸的单图、条带完成后跳变为正常
+      // （"一开始拉伸很快恢复"闪变根因）。条带 fetch 与 MapLibre image source
+      // 下载同一 preview URL 并发，空窗与图片下载期重叠、几乎无感；条带化
+      // 失败时降级恢复主 layer（拉伸但可用，好于空白）。
+      const bandingNeeded = renderMode !== 'raster-xyz' && needsBanding(bounds)
       const visibleNow = desiredVisibility.get(layerId) ?? initiallyVisible
-      _addRasterLayer(rasterLayerId, sourceId, opacity, visibleNow)
+      _addRasterLayer(rasterLayerId, sourceId, opacity, visibleNow && !bandingNeeded)
       _ensureFootprint(layerId, bounds, visibleNow && renderMode === 'image')
+
+      if (bandingNeeded) {
+        void addBandedImageSources(options.map, sourceId, rasterLayerId, url, bounds, {
+          opacity,
+          extraPaint: { 'raster-resampling': 'nearest' },
+        }).catch(() => {
+          /* 条带化失败：恢复主 layer 单图渲染（降级——单图直贴有高纬形变但可用） */
+          if (options.map.getLayer(rasterLayerId)) {
+            const fallbackVisible = desiredVisibility.get(layerId) ?? initiallyVisible
+            options.map.setLayoutProperty(
+              rasterLayerId,
+              'visibility',
+              fallbackVisible ? 'visible' : 'none',
+            )
+          }
+        })
+      }
 
       loadedOverlays.set(layerId, {
         layerId,
@@ -774,6 +874,7 @@ export function createOverlayImageModule(
         currentTime,
         renderMode,
         supportsXyzTiles,
+        hasOverview: meta.has_overview,
         overviewMaxZoom,
         maxZoom,
         tileUrlTemplate: supportsXyzTiles ? tileUrlTemplate : null,
@@ -831,10 +932,16 @@ export function createOverlayImageModule(
 
     const visibleSet = new Set(visibleOverlayLayerIds)
 
-    // 1) 移除真正从 activeLayers 列表消失的图层（用户删除图层）
+    // 1) 移除真正从 activeLayers 列表消失的图层（用户删除图层）。
+    // 2026-08-24 地图闪现修复：先把本轮要新增的 overlay 全部加载就绪，再移除
+    // 不在 active 列表的旧 id——此前"先删后加"，静态层绑定产物 overlay 时
+    //（catalogId→imported-* id 变更）删旧是同步的、加新要等两次网络往返，
+    // 中间空窗=地图图层一闪而过；若新源加载失败则永久消失。
+    const activeSet = new Set(activeOverlayLayerIds)
+    const toRemove: string[] = []
     for (const layerId of Array.from(loadedOverlays.keys())) {
-      if (!activeOverlayLayerIds.includes(layerId)) {
-        _removeOverlay(layerId)
+      if (!activeSet.has(layerId)) {
+        toRemove.push(layerId)
       }
     }
 
@@ -866,6 +973,11 @@ export function createOverlayImageModule(
         ),
       )
     }
+
+    // 3) 新源就绪后再移除被替换/删除的旧 id（无空窗）。
+    for (const layerId of toRemove) {
+      _removeOverlay(layerId)
+    }
   }
 
   function setLinkTime(enabled: boolean) {
@@ -893,7 +1005,12 @@ export function createOverlayImageModule(
     if (!loaded) return
     if (loaded.category !== 'time-series') return
 
+    const seq = (overlayTimeReqSeq.get(layerId) ?? 0) + 1
+    overlayTimeReqSeq.set(layerId, seq)
+    const isStale = () => (overlayTimeReqSeq.get(layerId) ?? 0) !== seq
+
     const timedBounds = await _fetchTimedBounds(layerId, time)
+    if (isStale()) return // 更新的时间切换已接管，丢弃过期响应
     if (!timedBounds) {
       // 时间块被服务端过滤/重建后，旧标签可能不再可用。自动切回当前可用默认块，
       // 避免时间轴从6块收敛为5块后图层因 404 消失。
@@ -934,6 +1051,7 @@ export function createOverlayImageModule(
       if (!source) return
       const newUrl = _previewUrl(layerId, time, loaded.style)
       _applyImageSourceUpdate(source, newUrl, timedBounds)
+      if (timedBounds) _rebuildBandsIfNeeded(loaded, newUrl, timedBounds)
     }
 
     loaded.currentTime = time
@@ -949,7 +1067,7 @@ export function createOverlayImageModule(
     }
 
     // 联动其他时间序列图层（关闭本层联动标志避免递归）
-    if (linkTimeEnabled.value) {
+    if (linkTimeEnabled.value && !isStale()) {
       const others = overlayTimeStates.value.filter(
         (s) => s.layerId !== layerId && s.category === 'time-series' && s.currentTime !== time,
       )
@@ -957,6 +1075,7 @@ export function createOverlayImageModule(
         linkTimeEnabled.value = false
         try {
           for (const other of others) {
+            if (isStale()) break // 本层已有更新切换：停止扩散过期时间
             const nearest = _findNearestTime(other.timeList, time)
             if (nearest && nearest !== other.currentTime) {
               await setOverlayTime(other.layerId, nearest)
@@ -1025,11 +1144,9 @@ export function createOverlayImageModule(
         }
       | undefined
     if (!source || !loaded.bounds) return
-    _applyImageSourceUpdate(
-      source,
-      _previewUrl(layerId, loaded.currentTime, loaded.style),
-      loaded.bounds,
-    )
+    const nextUrl = _previewUrl(layerId, loaded.currentTime, loaded.style)
+    _applyImageSourceUpdate(source, nextUrl, loaded.bounds)
+    _rebuildBandsIfNeeded(loaded, nextUrl, loaded.bounds)
   }
 
   function setOverlayOpacity(layerId: string, opacity: number) {
@@ -1039,6 +1156,7 @@ export function createOverlayImageModule(
     const clamped = Math.max(0, Math.min(1, opacity))
     loaded.opacity = clamped
     options.map.setPaintProperty(loaded.rasterLayerId, 'raster-opacity', clamped)
+    syncBandedLayerPaint(options.map, loaded.rasterLayerId, { opacity: clamped })
     overlayTimeStates.value = overlayTimeStates.value.map((s) =>
       s.layerId === layerId ? { ...s, opacity: clamped } : s,
     )
@@ -1048,12 +1166,19 @@ export function createOverlayImageModule(
     desiredVisibility.set(layerId, visible)
     const loaded = loadedOverlays.get(layerId)
     if (!loaded) return
+    // 条带 layer 存在时由条带承担渲染——主 layer 必须保持隐藏，
+    // 否则与条带双份叠加（透明度视觉翻倍，回顾审查 2026-08-23 发现）
+    const hasBands = _hasBandLayers(loaded.rasterLayerId)
     if (options.map.getLayer(loaded.rasterLayerId)) {
       options.map.setLayoutProperty(
         loaded.rasterLayerId,
         'visibility',
-        visible ? 'visible' : 'none',
+        visible && !hasBands ? 'visible' : 'none',
       )
+    }
+    // 条带 layer 的可见性同步（主 layer 被条带覆盖隐藏时由条带承担渲染）
+    if (loaded.renderMode !== 'raster-xyz') {
+      syncBandedLayerPaint(options.map, loaded.rasterLayerId, { visible })
     }
     if (options.map.getLayer(loaded.footprintLayerId)) {
       options.map.setLayoutProperty(

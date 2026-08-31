@@ -49,12 +49,37 @@ _DAILY_BUNDLE_PREPARED_KEY_MAP: dict[str, tuple[str, ...]] = {
 }
 
 
+def _path_from_datasource_value(value: object) -> str | None:
+    """从 scrape 的扁平路径或 data/source 节点 payload 取本地路径。"""
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("path", "input_dir", "uri", "local_path"):
+            raw = value.get(key)
+            if isinstance(raw, str) and raw.strip():
+                return raw.strip()
+    return None
+
+
 def _resolve_bundle_datasource_selection(
     datasource_selection: dict[str, object],
 ) -> dict[str, object]:
+    """解析 daily-bundle 数据源键。
+
+    优先保留已有 required 键；否则：
+    1. 提升画布 scrape 的 alias 扁平键（``smap_daily_mat`` → ``smap_folder``）；
+    2. 再查 ``_prepared_inputs``（data_access 物化结果）。
+    """
     resolved = dict(datasource_selection)
     for target_key, dataset_names in _DAILY_BUNDLE_PREPARED_KEY_MAP.items():
-        if target_key in resolved:
+        if resolved.get(target_key):
+            continue
+        for name in dataset_names:
+            path = _path_from_datasource_value(resolved.get(name))
+            if path:
+                resolved[target_key] = path
+                break
+        if resolved.get(target_key):
             continue
         local_path = resolve_prepared_local_path(
             resolved,

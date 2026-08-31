@@ -118,19 +118,36 @@ def convert_smap_l3_directory_to_mat(
     input_dir = Path(input_dir)
     files = sorted(input_dir.glob(pattern))
     if start_time is not None or end_time is not None:
+        # 文件名解析出 naive datetime——调用方可能传 aware（如
+        # WorkflowSubmitRequest.time_range 自动转 ISO+UTC）：统一剥 tz
+        # 再比较，避免 naive/aware 混比 TypeError（2026-08-25 实测）。
+        _start = start_time.replace(tzinfo=None) if start_time is not None else None
+        _end = end_time.replace(tzinfo=None) if end_time is not None else None
         filtered_files: list[Path] = []
         for file_path in files:
             date_key = extract_date_from_smap_filename(file_path)
             file_time = datetime.strptime(date_key, "%Y%m%d")
-            if start_time is not None and file_time < start_time:
+            if _start is not None and file_time < _start:
                 continue
-            if end_time is not None and file_time > end_time:
+            if _end is not None and file_time > _end:
                 continue
             filtered_files.append(file_path)
         files = filtered_files
     if not files:
         raise FileNotFoundError(f"No SMAP HDF5 files found in {input_dir}")
     outputs: list[Path] = []
+    failed_files: list[str] = []
     for file_path in files:
-        outputs.append(convert_smap_l3_file_to_mat(file_path, output_dir, field_specs))
+        # 容错（2026-08-25）：磁盘混入损坏 HDF5（metadata checksum 错）时
+        # 跳过该文件继续转换其余——单个坏文件不应炸整条自动链；全部失败
+        # 才抛错（保留原 FileNotFoundError 语义）。
+        try:
+            outputs.append(convert_smap_l3_file_to_mat(file_path, output_dir, field_specs))
+        except Exception:
+            failed_files.append(file_path.name)
+    if failed_files and not outputs:
+        raise RuntimeError(
+            f"All {len(failed_files)} SMAP HDF5 files failed to convert: "
+            f"{failed_files[:3]}{'…' if len(failed_files) > 3 else ''}"
+        )
     return outputs

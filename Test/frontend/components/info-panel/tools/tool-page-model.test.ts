@@ -4,6 +4,7 @@ import {
   canRunTool,
   fieldHintFor,
   initFormValues,
+  needsRasterImportHint,
   numericRangeLabel,
   phaseLabelFor,
   runDisabledReasonFor,
@@ -95,6 +96,21 @@ describe('canRunTool / runDisabledReasonFor', () => {
     const ctx = { displayLayer: makeDisplayLayer(), selectedMapPoint: null, hasMapBBox: true }
     // 不在 RASTER_INPUT_TOOLS 内，也不满足 raster 条件 → 走 default 分支
     expect(canRunTool(unknown, ctx)).toBe(true)
+  })
+})
+
+describe('needsRasterImportHint', () => {
+  it('前端与后端的缺栅格文案均命中引导', () => {
+    expect(needsRasterImportHint('需要已导入的静态栅格图层')).toBe(true)
+    expect(needsRasterImportHint('天气瓦片层请先导出/导入为静态栅格后再分析')).toBe(true)
+  })
+
+  it('其他原因与空值不命中', () => {
+    expect(needsRasterImportHint('需要已导入的矢量图层')).toBe(false)
+    expect(needsRasterImportHint('当前图层类型「vector」不支持该工具')).toBe(false)
+    expect(needsRasterImportHint('')).toBe(false)
+    expect(needsRasterImportHint(null)).toBe(false)
+    expect(needsRasterImportHint(undefined)).toBe(false)
   })
 })
 

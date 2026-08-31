@@ -47,14 +47,37 @@ import contextlib
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# GDAL 可执行文件定位
+# GDAL 可执行文件定位（跨平台：Windows OSGeo4W/QGIS/conda 布局 + Linux
+# conda/PATH；env CGDA_GDAL_BIN 两平台均优先生效）
 # ---------------------------------------------------------------------------
 
-_FORCE_GDAL_BIN = r"C:\OSGeo4W\bin"
+_FORCE_GDAL_BIN = r"C:\OSGeo4W\bin"  # 仅 Windows 探测（历史 OSGeo4W 布局）
+_IS_WINDOWS = os.name == "nt"
+_GDAL_SUFFIX = ".exe" if _IS_WINDOWS else ""
+
+
+def _qgis_candidates() -> list[str]:
+    """QGIS 官方安装布局候选（仅 Windows：``C:\\Program Files\\QGIS*\\bin``）。"""
+    if not _IS_WINDOWS:
+        return []
+    import glob as _glob
+
+    roots = _glob.glob(r"C:\Program Files\QGIS*\bin") + _glob.glob(
+        r"C:\Program Files (x86)\QGIS*\bin"
+    )
+    return sorted(roots, reverse=True)
 
 
 def _resolve_gdal_bins() -> tuple[str, str, str, str, str]:
-    """定位 GDAL 可执行文件（gdal_translate / gdalbuildvrt / gdalwarp / gdalinfo）。"""
+    """定位 GDAL 可执行文件（gdal_translate / gdalbuildvrt / gdalwarp / gdalinfo）。
+
+    解析顺序（按平台）：
+    - 环境变量 ``CGDA_GDAL_BIN``（两平台均优先，指向含 GDAL CLI 的 bin 目录）
+    - Windows：历史 OSGeo4W 默认 → QGIS 官方安装目录
+      （``C:\\Program Files\\QGIS*\\bin``，取最高版本）→ conda（Library/bin）
+    - Linux/macOS：conda（``$CONDA_PREFIX/bin`` 与解释器同级 bin）
+    - PATH（``shutil.which``，两平台）
+    """
 
     def _ok(p: str | None) -> bool:
         return bool(p) and os.path.exists(p)
@@ -62,30 +85,39 @@ def _resolve_gdal_bins() -> tuple[str, str, str, str, str]:
     def _try_prefix(prefix: str) -> tuple[str, str, str, str, str] | None:
         if not prefix or not os.path.isdir(prefix):
             return None
-        t = os.path.join(prefix, "gdal_translate.exe")
-        b = os.path.join(prefix, "gdalbuildvrt.exe")
-        w = os.path.join(prefix, "gdalwarp.exe")
-        i = os.path.join(prefix, "gdalinfo.exe")
+        t = os.path.join(prefix, "gdal_translate" + _GDAL_SUFFIX)
+        b = os.path.join(prefix, "gdalbuildvrt" + _GDAL_SUFFIX)
+        w = os.path.join(prefix, "gdalwarp" + _GDAL_SUFFIX)
+        i = os.path.join(prefix, "gdalinfo" + _GDAL_SUFFIX)
         if all(map(_ok, [t, b, w, i])):
             return t, b, w, i, prefix
         return None
 
-    fb = (_FORCE_GDAL_BIN or "").strip().rstrip("/\\")
+    fb = os.environ.get("CGDA_GDAL_BIN", "").strip().rstrip("/\\")
     found = _try_prefix(fb)
     if found:
         return found
 
-    cp = os.environ.get("CONDA_PREFIX", "")
-    found = _try_prefix(os.path.join(cp, "Library", "bin"))
-    if found:
-        return found
+    if _IS_WINDOWS:
+        for prefix in (_FORCE_GDAL_BIN, *_qgis_candidates()):
+            found = _try_prefix(prefix)
+            if found:
+                return found
 
+    # conda：Windows 为 <prefix>/Library/bin；Linux 为 <prefix>/bin。
+    cp = os.environ.get("CONDA_PREFIX", "")
+    conda_candidates = [
+        os.path.join(cp, "Library", "bin"),
+        os.path.join(cp, "bin"),
+    ]
     exe = os.path.abspath(sys.executable)
-    found = _try_prefix(
-        os.path.join(os.path.dirname(os.path.dirname(exe)), "Library", "bin")
-    )
-    if found:
-        return found
+    exe_base = os.path.dirname(os.path.dirname(exe))
+    conda_candidates.append(os.path.join(exe_base, "Library", "bin"))
+    conda_candidates.append(os.path.join(exe_base, "bin"))
+    for cand in conda_candidates:
+        found = _try_prefix(cand)
+        if found:
+            return found
 
     t = shutil.which("gdal_translate") or shutil.which("gdal_translate.exe")
     b = shutil.which("gdalbuildvrt") or shutil.which("gdalbuildvrt.exe")
@@ -95,7 +127,12 @@ def _resolve_gdal_bins() -> tuple[str, str, str, str, str]:
         return t, b, w, i, os.path.dirname(t)
 
     raise FileNotFoundError(
-        "GDAL executables not found. Tried OSGeo4W, conda, and PATH."
+        "GDAL executables not found. "
+        + (
+            "Tried CGDA_GDAL_BIN, OSGeo4W, QGIS, conda and PATH."
+            if _IS_WINDOWS
+            else "Tried CGDA_GDAL_BIN, conda($CONDA_PREFIX/bin) and PATH."
+        )
     )
 
 
@@ -107,6 +144,32 @@ GDAL_INFO: str = ""
 GDAL_BIN_PREFIX: str = ""
 
 
+def _maybe_set_qgis_gdal_driver_path(bin_prefix: str) -> None:
+    """QGIS 安装的 HDF5 驱动在 ``apps/gdal/lib/gdalplugins``，须设 GDAL_DRIVER_PATH。
+
+    未设置时 gdal_translate 读 ``HDF5:"…"`` 会报
+    ``plugin gdal_HDF5.dll is not available … GDAL_DRIVER_PATH is not set``，
+    导致 fy_preprocess 全波段 SKIP、产物目录空仍「成功」。
+    已有环境变量时不覆盖（尊重用户/运维显式配置）。
+    """
+    existing = os.environ.get("GDAL_DRIVER_PATH", "").strip()
+    if existing:
+        return
+    if not bin_prefix:
+        return
+    root = os.path.dirname(os.path.abspath(bin_prefix))
+    plugins = os.path.join(root, "apps", "gdal", "lib", "gdalplugins")
+    if not os.path.isdir(plugins):
+        return
+    marker_dll = os.path.join(plugins, "gdal_HDF5.dll")
+    marker_so = os.path.join(plugins, "gdal_HDF5.so")
+    if not (os.path.exists(marker_dll) or os.path.exists(marker_so)):
+        # 无 HDF5 插件时不设（避免掩盖其它驱动缺失）
+        return
+    os.environ["GDAL_DRIVER_PATH"] = plugins
+    logger.info("GDAL_DRIVER_PATH set to QGIS plugins: %s", plugins)
+
+
 def _ensure_gdal_bins() -> None:
     """延迟解析 GDAL 可执行文件路径，仅在首次实际使用时执行。"""
     global GDAL_TRANSLATE, GDAL_BUILDVRT, GDAL_WARP, GDAL_INFO, GDAL_BIN_PREFIX
@@ -114,6 +177,7 @@ def _ensure_gdal_bins() -> None:
         return
     bins = _resolve_gdal_bins()
     GDAL_TRANSLATE, GDAL_BUILDVRT, GDAL_WARP, GDAL_INFO, GDAL_BIN_PREFIX = bins
+    _maybe_set_qgis_gdal_driver_path(GDAL_BIN_PREFIX)
 
 
 # ---------------------------------------------------------------------------
@@ -1027,8 +1091,8 @@ class FyPreprocessor:
         )
 
         # 构造日期列表
-        start = datetime.strptime(start_date, "%Y-%m-%d")
-        end = datetime.strptime(end_date, "%Y-%m-%d")
+        start = parse_fy_date(start_date)
+        end = parse_fy_date(end_date)
         date_keys = build_date_keys(start, end)
         if not date_keys:
             logger.warning("输入的时间范围无效")
@@ -1074,29 +1138,41 @@ class FyPreprocessor:
 
             if orbit_mode == "MWRID" and d_files:
                 logger.info("%s [MWRID] 文件数=%d", day, len(d_files))
-                self._merge_day(d_files, input_dir, "MWRID", output_dir, day, options)
-                processed_days.append(day)
+                if self._merge_day(
+                    d_files, input_dir, "MWRID", output_dir, day, options
+                ):
+                    processed_days.append(day)
+                else:
+                    logger.warning("%s [MWRID] 合并失败（无有效输出）", day)
             elif orbit_mode == "MWRIA" and a_files:
                 logger.info("%s [MWRIA] 文件数=%d", day, len(a_files))
-                self._merge_day(a_files, input_dir, "MWRIA", output_dir, day, options)
-                processed_days.append(day)
+                if self._merge_day(
+                    a_files, input_dir, "MWRIA", output_dir, day, options
+                ):
+                    processed_days.append(day)
+                else:
+                    logger.warning("%s [MWRIA] 合并失败（无有效输出）", day)
             elif orbit_mode == "Both":
                 if d_files:
                     logger.info("%s [MWRID] 文件数=%d", day, len(d_files))
-                    self._merge_day(
+                    if self._merge_day(
                         d_files, input_dir, "MWRID", out_mwrid, day, options
-                    )
-                    processed_days.append(day)
+                    ):
+                        processed_days.append(day)
+                    else:
+                        logger.warning("%s [MWRID] 合并失败（无有效输出）", day)
                 if a_files:
                     logger.info("%s [MWRIA] 文件数=%d", day, len(a_files))
-                    self._merge_day(
+                    if self._merge_day(
                         a_files, input_dir, "MWRIA", out_mwria, day, options
-                    )
-                    if day not in processed_days:
-                        processed_days.append(day)
+                    ):
+                        if day not in processed_days:
+                            processed_days.append(day)
+                    else:
+                        logger.warning("%s [MWRIA] 合并失败（无有效输出）", day)
 
         if not processed_days:
-            logger.warning("输入的时间范围内无数据存在")
+            logger.warning("输入的时间范围内无数据存在或全部预处理失败")
         return processed_days
 
 
@@ -1108,3 +1184,15 @@ def build_date_keys(start_time: datetime, end_time: datetime) -> list[str]:
         keys.append(current.strftime("%Y%m%d"))
         current += timedelta(days=1)
     return keys
+
+
+def parse_fy_date(value: str) -> datetime:
+    """解析 ``YYYY-MM-DD`` / ``YYYY.MM.DD`` / ``YYYYMMDD`` 日期输入。
+
+    种子 ``{YYYYMMDD}`` 占位符展开后为紧凑格式，与
+    ``fy_download._iter_date_range`` 的宽容策略保持一致。
+    """
+    v = str(value).strip()
+    if len(v) == 8 and v.isdigit():
+        return datetime.strptime(v, "%Y%m%d")
+    return datetime.strptime(v.replace(".", "-"), "%Y-%m-%d")

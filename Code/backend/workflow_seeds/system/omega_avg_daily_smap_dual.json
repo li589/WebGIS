@@ -228,6 +228,12 @@
       "VOD",
       "OMEGA"
     ],
-    "notes": "双温度方案：build_daily_bundle_for_date 内部调用 build_effective_soil_temperature_scheme(sm_ref, tsoil1, tsoil2) → Ct/TG，DDCA 用 ddca_dual_temp(tbv, tbh, tc, tg, ..., omega_value=OMEGA_AVG)。NDVI 用 DOY 气候态。模板缺失时 Python 侧回退到过顶时刻匹配。"
+    "notes": "双温度方案：build_daily_bundle_for_date 内部调用 build_effective_soil_temperature_scheme(sm_ref, tsoil1, tsoil2) → Ct/TG，DDCA 用 ddca_dual_temp(tbv, tbh, tc, tg, ..., omega_value=OMEGA_AVG)。NDVI 用 DOY 气候态。模板缺失时 Python 侧回退到过顶时刻匹配。",
+    "group_title": "SMAP 双源 ω 反演产物（平均）",
+    "output_labels": {
+      "SM": "土壤水分",
+      "VOD": "植被光学厚度",
+      "OMEGA": "反演参数 ω"
+    }
   }
 }

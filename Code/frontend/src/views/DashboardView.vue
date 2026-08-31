@@ -7,8 +7,7 @@
  *
  * 拆分历史：原 1659 行 → CSS 提取(-196) → composable 提取(-1050)
  */
-import { computed, defineAsyncComponent, onBeforeUnmount, ref } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, toRef, watch } from 'vue'
 import { Globe } from '../components/ui/icons'
 import { useDataImportFlow } from '../data-manager/core/workspace-store'
 
@@ -17,15 +16,25 @@ import InfoPanel from '../components/InfoPanel.vue'
 import LayerSidebar from '../components/LayerSidebar.vue'
 import MapCanvas from '../components/MapCanvas.vue'
 import ModeToolbar from '../components/ModeToolbar.vue'
+import TimelineActionBanner from '../components/TimelineActionBanner.vue'
+import OnlinePlanPanel from '../components/OnlinePlanPanel.vue'
 import LogPanel from '../components/toolbar/LogPanel.vue'
+import AgentCompanion from '../components/agent/AgentCompanion.vue'
 import TimelinePanel from '../components/TimelinePanel.vue'
 import TimelineScrubber from '../components/TimelineScrubber.vue'
 import WorkflowStatusPanel from '../components/workflow/WorkflowStatusPanel.vue'
 import type { TileSourceId } from '../services/api-config'
+import {
+  is3DViewExperimentalEnabled,
+  isAgentCompanionEnabled,
+  subscribe3DViewExperimental,
+  subscribeAgentCompanion,
+} from '../services/settings-local'
+import { importLazyChunk } from '../utils/lazy-chunk'
 import type { OverlayTimeState } from '../components/map/overlay-image-module'
 import { useUiStore } from '../stores/ui'
 import { useUiLoadingStore } from '../stores/ui-loading'
-import { useLayerWorkspace, useWorkflowRun } from '../stores/layers/selectors'
+import { useLayerWorkspace, useLayerLifecycle, useWorkflowRun } from '../stores/layers/selectors'
 import { syncWorkspaceOnBoot, teardownWorkspaceSync } from '../stores/layers/workspace-sync'
 import { useLogStore } from '../stores/log'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
@@ -47,11 +56,13 @@ import { useTimelineControls } from './dashboard/useTimelineControls'
 import { useFileDrop } from './dashboard/useFileDrop'
 import { useWorkflowEditorRun } from './dashboard/useWorkflowEditorRun'
 import { useOnlineTemporalIntegration } from './dashboard/useOnlineTemporalIntegration'
+import { useTimelineActionConfirm } from './dashboard/useTimelineActionConfirm'
 
 // ── Store 设置 ────────────────────────────────────────────────────────────
 const uiStore = useUiStore()
 const workspace = useLayerWorkspace()
 const workflowRun = useWorkflowRun()
+const lifecycle = useLayerLifecycle()
 const logStore = useLogStore()
 const uiLoading = useUiLoadingStore()
 const weatherTileManager = useWeatherTileManager()
@@ -61,27 +72,36 @@ const workflowOutputStore = useWorkflowOutputLayersStore()
 
 uiLoading.showImmediate('初始化地图数据...')
 void workspace.ensureRuntimeLayerCatalog().finally(() => uiLoading.hideImmediate())
-// 先完成跨设备工作区同步（远端较新时接管 localStorage），再从快照恢复图层
+// 先完成跨设备工作区同步（远端较新时接管 localStorage），再从快照恢复图层。
+// 全程开启水合保护：防止 MapCanvas 草稿恢复的早期落盘在矢量图层恢复前
+// 重写快照，把未恢复的导入图层永久抹掉（见 workspace-hydrate 注释）。
 void (async () => {
-  await syncWorkspaceOnBoot()
-  void workflowRun.restoreActiveWorkflows()
+  workflowRun.setWorkspaceHydrationGuard(true)
+  try {
+    await syncWorkspaceOnBoot()
+    await workflowRun.restoreActiveWorkflows()
+  } finally {
+    workflowRun.setWorkspaceHydrationGuard(false)
+  }
 })()
 
 // Dashboard 卸载时清理所有 429 重试定时器，防止已取消的工作流被重新提交
 onBeforeUnmount(() => {
   workflowRun.cleanupAllRetryTimers()
   teardownWorkspaceSync()
+  _unsubscribe3DView?.()
+  _unsubscribe3DView = null
+  _unsubscribeAgentCompanion?.()
+  _unsubscribeAgentCompanion = null
 })
 
-const {
-  tileSourceId,
-  currentHour,
-  currentDate,
-  hourLabel,
-  isPlaying,
-  playIntervalMs,
-  unifiedTimeLock,
-} = storeToRefs(uiStore)
+const tileSourceId = toRef(uiStore, 'tileSourceId')
+const currentHour = toRef(uiStore, 'currentHour')
+const currentDate = toRef(uiStore, 'currentDate')
+const hourLabel = toRef(uiStore, 'hourLabel')
+const isPlaying = toRef(uiStore, 'isPlaying')
+const playIntervalMs = toRef(uiStore, 'playIntervalMs')
+const unifiedTimeLock = toRef(uiStore, 'unifiedTimeLock')
 const { selectedLayerDisplay, isSubmitting, selectedInstanceId } = workspace
 const {
   workflowError,
@@ -90,10 +110,11 @@ const {
   pointWeatherLoading,
   pointWeatherError,
 } = workflowRun
-const { statusVersion: weatherStatusVersion, activityVersion: weatherActivityVersion } =
-  storeToRefs(weatherTileManager)
+const weatherStatusVersion = toRef(weatherTileManager, 'statusVersion')
+const weatherActivityVersion = toRef(weatherTileManager, 'activityVersion')
 
 const activeLayer = computed(() => selectedLayerDisplay.value ?? buildFallbackActiveLayerDisplay())
+const has3dCompatibleLayer = computed(() => Boolean(activeLayer.value.instanceId))
 
 const stageLabel = computed(() => {
   const layer = activeLayer.value
@@ -160,7 +181,6 @@ const {
   timelineAvailabilityLabel,
   timelineObservationLabel,
   activeLayerGranularity,
-  isLayerLocked,
   timelineSegments,
 } = useTimelineSync(
   uiStore,
@@ -181,8 +201,82 @@ const {
   analysisPanelRef,
 )
 
+// ── 图层平台子系统：选中图层生命周期（时间轴徽标数据源） ──
+const selectedLayerLifecycle = computed(() => {
+  const catalogId = selectedCatalogId.value
+  if (!catalogId) return null
+  return lifecycle.getLifecycle(catalogId)
+})
+
+// ── 实验性 3D 视图（外观设置勾选）──
+// 勾选后 3D 模式复用现有 MapCanvas 并切 globe 投影；未勾选时保持「尚未实现」遮罩。
+const enable3DView = ref(is3DViewExperimentalEnabled())
+let _unsubscribe3DView: (() => void) | null = null
+{
+  _unsubscribe3DView = subscribe3DViewExperimental(() => {
+    enable3DView.value = is3DViewExperimentalEnabled()
+  })
+}
+/** 3D 模式下是否直接显示真实地图（globe 投影） */
+const showGlobeMap = computed(
+  () => uiStore.viewMode === '2d' || (uiStore.viewMode === '3d' && enable3DView.value),
+)
+const globeProjectionOn = computed(() => uiStore.viewMode === '3d' && enable3DView.value)
+
+const agentCompanionEnabled = ref(isAgentCompanionEnabled())
+let _unsubscribeAgentCompanion: (() => void) | null = null
+{
+  _unsubscribeAgentCompanion = subscribeAgentCompanion(() => {
+    agentCompanionEnabled.value = isAgentCompanionEnabled()
+  })
+}
+
+const {
+  banner: timelineActionBanner,
+  handleReuse: handleTimelineReuse,
+  handleRerun: handleTimelineRerun,
+  handleCancelConfirm: handleTimelineCancelConfirm,
+  handleDismissNotice: handleTimelineDismissNotice,
+  handleDismissRecovery: handleTimelineDismissRecovery,
+  handleSwitchOnlineRerun: handleTimelineSwitchOnline,
+  handleOpenPlan: handleTimelineOpenPlan,
+  syncWorkflowTimelineNow,
+} = useTimelineActionConfirm({
+  workspace,
+  workflowRun,
+  uiStore,
+  selectedCatalogId,
+  currentDate,
+  currentHour,
+  activeLayerGranularity,
+  isPlaying,
+  logOperation: (tag, message) => logStore.logOperation(tag, message),
+  syncBoundWorkflowTimeline: (range) => {
+    if (!workflowEditorOpen.value) return
+    const n = workflowEditorRef.value?.applyBoundMainTimeline?.({
+      start_at: range.start_at,
+      end_at: range.end_at,
+    })
+    if (n && n > 0) {
+      logStore.logOperation(
+        'timeline-wf-sync',
+        `同步工作流时间窗 ×${n} · ${range.timeKey}`,
+      )
+    }
+  },
+})
+
+// 打开工作流编辑器后对齐一次 bind_timeline 时间窗（定义/画布就绪后）
+watch(workflowEditorOpen, (open) => {
+  if (!open) return
+  void nextTick(() => {
+    window.setTimeout(() => syncWorkflowTimelineNow(), 120)
+  })
+})
+
 // ── Online Temporal Integration ──
 // 在线时间获取编排器：当用户选中 fetchable 段时自动触发工作流获取数据
+// 顶栏确认卡打开时暂停自动提交，避免与用户确认重跑双通道抢跑
 const onlineTemporal = useOnlineTemporalIntegration({
   workspace,
   workflowRun,
@@ -192,6 +286,7 @@ const onlineTemporal = useOnlineTemporalIntegration({
   activeLayerGranularity,
   timelineSegments,
   isPlaying,
+  pauseAutoFetch: toRef(timelineActionBanner, 'hasConfirm'),
   logOperation: (tag, message) => logStore.logOperation(tag, message),
 })
 
@@ -250,22 +345,65 @@ const { handleRunWorkflowFromEditor } = useWorkflowEditorRun(
 )
 
 // ── 异步组件 ──────────────────────────────────────────────────────────────
-const ScreenshotExport = defineAsyncComponent(() => import('../components/ScreenshotExport.vue'))
-const SettingsPanel = defineAsyncComponent(() => import('../components/settings/SettingsPanel.vue'))
+// chunk 加载失败（弱网/刷新竞态）时 loader promise reject，组件永不挂载，
+// usePanelManager 的 showImmediate 将无人配对 hideImmediate → 顶栏光带
+// 永久加载（2026-08-25 反馈）。此处统一兜底关 loading 后再抛出。
+function withLoadingGuard<T>(loader: () => Promise<T>) {
+  return async (): Promise<T> => {
+    try {
+      return await importLazyChunk(loader)
+    } catch (err) {
+      try {
+        uiLoading.hideImmediate()
+      } catch {
+        /* store 未就绪时忽略 */
+      }
+      throw err
+    }
+  }
+}
+const ScreenshotExport = defineAsyncComponent(
+  withLoadingGuard(() => import('../components/ScreenshotExport.vue')),
+)
+const SettingsPanel = defineAsyncComponent(
+  withLoadingGuard(() => import('../components/settings/SettingsPanel.vue')),
+)
 const WorkflowEditorPanel = defineAsyncComponent(
-  () => import('../components/workflow/WorkflowEditorPanel.vue'),
+  withLoadingGuard(() => import('../components/workflow/WorkflowEditorPanel.vue')),
 )
 
 // ── 面板尺寸 ──────────────────────────────────────────────────────────────
-const sidePanelDimensions = Object.freeze({
+// 2026-08-25 用户反馈：图层/分析面板纵向拉伸要能拉到主界面最底——
+// maxHeight 随视口高度动态计算（overlay 顶部 9.5rem=152px + 12px 底部
+// 呼吸余量）；小屏（结果 < 540）保持原 540 下限，行为不回退。
+function computeSidePanelMaxHeight(): number {
+  if (typeof window === 'undefined') return 540
+  return Math.max(540, window.innerHeight - 152 - 12)
+}
+const sidePanelMaxHeight = ref(computeSidePanelMaxHeight())
+function handleSidePanelResize(): void {
+  sidePanelMaxHeight.value = computeSidePanelMaxHeight()
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('resize', handleSidePanelResize)
+}
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', handleSidePanelResize)
+  }
+})
+const sidePanelDimensions = computed(() => ({
   defaultHeight: 372,
   minHeight: 236,
-  maxHeight: 540,
+  maxHeight: sidePanelMaxHeight.value,
   minWidth: 280,
   maxWidth: 420,
-})
-const layerPanelDimensions = Object.freeze({ ...sidePanelDimensions, defaultWidth: 292 })
-const analysisPanelDimensions = Object.freeze({ ...sidePanelDimensions, defaultWidth: 304 })
+}))
+const layerPanelDimensions = computed(() => ({ ...sidePanelDimensions.value, defaultWidth: 292 }))
+const analysisPanelDimensions = computed(() => ({
+  ...sidePanelDimensions.value,
+  defaultWidth: 304,
+}))
 
 // ── 内联 handler ──────────────────────────────────────────────────────────
 function handleTileSourceChange(sourceId: TileSourceId) {
@@ -276,9 +414,10 @@ function handleLayerSelect(layerId: string) {
   if (selectedInstanceId.value !== layerId) workspace.selectLayer(layerId)
   logStore.logOperation('layer-select', `选中图层: ${layerId}`)
 }
-function handleZoomToLayer(instanceId: string) {
-  if (mapCanvasRef.value?.fitToLayerExtent?.(instanceId))
-    logStore.logOperation('layer-zoom', `缩放到图层: ${instanceId}`)
+function handleZoomToLayer(instanceId: string): boolean {
+  const ok = Boolean(mapCanvasRef.value?.fitToLayerExtent?.(instanceId))
+  if (ok) logStore.logOperation('layer-zoom', `缩放到图层: ${instanceId}`)
+  return ok
 }
 function handleToggleLayerVisibility(instanceId: string) {
   workspace.toggleLayerVisibility(instanceId)
@@ -310,23 +449,40 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
       @drop="onMapShellDrop"
     >
       <MapCanvas
-        v-if="uiStore.viewMode === '2d'"
+        v-if="showGlobeMap"
         ref="mapCanvasRef"
         :tile-source-id="tileSourceId"
         :current-hour="currentHour"
+        :current-date="currentDate"
         :inspect-point="selectedMapPoint"
+        :globe-projection="globeProjectionOn"
         @visible-hotspots-change="handleVisibleHotspotsChange"
         @hotspot-select="handleHotspotSelect"
         @map-point-select="handleMapPointSelect"
         @overlay-time-update="handleOverlayTimeUpdate"
       />
 
-      <div v-else class="view-placeholder-3d">
+      <div v-else class="view-placeholder-3d" :class="{ 'view-placeholder-3d--layer-ready': has3dCompatibleLayer }">
+        <div class="placeholder-3d-stars" aria-hidden="true">
+          <i v-for="n in 10" :key="n" :style="{ '--star-index': n }"></i>
+        </div>
+        <div class="placeholder-3d-orbit orbit--one" aria-hidden="true"></div>
+        <div class="placeholder-3d-orbit orbit--two" aria-hidden="true"></div>
+        <div class="placeholder-3d-planet" aria-hidden="true">
+          <div class="planet-grid"></div>
+          <div class="planet-glow"></div>
+        </div>
         <div class="placeholder-3d-inner">
-          <div class="placeholder-3d-icon"><Globe :size="48" aria-hidden="true" /></div>
+          <div class="placeholder-3d-icon"><Globe :size="30" aria-hidden="true" /></div>
           <h2 class="placeholder-3d-title">3D 地球视图</h2>
           <p class="placeholder-3d-desc">该功能尚未实现</p>
-          <p class="placeholder-3d-hint">点击顶栏「3D」按钮可返回 2D 平面地图</p>
+          <p v-if="has3dCompatibleLayer" class="placeholder-3d-layer-note">
+            已保留当前图层状态，3D 渲染器上线后将继续使用「{{ activeLayer.name }}」
+          </p>
+          <p class="placeholder-3d-hint">点击顶栏「2D」按钮可返回平面地图</p>
+          <p class="placeholder-3d-hint">
+            可在 设置 → 外观 → 地图显示 勾选「启用3D视图（实验测试）」提前体验地球投影
+          </p>
         </div>
       </div>
 
@@ -351,6 +507,18 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
           @open-log="logOpen = true"
         />
       </div>
+
+      <!-- 左下角浮层：图层面板下 / 比例尺上；Teleport 到 body 并置顶，可拖动 -->
+      <TimelineActionBanner
+        @reuse="handleTimelineReuse"
+        @rerun="handleTimelineRerun"
+        @cancel="handleTimelineCancelConfirm"
+        @dismiss-notice="handleTimelineDismissNotice"
+        @switch-online="handleTimelineSwitchOnline"
+        @open-plan="handleTimelineOpenPlan"
+        @dismiss-recovery="handleTimelineDismissRecovery"
+      />
+      <OnlinePlanPanel />
 
       <div class="overlay overlay-left">
         <PanelDock
@@ -423,11 +591,11 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
           :max-offset-x="140"
           :max-offset-y="70"
           :default-width="720"
-          :default-height="205"
+          :default-height="235"
           :min-width="460"
-          :min-height="195"
+          :min-height="210"
           :max-width="980"
-          :max-height="260"
+          :max-height="330"
         >
           <TimelineScrubber
             :current-hour="currentHour"
@@ -443,11 +611,12 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
             :play-interval-ms="playIntervalMs"
             :granularity="hasTimelineLayer ? activeLayerGranularity : 'hour'"
             :active-layer-name="timelineLayerName"
-            :is-layer-locked="isLayerLocked"
             :online-fetch-in-progress="
               onlineTemporal.orchestrator.currentFetchStatus.value?.status === 'in-flight' ||
               onlineTemporal.orchestrator.currentFetchStatus.value?.status === 'submitting'
             "
+            :lifecycle-state="selectedLayerLifecycle?.lifecycleState ?? 'unknown'"
+            :lifecycle-message="selectedLayerLifecycle?.message ?? null"
             @step="handleTimelineStep"
             @change-hour="handleTimelineChange"
             @change-date="handleTimelineDateChange"
@@ -459,6 +628,11 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
           />
         </TimelinePanel>
       </div>
+
+      <AgentCompanion
+        v-if="agentCompanionEnabled"
+        :fit-to-layer-extent="handleZoomToLayer"
+      />
     </section>
 
     <ScreenshotExport

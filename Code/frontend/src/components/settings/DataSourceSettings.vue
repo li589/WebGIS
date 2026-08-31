@@ -12,20 +12,24 @@ import { RouterLink } from 'vue-router'
 import Tabs from '../ui/Tabs.vue'
 import LocalDataSourcePanel from './data-source/LocalDataSourcePanel.vue'
 import RemoteDataSourcesPanel from './data-source/RemoteDataSourcesPanel.vue'
+import DataInputPoliciesPanel from './data-source/DataInputPoliciesPanel.vue'
 import { loadSettingsUiLocal, saveSettingsUiLocal } from '../../services/settings-local'
 import { useAuthStore } from '../../stores/auth'
 
-type SubTab = 'local' | 'remote'
+type SubTab = 'local' | 'remote' | 'policies'
 
 const TABS = [
   { value: 'local', label: '本地数据源' },
   { value: 'remote', label: '远程数据源' },
+  { value: 'policies', label: '调度策略' },
 ]
 
 const authStore = useAuthStore()
 
 const saved = loadSettingsUiLocal().dataSourceTab as SubTab | undefined
-const activeTab = ref<SubTab>(saved === 'remote' ? 'remote' : 'local')
+const activeTab = ref<SubTab>(
+  saved === 'remote' || saved === 'policies' ? saved : 'local',
+)
 
 function onTabChange(tab: string) {
   activeTab.value = tab as SubTab
@@ -51,7 +55,8 @@ function onTabChange(tab: string) {
       @update:model-value="onTabChange"
     />
     <LocalDataSourcePanel v-if="activeTab === 'local'" />
-    <RemoteDataSourcesPanel v-else />
+    <RemoteDataSourcesPanel v-else-if="activeTab === 'remote'" />
+    <DataInputPoliciesPanel v-else />
   </div>
 </template>
 

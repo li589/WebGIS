@@ -54,7 +54,7 @@ _DEFAULT_RETENTION_DAYS = 30
 # P2-3：schema 版本跟踪（无 Alembic，用 schema_meta 表记录当前 schema 版本，
 # 发版/升级时可检测代码与 DB 版本是否一致）。每次 schema 变更（加列/加表/加索引）
 # 时递增此值并记录变更说明。
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 SCHEMA_CHANGES: list[tuple[int, str]] = [
     (1, "初始 schema：workflow_runs / workflow_events / runtime_config"),
     (
@@ -65,6 +65,11 @@ SCHEMA_CHANGES: list[tuple[int, str]] = [
     (
         4,
         "workflow_runs 加 user_id 列 + idx_workflow_runs_user_status（Phase C 按角色并发控制）",
+    ),
+    (
+        5,
+        "workflow_runs 加 workflow_kind / layer_id / progress 结构化列 + "
+        "idx_workflow_runs_kind_layer（图层平台子系统：按图层/类型查询 run 不再全表扫描）",
     ),
 ]
 
@@ -103,6 +108,35 @@ class SQLiteWorkflowRepository:
             payload["result_dto"] = result_dto_override
         return json.dumps(payload, ensure_ascii=False)
 
+    @staticmethod
+    def _extract_structured_columns(
+        run_status: WorkflowRunStatusResponse,
+        *,
+        workflow_kind: str | None = None,
+        layer_id: str | None = None,
+        progress: int | None = None,
+    ) -> tuple[str | None, str | None, int | None]:
+        """图层平台子系统 v5：结构化列提取（调用面零改动的兜底路径）。
+
+        显式参数优先；缺省时从 run_status 自动提取：
+        - ``workflow_kind`` ← ``executor_metadata.workflow_kind``
+        - ``layer_id`` ← ``run_status.layer_id``
+        - ``progress`` ← ``run_status.progress``
+
+        Returns:
+            ``(workflow_kind, layer_id, progress)``，均可为 None（旧行兼容）。
+        """
+        if workflow_kind is None:
+            metadata = run_status.executor_metadata or {}
+            raw_kind = metadata.get("workflow_kind")
+            if isinstance(raw_kind, str) and raw_kind:
+                workflow_kind = raw_kind
+        if layer_id is None and run_status.layer_id:
+            layer_id = run_status.layer_id
+        if progress is None:
+            progress = int(run_status.progress)
+        return workflow_kind, layer_id, progress
+
     # C4 终态守卫（SQL 原子层，消除应用层 read-check-write 的 TOCTOU 窗口）：
     # cancelled 或 watchdog-failed（stuck_running_watchdog）的 run 拒绝任何覆盖写，
     # 与 lifecycle_service._is_protected_terminal 语义一致；INSERT 新行不受影响。
@@ -130,23 +164,32 @@ class SQLiteWorkflowRepository:
         *,
         result_dto_override: dict[str, Any] | None = None,
         user_id: int | None = None,
+        workflow_kind: str | None = None,
+        layer_id: str | None = None,
+        progress: int | None = None,
     ) -> None:
         payload = self._serialize_run_payload(
             run_status, result_dto_override=result_dto_override
+        )
+        kind, lid, prog = self._extract_structured_columns(
+            run_status, workflow_kind=workflow_kind, layer_id=layer_id, progress=progress
         )
         with self._connect() as connection:
             if request_json is not None:
                 connection.execute(
                     """
-                    INSERT INTO workflow_runs (run_id, status, updated_at, payload_json, request_json, run_class, user_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO workflow_runs (run_id, status, updated_at, payload_json, request_json, run_class, user_id, workflow_kind, layer_id, progress)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(run_id) DO UPDATE SET
                         status = excluded.status,
                         updated_at = excluded.updated_at,
                         payload_json = excluded.payload_json,
                         request_json = COALESCE(excluded.request_json, request_json),
                         run_class = COALESCE(excluded.run_class, run_class),
-                        user_id = COALESCE(excluded.user_id, user_id)
+                        user_id = COALESCE(excluded.user_id, user_id),
+                        workflow_kind = COALESCE(excluded.workflow_kind, workflow_runs.workflow_kind),
+                        layer_id = COALESCE(excluded.layer_id, workflow_runs.layer_id),
+                        progress = excluded.progress
                     """
                     + self._TERMINAL_GUARD_WHERE,
                     (
@@ -157,19 +200,25 @@ class SQLiteWorkflowRepository:
                         request_json,
                         run_class or "business",
                         user_id,
+                        kind,
+                        lid,
+                        prog,
                     ),
                 )
             else:
                 connection.execute(
                     """
-                    INSERT INTO workflow_runs (run_id, status, updated_at, payload_json, run_class, user_id)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO workflow_runs (run_id, status, updated_at, payload_json, run_class, user_id, workflow_kind, layer_id, progress)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(run_id) DO UPDATE SET
                         status = excluded.status,
                         updated_at = excluded.updated_at,
                         payload_json = excluded.payload_json,
                         run_class = COALESCE(workflow_runs.run_class, excluded.run_class),
-                        user_id = COALESCE(excluded.user_id, user_id)
+                        user_id = COALESCE(excluded.user_id, user_id),
+                        workflow_kind = COALESCE(excluded.workflow_kind, workflow_runs.workflow_kind),
+                        layer_id = COALESCE(excluded.layer_id, workflow_runs.layer_id),
+                        progress = excluded.progress
                     """
                     + self._TERMINAL_GUARD_WHERE,
                     (
@@ -179,6 +228,9 @@ class SQLiteWorkflowRepository:
                         payload,
                         run_class or "business",
                         user_id,
+                        kind,
+                        lid,
+                        prog,
                     ),
                 )
 
@@ -217,6 +269,48 @@ class SQLiteWorkflowRepository:
             rows = connection.execute(
                 "SELECT payload_json FROM workflow_runs ORDER BY updated_at DESC"
             ).fetchall()
+        return [
+            WorkflowRunStatusResponse.model_validate(json.loads(row[0])) for row in rows
+        ]
+
+    def list_runs_by_layer(
+        self,
+        layer_id: str,
+        *,
+        limit: int = 20,
+        workflow_kind: str | None = None,
+    ) -> list[WorkflowRunStatusResponse]:
+        """按图层（可选 workflow_kind）列出最近 run（图层平台子系统 v5）。
+
+        走 ``idx_workflow_runs_kind_layer`` 索引，替代调用方全表
+        ``list_runs()`` 内存过滤。旧行新列可能为 NULL，会回退到
+        payload_json 内层匹配，保证历史 run 仍可被查到。
+        """
+        with self._connect() as connection:
+            if workflow_kind is not None:
+                rows = connection.execute(
+                    """
+                    SELECT payload_json FROM workflow_runs
+                    WHERE layer_id = ? AND workflow_kind = ?
+                    ORDER BY updated_at DESC
+                    LIMIT ?
+                    """,
+                    (layer_id, workflow_kind, max(1, int(limit))),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT payload_json FROM workflow_runs
+                    WHERE layer_id = ?
+                       OR (
+                           layer_id IS NULL
+                           AND json_extract(payload_json, '$.layer_id') = ?
+                       )
+                    ORDER BY updated_at DESC
+                    LIMIT ?
+                    """,
+                    (layer_id, layer_id, max(1, int(limit))),
+                ).fetchall()
         return [
             WorkflowRunStatusResponse.model_validate(json.loads(row[0])) for row in rows
         ]
@@ -268,6 +362,35 @@ class SQLiteWorkflowRepository:
                     event.event_id,
                     event.run_id,
                 )
+
+    def get_latest_event_created_at(self, run_id: str) -> datetime | None:
+        """Return the newest ``created_at`` among persisted events for ``run_id``.
+
+        Used by the stuck-running watchdog as an activity heartbeat: mid-run
+        progress often lands only in ``workflow_events`` and does not bump
+        ``workflow_runs.updated_at``.
+        """
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT created_at
+                FROM workflow_events
+                WHERE run_id = ?
+                ORDER BY created_at DESC, event_id DESC
+                LIMIT 1
+                """,
+                (run_id,),
+            ).fetchone()
+        if row is None or not row[0]:
+            return None
+        raw = str(row[0])
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed
 
     def list_events(
         self,
@@ -502,6 +625,9 @@ class SQLiteWorkflowRepository:
         result_dto_override: dict[str, Any] | None = None,
         user_id: int | None = None,
         user_limit: int | None = None,
+        workflow_kind: str | None = None,
+        layer_id: str | None = None,
+        progress: int | None = None,
     ) -> None:
         """Atomically reserve a capacity slot and insert the accepted run.
 
@@ -556,17 +682,26 @@ class SQLiteWorkflowRepository:
                         f"User workflow capacity reached: "
                         f"user_active={user_active}, limit={user_limit}"
                     )
+            kind, lid, prog = self._extract_structured_columns(
+                run_status,
+                workflow_kind=workflow_kind,
+                layer_id=layer_id,
+                progress=progress,
+            )
             connection.execute(
                 """
-                INSERT INTO workflow_runs (run_id, status, updated_at, payload_json, request_json, run_class, user_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO workflow_runs (run_id, status, updated_at, payload_json, request_json, run_class, user_id, workflow_kind, layer_id, progress)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(run_id) DO UPDATE SET
                     status = excluded.status,
                     updated_at = excluded.updated_at,
                     payload_json = excluded.payload_json,
                     request_json = COALESCE(excluded.request_json, request_json),
                     run_class = COALESCE(excluded.run_class, run_class),
-                    user_id = COALESCE(excluded.user_id, user_id)
+                    user_id = COALESCE(excluded.user_id, user_id),
+                    workflow_kind = COALESCE(excluded.workflow_kind, workflow_runs.workflow_kind),
+                    layer_id = COALESCE(excluded.layer_id, workflow_runs.layer_id),
+                    progress = excluded.progress
                 """
                 + self._TERMINAL_GUARD_WHERE,
                 (
@@ -577,6 +712,9 @@ class SQLiteWorkflowRepository:
                     request_json,
                     run_class or "business",
                     user_id,
+                    kind,
+                    lid,
+                    prog,
                 ),
             )
 
@@ -589,6 +727,9 @@ class SQLiteWorkflowRepository:
         run_class: str | None = None,
         result_dto_override: dict[str, Any] | None = None,
         max_retries: int = 3,
+        workflow_kind: str | None = None,
+        layer_id: str | None = None,
+        progress: int | None = None,
     ) -> bool:
         """Compare-And-Swap status update with retry.
 
@@ -613,6 +754,9 @@ class SQLiteWorkflowRepository:
         payload = self._serialize_run_payload(
             run_status, result_dto_override=result_dto_override
         )
+        kind, lid, prog = self._extract_structured_columns(
+            run_status, workflow_kind=workflow_kind, layer_id=layer_id, progress=progress
+        )
 
         for attempt in range(max_retries):
             with self._connect() as connection:
@@ -623,7 +767,10 @@ class SQLiteWorkflowRepository:
                         updated_at = ?,
                         payload_json = ?,
                         request_json = COALESCE(?, request_json),
-                        run_class = COALESCE(?, run_class)
+                        run_class = COALESCE(?, run_class),
+                        workflow_kind = COALESCE(?, workflow_kind),
+                        layer_id = COALESCE(?, layer_id),
+                        progress = ?
                     WHERE run_id = ? AND status = ?
                     """,
                     (
@@ -632,6 +779,9 @@ class SQLiteWorkflowRepository:
                         payload,
                         request_json,
                         run_class or "business",
+                        kind,
+                        lid,
+                        prog,
                         run_status.run_id,
                         expected,
                     ),
@@ -855,12 +1005,32 @@ class SQLiteWorkflowRepository:
                     )
                 except sqlite3.OperationalError:
                     pass  # 列已存在
+            # 图层平台子系统 v5：结构化列（全部允许 NULL，兼容旧行）。
+            # save 系列写入时自动从 run_status/executor_metadata 提取填充。
+            for column_ddl in (
+                "workflow_kind TEXT",
+                "layer_id TEXT",
+                "progress INTEGER",
+            ):
+                column_name = column_ddl.split()[0]
+                if column_name not in columns:
+                    try:
+                        connection.execute(
+                            f"ALTER TABLE workflow_runs ADD COLUMN {column_ddl}"
+                        )
+                    except sqlite3.OperationalError:
+                        pass  # 列已存在
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_workflow_runs_class_status ON workflow_runs(run_class, status)"
             )
             # Phase C：按 user_id + status 查询活跃工作流数的索引。
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_workflow_runs_user_status ON workflow_runs(user_id, status)"
+            )
+            # 图层平台子系统：按 workflow_kind + layer_id 查询 run 的索引。
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_workflow_runs_kind_layer "
+                "ON workflow_runs(workflow_kind, layer_id)"
             )
 
     def _connect(self):

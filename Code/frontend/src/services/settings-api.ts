@@ -48,16 +48,14 @@ export type {
   GeeRuntimeConfig,
   GeneralConfig,
   MapAoiPreset,
-  MinioPublicConfig,
-  OpenDataPresetsUpdateRequest,
-  OpenDataPresetsUpdateResponse,
+  OnlineTileSource,
+  OnlineTileSourceUpsertRequest,
   PortalCatalogEntry,
   PortalCatalogResponse,
   PortalCredentialPublic,
   PortalCredentialUpsertRequest,
   PortalCredentialsMapResponse,
   PortalSearchResponse,
-  PortalSearchResultItem,
   PortalTestResponse,
   PortalUpsertRequest,
   ReloadResultResponse,
@@ -71,6 +69,9 @@ export type {
   RemoteLayerUrisUpdateResponse,
   RemoteSearchRequest,
   RemoteSearchResponse,
+  RemoteDatasetGrant,
+  RemoteDatasetGrantUpsertRequest,
+  RemoteDatasetPolicy,
   RemoteSourceEntry,
   RemoteSourceKind,
   RemoteSourceRefBadge,
@@ -149,6 +150,8 @@ import type {
   GeeAccountToggleResponse,
   GeeRuntimeConfig,
   GeneralConfig,
+  OnlineTileSource,
+  OnlineTileSourceUpsertRequest,
   OpenDataPresetsUpdateRequest,
   OpenDataPresetsUpdateResponse,
   PortalCatalogEntry,
@@ -167,6 +170,11 @@ import type {
   RemoteLayerUrisUpdateResponse,
   RemoteSearchRequest,
   RemoteSearchResponse,
+  RemoteDatasetGrant,
+  RemoteDatasetGrantUpsertRequest,
+  RemoteDatasetPolicy,
+  RegisterAndAddRequest,
+  RegisterAndAddResponse,
   RemoteSourceEntry,
   RemoteSourceUpsertRequest,
   RemoteStorageDeletedResponse,
@@ -200,7 +208,11 @@ import type {
   WeatherProviderUpdateRequest,
 } from '../types/api-reexports'
 
-async function settingsFetch<T>(path: string, init?: RequestInit): Promise<T> {
+async function settingsFetch<T>(
+  path: string,
+  init?: RequestInit,
+  timeoutMs = 15_000,
+): Promise<T> {
   const url = resolveApiUrl(path)
   const method = (init?.method ?? 'GET').toUpperCase()
   let headers: Record<string, string> = {
@@ -212,7 +224,7 @@ async function settingsFetch<T>(path: string, init?: RequestInit): Promise<T> {
   headers = withWriteAuthHeaders(headers, method, true)
 
   const controller = new AbortController()
-  const timeoutId = window.setTimeout(() => controller.abort(), 15_000)
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetch(
       url,
@@ -275,6 +287,25 @@ async function settingsFetch<T>(path: string, init?: RequestInit): Promise<T> {
   }
 }
 
+export function fetchOnlineTileSources(): Promise<OnlineTileSource[]> {
+  return settingsFetch('/config/online-tile-sources')
+}
+
+export function upsertOnlineTileSource(
+  sourceId: string,
+  payload: OnlineTileSourceUpsertRequest,
+): Promise<OnlineTileSource> {
+  return settingsFetch(`/config/online-tile-sources/${encodeURIComponent(sourceId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteOnlineTileSource(sourceId: string): Promise<DeletedResponse> {
+  return settingsFetch(`/config/online-tile-sources/${encodeURIComponent(sourceId)}`, {
+    method: 'DELETE',
+  })
+}
 export function fetchGeneralConfig(): Promise<GeneralConfig> {
   return settingsFetch('/config/general')
 }
@@ -757,10 +788,62 @@ export function upsertRemoteSource(
   })
 }
 
+/**
+ * 注册并添加到图层（原子端点，2026-08-25 P2/Wave 2）：
+ * 注册（site_compatible 整源）+ 数据集记录（grants）+ 工作流编排提示。
+ */
+export function registerAndAddRemoteSource(
+  payload: RegisterAndAddRequest,
+): Promise<RegisterAndAddResponse> {
+  return settingsFetch('/config/remote-sources/register-and-add', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
 export function deleteRemoteSource(remoteSourceId: string): Promise<DeletedResponse> {
   return settingsFetch(`/config/remote-sources/${encodeURIComponent(remoteSourceId)}`, {
     method: 'DELETE',
   })
+}
+
+// ── Phase 4：远程数据源访问模式切换 ─────────────────────────────────────────
+
+export function toggleRemoteSourceAccessMode(
+  remoteSourceId: string,
+  accessMode: string,
+): Promise<RemoteSourceEntry> {
+  // 先获取现有条目，再用 upsert 更新 access_mode（保持其他字段不变）
+  return settingsFetch(`/config/remote-sources/${encodeURIComponent(remoteSourceId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ access_mode: accessMode }),
+  })
+}
+
+// ── 远程数据集授权（「具体数据集选取模式」白名单） ──────────────────────────
+
+export function fetchRemoteDatasetGrants(): Promise<RemoteDatasetGrant[]> {
+  return settingsFetch('/config/remote-datasets/grants')
+}
+
+export function upsertRemoteDatasetGrant(
+  grantId: string,
+  payload: RemoteDatasetGrantUpsertRequest,
+): Promise<RemoteDatasetGrant> {
+  return settingsFetch(`/config/remote-datasets/grants/${encodeURIComponent(grantId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteRemoteDatasetGrant(grantId: string): Promise<DeletedResponse> {
+  return settingsFetch(`/config/remote-datasets/grants/${encodeURIComponent(grantId)}`, {
+    method: 'DELETE',
+  })
+}
+
+export function fetchRemoteDatasetPolicy(): Promise<RemoteDatasetPolicy[]> {
+  return settingsFetch('/config/remote-datasets/policy')
 }
 
 export function fetchAboutInfo(): Promise<AboutInfo> {
@@ -772,7 +855,9 @@ export function fetchRuntimeConfig(): Promise<RuntimeConfigSnapshotResponse> {
 }
 
 export function fetchRuntimeStatus(): Promise<RuntimeStatusResponse> {
-  return settingsFetch('/runtime/status')
+  // /runtime/status 会扫描 Redis、Celery 与活跃运行库；它是诊断接口，
+  // 超时不能影响当前登录会话，也不应把短暂诊断失败误判为 401。
+  return settingsFetch('/runtime/status', undefined, 30_000)
 }
 
 export function fetchRuntimeResources(): Promise<ResourceUsageResponse> {

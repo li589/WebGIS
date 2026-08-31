@@ -19,7 +19,10 @@ Code/
 ├─ backend/    # FastAPI + Celery：workflow 编排、weatherengine、统一瓦片、GEE
 ├─ algorithms/ # Python 算法包、数据接入、工作流与产品输出
 ├─ shared/     # 前后端共享协议与公共契约
+├─ weixin/     # 微信小程序开发项目
+├─ agentKits/  # 实现AI Agent助手功能
 └─ infra/      # data-sync（气象同步）+ gateway（可选 Nginx 同域入口）
+
 ```
 
 说明：公开文档在仓库根 **`Docs/`**（编号目录）；AI 本地工作区在 **`.ai/`**。测试在仓库根 **`Test/`**。运行栈见 `backend/docker-compose.yml`；一键启停在仓库根 `launch.py`（`Env/Python312`）。
@@ -81,17 +84,6 @@ Code/
 - **`.ai/`**：AI 技能、规则、计划、进度（本地，不上传）
 - **`Test/`**：后端 / 前端 / 算法测试集中地（见 `AGENTS.md`）
 - **`AGENTS.md`**：命令指针、「改 X 则跑 Y」、高风险区
-
-## 当前开发优先级
-
-近期排期以仓库根 `.ai/progress/` 与 `Docs/01-协作规范/工程收口仪表盘.md` 为准（`.ai/` 为本地进度真源时可优先）。
-
-1. **P0**：FY/SMAP UI 人工闭环（更大样本条带上图 + `.ai/progress/ui-verification-steps.md`）
-2. **P0**：Open-Meteo Phase B（tile-manager / coverage 与 settings `default_model` 贯通）
-3. **P1**：真实课题组数据 e2e / NAS 绿测；工作流调度（见 `Docs/05-专题研究/` 与审查报告）
-4. **P2–P3**：Layers store 域拆分已落地（bindings / selectors / *-domain）；按需推进 PostGIS、TiTiler/Martin、Cesium 主链（可选 Nginx：`launch.py start gateway`）
-
-画布编译执行 + 下载/解压/变量提取节点已落地，见 `Docs/05-专题研究/其它专题/课题组数据全链路-2026-07-21.md`。保持 `workflow-runs` / `unified-tiles` / artifact 契约清晰。
 
 ## 需要避免的做法
 

@@ -7,7 +7,8 @@
 
 支持三种 SSH 访问方式：
     1. direct  —— 校园网内直连 ``likr6008@172.16.98.184:22``（使用原始 RSA 私钥）
-    2. tunnel  —— Cloudflare 隧道，连接 ``127.0.0.1:2222``（需先启动 cloudflared）
+    2. tunnel  —— Cloudflare 隧道，连接 ``127.0.0.1:<TUNNEL_PORT>``（需先启动 cloudflared；
+                 端口经 ``CGDA_SSH_TUNNEL_PORT`` 环境变量覆盖，默认 9999；旧值为 2222）
     3. jump    —— 跳板机桥接：经 ``win11-lab``（~/.ssh/config 别名）转发到目标机
 
 主要特性：
@@ -93,12 +94,14 @@ ORIGINAL_KEY: Path = Path(
     r"D:\Workspace\mat2py\tmp\likr6008_10.10.10.254_RsaKeyExpireTime_2026-08-23_20-23-34.txt"
 )
 
-# Cloudflare 隧道未就绪时的提示
+# Cloudflare 隧道默认本地端口（与生产凭据库 seahpc profile 保持一致：9999）。
+# 老旧 cloudflared listener 可能用 2222，可用环境变量覆盖：
+#   set CGDA_SSH_TUNNEL_PORT=2222    (PowerShell: $env:CGDA_SSH_TUNNEL_PORT=2222)
 CLOUDFLARED_HINT: str = (
     "Cloudflare 隧道未就绪。请先在另一个终端启动 cloudflared，例如:\n"
     "    cloudflared access tcp --hostname <你的隧道域名> "
-    "--listener 127.0.0.1:2222\n"
-    "确认本地 127.0.0.1:2222 可连通后，再运行本脚本。"
+    f"--listener 127.0.0.1:{os.getenv('CGDA_SSH_TUNNEL_PORT', '9999')}\n"
+    f"确认本地 127.0.0.1:{os.getenv('CGDA_SSH_TUNNEL_PORT', '9999')} 可连通后，再运行本脚本。"
 )
 
 # 跳板机 ProxyCommand（依赖 ~/.ssh/config 中的 win11-lab 别名）
@@ -193,10 +196,16 @@ ACCESS_METHODS: dict[str, AccessConfig] = {
     "tunnel": AccessConfig(
         name="tunnel",
         host="127.0.0.1",
-        port=2222,
+        # 2026-08-20 实测本地 cloudflared listener 端口为 9999（旧默认 2222 已停用）。
+        # 同步 seahpc profile（Code/backend/data/.../remote_storage_credentials.sqlite3）
+        # 配置；可经环境变量 CGDA_SSH_TUNNEL_PORT 覆盖。
+        port=int(os.getenv("CGDA_SSH_TUNNEL_PORT", "9999")),
         username="likr6008",
         key_filename=SEAHPC_KEY,
-        description="Cloudflare 隧道 127.0.0.1:2222（需先启动 cloudflared）",
+        description=(
+            f"Cloudflare 隧道 127.0.0.1:{os.getenv('CGDA_SSH_TUNNEL_PORT', '9999')}"
+            "（需先启动 cloudflared）"
+        ),
     ),
     "jump": AccessConfig(
         name="jump",
@@ -476,7 +485,7 @@ class ServerDataSynchronizer:
             raise
         except OSError as exc:
             if self.access.name == "tunnel":
-                self.log.error("无法连接 127.0.0.1:2222: %s", exc)
+                self.log.error("无法连接 127.0.0.1:%d: %s", self.access.port, exc)
                 self.log.error(CLOUDFLARED_HINT)
             else:
                 self.log.error("网络错误: %s", exc)

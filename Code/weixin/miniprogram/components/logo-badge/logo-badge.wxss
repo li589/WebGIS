@@ -1,0 +1,28 @@
+/* 纯 CSS logo（无文字）：蓝底圆角方块 + 轨道弧 + 定位点，M1 占位版（正式视觉稿后替换为图片资源） */
+.logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: #185fa5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.logo-orbit {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-top-color: transparent;
+  transform: rotate(-30deg);
+}
+.logo-dot {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #7ad151;
+}

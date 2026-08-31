@@ -5,6 +5,11 @@
 import type { ActiveLayer, ActiveRunLayerGroup } from './types'
 import type { ImportedRasterPayload } from './imported-raster'
 import type { ImportedVectorPayload } from './imported-vector'
+import {
+  readScopedItem,
+  removeScopedItem,
+  writeScopedItem,
+} from '../../services/user-local-isolation'
 
 const STORAGE_KEY = 'geo:active-layers-workspace:v1'
 const DISMISSED_STORAGE_KEY = 'geo:dismissed-layers:v1'
@@ -102,7 +107,7 @@ function pushUnique(list: string[], value: string | undefined | null) {
 export function loadDismissedLayers(): DismissedLayersRegistry {
   if (typeof window === 'undefined') return emptyDismissed()
   try {
-    const raw = window.localStorage.getItem(DISMISSED_STORAGE_KEY)
+    const raw = readScopedItem(DISMISSED_STORAGE_KEY)
     if (!raw) return emptyDismissed()
     const parsed = JSON.parse(raw) as Partial<DismissedLayersRegistry>
     return {
@@ -127,7 +132,7 @@ export function loadDismissedLayers(): DismissedLayersRegistry {
 function saveDismissedLayers(registry: DismissedLayersRegistry): void {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.setItem(DISMISSED_STORAGE_KEY, JSON.stringify(registry))
+    writeScopedItem(DISMISSED_STORAGE_KEY, JSON.stringify(registry))
   } catch {
     /* quota / private mode */
   }
@@ -365,7 +370,7 @@ export function buildWorkspaceSnapshot(
 export function saveWorkspaceSnapshot(snapshot: WorkspaceSnapshot): void {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))
+    writeScopedItem(STORAGE_KEY, JSON.stringify(snapshot))
   } catch {
     /* quota / private mode */
   }
@@ -374,7 +379,7 @@ export function saveWorkspaceSnapshot(snapshot: WorkspaceSnapshot): void {
 export function loadWorkspaceSnapshot(): WorkspaceSnapshot | null {
   if (typeof window === 'undefined') return null
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
+    const raw = readScopedItem(STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as WorkspaceSnapshot
     if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.layers)) return null
@@ -388,20 +393,28 @@ export function loadWorkspaceSnapshot(): WorkspaceSnapshot | null {
 }
 
 /**
- * 一次性迁移：删除英文占位图层条目（catalogId 为 omega_sf_fenkuai_* /
- * omega_avg_daily_* 等原始 workflow id）。这些占位无目录条目、无独立数据源，
+ * 一次性迁移：删除英文占位 / 技术 id 游离层。
+ * - 裸 workflow id：omega_sf_fenkuai_* / omega_avg_daily_*
+ * - 稳定 overlay 派生：imported-omega_sf_fenkuai_*（附加产物未建组时的泄漏）
  * 产物恢复改经 restoreActiveWorkflows 映射到「风云/SMAP ω 反演」合并组。
  */
-const ENGLISH_PLACEHOLDER_CATALOG_PATTERN = /^omega[-_]sf[-_]fenkuai|^omega[-_]avg[-_]daily/i
+const ENGLISH_PLACEHOLDER_CATALOG_PATTERN =
+  /(?:^|[/\\-])(?:imported-)?omega[-_](?:sf[-_]fenkuai|avg[-_]daily)/i
 
 function migrateSnapshot(snapshot: WorkspaceSnapshot): WorkspaceSnapshot {
   const drop = (catalogId: string | undefined | null): boolean =>
     Boolean(catalogId) && ENGLISH_PLACEHOLDER_CATALOG_PATTERN.test(String(catalogId))
+  const dropLayer = (layer: { catalogId?: string; name?: string | null }): boolean => {
+    if (drop(layer.catalogId)) return true
+    // 显示名整段仍是技术 id（旧游离层）一并剔除
+    const name = String(layer.name || '').trim()
+    return Boolean(name) && ENGLISH_PLACEHOLDER_CATALOG_PATTERN.test(name)
+  }
   const catalogLayers = snapshot.catalogLayers ?? []
   const vectorLayers = snapshot.vectorLayers ?? []
   const beforeLayers = snapshot.layers.length + catalogLayers.length
-  snapshot.layers = snapshot.layers.filter((l) => !drop(l.catalogId))
-  snapshot.catalogLayers = catalogLayers.filter((l) => !drop(l.catalogId))
+  snapshot.layers = snapshot.layers.filter((l) => !dropLayer(l))
+  snapshot.catalogLayers = catalogLayers.filter((l) => !dropLayer(l))
   if (snapshot.layers.length + snapshot.catalogLayers.length === beforeLayers) return snapshot
   const keptInstanceIds = new Set([
     ...snapshot.layers.map((l) => l.instanceId),
@@ -418,7 +431,7 @@ function migrateSnapshot(snapshot: WorkspaceSnapshot): WorkspaceSnapshot {
 export function clearWorkspaceSnapshot(): void {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.removeItem(STORAGE_KEY)
+    removeScopedItem(STORAGE_KEY)
   } catch {
     /* ignore */
   }

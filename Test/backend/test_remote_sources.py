@@ -1,21 +1,15 @@
-"""Remote URI parsing + transport registry + config route auth."""
+"""Remote URI parsing + transport registry + config route auth.
+
+注意：不做手动 sys.path 操纵——conftest 已统一处理（_BACKEND_ROOT/
+_CODE_ROOT insert + _ALGO_ROOT append）。手动把 provider 根 insert 到
+最前会触发 B-N8 包名遮蔽（同进程其他测试 import
+app.services.workflow.* → algorithms.providers 不可导入——2026-08-25
+test_register_and_add 与本文件同跑时实测）。
+"""
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-
-_CODE_ROOT = Path(__file__).resolve().parents[2]
-# 注意必须带 Code/ 前缀：mat2py editable finder 只映射 data_access 等包、
-# 不映射 path_utils 等顶层模块，故必须显式挂上真实 provider 根目录。
-for _p in (
-    _CODE_ROOT / "Code" / "algorithms" / "providers" / "Python",
-    _CODE_ROOT,
-):
-    _s = str(_p)
-    if _s in sys.path:
-        sys.path.remove(_s)
-    sys.path.insert(0, _s)
 
 
 def test_parse_sftp_uri_with_cred():

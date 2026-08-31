@@ -8,6 +8,7 @@ import {
   getPaletteColors,
   paletteIdsEqual,
   resolveCanonicalPaletteId,
+  resolveCanonicalPaletteIdStrict,
   WEATHER_PALETTE_OPTIONS,
 } from './weather-render'
 
@@ -18,6 +19,7 @@ export {
   getPaletteColors,
   paletteIdsEqual,
   resolveCanonicalPaletteId,
+  resolveCanonicalPaletteIdStrict,
 }
 
 // D1 修复后：类型真源在 src/types/overlay-symbology.ts，此处 re-export 保持兼容

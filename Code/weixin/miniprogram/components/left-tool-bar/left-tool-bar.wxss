@@ -1,0 +1,52 @@
+/* 左上角竖向地图操作工具栏：与 right-tool-bar 视觉统一
+ * 玻璃半透明、圆角 22px、描边单色 SVG 图标
+ * 定位由父级 .ltb-slot（map-shell.wxss）控制，组件内部 .ltb 用 relative 作为基准
+ */
+
+.ltb {
+  position: relative;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.ltb-bar {
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(14, 22, 33, 0.10),
+              inset 0 0 0 0.5px rgba(255, 255, 255, 0.5);
+  padding: 4px 0;
+}
+
+.ltb-btn {
+  position: relative;
+  width: 48px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.18s ease;
+}
+
+.ltb-hover {
+  opacity: 0.55;
+  background: rgba(24, 95, 165, 0.08);
+}
+
+.ltb-icon {
+  width: 26px;
+  height: 26px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.ltb-divider {
+  height: 0.5px;
+  margin: 0 8px;
+  background: rgba(58, 63, 74, 0.10);
+}

@@ -592,7 +592,13 @@
       "isAdminBoundary": false,
       "dataOwner": "CAS",
       "temporalCoverage": "2020 Baseline",
-      "sourceReference": "National Earth System Science Data Center"
+      "sourceReference": "National Earth System Science Data Center",
+      "workflowExtra": {
+        "group_title": "生物量密度",
+        "output_labels": {
+          "result": "生物量密度"
+        }
+      }
     },
     {
       "catalogId": "landcover-cn",
@@ -623,7 +629,13 @@
       "isAdminBoundary": false,
       "dataOwner": "NASA LP DAAC",
       "temporalCoverage": "2001 to 2022 (Annual)",
-      "sourceReference": "https://lpdaac.usgs.gov/products/mcd12q1v061/"
+      "sourceReference": "https://lpdaac.usgs.gov/products/mcd12q1v061/",
+      "workflowExtra": {
+        "group_title": "土地利用覆被",
+        "output_labels": {
+          "result": "土地利用覆被"
+        }
+      }
     },
     {
       "catalogId": "clcd-cn",
@@ -654,7 +666,13 @@
       "isAdminBoundary": false,
       "dataOwner": "Wuhan University",
       "temporalCoverage": "1985 to 2022 (Annual)",
-      "sourceReference": "https://zenodo.org/record/4417810"
+      "sourceReference": "https://zenodo.org/record/4417810",
+      "workflowExtra": {
+        "group_title": "CLCD 土地利用",
+        "output_labels": {
+          "result": "CLCD 土地利用"
+        }
+      }
     },
     {
       "catalogId": "hfp-cn",
@@ -685,7 +703,13 @@
       "isAdminBoundary": false,
       "dataOwner": "WCS / SEDAC",
       "temporalCoverage": "2020 Global HFP Release",
-      "sourceReference": "https://sedac.ciesin.columbia.edu/"
+      "sourceReference": "https://sedac.ciesin.columbia.edu/",
+      "workflowExtra": {
+        "group_title": "人类足迹指数 HFP",
+        "output_labels": {
+          "result": "人类足迹指数 HFP"
+        }
+      }
     },
     {
       "catalogId": "dem-etopo",
@@ -716,7 +740,13 @@
       "isAdminBoundary": false,
       "dataOwner": "NOAA NCEI",
       "temporalCoverage": "Static Topography Baseline",
-      "sourceReference": "https://www.ncei.noaa.gov/products/etopo-global-relief-model"
+      "sourceReference": "https://www.ncei.noaa.gov/products/etopo-global-relief-model",
+      "workflowExtra": {
+        "group_title": "ETOPO 地形高程",
+        "output_labels": {
+          "result": "ETOPO 地形高程"
+        }
+      }
     },
     {
       "catalogId": "gebco-dem-cn",
@@ -747,7 +777,13 @@
       "isAdminBoundary": false,
       "dataOwner": "GEBCO Consortium",
       "temporalCoverage": "2023 Release",
-      "sourceReference": "https://www.gebco.net/data_and_products/gridded_bathymetry_data/"
+      "sourceReference": "https://www.gebco.net/data_and_products/gridded_bathymetry_data/",
+      "workflowExtra": {
+        "group_title": "GEBCO 海底地形",
+        "output_labels": {
+          "result": "GEBCO 海底地形"
+        }
+      }
     },
     {
       "catalogId": "ref-smap-sm-202512-l3",
@@ -933,7 +969,13 @@
       "members": [],
       "isAdminBoundary": false,
       "dataOwner": "Lab",
-      "temporalCoverage": "Static Auxiliary Baseline"
+      "temporalCoverage": "Static Auxiliary Baseline",
+      "workflowExtra": {
+        "group_title": "森林覆盖率",
+        "output_labels": {
+          "result": "森林覆盖率"
+        }
+      }
     },
     {
       "catalogId": "landscape-metrics-9km",
@@ -993,7 +1035,13 @@
       "isMergedGroup": false,
       "members": [],
       "isAdminBoundary": false,
-      "temporalCoverage": "Static Climate Product"
+      "temporalCoverage": "Static Climate Product",
+      "workflowExtra": {
+        "group_title": "干旱指数 AI",
+        "output_labels": {
+          "result": "干旱指数 AI"
+        }
+      }
     },
     {
       "catalogId": "gpcp-precip-ts",
@@ -1023,7 +1071,91 @@
       "members": [],
       "isAdminBoundary": false,
       "mergedInto": "precipitation-static",
-      "temporalCoverage": "Monthly sample series"
+      "temporalCoverage": "Monthly sample series",
+      "workflowExtra": {
+        "group_title": "GPCP 月降水",
+        "output_labels": {
+          "result": "GPCP 月降水"
+        }
+      }
+    },
+    {
+      "catalogId": "era5-hazards-cn",
+      "name": "ERA5 灾害事件",
+      "category": "climate",
+      "subCategory": "灾害事件",
+      "metricLabel": "热浪事件",
+      "metricUnit": "次",
+      "metricPrecision": 0,
+      "updateLabel": "2020 年",
+      "sourceLabel": "白天/夜间可选",
+      "accentColor": "#e85d75",
+      "accentGlow": "rgba(232,93,117,0.3)",
+      "chipTone": "rgba(232,93,117,0.16)",
+      "sources": [
+        {
+          "id": "era5-dwaa-cn",
+          "name": "白天热浪事件（DWAA）",
+          "description": "ERA5 衍生白天热浪事件，2020 年中国区域 0.25°。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "年度"
+        },
+        {
+          "id": "era5-wdaa-cn",
+          "name": "夜间热浪事件（WDAA）",
+          "description": "ERA5 衍生夜间热浪事件，2020 年中国区域 0.25°。",
+          "urlTemplate": "",
+          "needsAuth": false,
+          "needsBackendTransform": false,
+          "coordSys": "EPSG:4326",
+          "updateFrequency": "年度"
+        }
+      ],
+      "isMergedGroup": true,
+      "members": [
+        "era5-dwaa-cn",
+        "era5-wdaa-cn"
+      ],
+      "isAdminBoundary": false
+    },
+    {
+      "catalogId": "era5-dwaa-cn",
+      "name": "ERA5 白天热浪事件",
+      "category": "climate",
+      "metricLabel": "主指标",
+      "metricUnit": "",
+      "metricPrecision": 1,
+      "updateLabel": "",
+      "sourceLabel": "",
+      "accentColor": "#67d4ff",
+      "accentGlow": "rgba(103, 212, 255, 0.28)",
+      "chipTone": "rgba(103, 212, 255, 0.16)",
+      "sources": [],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "mergedInto": "era5-hazards-cn"
+    },
+    {
+      "catalogId": "era5-wdaa-cn",
+      "name": "ERA5 夜间热浪事件",
+      "category": "climate",
+      "metricLabel": "主指标",
+      "metricUnit": "",
+      "metricPrecision": 1,
+      "updateLabel": "",
+      "sourceLabel": "",
+      "accentColor": "#67d4ff",
+      "accentGlow": "rgba(103, 212, 255, 0.28)",
+      "chipTone": "rgba(103, 212, 255, 0.16)",
+      "sources": [],
+      "isMergedGroup": false,
+      "members": [],
+      "isAdminBoundary": false,
+      "mergedInto": "era5-hazards-cn"
     },
     {
       "catalogId": "cmfd-precip-cn",
@@ -1053,7 +1185,13 @@
       "members": [],
       "isAdminBoundary": false,
       "mergedInto": "precipitation-static",
-      "temporalCoverage": "2002-01 sample"
+      "temporalCoverage": "2002-01 sample",
+      "workflowExtra": {
+        "group_title": "CMFD 区域降水",
+        "output_labels": {
+          "result": "CMFD 区域降水"
+        }
+      }
     },
     {
       "catalogId": "co2-cn",
@@ -1082,7 +1220,13 @@
       "isMergedGroup": false,
       "members": [],
       "isAdminBoundary": false,
-      "temporalCoverage": "Static Mean Product"
+      "temporalCoverage": "Static Mean Product",
+      "workflowExtra": {
+        "group_title": "GOSAT CO₂ 柱浓度",
+        "output_labels": {
+          "result": "GOSAT CO₂ 柱浓度"
+        }
+      }
     },
     {
       "catalogId": "method-smap-omega-doy-dynamic",
@@ -1101,7 +1245,7 @@
         {
           "id": "method-smap-omega-doy-dynamic",
           "name": "SMAP 动态 ω 反演",
-          "description": "omega_sf_fenkuai 流水线：SMAP 亮温 + 辅助数据 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。",
+          "description": "SMAP 亮温与多源辅助数据联合反演：8 天合成产出 SM / VOD / ω 三个图层。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1114,7 +1258,15 @@
       "isAdminBoundary": false,
       "mergedInto": "smap-omega-inversion",
       "dataOwner": "Lab",
-      "temporalCoverage": "Depends on SMAP daily mats under DATA_ROOT"
+      "temporalCoverage": "Depends on SMAP daily mats under DATA_ROOT",
+      "workflowExtra": {
+        "group_title": "SMAP ω 反演产物（动态）",
+        "output_labels": {
+          "SM": "土壤水分",
+          "VOD": "植被光学厚度",
+          "OMEGA": "反演参数 ω"
+        }
+      }
     },
     {
       "catalogId": "method-fy-omega-doy-dynamic",
@@ -1133,7 +1285,7 @@
         {
           "id": "method-fy-omega-doy-dynamic",
           "name": "风云卫星 动态 ω 反演",
-          "description": "omega_sf_fenkuai 流水线：FY 亮温 + SMAP 辅助 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。",
+          "description": "风云卫星亮温与 SMAP 辅助数据联合反演：8 天合成产出 SM / VOD / ω 三个图层。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1146,26 +1298,34 @@
       "isAdminBoundary": false,
       "mergedInto": "fy-omega-inversion",
       "dataOwner": "Lab",
-      "temporalCoverage": "Depends on FY/SMAP daily mats under DATA_ROOT"
+      "temporalCoverage": "Depends on FY/SMAP daily mats under DATA_ROOT",
+      "workflowExtra": {
+        "group_title": "风云 ω 反演产物（动态）",
+        "output_labels": {
+          "SM": "土壤水分",
+          "VOD": "植被光学厚度",
+          "OMEGA": "反演参数 ω"
+        }
+      }
     },
     {
       "catalogId": "method-smap-omega-doy-avg",
-      "name": "SMAP 日均 ω 反演",
+      "name": "SMAP 平均 ω 反演",
       "category": "research-group",
       "subCategory": "模型输出",
       "metricLabel": "ω",
       "metricUnit": "",
       "metricPrecision": 3,
       "updateLabel": "按工作流运行",
-      "sourceLabel": "SMAP 日均反演",
+      "sourceLabel": "SMAP 平均反演",
       "accentColor": "#abdda4",
       "accentGlow": "rgba(171, 221, 164, 0.3)",
       "chipTone": "rgba(171, 221, 164, 0.16)",
       "sources": [
         {
           "id": "method-smap-omega-doy-avg",
-          "name": "SMAP 日均 ω 反演",
-          "description": "omega_avg_daily / omega_block 经典 D1→D2 链路：SMAP 日均 ω 反演。",
+          "name": "SMAP 平均 ω 反演",
+          "description": "omega_avg_daily / omega_block 经典 D1→D2 链路：SMAP 平均 ω 反演。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1178,26 +1338,34 @@
       "isAdminBoundary": false,
       "mergedInto": "smap-omega-inversion",
       "dataOwner": "Lab",
-      "temporalCoverage": "Depends on omega_block outputs"
+      "temporalCoverage": "Depends on omega_block outputs",
+      "workflowExtra": {
+        "group_title": "SMAP ω 反演产物（平均）",
+        "output_labels": {
+          "SM": "土壤水分",
+          "VOD": "植被光学厚度",
+          "OMEGA": "反演参数 ω"
+        }
+      }
     },
     {
       "catalogId": "method-fy-omega-doy-avg",
-      "name": "风云卫星 日均 ω 反演",
+      "name": "风云卫星 平均 ω 反演",
       "category": "research-group",
       "subCategory": "模型输出",
       "metricLabel": "ω",
       "metricUnit": "",
       "metricPrecision": 3,
       "updateLabel": "按工作流运行",
-      "sourceLabel": "FY 日均反演",
+      "sourceLabel": "FY 平均反演",
       "accentColor": "#66c2a5",
       "accentGlow": "rgba(102, 194, 165, 0.3)",
       "chipTone": "rgba(102, 194, 165, 0.16)",
       "sources": [
         {
           "id": "method-fy-omega-doy-avg",
-          "name": "风云卫星 日均 ω 反演",
-          "description": "omega_avg_daily FY ORIG_TS 链路：经典 D1→D2 日均 ω 反演。",
+          "name": "风云卫星 平均 ω 反演",
+          "description": "omega_avg_daily FY ORIG_TS 链路：经典 D1→D2 平均 ω 反演。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1210,7 +1378,15 @@
       "isAdminBoundary": false,
       "mergedInto": "fy-omega-inversion",
       "dataOwner": "Lab",
-      "temporalCoverage": "Depends on omega_block outputs"
+      "temporalCoverage": "Depends on omega_block outputs",
+      "workflowExtra": {
+        "group_title": "风云 ω 反演产物（平均）",
+        "output_labels": {
+          "SM": "土壤水分",
+          "VOD": "植被光学厚度",
+          "OMEGA": "反演参数 ω"
+        }
+      }
     },
     {
       "catalogId": "smap-aux-albedo",
@@ -1613,7 +1789,7 @@
         {
           "id": "method-fy-omega-doy-dynamic",
           "name": "风云卫星 动态 ω 反演",
-          "description": "omega_sf_fenkuai 流水线：FY 亮温 + SMAP 辅助 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。",
+          "description": "风云 ω 反演合集：动态反演 / 平均反演等多数据源可选。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1622,8 +1798,8 @@
         },
         {
           "id": "method-fy-omega-doy-avg",
-          "name": "风云卫星 日均 ω 反演",
-          "description": "omega_avg_daily FY ORIG_TS 链路：经典 D1→D2 日均 ω 反演。",
+          "name": "风云卫星 平均 ω 反演",
+          "description": "风云 ω 反演合集：动态反演 / 平均反演等多数据源可选。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1655,7 +1831,7 @@
         {
           "id": "method-smap-omega-doy-dynamic",
           "name": "SMAP 动态 ω 反演",
-          "description": "omega_sf_fenkuai 流水线：SMAP 亮温 + 辅助数据 → 8-day 分块 SF 倒推 → SM/VOD/OMEGA。",
+          "description": "SMAP ω 反演合集：动态反演 / 平均反演等多数据源可选。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1664,8 +1840,8 @@
         },
         {
           "id": "method-smap-omega-doy-avg",
-          "name": "SMAP 日均 ω 反演",
-          "description": "omega_avg_daily / omega_block 经典 D1→D2 链路：SMAP 日均 ω 反演。",
+          "name": "SMAP 平均 ω 反演",
+          "description": "SMAP ω 反演合集：动态反演 / 平均反演等多数据源可选。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,

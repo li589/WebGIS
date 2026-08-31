@@ -1,0 +1,56 @@
+{
+  "workflow_id": "static_local_read_dem_etopo",
+  "name": "ETOPO 地形高程 本地数据读取",
+  "description": "ETOPO 地形高程 静态本地数据直读工作流：data/source 指向源数据，output/map_layer 发布为产物图层（2026-08-22 需求2：所有图层配置工作流）。",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "data/source",
+      "pos": [
+        120,
+        160
+      ],
+      "size": [
+        220,
+        120
+      ],
+      "properties": {
+        "path": "{DATA_ROOT}/Geological/DEM/ETOPO_2022/ETOPO_2022_v1_60s_N90W180_surface.tif",
+        "dataset_key": "STATIC_LOCAL_DEM_ETOPO"
+      }
+    },
+    {
+      "id": 2,
+      "type": "output/map_layer",
+      "pos": [
+        480,
+        160
+      ],
+      "size": [
+        220,
+        110
+      ],
+      "properties": {
+        "layer_id": "dem-etopo",
+        "display_name": "ETOPO 地形高程"
+      }
+    }
+  ],
+  "links": [
+    {
+      "id": 1,
+      "type": "data",
+      "origin_id": 1,
+      "origin_slot": 0,
+      "target_id": 2,
+      "target_slot": 0
+    }
+  ],
+  "extra": {
+    "purpose": "static_local_read",
+    "group_title": "ETOPO 地形高程",
+    "output_labels": {
+      "result": "ETOPO 地形高程"
+    }
+  }
+}

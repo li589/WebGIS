@@ -25,17 +25,19 @@ VALID_AUTH_TYPES = frozenset({"bearer", "basic", "header", "token", "none"})
 VALID_SEARCH_CAPABILITIES = frozenset({"cmr", "cdse_odata", "cds", "none"})
 VALID_REGIONS = frozenset({"international", "china"})
 
-# CMR granule 检索模板（short_name 检索；page_size 由调用方注入）
+# CMR 数据集（collection）检索模板（数据集化改造阶段 2/6：granule 文件级 →
+# collection 数据集级，keyword 检索；page_size 由调用方注入）
 _CMR_SEARCH_TEMPLATE = (
-    "{base}/search/granules.json?short_name={query}&page_size={page_size}"
+    "{base}/search/collections.json?keyword={query}&page_size={page_size}"
 )
 # Copernicus Data Space OData V2 产品检索（公共，无鉴权；2026-08-16 活体探针确认契约：
-# 响应 {"value": [{Id, Name, ContentLength, Online, SensingStartDate, ...}]}）
+# 响应 {"value": [{Id, Name, ContentLength, Online, SensingStartDate, ...}]}）。
+# 数据集化改造：检索仍按产品，但解析层聚合为「任务_产品级」数据集条目。
 _CDSE_ODATA_SEARCH_TEMPLATE = (
     "{base}/odata/v1/Products?$filter=contains(Name,'{query}')&$top={page_size}"
 )
 # ECMWF 新版 CDS STAC 风格目录（公共；探针确认：/api/catalogue/v1/collections?q=&limit=
-# 返回 {"collections": [{id, title, description, ...}]}）
+# 返回 {"collections": [{id, title, description, ...}]}；collection 即数据集级）
 _CDS_SEARCH_TEMPLATE = "{base}/api/catalogue/v1/collections?q={query}&limit={page_size}"
 
 # CDSE 产品内容下载固定走下载域（与目录域不同 host）
@@ -216,7 +218,7 @@ DEFAULT_PORTAL_CATALOG: dict[str, PortalDef] = {
             name="欧空局 Copernicus 下载 CDN",
             organization="ESA Copernicus Data Space",
             region="international",
-            base_url="https://download.dataspace.copernicus.eu/",
+            base_url="https://download.dataspace.copernicus.eu/odata/v1/",
             website="https://dataspace.copernicus.eu/",
             description="Copernicus 产品下载 CDN（凭据同目录）。",
             requires_credentials=True,
@@ -437,6 +439,23 @@ def known_portal_ids(*, repo: Any = None) -> set[str]:
     # 遗留规范键（PORTAL_IDS 时代已存数据迁移安全）
     ids.update({"earthdata", "nsidc", "copernicus"})
     return ids
+
+
+def portal_profile_aliases(*, repo: Any = None) -> dict[str, str]:
+    """portal_id → credential_profile 别名表（共享凭据族的规范键归一用）。
+
+    前端凭据对话框按 portal_id 保存（如 ``esa_copernicus``/``cdse``），而目录
+    状态徽标、凭据回填与 worker 运行时解析都按 credential_profile（如
+    ``copernicus``）查询。本表供 ``load_portal_credentials_secret`` 把
+    portal_id 键的存储投影到规范键，消除写入/读取键错位。仅含 profile
+    非空且不等于自身 portal_id 的条目。
+    """
+    r = repo if repo is not None else _repo()
+    return {
+        pid: d.cred_key()
+        for pid, d in list_portal_defs(repo=r).items()
+        if d.credential_profile and d.credential_profile != pid
+    }
 
 
 def preset_labels_from_catalog(*, repo: Any = None) -> dict[str, str]:
@@ -734,7 +753,8 @@ def _auth_headers_for_portal(
 
 def _test_url_for(defn: PortalDef, base: str) -> str:
     if defn.search_capability == "cmr":
-        return f"{base.rstrip('/')}/search/granules.json?page_size=1"
+        # 数据集化改造（阶段 2/6）：连通性探针同步换 collections 端点
+        return f"{base.rstrip('/')}/search/collections.json?page_size=1"
     if defn.search_capability == "cdse_odata":
         return f"{base.rstrip('/')}/odata/v1/Products?$top=1"
     if defn.search_capability == "cds":
@@ -800,36 +820,98 @@ def test_portal(portal_id: str) -> dict[str, Any]:
         }
 
 
-# ── 在线检索（CMR provider） ─────────────────────────────────────────────────
+# ── 在线检索（数据集级 provider，plan §2） ──────────────────────────────────
 
 
-def _first_link_by_rel(entry: dict[str, Any], needle: str) -> str:
-    for link in entry.get("links") or []:
-        if isinstance(link, dict) and needle in str(link.get("rel") or ""):
-            href = str(link.get("href") or "").strip()
-            if href:
-                return href
-    return ""
+def _parse_cmr_collection_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """CMR collection（数据集级）→ 统一数据集条目（plan §2）。
 
-
-def _parse_cmr_entry(entry: dict[str, Any]) -> dict[str, Any]:
-    try:
-        size_bytes = int(float(entry.get("granule_size") or 0))
-    except (TypeError, ValueError):
-        size_bytes = 0
+    真实 collections.json 契约（2026-08-21 活体探针确认）：
+    entry_id="GLDAS_NOAH025_3H_2.1"（短名_版本）、dataset_id=完整标题、
+    version_id、time_start/end、data_center、summary。dataset_key 取
+    entry_id 去掉 "_{version_id}" 后缀；缺失字段防御性回退。
+    """
+    title = str(entry.get("dataset_id") or entry.get("entry_title") or "").strip()
+    version = str(entry.get("version_id") or "").strip()
+    entry_id = str(entry.get("entry_id") or entry.get("short_name") or "").strip()
+    dataset_key = entry_id
+    if version and dataset_key.endswith(f"_{version}"):
+        dataset_key = dataset_key[: -len(version) - 1]
+    if not dataset_key:
+        dataset_key = re.sub(r"\s+", "_", title)
     return {
-        "title": str(entry.get("title") or ""),
-        "granule_id": str(entry.get("id") or ""),
-        "producer_granule_id": str(entry.get("producer_granule_id") or ""),
-        "size_bytes": size_bytes,
+        "dataset_key": dataset_key,
+        "title": title,
+        "description": str(entry.get("summary") or "").strip(),
         "time_start": str(entry.get("time_start") or ""),
         "time_end": str(entry.get("time_end") or ""),
-        "data_link": _first_link_by_rel(entry, "data#"),
-        "browse_link": _first_link_by_rel(entry, "browse"),
+        "provider_kind": "cmr",
+        "extra": {
+            "collection_id": str(entry.get("id") or entry_id),
+            "version": version,
+            "data_center": str(entry.get("data_center") or ""),
+        },
     }
 
 
+_CDSE_LEVEL_SEGMENT_RE = re.compile(r"^\d[A-Z]{0,3}$")
+_CDSE_TIMESTAMP_SEGMENT_RE = re.compile(r"^\d{8}T")
+
+
+def _cdse_dataset_pattern(name: str) -> str:
+    """CDSE 产品名 → 「任务_产品级」模式（数据集标识）。
+
+    按级别段（形如 1SDV/1SDH）截断并去掉时间戳段，最多取 3 段：
+    - S1A_IW_GRDH_1SDV_20150412T… → S1A_IW_GRDH
+    - S2A_MSIL1C_20240101T…       → S2A_MSIL1C
+    """
+    parts = [p for p in str(name or "").strip().split("_") if p]
+    if not parts:
+        return ""
+    for i, seg in enumerate(parts):
+        if i > 0 and _CDSE_LEVEL_SEGMENT_RE.match(seg):
+            parts = parts[:i]
+            break
+    parts = [p for p in parts if not _CDSE_TIMESTAMP_SEGMENT_RE.match(p)]
+    return "_".join(parts[:3]) if len(parts) > 3 else "_".join(parts)
+
+
+def _aggregate_cdse_products(products: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """CDSE 产品级条目聚合为数据集级（数据集化改造阶段 2/6）。
+
+    按产品名前两段（任务_产品级）分组，每组一条数据集条目；
+    extra 携带产品数与示例产品 ID，产品级细节不再直接暴露。
+    """
+    groups: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for product in products:
+        name = str(product.get("title") or "")
+        pattern = _cdse_dataset_pattern(name)
+        if not pattern:
+            continue
+        if pattern not in groups:
+            order.append(pattern)
+            groups[pattern] = {
+                "dataset_key": pattern,
+                "title": pattern,
+                "description": f"Copernicus Data Space 产品集 {pattern}",
+                "time_start": str(product.get("time_start") or ""),
+                "time_end": str(product.get("time_end") or ""),
+                "provider_kind": "cdse_odata",
+                "extra": {"count": 0, "sample_product_id": "", "sample_link": ""},
+            }
+        g = groups[pattern]
+        g["extra"]["count"] += 1
+        if not g["extra"]["sample_product_id"]:
+            g["extra"]["sample_product_id"] = str(product.get("granule_id") or "")
+            g["extra"]["sample_link"] = str(product.get("data_link") or "")
+        if not g["time_start"] and product.get("time_start"):
+            g["time_start"] = str(product["time_start"])
+    return [groups[k] for k in order]
+
+
 def _parse_cdse_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """CDSE 产品级解析（供聚合步骤消费，不再直接作为检索结果）。"""
     try:
         size_bytes = int(float(entry.get("ContentLength") or 0))
     except (TypeError, ValueError):
@@ -854,21 +936,27 @@ def _parse_cdse_entry(entry: dict[str, Any]) -> dict[str, Any]:
 
 
 def _parse_cds_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """CDS collection（数据集级）→ 统一数据集条目（字段重排，阶段 2/6）。"""
     dataset_id = str(entry.get("id") or "")
     return {
+        "dataset_key": dataset_id,
         "title": str(entry.get("title") or dataset_id),
-        "granule_id": dataset_id,
-        "producer_granule_id": "",
-        "size_bytes": 0,
-        "time_start": "",
-        "time_end": "",
-        # CDS 数据集页；实际取数须经 cdsapi（download/cds_download 节点）
-        "data_link": (
-            f"https://cds.climate.copernicus.eu/datasets/{dataset_id}"
-            if dataset_id
+        "description": str(entry.get("description") or "").strip(),
+        "time_start": str(
+            entry.get("extent", {}).get("temporal", {}).get("interval", [[""]])[0][0]
+            if isinstance(entry.get("extent"), dict)
             else ""
         ),
-        "browse_link": "",
+        "time_end": "",
+        "provider_kind": "cds",
+        "extra": {
+            # CDS 数据集页；实际取数须经 cdsapi（download/cds_download 节点）
+            "data_link": (
+                f"https://cds.climate.copernicus.eu/datasets/{dataset_id}"
+                if dataset_id
+                else ""
+            ),
+        },
     }
 
 
@@ -880,7 +968,7 @@ _SEARCH_ITEM_EXTRACTORS: dict[str, str] = {
 }
 
 _SEARCH_ITEM_PARSERS: dict[str, Any] = {
-    "cmr": _parse_cmr_entry,
+    "cmr": _parse_cmr_collection_entry,
     "cdse_odata": _parse_cdse_entry,
     "cds": _parse_cds_entry,
 }
@@ -963,6 +1051,9 @@ def search_portal(
     entries = _extract_search_items(capability, payload)
     parser = _SEARCH_ITEM_PARSERS[capability]
     items = [parser(e) for e in entries]
+    # 数据集化改造（阶段 2/6）：CDSE 产品级条目聚合为「任务_产品级」数据集
+    if capability == "cdse_odata":
+        items = _aggregate_cdse_products(items)
     return {
         "portal_id": pid,
         "query": q,

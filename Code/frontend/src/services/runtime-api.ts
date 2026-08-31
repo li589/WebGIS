@@ -10,8 +10,12 @@ import type {
   WorkflowRunViewResponse,
   LayerCatalogResponse,
   LayerCategoryResponse,
+  LayerLifecycleResponse,
+  LayerOnlineSyncResponse,
   WeatherPointResponse,
   WorkflowSubmitRequest,
+  WorkflowTemplateListResponse,
+  WorkflowTemplateRunResponse,
 } from '../types/api-reexports'
 // Sprint 3.6: requestJson / resolveApiUrl 已抽取到 _http.ts 统一维护
 import { requestJson, resolveApiUrl } from './_http'
@@ -25,6 +29,78 @@ export function submitWorkflow(payload: WorkflowSubmitRequest) {
     body: JSON.stringify(payload),
     timeoutMs: 120000,
   })
+}
+
+/** 统一图层资产工作流：检查烘焙资产，陈旧/缺失则后台重烘。 */
+export function submitOverlayAssetWorkflow(layerId: string, forceRebake = false) {
+  const suffix = forceRebake ? '?force_rebake=true' : ''
+  return requestJson<WorkflowAcceptedResponse>(
+    `/overlay-asset-workflows/${encodeURIComponent(layerId)}${suffix}`,
+    {
+      method: 'POST',
+      body: '{}',
+      timeoutMs: 120000,
+    },
+  )
+}
+
+/** 图层平台子系统 P0：图层生命周期聚合查询（资产 + 最近 run + 时间轴）。 */
+export function fetchLayerLifecycle(layerId: string) {
+  return requestJson<LayerLifecycleResponse>(
+    `/layers/${encodeURIComponent(layerId)}/lifecycle`,
+    { silent: true, timeoutMs: 30000 },
+  )
+}
+
+/** 图层平台子系统 P1：在线源同步统一入口（workflow_kind=online_sync）。 */
+export function syncLayerAssetOnline(
+  layerId: string,
+  options?: { timeKey?: string; isPrefetch?: boolean; priority?: 'low' | 'normal' },
+) {
+  return requestJson<LayerOnlineSyncResponse>(
+    `/layer-assets/${encodeURIComponent(layerId)}/sync`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        time_key: options?.timeKey ?? null,
+        is_prefetch: options?.isPrefetch ?? false,
+        priority: options?.priority ?? 'normal',
+      }),
+      timeoutMs: 120000,
+    },
+  )
+}
+
+/** 图层平台子系统 P1：课题组工作流模板列表。 */
+export function fetchWorkflowTemplates() {
+  return requestJson<WorkflowTemplateListResponse>('/workflows/templates', {
+    timeoutMs: 30000,
+  })
+}
+
+/** 图层平台子系统 P1：模板一键运行（完成后自动上图）。 */
+export function runWorkflowTemplate(
+  workflowId: string,
+  options?: {
+    parameters?: Record<string, unknown>
+    timeRange?: { start_at: string; end_at: string }
+    resourceProfile?: string
+    autoDisplay?: boolean
+  },
+) {
+  return requestJson<WorkflowTemplateRunResponse>(
+    `/workflows/templates/${encodeURIComponent(workflowId)}/runs`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        parameters: options?.parameters ?? {},
+        time_range: options?.timeRange ?? null,
+        resource_profile: options?.resourceProfile ?? null,
+        auto_display: options?.autoDisplay ?? null,
+      }),
+      timeoutMs: 120000,
+    },
+  )
 }
 
 export function fetchLayerCatalog() {
@@ -85,7 +161,12 @@ export function getWorkflowRunView(runId: string) {
   return requestJson<WorkflowRunViewResponse>(`/workflow-runs/${runId}/view`, { silent: true })
 }
 
-export function materializeWorkflowMapLayers(runId: string) {
+export function materializeWorkflowMapLayers(
+  runId: string,
+  options?: { silent?: boolean },
+) {
+  // 默认 silent：渐进物化与失败竞态下的 409（retry_pending/failed）属预期，
+  // 勿写入「Request failed」用户日志；显式 silent:false 仅用于调试。
   return requestJson<{
     run_id: string
     layers: Array<{
@@ -105,6 +186,7 @@ export function materializeWorkflowMapLayers(runId: string) {
     method: 'POST',
     body: '{}',
     timeoutMs: 300000,
+    silent: options?.silent !== false,
   })
 }
 

@@ -13,7 +13,10 @@
  * - 获取失败后进入 cooling（60s），期间不重复提交同一时间点
  */
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
-import type { OnlineTemporalCapability } from '../../services/runtime-api'
+import type {
+  LayerOnlineSyncResponse,
+  OnlineTemporalCapability,
+} from '../../services/runtime-api'
 import type { TimeGranularity } from '../../utils/layer-timeline'
 import { parseTimeStep, type TimeStep } from '../../utils/temporal-interval'
 
@@ -40,7 +43,7 @@ export interface OnlineFetchEntry {
 export interface OnlineTemporalOrchestratorDeps {
   /** 获取图层的在线时间配置 */
   getOnlineTemporalConfig: (catalogId: string) => OnlineTemporalCapability | null
-  /** 提交工作流（委托 workflow-run 域） */
+  /** 提交工作流（委托 workflow-run 域；P2 起作为回退路径） */
   runWorkflowForCatalog: (
     catalogId: string,
     options: {
@@ -50,6 +53,21 @@ export interface OnlineTemporalOrchestratorDeps {
       commandLabel?: string
     },
   ) => Promise<string | undefined>
+  /**
+   * P2：统一在线同步入口（POST /layer-assets/{id}/sync）。
+   * 后端承担同图层活跃 run 去重、time_key 解析、prefetch/low 批量队列与
+   * 失败保留旧资产语义。缺省时编排器回退 runWorkflowForCatalog 旧路径。
+   */
+  syncLayerAssetOnline?: (
+    catalogId: string,
+    body: { time_key?: string; is_prefetch?: boolean; priority?: 'low' | 'normal' },
+  ) => Promise<LayerOnlineSyncResponse>
+  /**
+   * P2：把后端返回的 online_sync run 注册进前端轮询链
+   * （复用 workflow-runner 的 registerExternalWorkflowRun：拉取状态 +
+   * upsertJobLayer + startPolling，终态后由既有 watcher 物化产物）。
+   */
+  registerExternalWorkflowRun?: (runId: string, catalogIdHint?: string) => Promise<void>
   /** 当前选中的 catalogId */
   selectedCatalogId: ComputedRef<string | null> | Ref<string | null>
   /** 当前时间轴日期 */
@@ -305,6 +323,47 @@ export function useOnlineTemporalOrchestrator(deps: OnlineTemporalOrchestratorDe
       `${label} ${catalogId} @ ${timeKey} → ${timeRange.start_at} ~ ${timeRange.end_at}`,
     )
 
+    // ── P2：优先走统一在线同步入口（后端承担去重/队列/预算语义） ──
+    if (deps.syncLayerAssetOnline) {
+      try {
+        const resp = await deps.syncLayerAssetOnline(catalogId, {
+          time_key: timeKey,
+          is_prefetch: options?.isPrefetch,
+          priority: cap.priority === 'low' ? 'low' : 'normal',
+        })
+
+        if (resp.status === 'succeeded') {
+          // 资产已 fresh：无需 run，直接标记成功（时间轴经 lifecycle/overlayTimeStates 更新）
+          updateEntry(key, { status: 'succeeded', settledAt: Date.now() })
+          deps.logOperation?.('online-temporal', `${label}完成（资产已就绪） ${catalogId} @ ${timeKey}`)
+          return undefined
+        }
+
+        if (resp.run_id && (resp.status === 'submitted' || resp.status === 'in-flight')) {
+          updateEntry(key, { runId: resp.run_id, status: 'in-flight' })
+          // 注册进前端轮询链：终态后由既有 watcher 物化产物 + markSucceeded
+          if (deps.registerExternalWorkflowRun) {
+            void deps.registerExternalWorkflowRun(resp.run_id, catalogId)
+          }
+          return resp.run_id
+        }
+
+        // skipped-unsupported 等异常分支 → 回退旧路径（见下方）
+        deps.logOperation?.(
+          'online-temporal',
+          `${label}统一入口返回 ${resp.status}（${resp.message ?? ''}），回退直提路径 ${catalogId} @ ${timeKey}`,
+        )
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        // 统一入口不可用（如旧后端无该路由 404）→ 回退旧路径而非直接失败
+        deps.logOperation?.(
+          'online-temporal',
+          `${label}统一入口失败（${message}），回退直提路径 ${catalogId} @ ${timeKey}`,
+        )
+      }
+    }
+
+    // ── 回退路径：直接委托 workflow-run 域提交（P1 及之前行为） ──
     try {
       const runId = await deps.runWorkflowForCatalog(catalogId, {
         timeRange,

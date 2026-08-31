@@ -17,7 +17,7 @@ import {
 } from '../services/analysis-api'
 import { ApiRequestError } from '../services/http-errors'
 import { cancelWorkflowRun } from '../services/runtime-api'
-import { useLayersStore } from './layers'
+import { useWorkflowRun } from './layers/selectors'
 import type { ActiveLayerDisplay } from './layers/types'
 
 export type AnalysisRunPhase =
@@ -298,8 +298,8 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
             replacedPrior,
           },
         }
-        const layers = useLayersStore()
-        await layers.registerExternalWorkflowRun(accepted.run_id, body.layer_id)
+        const { registerExternalWorkflowRun } = useWorkflowRun()
+        await registerExternalWorkflowRun(accepted.run_id, body.layer_id)
         void watchRun(key, accepted.run_id)
         return
       } catch (err) {
@@ -350,7 +350,7 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
   }
 
   async function watchRun(key: string, runId: string) {
-    const layers = useLayersStore()
+    const { jobLayers } = useWorkflowRun()
     const started = Date.now()
     while (Date.now() - started < 30 * 60_000) {
       const sleeper = cancelableSleep(1500)
@@ -362,7 +362,7 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
       } finally {
         watcherCancellers.delete(key)
       }
-      const job = layers.jobLayers.find((j) => j.jobId === runId)
+      const job = jobLayers.value.find((j) => j.jobId === runId)
       const cur = activeByKey.value[key]
       if (!cur || cur.runId !== runId) return
       if (cur.phase === 'cancelled') return

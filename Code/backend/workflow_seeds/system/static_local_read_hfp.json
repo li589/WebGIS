@@ -1,0 +1,56 @@
+{
+  "workflow_id": "static_local_read_hfp",
+  "name": "人类足迹指数 HFP 本地数据读取",
+  "description": "人类足迹指数 HFP 静态本地数据直读工作流：data/source 指向源数据，output/map_layer 发布为产物图层（2026-08-22 需求2：所有图层配置工作流）。",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "data/source",
+      "pos": [
+        120,
+        160
+      ],
+      "size": [
+        220,
+        120
+      ],
+      "properties": {
+        "path": "{DATA_ROOT}/ProjectOutput/2023-01_Omega_Inversion/stage2_aligned/hfp_025.mat",
+        "dataset_key": "STATIC_LOCAL_HFP_CN"
+      }
+    },
+    {
+      "id": 2,
+      "type": "output/map_layer",
+      "pos": [
+        480,
+        160
+      ],
+      "size": [
+        220,
+        110
+      ],
+      "properties": {
+        "layer_id": "hfp-cn",
+        "display_name": "人类足迹指数 HFP"
+      }
+    }
+  ],
+  "links": [
+    {
+      "id": 1,
+      "type": "data",
+      "origin_id": 1,
+      "origin_slot": 0,
+      "target_id": 2,
+      "target_slot": 0
+    }
+  ],
+  "extra": {
+    "purpose": "static_local_read",
+    "group_title": "人类足迹指数 HFP",
+    "output_labels": {
+      "result": "人类足迹指数 HFP"
+    }
+  }
+}

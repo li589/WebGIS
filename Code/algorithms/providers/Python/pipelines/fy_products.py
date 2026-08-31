@@ -15,6 +15,7 @@ from data_access import resolve_prepared_local_directory
 from ingest.fy import build_fy_daily_job_plans, write_fy_daily_plan_json
 from pipelines.base import BasePipeline, PipelinePlan
 from utils.fy_executor import execute_fy_command_steps
+from utils.request_time import resolve_time_bounds
 
 
 def _resolve_fy_input_dir(datasource_selection: dict[str, object]) -> Path:
@@ -65,11 +66,16 @@ class FyDailyPipeline(BasePipeline):
                 "fy_plan", f"Build FY daily job plan from {input_dir}"
             )
 
+        start_time, end_time = resolve_time_bounds(
+            time_range=request.time_range,
+            algorithm_params=request.algorithm_params,
+            module_label="fy_daily_pipeline",
+        )
         plans = build_fy_daily_job_plans(
             input_dir=input_dir,
             output_root=output_root,
-            start_time=request.time_range.start,
-            end_time=request.time_range.end,
+            start_time=start_time,
+            end_time=end_time,
             orbit_mode=orbit_mode,
         )
         if not plans:

@@ -163,8 +163,10 @@ function applyDatePreset(preset: DatePreset) {
 
 /** WorkflowDefinitionMeta 未声明 tags 字段，运行时后端会返回，安全读取 */
 function readMetaTags(def: WorkflowDefinition): string[] {
-  const meta = def._meta as unknown as Record<string, unknown>
-  const tags = meta.tags
+  // _meta 本身可能缺失（种子未带 meta 块）——可选链防
+  // "Cannot read properties of undefined (reading 'tags')"
+  const meta = def._meta as unknown as Record<string, unknown> | undefined
+  const tags = meta?.tags
   return Array.isArray(tags) ? tags.filter((t): t is string => typeof t === 'string') : []
 }
 
@@ -286,6 +288,24 @@ function handleConfirmLaunch() {
   if (sd > ed) {
     dateError.value = '开始日期不能晚于结束日期'
     return
+  }
+  // SMAP/FY ω 反演：气候态 ω 按 8 天变化，流水线最短窗 8 天（含首尾）
+  const wfId = selectedPipeline.value.workflowId
+  if (/omega_(avg|sf|block)|omega-avg|omega-sf/i.test(wfId)) {
+    const y0 = Number(sd.slice(0, 4))
+    const m0 = Number(sd.slice(4, 6))
+    const d0 = Number(sd.slice(6, 8))
+    const y1 = Number(ed.slice(0, 4))
+    const m1 = Number(ed.slice(4, 6))
+    const d1 = Number(ed.slice(6, 8))
+    const spanDays =
+      Math.round(
+        (Date.UTC(y1, m1 - 1, d1) - Date.UTC(y0, m0 - 1, d0)) / (24 * 3600 * 1000),
+      ) + 1
+    if (spanDays < 8) {
+      dateError.value = `SMAP/FY ω 流水线至少需要 8 天（当前 ${spanDays} 天）；平均/动态 ω 按 8 天一变`
+      return
+    }
   }
   dateError.value = ''
 

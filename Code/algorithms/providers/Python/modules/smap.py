@@ -101,11 +101,14 @@ class SmapDailyModule(BaseModule):
             ctx.logger_adapter.emit_stage_start(
                 "smap_extract", f"Extract SMAP L3 from {input_dir}"
             )
+        # time_range 缺省（如 register-and-add 自动链不传时间窗）→ 全量转换
+        # （不过滤）；有则按窗口过滤（naive/aware 兼容在 ingest 层统一处理）。
+        _tr = getattr(ctx.request, "time_range", None)
         outputs = convert_smap_l3_directory_to_mat(
             input_dir=input_dir,
             output_dir=output_dir,
-            start_time=ctx.request.time_range.start,
-            end_time=ctx.request.time_range.end,
+            start_time=getattr(_tr, "start", None),
+            end_time=getattr(_tr, "end", None),
         )
 
         product_refs = [

@@ -5,6 +5,7 @@ from contextvars import ContextVar
 from datetime import datetime, UTC
 import json
 import logging
+import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from collections.abc import Iterator
@@ -48,8 +49,15 @@ def configure_logging() -> None:
 
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
+    # 多 worker 进程并发（CGDA_WORKER_INSTANCES>1）时，多进程共享同一
+    # RotatingFileHandler 在轮转瞬间互相持有旧文件句柄 → Windows
+    # PermissionError 杀死 worker（2026-08-21 需求4 实测）。按进程角色
+    # （process_manager 注入 CGDA_LOG_FILE_ROLE=worker-<name>[-<i>]）分文件；
+    # 未注入（FastAPI/测试/手动）保持 backend.log 兼容。
+    _role = (os.getenv("CGDA_LOG_FILE_ROLE") or "").strip()
+    _log_filename = f"backend-{_role}.log" if _role else "backend.log"
     file_handler = RotatingFileHandler(
-        log_dir / "backend.log",
+        log_dir / _log_filename,
         maxBytes=5 * 1024 * 1024,
         backupCount=5,
         encoding="utf-8",

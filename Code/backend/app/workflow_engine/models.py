@@ -46,6 +46,9 @@ class NodeSpec(BaseModel):
     output_ports: list[PortSpec] = Field(default_factory=list)
     retry_limit: int = 0
     batch_enabled: bool = False
+    # C-6：画布节点可停用（enabled=false，如默认关闭的 FY3B 支路）；
+    # 此前该字段被 pydantic extra 丢弃，executor 照常执行停用节点
+    enabled: bool = True
     ui_schema: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
     deprecated: bool = False

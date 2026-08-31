@@ -724,12 +724,15 @@ class JobServiceTests(unittest.TestCase):
         ui_response = service.get_workflow_ui_schema_response("retrieval_workflow")
 
         self.assertEqual(workflows_response.status_code, 200)
-        self.assertEqual(workflows_response.body["count"], 1)
-        self.assertEqual(
-            workflows_response.body["workflows"][0]["name"], "retrieval_workflow"
+        # named presets：retrieval_workflow + duxin_sme_workflow
+        self.assertGreaterEqual(workflows_response.body["count"], 1)
+        workflow_names = {w["name"] for w in workflows_response.body["workflows"]}
+        self.assertIn("retrieval_workflow", workflow_names)
+        retrieval_entry = next(
+            w for w in workflows_response.body["workflows"] if w["name"] == "retrieval_workflow"
         )
         self.assertEqual(
-            tuple(workflows_response.body["workflows"][0]["preview_modes"]),
+            tuple(retrieval_entry["preview_modes"]),
             ("dh", "ddca", "omega"),
         )
         self.assertEqual(describe_response.status_code, 200)

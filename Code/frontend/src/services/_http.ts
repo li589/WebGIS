@@ -215,10 +215,30 @@ export async function requestJson<T>(path: string, init?: RequestJsonInit): Prom
   }
 
   try {
+    // D-3：组合外部 signal 与超时 signal——此前 `restInit.signal ?? controller.signal`
+    // 在调用方传 signal 时超时完全静默失效（getWeatherCoverage 等 8s 超时失效）。
+    // AbortSignal.any 为 2024 标准（Chrome 116+）；旧环境手动桥接外部 signal
+    // 到超时 controller，保证超时始终生效（悬挂请求会让全局 loading 永不结束）。
+    let requestSignal: AbortSignal | null | undefined = controller.signal
+    if (restInit.signal && typeof AbortSignal.any === 'function') {
+      requestSignal = AbortSignal.any([restInit.signal, controller.signal])
+    } else if (restInit.signal) {
+      const external = restInit.signal
+      if (external.aborted) {
+        controller.abort(external.reason)
+      } else {
+        external.addEventListener(
+          'abort',
+          () => controller.abort(external.reason),
+          { once: true },
+        )
+      }
+      requestSignal = controller.signal
+    }
     const response = await fetch(resolveApiUrl(path), {
       ...restInit,
       headers: mergedHeaders,
-      signal: restInit.signal ?? controller.signal,
+      signal: requestSignal,
       credentials: 'include',
     })
 

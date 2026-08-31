@@ -8,7 +8,14 @@
     "readonly": true,
     "is_template": true,
     "linked_layer_id": null,
-    "tags": ["analysis", "preprocess", "raster", "stub_v1", "sample", "hidden"],
+    "tags": [
+      "analysis",
+      "preprocess",
+      "raster",
+      "stub_v1",
+      "sample",
+      "hidden"
+    ],
     "category": "analysis",
     "resource_profile": "heavy"
   },
@@ -19,7 +26,10 @@
     {
       "id": 1,
       "type": "data/source",
-      "pos": [60, 120],
+      "pos": [
+        60,
+        120
+      ],
       "properties": {
         "path": "{DATA_ROOT}/_runtime/smoke_stub.tif",
         "dataset_key": "input_path"
@@ -28,7 +38,10 @@
     {
       "id": 2,
       "type": "data/source",
-      "pos": [60, 280],
+      "pos": [
+        60,
+        280
+      ],
       "properties": {
         "path": "{DATA_ROOT}/_runtime/smoke_stub_b.tif",
         "dataset_key": "mask_path"
@@ -37,7 +50,10 @@
     {
       "id": 3,
       "type": "preprocess/mask",
-      "pos": [360, 180],
+      "pos": [
+        360,
+        180
+      ],
       "properties": {
         "mask_value": 0,
         "invert": false
@@ -46,7 +62,10 @@
     {
       "id": 4,
       "type": "preprocess/resample",
-      "pos": [660, 180],
+      "pos": [
+        660,
+        180
+      ],
       "properties": {
         "target_resolution": 0.2,
         "unit": "degrees",
@@ -55,8 +74,32 @@
     }
   ],
   "links": [
-    [1, 1, 2, 3, 1],
-    [2, 2, 2, 3, 2],
-    [3, 3, 0, 4, 1]
-  ]
+    [
+      1,
+      1,
+      2,
+      3,
+      1
+    ],
+    [
+      2,
+      2,
+      2,
+      3,
+      2
+    ],
+    [
+      3,
+      3,
+      0,
+      4,
+      1
+    ]
+  ],
+  "extra": {
+    "group_title": "预处理（掩膜与重采样）",
+    "output_labels": {
+      "result": "预处理结果"
+    }
+  }
 }

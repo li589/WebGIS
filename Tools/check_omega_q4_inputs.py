@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from data_root import resolve_data_root
 
 REQUIRED_SMAP = ("sm_dca", "vwc", "Ts")
 REQUIRED_FY = ("TBv", "TBh", "IA")
@@ -34,7 +35,7 @@ def _check_mat(path: Path, required: tuple[str, ...]) -> dict:
 
 
 def main() -> None:
-    root = Path(r"I:\Geograph_DataSet\Soil_Moisture")
+    root = resolve_data_root() / "Soil_Moisture"
     report: dict = {"smap": [], "fy3d": [], "ancillary": {}}
     for folder, req, bucket in (
         (root / "SMAP_Origin_Data", REQUIRED_SMAP, "smap"),

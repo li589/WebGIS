@@ -6,8 +6,7 @@
  * 支持选中、新建、复制、删除用户工作流、使用模板创建。
  * 支持按 category 分类过滤和标签显示。
  */
-import { ref, computed } from 'vue'
-import { storeToRefs } from 'pinia'
+import { ref, computed, toRef } from 'vue'
 import { ClipboardList, Zap, Settings, Lock, Gem, Diamond, X } from '../ui/icons'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import { useLogStore } from '../../stores/log'
@@ -21,7 +20,11 @@ const emit = defineEmits<{
 
 const store = useWorkflowDefinitionsStore()
 const logStore = useLogStore()
-const { summaries, systemWorkflows, userWorkflows, currentDefinition, loading } = storeToRefs(store)
+const summaries = toRef(store, 'summaries')
+const systemWorkflows = toRef(store, 'systemWorkflows')
+const userWorkflows = toRef(store, 'userWorkflows')
+const currentDefinition = toRef(store, 'currentDefinition')
+const loading = toRef(store, 'loading')
 
 const confirmDeleteId = ref<string | null>(null)
 const duplicateSourceId = ref<string | null>(null)

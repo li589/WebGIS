@@ -1,0 +1,1064 @@
+{
+  "basemapProviders": [
+    {
+      "id": "none",
+      "label": "空白底图",
+      "provider": "None",
+      "coordinateSystem": "EPSG:3857",
+      "endpoints": [
+        {
+          "id": "blank",
+          "sourceId": "none",
+          "label": "空白",
+          "url": "",
+          "authMode": "none",
+          "enabled": true,
+          "style": "none",
+          "saturation": 0,
+          "brightness": 0,
+          "contrast": 0,
+          "isStandard": true,
+          "needsBackendTransform": false
+        }
+      ]
+    },
+    {
+      "id": "esri",
+      "label": "Esri Basemaps",
+      "provider": "Esri",
+      "coordinateSystem": "EPSG:3857",
+      "endpoints": [
+        {
+          "id": "street",
+          "sourceId": "esri-street",
+          "label": "Esri 世界街道",
+          "url": "/unified-tiles/esri-street/{z}/{x}/{y}",
+          "authMode": "none",
+          "enabled": true,
+          "style": "street",
+          "attribution": "Esri",
+          "tileSize": 256,
+          "saturation": -0.08,
+          "brightness": 0.02,
+          "contrast": 0.08,
+          "isStandard": true,
+          "needsBackendTransform": false
+        },
+        {
+          "id": "imagery",
+          "sourceId": "esri-imagery",
+          "label": "Esri 世界影像",
+          "url": "/unified-tiles/esri-imagery/{z}/{x}/{y}",
+          "authMode": "none",
+          "enabled": true,
+          "style": "satellite",
+          "attribution": "Esri",
+          "tileSize": 256,
+          "saturation": 0.04,
+          "brightness": 0.03,
+          "contrast": 0.1,
+          "isStandard": true,
+          "needsBackendTransform": false
+        },
+        {
+          "id": "terrain",
+          "sourceId": "esri-terrain",
+          "label": "Esri 地形图",
+          "url": "/unified-tiles/esri-terrain/{z}/{x}/{y}",
+          "authMode": "none",
+          "enabled": true,
+          "style": "terrain",
+          "attribution": "Esri",
+          "tileSize": 256,
+          "saturation": -0.1,
+          "brightness": 0.02,
+          "contrast": 0.12,
+          "isStandard": true,
+          "needsBackendTransform": false
+        },
+        {
+          "id": "hillshade",
+          "sourceId": "esri-hillshade",
+          "label": "Esri 晕渲",
+          "url": "/unified-tiles/esri-hillshade/{z}/{x}/{y}",
+          "authMode": "none",
+          "enabled": true,
+          "style": "terrain",
+          "attribution": "Esri",
+          "tileSize": 256,
+          "saturation": -0.12,
+          "brightness": 0.04,
+          "contrast": 0.14,
+          "isStandard": true,
+          "needsBackendTransform": false
+        },
+        {
+          "id": "dark",
+          "sourceId": "esri-dark",
+          "label": "Esri 深色",
+          "url": "/unified-tiles/esri-dark/{z}/{x}/{y}",
+          "authMode": "none",
+          "enabled": true,
+          "style": "dark",
+          "attribution": "Esri",
+          "tileSize": 256,
+          "saturation": -0.15,
+          "brightness": -0.05,
+          "contrast": 0.12,
+          "isStandard": true,
+          "needsBackendTransform": false
+        }
+      ]
+    },
+    {
+      "id": "osm",
+      "label": "OSM Basemaps",
+      "provider": "OSM",
+      "coordinateSystem": "EPSG:3857",
+      "endpoints": [
+        {
+          "id": "standard",
+          "sourceId": "osm-standard",
+          "label": "OSM 标准",
+          "url": "/unified-tiles/osm-standard/{z}/{x}/{y}",
+          "authMode": "none",
+          "enabled": true,
+          "style": "street",
+          "attribution": "© OpenStreetMap contributors",
+          "tileSize": 256,
+          "saturation": 0,
+          "brightness": 0,
+          "contrast": 0.02,
+          "isStandard": true,
+          "needsBackendTransform": false
+        },
+        {
+          "id": "hot",
+          "sourceId": "osm-hot",
+          "label": "OSM 人道主义",
+          "url": "/unified-tiles/osm-hot/{z}/{x}/{y}",
+          "authMode": "none",
+          "enabled": true,
+          "style": "street",
+          "attribution": "© OpenStreetMap contributors",
+          "tileSize": 256,
+          "saturation": -0.05,
+          "brightness": 0,
+          "contrast": 0.05,
+          "isStandard": true,
+          "needsBackendTransform": false,
+          "metadata": {
+            "providerLabel": "OSM-FR"
+          }
+        },
+        {
+          "id": "opentopo",
+          "sourceId": "opentopo-terrain",
+          "label": "OpenTopoMap",
+          "url": "/unified-tiles/opentopo-terrain/{z}/{x}/{y}",
+          "authMode": "none",
+          "enabled": true,
+          "style": "terrain",
+          "attribution": "© OpenStreetMap contributors, SRTM | OpenTopoMap",
+          "tileSize": 256,
+          "saturation": -0.05,
+          "brightness": 0.02,
+          "contrast": 0.1,
+          "isStandard": true,
+          "needsBackendTransform": false,
+          "metadata": {
+            "providerLabel": "OpenTopo"
+          }
+        }
+      ]
+    },
+    {
+      "id": "carto",
+      "label": "CARTO Basemaps",
+      "provider": "CARTO",
+      "coordinateSystem": "EPSG:3857",
+      "endpoints": [
+        {
+          "id": "dark",
+          "sourceId": "carto-dark",
+          "label": "CARTO 深色",
+          "url": "/unified-tiles/carto-dark/{z}/{x}/{y}",
+          "authMode": "none",
+          "enabled": true,
+          "style": "dark",
+          "attribution": "CARTO",
+          "tileSize": 256,
+          "saturation": -0.2,
+          "brightness": -0.04,
+          "contrast": 0.16,
+          "isStandard": true,
+          "needsBackendTransform": false
+        }
+      ]
+    },
+    {
+      "id": "bing",
+      "label": "Bing",
+      "provider": "Bing",
+      "coordinateSystem": "EPSG:3857",
+      "endpoints": [
+        {
+          "id": "road",
+          "sourceId": "bing-road",
+          "label": "Bing 道路",
+          "url": "/unified-tiles/bing-road/{z}/{x}/{y}",
+          "authMode": "api-key",
+          "enabled": true,
+          "style": "street",
+          "attribution": "© Microsoft Bing",
+          "tileSize": 256,
+          "saturation": -0.02,
+          "brightness": 0.01,
+          "contrast": 0.05,
+          "isStandard": true,
+          "needsBackendTransform": false,
+          "secretRef": {
+            "id": "bing-maps-key",
+            "backend": "config-api-keys",
+            "key": "bing"
+          }
+        },
+        {
+          "id": "aerial",
+          "sourceId": "bing-aerial",
+          "label": "Bing 航空",
+          "url": "/unified-tiles/bing-aerial/{z}/{x}/{y}",
+          "authMode": "api-key",
+          "enabled": true,
+          "style": "satellite",
+          "attribution": "© Microsoft Bing",
+          "tileSize": 256,
+          "saturation": 0.02,
+          "brightness": 0.02,
+          "contrast": 0.08,
+          "isStandard": true,
+          "needsBackendTransform": false,
+          "secretRef": {
+            "id": "bing-maps-key",
+            "backend": "config-api-keys",
+            "key": "bing"
+          }
+        },
+        {
+          "id": "dark",
+          "sourceId": "bing-dark",
+          "label": "Bing 深色",
+          "url": "/unified-tiles/bing-dark/{z}/{x}/{y}",
+          "authMode": "api-key",
+          "enabled": true,
+          "style": "dark",
+          "attribution": "© Microsoft Bing",
+          "tileSize": 256,
+          "saturation": -0.1,
+          "brightness": -0.04,
+          "contrast": 0.12,
+          "isStandard": true,
+          "needsBackendTransform": false,
+          "secretRef": {
+            "id": "bing-maps-key",
+            "backend": "config-api-keys",
+            "key": "bing"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gaode",
+      "label": "高德",
+      "provider": "高德",
+      "coordinateSystem": "GCJ-02",
+      "endpoints": [
+        {
+          "id": "street",
+          "sourceId": "gaode-street",
+          "label": "高德街道",
+          "url": "/unified-tiles/gaode-street/{z}/{x}/{y}",
+          "authMode": "api-key",
+          "enabled": true,
+          "style": "street",
+          "attribution": "© 高德地图",
+          "tileSize": 256,
+          "saturation": 0,
+          "brightness": 0,
+          "contrast": 0.05,
+          "isStandard": true,
+          "needsBackendTransform": true,
+          "secretRef": {
+            "id": "gaode-key",
+            "backend": "config-api-keys",
+            "key": "gaode"
+          }
+        },
+        {
+          "id": "satellite",
+          "sourceId": "gaode-satellite",
+          "label": "高德卫星",
+          "url": "/unified-tiles/gaode-satellite/{z}/{x}/{y}",
+          "authMode": "api-key",
+          "enabled": true,
+          "style": "satellite",
+          "attribution": "© 高德影像",
+          "tileSize": 256,
+          "saturation": 0.02,
+          "brightness": 0.02,
+          "contrast": 0.08,
+          "isStandard": true,
+          "needsBackendTransform": true,
+          "secretRef": {
+            "id": "gaode-key",
+            "backend": "config-api-keys",
+            "key": "gaode"
+          }
+        }
+      ]
+    },
+    {
+      "id": "tianditu",
+      "label": "Tianditu Basemaps",
+      "provider": "Tianditu",
+      "coordinateSystem": "EPSG:3857",
+      "endpoints": [
+        {
+          "id": "vector",
+          "sourceId": "tianditu-vec",
+          "label": "天地图街道",
+          "url": "/unified-tiles/tianditu-vec/{z}/{x}/{y}",
+          "authMode": "api-key",
+          "enabled": true,
+          "style": "street",
+          "attribution": "© 天地图",
+          "tileSize": 256,
+          "saturation": 0,
+          "brightness": 0,
+          "contrast": 0.02,
+          "isStandard": true,
+          "needsBackendTransform": false,
+          "secretRef": {
+            "id": "tianditu-token",
+            "backend": "config-api-keys",
+            "key": "tianditu"
+          },
+          "metadata": {
+            "providerLabel": "Tianditu",
+            "overlayUrl": "/unified-tiles/tianditu-cva/{z}/{x}/{y}"
+          }
+        },
+        {
+          "id": "imagery",
+          "sourceId": "tianditu-img",
+          "label": "天地图影像",
+          "url": "/unified-tiles/tianditu-img/{z}/{x}/{y}",
+          "authMode": "api-key",
+          "enabled": true,
+          "style": "satellite",
+          "attribution": "© 天地图",
+          "tileSize": 256,
+          "saturation": 0.02,
+          "brightness": 0.02,
+          "contrast": 0.08,
+          "isStandard": true,
+          "needsBackendTransform": false,
+          "secretRef": {
+            "id": "tianditu-token",
+            "backend": "config-api-keys",
+            "key": "tianditu"
+          }
+        },
+        {
+          "id": "terrain",
+          "sourceId": "tianditu-ter",
+          "label": "天地图地形",
+          "url": "/unified-tiles/tianditu-ter/{z}/{x}/{y}",
+          "authMode": "api-key",
+          "enabled": true,
+          "style": "terrain",
+          "attribution": "© 天地图",
+          "tileSize": 256,
+          "saturation": -0.08,
+          "brightness": 0.02,
+          "contrast": 0.1,
+          "isStandard": true,
+          "needsBackendTransform": false,
+          "secretRef": {
+            "id": "tianditu-token",
+            "backend": "config-api-keys",
+            "key": "tianditu"
+          }
+        }
+      ]
+    },
+    {
+      "id": "baidu",
+      "label": "Baidu Basemaps",
+      "provider": "Baidu",
+      "coordinateSystem": "BD-09",
+      "endpoints": [
+        {
+          "id": "street",
+          "sourceId": "baidu-street",
+          "label": "百度街道",
+          "url": "/unified-tiles/baidu-street/{z}/{x}/{y}",
+          "authMode": "api-key",
+          "enabled": true,
+          "style": "street",
+          "attribution": "© 百度地图",
+          "tileSize": 256,
+          "saturation": 0,
+          "brightness": 0,
+          "contrast": 0.05,
+          "isStandard": true,
+          "needsBackendTransform": true,
+          "secretRef": {
+            "id": "baidu-map-ak",
+            "backend": "config-api-keys",
+            "key": "baidu"
+          }
+        },
+        {
+          "id": "satellite",
+          "sourceId": "baidu-satellite",
+          "label": "百度卫星",
+          "url": "/unified-tiles/baidu-satellite/{z}/{x}/{y}",
+          "authMode": "api-key",
+          "enabled": true,
+          "style": "satellite",
+          "attribution": "© 百度影像",
+          "tileSize": 256,
+          "saturation": 0.02,
+          "brightness": 0.02,
+          "contrast": 0.08,
+          "isStandard": true,
+          "needsBackendTransform": true,
+          "secretRef": {
+            "id": "baidu-map-ak",
+            "backend": "config-api-keys",
+            "key": "baidu"
+          }
+        }
+      ]
+    }
+  ],
+  "externalApis": [
+    {
+      "id": "open-meteo-online",
+      "label": "Open-Meteo (Online)",
+      "domain": "data-source",
+      "capabilities": [
+        "weather",
+        "forecast"
+      ],
+      "endpoints": [
+        {
+          "id": "forecast",
+          "label": "Forecast API",
+          "url": "https://api.open-meteo.com/v1/forecast",
+          "authMode": "none",
+          "enabled": true,
+          "timeoutMs": 30000
+        }
+      ]
+    },
+    {
+      "id": "open-meteo-local",
+      "label": "Open-Meteo (Local)",
+      "domain": "data-source",
+      "capabilities": [
+        "weather",
+        "forecast"
+      ],
+      "endpoints": [
+        {
+          "id": "forecast",
+          "label": "Local Docker API",
+          "url": "http://127.0.0.1:8080/v1/forecast",
+          "authMode": "none",
+          "enabled": true,
+          "timeoutMs": 30000
+        }
+      ]
+    },
+    {
+      "id": "basemap-proxy",
+      "label": "Basemap Proxy",
+      "domain": "basemap",
+      "capabilities": [
+        "tile-proxy",
+        "coord-transform"
+      ],
+      "endpoints": [
+        {
+          "id": "tiles",
+          "label": "Tile Proxy",
+          "url": "/unified-tiles/{provider}/{z}/{x}/{y}",
+          "authMode": "none",
+          "enabled": true
+        }
+      ]
+    }
+  ],
+  "geeIntegration": {
+    "enabled": true,
+    "environment": "dev",
+    "moduleRoot": "backend-managed",
+    "credentialsStoreRef": {
+      "id": "gee-credentials-db",
+      "backend": "backend-runtime",
+      "key": "GEE_CREDENTIALS_DB_PATH"
+    },
+    "encryptionKeyRef": {
+      "id": "gee-credentials-key",
+      "backend": "backend-runtime",
+      "key": "GEE_CREDENTIALS_ENCRYPTION_KEY"
+    },
+    "accounts": [
+      {
+        "id": "gee-account-template",
+        "label": "GEE Account Template",
+        "enabled": false,
+        "credentialRef": {
+          "id": "gee-service-account-json",
+          "backend": "vault",
+          "key": "GEE_SERVICE_ACCOUNT_JSON"
+        }
+      }
+    ]
+  },
+  "unifiedTemplate": {
+    "version": "0.2.0",
+    "updatedAt": "2026-07-09T00:00:00Z",
+    "basemaps": [
+      {
+        "id": "none",
+        "label": "空白底图",
+        "provider": "None",
+        "coordinateSystem": "EPSG:3857",
+        "endpoints": [
+          {
+            "id": "blank",
+            "sourceId": "none",
+            "label": "空白",
+            "url": "",
+            "authMode": "none",
+            "enabled": true,
+            "style": "none",
+            "saturation": 0,
+            "brightness": 0,
+            "contrast": 0,
+            "isStandard": true,
+            "needsBackendTransform": false
+          }
+        ]
+      },
+      {
+        "id": "esri",
+        "label": "Esri Basemaps",
+        "provider": "Esri",
+        "coordinateSystem": "EPSG:3857",
+        "endpoints": [
+          {
+            "id": "street",
+            "sourceId": "esri-street",
+            "label": "Esri 世界街道",
+            "url": "/unified-tiles/esri-street/{z}/{x}/{y}",
+            "authMode": "none",
+            "enabled": true,
+            "style": "street",
+            "attribution": "Esri",
+            "tileSize": 256,
+            "saturation": -0.08,
+            "brightness": 0.02,
+            "contrast": 0.08,
+            "isStandard": true,
+            "needsBackendTransform": false
+          },
+          {
+            "id": "imagery",
+            "sourceId": "esri-imagery",
+            "label": "Esri 世界影像",
+            "url": "/unified-tiles/esri-imagery/{z}/{x}/{y}",
+            "authMode": "none",
+            "enabled": true,
+            "style": "satellite",
+            "attribution": "Esri",
+            "tileSize": 256,
+            "saturation": 0.04,
+            "brightness": 0.03,
+            "contrast": 0.1,
+            "isStandard": true,
+            "needsBackendTransform": false
+          },
+          {
+            "id": "terrain",
+            "sourceId": "esri-terrain",
+            "label": "Esri 地形图",
+            "url": "/unified-tiles/esri-terrain/{z}/{x}/{y}",
+            "authMode": "none",
+            "enabled": true,
+            "style": "terrain",
+            "attribution": "Esri",
+            "tileSize": 256,
+            "saturation": -0.1,
+            "brightness": 0.02,
+            "contrast": 0.12,
+            "isStandard": true,
+            "needsBackendTransform": false
+          },
+          {
+            "id": "hillshade",
+            "sourceId": "esri-hillshade",
+            "label": "Esri 晕渲",
+            "url": "/unified-tiles/esri-hillshade/{z}/{x}/{y}",
+            "authMode": "none",
+            "enabled": true,
+            "style": "terrain",
+            "attribution": "Esri",
+            "tileSize": 256,
+            "saturation": -0.12,
+            "brightness": 0.04,
+            "contrast": 0.14,
+            "isStandard": true,
+            "needsBackendTransform": false
+          },
+          {
+            "id": "dark",
+            "sourceId": "esri-dark",
+            "label": "Esri 深色",
+            "url": "/unified-tiles/esri-dark/{z}/{x}/{y}",
+            "authMode": "none",
+            "enabled": true,
+            "style": "dark",
+            "attribution": "Esri",
+            "tileSize": 256,
+            "saturation": -0.15,
+            "brightness": -0.05,
+            "contrast": 0.12,
+            "isStandard": true,
+            "needsBackendTransform": false
+          }
+        ]
+      },
+      {
+        "id": "osm",
+        "label": "OSM Basemaps",
+        "provider": "OSM",
+        "coordinateSystem": "EPSG:3857",
+        "endpoints": [
+          {
+            "id": "standard",
+            "sourceId": "osm-standard",
+            "label": "OSM 标准",
+            "url": "/unified-tiles/osm-standard/{z}/{x}/{y}",
+            "authMode": "none",
+            "enabled": true,
+            "style": "street",
+            "attribution": "© OpenStreetMap contributors",
+            "tileSize": 256,
+            "saturation": 0,
+            "brightness": 0,
+            "contrast": 0.02,
+            "isStandard": true,
+            "needsBackendTransform": false
+          },
+          {
+            "id": "hot",
+            "sourceId": "osm-hot",
+            "label": "OSM 人道主义",
+            "url": "/unified-tiles/osm-hot/{z}/{x}/{y}",
+            "authMode": "none",
+            "enabled": true,
+            "style": "street",
+            "attribution": "© OpenStreetMap contributors",
+            "tileSize": 256,
+            "saturation": -0.05,
+            "brightness": 0,
+            "contrast": 0.05,
+            "isStandard": true,
+            "needsBackendTransform": false,
+            "metadata": {
+              "providerLabel": "OSM-FR"
+            }
+          },
+          {
+            "id": "opentopo",
+            "sourceId": "opentopo-terrain",
+            "label": "OpenTopoMap",
+            "url": "/unified-tiles/opentopo-terrain/{z}/{x}/{y}",
+            "authMode": "none",
+            "enabled": true,
+            "style": "terrain",
+            "attribution": "© OpenStreetMap contributors, SRTM | OpenTopoMap",
+            "tileSize": 256,
+            "saturation": -0.05,
+            "brightness": 0.02,
+            "contrast": 0.1,
+            "isStandard": true,
+            "needsBackendTransform": false,
+            "metadata": {
+              "providerLabel": "OpenTopo"
+            }
+          }
+        ]
+      },
+      {
+        "id": "carto",
+        "label": "CARTO Basemaps",
+        "provider": "CARTO",
+        "coordinateSystem": "EPSG:3857",
+        "endpoints": [
+          {
+            "id": "dark",
+            "sourceId": "carto-dark",
+            "label": "CARTO 深色",
+            "url": "/unified-tiles/carto-dark/{z}/{x}/{y}",
+            "authMode": "none",
+            "enabled": true,
+            "style": "dark",
+            "attribution": "CARTO",
+            "tileSize": 256,
+            "saturation": -0.2,
+            "brightness": -0.04,
+            "contrast": 0.16,
+            "isStandard": true,
+            "needsBackendTransform": false
+          }
+        ]
+      },
+      {
+        "id": "bing",
+        "label": "Bing",
+        "provider": "Bing",
+        "coordinateSystem": "EPSG:3857",
+        "endpoints": [
+          {
+            "id": "road",
+            "sourceId": "bing-road",
+            "label": "Bing 道路",
+            "url": "/unified-tiles/bing-road/{z}/{x}/{y}",
+            "authMode": "api-key",
+            "enabled": true,
+            "style": "street",
+            "attribution": "© Microsoft Bing",
+            "tileSize": 256,
+            "saturation": -0.02,
+            "brightness": 0.01,
+            "contrast": 0.05,
+            "isStandard": true,
+            "needsBackendTransform": false,
+            "secretRef": {
+              "id": "bing-maps-key",
+              "backend": "config-api-keys",
+              "key": "bing"
+            }
+          },
+          {
+            "id": "aerial",
+            "sourceId": "bing-aerial",
+            "label": "Bing 航空",
+            "url": "/unified-tiles/bing-aerial/{z}/{x}/{y}",
+            "authMode": "api-key",
+            "enabled": true,
+            "style": "satellite",
+            "attribution": "© Microsoft Bing",
+            "tileSize": 256,
+            "saturation": 0.02,
+            "brightness": 0.02,
+            "contrast": 0.08,
+            "isStandard": true,
+            "needsBackendTransform": false,
+            "secretRef": {
+              "id": "bing-maps-key",
+              "backend": "config-api-keys",
+              "key": "bing"
+            }
+          },
+          {
+            "id": "dark",
+            "sourceId": "bing-dark",
+            "label": "Bing 深色",
+            "url": "/unified-tiles/bing-dark/{z}/{x}/{y}",
+            "authMode": "api-key",
+            "enabled": true,
+            "style": "dark",
+            "attribution": "© Microsoft Bing",
+            "tileSize": 256,
+            "saturation": -0.1,
+            "brightness": -0.04,
+            "contrast": 0.12,
+            "isStandard": true,
+            "needsBackendTransform": false,
+            "secretRef": {
+              "id": "bing-maps-key",
+              "backend": "config-api-keys",
+              "key": "bing"
+            }
+          }
+        ]
+      },
+      {
+        "id": "gaode",
+        "label": "高德",
+        "provider": "高德",
+        "coordinateSystem": "GCJ-02",
+        "endpoints": [
+          {
+            "id": "street",
+            "sourceId": "gaode-street",
+            "label": "高德街道",
+            "url": "/unified-tiles/gaode-street/{z}/{x}/{y}",
+            "authMode": "api-key",
+            "enabled": true,
+            "style": "street",
+            "attribution": "© 高德地图",
+            "tileSize": 256,
+            "saturation": 0,
+            "brightness": 0,
+            "contrast": 0.05,
+            "isStandard": true,
+            "needsBackendTransform": true,
+            "secretRef": {
+              "id": "gaode-key",
+              "backend": "config-api-keys",
+              "key": "gaode"
+            }
+          },
+          {
+            "id": "satellite",
+            "sourceId": "gaode-satellite",
+            "label": "高德卫星",
+            "url": "/unified-tiles/gaode-satellite/{z}/{x}/{y}",
+            "authMode": "api-key",
+            "enabled": true,
+            "style": "satellite",
+            "attribution": "© 高德影像",
+            "tileSize": 256,
+            "saturation": 0.02,
+            "brightness": 0.02,
+            "contrast": 0.08,
+            "isStandard": true,
+            "needsBackendTransform": true,
+            "secretRef": {
+              "id": "gaode-key",
+              "backend": "config-api-keys",
+              "key": "gaode"
+            }
+          }
+        ]
+      },
+      {
+        "id": "tianditu",
+        "label": "Tianditu Basemaps",
+        "provider": "Tianditu",
+        "coordinateSystem": "EPSG:3857",
+        "endpoints": [
+          {
+            "id": "vector",
+            "sourceId": "tianditu-vec",
+            "label": "天地图街道",
+            "url": "/unified-tiles/tianditu-vec/{z}/{x}/{y}",
+            "authMode": "api-key",
+            "enabled": true,
+            "style": "street",
+            "attribution": "© 天地图",
+            "tileSize": 256,
+            "saturation": 0,
+            "brightness": 0,
+            "contrast": 0.02,
+            "isStandard": true,
+            "needsBackendTransform": false,
+            "secretRef": {
+              "id": "tianditu-token",
+              "backend": "config-api-keys",
+              "key": "tianditu"
+            },
+            "metadata": {
+              "providerLabel": "Tianditu",
+              "overlayUrl": "/unified-tiles/tianditu-cva/{z}/{x}/{y}"
+            }
+          },
+          {
+            "id": "imagery",
+            "sourceId": "tianditu-img",
+            "label": "天地图影像",
+            "url": "/unified-tiles/tianditu-img/{z}/{x}/{y}",
+            "authMode": "api-key",
+            "enabled": true,
+            "style": "satellite",
+            "attribution": "© 天地图",
+            "tileSize": 256,
+            "saturation": 0.02,
+            "brightness": 0.02,
+            "contrast": 0.08,
+            "isStandard": true,
+            "needsBackendTransform": false,
+            "secretRef": {
+              "id": "tianditu-token",
+              "backend": "config-api-keys",
+              "key": "tianditu"
+            }
+          },
+          {
+            "id": "terrain",
+            "sourceId": "tianditu-ter",
+            "label": "天地图地形",
+            "url": "/unified-tiles/tianditu-ter/{z}/{x}/{y}",
+            "authMode": "api-key",
+            "enabled": true,
+            "style": "terrain",
+            "attribution": "© 天地图",
+            "tileSize": 256,
+            "saturation": -0.08,
+            "brightness": 0.02,
+            "contrast": 0.1,
+            "isStandard": true,
+            "needsBackendTransform": false,
+            "secretRef": {
+              "id": "tianditu-token",
+              "backend": "config-api-keys",
+              "key": "tianditu"
+            }
+          }
+        ]
+      },
+      {
+        "id": "baidu",
+        "label": "Baidu Basemaps",
+        "provider": "Baidu",
+        "coordinateSystem": "BD-09",
+        "endpoints": [
+          {
+            "id": "street",
+            "sourceId": "baidu-street",
+            "label": "百度街道",
+            "url": "/unified-tiles/baidu-street/{z}/{x}/{y}",
+            "authMode": "api-key",
+            "enabled": true,
+            "style": "street",
+            "attribution": "© 百度地图",
+            "tileSize": 256,
+            "saturation": 0,
+            "brightness": 0,
+            "contrast": 0.05,
+            "isStandard": true,
+            "needsBackendTransform": true,
+            "secretRef": {
+              "id": "baidu-map-ak",
+              "backend": "config-api-keys",
+              "key": "baidu"
+            }
+          },
+          {
+            "id": "satellite",
+            "sourceId": "baidu-satellite",
+            "label": "百度卫星",
+            "url": "/unified-tiles/baidu-satellite/{z}/{x}/{y}",
+            "authMode": "api-key",
+            "enabled": true,
+            "style": "satellite",
+            "attribution": "© 百度影像",
+            "tileSize": 256,
+            "saturation": 0.02,
+            "brightness": 0.02,
+            "contrast": 0.08,
+            "isStandard": true,
+            "needsBackendTransform": true,
+            "secretRef": {
+              "id": "baidu-map-ak",
+              "backend": "config-api-keys",
+              "key": "baidu"
+            }
+          }
+        ]
+      }
+    ],
+    "externalApis": [
+      {
+        "id": "open-meteo-online",
+        "label": "Open-Meteo (Online)",
+        "domain": "data-source",
+        "capabilities": [
+          "weather",
+          "forecast"
+        ],
+        "endpoints": [
+          {
+            "id": "forecast",
+            "label": "Forecast API",
+            "url": "https://api.open-meteo.com/v1/forecast",
+            "authMode": "none",
+            "enabled": true,
+            "timeoutMs": 30000
+          }
+        ]
+      },
+      {
+        "id": "open-meteo-local",
+        "label": "Open-Meteo (Local)",
+        "domain": "data-source",
+        "capabilities": [
+          "weather",
+          "forecast"
+        ],
+        "endpoints": [
+          {
+            "id": "forecast",
+            "label": "Local Docker API",
+            "url": "http://127.0.0.1:8080/v1/forecast",
+            "authMode": "none",
+            "enabled": true,
+            "timeoutMs": 30000
+          }
+        ]
+      },
+      {
+        "id": "basemap-proxy",
+        "label": "Basemap Proxy",
+        "domain": "basemap",
+        "capabilities": [
+          "tile-proxy",
+          "coord-transform"
+        ],
+        "endpoints": [
+          {
+            "id": "tiles",
+            "label": "Tile Proxy",
+            "url": "/unified-tiles/{provider}/{z}/{x}/{y}",
+            "authMode": "none",
+            "enabled": true
+          }
+        ]
+      }
+    ],
+    "gee": {
+      "enabled": true,
+      "environment": "dev",
+      "moduleRoot": "backend-managed",
+      "credentialsStoreRef": {
+        "id": "gee-credentials-db",
+        "backend": "backend-runtime",
+        "key": "GEE_CREDENTIALS_DB_PATH"
+      },
+      "encryptionKeyRef": {
+        "id": "gee-credentials-key",
+        "backend": "backend-runtime",
+        "key": "GEE_CREDENTIALS_ENCRYPTION_KEY"
+      },
+      "accounts": [
+        {
+          "id": "gee-account-template",
+          "label": "GEE Account Template",
+          "enabled": false,
+          "credentialRef": {
+            "id": "gee-service-account-json",
+            "backend": "vault",
+            "key": "GEE_SERVICE_ACCOUNT_JSON"
+          }
+        }
+      ]
+    }
+  }
+}

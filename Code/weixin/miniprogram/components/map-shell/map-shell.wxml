@@ -1,0 +1,108 @@
+<view class="shell">
+  <!-- 底图：腾讯原生 map -->
+  <map
+    id="cgdaMap"
+    class="map"
+    latitude="{{center.latitude}}"
+    longitude="{{center.longitude}}"
+    scale="{{scale}}"
+    markers="{{markers}}"
+    enable-satellite="{{satellite}}"
+    enable-rotate="{{false}}"
+    enable-overlooking="{{false}}"
+    enable-skew="{{false}}"
+    enable-3D="{{false}}"
+    enable-zoom="{{true}}"
+    enable-scroll="{{true}}"
+    show-compass="{{false}}"
+    show-scale="{{false}}"
+    bindregionchange="onRegionChange"
+    bindupdated="onMapUpdated"
+    bindtap="onMapTap"
+  ></map>
+
+  <!-- 仅用户手动选层后挂载，杜绝首屏空/错 canvas 盖控件 -->
+  <canvas
+    wx:if="{{showOverlayCanvas}}"
+    type="2d"
+    id="overlayCanvas"
+    class="overlay-canvas"
+    disable-scroll="{{true}}"
+  ></canvas>
+
+  <!--
+    root-portal：把 UI 挂到页面根节点之上，压过 map/canvas 原生合成层。
+    自定义组件放在 portal 内的普通 view 槽里，定位 class 写在 view 上（不要挂在组件 host）。
+  -->
+  <root-portal enable="{{true}}">
+    <view class="ui-layer">
+      <view class="slot colorbar-slot" wx:if="{{colorbar.visible}}">
+        <colorbar
+          visible="{{colorbar.visible}}"
+          title="{{colorbar.title}}"
+          unit="{{colorbar.unit}}"
+          palette-id="{{colorbar.paletteId}}"
+          vmin="{{colorbar.vmin}}"
+          vmax="{{colorbar.vmax}}"
+        />
+      </view>
+
+      <view class="slot logo-slot">
+        <logo-badge />
+      </view>
+
+      <view class="slot ltb-slot">
+        <left-tool-bar
+          bind:zoomin="onZoomIn"
+          bind:zoomout="onZoomOut"
+          bind:resetnorth="onResetNorth"
+          bind:locate="onLocate"
+        />
+      </view>
+
+      <view class="slot rail-slot">
+        <right-tool-bar
+          categories="{{railCategories}}"
+          active-layer-id="{{activeLayer.id}}"
+          bind:select="onToolBarSelect"
+        />
+      </view>
+
+      <view class="slot scale-slot" style="bottom: calc({{tlHeight}}px + 12px);">
+        <scale-bar meters-per-pixel="{{metersPerPixel}}" />
+      </view>
+
+      <view
+        class="slot basemap-toggle"
+        style="bottom: calc({{tlHeight}}px + 12px);"
+        bindtap="toggleSatellite"
+        hover-class="btn-hover"
+      >
+        <text>{{satellite ? '街道' : '影像'}}</text>
+      </view>
+
+      <view class="slot timeline-slot">
+        <timeline
+          mode="{{timeline.mode}}"
+          ticks="{{timeline.ticks}}"
+          current="{{timeline.current}}"
+          bind:change="onTimelineChange"
+          bind:toggle="onTimelineToggle"
+          bind:collapse="onTimelineCollapse"
+        />
+      </view>
+
+      <view
+        class="slot debug-hud"
+        style="bottom: calc({{tlHeight}}px + 53px);"
+        wx:if="{{debugHud}}"
+      >
+        <text>{{debugHud}}</text>
+      </view>
+
+      <view class="slot banner" wx:if="{{banner}}" bindtap="onBannerTap">
+        <text>{{banner}}</text>
+      </view>
+    </view>
+  </root-portal>
+</view>

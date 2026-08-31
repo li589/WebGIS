@@ -17,6 +17,20 @@ export function resolveSurfaceColor(varName = '--surface-1'): string {
   return value || '#0b1a2a'
 }
 
+/**
+ * 解析 background layer 颜色（globe 感知）。
+ *
+ * - 2D：--surface-1（原行为，地图画布底色）
+ * - 3D globe：深空蓝（暗色主题）/浅蓝灰（浅色主题）——background layer 在
+ *   globe 投影下渲染于球面，作为"无瓦片区域兜底色"（高德等仅覆盖中国的源
+ *   拖到南半球时避免露出 --surface-1 导致球面发白发灰）；球外区域保持
+ *   透明，让 GlobeStarfield 星图层透出。
+ */
+export function resolveGlobeBackgroundColor(isGlobe: boolean, isLightTheme: boolean): string {
+  if (!isGlobe) return resolveSurfaceColor()
+  return isLightTheme ? '#c3d0de' : '#0d2436'
+}
+
 export function createMapCanvasMapOptions(options: CreateMapCanvasMapOptionsOptions): MapOptions {
   const mapDefaults = getMapDefaults()
   return {

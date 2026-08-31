@@ -9,7 +9,8 @@ type RasterSourceSpecification = import('maplibre-gl').RasterSourceSpecification
 type RasterTileSource = import('maplibre-gl').RasterTileSource
 
 const TILE_SOURCE_ID = 'tile-base'
-const TILE_LAYER_ID = 'tile-base-raster'
+/** 底图 raster 图层 id：MapCanvas 的 globe 光影（raster-brightness 压制）需要引用 */
+export const TILE_LAYER_ID = 'tile-base-raster'
 const TILE_OVERLAY_SOURCE_ID = 'tile-base-overlay'
 const TILE_OVERLAY_LAYER_ID = 'tile-base-overlay-raster'
 const TILE_ERROR_WINDOW_MS = 5000
@@ -68,6 +69,13 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
   const providerCooldownUntil = new Map<string, number>()
   /** 已调度的故障转移目标（防抖完成前抑制重复触发），switchTileSource 执行时清空 */
   let pendingFailoverSourceId: TileSourceId | null = null
+  /**
+   * 最近一次「外来 provider」瓦片错误时间戳（归因检查跳过的那类）。
+   * 用户已切走但旧源请求仍在超时失败时，错误不会进熔断窗口（归因保护），
+   * 但它们证明旧源挂起请求正在拖连接池——切换重建判定需要该信号。
+   * 初始 -Infinity（绝不能把「从未有外来错误」误判为刚发生）。
+   */
+  let lastForeignTileErrorAt = Number.NEGATIVE_INFINITY
 
   function hideOverlay() {
     if (options.map.getLayer(TILE_OVERLAY_LAYER_ID)) {
@@ -237,6 +245,79 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     }, 260)
   }
 
+  /**
+   * 源当前是否有未消解的瓦片异常（慢/失败请求挂起中）。
+   *
+   * 全部底图源经 ``/unified-tiles/`` 后端代理（同源），浏览器对同源
+   * HTTP/1.1 并发连接上限 6 条：源挂起时视口内几十个瓦片请求占满连接
+   * 池，``setTiles`` 不中止这些请求 → 新源请求排队其后 → 「切了底图
+   * 但卡一段时间才显示」（2026-08-24 复发报障根因）。此状态下切换必须
+   * 重建源（removeSource 会 abort 全部挂起请求，立即释放连接）。
+   */
+  function hasUnresolvedTileErrors(): boolean {
+    return (
+      isCircuitBroken ||
+      tileErrorTimestamps.length > 0 ||
+      nowImpl() - lastForeignTileErrorAt < TILE_ERROR_WINDOW_MS
+    )
+  }
+
+  /**
+   * 源是否有仍在途（未完成/未失败）的瓦片网络请求。
+   *
+   * ``map.isSourceLoaded(id)`` 为 false 表示该源仍有 tile 处于 loading
+   * 态。错误窗口法只能看到「已报错」的请求；慢而未超时的挂起请求不产生
+   * error 事件 → 走 setTiles 平滑路径 → 新源请求仍被旧源挂起请求阻塞
+   * （2026-08-27 复发报障补充：网络半死不活时切源「一段时间不变化」）。
+   * 主源与注记 overlay 源同走代理、共占连接池，两者任一在途都须重建。
+   */
+  function hasPendingTileRequests(): boolean {
+    if (typeof options.map.isSourceLoaded !== 'function') return false
+    for (const sourceId of [TILE_SOURCE_ID, TILE_OVERLAY_SOURCE_ID]) {
+      if (!options.map.getSource(sourceId)) continue
+      try {
+        if (!options.map.isSourceLoaded(sourceId)) return true
+      } catch {
+        // 源尚在样式装载中等瞬态：保守视为无在途（保持既有行为）
+      }
+    }
+    return false
+  }
+
+  function dropOverlaySource(): void {
+    if (options.map.getLayer(TILE_OVERLAY_LAYER_ID)) {
+      options.map.removeLayer(TILE_OVERLAY_LAYER_ID)
+    }
+    if (options.map.getSource(TILE_OVERLAY_SOURCE_ID)) {
+      options.map.removeSource(TILE_OVERLAY_SOURCE_ID)
+    }
+  }
+
+  /**
+   * 重建底图源+图层（先删后建）。
+   *
+   * ``removeSource`` 触发 MapLibre 中止该源全部 in-flight 瓦片请求
+   * （每瓦片 AbortController），挂起连接立即释放——这是「切源立即生效」
+   * 的关键路径；``setTiles`` 不会中止旧请求（只换 URL 模板，旧 Tile
+   * 对象继续等超时）。重建后 ``ensureTileLayer`` 幂等补建 source/layer，
+   * 栈位由 ``enforceBasemapStackPosition`` 校正。瓦片命中浏览器 HTTP
+   * 缓存不受影响（同 URL 复用缓存），重选该源时缓存照常生效。
+   */
+  function recreateTileSource(sourceId: TileSourceId): void {
+    const map = options.map
+    if (map.getLayer(TILE_LAYER_ID)) {
+      map.removeLayer(TILE_LAYER_ID)
+    }
+    if (map.getSource(TILE_SOURCE_ID)) {
+      map.removeSource(TILE_SOURCE_ID)
+    }
+    // 注记 overlay 与主源同走 /unified-tiles 代理（共占同源 6 连接池）：
+    // 重建时一并卸载，其挂起请求随之 abort；随后 syncOverlayLayer(cfg,true)
+    // 以新配置原样重建（overlayUrlTemplate 未变时瓦片命中 HTTP 缓存）。
+    dropOverlaySource()
+    ensureTileLayer(sourceId)
+  }
+
   function resetTileErrorState() {
     options.setTileLoadFailed(false)
     options.setTileFailedProvider(null)
@@ -262,6 +343,11 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
   }
 
   function switchTileSource(sourceId: TileSourceId) {
+    // 先快照异常态再 reset（reset 会清空错误窗口/熔断标记——重建判定依赖它）
+    const hadUnresolvedErrors = hasUnresolvedTileErrors()
+    // 慢而未报错的在途请求（isSourceLoaded=false）：同样必须重建，否则
+    // 新源请求排队在旧源挂起请求之后 →「切了底图一段时间不变化」
+    const hadPendingRequests = hasPendingTileRequests()
     resetTileErrorState()
     pendingFailoverSourceId = null
 
@@ -270,12 +356,12 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
         options.map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'none')
         options.map.setPaintProperty(TILE_LAYER_ID, 'raster-opacity', 0)
       }
-      // 清空底图瓦片 URL，避免仅 visibility 被其它逻辑改回 visible 时残留旧图
-      const existingSource = options.map.getSource(TILE_SOURCE_ID) as RasterTileSource | undefined
-      if (existingSource && existingSource.type === 'raster') {
-        existingSource.setTiles([])
-        options.map.triggerRepaint()
-      }
+      // 空白模式只做 visibility/opacity 隐藏，**不**清空 tiles：
+      // setTiles([]) 会走 maplibre loadTile 的空 URL 异常路径，快速切换（尤其
+      // none→真实源）时 tile 状态机竞态 → painter 的 texture.bind() 读 undefined
+      // 持续崩溃（vendor-maplibre 内部无守卫，见 2026-08-22 用户日志 56 条）。
+      // 切回真实源时 switchTileSource 必 setTiles([新 url])，无旧图残留风险。
+      options.map.triggerRepaint()
       hideOverlay()
       // 空白模式下卸掉注记 overlay 源，避免残留
       syncOverlayLayer(undefined, false)
@@ -292,8 +378,15 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
 
     const existingSource = options.map.getSource(TILE_SOURCE_ID) as RasterTileSource | undefined
     if (existingSource && existingSource.type === 'raster') {
-      existingSource.setTiles([cfg.urlTemplate])
-      options.map.triggerRepaint()
+      if (hadUnresolvedErrors || hadPendingRequests) {
+        // 慢/挂源切换：重建源以 abort 全部挂起瓦片请求，立即释放同源连接
+        // 池给新源（见 hasUnresolvedTileErrors / hasPendingTileRequests 注释）；
+        // 否则 setTiles 只换 URL 模板，新源请求会排在旧源挂起请求之后 → 切换被拖住。
+        recreateTileSource(sourceId)
+      } else {
+        existingSource.setTiles([cfg.urlTemplate])
+        options.map.triggerRepaint()
+      }
     }
 
     ensureTileLayer(sourceId)
@@ -386,6 +479,9 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
         .getTileConfig(currentSourceId)
         ?.overlayUrlTemplate?.includes(`/unified-tiles/${failedProvider}/`)
     ) {
+      // 外来 provider（用户已切走、旧源迟到失败）：不进熔断窗口，但记录
+      // 时间戳供切换重建判定（旧源挂起请求正在拖连接池的证据）。
+      lastForeignTileErrorAt = nowImpl()
       return
     }
 
@@ -409,6 +505,13 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
         options.map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'none')
       }
       hideOverlay()
+      // 熔断即重建源：挂起瓦片请求立即 abort——否则它们继续占用同源连接
+      // 池（/unified-tiles 代理与 API 同源），拖慢自动恢复重试与其余同源
+      // 请求直到超时。重建后 layer 隐藏（ensureTileLayer 默认 visibility
+      // none），15s 自动恢复走 retryTileLoad 重新加载。
+      if (options.getTileConfig(currentSourceId)?.urlTemplate) {
+        recreateTileSource(currentSourceId)
+      }
       scheduleAutoRecovery()
     }
   }
@@ -450,18 +553,22 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
 
   function retryTileLoad() {
     resetTileErrorState()
-    if (!options.map.getSource(TILE_SOURCE_ID)) return
-
-    const source = options.map.getSource(TILE_SOURCE_ID) as RasterTileSource | undefined
     const currentTileConfig = options.getTileConfig(options.getCurrentTileSourceId())
-    if (source && source.type === 'raster' && currentTileConfig) {
-      source.setTiles([currentTileConfig.urlTemplate])
-      options.map.triggerRepaint()
+    if (options.getCurrentTileSourceId() === 'none') {
+      syncOverlayLayer(undefined, false)
+      return
     }
-    if (options.map.getLayer(TILE_LAYER_ID) && options.getCurrentTileSourceId() !== 'none') {
+    if (!currentTileConfig?.urlTemplate) return
+
+    // 重建源（而非 setTiles）：熔断期间挂起的旧请求随 removeSource abort，
+    // 且重建即重发请求（15s 恢复窗口内网络若已恢复则立即出图）；已加载
+    // 瓦片命中浏览器 HTTP 缓存，无重复下载。
+    recreateTileSource(options.getCurrentTileSourceId())
+    if (options.map.getLayer(TILE_LAYER_ID)) {
       options.map.setLayoutProperty(TILE_LAYER_ID, 'visibility', 'visible')
     }
-    syncOverlayLayer(currentTileConfig, options.getCurrentTileSourceId() !== 'none')
+    syncOverlayLayer(currentTileConfig, true)
+    options.map.triggerRepaint()
   }
 
   function dispose() {
@@ -481,6 +588,7 @@ export function createBasemapModule(options: CreateBasemapModuleOptions): Basema
     tileErrorTimestamps.length = 0
     providerCooldownUntil.clear()
     pendingFailoverSourceId = null
+    lastForeignTileErrorAt = Number.NEGATIVE_INFINITY
     isCircuitBroken = false
   }
 

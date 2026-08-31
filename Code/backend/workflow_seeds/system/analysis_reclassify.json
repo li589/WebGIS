@@ -8,7 +8,12 @@
     "readonly": true,
     "is_template": true,
     "linked_layer_id": null,
-    "tags": ["analysis", "gis", "ui-panel", "raster"],
+    "tags": [
+      "analysis",
+      "gis",
+      "ui-panel",
+      "raster"
+    ],
     "category": "analysis",
     "resource_profile": "standard"
   },
@@ -19,7 +24,10 @@
     {
       "id": 1,
       "type": "data/source",
-      "pos": [60, 160],
+      "pos": [
+        60,
+        160
+      ],
       "properties": {
         "path": "{DATA_ROOT}/_runtime/smoke_stub.tif",
         "dataset_key": "input_path"
@@ -28,12 +36,29 @@
     {
       "id": 2,
       "type": "gis/reclassify",
-      "pos": [380, 160],
+      "pos": [
+        380,
+        160
+      ],
       "properties": {
         "remap_table": "0-10:1,10-100:2,100-1000:3",
         "nodata_value": -9999
       }
     }
   ],
-  "links": [[1, 1, 2, 2, 1]]
+  "links": [
+    [
+      1,
+      1,
+      2,
+      2,
+      1
+    ]
+  ],
+  "extra": {
+    "group_title": "栅格重分类",
+    "output_labels": {
+      "result": "重分类结果"
+    }
+  }
 }

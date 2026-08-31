@@ -45,6 +45,79 @@ def _store_manifest(
     return {"manifest": artifact}
 
 
+def _align_window_to_available(
+    algorithm_params: dict[str, object],
+    smap_folder: str,
+    ctx: NodeExecutionContext,
+    *,
+    allow_align: bool,
+) -> dict[str, object]:
+    """请求窗口与本地 SMAP 数据零交集时，可选对齐到最新可用窗。
+
+    仅当 ``allow_align=True``（来自 relax_flags 或策略 allow_silent）时改窗；
+    否则 raise ``ValueError``（``error_code=coverage_gap``）fail-closed。
+    """
+    from datetime import datetime, timedelta
+
+    start_raw = str(algorithm_params.get("start_date") or "").strip()
+    end_raw = str(algorithm_params.get("end_date") or "").strip()
+    if len(start_raw) < 8 or len(end_raw) < 8:
+        return algorithm_params
+
+    try:
+        from algorithms.omega_sf import _scan_folder_dates
+
+        available = _scan_folder_dates(smap_folder)
+    except Exception:
+        return algorithm_params
+    if not available:
+        return algorithm_params
+
+    try:
+        start = datetime.strptime(start_raw[:8], "%Y%m%d")
+        end = datetime.strptime(end_raw[:8], "%Y%m%d")
+    except ValueError:
+        return algorithm_params
+
+    if any(start <= t <= end for t in available):
+        return algorithm_params  # 有交集：保持请求窗口
+
+    if not allow_align:
+        message = (
+            "error_code=coverage_gap "
+            f"时间窗与本地 SMAP 零交集（请求 {start:%Y%m%d}~{end:%Y%m%d}，"
+            f"本地最新 {max(available):%Y%m%d}）；未启用对齐放宽。"
+        )
+        if ctx.logger_adapter is not None:
+            try:
+                ctx.logger_adapter.emit_stage_start("omega_sf_fenkuai", message)
+            except Exception:
+                pass
+        # fail-closed：缺数不可静默继续，供桥接层归类为 coverage_gap
+        raise ValueError(message)
+
+    latest = max(available)
+    window_days = max((end - start).days, 7)  # 至少 8 天（含端点）
+    new_end = latest
+    new_start = new_end - timedelta(days=window_days)
+
+    message = (
+        f"时间窗自动对齐：请求 {start:%Y%m%d}~{end:%Y%m%d} 本地无数据，"
+        f"回退到最新可用窗 {new_start:%Y%m%d}~{new_end:%Y%m%d}"
+        f"（本地最新 {latest:%Y%m%d}；机器时钟与数据可用性不匹配时以数据为准）"
+    )
+    if ctx.logger_adapter is not None:
+        try:
+            ctx.logger_adapter.emit_stage_start("omega_sf_fenkuai", message)
+        except Exception:
+            pass
+
+    aligned = dict(algorithm_params)
+    aligned["start_date"] = f"{new_start:%Y%m%d}"
+    aligned["end_date"] = f"{new_end:%Y%m%d}"
+    return aligned
+
+
 # omega_sf 专有数据源键映射（daily bundle 键复用 bundles.py 的映射）
 _OMEGA_SF_DATASOURCE_KEY_MAP: dict[str, tuple[str, ...]] = {
     "fy3d_folder": ("fy3d_folder", "fy_daily_mat", "daily_mat_sources"),
@@ -60,14 +133,24 @@ def _resolve_omega_sf_datasource_selection(
     datasource_selection: dict[str, object],
 ) -> dict[str, object]:
     """解析 omega_sf 数据源选择：先复用 daily bundle 键映射，再解析 omega_sf 专有键。"""
-    from modules.bundles import _resolve_bundle_datasource_selection
+    from modules.bundles import (
+        _path_from_datasource_value,
+        _resolve_bundle_datasource_selection,
+    )
 
     # 1. 复用 daily bundle 键映射（anc_root / smap_folder / ndvi_folder / lin_pix_mat 等）
     resolved = _resolve_bundle_datasource_selection(dict(datasource_selection))
 
     # 2. 解析 omega_sf 专有键（fy3d_folder / fy3b_folder / gldas_mat_folder / ddca_sm_folder）
     for target_key, dataset_names in _OMEGA_SF_DATASOURCE_KEY_MAP.items():
-        if target_key in resolved and resolved[target_key]:
+        if resolved.get(target_key):
+            continue
+        for name in dataset_names:
+            path = _path_from_datasource_value(resolved.get(name))
+            if path:
+                resolved[target_key] = path
+                break
+        if resolved.get(target_key):
             continue
         local_path = resolve_prepared_local_path(
             resolved,
@@ -112,7 +195,18 @@ def _resolve_grid_shape(
 
 
 @register_module_decorator(
-    name="omega_sf_fenkuai", aliases=["omega_sf_fenkuai_pipeline"]
+    name="omega_sf_fenkuai",
+    aliases=["omega_sf_fenkuai_pipeline"],
+    template_overrides={
+        "phase": "inversion",
+        "datasource_severity": {
+            "time_window_align_on_zero_intersection": "soft",
+            "smap_folder": "hard",
+            "anc_root": "hard",
+            "fy3d_folder": "hard",
+            "fy3b_folder": "hard",
+        },
+    },
 )
 class OmegaSfFenkuaiModule(BaseModule):
     name = "omega_sf_fenkuai"
@@ -140,6 +234,18 @@ class OmegaSfFenkuaiModule(BaseModule):
         ),
         PortSpec(
             name="output_spec_extra", kind="config", data_class="dict", required=False
+        ),
+        PortSpec(
+            name="time_window_align_on_zero_intersection",
+            kind="config",
+            data_class="bool",
+            required=False,
+            severity="soft",
+            description=(
+                "When request window has zero intersection with local SMAP dates, "
+                "align to the latest available window (requires relax_flags or "
+                "allow_silent policy)."
+            ),
         ),
     ]
     output_ports = [
@@ -172,6 +278,20 @@ class OmegaSfFenkuaiModule(BaseModule):
                 f"omega_sf_fenkuai requires datasource_selection keys: "
                 f"{', '.join(sorted(missing_keys))}"
             )
+
+        # 时间窗对齐仅在 relax_flags / 策略 allow_silent 时启用（默认 fail-closed）
+        relax_flags = algorithm_params.get("relax_flags")
+        if not isinstance(relax_flags, dict):
+            relax_flags = {}
+        allow_align = bool(
+            relax_flags.get("time_window_align_on_zero_intersection") is True
+        )
+        algorithm_params = _align_window_to_available(
+            algorithm_params,
+            str(datasource_selection["smap_folder"]),
+            ctx,
+            allow_align=allow_align,
+        )
 
         # 构建配置
         config = OmegaSfConfig.from_params(algorithm_params)
@@ -283,6 +403,23 @@ class OmegaSfFenkuaiModule(BaseModule):
             cancel_flag_path=cancel_flag_path,
             reuse_block_cache=bool(reuse_block_cache),
         )
+
+        # Fail-closed：零有效像元仍写全 NaN 块文件时，桥接层会标 success 并
+        # 物化「空白」图层 → 用户看到「已完成但地图无显示」。无有效像元视为失败。
+        if int(result.n_pixels_success or 0) <= 0:
+            message = (
+                "error_code=coverage_gap "
+                f"SF 反演无有效像元（0/{int(result.n_pixels_total or 0)} succeeded；"
+                f"TB_SOURCE={config.tb_source}, SM_SOURCE={config.sm_source}, "
+                f"{config.start_date}~{config.end_date}）。"
+                "请检查该时间窗 FY/SMAP/辅助数据是否对齐可用，勿将空结果当成功上图。"
+            )
+            if ctx.logger_adapter is not None:
+                try:
+                    ctx.logger_adapter.emit_stage_end("omega_sf_fenkuai", message)
+                except Exception:
+                    pass
+            raise ValueError(message)
 
         # 构建三个产品图层引用
         products: list[ProductRef] = []

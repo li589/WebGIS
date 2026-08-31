@@ -9,10 +9,12 @@ import { computed } from 'vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { BarChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent } from 'echarts/components'
+import { GridComponent, TooltipComponent, TitleComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
+import { useEchartsThemeName } from './echarts-theme'
+import { resolveCanvasColor } from '../workflow/canvas-theme'
 
-use([CanvasRenderer, BarChart, GridComponent, TooltipComponent])
+use([CanvasRenderer, BarChart, GridComponent, TooltipComponent, TitleComponent])
 
 export interface OverlayBarItem {
   layerId: string
@@ -30,6 +32,10 @@ const props = defineProps<{
   /** 图表高度（px），默认按条目数自适应 */
   height?: number
 }>()
+
+const echartsTheme = useEchartsThemeName()
+
+const defaultBarColor = () => resolveCanvasColor('--accent', '#5ad5ff')
 
 const chartHeight = computed(() => {
   if (props.height) return props.height
@@ -84,7 +90,7 @@ const echartsOption = computed(() => {
         data: items.map((i) => ({
           value: i.numericValue ?? 0,
           itemStyle: {
-            color: i.accentColor || '#4fc4f7',
+            color: i.accentColor || defaultBarColor(),
             borderRadius: [0, 3, 3, 0],
           },
         })),
@@ -111,7 +117,9 @@ const echartsOption = computed(() => {
       <span class="chart-badge">{{ items.length }} 个共显层</span>
     </div>
     <VChart
+      :key="echartsTheme"
       class="multi-overlay-echart"
+      :theme="echartsTheme"
       :option="echartsOption"
       autoresize
       :style="{ height: chartHeight + 'px' }"
@@ -144,11 +152,11 @@ const echartsOption = computed(() => {
 
 .chart-badge {
   font-size: var(--font-size-caption);
-  background: rgba(79, 195, 247, 0.15);
+  background: var(--accent-surface);
   color: var(--accent);
   padding: 0.15rem 0.45rem;
   border-radius: 4px;
-  border: 1px solid rgba(79, 195, 247, 0.25);
+  border: 1px solid var(--accent-border);
 }
 
 .multi-overlay-echart {

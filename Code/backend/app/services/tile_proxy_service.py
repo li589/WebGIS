@@ -399,6 +399,40 @@ class TileProxyService:
             f"Tile source redirect exceeded {_MAX_REDIRECT_HOPS} hops"
         )
 
+    async def fetch_external_url(
+        self,
+        url: str,
+        *,
+        use_cache: bool = True,
+        user_agent: str = DEFAULT_TILE_USER_AGENT,
+    ) -> bytes:
+        """通过同一缓存/SSRF/重定向链路请求用户注册的在线瓦片。"""
+        cache_key = self._get_cache_key(url)
+        if use_cache and cache_key in self._cache:
+            data, timestamp = self._cache[cache_key]
+            if time.time() - timestamp < self._cache_ttl:
+                self._cache.move_to_end(cache_key)
+                return data
+            self._cache.pop(cache_key, None)
+        client = await self.get_http_client()
+        try:
+            response = await self._get_ssrf_safe(client, url, {"User-Agent": user_agent})
+            response.raise_for_status()
+            data = response.content
+            if use_cache:
+                self._cache[cache_key] = (data, time.time())
+                self._cache.move_to_end(cache_key)
+                while len(self._cache) > self._MAX_CACHE_ENTRIES:
+                    self._cache.popitem(last=False)
+            return data
+        except httpx.HTTPStatusError as exc:
+            raise TileProxyUpstreamError(
+                f"Tile source returned HTTP {exc.response.status_code}",
+                status_code=exc.response.status_code,
+            ) from exc
+        except httpx.RequestError as exc:
+            raise TileProxyUpstreamError("Tile source is temporarily unavailable") from exc
+
     async def fetch_tile(
         self,
         tile_id: str,
@@ -512,6 +546,7 @@ class TileProxyService:
                     "provider": template.provider.value,
                     "requires_transform": template.requires_transform,
                     "coord_system": template.coord_system,
+                    "service_type": "builtin",
                 }
             )
         return providers

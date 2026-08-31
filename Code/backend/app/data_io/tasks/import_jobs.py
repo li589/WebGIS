@@ -86,7 +86,9 @@ if celery_available and celery_app is not None:
 
     @celery_app.task(
         name="app.tasks.import_tasks.run_import_job",
-        queue=getattr(settings, "workflow_queue_batch", "celery"),
+        # settings.workflow_queue_batch 恒存在，旧的 "celery" fallback 是
+        # 误导性死代码（"celery" 队列无 worker 监听，落进去即永久堆积）
+        queue=settings.workflow_queue_batch,
     )
     def run_import_job(job_id: str, kind: str) -> dict[str, Any]:
         from app.data_io.services.jobs import run_job_sync

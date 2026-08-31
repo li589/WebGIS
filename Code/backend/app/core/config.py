@@ -43,6 +43,8 @@ DEFAULT_PYTHON_PROVIDER_ROOT = (
     BACKEND_ROOT.parent / "algorithms" / "providers" / "Python"
 )
 DEFAULT_PYTHON_PROVIDER_WORKSPACE = _RUNTIME_ROOT / "python_provider"
+# 问题反馈服务端存储目录（用户反馈页/工程师处理台经 /feedback/api/* 读写）
+DEFAULT_FEEDBACK_DIR = _RUNTIME_ROOT / "feedback"
 
 # ---- 命名常量（提取自原内联魔数，便于维护与审阅）----
 # 结果内联返回上限：小于此字节数的产物直接内联在响应中
@@ -52,7 +54,7 @@ _DOWNLOAD_MAX_BYTES = 512 * 1024 * 1024  # 512 MB
 # Celery broker visibility_timeout（秒）：必须大于最长 task_time_limit
 # （workflow 任务 time_limit=7500），否则 acks_late 下长任务会被重投
 _BROKER_VISIBILITY_TIMEOUT = 8100  # seconds
-# solo 池看门狗阈值（秒）：运行时长超此值的 run 标记为 failed
+# solo 池看门狗空闲阈值（秒）：running 且无活动（无 updated_at / 无新事件）超此值则标 failed
 _WORKFLOW_STUCK_WATCHDOG_SECONDS = 8100  # seconds
 # GEE 本地单次写入上限
 _GEE_MAX_LOCAL_WRITE_BYTES = 10 * 1024 * 1024  # 10 MB
@@ -65,6 +67,20 @@ def _parse_csv_env(name: str, default: str = "") -> list[str]:
 
 def _default_ui_restart_enabled() -> bool:
     raw = os.getenv("BACKEND_UI_RESTART_ENABLED")
+    if raw is not None and str(raw).strip() != "":
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+    env = (os.getenv("BACKEND_ENV") or "production").lower()
+    return env in {"development", "dev"}
+
+
+def _default_docs_enabled() -> bool:
+    """交互式 API 文档（/docs /redoc）暴露开关（安全审计 2026-08-20）。
+
+    显式 ``BACKEND_DOCS_ENABLED`` 优先；否则仅 development/dev 默认开启
+    （fail-secure：production/test 默认不暴露交互文档接口面）。
+    ``/openapi.json`` 不受此开关影响（保持开放供工具调用）。
+    """
+    raw = os.getenv("BACKEND_DOCS_ENABLED")
     if raw is not None and str(raw).strip() != "":
         return str(raw).strip().lower() in {"1", "true", "yes", "on"}
     env = (os.getenv("BACKEND_ENV") or "production").lower()
@@ -212,11 +228,11 @@ class StorageConfig:
 
 @dataclass(frozen=True)
 class Settings:
-    # 2026-08 品牌更名：旧名 "Comprehensive Geographic Data Analysis Backend"（CGDA/CGDAS）。
-    # 回退方案见前端 src/ui-copy/brand.ts 品牌沿革注释。
+    # 平台品牌为 SGFS（星地融合），但后端服务保留 CGDA 技术标识（仓库本名），
+    # About 页「后端服务」/ 常规配置「服务名称」均取此值。
     service_name: str = os.getenv(
         "BACKEND_SERVICE_NAME",
-        "Star-Ground Fusion Soil Data Platform Backend",
+        "Comprehensive Geographic Data Analysis System (CGDA) Backend",
     )
     # 发布就绪修复（P0-1）：默认 environment 反转为 "production"（fail-secure）。
     # 此前默认 "development" 会在未配置 API Key 时静默放行所有写接口（见 app/api/deps.py）。
@@ -238,6 +254,9 @@ class Settings:
     # （bootstrap_auth 等已做并发竞争兜底）。生产可设 BACKEND_FASTAPI_WORKERS=2+。
     fastapi_workers: int = max(1, int(os.getenv("BACKEND_FASTAPI_WORKERS", "1")))
     workflow_executor: str = os.getenv("BACKEND_WORKFLOW_EXECUTOR", "sync")
+    # 工作流定时器墙钟时区（D4：cron/日期模板求值时区；下次触发存 UTC）。
+    # 合法值见 zoneinfo.available_timezones()（如 Asia/Shanghai、UTC）。
+    timer_timezone: str = os.getenv("BACKEND_TIMER_TZ", "Asia/Shanghai")
     redis_url: str = os.getenv("BACKEND_REDIS_URL", "redis://127.0.0.1:6379/0")
     celery_broker_url: str = os.getenv("BACKEND_CELERY_BROKER_URL", redis_url)
     celery_result_backend: str = os.getenv("BACKEND_CELERY_RESULT_BACKEND", redis_url)
@@ -312,6 +331,13 @@ class Settings:
     )
     weather_schedule_enabled: bool = (
         os.getenv("BACKEND_WEATHER_SCHEDULE_ENABLED", "true").lower() == "true"
+    )
+    # 天气瓦片渲染并发槽位（每进程）。注意部署形态：总上游并发 = 槽位 × 持有进程数
+    # （FastAPI worker 的 async 槽 + Celery weather worker 的 sync 槽，各持一份实例）。
+    # 默认 6 对自托管 Open-Meteo 容器无压力；接入商业天气源（限流）时按进程数调低。
+    # 重启生效（进程启动时读取）。
+    weather_tile_max_concurrent: int = max(
+        1, int(os.getenv("BACKEND_WEATHER_TILE_MAX_CONCURRENT", "6"))
     )
     # Phase 2: Open-Meteo 本地数据自动同步（Celery Beat）
     # ECMWF IFS 每 6 小时更新初始场（00/06/12/18 UTC），同步在更新后 1-2 小时触发
@@ -401,6 +427,12 @@ class Settings:
     workflow_queue_analysis_batch: str = os.getenv(
         "BACKEND_WORKFLOW_QUEUE_ANALYSIS_BATCH", workflow_queue_batch
     )
+    # 僵尸 run 回收阈值（秒）：accepted/queued 无事件推进超过此时长 →
+    # beat 回收任务 CAS 标记 failed（2026-08-25「任务长期卡排队中」根治；
+    # 默认 30 分钟——下载/重算队列长等待属正常，仅无任何推进才回收）。
+    workflow_stuck_reclaim_seconds: int = int(
+        os.getenv("BACKEND_WORKFLOW_STUCK_RECLAIM_SECONDS", "1800")
+    )
     workflow_queue_algorithm_realtime: str = os.getenv(
         "BACKEND_WORKFLOW_QUEUE_ALGORITHM_REALTIME", workflow_queue_realtime
     )
@@ -435,8 +467,15 @@ class Settings:
     data_root: str = os.getenv("BACKEND_DATA_ROOT", "")
     # 产物输出根目录（算法产物的写入路径，必须通过环境变量配置）
     output_root: str = os.getenv("BACKEND_OUTPUT_ROOT", "")
+    # 问题反馈服务端存储目录（/feedback/api/* 的落盘根；网关反馈页双轨的在线轨）
+    feedback_dir: str = os.getenv("BACKEND_FEEDBACK_DIR", str(DEFAULT_FEEDBACK_DIR))
     # 前端设置页「重启后端」（FastAPI+Worker+Beat）；默认仅 development 开启
     ui_restart_enabled: bool = _default_ui_restart_enabled()
+    # 交互式 API 文档（/docs /redoc）按环境默认禁用（production/test 默认
+    # False，BACKEND_DOCS_ENABLED 可覆盖）；/openapi.json 不受影响。
+    # 注意 frozen dataclass 字段默认值 import 时求值——测试须用
+    # dataclasses.replace 显式构造变体。
+    docs_enabled: bool = _default_docs_enabled()
 
     # ---- GEE 引擎配置 ----
     # 是否启用 GEE 引擎桥接（False 时 gee_bridge_service.supports 永远返回 False）
@@ -509,6 +548,12 @@ class Settings:
     # 是否启用天气工作流桥接（False 时 weather_bridge_service.supports 永远返回 False）
     weather_workflow_enabled: bool = (
         os.getenv("BACKEND_WEATHER_WORKFLOW_ENABLED", "true").lower() == "true"
+    )
+    # 是否启用旧 monolithic weather engine 作为 bridge 链末位的 layer-based fallback
+    # （False 时 WeatherEngineService.supports 永远返回 False；默认 True 保持现状，
+    #  生产收敛时可置 False，强制天气工作流只走 weather_bridge / 瓦片主路径）
+    weather_engine_fallback_enabled: bool = (
+        os.getenv("BACKEND_WEATHER_ENGINE_FALLBACK_ENABLED", "true").lower() == "true"
     )
     # 天气工作流队列（独立队列，避免与 algorithm/gee 队列混用）
     workflow_queue_weather_realtime: str = os.getenv(
@@ -586,10 +631,11 @@ class Settings:
     celery_broker_socket_connect_timeout: int = int(
         os.getenv("BACKEND_CELERY_BROKER_SOCKET_CONNECT_TIMEOUT", "10")
     )
-    # 发布就绪修复（P1-4）：solo 池看门狗阈值（秒）。worker_pool=solo 时 time_limit
-    # 无法强杀卡死任务，run 会永远停在 running。看门狗周期任务把"运行时长超此阈值"
-    # 的 run 标记为 failed（仅纠正状态，不释放被卡 worker）。默认 8100 > workflow
-    # 任务 time_limit=7500，避免误杀合法长任务。
+    # 发布就绪修复（P1-4）：solo 池看门狗**空闲**阈值（秒）。worker_pool=solo 时
+    # time_limit 无法强杀卡死任务。看门狗按「最近活动」计时（run.updated_at 与
+    # workflow_events 最新 created_at 取较大值），仅在无进度/无事件超过本阈值时
+    # 标 failed——不会因总墙钟时长误杀仍在下载/反演的长任务。仅纠正状态，不释放
+    # 被卡 worker。默认 8100s（约 2.25h 无动静）。
     workflow_stuck_watchdog_seconds: int = int(
         os.getenv(
             "BACKEND_WORKFLOW_STUCK_WATCHDOG_SECONDS",

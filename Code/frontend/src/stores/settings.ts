@@ -27,6 +27,9 @@ import {
   toggleWeatherProvider,
   setWeatherProviderPriority,
   deleteWeatherProvider,
+  fetchOnlineTileSources,
+  upsertOnlineTileSource,
+  deleteOnlineTileSource,
   fetchDataSourceConfig,
   fetchAboutInfo,
   updateRuntimeConfig,
@@ -42,6 +45,7 @@ import {
   fetchRemoteSources,
   upsertRemoteSource,
   deleteRemoteSource,
+  toggleRemoteSourceAccessMode as _toggleRemoteSourceAccessModeApi,
   upsertRemoteStorageProfile,
   deleteRemoteStorageProfile,
   toggleRemoteStorageProfile,
@@ -60,6 +64,8 @@ import {
   type WeatherProviderItem,
   type WeatherProviderUpdateRequest,
   type WeatherProviderTestResponse,
+  type OnlineTileSource,
+  type OnlineTileSourceUpsertRequest,
   type GeneralConfig,
   type DataSourceConfig,
   type AboutInfo,
@@ -93,6 +99,7 @@ type LoaderName =
   | 'portals'
   | 'datasets'
   | 'remote-sources'
+  | 'online-tile-sources'
   | 'about'
 
 const LOADER_LABELS: Record<LoaderName, string> = {
@@ -107,6 +114,7 @@ const LOADER_LABELS: Record<LoaderName, string> = {
   portals: '开放门户',
   datasets: '可用数据集',
   'remote-sources': '远程数据源',
+  'online-tile-sources': '在线瓦片源',
   about: '关于',
 }
 
@@ -138,6 +146,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const portalCatalog = ref<PortalCatalogEntry[]>([])
   const availableDatasets = ref<AvailableDatasetEntry[]>([])
   const remoteSourceRegistry = ref<RemoteSourceEntry[]>([])
+  const onlineTileSources = ref<OnlineTileSource[]>([])
   const aboutInfo = ref<AboutInfo | null>(null)
   const loading = ref(false)
   /** 致命错误：核心配置不可用，界面阻断 */
@@ -176,6 +185,7 @@ export const useSettingsStore = defineStore('settings', () => {
         settled('portals', async () => (await fetchPortalCatalog()).portals ?? []),
         settled('datasets', () => fetchAvailableDatasets(true)),
         settled('remote-sources', fetchRemoteSources),
+        settled('online-tile-sources', fetchOnlineTileSources),
       ])
 
     const applyResult = (r: Awaited<ReturnType<typeof settled>>) => {
@@ -224,6 +234,9 @@ export const useSettingsStore = defineStore('settings', () => {
           break
         case 'remote-sources':
           remoteSourceRegistry.value = r.value as RemoteSourceEntry[]
+          break
+        case 'online-tile-sources':
+          onlineTileSources.value = r.value as OnlineTileSource[]
           break
         case 'about':
           aboutInfo.value = r.value as AboutInfo
@@ -566,6 +579,30 @@ export const useSettingsStore = defineStore('settings', () => {
     await loadRemoteSources()
   }
 
+  /** Phase 4：切换远程数据源的访问模式（legacy ↔ site_compatible） */
+  async function toggleRemoteSourceAccessMode(
+    remoteSourceId: string,
+    accessMode: 'legacy' | 'site_compatible',
+  ) {
+    await _toggleRemoteSourceAccessModeApi(remoteSourceId, accessMode)
+    await loadRemoteSources()
+  }
+
+  async function loadOnlineTileSources() {
+    onlineTileSources.value = await fetchOnlineTileSources()
+  }
+
+  async function saveOnlineTileSource(sourceId: string, request: OnlineTileSourceUpsertRequest) {
+    const updated = await upsertOnlineTileSource(sourceId, request)
+    await loadOnlineTileSources()
+    return updated
+  }
+
+  async function removeOnlineTileSource(sourceId: string) {
+    await deleteOnlineTileSource(sourceId)
+    await loadOnlineTileSources()
+  }
+
   async function saveWeatherDefaultModel(defaultModel: string) {
     const updated = await updateWeatherDefaultModel(defaultModel)
     weatherConfig.value = { ...(weatherConfig.value ?? ({} as WeatherConfig)), ...updated }
@@ -641,13 +678,18 @@ export const useSettingsStore = defineStore('settings', () => {
     removePortal,
     runPortalTest,
     availableDatasets,
-    remoteSourceRegistry,
     loadAvailableDatasets,
+    onlineTileSources,
+    loadOnlineTileSources,
+    saveOnlineTileSource,
+    removeOnlineTileSource,
+    remoteSourceRegistry,
     saveAvailableDataset,
     removeAvailableDataset,
     runDatasetRescan,
     loadRemoteSources,
     saveRemoteSource,
     removeRemoteSource,
+    toggleRemoteSourceAccessMode,
   }
 })

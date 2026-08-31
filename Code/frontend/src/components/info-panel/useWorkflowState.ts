@@ -2,8 +2,9 @@ import { computed, type ComputedRef } from 'vue'
 
 import type { ActiveLayerDisplay, JobLayerItem, LayerHotspot } from '../../stores/layers/types'
 import type { LayerTileStats } from '../../stores/weather-tile-types'
-import { useLayerWorkspace } from '../../stores/layers/selectors'
-import { ANALYSIS_COPY } from '../../ui-copy'
+import { useLayerWorkspace, useWorkflowRun } from '../../stores/layers/selectors'
+import { ANALYSIS_COPY, ONLINE_PLAN_COPY } from '../../ui-copy'
+import { useOnlinePlanSessionStore } from '../../stores/online-plan-session'
 import { resolveWeatherWorkflowStage } from '../../utils/weather-tile-readiness'
 import {
   resolveAnalysisStageKind,
@@ -35,6 +36,15 @@ export interface WorkflowStateOptions {
   resultModel: ComputedRef<ResultDisplayModel | null>
 }
 
+/** X2 工作流变体展示模型；含「自动」项时 selectedKey 可为 auto。 */
+export type WorkflowVariantView = {
+  defaultKey: string
+  selectedKey: string
+  options: { key: string; label: string }[]
+  /** 源路由自动模式（未钉死偏好） */
+  isAuto: boolean
+}
+
 export function useWorkflowState(options: WorkflowStateOptions) {
   const {
     displayLayer,
@@ -54,6 +64,113 @@ export function useWorkflowState(options: WorkflowStateOptions) {
   } = options
 
   const workspace = useLayerWorkspace()
+  const workflowRun = useWorkflowRun()
+  const onlinePlan = useOnlinePlanSessionStore()
+
+  const workflowVariants = computed<WorkflowVariantView | null>(() => {
+    const cid = displayLayer.value.catalogId
+    if (!cid || !canRunWorkflow.value) return null
+    const descriptor = workspace.resolveEffectiveDescriptor(cid)
+    const variants = descriptor?.workflow_variants as Record<
+      string,
+      { workflow_id?: string | null; label?: string } | undefined
+    > | null
+    if (!variants || Object.keys(variants).length === 0) return null
+    const hasLocal = Boolean(variants.local?.workflow_id)
+    const hasOnline = Boolean(variants.online?.workflow_id)
+    // 通用：任一端声明即可展示；双端齐全时追加「自动」（策略源路由）
+    if (!hasLocal && !hasOnline) return null
+    const defaultKey =
+      Object.entries(variants).find(([, v]) => v?.workflow_id === descriptor?.workflow_id)?.[0] ??
+      (hasOnline ? 'online' : 'local')
+    const options = [
+      ...(hasLocal && hasOnline ? [{ key: 'auto', label: '自动' }] : []),
+      ...(hasLocal
+        ? [{ key: 'local', label: variants.local?.label?.trim() || '本地读取' }]
+        : []),
+      ...(hasOnline
+        ? [{ key: 'online', label: variants.online?.label?.trim() || '在线获取' }]
+        : []),
+    ]
+    const backendId = workspace.resolveBackendLayerId(cid)
+    const pinned =
+      workflowRun.isWorkflowVariantPinned?.(backendId) ||
+      workflowRun.isWorkflowVariantPinned?.(cid)
+    const preference =
+      workflowRun.workflowVariantPreference.value[backendId] ??
+      workflowRun.workflowVariantPreference.value[cid]
+    const isAuto = hasLocal && hasOnline && !pinned
+    const selectedKey = isAuto ? 'auto' : (preference ?? defaultKey)
+    return { defaultKey, selectedKey, options, isAuto }
+  })
+
+  /** 切换「数据来源」：自动=清钉死走策略；本地/在线=钉死并带当前时间轴重提。
+   * 不打断地图上已有缓存图层显示（runner 会保留旧 mapLayerPayload）。 */
+  async function switchWorkflowVariant(variantKey: string) {
+    const cid = displayLayer.value.catalogId
+    if (!cid) return
+    const view = workflowVariants.value
+    if (!view || variantKey === view.selectedKey) return
+    const backendId = workspace.resolveBackendLayerId(cid)
+    if (variantKey === 'auto') {
+      workflowRun.clearWorkflowVariantPin?.(cid)
+      if (backendId !== cid) workflowRun.clearWorkflowVariantPin?.(backendId)
+    } else if (variantKey === 'online' || variantKey === 'local') {
+      workflowRun.setWorkflowVariantPreference(cid, variantKey, { pinned: true })
+      if (backendId !== cid) {
+        workflowRun.setWorkflowVariantPreference(backendId, variantKey, { pinned: true })
+      }
+    } else {
+      return
+    }
+
+    // 显式带上当前时间轴窗，避免在线种子（fy_download）缺 start_date
+    let timeRange: Record<string, unknown> | undefined
+    try {
+      const { useUiStore } = await import('../../stores/ui')
+      const { buildTimeKey, buildTimeRangeFromKey } = await import(
+        '../../stores/layers/online-temporal-orchestrator'
+      )
+      const ui = useUiStore()
+      const desc = workspace.resolveEffectiveDescriptor(cid) as {
+        time_granularity?: string
+        online_temporal?: { native_step?: string }
+        native_step?: string
+        supports_time?: boolean
+      } | null
+      if (desc?.supports_time !== false) {
+        const granRaw = desc?.time_granularity || ui.activeTimeGranularity || 'day'
+        const gran =
+          granRaw === 'hour' ||
+          granRaw === 'day' ||
+          granRaw === 'month' ||
+          granRaw === 'year' ||
+          granRaw === 'static'
+            ? granRaw
+            : 'day'
+        if (gran !== 'static') {
+          const nativeStep =
+            desc?.native_step || desc?.online_temporal?.native_step || (gran === 'hour' ? '1h' : '1d')
+          const timeKey = buildTimeKey(ui.currentDate, ui.currentHour, gran)
+          const built = buildTimeRangeFromKey(timeKey, nativeStep, gran)
+          if (built) timeRange = built as unknown as Record<string, unknown>
+        }
+      }
+    } catch {
+      /* 时间轴不可用时仍提交，由 runner 再补一次 */
+    }
+
+    try {
+      await workflowRun.runWorkflowForCatalog(cid, {
+        ...(variantKey === 'auto'
+          ? {}
+          : { workflowVariant: variantKey as 'online' | 'local' }),
+        ...(timeRange ? { timeRange } : {}),
+      })
+    } catch (error) {
+      console.warn('[InfoPanel] switchWorkflowVariant re-run failed:', error)
+    }
+  }
 
   // ── 分析摘要 ──────────────────────────────────────────────────────────────
 
@@ -137,6 +254,8 @@ export function useWorkflowState(options: WorkflowStateOptions) {
     if (jobLayer.value?.status === 'running') return 'running'
     if (jobLayer.value?.status === 'succeeded') return 'succeeded'
     if (jobLayer.value?.status === 'failed') return 'failed'
+    // 提交失败只落了全局 workflowError、jobLayer 已被抹掉时，分析框仍显示失败态
+    if (workflowRun.workflowError.value) return 'failed'
     return 'idle'
   })
 
@@ -214,6 +333,16 @@ export function useWorkflowState(options: WorkflowStateOptions) {
       (isRealtimeWeatherLayer.value && hasRealSelection.value && hasWeatherTileActivity.value),
   )
 
+  /** P2：只读「待计划」— 会话 tabs 含当前层且未 resolved；不改 job status */
+  const onlinePlanPending = computed(() => {
+    const cid = displayLayer.value.catalogId
+    return Boolean(cid && onlinePlan.isCatalogPendingPlan(cid))
+  })
+
+  function openOnlinePlanSession() {
+    onlinePlan.openSession()
+  }
+
   const workflowStageCopy = computed(() =>
     resolveWorkflowStageCopy({
       stage: workflowStage.value,
@@ -227,7 +356,9 @@ export function useWorkflowState(options: WorkflowStateOptions) {
 
   const weatherTopLines = computed(() => {
     if (!hasRealSelection.value || !isRealtimeWeatherLayer.value) return [] as string[]
-    const lines: string[] = [ANALYSIS_COPY.weatherAutoLoad]
+    // 2026-08-25 用户反馈：分析框顶部「瓦片按视口自动加载，无需手动提交工作流」
+    // 提示性文案属噪音——已移除（保留瓦片进度等可观测信息）。
+    const lines: string[] = []
     const stats = tileStats.value
     if (stats) {
       lines.push(ANALYSIS_COPY.weatherTileLine(stats.cached, stats.visible, stats.pending))
@@ -257,6 +388,8 @@ export function useWorkflowState(options: WorkflowStateOptions) {
     workflowStage,
     workflowMeta,
     workflowProgress,
+    workflowVariants,
+    switchWorkflowVariant,
     latestEventMessage,
     hasRealSelection,
     sparseVisualHint,
@@ -274,5 +407,9 @@ export function useWorkflowState(options: WorkflowStateOptions) {
     jobReportSummary,
     analysisSummary,
     showCompactHero,
+    onlinePlanPending,
+    openOnlinePlanSession,
+    onlinePlanPendingLabel: ONLINE_PLAN_COPY.pendingBadge,
+    onlinePlanPendingTitle: ONLINE_PLAN_COPY.pendingBadgeTitle,
   }
 }

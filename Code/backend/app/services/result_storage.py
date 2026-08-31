@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from uuid import uuid4
 
 from app.core.config import settings
+from app.services.effective_config import get_result_inline_max_bytes
 from app.services.object_store import object_store
 from shared.contracts.api_contracts import ResultKind, WorkflowResultReference
 
@@ -142,7 +143,7 @@ class ResultStorageService:
             serialized = json.dumps(result_ref.inline_data, ensure_ascii=False).encode(
                 "utf-8"
             )
-            if len(serialized) <= settings.result_inline_max_bytes:
+            if len(serialized) <= get_result_inline_max_bytes():
                 persisted.append(result_ref)
                 continue
 

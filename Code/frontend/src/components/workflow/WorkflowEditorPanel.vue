@@ -14,8 +14,7 @@
  * 左右面板已拆分为 WorkflowLeftSidebar / WorkflowRightSidebar 独立组件。
  * 顶部工具栏：保存 / 排列 / 适配视图 / 清空 / 运行
  */
-import { onMounted, onBeforeUnmount, ref, shallowRef, computed, nextTick } from 'vue'
-import { storeToRefs } from 'pinia'
+import { onMounted, onBeforeUnmount, ref, shallowRef, computed, nextTick, toRef } from 'vue'
 import {
   Hexagon,
   Settings,
@@ -48,6 +47,7 @@ import WorkflowTimerPanel from './WorkflowTimerPanel.vue'
 import PipelineLauncher from './PipelineLauncher.vue'
 import NodeCacheDialog from './NodeCacheDialog.vue'
 import AppSelect from '../ui/AppSelect.vue'
+import { useUnsavedChangesGuard } from '../../composables/useUnsavedChangesGuard'
 import { WORKFLOW_COPY } from '../../ui-copy'
 import {
   validateWorkflowBeforeRun,
@@ -56,6 +56,7 @@ import {
   type ValidationResult,
   type ValidationIssue,
 } from '../../composables/workflow-validator'
+import { applyPipelineParamsToGraph } from '../../composables/workflow-pipeline-params'
 
 import type { LGraphNodeClass } from './litegraph-setup'
 import type {
@@ -75,7 +76,10 @@ const emit = defineEmits<{
 }>()
 
 const store = useWorkflowDefinitionsStore()
-const { nodeTemplates, currentDefinition, isReadonly, error } = storeToRefs(store)
+const nodeTemplates = toRef(store, 'nodeTemplates')
+const currentDefinition = toRef(store, 'currentDefinition')
+const isReadonly = toRef(store, 'isReadonly')
+const error = toRef(store, 'error')
 const logStore = useLogStore()
 
 // 选中节点状态
@@ -94,6 +98,14 @@ const nodeCacheDialogOpen = ref(false)
 const saving = ref(false)
 const saveError = ref<string | null>(null)
 const dirty = ref(false)
+
+// 是否存在当前工作流定义（须在 useUnsavedChangesGuard 之前声明，避免 TDZ）
+const hasDefinition = computed(() => currentDefinition.value !== null)
+
+// 未保存修改的页面离开拦截（有定义、非只读、dirty、非保存中——与保存按钮可用条件一致）
+useUnsavedChangesGuard(
+  () => hasDefinition.value && !isReadonly.value && dirty.value && !saving.value,
+)
 
 // 运行状态
 const running = ref(false)
@@ -152,9 +164,12 @@ function resolveGraphForRun(): {
   return fromCanvas ?? currentGraphData.value ?? null
 }
 
-/** 执行校验并更新状态 */
+/** 执行校验并更新状态（流水线启动时先注入日期等到图上再校验） */
 function runValidation(): ValidationResult {
-  const graphData = resolveGraphForRun()
+  let graphData = resolveGraphForRun()
+  if (pendingPipelineParams.value && graphData) {
+    graphData = applyPipelineParamsToGraph(graphData, pendingPipelineParams.value)
+  }
   const result = validateWorkflowBeforeRun(graphData, nodeTemplates.value)
   validationResult.value = result
   return result
@@ -172,7 +187,6 @@ const selectedNodeIssues = computed<ValidationIssue[]>(() => {
   return issuesByNode.value.get(selectedNode.value.id) ?? []
 })
 
-const hasDefinition = computed(() => currentDefinition.value !== null)
 const canSave = computed(
   () => hasDefinition.value && !isReadonly.value && dirty.value && !saving.value,
 )
@@ -423,55 +437,6 @@ async function handleRunConfirm(target: WorkflowRunTarget) {
 }
 
 /**
- * 将流水线启动器参数同步到算法节点与 data/time_range，保证计算范围和 UI 时间轴元数据一致。
- */
-function applyPipelineParamsToGraph(
-  graphData: { nodes: WorkflowDefinitionNode[]; links: WorkflowDefinitionLink[] },
-  params: Record<string, unknown>,
-): { nodes: WorkflowDefinitionNode[]; links: WorkflowDefinitionLink[] } {
-  const startDate = typeof params.start_date === 'string' ? params.start_date : ''
-  const endDate = typeof params.end_date === 'string' ? params.end_date : ''
-  const toIsoDate = (value: string) =>
-    `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T00:00:00`
-  const startAt = startDate.length === 8 ? toIsoDate(startDate) : ''
-  const endAt = endDate.length === 8 ? toIsoDate(endDate) : ''
-
-  const updatedNodes = graphData.nodes.map((node) => {
-    const nodeProps = node.properties as Record<string, unknown>
-    const isTimeRangeNode =
-      node.type === 'data/time_range' || nodeProps.module_name === 'time_range'
-    if (isTimeRangeNode && startAt && endAt) {
-      return {
-        ...node,
-        properties: {
-          ...nodeProps,
-          start_at: startAt,
-          end_at: endAt,
-        },
-      }
-    }
-    if (
-      nodeProps.algorithm_params &&
-      typeof nodeProps.algorithm_params === 'object' &&
-      !Array.isArray(nodeProps.algorithm_params)
-    ) {
-      return {
-        ...node,
-        properties: {
-          ...nodeProps,
-          algorithm_params: {
-            ...(nodeProps.algorithm_params as Record<string, unknown>),
-            ...params,
-          },
-        },
-      }
-    }
-    return node
-  })
-  return { nodes: updatedNodes, links: graphData.links }
-}
-
-/**
  * 流水线启动回调：加载对应工作流定义，注入 algorithm_params，然后走正常的 run 流程。
  */
 async function handlePipelineLaunch(workflowId: string, params: Record<string, unknown>) {
@@ -485,15 +450,18 @@ async function handlePipelineLaunch(workflowId: string, params: Record<string, u
     runStatus.value = 'error'
     return
   }
-  // 立刻写入 graph 快照，避免等 LiteGraph 异步 configure 完成
-  currentGraphData.value = {
-    nodes: def.nodes as WorkflowDefinitionNode[],
-    links: (def.links ?? []) as WorkflowDefinitionLink[],
-  }
+  // 立刻写入图快照（含流水线日期注入），避免等 LiteGraph 异步 configure 完成
+  currentGraphData.value = applyPipelineParamsToGraph(
+    {
+      nodes: def.nodes as WorkflowDefinitionNode[],
+      links: (def.links ?? []) as WorkflowDefinitionLink[],
+    },
+    params,
+  )
   selectedNode.value = null
   dirty.value = false
 
-  // 暂存流水线参数，待 handleRunConfirm 时注入 graphData
+  // 暂存流水线参数：校验与确认提交时再注入一次（画布序列化可能仍是种子占位）
   pendingPipelineParams.value = params
 
   logStore.logOperation(
@@ -526,6 +494,24 @@ function notifyRunOutcome(ok: boolean, message?: string) {
       runStatus.value = 'idle'
     }, 4000)
   }
+}
+
+/**
+ * 主界面时间轴停稳后：同步打开画布中 bind_timeline 的 time_range 节点。
+ * 只读种子图不写脏标记以外的持久化；可编辑图标 dirty。
+ */
+function applyBoundMainTimeline(range: { start_at: string; end_at: string }): number {
+  if (!hasDefinition.value || !canvasRef.value) return 0
+  const changed =
+    (
+      canvasRef.value as {
+        applyBoundMainTimeline?: (r: { start_at: string; end_at: string }) => number
+      }
+    ).applyBoundMainTimeline?.(range) ?? 0
+  if (changed > 0 && !isReadonly.value) {
+    dirty.value = true
+  }
+  return changed
 }
 
 function clearRunStatusTimers() {
@@ -647,6 +633,7 @@ function handleClose() {
 
 defineExpose({
   notifyRunOutcome,
+  applyBoundMainTimeline,
 })
 </script>
 
@@ -909,7 +896,16 @@ defineExpose({
         <main v-else class="editor-canvas-area">
           <div v-if="!hasDefinition" class="canvas-placeholder">
             <div class="placeholder-content">
-              <Hexagon :size="48" class="placeholder-icon" aria-hidden="true" />
+              <div class="placeholder-orbit" aria-hidden="true">
+                <span class="orbit-ring orbit-ring--outer"></span>
+                <span class="orbit-ring orbit-ring--inner"></span>
+                <span class="flow-node flow-node--source"></span>
+                <span class="flow-node flow-node--transform"></span>
+                <span class="flow-node flow-node--output"></span>
+                <span class="flow-link flow-link--source"></span>
+                <span class="flow-link flow-link--output"></span>
+                <span class="flow-core"></span>
+              </div>
               <h2 class="placeholder-title">工作流编辑器</h2>
               <p class="placeholder-text">从左侧选择工作流或范例，也可点击「新建」创建空白流</p>
               <p class="placeholder-hint">
@@ -1119,7 +1115,11 @@ defineExpose({
 }
 
 .header-icon {
-  font-size: 0.92rem;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
   color: var(--accent);
 }
 
@@ -1334,25 +1334,74 @@ defineExpose({
 }
 
 .placeholder-content {
+  width: min(34rem, calc(100% - 2rem));
   text-align: center;
   color: var(--text-disabled);
 }
 
-.placeholder-icon {
-  font-size: 3.2rem;
-  opacity: 0.3;
+.placeholder-orbit {
+  position: relative;
+  width: 8.5rem;
+  height: 5.5rem;
+  margin: 0 auto 1rem;
+  filter: drop-shadow(0 10px 24px color-mix(in srgb, var(--accent) 14%, transparent));
+}
+.orbit-ring {
+  position: absolute;
+  inset: 0.6rem 1.2rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 50%;
+  transform: rotate(-18deg) skewX(-14deg);
+}
+.orbit-ring--inner {
+  inset: 1.15rem 2.1rem;
+  border-color: color-mix(in srgb, var(--accent-strong) 42%, transparent);
+  transform: rotate(24deg) skewX(10deg);
+}
+.flow-node,
+.flow-core {
+  position: absolute;
   display: block;
-  margin-bottom: 0.72rem;
-  animation: placeholder-float 3s ease-in-out infinite;
+  border-radius: 0.35rem;
+  border: 1px solid var(--accent-border);
+  background: var(--surface-2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 9%, transparent), 0 5px 14px rgb(0 0 0 / 0.18);
+}
+.flow-node {
+  width: 1.05rem;
+  height: 0.78rem;
+}
+.flow-node--source { left: 0.55rem; top: 2.3rem; }
+.flow-node--transform { left: 3.72rem; top: 0.45rem; border-radius: 50%; }
+.flow-node--output { right: 0.55rem; top: 2.3rem; }
+.flow-link {
+  position: absolute;
+  height: 1px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: 0.78;
+}
+.flow-link--source { left: 1.42rem; top: 2.7rem; width: 2.45rem; transform: rotate(-30deg); }
+.flow-link--output { left: 4.72rem; top: 1.16rem; width: 2.48rem; transform: rotate(30deg); }
+.flow-core {
+  left: 3.78rem;
+  top: 2.3rem;
+  width: 0.92rem;
+  height: 0.92rem;
+  border-radius: 50%;
+  border-color: var(--accent-strong);
+  background: var(--accent-surface);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 11%, transparent), 0 0 22px color-mix(in srgb, var(--accent) 36%, transparent);
+  animation: core-pulse 2.8s ease-in-out infinite;
+}
+@keyframes core-pulse {
+  0%, 100% { transform: scale(0.92); opacity: 0.76; }
+  50% { transform: scale(1.08); opacity: 1; }
 }
 
-@keyframes placeholder-float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-6px);
+@media (prefers-reduced-motion: reduce) {
+  .flow-core {
+    animation: none;
   }
 }
 

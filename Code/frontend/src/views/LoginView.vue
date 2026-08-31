@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { Eye, EyeOff } from 'lucide-vue-next'
 
 import { safeRedirect } from '../app/router'
 import { useAuthStore } from '../stores/auth'
@@ -14,13 +15,19 @@ const route = useRoute()
 
 const username = ref('')
 const password = ref('')
+const showPassword = ref(false)
 const error = ref<string | null>(null)
 const submitting = ref(false)
 const retrying = ref(false)
 
 const devHint = computed(() => (import.meta.env.DEV ? auth.config?.dev_prefill : null))
+const brandAbbr = computed(() => auth.resolvedBrand.abbr || BRAND.abbr)
+const brandShort = computed(() => auth.resolvedBrand.shortName || BRAND.shortName)
+const brandEn = computed(() => auth.resolvedBrand.displayNameEn || BRAND.displayNameEn)
+const brandLogo = computed(() => auth.resolvedBrand.logoUrl)
 
 onMounted(() => {
+  void auth.loadPrimaryTheme()
   if (devHint.value) {
     username.value = devHint.value.username
     password.value = devHint.value.password
@@ -185,16 +192,17 @@ async function submit() {
     <div class="login-card">
       <div class="brand-block">
         <div class="brand-mark" aria-hidden="true">
-          <BrandMark :size="56" />
+          <img v-if="brandLogo" class="brand-logo-img" :src="brandLogo" alt="" />
+          <BrandMark v-else :size="56" />
           <span class="mark-ring-outer"></span>
         </div>
-        <div class="brand-copy">
-          <p class="eyebrow">{{ BRAND.eyebrow }}</p>
-          <h1>{{ BRAND.shortName }}</h1>
-          <p class="subtitle-en">{{ BRAND.displayNameEn }}</p>
-          <p class="subtitle">登录以访问地图分析、工作流与数据服务</p>
+        <p class="brand-abbr">{{ brandAbbr }}</p>
+        <div class="brand-names">
+          <h1>{{ brandShort }}</h1>
+          <span class="brand-name-en">{{ brandEn }}</span>
         </div>
       </div>
+      <div class="brand-divider" aria-hidden="true"></div>
 
       <p v-if="auth.bootstrapError" class="banner banner-warn">
         {{ auth.bootstrapError }}
@@ -216,13 +224,27 @@ async function submit() {
         </label>
         <label class="field">
           <span class="field-label">密码</span>
-          <input
-            v-model="password"
-            type="password"
-            autocomplete="current-password"
-            placeholder="请输入密码"
-            required
-          />
+          <div class="input-wrap">
+            <input
+              v-model="password"
+              :type="showPassword ? 'text' : 'password'"
+              autocomplete="current-password"
+              placeholder="请输入密码"
+              required
+            />
+            <button
+              type="button"
+              class="password-toggle"
+              :class="{ 'is-visible': showPassword }"
+              :aria-label="showPassword ? '隐藏密码' : '显示密码'"
+              :aria-pressed="showPassword"
+              @mousedown.prevent
+              @click="showPassword = !showPassword"
+            >
+              <EyeOff v-if="showPassword" :size="15" />
+              <Eye v-else :size="15" />
+            </button>
+          </div>
         </label>
 
         <p v-if="devHint" class="dev-hint">
@@ -240,8 +262,6 @@ async function submit() {
           {{ submitting ? '登录中…' : '进入系统' }}
         </AppButton>
       </form>
-
-      <p class="footer-note">会话通过安全 Cookie 维持，请勿在公共设备保持登录。</p>
     </div>
   </div>
 </template>
@@ -438,7 +458,7 @@ async function submit() {
 .login-card {
   position: relative;
   width: min(28rem, 100%);
-  padding: var(--space-7) var(--space-6) var(--space-6);
+  padding: var(--space-7) var(--space-6);
   border: 1px solid var(--accent-surface);
   border-radius: var(--radius-xl);
   background:
@@ -504,12 +524,12 @@ async function submit() {
   }
 }
 
-/* ═══ 品牌区域 ═══ */
+/* ═══ 品牌区域（居中锁版：图标 → 缩写 → 中英文名一行） ═══ */
 .brand-block {
   display: flex;
-  gap: var(--space-4);
+  flex-direction: column;
   align-items: center;
-  margin-bottom: var(--space-6);
+  text-align: center;
 }
 
 .brand-mark {
@@ -541,20 +561,29 @@ async function submit() {
   }
 }
 
-.brand-copy .eyebrow {
-  margin: 0;
-  font-size: var(--font-size-caption);
-  letter-spacing: 0.18em;
+.brand-abbr {
+  margin: var(--space-3) -0.42em 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.42em;
   text-transform: uppercase;
   color: var(--accent);
-  font-weight: var(--font-weight-semibold);
   text-shadow: 0 0 20px var(--accent-border);
 }
 
-.brand-copy h1 {
-  margin: 6px 0 0;
-  font-size: 1.6rem;
-  font-weight: var(--font-weight-bold);
+.brand-names {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.brand-names h1 {
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: var(--font-weight-semibold);
   letter-spacing: 0.02em;
   color: var(--text-strong);
   background: linear-gradient(135deg, var(--surface-3) 0%, var(--accent-strong) 100%);
@@ -563,21 +592,17 @@ async function submit() {
   -webkit-text-fill-color: transparent;
 }
 
-.subtitle-en {
-  margin: var(--space-1) 0 0;
-  font-size: var(--font-size-caption);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+.brand-name-en {
+  font-size: 0.66rem;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
   color: var(--text-muted);
-  font-family: var(--font-family-mono, 'IBM Plex Mono', monospace);
 }
 
-.subtitle {
-  margin: var(--space-2) 0 0;
-  font-size: var(--font-size-body-sm, 0.875rem);
-  line-height: 1.6;
-  color: var(--text-secondary);
-  opacity: 0.9;
+.brand-divider {
+  height: 1px;
+  margin: var(--space-5) 0;
+  background: linear-gradient(90deg, transparent, var(--border-accent), transparent);
 }
 
 /* ═══ 表单 ═══ */
@@ -633,6 +658,52 @@ async function submit() {
   background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
 }
 
+/* ═══ 密码可见性切换 ═══ */
+.input-wrap {
+  position: relative;
+}
+
+/* input 为行内级替换元素，嵌套在普通 div 内时不会自动撑满，需显式满宽 */
+.input-wrap input {
+  width: 100%;
+  padding-right: 2.8rem;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 0.55rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color var(--motion-fast) var(--ease-soft),
+    background-color var(--motion-fast) var(--ease-soft);
+}
+
+.password-toggle:hover,
+.password-toggle.is-visible {
+  color: var(--accent);
+}
+
+.password-toggle:hover {
+  background: var(--accent-surface);
+}
+
+.password-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .dev-hint {
   margin: 0;
   font-size: var(--font-size-caption);
@@ -664,14 +735,6 @@ async function submit() {
   color: var(--danger);
 }
 
-.footer-note {
-  margin: var(--space-4) 0 0;
-  font-size: var(--font-size-caption);
-  line-height: 1.5;
-  color: var(--text-faint);
-  text-align: center;
-}
-
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -694,6 +757,9 @@ async function submit() {
   .login-card {
     opacity: 1;
     transform: none;
+  }
+  .password-toggle {
+    transition: none;
   }
 }
 </style>

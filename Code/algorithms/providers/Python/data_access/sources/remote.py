@@ -75,15 +75,17 @@ def _resolve_auth(uri: str, metadata: dict[str, object] | None) -> RemoteAuth:
             port=port,
             extra={str(k): str(v) for k, v in extra.items()},
         )
-    try:
-        from app.services.remote_auth_resolver import resolve_remote_auth
+    # P3 分层收口（2026-08-23）：后端凭据解析经 _backend_bridge 边界桥
+    # （算法包唯一的 app.services 借用点）
+    from modules.provider_bridge_access import load_backend_bridge
 
-        return resolve_remote_auth(uri)
-    except Exception as exc:
-        raise ValueError(
-            f"Unable to resolve remote credentials for {uri}: {exc}. "
-            "Provide metadata auth fields or backend credential profile (?cred=)."
-        ) from exc
+    resolved = load_backend_bridge().resolve_remote_credentials(uri)
+    if resolved is not None:
+        return resolved
+    raise ValueError(
+        f"Unable to resolve remote credentials for {uri}. "
+        "Provide metadata auth fields or backend credential profile (?cred=)."
+    )
 
 
 class RemoteSource:

@@ -2,7 +2,7 @@
  * Active layer list CRUD / display / import slice.
  * Public API re-exported via useLayersStore().
  */
-import { computed, nextTick, ref } from 'vue'
+import { computed, markRaw, nextTick, ref } from 'vue'
 
 import type { LayerDescriptor } from '../../services/runtime-api'
 import { deleteImportedRaster } from '../../services/data-import'
@@ -19,6 +19,7 @@ import {
   isRuntimeCatalogId,
   normalizeDisplayName,
 } from './layer-naming'
+import { isEnglishInversionCatalogId } from './inversion-catalog'
 import { projectActiveLayersDisplay } from './display-projection'
 import { rememberDismissedLayer } from './workspace-persist'
 import { MERGED_LAYER_GROUPS } from './catalog'
@@ -56,6 +57,7 @@ export interface ActiveLayersSliceDeps {
   enableParticleIfUnset: (catalogId: string) => void
   clearWindForCatalog: (catalogId: string) => void
   stopWorkflowPolling: (jobId: string) => void
+  cancelWorkflowRunForJob: (jobId: string, catalogId: string) => Promise<unknown>
   forgetTrackedWorkflowRun: (runId: string) => void
   saveTrackedWorkflowRuns: (runs: unknown[]) => void
   getWorkflowRetryTimers: () => Map<string, number>
@@ -66,7 +68,6 @@ export interface ActiveLayersSliceDeps {
   flushWorkspacePersistNow: () => void
   debugLog: (module: string, ...args: unknown[]) => void
   // ── Auto-run workflow on layer add ──
-  supportsAnalysisWorkflow: (catalogId: string) => boolean
   canRunCatalog: (catalogId: string) => boolean
   runWorkflowForCatalog: (catalogId: string) => Promise<void>
 }
@@ -116,7 +117,12 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
     return allocateLayerAccent(usedLayerAccentColors(), preferred)
   }
 
-  function addLayer(catalogId: string, isAdminBoundary = false, jobLayer?: JobLayerItem) {
+  function addLayer(
+    catalogId: string,
+    isAdminBoundary = false,
+    jobLayer?: JobLayerItem,
+    options?: { skipAutoRun?: boolean },
+  ) {
     // 行政边界不再作为可添加数据集
     if (isAdminBoundary || catalogId === 'admin-boundary' || catalogId === 'admin-boundary-cn') {
       return
@@ -195,12 +201,17 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       })
     }
 
-    // 非天气分析图层（python_provider / gee）添加后自动运行工作流，
-    // 消除"待运行"状态并生成数据供点选/时序分析。
+    // 统一图层生命周期：所有非导入图层添加后都提交资产/分析工作流。
+    // - python_provider/gee 图层走分析工作流
+    // - overlay_registry 静态图层走资产检查/烘焙工作流（runWorkflowForCatalog 内分流）
+    // skipAutoRun：侧栏 ensureLayerDataOrRun 已负责「先 attach 再按需跑」，
+    // 若此处再 setTimeout 开跑会与 attach/建组竞态，易落成 imported-omega_* 游离层
+    // 污染 TOC/图层库观感（2026-08-30 审计）。
     if (
+      !options?.skipAutoRun &&
       !jobLayer && // 不是工作流产物回填
       !deps.isWeatherEngineLayer(catalogId) && // 非天气图层
-      deps.supportsAnalysisWorkflow(catalogId) && // engine 为 python_provider 或 gee
+      catalogId !== 'gebco-dem-cn' && // GEBCO 已有静态烘焙资产，不自动启动 6.95GB 重读工作流
       deps.canRunCatalog(catalogId) // readiness 非 blocked
     ) {
       // 推迟到下一宏任务，让 Vue 先完成「已添加 ✓」UI 刷新
@@ -305,7 +316,8 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
     if (!layer?.importedVector) return
     layer.importedVector = {
       ...layer.importedVector,
-      geojson,
+      // D-4：替换时同样 markRaw（传入对象可能未标记，进入 proxy 树前豁免）
+      geojson: markRaw(geojson),
       featureCount: extras?.featureCount ?? geojson.features.length,
       truncated: extras?.truncated ?? layer.importedVector.truncated,
       geometryType: inferGeometryType(geojson),
@@ -354,11 +366,18 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       followPolicy: options?.followPolicy,
     })
     const accent = assignLayerAccent('#7eb8e0')
+    // 反演 overlay 技术 id（omega_sf_fenkuai_* / imported-omega_*）禁止作为
+    // catalogId/显示名——否则 TOC/图层库观感会出现一堆英文技术名（2026-08-30）。
+    // overlay 真源仍保留在 importedRaster.overlayLayerId，地图加载不依赖 catalogId。
+    const safeCatalogId = isEnglishInversionCatalogId(overlayLayerId)
+      ? `imported-${instanceId}`
+      : overlayLayerId
+    const rawName = name.replace(/\.(tif|tiff)$/i, '') || name
+    const safeName = isEnglishInversionCatalogId(rawName) ? '反演产物' : rawName
     const layer: ActiveLayer = {
       instanceId,
-      // catalogId 与后端 overlay_layer_id 对齐，便于 overlay-image-module 加载
-      catalogId: overlayLayerId,
-      name: name.replace(/\.(tif|tiff)$/i, '') || name,
+      catalogId: safeCatalogId,
+      name: safeName,
       visible: true,
       opacity: 0.7,
       order: maxOrder + 1,
@@ -375,6 +394,19 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       sidebarView.value = 'active'
     }
     deps.scheduleWorkspacePersist()
+    // 统一图层生命周期：目录 overlay 添加即登记图层资产工作流，
+    // 显示“资产检查/更新中/就绪”，陈旧或缺失时后台重烘。
+    if (!layer.importedRaster && !layer.importedVector && !layer.isAdminBoundary) {
+      void deps.runWorkflowForCatalog(layer.catalogId).catch((err) => {
+        console.warn('[layers] asset workflow submit failed', layer.catalogId, err)
+        safeLog(
+          'client-error',
+          '图层资产工作流提交失败',
+          `catalog=${layer.catalogId} err=${String(err)}`,
+          'warn',
+        )
+      })
+    }
     return layer
   }
 
@@ -403,7 +435,16 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
     const runIdHint = layer.jobLayer?.jobId || groupBeforeRemove?.runId
 
     if (layer.jobLayer?.jobId) {
-      deps.stopWorkflowPolling(layer.jobLayer.jobId)
+      const jobId = layer.jobLayer.jobId
+      deps.stopWorkflowPolling(jobId)
+      // 删除运行中图层必须取消后端 run；仅停轮询会留下活跃任务，任务完成后
+      // restore/auto-attach 会把图层重新挂回（用户反馈#7）。取消请求异步发出，
+      // 本地 UI 先移除；后端取消接口幂等，失败只记日志不阻塞删除。
+      if (!['succeeded', 'failed', 'cancelled'].includes(layer.jobLayer.status)) {
+        void deps.cancelWorkflowRunForJob(jobId, layer.catalogId).catch((err) => {
+          console.warn('[layers] cancel removed workflow failed', jobId, err)
+        })
+      }
     }
     const retryTimer = deps.getWorkflowRetryTimers().get(layer.catalogId)
     if (retryTimer !== undefined) {
@@ -448,7 +489,9 @@ export function createActiveLayersSlice(deps: ActiveLayersSliceDeps) {
       overlayLayerId: overlayId,
       catalogId: isLocalImport(layer) ? undefined : layer.catalogId,
       vectorBackendLayerId: layer.importedVector?.backendLayerId,
-      runId: undefined,
+      // 持久化真实 runId：否则刷新恢复会重新发现仍在运行/稍后完成的 run，
+      // 造成“移除后过一会儿又出现”。
+      runId: runIdHint,
     })
 
     deps.clearWindForCatalog(layer.catalogId)

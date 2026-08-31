@@ -38,6 +38,15 @@ interface LayersStoreLike {
     zoom?: number,
     options?: { immediate?: boolean },
   ) => void
+  /** P1 lifecycle 双写：把地图 overlay 时间状态回传给 layers lifecycle 域。 */
+  setMapOverlayTimeStates?: (
+    states: Array<{
+      layerId: string
+      category: string
+      timeList: string[]
+      currentTime: string | null
+    }>,
+  ) => void
 }
 
 interface WeatherTileManagerLike {
@@ -190,6 +199,7 @@ export function createMapCanvasModuleBundle(
     getActiveLayers: () => options.layersStore.activeLayers,
     getActiveVisibleCatalogIds: () =>
       options.layersStore.activeLayersDisplay.filter((l) => l.visible).map((l) => l.catalogId),
+    onOverlayTimeStatesChanged: (states) => options.layersStore.setMapOverlayTimeStates?.(states),
   })
 
   const hotspotPinsModule = createHotspotPinsModuleImpl({
@@ -258,6 +268,9 @@ export function createMapCanvasModuleBundle(
       mapInteractionModule.applyInteractionMode()
       measureModule.applyMeasureMode()
       drawModule.applyDrawMode()
+      // 报障 2026-08-22：进入绘制/测量模式时确保交互层置顶——
+      // 数据层后添加会压过绘制层，导致绘制中被数据图层遮挡
+      drawModule.bringToFront()
       // 非「点选」模式：清除选中点，避免移动/测量模式下残留 inspect 圆点与选中高亮
       const mode = options.getInteractionMode()
       if (mode !== 'select') {

@@ -338,3 +338,126 @@ def test_execute_temperature_uses_grid_for_geojson_and_cog(_weather_engine_servi
     assert layer_assets.get("geojson_url"), 'layer_assets.get("geojson_url") is truthy'
     assert layer_assets.get("cog_url"), 'layer_assets.get("cog_url") is truthy'
     assert client.grid_calls.count("temperature") >= 2, 'client.grid_calls.count("temperature") >= 2'
+
+
+# ── 2026-08-27 回归：80/120/180m 轮毂高度点查（gfs 代理无原生高度场） ──
+
+
+class _NoHubHeightFakeOpenMeteoClient(_FakeOpenMeteoClient):
+    """模拟 gfs 本地代理：仅含 2m 温度 / 10m 风，不含 80/120/180m 高空数据。"""
+
+    def fetch_point_forecast(
+        self,
+        *,
+        latitude: float,
+        longitude: float,
+        layer_spec,
+        model: str,
+        forecast_hours: int,
+        ttl_seconds: int,
+        pressure_levels: tuple[int, ...] | None = None,
+    ):
+        return (
+            {
+                "timezone": "Asia/Shanghai",
+                "current": {
+                    "time": "2026-08-27T02:00",
+                    "temperature_2m": 24.0,
+                    "wind_speed_10m": 8.0,
+                    "wind_direction_10m": 90,
+                },
+                "hourly": {
+                    "time": [
+                        "2026-08-27T02:00",
+                        "2026-08-27T03:00",
+                        "2026-08-27T04:00",
+                    ],
+                    "temperature_2m": [24.0, 23.8, 23.5],
+                    "wind_speed_10m": [8.0, 7.8, 7.5],
+                    "wind_direction_10m": [90, 95, 100],
+                },
+            },
+            "hit",
+        )
+
+
+def test_hub_height_wind_extrapolated_from_10m_when_missing(
+    monkeypatch,
+) -> None:
+    """轮毂高度风点查：当前段缺 80/120/180m 时由 10m 风按 Hellmann 指数外推填充。"""
+    registry = get_registry()
+    registry.register(
+        OpenMeteoProvider(client=_NoHubHeightFakeOpenMeteoClient()),
+        priority=0,
+        enabled=True,
+    )
+    try:
+        service = WeatherEngineService()
+        for layer_id, attr in (
+            ("wind-field-80m", "wind_speed_80m"),
+            ("wind-field-120m", "wind_speed_120m"),
+            ("wind-field-180m", "wind_speed_180m"),
+        ):
+            weather = service.get_point_weather(
+                layer_id=layer_id,
+                latitude=23.5,
+                longitude=113.5,
+                forecast_hours=3,
+            )
+            current_value = getattr(weather.current, attr)
+            assert current_value is not None, (
+                f"{layer_id}: current.{attr} should be extrapolated, got None"
+            )
+            assert current_value > 8.0, (
+                f"{layer_id}: extrapolated value must exceed 10m base 8.0, got {current_value}"
+            )
+            # hourly primary_value 也必须有非空值（外推后 24 个时点）
+            assert weather.hourly[0].primary_value is not None, (
+                f"{layer_id}: hourly[0].primary_value should be extrapolated"
+            )
+            assert "--" not in weather.summary, (
+                f"{layer_id}: summary should not show '--', got: {weather.summary}"
+            )
+    finally:
+        registry.clear()
+
+
+def test_hub_height_temperature_extrapolated_from_2m_when_missing(
+    monkeypatch,
+) -> None:
+    """轮毂高度温度点查：缺 80/120/180m 时由 2m 温度按环境递减率外推填充。"""
+    registry = get_registry()
+    registry.register(
+        OpenMeteoProvider(client=_NoHubHeightFakeOpenMeteoClient()),
+        priority=0,
+        enabled=True,
+    )
+    try:
+        service = WeatherEngineService()
+        for layer_id, attr in (
+            ("temperature-80m", "temperature_80m"),
+            ("temperature-120m", "temperature_120m"),
+            ("temperature-180m", "temperature_180m"),
+        ):
+            weather = service.get_point_weather(
+                layer_id=layer_id,
+                latitude=23.5,
+                longitude=113.5,
+                forecast_hours=3,
+            )
+            current_value = getattr(weather.current, attr)
+            assert current_value is not None, (
+                f"{layer_id}: current.{attr} should be extrapolated, got None"
+            )
+            # 环境递减率 -6.5°C/km：180m 应略低于 24°C
+            assert 22.0 < current_value < 25.0, (
+                f"{layer_id}: extrapolated value should be slightly below 2m 24.0, got {current_value}"
+            )
+            assert weather.hourly[0].primary_value is not None, (
+                f"{layer_id}: hourly[0].primary_value should be extrapolated"
+            )
+            assert "--" not in weather.summary, (
+                f"{layer_id}: summary should not show '--', got: {weather.summary}"
+            )
+    finally:
+        registry.clear()

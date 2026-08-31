@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { MapChromeNavigationControl } from './map/map-chrome-controls'
+import type { Map as MapInstance } from 'maplibre-gl'
 
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, toRef, watch } from 'vue'
 
 import { AlertTriangle } from './ui/icons'
 import DrawToolbar from './map/draw-toolbar.vue'
+import GlobeStarfield from './map/GlobeStarfield.vue'
 import ZonalStatsCard from './info-panel/ZonalStatsCard.vue'
 import VectorAttributeTable from './info-panel/VectorAttributeTable.vue'
 import { useLayersStore } from '../stores/layers'
@@ -46,9 +47,25 @@ import { isGlobalMapViewport } from '../utils/map-viewport'
 import {
   isMapDistributionChromeEnabled,
   subscribeMapDistributionChrome,
+  getGlobeBackgroundMode,
+  getGlobeDaylightMode,
+  subscribeGlobeScene,
+  type GlobeBackgroundMode,
+  type GlobeDaylightMode,
 } from '../services/settings-local'
+import {
+  classifyBasemapBrightness,
+  resolveGlobeSky,
+} from './map/globe-scene-utils'
+import { quantizeNightMaskHour } from './map/globe-night-mask'
+import {
+  ensureGlobeNightMaskLayerOnMap,
+  GlobeNightMaskLayer,
+  removeLegacyNightMaskRaster,
+} from './map/globe-night-mask-layer'
+import { TILE_LAYER_ID } from './map/basemap-module'
 import { useThemeStore } from '../stores/theme'
-import { resolveSurfaceColor } from './map/map-canvas-map-options'
+import { resolveGlobeBackgroundColor } from './map/map-canvas-map-options'
 import {
   dataWorkspaceHighlight,
   dataWorkspaceZoomRequest,
@@ -65,14 +82,18 @@ const settingsStore = useSettingsStore()
 const drawStore = useDrawStore()
 const logStore = useLogStore()
 const weatherTileManager = useWeatherTileManager()
-const { statusVersion: weatherStatusVersion, activityVersion: weatherActivityVersion } =
-  storeToRefs(weatherTileManager)
+const weatherStatusVersion = toRef(weatherTileManager, 'statusVersion')
+const weatherActivityVersion = toRef(weatherTileManager, 'activityVersion')
 
 const props = defineProps<{
   tileSourceId: TileSourceId
   currentHour: number
+  /** 时间轴日期（"自然"晨昏样式计算太阳赤纬所需；缺省取当前日期） */
+  currentDate?: Date
   /** 地图点查选中坐标（持久标记，非定位标记） */
   inspectPoint?: { lng: number; lat: number } | null
+  /** 实验性 3D：true 时地图切 globe 投影（外观设置勾选「启用3D视图」后生效） */
+  globeProjection?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -153,8 +174,15 @@ function fitToLayerExtent(instanceId: string): boolean {
   if (!bounds && layer?.importedVector) {
     const mod = state.resources.nonWeatherLayerSyncModule?.importedLayerModule
     if (mod) {
-      mod.fitLayers([instanceId])
-      return true
+      // 相机操作失败不得炸断用户操作链（坏 bounds 数据防御）
+      try {
+        mod.fitLayers([instanceId])
+        return true
+      } catch (error) {
+        console.warn('[MapCanvas] fitLayers failed', error)
+        showToast('该图层坐标超出地理范围，无法定位', true, 3500)
+        return false
+      }
     }
   }
 
@@ -274,13 +302,27 @@ const unsubscribeMapChrome = subscribeMapDistributionChrome(() => {
 
 // ─── 主题切换时更新 MapLibre 背景色 ──────────────────────────────────────────
 const themeStore = useThemeStore()
+
+/** 按当前投影模式更新 background layer 颜色（globe=球面深空蓝兜底/浅蓝灰；2D=surface-1）。 */
+function applyBackgroundColor(): void {
+  const map = state.resources.map
+  if (map && mapReady.value) {
+    map.setPaintProperty(
+      'background',
+      'background-color',
+      resolveGlobeBackgroundColor(
+        props.globeProjection === true,
+        themeStore.mode === 'light',
+      ),
+    )
+  }
+}
+
 watch(
   () => themeStore.mode,
   () => {
-    const map = state.resources.map
-    if (map && mapReady.value) {
-      map.setPaintProperty('background', 'background-color', resolveSurfaceColor())
-    }
+    applyBackgroundColor()
+    // 昼夜遮罩层在主题切换时无需改色（fill-color 固定深色半透明）
   },
 )
 
@@ -341,9 +383,251 @@ watch(
   },
 )
 
+// ─── 实验性 3D：globe 投影切换 ──────────────────────────────────────────────
+// 外观设置勾选「启用3D视图（实验测试）」且顶栏处于 3D 模式时切 globe；
+// 关闭或切回 2D 时恢复 mercator。地图实例保持不变，全部图层与叠加层保留。
+watch(
+  [() => props.globeProjection, mapReady],
+  ([on, ready]) => {
+    if (!ready || _isUnmounted) return
+    const map = state.resources.map
+    if (!map) return
+    const target = on ? 'globe' : 'mercator'
+    try {
+      const current = map.getProjection?.()
+      if (current?.type === target) return
+      map.setProjection({ type: target })
+      debugLog('MapCanvas', 'setProjection', target)
+    } catch (err) {
+      console.warn('[MapCanvas] setProjection failed:', err)
+    }
+    // 投影切换后同步 background 颜色（globe=深空蓝球面兜底；2D=surface-1）
+    applyBackgroundColor()
+  },
+  { immediate: true },
+)
+
+// ─── 3D globe 场景偏好（背景星图 / 昼夜光影档位）────────────────────────────
+
+const globeProjectionOn = computed(() => props.globeProjection === true)
+const globeBackgroundMode = ref<GlobeBackgroundMode>(getGlobeBackgroundMode())
+const globeDaylightMode = ref<GlobeDaylightMode>(getGlobeDaylightMode())
+let _unsubscribeGlobeScene: (() => void) | null = null
+_unsubscribeGlobeScene = subscribeGlobeScene(() => {
+  globeBackgroundMode.value = getGlobeBackgroundMode()
+  globeDaylightMode.value = getGlobeDaylightMode()
+})
+onBeforeUnmount(() => {
+  _unsubscribeGlobeScene?.()
+  _unsubscribeGlobeScene = null
+})
+
+// map 实例在 onMounted 异步创建；watch 先登记，创建后立即 apply，
+// 时间轴 / 底图源 / 光影档位变化时仅更新光照与天空。
+watch(
+  [
+    () => props.globeProjection,
+    () => props.currentHour,
+    () => props.currentDate,
+    () => props.tileSourceId,
+    globeDaylightMode,
+    mapReady,
+  ],
+  ([enabled, hour, , , , ready]) => {
+    const map = state.resources.map
+    if (map && ready) applyGlobeScene(map, enabled === true, hour)
+  },
+  { immediate: true },
+)
+
 // ─── Time-of-day visual vars ─────────────────────────────────────────────────
 
-const timeVisualState = computed(() => buildMapStageTimeVisualState(props.currentHour))
+/** 3D「自然」档冻结屏幕空间时间 CSS 变量，避免 --horizon-position / --stage-glow-spread 随时间轴变化形成"圈在动" */
+const timeVisualState = computed(() => {
+  if (globeProjectionOn.value && globeDaylightMode.value === 'natural') {
+    return buildMapStageTimeVisualState(12)
+  }
+  return buildMapStageTimeVisualState(props.currentHour)
+})
+
+/**
+ * Globe 专属视觉层：原生天空大气 + raster 昼夜遮罩。
+ * 只在 3D 模式打开，2D 模式恢复默认，避免常规地图承担额外样式更新。
+ *
+ * ⚠️ globe 模式下**不再 setLight**：light 的 azimuth 公式是"视口相对方位"，
+ * 对 globe 语义错误（且 raster 瓦片本身不吃 light，只会对 vector 数据层
+ * 产生方向错误的阴影）——昼夜统一由夜半球遮罩（applyNightHemisphere）
+ * 与 raster-brightness 压制（applyBasemapBrightness）负责。
+ *
+ * 亮色底图（街道/矢量/地形）在太阳直射下会过曝发白：
+ * 直接压底图 raster 图层的 brightness-max（对瓦片像素的硬约束）：
+ * 亮色底图白天段 ≈ 0.80，soft 档再降至 0.72；影像/暗色底图保留 1.0。
+ */
+function applyGlobeScene(map: MapInstance, enabled: boolean, hour: number): void {
+  try {
+    applyBasemapBrightness(map, enabled)
+    applyNightHemisphere(map, enabled, hour, props.currentDate)
+    if (!enabled || globeDaylightMode.value === 'off') {
+      // 非 globe 或「无」档：恢复默认大气（整体亮度统一，不加任何亮暗效果）
+      map.setSky?.({})
+      return
+    }
+    if (globeDaylightMode.value === 'natural') {
+      // 自然档：关闭球缘大气（atmosphere-blend>0 会在背景形成固定亮圈；
+      // setSky({}) 在 MapLibre 5.x 会回落到默认大气，须显式 blend=0）
+      map.setSky?.({
+        'atmosphere-blend': 0,
+        'sky-horizon-blend': 0,
+        'horizon-fog-blend': 0,
+        'fog-ground-blend': 0,
+      })
+      return
+    }
+    const basemapStyle = TILE_SOURCE_MAP.get(props.tileSourceId)?.style
+    const brightness = classifyBasemapBrightness(basemapStyle)
+    const sky = resolveGlobeSky(12, brightness)
+    map.setSky?.({
+      'sky-color': sky.skyColor,
+      'horizon-color': sky.horizonColor,
+      'fog-color': sky.fogColor,
+      'fog-ground-blend': sky.fogGroundBlend,
+      'horizon-fog-blend': sky.horizonFogBlend,
+      'sky-horizon-blend': sky.skyHorizonBlend,
+      'atmosphere-blend': sky.atmosphereBlend,
+    })
+  } catch (error) {
+    // 旧样式/旧 MapLibre 版本不支持天空参数时，不影响地图主体渲染。
+    debugLog('[MapCanvas] globe scene style unavailable', error)
+  }
+}
+
+/**
+ * 底图 raster 亮度压制（globe 模式专属）。
+ * 亮色底图阳面"过曝发白"的主修：直接限制瓦片像素最大亮度。
+ * - 亮色底图 + 标准：raster-brightness-max = 0.80
+ * - 亮色底图 + 柔和：0.72（进一步压）
+ * - 影像/暗色底图：1.0（保留原始对比）
+ * - 2D / globe 关闭：恢复 1.0
+ */
+/**
+ * 底图 raster 亮度压制（globe 模式专属）。
+ * 亮色底图阳面"过曝发白"的主修：直接限制瓦片像素最大亮度。
+ * - 亮色底图 + 标准：raster-brightness-max = 0.80（左上立体压亮）
+ * - 自然 / 无：1.0（自然档昼夜仅由遮罩负责，不加瓦片光影）
+ * - 影像/暗色底图：1.0（保留原始对比）
+ * - 2D / globe 关闭：恢复 1.0
+ */
+function applyBasemapBrightness(map: MapInstance, globeEnabled: boolean): void {
+  try {
+    if (!map.getLayer?.(TILE_LAYER_ID)) return
+    let brightnessMax = 1.0
+    if (globeEnabled && globeDaylightMode.value === 'standard') {
+      const basemapStyle = TILE_SOURCE_MAP.get(props.tileSourceId)?.style
+      const brightness = classifyBasemapBrightness(basemapStyle)
+      if (brightness === 'light') {
+        brightnessMax = 0.8
+      }
+    }
+    const current = map.getPaintProperty?.(TILE_LAYER_ID, 'raster-brightness-max')
+    if (current !== brightnessMax) {
+      map.setPaintProperty(TILE_LAYER_ID, 'raster-brightness-max', brightnessMax)
+    }
+  } catch (error) {
+    debugLog('[MapCanvas] applyBasemapBrightness unavailable', error)
+  }
+}
+
+// ─── Globe「自然」档：WebGL 球面夜半球（硬边暗/亮，无 image source 扭曲） ───
+
+function nightMaskCacheKey(hour: number, date?: Date): string {
+  const day = date ? date.toISOString().slice(0, 10) : 'today'
+  return `${quantizeNightMaskHour(hour).toFixed(2)}|${day}`
+}
+
+let lastNightMaskKey = ''
+
+function applyNightHemisphereNow(
+  map: MapInstance,
+  globeEnabled: boolean,
+  hour: number,
+  date?: Date,
+): void {
+  removeLegacyNightMaskRaster(map)
+
+  const applyLayerState = (layer: GlobeNightMaskLayer) => {
+    if (!globeEnabled || globeDaylightMode.value !== 'natural') {
+      layer.setVisible(false)
+      lastNightMaskKey = ''
+      return
+    }
+    const cacheKey = nightMaskCacheKey(hour, date)
+    if (cacheKey !== lastNightMaskKey) {
+      lastNightMaskKey = cacheKey
+      layer.setSunState(quantizeNightMaskHour(hour), date)
+    }
+    layer.setVisible(true)
+    try {
+      map.triggerRepaint()
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const layer = ensureGlobeNightMaskLayerOnMap(map, applyLayerState)
+  applyLayerState(layer)
+}
+
+/** 每帧合并一次更新，避免拖动时间轴时连续 setSunState */
+let nightMaskRaf = 0
+let pendingNightMask: {
+  map: MapInstance
+  globeEnabled: boolean
+  hour: number
+  date?: Date
+} | null = null
+
+function cancelPendingNightMask(): void {
+  if (nightMaskRaf) {
+    cancelAnimationFrame(nightMaskRaf)
+    nightMaskRaf = 0
+  }
+  pendingNightMask = null
+}
+
+function applyNightHemisphere(
+  map: MapInstance,
+  globeEnabled: boolean,
+  hour: number,
+  date?: Date,
+): void {
+  try {
+    if (!globeEnabled || globeDaylightMode.value !== 'natural') {
+      cancelPendingNightMask()
+      applyNightHemisphereNow(map, globeEnabled, hour, date)
+      return
+    }
+    pendingNightMask = { map, globeEnabled, hour, date }
+    if (nightMaskRaf) return
+    nightMaskRaf = requestAnimationFrame(() => {
+      nightMaskRaf = 0
+      const pending = pendingNightMask
+      pendingNightMask = null
+      if (!pending) return
+      try {
+        applyNightHemisphereNow(
+          pending.map,
+          pending.globeEnabled,
+          pending.hour,
+          pending.date,
+        )
+      } catch (error) {
+        debugLog('[MapCanvas] applyNightHemisphere unavailable', error)
+      }
+    })
+  } catch (error) {
+    debugLog('[MapCanvas] applyNightHemisphere unavailable', error)
+  }
+}
 
 // ─── Map init ────────────────────────────────────────────────────────────────
 
@@ -377,6 +661,10 @@ onMounted(async () => {
       }),
     )
     state.resources.map = mapInstance
+    // 调试诊断口：浏览器控制台排查 globe/光照/图层状态用（perf-probe 惯例，只读引用）
+    if (typeof window !== 'undefined') {
+      ;(window as unknown as Record<string, unknown>).__cgdaMap = mapInstance
+    }
     const moduleBundle = createMapCanvasModuleBundle({
       map: mapInstance,
       layersStore,
@@ -556,6 +844,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   _isUnmounted = true
+  cancelPendingNightMask()
   unsubscribeMapChrome()
   teardownBinder.dispose()
   overlayImageModule = null
@@ -799,9 +1088,20 @@ async function handleLocateMe() {
   <section
     ref="mapStageRef"
     class="map-stage"
-    :class="stageAppearanceModel.stageClassNames"
+    :class="[
+      stageAppearanceModel.stageClassNames,
+      { 'map-stage--globe-natural': globeProjectionOn && globeDaylightMode === 'natural' },
+    ]"
     :style="stageAppearanceModel.stageStyleVars"
   >
+    <!-- 3D globe 深空星图背景层（2D 时淡出；在地图画布之下）
+         suppress-galaxy：「自然/无」档隐藏银河白带（左上亮来源），「标准」档保留 -->
+    <GlobeStarfield
+      :mode="globeBackgroundMode"
+      :active="globeProjectionOn"
+      :suppress-galaxy="globeDaylightMode !== 'standard'"
+    />
+
     <div ref="mapContainer" class="map-host" :class="stageAppearanceModel.mapHostClassNames"></div>
 
     <!-- Skeleton -->
@@ -816,10 +1116,17 @@ async function handleLocateMe() {
     <!-- Atmosphere layers -->
     <div class="map-fog"></div>
     <div class="basemap-transition-mask"></div>
-    <div class="time-sheen"></div>
-    <div class="time-band"></div>
-    <div class="weather-overlay"></div>
-    <div class="grid-overlay"></div>
+    <!-- 3D globe 下不渲染屏幕空间时间铬层（昼夜统一由地理夜半球遮罩负责，
+         避免"两条晨昏线"；v-if 比 CSS display:none 可靠，不受缓存/级联影响） -->
+    <div v-if="!globeProjectionOn" class="time-sheen"></div>
+    <div v-if="!globeProjectionOn" class="time-band"></div>
+    <!-- weather/grid-overlay 的方向性光斑与网格是 2D 氛围层：
+         「自然/无」档隐藏（亮暗只由晨昏线/统一亮度负责），「标准」档保留质感 -->
+    <div
+      v-if="!globeProjectionOn || globeDaylightMode === 'standard'"
+      class="weather-overlay"
+    ></div>
+    <div v-if="!globeProjectionOn" class="grid-overlay"></div>
 
     <!-- Loading indicator -->
     <div v-if="stageStatusModel.showLoading" class="map-loading">

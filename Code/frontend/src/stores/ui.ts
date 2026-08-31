@@ -45,6 +45,7 @@ export type LayerTimeMemory = {
 
 const TIME_MODE_STORAGE_KEY = 'cgda.timeline.unified'
 const LAYER_TIME_STORAGE_KEY = 'cgda.timeline.layer-memory'
+const UNIFIED_TIME_STORAGE_KEY = 'cgda.timeline.unified-time'
 
 function toDateKey(date: Date): string {
   const y = date.getFullYear()
@@ -65,6 +66,38 @@ function loadUnifiedFlag(): boolean {
     return window.localStorage?.getItem(TIME_MODE_STORAGE_KEY) === '1'
   } catch {
     return false
+  }
+}
+
+/** 统一时间模式下持久化的选定时刻（刷新后恢复，避免回退到当前时间） */
+function loadUnifiedTime(): LayerTimeMemory | null {
+  try {
+    const raw = window.localStorage?.getItem(UNIFIED_TIME_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    if (
+      typeof parsed.dateKey === 'string' &&
+      typeof parsed.hour === 'number' &&
+      parsed.hour >= 0 &&
+      parsed.hour <= 23
+    ) {
+      return { dateKey: parsed.dateKey, hour: parsed.hour }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+function persistUnifiedTime(value: LayerTimeMemory | null): void {
+  try {
+    if (value === null) {
+      window.localStorage?.removeItem(UNIFIED_TIME_STORAGE_KEY)
+    } else {
+      window.localStorage?.setItem(UNIFIED_TIME_STORAGE_KEY, JSON.stringify(value))
+    }
+  } catch {
+    /* ignore */
   }
 }
 
@@ -104,8 +137,20 @@ export const useUiStore = defineStore('ui', () => {
   /**
    * 统一时间：开 → 所有图层共用当前时刻，切层不改时间；
    * 关 → 按 catalogId 记忆/恢复；新加图层对齐最新有效时次。
+   * 开启时选定的日期+钟点持久化，刷新后恢复（非统一模式清除，
+   * 回退逐层记忆机制）。
    */
   const unifiedTimeLock = ref(loadUnifiedFlag())
+  if (unifiedTimeLock.value) {
+    const saved = loadUnifiedTime()
+    if (saved) {
+      const date = fromDateKey(saved.dateKey)
+      if (date) {
+        currentDate.value = date
+        currentHour.value = saved.hour
+      }
+    }
+  }
   const layerTimeMemory = ref<Record<string, LayerTimeMemory>>(loadLayerMemory())
   const lockedLayerIds = ref<Record<string, boolean>>({})
   const activeTimeGranularity = ref<'hour' | 'day' | 'month' | 'year' | 'static'>('hour')
@@ -152,7 +197,23 @@ export const useUiStore = defineStore('ui', () => {
     } catch {
       /* ignore */
     }
+    if (!on) {
+      // 关闭统一模式：清除全局选定时刻（回退逐层记忆机制）
+      persistUnifiedTime(null)
+    }
   })
+
+  // 统一模式下选定时刻持久化（刷新后恢复 currentDate/currentHour）
+  watch(
+    () => [currentDate.value, currentHour.value] as const,
+    () => {
+      if (!unifiedTimeLock.value) return
+      persistUnifiedTime({
+        dateKey: toDateKey(currentDate.value),
+        hour: currentHour.value,
+      })
+    },
+  )
 
   watch(layerTimeMemory, (value) => {
     try {

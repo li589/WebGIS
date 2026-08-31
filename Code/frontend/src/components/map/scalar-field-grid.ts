@@ -85,7 +85,14 @@ function buildScalarGridSignature(
 }
 
 /**
- * 从 Point FeatureCollection 构建标量网格。
+ * 从 Point / Polygon（网格单元）FeatureCollection 构建标量网格。
+ *
+ * 2026-08-25：后端标量层 tile（temperature/humidity 等非风场图层）的
+ * feature 是网格单元 Polygon（PixelIsArea，值代表整格），而风场 tile 是
+ * Point。此前只认 Point → 标量层 1350 个 feature 全部被跳过 → WebGL
+ * 连续面永远建不出网格（平滑渲染开关无效的第三层根因）。Polygon 按
+ * 外环包围盒取质心作为格点（值代表整格 → 质心即值心，几何对称无假设）。
+ *
  * @param frame 视口经度帧；有则按帧解包并丢弃帧外点
  * @returns null 表示数据不足（&lt;2×2）
  */
@@ -101,10 +108,40 @@ export function buildScalarGridFromGeoJSON(
   let propRes: number | null = null
 
   for (const f of features) {
-    const geom = f?.geometry as { type?: string; coordinates?: number[] } | undefined
-    if (!geom || geom.type !== 'Point' || !Array.isArray(geom.coordinates)) continue
-    const lon = Number(geom.coordinates[0])
-    const lat = Number(geom.coordinates[1])
+    const geom = f?.geometry as
+      | { type?: string; coordinates?: unknown }
+      | undefined
+    if (!geom) continue
+    let lon: number
+    let lat: number
+    if (geom.type === 'Point' && Array.isArray(geom.coordinates)) {
+      lon = Number(geom.coordinates[0])
+      lat = Number(geom.coordinates[1])
+    } else if (geom.type === 'Polygon') {
+      // 网格单元 Polygon：外环包围盒质心（后端导出的规则矩形单元）
+      const ring = (geom.coordinates as number[][][] | undefined)?.[0]
+      if (!Array.isArray(ring) || ring.length < 4) continue
+      let minX = Infinity
+      let maxX = -Infinity
+      let minY = Infinity
+      let maxY = -Infinity
+      for (const vertex of ring) {
+        const x = Number(vertex?.[0])
+        const y = Number(vertex?.[1])
+        if (Number.isFinite(x)) {
+          if (x < minX) minX = x
+          if (x > maxX) maxX = x
+        }
+        if (Number.isFinite(y)) {
+          if (y < minY) minY = y
+          if (y > maxY) maxY = y
+        }
+      }
+      lon = (minX + maxX) / 2
+      lat = (minY + maxY) / 2
+    } else {
+      continue
+    }
     if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue
     const value = readMetric(f.properties as Record<string, unknown>, metric)
     if (value === null) continue

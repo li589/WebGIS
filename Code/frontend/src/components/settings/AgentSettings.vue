@@ -1,0 +1,1054 @@
+<script setup lang="ts">
+/**
+ * AgentSettings — 全局(admin) / 个人 配置档分组 + 伴侣开关。
+ */
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import {
+  createAgentProfile,
+  deleteAgentProfile,
+  fetchAgentConfig,
+  refreshAgentModels,
+  setActiveAgentProfile,
+  updateAgentProfile,
+  useGlobalAgentProfile,
+  type AgentPreset,
+  type AgentProfile,
+  type AgentProtocol,
+  type AgentScope,
+} from '../../services/agent-api'
+import {
+  isAgentCompanionEnabled,
+  setAgentCompanionEnabled,
+} from '../../services/settings-local'
+import IconButton from '../ui/IconButton.vue'
+import { Plus, RefreshCw } from '../ui/icons'
+
+const companionEnabled = ref(isAgentCompanionEnabled())
+
+const loading = ref(false)
+const saving = ref(false)
+const activating = ref(false)
+const refreshingModels = ref(false)
+const error = ref<string | null>(null)
+const savedFlash = ref(false)
+
+const profiles = ref<AgentProfile[]>([])
+const presets = ref<AgentPreset[]>([])
+const activeProfileId = ref('')
+const activeScope = ref<AgentScope>('global')
+const canManageGlobal = ref(false)
+const canManagePersonal = ref(false)
+const selectedId = ref('')
+const selectedScope = ref<AgentScope>('personal')
+const createScope = ref<AgentScope>('personal')
+
+const name = ref('')
+const protocol = ref<AgentProtocol>('demo')
+const baseUrl = ref('')
+const model = ref('')
+const contextIn = ref(8192)
+const contextOut = ref(4096)
+const apiKeyInput = ref('')
+const hasApiKey = ref(false)
+const clearApiKey = ref(false)
+const modelOptions = ref<string[]>([])
+const modelsManualHint = ref<string | null>(null)
+const modelsLoaded = ref(false)
+const modelPickerOpen = ref(false)
+const modelFilter = ref('')
+
+const canPickModel = computed(
+  () => modelsLoaded.value && modelOptions.value.length > 0 && canEditSelected.value,
+)
+const filteredModelOptions = computed(() => {
+  const q = modelFilter.value.trim().toLowerCase()
+  const list = modelOptions.value
+  if (!q) return list
+  return list.filter((m) => m.toLowerCase().includes(q))
+})
+
+const globalProfiles = computed(() =>
+  (profiles.value ?? []).filter((p) => p.scope === 'global'),
+)
+const personalProfiles = computed(() =>
+  (profiles.value ?? []).filter((p) => p.scope === 'personal'),
+)
+const selected = computed(() => {
+  const list = profiles.value ?? []
+  return (
+    list.find((p) => p.id === selectedId.value && p.scope === selectedScope.value) ?? null
+  )
+})
+const canEditSelected = computed(() => {
+  if (!selected.value) return false
+  if (selected.value.scope === 'global') return canManageGlobal.value
+  return canManagePersonal.value
+})
+const needsRemote = computed(() => protocol.value !== 'demo')
+const protocolOptions: Array<{ value: AgentProtocol; label: string }> = [
+  { value: 'demo', label: '演示' },
+  { value: 'openai', label: 'OpenAI 兼容' },
+  { value: 'anthropic', label: 'Anthropic 兼容' },
+]
+
+function onCompanionChange(event: Event) {
+  const checked = (event.target as HTMLInputElement).checked
+  companionEnabled.value = checked
+  setAgentCompanionEnabled(checked)
+}
+
+function applyBundle(bundle: Partial<{
+  active_profile_id: string
+  active_scope: AgentScope
+  can_manage_global: boolean
+  can_manage_personal: boolean
+  profiles: AgentProfile[]
+  presets: AgentPreset[]
+}> | null | undefined) {
+  const list = Array.isArray(bundle?.profiles) ? bundle!.profiles! : []
+  const presetList = Array.isArray(bundle?.presets) ? bundle!.presets! : []
+  profiles.value = list
+  presets.value = presetList
+  activeProfileId.value = String(bundle?.active_profile_id || list[0]?.id || '')
+  activeScope.value = (bundle?.active_scope === 'personal' ? 'personal' : 'global') as AgentScope
+  canManageGlobal.value = Boolean(bundle?.can_manage_global)
+  canManagePersonal.value = Boolean(bundle?.can_manage_personal)
+  createScope.value = canManagePersonal.value
+    ? 'personal'
+    : canManageGlobal.value
+      ? 'global'
+      : 'personal'
+  // Admin default: create into global when both scopes available
+  if (canManageGlobal.value) {
+    createScope.value = 'global'
+  }
+  const still =
+    list.find((p) => p.id === selectedId.value && p.scope === selectedScope.value) ||
+    list.find(
+      (p) => p.id === activeProfileId.value && p.scope === activeScope.value,
+    ) ||
+    list[0]
+  if (still) {
+    selectedId.value = still.id
+    selectedScope.value = still.scope
+  }
+}
+
+function applySelected(profile: AgentProfile | null) {
+  if (!profile) return
+  name.value = profile.name
+  protocol.value = profile.protocol
+  baseUrl.value = profile.base_url
+  model.value = profile.model
+  contextIn.value = profile.context_window_input
+  contextOut.value = profile.context_window_output
+  hasApiKey.value = profile.has_api_key
+  apiKeyInput.value = ''
+  clearApiKey.value = false
+  modelsManualHint.value = null
+  modelOptions.value = []
+  modelsLoaded.value = false
+  modelPickerOpen.value = false
+  modelFilter.value = ''
+}
+
+watch(selected, (p) => applySelected(p), { immediate: true })
+
+watch(baseUrl, () => {
+  // Unsaved Base URL edits invalidate the last refresh result.
+  if (!modelsLoaded.value && !modelOptions.value.length && !modelPickerOpen.value) return
+  modelsLoaded.value = false
+  modelOptions.value = []
+  modelPickerOpen.value = false
+  modelFilter.value = ''
+  modelsManualHint.value = null
+})
+
+watch([apiKeyInput, clearApiKey], () => {
+  if (!modelsLoaded.value && !modelOptions.value.length) return
+  // Draft key changes mean the previous list may be for a different credential.
+  modelsLoaded.value = false
+  modelOptions.value = []
+  modelPickerOpen.value = false
+  modelsManualHint.value = null
+})
+
+async function loadConfig() {
+  loading.value = true
+  error.value = null
+  try {
+    applyBundle(await fetchAgentConfig())
+    if (!profiles.value.length && canManageGlobal.value) {
+      // Admin safety net: ensure at least a demo global profile exists
+      try {
+        await createAgentProfile({ preset_id: 'demo', scope: 'global', name: '演示（无网）' })
+        applyBundle(await fetchAgentConfig())
+      } catch {
+        /* keep empty; error shown below if still empty */
+      }
+    }
+    if (!profiles.value.length) {
+      error.value =
+        '未加载到任何配置档。请确认已登录管理员，并执行 launch.py restart fastapi 后硬刷新。'
+    }
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    loading.value = false
+  }
+}
+
+function onSelectProfile(p: AgentProfile) {
+  selectedId.value = p.id
+  selectedScope.value = p.scope
+}
+
+async function onActivate(p: AgentProfile) {
+  if (p.scope === 'global' && !canManageGlobal.value) {
+    // Fall back to global active by clearing personal
+    activating.value = true
+    error.value = null
+    try {
+      applyBundle(await useGlobalAgentProfile())
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : String(err)
+    } finally {
+      activating.value = false
+    }
+    return
+  }
+  if (p.scope === 'personal' && !canManagePersonal.value) {
+    error.value = '无权切换个人配置档。'
+    return
+  }
+  activating.value = true
+  error.value = null
+  try {
+    applyBundle(await setActiveAgentProfile(p.id, p.scope))
+    selectedId.value = p.id
+    selectedScope.value = p.scope
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    activating.value = false
+  }
+}
+
+async function onCreateFromPreset(presetId: string) {
+  const scope = createScope.value
+  if (scope === 'global' && !canManageGlobal.value) {
+    error.value = '仅管理员可新建全局配置档。'
+    return
+  }
+  if (scope === 'personal' && !canManagePersonal.value) {
+    error.value = '当前账户无法新建个人配置档。'
+    return
+  }
+  saving.value = true
+  error.value = null
+  try {
+    const created = await createAgentProfile({ preset_id: presetId, scope })
+    await loadConfig()
+    selectedId.value = created.id
+    selectedScope.value = created.scope
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function onDelete() {
+  if (!selected.value || !canEditSelected.value) return
+  if (selected.value.scope === 'global' && globalProfiles.value.length <= 1) {
+    error.value = '不能删除最后一个全局配置档。'
+    return
+  }
+  if (!window.confirm(`确定删除配置档「${selected.value.name}」？`)) return
+  saving.value = true
+  error.value = null
+  try {
+    applyBundle(await deleteAgentProfile(selected.value.id, selected.value.scope))
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function saveProfile() {
+  if (!selected.value || !canEditSelected.value) {
+    error.value = '无权保存此配置档。'
+    return
+  }
+  saving.value = true
+  error.value = null
+  savedFlash.value = false
+  try {
+    const body: Parameters<typeof updateAgentProfile>[1] = {
+      scope: selected.value.scope,
+      name: name.value.trim(),
+      protocol: protocol.value,
+      base_url: baseUrl.value.trim(),
+      model: model.value.trim(),
+      context_window_input: Number(contextIn.value) || 8192,
+      context_window_output: Number(contextOut.value) || 4096,
+    }
+    if (clearApiKey.value) {
+      body.clear_api_key = true
+    } else if (apiKeyInput.value.trim()) {
+      body.api_key = apiKeyInput.value.trim()
+    }
+    const updated = await updateAgentProfile(selected.value.id, body)
+    profiles.value = profiles.value.map((p) =>
+      p.id === updated.id && p.scope === updated.scope ? updated : p,
+    )
+    applySelected(updated)
+    savedFlash.value = true
+    window.setTimeout(() => {
+      savedFlash.value = false
+    }, 2000)
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function onRefreshModels() {
+  if (!selected.value) return
+  refreshingModels.value = true
+  error.value = null
+  modelsManualHint.value = null
+  modelPickerOpen.value = false
+  try {
+    const res = await refreshAgentModels(selected.value.id, selected.value.scope, {
+      base_url: baseUrl.value,
+      api_key: clearApiKey.value ? null : apiKeyInput.value,
+    })
+    modelOptions.value = Array.isArray(res.models) ? res.models : []
+    modelsLoaded.value = true
+    if (res.error || (res.manual && !modelOptions.value.length)) {
+      modelsManualHint.value =
+        res.error || '该站点未提供模型列表，请手动填写模型名。'
+      modelPickerOpen.value = false
+    } else if (!modelOptions.value.length) {
+      modelsManualHint.value = '未返回可用模型，请检查 Base URL / API Key 后重试，或手动填写。'
+      modelPickerOpen.value = false
+    } else {
+      modelsManualHint.value = `已加载 ${modelOptions.value.length} 个模型，点「+」从列表选择。`
+      // 刷新成功后直接展开列表，减少多一步点击
+      modelPickerOpen.value = true
+      modelFilter.value = ''
+    }
+  } catch (err) {
+    modelsLoaded.value = false
+    modelOptions.value = []
+    modelPickerOpen.value = false
+    const msg = err instanceof Error ? err.message : String(err)
+    modelsManualHint.value = msg.includes('500')
+      ? `${msg}（若刚更新后端，请 launch.py restart fastapi 后再试）`
+      : msg
+  } finally {
+    refreshingModels.value = false
+  }
+}
+
+function toggleModelPicker() {
+  if (!canPickModel.value) return
+  modelPickerOpen.value = !modelPickerOpen.value
+  if (modelPickerOpen.value) modelFilter.value = ''
+}
+
+function pickModel(m: string) {
+  model.value = m
+  modelPickerOpen.value = false
+  modelFilter.value = ''
+}
+
+function onDocPointerDown(ev: PointerEvent) {
+  if (!modelPickerOpen.value) return
+  const t = ev.target
+  if (!(t instanceof Element)) return
+  if (t.closest('.model-row') || t.closest('.model-picker')) return
+  modelPickerOpen.value = false
+}
+
+function onDocKeydown(ev: KeyboardEvent) {
+  if (ev.key === 'Escape' && modelPickerOpen.value) {
+    modelPickerOpen.value = false
+  }
+}
+
+onMounted(() => {
+  void loadConfig()
+  document.addEventListener('pointerdown', onDocPointerDown, true)
+  document.addEventListener('keydown', onDocKeydown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', onDocPointerDown, true)
+  document.removeEventListener('keydown', onDocKeydown)
+})
+</script>
+
+<template>
+  <div class="agent-settings">
+    <section class="settings-section">
+      <h3 class="section-title">地图助手（Web）</h3>
+      <p class="section-hint">
+        控制主前端地图上的机器人挂件。仅影响 Web 端；微信小程序不使用本配置。
+      </p>
+      <label class="toggle-row">
+        <input type="checkbox" :checked="companionEnabled" @change="onCompanionChange" />
+        <span>显示 Agent 伴侣挂件</span>
+      </label>
+    </section>
+
+    <section class="settings-section">
+      <h3 class="section-title">模型配置档</h3>
+      <p class="section-hint">
+        全局档由管理员维护；个人档仅本人可写。对话优先个人启用档，否则回退全局。
+      </p>
+
+      <div v-if="loading" class="status-line">加载配置中…</div>
+      <div v-else class="profile-layout">
+        <aside class="profile-list">
+          <div class="group-label">全局（管理员）</div>
+          <p v-if="!globalProfiles.length" class="status-line">暂无全局配置档</p>
+          <button
+            v-for="p in globalProfiles"
+            :key="`g-${p.id}`"
+            type="button"
+            class="profile-chip"
+            :class="{
+              selected: p.id === selectedId && selectedScope === 'global',
+              active: p.id === activeProfileId && activeScope === 'global',
+            }"
+            @click="onSelectProfile(p)"
+          >
+            <span class="chip-name">{{ p.name }}</span>
+            <span v-if="p.id === activeProfileId && activeScope === 'global'" class="chip-badge"
+              >启用中</span
+            >
+          </button>
+
+          <div class="group-label">我的配置</div>
+          <button
+            v-for="p in personalProfiles"
+            :key="`p-${p.id}`"
+            type="button"
+            class="profile-chip"
+            :class="{
+              selected: p.id === selectedId && selectedScope === 'personal',
+              active: p.id === activeProfileId && activeScope === 'personal',
+            }"
+            @click="onSelectProfile(p)"
+          >
+            <span class="chip-name">{{ p.name }}</span>
+            <span v-if="p.id === activeProfileId && activeScope === 'personal'" class="chip-badge"
+              >启用中</span
+            >
+          </button>
+          <p v-if="!personalProfiles.length" class="status-line">暂无个人配置档</p>
+
+          <div class="preset-create">
+            <label class="field-label">从预设新建</label>
+            <select
+              v-if="canManageGlobal && canManagePersonal"
+              v-model="createScope"
+              class="field-input"
+              :disabled="saving"
+            >
+              <option value="personal">个人</option>
+              <option value="global">全局</option>
+            </select>
+            <select
+              class="field-input"
+              :disabled="saving || (!canManageGlobal && !canManagePersonal)"
+              @change="
+                (e) => {
+                  const v = (e.target as HTMLSelectElement).value
+                  if (v) void onCreateFromPreset(v)
+                  ;(e.target as HTMLSelectElement).value = ''
+                }
+              "
+            >
+              <option value="">选择预设…</option>
+              <option v-for="pre in presets" :key="pre.id" :value="pre.id">
+                {{ pre.name }}
+              </option>
+            </select>
+          </div>
+        </aside>
+
+        <div v-if="selected" class="profile-editor">
+          <div class="editor-toolbar">
+            <button
+              type="button"
+              class="btn-secondary btn-sm"
+              :disabled="
+                activating ||
+                (selected.id === activeProfileId && selected.scope === activeScope)
+              "
+              @click="onActivate(selected)"
+            >
+              {{
+                selected.id === activeProfileId && selected.scope === activeScope
+                  ? '当前已启用'
+                  : selected.scope === 'global' && !canManageGlobal
+                    ? '改用此全局档'
+                    : '设为启用'
+              }}
+            </button>
+            <button
+              type="button"
+              class="btn-danger btn-sm"
+              :disabled="saving || !canEditSelected"
+              @click="onDelete"
+            >
+              删除
+            </button>
+          </div>
+
+          <div class="field-grid">
+            <label class="field">
+              <span class="field-label">名称</span>
+              <input
+                v-model="name"
+                type="text"
+                class="field-input"
+                :disabled="!canEditSelected"
+              />
+            </label>
+            <label class="field">
+              <span class="field-label">协议</span>
+              <select v-model="protocol" class="field-input" :disabled="!canEditSelected">
+                <option v-for="opt in protocolOptions" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </option>
+              </select>
+            </label>
+            <template v-if="needsRemote">
+              <label class="field">
+                <span class="field-label">API Base URL</span>
+                <input
+                  v-model="baseUrl"
+                  type="url"
+                  class="field-input"
+                  :disabled="!canEditSelected"
+                />
+              </label>
+              <label class="field">
+                <span class="field-label">模型</span>
+                <div class="model-row">
+                  <input
+                    v-model="model"
+                    type="text"
+                    class="field-input"
+                    placeholder="模型名"
+                    :disabled="!canEditSelected"
+                  />
+                  <IconButton
+                    size="sm"
+                    label="刷新模型列表"
+                    :disabled="refreshingModels || !canEditSelected"
+                    @click="onRefreshModels"
+                  >
+                    <template #icon>
+                      <RefreshCw
+                        :size="14"
+                        :class="{ spinning: refreshingModels }"
+                        aria-hidden="true"
+                      />
+                    </template>
+                  </IconButton>
+                  <IconButton
+                    size="sm"
+                    :label="
+                      canPickModel
+                        ? '从列表选择模型'
+                        : modelsLoaded
+                          ? '暂无可用模型，请手动填写或重新刷新'
+                          : '请先刷新加载模型列表'
+                    "
+                    :disabled="!canPickModel"
+                    :active="modelPickerOpen"
+                    @click="toggleModelPicker"
+                  >
+                    <template #icon>
+                      <Plus :size="14" aria-hidden="true" />
+                    </template>
+                  </IconButton>
+                </div>
+                <div v-if="modelPickerOpen && canPickModel" class="model-picker" role="listbox">
+                  <input
+                    v-model="modelFilter"
+                    type="search"
+                    class="field-input model-picker-filter"
+                    placeholder="筛选模型…"
+                    aria-label="筛选模型"
+                  />
+                  <ul class="model-picker-list">
+                    <li v-if="!filteredModelOptions.length" class="model-picker-empty">
+                      无匹配模型
+                    </li>
+                    <li
+                      v-for="m in filteredModelOptions"
+                      :key="m"
+                      class="model-picker-item"
+                      :class="{ 'model-picker-item--active': m === model }"
+                      role="option"
+                      :aria-selected="m === model"
+                      @click="pickModel(m)"
+                    >
+                      {{ m }}
+                    </li>
+                  </ul>
+                </div>
+                <span v-if="modelsManualHint" class="field-hint">{{ modelsManualHint }}</span>
+                <span v-else-if="!modelsLoaded" class="field-hint"
+                  >请先点刷新加载可用模型，再点「+」选择。</span
+                >
+              </label>
+              <div class="field-row-2">
+                <label class="field">
+                  <span class="field-label">上下文输入上限</span>
+                  <input
+                    v-model.number="contextIn"
+                    type="number"
+                    min="256"
+                    class="field-input"
+                    :disabled="!canEditSelected"
+                  />
+                </label>
+                <label class="field">
+                  <span class="field-label">上下文输出上限</span>
+                  <input
+                    v-model.number="contextOut"
+                    type="number"
+                    min="64"
+                    class="field-input"
+                    :disabled="!canEditSelected"
+                  />
+                </label>
+              </div>
+              <label class="field">
+                <span class="field-label">API Key</span>
+                <input
+                  v-model="apiKeyInput"
+                  type="password"
+                  class="field-input"
+                  :placeholder="hasApiKey ? '已配置（留空则不修改）' : 'Ollama 通常可留空'"
+                  :disabled="!canEditSelected || clearApiKey"
+                  autocomplete="off"
+                />
+              </label>
+              <label v-if="hasApiKey" class="toggle-row">
+                <input v-model="clearApiKey" type="checkbox" :disabled="!canEditSelected" />
+                <span>清除已保存的 API Key</span>
+              </label>
+            </template>
+          </div>
+
+          <div class="actions">
+            <button
+              type="button"
+              class="btn-save btn-sm"
+              :disabled="saving || !canEditSelected"
+              @click="saveProfile"
+            >
+              {{ saving ? '保存中…' : '保存配置档' }}
+            </button>
+            <span v-if="savedFlash" class="flash-ok">已保存</span>
+            <span v-if="!canEditSelected" class="flash-muted">无权编辑此配置档</span>
+          </div>
+        </div>
+      </div>
+      <p v-if="error" class="error-line">{{ error }}</p>
+    </section>
+  </div>
+</template>
+
+<style scoped>
+.agent-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 1.35rem;
+  max-width: 52rem;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.section-title {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-medium, 600);
+  color: var(--text-primary);
+}
+
+.section-hint {
+  margin: 0;
+  font-size: var(--font-size-caption);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-primary);
+  font-size: var(--font-size-body);
+  cursor: pointer;
+  min-height: 1.75rem;
+}
+
+.toggle-row input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.profile-layout {
+  display: grid;
+  grid-template-columns: minmax(176px, 212px) minmax(0, 1fr);
+  gap: 0.85rem 1rem;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .profile-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.65rem;
+  border-radius: var(--radius-lg, 10px);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-sunken, var(--surface-1));
+  max-height: min(30rem, 72vh);
+  overflow: auto;
+}
+
+.group-label {
+  margin: 0.5rem 0 0.2rem;
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.group-label:first-child {
+  margin-top: 0;
+}
+
+.profile-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  text-align: left;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  padding: 0.45rem 0.55rem;
+  font: inherit;
+  font-size: var(--font-size-caption);
+  line-height: 1.35;
+  cursor: pointer;
+  min-height: 2.15rem;
+}
+
+.profile-chip:hover {
+  border-color: var(--border-default);
+}
+
+.profile-chip.selected {
+  border-color: var(--accent-border);
+  background: var(--accent-surface);
+}
+
+.chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.chip-badge {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--accent-strong);
+  padding: 0.12rem 0.35rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent-surface) 80%, transparent);
+}
+
+.preset-create {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.profile-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.75rem 0.85rem;
+  border-radius: var(--radius-lg, 10px);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+}
+
+.editor-toolbar {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.field-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.field-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+@media (max-width: 560px) {
+  .field-row-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+
+.field-label {
+  font-size: var(--font-size-caption);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.field-hint {
+  font-size: var(--font-size-caption);
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.field-input {
+  border-radius: 8px;
+  border: 1px solid var(--border-default);
+  background: var(--surface-2, var(--surface-1));
+  color: var(--text-primary);
+  padding: 0.45rem 0.6rem;
+  font: inherit;
+  font-size: var(--font-size-caption);
+  line-height: 1.4;
+  min-height: 2.15rem;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.field-input:focus {
+  outline: 2px solid var(--accent-focus-ring);
+  border-color: var(--accent-border);
+}
+
+.field-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.model-row {
+  display: flex;
+  gap: 0.45rem;
+  align-items: stretch;
+}
+
+.model-row .field-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.model-row :deep(.icon-btn) {
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.model-picker {
+  margin-top: 0.4rem;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--surface-elevated, var(--surface-1));
+  color: var(--text-primary);
+  box-shadow:
+    0 12px 32px color-mix(in srgb, #000 28%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--border-subtle) 80%, transparent);
+  overflow: hidden;
+  max-width: 100%;
+  z-index: 20;
+  position: relative;
+}
+
+.model-picker-filter {
+  border: none !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+  border-radius: 0 !important;
+  background: var(--surface-2) !important;
+  color: var(--text-primary) !important;
+}
+
+.model-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0;
+  max-height: min(20rem, 48vh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--surface-elevated, var(--surface-1));
+  scrollbar-gutter: stable;
+}
+
+.model-picker-item {
+  padding: 0.45rem 0.75rem;
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
+  cursor: pointer;
+  word-break: break-all;
+  line-height: 1.4;
+  border-left: 2px solid transparent;
+}
+
+.model-picker-item:hover {
+  background: var(--surface-hover, var(--surface-2));
+}
+
+.model-picker-item--active {
+  background: var(--accent-surface);
+  color: var(--accent-strong);
+  font-weight: 600;
+  border-left-color: var(--accent);
+}
+
+.model-picker-empty {
+  padding: 0.65rem 0.75rem;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding-top: 0.15rem;
+}
+
+.btn-save,
+.btn-secondary,
+.btn-danger {
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.32rem 0.65rem;
+  cursor: pointer;
+  line-height: 1.3;
+  min-height: 1.85rem;
+  box-sizing: border-box;
+}
+
+.btn-sm {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.2rem 0.48rem;
+  min-height: 1.5rem;
+  border-radius: 5px;
+  letter-spacing: 0.01em;
+}
+
+.spinning {
+  animation: agent-refresh-spin 0.8s linear infinite;
+}
+
+@keyframes agent-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinning {
+    animation: none;
+  }
+}
+
+.btn-save {
+  border: 1px solid var(--accent-border);
+  background: var(--accent-surface);
+  color: var(--accent-strong);
+}
+
+.btn-secondary {
+  border: 1px solid var(--border-default);
+  background: var(--surface-2, var(--surface-1));
+  color: var(--text-primary);
+}
+
+.btn-danger {
+  border: 1px solid color-mix(in srgb, var(--danger, #c44) 55%, var(--border-default));
+  background: transparent;
+  color: var(--danger, #c44);
+}
+
+.btn-save:disabled,
+.btn-secondary:disabled,
+.btn-danger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.flash-ok {
+  color: var(--success);
+  font-size: var(--font-size-caption);
+}
+
+.flash-muted,
+.status-line {
+  color: var(--text-muted);
+  font-size: var(--font-size-caption);
+  margin: 0.1rem 0;
+}
+
+.error-line {
+  margin: 0.35rem 0 0;
+  color: var(--danger);
+  font-size: var(--font-size-caption);
+  line-height: 1.45;
+}
+</style>

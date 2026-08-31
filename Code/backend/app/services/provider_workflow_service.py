@@ -25,6 +25,11 @@ from typing import Any
 from algorithms.providers.base import ProviderExecutionPayload, ProviderExecutionResult
 from algorithms.registry.provider_registry import get_provider_for_layer
 from app.core.config import settings
+from app.services.effective_config import (
+    get_provider_max_hotspots,
+    get_provider_max_series_points,
+    get_result_inline_max_bytes,
+)
 from app.services.provider_result_builder import (
     ProviderResultBuilder,
     provider_result_builder,
@@ -129,9 +134,9 @@ class ProviderWorkflowService:
             map_context=payload.map_context.model_dump(mode="json"),
             config_overrides=payload.config_overrides,
             execution_limits={
-                "max_hotspots": settings.provider_max_hotspots,
-                "max_series_points": settings.provider_max_series_points,
-                "max_inline_result_bytes": settings.result_inline_max_bytes,
+                "max_hotspots": get_provider_max_hotspots(),
+                "max_series_points": get_provider_max_series_points(),
+                "max_inline_result_bytes": get_result_inline_max_bytes(),
             },
             correlation_id=payload.correlation_id,
         )
@@ -353,8 +358,8 @@ class ProviderWorkflowService:
                 "provider_note": "当前 provider 链路为过渡样板，结果仅用于联调与界面验收，不代表正式生产数据。",
                 "registered_layer_count": len(layer_ids),
                 "registered_layers": layer_ids,
-                "max_hotspots": settings.provider_max_hotspots,
-                "max_series_points": settings.provider_max_series_points,
+                "max_hotspots": get_provider_max_hotspots(),
+                "max_series_points": get_provider_max_series_points(),
             },
         }
 

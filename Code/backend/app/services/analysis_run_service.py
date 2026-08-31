@@ -182,10 +182,6 @@ def _inject_tool_params(
             for key in ("statistic", "band", "all_touched"):
                 if key in params and params[key] is not None:
                     props[key] = params[key]
-        elif tool_id == "stats.histogram" and ntype == "stats/histogram":
-            for key in ("bins", "band", "density", "variable", "nodata"):
-                if key in params and params[key] is not None:
-                    props[key] = params[key]
         elif tool_id == "gis.reclassify" and ntype == "gis/reclassify":
             for key in ("remap_table", "nodata_value"):
                 if key in params and params[key] is not None:
@@ -391,7 +387,6 @@ def build_analysis_submit_request(req: AnalysisRunRequest) -> WorkflowSubmitRequ
         _inject_node_path(nodes, dataset_key="input_path", path=primary_path)
     elif tool.tool_id in {
         "gis.clip",
-        "stats.histogram",
         "gis.reclassify",
         "gis.contour",
         "gis.slope_aspect",

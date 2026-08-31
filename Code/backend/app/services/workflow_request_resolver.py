@@ -22,6 +22,9 @@ from shared.contracts.api_contracts import WorkflowCommandType, WorkflowSubmitRe
 
 logger = logging.getLogger(__name__)
 
+# 平台常量（模块级以便测试 monkeypatch；硬编码清理 A3）
+_IS_WINDOWS = sys.platform == "win32"
+
 _ALGORITHM_ENTRY_KEYS: tuple[str, ...] = (
     "module_name",
     "workflow_name",
@@ -55,6 +58,35 @@ def _expand_date_placeholders(value: Any, ref_date: date) -> Any:
         return {k: _expand_date_placeholders(v, ref_date) for k, v in value.items()}
     if isinstance(value, list):
         return [_expand_date_placeholders(v, ref_date) for v in value]
+    return value
+
+
+def _expand_data_root_placeholders(value: Any) -> Any:
+    """展开 ``{DATA_ROOT}`` / ``{DATA_ROOT_WIN}`` 种子占位符。
+
+    种子同步（workflow_definition_service）在落盘时展开，但经
+    ``/workflow-definitions/compile`` 直传的画布定义保留字面占位符；
+    提交边界须展开为 settings.data_root 绝对路径，否则 worker 侧
+    算法收到不可解析的 ``{DATA_ROOT}/...`` 路径。
+    """
+    if isinstance(value, str):
+        if "{DATA_ROOT" not in value:
+            return value
+        root = (getattr(config.settings, "data_root", None) or "").strip()
+        if not root:
+            return value
+        root_posix = root.replace("\\", "/")
+        # 跨平台（硬编码清理 A3）：非 Windows 下 {DATA_ROOT_WIN} 退化为
+        # posix root（占位符名保留兼容旧种子/画布定义）——原
+        # root.replace("/", "\\") 在 Linux data_root 下生成含反斜杠的非法路径。
+        root_win = root_posix.replace("/", "\\") if _IS_WINDOWS else root_posix
+        return value.replace("{DATA_ROOT_WIN}", root_win).replace(
+            "{DATA_ROOT}", root_posix
+        )
+    if isinstance(value, dict):
+        return {k: _expand_data_root_placeholders(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_expand_data_root_placeholders(v) for v in value]
     return value
 
 
@@ -175,6 +207,138 @@ def _describe_python_provider_resolution_impl(
     }
 
 
+def _portal_credential_profile_ready(profile: str) -> bool:
+    """门户凭据 profile 就绪检查。
+
+    语义对齐 ``Tools/smoke_system_workflows.py`` 的 ``portal_creds_ready``：
+    门户 store 条目 enabled=false 忽略；token/access_token 或 username+password
+    任一可用即就绪；支持多账号轮换条目（accounts[]）。
+    """
+    try:
+        from app.services.config_service import get_portal_credentials_runtime
+
+        store = get_portal_credentials_runtime() or {}
+    except Exception:  # noqa: BLE001 — 凭据存储不可用时按未就绪处理
+        return False
+    entry = store.get(profile)
+    if not isinstance(entry, dict) or entry.get("enabled") is False:
+        return False
+    if str(entry.get("token") or entry.get("access_token") or "").strip():
+        return True
+    user = str(entry.get("username") or "").strip()
+    password = str(entry.get("password") or entry.get("secret") or "").strip()
+    if user and password:
+        return True
+    for account in entry.get("accounts") or []:
+        if not isinstance(account, dict):
+            continue
+        if str(account.get("token") or "").strip():
+            return True
+        account_user = str(account.get("username") or "").strip()
+        account_password = str(account.get("password") or "").strip()
+        if account_user and account_password:
+            return True
+    return False
+
+
+def _variant_field(variant: Any, key: str, default: Any = None) -> Any:
+    """读取变体字段，兼容 pydantic 对象与 dict 两种形态。"""
+    if isinstance(variant, dict):
+        return variant.get(key, default)
+    return getattr(variant, key, default)
+
+
+def _resolve_variant_workflow_entry(
+    algorithm_request: dict[str, Any], descriptor: Any
+) -> str | None:
+    """X2 变体路由：解析本次提交应执行的变体种子 id。
+
+    - FE 分析框切换注入 ``workflow_entry_name``（变体种子 id）：仅当与
+      ``descriptor.workflow_variants`` 中声明的变体匹配时生效，未声明的
+      entry 不路由（维持旧语义，交给后续兜底）；
+    - 无显式选择：回落默认变体（``workflow_variants.online.workflow_id``，
+      即 ω 反演图层默认在线执行）；
+    - descriptor 未声明变体 → None（维持既有单变体/裸模块语义）。
+    """
+    variants = getattr(descriptor, "workflow_variants", None)
+    if not isinstance(variants, dict) or not variants:
+        return None
+    entry = algorithm_request.get("workflow_entry_name")
+    if entry:
+        entry = str(entry)
+        for variant in variants.values():
+            if _variant_field(variant, "workflow_id") == entry:
+                return entry
+        return None
+    online = variants.get("online")
+    default_workflow = _variant_field(online, "workflow_id") if online else None
+    return str(default_workflow) if default_workflow else None
+
+
+def _describe_workflow_variant_readiness(
+    descriptor: Any, unresolved_default_datasets: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    """工作流变体二元就绪语义（X2）：在线凭据就绪 OR 本地数据可解析 → ready。
+
+    仅对声明了 ``workflow_variants`` 的 descriptor 生效；返回 None 表示无变体
+    （维持既有单变体语义）。返回体含 online_ready / local_ready / notes / summary。
+    """
+    variants = getattr(descriptor, "workflow_variants", None)
+    if not variants:
+        return None
+    online = variants.get("online")
+    local = variants.get("local")
+
+    notes: list[str] = []
+    online_ready = False
+    if online is not None:
+        profile = _variant_field(online, "credential_profile")
+        if profile:
+            online_ready = _portal_credential_profile_ready(profile)
+            label = _variant_field(online, "label") or "在线反演"
+            if online_ready:
+                notes.append(f"{label}就绪（门户凭据 {profile} 可用，默认执行路径）。")
+            else:
+                notes.append(
+                    f"{label}未就绪：缺少门户凭据 {profile}（可在设置中配置）。"
+                )
+        else:
+            notes.append("在线变体未声明凭据 profile，按未就绪处理。")
+
+    # 仅当声明了 local 变体时才评估本地就绪；单变体（仅 online）descriptor
+    # 本地数据可解析也不得误报「本地反演可用」。
+    local_ready = local is not None and not unresolved_default_datasets
+    if local is not None:
+        label = _variant_field(local, "label") or "本地反演"
+        if local_ready:
+            notes.append(f"{label}就绪（本地数据源可解析）。")
+        else:
+            missing = "、".join(
+                item["dataset_name"] for item in unresolved_default_datasets
+            )
+            notes.append(f"{label}未就绪：本地数据源缺失（{missing}）。")
+
+    if online_ready or local_ready:
+        available = []
+        if online_ready:
+            available.append(_variant_field(online, "label") or "在线反演")
+        if local_ready:
+            available.append(_variant_field(local, "label") or "本地反演")
+        summary = f"变体可用：{'、'.join(available)}（默认 {descriptor.workflow_id}）。"
+        readiness = "ready"
+    else:
+        summary = "在线凭据与本地数据源均未就绪，无法执行反演。"
+        readiness = "blocked"
+
+    return {
+        "readiness": readiness,
+        "online_ready": online_ready,
+        "local_ready": local_ready,
+        "summary": summary,
+        "notes": notes,
+    }
+
+
 def _describe_merged_group_readiness(descriptor: Any) -> dict[str, Any]:
     """合并组虚拟条目的就绪聚合：任一成员 ready 即 ready。
 
@@ -242,15 +406,32 @@ def describe_layer_run_readiness(layer_id: str) -> dict[str, Any] | None:
                     "unresolved_default_datasets", []
                 )
 
-    if unresolved_default_datasets:
-        readiness = "blocked"
-        for item in unresolved_default_datasets:
-            candidate_text = ", ".join(item["candidate_sources"]) or "未提供候选源"
-            notes.append(
-                f"缺少默认数据集 {item['dataset_name']}；已检查：{candidate_text}"
-            )
+    # X2 变体二元语义：在线凭据就绪 OR 本地数据可解析 → ready（本地缺失不 block）
+    variant_result = _describe_workflow_variant_readiness(
+        descriptor, unresolved_default_datasets
+    )
 
     if unresolved_default_datasets:
+        if variant_result is not None and variant_result["online_ready"]:
+            # 本地数据缺失但在线变体可用：保持 ready，说明走在线执行路径
+            notes.extend(variant_result["notes"])
+            summary = variant_result["summary"]
+        else:
+            readiness = "blocked"
+            for item in unresolved_default_datasets:
+                candidate_text = ", ".join(item["candidate_sources"]) or "未提供候选源"
+                notes.append(
+                    f"缺少默认数据集 {item['dataset_name']}；已检查：{candidate_text}"
+                )
+    elif variant_result is not None:
+        notes.extend(variant_result["notes"])
+        if variant_result["readiness"] == "blocked":
+            readiness = "blocked"
+        summary = variant_result["summary"]
+
+    if unresolved_default_datasets and (
+        variant_result is None or not variant_result["online_ready"]
+    ):
         dataset_names = "、".join(
             item["dataset_name"] for item in unresolved_default_datasets
         )
@@ -263,6 +444,12 @@ def describe_layer_run_readiness(layer_id: str) -> dict[str, Any] | None:
         "run_readiness_summary": summary,
         "run_readiness_notes": notes,
         "unresolved_default_datasets": unresolved_default_datasets,
+        "online_ready": (
+            None if variant_result is None else bool(variant_result.get("online_ready"))
+        ),
+        "local_ready": (
+            None if variant_result is None else bool(variant_result.get("local_ready"))
+        ),
     }
 
 
@@ -319,7 +506,46 @@ def _node_module_name(node: dict[str, Any]) -> str:
     return str(node.get("node_type") or "")
 
 
-def _extract_time_range_from_nodes(nodes: list[Any] | None):
+def _expand_seed_date_placeholder(value: str, ref: Any) -> str:
+    """展开种子 time_range 节点的日期占位符（无 ref 时用当天）。
+
+    支持的占位符：
+    - ``{YYYY-MM-DD}`` / ``{YYYYMMDD}``：提交当天（历史行为）。
+    - ``{TODAY}`` / ``{TODAY-Nd}`` / ``{TODAY+Nd}``：提交当天 ± N 天的
+      回看/前看窗口（2026-08-25 增）。在线种子的数据源常有发布滞后
+      （SMAP NSIDC 3 级产品滞后约 2-3 天），默认窗口=当天会导致
+      下载器无可下日期 → 反演「SMAP 文件夹无可用日期数据」失败
+      （用户报障 ω 反演链路）。
+
+    此前 ``_extract_time_range_from_nodes`` 直接 ``fromisoformat`` 解析
+    占位符抛 ValueError → time_range 静默 None → layer_id-only 提交缺
+    time_range → 下游参数校验报一堆无效（用户报障 2026-08-22「流水线
+    配置时间范围后运行直接出错」根因）。
+    """
+    from datetime import date as _date
+    from datetime import timedelta as _timedelta
+
+    base = ref if isinstance(ref, _date) else _date.today()
+
+    if "{TODAY" in value:
+        import re as _re
+
+        def _sub(match: "_re.Match[str]") -> str:
+            sign = -1 if match.group(1) == "-" else 1
+            days = int(match.group(2) or 0)
+            return (base + _timedelta(days=sign * days)).isoformat()
+
+        # {TODAY} / {TODAY-10} / {TODAY+5d}（d 后缀可选）
+        value = _re.sub(r"\{TODAY(?:([+-])(\d+)d?)?\}", _sub, value)
+
+    if "{YYYY-MM-DD}" in value:
+        return value.replace("{YYYY-MM-DD}", base.isoformat())
+    if "{YYYYMMDD}" in value:
+        return value.replace("{YYYYMMDD}", base.strftime("%Y%m%d"))
+    return value
+
+
+def _extract_time_range_from_nodes(nodes: list[Any] | None, ref_date: Any = None):
     """从 data/time_range（或编译后的 time_range 模块）节点提取 TimeRange。"""
     if not nodes:
         return None
@@ -338,8 +564,12 @@ def _extract_time_range_from_nodes(nodes: list[Any] | None):
             end_str = props.get("end_at")
             if not start_str or not end_str:
                 continue
-            start_dt = datetime.fromisoformat(str(start_str))
-            end_dt = datetime.fromisoformat(str(end_str))
+            start_dt = datetime.fromisoformat(
+                _expand_seed_date_placeholder(str(start_str), ref_date)
+            )
+            end_dt = datetime.fromisoformat(
+                _expand_seed_date_placeholder(str(end_str), ref_date)
+            )
             granularity_str = str(props.get("granularity") or "day")
             try:
                 granularity = TimeGranularity(granularity_str)
@@ -577,7 +807,9 @@ def _flatten_ui_workflow_definition(
     for key, value in list(existing_ds.items()):
         if key.startswith("_") or not isinstance(value, str) or not value.strip():
             continue
-        expanded = _expand_date_placeholders(value, ref_date)
+        expanded = _expand_data_root_placeholders(
+            _expand_date_placeholders(value, ref_date)
+        )
         if expanded != value:
             existing_ds[key] = expanded
             value = expanded
@@ -621,13 +853,48 @@ def _flatten_ui_workflow_definition(
     # 剥离），节点级 properties.algorithm_params 由算法侧 executor 以节点基底
     # 合并，避免首模块参数（如 fy_daily 的 orbit_mode）泄漏进其余模块。
     if keep_graph:
+        # 合并图层默认 data_access，并把 scrape 的 alias 提升为模板 required 键，
+        # 否则图执行提前返回时 request.datasource_selection 仍是
+        # smap_daily_mat/ancillary_mat，omega_avg_daily 运行时报缺 anc_root 等。
+        default_data_access = _build_default_data_access_requests(
+            getattr(descriptor, "default_data_access_sources", None) or {}
+        )
+        data_access_requests = _normalize_request(
+            existing_ds.get("_data_access_requests")
+        )
+        for dataset_name, request_payload in default_data_access.items():
+            data_access_requests.setdefault(dataset_name, request_payload)
+        if data_access_requests:
+            existing_ds["_data_access_requests"] = data_access_requests
+        inferred_module = _infer_primary_module_name(
+            nodes if isinstance(nodes, list) else None
+        )
+        template_module = str(
+            inferred_module
+            or getattr(descriptor, "module_name", None)
+            or algorithm_request.get("module_name")
+            or ""
+        )
+        template = (
+            _get_module_request_template(template_module) if template_module else None
+        )
+        _promote_accepted_datasource_aliases(existing_ds, template)
+        for key, value in list(existing_ds.items()):
+            if key.startswith("_") or not isinstance(value, str) or not value.strip():
+                continue
+            if Path(value).is_absolute() and Path(value).exists():
+                continue
+            resolved = _resolve_data_access_source_uri(value)
+            if resolved:
+                existing_ds[key] = resolved
+
         enriched = dict(algorithm_request)
         enriched["datasource_selection"] = existing_ds
         enriched["algorithm_params"] = existing_params
         enriched.setdefault("output_spec", {})
         if "workflow_definition" in enriched:
-            enriched["workflow_definition"] = _expand_date_placeholders(
-                enriched["workflow_definition"], ref_date
+            enriched["workflow_definition"] = _expand_data_root_placeholders(
+                _expand_date_placeholders(enriched["workflow_definition"], ref_date)
             )
         # Bridge rejects workflow_definition + module_name together; keep graph only.
         enriched.pop("module_name", None)
@@ -700,6 +967,14 @@ def _compile_workflow_seed(workflow_name: str) -> dict[str, Any] | None:
         )
 
         _filter_invalid_edges(compiled)
+
+        # 透传种子 extra（outputs/group_title/output_labels 等）到 compiled
+        # workflow_definition——前端建组命名（extra.group_title/output_labels
+        # 中文配置，2026-08-22 需求2）与产出标签推导依赖该字段；此前编译器
+        # 丢弃 extra，配置静默失效。
+        seed_extra = definition.get("extra")
+        if isinstance(seed_extra, dict) and seed_extra:
+            compiled["extra"] = dict(seed_extra)
 
         return compiled
     except Exception:
@@ -852,6 +1127,18 @@ def _populate_python_provider_request(
     *, payload: WorkflowSubmitRequest, descriptor
 ) -> WorkflowSubmitRequest:
     algorithm_request = _normalize_algorithm_request(payload.algorithm_request)
+    # X2 变体路由：变体选择（FE 注入 workflow_entry_name）或默认在线变体翻译为
+    # workflow_name 入口键，由下方种子分支补齐 time_range、bridge 的种子编译接管
+    # 图执行。否则后续 setdefault(module_name) 会遮蔽变体选择，退化为裸模块
+    # 路径（变体切换失效根因）。显式 module_name/workflow_definition 提交
+    # （画布/编辑器）不参与翻译，保持原优先级。
+    if not any(
+        algorithm_request.get(key)
+        for key in ("module_name", "workflow_name", "workflow_definition")
+    ):
+        variant_entry = _resolve_variant_workflow_entry(algorithm_request, descriptor)
+        if variant_entry:
+            algorithm_request["workflow_name"] = variant_entry
     has_algorithm_entry = any(
         algorithm_request.get(key) for key in _ALGORITHM_ENTRY_KEYS
     )
@@ -883,7 +1170,9 @@ def _populate_python_provider_request(
                 payload = payload.model_copy(update={"time_range": resolved_tr})
             return payload
     elif algorithm_request.get("workflow_name"):
-        # 仅声明 workflow_name、无 definition：仍补齐 time_range 后交由种子路径
+        # 仅声明 workflow_name、无 definition：补齐 time_range + 默认数据源别名提升
+        # 后交由种子路径。图层变体（如 omega_avg_daily_fy_online）走此分支，
+        # 若不提升则 scrape 的 smap_daily_mat 等 alias 无法满足模板 required 键。
         resolved_tr = _resolve_missing_time_range(
             payload=payload,
             algorithm_request=algorithm_request,
@@ -893,6 +1182,16 @@ def _populate_python_provider_request(
             payload = payload.model_copy(update={"time_range": resolved_tr})
         ref_date = _get_ref_date_from_payload(payload)
         algorithm_request = _expand_date_placeholders(algorithm_request, ref_date)
+        _enrich_datasource_selection_aliases(
+            algorithm_request,
+            descriptor=descriptor,
+            template_module=str(
+                getattr(descriptor, "module_name", None)
+                or algorithm_request.get("module_name")
+                or ""
+            ),
+            ref_date=ref_date,
+        )
         payload = payload.model_copy(update={"algorithm_request": algorithm_request})
         return payload
 
@@ -970,70 +1269,63 @@ def _populate_python_provider_request(
             algorithm_request["algorithm_params"], _ref_date
         )
 
-    datasource_selection = _normalize_request(
-        algorithm_request.get("datasource_selection")
-    )
-    data_access_requests = _normalize_request(
-        datasource_selection.get("_data_access_requests")
-    )
-    default_data_access = _build_default_data_access_requests(
-        getattr(descriptor, "default_data_access_sources", None) or {}
-    )
-    for dataset_name, request_payload in default_data_access.items():
-        data_access_requests.setdefault(dataset_name, request_payload)
-    if data_access_requests:
-        datasource_selection["_data_access_requests"] = data_access_requests
+    # 策略 allow_silent：自动注入 relax_flags（用户确认路径由 FE 显式传入）
+    try:
+        from app.services.data_input_policy_service import (
+            INPUT_KEY_TIME_WINDOW_ALIGN,
+            resolve_policy_mode,
+        )
+
+        params = algorithm_request.get("algorithm_params")
+        if not isinstance(params, dict):
+            params = {}
+            algorithm_request["algorithm_params"] = params
+        relax = params.get("relax_flags")
+        if not isinstance(relax, dict):
+            relax = {}
+            params["relax_flags"] = relax
+        if INPUT_KEY_TIME_WINDOW_ALIGN not in relax:
+            mode = resolve_policy_mode(
+                INPUT_KEY_TIME_WINDOW_ALIGN,
+                module=str(
+                    algorithm_request.get("module_name") or descriptor_module or ""
+                )
+                or None,
+                workflow_id=str(
+                    algorithm_request.get("workflow_entry_name")
+                    or algorithm_request.get("workflow_name")
+                    or descriptor_workflow
+                    or ""
+                )
+                or None,
+                layer_id=str(getattr(descriptor, "layer_id", "") or "") or None,
+            )
+            if mode == "allow_silent":
+                relax[INPUT_KEY_TIME_WINDOW_ALIGN] = True
+    except Exception:
+        logger.debug("Failed to apply data_input_policies relax_flags", exc_info=True)
 
     # 根据模板的 accepted_data_access_by_required_key 把 dataset URI 映射到 required_key
     # 修复：模板验证检查 datasource_selection 中有 input_dir 等键，
     # 但 _data_access_requests 中用的是 dataset_name（如 NDVI_16DAY_RASTER）。
     # 需要把解析到的 URI 也设置到 datasource_selection[required_key] 中。
-    template_module = str(
-        algorithm_request.get("module_name") or descriptor_module or ""
-    )
-    template = (
-        _get_module_request_template(template_module) if template_module else None
-    )
-    if template is not None and template.accepted_data_access_by_required_key:
-        for (
-            required_key,
-            accepted_datasets,
-        ) in template.accepted_data_access_by_required_key.items():
-            if datasource_selection.get(required_key) is not None:
-                continue  # 用户已显式提供
-            for dataset_name in accepted_datasets:
-                da_request = data_access_requests.get(dataset_name)
-                if da_request and isinstance(da_request, dict):
-                    selector = da_request.get("selector") or {}
-                    uris = selector.get("uris") or []
-                    if uris:
-                        datasource_selection[required_key] = uris[0]
-                        break
-
-    # 展开日期占位符 {YYYY.MM.DD} 等（种子 uri/relative_path 中的模板）
+    # 画布/种子 scrape 常写 alias 键（smap_daily_mat / ancillary_mat），
+    # 同样提升为 required_key（smap_folder / anc_root）。
     ref_date = _ref_date
-    for key, value in list(datasource_selection.items()):
-        if isinstance(value, str) and "{" in value:
-            expanded = _expand_date_placeholders(value, ref_date)
-            if expanded != value:
-                datasource_selection[key] = expanded
     if isinstance(algorithm_request.get("workflow_definition"), dict):
-        algorithm_request["workflow_definition"] = _expand_date_placeholders(
-            algorithm_request["workflow_definition"], ref_date
+        algorithm_request["workflow_definition"] = _expand_data_root_placeholders(
+            _expand_date_placeholders(
+                algorithm_request["workflow_definition"], ref_date
+            )
         )
-
-    # 显式相对路径（画布/种子）→ 绝对本地 URI，供 omega_sf 读 IGPB 等
-    for key, value in list(datasource_selection.items()):
-        if key.startswith("_") or not isinstance(value, str) or not value.strip():
-            continue
-        if Path(value).is_absolute() and Path(value).exists():
-            continue
-        resolved = _resolve_data_access_source_uri(value)
-        if resolved:
-            datasource_selection[key] = resolved
-
-    if datasource_selection:
-        algorithm_request["datasource_selection"] = datasource_selection
+    _enrich_datasource_selection_aliases(
+        algorithm_request,
+        descriptor=descriptor,
+        template_module=str(
+            algorithm_request.get("module_name") or descriptor_module or ""
+        ),
+        ref_date=ref_date,
+    )
 
     # 从画布/种子补齐 time_range（前端 UI 提交时常缺该字段）
     updates: dict[str, Any] = {"algorithm_request": algorithm_request}
@@ -1093,6 +1385,93 @@ def _normalize_request(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
     return {}
+
+
+def _promote_accepted_datasource_aliases(
+    datasource_selection: dict[str, Any],
+    template: Any,
+) -> None:
+    """把 alias / ``_data_access_requests`` 提升为模板 required_datasource_keys。
+
+    画布种子常写 ``smap_daily_mat`` / ``ancillary_mat`` / ``ndvi_daily_mat``，
+    而 ``omega_avg_daily`` 等模板校验的是 ``smap_folder`` / ``anc_root`` /
+    ``ndvi_folder``。缺提升时本地分析会在提交期 422。
+    """
+    if template is None:
+        return
+    mapping = getattr(template, "accepted_data_access_by_required_key", None) or {}
+    if not mapping:
+        return
+    data_access_requests = _normalize_request(
+        datasource_selection.get("_data_access_requests")
+    )
+    for required_key, accepted_datasets in mapping.items():
+        if datasource_selection.get(required_key) is not None:
+            continue
+        for dataset_name in accepted_datasets:
+            flat = datasource_selection.get(dataset_name)
+            if flat is not None and str(flat).strip() != "":
+                datasource_selection[required_key] = flat
+                break
+            da_request = data_access_requests.get(dataset_name)
+            if da_request and isinstance(da_request, dict):
+                selector = da_request.get("selector") or {}
+                uris = selector.get("uris") or []
+                if uris:
+                    datasource_selection[required_key] = uris[0]
+                    break
+
+
+def _enrich_datasource_selection_aliases(
+    algorithm_request: dict[str, Any],
+    *,
+    descriptor: Any,
+    template_module: str,
+    ref_date: date | None = None,
+) -> None:
+    """合并图层默认 data_access，并把 alias 提升为模板 required 键。
+
+    供 ``workflow_name`` 早退路径与 module 路径共用，避免图种子 scrape 的
+    ``smap_daily_mat`` 等键在 omega_avg_daily 运行期仍缺 ``smap_folder``。
+    """
+    datasource_selection = _normalize_request(
+        algorithm_request.get("datasource_selection")
+    )
+    data_access_requests = _normalize_request(
+        datasource_selection.get("_data_access_requests")
+    )
+    default_data_access = _build_default_data_access_requests(
+        getattr(descriptor, "default_data_access_sources", None) or {}
+    )
+    for dataset_name, request_payload in default_data_access.items():
+        data_access_requests.setdefault(dataset_name, request_payload)
+    if data_access_requests:
+        datasource_selection["_data_access_requests"] = data_access_requests
+
+    template = (
+        _get_module_request_template(template_module) if template_module else None
+    )
+    _promote_accepted_datasource_aliases(datasource_selection, template)
+
+    expand_date = ref_date or date.today()
+    for key, value in list(datasource_selection.items()):
+        if isinstance(value, str) and "{" in value:
+            expanded = _expand_data_root_placeholders(
+                _expand_date_placeholders(value, expand_date)
+            )
+            if expanded != value:
+                datasource_selection[key] = expanded
+    for key, value in list(datasource_selection.items()):
+        if key.startswith("_") or not isinstance(value, str) or not value.strip():
+            continue
+        if Path(value).is_absolute() and Path(value).exists():
+            continue
+        resolved = _resolve_data_access_source_uri(value)
+        if resolved:
+            datasource_selection[key] = resolved
+
+    if datasource_selection:
+        algorithm_request["datasource_selection"] = datasource_selection
 
 
 def _build_default_data_access_requests(
@@ -1485,7 +1864,20 @@ class _OverlayRegistryPopulator:
         layer_id: str,
         descriptor: Any,
     ) -> WorkflowSubmitRequest:
-        # overlay_registry 图层不走工作流提交
+        # 需求2（2026-08-22）：overlay_registry 静态图层配置了本地读工作流
+        # （descriptor.workflow_name → static_local_read_* 种子）时，提交按
+        # python_provider 种子路径翻译，让"运行"入口统一走工作流；未配置
+        # 的 overlay 图层维持 display-only 行为（不走工作流提交）。
+        # 先注入 workflow_name：静态图层无 module_name，不注入会被
+        # _populate_python_provider_request 的入口守卫直接 return。
+        workflow_name = getattr(descriptor, "workflow_name", None)
+        if workflow_name:
+            algo = _normalize_algorithm_request(payload.algorithm_request)
+            algo.setdefault("workflow_name", str(workflow_name))
+            injected = payload.model_copy(update={"algorithm_request": algo})
+            return _populate_python_provider_request(
+                payload=injected, descriptor=descriptor
+            )
         return payload
 
     def describe_resolution(

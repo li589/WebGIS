@@ -3,6 +3,8 @@
  * 新写入优先 instanceId（+ 导入 backend/overlay id）；读路径仍兼容旧 catalogId 键。
  * 见 Docs/03-规范协议/layer-naming.md
  */
+import { readScopedItem, writeScopedItem } from '../../services/user-local-isolation'
+
 const STORAGE_KEY = 'geo:layer-display-names:v1'
 
 type NameMap = Record<string, string>
@@ -10,7 +12,7 @@ type NameMap = Record<string, string>
 function loadMap(): NameMap {
   if (typeof window === 'undefined') return {}
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
+    const raw = readScopedItem(STORAGE_KEY)
     if (!raw) return {}
     const parsed = JSON.parse(raw) as unknown
     if (!parsed || typeof parsed !== 'object') return {}
@@ -29,7 +31,7 @@ function loadMap(): NameMap {
 function saveMap(map: NameMap): void {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(map))
+    writeScopedItem(STORAGE_KEY, JSON.stringify(map))
   } catch {
     /* ignore quota / private mode */
   }

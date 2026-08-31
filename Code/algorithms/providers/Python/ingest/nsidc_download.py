@@ -21,7 +21,8 @@ SPL3SMP_E 数据下载函数，供工作流 ``nsidc_smap_download`` 节点调用
     result = download_smap_range(
         start_date="2023-01-01",
         end_date="2023-01-31",
-        local_dir=r"I:\Geograph_DataSet\Soil_Moisture\SMAP",
+        # 独立运行需设置 BACKEND_DATA_ROOT（本机示例值）：
+        local_dir=os.environ["BACKEND_DATA_ROOT"] + r"\Soil_Moisture\SMAP",
     )
 
 凭据策略：
@@ -42,8 +43,10 @@ from typing import Any
 from collections.abc import Callable
 import contextlib
 
+from ingest.endpoints import CMR_GRANULES_UMM_JSON, URS_PROFILE_URL
 from ingest._http_resume import (
     check_disk_space as _check_disk_space,
+    download_with_retry,
     format_size as _format_size,
 )
 
@@ -54,22 +57,32 @@ logger = logging.getLogger(__name__)
 SHORT_NAME = "SPL3SMP_E"
 VERSION = "6"
 
-MAX_RETRIES = 3
+# 网络运行参数（硬编码清理 E1：env 可覆盖，默认值与原值一致；慢速网络/
+# HPC 隧道场景按需调整）：
+MAX_RETRIES = int(os.getenv("CGDA_DOWNLOAD_RETRIES", "3"))
 INITIAL_BACKOFF = 2.0
 CHUNK_SIZE = 262144  # 256 KB
-REQUEST_TIMEOUT = 60
-DOWNLOAD_TIMEOUT = 3600
-MIN_DISK_FREE_GB = 5.0
+REQUEST_TIMEOUT = int(os.getenv("CGDA_HTTP_TIMEOUT", "60"))
+DOWNLOAD_TIMEOUT = int(os.getenv("CGDA_DOWNLOAD_TIMEOUT", "3600"))
+MIN_DISK_FREE_GB = float(os.getenv("CGDA_MIN_DISK_FREE_GB", "5.0"))
 PROGRESS_INTERVAL = 2.0
 
-# 独立运行的兜底目录：经 BACKEND_DATA_ROOT 注入根（未设时退回实验室本机路径）。
+# 独立运行的兜底目录：必须设置 BACKEND_DATA_ROOT（对齐 dataset_config 的
+# 「禁止静默回退盘符」决策——Linux 上回退 I:\ 会生成字面量目录名）。
 # 工作流路径不使用此默认——nsidc_smap_download 节点显式传 local_dir
 # （节点参数优先，缺省落 ctx.workspace/data_access/smap_download）。
-DEFAULT_OUTPUT_DIR = (
-    Path(os.getenv("BACKEND_DATA_ROOT", r"I:\Geograph_DataSet"))
-    / "Soil_Moisture"
-    / "SMAP"
-)
+
+
+def _default_output_dir() -> Path:
+    root = os.getenv("BACKEND_DATA_ROOT", "").strip()
+    if not root:
+        raise RuntimeError(
+            "BACKEND_DATA_ROOT is not set. NSIDC standalone fallback output "
+            "dir requires it (workflow paths unaffected: node passes "
+            "local_dir explicitly)."
+        )
+    return Path(root) / "Soil_Moisture" / "SMAP"
+
 
 # 尝试导入 earthaccess
 try:
@@ -207,7 +220,7 @@ def test_earthdata_auth(username: str, password: str) -> bool:
         session = requests.Session()
         session.auth = HTTPBasicAuth(username, password)
         resp = session.get(
-            "https://urs.earthdata.nasa.gov/profile",
+            URS_PROFILE_URL,
             timeout=REQUEST_TIMEOUT,
             allow_redirects=True,
         )
@@ -344,7 +357,7 @@ def _search_via_cmr(
     """使用 CMR UMM-JSON API 搜索 granule（earthaccess 不可用时回退）。"""
     import requests  # type: ignore
 
-    cmr_url = "https://cmr.earthdata.nasa.gov/search/granules.umm_json"
+    cmr_url = CMR_GRANULES_UMM_JSON
     temporal = f"{start_date}T00:00:00Z,{end_date}T23:59:59Z"
     granules: list[Granule] = []
     page_num = 1
@@ -436,111 +449,10 @@ def _get_download_session(username: str, password: str) -> Any:
     return session
 
 
-def _download_single(
-    session: Any,
-    url: str,
-    local_path: Path,
-    progress_callback: Callable[[int, int], None] | None = None,
-) -> tuple[bool, int]:
-    """流式下载单个文件，支持断点续传。
-
-    Returns:
-        (是否成功, 本次下载字节数)
-    """
-    local_path.parent.mkdir(parents=True, exist_ok=True)
-    existing = local_path.stat().st_size if local_path.exists() else 0
-
-    headers: dict[str, str] = {}
-    if existing > 0:
-        headers["Range"] = f"bytes={existing}-"
-        logger.info("  断点续传: 从 %s 开始", format_size(existing))
-
-    resp = session.get(
-        url,
-        headers=headers,
-        stream=True,
-        timeout=DOWNLOAD_TIMEOUT,
-        allow_redirects=True,
-    )
-
-    if resp.status_code == 416:
-        resp.close()
-        logger.info("  本地文件已完成，跳过")
-        return True, 0
-
-    if resp.status_code not in (200, 206):
-        resp.close()
-        raise RuntimeError(f"HTTP {resp.status_code} 下载失败: {url}")
-
-    mode = "ab" if resp.status_code == 206 else "wb"
-    if mode == "wb" and existing > 0:
-        existing = 0
-
-    content_length = int(resp.headers.get("Content-Length", 0))
-    total = content_length + existing
-    downloaded = 0
-    last_report = time.time()
-
-    try:
-        with open(local_path, mode) as f:
-            for chunk in resp.iter_content(chunk_size=CHUNK_SIZE):
-                if not chunk:
-                    continue
-                f.write(chunk)
-                downloaded += len(chunk)
-                now = time.time()
-                if now - last_report >= PROGRESS_INTERVAL:
-                    cur = existing + downloaded
-                    logger.info(
-                        "  下载中 %s: %s / %s",
-                        local_path.name,
-                        format_size(cur),
-                        format_size(total) if total else "?",
-                    )
-                    last_report = now
-                if progress_callback:
-                    progress_callback(downloaded, total)
-    finally:
-        resp.close()
-
-    return True, downloaded
-
-
-def _download_with_retry(
-    session: Any,
-    url: str,
-    local_path: Path,
-    expected_size_mb: float | None = None,
-    progress_callback: Callable[[int, int], None] | None = None,
-) -> bool:
-    """带重试（指数退避）的下载封装。"""
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            ok, _ = _download_single(session, url, local_path, progress_callback)
-            if ok:
-                final_size = local_path.stat().st_size if local_path.exists() else 0
-                if final_size <= 0:
-                    raise RuntimeError("下载后文件大小为 0")
-                return True
-        except Exception as exc:
-            logger.warning("  尝试 %d/%d 失败: %s", attempt, MAX_RETRIES, exc)
-            if attempt < MAX_RETRIES:
-                backoff = INITIAL_BACKOFF * (2 ** (attempt - 1))
-                logger.info("  等待 %.1fs 后重试...", backoff)
-                time.sleep(backoff)
-            else:
-                logger.error("  已达最大重试次数，放弃: %s", local_path.name)
-                return False
-    return False
-
-
-# ─── 主 API ──────────────────────────────────────────────────────────────────
-
-
 def download_smap_range(
     start_date: str,
     end_date: str,
-    local_dir: str | Path = DEFAULT_OUTPUT_DIR,
+    local_dir: str | Path | None = None,
     *,
     version: str = VERSION,
     short_name: str = SHORT_NAME,
@@ -571,7 +483,7 @@ def download_smap_range(
     # 与 CMR 查询均要求 ISO 日期，入口统一归一化。
     start_date = _normalize_iso_date(start_date)
     end_date = _normalize_iso_date(end_date)
-    local_path = Path(local_dir)
+    local_path = Path(local_dir) if local_dir is not None else _default_output_dir()
     username, password = load_credentials(username, password)
 
     result = DownloadResult(local_dir=str(local_path))
@@ -645,19 +557,33 @@ def download_smap_range(
     # 7) 下载
     session = _get_download_session(username, password)
 
+    from ingest._download_sync import download_claimed_file
+
     for i, g in enumerate(todo, 1):
         fp = local_path / g.name
         logger.info("[%d/%d] %s", i, len(todo), g.name)
 
         def file_progress(dl: int, total: int) -> None:
             if progress_callback:
-                progress_callback(i, len(todo), dl)
+                progress_callback(i, len(todo), dl, g.name)
 
-        success = _download_with_retry(session, g.url, fp, g.size_mb, file_progress)
-        if success:
+        # 安审 2026-08-21 H-1：续传写半成品再原子落盘。
+        # 2026-08-30：多任务共享 DATA_ROOT 时固定 ``.part`` + replace 会在
+        # Windows 上撞 WinError 32；改为认领锁 + 唯一 part + 可重试 replace，
+        # 对端已在下则等待成品而非并行抢写。
+        def _do_download(part: Path) -> bool:
+            return download_with_retry(
+                session, g.url, part, progress_callback=file_progress
+            )
+
+        status = download_claimed_file(dest=fp, do_download=_do_download)
+        if status == "downloaded":
             result.downloaded += 1
             result.downloaded_bytes += fp.stat().st_size
             logger.info("  完成: %s", format_size(fp.stat().st_size))
+        elif status == "skipped":
+            result.skipped += 1
+            logger.info("  跳过（已存在或对端已完成）: %s", g.name)
         else:
             result.failed += 1
             result.errors.append(f"下载失败: {g.name}")

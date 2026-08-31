@@ -15,6 +15,7 @@ from collections.abc import Iterator
 
 from rasterio.warp import transform_bounds as _transform_bounds
 
+from app.data_io.services._meta_io import save_bytes_atomic, save_json_atomic
 from app.data_io.services import paths as import_paths
 from app.data_io.services.raster_science import extract_variable_to_geotiff
 from app.services.overlay_registry import (
@@ -320,7 +321,7 @@ def _upsert_block_dir_timeseries_locked(
                 crop_to_data=False,
             )
         )
-        png_path.write_bytes(png_bytes)
+        save_bytes_atomic(png_path, png_bytes)
         west, south, east, north = _transform_bounds(
             "EPSG:3857",
             "EPSG:4326",
@@ -332,22 +333,18 @@ def _upsert_block_dir_timeseries_locked(
         )
         slice_bounds = [float(west), float(south), float(east), float(north)]
         bounds_by_time[time_label] = slice_bounds
-        bounds_path.write_text(
-            json.dumps(
-                {
-                    "bounds": slice_bounds,
-                    "meta": {
-                        "layer_id": layer_id,
-                        "time": time_label,
-                        "variable_id": variable_id,
-                        "native_step": native_step,
-                        "science_source": mat_path.name,
-                    },
+        save_json_atomic(
+            bounds_path,
+            {
+                "bounds": slice_bounds,
+                "meta": {
+                    "layer_id": layer_id,
+                    "time": time_label,
+                    "variable_id": variable_id,
+                    "native_step": native_step,
+                    "science_source": mat_path.name,
                 },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
+            },
         )
 
     if not time_list:
@@ -377,12 +374,8 @@ def _upsert_block_dir_timeseries_locked(
             "follow_policy": "containing",
         },
     }
-    (dest_dir / "bounds.json").write_text(
-        json.dumps(shared_bounds, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    (dest_dir / "meta.json").write_text(
-        json.dumps(
-            {
+    save_json_atomic(dest_dir / "bounds.json", shared_bounds)
+    meta_payload = {
                 "layer_id": layer_id,
                 "kind": "raster",
                 "category": "time-series",
@@ -391,12 +384,8 @@ def _upsert_block_dir_timeseries_locked(
                 "variable_id": variable_id,
                 "label": label,
                 "run_id": run_id,
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+            }
+    save_json_atomic(dest_dir / "meta.json", meta_payload)
 
     with suppress(Exception):
         unregister_overlay(layer_id)

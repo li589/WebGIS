@@ -12,8 +12,10 @@ import {
   TooltipComponent,
   LegendComponent,
   DataZoomComponent,
+  TitleComponent,
 } from 'echarts/components'
 import VChart from 'vue-echarts'
+import { useEchartsThemeName } from './echarts-theme'
 
 use([
   CanvasRenderer,
@@ -24,6 +26,7 @@ use([
   TooltipComponent,
   LegendComponent,
   DataZoomComponent,
+  TitleComponent,
 ])
 
 export interface AnalysisChartSeries {
@@ -53,6 +56,8 @@ const props = defineProps<{
   charts?: AnalysisChartModel[]
   tables?: AnalysisTableModel[]
 }>()
+
+const echartsTheme = useEchartsThemeName()
 
 const hasContent = computed(
   () => (props.charts?.length ?? 0) > 0 || (props.tables?.length ?? 0) > 0,
@@ -119,7 +124,13 @@ function cellText(value: unknown): string {
   <div v-if="hasContent" class="analysis-result-charts">
     <div class="section-kicker">工作流图表</div>
     <article v-for="chart in charts" :key="chart.id" class="analysis-chart-card">
-      <VChart class="analysis-echart" :option="toEchartsOption(chart)" autoresize />
+      <VChart
+        :key="echartsTheme"
+        class="analysis-echart"
+        :theme="echartsTheme"
+        :option="toEchartsOption(chart)"
+        autoresize
+      />
     </article>
     <article v-for="table in tables" :key="table.id" class="analysis-table-card">
       <h4>{{ table.title }}</h4>

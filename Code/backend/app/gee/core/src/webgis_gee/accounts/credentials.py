@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class GeeCredentialsLoader:
-    """加载 service_account JSON 并构造 ee.Credentials 对象。"""
+    """加载 service_account JSON 并构造 ee.Initialize 可用的凭据对象。"""
 
     @staticmethod
     def load_service_account_credentials(
@@ -24,7 +24,7 @@ class GeeCredentialsLoader:
             project_id: 可选 GCP project_id，目前仅用于日志，ee 内部会从凭证推导
 
         Returns:
-            ee.Credentials 对象、google.oauth2.service_account.Credentials 或 dict（回退）
+            google.oauth2.service_account.Credentials（主路径）、ee 兼容凭据对象或 dict（回退）
 
         Raises:
             ValueError: JSON 格式错误或缺少必要字段
@@ -50,10 +50,17 @@ class GeeCredentialsLoader:
 
         email = sa_dict["client_email"]
         key = sa_dict["private_key"]
+        scopes = ["https://www.googleapis.com/auth/earthengine"]
 
-        # 优先用 ee.ServiceAccountCredentials（earthengine-api 内置实现）
+        # 主路径：google.oauth2 直接构造。earthengine-api 1.x 的
+        # ee.Initialize(credentials=...) 原生接受 google-auth 凭据对象；
+        # 旧实现的 ee.Credentials 类已在 1.x 移除，不可再引用。
         try:
-            creds = ee.ServiceAccountCredentials(email, key)
+            from google.oauth2 import service_account  # type: ignore
+
+            creds = service_account.Credentials.from_service_account_info(
+                sa_dict, scopes=scopes
+            )
             if project_id:
                 logger.debug(
                     "Loaded service account credentials for %s (project=%s)",
@@ -61,28 +68,21 @@ class GeeCredentialsLoader:
                     project_id,
                 )
             return creds
-        except Exception as exc:
-            logger.warning(
-                "ee.ServiceAccountCredentials failed (%s); falling back to google.oauth2",
-                exc,
-            )
-
-        # 回退：用 google.oauth2.service_account 构造，再转 ee.Credentials
-        try:
-            from google.oauth2 import service_account  # type: ignore
-            from google.auth.transport.requests import Request  # type: ignore
-
-            scopes = ["https://www.googleapis.com/auth/earthengine"]
-            google_creds = service_account.Credentials.from_service_account_info(
-                sa_dict, scopes=scopes
-            )
-            google_creds.refresh(Request())
-            ee_creds = ee.Credentials(google_creds.token, None)
-            return ee_creds
         except ImportError:
             logger.warning(
-                "google-auth not installed; returning raw service_account dict "
-                "(ee.Initialize may fail if it cannot self-resolve)"
+                "google-auth not installed; trying ee.ServiceAccountCredentials"
+            )
+
+        # 回退：ee.ServiceAccountCredentials。1.x 签名为
+        # (email, key_file, key_data)——key_data 接受完整 SA JSON 或 PEM 私钥，
+        # 私钥字符串绝不可按位置参数传入（会被当作 key_file 文件路径）。
+        try:
+            return ee.ServiceAccountCredentials(key_data=key)
+        except Exception as exc:
+            logger.warning(
+                "ee.ServiceAccountCredentials failed (%s); returning raw dict "
+                "(ee.Initialize may fail if it cannot self-resolve)",
+                exc,
             )
             return sa_dict
 

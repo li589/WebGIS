@@ -16,7 +16,7 @@ import shutil
 from typing import Any
 
 from app.services.workflow.service_container import submission_service
-from app.weatherengine.provider_registry import get_registry
+from app.weatherengine.provider_registry import get_registry, register_default_providers
 from app.weatherengine.providers.open_meteo_provider import OpenMeteoProvider
 from shared.contracts.api_contracts import WorkflowSubmitRequest
 
@@ -120,6 +120,8 @@ def _weather_frontend_compat_tests_env():
     cache_dir = os.path.join(os.getcwd(), ".data", "cache", "weatherengine")
     if os.path.exists(cache_dir):
         shutil.rmtree(cache_dir, ignore_errors=True)
+    # 注册默认 provider（open-meteo-online / open-meteo-local），防止 registry 为空
+    register_default_providers()
     # 确保每测用例仍启用 open-meteo-online（防止其他测试禁用后遗留）
     get_registry().set_enabled("open-meteo-online", True)
     yield ns

@@ -38,6 +38,8 @@ export const WORKFLOW_COPY = {
 
   // 结果回显空态
   noMapLayers: '工作流已完成，但未生成可显示的地图图层。',
+  /** noMapLayers 横幅限时显示时长（ms）——用户反馈：提示一段时间即可而非常驻 */
+  noMapLayersBannerTtl: 12_000,
 
   // 状态面板
   copyRunTimeline: '复制运行时间线',

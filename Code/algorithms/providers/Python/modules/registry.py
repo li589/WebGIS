@@ -64,7 +64,10 @@ def register_module(
         aliases: 别名列表（如 ["ndvi_daily_pipeline"]）
         template_overrides: RequestTemplateSpec 覆盖字段
             支持的 key: accepted_data_access_datasets / allowed_task_types /
-            allowed_algorithm_values / notes / required_algorithm_keys 等
+            allowed_algorithm_values / notes / required_algorithm_keys /
+            phase（节点阶段分类声明，如 "download" / "preprocess" /
+            "inversion" / "output" / "processing"；bridge 的
+            _classify_stage 优先读取此声明，substring 匹配为回退）等
             未覆盖的字段由 ModuleSpec 自动推导
         name_override: 注册名覆盖。若提供，使用此名称作为注册表 key，
             而非 module.name。供 @register_module_decorator(name=...) 使用。
@@ -162,3 +165,10 @@ def get_template_overrides(name: str) -> dict[str, Any]:
     _ensure_default_modules_loaded()
     canonical_name = MODULE_ALIASES.get(name, name)
     return _TEMPLATE_OVERRIDES.get(canonical_name, {})
+
+
+def get_module_phase(name: str) -> str | None:
+    """获取 module 声明的阶段分类（phase 声明缺失时返回 None）。"""
+    overrides = get_template_overrides(name)
+    phase = overrides.get("phase")
+    return str(phase) if phase else None

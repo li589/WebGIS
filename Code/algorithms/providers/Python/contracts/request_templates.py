@@ -22,6 +22,8 @@ class RequestTemplateSpec:
         default_factory=dict
     )
     notes: str | None = None
+    # key → hard|soft|optional（additive；未列出的键按 required/optional 旧语义）
+    datasource_severity: dict[str, str] = field(default_factory=dict)
 
 
 MODULE_REQUEST_TEMPLATES: dict[str, RequestTemplateSpec] = {
@@ -208,16 +210,20 @@ MODULE_REQUEST_TEMPLATES: dict[str, RequestTemplateSpec] = {
             "gldas_template_file",
         ),
         accepted_data_access_by_required_key={
-            "omega_block_dir": ("omega_block_dir",),
-            "anc_root": ("anc_root",),
-            "smap_folder": ("smap_folder",),
-            "ndvi_folder": ("ndvi_folder",),
+            "omega_block_dir": ("omega_block_dir", "omega_block_output", "daily_omega_dir"),
+            "anc_root": ("anc_root", "ancillary_mat"),
+            "smap_folder": ("smap_folder", "smap_daily_mat"),
+            "ndvi_folder": ("ndvi_folder", "ndvi_daily_mat"),
         },
         optional_datasource_keys=(
             "ndvi_clim_folder",
             "ndvi_extrema_mat",
             "avg_omega_doy_dir",
             "omega_block_mat",
+            "omega_block_output",
+            "ancillary_mat",
+            "smap_daily_mat",
+            "ndvi_daily_mat",
             "gldas_mat",
             "gldas_mat_folder",
             "gldas_folder",

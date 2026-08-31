@@ -53,4 +53,39 @@ describe('result-adapter analysis charts/tables', () => {
     expect(job.analysisTables?.length).toBe(1)
     expect(job.analysisTables?.[0].columns).toEqual(['center', 'count'])
   })
+  it('does not leak technical omega workflow_entry_name into job layer name', async () => {
+    const job = await buildJobLayer(
+      {
+        run_id: 'run-omega-123',
+        command_type: 'algorithm',
+        status: 'running',
+        progress: 10,
+        created_at: '2026-08-05T00:00:00Z',
+        updated_at: '2026-08-05T00:00:01Z',
+        message: '',
+        result_dto: { workflow_entry_name: 'omega_sf_fenkuai_smap_online' },
+        result_refs: [],
+      } as never,
+      'SMAP 动态 ω 反演',
+    )
+    expect(job.name).toBe('SMAP 动态 ω 反演')
+  })
+
+  it('keeps human workflow entry name when it is not technical', async () => {
+    const job = await buildJobLayer(
+      {
+        run_id: 'run-human-123',
+        command_type: 'algorithm',
+        status: 'running',
+        progress: 10,
+        created_at: '2026-08-05T00:00:00Z',
+        updated_at: '2026-08-05T00:00:01Z',
+        message: '',
+        result_dto: { workflow_entry_name: '自定义演示工作流' },
+        result_refs: [],
+      } as never,
+      '默认目录名',
+    )
+    expect(job.name).toBe('自定义演示工作流')
+  })
 })

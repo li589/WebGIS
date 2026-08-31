@@ -16,13 +16,19 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { Check, AlertTriangle } from '../../ui/icons'
 import type { LGraphNodeClass } from '../litegraph-setup'
 import {
+  fetchRemoteDatasetPolicy,
   fetchRemoteSources,
   fetchRemoteStorageProfiles,
   testRemoteStorageProfile,
 } from '../../../services/settings-api'
-import type { RemoteSourceEntry, RemoteStorageProfile } from '../../../types/api-reexports'
+import type {
+  RemoteDatasetPolicy,
+  RemoteSourceEntry,
+  RemoteStorageProfile,
+} from '../../../types/api-reexports'
 import RemoteDirBrowser from './RemoteDirBrowser.vue'
 import ParamCombobox from '../ParamCombobox.vue'
+import { authorizedPrefixesForSource, filterSourcesByDatasetPolicy } from './remote-source-policy'
 import {
   type FormErrors,
   isoToYyyymmdd,
@@ -134,12 +140,26 @@ async function loadSyncProfiles() {
 
 // ── 已注册远程数据源（settings → 远程存储「添加为数据源」的别名注册表）──────
 const registeredSources = ref<RemoteSourceEntry[]>([])
+const datasetPolicy = ref<RemoteDatasetPolicy[] | null>(null)
 const selectedSourceId = ref('')
 
 async function loadRegisteredSources() {
   try {
-    const entries = await fetchRemoteSources()
-    registeredSources.value = entries.filter(
+    // policy 拉取失败 → 置 null（fail-open 放行全部，与后端降级语义一致）
+    const [entriesResult, policyResult] = await Promise.allSettled([
+      fetchRemoteSources(),
+      fetchRemoteDatasetPolicy(),
+    ])
+    if (policyResult.status === 'fulfilled') {
+      datasetPolicy.value = policyResult.value
+    } else {
+      console.warn('[SshSyncForm] dataset policy fetch failed, skip filtering')
+    }
+    if (entriesResult.status !== 'fulfilled') {
+      registeredSources.value = []
+      return
+    }
+    registeredSources.value = entriesResult.value.filter(
       (s) =>
         s.kind === 'storage_profile' &&
         s.ref_exists &&
@@ -151,9 +171,25 @@ async function loadRegisteredSources() {
   }
 }
 
+/** #57：按数据集授权策略过滤后的可选源（site_compatible 放行；legacy 按授权前缀交集）。 */
+const selectableSources = computed(() =>
+  filterSourcesByDatasetPolicy(registeredSources.value, datasetPolicy.value),
+)
+
+/** 当前选中源的授权前缀提示（legacy 模式下展示，引导用户填已授权路径）。 */
+const selectedSourcePrefixHint = computed(() => {
+  if (!selectedSourceId.value) return ''
+  const entry = registeredSources.value.find((s) => s.remote_source_id === selectedSourceId.value)
+  if (!entry || entry.access_mode === 'site_compatible') return ''
+  const prefixes = authorizedPrefixesForSource(entry, datasetPolicy.value)
+  return prefixes.length
+    ? `已授权前缀：${prefixes.slice(0, 3).join('、')}${prefixes.length > 3 ? '…' : ''}`
+    : ''
+})
+
 /** 选中已注册数据源：快捷填充 server_type（引用的 profile）+ remote_path。 */
 function applyRegisteredSource() {
-  const entry = registeredSources.value.find((s) => s.remote_source_id === selectedSourceId.value)
+  const entry = selectableSources.value.find((s) => s.remote_source_id === selectedSourceId.value)
   if (!entry || props.readonly) return
   update('server_type', entry.ref_id)
   update('remote_path', entry.remote_path || '/')
@@ -292,14 +328,14 @@ function toggleFilter(ext: string) {
       <span v-else-if="serverHint" class="field-hint">{{ serverHint }}</span>
     </div>
 
-    <!-- 已注册远程数据源快捷填充 -->
+    <!-- 已注册远程数据源快捷填充（#57：按数据集授权策略过滤） -->
     <div v-if="registeredSources.length" class="form-row">
       <label class="form-label">快捷填充：已注册数据源</label>
       <div class="input-with-btn">
         <select v-model="selectedSourceId" class="form-input form-select" :disabled="readonly">
           <option value="">选择已注册数据源…</option>
           <option
-            v-for="src in registeredSources"
+            v-for="src in selectableSources"
             :key="src.remote_source_id"
             :value="src.remote_source_id"
           >
@@ -316,6 +352,10 @@ function toggleFilter(ext: string) {
           填充
         </button>
       </div>
+      <span v-if="selectedSourcePrefixHint" class="field-hint">{{ selectedSourcePrefixHint }}</span>
+      <span v-else-if="registeredSources.length > selectableSources.length" class="field-hint">
+        已按数据集授权过滤 {{ registeredSources.length - selectableSources.length }} 个未授权源
+      </span>
     </div>
 
     <!-- 连接状态 -->

@@ -24,6 +24,7 @@ import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from data_root import resolve_data_root
 
 # ─── 配置 ────────────────────────────────────────────────────────────────────
 
@@ -40,7 +41,7 @@ SERVERS = {
     },
 }
 
-LOCAL_ROOT = Path(r"I:\Geograph_DataSet")
+LOCAL_ROOT = resolve_data_root()
 BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 REQUEST_DELAY = 0.12
 DOWNLOAD_TIMEOUT = 3600  # 60 分钟

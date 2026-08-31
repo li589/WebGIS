@@ -160,7 +160,7 @@ def _real_services(tmpdir: str):
 
 
 def test_fail_stuck_running_marks_old_running_failed():
-    """A running run older than the threshold is marked failed."""
+    """A running run with no activity older than the idle threshold is marked failed."""
     with TemporaryDirectory() as tmpdir:
         repository, persistence, transitions, svc = _real_services(tmpdir)
         try:
@@ -211,6 +211,54 @@ def test_fail_stuck_running_skips_recent_running():
             assert failed == 0, "recent run must not be marked failed"
             run = repository.get_run("run-fresh")
             assert run.status == ExecutionStatus.running, "recent run must stay running"
+        finally:
+            repository.close()
+
+
+def test_fail_stuck_running_skips_when_events_show_activity():
+    """Stale updated_at must not kill a run that still emits progress events.
+
+    Mid-run progress often only appends workflow_events and never bumps
+    workflow_runs.updated_at (e.g. long NSIDC downloads). Idle watchdog must
+    treat the latest event timestamp as activity.
+    """
+    from shared.contracts.api_contracts import EventChannel, LogLevel, WorkflowEvent
+
+    with TemporaryDirectory() as tmpdir:
+        repository, persistence, transitions, svc = _real_services(tmpdir)
+        try:
+            past = datetime.now(UTC) - timedelta(hours=3)
+            now = datetime.now(UTC)
+            payload = _payload()
+            repository.save_run(
+                transitions.build_execution_transition(
+                    run_id="run-alive-download",
+                    payload=payload,
+                    status=ExecutionStatus.running,
+                    progress=7,
+                    message="下载中",
+                    created_at=past,
+                    updated_at=past,
+                )
+            )
+            repository.append_event(
+                WorkflowEvent(
+                    event_id="evt-progress-alive",
+                    run_id="run-alive-download",
+                    channel=EventChannel.log,
+                    level=LogLevel.info,
+                    message="文件 21/31 · 已下载 288.00 MB · 256 KB/s",
+                    progress=7,
+                    payload={"node_progress": {"node_id": "nsidc_smap_download"}},
+                    created_at=now,
+                )
+            )
+
+            failed = svc.fail_stuck_running_workflows(max_running_seconds=60)
+
+            assert failed == 0, "active progress events must keep the run running"
+            run = repository.get_run("run-alive-download")
+            assert run is not None and run.status == ExecutionStatus.running
         finally:
             repository.close()
 

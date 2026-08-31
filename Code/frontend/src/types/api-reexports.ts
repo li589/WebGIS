@@ -74,6 +74,29 @@ export type LayerCatalogResponse = Schema<'LayerCatalogResponse'>
 export type LayerCategoryDef = Schema<'LayerCategoryDef'>
 export type LayerCategoryResponse = Schema<'LayerCategoryResponse'>
 
+// ── 图层平台子系统：资产状态与生命周期（P0，2026-08-24） ───────────────────
+
+export type LayerAssetStateResponse = Schema<'LayerAssetStateResponse'>
+export type LayerLifecycleRunSummary = Schema<'LayerLifecycleRunSummary'>
+export type LayerLifecycleResponse = Schema<'LayerLifecycleResponse'>
+
+// ── 图层平台子系统：在线源同步（P1，2026-08-25） ─────────────────────────────
+
+export type LayerOnlineSyncRequest = Schema<'LayerOnlineSyncRequest'>
+export type LayerOnlineSyncResponse = Schema<'LayerOnlineSyncResponse'>
+
+// ── 图层平台子系统：课题组工作流模板（P1，2026-08-25） ───────────────────────
+
+export type WorkflowTemplateSummary = Schema<'WorkflowTemplateSummary'>
+export type WorkflowTemplateListResponse = Schema<'WorkflowTemplateListResponse'>
+export type WorkflowTemplateRunRequest = Schema<'WorkflowTemplateRunRequest'>
+export type WorkflowTemplateRunResponse = Schema<'WorkflowTemplateRunResponse'>
+
+// ── 图层平台子系统：统一在线源凭证状态（P2-3，2026-08-25） ────────────────────
+
+export type OnlineSourceCredentialStatus = Schema<'OnlineSourceCredentialStatus'>
+export type OnlineSourcesResponse = Schema<'OnlineSourcesResponse'>
+
 // ── Weather 相关 ──────────────────────────────────────────────────────────
 
 export type WeatherLayerRenderHint = Schema<'WeatherLayerRenderHint'>
@@ -117,6 +140,8 @@ export type WeatherProviderPriorityResponse = Schema<'WeatherProviderPriorityRes
 export type WeatherProviderDeletedResponse = Schema<'WeatherProviderDeletedResponse'>
 
 export type DataSourceConfig = Schema<'DataSourceConfig'>
+export type OnlineTileSource = Schema<'OnlineTileSource'>
+export type OnlineTileSourceUpsertRequest = Schema<'OnlineTileSourceUpsertRequest'>
 export type DataSourcePathsUpdateRequest = Schema<'DataSourcePathsUpdateRequest'>
 export type DataSourcePathsUpdateResponse = Schema<'DataSourcePathsUpdateResponse'>
 export type DiscoveredDataset = Schema<'DiscoveredDataset'>
@@ -182,7 +207,7 @@ export type PortalCatalogResponse = Schema<'PortalCatalogResponse'>
 export type PortalUpsertRequest = Schema<'PortalUpsertRequest'>
 export type PortalTestResponse = Schema<'PortalTestResponse'>
 export type PortalSearchResponse = Schema<'PortalSearchResponse'>
-export type PortalSearchResultItem = Schema<'PortalSearchResultItem'>
+export type PortalSearchDatasetItem = Schema<'PortalSearchDatasetItem'>
 
 // ── 可用数据集 / 远程数据源注册表（Phase C） ─────────────────────────────────
 
@@ -192,6 +217,17 @@ export type DatasetRescanResponse = Schema<'DatasetRescanResponse'>
 export type RemoteSourceEntry = Schema<'RemoteSourceEntry'>
 export type RemoteSourceRefBadge = Schema<'RemoteSourceRefBadge'>
 export type RemoteSourceUpsertRequest = Schema<'RemoteSourceUpsertRequest'>
+// 注册并添加到图层（原子端点，2026-08-25 P2/Wave 2）
+export type RegisterAndAddRequest = Schema<'RegisterAndAddRequest'>
+export type RegisterAndAddResponse = Schema<'RegisterAndAddResponse'>
+export type WorkflowHint = Schema<'WorkflowHint'>
+
+// ── 远程数据集授权（数据集化改造阶段 1） ─────────────────────────────────────
+
+export type RemoteDatasetGrant = Schema<'RemoteDatasetGrant'>
+export type RemoteDatasetGrantUpsertRequest = Schema<'RemoteDatasetGrantUpsertRequest'>
+export type RemoteDatasetPolicy = Schema<'RemoteDatasetPolicy'>
+export type RemoteDatasetPolicyDataset = Schema<'RemoteDatasetPolicyDataset'>
 
 export type DeletedResponse = Schema<'DeletedResponse'>
 

@@ -29,6 +29,7 @@ import {
   WORKFLOW_OUTPUT_SUBCATEGORY,
 } from '../workflow-output-layers'
 import { isWeatherEngineCatalogId } from './weather-session'
+import { isEnglishInversionCatalogId, resolveInversionCatalogId } from './inversion-catalog'
 import type {
   ActiveLayer,
   ActiveRunLayerGroup,
@@ -58,6 +59,10 @@ export interface CatalogRuntimeSlice {
   resolveEffectiveDescriptor: (catalogId: string) => LayerDescriptor | null
   getCatalogWorkflowEngine: (catalogId: string) => string | null
   supportsAnalysisWorkflow: (catalogId: string) => boolean
+  /** overlay 静态/时间序列图层（engine=overlay_registry 或空）：无工作流但有 PNG 缓存。 */
+  isOverlayDisplayOnlyLayer: (catalogId: string) => boolean
+  /** 添加路径独立语义：overlay 图层永不阻断。运行按钮仍走 getCatalogRunBlockReason。 */
+  getCatalogAddBlockReason: (catalogId: string) => string | null
   getCatalogRunBlockReason: (catalogId: string) => string | null
   canRunCatalog: (catalogId: string) => boolean
   isWeatherEngineLayer: (catalogId: string) => boolean
@@ -150,29 +155,47 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     const researchCategory = LAYER_CATEGORIES.find((c) => c.id === 'research-group')
     const researchAccent = researchCategory?.accentColor ?? '#ff6f91'
     const researchChip = researchCategory?.chipTone ?? 'rgba(255, 111, 145, 0.16)'
-    const outputItems: RuntimeLayerLibraryItem[] = outputStore.entries.map((entry) => ({
-      catalogId: entry.localId,
-      name: entry.name,
-      category: 'research-group',
-      subCategory: WORKFLOW_OUTPUT_SUBCATEGORY,
-      metricLabel: '产出',
-      metricUnit: '',
-      metricPrecision: 1,
-      updateLabel: '工作流驱动',
-      sourceLabel: `工作流: ${entry.sourceWorkflowId}`,
-      accentColor: researchAccent,
-      accentGlow: 'rgba(255, 111, 145, 0.28)',
-      chipTone: researchChip,
-      sources: [],
-      description: `模型输出 · 源图层: ${entry.sourceLayerId}`,
-      engine: entry.engine,
-      workflowName: entry.name,
-      runReadiness: 'ready',
-      runReadinessSummary: '工作流产出图层，可运行源工作流刷新数据',
-      runReadinessNotes: [],
-      backendStatus: 'sample',
-      supportsTime: false,
-    }))
+    // 仅滤显示名/localId 污染；sourceWorkflowId 是机器路由键，不进卡片名
+    const outputItems: RuntimeLayerLibraryItem[] = outputStore.entries
+      .filter(
+        (entry) =>
+          !isEnglishInversionCatalogId(entry.name) && !isEnglishInversionCatalogId(entry.localId),
+      )
+      .map((entry) => {
+        // 勿把 omega_sf_fenkuai_* 写进 sourceLabel / description（库卡片副文案）
+        const sourceLabel = isEnglishInversionCatalogId(entry.sourceWorkflowId)
+          ? '工作流产出'
+          : `工作流: ${entry.sourceWorkflowId}`
+        const mappedSource = resolveInversionCatalogId(entry.sourceLayerId)
+        const sourceLayerLabel = isEnglishInversionCatalogId(entry.sourceLayerId)
+          ? mappedSource.startsWith('method-')
+            ? mappedSource
+            : '反演目录图层'
+          : entry.sourceLayerId
+        return {
+          catalogId: entry.localId,
+          name: entry.name,
+          category: 'research-group' as const,
+          subCategory: WORKFLOW_OUTPUT_SUBCATEGORY,
+          metricLabel: '产出',
+          metricUnit: '',
+          metricPrecision: 1,
+          updateLabel: '工作流驱动',
+          sourceLabel,
+          accentColor: researchAccent,
+          accentGlow: 'rgba(255, 111, 145, 0.28)',
+          chipTone: researchChip,
+          sources: [],
+          description: `模型输出 · 源图层: ${sourceLayerLabel}`,
+          engine: entry.engine,
+          workflowName: entry.name,
+          runReadiness: 'ready' as const,
+          runReadinessSummary: '工作流产出图层，可运行源工作流刷新数据',
+          runReadinessNotes: [],
+          backendStatus: 'sample' as const,
+          supportsTime: false,
+        }
+      })
 
     const isDatasetLibraryItem = (item: RuntimeLayerLibraryItem) =>
       item.category !== 'boundary' &&
@@ -183,6 +206,7 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     return items
       .concat(outputItems)
       .filter(isDatasetLibraryItem)
+      .filter((item) => !isEnglishInversionCatalogId(item.catalogId) && !isEnglishInversionCatalogId(item.name))
       .sort((a, b) => {
         const categoryOrderA = CATEGORY_INDEX_BY_ID.get(a.category) ?? Number.MAX_SAFE_INTEGER
         const categoryOrderB = CATEGORY_INDEX_BY_ID.get(b.category) ?? Number.MAX_SAFE_INTEGER
@@ -320,8 +344,27 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     const backendLayerId = resolveBackendLayerId(catalogId)
     if (isWeatherEngineLayer(backendLayerId) || isWeatherEngineLayer(catalogId)) return false
     const engine = getCatalogWorkflowEngine(backendLayerId) || getCatalogWorkflowEngine(catalogId)
-    // overlay_registry / missing engine = display-only; only these engines can submit /workflow-runs
-    return engine === 'python_provider' || engine === 'gee'
+    if (engine === 'python_provider' || engine === 'gee') return true
+    // overlay_registry 也有图层资产工作流（/overlay-asset-workflows），
+    // 只是不走分析引擎；runWorkflowForCatalog 会根据该返回值分流。
+    if (engine === 'overlay_registry' || engine === '') return true
+    return false
+  }
+
+  /** overlay 静态/时间序列图层也是工作流驱动：/overlay-asset-workflows
+   * 先检查烘焙资产，陈旧/缺失后台重烘；只是不走 python_provider 分析引擎。 */
+  function isOverlayDisplayOnlyLayer(catalogId: string): boolean {
+    const backendLayerId = resolveBackendLayerId(catalogId)
+    if (isWeatherEngineLayer(backendLayerId) || isWeatherEngineLayer(catalogId)) return false
+    const engine =
+      getCatalogWorkflowEngine(backendLayerId) || getCatalogWorkflowEngine(catalogId) || ''
+    return engine === 'overlay_registry' || engine === ''
+  }
+
+  /** 添加路径独立语义：overlay 图层永不阻断（其 PNG 缓存由 map-canvas 自动加载）。 */
+  function getCatalogAddBlockReason(catalogId: string): string | null {
+    if (isOverlayDisplayOnlyLayer(catalogId)) return null
+    return getCatalogRunBlockReason(catalogId)
   }
 
   function getCatalogRunBlockReason(catalogId: string) {
@@ -397,6 +440,8 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     resolveEffectiveDescriptor,
     getCatalogWorkflowEngine,
     supportsAnalysisWorkflow,
+    isOverlayDisplayOnlyLayer,
+    getCatalogAddBlockReason,
     getCatalogRunBlockReason,
     canRunCatalog,
     isWeatherEngineLayer,

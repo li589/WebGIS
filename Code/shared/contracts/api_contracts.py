@@ -157,6 +157,23 @@ class OnlineTemporalCapability(BaseModel):
     """提交优先级（'low' | 'normal'），预取用 low 避免抢占用户操作。"""
 
 
+class WorkflowVariantDef(BaseModel):
+    """工作流变体定义（X2：同一图层的多执行形态，如在线/本地反演）。
+
+    LayerDescriptor.workflow_variants 以变体键（"online" / "local"）映射到具体种子；
+    前端据此在分析框渲染「反演来源」切换控件，默认提交 descriptor.workflow_id
+    所指变体（约定为默认变体）。
+    """
+
+    workflow_id: str
+    """变体对应的 workflow 种子 id（如 omega_sf_fenkuai_fy_online）。"""
+    label: str | None = None
+    """变体展示名（如 "在线反演" / "本地反演"）；缺省时前端按变体键回退显示。"""
+    credential_profile: str | None = None
+    """在线变体所需门户凭据 profile（"nsmc" / "earthdata" 等）；
+    readiness 二元语义据此判定在线变体可用性。"""
+
+
 class LayerDescriptor(BaseModel):
     layer_id: str
     dataset_key: str
@@ -181,11 +198,18 @@ class LayerDescriptor(BaseModel):
     workflow_name: str | None = None
     workflow_id: str | None = None
     workflow_definition: dict[str, Any] | None = None
+    # 需求2（2026-08-22）：工作流中文命名配置（group_title / output_labels），
+    # 由种子 extra / descriptor workflow_extra 透传，前端建组优先读取。
+    workflow_extra: dict[str, Any] | None = None
     default_task_type: str | None = None
     default_data_access_sources: dict[str, list[str]] = Field(default_factory=dict)
     run_readiness: str = "ready"
     run_readiness_summary: str | None = None
     run_readiness_notes: list[str] = Field(default_factory=list)
+    """变体图层：在线门户凭据是否就绪（由 describe_layer_run_readiness 投影）。"""
+    online_ready: bool | None = None
+    """变体图层：本地默认数据源是否可解析。"""
+    local_ready: bool | None = None
     # ── 课题组数据集元数据扩展（Phase 1：扩展和细化）──────────────────────────────
     # 用于课题组数据集的归属、时间范围与数据源引用追踪；其他图层可留空。
     data_owner: str | None = None
@@ -218,6 +242,9 @@ class LayerDescriptor(BaseModel):
     """是否为行政区边界图层。"""
     online_temporal: OnlineTemporalCapability | None = None
     """在线时间获取能力声明。None 表示该图层不支持在线历史时间获取。"""
+    workflow_variants: dict[str, WorkflowVariantDef] | None = None
+    """工作流变体（X2）。键为变体名（"online" / "local"），值为对应种子定义；
+    None 表示单变体图层（仅 descriptor.workflow_id 一条执行路径）。"""
 
 
 class LayerCatalogResponse(BaseModel):
@@ -262,6 +289,7 @@ class FailureCategory(str, Enum):
     # ---- 终态：不可重试 ----
     validation_error = "validation_error"
     not_found = "not_found"
+    coverage_gap = "coverage_gap"
     permission_denied = "permission_denied"
     contract_violation = "contract_violation"
     terminal_failure = "terminal_failure"
@@ -695,6 +723,163 @@ class WorkflowRunViewResponse(BaseModel):
     updated_at: datetime
 
 
+# ── 图层平台子系统：资产状态与生命周期聚合契约（P0，2026-08-24） ─────────────
+
+
+class LayerAssetStateResponse(BaseModel):
+    """单图层烘焙资产状态（GET /layer-assets/{layer_id}）。"""
+
+    layer_id: str
+    asset_state: str
+    """missing | unversioned | stale | fresh"""
+
+    bake_version: int | None = None
+    current_bake_version: int
+
+    png_exists: bool = False
+    bounds_exists: bool = False
+
+    category: str = "static"
+    """static | time-series"""
+
+    time_list: list[str] = Field(default_factory=list)
+    default_time: str | None = None
+
+    asset_task: str | None = None
+    """可用的烘焙任务 key；None 表示该图层暂未配置烘焙任务。"""
+
+
+class LayerLifecycleRunSummary(BaseModel):
+    """lifecycle 聚合中的最近 run 摘要（不含完整 payload）。"""
+
+    run_id: str
+    workflow_kind: str | None = None
+    status: str
+    progress: int
+    message: str | None = None
+    updated_at: datetime
+
+
+class LayerLifecycleResponse(BaseModel):
+    """图层生命周期聚合视图（GET /layers/{layer_id}/lifecycle）。
+
+    前端不再自行拼接 jobLayer/overlayTimeStates/asset_state，
+    统一从本响应读取「资产 + 最近 run + 时间轴」状态。
+    """
+
+    layer_id: str
+    asset: LayerAssetStateResponse
+    recent_runs: list[LayerLifecycleRunSummary] = Field(default_factory=list)
+
+    lifecycle_state: str
+    """fresh | stale | updating | missing | failed"""
+
+    message: str | None = None
+    updated_at: datetime
+
+
+class LayerOnlineSyncRequest(BaseModel):
+    """在线源同步请求（POST /layer-assets/{layer_id}/sync，图层平台子系统 P1）。
+
+    统一入口：在线时间获取/在线源拉取不再让前端自行拼 workflow 提交参数。
+    服务端据此创建 ``workflow_kind=online_sync`` 的 run，并复用现有
+    workflow-runs 状态/事件/取消契约。失败时保留旧资产显示。
+    """
+
+    time_key: str | None = None
+    """目标时间块 key（如 '2023-01' / '2023-01-15'）；缺省=图层 default_time。"""
+
+    time_range: TimeRange | None = None
+    """显式时间范围；与 time_key 至少给一个。"""
+
+    is_prefetch: bool = False
+    """是否预获取（低优先级，达到并发上限可跳过）。"""
+
+    priority: str = "normal"
+    """'low' | 'normal'；预获取通常 low。"""
+
+
+class LayerOnlineSyncResponse(BaseModel):
+    """在线源同步响应：复用 WorkflowAcceptedResponse 语义。"""
+
+    run_id: str | None = None
+    """已创建或复用的 run id；skip 原因为 cooldown/succeeded 时为既有 run。"""
+
+    status: str
+    """submitted | in-flight | cooldown | succeeded | skipped-unsupported"""
+
+    message: str
+    layer_id: str
+    time_key: str | None = None
+    status_url: str | None = None
+    events_url: str | None = None
+
+
+# ── 图层平台子系统 P1：课题组工作流模板一键显示 ─────────────────────────────
+
+
+class WorkflowTemplateSummary(BaseModel):
+    """课题组工作流模板摘要（GET /workflows/templates）。
+
+    从 workflow_seeds/system + workflow_definitions/user 聚合；
+    is_template=true 或 tags 含 "template"/"lab" 的定义视为课题组模板。
+    """
+
+    workflow_id: str
+    name: str
+    description: str | None = None
+    engine: str = "unknown"
+    """python_provider | gee | weather | analysis"""
+
+    linked_layer_id: str | None = None
+    """模板完成后自动上图的目标图层（None=仅运行不上图）"""
+
+    auto_display: bool = True
+    """完成后是否自动 materialize-map-layers"""
+
+    resource_profile: str = "standard"
+    """light | standard | heavy | batch（realtime 为 light 别名）"""
+
+    is_template: bool = True
+    readonly: bool = False
+    kind: str = "system"
+    node_count: int = 0
+    tags: list[str] = Field(default_factory=list)
+    updated_at: str | None = None
+
+
+class WorkflowTemplateListResponse(BaseModel):
+    items: list[WorkflowTemplateSummary] = Field(default_factory=list)
+    count: int
+
+
+class WorkflowTemplateRunRequest(BaseModel):
+    """模板一键运行请求（POST /workflows/templates/{workflow_id}/runs）。"""
+
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    """模板参数覆盖（与种子 defaults 合并）。"""
+
+    time_range: TimeRange | None = None
+    resource_profile: str | None = None
+    """覆盖模板默认资源档位。"""
+
+    auto_display: bool | None = None
+    """覆盖模板默认 auto_display。"""
+
+
+class WorkflowTemplateRunResponse(BaseModel):
+    """模板一键运行响应：复用 WorkflowAcceptedResponse 语义。"""
+
+    run_id: str
+    status: str
+    message: str
+    workflow_id: str
+    linked_layer_id: str | None = None
+    auto_display: bool = True
+    status_url: str | None = None
+    events_url: str | None = None
+
+
 class WeatherLayerRenderHint(BaseModel):
     layer_id: str
     paint_mode: str = "point_symbol"
@@ -919,3 +1104,91 @@ class AnalysisRunRequest(BaseModel):
     bbox: BoundingBox | None = None
     params: dict[str, Any] = Field(default_factory=dict)
     show_on_map: bool = True
+
+
+class OnlineSourceCredentialStatus(BaseModel):
+    """单个在线数据源的凭证就绪状态（GET /config/online-sources）。
+
+    图层平台子系统 P2-3：统一凭证可见性聚合。不迁移各源凭证存储
+    （GEE=加密 SQLite 账号池；SSH HPC/Earthdata/FileBrowser=.env），
+    仅收口「配置了没有 / 可用不可用」的管理可见性。
+    """
+
+    source_id: str
+    """gee | ssh_hpc | earthdata | filebrowser"""
+
+    display_name: str
+
+    kind: str
+    """account_pool=加密账号池；env_credential=环境变量凭证"""
+
+    configured: bool
+    """该源已具备可用凭证（账号池有启用账号 / 必需 env 字段齐全）"""
+
+    detail: str
+    """人类可读的就绪描述（不含任何明文密钥）"""
+
+    account_count: int | None = None
+    """账号池类：总账号数"""
+
+    enabled_count: int | None = None
+    """账号池类：启用账号数"""
+
+    last_tested_at: str | None = None
+    """账号池类：最近一次凭证测试时间"""
+
+    last_test_status: str | None = None
+    """账号池类：最近测试结果 ok/failed"""
+
+    fields: dict[str, bool] = Field(default_factory=dict)
+    """env 凭证类：字段名 → 是否已配置（只报布尔，不回显值）"""
+
+
+class OnlineSourcesResponse(BaseModel):
+    """统一在线源凭证状态响应。"""
+
+    sources: list[OnlineSourceCredentialStatus] = Field(default_factory=list)
+    count: int
+
+
+class DataInputPolicyItem(BaseModel):
+    """单条数据输入策略（时间窗对齐 / 源路由等；GET|PUT /config/data-input-policies）。"""
+
+    id: str
+    scope: str
+    """module | workflow_id | layer_id | *"""
+
+    scope_id: str | None = None
+    input_key: str
+    """time_window_align_on_zero_intersection | source_route_local_first"""
+
+    mode: str
+    """deny | allow_with_confirm | allow_silent
+    （source_route_local_first：silent=自动选源；confirm=缺本地时确认改在线；deny=仅手动）"""
+
+    notes: str | None = None
+
+
+class DataInputPoliciesResponse(BaseModel):
+    """数据输入策略投影（seed ≺ runtime 合并后）。"""
+
+    version: int = 1
+    policies: list[DataInputPolicyItem] = Field(default_factory=list)
+    """合并后的生效表（seed ≺ runtime）。"""
+
+    runtime_override_present: bool = False
+    seed_policies: list[DataInputPolicyItem] = Field(default_factory=list)
+    """仅种子文件条目（只读参考；勿整表写回 runtime）。"""
+
+    runtime_policies: list[DataInputPolicyItem] = Field(default_factory=list)
+    """仅 runtime 覆盖文件条目；PUT 应只写此层。"""
+
+
+class DataInputPoliciesUpdateRequest(BaseModel):
+    """写入 runtime 覆盖（仅 overrides；同 id 覆盖 seed；热载无需重启）。
+
+    勿把 GET.policies（合并表）原样 PUT——会固化 seed、阻断后续种子更新。
+    """
+
+    version: int = 1
+    policies: list[DataInputPolicyItem] = Field(default_factory=list)

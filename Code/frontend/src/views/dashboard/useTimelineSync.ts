@@ -10,6 +10,7 @@
  */
 import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import type { useUiStore } from '../../stores/ui'
+import { useTimelineActionBannerStore } from '../../stores/timeline-action-banner'
 import { useLayerWorkspace, useWorkflowRun } from '../../stores/layers/selectors'
 import type { useLogStore } from '../../stores/log'
 import type { useWeatherTileManager } from '../../stores/weather-tile-manager'
@@ -161,6 +162,8 @@ export function useTimelineSync(
     const layer = workspace.activeLayers.value.find((l) => l.catalogId === layerCatalogId)
     const scienceSnap = snapTargetFromLayer(layer)
     if (!scienceSnap) return
+    // 程序化 snap 抑制顶栏确认，避免 add→snap→confirm→reuse 循环
+    useTimelineActionBannerStore().suppressConfirm(3_500)
     uiStore.applyDateHour(scienceSnap.date, scienceSnap.hour)
     uiStore.applyTimelineFromLayerGranularity(scienceSnap.granularity)
     uiStore.rememberLayerTime(layerCatalogId)
@@ -225,34 +228,34 @@ export function useTimelineSync(
         if (!ids.includes(id)) knownActiveInstanceIds.delete(id)
       }
       if (added.length === 0) return
+      // 产品约定：添加图层强制独立记忆，再 snap 到最新有数据时刻
       if (unifiedTimeLock.value) {
-        if (
-          added.some(
-            (id) => workspace.activeLayers.value.find((l) => l.instanceId === id)?.importedRaster,
-          )
-        ) {
-          refreshImportedRasterEffectiveTimes()
-        }
-        return
+        uiStore.setUnifiedTimeLock(false)
       }
       for (const instanceId of added) {
         const layer = workspace.activeLayers.value.find((l) => l.instanceId === instanceId)
         if (!layer) continue
         if (layer.importedRaster?.timeList?.length) {
           pendingSnapCatalogIds.add(layer.catalogId)
+          // 工作流渐进物化带 runGroupId：未点播放不抢轴（色段仍会更新）
+          if (!isPlaying.value && layer.runGroupId) {
+            continue
+          }
           snapTimelineToLayerLatest(layer.catalogId, `新加科学图层 ${layer.catalogId} → 最新切片`)
+          uiStore.rememberLayerTime(layer.catalogId, { force: true })
           break
         }
         if (!workspace.isWeatherEngineLayer(layer.catalogId)) continue
         pendingSnapCatalogIds.add(layer.catalogId)
         snapTimelineToLatestValid(`新加图层 ${layer.catalogId} → 最新有效时次`)
+        uiStore.rememberLayerTime(layer.catalogId, { force: true })
         break
       }
     },
     { immediate: true },
   )
 
-  // 渐进块：非锁定非统一时，科学层 time_list 增长则跟最新块
+  // 渐进块：仅在时间轴播放中跟随最新块；未点播放时不抢用户选定时刻
   const scienceTimeListSignature = computed(() =>
     workspace.activeLayers.value
       .filter((l) => l.importedRaster?.timeList?.length)
@@ -275,7 +278,7 @@ export function useTimelineSync(
     refreshImportedRasterEffectiveTimes()
     if (!prev) return
     if (unifiedTimeLock.value) return
-    if (isPlaying.value) return
+    if (!isPlaying.value) return
 
     const selected = workspace.activeLayers.value.find(
       (l) => l.catalogId === selectedCatalogId.value,
@@ -303,7 +306,8 @@ export function useTimelineSync(
     reason: string,
   ) {
     if (unifiedTimeLock.value) return
-    if (isPlaying.value) return
+    // 未点播放时不随工作流块 seek；inFlight 键仍由 emitWorkflowProgressTimeSeek 更新色段
+    if (!isPlaying.value) return
     if (uiStore.isLayerTimeLocked(catalogId)) return
 
     const target = timelineTargetFromWorkflowTimeKey(timeKey)
@@ -358,7 +362,8 @@ export function useTimelineSync(
     { deep: true },
   )
 
-  // 运行启动：有预期时间段时把轴对齐到 start_at
+  // 运行启动：仅在时间轴播放中首次对齐 start_at（未点播放不抢用户选定时刻）
+  const alignedRunStartJobs = new Set<string>()
   watch(
     (): { jobId: string; startAt: string; status: string } | null => {
       const layer = workspace.activeLayers.value.find(
@@ -375,13 +380,24 @@ export function useTimelineSync(
     },
     (hint, prev) => {
       if (!hint) return
-      if (prev && prev.jobId === hint.jobId && prev.startAt === hint.startAt) return
-      if (unifiedTimeLock.value || isPlaying.value) return
+      if (hint.status !== 'running') return
+      if (alignedRunStartJobs.has(hint.jobId)) return
+      const isFreshRun =
+        !prev || prev.jobId !== hint.jobId || prev.status === 'queued' || prev.status === 'retry_pending'
+      if (!isFreshRun) return
+      if (unifiedTimeLock.value) return
+      // 未点播放：仅记录已对齐，避免下次播放又跳回 start_at；不改 currentDate
+      if (!isPlaying.value) {
+        alignedRunStartJobs.add(hint.jobId)
+        return
+      }
       const catalogId = selectedCatalogId.value
       if (!catalogId || uiStore.isLayerTimeLocked(catalogId)) return
       const d = parseInstant(hint.startAt)
       if (!d) return
+      useTimelineActionBannerStore().suppressConfirm(3_500)
       uiStore.applyDateHour(d, 0)
+      alignedRunStartJobs.add(hint.jobId)
     },
   )
 
@@ -491,6 +507,35 @@ export function useTimelineSync(
 
     const gran = activeLayerGranularity.value
     if (gran === 'static') {
+      // 事件时间轴（2026-08-25 用户反馈）：静态图层若带事件时间（overlay
+      // meta time_list，如 ERA5 2020 灾害事件），按事件年份生成年刻度轴，
+      // 事件年标记就绪；无事件时间才回落笼统的「静态」单段。
+      const oid = selectedActiveLayer.value?.importedRaster?.overlayLayerId
+      const eventTimes = oid
+        ? (overlayTimeStates.value.find((s) => s.layerId === oid)?.timeList ?? [])
+        : []
+      const eventYears = [
+        ...new Set(
+          eventTimes
+            .map((t) => /^\d{4}/.exec(String(t))?.[0])
+            .filter((y): y is string => Boolean(y))
+            .map(Number),
+        ),
+      ].sort((a, b) => a - b)
+      if (eventYears.length > 0) {
+        const start = Math.max(1, eventYears[0] - 1)
+        const end = eventYears[eventYears.length - 1] + 1
+        return Array.from({ length: end - start + 1 }, (_, idx): TimelineAvailabilitySegment => {
+          const year = start + idx
+          const isEvent = eventYears.includes(year)
+          return {
+            index: year,
+            label: String(year),
+            state: isEvent ? 'ready' : 'empty',
+            availabilityLabel: isEvent ? `事件时间 ${year} · 资产就绪` : '无事件',
+          }
+        })
+      }
       return generateTimelineSegments(currentDate.value, 'static')
     }
 

@@ -173,16 +173,18 @@ def _iter_resolved_ips(host: str, port: int) -> list[ipaddress._BaseAddress]:
 
 
 def _assert_ip_allowed(
-    ip: ipaddress._BaseAddress, host: str, *, allow_private: bool
+    ip: ipaddress._BaseAddress, host: str, *, allow_private: bool, allow_loopback: bool = False
 ) -> None:
     """单个 IP 的策略判定；命中黑名单即抛 SSRFBlockedError。"""
     if (
-        ip.is_loopback
-        or ip.is_link_local
+        ip.is_link_local
         or ip.is_multicast
         or ip.is_reserved
         or ip.is_unspecified
     ):
+        logger.warning("SSRF 阻断出站请求 host=%r ip=%s", host, ip)
+        raise SSRFBlockedError(f"阻断出站地址 {ip}（主机 {host!r}）")
+    if ip.is_loopback and not allow_loopback:
         logger.warning("SSRF 阻断出站请求 host=%r ip=%s", host, ip)
         raise SSRFBlockedError(f"阻断出站地址 {ip}（主机 {host!r}）")
     if ip.is_private and not allow_private:
@@ -190,7 +192,9 @@ def _assert_ip_allowed(
         raise SSRFBlockedError(f"阻断私网出站地址 {ip}（主机 {host!r}）")
 
 
-def resolve_outbound_target(url: str, *, allow_private: bool = True) -> OutboundTarget:
+def resolve_outbound_target(
+    url: str, *, allow_private: bool = True, allow_loopback: bool = False
+) -> OutboundTarget:
     """校验出站 URL 并返回「URL + 已校验 IP 列表」。
 
     与 :func:`validate_outbound_url` 的区别：本函数把解析结果带出来，供连接阶段
@@ -199,15 +203,20 @@ def resolve_outbound_target(url: str, *, allow_private: bool = True) -> Outbound
     Args:
         url: 目标 URL。
         allow_private: 是否允许 RFC1918 私网地址（默认 True，兼容内网数据源）。
-            环回 / 链路本地 / 保留 / 组播 / 未指定地址始终被阻断。
+            环回默认阻断；``allow_loopback=True`` 时放行（如本机 Ollama）。
+            链路本地 / 保留 / 组播 / 未指定地址始终被阻断。
 
     Returns:
         OutboundTarget：校验通过的 URL 与其解析到的全部 IP。
 
     Raises:
         SSRFBlockedError: 协议非 http/https、无主机、解析失败/为空，
-            或任一解析结果命中被阻断地址。
+            或任一解析结果命中被阻断地址；或传入非字符串 URL（如误传 Request）。
     """
+    if not isinstance(url, str):
+        raise SSRFBlockedError(
+            f"出站 URL 必须是字符串，收到 {type(url).__name__}"
+        )
     parsed = urlparse(url)
     scheme = (parsed.scheme or "").lower()
     if scheme not in _ALLOWED_SCHEMES:
@@ -222,11 +231,15 @@ def resolve_outbound_target(url: str, *, allow_private: bool = True) -> Outbound
         # 防御性：getaddrinfo 返回空/全部不可解析时，此前会「静默放行」。
         raise SSRFBlockedError(f"出站主机未解析到可用 IP: {host!r}")
     for ip in ips:
-        _assert_ip_allowed(ip, host, allow_private=allow_private)
+        _assert_ip_allowed(
+            ip, host, allow_private=allow_private, allow_loopback=allow_loopback
+        )
     return OutboundTarget(url=url, ips=tuple(str(ip) for ip in ips))
 
 
-def validate_outbound_url(url: str, *, allow_private: bool = True) -> str:
+def validate_outbound_url(
+    url: str, *, allow_private: bool = True, allow_loopback: bool = False
+) -> str:
     """校验出站 URL 是否允许发起请求（兼容旧调用点）。
 
     Returns:
@@ -235,7 +248,9 @@ def validate_outbound_url(url: str, *, allow_private: bool = True) -> str:
     Raises:
         SSRFBlockedError: 见 :func:`resolve_outbound_target`。
     """
-    return resolve_outbound_target(url, allow_private=allow_private).url
+    return resolve_outbound_target(
+        url, allow_private=allow_private, allow_loopback=allow_loopback
+    ).url
 
 
 class _NoRedirectHandler(HTTPRedirectHandler):
@@ -344,6 +359,7 @@ def safe_urlopen(
     timeout: float,
     headers: Mapping[str, str] | None = None,
     allow_private: bool | None = None,
+    allow_loopback: bool = False,
     allow_proxy: bool = False,
     max_redirects: int = 5,
     data: bytes | None = None,
@@ -354,6 +370,7 @@ def safe_urlopen(
     Args:
         data: 可选请求体（非 None 时默认方法为 POST）。
         method: 可选显式 HTTP 方法（默认 GET / 有 data 时 POST）。
+        allow_loopback: 是否允许环回（本机 LLM 如 Ollama）。默认 False。
 
     Returns:
         最终响应对象（调用方负责 ``.read()`` / ``.close()``，或 ``with`` 使用）。
@@ -364,7 +381,9 @@ def safe_urlopen(
     """
     if allow_private is None:
         allow_private = default_allow_private()
-    target = resolve_outbound_target(url, allow_private=allow_private)
+    target = resolve_outbound_target(
+        url, allow_private=allow_private, allow_loopback=allow_loopback
+    )
     redirects = 0
     req_headers = dict(headers or {})
     req_method = method or ("POST" if data is not None else "GET")
@@ -392,7 +411,11 @@ def safe_urlopen(
                     f"出站重定向超过上限（max_redirects={max_redirects}）"
                 ) from exc
             next_url = urljoin(target.url, location)
-            next_target = resolve_outbound_target(next_url, allow_private=allow_private)
+            next_target = resolve_outbound_target(
+                next_url,
+                allow_private=allow_private,
+                allow_loopback=allow_loopback,
+            )
             if _host_of(next_target.url) != _host_of(target.url):
                 # 跨主机跳转不携带请求体与凭据类头，防止凭据被重定向外泄
                 if data is not None or req_method != "GET":

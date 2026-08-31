@@ -11,9 +11,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.core.config import settings
 from app.weatherengine.default_model import weather_default_model
-from app.services.effective_config import get_weather_cache_ttl_seconds
+from app.services.effective_config import (
+    get_weather_cache_ttl_seconds,
+    get_weather_refresh_forecast_hours,
+)
 from app.weatherengine.constants import WEATHER_LAYER_SPECS, WeatherLayerSpec
 from app.weatherengine.provider_base import WeatherProvider
 from app.weatherengine.provider_ids import normalize_provider_id
@@ -46,6 +48,17 @@ def resolve_provider_for_layer(
     - Else: registry priority order, honoring ``exclude``.
     Legacy ``open-meteo`` is normalized to ``open-meteo-online``.
     """
+    # C-1（2026-08-23）：跨进程 provider 配置版本检查点——多 worker 下
+    # 其他进程 ≤5s 感知 update/delete 并重放 DB 覆盖（Redis 不可用则降级）。
+    try:
+        from app.services.config_weather_providers import (
+            maybe_refresh_provider_overrides,
+        )
+
+        maybe_refresh_provider_overrides()
+    except Exception:  # noqa: BLE001 — 版本检查是尽力而为，失败不阻塞取数
+        logger.debug("weather provider override refresh skipped", exc_info=True)
+
     registry = get_registry()
     if provider_id:
         pid = normalize_provider_id(str(provider_id).strip())
@@ -90,6 +103,16 @@ def list_providers_for_layer(
         commercial_data_quality,
         commercial_layer_hint,
     )
+
+    # C-1：与 resolve_provider_for_layer 同一检查点，UI 选源列表跨进程保鲜
+    try:
+        from app.services.config_weather_providers import (
+            maybe_refresh_provider_overrides,
+        )
+
+        maybe_refresh_provider_overrides()
+    except Exception:  # noqa: BLE001 — 尽力而为
+        logger.debug("weather provider override refresh skipped", exc_info=True)
 
     registry = get_registry()
     rows: list[dict[str, Any]] = []
@@ -181,7 +204,7 @@ def fetch_point_forecast(
     )
     provider = resolve_provider_for_layer(layer_id, provider_id=provider_id)
     resolved_model = model or spec.preferred_model or weather_default_model()
-    resolved_hours = forecast_hours or settings.weather_refresh_forecast_hours
+    resolved_hours = forecast_hours or get_weather_refresh_forecast_hours()
     resolved_ttl = (
         ttl_seconds if ttl_seconds is not None else get_weather_cache_ttl_seconds()
     )

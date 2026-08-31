@@ -71,9 +71,10 @@ class UniversalDataReader:
 
     def _detect_format(self) -> str:
         ext = self.path.suffix.lower()
-        if ext in (".h5", ".hdf", ".he5"):
+        if ext in (".h5", ".hdf", ".he5", ".hdf5"):
             return "hdf5"
-        if ext == ".nc":
+        if ext in (".nc", ".nc4"):
+            # .nc4 为 netCDF4 格式（如 GPCP 月降水 GPCPMON_L3_*_V3.2.nc4）
             return "netcdf"
         if ext in (".tif", ".tiff"):
             return "geotiff"
@@ -303,6 +304,9 @@ class UniversalDataReader:
             slices: list[slice] = []
             lat_slice = slice(None)
             lon_slice = slice(None)
+            # 安审 2026-08-22（E-1）：0-360 网格跨缝 bbox 的第二段经度切片
+            lon_slice_seam: slice | None = None
+            lon_axis_pos: int | None = None
 
             for dim in dims:
                 if lat_var is not None and dim == lat_var.dimensions[0]:
@@ -319,18 +323,37 @@ class UniversalDataReader:
                 elif lon_var is not None and dim == lon_var.dimensions[0]:
                     if bbox is not None and lon_1d is not None:
                         west, east = bbox[0], bbox[2]
-                        # 处理 0-360 经度 (ERA5): 仅当 bbox 含负值时偏移
-                        if lon_1d.max() > 180 and west < 0:
-                            west_idx = int(np.searchsorted(lon_1d, west + 360))
-                            east_idx = int(np.searchsorted(lon_1d, east + 360)) + 1
-                        elif lon_1d.max() > 180 and east > 180:
-                            # bbox 在 0-360 范围内，直接索引
-                            west_idx = int(np.searchsorted(lon_1d, west))
-                            east_idx = int(np.searchsorted(lon_1d, east)) + 1
+                        is_0360 = float(lon_1d.max()) > 180
+                        n_lon = int(lon_1d.size)
+                        # 0-360 经度网格（ERA5 等）：负经度折算进 0-360
+                        w = (
+                            float(west) + 360.0
+                            if (is_0360 and west < 0)
+                            else float(west)
+                        )
+                        e = (
+                            float(east) + 360.0
+                            if (is_0360 and east < 0)
+                            else float(east)
+                        )
+                        west_idx = int(np.searchsorted(lon_1d, w))
+                        east_idx = int(np.searchsorted(lon_1d, e)) + 1
+                        if is_0360 and w >= e:
+                            # 跨缝（含全球 w==e）：拆 [w,360) + [0,e) 两段，
+                            # 否则东段会被静默丢弃（E-1）。东段用左闭右开
+                            # searchsorted（不加 1），两段永不重叠。
+                            seg_a = slice(min(west_idx, n_lon), n_lon)
+                            seg_b = slice(0, max(0, min(east_idx - 1, n_lon)))
+                            if seg_a.stop <= seg_a.start:
+                                lon_slice = seg_b
+                            elif seg_b.stop <= seg_b.start:
+                                lon_slice = seg_a
+                            else:
+                                lon_slice = seg_a
+                                lon_slice_seam = seg_b
+                                lon_axis_pos = len(slices)
                         else:
-                            west_idx = int(np.searchsorted(lon_1d, west))
-                            east_idx = int(np.searchsorted(lon_1d, east)) + 1
-                        lon_slice = slice(west_idx, east_idx)
+                            lon_slice = slice(west_idx, east_idx)
                     slices.append(lon_slice)
                 elif time_var is not None and dim == time_var.dimensions[0]:
                     if time_index is not None:
@@ -344,7 +367,16 @@ class UniversalDataReader:
             # 让下方手工清洗/缩放管线（fill→NaN + *scale/+offset）成为唯一真源。
             # 默认开启时读出已缩放的掩码数组，再手工缩放一次即双重缩放失真。
             var.set_auto_maskandscale(False)
-            values = var[tuple(slices)]
+            if lon_slice_seam is not None and lon_axis_pos is not None:
+                # E-1：跨缝两段读取后按经度轴拼接（西段 [w,360) + 东段 [0,e)）
+                slices_east = list(slices)
+                slices_east[lon_axis_pos] = lon_slice_seam
+                values = np.concatenate(
+                    [var[tuple(slices)], var[tuple(slices_east)]],
+                    axis=lon_axis_pos,
+                )
+            else:
+                values = var[tuple(slices)]
 
             # 处理时间维度
             if time_index is not None and time_vals is not None:
@@ -367,7 +399,13 @@ class UniversalDataReader:
 
             # 提取裁剪后的坐标
             lat_out = lat_1d[lat_slice] if lat_1d is not None else None
-            lon_out = lon_1d[lon_slice] if lon_1d is not None else None
+            if lon_1d is None:
+                lon_out = None
+            elif lon_slice_seam is not None:
+                # E-1：跨缝时坐标同样两段拼接，与 values 对齐
+                lon_out = np.concatenate([lon_1d[lon_slice], lon_1d[lon_slice_seam]])
+            else:
+                lon_out = lon_1d[lon_slice]
 
             # 填充值 + 比例缩放
             if isinstance(values, np.ma.MaskedArray):

@@ -59,7 +59,7 @@
 
 - `pipeline`：多节点主链路模板。
 - `demo` / `sample`：演示或样例，不作为生产默认定时任务。
-- `local` / `*_online`：数据来源暗示；`online` / `remote` 为通用在线 / 远端来源标记（`omega_sf_fenkuai_*_online`、`fy_tb_nas_read` 等）。
+- `local` / `*_online`：数据来源暗示；`online` / `remote` 为通用在线 / 远端来源标记（现存示例 `fy_tb_online_read`、`ndvi_online_read`、`omega_avg_daily_gldas_online`、`omega_sf_fenkuai_fy_online`；历史上的 `fy_tb_nas_read` / `fy_tb_nsmc_online` 种子文件已删除，取数并入 FY 取数 auto 回退，见《工作流预设与端到端流水线盘点》冗余清理节）。
 - 算法族用稳定前缀（`omega_*`、`sf_*`）。
 - `gee`：GEE 引擎读取流（`ndvi_gee_read` 等）。
 - `stub_v1`：2026-08 新启用的预处理 / GIS / 统计 / 融合样例种子。

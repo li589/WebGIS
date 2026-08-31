@@ -50,9 +50,13 @@ def bootstrap_auth() -> None:
         )
         return
 
+    from app.services.theme_repository import get_theme_repository
     from app.services.user_repository import get_user_repository
 
+    # users schema first (theme_id column), then seed themes + backfill.
     repo = get_user_repository()
+    get_theme_repository().ensure_primary_theme()
+
     admin_user = (config.settings.admin_username or "").strip()
     admin_password = config.settings.admin_password or ""
 
@@ -88,6 +92,8 @@ def bootstrap_auth() -> None:
             logger.warning(
                 "Initial admin already bootstrapped by another worker: %s", admin_user
             )
+
+    get_theme_repository().ensure_primary_theme()
 
     if _is_development():
         _check_dev_credentials_safety()

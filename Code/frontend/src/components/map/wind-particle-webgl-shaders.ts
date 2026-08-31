@@ -38,6 +38,20 @@ export const MERCATOR_PROJECTION_GLSL = /* glsl */ `
 `
 
 /**
+ * 经纬度 → 单位球（半径 1）3D 坐标。配合 globe 模式下的
+ * `getProjectionDataForCustomLayer(true)` 返回的 mainMatrix 直接投影到屏幕。
+ * 公式与 MapLibre 内部 globe_to_clip.glsl 一致（lng → x = sin, lat → y, z = cos）。
+ */
+export const GLOBE_SPHERE_GLSL = /* glsl */ `
+  vec3 lngLatToGlobeSphere(float lon, float latDeg) {
+    float lonRad = radians(lon);
+    float latRad = radians(clamp(latDeg, -85.051129, 85.051129));
+    float cosLat = cos(latRad);
+    return vec3(cosLat * sin(lonRad), sin(latRad), cosLat * cos(lonRad));
+  }
+`
+
+/**
  * 与 MERCATOR_PROJECTION_GLSL 数学等价的 TS 实现。
  *
  * 用途：单测验证投影公式正确性（GLSL 无法直接在 node 环境执行）。
@@ -129,36 +143,80 @@ export const WIND_TEXTURE_SAMPLE_GLSL = /* glsl */ `
   }
 `
 
-/** B2 风场可视化顶点着色器：投影 + 传递 Mercator 坐标 */
+/** B2 风场可视化顶点着色器：投影 + 传递 Mercator 坐标。
+ *  - mercator 模式：u_matrix * vec4(merc, 0, 1)
+ *  - globe 模式（u_useGlobe=1）：u_matrix * vec4(sphere3D, 1) 配合 mainMatrix(true) 矩阵
+ *  - globe 模式下额外算 v_globeEdge = clip-space 归一化半径（>1 表明越出可见半球），
+ *    供 fragment 做边缘羽化与背面剔除。
+ */
 export const WIND_FIELD_VERTEX_SHADER = /* glsl */ `
   attribute vec2 a_lnglat;
   uniform mat4 u_matrix;
+  uniform float u_useGlobe;
   varying vec2 v_merc;
+  varying float v_globeRim;  // 0=球心，~1=地平线，>1=地平线外（背面/圈外）
   ${MERCATOR_PROJECTION_GLSL}
+  ${GLOBE_SPHERE_GLSL}
   void main() {
     vec2 merc = lngLatToMercator(a_lnglat.x, a_lnglat.y);
     v_merc = merc;
-    gl_Position = u_matrix * vec4(merc, 0.0, 1.0);
+    if (u_useGlobe > 0.5) {
+      vec3 sphere = lngLatToGlobeSphere(a_lnglat.x, a_lnglat.y);
+      vec4 clip = u_matrix * vec4(sphere, 1.0);
+      gl_Position = clip;
+      // 归一化 NDC 半径（屏幕中心=0，右上角≈1.414）。地平线 ≈ 1.0，超出即被大气层/horizon 雾化
+      v_globeRim = length(clip.xy / clip.w) * (clip.w > 0.0 ? 1.0 : -1.0);
+    } else {
+      gl_Position = u_matrix * vec4(merc, 0.0, 1.0);
+      v_globeRim = -1.0;  // mercator 模式不参与边缘羽化
+    }
   }
 `
 
 /**
  * B2 风场可视化片元着色器：反投影 → 采样风场 → 速度→颜色。
  * 速度配色用简洁的 蓝→青→白 渐变；B5 阶段替换为 LUT 调色板。
+ *  - globe 模式：v_globeRim>1.05 discard（被大气层雾化之前先自己羽化），
+ *    0.85→1.05 smoothstep 渐变到 0，消灭"矩形色底硬边"。
  */
 export const WIND_FIELD_FRAGMENT_SHADER = /* glsl */ `
+  // 默认精度 mediump（与历史行为一致，避免其它内部计算精度突变）。
   precision mediump float;
+  precision mediump int;
+  // u_useGlobe 显式 highp：与 vertex shader 默认 highp 一致，避免 GLSL link 失败。
+  uniform highp float u_useGlobe;
   varying vec2 v_merc;
+  varying float v_globeRim;
   uniform float u_opacity;
   ${MERCATOR_INVERSE_GLSL}
   ${WIND_TEXTURE_SAMPLE_GLSL}
   void main() {
+    if (u_useGlobe > 0.5) {
+      // 背面：clip-space w<0 → NDC 半径为负 → 整像素丢弃
+      if (v_globeRim < 0.0) discard;
+      // 大气层地平线渐变：球面边缘 0.85→1.05 平滑过渡到 0
+      float rim = v_globeRim;
+      float edgeFade = 1.0 - smoothstep(0.85, 1.05, rim);
+      if (edgeFade <= 0.0) discard;
+      // 残影：贴近地平线 (rim~1) 时叠加一层极淡的"晨昏线"冷光，仅作炫酷点缀
+      float twilight = smoothstep(0.92, 0.99, rim) * (1.0 - smoothstep(0.99, 1.04, rim));
+      vec2 lnglat = mercatorToLngLat(v_merc);
+      vec2 texUv = windTexUv(lnglat.x, lnglat.y);
+      vec4 t = texture2D(u_windTexture, texUv);
+      if (t.a < 0.01) discard;
+      float speed = t.b * u_maxWind;
+      float k = clamp(speed / u_maxWind, 0.0, 1.0);
+      vec3 color = mix(vec3(0.10, 0.30, 0.65), vec3(0.55, 0.90, 1.00), smoothstep(0.0, 0.55, k));
+      color = mix(color, vec3(1.0), smoothstep(0.55, 1.0, k));
+      // 晨昏线加暖橙光晕，温和强度
+      color += vec3(0.45, 0.28, 0.10) * twilight * 0.18;
+      gl_FragColor = vec4(color, k * u_opacity * edgeFade);
+      return;
+    }
     vec2 lnglat = mercatorToLngLat(v_merc);
     vec2 texUv = windTexUv(lnglat.x, lnglat.y);
     vec4 t = texture2D(u_windTexture, texUv);
-    if (t.a < 0.01) {
-      discard;
-    }
+    if (t.a < 0.01) discard;
     float speed = t.b * u_maxWind;
     float k = clamp(speed / u_maxWind, 0.0, 1.0);
     vec3 color = mix(vec3(0.10, 0.30, 0.65), vec3(0.55, 0.90, 1.00), smoothstep(0.0, 0.55, k));

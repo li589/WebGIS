@@ -152,6 +152,8 @@ def test_runtime_ghost_keys_rejected():
 
 
 def test_backend_auth_uses_effective_secret(monkeypatch):
+    import time as _time
+
     from app.services import effective_config
 
     monkeypatch.setattr(effective_config, "_hydrated", True)
@@ -163,6 +165,10 @@ def test_backend_auth_uses_effective_secret(monkeypatch):
             hydrated=True,
         ),
     )
+    # 防 TTL 过期触发 _maybe_refresh_snapshot → Redis 版本戳 rehydrate
+    # 覆盖上面 patch 的 _snapshot（本机 Redis 残留版本戳时单跑必败的
+    # 顺序敏感 flaky，2026-08-23 P3 批次修复）
+    effective_config._snapshot_refresh_state["checked_at"] = _time.monotonic()
     assert effective_config.get_backend_auth_key() == "db-auth-key"
 
 

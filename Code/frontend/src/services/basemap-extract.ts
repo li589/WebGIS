@@ -30,7 +30,11 @@ const ROAD_CLASS_PATTERNS: Record<RoadClassFilter, string> = {
   all: 'motorway|trunk|primary|secondary|tertiary|residential|unclassified',
 }
 
-const OVERPASS_ENDPOINT = 'https://overpass-api.de/api/interpreter'
+// D0+D1（去硬编码）：Overpass 端点可配。默认官方实例；部署可通过
+// VITE_OVERPASS_ENDPOINT 覆盖（私有镜像/加速实例，如 kumi.systems）。
+const OVERPASS_ENDPOINT =
+  import.meta.env.VITE_OVERPASS_ENDPOINT?.replace(/\/$/, '') ||
+  'https://overpass-api.de/api/interpreter'
 const OVERPASS_TIMEOUT_SEC = 30
 /** 视口 bbox 面积上限（平方度），超过则要求缩小视野，避免 Overpass 超时 */
 const MAX_BBOX_AREA_SQ_DEG = 0.5

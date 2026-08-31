@@ -1,4 +1,5 @@
 import type { ImportedGeometryType } from '../../stores/layers/imported-vector'
+import { IMPORTED_VECTOR_STYLE_DEFAULTS } from '../../stores/layers/imported-vector'
 import {
   Popup,
   type ExpressionSpecification,
@@ -92,6 +93,10 @@ function _collectBounds(fc: GeoJSON.FeatureCollection): [number, number, number,
       const lng = coords[0] as number
       const lat = coords[1] as number
       if (!Number.isFinite(lng) || !Number.isFinite(lat)) return
+      // 世界范围过滤：投影坐标系（米制坐标远超 ±90/±180）或坏坐标不计入
+      // bounds——否则 fitBounds 抛 Invalid LngLat 炸断 onMapLoad 初始化链
+      // （分析面板/底图全不显示的 2026-08-23 事故根因）
+      if (Math.abs(lng) > 180 || Math.abs(lat) > 90) return
       lngs.push(lng)
       minLat = Math.min(minLat, lat)
       maxLat = Math.max(maxLat, lat)
@@ -184,7 +189,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
           filter: ['==', '$type', 'Polygon'],
           paint: {
             'fill-color': fillColor,
-            'fill-opacity': 0.25,
+            'fill-opacity': IMPORTED_VECTOR_STYLE_DEFAULTS.fillOpacity,
           },
           layout: { visibility: 'visible' },
         },
@@ -201,7 +206,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
           source: sourceId,
           paint: {
             'line-color': fillColor,
-            'line-width': 2,
+            'line-width': IMPORTED_VECTOR_STYLE_DEFAULTS.width,
             'line-opacity': 0.9,
           },
           layout: { visibility: 'visible' },
@@ -219,7 +224,7 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
           source: sourceId,
           filter: ['==', '$type', 'Point'],
           paint: {
-            'circle-radius': 4,
+            'circle-radius': IMPORTED_VECTOR_STYLE_DEFAULTS.radius,
             'circle-color': fillColor,
             'circle-stroke-width': 1,
             'circle-stroke-color': '#0a233a',
@@ -382,7 +387,11 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
       const layer = options.map.getLayer(layerId) as LayerSpecification | undefined
       if (!layer) continue
       if (layer.type === 'fill') {
-        options.map.setPaintProperty(layerId, 'fill-opacity', 0.25 * opacity)
+        options.map.setPaintProperty(
+          layerId,
+          'fill-opacity',
+          IMPORTED_VECTOR_STYLE_DEFAULTS.fillOpacity * opacity,
+        )
       } else if (layer.type === 'line') {
         options.map.setPaintProperty(layerId, 'line-opacity', 0.9 * opacity)
       } else if (layer.type === 'circle') {
@@ -395,9 +404,10 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
     const info = loaded.get(id)
     if (!info) return
     const color = style.color || resolveThemeColor('--success', FALLBACK_SUCCESS)
-    const width = style.width ?? 2
-    const radius = style.radius ?? 4
-    const fillOpacity = (style.fillOpacity ?? 0.25) * baseOpacity
+    const width = style.width ?? IMPORTED_VECTOR_STYLE_DEFAULTS.width
+    const radius = style.radius ?? IMPORTED_VECTOR_STYLE_DEFAULTS.radius
+    const fillOpacity =
+      (style.fillOpacity ?? IMPORTED_VECTOR_STYLE_DEFAULTS.fillOpacity) * baseOpacity
     for (const layerId of info.layerIds) {
       const layer = options.map.getLayer(layerId) as LayerSpecification | undefined
       if (!layer) continue
@@ -526,10 +536,19 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
       minLat -= pad
       maxLat += pad
     }
+    // 兜底 clamp：bounds 可能来自历史持久化数据（_collectBounds 过滤前的
+    // 旧值），聚合后仍可能超界——夹到 Web Mercator 合法范围，绝不让
+    // fitBounds 抛 Invalid LngLat 炸断调用链
+    const clampedWest = Math.max(-180, Math.min(180, minLng))
+    const clampedEast = Math.max(-180, Math.min(180, maxLng))
+    // Web Mercator 纬度上限 ~85.05°
+    const clampedSouth = Math.max(-85, Math.min(85, minLat))
+    const clampedNorth = Math.max(-85, Math.min(85, maxLat))
+    if (clampedEast <= clampedWest || clampedNorth <= clampedSouth) return
     options.map.fitBounds(
       [
-        [minLng, minLat],
-        [maxLng, maxLat],
+        [clampedWest, clampedSouth],
+        [clampedEast, clampedNorth],
       ],
       { padding: 48, maxZoom: 14, duration: 600 },
     )

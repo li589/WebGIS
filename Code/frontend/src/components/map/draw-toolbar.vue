@@ -1,15 +1,17 @@
 <script setup lang="ts">
 /**
- * 绘制编辑工具栏 — 左下角可拖拽浮动面板。
+ * 绘制编辑工具栏 — 可拖拽浮动面板（默认：主界面顶栏下方水平居中）。
  *
  * 包含：
  *   - 绘制类型切换（多边形/矩形/线段）
- *   - 操作按钮（撤销/清除/保存）
+ *   - 操作按钮（撤销/清除/属性表/保存）
  *   - 要素计数
  *   - 仅在 draw 交互模式下显示
+ *
+ * 定位协议：位置相对 .map-stage（offsetParent），x/y 均可拖拽；
+ * 几何（位置+尺寸）实时写入 drawStore.toolbarRect，供属性表联动跟随。
  */
-import { computed, onBeforeUnmount, ref } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
 import { Square, Hexagon, Minus, Undo2, Trash2, Save, Table2 } from '../ui/icons'
 import IconButton from '../ui/IconButton.vue'
 import { useDrawStore } from '../../stores/draw-store'
@@ -17,12 +19,11 @@ import { useUiStore } from '../../stores/ui'
 
 const drawStore = useDrawStore()
 const uiStore = useUiStore()
-const { drawMode, features, activeVertices, isDrawing, undoStack } = storeToRefs(drawStore)
-
-const basePosition = ref({ x: 16, y: 0 })
-const isDragging = ref(false)
-const dragOffset = ref({ x: 0, y: 0 })
-const toolbarRef = ref<HTMLElement | null>(null)
+const drawMode = toRef(drawStore, 'drawMode')
+const features = toRef(drawStore, 'features')
+const activeVertices = toRef(drawStore, 'activeVertices')
+const isDrawing = toRef(drawStore, 'isDrawing')
+const undoStack = toRef(drawStore, 'undoStack')
 
 const visible = computed(() => uiStore.interactionMode === 'draw')
 
@@ -35,6 +36,48 @@ const modeOptions = [
   { value: 'rectangle' as const, label: '矩形', icon: Square },
   { value: 'line' as const, label: '线段', icon: Minus },
 ]
+
+/** 默认纵坐标：顶栏（top 0.8rem + 高约 48px）之下留出间隙 */
+const DEFAULT_TOP_PX = 72
+const EDGE_MARGIN_PX = 8
+
+/** null = 尚未定位（首次显示时落到默认位置）；拖拽后保留用户位置 */
+const position = ref<{ x: number; y: number } | null>(null)
+const isDragging = ref(false)
+const toolbarRef = ref<HTMLElement | null>(null)
+
+let dragStart = { pointerX: 0, pointerY: 0, x: 0, y: 0 }
+
+const shellEl = computed<HTMLElement | null>(
+  () => (toolbarRef.value?.offsetParent as HTMLElement | null) ?? null,
+)
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), Math.max(min, max))
+}
+
+/** 默认位置：水平居中、顶栏正下方 */
+function applyDefaultPosition() {
+  const shell = shellEl.value
+  const el = toolbarRef.value
+  if (!shell || !el) return
+  const x = Math.round((shell.clientWidth - el.offsetWidth) / 2)
+  position.value = { x: clamp(x, EDGE_MARGIN_PX, Infinity), y: DEFAULT_TOP_PX }
+}
+
+/** 把工具栏几何同步到 store（属性表跟随依赖此数据） */
+function syncRectToStore() {
+  const el = toolbarRef.value
+  const shell = shellEl.value
+  if (!el || !shell) return
+  drawStore.setShellSize(shell.clientWidth, shell.clientHeight)
+  drawStore.setToolbarRect({
+    x: el.offsetLeft,
+    y: el.offsetTop,
+    width: el.offsetWidth,
+    height: el.offsetHeight,
+  })
+}
 
 function onModeChange(mode: 'polygon' | 'rectangle' | 'line') {
   drawStore.setDrawMode(mode)
@@ -58,34 +101,87 @@ function handleToggleAttrTable() {
 }
 
 function onDragStart(e: MouseEvent) {
-  if (!toolbarRef.value) return
+  if (!toolbarRef.value || !position.value) return
   isDragging.value = true
-  dragOffset.value = {
-    x: e.clientX - toolbarRef.value.getBoundingClientRect().left,
-    y: e.clientY - toolbarRef.value.getBoundingClientRect().top,
+  dragStart = {
+    pointerX: e.clientX,
+    pointerY: e.clientY,
+    x: position.value.x,
+    y: position.value.y,
   }
   document.addEventListener('mousemove', onDragMove)
   document.addEventListener('mouseup', onDragEnd)
+  e.preventDefault()
 }
 
 function onDragMove(e: MouseEvent) {
-  if (!isDragging.value) return
-  basePosition.value = {
-    x: e.clientX - dragOffset.value.x,
-    y: e.clientY - dragOffset.value.y,
+  if (!isDragging.value || !toolbarRef.value) return
+  const shell = shellEl.value
+  const el = toolbarRef.value
+  if (!shell) return
+  const x = dragStart.x + (e.clientX - dragStart.pointerX)
+  const y = dragStart.y + (e.clientY - dragStart.pointerY)
+  position.value = {
+    x: clamp(x, 0, shell.clientWidth - el.offsetWidth),
+    y: clamp(y, 0, shell.clientHeight - el.offsetHeight),
   }
+  syncRectToStore()
 }
 
 function onDragEnd() {
   isDragging.value = false
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', onDragEnd)
+  syncRectToStore()
 }
+
+function onWindowResize() {
+  // 视口变化：未拖拽过的回默认居中；拖拽过的钳回容器内
+  if (!position.value) return
+  applyDefaultPositionIfPristine()
+  clampIntoShell()
+  void nextTick(syncRectToStore)
+}
+
+function applyDefaultPositionIfPristine() {
+  if (position.value === null) applyDefaultPosition()
+}
+
+function clampIntoShell() {
+  const shell = shellEl.value
+  const el = toolbarRef.value
+  if (!shell || !el || !position.value) return
+  position.value = {
+    x: clamp(position.value.x, 0, Math.max(0, shell.clientWidth - el.offsetWidth)),
+    y: clamp(position.value.y, 0, Math.max(0, shell.clientHeight - el.offsetHeight)),
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('resize', onWindowResize)
+})
 
 onBeforeUnmount(() => {
   document.removeEventListener('mousemove', onDragMove)
   document.removeEventListener('mouseup', onDragEnd)
+  window.removeEventListener('resize', onWindowResize)
+  drawStore.setToolbarRect(null)
 })
+
+// 显示时：首帧测量后落位（首次=默认位置），并把几何同步给属性表；
+// immediate 兜底：组件挂载时已处于 draw 模式（如视图重建）也能落位
+watch(
+  visible,
+  async (v) => {
+    if (!v) return
+    await nextTick()
+    await nextTick() // 等 Transition 首帧 + 尺寸稳定
+    applyDefaultPositionIfPristine()
+    clampIntoShell()
+    syncRectToStore()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -94,9 +190,11 @@ onBeforeUnmount(() => {
       v-if="visible"
       ref="toolbarRef"
       class="draw-toolbar"
+      :class="{ 'draw-toolbar--dragging': isDragging }"
       :style="{
-        left: basePosition.x + 'px',
-        bottom: '3.5rem',
+        left: (position?.x ?? 0) + 'px',
+        top: (position?.y ?? DEFAULT_TOP_PX) + 'px',
+        visibility: position ? 'visible' : 'hidden',
       }"
     >
       <div class="draw-toolbar-handle" @mousedown="onDragStart">
@@ -176,6 +274,11 @@ onBeforeUnmount(() => {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
   user-select: none;
   min-width: 240px;
+}
+
+.draw-toolbar--dragging {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  border-color: var(--border-accent);
 }
 
 .draw-toolbar-handle {

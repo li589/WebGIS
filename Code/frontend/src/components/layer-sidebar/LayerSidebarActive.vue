@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { LAYERS_COPY } from '../../ui-copy'
+import { LAYERS_COPY, ONLINE_PLAN_COPY } from '../../ui-copy'
 import { productTagDescription } from '../../utils/workflow-expected-outputs'
+import type { DataStatusBadge } from '../../utils/layer-data-status'
 import { CircleDot, Circle, X, Menu } from '../ui/icons'
 import type { ActiveLayerDisplay, ActiveRunLayerGroup } from '../../stores/layers/types'
 import type { ActiveTocRow } from './useSidebarDragReorder'
@@ -22,6 +23,19 @@ defineProps<{
   availabilityClass: (state: string) => string
   getCategoryName: (categoryId: string) => string
   supportsOnlineTemporal: (catalogId: string) => boolean
+  getSourceRouteBadge?: (
+    catalogId: string,
+  ) => { key: string; label: string; title: string } | null
+  cycleSourceRoute?: (catalogId: string) => void
+  /**
+   * 统一数据状态徽标（2026-08-25 UX 简化）：归并 availability/lifecycle/job
+   * 三源为单枚五态徽标（运行中/排队中/异常/完成/旧数据）+ 查看报告。
+   * null = 不渲染。
+   */
+  getUnifiedDataStatus: (layer: ActiveLayerDisplay) => DataStatusBadge | null
+  /** P2：在线计划会话待决策（只读，不改 job status） */
+  isOnlinePlanPending?: (catalogId: string) => boolean
+  openOnlinePlan?: () => void
 }>()
 
 const emit = defineEmits<{
@@ -100,7 +114,11 @@ const emit = defineEmits<{
             <strong class="group-title">{{
               runGroupOf(row.groupId)?.title || LAYERS_COPY.computingGroup
             }}</strong>
-            <span class="group-status-chip">{{ groupStatusLabel(row.groupId) }}</span>
+            <span
+              class="group-status-chip"
+              :class="`group-status-chip--${runGroupOf(row.groupId)?.status ?? 'computing'}`"
+              >{{ groupStatusLabel(row.groupId) }}</span
+            >
             <span
               v-if="typeof runGroupOf(row.groupId)?.progress === 'number'"
               class="group-progress-track"
@@ -188,22 +206,50 @@ const emit = defineEmits<{
               </button>
             </div>
 
-            <div v-if="hasColorSymbology(row.layer)" class="layer-legend">
+            <!-- 图例行（2026-08-25 UX 简化）：单位已挪入状态行；仅当有
+                 vmin/vmax 刻度时渲染（无刻度时色带行无信息量，省一行高度）。 -->
+            <div
+              v-if="hasColorSymbology(row.layer) && (getSymbologyVmin(row.layer) || getSymbologyVmax(row.layer))"
+              class="layer-legend"
+            >
               <div class="legend-ramp" :style="getColorRampStyle(row.layer)"></div>
               <div class="legend-labels">
                 <span class="legend-min">{{ getSymbologyVmin(row.layer) }}</span>
-                <span class="legend-unit">{{ getSymbologyUnit(row.layer) }}</span>
                 <span class="legend-max">{{ getSymbologyVmax(row.layer) }}</span>
               </div>
             </div>
 
             <div class="layer-row-bottom">
+              <!-- 统一数据状态徽标（2026-08-25 UX 简化）：三源归并为
+                   五态（运行中/排队中/异常/完成/旧数据）——去掉
+                   「数据异常/资产陈旧/失败」堆叠与「资产」术语。 -->
               <span
-                class="availability-chip"
-                :class="availabilityClass(row.layer.availabilityState)"
+                v-if="getUnifiedDataStatus(row.layer)"
+                class="data-status-badge"
+                :class="`data-status-${getUnifiedDataStatus(row.layer)!.state}`"
+                :title="getUnifiedDataStatus(row.layer)!.title ?? undefined"
               >
-                {{ row.layer.availabilityLabel }}
+                {{ getUnifiedDataStatus(row.layer)!.label }}
               </span>
+              <button
+                v-if="isOnlinePlanPending?.(row.layer.catalogId)"
+                type="button"
+                class="plan-pending-badge"
+                :title="ONLINE_PLAN_COPY.pendingBadgeTitle"
+                @click.stop="openOnlinePlan?.()"
+              >
+                {{ ONLINE_PLAN_COPY.pendingBadge }}
+              </button>
+              <button
+                v-if="getSourceRouteBadge?.(row.layer.catalogId)"
+                type="button"
+                class="source-route-badge"
+                :class="`source-route-${getSourceRouteBadge?.(row.layer.catalogId)?.key}`"
+                :title="getSourceRouteBadge?.(row.layer.catalogId)?.title"
+                @click.stop="cycleSourceRoute?.(row.layer.catalogId)"
+              >
+                {{ getSourceRouteBadge?.(row.layer.catalogId)?.label }}
+              </button>
               <span
                 v-if="supportsOnlineTemporal(row.layer.catalogId)"
                 class="online-fetch-badge"
@@ -234,30 +280,6 @@ const emit = defineEmits<{
                 }}</span
               >
               <template v-if="row.layer.jobLayer">
-                <span
-                  class="job-status-badge"
-                  :class="`job-${row.layer.jobLayer.status}`"
-                  :title="row.layer.jobLayer.message || undefined"
-                >
-                  {{
-                    row.layer.jobLayer.status === 'running'
-                      ? typeof row.layer.jobLayer.progress === 'number' &&
-                        row.layer.jobLayer.progress > 0
-                        ? `运行中 ${row.layer.jobLayer.progress}%`
-                        : '运行中'
-                      : row.layer.jobLayer.status === 'queued'
-                        ? '排队中'
-                        : row.layer.jobLayer.status === 'retry_pending'
-                          ? '等待重试'
-                          : row.layer.jobLayer.status === 'succeeded'
-                            ? '已完成'
-                            : row.layer.jobLayer.status === 'failed'
-                              ? '失败'
-                              : row.layer.jobLayer.status === 'cancelled'
-                                ? '已取消'
-                                : row.layer.jobLayer.status
-                  }}
-                </span>
                 <button
                   v-if="row.layer.jobLayer.reportSummary"
                   class="job-report-hint"
@@ -267,6 +289,14 @@ const emit = defineEmits<{
                   {{ LAYERS_COPY.viewReport }}
                 </button>
               </template>
+              <!-- 单位（2026-08-25 UX 简化）：从图例行挪入状态行，
+                   相对整个图层条水平居中（绝对定位，不随左右内容挤压）。 -->
+              <span
+                v-if="getSymbologyUnit(row.layer)"
+                class="layer-metric-unit"
+                :title="`图层计量单位：${getSymbologyUnit(row.layer)}`"
+                >{{ getSymbologyUnit(row.layer) }}</span
+              >
               <span class="order-hint"
                 >顺序
                 {{

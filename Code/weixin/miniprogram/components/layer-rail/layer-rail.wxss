@@ -1,0 +1,49 @@
+/* 右侧分组符号竖条（Windy 式）：白底圆角窄条 + 字符图标 + 计数徽标 */
+.rail {
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+}
+
+.rail-item {
+  position: relative;
+  width: 40px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rail-item.active {
+  background: #e6f1fb;
+}
+.rail-hover {
+  opacity: 0.7;
+}
+
+.rail-icon {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.rail-badge {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  min-width: 13px;
+  height: 13px;
+  border-radius: 7px;
+  background: #888780;
+  color: #ffffff;
+  font-size: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
+  box-sizing: border-box;
+}
+.rail-item.active .rail-badge {
+  background: #185fa5;
+}

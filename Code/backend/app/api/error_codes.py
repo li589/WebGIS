@@ -34,6 +34,18 @@ AUTH_ERROR = C403001
 C409001 = ErrorCodeSpec("C409001", "状态冲突或请求体超限，请刷新后重试")
 CONFLICT_ERROR = C409001
 
+#: 请求校验失败（422）。
+C422001 = ErrorCodeSpec("C422001", "请求参数无效")
+VALIDATION_ERROR = C422001
+
+#: 资源不存在（404）。
+C404001 = ErrorCodeSpec("C404001", "资源不存在")
+NOT_FOUND_ERROR = C404001
+
+#: 上游依赖失败（502），如 LLM 提供商不可用。
+C502001 = ErrorCodeSpec("C502001", "上游服务调用失败")
+UPSTREAM_ERROR = C502001
+
 
 class ApiError(HTTPException):
     """带业务错误码的 HTTP 异常；响应体将包含 ``error_code`` 字段。

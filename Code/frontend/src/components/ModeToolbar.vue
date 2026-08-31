@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, onMounted, toRef, watch } from 'vue'
 import {
   Settings,
   ScrollText,
@@ -42,7 +41,6 @@ import { useWeatherSyncStatusStore } from '../stores/weather-sync-status'
 import { useBreakpoint } from '../composables/useBreakpoint'
 import { mergeWorkflowSummaryWithWeather } from '../utils/workflow-status-merge'
 import {
-  BRAND,
   BASEMAP_COPY,
   basemapStyleLabel,
   basemapProviderShort,
@@ -57,13 +55,15 @@ const uiStore = useUiStore()
 const logStore = useLogStore()
 const settingsStore = useSettingsStore()
 const authStore = useAuthStore()
+const brand = computed(() => authStore.resolvedBrand)
 const weatherTileManager = useWeatherTileManager()
 const weatherSyncStatus = useWeatherSyncStatusStore()
 const { isMobile } = useBreakpoint()
 const { workflowSummary } = useWorkflowRun()
-const { activityVersion, statusVersion } = storeToRefs(weatherTileManager)
-const { apiKeys } = storeToRefs(settingsStore)
-const { syncInProgress } = storeToRefs(weatherSyncStatus)
+const activityVersion = toRef(weatherTileManager, 'activityVersion')
+const statusVersion = toRef(weatherTileManager, 'statusVersion')
+const apiKeys = toRef(settingsStore, 'apiKeys')
+const syncInProgress = toRef(weatherSyncStatus, 'syncInProgress')
 
 onMounted(() => {
   if (authStore.isAuthenticated && apiKeys.value.length === 0) {
@@ -177,6 +177,14 @@ function onStyleChange(style: BasemapStyle) {
   }
 }
 
+function onViewModeChange(value: string | number) {
+  const next = value === '3d' ? '3d' : '2d'
+  if (next !== uiStore.viewMode) {
+    uiStore.setViewMode(next)
+    logStore.logOperation('view-mode-switch', `切换到${next.toUpperCase()}视图`)
+  }
+}
+
 function setInteractionMode(mode: 'move' | 'select' | 'measure' | 'draw') {
   uiStore.setInteractionMode(mode)
   const label =
@@ -214,10 +222,18 @@ function sourcePillLabel(source: TileSourceConfig): string {
     <!-- 左侧：品牌 + 主工具 -->
     <div class="toolbar-left">
       <div class="brand">
-        <BrandMark :size="30" />
+        <img
+          v-if="brand.logoUrl"
+          class="brand-logo-img"
+          :src="brand.logoUrl"
+          :alt="brand.abbr"
+          width="30"
+          height="30"
+        />
+        <BrandMark v-else :size="30" />
         <div class="brand-copy">
-          <p class="brand-eyebrow">{{ BRAND.eyebrow }}</p>
-          <h1 class="brand-name">{{ BRAND.shortName }}</h1>
+          <p class="brand-eyebrow">{{ brand.eyebrow }}</p>
+          <h1 class="brand-name">{{ brand.shortName }}</h1>
         </div>
       </div>
 
@@ -358,17 +374,17 @@ function sourcePillLabel(source: TileSourceConfig): string {
         <!-- 时间标签 -->
         <Chip class="time-chip">{{ hourLabel }}</Chip>
 
-        <!-- 2D/3D 视图切换 -->
-        <button
-          class="dim-toggle"
-          :class="{ 'dim-toggle--3d': uiStore.viewMode === '3d' }"
-          type="button"
-          :title="uiStore.viewMode === '2d' ? '切换到3D地球视图' : '切换到2D平面视图'"
-          @click="uiStore.toggleViewMode()"
-        >
-          <component :is="uiStore.viewMode === '2d' ? Map : Globe" :size="12" class="dim-icon" />
-          <span>{{ uiStore.viewMode === '2d' ? '2D' : '3D' }}</span>
-        </button>
+        <!-- 2D/3D 视图切换（分段控件，与底图风格选择器同一交互语言） -->
+        <SegmentedControl
+          class="dim-seg"
+          :model-value="uiStore.viewMode"
+          :options="[
+            { value: '2d', label: '2D', icon: Map },
+            { value: '3d', label: '3D', icon: Globe },
+          ]"
+          size="xs"
+          @change="onViewModeChange"
+        />
 
         <!-- API Key 锁定警告 -->
         <Chip v-if="currentSourceLocked" variant="warning">

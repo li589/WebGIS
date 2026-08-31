@@ -183,9 +183,13 @@ def upsert_api_key(
     effective = get_effective_api_key(key_name) or ""
     _sync_api_config_manager_key(key_name, effective)
     try:
-        from app.services.effective_config import hydrate_effective_config
+        from app.services.effective_config import (
+            bump_effective_config_version,
+            hydrate_effective_config,
+        )
 
         hydrate_effective_config()
+        bump_effective_config_version()
     except Exception:  # noqa: BLE001 — best-effort rehydrate, logged
         logger.exception("Failed to rehydrate effective config after api key upsert")
     return _annotate_key_entry(result or {}, source="db")
@@ -232,9 +236,13 @@ def delete_api_key(key_name: str) -> bool:
         _get_effective_api_key_cached.cache_clear()
         _sync_api_config_manager_key(key_name, get_effective_api_key(key_name) or "")
         try:
-            from app.services.effective_config import hydrate_effective_config
+            from app.services.effective_config import (
+                bump_effective_config_version,
+                hydrate_effective_config,
+            )
 
             hydrate_effective_config()
+            bump_effective_config_version()
         except Exception:  # noqa: BLE001 — best-effort rehydrate, logged
             logger.exception(
                 "Failed to rehydrate effective config after api key delete"
@@ -274,9 +282,13 @@ def toggle_api_key(key_name: str, enabled: bool) -> dict[str, Any]:
     effective = get_effective_api_key(key_name) or ""
     _sync_api_config_manager_key(key_name, effective)
     try:
-        from app.services.effective_config import hydrate_effective_config
+        from app.services.effective_config import (
+            bump_effective_config_version,
+            hydrate_effective_config,
+        )
 
         hydrate_effective_config()
+        bump_effective_config_version()
     except Exception:  # noqa: BLE001 — best-effort rehydrate, logged
         logger.exception("Failed to rehydrate effective config after api key toggle")
 

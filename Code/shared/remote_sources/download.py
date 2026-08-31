@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from shared.remote_sources.limits import DEFAULT_MAX_REMOTE_BYTES
 from shared.remote_sources.protocol import RemoteAuth, RemoteStat
 from shared.remote_sources.registry import get_default_transport_registry
 from shared.remote_sources.uri import build_connectivity_probe_uri
+
+if TYPE_CHECKING:
+    from shared.remote_sources.access_control import AccessPolicyContext
+
+logger = logging.getLogger(__name__)
 
 
 def download_remote_uri(
@@ -17,7 +24,20 @@ def download_remote_uri(
     *,
     target_dir: Path,
     max_bytes: int = DEFAULT_MAX_REMOTE_BYTES,
+    policy_context: "AccessPolicyContext | None" = None,
 ) -> tuple[Path, RemoteStat]:
+    """下载远程资源到本地文件。
+
+    Args:
+        policy_context: 访问策略上下文（Phase 4）。None = 跳过访问校验
+            （向后兼容）。传入时执行 access_mode + grants 校验。
+    """
+    # Phase 4：访问模式校验
+    if policy_context is not None:
+        from shared.remote_sources.access_control import check_remote_access
+
+        check_remote_access(uri, policy_context)
+
     parsed, transport = get_default_transport_registry().get_for_uri(uri)
     digest = hashlib.sha256(uri.encode("utf-8")).hexdigest()[:24]
     suffix = Path(parsed.path).suffix or ".bin"

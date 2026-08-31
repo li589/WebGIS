@@ -10,11 +10,12 @@ logger = logging.getLogger(__name__)
 try:
     from celery import Celery
     from celery.schedules import crontab
-    from celery.signals import task_failure, worker_ready
+    from celery.signals import task_failure, worker_process_init, worker_ready
 except ImportError:  # pragma: no cover - optional dependency during bootstrap
     Celery = None
     crontab = None
     task_failure = None
+    worker_process_init = None
     worker_ready = None
 
 
@@ -32,6 +33,7 @@ if celery_available:
             "app.tasks.open_meteo_sync_tasks",
             "app.tasks.workflow_timer_tasks",
             "app.tasks.cleanup_tasks",
+            "app.tasks.asset_bake_tasks",
             "app.tasks.import_tasks",
             "app.data_io.tasks.import_jobs",
         ],
@@ -89,6 +91,9 @@ if celery_available:
         },
         # task_queue_max_priority 须与 priority_steps 最大值一致
         task_queue_max_priority=9,
+        # 兜底默认队列：任何遗漏显式 queue 的新任务落到 standard（有 worker 监听），
+        # 避免静默落到无消费者消费的默认 "celery" 队列导致任务永久堆积。
+        task_default_queue=settings.workflow_queue_standard,
         # Beat / 运维任务必须落到 launch.py 实际监听的队列（勿用默认 celery）
         task_routes={
             "app.tasks.open_meteo_sync_tasks.sync_open_meteo_data": {
@@ -124,6 +129,41 @@ if celery_available:
     # FastAPI registers weather providers in lifespan; Celery workers are a
     # separate process and must bootstrap the same registry or weather DAG
     # nodes fail with "provider is not registered" while /weather/tiles still works.
+    def _bootstrap_worker_runtime() -> None:
+        """P-C：worker 侧应用 DB 持久化配置（provider 覆盖 / runtime overrides / celery 时限）。
+
+        worker_ready 覆盖 solo 池与主进程；worker_process_init 覆盖 prefork 子进程。
+        任一步失败仅告警，不阻断 worker 启动（DB 不可用时保持 env/code 默认）。
+        """
+        try:
+            from app.services.config_weather_providers import (
+                apply_persisted_provider_overrides,
+            )
+
+            apply_persisted_provider_overrides()
+        except Exception:
+            logger.exception(
+                "worker init: failed to apply persisted weather provider overrides"
+            )
+        try:
+            from app.services.effective_config import (
+                get_celery_task_soft_time_limit,
+                get_celery_task_time_limit,
+                hydrate_effective_config,
+            )
+            from app.services.weather_engine_settings import (
+                invalidate_weather_default_model_cache,
+            )
+
+            hydrate_effective_config()
+            invalidate_weather_default_model_cache()
+            celery_app.conf.update(
+                task_soft_time_limit=get_celery_task_soft_time_limit(),
+                task_time_limit=get_celery_task_time_limit(),
+            )
+        except Exception:
+            logger.exception("worker init: failed to apply runtime config overrides")
+
     if worker_ready is not None:
 
         @worker_ready.connect
@@ -139,6 +179,13 @@ if celery_available:
                 logger.exception(
                     "Failed to register weather providers in Celery worker"
                 )
+            _bootstrap_worker_runtime()
+
+    if worker_process_init is not None:
+
+        @worker_process_init.connect
+        def _on_worker_process_init(**kwargs):  # type: ignore[no-untyped-def]
+            _bootstrap_worker_runtime()
 
     beat_schedule: dict[str, dict[str, Any]] = {}
     if settings.weather_schedule_enabled and crontab is not None:
@@ -170,6 +217,23 @@ if celery_available:
             "task": "app.tasks.workflow_timer_tasks.tick_workflow_timers",
             "schedule": crontab(minute="*"),
             "options": {"queue": settings.workflow_queue_standard},
+        }
+    # 僵尸 run 回收（2026-08-25）：accepted/queued 超时无推进 → CAS 标记
+    # failed（Redis/worker 重启丢任务后 run 永远卡「排队中」的根治）。
+    # 每 5 分钟扫描，阈值见 settings.workflow_stuck_reclaim_seconds（默认 30min）。
+    if crontab is not None:
+        beat_schedule["reclaim-stuck-workflow-runs"] = {
+            "task": "app.tasks.workflow_reclaim_tasks.reclaim_stuck_workflow_runs",
+            "schedule": crontab(minute="*/5"),
+            "options": {"queue": settings.workflow_queue_standard},
+        }
+    # 叠加层烘焙资产自愈：每日校验 bake_version 陈旧资产并自动重烘
+    # （2026-08-24 用户意见#1：资产新鲜度不依赖外部手工操作）
+    if crontab is not None:
+        beat_schedule["rebake-stale-overlay-assets"] = {
+            "task": "app.tasks.asset_bake_tasks.rebake_stale_overlay_assets",
+            "schedule": crontab(minute=17, hour=3),
+            "options": {"queue": settings.workflow_queue_batch},
         }
     # 长期运行清理任务：避免 SQLite 与缓存文件无限增长
     # - workflow runs 保留 30 天，每天 03:00 UTC 清理

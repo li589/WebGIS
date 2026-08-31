@@ -109,6 +109,73 @@
     linear-gradient(180deg, var(--surface-sunken), var(--surface-sunken));
 }
 
+/* Globe 模式专属视觉层：大气边缘辉光与深空底色；默认不增加绘制，
+   仅由 DashboardView 的 map-shell--3d 类激活。
+   主题感知：浅色主题（data-theme="light"）下用柔和浅蓝灰渐变，避免深空与浅色 UI 冲突。 */
+.map-shell--3d .map-stage {
+  background:
+    radial-gradient(circle at 50% 48%, rgba(80, 180, 220, 0.12), transparent 34%),
+    linear-gradient(180deg, #07141f 0%, #091d2b 56%, #04101b 100%);
+}
+
+:root[data-theme='light'] .map-shell--3d .map-stage {
+  background:
+    radial-gradient(circle at 50% 48%, rgba(140, 175, 210, 0.10), transparent 38%),
+    linear-gradient(180deg, #e7edf4 0%, #d6dfeb 56%, #c5d1e0 100%);
+}
+
+.map-shell--3d .map-host {
+  filter: saturate(1.08) contrast(1.04);
+  /* 白球兜底不在此处：.map-host 矩形不透明背景会把 z-index 同层的星图层
+     （GlobeStarfield）完全遮住，导致"星图不显示/3D 背景调整无效"。
+     无瓦片区域的深空蓝兜底改由 MapLibre background layer 承担
+     （globe 投影下贴在球面上，球外区域保持透明让星图透出），
+     见 MapCanvas 的 globe 背景色解析（resolveGlobeBackgroundColor）。 */
+}
+
+/* 3D 模式禁用 CSS 屏幕空间时间铬层（time-sheen/time-band）：
+   它们基于 --horizon-position 的屏幕坐标渐变，在 globe 下与地理无关，
+   会和夜半球遮罩（globe-night-hemisphere-fill）叠出"两条晨昏线"。
+   globe 的昼夜/晨昏渐变统一由地理空间的夜半球遮罩负责。 */
+.map-shell--3d :is(.time-sheen, .time-band) {
+  display: none;
+}
+
+.map-shell--3d .map-fog {
+  background:
+    radial-gradient(ellipse at 50% 48%, transparent 30%, rgba(20, 126, 168, 0.10) 69%, rgba(74, 203, 231, 0.28) 100%),
+    linear-gradient(180deg, rgba(2, 10, 18, 0.14), rgba(2, 10, 18, 0.08));
+  mix-blend-mode: screen;
+  opacity: 0.9;
+}
+
+/* 「自然」档：屏幕空间大气辉光圆会与地理夜半球边界叠成"几个圈在动"，仅保留地理遮罩 */
+.map-shell--3d .map-stage--globe-natural .map-fog {
+  opacity: 0;
+}
+
+.map-shell--3d .map-stage--globe-natural.map-stage {
+  background: linear-gradient(180deg, #07141f 0%, #091d2b 56%, #04101b 100%);
+}
+
+:root[data-theme='light'] .map-shell--3d .map-stage--globe-natural.map-stage {
+  background: linear-gradient(180deg, #e7edf4 0%, #d6dfeb 56%, #c5d1e0 100%);
+}
+
+:root[data-theme='light'] .map-shell--3d .map-fog {
+  background:
+    radial-gradient(ellipse at 50% 48%, transparent 32%, rgba(110, 150, 195, 0.08) 70%, rgba(150, 185, 220, 0.18) 100%),
+    linear-gradient(180deg, rgba(220, 230, 240, 0.10), rgba(220, 230, 240, 0.06));
+  mix-blend-mode: normal;
+  opacity: 0.85;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-shell--3d .map-host {
+    filter: saturate(1.03);
+  }
+}
+
 .basemap-transition-mask {
   position: absolute;
   inset: 0;
@@ -472,7 +539,7 @@
 
 .tile-retry-btn:hover {
   background: var(--danger);
-  color: #fff8f5;
+  color: var(--text-strong);
 }
 
 /* 天气瓦片加载指示器 */
@@ -750,16 +817,16 @@
   height: 0.75rem;
   border-radius: 50%;
   /* 深色模式：浅橙填充 + 浅色描边 */
-  background: #ffb070;
-  border: 2px solid #f0faff;
-  box-shadow: 0 0 8px rgba(255, 184, 77, 0.75);
+  background: var(--inspect-dot-fill);
+  border: 2px solid var(--inspect-dot-ring);
+  box-shadow: 0 0 8px var(--inspect-dot-glow);
 }
 
 /* 浅色模式：更深填充，仍用浅色边缘（与深色模式一致） */
 :global([data-theme='light']) :deep(.inspect-dot) {
-  background: #c45a0a;
-  border-color: #f0faff;
-  box-shadow: 0 0 8px rgba(196, 90, 10, 0.55);
+  background: var(--inspect-dot-fill);
+  border-color: var(--inspect-dot-ring);
+  box-shadow: 0 0 8px var(--inspect-dot-glow);
 }
 :deep(.geo-dot) {
   position: absolute;

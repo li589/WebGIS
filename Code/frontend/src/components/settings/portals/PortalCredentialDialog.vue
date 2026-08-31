@@ -52,6 +52,11 @@ const saving = ref(false)
 const errMsg = ref('')
 const okMsg = ref('')
 
+/** 凭据存储键：credential_profile 优先（与后端 cred_key / 回填读取一致）。 */
+const credStoreKey = computed(
+  () => props.portal?.credential_profile || props.portal?.portal_id || '',
+)
+
 /** 凭据键（credential_profile）与门户同键时显示共享提示。 */
 const isEarthdataFamily = computed(
   () =>
@@ -144,7 +149,7 @@ async function save() {
   }
   saving.value = true
   try {
-    await upsertPortalCredential(props.portal.portal_id, {
+    await upsertPortalCredential(credStoreKey.value, {
       enabled: form.enabled,
       auth_type: form.auth_type,
       username: form.username.trim() || null,
@@ -172,7 +177,7 @@ async function clearCredentials() {
   okMsg.value = ''
   saving.value = true
   try {
-    await deletePortalCredential(props.portal.portal_id)
+    await deletePortalCredential(credStoreKey.value)
     okMsg.value = '凭据已清除'
     emit('saved')
   } catch (e) {

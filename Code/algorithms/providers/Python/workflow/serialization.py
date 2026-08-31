@@ -52,6 +52,14 @@ WORKFLOW_DEFINITION_JSON_SCHEMA: dict[str, object] = {
             "default": {},
             "additionalProperties": True,
         },
+        # 前端画布/种子定义的附加元数据（purpose / group_title / output_labels 等）；
+        # 2026-08-23 曾因 additionalProperties=False 拒绝导致静态图层工作流
+        # 校验失败（Unknown field(s) not allowed: workflow_definition -> extra）
+        "extra": {
+            "type": ["object", "null"],
+            "default": None,
+            "additionalProperties": True,
+        },
     },
     "$defs": {
         "InputSourceSpec": {
@@ -183,6 +191,8 @@ def workflow_definition_from_mapping(
             "outputs",
             "defaults",
             "metadata",
+            # 前端画布/种子的附加元数据（purpose/group_title/output_labels）
+            "extra",
         },
         path="workflow_definition",
     )
@@ -208,6 +218,13 @@ def workflow_definition_from_mapping(
     metadata = _optional_mapping(
         payload, "metadata", "workflow_definition.metadata", default={}
     )
+    # 种子/画布 extra（purpose/group_title/output_labels）并入 metadata 保真透传，
+    # 避免"Unknown field(s) not allowed: workflow_definition -> extra"校验失败
+    extra = _optional_mapping(
+        payload, "extra", "workflow_definition.extra", default={}
+    )
+    if extra:
+        metadata = {**metadata, "extra": dict(extra)}
 
     inputs = {
         input_name: _parse_input_source_spec(

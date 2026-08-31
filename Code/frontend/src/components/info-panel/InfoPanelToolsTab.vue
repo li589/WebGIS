@@ -8,7 +8,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import type { ActiveLayerDisplay } from '../../stores/layers/types'
 import { useAnalysisRunnerStore } from '../../stores/analysis-runner'
-import { useLayersStore } from '../../stores/layers'
+import { useLayerViewport, useLayerWorkspace } from '../../stores/layers/selectors'
 import { isShowAnalysisResultOnMapEnabled } from '../../services/settings-local'
 import type { AnalysisToolDescriptor } from '../../services/analysis-api'
 import AppButton from '../ui/AppButton.vue'
@@ -16,6 +16,7 @@ import AnalysisResultCharts from './AnalysisResultCharts.vue'
 import BasemapFeatureExtractCard from './BasemapFeatureExtractCard.vue'
 import ToolCatalogGrid from './tools/ToolCatalogGrid.vue'
 import ToolRunPage from './tools/ToolRunPage.vue'
+import PageBackButton from './tools/PageBackButton.vue'
 import {
   initFormValues,
   phaseLabelFor,
@@ -42,7 +43,8 @@ const emit = defineEmits<{
 }>()
 
 const runner = useAnalysisRunnerStore()
-const layers = useLayersStore()
+const { currentMapBBox: mapBBoxRef } = useLayerViewport()
+const { activeLayersDisplay } = useLayerWorkspace()
 
 const page = ref<ToolPage>({ kind: 'list' })
 const formValues = reactive<Record<string, unknown>>({})
@@ -59,7 +61,7 @@ const selectedTool = computed<AnalysisToolDescriptor | null>(() => {
 const runContext = computed(() => ({
   displayLayer: props.displayLayer,
   selectedMapPoint: props.selectedMapPoint,
-  hasMapBBox: Boolean(layers.currentMapBBox),
+  hasMapBBox: Boolean(mapBBoxRef.value),
 }))
 
 const runState = computed(() => {
@@ -81,9 +83,19 @@ const phaseBadges = computed<Record<string, string>>(() => {
   return badges
 })
 
+/** 各工具不可用原因（后端 disabled_reason 优先，前端数据前置条件兜底）→ 网格卡片引导 */
+const blockedReasons = computed<Record<string, string>>(() => {
+  const reasons: Record<string, string> = {}
+  for (const tool of tools.value) {
+    const reason = tool.disabled_reason || runDisabledReasonFor(tool, runContext.value)
+    if (reason) reasons[tool.tool_id] = reason
+  }
+  return reasons
+})
+
 /** 当前工作区已导入矢量层（供分区统计 overlay id 下拉建议） */
 const importedVectorOptions = computed(() =>
-  layers.activeLayersDisplay
+  activeLayersDisplay.value
     .filter((layer) => layer.importedVectorBackendLayerId)
     .map((layer) => ({ id: layer.importedVectorBackendLayerId as string, label: layer.name })),
 )
@@ -102,7 +114,7 @@ const analysisTables = computed(() => props.displayLayer.jobLayer?.analysisTable
 const hasResults = computed(
   () => analysisCharts.value.length > 0 || analysisTables.value.length > 0,
 )
-const currentMapBBox = computed(() => layers.currentMapBBox)
+const currentMapBBox = computed(() => mapBBoxRef.value)
 
 async function refreshTools() {
   await runner.loadToolsForDisplay(props.displayLayer, {
@@ -157,7 +169,7 @@ async function onRun() {
   const params = sanitizeFormValues(formValues)
   let bbox = null as null | { west: number; south: number; east: number; north: number }
   if (tool.tool_id === 'gis.clip') {
-    const cb = layers.currentMapBBox
+    const cb = mapBBoxRef.value
     if (cb) {
       bbox = { west: cb.west, south: cb.south, east: cb.east, north: cb.north }
       params.west = cb.west
@@ -231,7 +243,12 @@ const activeToolRunHint = computed(() => {
       <p v-if="runner.toolsError" class="tool-error">{{ runner.toolsError }}</p>
       <p v-if="runner.toolsLoading" class="tool-hint">加载工具目录…</p>
 
-      <ToolCatalogGrid :tools="tools" :phase-badges="phaseBadges" @select="onGridSelect" />
+      <ToolCatalogGrid
+        :tools="tools"
+        :phase-badges="phaseBadges"
+        :blocked-reasons="blockedReasons"
+        @select="onGridSelect"
+      />
 
       <div v-if="hasResults" class="result-block">
         <div class="section-kicker">分析结果</div>
@@ -273,9 +290,7 @@ const activeToolRunHint = computed(() => {
     <template v-else-if="page.kind === 'extract'">
       <div class="tool-page-card">
         <div class="tool-page-head">
-          <button type="button" class="page-back" @click="page = { kind: 'list' }">
-            ← 工具列表
-          </button>
+          <PageBackButton label="工具列表" @back="page = { kind: 'list' }" />
           <span class="tool-kicker">basemap</span>
           <h4 class="tool-title">底图要素提取</h4>
           <p class="tool-note">
@@ -317,21 +332,6 @@ const activeToolRunHint = computed(() => {
   display: grid;
   gap: 0.15rem;
   margin-bottom: 0.5rem;
-}
-
-.page-back {
-  justify-self: start;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: var(--font-size-caption);
-  cursor: pointer;
-  padding: 0;
-  margin-bottom: 0.2rem;
-}
-
-.page-back:hover {
-  color: var(--accent, #3b82f6);
 }
 
 .tool-kicker {

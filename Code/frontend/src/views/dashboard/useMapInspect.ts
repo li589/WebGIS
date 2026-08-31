@@ -15,6 +15,7 @@ import type { useUiStore } from '../../stores/ui'
 import type { LayerHotspot } from '../../stores/layers/types'
 import type { OverlayTimeState } from '../../components/map/overlay-image-module'
 import { getOverlayValue, type OverlayPointValue } from '../../services/runtime-api'
+import { setAgentMapPoint } from '../../stores/agent-map-point'
 import type MapCanvas from '../../components/MapCanvas.vue'
 
 interface SelectedLayerLike {
@@ -66,6 +67,7 @@ export function useMapInspect(
 
   function handleMapPointSelect(point: { lng: number; lat: number }) {
     selectedMapPoint.value = point
+    setAgentMapPoint(point)
     logStore.logOperation(
       'map-point-select',
       `查询点 (${point.lng.toFixed(4)}, ${point.lat.toFixed(4)})`,
@@ -81,6 +83,7 @@ export function useMapInspect(
 
   function clearMapPointInspect() {
     selectedMapPoint.value = null
+    setAgentMapPoint(null)
     workflowRun.clearPointWeather()
     overlayPointValues.value = []
     selectedOverlayTimeSeries.value = []
@@ -153,31 +156,43 @@ export function useMapInspect(
       .map((r) => (r.status === 'fulfilled' ? r.value : null))
       .filter((v): v is OverlayPointValue => v !== null)
 
-    // 并行获取所有可见 overlay 图层的时序与选中图层时序
+    // 并行获取所有可见 overlay 图层的时序与选中图层时序。
+    // GPCP 等大时序另走按需查询，避免一次点击扇出 24 个 NetCDF 读取而触发 502。
+    // 安审 2026-08-21 U-1：seq 必须传入子函数，写回前校验，否则旧点响应
+    // 后到会覆盖新点的时序数据（点 A 慢响应覆盖点 B → 图表与选点静默不一致）
     await Promise.all([
-      fetchAllOverlaySeries(lng, lat, states),
-      fetchSelectedOverlaySeries(lng, lat),
+      fetchAllOverlaySeries(lng, lat, states, seq),
+      fetchSelectedOverlaySeries(lng, lat, seq),
     ])
   }
 
   /** 获取所有可见 overlay 图层在选点处的完整时序（非仅选中层） */
-  async function fetchAllOverlaySeries(lng: number, lat: number, states: OverlayTimeState[]) {
+  async function fetchAllOverlaySeries(
+    lng: number,
+    lat: number,
+    states: OverlayTimeState[],
+    seq?: number,
+  ) {
     const seriesMap: Record<string, OverlayPointValue[]> = {}
     const tasks = states
       .filter((s) => s.category === 'time-series' && s.timeList.length > 0)
       .map(async (s) => {
+        // GPCP 单帧 NetCDF 读取已足够重；点击地图不自动扫完全部采样月。
+        // 保留当前值，完整曲线仅对短时序或用户明确选中的图层按需查询。
+        const times = s.layerId === 'gpcp-precip-ts' ? [s.currentTime ?? s.timeList[0]!].filter(Boolean) : s.timeList
         const results = await Promise.allSettled(
-          s.timeList.map((time) => getOverlayValue(s.layerId, lng, lat, time)),
+          times.map((time) => getOverlayValue(s.layerId, lng, lat, time)),
         )
         seriesMap[s.layerId] = results
           .map((r) => (r.status === 'fulfilled' ? r.value : null))
           .filter((v): v is OverlayPointValue => v !== null)
       })
     await Promise.all(tasks)
+    if (seq !== undefined && seq !== overlayPointFetchSeq) return
     allOverlayTimeSeries.value = seriesMap
   }
 
-  async function fetchSelectedOverlaySeries(lng: number, lat: number) {
+  async function fetchSelectedOverlaySeries(lng: number, lat: number, seq?: number) {
     const selectedActive = workspace.activeLayers.value.find(
       (l) => l.instanceId === selectedLayerDisplay.value?.instanceId,
     )
@@ -192,16 +207,25 @@ export function useMapInspect(
       times = state?.timeList ?? []
     }
     if (!selectedOverlayId || times.length === 0) {
-      selectedOverlayTimeSeries.value = []
-      logStore.logOperation(
-        'overlay-series-error',
-        `无法加载点时序：当前图层无可用时间块（${selectedLayerDisplay.value?.name ?? '未选择'}）`,
-      )
+      if (seq === undefined || seq === overlayPointFetchSeq) {
+        selectedOverlayTimeSeries.value = []
+        logStore.logOperation(
+          'overlay-series-error',
+          `无法加载点时序：当前图层无可用时间块（${selectedLayerDisplay.value?.name ?? '未选择'}）`,
+        )
+      }
       return
     }
+    // 选中 GPCP 时也只先展示当前采样月；完整时序要显式走专用聚合 API，
+    // 不能在交互事件里并发打开 24 个 NetCDF 文件。
+    const queryTimes =
+      selectedOverlayId === 'gpcp-precip-ts'
+        ? [overlayTimeStates.value.find((s) => s.layerId === selectedOverlayId)?.currentTime ?? times[0]!]
+        : times
     const seriesResults = await Promise.allSettled(
-      times.map((time) => getOverlayValue(selectedOverlayId, lng, lat, time)),
+      queryTimes.map((time) => getOverlayValue(selectedOverlayId, lng, lat, time)),
     )
+    if (seq !== undefined && seq !== overlayPointFetchSeq) return
     selectedOverlayTimeSeries.value = seriesResults
       .map((r) => (r.status === 'fulfilled' ? r.value : null))
       .filter((v): v is OverlayPointValue => v !== null)

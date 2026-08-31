@@ -1,6 +1,6 @@
-import { computed, ref, type ComputedRef, type Ref } from 'vue'
-import { useLayersStore } from '../../stores/layers'
+import { computed, ref, type Ref } from 'vue'
 import type { ActiveLayerDisplay, ActiveRunLayerGroup } from '../../stores/layers/types'
+import type { SidebarDragDeps } from './sidebar-layers-deps'
 import { LAYERS_COPY } from '../../ui-copy'
 
 export type ActiveTocRow =
@@ -21,12 +21,12 @@ export type ActiveTocRow =
  *
  * @param activeLayersDisplay - ComputedRef of the display-ordered active layers
  * @param runLayerGroups - ComputedRef of the active run layer groups
- * @param layersStore - The layers store instance
+ * @param layersDeps - Narrow layers dependencies (see sidebar-layers-deps.ts)
  */
 export function useSidebarDragReorder(
-  activeLayersDisplay: ComputedRef<ActiveLayerDisplay[]>,
+  activeLayersDisplay: Ref<ActiveLayerDisplay[]>,
   runLayerGroups: Ref<ActiveRunLayerGroup[]>,
-  layersStore: ReturnType<typeof useLayersStore>,
+  layersDeps: SidebarDragDeps,
 ) {
   const draggedInstanceId = ref<string | null>(null)
   const draggedGroupId = ref<string | null>(null)
@@ -105,7 +105,7 @@ export function useSidebarDragReorder(
           ? sorted.findIndex((l) => l.instanceId === firstMember.instanceId)
           : -1
         const placeAfter = firstIdx >= 0 ? targetIdx < firstIdx : true
-        layersStore.moveRunGroupBlock(draggedGroupId.value, targetInstanceId, placeAfter)
+        layersDeps.moveRunGroupBlock(draggedGroupId.value, targetInstanceId, placeAfter)
       }
       onDragEnd()
       return
@@ -121,7 +121,7 @@ export function useSidebarDragReorder(
       onDragEnd()
       return
     }
-    layersStore.reorderLayers(fromIndex, toIndex)
+    layersDeps.reorderLayers(fromIndex, toIndex)
     onDragEnd()
   }
 
@@ -130,7 +130,7 @@ export function useSidebarDragReorder(
       const targetGroup = runGroupOf(groupId)
       const anchor = targetGroup?.memberInstanceIds[0] ?? null
       if (anchor) {
-        layersStore.moveRunGroupBlock(draggedGroupId.value, anchor, false)
+        layersDeps.moveRunGroupBlock(draggedGroupId.value, anchor, false)
       }
     }
     onDragEnd()

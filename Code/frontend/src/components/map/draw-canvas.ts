@@ -11,6 +11,11 @@
  */
 import type { Map as MaplibreMap } from 'maplibre-gl'
 import type { DrawVertex, DrawFeature, DrawMode } from '../../stores/draw-store'
+import {
+  clipCoordsForGlobe,
+  isGlobeProjection,
+  isLngLatOnGlobeVisibleSide,
+} from './canvas-utils'
 
 const MAX_PIXEL_RATIO = 2
 const VERTEX_RADIUS = 6
@@ -179,8 +184,11 @@ export class DrawCanvas {
   }
 
   private renderVertexHandles(ctx: CanvasRenderingContext2D): void {
+    const onGlobe = isGlobeProjection(this.map)
     for (let i = 0; i < this.vertices.length; i++) {
       const v = this.vertices[i]
+      // globe 模式：背面的顶点不再绘制（避免圈出现在屏幕外或中央）。
+      if (onGlobe && !isLngLatOnGlobeVisibleSide(this.map, v.lng, v.lat)) continue
       const sp = this.project(v.lng, v.lat)
       const isFirst = i === 0
 
@@ -204,8 +212,16 @@ export class DrawCanvas {
 
   private renderPreviewLine(ctx: CanvasRenderingContext2D): void {
     const last = this.vertices[this.vertices.length - 1]
+    const hover = this.hoverPoint!
+    const onGlobe = isGlobeProjection(this.map)
+    // globe 模式：跨 antimeridian 或任一端在镜头背后时不画预览线，避免飞线。
+    if (onGlobe) {
+      if (!isLngLatOnGlobeVisibleSide(this.map, last.lng, last.lat)) return
+      if (!isLngLatOnGlobeVisibleSide(this.map, hover.lng, hover.lat)) return
+      if (Math.abs(hover.lng - last.lng) > 180) return
+    }
     const lastSp = this.project(last.lng, last.lat)
-    const hoverSp = this.project(this.hoverPoint!.lng, this.hoverPoint!.lat)
+    const hoverSp = this.project(hover.lng, hover.lat)
 
     ctx.beginPath()
     ctx.setLineDash(PREVIEW_DASH)
@@ -228,20 +244,32 @@ export class DrawCanvas {
 
     if (coords.length < 2) return
 
-    ctx.beginPath()
-    const first = this.project(coords[0][0], coords[0][1])
-    ctx.moveTo(first.x, first.y)
-    for (let i = 1; i < coords.length; i++) {
-      const sp = this.project(coords[i][0], coords[i][1])
-      ctx.lineTo(sp.x, sp.y)
-    }
-    if (feature.geometry.type === 'Polygon') {
-      ctx.closePath()
-    }
+    // globe 模式：拆 antimeridian + 剔除背面顶点，避免多边形横跨屏幕中央画飞线。
+    // mercator 模式：clipCoordsForGlobe 直接原样返回单段，零开销。
+    const segments = clipCoordsForGlobe(
+      this.map,
+      coords.map((coord) => [coord[0], coord[1]] as [number, number]),
+    )
+    if (segments.length === 0) return
+
     ctx.strokeStyle = SELECTED_STROKE
     ctx.lineWidth = SELECTED_WIDTH
     ctx.setLineDash([8, 4])
-    ctx.stroke()
+
+    for (const seg of segments) {
+      if (seg.length < 2) continue
+      const first = this.project(seg[0][0], seg[0][1])
+      ctx.beginPath()
+      ctx.moveTo(first.x, first.y)
+      for (let i = 1; i < seg.length; i++) {
+        const sp = this.project(seg[i][0], seg[i][1])
+        ctx.lineTo(sp.x, sp.y)
+      }
+      if (feature.geometry.type === 'Polygon') {
+        ctx.closePath()
+      }
+      ctx.stroke()
+    }
     ctx.setLineDash([])
   }
 

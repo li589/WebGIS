@@ -226,7 +226,19 @@ def require_data_transfer_access(
     request: Request,
     x_api_key: str | None = Security(_api_key_header),
 ) -> None:
-    """数据上传/下载权限：admin + standard 无限制；demo 受全局开关管控。"""
+    """数据上传/下载权限：admin + standard 无限制；demo 受全局开关管控。
+
+    本依赖**只做权限闸门**，不负责传递调用者身份。
+
+    历史教训（2026-08-29 审查 C-1）：此处曾是同步 ``def`` 并试图用 ContextVar
+    把 user_id 捅给下游的 ``create_job``。但 FastAPI 在线程池执行同步依赖
+    （anyio ``copy_context()``），``ContextVar.set()`` 不会回传事件循环，
+    而端点是 ``async def``，导致所有导入任务属主恒为 ``None``，
+    提交者被自己任务的 403 挡在外面。
+
+    → 属主必须由端点**显式传参**下传（``enqueue_job(..., owner_user_id=...)``），
+    切勿改回任何隐式上下文方案。回归锁见 ``Test/backend/test_import_job_ownership.py``。
+    """
     ctx = resolve_credential(request, x_api_key)
     if ctx is not None and can_data_transfer(ctx):
         return

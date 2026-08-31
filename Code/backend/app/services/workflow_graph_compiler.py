@@ -305,7 +305,11 @@ def compile_litegraph_to_workflow_definition(
     # skipping pure helpers whose primary job is request shaping.
     _CONFIG_HELPER_MODULES = frozenset({"time_range", "data_source", "bbox"})
     output_specs: list[dict[str, str]] = []
+    # disabled 节点（enabled=false，如默认关闭的 FY3F/FY3B 支路）不得作为输出源：
+    # 验证层要求 outputs 引用的必须是启用节点。
     for node in reversed(compiled_nodes):
+        if node.get("enabled") is False:
+            continue
         nid = node["node_id"]
         outs = port_meta[nid]["outputs"]
         if any(p.get("name") == "manifest" for p in outs):
@@ -313,6 +317,8 @@ def compile_litegraph_to_workflow_definition(
             break
     if not output_specs:
         for node in reversed(compiled_nodes):
+            if node.get("enabled") is False:
+                continue
             nid = node["node_id"]
             outs = port_meta[nid]["outputs"]
             if not outs:

@@ -31,7 +31,7 @@
         "data_source": "auto",
         "start_date": "{YYYYMMDD}",
         "end_date": "{YYYYMMDD}",
-        "local_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\FY3D\\raw",
+        "local_dir": "{DATA_ROOT}/Soil_Moisture/FY3D/raw",
         "band_ids": "1,2",
         "orbit_mode": "MWRID"
       }
@@ -49,7 +49,7 @@
         "data_source": "auto",
         "start_date": "{YYYYMMDD}",
         "end_date": "{YYYYMMDD}",
-        "local_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\FY3B\\raw",
+        "local_dir": "{DATA_ROOT}/Soil_Moisture/FY3B/raw",
         "band_ids": "1,2",
         "orbit_mode": "MWRID"
       }
@@ -62,7 +62,7 @@
         140
       ],
       "properties": {
-        "output_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\FY3D",
+        "output_dir": "{DATA_ROOT}/Soil_Moisture/FY3D",
         "algorithm_params": {
           "orbit_mode": "MWRID",
           "band_ids": [
@@ -84,7 +84,7 @@
       ],
       "properties": {
         "enabled": false,
-        "output_dir": "{DATA_ROOT_WIN}\\Soil_Moisture\\FY3B",
+        "output_dir": "{DATA_ROOT}/Soil_Moisture/FY3B",
         "algorithm_params": {
           "orbit_mode": "MWRID",
           "band_ids": [
@@ -325,6 +325,12 @@
     "notes": "模板种子：start_date/end_date 含 YYYYMMDD 占位符，运行前替换。data_source=auto：优先 NSMC 门户在线（多账号轮换 + 额度冷却；历史日期门户 404），失败回退 NAS FileBrowser（/Chenhaojun/Data/fy3dhdf2425 逐日 FY3D TIF）。FY3B 支路默认停用（properties.enabled=false，FY3B 卫星 2020 年退役、无现代日期数据；反演回退匹配在 fy3b_folder 为空时自动跳过）——历史日期回补可在画布重新启用节点 2/4。fy_daily 落盘规范名 YYYYMMDD.mat 供 fy3d_folder/fy3b_folder 读取；D1 omega_block 产物、SMAP、辅助库、NDVI 数据源保持本地。补齐 2×2×2 矩阵的「风云×平均×在线」一格。",
     "has_time_range_node": false,
     "has_bbox_node": false,
-    "has_output_node": true
+    "has_output_node": true,
+    "group_title": "风云 ω 反演产物（平均）",
+    "output_labels": {
+      "SM": "土壤水分",
+      "VOD": "植被光学厚度",
+      "OMEGA": "反演参数 ω"
+    }
   }
 }

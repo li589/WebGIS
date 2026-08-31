@@ -37,8 +37,25 @@ import contextlib
 
 logger = logging.getLogger(__name__)
 
-# Cron / 日期模板墙钟时区（存储仍为 UTC ISO）
-TIMER_TZ = ZoneInfo("Asia/Shanghai")
+
+# Cron / 日期模板墙钟时区（存储仍为 UTC ISO）。
+# D4：时区经 settings.timer_timezone（env BACKEND_TIMER_TZ）可配，默认
+# Asia/Shanghai。模块导入时求值一次；非法值回退默认并告警（启动即暴露）。
+def _resolve_timer_tz() -> ZoneInfo:
+    tz_name = (getattr(settings, "timer_timezone", None) or "").strip()
+    if not tz_name:
+        return ZoneInfo("Asia/Shanghai")
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        logger.warning(
+            "[TimerService] invalid BACKEND_TIMER_TZ=%r, falling back to Asia/Shanghai",
+            tz_name,
+        )
+        return ZoneInfo("Asia/Shanghai")
+
+
+TIMER_TZ = _resolve_timer_tz()
 
 # claim 后若进程在 mark_fired 前崩溃，CLAIMED 哨兵超过此时长则回收为立即到期。
 # 600s 覆盖 tick() 内同步 submit_workflow 的最坏耗时（payload 构建 + 容量预留 +
@@ -72,6 +89,8 @@ class WorkflowTimer:
     fire_count: int = 0
     created_at: str = ""
     updated_at: str = ""
+    # 归属用户（多用户隔离）：None = 旧共享数据 / 匿名创建（仅 admin 可见）
+    owner_user_id: int | None = None
 
 
 # ─── Cron 解析器（5 字段，无外部依赖） ───────────────────────────────────────
@@ -445,10 +464,23 @@ class WorkflowTimerStore:
                     last_error TEXT,
                     fire_count INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    owner_user_id INTEGER
                 )
                 """
             )
+            # 旧表迁移：补充 owner_user_id 列（2026-08-20 多用户隔离）。
+            # SQLite ALTER ADD COLUMN 带默认 NULL 幂等性由列存在检测保证。
+            cols = {
+                row[1]
+                for row in self._conn.execute(
+                    "PRAGMA table_info(workflow_timers)"
+                ).fetchall()
+            }
+            if "owner_user_id" not in cols:
+                self._conn.execute(
+                    "ALTER TABLE workflow_timers ADD COLUMN owner_user_id INTEGER"
+                )
             self._conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_workflow_timers_enabled_next ON workflow_timers(enabled, next_fire_at)"
             )
@@ -461,17 +493,29 @@ class WorkflowTimerStore:
             with contextlib.suppress(Exception):
                 self._conn.close()
 
-    def list_timers(self, *, workflow_id: str | None = None) -> list[WorkflowTimer]:
+    def list_timers(
+        self,
+        *,
+        workflow_id: str | None = None,
+        owner_user_id: int | None = None,
+    ) -> list[WorkflowTimer]:
+        """列定时器；``owner_user_id`` 非 None 时仅返回该用户的定时器。
+
+        调度路径（tick/fetch_due_timers）不传 owner —— 服务端内部按到期
+        时间扫描全部定时器，与归属无关。
+        """
+        clauses: list[str] = []
+        params: list[Any] = []
+        if workflow_id:
+            clauses.append("workflow_id = ?")
+            params.append(workflow_id)
+        if owner_user_id is not None:
+            clauses.append("owner_user_id = ?")
+            params.append(owner_user_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        sql = f"SELECT * FROM workflow_timers {where} ORDER BY created_at ASC"
         with self._lock:
-            if workflow_id:
-                rows = self._conn.execute(
-                    "SELECT * FROM workflow_timers WHERE workflow_id = ? ORDER BY created_at ASC",
-                    (workflow_id,),
-                ).fetchall()
-            else:
-                rows = self._conn.execute(
-                    "SELECT * FROM workflow_timers ORDER BY created_at ASC"
-                ).fetchall()
+            rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_timer(r) for r in rows]
 
     def get_timer(self, timer_id: str) -> WorkflowTimer | None:
@@ -489,8 +533,8 @@ class WorkflowTimerStore:
                 INSERT INTO workflow_timers
                 (timer_id, workflow_id, name, trigger_type, trigger_config, payload_overrides,
                  enabled, last_fired_at, next_fire_at, last_run_id, last_error,
-                 fire_count, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 fire_count, created_at, updated_at, owner_user_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     timer.timer_id,
@@ -507,6 +551,7 @@ class WorkflowTimerStore:
                     timer.fire_count,
                     timer.created_at,
                     timer.updated_at,
+                    timer.owner_user_id,
                 ),
             )
         return timer
@@ -740,6 +785,7 @@ class WorkflowTimerStore:
             )
 
     def _row_to_timer(self, row: sqlite3.Row) -> WorkflowTimer:
+        keys = set(row.keys())
         return WorkflowTimer(
             timer_id=row["timer_id"],
             workflow_id=row["workflow_id"],
@@ -755,6 +801,7 @@ class WorkflowTimerStore:
             fire_count=row["fire_count"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            owner_user_id=row["owner_user_id"] if "owner_user_id" in keys else None,
         )
 
 
@@ -792,6 +839,7 @@ def create_timer(
     *,
     payload_overrides: dict[str, Any] | None = None,
     enabled: bool = True,
+    owner_user_id: int | None = None,
 ) -> WorkflowTimer:
     """创建并持久化一个新定时器。"""
     from app.services import workflow_definition_service as wds
@@ -823,6 +871,7 @@ def create_timer(
         next_fire_at=next_fire,
         created_at=now.isoformat(),
         updated_at=now.isoformat(),
+        owner_user_id=owner_user_id,
     )
     return get_timer_store().create_timer(timer)
 
@@ -1068,4 +1117,5 @@ def timer_to_dict(timer: WorkflowTimer) -> dict[str, Any]:
         "fire_count": timer.fire_count,
         "created_at": timer.created_at,
         "updated_at": timer.updated_at,
+        "owner_user_id": timer.owner_user_id,
     }

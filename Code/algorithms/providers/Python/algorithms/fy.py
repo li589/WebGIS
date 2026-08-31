@@ -49,6 +49,12 @@ class FyDatasetProfile:
     tb_offset: float
     zen_scale: float
     zen_offset: float
+    # FY-3F 的 EARTH_OBSERVE_BT 为 (scanline, pixel, channel) 3D 数组，GDAL
+    # 将其暴露为转置的多波段栅格（10 x 520 且 2023 波段），-b 无法选通道；
+    # 需先经 h5py 抽取通道为 2D 临时 HDF5（见 FY3F_MWRI_mosaic.py 先例）。
+    tb_3d_extract: bool = False
+    # 3D 抽取时 h5py 侧的组路径（GDAL 下划线映射前的原始名，含空格）。
+    tb_h5_group_path: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,45 +133,78 @@ def get_fy_profile(satellite: str) -> FyDatasetProfile:
     satellite = satellite.upper()
     if satellite == "FY3B":
         return FY3B_PROFILE
+    if satellite == "FY3F":
+        return FY3F_PROFILE
     if satellite == "FY3D":
         return FY3D_PROFILE
     return FY3D_PROFILE
 
 
+# FY-3F MWRI（ORBA 升轨）。SDS 路径/源 nodata/scale 以课题组
+# ``Matlab/fy拼接/FY3F_MWRI_mosaic.py`` 与 ``B4_FY3F.m`` 实测为准：
+# TB FillValue=-32767 Slope=0.01 Intercept=327.68；IA FillValue=-32768（兼容 -32767）；
+# 经纬度 FillValue=-9999.9；输出统一 -32767。
+FY3F_PROFILE = FyDatasetProfile(
+    satellite="FY3F",
+    tb_sds_path="//Window_Channel/Calibration/EARTH_OBSERVE_BT",
+    lat_sds_path="//Window_Channel/Geolocation/Latitude",
+    lon_sds_path="//Window_Channel/Geolocation/Longitude",
+    zen_sds_path="//Window_Channel/Geolocation/Sensor_Zenith",
+    tb_band_names=(
+        "10V",
+        "10H",
+        "18V",
+        "18H",
+        "23V",
+        "23H",
+        "36V",
+        "36H",
+        "89V",
+        "89H",
+    ),
+    zenith_name="Sensor_Zenith",
+    tb_src_nodata=-32767.0,
+    lat_lon_src_nodata=-9999.9,
+    zen_src_nodata=-32768.0,
+    dst_nodata=-32767.0,
+    output_prefix="FY3F_GBAL_L1",
+    tb_scale=0.01,
+    tb_offset=327.68,
+    zen_scale=0.01,
+    zen_offset=0.0,
+    tb_3d_extract=True,
+    tb_h5_group_path="Window Channel/Calibration/EARTH_OBSERVE_BT",
+)
+
+
 def resolve_gdal_bins(force_bin: str | None = None) -> dict[str, str]:
-    """查找 GDAL 可执行文件路径。优先 force_bin 指定目录，其次 PATH 环境变量。返回含 gdal_translate/gdalbuildvrt/gdalwarp/gdalinfo 的字典。"""
-    import shutil
+    """查找 GDAL 可执行文件绝对路径（与 ``ingest.fy_preprocess`` 共用探测链）。
 
-    candidates: list[Path] = []
-    if force_bin:
-        candidates.append(Path(force_bin))
+    优先 ``force_bin`` / ``CGDA_GDAL_BIN``，再 OSGeo4W / QGIS / conda / PATH。
+    找到 QGIS 时会设置 ``GDAL_DRIVER_PATH``（HDF5 插件）。
+    **不再**回退为裸命令名 ``gdal_translate``（Windows 无 PATH 时会假成功拼出
+    ``'"gdal_translate"' is not recognized``）。
+    """
+    from ingest import fy_preprocess as fp
 
-    conda_prefix = os.environ.get("CONDA_PREFIX")
-    if conda_prefix:
-        candidates.append(Path(conda_prefix) / "Library" / "bin")
+    previous = os.environ.get("CGDA_GDAL_BIN")
+    try:
+        if force_bin:
+            os.environ["CGDA_GDAL_BIN"] = str(force_bin).strip().rstrip("/\\")
+        translate, buildvrt, warp, info, prefix = fp._resolve_gdal_bins()
+    finally:
+        if force_bin:
+            if previous is None:
+                os.environ.pop("CGDA_GDAL_BIN", None)
+            else:
+                os.environ["CGDA_GDAL_BIN"] = previous
 
-    for candidate in candidates:
-        translate = candidate / "gdal_translate.exe"
-        buildvrt = candidate / "gdalbuildvrt.exe"
-        warp = candidate / "gdalwarp.exe"
-        info = candidate / "gdalinfo.exe"
-        if all(path.exists() for path in (translate, buildvrt, warp, info)):
-            return {
-                "gdal_translate": str(translate),
-                "gdalbuildvrt": str(buildvrt),
-                "gdalwarp": str(warp),
-                "gdalinfo": str(info),
-            }
-
-    translate = shutil.which("gdal_translate") or shutil.which("gdal_translate.exe")
-    buildvrt = shutil.which("gdalbuildvrt") or shutil.which("gdalbuildvrt.exe")
-    warp = shutil.which("gdalwarp") or shutil.which("gdalwarp.exe")
-    info = shutil.which("gdalinfo") or shutil.which("gdalinfo.exe")
+    fp._maybe_set_qgis_gdal_driver_path(prefix)
     return {
-        "gdal_translate": translate or "gdal_translate",
-        "gdalbuildvrt": buildvrt or "gdalbuildvrt",
-        "gdalwarp": warp or "gdalwarp",
-        "gdalinfo": info or "gdalinfo",
+        "gdal_translate": translate,
+        "gdalbuildvrt": buildvrt,
+        "gdalwarp": warp,
+        "gdalinfo": info,
     }
 
 
@@ -228,13 +267,38 @@ def build_fy_daily_command_steps(
             geoloc_vrt = work_dir / f"temp_{file_name}_{band_name}new.vrt"
             geoloc_tif = work_dir / f"vrt_{file_name}_{band_name}.tif"
 
+            if profile.tb_3d_extract:
+                # FY-3F 3D TB：先经 h5py 抽取通道为 2D 临时 HDF5，再 -b 1
+                tb_temp_h5 = work_dir / f"tb_{file_name}_{band_name}.h5"
+                steps.append(
+                    FyCommandStep(
+                        name=f"extract_tb_channel_{band_name}",
+                        command=(
+                            f"EXTRACT_TB_CHANNEL {input_file} "
+                            f"channel={band_id} -> {tb_temp_h5}"
+                        ),
+                        outputs=(str(tb_temp_h5),),
+                        metadata={
+                            "source_hdf": str(input_file),
+                            "h5_group_path": profile.tb_h5_group_path,
+                            "channel_index": band_id - 1,
+                            "target_h5": str(tb_temp_h5),
+                        },
+                    )
+                )
+                tb_uri = hdf_sds_uri(str(tb_temp_h5), "//TB")
+                tb_band_flag = 1
+            else:
+                tb_uri = hdf_sds_uri(input_file, profile.tb_sds_path)
+                tb_band_flag = band_id
+
             steps.append(
                 FyCommandStep(
                     name=f"translate_tb_vrt_{band_name}",
                     command=(
                         f'"{gdal_bins["gdal_translate"]}" -of VRT '
-                        f'-a_nodata {profile.tb_src_nodata} -b {band_id} '
-                        f'{hdf_sds_uri(input_file, profile.tb_sds_path)} "{data_vrt}"'
+                        f"-a_nodata {profile.tb_src_nodata} -b {tb_band_flag} "
+                        f'{tb_uri} "{data_vrt}"'
                     ),
                     outputs=(str(data_vrt),),
                 )

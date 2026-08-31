@@ -27,8 +27,17 @@ from app.services.overlay_registry import (
 )
 from app.services.workflow_request_resolver import describe_layer_run_readiness
 from shared.contracts.api_contracts import (
+    LayerAssetStateResponse,
     LayerCatalogResponse,
     LayerCategoryResponse,
+    LayerLifecycleResponse,
+    LayerLifecycleRunSummary,
+    LayerOnlineSyncRequest,
+    LayerOnlineSyncResponse,
+    WorkflowTemplateListResponse,
+    WorkflowTemplateRunRequest,
+    WorkflowTemplateRunResponse,
+    WorkflowTemplateSummary,
 )
 
 _logger = logging.getLogger(__name__)
@@ -140,6 +149,8 @@ def list_layers(cred=Depends(get_request_user)) -> LayerCatalogResponse:
                     "run_readiness_notes": readiness.get(
                         "run_readiness_notes", descriptor.run_readiness_notes
                     ),
+                    "online_ready": readiness.get("online_ready", descriptor.online_ready),
+                    "local_ready": readiness.get("local_ready", descriptor.local_ready),
                 }
             )
         )
@@ -158,6 +169,126 @@ def list_layer_categories() -> LayerCategoryResponse:
     return get_layer_category_response()
 
 
+# ── 图层平台子系统 P0：资产状态与生命周期聚合接口（2026-08-24） ───────────────
+
+
+def _layer_asset_state_response(layer_id: str, state: dict[str, Any]) -> LayerAssetStateResponse:
+    from app.services.overlay_asset_workflow_service import _layer_to_task
+
+    return LayerAssetStateResponse(
+        layer_id=layer_id,
+        asset_state=str(state.get("asset_state") or "missing"),
+        bake_version=state.get("bake_version"),
+        current_bake_version=int(state.get("current_bake_version") or 0),
+        png_exists=bool(state.get("png_exists")),
+        bounds_exists=bool(state.get("bounds_exists")),
+        category=str(state.get("category") or "static"),
+        time_list=[str(t) for t in (state.get("time_list") or [])],
+        default_time=state.get("default_time"),
+        asset_task=_layer_to_task().get(layer_id),
+    )
+
+
+def _compute_lifecycle_state(
+    asset_state: str, recent_runs: list[Any]
+) -> tuple[str, str | None]:
+    """由资产状态 + 最近 run 推导统一生命周期状态与提示文案。"""
+    active_statuses = {"accepted", "queued", "running", "retry_pending"}
+    if any(r.status in active_statuses for r in recent_runs):
+        return "updating", "图层资产正在检查或更新。"
+    if asset_state == "fresh":
+        return "fresh", "图层资产已就绪。"
+    if asset_state == "stale":
+        return "stale", "图层资产陈旧，可触发重新烘焙。"
+    if asset_state == "missing":
+        return "missing", "图层资产缺失，需要烘焙后显示。"
+    if any(r.status == "failed" for r in recent_runs[:3]):
+        return "failed", "最近一次资产/工作流运行失败。"
+    return asset_state, None
+
+
+@router.get(
+    "/layer-assets/{layer_id}", tags=["layer-platform"], response_model=LayerAssetStateResponse
+)
+def get_layer_asset_state(
+    layer_id: str,
+    cred=Depends(get_request_user),
+) -> LayerAssetStateResponse:
+    """图层烘焙资产状态查询（图层平台子系统 P0）。
+
+    返回 asset_state（missing/unversioned/stale/fresh）、bake_version、
+    时间轴元数据与可用烘焙任务 key。前端 lifecycle 域以本接口为真源。
+    """
+    check_resource_access(cred, "layer", layer_id)
+    from app.services.overlay_asset_workflow_service import (
+        overlay_asset_workflow_service,
+    )
+
+    try:
+        state = overlay_asset_workflow_service.get_asset_state(layer_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+    return _layer_asset_state_response(layer_id, state)
+
+
+@router.get(
+    "/layers/{layer_id}/lifecycle",
+    tags=["layer-platform"],
+    response_model=LayerLifecycleResponse,
+)
+def get_layer_lifecycle(
+    layer_id: str,
+    limit: int = Query(default=5, ge=1, le=20),
+    cred=Depends(get_request_user),
+) -> LayerLifecycleResponse:
+    """图层生命周期聚合视图（图层平台子系统 P0）。
+
+    聚合资产状态 + 最近 run（workflow_kind/layer_id 索引查询）+ 时间轴元数据，
+    前端不再自行拼接 jobLayer / overlayTimeStates / asset_state。
+    """
+    check_resource_access(cred, "layer", layer_id)
+    from app.services.overlay_asset_workflow_service import (
+        overlay_asset_workflow_service,
+    )
+
+    try:
+        state = overlay_asset_workflow_service.get_asset_state(layer_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+
+    asset = _layer_asset_state_response(layer_id, state)
+    from app.services.workflow_repository import SQLiteWorkflowRepository
+
+    repository = SQLiteWorkflowRepository()
+    runs = repository.list_runs_by_layer(layer_id, limit=limit)
+    recent = [
+        LayerLifecycleRunSummary(
+            run_id=r.run_id,
+            workflow_kind=(r.executor_metadata or {}).get("workflow_kind"),
+            status=r.status.value,
+            progress=r.progress,
+            message=r.message,
+            updated_at=r.updated_at,
+        )
+        for r in runs
+    ]
+    lifecycle_state, message = _compute_lifecycle_state(asset.asset_state, runs)
+    from datetime import UTC, datetime as _dt
+
+    return LayerLifecycleResponse(
+        layer_id=layer_id,
+        asset=asset,
+        recent_runs=recent,
+        lifecycle_state=lifecycle_state,
+        message=message,
+        updated_at=runs[0].updated_at if runs else _dt.now(UTC),
+    )
+
+
 @router.get("/layers/{layer_id}/online-temporal", tags=["catalog"])
 def get_layer_online_temporal(
     layer_id: str,
@@ -174,6 +305,347 @@ def get_layer_online_temporal(
     if cap is None or not cap.enabled:
         return {"layer_id": layer_id, "available": False}
     return {"layer_id": layer_id, "available": True, **cap.model_dump()}
+
+
+@router.get("/layers/{layer_id}/data-coverage", tags=["catalog"])
+def get_layer_data_coverage(
+    layer_id: str,
+    cred=Depends(get_request_user),
+) -> dict[str, Any]:
+    """双通道可用性：在线覆盖窗 + 本地资产 time_list（计划会话 / 色带）。
+
+    - ``channels.online``：来自 descriptor.online_temporal（未启用则 available=false）
+    - ``channels.local``：来自 overlay 资产 state.time_list；取失败时 dates=[]
+    """
+    check_resource_access(cred, "layer", layer_id)
+    descriptor = get_layer_descriptor(layer_id)
+    cap = descriptor.online_temporal if descriptor else None
+    online: dict[str, Any]
+    if cap is None or not cap.enabled:
+        online = {
+            "available": False,
+            "coverage_start": None,
+            "coverage_end": None,
+            "native_step": None,
+        }
+    else:
+        online = {
+            "available": True,
+            "coverage_start": cap.coverage_start,
+            "coverage_end": cap.coverage_end,
+            "native_step": cap.native_step,
+        }
+
+    local_dates: list[str] = []
+    try:
+        from app.services.overlay_asset_workflow_service import (
+            overlay_asset_workflow_service,
+        )
+
+        state = overlay_asset_workflow_service.get_asset_state(layer_id)
+        local_dates = [str(t) for t in (state.get("time_list") or []) if t]
+    except Exception:
+        local_dates = []
+
+    return {
+        "layer_id": layer_id,
+        "channels": {
+            "online": online,
+            "local": {
+                "available": len(local_dates) > 0,
+                "dates": local_dates,
+            },
+        },
+    }
+
+
+def _submit_online_sync_workflow(
+    payload: Any, cred: Any = None
+) -> Any:
+    """online_sync 的 workflow 提交封装（可 mock）。
+
+    模块级独立函数便于测试隔离路由编排逻辑与真实 workflow 提交。
+    """
+    from app.api.routers.workflow_router import submit_workflow
+
+    return submit_workflow(
+        payload,
+        cred=cred if hasattr(cred, "role") else None,
+    )
+
+
+@router.post(
+    "/layer-assets/{layer_id}/sync",
+    tags=["layer-platform"],
+    response_model=LayerOnlineSyncResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def sync_layer_asset_online(
+    layer_id: str,
+    body: LayerOnlineSyncRequest | None = None,
+    cred=Depends(get_request_user),
+) -> LayerOnlineSyncResponse:
+    """在线源同步统一入口（图层平台子系统 P1）。
+
+    前端不再自行拼 workflow 提交参数；服务端创建 ``workflow_kind=online_sync``
+    的 run 并复用 workflow-runs 状态/事件/取消契约。
+
+    语义：
+    - 图层未启用 online_temporal → ``skipped-unsupported``（200，不报错）
+    - 已有同图层同时间的活跃 online_sync run → ``in-flight``（复用）
+    - 其他情况 → 提交 workflow run，返回 ``submitted``
+
+    失败时保留旧资产显示（run 失败不影响已有烘焙资产）。
+    """
+    check_resource_access(cred, "layer", layer_id)
+    descriptor = get_layer_descriptor(layer_id)
+    cap = descriptor.online_temporal if descriptor else None
+    if cap is None or not cap.enabled:
+        return LayerOnlineSyncResponse(
+            status="skipped-unsupported",
+            message=f"图层 {layer_id} 未启用在线时间获取。",
+            layer_id=layer_id,
+            time_key=body.time_key if body else None,
+        )
+
+    from shared.contracts.api_contracts import ExecutionStatus
+
+    from app.services.workflow_repository import SQLiteWorkflowRepository
+
+    body = body or LayerOnlineSyncRequest()
+    repository = SQLiteWorkflowRepository()
+
+    # 复用同图层活跃 online_sync run（避免重复拉取）
+    for existing in repository.list_runs_by_layer(
+        layer_id, limit=10, workflow_kind="online_sync"
+    ):
+        if existing.status in {
+            ExecutionStatus.accepted,
+            ExecutionStatus.queued,
+            ExecutionStatus.running,
+            ExecutionStatus.retry_pending,
+        }:
+            return LayerOnlineSyncResponse(
+                run_id=existing.run_id,
+                status="in-flight",
+                message=f"图层 {layer_id} 的在线同步已在执行中。",
+                layer_id=layer_id,
+                time_key=body.time_key,
+                status_url=existing.status_url or f"/workflow-runs/{existing.run_id}",
+                events_url=existing.events_url or f"/workflow-runs/{existing.run_id}/events",
+            )
+
+    # 构建 workflow 提交请求
+    from shared.contracts.api_contracts import (
+        TimeRange,
+        WorkflowCommandType,
+        WorkflowPriority,
+        WorkflowResourceProfile,
+        WorkflowSubmitRequest,
+    )
+
+    time_range = body.time_range
+    if time_range is None and body.time_key:
+        # time_key 简单解析：YYYY-MM → 当月范围；YYYY-MM-DD → 当天
+        key = body.time_key
+        try:
+            if len(key) == 7:  # YYYY-MM
+                from datetime import date
+                y, m = int(key[:4]), int(key[5:7])
+                start = date(y, m, 1)
+                if m == 12:
+                    end = date(y + 1, 1, 1)
+                else:
+                    end = date(y, m + 1, 1)
+                time_range = TimeRange(
+                    start_at=start.isoformat(), end_at=end.isoformat()
+                )
+            elif len(key) == 10:  # YYYY-MM-DD
+                from datetime import date as _date, timedelta as _td
+                d = _date.fromisoformat(key)
+                time_range = TimeRange(
+                    start_at=d.isoformat(), end_at=(d + _td(days=1)).isoformat()
+                )
+        except (ValueError, TypeError):
+            pass
+
+    priority = (
+        WorkflowPriority.low
+        if body.priority == "low" or body.is_prefetch
+        else WorkflowPriority.normal
+    )
+    payload = WorkflowSubmitRequest(
+        # command_type 必须为 analysis：submission_service 的
+        # normalize_workflow_submit_request 仅对 analysis 按 layer_id
+        # 填充 engine request（algorithm_request），否则 Celery 端
+        # no bridge 匹配 → 「未找到匹配的工作流引擎」（P1 遗留，2026-08-25 修复）
+        command_type=WorkflowCommandType.analysis,
+        command_label=f"在线同步 {layer_id}" + (f" @ {body.time_key}" if body.time_key else ""),
+        layer_id=layer_id,
+        priority=priority,
+        resource_profile=(
+            WorkflowResourceProfile.batch
+            if body.is_prefetch or body.priority == "low"
+            else WorkflowResourceProfile.standard
+        ),
+        time_range=time_range,
+        parameters={
+            "workflow_kind": "online_sync",
+            "time_key": body.time_key,
+            "is_prefetch": body.is_prefetch,
+        },
+        # 注：不用 cap.queue_tag（"temporal-fetch"）——queue_tag 校验只接受
+        # 已注册队列名或 '<channel>-<slot>' 模式，自定义标签会 400；
+        # 优先级分流已由 resource_profile=batch 承担。
+    )
+
+    accepted = _submit_online_sync_workflow(payload, cred=cred)
+    return LayerOnlineSyncResponse(
+        run_id=accepted.run_id,
+        status="submitted",
+        message=accepted.message,
+        layer_id=layer_id,
+        time_key=body.time_key,
+        status_url=accepted.status_url,
+        events_url=accepted.events_url,
+    )
+
+
+# ── 图层平台子系统 P1：课题组工作流模板一键显示 ─────────────────────────────
+
+
+@router.get(
+    "/workflows/templates",
+    tags=["layer-platform"],
+    response_model=WorkflowTemplateListResponse,
+)
+def list_workflow_templates(
+    cred=Depends(get_request_user),
+) -> WorkflowTemplateListResponse:
+    """课题组工作流模板列表（图层平台子系统 P1）。
+
+    聚合 workflow_seeds/system + workflow_definitions/user 中
+    ``is_template=true`` 或 tags 含 "template"/"lab" 的定义；
+    前端课题组入口据此渲染「一键运行」面板。
+    """
+    from app.services.workflow_definition_service import list_definitions
+
+    items: list[WorkflowTemplateSummary] = []
+    for item in list_definitions():
+        meta = item if isinstance(item, dict) else {}
+        tags = [str(t) for t in (meta.get("tags") or [])]
+        is_template = bool(meta.get("is_template", False)) or any(
+            t in {"template", "lab", "课题组"} for t in tags
+        )
+        if not is_template:
+            continue
+        items.append(
+            WorkflowTemplateSummary(
+                workflow_id=str(meta.get("workflow_id") or ""),
+                name=str(meta.get("name") or meta.get("workflow_id") or ""),
+                description=meta.get("description"),
+                engine=str(meta.get("engine") or "unknown"),
+                linked_layer_id=meta.get("linked_layer_id"),
+                auto_display=bool(meta.get("auto_display", True)),
+                resource_profile=str(meta.get("resource_profile") or "standard"),
+                is_template=bool(meta.get("is_template", True)),
+                readonly=bool(meta.get("readonly", False)),
+                kind=str(meta.get("kind") or "system"),
+                node_count=int(meta.get("node_count") or 0),
+                tags=tags,
+                updated_at=meta.get("updated_at"),
+            )
+        )
+    return WorkflowTemplateListResponse(items=items, count=len(items))
+
+
+@router.post(
+    "/workflows/templates/{workflow_id}/runs",
+    tags=["layer-platform"],
+    response_model=WorkflowTemplateRunResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def run_workflow_template(
+    workflow_id: str,
+    body: WorkflowTemplateRunRequest | None = None,
+    cred=Depends(get_request_user),
+) -> WorkflowTemplateRunResponse:
+    """课题组工作流模板一键运行（图层平台子系统 P1）。
+
+    按模板定义构建 WorkflowSubmitRequest 并提交；
+    完成后若 auto_display=true 且 linked_layer_id 非空，
+    由 workflow-runs 轮询链自动 materialize-map-layers 上图。
+    """
+    check_resource_access(cred, "workflow", workflow_id)
+    from app.services.workflow_definition_service import get_definition
+
+    definition = get_definition(workflow_id)
+    if definition is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow template not found: {workflow_id}",
+        )
+
+    meta = definition.get("_meta", {}) if isinstance(definition, dict) else {}
+    linked_layer_id = meta.get("linked_layer_id")
+    auto_display = bool(meta.get("auto_display", True))
+    resource_profile_str = str(meta.get("resource_profile") or "standard")
+
+    body = body or WorkflowTemplateRunRequest()
+    if body.resource_profile is not None:
+        resource_profile_str = body.resource_profile
+    if body.auto_display is not None:
+        auto_display = body.auto_display
+
+    # 构建提交请求
+    from shared.contracts.api_contracts import (
+        WorkflowCommandType,
+        WorkflowPriority,
+        WorkflowResourceProfile,
+        WorkflowSubmitRequest,
+    )
+
+    resource_profile = {
+        "light": WorkflowResourceProfile.light,
+        "realtime": WorkflowResourceProfile.light,  # realtime 别名映射到 light
+        "standard": WorkflowResourceProfile.standard,
+        "heavy": WorkflowResourceProfile.heavy,
+        "batch": WorkflowResourceProfile.batch,
+    }.get(resource_profile_str, WorkflowResourceProfile.standard)
+
+    payload = WorkflowSubmitRequest(
+        # analysis + algorithm_request.workflow_name（模板种子 id）：
+        # python_provider bridge 的 ALGORITHM_REQUEST_ENTRY_KEYS 含
+        # workflow_name，据此路由到对应模块执行；custom 类型会 no bridge。
+        command_type=WorkflowCommandType.analysis,
+        command_label=f"课题组模板 {meta.get('name', workflow_id)}",
+        layer_id=linked_layer_id,
+        priority=WorkflowPriority.normal,
+        resource_profile=resource_profile,
+        time_range=body.time_range,
+        algorithm_request={
+            "workflow_name": workflow_id,
+            "algorithm_params": dict(body.parameters),
+        },
+        parameters={
+            "workflow_kind": "lab_template",
+            "workflow_template_id": workflow_id,
+            "auto_display": auto_display,
+            **body.parameters,
+        },
+    )
+
+    accepted = _submit_online_sync_workflow(payload, cred=cred)
+    return WorkflowTemplateRunResponse(
+        run_id=accepted.run_id,
+        status="submitted",
+        message=accepted.message,
+        workflow_id=workflow_id,
+        linked_layer_id=linked_layer_id,
+        auto_display=auto_display,
+        status_url=accepted.status_url,
+        events_url=accepted.events_url,
+    )
 
 
 @router.get("/geo/transform", tags=["geo"])
@@ -277,6 +749,7 @@ def get_overlay_tile(
             z,
             x,
             y,
+            band=spec.source_band,
             palette=palette or spec.palette or "viridis",
             min_value=min_value if min_value is not None else spec.vmin,
             max_value=max_value if max_value is not None else spec.vmax,
@@ -291,9 +764,8 @@ def get_overlay_tile(
         _logger.warning(
             "overlay tile render failed %s z=%s", layer_id, z, exc_info=True
         )
-        raise HTTPException(
-            status_code=500, detail=f"Tile render failed: {exc}"
-        ) from exc
+        # B-7：500 固定文案（不回显 exc，防内部信息泄露；真因走日志 exc_info）
+        raise HTTPException(status_code=500, detail="Tile render failed") from exc
     return Response(
         content=png,
         media_type="image/png",

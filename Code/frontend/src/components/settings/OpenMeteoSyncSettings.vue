@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, onBeforeUnmount, onMounted, ref, toRef } from 'vue'
 
 import { useSettingsStore } from '../../stores/settings'
 import { useLayerViewport } from '../../stores/layers/selectors'
@@ -20,7 +19,7 @@ const settingsStore = useSettingsStore()
 const weatherSyncStatusStore = useWeatherSyncStatusStore()
 const viewport = useLayerViewport()
 const weatherEngine = useWeatherEngineStore()
-const { weatherConfig } = storeToRefs(settingsStore)
+const weatherConfig = toRef(settingsStore, 'weatherConfig')
 
 const FALLBACK_MODELS = [
   { id: 'ecmwf_ifs025', label: 'ECMWF IFS 0.25°', region: 'global', update_interval: '6h' },

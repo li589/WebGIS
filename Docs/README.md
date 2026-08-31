@@ -23,7 +23,7 @@
 | 04 | `04-执行部署/` | 本地联调环境、交付清单 |
 | 05 | `05-专题研究/` | 天气渲染、omega_sf 反演、数据集目录、命名研究、其它专题 |
 | 06 | `06-代码审查/` | 各轮代码审查报告与问题追踪 |
-| 07 | `07-工程保障/` | 预启动检查、工程收口、功能验证、UI/底图修复记录 |
+| 07 | `07-工程保障/` | 预启动检查、工程收口、功能验证、UI/底图修复、[联调缓存与生效边界](07-工程保障/联调缓存与生效边界.md)、[Agent 多配置档](07-工程保障/agent-profiles.md) |
 | 08 | `08-HTML报告/` | 可交互 HTML（project-overview、frontend-design-audit） |
 | 09 | `09-结题材料/` | 结题报告、验收材料、修改意见 |
 | 10 | `10-参考示例/` | Windy 等外部参考资料 |
@@ -60,9 +60,11 @@
 |------|----------|------|
 | 底图 vs 天气瓦片 | `/unified-tiles` 栅格；`/weather/tiles` GeoJSON；勿混用 | `02-架构设计/工程决策纪要-…` |
 | 天地图街道 | `tianditu-vec` + `tianditu-cva` overlay；代理 UA=`CGDA-Backend/1.0` | `07-工程保障/UI优化与底图模块修复-2026-08-12.md` |
+| 联调缓存边界 | start/restart 默认矩阵 clean；永不自动 flush；Gateway `index.html` no-store | `07-工程保障/联调缓存与生效边界.md` |
 | 配置门面 | `config_service` 再导出 L3：`config_api_keys` / GEE / weather / remote_storage | `Code/backend/README.md` |
 | 图层 store | `stores/layers/` 域拆分：bindings / selectors / workspace\|viewport\|workflow-run-domain | `Code/frontend/README.md` |
 | 图层目录真源 | 后端 `catalog_seeds/*.json`；前端 `gen:catalog` → `catalog-seeds.generated.json`；`check:catalog` 门禁 | `Tools/generate_catalog_seeds.py`、`AGENTS.md` |
 | 在线时序编排 | Timeline 驱动自动取数：`online-temporal-orchestrator.ts` + `useOnlineTemporalIntegration.ts` | `Code/frontend/src/stores/layers/` |
 | 默认同域入口 | `launch.py start`/`restart` → Nginx Gateway `:5175`；HMR：`start --vite` | `Code/infra/gateway/README.md` |
+| 多主题 / 跨用户隔离 | 同 SPA；主题默认 ACL ⊕ 用户覆盖；P1 缺口见专文 | `Docs/03-规范协议/多主题与跨用户隔离说明.md` |
 | 测试落点 | 后端/算法：`Test/`；前端：`Test/frontend/`（由 Vite vitest 加载） | `AGENTS.md` |

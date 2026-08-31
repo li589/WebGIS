@@ -1,0 +1,26 @@
+<view class="ds">
+  <scroll-view
+    class="ds-viewport"
+    scroll-x="true"
+    enable-flex="true"
+    scroll-left="{{scrollLeft}}"
+    scroll-with-animation="{{scrollWithAnim}}"
+    enhanced="true"
+    show-scrollbar="false"
+    bindscroll="onScroll"
+  >
+    <view class="ds-content">
+      <view
+        wx:for="{{dates}}"
+        wx:key="key"
+        class="ds-cell {{currentIdx === index ? 'active' : ''}}"
+        data-index="{{index}}"
+        bindtap="onCellTap"
+      >
+        <text class="ds-weekday">{{item.weekdayShort}}</text>
+        <text class="ds-day">{{item.day}}</text>
+        <text class="ds-month">{{item.monthShort}}</text>
+      </view>
+    </view>
+  </scroll-view>
+</view>

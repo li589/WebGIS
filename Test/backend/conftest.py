@@ -18,6 +18,13 @@ os.environ["ENVIRONMENT"] = "test"
 os.environ["BACKEND_ENV"] = "test"
 os.environ["BACKEND_WORKFLOW_EXECUTOR"] = "sync"
 
+# 测试隔离防御：剔除超出 Windows 环境变量合法上限（32767 字符）的巨型变量
+# （如 AI 会话注入的 ACC_PRODUCT_CONFIG_V3 ~481KB）。它会让
+# ``unittest.mock.patch.dict(os.environ, ...)`` 退出时写回超限炸
+# ``ValueError``，也会波及子进程 spawn（与 git 提交须 ``env -u`` 同源）。
+for _oversized_env_key in [k for k, v in os.environ.items() if len(v) > 32760]:
+    os.environ.pop(_oversized_env_key, None)
+
 # 测试套件已从 Code/backend/tests/ 迁至 Test/backend/，路径需回归仓库根再定位。
 # conftest 位于 <repo>/Test/backend/conftest.py → parents[2] = 仓库根。
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -36,15 +43,45 @@ if not os.environ.get("BACKEND_DATA_ROOT", "").strip():
     else:
         _lab_root = Path(r"I:\Geograph_DataSet")
         os.environ["BACKEND_DATA_ROOT"] = str(
-            _lab_root if _lab_root.exists() else _BACKEND_ROOT / ".pytest_tmp" / "data_root"
+            _lab_root
+            if _lab_root.exists()
+            else _BACKEND_ROOT / ".pytest_tmp" / "data_root"
         )
 
-try:
-    import app.core.config
-    app.core.config.settings = app.core.config.Settings()
-except Exception:
-    pass
+# 凭据类 SQLite（gee_credentials / research_data_settings / api_keys / users 等
+# 全部从 gee_credentials_db_path.parent 派生）必须在 conftest 预导入 app.core.config
+# 之前就指向隔离路径：模块级 apply_startup_overrides() 会用 deployment.config.json
+# 强制覆写 BACKEND_DATA_ROOT（生产 I: 盘），且 Settings 为 frozen dataclass、
+# 类默认值在导入时求值——app fixture 的 monkeypatch+Settings() 重建对
+# _RUNTIME_ROOT 派生路径不生效。不设此键时，HTTP 层凭据测试
+# （test_config_contracts.py F6 PUT portal-credentials）会写生产 DB
+# （2026-08-19 事故：earthdata 用户名被测试载荷 "tessa" 覆盖）。
+#
+# workflow_state 同理：users.sqlite3 / workflow_state.sqlite3 落点由该键决定。
+# 全量跑时 app.core.config 在采集期被测试模块顶层 import，类默认值先于 app
+# fixture 的 monkeypatch 固化——不在此处设隔离值，auth 类测试会把测试用户/
+# Token 写进生产 users.sqlite3（2026-08-19 取证：token #64 user_id=2 悬空）。
+_TEST_GEE_DB = _BACKEND_ROOT / ".pytest_tmp" / "test_gee_credentials.sqlite3"
+_TEST_WS_DIR = _BACKEND_ROOT / ".pytest_tmp" / "test_workflow_state"
+_TEST_ISOLATION = {
+    "BACKEND_GEE_CREDENTIALS_DB_PATH": (
+        str(_TEST_GEE_DB),
+        "gee_credentials_db_path",
+    ),
+    "BACKEND_WORKFLOW_STATE_DIR": (
+        str(_TEST_WS_DIR),
+        "workflow_state_dir",
+    ),
+}
+for _env_key, (_isolated, _field) in _TEST_ISOLATION.items():
+    os.environ.setdefault(_env_key, _isolated)
+# 导入前生效的隔离值（operator 显式覆盖时为其值），供导入后哨兵比对。
+_TEST_ISOLATION_ARRANGED = {k: os.environ.get(k, "") for k in _TEST_ISOLATION}
 
+# sys.path 必须先于下方 import app.core.config 就绪：测试套件迁至 Test/backend 后，
+# pytest 的 rootdir 插入不含 Code/backend，此前 conftest 内的 import 一直抛
+# ImportError 并被 except 静默吞掉（真实首次导入发生在测试模块顶层）——
+# 隔离 env 变量仍生效，但依赖该 import 生效的哨兵从未执行（2026-08-19 取证）。
 for path in (str(_BACKEND_ROOT), str(_CODE_ROOT), str(_GEE_SRC)):
     if path not in sys.path:
         sys.path.insert(0, path)
@@ -55,6 +92,31 @@ for path in (str(_BACKEND_ROOT), str(_CODE_ROOT), str(_GEE_SRC)):
 # 始终优先于 provider 本地同名包，避免 B-N8 的包名遮蔽。
 if str(_ALGO_ROOT) not in sys.path:
     sys.path.append(str(_ALGO_ROOT))
+
+try:
+    import app.core.config
+
+    app.core.config.settings = app.core.config.Settings()
+except Exception:
+    pass
+else:
+    # 隔离哨兵（fail-fast）：apply_startup_overrides() 对 deployment.config.json
+    # 中存在的键无条件覆写 os.environ（json 为部署真源，环境变量无法夺回）。
+    # 若未来经配置中心把 workflow_state_dir 等运行时键写入 json，上述隔离值
+    # 会在 config 导入时被静默踩掉、pytest 落回生产盘——此处直接拒绝采集，
+    # 把 2026-08-19 事故的静默复发路径变成显式报错。
+    for _env_key, (_isolated, _field) in _TEST_ISOLATION.items():
+        _expected = _TEST_ISOLATION_ARRANGED[_env_key]
+        _actual = str(getattr(app.core.config.settings, _field, ""))
+        if _expected and _actual != _expected:
+            raise RuntimeError(
+                f"pytest 测试隔离被破坏：settings.{_field}={_actual!r} 与导入前"
+                f"安排的隔离值 {_expected!r} 不一致——deployment.config.json 的"
+                f" runtime 组键在导入 app.core.config 时强制覆盖了 {_env_key}"
+                "（json 为部署真源，环境变量无法夺回）。请从"
+                " deployment.config.json 移除该运行时键（或为测试机单独准备"
+                "不含该键的部署配置），勿让 pytest 写生产库。"
+            )
 
 # ── 重定向 pytest tmp_path 到项目内可写目录 ──────────────────────────────
 # 必须在 pytest 初始化 ``tmp_path_factory`` 之前设置 ``PYTEST_DEBUG_TEMPROOT``
@@ -88,6 +150,12 @@ def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("BACKEND_OUTPUT_ROOT", str(tmp_path / "output_root"))
     monkeypatch.setenv("BACKEND_WORKFLOW_STATE_DIR", str(tmp_path / "workflow_state"))
     monkeypatch.setenv("BACKEND_API_KEYS_ENABLED", "false")
+    # 凭据类 DB 隔离：见模块级 _TEST_GEE_DB 注释（deployment.config.json 会强制
+    # 覆写 BACKEND_DATA_ROOT，故须单独覆写本键才能落到 tmp）。
+    monkeypatch.setenv(
+        "BACKEND_GEE_CREDENTIALS_DB_PATH",
+        str(tmp_path / "workflow_state" / "gee_credentials.sqlite3"),
+    )
 
     # 重置 settings 以拾取新的环境变量
     try:

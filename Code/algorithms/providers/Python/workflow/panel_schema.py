@@ -3,10 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from contracts.request_templates import get_module_request_template
-from modules.registry import get_module
 from workflow.serialization import coerce_workflow_definition
 from workflow.template_inference import _infer_workflow_request_template
 from workflow.validation import validate_workflow_definition
+
+# 注意：``modules.registry.get_module`` 在函数内惰性导入。顶层导入会形成
+# modules.base → workflow → contracts → workflow.panel_schema → modules.registry
+# → modules.base 循环（先 import modules 包时 BaseModule 尚未初始化）。
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +82,8 @@ def build_workflow_input_panel_schema(value: object) -> WorkflowInputPanelSchema
         module_template = None
         module_mode_required_inputs: dict[str, tuple[str, ...]] = {}
         if node.node_type == "module" and entry_name:
+            from modules.registry import get_module
+
             module_template = get_module_request_template(entry_name)
             module_mode_required_inputs = dict(
                 get_module(entry_name).get_spec().mode_required_inputs

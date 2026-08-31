@@ -48,9 +48,19 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from data_root import resolve_data_root
 
 # Output root
-_OUT_ROOT = Path(r"I:\Geograph_DataSet\ProjectOutput\2023-01_Omega_Inversion\_overlays")
+_OUT_ROOT = resolve_data_root() / "ProjectOutput" / "2023-01_Omega_Inversion" / "_overlays"
+
+# 资产烘焙版本：改动渲染几何/行序等影响已有 PNG 正确性的逻辑时递增，
+# 后端 asset_bake_tasks 据此自动重烘陈旧资产。版本史：
+#   1 = 初版（thematic 族存在行序上下翻转 bug）
+#   2 = 行序修复（2026-08-24，imshow origin 校准 + thematic 重烘）
+#   3 = 中国区域静态层（thematic/ERA5）后端 Mercator 线性重投影，
+#       不再依赖浏览器条带补偿（2026-08-24 真实地图偏移复现修复）
+#   4 = GPCP 低值透明 + Blues 对比度修复（2026-08-24 真实白屏复现）
+BAKE_VERSION = 4
 _CHINA_BBOX = (73.0, 15.0, 137.0, 59.0)
 
 # extent 模式：auto = 按任务表声明；global/china = CLI 强制覆盖（诊断用）
@@ -72,10 +82,10 @@ def _extent_res_deg(extent: str, china_deg: float = 0.1, global_deg: float = 0.2
     return global_deg if extent == "global" else china_deg
 
 # ── Phase 1.6: 课题组时间序列源数据目录（与 overlay_registry.py 同步）──────────
-_INVERSION_RESULTS_ROOT = Path(r"I:\Geograph_DataSet\Inversion_Results")
+_INVERSION_RESULTS_ROOT = resolve_data_root() / "Inversion_Results"
 _OMEGA_SMAP_AVG_DIR = _INVERSION_RESULTS_ROOT / "smap_avg"
 _OMEGA_FY_AVG_DIR = _INVERSION_RESULTS_ROOT / "fy_avg"
-_SOIL_DDCA_H_DIR = Path(r"I:\Geograph_DataSet\Soil_Moisture\DDCA\DDCA_DH\H")
+_SOIL_DDCA_H_DIR = resolve_data_root() / "Soil_Moisture" / "DDCA" / "DDCA_DH" / "H"
 _LANDSCAPE_METRICS_MAT = (
     _INVERSION_RESULTS_ROOT / "Landscape_Metrics_LandOnly_9KM_2020.mat"
 )
@@ -248,6 +258,11 @@ def _write_bounds(
         "layer_id": layer_id,
         "bounds": list(bounds),  # [west, south, east, north]
         "crs": "EPSG:4326",
+        # 资产烘焙版本（自愈机制用）：app/tasks/asset_bake_tasks.py 启动/定期
+        # 校验 bake_version < BAKE_VERSION 的资产并自动重烘（2026-08-24：
+        # 旧版行序翻转 PNG 曾靠手工重烘修复——资产新鲜度不再依赖外部操作）。
+        # 版本史：1=初版（存在行序翻转 bug）；2=行序修复（imshow origin 校准）
+        "bake_version": BAKE_VERSION,
     }
     text = json.dumps(data, indent=2)
     tmp_path = bounds_path.parent / f"{bounds_path.name}.tmp_{os.getpid()}.json"
@@ -307,51 +322,64 @@ def _bounds_from_centers(lat_1d, lon_1d):
     return (west, south, east, north)
 
 
-# EASE-Grid 2.0 9km 标准定义（NSIDC）
+# ── EASE / Mercator 共享几何与重投影（2026-08-24 P2 收敛）───────────────────
+# 唯一真源：Code/backend/app/data_io/services/{grid_presets,grid_reproject}.py。
+# 通过 importlib 按文件路径直接加载（不触发 app 包初始化链），Tools 可独立
+# 运行；本地不再保留任何 EASE 常数 / 重投影副本。
 # 注意：500m 网格的像素尺寸 = 500.4475m；9km 标称 = 18 × 500.4475 = 9008.0552m
-# 早期硬编码 9000.879 是错误的（差 7.18m/像素，1624 行累计偏差 11.6km）
+# （早期硬编码 9000.879 是错误的，差 7.18m/像素，1624 行累计偏差 11.6km）。
+import importlib.util as _ilu
+
+
+def _load_shared_module(name: str):
+    """按文件路径加载后端共享纯依赖模块（grid_presets / grid_reproject）。"""
+    mod_path = (
+        Path(__file__).resolve().parents[1]
+        / "Code"
+        / "backend"
+        / "app"
+        / "data_io"
+        / "services"
+        / f"{name}.py"
+    )
+    if not mod_path.is_file():
+        raise RuntimeError(f"shared module not found: {mod_path}")
+    spec = _ilu.spec_from_file_location(f"_cgda_shared_{name}", mod_path)
+    mod = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+_grid_presets = _load_shared_module("grid_presets")
+_grid_reproject = _load_shared_module("grid_reproject")
+
+EASE_UL_BY_CRS = _grid_presets.EASE_UL_BY_CRS
+GRID_PRESETS = _grid_presets.GRID_PRESETS
+ease_grid_transform = _grid_presets.ease_grid_transform
+ease_grid_from_shape = _grid_presets.ease_grid_from_shape
+
 _EASE_GRID_9K_CRS = "EPSG:6933"
-_EASE_GRID_9K_PIXEL_SIZE = 9008.0552  # 米（= 18 × 500.4475，NSIDC 标准）
+_EASE_GRID_9K_PIXEL_SIZE = float(
+    GRID_PRESETS["ease2-global-9km"]["resolution"]
+)  # 米（= 18 × 500.4475，NSIDC 标准）
 
-# EASE-Grid 2.0 上左角（米）：同一 CRS 各分辨率共享角点（500m 基准网格对齐）
-# 出处：NSIDC EASE-Grid 2.0 https://nsidc.org/data/ease/ease_grid2.html
-# 半球 LAEA（6931/6932）官方角点 (-9,000,000, 9,000,000)；
-# EASE-Grid 1.0（3408/3409/3410）为球体 R=6371228 网格，角点不可与 2.0 混用：
-#   - 1.0 半球 25km：721×721 × 25067.525 m，UL 同 (-9,000,000, 9,000,000)
-#   - 1.0 全球：x ∈ ±17,334,194（lon=±180），y 由分辨率对齐（约 ±7,356,861）
-_EASE_GRID_UL_BY_CRS: dict[str, tuple[float, float]] = {
-    "EPSG:6933": (-17367530.45, 7314540.83),
-    "EPSG:6931": (-9000000.0, 9000000.0),
-    "EPSG:6932": (-9000000.0, 9000000.0),
-    "EPSG:3408": (-9000000.0, 9000000.0),
-    "EPSG:3409": (-9000000.0, 9000000.0),
-    "EPSG:3410": (-17334193.94, 7356860.29),
-}
-
-# Web Mercator（EPSG:3857）纬度极限：MapLibre ImageSource 四角无法表示 ±90°，
-# 超出即渲染失败（GPCP 全球 bounds (-180,-90,180,90) 图层不显示的根因）
-_MERCATOR_MAX_LAT = 85.0511287798066
-_MERCATOR_MAX_Y = 20037508.342789244
-_METERS_PER_DEGREE_EQUATOR = 111319.49079327358
+# Mercator 常数与重投影实现（与后端 overlay 链共享同一份）
+_MERCATOR_MAX_LAT = _grid_reproject.MERCATOR_MAX_LAT
+_MERCATOR_MAX_Y = _grid_reproject.MERCATOR_MAX_Y
+_METERS_PER_DEGREE_EQUATOR = _grid_reproject.METERS_PER_DEGREE_EQUATOR
+_reproject_to_mercator_linear = _grid_reproject.reproject_to_mercator_linear
 
 
 def _ease_grid_transform(
     src_crs: str = _EASE_GRID_9K_CRS, resolution_m: float = _EASE_GRID_9K_PIXEL_SIZE
 ):
-    """按 (CRS, 分辨率) 返回 EASE-Grid 仿射变换（rasterio 约定）。
+    """按 (CRS, 分辨率) 返回 EASE-Grid 仿射变换（委托共享真源 grid_presets）。
 
     覆盖 EASE-Grid 2.0 全球（6933）与半球 LAEA（6931/6932），以及
     NSIDC EASE-Grid 1.0（3408/3409/3410，球体 R=6371228）。角点查
-    ``_EASE_GRID_UL_BY_CRS``；1.0 与 2.0 角点不同，不可混用。
+    ``EASE_UL_BY_CRS``；1.0 与 2.0 角点不同，不可混用。
     """
-    from rasterio.transform import from_origin
-
-    ul = _EASE_GRID_UL_BY_CRS.get(src_crs)
-    if ul is None:
-        raise ValueError(
-            f"No EASE-Grid preset for {src_crs}; known: {sorted(_EASE_GRID_UL_BY_CRS)}"
-        )
-    return from_origin(ul[0], ul[1], resolution_m, resolution_m)
+    return ease_grid_transform(src_crs, resolution_m)
 
 
 def _ease_grid_9k_transform():
@@ -401,66 +429,11 @@ def _ease_grid_9k_transform_from_mat(mat_dict):
         return None
 
 
-def _reproject_to_mercator_linear(
-    data,
-    src_transform,
-    src_crs,
-    target_resolution=0.25,
-    clip_bounds=None,
-):
-    """重投影任意投影栅格到 Web Mercator 线性网格（行/列在 3857 平面均匀）。
-
-    为什么目标不是等经纬（EPSG:4326）：MapLibre ``ImageSource`` 以 4 角坐标
-    在 Mercator 平面做双线性插值渲染。等经纬图像的行按纬度均匀分布，而
-    Mercator y 对纬度非线性 → 中高纬渲染偏移可达十几度；±90° 角点甚至
-    无法表示。把行重采样为 Mercator y 均匀后，四角线性插值即地理精确，
-    南北极边界自动收敛到 ±85.0511°（Mercator 全幅）。
-
-    Args:
-        data: (n_lat, n_lon) 2D 源数组
-        src_transform / src_crs: 源栅格仿射变换与 CRS
-        target_resolution: 输出分辨率（度，赤道处；1 度 = 111319.49 米）
-        clip_bounds: (west, south, east, north) WGS84 裁剪窗口；
-                     None = 全球全幅（-180 ~ 180, ±85.0511）
-    Returns:
-        (out_data, (west, south, east, north)) — bounds 为角点精确反算的经纬度
-    """
-    from pyproj import Transformer
-    from rasterio.enums import Resampling
-    from rasterio.transform import from_origin
-    from rasterio.warp import reproject
-
-    res_m = target_resolution * _METERS_PER_DEGREE_EQUATOR
-    if clip_bounds is None:
-        west_m = south_m = -_MERCATOR_MAX_Y
-        east_m = north_m = _MERCATOR_MAX_Y
-    else:
-        west, south, east, north = clip_bounds
-        fwd = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
-        west_m, south_m = fwd.transform(west, max(south, -_MERCATOR_MAX_LAT))
-        east_m, north_m = fwd.transform(east, min(north, _MERCATOR_MAX_LAT))
-
-    width = max(1, int(round((east_m - west_m) / res_m)))
-    height = max(1, int(round((north_m - south_m) / res_m)))
-    dst_transform = from_origin(west_m, north_m, res_m, res_m)
-
-    dst_data = np.full((height, width), np.nan, dtype=np.float64)
-    reproject(
-        source=data,
-        destination=dst_data,
-        src_transform=src_transform,
-        src_crs=src_crs,
-        dst_transform=dst_transform,
-        dst_crs="EPSG:3857",
-        resampling=Resampling.nearest,  # 分类数据用最近邻；连续数据可改 bilinear
-        src_nodata=np.nan,
-        dst_nodata=np.nan,
-    )
-
-    inv = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
-    w, s = inv.transform(west_m, south_m)
-    e, n = inv.transform(east_m, north_m)
-    return dst_data, (float(w), float(s), float(e), float(n))
+# _reproject_to_mercator_linear 已下沉为共享实现（上方 importlib 别名），
+# 签名不变：(data, src_transform, src_crs, target_resolution=0.25,
+# clip_bounds=None, resampling="nearest") → (out_data, (w, s, e, n))。
+# 为什么目标是 Mercator 线性而非等经纬：MapLibre ImageSource 以 4 角坐标
+# 在 Mercator 平面双线性插值渲染，等经纬图像在中高纬会偏移十几度。
 
 
 def _reproject_ease_to_wgs84(
@@ -509,8 +482,11 @@ def _reproject_ease_to_wgs84(
 
 def export_dem_etopo() -> None:
     print("\n=== DEM ETOPO_2022 ===")
+    # 2026-08-25 路径修复：实际文件在 Geological/DEM/ETOPO_2022/ 下
+    # （此前缺 Geological 层 → [SKIP] File not found → 资产永远 stale，
+# 图层逐一验证报障定位）
     tif_path = Path(
-        r"I:\Geograph_DataSet\DEM\ETOPO_2022\ETOPO_2022_v1_60s_N90W180_surface.tif"
+        r"I:\Geograph_DataSet\Geological\DEM\ETOPO_2022\ETOPO_2022_v1_60s_N90W180_surface.tif"
     )
     if not tif_path.exists():
         print("  [SKIP] File not found")
@@ -625,11 +601,26 @@ def export_thematic_layers() -> None:
         else:
             bounds = _CHINA_BBOX  # fallback
             print(f"  [WARN] {fname} has no lat/lon, using _CHINA_BBOX fallback")
-        print(f"  {layer_id}: {data.shape}, bounds={bounds}")
+        # ImageSource 在 Web Mercator 平面插值；不能把等经纬数组直接写 PNG
+        # 再依赖前端条带补偿（条带异步失败即回退成数百公里南偏/拉伸）。
+        # 以 .mat 的真实像元外边界构建源 Affine，在烘焙阶段一次性重投影为
+        # Mercator-y 线性资产，浏览器仅做单张 image source 贴图即可精确显示。
+        from rasterio.transform import from_bounds
+
+        src_transform = from_bounds(*bounds, data.shape[1], data.shape[0])
+        data, mercator_bounds = _reproject_to_mercator_linear(
+            data,
+            src_transform,
+            "EPSG:4326",
+            target_resolution=0.25,
+            clip_bounds=bounds,
+            resampling="nearest" if varname == "landcover" else "bilinear",
+        )
+        print(f"  {layer_id}: mercator={data.shape}, bounds={mercator_bounds}")
         _render_png(
             data, out_dir / f"{varname}_overlay.png", cmap=cmap, vmin=vmin, vmax=vmax
         )
-        _write_bounds(out_dir / f"{varname}_overlay_bounds.json", layer_id, bounds)
+        _write_bounds(out_dir / f"{varname}_overlay_bounds.json", layer_id, mercator_bounds)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -815,7 +806,9 @@ def export_smap_ts() -> None:
 
 def export_gpcp_ts() -> None:
     print("\n=== GPCP precipitation time series ===")
-    gpcp_dir = Path(r"I:\Geograph_DataSet\Weather\Precipitation\Precipitation\dataset")
+    gpcp_dir = resolve_data_root() / "Weather" / "Precipitation" / "Precipitation" / "dataset"
+    if not gpcp_dir.exists():
+        gpcp_dir = resolve_data_root() / "Meteorological" / "Weather" / "Precipitation" / "Precipitation" / "dataset"
     if not gpcp_dir.exists():
         print("  [SKIP] Directory not found")
         return
@@ -862,9 +855,13 @@ def export_gpcp_ts() -> None:
         )
 
         print(f"  {tag}: {arr.shape}, range={np.nanmin(arr):.2f}-{np.nanmax(arr):.2f}")
+        # GPCP 月降水大面积低值（中位数约 1 mm/day）。YlGnBu 的最低端
+        # 接近白色，叠加 0.8 opacity 会把底图整块洗白；将近零降水透明，
+        # 并使用深色起始的 Blues，确保有效降水与底图均可辨。
+        arr[arr <= 0.05] = np.nan
         vmax = float(np.nanpercentile(arr, 99))
         _render_png(
-            arr, out_dir / f"gpcp_{tag}.png", cmap="YlGnBu", vmin=0, vmax=max(vmax, 10)
+            arr, out_dir / f"gpcp_{tag}.png", cmap="Blues", vmin=0.05, vmax=max(vmax, 10)
         )
         _write_bounds(out_dir / f"gpcp_{tag}_bounds.json", "gpcp-precip-ts", bounds)
 
@@ -936,6 +933,68 @@ def export_gpcp_rewarp() -> None:
     print(f"  Re-warped {n_fixed} PNG(s)")
 
 
+def export_china_rewarp() -> None:
+    """把中国窗口等经纬资产 PNG 原地重变形为 Mercator 线性（2026-08-22）。
+
+    背景：thematic（hfp/aridity/landcover）与 clcd 资产是 2026-07 旧版等经纬
+    渲染 + WGS84 矩形 bounds；MapLibre ImageSource 在 Mercator 平面插值，
+    等纬度图像在中高纬偏北（用户实测 HFP ~190km、AI 干旱指数/CLCD 同症）。
+
+    修法：源行纬度均匀 [s,n] → 重采样为 Mercator-y 均匀行（最近邻），
+    bounds 四角保持 WGS84 不变（MapLibre 转 Mercator 后与行对齐）。
+    """
+    print("\n=== China-window asset re-warp (equirect -> mercator-linear) ===")
+    from PIL import Image
+
+    targets = [
+        ("thematic/hfp_overlay.png", "hfp-cn"),
+        ("thematic/aridity_overlay.png", "aridity-cn"),
+        ("thematic/landcover_overlay.png", "landcover-cn"),
+        ("clcd/clcd_overlay.png", "clcd-cn"),
+        ("gebco_dem/gebco_dem_overlay.png", "gebco-dem-cn"),
+    ]
+    n_fixed = 0
+    for rel, layer_id in targets:
+        png = _OUT_ROOT / rel
+        bounds_json = png.with_name(png.stem + "_bounds.json")
+        if not png.exists():
+            print(f"  [SKIP] {rel} not found")
+            continue
+        try:
+            bj = json.loads(bounds_json.read_text(encoding="utf-8"))
+            if bj.get("rewarped"):
+                print(f"  [SKIP] {rel}: already re-warped (idempotent guard)")
+                continue
+            bounds = bj["bounds"]
+        except Exception as exc:
+            print(f"  [SKIP] {rel}: bad bounds json ({exc})")
+            continue
+        w, s, e, n = (float(v) for v in bounds)
+        img = Image.open(png)
+        arr = np.asarray(img)
+        h = arr.shape[0]
+
+        def merc_y(lat_deg: float) -> float:
+            t = np.deg2rad(np.clip(lat_deg, -_MERCATOR_MAX_LAT, _MERCATOR_MAX_LAT))
+            return float(np.log(np.tan(np.pi / 4 + t / 2)))
+
+        y_s, y_n = merc_y(s), merc_y(n)
+        # 目标行中心（Mercator y 均匀）反解纬度
+        y_centers = y_s + (np.arange(h) + 0.5) / h * (y_n - y_s)
+        tgt_lat = np.rad2deg(2 * np.arctan(np.exp(y_centers)) - np.pi / 2)
+        # 源行索引（等纬度，j=0 = 北边界 n）
+        src_rows = np.clip(((n - tgt_lat) / (n - s) * h).round().astype(int), 0, h - 1)
+        warped = arr[src_rows, :]
+        Image.fromarray(warped).save(png)
+        # bounds 保持 WGS84 四角不变（重采样已补偿 Mercator 拉伸）；
+        # 写 rewarped 标记防二次重采样（幂等保护）
+        bj["rewarped"] = True
+        bounds_json.write_text(json.dumps(bj, ensure_ascii=False, indent=2), encoding="utf-8")
+        n_fixed += 1
+        print(f"  [OK] {rel} re-warped ({h} rows, bounds [{w:.2f},{s:.2f},{e:.2f},{n:.2f}])")
+    print(f"  Re-warped {n_fixed} PNG(s)")
+
+
 def export_dem_rewarp() -> None:
     """把既有 DEM 资产 PNG（等经纬 ±90° 旧格式）原地重变形为 Mercator 线性。
 
@@ -995,10 +1054,10 @@ def export_dem_rewarp() -> None:
 def export_gebco_dem() -> None:
     print("\n=== GEBCO 2024 DEM (China) ===")
     # 与 overlay_registry._GEBCO_NC 对齐
-    nc_path = Path(r"I:\Geograph_DataSet\Geological\DEM\GEBCO_2024.nc")
+    nc_path = resolve_data_root() / "Geological" / "DEM" / "GEBCO_2024.nc"
     if not nc_path.exists():
         # 旧路径兼容
-        alt = Path(r"I:\Geograph_DataSet\DEM\GEBCO_2024.nc")
+        alt = resolve_data_root() / "DEM" / "GEBCO_2024.nc"
         nc_path = alt if alt.exists() else nc_path
     if not nc_path.exists():
         print("  [SKIP] File not found")
@@ -1051,9 +1110,15 @@ def export_gebco_dem() -> None:
 
 def export_cmfd_precip() -> None:
     print("\n=== CMFD Precipitation (China 1km) ===")
-    tif_path = Path(r"I:\Geograph_DataSet\Precipitation\pre_2002_01.tif")
+    # 与 overlay_registry._CMFD_TIF 对齐（reorganize_datasets 后落在 Meteorological/）
+    root = resolve_data_root()
+    tif_path = root / "Meteorological" / "Precipitation" / "pre_2002_01.tif"
     if not tif_path.exists():
-        print("  [SKIP] File not found")
+        alt = root / "Precipitation" / "pre_2002_01.tif"
+        if alt.exists():
+            tif_path = alt
+    if not tif_path.exists():
+        print(f"  [SKIP] File not found: {tif_path}")
         return
 
     import rasterio
@@ -1102,7 +1167,8 @@ def export_cmfd_precip() -> None:
 
 def export_clcd() -> None:
     print("\n=== CLCD 1997 (China) ===")
-    tif_path = Path(r"I:\Geograph_DataSet\LandCover\CLCD_v01_1997.tif")
+    # 与 overlay_registry._CLCD_TIF 路径对齐（旧 LandCover/ 路径已失效）
+    tif_path = resolve_data_root() / "Ecological_Vegetation" / "LandCover" / "CLCD_v01_1997.tif"
     if not tif_path.exists():
         print("  [SKIP] File not found")
         return
@@ -1235,7 +1301,13 @@ def export_era5_dwaa() -> None:
         # 使用 window_bounds 获取窗口的地理边界 (west, south, east, north)
         # 注意: 不能用 xy(offset="ll")/xy(offset="ur"), 那样会取像素内边沿导致整体偏移 1 个像素
         actual_bounds = tuple(float(v) for v in src.window_bounds(win))
+        src_transform = src.window_transform(win)
+        src_crs = str(src.crs) if src.crs else "EPSG:4326"
 
+    # 后端烘焙为 Mercator 线性行；避免浏览器端条带化失败时图层南偏/拉伸。
+    event_count, actual_bounds = _reproject_to_mercator_linear(
+        event_count, src_transform, src_crs, target_resolution=0.25, clip_bounds=actual_bounds
+    )
     print(
         f"  Event count shape: {event_count.shape}, max events: {np.nanmax(event_count):.0f}"
     )
@@ -1277,7 +1349,13 @@ def export_era5_wdaa() -> None:
         # 使用 window_bounds 获取窗口的地理边界 (west, south, east, north)
         # 注意: 不能用 xy(offset="ll")/xy(offset="ur"), 那样会取像素内边沿导致整体偏移 1 个像素
         actual_bounds = tuple(float(v) for v in src.window_bounds(win))
+        src_transform = src.window_transform(win)
+        src_crs = str(src.crs) if src.crs else "EPSG:4326"
 
+    # 后端烘焙为 Mercator 线性行；避免浏览器端条带化失败时图层南偏/拉伸。
+    event_count, actual_bounds = _reproject_to_mercator_linear(
+        event_count, src_transform, src_crs, target_resolution=0.25, clip_bounds=actual_bounds
+    )
     print(
         f"  Event count shape: {event_count.shape}, max events: {np.nanmax(event_count):.0f}"
     )
@@ -1300,32 +1378,57 @@ def export_era5_wdaa() -> None:
 
 
 def export_co2() -> None:
-    print("\n=== MeanCarbonDioxide (China) ===")
+    """MeanCarbonDioxide 全球层（GOSAT L3 粗网格 2.5°x2.0°）。
+
+    2026-08-23 重写：
+    - 源路径修正（原 I:\\Geograph_DataSet\\CO2\\... 已失效，实际位于
+      Atmospheric\\CO2\\MidLayerCO2Column\\TIF\\，此前 File-not-found 一直
+      SKIP，07-18 旧资产未再更新）。
+    - 重投影到 Mercator 线性网格（_reproject_to_mercator_linear）——旧资产
+      直接用源 bounds（north=90 超 Mercator 上限 85.051）贴图导致南北
+      大范围拉伸。
+    - bilinear 重采样：源 2.5° 粗网格的连续量（CO₂ ppm）线性插值合理，
+      缓解瓦片块状感（nearest 会放大块状）。
+    - vmin/vmax 用源数据 p1/p99（386-391 为旧数据范围，实测 370-407）。
+    """
+    print("\n=== MeanCarbonDioxide (global, GOSAT L3) ===")
     tif_path = Path(
-        r"I:\Geograph_DataSet\CO2\MidLayerCO2Column\TIF\MeanCarbonDioxide.tif"
+        r"I:\Geograph_DataSet\Atmospheric\CO2\MidLayerCO2Column\TIF\MeanCarbonDioxide.tif"
     )
     if not tif_path.exists():
-        print("  [SKIP] File not found")
+        print(f"  [SKIP] File not found: {tif_path}")
         return
 
     import rasterio
 
     out_dir = _OUT_ROOT / "co2"
-    bounds = _CHINA_BBOX
 
     with rasterio.open(tif_path) as src:
         data = src.read(1).astype(np.float64)
-        west, south, east, north = src.bounds
+        src_transform = src.transform
+        src_crs = src.crs or "EPSG:4326"
+        print(
+            f"  source: {data.shape}, bounds={tuple(round(b, 2) for b in src.bounds)}, "
+            f"range={np.nanmin(data):.2f}~{np.nanmax(data):.2f} ppm"
+        )
 
-    print(
-        f"  Data shape: {data.shape}, range: {np.nanmin(data):.2f} to {np.nanmax(data):.2f} ppm"
+    # 全球全幅 Mercator 线性网格；north=90 由管线 clamp 到 85.051
+    data, bounds = _reproject_to_mercator_linear(
+        data,
+        src_transform,
+        str(src_crs),
+        target_resolution=0.25,
+        clip_bounds=None,
+        resampling="bilinear",
     )
-    _render_png(data, out_dir / "co2_overlay.png", cmap="RdYlGn_r", vmin=386, vmax=391)
-    _write_bounds(
-        out_dir / "co2_overlay_bounds.json",
-        "co2-cn",
-        (float(west), float(south), float(east), float(north)),
+    print(f"  reprojected (mercator-linear): {data.shape}, bounds={bounds}")
+
+    vmin, vmax = _smap_aux_continuous_range(data)
+    print(f"  display range (p1/p99): vmin={vmin}, vmax={vmax}")
+    _render_png(
+        data, out_dir / "co2_overlay.png", cmap="RdYlGn_r", vmin=vmin, vmax=vmax
     )
+    _write_bounds(out_dir / "co2_overlay_bounds.json", "co2-cn", bounds)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1484,7 +1587,7 @@ def export_omega_fy_ts() -> None:
 
 def export_forest_ratio() -> None:
     print("\n=== Forest Ratio 9KM 2020 ===")
-    mat_path = Path(r"I:\Geograph_DataSet\Inversion_Results\Forest_Ratio_9KM_2020.mat")
+    mat_path = resolve_data_root() / "Inversion_Results" / "Forest_Ratio_9KM_2020.mat"
     if not mat_path.exists():
         print("  [SKIP] File not found")
         return
@@ -1542,7 +1645,7 @@ def export_forest_ratio() -> None:
 #     旧版 aux_*/ 目录为全球范围未重投影导出（地理定位错误），由本节取代
 # ──────────────────────────────────────────────────────────────────────────────
 
-_SMAP_AUX_DATA_DIR = Path(r"I:\Geograph_DataSet\Soil_Moisture\SMAP_Auxiliary_Data")
+_SMAP_AUX_DATA_DIR = resolve_data_root() / "Soil_Moisture" / "SMAP_Auxiliary_Data"
 
 
 def _smap_aux_continuous_range(data: np.ndarray) -> tuple[float, float]:
@@ -1953,6 +2056,8 @@ def _build_task_table() -> list[dict]:
          "extent": "native", "layers": ["gpcp-precip-ts"]},
         {"key": "gpcp-rewarp", "name": "GPCP Re-warp", "func": export_gpcp_rewarp,
          "extent": "native", "layers": ["gpcp-precip-ts"]},
+        {"key": "china-rewarp", "name": "China Re-warp", "func": export_china_rewarp,
+         "extent": "native", "layers": ["landcover-cn", "hfp-cn", "aridity-cn", "clcd-cn"]},
         {"key": "dem-rewarp", "name": "DEM Re-warp", "func": export_dem_rewarp,
          "extent": "native", "layers": ["dem-etopo"]},
         {"key": "gebco-dem", "name": "GEBCO DEM", "func": export_gebco_dem,

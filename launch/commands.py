@@ -24,8 +24,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from launch.cache_hygiene import apply_prepare_from_args, prepare_launch_caches
 from launch.constants import (
-    ALGORITHMS_DIR,
     BACKEND_DIR,
     DATA_SYNC_DIR,
     DEFAULT_FRONTEND_PORT,
@@ -35,9 +35,8 @@ from launch.constants import (
     PID_FILE,
     SCRIPT_DIR,
     SNAPSHOT_ROOT,
-    TEST_DIR,
     VALID_WORKER_NAMES,
-    VITE_CACHE_DIR,
+    VITE_BEHIND_GATEWAY_PORT,
     WEATHER_CACHE_DIR,
     WEATHERENGINE_CACHE_DIR,
     WORKFLOW_DEFINITIONS_DIR,
@@ -57,19 +56,28 @@ from launch.docker_manager import (
 from launch.gateway_manager import (
     GATEWAY_CONTAINER,
     GATEWAY_PORT,
+    gateway_hmr_active,
     gateway_running,
+    reload_gateway_nginx,
     start_gateway_infra,
     stop_gateway_infra,
+    stop_vite_behind_gateway,
 )
 from launch.logging_setup import log
 from launch.process_manager import ProcessManager
 from launch.subprocess_utils import (
     ensure_named_volume,
     ensure_project_initialized,
+    enumerate_cmdline_rows,
     hidden_kwargs,
+    netstat_listening_pids,
     pid_alive,
+    port_listening,
+    python_executable,
     resolve_open_meteo_volume_name,
     terminate_by_cmdline_patterns,
+    tree_kill_pid,
+    wait_for_pattern_exit,
 )
 
 
@@ -92,6 +100,8 @@ def _regenerate_catalog_seeds() -> None:
             cwd=str(SCRIPT_DIR),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=120,
             **hidden_kwargs(),
         )
@@ -109,19 +119,16 @@ def _regenerate_catalog_seeds() -> None:
 
 def cmd_start(args: argparse.Namespace) -> int:
     """启动 CGDA 服务（全部或指定组件）。"""
-    if getattr(args, "clean_cache", False):
-        rc = cmd_clean_cache(
-            argparse.Namespace(all=True, pycache=False, vite=False, dry_run=False)
-        )
-        if rc != 0:
-            return rc
-
     component = args.component
     if component is None:
         component = "all"
 
     if getattr(args, "frontend_only", False) and component == "all":
         component = "frontend"
+
+    if not getattr(args, "_cache_prepare_done", False):
+        apply_prepare_from_args(args, component)
+        args._cache_prepare_done = True
 
     ensure_project_initialized()
     _regenerate_catalog_seeds()
@@ -179,7 +186,7 @@ def cmd_start(args: argparse.Namespace) -> int:
         return 0
 
     if component == "gateway":
-        # 演示/同域入口：静态 dist + 反代 FastAPI；与 Vite 互斥
+        # 同域入口：默认静态 dist；``--vite`` 时切 HMR 剖面并拉起本机 Vite :5174
         import urllib.request
 
         try:
@@ -194,14 +201,31 @@ def cmd_start(args: argparse.Namespace) -> int:
                 "FastAPI :8000 未响应；网关可启动但 API 反代会失败。"
                 " 建议先: launch.py start docker && launch.py start fastapi",
             )
+        use_hmr = bool(getattr(args, "vite", False))
         if not start_gateway_infra(
-            rebuild_frontend=bool(getattr(args, "rebuild_frontend", False))
+            rebuild_frontend=bool(getattr(args, "rebuild_frontend", False)),
+            hmr=use_hmr,
         ):
             return 1
-        log.ok(
-            "Launcher",
-            f"Nginx Gateway 已启动（http://localhost:{GATEWAY_PORT}，不进入监控循环）",
-        )
+        if use_hmr:
+            pm = ProcessManager(
+                debug=args.debug,
+                frontend_port=args.frontend_port,
+                behind_gateway=True,
+            )
+            pm.start_frontend()
+            time.sleep(2)
+            pm.save_pids(merge=True)
+            log.ok(
+                "Launcher",
+                f"Nginx Gateway HMR 已启动（入口 http://localhost:{GATEWAY_PORT}，"
+                f"Vite :{VITE_BEHIND_GATEWAY_PORT}）",
+            )
+        else:
+            log.ok(
+                "Launcher",
+                f"Nginx Gateway 已启动（http://localhost:{GATEWAY_PORT}，不进入监控循环）",
+            )
         return 0
 
     if component in ("worker", "worker:all"):
@@ -253,7 +277,11 @@ def _start_all(args: argparse.Namespace) -> int:
         log.info("Launcher", "调试模式: ON（窗口可见，Celery 日志级别 DEBUG）")
     log.ok("Launcher", "初始化完成（数据目录 / data-sync .env）")
 
-    pm = ProcessManager(debug=args.debug, frontend_port=args.frontend_port)
+    pm = ProcessManager(
+        debug=args.debug,
+        frontend_port=args.frontend_port,
+        behind_gateway=bool(getattr(args, "vite", False)),
+    )
     pm.install_signal_handlers()
 
     if not args.no_docker:
@@ -265,8 +293,13 @@ def _start_all(args: argparse.Namespace) -> int:
         # P2-2：此前 wait_for_redis 返回值被丢弃，Redis 未就绪仍拉起 7 worker+beat
         # 导致 crash-loop。现检查返回值 fail-fast。
         if not wait_for_redis(max_wait=30):
-            log.error("Launcher", "Redis 未就绪，终止启动（避免 worker/beat crash-loop）")
-            log.info("Launcher", "  排查：docker logs cgda-redis；或 launch.py start docker 单独诊断")
+            log.error(
+                "Launcher", "Redis 未就绪，终止启动（避免 worker/beat crash-loop）"
+            )
+            log.info(
+                "Launcher",
+                "  排查：docker logs cgda-redis；或 launch.py start docker 单独诊断",
+            )
             return 1
         # P2-2：新增 MinIO 探测（warn-only，对象存储未就绪时部分功能降级但不阻塞启动）
         wait_for_minio(max_wait=30)
@@ -284,18 +317,19 @@ def _start_all(args: argparse.Namespace) -> int:
     if not args.no_frontend:
         use_vite = bool(getattr(args, "vite", False))
         if use_vite:
-            if gateway_running():
-                log.info(
-                    "Launcher",
-                    "检测到 Nginx Gateway 占用 :5175，先停止 gateway 以启动 Vite（--vite）",
-                )
-                stop_gateway_infra()
+            # Gateway :5175 同域入口 + 本机 Vite :5174 HMR（不再互斥停 Gateway）
+            if not start_gateway_infra(
+                rebuild_frontend=bool(getattr(args, "rebuild_frontend", False)),
+                hmr=True,
+            ):
+                log.error("Launcher", "Nginx Gateway HMR 启动失败，终止")
+                return 1
             pm.start_frontend()
             time.sleep(3)
         else:
-            # 上线默认：同域 Nginx Gateway（静态 dist + 反代 API）；与 Vite 互斥
             if not start_gateway_infra(
-                rebuild_frontend=bool(getattr(args, "rebuild_frontend", False))
+                rebuild_frontend=bool(getattr(args, "rebuild_frontend", False)),
+                hmr=False,
             ):
                 log.error("Launcher", "Nginx Gateway 启动失败，终止")
                 return 1
@@ -313,16 +347,28 @@ def _start_all(args: argparse.Namespace) -> int:
         if getattr(args, "vite", False):
             log.info(
                 "Launcher",
-                f"  Frontend:  http://localhost:{args.frontend_port}  [Vite]",
+                f"  Frontend:  http://localhost:{GATEWAY_PORT}  [Gateway + Vite HMR]",
+            )
+            log.info(
+                "Launcher",
+                f"  Vite:      http://127.0.0.1:{VITE_BEHIND_GATEWAY_PORT}（经网关反代）",
             )
         else:
             log.info(
                 "Launcher",
-                f"  Frontend:  http://localhost:{GATEWAY_PORT}  [Nginx Gateway]",
+                f"  Frontend:  http://localhost:{GATEWAY_PORT}  [Nginx Gateway 静态]",
             )
-            log.info("Launcher", "  静态:     Code/frontend/dist（改前端后需 --rebuild-frontend）")
+            log.info(
+                "Launcher",
+                "  静态:     Code/frontend/dist（改前端后需 --rebuild-frontend 或 npm run build）",
+            )
+            log.info(
+                "Launcher",
+                "  HMR:      launch.py start --vite（同域入口不变）",
+            )
     log.info("Launcher", f"  日志目录:  {LOG_DIR}")
     log.info("Launcher", "  停止方式:  python launch.py stop  或  Ctrl+C")
+    log.info("Launcher", "  配置热重载: python launch.py reload gateway")
     log.info("Launcher", "  查看日志:  python launch.py logs [component]")
     log.info("Launcher", "  数据同步:  python launch.py sync  （Code/infra/data-sync）")
     log.info("Launcher", "")
@@ -347,8 +393,9 @@ def cmd_stop(args: argparse.Namespace | None = None) -> int:
         component = None
     if component == "gateway":
         log.banner("停止 Nginx Gateway")
+        stop_vite_behind_gateway()
         stop_gateway_infra()
-        log.ok("Stop", "Gateway 已停止")
+        log.ok("Stop", "Gateway 已停止（未执行 flush/clean-cache）")
         return 0
     if component is not None:
         log.error("Stop", f"未知组件: {component}（stop 支持: 全部 / gateway）")
@@ -381,13 +428,14 @@ def cmd_stop(args: argparse.Namespace | None = None) -> int:
         [
             str(FRONTEND_DIR),
             f"vite --port {DEFAULT_FRONTEND_PORT}",
+            f"vite --port {VITE_BEHIND_GATEWAY_PORT}",
         ]
     )
 
     time.sleep(1)
     stop_gateway_infra()
     stop_docker_infra()
-    log.ok("Stop", "所有服务已停止")
+    log.ok("Stop", "所有服务已停止（未执行 flush/clean-cache；下次 start/restart 会按矩阵自动 clean）")
     return 0
 
 
@@ -408,6 +456,8 @@ def cmd_status() -> int:
             ["docker", "inspect", "-f", "{{.State.Status}}", cid],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             **hidden_kwargs(),
         )
         state = r.stdout.strip() if r.returncode == 0 else "未运行"
@@ -436,11 +486,32 @@ def cmd_status() -> int:
     except Exception:
         fe_ok = False
     icon = "✓" if fe_ok else "✗"
-    fe_mode = "Nginx Gateway" if gw_up else ("Vite" if fe_ok else "未响应")
+    if gw_up and gateway_hmr_active():
+        fe_mode = "Gateway + Vite HMR"
+    elif gw_up:
+        fe_mode = "Nginx Gateway"
+    elif fe_ok:
+        fe_mode = "Vite"
+    else:
+        fe_mode = "未响应"
     log.info(
         "Status",
         f"  {icon} Frontend (http://localhost:{DEFAULT_FRONTEND_PORT}):  "
         f"{'就绪' if fe_ok else '未响应'} [{fe_mode}]",
+    )
+    if gw_up and gateway_hmr_active():
+        vite_ok = port_listening(VITE_BEHIND_GATEWAY_PORT)
+        icon = "✓" if vite_ok else "✗"
+        log.info(
+            "Status",
+            f"  {icon} Vite HMR  (http://127.0.0.1:{VITE_BEHIND_GATEWAY_PORT}): "
+            f"{'监听中' if vite_ok else '未监听'}",
+        )
+
+    log.info(
+        "Status",
+        "缓存约定: start/restart 默认按组件清理本地编译缓存（--no-clean-cache 可跳过）；"
+        "Redis/天气仅 launch.py flush；手册 Docs/07-工程保障/联调缓存与生效边界.md",
     )
 
     if PID_FILE.exists():
@@ -484,50 +555,201 @@ def cmd_status() -> int:
 
 
 # ─── 重启命令 ────────────────────────────────────────────────────────────────
-def _stop_backend_app_processes() -> None:
+# backend 进程面的命令行清扫特征（父进程：start_*.py）与 API 端口。
+BACKEND_STOP_PATTERNS = [
+    "start_celery_worker.py",
+    "start_celery_beat.py",
+    "start_fastapi.py",
+]
+BACKEND_API_PORT = 8000
+
+
+def _iter_backend_pid_file_entries() -> list[tuple[str, int]]:
+    """读取 PID 文件中的 backend 条目（worker-* / fastapi / beat）。"""
+    if not PID_FILE.exists():
+        return []
+    try:
+        pids = json.loads(PID_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    if not isinstance(pids, dict):
+        return []
+    out: list[tuple[str, int]] = []
+    for name, pid in pids.items():
+        if not (
+            str(name).startswith("worker-")
+            or str(name) in {"fastapi", "beat", "celery-beat"}
+        ):
+            continue
+        try:
+            out.append((str(name), int(pid)))
+        except (ValueError, TypeError):
+            continue
+    return out
+
+
+def _terminate_cgda_spawn_children() -> int:
+    """树杀 CGDA Python multiprocessing spawn 孤儿子进程。
+
+    uvicorn 多 worker 与 celery pool 的子进程 cmdline 是
+    ``python -c "from multiprocessing.spawn import spawn_main ..."``，
+    不含 ``start_*.py`` 路径；父进程被单独击杀（Windows 下 ``os.kill``
+    等效 TerminateProcess，不杀树）后它们会孤儿化，继续占用 8000 端口
+    或消费队列——即世代堆积的残余形态。识别标记：spawn_main +
+    Env/Python312 解释器路径。
+    """
+    py_marker = python_executable().lower()
+    if not py_marker:
+        return 0
+    ok, rows = enumerate_cmdline_rows()
+    if not ok:
+        return 0
+    killed = 0
+    for pid, cmdline in rows:
+        if pid == os.getpid():
+            continue
+        cl = cmdline.lower()
+        if "spawn_main" in cl and py_marker in cl:
+            tree_kill_pid(pid)
+            killed += 1
+    return killed
+
+
+def _kill_port_owner_if_backend(port: int) -> bool:
+    """端口属主可识别为 CGDA 后端进程时树杀；无关进程不动，仅告警。"""
+    if not IS_WINDOWS:
+        try:
+            subprocess.run(
+                ["fuser", "-k", f"{port}/tcp"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return True
+        except (FileNotFoundError, OSError):
+            log.warn("Stop", "fuser 不可用，无法清除端口属主")
+            return False
+
+    pids = netstat_listening_pids(port)
+    if not pids:
+        return False
+    ok, rows = enumerate_cmdline_rows()
+    cmdlines = dict(rows) if ok else {}
+    py_marker = python_executable().lower()
+    killed_any = False
+    identified_any = False
+    for pid in pids:
+        cl = cmdlines.get(pid, "")
+        cl_l = cl.lower()
+        is_cgda = (
+            "start_fastapi.py" in cl_l
+            or "uvicorn" in cl_l
+            or "app.main" in cl_l
+            or str(BACKEND_DIR).lower() in cl_l
+            or (bool(py_marker) and py_marker in cl_l)
+        )
+        if is_cgda:
+            log.warn("Stop", f"树杀端口 {port} 属主 (pid={pid})")
+            tree_kill_pid(pid)
+            killed_any = True
+            identified_any = True
+        elif cl:
+            identified_any = True
+            log.error(
+                "Stop",
+                f"端口 {port} 被疑似无关进程占用，不自动击杀 (pid={pid}): {cl[:160]}",
+            )
+    if not identified_any:
+        log.error(
+            "Stop",
+            f"端口 {port} 有监听但属主无法识别（进程枚举失败），"
+            f"需手工排查: netstat -ano | findstr :{port}",
+        )
+    return killed_any
+
+
+def _verify_backend_stop() -> bool:
+    """清扫后死亡验证：无匹配进程存活 + PID 文件条目全死 + 端口可绑定。
+
+    存活时升级击杀一轮；仍不干净则返回 False（调用方应拒绝启动新世代，
+    否则复现 2026-08-16 的世代堆叠）。
+    """
+    survivors = wait_for_pattern_exit(BACKEND_STOP_PATTERNS, timeout=10.0)
+    if survivors is None:
+        log.warn("Stop", "进程枚举不可用，无法验证命令行清扫结果")
+        # 枚举失败兜底：PID 文件条目逐个树杀后按 pid_alive 复查
+        alive = [
+            pid for _name, pid in _iter_backend_pid_file_entries() if pid_alive(pid)
+        ]
+        for pid in alive:
+            tree_kill_pid(pid)
+        time.sleep(1.0)
+        still = [
+            pid for _name, pid in _iter_backend_pid_file_entries() if pid_alive(pid)
+        ]
+        if still:
+            log.error("Stop", f"PID 文件兜底击杀后仍存活: {still}")
+            return False
+    elif survivors:
+        log.warn(
+            "Stop", f"{len(survivors)} 个 backend 进程未退出，升级强制击杀: {survivors}"
+        )
+        terminate_by_cmdline_patterns(BACKEND_STOP_PATTERNS)
+        _terminate_cgda_spawn_children()
+        survivors = wait_for_pattern_exit(BACKEND_STOP_PATTERNS, timeout=5.0)
+        if survivors:
+            log.error(
+                "Stop",
+                f"强制击杀后仍存活（可能需要管理员权限）: {survivors}",
+            )
+            return False
+
+    if port_listening("127.0.0.1", BACKEND_API_PORT):
+        log.warn("Stop", f"端口 {BACKEND_API_PORT} 仍被占用，尝试识别并清除属主")
+        _kill_port_owner_if_backend(BACKEND_API_PORT)
+        time.sleep(1.0)
+        if port_listening("127.0.0.1", BACKEND_API_PORT):
+            log.error(
+                "Stop",
+                f"端口 {BACKEND_API_PORT} 仍被占用，重启中止以免世代堆叠",
+            )
+            return False
+    return True
+
+
+def _stop_backend_app_processes() -> bool:
     """仅停止 FastAPI / Celery worker / Beat（不动 Docker、Vite、gateway）。
 
-    双保险：PID 文件条目先 SIGTERM 兜底（os.kill 走 Win32 API，不依赖
-    PATH），再按命令行模式清扫（覆盖 PID 文件未收录的孤儿世代）。
-    2026-08-16 事故：仅靠裸名 powershell/taskkill 清扫，PATH 缺 System32
-    时枚举静默为空 → no-op → 旧世代堆叠并占用 8000 端口。
+    返回是否**验证清洁**（无匹配进程存活且 8000 端口可绑定）。
+
+    三层清扫 + 死亡验证（对应 2026-08-16 世代堆积事故）：
+    1. 命令行模式清扫：taskkill /T /F 整树击杀，覆盖 PID 文件未收录的
+       旧世代；枚举失败（PATH 缺 System32 等）会被哨兵识别而非静默 no-op。
+    2. PID 文件条目 SIGTERM 兜底（os.kill 走 Win32 API，不依赖 PATH）。
+    3. spawn 孤儿子进程清除 + 死亡验证 + 端口属主核对（见
+       ``_verify_backend_stop``）。
     """
-    if PID_FILE.exists():
+    terminate_by_cmdline_patterns(BACKEND_STOP_PATTERNS)
+
+    for name, pid in _iter_backend_pid_file_entries():
         try:
-            pids = json.loads(PID_FILE.read_text(encoding="utf-8"))
-            if isinstance(pids, dict):
-                for name, pid in pids.items():
-                    if not (
-                        str(name).startswith("worker-")
-                        or str(name) in {"fastapi", "beat", "celery-beat"}
-                    ):
-                        continue
-                    try:
-                        os.kill(int(pid), signal.SIGTERM)
-                        log.info("Stop", f"已发送 SIGTERM 到 {name} (pid={pid})")
-                    except (ProcessLookupError, PermissionError, ValueError, OSError):
-                        log.debug("Stop", f"{name} (pid={pid}) 已不存在")
-        except (json.JSONDecodeError, OSError):
-            pass
-    terminate_by_cmdline_patterns(
-        [
-            "start_celery_worker.py",
-            "start_celery_beat.py",
-            "start_fastapi.py",
-        ]
-    )
+            os.kill(pid, signal.SIGTERM)
+            log.info("Stop", f"已发送 SIGTERM 到 {name} (pid={pid})")
+        except (ProcessLookupError, PermissionError, ValueError, OSError):
+            log.debug("Stop", f"{name} (pid={pid}) 已不存在")
+
+    _terminate_cgda_spawn_children()
+    clean = _verify_backend_stop()
+
     # Drop stale PID entries for backend procs if present
     if PID_FILE.exists():
         try:
             pids = json.loads(PID_FILE.read_text(encoding="utf-8"))
             if isinstance(pids, dict):
+                backend_names = {
+                    name for name, _pid in _iter_backend_pid_file_entries()
+                }
                 keep = {
-                    name: pid
-                    for name, pid in pids.items()
-                    if not (
-                        str(name).startswith("worker-")
-                        or str(name) in {"fastapi", "beat", "celery-beat"}
-                    )
+                    name: pid for name, pid in pids.items() if name not in backend_names
                 }
                 if keep:
                     PID_FILE.write_text(json.dumps(keep, indent=2), encoding="utf-8")
@@ -535,13 +757,28 @@ def _stop_backend_app_processes() -> None:
                     PID_FILE.unlink(missing_ok=True)
         except (json.JSONDecodeError, OSError, TypeError):
             pass
+    return clean
 
 
 def _start_backend_app_processes(args: argparse.Namespace) -> int:
     """启动 worker → beat → fastapi（不进入监控循环）。"""
     pm = ProcessManager(debug=args.debug, frontend_port=args.frontend_port)
+    # 2026-08-25 自愈：Redis 不可达时自动拉起 Docker 栈（幂等）——
+    # 此前仅 warn 后照常启动，broker 缺失下 worker 全部 crash-loop /
+    # 任务派发 500（「任务长期卡排队中」根因之一）。
     if not redis_running():
-        log.warn("Launcher", "Redis 未检测到；worker/beat/fastapi 可能失败")
+        log.warn("Launcher", "Redis 未运行，自动拉起 Docker 基础设施（自愈）...")
+        if start_docker_infra(
+            start_open_meteo=not getattr(args, "no_open_meteo", False)
+        ):
+            wait_for_redis(max_wait=30)
+            wait_for_minio(max_wait=30)
+        else:
+            log.error(
+                "Launcher",
+                "Docker 基础设施拉起失败；worker/beat/fastapi 可能失败"
+                "（排查: docker ps / launch.py start docker）",
+            )
     pm.start_celery_workers()
     pm.start_celery_beat()
     pm.start_fastapi()
@@ -564,29 +801,130 @@ def cmd_restart(args: argparse.Namespace) -> int:
 
     ``backend``：仅重启 FastAPI + Worker + Beat，保留 Docker / Gateway / Vite。
     """
-    if getattr(args, "clean_cache", False):
-        rc = cmd_clean_cache(
-            argparse.Namespace(all=True, pycache=False, vite=False, dry_run=False)
-        )
-        if rc != 0:
-            return rc
-
     component = getattr(args, "component", None) or "all"
+    was_hmr = False
+    if component in ("gateway", "all"):
+        was_hmr = gateway_hmr_active()
+    if not getattr(args, "_cache_prepare_done", False):
+        apply_prepare_from_args(args, component, was_gateway_hmr=was_hmr)
+        args._cache_prepare_done = True
+
     if component == "backend":
         log.banner("重启 backend（FastAPI + Worker + Beat）")
         ensure_project_initialized()
-        _stop_backend_app_processes()
+        # 2026-08-25 Redis 反复"挂掉"根因修复：restart gateway/全量 restart 走
+        # cmd_stop() 会 stop_docker_infra() 停掉 Redis/MinIO；且 restart backend
+        # 从不检查 Redis——worker 在 broker 缺失下启动 → 任务派发 500/卡 accepted。
+        # 自愈：Redis 不可达时自动拉起 Docker 栈（compose up -d 幂等）。
+        if not redis_running():
+            log.warn(
+                "Restart", "Redis 未运行，自动拉起 Docker 基础设施（自愈）..."
+            )
+            if not start_docker_infra(
+                start_open_meteo=not getattr(args, "no_open_meteo", False)
+            ):
+                log.error("Restart", "Docker 基础设施拉起失败，继续重启（worker 将 crash-loop 重连）")
+            else:
+                wait_for_redis(max_wait=30)
+                wait_for_minio(max_wait=30)
+        clean = _stop_backend_app_processes()
+        if not clean:
+            log.error(
+                "Restart",
+                "旧 backend 进程未清扫干净（仍存活或端口被占），已中止重启以防世代堆叠",
+            )
+            log.info(
+                "Restart",
+                f"  排查: netstat -ano | findstr :{BACKEND_API_PORT}；"
+                "任务管理器搜索 start_fastapi / start_celery / spawn_main",
+            )
+            log.info(
+                "Restart",
+                "  清理后重试: Env\\Python312\\python.exe launch.py restart backend",
+            )
+            return 1
         _regenerate_catalog_seeds()
         time.sleep(2)
         return _start_backend_app_processes(args)
 
+    if component == "fastapi":
+        # 2026-08-25 修复：此前 restart fastapi 落入全量分支（cmd_stop 停 Docker
+        # 栈后仅 start fastapi 不清旧进程）——新旧进程共存同端口，请求随机打到
+        # 旧进程（代码更新后行为分裂，本日 NSIDC/GLDAS access_mode 排查实证）。
+        # 语义收敛：restart fastapi = 完整 backend 清扫+重启（worker/beat 也需
+        # 消费新代码），且不动 Docker/gateway。
+        log.banner("重启 backend（FastAPI + Worker + Beat）")
+        ensure_project_initialized()
+        if not redis_running():
+            log.warn("Restart", "Redis 未运行，自动拉起 Docker 基础设施（自愈）...")
+            if not start_docker_infra(
+                start_open_meteo=not getattr(args, "no_open_meteo", False)
+            ):
+                log.error(
+                    "Restart", "Docker 基础设施拉起失败，继续重启（worker 将 crash-loop 重连）"
+                )
+            else:
+                wait_for_redis(max_wait=30)
+                wait_for_minio(max_wait=30)
+        clean = _stop_backend_app_processes()
+        if not clean:
+            log.error(
+                "Restart", "旧 backend 进程未清扫干净，已中止重启以防世代堆叠"
+            )
+            return 1
+        _regenerate_catalog_seeds()
+        time.sleep(2)
+        return _start_backend_app_processes(args)
+
+    if component == "gateway":
+        # 2026-08-25 修复：此前 restart gateway 落入全量分支 → cmd_stop() 停掉
+        # Docker 栈（Redis/MinIO）后只重启 gateway 不恢复 Docker——Redis 反复
+        # "挂掉"的根因。gateway 重启应精准：只 stop/start gateway 容器。
+        use_hmr = bool(getattr(args, "vite", False))
+        log.banner(
+            "重启 gateway（Nginx"
+            + (" + Vite HMR" if use_hmr else "")
+            + "，不动 Docker 基础设施/backend）"
+        )
+        if use_hmr or was_hmr:
+            stop_vite_behind_gateway()
+        stop_gateway_infra()
+        time.sleep(1)
+        if not start_gateway_infra(
+            rebuild_frontend=bool(getattr(args, "rebuild_frontend", False)),
+            hmr=use_hmr,
+        ):
+            log.error("Restart", "Nginx Gateway 重启失败")
+            return 1
+        if use_hmr:
+            pm = ProcessManager(
+                debug=getattr(args, "debug", False),
+                frontend_port=getattr(args, "frontend_port", DEFAULT_FRONTEND_PORT),
+                behind_gateway=True,
+            )
+            pm.start_frontend()
+            time.sleep(2)
+            pm.save_pids(merge=True)
+        log.ok("Restart", "Gateway 已重启")
+        return 0
+
     log.banner("重启 CGDA 服务")
     cmd_stop()
     time.sleep(2)
-    # Avoid running clean-cache twice when restart delegates to start.
-    if getattr(args, "clean_cache", False):
-        args.clean_cache = False
+    # prepare 已在本函数入口执行；委托 start 时勿再清一遍
     return cmd_start(args)
+
+
+def cmd_reload(args: argparse.Namespace) -> int:
+    """热重载指定组件配置（当前仅 gateway → nginx -s reload）。"""
+    component = getattr(args, "component", None) or "gateway"
+    if component != "gateway":
+        log.error("Reload", f"未知组件: {component}（reload 仅支持 gateway）")
+        return 1
+    log.banner("热重载 Nginx Gateway 配置")
+    if not reload_gateway_nginx():
+        return 1
+    return 0
 
 
 # ─── 日志命令 ────────────────────────────────────────────────────────────────
@@ -700,9 +1038,7 @@ def cmd_sync(job: str = "open-meteo-sync") -> int:
 
     lock_token = acquire_sync_lock(domains) if acquire_sync_lock is not None else None
     if lock_token is None and acquire_sync_lock is not None:
-        log.error(
-            "Sync", f"另一同步正在进行（domains={domains}），本次 CLI 同步跳过"
-        )
+        log.error("Sync", f"另一同步正在进行（domains={domains}），本次 CLI 同步跳过")
         return 1
 
     try:
@@ -741,7 +1077,10 @@ def cmd_sync(job: str = "open-meteo-sync") -> int:
             return r.returncode
         log.ok("Sync", f"{job} 完成")
         _record_cli_sync_result(
-            ok=True, domains=domains, message=f"{job} completed via launch.py", exit_code=0
+            ok=True,
+            domains=domains,
+            message=f"{job} completed via launch.py",
+            exit_code=0,
         )
         return 0
     finally:
@@ -1026,7 +1365,7 @@ def cmd_clean_cache(args: argparse.Namespace) -> int:
     """清理本地 ``__pycache__`` / ``*.pyc`` 与 Vite ``node_modules/.vite``。
 
     与 ``flush`` 不同：本命令**不**清空 Redis，也**不**删除天气文件缓存。
-    适合代码更新、模块导入怪错、Vite 插件状态异常后，在 ``restart`` 前执行。
+    start/restart 会按组件矩阵自动调用；亦可手动执行本命令。
     """
     dry_run = bool(getattr(args, "dry_run", False))
     do_pycache = bool(getattr(args, "pycache", False))
@@ -1035,65 +1374,9 @@ def cmd_clean_cache(args: argparse.Namespace) -> int:
     if do_all:
         do_pycache = True
         do_vite = True
-
-    log.banner("预览本地编译缓存清理" if dry_run else "清理本地编译缓存")
-
-    removed_dirs = 0
-    removed_files = 0
-
-    if do_pycache:
-        roots = [BACKEND_DIR, ALGORITHMS_DIR, TEST_DIR]
-        for root in roots:
-            if not root.is_dir():
-                log.warn("CleanCache", f"跳过不存在的目录: {root}")
-                continue
-            for dirpath, dirnames, filenames in os.walk(root, topdown=False):
-                base = Path(dirpath)
-                # 跳过虚拟环境与前端 node_modules（算法包下偶发）
-                parts_lower = [p.lower() for p in base.parts]
-                if "node_modules" in parts_lower or ".venv" in parts_lower:
-                    continue
-                if base.name == "__pycache__":
-                    if dry_run:
-                        log.info("CleanCache", f"[dry-run] rmtree {base}")
-                    else:
-                        shutil.rmtree(base, ignore_errors=True)
-                    removed_dirs += 1
-                    continue
-                for name in filenames:
-                    if name.endswith((".pyc", ".pyo")):
-                        target = base / name
-                        if dry_run:
-                            log.info("CleanCache", f"[dry-run] unlink {target}")
-                        else:
-                            try:
-                                target.unlink(missing_ok=True)
-                            except OSError as exc:
-                                log.warn("CleanCache", f"无法删除 {target}: {exc}")
-                        removed_files += 1
-
-    if do_vite:
-        vite_targets = [VITE_CACHE_DIR, FRONTEND_DIR / ".vite"]
-        for cache_dir in vite_targets:
-            if not cache_dir.exists():
-                log.info("CleanCache", f"Vite 缓存不存在（跳过）: {cache_dir}")
-                continue
-            if dry_run:
-                log.info("CleanCache", f"[dry-run] rmtree {cache_dir}")
-            else:
-                shutil.rmtree(cache_dir, ignore_errors=True)
-            removed_dirs += 1
-
-    log.ok(
-        "CleanCache",
-        f"{'将清理' if dry_run else '已清理'} dirs≈{removed_dirs} files≈{removed_files}"
-        f"（pycache={'on' if do_pycache else 'off'}, vite={'on' if do_vite else 'off'}）",
+    return prepare_launch_caches(
+        pycache=do_pycache, vite=do_vite, dry_run=dry_run
     )
-    log.info(
-        "CleanCache",
-        "提示: 与 flush 无关。代码更新后建议: launch.py clean-cache && launch.py restart",
-    )
-    return 0
 
 
 # ─── 清空缓存命令 ────────────────────────────────────────────────────────────
@@ -1108,6 +1391,8 @@ def cmd_flush(args: argparse.Namespace) -> int:
             ["docker", "exec", "cgda-redis", "redis-cli", "DBSIZE"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=10,
             **hidden_kwargs(),
         )
@@ -1164,6 +1449,8 @@ def cmd_flush(args: argparse.Namespace) -> int:
             ["docker", "exec", "cgda-redis", "redis-cli", "FLUSHDB"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=10,
             **hidden_kwargs(),
         )

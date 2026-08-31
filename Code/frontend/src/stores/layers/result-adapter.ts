@@ -7,11 +7,15 @@ import type {
 } from '../../services/runtime-api'
 import type { JobLayerItem, JobLayerMapLayerPayload } from './types'
 import type { ActiveLayer, ActiveLayerDisplay, RuntimeLayerLibraryItem } from './types'
+import { mergeProductTag } from './layer-naming'
 import { asRecord, extractLayerHotspots, formatClockLabel } from './catalog-builders'
 import {
+  extractFailureCategory,
+  extractWorkflowTechLogs,
   localizeWorkflowDiagnostics,
   localizeWorkflowErrorMessage,
 } from '../../utils/workflow-error-messages'
+import { resolveJobLayerDisplayName } from '../../utils/workflow-run-display-name'
 
 function formatMetricValue(value: unknown, unit = '') {
   if (typeof value === 'number') {
@@ -31,6 +35,14 @@ function extractWorkflowEntryName(run: WorkflowRunStatusResponse) {
   const dto = run.result_dto
   const entryName = dto && typeof dto === 'object' ? dto.workflow_entry_name : undefined
   return typeof entryName === 'string' && entryName.trim() ? entryName : undefined
+}
+
+/** 工作流内部 entry id 不得泄漏到图层库运行条目名。 */
+function isTechnicalWorkflowEntryName(name: string | undefined): boolean {
+  if (!name) return false
+  return /^(?:omega[-_]sf[-_]fenkuai|omega[-_]avg[-_]daily|static_local_read|analysis_|preprocess_|fusion_|stats_)/i.test(
+    name,
+  )
 }
 
 function extractReportSummary(
@@ -412,10 +424,18 @@ export async function buildJobLayer(
           typeof item === 'string' &&
           item.trim() &&
           !item.startsWith('validation_') &&
-          !item.startsWith('error_message='),
+          !item.startsWith('error_message=') &&
+          !item.startsWith('reason=') && // 与主 message 重复
+          !item.startsWith('bake_log='),
       ),
     ),
-  ].filter((note, index, arr) => arr.indexOf(note) === index)
+  ].filter((note, index, arr) => {
+    if (!note) return false
+    // 勿与主消息重复
+    if (run.message && note === run.message.trim()) return false
+    return arr.indexOf(note) === index
+  })
+  const techLogs = extractWorkflowTechLogs(rawDiagnostics)
   const previousJobLayer = options.previousJobLayer
   const resultView: WorkflowRunViewResponse | null = shouldFetchWorkflowRunView(run)
     ? await getWorkflowRunView(run.run_id).catch(() => previousJobLayer?.resultView ?? null)
@@ -438,12 +458,20 @@ export async function buildJobLayer(
     }
   }
   const localizedMessage = localizeWorkflowErrorMessage(run.message)
+  const failureCategory = extractFailureCategory({
+    diagnostics: rawDiagnostics,
+    message: run.message,
+  })
   const analysisCharts = await extractAnalysisCharts(run.result_refs)
   const analysisTables = extractAnalysisTables(run.result_refs)
   return {
     jobId: run.run_id,
-    name: entryName ?? catalogName,
+    name: resolveJobLayerDisplayName(run, catalogName, {
+      previousName: previousJobLayer?.name,
+      entryName,
+    }),
     commandType: run.command_type,
+    commandLabel: run.command_label ?? undefined,
     status,
     progress: run.progress,
     createdAt: run.created_at,
@@ -459,6 +487,8 @@ export async function buildJobLayer(
     mapLayerPayload,
     diagnostics: run.diagnostics ?? [],
     diagnosticNotes,
+    techLogs: techLogs.length ? techLogs : previousJobLayer?.techLogs,
+    failureCategory: failureCategory ?? previousJobLayer?.failureCategory,
     retryOfRunId:
       typeof run.executor_metadata?.retry_of_run_id === 'string'
         ? run.executor_metadata.retry_of_run_id
@@ -474,23 +504,17 @@ export async function buildJobLayer(
   }
 }
 
-/** 产品标签归一：OMEGA_BLOCK / OMEGA_PIXEL → OMEGA，便于绑入计算组 */
+/** 产品标签归一：查表归并（OMEGA_BLOCK/PIXEL→OMEGA 等，规则见
+ * layer-naming.PRODUCT_TAG_MERGE_RULES——P2-A 表化，2026-08-24） */
 export function normalizeProductTag(raw: string | null | undefined): string {
   const tag = String(raw || '')
     .trim()
     .toUpperCase()
-    .replace(/^ALGORITHM MAP LAYER:\s*/i, '')
+    // R4：技术前缀剥两类——map_layer 产物（Algorithm Map Layer）与 file 产物（Algorithm Output），
+    // 否则未识别 title 会作为 tag 原样泄漏成图层名（productTagLabel 未知 tag 透传）
+    .replace(/^ALGORITHM (?:MAP LAYER|OUTPUT):\s*/i, '')
   if (!tag) return ''
-  if (tag === 'OMEGA_BLOCK' || tag.startsWith('OMEGA_BLOCK') || tag.includes('OMEGA_BLOCK')) {
-    return 'OMEGA'
-  }
-  if (tag === 'OMEGA_PIXEL' || tag.includes('OMEGA_PIXEL') || tag.includes('OMEGA_PIX')) {
-    return 'OMEGA'
-  }
-  if (tag === 'OMEGA' || tag.endsWith('_OMEGA') || tag.endsWith('-OMEGA')) return 'OMEGA'
-  if (tag === 'SM' || tag.endsWith('_SM') || tag.endsWith('-SM')) return 'SM'
-  if (tag === 'VOD' || tag.endsWith('_VOD') || tag.endsWith('-VOD')) return 'VOD'
-  return tag
+  return mergeProductTag(tag)
 }
 
 /** 从 jobLayer 提取真实数据显示数据 */

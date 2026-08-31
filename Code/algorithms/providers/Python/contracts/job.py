@@ -13,7 +13,11 @@ class JobRequest:
     job_id: str
     pipeline_name: str
     task_type: str
-    time_range: TimeRange
+    # 静态数据集（aridity-cn / omega 反演产物等，dataset_config time_range=None）
+    # 的工作流无时间维度——time_range 可选（缺失时 None）。
+    # 2026-08-23：曾硬必填导致静态图层"运行"入口统一报
+    # Missing required field: job_request.time_range。
+    time_range: TimeRange | None
     region: RegionSpec
     datasource_selection: dict[str, Any]
     algorithm_params: dict[str, Any]

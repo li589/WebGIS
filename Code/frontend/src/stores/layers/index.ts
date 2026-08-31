@@ -65,11 +65,14 @@
 import { watch } from 'vue'
 import { defineStore } from 'pinia'
 
+import type { FeatureCollection } from 'geojson'
+import { useDrawStore, type DrawFeature } from '../draw-store'
 import { LAYER_CATEGORIES } from './catalog'
 import { createCrossDomainBindings } from './bindings'
 import { createWorkspaceDomain } from './workspace-domain'
 import { createViewportDomain } from './viewport-domain'
 import { createWorkflowRunDomain } from './workflow-run-domain'
+import { createLifecycleDomain } from './lifecycle-domain'
 
 export const useLayersStore = defineStore('layers', () => {
   // ── Cross-domain bindings (populated by domain modules) ──
@@ -94,16 +97,64 @@ export const useLayersStore = defineStore('layers', () => {
   // Created after workspace + viewport; populates workflow-run-side bindings.
   const workflowRun = createWorkflowRunDomain(bindings, workspace, viewport)
 
+  // ── 4. Lifecycle domain（图层平台子系统 P0）──
+  // 聚合「资产 + 工作流 + 时间轴」为统一生命周期视图；在 workflow-run 之后创建，
+  // 读取 jobLayers 与 overlayTimeStates（MapCanvas 双写过渡期经 bindings 注入）。
+  const lifecycle = createLifecycleDomain({
+    bindings,
+    getJobLayers: () => workflowRun.jobLayers.value,
+  })
+  // 图层添加后刷新 lifecycle（后端真源；失败静默走本地推导）
+  watch(
+    () => workspace.activeLayers.value.length,
+    () => {
+      const ids = workspace.activeLayers.value
+        .filter((l) => !l.importedRaster && !l.importedVector && !l.isAdminBoundary)
+        .map((l) => l.catalogId)
+      if (ids.length > 0) void lifecycle.refreshAll(ids)
+    },
+  )
+
   // ── Watch: currentHour → flush weather tile viewports ──
   // 小时变化是离散用户操作，需立即执行；取消挂起的视口防抖，避免用旧 hour 覆盖。
   watch(workspace.currentHour, (hour) => {
     viewport.flushWeatherTileViewports(hour)
   })
 
-  // ── Backward-compatible flat return ──
-  // All 84+ members from the three domains are exposed through the single
-  // store. Consumers can migrate to selector composables (./selectors.ts)
-  // for a narrower API.
+  // ── Watch: draw features → sync importedVector（O4 绘制图层元数据实时读）──
+  // 绘制要素原本只存在 draw-store（工具条/属性表正确），但 ActiveLayer.importedVector
+  // 停留在创建时的空 GeoJSON（featureCount=0 / geometryType undefined）→
+  // 元数据 Tab 显示 Unknown/0 要素。此处把 draw-store 要素单向同步回 importedVector
+  // （updateImportedVectorGeojson 会重推 featureCount/geometryType/bounds/revision），
+  // 元数据/导出/属性表全部自动恢复正确。
+  const drawStore = useDrawStore()
+  watch(
+    () => [drawStore.features, drawStore.editingLayerId, drawStore.draftLayerId] as const,
+    ([feats, editingId, draftId]) => {
+      const targetId = editingId ?? draftId
+      if (!targetId) return
+      const geojson: FeatureCollection = {
+        type: 'FeatureCollection',
+        features: (feats as DrawFeature[]).map((f, i) => ({
+          type: 'Feature' as const,
+          id: i + 1,
+          geometry: f.geometry,
+          properties: f.properties ?? {},
+        })),
+      }
+      workspace.updateImportedVectorGeojson(targetId, geojson)
+    },
+    { deep: true },
+  )
+
+  // ── Flat return（P3 收口后的定位，2026-08-23）──
+  // 本 return 不再是公共 API——已降级为 **selectors 的底座**：
+  // 1. selectors.ts 的 toRef(store, key) / store.xxx 经由此面取成员；
+  // 2. 整店传递白名单（MapCanvas / LayerSidebar 侧栏三件套，见
+  //    eslint no-restricted-imports 配置）仍需完整实例——窄接口专项收口对象；
+  // 3. 外部直连已被 eslint 禁令阻止（pattern: layers store 入口），
+  //    新消费方一律经 useLayerWorkspace/useLayerViewport/useWorkflowRun。
+  // 成员面与 selectors 依赖面保持一致（收窄无收益且破坏底座契约）。
   /**
    * @deprecated 逐步迁移到 selector composables（`./selectors.ts`）。
    * 新代码请使用 useLayerWorkspace() / useLayerViewport() / useWorkflowRun()。
@@ -135,9 +186,14 @@ export const useLayersStore = defineStore('layers', () => {
     sidebarViewLabel: workspace.sidebarViewLabel,
     catalogJobStatus: workspace.catalogJobStatus,
     catalogRunReadiness: workspace.catalogRunReadiness,
+    // ── Computed: lifecycle（图层平台子系统 P0）──
+    layerLifecycle: lifecycle.layerLifecycle,
     // ── Data ──
     layerLibrary: workspace.layerLibrary,
     layerCategories: LAYER_CATEGORIES,
+    // ── Actions: lifecycle（图层平台子系统 P0/P1）──
+    refreshLayerLifecycle: lifecycle.refreshLayerLifecycle,
+    setMapOverlayTimeStates: lifecycle.setMapOverlayTimeStates,
     // ── Actions: workspace ──
     addLayer: workspace.addLayer,
     addImportedVectorLayer: workspace.addImportedVectorLayer,
@@ -177,11 +233,21 @@ export const useLayersStore = defineStore('layers', () => {
     updateRunGroupFromJob: workflowRun.updateRunGroupFromJob,
     // ── Actions: workflow ──
     runWorkflowForCatalog: workflowRun.runWorkflowForCatalog,
+    workflowVariantPreference: workflowRun.workflowVariantPreference,
+    getWorkflowVariantPreference: workflowRun.getWorkflowVariantPreference,
+    setWorkflowVariantPreference: workflowRun.setWorkflowVariantPreference,
+    isWorkflowVariantPinned: workflowRun.isWorkflowVariantPinned,
+    clearWorkflowVariantPin: workflowRun.clearWorkflowVariantPin,
     cancelWorkflowRunForJob: workflowRun.cancelWorkflowRunForJob,
     retryWorkflowRunForJob: workflowRun.retryWorkflowRunForJob,
+    autoAttachProductsForNewLayer: workflowRun.autoAttachProductsForNewLayer,
+    hasReusableProductsForTime: workflowRun.hasReusableProductsForTime,
+    interruptWorkflowForCatalog: workflowRun.interruptWorkflowForCatalog,
     cleanupAllRetryTimers: workflowRun.cleanupAllRetryTimers,
     stopWorkflowPolling: workflowRun.stopWorkflowPolling,
     getCatalogRunBlockReason: workspace.getCatalogRunBlockReason,
+    getCatalogAddBlockReason: workspace.getCatalogAddBlockReason,
+    isOverlayDisplayOnlyLayer: workspace.isOverlayDisplayOnlyLayer,
     canRunCatalog: workspace.canRunCatalog,
     supportsAnalysisWorkflow: workspace.supportsAnalysisWorkflow,
     isWeatherEngineLayer: workspace.isWeatherEngineLayer,
@@ -216,5 +282,6 @@ export const useLayersStore = defineStore('layers', () => {
     // ── External workflow tracking ──
     registerExternalWorkflowRun: workflowRun.registerExternalWorkflowRun,
     restoreActiveWorkflows: workflowRun.restoreActiveWorkflows,
+    setWorkspaceHydrationGuard: workflowRun.setWorkspaceHydrationGuard,
   }
 })

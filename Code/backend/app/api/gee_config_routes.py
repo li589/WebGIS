@@ -7,14 +7,23 @@ GEE 配置 API 路由
 - GET /gee/config/status - 获取 GEE 运行状态
 """
 
-from fastapi import APIRouter, HTTPException
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.api.deps import require_config_read_access
 from app.core.config import settings
 from app.services.gee_parallel_config import gee_config_service, TaskType
 
+logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/gee/config", tags=["gee-config"])
+# 安审 2026-08-22（B-5）：GEE 配置/状态/环境均为敏感读，router 级统一鉴权
+router = APIRouter(
+    prefix="/gee/config",
+    tags=["gee-config"],
+    dependencies=[Depends(require_config_read_access)],
+)
 
 
 class ParallelConfig(BaseModel):
@@ -142,9 +151,9 @@ async def get_gee_status():
             ),
         )
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to get GEE status: {str(e)}"
-        )
+        # 安审 2026-08-22（B-5）：500 不回显内部异常文本，细节留日志
+        logger.exception("Failed to get GEE status")
+        raise HTTPException(status_code=500, detail="Failed to get GEE status") from e
 
 
 @router.get("/environment")

@@ -62,6 +62,8 @@ def start_docker_infra(*, start_open_meteo: bool = True) -> bool:
             cwd=str(BACKEND_DIR),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=180,
             **hidden_kwargs(),
         )
@@ -115,6 +117,8 @@ def wait_for_redis(max_wait: int = 30) -> bool:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=5,
                 **hidden_kwargs(),
             )
@@ -146,6 +150,8 @@ def wait_for_minio(max_wait: int = 30) -> bool:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=5,
                 **hidden_kwargs(),
             )
@@ -167,6 +173,8 @@ def redis_running() -> bool:
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=3,
             **hidden_kwargs(),
         )

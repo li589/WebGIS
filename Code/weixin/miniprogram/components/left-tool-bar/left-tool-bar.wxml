@@ -1,0 +1,23 @@
+<view class="ltb">
+  <view class="ltb-bar">
+    <!-- 放大 -->
+    <view class="ltb-btn" bindtap="onZoomIn" hover-class="ltb-hover" hover-stay-time="80">
+      <view class="ltb-icon" style="background-image: url('data:image/svg+xml;base64,{{zoomInIcon}}');"></view>
+    </view>
+    <view class="ltb-divider"></view>
+    <!-- 指南针（重置正北）-->
+    <view class="ltb-btn" bindtap="onResetNorth" hover-class="ltb-hover" hover-stay-time="80">
+      <view class="ltb-icon" style="background-image: url('data:image/svg+xml;base64,{{compassIcon}}');"></view>
+    </view>
+    <view class="ltb-divider"></view>
+    <!-- 缩小 -->
+    <view class="ltb-btn" bindtap="onZoomOut" hover-class="ltb-hover" hover-stay-time="80">
+      <view class="ltb-icon" style="background-image: url('data:image/svg+xml;base64,{{zoomOutIcon}}');"></view>
+    </view>
+    <view class="ltb-divider"></view>
+    <!-- 定位 -->
+    <view class="ltb-btn" bindtap="onLocate" hover-class="ltb-hover" hover-stay-time="80">
+      <view class="ltb-icon" style="background-image: url('data:image/svg+xml;base64,{{locateIcon}}');"></view>
+    </view>
+  </view>
+</view>

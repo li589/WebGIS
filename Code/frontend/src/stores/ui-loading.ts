@@ -14,10 +14,17 @@ import { ref, onScopeDispose } from 'vue'
 export type UiLoadingMode = 'hero' | 'compact'
 
 const SHOW_DELAY_MS = 300
+/** 看门狗：loading 持续超过该时长且无新活动 → 强制复位。
+ * 依据：非 silent 请求最长 120s 超时、面板 chunk 加载秒级——任何合法
+ * loading 事件都会在此之前结束。卡死超过 150s 必然是计数泄漏
+ * （如异步面板 chunk 加载失败时 hideImmediate 未执行），强制复位
+ * 避免顶栏光带永久加载（2026-08-25 用户反馈）。 */
+const WATCHDOG_MS = 150_000
 
 export const useUiLoadingStore = defineStore('ui-loading', () => {
   let _counter = 0
   let _showTimer: ReturnType<typeof setTimeout> | null = null
+  let _watchdogTimer: ReturnType<typeof setTimeout> | null = null
   let _pendingMessage = ''
   let _pendingMode: UiLoadingMode = 'compact'
 
@@ -30,6 +37,27 @@ export const useUiLoadingStore = defineStore('ui-loading', () => {
     if (_showTimer !== null) {
       clearTimeout(_showTimer)
       _showTimer = null
+    }
+  }
+
+  function armWatchdog() {
+    if (_watchdogTimer !== null) clearTimeout(_watchdogTimer)
+    _watchdogTimer = setTimeout(() => {
+      _watchdogTimer = null
+      if (_counter > 0 || isVisible.value) {
+        // 计数泄漏（hide 缺失/未配对）：强制复位，避免顶栏光带永久加载
+        console.warn(
+          `[ui-loading] watchdog: loading 持续 ${WATCHDOG_MS}ms 未结束（counter=${_counter}），强制复位`,
+        )
+        hideImmediate()
+      }
+    }, WATCHDOG_MS)
+  }
+
+  function disarmWatchdog() {
+    if (_watchdogTimer !== null) {
+      clearTimeout(_watchdogTimer)
+      _watchdogTimer = null
     }
   }
 
@@ -47,6 +75,7 @@ export const useUiLoadingStore = defineStore('ui-loading', () => {
    */
   function show(msg: string = '', nextMode: UiLoadingMode = 'compact') {
     _counter++
+    armWatchdog()
     if (msg) _pendingMessage = msg
     if (isVisible.value) {
       if (msg) message.value = msg
@@ -69,6 +98,7 @@ export const useUiLoadingStore = defineStore('ui-loading', () => {
     _counter = Math.max(0, _counter - 1)
     if (_counter > 0) return
     clearShowTimer()
+    disarmWatchdog()
     isVisible.value = false
     message.value = ''
     _pendingMessage = ''
@@ -82,6 +112,7 @@ export const useUiLoadingStore = defineStore('ui-loading', () => {
   function showImmediate(msg: string = '', nextMode: UiLoadingMode = 'hero') {
     clearShowTimer()
     _counter++
+    armWatchdog()
     applyVisible(nextMode, msg)
   }
 
@@ -89,6 +120,7 @@ export const useUiLoadingStore = defineStore('ui-loading', () => {
   function hideImmediate() {
     _counter = 0
     clearShowTimer()
+    disarmWatchdog()
     isVisible.value = false
     message.value = ''
     _pendingMessage = ''
@@ -101,6 +133,10 @@ export const useUiLoadingStore = defineStore('ui-loading', () => {
     if (_showTimer !== null) {
       clearTimeout(_showTimer)
       _showTimer = null
+    }
+    if (_watchdogTimer !== null) {
+      clearTimeout(_watchdogTimer)
+      _watchdogTimer = null
     }
   })
 

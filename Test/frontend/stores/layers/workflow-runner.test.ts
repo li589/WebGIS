@@ -32,6 +32,7 @@ vi.mock('@/services/runtime-api', () => ({
   listActiveWorkflowRuns: vi.fn(),
   listRecentSucceededRuns: vi.fn(),
   retryWorkflowRun: vi.fn(),
+  submitOverlayAssetWorkflow: vi.fn(),
 }))
 
 vi.mock('@/stores/workflow-output-layers', () => ({
@@ -82,6 +83,7 @@ import {
   listActiveWorkflowRuns,
   listRecentSucceededRuns,
   retryWorkflowRun,
+  submitOverlayAssetWorkflow,
 } from '@/services/runtime-api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -179,6 +181,7 @@ function makeDeps(overrides: Partial<WorkflowRunnerDeps> = {}): WorkflowRunnerDe
     ensureRuntimeLayerCatalog: vi.fn(async () => {}),
     getCatalogRunBlockReason: vi.fn(() => null),
     supportsAnalysisWorkflow: vi.fn(() => true),
+    isOverlayDisplayOnlyLayer: vi.fn(() => false),
     supportsMapLayerResult: vi.fn(() => false),
     buildWorkflowPayloadForCatalog: vi.fn(() => ({})),
     activateWeatherTileViewport: vi.fn(),
@@ -263,6 +266,15 @@ describe('rememberTrackedWorkflowRun', () => {
     expect(loadTrackedWorkflowRuns()).toHaveLength(0)
   })
 
+  it('forgets succeeded runs so only in-flight runs survive refresh', () => {
+    const deps = makeDeps()
+    const runner = createWorkflowRunner(deps)
+    runner.rememberTrackedWorkflowRun('cat-1', makeJobLayer({ jobId: 'run-1', status: 'running' }))
+    expect(loadTrackedWorkflowRuns()).toHaveLength(1)
+    runner.rememberTrackedWorkflowRun('cat-1', makeJobLayer({ jobId: 'run-1', status: 'succeeded' }))
+    expect(loadTrackedWorkflowRuns()).toHaveLength(0)
+  })
+
   it('adds a real run to the tracking list', () => {
     const deps = makeDeps()
     const runner = createWorkflowRunner(deps)
@@ -277,7 +289,7 @@ describe('rememberTrackedWorkflowRun', () => {
     const deps = makeDeps()
     const runner = createWorkflowRunner(deps)
     runner.rememberTrackedWorkflowRun('cat-1', makeJobLayer({ jobId: 'run-1', status: 'running' }))
-    runner.rememberTrackedWorkflowRun('cat-1', makeJobLayer({ jobId: 'run-1', status: 'succeeded' }))
+    runner.rememberTrackedWorkflowRun('cat-1', makeJobLayer({ jobId: 'run-1', status: 'queued' }))
     const loaded = loadTrackedWorkflowRuns()
     expect(loaded).toHaveLength(1)
     expect(loaded[0].runId).toBe('run-1')
@@ -388,6 +400,129 @@ describe('runWorkflowForCatalog', () => {
     // Clean up timer
     const timer = deps.workflowRetryTimers.get('cat-1')
     if (timer !== undefined) clearTimeout(timer)
+  })
+
+  // 2026-08-25 回归修复：overlay_registry 静态图层（ERA5 热浪/柯本/土壤容重等）
+  // 曾因 supportsAnalysisWorkflow 反转落入通用 analysis 提交 → 后端 no_bridge 误报失败。
+  // 锁定：overlay 图层必须走 /overlay-asset-workflows 资产检查，不走通用提交。
+  it('overlay_display_only layers submit asset workflow, not generic analysis', async () => {
+    const deps = makeDeps({
+      isOverlayDisplayOnlyLayer: vi.fn(() => true),
+      supportsAnalysisWorkflow: vi.fn(() => true),
+    })
+    vi.mocked(submitOverlayAssetWorkflow).mockResolvedValue({
+      run_id: 'run-asset-1',
+      status: 'succeeded',
+      message: '图层资产已就绪。',
+      created_at: '2026-01-01T00:00:00Z',
+    } as never)
+
+    const runner = createWorkflowRunner(deps)
+    const runId = await runner.runWorkflowForCatalog('cat-1')
+
+    expect(runId).toBe('run-asset-1')
+    expect(submitOverlayAssetWorkflow).toHaveBeenCalledOnce()
+    expect(submitOverlayAssetWorkflow).toHaveBeenCalledWith('cat-1')
+    // 关键回归锁：通用 analysis 提交路径不得被触发
+    expect(submitWorkflow).not.toHaveBeenCalled()
+  })
+
+  it('non-overlay layers still submit generic analysis workflow', async () => {
+    const deps = makeDeps({
+      isOverlayDisplayOnlyLayer: vi.fn(() => false),
+      supportsAnalysisWorkflow: vi.fn(() => true),
+    })
+    vi.mocked(submitWorkflow).mockResolvedValue({
+      run_id: 'run-analysis-1',
+      created_at: '2026-01-01T00:00:00Z',
+      message: 'accepted',
+    } as never)
+
+    const runner = createWorkflowRunner(deps)
+    await runner.runWorkflowForCatalog('cat-1')
+
+    expect(submitWorkflow).toHaveBeenCalledOnce()
+    expect(submitOverlayAssetWorkflow).not.toHaveBeenCalled()
+  })
+})
+
+describe('workflow variant preference (X2 online/local 反演切换)', () => {
+  const VARIANT_CATALOG_ID = 'method-fy-omega-doy-dynamic'
+  const VARIANT_DESCRIPTOR = {
+    layer_id: VARIANT_CATALOG_ID,
+    display_name: 'FY 动态 ω 反演',
+    workflow_id: 'omega_sf_fenkuai_fy_online',
+    workflow_variants: {
+      online: { workflow_id: 'omega_sf_fenkuai_fy_online', label: '在线反演' },
+      local: { workflow_id: 'omega_sf_fenkuai_fy_single', label: '本地反演' },
+    },
+  } as unknown as LayerDescriptor
+
+  function makeVariantDeps(overrides: Partial<WorkflowRunnerDeps> = {}) {
+    return makeDeps({
+      getRuntimeLayerCatalog: () => ({ [VARIANT_CATALOG_ID]: VARIANT_DESCRIPTOR }),
+      ...overrides,
+    })
+  }
+
+  it('sets / gets / clears preference per catalog', () => {
+    const runner = createWorkflowRunner(makeVariantDeps())
+    expect(runner.getWorkflowVariantPreference(VARIANT_CATALOG_ID)).toBeUndefined()
+    runner.setWorkflowVariantPreference(VARIANT_CATALOG_ID, 'local')
+    expect(runner.getWorkflowVariantPreference(VARIANT_CATALOG_ID)).toBe('local')
+    runner.setWorkflowVariantPreference(VARIANT_CATALOG_ID, null)
+    expect(runner.getWorkflowVariantPreference(VARIANT_CATALOG_ID)).toBeUndefined()
+  })
+
+  it('injects preferred variant seed when no explicit workflowVariant option', async () => {
+    const deps = makeVariantDeps()
+    vi.mocked(submitWorkflow).mockResolvedValue({
+      run_id: 'run-variant',
+      created_at: '2026-01-01T00:00:00Z',
+      message: 'accepted',
+    } as never)
+
+    const runner = createWorkflowRunner(deps)
+    runner.setWorkflowVariantPreference(VARIANT_CATALOG_ID, 'local')
+    await runner.runWorkflowForCatalog(VARIANT_CATALOG_ID)
+
+    const buildCall = vi.mocked(deps.buildWorkflowPayloadForCatalog).mock.calls[0]
+    expect(buildCall?.[5]).toMatchObject({
+      workflow_entry_name: 'omega_sf_fenkuai_fy_single',
+    })
+  })
+
+  it('explicit workflowVariant option overrides stored preference', async () => {
+    const deps = makeVariantDeps()
+    vi.mocked(submitWorkflow).mockResolvedValue({
+      run_id: 'run-variant',
+      created_at: '2026-01-01T00:00:00Z',
+      message: 'accepted',
+    } as never)
+
+    const runner = createWorkflowRunner(deps)
+    runner.setWorkflowVariantPreference(VARIANT_CATALOG_ID, 'local')
+    await runner.runWorkflowForCatalog(VARIANT_CATALOG_ID, { workflowVariant: 'online' })
+
+    const buildCall = vi.mocked(deps.buildWorkflowPayloadForCatalog).mock.calls[0]
+    expect(buildCall?.[5]).toMatchObject({
+      workflow_entry_name: 'omega_sf_fenkuai_fy_online',
+    })
+  })
+
+  it('no preference → descriptor default path (no variant injection)', async () => {
+    const deps = makeVariantDeps()
+    vi.mocked(submitWorkflow).mockResolvedValue({
+      run_id: 'run-default',
+      created_at: '2026-01-01T00:00:00Z',
+      message: 'accepted',
+    } as never)
+
+    const runner = createWorkflowRunner(deps)
+    await runner.runWorkflowForCatalog(VARIANT_CATALOG_ID)
+
+    const buildCall = vi.mocked(deps.buildWorkflowPayloadForCatalog).mock.calls[0]
+    expect(buildCall?.[5]).toBeUndefined()
   })
 })
 
@@ -671,7 +806,7 @@ describe('restoreActiveWorkflows / ensureRestoredRunGroup（F2 manifest 成员�
     expect(memberTags).toEqual(['NDVI'])
   })
 
-  it('无 manifest 时回退 SM/VOD/OMEGA 兼容标签', async () => {
+  it('无 manifest 时回退单产出 result（LEGACY 三件套已退役 2026-08-24）', async () => {
     const deps = setupRestore(null)
     const runner = createWorkflowRunner(deps)
     await runner.restoreActiveWorkflows()
@@ -681,6 +816,70 @@ describe('restoreActiveWorkflows / ensureRestoredRunGroup（F2 manifest 成员�
     const memberTags = group!.memberInstanceIds
       .map((id) => deps.getActiveLayers().find((l) => l.instanceId === id)?.runGroupProductTag)
       .filter(Boolean)
-    expect(memberTags.sort()).toEqual(['OMEGA', 'SM', 'VOD'])
+    // 退役决策：旧 run 快照不再回退 SM/VOD/OMEGA 三占位——
+    // 61 种子全带 extra 中文配置，无 manifest 一律单产出 'result' 语义
+    expect(memberTags.sort()).toEqual(['result'])
+  })
+
+  it('同工作流已有成功产物时仍恢复未跟踪的 running run 到指示器', async () => {
+    const deps = makeDeps()
+    const catalog = deps.getRuntimeLayerCatalog()
+    catalog['method-omega-fy'] = {
+      layer_id: 'method-omega-fy',
+      dataset_key: 'ds',
+      display_name: '风云ω',
+      description: '',
+      category: 'analysis',
+      source_type: 'imported' as never,
+      render_type: 'raster' as never,
+      supported_map_modes: ['2d'] as never,
+      extent: { west: 116, south: 39, east: 117, north: 40 },
+      workflow_id: 'wf-fy',
+      workflow_definition: null,
+    } as LayerDescriptor
+
+    vi.mocked(listRecentSucceededRuns).mockResolvedValue([
+      {
+        run_id: 'run-old-ok',
+        layer_id: 'omega_sf_fenkuai_fy',
+        command_label: '反演',
+        status: 'succeeded',
+        result_refs: [],
+      },
+    ] as never)
+    vi.mocked(listActiveWorkflowRuns).mockResolvedValue([
+      {
+        run_id: 'run-new-active',
+        layer_id: 'omega_sf_fenkuai_fy',
+        command_label: '反演',
+        status: 'running',
+      },
+    ] as never)
+    vi.mocked(getWorkflowRun).mockImplementation(async (runId: string) => {
+      if (runId === 'run-new-active') {
+        return {
+          run_id: 'run-new-active',
+          layer_id: 'omega_sf_fenkuai_fy',
+          command_label: '反演',
+          status: 'running',
+          result_refs: [],
+        } as never
+      }
+      return {
+        run_id: runId,
+        layer_id: 'omega_sf_fenkuai_fy',
+        command_label: '反演',
+        status: 'succeeded',
+        result_refs: [],
+      } as never
+    })
+    vi.mocked(getWorkflowEvents).mockResolvedValue({ items: [] } as never)
+
+    const runner = createWorkflowRunner(deps)
+    await runner.restoreActiveWorkflows()
+
+    const jobs = deps.getJobLayers()
+    expect(jobs.some((j) => j.jobId === 'run-new-active' && j.status === 'running')).toBe(true)
+    expect(deps.startPolling).toHaveBeenCalledWith('run-new-active', expect.any(String))
   })
 })

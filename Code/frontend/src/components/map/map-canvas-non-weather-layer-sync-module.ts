@@ -17,6 +17,15 @@ interface CreateMapCanvasNonWeatherLayerSyncModuleOptions {
   getMapReady: () => boolean
   getActiveLayers: () => ActiveLayer[]
   getActiveVisibleCatalogIds: () => string[]
+  /** P1 lifecycle 双写：将地图 overlay 时间状态回传给 layers store。 */
+  onOverlayTimeStatesChanged?: (
+    states: Array<{
+      layerId: string
+      category: string
+      timeList: string[]
+      currentTime: string | null
+    }>,
+  ) => void
 }
 
 export interface MapCanvasNonWeatherLayerSyncModule {
@@ -54,6 +63,17 @@ export function createMapCanvasNonWeatherLayerSyncModule(
       getOverlayRasterLayerId: (overlayLayerId) =>
         overlayImageModule.getRasterLayerId(overlayLayerId),
     })
+  }
+
+  function publishOverlayTimeStates() {
+    options.onOverlayTimeStatesChanged?.(
+      overlayImageModule.overlayTimeStates.value.map((state) => ({
+        layerId: state.layerId,
+        category: state.category,
+        timeList: [...state.timeList],
+        currentTime: state.currentTime,
+      })),
+    )
   }
 
   async function syncOverlayLayers() {
@@ -98,6 +118,7 @@ export function createMapCanvasNonWeatherLayerSyncModule(
     }
 
     await overlayImageModule.syncOverlays(activeList, visibleList, opacityByLayerId, styleByLayerId)
+    publishOverlayTimeStates()
     applyLayerStackOrder()
   }
 
@@ -155,7 +176,13 @@ export function createMapCanvasNonWeatherLayerSyncModule(
       importedLayerModule.removeLayer(staleId)
     }
     if (opts.fitNew && newlyAdded.length > 0) {
-      importedLayerModule.fitLayers(newlyAdded)
+      // 相机操作失败不得中断图层栈应用（2026-08-23 事故：fitBounds 抛
+      // Invalid LngLat 炸穿 onMapLoad → 底图/分析面板全部不渲染）
+      try {
+        importedLayerModule.fitLayers(newlyAdded)
+      } catch (error) {
+        console.warn('[NonWeatherLayerSync] fitLayers failed (skipped)', error)
+      }
     }
     applyLayerStackOrder()
   }
@@ -198,6 +225,16 @@ export function createMapCanvasNonWeatherLayerSyncModule(
         () => {
           void syncOverlayLayers()
         },
+      ),
+    )
+    stopHandles.push(
+      watch(
+        () =>
+          overlayImageModule.overlayTimeStates.value
+            .map((s) => `${s.layerId}:${s.currentTime ?? ''}:${s.timeList.join('|')}`)
+            .join(','),
+        () => publishOverlayTimeStates(),
+        { immediate: true },
       ),
     )
     stopHandles.push(

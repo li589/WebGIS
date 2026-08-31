@@ -2,8 +2,9 @@
 /**
  * RemoteSourceCard — 远程数据源页的单源卡片（存储 profile 或开放门户）。
  *
- * 徽标：类型 / 协议 / 凭据与测试状态 / 搜索能力；操作按能力渲染：
- * browse（browsable 存储）、search（searchable 存储 / cmr 门户）、add（注册为可访问远程数据源）。
+ * 徽标：类型 / 协议 / 凭据与测试状态 / 搜索能力。
+ * 操作（2026-08-25 改版）：统一单入口「添加为可访问远程数据源」——
+ * 检索/浏览并入融合对话框（RemoteSourceAddDialog），卡片不再有独立按钮。
  */
 
 export interface RemoteSourceCardData {
@@ -26,8 +27,6 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{
-  browse: [source: RemoteSourceCardData]
-  search: [source: RemoteSourceCardData]
   add: [source: RemoteSourceCardData]
 }>()
 </script>
@@ -60,14 +59,8 @@ const emit = defineEmits<{
     </div>
     <p class="subtitle">{{ source.subtitle }}</p>
     <div class="ops">
-      <button v-if="source.browsable" type="button" class="btn" @click="emit('browse', source)">
-        浏览
-      </button>
-      <button v-if="source.searchable" type="button" class="btn" @click="emit('search', source)">
-        {{ source.searchLabel || '检索' }}
-      </button>
       <button type="button" class="btn btn-primary" @click="emit('add', source)">
-        添加为可访问数据源
+        添加为可访问远程数据源
       </button>
     </div>
   </div>

@@ -9,8 +9,7 @@
  * 可用数据集注册表与「远程与存储 → 开放门户」替代。
  */
 
-import { computed, onMounted, ref } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, onMounted, ref, toRef } from 'vue'
 import { useSettingsStore } from '../../../stores/settings'
 import { useWeatherTileManager } from '../../../stores/weather-tile-manager'
 import {
@@ -24,7 +23,7 @@ import AvailableDatasetsPanel from './AvailableDatasetsPanel.vue'
 
 const settingsStore = useSettingsStore()
 const weatherTileManager = useWeatherTileManager()
-const { dataSourceConfig } = storeToRefs(settingsStore)
+const dataSourceConfig = toRef(settingsStore, 'dataSourceConfig')
 
 const cacheOverview = ref<DataCacheOverview | null>(null)
 const cacheBusy = ref(false)

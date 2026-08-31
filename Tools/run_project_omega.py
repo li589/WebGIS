@@ -32,11 +32,12 @@ from data_access.spatial_aligner import SpatialAligner
 from analysis.spatial_stats import ZonalStats
 from analysis.timeseries_analysis import CorrelationAnalysis
 from analysis.visualization import DataVisualization
+from data_root import resolve_data_root
 
 # ======================================================================
 # 配置
 # ======================================================================
-DATA_ROOT = Path(r"I:\Geograph_DataSet")
+DATA_ROOT = resolve_data_root()
 OUTPUT_ROOT = DATA_ROOT / "ProjectOutput" / "2023-01_Omega_Inversion"
 SMAP_DIR = DATA_ROOT / "SMAP"
 BIOMASS_PATH = DATA_ROOT / "Biomass" / "ESACCI-BIOMASS-L4-AGB-MERGED-100m-2020-fv6.0.nc"

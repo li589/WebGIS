@@ -1,0 +1,223 @@
+/** 色带单源生成物（Tools/generate_palette_config.py）——禁止手改。
+ * 真源：Code/backend/app/catalog_seeds/palettes.json（P2-E 单源生成，2026-08-24）。
+ * 后端 _PALETTES 同样从该 JSON 加载（raster_preview_service），
+ * 前后端渲染色值/别名由同一份数据驱动，消除双维护漂移。
+ */
+
+export interface GeneratedPaletteDefinition {
+  colors: string[]
+  lineColor: string
+  /** UI 显示名 */
+  label: string
+  /** 配色类型 */
+  type: 'sequential' | 'diverging' | 'qualitative'
+  /** 是否进色带选择器（后端独有条目为 false） */
+  exposed: boolean
+}
+
+export const GENERATED_WEATHER_PALETTES: Record<string, GeneratedPaletteDefinition> = {
+  'thermal-orange': {
+    colors: ['#0b1a6e', '#1b3cff', '#2a5fff', '#2f8cff', '#36c5ff', '#4ad4d0', '#5ad9c4', '#7ce7b0', '#a8e87a', '#c8e86a', '#ffe066', '#ffd166', '#ff9f4a', '#ff7b54', '#ff4d4d', '#e83070', '#c01888'],
+    lineColor: 'rgba(255,255,255,0.08)',
+    label: "热力橙红",
+    type: 'sequential',
+    exposed: true,
+  },
+  'precip-cyan': {
+    colors: ['#061018', '#0b1c30', '#123048', '#16324f', '#1a4a7a', '#1c6dd0', '#1ea0ef', '#1ec8ff', '#48e0ff', '#70f0ff', '#9af8f0', '#b7fff5', '#d8fffb', '#e8ffff', '#ffffff'],
+    lineColor: 'rgba(150, 236, 255, 0.12)',
+    label: "降水青蓝",
+    type: 'sequential',
+    exposed: true,
+  },
+  'wind-blue': {
+    colors: ['#6271b8', '#3d6ea3', '#4a94aa', '#4a9294', '#4d8e7c', '#6b9148', '#a89438', '#d07a3a', '#c94e4e', '#a83d7a', '#7a3d9e', '#5c4d6e'],
+    lineColor: 'rgba(170, 228, 255, 0.12)',
+    label: "风场蓝",
+    type: 'sequential',
+    exposed: true,
+  },
+  'magenta-yellow': {
+    colors: ['#1a102a', '#5b1f7a', '#b832e0', '#ff5e9a', '#ffb347', '#fff2a6'],
+    lineColor: 'rgba(255, 214, 153, 0.24)',
+    label: "品红黄",
+    type: 'diverging',
+    exposed: true,
+  },
+  'yellow-red': {
+    colors: ['#ffffcc', '#ffeda0', '#fed976', '#feb24c', '#fd8d3c', '#fc4e2a', '#e31a1c', '#b10026'],
+    lineColor: 'rgba(255, 200, 100, 0.22)',
+    label: "黄红外推",
+    type: 'sequential',
+    exposed: true,
+  },
+  'blue-green': {
+    colors: ['#08306b', '#2171b5', '#6baed6', '#66c2a4', '#41ab5d', '#238b45'],
+    lineColor: 'rgba(150, 220, 180, 0.22)',
+    label: "蓝绿渐变",
+    type: 'sequential',
+    exposed: true,
+  },
+  'red-blue': {
+    colors: ['#b2182b', '#ef8a62', '#fddbc7', '#f7f7f7', '#d1e5f0', '#67a9cf', '#2166ac'],
+    lineColor: 'rgba(255, 255, 255, 0.20)',
+    label: "红蓝发散",
+    type: 'diverging',
+    exposed: true,
+  },
+  'purple-orange': {
+    colors: ['#2d1b3d', '#542466', '#8c2d80', '#c63e6c', '#f08050', '#ffb347', '#ffe066'],
+    lineColor: 'rgba(255, 200, 120, 0.24)',
+    label: "紫橙渐变",
+    type: 'diverging',
+    exposed: true,
+  },
+  'dark-rainbow': {
+    colors: ['#1a0033', '#003380', '#0066cc', '#00cc66', '#cccc00', '#cc6600', '#cc0000'],
+    lineColor: 'rgba(255, 255, 255, 0.20)',
+    label: "暗色彩虹",
+    type: 'sequential',
+    exposed: true,
+  },
+  'viridis': {
+    colors: ['#440154', '#414487', '#2a788e', '#22a884', '#7ad151', '#fde725'],
+    lineColor: 'rgba(255,255,255,0.08)',
+    label: "viridis",
+    type: 'sequential',
+    exposed: false,
+  },
+  'cividis': {
+    colors: ['#00204d', '#285677', '#66837a', '#aaa666', '#e0c95a', '#fde737'],
+    lineColor: 'rgba(255,255,255,0.08)',
+    label: "cividis",
+    type: 'sequential',
+    exposed: false,
+  },
+  'spectral': {
+    colors: ['#9e0142', '#d53e4f', '#f46d43', '#fdae61', '#fee08b', '#e6f598', '#abdda4', '#66c2a5', '#3288bd'],
+    lineColor: 'rgba(255,255,255,0.08)',
+    label: "spectral",
+    type: 'sequential',
+    exposed: false,
+  },
+  'blues': {
+    colors: ['#f7fbff', '#deebf7', '#c6dbef', '#9ecae1', '#6baed6', '#4292c6', '#2171b5', '#084594'],
+    lineColor: 'rgba(255,255,255,0.08)',
+    label: "blues",
+    type: 'sequential',
+    exposed: false,
+  },
+  'reds': {
+    colors: ['#fff5f0', '#fee0d2', '#fcbba1', '#fc9272', '#fb6a4a', '#ef3b2c', '#cb181d', '#99000d'],
+    lineColor: 'rgba(255,255,255,0.08)',
+    label: "reds",
+    type: 'sequential',
+    exposed: false,
+  },
+  'greens': {
+    colors: ['#0d2818', '#1a4d2e', '#2d6a4f', '#40916c', '#52b788', '#74c69d', '#95d5b2', '#b7e4c7'],
+    lineColor: 'rgba(255,255,255,0.08)',
+    label: "greens",
+    type: 'sequential',
+    exposed: false,
+  },
+  'ylgnbu': {
+    colors: ['#ffffd9', '#c7e9b4', '#7fcdbb', '#41b6c4', '#1d91c0', '#081d58'],
+    lineColor: 'rgba(255,255,255,0.08)',
+    label: "ylgnbu",
+    type: 'sequential',
+    exposed: false,
+  },
+  'plasma': {
+    colors: ['#0d0887', '#6a00a8', '#b12a90', '#e16462', '#fca636', '#f0f921'],
+    lineColor: 'rgba(255,255,255,0.08)',
+    label: "plasma",
+    type: 'sequential',
+    exposed: false,
+  },
+  'hot': {
+    colors: ['#000000', '#8b0000', '#ff0000', '#ffff00', '#ffffff'],
+    lineColor: 'rgba(255,255,255,0.08)',
+    label: "hot",
+    type: 'sequential',
+    exposed: false,
+  },
+  'terrain': {
+    colors: ['#333399', '#00aa88', '#88cc44', '#ddcc66', '#c4a35a', '#ffffff'],
+    lineColor: 'rgba(255,255,255,0.08)',
+    label: "terrain",
+    type: 'sequential',
+    exposed: false,
+  },
+  'tab10': {
+    colors: ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'],
+    lineColor: 'rgba(255,255,255,0.08)',
+    label: "tab10",
+    type: 'sequential',
+    exposed: false,
+  },
+  'ylgn': {
+    colors: ['#ffffe5', '#f7fcb9', '#d9f0a3', '#addd8e', '#78c679', '#238443'],
+    lineColor: 'rgba(255,255,255,0.08)',
+    label: "ylgn",
+    type: 'sequential',
+    exposed: false,
+  },
+  'ylorrd': {
+    colors: ['#ffffcc', '#ffeda0', '#fed976', '#feb24c', '#fd8d3c', '#f03b20', '#bd0026'],
+    lineColor: 'rgba(255,255,255,0.08)',
+    label: "ylorrd",
+    type: 'sequential',
+    exposed: false,
+  },
+  'brg': {
+    colors: ['#0000ff', '#ff00ff', '#ff0000', '#ffff00', '#00ff00'],
+    lineColor: 'rgba(255,255,255,0.08)',
+    label: "brg",
+    type: 'sequential',
+    exposed: false,
+  },
+  'rdylgn_r': {
+    colors: ['#006837', '#31a354', '#78c679', '#c2e699', '#ffffcc', '#fdae61', '#f46d43', '#a50026'],
+    lineColor: 'rgba(255,255,255,0.08)',
+    label: "rdylgn_r",
+    type: 'sequential',
+    exposed: false,
+  },
+}
+
+export const GENERATED_PALETTE_ALIASES: Record<string, string> = {
+  "YlGnBu": "ylgnbu",
+  "ylgnbu": "ylgnbu",
+  "YlGn": "ylgn",
+  "YlOrRd": "ylorrd",
+  "RdYlGn_r": "rdylgn_r",
+  "RdYlGn": "rdylgn_r",
+  "RdBu": "red-blue",
+  "YlOrBr": "ylorrd",
+  "PuBu": "blues",
+  "Oranges": "reds",
+  "Set3": "tab10",
+  "elevation-terrain-ramp": "terrain",
+  "gebco-terrain-ramp": "terrain",
+  "spectral-ramp": "spectral",
+  "igbp": "tab10",
+  "igbp-landcover-ramp": "tab10",
+  "clcd-landcover-ramp": "tab10",
+  "hfp-ramp": "hot",
+  "forest-ramp": "greens",
+  "ndvi-ramp": "greens",
+  "biomass-ramp": "ylgn",
+  "soil-moisture-ramp": "magenta-yellow",
+  "station-ramp": "magenta-yellow",
+  "bright-temp-ramp": "thermal-orange",
+  "orange-red": "thermal-orange",
+  "blue-cyan": "wind-blue",
+  "teal-blue": "precip-cyan",
+  "purple-seq": "magenta-yellow",
+  "green-seq": "greens",
+  "amber-gray": "yellow-red",
+  "pressure-purple": "magenta-yellow",
+  "humidity-green": "greens",
+  "visibility-amber": "yellow-red",
+}

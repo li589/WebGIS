@@ -43,6 +43,7 @@ class SQLiteConnectionPool:
         self._pool: Queue[sqlite3.Connection | None] = Queue(maxsize=self._max_size)
         self._lock = threading.Lock()
         self._created = 0
+        self._closed = False
 
     def _create_connection(self) -> sqlite3.Connection:
         """创建新连接并配置 WAL + busy_timeout。
@@ -114,7 +115,15 @@ class SQLiteConnectionPool:
 
         if should_create:
             try:
-                return self._create_connection()
+                conn = self._create_connection()
+                # close_all 后拒绝再借出：直接关闭丢弃，避免向已关闭池续命
+                with self._lock:
+                    if self._closed:
+                        with suppress(Exception):
+                            conn.close()
+                        self._created -= 1
+                        raise RuntimeError("SQLiteConnectionPool already closed")
+                return conn
             except Exception:
                 # 创建失败时回退计数器，避免 _created 虚高导致池永久阻塞
                 with self._lock:
@@ -125,7 +134,14 @@ class SQLiteConnectionPool:
         return self._pool.get()
 
     def _release(self, conn: sqlite3.Connection) -> None:
-        self._pool.put(conn)
+        # 安审 2026-08-21 C-3：close_all 清空队列并归零 _created 后，借出中的
+        # 旧连接归还时 put 可能使队列超 maxsize → 归还线程永久阻塞（线程泄漏）。
+        # 改 put_nowait：队列满（或已关闭）时直接关闭连接丢弃。
+        try:
+            self._pool.put_nowait(conn)
+        except Exception:
+            with suppress(Exception):
+                conn.close()
 
     def close_all(self, *, quiet: bool = False) -> None:
         """关闭池中所有空闲连接（用于优雅关闭）。
@@ -133,6 +149,8 @@ class SQLiteConnectionPool:
         quiet=True 时跳过日志记录（用于 __del__ 期间，避免解释器关闭时
         logging 模块的 stream 已关闭导致 I/O 错误输出到 stderr）。
         """
+        with self._lock:
+            self._closed = True
         closed = 0
         while not self._pool.empty():
             try:

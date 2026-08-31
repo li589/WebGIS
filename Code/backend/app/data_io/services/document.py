@@ -18,6 +18,7 @@ from app.data_io.services.paths import (
     DOC_PREVIEW_ROW_LIMIT,
     DOC_SESSIONS_DIR,
     ensure_imports_root,
+    safe_import_child,
 )
 from app.data_io.services.vector import import_vector_from_paths
 
@@ -40,7 +41,8 @@ _CSV_ENCODING_CANDIDATES: tuple[str, ...] = (
 
 
 def _session_dir(session_id: str) -> Path:
-    return DOC_SESSIONS_DIR / session_id
+    # 安审 2026-08-22（B-2）：session_id 纯目录名校验，防越界读/写 table.json
+    return safe_import_child(session_id, root=DOC_SESSIONS_DIR)
 
 
 def _load_table(session_id: str) -> dict[str, Any]:

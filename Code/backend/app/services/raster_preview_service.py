@@ -1,200 +1,49 @@
 from __future__ import annotations
 
+import contextlib
 import importlib
+import json
 import re
 from pathlib import Path
 from typing import Literal
-import contextlib
 
 NodataMode = Literal["transparent", "solid"]
 
 
-def _hex_stops(*hexes: str) -> list[tuple[int, int, int]]:
-    out: list[tuple[int, int, int]] = []
-    for raw in hexes:
-        h = raw.lstrip("#")
-        if len(h) != 6:
-            continue
-        out.append((int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)))
-    return out
+
+# P2-E（2026-08-24）色带单源：定义与别名以 catalog_seeds/palettes.json 为
+# 唯一真源（前端 src/data/weather-palettes.generated.ts 由
+# Tools/generate_palette_config.py 从同一 JSON 生成），消除前后端双维护
+# 漂移。改色带只改 JSON + 跑脚本，禁止在代码里加色带。
+_PALETTES_PATH = Path(__file__).resolve().parent.parent / "catalog_seeds" / "palettes.json"
 
 
-# 与前端 WEATHER_PALETTES id 对齐；未知 id 回落 viridis。
-_PALETTES: dict[str, list[tuple[int, int, int]]] = {
-    "thermal-orange": _hex_stops(
-        "0b1a6e",
-        "1b3cff",
-        "2a5fff",
-        "2f8cff",
-        "36c5ff",
-        "4ad4d0",
-        "5ad9c4",
-        "7ce7b0",
-        "a8e87a",
-        "c8e86a",
-        "ffe066",
-        "ffd166",
-        "ff9f4a",
-        "ff7b54",
-        "ff4d4d",
-        "e83070",
-        "c01888",
-    ),
-    "precip-cyan": _hex_stops(
-        "061018",
-        "0b1c30",
-        "123048",
-        "16324f",
-        "1a4a7a",
-        "1c6dd0",
-        "1ea0ef",
-        "1ec8ff",
-        "48e0ff",
-        "70f0ff",
-        "9af8f0",
-        "b7fff5",
-        "d8fffb",
-        "e8ffff",
-        "ffffff",
-    ),
-    "wind-blue": _hex_stops(
-        "6271b8",
-        "3d6ea3",
-        "4a94aa",
-        "4a9294",
-        "4d8e7c",
-        "6b9148",
-        "a89438",
-        "d07a3a",
-        "c94e4e",
-        "a83d7a",
-        "7a3d9e",
-        "5c4d6e",
-    ),
-    "magenta-yellow": _hex_stops(
-        "1a102a", "5b1f7a", "b832e0", "ff5e9a", "ffb347", "fff2a6"
-    ),
-    "viridis": _hex_stops("440154", "414487", "2a788e", "22a884", "7ad151", "fde725"),
-    "cividis": [
-        (0, 32, 77),
-        (40, 86, 119),
-        (102, 131, 122),
-        (170, 166, 102),
-        (224, 201, 90),
-        (253, 231, 55),
-    ],
-    "spectral": _hex_stops(
-        "9e0142",
-        "d53e4f",
-        "f46d43",
-        "fdae61",
-        "fee08b",
-        "e6f598",
-        "abdda4",
-        "66c2a5",
-        "3288bd",
-    ),
-    "blues": _hex_stops(
-        "f7fbff",
-        "deebf7",
-        "c6dbef",
-        "9ecae1",
-        "6baed6",
-        "4292c6",
-        "2171b5",
-        "084594",
-    ),
-    "reds": _hex_stops(
-        "fff5f0",
-        "fee0d2",
-        "fcbba1",
-        "fc9272",
-        "fb6a4a",
-        "ef3b2c",
-        "cb181d",
-        "99000d",
-    ),
-    "greens": _hex_stops(
-        "0d2818",
-        "1a4d2e",
-        "2d6a4f",
-        "40916c",
-        "52b788",
-        "74c69d",
-        "95d5b2",
-        "b7e4c7",
-    ),
-    "yellow-red": _hex_stops(
-        "ffffcc",
-        "ffeda0",
-        "fed976",
-        "feb24c",
-        "fd8d3c",
-        "fc4e2a",
-        "e31a1c",
-        "b10026",
-    ),
-    "blue-green": _hex_stops(
-        "08306b", "2171b5", "6baed6", "66c2a4", "41ab5d", "238b45"
-    ),
-    "red-blue": _hex_stops(
-        "b2182b", "ef8a62", "fddbc7", "f7f7f7", "d1e5f0", "67a9cf", "2166ac"
-    ),
-    "purple-orange": _hex_stops(
-        "2d1b3d", "542466", "8c2d80", "c63e6c", "f08050", "ffb347", "ffe066"
-    ),
-    "dark-rainbow": _hex_stops(
-        "1a0033", "003380", "0066cc", "00cc66", "cccc00", "cc6600", "cc0000"
-    ),
-    "ylgnbu": [
-        (255, 255, 217),
-        (199, 233, 180),
-        (127, 205, 187),
-        (65, 182, 196),
-        (29, 145, 192),
-        (8, 29, 88),
-    ],
-    # matplotlib / overlay_registry aliases
-    "plasma": _hex_stops("0d0887", "6a00a8", "b12a90", "e16462", "fca636", "f0f921"),
-    "hot": _hex_stops("000000", "8b0000", "ff0000", "ffff00", "ffffff"),
-    "terrain": _hex_stops("333399", "00aa88", "88cc44", "ddcc66", "c4a35a", "ffffff"),
-    "tab10": _hex_stops(
-        "1f77b4",
-        "ff7f0e",
-        "2ca02c",
-        "d62728",
-        "9467bd",
-        "8c564b",
-        "e377c2",
-        "7f7f7f",
-        "bcbd22",
-        "17becf",
-    ),
-    "ylgn": _hex_stops("ffffe5", "f7fcb9", "d9f0a3", "addd8e", "78c679", "238443"),
-    "ylorrd": _hex_stops(
-        "ffffcc", "ffeda0", "fed976", "feb24c", "fd8d3c", "f03b20", "bd0026"
-    ),
-    "brg": _hex_stops("0000ff", "ff00ff", "ff0000", "ffff00", "00ff00"),
-    "rdylgn_r": _hex_stops(
-        "006837", "31a354", "78c679", "c2e699", "ffffcc", "fdae61", "f46d43", "a50026"
-    ),
-}
+def _load_palettes_from_config() -> tuple[dict[str, list[tuple[int, int, int]]], dict[str, str]]:
+    def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
+        value = hex_str.lstrip("#")
+        return (int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16))
 
-_PALETTE_ALIASES: dict[str, str] = {
-    "YlGnBu": "ylgnbu",
-    "ylgnbu": "ylgnbu",
-    "YlGn": "ylgn",
-    "YlOrRd": "ylorrd",
-    "RdYlGn_r": "rdylgn_r",
-    "elevation-terrain-ramp": "terrain",
-    "spectral-ramp": "spectral",
-}
+    raw = json.loads(_PALETTES_PATH.read_text(encoding="utf-8"))
+    palettes = {
+        str(key): [_hex_to_rgb(c) for c in entry["colors"]]
+        for key, entry in raw.get("palettes", {}).items()
+    }
+    aliases = {str(k): str(v) for k, v in raw.get("backend_aliases", {}).items()}
+    if not palettes or "viridis" not in palettes:
+        raise ValueError("palettes.json invalid: viridis baseline missing")
+    return palettes, aliases
+
+
+_PALETTES, _PALETTE_ALIASES = _load_palettes_from_config()
 
 
 def resolve_palette_id(palette: str | None) -> str:
     raw = (palette or "").strip() or "viridis"
     aliased = _PALETTE_ALIASES.get(raw) or _PALETTE_ALIASES.get(raw.lower())
-    key = aliased or raw.lower() if raw.lower() in _PALETTES else raw
+    if aliased:
+        key = aliased
+    else:
+        key = raw.lower() if raw.lower() in _PALETTES else raw
     if key in _PALETTES:
         return key
     if raw in _PALETTES:
@@ -233,16 +82,21 @@ def normalize_nodata_mode(raw: str | None) -> NodataMode:
 
 
 def _mask_invalid_raster(numpy, band, *, nodata: float | None = None):
-    """Mask nodata + non-finite samples so voids become transparent."""
-    masked = numpy.ma.array(band, copy=False)
-    invalid = ~numpy.isfinite(numpy.ma.filled(masked, numpy.nan))
+    """Mask nodata + non-finite samples so voids become transparent.
+
+    2026-08-24 CLCD 报障：整型源（uint8 分类数据）上 ``filled(nan)`` 会抛
+    TypeError（NaN 无法转 int dtype）→ 注册 preview 渲染整链失败。先
+    astype(float64)（MaskedArray 保 mask）再做 NaN 填充，任意 dtype 安全。
+    """
+    arr = numpy.ma.asarray(band)
+    arrf = arr.astype("float64")
+    invalid = ~numpy.isfinite(numpy.ma.filled(arrf, numpy.nan))
     if nodata is not None and numpy.isfinite(nodata):
         invalid = invalid | numpy.isclose(
-            numpy.ma.filled(masked, nodata), float(nodata), equal_nan=False
+            numpy.ma.filled(arrf, float(nodata)), float(nodata), equal_nan=False
         )
-    if numpy.ma.isMaskedArray(masked):
-        invalid = invalid | numpy.ma.getmaskarray(masked)
-    return numpy.ma.array(numpy.ma.filled(masked, numpy.nan), mask=invalid)
+    invalid = invalid | numpy.ma.getmaskarray(arr)
+    return numpy.ma.array(numpy.ma.filled(arrf, numpy.nan), mask=invalid)
 
 
 def _colorize_masked_band(
@@ -257,11 +111,31 @@ def _colorize_masked_band(
 ):
     count = int(masked_array.count()) if hasattr(masked_array, "count") else 0
     if min_value is None:
-        min_value = float(masked_array.min()) if count else 0.0
+        # 2026-08-24 统一归一化基准：与瓦片路径（overlay_tile_service
+        # ._source_value_range / _apply_palette）一致改用 p2/p98 百分位。
+        # 此前用全量 min/max——与瓦片 p2/p98 两套基准，image↔瓦片模式切换
+        # 时同数据色阶突变；且 min/max 受极值敏感（火点/异常值压扁整体色阶）。
+        # filled(nan) 前先转 float：整型源（uint8 分类）会抛 TypeError
+        #（2026-08-24 CLCD 注册失败根因之一）。
+        if count >= 100:
+            min_value = float(
+                numpy.nanpercentile(
+                    numpy.ma.filled(masked_array.astype("float64"), numpy.nan), 2
+                )
+            )
+        else:
+            min_value = float(masked_array.min()) if count else 0.0
     if max_value is None:
-        max_value = (
-            float(masked_array.max()) if count else max(float(min_value) + 1.0, 1.0)
-        )
+        if count >= 100:
+            max_value = float(
+                numpy.nanpercentile(
+                    numpy.ma.filled(masked_array.astype("float64"), numpy.nan), 98
+                )
+            )
+        else:
+            max_value = (
+                float(masked_array.max()) if count else max(float(min_value) + 1.0, 1.0)
+            )
     if not numpy.isfinite(min_value):
         min_value = 0.0
     if not numpy.isfinite(max_value) or max_value <= min_value:
@@ -482,7 +356,30 @@ class RasterPreviewService:
             src_transform = dataset.transform
             src_width = dataset.width
             src_height = dataset.height
-            src_band = dataset.read(1, masked=True)
+            # 2026-08-24 CLCD 报障：巨型源（CLCD_v01 228579×131361 / 821MB、
+            # stripped 无 overview）全分辨率 read(1) 要分配 ~30GB → 注册在
+            # preview 渲染一步死掉（imports 目录只剩源文件、无 bounds.json/
+            # preview.png = "工作流完成但图层不显示"）。超过 2048 边一律降
+            # 采样读（nearest 保类别），transform 按比例缩放；warp 精度对
+            # ≤2048 预览无损。
+            if max(src_width, src_height) > 2048:
+                from rasterio.enums import Resampling as _Resampling
+                from rasterio.transform import Affine as _Affine
+
+                _scale = 2048.0 / max(src_width, src_height)
+                _oh = max(1, int(round(src_height * _scale)))
+                _ow = max(1, int(round(src_width * _scale)))
+                src_band = dataset.read(
+                    1,
+                    out_shape=(_oh, _ow),
+                    resampling=_Resampling.nearest,
+                    masked=True,
+                )
+                src_transform = src_transform * _Affine.scale(
+                    src_width / _ow, src_height / _oh
+                )
+            else:
+                src_band = dataset.read(1, masked=True)
             src_nodata = dataset.nodata
             if src_nodata is None:
                 # Float science rasters often store voids as NaN without nodata tag.

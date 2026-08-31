@@ -55,6 +55,12 @@ export interface LayerCatalogItem {
   isAdminBoundary?: boolean
   /** 若此条目已合并到某个多源条目，此处记录目标 catalogId（运行时目录中隐藏本条目） */
   mergedInto?: string
+  /** 需求2（2026-08-22）：工作流中文命名配置（group_title/output_labels） */
+  workflowExtra?: {
+    group_title?: string
+    output_labels?: Record<string, string> | string[]
+    [key: string]: unknown
+  }
   /** X1: 标记此条目为合并组虚拟条目（含 members 列表，自身不对应实际数据） */
   isMergedGroup?: boolean
   /** X1: 合并组成员的 catalogId 列表（仅 isMergedGroup=true 时有效） */
@@ -173,7 +179,22 @@ export interface NodeProgress {
     blockId?: string
     productTag?: string
     moduleName?: string
+    /** 下载进度（2026-08-25 下载可视化）：瞬时速率（字节/秒） */
+    speed_bps?: number | null
+    /** 已完成下载的文件数 */
+    downloaded_items?: number
+    /** 待下载文件总数 */
+    total_items?: number
+    /** 累计已下载字节数 */
+    downloaded_bytes?: number
+    download_mode?: string
+    total_bytes?: number | null
+    current_item_name?: string | null
+    active_workers?: number | null
+    items_display?: string
   }
+  /** 快完成/跳过节点展示提示 */
+  terminalHint?: 'skipped' | 'complete'
 }
 
 export interface JobLayerItem {
@@ -184,6 +205,8 @@ export interface JobLayerItem {
   /** 关联的图层目录 ID（用于面板列表展示与重试/取消操作） */
   catalogId?: string
   commandType: string
+  /** 人类可读命令标签（优先于 commandType 枚举展示） */
+  commandLabel?: string
   status: JobStatus
   /** 0-100 */
   progress: number
@@ -223,12 +246,16 @@ export interface JobLayerItem {
   diagnostics?: string[]
   /** 面向 UI 的诊断摘要 */
   diagnosticNotes?: string[]
+  /** 折叠区技术日志（烘焙工具 stdout 等，默认不进主诊断） */
+  techLogs?: string[]
   /** 最近一次已消费的事件游标 */
   lastEventId?: string
   /** 最近一次事件时间 */
   lastEventAt?: string
   /** 最近的增量事件消息，用于运行中展示持续产出 */
   eventMessages?: string[]
+  /** 失败/警告关键线索（调度器、模块、组件），来自 operational 事件 */
+  failureHints?: string[]
   /** 节点级进度（下载/预处理/反演各阶段） */
   nodeProgress?: NodeProgress[]
   /** 运行中 incremental materialize 已同步的时间片/图层数 */
@@ -247,6 +274,11 @@ export interface JobLayerItem {
   inFlightTimeKeys?: string[]
   /** 明确失败的时间键 */
   failedTimeKeys?: string[]
+  /**
+   * 结构化失败类别（从 diagnostics 的 failure_category= / error_code= 解析）。
+   * 例如 coverage_gap 供时间轴恢复卡「切换在线重跑」。
+   */
+  failureCategory?: string
 }
 
 // ─── Active layer (已添加图层) ────────────────────────────────────────────────

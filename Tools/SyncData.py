@@ -23,14 +23,14 @@ CONFIG = {
     #     "host": "172.18.206.109",
     #     "port": 80,
     #     "username": "user03",
-    #     "password": "wnai168618",
+    #     "password": "<REDACTED — 见 SSH 凭据库，勿明文入库>",
     #     "timeout": 10
     # },
     # "ssh": {
     #     "host": "172.18.206.109",
     #     "port": 80,
     #     "username": "user03",
-    #     "password": "wnai168618",
+    #     "password": "<REDACTED — 见 SSH 凭据库，勿明文入库>",
     #     "timeout": 10
     # },
     "ssh": {
@@ -85,7 +85,7 @@ CONFIG = {
     #     "host": "222.200.176.12",
     #     "port": 21,
     #     "username": "Teacher",
-    #     "password": "Qiujianxiu.123456",
+    #     "password": "<REDACTED — 见 SSH 凭据库，勿明文入库>",
     #     "timeout": 10
     # },
     # 全局默认路径：当 item 没有填 src 或 dest 时的补全参考

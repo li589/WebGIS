@@ -144,20 +144,32 @@ def _open_grib_dataset(path: Path) -> Any:
 
 
 def _grib_geo_bounds(ds: Any) -> list[float]:
-    """从 cfgrib 数据集经纬坐标计算 WSEN bounds（格点中心外扩半格）。"""
+    """从 cfgrib 数据集经纬坐标计算 WSEN bounds（像元配准归一化）。
+
+    GRIB 经纬坐标为格点中心（PixelIsPoint）→ 统一走
+    :func:`cell_registration.coords_to_area_bounds` 四边外扩半格
+    （2026-08-24 P1.5 前为本函数内联的隐式外扩，现收敛共享实现）。
+    """
+    from app.data_io.services.cell_registration import coords_to_area_bounds
+
     lat = np.asarray(ds["latitude"].values, dtype=np.float64)
     lon = np.asarray(ds["longitude"].values, dtype=np.float64)
-    south, north = float(lat.min()), float(lat.max())
-    west, east = float(lon.min()), float(lon.max())
-    if lat.size > 1:
-        d = abs(float(lat[1]) - float(lat[0])) / 2.0
-        south -= d
-        north += d
-    if lon.size > 1:
-        d = abs(float(lon[1]) - float(lon[0])) / 2.0
-        west -= d
-        east += d
-    return [west, south, east, north]
+    data_shape = None
+    for name in ds.data_vars:
+        shape = tuple(getattr(ds[name], "shape", ()) or ())
+        if len(shape) >= 2:
+            data_shape = shape
+            break
+    normalized = coords_to_area_bounds(lat, lon, data_shape)
+    if normalized is None:
+        # 兜底：坐标异常时退回 min/max（不外扩）
+        return [
+            float(lon.min()),
+            float(lat.min()),
+            float(lon.max()),
+            float(lat.max()),
+        ]
+    return normalized[0]
 
 
 def _list_grib(path: Path) -> dict[str, Any]:

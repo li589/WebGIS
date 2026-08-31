@@ -66,7 +66,25 @@ class RemoteSourceRegistryRepository:
                 )
                 """
             )
+            # 数据集化改造（阶段 3/6）：additive 扩列（幂等）
+            self._ensure_column(conn, "access_mode", "TEXT NOT NULL DEFAULT 'legacy'")
+            self._ensure_column(conn, "archived", "INTEGER NOT NULL DEFAULT 0")
             conn.commit()
+
+    @staticmethod
+    def _ensure_column(conn, column: str, ddl_type: str) -> None:
+        """SQLite ALTER ADD COLUMN 幂等保护（缺列才加）。"""
+        cols = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(remote_sources)").fetchall()
+        }
+        if column in cols:
+            return
+        try:
+            conn.execute(f"ALTER TABLE remote_sources ADD COLUMN {column} {ddl_type}")
+        except sqlite3.OperationalError:
+            # 并发初始化（多 worker）时另一进程已加列
+            pass
 
     @staticmethod
     def _row_to_entry(row: sqlite3.Row) -> dict[str, Any]:
@@ -96,6 +114,7 @@ class RemoteSourceRegistryRepository:
         remote_path: str = "",
         display_name: str = "",
         cache_policy: str = "standard",
+        access_mode: str = "legacy",
     ) -> dict[str, Any]:
         rid = str(remote_source_id or "").strip()
         if not rid:
@@ -111,6 +130,10 @@ class RemoteSourceRegistryRepository:
                 "Invalid cache_policy: "
                 f"{cache_policy}; expected one of {sorted(VALID_CACHE_POLICIES)}"
             )
+        if access_mode not in ("legacy", "site_compatible"):
+            raise RemoteSourceRegistryError(
+                f"Invalid access_mode: {access_mode}; expected legacy|site_compatible"
+            )
 
         existing = self.get(rid)
         now = _now_iso()
@@ -119,14 +142,15 @@ class RemoteSourceRegistryRepository:
                 """
                 INSERT INTO remote_sources (
                     remote_source_id, kind, ref_id, remote_path, display_name,
-                    cache_policy, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    cache_policy, access_mode, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(remote_source_id) DO UPDATE SET
                     kind = excluded.kind,
                     ref_id = excluded.ref_id,
                     remote_path = excluded.remote_path,
                     display_name = excluded.display_name,
                     cache_policy = excluded.cache_policy,
+                    access_mode = excluded.access_mode,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -136,6 +160,7 @@ class RemoteSourceRegistryRepository:
                     str(remote_path or "").strip(),
                     str(display_name or "").strip(),
                     cache_policy,
+                    access_mode,
                     (existing or {}).get("created_at") or now,
                     now,
                 ),

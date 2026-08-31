@@ -264,6 +264,12 @@
     "notes": "FY 双温度方案：temp_scheme=DUAL（dual_tg_mode=PAPER_CT），GLDAS 按 FY-3D 降轨过境本地时（02:00）±1.6h 匹配；无匹配日期自动剔除。SF 倒推使用 FY3D 亮温，FY3B→FY3D 时空匹配（match_method=bias）；OMEGA 按 PFT 聚合。",
     "has_time_range_node": true,
     "has_bbox_node": true,
-    "has_output_node": true
+    "has_output_node": true,
+    "group_title": "风云双源 ω 分块反演产物",
+    "output_labels": {
+      "SM": "土壤水分",
+      "VOD": "植被光学厚度",
+      "OMEGA": "反演参数 ω"
+    }
   }
 }

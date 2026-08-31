@@ -50,6 +50,7 @@ def _ease2(res: float, cols: int, rows: int) -> dict[str, Any]:
         "bounds": [west, south, east, north],
         "geographic_bounds": list(_EASE2_WGS84_BOUNDS),
         "origin": "upper-left",
+        "cell_registration": "area",
     }
 
 
@@ -73,6 +74,7 @@ def _ease2_hemi(crs: str, hemisphere: str, res: float, dim: int) -> dict[str, An
         "bounds": [west, south, east, north],
         "geographic_bounds": geo,
         "origin": "upper-left",
+        "cell_registration": "area",
     }
 
 
@@ -96,6 +98,7 @@ def _ease1_hemi_25km(crs: str, hemisphere: str) -> dict[str, Any]:
         "bounds": [west, south, east, north],
         "geographic_bounds": geo,
         "origin": "upper-left",
+        "cell_registration": "area",
     }
 
 
@@ -110,6 +113,7 @@ GRID_PRESETS: dict[str, dict[str, Any]] = {
         "bounds": [-180.0, -90.0, 180.0, 90.0],
         "geographic_bounds": [-180.0, -90.0, 180.0, 90.0],
         "origin": "upper-left",
+        "cell_registration": "area",
         "category": "geographic",
     },
     "ease2-global-9km": {
@@ -213,6 +217,78 @@ GRID_PRESETS: dict[str, dict[str, Any]] = {
 }
 
 
+# ── EASE 网格上左角（UL）权威表（2026-08-24 自 Tools/export_overlay_assets.py 下沉）──
+# 同一 CRS 各分辨率共享角点（500m 基准网格对齐）。
+# 出处：NSIDC EASE-Grid 2.0 https://nsidc.org/data/ease/ease_grid2.html
+# 半球 LAEA（6931/6932）官方角点 (-9,000,000, 9,000,000)；
+# EASE-Grid 1.0（3408/3409/3410）为球体 R=6371228 网格，角点不可与 2.0 混用：
+#   - 1.0 半球 25km：721×721 × 25067.525 m，UL 同 (-9,000,000, 9,000,000)
+#   - 1.0 全球：x ∈ ±17,334,194（lon=±180），y 由分辨率对齐（约 ±7,356,861）
+# 消费方（overlay_recolor / overlay_registry / Tools 导出脚本）一律引用本表，
+# 禁止再各自硬编码 EASE 常数。
+EASE_UL_BY_CRS: dict[str, tuple[float, float]] = {
+    "EPSG:6933": (_EASE2_ULX, _EASE2_ULY),
+    "EPSG:6931": (_EASE2_HEMI_UL, -_EASE2_HEMI_UL),
+    "EPSG:6932": (_EASE2_HEMI_UL, -_EASE2_HEMI_UL),
+    "EPSG:3408": (_EASE2_HEMI_UL, -_EASE2_HEMI_UL),
+    "EPSG:3409": (_EASE2_HEMI_UL, -_EASE2_HEMI_UL),
+    "EPSG:3410": (-17334193.94, 7356860.29),
+}
+
+# 像元配准语义（PixelIsArea / PixelIsPoint，GDAL AREA_OR_POINT 约定）：
+# - "area"：坐标/transform 描述像元**边缘**（rasterio from_bounds/from_origin 默认）；
+# - "point"：坐标为像元**中心**（CF 坐标变量约定、SMAP L3/GLDAS 等格点产品），
+#   转 area 需在四边外扩半步长（见 cell_registration.coords_to_area_bounds）。
+CELL_REGISTRATION_AREA = "area"
+CELL_REGISTRATION_POINT = "point"
+
+
+def ease_grid_transform(src_crs: str, resolution_m: float) -> Any:
+    """按 (CRS, 分辨率) 返回 EASE-Grid 仿射变换（rasterio 约定，north-up）。
+
+    覆盖 EASE-Grid 2.0 全球（6933）与半球 LAEA（6931/6932），以及 NSIDC
+    EASE-Grid 1.0（3408/3409/3410，球体 R=6371228）。角点查
+    :data:`EASE_UL_BY_CRS`；1.0 与 2.0 角点不同，不可混用。
+    """
+    from rasterio.transform import from_origin
+
+    ul = EASE_UL_BY_CRS.get(src_crs)
+    if ul is None:
+        raise ValueError(
+            f"No EASE-Grid preset for {src_crs}; known: {sorted(EASE_UL_BY_CRS)}"
+        )
+    return from_origin(ul[0], ul[1], resolution_m, resolution_m)
+
+
+def ease_grid_from_shape(
+    shape: list[int] | tuple[int, ...] | None,
+) -> tuple[str, str, Any] | None:
+    """按二维 shape 匹配任意 EASE 网格 preset 并构建其 Affine 变换。
+
+    与 :func:`match_grid_preset` 同源匹配（含转置检测——转置只影响数组
+    对齐方式，不改变网格几何），但只接受 EASE（ease1/ease2）类别，
+    返回可直接喂给 ``grid_reproject.reproject_to_mercator_linear`` 的三元组。
+
+    Returns:
+        (preset_id, crs, src_transform) — 非 EASE 形状返回 None。
+    """
+    preset_id, _ = match_grid_preset(shape)
+    if not preset_id:
+        return None
+    preset = GRID_PRESETS.get(preset_id)
+    if not preset or preset.get("category") not in {"ease1", "ease2"}:
+        return None
+    west, _south, _east, north = preset["bounds"]
+    res = float(preset["resolution"])
+    from rasterio.transform import from_origin
+
+    return (
+        preset_id,
+        str(preset["crs"]),
+        from_origin(west, north, res, res),
+    )
+
+
 def list_grid_presets() -> list[dict[str, Any]]:
     return [
         {
@@ -225,6 +301,7 @@ def list_grid_presets() -> list[dict[str, Any]]:
             "bounds": p.get("bounds"),
             "geographic_bounds": p.get("geographic_bounds"),
             "category": p.get("category"),
+            "cell_registration": p.get("cell_registration"),
         }
         for p in GRID_PRESETS.values()
     ]

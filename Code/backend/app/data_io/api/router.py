@@ -14,7 +14,8 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, model_validator
 
-from app.api.deps import require_data_transfer_access
+from app.api.deps import get_request_user, require_data_transfer_access
+from app.services.credential_resolver import CredentialContext
 from app.data_io.services import paths as import_paths
 from app.data_io.services.paths import QuotaExceededError
 from app.data_io.services.document import (
@@ -400,16 +401,59 @@ async def upload_discard(upload_id: str) -> dict[str, Any]:
 
 
 @router.get("/import/jobs", dependencies=[Depends(require_data_transfer_access)])
-async def import_jobs_list(limit: int = 20) -> dict[str, Any]:
-    return {"items": list_jobs(limit=limit)}
+async def import_jobs_list(
+    limit: int = 20,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
+    include_all = cred is not None and cred.role == "admin"
+    owner = None if include_all else (int(cred.user_id) if cred and cred.user_id else None)
+    # Non-admin without user_id (service key): empty list (fail-closed)
+    if not include_all and owner is None:
+        return {"items": []}
+    return {
+        "items": list_jobs(
+            limit=limit, owner_user_id=owner, include_all=include_all
+        )
+    }
+
+
+def _owner_user_id(cred: CredentialContext | None) -> int | None:
+    """从凭据取属主 user_id。
+
+    返回 ``None`` 表示无主任务（service key / dev bypass / 未登录等无 user_id 的
+    调用者）。无主任务会被 ``list_jobs`` 过滤、被 ``_deny_job_if_not_owner``
+    拒绝，属既有 fail-closed 设计，并非缺陷。
+
+    属主必须这样显式下传，不得借助任何隐式上下文——详见 ``deps.require_data_transfer_access``
+    的 docstring（2026-08-29 审查 C-1）。
+    """
+    if cred is None or cred.user_id is None:
+        return None
+    return int(cred.user_id)
+
+
+def _deny_job_if_not_owner(job: dict[str, Any], cred: CredentialContext | None) -> None:
+    if cred is not None and cred.role == "admin":
+        return
+    owner = job.get("owner_user_id")
+    if owner is None:
+        # Legacy unscoped jobs: admin-only after isolation
+        raise HTTPException(status_code=403, detail="无权访问该导入任务")
+    if cred is None or cred.user_id is None or int(cred.user_id) != int(owner):
+        raise HTTPException(status_code=403, detail="无权访问该导入任务")
 
 
 @router.get(
     "/import/jobs/{job_id}", dependencies=[Depends(require_data_transfer_access)]
 )
-async def import_job_status(job_id: str) -> dict[str, Any]:
+async def import_job_status(
+    job_id: str,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     try:
-        return get_job(job_id)
+        job = get_job(job_id)
+        _deny_job_if_not_owner(job, cred)
+        return job
     except FileNotFoundError as exc:
         raise _http_err(exc) from exc
 
@@ -417,8 +461,13 @@ async def import_job_status(job_id: str) -> dict[str, Any]:
 @router.post(
     "/import/jobs/{job_id}/cancel", dependencies=[Depends(require_data_transfer_access)]
 )
-async def import_job_cancel(job_id: str) -> dict[str, Any]:
+async def import_job_cancel(
+    job_id: str,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     try:
+        job = get_job(job_id)
+        _deny_job_if_not_owner(job, cred)
         return cancel_job(job_id)
     except FileNotFoundError as exc:
         raise _http_err(exc) from exc
@@ -428,9 +477,13 @@ async def import_job_cancel(job_id: str) -> dict[str, Any]:
     "/import/jobs/{job_id}/download",
     dependencies=[Depends(require_data_transfer_access)],
 )
-async def import_job_download(job_id: str) -> FileResponse:
+async def import_job_download(
+    job_id: str,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> FileResponse:
     try:
         job = get_job(job_id)
+        _deny_job_if_not_owner(job, cred)
     except FileNotFoundError as exc:
         raise _http_err(exc) from exc
     result = job.get("result") or {}
@@ -457,9 +510,13 @@ async def import_job_download(job_id: str) -> FileResponse:
 
 
 @router.post("/import/batch", dependencies=[Depends(require_data_transfer_access)])
-async def import_batch(body: ImportBatchBody) -> dict[str, Any]:
+async def import_batch(
+    body: ImportBatchBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     if not body.groups:
         raise HTTPException(status_code=400, detail="groups 不能为空")
+    owner = _owner_user_id(cred)
     batch_id = f"batch-{uuid.uuid4().hex[:12]}"
     job_ids: list[str] = []
     try:
@@ -477,6 +534,7 @@ async def import_batch(body: ImportBatchBody) -> dict[str, Any]:
                         "source_name": source_name,
                     },
                     force_async=True,
+                    owner_user_id=owner,
                 )
                 job_ids.append(job["job_id"])
             elif kind == "document":
@@ -484,6 +542,7 @@ async def import_batch(body: ImportBatchBody) -> dict[str, Any]:
                     "document",
                     {"path": str(paths[0]), "source_name": source_name},
                     force_async=True,
+                    owner_user_id=owner,
                 )
                 job_ids.append(job["job_id"])
             elif kind == "raster":
@@ -497,6 +556,7 @@ async def import_batch(body: ImportBatchBody) -> dict[str, Any]:
                         "source_name": source_name,
                     },
                     force_async=True,
+                    owner_user_id=owner,
                 )
                 job_ids.append(job["job_id"])
             else:
@@ -512,9 +572,13 @@ async def import_batch(body: ImportBatchBody) -> dict[str, Any]:
 
 
 @router.post("/import/vector", dependencies=[Depends(require_data_transfer_access)])
-async def import_vector(body: VectorImportBody) -> dict[str, Any]:
+async def import_vector(
+    body: VectorImportBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     if not body.upload_ids:
         raise HTTPException(status_code=400, detail="upload_ids 不能为空")
+    owner = _owner_user_id(cred)
     try:
         paths = [resolve_upload_path(uid) for uid in body.upload_ids]
         total = sum(p.stat().st_size for p in paths)
@@ -533,6 +597,7 @@ async def import_vector(body: VectorImportBody) -> dict[str, Any]:
                 },
                 handler,
                 force_async=True,
+                owner_user_id=owner,
             )
             return {"job_id": job["job_id"], "status": job["status"], "async": True}
 
@@ -767,7 +832,11 @@ async def raster_inspect(body: RasterInspectBody) -> dict[str, Any]:
 @router.post(
     "/import/raster/commit", dependencies=[Depends(require_data_transfer_access)]
 )
-async def raster_commit(body: RasterCommitBody) -> dict[str, Any]:
+async def raster_commit(
+    body: RasterCommitBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
+    owner = _owner_user_id(cred)
     try:
         path = resolve_upload_path(body.upload_id)
         ext = path.suffix.lower()
@@ -809,6 +878,7 @@ async def raster_commit(body: RasterCommitBody) -> dict[str, Any]:
                     "native_step": body.native_step,
                 },
                 force_async=True,
+                owner_user_id=owner,
             )
             return {"async": True, "job_id": job["job_id"], "status": job["status"]}
         return {"async": False, **_raster_commit_sync(body)}
@@ -892,7 +962,12 @@ async def document_ops(session_id: str, body: DocumentOpsBody) -> dict[str, Any]
     "/import/document/{session_id}/commit",
     dependencies=[Depends(require_data_transfer_access)],
 )
-async def document_commit(session_id: str, body: DocumentCommitBody) -> dict[str, Any]:
+async def document_commit(
+    session_id: str,
+    body: DocumentCommitBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
+    owner = _owner_user_id(cred)
     try:
         payload = {
             "session_id": session_id,
@@ -905,7 +980,9 @@ async def document_commit(session_id: str, body: DocumentCommitBody) -> dict[str
             "swap_xy": body.swap_xy,
         }
         if body.async_mode:
-            job = enqueue_job("document_commit", payload, force_async=True)
+            job = enqueue_job(
+                "document_commit", payload, force_async=True, owner_user_id=owner
+            )
             return {"async": True, "job_id": job["job_id"], "status": job["status"]}
         result = commit_document_session(
             session_id,
@@ -953,9 +1030,13 @@ async def export_layer_endpoint(body: ExportBody) -> Response:
 
 
 @router.post("/export/batch", dependencies=[Depends(require_data_transfer_access)])
-async def export_batch_endpoint(body: ExportBatchBody) -> Response:
+async def export_batch_endpoint(
+    body: ExportBatchBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> Response:
     if not body.layer_ids:
         raise HTTPException(status_code=400, detail="layer_ids 不能为空")
+    owner = _owner_user_id(cred)
     force_async = body.async_mode or len(body.layer_ids) > 2
     bbox_payload = body.bbox.model_dump() if body.bbox else None
     try:
@@ -973,6 +1054,7 @@ async def export_batch_endpoint(body: ExportBatchBody) -> Response:
                     "fields": body.fields,
                 },
                 force_async=True,
+                owner_user_id=owner,
             )
             return Response(
                 content=json.dumps(

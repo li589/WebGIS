@@ -32,6 +32,7 @@ export interface CrossDomainBindings {
   setRunLayerGroups: (groups: ActiveRunLayerGroup[]) => void
   getJobLayers: () => JobLayerItem[]
   stopWorkflowPolling: (jobId: string) => void
+  cancelWorkflowRunForJob: (jobId: string, catalogId: string) => Promise<unknown>
   forgetTrackedWorkflowRun: (runId: string) => void
   rememberTrackedWorkflowRun: (catalogId: string, jobLayer: JobLayerItem) => void
   scheduleWorkspacePersist: () => void
@@ -56,6 +57,10 @@ export interface CrossDomainBindings {
 
   // ── workspace → workflow-run (auto-run on layer add) ──
   runWorkflowForCatalog: (catalogId: string) => Promise<void>
+
+  // ── lifecycle 域（图层平台子系统）──
+  /** lifecycle 域刷新某图层后回调（保留扩展点；当前为 no-op stub）。 */
+  onLifecycleRefreshed: (layerId: string, lifecycleState: string) => void
 }
 
 /**
@@ -76,6 +81,7 @@ export function createCrossDomainBindings(): CrossDomainBindings {
     setRunLayerGroups: () => {},
     getJobLayers: () => [],
     stopWorkflowPolling: () => {},
+    cancelWorkflowRunForJob: () => Promise.resolve(),
     forgetTrackedWorkflowRun: () => {},
     rememberTrackedWorkflowRun: () => {},
     scheduleWorkspacePersist: () => {},
@@ -90,5 +96,6 @@ export function createCrossDomainBindings(): CrossDomainBindings {
     onCatalogLoaded: () => {},
     onWorkflowViewportRefresh: () => {},
     runWorkflowForCatalog: () => Promise.resolve(),
+    onLifecycleRefreshed: () => {},
   }
 }

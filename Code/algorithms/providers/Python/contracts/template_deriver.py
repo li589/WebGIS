@@ -45,7 +45,12 @@ def derive_template_from_module(module_name: str) -> RequestTemplateSpec | None:
     # 而非算法参数，故一并归入 required_datasource_keys。
     required_datasource_keys: set[str] = set()
     optional_datasource_keys: list[str] = []
+    datasource_severity: dict[str, str] = {}
     for port in spec.input_ports:
+        severity = (port.severity or ("hard" if port.required else "optional")).lower()
+        if severity not in ("hard", "soft", "optional"):
+            severity = "hard" if port.required else "optional"
+        datasource_severity[port.name] = severity
         if port.kind == "scalar":
             if port.required:
                 required_datasource_keys.add(port.name)
@@ -55,6 +60,7 @@ def derive_template_from_module(module_name: str) -> RequestTemplateSpec | None:
     for mode_inputs in spec.mode_required_inputs.values():
         for key in mode_inputs:
             required_datasource_keys.add(key)
+            datasource_severity.setdefault(key, "hard")
 
     # required_algorithm_keys：当前无模块声明无默认值的 required algorithm key，留空。
     # 若未来需要，可从 default_params 中无默认值的 key 扩展。
@@ -64,6 +70,14 @@ def derive_template_from_module(module_name: str) -> RequestTemplateSpec | None:
     for key in spec.default_params:
         if key not in required_datasource_keys and key not in required_algorithm_keys:
             optional_algorithm_keys.append(key)
+
+    # template_overrides 可覆盖/追加 severity（如 soft 时间窗对齐键）
+    override_severity = overrides.get("datasource_severity") or {}
+    if isinstance(override_severity, dict):
+        for key, value in override_severity.items():
+            sev = str(value).lower()
+            if sev in ("hard", "soft", "optional"):
+                datasource_severity[str(key)] = sev
 
     # allowed_task_types：module_name + "workflow"，可被 overrides 覆盖
     default_allowed_task_types = (spec.name, "workflow")
@@ -86,6 +100,7 @@ def derive_template_from_module(module_name: str) -> RequestTemplateSpec | None:
         ),
         allowed_algorithm_values=dict(overrides.get("allowed_algorithm_values", {})),
         notes=overrides.get("notes"),
+        datasource_severity=dict(datasource_severity),
     )
 
 

@@ -11,19 +11,32 @@ from pathlib import Path
 from typing import Any
 from collections.abc import Callable
 
-from app.data_io.services.paths import JOBS_DIR, ensure_imports_root
+from app.data_io.services.paths import JOBS_DIR, ensure_imports_root, safe_import_child
 
 logger = logging.getLogger(__name__)
 
 JobHandler = Callable[[dict[str, Any]], dict[str, Any]]
 
-
 def _job_path(job_id: str) -> Path:
     ensure_imports_root()
-    return JOBS_DIR / f"{job_id}.json"
+    # 安审 2026-08-22（B-3）：job_id 纯名称校验，防越界读任意 JSON 文件
+    safe = safe_import_child(job_id, root=JOBS_DIR)
+    return safe.with_name(safe.name + ".json")
 
 
-def create_job(*, kind: str, payload: dict[str, Any]) -> str:
+def create_job(
+    *, kind: str, payload: dict[str, Any], owner_user_id: int | None = None
+) -> str:
+    """创建导入任务。
+
+    ``owner_user_id`` **必须由调用方显式传入**（通常来自端点的凭据）。
+    本模块不接受任何隐式上下文（ContextVar 等）——2026-08-29 审查 C-1：
+    曾由同步依赖用 ContextVar 传递属主，因 FastAPI 在线程池执行同步依赖，
+    ``set()`` 不回传事件循环，导致属主恒为 ``None``、提交者被自己的任务 403。
+
+    ``owner_user_id=None`` 表示无主任务：会被 ``list_jobs`` 过滤、
+    被 ``_deny_job_if_not_owner`` 拒绝（fail-closed，仅管理员可见）。
+    """
     ensure_imports_root()
     job_id = f"job-{uuid.uuid4().hex[:16]}"
     record = {
@@ -35,6 +48,7 @@ def create_job(*, kind: str, payload: dict[str, Any]) -> str:
         "payload": payload,
         "result": None,
         "error": None,
+        "owner_user_id": owner_user_id,
         "created_at": time.time(),
         "updated_at": time.time(),
     }
@@ -69,7 +83,19 @@ def get_job(job_id: str) -> dict[str, Any]:
     return record
 
 
-def list_jobs(*, limit: int = 20) -> list[dict[str, Any]]:
+def list_jobs(
+    *, limit: int = 20, owner_user_id: int | None = None, include_all: bool = False
+) -> list[dict[str, Any]]:
+    """List recent jobs.
+
+    When ``include_all`` is False and ``owner_user_id`` is set, only jobs owned
+    by that user are returned. Admin callers should pass ``include_all=True``.
+
+    **无主任务一律不返回**（fail-closed）：此前本 docstring 误称"legacy 无主任务
+    也会返回"，与实现相反。实现是对的——无主任务可能属于任何调用者（例如
+    service key / dev bypass 提交的任务），暴露给非管理员即越权。
+    **请勿按旧文档把这段改成返回无主任务。**
+    """
     ensure_imports_root()
     items: list[dict[str, Any]] = []
     for path in sorted(
@@ -79,6 +105,11 @@ def list_jobs(*, limit: int = 20) -> list[dict[str, Any]]:
             record = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
+        if not include_all and owner_user_id is not None:
+            job_owner = record.get("owner_user_id")
+            # Legacy jobs without owner: hide from non-owner lists (fail-closed)
+            if job_owner is None or int(job_owner) != int(owner_user_id):
+                continue
         items.append(
             {
                 "job_id": record.get("job_id"),
@@ -88,6 +119,7 @@ def list_jobs(*, limit: int = 20) -> list[dict[str, Any]]:
                 "message": record.get("message"),
                 "error": record.get("error"),
                 "created_at": record.get("created_at"),
+                "owner_user_id": record.get("owner_user_id"),
             }
         )
         if len(items) >= max(1, min(limit, 100)):
@@ -147,12 +179,13 @@ def enqueue_job(
     handler: JobHandler | None = None,
     *,
     force_async: bool = False,
+    owner_user_id: int | None = None,
 ) -> dict[str, Any]:
     """创建任务：优先 Celery；不可用则线程或同步执行。
 
     ``handler`` 仅同步路径需要；异步走 Celery ``_dispatch(kind, payload)``。
     """
-    job_id = create_job(kind=kind, payload=payload)
+    job_id = create_job(kind=kind, payload=payload, owner_user_id=owner_user_id)
 
     def _run() -> None:
         if handler is None:

@@ -8,7 +8,14 @@
     "readonly": true,
     "is_template": true,
     "linked_layer_id": null,
-    "tags": ["analysis", "gis", "dem", "slope", "aspect", "ui-panel"],
+    "tags": [
+      "analysis",
+      "gis",
+      "dem",
+      "slope",
+      "aspect",
+      "ui-panel"
+    ],
     "category": "analysis",
     "resource_profile": "standard"
   },
@@ -19,7 +26,10 @@
     {
       "id": 1,
       "type": "data/source",
-      "pos": [60, 120],
+      "pos": [
+        60,
+        120
+      ],
       "properties": {
         "path": "{DATA_ROOT}/_runtime/smoke_dem.tif",
         "dataset_key": "input_path"
@@ -28,7 +38,10 @@
     {
       "id": 2,
       "type": "gis/slope_aspect",
-      "pos": [360, 160],
+      "pos": [
+        360,
+        160
+      ],
       "properties": {
         "z_unit": "meters",
         "algorithm": "horn"
@@ -36,6 +49,18 @@
     }
   ],
   "links": [
-    [1, 1, 2, 2, 1]
-  ]
+    [
+      1,
+      1,
+      2,
+      2,
+      1
+    ]
+  ],
+  "extra": {
+    "group_title": "坡度坡向分析",
+    "output_labels": {
+      "result": "坡度坡向结果"
+    }
+  }
 }

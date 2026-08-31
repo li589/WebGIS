@@ -11,7 +11,13 @@ import os
 from pathlib import Path
 
 from modules.base import BaseModule
-from modules.download_nodes import _resolve_portal_entry, _store_path_manifest
+from modules.download_nodes import (
+    _emit_download_progress,
+    _make_byte_stream_progress_cb,
+    _make_skip_complete_emit,
+    _resolve_portal_entry,
+    _store_path_manifest,
+)
 from modules.registry import register_module_decorator
 from workflow.schemas import NodeExecutionContext, PortSpec
 
@@ -32,7 +38,7 @@ def _resolve_cds_api_key(
     return os.environ.get("BACKEND_CDS_API_KEY", "").strip()
 
 
-@register_module_decorator(name="cds_download")
+@register_module_decorator(name="cds_download", template_overrides={"phase": "download"})
 class CdsDownloadModule(BaseModule):
     name = "cds_download"
     description = (
@@ -104,6 +110,15 @@ class CdsDownloadModule(BaseModule):
                 f"CDS download: {dataset} (use={use}) -> {target_dir}",
             )
 
+        target_name = str(resolved.get("filename") or "").strip() or dataset
+        _byte_cb = (
+            _make_byte_stream_progress_cb(
+                ctx.logger_adapter, "cds_download", item_name=target_name
+            )
+            if use in {"legacy", "auto"}
+            else None
+        )
+
         result = download_cds_dataset(
             dataset,
             request,
@@ -113,7 +128,33 @@ class CdsDownloadModule(BaseModule):
             filename=str(resolved.get("filename") or ""),
             direct_url=str(resolved.get("direct_url") or ""),
             force=bool(resolved.get("force")),
+            progress_callback=_byte_cb,
         )
+
+        if ctx.logger_adapter is not None:
+            if result.skipped:
+                _make_skip_complete_emit(
+                    ctx.logger_adapter,
+                    "cds_download",
+                    total=1,
+                    skipped=1,
+                )
+            elif result.downloaded_bytes > 0 and use not in {"legacy"}:
+                from ingest._http_resume import format_size
+
+                _emit_download_progress(
+                    ctx.logger_adapter,
+                    "cds_download",
+                    1.0,
+                    f"CDS 下载完成 · {format_size(result.downloaded_bytes)}",
+                    {
+                        "download_mode": "byte_stream",
+                        "downloaded_bytes": result.downloaded_bytes,
+                        "total_bytes": result.downloaded_bytes,
+                        "current_item_name": Path(result.target).name,
+                        "phase": "complete",
+                    },
+                )
 
         if ctx.logger_adapter is not None:
             ctx.logger_adapter.emit_stage_end(

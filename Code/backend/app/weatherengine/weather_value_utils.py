@@ -226,9 +226,11 @@ def resolve_point(
 
 def resolve_forecast_hours(payload: WorkflowSubmitRequest) -> int:
     """从 payload 解析 forecast_hours，限制 [1, 24]。"""
+    from app.services.effective_config import get_weather_refresh_forecast_hours
+
     requested = as_int(payload.parameters.get("forecast_hours"))
     if requested is None:
-        return settings.weather_refresh_forecast_hours
+        return get_weather_refresh_forecast_hours()
     return max(1, min(24, requested))
 
 

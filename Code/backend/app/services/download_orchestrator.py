@@ -34,6 +34,7 @@ from app.services.download_manifest_writer import (
     download_manifest_writer,
 )
 from app.services.download_utils import coerce_int, coerce_str_list
+from app.services.effective_config import get_cache_default_ttl_seconds
 from shared.contracts.api_contracts import WorkflowResultReference
 
 logger = logging.getLogger(__name__)
@@ -233,9 +234,10 @@ class DownloadOrchestrator:
         ttl_value = coerce_int(payload_parameters.get("cache_ttl_seconds"))
         if ttl_value is not None:
             return max(1, ttl_value)
+        default_ttl = get_cache_default_ttl_seconds()
         if realtime_preferred:
-            return min(settings.cache_default_ttl_seconds, 300)
-        return settings.cache_default_ttl_seconds
+            return min(default_ttl, 300)
+        return default_ttl
 
     def _resolve_download_ticket_id(
         self, cache_entry: CacheEntry | None, cache_status: str

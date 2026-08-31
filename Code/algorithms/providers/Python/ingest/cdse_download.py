@@ -22,11 +22,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ingest._http_resume import check_disk_space, download_with_retry, format_size
 
 logger = logging.getLogger(__name__)
+
+MultiFileProgressCb = Callable[[int, int, int, str | None], None] | None
+ByteStreamProgressCb = Callable[[int, int], None] | None
 
 CDSE_TOKEN_URL = (
     "https://identity.dataspace.copernicus.eu/auth/realms/CDSE"
@@ -254,6 +257,7 @@ def download_product_value(
     bearer_token: str,
     origin: str = CDSE_DOWNLOAD_ORIGIN,
     session: Any = None,
+    progress_callback: ByteStreamProgressCb = None,
 ) -> int:
     """单个产品 ``$value`` 下载（共享续传工具），返回字节数。"""
     import requests
@@ -268,7 +272,7 @@ def download_product_value(
         if isinstance(sess, requests.Session):
             sess.headers["Authorization"] = token
     url = build_download_url(product.product_id, origin=origin)
-    if not download_with_retry(sess, url, target):
+    if not download_with_retry(sess, url, target, progress_callback=progress_callback):
         raise RuntimeError(f"CDSE download failed: {product.product_id}")
     return target.stat().st_size if target.exists() else 0
 
@@ -288,6 +292,8 @@ def download_cdse_products(
     max_products: int | None = None,
     origin: str = CDSE_DOWNLOAD_ORIGIN,
     min_disk_free_gb: float = MIN_DISK_FREE_GB,
+    progress_callback: MultiFileProgressCb = None,
+    byte_stream_callback: ByteStreamProgressCb = None,
 ) -> CdseDownloadResult:
     """下载 CDSE 产品列表到 ``target_dir``。
 
@@ -331,7 +337,13 @@ def download_cdse_products(
         )
         result = CdseDownloadResult(use=use_mode, target_dir=str(target_path))
         target_path.mkdir(parents=True, exist_ok=True)
-        _run_legacy(legacy_urls, target_path, result)
+        _run_legacy(
+            legacy_urls,
+            target_path,
+            result,
+            progress_callback=progress_callback,
+            byte_stream_callback=byte_stream_callback,
+        )
         return result
 
     if not products:
@@ -364,7 +376,9 @@ def download_cdse_products(
             )
         token = exchange_cdse_token(username.strip(), password.strip())
 
-    for product in products:
+    total = len(products)
+    downloaded_bytes = 0
+    for i, product in enumerate(products, start=1):
         filename = product.name.strip() or f"cdse_{product.product_id}.zip"
         target = target_path / filename
         label = product.name.strip() or product.product_id
@@ -381,15 +395,25 @@ def download_cdse_products(
                 logger.info("CDSE 目标已存在，跳过: %s", target.name)
                 result.skipped += 1
                 result.products.append(product)
+                if progress_callback is not None:
+                    downloaded_bytes += target.stat().st_size
+                    progress_callback(i, total, downloaded_bytes, filename)
                 continue
             logger.info("CDSE 下载: %s -> %s", label, target)
             size = download_product_value(
-                product, target, bearer_token=token, origin=origin
+                product,
+                target,
+                bearer_token=token,
+                origin=origin,
+                progress_callback=byte_stream_callback,
             )
             product.size_bytes = size
             result.products.append(product)
             result.downloaded += 1
             result.downloaded_bytes += size
+            downloaded_bytes += size
+            if progress_callback is not None:
+                progress_callback(i, total, downloaded_bytes, filename)
             logger.info("CDSE 完成: %s (%s)", target.name, format_size(size))
         except Exception as exc:  # noqa: BLE001
             result.failed += 1
@@ -403,6 +427,9 @@ def _run_legacy(
     legacy_urls: list[str] | str,
     target_path: Path,
     result: CdseDownloadResult,
+    *,
+    progress_callback: MultiFileProgressCb = None,
+    byte_stream_callback: ByteStreamProgressCb = None,
 ) -> None:
     """legacy 直链下载（共享续传工具，免 token）。"""
     import requests
@@ -418,12 +445,16 @@ def _run_legacy(
             "cdse_download: use='legacy' requires legacy_urls (public direct links)"
         )
     session = requests.Session()
-    for i, url in enumerate(urls):
-        name = url.rstrip("/").split("?")[0].split("/")[-1] or f"cdse_legacy_{i}.zip"
+    total = len(urls)
+    downloaded_bytes = 0
+    for i, url in enumerate(urls, start=1):
+        name = url.rstrip("/").split("?")[0].split("/")[-1] or f"cdse_legacy_{i - 1}.zip"
         target = target_path / name
         try:
             logger.info("CDSE legacy 下载: %s -> %s", url, target)
-            if not download_with_retry(session, url, target):
+            if not download_with_retry(
+                session, url, target, progress_callback=byte_stream_callback
+            ):
                 raise RuntimeError(f"download failed: {url}")
             size = target.stat().st_size if target.exists() else 0
             result.products.append(
@@ -431,6 +462,9 @@ def _run_legacy(
             )
             result.downloaded += 1
             result.downloaded_bytes += size
+            downloaded_bytes += size
+            if progress_callback is not None:
+                progress_callback(i, total, downloaded_bytes, name)
         except Exception as exc:  # noqa: BLE001
             result.failed += 1
             result.errors.append(f"{name}: {exc}")

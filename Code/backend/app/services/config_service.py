@@ -265,6 +265,66 @@ def _research_data_repo():
     return _inner()
 
 
+def _online_tile_source_status(source: dict[str, Any]) -> str:
+    service_type = str(source.get("service_type") or "")
+    template = str(source.get("url_template") or "")
+    if service_type not in {"wmts", "xyz"} or not template:
+        return "invalid"
+    return "configured"
+
+
+def list_online_tile_sources() -> list[dict[str, Any]]:
+    value = _research_data_repo().get_json("online_tile_sources", [])
+    if not isinstance(value, list):
+        return []
+    return [
+        {**item, "config_status": _online_tile_source_status(item)}
+        for item in value
+        if isinstance(item, dict)
+    ]
+
+
+def upsert_online_tile_source(source_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    import re
+    from datetime import datetime, UTC
+    from urllib.parse import urlparse
+
+    sid = str(source_id or "").strip()
+    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{1,63}", sid):
+        raise ValueError("source_id must be 2-64 characters: letters, digits, _ or -")
+    template = str(payload.get("url_template") or "").strip()
+    parsed = urlparse(template)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("url_template must be an absolute http(s) URL")
+    if "{z}" not in template or "{x}" not in template or "{y}" not in template:
+        raise ValueError("url_template must contain {z}, {x}, and {y} placeholders")
+    if "{" in parsed.netloc or "}" in parsed.netloc:
+        raise ValueError("URL host must not be templated")
+    if payload.get("service_type") == "wmts" and not str(payload.get("layer") or "").strip():
+        raise ValueError("WMTS layer is required")
+    now = datetime.now(UTC).isoformat()
+    items = list_online_tile_sources()
+    item = next((dict(v) for v in items if isinstance(v, dict) and v.get("source_id") == sid), None) or {
+        "source_id": sid,
+        "created_at": now,
+    }
+    item.update(payload)
+    item.update({"source_id": sid, "updated_at": now, "last_test_status": None})
+    items = [v for v in items if not (isinstance(v, dict) and v.get("source_id") == sid)]
+    items.append(item)
+    _research_data_repo().set_json("online_tile_sources", items)
+    return item
+
+
+def delete_online_tile_source(source_id: str) -> bool:
+    items = list_online_tile_sources()
+    kept = [v for v in items if not (isinstance(v, dict) and v.get("source_id") == source_id)]
+    changed = len(kept) != len(items)
+    if changed:
+        _research_data_repo().set_json("online_tile_sources", kept)
+    return changed
+
+
 def get_data_source_config() -> dict[str, Any]:
     """获取数据源配置（含数据根扫描、开放数据预设、静态缓存概览）。"""
     from app.services.data_cache_service import (
@@ -343,6 +403,7 @@ def get_data_source_config() -> dict[str, Any]:
             "entry_count": overview["entry_count"],
             "total_bytes": overview["total_bytes"],
         },
+        "online_tile_sources": list_online_tile_sources(),
         "workflow_hint": (
             "开放门户请用工作流「门户数据下载」(http_open_data) + cred_profile；"
             "NAS/任意 URI 用「远程拉取」并引用「远程存储」凭证 profile。"
@@ -573,6 +634,9 @@ def upsert_remote_source_entry(
             remote_path=str(payload.get("remote_path") or ""),
             display_name=str(payload.get("display_name") or ""),
             cache_policy=str(payload.get("cache_policy") or "standard"),
+            # 2026-08-25：透传 access_mode（此前被静默丢弃——PUT 请求里的
+            # access_mode 字段从未生效，注册一直落 legacy 默认值）
+            access_mode=str(payload.get("access_mode") or "legacy"),
         )
     except RemoteSourceRegistryError as exc:
         raise ValueError(str(exc)) from exc
@@ -582,6 +646,52 @@ def delete_remote_source_entry(remote_source_id: str) -> bool:
     from app.services.remote_source_registry import get_remote_source_registry
 
     return get_remote_source_registry().delete(remote_source_id)
+
+
+def list_remote_dataset_grants() -> list[dict[str, Any]]:
+    """数据集授权条目 + 门户徽标（plan 阶段 1）。"""
+    from app.services.remote_dataset_grants import list_grants_with_badges
+
+    return list_grants_with_badges()
+
+
+def upsert_remote_dataset_grant(
+    grant_id: str, payload: dict[str, Any]
+) -> dict[str, Any]:
+    from app.services.remote_dataset_grants import (
+        RemoteDatasetGrantsError,
+        get_remote_dataset_grants,
+    )
+
+    try:
+        return get_remote_dataset_grants().upsert(
+            grant_id=grant_id,
+            portal_id=str(payload.get("portal_id") or ""),
+            dataset_key=str(payload.get("dataset_key") or ""),
+            dataset_title=str(payload.get("dataset_title") or ""),
+            dataset_description=str(payload.get("dataset_description") or ""),
+            provider_kind=str(payload.get("provider_kind") or ""),
+            time_start=str(payload.get("time_start") or ""),
+            time_end=str(payload.get("time_end") or ""),
+            path_prefix=str(payload.get("path_prefix") or ""),
+            search_meta=str(payload.get("search_meta") or "{}"),
+            enabled=bool(payload.get("enabled", True)),
+        )
+    except RemoteDatasetGrantsError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def delete_remote_dataset_grant(grant_id: str) -> bool:
+    from app.services.remote_dataset_grants import get_remote_dataset_grants
+
+    return get_remote_dataset_grants().delete(grant_id)
+
+
+def get_remote_dataset_policy() -> list[dict[str, Any]]:
+    """远程数据集访问策略投影（编辑器过滤/提交校验消费，plan §3）。"""
+    from app.services.remote_dataset_grants import build_remote_dataset_policy
+
+    return build_remote_dataset_policy()
 
 
 def schedule_ui_backend_restart(
@@ -759,15 +869,18 @@ def get_about_info() -> dict[str, Any]:
             "TypeScript",
             "Pinia",
             "MapLibre GL",
+            "Cesium",
+            "ECharts",
             "Vite",
             "FastAPI",
-            "Python 3.11+",
+            "Python 3.12",
             "Celery",
             "Redis",
             "SQLite",
             "MinIO",
             "Google Earth Engine",
             "Open-Meteo",
+            "Nginx",
             "Docker",
         ],
         "modules": [

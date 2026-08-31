@@ -6,14 +6,13 @@
  * 顶栏：搜索 / 来源筛选 / 重新扫描 / 新增；行操作：编辑 / 启停 / 删除（内置条目禁删）。
  */
 
-import { computed, ref } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, ref, toRef } from 'vue'
 import { useSettingsStore } from '../../../stores/settings'
 import type { AvailableDatasetEntry } from '../../../types/api-reexports'
 import DatasetFormDialog from './DatasetFormDialog.vue'
 
 const settingsStore = useSettingsStore()
-const { availableDatasets } = storeToRefs(settingsStore)
+const availableDatasets = toRef(settingsStore, 'availableDatasets')
 
 const search = ref('')
 const sourceFilter = ref('all')

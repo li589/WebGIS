@@ -25,6 +25,28 @@ _META_TMP_SUFFIX = ".json.tmp"
 _LOCK_FILENAME = "meta.lock"
 
 
+def save_json_atomic(path: Path, payload: Any) -> None:
+    """原子写任意 JSON 文件（同目录 ``.tmp`` + ``os.replace``）。
+
+    安审 2026-08-21 C-2：``bounds.json`` / 时序 ``meta.json`` 等与 staging
+    ``meta.json`` 同样存在「worker 写 / API 进程读」并发，半写 JSON 会让
+    lazy-load 读端 JSONDecodeError → 图层被判「不存在」。与 ``save_meta``
+    同模式，通用化到任意路径。
+    """
+    tmp_path = path.with_name(path.name + ".tmp")
+    tmp_path.write_text(
+        json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+    )
+    os.replace(tmp_path, path)
+
+
+def save_bytes_atomic(path: Path, payload: bytes) -> None:
+    """原子写二进制文件（同目录 ``.tmp`` + ``os.replace``）。"""
+    tmp_path = path.with_name(path.name + ".tmp")
+    tmp_path.write_bytes(payload)
+    os.replace(tmp_path, path)
+
+
 def load_meta(dest: Path) -> dict[str, Any]:
     """从 ``dest/meta.json`` 读取并解析 meta。
 

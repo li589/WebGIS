@@ -1,4 +1,4 @@
-import { computed, ref, watch, type ComputedRef } from 'vue'
+import { computed, ref, watch, type Ref } from 'vue'
 import type { RuntimeLayerLibraryItem, LayerCategory } from '../../stores/layers/types'
 
 /**
@@ -13,7 +13,7 @@ import type { RuntimeLayerLibraryItem, LayerCategory } from '../../stores/layers
  * @param ensureWeatherProviders - Callback to prefetch weather providers for a catalogId
  */
 export function useSidebarSearch(
-  layerLibrary: ComputedRef<RuntimeLayerLibraryItem[]>,
+  layerLibrary: Ref<RuntimeLayerLibraryItem[]>,
   layerCategories: LayerCategory[],
   ensureWeatherProviders: (catalogId: string) => Promise<void>,
 ) {

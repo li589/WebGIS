@@ -12,7 +12,21 @@
 import { ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
+import {
+  readScopedItem,
+  removeScopedItem,
+  writeScopedItem,
+} from '../services/user-local-isolation'
+
 export type DrawMode = 'polygon' | 'rectangle' | 'line'
+
+/** 绘制工具栏在地图舞台（.map-stage）内的几何（px，供属性表联动定位） */
+export interface DrawToolbarRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
 
 export interface DrawVertex {
   lng: number
@@ -37,7 +51,7 @@ interface DrawDraft {
 
 function saveDraftToStorage(draft: DrawDraft): void {
   try {
-    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft))
+    writeScopedItem(DRAFT_STORAGE_KEY, JSON.stringify(draft))
   } catch {
     /* quota exceeded, ignore */
   }
@@ -45,7 +59,7 @@ function saveDraftToStorage(draft: DrawDraft): void {
 
 function loadDraftFromStorage(): DrawDraft | null {
   try {
-    const raw = localStorage.getItem(DRAFT_STORAGE_KEY)
+    const raw = readScopedItem(DRAFT_STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as DrawDraft
     if (parsed.version !== 1) return null
@@ -57,7 +71,7 @@ function loadDraftFromStorage(): DrawDraft | null {
 
 function clearDraftStorage(): void {
   try {
-    localStorage.removeItem(DRAFT_STORAGE_KEY)
+    removeScopedItem(DRAFT_STORAGE_KEY)
   } catch {
     /* ignore */
   }
@@ -75,6 +89,19 @@ export const useDrawStore = defineStore('draw', () => {
   const draftLayerId = ref<string | null>(null)
   const draftLayerName = ref<string>('')
   const editingLayerId = ref<string | null>(null)
+
+  // ── 绘制工具栏几何（工具栏 ↔ 属性表联动）──────────────────────────────
+  // 均相对 .map-stage（工具栏与属性表共同的 offsetParent）
+  const toolbarRect = ref<DrawToolbarRect | null>(null)
+  const shellSize = ref({ width: 0, height: 0 })
+
+  function setToolbarRect(rect: DrawToolbarRect | null) {
+    toolbarRect.value = rect
+  }
+
+  function setShellSize(width: number, height: number) {
+    shellSize.value = { width, height }
+  }
 
   let draftLoaded = false
 
@@ -205,11 +232,21 @@ export const useDrawStore = defineStore('draw', () => {
     if (draftLoaded) return false
     draftLoaded = true
     const draft = loadDraftFromStorage()
-    if (!draft || draft.features.length === 0) return false
+    if (!draft) return false
+    // 与 persistDraft 契约对称：空要素且非编辑会话的草稿视为已废弃，
+    // 清除残留（防 localStorage 永久堆积无效草稿）。
+    if (draft.features.length === 0 && !draft.editingLayerId) {
+      clearDraftStorage()
+      return false
+    }
     features.value = draft.features
     drawMode.value = draft.drawMode
     draftLayerName.value = draft.draftLayerName
-    editingLayerId.value = draft.editingLayerId
+    // editingLayerId 不跨会话恢复：刷新后图层 instanceId 全部重新生成
+    // （workspace-hydrate genInstanceId），旧 id 在新会话必然失效——
+    // 恢复它会被 MapCanvas 孤儿安全网 watcher 误杀（clearDraft 清空
+    // 未保存要素）。未保存的编辑要素降级为普通草稿保留。
+    editingLayerId.value = null
     return true
   }
 
@@ -254,6 +291,10 @@ export const useDrawStore = defineStore('draw', () => {
     draftLayerId,
     draftLayerName,
     editingLayerId,
+    toolbarRect,
+    shellSize,
+    setToolbarRect,
+    setShellSize,
     setDrawMode,
     addVertex,
     undoLastVertex,

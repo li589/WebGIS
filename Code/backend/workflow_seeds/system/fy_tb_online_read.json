@@ -8,7 +8,10 @@
     "readonly": true,
     "is_template": true,
     "linked_layer_id": "ref-fy-tb-202512-mwri",
-    "tags": ["sample", "download"],
+    "tags": [
+      "sample",
+      "download"
+    ],
     "category": "data_access"
   },
   "workflow_id": "fy_tb_online_read",
@@ -18,46 +21,100 @@
     {
       "id": 1,
       "type": "download/fy_download",
-      "pos": [80, 140],
+      "pos": [
+        80,
+        140
+      ],
       "properties": {
         "satellite": "FY3D",
         "data_source": "auto",
-        "band_ids": [1, 2],
+        "band_ids": [
+          1,
+          2
+        ],
         "orbit_mode": "MWRID"
       }
     },
     {
       "id": 2,
       "type": "download/fy_preprocess",
-      "pos": [420, 140],
+      "pos": [
+        420,
+        140
+      ],
       "properties": {
         "satellite": "FY3D",
         "orbit_mode": "MWRID",
-        "band_ids": [1, 2],
-        "outfile_type": "hdf5",
+        "band_ids": [
+          1,
+          2
+        ],
+        "outfile_type": "gtiff",
         "spatial_extent": "global"
       }
     },
     {
       "id": 3,
       "type": "output/map_layer",
-      "pos": [760, 140],
+      "pos": [
+        760,
+        140
+      ],
       "properties": {
         "layer_id": "ref-fy-tb-202512-mwri",
         "colormap": "viridis",
         "rescale": "200,320"
       }
+    },
+    {
+      "id": 4,
+      "type": "data/time_range",
+      "pos": [
+        80,
+        300
+      ],
+      "size": [
+        210,
+        130
+      ],
+      "properties": {
+        "start_at": "2025-12-01T00:00:00",
+        "end_at": "2025-12-08T00:00:00",
+        "resolution_unit": "day",
+        "resolution_step": 1,
+        "granularity": "day",
+        "bind_timeline": true,
+        "timezone": "UTC"
+      }
     }
   ],
   "links": [
-    {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "value:string"},
-    {"0": 2, "1": 2, "2": 0, "3": 3, "4": 0, "5": "value:string"}
+    {
+      "0": 1,
+      "1": 1,
+      "2": 0,
+      "3": 2,
+      "4": 0,
+      "5": "value:string"
+    },
+    {
+      "0": 2,
+      "1": 2,
+      "2": 0,
+      "3": 3,
+      "4": 0,
+      "5": "value:string"
+    }
   ],
   "extra": {
     "purpose": "online_fy_auto_pipeline",
     "scheme": "FY_DOWNLOAD_AUTO_FALLBACK",
     "pipeline": "fy_download(auto: NSMC→NAS) → fy_preprocess → map_layer",
     "prerequisite": "nsmc 凭证（NSMC 门户）和/或 nas_profile 凭证（SMB NAS）",
-    "notes": "推荐在线获取入口。data_source=auto 时优先 NSMC，失败自动回退 NAS。也可手动指定 data_source=nsmc 或 data_source=nas。"
+    "notes": "推荐在线获取入口。data_source=auto 时优先 NSMC，失败自动回退 NAS。也可手动指定 data_source=nsmc 或 data_source=nas。",
+    "group_title": "FY 微波亮温（在线）",
+    "output_labels": {
+      "result": "FY 微波亮温"
+    }
   }
 }

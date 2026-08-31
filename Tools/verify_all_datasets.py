@@ -33,8 +33,9 @@ sys.path.insert(
 )
 
 from universal_reader import UniversalDataReader, CHINA_BBOX
+from data_root import resolve_data_root
 
-DATA_ROOT = Path("I:/Geograph_DataSet")
+DATA_ROOT = resolve_data_root()
 REPORT_PATH = Path(__file__).resolve().parent / "reports" / "dataset_verification.json"
 
 
@@ -182,15 +183,19 @@ def main():
             "variable": None,
             "skip_china": True,  # 意大利区域，不裁剪中国
         },
-        # Precipitation / CMFD
+        # Precipitation / CMFD（reorganize 后在 Meteorological/Precipitation）
         {
             "label": "CMFD Precipitation 2002-01 (GeoTIFF)",
-            "file": str(DATA_ROOT / "Precipitation" / "pre_2002_01.tif"),
+            "file": str(
+                DATA_ROOT / "Meteorological" / "Precipitation" / "pre_2002_01.tif"
+            ),
             "variable": None,
         },
         {
             "label": "CMFD Precipitation 2002-02 (GeoTIFF)",
-            "file": str(DATA_ROOT / "Precipitation" / "pre_2002_02.tif"),
+            "file": str(
+                DATA_ROOT / "Meteorological" / "Precipitation" / "pre_2002_02.tif"
+            ),
             "variable": None,
         },
         # LandCover - CLCD

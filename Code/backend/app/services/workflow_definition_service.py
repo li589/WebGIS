@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import re
+import sys
 import tempfile
 from datetime import datetime, UTC
 from pathlib import Path
@@ -59,13 +60,19 @@ def _json_escape(value: str) -> str:
     return json.dumps(value)[1:-1]
 
 
+# 平台常量（模块级以便测试 monkeypatch；硬编码清理 A3）
+_IS_WINDOWS = sys.platform == "win32"
+
+
 def _expand_seed_placeholders(content: str) -> str:
     """展开种子中的 ``{DATA_ROOT}`` / ``{DATA_ROOT_WIN}``（去硬编码批 1）。"""
     from app.core.config import settings
 
     root = (getattr(settings, "data_root", None) or "").strip()
     root_posix = root.replace("\\", "/")
-    root_win = root.replace("/", "\\")
+    # 跨平台（硬编码清理 A3）：非 Windows 下 {DATA_ROOT_WIN} 退化为 posix
+    # root（占位符名保留兼容旧种子）——反斜杠展开在 Linux 生成非法路径。
+    root_win = root_posix.replace("/", "\\") if _IS_WINDOWS else root_posix
     return content.replace("{DATA_ROOT_WIN}", _json_escape(root_win)).replace(
         "{DATA_ROOT}", _json_escape(root_posix)
     )
@@ -129,6 +136,10 @@ def _ensure_dirs() -> None:
     _USER_DIR.mkdir(parents=True, exist_ok=True)
     (_USER_DIR / ".gitkeep").touch(exist_ok=True)
     _sync_system_seeds()
+
+
+# get_definition 首读惰性同步标记（每进程一次）
+_SEED_SYNC_DONE = False
 
 
 def _validate_id(workflow_id: str) -> None:
@@ -295,7 +306,21 @@ def list_definitions() -> list[dict[str, Any]]:
 
 
 def get_definition(workflow_id: str) -> dict[str, Any] | None:
-    """获取单个工作流定义的完整内容。"""
+    """获取单个工作流定义的完整内容。
+
+    首次读取前惰性同步 system 种子（2026-08-25 修复）：此前同步仅在
+    list/create 路径触发，服务重启后若无人访问列表页，种子修复
+    （如 ω 反演默认时间窗 {TODAY-10}~{TODAY-3}）到不了运行时定义目录，
+    读路径永远拿到旧内容——「改了种子不生效」的根因。每进程只同步
+    一次；同步幂等（内容相同跳过），多 worker 竞态无害。
+    """
+    global _SEED_SYNC_DONE
+    if not _SEED_SYNC_DONE:
+        try:
+            _ensure_dirs()
+        except OSError as exc:
+            logger.warning("Seed sync on first read failed: %s", exc)
+        _SEED_SYNC_DONE = True
     path = _resolve_file(workflow_id)
     if path is None:
         return None

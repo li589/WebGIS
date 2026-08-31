@@ -48,7 +48,11 @@ def _resolve_inversion_input_mat(datasource_selection: dict[str, object]) -> Pat
     return Path(str(input_mat))
 
 
-@register_module_decorator(name="inversion_daily", aliases=["inversion_daily_pipeline"])
+@register_module_decorator(
+    name="inversion_daily",
+    aliases=["inversion_daily_pipeline"],
+    template_overrides={"phase": "inversion"},
+)
 class InversionDailyModule(BaseModule):
     name = "inversion_daily"
     description = "Native module that runs DDCA or dynamic-h daily inversion from a prepared MAT bundle."

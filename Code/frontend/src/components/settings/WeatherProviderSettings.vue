@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { computed, reactive, ref, type Component } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, reactive, ref, toRef, type Component } from 'vue'
 import { CloudSun, Settings, AlertTriangle, Save, DollarSign, Gift, HelpCircle } from '../ui/icons'
 import { useSettingsStore } from '../../stores/settings'
 import type { WeatherProviderItem, WeatherProviderType } from '../../services/settings-api'
 import AppSelect from '../ui/AppSelect.vue'
 
 const settingsStore = useSettingsStore()
-const { weatherProviders, weatherConfig } = storeToRefs(settingsStore)
+const weatherProviders = toRef(settingsStore, 'weatherProviders')
+const weatherConfig = toRef(settingsStore, 'weatherConfig')
 
 // ── 状态 ───────────────────────────────────────────────────────────────────
 

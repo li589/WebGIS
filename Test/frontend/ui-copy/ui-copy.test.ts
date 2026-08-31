@@ -47,10 +47,12 @@ describe('acceptance basemap defaults', () => {
 
 describe('ui-copy glossary', () => {
   it('keeps brand and wind labels stable for acceptance', () => {
-    // 2026-08 验收更名：CGDA → SGFS（星地融合土壤水分监测与干旱预警系统）
+    // 验收品牌：SGFS / Satellite-Ground Fusion Soil Data Platform
     expect(BRAND.shortName).toBe('星地融合土壤数据平台')
-    expect(BRAND.fullName).toBe('星地融合土壤水分监测与干旱预警系统')
-    expect(BRAND.displayNameEn).toBe('Star-Ground Fusion Soil Data Platform')
+    expect(BRAND.fullName).toBe(
+      '星地融合土壤水分监测与干旱预警数据分析与可视化系统',
+    )
+    expect(BRAND.displayNameEn).toBe('Satellite-Ground Fusion Soil Data Platform')
     expect(BRAND.eyebrow).toBe('SGFS')
     expect(WIND_COPY.particle).toBe('粒子流')
     expect(WIND_COPY.streamline).toBe('流量场')

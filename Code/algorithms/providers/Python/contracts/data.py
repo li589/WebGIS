@@ -10,7 +10,8 @@ from .runtime import CachePolicy, RegionSpec, TimeRange
 class DataRequest:
     dataset_name: str
     variables: list[str]
-    time_range: TimeRange
+    # 静态数据集（dataset_config time_range=None）无时间维度——time_range 可选
+    time_range: TimeRange | None
     spatial_filter: RegionSpec | None = None
     depth_filter: dict[str, Any] | None = None
     acquire_mode: str = "lazy"
@@ -23,7 +24,7 @@ class DataBundle:
     bundle_id: str
     dataset_name: str
     variables: list[str]
-    time_range: TimeRange
+    time_range: TimeRange | None
     storage_mode: str
     local_paths: list[str] = field(default_factory=list)
     remote_refs: list[str] = field(default_factory=list)

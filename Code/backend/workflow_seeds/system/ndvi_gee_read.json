@@ -8,7 +8,10 @@
     "readonly": true,
     "is_template": true,
     "linked_layer_id": "ndvi",
-    "tags": ["sample", "gee"],
+    "tags": [
+      "sample",
+      "gee"
+    ],
     "category": "data_access"
   },
   "workflow_id": "ndvi_gee_read",
@@ -18,7 +21,10 @@
     {
       "id": 1,
       "type": "gee/export",
-      "pos": [100, 140],
+      "pos": [
+        100,
+        140
+      ],
       "properties": {
         "workflow": {
           "description": "MODIS NDVI 16-day composite export",
@@ -34,22 +40,57 @@
     {
       "id": 2,
       "type": "output/map_layer",
-      "pos": [420, 140],
+      "pos": [
+        420,
+        140
+      ],
       "properties": {
         "layer_id": "ndvi",
         "colormap": "ndvi",
         "rescale": "-1,1"
       }
+    },
+    {
+      "id": 3,
+      "type": "data/time_range",
+      "pos": [
+        80,
+        220
+      ],
+      "size": [
+        210,
+        130
+      ],
+      "properties": {
+        "start_at": "2015-01-01T00:00:00",
+        "end_at": "2015-01-31T00:00:00",
+        "resolution_unit": "day",
+        "resolution_step": 1,
+        "granularity": "day",
+        "bind_timeline": true,
+        "timezone": "UTC"
+      }
     }
   ],
   "links": [
-    {"0": 1, "1": 1, "2": 0, "3": 2, "4": 0, "5": "value:string"}
+    {
+      "0": 1,
+      "1": 1,
+      "2": 0,
+      "3": 2,
+      "4": 0,
+      "5": "value:string"
+    }
   ],
   "extra": {
     "purpose": "gee_ndvi_pipeline",
     "scheme": "GEE_MODIS_NDVI",
     "pipeline": "GEE export MOD13A2 NDVI → map_layer",
     "prerequisite": "GEE 账号（SA JSON 凭证，通过 GeeBridgeService 账号池管理）",
-    "notes": "GEE 引擎工作流。使用 MODIS MOD13A2（1km 16-day NDVI），也可切换为 VIIRS VNP13A1。导出由 GeeBridgeService._execute_workflow() 提交，结果通过 _build_result_refs() 返回 map_layer。priority=low 建议用于大范围合成。"
+    "notes": "GEE 引擎工作流。使用 MODIS MOD13A2（1km 16-day NDVI），也可切换为 VIIRS VNP13A1。导出由 GeeBridgeService._execute_workflow() 提交，结果通过 _build_result_refs() 返回 map_layer。priority=low 建议用于大范围合成。",
+    "group_title": "NDVI 植被指数（GEE）",
+    "output_labels": {
+      "result": "NDVI 植被指数"
+    }
   }
 }

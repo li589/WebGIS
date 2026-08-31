@@ -52,9 +52,12 @@
 - DELETE /config/remote-sources/{remote_source_id} — 删除别名（admin）
 - POST /config/service/restart — 调度重启 FastAPI+Worker+Beat
 - GET /config/about — 项目信息
+- GET /config/data-input-policies — 数据输入策略（时间窗对齐 / 源路由；seed+runtime）
+- PUT /config/data-input-policies — 写入 runtime 策略覆盖（admin；热载无需重启）
 """
 
 import logging
+from typing import Any
 
 import anyio
 import json
@@ -68,6 +71,7 @@ from app.api.deps import (
 )
 from app.services import config_service
 from app.services import deployment_config as dc
+from shared.contracts.api_contracts import DataInputPoliciesUpdateRequest
 from shared.contracts.config_contracts import (
     AboutInfo,
     ApiKeyDeletedResponse,
@@ -98,6 +102,8 @@ from shared.contracts.config_contracts import (
     GeeAccountToggleResponse,
     GeeRuntimeConfig,
     GeneralConfig,
+    OnlineTileSource,
+    OnlineTileSourceUpsertRequest,
     OpenDataPresetsUpdateRequest,
     OpenDataPresetsUpdateResponse,
     PortalCatalogEntry,
@@ -128,6 +134,12 @@ from shared.contracts.config_contracts import (
     RemoteFailoverResponse,
     RemoteSourceEntry,
     RemoteSourceUpsertRequest,
+    RemoteDatasetGrant,
+    RemoteDatasetGrantUpsertRequest,
+    RemoteDatasetPolicy,
+    MigrationReport,
+    RegisterAndAddRequest,
+    RegisterAndAddResponse,
     ServiceRestartRequest,
     ServiceRestartResponse,
     TestResultResponse,
@@ -782,6 +794,38 @@ async def clear_remote_storage_history(profile_id: str):
     return RemoteStorageHistoryClearResponse(profile_id=profile_id, deleted=deleted)
 
 
+@router.get(
+    "/online-tile-sources",
+    response_model=list[OnlineTileSource],
+    dependencies=[Depends(require_config_read_access)],
+)
+async def list_online_tile_sources():
+    return config_service.list_online_tile_sources()
+
+
+@router.put(
+    "/online-tile-sources/{source_id}",
+    response_model=OnlineTileSource,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def upsert_online_tile_source(source_id: str, payload: OnlineTileSourceUpsertRequest):
+    try:
+        return config_service.upsert_online_tile_source(source_id, payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/online-tile-sources/{source_id}",
+    response_model=DeletedResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def delete_online_tile_source(source_id: str):
+    if not config_service.delete_online_tile_source(source_id):
+        raise HTTPException(status_code=404, detail=f"Online tile source '{source_id}' not found")
+    return DeletedResponse(deleted=True)
+
+
 # ── 数据源配置 ────────────────────────────────────────────────────────────────
 
 
@@ -898,7 +942,11 @@ async def restart_backend_service(request: ServiceRestartRequest | None = None):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        # B-7：500 固定文案（不回显 exc；真因走日志）
+        logger.exception("[ConfigRoutes] schedule_ui_backend_restart failed")
+        raise HTTPException(
+            status_code=500, detail="Backend restart scheduling failed"
+        ) from exc
 
 
 @router.get(
@@ -1176,6 +1224,269 @@ async def delete_remote_source(remote_source_id: str):
     return DeletedResponse(deleted=True)
 
 
+# ── 远程数据集授权（「具体数据集选取模式」白名单，plan 阶段 1） ─────────────
+
+
+@router.get(
+    "/remote-datasets/grants",
+    response_model=list[RemoteDatasetGrant],
+    dependencies=[Depends(require_config_read_access)],
+)
+async def list_remote_dataset_grants():
+    """数据集授权条目 + 门户能力徽标。"""
+    return config_service.list_remote_dataset_grants()
+
+
+@router.put(
+    "/remote-datasets/grants/{grant_id}",
+    response_model=RemoteDatasetGrant,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def upsert_remote_dataset_grant(
+    grant_id: str, payload: RemoteDatasetGrantUpsertRequest
+):
+    """新增/更新数据集授权（UNIQUE(portal_id, dataset_key) 幂等合并）。"""
+    try:
+        return config_service.upsert_remote_dataset_grant(
+            grant_id, payload.model_dump()
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/remote-datasets/grants/{grant_id}",
+    response_model=DeletedResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def delete_remote_dataset_grant(grant_id: str):
+    """删除数据集授权（删除后该数据集在管控门户内不可访问）。"""
+    if not config_service.delete_remote_dataset_grant(grant_id):
+        raise HTTPException(
+            status_code=404, detail=f"Remote dataset grant '{grant_id}' not found"
+        )
+    return DeletedResponse(deleted=True)
+
+
+@router.get(
+    "/remote-datasets/policy",
+    response_model=list[RemoteDatasetPolicy],
+    dependencies=[Depends(require_config_read_access)],
+)
+async def get_remote_dataset_policy():
+    """各门户远程数据集访问策略投影（编辑器过滤用）。
+
+    未列出的门户 = 未管控（放行）；列出的门户 managed=true，
+    compatible=true 表示站点兼容模式全放行，datasets 为白名单。
+    """
+    return config_service.get_remote_dataset_policy()
+
+
+# ── 注册并添加到图层（原子端点，2026-08-25 P2/Wave 2） ───────────────────────
+
+
+def _resolve_layer_time_range(layer_id: str):
+    """解析种子层的数据时间覆盖 → WorkflowSubmitRequest.time_range。
+
+    仅在 available_datasets 注册表**精确匹配**（dataset_id / logical_name）
+    时返回窗口——'YYYY-MM-DD~YYYY-MM-DD' 是磁盘实际数据窗口；
+    匹配不到返回 None（模块全量转换/默认时间轴），**不硬猜**：
+    实测教训——descriptor 的 temporal_coverage（如 ref-smap-sm 的
+    2025-12）可能与磁盘实际文件（2023-01）不一致，猜错窗口会把
+    输入文件全部过滤掉（"No SMAP HDF5 files found"）。
+    """
+    from datetime import UTC, datetime
+
+    from shared.contracts.api_contracts import TimeGranularity, TimeRange
+
+    def _parse_pair(text: str):
+        import re
+
+        dates = re.findall(r"\d{4}-\d{2}-\d{2}", text)
+        if len(dates) >= 2:
+            start = datetime.strptime(dates[0], "%Y-%m-%d").replace(tzinfo=UTC)
+            end = datetime.strptime(dates[1], "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59, tzinfo=UTC
+            )
+            if start <= end:
+                return TimeRange(
+                    start_at=start, end_at=end, granularity=TimeGranularity.day
+                )
+        return None
+
+    try:
+        from app.services.layer_catalog import get_layer_descriptor
+
+        descriptor = get_layer_descriptor(layer_id)
+        if descriptor is None:
+            return None
+        dataset_key = str(getattr(descriptor, "dataset_key", "") or "")
+        if not dataset_key:
+            return None
+        from app.services.config_service import list_available_datasets
+
+        for ds in list_available_datasets():
+            if (
+                ds.get("dataset_id") == dataset_key
+                or ds.get("logical_name", "").lower() == dataset_key.lower()
+            ):
+                return _parse_pair(str(ds.get("time_range") or ""))
+    except Exception:  # noqa: BLE001 — 解析失败 → None（全量）
+        pass
+    return None
+
+
+@router.post(
+    "/remote-sources/register-and-add",
+    response_model=RegisterAndAddResponse,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def register_and_add_remote_source(payload: RegisterAndAddRequest):
+    """原子完成「注册 + 数据集记录 + 工作流编排提示」。
+
+    - 注册 remote_source（统一 site_compatible 整源——兼容模式弃用）；
+    - dataset_keys 逐条写 remote_dataset_grants（一键上图选集记录，
+      不限制整源访问）；
+    - 门户有工作流映射时返回 workflow_hint（节点类型/建议参数——
+      Wave 3 接全自动「下载→预处理→入图层库」链，当前引导工作流编排）。
+    """
+    from app.services.portal_workflow_map import build_workflow_hint
+
+    try:
+        # 1) 注册（整源 site_compatible）
+        entry = config_service.upsert_remote_source_entry(
+            payload.alias,
+            {
+                "kind": payload.kind,
+                "ref_id": payload.ref_id,
+                "remote_path": payload.remote_path,
+                "display_name": payload.display_name or payload.alias,
+                "cache_policy": "standard",
+                "access_mode": "site_compatible",
+                "archived": False,
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # 2) 数据集记录（选集；门户类才有 dataset 概念）
+    grants: list[dict] = []
+    if payload.kind == "portal" and payload.dataset_keys:
+        for key in payload.dataset_keys:
+            grant_id = f"{payload.ref_id}__{key}"[:120]
+            try:
+                grants.append(
+                    config_service.upsert_remote_dataset_grant(
+                        grant_id,
+                        {
+                            "portal_id": payload.ref_id,
+                            "dataset_key": key,
+                            "dataset_title": key,
+                            "dataset_description": "",
+                            "enabled": True,
+                        },
+                    )
+                )
+            except Exception:  # noqa: BLE001 — 单条记录失败不阻断整体注册
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "register-and-add: grant upsert failed for %s", grant_id
+                )
+
+    # 3) 工作流编排提示（无映射门户 → None）
+    hint = None
+    if payload.kind == "portal":
+        hint = build_workflow_hint(payload.ref_id, payload.dataset_keys)
+
+    # 4) 自动链（Wave 3）：有种子层映射 → 自动提交该层工作流
+    # 「下载→预处理→烘焙→入图层库」由现有 python_provider 管线完成。
+    # 提交失败（容量满/队列异常）不阻断注册——降级为 hint 引导手动运行。
+    run_id: str | None = None
+    auto_chain_message = ""
+    if hint is not None and hint.get("layer_id"):
+        try:
+            from shared.contracts.api_contracts import (
+                ClientIdentity,
+                WorkflowCommandType,
+                WorkflowSubmitRequest,
+            )
+
+            from app.services.workflow.service_container import (
+                submission_service,
+            )
+
+            layer_id = str(hint["layer_id"])
+            # 注意：不注入 hint.params（下载节点参数 short_name/start_date
+            # 等与 layer 工作流参数体系不同——python_provider bridge 按
+            # layer 配置自组装；实测注入 start_date 会让 SMAP 提取模块
+            # 日期解析失败 'NoneType'.start）。与前端正常跑层保持一致：
+            # 空 parameters + 默认输出。
+            # time_range 取数据集实际时间覆盖（smap.py 等提取模块按
+            # start/end 过滤输入文件——实测缺省会 NoneType.start 崩溃）。
+            time_range = _resolve_layer_time_range(layer_id)
+            accepted = submission_service.submit_workflow(
+                WorkflowSubmitRequest(
+                    command_type=WorkflowCommandType.analysis,
+                    command_label=f"一键添加到图层：{payload.display_name or payload.alias}",
+                    layer_id=layer_id,
+                    requested_outputs=["json"],
+                    time_range=time_range,
+                    client=ClientIdentity(page="settings", view_id="data-source"),
+                )
+            )
+            run_id = accepted.run_id
+            auto_chain_message = (
+                f"已自动提交图层「{layer_id}」工作流，产物烘焙完成后入图层库"
+            )
+        except Exception:  # noqa: BLE001 — 自动链失败降级（注册本身已成功）
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "register-and-add: auto chain submit failed for %s",
+                payload.ref_id,
+                exc_info=True,
+            )
+            auto_chain_message = (
+                "自动提交工作流失败（容量满或队列繁忙）——已注册，"
+                "请稍后在图层库手动运行该层"
+            )
+
+    return RegisterAndAddResponse(
+        remote_source=entry,
+        grants=grants,  # type: ignore[arg-type] — dict 条目经 pydantic 转换
+        workflow_hint=hint,
+        run_id=run_id,
+        auto_chain_message=auto_chain_message,
+    )
+
+
+# ── 存量迁移 ──────────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/remote-sources/migrate-legacy",
+    response_model=MigrationReport,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def migrate_legacy_remote_sources_endpoint(
+    dry_run: bool = False,
+    safe: bool = False,
+):
+    """手动重跑存量迁移（dry_run/safe 查询参数）。
+
+    幂等：已完成的迁移再次调用返回 already_done=True。
+    """
+    from app.services.remote_source_migration import (
+        migrate_legacy_remote_sources,
+    )
+
+    report = await anyio.to_thread.run_sync(
+        lambda: migrate_legacy_remote_sources(dry_run=dry_run, safe=safe),
+    )
+    return report
+
+
 # ── 关于 ──────────────────────────────────────────────────────────────────────
 
 
@@ -1183,6 +1494,85 @@ async def delete_remote_source(remote_source_id: str):
 async def get_about_info():
     """获取项目信息。"""
     return config_service.get_about_info()
+
+
+# ── 数据输入策略（时间窗对齐 / 源路由）────────────────────────────────────────
+
+
+def _data_input_policies_response(doc: dict):
+    from shared.contracts.api_contracts import (
+        DataInputPoliciesResponse,
+        DataInputPolicyItem,
+    )
+
+    def _items(raw_list: object) -> list:
+        out = []
+        for p in raw_list or []:
+            if not isinstance(p, dict):
+                continue
+            out.append(
+                DataInputPolicyItem(
+                    id=str(p["id"]),
+                    scope=str(p["scope"]),
+                    scope_id=p.get("scope_id"),
+                    input_key=str(p["input_key"]),
+                    mode=str(p["mode"]),
+                    notes=p.get("notes"),
+                )
+            )
+        return out
+
+    return DataInputPoliciesResponse(
+        version=int(doc.get("version") or 1),
+        policies=_items(doc.get("policies")),
+        runtime_override_present=bool(doc.get("runtime_override_present")),
+        seed_policies=_items(doc.get("seed_policies")),
+        runtime_policies=_items(doc.get("runtime_policies")),
+    )
+
+
+@router.get(
+    "/data-input-policies",
+    response_model=None,
+    dependencies=[Depends(require_config_read_access)],
+)
+async def get_data_input_policies():
+    """只读投影：时间窗对齐 / 本地优先源路由等策略（seed + runtime 覆盖）。"""
+    from app.services.data_input_policy_service import load_data_input_policies
+
+    return _data_input_policies_response(load_data_input_policies())
+
+
+@router.put(
+    "/data-input-policies",
+    response_model=None,
+    dependencies=[Depends(require_config_management_access)],
+)
+async def put_data_input_policies(body: Any):
+    """写入 runtime 覆盖（原子写）。同 id 覆盖 seed；热载生效，无需重启后端。"""
+    from app.services.data_input_policy_service import save_runtime_data_input_policies
+    from shared.contracts.api_contracts import DataInputPoliciesUpdateRequest
+
+    try:
+        parsed = (
+            body
+            if isinstance(body, DataInputPoliciesUpdateRequest)
+            else DataInputPoliciesUpdateRequest.model_validate(body)
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        doc = save_runtime_data_input_policies(
+            version=int(parsed.version),
+            policies=[p.model_dump() for p in parsed.policies],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to write data_input_policies: {exc}"
+        ) from exc
+    return _data_input_policies_response(doc)
 
 
 # ── 缓存管理 ──────────────────────────────────────────────────────────────────

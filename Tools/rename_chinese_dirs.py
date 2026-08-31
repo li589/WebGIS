@@ -7,8 +7,9 @@
 """
 
 from pathlib import Path
+from data_root import resolve_data_root
 
-ROOT = Path(r"I:\Geograph_DataSet")
+ROOT = resolve_data_root()
 
 # 重命名映射: (相对路径, 新名称)
 # 顺序无关，会按深度排序后执行

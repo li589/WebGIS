@@ -20,7 +20,7 @@ JOB_REQUEST_JSON_SCHEMA: dict[str, object] = {
         "job_id",
         "pipeline_name",
         "task_type",
-        "time_range",
+        # time_range 自 2026-08-23 起可选（静态数据集工作流无时间维度）
         "region",
         "datasource_selection",
         "algorithm_params",
@@ -29,7 +29,7 @@ JOB_REQUEST_JSON_SCHEMA: dict[str, object] = {
         "job_id": {"type": "string", "minLength": 1},
         "pipeline_name": {"type": "string", "minLength": 1},
         "task_type": {"type": "string", "minLength": 1},
-        "time_range": {"$ref": "#/$defs/TimeRange"},
+        "time_range": {"anyOf": [{"$ref": "#/$defs/TimeRange"}, {"type": "null"}]},
         "region": {"$ref": "#/$defs/RegionSpec"},
         "datasource_selection": {
             "type": "object",
@@ -187,9 +187,12 @@ def job_request_from_mapping(payload: Mapping[str, object]) -> JobRequest:
         job_id=_require_string(payload, "job_id", "job_request"),
         pipeline_name=_require_string(payload, "pipeline_name", "job_request"),
         task_type=_require_string(payload, "task_type", "job_request"),
-        time_range=_parse_time_range(
-            _require_mapping(payload, "time_range", "job_request"),
-            path="job_request.time_range",
+        # 静态数据集工作流无时间维度：time_range 可选（缺失/None → None），
+        # 与 dataset_config 的 time_range=None 静态语义对齐
+        time_range=(
+            _parse_time_range(tr_payload, path="job_request.time_range")
+            if isinstance(tr_payload := payload.get("time_range"), dict) and tr_payload
+            else None
         ),
         region=_parse_region_spec(
             _require_mapping(payload, "region", "job_request"),

@@ -6,8 +6,7 @@
  *      + ProfileBrowserDialog（目录浏览/搜索/添加为远程数据源）。
  */
 
-import { computed, reactive, ref } from 'vue'
-import { storeToRefs } from 'pinia'
+import { computed, reactive, ref, toRef } from 'vue'
 import type { RemoteStorageProfile } from '../../../types/api-reexports'
 import { useSettingsStore } from '../../../stores/settings'
 import ProfileForm from './ProfileForm.vue'
@@ -15,7 +14,8 @@ import ProfileCard from './ProfileCard.vue'
 import ProfileBrowserDialog from './ProfileBrowserDialog.vue'
 
 const settingsStore = useSettingsStore()
-const { remoteStorageProfiles, remoteStorageHistory } = storeToRefs(settingsStore)
+const remoteStorageProfiles = toRef(settingsStore, 'remoteStorageProfiles')
+const remoteStorageHistory = toRef(settingsStore, 'remoteStorageHistory')
 
 const editing = ref<RemoteStorageProfile | null>(null)
 

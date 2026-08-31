@@ -28,7 +28,6 @@ import logging
 from datetime import datetime, UTC
 from typing import Any
 
-from app.core.config import settings
 from app.services.cache_service import CacheEntry, cache_service
 from app.services.download_manifest_writer import (
     DownloadManifestWriter,
@@ -646,7 +645,9 @@ class DownloadProgressTracker:
     ) -> int:
         """Preserve remaining TTL on follow-up; fall back to default on cold cache."""
         if current_cache is None:
-            return settings.cache_default_ttl_seconds
+            from app.services.effective_config import get_cache_default_ttl_seconds
+
+            return get_cache_default_ttl_seconds()
         remaining_seconds = int((current_cache.expires_at - now).total_seconds())
         return max(1, remaining_seconds)
 

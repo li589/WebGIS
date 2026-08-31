@@ -21,7 +21,9 @@ export {
   Settings,
   User,
   RefreshCw,
+  Plus,
   ArrowRight,
+  ArrowLeft,
   Undo2,
   Minus,
   // ── 导航 / 折叠 ──
@@ -99,4 +101,5 @@ export {
   DollarSign,
   Gift,
   HelpCircle,
+  Bot,
 } from 'lucide-vue-next'

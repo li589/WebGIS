@@ -11,6 +11,10 @@ import type { OverlayTimeState } from '../map/overlay-image-module'
 import { useLayerViewport } from '../../stores/layers/selectors'
 import { windDisplayModeLabel } from '../map/wind-display-mode'
 import { paletteIdsEqual } from '../map/layer-symbology'
+import {
+  IMPORTED_VECTOR_STYLE_DEFAULTS,
+  resolveImportedVectorDefaultColor,
+} from '../../stores/layers/imported-vector'
 import { ANALYSIS_COPY, INSPECT_COPY, LAYERS_COPY } from '../../ui-copy'
 import { openDataWorkspace } from '../../data-manager/core/workspace-store'
 import { useLayerSymbology } from './useLayerSymbology'
@@ -85,6 +89,9 @@ const {
 } = useWeatherProviders(displayLayerRef, isRealtimeWeatherLayerRef)
 
 const { importedVectorStyle, patchImportedVectorStyle } = useImportExport(displayLayerRef)
+
+// 兜底色取当前主题 --success 实色（与地图渲染同源），而非无效的 CSS 变量字符串
+const importedVectorDefaultColor = computed(() => resolveImportedVectorDefaultColor())
 
 // ── 配色下拉框动态翻转 ──────────────────────────────────────────────
 const paletteDropdownRef = ref<HTMLElement | null>(null)
@@ -202,7 +209,7 @@ onBeforeUnmount(() => {
         <span>{{ LAYERS_COPY.vectorColor }}</span>
         <input
           type="color"
-          :value="importedVectorStyle.color || 'var(--accent)'"
+          :value="importedVectorStyle.color || importedVectorDefaultColor"
           @input="
             patchImportedVectorStyle({
               color: ($event.target as HTMLInputElement).value,
@@ -217,14 +224,14 @@ onBeforeUnmount(() => {
           min="0.5"
           max="8"
           step="0.5"
-          :value="importedVectorStyle.width ?? 2"
+          :value="importedVectorStyle.width ?? IMPORTED_VECTOR_STYLE_DEFAULTS.width"
           @input="
             patchImportedVectorStyle({
               width: Number(($event.target as HTMLInputElement).value),
             })
           "
         />
-        <strong>{{ importedVectorStyle.width ?? 2 }}</strong>
+        <strong>{{ importedVectorStyle.width ?? IMPORTED_VECTOR_STYLE_DEFAULTS.width }}</strong>
       </label>
       <label class="layer-style-row">
         <span>{{ LAYERS_COPY.vectorRadius }}</span>
@@ -233,14 +240,14 @@ onBeforeUnmount(() => {
           min="2"
           max="16"
           step="1"
-          :value="importedVectorStyle.radius ?? 5"
+          :value="importedVectorStyle.radius ?? IMPORTED_VECTOR_STYLE_DEFAULTS.radius"
           @input="
             patchImportedVectorStyle({
               radius: Number(($event.target as HTMLInputElement).value),
             })
           "
         />
-        <strong>{{ importedVectorStyle.radius ?? 5 }}</strong>
+        <strong>{{ importedVectorStyle.radius ?? IMPORTED_VECTOR_STYLE_DEFAULTS.radius }}</strong>
       </label>
       <label class="layer-style-row">
         <span>{{ LAYERS_COPY.vectorFillOpacity }}</span>
@@ -248,14 +255,24 @@ onBeforeUnmount(() => {
           type="range"
           min="0"
           max="100"
-          :value="Math.round((importedVectorStyle.fillOpacity ?? 0.35) * 100)"
+          :value="
+            Math.round(
+              (importedVectorStyle.fillOpacity ?? IMPORTED_VECTOR_STYLE_DEFAULTS.fillOpacity) * 100,
+            )
+          "
           @input="
             patchImportedVectorStyle({
               fillOpacity: Number(($event.target as HTMLInputElement).value) / 100,
             })
           "
         />
-        <strong>{{ Math.round((importedVectorStyle.fillOpacity ?? 0.35) * 100) }}%</strong>
+        <strong>
+          {{
+            Math.round(
+              (importedVectorStyle.fillOpacity ?? IMPORTED_VECTOR_STYLE_DEFAULTS.fillOpacity) * 100,
+            )
+          }}%
+        </strong>
       </label>
     </div>
 

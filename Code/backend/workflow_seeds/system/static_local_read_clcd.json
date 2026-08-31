@@ -1,0 +1,56 @@
+{
+  "workflow_id": "static_local_read_clcd",
+  "name": "CLCD 土地利用 本地数据读取",
+  "description": "CLCD 土地利用 静态本地数据直读工作流：data/source 指向源数据，output/map_layer 发布为产物图层（2026-08-22 需求2：所有图层配置工作流）。",
+  "nodes": [
+    {
+      "id": 1,
+      "type": "data/source",
+      "pos": [
+        120,
+        160
+      ],
+      "size": [
+        220,
+        120
+      ],
+      "properties": {
+        "path": "{DATA_ROOT}/Ecological_Vegetation/LandCover/CLCD_v01_1997.tif",
+        "dataset_key": "STATIC_LOCAL_CLCD_CN"
+      }
+    },
+    {
+      "id": 2,
+      "type": "output/map_layer",
+      "pos": [
+        480,
+        160
+      ],
+      "size": [
+        220,
+        110
+      ],
+      "properties": {
+        "layer_id": "clcd-cn",
+        "display_name": "CLCD 土地利用"
+      }
+    }
+  ],
+  "links": [
+    {
+      "id": 1,
+      "type": "data",
+      "origin_id": 1,
+      "origin_slot": 0,
+      "target_id": 2,
+      "target_slot": 0
+    }
+  ],
+  "extra": {
+    "purpose": "static_local_read",
+    "group_title": "CLCD 土地利用",
+    "output_labels": {
+      "result": "CLCD 土地利用"
+    }
+  }
+}

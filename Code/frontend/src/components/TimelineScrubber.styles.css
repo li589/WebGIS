@@ -48,7 +48,7 @@
   gap: 0.4rem;
   padding: 0.25rem 0.55rem;
   background: var(--surface-1);
-  border: 1px solid rgba(56, 189, 248, 0.22);
+  border: 1px solid var(--accent-border);
   border-radius: 0.45rem;
   font-size: 0.8rem;
   font-weight: 500;
@@ -62,7 +62,7 @@
 }
 
 .date-display:hover {
-  border-color: rgba(56, 189, 248, 0.45);
+  border-color: var(--border-strong);
   background: var(--surface-1);
 }
 
@@ -93,9 +93,9 @@
 
 .date-today-badge {
   font-size: var(--font-size-caption);
-  background: rgba(56, 189, 248, 0.2);
+  background: var(--accent-surface);
   color: var(--accent);
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  border: 1px solid var(--accent-border);
   padding: 0 0.25rem;
   border-radius: 0.2rem;
   font-weight: 600;
@@ -117,9 +117,9 @@
 }
 
 .nav-btn--now:hover {
-  background: rgba(56, 189, 248, 0.12);
+  background: var(--accent-surface);
   color: var(--text-strong);
-  border-color: rgba(56, 189, 248, 0.35);
+  border-color: var(--accent-border);
 }
 
 .now-label {
@@ -166,7 +166,7 @@
 .active-layer-tag {
   font-size: var(--font-size-caption);
   font-weight: 600;
-  color: var(--surface-base);
+  color: var(--text-strong);
   background: var(--surface-1);
   border: 1px solid var(--surface-hover);
   padding: 0.15rem 0.5rem;
@@ -184,8 +184,8 @@
   font-size: var(--font-size-caption);
   padding: 0.12rem 0.4rem;
   border-radius: 0.3rem;
-  border: 1px solid rgba(56, 189, 248, 0.3);
-  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid var(--accent-border);
+  background: var(--accent-surface);
   color: var(--accent);
   font-weight: 500;
   flex: none;
@@ -261,7 +261,7 @@
 }
 
 .play-btn--menu-open {
-  border-color: rgba(56, 189, 248, 0.45);
+  border-color: var(--accent-border);
   color: var(--accent);
 }
 
@@ -286,8 +286,8 @@
 }
 
 .sync-btn--on {
-  border-color: rgba(56, 189, 248, 0.4);
-  background: rgba(56, 189, 248, 0.15);
+  border-color: var(--accent-border);
+  background: var(--accent-surface);
   color: var(--accent);
 }
 
@@ -369,10 +369,10 @@
 .availability-fetchable {
   background: repeating-linear-gradient(
     45deg,
-    rgba(59, 130, 246, 0.25),
-    rgba(59, 130, 246, 0.25) 3px,
-    rgba(59, 130, 246, 0.12) 3px,
-    rgba(59, 130, 246, 0.12) 6px
+    var(--accent-border),
+    var(--accent-border) 3px,
+    var(--accent-surface) 3px,
+    var(--accent-surface) 6px
   );
 }
 
@@ -387,10 +387,10 @@
 .availability-fetchable-clickable:hover {
   background: repeating-linear-gradient(
     45deg,
-    rgba(59, 130, 246, 0.5),
-    rgba(59, 130, 246, 0.5) 3px,
-    rgba(59, 130, 246, 0.25) 3px,
-    rgba(59, 130, 246, 0.25) 6px
+    var(--border-strong),
+    var(--border-strong) 3px,
+    var(--accent-border) 3px,
+    var(--accent-border) 6px
   );
   transform: scaleY(1.3);
 }
@@ -425,7 +425,7 @@
 .track-fill {
   height: 100%;
   width: var(--track-progress);
-  background: linear-gradient(90deg, rgba(56, 189, 248, 0.4), var(--accent-color, var(--accent)));
+  background: linear-gradient(90deg, var(--accent-border), var(--accent-color, var(--accent)));
   border-radius: 999px;
 }
 
@@ -500,7 +500,7 @@
 .tick-button.active {
   color: var(--accent);
   font-weight: 600;
-  background: rgba(56, 189, 248, 0.12);
+  background: var(--accent-surface);
 }
 
 .tick-button.tick-minor.active .tick-bar,

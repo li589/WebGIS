@@ -195,6 +195,12 @@
     "notes": "SMAP 方案：SF 倒推使用 SMAP L 波段亮温（freq_ghz=1.4）；无需 FY3B→FY3D 匹配；OMEGA 按 PFT 聚合。",
     "has_time_range_node": true,
     "has_bbox_node": true,
-    "has_output_node": true
+    "has_output_node": true,
+    "group_title": "SMAP ω 反演产物（本地）",
+    "output_labels": {
+      "SM": "土壤水分",
+      "VOD": "植被光学厚度",
+      "OMEGA": "反演参数 ω"
+    }
   }
 }

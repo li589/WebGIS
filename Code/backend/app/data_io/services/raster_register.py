@@ -10,12 +10,13 @@ from typing import Any
 
 from rasterio.warp import transform_bounds as _transform_bounds
 
+from app.data_io.services._meta_io import save_bytes_atomic, save_json_atomic
 from app.services.crs import crs_detector
 from app.data_io.services.paths import (
-    IMPORTS_DIR,
     assert_quota_available,
     dir_size_bytes,
     ensure_imports_root,
+    safe_import_child,
 )
 from app.services.geo_math import overlay_safe_wgs84_bounds
 from app.services.overlay_registry import (
@@ -45,12 +46,14 @@ def register_geotiff_as_imported(
     layer_id: str | None = None,
     extra_meta: dict[str, Any] | None = None,
     replace_existing: bool = False,
+    palette: str = "wind-blue",
 ) -> dict[str, Any]:
     ensure_imports_root()
     src_size = src_path.stat().st_size if src_path.exists() else 0
 
     layer_id = layer_id or f"imported-{uuid.uuid4().hex[:12]}"
-    dest_dir = IMPORTS_DIR / layer_id
+    # 安审 2026-08-21 S-2：layer_id 可能透传自调用方，统一走防穿越收敛点
+    dest_dir = safe_import_child(layer_id)
     replace_bytes = 0
     replaced = False
     if dest_dir.exists():
@@ -123,11 +126,11 @@ def register_geotiff_as_imported(
     try:
         png_bytes = raster_preview_service.render_cog_preview(
             cog_path=stored,
-            palette="wind-blue",
+            palette=palette,
             width=min(2048, width),
             height=min(2048, height),
         )
-        png_path.write_bytes(png_bytes)
+        save_bytes_atomic(png_path, png_bytes)
     except Exception as exc:
         shutil.rmtree(dest_dir, ignore_errors=True)
         raise RuntimeError(f"预览生成失败: {exc}") from exc
@@ -151,7 +154,7 @@ def register_geotiff_as_imported(
     meta = {
         "layer_id": layer_id,
         "category": "static",
-        "palette": "wind-blue",
+        "palette": palette,
         "vmin": None,
         "vmax": None,
         "unit": "",
@@ -178,42 +181,34 @@ def register_geotiff_as_imported(
     meta["default_time"] = default_time
     meta["current_time"] = default_time
     bounds_data = {"bounds": bounds, "meta": meta}
-    (dest_dir / "bounds.json").write_text(
-        json.dumps(bounds_data, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    (dest_dir / "meta.json").write_text(
-        json.dumps(
-            {
-                "layer_id": layer_id,
-                "kind": "raster",
-                "source_filename": filename,
-                "time_list": time_list,
-                "default_time": default_time,
-                "native_step": native_step,
-                "follow_policy": follow_policy,
-                "temporal_kind": meta.get("temporal_kind"),
-                "temporal_source": meta.get("temporal_source"),
-                **{
-                    k: v
-                    for k, v in extra.items()
-                    if k
-                    not in {
-                        "time_list",
-                        "default_time",
-                        "native_step",
-                        "follow_policy",
-                        "temporal_kind",
-                        "temporal_source",
-                        "category",
-                        "current_time",
-                    }
-                },
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    save_json_atomic(dest_dir / "bounds.json", bounds_data)
+    meta_payload = {
+        "layer_id": layer_id,
+        "kind": "raster",
+        "source_filename": filename,
+        "time_list": time_list,
+        "default_time": default_time,
+        "native_step": native_step,
+        "follow_policy": follow_policy,
+        "temporal_kind": meta.get("temporal_kind"),
+        "temporal_source": meta.get("temporal_source"),
+        **{
+            k: v
+            for k, v in extra.items()
+            if k
+            not in {
+                "time_list",
+                "default_time",
+                "native_step",
+                "follow_policy",
+                "temporal_kind",
+                "temporal_source",
+                "category",
+                "current_time",
+            }
+        },
+    }
+    save_json_atomic(dest_dir / "meta.json", meta_payload)
 
     register_overlay(
         OverlaySpec(
@@ -224,7 +219,7 @@ def register_geotiff_as_imported(
             category="static",
             time_list=time_list,
             default_time=default_time,
-            palette="wind-blue",
+            palette=palette,
             opacity=0.7,
             crs=source_crs,
             source_path=stored,
@@ -261,7 +256,8 @@ def confirm_imported_raster_crs(
     if not layer_id.startswith("imported-"):
         raise ValueError("仅允许确认 imported-* 图层")
 
-    dest_dir = IMPORTS_DIR / layer_id
+    # 安审 2026-08-21 S-2：layer_id 来自 body，须防路径穿越（写 preview/bounds）
+    dest_dir = safe_import_child(layer_id)
     bounds_path = dest_dir / "bounds.json"
     if not bounds_path.exists():
         raise FileNotFoundError(f"导入图层不存在: {layer_id}")
@@ -276,7 +272,8 @@ def confirm_imported_raster_crs(
     if not source_filename:
         raise RuntimeError("bounds.json 缺少 source_filename 元数据")
 
-    src_path = dest_dir / source_filename
+    # 安审 2026-08-21 S-3：source_filename 来自 meta（可被构造），归一为纯文件名
+    src_path = dest_dir / Path(str(source_filename)).name
     if not src_path.exists():
         raise FileNotFoundError(f"源 TIF 文件不存在: {source_filename}")
 
@@ -287,9 +284,11 @@ def confirm_imported_raster_crs(
         "EPSG:6933",
         "6933",
     } or grid_preset.startswith("ease2")
+    # R1：沿用注册时的 palette（confirm 重渲染不得把色带重置回 wind-blue）
+    registered_palette = str(meta.get("palette") or "wind-blue")
     png_bytes, mercator_bounds = raster_preview_service.render_cog_preview_reprojected(
         cog_path=src_path,
-        palette="wind-blue",
+        palette=registered_palette,
         width=2048,
         height=2048,
         source_crs=source_crs,
@@ -320,7 +319,7 @@ def confirm_imported_raster_crs(
     new_bounds: list[float] = [float(west), float(south), float(east), float(north)]
 
     png_path = dest_dir / "preview.png"
-    png_path.write_bytes(png_bytes)
+    save_bytes_atomic(png_path, png_bytes)
 
     bounds_data["bounds"] = new_bounds
     meta["crs"] = "EPSG:4326"
@@ -328,9 +327,7 @@ def confirm_imported_raster_crs(
     meta["applied_lng_offset"] = lng_offset
     meta["applied_lat_offset"] = lat_offset
     bounds_data["meta"] = meta
-    bounds_path.write_text(
-        json.dumps(bounds_data, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    save_json_atomic(bounds_path, bounds_data)
 
     # 局部导入，避免进程热重载/旧模块缓存导致 NameError
     from app.services.overlay_registry import (
@@ -356,7 +353,7 @@ def confirm_imported_raster_crs(
             category="static",
             time_list=time_list,
             default_time=default_time,
-            palette="wind-blue",
+            palette=registered_palette,
             opacity=0.7,
             crs="EPSG:4326",
             source_path=src_path,

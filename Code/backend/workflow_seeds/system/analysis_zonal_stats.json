@@ -8,7 +8,12 @@
     "readonly": true,
     "is_template": true,
     "linked_layer_id": null,
-    "tags": ["analysis", "gis", "ui-panel", "zonal"],
+    "tags": [
+      "analysis",
+      "gis",
+      "ui-panel",
+      "zonal"
+    ],
     "category": "analysis",
     "resource_profile": "standard"
   },
@@ -19,7 +24,10 @@
     {
       "id": 1,
       "type": "data/source",
-      "pos": [60, 80],
+      "pos": [
+        60,
+        80
+      ],
       "properties": {
         "path": "{DATA_ROOT}/_runtime/smoke_stub.tif",
         "dataset_key": "input_path",
@@ -29,7 +37,10 @@
     {
       "id": 2,
       "type": "data/source",
-      "pos": [60, 240],
+      "pos": [
+        60,
+        240
+      ],
       "properties": {
         "path": "{DATA_ROOT}/_runtime/smoke_zones.geojson",
         "dataset_key": "zones_path",
@@ -39,7 +50,10 @@
     {
       "id": 3,
       "type": "gis/zonal_statistics",
-      "pos": [380, 140],
+      "pos": [
+        380,
+        140
+      ],
       "properties": {
         "statistic": "mean",
         "band": 0,
@@ -48,7 +62,25 @@
     }
   ],
   "links": [
-    [1, 1, 2, 3, 1],
-    [2, 2, 2, 3, 2]
-  ]
+    [
+      1,
+      1,
+      2,
+      3,
+      1
+    ],
+    [
+      2,
+      2,
+      2,
+      3,
+      2
+    ]
+  ],
+  "extra": {
+    "group_title": "分区统计",
+    "output_labels": {
+      "result": "分区统计结果"
+    }
+  }
 }

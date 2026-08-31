@@ -208,6 +208,7 @@ class TileProviderInfo(BaseModel):
     provider: str
     requires_transform: bool
     coord_system: str
+    service_type: str = "builtin"
 
 
 class TileProvidersResponse(BaseModel):
@@ -223,6 +224,19 @@ class TileProvidersResponse(BaseModel):
 def list_runtime_tile_providers() -> TileProvidersResponse:
     """列出可用底图代理提供商（管理面，像素请求请走 /unified-tiles）。"""
     providers = tile_proxy_service.get_available_providers()
+    from app.services.config_service import list_online_tile_sources
+
+    providers.extend(
+        {
+            "id": item["source_id"],
+            "provider": "online",
+            "requires_transform": False,
+            "coord_system": item.get("coordinate_system", "EPSG:3857"),
+            "service_type": item.get("service_type", "xyz"),
+        }
+        for item in list_online_tile_sources()
+        if item.get("enabled") is not False
+    )
     return TileProvidersResponse(
         providers=[TileProviderInfo(**item) for item in providers]
     )

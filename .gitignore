@@ -62,6 +62,7 @@ screenshot*.png
 temp.txt
 
 # Celery beat schedule runtime files
+celerybeat-schedule
 celerybeat-schedule.*
 celerybeat.pid
 
@@ -149,21 +150,38 @@ Doc/一份任务说明-*.txt
 
 # Local pytest/vitest temp + manual verification logs (generated during dev verification)
 Test/.pytest-*/
+Test/.pytest_*/
 Test/.tmp-*/
 Test/.tmp_*
 Test/pytest-run-tmp/
 Test/pytest-run-tmp2/
+Test/_tmp*
+Test/_tail*
+Test/debug-*.png
 be_run*.log
 be_collect.log
 algo_run*.log
 algo_collect.log
 vitest_run.log
 
+# Ad-hoc root/workspace probe outputs (never commit)
+_diag_*.txt
+_ping.txt
+_tmp_*.txt
+
 # Generated test/verification reports (large dataset_inventory/scan/checkpoint dumps, up to ~188MB). Keep local, NOT in git.
 Test/reports/
 
+# Test/debug 数据文件（payload 快照与 run 备份，不入库；.py 探查脚本正常入库）
+Test/debug/*.backup.json
+Test/debug/v2r_api_payload.json
+Test/debug/payload_*.json
+
 # Local pytest temp dirs under Code/ (created by manual verification runs, e.g. .pytest_tmp_full)
 .pytest_tmp_*/
+
+# NSMC online-pull probe session state (plaintext portal creds; never commit)
+.pytest_nsmc_probe/
 
 # Windows NUL redirect artifact
 nul
@@ -171,3 +189,9 @@ nul
 # Local pipeline-health/stub inventory dry-run outputs (never commit)
 _pipeline_health_static.json
 _stub_inventory.json
+
+# B3 出库（阶段 B 去硬编码）：含内网拓扑与账号信息的运维同步脚本，仅本地使用
+Tools/sync_server_data.py
+
+# CodeGraph 本地索引缓存（IDE/工具生成，不入库）
+.codegraph/

@@ -24,18 +24,22 @@ const props = withDefaults(
     playIntervalMs?: number
     granularity?: TimeGranularity
     activeLayerName?: string
-    isLayerLocked?: boolean
     /** 当前段是否正在在线获取中 */
     onlineFetchInProgress?: boolean
+    /** 图层平台子系统 P0：图层生命周期状态（fresh/stale/updating/missing/failed） */
+    lifecycleState?: 'fresh' | 'stale' | 'updating' | 'missing' | 'failed' | 'unknown'
+    /** lifecycle 状态提示文案（后端 message 或本地推导） */
+    lifecycleMessage?: string | null
   }>(),
   {
     granularity: 'hour',
     unifiedTimeLock: true,
     isPlaying: false,
     playIntervalMs: DEFAULT_PLAY_INTERVAL_MS,
-    isLayerLocked: false,
     activeLayerName: '',
     onlineFetchInProgress: false,
+    lifecycleState: 'unknown',
+    lifecycleMessage: null,
   },
 )
 
@@ -45,7 +49,6 @@ const emit = defineEmits<{
   changeDate: [date: Date]
   togglePlay: []
   toggleUnifiedTime: []
-  toggleLayerLock: []
   changePlayInterval: [ms: number]
   /** 用户点击可在线获取段时触发 */
   fetchSegment: [segment: TimelineAvailabilitySegment]
@@ -180,7 +183,12 @@ const trackStyle = computed(() => ({
 }))
 
 function isTickActive(tick: TimelineAvailabilitySegment): boolean {
-  if (isStatic.value) return true
+  // 事件时间轴（2026-08-25）：static 多段时按观测年份高亮，单段保持全选
+  if (isStatic.value) {
+    return props.timelineSegments.length > 1
+      ? segmentIndex(tick) === props.currentDate.getFullYear()
+      : true
+  }
   const idx = segmentIndex(tick)
   if (props.granularity === 'month') return idx === props.currentDate.getMonth()
   if (props.granularity === 'day') return idx === props.currentDate.getDate()
@@ -302,6 +310,13 @@ function handleTickClick(tickIndex: number) {
     return
   }
   if (props.granularity === 'year') {
+    const newDate = new Date(props.currentDate)
+    newDate.setFullYear(Math.round(tickIndex))
+    emit('changeDate', newDate)
+    return
+  }
+  if (props.granularity === 'static') {
+    // 事件时间轴（2026-08-25）：static 图层的事件年刻度，点击跳转观测年份
     const newDate = new Date(props.currentDate)
     newDate.setFullYear(Math.round(tickIndex))
     emit('changeDate', newDate)
@@ -598,32 +613,6 @@ const visibleTickSet = computed(() => computeVisibleTickIndices(props.timelineSe
         </div>
 
         <div class="divider" aria-hidden="true"></div>
-
-        <!-- 图层时间独立锁定开关 -->
-        <button
-          class="action-btn lock-btn"
-          type="button"
-          :class="{ 'lock-btn--locked': isLayerLocked }"
-          :title="
-            isLayerLocked
-              ? '已锁定本图层时间记忆：切回时恢复锁定时刻；播放/拖动仍用全局时刻驱动地图（点击解除）'
-              : '未锁定记忆：切层时按图层记忆模式读写时刻（点击锁定当前时刻）'
-          "
-          @click="emit('toggleLayerLock')"
-        >
-          <svg v-if="isLayerLocked" viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M8 1a3.5 3.5 0 0 0-3.5 3.5V6H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-.5V4.5A3.5 3.5 0 0 0 8 1zm2 5H6V4.5a2 2 0 1 1 4 0V6z"
-            />
-          </svg>
-          <svg v-else viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M11 6V4.5a3.5 3.5 0 1 0-7 0v.5h1.5v-.5a2 2 0 1 1 4 0V6H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-1z"
-            />
-          </svg>
-        </button>
 
         <!-- 全局统一时间 Link 按钮 -->
         <button

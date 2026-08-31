@@ -37,6 +37,55 @@ from shared.contracts.api_contracts import (
 
 logger = logging.getLogger(__name__)
 
+
+def _scrape_datasource_selection_from_definition(
+    definition: Any,
+) -> dict[str, str]:
+    """从 workflow_definition 的 data_source config-helper 节点刮取数据源声明。
+
+    返回 ``{dataset_key: 绝对路径}``。相对路径（如 ``Soil_Moisture/SMAP_Origin_Data``）
+    以 settings.data_root 解析；含 ``{DATA_ROOT}`` 占位符的值跳过（由
+    ``_expand_data_root_placeholders`` 统一展开）。节点 params 残缺时忽略该节点。
+    """
+    if not isinstance(definition, dict):
+        return {}
+    nodes = definition.get("nodes")
+    if not isinstance(nodes, list):
+        return {}
+    root = ""
+    try:
+        from app.core import config as _config
+
+        root = (
+            getattr(_config.settings, "data_root", None) or ""
+        ).strip().replace("\\", "/")
+    except Exception:  # noqa: BLE001 — settings 不可用时保留相对路径
+        root = ""
+    scraped: dict[str, str] = {}
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        params = node.get("params") or {}
+        if not isinstance(params, dict):
+            continue
+        if str(params.get("module_name") or "") != "data_source":
+            continue
+        key = str(params.get("dataset_key") or "").strip()
+        path = str(params.get("path") or "").strip()
+        if not key or not path:
+            continue
+        if "{DATA_ROOT" in path:
+            scraped.setdefault(key, path)
+            continue
+        posix = path.replace("\\", "/")
+        is_absolute = posix.startswith("/") or (
+            len(posix) > 1 and posix[1] == ":"
+        )
+        if root and not is_absolute:
+            posix = f"{root.rstrip('/')}/{posix}"
+        scraped.setdefault(key, posix)
+    return scraped
+
 # Keys that identify an algorithm_request as a valid Python provider entry.
 # At least one must be present for supports() to return True.
 ALGORITHM_REQUEST_ENTRY_KEYS: tuple[str, ...] = (
@@ -87,11 +136,22 @@ class PythonProviderRequestBuilder:
             try:
                 from app.services.workflow_request_resolver import (
                     _compile_workflow_seed,
+                    _expand_data_root_placeholders,
+                    _expand_date_placeholders,
+                    _get_ref_date_from_payload,
                 )
 
                 compiled = _compile_workflow_seed(wf_name)
                 if compiled is not None:
-                    request_payload["workflow_definition"] = compiled
+                    # 种子模板含 {YYYYMMDD}/{DATA_ROOT} 字面占位符（种子同步仅展开
+                    # DATA_ROOT，日期占位符保留至提交边界）：在此按提交时间窗展开，
+                    # 与画布 workflow_definition 路径的展开行为对齐（AD11）。
+                    ref_date = _get_ref_date_from_payload(payload)
+                    request_payload["workflow_definition"] = (
+                        _expand_data_root_placeholders(
+                            _expand_date_placeholders(compiled, ref_date)
+                        )
+                    )
             except Exception:  # noqa: BLE001
                 logger.warning("Failed to compile workflow seed '%s'", wf_name)
 
@@ -102,6 +162,64 @@ class PythonProviderRequestBuilder:
             algorithm_request.get("task_type") or payload.command_type.value,
         )
         request_payload.setdefault("datasource_selection", {})
+        # 图编译器把模块的 datasource_selection 端口绑定为 request:* 并丢弃
+        # data/source → 模块的 fan-in 边（_SCRAPED_FANIN_PORTS）；data/source
+        # 是 config helper（不产出运行时数据），其 dataset_key/path 语义即
+        # 请求级数据源声明。种子图（layer_id-only 提交）与画布直传定义在此
+        # 统一刮取进 datasource_selection（显式提交的 key 优先，刮取仅补缺）。
+        scraped = _scrape_datasource_selection_from_definition(
+            request_payload.get("workflow_definition")
+        )
+        if scraped:
+            ds = request_payload["datasource_selection"]
+            if isinstance(ds, dict):
+                for key, path in scraped.items():
+                    ds.setdefault(key, path)
+        # scrape 写入 alias（smap_daily_mat 等）；按模块模板提升为 required 键，
+        # 避免图执行到 omega_avg_daily 时仍缺 anc_root/smap_folder。
+        ds = request_payload.get("datasource_selection")
+        if isinstance(ds, dict):
+            module_hint = str(
+                request_payload.get("module_name")
+                or (request_payload.get("tags") or {}).get("module_name")
+                or ""
+            )
+            if not module_hint:
+                # 图种子：从编译节点推断主算法模块
+                wf_def = request_payload.get("workflow_definition")
+                if isinstance(wf_def, dict):
+                    for node in wf_def.get("nodes") or []:
+                        if not isinstance(node, dict):
+                            continue
+                        params = node.get("params") or {}
+                        if str(node.get("node_type") or "") != "module":
+                            continue
+                        name = str(params.get("module_name") or "").strip()
+                        if name and name not in {
+                            "data_source",
+                            "time_range",
+                            "bbox",
+                            "output_map_layer",
+                            "map_layer",
+                        }:
+                            module_hint = name
+                            break
+            if module_hint:
+                try:
+                    from app.services.workflow_request_resolver import (
+                        _get_module_request_template,
+                        _promote_accepted_datasource_aliases,
+                    )
+
+                    _promote_accepted_datasource_aliases(
+                        ds, _get_module_request_template(module_hint)
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.debug(
+                        "Failed to promote scraped datasource aliases for %s",
+                        module_hint,
+                        exc_info=True,
+                    )
         request_payload.setdefault("algorithm_params", {})
         request_payload.setdefault(
             "output_spec", {"include_manifest": True, "extra": {}}

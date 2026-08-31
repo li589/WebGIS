@@ -32,11 +32,23 @@ describe('parseOverlayBoundsMeta', () => {
       opacity: 0.5,
       supports_recolor: true,
       supports_xyz_tiles: true,
+      has_overview: true,
       overview_max_zoom: 8,
       maxzoom: 12,
       tile_url_template: '/overlay-tiles/demo/{z}/{x}/{y}.png',
       bounds_warning: null,
     })
+  })
+
+  it('P2-4: has_overview 缺省 true（向后兼容），显式 false 生效', () => {
+    const legacy = parseOverlayBoundsMeta({ category: 'static' })
+    expect(legacy.has_overview).toBe(true)
+    const direct = parseOverlayBoundsMeta({
+      category: 'static',
+      supports_xyz_tiles: true,
+      has_overview: false,
+    })
+    expect(direct.has_overview).toBe(false)
   })
 
   it('falls back to defaults for missing or invalid fields', () => {

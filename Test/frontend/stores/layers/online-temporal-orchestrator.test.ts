@@ -309,3 +309,103 @@ describe('markSucceeded / markFailed / cleanupStaleEntries', () => {
     expect(h.orch.fetchEntries.value.size).toBe(0)
   })
 })
+
+// ── P2：统一在线同步入口（syncLayerAssetOnline）分支 ────────────────────────
+
+describe('triggerOnlineFetch 统一入口（P2）', () => {
+  function setupWithSync(
+    syncImpl: (catalogId: string, body: Record<string, unknown>) => Promise<unknown>,
+  ) {
+    const cap = makeCap()
+    const runWorkflowForCatalog = vi.fn(async () => 'run-fallback-1')
+    const registerExternalWorkflowRun = vi.fn(async () => {})
+    const deps = {
+      getOnlineTemporalConfig: vi.fn(() => cap),
+      runWorkflowForCatalog,
+      syncLayerAssetOnline: vi.fn(syncImpl) as never,
+      registerExternalWorkflowRun,
+      selectedCatalogId: ref<string | null>('cat-ndvi'),
+      currentDate: ref(new Date(2024, 4, 1, 0, 0, 0)),
+      currentHour: ref(0),
+      activeLayerGranularity: computed(() => 'day' as const),
+      logOperation: vi.fn(),
+    }
+    const orch = useOnlineTemporalOrchestrator(deps as unknown as OnlineTemporalOrchestratorDeps)
+    return { orch, deps }
+  }
+
+  it('succeeded（资产已 fresh）→ 直接标记成功，不注册轮询、不走回退', async () => {
+    const h = setupWithSync(async () => ({
+      run_id: 'run-sync-fresh',
+      status: 'succeeded',
+      message: '图层资产已就绪。',
+    }))
+    const runId = await h.orch.triggerOnlineFetch('cat-ndvi', '2024-05-01')
+
+    expect(runId).toBeUndefined()
+    expect(h.deps.runWorkflowForCatalog).not.toHaveBeenCalled()
+    expect(h.deps.registerExternalWorkflowRun).not.toHaveBeenCalled()
+    const entry = h.orch.fetchEntries.value.get('cat-ndvi:2024-05-01')
+    expect(entry?.status).toBe('succeeded')
+  })
+
+  it('submitted → 注册外部 run 进轮询链并返回 run_id', async () => {
+    const h = setupWithSync(async () => ({
+      run_id: 'run-sync-1',
+      status: 'submitted',
+      message: '工作流已提交。',
+    }))
+    const runId = await h.orch.triggerOnlineFetch('cat-ndvi', '2024-05-01')
+
+    expect(runId).toBe('run-sync-1')
+    expect(h.deps.registerExternalWorkflowRun).toHaveBeenCalledWith('run-sync-1', 'cat-ndvi')
+    expect(h.deps.runWorkflowForCatalog).not.toHaveBeenCalled()
+    const entry = h.orch.fetchEntries.value.get('cat-ndvi:2024-05-01')
+    expect(entry?.status).toBe('in-flight')
+    expect(entry?.runId).toBe('run-sync-1')
+  })
+
+  it('in-flight 复用后端既有 run（同 run_id 不重复注册）', async () => {
+    const h = setupWithSync(async () => ({
+      run_id: 'run-sync-existing',
+      status: 'in-flight',
+      message: '同图层在线同步已在进行。',
+    }))
+    const runId = await h.orch.triggerOnlineFetch('cat-ndvi', '2024-05-01')
+
+    expect(runId).toBe('run-sync-existing')
+    expect(h.deps.registerExternalWorkflowRun).toHaveBeenCalledWith(
+      'run-sync-existing',
+      'cat-ndvi',
+    )
+  })
+
+  it('统一入口异常 → 回退 runWorkflowForCatalog 直提路径', async () => {
+    const h = setupWithSync(async () => {
+      throw new Error('网络不可用')
+    })
+    const runId = await h.orch.triggerOnlineFetch('cat-ndvi', '2024-05-01')
+
+    expect(runId).toBe('run-fallback-1')
+    expect(h.deps.runWorkflowForCatalog).toHaveBeenCalledWith('cat-ndvi', expect.anything())
+  })
+
+  it('未注入 syncLayerAssetOnline → 保持旧路径行为', async () => {
+    const cap = makeCap()
+    const runWorkflowForCatalog = vi.fn(async () => 'run-legacy-1')
+    const deps = {
+      getOnlineTemporalConfig: vi.fn(() => cap),
+      runWorkflowForCatalog,
+      selectedCatalogId: ref<string | null>('cat-ndvi'),
+      currentDate: ref(new Date(2024, 4, 1, 0, 0, 0)),
+      currentHour: ref(0),
+      activeLayerGranularity: computed(() => 'day' as const),
+      logOperation: vi.fn(),
+    }
+    const orch = useOnlineTemporalOrchestrator(deps as unknown as OnlineTemporalOrchestratorDeps)
+    const runId = await orch.triggerOnlineFetch('cat-ndvi', '2024-05-01')
+
+    expect(runId).toBe('run-legacy-1')
+    expect(runWorkflowForCatalog).toHaveBeenCalledOnce()
+  })
+})

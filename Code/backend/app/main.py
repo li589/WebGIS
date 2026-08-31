@@ -12,10 +12,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers import (
+    agent_router,
     algorithm_router,
     analysis_router,
     artifact_router,
     data_io_router,
+    feedback_router,
     health_router,
     import_router,
     layer_router,
@@ -30,6 +32,7 @@ from app.api.routers.unified_tile_router import router as unified_tile_router
 from app.api.weather_tile_routes import router as weather_tile_router
 from app.api.gee_config_routes import router as gee_config_router
 from app.api.config_routes import router as config_router
+from app.api.routers.online_sources_router import router as online_sources_router
 from app.api.routers.workflow_definition_router import (
     router as workflow_definition_router,
 )
@@ -92,6 +95,25 @@ async def lifespan(app: FastAPI):
             )
     except Exception:  # noqa: BLE001 — 同步失败不应阻断启动
         logger.exception("Failed to sync dataset registry on startup")
+
+    # 远程数据源存量迁移：文件级条目 → 数据集授权/站点兼容（失败仅告警，幂等）
+    try:
+        from app.services.remote_source_migration import (
+            migrate_legacy_remote_sources,
+        )
+
+        migration_report = migrate_legacy_remote_sources()
+        mg = migration_report.get("migrated_to_grants", 0)
+        sc = migration_report.get("upgraded_site_compatible", 0)
+        if mg or sc:
+            logger.info(
+                "[RemoteSourceMigration] startup: %d grants, %d site_compatible, %d legacy",
+                mg,
+                sc,
+                migration_report.get("kept_legacy", 0),
+            )
+    except Exception:  # noqa: BLE001 — 迁移失败不应阻断启动
+        logger.exception("Failed to migrate legacy remote sources on startup")
 
     # 预热 psutil CPU 采样：cpu_percent(interval=None) 首次调用返回 0.0（psutil 语义），
     # 提前调用一次使后续 get_resource_usage() 能拿到真实值
@@ -157,11 +179,18 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    # 安全审计 2026-08-20：交互式文档（/docs /redoc）按环境默认禁用
+    # （production/test 默认 404，BACKEND_DOCS_ENABLED 可覆盖）。
+    # /openapi.json 保持开放（供工具调用）；export_openapi.py /
+    # check_openapi_drift.py 直接调用 app.openapi()，与路由无关，不受影响。
+    _docs_enabled = settings.docs_enabled
     app = FastAPI(
         title=settings.service_name,
         version="0.1.0",
         description="Minimal backend service for the geographic analysis platform.",
         lifespan=lifespan,
+        docs_url="/docs" if _docs_enabled else None,
+        redoc_url="/redoc" if _docs_enabled else None,
     )
 
     # P2-11: 注册统一瓦片提供者（BaseMap + Weather）—— 从模块级移入 create_app()
@@ -211,7 +240,8 @@ def create_app() -> FastAPI:
                 "script-src 'self'; "
                 "style-src 'self' 'unsafe-inline'; "
                 "img-src 'self' data: blob: https:; "
-                "connect-src 'self' https:; "
+                # blob: 为 MapLibre image source 加载 canvas 条带 object URL 所需
+                "connect-src 'self' blob: https:; "
                 "font-src 'self' data:; "
                 "frame-ancestors 'none'"
             )
@@ -225,11 +255,17 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def write_rate_limit_middleware(request: Request, call_next):
         from app.api.rate_limit import (
+            check_agent_chat_rate_limit,
+            check_agent_models_refresh_rate_limit,
+            check_feedback_upload_rate_limit,
             check_login_rate_limit,
             check_weather_tile_rate_limit,
             check_write_rate_limit,
             client_ip,
             rate_limited_response,
+            should_rate_limit_agent_chat,
+            should_rate_limit_agent_models_refresh,
+            should_rate_limit_feedback_upload,
             should_rate_limit_login,
             should_rate_limit_weather_tile,
             should_rate_limit_write,
@@ -267,6 +303,31 @@ def create_app() -> FastAPI:
                     return rate_limited_response(
                         result.retry_after_seconds,
                         message="天气瓦片请求过于频繁，请稍后再试。",
+                        request_id=request_id,
+                    )
+            # 问题反馈匿名上传（公开写面，无鉴权）：更严阈值，防灌盘
+            if should_rate_limit_feedback_upload(path, method):
+                result = check_feedback_upload_rate_limit(client_ip(request))
+                if not result.allowed:
+                    return rate_limited_response(
+                        result.retry_after_seconds,
+                        message="反馈上传过于频繁，请稍后再试。",
+                        request_id=request_id,
+                    )
+            if should_rate_limit_agent_chat(path, method):
+                result = check_agent_chat_rate_limit(client_ip(request))
+                if not result.allowed:
+                    return rate_limited_response(
+                        result.retry_after_seconds,
+                        message="Agent 对话过于频繁，请稍后再试。",
+                        request_id=request_id,
+                    )
+            if should_rate_limit_agent_models_refresh(path, method):
+                result = check_agent_models_refresh_rate_limit(client_ip(request))
+                if not result.allowed:
+                    return rate_limited_response(
+                        result.retry_after_seconds,
+                        message="模型列表刷新过于频繁，请稍后再试。",
                         request_id=request_id,
                     )
         return await call_next(request)
@@ -361,6 +422,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(auth_router)
+    app.include_router(feedback_router)
     app.include_router(layer_router)
     app.include_router(workflow_router)
     app.include_router(analysis_router)
@@ -375,11 +437,13 @@ def create_app() -> FastAPI:
     app.include_router(weather_tile_router)
     app.include_router(gee_config_router)
     app.include_router(config_router)
+    app.include_router(online_sources_router)
     app.include_router(workflow_definition_router)
     app.include_router(workflow_timer_router)
     app.include_router(cleanup_router)
     app.include_router(zonal_stats_router)
     app.include_router(workspace_router)
+    app.include_router(agent_router)
 
     # 挂载 GEE engine router，使 /gee/* 路由正式接入 FastAPI
     # 路由前缀已在 create_gee_router 内部定义为 /gee

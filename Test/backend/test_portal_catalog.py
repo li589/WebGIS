@@ -350,39 +350,34 @@ def test_test_portal_cmr_uses_search_endpoint(repo_env, monkeypatch) -> None:
     from app.services import portal_catalog
 
     def fake_urlopen(url, **kw):
-        assert "search/granules.json" in url
+        # 数据集化改造（阶段 2/6）：连通性探针换 collections 端点
+        assert "search/collections.json" in url
         return _FakeResponse(200)
 
     monkeypatch.setattr(portal_catalog, "safe_urlopen", fake_urlopen)
     result = portal_catalog.test_portal("nasa_cmr")
     assert result["ok"] is True
-    assert "granules.json" in result["tested_url"]
+    assert "collections.json" in result["tested_url"]
 
 
-# ── CMR 检索 ─────────────────────────────────────────────────────────────────
+# ── CMR 检索（数据集级 collections） ─────────────────────────────────────────
 
 
 def _cmr_payload() -> dict:
+    # 数据集化改造（阶段 2/6）：collections.json 真实契约
+    # （2026-08-21 活体探针：entry_id="短名_版本"、dataset_id=完整标题）
     return {
         "feed": {
             "entry": [
                 {
-                    "title": "MOD09GQ.A2025001.h23v03.061",
-                    "id": "G123-LPDAAC-abc",
-                    "producer_granule_id": "MOD09GQ.A2025001.h23v03.061.hdf",
-                    "granule_size": "2.5",
-                    "time_start": "2025-01-01T00:00:00Z",
-                    "time_end": "2025-01-01T23:59:59Z",
-                    "links": [
-                        {
-                            "rel": "http://esipfed.org/ns/fedsearch/1.1/data#",
-                            "href": "https://data.lpdaac.earthdatacloud.nasa.gov/MOD09GQ.hdf",
-                        },
-                        {
-                            "rel": "http://esipfed.org/ns/fedsearch/1.1/browse#",
-                            "href": "https://browse.example.org/1.jpg",
-                        },
-                    ],
+                    "id": "C123-LPDAAC-abc",
+                    "dataset_id": "MOD09GQ Surface Reflectance Band 1-2 V061",
+                    "entry_id": "MOD09GQ_061",
+                    "summary": "MODIS Surface Reflectance 250m daily",
+                    "time_start": "2000-02-24T00:00:00Z",
+                    "time_end": "",
+                    "data_center": "LPDAAC_ECS",
+                    "version_id": "061",
                 }
             ]
         }
@@ -407,10 +402,13 @@ def test_search_portal_cmr_parsing(repo_env, monkeypatch) -> None:
     result = portal_catalog.search_portal("nasa_cmr", query="MOD09GQ", page_size=5)
     assert result["count"] == 1
     item = result["items"][0]
+    # 数据集级条目（阶段 2/6）
+    assert item["dataset_key"] == "MOD09GQ"
     assert item["title"].startswith("MOD09GQ")
-    assert item["size_bytes"] == 2
-    assert item["data_link"].endswith("MOD09GQ.hdf")
-    assert item["browse_link"].endswith("1.jpg")
+    assert item["provider_kind"] == "cmr"
+    assert item["time_start"] == "2000-02-24T00:00:00Z"
+    assert item["extra"]["version"] == "061"
+    assert item["extra"]["data_center"] == "LPDAAC_ECS"
 
 
 def test_search_portal_single_entry_dict(repo_env, monkeypatch) -> None:
@@ -553,16 +551,18 @@ def test_search_portal_cdse_odata_parsing(repo_env, monkeypatch) -> None:
     result = portal_catalog.search_portal(
         "esa_copernicus", query="S1A_IW_GRDH_1SDV", page_size=5
     )
+    # 数据集化改造（阶段 2/6）：产品级条目聚合为「任务_产品级」数据集
     assert result["count"] == 1
     item = result["items"][0]
-    assert item["title"].startswith("S1A_IW_GRDH")
-    assert item["granule_id"] == "427be276-cf42-419e-9dd3-c6544a2f4d46"
-    assert item["size_bytes"] == 1004000225
-    assert item["online"] is True
-    assert item["data_link"] == (
+    assert item["dataset_key"] == "S1A_IW_GRDH"
+    assert item["provider_kind"] == "cdse_odata"
+    assert item["extra"]["count"] == 1
+    assert item["extra"]["sample_product_id"] == "427be276-cf42-419e-9dd3-c6544a2f4d46"
+    assert item["extra"]["sample_link"] == (
         "https://download.dataspace.copernicus.eu/odata/v1/Products"
         "(427be276-cf42-419e-9dd3-c6544a2f4d46)/$value"
     )
+    assert item["time_start"] == "2015-04-12T17:45:35Z"
     # OData 检索为公共端点：即使门户配置了凭据也不携带
     assert "Authorization" not in (seen["headers"] or {})
     assert "odata/v1/Products" in seen["url"]
@@ -581,9 +581,11 @@ def test_search_portal_cds_parsing(repo_env, monkeypatch) -> None:
     result = portal_catalog.search_portal("ecmwf_cds", query="ERA5", page_size=3)
     assert result["count"] == 1
     item = result["items"][0]
-    assert item["granule_id"] == "reanalysis-era5-single-levels"
+    # 数据集化改造（阶段 2/6）：CDS collection 字段重排为统一数据集条目
+    assert item["dataset_key"] == "reanalysis-era5-single-levels"
     assert item["title"].startswith("ERA5 hourly")
-    assert item["data_link"] == (
+    assert item["provider_kind"] == "cds"
+    assert item["extra"]["data_link"] == (
         "https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels"
     )
     assert "api/catalogue/v1/collections" in seen["url"]

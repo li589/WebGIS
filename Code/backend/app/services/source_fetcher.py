@@ -20,12 +20,15 @@ import logging
 import random
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse, unquote
 
 from app.core.config import settings
 from app.services.object_store import object_store
+
+if TYPE_CHECKING:
+    from shared.remote_sources.access_control import AccessPolicyContext
 
 logger = logging.getLogger(__name__)
 
@@ -579,11 +582,14 @@ class RemoteProtocolSourceFetcher(SourceFetcher):
 
             auth = resolve_remote_auth(source_uri)
             cache_dir = Path(settings.cache_dir) / "remote_fetch"
+            # Phase 4：构建访问策略上下文，传入 download_remote_uri 执行校验
+            policy_ctx = _build_access_policy_context(source_uri)
             local_path, _stat = download_remote_uri(
                 source_uri,
                 auth,
                 target_dir=cache_dir,
                 max_bytes=get_max_remote_bytes(settings.remote_max_bytes),
+                policy_context=policy_ctx,
             )
             file_size = local_path.stat().st_size
             artifact_key = f"{artifact_key_prefix}/{ref_id}"
@@ -685,6 +691,37 @@ class DemoSourceFetcher(SourceFetcher):
             local_path=str(stored.file_path) if stored.file_path else None,
             fetched_at=fetched_at,
         )
+
+
+# ── Phase 4：访问策略上下文构建 ────────────────────────────────────────────
+
+
+def _build_access_policy_context(source_uri: str) -> "AccessPolicyContext | None":
+    """从 source_uri 构建访问策略上下文（失败时返回 None = 跳过校验）。
+
+    用于 RemoteProtocolSourceFetcher.fetch() 下载前注入 access_mode 校验。
+    使用 try/except 包裹，确保远程源访问异常不影响主流程。
+    """
+    try:
+        from shared.remote_sources.access_control import (
+            build_policy_context_from_uri,
+        )
+        from app.services.remote_source_registry import get_remote_source_registry
+        from app.services.remote_dataset_grants import get_remote_dataset_grants
+
+        sources_reg = get_remote_source_registry()
+        grants_reg = get_remote_dataset_grants()
+        ctx = build_policy_context_from_uri(
+            source_uri,
+            source_registry=sources_reg,
+            grants_registry=grants_reg,
+        )
+        return ctx
+    except Exception:  # noqa: BLE001 — 访问控制注入失败不阻断下载
+        logger.debug(
+            "Access policy context build failed, skipping check", exc_info=True
+        )
+        return None
 
 
 class SourceFetcherRegistry:

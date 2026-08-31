@@ -40,6 +40,9 @@ class WeatherLayerSpec:
     # 图层首选模型：部分变量（如 visibility）仅在特定模型（gfs_global）下有数据。
     # 留空表示使用全局默认模型。
     preferred_model: str | None = None
+    # 图层垂直分类："surface"（近地层）/ "height"（高度层 AGL）/ "pressure"（气压层 hPa）。
+    # 派生 field_mapping 的 SURFACE/HEIGHT/PRESSURE_LAYER_IDS，消除双登记。
+    layer_kind: str = "surface"
 
 
 WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
@@ -99,6 +102,7 @@ WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
             "Particle flow field reuses the 10m renderer with 80m vectors.",
             "Models without native 80m (e.g. ECMWF IFS) fall back to 10m power-law extrapolation.",
         ),
+        layer_kind="height",
     ),
     "wind-field-120m": WeatherLayerSpec(
         layer_id="wind-field-120m",
@@ -131,6 +135,7 @@ WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
             "Particle flow field reuses the 10m renderer with 120m vectors.",
             "Models without native 120m fall back to 10m power-law extrapolation.",
         ),
+        layer_kind="height",
     ),
     "wind-field-180m": WeatherLayerSpec(
         layer_id="wind-field-180m",
@@ -163,6 +168,7 @@ WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
             "Particle flow field reuses the 10m renderer with 180m vectors.",
             "Models without native 180m fall back to 10m power-law extrapolation.",
         ),
+        layer_kind="height",
     ),
     "wind-field-850hPa": WeatherLayerSpec(
         layer_id="wind-field-850hPa",
@@ -187,6 +193,7 @@ WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
             "Open-Meteo pressure_levels parameter required.",
         ),
         pressure_levels=(850,),
+        layer_kind="pressure",
     ),
     "wind-field-500hPa": WeatherLayerSpec(
         layer_id="wind-field-500hPa",
@@ -211,6 +218,7 @@ WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
             "Open-Meteo pressure_levels parameter required.",
         ),
         pressure_levels=(500,),
+        layer_kind="pressure",
     ),
     "wind-field-200hPa": WeatherLayerSpec(
         layer_id="wind-field-200hPa",
@@ -235,6 +243,7 @@ WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
             "Open-Meteo pressure_levels parameter required.",
         ),
         pressure_levels=(200,),
+        layer_kind="pressure",
     ),
     "temperature": WeatherLayerSpec(
         layer_id="temperature",
@@ -271,6 +280,7 @@ WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
             "80 m AGL temperature — useful for wind turbine icing and wake analysis.",
             "Reuses the 2m temperature renderer with 80m field.",
         ),
+        layer_kind="height",
     ),
     "temperature-120m": WeatherLayerSpec(
         layer_id="temperature-120m",
@@ -289,6 +299,7 @@ WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
             "120 m AGL temperature — large turbine hub-height thermal reference.",
             "Reuses the 2m temperature renderer with 120m field.",
         ),
+        layer_kind="height",
     ),
     "temperature-180m": WeatherLayerSpec(
         layer_id="temperature-180m",
@@ -307,6 +318,7 @@ WEATHER_LAYER_SPECS: dict[str, WeatherLayerSpec] = {
             "180 m AGL temperature — boundary-layer top thermal profile.",
             "Reuses the 2m temperature renderer with 180m field.",
         ),
+        layer_kind="height",
     ),
     "precipitation": WeatherLayerSpec(
         layer_id="precipitation",

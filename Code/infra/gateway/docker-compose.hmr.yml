@@ -1,0 +1,11 @@
+# Gateway HMR override：对外仍 :5175，SPA/HMR 反代宿主机 Vite :5174。
+# 用法（由 launch.py start --vite 编排）：
+#   docker compose -p gateway -f docker-compose.yml -f docker-compose.hmr.yml up -d
+#
+# 切回静态：
+#   docker compose -p gateway -f docker-compose.yml up -d --force-recreate
+
+services:
+  nginx:
+    volumes:
+      - ./nginx.hmr.conf:/etc/nginx/nginx.conf:ro

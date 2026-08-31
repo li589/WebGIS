@@ -45,6 +45,7 @@ CRITICAL_PREFIXES: tuple[str, ...] = (
     "/gee",
     "/artifacts",
     "/auth",
+    "/agent",
 )
 
 

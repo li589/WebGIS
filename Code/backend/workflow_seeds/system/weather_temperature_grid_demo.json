@@ -71,6 +71,10 @@
   ],
   "extra": {
     "purpose": "weather_editor_demo",
-    "notes": "地图热路径请用瓦片；本种子验证编辑器 compile→weather_request。grid_fetch→temperature_render.grid_data；注入 time_range/bbox 后 grid_data 为 slot 2。forecast_fetch 保留作编辑器演示节点。"
+    "notes": "地图热路径请用瓦片；本种子验证编辑器 compile→weather_request。grid_fetch→temperature_render.grid_data；注入 time_range/bbox 后 grid_data 为 slot 2。forecast_fetch 保留作编辑器演示节点。",
+    "group_title": "温度格点演示",
+    "output_labels": {
+      "result": "温度格点结果"
+    }
   }
 }
