@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -30,10 +31,22 @@ def _patch_data_root(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
 @pytest.mark.parametrize(
     "data_root",
     [
-        r"I:\Geograph_DataSet",
+        pytest.param(
+            r"I:\Geograph_DataSet",
+            marks=pytest.mark.skipif(
+                sys.platform != "win32",
+                reason="Windows drive-letter backslash paths",
+            ),
+        ),
         "I:/Geograph_DataSet",
         "/srv/geodata",
-        r"D:\data with space\root",
+        pytest.param(
+            r"D:\data with space\root",
+            marks=pytest.mark.skipif(
+                sys.platform != "win32",
+                reason="Windows drive-letter backslash paths",
+            ),
+        ),
     ],
 )
 def test_expanded_seed_is_valid_json(

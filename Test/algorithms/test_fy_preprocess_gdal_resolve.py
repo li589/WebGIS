@@ -65,6 +65,8 @@ def test_env_bin_without_exe_files_not_matched_on_linux(tmp_path, monkeypatch):
     monkeypatch.setattr(fp, "_GDAL_SUFFIX", "")
     bin_dir = _make_fake_bins(tmp_path / "mixed", ".exe")
     monkeypatch.setenv("CGDA_GDAL_BIN", str(bin_dir))
+    # CI 安装 gdal-bin 后 PATH 上存在无后缀 CLI；隔离系统探测以测 env 目录语义。
+    monkeypatch.setattr(fp.shutil, "which", lambda _: None)
     with pytest.raises(FileNotFoundError) as exc_info:
         fp._resolve_gdal_bins()
     # 报错文案按平台：Linux 不提 OSGeo4W/QGIS

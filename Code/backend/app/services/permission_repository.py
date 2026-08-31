@@ -277,12 +277,21 @@ class PermissionRepository:
         tid = row["theme_id"] if isinstance(row, dict) else row[0]
         return int(tid) if tid is not None else None
 
+    def _theme_permissions_table_exists(self, conn) -> bool:
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master "
+            "WHERE type='table' AND name='theme_resource_permissions' LIMIT 1"
+        ).fetchone()
+        return row is not None
+
     def _theme_perm_map(
         self, theme_id: int | None, resource_type: str
     ) -> dict[str, str]:
         if theme_id is None:
             return {}
         with self._pool.connection() as conn:
+            if not self._theme_permissions_table_exists(conn):
+                return {}
             rows = conn.execute(
                 "SELECT resource_id, permission FROM theme_resource_permissions "
                 "WHERE theme_id=? AND resource_type=?",
@@ -324,7 +333,7 @@ class PermissionRepository:
                 (user_id, resource_type, resource_id),
             ).fetchone()
             theme_row = None
-            if theme_id is not None:
+            if theme_id is not None and self._theme_permissions_table_exists(conn):
                 theme_row = conn.execute(
                     "SELECT permission FROM theme_resource_permissions "
                     "WHERE theme_id=? AND resource_type=? AND resource_id=?",

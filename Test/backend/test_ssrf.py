@@ -176,12 +176,14 @@ def test_safe_urlopen_blocks_redirect_to_loopback() -> None:
     call_count = {"n": 0}
     real = resolve_outbound_target
 
-    def _resolve(url: str, *, allow_private: bool = True) -> OutboundTarget:
+    def _resolve(
+        url: str, *, allow_private: bool = True, allow_loopback: bool = False
+    ) -> OutboundTarget:
         call_count["n"] += 1
         if call_count["n"] == 1:
             # 假装初始「外网」主机已通过校验
             return OutboundTarget(url=url, ips=(_PUBLIC_IP,))
-        return real(url, allow_private=allow_private)
+        return real(url, allow_private=allow_private, allow_loopback=allow_loopback)
 
     opener = OpenerDirector()
     opener.open = _open  # type: ignore[method-assign]

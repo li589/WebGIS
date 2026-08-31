@@ -208,10 +208,13 @@ class ThemeRepository:
                     (now, theme_id),
                 )
 
-            conn.execute(
-                "UPDATE users SET theme_id=? WHERE theme_id IS NULL",
-                (theme_id,),
-            )
+            if conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='users' LIMIT 1"
+            ).fetchone():
+                conn.execute(
+                    "UPDATE users SET theme_id=? WHERE theme_id IS NULL",
+                    (theme_id,),
+                )
             conn.commit()
 
         theme = self.get_by_id(theme_id)

@@ -21,6 +21,7 @@ for _oversized_env_key in [k for k, v in os.environ.items() if len(v) > 32760]:
 
 # conftest 位于 <repo>/Test/algorithms/conftest.py → parents[2] = 仓库根
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+_BACKEND_ROOT = _REPO_ROOT / "Code" / "backend"
 _ALGO_ROOT = _REPO_ROOT / "Code" / "algorithms" / "providers" / "Python"
 _CODE_ROOT = _REPO_ROOT / "Code"
 
@@ -46,7 +47,7 @@ if not os.environ.get("BACKEND_DATA_ROOT", "").strip():
 # （后者经 __init__ 的 __path__ 合并垫片可同时解析内核算法与 providers 子包），
 # 导致后端 22 个文件的 algorithms.providers 导入链断裂。故先移除已存在项，
 # 再按「Code 根在前、provider 根紧随其后」的固定顺序重插。
-for _path in (str(_ALGO_ROOT), str(_CODE_ROOT)):
+for _path in (str(_ALGO_ROOT), str(_CODE_ROOT), str(_BACKEND_ROOT)):
     if _path in sys.path:
         sys.path.remove(_path)
     sys.path.insert(0, _path)

@@ -102,6 +102,10 @@ jobs:
         env:
           REDIS_URL: redis://localhost:6379/0
           ENVIRONMENT: test
+          BACKEND_ENV: test
+          BACKEND_DATA_ROOT: /tmp/cgda-test-data
+          BACKEND_OUTPUT_ROOT: /tmp/cgda-test-output
+          CGDA_TEST_DATA_ROOT: /tmp/cgda-test-data
         run: pytest Test/backend/ --tb=short -q --cov=Code/backend/app --cov-report=term --cov-fail-under=52
 
   # ── vitest：前端单元测试 ──────────────────────────────────────────────────
@@ -170,6 +174,10 @@ jobs:
         env:
           REDIS_URL: redis://localhost:6379/0
           ENVIRONMENT: test
+          BACKEND_ENV: test
+          BACKEND_DATA_ROOT: /tmp/cgda-test-data
+          BACKEND_OUTPUT_ROOT: /tmp/cgda-test-output
+          CGDA_TEST_DATA_ROOT: /tmp/cgda-test-data
         run: pytest Test/algorithms/ --tb=short -q
 
   # ── build：前端生产构建 + 类型检查（P1-7 补生产构建门）──────────────────────
@@ -264,6 +272,10 @@ jobs:
         env:
           REDIS_URL: redis://localhost:6379/0
           ENVIRONMENT: test
+          BACKEND_ENV: test
+          BACKEND_DATA_ROOT: /tmp/cgda-test-data
+          BACKEND_OUTPUT_ROOT: /tmp/cgda-test-output
+          CGDA_TEST_DATA_ROOT: /tmp/cgda-test-data
         run: npm run check:openapi
 
   # ── check:catalog：catalog-seeds.generated.json ↔ backend seeds 同步闸门 ────

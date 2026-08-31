@@ -762,17 +762,28 @@ def test_routes() -> None:
     section("5. 路由注册与可达性")
     from app.main import app
 
-    # 收集所有 weather 和 gee 路由
-    all_routes = app.routes
+    def _collect_http_routes(fastapi_app) -> list[tuple[str, set[str]]]:
+        """FastAPI 0.141+ 使用 lazy _IncludedRouter；OpenAPI paths 为稳定枚举面。"""
+        paths = fastapi_app.openapi().get("paths", {})
+        collected: list[tuple[str, set[str]]] = []
+        for path, ops in paths.items():
+            methods = {
+                m.upper()
+                for m in ops
+                if m in ("get", "post", "put", "patch", "delete", "head", "options")
+            }
+            if methods:
+                collected.append((path, methods))
+        return collected
+
+    all_routes = _collect_http_routes(app)
     weather_routes = [
-        (r.path, r.methods)
-        for r in all_routes
-        if getattr(r, "path", "").startswith("/weather/workflows")
+        (path, methods)
+        for path, methods in all_routes
+        if path.startswith("/weather/workflows")
     ]
     gee_routes = [
-        (r.path, r.methods)
-        for r in all_routes
-        if getattr(r, "path", "").startswith("/gee/")
+        (path, methods) for path, methods in all_routes if path.startswith("/gee/")
     ]
 
     check("Weather 路由 — 3 条", len(weather_routes) == 3, f"routes={weather_routes}")
@@ -791,10 +802,7 @@ def test_routes() -> None:
     )
 
     # 验证 /weather/point 路由仍然存在（旧路由不丢失）
-    has_weather_point = any(
-        p == "/weather/point"
-        for p, _ in [(r.path, r.methods) for r in all_routes if hasattr(r, "path")]
-    )
+    has_weather_point = any(path == "/weather/point" for path, _ in all_routes)
     check("旧路由 — /weather/point 仍存在", has_weather_point)
 
 
