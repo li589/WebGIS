@@ -20,7 +20,7 @@ import {
   type PersistedCatalogLayer,
   type PersistedVectorLayer,
 } from './workspace-persist'
-import { scheduleWorkspaceSyncPush } from './workspace-sync'
+import { scheduleWorkspaceSyncPush, suppressWorkspaceSyncPush } from './workspace-sync'
 import type {
   ActiveLayer,
   ActiveRunLayerGroup,
@@ -50,7 +50,7 @@ export interface WorkspaceHydrateSliceDeps {
   /** Late-bound setters so active/run slices can call persist before this slice exists. */
   bindPersistFns: (fns: {
     scheduleWorkspacePersist: () => void
-    flushWorkspacePersistNow: () => void
+    flushWorkspacePersistNow: (opts?: { sync?: boolean }) => void
   }) => void
 }
 
@@ -99,7 +99,7 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
     pendingRetryVectorLayers = retained
   }
 
-  function flushWorkspacePersistNow() {
+  function flushWorkspacePersistNow(opts?: { sync?: boolean }) {
     if (typeof window === 'undefined') return
     if (hydrationGuard) return
     if (workspacePersistTimer != null) {
@@ -109,11 +109,15 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
     const snapshot = buildWorkspaceSnapshot(deps.getActiveLayers(), deps.getRunLayerGroups())
     reconcilePendingRetryVectors(snapshot)
     saveWorkspaceSnapshot(snapshot)
+    if (opts?.sync === false) return
     scheduleWorkspaceSyncPush()
   }
 
   function scheduleWorkspacePersist() {
     if (typeof window === 'undefined') return
+    // 水合中禁止排队落盘：否则解除 guard 后 400ms 定时器会把未齐内存态推到 /workspace，
+    // 冲掉局域网/公网同账号另一端的完整工作区（localhost ↔ 公网入口串扰）。
+    if (hydrationGuard) return
     if (workspacePersistTimer != null) window.clearTimeout(workspacePersistTimer)
     workspacePersistTimer = window.setTimeout(() => {
       workspacePersistTimer = null
@@ -123,7 +127,19 @@ export function createWorkspaceHydrateSlice(deps: WorkspaceHydrateSliceDeps) {
 
   function setWorkspaceHydrationGuard(active: boolean) {
     hydrationGuard = active
-    if (!active) scheduleWorkspacePersist()
+    if (!active) {
+      // 取消水合期间可能残留的定时器，再只落盘本地、禁止立刻推远端
+      if (typeof window !== 'undefined' && workspacePersistTimer != null) {
+        window.clearTimeout(workspacePersistTimer)
+        workspacePersistTimer = null
+      }
+      suppressWorkspaceSyncPush(true)
+      try {
+        flushWorkspacePersistNow({ sync: false })
+      } finally {
+        suppressWorkspaceSyncPush(false)
+      }
+    }
   }
 
   deps.bindPersistFns({ scheduleWorkspacePersist, flushWorkspacePersistNow })

@@ -103,6 +103,7 @@ const mode = toRef(uiLoading, 'mode')
     inset 0 1px 0 var(--accent-surface);
   backdrop-filter: blur(24px) saturate(1.1);
   -webkit-backdrop-filter: blur(24px) saturate(1.1);
+  animation: hero-card-in var(--motion-slow) var(--ease-emphasized) both;
 }
 
 .orbit-stage {
@@ -448,7 +449,7 @@ const mode = toRef(uiLoading, 'mode')
 
 .loading-fade-enter-active,
 .loading-fade-leave-active {
-  transition: opacity var(--motion-base) var(--ease-standard);
+  transition: opacity var(--motion-modal, var(--motion-base)) var(--ease-standard);
 }
 
 .loading-fade-enter-from,
@@ -456,7 +457,18 @@ const mode = toRef(uiLoading, 'mode')
   opacity: 0;
 }
 
-/* 系统「减少动效」：放慢加载反馈，但不要完全静止（否则像卡死） */
+@keyframes hero-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 系统 / 设置「减少动效」：放慢加载反馈，但不要完全静止（否则像卡死） */
 @media (prefers-reduced-motion: reduce) {
   .stars {
     animation-duration: 6s;
@@ -475,5 +487,29 @@ const mode = toRef(uiLoading, 'mode')
   .compact-glow {
     animation-duration: 2.4s;
   }
+  .hero-card {
+    animation: none;
+  }
+}
+
+html.reduce-motion .stars {
+  animation-duration: 6s;
+}
+html.reduce-motion .earth-sphere {
+  animation-duration: 24s;
+}
+html.reduce-motion .sat-orbit {
+  animation-duration: 8s;
+}
+html.reduce-motion .earth-glow,
+html.reduce-motion .sat-beam {
+  animation-duration: 3s;
+}
+html.reduce-motion .loading-progress-glow,
+html.reduce-motion .compact-glow {
+  animation-duration: 2.4s;
+}
+html.reduce-motion .hero-card {
+  animation: none;
 }
 </style>

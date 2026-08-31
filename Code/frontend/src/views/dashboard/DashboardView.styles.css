@@ -314,58 +314,10 @@
   height: min-content;
 }
 
-/* ═══ 面板入场错开编排 ═══ */
-.overlay-top {
-  animation: panel-enter-down var(--motion-slow) var(--ease-emphasized) both;
-  animation-delay: var(--motion-enter-delay);
-}
-
-.overlay-left {
-  animation: panel-enter-right var(--motion-slow) var(--ease-emphasized) both;
-  animation-delay: calc(var(--motion-enter-delay) + var(--motion-stagger-step));
-}
-
-.overlay-right {
-  animation: panel-enter-left var(--motion-slow) var(--ease-emphasized) both;
-  animation-delay: calc(var(--motion-enter-delay) + var(--motion-stagger-step) * 2);
-}
-
-.overlay-bottom {
-  animation: panel-enter-bottom var(--motion-slow) var(--ease-emphasized) both;
-  animation-delay: calc(var(--motion-enter-delay) + var(--motion-stagger-step) * 3);
-}
-
-@keyframes panel-enter-down {
-  from {
-    opacity: 0;
-    transform: translateY(-12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes panel-enter-right {
-  from {
-    opacity: 0;
-    transform: translateX(-16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes panel-enter-left {
-  from {
-    opacity: 0;
-    transform: translateX(16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+/* ═══ 面板入场：共享 cgda-boot-reveal（motion.css）+ 底栏保留居中 transform ── */
+/* 顶/左/右由模板上的 cgda-boot-reveal--N 错峰；底栏需 translateX(-50%)，覆盖 keyframes */
+.overlay-bottom.cgda-boot-reveal {
+  animation-name: panel-enter-bottom;
 }
 
 @keyframes panel-enter-bottom {
@@ -379,6 +331,7 @@
   }
 }
 
+/* 移动端底栏无 translateX(-50%)，用纵向入场 */
 @keyframes panel-enter-up {
   from {
     opacity: 0;
@@ -395,6 +348,52 @@
   .overlay-left,
   .overlay-right,
   .overlay-bottom {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* 设置「减少动效」：与系统媒体查询同等处理 */
+html.reduce-motion .overlay-top,
+html.reduce-motion .overlay-left,
+html.reduce-motion .overlay-right,
+html.reduce-motion .overlay-bottom {
+  animation: none;
+  opacity: 1;
+  transform: none;
+}
+
+html.reduce-motion .overlay-bottom {
+  transform: translateX(-50%);
+}
+
+@media (max-width: 768px) {
+  html.reduce-motion .overlay-bottom {
+    transform: none;
+  }
+}
+
+/* 地图壳启动轻抬升（与面板错开；仅 opacity） */
+.map-shell {
+  animation: map-shell-boot var(--motion-slow) var(--ease-emphasized) both;
+}
+
+@keyframes map-shell-boot {
+  from {
+    opacity: 0.72;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+html.reduce-motion .map-shell {
+  animation: none;
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-shell {
     animation: none;
     opacity: 1;
   }

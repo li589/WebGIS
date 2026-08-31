@@ -104,7 +104,7 @@ const iconSize = computed(() => {
     border-color var(--motion-fast) var(--ease-soft),
     color var(--motion-fast) var(--ease-soft),
     box-shadow var(--motion-fast) var(--ease-soft),
-    transform var(--motion-fast) var(--ease-soft);
+    transform var(--motion-press, var(--motion-fast)) var(--ease-soft);
 }
 
 .app-btn:focus-visible {
@@ -189,7 +189,10 @@ const iconSize = computed(() => {
   background-position: -200% 0;
 }
 .app-btn--primary:active:not(:disabled) {
-  transform: translateY(0);
+  transform: translateY(1px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.12) inset,
+    0 1px 2px var(--surface-sunken);
 }
 
 /* 变体：secondary */
@@ -206,7 +209,9 @@ const iconSize = computed(() => {
   box-shadow: var(--elevation-1);
 }
 .app-btn--secondary:active:not(:disabled) {
-  transform: translateY(0);
+  transform: translateY(1px);
+  box-shadow: none;
+  background: var(--surface-sunken);
 }
 
 /* 变体：ghost（透明背景 + 无边框，依赖文字/图标表达） */
@@ -220,7 +225,8 @@ const iconSize = computed(() => {
   color: var(--text-strong);
 }
 .app-btn--ghost:active:not(:disabled) {
-  transform: translateY(0);
+  transform: translateY(1px);
+  background: var(--surface-1);
 }
 
 /* 变体：danger */
@@ -237,7 +243,8 @@ const iconSize = computed(() => {
   box-shadow: var(--elevation-1);
 }
 .app-btn--danger:active:not(:disabled) {
-  transform: translateY(0);
+  transform: translateY(1px);
+  box-shadow: none;
 }
 
 /* 图标 / 标签 */
@@ -269,16 +276,26 @@ const iconSize = computed(() => {
   }
 }
 
-/* 尊重 reduced-motion */
-@media (prefers-reduced-motion: reduce) {
-  .app-btn {
-    transition: none;
-  }
-  .app-btn:hover:not(:disabled) {
-    transform: none;
-  }
-  .app-btn-spinner {
-    animation: none;
-  }
+/* 设置开关 html.reduce-motion 优先；保留颜色过渡，去掉位移与扫光 */
+html.reduce-motion .app-btn:hover:not(:disabled),
+html.reduce-motion .app-btn:active:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+}
+
+html.reduce-motion .app-btn--primary:hover:not(:disabled) {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.18) inset,
+    0 1px 2px var(--surface-sunken),
+    0 0 0 1px var(--accent-border);
+}
+
+html.reduce-motion .app-btn--primary:hover:not(:disabled)::after {
+  background-position: 200% 0;
+  transition: none;
+}
+
+html.reduce-motion .app-btn-spinner {
+  animation-duration: 1.2s;
 }
 </style>

@@ -111,6 +111,17 @@ export function getApiBaseUrl(): string {
   return import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? ''
 }
 
+/**
+ * 浏览器本地持久化/API 同步的作用域键（区分 localhost:5175 与公网域名等同账号多入口）。
+ * 有显式 API 基址时用基址；开发态相对路径时用页面 origin。
+ */
+export function getApiStorageScope(): string {
+  const base = getApiBaseUrl()
+  if (base) return base
+  if (typeof window !== 'undefined') return window.location.origin
+  return 'unknown'
+}
+
 export function resolveApiUrl(pathOrUrl: string): string {
   if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl
   const normalizedPath = pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`

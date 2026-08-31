@@ -43,6 +43,11 @@ vi.mock('@/stores/workflow-output-layers', () => ({
   }),
 }))
 
+vi.mock('@/stores/layers/workspace-sync', () => ({
+  suppressWorkspaceSyncPush: vi.fn(),
+  scheduleWorkspaceSyncPush: vi.fn(),
+}))
+
 // Mock buildJobLayer to avoid needing full WorkflowRun shape
 vi.mock('@/stores/layers/result-adapter', () => ({
   buildJobLayer: vi.fn(async (run: Record<string, unknown>, catalogId: string) => ({
@@ -163,6 +168,7 @@ function makeDeps(overrides: Partial<WorkflowRunnerDeps> = {}): WorkflowRunnerDe
     }),
     setWorkflowError: vi.fn(),
     scheduleWorkspacePersist: vi.fn(),
+    flushWorkspacePersistNow: vi.fn(),
     cleanupUnproducedRunLayers: vi.fn(),
     createRunLayerGroup: vi.fn(() => ({
       groupId: 'grp-1',

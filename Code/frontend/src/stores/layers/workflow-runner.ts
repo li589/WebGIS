@@ -41,6 +41,7 @@ import {
 } from '../../utils/source-route-policy'
 import { buildJobLayer } from './result-adapter'
 import { forgetDismissedLayer, isRunDismissed } from './workspace-persist'
+import { suppressWorkspaceSyncPush } from './workspace-sync'
 import { getCatalogDisplayName, isTerminalStatus } from './catalog-builders'
 import { resolveJobOverallProgress } from './workflow-progress'
 import { resolveRestoreWorkflowBridge as resolveRestoreWorkflowBridgeFromCatalog } from './restore-workflow-bridge'
@@ -300,6 +301,8 @@ export interface WorkflowStateWriterDeps {
   removeJobLayerById: (jobId: string) => void
   setWorkflowError: (message: string | null) => void
   scheduleWorkspacePersist: () => void
+  /** 立即落盘；restore 路径应传 { sync: false } 避免冲远端 */
+  flushWorkspacePersistNow: (opts?: { sync?: boolean }) => void
   cleanupUnproducedRunLayers: (runId: string, opts?: { succeeded?: boolean }) => void
   /** 丢弃探测失败的 run 组 UI（不删后端 overlay） */
   discardRunGroupUi?: (runId: string) => void
@@ -518,15 +521,129 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
   }
 
   /**
+   * 核对快照中残留的 run 组：终态更新状态；缺失 run 且无产物则清占位；
+   * 避免跨端同步后侧栏「运行中」永久悬挂而指示器为空。
+   */
+  async function reconcileOrphanRunGroup(
+    runId: string,
+    opts?: { forceMissing?: boolean },
+  ): Promise<void> {
+    const groups = deps.getRunLayerGroups().filter((g) => String(g.runId || '') === runId)
+    if (!groups.length) return
+
+    const removeGroupAndPlaceholders = (g: ActiveRunLayerGroup) => {
+      deps.setRunLayerGroups(deps.getRunLayerGroups().filter((x) => x.groupId !== g.groupId))
+      const activeLayers = deps.getActiveLayers()
+      for (let i = activeLayers.length - 1; i >= 0; i--) {
+        const layer = activeLayers[i]!
+        if (layer.runGroupId !== g.groupId) continue
+        if (
+          layer.importedRaster?.overlayLayerId ||
+          layer.importedVector?.backendLayerId ||
+          layer.dataState === 'real'
+        ) {
+          layer.runGroupId = undefined
+          layer.runGroupProductTag = undefined
+          layer.runGroupLocked = false
+          continue
+        }
+        activeLayers.splice(i, 1)
+      }
+    }
+
+    const demoteGroup = (g: ActiveRunLayerGroup, status: ActiveRunLayerGroup['status']) => {
+      const target = deps.getRunLayerGroups().find((x) => x.groupId === g.groupId)
+      if (!target) return
+      target.status = status
+      if (status === 'ready') {
+        target.dissolvable = true
+        target.progress = typeof target.progress === 'number' ? target.progress : 1
+        for (const m of deps.getActiveLayers().filter((l) => l.runGroupId === g.groupId)) {
+          m.runGroupLocked = false
+        }
+      }
+    }
+
+    const hasProductFor = (g: ActiveRunLayerGroup) =>
+      deps.getActiveLayers().some(
+        (l) =>
+          l.runGroupId === g.groupId &&
+          (Boolean(l.importedRaster?.overlayLayerId) ||
+            Boolean(l.importedVector?.backendLayerId) ||
+            l.dataState === 'real'),
+      )
+
+    if (opts?.forceMissing) {
+      for (const g of groups) {
+        if (!hasProductFor(g) && g.status === 'computing') removeGroupAndPlaceholders(g)
+        else demoteGroup(g, 'ready')
+      }
+      return
+    }
+
+    try {
+      const run = await getWorkflowRun(runId)
+      const st = String(run.status)
+      for (const g of groups) {
+        if (isTerminalStatus(st)) {
+          if (st === 'succeeded') {
+            demoteGroup(g, 'ready')
+          } else if (st === 'failed') {
+            demoteGroup(g, 'failed')
+            if (!hasProductFor(g)) removeGroupAndPlaceholders(g)
+          } else if (st === 'cancelled') {
+            demoteGroup(g, 'cancelled')
+            if (!hasProductFor(g)) removeGroupAndPlaceholders(g)
+          } else {
+            demoteGroup(g, 'ready')
+          }
+        } else {
+          const catalogId = resolveRestoredCatalogId(run.layer_id || undefined, run.run_id)
+          const catalogDisplayName =
+            deps.getRuntimeLayerCatalog()[catalogId]?.display_name ??
+            getCatalogDisplayName(catalogId)
+          let jobLayer = await buildJobLayer(run, catalogDisplayName, {})
+          jobLayer = await hydrateJobLayerFromEvents(jobLayer)
+          deps.upsertJobLayer(catalogId, jobLayer)
+          demoteGroup(g, 'computing')
+          deps.activeWorkflowCatalogIds.add(catalogId)
+          void deps.startPolling(run.run_id, catalogId)
+        }
+      }
+    } catch {
+      for (const g of groups) {
+        if (!hasProductFor(g) && g.status === 'computing') removeGroupAndPlaceholders(g)
+        else demoteGroup(g, 'ready')
+      }
+    }
+  }
+
+  /**
    * 从后端 + localStorage 恢复工作流列表。在页面加载 / 刷新后调用，
    * 确保跨会话与长批任务的进度条/节点进度不会丢失。
    */
   async function restoreActiveWorkflows() {
+    // 整段恢复禁止推 /workspace：跨端同账号时残缺内存态会冲掉另一端完整工作区
+    suppressWorkspaceSyncPush(true)
     try {
       // 先恢复本机已产出图层/组，再合并后端活跃 run
       const instanceIdMap = deps.hydrateWorkspaceFromSnapshot()
       await deps.hydrateVectorLayersFromSnapshot(instanceIdMap)
       deps.reconcileOmegaBlockLayers()
+
+      // 快照恢复的 computing 组：立即与当前后端核对，清掉跨环境同步的僵尸「运行中」
+      const computingRunIds = [
+        ...new Set(
+          deps
+            .getRunLayerGroups()
+            .filter((g) => g.status === 'computing' && g.runId)
+            .map((g) => String(g.runId)),
+        ),
+      ]
+      for (const runId of computingRunIds) {
+        await reconcileOrphanRunGroup(runId)
+      }
+
       // bridge 依赖目录 descriptor；与 Dashboard 并行启动时需等目录就绪
       await deps.ensureRuntimeLayerCatalog().catch(() => undefined)
 
@@ -641,6 +758,8 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
             'warn',
           )
           forgetTrackedWorkflowRun(candidate.runId)
+          // 跨端同步留下的 computing 组：本机查不到 run 时不得继续显示「运行中」
+          await reconcileOrphanRunGroup(candidate.runId, { forceMissing: true })
           continue
         }
 
@@ -740,38 +859,31 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
             })
             .then(() => {
               deps.cleanupUnproducedRunLayers(run.run_id, { succeeded: true })
-              deps.scheduleWorkspacePersist()
+              // 产物附加完成后只落盘本地；远端推送留给用户后续编辑触发
+              deps.flushWorkspacePersistNow({ sync: false })
             })
         }
       }
 
-      // 清理快照残留的旧 run 组：runId 不在本次恢复集合（已被新 run 取代或已移除）
-      // 的 restored 组连同其占位成员一并移除，避免陈旧时间块继续显示。
+      // 快照中有、但本机 tracked/active 未列入的 run 组：
+      // 旧逻辑会直接删组+图层。跨设备同账号时 tracked 表不同源，误删后
+      // scheduleWorkspacePersist 会把残缺快照推到 /workspace，冲掉其它端的工作区。
+      // 改为向后端核对：终态则更新组状态并保留产物层；仅清除无产物的僵尸占位。
       const restoredRunIds = new Set(candidates.map((c) => c.runId))
-      const staleGroupIds = new Set(
-        deps
-          .getRunLayerGroups()
-          .filter((g) => g.runId && !restoredRunIds.has(g.runId))
-          .map((g) => g.groupId),
-      )
-      if (staleGroupIds.size > 0) {
-        deps.setRunLayerGroups(
-          deps.getRunLayerGroups().filter((g) => !staleGroupIds.has(g.groupId)),
-        )
-        const activeLayers = deps.getActiveLayers()
-        for (let i = activeLayers.length - 1; i >= 0; i--) {
-          const layer = activeLayers[i]!
-          if (layer.runGroupId && staleGroupIds.has(layer.runGroupId)) {
-            activeLayers.splice(i, 1)
-          }
-        }
+      const orphanGroups = deps
+        .getRunLayerGroups()
+        .filter((g) => Boolean(g.runId) && !restoredRunIds.has(String(g.runId)))
+      for (const g of orphanGroups) {
+        await reconcileOrphanRunGroup(String(g.runId || ''))
       }
       // 恢复末再 scrub：剔除误建的英文反演游离层 / 纠偏组标题（attach 竞态兜底）
       deps.reconcileOmegaBlockLayers()
-      deps.scheduleWorkspacePersist()
+      deps.flushWorkspacePersistNow({ sync: false })
     } catch (err) {
       console.error('[layers] restoreActiveWorkflows failed:', err)
       safeLog('workflow-error', '恢复活跃工作流失败', String(err), 'error')
+    } finally {
+      suppressWorkspaceSyncPush(false)
     }
   }
 

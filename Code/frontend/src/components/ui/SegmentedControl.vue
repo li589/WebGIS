@@ -131,7 +131,8 @@ function onKeydown(e: KeyboardEvent) {
   white-space: nowrap;
   transition:
     background-color var(--motion-fast) var(--ease-soft),
-    color var(--motion-fast) var(--ease-soft);
+    color var(--motion-fast) var(--ease-soft),
+    transform var(--motion-press, var(--motion-fast)) var(--ease-soft);
   font-family: inherit;
 }
 
@@ -144,6 +145,10 @@ function onKeydown(e: KeyboardEvent) {
 .seg-ctrl-item:hover:not(:disabled):not(.active) {
   background: var(--surface-hover);
   color: var(--text-primary);
+}
+
+.seg-ctrl-item:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .seg-ctrl-item:disabled,
@@ -204,5 +209,9 @@ function onKeydown(e: KeyboardEvent) {
   .seg-ctrl-item {
     transition: none;
   }
+}
+
+html.reduce-motion .seg-ctrl-item:active:not(:disabled) {
+  transform: none;
 }
 </style>

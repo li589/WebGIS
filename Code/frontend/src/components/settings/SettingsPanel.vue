@@ -396,10 +396,13 @@ onUnmounted(() => {
   background: var(--surface-2);
   border-left: 1px solid var(--border-default);
   box-shadow: -12px 0 36px rgba(1, 8, 16, 0.32);
+  transition: width var(--motion-base) var(--ease-standard);
 }
 
 .settings-panel--resizing {
   transition: none;
+  will-change: width;
+  cursor: ew-resize;
 }
 
 .settings-resize-handle {
@@ -425,7 +428,7 @@ onUnmounted(() => {
   border-radius: 999px;
   background: var(--border-default);
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--motion-fast) var(--ease-soft);
 }
 
 .settings-panel:hover .settings-resize-handle::after,

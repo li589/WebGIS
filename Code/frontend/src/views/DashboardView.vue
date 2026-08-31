@@ -496,7 +496,7 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
         </div>
       </div>
 
-      <div class="overlay overlay-top">
+      <div class="overlay overlay-top cgda-boot-reveal cgda-boot-reveal--1">
         <ModeToolbar
           :tile-source-id="tileSourceId"
           :hour-label="hourLabel"
@@ -521,7 +521,7 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
       />
       <OnlinePlanPanel />
 
-      <div class="overlay overlay-left">
+      <div class="overlay overlay-left cgda-boot-reveal cgda-boot-reveal--2">
         <PanelDock
           panel-label="图层"
           panel-key="layers"
@@ -540,7 +540,7 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
         </PanelDock>
       </div>
 
-      <div class="overlay overlay-right">
+      <div class="overlay overlay-right cgda-boot-reveal cgda-boot-reveal--3">
         <PanelDock
           ref="analysisPanelRef"
           panel-label="分析"
@@ -585,7 +585,7 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
         </PanelDock>
       </div>
 
-      <div class="overlay overlay-bottom">
+      <div class="overlay overlay-bottom cgda-boot-reveal cgda-boot-reveal--4">
         <TimelinePanel
           panel-label="时间轴"
           panel-key="timeline"
@@ -647,7 +647,9 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
 
     <WorkflowStatusPanel v-if="workflowStatusOpen" @close="handleCloseWorkflowStatus" />
     <LogPanel v-if="logOpen" @close="logOpen = false" />
-    <SettingsPanel v-if="settingsOpen" @close="handleCloseSettings" />
+    <Transition name="cgda-drawer">
+      <SettingsPanel v-if="settingsOpen" @close="handleCloseSettings" />
+    </Transition>
     <WorkflowEditorPanel
       v-if="workflowEditorOpen"
       ref="workflowEditorRef"

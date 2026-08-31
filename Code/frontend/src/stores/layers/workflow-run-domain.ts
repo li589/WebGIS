@@ -222,6 +222,7 @@ export function createWorkflowRunDomain(
       workflowError.value = msg
     },
     scheduleWorkspacePersist: () => bindings.scheduleWorkspacePersist(),
+    flushWorkspacePersistNow: (opts) => bindings.flushWorkspacePersistNow(opts),
     cleanupUnproducedRunLayers: (runId, opts) => cleanupUnproducedRunLayers(runId, opts),
     discardRunGroupUi: (runId) => discardRunGroupUi(runId),
     createRunLayerGroup: (options) => createRunLayerGroup(options),

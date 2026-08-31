@@ -800,18 +800,7 @@
   transform: translateY(0);
 }
 
-.locate-error-enter-active,
-.locate-error-leave-active {
-  transition:
-    opacity var(--motion-base) var(--ease-standard),
-    transform var(--motion-base) var(--ease-standard);
-}
-
-.locate-error-enter-from,
-.locate-error-leave-to {
-  opacity: 0;
-  transform: translateY(0.4rem);
-}
+/* locate-error 入场改用全局 cgda-pop（motion.css） */
 
 /* ── 定位标记 ─────────────────────────────────────────────────────────── */
 :deep(.geolocation-marker) {

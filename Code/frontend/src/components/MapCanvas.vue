@@ -1230,7 +1230,7 @@ async function handleLocateMe() {
     </div>
 
     <!-- 定位失败提示 -->
-    <Transition name="locate-error">
+    <Transition name="cgda-pop">
       <div v-if="locateError" class="locate-error-tip">
         <span class="locate-error-icon"><AlertTriangle :size="14" aria-hidden="true" /></span>
         <div class="locate-error-body">

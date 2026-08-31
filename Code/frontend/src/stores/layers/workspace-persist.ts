@@ -10,6 +10,7 @@ import {
   removeScopedItem,
   writeScopedItem,
 } from '../../services/user-local-isolation'
+import { getApiStorageScope } from '../../services/_http'
 
 const STORAGE_KEY = 'geo:active-layers-workspace:v1'
 const DISMISSED_STORAGE_KEY = 'geo:dismissed-layers:v1'
@@ -80,6 +81,8 @@ export interface PersistedCatalogLayer {
 export interface WorkspaceSnapshot {
   version: 1
   savedAt: string
+  /** 写入时的 API/页面作用域；跨环境接管时用于剥离无效工作流状态 */
+  apiScope?: string
   layers: PersistedActiveLayer[]
   catalogLayers?: PersistedCatalogLayer[]
   vectorLayers?: PersistedVectorLayer[]
@@ -299,6 +302,7 @@ export function buildWorkspaceSnapshot(
     return {
       version: 1,
       savedAt: new Date().toISOString(),
+      apiScope: getApiStorageScope(),
       layers: [],
       catalogLayers: [],
       vectorLayers: [],
@@ -360,10 +364,84 @@ export function buildWorkspaceSnapshot(
   return {
     version: 1,
     savedAt: new Date().toISOString(),
+    apiScope: getApiStorageScope(),
     layers,
     catalogLayers,
     vectorLayers,
     groups,
+  }
+}
+
+/**
+ * 跨 API 入口（局域网 / 公网同账号）接管快照时，剥离另一环境的工作流 run 组与
+ * 「运行中」占位，保留静态目录/导入图层，避免侧栏悬挂「运行中」而指示器为空。
+ */
+export function sanitizeSnapshotForCurrentApi(snapshot: WorkspaceSnapshot): WorkspaceSnapshot {
+  const current = getApiStorageScope()
+  const reconciled = reconcileSnapshotGroupRefs(snapshot)
+
+  if (!reconciled.apiScope || reconciled.apiScope === current) {
+    return { ...reconciled, apiScope: current }
+  }
+
+  const stripRunFields = <T extends { runGroupId?: string; runGroupProductTag?: string; runGroupLocked?: boolean; catalogId?: string }>(
+    layer: T,
+  ): T | null => {
+    const catalogId = String(layer.catalogId || '')
+    // 另一环境的 wf-run 占位层无意义，直接丢弃
+    if (layer.runGroupLocked || /^wf-run-/i.test(catalogId)) {
+      return null
+    }
+    return {
+      ...layer,
+      runGroupId: undefined,
+      runGroupProductTag: undefined,
+      runGroupLocked: false,
+    }
+  }
+
+  const layers = reconciled.layers
+    .map(stripRunFields)
+    .filter((l): l is (typeof reconciled.layers)[number] => l != null)
+  const catalogLayers = (reconciled.catalogLayers || [])
+    .map(stripRunFields)
+    .filter((l): l is PersistedCatalogLayer => l != null)
+
+  return {
+    ...reconciled,
+    apiScope: current,
+    groups: [],
+    layers,
+    catalogLayers,
+    vectorLayers: reconciled.vectorLayers || [],
+  }
+}
+
+/** 图层 runGroupId 无对应 group 时清锁，避免「运行中」幽灵占位。 */
+export function reconcileSnapshotGroupRefs(snapshot: WorkspaceSnapshot): WorkspaceSnapshot {
+  const groupIds = new Set((snapshot.groups || []).map((g) => g.groupId))
+  const clearOrphan = <
+    T extends {
+      runGroupId?: string
+      runGroupProductTag?: string
+      runGroupLocked?: boolean
+    },
+  >(
+    layer: T,
+  ): T => {
+    if (!layer.runGroupId || groupIds.has(layer.runGroupId)) return layer
+    return {
+      ...layer,
+      runGroupId: undefined,
+      runGroupProductTag: undefined,
+      runGroupLocked: false,
+    }
+  }
+  return {
+    ...snapshot,
+    layers: snapshot.layers.map(clearOrphan),
+    catalogLayers: (snapshot.catalogLayers || []).map(clearOrphan),
+    vectorLayers: (snapshot.vectorLayers || []).map(clearOrphan),
   }
 }
 
@@ -386,7 +464,7 @@ export function loadWorkspaceSnapshot(): WorkspaceSnapshot | null {
     if (!Array.isArray(parsed.catalogLayers)) parsed.catalogLayers = []
     if (!Array.isArray(parsed.vectorLayers)) parsed.vectorLayers = []
     if (!Array.isArray(parsed.groups)) parsed.groups = []
-    return migrateSnapshot(parsed)
+    return sanitizeSnapshotForCurrentApi(migrateSnapshot(reconcileSnapshotGroupRefs(parsed)))
   } catch {
     return null
   }
