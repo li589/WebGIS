@@ -223,12 +223,16 @@ def test_submit_workflow_auto_populates_algorithm_request_from_layer_catalog(
         execute_mock.assert_called_once()
         normalized_payload = execute_mock.call_args.kwargs["payload"]
         algorithm_request = _as_dict(normalized_payload.algorithm_request)
-        assert algorithm_request["module_name"] == "ndvi_daily", 'algorithm_request["module_name"] == "ndvi_daily"'
-        assert algorithm_request["workflow_entry_name"] == "ndvi_local_read", 'algorithm_request["workflow_entry_name"] == "ndvi_local_read"'
-        assert algorithm_request["task_type"] == "ndvi_daily", 'algorithm_request["task_type"] == "ndvi_daily"'
+        # X2 变体路由：ndvi 默认走 online 变体 workflow_name，不再注入 module_name。
+        assert algorithm_request["workflow_name"] == "ndvi_online_read", (
+            'algorithm_request["workflow_name"] == "ndvi_online_read"'
+        )
         assert algorithm_request["datasource_selection"]["_data_access_requests"][
                 "NDVI_16DAY_RASTER"
-            ]["selector"]["uris"] == ["D:/prepared/NDVI_16DAY_RASTER"], 'algorithm_request["datasource_selection"]["_data_access_requests"][\n                    "NDVI_16DAY_RASTER"\n                ]["selector"]["uris"] == ["D:/prepared/NDVI_16DAY_RASTER"]'
+            ]["selector"]["uris"] == ["D:/prepared/NDVI_16DAY_RASTER"], (
+            'algorithm_request["datasource_selection"]["_data_access_requests"]'
+            '["NDVI_16DAY_RASTER"]["selector"]["uris"] == ["D:/prepared/NDVI_16DAY_RASTER"]'
+        )
 
         request_json = repository.get_run_request_json(response.run_id)
         assert request_json is not None, 'request_json is not None'
@@ -236,8 +240,9 @@ def test_submit_workflow_auto_populates_algorithm_request_from_layer_catalog(
         persisted_algorithm_request = _as_dict(
             persisted_payload.algorithm_request
         )
-        assert persisted_algorithm_request["module_name"] == "ndvi_daily", 'persisted_algorithm_request["module_name"] == "ndvi_daily"'
-        assert persisted_algorithm_request["task_type"] == "ndvi_daily", 'persisted_algorithm_request["task_type"] == "ndvi_daily"'
+        assert persisted_algorithm_request["workflow_name"] == "ndvi_online_read", (
+            'persisted_algorithm_request["workflow_name"] == "ndvi_online_read"'
+        )
 
 
 def test_submit_workflow_auto_populates_python_provider_defaults_for_smap_and_fy_layers(
@@ -248,8 +253,18 @@ def test_submit_workflow_auto_populates_python_provider_defaults_for_smap_and_fy
     # 业务判定（2026-08-07）：本地候选为可解析数据源名 "SMAP_L3"
     # （dataset_config → Soil_Moisture/SMAP），故派生 URI 为 D:/prepared/SMAP_L3。
     expected_layers = {
-        "ref-smap-sm-202512-l3": ("smap_daily", "SMAP_L3_DEC2025", "D:/prepared/SMAP_L3"),
-        "ref-fy-tb-202512-mwri": ("fy_daily", "FY_MWRI_HDF", "D:/prepared/FY_MWRI_HDF"),
+        "ref-smap-sm-202512-l3": {
+            "entry": "module_name",
+            "value": "smap_daily",
+            "dataset": "SMAP_L3_DEC2025",
+            "uri": "D:/prepared/SMAP_L3",
+        },
+        "ref-fy-tb-202512-mwri": {
+            "entry": "workflow_name",
+            "value": "fy_tb_online_read",
+            "dataset": "FY_MWRI_HDF",
+            "uri": "D:/prepared/FY_MWRI_HDF",
+        },
     }
 
     with _temp_repository() as repository:
@@ -277,17 +292,19 @@ def test_submit_workflow_auto_populates_python_provider_defaults_for_smap_and_fy
         for call in execute_mock.call_args_list:
             normalized_payload = call.kwargs["payload"]
             layer_id = normalized_payload.layer_id
-            expected_task_type, expected_dataset_name, expected_uri = (
-                expected_layers[layer_id]
-            )
+            spec = expected_layers[layer_id]
             algorithm_request = _as_dict(normalized_payload.algorithm_request)
 
             with nullcontext():
-                assert algorithm_request["module_name"] == expected_task_type, 'algorithm_request["module_name"] == expected_task_type'
-                assert algorithm_request["task_type"] == expected_task_type, 'algorithm_request["task_type"] == expected_task_type'
+                assert algorithm_request[spec["entry"]] == spec["value"], (
+                    f'algorithm_request[{spec["entry"]!r}] == {spec["value"]!r}'
+                )
                 assert algorithm_request["datasource_selection"][
                         "_data_access_requests"
-                    ][expected_dataset_name]["selector"]["uris"] == [expected_uri], 'algorithm_request["datasource_selection"][\n                            "_data_access_requests"\n                        ][expected_dataset_name]["selector"]["uris"] == [expected_uri]'
+                    ][spec["dataset"]]["selector"]["uris"] == [spec["uri"]], (
+                    'algorithm_request["datasource_selection"]["_data_access_requests"]'
+                    f'[{spec["dataset"]!r}]["selector"]["uris"] == [{spec["uri"]!r}]'
+                )
 
 
 def test_submit_workflow_keeps_python_provider_datasource_missing_when_default_sources_are_unavailable(
@@ -301,7 +318,8 @@ def test_submit_workflow_keeps_python_provider_datasource_missing_when_default_s
                 return_value=None,
             ),
             patch(
-                "app.services.workflow.submission_service.execute_workflow_task"
+                "app.services.workflow.submission_service.execute_workflow_task",
+                return_value=WorkflowExecutionResult(message="ok"),
             ) as execute_mock,
             # 跳过提交期参数预校验：本测试关注 normalization 行为
             # （_data_access_requests 在数据源不可用时应留空），
@@ -318,8 +336,9 @@ def test_submit_workflow_keeps_python_provider_datasource_missing_when_default_s
         execute_mock.assert_called_once()
         normalized_payload = execute_mock.call_args.kwargs["payload"]
         algorithm_request = _as_dict(normalized_payload.algorithm_request)
-        assert algorithm_request["module_name"] == "ndvi_daily", 'algorithm_request["module_name"] == "ndvi_daily"'
-        assert algorithm_request["task_type"] == "ndvi_daily", 'algorithm_request["task_type"] == "ndvi_daily"'
+        assert algorithm_request["workflow_name"] == "ndvi_online_read", (
+            'algorithm_request["workflow_name"] == "ndvi_online_read"'
+        )
         datasource_selection = algorithm_request.get("datasource_selection", {})
         assert not datasource_selection.get("_data_access_requests"), 'datasource_selection.get("_data_access_requests") is falsy'
 
@@ -456,7 +475,8 @@ def test_submit_workflow_raises_validation_error_when_required_datasource_missin
             with pytest.raises(WorkflowValidationError) as ctx:
                 submission.submit_workflow(
                     _build_payload(
-                        WorkflowCommandType.analysis, layer_id="ndvi"
+                        WorkflowCommandType.analysis,
+                        layer_id="ref-smap-sm-202512-l3",
                     )
                 )
 
