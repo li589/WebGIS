@@ -175,6 +175,51 @@ class PythonProviderRequestBuilder:
             if isinstance(ds, dict):
                 for key, path in scraped.items():
                     ds.setdefault(key, path)
+        # scrape 写入 alias（smap_daily_mat 等）；按模块模板提升为 required 键，
+        # 避免图执行到 omega_avg_daily 时仍缺 anc_root/smap_folder。
+        ds = request_payload.get("datasource_selection")
+        if isinstance(ds, dict):
+            module_hint = str(
+                request_payload.get("module_name")
+                or (request_payload.get("tags") or {}).get("module_name")
+                or ""
+            )
+            if not module_hint:
+                # 图种子：从编译节点推断主算法模块
+                wf_def = request_payload.get("workflow_definition")
+                if isinstance(wf_def, dict):
+                    for node in wf_def.get("nodes") or []:
+                        if not isinstance(node, dict):
+                            continue
+                        params = node.get("params") or {}
+                        if str(node.get("node_type") or "") != "module":
+                            continue
+                        name = str(params.get("module_name") or "").strip()
+                        if name and name not in {
+                            "data_source",
+                            "time_range",
+                            "bbox",
+                            "output_map_layer",
+                            "map_layer",
+                        }:
+                            module_hint = name
+                            break
+            if module_hint:
+                try:
+                    from app.services.workflow_request_resolver import (
+                        _get_module_request_template,
+                        _promote_accepted_datasource_aliases,
+                    )
+
+                    _promote_accepted_datasource_aliases(
+                        ds, _get_module_request_template(module_hint)
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.debug(
+                        "Failed to promote scraped datasource aliases for %s",
+                        module_hint,
+                        exc_info=True,
+                    )
         request_payload.setdefault("algorithm_params", {})
         request_payload.setdefault(
             "output_spec", {"include_manifest": True, "extra": {}}

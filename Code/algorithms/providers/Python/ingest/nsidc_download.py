@@ -557,25 +557,33 @@ def download_smap_range(
     # 7) 下载
     session = _get_download_session(username, password)
 
+    from ingest._download_sync import download_claimed_file
+
     for i, g in enumerate(todo, 1):
         fp = local_path / g.name
         logger.info("[%d/%d] %s", i, len(todo), g.name)
 
         def file_progress(dl: int, total: int) -> None:
             if progress_callback:
-                progress_callback(i, len(todo), dl)
+                progress_callback(i, len(todo), dl, g.name)
 
-        # 安审 2026-08-21 H-1：改用共享 _http_resume 续传 + .part 临时文件
-        # 原子替换（gldas_download 同款）——半成品不再落为 .h5 本名，避免被
-        # 上方「已存在即跳过」的增量过滤误判为已完成。
-        part = fp.with_suffix(fp.suffix + ".part")
-        success = download_with_retry(
-            session, g.url, part, progress_callback=file_progress
-        ) and (part.replace(fp) or True)
-        if success:
+        # 安审 2026-08-21 H-1：续传写半成品再原子落盘。
+        # 2026-08-30：多任务共享 DATA_ROOT 时固定 ``.part`` + replace 会在
+        # Windows 上撞 WinError 32；改为认领锁 + 唯一 part + 可重试 replace，
+        # 对端已在下则等待成品而非并行抢写。
+        def _do_download(part: Path) -> bool:
+            return download_with_retry(
+                session, g.url, part, progress_callback=file_progress
+            )
+
+        status = download_claimed_file(dest=fp, do_download=_do_download)
+        if status == "downloaded":
             result.downloaded += 1
             result.downloaded_bytes += fp.stat().st_size
             logger.info("  完成: %s", format_size(fp.stat().st_size))
+        elif status == "skipped":
+            result.skipped += 1
+            logger.info("  跳过（已存在或对端已完成）: %s", g.name)
         else:
             result.failed += 1
             result.errors.append(f"下载失败: {g.name}")

@@ -111,6 +111,11 @@ describe('extractFailureCategory / isCoverageGapFailure', () => {
         failureCategory: 'transient_upstream',
       }),
     ).toBe(true)
+    expect(
+      isCoverageGapFailure({
+        message: '文件不存在: I:\\Geograph_DataSet\\FY',
+      }),
+    ).toBe(true)
     expect(isCoverageGapFailure({ message: '工作流执行失败，请查看服务端日志。' })).toBe(
       false,
     )

@@ -15,15 +15,33 @@
   z-index: 1;
 }
 
-/* 叠加层：覆盖底图但不拦截手势（同层渲染下 CSS 生效） */
+/* 叠加层：仅覆盖底图；z-index 必须远低于 .ui-layer */
 .overlay-canvas {
   position: absolute;
   left: 0;
   top: 0;
   width: 100%;
   height: 100%;
-  z-index: 5;
+  z-index: 2;
   pointer-events: none;
+}
+
+/*
+ * UI 层：经 root-portal 挂到页面根上，压过 map/canvas 原生层。
+ * position:fixed + 高 z-index；空区 pointer-events:none，子槽 auto。
+ */
+.ui-layer {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10000;
+  pointer-events: none;
+}
+
+.ui-layer .slot {
+  pointer-events: auto;
 }
 
 /* ---- 顶部 colorbar：贴顶全宽横条 ---- */
@@ -32,7 +50,7 @@
   top: 0;
   left: 0;
   right: 0;
-  z-index: 10;
+  z-index: 1;
 }
 
 /* ---- logo：避开 colorbar（colorbar 高约 44px） ---- */
@@ -40,46 +58,43 @@
   position: absolute;
   top: calc(52px + env(safe-area-inset-top));
   left: 12px;
-  z-index: 10;
+  z-index: 1;
 }
 
-/* ---- 左上角工具栏：logo-badge 正下方（logo 高约 44px + 8px 缝隙） ---- */
+/* ---- 左上角工具栏：logo-badge 正下方 ---- */
 .ltb-slot {
   position: absolute;
   top: calc(104px + env(safe-area-inset-top));
   left: 12px;
-  z-index: 10;
+  z-index: 1;
 }
 
-/* ---- 右侧工具栏：贴右上角（避开小程序右上胶囊按钮）
- * 胶囊按钮位置：top = safe-area-inset-top，高度约 32px
- * 工具栏从 safe-area-inset-top + 92px 开始（约 40px 缝隙）
- * 右侧留 14px 距离，不贴边 */
+/* ---- 右侧工具栏：贴右上角（避开小程序右上胶囊） ---- */
 .rail-slot {
   position: absolute;
   right: 14px;
   top: calc(env(safe-area-inset-top) + 92px);
-  z-index: 10;
+  z-index: 2;
 }
 
-/* ---- 左下比例尺：bottom 由 WXML 动态绑定（跟随时间轴高度） ---- */
+/* ---- 左下比例尺：bottom 由 WXML 动态绑定 ---- */
 .scale-slot {
   position: absolute;
   left: 12px;
-  z-index: 10;
+  z-index: 1;
 }
 
-/* ---- 底图切换按钮：bottom 由 WXML 动态绑定；圆角/内边距与比例尺/HUD容器对齐 ---- */
+/* ---- 底图切换按钮 ---- */
 .basemap-toggle {
   position: absolute;
   right: 12px;
-  z-index: 10;
+  z-index: 1;
   min-width: 58px;
-  padding: 7px 13px;           /* 内边距与 scale-bar-wrap 同一量级 */
+  padding: 7px 13px;
   background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border-radius: 10px;          /* 与 HUD/比例尺容器一致，不再是胶囊 */
+  border-radius: 10px;
   box-shadow: 0 4px 16px rgba(14, 22, 33, 0.10),
               inset 0 0 0 0.5px rgba(255, 255, 255, 0.5);
   display: flex;
@@ -101,38 +116,38 @@
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 10;
+  z-index: 3;
 }
 
-/* ---- 状态 HUD：尺寸/圆角/内边距与比例尺容器完全对齐 ---- */
+/* ---- 状态 HUD ---- */
 .debug-hud {
   position: absolute;
   left: 12px;
-  z-index: 20;
+  z-index: 2;
   max-width: 68vw;
   background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border-radius: 10px;          /* 与 scale-bar-wrap 一致 */
+  border-radius: 10px;
   box-shadow: 0 4px 16px rgba(14, 22, 33, 0.10),
               inset 0 0 0 0.5px rgba(255, 255, 255, 0.5);
-  padding: 7px 11px;           /* 与 scale-bar-wrap 一致 */
+  padding: 7px 11px;
 }
 .debug-hud text {
-  font-size: 12px;             /* 原 10px → 大一号 */
+  font-size: 12px;
   color: #3a3f4a;
   font-family: monospace;
   white-space: pre-wrap;
-  line-height: 1.55;           /* 行高同步放大 */
+  line-height: 1.55;
 }
 
-/* ---- 错误横幅：避开 colorbar 贴顶 ---- */
+/* ---- 错误横幅 ---- */
 .banner {
   position: absolute;
   top: calc(56px + env(safe-area-inset-top));
   left: 12px;
   right: 12px;
-  z-index: 40;
+  z-index: 4;
   background: rgba(226, 75, 74, 0.92);
   border-radius: 8px;
   padding: 8px 12px;

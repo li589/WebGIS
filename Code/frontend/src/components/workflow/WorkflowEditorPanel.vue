@@ -56,6 +56,7 @@ import {
   type ValidationResult,
   type ValidationIssue,
 } from '../../composables/workflow-validator'
+import { applyPipelineParamsToGraph } from '../../composables/workflow-pipeline-params'
 
 import type { LGraphNodeClass } from './litegraph-setup'
 import type {
@@ -163,9 +164,12 @@ function resolveGraphForRun(): {
   return fromCanvas ?? currentGraphData.value ?? null
 }
 
-/** 执行校验并更新状态 */
+/** 执行校验并更新状态（流水线启动时先注入日期等到图上再校验） */
 function runValidation(): ValidationResult {
-  const graphData = resolveGraphForRun()
+  let graphData = resolveGraphForRun()
+  if (pendingPipelineParams.value && graphData) {
+    graphData = applyPipelineParamsToGraph(graphData, pendingPipelineParams.value)
+  }
   const result = validateWorkflowBeforeRun(graphData, nodeTemplates.value)
   validationResult.value = result
   return result
@@ -433,55 +437,6 @@ async function handleRunConfirm(target: WorkflowRunTarget) {
 }
 
 /**
- * 将流水线启动器参数同步到算法节点与 data/time_range，保证计算范围和 UI 时间轴元数据一致。
- */
-function applyPipelineParamsToGraph(
-  graphData: { nodes: WorkflowDefinitionNode[]; links: WorkflowDefinitionLink[] },
-  params: Record<string, unknown>,
-): { nodes: WorkflowDefinitionNode[]; links: WorkflowDefinitionLink[] } {
-  const startDate = typeof params.start_date === 'string' ? params.start_date : ''
-  const endDate = typeof params.end_date === 'string' ? params.end_date : ''
-  const toIsoDate = (value: string) =>
-    `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T00:00:00`
-  const startAt = startDate.length === 8 ? toIsoDate(startDate) : ''
-  const endAt = endDate.length === 8 ? toIsoDate(endDate) : ''
-
-  const updatedNodes = graphData.nodes.map((node) => {
-    const nodeProps = node.properties as Record<string, unknown>
-    const isTimeRangeNode =
-      node.type === 'data/time_range' || nodeProps.module_name === 'time_range'
-    if (isTimeRangeNode && startAt && endAt) {
-      return {
-        ...node,
-        properties: {
-          ...nodeProps,
-          start_at: startAt,
-          end_at: endAt,
-        },
-      }
-    }
-    if (
-      nodeProps.algorithm_params &&
-      typeof nodeProps.algorithm_params === 'object' &&
-      !Array.isArray(nodeProps.algorithm_params)
-    ) {
-      return {
-        ...node,
-        properties: {
-          ...nodeProps,
-          algorithm_params: {
-            ...(nodeProps.algorithm_params as Record<string, unknown>),
-            ...params,
-          },
-        },
-      }
-    }
-    return node
-  })
-  return { nodes: updatedNodes, links: graphData.links }
-}
-
-/**
  * 流水线启动回调：加载对应工作流定义，注入 algorithm_params，然后走正常的 run 流程。
  */
 async function handlePipelineLaunch(workflowId: string, params: Record<string, unknown>) {
@@ -495,15 +450,18 @@ async function handlePipelineLaunch(workflowId: string, params: Record<string, u
     runStatus.value = 'error'
     return
   }
-  // 立刻写入 graph 快照，避免等 LiteGraph 异步 configure 完成
-  currentGraphData.value = {
-    nodes: def.nodes as WorkflowDefinitionNode[],
-    links: (def.links ?? []) as WorkflowDefinitionLink[],
-  }
+  // 立刻写入图快照（含流水线日期注入），避免等 LiteGraph 异步 configure 完成
+  currentGraphData.value = applyPipelineParamsToGraph(
+    {
+      nodes: def.nodes as WorkflowDefinitionNode[],
+      links: (def.links ?? []) as WorkflowDefinitionLink[],
+    },
+    params,
+  )
   selectedNode.value = null
   dirty.value = false
 
-  // 暂存流水线参数，待 handleRunConfirm 时注入 graphData
+  // 暂存流水线参数：校验与确认提交时再注入一次（画布序列化可能仍是种子占位）
   pendingPipelineParams.value = params
 
   logStore.logOperation(

@@ -55,14 +55,24 @@ def _resolve_omega_avg_datasource_selection(
     datasource_selection: dict[str, object],
 ) -> dict[str, object]:
     """解析 D2 数据源选择：先复用 daily bundle 键映射，再解析 omega_avg 专有键。"""
-    from modules.bundles import _resolve_bundle_datasource_selection
+    from modules.bundles import (
+        _path_from_datasource_value,
+        _resolve_bundle_datasource_selection,
+    )
 
     # 1. 复用 daily bundle 键映射（anc_root / smap_folder / ndvi_folder / lin_pix_mat 等）
     resolved = _resolve_bundle_datasource_selection(dict(datasource_selection))
 
     # 2. 解析 omega_avg 专有键（omega_block_dir / avg_omega_doy_dir / omega_block_mat）
     for target_key, dataset_names in _OMEGA_AVG_DATASOURCE_KEY_MAP.items():
-        if target_key in resolved and resolved[target_key]:
+        if resolved.get(target_key):
+            continue
+        for name in dataset_names:
+            path = _path_from_datasource_value(resolved.get(name))
+            if path:
+                resolved[target_key] = path
+                break
+        if resolved.get(target_key):
             continue
         local_path = resolve_prepared_local_path(
             resolved,

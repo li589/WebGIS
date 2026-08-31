@@ -22,7 +22,7 @@ API (list/describe/panel-schema/ui-schema/diagnostics).
 
 from __future__ import annotations
 
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from datetime import datetime
 from functools import lru_cache
 import importlib
@@ -59,17 +59,18 @@ _PENDING_IMPLEMENTATION_MODULES: frozenset[str] = frozenset()
 
 @contextmanager
 def _python_provider_import_path(provider_root: Path) -> Iterator[None]:
+    """Ensure the in-process Python provider root is importable.
+
+    The path is left on ``sys.path`` after the context exits. Algorithm modules
+    lazily import top-level provider modules such as ``_backend_bridge`` during
+    ``execute()`` (portal credentials, remote storage). Removing the path here
+    undoes ``modules.registry``'s permanent insert and yields
+    ``ModuleNotFoundError: No module named '_backend_bridge'`` mid-run.
+    """
     provider_path = str(provider_root)
-    inserted = False
     if provider_path not in sys.path:
         sys.path.insert(0, provider_path)
-        inserted = True
-    try:
-        yield
-    finally:
-        if inserted:
-            with suppress(ValueError):
-                sys.path.remove(provider_path)
+    yield
 
 
 # ─── 线程局部事件转发上下文 ───────────────────────────────────────────────────
@@ -158,7 +159,14 @@ class _EventForwardingLoggerAdapter:
 
     def emit_stage_start(self, stage: str, message: str) -> None:
         self._console.emit_stage_start(stage, message)
-        self._forward(stage, 0, message)
+        self._forward(
+            stage,
+            0,
+            message,
+            ui_surface="operational",
+            channel="system",
+            operational_message=f"[{stage}] 开始 · {message}",
+        )
 
     def emit_progress(
         self,
@@ -171,17 +179,43 @@ class _EventForwardingLoggerAdapter:
             self._console.emit_progress(stage, progress, message, detail=detail)
         except TypeError:
             self._console.emit_progress(stage, progress, message)
-        # progress 可能是 0-1 或 0-100，统一为 0-100（用 round 避免早期进度截断为 0）
         pct = round(progress * 100) if 0.0 <= progress <= 1.0 else round(progress)
-        self._forward(stage, pct, message, detail=detail)
+        self._forward(
+            stage,
+            pct,
+            message,
+            detail=detail,
+            ui_surface="node_progress",
+            channel="log",
+        )
 
     def emit_warning(self, stage: str, message: str, extra: dict | None = None) -> None:
         self._console.emit_warning(stage, message, extra=extra)
-        self._forward(stage, -1, message, level="warning", detail=extra)
+        self._forward(
+            stage,
+            -1,
+            message,
+            level="warning",
+            detail=extra,
+            ui_surface="operational",
+            channel="log",
+            component="module",
+        )
 
     def emit_error(self, stage: str, message: str, extra: dict | None = None) -> None:
         self._console.emit_error(stage, message, extra=extra)
-        self._forward(stage, -1, message, level="error", detail=extra)
+        enriched = dict(extra or {})
+        enriched.setdefault("component", "module")
+        enriched.setdefault("module_name", stage)
+        self._forward(
+            stage,
+            -1,
+            message,
+            level="error",
+            detail=enriched,
+            ui_surface="operational",
+            channel="log",
+        )
 
     def emit_artifact(self, stage: str, artifact_uri: str, artifact_type: str) -> None:
         self._console.emit_artifact(stage, artifact_uri, artifact_type)
@@ -195,11 +229,28 @@ class _EventForwardingLoggerAdapter:
                 "product_tag": artifact_type,
                 "phase": "artifact",
             },
+            ui_surface="operational",
+            channel="notification",
         )
 
     def emit_stage_end(self, stage: str, message: str) -> None:
         self._console.emit_stage_end(stage, message)
-        self._forward(stage, 100, message)
+        # 节点进度条：stage_end 必须落 100%（operational 事件不含 node_progress）
+        self._forward(
+            stage,
+            100,
+            message,
+            ui_surface="node_progress",
+            channel="log",
+        )
+        self._forward(
+            stage,
+            100,
+            message,
+            ui_surface="operational",
+            channel="system",
+            operational_message=f"[{stage}] 完成 · {message}",
+        )
 
     def _forward(
         self,
@@ -208,34 +259,66 @@ class _EventForwardingLoggerAdapter:
         message: str,
         level: str = "info",
         detail: dict | None = None,
+        *,
+        ui_surface: str = "node_progress",
+        channel: str = "log",
+        operational_message: str | None = None,
+        component: str | None = None,
     ) -> None:
         event_factory = getattr(_thread_local, "event_factory", None)
         if event_factory is None:
             return
         try:
+            from shared.contracts.api_contracts import EventChannel, LogLevel
+
             clamped = max(0, min(100, progress)) if progress >= 0 else -1
+            enriched = dict(detail or {})
+            graph_node_id = enriched.pop("graph_node_id", None)
+            node_id = (
+                f"{graph_node_id}:{stage}"
+                if graph_node_id and not str(stage).startswith("workflow.")
+                else stage
+            )
+            payload: dict[str, object] = {
+                "ui_surface": ui_surface,
+                "graph_node_id": graph_node_id,
+                "module_name": stage,
+            }
+            if component:
+                payload["component"] = component
             node_progress: dict[str, object] = {
-                "node_id": stage,
+                "node_id": node_id,
                 "node_label": stage,
                 "stage": _classify_stage(stage),
                 "progress": clamped,
                 "message": message,
                 "level": level,
             }
-            if detail:
-                # Normalize common dimension keys onto detail for FE progress shell
-                enriched = dict(detail)
+            if enriched:
                 if "module_name" not in enriched:
                     enriched["module_name"] = stage
                 node_progress["detail"] = enriched
+            # stage_start/end 也须带 node_progress，否则快完成节点条卡在 0%。
+            # ui_surface 只控制「运行记录」是否收录文案，不控制节点条更新。
+            if clamped >= 0 or ui_surface == "node_progress":
+                payload["node_progress"] = node_progress
+            event_message = operational_message if operational_message else message
+            if ui_surface == "node_progress" and not operational_message:
+                event_message = message
+            resolved_channel = (
+                channel
+                if isinstance(channel, EventChannel)
+                else EventChannel(channel)
+            )
+            resolved_level = level if isinstance(level, LogLevel) else LogLevel(level)
             event_factory(
-                channel="log",
-                message=message,
+                channel=resolved_channel,
+                message=event_message,
                 progress=clamped if clamped >= 0 else None,
-                payload={"node_progress": node_progress},
+                level=resolved_level,
+                payload=payload,
             )
         except Exception:
-            # 事件转发失败不应影响算法执行
             logger.debug("Failed to forward node_progress event", exc_info=True)
 
 
@@ -258,6 +341,9 @@ def _load_python_job_service():
         service = build_local_persistent_job_service(
             workspace=workspace, start_worker=False
         )
+        # Eager-load boundary bridge so mid-run lazy imports resolve even if a
+        # future change reintroduces temporary sys.path scoping.
+        importlib.import_module("_backend_bridge")
     # 覆盖 logger_adapter_factory：用事件转发适配器替代纯控制台适配器
     service._logger_adapter_factory = _EventForwardingLoggerAdapter
     return service

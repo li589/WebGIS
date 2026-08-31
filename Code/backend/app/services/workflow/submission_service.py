@@ -588,9 +588,11 @@ class WorkflowSubmissionService:
                 self._persistence.record_event(
                     run_id=run_id,
                     channel=EventChannel.system,
-                    message="工作流已成功派发到 Celery。",
+                    message=f"派发到队列 {queue_name}，等待 worker 消费。",
                     progress=18,
                     payload={
+                        "ui_surface": "operational",
+                        "component": "scheduler",
                         "task_id": task_id,
                         "queue_name": queue_name,
                         "dispatch_channel": dispatch_channel,

@@ -8,14 +8,21 @@
 from __future__ import annotations
 
 from modules.base import BaseModule
-from modules.download_nodes import _store_path_manifest
+from modules.download_nodes import (
+    _make_byte_stream_progress_cb,
+    _make_multi_file_progress_cb,
+    _make_skip_complete_emit,
+    _store_path_manifest,
+)
 from modules.registry import register_module_decorator
 from workflow.schemas import NodeExecutionContext, PortSpec
 
 _VALID_USE = frozenset({"auto", "herbie", "legacy"})
 
 
-@register_module_decorator(name="nomads_grib_download")
+@register_module_decorator(
+    name="nomads_grib_download", template_overrides={"phase": "download"}
+)
 class NomadsGribDownloadModule(BaseModule):
     name = "nomads_grib_download"
     description = (
@@ -88,6 +95,19 @@ class NomadsGribDownloadModule(BaseModule):
                 f"date={date} use={use} -> {target_dir}",
             )
 
+        _multi_cb = _make_multi_file_progress_cb(
+            ctx.logger_adapter, "nomads_grib_download"
+        )
+        _byte_cb = (
+            _make_byte_stream_progress_cb(
+                ctx.logger_adapter,
+                "nomads_grib_download",
+                item_name="grib2",
+            )
+            if use in {"legacy", "auto"}
+            else None
+        )
+
         result = download_nomads_grib(
             date,
             str(resolved.get("model") or "gfs"),
@@ -99,7 +119,22 @@ class NomadsGribDownloadModule(BaseModule):
             use=use,
             legacy_url=str(resolved.get("legacy_url") or ""),
             overwrite=bool(resolved.get("overwrite")),
+            progress_callback=_multi_cb,
+            byte_stream_callback=_byte_cb,
         )
+
+        if ctx.logger_adapter is not None:
+            total = result.downloaded + result.skipped + result.failed
+            if total == 0 or (
+                result.skipped >= total and result.downloaded == 0 and total > 0
+            ):
+                _make_skip_complete_emit(
+                    ctx.logger_adapter,
+                    "nomads_grib_download",
+                    total=max(total, result.skipped),
+                    skipped=result.skipped,
+                    downloaded=result.downloaded,
+                )
 
         if ctx.logger_adapter is not None:
             ctx.logger_adapter.emit_stage_end(

@@ -32,23 +32,36 @@ class _ScopedProgressLogger:
     而非纹丝不动。stage 以 ``workflow.`` 开头的内部事件不重复映射。
     """
 
-    def __init__(self, inner, base: float, span: float) -> None:
+    def __init__(self, inner, base: float, span: float, graph_node_id: str = "") -> None:
         self._inner = inner
         self._base = base
         self._span = span
+        self._graph_node_id = graph_node_id
+
+    def _with_graph(self, detail):
+        if not self._graph_node_id:
+            return detail
+        merged = dict(detail or {})
+        merged.setdefault("graph_node_id", self._graph_node_id)
+        return merged
 
     def emit_progress(self, stage, progress, message, detail=None) -> None:
         if self._inner is None:
             return
+        detail = self._with_graph(detail)
         self._inner.emit_progress(stage, progress, message, detail)
         if str(stage).startswith("workflow."):
             return
         try:
-            frac = max(0.0, min(1.0, float(progress)))
+            raw = float(progress)
         except (TypeError, ValueError):
             return
+        # Modules may emit 0–1 fractions or 0–100 percents; clamp to a fraction.
+        frac = raw / 100.0 if raw > 1.0 else raw
+        frac = max(0.0, min(1.0, frac))
         overall = min(0.999, self._base + frac * self._span)
-        self._inner.emit_progress("workflow.dispatch", overall, message, detail)
+        short = f"整体 {int(overall * 100)}%"
+        self._inner.emit_progress("workflow.dispatch", overall, short, None)
 
     def __getattr__(self, name):  # 其余事件透传
         inner = object.__getattribute__(self, "_inner")
@@ -218,6 +231,7 @@ class WorkflowRunner:
                 self.logger_adapter,
                 progress_base[0],
                 progress_base[1],
+                node.node_id,
             )
             if progress_base is not None and self.logger_adapter is not None
             else self.logger_adapter

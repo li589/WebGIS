@@ -23,6 +23,11 @@ Component({
   methods: {
     onSelect: function (e) {
       var id = e.currentTarget.dataset.id;
+      // 再点已选中 → 取消叠加
+      if (id && id === this.properties.activeLayerId) {
+        this.triggerEvent('select', { layerId: '' });
+        return;
+      }
       this.triggerEvent('select', { layerId: id });
     },
     onMaskTap: function () {

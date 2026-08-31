@@ -250,20 +250,23 @@ def _download_with_retry(
     dest: Path,
     progress_callback: Callable[[int, int], None] | None,
 ) -> bool:
-    """共享续传下载 + ``.part`` 临时文件原子替换，避免部分文件污染跳过逻辑。"""
+    """共享续传下载 + 认领锁/唯一 part/可重试落盘（多用户共享目录安全）。"""
+    from ingest._download_sync import download_claimed_file
+
     dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dest.with_suffix(dest.suffix + ".part")
-    if not download_with_retry(
-        session,
-        url,
-        tmp,
-        max_retries=MAX_RETRIES,
-        timeout=DOWNLOAD_TIMEOUT,
-        progress_callback=progress_callback,
-    ):
-        return False
-    tmp.replace(dest)
-    return True
+
+    def _do_download(part: Path) -> bool:
+        return download_with_retry(
+            session,
+            url,
+            part,
+            max_retries=MAX_RETRIES,
+            timeout=DOWNLOAD_TIMEOUT,
+            progress_callback=progress_callback,
+        )
+
+    status = download_claimed_file(dest=dest, do_download=_do_download)
+    return status in {"downloaded", "skipped"}
 
 
 def download_gldas_range(

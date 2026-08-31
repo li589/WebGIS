@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -173,16 +174,63 @@ def test_normalize_layer_without_variants_keeps_module_path() -> None:
     """无 workflow_variants 声明的 python_provider 图层维持既有模块路径（兼容）。"""
     payload = WorkflowSubmitRequest(
         command_type=WorkflowCommandType.analysis,
-        command_label="run ndvi",
-        layer_id="ndvi",
-        map_context=RuntimeMapContext(active_layer_id="ndvi"),
+        command_label="run smap l3",
+        layer_id="ref-smap-sm-202512-l3",
+        map_context=RuntimeMapContext(active_layer_id="ref-smap-sm-202512-l3"),
     )
     normalized = normalize_workflow_submit_request(payload)
     algo = normalized.algorithm_request or {}
     assert (
-        algo.get("module_name") == "ndvi_daily"
-    ), 'algo.get("module_name") == "ndvi_daily"（无变体图层不注入 workflow_name）'
+        algo.get("module_name") == "smap_daily"
+    ), 'algo.get("module_name") == "smap_daily"（无变体图层不注入 workflow_name）'
     assert "workflow_name" not in algo
+
+
+def test_normalize_fy_avg_online_promotes_datasource_aliases(tmp_path: Path, request) -> None:
+    """图层变体 workflow_name 路径须合并默认源并把 alias 提升为 required 键。"""
+    from app.core.config import settings
+    from app.services.workflow_request_resolver import invalidate_template_cache
+
+    root = tmp_path / "Geograph_DataSet"
+    for rel in (
+        "Inversion_Results/omega_block",
+        "Soil_Moisture/SMAP_Origin_Data",
+        "Soil_Moisture/SMAP_Auxiliary_Data",
+        "Ecological_Vegetation/NDVI/NDVIday",
+    ):
+        (root / rel).mkdir(parents=True, exist_ok=True)
+        (root / rel / "dummy.bin").write_bytes(b"x")
+
+    old_root = getattr(settings, "data_root")
+    object.__setattr__(settings, "data_root", str(root))
+    request.addfinalizer(lambda: object.__setattr__(settings, "data_root", old_root))
+    invalidate_template_cache()
+    request.addfinalizer(invalidate_template_cache)
+
+    payload = WorkflowSubmitRequest(
+        command_type=WorkflowCommandType.analysis,
+        command_label="run fy avg online",
+        layer_id="method-fy-omega-doy-avg",
+        map_context=RuntimeMapContext(active_layer_id="method-fy-omega-doy-avg"),
+        algorithm_request={
+            "workflow_entry_name": "omega_avg_daily_fy_online",
+            "datasource_selection": {
+                "smap_daily_mat": str(root / "Soil_Moisture" / "SMAP_Origin_Data"),
+                "ancillary_mat": str(root / "Soil_Moisture" / "SMAP_Auxiliary_Data"),
+                "ndvi_daily_mat": str(
+                    root / "Ecological_Vegetation" / "NDVI" / "NDVIday"
+                ),
+                "omega_block_output": str(root / "Inversion_Results" / "omega_block"),
+            },
+        },
+    )
+    normalized = normalize_workflow_submit_request(payload)
+    algo = normalized.algorithm_request or {}
+    ds = algo.get("datasource_selection") or {}
+    assert ds.get("smap_folder"), "smap_daily_mat 应提升为 smap_folder"
+    assert ds.get("anc_root"), "ancillary_mat 应提升为 anc_root"
+    assert ds.get("ndvi_folder"), "ndvi_daily_mat 应提升为 ndvi_folder"
+    assert ds.get("omega_block_dir"), "omega_block_output 应提升为 omega_block_dir"
 
 
 def test_normalize_multi_module_keeps_definition_without_module_name() -> None:

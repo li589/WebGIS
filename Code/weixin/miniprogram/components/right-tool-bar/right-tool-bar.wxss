@@ -74,7 +74,7 @@
   color: #185fa5;
 }
 
-/* ---- 遮罩 ---- */
+/* ---- 遮罩：收起时禁用命中，避免隐形全屏层挡住地图/其它控件 ---- */
 .rtb-mask {
   position: fixed;
   left: 0;
@@ -84,10 +84,12 @@
   background: rgba(0, 0, 0, 0);
   z-index: 30;
   visibility: hidden;
+  pointer-events: none;
   transition: background 0.2s ease, visibility 0.2s;
 }
 .rtb-mask.show {
   visibility: visible;
+  pointer-events: auto;
   background: rgba(0, 0, 0, 0.25);
 }
 

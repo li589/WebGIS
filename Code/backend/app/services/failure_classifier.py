@@ -187,6 +187,8 @@ class FailureClassifier:
                 "零交集",
                 "本地无数据",
                 "无可用日期",
+                "无有效像元",
+                "0 valid pixels",
                 "no overlapping dates",
                 "zero intersection",
                 "requested date/file may not be available",
@@ -199,6 +201,12 @@ class FailureClassifier:
                 "files found in",
                 "no matching files",
                 "no files found",
+                # data/source 本地路径缺失（universal_reader / local_fs）
+                # 例如「文件不存在: I:\…\FY」——须在泛化 not_found 之前命中，
+                # 才能触发前端源路由切在线。
+                "文件不存在",
+                "file does not exist",
+                "no such file or directory",
             )
         )
 

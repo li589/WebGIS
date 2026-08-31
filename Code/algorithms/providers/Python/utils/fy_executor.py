@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -20,6 +21,14 @@ def _build_hidden_creationflags() -> dict[str, Any]:
 def inject_geoloc_metadata_to_vrt(
     source_vrt: str | Path, target_vrt: str | Path, metadata_block: str
 ) -> Path:
+    """把 GEOLOCATION 元数据块写入 VRT（须在默认 Metadata 域之外）。
+
+    旧逻辑在见到第一个 ``</Metadata>`` 时**先写 GEOLOCATION 再写闭合标签**，
+    会把 GEOLOCATION 嵌进默认 Metadata 域内。GDAL 随后读不到合法
+    GEOLOC_ARRAY，gdalwarp -geoloc 报
+    ``Unable to compute a GEOLOC_ARRAY based transformation``。
+    正确位置：默认 Metadata 关闭之后、或 ``<GCPList`` 之前（同级兄弟节点）。
+    """
     source_vrt = Path(source_vrt)
     target_vrt = Path(target_vrt)
     target_vrt.parent.mkdir(parents=True, exist_ok=True)
@@ -30,7 +39,13 @@ def inject_geoloc_metadata_to_vrt(
         target_vrt.open("w", encoding="utf-8") as dst,
     ):
         for line in src:
-            if (not inserted) and ("<GCPList" in line or "</Metadata>" in line):
+            # 先关闭默认 Metadata，再在其后插入 GEOLOCATION（同级）
+            if (not inserted) and ("</Metadata>" in line) and ("domain=" not in line):
+                dst.write(line)
+                dst.write(metadata_block)
+                inserted = True
+                continue
+            if (not inserted) and ("<GCPList" in line):
                 dst.write(metadata_block)
                 inserted = True
             dst.write(line)
@@ -70,6 +85,11 @@ def execute_fy_command_steps(
     shell: bool = True,
     stop_on_error: bool = True,
 ) -> list[dict[str, Any]]:
+    # 计划阶段可能已写入绝对路径；执行时仍确保 QGIS HDF5 的 GDAL_DRIVER_PATH。
+    from algorithms.fy import resolve_gdal_bins
+
+    resolve_gdal_bins()
+
     results: list[dict[str, Any]] = []
     total_steps = max(len(steps), 1)
     hidden_kwargs = _build_hidden_creationflags()
@@ -128,6 +148,7 @@ def execute_fy_command_steps(
             shell=shell,
             capture_output=True,
             text=True,
+            env=os.environ.copy(),
             **hidden_kwargs,
         )
         results.append(

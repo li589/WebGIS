@@ -29,6 +29,8 @@
         "start_date": "{YYYYMMDD}",
         "end_date": "{YYYYMMDD}",
         "version": "6",
+        "short_name": "SPL3SMP_E",
+        "local_dir": "{DATA_ROOT}/Soil_Moisture/SMAP_L3_SPL3SMP_E",
         "dry_run": false
       }
     },
@@ -40,6 +42,7 @@
         140
       ],
       "properties": {
+        "module_name": "smap_daily",
         "output_dir": "{DATA_ROOT}/Soil_Moisture/SMAP_Origin_Data"
       }
     },

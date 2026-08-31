@@ -3,13 +3,17 @@
 > 仅前端工程，适配 CGDA FastAPI 后端；数据图层 + 腾讯底图 + 时间轴**纯显示**。
 > 设计方案：`.ai/plans/2026-08-22-weixin-miniprogram-design.md`
 
-## 当前状态：M0 ✅ M1 ✅ M2 ✅ M3-UI ✅（2026-08-22）
+## 当前状态：M0 ✅ M1 ✅ M2 ✅ M3-UI ✅（2026-08-30：禁首屏自动选层）
+
+- **进入页不自动加载任何叠加图层**（含 dem-etopo）；目录只拉 `/layers`+`/overlays`，bounds/瓦片仅在用户点选后请求。
+- **canvas 按需挂载**（`showOverlayCanvas`）；UI 经 `root-portal` 置于原生 map/canvas 之上。
 
 ### M0 spike 验收结果（模拟器实测）
 
 | 验收项 | 标准 | 实测 | 结论 |
 |---|---|---|---|
 | canvas 同层渲染覆盖 map | 叠加层可见且手势透传 | ✅ `pointer-events:none` 生效，拖动/缩放流畅 | 通过 |
+| UI 控件不被瓦片盖住 | colorbar/工具栏/时间轴始终在 canvas 之上 | ✅ `.ui-layer`（普通 view + z-index:20）承载控件；勿把定位 class 直接挂在自定义组件 host 上 | 通过（2026-08-30 修复） |
 | mercator 对齐精度（z12） | 错位 < 5px | **0.3px**（getRegion 四角自检） | 通过 |
 | mercator 对齐精度（z16 卫星） | 错位 < 5px | **0.3px** | 通过 |
 | marker ↔ canvas 圆点重合 | 目视重合 | ✅ 重合（z16 截图） | 通过 |
@@ -56,6 +60,8 @@
 
 **模拟器验收（实测）**：
 - 默认图层 dem-etopo（全局 ETOPO 高程，terrain 渐变）→ 30/30 瓦片全加载
++ ~~默认自动加载 dem-etopo~~（已关闭：`AUTO_SELECT_DEFAULT_LAYER=false`；进页仅底图+控件，右侧工具栏手动选层）
++- 手动选 dem-etopo → 按需挂载 canvas → 30/30 瓦片（对齐后再绘）
 - 切 CLCD 土地利用（土地覆盖，discrete tab10）→ 离散色块可视，30/30 加载
 - 切 CMFD 区域降水（climate，YlGnBu 渐变）→ 30/30 加载
 - 切 CO₂ 柱浓度（climate，RdYlGn_r 渐变）→ 30/30 加载

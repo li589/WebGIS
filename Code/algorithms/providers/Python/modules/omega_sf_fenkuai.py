@@ -133,14 +133,24 @@ def _resolve_omega_sf_datasource_selection(
     datasource_selection: dict[str, object],
 ) -> dict[str, object]:
     """解析 omega_sf 数据源选择：先复用 daily bundle 键映射，再解析 omega_sf 专有键。"""
-    from modules.bundles import _resolve_bundle_datasource_selection
+    from modules.bundles import (
+        _path_from_datasource_value,
+        _resolve_bundle_datasource_selection,
+    )
 
     # 1. 复用 daily bundle 键映射（anc_root / smap_folder / ndvi_folder / lin_pix_mat 等）
     resolved = _resolve_bundle_datasource_selection(dict(datasource_selection))
 
     # 2. 解析 omega_sf 专有键（fy3d_folder / fy3b_folder / gldas_mat_folder / ddca_sm_folder）
     for target_key, dataset_names in _OMEGA_SF_DATASOURCE_KEY_MAP.items():
-        if target_key in resolved and resolved[target_key]:
+        if resolved.get(target_key):
+            continue
+        for name in dataset_names:
+            path = _path_from_datasource_value(resolved.get(name))
+            if path:
+                resolved[target_key] = path
+                break
+        if resolved.get(target_key):
             continue
         local_path = resolve_prepared_local_path(
             resolved,
@@ -393,6 +403,23 @@ class OmegaSfFenkuaiModule(BaseModule):
             cancel_flag_path=cancel_flag_path,
             reuse_block_cache=bool(reuse_block_cache),
         )
+
+        # Fail-closed：零有效像元仍写全 NaN 块文件时，桥接层会标 success 并
+        # 物化「空白」图层 → 用户看到「已完成但地图无显示」。无有效像元视为失败。
+        if int(result.n_pixels_success or 0) <= 0:
+            message = (
+                "error_code=coverage_gap "
+                f"SF 反演无有效像元（0/{int(result.n_pixels_total or 0)} succeeded；"
+                f"TB_SOURCE={config.tb_source}, SM_SOURCE={config.sm_source}, "
+                f"{config.start_date}~{config.end_date}）。"
+                "请检查该时间窗 FY/SMAP/辅助数据是否对齐可用，勿将空结果当成功上图。"
+            )
+            if ctx.logger_adapter is not None:
+                try:
+                    ctx.logger_adapter.emit_stage_end("omega_sf_fenkuai", message)
+                except Exception:
+                    pass
+            raise ValueError(message)
 
         # 构建三个产品图层引用
         products: list[ProductRef] = []

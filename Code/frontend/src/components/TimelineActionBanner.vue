@@ -107,13 +107,14 @@ let dragOffsetY = 0
 let activePointerId: number | null = null
 
 function onDragPointerDown(e: PointerEvent) {
-  // 仅左键；点在按钮/输入上不拖
+  // 仅左键；点在按钮/输入上不拖（手柄/正文空白可拖）
   if (e.button !== 0) return
   const t = e.target as HTMLElement | null
-  if (t?.closest('button, input, label, a')) return
+  if (t?.closest('button, input, label, a, .tab-actions')) return
   const el = rootRef.value
   if (!el) return
   e.preventDefault()
+  e.stopPropagation()
   const rect = el.getBoundingClientRect()
   // 首次拖动：从当前几何转为 left/top
   if (!placed.value) {
@@ -123,7 +124,8 @@ function onDragPointerDown(e: PointerEvent) {
   dragOffsetY = e.clientY - placed.value.top
   dragging.value = true
   activePointerId = e.pointerId
-  ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+  // 捕获挂在根节点，避免子树（Tooltip 等）吞掉 pointermove
+  el.setPointerCapture?.(e.pointerId)
 }
 
 function onDragPointerMove(e: PointerEvent) {
@@ -378,16 +380,21 @@ onScopeDispose(() => {
 .tab-drag {
   display: flex;
   justify-content: center;
-  padding: 0.15rem 0 0.05rem;
-  margin-bottom: -0.1rem;
+  align-items: center;
+  min-height: 1.1rem;
+  padding: 0.25rem 0 0.1rem;
+  margin-bottom: -0.05rem;
+  cursor: grab;
+  touch-action: none;
 }
 
 .tab-drag-grip {
-  width: 2rem;
-  height: 0.28rem;
+  width: 2.6rem;
+  height: 0.34rem;
   border-radius: 999px;
   background: var(--border-strong);
-  opacity: 0.85;
+  opacity: 0.9;
+  pointer-events: none;
 }
 
 .tab-card {

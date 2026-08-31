@@ -54,7 +54,7 @@ _DOWNLOAD_MAX_BYTES = 512 * 1024 * 1024  # 512 MB
 # Celery broker visibility_timeout（秒）：必须大于最长 task_time_limit
 # （workflow 任务 time_limit=7500），否则 acks_late 下长任务会被重投
 _BROKER_VISIBILITY_TIMEOUT = 8100  # seconds
-# solo 池看门狗阈值（秒）：运行时长超此值的 run 标记为 failed
+# solo 池看门狗空闲阈值（秒）：running 且无活动（无 updated_at / 无新事件）超此值则标 failed
 _WORKFLOW_STUCK_WATCHDOG_SECONDS = 8100  # seconds
 # GEE 本地单次写入上限
 _GEE_MAX_LOCAL_WRITE_BYTES = 10 * 1024 * 1024  # 10 MB
@@ -631,10 +631,11 @@ class Settings:
     celery_broker_socket_connect_timeout: int = int(
         os.getenv("BACKEND_CELERY_BROKER_SOCKET_CONNECT_TIMEOUT", "10")
     )
-    # 发布就绪修复（P1-4）：solo 池看门狗阈值（秒）。worker_pool=solo 时 time_limit
-    # 无法强杀卡死任务，run 会永远停在 running。看门狗周期任务把"运行时长超此阈值"
-    # 的 run 标记为 failed（仅纠正状态，不释放被卡 worker）。默认 8100 > workflow
-    # 任务 time_limit=7500，避免误杀合法长任务。
+    # 发布就绪修复（P1-4）：solo 池看门狗**空闲**阈值（秒）。worker_pool=solo 时
+    # time_limit 无法强杀卡死任务。看门狗按「最近活动」计时（run.updated_at 与
+    # workflow_events 最新 created_at 取较大值），仅在无进度/无事件超过本阈值时
+    # 标 failed——不会因总墙钟时长误杀仍在下载/反演的长任务。仅纠正状态，不释放
+    # 被卡 worker。默认 8100s（约 2.25h 无动静）。
     workflow_stuck_watchdog_seconds: int = int(
         os.getenv(
             "BACKEND_WORKFLOW_STUCK_WATCHDOG_SECONDS",

@@ -180,7 +180,7 @@ export function isCoverageGapFailure(job: {
   })
   if (fromDiag === 'coverage_gap') return true
   const blob = `${job.message || ''} ${job.reportSummary || ''} ${(job.diagnostics || []).join(' ')}`
-  return /零交集|本地无数据|coverage_gap|no overlapping dates|zero intersection|no fy hdf|hdf files found|files found in|no files found|no matching files/i.test(
+  return /零交集|本地无数据|coverage_gap|no overlapping dates|zero intersection|no fy hdf|hdf files found|files found in|no files found|no matching files|文件不存在|file does not exist|no such file or directory/i.test(
     blob,
   )
 }

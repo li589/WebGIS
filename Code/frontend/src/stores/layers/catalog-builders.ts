@@ -6,7 +6,7 @@
  * index.ts 经 re-export 保持既有引用兼容。
  */
 import type { LayerDescriptor, WorkflowEvent } from '../../services/runtime-api'
-import { formatWorkflowEventLine } from '../../utils/workflow-event-label'
+import { mergeOperationalLog } from '../../utils/workflow-operational-log'
 import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
 import { isWeatherEngineCatalogId } from './weather-session'
 import { isEnglishInversionCatalogId } from './inversion-catalog'
@@ -19,8 +19,6 @@ import type {
   LayerSource,
   RuntimeLayerLibraryItem,
 } from './types'
-
-const MAX_EVENT_MESSAGE_COUNT = 5
 
 /**
  * 目录显示名：静态 LAYER_LIBRARY → 传入的 runtime 缓存 → catalogId。
@@ -144,14 +142,7 @@ export function mergeRecentEventMessages(
   existing: string[] | undefined,
   incoming: WorkflowEvent[],
 ) {
-  const merged = [...(existing ?? [])]
-  for (const event of incoming) {
-    const text = formatWorkflowEventLine(event.channel, event.message)
-    if (merged[merged.length - 1] !== text) {
-      merged.push(text)
-    }
-  }
-  return merged.slice(-MAX_EVENT_MESSAGE_COUNT)
+  return mergeOperationalLog(existing, incoming)
 }
 
 export function hasRenderableMapLayerAsset(jobLayer: JobLayerItem | null | undefined) {

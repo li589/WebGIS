@@ -18,7 +18,12 @@ import { resolveEmptyOverlayWorkflowError } from './materialize-empty'
 import { productTagLabel } from '../../utils/workflow-expected-outputs'
 import { cleanProductDisplayName } from '../../utils/workflow-result-naming'
 import { isDefaultProductDisplayName } from './layer-naming'
-import { isEnglishInversionCatalogId, resolveInversionCatalogId, sanitizeRunGroupTitle } from './inversion-catalog'
+import { isEnglishInversionCatalogId, resolveInversionCatalogId } from './inversion-catalog'
+import {
+  isTechnicalRunTitle,
+  resolveRunGroupTitle,
+  tryWorkflowSummaries,
+} from '../../utils/workflow-run-display-name'
 import {
   timelineTargetFromWorkflowTimeKey,
   type WorkflowProgressTimeSeekHint,
@@ -185,6 +190,39 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     }
   }
 
+  /** 按成员 catalog / runId 同步计算组标题为工作流中文名（禁止 wf-run-* 占位泄漏）。 */
+  function syncRunGroupTitleFromJob(
+    catalogId: string,
+    job: Pick<JobLayerItem, 'jobId' | 'name' | 'commandLabel'>,
+  ) {
+    const resolved = resolveRunGroupTitle({
+      jobName: job.name,
+      commandLabel: job.commandLabel,
+      summaries: tryWorkflowSummaries(),
+    })
+    if (isTechnicalRunTitle(resolved)) return
+
+    const layer = deps.getActiveLayers().find((l) => l.catalogId === catalogId && l.runGroupId)
+    const byRun =
+      job.jobId && !deps.isLocalSubmitJobId(job.jobId)
+        ? runLayerGroups.value.find((g) => g.runId === job.jobId)
+        : undefined
+    const byMember = layer?.runGroupId
+      ? runLayerGroups.value.find((g) => g.groupId === layer.runGroupId)
+      : undefined
+    const group = byRun ?? byMember
+    if (!group) return
+
+    if (isTechnicalRunTitle(group.title) || !group.title?.trim()) {
+      group.title = resolved
+      return
+    }
+    // 已有标题但仍是泛化 fallback 时，用工作流名覆盖
+    if (/^(反演产物|工作流产物|工作流运行)$/.test(group.title.trim())) {
+      group.title = resolved
+    }
+  }
+
   /** 按成员 catalog 更新计算组进度（local-submit 阶段 group.runId 尚为空） */
   function updateRunGroupForCatalog(
     catalogId: string,
@@ -258,6 +296,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     syncJobLayerToActiveLayer(resolvedCatalogId, enrichedJobLayer)
     deps.rememberTrackedWorkflowRun(resolvedCatalogId, enrichedJobLayer)
     updateRunGroupForCatalog(resolvedCatalogId, enrichedJobLayer)
+    syncRunGroupTitleFromJob(resolvedCatalogId, enrichedJobLayer)
     if (isTerminalStatus(enrichedJobLayer.status)) {
       if (enrichedJobLayer.status === 'cancelled' || enrichedJobLayer.status === 'failed') {
         // local-submit 失败时按 catalog 找组清理占位；真 run 按 runId
@@ -918,21 +957,15 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       // 无组游离层：丢弃 UI 条目（产物可经 restore/autoAttach 再绑）
       layers.splice(i, 1)
     }
-    // 组标题若落成 omega_sf_fenkuai_* 等技术名，纠偏为中文目录名或通用名
+    // 组标题若落成技术占位（wf-run-* / omega_sf_*），纠偏为中文名
     for (const group of runLayerGroups.value) {
-      if (!group.title || !isEnglishInversionCatalogId(group.title)) continue
-      const mapped = resolveInversionCatalogId(group.title)
-      const libName =
-        mapped !== group.title
-          ? deps.getActiveLayers().find((l) => l.catalogId === mapped)?.name
-          : undefined
-      group.title =
-        (libName && !isEnglishInversionCatalogId(libName) ? libName : '') ||
-        (group.sourceLayerId
-          ? deps.getActiveLayers().find((l) => l.catalogId === group.sourceLayerId)?.name
-          : '') ||
-        '反演产物'
-      if (isEnglishInversionCatalogId(group.title)) group.title = '反演产物'
+      if (!group.title || !isTechnicalRunTitle(group.title)) continue
+      group.title = resolveRunGroupTitle({
+        workflowId: group.workflowId,
+        configuredTitle: group.title,
+        summaries: tryWorkflowSummaries(),
+        fallback: '工作流产物',
+      })
     }
   }
 
@@ -1100,7 +1133,12 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     runLayerGroups.value.push({
       groupId,
       runId: '',
-      title: sanitizeRunGroupTitle(options.title, '反演产物'),
+      title: resolveRunGroupTitle({
+        configuredTitle: options.title,
+        workflowId: options.workflowId,
+        summaries: tryWorkflowSummaries(),
+        fallback: '反演产物',
+      }),
       status: 'computing',
       memberInstanceIds,
       dissolvable: false,

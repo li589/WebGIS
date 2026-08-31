@@ -8,6 +8,31 @@ import { mergeWorkflowSummaryWithWeather } from '../../utils/workflow-status-mer
 import { formatWorkflowCommandChip } from '../../utils/workflow-error-messages'
 import type { JobStatus } from '../../stores/layers/types'
 import { WORKFLOW_COPY } from '../../ui-copy'
+import { filterDisplayableNodeProgress } from '../../stores/layers/workflow-progress'
+import {
+  formatDownloadProgressDetail,
+  hasDownloadProgressDetail,
+} from '../../utils/workflow-download-display'
+import {
+  isTechnicalRunTitle,
+  resolveJobLayerDisplayName,
+  stripComputingGroupSuffix,
+} from '../../utils/workflow-run-display-name'
+import { MAX_OPERATIONAL_LOG_COUNT } from '../../utils/workflow-operational-log'
+
+/** 状态指示器主标题：工作流种子名优先，禁止图层 catalog 名 / wf-run-* 占位。 */
+function workflowStatusDisplayName(options: {
+  layerCatalogName: string
+  jobLayer: { name?: string; commandLabel?: string; catalogId?: string }
+}): string {
+  const fromJob = stripComputingGroupSuffix(String(options.jobLayer.name || '').trim())
+  if (fromJob && !isTechnicalRunTitle(fromJob)) return fromJob
+  return resolveJobLayerDisplayName(
+    { command_label: options.jobLayer.commandLabel, layer_id: options.jobLayer.catalogId },
+    options.layerCatalogName,
+    { previousName: options.jobLayer.name },
+  )
+}
 
 const workspace = useLayerWorkspace()
 const workflowRun = useWorkflowRun()
@@ -41,7 +66,10 @@ const workflowItems = computed(() => {
     .filter((layer) => layer.jobLayer)
     .map((layer) => ({
       catalogId: layer.catalogId,
-      name: layer.name,
+      name: workflowStatusDisplayName({
+        layerCatalogName: layer.name,
+        jobLayer: layer.jobLayer!,
+      }),
       accentColor: layer.accentColor,
       category: layer.category,
       jobLayer: layer.jobLayer!,
@@ -58,7 +86,10 @@ const workflowItems = computed(() => {
       const cat = workspace.layerCategories.find((c) => c.id === meta?.category)
       return {
         catalogId: catId,
-        name: meta?.name ?? job.name,
+        name: workflowStatusDisplayName({
+          layerCatalogName: meta?.name ?? job.name,
+          jobLayer: job,
+        }),
         accentColor: meta?.accentColor ?? cat?.accentColor ?? 'var(--text-disabled)',
         category: meta?.category ?? 'research-group',
         jobLayer: job,
@@ -269,15 +300,60 @@ const summaryCards = computed(() => {
 /** 展开的诊断/事件面板 */
 const expandedItems = ref<Set<string>>(new Set())
 function toggleExpand(jobId: string) {
-  if (expandedItems.value.has(jobId)) {
-    expandedItems.value.delete(jobId)
-  } else {
-    expandedItems.value.add(jobId)
-  }
+  const next = new Set(expandedItems.value)
+  if (next.has(jobId)) next.delete(jobId)
+  else next.add(jobId)
+  expandedItems.value = next
 }
 
 function isExpanded(jobId: string): boolean {
   return expandedItems.value.has(jobId)
+}
+
+/** 失败作业 id 集合（浅层），避免 deep watch 整树 */
+const failedJobIdsKey = computed(() =>
+  workflowItems.value
+    .filter((item) => item.jobLayer.status === 'failed')
+    .map((item) => item.jobLayer.jobId)
+    .sort()
+    .join(','),
+)
+
+watch(failedJobIdsKey, (key) => {
+  if (!key) return
+  const next = new Set(expandedItems.value)
+  let changed = false
+  for (const jobId of key.split(',')) {
+    if (jobId && !next.has(jobId)) {
+      next.add(jobId)
+      changed = true
+    }
+  }
+  if (changed) expandedItems.value = next
+})
+
+function buildOperationalLogLines(job: {
+  status: JobStatus
+  eventMessages?: string[]
+  failureHints?: string[]
+}): string[] {
+  const events = filteredEventMessages(job.eventMessages)
+  if (job.status !== 'failed' || !job.failureHints?.length) return events
+  const pinned = job.failureHints.filter((h) => !events.includes(h))
+  return [...pinned, ...events]
+}
+
+/** 每 job 运行记录缓存，避免模板多次重算 */
+const operationalLogByJobId = computed(() => {
+  const map = new Map<string, string[]>()
+  for (const item of workflowItems.value) {
+    map.set(item.jobLayer.jobId, buildOperationalLogLines(item.jobLayer))
+  }
+  return map
+})
+
+function operationalLogLines(jobId: string): string[] {
+  return operationalLogByJobId.value.get(jobId) ?? []
 }
 
 function formatTime(value: string): string {
@@ -325,27 +401,7 @@ function categoryTooltip(cat: { running: number; succeeded: number; failed: numb
   return `运行 ${cat.running} · 完成 ${cat.succeeded} · 失败 ${cat.failed} · 共 ${cat.total} 项`
 }
 
-/** 下载速率格式化：1835008 → "1.8 MB/s"（与算法包 format_speed 同规则） */
-function formatSpeed(bps: number | null | undefined): string {
-  if (!bps || bps <= 0) return ''
-  if (bps >= 1024 * 1024) return `${(bps / 1024 / 1024).toFixed(1)} MB/s`
-  if (bps >= 1024) return `${(bps / 1024).toFixed(0)} KB/s`
-  return `${bps.toFixed(0)} B/s`
-}
-
-/** 字节数格式化：156000000 → "148.8 MB"（与算法包 format_size 同规则） */
-function formatBytes(bytes: number | null | undefined): string {
-  if (!bytes || bytes <= 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let size = bytes
-  let idx = 0
-  while (size >= 1024 && idx < units.length - 1) {
-    size /= 1024
-    idx++
-  }
-  return `${idx === 0 ? size : size.toFixed(1)} ${units[idx]}`
-}
-
+/** 下载速率/字节格式化见 workflow-download-display（与算法包同规则） */
 /** 节点阶段图标映射 */
 const STAGE_ICONS: Record<string, Component> = {
   download: Download,
@@ -356,6 +412,12 @@ const STAGE_ICONS: Record<string, Component> = {
 
 function getStageIcon(stage: string): Component {
   return STAGE_ICONS[stage] ?? Circle
+}
+
+function displayableNodeProgress<T extends { nodeId: string; nodeLabel?: string; stage?: string; progress: number; updatedAt?: string; eventId?: string }>(
+  nodes: T[] | undefined,
+): T[] {
+  return filterDisplayableNodeProgress(nodes)
 }
 
 function handleCancel(jobId: string, catalogId: string) {
@@ -388,7 +450,7 @@ async function copyRunTimeline(job: {
     progress: job.progress,
     message: job.message,
     retry_of_run_id: job.retryOfRunId,
-    events: filteredEventMessages(job.eventMessages).slice(-40),
+    events: filteredEventMessages(job.eventMessages).slice(-MAX_OPERATIONAL_LOG_COUNT),
     node_progress: job.nodeProgress ?? [],
   }
   try {
@@ -820,37 +882,48 @@ onBeforeUnmount(() => {
               >
             </details>
 
-            <!-- 事件消息（可展开，支持阶段过滤） -->
+            <!-- 运行记录（调度/节点起止/错误；不含高频下载 tick） -->
             <ul
-              v-if="filteredEventMessages(item.jobLayer.eventMessages).length"
+              v-if="operationalLogLines(item.jobLayer.jobId).length"
               class="wf-item-events"
             >
+              <li class="wf-events-title">运行记录</li>
               <li
-                v-for="evt in isExpanded(item.jobLayer.jobId)
-                  ? filteredEventMessages(item.jobLayer.eventMessages)
-                  : filteredEventMessages(item.jobLayer.eventMessages).slice(-2)"
-                :key="evt"
+                v-for="(evt, evtIdx) in isExpanded(item.jobLayer.jobId)
+                  ? operationalLogLines(item.jobLayer.jobId)
+                  : operationalLogLines(item.jobLayer.jobId).slice(
+                      0,
+                      item.jobLayer.status === 'failed' ? 6 : 2,
+                    )"
+                :key="`${item.jobLayer.jobId}-${evtIdx}-${evt}`"
+                :class="{ 'wf-event-error': /ERROR|失败|failed/i.test(evt) }"
               >
                 {{ evt }}
               </li>
               <button
-                v-if="filteredEventMessages(item.jobLayer.eventMessages).length > 2"
+                v-if="
+                  operationalLogLines(item.jobLayer.jobId).length >
+                  (item.jobLayer.status === 'failed' ? 6 : 2)
+                "
                 class="wf-expand-btn"
                 @click="toggleExpand(item.jobLayer.jobId)"
               >
                 {{
                   isExpanded(item.jobLayer.jobId)
                     ? '收起'
-                    : `展开全部 (${filteredEventMessages(item.jobLayer.eventMessages).length})`
+                    : `展开全部 (${operationalLogLines(item.jobLayer.jobId).length})`
                 }}
               </button>
             </ul>
 
             <!-- 节点级进度 -->
-            <div v-if="item.jobLayer.nodeProgress?.length" class="node-progress-section">
+            <div
+              v-if="displayableNodeProgress(item.jobLayer.nodeProgress).length"
+              class="node-progress-section"
+            >
               <h4 class="progress-section-title">节点进度</h4>
               <div
-                v-for="np in item.jobLayer.nodeProgress"
+                v-for="np in displayableNodeProgress(item.jobLayer.nodeProgress)"
                 :key="np.nodeId"
                 class="node-progress-item"
               >
@@ -859,10 +932,15 @@ onBeforeUnmount(() => {
                     ><component :is="getStageIcon(np.stage)" :size="14"
                   /></span>
                   <span class="node-label">{{ np.nodeLabel }}</span>
+                  <span v-if="np.terminalHint === 'skipped'" class="node-skipped-badge">已跳过</span>
+                  <span v-else-if="np.terminalHint === 'complete' && np.progress >= 100" class="node-done-badge">已完成</span>
                   <span class="node-progress-value">{{ np.progress }}%</span>
                 </div>
-                <div class="node-progress-bar">
+                <div v-if="np.terminalHint !== 'skipped'" class="node-progress-bar">
                   <div class="node-progress-fill" :style="{ width: np.progress + '%' }"></div>
+                </div>
+                <div v-else class="node-progress-bar node-progress-bar-skipped">
+                  <div class="node-progress-fill" style="width: 100%"></div>
                 </div>
                 <span v-if="np.message" class="node-progress-message">{{ np.message }}</span>
                 <!-- P0-10：节点产物下载入口（/artifacts/{id} 由后端 FileResponse 直接下载） -->
@@ -881,38 +959,37 @@ onBeforeUnmount(() => {
                 <div
                   v-if="
                     np.detail &&
-                    (np.detail.chunksTotal ||
+                    (hasDownloadProgressDetail(np.detail) ||
+                      np.detail.chunksTotal ||
                       np.detail.pixelsTotal ||
                       np.detail.blocksTotal ||
-                      np.detail.dateStart ||
-                      np.detail.downloaded_items != null ||
-                      np.detail.speed_bps)
+                      np.detail.dateStart)
                   "
                   class="node-progress-detail"
                 >
-                  <!-- 下载进度（2026-08-25）：文件 i/N · 已下载 bytes · 网速 -->
-                  <span v-if="np.detail.downloaded_items != null" class="download-progress-detail">
-                    文件 {{ np.detail.downloaded_items ?? 0 }}/{{ np.detail.total_items ?? '?' }}
-                    <template v-if="np.detail.downloaded_bytes">
-                      · {{ formatBytes(np.detail.downloaded_bytes) }}
-                    </template>
-                    <template v-if="np.detail.speed_bps">
-                      · {{ formatSpeed(np.detail.speed_bps) }}
-                    </template>
+                  <span v-if="hasDownloadProgressDetail(np.detail)" class="download-progress-detail">
+                    {{ formatDownloadProgressDetail(np.detail) }}
                   </span>
-                  <span v-if="np.detail.blocksTotal">
+                  <span v-if="np.detail.blocksTotal && !hasDownloadProgressDetail(np.detail)">
                     块 {{ np.detail.blocksDone ?? 0 }}/{{ np.detail.blocksTotal
                     }}<template v-if="np.detail.dateStart && np.detail.dateEnd">
                       · {{ np.detail.dateStart }}–{{ np.detail.dateEnd }}
                     </template>
                   </span>
-                  <span v-else-if="np.detail.chunksTotal">
+                  <span v-else-if="np.detail.chunksTotal && !hasDownloadProgressDetail(np.detail)">
                     chunk {{ np.detail.chunksDone ?? 0 }}/{{ np.detail.chunksTotal }}
                   </span>
                   <span v-if="np.detail.pixelsTotal">
                     pixel {{ np.detail.pixelsDone ?? 0 }}/{{ np.detail.pixelsTotal }}
                   </span>
-                  <span v-if="np.detail.phase">{{ np.detail.phase }}</span>
+                  <span
+                    v-if="
+                      np.detail.phase &&
+                      !hasDownloadProgressDetail(np.detail) &&
+                      np.detail.phase !== 'downloading'
+                    "
+                    >{{ np.detail.phase }}</span
+                  >
                 </div>
               </div>
             </div>
@@ -1574,11 +1651,43 @@ onBeforeUnmount(() => {
 }
 
 .node-progress-value {
-  color: var(--accent);
-  font-size: var(--font-size-caption);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  flex: none;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.node-skipped-badge,
+.node-done-badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+
+.node-skipped-badge {
+  color: var(--text-muted);
+  background: var(--border-default);
+}
+
+.node-done-badge {
+  color: var(--success);
+  background: var(--success-surface);
+}
+
+.node-progress-bar-skipped .node-progress-fill {
+  opacity: 0.35;
+}
+
+.wf-events-title {
+  list-style: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.wf-event-error {
+  color: var(--danger);
 }
 
 .node-progress-bar {
@@ -1830,5 +1939,21 @@ onBeforeUnmount(() => {
 
 .wf-action-btn.retry:hover {
   background: var(--accent-surface);
+}
+
+.wf-action-btn.copy {
+  color: var(--text-secondary);
+  border-color: var(--border-default);
+}
+
+.wf-action-btn.copy:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.download-progress-detail {
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 </style>

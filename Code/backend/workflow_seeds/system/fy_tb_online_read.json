@@ -49,7 +49,7 @@
           1,
           2
         ],
-        "outfile_type": "hdf5",
+        "outfile_type": "gtiff",
         "spatial_extent": "global"
       }
     },

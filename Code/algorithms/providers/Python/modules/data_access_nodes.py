@@ -445,9 +445,9 @@ def _resolve_portal_headers(
     # when the context is empty and the resolve flag is set.
     if (not portal_creds) and datasource_selection.get("portal_credentials_resolve"):
         # P3 分层收口（2026-08-23）：经 _backend_bridge 边界桥解析门户凭据
-        from _backend_bridge import get_portal_credentials
+        from modules.provider_bridge_access import load_backend_bridge
 
-        resolved = get_portal_credentials()
+        resolved = load_backend_bridge().get_portal_credentials()
         if isinstance(resolved, dict):
             portal_creds = resolved
 

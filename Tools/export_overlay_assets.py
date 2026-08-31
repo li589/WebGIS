@@ -1110,9 +1110,15 @@ def export_gebco_dem() -> None:
 
 def export_cmfd_precip() -> None:
     print("\n=== CMFD Precipitation (China 1km) ===")
-    tif_path = resolve_data_root() / "Precipitation" / "pre_2002_01.tif"
+    # 与 overlay_registry._CMFD_TIF 对齐（reorganize_datasets 后落在 Meteorological/）
+    root = resolve_data_root()
+    tif_path = root / "Meteorological" / "Precipitation" / "pre_2002_01.tif"
     if not tif_path.exists():
-        print("  [SKIP] File not found")
+        alt = root / "Precipitation" / "pre_2002_01.tif"
+        if alt.exists():
+            tif_path = alt
+    if not tif_path.exists():
+        print(f"  [SKIP] File not found: {tif_path}")
         return
 
     import rasterio

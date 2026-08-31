@@ -1,5 +1,5 @@
 <view class="shell">
-  <!-- 底图：腾讯原生 map（街道 / 影像），禁旋转与倾斜，保证 mercator 对齐成立 -->
+  <!-- 底图：腾讯原生 map -->
   <map
     id="cgdaMap"
     class="map"
@@ -21,79 +21,88 @@
     bindtap="onMapTap"
   ></map>
 
-  <!-- 数据图层叠加画布：同层渲染，pointer-events:none 透传手势到底图 -->
-  <canvas type="2d" id="overlayCanvas" class="overlay-canvas" disable-scroll="{{true}}"></canvas>
+  <!-- 仅用户手动选层后挂载，杜绝首屏空/错 canvas 盖控件 -->
+  <canvas
+    wx:if="{{showOverlayCanvas}}"
+    type="2d"
+    id="overlayCanvas"
+    class="overlay-canvas"
+    disable-scroll="{{true}}"
+  ></canvas>
 
-  <!-- 顶部自动 colorbar（palette/vmin/vmax/unit 来自 overlay-bounds） -->
-  <colorbar
-    class="colorbar-slot"
-    visible="{{colorbar.visible}}"
-    title="{{colorbar.title}}"
-    unit="{{colorbar.unit}}"
-    palette-id="{{colorbar.paletteId}}"
-    vmin="{{colorbar.vmin}}"
-    vmax="{{colorbar.vmax}}"
-  />
+  <!--
+    root-portal：把 UI 挂到页面根节点之上，压过 map/canvas 原生合成层。
+    自定义组件放在 portal 内的普通 view 槽里，定位 class 写在 view 上（不要挂在组件 host）。
+  -->
+  <root-portal enable="{{true}}">
+    <view class="ui-layer">
+      <view class="slot colorbar-slot" wx:if="{{colorbar.visible}}">
+        <colorbar
+          visible="{{colorbar.visible}}"
+          title="{{colorbar.title}}"
+          unit="{{colorbar.unit}}"
+          palette-id="{{colorbar.paletteId}}"
+          vmin="{{colorbar.vmin}}"
+          vmax="{{colorbar.vmax}}"
+        />
+      </view>
 
-  <!-- 左上角 logo（无文字） -->
-  <logo-badge class="logo-slot" />
+      <view class="slot logo-slot">
+        <logo-badge />
+      </view>
 
-  <!-- 左上角竖向地图操作工具栏：放大/缩小/指南针/定位（logo-badge 正下方） -->
-  <left-tool-bar
-    class="ltb-slot"
-    bind:zoomin="onZoomIn"
-    bind:zoomout="onZoomOut"
-    bind:resetnorth="onResetNorth"
-    bind:locate="onLocate"
-  />
+      <view class="slot ltb-slot">
+        <left-tool-bar
+          bind:zoomin="onZoomIn"
+          bind:zoomout="onZoomOut"
+          bind:resetnorth="onResetNorth"
+          bind:locate="onLocate"
+        />
+      </view>
 
-  <!-- 右侧竖向图层大类导航栏：点击图标 → 紧贴左侧弹出图层面板 -->
-  <right-tool-bar
-    class="rail-slot"
-    categories="{{railCategories}}"
-    active-layer-id="{{activeLayer.id}}"
-    bind:select="onToolBarSelect"
-  />
+      <view class="slot rail-slot">
+        <right-tool-bar
+          categories="{{railCategories}}"
+          active-layer-id="{{activeLayer.id}}"
+          bind:select="onToolBarSelect"
+        />
+      </view>
 
-  <!-- 左下角比例尺：紧贴时间轴顶部（+12px 呼吸） -->
-  <scale-bar
-    class="scale-slot"
-    style="bottom: calc({{tlHeight}}px + 12px);"
-    meters-per-pixel="{{metersPerPixel}}"
-  />
+      <view class="slot scale-slot" style="bottom: calc({{tlHeight}}px + 12px);">
+        <scale-bar meters-per-pixel="{{metersPerPixel}}" />
+      </view>
 
-  <!-- 右下角：底图切换（街道 ⇄ 影像），与比例尺同高 -->
-  <view
-    class="basemap-toggle"
-    style="bottom: calc({{tlHeight}}px + 12px);"
-    bindtap="toggleSatellite"
-    hover-class="btn-hover"
-  >
-    <text>{{satellite ? '街道' : '影像'}}</text>
-  </view>
+      <view
+        class="slot basemap-toggle"
+        style="bottom: calc({{tlHeight}}px + 12px);"
+        bindtap="toggleSatellite"
+        hover-class="btn-hover"
+      >
+        <text>{{satellite ? '街道' : '影像'}}</text>
+      </view>
 
-  <!-- 底部全宽时间轴（hour / day / month / static 由图层时间能力驱动） -->
-  <timeline
-    class="timeline-slot"
-    mode="{{timeline.mode}}"
-    ticks="{{timeline.ticks}}"
-    current="{{timeline.current}}"
-    bind:change="onTimelineChange"
-    bind:toggle="onTimelineToggle"
-    bind:collapse="onTimelineCollapse"
-  />
+      <view class="slot timeline-slot">
+        <timeline
+          mode="{{timeline.mode}}"
+          ticks="{{timeline.ticks}}"
+          current="{{timeline.current}}"
+          bind:change="onTimelineChange"
+          bind:toggle="onTimelineToggle"
+          bind:collapse="onTimelineCollapse"
+        />
+      </view>
 
-  <!-- 状态 HUD（图层/瓦片进度）：贴比例尺上方（+41px 间距，对应比例尺盒高矮 4px 的补偿） -->
-  <view
-    class="debug-hud"
-    style="bottom: calc({{tlHeight}}px + 53px);"
-    wx:if="{{debugHud}}"
-  >
-    <text>{{debugHud}}</text>
-  </view>
+      <view
+        class="slot debug-hud"
+        style="bottom: calc({{tlHeight}}px + 53px);"
+        wx:if="{{debugHud}}"
+      >
+        <text>{{debugHud}}</text>
+      </view>
 
-  <!-- 错误横幅 -->
-  <view class="banner" wx:if="{{banner}}" bindtap="onBannerTap">
-    <text>{{banner}}</text>
-  </view>
+      <view class="slot banner" wx:if="{{banner}}" bindtap="onBannerTap">
+        <text>{{banner}}</text>
+      </view>
+    </view>
+  </root-portal>
 </view>

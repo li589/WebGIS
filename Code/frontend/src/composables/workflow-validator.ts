@@ -114,6 +114,11 @@ function isValidYYYYMMDD(value: string): boolean {
   return true
 }
 
+/** 种子日期占位符：运行时由 time_range / 流水线启动器展开 */
+function isSeedDatePlaceholder(value: string): boolean {
+  return value.trim() === '{YYYYMMDD}'
+}
+
 /** 比较两个 YYYYMMDD 日期字符串（返回 -1/0/1） */
 function compareDates(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0
@@ -165,18 +170,21 @@ export function validateNode(
   const nodeTitle = node.title || nodeType
   const props = node.properties ?? {}
 
-  // ── 1. module 节点必须有 module_name ──
+  // ── 1. module 节点必须有 module_name（可由 type 后缀 module/<name> 推导）──
   if (nodeType.startsWith(MODULE_NODE_PREFIX)) {
     if (isEmpty(props.module_name)) {
-      issues.push({
-        nodeId,
-        nodeType,
-        nodeTitle,
-        field: 'module_name',
-        severity: 'error',
-        code: 'module_name_missing',
-        message: '缺少 module_name 属性',
-      })
+      const inferred = nodeType.slice(MODULE_NODE_PREFIX.length).trim()
+      if (!inferred) {
+        issues.push({
+          nodeId,
+          nodeType,
+          nodeTitle,
+          field: 'module_name',
+          severity: 'error',
+          code: 'module_name_missing',
+          message: '缺少 module_name 属性',
+        })
+      }
     }
   }
 
@@ -257,8 +265,14 @@ export function validateNode(
   const datePairs = findDatePairs(props)
   for (const { startKey, endKey, startVal, endVal } of datePairs) {
     if (startVal && endVal) {
+      const startDeferred = isSeedDatePlaceholder(startVal)
+      const endDeferred = isSeedDatePlaceholder(endVal)
+      // 种子 {YYYYMMDD} 成对出现：由后端 time_range / 启动器展开，前端不拦
+      if (startDeferred && endDeferred) {
+        continue
+      }
       // 格式校验
-      if (!isValidYYYYMMDD(startVal)) {
+      if (!startDeferred && !isValidYYYYMMDD(startVal)) {
         issues.push({
           nodeId,
           nodeType,
@@ -269,7 +283,7 @@ export function validateNode(
           message: `日期 "${startKey}" 格式无效: ${startVal}（应为 YYYYMMDD）`,
         })
       }
-      if (!isValidYYYYMMDD(endVal)) {
+      if (!endDeferred && !isValidYYYYMMDD(endVal)) {
         issues.push({
           nodeId,
           nodeType,
@@ -278,6 +292,18 @@ export function validateNode(
           severity: 'error',
           code: 'date_format_invalid',
           message: `日期 "${endKey}" 格式无效: ${endVal}（应为 YYYYMMDD）`,
+        })
+      }
+      // 一侧占位、一侧已填：不一致
+      if (startDeferred !== endDeferred) {
+        issues.push({
+          nodeId,
+          nodeType,
+          nodeTitle,
+          field: endDeferred ? endKey : startKey,
+          severity: 'error',
+          code: 'date_format_invalid',
+          message: `日期占位符须成对使用 {YYYYMMDD}，或均填入 YYYYMMDD`,
         })
       }
       // 范围校验
@@ -435,55 +461,8 @@ function validateDownloadNode(node: WorkflowDefinitionNode): ValidationIssue[] {
     }
   }
 
-  if (nodeType === 'download/nsidc_smap_download') {
-    if (isEmpty(props.short_name)) {
-      issues.push({
-        nodeId,
-        nodeType,
-        nodeTitle,
-        field: 'short_name',
-        severity: 'error',
-        code: 'required_empty',
-        message: 'NSIDC 产品 short_name 不能为空',
-      })
-    }
-    if (isEmpty(props.local_dir)) {
-      issues.push({
-        nodeId,
-        nodeType,
-        nodeTitle,
-        field: 'local_dir',
-        severity: 'error',
-        code: 'required_empty',
-        message: '本地下载目录不能为空',
-      })
-    }
-  }
-
-  if (nodeType === 'download/gldas_download') {
-    if (isEmpty(props.short_name)) {
-      issues.push({
-        nodeId,
-        nodeType,
-        nodeTitle,
-        field: 'short_name',
-        severity: 'error',
-        code: 'required_empty',
-        message: 'GLDAS 产品 short_name 不能为空',
-      })
-    }
-    if (isEmpty(props.local_dir)) {
-      issues.push({
-        nodeId,
-        nodeType,
-        nodeTitle,
-        field: 'local_dir',
-        severity: 'error',
-        code: 'required_empty',
-        message: '本地下载目录不能为空',
-      })
-    }
-  }
+  // download/nsidc_smap_download、download/gldas_download：short_name / local_dir
+  // 后端有默认值，空值不在此拦（种子建议显式写出 DATA_ROOT 路径）
 
   if (nodeType === 'download/gldas_nc4_to_mat') {
     if (isEmpty(props.input_dir)) {

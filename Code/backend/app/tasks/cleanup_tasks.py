@@ -42,7 +42,10 @@ def execute_cache_cleanup() -> dict[str, Any]:
 
 
 def execute_stuck_workflow_watchdog() -> dict[str, Any]:
-    """执行 stuck running 工作流看门狗（非 Celery 入口，可供 API 直接调用）。"""
+    """执行 stuck running 工作流看门狗（非 Celery 入口，可供 API 直接调用）。
+
+    阈值语义为**空闲秒数**（无 run.updated_at / 无新 events），不是墙钟总时长。
+    """
     from app.services.workflow.service_container import follow_up_dispatch_service
 
     failed = follow_up_dispatch_service.fail_stuck_running_workflows(

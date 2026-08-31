@@ -1838,7 +1838,7 @@
    "enabled": true,
    "coverage_start": "2015-04",
    "coverage_end": null,
-   "native_step": "1d",
+   "native_step": "8d",
    "max_batch": 8,
    "prefetch_depth": 1,
    "queue_tag": "temporal-fetch",
@@ -1968,7 +1968,7 @@
    "enabled": true,
    "coverage_start": "2017-01",
    "coverage_end": null,
-   "native_step": "1d",
+   "native_step": "8d",
    "max_batch": 8,
    "prefetch_depth": 1,
    "queue_tag": "temporal-fetch",
@@ -2076,14 +2076,32 @@
   "default_task_type": "omega_avg_daily",
   "default_data_access_sources": {
    "omega_block_dir": [
+    "omega_block_output",
     "Inversion_Results/omega_block"
+   ],
+   "smap_folder": [
+    "smap_daily_mat",
+    "Soil_Moisture/SMAP_Origin_Data"
+   ],
+   "anc_root": [
+    "ancillary_mat",
+    "Soil_Moisture/SMAP_Auxiliary_Data"
+   ],
+   "ndvi_folder": [
+    "ndvi_daily_mat",
+    "Ecological_Vegetation/NDVI/NDVIday"
+   ],
+   "ndvi_clim_folder": [
+    "ndvi_clim_dir",
+    "Soil_Moisture/SMAP_Auxiliary_Data/NDVI_clim",
+    "Ecological_Vegetation/NDVI/climatology"
    ]
   },
   "online_temporal": {
    "enabled": true,
    "coverage_start": "2015-04",
    "coverage_end": null,
-   "native_step": "1d",
+   "native_step": "8d",
    "max_batch": 8,
    "prefetch_depth": 1,
    "queue_tag": "temporal-fetch",
@@ -2191,14 +2209,32 @@
   "default_task_type": "omega_avg_daily",
   "default_data_access_sources": {
    "omega_block_dir": [
+    "omega_block_output",
     "Inversion_Results/omega_block"
+   ],
+   "smap_folder": [
+    "smap_daily_mat",
+    "Soil_Moisture/SMAP_Origin_Data"
+   ],
+   "anc_root": [
+    "ancillary_mat",
+    "Soil_Moisture/SMAP_Auxiliary_Data"
+   ],
+   "ndvi_folder": [
+    "ndvi_daily_mat",
+    "Ecological_Vegetation/NDVI/NDVIday"
+   ],
+   "ndvi_clim_folder": [
+    "ndvi_clim_dir",
+    "Soil_Moisture/SMAP_Auxiliary_Data/NDVI_clim",
+    "Ecological_Vegetation/NDVI/climatology"
    ]
   },
   "online_temporal": {
    "enabled": true,
    "coverage_start": "2017-01",
    "coverage_end": null,
-   "native_step": "1d",
+   "native_step": "8d",
    "max_batch": 8,
    "prefetch_depth": 1,
    "queue_tag": "temporal-fetch",

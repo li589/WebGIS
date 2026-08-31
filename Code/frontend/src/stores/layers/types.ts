@@ -187,7 +187,14 @@ export interface NodeProgress {
     total_items?: number
     /** 累计已下载字节数 */
     downloaded_bytes?: number
+    download_mode?: string
+    total_bytes?: number | null
+    current_item_name?: string | null
+    active_workers?: number | null
+    items_display?: string
   }
+  /** 快完成/跳过节点展示提示 */
+  terminalHint?: 'skipped' | 'complete'
 }
 
 export interface JobLayerItem {
@@ -247,6 +254,8 @@ export interface JobLayerItem {
   lastEventAt?: string
   /** 最近的增量事件消息，用于运行中展示持续产出 */
   eventMessages?: string[]
+  /** 失败/警告关键线索（调度器、模块、组件），来自 operational 事件 */
+  failureHints?: string[]
   /** 节点级进度（下载/预处理/反演各阶段） */
   nodeProgress?: NodeProgress[]
   /** 运行中 incremental materialize 已同步的时间片/图层数 */

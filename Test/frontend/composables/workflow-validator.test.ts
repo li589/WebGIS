@@ -45,8 +45,8 @@ function makeTemplate(overrides: Partial<NodeTemplate> = {}): NodeTemplate {
 }
 
 describe('validateNode：module 节点', () => {
-  it('module/ 前缀节点缺 module_name 报 error', () => {
-    const node = makeNode({ type: 'module/omega_sf_fenkuai' })
+  it('module/ 无后缀且缺 module_name 报 error', () => {
+    const node = makeNode({ type: 'module/' })
     const issues = validateNode(node, null, undefined)
     expect(issues).toHaveLength(1)
     expect(issues[0]).toMatchObject({
@@ -54,6 +54,11 @@ describe('validateNode：module 节点', () => {
       field: 'module_name',
       severity: 'error',
     })
+  })
+
+  it('module/<name> 可由类型后缀推导，缺属性不报', () => {
+    const node = makeNode({ type: 'module/smap_daily' })
+    expect(validateNode(node, null, undefined)).toHaveLength(0)
   })
 
   it('module_name 已设置时不报', () => {
@@ -187,6 +192,27 @@ describe('validateNode：日期校验', () => {
     expect(issues).toHaveLength(0)
   })
 
+  it('成对种子占位符 {YYYYMMDD} 不报格式错误', () => {
+    const issues = validateNode(
+      makeNode({
+        type: 'download/nsidc_smap_download',
+        properties: { start_date: '{YYYYMMDD}', end_date: '{YYYYMMDD}' },
+      }),
+      null,
+      undefined,
+    )
+    expect(issues.filter((i) => i.code === 'date_format_invalid')).toHaveLength(0)
+  })
+
+  it('一侧占位一侧实值报不一致', () => {
+    const issues = validateNode(
+      makeNode({ properties: { start_date: '{YYYYMMDD}', end_date: '20240102' } }),
+      null,
+      undefined,
+    )
+    expect(issues.some((i) => i.code === 'date_format_invalid')).toBe(true)
+  })
+
   it('数字型日期被 asString 接受并可参与比较', () => {
     const issues = validateNode(
       makeNode({ properties: { start_date: 20240702, end_date: 20240701 } }),
@@ -229,14 +255,15 @@ describe('validateNode：下载节点专用校验', () => {
     expect(issues.map((i) => i.field)).toEqual(['remote_path', 'local_path', 'server_type'])
   })
 
-  it('download/nsidc_smap_download 缺 short_name/local_dir 报两条', () => {
+  it('download/nsidc_smap_download 缺 short_name/local_dir 不报（后端有默认）', () => {
     const issues = validateNode(makeNode({ type: 'download/nsidc_smap_download' }), null, undefined)
-    expect(issues.map((i) => i.field)).toEqual(['short_name', 'local_dir'])
+    expect(issues).toHaveLength(0)
   })
 
-  it('download/gldas_download 缺 short_name/local_dir 报两条', () => {
-    const issues = validateNode(makeNode({ type: 'download/gldas_download' }), null, undefined)
-    expect(issues.map((i) => i.field)).toEqual(['short_name', 'local_dir'])
+  it('download/gldas_download 缺 short_name/local_dir 不报（后端有默认）', () => {
+    expect(validateNode(makeNode({ type: 'download/gldas_download' }), null, undefined)).toHaveLength(
+      0,
+    )
   })
 
   it('download/gldas_nc4_to_mat 缺 input_dir/output_dir 报两条', () => {
@@ -279,8 +306,16 @@ describe('validateNode：必填端口连接', () => {
 })
 
 describe('validateWorkflowBeforeRun', () => {
-  const nodeA = makeNode({ id: 10, type: 'module/m1' })
-  const nodeB = makeNode({ id: 20, type: 'io/output', properties: { start_date: '20240102', end_date: '20240101' } })
+  const nodeA = makeNode({
+    id: 10,
+    type: 'module/',
+    properties: {},
+  })
+  const nodeB = makeNode({
+    id: 20,
+    type: 'io/output',
+    properties: { start_date: '20240102', end_date: '20240101' },
+  })
   const templates = [makeTemplate({ type: 'io/output' })]
 
   it('空画布 / null 返回画布为空错误', () => {
@@ -293,9 +328,7 @@ describe('validateWorkflowBeforeRun', () => {
   })
 
   it('多节点问题汇总与 error/warning 计数', () => {
-    const links: WorkflowDefinitionLink[] = [
-      [1, 5, 0, 10, 0, 'raster'],
-    ] as unknown as WorkflowDefinitionLink[]
+    const links: WorkflowDefinitionLink[] = [[1, 5, 0, 10, 0, 'raster']] as unknown as WorkflowDefinitionLink[]
     const result = validateWorkflowBeforeRun({ nodes: [nodeA, nodeB], links }, templates)
     expect(result.errorCount).toBe(2)
     expect(result.warningCount).toBe(0)

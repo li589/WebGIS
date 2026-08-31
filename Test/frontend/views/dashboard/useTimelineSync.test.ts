@@ -8,6 +8,7 @@
  *  - refreshImportedRasterEffectiveTimes、timelineSegments 基础形态
  */
 import { computed, nextTick, reactive, ref, type ComputedRef, type Ref } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useTimelineSync } from '@/views/dashboard/useTimelineSync'
@@ -192,6 +193,7 @@ function setupSync(initial: { layers?: ActiveLayer[]; selectedCatalogId?: string
 }
 
 beforeEach(() => {
+  setActivePinia(createPinia())
   vi.clearAllMocks()
   workspaceCalls.isWeatherEngineLayer.mockReturnValue(false)
   workspaceCalls.resolveEffectiveDescriptor.mockReturnValue(null)
@@ -249,9 +251,10 @@ describe('workflowProgressTimeSeek 消费', () => {
     })
   }
 
-  it('hint 命中选中图层：对齐日期/粒度并 seek overlay 时间', async () => {
+  it('hint 命中选中图层：播放中对齐日期/粒度并 seek overlay 时间', async () => {
     const layer = makeScienceLayer('cat-run')
     const h = setupSync({ layers: [layer], selectedCatalogId: 'cat-run' })
+    h.isPlaying.value = true
     h.workflowProgressTimeSeek.value = {
       runId: 'run-0001-aaaa',
       catalogId: 'cat-run',
@@ -275,9 +278,26 @@ describe('workflowProgressTimeSeek 消费', () => {
     )
   })
 
+  it('未播放时忽略 workflow seek（不抢用户选定时刻）', async () => {
+    const layer = makeScienceLayer('cat-run')
+    const h = setupSync({ layers: [layer], selectedCatalogId: 'cat-run' })
+    h.isPlaying.value = false
+    h.workflowProgressTimeSeek.value = {
+      runId: 'run-0001',
+      catalogId: 'cat-run',
+      timeKey: '20240501',
+      sliceLabel: '20240501_20240508',
+      at: new Date().toISOString(),
+    }
+    await nextTick()
+    expect(h.uiStore.applyDateHour).not.toHaveBeenCalled()
+    expect(h.setOverlayTime).not.toHaveBeenCalled()
+  })
+
   it('sliceLabel 未命中 time_list 时回退原标签', async () => {
     const layer = makeScienceLayer('cat-run')
     const h = setupSync({ layers: [layer], selectedCatalogId: 'cat-run' })
+    h.isPlaying.value = true
     h.workflowProgressTimeSeek.value = {
       runId: 'run-0001',
       catalogId: 'cat-run',
@@ -309,6 +329,7 @@ describe('workflowProgressTimeSeek 消费', () => {
     const sm = makeScienceLayer('cat-sm', 'g1')
     const vod = makeScienceLayer('cat-vod', 'g1')
     const h = setupSync({ layers: [sm, vod], selectedCatalogId: 'cat-vod' })
+    h.isPlaying.value = true
     h.workflowProgressTimeSeek.value = {
       runId: 'run-1',
       catalogId: 'cat-sm',
@@ -322,7 +343,7 @@ describe('workflowProgressTimeSeek 消费', () => {
     expect(h.setOverlayTime).toHaveBeenCalledWith('ov-cat-vod', '20240501_20240508')
   })
 
-  it('统一时间锁 / 播放中 / 图层时间锁定时忽略', async () => {
+  it('统一时间锁 / 图层时间锁定时忽略（播放中才跟随）', async () => {
     const layer = makeScienceLayer('cat-run')
     const hint: WorkflowProgressTimeSeekHint = {
       runId: 'run-1',
@@ -333,18 +354,14 @@ describe('workflowProgressTimeSeek 消费', () => {
     }
 
     const lockAll = setupSync({ layers: [layer], selectedCatalogId: 'cat-run' })
+    lockAll.isPlaying.value = true
     lockAll.unifiedTimeLock.value = true
     lockAll.workflowProgressTimeSeek.value = hint
     await nextTick()
     expect(lockAll.uiStore.applyDateHour).not.toHaveBeenCalled()
 
-    const playing = setupSync({ layers: [layer], selectedCatalogId: 'cat-run' })
-    playing.isPlaying.value = true
-    playing.workflowProgressTimeSeek.value = hint
-    await nextTick()
-    expect(playing.uiStore.applyDateHour).not.toHaveBeenCalled()
-
     const layerLocked = setupSync({ layers: [layer], selectedCatalogId: 'cat-run' })
+    layerLocked.isPlaying.value = true
     layerLocked.uiStore.isLayerTimeLocked.mockReturnValue(true)
     layerLocked.workflowProgressTimeSeek.value = hint
     await nextTick()
@@ -369,9 +386,33 @@ describe('workflowProgressTimeSeek 消费', () => {
 // ── 运行启动对齐 / 切层记忆 ───────────────────────────────────────────────────
 
 describe('运行启动与切层记忆', () => {
-  it('job 带 expectedTimeRange 时轴对齐 start_at', async () => {
+  it('未播放时 job expectedTimeRange 不抢轴', async () => {
     const layer = makeLayer({ catalogId: 'cat-run', jobLayer: undefined })
     const h = setupSync({ layers: [layer], selectedCatalogId: 'cat-run' })
+    h.isPlaying.value = false
+    mockJobLayers.value = [
+      {
+        jobId: 'run-1',
+        name: 'T',
+        commandType: 'analysis',
+        status: 'running',
+        progress: 0,
+        createdAt: '',
+        updatedAt: '',
+        message: '',
+        catalogId: 'cat-run',
+        expectedTimeRange: { start_at: '20240425', end_at: '20240530' },
+      },
+    ]
+    await nextTick()
+    await nextTick()
+    expect(h.uiStore.applyDateHour).not.toHaveBeenCalled()
+  })
+
+  it('播放中 job 带 expectedTimeRange 时轴对齐 start_at', async () => {
+    const layer = makeLayer({ catalogId: 'cat-run', jobLayer: undefined })
+    const h = setupSync({ layers: [layer], selectedCatalogId: 'cat-run' })
+    h.isPlaying.value = true
     mockJobLayers.value = [
       {
         jobId: 'run-1',
@@ -393,6 +434,30 @@ describe('运行启动与切层记忆', () => {
     expect(alignDate.getDate()).toBe(25)
     expect(alignDate.getMonth()).toBe(3)
     expect(hour).toBe(0)
+  })
+
+  it('未播放时工作流 runGroup 产物加层不 snap', async () => {
+    const seed = makeLayer({ catalogId: 'seed' })
+    const h = setupSync({ layers: [seed], selectedCatalogId: 'seed' })
+    h.isPlaying.value = false
+    await nextTick()
+    h.uiStore.applyDateHour.mockClear()
+
+    mockActiveLayers.value = [
+      seed,
+      makeLayer({
+        catalogId: 'cat-wf',
+        runGroupId: 'rg-1',
+        dataState: 'imported',
+        importedRaster: {
+          overlayLayerId: 'ov-wf',
+          nativeStep: '8d',
+          timeList: ['20240425_20240502', '20240501_20240508'],
+        },
+      }),
+    ]
+    await nextTick()
+    expect(h.uiStore.applyDateHour).not.toHaveBeenCalled()
   })
 
   it('切层时按图层形态切换粒度并恢复记忆时刻', async () => {

@@ -8,7 +8,13 @@
 from __future__ import annotations
 
 from modules.base import BaseModule
-from modules.download_nodes import _resolve_portal_entry, _store_path_manifest
+from modules.download_nodes import (
+    _make_byte_stream_progress_cb,
+    _make_multi_file_progress_cb,
+    _make_skip_complete_emit,
+    _resolve_portal_entry,
+    _store_path_manifest,
+)
 from modules.registry import register_module_decorator
 from workflow.schemas import NodeExecutionContext, PortSpec
 
@@ -34,7 +40,7 @@ def _resolve_copernicus_credentials(
     return username, password, bearer
 
 
-@register_module_decorator(name="cdse_download")
+@register_module_decorator(name="cdse_download", template_overrides={"phase": "download"})
 class CdseDownloadModule(BaseModule):
     name = "cdse_download"
     description = (
@@ -113,6 +119,11 @@ class CdseDownloadModule(BaseModule):
                 f"CDSE download (use={use}) -> {target_dir}",
             )
 
+        _multi_cb = _make_multi_file_progress_cb(ctx.logger_adapter, "cdse_download")
+        _byte_cb = _make_byte_stream_progress_cb(
+            ctx.logger_adapter, "cdse_download", item_name="product"
+        )
+
         result = download_cdse_products(
             product_ids,
             str(resolved.get("odata_filter") or ""),
@@ -125,7 +136,22 @@ class CdseDownloadModule(BaseModule):
             legacy_urls=resolved.get("legacy_urls", ""),
             force=bool(resolved.get("force")),
             max_products=max_products,
+            progress_callback=_multi_cb,
+            byte_stream_callback=_byte_cb,
         )
+
+        if ctx.logger_adapter is not None:
+            total = result.downloaded + result.skipped + result.failed
+            if total == 0 or (
+                result.skipped >= total and result.downloaded == 0 and total > 0
+            ):
+                _make_skip_complete_emit(
+                    ctx.logger_adapter,
+                    "cdse_download",
+                    total=max(total, result.skipped),
+                    skipped=result.skipped,
+                    downloaded=result.downloaded,
+                )
 
         if ctx.logger_adapter is not None:
             ctx.logger_adapter.emit_stage_end(

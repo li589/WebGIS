@@ -419,6 +419,31 @@ def test_stop_all_escalates_kill_on_psutil_timeout() -> None:
     assert pm.processes == {}
 
 
+def test_stop_all_falls_back_to_tree_kill_on_psutil_access_denied(monkeypatch) -> None:
+    """Windows 外部接管句柄 wait 抛 AccessDenied 时不得崩；改 taskkill。"""
+    import psutil as psutil_mod
+
+    from launch import process_manager as pm_mod
+    from launch.process_manager import ProcessManager
+
+    killed: list[int] = []
+    monkeypatch.setattr(pm_mod, "tree_kill_pid", lambda pid: killed.append(pid))
+
+    alive = mock.Mock(spec=psutil_mod.Process)
+    alive.is_running.return_value = True
+    alive.pid = 37448
+    alive.wait.side_effect = psutil_mod.AccessDenied(pid=37448)
+
+    pm = object.__new__(ProcessManager)
+    pm.processes = {"fastapi": alive}
+    pm._awaiting_external_restart = {}
+    pm.stop_all()
+
+    alive.terminate.assert_called_once()
+    assert killed == [37448]
+    assert pm.processes == {}
+
+
 def test_monitor_adopts_new_pid_from_file_on_external_restart(
     monkeypatch, tmp_path
 ) -> None:

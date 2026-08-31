@@ -77,9 +77,9 @@ def _resolve_auth(uri: str, metadata: dict[str, object] | None) -> RemoteAuth:
         )
     # P3 分层收口（2026-08-23）：后端凭据解析经 _backend_bridge 边界桥
     # （算法包唯一的 app.services 借用点）
-    from _backend_bridge import resolve_remote_credentials
+    from modules.provider_bridge_access import load_backend_bridge
 
-    resolved = resolve_remote_credentials(uri)
+    resolved = load_backend_bridge().resolve_remote_credentials(uri)
     if resolved is not None:
         return resolved
     raise ValueError(

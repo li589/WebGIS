@@ -42,7 +42,7 @@ import {
 import { buildJobLayer } from './result-adapter'
 import { forgetDismissedLayer, isRunDismissed } from './workspace-persist'
 import { getCatalogDisplayName, isTerminalStatus } from './catalog-builders'
-import { normalizeWorkflowProgress } from './workflow-progress'
+import { resolveJobOverallProgress } from './workflow-progress'
 import { resolveRestoreWorkflowBridge as resolveRestoreWorkflowBridgeFromCatalog } from './restore-workflow-bridge'
 import { claimOrphanWorkflowRun, isSubmitTimeoutError } from '../../utils/workflow-submit-reconcile'
 import {
@@ -65,6 +65,15 @@ import {
   resolveInversionCatalogId,
   sanitizeRunGroupTitle,
 } from './inversion-catalog'
+import {
+  extractWorkflowDefinitionName,
+  extractWorkflowEntryId,
+  isTechnicalRunTitle,
+  resolveRunGroupTitle,
+  resolveWorkflowRunDisplayName,
+  tryWorkflowSummaries,
+  type WorkflowSummaryLike,
+} from '../../utils/workflow-run-display-name'
 import type {
   ActiveLayer,
   ActiveRunLayerGroup,
@@ -81,6 +90,25 @@ export {
 
 function debugLog(module: string, ...args: unknown[]) {
   probeDebugLog(`[${performance.now().toFixed(1)}ms] [LayersStore:${module}]`, ...args)
+}
+
+function resolveSubmitWorkflowDisplayName(
+  catalogName: string,
+  options: {
+    algorithmRequest?: Record<string, unknown>
+    commandLabel?: string
+  },
+): string {
+  const summaries = tryWorkflowSummaries()
+  const workflowId = extractWorkflowEntryId(options.algorithmRequest, options.commandLabel)
+  return resolveWorkflowRunDisplayName({
+    workflowId,
+    commandLabel: options.commandLabel,
+    catalogName,
+    definitionName: extractWorkflowDefinitionName(options.algorithmRequest),
+    summaries,
+    fallback: '工作流运行',
+  })
 }
 
 /**
@@ -643,20 +671,19 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           previousJobLayer: existing,
         })
         jobLayer = await hydrateJobLayerFromEvents(jobLayer)
-        // Prefer hydrated progress over bare server snapshot (often stuck at 18/35)
+        // Prefer hydrated / dispatch-weighted progress over bare server snapshot
         if (existing) {
+          const nodeProgress = jobLayer.nodeProgress?.length
+            ? jobLayer.nodeProgress
+            : existing.nodeProgress
           jobLayer = {
             ...jobLayer,
-            progress: Math.max(
-              normalizeWorkflowProgress(jobLayer.progress),
-              normalizeWorkflowProgress(existing.progress),
-              ...(jobLayer.nodeProgress ?? []).map((np) =>
-                normalizeWorkflowProgress(np.progress, np.detail),
-              ),
-            ),
-            nodeProgress: jobLayer.nodeProgress?.length
-              ? jobLayer.nodeProgress
-              : existing.nodeProgress,
+            progress: resolveJobOverallProgress({
+              current: existing.progress,
+              snapshot: jobLayer.progress,
+              nodeProgress,
+            }),
+            nodeProgress,
             eventMessages: jobLayer.eventMessages?.length
               ? jobLayer.eventMessages
               : existing.eventMessages,
@@ -1039,16 +1066,21 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       }
       if (!group.sourceLayerId) group.sourceLayerId = sourceLayerId
       if (!group.workflowId) group.workflowId = workflowId
-      // 组名优先中文配置（种子/画布流水线 extra.group_title）；无配置时
-      // 技术名（jobLayer/entry 名）仅兜底。已存在的组每次恢复/轮询均以
-      // 中文配置纠偏——旧快照/历史 run 的技术名组标题由此自动纠正
-      // （2026-08-24 组名中文化报障）。
-      if (configuredGroupTitle) {
+      // 组名：种子 extra.group_title > 提交时工作流中文名 > 已有非技术标题。
+      // 禁止用 wf-run-* / 英文 workflow id 覆盖（此前 isEnglishInversionCatalogId
+      // 对 wf-run-* 返回 false，导致组标题被占位 catalogId 污染）。
+      if (configuredGroupTitle && !isTechnicalRunTitle(configuredGroupTitle)) {
         group.title = configuredGroupTitle
-      } else if (options?.title && !isEnglishInversionCatalogId(options.title)) {
+      } else if (options?.title && !isTechnicalRunTitle(options.title)) {
         group.title = options.title
-      } else if (group.title && isEnglishInversionCatalogId(group.title)) {
-        group.title = configuredGroupTitle || '反演产物'
+      } else if (isTechnicalRunTitle(group.title)) {
+        group.title = resolveRunGroupTitle({
+          workflowId: group.workflowId || workflowId,
+          configuredTitle: configuredGroupTitle || options?.title,
+          jobName: tracked?.name,
+          summaries: tryWorkflowSummaries(),
+          fallback: '工作流产物',
+        })
       }
     }
 
@@ -1079,10 +1111,13 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         groupId,
         runId,
         // 中文配置优先（extra.group_title）；英文技术名不得落入组标题
-        title: sanitizeRunGroupTitle(
-          configuredGroupTitle || options?.title || tracked?.name,
-          '工作流产物',
-        ),
+        title: resolveRunGroupTitle({
+          workflowId,
+          configuredTitle: configuredGroupTitle || options?.title,
+          jobName: tracked?.name,
+          summaries: tryWorkflowSummaries(),
+          fallback: '工作流产物',
+        }),
         status: options?.createPlaceholders ? 'computing' : 'ready',
         memberInstanceIds: seedMembers.map((m) => m.instanceId),
         dissolvable: !options?.createPlaceholders,
@@ -1100,10 +1135,13 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     }
 
     const created = deps.createRunLayerGroup({
-      title: sanitizeRunGroupTitle(
-        configuredGroupTitle || options?.title || tracked?.name,
-        '反演产物',
-      ),
+      title: resolveRunGroupTitle({
+        workflowId,
+        configuredTitle: configuredGroupTitle || options?.title,
+        jobName: tracked?.name,
+        summaries: tryWorkflowSummaries(),
+        fallback: '反演产物',
+      }),
       targets: configuredTargets.length
         ? configuredTargets
         : tags.map((tag) => ({ name: productTagLabel(tag), productTag: tag })),
@@ -1196,6 +1234,10 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         getCatalogDisplayName(catalogId))
     const submitJobId = localSubmitJobId(catalogId)
     const submitStartedAt = new Date().toISOString()
+    let workflowDisplayName = resolveSubmitWorkflowDisplayName(catalogName, {
+      algorithmRequest: options.algorithmRequest,
+      commandLabel: options.commandLabel,
+    })
 
     try {
       const hasEditorWeather = Boolean(
@@ -1460,9 +1502,19 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
             effectiveVariant === 'local'
               ? variantLabels?.local?.label?.trim() || '本地读取'
               : variantLabels?.online?.label?.trim() || '在线获取'
-          payload.command_label = `运行 ${catalogName} 分析 · ${variantLabel}`
+          // command_label 仅作芯片副标题；主标题走工作流种子名
+          payload.command_label = `运行分析 · ${variantLabel}`
         }
       }
+      // 状态指示器 / 计算组标题：工作流种子中文名优先，禁止图层名 / wf-run-* 占位
+      workflowDisplayName = resolveSubmitWorkflowDisplayName(catalogName, {
+        algorithmRequest: (payload.algorithm_request ?? options.algorithmRequest) as
+          | Record<string, unknown>
+          | undefined,
+        commandLabel:
+          options.commandLabel ||
+          (typeof payload.command_label === 'string' ? payload.command_label : undefined),
+      })
       const catalogNative =
         resolveCatalogNativeStep(
           runtimeLayerCatalog[backendLayerId] as Record<string, unknown> | undefined,
@@ -1473,35 +1525,57 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       if (options.timeRange && typeof options.timeRange === 'object') {
         payload.time_range = options.timeRange
       } else {
-        // 图层库/侧栏「运行」常不带 time_range；时间轴当前窗补齐，避免后端 None.start
-        const libItem = deps.getLayerLibrary().find((l) => l.catalogId === catalogId)
-        const rt =
-          (runtimeLayerCatalog[backendLayerId] as
-            | {
-                supports_time?: boolean
-                time_granularity?: string
-                native_step?: string
-                online_temporal?: { native_step?: string }
-              }
-            | undefined) ??
-          (runtimeLayerCatalog[catalogId] as
-            | {
-                supports_time?: boolean
-                time_granularity?: string
-                native_step?: string
-                online_temporal?: { native_step?: string }
-              }
-            | undefined)
-        const supportsTime = libItem?.supportsTime ?? rt?.supports_time ?? true
-        const filled = await resolveDefaultTimeRangeFromTimeline({
-          supportsTime: supportsTime !== false,
-          nativeStep: catalogNative ?? rt?.native_step ?? rt?.online_temporal?.native_step,
-          // 目录条目未投影 timeGranularity；粒度以 runtime descriptor 为准
-          granularity: rt?.time_granularity,
-        })
-        if (filled) {
-          payload.time_range = filled
-          debugLog('runWorkflow', catalogId, 'injected timeline time_range', filled)
+        // 画布/流水线常把日期写在 algorithm_params，却未带顶层 time_range；
+        // 优先用 YYYYMMDD，禁止误用主时间轴「今天」盖掉流水线窗。
+        const { yyyymmddPairToTimeRange } = await import(
+          '../../composables/workflow-pipeline-params'
+        )
+        const apForDates =
+          options.algorithmRequest &&
+          typeof options.algorithmRequest.algorithm_params === 'object' &&
+          options.algorithmRequest.algorithm_params
+            ? (options.algorithmRequest.algorithm_params as Record<string, unknown>)
+            : null
+        const fromParams =
+          apForDates &&
+          yyyymmddPairToTimeRange(
+            String(apForDates.start_date ?? ''),
+            String(apForDates.end_date ?? ''),
+          )
+        if (fromParams) {
+          payload.time_range = fromParams
+          debugLog('runWorkflow', catalogId, 'injected algorithm_params time_range', fromParams)
+        } else {
+          // 图层库/侧栏「运行」常不带 time_range；时间轴当前窗补齐，避免后端 None.start
+          const libItem = deps.getLayerLibrary().find((l) => l.catalogId === catalogId)
+          const rt =
+            (runtimeLayerCatalog[backendLayerId] as
+              | {
+                  supports_time?: boolean
+                  time_granularity?: string
+                  native_step?: string
+                  online_temporal?: { native_step?: string }
+                }
+              | undefined) ??
+            (runtimeLayerCatalog[catalogId] as
+              | {
+                  supports_time?: boolean
+                  time_granularity?: string
+                  native_step?: string
+                  online_temporal?: { native_step?: string }
+                }
+              | undefined)
+          const supportsTime = libItem?.supportsTime ?? rt?.supports_time ?? true
+          const filled = await resolveDefaultTimeRangeFromTimeline({
+            supportsTime: supportsTime !== false,
+            nativeStep: catalogNative ?? rt?.native_step ?? rt?.online_temporal?.native_step,
+            // 目录条目未投影 timeGranularity；粒度以 runtime descriptor 为准
+            granularity: rt?.time_granularity,
+          })
+          if (filled) {
+            payload.time_range = filled
+            debugLog('runWorkflow', catalogId, 'injected timeline time_range', filled)
+          }
         }
       }
       const algoParams =
@@ -1527,7 +1601,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       deps.upsertJobLayer(catalogId, {
         jobId: submitJobId,
         catalogId,
-        name: catalogName,
+        name: workflowDisplayName,
         commandType: 'analysis',
         status: 'queued',
         progress: 5,
@@ -1542,6 +1616,9 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         expectedNativeStep: coverage.expectedNativeStep,
         inFlightTimeKeys: [],
         failedTimeKeys: [],
+        commandLabel:
+          options.commandLabel ||
+          (typeof payload.command_label === 'string' ? payload.command_label : undefined),
       })
       if (options.resourceProfile) {
         payload.resource_profile = options.resourceProfile
@@ -1572,7 +1649,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       deps.upsertJobLayer(catalogId, {
         jobId: accepted.run_id,
         catalogId,
-        name: catalogName,
+        name: workflowDisplayName,
         commandType: 'analysis',
         status: 'queued',
         progress: 12,
@@ -1588,6 +1665,9 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         expectedNativeStep: coverage.expectedNativeStep,
         inFlightTimeKeys: [],
         failedTimeKeys: [],
+        commandLabel:
+          options.commandLabel ||
+          (typeof payload.command_label === 'string' ? payload.command_label : undefined),
       })
       if (catalogId.startsWith('wf-out-')) {
         useWorkflowOutputLayersStore().updateRunStatus(catalogId, accepted.run_id, 'queued')
@@ -1602,7 +1682,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       // 单产出 'result' 语义（ensureRestoredRunGroup 内部处理）。
       ensureRestoredRunGroup(accepted.run_id, catalogId, undefined, {
         createPlaceholders: true,
-        title: catalogName,
+        title: workflowDisplayName,
         source: 'submit',
       })
       void deps.startPolling(accepted.run_id, catalogId, options.expectedViewportEpoch)
@@ -1635,7 +1715,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
             deps.upsertJobLayer(catalogId, {
               jobId: claimed.run_id,
               catalogId,
-              name: catalogName,
+              name: workflowDisplayName,
               commandType: 'analysis',
               status: 'queued',
               progress: 12,
@@ -1668,7 +1748,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         deps.upsertJobLayer(catalogId, {
           jobId: submitJobId,
           catalogId,
-          name: catalogName,
+          name: workflowDisplayName,
           commandType: 'analysis',
           status: 'queued',
           progress: 5,
@@ -1692,7 +1772,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         deps.upsertJobLayer(catalogId, {
           jobId: submitJobId,
           catalogId,
-          name: catalogName,
+          name: workflowDisplayName,
           commandType: 'analysis',
           status: 'failed',
           progress: 0,
@@ -1818,11 +1898,15 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     deps.submittingCatalogIds.add(catalogId)
     try {
       const accepted = await retryWorkflowRun(jobId)
+      const prevJob = deps.getJobLayers().find((item) => item.jobId === jobId)
       const catalogName =
         deps.getRuntimeLayerCatalog()[catalogId]?.display_name ?? getCatalogDisplayName(catalogId)
+      const retryDisplayName = resolveSubmitWorkflowDisplayName(catalogName, {
+        commandLabel: prevJob?.commandLabel,
+      })
       deps.upsertJobLayer(catalogId, {
         jobId: accepted.run_id,
-        name: catalogName,
+        name: retryDisplayName,
         commandType: 'analysis',
         status: 'queued',
         progress: 12,

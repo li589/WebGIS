@@ -363,6 +363,35 @@ class SQLiteWorkflowRepository:
                     event.run_id,
                 )
 
+    def get_latest_event_created_at(self, run_id: str) -> datetime | None:
+        """Return the newest ``created_at`` among persisted events for ``run_id``.
+
+        Used by the stuck-running watchdog as an activity heartbeat: mid-run
+        progress often lands only in ``workflow_events`` and does not bump
+        ``workflow_runs.updated_at``.
+        """
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT created_at
+                FROM workflow_events
+                WHERE run_id = ?
+                ORDER BY created_at DESC, event_id DESC
+                LIMIT 1
+                """,
+                (run_id,),
+            ).fetchone()
+        if row is None or not row[0]:
+            return None
+        raw = str(row[0])
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed
+
     def list_events(
         self,
         run_id: str,

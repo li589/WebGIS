@@ -691,7 +691,19 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _param(
                 "end_date", "string", description="结束日期 YYYYMMDD。", widget="date"
             ),
-            _param("local_path", "string", description="本地目标目录。", widget="path"),
+            _param(
+                "local_dir",
+                "string",
+                default="",
+                description="本地目标目录（空=工作区 data_access/smap_download）。",
+                widget="path",
+            ),
+            _param(
+                "short_name",
+                "string",
+                default="SPL3SMP_E",
+                description="NSIDC 产品短名。",
+            ),
             _param(
                 "version",
                 "string",
@@ -730,7 +742,8 @@ _NODE_TEMPLATES: list[dict[str, Any]] = [
             _param(
                 "local_dir",
                 "string",
-                description="本地目标目录（默认 Meteorological/Weather/GLDAS_Download）。",
+                default="",
+                description="本地目标目录（默认 Meteorological/Weather/GLDAS_Download；空=工作区 data_access/gldas_download）。",
                 widget="path",
             ),
             _param(

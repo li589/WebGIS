@@ -208,7 +208,13 @@ Component({
 
     onLayerTap: function (e) {
       var layerId = e.currentTarget.dataset.id;
-      if (!layerId || layerId === this.properties.activeLayerId) {
+      if (!layerId) {
+        return;
+      }
+      // 再点已选中图层 → 取消叠加（父级 selectLayer('') → teardown）
+      if (layerId === this.properties.activeLayerId) {
+        this.setData({ loadingLayerId: '' });
+        this.triggerEvent('select', { layerId: '' });
         return;
       }
       this.setData({ loadingLayerId: layerId });

@@ -8,6 +8,11 @@ import type { ResultDisplayModel } from './result-adapter'
 import { ANALYSIS_COPY, DATA_COPY, LAYERS_COPY } from '../../ui-copy'
 import { openDataWorkspace } from '../../data-manager/core/workspace-store'
 import AppButton from '../ui/AppButton.vue'
+import { filterDisplayableNodeProgress } from '../../stores/layers/workflow-progress'
+import {
+  formatDownloadProgressDetail,
+  hasDownloadProgressDetail,
+} from '../../utils/workflow-download-display'
 
 const props = defineProps<{
   displayLayer: ActiveLayerDisplay
@@ -45,6 +50,10 @@ const emit = defineEmits<{
   exportRaster: [format: string]
   openDataWorkspace: [payload: { tab: string; layerInstanceId: string }]
 }>()
+
+const displayNodeProgress = computed(() =>
+  filterDisplayableNodeProgress(props.jobLayer?.nodeProgress),
+)
 
 const layerMetadata = computed(() => {
   const dl = props.displayLayer
@@ -289,10 +298,11 @@ function enterInspectTools() {
         <span class="job-progress-label">{{ jobLayer.progress }}%</span>
       </div>
       <p class="job-message">{{ jobLayer.message || '作业正在处理中...' }}</p>
-      <div v-if="jobLayer.nodeProgress?.length" class="job-node-progress-section">
-        <div v-for="np in jobLayer.nodeProgress" :key="np.nodeId" class="job-node-progress-item">
+      <div v-if="displayNodeProgress.length" class="job-node-progress-section">
+        <div v-for="np in displayNodeProgress" :key="np.nodeId" class="job-node-progress-item">
           <div class="job-node-progress-header">
             <span>{{ np.nodeLabel }}</span>
+            <span v-if="np.terminalHint === 'skipped'" class="job-node-skipped">已跳过</span>
             <span>{{ np.progress }}%</span>
           </div>
           <div class="job-node-progress-bar">
@@ -300,7 +310,13 @@ function enterInspectTools() {
           </div>
           <p v-if="np.message" class="job-node-progress-message">{{ np.message }}</p>
           <p
-            v-if="
+            v-if="np.detail && hasDownloadProgressDetail(np.detail)"
+            class="job-node-progress-detail"
+          >
+            {{ formatDownloadProgressDetail(np.detail) }}
+          </p>
+          <p
+            v-else-if="
               np.detail &&
               (np.detail.chunksTotal ||
                 np.detail.pixelsTotal ||
@@ -380,10 +396,10 @@ function enterInspectTools() {
     <p v-if="jobReportSummary" class="job-report-copy">{{ jobReportSummary }}</p>
     <p v-else class="job-report-copy">{{ jobLayer.message || '暂无摘要' }}</p>
 
-    <div v-if="jobLayer.nodeProgress?.length" class="report-block">
+    <div v-if="displayNodeProgress.length" class="report-block">
       <h4>进度时间线</h4>
       <ul class="report-node-list">
-        <li v-for="np in jobLayer.nodeProgress" :key="np.nodeId">
+        <li v-for="np in displayNodeProgress" :key="np.nodeId">
           <strong>{{ np.nodeLabel || np.nodeId }}</strong>
           <span>{{ np.stage }} · {{ np.progress }}%</span>
           <span v-if="np.message" class="report-node-msg">{{ np.message }}</span>

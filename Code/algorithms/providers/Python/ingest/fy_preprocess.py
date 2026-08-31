@@ -144,6 +144,32 @@ GDAL_INFO: str = ""
 GDAL_BIN_PREFIX: str = ""
 
 
+def _maybe_set_qgis_gdal_driver_path(bin_prefix: str) -> None:
+    """QGIS 安装的 HDF5 驱动在 ``apps/gdal/lib/gdalplugins``，须设 GDAL_DRIVER_PATH。
+
+    未设置时 gdal_translate 读 ``HDF5:"…"`` 会报
+    ``plugin gdal_HDF5.dll is not available … GDAL_DRIVER_PATH is not set``，
+    导致 fy_preprocess 全波段 SKIP、产物目录空仍「成功」。
+    已有环境变量时不覆盖（尊重用户/运维显式配置）。
+    """
+    existing = os.environ.get("GDAL_DRIVER_PATH", "").strip()
+    if existing:
+        return
+    if not bin_prefix:
+        return
+    root = os.path.dirname(os.path.abspath(bin_prefix))
+    plugins = os.path.join(root, "apps", "gdal", "lib", "gdalplugins")
+    if not os.path.isdir(plugins):
+        return
+    marker_dll = os.path.join(plugins, "gdal_HDF5.dll")
+    marker_so = os.path.join(plugins, "gdal_HDF5.so")
+    if not (os.path.exists(marker_dll) or os.path.exists(marker_so)):
+        # 无 HDF5 插件时不设（避免掩盖其它驱动缺失）
+        return
+    os.environ["GDAL_DRIVER_PATH"] = plugins
+    logger.info("GDAL_DRIVER_PATH set to QGIS plugins: %s", plugins)
+
+
 def _ensure_gdal_bins() -> None:
     """延迟解析 GDAL 可执行文件路径，仅在首次实际使用时执行。"""
     global GDAL_TRANSLATE, GDAL_BUILDVRT, GDAL_WARP, GDAL_INFO, GDAL_BIN_PREFIX
@@ -151,6 +177,7 @@ def _ensure_gdal_bins() -> None:
         return
     bins = _resolve_gdal_bins()
     GDAL_TRANSLATE, GDAL_BUILDVRT, GDAL_WARP, GDAL_INFO, GDAL_BIN_PREFIX = bins
+    _maybe_set_qgis_gdal_driver_path(GDAL_BIN_PREFIX)
 
 
 # ---------------------------------------------------------------------------
@@ -1111,29 +1138,41 @@ class FyPreprocessor:
 
             if orbit_mode == "MWRID" and d_files:
                 logger.info("%s [MWRID] 文件数=%d", day, len(d_files))
-                self._merge_day(d_files, input_dir, "MWRID", output_dir, day, options)
-                processed_days.append(day)
+                if self._merge_day(
+                    d_files, input_dir, "MWRID", output_dir, day, options
+                ):
+                    processed_days.append(day)
+                else:
+                    logger.warning("%s [MWRID] 合并失败（无有效输出）", day)
             elif orbit_mode == "MWRIA" and a_files:
                 logger.info("%s [MWRIA] 文件数=%d", day, len(a_files))
-                self._merge_day(a_files, input_dir, "MWRIA", output_dir, day, options)
-                processed_days.append(day)
+                if self._merge_day(
+                    a_files, input_dir, "MWRIA", output_dir, day, options
+                ):
+                    processed_days.append(day)
+                else:
+                    logger.warning("%s [MWRIA] 合并失败（无有效输出）", day)
             elif orbit_mode == "Both":
                 if d_files:
                     logger.info("%s [MWRID] 文件数=%d", day, len(d_files))
-                    self._merge_day(
+                    if self._merge_day(
                         d_files, input_dir, "MWRID", out_mwrid, day, options
-                    )
-                    processed_days.append(day)
+                    ):
+                        processed_days.append(day)
+                    else:
+                        logger.warning("%s [MWRID] 合并失败（无有效输出）", day)
                 if a_files:
                     logger.info("%s [MWRIA] 文件数=%d", day, len(a_files))
-                    self._merge_day(
+                    if self._merge_day(
                         a_files, input_dir, "MWRIA", out_mwria, day, options
-                    )
-                    if day not in processed_days:
-                        processed_days.append(day)
+                    ):
+                        if day not in processed_days:
+                            processed_days.append(day)
+                    else:
+                        logger.warning("%s [MWRIA] 合并失败（无有效输出）", day)
 
         if not processed_days:
-            logger.warning("输入的时间范围内无数据存在")
+            logger.warning("输入的时间范围内无数据存在或全部预处理失败")
         return processed_days
 
 

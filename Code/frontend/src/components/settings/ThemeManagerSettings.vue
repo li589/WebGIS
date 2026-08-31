@@ -106,13 +106,75 @@ function fillCreateDefaults() {
   draftMode.value = 'open'
 }
 
+/** 生成符合后端 slug 规则的标识：小写字母开头，[a-z0-9_-]，长度 2–64 */
+function slugifyThemeId(raw: string): string {
+  const cleaned = raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^[^a-z]+/, '')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64)
+  return cleaned
+}
+
+function ensureDraftSlug(): string {
+  let slug = slugifyThemeId(draftSlug.value)
+  if (slug.length >= 2) {
+    draftSlug.value = slug
+    return slug
+  }
+  // 仅从英文名推导；缩写默认值 SGFS 不宜当作 slug（易撞名）
+  slug = slugifyThemeId(draftNameEn.value)
+  if (slug.length >= 2) {
+    draftSlug.value = slug
+    return slug
+  }
+  return ''
+}
+
+function onSlugBlur() {
+  if (!creating.value) return
+  const slug = slugifyThemeId(draftSlug.value)
+  if (slug) draftSlug.value = slug
+}
+
+function onNameEnBlur() {
+  if (!creating.value || draftSlug.value.trim()) return
+  const slug = slugifyThemeId(draftNameEn.value)
+  if (slug.length >= 2) draftSlug.value = slug
+}
+
+const canSubmitCreate = computed(() => {
+  if (!creating.value) return false
+  const slug =
+    slugifyThemeId(draftSlug.value) || slugifyThemeId(draftNameEn.value)
+  return (
+    slug.length >= 2 &&
+    draftNameZh.value.trim().length >= 1 &&
+    draftFullZh.value.trim().length >= 1 &&
+    draftNameEn.value.trim().length >= 1
+  )
+})
+
 async function submitCreate() {
   error.value = null
   message.value = null
+  const slug = ensureDraftSlug()
+  if (slug.length < 2) {
+    error.value =
+      '请填写 slug（至少 2 个字符，小写字母开头，仅 a-z / 0-9 / _ / -），或先填英文名以便自动生成。'
+    return
+  }
+  if (!draftNameZh.value.trim() || !draftFullZh.value.trim() || !draftNameEn.value.trim()) {
+    error.value = '请填写中文短名、中文全称与英文名'
+    return
+  }
   saving.value = true
   try {
     const created = await createTheme({
-      slug: draftSlug.value.trim(),
+      slug,
       name_zh: draftNameZh.value.trim(),
       full_name_zh: draftFullZh.value.trim(),
       name_en: draftNameEn.value.trim(),
@@ -303,11 +365,37 @@ function onSelectTheme(val: string) {
     </div>
 
     <div v-if="creating" class="form-grid">
-      <input v-model="draftSlug" type="text" placeholder="slug（如 weather-demo）" />
-      <input v-model="draftNameZh" type="text" placeholder="中文短名" />
-      <input v-model="draftFullZh" type="text" placeholder="中文全称" />
-      <input v-model="draftNameEn" type="text" placeholder="英文名" />
-      <input v-model="draftAbbr" type="text" placeholder="缩写" />
+      <label class="field">
+        <span class="field-label">slug（必填）</span>
+        <input
+          v-model="draftSlug"
+          type="text"
+          placeholder="如 weather-demo（小写字母开头）"
+          autocomplete="off"
+          @blur="onSlugBlur"
+        />
+      </label>
+      <label class="field">
+        <span class="field-label">中文短名</span>
+        <input v-model="draftNameZh" type="text" placeholder="中文短名" />
+      </label>
+      <label class="field">
+        <span class="field-label">中文全称</span>
+        <input v-model="draftFullZh" type="text" placeholder="中文全称" />
+      </label>
+      <label class="field">
+        <span class="field-label">英文名</span>
+        <input
+          v-model="draftNameEn"
+          type="text"
+          placeholder="英文名（可自动生成 slug）"
+          @blur="onNameEnBlur"
+        />
+      </label>
+      <label class="field">
+        <span class="field-label">缩写</span>
+        <input v-model="draftAbbr" type="text" placeholder="缩写" />
+      </label>
       <AppSelect
         v-model="draftMode"
         :options="[
@@ -316,7 +404,12 @@ function onSelectTheme(val: string) {
         ]"
       />
       <textarea v-model="draftDescription" rows="2" placeholder="描述" />
-      <button type="button" class="primary-btn" :disabled="saving" @click="submitCreate">
+      <button
+        type="button"
+        class="primary-btn"
+        :disabled="saving || !canSubmitCreate"
+        @click="submitCreate"
+      >
         创建
       </button>
     </div>
@@ -469,6 +562,19 @@ function onSelectTheme(val: string) {
   border-radius: var(--radius-lg, 10px);
   border: 1px solid var(--border-subtle);
   background: var(--surface-1);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.field-label {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  line-height: 1.3;
 }
 
 .form-grid input,

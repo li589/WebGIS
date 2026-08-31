@@ -64,7 +64,7 @@
         <view class="rtb-loading" wx:if="{{loadingLayerId === item.layerId}}">
           <text>加载中</text>
         </view>
-        <view class="rtb-check" wx:elif="{{activeLayerId === item.layerId}}"></view>
+        <view class="rtb-check" wx:elif="{{activeLayerId === item.layerId}}" aria-label="再点取消"></view>
       </view>
       <view wx:if="{{!expandedCatLayers.length}}" class="rtb-empty">
         <text>该分组暂无可用图层</text>

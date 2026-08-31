@@ -178,39 +178,33 @@ FY3F_PROFILE = FyDatasetProfile(
 
 
 def resolve_gdal_bins(force_bin: str | None = None) -> dict[str, str]:
-    """查找 GDAL 可执行文件路径。优先 force_bin 指定目录，其次 PATH 环境变量。返回含 gdal_translate/gdalbuildvrt/gdalwarp/gdalinfo 的字典。"""
-    import shutil
+    """查找 GDAL 可执行文件绝对路径（与 ``ingest.fy_preprocess`` 共用探测链）。
 
-    candidates: list[Path] = []
-    if force_bin:
-        candidates.append(Path(force_bin))
+    优先 ``force_bin`` / ``CGDA_GDAL_BIN``，再 OSGeo4W / QGIS / conda / PATH。
+    找到 QGIS 时会设置 ``GDAL_DRIVER_PATH``（HDF5 插件）。
+    **不再**回退为裸命令名 ``gdal_translate``（Windows 无 PATH 时会假成功拼出
+    ``'"gdal_translate"' is not recognized``）。
+    """
+    from ingest import fy_preprocess as fp
 
-    conda_prefix = os.environ.get("CONDA_PREFIX")
-    if conda_prefix:
-        candidates.append(Path(conda_prefix) / "Library" / "bin")
+    previous = os.environ.get("CGDA_GDAL_BIN")
+    try:
+        if force_bin:
+            os.environ["CGDA_GDAL_BIN"] = str(force_bin).strip().rstrip("/\\")
+        translate, buildvrt, warp, info, prefix = fp._resolve_gdal_bins()
+    finally:
+        if force_bin:
+            if previous is None:
+                os.environ.pop("CGDA_GDAL_BIN", None)
+            else:
+                os.environ["CGDA_GDAL_BIN"] = previous
 
-    for candidate in candidates:
-        translate = candidate / "gdal_translate.exe"
-        buildvrt = candidate / "gdalbuildvrt.exe"
-        warp = candidate / "gdalwarp.exe"
-        info = candidate / "gdalinfo.exe"
-        if all(path.exists() for path in (translate, buildvrt, warp, info)):
-            return {
-                "gdal_translate": str(translate),
-                "gdalbuildvrt": str(buildvrt),
-                "gdalwarp": str(warp),
-                "gdalinfo": str(info),
-            }
-
-    translate = shutil.which("gdal_translate") or shutil.which("gdal_translate.exe")
-    buildvrt = shutil.which("gdalbuildvrt") or shutil.which("gdalbuildvrt.exe")
-    warp = shutil.which("gdalwarp") or shutil.which("gdalwarp.exe")
-    info = shutil.which("gdalinfo") or shutil.which("gdalinfo.exe")
+    fp._maybe_set_qgis_gdal_driver_path(prefix)
     return {
-        "gdal_translate": translate or "gdal_translate",
-        "gdalbuildvrt": buildvrt or "gdalbuildvrt",
-        "gdalwarp": warp or "gdalwarp",
-        "gdalinfo": info or "gdalinfo",
+        "gdal_translate": translate,
+        "gdalbuildvrt": buildvrt,
+        "gdalwarp": warp,
+        "gdalinfo": info,
     }
 
 

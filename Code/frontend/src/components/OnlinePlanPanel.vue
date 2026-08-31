@@ -44,6 +44,156 @@ const draftDate = ref('')
 const confirmError = ref<string | null>(null)
 const draftError = ref<string | null>(null)
 
+/** 面板/角标拖动后的视口坐标；null 用默认 CSS 定位 */
+const panelPlaced = ref<{ left: number; top: number } | null>(null)
+const dockPlaced = ref<{ left: number; top: number } | null>(null)
+const panelDragging = ref(false)
+const dockDragging = ref(false)
+const panelRootRef = ref<HTMLElement | null>(null)
+const dockRootRef = ref<HTMLElement | null>(null)
+const PAD = 8
+let panelDragOx = 0
+let panelDragOy = 0
+let dockDragOx = 0
+let dockDragOy = 0
+let panelPointerId: number | null = null
+let dockPointerId: number | null = null
+let dockMoved = false
+
+const panelPosStyle = computed(() => {
+  if (!panelPlaced.value) return undefined
+  return {
+    left: `${panelPlaced.value.left}px`,
+    top: `${panelPlaced.value.top}px`,
+    right: 'auto',
+    bottom: 'auto',
+    margin: '0',
+  } as Record<string, string>
+})
+
+const dockPosStyle = computed(() => {
+  if (!dockPlaced.value) return undefined
+  return {
+    left: `${dockPlaced.value.left}px`,
+    top: `${dockPlaced.value.top}px`,
+    right: 'auto',
+    bottom: 'auto',
+  } as Record<string, string>
+})
+
+function clampPos(left: number, top: number, width: number, height: number) {
+  const maxL = Math.max(PAD, window.innerWidth - width - PAD)
+  const maxT = Math.max(PAD, window.innerHeight - height - PAD)
+  return {
+    left: Math.min(Math.max(PAD, left), maxL),
+    top: Math.min(Math.max(PAD, top), maxT),
+  }
+}
+
+function onPanelDragDown(e: PointerEvent) {
+  if (e.button !== 0) return
+  const t = e.target as HTMLElement | null
+  if (t?.closest('button, input, label, a, select, textarea')) return
+  if (!t?.closest('.ops-header--drag')) return
+  const el = panelRootRef.value
+  if (!el) return
+  e.preventDefault()
+  e.stopPropagation()
+  const rect = el.getBoundingClientRect()
+  if (!panelPlaced.value) panelPlaced.value = { left: rect.left, top: rect.top }
+  panelDragOx = e.clientX - panelPlaced.value.left
+  panelDragOy = e.clientY - panelPlaced.value.top
+  panelDragging.value = true
+  panelPointerId = e.pointerId
+  el.setPointerCapture?.(e.pointerId)
+  window.addEventListener('pointermove', onPanelDragMove)
+  window.addEventListener('pointerup', onPanelDragUp)
+  window.addEventListener('pointercancel', onPanelDragUp)
+}
+
+function onPanelDragMove(e: PointerEvent) {
+  if (!panelDragging.value || panelPointerId !== e.pointerId || !panelPlaced.value) return
+  const el = panelRootRef.value
+  if (!el) return
+  panelPlaced.value = clampPos(
+    e.clientX - panelDragOx,
+    e.clientY - panelDragOy,
+    el.offsetWidth,
+    el.offsetHeight,
+  )
+}
+
+function onPanelDragUp(e: PointerEvent) {
+  if (panelPointerId !== e.pointerId) return
+  panelDragging.value = false
+  panelPointerId = null
+  window.removeEventListener('pointermove', onPanelDragMove)
+  window.removeEventListener('pointerup', onPanelDragUp)
+  window.removeEventListener('pointercancel', onPanelDragUp)
+}
+
+function onDockDragDown(e: PointerEvent) {
+  if (e.button !== 0) return
+  const el = dockRootRef.value
+  if (!el) return
+  e.preventDefault()
+  const rect = el.getBoundingClientRect()
+  if (!dockPlaced.value) dockPlaced.value = { left: rect.left, top: rect.top }
+  dockDragOx = e.clientX - dockPlaced.value.left
+  dockDragOy = e.clientY - dockPlaced.value.top
+  dockDragging.value = true
+  dockMoved = false
+  dockPointerId = e.pointerId
+  el.setPointerCapture?.(e.pointerId)
+}
+
+function onDockDragMove(e: PointerEvent) {
+  if (!dockDragging.value || dockPointerId !== e.pointerId || !dockPlaced.value) return
+  const el = dockRootRef.value
+  if (!el) return
+  const next = clampPos(
+    e.clientX - dockDragOx,
+    e.clientY - dockDragOy,
+    el.offsetWidth,
+    el.offsetHeight,
+  )
+  if (
+    Math.abs(next.left - dockPlaced.value.left) > 3 ||
+    Math.abs(next.top - dockPlaced.value.top) > 3
+  ) {
+    dockMoved = true
+  }
+  dockPlaced.value = next
+}
+
+function onDockDragUp(e: PointerEvent) {
+  if (dockPointerId !== e.pointerId) return
+  dockDragging.value = false
+  dockPointerId = null
+  if (!dockMoved) reopen()
+}
+
+function onViewportResize() {
+  const panel = panelRootRef.value
+  if (panel && panelPlaced.value) {
+    panelPlaced.value = clampPos(
+      panelPlaced.value.left,
+      panelPlaced.value.top,
+      panel.offsetWidth,
+      panel.offsetHeight,
+    )
+  }
+  const dock = dockRootRef.value
+  if (dock && dockPlaced.value) {
+    dockPlaced.value = clampPos(
+      dockPlaced.value.left,
+      dockPlaced.value.top,
+      dock.offsetWidth,
+      dock.offsetHeight,
+    )
+  }
+}
+
 const isOpen = computed(() => plan.isOpen)
 const isParked = computed(() => plan.isParked)
 const tabs = computed(() => plan.tabs)
@@ -198,10 +348,15 @@ onMounted(() => {
     void refreshCoverage(activeTab.value.catalogId)
   }
   window.addEventListener('keydown', onPlanEscapeKey)
+  window.addEventListener('resize', onViewportResize)
 })
 
 onScopeDispose(() => {
   window.removeEventListener('keydown', onPlanEscapeKey)
+  window.removeEventListener('resize', onViewportResize)
+  window.removeEventListener('pointermove', onPanelDragMove)
+  window.removeEventListener('pointerup', onPanelDragUp)
+  window.removeEventListener('pointercancel', onPanelDragUp)
   confirmGeneration += 1
   coverageGeneration += 1
 })
@@ -373,24 +528,42 @@ export default { name: 'OnlinePlanPanel' }
 </script>
 
 <template>
-  <!-- parked 角标 -->
+  <!-- parked 角标（可拖；单击未移动则重新打开） -->
   <Teleport to="body">
-    <button
+    <div
       v-if="isParked && pendingCount > 0"
-      type="button"
+      ref="dockRootRef"
       class="ops-dock"
+      :class="{ 'is-placed': Boolean(dockPlaced), 'is-dragging': dockDragging }"
+      :style="dockPosStyle"
+      role="button"
+      tabindex="0"
       :aria-label="ONLINE_PLAN_COPY.parkedDockAria"
-      @click="reopen"
+      @pointerdown="onDockDragDown"
+      @pointermove="onDockDragMove"
+      @pointerup="onDockDragUp"
+      @pointercancel="onDockDragUp"
+      @keydown.enter.prevent="reopen"
+      @keydown.space.prevent="reopen"
     >
+      <span class="ops-dock-grip" aria-hidden="true" />
       {{ ONLINE_PLAN_COPY.parkedDock(pendingCount) }}
-    </button>
+    </div>
   </Teleport>
 
   <Teleport to="body">
     <div v-if="isOpen && tabs.length" class="ops-backdrop" @click.self="park">
-      <section class="ops-panel" role="dialog" aria-label="在线计划会话">
-        <header class="ops-header">
+      <section
+        ref="panelRootRef"
+        class="ops-panel"
+        :class="{ 'is-placed': Boolean(panelPlaced), 'is-dragging': panelDragging }"
+        :style="panelPosStyle"
+        role="dialog"
+        aria-label="在线计划会话"
+      >
+        <header class="ops-header ops-header--drag" title="拖动面板" @pointerdown="onPanelDragDown">
           <div class="ops-title-row">
+            <span class="ops-drag-grip" aria-hidden="true" />
             <h2 class="ops-title">{{ ONLINE_PLAN_COPY.panelTitle }}</h2>
             <span class="ops-sub">{{ ONLINE_PLAN_COPY.panelSub }}</span>
           </div>
@@ -504,6 +677,9 @@ export default { name: 'OnlinePlanPanel' }
   left: 12px;
   bottom: 108px;
   z-index: var(--z-toast);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   padding: 0.35rem 0.65rem;
   border-radius: var(--radius-md, 0.5rem);
   border: 1px solid var(--accent-border, var(--border-strong));
@@ -511,9 +687,30 @@ export default { name: 'OnlinePlanPanel' }
   color: var(--accent-strong, var(--text-strong));
   font-size: 0.75rem;
   font-weight: 700;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
   box-shadow: var(--elevation-2, 0 4px 14px var(--shadow-ambient));
   animation: ops-dock-in 0.28s ease-out;
+}
+
+.ops-dock.is-placed {
+  bottom: auto;
+  right: auto;
+}
+
+.ops-dock.is-dragging {
+  cursor: grabbing;
+  opacity: 0.96;
+}
+
+.ops-dock-grip {
+  width: 0.9rem;
+  height: 0.28rem;
+  border-radius: 999px;
+  background: var(--border-strong);
+  opacity: 0.85;
+  flex-shrink: 0;
 }
 
 .ops-dock:hover {
@@ -534,6 +731,7 @@ export default { name: 'OnlinePlanPanel' }
 }
 
 .ops-panel {
+  position: relative;
   width: min(28rem, calc(100vw - 1.5rem));
   max-height: min(78vh, 36rem);
   overflow: auto;
@@ -543,6 +741,30 @@ export default { name: 'OnlinePlanPanel' }
   box-shadow: var(--elevation-3, 0 8px 28px var(--shadow-ambient));
   color: var(--text-strong);
   animation: ops-slide-in 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ops-panel.is-placed {
+  position: fixed;
+  z-index: calc(var(--z-toast) + 3);
+}
+
+.ops-panel.is-dragging {
+  opacity: 0.97;
+  user-select: none;
+}
+
+.ops-header--drag {
+  cursor: grab;
+  touch-action: none;
+}
+
+.ops-drag-grip {
+  width: 1.1rem;
+  height: 0.28rem;
+  border-radius: 999px;
+  background: var(--border-strong);
+  opacity: 0.85;
+  flex-shrink: 0;
 }
 
 @keyframes ops-backdrop-in {
@@ -593,6 +815,14 @@ export default { name: 'OnlinePlanPanel' }
   gap: 0.5rem;
   padding: 0.65rem 0.75rem 0.4rem;
   border-bottom: 1px solid var(--border-default);
+}
+
+.ops-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  min-width: 0;
 }
 
 .ops-title {

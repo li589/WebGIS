@@ -294,18 +294,29 @@ def _download_from_nsmc(
                 f"（template={template}）"
             )
 
+        from modules.download_nodes import _make_multi_file_progress_cb
+
+        total_files = min(len(files), max_files_per_day)
+        _progress_cb = _make_multi_file_progress_cb(
+            ctx.logger_adapter, "fy_download:nsmc"
+        )
         downloaded: list[str] = []
+        downloaded_bytes = 0
         try:
-            for item in files[:max_files_per_day]:
+            for i, item in enumerate(files[:max_files_per_day], start=1):
                 filename = str(item["ARCHIVENAME"])
                 dest = target_dir / filename
                 if dest.exists() and dest.stat().st_size > 0:
                     downloaded.append(filename)
+                    downloaded_bytes += dest.stat().st_size
+                    _progress_cb(i, total_files, downloaded_bytes, filename)
                     continue
                 client.download_file(
                     filename, dest, center_flag=str(item.get("CNETERFLAG") or "1")
                 )
                 downloaded.append(filename)
+                downloaded_bytes += dest.stat().st_size
+                _progress_cb(i, total_files, downloaded_bytes, filename)
         except NsmcDownloadError as exc:
             message = str(exc)
             if _ACCOUNT_LIMIT_RE.search(message):
@@ -346,19 +357,34 @@ def _fetch_fy3f_tif_fallback(
     逐日单极化文件（与 fy.py 的 ``*.tif`` 回退分支输入契约一致）。
     """
     from ingest.remote_sync import _filebrowser_download
+    from modules.download_nodes import _emit_download_progress, _make_multi_file_progress_cb
 
+    bands = ("10V", "10H")
+    _progress_cb = _make_multi_file_progress_cb(ctx.logger_adapter, "fy_download:nas")
     if ctx.logger_adapter is not None:
-        ctx.logger_adapter.emit_progress(
+        _emit_download_progress(
+            ctx.logger_adapter,
             "fy_download:nas",
-            0.5,
+            0.0,
             f"FY3F 合并 HDF 缺失，回退单极化 TIF 对: {remote_dir} ({date_ymd})",
+            {
+                "download_mode": "multi_file",
+                "downloaded_items": 0,
+                "total_items": len(bands),
+                "downloaded_bytes": 0,
+                "phase": "downloading",
+                "items_display": "filename",
+            },
         )
     last_local: Path | None = None
-    for band in ("10V", "10H"):
+    downloaded_bytes = 0
+    for i, band in enumerate(bands, start=1):
         remote_name = f"FY3F_GBAL_L1_{band}_{date_ymd}_ORBA_0.tif"
         remote_path = f"{remote_dir.rstrip('/')}/{remote_name}"
         local_path = target_dir / remote_name
         if local_path.exists() and local_path.stat().st_size > 0:
+            downloaded_bytes += local_path.stat().st_size
+            _progress_cb(i, len(bands), downloaded_bytes, remote_name)
             last_local = local_path
             continue
         ok = _filebrowser_download(
@@ -367,6 +393,8 @@ def _fetch_fy3f_tif_fallback(
         if not ok or not local_path.exists() or local_path.stat().st_size == 0:
             local_path.unlink(missing_ok=True)
             raise RuntimeError(f"NAS FileBrowser download failed: {remote_path}")
+        downloaded_bytes += local_path.stat().st_size
+        _progress_cb(i, len(bands), downloaded_bytes, remote_name)
         last_local = local_path
     if last_local is None:
         raise RuntimeError(f"NAS FY3F TIF 回退亦无文件: {remote_dir} ({date_ymd})")
@@ -445,11 +473,22 @@ def _fetch_from_nas(
     server = _resolve_profile_server_config(profile_id)
     token = filebrowser_login(server.filebrowser_url, server.username, server.password)
 
+    from modules.download_nodes import _make_multi_file_progress_cb, _make_skip_complete_emit
+
+    total_files = len(remote_names)
+    _progress_cb = _make_multi_file_progress_cb(ctx.logger_adapter, "fy_download:nas")
+    downloaded_bytes = 0
+
     last_local_path: Path | None = None
+    done_count = 0
     for remote_name in remote_names:
         remote_path = f"{remote_dir.rstrip('/')}/{remote_name}"
         local_path = target_dir / remote_name
         if local_path.exists() and local_path.stat().st_size > 0:
+            done_count += 1
+            downloaded_bytes += local_path.stat().st_size
+            _progress_cb(done_count, total_files, downloaded_bytes, remote_name)
+            last_local_path = local_path
             continue
         ok = _filebrowser_download(
             server.filebrowser_url, token, remote_path, local_path, remote_size=0
@@ -471,6 +510,18 @@ def _fetch_from_nas(
                 "The requested date/file may not be available on NAS; "
                 "verify the FY3D archive date and NAS path before retrying."
             )
+        done_count += 1
+        downloaded_bytes += local_path.stat().st_size
+        _progress_cb(done_count, total_files, downloaded_bytes, remote_name)
+        last_local_path = local_path
+
+    if done_count == 0 and total_files > 0 and ctx.logger_adapter is not None:
+        _make_skip_complete_emit(
+            ctx.logger_adapter,
+            "fy_download:nas",
+            total=total_files,
+            skipped=total_files,
+        )
 
     if ctx.logger_adapter is not None:
         fetched = ", ".join(str(target_dir / name) for name in remote_names)
@@ -478,7 +529,7 @@ def _fetch_from_nas(
     return last_local_path or (target_dir / remote_names[-1])
 
 
-@register_module_decorator(name="fy_download")
+@register_module_decorator(name="fy_download", template_overrides={"phase": "download"})
 class FYDownloadModule(BaseModule):
     name = "fy_download"
     description = (
@@ -586,6 +637,10 @@ class FYDownloadModule(BaseModule):
 
         downloaded_days: list[str] = []
         used_sources: set[str] = set()
+        from modules.download_nodes import _emit_download_progress, _make_multi_file_progress_cb
+
+        total_days = len(days)
+        _day_cb = _make_multi_file_progress_cb(ctx.logger_adapter, "fy_download")
         for day_index, day in enumerate(days):
             date_path = day.replace("-", ".")
             day_error: Exception | None = None
@@ -619,11 +674,21 @@ class FYDownloadModule(BaseModule):
                 except Exception as exc:  # noqa: BLE001
                     day_error = exc
                     if ctx.logger_adapter is not None:
-                        ctx.logger_adapter.emit_progress(
+                        _emit_download_progress(
+                            ctx.logger_adapter,
                             "fy_download",
-                            day_index / len(days),
+                            day_index / total_days if total_days else 0.0,
                             f"[{day}] source '{source_name}' failed: {exc}; "
                             "trying next...",
+                            {
+                                "download_mode": "multi_file",
+                                "downloaded_items": day_index,
+                                "total_items": total_days,
+                                "downloaded_bytes": 0,
+                                "phase": "downloading",
+                                "items_display": "filename",
+                                "current_item_name": day,
+                            },
                         )
             if day_error is not None:
                 raise RuntimeError(
@@ -631,13 +696,7 @@ class FYDownloadModule(BaseModule):
                     f"Last error: {day_error} "
                     f"(downloaded {len(downloaded_days)}/{len(days)} days)"
                 )
-            if ctx.logger_adapter is not None:
-                ctx.logger_adapter.emit_progress(
-                    "fy_download",
-                    (day_index + 1) / len(days),
-                    f"[{day}] downloaded via {day_source} "
-                    f"({day_index + 1}/{len(days)} days)",
-                )
+            _day_cb(day_index + 1, total_days, 0, day)
 
         return _store_path_manifest(
             ctx,

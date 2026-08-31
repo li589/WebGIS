@@ -853,6 +853,41 @@ def _flatten_ui_workflow_definition(
     # 剥离），节点级 properties.algorithm_params 由算法侧 executor 以节点基底
     # 合并，避免首模块参数（如 fy_daily 的 orbit_mode）泄漏进其余模块。
     if keep_graph:
+        # 合并图层默认 data_access，并把 scrape 的 alias 提升为模板 required 键，
+        # 否则图执行提前返回时 request.datasource_selection 仍是
+        # smap_daily_mat/ancillary_mat，omega_avg_daily 运行时报缺 anc_root 等。
+        default_data_access = _build_default_data_access_requests(
+            getattr(descriptor, "default_data_access_sources", None) or {}
+        )
+        data_access_requests = _normalize_request(
+            existing_ds.get("_data_access_requests")
+        )
+        for dataset_name, request_payload in default_data_access.items():
+            data_access_requests.setdefault(dataset_name, request_payload)
+        if data_access_requests:
+            existing_ds["_data_access_requests"] = data_access_requests
+        inferred_module = _infer_primary_module_name(
+            nodes if isinstance(nodes, list) else None
+        )
+        template_module = str(
+            inferred_module
+            or getattr(descriptor, "module_name", None)
+            or algorithm_request.get("module_name")
+            or ""
+        )
+        template = (
+            _get_module_request_template(template_module) if template_module else None
+        )
+        _promote_accepted_datasource_aliases(existing_ds, template)
+        for key, value in list(existing_ds.items()):
+            if key.startswith("_") or not isinstance(value, str) or not value.strip():
+                continue
+            if Path(value).is_absolute() and Path(value).exists():
+                continue
+            resolved = _resolve_data_access_source_uri(value)
+            if resolved:
+                existing_ds[key] = resolved
+
         enriched = dict(algorithm_request)
         enriched["datasource_selection"] = existing_ds
         enriched["algorithm_params"] = existing_params
@@ -1135,7 +1170,9 @@ def _populate_python_provider_request(
                 payload = payload.model_copy(update={"time_range": resolved_tr})
             return payload
     elif algorithm_request.get("workflow_name"):
-        # 仅声明 workflow_name、无 definition：仍补齐 time_range 后交由种子路径
+        # 仅声明 workflow_name、无 definition：补齐 time_range + 默认数据源别名提升
+        # 后交由种子路径。图层变体（如 omega_avg_daily_fy_online）走此分支，
+        # 若不提升则 scrape 的 smap_daily_mat 等 alias 无法满足模板 required 键。
         resolved_tr = _resolve_missing_time_range(
             payload=payload,
             algorithm_request=algorithm_request,
@@ -1145,6 +1182,16 @@ def _populate_python_provider_request(
             payload = payload.model_copy(update={"time_range": resolved_tr})
         ref_date = _get_ref_date_from_payload(payload)
         algorithm_request = _expand_date_placeholders(algorithm_request, ref_date)
+        _enrich_datasource_selection_aliases(
+            algorithm_request,
+            descriptor=descriptor,
+            template_module=str(
+                getattr(descriptor, "module_name", None)
+                or algorithm_request.get("module_name")
+                or ""
+            ),
+            ref_date=ref_date,
+        )
         payload = payload.model_copy(update={"algorithm_request": algorithm_request})
         return payload
 
@@ -1258,74 +1305,27 @@ def _populate_python_provider_request(
     except Exception:
         logger.debug("Failed to apply data_input_policies relax_flags", exc_info=True)
 
-    datasource_selection = _normalize_request(
-        algorithm_request.get("datasource_selection")
-    )
-    data_access_requests = _normalize_request(
-        datasource_selection.get("_data_access_requests")
-    )
-    default_data_access = _build_default_data_access_requests(
-        getattr(descriptor, "default_data_access_sources", None) or {}
-    )
-    for dataset_name, request_payload in default_data_access.items():
-        data_access_requests.setdefault(dataset_name, request_payload)
-    if data_access_requests:
-        datasource_selection["_data_access_requests"] = data_access_requests
-
     # 根据模板的 accepted_data_access_by_required_key 把 dataset URI 映射到 required_key
     # 修复：模板验证检查 datasource_selection 中有 input_dir 等键，
     # 但 _data_access_requests 中用的是 dataset_name（如 NDVI_16DAY_RASTER）。
     # 需要把解析到的 URI 也设置到 datasource_selection[required_key] 中。
-    template_module = str(
-        algorithm_request.get("module_name") or descriptor_module or ""
-    )
-    template = (
-        _get_module_request_template(template_module) if template_module else None
-    )
-    if template is not None and template.accepted_data_access_by_required_key:
-        for (
-            required_key,
-            accepted_datasets,
-        ) in template.accepted_data_access_by_required_key.items():
-            if datasource_selection.get(required_key) is not None:
-                continue  # 用户已显式提供
-            for dataset_name in accepted_datasets:
-                da_request = data_access_requests.get(dataset_name)
-                if da_request and isinstance(da_request, dict):
-                    selector = da_request.get("selector") or {}
-                    uris = selector.get("uris") or []
-                    if uris:
-                        datasource_selection[required_key] = uris[0]
-                        break
-
-    # 展开日期占位符 {YYYY.MM.DD} 等（种子 uri/relative_path 中的模板）
+    # 画布/种子 scrape 常写 alias 键（smap_daily_mat / ancillary_mat），
+    # 同样提升为 required_key（smap_folder / anc_root）。
     ref_date = _ref_date
-    for key, value in list(datasource_selection.items()):
-        if isinstance(value, str) and "{" in value:
-            expanded = _expand_data_root_placeholders(
-                _expand_date_placeholders(value, ref_date)
-            )
-            if expanded != value:
-                datasource_selection[key] = expanded
     if isinstance(algorithm_request.get("workflow_definition"), dict):
         algorithm_request["workflow_definition"] = _expand_data_root_placeholders(
             _expand_date_placeholders(
                 algorithm_request["workflow_definition"], ref_date
             )
         )
-
-    # 显式相对路径（画布/种子）→ 绝对本地 URI，供 omega_sf 读 IGPB 等
-    for key, value in list(datasource_selection.items()):
-        if key.startswith("_") or not isinstance(value, str) or not value.strip():
-            continue
-        if Path(value).is_absolute() and Path(value).exists():
-            continue
-        resolved = _resolve_data_access_source_uri(value)
-        if resolved:
-            datasource_selection[key] = resolved
-
-    if datasource_selection:
-        algorithm_request["datasource_selection"] = datasource_selection
+    _enrich_datasource_selection_aliases(
+        algorithm_request,
+        descriptor=descriptor,
+        template_module=str(
+            algorithm_request.get("module_name") or descriptor_module or ""
+        ),
+        ref_date=ref_date,
+    )
 
     # 从画布/种子补齐 time_range（前端 UI 提交时常缺该字段）
     updates: dict[str, Any] = {"algorithm_request": algorithm_request}
@@ -1385,6 +1385,93 @@ def _normalize_request(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
     return {}
+
+
+def _promote_accepted_datasource_aliases(
+    datasource_selection: dict[str, Any],
+    template: Any,
+) -> None:
+    """把 alias / ``_data_access_requests`` 提升为模板 required_datasource_keys。
+
+    画布种子常写 ``smap_daily_mat`` / ``ancillary_mat`` / ``ndvi_daily_mat``，
+    而 ``omega_avg_daily`` 等模板校验的是 ``smap_folder`` / ``anc_root`` /
+    ``ndvi_folder``。缺提升时本地分析会在提交期 422。
+    """
+    if template is None:
+        return
+    mapping = getattr(template, "accepted_data_access_by_required_key", None) or {}
+    if not mapping:
+        return
+    data_access_requests = _normalize_request(
+        datasource_selection.get("_data_access_requests")
+    )
+    for required_key, accepted_datasets in mapping.items():
+        if datasource_selection.get(required_key) is not None:
+            continue
+        for dataset_name in accepted_datasets:
+            flat = datasource_selection.get(dataset_name)
+            if flat is not None and str(flat).strip() != "":
+                datasource_selection[required_key] = flat
+                break
+            da_request = data_access_requests.get(dataset_name)
+            if da_request and isinstance(da_request, dict):
+                selector = da_request.get("selector") or {}
+                uris = selector.get("uris") or []
+                if uris:
+                    datasource_selection[required_key] = uris[0]
+                    break
+
+
+def _enrich_datasource_selection_aliases(
+    algorithm_request: dict[str, Any],
+    *,
+    descriptor: Any,
+    template_module: str,
+    ref_date: date | None = None,
+) -> None:
+    """合并图层默认 data_access，并把 alias 提升为模板 required 键。
+
+    供 ``workflow_name`` 早退路径与 module 路径共用，避免图种子 scrape 的
+    ``smap_daily_mat`` 等键在 omega_avg_daily 运行期仍缺 ``smap_folder``。
+    """
+    datasource_selection = _normalize_request(
+        algorithm_request.get("datasource_selection")
+    )
+    data_access_requests = _normalize_request(
+        datasource_selection.get("_data_access_requests")
+    )
+    default_data_access = _build_default_data_access_requests(
+        getattr(descriptor, "default_data_access_sources", None) or {}
+    )
+    for dataset_name, request_payload in default_data_access.items():
+        data_access_requests.setdefault(dataset_name, request_payload)
+    if data_access_requests:
+        datasource_selection["_data_access_requests"] = data_access_requests
+
+    template = (
+        _get_module_request_template(template_module) if template_module else None
+    )
+    _promote_accepted_datasource_aliases(datasource_selection, template)
+
+    expand_date = ref_date or date.today()
+    for key, value in list(datasource_selection.items()):
+        if isinstance(value, str) and "{" in value:
+            expanded = _expand_data_root_placeholders(
+                _expand_date_placeholders(value, expand_date)
+            )
+            if expanded != value:
+                datasource_selection[key] = expanded
+    for key, value in list(datasource_selection.items()):
+        if key.startswith("_") or not isinstance(value, str) or not value.strip():
+            continue
+        if Path(value).is_absolute() and Path(value).exists():
+            continue
+        resolved = _resolve_data_access_source_uri(value)
+        if resolved:
+            datasource_selection[key] = resolved
+
+    if datasource_selection:
+        algorithm_request["datasource_selection"] = datasource_selection
 
 
 def _build_default_data_access_requests(

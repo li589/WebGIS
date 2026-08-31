@@ -15,6 +15,7 @@ import {
   localizeWorkflowDiagnostics,
   localizeWorkflowErrorMessage,
 } from '../../utils/workflow-error-messages'
+import { resolveJobLayerDisplayName } from '../../utils/workflow-run-display-name'
 
 function formatMetricValue(value: unknown, unit = '') {
   if (typeof value === 'number') {
@@ -465,9 +466,10 @@ export async function buildJobLayer(
   const analysisTables = extractAnalysisTables(run.result_refs)
   return {
     jobId: run.run_id,
-    // workflow_entry_name 是机器路由 id（omega_sf_fenkuai_* 等），只能
-    // 作为内部字段，不能作为图层库运行条目显示名；优先 catalog 中文名。
-    name: !isTechnicalWorkflowEntryName(entryName) && entryName ? entryName : catalogName,
+    name: resolveJobLayerDisplayName(run, catalogName, {
+      previousName: previousJobLayer?.name,
+      entryName,
+    }),
     commandType: run.command_type,
     commandLabel: run.command_label ?? undefined,
     status,

@@ -2,6 +2,7 @@
  * 反演英文 workflow / overlay id → 目录 method-* 成员映射。
  * 独立模块，供 workflow-runner / run-layers / workspace-persist 共用，避免循环依赖。
  */
+import { isTechnicalRunTitle } from '@/utils/workflow-run-display-name'
 
 /** 历史 run 的 layer_id 直接落 workflow_id（omega_sf_fenkuai_* 等）→ 目录合并组成员 */
 const INVERSION_RUN_CATALOG_MAP: Array<{ pattern: RegExp; catalogId: string }> = [
@@ -46,7 +47,7 @@ export function resolveInversionCatalogId(layerId: string): string {
 }
 
 /**
- * 计算组标题消毒：英文反演技术 id / 空串不得进 TOC 组名。
+ * 计算组标题消毒：英文反演技术 id / wf-run 占位 id / 空串不得进 TOC 组名。
  * 供 ensureRestoredRunGroup / createRunLayerGroup 共用。
  */
 export function sanitizeRunGroupTitle(
@@ -54,6 +55,8 @@ export function sanitizeRunGroupTitle(
   fallback = '反演产物',
 ): string {
   const raw = String(title || '').trim()
-  if (!raw || isEnglishInversionCatalogId(raw)) return fallback
+  if (!raw) return fallback
+  // 技术占位 id（wf-run-* / run-group-* / 英文 workflow id）
+  if (isTechnicalRunTitle(raw)) return fallback
   return raw
 }

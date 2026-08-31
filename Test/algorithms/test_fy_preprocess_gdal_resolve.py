@@ -97,6 +97,56 @@ def test_conda_prefix_bin_candidate_on_linux(tmp_path, monkeypatch):
     assert Path(prefix) == tmp_path / "condaroot" / "bin"
 
 
+def test_qgis_gdal_driver_path_set_when_hdf5_plugin_present(tmp_path, monkeypatch):
+    """QGIS bin + apps/gdal/lib/gdalplugins/gdal_HDF5.dll → 写入 GDAL_DRIVER_PATH。"""
+    monkeypatch.delenv("GDAL_DRIVER_PATH", raising=False)
+    qgis_root = tmp_path / "QGIS"
+    bin_dir = _make_fake_bins(qgis_root / "bin", ".exe")
+    plugins = qgis_root / "apps" / "gdal" / "lib" / "gdalplugins"
+    plugins.mkdir(parents=True)
+    (plugins / "gdal_HDF5.dll").write_bytes(b"x")
+    monkeypatch.setattr(fp, "_IS_WINDOWS", True)
+    fp._maybe_set_qgis_gdal_driver_path(str(bin_dir))
+    assert Path(os.environ["GDAL_DRIVER_PATH"]) == plugins
+
+
+def test_qgis_gdal_driver_path_respects_existing_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("GDAL_DRIVER_PATH", r"Z:\custom\plugins")
+    qgis_root = tmp_path / "QGIS"
+    bin_dir = _make_fake_bins(qgis_root / "bin", ".exe")
+    plugins = qgis_root / "apps" / "gdal" / "lib" / "gdalplugins"
+    plugins.mkdir(parents=True)
+    (plugins / "gdal_HDF5.dll").write_bytes(b"x")
+    fp._maybe_set_qgis_gdal_driver_path(str(bin_dir))
+    assert os.environ["GDAL_DRIVER_PATH"] == r"Z:\custom\plugins"
+
+
+def test_algorithms_fy_resolve_gdal_bins_uses_absolute_paths(tmp_path, monkeypatch):
+    """ω / fy_execute 共用 resolve_gdal_bins：必须是绝对路径，禁止裸命令名。"""
+    from algorithms.fy import resolve_gdal_bins
+
+    monkeypatch.setattr(fp, "_IS_WINDOWS", True)
+    monkeypatch.setattr(fp, "_GDAL_SUFFIX", ".exe")
+    bin_dir = _make_fake_bins(tmp_path / "gdalbin", ".exe")
+    monkeypatch.setenv("CGDA_GDAL_BIN", str(bin_dir))
+    monkeypatch.delenv("GDAL_DRIVER_PATH", raising=False)
+    bins = resolve_gdal_bins()
+    assert Path(bins["gdal_translate"]).is_absolute()
+    assert bins["gdal_translate"].endswith("gdal_translate.exe")
+    assert Path(bins["gdal_translate"]).name != "gdal_translate"
+
+
+def test_algorithms_fy_resolve_gdal_bins_force_bin(tmp_path, monkeypatch):
+    from algorithms.fy import resolve_gdal_bins
+
+    monkeypatch.setattr(fp, "_IS_WINDOWS", True)
+    monkeypatch.setattr(fp, "_GDAL_SUFFIX", ".exe")
+    bin_dir = _make_fake_bins(tmp_path / "forced", ".exe")
+    monkeypatch.delenv("CGDA_GDAL_BIN", raising=False)
+    bins = resolve_gdal_bins(force_bin=str(bin_dir))
+    assert Path(bins["gdal_translate"]).parent == bin_dir
+
+
 def test_module_platform_constants_consistent():
     """模块平台常量与 os.name 一致（防未来误改）。"""
     if os.name == "nt":

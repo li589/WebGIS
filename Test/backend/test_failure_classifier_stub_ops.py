@@ -43,6 +43,13 @@ def test_raster_ops_data_and_file_not_found() -> None:
     assert FailureClassifier.classify(FileNotFoundError("nope")) == FailureCategory.not_found, 'FailureClassifier.classify(FileNotFoundError("nope")) == FailureCategory.not_found'
 
 
+def test_local_data_source_missing_path_is_coverage_gap() -> None:
+    """data/source 本地路径缺失须为 coverage_gap，才能触发 FE 源路由切在线。"""
+    exc = FileNotFoundError(r"文件不存在: I:\Geograph_DataSet\FY")
+    assert FailureClassifier.classify(exc) == FailureCategory.coverage_gap
+    assert not FailureClassifier.is_retryable(exc)
+
+
 def test_nas_date_unavailable_is_coverage_gap() -> None:
     exc = RuntimeError(
         "NAS FileBrowser download failed: /fy/FY3D.tif. "
@@ -58,6 +65,17 @@ def test_coverage_gap_token_and_zero_intersection() -> None:
         == FailureCategory.coverage_gap
     )
     assert not FailureCategory.coverage_gap.retryable
+
+
+def test_zero_pixel_sf_inversion_is_coverage_gap() -> None:
+    """omega_sf_fenkuai 0 有效像元不得标 success 上图；归类为 coverage_gap。"""
+    msg = (
+        "error_code=coverage_gap "
+        "SF 反演无有效像元（0/6262144 succeeded；"
+        "TB_SOURCE=FY, SM_SOURCE=SMAP, 20251210~20251210）。"
+    )
+    assert FailureClassifier.classify(ValueError(msg)) == FailureCategory.coverage_gap
+    assert not FailureClassifier.is_retryable(ValueError(msg))
 
 
 def test_memory_and_disk_are_terminal() -> None:

@@ -237,6 +237,10 @@ export function useTimelineSync(
         if (!layer) continue
         if (layer.importedRaster?.timeList?.length) {
           pendingSnapCatalogIds.add(layer.catalogId)
+          // 工作流渐进物化带 runGroupId：未点播放不抢轴（色段仍会更新）
+          if (!isPlaying.value && layer.runGroupId) {
+            continue
+          }
           snapTimelineToLayerLatest(layer.catalogId, `新加科学图层 ${layer.catalogId} → 最新切片`)
           uiStore.rememberLayerTime(layer.catalogId, { force: true })
           break
@@ -251,7 +255,7 @@ export function useTimelineSync(
     { immediate: true },
   )
 
-  // 渐进块：非锁定非统一时，科学层 time_list 增长则跟最新块
+  // 渐进块：仅在时间轴播放中跟随最新块；未点播放时不抢用户选定时刻
   const scienceTimeListSignature = computed(() =>
     workspace.activeLayers.value
       .filter((l) => l.importedRaster?.timeList?.length)
@@ -274,7 +278,7 @@ export function useTimelineSync(
     refreshImportedRasterEffectiveTimes()
     if (!prev) return
     if (unifiedTimeLock.value) return
-    if (isPlaying.value) return
+    if (!isPlaying.value) return
 
     const selected = workspace.activeLayers.value.find(
       (l) => l.catalogId === selectedCatalogId.value,
@@ -302,7 +306,8 @@ export function useTimelineSync(
     reason: string,
   ) {
     if (unifiedTimeLock.value) return
-    if (isPlaying.value) return
+    // 未点播放时不随工作流块 seek；inFlight 键仍由 emitWorkflowProgressTimeSeek 更新色段
+    if (!isPlaying.value) return
     if (uiStore.isLayerTimeLocked(catalogId)) return
 
     const target = timelineTargetFromWorkflowTimeKey(timeKey)
@@ -357,7 +362,8 @@ export function useTimelineSync(
     { deep: true },
   )
 
-  // 运行启动：有预期时间段时把轴对齐到 start_at
+  // 运行启动：仅在时间轴播放中首次对齐 start_at（未点播放不抢用户选定时刻）
+  const alignedRunStartJobs = new Set<string>()
   watch(
     (): { jobId: string; startAt: string; status: string } | null => {
       const layer = workspace.activeLayers.value.find(
@@ -374,13 +380,24 @@ export function useTimelineSync(
     },
     (hint, prev) => {
       if (!hint) return
-      if (prev && prev.jobId === hint.jobId && prev.startAt === hint.startAt) return
-      if (unifiedTimeLock.value || isPlaying.value) return
+      if (hint.status !== 'running') return
+      if (alignedRunStartJobs.has(hint.jobId)) return
+      const isFreshRun =
+        !prev || prev.jobId !== hint.jobId || prev.status === 'queued' || prev.status === 'retry_pending'
+      if (!isFreshRun) return
+      if (unifiedTimeLock.value) return
+      // 未点播放：仅记录已对齐，避免下次播放又跳回 start_at；不改 currentDate
+      if (!isPlaying.value) {
+        alignedRunStartJobs.add(hint.jobId)
+        return
+      }
       const catalogId = selectedCatalogId.value
       if (!catalogId || uiStore.isLayerTimeLocked(catalogId)) return
       const d = parseInstant(hint.startAt)
       if (!d) return
+      useTimelineActionBannerStore().suppressConfirm(3_500)
       uiStore.applyDateHour(d, 0)
+      alignedRunStartJobs.add(hint.jobId)
     },
   )
 

@@ -37,6 +37,7 @@ from launch.subprocess_utils import (
     frontend_dev_command,
     hidden_kwargs,
     python_executable,
+    tree_kill_pid,
 )
 
 # 外部 ``restart backend`` 会先清空 PID 文件 backend 条目，再启新进程
@@ -320,26 +321,82 @@ class ProcessManager:
         外部重启时会把句柄替换成 psutil.Process（无 poll() 方法，且其
         wait(timeout) 超时抛 psutil.TimeoutExpired 而非 subprocess.TimeoutExpired），
         因此存活探测与超时捕获都必须双兼容，否则 Ctrl+C 优雅停止会崩。
+
+        Windows 上外部接管的 psutil.Process.wait() 可能抛 AccessDenied
+        （OpenProcess 权限不足）——降级 taskkill /T /F，不得中断整轮停服。
         """
         log.banner("停止所有服务")
         for name, proc in reversed(list(self.processes.items())):
-            if self._poll_proc(proc) is not None:
-                log.info("Stop", f"{name} 已退出")
-                continue
-            log.info("Stop", f"停止 {name} (pid={proc.pid})...")
-            proc.terminate()
-            try:
-                proc.wait(timeout=10)
-                log.ok("Stop", f"{name} 已停止")
-            except (subprocess.TimeoutExpired, psutil.TimeoutExpired):
-                log.warn("Stop", f"{name} 10s 内未退出，强制 kill")
-                proc.kill()
-                try:
-                    proc.wait(timeout=5)
-                except (subprocess.TimeoutExpired, psutil.TimeoutExpired):
-                    log.warn("Stop", f"{name} kill 后仍未退出")
+            self._stop_one_proc(name, proc)
         self.processes.clear()
         self._awaiting_external_restart.clear()
+
+    def _stop_one_proc(self, name: str, proc: Any) -> None:
+        """停止单个子进程；权限/句柄异常时降级 tree_kill，不向上抛出。"""
+        if self._poll_proc(proc) is not None:
+            log.info("Stop", f"{name} 已退出")
+            return
+        pid = getattr(proc, "pid", None)
+        log.info("Stop", f"停止 {name} (pid={pid})...")
+        try:
+            proc.terminate()
+        except (psutil.AccessDenied, PermissionError, OSError) as exc:
+            log.warn(
+                "Stop",
+                f"{name} terminate 权限不足 ({exc})，改用 taskkill pid={pid}",
+            )
+            if pid is not None:
+                tree_kill_pid(int(pid))
+            return
+        except Exception as exc:
+            log.warn("Stop", f"{name} terminate 失败: {exc}")
+            if pid is not None:
+                tree_kill_pid(int(pid))
+            return
+
+        try:
+            proc.wait(timeout=10)
+            log.ok("Stop", f"{name} 已停止")
+            return
+        except (subprocess.TimeoutExpired, psutil.TimeoutExpired):
+            log.warn("Stop", f"{name} 10s 内未退出，强制 kill")
+        except (psutil.AccessDenied, PermissionError, OSError) as exc:
+            log.warn(
+                "Stop",
+                f"{name} wait 权限不足 ({exc})，改用 taskkill pid={pid}",
+            )
+            if pid is not None:
+                tree_kill_pid(int(pid))
+            return
+
+        try:
+            proc.kill()
+        except (psutil.AccessDenied, PermissionError, OSError) as exc:
+            log.warn(
+                "Stop",
+                f"{name} kill 权限不足 ({exc})，改用 taskkill pid={pid}",
+            )
+            if pid is not None:
+                tree_kill_pid(int(pid))
+            return
+        except Exception as exc:
+            log.warn("Stop", f"{name} kill 失败: {exc}")
+            if pid is not None:
+                tree_kill_pid(int(pid))
+            return
+
+        try:
+            proc.wait(timeout=5)
+            log.ok("Stop", f"{name} 已强制停止")
+        except (subprocess.TimeoutExpired, psutil.TimeoutExpired):
+            log.warn("Stop", f"{name} kill 后仍未退出")
+        except (psutil.AccessDenied, PermissionError, OSError) as exc:
+            log.warn(
+                "Stop",
+                f"{name} kill 后 wait 权限不足 ({exc})，改用 taskkill pid={pid}",
+            )
+            if pid is not None:
+                tree_kill_pid(int(pid))
 
     @staticmethod
     def _poll_proc(proc: Any) -> int | None:
@@ -529,7 +586,10 @@ class ProcessManager:
                 return
             self._shutting_down = True
             log.warn("Signal", f"收到信号 {signum}，正在优雅停止所有服务...")
-            self.stop_all()
+            try:
+                self.stop_all()
+            except Exception as exc:
+                log.error("Signal", f"停服过程异常（已尽力继续退出）: {exc}")
             log.banner("已停止")
             sys.exit(0)
 

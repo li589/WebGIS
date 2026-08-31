@@ -76,6 +76,72 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
 }
 
 _SINGLE_DAY_MAT_RE = re.compile(r"^\d{8}\.mat$", re.IGNORECASE)
+_FY_DATE_IN_NAME_RE = re.compile(r"(20\d{6})")
+_DISPLAYABLE_RASTER_SUFFIXES = {".tif", ".tiff", ".geotiff", ".cog"}
+_SCIENCE_RASTER_SUFFIXES = {".hdf", ".h5", ".he5", ".nc", ".mat"}
+
+
+def _pick_fy_display_raster(
+    root: Path,
+    *,
+    time_start: str | None = None,
+    time_end: str | None = None,
+) -> Path | None:
+    """从 fy_preprocessed_dir 中挑一张可上图栅格（优先 GeoTIFF，其次科学格式）。
+
+    在线种子默认写出 GeoTIFF；hdf5 模式仍会保留中间 .tif。文件名常含 YYYYMMDD，
+    优先匹配 time_start；同日多波段优先 10V。
+    """
+    if not root.is_dir():
+        return None
+    geotiffs = sorted(
+        (
+            path
+            for path in root.rglob("*")
+            if path.is_file() and path.suffix.lower() in _DISPLAYABLE_RASTER_SUFFIXES
+        ),
+        key=lambda path: path.name.lower(),
+    )
+    science = sorted(
+        (
+            path
+            for path in root.rglob("*")
+            if path.is_file() and path.suffix.lower() in _SCIENCE_RASTER_SUFFIXES
+        ),
+        key=lambda path: path.name.lower(),
+    )
+    candidates = geotiffs or science
+    if not candidates:
+        return None
+
+    want = (time_start or "").replace("-", "")[:8]
+    if want and len(want) == 8:
+        dated = [
+            path
+            for path in candidates
+            if (match := _FY_DATE_IN_NAME_RE.search(path.name)) and match.group(1) == want
+        ]
+        if dated:
+            candidates = dated
+        elif time_end:
+            end_key = time_end.replace("-", "")[:8]
+            if end_key and len(end_key) == 8:
+                ranged = []
+                for path in candidates:
+                    match = _FY_DATE_IN_NAME_RE.search(path.name)
+                    if not match:
+                        continue
+                    day = match.group(1)
+                    if want <= day <= end_key:
+                        ranged.append(path)
+                if ranged:
+                    candidates = ranged
+
+    for prefer in ("10V", "10H", "18V", "18H"):
+        for path in reversed(candidates):
+            if prefer.lower() in path.name.lower():
+                return path
+    return candidates[-1]
 
 
 def _infer_mat_data_variable(path: Path) -> str | None:
@@ -786,6 +852,16 @@ class PythonProviderResultBuilder:
         product_type = str(product.get("type") or "")
         config = _MAPPABLE_PRODUCTS.get(product_type)
         if config is None:
+            if product_type == "fy_preprocessed_dir":
+                return self._build_fy_preprocessed_dir_map_layer_ref(
+                    run_id=run_id,
+                    requested_at=requested_at,
+                    payload=payload,
+                    product=product,
+                    index=index,
+                    time_start=time_start,
+                    time_end=time_end,
+                )
             # Generic GIS / preprocess GeoTIFF products (native CRS/bounds).
             # tags.module=output_map_layer（2026-08-25 图层逐一验证发现）：
             # static_local_read_*（ETOPO/GEBCO/DEM 等静态读取层）的产物
@@ -1007,6 +1083,71 @@ class PythonProviderResultBuilder:
             updated_at=requested_at,
         )
 
+    def _build_fy_preprocessed_dir_map_layer_ref(
+        self,
+        *,
+        run_id: str,
+        requested_at: datetime,
+        payload: WorkflowSubmitRequest,
+        product: dict[str, Any],
+        index: int,
+        time_start: str | None = None,
+        time_end: str | None = None,
+    ) -> WorkflowResultReference | None:
+        """fy_preprocess 输出目录 → 挑 GeoTIFF/科学栅格 → 走 generic 上图通道。
+
+        2026-08-30：fy_tb_online_read 成功但 product_type=fy_preprocessed_dir
+        不在 _MAPPABLE_PRODUCTS，被静默丢弃 → 「已完成但地图空白」。
+        """
+        uri = str(
+            product.get("download_url")
+            or product.get("preview_url")
+            or product.get("uri")
+            or ""
+        ).strip()
+        local_path = self._uri_to_local_path(uri) if uri else None
+        if local_path is None or not local_path.is_dir():
+            logger.warning(
+                "fy_preprocessed_dir missing or not a directory: uri=%r run_id=%s",
+                uri,
+                run_id,
+            )
+            return None
+        chosen = _pick_fy_display_raster(
+            local_path, time_start=time_start, time_end=time_end
+        )
+        if chosen is None:
+            logger.warning(
+                "fy_preprocessed_dir has no displayable raster under %s run_id=%s",
+                local_path,
+                run_id,
+            )
+            return None
+        tags = as_dict(product.get("tags"))
+        synth = {
+            **product,
+            "type": "map_layer",
+            "uri": str(chosen),
+            "download_url": str(chosen),
+            "variable": product.get("variable") or "Brightness_Temperature",
+            "tags": {
+                **tags,
+                "module": "output_map_layer",
+                "kind": "raster",
+                "source_dir": str(local_path),
+                "picked_file": chosen.name,
+            },
+        }
+        return self._build_generic_raster_map_layer_ref(
+            run_id=run_id,
+            requested_at=requested_at,
+            payload=payload,
+            product=synth,
+            index=index,
+            time_start=time_start,
+            time_end=time_end,
+        )
+
     def _build_generic_raster_map_layer_ref(
         self,
         *,
@@ -1026,7 +1167,22 @@ class PythonProviderResultBuilder:
             or ""
         ).strip()
         local_path = self._uri_to_local_path(uri) if uri else None
-        if local_path is None or not local_path.is_file():
+        if local_path is None:
+            return None
+        # output_map_layer 常把上游目录 path 标成 type=map_layer；目录须先挑可上图文件。
+        if local_path.is_dir():
+            chosen = _pick_fy_display_raster(
+                local_path, time_start=time_start, time_end=time_end
+            )
+            if chosen is None:
+                logger.warning(
+                    "map_layer uri is empty/unreadable directory: %s run_id=%s",
+                    local_path,
+                    run_id,
+                )
+                return None
+            local_path = chosen
+        if not local_path.is_file():
             return None
         suffix = local_path.suffix.lower()
         if suffix not in {".tif", ".tiff", ".geotiff", ".cog"}:

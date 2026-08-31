@@ -17,9 +17,13 @@ var tiles = require('../../services/tiles');
 var palettes = require('../../services/palettes');
 
 var INITIAL_SCALE = 12;
-var DEFAULT_LAYER_ID = 'dem-etopo'; // 后端 XYZ 能力薄：默认全局静态地形（其他 xyz 支持层：co2/cmfd-precip/clcd）
+// 进入页绝不自动选层 / 不拉 ETOPO 瓦片；仅用户从右侧工具栏点选后加载
 
 Component({
+  options: {
+    styleIsolation: 'apply-shared'
+  },
+
   data: {
     center: { latitude: 39.9101, longitude: 116.4036 },
     scale: INITIAL_SCALE,
@@ -28,6 +32,8 @@ Component({
     metersPerPixel: 0,
     debugHud: '',
     banner: '',
+    /* 仅有活动图层时才挂载 canvas */
+    showOverlayCanvas: false,
     /* M2 图层链路 */
     railCategories: [],
     railActiveId: '',
@@ -44,7 +50,6 @@ Component({
       vmax: 1
     },
     timeline: { mode: 'static', ticks: [], current: 0 },
-    // 时间轴当前高度（px），由 timeline 组件 collapse 事件驱动；用于 HUD/比例尺/影像按钮的联动位置
     tlHeight: 128
   },
 
@@ -63,11 +68,18 @@ Component({
       this._imgCache = {}; // filePath -> {img, ready}
       this._layer = null; // {id, name, meta, timeList, timeParam, ticks}
       this._tileStats = { loaded: 0, total: 0, fetching: 0 };
+      // 必须等 MapContext 回传真实中心/缩放后再画瓦片，否则首帧投影错位会把
+      // dem-etopo（terrain 黄米色）整屏糊成半透明黄罩。
+      this._mapSynced = false;
+      this._pendingLayerId = null;
       this.setData({
         center: { latitude: this._centerGcj.lat, longitude: this._centerGcj.lng }
       });
 
       tiles.onTileReady(function (tile, filePath) {
+        if (!self._layer || !self.data.showOverlayCanvas) {
+          return;
+        }
         self._getImage(filePath, function () {
           self._drawOverlay('tile');
         });
@@ -77,27 +89,12 @@ Component({
         self._updateHud();
       });
 
-      this.createSelectorQuery()
-        .select('#overlayCanvas')
-        .fields({ node: true, size: true })
-        .exec(function (res) {
-          if (!res || !res[0] || !res[0].node) {
-            console.error('[map-shell] canvas node 获取失败');
-            self.setData({ banner: 'canvas 初始化失败' });
-            return;
-          }
-          var info = res[0];
-          var win = wx.getWindowInfo ? wx.getWindowInfo() : { pixelRatio: 2 };
-          var dpr = win.pixelRatio || 2;
-          var canvas = info.node;
-          canvas.width = info.width * dpr;
-          canvas.height = info.height * dpr;
-          var ctx = canvas.getContext('2d');
-          ctx.scale(dpr, dpr);
-          self._cv = { canvas: canvas, ctx: ctx, w: info.width, h: info.height, dpr: dpr };
-          self._updateScaleBar();
-          self._boot();
-        });
+      // 先起目录/地图对齐；canvas 仅在用户选层后挂载（见 _ensureOverlayCanvas）
+      this._boot();
+      // 稍后再同步相机（不等 canvas）
+      setTimeout(function () {
+        self._syncMapCamera(false);
+      }, 300);
     },
 
     /* ================= M2: 目录 + 图层链路 ================= */
@@ -109,23 +106,94 @@ Component({
         .loadCatalog()
         .then(function (cat) {
           self._catalog = cat;
-          self.setData({
-            railCategories: cat.railCategories,
-            railActiveId: cat.railCategories.length ? cat.railCategories[0].id : ''
+          // 右侧栏需要 categories[].layers；catalog 已挂在 railCategories 上
+          var rails = (cat.railCategories || []).map(function (rc) {
+            var g = cat.groups[rc.id];
+            return Object.assign({}, rc, { layers: (g && g.layers) || rc.layers || [] });
           });
-          // 默认图层：优先 GPCP 月降水（全局 + 时间序列，可演示 timeline）
-          var first = cat.railCategories.length ? cat.railCategories[0].id : '';
-          var prefer =
-            cat.layerById[DEFAULT_LAYER_ID] ||
-            (cat.groups[first] && cat.groups[first].layers[0]);
-          if (prefer) {
-            self.selectLayer(prefer.layerId);
-          }
+          self.setData({
+            railCategories: rails,
+            railActiveId: rails.length ? rails[0].id : ''
+          });
+          // 明确：不自动 selectLayer，不挂 canvas，不请求瓦片
         })
         .catch(function (err) {
           console.error('[map-shell] catalog fail', err);
           self.setData({ banner: '目录加载失败：' + (err.message || err) });
         });
+    },
+
+    /** 选层后按需创建 canvas，避免空/错 canvas 压在 UI 上 */
+    _ensureOverlayCanvas: function (done) {
+      var self = this;
+      if (this._cv && this.data.showOverlayCanvas) {
+        if (done) {
+          done();
+        }
+        return;
+      }
+      this.setData({ showOverlayCanvas: true }, function () {
+        var defer =
+          typeof wx.nextTick === 'function'
+            ? wx.nextTick
+            : function (fn) {
+                setTimeout(fn, 0);
+              };
+        defer(function () {
+          self
+            .createSelectorQuery()
+            .select('#overlayCanvas')
+            .fields({ node: true, size: true })
+            .exec(function (res) {
+              if (!res || !res[0] || !res[0].node) {
+                console.error('[map-shell] canvas node 获取失败');
+                self.setData({ banner: 'canvas 初始化失败', showOverlayCanvas: false });
+                return;
+              }
+              var info = res[0];
+              var win = wx.getWindowInfo ? wx.getWindowInfo() : { pixelRatio: 2 };
+              var dpr = win.pixelRatio || 2;
+              var canvas = info.node;
+              var w = info.width || 0;
+              var h = info.height || 0;
+              if (w < 8 || h < 8) {
+                console.warn('[map-shell] canvas size invalid', w, h);
+                self.setData({ showOverlayCanvas: false });
+                return;
+              }
+              canvas.width = w * dpr;
+              canvas.height = h * dpr;
+              var ctx = canvas.getContext('2d');
+              ctx.setTransform(1, 0, 0, 1, 0, 0);
+              ctx.scale(dpr, dpr);
+              self._cv = { canvas: canvas, ctx: ctx, w: w, h: h, dpr: dpr };
+              if (done) {
+                done();
+              }
+            });
+        });
+      });
+    },
+
+    _teardownOverlayCanvas: function () {
+      tiles.clear();
+      this._imgCache = {};
+      this._layer = null;
+      this._cv = null;
+      this.setData({
+        showOverlayCanvas: false,
+        activeLayer: { id: '', name: '' },
+        colorbar: {
+          visible: false,
+          title: '',
+          unit: '',
+          paletteId: 'viridis',
+          vmin: 0,
+          vmax: 1
+        },
+        timeline: { mode: 'static', ticks: [], current: 0 },
+        debugHud: ''
+      });
     },
 
     onRailSelect: function (e) {
@@ -156,34 +224,48 @@ Component({
 
     selectLayer: function (layerId) {
       var self = this;
-      var layerInfo = (this._catalog && this._catalog.layerById[layerId]) || null;
-      var boundsP = layerInfo && layerInfo.meta
-        ? Promise.resolve({
-            meta: layerInfo.meta,
-            bounds: [layerInfo.meta.minzoom != null ? -180 : -180]
-          })
-        : api.getOverlayBounds(layerId);
+      if (!layerId) {
+        this._teardownOverlayCanvas();
+        return;
+      }
+      // 演示占位 id 不请求后端
+      if (String(layerId).indexOf('demo-') === 0) {
+        this.setData({ banner: '演示图层，请连接后端后选择真实图层' });
+        return;
+      }
 
       this.setData({
-        activeLayer: { id: layerId, name: (layerInfo && layerInfo.displayName) || layerId },
+        activeLayer: { id: layerId, name: layerId },
         banner: ''
       });
+      this._imgCache = {};
+      tiles.clear();
 
-      boundsP.then(function (d) {
-        var meta = (d && d.meta) || {};
-        var timeList = meta.timeList || meta.time_list || [];
+      var applyMeta = function (meta, displayName) {
+        if (meta.supportsXyzTiles === false) {
+          self.setData({
+            banner: '该图层不支持 XYZ 瓦片，无法在小程序叠加显示',
+            showOverlayCanvas: false
+          });
+          self._layer = null;
+          self._cv = null;
+          return;
+        }
+        var timeList = meta.timeList || [];
         var timeParam = timeList.length ? String(timeList[0]) : '';
-
         self._layer = {
           id: layerId,
-          name: (layerInfo && layerInfo.displayName) || layerId,
+          name: displayName || layerId,
           meta: meta,
           timeList: timeList.map(String),
           timeParam: timeParam,
-          opacity: typeof meta.opacity === 'number' ? meta.opacity : 0.85
+          opacity: typeof meta.opacity === 'number' ? Math.min(meta.opacity, 0.75) : 0.7
         };
-
+        if (self._catalog && self._catalog.layerById[layerId]) {
+          self._catalog.layerById[layerId].meta = meta;
+        }
         self.setData({
+          activeLayer: { id: layerId, name: self._layer.name },
           colorbar: {
             visible: true,
             title: self._layer.name,
@@ -193,13 +275,35 @@ Component({
             vmax: meta.vmax != null ? meta.vmax : 1
           }
         });
-
         self._buildTimelineFromTimeList(self._layer.timeList);
         tiles.setActive(layerId, timeParam);
+        if (!self._mapSynced) {
+          self._pendingLayerId = layerId;
+          self._syncMapCamera(true);
+          return;
+        }
         self._scheduleTiles();
-      }).catch(function (err) {
-        console.error('[map-shell] overlay-bounds fail', err);
-        self.setData({ banner: '图层元数据加载失败：' + (err.message || err) });
+      };
+
+      var layerInfo = (this._catalog && this._catalog.layerById[layerId]) || null;
+      var displayName = (layerInfo && layerInfo.displayName) || layerId;
+
+      self._ensureOverlayCanvas(function () {
+        if (self._cv && self._cv.ctx) {
+          self._cv.ctx.clearRect(0, 0, self._cv.w, self._cv.h);
+        }
+        var metaP =
+          layerInfo && layerInfo.meta && layerInfo.meta.supportsXyzTiles != null
+            ? Promise.resolve(layerInfo.meta)
+            : catalogSvc.fetchLayerMeta(layerId);
+        metaP
+          .then(function (meta) {
+            applyMeta(meta, displayName);
+          })
+          .catch(function (err) {
+            console.error('[map-shell] overlay-bounds fail', err);
+            self.setData({ banner: '图层元数据加载失败：' + (err.message || err) });
+          });
       });
     },
 
@@ -305,10 +409,13 @@ Component({
 
     /** 视口变化 / 图层时间变化 → 重算 needed 瓦片并取片 */
     _scheduleTiles: function () {
-      if (!this._layer || !this._cv) {
+      if (!this._layer || !this._cv || !this._mapSynced) {
         return;
       }
-      var meta = this._layer.meta;
+      if (!this._cv.w || !this._cv.h || this._cv.w < 8 || this._cv.h < 8) {
+        return;
+      }
+      var meta = this._layer.meta || {};
       var minZ = meta.minzoom != null ? meta.minzoom : 0;
       var maxZ = meta.maxzoom != null ? meta.maxzoom : 18;
       var z = Math.round(this._scale);
@@ -361,34 +468,81 @@ Component({
       var seG = gcj.wgs84ToGcj02(se.lng, se.lat);
       var p1 = this._project(nwG.lat, nwG.lng);
       var p2 = this._project(seG.lat, seG.lng);
-      return { x: p1.x, y: p1.y, w: p2.x - p1.x, h: p2.y - p1.y };
+      var rect = { x: p1.x, y: p1.y, w: p2.x - p1.x, h: p2.y - p1.y };
+      // 期望边长 ≈ 256 * 2^(mapScale - tileZ)；超出过多即投影未对齐
+      var expected = merc.TILE_SIZE * Math.pow(2, this._scale - t.z);
+      var maxSide = Math.max(expected * 2.2, 64);
+      if (
+        !isFinite(rect.x) ||
+        !isFinite(rect.y) ||
+        !isFinite(rect.w) ||
+        !isFinite(rect.h) ||
+        rect.w <= 1 ||
+        rect.h <= 1 ||
+        rect.w > maxSide ||
+        rect.h > maxSide ||
+        rect.w > this._cv.w * 1.5 ||
+        rect.h > this._cv.h * 1.5
+      ) {
+        return null;
+      }
+      return rect;
+    },
+
+    /** 从 MapContext 拉真实中心/缩放；首次成功后放开瓦片绘制 */
+    _syncMapCamera: function (thenSchedule) {
+      var self = this;
+      var mc = wx.createMapContext('cgdaMap', this);
+      mc.getCenterLocation({
+        success: function (loc) {
+          if (typeof loc.latitude !== 'number' || typeof loc.longitude !== 'number') {
+            return;
+          }
+          mc.getScale({
+            success: function (s) {
+              if (typeof s.scale !== 'number' || !(s.scale > 0)) {
+                return;
+              }
+              self._centerGcj = { lat: loc.latitude, lng: loc.longitude };
+              self._scale = s.scale;
+              var firstSync = !self._mapSynced;
+              self._mapSynced = true;
+              self._updateScaleBar();
+              if (firstSync && self._pendingLayerId) {
+                var id = self._pendingLayerId;
+                self._pendingLayerId = null;
+                self.selectLayer(id);
+              } else if (thenSchedule || (firstSync && self._layer)) {
+                self._scheduleTiles();
+              } else {
+                self._drawOverlay('camera-sync');
+              }
+            }
+          });
+        }
+      });
+    },
+
+    onBannerTap: function () {
+      this.setData({ banner: '' });
     },
 
     /* ================= 地图交互 ================= */
 
     onMapUpdated: function () {
-      this._drawOverlay('map-updated');
+      if (!this._mapSynced) {
+        // 不对齐时不要 thenSchedule=true 误触发；无图层时 schedule 本就空跑
+        this._syncMapCamera(!!this._layer || !!this._pendingLayerId);
+      } else if (this._layer) {
+        this._drawOverlay('map-updated');
+      }
     },
 
     onRegionChange: function (e) {
       if (e.type !== 'end') {
         return; // 手势期间冻结上一帧（连续同步在 M3 优化）
       }
-      var self = this;
-      var mc = wx.createMapContext('cgdaMap', this);
-      mc.getCenterLocation({
-        success: function (loc) {
-          mc.getScale({
-            success: function (s) {
-              self._centerGcj = { lat: loc.latitude, lng: loc.longitude };
-              self._scale = s.scale;
-              self._updateScaleBar();
-              self._drawOverlay('regionchange');
-              self._scheduleTiles();
-            }
-          });
-        }
-      });
+      this._syncMapCamera(true);
     },
 
     onMapTap: function (e) {
@@ -414,16 +568,24 @@ Component({
 
     /** 放大地图：scale + 1（上限 20） */
     onZoomIn: function () {
+      var self = this;
       var s = Math.min((this._scale || 12) + 1, 20);
       this._scale = s;
-      this.setData({ scale: s });
+      this.setData({ scale: s }, function () {
+        self._updateScaleBar();
+        self._scheduleTiles();
+      });
     },
 
     /** 缩小地图：scale - 1（下限 3） */
     onZoomOut: function () {
+      var self = this;
       var s = Math.max((this._scale || 12) - 1, 3);
       this._scale = s;
-      this.setData({ scale: s });
+      this.setData({ scale: s }, function () {
+        self._updateScaleBar();
+        self._scheduleTiles();
+      });
     },
 
     /** 重置视角正北（本项目禁旋转倾斜，此方法为保险入口） */
@@ -562,7 +724,16 @@ Component({
       var ctx = this._cv.ctx;
       var w = this._cv.w;
       var h = this._cv.h;
+      if (!w || !h) {
+        return;
+      }
       ctx.clearRect(0, 0, w, h);
+
+      // 地图相机未对齐前不画瓦片（只清屏），避免整屏黄罩
+      if (!this._mapSynced) {
+        this._updateHud();
+        return;
+      }
 
       // ---- 1) 数据瓦片（overlay PNG） ----
       if (this._layer) {
@@ -575,11 +746,15 @@ Component({
             continue;
           }
           var r = this._tileRect(t);
-          if (r.x > w || r.y > h || r.x + r.w < 0 || r.y + r.h < 0) {
+          if (!r || r.x > w || r.y > h || r.x + r.w < 0 || r.y + r.h < 0) {
             continue;
           }
           ctx.globalAlpha = opacity;
-          ctx.drawImage(entry.img, r.x, r.y, r.w, r.h);
+          try {
+            ctx.drawImage(entry.img, r.x, r.y, r.w, r.h);
+          } catch (err) {
+            console.warn('[map-shell] drawImage fail', t.key, err);
+          }
         }
         ctx.globalAlpha = 1;
       }
