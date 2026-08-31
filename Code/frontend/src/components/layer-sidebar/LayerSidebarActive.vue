@@ -23,9 +23,7 @@ defineProps<{
   availabilityClass: (state: string) => string
   getCategoryName: (categoryId: string) => string
   supportsOnlineTemporal: (catalogId: string) => boolean
-  getSourceRouteBadge?: (
-    catalogId: string,
-  ) => { key: string; label: string; title: string } | null
+  getSourceRouteBadge?: (catalogId: string) => { key: string; label: string; title: string } | null
   cycleSourceRoute?: (catalogId: string) => void
   /**
    * 统一数据状态徽标（2026-08-25 UX 简化）：归并 availability/lifecycle/job
@@ -209,7 +207,10 @@ const emit = defineEmits<{
             <!-- 图例行（2026-08-25 UX 简化）：单位已挪入状态行；仅当有
                  vmin/vmax 刻度时渲染（无刻度时色带行无信息量，省一行高度）。 -->
             <div
-              v-if="hasColorSymbology(row.layer) && (getSymbologyVmin(row.layer) || getSymbologyVmax(row.layer))"
+              v-if="
+                hasColorSymbology(row.layer) &&
+                (getSymbologyVmin(row.layer) || getSymbologyVmax(row.layer))
+              "
               class="layer-legend"
             >
               <div class="legend-ramp" :style="getColorRampStyle(row.layer)"></div>

@@ -34,9 +34,7 @@ def save_json_atomic(path: Path, payload: Any) -> None:
     同模式，通用化到任意路径。
     """
     tmp_path = path.with_name(path.name + ".tmp")
-    tmp_path.write_text(
-        json.dumps(payload, ensure_ascii=False), encoding="utf-8"
-    )
+    tmp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     os.replace(tmp_path, path)
 
 

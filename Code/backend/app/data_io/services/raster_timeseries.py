@@ -376,15 +376,15 @@ def _upsert_block_dir_timeseries_locked(
     }
     save_json_atomic(dest_dir / "bounds.json", shared_bounds)
     meta_payload = {
-                "layer_id": layer_id,
-                "kind": "raster",
-                "category": "time-series",
-                "native_step": native_step,
-                "time_list": time_list,
-                "variable_id": variable_id,
-                "label": label,
-                "run_id": run_id,
-            }
+        "layer_id": layer_id,
+        "kind": "raster",
+        "category": "time-series",
+        "native_step": native_step,
+        "time_list": time_list,
+        "variable_id": variable_id,
+        "label": label,
+        "run_id": run_id,
+    }
     save_json_atomic(dest_dir / "meta.json", meta_payload)
 
     with suppress(Exception):

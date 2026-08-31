@@ -27,9 +27,7 @@ const TABS = [
 const authStore = useAuthStore()
 
 const saved = loadSettingsUiLocal().dataSourceTab as SubTab | undefined
-const activeTab = ref<SubTab>(
-  saved === 'remote' || saved === 'policies' ? saved : 'local',
-)
+const activeTab = ref<SubTab>(saved === 'remote' || saved === 'policies' ? saved : 'local')
 
 function onTabChange(tab: string) {
   activeTab.value = tab as SubTab

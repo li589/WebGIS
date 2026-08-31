@@ -98,9 +98,9 @@ export function resolvePolicyMode(
     } else if (scope !== '*') {
       continue
     }
-    const mode = (['deny', 'allow_with_confirm', 'allow_silent'].includes(String(p.mode))
-      ? p.mode
-      : 'deny') as DataInputPolicyMode
+    const mode = (
+      ['deny', 'allow_with_confirm', 'allow_silent'].includes(String(p.mode)) ? p.mode : 'deny'
+    ) as DataInputPolicyMode
     const r = rank[scope] ?? -1
     if (!best || r > best.r) best = { r, mode }
   }

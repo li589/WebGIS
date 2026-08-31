@@ -192,7 +192,8 @@ export async function streamAgentChat(
       let detail = `HTTP ${response.status}`
       try {
         const errBody = await response.json()
-        const rec = errBody && typeof errBody === 'object' ? (errBody as Record<string, unknown>) : null
+        const rec =
+          errBody && typeof errBody === 'object' ? (errBody as Record<string, unknown>) : null
         detail =
           (rec && typeof rec.detail === 'string' && rec.detail) ||
           (rec && typeof rec.user_message === 'string' && rec.user_message) ||
@@ -307,7 +308,9 @@ export async function fetchAgentConfig(): Promise<AgentConfigBundle> {
     name: String(p.name || p.id || '未命名'),
     id: String(p.id || ''),
     provider_kind: String(p.provider_kind || 'custom'),
-    protocol: (p.protocol === 'anthropic' || p.protocol === 'demo' ? p.protocol : 'openai') as AgentProtocol,
+    protocol: (p.protocol === 'anthropic' || p.protocol === 'demo'
+      ? p.protocol
+      : 'openai') as AgentProtocol,
     base_url: String(p.base_url || ''),
     model: String(p.model || ''),
     context_window_input: Number(p.context_window_input) || 8192,

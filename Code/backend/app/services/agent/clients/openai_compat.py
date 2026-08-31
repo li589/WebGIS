@@ -113,7 +113,9 @@ def chat_completions(
     )
 
 
-def list_models(*, base_url: str, api_key: str | None, timeout: float = 30.0) -> list[str]:
+def list_models(
+    *, base_url: str, api_key: str | None, timeout: float = 30.0
+) -> list[str]:
     url = urljoin(_normalize_base(base_url), "models")
     data = _request_json("GET", url, headers=_headers(api_key), timeout=timeout)
     items = data.get("data")
@@ -134,7 +136,9 @@ def list_ollama_tags(*, base_url: str, timeout: float = 30.0) -> list[str]:
     if root.endswith("/v1"):
         root = root[:-3]
     url = urljoin(root.rstrip("/") + "/", "api/tags")
-    data = _request_json("GET", url, headers={"Accept": "application/json"}, timeout=timeout)
+    data = _request_json(
+        "GET", url, headers={"Accept": "application/json"}, timeout=timeout
+    )
     models = data.get("models")
     if not isinstance(models, list):
         return []

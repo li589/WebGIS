@@ -48,9 +48,9 @@ export function descriptorEligibleForSourceRoute(
   const onlineId = variants.online?.workflow_id
   return Boolean(
     typeof localId === 'string' &&
-      localId.trim() &&
-      typeof onlineId === 'string' &&
-      onlineId.trim(),
+    localId.trim() &&
+    typeof onlineId === 'string' &&
+    onlineId.trim(),
   )
 }
 
@@ -80,9 +80,7 @@ export function resolveSourceRoutePolicyMode(
   policies: DataInputPolicyItem[],
   opts: { layerId?: string | null; workflowId?: string | null; module?: string | null },
 ): DataInputPolicyMode {
-  return normalizePolicyMode(
-    resolvePolicyMode(policies, INPUT_KEY_SOURCE_ROUTE_LOCAL_FIRST, opts),
-  )
+  return normalizePolicyMode(resolvePolicyMode(policies, INPUT_KEY_SOURCE_ROUTE_LOCAL_FIRST, opts))
 }
 
 function localDatesCoverTimeKey(
@@ -165,13 +163,7 @@ export function decideSourceRoute(opts: {
     if (localDatesCoverTimeKey(opts.coverage, opts.timeKey)) {
       return { action: 'use', variant: 'local', reason: 'local_dates_hit' }
     }
-    return tryRouteOnline(
-      mode,
-      opts.coverage,
-      opts.timeKey,
-      opts.onlineBlocked,
-      'local_miss',
-    )
+    return tryRouteOnline(mode, opts.coverage, opts.timeKey, opts.onlineBlocked, 'local_miss')
   }
 
   // time_list 空

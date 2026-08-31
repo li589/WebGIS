@@ -10,10 +10,7 @@
 
 import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useSettingsStore } from '../../../stores/settings'
-import {
-  fetchRemoteDatasetGrants,
-  type RemoteDatasetGrant,
-} from '../../../services/settings-api'
+import { fetchRemoteDatasetGrants, type RemoteDatasetGrant } from '../../../services/settings-api'
 
 const settingsStore = useSettingsStore()
 const remoteSourceRegistry = toRef(settingsStore, 'remoteSourceRegistry')

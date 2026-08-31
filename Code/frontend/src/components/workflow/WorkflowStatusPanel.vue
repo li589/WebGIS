@@ -397,7 +397,12 @@ function getCategoryName(categoryId: string): string {
 }
 
 /** 分类计数悬停说明（▶✓✕ 符号语义） */
-function categoryTooltip(cat: { running: number; succeeded: number; failed: number; total: number }): string {
+function categoryTooltip(cat: {
+  running: number
+  succeeded: number
+  failed: number
+  total: number
+}): string {
   return `运行 ${cat.running} · 完成 ${cat.succeeded} · 失败 ${cat.failed} · 共 ${cat.total} 项`
 }
 
@@ -414,9 +419,16 @@ function getStageIcon(stage: string): Component {
   return STAGE_ICONS[stage] ?? Circle
 }
 
-function displayableNodeProgress<T extends { nodeId: string; nodeLabel?: string; stage?: string; progress: number; updatedAt?: string; eventId?: string }>(
-  nodes: T[] | undefined,
-): T[] {
+function displayableNodeProgress<
+  T extends {
+    nodeId: string
+    nodeLabel?: string
+    stage?: string
+    progress: number
+    updatedAt?: string
+    eventId?: string
+  },
+>(nodes: T[] | undefined): T[] {
   return filterDisplayableNodeProgress(nodes)
 }
 
@@ -869,24 +881,17 @@ onBeforeUnmount(() => {
             </ul>
 
             <!-- 技术日志（默认折叠，避免烘焙工具 stdout 淹没主状态） -->
-            <details
-              v-if="item.jobLayer.techLogs?.length"
-              class="wf-tech-logs"
-            >
+            <details v-if="item.jobLayer.techLogs?.length" class="wf-tech-logs">
               <summary>技术日志（{{ item.jobLayer.techLogs.length }}）</summary>
               <pre
                 v-for="(log, idx) in item.jobLayer.techLogs"
                 :key="`${item.jobLayer.jobId}-tech-${idx}`"
                 class="wf-tech-log-body"
-                >{{ log }}</pre
-              >
+                >{{ log }}</pre>
             </details>
 
             <!-- 运行记录（调度/节点起止/错误；不含高频下载 tick） -->
-            <ul
-              v-if="operationalLogLines(item.jobLayer.jobId).length"
-              class="wf-item-events"
-            >
+            <ul v-if="operationalLogLines(item.jobLayer.jobId).length" class="wf-item-events">
               <li class="wf-events-title">运行记录</li>
               <li
                 v-for="(evt, evtIdx) in isExpanded(item.jobLayer.jobId)
@@ -932,8 +937,14 @@ onBeforeUnmount(() => {
                     ><component :is="getStageIcon(np.stage)" :size="14"
                   /></span>
                   <span class="node-label">{{ np.nodeLabel }}</span>
-                  <span v-if="np.terminalHint === 'skipped'" class="node-skipped-badge">已跳过</span>
-                  <span v-else-if="np.terminalHint === 'complete' && np.progress >= 100" class="node-done-badge">已完成</span>
+                  <span v-if="np.terminalHint === 'skipped'" class="node-skipped-badge"
+                    >已跳过</span
+                  >
+                  <span
+                    v-else-if="np.terminalHint === 'complete' && np.progress >= 100"
+                    class="node-done-badge"
+                    >已完成</span
+                  >
                   <span class="node-progress-value">{{ np.progress }}%</span>
                 </div>
                 <div v-if="np.terminalHint !== 'skipped'" class="node-progress-bar">
@@ -967,7 +978,10 @@ onBeforeUnmount(() => {
                   "
                   class="node-progress-detail"
                 >
-                  <span v-if="hasDownloadProgressDetail(np.detail)" class="download-progress-detail">
+                  <span
+                    v-if="hasDownloadProgressDetail(np.detail)"
+                    class="download-progress-detail"
+                  >
                     {{ formatDownloadProgressDetail(np.detail) }}
                   </span>
                   <span v-if="np.detail.blocksTotal && !hasDownloadProgressDetail(np.detail)">

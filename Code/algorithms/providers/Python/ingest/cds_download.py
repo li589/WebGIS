@@ -172,7 +172,9 @@ def download_resumable_with_retry(
     """共享续传工具薄封装（便于测试替换）。"""
     from ingest._http_resume import download_with_retry
 
-    return download_with_retry(session, url, target, progress_callback=progress_callback)
+    return download_with_retry(
+        session, url, target, progress_callback=progress_callback
+    )
 
 
 def download_cds_dataset(

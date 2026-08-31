@@ -206,7 +206,10 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     return items
       .concat(outputItems)
       .filter(isDatasetLibraryItem)
-      .filter((item) => !isEnglishInversionCatalogId(item.catalogId) && !isEnglishInversionCatalogId(item.name))
+      .filter(
+        (item) =>
+          !isEnglishInversionCatalogId(item.catalogId) && !isEnglishInversionCatalogId(item.name),
+      )
       .sort((a, b) => {
         const categoryOrderA = CATEGORY_INDEX_BY_ID.get(a.category) ?? Number.MAX_SAFE_INTEGER
         const categoryOrderB = CATEGORY_INDEX_BY_ID.get(b.category) ?? Number.MAX_SAFE_INTEGER

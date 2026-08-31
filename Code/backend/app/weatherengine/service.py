@@ -70,7 +70,7 @@ class WeatherEngineService(WeatherRenderMixin):
     def supports(self, payload: WorkflowSubmitRequest) -> bool:
         # 与 weather_bridge / provider_workflow 对齐 enabled flag：
         # False 时不再作为 layer-based fallback 接管 workflow-runs
-        #（收敛到 weather_bridge / 瓦片主路径，见工程决策纪要 §5）
+        # （收敛到 weather_bridge / 瓦片主路径，见工程决策纪要 §5）
         if not settings.weather_engine_fallback_enabled:
             return False
         layer_id = payload.layer_id or payload.map_context.active_layer_id
@@ -715,7 +715,10 @@ def _extrapolate_hub_height_point(
             current[speed_key] = extrapolate_wind_speed_power_law(
                 base_speed, target_height_m=float(target_h)
             )
-        if current.get(dir_key) is None and current.get("wind_direction_10m") is not None:
+        if (
+            current.get(dir_key) is None
+            and current.get("wind_direction_10m") is not None
+        ):
             current[dir_key] = current.get("wind_direction_10m")
 
         # hourly 段：基序列可能整列为 null（gfs 代理无 10m 真值）；
@@ -727,10 +730,16 @@ def _extrapolate_hub_height_point(
             or not hourly_base
             or not any(v is not None for v in hourly_base)
         ) and current.get(speed_key) is not None:
-            hourly_base = [current.get("wind_speed_10m")] * len(hourly.get("time") or [])
-        if isinstance(hourly_base, list) and hourly_base and (
-            not isinstance(hourly_speed, list)
-            or not any(v is not None for v in hourly_speed)
+            hourly_base = [current.get("wind_speed_10m")] * len(
+                hourly.get("time") or []
+            )
+        if (
+            isinstance(hourly_base, list)
+            and hourly_base
+            and (
+                not isinstance(hourly_speed, list)
+                or not any(v is not None for v in hourly_speed)
+            )
         ):
             hourly[speed_key] = [
                 extrapolate_wind_speed_power_law(v, target_height_m=float(target_h))
@@ -755,10 +764,16 @@ def _extrapolate_hub_height_point(
             or not hourly_base
             or not any(v is not None for v in hourly_base)
         ) and current.get("temperature_2m") is not None:
-            hourly_base = [current.get("temperature_2m")] * len(hourly.get("time") or [])
-        if isinstance(hourly_base, list) and hourly_base and (
-            not isinstance(hourly_temp, list)
-            or not any(v is not None for v in hourly_temp)
+            hourly_base = [current.get("temperature_2m")] * len(
+                hourly.get("time") or []
+            )
+        if (
+            isinstance(hourly_base, list)
+            and hourly_base
+            and (
+                not isinstance(hourly_temp, list)
+                or not any(v is not None for v in hourly_temp)
+            )
         ):
             hourly[temp_key] = [
                 extrapolate_temperature_lapse_rate(v, target_height_m=float(target_h))

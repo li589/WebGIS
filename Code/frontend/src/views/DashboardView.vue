@@ -258,10 +258,7 @@ const {
       end_at: range.end_at,
     })
     if (n && n > 0) {
-      logStore.logOperation(
-        'timeline-wf-sync',
-        `同步工作流时间窗 ×${n} · ${range.timeKey}`,
-      )
+      logStore.logOperation('timeline-wf-sync', `同步工作流时间窗 ×${n} · ${range.timeKey}`)
     }
   },
 })
@@ -462,7 +459,11 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
         @overlay-time-update="handleOverlayTimeUpdate"
       />
 
-      <div v-else class="view-placeholder-3d" :class="{ 'view-placeholder-3d--layer-ready': has3dCompatibleLayer }">
+      <div
+        v-else
+        class="view-placeholder-3d"
+        :class="{ 'view-placeholder-3d--layer-ready': has3dCompatibleLayer }"
+      >
         <div class="placeholder-3d-stars" aria-hidden="true">
           <i v-for="n in 10" :key="n" :style="{ '--star-index': n }"></i>
         </div>
@@ -629,10 +630,7 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
         </TimelinePanel>
       </div>
 
-      <AgentCompanion
-        v-if="agentCompanionEnabled"
-        :fit-to-layer-extent="handleZoomToLayer"
-      />
+      <AgentCompanion v-if="agentCompanionEnabled" :fit-to-layer-extent="handleZoomToLayer" />
     </section>
 
     <ScreenshotExport

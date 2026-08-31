@@ -393,7 +393,11 @@ def get_effective_profile_raw(
                 p_store = _load_store_unlocked(p_path, personal=True)
                 p_active = str(p_store.get("active_profile_id") or "")
                 for p in p_store.get("profiles") or []:
-                    if isinstance(p, dict) and str(p.get("id")) == p_active and p_active:
+                    if (
+                        isinstance(p, dict)
+                        and str(p.get("id")) == p_active
+                        and p_active
+                    ):
                         out = dict(p)
                         out["_scope"] = "personal"
                         return out

@@ -149,7 +149,9 @@ def list_layers(cred=Depends(get_request_user)) -> LayerCatalogResponse:
                     "run_readiness_notes": readiness.get(
                         "run_readiness_notes", descriptor.run_readiness_notes
                     ),
-                    "online_ready": readiness.get("online_ready", descriptor.online_ready),
+                    "online_ready": readiness.get(
+                        "online_ready", descriptor.online_ready
+                    ),
                     "local_ready": readiness.get("local_ready", descriptor.local_ready),
                 }
             )
@@ -172,7 +174,9 @@ def list_layer_categories() -> LayerCategoryResponse:
 # ── 图层平台子系统 P0：资产状态与生命周期聚合接口（2026-08-24） ───────────────
 
 
-def _layer_asset_state_response(layer_id: str, state: dict[str, Any]) -> LayerAssetStateResponse:
+def _layer_asset_state_response(
+    layer_id: str, state: dict[str, Any]
+) -> LayerAssetStateResponse:
     from app.services.overlay_asset_workflow_service import _layer_to_task
 
     return LayerAssetStateResponse(
@@ -208,7 +212,9 @@ def _compute_lifecycle_state(
 
 
 @router.get(
-    "/layer-assets/{layer_id}", tags=["layer-platform"], response_model=LayerAssetStateResponse
+    "/layer-assets/{layer_id}",
+    tags=["layer-platform"],
+    response_model=LayerAssetStateResponse,
 )
 def get_layer_asset_state(
     layer_id: str,
@@ -359,9 +365,7 @@ def get_layer_data_coverage(
     }
 
 
-def _submit_online_sync_workflow(
-    payload: Any, cred: Any = None
-) -> Any:
+def _submit_online_sync_workflow(payload: Any, cred: Any = None) -> Any:
     """online_sync 的 workflow 提交封装（可 mock）。
 
     模块级独立函数便于测试隔离路由编排逻辑与真实 workflow 提交。
@@ -432,7 +436,8 @@ def sync_layer_asset_online(
                 layer_id=layer_id,
                 time_key=body.time_key,
                 status_url=existing.status_url or f"/workflow-runs/{existing.run_id}",
-                events_url=existing.events_url or f"/workflow-runs/{existing.run_id}/events",
+                events_url=existing.events_url
+                or f"/workflow-runs/{existing.run_id}/events",
             )
 
     # 构建 workflow 提交请求
@@ -451,6 +456,7 @@ def sync_layer_asset_online(
         try:
             if len(key) == 7:  # YYYY-MM
                 from datetime import date
+
                 y, m = int(key[:4]), int(key[5:7])
                 start = date(y, m, 1)
                 if m == 12:
@@ -462,6 +468,7 @@ def sync_layer_asset_online(
                 )
             elif len(key) == 10:  # YYYY-MM-DD
                 from datetime import date as _date, timedelta as _td
+
                 d = _date.fromisoformat(key)
                 time_range = TimeRange(
                     start_at=d.isoformat(), end_at=(d + _td(days=1)).isoformat()
@@ -480,7 +487,8 @@ def sync_layer_asset_online(
         # 填充 engine request（algorithm_request），否则 Celery 端
         # no bridge 匹配 → 「未找到匹配的工作流引擎」（P1 遗留，2026-08-25 修复）
         command_type=WorkflowCommandType.analysis,
-        command_label=f"在线同步 {layer_id}" + (f" @ {body.time_key}" if body.time_key else ""),
+        command_label=f"在线同步 {layer_id}"
+        + (f" @ {body.time_key}" if body.time_key else ""),
         layer_id=layer_id,
         priority=priority,
         resource_profile=(

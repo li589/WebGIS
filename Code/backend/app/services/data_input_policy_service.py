@@ -25,7 +25,9 @@ PolicyScope = Literal["module", "workflow_id", "layer_id", "*"]
 INPUT_KEY_TIME_WINDOW_ALIGN = "time_window_align_on_zero_intersection"
 INPUT_KEY_SOURCE_ROUTE_LOCAL_FIRST = "source_route_local_first"
 
-_SEED_PATH = Path(__file__).resolve().parents[1] / "policy_seeds" / "data_input_policies.json"
+_SEED_PATH = (
+    Path(__file__).resolve().parents[1] / "policy_seeds" / "data_input_policies.json"
+)
 
 _cache: dict[str, Any] | None = None
 _cache_mtimes: tuple[float | None, float | None] = (None, None)
@@ -100,11 +102,7 @@ def load_data_input_policies(*, force: bool = False) -> dict[str, Any]:
     seed_m = _mtime(_SEED_PATH)
     runtime_path = _runtime_override_path()
     runtime_m = _mtime(runtime_path)
-    if (
-        not force
-        and _cache is not None
-        and _cache_mtimes == (seed_m, runtime_m)
-    ):
+    if not force and _cache is not None and _cache_mtimes == (seed_m, runtime_m):
         return _cache
 
     seed = _read_json(_SEED_PATH)
@@ -112,7 +110,9 @@ def load_data_input_policies(*, force: bool = False) -> dict[str, Any]:
     version = int(runtime.get("version") or seed.get("version") or 1)
     seed_policies = _merge_policies(seed.get("policies") or [], [])
     runtime_policies = _merge_policies([], runtime.get("policies") or [])
-    policies = _merge_policies(seed.get("policies") or [], runtime.get("policies") or [])
+    policies = _merge_policies(
+        seed.get("policies") or [], runtime.get("policies") or []
+    )
     doc = {
         "version": version,
         "policies": policies,

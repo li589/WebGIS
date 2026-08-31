@@ -124,7 +124,9 @@ def _asset_state_zh(state: str | None) -> str:
     return mapping.get(key, key or "未知")
 
 
-def _summarize_bake_tool_output(stdout: str, stderr: str) -> tuple[str | None, list[str]]:
+def _summarize_bake_tool_output(
+    stdout: str, stderr: str
+) -> tuple[str | None, list[str]]:
     """从烘焙工具输出提取用户可读原因与短要点（不含整段日志）。"""
     text = f"{stdout or ''}\n{stderr or ''}"
     notes: list[str] = []
@@ -141,8 +143,7 @@ def _summarize_bake_tool_output(stdout: str, stderr: str) -> tuple[str | None, l
                 label = label.replace(token, " ")
             label = " ".join(label.split()).strip(" -:")
             notes.append(
-                f"源数据文件未找到，已跳过烘焙"
-                + (f"（{label}）" if label else "")
+                f"源数据文件未找到，已跳过烘焙" + (f"（{label}）" if label else "")
             )
         elif line.startswith("Summary:") and "FAIL" in line.upper():
             notes.append(f"烘焙汇总：{line[len('Summary:'):].strip()}")
@@ -341,7 +342,8 @@ class OverlayAssetWorkflowService:
                 return WorkflowAcceptedResponse(
                     run_id=existing.run_id,
                     status=existing.status,
-                    status_url=existing.status_url or f"/workflow-runs/{existing.run_id}",
+                    status_url=existing.status_url
+                    or f"/workflow-runs/{existing.run_id}",
                     events_url=existing.events_url
                     or f"/workflow-runs/{existing.run_id}/events",
                     created_at=existing.created_at,

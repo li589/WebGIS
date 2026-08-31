@@ -220,9 +220,7 @@ def workflow_definition_from_mapping(
     )
     # 种子/画布 extra（purpose/group_title/output_labels）并入 metadata 保真透传，
     # 避免"Unknown field(s) not allowed: workflow_definition -> extra"校验失败
-    extra = _optional_mapping(
-        payload, "extra", "workflow_definition.extra", default={}
-    )
+    extra = _optional_mapping(payload, "extra", "workflow_definition.extra", default={})
     if extra:
         metadata = {**metadata, "extra": dict(extra)}
 

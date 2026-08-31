@@ -383,7 +383,10 @@ export function useTimelineSync(
       if (hint.status !== 'running') return
       if (alignedRunStartJobs.has(hint.jobId)) return
       const isFreshRun =
-        !prev || prev.jobId !== hint.jobId || prev.status === 'queued' || prev.status === 'retry_pending'
+        !prev ||
+        prev.jobId !== hint.jobId ||
+        prev.status === 'queued' ||
+        prev.status === 'retry_pending'
       if (!isFreshRun) return
       if (unifiedTimeLock.value) return
       // 未点播放：仅记录已对齐，避免下次播放又跳回 start_at；不改 currentDate

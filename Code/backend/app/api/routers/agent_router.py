@@ -28,7 +28,11 @@ from app.services.agent import config_service
 from app.services.agent.clients.openai_compat import LlmClientError
 from app.services.agent.config_service import AgentPermissionError
 from app.services.agent.orchestrator import refresh_models_for_profile, run_chat
-from app.services.credential_resolver import CredentialContext, allows_write, dev_bypass_allowed
+from app.services.credential_resolver import (
+    CredentialContext,
+    allows_write,
+    dev_bypass_allowed,
+)
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -331,7 +335,9 @@ def update_agent_profile(
     return AgentProfilePublic(**data)
 
 
-@router.delete("/config/profiles/{profile_id}", response_model=AgentConfigBundleResponse)
+@router.delete(
+    "/config/profiles/{profile_id}", response_model=AgentConfigBundleResponse
+)
 def delete_agent_profile(
     profile_id: str,
     scope: AgentScopeLiteral = "personal",
@@ -438,9 +444,7 @@ def refresh_agent_models(
         raw_for_refresh["base_url"] = draft_url
     draft_key = (payload.api_key or "").strip() or None
     try:
-        result = refresh_models_for_profile(
-            raw_for_refresh, api_key_override=draft_key
-        )
+        result = refresh_models_for_profile(raw_for_refresh, api_key_override=draft_key)
     except Exception as exc:
         logger.exception("agent models refresh crashed profile=%s", pid)
         result = {

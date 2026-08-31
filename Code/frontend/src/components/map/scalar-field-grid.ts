@@ -108,9 +108,7 @@ export function buildScalarGridFromGeoJSON(
   let propRes: number | null = null
 
   for (const f of features) {
-    const geom = f?.geometry as
-      | { type?: string; coordinates?: unknown }
-      | undefined
+    const geom = f?.geometry as { type?: string; coordinates?: unknown } | undefined
     if (!geom) continue
     let lon: number
     let lat: number

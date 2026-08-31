@@ -94,7 +94,9 @@ def _make_multi_file_progress_cb(
 
     last_emit = [0.0]
 
-    def _cb(current: int, total: int, downloaded: int, item_name: str | None = None) -> None:
+    def _cb(
+        current: int, total: int, downloaded: int, item_name: str | None = None
+    ) -> None:
         now = time.monotonic()
         is_file_boundary = current != getattr(_cb, "_last_file", 0)  # noqa: SLF001
         if not is_file_boundary and now - last_emit[0] < _DOWNLOAD_EMIT_INTERVAL:
@@ -525,7 +527,9 @@ class SshSyncModule(BaseModule):
 
         if ctx.logger_adapter is not None:
             total = result.total_files
-            if total == 0 or (result.skipped >= total and result.downloaded == 0 and total > 0):
+            if total == 0 or (
+                result.skipped >= total and result.downloaded == 0 and total > 0
+            ):
                 _make_skip_complete_emit(
                     ctx.logger_adapter,
                     "ssh_sync",
@@ -794,9 +798,7 @@ class GldasDownloadModule(BaseModule):
                 f"{start_date} ~ {end_date} -> {local_dir}",
             )
 
-        _progress_cb = _make_download_progress_cb(
-            ctx.logger_adapter, "gldas_download"
-        )
+        _progress_cb = _make_download_progress_cb(ctx.logger_adapter, "gldas_download")
 
         result = download_gldas_range(
             start_date=start_date,

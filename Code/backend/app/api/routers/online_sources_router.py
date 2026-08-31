@@ -83,10 +83,14 @@ def _env_credential_status(
     configured = not missing
     if configured:
         optional_missing = [
-            name for name, ok in required_fields.items() if not ok and name not in essential
+            name
+            for name, ok in required_fields.items()
+            if not ok and name not in essential
         ]
         detail = "凭证已配置" + (
-            f"（可选字段未配置：{'、'.join(optional_missing)}）" if optional_missing else ""
+            f"（可选字段未配置：{'、'.join(optional_missing)}）"
+            if optional_missing
+            else ""
         )
     else:
         detail = f"未配置：缺少 {'、'.join(missing)}（.env / 设置界面配置）"

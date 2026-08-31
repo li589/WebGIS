@@ -314,7 +314,9 @@ _agent_models_refresh_limiter = RateLimiter(
 
 
 def should_rate_limit_agent_chat(path: str, method: str) -> bool:
-    return method == "POST" and (path == "/agent/chat" or path.startswith("/agent/chat/"))
+    return method == "POST" and (
+        path == "/agent/chat" or path.startswith("/agent/chat/")
+    )
 
 
 def check_agent_chat_rate_limit(ip: str) -> RateLimitResult:

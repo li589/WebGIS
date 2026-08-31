@@ -40,7 +40,9 @@ def _resolve_copernicus_credentials(
     return username, password, bearer
 
 
-@register_module_decorator(name="cdse_download", template_overrides={"phase": "download"})
+@register_module_decorator(
+    name="cdse_download", template_overrides={"phase": "download"}
+)
 class CdseDownloadModule(BaseModule):
     name = "cdse_download"
     description = (

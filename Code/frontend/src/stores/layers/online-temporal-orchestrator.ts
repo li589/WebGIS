@@ -13,10 +13,7 @@
  * - 获取失败后进入 cooling（60s），期间不重复提交同一时间点
  */
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
-import type {
-  LayerOnlineSyncResponse,
-  OnlineTemporalCapability,
-} from '../../services/runtime-api'
+import type { LayerOnlineSyncResponse, OnlineTemporalCapability } from '../../services/runtime-api'
 import type { TimeGranularity } from '../../utils/layer-timeline'
 import { parseTimeStep, type TimeStep } from '../../utils/temporal-interval'
 
@@ -335,7 +332,10 @@ export function useOnlineTemporalOrchestrator(deps: OnlineTemporalOrchestratorDe
         if (resp.status === 'succeeded') {
           // 资产已 fresh：无需 run，直接标记成功（时间轴经 lifecycle/overlayTimeStates 更新）
           updateEntry(key, { status: 'succeeded', settledAt: Date.now() })
-          deps.logOperation?.('online-temporal', `${label}完成（资产已就绪） ${catalogId} @ ${timeKey}`)
+          deps.logOperation?.(
+            'online-temporal',
+            `${label}完成（资产已就绪） ${catalogId} @ ${timeKey}`,
+          )
           return undefined
         }
 

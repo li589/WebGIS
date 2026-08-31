@@ -57,7 +57,8 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
     enableParticleIfUnset: (catalogId) => bindings.enableParticleIfUnset(catalogId),
     clearWindForCatalog: (catalogId) => bindings.clearWindForCatalog(catalogId),
     stopWorkflowPolling: (jobId) => bindings.stopWorkflowPolling(jobId),
-    cancelWorkflowRunForJob: (jobId, catalogId) => bindings.cancelWorkflowRunForJob(jobId, catalogId),
+    cancelWorkflowRunForJob: (jobId, catalogId) =>
+      bindings.cancelWorkflowRunForJob(jobId, catalogId),
     forgetTrackedWorkflowRun: (runId) => bindings.forgetTrackedWorkflowRun(runId),
     saveTrackedWorkflowRuns: (runs) => saveTrackedWorkflowRuns(runs as never),
     getWorkflowRetryTimers: () => workflowRetryTimers,

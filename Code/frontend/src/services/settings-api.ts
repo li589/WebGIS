@@ -208,11 +208,7 @@ import type {
   WeatherProviderUpdateRequest,
 } from '../types/api-reexports'
 
-async function settingsFetch<T>(
-  path: string,
-  init?: RequestInit,
-  timeoutMs = 15_000,
-): Promise<T> {
+async function settingsFetch<T>(path: string, init?: RequestInit, timeoutMs = 15_000): Promise<T> {
   const url = resolveApiUrl(path)
   const method = (init?.method ?? 'GET').toUpperCase()
   let headers: Record<string, string> = {

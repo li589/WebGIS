@@ -1,6 +1,5 @@
-/** InfoPanel 顶部 Tab 栏。纯展示，样式自洽（不依赖父级 scoped CSS）。
- * 2026-08-25 用户反馈：原「图层名 · 阶段标签」指示行移到 panel-topline
- * 顶摘要行（右对齐）——此处只保留 Tabs。 */
+/** InfoPanel 顶部 Tab 栏。纯展示，样式自洽（不依赖父级 scoped CSS）。 * 2026-08-25
+用户反馈：原「图层名 · 阶段标签」指示行移到 panel-topline * 顶摘要行（右对齐）——此处只保留 Tabs。 */
 <script setup lang="ts">
 import Tabs from '../ui/Tabs.vue'
 import type { AnalysisTabId } from './analysis-tab-focus'

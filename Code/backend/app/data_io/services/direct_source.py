@@ -36,7 +36,9 @@ logger = logging.getLogger(__name__)
 DIRECT_SOURCE_SUFFIXES = frozenset({".tif", ".tiff", ".geotiff", ".cog"})
 
 
-def find_direct_source(dest_dir: Path, meta: dict[str, Any] | None = None) -> Path | None:
+def find_direct_source(
+    dest_dir: Path, meta: dict[str, Any] | None = None
+) -> Path | None:
     """判定 overlay 目录是否为 direct 源形态；返回源文件路径（非 direct 返回 None）。
 
     判定规则（单一真源，registry lazy-load 委托本函数）：
@@ -50,7 +52,10 @@ def find_direct_source(dest_dir: Path, meta: dict[str, Any] | None = None) -> Pa
         source_filename = meta.get("source_filename")
         if source_filename:
             candidate = dest_dir / str(source_filename)
-            if candidate.is_file() and candidate.suffix.lower() in DIRECT_SOURCE_SUFFIXES:
+            if (
+                candidate.is_file()
+                and candidate.suffix.lower() in DIRECT_SOURCE_SUFFIXES
+            ):
                 return candidate
     candidates: list[Path] = []
     for pattern in ("source*.tif", "source*.tiff", "source*.cog"):
@@ -88,7 +93,11 @@ def register_direct_geotiff(
     Returns:
         与 register_geotiff_as_imported 同构的结果 dict（layer_id/bounds/dir 等）。
     """
-    from app.services.overlay_registry import OverlaySpec, register_overlay, unregister_overlay
+    from app.services.overlay_registry import (
+        OverlaySpec,
+        register_overlay,
+        unregister_overlay,
+    )
 
     ensure_imports_root()
     if not src_path.is_file() or src_path.suffix.lower() not in DIRECT_SOURCE_SUFFIXES:
@@ -99,7 +108,9 @@ def register_direct_geotiff(
     replace_bytes = 0
     if dest_dir.exists():
         if not replace_existing:
-            raise ValueError(f"图层已存在: {layer_id}（可设 replace_existing=True 覆盖）")
+            raise ValueError(
+                f"图层已存在: {layer_id}（可设 replace_existing=True 覆盖）"
+            )
         replace_bytes = dir_size_bytes(dest_dir)
         with contextlib.suppress(Exception):
             unregister_overlay(layer_id)

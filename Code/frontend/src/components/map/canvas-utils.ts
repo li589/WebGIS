@@ -141,11 +141,7 @@ export function lngLatToGlobeSphere(lon: number, latDeg: number): [number, numbe
  * 球面距离公式（haversine，省略 asin 取 cos 取最值以保持 O(1)）：
  *   cos(d/R) = sinφ1·sinφ2 + cosφ1·cosφ2·cos(Δλ)
  */
-export function isLngLatOnGlobeVisibleSide(
-  map: MaplibreMap,
-  lng: number,
-  lat: number,
-): boolean {
+export function isLngLatOnGlobeVisibleSide(map: MaplibreMap, lng: number, lat: number): boolean {
   if (!isGlobeProjection(map)) return true
   // 优先尝试 MapLibre 私有 transform.elevation / cameraPos（极少见公开）。
   // 失败时退化到 getCenter 近似——center 位于屏幕中央经纬度、pitch=0 时与镜头方向一致；

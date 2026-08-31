@@ -68,10 +68,6 @@ export function companionDockOffset(
 }
 
 /** 位移是否视为拖动（而非点击） */
-export function isCompanionDragGesture(
-  dx: number,
-  dy: number,
-  thresholdPx = 6,
-): boolean {
+export function isCompanionDragGesture(dx: number, dy: number, thresholdPx = 6): boolean {
   return Math.hypot(dx, dy) >= thresholdPx
 }

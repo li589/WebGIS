@@ -179,7 +179,10 @@ export function useMapInspect(
       .map(async (s) => {
         // GPCP 单帧 NetCDF 读取已足够重；点击地图不自动扫完全部采样月。
         // 保留当前值，完整曲线仅对短时序或用户明确选中的图层按需查询。
-        const times = s.layerId === 'gpcp-precip-ts' ? [s.currentTime ?? s.timeList[0]!].filter(Boolean) : s.timeList
+        const times =
+          s.layerId === 'gpcp-precip-ts'
+            ? [s.currentTime ?? s.timeList[0]!].filter(Boolean)
+            : s.timeList
         const results = await Promise.allSettled(
           times.map((time) => getOverlayValue(s.layerId, lng, lat, time)),
         )
@@ -220,7 +223,10 @@ export function useMapInspect(
     // 不能在交互事件里并发打开 24 个 NetCDF 文件。
     const queryTimes =
       selectedOverlayId === 'gpcp-precip-ts'
-        ? [overlayTimeStates.value.find((s) => s.layerId === selectedOverlayId)?.currentTime ?? times[0]!]
+        ? [
+            overlayTimeStates.value.find((s) => s.layerId === selectedOverlayId)?.currentTime ??
+              times[0]!,
+          ]
         : times
     const seriesResults = await Promise.allSettled(
       queryTimes.map((time) => getOverlayValue(selectedOverlayId, lng, lat, time)),

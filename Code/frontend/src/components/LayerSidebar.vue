@@ -237,14 +237,10 @@ function getLifecycleBadge(
 function isStaticDataLayer(catalogId: string): boolean {
   const item = layerLibrary.value.find((l) => l.catalogId === catalogId)
   if (!item) return false
-  return (
-    String(item.updateLabel || '').includes('静态') || item.supportsTime === false
-  )
+  return String(item.updateLabel || '').includes('静态') || item.supportsTime === false
 }
 
-function getUnifiedDataStatus(
-  layer: ActiveLayerDisplay,
-): ReturnType<typeof deriveDataStatus> {
+function getUnifiedDataStatus(layer: ActiveLayerDisplay): ReturnType<typeof deriveDataStatus> {
   const badge = getLifecycleBadge(layer.catalogId)
   const job = layer.jobLayer
   return deriveDataStatus({

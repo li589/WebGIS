@@ -32,7 +32,9 @@ class _ScopedProgressLogger:
     而非纹丝不动。stage 以 ``workflow.`` 开头的内部事件不重复映射。
     """
 
-    def __init__(self, inner, base: float, span: float, graph_node_id: str = "") -> None:
+    def __init__(
+        self, inner, base: float, span: float, graph_node_id: str = ""
+    ) -> None:
         self._inner = inner
         self._base = base
         self._span = span

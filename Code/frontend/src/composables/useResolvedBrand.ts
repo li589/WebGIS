@@ -52,10 +52,6 @@ export function useResolvedBrand(
   primaryTheme: Ref<ThemePublic | null>,
 ) {
   return computed<ResolvedBrand>(() => {
-    return (
-      brandFromTheme(activeTheme.value) ??
-      brandFromTheme(primaryTheme.value) ??
-      staticBrand()
-    )
+    return brandFromTheme(activeTheme.value) ?? brandFromTheme(primaryTheme.value) ?? staticBrand()
   })
 }

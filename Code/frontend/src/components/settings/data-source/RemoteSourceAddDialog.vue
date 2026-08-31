@@ -199,7 +199,8 @@ async function doRegister(addToLayer: boolean) {
           .slice(0, 4)
           .map(([k, v]) => `${k}=${String(v)}`)
           .join(' ')
-        okMsg.value = resp.auto_chain_message ||
+        okMsg.value =
+          resp.auto_chain_message ||
           `已注册并记录 ${layerDatasetKeys.length} 个数据集（${layerDatasetKeys.join('、')}）——到「工作流」添加 ${hint.node_type} 节点运行下载链即可上图（参数建议：${paramPreview}）`
       } else {
         okMsg.value = '已注册——数据可经工作流自动访问'
@@ -300,10 +301,7 @@ async function doRegister(addToLayer: boolean) {
               可浏览选择子目录（默认整源）；选中目录注册后，工作流下载将限定在该路径下。
             </p>
             <div class="rsa-browse-row">
-              <input
-                v-model="form.remotePath"
-                placeholder="留空 = 整源；或点击右侧按钮浏览选择"
-              />
+              <input v-model="form.remotePath" placeholder="留空 = 整源；或点击右侧按钮浏览选择" />
               <button type="button" class="btn" @click="openBrowser">浏览目录…</button>
             </div>
           </template>
@@ -336,16 +334,15 @@ async function doRegister(addToLayer: boolean) {
               busy === 'register-add'
                 ? '添加中…'
                 : `注册并添加到图层${
-                    selectedCount ? `（${selectedCount} 个）` : canAddToLayer ? '（默认数据集）' : ''
+                    selectedCount
+                      ? `（${selectedCount} 个）`
+                      : canAddToLayer
+                        ? '（默认数据集）'
+                        : ''
                   }`
             }}
           </button>
-          <button
-            type="button"
-            class="btn"
-            :disabled="busy !== ''"
-            @click="doRegister(false)"
-          >
+          <button type="button" class="btn" :disabled="busy !== ''" @click="doRegister(false)">
             {{ busy === 'register' ? '保存中…' : '注册' }}
           </button>
         </div>

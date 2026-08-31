@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import {
-  getAgentCompanionPosition,
-  setAgentCompanionPosition,
-} from '../../services/settings-local'
+import { getAgentCompanionPosition, setAgentCompanionPosition } from '../../services/settings-local'
 import {
   companionDockOffset,
   COMPANION_SIZE_PX,
@@ -83,9 +80,7 @@ function persist() {
 }
 
 /** 贴边半藏；hover / 打开 / 拖动时完全呼出 */
-const dockExpanded = computed(
-  () => open.value || hovered.value || dragging.value || greeting.value,
-)
+const dockExpanded = computed(() => open.value || hovered.value || dragging.value || greeting.value)
 
 /**
  * 命中层始终停在逻辑坐标 (x,y)，不随 peek 位移——避免边缘 hover 时
@@ -346,7 +341,11 @@ watch(open, (v) => {
   border: 1px solid color-mix(in srgb, var(--accent-border) 70%, var(--border-default));
   border-radius: 20px;
   background:
-    radial-gradient(120% 80% at 30% 20%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 55%),
+    radial-gradient(
+      120% 80% at 30% 20%,
+      color-mix(in srgb, var(--accent) 18%, transparent),
+      transparent 55%
+    ),
     linear-gradient(165deg, var(--surface-3), var(--surface-2) 62%, var(--surface-1));
   color: var(--text-primary);
   box-shadow:
@@ -454,7 +453,11 @@ watch(open, (v) => {
   height: 36px;
   border-radius: 13px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent-surface) 90%, white), var(--accent-surface)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--accent-surface) 90%, white),
+      var(--accent-surface)
+    ),
     var(--surface-1);
   border: 1px solid var(--accent-border);
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 18%, transparent);

@@ -57,7 +57,7 @@ export interface GlobeSkyParams {
 export function subsolarLongitude(hour: number, tzOffsetHours?: number): number {
   const tz = tzOffsetHours ?? -new Date().getTimezoneOffset() / 60
   const utcHour = (((hour - tz) % 24) + 24) % 24
-  return ((12 - utcHour) * 15 + 540) % 360 - 180
+  return (((12 - utcHour) * 15 + 540) % 360) - 180
 }
 
 /**
@@ -87,19 +87,19 @@ export function resolveGlobeLighting(
   const twilight = 1 - daylight
   const azimuth = 180 - ((((hour % 24) + 24) % 24) - 12) * 15
 
-  const brightnessScale =
-    brightness === 'light' ? 0.5 : brightness === 'dark' ? 1.0 : 0.78
+  const brightnessScale = brightness === 'light' ? 0.5 : brightness === 'dark' ? 1.0 : 0.78
   const intensity = clamp((0.4 + daylight * 0.55) * brightnessScale, 0.18, 1.0)
 
   const elevationBase = brightness === 'light' ? 10 : brightness === 'dark' ? 20 : 16
   const elevationRange = brightness === 'light' ? 26 : brightness === 'dark' ? 44 : 34
   const elevation = elevationBase + daylight * elevationRange
 
-  const lightBase = brightness === 'light'
-    ? { warm: 213, green: 224, blue: 230 }
-    : brightness === 'dark'
-      ? { warm: 255, green: 246, blue: 232 }
-      : { warm: 244, green: 240, blue: 232 }
+  const lightBase =
+    brightness === 'light'
+      ? { warm: 213, green: 224, blue: 230 }
+      : brightness === 'dark'
+        ? { warm: 255, green: 246, blue: 232 }
+        : { warm: 244, green: 240, blue: 232 }
   const warm = Math.round(lightBase.warm - twilight * (lightBase.warm === 255 ? 28 : 24))
   const green = Math.round(lightBase.green - twilight * 56)
   const blue = Math.round(lightBase.blue - twilight * 40)
@@ -111,10 +111,7 @@ export function resolveGlobeLighting(
 /**
  * 解析天空大气参数（MapLibre sky）。
  */
-export function resolveGlobeSky(
-  hour: number,
-  brightness: BasemapBrightness,
-): GlobeSkyParams {
+export function resolveGlobeSky(hour: number, brightness: BasemapBrightness): GlobeSkyParams {
   const daylight = daylightFactor(hour)
   const isDay = daylight > 0.45
   if (!isDay) {

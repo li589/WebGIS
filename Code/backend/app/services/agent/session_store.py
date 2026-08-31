@@ -21,7 +21,9 @@ _SAFE_SESSION = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 # Session retention / quota (Phase 0 / M-2).
 _SESSION_TTL_HOURS = max(1, int(os.getenv("BACKEND_AGENT_SESSION_TTL_HOURS", "24")))
-_MAX_SESSIONS_PER_USER = max(1, int(os.getenv("BACKEND_AGENT_MAX_SESSIONS_PER_USER", "40")))
+_MAX_SESSIONS_PER_USER = max(
+    1, int(os.getenv("BACKEND_AGENT_MAX_SESSIONS_PER_USER", "40"))
+)
 
 
 def _sessions_root() -> Path:
@@ -79,7 +81,9 @@ def _enforce_session_quota(user_key: str, *, keep_path: Path | None = None) -> N
     def _sort_key(p: Path) -> float:
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
-            ts = _parse_updated_at(data.get("updated_at") if isinstance(data, dict) else None)
+            ts = _parse_updated_at(
+                data.get("updated_at") if isinstance(data, dict) else None
+            )
             if ts is not None:
                 return ts.timestamp()
         except (OSError, json.JSONDecodeError, TypeError, ValueError):
@@ -137,7 +141,9 @@ def purge_expired_sessions(*, user_id: int | None = None) -> int:
                         path.unlink(missing_ok=True)
                         removed += 1
                     except OSError as exc:
-                        logger.warning("Failed to delete expired session %s: %s", path, exc)
+                        logger.warning(
+                            "Failed to delete expired session %s: %s", path, exc
+                        )
     return removed
 
 
@@ -198,7 +204,9 @@ def append_turn(
                     updated = _parse_updated_at(data.get("updated_at"))
                     if updated is None:
                         try:
-                            updated = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+                            updated = datetime.fromtimestamp(
+                                path.stat().st_mtime, tz=UTC
+                            )
                         except OSError:
                             updated = None
                     if not _is_expired(updated, now=now):

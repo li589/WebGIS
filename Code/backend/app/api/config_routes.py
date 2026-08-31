@@ -808,7 +808,9 @@ async def list_online_tile_sources():
     response_model=OnlineTileSource,
     dependencies=[Depends(require_config_management_access)],
 )
-async def upsert_online_tile_source(source_id: str, payload: OnlineTileSourceUpsertRequest):
+async def upsert_online_tile_source(
+    source_id: str, payload: OnlineTileSourceUpsertRequest
+):
     try:
         return config_service.upsert_online_tile_source(source_id, payload.model_dump())
     except ValueError as exc:
@@ -822,7 +824,9 @@ async def upsert_online_tile_source(source_id: str, payload: OnlineTileSourceUps
 )
 async def delete_online_tile_source(source_id: str):
     if not config_service.delete_online_tile_source(source_id):
-        raise HTTPException(status_code=404, detail=f"Online tile source '{source_id}' not found")
+        raise HTTPException(
+            status_code=404, detail=f"Online tile source '{source_id}' not found"
+        )
     return DeletedResponse(deleted=True)
 
 

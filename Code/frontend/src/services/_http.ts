@@ -227,11 +227,7 @@ export async function requestJson<T>(path: string, init?: RequestJsonInit): Prom
       if (external.aborted) {
         controller.abort(external.reason)
       } else {
-        external.addEventListener(
-          'abort',
-          () => controller.abort(external.reason),
-          { once: true },
-        )
+        external.addEventListener('abort', () => controller.abort(external.reason), { once: true })
       }
       requestSignal = controller.signal
     }

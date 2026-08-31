@@ -1365,15 +1365,27 @@ defineExpose({
   border-radius: 0.35rem;
   border: 1px solid var(--accent-border);
   background: var(--surface-2);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 9%, transparent), 0 5px 14px rgb(0 0 0 / 0.18);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 9%, transparent),
+    0 5px 14px rgb(0 0 0 / 0.18);
 }
 .flow-node {
   width: 1.05rem;
   height: 0.78rem;
 }
-.flow-node--source { left: 0.55rem; top: 2.3rem; }
-.flow-node--transform { left: 3.72rem; top: 0.45rem; border-radius: 50%; }
-.flow-node--output { right: 0.55rem; top: 2.3rem; }
+.flow-node--source {
+  left: 0.55rem;
+  top: 2.3rem;
+}
+.flow-node--transform {
+  left: 3.72rem;
+  top: 0.45rem;
+  border-radius: 50%;
+}
+.flow-node--output {
+  right: 0.55rem;
+  top: 2.3rem;
+}
 .flow-link {
   position: absolute;
   height: 1px;
@@ -1381,8 +1393,18 @@ defineExpose({
   background: linear-gradient(90deg, transparent, var(--accent), transparent);
   opacity: 0.78;
 }
-.flow-link--source { left: 1.42rem; top: 2.7rem; width: 2.45rem; transform: rotate(-30deg); }
-.flow-link--output { left: 4.72rem; top: 1.16rem; width: 2.48rem; transform: rotate(30deg); }
+.flow-link--source {
+  left: 1.42rem;
+  top: 2.7rem;
+  width: 2.45rem;
+  transform: rotate(-30deg);
+}
+.flow-link--output {
+  left: 4.72rem;
+  top: 1.16rem;
+  width: 2.48rem;
+  transform: rotate(30deg);
+}
 .flow-core {
   left: 3.78rem;
   top: 2.3rem;
@@ -1391,12 +1413,21 @@ defineExpose({
   border-radius: 50%;
   border-color: var(--accent-strong);
   background: var(--accent-surface);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 11%, transparent), 0 0 22px color-mix(in srgb, var(--accent) 36%, transparent);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--accent) 11%, transparent),
+    0 0 22px color-mix(in srgb, var(--accent) 36%, transparent);
   animation: core-pulse 2.8s ease-in-out infinite;
 }
 @keyframes core-pulse {
-  0%, 100% { transform: scale(0.92); opacity: 0.76; }
-  50% { transform: scale(1.08); opacity: 1; }
+  0%,
+  100% {
+    transform: scale(0.92);
+    opacity: 0.76;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

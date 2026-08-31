@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 JobHandler = Callable[[dict[str, Any]], dict[str, Any]]
 
+
 def _job_path(job_id: str) -> Path:
     ensure_imports_root()
     # 安审 2026-08-22（B-3）：job_id 纯名称校验，防越界读任意 JSON 文件

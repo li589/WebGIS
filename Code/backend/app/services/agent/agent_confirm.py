@@ -60,7 +60,9 @@ def create_confirmation(
     path = _path_for(cid)
     with _lock:
         tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.write_text(
+            json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         tmp.replace(path)
     return {
         "confirmation_id": cid,
@@ -139,7 +141,9 @@ def consume_confirmation(
             record["status"] = "rejected"
             record["resolved_at"] = datetime.now(UTC).isoformat()
             tmp = path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+            tmp.write_text(
+                json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
             tmp.replace(path)
             return {
                 "confirmation_id": confirmation_id,

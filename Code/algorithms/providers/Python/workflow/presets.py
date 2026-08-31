@@ -102,7 +102,10 @@ def build_duxin_sme_workflow_definition(request: JobRequest) -> WorkflowDefiniti
         outputs=[
             WorkflowOutputSpec(name="final_manifest", source="node:duxin_sme.manifest")
         ],
-        metadata={"generated_from": "workflow.presets", "module": "duxin_time_series_sme"},
+        metadata={
+            "generated_from": "workflow.presets",
+            "module": "duxin_time_series_sme",
+        },
     )
 
 

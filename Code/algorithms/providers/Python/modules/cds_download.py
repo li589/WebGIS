@@ -38,7 +38,9 @@ def _resolve_cds_api_key(
     return os.environ.get("BACKEND_CDS_API_KEY", "").strip()
 
 
-@register_module_decorator(name="cds_download", template_overrides={"phase": "download"})
+@register_module_decorator(
+    name="cds_download", template_overrides={"phase": "download"}
+)
 class CdsDownloadModule(BaseModule):
     name = "cds_download"
     description = (

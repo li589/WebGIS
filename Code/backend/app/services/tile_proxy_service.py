@@ -416,7 +416,9 @@ class TileProxyService:
             self._cache.pop(cache_key, None)
         client = await self.get_http_client()
         try:
-            response = await self._get_ssrf_safe(client, url, {"User-Agent": user_agent})
+            response = await self._get_ssrf_safe(
+                client, url, {"User-Agent": user_agent}
+            )
             response.raise_for_status()
             data = response.content
             if use_cache:
@@ -431,7 +433,9 @@ class TileProxyService:
                 status_code=exc.response.status_code,
             ) from exc
         except httpx.RequestError as exc:
-            raise TileProxyUpstreamError("Tile source is temporarily unavailable") from exc
+            raise TileProxyUpstreamError(
+                "Tile source is temporarily unavailable"
+            ) from exc
 
     async def fetch_tile(
         self,

@@ -97,7 +97,9 @@ def _normalize_polarization(polarization: str) -> str:
 # ─── Part 2.1 查找表基础：作者自有 Fresnel 幅值公式 ─────────────────────────
 
 
-def alpha_calculation_hh(theta: float | np.ndarray, epsilon: float | np.ndarray) -> np.ndarray:
+def alpha_calculation_hh(
+    theta: float | np.ndarray, epsilon: float | np.ndarray
+) -> np.ndarray:
     """HH 极化 Fresnel 幅值（作者公式，忠实移植 alpha_calculation_HH.m）。
 
     alpha_HH = |ε - 1| / (cosθ + sqrt(ε - sin²θ))²
@@ -116,7 +118,9 @@ def alpha_calculation_hh(theta: float | np.ndarray, epsilon: float | np.ndarray)
     return result
 
 
-def alpha_calculation_vv(theta: float | np.ndarray, epsilon: float | np.ndarray) -> np.ndarray:
+def alpha_calculation_vv(
+    theta: float | np.ndarray, epsilon: float | np.ndarray
+) -> np.ndarray:
     """VV 极化 Fresnel 幅值（作者公式，忠实移植 alpha_calculation_VV.m）。
 
     alpha_VV = |(ε-1)(sin²θ - ε(1+sin²θ))| / (ε·cosθ + sqrt(ε - sin²θ))²
@@ -128,7 +132,9 @@ def alpha_calculation_vv(theta: float | np.ndarray, epsilon: float | np.ndarray)
     epsilon = np.asarray(epsilon, dtype=np.float64)
     sin_theta_sq = np.sin(theta) ** 2
     root = np.sqrt(np.maximum(epsilon - sin_theta_sq, 0.0))
-    numerator = np.abs((epsilon - 1.0) * (sin_theta_sq - epsilon * (1.0 + sin_theta_sq)))
+    numerator = np.abs(
+        (epsilon - 1.0) * (sin_theta_sq - epsilon * (1.0 + sin_theta_sq))
+    )
     denominator = (epsilon * np.cos(theta) + root) ** 2
     with np.errstate(divide="ignore", invalid="ignore"):
         result = np.where(denominator > 0, numerator / denominator, np.nan)
@@ -166,17 +172,23 @@ class AlphaLUT:
         return self.table[index] * (1.0 - weight) + self.table[index + 1] * weight
 
 
-def build_alpha_lut(config: DuxinSmeConfig | None = None, polarization: str | None = None) -> AlphaLUT:
+def build_alpha_lut(
+    config: DuxinSmeConfig | None = None, polarization: str | None = None
+) -> AlphaLUT:
     """构建 alpha 查找表（对应原版 Part-2.1 双重循环，这里全向量化）。"""
     cfg = config or DuxinSmeConfig(polarization=polarization or "hh")
     pol = _normalize_polarization(polarization or cfg.polarization)
-    theta_grid = np.arange(cfg.theta_min, cfg.theta_max + cfg.theta_step * 0.5, cfg.theta_step)
+    theta_grid = np.arange(
+        cfg.theta_min, cfg.theta_max + cfg.theta_step * 0.5, cfg.theta_step
+    )
     epsilon_grid = np.arange(
         cfg.epsilon_min, cfg.epsilon_max + cfg.epsilon_step * 0.5, cfg.epsilon_step
     )
     # 广播：theta (T,1) × epsilon (1,E) → (T,E)
     table = _ALPHA_FUNCS[pol](theta_grid[:, None], epsilon_grid[None, :])
-    return AlphaLUT(polarization=pol, theta_grid=theta_grid, epsilon_grid=epsilon_grid, table=table)
+    return AlphaLUT(
+        polarization=pol, theta_grid=theta_grid, epsilon_grid=epsilon_grid, table=table
+    )
 
 
 # ─── Part 3 Topp 模型 ──────────────────────────────────────────────────────
@@ -262,7 +274,9 @@ def time_series_alpha_retrieval(
     obsv = np.asarray(obsv_data, dtype=np.float64)
     ang = np.asarray(inc_ang, dtype=np.float64)
     if obsv.ndim != 3:
-        raise ValueError(f"obsv_data must be 3-D (rows, cols, N), got shape {obsv.shape}")
+        raise ValueError(
+            f"obsv_data must be 3-D (rows, cols, N), got shape {obsv.shape}"
+        )
     if ang.shape != obsv.shape[:2]:
         raise ValueError(
             f"inc_ang shape {ang.shape} must match obsv_data spatial shape {obsv.shape[:2]}"

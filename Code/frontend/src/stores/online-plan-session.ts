@@ -65,8 +65,8 @@ export const useOnlinePlanSessionStore = defineStore('online-plan-session', () =
   const pendingCount = computed(() => session.value?.tabs.length ?? 0)
   const isOpen = computed(() => session.value?.status === 'open')
   const isParked = computed(() => session.value?.status === 'parked')
-  const hasPending = computed(
-    () => Boolean(session.value && session.value.tabs.length > 0 && session.value.status !== 'resolved'),
+  const hasPending = computed(() =>
+    Boolean(session.value && session.value.tabs.length > 0 && session.value.status !== 'resolved'),
   )
 
   const activeTab = computed(() => {
@@ -198,8 +198,7 @@ export const useOnlinePlanSessionStore = defineStore('online-plan-session', () =
       }
       return
     }
-    const active =
-      s.activeCatalogId === catalogId ? tabsNext[0].catalogId : s.activeCatalogId
+    const active = s.activeCatalogId === catalogId ? tabsNext[0].catalogId : s.activeCatalogId
     session.value = { ...s, tabs: tabsNext, activeCatalogId: active, status: 'open' }
   }
 
@@ -218,10 +217,7 @@ export const useOnlinePlanSessionStore = defineStore('online-plan-session', () =
    * P2：统一时间锁下把同一 timeKey/timeRange 写入本会话全部 tab。
    * 返回更新的 tab 数。
    */
-  function applyTimeRangeToAllTabs(patch: {
-    timeKey: string
-    timeRange?: PlanTimeRange
-  }): number {
+  function applyTimeRangeToAllTabs(patch: { timeKey: string; timeRange?: PlanTimeRange }): number {
     const s = session.value
     if (!s || s.tabs.length === 0) return 0
     const key = String(patch.timeKey || '').trim()
@@ -229,9 +225,7 @@ export const useOnlinePlanSessionStore = defineStore('online-plan-session', () =
     const tabsNext = s.tabs.map((t) => ({
       ...t,
       timeKey: key,
-      timeRange: patch.timeRange
-        ? { ...patch.timeRange }
-        : t.timeRange,
+      timeRange: patch.timeRange ? { ...patch.timeRange } : t.timeRange,
     }))
     session.value = { ...s, tabs: tabsNext }
     return tabsNext.length

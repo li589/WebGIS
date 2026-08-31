@@ -345,9 +345,7 @@ function onPermDialogUpdated(userId: number, mode: string) {
               <button
                 type="button"
                 class="secondary-btn perm-btn"
-                @click="
-                  openPermDialog(u.id, u.username, u.role, u.permission_mode, u.theme_id)
-                "
+                @click="openPermDialog(u.id, u.username, u.role, u.permission_mode, u.theme_id)"
               >
                 权限覆盖
               </button>

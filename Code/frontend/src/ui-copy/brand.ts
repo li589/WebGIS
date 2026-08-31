@@ -24,9 +24,7 @@ export const BRAND = {
   /** 工具栏/登录页短标题（界面主显示名） */
   shortName: envTrim('VITE_BRAND_SHORT_NAME') ?? '星地融合土壤数据平台',
   /** About / 浏览器标签栏中文全称 */
-  fullName:
-    envTrim('VITE_BRAND_FULL_NAME') ??
-    '星地融合土壤水分监测与干旱预警数据分析与可视化系统',
+  fullName: envTrim('VITE_BRAND_FULL_NAME') ?? '星地融合土壤水分监测与干旱预警数据分析与可视化系统',
   /** 英文显示名 */
   displayNameEn:
     envTrim('VITE_BRAND_DISPLAY_NAME_EN') ?? 'Satellite-Ground Fusion Soil Data Platform',

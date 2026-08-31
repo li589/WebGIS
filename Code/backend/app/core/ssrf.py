@@ -173,15 +173,14 @@ def _iter_resolved_ips(host: str, port: int) -> list[ipaddress._BaseAddress]:
 
 
 def _assert_ip_allowed(
-    ip: ipaddress._BaseAddress, host: str, *, allow_private: bool, allow_loopback: bool = False
+    ip: ipaddress._BaseAddress,
+    host: str,
+    *,
+    allow_private: bool,
+    allow_loopback: bool = False,
 ) -> None:
     """单个 IP 的策略判定；命中黑名单即抛 SSRFBlockedError。"""
-    if (
-        ip.is_link_local
-        or ip.is_multicast
-        or ip.is_reserved
-        or ip.is_unspecified
-    ):
+    if ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
         logger.warning("SSRF 阻断出站请求 host=%r ip=%s", host, ip)
         raise SSRFBlockedError(f"阻断出站地址 {ip}（主机 {host!r}）")
     if ip.is_loopback and not allow_loopback:
@@ -214,9 +213,7 @@ def resolve_outbound_target(
             或任一解析结果命中被阻断地址；或传入非字符串 URL（如误传 Request）。
     """
     if not isinstance(url, str):
-        raise SSRFBlockedError(
-            f"出站 URL 必须是字符串，收到 {type(url).__name__}"
-        )
+        raise SSRFBlockedError(f"出站 URL 必须是字符串，收到 {type(url).__name__}")
     parsed = urlparse(url)
     scheme = (parsed.scheme or "").lower()
     if scheme not in _ALLOWED_SCHEMES:

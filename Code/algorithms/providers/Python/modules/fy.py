@@ -100,7 +100,10 @@ class FyDailyModule(BaseModule):
         algorithm_params = dict(inputs.get("algorithm_params", {}))
         if ctx.request.algorithm_params:
             # 请求级参数作底，节点/输入覆盖其上
-            algorithm_params = {**dict(ctx.request.algorithm_params), **algorithm_params}
+            algorithm_params = {
+                **dict(ctx.request.algorithm_params),
+                **algorithm_params,
+            }
         output_spec_extra = dict(inputs.get("output_spec_extra", {}))
 
         input_dir = _resolve_fy_input_dir(datasource_selection)

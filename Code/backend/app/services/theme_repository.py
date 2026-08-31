@@ -267,13 +267,13 @@ class ThemeRepository:
                 "slug must be 2-64 chars: lowercase letter, then [a-z0-9_-]"
             )
         if default_permission_mode not in _VALID_MODES:
-            raise ValueError(f"invalid default_permission_mode: {default_permission_mode}")
+            raise ValueError(
+                f"invalid default_permission_mode: {default_permission_mode}"
+            )
         now = datetime.now(UTC).isoformat()
         with self._pool.connection() as conn:
             if is_primary:
-                conn.execute(
-                    "UPDATE themes SET is_primary=0, updated_at=?", (now,)
-                )
+                conn.execute("UPDATE themes SET is_primary=0, updated_at=?", (now,))
             try:
                 cur = conn.execute(
                     """
@@ -319,8 +319,13 @@ class ThemeRepository:
         theme = self.get_by_id(theme_id)
         if theme is None:
             return None
-        if default_permission_mode is not None and default_permission_mode not in _VALID_MODES:
-            raise ValueError(f"invalid default_permission_mode: {default_permission_mode}")
+        if (
+            default_permission_mode is not None
+            and default_permission_mode not in _VALID_MODES
+        ):
+            raise ValueError(
+                f"invalid default_permission_mode: {default_permission_mode}"
+            )
         now = datetime.now(UTC).isoformat()
         fields: list[str] = ["updated_at=?"]
         params: list[Any] = [now]
@@ -447,9 +452,7 @@ class ThemeRepository:
         invalidate_access_cache()
         return self.get_theme_permissions(theme_id)
 
-    def save_logo(
-        self, theme_id: int, *, filename: str, content: bytes
-    ) -> ThemeRecord:
+    def save_logo(self, theme_id: int, *, filename: str, content: bytes) -> ThemeRecord:
         theme = self.get_by_id(theme_id)
         if theme is None:
             raise ValueError("theme not found")

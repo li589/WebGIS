@@ -55,7 +55,9 @@ def local_source_max_bytes(definition: dict[str, Any] | None) -> int:
     for node in definition.get("nodes") or []:
         if not isinstance(node, dict):
             continue
-        props = node.get("properties") if isinstance(node.get("properties"), dict) else {}
+        props = (
+            node.get("properties") if isinstance(node.get("properties"), dict) else {}
+        )
         raw = props.get("path")
         if not isinstance(raw, str) or not raw.strip():
             continue

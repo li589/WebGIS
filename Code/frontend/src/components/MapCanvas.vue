@@ -53,10 +53,7 @@ import {
   type GlobeBackgroundMode,
   type GlobeDaylightMode,
 } from '../services/settings-local'
-import {
-  classifyBasemapBrightness,
-  resolveGlobeSky,
-} from './map/globe-scene-utils'
+import { classifyBasemapBrightness, resolveGlobeSky } from './map/globe-scene-utils'
 import { quantizeNightMaskHour } from './map/globe-night-mask'
 import {
   ensureGlobeNightMaskLayerOnMap,
@@ -310,10 +307,7 @@ function applyBackgroundColor(): void {
     map.setPaintProperty(
       'background',
       'background-color',
-      resolveGlobeBackgroundColor(
-        props.globeProjection === true,
-        themeStore.mode === 'light',
-      ),
+      resolveGlobeBackgroundColor(props.globeProjection === true, themeStore.mode === 'light'),
     )
   }
 }
@@ -614,12 +608,7 @@ function applyNightHemisphere(
       pendingNightMask = null
       if (!pending) return
       try {
-        applyNightHemisphereNow(
-          pending.map,
-          pending.globeEnabled,
-          pending.hour,
-          pending.date,
-        )
+        applyNightHemisphereNow(pending.map, pending.globeEnabled, pending.hour, pending.date)
       } catch (error) {
         debugLog('[MapCanvas] applyNightHemisphere unavailable', error)
       }

@@ -62,7 +62,10 @@ function safeRemove(key: string): void {
 }
 
 /** Read scoped value; optionally migrate legacy unscoped key into scoped slot. */
-export function readScopedItem(baseKey: string, userId: number | null = activeUserId): string | null {
+export function readScopedItem(
+  baseKey: string,
+  userId: number | null = activeUserId,
+): string | null {
   if (userId == null) return safeGet(baseKey)
   const scoped = scopedStorageKey(baseKey, userId)
   const existing = safeGet(scoped)

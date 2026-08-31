@@ -110,7 +110,9 @@ def _style_requested(
     return False
 
 
-def _layer_wgs84_window(spec: Any, time: str | None) -> tuple[float, float, float, float] | None:
+def _layer_wgs84_window(
+    spec: Any, time: str | None
+) -> tuple[float, float, float, float] | None:
     """读图层 bounds.json 的 WGS84 窗口（recolor Mercator 线性对齐的裁剪窗）。
 
     烘焙 preview.png（导入链 render_cog_preview_reprojected target=3857 /
@@ -172,9 +174,7 @@ def _load_source_grid(spec: Any, time: str | None) -> np.ndarray | None:
         try:
             from app.services.overlay_tile_service import _source_pyramid
 
-            pyramid = _source_pyramid(
-                str(src_path), band, src_path.stat().st_mtime_ns
-            )
+            pyramid = _source_pyramid(str(src_path), band, src_path.stat().st_mtime_ns)
         except Exception:
             pyramid = None
         if pyramid is not None:
@@ -257,7 +257,10 @@ def _load_source_grid(spec: Any, time: str | None) -> np.ndarray | None:
             # → 前端 isMercatorLinearPng 误判等经纬 → 条带化 → 纵向压扁。
             # 修复：从 .mat 同文件探测规则 2D lat/lon 坐标对（lat_*/lon_*）
             # 补齐坐标后走统一重投影。
-            if getattr(data_array, "lat", None) is None or getattr(data_array, "lon", None) is None:
+            if (
+                getattr(data_array, "lat", None) is None
+                or getattr(data_array, "lon", None) is None
+            ):
                 probed = _probe_mat_grid_coordinates(src_path, values)
                 if probed is not None:
                     from types import SimpleNamespace

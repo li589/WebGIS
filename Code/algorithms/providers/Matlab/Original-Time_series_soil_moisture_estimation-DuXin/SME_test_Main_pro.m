@@ -16,7 +16,7 @@ clear;
 %% ######################Part 0: Input data###############################%
 %Generate random simulated data:
 %-obsv_data:time series SAR observations
-%-inc_ang:incidence angle 
+%-inc_ang:incidence angle
 obsv_data = rand(20,20,14);%20rows*20cols*14bands, 14 imageries,range:[0,1]
 a=0.3;%minimum incidence angle 17degree
 b=1.2;%maximum incidence angle 69degree
@@ -27,7 +27,7 @@ Num_step= Num_image;%size of sliding windows
 
 soil_epsilon_retrieval = zeros(20,20,14);
 %soil_alpha_retrieval = zeros(20,20,14);
-%soil_moisture_retrieval = zeros(20,20,14);% define volumetric 
+%soil_moisture_retrieval = zeros(20,20,14);% define volumetric
 
 %% #################### Part-1: Caculate the 'alpha' value  ############# %
 %Caculate the 'alpha' value from time series observations
@@ -37,7 +37,7 @@ soil_alpha_retrieval = Fun_time_series_SME_hh(obsv_data,inc_ang,Num_step);
 %for VV chanel
 %soil_alpha_retrieval = Fun_time_series_SME_vv(obsv_data,inc_ang,Num_step);
 
-soil_alpha_retrieval(isinf(soil_alpha_retrieval)|isnan(soil_alpha_retrieval)) = 0; 
+soil_alpha_retrieval(isinf(soil_alpha_retrieval)|isnan(soil_alpha_retrieval)) = 0;
 % Replace NaNs and infinite values with zeros
 
 %% ###Part-2:Caculate the soil dielectric constant from 'alpha' value#### %
@@ -63,15 +63,15 @@ for ii = 1:1:rows
     for jj= 1:1:cols
         for kk=1:1:Num_image
             A1=double(inc_ang(ii,jj));
-            
+
             %for HH chanel
             Z=interp2(A_thetai',B_epsilon,C_alpha_HH',A1,B_epsilon);
             %%for VV chanel
             %Z=interp2(A_thetai',B_epsilon,C_alpha_VV',A1,B_epsilon);
             C1=soil_alpha_retrieval(ii,jj,kk);
-            
+
             %solved soil dielectric constant value
-            soil_epsilon_retrieval(ii,jj,kk)=interp1(Z,B_epsilon,C1);   
+            soil_epsilon_retrieval(ii,jj,kk)=interp1(Z,B_epsilon,C1);
         end
     end
     waitbar(ii/rows);
@@ -82,7 +82,7 @@ close(h); %close the wait bar
 soil_epsilon_retrieval(isnan(soil_epsilon_retrieval)==1)=0;
 
 %% ##Part 3: convert soil dielectric constant to volumetric soil moisture##%
-%%Topp model-1980; TOPP model 
+%%Topp model-1980; TOPP model
 soil_moisture_retrieval = -5.3 + 2.92 .* soil_epsilon_retrieval -...
     0.055 .* soil_epsilon_retrieval .* soil_epsilon_retrieval +...
     0.0004 .* soil_epsilon_retrieval .* soil_epsilon_retrieval .* soil_epsilon_retrieval;

@@ -11,11 +11,7 @@
  */
 import type { Map as MaplibreMap } from 'maplibre-gl'
 import type { DrawVertex, DrawFeature, DrawMode } from '../../stores/draw-store'
-import {
-  clipCoordsForGlobe,
-  isGlobeProjection,
-  isLngLatOnGlobeVisibleSide,
-} from './canvas-utils'
+import { clipCoordsForGlobe, isGlobeProjection, isLngLatOnGlobeVisibleSide } from './canvas-utils'
 
 const MAX_PIXEL_RATIO = 2
 const VERTEX_RADIUS = 6
