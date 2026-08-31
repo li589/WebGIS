@@ -1555,7 +1555,6 @@ async def get_data_input_policies():
 async def put_data_input_policies(body: Any):
     """写入 runtime 覆盖（原子写）。同 id 覆盖 seed；热载生效，无需重启后端。"""
     from app.services.data_input_policy_service import save_runtime_data_input_policies
-    from shared.contracts.api_contracts import DataInputPoliciesUpdateRequest
 
     try:
         parsed = (

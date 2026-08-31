@@ -651,7 +651,6 @@ class FYDownloadModule(BaseModule):
         for day_index, day in enumerate(days):
             date_path = day.replace("-", ".")
             day_error: Exception | None = None
-            day_source = ""
             for source_name in sources_to_try:
                 try:
                     if source_name == "nsmc":
@@ -675,7 +674,6 @@ class FYDownloadModule(BaseModule):
                         )
                     downloaded_days.append(day)
                     used_sources.add(source_name)
-                    day_source = source_name
                     day_error = None
                     break
                 except Exception as exc:  # noqa: BLE001

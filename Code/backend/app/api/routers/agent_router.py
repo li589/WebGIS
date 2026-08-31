@@ -21,8 +21,6 @@ from app.api.error_codes import (
     VALIDATION_ERROR,
     ApiError,
 )
-
-logger = logging.getLogger(__name__)
 from app.core import config
 from app.services.agent import config_service
 from app.services.agent.clients.openai_compat import LlmClientError
@@ -33,6 +31,8 @@ from app.services.credential_resolver import (
     allows_write,
     dev_bypass_allowed,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 

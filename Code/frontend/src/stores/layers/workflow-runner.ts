@@ -59,12 +59,7 @@ import {
 } from '../../utils/workflow-expected-outputs'
 import { debugLog as probeDebugLog } from '../../utils/perf-probe'
 import { WORKFLOW_COPY } from '../../ui-copy/workflow'
-import {
-  INVERSION_RUN_LAYER_PATTERN,
-  isEnglishInversionCatalogId,
-  resolveInversionCatalogId,
-  sanitizeRunGroupTitle,
-} from './inversion-catalog'
+import { INVERSION_RUN_LAYER_PATTERN, resolveInversionCatalogId } from './inversion-catalog'
 import {
   extractWorkflowDefinitionName,
   extractWorkflowEntryId,
@@ -72,7 +67,6 @@ import {
   resolveRunGroupTitle,
   resolveWorkflowRunDisplayName,
   tryWorkflowSummaries,
-  type WorkflowSummaryLike,
 } from '../../utils/workflow-run-display-name'
 import type {
   ActiveLayer,

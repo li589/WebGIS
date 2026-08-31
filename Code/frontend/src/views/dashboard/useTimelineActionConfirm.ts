@@ -330,7 +330,7 @@ export function useTimelineActionConfirm(deps: {
       : undefined
 
     // 源路由策略：每次重新拉取，避免 admin PUT 后缓存陈旧
-    let routeMode: 'deny' | 'allow_with_confirm' | 'allow_silent' = 'deny'
+    let routeMode: 'deny' | 'allow_with_confirm' | 'allow_silent'
     try {
       policiesCache = await fetchDataInputPolicies()
       const desc = deps.workspace.resolveEffectiveDescriptor?.(catalogId) ?? null

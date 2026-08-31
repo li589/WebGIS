@@ -143,7 +143,7 @@ def _summarize_bake_tool_output(
                 label = label.replace(token, " ")
             label = " ".join(label.split()).strip(" -:")
             notes.append(
-                f"源数据文件未找到，已跳过烘焙" + (f"（{label}）" if label else "")
+                "源数据文件未找到，已跳过烘焙" + (f"（{label}）" if label else "")
             )
         elif line.startswith("Summary:") and "FAIL" in line.upper():
             notes.append(f"烘焙汇总：{line[len('Summary:'):].strip()}")

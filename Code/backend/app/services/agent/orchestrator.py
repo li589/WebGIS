@@ -497,7 +497,6 @@ def run_chat(
             }
         )
         # Optional: search_layers if message looks like catalog search
-        lower = message.lower()
         if (
             any(k in message for k in ("搜索", "查找图层", "有哪些层", "search"))
             or "图层" in message
