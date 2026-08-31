@@ -177,7 +177,7 @@ class TestDownloadCdsDataset(unittest.TestCase):
         self.assertEqual(len(_FakeCdsapiClient.calls), 2)
 
     def test_legacy_direct_url(self) -> None:
-        def _fake_retry(session, url, target):  # noqa: ANN001
+        def _fake_retry(session, url, target, **kwargs):  # noqa: ANN001, ANN003
             Path(target).write_bytes(b"legacy-payload")
             return True
 
