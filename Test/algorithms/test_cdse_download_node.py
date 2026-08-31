@@ -173,7 +173,7 @@ class TestDownloadCdseProducts(unittest.TestCase):
                 for p in ids
             ]
 
-        def _download(product, target, *, bearer_token, origin, session=None):  # noqa: ANN001
+        def _download(product, target, *, bearer_token, origin, session=None, **kwargs):  # noqa: ANN001, ANN003
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(b"12345678")
             return 8
@@ -239,7 +239,7 @@ class TestDownloadCdseProducts(unittest.TestCase):
         dl.assert_not_called()
 
     def test_search_results_input(self) -> None:
-        def _download(product, target, *, bearer_token, origin, session=None):  # noqa: ANN001
+        def _download(product, target, *, bearer_token, origin, session=None, **kwargs):  # noqa: ANN001, ANN003
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(b"12345678")
             return 8
@@ -270,7 +270,7 @@ class TestDownloadCdseProducts(unittest.TestCase):
                 )
 
     def test_legacy_direct_urls(self) -> None:
-        def _retry(session, url, target):  # noqa: ANN001
+        def _retry(session, url, target, **kwargs):  # noqa: ANN001, ANN003
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(b"abc")
             return True

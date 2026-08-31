@@ -85,6 +85,8 @@ jobs:
       # SpatiaLite：overlay 视口相交查询测试依赖 mod_spatialite（Windows 本地用 gaia-gis 预编译包；CI 用 apt）
       - name: Install mod_spatialite (for spatial overlay tests)
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-mod-spatialite
+      - name: Install GDAL (for FY-3F extract pipeline tests)
+        run: sudo apt-get install -y gdal-bin
       # 验证扩展确实可加载：刚装完若不可用，直接让 CI 失败（而非让 7 个空间测试静默 skip）
       - name: Verify SpatiaLite extension loads (fail CI if broken)
         run: python Tools/verify_spatialite.py
@@ -160,6 +162,9 @@ jobs:
       - name: Install algorithms deps
         working-directory: Code/algorithms/providers/Python
         run: pip install -r requirements.txt
+
+      - name: Install GDAL (for FY-3F extract pipeline tests)
+        run: sudo apt-get update && sudo apt-get install -y gdal-bin
 
       - name: Run pytest (algorithms)
         env:

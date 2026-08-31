@@ -26,8 +26,8 @@ _CODE = """
 import sys
 sys.path.insert(0, {root!r})
 import workflow
-sys.path.remove({root!r})
 import modules.registry
+sys.path.remove({root!r})
 m = modules.registry.get_module("ndvi_daily")
 print(m.__class__.__module__)
 """

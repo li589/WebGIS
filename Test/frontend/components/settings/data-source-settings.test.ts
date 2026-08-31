@@ -117,11 +117,11 @@ afterEach(() => {
 })
 
 describe('DataSourceSettings 双 tab', () => {
-  it('默认渲染「本地数据源」面板与两个 tab 按钮', () => {
+  it('默认渲染「本地数据源」面板与三个 tab 按钮', () => {
     mountStore()
     const wrapper = mount(DataSourceSettings)
     const tabs = wrapper.findAll('.tabs-item')
-    expect(tabs.map((t) => t.text())).toEqual(['本地数据源', '远程数据源'])
+    expect(tabs.map((t) => t.text())).toEqual(['本地数据源', '远程数据源', '调度策略'])
     expect(wrapper.findComponent(LocalDataSourcePanel).exists()).toBe(true)
     expect(wrapper.findComponent(RemoteDataSourcesPanel).exists()).toBe(false)
   })

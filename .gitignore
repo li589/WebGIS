@@ -139,6 +139,8 @@ Tools/reports/
 
 # Deployment config rotation backups (local runtime state, never commit)
 Code/backend/deployment.config.json.bak.*
+# Machine-specific deployment config (copy from deployment.config.json.example)
+Code/backend/deployment.config.json
 
 # Doc task notes (temp)
 Doc/一份任务说明-*.txt

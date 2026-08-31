@@ -156,7 +156,7 @@ class TestDownloadNomadsGrib(unittest.TestCase):
         self.assertTrue(any("network down" in e for e in result.errors))
 
     def test_legacy_direct_urls(self) -> None:
-        def _fake_legacy(url: str, target: Path) -> int:
+        def _fake_legacy(url: str, target: Path, **kwargs) -> int:  # noqa: ANN003
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(b"legacy-grib")
             return target.stat().st_size
@@ -195,7 +195,7 @@ class TestDownloadNomadsGrib(unittest.TestCase):
                 )
 
     def test_auto_without_herbie_falls_back_to_legacy(self) -> None:
-        def _fake_legacy(url: str, target: Path) -> int:
+        def _fake_legacy(url: str, target: Path, **kwargs) -> int:  # noqa: ANN003
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(b"g")
             return 1
