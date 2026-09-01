@@ -12,11 +12,14 @@ import type { useLayerWorkspace, useWorkflowRun } from '../../stores/layers/sele
 type Workspace = ReturnType<typeof useLayerWorkspace>
 type WorkflowRun = ReturnType<typeof useWorkflowRun>
 
-/** 右键菜单所需 layers 依赖（10 成员，2026-08-23 扫描定格）。 */
+/** 右键菜单所需 layers 依赖（2026-08-23 扫描定格 + 天气能力）。 */
 export interface SidebarLayersDeps {
   /** 响应式当前图层（toRef 包裹） */
   activeLayers: Workspace['activeLayers']
   canRunCatalog: Workspace['canRunCatalog']
+  isWeatherEngineLayer: Workspace['isWeatherEngineLayer']
+  supportsAnalysisWorkflow: Workspace['supportsAnalysisWorkflow']
+  isOverlayDisplayOnlyLayer: Workspace['isOverlayDisplayOnlyLayer']
   bringLayerToFront: Workspace['bringLayerToFront']
   sendLayerToBack: Workspace['sendLayerToBack']
   removeLayer: Workspace['removeLayer']

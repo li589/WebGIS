@@ -370,6 +370,11 @@ export function usePanelDragResize(options: UsePanelDragResizeOptions): PanelDra
     draggingPill.value = false
     window.removeEventListener('pointermove', handlePointerMove)
     window.removeEventListener('pointerup', stopDragging)
+    // 下一帧再允许 transform transition，避免松手瞬间回弹动画抢帧
+    suppressTransformTransition.value = true
+    window.requestAnimationFrame(() => {
+      suppressTransformTransition.value = false
+    })
   }
 
   function startDragging(event: PointerEvent): void {
@@ -391,6 +396,10 @@ export function usePanelDragResize(options: UsePanelDragResizeOptions): PanelDra
     draggingPill.value = false
     window.removeEventListener('pointermove', handlePointerMove)
     window.removeEventListener('pointerup', stopPillDragging)
+    suppressTransformTransition.value = true
+    window.requestAnimationFrame(() => {
+      suppressTransformTransition.value = false
+    })
     if (!moved) showPanel()
   }
 
@@ -460,6 +469,10 @@ export function usePanelDragResize(options: UsePanelDragResizeOptions): PanelDra
     resizing.value = false
     window.removeEventListener('pointermove', handleResizeMove)
     window.removeEventListener('pointerup', stopResizing)
+    suppressTransformTransition.value = true
+    window.requestAnimationFrame(() => {
+      suppressTransformTransition.value = false
+    })
   }
 
   function startResizing(event: PointerEvent): void {

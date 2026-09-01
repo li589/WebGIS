@@ -7,6 +7,11 @@ import { ANALYSIS_COPY, ONLINE_PLAN_COPY } from '../../ui-copy'
 import { useOnlinePlanSessionStore } from '../../stores/online-plan-session'
 import { resolveWeatherWorkflowStage } from '../../utils/weather-tile-readiness'
 import {
+  buildLayerVisualProductSummary,
+  resolveLayerSourceRouteKey,
+  type LayerVisualProductSummary,
+} from '../../utils/layer-visual-product-summary'
+import {
   resolveAnalysisStageKind,
   resolveStaticLayerHint,
   resolveWorkflowStageCopy,
@@ -298,11 +303,46 @@ export function useWorkflowState(options: WorkflowStateOptions) {
 
   const hasRealSelection = computed(() => Boolean(displayLayer.value.instanceId))
 
-  /** 图表 Tab 稀疏态说明（有选中但尚无图表载荷） */
+  /** 图表 Tab 稀疏态说明（无选中图层时） */
   const sparseVisualHint = computed(() => {
     if (isRealtimeWeatherLayer.value) return ANALYSIS_COPY.sparseVisualWeather
-    if (canRunWorkflow.value) return ANALYSIS_COPY.sparseVisualWorkflow
-    return ANALYSIS_COPY.sparseVisualStatic
+    return ANALYSIS_COPY.sparseVisualWorkflow
+  })
+
+  /** 有选中图层但尚无图表载荷时展示的产品摘要 */
+  const visualProductSummary = computed((): LayerVisualProductSummary | null => {
+    if (!hasRealSelection.value) return null
+    const layer = displayLayer.value
+    const cid = layer.catalogId
+    const catalogItem = workspace.layerLibrary.value.find((l) => l.catalogId === cid) ?? null
+    const descriptor = cid ? workspace.resolveEffectiveDescriptor(cid) : null
+    const variants = descriptor?.workflow_variants as
+      | Record<string, { workflow_id?: string | null } | undefined>
+      | null
+      | undefined
+    const hasLocal = Boolean(variants?.local?.workflow_id)
+    const hasOnline = Boolean(variants?.online?.workflow_id)
+    const backendId = cid ? workspace.resolveBackendLayerId(cid) : cid
+    const pinned = Boolean(
+      (backendId && workflowRun.isWorkflowVariantPinned?.(backendId)) ||
+        (cid && workflowRun.isWorkflowVariantPinned?.(cid)),
+    )
+    const preference =
+      (backendId && workflowRun.workflowVariantPreference.value[backendId]) ||
+      (cid && workflowRun.workflowVariantPreference.value[cid]) ||
+      null
+    const sourceRouteKey = resolveLayerSourceRouteKey({
+      catalogId: cid,
+      hasLocalOnlineVariants: hasLocal && hasOnline,
+      pinned,
+      preference: typeof preference === 'string' ? preference : null,
+    })
+    return buildLayerVisualProductSummary({
+      layer,
+      catalogItem,
+      symbologyUnit: catalogItem?.metricUnit ?? layer.metricLabel,
+      sourceRouteKey,
+    })
   })
 
   const analysisStageKind = computed(() =>
@@ -389,6 +429,7 @@ export function useWorkflowState(options: WorkflowStateOptions) {
     latestEventMessage,
     hasRealSelection,
     sparseVisualHint,
+    visualProductSummary,
     analysisStageKind,
     hasWeatherTileActivity,
     showWorkflowStageRow,

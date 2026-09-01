@@ -159,12 +159,16 @@
   --motion-fast: 150ms;
   --motion-base: 200ms;
   --motion-slow: 320ms;
+  --motion-press: 90ms; /* 按下回弹 */
+  --motion-modal: 220ms; /* 对话框 / 抽屉 enter */
+  --motion-modal-leave: 160ms; /* 对话框 leave（略快） */
 
   /* 缓动函数 */
   --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1); /* 标准出 */
   --ease-soft: cubic-bezier(0.25, 0.1, 0.25, 1); /* 柔和 — 按钮hover/微交互 */
   --ease-emphasized: cubic-bezier(0.3, 0, 0.2, 1); /* 强调 */
   --ease-decelerate: cubic-bezier(0, 0, 0.2, 1); /* 减速 */
+  --ease-spring: cubic-bezier(0.34, 1.2, 0.64, 1); /* 轻弹（仅短位移） */
 
   /* ═══ z-index 层级 ═══ */
   --z-map: 0; /* 地图基底 */

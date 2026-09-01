@@ -24,8 +24,10 @@ import {
   canRunTool,
   sanitizeFormValues,
   validateFormValues,
+  buildToolRunContext,
   type ToolPage,
 } from './tools/tool-page-model'
+import { useMapPointAdminLookup } from '../../composables/useMapPointAdminLookup'
 
 const props = defineProps<{
   displayLayer: ActiveLayerDisplay
@@ -47,9 +49,14 @@ const { currentMapBBox: mapBBoxRef } = useLayerViewport()
 const { activeLayersDisplay } = useLayerWorkspace()
 
 const page = ref<ToolPage>({ kind: 'list' })
+const selectedMapPointRef = computed(() => props.selectedMapPoint)
+const extractPageActive = computed(() => page.value.kind === 'extract')
+const { label: mapPointAdminLabel } = useMapPointAdminLookup(
+  selectedMapPointRef,
+  extractPageActive,
+)
 const formValues = reactive<Record<string, unknown>>({})
 const formErrors = reactive<Record<string, string>>({})
-const zonesOverlayId = ref('')
 
 const tools = computed(() => runner.toolsCache?.items ?? [])
 const selectedTool = computed<AnalysisToolDescriptor | null>(() => {
@@ -58,11 +65,9 @@ const selectedTool = computed<AnalysisToolDescriptor | null>(() => {
   return tools.value.find((t) => t.tool_id === p.toolId) ?? null
 })
 
-const runContext = computed(() => ({
-  displayLayer: props.displayLayer,
-  selectedMapPoint: props.selectedMapPoint,
-  hasMapBBox: Boolean(mapBBoxRef.value),
-}))
+const runContext = computed(() =>
+  buildToolRunContext(props.displayLayer, props.selectedMapPoint, Boolean(mapBBoxRef.value)),
+)
 
 const runState = computed(() => {
   if (page.value.kind !== 'tool') return null
@@ -109,8 +114,14 @@ const estimatedAreaKm2 = computed(() => {
   return (Math.PI * km * km).toFixed(1)
 })
 
-const analysisCharts = computed(() => props.displayLayer.jobLayer?.analysisCharts ?? [])
-const analysisTables = computed(() => props.displayLayer.jobLayer?.analysisTables ?? [])
+const toolPageResults = computed(() => {
+  if (page.value.kind !== 'tool') {
+    return runner.latestToolResultsForLayer(props.displayLayer.catalogId)
+  }
+  return runner.toolResults(page.value.toolId, props.displayLayer.catalogId)
+})
+const analysisCharts = computed(() => toolPageResults.value.charts)
+const analysisTables = computed(() => toolPageResults.value.tables)
 const hasResults = computed(
   () => analysisCharts.value.length > 0 || analysisTables.value.length > 0,
 )
@@ -178,20 +189,13 @@ async function onRun() {
       params.north = cb.north
     }
   }
-  if (
-    (tool.tool_id === 'gis.buffer' || tool.tool_id === 'gis.vector_to_raster') &&
-    !props.selectedMapPoint &&
-    props.displayLayer.importedVectorBackendLayerId
-  ) {
-    params.imported_vector_layer_id = props.displayLayer.importedVectorBackendLayerId
-  }
+  // imported_vector_layer_id / zones_* 由 analysis-runner.buildSubmitBody 统一映射
   await runner.submitTool({
     tool,
     display: props.displayLayer,
     params,
     mapPoint: props.selectedMapPoint ?? null,
     bbox,
-    zonesOverlayLayerId: zonesOverlayId.value || null,
     showOnMap: isShowAnalysisResultOnMapEnabled(),
   })
 }
@@ -234,6 +238,9 @@ const activeToolRunHint = computed(() => {
       </AppButton>
       <span v-if="selectedMapPoint" class="weather-mini-meta">
         {{ selectedMapPoint.lng.toFixed(3) }}, {{ selectedMapPoint.lat.toFixed(3) }}
+        <template v-if="page.kind === 'extract' && mapPointAdminLabel.adminLine">
+          · {{ mapPointAdminLabel.adminLine }}
+        </template>
       </span>
     </div>
 
@@ -260,7 +267,6 @@ const activeToolRunHint = computed(() => {
     <template v-else-if="page.kind === 'tool' && selectedTool">
       <div class="tool-page-card">
         <ToolRunPage
-          v-model:zones-overlay-id="zonesOverlayId"
           :tool="selectedTool"
           :form-values="formValues"
           :form-errors="formErrors"
@@ -269,6 +275,7 @@ const activeToolRunHint = computed(() => {
           :run-phase-label="phaseLabel"
           :run-message="runState?.message ?? ''"
           :imported-vector-options="importedVectorOptions"
+          :map-b-box="currentMapBBox"
           @back="page = { kind: 'list' }"
           @run="onRun"
           @cancel="onCancel"
@@ -295,7 +302,7 @@ const activeToolRunHint = computed(() => {
           <h4 class="tool-title">底图要素提取</h4>
           <p class="tool-note">
             从底图提取行政区 / 道路要素并自动创建矢量图层。栅格底图无原生要素，
-            行政区来自内置边界数据，道路来自 OpenStreetMap（需外部网络）。
+            行政区来自内置全球边界数据（Natural Earth 省/州与国家），道路来自 OpenStreetMap（需外部网络）。
           </p>
         </div>
         <BasemapFeatureExtractCard

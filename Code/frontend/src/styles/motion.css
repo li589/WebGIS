@@ -1,0 +1,245 @@
+/**
+ * CGDA 共享动效层
+ *
+ * - Vue Transition 名：cgda-modal（对话框）、cgda-drawer（侧滑设置等）、
+ *   cgda-fade-scale（面板显隐）、cgda-fade（轻量淡入淡出）、cgda-pop（小浮层）
+ * - 性能：仅 transform/opacity；拖拽中禁用 transition；.reduce-motion 压短 token
+ * - 加载指示器（.loading-overlay / .loading-compact）不纳入全局掐断
+ */
+
+/* ── reduce-motion：压短 token（组件仍可用 var，自动变「瞬时」）── */
+html.reduce-motion {
+  --motion-fast: 0ms;
+  --motion-base: 0ms;
+  --motion-slow: 0ms;
+  --motion-press: 0ms;
+  --motion-modal: 0ms;
+  --motion-modal-leave: 0ms;
+  --motion-stagger-step: 0ms;
+  --motion-enter-delay: 0ms;
+}
+
+/* ── 对话框：遮罩淡入 + 面板轻抬升（不用 scale，避免与布局打架）── */
+/* leave 略快于 enter，关闭更干脆 */
+.cgda-modal-enter-active {
+  transition: opacity var(--motion-modal, var(--motion-base)) var(--ease-standard);
+}
+
+.cgda-modal-leave-active {
+  transition: opacity var(--motion-modal-leave, var(--motion-fast)) var(--ease-standard);
+}
+
+.cgda-modal-enter-active .cgda-modal-panel,
+.cgda-modal-enter-active [role='dialog'] {
+  transition:
+    opacity var(--motion-modal, var(--motion-base)) var(--ease-emphasized),
+    transform var(--motion-modal, var(--motion-base)) var(--ease-emphasized);
+}
+
+.cgda-modal-leave-active .cgda-modal-panel,
+.cgda-modal-leave-active [role='dialog'] {
+  transition:
+    opacity var(--motion-modal-leave, var(--motion-fast)) var(--ease-emphasized),
+    transform var(--motion-modal-leave, var(--motion-fast)) var(--ease-emphasized);
+}
+
+.cgda-modal-enter-from,
+.cgda-modal-leave-to {
+  opacity: 0;
+}
+
+.cgda-modal-enter-from .cgda-modal-panel,
+.cgda-modal-leave-to .cgda-modal-panel,
+.cgda-modal-enter-from [role='dialog'],
+.cgda-modal-leave-to [role='dialog'] {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.cgda-modal-enter-to .cgda-modal-panel,
+.cgda-modal-leave-from .cgda-modal-panel,
+.cgda-modal-enter-to [role='dialog'],
+.cgda-modal-leave-from [role='dialog'] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── 侧滑抽屉（设置面板等）── */
+.cgda-drawer-enter-active,
+.cgda-drawer-leave-active {
+  transition: opacity var(--motion-base) var(--ease-standard);
+}
+
+.cgda-drawer-enter-active .settings-panel,
+.cgda-drawer-leave-active .settings-panel,
+.cgda-drawer-enter-active .cgda-drawer-panel,
+.cgda-drawer-leave-active .cgda-drawer-panel {
+  transition: transform var(--motion-slow) var(--ease-emphasized);
+}
+
+.cgda-drawer-enter-from,
+.cgda-drawer-leave-to {
+  opacity: 0;
+}
+
+.cgda-drawer-enter-from .settings-panel,
+.cgda-drawer-leave-to .settings-panel,
+.cgda-drawer-enter-from .cgda-drawer-panel,
+.cgda-drawer-leave-to .cgda-drawer-panel {
+  transform: translateX(28px);
+}
+
+.cgda-drawer-enter-to .settings-panel,
+.cgda-drawer-leave-from .settings-panel,
+.cgda-drawer-enter-to .cgda-drawer-panel,
+.cgda-drawer-leave-from .cgda-drawer-panel {
+  transform: translateX(0);
+}
+
+/* ── 显隐：淡入 + 轻微位移（面板恢复胶囊 ↔ 壳）── */
+.cgda-fade-scale-enter-active,
+.cgda-fade-scale-leave-active {
+  transition:
+    opacity var(--motion-base) var(--ease-standard),
+    transform var(--motion-base) var(--ease-emphasized);
+}
+
+.cgda-fade-scale-enter-from,
+.cgda-fade-scale-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+/* ── 轻量淡入（提示条 / toast 类）── */
+.cgda-fade-enter-active,
+.cgda-fade-leave-active {
+  transition: opacity var(--motion-fast) var(--ease-standard);
+}
+
+.cgda-fade-enter-from,
+.cgda-fade-leave-to {
+  opacity: 0;
+}
+
+/* ── 小浮层 pop（tooltip / 错误条 / 端口提示）── */
+.cgda-pop-enter-active,
+.cgda-pop-leave-active {
+  transition:
+    opacity var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-emphasized);
+}
+
+.cgda-pop-enter-from,
+.cgda-pop-leave-to {
+  opacity: 0;
+  transform: translateY(2px);
+}
+
+/* ── 拖拽态工具类（性能：关闭过渡，启用 compositing）── */
+.is-dragging,
+.cgda-dragging {
+  cursor: grabbing !important;
+  user-select: none;
+  transition: none !important;
+  will-change: transform;
+  touch-action: none;
+}
+
+.is-dragging *,
+.cgda-dragging * {
+  transition: none !important;
+}
+
+/* 拖拽时轻微抬升：仅 opacity + elevation（不用 filter/transform，避免与面板定位 transform 冲突） */
+.is-dragging.cgda-drag-lift,
+.cgda-dragging.cgda-drag-lift {
+  opacity: 0.97;
+  box-shadow: var(--elevation-3);
+}
+
+.cgda-drag-over {
+  outline: 1px solid var(--border-strong);
+  background: var(--accent-surface);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+  transition:
+    background-color var(--motion-fast) var(--ease-soft),
+    box-shadow var(--motion-fast) var(--ease-soft);
+}
+
+html.reduce-motion .is-dragging.cgda-drag-lift,
+html.reduce-motion .cgda-dragging.cgda-drag-lift {
+  opacity: 1;
+}
+
+/* ── 按压反馈工具类（原生 button 可复用）── */
+.cgda-pressable {
+  transition:
+    transform var(--motion-press, var(--motion-fast)) var(--ease-soft),
+    box-shadow var(--motion-press, var(--motion-fast)) var(--ease-soft),
+    background-color var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft);
+}
+
+.cgda-pressable:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.cgda-pressable:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+html.reduce-motion .cgda-pressable:hover:not(:disabled),
+html.reduce-motion .cgda-pressable:active:not(:disabled) {
+  transform: none;
+}
+
+/* ── 启动入场（地图壳 / 品牌条等一次性 reveal）── */
+.cgda-boot-reveal {
+  animation: cgda-boot-reveal var(--motion-slow) var(--ease-emphasized) both;
+  animation-delay: var(--motion-enter-delay, 0ms);
+}
+
+.cgda-boot-reveal--1 {
+  --motion-enter-delay: calc(var(--motion-stagger-step, 30ms) * 0);
+}
+
+.cgda-boot-reveal--2 {
+  --motion-enter-delay: calc(var(--motion-stagger-step, 30ms) * 2);
+}
+
+.cgda-boot-reveal--3 {
+  --motion-enter-delay: calc(var(--motion-stagger-step, 30ms) * 4);
+}
+
+.cgda-boot-reveal--4 {
+  --motion-enter-delay: calc(var(--motion-stagger-step, 30ms) * 6);
+}
+
+@keyframes cgda-boot-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+html.reduce-motion .cgda-boot-reveal {
+  animation: none;
+  opacity: 1;
+  transform: none;
+}
+
+/* ── reduce-motion：非加载指示的无限动画兜底（加载条仍由 LoadingOverlay 自行减速）── */
+html.reduce-motion .cgda-spin,
+html.reduce-motion .cgda-pulse:not(.loading-progress-glow):not(.compact-glow) {
+  animation: none !important;
+}
+
+/* 对话框打开时弱化其它层 blur 的钩子由组件自行读取；此处仅文档约定 */
+html.cgda-modal-open {
+  /* reserved for future scroll-lock / focus traps */
+}

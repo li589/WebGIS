@@ -47,3 +47,6 @@ export const LEGACY_BRAND = {
 
 /** 侧栏/分类机构叙事标签（默认「科研」） */
 export const ORG_LABEL = envTrim('VITE_ORG_LABEL') ?? '科研'
+
+/** 图层库「research-group」分组显示名（默认「核心资产」） */
+export const ORG_CATEGORY_NAME = envTrim('VITE_ORG_CATEGORY_NAME') ?? '核心资产'

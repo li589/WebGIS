@@ -33,6 +33,7 @@ describe('user-local-isolation', () => {
     sessionStore.clear()
     vi.stubGlobal('localStorage', stubStorage(store))
     vi.stubGlobal('sessionStorage', stubStorage(sessionStore))
+    vi.stubGlobal('window', { location: { origin: 'http://test.local' } })
     setActiveStorageUserId(null)
   })
 
@@ -40,13 +41,15 @@ describe('user-local-isolation', () => {
     vi.unstubAllGlobals()
   })
 
-  it('scopes keys by active user id', () => {
+  it('scopes keys by active user id and api origin', () => {
     setActiveStorageUserId(7)
     expect(scopedStorageKey('geo:active-layers-workspace:v1')).toBe(
-      'geo:active-layers-workspace:v1:u7',
+      `geo:active-layers-workspace:v1:u7@${encodeURIComponent('http://test.local')}`,
     )
     writeScopedItem('geo:active-layers-workspace:v1', '{"version":1}')
-    expect(localStorage.getItem('geo:active-layers-workspace:v1:u7')).toContain('"version":1')
+    expect(localStorage.getItem(scopedStorageKey('geo:active-layers-workspace:v1', 7))).toContain(
+      '"version":1',
+    )
     expect(localStorage.getItem('geo:active-layers-workspace:v1')).toBeNull()
   })
 
@@ -55,7 +58,9 @@ describe('user-local-isolation', () => {
     setActiveStorageUserId(3)
     const value = readScopedItem('geo:dismissed-layers:v1')
     expect(value).toContain('wind-field')
-    expect(localStorage.getItem('geo:dismissed-layers:v1:u3')).toContain('wind-field')
+    expect(localStorage.getItem(scopedStorageKey('geo:dismissed-layers:v1', 3))).toContain(
+      'wind-field',
+    )
     expect(localStorage.getItem('geo:dismissed-layers:v1')).toBeNull()
   })
 
@@ -73,7 +78,9 @@ describe('user-local-isolation', () => {
     expect(localStorage.getItem('cgda.backend_write_api_key')).toBeNull()
     expect(localStorage.getItem('geo:active-layers-workspace:v1')).toBeNull()
     // Scoped workspace retained for re-login of same user
-    expect(localStorage.getItem('geo:active-layers-workspace:v1:u9')).toBe('user-snap')
+    expect(
+      localStorage.getItem(scopedStorageKey('geo:active-layers-workspace:v1', 9)),
+    ).toBe('user-snap')
     expect(getActiveStorageUserId()).toBe(9)
   })
 

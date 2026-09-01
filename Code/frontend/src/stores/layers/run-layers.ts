@@ -256,6 +256,17 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
   }
 
   function syncJobLayerToActiveLayer(catalogId: string, jobLayer: JobLayerItem) {
+    // GIS 分析工具 run 仅更新 jobLayers，不覆盖 catalog 层上的主工作流 jobLayer
+    if (jobLayer.isAnalysisToolRun) {
+      const boundLayer = deps
+        .getActiveLayers()
+        .find((layer) => layer.jobLayer?.jobId === jobLayer.jobId)
+      if (boundLayer) {
+        boundLayer.jobLayer = jobLayer
+        boundLayer.dataState = 'real'
+      }
+      return
+    }
     // 英文反演 workflow id 不得直接成为活跃层 catalogId（会以技术名进 TOC）
     const resolvedCatalogId = resolveInversionCatalogId(catalogId)
     const existingRealLayer = deps
@@ -280,7 +291,11 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     deps.addLayer(resolvedCatalogId, false, jobLayer)
   }
 
-  function upsertJobLayer(catalogId: string, jobLayer: JobLayerItem) {
+  function upsertJobLayer(
+    catalogId: string,
+    jobLayer: JobLayerItem,
+    opts?: { skipActiveLayerSync?: boolean },
+  ) {
     const resolvedCatalogId = resolveInversionCatalogId(catalogId)
     // 确保 catalogId 被记录在 jobLayer 上，便于面板列表展示孤儿工作流（无活跃图层时）
     const enrichedJobLayer: JobLayerItem = {
@@ -293,11 +308,19 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     } else {
       jobLayers.value.unshift(enrichedJobLayer)
     }
-    syncJobLayerToActiveLayer(resolvedCatalogId, enrichedJobLayer)
-    deps.rememberTrackedWorkflowRun(resolvedCatalogId, enrichedJobLayer)
-    updateRunGroupForCatalog(resolvedCatalogId, enrichedJobLayer)
-    syncRunGroupTitleFromJob(resolvedCatalogId, enrichedJobLayer)
-    if (isTerminalStatus(enrichedJobLayer.status)) {
+    // GIS 分析工具 run：只写入 jobLayers，不覆盖主工作流 jobLayer / run 组 / 追踪表
+    const analysisOnly =
+      Boolean(opts?.skipActiveLayerSync) || Boolean(enrichedJobLayer.isAnalysisToolRun)
+    if (!analysisOnly) {
+      syncJobLayerToActiveLayer(resolvedCatalogId, enrichedJobLayer)
+      deps.rememberTrackedWorkflowRun(resolvedCatalogId, enrichedJobLayer)
+      updateRunGroupForCatalog(resolvedCatalogId, enrichedJobLayer)
+      syncRunGroupTitleFromJob(resolvedCatalogId, enrichedJobLayer)
+    } else {
+      // 仅当已有同 jobId 的活跃层时更新；不按 catalogId 覆盖主工作流
+      syncJobLayerToActiveLayer(resolvedCatalogId, enrichedJobLayer)
+    }
+    if (isTerminalStatus(enrichedJobLayer.status) && !analysisOnly) {
       if (enrichedJobLayer.status === 'cancelled' || enrichedJobLayer.status === 'failed') {
         // local-submit 失败时按 catalog 找组清理占位；真 run 按 runId
         if (deps.isLocalSubmitJobId(enrichedJobLayer.jobId)) {

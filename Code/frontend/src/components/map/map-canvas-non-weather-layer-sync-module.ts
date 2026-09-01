@@ -26,6 +26,7 @@ interface CreateMapCanvasNonWeatherLayerSyncModuleOptions {
       currentTime: string | null
     }>,
   ) => void
+  restoreMapCursor?: () => void
 }
 
 export interface MapCanvasNonWeatherLayerSyncModule {
@@ -51,6 +52,7 @@ export function createMapCanvasNonWeatherLayerSyncModule(
   const importedLayerModule = createImportedLayerModule({
     map: options.map,
     getMapReady: options.getMapReady,
+    restoreMapCursor: options.restoreMapCursor,
   })
 
   const stopHandles: WatchStopHandle[] = []

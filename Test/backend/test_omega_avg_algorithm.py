@@ -392,6 +392,55 @@ def test_retrieve_daily_skips_missing_doy(tmp_path: Path) -> None:
     assert result["days_skipped"] == 365
 
 
+def test_retrieve_daily_resumes_existing_mat(tmp_path: Path) -> None:
+    """Stage D skips days when output_dir already has a usable daily .mat."""
+    doy_dir = tmp_path / "doy"
+    doy_dir.mkdir()
+    savemat(
+        doy_dir / "doy_001.mat",
+        {"OMEGA_AVG": np.full(_GRID_SHAPE, 0.10)},
+        do_compression=True,
+    )
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    savemat(
+        output_dir / "20230101.mat",
+        {
+            "SM": np.full(_GRID_SHAPE, 0.20),
+            "VOD": np.full(_GRID_SHAPE, 0.05),
+            "OMEGA": np.full(_GRID_SHAPE, 0.12),
+        },
+        do_compression=True,
+    )
+    config = build_omega_avg_config(
+        {"target_year": 2023, "enable_parallel": False, "print_every_days": 1}
+    )
+
+    class _MockBundleConfig:
+        temp_scheme = "ORIG_TS"
+
+    with patch(
+        "ingest.daily_bundle.build_daily_bundle_for_date",
+        return_value=_make_mock_bundle(),
+    ) as mock_bundle:
+        result = retrieve_daily_with_avg_omega(
+            target_year=2023,
+            omega_avg_doy_dir=doy_dir,
+            h_map=np.full(_GRID_SHAPE, 0.50),
+            alpha_map=np.full(_GRID_SHAPE, 0.15),
+            datasource_selection={},
+            config=config,
+            daily_bundle_config=_MockBundleConfig(),
+            lin_pix=None,
+            grid_shape=_GRID_SHAPE,
+            output_dir=output_dir,
+        )
+
+    assert result["days_resumed"] >= 1
+    assert result["days_processed"] == 0
+    mock_bundle.assert_not_called()
+
+
 # ─── Config builder ─────────────────────────────────────────────────────────
 
 

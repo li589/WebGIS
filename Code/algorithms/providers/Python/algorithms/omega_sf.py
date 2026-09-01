@@ -3952,7 +3952,11 @@ def _fill_chunk_row(
     """
     if full_vals is None:
         return
-    flat = np.asarray(full_vals, dtype=np.float64).ravel()
+    from data_access.ease_grid_constants import ensure_ease2_9km_shape
+
+    # 纠正历史 SMAP 日 .mat (3856,1624) 等行列颠倒，再 C-order ravel
+    normalized = ensure_ease2_9km_shape(full_vals)
+    flat = np.asarray(normalized, dtype=np.float64).ravel()
     out = np.full(lin_pix.shape[0], np.nan, dtype=np.float64)
     ok = (lin_pix >= 0) & (lin_pix < flat.size)
     if np.any(ok):
@@ -3997,6 +4001,7 @@ def _load_smap_day(smap_folder: str, date_str: str) -> dict[str, Any]:
 
     异常吞掉返回 ``{}``（与原实现 try/except: pass 一致）。
     """
+    from data_access.ease_grid_constants import ensure_ease2_9km_shape
     from ingest.mat_bundle import load_mat_file
 
     smap_file = Path(smap_folder) / f"{date_str}.mat"
@@ -4004,7 +4009,11 @@ def _load_smap_day(smap_folder: str, date_str: str) -> dict[str, Any]:
         return {}
     try:
         data = load_mat_file(str(smap_file))
-        return data
+        # 兼容历史错误转置的日 .mat（3856×1624）
+        return {
+            key: ensure_ease2_9km_shape(value) if hasattr(value, "shape") else value
+            for key, value in data.items()
+        }
     except Exception:  # noqa: BLE001 — SMAP 容错
         return {}
 

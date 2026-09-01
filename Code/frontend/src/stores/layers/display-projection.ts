@@ -1,4 +1,5 @@
 import type { LayerDescriptor } from '../../services/runtime-api'
+import { ORG_CATEGORY_NAME } from '../../ui-copy/brand'
 import { buildDefaultWeatherRenderHint } from '../../data/weather-render-hints'
 import { formatClockHourLabel } from '../../utils/weather-timeline'
 import { resolveWeatherTileReadyKind } from '../../utils/weather-tile-readiness'
@@ -279,14 +280,14 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
               catalogId: layer.catalogId,
             }),
         category: layer.isAdminBoundary ? 'boundary' : item.category,
-        description: layer.isAdminBoundary ? '广东省市级行政区边界叠加层。' : item.description,
+        description: layer.isAdminBoundary ? '全球省/州级行政区边界叠加层（Natural Earth）。' : item.description,
         engine: layer.isAdminBoundary ? 'builtin' : item.engine,
         supportsTime: item.supportsTime,
         runReadiness: item.runReadiness,
         runReadinessSummary: item.runReadinessSummary,
         renderHint: weatherRenderHint ?? undefined,
         summary: layer.isAdminBoundary
-          ? '广东省市级行政区边界叠加层'
+          ? '全球省/州级行政区边界叠加层'
           : (realDisplay.summary ?? item.description),
         metricLabel: layer.isAdminBoundary ? '边界层级' : item.metricLabel,
         metricValue: layer.isAdminBoundary ? '省市级' : (realDisplay.metricValue ?? '--'),
@@ -299,7 +300,7 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
                 ? '实验 provider 链路已接入'
                 : item.supportsTime
                   ? '支持时间维度查询'
-                  : '课题组数据已接入')),
+                  : `${ORG_CATEGORY_NAME}已接入`)),
         statusLabel: layer.isAdminBoundary
           ? '静态数据'
           : isWeatherLayer
@@ -312,11 +313,11 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
                   : '目录已接入')),
         updateLabel: layer.isAdminBoundary ? '静态数据' : item.updateLabel,
         sourceLabel: layer.isAdminBoundary
-          ? '广东省市级边界'
+          ? '全球省/州边界'
           : (realDisplay.sourceLabel ?? item.sourceLabel),
         confidenceLabel: layer.isAdminBoundary
           ? '置信度 100%'
-          : (realDisplay.confidenceLabel ?? '以课题组数据为准'),
+          : (realDisplay.confidenceLabel ?? `以${ORG_CATEGORY_NAME}为准`),
         accentColor: layer.accentColor ?? item.accentColor,
         accentGlow: layer.accentGlow ?? item.accentGlow,
         chipTone: layer.chipTone ?? item.chipTone,

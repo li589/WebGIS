@@ -1,9 +1,11 @@
 /**
- * Per-user browser storage isolation (same browser, multiple accounts).
+ * Per-user + per-API-origin browser storage isolation.
  *
- * Scoped keys: `{base}:u{userId}` — legacy unscoped keys are read as fallback
- * once, then migrated/removed when a user session is active.
+ * Scoped keys: `{base}:u{userId}@{apiScope}` — legacy `u{userId}` / unscoped
+ * keys are read once as fallback, then migrated when a user session is active.
  */
+
+import { getApiStorageScope } from './_http'
 
 let activeUserId: number | null = null
 
@@ -32,8 +34,21 @@ export function getActiveStorageUserId(): number | null {
   return activeUserId
 }
 
-export function scopedStorageKey(baseKey: string, userId: number | null = activeUserId): string {
-  if (userId == null) return baseKey
+function apiScopeSuffix(apiScope: string = getApiStorageScope()): string {
+  return `@${encodeURIComponent(apiScope)}`
+}
+
+export function scopedStorageKey(
+  baseKey: string,
+  userId: number | null = activeUserId,
+  apiScope: string = getApiStorageScope(),
+): string {
+  const suffix = apiScopeSuffix(apiScope)
+  if (userId == null) return `${baseKey}${suffix}`
+  return `${baseKey}:u${userId}${suffix}`
+}
+
+function legacyUserScopedKey(baseKey: string, userId: number): string {
   return `${baseKey}:u${userId}`
 }
 
@@ -61,18 +76,33 @@ function safeRemove(key: string): void {
   }
 }
 
-/** Read scoped value; optionally migrate legacy unscoped key into scoped slot. */
+/** Read scoped value; migrate legacy unscoped / user-only keys into scoped slot. */
 export function readScopedItem(
   baseKey: string,
   userId: number | null = activeUserId,
 ): string | null {
-  if (userId == null) return safeGet(baseKey)
-  const scoped = scopedStorageKey(baseKey, userId)
-  const existing = safeGet(scoped)
+  const apiScope = getApiStorageScope()
+  if (userId == null) {
+    const scoped = safeGet(scopedStorageKey(baseKey, null, apiScope))
+    if (scoped != null) return scoped
+    return safeGet(baseKey)
+  }
+
+  const primary = scopedStorageKey(baseKey, userId, apiScope)
+  const existing = safeGet(primary)
   if (existing != null) return existing
+
+  const legacyUser = safeGet(legacyUserScopedKey(baseKey, userId))
+  if (legacyUser != null) {
+    safeSet(primary, legacyUser)
+    safeRemove(legacyUserScopedKey(baseKey, userId))
+    safeRemove(baseKey)
+    return legacyUser
+  }
+
   const legacy = safeGet(baseKey)
   if (legacy != null) {
-    safeSet(scoped, legacy)
+    safeSet(primary, legacy)
     safeRemove(baseKey)
     return legacy
   }
@@ -89,7 +119,10 @@ export function writeScopedItem(
 
 export function removeScopedItem(baseKey: string, userId: number | null = activeUserId): void {
   safeRemove(scopedStorageKey(baseKey, userId))
-  if (userId != null) safeRemove(baseKey)
+  if (userId != null) {
+    safeRemove(legacyUserScopedKey(baseKey, userId))
+  }
+  safeRemove(baseKey)
 }
 
 /** Clear sensitive prefs on logout; keep scoped geo workspace for re-login. */
@@ -98,11 +131,15 @@ export function clearUserLocalState(userId: number | null): void {
   for (const key of sensitive) {
     if (userId != null) {
       safeRemove(scopedStorageKey(key, userId))
+      safeRemove(legacyUserScopedKey(key, userId))
     }
     safeRemove(key)
     try {
       sessionStorage.removeItem(key)
-      if (userId != null) sessionStorage.removeItem(scopedStorageKey(key, userId))
+      if (userId != null) {
+        sessionStorage.removeItem(scopedStorageKey(key, userId))
+        sessionStorage.removeItem(legacyUserScopedKey(key, userId))
+      }
     } catch {
       // ignore
     }
@@ -110,5 +147,8 @@ export function clearUserLocalState(userId: number | null): void {
   // Drop legacy unscoped geo keys so the next account cannot hydrate them.
   for (const key of LEGACY_GEO_KEYS) {
     safeRemove(key)
+    if (userId != null) {
+      safeRemove(legacyUserScopedKey(key, userId))
+    }
   }
 }

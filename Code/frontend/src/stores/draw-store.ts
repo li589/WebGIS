@@ -73,6 +73,10 @@ function clearDraftStorage(): void {
   }
 }
 
+export function cloneDrawFeatures(features: DrawFeature[]): DrawFeature[] {
+  return JSON.parse(JSON.stringify(features)) as DrawFeature[]
+}
+
 export const useDrawStore = defineStore('draw', () => {
   const drawMode = ref<DrawMode>('polygon')
   const features = ref<DrawFeature[]>([])
@@ -85,6 +89,7 @@ export const useDrawStore = defineStore('draw', () => {
   const draftLayerId = ref<string | null>(null)
   const draftLayerName = ref<string>('')
   const editingLayerId = ref<string | null>(null)
+  const editBaselineFeatures = ref<DrawFeature[]>([])
 
   // ── 绘制工具栏几何（工具栏 ↔ 属性表联动）──────────────────────────────
   // 均相对 .map-stage（工具栏与属性表共同的 offsetParent）
@@ -177,6 +182,7 @@ export const useDrawStore = defineStore('draw', () => {
     draftLayerName.value = layerName || `绘制图层-${new Date().toLocaleString('zh-CN')}`
     draftLayerId.value = null
     editingLayerId.value = null
+    editBaselineFeatures.value = []
     features.value = []
     activeVertices.value = []
     isDrawing.value = false
@@ -187,11 +193,32 @@ export const useDrawStore = defineStore('draw', () => {
   function beginEditLayer(instanceId: string, existingFeatures: DrawFeature[]) {
     editingLayerId.value = instanceId
     draftLayerId.value = null
-    features.value = [...existingFeatures]
+    editBaselineFeatures.value = cloneDrawFeatures(existingFeatures)
+    features.value = cloneDrawFeatures(existingFeatures)
     activeVertices.value = []
     isDrawing.value = false
     hoverPoint.value = null
     undoStack.value = []
+  }
+
+  function revertToEditBaseline() {
+    features.value = cloneDrawFeatures(editBaselineFeatures.value)
+    clearActiveVertices()
+  }
+
+  function hasEditChanges(): boolean {
+    if (!editingLayerId.value) return features.value.length > 0 || activeVertices.value.length > 0
+    return JSON.stringify(features.value) !== JSON.stringify(editBaselineFeatures.value)
+  }
+
+  function endEditSession() {
+    editingLayerId.value = null
+    editBaselineFeatures.value = []
+    activeVertices.value = []
+    isDrawing.value = false
+    hoverPoint.value = null
+    undoStack.value = []
+    selectedFeatureIndex.value = null
   }
 
   function setDraftLayerId(id: string) {
@@ -251,6 +278,7 @@ export const useDrawStore = defineStore('draw', () => {
     draftLayerId.value = null
     draftLayerName.value = ''
     editingLayerId.value = null
+    editBaselineFeatures.value = []
     features.value = []
     activeVertices.value = []
     isDrawing.value = false
@@ -287,6 +315,7 @@ export const useDrawStore = defineStore('draw', () => {
     draftLayerId,
     draftLayerName,
     editingLayerId,
+    editBaselineFeatures,
     toolbarRect,
     shellSize,
     setToolbarRect,
@@ -304,6 +333,9 @@ export const useDrawStore = defineStore('draw', () => {
     updateFeatureProperties,
     beginDrawSession,
     beginEditLayer,
+    revertToEditBaseline,
+    hasEditChanges,
+    endEditSession,
     setDraftLayerId,
     buildDraft,
     persistDraft,

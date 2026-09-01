@@ -19,6 +19,12 @@ import { ApiRequestError } from '../services/http-errors'
 import { cancelWorkflowRun } from '../services/runtime-api'
 import { useWorkflowRun } from './layers/selectors'
 import type { ActiveLayerDisplay } from './layers/types'
+import {
+  layerHasReadableRaster,
+  resolveRasterOverlayId,
+  resolveVectorBackendId,
+} from '../components/info-panel/tools/tool-layer-capabilities'
+import type { AnalysisChartModel, AnalysisTableModel } from '../components/info-panel/AnalysisResultCharts.vue'
 
 export type AnalysisRunPhase =
   'idle' | 'queued' | 'submitting' | 'running' | 'succeeded' | 'failed' | 'cancelled'
@@ -40,6 +46,11 @@ export interface AnalysisQueueItem {
   instanceId: string
   body: AnalysisRunRequestBody
   enqueuedAt: number
+}
+
+export interface AnalysisToolResults {
+  charts: AnalysisChartModel[]
+  tables: AnalysisTableModel[]
 }
 
 const MAX_PARALLEL_TOOLS_PER_LAYER = 2
@@ -69,6 +80,15 @@ function isCapacityError(err: unknown): boolean {
   if (err instanceof ApiRequestError && err.status === 429) return true
   const msg = err instanceof Error ? err.message : String(err)
   return /\b429\b/.test(msg) || /capacity|max_active|too many/i.test(msg)
+}
+
+function jobResultsForRun(runId: string): AnalysisToolResults {
+  const { jobLayers } = useWorkflowRun()
+  const job = jobLayers.value.find((j) => j.jobId === runId)
+  return {
+    charts: (job?.analysisCharts ?? []) as AnalysisChartModel[],
+    tables: (job?.analysisTables ?? []) as AnalysisTableModel[],
+  }
 }
 
 export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
@@ -131,12 +151,12 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
     toolsLoading.value = true
     toolsError.value = null
     try {
-      const overlayId = display.importedRasterOverlayLayerId || undefined
+      const overlayId = resolveRasterOverlayId(display)
       const res = await fetchAnalysisTools({
         layer_id: display.catalogId,
-        overlay_layer_id: overlayId,
-        has_raster: Boolean(display.isImportedRaster || overlayId),
-        has_vector: Boolean(display.isImported),
+        overlay_layer_id: overlayId ?? undefined,
+        has_raster: layerHasReadableRaster(display),
+        has_vector: Boolean(display.isImported && resolveVectorBackendId(display)),
         is_weather: Boolean(opts?.isWeather),
         is_point_only: false,
       })
@@ -153,6 +173,36 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
 
   function toolStatus(toolId: string, layerId: string): AnalysisActiveRun | null {
     return activeByKey.value[runKey(layerId, toolId)] ?? null
+  }
+
+  /** 指定工具最近一次 GIS 分析 run 的 chart/table（不读 activeLayer.jobLayer） */
+  function toolResults(toolId: string, layerId: string): AnalysisToolResults {
+    const run = activeByKey.value[runKey(layerId, toolId)]
+    if (!run?.runId) return { charts: [], tables: [] }
+    return jobResultsForRun(run.runId)
+  }
+
+  /** 当前图层最近一次已完成 GIS 工具 run 的结果（Tools Tab 列表页） */
+  function latestToolResultsForLayer(layerId: string): AnalysisToolResults {
+    const { jobLayers } = useWorkflowRun()
+    let bestRunId = ''
+    let bestUpdated = ''
+    for (const active of Object.values(activeByKey.value)) {
+      if (active.layerId !== layerId || !active.runId) continue
+      if (active.phase !== 'succeeded' && active.phase !== 'running') continue
+      const job = jobLayers.value.find((j) => j.jobId === active.runId)
+      if (!job) continue
+      const hasOutput =
+        (job.analysisCharts?.length ?? 0) > 0 || (job.analysisTables?.length ?? 0) > 0
+      if (!hasOutput && active.phase !== 'running') continue
+      const updated = job.updatedAt || job.createdAt || ''
+      if (!bestRunId || updated > bestUpdated) {
+        bestRunId = active.runId
+        bestUpdated = updated
+      }
+    }
+    if (!bestRunId) return { charts: [], tables: [] }
+    return jobResultsForRun(bestRunId)
   }
 
   async function cancelRun(layerId: string, toolId: string) {
@@ -180,27 +230,55 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
     void drainQueue(layerId)
   }
 
+  function buildSubmitBody(args: {
+    tool: AnalysisToolDescriptor
+    display: ActiveLayerDisplay
+    params: Record<string, unknown>
+    mapPoint?: { lng: number; lat: number } | null
+    bbox?: { west: number; south: number; east: number; north: number } | null
+    showOnMap?: boolean
+  }): AnalysisRunRequestBody {
+    const params = { ...args.params }
+    const vectorBackendId = resolveVectorBackendId(args.display)
+    if (
+      (args.tool.tool_id === 'gis.buffer' || args.tool.tool_id === 'gis.vector_to_raster') &&
+      !args.mapPoint &&
+      vectorBackendId
+    ) {
+      params.imported_vector_layer_id = vectorBackendId
+    }
+
+    const zonesVectorId = String(params.zones_imported_vector_layer_id ?? '').trim()
+    const zonesRasterId = String(params.zones_overlay_layer_id ?? '').trim()
+    delete params.zones_imported_vector_layer_id
+    delete params.zones_overlay_layer_id
+
+    return {
+      tool_id: args.tool.tool_id,
+      layer_id: args.display.catalogId,
+      overlay_layer_id: resolveRasterOverlayId(args.display),
+      zones_overlay_layer_id: zonesRasterId || null,
+      map_point: args.mapPoint || null,
+      bbox: args.bbox || null,
+      params: {
+        ...params,
+        ...(zonesVectorId ? { zones_imported_vector_layer_id: zonesVectorId } : {}),
+      },
+      show_on_map: args.showOnMap ?? true,
+    }
+  }
+
   async function submitTool(args: {
     tool: AnalysisToolDescriptor
     display: ActiveLayerDisplay
     params: Record<string, unknown>
     mapPoint?: { lng: number; lat: number } | null
     bbox?: { west: number; south: number; east: number; north: number } | null
-    zonesOverlayLayerId?: string | null
     showOnMap?: boolean
   }) {
     const layerId = args.display.catalogId
     const toolId = args.tool.tool_id
-    const body: AnalysisRunRequestBody = {
-      tool_id: toolId,
-      layer_id: layerId,
-      overlay_layer_id: args.display.importedRasterOverlayLayerId || null,
-      zones_overlay_layer_id: args.zonesOverlayLayerId || null,
-      map_point: args.mapPoint || null,
-      bbox: args.bbox || null,
-      params: args.params,
-      show_on_map: args.showOnMap ?? true,
-    }
+    const body = buildSubmitBody(args)
 
     const key = runKey(layerId, toolId)
     const prior = activeByKey.value[key]
@@ -299,7 +377,9 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
           },
         }
         const { registerExternalWorkflowRun } = useWorkflowRun()
-        await registerExternalWorkflowRun(accepted.run_id, body.layer_id)
+        await registerExternalWorkflowRun(accepted.run_id, body.layer_id, {
+          skipActiveLayerSync: true,
+        })
         void watchRun(key, accepted.run_id)
         return
       } catch (err) {
@@ -426,7 +506,10 @@ export const useAnalysisRunnerStore = defineStore('analysis-runner', () => {
     lastHint,
     loadToolsForDisplay,
     toolStatus,
+    toolResults,
+    latestToolResultsForLayer,
     submitTool,
     cancelRun,
+    buildSubmitBody,
   }
 })

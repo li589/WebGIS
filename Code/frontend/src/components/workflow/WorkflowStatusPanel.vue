@@ -13,6 +13,7 @@ import {
   formatDownloadProgressDetail,
   hasDownloadProgressDetail,
 } from '../../utils/workflow-download-display'
+import { nodeMessageRedundantWithDetail } from '../../utils/workflow-node-progress-display'
 import {
   isTechnicalRunTitle,
   resolveJobLayerDisplayName,
@@ -807,6 +808,16 @@ onBeforeUnmount(() => {
               <div class="wf-progress-fill" :style="{ width: `${item.jobLayer.progress}%` }"></div>
             </div>
 
+            <p
+              v-if="
+                item.jobLayer.executionRetryCount &&
+                (item.jobLayer.status === 'running' || item.jobLayer.status === 'retry_pending')
+              "
+              class="wf-item-message wf-item-retry-hint"
+            >
+              工作流正在重试（第 {{ item.jobLayer.executionRetryCount }} 次），已完成步骤将尽量跳过
+            </p>
+
             <!-- 消息 -->
             <p v-if="item.jobLayer.message" class="wf-item-message">{{ item.jobLayer.message }}</p>
             <p
@@ -953,7 +964,11 @@ onBeforeUnmount(() => {
                 <div v-else class="node-progress-bar node-progress-bar-skipped">
                   <div class="node-progress-fill" style="width: 100%"></div>
                 </div>
-                <span v-if="np.message" class="node-progress-message">{{ np.message }}</span>
+                <span
+                  v-if="np.message && !nodeMessageRedundantWithDetail(np)"
+                  class="node-progress-message"
+                  >{{ np.message }}</span
+                >
                 <!-- P0-10：节点产物下载入口（/artifacts/{id} 由后端 FileResponse 直接下载） -->
                 <div v-if="np.artifacts?.length" class="node-artifacts">
                   <a
@@ -1802,6 +1817,12 @@ onBeforeUnmount(() => {
 .wf-item-progressive-hint {
   color: var(--accent);
   opacity: 0.92;
+}
+
+.wf-item-retry-hint {
+  color: var(--accent-warm);
+  border-left: 2px solid rgba(255, 211, 138, 0.55);
+  padding-left: 0.4rem;
 }
 
 .wf-item-summary {

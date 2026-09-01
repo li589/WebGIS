@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 # Modules that support reuse_block_cache / reuse_output_dir on retry.
 _OMEGA_BLOCK_MODULES = frozenset(
     {
+        "omega_avg_daily",
         "omega_sf_fenkuai",
         "omega_sf",
         "omega_block",

@@ -9,7 +9,7 @@
  * 新增/修改图层只需改后端 JSON + 运行 npm run gen:catalog。
  */
 import type { LayerCatalogItem, LayerCategory } from './types'
-import { ORG_LABEL } from '../../ui-copy/brand'
+import { ORG_CATEGORY_NAME } from '../../ui-copy/brand'
 import generatedDataRaw from './catalog-seeds.generated.json'
 
 // ── 类型断言：codegen 脚本保证 JSON 结构与 TypeScript 接口一致 ──────────────────
@@ -19,10 +19,23 @@ const generatedData = generatedDataRaw as unknown as {
 }
 
 // ── 类别定义（X1: 从后端 JSON codegen 派生）────────────────────────────────────
-// research-group 类别名称用 ORG_LABEL 运行时替换，保持环境可配置。
-export const LAYER_CATEGORIES: LayerCategory[] = generatedData.categories.map((cat) =>
-  cat.id === 'research-group' ? { ...cat, name: `${ORG_LABEL}数据` } : cat,
+// research-group 显示名统一走 ORG_CATEGORY_NAME（默认「核心资产」），勿在 JSON/组件里写死旧名。
+export function applyResearchGroupCategoryLabel<T extends { id: string; name: string }>(
+  categories: readonly T[],
+): T[] {
+  return categories.map((cat) =>
+    cat.id === 'research-group' ? { ...cat, name: ORG_CATEGORY_NAME } : cat,
+  )
+}
+
+export const LAYER_CATEGORIES: LayerCategory[] = applyResearchGroupCategoryLabel(
+  generatedData.categories,
 )
+
+/** 分类 id → 侧栏/图层 chip 展示名（含 research-group → 核心资产） */
+export function resolveCategoryDisplayName(categoryId: string): string {
+  return LAYER_CATEGORIES.find((c) => c.id === categoryId)?.name ?? categoryId
+}
 
 // ── 图层库（X1: 从后端 JSON codegen 派生）─────────────────────────────────────
 export const LAYER_LIBRARY: LayerCatalogItem[] = generatedData.items

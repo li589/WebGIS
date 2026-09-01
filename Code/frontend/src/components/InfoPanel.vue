@@ -388,6 +388,7 @@ function queryDefaultOverlaySeries() {
               :result-model="resultModel"
               :has-visual-tab-content="wf.hasVisualTabContent.value"
               :sparse-visual-hint="wf.sparseVisualHint.value"
+              :visual-product-summary="wf.visualProductSummary.value"
               :point-inspect-info="pointInspectInfo"
               :can-run-workflow="wf.canRunWorkflow.value"
               :interaction-mode="uiStore.interactionMode"

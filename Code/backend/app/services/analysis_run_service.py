@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -28,6 +29,9 @@ logger = logging.getLogger(__name__)
 
 class AnalysisRunError(ValueError):
     """User-facing analysis submit error."""
+
+
+_REMAP_SEGMENT_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?):(\S+)\s*$")
 
 
 def _definition_graph_body(definition: dict[str, Any]) -> dict[str, Any]:
@@ -305,6 +309,16 @@ def _validate_tool_params(
                 raise AnalysisRunError(
                     f"参数 '{key}' 的值 {value} 大于最大值 {field_max}"
                 )
+
+    if tool_id == "gis.reclassify":
+        remap = params.get("remap_table")
+        if remap is not None and str(remap).strip():
+            segments = str(remap).split(",")
+            for seg in segments:
+                if not _REMAP_SEGMENT_RE.match(seg):
+                    raise AnalysisRunError(
+                        "参数 'remap_table' 格式应为 min-max:class，逗号分隔"
+                    )
 
 
 def build_analysis_submit_request(req: AnalysisRunRequest) -> WorkflowSubmitRequest:

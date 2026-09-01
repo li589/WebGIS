@@ -73,10 +73,8 @@ export function createMapInteractionModule(
     // - draw：点击打点绘制，拖动会与单击冲突
     if (mode === 'select' || mode === 'measure' || mode === 'draw') {
       options.map.dragPan.disable()
-      // select 用箭头（非抓手）；measure/draw 用十字准星
       if (canvas?.style) {
-        canvas.style.cursor =
-          mode === 'draw' ? 'crosshair' : mode === 'select' ? 'default' : 'crosshair'
+        canvas.style.cursor = 'pointer'
       }
     } else {
       options.map.dragPan.enable()

@@ -198,9 +198,18 @@ class TestNSMCAccountRotation(unittest.TestCase):
     def _ds(self, accounts: list[dict]) -> dict:
         return {"portal_credentials": {"nsmc": {"enabled": True, "accounts": accounts}}}
 
-    def _fake_client(self, behavior: dict[str, str | Exception]):
+    def _fake_client(self, behavior: dict[str, str | Exception], *, datasize: int | None = None):
         """按 username 分派行为：'ok'（成功下载 2 文件）或异常。"""
         calls: list[dict] = []
+
+        def _write_mini_hdf(dest: Path) -> int:
+            import h5py
+            import numpy as np
+
+            Path(dest).parent.mkdir(parents=True, exist_ok=True)
+            with h5py.File(dest, "w") as handle:
+                handle.create_dataset("probe", data=np.asarray([1], dtype="i4"))
+            return dest.stat().st_size
 
         class _FakeClient:
             def __init__(
@@ -230,11 +239,17 @@ class TestNSMCAccountRotation(unittest.TestCase):
                 action = behavior.get(self.username)
                 if isinstance(action, Exception):
                     raise action
+                # 预写一次以得到稳定 DATASIZE（与 download 内容一致）
+                size = datasize
+                if size is None:
+                    with tempfile.TemporaryDirectory() as probe_tmp:
+                        size = _write_mini_hdf(Path(probe_tmp) / "probe.HDF")
                 return [
                     {
                         "ARCHIVENAME": f"FY3D_MWRID_GBAL_L1_{day.replace('-', '')}_"
                         f"0100_{i}_010KM_MS.HDF",
                         "CNETERFLAG": "1",
+                        "DATASIZE": size,
                     }
                     for i in range(3)
                 ]
@@ -250,8 +265,7 @@ class TestNSMCAccountRotation(unittest.TestCase):
                 action = behavior.get(self.username)
                 if isinstance(action, Exception):
                     raise action
-                Path(dest).parent.mkdir(parents=True, exist_ok=True)
-                Path(dest).write_bytes(b"HDFDATA")
+                _write_mini_hdf(Path(dest))
                 return Path(dest)
 
         return _FakeClient, calls
@@ -485,6 +499,141 @@ class TestNSMCAccountRotation(unittest.TestCase):
                     target_dir=Path(tmp) / "out",
                 )
 
+    def test_incomplete_local_hdf_is_redownloaded(self) -> None:
+        """本地半截/假 HDF 不跳过：删掉后重新下载。"""
+        import modules.fy_download as fy
+
+        fake_cls, calls = self._fake_client({"a@x": "ok"})
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            out = Path(tmp) / "out"
+            out.mkdir()
+            # 与检索命名一致的第一文件写半截内容
+            broken = out / "FY3D_MWRID_GBAL_L1_20260801_0100_0_010KM_MS.HDF"
+            broken.write_bytes(b"NOT-A-REAL-HDF")
+            with patch("ingest.nsmc_portal.NsmcPortalClient", fake_cls):
+                fy._download_from_nsmc(
+                    _ctx(workspace),
+                    satellite="FY3D",
+                    date_path="2026.08.01",
+                    ds=self._ds([{"username": "a@x", "password": "p"}]),
+                    target_dir=out,
+                    max_files_per_day=2,
+                )
+            self.assertTrue(broken.exists())
+            self.assertGreater(broken.stat().st_size, 20)
+            from modules.fy_download import _hdf_file_readable
+
+            self.assertTrue(_hdf_file_readable(broken))
+        downloads = [c for c in calls if c["phase"] == "download"]
+        self.assertEqual(len(downloads), 2)
+
+    def test_size_mismatch_forces_redownload(self) -> None:
+        """DATASIZE 不一致的本地文件视为不完整。"""
+        import h5py
+        import numpy as np
+
+        import modules.fy_download as fy
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            out = Path(tmp) / "out"
+            out.mkdir()
+            name = "FY3D_MWRID_GBAL_L1_20260802_0100_0_010KM_MS.HDF"
+            local = out / name
+            with h5py.File(local, "w") as handle:
+                handle.create_dataset("probe", data=np.asarray([1], dtype="i4"))
+            wrong_size = local.stat().st_size + 999
+
+            fake_cls, calls = self._fake_client({"a@x": "ok"}, datasize=wrong_size)
+            # 覆盖 search：强制 DATASIZE=wrong_size，download 写出真实 mini hdf
+            # _fake_client 已把 DATASIZE 设为 wrong_size，但 download 写的是 mini
+            # → 下载后校验也会失败。改为：download 写出恰好 wrong_size 的合法 hdf 不可能；
+            # 因此本测只验证「跳过前因 size mismatch 进入 download」。
+            with patch("ingest.nsmc_portal.NsmcPortalClient", fake_cls):
+                with self.assertRaises(Exception) as cm:
+                    fy._download_from_nsmc(
+                        _ctx(workspace),
+                        satellite="FY3D",
+                        date_path="2026.08.02",
+                        ds=self._ds([{"username": "a@x", "password": "p"}]),
+                        target_dir=out,
+                        max_files_per_day=1,
+                    )
+            # 必须至少尝试过 download（说明没有因本地存在而跳过）
+            self.assertTrue(any(c["phase"] == "download" for c in calls))
+            self.assertIn("校验失败", str(cm.exception))
+
+
+class TestLocalDownloadOkHelpers(unittest.TestCase):
+    def test_coerce_byte_count_units(self) -> None:
+        from modules.fy_download import _coerce_byte_count
+
+        self.assertEqual(_coerce_byte_count(1024), 1024)
+        self.assertEqual(_coerce_byte_count("2 KB"), 2048)
+        self.assertEqual(_coerce_byte_count("1.5 MB"), int(1.5 * 1024**2))
+        self.assertIsNone(_coerce_byte_count(""))
+        self.assertIsNone(_coerce_byte_count(0))
+
+    def test_local_ok_requires_hdf_readable(self) -> None:
+        import h5py
+        import numpy as np
+
+        from modules.fy_download import _local_download_ok
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / "a.HDF"
+            bad.write_bytes(b"junk")
+            self.assertFalse(_local_download_ok(bad))
+            good = Path(tmp) / "b.HDF"
+            with h5py.File(good, "w") as handle:
+                handle.create_dataset("probe", data=np.asarray([1], dtype="i4"))
+            self.assertTrue(_local_download_ok(good))
+            self.assertFalse(_local_download_ok(good, expected_bytes=good.stat().st_size + 1))
+
+    def test_hdf_readable_probes_mwri_bt_without_flat(self) -> None:
+        """真实 FY 亮温 Dataset 无 ``.flat``；探测不得抛 AttributeError。"""
+        import h5py
+        import numpy as np
+
+        from modules.fy_download import _hdf_file_readable, _local_download_ok
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "FY3D_MWRID_GBAL_L1_20251201_0100_010KM_MS.HDF"
+            with h5py.File(path, "w") as handle:
+                grp = handle.create_group("Calibration")
+                grp.create_dataset(
+                    "EARTH_OBSERVE_BT_10_to_89GHz",
+                    data=np.zeros((4, 4, 2), dtype="f4"),
+                )
+            self.assertTrue(_hdf_file_readable(path))
+            self.assertTrue(_local_download_ok(path))
+
+    def test_purge_incomplete_orbit_hdf_for_day(self) -> None:
+        import h5py
+        import numpy as np
+
+        from modules.fy_download import _purge_incomplete_orbit_hdf
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            day = "20251209"
+            junk = root / f"FY3D_MWRID_GBAL_L1_{day}_2045_010KM_MS.HDF"
+            junk.write_bytes(b"NOT-HDF")
+            good = root / f"FY3D_MWRID_GBAL_L1_{day}_2211_010KM_MS.HDF"
+            with h5py.File(good, "w") as handle:
+                handle.create_dataset("probe", data=np.asarray([1], dtype="i4"))
+            other = root / "FY3D_MWRID_GBAL_L1_20251210_0100_010KM_MS.HDF"
+            other.write_bytes(b"also-junk")
+
+            removed = _purge_incomplete_orbit_hdf(root, day)
+            self.assertEqual(removed, [junk.name])
+            self.assertFalse(junk.exists())
+            self.assertTrue(good.exists())
+            self.assertTrue(other.exists())  # 其它日期不碰
+
 
 class TestFetchFromNasFileBrowser(unittest.TestCase):
     """NAS 回退：FileBrowser 直连下载（凭据协议匹配 + 已知文件名免列举）。"""
@@ -517,6 +666,9 @@ class TestFetchFromNasFileBrowser(unittest.TestCase):
 
     def test_fy3f_merged_hdf_download(self) -> None:
         """FY3F：默认 3Ffinal 目录 + 双极化合并 HDF（单文件）。"""
+        import h5py
+        import numpy as np
+
         import modules.fy_download as fy
 
         downloads: list[str] = []
@@ -532,7 +684,8 @@ class TestFetchFromNasFileBrowser(unittest.TestCase):
         ):
             downloads.append(remote_path)
             Path(local_path).parent.mkdir(parents=True, exist_ok=True)
-            Path(local_path).write_bytes(b"HDF5....")
+            with h5py.File(local_path, "w") as handle:
+                handle.create_dataset("probe", data=np.asarray([1], dtype="i4"))
             return True
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -564,6 +717,56 @@ class TestFetchFromNasFileBrowser(unittest.TestCase):
                 "/Chenhaojun/Data/3Ffinal/FY3F_GBAL_L1_ORBA_10V10H_20240115_ORBA.hdf",
             ],
         )
+
+    def test_fy3f_corrupt_hdf_falls_back_to_tif_pair(self) -> None:
+        """FY3F：本地/新下 HDF 损坏 → 删除并回退 TIF 对。"""
+        import modules.fy_download as fy
+
+        downloads: list[str] = []
+
+        def _fake_download(
+            url,
+            token,
+            remote_path,
+            local_path,
+            remote_size=0,
+            resume_offset=0,
+            progress_callback=None,
+        ):
+            downloads.append(remote_path)
+            Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+            if remote_path.endswith(".hdf"):
+                Path(local_path).write_bytes(b"not-hdf")
+                return True
+            Path(local_path).write_bytes(b"tif")
+            return True
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            target = Path(tmp) / "out"
+            with (
+                patch(
+                    "modules.download_nodes._resolve_profile_server_config",
+                    return_value=self._server(),
+                ),
+                patch("ingest.remote_sync.filebrowser_login", return_value="tok"),
+                patch(
+                    "ingest.remote_sync._filebrowser_download",
+                    side_effect=_fake_download,
+                ),
+            ):
+                out = fy._fetch_from_nas(
+                    _ctx(workspace),
+                    satellite="FY3F",
+                    date_path="2024.01.17",
+                    ds={},
+                    target_dir=target,
+                )
+            self.assertEqual(out.name, "FY3F_GBAL_L1_10H_20240117_ORBA_0.tif")
+            self.assertFalse(
+                (target / "FY3F_GBAL_L1_ORBA_10V10H_20240117_ORBA.hdf").exists()
+            )
 
     def test_fy3f_hdf_missing_falls_back_to_tif_pair(self) -> None:
         """FY3F：合并 HDF 缺失 → 回退 10V/10H 单极化 TIF 对。"""

@@ -132,6 +132,18 @@ def test_cdse_module_wires_progress_detail(logger):
         assert mock_dl.call_args.kwargs["byte_stream_callback"] is not None
 
 
+def test_multi_file_progress_cb_skip_emits_skipping_phase(logger):
+    from modules.download_nodes import _make_multi_file_progress_cb
+
+    cb = _make_multi_file_progress_cb(logger, "fy_download:nsmc")
+    cb(1, 2, 0, "existing.hdf", skipped=True)
+    logger.emit_progress.assert_called_once()
+    detail = logger.emit_progress.call_args[0][3]
+    assert detail["phase"] == "skipping"
+    assert detail["downloaded_bytes"] == 0
+    assert detail["download_mode"] == "multi_file"
+
+
 def test_cds_module_skip_complete_detail(logger):
     from ingest.cds_download import CdsDownloadResult
     from modules.cds_download import CdsDownloadModule

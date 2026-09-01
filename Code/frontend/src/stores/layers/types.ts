@@ -39,7 +39,7 @@ export interface LayerCatalogItem {
   catalogId: string
   name: string
   category: string
-  /** 课题组数据二级分类（由 API sub_category / 静态库提供，勿前端写死枚举） */
+  /** 核心资产（research-group）二级分类（由 API sub_category / 静态库提供，勿前端写死枚举） */
   subCategory?: string
   metricLabel: string
   metricUnit: string
@@ -65,7 +65,7 @@ export interface LayerCatalogItem {
   isMergedGroup?: boolean
   /** X1: 合并组成员的 catalogId 列表（仅 isMergedGroup=true 时有效） */
   members?: string[]
-  // ── 课题组数据集元数据扩展（Phase 1：扩展和细化）────────────────────────────
+  // ── 核心资产（research-group）数据集元数据扩展（Phase 1：扩展和细化）────────────────────────────
   /** 数据归属（课题组成员 / Lab / 留空表示外部公开数据）；与 NAS 顶级目录对齐 */
   dataOwner?: string
   /** 时间覆盖范围的人类可读描述，如 '2023-01' / '2018-2020' / 'doy 017-030' */
@@ -242,6 +242,8 @@ export interface JobLayerItem {
   }>
   /** map_layer 产物中的附加地图资产 */
   mapLayerPayload?: JobLayerMapLayerPayload
+  /** InfoPanel GIS 工具 run：写入 jobLayers 但不覆盖图层主工作流 jobLayer */
+  isAnalysisToolRun?: boolean
   /** 原始诊断信息 */
   diagnostics?: string[]
   /** 面向 UI 的诊断摘要 */
@@ -266,6 +268,8 @@ export interface JobLayerItem {
   progressiveOverlayAt?: string
   /** 若为重试运行，指向原 run_id */
   retryOfRunId?: string
+  /** Celery 同 run 重投次数（worker 崩溃后从头发执行） */
+  executionRetryCount?: number
   /** 提交时约定的产出时间段（ISO），供运行中时间轴画总覆盖 */
   expectedTimeRange?: { start_at: string; end_at: string }
   /** 原生时间步，如 8d / 1h / 1m */

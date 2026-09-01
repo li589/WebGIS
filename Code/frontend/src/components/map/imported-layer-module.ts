@@ -28,6 +28,7 @@ export interface ImportedLayerStyle {
 interface CreateImportedLayerModuleOptions {
   map: MapInstance
   getMapReady: () => boolean
+  restoreMapCursor?: () => void
 }
 
 interface LoadedImportedLayer {
@@ -307,7 +308,11 @@ export function createImportedLayerModule(options: CreateImportedLayerModuleOpti
           options.map.getCanvas().style.cursor = 'pointer'
         }
         const leaveHandler = (_e: MapLayerMouseEvent) => {
-          options.map.getCanvas().style.cursor = ''
+          if (options.restoreMapCursor) {
+            options.restoreMapCursor()
+          } else {
+            options.map.getCanvas().style.cursor = ''
+          }
         }
 
         options.map.on('click', layerId, clickHandler)

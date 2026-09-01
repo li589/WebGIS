@@ -366,37 +366,6 @@
   opacity: 0;
 }
 
-.map-note {
-  position: absolute;
-  z-index: 18;
-  left: 1rem;
-  bottom: 3.15rem;
-  max-width: 13rem;
-  display: grid;
-  gap: 0.2rem;
-  padding: 0.46rem 0.54rem;
-  border-radius: 0.82rem;
-  background: var(--surface-1);
-  border: 1px solid var(--surface-blue-tint);
-}
-
-.map-note h2 {
-  margin: 0;
-  font-size: var(--font-size-caption);
-  color: var(--text-strong);
-}
-.map-note p {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--font-size-caption);
-  line-height: 1.32;
-}
-.map-note-meta {
-  color: var(--text-secondary);
-  font-size: var(--font-size-caption);
-  letter-spacing: 0.02em;
-}
-
 .time-indicator {
   position: relative;
   height: 0.24rem;
@@ -672,12 +641,6 @@
   .map-stage {
     min-height: calc(100vh - 1rem);
   }
-  .map-note {
-    left: 0.75rem;
-    right: 0.75rem;
-    bottom: 8.3rem;
-    max-width: none;
-  }
   :deep(.maplibregl-ctrl-bottom-left) {
     left: 0.75rem;
     bottom: 0.75rem;
@@ -800,18 +763,7 @@
   transform: translateY(0);
 }
 
-.locate-error-enter-active,
-.locate-error-leave-active {
-  transition:
-    opacity var(--motion-base) var(--ease-standard),
-    transform var(--motion-base) var(--ease-standard);
-}
-
-.locate-error-enter-from,
-.locate-error-leave-to {
-  opacity: 0;
-  transform: translateY(0.4rem);
-}
+/* locate-error 入场改用全局 cgda-pop（motion.css） */
 
 /* ── 定位标记 ─────────────────────────────────────────────────────────── */
 :deep(.geolocation-marker) {

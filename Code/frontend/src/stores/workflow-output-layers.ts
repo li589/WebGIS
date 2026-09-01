@@ -4,7 +4,7 @@
  * 管理用户通过工作流编辑器「新建图层」方式创建的产出图层条目。
  * 这些条目在前端本地维护（持久化到 localStorage），后端提交时仍使用
  * 源工作流的 linked_layer_id 解析引擎请求，在图层面板中归入
- * 「科研数据 → 模型输出」展示。
+ * 「核心资产 → 模型输出」展示。
  */
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'

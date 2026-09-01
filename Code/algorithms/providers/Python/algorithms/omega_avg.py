@@ -667,6 +667,12 @@ def retrieve_daily_with_avg_omega(
     date_keys = _apply_stage_d_window(_iter_date_keys_for_year(target_year), config)
     days_processed = 0
     days_skipped = 0
+    days_resumed = 0
+
+    import time
+
+    stage_d_progress_interval_s = 30.0
+    last_progress_emit = time.monotonic()
 
     if logger_adapter is not None:
         logger_adapter.emit_stage_start(
@@ -688,6 +694,35 @@ def retrieve_daily_with_avg_omega(
 
     for day_idx, date_key in enumerate(date_keys):
         check_cancel_requested(cancel_flag_path)
+        day_path = output_dir / f"{date_key}.mat"
+        if _stage_d_existing_output_usable(day_path):
+            days_resumed += 1
+            now = time.monotonic()
+            if (
+                now - last_progress_emit >= stage_d_progress_interval_s
+                or day_idx % config.print_every_days == 0
+            ):
+                last_progress_emit = now
+                logger.info(
+                    "Stage D: %s resumed (%d/%d); processed=%d resumed=%d skipped=%d",
+                    date_key,
+                    day_idx + 1,
+                    len(date_keys),
+                    days_processed,
+                    days_resumed,
+                    days_skipped,
+                )
+                if logger_adapter is not None:
+                    logger_adapter.emit_progress(
+                        "omega_avg_daily",
+                        (day_idx + 1) / len(date_keys) if date_keys else 0.0,
+                        (
+                            f"Stage D: {day_idx + 1}/{len(date_keys)} "
+                            f"(processed={days_processed}, resumed={days_resumed}, "
+                            f"skipped={days_skipped})"
+                        ),
+                    )
+            continue
         # 1. 加载 DOY 对应的 OMEGA_AVG
         doy = datetime.strptime(date_key, _DATE_KEY_FORMAT).timetuple().tm_yday
         doy_file = omega_avg_doy_dir / f"{_DOY_FILE_PREFIX}{doy:03d}.mat"
@@ -859,23 +894,42 @@ def retrieve_daily_with_avg_omega(
     if logger_adapter is not None:
         logger_adapter.emit_stage_end(
             "omega_avg_daily",
-            f"Stage D: processed {days_processed} days, skipped {days_skipped}",
+            (
+                f"Stage D: processed {days_processed} days, "
+                f"resumed {days_resumed}, skipped {days_skipped}"
+            ),
         )
 
     logger.info(
-        "Stage D: processed %d days, skipped %d for year %d",
+        "Stage D: processed %d days, resumed %d, skipped %d for year %d",
         days_processed,
+        days_resumed,
         days_skipped,
         target_year,
     )
     return {
         "days_processed": days_processed,
+        "days_resumed": days_resumed,
         "days_skipped": days_skipped,
         "output_dir": str(output_dir),
     }
 
 
 # ─── 内部 .mat 加载辅助（避免与 ingest 模块循环导入） ──────────────────────
+
+
+def _stage_d_existing_output_usable(day_path: Path) -> bool:
+    """Return True when Stage D daily .mat exists and contains SM/VOD/OMEGA."""
+    if not day_path.exists():
+        return False
+    try:
+        payload = _load_mat_payload_local(day_path)
+    except (OSError, ValueError, KeyError):
+        return False
+    for key in ("SM", "VOD", "OMEGA"):
+        if _pick_field_local(payload, (key,), required=False) is None:
+            return False
+    return True
 
 
 def _load_mat_payload_local(file_path: Path) -> dict[str, Any]:

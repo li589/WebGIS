@@ -11,11 +11,17 @@ import {
   showToast,
 } from '../../data-manager/core/workspace-store'
 import { exportLayer } from '../../data-manager/adapters/export'
+import { useDrawStore } from '../../stores/draw-store'
+import { useDrawSessionTransition } from '../../composables/useDrawSessionTransition'
+import { geojsonToDrawFeatures } from '../../utils/draw-geojson-bridge'
 import {
   buildLayerContextMenu,
   buildGroupContextMenu,
   type LayerContextActionId,
 } from './layer-context-menu'
+import { resolveLayerContextCapabilities } from './layer-context-menu-capabilities'
+import { useWeatherTileManager } from '../../stores/weather-tile-manager'
+import { useWeatherSyncStatusStore } from '../../stores/weather-sync-status'
 
 export interface ContextMenuState {
   instanceId?: string
@@ -57,6 +63,10 @@ export function useSidebarContextMenu(
   removeItem: (instanceId: string, event: MouseEvent) => void,
   runGroupOf: (groupId: string) => ActiveRunLayerGroup | null,
 ) {
+  const drawStore = useDrawStore()
+  const { requestInteractionMode } = useDrawSessionTransition()
+  const weatherTileManager = useWeatherTileManager()
+  const weatherSyncStatus = useWeatherSyncStatusStore()
   // ── 右键菜单 ─────────────────────────────────────────────────────────────────
 
   const contextMenu = ref<ContextMenuState | null>(null)
@@ -111,31 +121,21 @@ export function useSidebarContextMenu(
     }
     const layer = contextMenuLayer.value
     if (!layer) return []
-    const canRun =
-      !layer.isImported &&
-      !layer.isImportedRaster &&
-      !layer.isAdminBoundary &&
-      layersDeps.canRunCatalog(layer.catalogId)
     const raw = layersDeps.activeLayers.value.find((l) => l.instanceId === layer.instanceId)
-    const isExportPending = Boolean(
-      raw?.runGroupId &&
-      !raw.importedRaster?.overlayLayerId &&
-      !raw.importedVector?.backendLayerId &&
-      !layer.isImported &&
-      !layer.isImportedRaster,
+    const weatherStatus = layersDeps.isWeatherEngineLayer(layer.catalogId)
+      ? weatherTileManager.getLayerStatus(layer.catalogId)
+      : undefined
+    return buildLayerContextMenu(
+      resolveLayerContextCapabilities({
+        layer,
+        raw,
+        isWeatherLayer: layersDeps.isWeatherEngineLayer,
+        supportsAnalysisWorkflow: layersDeps.supportsAnalysisWorkflow,
+        isOverlayDisplayOnlyLayer: layersDeps.isOverlayDisplayOnlyLayer,
+        canRunCatalog: layersDeps.canRunCatalog,
+        weatherStatus,
+      }),
     )
-    return buildLayerContextMenu({
-      visible: layer.visible,
-      isAdminBoundary: layer.isAdminBoundary,
-      isImported: layer.isImported,
-      isImportedRaster: layer.isImportedRaster,
-      isExportPending,
-      hasJobReport: Boolean(layer.jobLayer?.reportSummary),
-      canRunWorkflow: canRun,
-      canDissolveGroup: Boolean(
-        layer.runGroupId && layersDeps.findRunGroupById(layer.runGroupId)?.dissolvable,
-      ),
-    })
   })
 
   /** 右键「样式…」→ 分析面板样式 Tab（符号/透明度/配色等统一入口） */
@@ -243,6 +243,35 @@ export function useSidebarContextMenu(
     closeContextMenu()
   }
 
+  async function editGeometryFromMenu() {
+    if (!contextMenu.value?.instanceId) return
+    const id = contextMenu.value.instanceId
+    const active = layersDeps.activeLayers.value.find((l) => l.instanceId === id)
+    if (!active?.importedVector?.geojson) {
+      closeContextMenu()
+      return
+    }
+    if (
+      uiStore.interactionMode === 'draw' &&
+      (drawStore.editingLayerId || drawStore.draftLayerId) &&
+      drawStore.editingLayerId !== id &&
+      drawStore.draftLayerId !== id
+    ) {
+      const ok = await requestInteractionMode('move')
+      if (!ok) return
+    }
+    const features = geojsonToDrawFeatures(active.importedVector.geojson)
+    drawStore.setDrawMode('polygon')
+    drawStore.beginEditLayer(id, features)
+    selectItem(id)
+    closeContextMenu()
+    const entered = await requestInteractionMode('draw')
+    if (!entered) return
+    openDataWorkspace({ tab: 'attributes', layerInstanceId: id })
+    window.dispatchEvent(new CustomEvent('draw:toggle-attr-table'))
+    logStore.logOperation('layer-edit-geometry', `编辑图层几何「${active.name}」`)
+  }
+
   function openJobReport(instanceId: string) {
     // 先请求滚动目标，再选中图层，避免 InfoPanel 默认滚到「当前对象」盖住报告区
     uiStore.requestAnalysisFocus(['report-section', 'result-section', 'scheduler-status'])
@@ -325,6 +354,9 @@ export function useSidebarContextMenu(
         openDataWorkspace({ tab: 'attributes', layerInstanceId: id })
         closeContextMenu()
         return
+      case 'editGeometry':
+        void editGeometryFromMenu()
+        return
       case 'openDetails':
         selectItem(id)
         openDataWorkspace({ tab: 'details', layerInstanceId: id })
@@ -375,6 +407,35 @@ export function useSidebarContextMenu(
         if (layer) {
           void layersDeps.runWorkflowForCatalog(layer.catalogId, { reuseBlockCache: false })
         }
+        closeContextMenu()
+        return
+      }
+      case 'retryWeatherTiles': {
+        const layer = activeLayersDisplay.value.find((l) => l.instanceId === id)
+        if (layer) {
+          weatherTileManager.retryLayerTiles(layer.catalogId)
+          logStore.logOperation('weather-retry-tiles', `重试天气瓦片「${layer.name}」`)
+        }
+        closeContextMenu()
+        return
+      }
+      case 'triggerWeatherSync': {
+        const layer = activeLayersDisplay.value.find((l) => l.instanceId === id)
+        void (async () => {
+          try {
+            await weatherSyncStatus.triggerSync()
+            if (layer) {
+              weatherTileManager.retryLayerTiles(layer.catalogId)
+            }
+            logStore.logOperation('weather-trigger-sync', '触发 Open-Meteo 同步')
+          } catch (err) {
+            logStore.logOperation(
+              'weather-trigger-sync-fail',
+              '触发 Open-Meteo 同步失败',
+              err instanceof Error ? err.message : String(err),
+            )
+          }
+        })()
         closeContextMenu()
         return
       }

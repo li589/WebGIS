@@ -6,10 +6,10 @@
  * 运行中 / 排队中 / 异常 / 完成 / 旧数据（静态层豁免旧数据）。
  */
 import { describe, expect, it } from 'vitest'
-import { deriveDataStatus } from '../../../Code/frontend/src/utils/layer-data-status'
+import { deriveDataStatus, normalizeRunGroupMemberStatus } from '../../../Code/frontend/src/utils/layer-data-status'
 
 describe('deriveDataStatus 三源归并', () => {
-  it('job 状态优先：running → 运行中（含进度）', () => {
+  it('job 状态优先：running → 运行中（不含组外进度百分比）', () => {
     const r = deriveDataStatus({
       jobStatus: 'running',
       jobProgress: 45.6,
@@ -18,7 +18,7 @@ describe('deriveDataStatus 三源归并', () => {
       lifecycleState: 'stale',
     })
     expect(r?.state).toBe('running')
-    expect(r?.label).toBe('运行中 46%')
+    expect(r?.label).toBe('运行中')
   })
 
   it('job queued/retry_pending → 排队中', () => {
@@ -102,5 +102,24 @@ describe('deriveDataStatus 三源归并', () => {
       availabilityLabel: '完整数据',
     })
     expect(r?.state).toBe('done')
+  })
+})
+
+describe('normalizeRunGroupMemberStatus', () => {
+  it('计算组运行中：排队中/运行中统一为运行中', () => {
+    expect(
+      normalizeRunGroupMemberStatus({ state: 'queued', label: '排队中' }, true)?.label,
+    ).toBe('运行中')
+    expect(
+      normalizeRunGroupMemberStatus({ state: 'running', label: '运行中 46%' }, true)?.label,
+    ).toBe('运行中')
+  })
+
+  it('非计算组或终态不改动', () => {
+    const done = { state: 'done' as const, label: '完成' }
+    expect(normalizeRunGroupMemberStatus(done, true)).toEqual(done)
+    expect(
+      normalizeRunGroupMemberStatus({ state: 'queued', label: '排队中' }, false)?.label,
+    ).toBe('排队中')
   })
 })

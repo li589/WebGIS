@@ -9,6 +9,8 @@ import {
   loadDismissedLayers,
   loadWorkspaceSnapshot,
   rememberDismissedLayer,
+  reconcileSnapshotGroupRefs,
+  sanitizeSnapshotForCurrentApi,
   saveWorkspaceSnapshot,
 } from '@/stores/layers/workspace-persist'
 
@@ -25,7 +27,8 @@ function mockBrowserStorage() {
     clear: () => store.clear(),
   }
   vi.stubGlobal('localStorage', storage)
-  vi.stubGlobal('window', { localStorage: storage })
+  vi.stubGlobal('window', { localStorage: storage, location: { origin: 'http://test.local' } })
+  return storage
 }
 
 function rasterLayer(overlayLayerId: string, catalogId = overlayLayerId): ActiveLayer {
@@ -226,5 +229,70 @@ describe('workspace-persist', () => {
     expect(snap.catalogLayers).toHaveLength(1)
     expect(snap.groups[0]?.status).toBe('computing')
     expect(snap.groups[0]?.memberInstanceIds).toEqual(['inst-sm', 'inst-vod'])
+  })
+
+  it('reconcileSnapshotGroupRefs clears orphan runGroupLocked layers', () => {
+    const snap: ReturnType<typeof buildWorkspaceSnapshot> = {
+      version: 1,
+      savedAt: '2026-01-01T00:00:00Z',
+      apiScope: 'http://test.local',
+      layers: [],
+      catalogLayers: [
+        {
+          instanceId: 'inst-orphan',
+          catalogId: 'wf-run-gone-sm',
+          visible: true,
+          opacity: 1,
+          order: 0,
+          dataState: 'catalog',
+          runGroupId: 'missing-group',
+          runGroupProductTag: 'SM',
+          runGroupLocked: true,
+        },
+      ],
+      vectorLayers: [],
+      groups: [],
+    }
+    const reconciled = reconcileSnapshotGroupRefs(snap)
+    expect(reconciled.catalogLayers[0]?.runGroupLocked).toBe(false)
+    expect(reconciled.catalogLayers[0]?.runGroupId).toBeUndefined()
+  })
+
+  it('sanitizeSnapshotForCurrentApi strips cross-scope workflow groups and locked placeholders', () => {
+    const foreignScope = 'http://localhost:5175'
+    const snap = buildWorkspaceSnapshot(
+      [
+        catalogLayer('method-smap-omega-doy-dynamic'),
+        {
+          instanceId: 'inst-wf',
+          catalogId: 'wf-run-g1-sm',
+          visible: true,
+          opacity: 1,
+          order: 1,
+          isAdminBoundary: false,
+          dataState: 'catalog',
+          runGroupId: 'g1',
+          runGroupProductTag: 'SM',
+          runGroupLocked: true,
+        },
+      ],
+      [
+        {
+          groupId: 'g1',
+          runId: 'run-1',
+          title: 'ω',
+          status: 'computing',
+          memberInstanceIds: ['inst-wf'],
+          dissolvable: false,
+        },
+      ],
+    )
+    snap.apiScope = foreignScope
+    const sanitized = sanitizeSnapshotForCurrentApi(snap)
+    expect(sanitized.apiScope).toBe('http://test.local')
+    expect(sanitized.groups).toEqual([])
+    expect(sanitized.catalogLayers).toHaveLength(1)
+    expect(sanitized.catalogLayers?.[0]?.catalogId).toBe('method-smap-omega-doy-dynamic')
+    expect(sanitized.layers).toHaveLength(0)
   })
 })

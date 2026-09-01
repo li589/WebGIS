@@ -118,3 +118,34 @@ def test_resolve_reuse_from_request_output_dir(repo: SQLiteWorkflowRepository, t
     resolved, module = resolve_reuse_output_dir(repo, "run-c")
     assert resolved == str(out_dir)
     assert module == "omega_sf_fenkuai"
+
+
+def test_resolve_reuse_from_omega_avg_daily_products(
+    repo: SQLiteWorkflowRepository, tmp_path: Path
+) -> None:
+    out_dir = tmp_path / "products" / "omega_avg_daily"
+    out_dir.mkdir(parents=True)
+    mat = out_dir / "20230101.mat"
+    mat.write_text("stub", encoding="utf-8")
+    _save_run(
+        repo,
+        run_id="run-d2",
+        request_json=json.dumps(
+            {
+                "command_type": "analysis",
+                "algorithm_request": {"module_name": "omega_avg_daily"},
+            }
+        ),
+        result_dto={
+            "module_name": "omega_avg_daily",
+            "products": [
+                {
+                    "uri": str(mat),
+                    "type": "omega_avg_daily_mat",
+                }
+            ]
+        },
+    )
+    resolved, module = resolve_reuse_output_dir(repo, "run-d2")
+    assert resolved == str(out_dir)
+    assert module == "omega_avg_daily"

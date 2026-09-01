@@ -495,6 +495,11 @@ export async function buildJobLayer(
       typeof run.executor_metadata?.retry_of_run_id === 'string'
         ? run.executor_metadata.retry_of_run_id
         : undefined,
+    executionRetryCount:
+      typeof run.executor_metadata?.execution_retry_count === 'number' &&
+      run.executor_metadata.execution_retry_count > 0
+        ? run.executor_metadata.execution_retry_count
+        : previousJobLayer?.executionRetryCount,
     expectedTimeRange: previousJobLayer?.expectedTimeRange,
     expectedNativeStep: previousJobLayer?.expectedNativeStep,
     inFlightTimeKeys: previousJobLayer?.inFlightTimeKeys,

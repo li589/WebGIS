@@ -179,6 +179,10 @@ export function fetchPrimaryThemePublic(): Promise<ThemePublicBrand> {
   return requestJson<ThemePublicBrand>('/auth/themes/primary/public', { silent: true })
 }
 
+export function fetchThemesPublic(): Promise<ThemePublicBrand[]> {
+  return requestJson<ThemePublicBrand[]>('/auth/themes/public', { silent: true })
+}
+
 export function listThemes(): Promise<ThemePublic[]> {
   return requestJson<ThemePublic[]>('/auth/themes', { sensitiveGet: true })
 }

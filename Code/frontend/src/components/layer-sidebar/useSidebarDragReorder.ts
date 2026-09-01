@@ -61,7 +61,7 @@ export function useSidebarDragReorder(
     if (!g) return ''
     if (g.status === 'computing') {
       if (g.message) return g.message
-      return `${LAYERS_COPY.computingGroupBusy}${typeof g.progress === 'number' ? ` ${g.progress}%` : ''}`
+      return LAYERS_COPY.computingGroupBusy
     }
     if (g.status === 'ready') return LAYERS_COPY.computingGroupReady
     if (g.status === 'failed') return '失败'

@@ -7,6 +7,7 @@ from algorithms.fy import (
     build_fy_daily_mat_payload_from_band_tifs,
     get_fy_daily_multiband_output_path,
     get_fy_profile,
+    normalize_fy_band_ids,
     write_fy_command_plan_json,
 )
 from contracts.product import ProductManifest, ProductRef
@@ -17,6 +18,29 @@ from modules.registry import register_module_decorator
 from utils.fy_executor import execute_fy_command_steps
 from utils.request_time import resolve_time_bounds
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
+
+
+def resolve_fy_daily_mat_path(
+    plan: object, output_root: Path, date_plan_counts: dict[str, int]
+) -> Path:
+    """Resolve canonical FY daily mat path (matches _build_fy_data_products naming)."""
+    date_key = str(getattr(plan, "date_key"))
+    orbit_type = str(getattr(plan, "orbit_type"))
+    if date_plan_counts.get(date_key, 0) == 1:
+        return output_root / f"{date_key}.mat"
+    return output_root / "mat" / f"{date_key}_{orbit_type}.mat"
+
+
+def _fy_daily_mat_usable(mat_path: Path) -> bool:
+    if not mat_path.exists():
+        return False
+    try:
+        from scipy.io import loadmat
+
+        payload = loadmat(mat_path, squeeze_me=True, struct_as_record=False)
+        return "TBv" in payload and "TBh" in payload
+    except Exception:
+        return False
 
 
 def _store_manifest(
@@ -115,7 +139,7 @@ class FyDailyModule(BaseModule):
             or (ctx.workspace / "products" / "fy_daily")
         )
         orbit_mode = algorithm_params.get("orbit_mode", "MWRID")
-        band_ids = tuple(algorithm_params.get("band_ids", [1, 2]))
+        band_ids = normalize_fy_band_ids(algorithm_params.get("band_ids", [1, 2]))
         overlap_option = algorithm_params.get("overlap_option", "average")
         spatial_mode = algorithm_params.get("spatial_mode", "global")
         gdal_bin = algorithm_params.get("gdal_bin")
@@ -147,6 +171,10 @@ class FyDailyModule(BaseModule):
             Path(plan.output_dir).mkdir(parents=True, exist_ok=True)
             Path(plan.work_dir).mkdir(parents=True, exist_ok=True)
 
+        date_plan_counts: dict[str, int] = {}
+        for plan in plans:
+            date_plan_counts[plan.date_key] = date_plan_counts.get(plan.date_key, 0) + 1
+
         plan_json_path = write_fy_daily_plan_json(
             plans, output_root / "fy_daily_plan.json"
         )
@@ -168,7 +196,22 @@ class FyDailyModule(BaseModule):
                 Path(plan.work_dir) / "fy_daily_commands.json",
             )
             if execute_commands:
-                execute_fy_command_steps(command_steps, logger=ctx.logger_adapter)
+                mat_path = resolve_fy_daily_mat_path(
+                    plan, output_root, date_plan_counts
+                )
+                multiband_path = get_fy_daily_multiband_output_path(plan)
+                if _fy_daily_mat_usable(mat_path) and (
+                    plan.metadata.get("input_format") == "tif"
+                    or multiband_path.exists()
+                ):
+                    if ctx.logger_adapter is not None:
+                        ctx.logger_adapter.emit_progress(
+                            "fy_execute",
+                            1.0,
+                            f"Skipped {plan.date_key} (mat exists)",
+                        )
+                else:
+                    execute_fy_command_steps(command_steps, logger=ctx.logger_adapter)
             command_plan_refs.append(
                 ProductRef(
                     name=f"{plan.date_key}_{plan.orbit_type}_commands",
@@ -184,7 +227,10 @@ class FyDailyModule(BaseModule):
                 )
 
         data_product_refs = self._build_fy_data_products(
-            plans, output_root, execute_commands=execute_commands
+            plans,
+            output_root,
+            execute_commands=execute_commands,
+            date_plan_counts=date_plan_counts,
         )
 
         if ctx.logger_adapter is not None:
@@ -244,6 +290,7 @@ class FyDailyModule(BaseModule):
         output_root: Path,
         *,
         execute_commands: bool,
+        date_plan_counts: dict[str, int] | None = None,
     ) -> list[ProductRef]:
         tif_plans = [p for p in plans if p.metadata.get("input_format") == "tif"]
         hdf_plans = [p for p in plans if p.metadata.get("input_format") != "tif"]
@@ -259,13 +306,33 @@ class FyDailyModule(BaseModule):
         # 单轨道日（orbit_mode=MWRID/MWRIA）落盘规范名 YYYYMMDD.mat 到
         # output_root，供 omega_sf_fenkuai 的 fy3d/fy3b_folder（要求 \d{8} 命名）
         # 直接读取；Both 模式同日双轨道会撞名，回落 mat/YYYYMMDD_<orbit>.mat。
-        date_plan_counts: dict[str, int] = {}
-        for plan in plans:
-            date_plan_counts[plan.date_key] = date_plan_counts.get(plan.date_key, 0) + 1
+        if date_plan_counts is None:
+            date_plan_counts = {}
+            for plan in plans:
+                date_plan_counts[plan.date_key] = (
+                    date_plan_counts.get(plan.date_key, 0) + 1
+                )
         mat_dir = output_root / "mat"
 
         # NAS 预投影逐波段 TIF → 直接转 mat（无需 GDAL/execute_commands）
         for plan in tif_plans:
+            mat_path = resolve_fy_daily_mat_path(plan, output_root, date_plan_counts)
+            if _fy_daily_mat_usable(mat_path):
+                data_products.append(
+                    ProductRef(
+                        name=f"{plan.date_key}_{plan.orbit_type}_fy_daily",
+                        type="fy_daily_mat",
+                        uri=str(mat_path),
+                        variable="TBv,TBh,IA",
+                        tags={
+                            "date_key": plan.date_key,
+                            "orbit_type": plan.orbit_type,
+                            "satellite": plan.satellite,
+                            "input_format": "tif",
+                        },
+                    )
+                )
+                continue
             payload = build_fy_daily_mat_payload_from_band_tifs(
                 list(plan.input_files), plan.satellite
             )
@@ -310,6 +377,22 @@ class FyDailyModule(BaseModule):
                     },
                 )
             )
+            mat_path = resolve_fy_daily_mat_path(plan, output_root, date_plan_counts)
+            if _fy_daily_mat_usable(mat_path):
+                data_products.append(
+                    ProductRef(
+                        name=f"{plan.date_key}_{plan.orbit_type}_fy_daily",
+                        type="fy_daily_mat",
+                        uri=str(mat_path),
+                        variable="TBv,TBh,IA",
+                        tags={
+                            "date_key": plan.date_key,
+                            "orbit_type": plan.orbit_type,
+                            "satellite": plan.satellite,
+                        },
+                    )
+                )
+                continue
             payload = _load_fy_multiband_payload(tif_path, satellite=plan.satellite)
             if date_plan_counts[plan.date_key] == 1:
                 mat_path = output_root / f"{plan.date_key}.mat"

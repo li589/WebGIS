@@ -58,6 +58,12 @@ const props = defineProps<{
   resultModel: ResultDisplayModel | null
   hasVisualTabContent: boolean
   sparseVisualHint: string
+  visualProductSummary: {
+    productName: string
+    unit: string
+    resolution: string
+    dataSourceMode: string
+  } | null
   pointInspectInfo: { lng: string; lat: string; basemapLabel: string } | null
   canRunWorkflow: boolean
   interactionMode: string
@@ -490,6 +496,30 @@ function enterInspectTools() {
         </div>
       </dl>
       <p>该点无可见数据图层取值 — 添加数据图层或换点查询。</p>
+    </template>
+    <template v-else-if="visualProductSummary">
+      <dl class="meta-list analysis-product-meta">
+        <div>
+          <dt>{{ ANALYSIS_COPY.sparseProductLabel }}</dt>
+          <dd>{{ visualProductSummary.productName }}</dd>
+        </div>
+        <div>
+          <dt>{{ ANALYSIS_COPY.sparseUnitLabel }}</dt>
+          <dd>{{ visualProductSummary.unit }}</dd>
+        </div>
+        <div>
+          <dt>{{ ANALYSIS_COPY.sparseResolutionLabel }}</dt>
+          <dd>{{ visualProductSummary.resolution }}</dd>
+        </div>
+        <div>
+          <dt>{{ ANALYSIS_COPY.sparseDataSourceLabel }}</dt>
+          <dd>{{ visualProductSummary.dataSourceMode }}</dd>
+        </div>
+      </dl>
+      <p class="analysis-sparse-op-hint">
+        <span class="analysis-sparse-op-label">{{ ANALYSIS_COPY.sparseOperationHintLabel }}：</span>
+        {{ ANALYSIS_COPY.sparseProductHint }}
+      </p>
     </template>
     <p v-else>{{ sparseVisualHint }}</p>
     <div v-if="isRealtimeWeatherLayer || canRunWorkflow" class="overview-quick-actions">

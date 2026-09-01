@@ -170,7 +170,12 @@ onScopeDispose(() => {
       v-if="confirm || notice || recovery"
       ref="rootRef"
       class="timeline-action-banner timeline-action-banner--slide-in"
-      :class="{ 'is-placed': Boolean(placed), 'is-dragging': dragging }"
+      :class="{
+        'is-placed': Boolean(placed),
+        'is-dragging': dragging,
+        'cgda-dragging': dragging,
+        'cgda-drag-lift': dragging,
+      }"
       :style="posStyle"
       role="region"
       aria-label="时间轴动作提示"
@@ -369,10 +374,9 @@ onScopeDispose(() => {
   right: auto;
 }
 
+/* 拖拽视觉由全局 .cgda-dragging / .cgda-drag-lift 承担 */
 .timeline-action-banner.is-dragging {
   cursor: grabbing;
-  opacity: 0.96;
-  user-select: none;
 }
 
 .tab-drag {

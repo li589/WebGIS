@@ -7,7 +7,7 @@
  * - 道路提取：当前视口 bbox 经 OSM Overpass（需外部网络）
  * 提取结果自动登记后端并创建矢量图层。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, toRef } from 'vue'
 import AppButton from '../ui/AppButton.vue'
 import {
   extractAdminAreaAt,
@@ -15,6 +15,7 @@ import {
   createExtractedVectorLayer,
   type RoadClassFilter,
 } from '../../services/basemap-extract'
+import { useMapPointAdminLookup } from '../../composables/useMapPointAdminLookup'
 
 const props = defineProps<{
   selectedMapPoint: { lng: number; lat: number } | null
@@ -32,6 +33,13 @@ const statusMessage = ref('')
 const errorMessage = ref('')
 const createdLayerName = ref('')
 
+const selectedMapPointRef = toRef(props, 'selectedMapPoint')
+const extractLookupEnabled = computed(() => extractKind.value === 'admin')
+const { label: mapPointAdminLabel } = useMapPointAdminLookup(
+  selectedMapPointRef,
+  extractLookupEnabled,
+)
+
 const roadClassOptions: { value: RoadClassFilter; label: string }[] = [
   { value: 'major', label: '主要道路（高速/主干/国道）' },
   { value: 'all', label: '全部道路（含次干/支路）' },
@@ -46,9 +54,12 @@ const canRun = computed(() => {
 const runHint = computed(() => {
   if (busy.value) return '提取中…'
   if (extractKind.value === 'admin') {
-    return props.selectedMapPoint
-      ? `将提取选点 (${props.selectedMapPoint.lng.toFixed(3)}, ${props.selectedMapPoint.lat.toFixed(3)}) 所在行政区`
-      : '请先进入选择模式并在地图选点'
+    if (!props.selectedMapPoint) return '请先进入选择模式并在地图选点'
+    const coord = `(${props.selectedMapPoint.lng.toFixed(3)}, ${props.selectedMapPoint.lat.toFixed(3)})`
+    const admin = mapPointAdminLabel.value.adminLine
+    return admin
+      ? `将提取选点 ${coord} 所在行政区 · ${admin}`
+      : `将提取选点 ${coord} 所在行政区`
   }
   return '将提取当前视口范围内的道路（需要外部网络）'
 })
@@ -66,15 +77,17 @@ async function onExtract() {
       const point = props.selectedMapPoint!
       const area = await extractAdminAreaAt(point.lng, point.lat)
       if (!area) {
-        throw new Error('选点不在行政区边界数据覆盖范围内（当前内置广东省市级边界）')
+        throw new Error('选点不在内置行政区边界数据覆盖范围内（全球省/州与国家边界）')
       }
-      name = `行政区-${area.name}`
+      const levelLabel =
+        area.adminLevel === 'city' ? '市' : area.adminLevel === 'state' ? '省/州' : '国家'
+      name = `行政区-${area.name}（${levelLabel}）`
       geojson = {
         type: 'FeatureCollection',
         features: [
           {
             type: 'Feature',
-            properties: { name: area.name, adcode: area.adcode },
+            properties: { name: area.name, adcode: area.adcode, admin_level: area.adminLevel },
             geometry: area.geometry,
           },
         ],

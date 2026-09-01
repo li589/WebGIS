@@ -66,7 +66,7 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
     getActiveWorkflowCatalogIds: () => activeWorkflowCatalogIds,
     isLocalSubmitJobId,
     scheduleWorkspacePersist: () => bindings.scheduleWorkspacePersist(),
-    flushWorkspacePersistNow: () => bindings.flushWorkspacePersistNow(),
+    flushWorkspacePersistNow: (opts) => bindings.flushWorkspacePersistNow(opts),
     debugLog,
     canRunCatalog: (catalogId) => catalog.canRunCatalog(catalogId),
     runWorkflowForCatalog: (catalogId) => bindings.runWorkflowForCatalog(catalogId),

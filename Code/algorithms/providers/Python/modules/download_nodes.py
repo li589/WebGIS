@@ -95,36 +95,50 @@ def _make_multi_file_progress_cb(
     last_emit = [0.0]
 
     def _cb(
-        current: int, total: int, downloaded: int, item_name: str | None = None
+        current: int,
+        total: int,
+        downloaded: int,
+        item_name: str | None = None,
+        *,
+        skipped: bool = False,
     ) -> None:
         now = time.monotonic()
         is_file_boundary = current != getattr(_cb, "_last_file", 0)  # noqa: SLF001
-        if not is_file_boundary and now - last_emit[0] < _DOWNLOAD_EMIT_INTERVAL:
+        if (
+            not skipped
+            and not is_file_boundary
+            and now - last_emit[0] < _DOWNLOAD_EMIT_INTERVAL
+        ):
             return
         last_emit[0] = now
         _cb._last_file = current  # type: ignore[attr-defined]  # noqa: SLF001
         if logger_adapter is None:
             return
-        bps = get_last_speed_bps()
+        bps = get_last_speed_bps() if not skipped else None
         speed_txt = f" · {format_speed(bps)}" if bps else ""
         name = item_name or current_item_name
         display = _items_display_mode(total) if total > 0 else "filename"
+        phase = "skipping" if skipped else "downloading"
         detail: dict[str, object] = {
             "download_mode": "multi_file",
             "speed_bps": bps,
             "downloaded_items": current,
             "total_items": total,
             "downloaded_bytes": downloaded,
-            "phase": "downloading",
+            "phase": phase,
             "items_display": display,
         }
         if name and display == "filename":
             detail["current_item_name"] = str(name)
+        if skipped:
+            msg = f"文件 {current}/{total} · 已跳过（本地已有）"
+        else:
+            msg = f"文件 {current}/{total} · 已下载 {format_size(downloaded)}{speed_txt}"
         _emit_download_progress(
             logger_adapter,
             stage,
             current / total if total else 0.0,
-            f"文件 {current}/{total} · 已下载 {format_size(downloaded)}{speed_txt}",
+            msg,
             detail,
         )
 

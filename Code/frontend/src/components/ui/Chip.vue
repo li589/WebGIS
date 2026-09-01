@@ -72,9 +72,10 @@ function handleRemove(e: MouseEvent) {
   white-space: nowrap;
   user-select: none;
   transition:
-    background-color var(--motion-fast),
-    border-color var(--motion-fast),
-    color var(--motion-fast);
+    background-color var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft),
+    box-shadow var(--motion-fast) var(--ease-soft);
 }
 
 /* 变体：default */
@@ -158,8 +159,14 @@ function handleRemove(e: MouseEvent) {
 .chip-remove:hover {
   background: var(--surface-hover);
   opacity: 1;
-  transform: scale(1.1);
-  transition: transform var(--motion-fast) var(--ease-soft);
+  transform: scale(1.08);
+  transition:
+    background-color var(--motion-fast) var(--ease-soft),
+    transform var(--motion-press, var(--motion-fast)) var(--ease-soft);
+}
+
+.chip-remove:active {
+  transform: scale(0.96);
 }
 
 .chip-remove:focus-visible {
@@ -167,9 +174,8 @@ function handleRemove(e: MouseEvent) {
   outline-offset: 1px;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .chip {
-    transition: none;
-  }
+html.reduce-motion .chip-remove:hover,
+html.reduce-motion .chip-remove:active {
+  transform: none;
 }
 </style>

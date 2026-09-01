@@ -1137,7 +1137,7 @@ watch(
 
   <!-- Teleport 到 body，避免被 editor-canvas-area 的 overflow:hidden 裁剪 -->
   <Teleport to="body">
-    <Transition name="port-tip">
+    <Transition name="cgda-pop">
       <div
         v-if="portTooltip.visible && portTooltip.model"
         class="wf-port-tooltip"
@@ -1285,17 +1285,7 @@ watch(
   color: var(--text-secondary);
 }
 
-:global(.port-tip-enter-active),
-:global(.port-tip-leave-active) {
-  transition:
-    opacity 0.12s ease,
-    transform 0.12s ease;
-}
-:global(.port-tip-enter-from),
-:global(.port-tip-leave-to) {
-  opacity: 0;
-  transform: translateY(4px);
-}
+/* port-tip 入场改用全局 cgda-pop（motion.css） */
 
 /* ── minimap 小地图 ────────────────────────────────────────────────── */
 .workflow-minimap {

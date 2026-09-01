@@ -1625,7 +1625,23 @@ class PythonProviderResultBuilder:
                     / "omega_sf_fenkuai"
                 )
             for path in [*candidates, *runtime_candidates]:
-                if path.is_dir() and any(path.glob("????????_????????.mat")):
+                block_dirs: list[Path] = []
+                if path.is_dir():
+                    if any(path.glob("????????_????????.mat")):
+                        block_dirs.append(path)
+                    run_scoped = path / run_id
+                    if (
+                        run_scoped.is_dir()
+                        and any(run_scoped.glob("????????_????????.mat"))
+                        and run_scoped not in block_dirs
+                    ):
+                        block_dirs.append(run_scoped)
+                    for sub in path.iterdir():
+                        if not sub.is_dir() or not sub.name.startswith("run-"):
+                            continue
+                        if any(sub.glob("????????_????????.mat")) and sub not in block_dirs:
+                            block_dirs.append(sub)
+                for block_dir in block_dirs:
                     for variable, label, palette in (
                         ("SM", "SM", "ylgnbu"),
                         ("VOD", "VOD", "viridis"),
@@ -1633,7 +1649,7 @@ class PythonProviderResultBuilder:
                     ):
                         try:
                             synced = upsert_block_dir_timeseries(
-                                path,
+                                block_dir,
                                 variable_id=variable,
                                 label=label,
                                 run_id=run_id,
@@ -1652,7 +1668,7 @@ class PythonProviderResultBuilder:
                             logger.warning(
                                 "upsert_block_dir_timeseries failed for run=%s path=%s var=%s",
                                 run_id,
-                                path,
+                                block_dir,
                                 variable,
                                 exc_info=True,
                             )
@@ -1680,6 +1696,8 @@ class PythonProviderResultBuilder:
                                 "native_step": synced.get("native_step"),
                             }
                         )
+                    break
+                if layers:
                     break
 
         return {"run_id": run_id, "layers": layers, "count": len(layers)}

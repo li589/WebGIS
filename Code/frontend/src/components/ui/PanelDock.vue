@@ -170,29 +170,44 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 <template>
   <div
     class="panel-anchor"
-    :class="[anchorClass, { 'panel-anchor--hidden': !visible }]"
+    :class="[
+      anchorClass,
+      {
+        'panel-anchor--hidden': !visible,
+        'cgda-dragging': dragging || resizing,
+        'cgda-drag-lift': dragging,
+      },
+    ]"
     :style="effectiveFrameStyle"
   >
     <!-- 隐藏态：恢复胶囊 -->
-    <button
-      v-if="!visible"
-      class="restore-pill"
-      type="button"
-      :class="{ 'restore-pill--dragging': dragging }"
-      :title="`${panelLabel} · 拖动自由移动 / 点击展开并恢复原布局`"
-      @pointerdown="startPillDragging"
-      @click.prevent
-    >
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        <path
-          d="M2 8s2.2-3.5 6-3.5S14 8 14 8s-2.2 3.5-6 3.5S2 8 2 8Zm6 1.8A1.8 1.8 0 1 0 8 6.2a1.8 1.8 0 0 0 0 3.6Z"
-        />
-      </svg>
-      <span>{{ panelLabel }}</span>
-    </button>
+    <Transition name="cgda-fade-scale" mode="out-in">
+      <button
+        v-if="!visible"
+        key="pill"
+        class="restore-pill"
+        type="button"
+        :class="{ 'restore-pill--dragging': dragging }"
+        :title="`${panelLabel} · 拖动自由移动 / 点击展开并恢复原布局`"
+        @pointerdown="startPillDragging"
+        @click.prevent
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path
+            d="M2 8s2.2-3.5 6-3.5S14 8 14 8s-2.2 3.5-6 3.5S2 8 2 8Zm6 1.8A1.8 1.8 0 1 0 8 6.2a1.8 1.8 0 0 0 0 3.6Z"
+          />
+        </svg>
+        <span>{{ panelLabel }}</span>
+      </button>
 
-    <!-- 显示态：面板壳 -->
-    <section v-else class="panel-dock__frame" :class="dockClass" :style="effectivePanelSizeStyle">
+      <!-- 显示态：面板壳 -->
+      <section
+        v-else
+        key="frame"
+        class="panel-dock__frame"
+        :class="dockClass"
+        :style="effectivePanelSizeStyle"
+      >
       <!-- 标题栏 -->
       <header class="panel-dock__head" :class="{ 'panel-dock__head--dragging': dragging }">
         <button
@@ -269,6 +284,7 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
         <span class="resize-corner resize-corner--two"></span>
       </button>
     </section>
+    </Transition>
   </div>
 </template>
 
@@ -285,13 +301,23 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 
   position: relative;
   pointer-events: auto;
-  will-change: transform;
   transition: transform var(--motion-base) var(--ease-standard);
   width: fit-content;
   height: fit-content;
   max-width: 100%;
   display: block;
   min-width: 200px;
+}
+
+.panel-anchor--interacting {
+  will-change: transform;
+  transition: none;
+  cursor: grabbing;
+}
+
+.panel-anchor--interacting.cgda-dragging {
+  /* 合成层提示：拖动中仅改 transform，避免子树 transition 抢帧 */
+  contain: layout style;
 }
 
 .panel-anchor--dock-right {
@@ -307,10 +333,6 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 
 .panel-anchor--dock-right :deep(.panel-dock__frame) {
   margin-inline-start: auto;
-}
-
-.panel-anchor--interacting {
-  transition: none;
 }
 
 /* ═══ 恢复胶囊 ═══ */
@@ -490,6 +512,19 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 
 .panel-dock__head--dragging {
   cursor: grabbing;
+  background: linear-gradient(180deg, var(--surface-hover), var(--surface-2));
+  border-color: var(--border-accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    var(--elevation-2),
+    0 0 0 1px var(--accent-surface);
+}
+
+.panel-anchor--interacting .panel-dock__frame {
+  box-shadow:
+    var(--elevation-3),
+    0 0 18px var(--accent-surface);
+  border-color: var(--border-accent);
 }
 
 /* 拖拽手柄 */
@@ -566,13 +601,21 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
   transition:
     border-color var(--motion-fast) var(--ease-soft),
     color var(--motion-fast) var(--ease-soft),
-    background-color var(--motion-fast) var(--ease-soft);
+    background-color var(--motion-fast) var(--ease-soft),
+    transform var(--motion-press, var(--motion-fast)) var(--ease-soft);
 }
 
 .panel-dock__btn:hover {
   border-color: var(--border-default);
   color: var(--text-strong);
   background: var(--surface-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--elevation-1);
+}
+
+.panel-dock__btn:active {
+  transform: translateY(1px);
+  box-shadow: none;
 }
 
 .panel-dock__btn:focus-visible {
@@ -766,6 +809,16 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
 }
 
 /* ═══ 减弱动效 ═══ */
+html.reduce-motion .panel-dock__btn:hover,
+html.reduce-motion .panel-dock__btn:active {
+  transform: none;
+  box-shadow: none;
+}
+
+html.reduce-motion .panel-dock__frame.panel-dock--collapsed:hover {
+  transform: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .panel-anchor,
   .panel-dock__frame,

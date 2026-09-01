@@ -30,7 +30,6 @@ const props = defineProps<{
   getCatalogSourceSummary: (catalogId: string) => string
   getPrimarySourceName: (catalogId: string) => string
   supportsOnlineTemporal: (catalogId: string) => boolean
-  orgLabel: string
 }>()
 
 const emit = defineEmits<{
@@ -142,7 +141,7 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
       </div>
 
       <div v-if="expandedCategories.has(group.category.id)" class="category-items">
-        <!-- 课题组数据二级分类筛选 Pills -->
+        <!-- 核心资产二级分类筛选 Pills -->
         <div
           v-if="group.category.id === 'research-group' && researchSubCategoryPills.length > 1"
           class="subcategory-pills-bar"
@@ -160,7 +159,7 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
         </div>
         <div v-if="group.items.length === 0" class="empty-subcategory-hint">
           暂无匹配【{{ selectedSubCategory === 'all' ? '全部' : selectedSubCategory }}】的{{
-            orgLabel
+            getCategoryName('research-group')
           }}图层
         </div>
         <div

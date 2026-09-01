@@ -38,6 +38,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useAuthStore } from '../stores/auth'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import { useWeatherSyncStatusStore } from '../stores/weather-sync-status'
+import { useDrawSessionTransition } from '../composables/useDrawSessionTransition'
 import { useBreakpoint } from '../composables/useBreakpoint'
 import { mergeWorkflowSummaryWithWeather } from '../utils/workflow-status-merge'
 import {
@@ -64,6 +65,7 @@ const activityVersion = toRef(weatherTileManager, 'activityVersion')
 const statusVersion = toRef(weatherTileManager, 'statusVersion')
 const apiKeys = toRef(settingsStore, 'apiKeys')
 const syncInProgress = toRef(weatherSyncStatus, 'syncInProgress')
+const { requestInteractionMode } = useDrawSessionTransition()
 
 onMounted(() => {
   if (authStore.isAuthenticated && apiKeys.value.length === 0) {
@@ -185,8 +187,9 @@ function onViewModeChange(value: string | number) {
   }
 }
 
-function setInteractionMode(mode: 'move' | 'select' | 'measure' | 'draw') {
-  uiStore.setInteractionMode(mode)
+async function setInteractionMode(mode: 'move' | 'select' | 'measure' | 'draw') {
+  const ok = await requestInteractionMode(mode)
+  if (!ok) return
   const label =
     mode === 'move' ? '移动' : mode === 'select' ? '选择' : mode === 'measure' ? '测量' : '绘制'
   logStore.logOperation('mode-switch', `切换到${label}模式`)

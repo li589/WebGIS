@@ -36,7 +36,7 @@ export interface CrossDomainBindings {
   forgetTrackedWorkflowRun: (runId: string) => void
   rememberTrackedWorkflowRun: (catalogId: string, jobLayer: JobLayerItem) => void
   scheduleWorkspacePersist: () => void
-  flushWorkspacePersistNow: () => void
+  flushWorkspacePersistNow: (opts?: { sync?: boolean }) => void
 
   // ── viewport → workflow-run (point weather) ──
   getLastPointWeatherQuery: () => { lng: number; lat: number; catalogId: string } | null

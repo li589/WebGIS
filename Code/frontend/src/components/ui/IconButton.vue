@@ -98,7 +98,7 @@ const viewBox = computed(() => `0 0 24 24`)
     border-color var(--motion-fast) var(--ease-soft),
     color var(--motion-fast) var(--ease-soft),
     box-shadow var(--motion-fast) var(--ease-soft),
-    transform var(--motion-fast) var(--ease-soft);
+    transform var(--motion-press, var(--motion-fast)) var(--ease-soft);
 }
 
 .icon-btn:focus-visible {
@@ -139,6 +139,12 @@ const viewBox = computed(() => `0 0 24 24`)
   box-shadow: var(--elevation-1);
 }
 
+.icon-btn--default:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
+  background: var(--surface-sunken);
+}
+
 /* danger 变体 */
 .icon-btn--danger {
   background: var(--danger-surface);
@@ -163,12 +169,10 @@ const viewBox = computed(() => `0 0 24 24`)
   color: var(--accent-strong);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .icon-btn {
-    transition: none;
-  }
-  .icon-btn--default:hover:not(:disabled) {
-    transform: none;
-  }
+/* 设置开关优先：保留背景/边框色变，去掉位移 */
+html.reduce-motion .icon-btn--default:hover:not(:disabled),
+html.reduce-motion .icon-btn--default:active:not(:disabled) {
+  transform: none;
+  box-shadow: none;
 }
 </style>

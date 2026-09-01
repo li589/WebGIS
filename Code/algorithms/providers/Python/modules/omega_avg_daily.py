@@ -222,13 +222,17 @@ class OmegaAvgDailyModule(BaseModule):
         # 解析 grid_shape
         grid_shape = _resolve_grid_shape(algorithm_params, datasource_selection)
 
-        # 解析输出目录：节点属性 output_dir（种子/画布 params）优先，
-        # 其次 request output_spec_extra，缺省 run 工作区。
-        output_dir = Path(
-            str(params.get("output_dir") or "").strip()
-            or output_spec_extra.get("output_dir")
-            or (ctx.workspace / "products" / "omega_avg_daily")
-        )
+        # 解析输出目录：显式 reuse_output_dir（失败重试复用）优先，
+        # 其次节点属性 output_dir、request output_spec_extra，缺省 run 工作区。
+        reuse_output_dir = algorithm_params.get("reuse_output_dir")
+        if isinstance(reuse_output_dir, str) and reuse_output_dir.strip():
+            output_dir = Path(reuse_output_dir.strip())
+        else:
+            output_dir = Path(
+                str(params.get("output_dir") or "").strip()
+                or output_spec_extra.get("output_dir")
+                or (ctx.workspace / "products" / "omega_avg_daily")
+            )
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # 解析 omega_block 目录与 .mat 文件

@@ -117,6 +117,17 @@ def test_primary_theme_public_branding(theme_client: TestClient) -> None:
     assert "数据分析与可视化" in body["full_name_zh"]
 
 
+def test_list_themes_public_branding(theme_client: TestClient) -> None:
+    r = theme_client.get("/auth/themes/public")
+    assert r.status_code == 200
+    body = r.json()
+    assert isinstance(body, list)
+    assert len(body) >= 1
+    assert body[0]["slug"] == "sgfs"
+    slugs = {t["slug"] for t in body}
+    assert "sgfs" in slugs
+
+
 def test_login_includes_theme(theme_client: TestClient) -> None:
     _admin_login(theme_client)
     me = theme_client.get("/auth/me")

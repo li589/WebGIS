@@ -11,7 +11,9 @@ import {
 } from '../../stores/workflow-output-layers'
 import type { WorkflowRunTarget } from '../../components/workflow/WorkflowRunDialog.vue'
 import { useLayerWorkspace, useLayerViewport, useWorkflowRun } from '../../stores/layers/selectors'
+import { INVERSION_RUN_LAYER_PATTERN } from '../../stores/layers/inversion-catalog'
 import { resolveRunGroupTitle } from '../../utils/workflow-run-display-name'
+import { productTagLabel } from '../../utils/workflow-expected-outputs'
 
 export function useWorkflowEditorRun(
   logStore: ReturnType<typeof useLogStore>,
@@ -46,9 +48,13 @@ export function useWorkflowEditorRun(
       return
     }
 
-    const targets = target.targets?.length
-      ? target.targets
-      : [{ name: target.name ?? `产出`, productTag: 'result' }]
+    const defaultTargets = INVERSION_RUN_LAYER_PATTERN.test(workflowId)
+      ? (['SM', 'VOD', 'OMEGA'] as const).map((productTag) => ({
+          name: productTagLabel(productTag),
+          productTag,
+        }))
+      : [{ name: target.name ?? '产出', productTag: 'result' }]
+    const targets = target.targets?.length ? target.targets : defaultTargets
     const groupTitle = resolveRunGroupTitle({
       configuredTitle: target.groupTitle,
       workflowId,
@@ -195,6 +201,7 @@ export function useWorkflowEditorRun(
         resourceProfile: /omega_sf|omega_block|omega_avg/i.test(workflowId) ? 'heavy' : undefined,
       })
       if (typeof runId === 'string' && runId) {
+        // runId 已在 runWorkflowForCatalog → ensureRestoredRunGroup(submit) 写入组
         workflowRun.bindRunIdToGroup(created.groupId, runId)
       }
       workflowEditorRef.value?.notifyRunOutcome?.(true)

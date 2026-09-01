@@ -28,11 +28,21 @@ import {
 import type { JobLayerItem, NodeProgress } from './types'
 
 export const EVENT_POLL_ACTIVE_INTERVAL_MS = 1200
+
+/** 终态 succeeded 但首次 attach 为空时的延迟重试（物化竞态 / 会话瞬断）。 */
+const SUCCEEDED_ATTACH_RETRY_MS = 4_000
+const succeededAttachRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 export const EVENT_POLL_IDLE_INTERVAL_MS = 2600
 export const STATUS_SYNC_INTERVAL_MS = 9000
 /** 无新事件且状态同步后仍非终态时，才判为“事件等待超时”。长批（omega_sf 等）可数小时。 */
 export const EVENT_POLL_IDLE_TIMEOUT_MS = 30 * 60_000
 export const MAX_CONSECUTIVE_POLL_ERRORS = 3
+
+function extractExecutionRetryCount(payload: unknown): number | undefined {
+  if (!payload || typeof payload !== 'object') return undefined
+  const raw = (payload as { execution_retry_count?: unknown }).execution_retry_count
+  return typeof raw === 'number' && raw > 0 ? raw : undefined
+}
 
 export interface WorkflowPollerDeps {
   // ── 状态读 ──
@@ -42,7 +52,11 @@ export interface WorkflowPollerDeps {
   getParticleFlowCatalogId: () => string | null
   supportsParticleFlow: (catalogId: string) => boolean
   // ── 状态写 / 动作 ──
-  upsertJobLayer: (catalogId: string, jobLayer: JobLayerItem) => void
+  upsertJobLayer: (
+    catalogId: string,
+    jobLayer: JobLayerItem,
+    opts?: { skipActiveLayerSync?: boolean },
+  ) => void
   setWorkflowError: (message: string | null) => void
   removeActiveCatalog: (catalogId: string) => void
   syncProgressiveBlockOverlays: (runId: string, catalogId: string) => void
@@ -55,6 +69,7 @@ export interface WorkflowPollerDeps {
     resultRefs: unknown,
     preferredCatalogId: string,
     runId?: string,
+    opts?: { forceBind?: boolean },
   ) => Promise<number>
   /** 成功终态 attach 后清理组内未产出占位成员（F1） */
   cleanupUnproducedRunLayers: (runId: string, opts?: { succeeded?: boolean }) => void
@@ -66,6 +81,29 @@ export interface WorkflowPollerDeps {
     catalogId: string,
     opts: { previousJobLayer?: JobLayerItem },
   ) => Promise<JobLayerItem>
+}
+
+function scheduleSucceededAttachRetry(
+  runId: string,
+  catalogId: string,
+  resultRefs: unknown,
+  deps: WorkflowPollerDeps,
+) {
+  if (succeededAttachRetryTimers.has(runId)) return
+  succeededAttachRetryTimers.set(
+    runId,
+    window.setTimeout(() => {
+      succeededAttachRetryTimers.delete(runId)
+      if (deps.isRunDismissed(runId)) return
+      void deps
+        .attachAlgorithmProductOverlays(resultRefs, catalogId, runId, { forceBind: true })
+        .then((boundCount) => {
+          if (boundCount > 0) {
+            deps.cleanupUnproducedRunLayers(runId, { succeeded: true })
+          }
+        })
+    }, SUCCEEDED_ATTACH_RETRY_MS),
+  )
 }
 
 export function createWorkflowPoller(deps: WorkflowPollerDeps) {
@@ -98,12 +136,22 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
     let nextUpdatedAt = jobLayer.updatedAt
     let lastEventId = jobLayer.lastEventId
     let lastEventAt = jobLayer.lastEventAt
+    let nextExecutionRetryCount = jobLayer.executionRetryCount ?? 0
     // 节点级进度累计：保留已有节点，按 node_id 合并最新阶段
-    const nextNodeProgress: NodeProgress[] = [...(jobLayer.nodeProgress ?? [])]
+    let nextNodeProgress: NodeProgress[] = [...(jobLayer.nodeProgress ?? [])]
     /** 本批事件是否见过块产物信号；批末再按最终 status 决定是否物化，避免 running→retry_pending 竞态 409 */
     let sawProgressiveOverlaySignal = false
 
     for (const event of events) {
+      const eventPayload = event.payload as Record<string, unknown> | null | undefined
+      const retryCount = extractExecutionRetryCount(eventPayload)
+      if (retryCount !== undefined) {
+        nextExecutionRetryCount = Math.max(nextExecutionRetryCount, retryCount)
+        nextNodeProgress = []
+      }
+      if (isRecognizedJobStatus(eventPayload?.status) && eventPayload?.status === 'retry_pending') {
+        nextNodeProgress = []
+      }
       // Overall bar: only lifecycle events (no node_progress) or workflow.dispatch.
       // Module nodes at 100% (e.g. fy_download) must not pin the job bar to 100%.
       const eventNodeProgress = (event.payload as { node_progress?: { node_id?: string } } | null)
@@ -381,6 +429,7 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
       lastEventAt,
       eventMessages,
       nodeProgress: dedupedNodeProgress,
+      executionRetryCount: nextExecutionRetryCount > 0 ? nextExecutionRetryCount : undefined,
       failureHints: failureHints.length
         ? [...new Set([...(jobLayer.failureHints ?? []), ...failureHints])].slice(-12)
         : jobLayer.failureHints,
@@ -439,6 +488,7 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
           nodeProgress: mergedNodeProgress,
           failureHints: existingJobLayer.failureHints ?? jobLayer.failureHints,
           diagnosticNotes: jobLayer.diagnosticNotes,
+          isAnalysisToolRun: existingJobLayer.isAnalysisToolRun ?? jobLayer.isAnalysisToolRun,
         }
       : {
           ...jobLayer,
@@ -453,15 +503,24 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
 
     if (isTerminalStatus(mergedJobLayer.status)) {
       stopWorkflowPolling(jobId)
-      deps.removeActiveCatalog(catalogId)
+      // GIS 分析工具 run 未加入 activeWorkflowCatalogIds；勿误删同 catalog 主工作流活跃标记
+      if (!mergedJobLayer.isAnalysisToolRun) {
+        deps.removeActiveCatalog(catalogId)
+      }
       if (mergedJobLayer.status === 'succeeded' && !deps.isRunDismissed(run.run_id)) {
         void deps
           .attachAlgorithmProductOverlays(run.result_refs, catalogId, run.run_id)
-          .then(() => {
-            deps.cleanupUnproducedRunLayers(run.run_id, { succeeded: true })
+          .then((boundCount) => {
+            if (boundCount > 0) {
+              deps.cleanupUnproducedRunLayers(run.run_id, { succeeded: true })
+              return
+            }
+            // 物化/绑定失败或竞态空结果：勿清空占位组（否则侧栏变空）。
+            scheduleSucceededAttachRetry(run.run_id, catalogId, run.result_refs, deps)
           })
       }
       if (
+        !mergedJobLayer.isAnalysisToolRun &&
         deps.getParticleFlowCatalogId() === catalogId &&
         deps.supportsParticleFlow(catalogId) &&
         !hasRenderableMapLayerAsset(mergedJobLayer)
@@ -469,6 +528,7 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
         deps.clearWindForCatalog(catalogId)
       }
       if (
+        !mergedJobLayer.isAnalysisToolRun &&
         mergedJobLayer.status === 'succeeded' &&
         deps.supportsParticleFlow(catalogId) &&
         hasRenderableMapLayerAsset(mergedJobLayer)

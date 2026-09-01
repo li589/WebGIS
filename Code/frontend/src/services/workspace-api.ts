@@ -1,20 +1,16 @@
 /**
  * 工作区跨设备同步 API（/workspace/*）。
  *
- * payload 为前端契约：{ version, snapshot, dismissed }（服务端不透明存储）。
+ * payload 契约见 workspace-remote-payload.ts（v2 按 apiScope 分桶；v1 向后兼容）。
  * 乐观并发：push 携带 base_revision；409 冲突时返回服务端 revision 供 adopt/retry。
  */
 
 import { applyApiFetchDefaults } from './http-credentials'
 import { extractErrorDetail } from './http-errors'
 import { resolveApiUrl } from './runtime-api'
-import type { DismissedLayersRegistry, WorkspaceSnapshot } from '../stores/layers/workspace-persist'
+import type { RemoteWorkspacePayload } from '../stores/layers/workspace-remote-payload'
 
-export interface RemoteWorkspacePayload {
-  version: 1
-  snapshot: WorkspaceSnapshot
-  dismissed?: DismissedLayersRegistry | null
-}
+export type { RemoteWorkspacePayload } from '../stores/layers/workspace-remote-payload'
 
 export interface RemoteWorkspaceState {
   revision: number

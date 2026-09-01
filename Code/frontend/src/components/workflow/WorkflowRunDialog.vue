@@ -146,9 +146,14 @@ watch(outputTags, (tags) => {
 </script>
 
 <template>
-  <Transition name="run-dialog-fade">
-    <div v-if="visible" class="run-dialog-overlay" @click.self="handleCancel">
-      <div class="run-dialog">
+  <Transition name="cgda-modal">
+    <div
+      v-if="visible"
+      class="run-dialog-overlay"
+      role="presentation"
+      @click.self="handleCancel"
+    >
+      <div class="run-dialog cgda-modal-panel" role="dialog" aria-modal="true" aria-label="运行工作流">
         <header class="dialog-header">
           <h3 class="dialog-title">运行工作流</h3>
           <p class="dialog-subtitle">{{ workflowName }} · 源图层: {{ sourceLayerName }}</p>
@@ -179,7 +184,7 @@ watch(outputTags, (tags) => {
               <input v-model="mode" type="radio" value="new" />
               <span class="mode-label">
                 <span class="mode-name">新建图层</span>
-                <span class="mode-desc">计算组 + 写入「科研数据 → 模型输出」目录条目</span>
+                <span class="mode-desc">计算组 + 写入「核心资产 → 模型输出」目录条目</span>
               </span>
             </label>
           </div>
@@ -522,13 +527,18 @@ watch(outputTags, (tags) => {
   font-size: var(--font-size-caption);
   cursor: pointer;
   transition:
-    border-color 0.18s ease,
-    background 0.18s ease,
-    color 0.18s ease;
+    border-color var(--motion-fast) var(--ease-soft),
+    background-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft),
+    transform var(--motion-press, var(--motion-fast)) var(--ease-soft);
 }
 .action-btn.cancel:hover {
   border-color: var(--border-strong);
   color: var(--text-primary);
+  transform: translateY(-1px);
+}
+.action-btn.cancel:active {
+  transform: translateY(1px);
 }
 .action-btn.confirm {
   border-color: var(--warning-border);
@@ -539,46 +549,18 @@ watch(outputTags, (tags) => {
   border-color: var(--warning-border);
   background: var(--warning-border);
   color: var(--accent-warm);
+  transform: translateY(-1px);
+}
+.action-btn.confirm:active:not(:disabled) {
+  transform: translateY(1px);
 }
 .action-btn.confirm:disabled {
   opacity: 0.42;
   cursor: not-allowed;
 }
 
-/* ── 对话框出入场动画 ──────────────────────────────────────── */
-.run-dialog-fade-enter-active {
-  transition: opacity 0.2s ease;
-}
-.run-dialog-fade-enter-active .run-dialog {
-  transition:
-    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 0.2s ease;
-}
-.run-dialog-fade-leave-active {
-  transition: opacity 0.16s ease;
-}
-.run-dialog-fade-leave-active .run-dialog {
-  transition:
-    transform 0.16s ease,
-    opacity 0.16s ease;
-}
-.run-dialog-fade-enter-from,
-.run-dialog-fade-leave-to {
-  opacity: 0;
-}
-.run-dialog-fade-enter-from .run-dialog {
-  transform: scale(0.96) translateY(8px);
-  opacity: 0;
-}
-.run-dialog-fade-leave-to .run-dialog {
-  transform: scale(0.98);
-  opacity: 0;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .run-dialog-fade-enter-active,
-  .run-dialog-fade-leave-active {
-    transition: opacity 0.01s ease;
-  }
+html.reduce-motion .action-btn:hover,
+html.reduce-motion .action-btn:active {
+  transform: none;
 }
 </style>

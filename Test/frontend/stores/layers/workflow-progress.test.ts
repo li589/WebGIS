@@ -38,11 +38,11 @@ describe('normalizeWorkflowProgress', () => {
 })
 
 describe('isOverallProgressStage', () => {
-  it('matches only workflow.dispatch', () => {
+  it('matches workflow.dispatch and workflow_dispatch lifecycle stages', () => {
     expect(isOverallProgressStage('workflow.dispatch')).toBe(true)
+    expect(isOverallProgressStage('workflow_dispatch')).toBe(true)
     expect(isOverallProgressStage('workflow.node.n1')).toBe(false)
     expect(isOverallProgressStage('fy_download')).toBe(false)
-    expect(isOverallProgressStage('omega_sf_fenkuai')).toBe(false)
   })
 })
 
@@ -51,6 +51,10 @@ describe('isInternalWorkflowNodeStage', () => {
     expect(isInternalWorkflowNodeStage('workflow.node.n1')).toBe(true)
     expect(isInternalWorkflowNodeStage('workflow.dispatch')).toBe(false)
     expect(isInternalWorkflowNodeStage('fy_download')).toBe(false)
+  })
+
+  it('hides data_prepare infrastructure stage', () => {
+    expect(isInternalWorkflowNodeStage('data_prepare')).toBe(true)
   })
 })
 
@@ -106,6 +110,41 @@ describe('filterDisplayableNodeProgress', () => {
     expect(nodes).toHaveLength(1)
     expect(nodes[0]?.progress).toBe(50)
   })
+
+  it('merges bare stage_start row with scoped graphNode:stage progress', async () => {
+    const { dedupeNodeProgress } = await import('@/stores/layers/workflow-progress')
+    const nodes = dedupeNodeProgress([
+      {
+        nodeId: 'omega_sf_fenkuai',
+        nodeLabel: 'omega_sf_fenkuai',
+        stage: 'inversion',
+        progress: 0,
+        message: 'SF block inversion start',
+        updatedAt: '2026-01-01T00:00:00Z',
+      },
+      {
+        nodeId: 'n12:omega_sf_fenkuai',
+        nodeLabel: 'omega_sf_fenkuai',
+        stage: 'inversion',
+        progress: 3,
+        message: 'chunk 1/32',
+        detail: { chunksDone: 1, chunksTotal: 32, phase: 'preload' },
+        updatedAt: '2026-01-01T00:01:00Z',
+      },
+    ])
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0]?.progress).toBe(3)
+    expect(nodes[0]?.nodeId).toBe('n12:omega_sf_fenkuai')
+  })
+
+  it('excludes workflow_dispatch from node list', async () => {
+    const { filterDisplayableNodeProgress } = await import('@/stores/layers/workflow-progress')
+    const nodes = filterDisplayableNodeProgress([
+      { nodeId: 'workflow_dispatch', progress: 0, stage: 'processing', nodeLabel: 'dispatch' },
+      { nodeId: 'nsidc_smap_download', progress: 100, stage: 'download', nodeLabel: 'nsidc' },
+    ])
+    expect(nodes.map((n) => n.nodeId)).toEqual(['nsidc_smap_download'])
+  })
 })
 
 describe('resolveJobOverallProgress', () => {
@@ -125,6 +164,17 @@ describe('resolveJobOverallProgress', () => {
         ],
       }),
     ).toBe(14)
+  })
+
+  it('prefers workflow.dispatch over workflow_dispatch bookend at 0%', () => {
+    expect(
+      resolveJobOverallProgress({
+        nodeProgress: [
+          { nodeId: 'workflow_dispatch', progress: 0 },
+          { nodeId: 'workflow.dispatch', progress: 45 },
+        ],
+      }),
+    ).toBe(45)
   })
 
   it('does not inflate dispatch with chunk detail', () => {

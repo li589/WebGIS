@@ -1,6 +1,7 @@
 @import 'maplibre-gl/dist/maplibre-gl.css';
 @import './tokens.css';
 @import './textures.css';
+@import './motion.css';
 
 html,
 body,

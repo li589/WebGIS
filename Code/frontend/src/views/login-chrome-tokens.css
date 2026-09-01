@@ -1,0 +1,37 @@
+/**
+ * 登录页固定深空 chrome：不受 html[data-theme='light'] 影响。
+ * 登录背景/卡片按深色设计；若继承浅色 token，标题与输入框会低对比不可读。
+ */
+.login-page {
+  color-scheme: dark;
+
+  --text-strong: #f0faff;
+  --text-primary: #d8e6f5;
+  --text-secondary: #9fb6cc;
+  --text-muted: #8aa8bf;
+  --text-faint: #6e8ba0;
+  --text-disabled: #5a7080;
+
+  --accent: #5ad5ff;
+  --accent-strong: #88dfff;
+  --accent-surface: rgba(90, 213, 255, 0.12);
+  --accent-border: rgba(90, 213, 255, 0.3);
+  --border-accent: rgba(90, 213, 255, 0.28);
+
+  --surface-base: #020814;
+  --surface-sunken: rgba(4, 12, 23, 0.5);
+  --surface-1: rgba(8, 17, 31, 0.86);
+  --surface-2: rgba(13, 23, 39, 0.92);
+  --surface-3: rgba(18, 30, 48, 0.96);
+  --surface-hover: rgba(20, 40, 66, 0.98);
+
+  --border-subtle: rgba(136, 192, 255, 0.08);
+
+  --warning: #ffb070;
+  --warning-surface: rgba(255, 176, 112, 0.12);
+  --warning-border: rgba(255, 176, 112, 0.3);
+
+  --danger: #ff8c64;
+  --danger-surface: rgba(255, 140, 100, 0.12);
+  --danger-border: rgba(255, 140, 100, 0.3);
+}

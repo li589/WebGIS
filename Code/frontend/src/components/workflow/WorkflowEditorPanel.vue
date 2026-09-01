@@ -951,9 +951,9 @@ defineExpose({
     />
 
     <!-- 新建工作流对话框 -->
-    <Transition name="dialog-fade">
+    <Transition name="cgda-modal">
       <div v-if="showCreateDialog" class="create-dialog-overlay" @click.self="cancelCreateWorkflow">
-        <div class="create-dialog">
+        <div class="create-dialog cgda-modal-panel" role="dialog" aria-modal="true" aria-label="新建工作流">
           <h3 class="dialog-title">新建工作流</h3>
           <div class="dialog-form">
             <div class="form-row">
@@ -1022,9 +1022,9 @@ defineExpose({
 
     <!-- 工作流属性编辑对话框（名称/描述） -->
     <Teleport to="body">
-      <Transition name="dialog-fade">
+      <Transition name="cgda-modal">
         <div v-if="showPropsDialog" class="props-mask" @click.self="showPropsDialog = false">
-          <div class="props-dialog" role="dialog" aria-label="工作流属性">
+          <div class="props-dialog cgda-modal-panel" role="dialog" aria-modal="true" aria-label="工作流属性">
             <div class="props-header">
               <span class="props-title">工作流属性</span>
               <button
@@ -1812,11 +1812,15 @@ defineExpose({
   .error-slide-enter-active,
   .error-slide-leave-active,
   .panel-slide-down-enter-active,
-  .panel-slide-down-leave-active,
-  .dialog-fade-enter-active,
-  .dialog-fade-leave-active {
+  .panel-slide-down-leave-active {
     transition: opacity 0.01s ease;
   }
+}
+
+:global(html.reduce-motion) .header-btn:active,
+:global(html.reduce-motion) .dialog-btn:active,
+:global(html.reduce-motion) .validation-action-btn:active {
+  transform: none;
 }
 
 /* ── 动画：错误条滑入 ──────────────────────────────────────── */
@@ -1859,39 +1863,5 @@ defineExpose({
 .panel-slide-down-leave-to {
   opacity: 0;
   max-height: 0;
-}
-
-/* ── 动画：对话框淡入缩放 ──────────────────────────────────── */
-.dialog-fade-enter-active {
-  transition: opacity var(--motion-base) var(--ease-standard);
-}
-.dialog-fade-enter-active .create-dialog,
-.dialog-fade-enter-active .props-dialog {
-  transition:
-    transform var(--motion-slow) var(--ease-emphasized),
-    opacity var(--motion-base) var(--ease-standard);
-}
-.dialog-fade-leave-active {
-  transition: opacity var(--motion-fast) var(--ease-soft);
-}
-.dialog-fade-leave-active .create-dialog,
-.dialog-fade-leave-active .props-dialog {
-  transition:
-    transform var(--motion-fast) var(--ease-soft),
-    opacity var(--motion-fast) var(--ease-soft);
-}
-.dialog-fade-enter-from,
-.dialog-fade-leave-to {
-  opacity: 0;
-}
-.dialog-fade-enter-from .create-dialog,
-.dialog-fade-enter-from .props-dialog {
-  transform: scale(0.96) translateY(8px);
-  opacity: 0;
-}
-.dialog-fade-leave-to .create-dialog,
-.dialog-fade-leave-to .props-dialog {
-  transform: scale(0.98);
-  opacity: 0;
 }
 </style>

@@ -193,6 +193,15 @@ export function createMapCanvasModuleBundle(
     debounceMs: options.weatherDebounceMs,
   })
 
+  const mapInteractionModule = createMapInteractionModuleImpl({
+    map: options.map,
+    layersStore: options.layersStore,
+    getInteractionMode: options.getInteractionMode,
+    setIsMapInteracting: options.setIsMapInteracting,
+    scheduleHotspotSync: options.scheduleHotspotSync,
+    emitMapPointSelect: options.emitMapPointSelect,
+  })
+
   const nonWeatherLayerSyncModule = createMapCanvasNonWeatherLayerSyncModuleImpl({
     map: options.map,
     getMapReady: options.getMapReady,
@@ -200,6 +209,7 @@ export function createMapCanvasModuleBundle(
     getActiveVisibleCatalogIds: () =>
       options.layersStore.activeLayersDisplay.filter((l) => l.visible).map((l) => l.catalogId),
     onOverlayTimeStatesChanged: (states) => options.layersStore.setMapOverlayTimeStates?.(states),
+    restoreMapCursor: () => mapInteractionModule.applyInteractionMode(),
   })
 
   const hotspotPinsModule = createHotspotPinsModuleImpl({
@@ -210,15 +220,6 @@ export function createMapCanvasModuleBundle(
     emitVisibleHotspotsChange: options.emitVisibleHotspotsChange,
     emitHotspotSelect: options.emitHotspotSelect,
     setHotspotPins: options.setHotspotPins,
-  })
-
-  const mapInteractionModule = createMapInteractionModuleImpl({
-    map: options.map,
-    layersStore: options.layersStore,
-    getInteractionMode: options.getInteractionMode,
-    setIsMapInteracting: options.setIsMapInteracting,
-    scheduleHotspotSync: options.scheduleHotspotSync,
-    emitMapPointSelect: options.emitMapPointSelect,
   })
 
   // measureModule 在 mapCanvasRuntimeModule 之前创建，

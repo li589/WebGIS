@@ -7,6 +7,7 @@ import {
   fetchAuthConfig,
   fetchAuthMe,
   fetchPrimaryThemePublic,
+  fetchThemesPublic,
   listThemes,
   listUsers,
   loginRequest,
@@ -15,6 +16,7 @@ import {
   type AuthConfig,
   type AuthUser,
   type ThemePublic,
+  type ThemePublicBrand,
   type UserRole,
 } from '../services/auth-api'
 import { clearBackendWriteApiKey } from '../services/backend-auth'
@@ -34,8 +36,12 @@ export const useAuthStore = defineStore('auth', () => {
   const users = ref<AuthUser[]>([])
   const usersLoading = ref(false)
   const primaryTheme = ref<ThemePublic | null>(null)
+  const publicThemes = ref<ThemePublicBrand[]>([])
+  const loginPreviewSlug = ref<string | null>(null)
   const themes = ref<ThemePublic[]>([])
   const themesLoading = ref(false)
+
+  const LOGIN_THEME_SLUG_KEY = 'cgda-login-theme-slug'
 
   const isAuthenticated = computed(() => user.value !== null)
   const isAdmin = computed(() => user.value?.role === 'admin')
@@ -59,7 +65,17 @@ export const useAuthStore = defineStore('auth', () => {
     return primaryTheme.value
   })
 
+  const loginPreviewTheme = computed<ThemePublicBrand | null>(() => {
+    if (user.value) return null
+    const slug = loginPreviewSlug.value
+    if (!slug) return null
+    return publicThemes.value.find((t) => t.slug === slug) ?? null
+  })
+
   const resolvedBrand = computed<ResolvedBrand>(() => {
+    if (loginPreviewTheme.value) {
+      return brandFromTheme(loginPreviewTheme.value) ?? staticBrand()
+    }
     return brandFromTheme(activeTheme.value) ?? brandFromTheme(primaryTheme.value) ?? staticBrand()
   })
 
@@ -90,6 +106,54 @@ export const useAuthStore = defineStore('auth', () => {
     } catch {
       primaryTheme.value = null
     }
+  }
+
+  async function loadPublicThemes() {
+    try {
+      const list = await fetchThemesPublic()
+      publicThemes.value = Array.isArray(list) ? list : []
+      if (!loginPreviewSlug.value && publicThemes.value.length === 1) {
+        loginPreviewSlug.value = publicThemes.value[0]?.slug ?? null
+      }
+    } catch {
+      publicThemes.value = []
+    }
+  }
+
+  function readStoredLoginThemeSlug(): string | null {
+    if (typeof window === 'undefined') return null
+    try {
+      const raw = window.sessionStorage.getItem(LOGIN_THEME_SLUG_KEY)
+      return raw && raw.trim() ? raw.trim() : null
+    } catch {
+      return null
+    }
+  }
+
+  function setLoginPreviewSlug(slug: string | null) {
+    const next = slug?.trim() || null
+    loginPreviewSlug.value = next
+    if (typeof window === 'undefined') return
+    try {
+      if (next) window.sessionStorage.setItem(LOGIN_THEME_SLUG_KEY, next)
+      else window.sessionStorage.removeItem(LOGIN_THEME_SLUG_KEY)
+    } catch {
+      /* private mode */
+    }
+  }
+
+  function initLoginPreviewSlug(routeSlug?: string | null) {
+    const fromRoute = routeSlug?.trim() || null
+    const fromStorage = readStoredLoginThemeSlug()
+    const primary = publicThemes.value.find((t) => t.slug === primaryTheme.value?.slug)
+    const fallback = primary?.slug ?? publicThemes.value[0]?.slug ?? primaryTheme.value?.slug ?? null
+    const candidate = fromRoute ?? fromStorage ?? fallback
+    if (!candidate) return
+    if (publicThemes.value.length > 0 && !publicThemes.value.some((t) => t.slug === candidate)) {
+      setLoginPreviewSlug(fallback)
+      return
+    }
+    setLoginPreviewSlug(candidate)
   }
 
   async function applyDevAutoLogin() {
@@ -233,6 +297,9 @@ export const useAuthStore = defineStore('auth', () => {
     users,
     usersLoading,
     primaryTheme,
+    publicThemes,
+    loginPreviewSlug,
+    loginPreviewTheme,
     themes,
     themesLoading,
     activeTheme,
@@ -251,6 +318,9 @@ export const useAuthStore = defineStore('auth', () => {
     loadUsers,
     loadThemes,
     loadPrimaryTheme,
+    loadPublicThemes,
+    initLoginPreviewSlug,
+    setLoginPreviewSlug,
     addUser,
     patchUser,
     removeUser,

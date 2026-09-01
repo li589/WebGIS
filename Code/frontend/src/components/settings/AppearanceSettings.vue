@@ -21,6 +21,10 @@ import {
   type GlobeBackgroundMode,
   type GlobeDaylightMode,
 } from '../../services/settings-local'
+import {
+  resolveReducedMotionPreference,
+  setReducedMotionPreference,
+} from '../../services/motion-preference'
 import SegmentedControl from '../ui/SegmentedControl.vue'
 
 const themeStore = useThemeStore()
@@ -85,32 +89,12 @@ function onThemeChange(value: string | number) {
   themeStore.setTheme(value as ThemePreference)
 }
 
-const prefersReducedMotion = ref(
-  typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
-)
+const prefersReducedMotion = ref(resolveReducedMotionPreference())
 
 function onReducedMotionChange(event: Event) {
   const checked = (event.target as HTMLInputElement).checked
   prefersReducedMotion.value = checked
-  if (typeof document !== 'undefined') {
-    document.documentElement.classList.toggle('reduce-motion', checked)
-  }
-  if (typeof window !== 'undefined') {
-    window.localStorage.setItem('cgda-reduce-motion', String(checked))
-  }
-}
-
-// 初始化：localStorage 优先，无记录时跟随系统偏好
-if (typeof window !== 'undefined') {
-  const stored = window.localStorage.getItem('cgda-reduce-motion')
-  if (stored !== null) {
-    // 用户曾手动设置过，以此为准
-    prefersReducedMotion.value = stored === 'true'
-  }
-  // 同步 class 到 <html>（无论来源是 localStorage 还是系统偏好）
-  if (typeof document !== 'undefined') {
-    document.documentElement.classList.toggle('reduce-motion', prefersReducedMotion.value)
-  }
+  setReducedMotionPreference(checked)
 }
 </script>
 
@@ -201,7 +185,7 @@ if (typeof window !== 'undefined') {
     <section class="settings-section">
       <h3 class="section-title">动效偏好</h3>
       <p class="section-hint">
-        开启后将减少界面中的过渡动画和粒子效果，适合低性能设备或对动效敏感的用户。
+        开启「减少动效」后将缩短按钮、对话框、面板入场与拖拽反馈等过渡；全局加载指示（启动地球 / 顶栏进度条）仍保留轻量运动以免看起来像卡死。适合低性能设备或对动效敏感的用户。未手动设置时跟随系统「减少动画」偏好。
       </p>
       <label class="toggle-row">
         <input type="checkbox" :checked="prefersReducedMotion" @change="onReducedMotionChange" />

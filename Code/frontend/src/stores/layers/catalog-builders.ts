@@ -6,6 +6,7 @@
  * index.ts 经 re-export 保持既有引用兼容。
  */
 import type { LayerDescriptor, WorkflowEvent } from '../../services/runtime-api'
+import { ORG_CATEGORY_NAME } from '../../ui-copy/brand'
 import { mergeOperationalLog } from '../../utils/workflow-operational-log'
 import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
 import { isWeatherEngineCatalogId } from './weather-session'
@@ -174,6 +175,9 @@ export function formatClockLabel(value?: string | null) {
 const CATEGORY_ALIASES: Record<string, string> = {
   气象场: 'weather',
   气候产品: 'climate',
+  课题组数据: 'research-group',
+  科研数据: 'research-group',
+  核心资产: 'research-group',
 }
 
 export function resolveCategory(descriptor: LayerDescriptor, fallbackCategory?: string) {
@@ -322,9 +326,9 @@ export function buildCatalogFallbackItem(
   if (fallback) {
     return {
       ...fallback,
-      description: `${fallback.name} 课题组数据信息尚未返回。`,
+      description: `${fallback.name} ${ORG_CATEGORY_NAME}信息尚未返回。`,
       runReadiness: 'unknown',
-      runReadinessSummary: '课题组数据加载中',
+      runReadinessSummary: `${ORG_CATEGORY_NAME}加载中`,
       runReadinessNotes: [],
       backendStatus: null,
       engine: null,
@@ -340,18 +344,18 @@ export function buildCatalogFallbackItem(
     catalogId,
     name: catalogId,
     category: 'research-group',
-    description: '课题组数据尚未收录该图层。',
+    description: `${ORG_CATEGORY_NAME}尚未收录该图层。`,
     metricLabel: '主指标',
     metricUnit: '',
     metricPrecision: 1,
     updateLabel: '待识别',
-    sourceLabel: '课题组数据',
+    sourceLabel: ORG_CATEGORY_NAME,
     accentColor: '#5a6a80',
     accentGlow: 'rgba(90, 106, 128, 0.3)',
     chipTone: 'rgba(90, 106, 128, 0.16)',
     sources: [],
     runReadiness: 'unknown',
-    runReadinessSummary: '课题组数据加载中',
+    runReadinessSummary: `${ORG_CATEGORY_NAME}加载中`,
     runReadinessNotes: [],
     backendStatus: null,
     engine: null,

@@ -2,9 +2,6 @@ import type { ActiveLayerDisplay } from '../../stores/layers/types'
 import { LAYERS_COPY } from '../../ui-copy'
 
 export interface MapStageDisplayModel {
-  noteTitle: string
-  noteSummary: string
-  noteMeta: string
   hotspotLayerClass: string
 }
 
@@ -82,9 +79,6 @@ export function buildMapStageDisplayModel(options: {
   activeLayer: ActiveLayerDisplay
 }): MapStageDisplayModel {
   return {
-    noteTitle: options.activeLayer.name,
-    noteSummary: options.activeLayer.trendLabel,
-    noteMeta: `${options.activeLayer.observationTimeLabel} · ${options.activeLayer.availabilityLabel}`,
     hotspotLayerClass: `hotspot-layer-${options.activeLayer.availabilityState}`,
   }
 }

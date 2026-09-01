@@ -18,7 +18,9 @@ class SmapFieldSpec:
     min_valid: float | None = None
     max_valid: float | None = None
     invalid_fill: float = -9999.0
-    transpose: bool = True
+    # SPL3SMP_E 9 km HDF5 原生即为 (1624, 3856)；勿默认转置。
+    # 旧默认 True 曾把日 .mat 写成 (3856, 1624)，与辅料网格错位。
+    transpose: bool = False
 
 
 SMAP_AM_FIELD_SPECS: tuple[SmapFieldSpec, ...] = (
@@ -60,11 +62,14 @@ def extract_date_from_smap_filename(file_path: str | Path) -> str:
 def _sanitize_array(data: Any, spec: SmapFieldSpec) -> Any:
     import numpy as np
 
+    from data_access.ease_grid_constants import ensure_ease2_9km_shape
     from data_access.numeric_sanitize import mask_common_fill_values, mask_value_range
 
     result = np.array(data, dtype=np.float64, copy=True)
     if spec.transpose:
         result = result.T
+    # 无论是否手动 transpose，9 km 场最终必须落在 (1624, 3856)
+    result = ensure_ease2_9km_shape(result)
     result = mask_common_fill_values(result)
     # 保留字段专属 invalid_fill（可能不是常见哨兵列表中的值）
     result[result == spec.invalid_fill] = np.nan
