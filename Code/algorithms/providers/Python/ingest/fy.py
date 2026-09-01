@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
 
+logger = logging.getLogger(__name__)
 FY_DATE_PATTERN = re.compile(r"(\d{8})")
 
 
@@ -80,6 +82,47 @@ def build_date_keys(start_time: datetime, end_time: datetime) -> list[str]:
 
 _FY_HDF_SUFFIXES = frozenset({".hdf", ".hdf5"})
 _DEFAULT_HDF_PATTERN = "*.HDF"
+_FY_BT_DATASET_PATHS = (
+    "Calibration/EARTH_OBSERVE_BT_10_to_89GHz",
+    "EARTH_OBSERVE_BT_10_to_89GHz",
+)
+
+
+def _probe_h5_dataset(ds: object) -> None:
+    """强制读一格；h5py Dataset 无 ``.flat``，按 ndim 取首元素。"""
+    size = int(getattr(ds, "size", 0) or 0)
+    if size <= 0:
+        return
+    ndim = int(getattr(ds, "ndim", 0) or 0)
+    if ndim <= 0:
+        _ = ds[()]  # type: ignore[index]
+    else:
+        _ = ds[tuple(0 for _ in range(ndim))]  # type: ignore[index]
+
+
+def _orbit_hdf_readable(path: Path) -> bool:
+    """跳过截断/损坏的轨道 HDF，避免后续 gdal_translate 整日失败。"""
+    suffix = path.suffix.lower()
+    if suffix not in _FY_HDF_SUFFIXES and suffix != ".h5":
+        return True
+    try:
+        import h5py
+    except ImportError:
+        return True
+    path_str = str(path)
+    try:
+        if not h5py.is_hdf5(path_str):
+            return False
+        with h5py.File(path_str, "r") as handle:
+            _ = list(handle.keys())[:1]
+            for ds_path in _FY_BT_DATASET_PATHS:
+                if ds_path not in handle:
+                    continue
+                _probe_h5_dataset(handle[ds_path])
+                break
+        return True
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, IndexError):
+        return False
 
 
 def discover_fy_orbit_files(
@@ -98,8 +141,12 @@ def discover_fy_orbit_files(
     else:
         candidates = sorted(input_dir.glob(pattern))
     files: list[FyOrbitFile] = []
+    skipped_unreadable = 0
     for file_path in candidates:
         file_name = file_path.name
+        if not _orbit_hdf_readable(file_path):
+            skipped_unreadable += 1
+            continue
         try:
             files.append(
                 FyOrbitFile(
@@ -112,6 +159,12 @@ def discover_fy_orbit_files(
             )
         except ValueError:
             continue
+    if skipped_unreadable:
+        logger.warning(
+            "discover_fy_orbit_files: skipped %d unreadable HDF under %s",
+            skipped_unreadable,
+            input_dir,
+        )
     if not files:
         raise FileNotFoundError(f"No FY HDF files found in {input_dir}")
     return files

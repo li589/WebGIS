@@ -12,7 +12,8 @@ import { Diamond } from './ui/icons'
 
 import { useLayerWorkspace, useLayerLifecycle, useWorkflowRun } from '../stores/layers/selectors'
 import type { ActiveLayerDisplay } from '../stores/layers/types'
-import { deriveDataStatus } from '../utils/layer-data-status'
+import { deriveDataStatus, normalizeRunGroupMemberStatus } from '../utils/layer-data-status'
+import { resolveCategoryDisplayName } from '../stores/layers/catalog'
 import type { SidebarDragDeps, SidebarLayersDeps } from './layer-sidebar/sidebar-layers-deps'
 import { useUiStore } from '../stores/ui'
 import { useLogStore } from '../stores/log'
@@ -23,8 +24,8 @@ import { useWeatherSourcePrefsStore } from '../stores/weather-source-prefs'
 import { isWeatherLayerUnsupportedByModel } from '../stores/weather-tile-manager'
 import { useWeatherEngineStore } from '../stores/weather-engine'
 import { LAYERS_COPY } from '../ui-copy'
-import { ORG_LABEL } from '../ui-copy/brand'
 import { useOnlinePlanSessionStore } from '../stores/online-plan-session'
+import { useDrawSessionTransition } from '../composables/useDrawSessionTransition'
 
 // ── Composables ───────────────────────────────────────────────────────────
 import { useSidebarWeatherProviders } from './layer-sidebar/useSidebarWeatherProviders'
@@ -51,10 +52,10 @@ const uiStore = useUiStore()
 const logStore = useLogStore()
 const onlinePlan = useOnlinePlanSessionStore()
 const drawStore = useDrawStore()
+const { requestInteractionMode } = useDrawSessionTransition()
 const overlaySymbologyStore = useOverlaySymbologyStore()
 const weatherSourcePrefs = useWeatherSourcePrefsStore()
 const weatherEngine = useWeatherEngineStore()
-const orgLabel = ORG_LABEL
 
 const {
   activeLayers,
@@ -78,6 +79,9 @@ const layerCategories = workspace.layerCategories
 const sidebarLayersDeps: SidebarLayersDeps = {
   activeLayers,
   canRunCatalog: workspace.canRunCatalog,
+  isWeatherEngineLayer: workspace.isWeatherEngineLayer,
+  supportsAnalysisWorkflow: workspace.supportsAnalysisWorkflow,
+  isOverlayDisplayOnlyLayer: workspace.isOverlayDisplayOnlyLayer,
   bringLayerToFront: workspace.bringLayerToFront,
   sendLayerToBack: workspace.sendLayerToBack,
   removeLayer: workspace.removeLayer,
@@ -243,7 +247,7 @@ function isStaticDataLayer(catalogId: string): boolean {
 function getUnifiedDataStatus(layer: ActiveLayerDisplay): ReturnType<typeof deriveDataStatus> {
   const badge = getLifecycleBadge(layer.catalogId)
   const job = layer.jobLayer
-  return deriveDataStatus({
+  const status = deriveDataStatus({
     jobStatus: job?.status ?? null,
     jobProgress: typeof job?.progress === 'number' ? job.progress : null,
     availabilityState: layer.availabilityState,
@@ -253,6 +257,9 @@ function getUnifiedDataStatus(layer: ActiveLayerDisplay): ReturnType<typeof deri
     lifecycleMessage: badge?.message ?? null,
     isStaticLayer: isStaticDataLayer(layer.catalogId),
   })
+  if (!layer.runGroupId) return status
+  const group = workflowRun.runLayerGroups.value.find((g) => g.groupId === layer.runGroupId)
+  return normalizeRunGroupMemberStatus(status, group?.status === 'computing')
 }
 
 // ── 添加即运行（2026-08-25 UX 简化）─────────────────────────────────────
@@ -350,7 +357,7 @@ function getCategoryMeta(categoryId: string) {
 }
 
 function getCategoryName(categoryId: string): string {
-  return layerCategories.find((c) => c.id === categoryId)?.name ?? categoryId
+  return resolveCategoryDisplayName(categoryId)
 }
 
 function availabilityClass(state: string) {
@@ -429,7 +436,7 @@ function removeItem(instanceId: string, event: MouseEvent) {
   workspace.removeLayer(instanceId)
   // 移除的是当前绘制/编辑图层时，退出绘制模式（孤儿草稿安全网会随之清空绘制 store）
   if (isActiveDrawLayer && uiStore.interactionMode === 'draw') {
-    uiStore.setInteractionMode('move')
+    void requestInteractionMode('move')
   }
   logStore.logOperation('layer-remove', `移除图层「${layer?.name ?? instanceId}」`)
 }
@@ -550,7 +557,6 @@ onMounted(() => {
       :get-catalog-source-summary="getCatalogSourceSummary"
       :get-primary-source-name="getPrimarySourceName"
       :supports-online-temporal="supportsOnlineTemporal"
-      :org-label="orgLabel"
       @update:search-query="search.searchQuery.value = $event"
       @update:selected-sub-category="search.selectedSubCategory.value = $event"
       @ensure-weather-providers="weatherProviders.ensureWeatherProviders"

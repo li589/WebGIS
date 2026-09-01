@@ -214,3 +214,100 @@ def test_build_analysis_contour_request_injects_path(tmp_path: Path, monkeypatch
     nodes = graph["nodes"]
     assert nodes[0]["properties"]["path"] == str(tif)
     assert nodes[1]["properties"]["interval"] == 50
+
+
+def test_analysis_tools_layer_kind_matrix():
+    from app.services.analysis_tool_catalog import list_tools_for_layer, load_analysis_tools
+
+    all_ids = {t.tool_id for t in load_analysis_tools()}
+    assert all_ids >= {
+        "gis.buffer",
+        "gis.zonal_stats",
+        "gis.clip",
+        "gis.reclassify",
+        "gis.contour",
+        "gis.slope_aspect",
+        "gis.raster_calc",
+        "gis.vector_to_raster",
+        "gis.raster_to_vector",
+        "gis.watershed",
+    }
+
+    weather = list_tools_for_layer(layer_id="wind", is_weather=True)
+    weather_enabled = {t.tool_id for t in weather.items if t.enabled}
+    assert weather_enabled <= {"gis.buffer"}
+
+    raster = list_tools_for_layer(layer_id="imported-x", has_raster=True, overlay_layer_id="ov-1")
+    raster_enabled = {t.tool_id for t in raster.items if t.enabled}
+    assert "gis.reclassify" in raster_enabled
+    assert "gis.vector_to_raster" not in raster_enabled
+
+    vector = list_tools_for_layer(layer_id="vec-x", has_vector=True)
+    vector_enabled = {t.tool_id for t in vector.items if t.enabled}
+    assert "gis.vector_to_raster" in vector_enabled
+    assert "gis.reclassify" not in vector_enabled
+
+
+def test_zonal_stats_vector_zones_injection(tmp_path: Path, monkeypatch):
+    from app.services import analysis_run_service as ars
+    from shared.contracts.api_contracts import AnalysisRunRequest
+
+    raster = tmp_path / "value.tif"
+    raster.write_bytes(b"raster")
+    vector_geojson = tmp_path / "zones.geojson"
+    vector_geojson.write_text('{"type":"FeatureCollection","features":[]}', encoding="utf-8")
+
+    monkeypatch.setattr(ars, "resolve_overlay_source_path", lambda _oid: raster)
+    monkeypatch.setattr(
+        ars,
+        "resolve_imported_vector_geojson",
+        lambda vid: vector_geojson,
+    )
+
+    seed = {
+        "_meta": {"engine": "python_provider"},
+        "workflow_id": "analysis_zonal_stats",
+        "nodes": [
+            {
+                "id": 1,
+                "type": "data/source",
+                "properties": {"path": "old", "dataset_key": "input_path"},
+            },
+            {
+                "id": 2,
+                "type": "data/source",
+                "properties": {"path": "old-z", "dataset_key": "zones_path"},
+            },
+            {"id": 3, "type": "gis/zonal_stats", "properties": {"statistic": "mean"}},
+        ],
+        "links": [],
+    }
+    monkeypatch.setattr(
+        "app.services.workflow_definition_service.get_definition",
+        lambda wid: seed if wid == "analysis_zonal_stats" else None,
+    )
+
+    req = AnalysisRunRequest(
+        tool_id="gis.zonal_stats",
+        layer_id="imported-raster",
+        overlay_layer_id="imported-raster",
+        params={"zones_imported_vector_layer_id": "vec-backend-1", "statistic": "mean"},
+    )
+    payload = ars.build_analysis_submit_request(req)
+    nodes = payload.algorithm_request.workflow_definition["nodes"]
+    zones_nodes = [n for n in nodes if n.get("properties", {}).get("dataset_key") == "zones_path"]
+    assert zones_nodes
+    assert zones_nodes[0]["properties"]["path"] == str(vector_geojson)
+
+
+def test_reclassify_remap_table_validation():
+    from app.services.analysis_run_service import AnalysisRunError, _validate_tool_params
+    from app.services.analysis_tool_catalog import get_tool
+
+    tool = get_tool("gis.reclassify")
+    assert tool is not None
+    with pytest.raises(AnalysisRunError, match="remap_table"):
+        _validate_tool_params(tool.tool_id, tool.param_schema, {"remap_table": "bad"})
+    _validate_tool_params(
+        tool.tool_id, tool.param_schema, {"remap_table": "0-10:1,10-100:2"}
+    )

@@ -136,32 +136,72 @@ class SmapDataCleaningTests(unittest.TestCase):
 
         results = read_smap_am_fields(h5_path)
 
-        # TBh: transpose True; HDF5 (3,1) → result (1,3)
+        # 默认不再转置：HDF5 (3,1) 保持 (3,1)
         # [-9999, 280, 350]: -9999 → NaN (invalid fill), 280 is valid (< 330), 350 → NaN (>330)
+        self.assertEqual(results["TBh"].shape, (3, 1))
         self.assertTrue(np.isnan(results["TBh"][0, 0]))
-        self.assertFalse(np.isnan(results["TBh"][0, 1]))
-        self.assertTrue(np.isnan(results["TBh"][0, 2]))
+        self.assertFalse(np.isnan(results["TBh"][1, 0]))
+        self.assertTrue(np.isnan(results["TBh"][2, 0]))
 
-        # TBv: transpose True; HDF5 (3,1) → result (1,3)
-        # 250 < 330, 290 < 330, -9999 → NaN (invalid fill)
+        # TBv: 250 < 330, 290 < 330, -9999 → NaN (invalid fill)
         self.assertFalse(np.isnan(results["TBv"][0, 0]))
-        self.assertFalse(np.isnan(results["TBv"][0, 1]))
-        self.assertTrue(np.isnan(results["TBv"][0, 2]))
+        self.assertFalse(np.isnan(results["TBv"][1, 0]))
+        self.assertTrue(np.isnan(results["TBv"][2, 0]))
 
         # Ts: 240 < 253.15 → NaN, 320 > 313.15 → NaN
         self.assertTrue(np.isnan(results["Ts"][0, 0]))
-        self.assertFalse(np.isnan(results["Ts"][0, 1]))
-        self.assertTrue(np.isnan(results["Ts"][0, 2]))
+        self.assertFalse(np.isnan(results["Ts"][1, 0]))
+        self.assertTrue(np.isnan(results["Ts"][2, 0]))
 
         # vwc: -1 < 0 → NaN, 50 > 30 → NaN
         self.assertTrue(np.isnan(results["vwc"][0, 0]))
-        self.assertFalse(np.isnan(results["vwc"][0, 1]))
-        self.assertTrue(np.isnan(results["vwc"][0, 2]))
+        self.assertFalse(np.isnan(results["vwc"][1, 0]))
+        self.assertTrue(np.isnan(results["vwc"][2, 0]))
 
         # sm_dca: -9999 → NaN
         self.assertTrue(np.isnan(results["sm_dca"][0, 0]))
-        self.assertFalse(np.isnan(results["sm_dca"][0, 1]))
-        self.assertFalse(np.isnan(results["sm_dca"][0, 2]))
+        self.assertFalse(np.isnan(results["sm_dca"][1, 0]))
+        self.assertFalse(np.isnan(results["sm_dca"][2, 0]))
+
+
+class EaseGridOrientationTests(unittest.TestCase):
+    def test_ensure_ease2_9km_transposes_swapped_axes(self) -> None:
+        from data_access.ease_grid_constants import (
+            EASE2_SHAPE_9KM,
+            ensure_ease2_9km_shape,
+        )
+
+        rows, cols = EASE2_SHAPE_9KM
+        swapped = np.arange(rows * cols, dtype=np.float64).reshape(cols, rows)
+        fixed = ensure_ease2_9km_shape(swapped)
+        self.assertEqual(fixed.shape, (rows, cols))
+        np.testing.assert_array_equal(fixed, swapped.T)
+
+    def test_ensure_ease2_9km_noop_for_standard_shape(self) -> None:
+        from data_access.ease_grid_constants import (
+            EASE2_SHAPE_9KM,
+            ensure_ease2_9km_shape,
+        )
+
+        rows, cols = EASE2_SHAPE_9KM
+        ok = np.zeros((rows, cols), dtype=np.float64)
+        out = ensure_ease2_9km_shape(ok)
+        self.assertIs(out, ok)
+
+    def test_sanitize_auto_corrects_transposed_9km(self) -> None:
+        from data_access.ease_grid_constants import EASE2_SHAPE_9KM
+
+        rows, cols = EASE2_SHAPE_9KM
+        # 模拟错误已转置的场；即使 transpose=False 也应被 ensure 纠正
+        raw = np.full((cols, rows), 280.0, dtype=np.float64)
+        spec = SmapFieldSpec(
+            output_name="TBv",
+            hdf5_path="/test",
+            max_valid=330.0,
+            transpose=False,
+        )
+        result = _sanitize_array(raw, spec)
+        self.assertEqual(result.shape, (rows, cols))
 
 
 if __name__ == "__main__":

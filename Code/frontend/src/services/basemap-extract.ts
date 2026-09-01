@@ -3,18 +3,23 @@
  *
  * 所有底图均为栅格瓦片（无 vector source），无法 queryRenderedFeatures，
  * 故「底图要素提取」走两条替代链路：
- * - 行政区：本地行政区边界 GeoJSON（@datapool/guangdong.geojson）+ 点包含判断
+ * - 行政区：内置 Natural Earth 全球省/州 + 国家边界（点包含 + 最小面优先）
  * - 道路：当前视口 bbox + OSM Overpass API（需外部网络）
  * 提取结果经 /import/vector 登记后端，再注册为前端矢量图层（可持久化）。
  */
 import { importVectorMultipart } from '../data-manager/core/api'
 import { registerImportedVectorLayer } from '../data-manager/adapters/layers'
+import {
+  loadWorldAdmin0Boundaries,
+  loadWorldAdmin1Boundaries,
+} from '../app/admin-boundaries'
 
 export type RoadClassFilter = 'major' | 'all'
 
 export interface ExtractedAdminArea {
   name: string
   adcode: number | string
+  adminLevel: 'city' | 'state' | 'country'
   geometry: GeoJSON.Geometry
 }
 
@@ -74,41 +79,136 @@ export function pointInPolygonGeometry(
   return false
 }
 
+function geometryBBoxArea(geometry: GeoJSON.Geometry): number {
+  let minLng = Infinity
+  let minLat = Infinity
+  let maxLng = -Infinity
+  let maxLat = -Infinity
+  const visit = (lng: number, lat: number) => {
+    if (lng < minLng) minLng = lng
+    if (lat < minLat) minLat = lat
+    if (lng > maxLng) maxLng = lng
+    if (lat > maxLat) maxLat = lat
+  }
+  if (geometry.type === 'Polygon') {
+    for (const ring of geometry.coordinates) {
+      for (const [lng, lat] of ring) visit(lng, lat)
+    }
+  } else if (geometry.type === 'MultiPolygon') {
+    for (const polygon of geometry.coordinates) {
+      for (const ring of polygon) {
+        for (const [lng, lat] of ring) visit(lng, lat)
+      }
+    }
+  } else {
+    return Infinity
+  }
+  if (!Number.isFinite(minLng)) return Infinity
+  return Math.abs(maxLng - minLng) * Math.abs(maxLat - minLat)
+}
+
 // ── 行政区提取 ──────────────────────────────────────────────────────────────
 
-let boundariesCache: GeoJSON.FeatureCollection | null = null
+interface AdminBoundaryLayer {
+  features: GeoJSON.Feature[]
+  adminLevel: ExtractedAdminArea['adminLevel']
+}
 
-async function loadBoundaries(): Promise<GeoJSON.FeatureCollection | null> {
-  if (boundariesCache) return boundariesCache
-  try {
-    const mod = await import('../app/guangdong-boundaries')
-    boundariesCache = mod.guangdongCityBoundaries as GeoJSON.FeatureCollection
-    return boundariesCache
-  } catch {
-    return null
+let boundaryLayersCache: AdminBoundaryLayer[] | null = null
+
+async function loadBoundaryLayers(): Promise<AdminBoundaryLayer[]> {
+  if (boundaryLayersCache) return boundaryLayersCache
+  const [admin1, admin0] = await Promise.all([
+    loadWorldAdmin1Boundaries(),
+    loadWorldAdmin0Boundaries(),
+  ])
+  boundaryLayersCache = [
+    { features: admin1.features ?? [], adminLevel: 'state' },
+    { features: admin0.features ?? [], adminLevel: 'country' },
+  ]
+  return boundaryLayersCache
+}
+
+function featureToAdminArea(
+  feature: GeoJSON.Feature,
+  adminLevel: ExtractedAdminArea['adminLevel'],
+): ExtractedAdminArea | null {
+  if (!feature.geometry) return null
+  const props = (feature.properties ?? {}) as {
+    name?: unknown
+    adcode?: unknown
+    iso_a2?: unknown
+    iso_a3?: unknown
+  }
+  const adcode =
+    props.adcode ??
+    props.iso_a2 ??
+    props.iso_a3 ??
+    ''
+  return {
+    name: typeof props.name === 'string' ? props.name : '未命名行政区',
+    adcode: typeof adcode === 'string' || typeof adcode === 'number' ? adcode : '',
+    adminLevel,
+    geometry: feature.geometry,
   }
 }
 
-/** 提取 (lng, lat) 所在行政区多边形；未命中（点在边界数据外）返回 null */
+/** 提取 (lng, lat) 所在行政区多边形；多层面重叠时取最小外包框面积（更细粒度） */
 export async function extractAdminAreaAt(
   lng: number,
   lat: number,
 ): Promise<ExtractedAdminArea | null> {
-  const boundaries = await loadBoundaries()
-  if (!boundaries) throw new Error('行政区边界数据加载失败')
-  for (const feature of boundaries.features ?? []) {
-    if (!feature.geometry) continue
-    if (pointInPolygonGeometry(lng, lat, feature.geometry)) {
-      const props = (feature.properties ?? {}) as { name?: unknown; adcode?: unknown }
-      const adcode = props.adcode
-      return {
-        name: typeof props.name === 'string' ? props.name : '未命名行政区',
-        adcode: typeof adcode === 'string' || typeof adcode === 'number' ? adcode : '',
-        geometry: feature.geometry,
+  const layers = await loadBoundaryLayers()
+  let best: ExtractedAdminArea | null = null
+  let bestArea = Infinity
+  for (const layer of layers) {
+    for (const feature of layer.features) {
+      if (!feature.geometry) continue
+      if (!pointInPolygonGeometry(lng, lat, feature.geometry)) continue
+      const area = geometryBBoxArea(feature.geometry)
+      if (area >= bestArea) continue
+      const candidate = featureToAdminArea(feature, layer.adminLevel)
+      if (!candidate) continue
+      best = candidate
+      bestArea = area
+    }
+  }
+  return best
+}
+
+export interface AdminPointLabels {
+  stateName: string | null
+  countryName: string | null
+}
+
+/** 点查展示用：分别解析省/州与国家名称（国家始终尝试匹配） */
+export async function extractAdminLabelsAt(
+  lng: number,
+  lat: number,
+): Promise<AdminPointLabels> {
+  const layers = await loadBoundaryLayers()
+  let stateName: string | null = null
+  let countryName: string | null = null
+  let bestStateArea = Infinity
+  let bestCountryArea = Infinity
+  for (const layer of layers) {
+    for (const feature of layer.features) {
+      if (!feature.geometry) continue
+      if (!pointInPolygonGeometry(lng, lat, feature.geometry)) continue
+      const area = geometryBBoxArea(feature.geometry)
+      const candidate = featureToAdminArea(feature, layer.adminLevel)
+      if (!candidate) continue
+      if (layer.adminLevel === 'state' && area < bestStateArea) {
+        stateName = candidate.name
+        bestStateArea = area
+      }
+      if (layer.adminLevel === 'country' && area < bestCountryArea) {
+        countryName = candidate.name
+        bestCountryArea = area
       }
     }
   }
-  return null
+  return { stateName, countryName }
 }
 
 // ── 道路提取（OSM Overpass） ───────────────────────────────────────────────

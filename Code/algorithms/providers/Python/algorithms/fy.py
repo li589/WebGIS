@@ -234,6 +234,33 @@ def build_geoloc_metadata_block(lon_vrt_path: str, lat_vrt_path: str) -> str:
     )
 
 
+def normalize_fy_band_ids(
+    raw: object, default: tuple[int, ...] = (1, 2)
+) -> tuple[int, ...]:
+    """Coerce workflow band_ids (int / str / list / comma-separated) to 1-based ints."""
+    if raw is None:
+        return default
+    items: list[object]
+    if isinstance(raw, str):
+        items = [p.strip() for p in raw.replace(";", ",").split(",") if p.strip()]
+    elif isinstance(raw, (list, tuple)):
+        items = []
+        for entry in raw:
+            if isinstance(entry, str) and ("," in entry or ";" in entry):
+                items.extend(
+                    p.strip()
+                    for p in entry.replace(";", ",").split(",")
+                    if p.strip()
+                )
+            else:
+                items.append(entry)
+    else:
+        return default
+    if not items:
+        return default
+    return tuple(int(item) for item in items)
+
+
 def build_fy_daily_command_steps(
     plan: FyDailyJobPlan,
     band_ids: tuple[int, ...] = (1, 2),
@@ -246,6 +273,7 @@ def build_fy_daily_command_steps(
     流程: HDF5 SDS 提取 → 地理定位 VRT → 重投影（gdalwarp）→ 拼接（gdalbuildvrt + gdal_translate）。
     band_ids 指定处理的波段编号（1-based），overlap_option 控制重叠区处理方式，spatial_mode 控制空间范围。
     """
+    band_ids = normalize_fy_band_ids(band_ids)
     profile = get_fy_profile(plan.satellite)
     gdal_bins = resolve_gdal_bins(force_bin=gdal_bin)
     work_dir = Path(plan.work_dir)
@@ -452,7 +480,7 @@ def build_fy_daily_command_steps(
             FyCommandStep(
                 name=f"warp_daily_4326_{band_name}",
                 command=(
-                    f'"{gdal_bins["gdalwarp"]}" -of GTiff -ot Float32 -r {overlap_option} '
+                    f'"{gdal_bins["gdalwarp"]}" -overwrite -of GTiff -ot Float32 -r {overlap_option} '
                     f'-srcnodata {profile.dst_nodata} -dstnodata {profile.dst_nodata} '
                     f'-co "COMPRESS=LZW" -co "PREDICTOR=3" -co "TILED=YES" '
                     f'"{mosaic_vrt}" "{mosaic_4326}"'
@@ -474,7 +502,7 @@ def build_fy_daily_command_steps(
             )
         else:
             command = (
-                f'"{gdal_bins["gdalwarp"]}" -of GTiff -ot Float32 -r {overlap_option} '
+                f'"{gdal_bins["gdalwarp"]}" -overwrite -of GTiff -ot Float32 -r {overlap_option} '
                 f'-srcnodata {profile.dst_nodata} -dstnodata {profile.dst_nodata} '
                 f'-co "COMPRESS=LZW" -co "PREDICTOR=3" -co "TILED=YES" '
                 f'"{mosaic_vrt}" "{final_tif}"'
@@ -516,7 +544,7 @@ def build_fy_daily_command_steps(
         FyCommandStep(
             name="translate_multiband_tif",
             command=(
-                f'"{gdal_bins["gdal_translate"]}" -of GTiff -a_nodata {profile.dst_nodata} -ot Float32 '
+                f'"{gdal_bins["gdal_translate"]}" -overwrite -of GTiff -a_nodata {profile.dst_nodata} -ot Float32 '
                 f'-co "COMPRESS=LZW" -co "PREDICTOR=3" -co "TILED=YES" '
                 f'{metadata_args} "{merged_vrt}" "{merged_tif}"'
             ),

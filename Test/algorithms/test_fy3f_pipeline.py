@@ -194,6 +194,33 @@ class Fy3fCommandStepsTests(unittest.TestCase):
             self.assertIn("-b 1 ", translate[0].command)
             self.assertIn("-b 2 ", translate[1].command)
 
+    def test_gdalwarp_daily_steps_use_overwrite_for_reruns(self) -> None:
+        """重跑同日计划时 _work 下已有 GeoTIFF 须可覆盖（勿因残留半成品失败）。"""
+        from ingest.fy import FyDailyJobPlan
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            input_file = tmp_dir / "FY3D_MWRID_20230101.HDF"
+            input_file.touch()
+            plan = FyDailyJobPlan(
+                date_key="20230101",
+                orbit_type="MWRID",
+                input_files=(str(input_file),),
+                output_dir=str(tmp_dir),
+                work_dir=str(tmp_dir),
+                output_prefix="FY3D_GBAL_L1_10V10H_20230101_MWRID",
+                satellite="FY3D",
+                metadata={},
+            )
+            steps = build_fy_daily_command_steps(plan, band_ids=(1, 2))
+            warp_4326 = [s for s in steps if s.name.startswith("warp_daily_4326_")]
+            warp_final = [s for s in steps if s.name.startswith("warp_daily_final_")]
+            translate_mb = [s for s in steps if s.name == "translate_multiband_tif"]
+            self.assertTrue(warp_4326, "应有 warp_daily_4326 步骤")
+            for step in (*warp_4326, *warp_final):
+                self.assertIn("-overwrite", step.command, step.name)
+            self.assertIn("-overwrite", translate_mb[0].command)
+
 
 class Fy3fExtractExecutorTests(unittest.TestCase):
     """EXTRACT_TB_CHANNEL 步骤执行（h5py 真实抽取）。"""

@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import time
@@ -24,6 +25,132 @@ from utils.request_time import resolve_time_bounds
 from workflow.schemas import ArtifactRef, NodeExecutionContext, PortSpec
 
 _MAX_RANGE_DAYS = 366
+_HDF_SUFFIXES = {".hdf", ".h5", ".he5"}
+
+
+def _coerce_byte_count(raw: object) -> int | None:
+    """把 NSMC ``DATASIZE`` 等字段规整为正整数字节数；无法解析则返回 None。"""
+    if raw is None or isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        n = int(raw)
+        return n if n > 0 else None
+    text = str(raw).strip().replace(",", "")
+    if not text:
+        return None
+    match = re.fullmatch(r"([0-9]*\.?[0-9]+)\s*([KMGT]?B)?", text, flags=re.IGNORECASE)
+    if match is None:
+        try:
+            n = int(float(text))
+        except ValueError:
+            return None
+        return n if n > 0 else None
+    value = float(match.group(1))
+    unit = (match.group(2) or "B").upper()
+    mult = {
+        "": 1,
+        "B": 1,
+        "KB": 1024,
+        "MB": 1024**2,
+        "GB": 1024**3,
+        "TB": 1024**4,
+    }.get(unit, 1)
+    n = int(value * mult)
+    return n if n > 0 else None
+
+
+def _nsmc_expected_bytes(item: dict[str, object]) -> int | None:
+    for key in ("DATASIZE", "datasize", "FILESIZE", "filesize", "SIZE", "size"):
+        parsed = _coerce_byte_count(item.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _probe_h5_dataset(ds: object) -> None:
+    """强制读一格；h5py Dataset 无 ``.flat``，按 ndim 取首元素。"""
+    size = int(getattr(ds, "size", 0) or 0)
+    if size <= 0:
+        return
+    ndim = int(getattr(ds, "ndim", 0) or 0)
+    if ndim <= 0:
+        _ = ds[()]  # type: ignore[index]
+    else:
+        _ = ds[tuple(0 for _ in range(ndim))]  # type: ignore[index]
+
+
+def _hdf_file_readable(path: Path) -> bool:
+    """轻量 HDF5 可读校验：打开根组；若有 MWRI 亮温数据集则读一格。"""
+    try:
+        import h5py
+    except ImportError:
+        return True  # 无 h5py 时不阻断下载主链
+    path_str = str(path)
+    try:
+        if not h5py.is_hdf5(path_str):
+            return False
+        with h5py.File(path_str, "r") as handle:
+            _ = list(handle.keys())[:1]
+            # 截断文件常在 open 后读数据才暴露（与 GDAL translate_tb_vrt 同失败面）
+            for ds_path in (
+                "Calibration/EARTH_OBSERVE_BT_10_to_89GHz",
+                "EARTH_OBSERVE_BT_10_to_89GHz",
+            ):
+                if ds_path not in handle:
+                    continue
+                _probe_h5_dataset(handle[ds_path])
+                break
+        return True
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, IndexError):
+        return False
+
+
+def _local_download_ok(
+    path: Path, *, expected_bytes: int | None = None
+) -> bool:
+    """本地成品是否可跳过重下：非空 +（可选）字节数一致 + HDF 可读。"""
+    try:
+        if not path.is_file():
+            return False
+        size = path.stat().st_size
+    except OSError:
+        return False
+    if size <= 0:
+        return False
+    if expected_bytes is not None and size != expected_bytes:
+        return False
+    if path.suffix.lower() in _HDF_SUFFIXES:
+        return _hdf_file_readable(path)
+    return True
+
+
+def _unlink_incomplete(path: Path) -> None:
+    with contextlib.suppress(OSError):
+        path.unlink(missing_ok=True)
+
+
+def _purge_incomplete_orbit_hdf(target_dir: Path, day_ymd: str) -> list[str]:
+    """删除 ``target_dir`` 下某日所有不可读的轨道 HDF。
+
+    ``fy_download`` 每日仅校验 NSMC 检索到的 ``max_files_per_day`` 个文件，
+    但 ``fy_preprocess`` / ``fy_plan`` 会拼接该日目录内**全部** ``.HDF``。历史半截
+    轨道若不清理，会在 ``translate_tb_vrt`` 以 truncated HDF5 炸掉整条链。
+    """
+    if not target_dir.is_dir() or not day_ymd:
+        return []
+    removed: list[str] = []
+    for path in sorted(target_dir.iterdir()):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in _HDF_SUFFIXES:
+            continue
+        if day_ymd not in path.name:
+            continue
+        if _local_download_ok(path):
+            continue
+        _unlink_incomplete(path)
+        removed.append(path.name)
+    return removed
 
 
 def _iter_date_range(start_date: str, end_date: str) -> list[str]:
@@ -225,6 +352,15 @@ def _download_from_nsmc(
         )
 
     day = date_path.replace(".", "-")
+    day_ymd = day.replace("-", "")
+    purged = _purge_incomplete_orbit_hdf(target_dir, day_ymd)
+    if purged and ctx.logger_adapter is not None:
+        ctx.logger_adapter.emit_warning(
+            "fy_download",
+            f"purged {len(purged)} incomplete orbit HDF for {day_ymd}: "
+            + ", ".join(purged[:5])
+            + ("…" if len(purged) > 5 else ""),
+        )
     nsmc_entry = _resolve_portal_entry(ds, "nsmc") or _resolve_portal_entry(
         ds, "cma_nsmc"
     )
@@ -301,19 +437,36 @@ def _download_from_nsmc(
             ctx.logger_adapter, "fy_download:nsmc"
         )
         downloaded: list[str] = []
+        skipped: list[str] = []
         downloaded_bytes = 0
         try:
             for i, item in enumerate(files[:max_files_per_day], start=1):
                 filename = str(item["ARCHIVENAME"])
                 dest = target_dir / filename
-                if dest.exists() and dest.stat().st_size > 0:
+                expected = _nsmc_expected_bytes(item)
+                if _local_download_ok(dest, expected_bytes=expected):
+                    skipped.append(filename)
                     downloaded.append(filename)
-                    downloaded_bytes += dest.stat().st_size
-                    _progress_cb(i, total_files, downloaded_bytes, filename)
+                    _progress_cb(
+                        i, total_files, downloaded_bytes, filename, skipped=True
+                    )
                     continue
+                # 不完整/损坏的成品删掉后再下，避免永久跳过
+                _unlink_incomplete(dest)
                 client.download_file(
                     filename, dest, center_flag=str(item.get("CNETERFLAG") or "1")
                 )
+                if not _local_download_ok(dest, expected_bytes=expected):
+                    actual = dest.stat().st_size if dest.exists() else 0
+                    _unlink_incomplete(dest)
+                    detail = (
+                        f" expected={expected} actual={actual}"
+                        if expected is not None
+                        else f" actual={actual}"
+                    )
+                    raise NsmcDownloadError(
+                        f"NSMC 下载后校验失败（大小/HDF 不可读）: {filename}{detail}"
+                    )
                 downloaded.append(filename)
                 downloaded_bytes += dest.stat().st_size
                 _progress_cb(i, total_files, downloaded_bytes, filename)
@@ -329,9 +482,12 @@ def _download_from_nsmc(
             raise
 
         if ctx.logger_adapter is not None:
+            n_skip = len(skipped)
+            n_new = len(downloaded) - n_skip
             ctx.logger_adapter.emit_stage_end(
                 "fy_download:nsmc",
-                f"Downloaded {len(downloaded)} file(s): " + ", ".join(downloaded[:5]),
+                f"Downloaded {n_new} file(s), skipped {n_skip}: "
+                + ", ".join(downloaded[:5]),
             )
         return target_dir
 
@@ -386,15 +542,16 @@ def _fetch_fy3f_tif_fallback(
         remote_path = f"{remote_dir.rstrip('/')}/{remote_name}"
         local_path = target_dir / remote_name
         if local_path.exists() and local_path.stat().st_size > 0:
-            downloaded_bytes += local_path.stat().st_size
-            _progress_cb(i, len(bands), downloaded_bytes, remote_name)
-            last_local = local_path
-            continue
+            if _local_download_ok(local_path):
+                _progress_cb(i, len(bands), downloaded_bytes, remote_name, skipped=True)
+                last_local = local_path
+                continue
+            _unlink_incomplete(local_path)
         ok = _filebrowser_download(
             server.filebrowser_url, token, remote_path, local_path, remote_size=0
         )
-        if not ok or not local_path.exists() or local_path.stat().st_size == 0:
-            local_path.unlink(missing_ok=True)
+        if not ok or not _local_download_ok(local_path):
+            _unlink_incomplete(local_path)
             raise RuntimeError(f"NAS FileBrowser download failed: {remote_path}")
         downloaded_bytes += local_path.stat().st_size
         _progress_cb(i, len(bands), downloaded_bytes, remote_name)
@@ -430,6 +587,14 @@ def _fetch_from_nas(
     from modules.download_nodes import _resolve_profile_server_config
 
     date_ymd = date_path.replace(".", "").replace("-", "")
+    purged = _purge_incomplete_orbit_hdf(target_dir, date_ymd)
+    if purged and ctx.logger_adapter is not None:
+        ctx.logger_adapter.emit_warning(
+            "fy_download",
+            f"purged {len(purged)} incomplete orbit HDF for {date_ymd}: "
+            + ", ".join(purged[:5])
+            + ("…" if len(purged) > 5 else ""),
+        )
 
     # 按卫星分派（远端目录, 逐日既知文件名）——免列举直连。
     if satellite == "FY3D":
@@ -488,17 +653,17 @@ def _fetch_from_nas(
     for remote_name in remote_names:
         remote_path = f"{remote_dir.rstrip('/')}/{remote_name}"
         local_path = target_dir / remote_name
-        if local_path.exists() and local_path.stat().st_size > 0:
+        if _local_download_ok(local_path):
             done_count += 1
-            downloaded_bytes += local_path.stat().st_size
-            _progress_cb(done_count, total_files, downloaded_bytes, remote_name)
+            _progress_cb(done_count, total_files, downloaded_bytes, remote_name, skipped=True)
             last_local_path = local_path
             continue
+        _unlink_incomplete(local_path)
         ok = _filebrowser_download(
             server.filebrowser_url, token, remote_path, local_path, remote_size=0
         )
-        if not ok or not local_path.exists() or local_path.stat().st_size == 0:
-            local_path.unlink(missing_ok=True)
+        if not ok or not _local_download_ok(local_path):
+            _unlink_incomplete(local_path)
             if satellite == "FY3F" and remote_name.endswith(".hdf"):
                 last_local_path = _fetch_fy3f_tif_fallback(
                     ctx,

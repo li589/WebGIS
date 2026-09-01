@@ -22,6 +22,7 @@ import LogPanel from '../components/toolbar/LogPanel.vue'
 import AgentCompanion from '../components/agent/AgentCompanion.vue'
 import TimelinePanel from '../components/TimelinePanel.vue'
 import TimelineScrubber from '../components/TimelineScrubber.vue'
+import DrawSessionExitModal from '../components/map/DrawSessionExitModal.vue'
 import WorkflowStatusPanel from '../components/workflow/WorkflowStatusPanel.vue'
 import type { TileSourceId } from '../services/api-config'
 import {
@@ -52,6 +53,7 @@ import { usePanelManager } from './dashboard/usePanelManager'
 import { useWeatherCoverage } from './dashboard/useWeatherCoverage'
 import { useTimelineSync } from './dashboard/useTimelineSync'
 import { useMapInspect } from './dashboard/useMapInspect'
+import { useDrawSessionTransition } from '../composables/useDrawSessionTransition'
 import { useTimelineControls } from './dashboard/useTimelineControls'
 import { useFileDrop } from './dashboard/useFileDrop'
 import { useWorkflowEditorRun } from './dashboard/useWorkflowEditorRun'
@@ -60,6 +62,11 @@ import { useTimelineActionConfirm } from './dashboard/useTimelineActionConfirm'
 
 // ── Store 设置 ────────────────────────────────────────────────────────────
 const uiStore = useUiStore()
+const { requestInteractionMode } = useDrawSessionTransition()
+
+async function handleEnterSelectMode() {
+  await requestInteractionMode('select')
+}
 const workspace = useLayerWorkspace()
 const workflowRun = useWorkflowRun()
 const lifecycle = useLayerLifecycle()
@@ -577,7 +584,7 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
             @set-layer-opacity="handleSetLayerOpacity"
             @select-hotspot="handleHotspotSelectFromPanel"
             @clear-map-point="clearMapPointInspect"
-            @enter-select-mode="uiStore.setInteractionMode('select')"
+            @enter-select-mode="handleEnterSelectMode"
             @query-overlay-series="
               (p: { lng: number; lat: number }) => fetchSelectedOverlaySeries(p.lng, p.lat)
             "
@@ -645,6 +652,7 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
       @close="handleCloseScreenshot"
     />
 
+    <DrawSessionExitModal />
     <WorkflowStatusPanel v-if="workflowStatusOpen" @close="handleCloseWorkflowStatus" />
     <LogPanel v-if="logOpen" @close="logOpen = false" />
     <Transition name="cgda-drawer">

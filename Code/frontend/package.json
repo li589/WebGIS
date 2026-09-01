@@ -29,7 +29,6 @@
     "audit:tokens:baseline": "node scripts/audit-ui-tokens.mjs --baseline"
   },
   "dependencies": {
-    "@datapool/guangdong.geojson": "1.0.1",
     "@types/proj4": "^2.5.6",
     "cesium": "^1.142.0",
     "dompurify": "^3.2.6",

@@ -12,6 +12,7 @@ export type LayerContextActionId =
   | 'sendToBack'
   | 'rename'
   | 'openAttributes'
+  | 'editGeometry'
   | 'openDetails'
   | 'openStyle'
   | 'exportGeoJson'
@@ -26,6 +27,8 @@ export type LayerContextActionId =
   | 'viewReport'
   | 'runWorkflow'
   | 'runWorkflowNoCache'
+  | 'retryWeatherTiles'
+  | 'triggerWeatherSync'
   | 'dissolveGroup'
   | 'toggleGroupVisible'
   | 'removeGroup'
@@ -59,8 +62,19 @@ export interface LayerContextMenuInput {
   hasJobReport: boolean
   /** 可提交分析工作流（非天气/导入/边界） */
   canRunWorkflow: boolean
-  /** 所属计算组可拆 */
-  canDissolveGroup?: boolean
+  /** 可进入多边形几何编辑（导入矢量面图层） */
+  canEditGeometry?: boolean
+  /** 天气瓦片层：显示重试瓦片 */
+  isWeatherLayer?: boolean
+  canRetryWeatherTiles?: boolean
+  /** 天气 data-empty：显示触发同步 */
+  canTriggerWeatherSync?: boolean
+  /** 导入类图层不在「查看」组重复 viewDetails */
+  showViewDetailsInViewGroup?: boolean
+  /** 绘制草稿：导出项禁用 */
+  isDrawDraft?: boolean
+  /** 栅格仅保留「打开导出面板」 */
+  rasterExportPanelOnly?: boolean
 }
 
 const GROUP_LABEL: Record<LayerContextGroupId, string> = {
@@ -74,32 +88,38 @@ const GROUP_LABEL: Record<LayerContextGroupId, string> = {
 
 export function buildLayerContextMenu(input: LayerContextMenuInput): LayerContextMenuGroup[] {
   const groups: LayerContextMenuGroup[] = []
+  const exportDisabled = Boolean(input.isDrawDraft)
+  const exportSuffix = exportDisabled ? LAYERS_COPY.exportRequiresSaveSuffix : ''
+
+  const viewItems: LayerContextMenuItem[] = [
+    {
+      id: 'zoom',
+      label: LAYERS_COPY.zoomToExtent,
+      icon: '◎',
+    },
+    {
+      id: 'toggleVisible',
+      label: input.visible ? LAYERS_COPY.hideLayer : LAYERS_COPY.showLayer,
+      icon: input.visible ? '👁' : '○',
+    },
+  ]
+  if (input.showViewDetailsInViewGroup !== false) {
+    viewItems.push({
+      id: 'viewDetails',
+      label: LAYERS_COPY.viewDetails,
+      icon: 'ℹ',
+    })
+  }
+  viewItems.push({
+    id: 'rename',
+    label: LAYERS_COPY.rename,
+    icon: '✎',
+  })
 
   groups.push({
     id: 'view',
     label: GROUP_LABEL.view,
-    items: [
-      {
-        id: 'zoom',
-        label: LAYERS_COPY.zoomToExtent,
-        icon: '◎',
-      },
-      {
-        id: 'toggleVisible',
-        label: input.visible ? LAYERS_COPY.hideLayer : LAYERS_COPY.showLayer,
-        icon: input.visible ? '👁' : '○',
-      },
-      {
-        id: 'viewDetails',
-        label: LAYERS_COPY.viewDetails,
-        icon: 'ℹ',
-      },
-      {
-        id: 'rename',
-        label: LAYERS_COPY.rename,
-        icon: '✎',
-      },
-    ],
+    items: viewItems,
   })
 
   // 样式统一进分析面板「样式」Tab（含透明度 / 配色 / 矢量样式 / 风场等）
@@ -129,21 +149,58 @@ export function buildLayerContextMenu(input: LayerContextMenuInput): LayerContex
     dataItems.push(
       { id: 'openAttributes', label: DATA_COPY.openAttrTable, icon: '☰' },
       { id: 'openDetails', label: DATA_COPY.openDetails, icon: 'ℹ' },
-      { id: 'exportGeoJson', label: LAYERS_COPY.exportGeoJson, icon: '⇩' },
-      { id: 'exportCsv', label: LAYERS_COPY.exportCsv, icon: '⇩' },
-      { id: 'exportShp', label: LAYERS_COPY.exportShp, icon: '⇩' },
-      { id: 'openExportPanel', label: LAYERS_COPY.openExportPanel, icon: '▤' },
+    )
+    if (input.canEditGeometry) {
+      dataItems.push({
+        id: 'editGeometry',
+        label: LAYERS_COPY.editGeometry,
+        icon: '✎',
+      })
+    }
+    dataItems.push(
+      {
+        id: 'exportGeoJson',
+        label: LAYERS_COPY.exportGeoJson + exportSuffix,
+        icon: '⇩',
+        disabled: exportDisabled,
+      },
+      {
+        id: 'exportCsv',
+        label: LAYERS_COPY.exportCsv + exportSuffix,
+        icon: '⇩',
+        disabled: exportDisabled,
+      },
+      {
+        id: 'exportShp',
+        label: LAYERS_COPY.exportShp + exportSuffix,
+        icon: '⇩',
+        disabled: exportDisabled,
+      },
+      {
+        id: 'openExportPanel',
+        label: LAYERS_COPY.openExportPanel + exportSuffix,
+        icon: '▤',
+        disabled: exportDisabled,
+      },
     )
   }
   if (input.isImportedRaster) {
-    dataItems.push(
-      { id: 'openDetails', label: DATA_COPY.openDetails, icon: 'ℹ' },
-      { id: 'exportTif', label: LAYERS_COPY.exportTif, icon: '⇩' },
-      { id: 'exportNc', label: LAYERS_COPY.exportNc, icon: '⇩' },
-      { id: 'exportMat', label: LAYERS_COPY.exportMat, icon: '⇩' },
-      { id: 'exportPng', label: LAYERS_COPY.exportPng, icon: '⇩' },
-      { id: 'openExportPanel', label: LAYERS_COPY.openExportPanel, icon: '▤' },
-    )
+    dataItems.push({ id: 'openDetails', label: DATA_COPY.openDetails, icon: 'ℹ' })
+    if (input.rasterExportPanelOnly) {
+      dataItems.push({
+        id: 'openExportPanel',
+        label: LAYERS_COPY.openExportPanel,
+        icon: '▤',
+      })
+    } else {
+      dataItems.push(
+        { id: 'exportTif', label: LAYERS_COPY.exportTif, icon: '⇩' },
+        { id: 'exportNc', label: LAYERS_COPY.exportNc, icon: '⇩' },
+        { id: 'exportMat', label: LAYERS_COPY.exportMat, icon: '⇩' },
+        { id: 'exportPng', label: LAYERS_COPY.exportPng, icon: '⇩' },
+        { id: 'openExportPanel', label: LAYERS_COPY.openExportPanel, icon: '▤' },
+      )
+    }
   }
   if (input.isExportPending && !input.isImported && !input.isImportedRaster) {
     dataItems.push({
@@ -181,11 +238,18 @@ export function buildLayerContextMenu(input: LayerContextMenuInput): LayerContex
       icon: '↺',
     })
   }
-  if (input.canDissolveGroup) {
+  if (input.canRetryWeatherTiles) {
     workflowItems.push({
-      id: 'dissolveGroup',
-      label: LAYERS_COPY.dissolveGroup,
-      icon: '⧉',
+      id: 'retryWeatherTiles',
+      label: LAYERS_COPY.retryWeatherTiles,
+      icon: '↻',
+    })
+  }
+  if (input.canTriggerWeatherSync) {
+    workflowItems.push({
+      id: 'triggerWeatherSync',
+      label: LAYERS_COPY.triggerWeatherSync,
+      icon: '☁',
     })
   }
   if (workflowItems.length) {

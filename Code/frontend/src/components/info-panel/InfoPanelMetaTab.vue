@@ -13,6 +13,7 @@ import {
   formatDownloadProgressDetail,
   hasDownloadProgressDetail,
 } from '../../utils/workflow-download-display'
+import { nodeMessageRedundantWithDetail } from '../../utils/workflow-node-progress-display'
 
 const props = defineProps<{
   displayLayer: ActiveLayerDisplay
@@ -54,6 +55,13 @@ const emit = defineEmits<{
 const displayNodeProgress = computed(() =>
   filterDisplayableNodeProgress(props.jobLayer?.nodeProgress),
 )
+
+/** 工作流运行/排队/失败时：元数据 Tab 只保留任务进度，隐藏图层目录冗余元数据。 */
+const simplifyMetaForActiveJob = computed(() => {
+  if (!props.jobLayer) return false
+  const status = props.jobLayer.status
+  return status === 'running' || status === 'queued' || status === 'failed'
+})
 
 const layerMetadata = computed(() => {
   const dl = props.displayLayer
@@ -98,15 +106,27 @@ function enterInspectTools() {
 
 <template>
   <!-- ── 总览 ─────────────────────────────────────────────────────── -->
-  <section v-show="true" id="global-overview" class="analysis-section analysis-section--overview">
+  <section
+    v-show="true"
+    id="global-overview"
+    class="analysis-section analysis-section--overview"
+    :class="{ 'analysis-section--overview-compact': simplifyMetaForActiveJob }"
+  >
     <div class="section-kicker">{{ ANALYSIS_COPY.overviewKicker }}</div>
     <h3>
-      {{ showCompactHero ? ANALYSIS_COPY.overviewTitleCompact : ANALYSIS_COPY.overviewTitleFull }}
+      {{
+        simplifyMetaForActiveJob
+          ? workflowMeta.name || displayLayer.name
+          : showCompactHero
+            ? ANALYSIS_COPY.overviewTitleCompact
+            : ANALYSIS_COPY.overviewTitleFull
+      }}
     </h3>
-    <p>{{ analysisSummary }}</p>
+    <p v-if="simplifyMetaForActiveJob">{{ workflowStageCopy || latestEventMessage || analysisSummary }}</p>
+    <p v-else>{{ analysisSummary }}</p>
     <div class="overview-quick-actions">
       <AppButton
-        v-if="isRealtimeWeatherLayer && interactionMode !== 'select'"
+        v-if="!simplifyMetaForActiveJob && isRealtimeWeatherLayer && interactionMode !== 'select'"
         size="xs"
         variant="secondary"
         @click="enterInspectTools"
@@ -114,7 +134,7 @@ function enterInspectTools() {
         {{ ANALYSIS_COPY.toolsQuickInspect }}
       </AppButton>
       <AppButton
-        v-if="canRunWorkflow"
+        v-if="!simplifyMetaForActiveJob && canRunWorkflow"
         size="xs"
         variant="secondary"
         @click="emit('setActiveTab', 'tools')"
@@ -122,7 +142,7 @@ function enterInspectTools() {
         {{ ANALYSIS_COPY.toolsQuickBuffer }}
       </AppButton>
       <AppButton
-        v-if="hasLayerStyleSection"
+        v-if="!simplifyMetaForActiveJob && hasLayerStyleSection"
         size="xs"
         variant="secondary"
         @click="emit('setActiveTab', 'style')"
@@ -134,7 +154,7 @@ function enterInspectTools() {
 
   <!-- ── 导入图层 ─────────────────────────────────────────────────── -->
   <section
-    v-if="displayLayer.isImported || displayLayer.isImportedRaster"
+    v-if="!simplifyMetaForActiveJob && (displayLayer.isImported || displayLayer.isImportedRaster)"
     v-show="true"
     id="imported-layer"
     class="analysis-section analysis-section--imported"
@@ -298,6 +318,7 @@ function enterInspectTools() {
         <span class="job-progress-label">{{ jobLayer.progress }}%</span>
       </div>
       <p class="job-message">{{ jobLayer.message || '作业正在处理中...' }}</p>
+      <p v-if="workflowError" class="job-message job-message--error">{{ workflowError }}</p>
       <div v-if="displayNodeProgress.length" class="job-node-progress-section">
         <div v-for="np in displayNodeProgress" :key="np.nodeId" class="job-node-progress-item">
           <div class="job-node-progress-header">
@@ -308,7 +329,9 @@ function enterInspectTools() {
           <div class="job-node-progress-bar">
             <div class="job-node-progress-fill" :style="{ width: `${np.progress}%` }"></div>
           </div>
-          <p v-if="np.message" class="job-node-progress-message">{{ np.message }}</p>
+          <p v-if="np.message && !nodeMessageRedundantWithDetail(np)" class="job-node-progress-message">
+            {{ np.message }}
+          </p>
           <p
             v-if="np.detail && hasDownloadProgressDetail(np.detail)"
             class="job-node-progress-detail"
@@ -341,7 +364,7 @@ function enterInspectTools() {
           </p>
         </div>
       </div>
-      <ul v-if="jobEventNotes.length" class="job-diagnostic-list">
+      <ul v-if="jobEventNotes.length && !simplifyMetaForActiveJob" class="job-diagnostic-list">
         <li
           v-for="(note, idx) in jobEventNotes"
           :key="`job-note-${idx}`"
@@ -352,7 +375,7 @@ function enterInspectTools() {
       </ul>
     </div>
 
-    <div class="job-steps">
+    <div v-if="!simplifyMetaForActiveJob" class="job-steps">
       <div class="job-step">1. 提交任务</div>
       <div
         class="job-step"
@@ -366,7 +389,7 @@ function enterInspectTools() {
 
   <!-- ── 报告 ─────────────────────────────────────────────────────── -->
   <section
-    v-if="jobLayer"
+    v-if="!simplifyMetaForActiveJob && jobLayer"
     v-show="true"
     id="report-section"
     class="analysis-section analysis-section--report"
@@ -440,6 +463,7 @@ function enterInspectTools() {
 
   <!-- ── 选中图层 ─────────────────────────────────────────────────── -->
   <section
+    v-if="!simplifyMetaForActiveJob"
     v-show="true"
     :id="`layer-${displayLayer.instanceId || 'default'}`"
     class="analysis-section analysis-section--layer"
@@ -455,7 +479,7 @@ function enterInspectTools() {
 
   <!-- meta：主指标与洞察（去冗后只在此 Tab） -->
   <section
-    v-if="displayLayer.instanceId && !showCompactHero"
+    v-if="displayLayer.instanceId && !showCompactHero && !simplifyMetaForActiveJob"
     v-show="true"
     class="hero-metric"
     :style="{ '--accent-color': displayLayer.accentColor }"
@@ -465,7 +489,11 @@ function enterInspectTools() {
     <p>{{ displayLayer.trendLabel }}</p>
   </section>
 
-  <div v-if="displayLayer.instanceId && !showCompactHero" v-show="true" class="insight-grid">
+  <div
+    v-if="displayLayer.instanceId && !showCompactHero && !simplifyMetaForActiveJob"
+    v-show="true"
+    class="insight-grid"
+  >
     <article class="insight-card">
       <span>更新频率</span>
       <strong>{{ displayLayer.updateLabel }}</strong>
@@ -485,7 +513,7 @@ function enterInspectTools() {
   </div>
 
   <section
-    v-if="layerMetadata.length && displayLayer.instanceId"
+    v-if="layerMetadata.length && displayLayer.instanceId && !simplifyMetaForActiveJob"
     v-show="true"
     class="info-card meta-card"
   >
@@ -504,7 +532,7 @@ function enterInspectTools() {
   </section>
 
   <section
-    v-if="displayLayer.trendLabel && displayLayer.instanceId"
+    v-if="displayLayer.trendLabel && displayLayer.instanceId && !simplifyMetaForActiveJob"
     v-show="true"
     class="info-card trend-card"
     :style="{ '--accent-color': displayLayer.accentColor }"

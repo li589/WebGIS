@@ -184,7 +184,7 @@ watch(outputTags, (tags) => {
               <input v-model="mode" type="radio" value="new" />
               <span class="mode-label">
                 <span class="mode-name">新建图层</span>
-                <span class="mode-desc">计算组 + 写入「科研数据 → 模型输出」目录条目</span>
+                <span class="mode-desc">计算组 + 写入「核心资产 → 模型输出」目录条目</span>
               </span>
             </label>
           </div>

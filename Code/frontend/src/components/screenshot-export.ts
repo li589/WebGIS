@@ -36,7 +36,6 @@ export const MAP_CANVAS_SELECTORS = [
 
 export const CLEAN_IGNORE_SELECTORS = [
   '.overlay',
-  '.map-note',
   '.tile-load-error',
   '.map-loading',
   '.map-skeleton',

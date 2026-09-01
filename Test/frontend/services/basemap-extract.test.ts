@@ -1,10 +1,56 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   bboxAreaSqDeg,
   buildOverpassQuery,
+  extractAdminAreaAt,
   overpassWaysToGeoJson,
   pointInPolygonGeometry,
 } from '@/services/basemap-extract'
+
+vi.mock('@/app/admin-boundaries', () => ({
+  loadWorldAdmin1Boundaries: vi.fn(async () => ({
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: { name: 'Samangan', adcode: 'AF-SAM', iso_a2: 'AF' },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [67.0, 35.0],
+              [68.5, 35.0],
+              [68.5, 36.5],
+              [67.0, 36.5],
+              [67.0, 35.0],
+            ],
+          ],
+        },
+      },
+    ],
+  })),
+  loadWorldAdmin0Boundaries: vi.fn(async () => ({
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: { name: 'Afghanistan', adcode: 'AFG', iso_a2: 'AF' },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [60.0, 29.0],
+              [75.0, 29.0],
+              [75.0, 39.0],
+              [60.0, 39.0],
+              [60.0, 29.0],
+            ],
+          ],
+        },
+      },
+    ],
+  })),
+}))
 
 const SQUARE_POLYGON: GeoJSON.Polygon = {
   type: 'Polygon',
@@ -32,6 +78,16 @@ const POLYGON_WITH_HOLE: GeoJSON.Polygon = {
     ],
   ],
 }
+
+describe('extractAdminAreaAt', () => {
+  it('returns finest admin polygon containing the point', async () => {
+    const area = await extractAdminAreaAt(67.649, 35.729)
+    expect(area).not.toBeNull()
+    expect(area?.name).toBe('Samangan')
+    expect(area?.adminLevel).toBe('state')
+    expect(area?.adcode).toBe('AF-SAM')
+  })
+})
 
 describe('pointInPolygonGeometry', () => {
   it('inside / outside / boundary tolerance', () => {

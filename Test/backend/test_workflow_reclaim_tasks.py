@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from app.core.celery_app import celery_app, celery_available
 from app.core.config import settings
 from app.services.workflow_repository import SQLiteWorkflowRepository
 from app.tasks.workflow_reclaim_tasks import reclaim_stuck_workflow_runs
@@ -44,6 +45,13 @@ def repo(tmp_path, monkeypatch):
         lambda: repository,
     )
     return repository
+
+
+def test_reclaim_task_registered_in_celery_app() -> None:
+    """Beat 调度的 reclaim 任务须在 worker include 中注册，避免 unregistered task 丢弃。"""
+    if not celery_available:
+        pytest.skip("Celery not installed")
+    assert "app.tasks.workflow_reclaim_tasks.reclaim_stuck_workflow_runs" in celery_app.tasks
 
 
 def test_reclaims_stuck_accepted_run(repo, monkeypatch):

@@ -88,6 +88,10 @@ Code/frontend/legacy-review/
 # Downloaded reference pages
 Code/frontend/.tmp_windy/
 
+# Natural Earth source zips (rebuilt via Tools/build_world_admin_boundaries.py)
+Code/frontend/public/data/boundaries/ne_*.zip
+Code/frontend/public/data/boundaries/*_src/
+
 # Test data binaries (large .mat files)
 Tools/test_data/
 

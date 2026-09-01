@@ -13,6 +13,10 @@ import type { ActiveLayerDisplay } from '../../stores/layers/types'
 import { resolveApiUrl } from '../../services/_http'
 import { applyApiFetchDefaults } from '../../services/http-credentials'
 import { formatArea, formatLength, summarizeFeatureCollection } from '../map/geometry-stats'
+import {
+  activeLayerHasReadableRaster,
+  resolveRasterOverlayIdFromActiveLayer,
+} from './tools/tool-layer-capabilities'
 
 interface ZonalStatItem {
   layer_id: string
@@ -44,11 +48,12 @@ const summary = computed(() => {
   return s.polygonCount > 0 || s.lineCount > 0 ? s : null
 })
 
-/** 可见栅格图层 id 列表（与地图浮卡「自动统计」同筛选口径） */
+/** 可见栅格图层 id 列表（与 tool-layer-capabilities 口径一致） */
 const overlayLayerIds = computed(() =>
   activeLayers.value
-    .filter((l) => l.visible && (l.importedRaster || l.dataState === 'catalog'))
-    .map((l) => l.importedRaster?.overlayLayerId ?? l.catalogId),
+    .filter((l) => l.visible && activeLayerHasReadableRaster(l))
+    .map((l) => resolveRasterOverlayIdFromActiveLayer(l))
+    .filter((id): id is string => Boolean(id)),
 )
 
 const loading = ref(false)

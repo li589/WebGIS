@@ -63,8 +63,8 @@ describe('canRunTool / runDisabledReasonFor', () => {
     ).toBe(true)
   })
 
-  it('栅格工具需要已导入栅格图层', () => {
-    const reclassify = makeTool({ tool_id: 'gis.reclassify' })
+  it('栅格工具需要可读栅格/overlay 图层', () => {
+    const reclassify = makeTool({ tool_id: 'gis.reclassify', input_kinds: ['raster'] })
     const ctx = {
       displayLayer: makeDisplayLayer(),
       selectedMapPoint: null,
@@ -75,6 +75,12 @@ describe('canRunTool / runDisabledReasonFor', () => {
       canRunTool(reclassify, {
         ...ctx,
         displayLayer: makeDisplayLayer({ importedRasterOverlayLayerId: 'r1' }),
+      }),
+    ).toBe(true)
+    expect(
+      canRunTool(reclassify, {
+        ...ctx,
+        displayLayer: makeDisplayLayer({ dataState: 'catalog', catalogId: 'c-overlay' }),
       }),
     ).toBe(true)
   })
@@ -91,10 +97,9 @@ describe('canRunTool / runDisabledReasonFor', () => {
     expect(canRunTool(clip, { ...ctx, selectedMapPoint: point, hasMapBBox: true })).toBe(true)
   })
 
-  it('直方图已移除：未知工具按通用规则处理', () => {
-    const unknown = makeTool({ tool_id: 'stats.histogram' })
+  it('未知非栅格工具在 enabled 时可运行', () => {
+    const unknown = makeTool({ tool_id: 'stats.histogram', input_kinds: ['any'] })
     const ctx = { displayLayer: makeDisplayLayer(), selectedMapPoint: null, hasMapBBox: true }
-    // 不在 RASTER_INPUT_TOOLS 内，也不满足 raster 条件 → 走 default 分支
     expect(canRunTool(unknown, ctx)).toBe(true)
   })
 })
@@ -129,13 +134,42 @@ describe('initFormValues', () => {
     expect(values.note).toBeUndefined()
   })
 
-  it('buffer 距离缺省时兜底 5000m', () => {
+  it('buffer 距离完全来自 schema default', () => {
     const tool = makeTool({
-      param_schema: [{ key: 'distance_unit', type: 'enum', title: '单位', default: 'meters', options: ['meters', 'kilometers'] }],
+      param_schema: [
+        { key: 'distance', type: 'number', title: '距离', default: 500 },
+        { key: 'distance_unit', type: 'enum', title: '单位', default: 'meters', options: ['meters', 'kilometers'] },
+      ],
     })
     const values = initFormValues(tool)
-    expect(values.distance).toBe(5000)
+    expect(values.distance).toBe(500)
     expect(values.distance_unit).toBe('meters')
+  })
+})
+
+describe('validateFormValues — remap / expression', () => {
+  it('remap_table 格式非法时报错', () => {
+    const tool = makeTool({
+      tool_id: 'gis.reclassify',
+      param_schema: [{ key: 'remap_table', type: 'string', title: '分级表' }],
+    })
+    const bad = validateFormValues(tool, { remap_table: 'bad-format' })
+    expect(bad.ok).toBe(false)
+    expect(bad.errors.remap_table).toContain('min-max:class')
+
+    const good = validateFormValues(tool, { remap_table: '0-10:1,10-100:2' })
+    expect(good.ok).toBe(true)
+  })
+
+  it('raster_calc expression 非空且字符白名单', () => {
+    const tool = makeTool({
+      tool_id: 'gis.raster_calc',
+      param_schema: [{ key: 'expression', type: 'string', title: '表达式' }],
+    })
+    const bad = validateFormValues(tool, { expression: 'A;DROP' })
+    expect(bad.ok).toBe(false)
+    const good = validateFormValues(tool, { expression: '(A+1)/2' })
+    expect(good.ok).toBe(true)
   })
 })
 

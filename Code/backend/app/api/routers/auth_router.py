@@ -154,6 +154,19 @@ def _theme_logo_url(theme_id: int, logo_path: str | None) -> str | None:
     return f"/auth/themes/{theme_id}/logo"
 
 
+def _theme_public_brand(theme) -> ThemePublicBrand:
+    return ThemePublicBrand(
+        id=theme.id,
+        slug=theme.slug,
+        name_zh=theme.name_zh,
+        full_name_zh=theme.full_name_zh,
+        name_en=theme.name_en,
+        abbr=theme.abbr,
+        description=theme.description,
+        logo_url=_theme_logo_url(theme.id, theme.logo_path),
+    )
+
+
 def _public_theme(theme) -> ThemePublic:
     return ThemePublic(
         id=theme.id,
@@ -624,17 +637,15 @@ def update_permission_mode(
 def get_primary_theme_public() -> ThemePublicBrand:
     from app.services.theme_repository import get_theme_repository
 
-    theme = get_theme_repository().get_primary()
-    return ThemePublicBrand(
-        id=theme.id,
-        slug=theme.slug,
-        name_zh=theme.name_zh,
-        full_name_zh=theme.full_name_zh,
-        name_en=theme.name_en,
-        abbr=theme.abbr,
-        description=theme.description,
-        logo_url=_theme_logo_url(theme.id, theme.logo_path),
-    )
+    return _theme_public_brand(get_theme_repository().get_primary())
+
+
+@router.get("/themes/public", response_model=list[ThemePublicBrand])
+def list_themes_public() -> list[ThemePublicBrand]:
+    """Unauthenticated branding for all product themes (login page theme picker)."""
+    from app.services.theme_repository import get_theme_repository
+
+    return [_theme_public_brand(t) for t in get_theme_repository().list_themes()]
 
 
 @router.get("/themes", response_model=list[ThemePublic])

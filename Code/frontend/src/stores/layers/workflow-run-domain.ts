@@ -118,8 +118,8 @@ export function createWorkflowRunDomain(
       void syncProgressiveBlockOverlays(runId, catalogId),
     emitWorkflowProgressTimeSeek: (jobLayer, status, detail) =>
       emitWorkflowProgressTimeSeek(jobLayer, status, detail),
-    attachAlgorithmProductOverlays: (refs, catalogId, runId) =>
-      attachAlgorithmProductOverlays(refs as never, catalogId, runId),
+    attachAlgorithmProductOverlays: (refs, catalogId, runId, opts) =>
+      attachAlgorithmProductOverlays(refs as never, catalogId, runId, opts),
     cleanupUnproducedRunLayers: (runId, opts) => cleanupUnproducedRunLayers(runId, opts),
     clearWindForCatalog: (catalogId) => viewport.clearWindForCatalog(catalogId),
     enableParticleIfUnset: (catalogId) => viewport.enableParticleIfUnset(catalogId),

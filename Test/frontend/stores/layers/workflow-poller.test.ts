@@ -349,6 +349,37 @@ describe('applyWorkflowEventsToJobLayer', () => {
     expect(deps.syncProgressiveBlockOverlays).not.toHaveBeenCalled()
   })
 
+  it('retry_pending 或 execution_retry_count 时清空 nodeProgress', () => {
+    const { poller } = setupDeps()
+    const existing: NodeProgress[] = [
+      {
+        nodeId: 'n1:fy_download',
+        nodeLabel: '下载',
+        stage: 'fy_download',
+        progress: 100,
+      },
+    ]
+    const fromRetryPending = poller.applyWorkflowEventsToJobLayer(
+      makeJobLayer({ status: 'running', nodeProgress: existing, progress: 80 }),
+      [makeEvent({ payload: { status: 'retry_pending' } })],
+    )
+    expect(fromRetryPending.nodeProgress).toEqual([])
+    expect(fromRetryPending.status).toBe('retry_pending')
+
+    const fromRedelivery = poller.applyWorkflowEventsToJobLayer(
+      makeJobLayer({ status: 'running', nodeProgress: existing, progress: 80 }),
+      [
+        makeEvent({
+          channel: 'system',
+          progress: 5,
+          payload: { execution_retry_count: 2 },
+        }),
+      ],
+    )
+    expect(fromRedelivery.nodeProgress).toEqual([])
+    expect(fromRedelivery.executionRetryCount).toBe(2)
+  })
+
   it('无 date 区间的 block_commit 回退到 formatProgressShell 消息', () => {
     const { poller } = setupDeps()
     const result = poller.applyWorkflowEventsToJobLayer(makeJobLayer({ message: '' }), [
@@ -498,6 +529,14 @@ describe('syncWorkflowRunSnapshot', () => {
     expect(merged.eventMessages).toEqual(['[nsidc] 开始', '派发到队列'])
     expect(merged.failureHints).toEqual(['module_name=nsidc_smap_download'])
     expect(merged.lastEventId).toBe('evt-live')
+  })
+
+  it('succeeded 但 attach 返回 0：不 cleanup 占位组', async () => {
+    const { deps, poller } = setupDeps()
+    vi.mocked(deps.attachAlgorithmProductOverlays).mockResolvedValue(0)
+    mockedGetRun.mockResolvedValue(makeRun({ status: 'succeeded' }) as never)
+    await poller.syncWorkflowRunSnapshot('run-1', 'cat-1', true)
+    expect(deps.cleanupUnproducedRunLayers).not.toHaveBeenCalled()
   })
 
   it('终态 failed：同样保留事件侧字段', async () => {

@@ -14,6 +14,10 @@ import { useUiStore } from '../../stores/ui'
 import { resolveApiUrl } from '../../services/_http'
 import { applyApiFetchDefaults } from '../../services/http-credentials'
 import { formatArea, formatLength, geodesicAreaM2, geodesicPerimeterM } from '../map/geometry-stats'
+import {
+  activeLayerHasReadableRaster,
+  resolveRasterOverlayIdFromActiveLayer,
+} from './tools/tool-layer-capabilities'
 
 interface ZonalStatItem {
   layer_id: string
@@ -61,11 +65,9 @@ const geomPerimeterM = computed(() =>
   lastPolygonFeature.value ? geodesicPerimeterM(lastPolygonFeature.value.geometry) : 0,
 )
 
-const overlayLayers = computed(() => {
-  return activeLayers.value.filter(
-    (l) => l.visible && (l.importedRaster || l.dataState === 'catalog'),
-  )
-})
+const overlayLayers = computed(() =>
+  activeLayers.value.filter((l) => l.visible && activeLayerHasReadableRaster(l)),
+)
 
 async function fetchStats() {
   const feature = lastPolygonFeature.value
@@ -75,9 +77,9 @@ async function fetchStats() {
   }
   const seq = ++statsSeq
 
-  const overlayLayerIds = overlayLayers.value.map(
-    (l) => l.importedRaster?.overlayLayerId ?? l.catalogId,
-  )
+  const overlayLayerIds = overlayLayers.value
+    .map((l) => resolveRasterOverlayIdFromActiveLayer(l))
+    .filter((id): id is string => Boolean(id))
   if (overlayLayerIds.length === 0) {
     // 无栅格不算错误：几何统计仍在展示，仅提示栅格部分不可用
     if (seq === statsSeq) {

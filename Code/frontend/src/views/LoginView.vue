@@ -7,7 +7,9 @@ import { safeRedirect } from '../app/router'
 import { useAuthStore } from '../stores/auth'
 import { BRAND } from '../ui-copy'
 import AppButton from '../components/ui/AppButton.vue'
+import AppSelect from '../components/ui/AppSelect.vue'
 import BrandMark from '../components/brand/BrandMark.vue'
+import { resolveLoginThemeStyle } from './login-theme-presets'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -25,9 +27,27 @@ const brandAbbr = computed(() => auth.resolvedBrand.abbr || BRAND.abbr)
 const brandShort = computed(() => auth.resolvedBrand.shortName || BRAND.shortName)
 const brandEn = computed(() => auth.resolvedBrand.displayNameEn || BRAND.displayNameEn)
 const brandLogo = computed(() => auth.resolvedBrand.logoUrl)
+const activeLoginThemeSlug = computed(
+  () => auth.loginPreviewSlug || auth.primaryTheme?.slug || 'sgfs',
+)
+const loginPageStyle = computed(() => resolveLoginThemeStyle(activeLoginThemeSlug.value))
+const loginThemeSlug = computed({
+  get: () => auth.loginPreviewSlug ?? '',
+  set: (slug: string) => auth.setLoginPreviewSlug(slug || null),
+})
+const showThemePicker = computed(() => auth.publicThemes.length > 1)
+const themeSelectOptions = computed(() =>
+  auth.publicThemes.map((t) => ({
+    label: t.name_zh || t.abbr,
+    value: t.slug,
+  })),
+)
 
-onMounted(() => {
-  void auth.loadPrimaryTheme()
+onMounted(async () => {
+  await Promise.all([auth.loadPrimaryTheme(), auth.loadPublicThemes()])
+  const routeTheme =
+    typeof route.query.theme === 'string' ? route.query.theme : null
+  auth.initLoginPreviewSlug(routeTheme)
   if (devHint.value) {
     username.value = devHint.value.username
     password.value = devHint.value.password
@@ -60,7 +80,11 @@ async function submit() {
 </script>
 
 <template>
-  <div class="login-page">
+  <div
+    class="login-page"
+    :data-theme-slug="activeLoginThemeSlug"
+    :style="loginPageStyle"
+  >
     <div class="login-backdrop" aria-hidden="true">
       <!-- 星点（最底层） -->
       <div class="stars"></div>
@@ -204,6 +228,17 @@ async function submit() {
       </div>
       <div class="brand-divider" aria-hidden="true"></div>
 
+      <label v-if="showThemePicker" class="theme-picker">
+        <span class="field-label">产品主题</span>
+        <AppSelect
+          v-model="loginThemeSlug"
+          :options="themeSelectOptions"
+          block
+          size="sm"
+          placeholder="选择登录主题"
+        />
+      </label>
+
       <p v-if="auth.bootstrapError" class="banner banner-warn">
         {{ auth.bootstrapError }}
         <AppButton variant="ghost" size="sm" :disabled="retrying" @click="retryBootstrap">
@@ -265,6 +300,8 @@ async function submit() {
     </div>
   </div>
 </template>
+
+<style src="./login-chrome-tokens.css"></style>
 
 <style scoped>
 .login-page {
@@ -370,8 +407,8 @@ async function submit() {
   left: -120px;
   background: radial-gradient(
     circle,
-    var(--border-accent) 0%,
-    var(--accent-surface) 50%,
+    var(--login-border-accent, var(--border-accent)) 0%,
+    var(--login-accent-surface, var(--accent-surface)) 50%,
     transparent 70%
   );
   opacity: 0.7;
@@ -385,8 +422,8 @@ async function submit() {
   right: -100px;
   background: radial-gradient(
     circle,
-    var(--accent-border) 0%,
-    var(--accent-surface) 50%,
+    var(--login-accent-border, var(--accent-border)) 0%,
+    var(--login-accent-surface, var(--accent-surface)) 50%,
     transparent 70%
   );
   opacity: 0.6;
@@ -398,7 +435,7 @@ async function submit() {
   height: 360px;
   top: 35%;
   right: 15%;
-  background: radial-gradient(circle, rgba(255, 200, 120, 0.08) 0%, transparent 70%);
+  background: radial-gradient(circle, var(--login-glow-warm, rgba(255, 200, 120, 0.08)) 0%, transparent 70%);
   opacity: 0.5;
 }
 
@@ -459,18 +496,18 @@ async function submit() {
   position: relative;
   width: min(28rem, 100%);
   padding: var(--space-7) var(--space-6);
-  border: 1px solid var(--accent-surface);
+  border: 1px solid var(--login-accent-surface, var(--accent-surface));
   border-radius: var(--radius-xl);
   background:
     linear-gradient(165deg, var(--surface-1), var(--surface-1)),
-    linear-gradient(180deg, var(--accent-surface) 0%, transparent 40%);
+    linear-gradient(180deg, var(--login-accent-surface, var(--accent-surface)) 0%, transparent 40%);
   backdrop-filter: blur(32px) saturate(1.2);
   -webkit-backdrop-filter: blur(32px) saturate(1.2);
   box-shadow:
     0 40px 100px rgba(1, 8, 16, 0.7),
     0 0 0 1px var(--surface-hover) inset,
     0 1px 0 rgba(136, 223, 255, 0.15) inset,
-    0 0 60px var(--accent-surface);
+    0 0 60px var(--login-accent-surface, var(--accent-surface));
   animation: card-enter 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
@@ -483,7 +520,7 @@ async function submit() {
   padding: 1px;
   background: linear-gradient(
     135deg,
-    var(--accent-border),
+    var(--login-accent-border, var(--accent-border)),
     transparent 40%,
     transparent 60%,
     rgba(255, 200, 120, 0.15)
@@ -540,11 +577,18 @@ async function submit() {
   filter: drop-shadow(0 8px 22px rgba(90, 213, 255, 0.22));
 }
 
+.brand-logo-img {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  border-radius: 12px;
+}
+
 .mark-ring-outer {
   position: absolute;
   inset: -5px;
   border-radius: 17px;
-  border: 1px solid var(--accent-surface);
+  border: 1px solid var(--login-accent-surface, var(--accent-surface));
   animation: ring-pulse 4s ease-in-out infinite;
   pointer-events: none;
 }
@@ -568,8 +612,8 @@ async function submit() {
   font-weight: var(--font-weight-semibold);
   letter-spacing: 0.42em;
   text-transform: uppercase;
-  color: var(--accent);
-  text-shadow: 0 0 20px var(--accent-border);
+  color: var(--login-accent, var(--accent));
+  text-shadow: 0 0 20px var(--login-accent-border, var(--accent-border));
 }
 
 .brand-names {
@@ -585,11 +629,27 @@ async function submit() {
   font-size: 1.08rem;
   font-weight: var(--font-weight-semibold);
   letter-spacing: 0.02em;
-  color: var(--text-strong);
-  background: linear-gradient(135deg, var(--surface-3) 0%, var(--accent-strong) 100%);
+  line-height: 1.45;
+  color: var(--login-title-base, var(--text-strong));
+  text-shadow:
+    0 1px 2px rgba(1, 8, 16, 0.9),
+    0 0 20px rgba(1, 8, 16, 0.35);
+  background: linear-gradient(
+    90deg,
+    var(--login-title-base, var(--text-strong)) 0%,
+    var(--login-title-base, var(--text-strong)) 78%,
+    var(--login-title-accent-stop, var(--login-accent-strong, var(--accent-strong))) 100%
+  );
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+}
+
+.theme-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
 }
 
 .brand-name-en {
@@ -626,7 +686,7 @@ async function submit() {
 
 .field input {
   padding: 0.8rem 1rem;
-  border: 1px solid var(--accent-surface);
+  border: 1px solid var(--login-accent-surface, var(--accent-surface));
   border-radius: var(--radius-md);
   background: linear-gradient(180deg, var(--surface-1), var(--surface-1));
   color: var(--text-strong);
@@ -644,16 +704,16 @@ async function submit() {
 }
 
 .field input:hover {
-  border-color: var(--border-accent);
+  border-color: var(--login-border-accent, var(--border-accent));
   background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
 }
 
 .field input:focus {
   outline: none;
-  border-color: var(--accent);
+  border-color: var(--login-accent, var(--accent));
   box-shadow:
-    0 0 0 3px var(--accent-surface),
-    0 0 20px var(--accent-surface),
+    0 0 0 3px var(--login-accent-surface, var(--accent-surface)),
+    0 0 20px var(--login-accent-surface, var(--accent-surface)),
     inset 0 1px 0 rgba(136, 223, 255, 0.1);
   background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
 }
@@ -692,15 +752,15 @@ async function submit() {
 
 .password-toggle:hover,
 .password-toggle.is-visible {
-  color: var(--accent);
+  color: var(--login-accent, var(--accent));
 }
 
 .password-toggle:hover {
-  background: var(--accent-surface);
+  background: var(--login-accent-surface, var(--accent-surface));
 }
 
 .password-toggle:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--login-accent, var(--accent));
   outline-offset: 2px;
 }
 

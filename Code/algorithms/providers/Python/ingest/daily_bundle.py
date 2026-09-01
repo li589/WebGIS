@@ -170,10 +170,17 @@ def date_keys_from_range(start_time: datetime, end_time: datetime) -> list[str]:
 
 
 def _load_mat_payload(file_path: str | Path) -> dict[str, Any]:
+    from data_access.ease_grid_constants import ensure_ease2_9km_shape
+
     file_path = Path(file_path)
     if not file_path.exists():
         raise FileNotFoundError(f"MAT file not found: {file_path}")
-    return load_mat_file(file_path)
+    payload = load_mat_file(file_path)
+    # SMAP 日文件等可能为历史 (3856,1624)；规范化后再与辅料对齐
+    return {
+        key: ensure_ease2_9km_shape(value) if hasattr(value, "shape") else value
+        for key, value in payload.items()
+    }
 
 
 def _pick_field(

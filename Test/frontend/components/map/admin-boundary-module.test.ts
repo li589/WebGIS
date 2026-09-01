@@ -9,7 +9,10 @@ describe('admin-boundary-module', () => {
     const setLayoutProperty = vi.fn()
     const setPaintProperty = vi.fn()
     const boundaryModuleData = {
-      guangdongCityBoundaries: { type: 'FeatureCollection', features: [] as any[] },
+      loadAdminBoundaryOverlay: vi.fn(async () => ({
+        type: 'FeatureCollection',
+        features: [],
+      })),
     }
     const loadBoundaryModule = vi.fn(async () => boundaryModuleData) as unknown as NonNullable<
       NonNullable<

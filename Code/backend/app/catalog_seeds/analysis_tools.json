@@ -50,11 +50,18 @@
         "options": ["mean", "median", "sum", "min", "max", "count"]
       },
       {
+        "key": "zones_imported_vector_layer_id",
+        "type": "string",
+        "title": "分区矢量层（backend id）",
+        "default": "",
+        "description": "已导入矢量层的 backend id；可从下拉选择。缺省时用模板默认 zones"
+      },
+      {
         "key": "zones_overlay_layer_id",
         "type": "string",
-        "title": "分区图层 overlay id",
+        "title": "分区栅格 overlay id（高级）",
         "default": "",
-        "description": "矢量导入层的 overlay/catalog id；缺省时用模板 zones 路径"
+        "description": "栅格分区 overlay id；一般留空"
       },
       {
         "key": "band",

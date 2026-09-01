@@ -297,7 +297,11 @@ export interface WorkflowStateReaderDeps {
 /** 状态写入接口：store 写函数注入 */
 export interface WorkflowStateWriterDeps {
   setRunLayerGroups: (groups: ActiveRunLayerGroup[]) => void
-  upsertJobLayer: (catalogId: string, jobLayer: JobLayerItem) => void
+  upsertJobLayer: (
+    catalogId: string,
+    jobLayer: JobLayerItem,
+    opts?: { skipActiveLayerSync?: boolean },
+  ) => void
   removeJobLayerById: (jobId: string) => void
   setWorkflowError: (message: string | null) => void
   scheduleWorkspacePersist: () => void
@@ -457,7 +461,11 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
    * 将其写入 jobLayers 并启动轮询跟踪。
    * catalogId 用于关联图层；若未知则用 run.engine 或 fallback。
    */
-  async function registerExternalWorkflowRun(runId: string, catalogIdHint?: string) {
+  async function registerExternalWorkflowRun(
+    runId: string,
+    catalogIdHint?: string,
+    opts?: { skipActiveLayerSync?: boolean },
+  ) {
     // 已在跟踪则跳过
     if (deps.isPolling(runId)) return
     const existing = deps.getJobLayers().find((item) => item.jobId === runId)
@@ -468,9 +476,17 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       // 推断 catalogId：优先 hint，其次从 run payload 的 layer_id 取（反演英文 id 归一）
       const inferredCatalogId = resolveInversionCatalogId(catalogIdHint ?? run.layer_id ?? runId)
       const jobLayer = await buildJobLayer(run, inferredCatalogId, {})
-      deps.upsertJobLayer(inferredCatalogId, jobLayer)
+      if (opts?.skipActiveLayerSync) {
+        jobLayer.isAnalysisToolRun = true
+      }
+      deps.upsertJobLayer(inferredCatalogId, jobLayer, {
+        skipActiveLayerSync: opts?.skipActiveLayerSync,
+      })
       if (!isTerminalStatus(jobLayer.status)) {
-        deps.activeWorkflowCatalogIds.add(inferredCatalogId)
+        // GIS 分析工具不占用 catalog「主工作流活跃」集合，避免侧栏/组状态被污染
+        if (!opts?.skipActiveLayerSync) {
+          deps.activeWorkflowCatalogIds.add(inferredCatalogId)
+        }
         void deps.startPolling(runId, inferredCatalogId)
       }
     } catch (err) {
@@ -857,10 +873,11 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
             .attachAlgorithmProductOverlays(run.result_refs, catalogId, run.run_id, {
               forceBind: Boolean(candidate.autoDiscovered),
             })
-            .then(() => {
-              deps.cleanupUnproducedRunLayers(run.run_id, { succeeded: true })
-              // 产物附加完成后只落盘本地；远端推送留给用户后续编辑触发
-              deps.flushWorkspacePersistNow({ sync: false })
+            .then((boundCount) => {
+              if (boundCount > 0) {
+                deps.cleanupUnproducedRunLayers(run.run_id, { succeeded: true })
+                deps.flushWorkspacePersistNow({ sync: false })
+              }
             })
         }
       }
@@ -992,7 +1009,24 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       catalogId,
       tracked,
     )
-    const existingGroup = deps.getRunLayerGroups().find((g) => g.runId === runId)
+    let existingGroup = deps.getRunLayerGroups().find((g) => g.runId === runId)
+    // 画布/编辑器在 submit 前已建 computing 组（runId 尚空）——提交路径须接管，
+    // 禁止再建第二组导致双 runId / attach 绑错组 / cleanup 清错侧栏。
+    if (!existingGroup && options?.source === 'submit') {
+      const probeWorkflowId = String(bridge.workflowId || workflowId || '')
+      const probeSource = resolveInversionCatalogId(String(bridge.sourceLayerId || catalogId))
+      const pendingGroup = deps.getRunLayerGroups().find(
+        (g) =>
+          !g.runId &&
+          g.status === 'computing' &&
+          ((Boolean(probeWorkflowId) && g.workflowId === probeWorkflowId) ||
+            resolveInversionCatalogId(String(g.sourceLayerId || '')) === probeSource),
+      )
+      if (pendingGroup) {
+        pendingGroup.runId = runId
+        existingGroup = pendingGroup
+      }
+    }
     // 占位成员标签：优先沿用已恢复组/已水合成员的真实标签，
     // 其次按工作流定义 manifest（extra.outputs / main_layers）推导，
     // 均无（旧 run）时回退 SM/VOD/OMEGA 兼容

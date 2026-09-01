@@ -6,6 +6,7 @@ from algorithms.fy import (
     build_fy_daily_command_steps,
     get_fy_daily_multiband_output_path,
     get_fy_profile,
+    normalize_fy_band_ids,
     write_fy_command_plan_json,
 )
 from contracts.job import JobRequest
@@ -55,7 +56,7 @@ class FyDailyPipeline(BasePipeline):
             )
         )
         orbit_mode = request.algorithm_params.get("orbit_mode", "MWRID")
-        band_ids = tuple(request.algorithm_params.get("band_ids", [1, 2]))
+        band_ids = normalize_fy_band_ids(request.algorithm_params.get("band_ids", [1, 2]))
         overlap_option = request.algorithm_params.get("overlap_option", "average")
         spatial_mode = request.algorithm_params.get("spatial_mode", "global")
         gdal_bin = request.algorithm_params.get("gdal_bin")

@@ -47,7 +47,7 @@ describe('map-interaction-module', () => {
 
     module.bindEvents()
     module.applyInteractionMode()
-    expect(canvasStyle.cursor).toBe('default')
+    expect(canvasStyle.cursor).toBe('pointer')
 
     handlers.get('movestart')?.()
     handlers.get('move')?.()

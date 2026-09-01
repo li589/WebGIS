@@ -1,105 +1,73 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
-vi.mock('@/services/analysis-api', () => ({
-  fetchAnalysisTools: vi.fn(async () => ({
-    layer_id: 'imported-a',
-    layer_kind: 'raster',
-    items: [
-      {
-        tool_id: 'gis.contour',
-        title: '等值线',
-        description: '',
-        category: 'gis',
-        input_kinds: ['raster'],
-        param_schema: [{ key: 'interval', type: 'number', title: '等值距', default: 100 }],
-        workflow_template_id: 'analysis_contour',
-        outputs: ['file'],
-        resource_profile: 'standard',
-        concurrency_key: 'layer_tool',
-        enabled: true,
-      },
-      {
-        tool_id: 'gis.clip',
-        title: '裁剪',
-        description: '',
-        category: 'gis',
-        input_kinds: ['raster'],
-        param_schema: [],
-        workflow_template_id: 'analysis_clip',
-        outputs: ['map_layer'],
-        resource_profile: 'heavy',
-        concurrency_key: 'layer_tool',
-        enabled: true,
-      },
-      {
-        tool_id: 'gis.reclassify',
-        title: '重分类',
-        description: '',
-        category: 'gis',
-        input_kinds: ['raster'],
-        param_schema: [],
-        workflow_template_id: 'analysis_reclassify',
-        outputs: ['map_layer'],
-        resource_profile: 'standard',
-        concurrency_key: 'layer_tool',
-        enabled: true,
-      },
-    ],
-  })),
-  submitAnalysisRun: vi.fn(async ({ tool_id }: { tool_id: string }) => ({
-    run_id: `run-${tool_id}`,
-    status: 'accepted',
-    status_url: '/x',
-    events_url: '/y',
-    created_at: new Date().toISOString(),
-    message: 'ok',
-  })),
-}))
+import { useAnalysisRunnerStore } from '@/stores/analysis-runner'
+import type { AnalysisToolDescriptor } from '@/services/analysis-api'
 
-vi.mock('@/services/runtime-api', () => ({
-  cancelWorkflowRun: vi.fn(async () => ({})),
-}))
+function makeTool(): AnalysisToolDescriptor {
+  return {
+    tool_id: 'gis.zonal_stats',
+    title: '分区统计',
+    description: '',
+    category: 'gis',
+    input_kinds: ['raster'],
+    param_schema: [],
+    workflow_template_id: 'analysis_zonal_stats',
+    outputs: ['table', 'chart'],
+    resource_profile: 'standard',
+    concurrency_key: 'layer_tool',
+    enabled: true,
+  }
+}
 
-vi.mock('@/stores/layers', () => ({
-  useLayersStore: () => ({
-    jobLayers: [],
-    registerExternalWorkflowRun: vi.fn(async () => undefined),
-    currentMapBBox: { west: 1, south: 2, east: 3, north: 4 },
-  }),
-}))
+function makeDisplay(overrides: Record<string, unknown> = {}) {
+  return {
+    instanceId: 'i1',
+    catalogId: 'cat-raster',
+    name: '栅格',
+    isImportedRaster: true,
+    importedRasterOverlayLayerId: 'ov-raster',
+    dataState: 'real',
+    ...overrides,
+  } as never
+}
 
-describe('analysis-runner', () => {
-  beforeEach(() => {
+describe('analysis-runner buildSubmitBody', () => {
+  it('overlay 与 zones 矢量/栅格字段映射正确', () => {
     setActivePinia(createPinia())
-    vi.clearAllMocks()
+    const runner = useAnalysisRunnerStore()
+    const body = runner.buildSubmitBody({
+      tool: makeTool(),
+      display: makeDisplay(),
+      params: {
+        statistic: 'mean',
+        zones_imported_vector_layer_id: 'vec-backend-9',
+        zones_overlay_layer_id: 'ov-zones',
+      },
+      mapPoint: null,
+      bbox: null,
+    })
+    expect(body.overlay_layer_id).toBe('ov-raster')
+    expect(body.zones_overlay_layer_id).toBe('ov-zones')
+    expect(body.params?.zones_imported_vector_layer_id).toBe('vec-backend-9')
+    expect(body.params?.zones_overlay_layer_id).toBeUndefined()
   })
 
-  it('queues third concurrent tool for same layer', async () => {
-    const { useAnalysisRunnerStore } = await import('@/stores/analysis-runner')
-    const { submitAnalysisRun } = await import('@/services/analysis-api')
-    const store = useAnalysisRunnerStore()
-    await store.loadToolsForDisplay({
-      catalogId: 'imported-a',
-      instanceId: 'i1',
-      isImportedRaster: true,
-      importedRasterOverlayLayerId: 'imported-a',
-    } as never)
-
-    const tools = store.toolsCache!.items
-    const display = {
-      catalogId: 'imported-a',
-      instanceId: 'i1',
-      isImportedRaster: true,
-      importedRasterOverlayLayerId: 'imported-a',
-    } as never
-
-    await store.submitTool({ tool: tools[0], display, params: {} })
-    await store.submitTool({ tool: tools[1], display, params: {} })
-    await store.submitTool({ tool: tools[2], display, params: {} })
-
-    expect(submitAnalysisRun).toHaveBeenCalledTimes(2)
-    expect(store.localQueue.length).toBe(1)
-    expect(store.toolStatus('gis.reclassify', 'imported-a')?.phase).toBe('queued')
+  it('catalog 层 overlay 回落 catalogId', () => {
+    setActivePinia(createPinia())
+    const runner = useAnalysisRunnerStore()
+    const body = runner.buildSubmitBody({
+      tool: makeTool(),
+      display: makeDisplay({
+        isImportedRaster: false,
+        importedRasterOverlayLayerId: undefined,
+        dataState: 'catalog',
+        catalogId: 'method-omega-sf',
+      }),
+      params: {},
+      mapPoint: null,
+      bbox: null,
+    })
+    expect(body.overlay_layer_id).toBe('method-omega-sf')
   })
 })

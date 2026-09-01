@@ -57,7 +57,16 @@ export function formatDownloadProgressDetail(
     const total = detail.total_items
     const done = detail.downloaded_items ?? total
     if (total != null && done != null) {
-      return phase === 'skipping' ? `全部跳过 (${done}/${total})` : `下载完成 (${done}/${total})`
+      if (phase === 'skipping') {
+        const name = detail.current_item_name
+          ? ` · ${truncateName(detail.current_item_name)}`
+          : ''
+        if (total === 1 || done === total) {
+          return `全部跳过 (${done}/${total})`
+        }
+        return `文件 ${done}/${total} · 已跳过（本地已有）${name}`
+      }
+      return `下载完成 (${done}/${total})`
     }
   }
 

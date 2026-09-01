@@ -16,7 +16,7 @@ export type DataStatusState = 'running' | 'queued' | 'error' | 'done' | 'stale'
 export interface DataStatusBadge {
   /** 统一五态（决定配色与文案） */
   state: DataStatusState
-  /** 展示文案（含进度百分比等动态内容） */
+  /** 展示文案 */
   label: string
   /** 悬停提示（保留原 availability/lifecycle/job 的细节诊断） */
   title?: string
@@ -25,7 +25,7 @@ export interface DataStatusBadge {
 export interface DataStatusInput {
   /** 工作流作业状态（running/queued/retry_pending/succeeded/failed/cancelled） */
   jobStatus?: string | null
-  /** 作业进度 0-100（running 态展示） */
+  /** 作业进度 0-100（保留入参供调用方；组内/侧栏徽标不展示百分比） */
   jobProgress?: number | null
   /** availability state（ready/partial/empty） */
   availabilityState?: string | null
@@ -58,7 +58,7 @@ const STALE_TITLE = '数据可用但非最新：新数据尚未发布或未更�
 export function deriveDataStatus(input: DataStatusInput): DataStatusBadge | null {
   const {
     jobStatus,
-    jobProgress,
+    jobProgress: _jobProgress,
     availabilityState,
     availabilityLabel,
     availabilityDescription,
@@ -69,9 +69,7 @@ export function deriveDataStatus(input: DataStatusInput): DataStatusBadge | null
 
   // 1. 作业状态最具体，优先
   if (jobStatus === 'running') {
-    const pct =
-      typeof jobProgress === 'number' && jobProgress > 0 ? ` ${Math.round(jobProgress)}%` : ''
-    return { state: 'running', label: `运行中${pct}`, title: availabilityDescription ?? undefined }
+    return { state: 'running', label: '运行中', title: availabilityDescription ?? undefined }
   }
   if (jobStatus === 'queued' || jobStatus === 'retry_pending') {
     return { state: 'queued', label: '排队中', title: availabilityDescription ?? undefined }
@@ -134,4 +132,16 @@ export function deriveDataStatus(input: DataStatusInput): DataStatusBadge | null
 
   // 6. 无信号
   return null
+}
+
+/** 计算组运行中：组内成员统一「运行中」，进度仅在组标题/工作流指示器展示。 */
+export function normalizeRunGroupMemberStatus(
+  badge: DataStatusBadge | null,
+  inComputingGroup: boolean,
+): DataStatusBadge | null {
+  if (!badge || !inComputingGroup) return badge
+  if (badge.state === 'queued' || badge.state === 'running') {
+    return { state: 'running', label: '运行中', title: badge.title }
+  }
+  return badge
 }

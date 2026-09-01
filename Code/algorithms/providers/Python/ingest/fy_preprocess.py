@@ -1107,9 +1107,38 @@ class FyPreprocessor:
         else:
             os.makedirs(output_dir, exist_ok=True)
 
-        # 扫描 HDF 文件并按日期+轨道分组
+        # 扫描 HDF 文件并按日期+轨道分组（跳过截断/损坏文件）
         logger.info("开始扫描 %s ...", input_dir)
-        all_files = [f for f in os.listdir(input_dir) if f.endswith(".HDF")]
+        all_files: list[str] = []
+        for file_name in os.listdir(input_dir):
+            if not file_name.endswith(".HDF"):
+                continue
+            full_path = os.path.join(input_dir, file_name)
+            try:
+                if not h5py.is_hdf5(full_path):
+                    logger.warning("跳过非 HDF5 文件: %s", file_name)
+                    continue
+                with h5py.File(full_path, "r") as handle:
+                    _ = list(handle.keys())[:1]
+                    for ds_path in (
+                        "Calibration/EARTH_OBSERVE_BT_10_to_89GHz",
+                        "EARTH_OBSERVE_BT_10_to_89GHz",
+                    ):
+                        if ds_path not in handle:
+                            continue
+                        ds = handle[ds_path]
+                        size = int(getattr(ds, "size", 0) or 0)
+                        if size > 0:
+                            ndim = int(getattr(ds, "ndim", 0) or 0)
+                            if ndim <= 0:
+                                _ = ds[()]
+                            else:
+                                _ = ds[tuple(0 for _ in range(ndim))]
+                        break
+            except (OSError, ValueError, TypeError, KeyError, AttributeError, IndexError) as exc:
+                logger.warning("跳过不可读 HDF %s: %s", file_name, exc)
+                continue
+            all_files.append(file_name)
         logger.info("扫描完成，HDF 文件数: %d", len(all_files))
 
         files_by_day: dict[str, dict[str, list[str]]] = {}

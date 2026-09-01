@@ -1620,6 +1620,9 @@
   font-size: var(--font-size-caption);
   line-height: 1.4;
 }
+.job-message--error {
+  color: var(--danger);
+}
 .job-diagnostic-list {
   display: grid;
   gap: 0.12rem;

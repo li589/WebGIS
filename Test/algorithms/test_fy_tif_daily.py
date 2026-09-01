@@ -179,6 +179,9 @@ class TestHdfExtensionTolerance(unittest.TestCase):
     """discover_fy_orbit_files 默认模式应大小写不敏感并接受 .hdf/.hdf5 变体。"""
 
     def test_hdf5_and_case_variants_discovered(self) -> None:
+        import h5py
+        import numpy as np
+
         from ingest.fy import discover_fy_orbit_files
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -189,7 +192,8 @@ class TestHdfExtensionTolerance(unittest.TestCase):
                 "FY3D_GBAL_L1_20251228_MWRID_0.hdf",
                 "FY3D_GBAL_L1_20251229_MWRID_0.hdf5",
             ):
-                (raw / name).write_bytes(b"")
+                with h5py.File(raw / name, "w") as handle:
+                    handle.create_dataset("probe", data=np.asarray([1], dtype="i4"))
             files = discover_fy_orbit_files(raw)
             self.assertEqual(
                 [f.file_name for f in files],
@@ -204,6 +208,23 @@ class TestHdfExtensionTolerance(unittest.TestCase):
                 ["20251227", "20251228", "20251229"],
             )
             self.assertTrue(all(f.orbit_type == "MWRID" for f in files))
+
+    def test_skips_unreadable_orbit_hdf(self) -> None:
+        import h5py
+        import numpy as np
+
+        from ingest.fy import discover_fy_orbit_files
+
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "raw"
+            raw.mkdir()
+            bad = raw / "FY3D_MWRID_GBAL_L1_20251209_2045_010KM_MS.HDF"
+            bad.write_bytes(b"truncated-junk")
+            good = raw / "FY3D_MWRID_GBAL_L1_20251209_2211_010KM_MS.HDF"
+            with h5py.File(good, "w") as handle:
+                handle.create_dataset("probe", data=np.asarray([1], dtype="i4"))
+            files = discover_fy_orbit_files(raw)
+            self.assertEqual([f.file_name for f in files], [good.name])
 
     def test_explicit_pattern_stays_exact(self) -> None:
         from ingest.fy import discover_fy_orbit_files

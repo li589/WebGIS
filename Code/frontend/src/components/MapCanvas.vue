@@ -15,6 +15,7 @@ import { useUiStore } from '../stores/ui'
 import { useDrawStore } from '../stores/draw-store'
 import { useLogStore } from '../stores/log'
 import { useDrawSave } from '../composables/useDrawSave'
+import { useDrawSessionTransition } from '../composables/useDrawSessionTransition'
 import { useWeatherTileManager } from '../stores/weather-tile-manager'
 import type { LayerHotspot } from '../stores/layers/types'
 import { createMapCanvasActionBridge } from './map/map-canvas-action-bridge'
@@ -77,6 +78,7 @@ const viewport = useLayerViewport()
 const uiStore = useUiStore()
 const settingsStore = useSettingsStore()
 const drawStore = useDrawStore()
+const { requestInteractionMode } = useDrawSessionTransition()
 const logStore = useLogStore()
 const weatherTileManager = useWeatherTileManager()
 const weatherStatusVersion = toRef(weatherTileManager, 'statusVersion')
@@ -877,27 +879,18 @@ async function handleDrawSave() {
   console.error('[draw] save failed:', res.error)
 }
 
-// 进入绘制模式时自动创建草稿图层；已有未保存草稿则继续编辑（防丢失）
+// 进入绘制模式时自动创建草稿图层；编辑已有图层或已有草稿则跳过
 watch(
   () => uiStore.interactionMode,
   (mode) => {
     if (mode !== 'draw') return
+    if (drawStore.editingLayerId) return
     const hasActiveDraft = drawStore.draftLayerId || drawStore.features.length > 0
     if (hasActiveDraft) return
     const name = drawStore.draftLayerName || `绘制图层-${new Date().toLocaleString('zh-CN')}`
     const layer = layersStore.addDrawDraftLayer(name)
     drawStore.beginDrawSession(name)
     drawStore.setDraftLayerId(layer.instanceId)
-  },
-)
-
-// 切出绘制模式：丢弃未闭合的半成品多边形，保留已完成要素（草稿）
-watch(
-  () => uiStore.interactionMode,
-  (mode) => {
-    if (mode !== 'draw') {
-      drawStore.clearActiveVertices()
-    }
   },
 )
 
@@ -910,7 +903,7 @@ watch(
     if ((draftId && !ids.includes(draftId)) || (editingId && !ids.includes(editingId))) {
       drawStore.clearDraft()
       if (uiStore.interactionMode === 'draw') {
-        uiStore.setInteractionMode('move')
+        void requestInteractionMode('move')
       }
     }
   },
@@ -1191,15 +1184,7 @@ async function handleLocateMe() {
       <span>{{ weatherTileStatusModel.error }}</span>
     </div>
 
-    <!-- Layer info card -->
-    <div class="map-note">
-      <h2>{{ stageDisplayModel.noteTitle }}</h2>
-      <p>{{ stageDisplayModel.noteSummary }}</p>
-      <span class="map-note-meta">{{ stageDisplayModel.noteMeta }}</span>
-      <div class="time-indicator" aria-hidden="true">
-        <div class="time-indicator-fill"></div>
-      </div>
-    </div>
+    <!-- Layer info card removed: progress/status shown in layer sidebar + workflow panel -->
 
     <!-- 绘制工具栏 -->
     <DrawToolbar />

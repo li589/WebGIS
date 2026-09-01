@@ -20,19 +20,21 @@ export type WorkflowProgressNodeLike = {
 }
 
 /**
- * Backend overall stage from WorkflowRunner._ScopedProgressLogger.
- * Exact match only — ``workflow.node.n1`` stage_end is also progress=100 and
- * must NOT be treated as the job bar.
+ * Backend overall stage: weighted span from ScopedProgressLogger (``workflow.dispatch``)
+ * or lifecycle bookends from runner dispatch (``workflow_dispatch``).
  */
 export function isOverallProgressStage(nodeIdOrStage: string | null | undefined): boolean {
-  return String(nodeIdOrStage ?? '').trim() === 'workflow.dispatch'
+  const id = String(nodeIdOrStage ?? '').trim()
+  return id === 'workflow.dispatch' || id === 'workflow_dispatch'
 }
 
 /** Internal per-node bookkeeping stages — hide from the node-progress list. */
+const HIDDEN_MODULE_STAGES = new Set(['data_prepare'])
+
 export function isInternalWorkflowNodeStage(nodeIdOrStage: string | null | undefined): boolean {
-  return String(nodeIdOrStage ?? '')
-    .trim()
-    .startsWith('workflow.node.')
+  const id = String(nodeIdOrStage ?? '').trim()
+  if (HIDDEN_MODULE_STAGES.has(id)) return true
+  return id.startsWith('workflow.node.')
 }
 
 /** Whether a node stage should appear in the per-node progress list (not job bar). */
@@ -42,6 +44,15 @@ export function isDisplayableNodeStage(nodeIdOrStage: string | null | undefined)
   if (isOverallProgressStage(id)) return false
   if (isInternalWorkflowNodeStage(id)) return false
   return true
+}
+
+/** Module stage suffix: ``n12:omega_sf_fenkuai`` → ``omega_sf_fenkuai``. */
+export function nodeProgressModuleKey(nodeId: string): string {
+  const id = String(nodeId ?? '').trim()
+  if (!id) return ''
+  const colon = id.lastIndexOf(':')
+  if (colon >= 0) return id.slice(colon + 1)
+  return id
 }
 
 function nodeProgressSortKey(node: {
@@ -54,10 +65,64 @@ function nodeProgressSortKey(node: {
   return node.progress
 }
 
+function pickRicherMessage(a?: string, b?: string): string | undefined {
+  if (!a?.trim()) return b
+  if (!b?.trim()) return a
+  return b.length >= a.length ? b : a
+}
+
+function pickBetterNodeProgress<
+  T extends {
+    nodeId: string
+    progress: number
+    updatedAt?: string
+    eventId?: string
+    terminalHint?: string
+    detail?: Record<string, unknown> | null
+  },
+>(a: T, b: T): T {
+  if (a.progress !== b.progress) return a.progress > b.progress ? a : b
+  const aScoped = a.nodeId.includes(':')
+  const bScoped = b.nodeId.includes(':')
+  if (aScoped !== bScoped) return aScoped ? a : b
+  const aDetail = a.detail && Object.keys(a.detail).length > 0
+  const bDetail = b.detail && Object.keys(b.detail).length > 0
+  if (aDetail !== bDetail) return aDetail ? a : b
+  return nodeProgressSortKey(b) >= nodeProgressSortKey(a) ? b : a
+}
+
+function mergeBareScopedNodeProgress<
+  T extends {
+    nodeId: string
+    nodeLabel?: string
+    stage?: string
+    progress: number
+    message?: string
+    terminalHint?: string
+    detail?: Record<string, unknown> | null
+    artifacts?: string[]
+    updatedAt?: string
+    eventId?: string
+  },
+>(bare: T, scoped: T): T {
+  const primary = pickBetterNodeProgress(bare, scoped)
+  const secondary = primary === bare ? scoped : bare
+  return {
+    ...primary,
+    progress: Math.max(bare.progress, scoped.progress),
+    terminalHint: bare.terminalHint ?? scoped.terminalHint ?? secondary.terminalHint,
+    message: pickRicherMessage(bare.message, scoped.message),
+    detail: (primary.detail ?? secondary.detail) as T['detail'],
+    artifacts: scoped.artifacts?.length ? scoped.artifacts : bare.artifacts,
+    updatedAt: primary.updatedAt ?? secondary.updatedAt,
+    eventId: primary.eventId ?? secondary.eventId,
+  }
+}
+
 /**
- * Dedupe by nodeId. Legacy fallback: collapse bare module ids that share
- * stage+label only when neither uses ``graphNode:stage`` form (avoid merging
- * two parallel instances of the same module).
+ * Dedupe by nodeId, then collapse bare module stages into their scoped
+ * ``graphNode:stage`` twin (stage_start/end vs emit_progress), while keeping
+ * multiple scoped instances (``n1:download`` vs ``n2:download``) separate.
  */
 export function dedupeNodeProgress<
   T extends {
@@ -65,6 +130,10 @@ export function dedupeNodeProgress<
     nodeLabel?: string
     stage?: string
     progress: number
+    message?: string
+    terminalHint?: string
+    detail?: Record<string, unknown> | null
+    artifacts?: string[]
     updatedAt?: string
     eventId?: string
   },
@@ -77,11 +146,33 @@ export function dedupeNodeProgress<
       byId.set(node.nodeId, node)
     }
   }
-  const deduped = [...byId.values()]
+
+  const grouped = new Map<string, T[]>()
+  for (const node of byId.values()) {
+    const key = nodeProgressModuleKey(node.nodeId)
+    grouped.set(key, [...(grouped.get(key) ?? []), node])
+  }
+
+  const merged: T[] = []
+  for (const [moduleKey, group] of grouped) {
+    const bare = group.filter((n) => n.nodeId === moduleKey)
+    const scoped = group.filter((n) => n.nodeId !== moduleKey && n.nodeId.includes(':'))
+    const rest = group.filter((n) => !bare.includes(n) && !scoped.includes(n))
+
+    if (bare.length === 1 && scoped.length === 1) {
+      merged.push(mergeBareScopedNodeProgress(bare[0]!, scoped[0]!))
+    } else if (bare.length === 1 && scoped.length > 1) {
+      merged.push(...scoped, ...rest)
+    } else if (bare.length === 1 && scoped.length === 0) {
+      merged.push(bare[0]!, ...rest)
+    } else {
+      merged.push(...group)
+    }
+  }
+
   const byStageLabel = new Map<string, T>()
-  for (const node of deduped) {
-    const scoped = node.nodeId.includes(':')
-    if (scoped) {
+  for (const node of merged) {
+    if (node.nodeId.includes(':')) {
       byStageLabel.set(`id:${node.nodeId}`, node)
       continue
     }
@@ -151,10 +242,9 @@ export function resolveJobOverallProgress(opts: {
   snapshot?: number | null
   nodeProgress?: WorkflowProgressNodeLike[] | null
 }): number {
-  const dispatch = (opts.nodeProgress ?? []).find((n) => isOverallProgressStage(n.nodeId))
-  if (dispatch) {
-    // Weighted overall only — ignore chunk/pixel detail attached to the same event.
-    return normalizeWorkflowProgress(dispatch.progress)
+  const dispatchNodes = (opts.nodeProgress ?? []).filter((n) => isOverallProgressStage(n.nodeId))
+  if (dispatchNodes.length) {
+    return Math.max(...dispatchNodes.map((n) => normalizeWorkflowProgress(n.progress)))
   }
   const candidates: number[] = []
   if (typeof opts.snapshot === 'number' && Number.isFinite(opts.snapshot)) {

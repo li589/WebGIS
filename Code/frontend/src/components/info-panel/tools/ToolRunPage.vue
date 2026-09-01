@@ -3,9 +3,12 @@
  * 单个分析工具的参数子页：页头（返回 + 工具信息）+ 参数表单 + 运行控制。
  * 表单值/校验状态由父级持有（跨页面往返保留输入）。
  */
+import { computed } from 'vue'
 import type { AnalysisToolDescriptor } from '../../../services/analysis-api'
 import {
+  CLIP_BBOX_FIELD_KEYS,
   fieldHintFor,
+  formatMapBBoxSummary,
   numericRangeLabel,
   type ToolRunContext,
   runDisabledReasonFor,
@@ -14,7 +17,7 @@ import {
 import AppButton from '../../ui/AppButton.vue'
 import PageBackButton from './PageBackButton.vue'
 
-defineProps<{
+const props = defineProps<{
   tool: AnalysisToolDescriptor
   formValues: Record<string, unknown>
   formErrors: Record<string, string>
@@ -23,9 +26,8 @@ defineProps<{
   runPhaseLabel: string
   runMessage: string
   importedVectorOptions: { id: string; label: string }[]
+  mapBBox: { west: number; south: number; east: number; north: number } | null
 }>()
-
-const zonesOverlayId = defineModel<string>('zonesOverlayId', { default: '' })
 
 const emit = defineEmits<{
   back: []
@@ -33,6 +35,18 @@ const emit = defineEmits<{
   cancel: []
   setField: [key: string, value: unknown]
 }>()
+
+const visibleFields = computed(() => {
+  if (props.tool.tool_id !== 'gis.clip' || !props.runContext.hasMapBBox) {
+    return props.tool.param_schema
+  }
+  return props.tool.param_schema.filter((field) => !CLIP_BBOX_FIELD_KEYS.has(field.key))
+})
+
+const clipBboxSummary = computed(() => {
+  if (props.tool.tool_id !== 'gis.clip' || !props.mapBBox) return ''
+  return formatMapBBoxSummary(props.mapBBox)
+})
 
 function isRunning(phase: string): boolean {
   return phase === 'running' || phase === 'submitting' || phase === 'queued'
@@ -66,9 +80,14 @@ function onNumberFieldInput(key: string, evt: Event): void {
       </p>
     </div>
 
+    <div v-if="clipBboxSummary" class="bbox-summary">
+      <span class="param-label">裁剪范围（当前视口）</span>
+      <span class="bbox-summary-val">{{ clipBboxSummary }}</span>
+    </div>
+
     <div class="param-grid">
       <label
-        v-for="field in tool.param_schema"
+        v-for="field in visibleFields"
         :key="field.key"
         class="param-row"
         :title="fieldHintFor(field, tool.tool_id)"
@@ -99,13 +118,13 @@ function onNumberFieldInput(key: string, evt: Event): void {
         />
 
         <input
-          v-else-if="field.key === 'zones_overlay_layer_id'"
+          v-else-if="field.key === 'zones_imported_vector_layer_id'"
           :value="formValues[field.key]"
           type="text"
           class="param-input"
-          list="zones-overlay-options"
+          list="zones-vector-options"
           :class="{ 'param-input--error': formErrors[field.key] }"
-          placeholder="可从下拉选择已导入矢量层，或直接输入 overlay id"
+          placeholder="从下拉选择已导入矢量层"
           @input="onFieldInput(field.key, $event)"
         />
 
@@ -128,24 +147,11 @@ function onNumberFieldInput(key: string, evt: Event): void {
         </span>
       </label>
 
-      <datalist id="zones-overlay-options">
+      <datalist id="zones-vector-options">
         <option v-for="opt in importedVectorOptions" :key="opt.id" :value="opt.id">
           {{ opt.label }}
         </option>
       </datalist>
-    </div>
-
-    <div v-if="tool.tool_id === 'gis.zonal_stats'" class="param-grid">
-      <label class="param-row" title="分区矢量图层，留空使用模板默认 zones">
-        <span class="param-label">分区矢量 overlay id（可选）</span>
-        <input
-          v-model="zonesOverlayId"
-          type="text"
-          class="param-input"
-          list="zones-overlay-options"
-          placeholder="imported-…"
-        />
-      </label>
     </div>
 
     <div class="run-row">
@@ -203,6 +209,22 @@ function onNumberFieldInput(key: string, evt: Event): void {
   margin: 0.2rem 0 0;
   font-size: var(--font-size-caption);
   color: var(--danger, #b91c1c);
+}
+
+.bbox-summary {
+  display: grid;
+  gap: 0.15rem;
+  margin-bottom: 0.45rem;
+  padding: 0.35rem 0.45rem;
+  border-radius: 0.45rem;
+  border: 1px solid var(--border-default);
+  background: var(--surface-base, transparent);
+}
+
+.bbox-summary-val {
+  font-size: var(--font-size-caption);
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary);
 }
 
 .param-grid {

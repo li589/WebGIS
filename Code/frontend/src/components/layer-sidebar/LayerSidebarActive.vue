@@ -7,7 +7,7 @@ import type { ActiveLayerDisplay, ActiveRunLayerGroup } from '../../stores/layer
 import type { ActiveTocRow } from './useSidebarDragReorder'
 import type { ActiveLayerDisplayLike } from './useSidebarSymbology'
 
-defineProps<{
+const props = defineProps<{
   activeLayersDisplay: ActiveLayerDisplay[]
   activeTocRows: ActiveTocRow[]
   selectedInstanceId: string | null
@@ -27,7 +27,7 @@ defineProps<{
   cycleSourceRoute?: (catalogId: string) => void
   /**
    * 统一数据状态徽标（2026-08-25 UX 简化）：归并 availability/lifecycle/job
-   * 三源为单枚五态徽标（运行中/排队中/异常/完成/旧数据）+ 查看报告。
+   * 三源为单枚五态徽标（运行中/排队中/异常/完成/旧数据）+ 详情。
    * null = 不渲染。
    */
   getUnifiedDataStatus: (layer: ActiveLayerDisplay) => DataStatusBadge | null
@@ -35,6 +35,11 @@ defineProps<{
   isOnlinePlanPending?: (catalogId: string) => boolean
   openOnlinePlan?: () => void
 }>()
+
+function isComputingRunMember(layer: ActiveLayerDisplay): boolean {
+  if (!layer.runGroupId) return false
+  return props.runGroupOf(layer.runGroupId)?.status === 'computing'
+}
 
 const emit = defineEmits<{
   selectItem: [instanceId: string]
@@ -191,9 +196,12 @@ const emit = defineEmits<{
                 "
                 >{{ row.layer.name }}</strong
               >
-              <span class="layer-chip" :style="{ background: row.layer.chipTone }">{{
-                getCategoryName(row.layer.category)
-              }}</span>
+              <span
+                v-if="!isComputingRunMember(row.layer)"
+                class="layer-chip"
+                :style="{ background: row.layer.chipTone }"
+                >{{ getCategoryName(row.layer.category) }}</span
+              >
               <button
                 class="del-btn"
                 title="移除图层"
@@ -252,7 +260,10 @@ const emit = defineEmits<{
                 {{ getSourceRouteBadge?.(row.layer.catalogId)?.label }}
               </button>
               <span
-                v-if="supportsOnlineTemporal(row.layer.catalogId)"
+                v-if="
+                  supportsOnlineTemporal(row.layer.catalogId) &&
+                  !getSourceRouteBadge?.(row.layer.catalogId)
+                "
                 class="online-fetch-badge"
                 title="此图层支持在线获取历史时间数据"
                 >在线</span
@@ -274,7 +285,11 @@ const emit = defineEmits<{
                 }}</span
               >
               <span
-                v-else-if="row.layer.runGroupId && !row.layer.isImportedRaster"
+                v-else-if="
+                  row.layer.runGroupId &&
+                  !row.layer.isImportedRaster &&
+                  runGroupOf(row.layer.runGroupId)?.status !== 'computing'
+                "
                 class="admin-tip-inline"
                 >计算占位{{
                   row.layer.runGroupProductTag ? ` · ${row.layer.runGroupProductTag}` : ''
@@ -287,18 +302,20 @@ const emit = defineEmits<{
                   type="button"
                   @click.stop="emit('openJobReport', row.layer.instanceId)"
                 >
-                  {{ LAYERS_COPY.viewReport }}
+                  {{ LAYERS_COPY.viewReportInline }}
                 </button>
               </template>
               <!-- 单位（2026-08-25 UX 简化）：从图例行挪入状态行，
                    相对整个图层条水平居中（绝对定位，不随左右内容挤压）。 -->
               <span
-                v-if="getSymbologyUnit(row.layer)"
+                v-if="getSymbologyUnit(row.layer) && !row.layer.runGroupLocked"
                 class="layer-metric-unit"
                 :title="`图层计量单位：${getSymbologyUnit(row.layer)}`"
                 >{{ getSymbologyUnit(row.layer) }}</span
               >
-              <span class="order-hint"
+              <span
+                v-if="!row.layer.runGroupId && !row.layer.runGroupLocked"
+                class="order-hint"
                 >顺序
                 {{
                   activeLayersDisplay.findIndex((l) => l.instanceId === row.layer.instanceId) + 1
