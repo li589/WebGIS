@@ -1,13 +1,17 @@
 <script setup lang="ts">
+import { LayoutGrid } from '../ui/icons'
+
 defineProps<{
   sidebarViewLabel: string
   sidebarView: string
   activeLayerCount: number
+  canManageGroups?: boolean
 }>()
 
 const emit = defineEmits<{
   openLibrary: []
   openActive: []
+  openGroupManager: []
 }>()
 </script>
 
@@ -32,6 +36,17 @@ const emit = defineEmits<{
           {{ activeLayerCount }}
         </button>
         <div class="view-tabs" role="tablist">
+          <button
+            v-if="canManageGroups"
+            class="view-tab view-tab--icon"
+            type="button"
+            role="tab"
+            title="管理图层分组"
+            aria-label="管理图层分组"
+            @click="emit('openGroupManager')"
+          >
+            <LayoutGrid :size="14" :stroke-width="2" aria-hidden="true" />
+          </button>
           <button
             class="view-tab"
             :class="{ active: sidebarView === 'library' }"

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 import { loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import cesium from 'vite-plugin-cesium'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -21,7 +22,7 @@ export default defineConfig(({ mode }) => {
   )
 
   const config = {
-    plugins: [vue()],
+    plugins: [vue(), cesium({ rebuildCesium: true })],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, 'src'),
@@ -109,6 +110,7 @@ export default defineConfig(({ mode }) => {
             if (!id.includes('node_modules')) return undefined
 
             if (id.includes('maplibre-gl')) return 'vendor-maplibre'
+            if (id.includes('cesium')) return 'vendor-cesium'
             if (id.includes('html2canvas')) return 'vendor-html2canvas'
             if (id.includes('jspdf')) return 'vendor-jspdf'
             if (id.includes('vue') || id.includes('pinia')) return 'vendor-framework'

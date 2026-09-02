@@ -11,7 +11,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from app.core.config import settings
+from app.core import config as app_config
+from app.services.agent.file_lock import interprocess_file_lock
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,8 @@ _MAX_SESSIONS_PER_USER = max(
 
 
 def _sessions_root() -> Path:
-    root = Path(settings.data_root or settings.workflow_state_dir or ".")
+    s = app_config.settings
+    root = Path(s.data_root or s.workflow_state_dir or ".")
     path = root / "_runtime" / "agent" / "sessions"
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -151,27 +153,28 @@ def load_history(*, user_id: int | None, session_id: str) -> list[dict[str, str]
     user_key = str(user_id) if user_id is not None else "anon"
     path = _session_path(user_key, session_id)
     with _lock:
-        if not path.exists():
-            return []
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return []
-        if not isinstance(data, dict):
-            return []
-        updated = _parse_updated_at(data.get("updated_at"))
-        if updated is None:
+        with interprocess_file_lock(path, label="Agent 会话"):
+            if not path.exists():
+                return []
             try:
-                updated = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
-            except OSError:
-                updated = None
-        if _is_expired(updated):
-            try:
-                path.unlink(missing_ok=True)
-            except OSError:
-                pass
-            return []
-    messages = data.get("messages")
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return []
+            if not isinstance(data, dict):
+                return []
+            updated = _parse_updated_at(data.get("updated_at"))
+            if updated is None:
+                try:
+                    updated = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+                except OSError:
+                    updated = None
+            if _is_expired(updated):
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                return []
+            messages = data.get("messages")
     if not isinstance(messages, list):
         return []
     out: list[dict[str, str]] = []
@@ -196,35 +199,36 @@ def append_turn(
     path = _session_path(user_key, session_id)
     now = datetime.now(UTC)
     with _lock:
-        history: list[Any] = []
-        if path.exists():
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                if isinstance(data, dict) and isinstance(data.get("messages"), list):
-                    updated = _parse_updated_at(data.get("updated_at"))
-                    if updated is None:
-                        try:
-                            updated = datetime.fromtimestamp(
-                                path.stat().st_mtime, tz=UTC
-                            )
-                        except OSError:
-                            updated = None
-                    if not _is_expired(updated, now=now):
-                        history = list(data["messages"])
-            except (OSError, json.JSONDecodeError):
-                history = []
-        history.append({"role": "user", "content": user_message})
-        history.append({"role": "assistant", "content": assistant_message})
-        # Keep last N *pairs* ≈ 2N messages
-        history = history[-(_MAX_TURNS * 2) :]
-        payload = {
-            "messages": history,
-            "updated_at": now.isoformat(),
-        }
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        tmp.replace(path)
-        _enforce_session_quota(user_key, keep_path=path)
+        with interprocess_file_lock(path, label="Agent 会话"):
+            history: list[Any] = []
+            if path.exists():
+                try:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                    if isinstance(data, dict) and isinstance(data.get("messages"), list):
+                        updated = _parse_updated_at(data.get("updated_at"))
+                        if updated is None:
+                            try:
+                                updated = datetime.fromtimestamp(
+                                    path.stat().st_mtime, tz=UTC
+                                )
+                            except OSError:
+                                updated = None
+                        if not _is_expired(updated, now=now):
+                            history = list(data["messages"])
+                except (OSError, json.JSONDecodeError):
+                    history = []
+            history.append({"role": "user", "content": user_message})
+            history.append({"role": "assistant", "content": assistant_message})
+            # Keep last N *pairs* ≈ 2N messages
+            history = history[-(_MAX_TURNS * 2) :]
+            payload = {
+                "messages": history,
+                "updated_at": now.isoformat(),
+            }
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            tmp.replace(path)
+            _enforce_session_quota(user_key, keep_path=path)

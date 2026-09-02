@@ -1317,7 +1317,7 @@
           "catalog"
         ],
         "summary": "List Layer Categories",
-        "description": "X1: 后端下发图层分类定义（id / name / icon / accent_color / chip_tone）。\n\n前端运行时消费此端点获取分类样式，消除前后端分类定义双写。\n前端 ``LAYER_CATEGORIES`` 静态表仅在 API 不可用时作离线兜底。\n图层平台 P1：返回种子 ⊕ 运行时管理分组（含 position / is_custom）。",
+        "description": "X1: 后端下发图层分类定义（id / name / icon / accent_color / chip_tone）。\n\n前端运行时消费此端点获取分类样式，消除前后端分类定义双写。\n前端 ``LAYER_CATEGORIES`` 静态表仅在 API 不可用时作离线兜底。\n管理员看到个人工作区；绑定主题且主题有分组预设的用户看到主题快照；\n其余为共享种子（+ 遗留共享自建组）。",
         "operationId": "list_layer_categories_layers_categories_get",
         "responses": {
           "200": {
@@ -1330,14 +1330,19 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
       },
       "post": {
         "tags": [
           "catalog"
         ],
         "summary": "Create Layer Group",
-        "description": "新建自定义分组（追加到分组序列末尾）。",
+        "description": "新建自定义分组（追加到当前管理员个人工作区末尾）。",
         "operationId": "create_layer_group_layers_categories_post",
         "requestBody": {
           "content": {
@@ -1373,13 +1378,188 @@
         }
       }
     },
+    "/layers/categories/order": {
+      "put": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Reorder Layer Groups",
+        "description": "按给定 id 顺序重排当前管理员工作区中的分组。",
+        "operationId": "reorder_layer_groups_layers_categories_order_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LayerGroupReorderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerCategoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/layers/categories/sync-to-theme/{theme_id}": {
+      "post": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Sync Layer Groups To Theme",
+        "description": "将当前管理员的图层分组工作区快照同步到指定主题预设（可选）。",
+        "operationId": "sync_layer_groups_to_theme_layers_categories_sync_to_theme__theme_id__post",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Sync Layer Groups To Theme Layers Categories Sync To Theme  Theme Id  Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/layers/categories/theme-preset/{theme_id}": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Get Theme Layer Group Preset",
+        "description": "读取主题的图层分组预设元数据（无预设时 has_preset=false）。",
+        "operationId": "get_theme_layer_group_preset_layers_categories_theme_preset__theme_id__get",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Theme Layer Group Preset Layers Categories Theme Preset  Theme Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Delete Theme Layer Group Preset",
+        "description": "清除主题上的图层分组预设（绑定用户回落到共享种子分组）。",
+        "operationId": "delete_theme_layer_group_preset_layers_categories_theme_preset__theme_id__delete",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Theme Layer Group Preset Layers Categories Theme Preset  Theme Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/layers/categories/{group_id}": {
       "patch": {
         "tags": [
           "catalog"
         ],
         "summary": "Update Layer Group",
-        "description": "修改分组名称 / 样式 / 子分类（种子组与自建组均可）。",
+        "description": "修改分组名称 / 样式 / 子分类（写入当前管理员工作区；种子组写为个人覆盖）。",
         "operationId": "update_layer_group_layers_categories__group_id__patch",
         "parameters": [
           {
@@ -1430,7 +1610,7 @@
           "catalog"
         ],
         "summary": "Delete Layer Group",
-        "description": "删除自定义分组（种子组拒绝）；组内成员关系随之解除，图层回落到种子分类。",
+        "description": "删除当前管理员工作区中的自定义分组（种子组拒绝）。",
         "operationId": "delete_layer_group_layers_categories__group_id__delete",
         "parameters": [
           {
@@ -1467,55 +1647,13 @@
         }
       }
     },
-    "/layers/categories/order": {
-      "put": {
-        "tags": [
-          "catalog"
-        ],
-        "summary": "Reorder Layer Groups",
-        "description": "按给定 id 顺序重排分组（图层库展示顺序）。",
-        "operationId": "reorder_layer_groups_layers_categories_order_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LayerGroupReorderRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LayerCategoryResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/layers/categories/{group_id}/members": {
       "put": {
         "tags": [
           "catalog"
         ],
         "summary": "Set Layer Group Members",
-        "description": "全量替换分组内图层成员（layer_id 列表）；受影响图层的 catalog category 同步更新。",
+        "description": "全量替换分组内图层成员（写入当前管理员工作区）。",
         "operationId": "set_layer_group_members_layers_categories__group_id__members_put",
         "parameters": [
           {
@@ -18471,7 +18609,7 @@
           "name"
         ],
         "title": "LayerCategoryDef",
-        "description": "X1: 图层分类定义 — 后端下发，消除前后端分类双写。\n\n图层平台 P1：分组支持运行时管理（种子 ⊕ layer_groups 表），\n``position`` 为全局排序键（种子组按文件序，自定义组追加在后），\n``is_custom`` 标记管理员自建分组（可删除；种子组仅可改名/样式）。"
+        "description": "X1: 图层分类定义 — 后端下发，消除前后端分类双写。\n\n图层平台 P1：分组支持运行时管理（种子 ⊕ 管理员个人工作区 / 主题预设），\n``position`` 为排序键，``is_custom`` 标记自建分组（可删除；种子组仅可改名/样式）。"
       },
       "LayerCategoryResponse": {
         "properties": {
@@ -18908,7 +19046,7 @@
           "name"
         ],
         "title": "LayerGroupCreateRequest",
-        "description": "管理员自建图层分组。"
+        "description": "管理员自建图层分组（写入当前管理员个人工作区）。"
       },
       "LayerGroupMembersRequest": {
         "properties": {

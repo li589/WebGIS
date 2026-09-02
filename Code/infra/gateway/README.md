@@ -96,6 +96,10 @@ docker compose -p gateway down
 
 统一片段 [`snippets/security-headers.conf`](snippets/security-headers.conf)（CSP / nosniff / Referrer-Policy）。**nginx 继承规则**：location 内出现任一 `add_header` 即不再继承 server 级安全头——凡含 `add_header` 的 location 必须重新 `include` 该片段。
 
+**CSP 与 Cesium（2026-09）**：`script-src` 含 `'unsafe-inline'`（主题引导）+ `'unsafe-eval'` + `'wasm-unsafe-eval'`（Cesium Viewer 的 string-as-JS 与 WASM；二者缺一不可）。`worker-src 'self' blob:` 覆盖 MapLibre / Cesium Worker。Vite 直连通常无 CSP，故「另开端口能渲染、`:5175` 报 CSP」时优先查本片段并 `launch.py reload gateway`。双引擎说明见 [`Docs/02-架构设计/cesium-dual-engine.md`](../../../Docs/02-架构设计/cesium-dual-engine.md)。
+
+**`/cesium/` 静态资源**：`try_files $uri =404`，禁止回退 `index.html`（否则 Worker 拿到 HTML → 白屏）。构建产物在 `Code/frontend/dist/cesium/`（`vite-plugin-cesium`）。
+
 ### 已知暴露面（已接受）
 
 - 网关端口 `5175` 绑定 `0.0.0.0`（局域网可达）：内网部署假设下已接受（用户决策 2026-08-20）；网关自身为明文 HTTP，TLS 由部署拓扑承担。

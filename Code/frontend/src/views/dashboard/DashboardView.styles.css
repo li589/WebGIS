@@ -187,7 +187,7 @@
   font-size: var(--font-size-body);
   color: var(--text-secondary);
 }
-.placeholder-3d-layer-note {
+/* .placeholder-3d-layer-note {
   max-width: 28rem;
   margin: 0;
   padding: 0.45rem 0.7rem;
@@ -197,7 +197,7 @@
   background: color-mix(in srgb, var(--surface-2) 72%, transparent);
   font-size: var(--font-size-caption);
   line-height: 1.5;
-}
+} */
 .placeholder-3d-hint {
   margin: var(--space-2) 0 0;
   font-size: var(--font-size-caption);

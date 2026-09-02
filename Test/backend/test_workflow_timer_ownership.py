@@ -237,8 +237,31 @@ def _create_timer(client: TestClient) -> str:
     return resp.json()["timer_id"]
 
 
-def test_owner_sees_own_timer(auth_client: TestClient) -> None:
+def test_standard_user_cannot_manage_timers(auth_client: TestClient) -> None:
+    """标准用户不可创建/列表/触发定时器（仅管理员）。"""
+    _admin_login(auth_client)
+    timer_id = _create_timer(auth_client)
+
     _create_user_and_login(auth_client, "alice")
+    assert auth_client.get("/workflow-timers").status_code == 403
+    assert auth_client.get(f"/workflow-timers/{timer_id}").status_code == 403
+    assert (
+        auth_client.put(
+            f"/workflow-timers/{timer_id}", json={"enabled": False}
+        ).status_code
+        == 403
+    )
+    assert auth_client.delete(f"/workflow-timers/{timer_id}").status_code == 403
+    assert auth_client.post(f"/workflow-timers/{timer_id}/run").status_code == 403
+    with patch(
+        "app.services.workflow_definition_service.get_definition",
+        return_value={"workflow_id": "wf-timer-test"},
+    ):
+        assert auth_client.post("/workflow-timers", json=_TIMER_PAYLOAD).status_code == 403
+
+
+def test_admin_can_create_list_and_run(auth_client: TestClient) -> None:
+    _admin_login(auth_client)
     timer_id = _create_timer(auth_client)
 
     resp = auth_client.get("/workflow-timers")
@@ -247,59 +270,29 @@ def test_owner_sees_own_timer(auth_client: TestClient) -> None:
     assert [t["timer_id"] for t in items] == [timer_id]
     assert items[0]["owner_user_id"] is not None
 
-    # 本人可更新
     resp = auth_client.put(f"/workflow-timers/{timer_id}", json={"enabled": False})
     assert resp.status_code == 200, resp.text
 
+    with patch(
+        "app.services.workflow_timer_service.trigger_manually",
+        return_value={"ok": True, "timer_id": timer_id},
+    ):
+        resp = auth_client.post(f"/workflow-timers/{timer_id}/run")
+    assert resp.status_code == 200, resp.text
 
-def test_other_user_cannot_see_or_manage(auth_client: TestClient) -> None:
-    _create_user_and_login(auth_client, "alice")
-    timer_id = _create_timer(auth_client)
-
-    _create_user_and_login(auth_client, "bob")
-    # 列表不可见
-    resp = auth_client.get("/workflow-timers")
-    assert resp.status_code == 200
-    assert resp.json()["items"] == []
-    # 详情 / 更新 / 删除 / 手动触发 统一 404 防枚举
-    assert auth_client.get(f"/workflow-timers/{timer_id}").status_code == 404
-    assert (
-        auth_client.put(
-            f"/workflow-timers/{timer_id}", json={"enabled": False}
-        ).status_code
-        == 404
-    )
-    assert auth_client.delete(f"/workflow-timers/{timer_id}").status_code == 404
-    assert auth_client.post(f"/workflow-timers/{timer_id}/run").status_code == 404
-
-
-def test_admin_sees_all_timers(auth_client: TestClient) -> None:
-    _create_user_and_login(auth_client, "alice")
-    timer_id = _create_timer(auth_client)
-
-    _admin_login(auth_client)
-    resp = auth_client.get("/workflow-timers")
-    assert resp.status_code == 200
-    assert [t["timer_id"] for t in resp.json()["items"]] == [timer_id]
-    # admin 可删除他人定时器
     resp = auth_client.delete(f"/workflow-timers/{timer_id}")
     assert resp.status_code == 200, resp.text
 
 
-def test_legacy_ownerless_timer_hidden_from_standard_user(
-    auth_client: TestClient,
-) -> None:
-    """旧共享定时器（owner=NULL）对普通用户不可见（与 run 策略一致）。"""
+def test_admin_sees_legacy_ownerless_timer(auth_client: TestClient) -> None:
     from app.services import workflow_timer_service as wts
 
     wts.get_timer_store().create_timer(_make_timer("t-legacy-shared"))
 
     _create_user_and_login(auth_client, "alice")
-    resp = auth_client.get("/workflow-timers")
-    assert resp.status_code == 200
-    assert resp.json()["items"] == []
-    assert auth_client.get("/workflow-timers/t-legacy-shared").status_code == 404
+    assert auth_client.get("/workflow-timers").status_code == 403
 
     _admin_login(auth_client)
     resp = auth_client.get("/workflow-timers")
+    assert resp.status_code == 200
     assert [t["timer_id"] for t in resp.json()["items"]] == ["t-legacy-shared"]

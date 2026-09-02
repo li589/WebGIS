@@ -92,8 +92,8 @@ export const SCALAR_FIELD_FRAGMENT_SHADER = /* glsl */ `
     // 相邻世界副本在国际日期变更线恰好共用该外框，两侧同时透明会形成裂缝。
     float softMask = smoothstep(0.008, 0.06, mask);
     float t = mix(a.r, b.r, clamp(u_blend, 0.0, 1.0));
-    // 轻微 gamma，压缩中间带状感
-    t = pow(clamp(t, 0.0, 1.0), 0.92);
+    // 轻微 gamma（0.96）：略压中间调提亮，观感更沉稳
+    t = pow(clamp(t, 0.0, 1.0), 0.96);
     // 极弱抖动，打断量化色带（不引入可见噪声纹理）
     float dither = (fract(sin(dot(uvClamped, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * 0.004;
     t = clamp(t + dither, 0.0, 1.0);

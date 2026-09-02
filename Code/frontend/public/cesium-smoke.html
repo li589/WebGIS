@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Cesium smoke</title>
+    <style>
+      html,
+      body,
+      #c {
+        margin: 0;
+        height: 100%;
+        background: #111;
+      }
+      #err {
+        color: #f88;
+        position: absolute;
+        left: 8px;
+        top: 8px;
+        z-index: 2;
+        font: 12px/1.4 monospace;
+        white-space: pre-wrap;
+        max-width: 90%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="err">loading…</div>
+    <div id="c"></div>
+    <script type="module">
+      window.CESIUM_BASE_URL = '/cesium/'
+      const err = document.getElementById('err')
+      try {
+        await import('/cesium/Widgets/widgets.css')
+      } catch (_) {
+        /* css path may differ in gateway static */
+      }
+      try {
+        const Cesium = await import('cesium')
+        err.textContent = 'cesium imported, creating Viewer…'
+        const viewer = new Cesium.Viewer(document.getElementById('c'), {
+          animation: false,
+          timeline: false,
+          baseLayerPicker: false,
+          geocoder: false,
+          homeButton: false,
+          sceneModePicker: false,
+          navigationHelpButton: false,
+          fullscreenButton: false,
+          infoBox: false,
+          selectionIndicator: false,
+          baseLayer: false,
+          skyBox: false,
+          skyAtmosphere: true,
+        })
+        viewer.imageryLayers.addImageryProvider(
+          new Cesium.UrlTemplateImageryProvider({
+            url: '/unified-tiles/osm-standard/{z}/{x}/{y}',
+            maximumLevel: 18,
+          }),
+        )
+        viewer.camera.setView({
+          destination: Cesium.Cartesian3.fromDegrees(105, 35, 12_000_000),
+        })
+        err.textContent = 'OK: viewer created'
+        window.__viewer = viewer
+      } catch (e) {
+        err.textContent = String(e && e.stack ? e.stack : e)
+        console.error(e)
+      }
+    </script>
+  </body>
+</html>

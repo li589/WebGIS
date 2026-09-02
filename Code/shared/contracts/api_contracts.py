@@ -122,9 +122,8 @@ class LayerSourceDef(BaseModel):
 class LayerCategoryDef(BaseModel):
     """X1: 图层分类定义 — 后端下发，消除前后端分类双写。
 
-    图层平台 P1：分组支持运行时管理（种子 ⊕ layer_groups 表），
-    ``position`` 为全局排序键（种子组按文件序，自定义组追加在后），
-    ``is_custom`` 标记管理员自建分组（可删除；种子组仅可改名/样式）。
+    图层平台 P1：分组支持运行时管理（种子 ⊕ 管理员个人工作区 / 主题预设），
+    ``position`` 为排序键，``is_custom`` 标记自建分组（可删除；种子组仅可改名/样式）。
     """
     id: str
     name: str
@@ -141,9 +140,9 @@ class LayerCategoryResponse(BaseModel):
 
 
 class LayerGroupCreateRequest(BaseModel):
-    """管理员自建图层分组。"""
+    """管理员自建图层分组（写入当前管理员个人工作区）。"""
     id: str
-    """分组标识（小写字母/数字/-/_，≤64 字符，全局唯一）。"""
+    """分组标识（小写字母/数字/-/_，≤64 字符，在个人工作区内唯一且不与种子冲突）。"""
     name: str
     icon: str | None = None
     accent_color: str | None = None

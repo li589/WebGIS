@@ -9,8 +9,9 @@ from __future__ import annotations
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
+from app.api.deps import check_resource_access, get_request_user
 from app.services.effective_config import get_weather_cache_ttl_seconds
 from app.weatherengine.tile_service import (
     TileDataEmptyError,
@@ -64,8 +65,10 @@ async def get_weather_tile(
         description="Weather provider id, or omit/auto for registry priority",
     ),
     t: int | None = Query(default=None),  # 客户端缓存 bust，不参与业务
+    cred=Depends(get_request_user),
 ) -> Response:
     """获取指定图层的标准 Web Mercator GeoJSON 瓦片。"""
+    check_resource_access(cred, "layer", layer_id)
     try:
         geojson, cache_status = await get_weather_tile_service().get_tile(
             layer_id=layer_id,

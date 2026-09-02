@@ -65,6 +65,8 @@ class ThemePublic(BaseModel):
     logo_url: str | None = None
     default_permission_mode: str = "open"
     is_primary: bool = False
+    # 登录页氛围色：cyan | green | warm | violet | slate（仅登录页）
+    login_palette: str = "cyan"
 
 
 class ThemePublicBrand(BaseModel):
@@ -78,6 +80,7 @@ class ThemePublicBrand(BaseModel):
     abbr: str
     description: str = ""
     logo_url: str | None = None
+    login_palette: str = "cyan"
 
 
 class UserPublic(BaseModel):
@@ -113,6 +116,7 @@ class CreateThemeRequest(BaseModel):
     description: str = Field(default="", max_length=2000)
     default_permission_mode: Literal["open", "whitelist"] = "open"
     is_primary: bool = False
+    login_palette: Literal["cyan", "green", "warm", "violet", "slate"] | None = None
 
 
 class UpdateThemeRequest(BaseModel):
@@ -123,6 +127,7 @@ class UpdateThemeRequest(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
     default_permission_mode: Literal["open", "whitelist"] | None = None
     is_primary: bool | None = None
+    login_palette: Literal["cyan", "green", "warm", "violet", "slate"] | None = None
 
 
 class CreateTokenRequest(BaseModel):
@@ -164,6 +169,7 @@ def _theme_public_brand(theme) -> ThemePublicBrand:
         abbr=theme.abbr,
         description=theme.description,
         logo_url=_theme_logo_url(theme.id, theme.logo_path),
+        login_palette=getattr(theme, "login_palette", "cyan") or "cyan",
     )
 
 
@@ -179,6 +185,7 @@ def _public_theme(theme) -> ThemePublic:
         logo_url=_theme_logo_url(theme.id, theme.logo_path),
         default_permission_mode=theme.default_permission_mode,
         is_primary=theme.is_primary,
+        login_palette=getattr(theme, "login_palette", "cyan") or "cyan",
     )
 
 
@@ -682,6 +689,7 @@ def create_theme(
             description=body.description,
             default_permission_mode=body.default_permission_mode,
             is_primary=body.is_primary,
+            login_palette=body.login_palette,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -708,6 +716,7 @@ def update_theme(
             description=body.description,
             default_permission_mode=body.default_permission_mode,
             is_primary=body.is_primary,
+            login_palette=body.login_palette,
         )
     except ValueError as exc:
         raise HTTPException(

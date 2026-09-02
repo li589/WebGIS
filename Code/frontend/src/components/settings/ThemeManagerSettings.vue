@@ -9,9 +9,11 @@ import {
   deleteTheme,
   updateTheme,
   uploadThemeLogo,
+  type LoginPalette,
   type PermissionMode,
 } from '../../services/auth-api'
 import { useAuthStore } from '../../stores/auth'
+import { LOGIN_PALETTE_OPTIONS } from '../../views/login-theme-presets'
 import AppSelect from '../ui/AppSelect.vue'
 import ResourceAclEditor from './ResourceAclEditor.vue'
 
@@ -29,7 +31,13 @@ const draftNameEn = ref('')
 const draftAbbr = ref('SGFS')
 const draftDescription = ref('')
 const draftMode = ref<PermissionMode>('open')
+const draftLoginPalette = ref<LoginPalette>('cyan')
 const creating = ref(false)
+
+const loginPaletteOptions = LOGIN_PALETTE_OPTIONS.map((o) => ({
+  label: o.label,
+  value: o.id,
+}))
 
 const selected = computed(() => (auth.themes ?? []).find((t) => t.id === selectedId.value) ?? null)
 
@@ -74,6 +82,7 @@ function fillCreateDefaults() {
   draftAbbr.value = 'SGFS'
   draftDescription.value = ''
   draftMode.value = 'open'
+  draftLoginPalette.value = 'cyan'
 }
 
 /** 生成符合后端 slug 规则的标识：小写字母开头，[a-z0-9_-]，长度 2–64 */
@@ -150,6 +159,7 @@ async function submitCreate() {
       abbr: draftAbbr.value.trim() || 'SGFS',
       description: draftDescription.value.trim(),
       default_permission_mode: draftMode.value,
+      login_palette: draftLoginPalette.value,
     })
     await refresh()
     selectedId.value = created.id
@@ -175,6 +185,7 @@ async function saveSelectedMeta() {
       abbr: draftAbbr.value.trim(),
       description: draftDescription.value.trim(),
       default_permission_mode: draftMode.value,
+      login_palette: draftLoginPalette.value,
     })
     await refresh()
     message.value = '主题信息已保存'
@@ -203,6 +214,7 @@ watch(
     draftAbbr.value = t.abbr
     draftDescription.value = t.description || ''
     draftMode.value = (t.default_permission_mode as PermissionMode) || 'open'
+    draftLoginPalette.value = (t.login_palette as LoginPalette) || 'cyan'
   },
   { immediate: true },
 )
@@ -259,6 +271,8 @@ function onSelectTheme(val: string) {
     <h3 class="section-title">主题管理（管理员）</h3>
     <p class="section-hint">
       主题承载品牌与默认资源 ACL；用户绑定主题后继承默认权限，并可在「用户权限覆盖」中微调。
+      图层库分组结构可由管理员在侧栏「分组」中配置个人工作区，并可选同步为本主题的分组预设。
+      「登录页配色」只影响未登录页的氛围色，不改应用内主题。
     </p>
     <p v-if="message" class="ok">{{ message }}</p>
     <p v-if="error" class="err">{{ error }}</p>
@@ -323,6 +337,10 @@ function onSelectTheme(val: string) {
           { label: '白名单', value: 'whitelist' },
         ]"
       />
+      <label class="field">
+        <span class="field-label">登录页配色（仅登录页）</span>
+        <AppSelect v-model="draftLoginPalette" :options="loginPaletteOptions" />
+      </label>
       <textarea v-model="draftDescription" rows="2" placeholder="描述" />
       <button
         type="button"
@@ -351,6 +369,10 @@ function onSelectTheme(val: string) {
           { label: '白名单', value: 'whitelist' },
         ]"
       />
+      <label class="field">
+        <span class="field-label">登录页配色（仅登录页）</span>
+        <AppSelect v-model="draftLoginPalette" :options="loginPaletteOptions" />
+      </label>
       <textarea v-model="draftDescription" rows="2" placeholder="描述" />
       <div class="logo-row">
         <img

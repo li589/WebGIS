@@ -59,6 +59,7 @@ def init_resumable(
     total_chunks: int | None = None,
     sha256_expected: str | None = None,
     content_type: str | None = None,
+    owner_user_id: int | None = None,
 ) -> dict[str, Any]:
     """初始化断点续传上传会话。
 
@@ -69,6 +70,7 @@ def init_resumable(
         total_chunks: 总块数；若为 None 则自动计算 = ceil(size / chunk_size)
         sha256_expected: 客户端提供的文件 SHA-256（十六进制），完成后校验
         content_type: MIME 类型
+        owner_user_id: 创建者用户 id（隔离上传会话）
 
     Returns:
         ``{upload_id, chunk_size, total_chunks, size, sha256_expected}``
@@ -111,6 +113,7 @@ def init_resumable(
         "received_bytes": 0,
         "created_at": time.time(),
         "complete": False,
+        "owner_user_id": int(owner_user_id) if owner_user_id is not None else None,
     }
     _save_meta(dest, meta)
     return {

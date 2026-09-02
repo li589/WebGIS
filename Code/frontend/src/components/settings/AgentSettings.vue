@@ -27,6 +27,7 @@ const saving = ref(false)
 const activating = ref(false)
 const refreshingModels = ref(false)
 const error = ref<string | null>(null)
+const infoNotice = ref<string | null>(null)
 const savedFlash = ref(false)
 
 const profiles = ref<AgentProfile[]>([])
@@ -230,7 +231,28 @@ async function onActivate(p: AgentProfile) {
   }
 }
 
-async function onCreateFromPreset(presetId: string) {
+const selectedPresetId = ref('')
+
+function profileChipMeta(p: AgentProfile): string {
+  const bits: string[] = []
+  if (p.model) bits.push(p.model)
+  const url = (p.base_url || '').trim()
+  if (url) {
+    try {
+      bits.push(new URL(url).host)
+    } catch {
+      bits.push(url.length > 28 ? `${url.slice(0, 28)}…` : url)
+    }
+  }
+  return bits.join(' · ')
+}
+
+async function onCreateFromPreset() {
+  const presetId = selectedPresetId.value
+  if (!presetId) {
+    error.value = '请先选择预设'
+    return
+  }
   const scope = createScope.value
   if (scope === 'global' && !canManageGlobal.value) {
     error.value = '仅管理员可新建全局配置档。'
@@ -242,11 +264,18 @@ async function onCreateFromPreset(presetId: string) {
   }
   saving.value = true
   error.value = null
+  infoNotice.value = null
   try {
+    const beforeIds = new Set(profiles.value.map((p) => `${p.scope}:${p.id}`))
     const created = await createAgentProfile({ preset_id: presetId, scope })
     await loadConfig()
     selectedId.value = created.id
     selectedScope.value = created.scope
+    selectedPresetId.value = ''
+    const key = `${created.scope}:${created.id}`
+    if (beforeIds.has(key)) {
+      infoNotice.value = `已存在相同的「${created.name}」配置档，已选中现有项（未重复创建）。`
+    }
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -403,7 +432,7 @@ onUnmounted(() => {
     <section class="settings-section">
       <h3 class="section-title">模型配置档</h3>
       <p class="section-hint">
-        全局档由管理员维护；个人档仅本人可写。对话优先个人启用档，否则回退全局。
+        全局档由管理员维护；个人档仅本人可写。对话优先个人启用档，否则回退全局。同名档若模型/地址不同会分别保留；完全相同的预设克隆不会重复创建。
       </p>
 
       <div v-if="loading" class="status-line">加载配置中…</div>
@@ -422,7 +451,10 @@ onUnmounted(() => {
             }"
             @click="onSelectProfile(p)"
           >
-            <span class="chip-name">{{ p.name }}</span>
+            <span class="chip-main">
+              <span class="chip-name">{{ p.name }}</span>
+              <span v-if="profileChipMeta(p)" class="chip-meta">{{ profileChipMeta(p) }}</span>
+            </span>
             <span v-if="p.id === activeProfileId && activeScope === 'global'" class="chip-badge"
               >启用中</span
             >
@@ -440,7 +472,10 @@ onUnmounted(() => {
             }"
             @click="onSelectProfile(p)"
           >
-            <span class="chip-name">{{ p.name }}</span>
+            <span class="chip-main">
+              <span class="chip-name">{{ p.name }}</span>
+              <span v-if="profileChipMeta(p)" class="chip-meta">{{ profileChipMeta(p) }}</span>
+            </span>
             <span v-if="p.id === activeProfileId && activeScope === 'personal'" class="chip-badge"
               >启用中</span
             >
@@ -459,21 +494,23 @@ onUnmounted(() => {
               <option value="global">全局</option>
             </select>
             <select
+              v-model="selectedPresetId"
               class="field-input"
               :disabled="saving || (!canManageGlobal && !canManagePersonal)"
-              @change="
-                (e) => {
-                  const v = (e.target as HTMLSelectElement).value
-                  if (v) void onCreateFromPreset(v)
-                  ;(e.target as HTMLSelectElement).value = ''
-                }
-              "
             >
               <option value="">选择预设…</option>
               <option v-for="pre in presets" :key="pre.id" :value="pre.id">
                 {{ pre.name }}
               </option>
             </select>
+            <button
+              type="button"
+              class="secondary-btn"
+              :disabled="saving || !selectedPresetId || (!canManageGlobal && !canManagePersonal)"
+              @click="onCreateFromPreset"
+            >
+              添加
+            </button>
           </div>
         </aside>
 
@@ -654,6 +691,7 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
+      <p v-if="infoNotice" class="ok-line">{{ infoNotice }}</p>
       <p v-if="error" class="error-line">{{ error }}</p>
     </section>
   </div>
@@ -744,7 +782,7 @@ onUnmounted(() => {
 
 .profile-chip {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.4rem;
   text-align: left;
@@ -758,6 +796,14 @@ onUnmounted(() => {
   line-height: 1.35;
   cursor: pointer;
   min-height: 2.15rem;
+}
+
+.chip-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+  flex: 1;
 }
 
 .profile-chip:hover {
@@ -774,6 +820,16 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+
+.chip-meta {
+  display: block;
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
+  line-height: 1.3;
+  word-break: break-all;
 }
 
 .chip-badge {
@@ -1032,6 +1088,13 @@ onUnmounted(() => {
   color: var(--text-muted);
   font-size: var(--font-size-caption);
   margin: 0.1rem 0;
+}
+
+.ok-line {
+  margin: 0.35rem 0 0;
+  color: var(--success, #2f9e44);
+  font-size: var(--font-size-caption);
+  line-height: 1.45;
 }
 
 .error-line {

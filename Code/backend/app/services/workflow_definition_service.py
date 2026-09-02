@@ -163,6 +163,7 @@ def _build_meta(
     linked_layer_id: str | None = None,
     tags: list[str] | None = None,
     category: str | None = None,
+    owner_user_id: int | None = None,
 ) -> dict[str, Any]:
     """构建 _meta 声明头。
 
@@ -170,6 +171,7 @@ def _build_meta(
         tags: 工作流标签列表（如 ["pipeline", "inversion"]），用于前端分类过滤。
             词汇表见 ``Docs/03-规范协议/workflow_seed_conventions.md``。
         category: 工作流主分类（如 "inversion"/"weather"/"data_access"/"analysis"/"demo"）。
+        owner_user_id: 用户定义属主；system 档为 None。
     """
     meta = {
         "kind": kind,  # "system" | "user"
@@ -186,7 +188,35 @@ def _build_meta(
         meta["tags"] = tags
     if category is not None:
         meta["category"] = category
+    if owner_user_id is not None:
+        meta["owner_user_id"] = int(owner_user_id)
     return meta
+
+
+def can_mutate_user_definition(
+    meta: dict[str, Any],
+    *,
+    role: str | None,
+    user_id: int | None,
+) -> bool:
+    """Whether *role*/*user_id* may update/delete a user workflow definition.
+
+    *admin* always may. Owner may when ``owner_user_id`` matches.
+    Legacy files without ``owner_user_id`` are admin-only (fail-closed).
+    """
+    if role == "admin":
+        return True
+    if meta.get("kind") == "system" or meta.get("readonly", False):
+        return False
+    owner = meta.get("owner_user_id")
+    if owner is None:
+        return False
+    if user_id is None:
+        return False
+    try:
+        return int(owner) == int(user_id)
+    except (TypeError, ValueError):
+        return False
 
 
 def _resolve_file(workflow_id: str) -> Path | None:
@@ -327,7 +357,11 @@ def get_definition(workflow_id: str) -> dict[str, Any] | None:
     return _read_file(path)
 
 
-def create_definition(payload: dict[str, Any]) -> dict[str, Any]:
+def create_definition(
+    payload: dict[str, Any],
+    *,
+    owner_user_id: int | None = None,
+) -> dict[str, Any]:
     """创建用户工作流定义。
 
     使用 O_EXCL 独占创建模式防止并发竞态：两个并发请求创建相同 workflow_id 时，
@@ -362,6 +396,7 @@ def create_definition(payload: dict[str, Any]) -> dict[str, Any]:
         linked_layer_id=payload.get("linked_layer_id"),
         tags=payload.get("tags"),
         category=payload.get("category"),
+        owner_user_id=owner_user_id,
     )
 
     definition = {
@@ -450,7 +485,11 @@ def delete_definition(workflow_id: str) -> bool:
 
 
 def duplicate_definition(
-    source_id: str, new_id: str, new_name: str | None = None
+    source_id: str,
+    new_id: str,
+    new_name: str | None = None,
+    *,
+    owner_user_id: int | None = None,
 ) -> dict[str, Any]:
     """复制现有工作流定义为新的用户工作流。"""
     source = get_definition(source_id)
@@ -472,4 +511,4 @@ def duplicate_definition(
         "extra": source.get("extra", {}),
     }
 
-    return create_definition(payload)
+    return create_definition(payload, owner_user_id=owner_user_id)

@@ -8,6 +8,7 @@
 import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
 import { AlarmClock, X, CircleSlash, Timer, Play } from '../ui/icons'
 
+import { useAuthStore } from '../../stores/auth'
 import { useWorkflowTimersStore } from '../../stores/workflow-timers'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import { previewCron, insertDateTemplateIntoOverridesJson } from '../../services/workflow-timer-api'
@@ -40,6 +41,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{ close: [] }>()
 
+const authStore = useAuthStore()
 const timersStore = useWorkflowTimersStore()
 const definitionsStore = useWorkflowDefinitionsStore()
 const timers = toRef(timersStore, 'timers')
@@ -47,6 +49,7 @@ const loading = toRef(timersStore, 'loading')
 const error = toRef(timersStore, 'error')
 const lastActionTimerId = toRef(timersStore, 'lastActionTimerId')
 const summaries = toRef(definitionsStore, 'summaries')
+const canManageTimers = computed(() => authStore.isAdmin)
 
 function loadListWidth(): number {
   try {
@@ -531,6 +534,9 @@ function showAllWorkflows() {
 
 const friendlyError = computed(() => {
   const raw = error.value || ''
+  if (/403/.test(raw) || /Admin role required/i.test(raw)) {
+    return '仅管理员可管理定时器。'
+  }
   if (/404/.test(raw) && /workflow-timers/i.test(raw)) {
     return '定时器接口不可用（404）。请确认后端已重启并包含 /workflow-timers 路由；开发模式需 Vite 代理到后端。'
   }
@@ -544,6 +550,7 @@ const workflowOptions = computed(() =>
 let _pollTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
+  if (!canManageTimers.value) return
   await Promise.all([timersStore.loadTimers(), definitionsStore.loadSummaries()])
   _pollTimer = setInterval(() => {
     void timersStore.loadTimers(undefined, { silent: true })
@@ -575,32 +582,34 @@ onUnmounted(() => {
           >北京时间</span
         >
         <div class="header-actions">
-          <button
-            class="header-btn"
-            type="button"
-            :disabled="ticking"
-            title="立即扫描到期定时器（调试用，正常由 Celery Beat 每分钟自动执行）"
-            @click="manualTick"
-          >
-            {{ ticking ? '扫描中...' : '立即扫描' }}
-          </button>
-          <button
-            class="header-btn"
-            type="button"
-            title="发射外部事件，触发匹配的 event 类型定时器"
-            @click="showEventDialog = true"
-          >
-            发射事件
-          </button>
-          <button
-            class="header-btn"
-            type="button"
-            :disabled="loading"
-            @click="timersStore.loadTimers()"
-          >
-            {{ loading ? '刷新中...' : '刷新' }}
-          </button>
-          <button class="header-btn primary" type="button" @click="openCreate">+ 新建</button>
+          <template v-if="canManageTimers">
+            <button
+              class="header-btn"
+              type="button"
+              :disabled="ticking"
+              title="立即扫描到期定时器（调试用，正常由 Celery Beat 每分钟自动执行）"
+              @click="manualTick"
+            >
+              {{ ticking ? '扫描中...' : '立即扫描' }}
+            </button>
+            <button
+              class="header-btn"
+              type="button"
+              title="发射外部事件，触发匹配的 event 类型定时器"
+              @click="showEventDialog = true"
+            >
+              发射事件
+            </button>
+            <button
+              class="header-btn"
+              type="button"
+              :disabled="loading"
+              @click="timersStore.loadTimers()"
+            >
+              {{ loading ? '刷新中...' : '刷新' }}
+            </button>
+            <button class="header-btn primary" type="button" @click="openCreate">+ 新建</button>
+          </template>
           <button
             v-if="!embedded"
             class="close-btn"
@@ -615,6 +624,9 @@ onUnmounted(() => {
       </div>
 
       <div class="panel-body panel-body--split">
+        <div v-if="!canManageTimers" class="error-banner">
+          <div>仅管理员可管理定时器。调度任务仍由已配置的定时器经 Beat 自动执行。</div>
+        </div>
         <div v-if="error" class="error-banner">
           <div>{{ friendlyError }}</div>
           <button class="header-btn" type="button" @click="timersStore.loadTimers()">重试</button>

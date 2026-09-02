@@ -66,5 +66,6 @@
 | 图层目录真源 | 后端 `catalog_seeds/*.json`；前端 `gen:catalog` → `catalog-seeds.generated.json`；`check:catalog` 门禁 | `Tools/generate_catalog_seeds.py`、`AGENTS.md` |
 | 在线时序编排 | Timeline 驱动自动取数：`online-temporal-orchestrator.ts` + `useOnlineTemporalIntegration.ts` | `Code/frontend/src/stores/layers/` |
 | 默认同域入口 | `launch.py start`/`restart` → Nginx Gateway `:5175`；HMR：`start --vite` | `Code/infra/gateway/README.md` |
+| Cesium 双引擎 | 默认 MapLibre globe；设置可选 Cesium；Gateway CSP 需 `unsafe-eval`+`wasm-unsafe-eval` | `02-架构设计/cesium-dual-engine.md` |
 | 多主题 / 跨用户隔离 | 同 SPA；主题默认 ACL ⊕ 用户覆盖；P1 缺口见专文 | `Docs/03-规范协议/多主题与跨用户隔离说明.md` |
 | 测试落点 | 后端/算法：`Test/`；前端：`Test/frontend/`（由 Vite vitest 加载） | `AGENTS.md` |

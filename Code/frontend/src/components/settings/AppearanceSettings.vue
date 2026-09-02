@@ -5,21 +5,25 @@
  * 包含主题模式切换（深色/浅色/跟随系统）、地图显示设置（分布淡底/氛围遮罩）、
  * 以及动效偏好。
  */
-import { ref } from 'vue'
+import { onUnmounted, ref } from 'vue'
 import { useThemeStore, type ThemePreference } from '../../stores/theme'
 import {
   getGlobeBackgroundMode,
   getGlobeDaylightMode,
+  getGlobeRenderEngine,
   is3DViewExperimentalEnabled,
   isMapDistributionChromeEnabled,
   isShowAnalysisResultOnMapEnabled,
   set3DViewExperimentalEnabled,
   setGlobeBackgroundMode,
   setGlobeDaylightMode,
+  setGlobeRenderEngine,
   setMapDistributionChromeEnabled,
   setShowAnalysisResultOnMapEnabled,
+  subscribeGlobeScene,
   type GlobeBackgroundMode,
   type GlobeDaylightMode,
+  type GlobeRenderEngine,
 } from '../../services/settings-local'
 import {
   resolveReducedMotionPreference,
@@ -59,11 +63,27 @@ function onEnable3DViewChange(event: Event) {
   set3DViewExperimentalEnabled(checked)
 }
 
+const globeRenderEngine = ref<GlobeRenderEngine>(getGlobeRenderEngine())
+
+const globeRenderEngineOptions = [
+  { value: 'maplibre', label: 'MapLibre（默认）' },
+  { value: 'cesium', label: 'Cesium（实验）' },
+]
+
+const mapLibreSceneOnly = ref(globeRenderEngine.value === 'maplibre')
+
+function onGlobeRenderEngineChange(value: string | number) {
+  globeRenderEngine.value = value as GlobeRenderEngine
+  mapLibreSceneOnly.value = globeRenderEngine.value === 'maplibre'
+  setGlobeRenderEngine(globeRenderEngine.value)
+}
+
 const globeBackground = ref<GlobeBackgroundMode>(getGlobeBackgroundMode())
 
 const globeBackgroundOptions = [
   { value: 'auto', label: '跟随主题' },
   { value: 'starfield', label: '星图' },
+  { value: 'solar_system', label: '太阳系' },
   { value: 'minimal', label: '极简' },
 ]
 
@@ -84,6 +104,16 @@ function onGlobeDaylightChange(value: string | number) {
   globeDaylight.value = value as GlobeDaylightMode
   setGlobeDaylightMode(globeDaylight.value)
 }
+
+const unsubGlobeScene = subscribeGlobeScene(() => {
+  globeRenderEngine.value = getGlobeRenderEngine()
+  mapLibreSceneOnly.value = globeRenderEngine.value === 'maplibre'
+  globeBackground.value = getGlobeBackgroundMode()
+  globeDaylight.value = getGlobeDaylightMode()
+})
+onUnmounted(() => {
+  unsubGlobeScene()
+})
 
 function onThemeChange(value: string | number) {
   themeStore.setTheme(value as ThemePreference)
@@ -153,16 +183,31 @@ function onReducedMotionChange(event: Event) {
       <!-- 3D 场景偏好（仅在启用 3D 视图时展示） -->
       <div v-if="enable3DView" class="globe-scene-options">
         <div class="scene-option">
+          <span class="scene-option-label">3D 渲染模式</span>
+          <SegmentedControl
+            :model-value="globeRenderEngine"
+            :options="globeRenderEngineOptions"
+            size="xs"
+            @change="onGlobeRenderEngineChange"
+          />
+        </div>
+        <p class="section-hint">
+          MapLibre 为默认主链（地球投影 + 现有天气叠加）。Cesium 为实验引擎：底图与「自然」光影已接，天气叠加尚未接入。
+        </p>
+        <div class="scene-option" :class="{ 'scene-option--disabled': !mapLibreSceneOnly }">
           <span class="scene-option-label">3D 背景</span>
           <SegmentedControl
             :model-value="globeBackground"
             :options="globeBackgroundOptions"
             size="xs"
+            :disabled="!mapLibreSceneOnly"
             @change="onGlobeBackgroundChange"
           />
         </div>
         <p class="section-hint">
           3D 模式下地球背后的深空背景。「跟随主题」在深色界面显示星图/银河，浅色界面淡化为柔和微尘。
+          「太阳系」随视角旋转星空，并按时间轴显示太阳盘（晨昏线仍由「3D 光影」控制）。
+          <template v-if="!mapLibreSceneOnly">当前仅 MapLibre 模式生效。</template>
         </p>
         <div class="scene-option">
           <span class="scene-option-label">3D 光影</span>
@@ -174,9 +219,8 @@ function onReducedMotionChange(event: Event) {
           />
         </div>
         <p class="section-hint">
-          3D
-          光影：「标准」压亮底图瓦片（左上立体感），不画昼夜遮罩；「自然」按时间轴硬边暗/亮半球（v1
-          无晨昏羽化/动画）；「无」取消一切亮暗效果。
+          3D 光影：「标准」压亮底图瓦片（MapLibre）/ 明亮地球（Cesium）；「自然」按时间轴夜半球；「无」关闭亮暗效果。
+          Cesium 模式下「自然」驱动引擎光照时钟，与时间轴小时联动。
         </p>
       </div>
     </section>
@@ -270,5 +314,9 @@ function onReducedMotionChange(event: Event) {
   font-weight: var(--font-weight-medium);
   color: var(--text-primary);
   white-space: nowrap;
+}
+
+.scene-option--disabled {
+  opacity: 0.55;
 }
 </style>

@@ -17,14 +17,17 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.deps import (
+    CredentialContext,
     require_workflow_create_access,
     check_resource_access,
     get_request_user,
 )
+from app.api.error_codes import AUTH_ERROR, ApiError
 from app.services import workflow_definition_service as wds
 from app.services.workflow_definition_service import (
     WorkflowExistsError,
     WorkflowNotFoundError,
+    can_mutate_user_definition,
 )
 from app.services.node_template_registry import get_all_node_templates
 from app.services.workflow_graph_compiler import (
@@ -301,16 +304,51 @@ def get_definition(
     return definition
 
 
+def _deny_if_cannot_mutate_definition(
+    workflow_id: str,
+    cred: CredentialContext | None,
+) -> None:
+    """Raise 403/404 when caller cannot mutate the user definition."""
+    definition = wds.get_definition(workflow_id)
+    if definition is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow definition not found: {workflow_id}",
+        )
+    meta = definition.get("_meta") if isinstance(definition.get("_meta"), dict) else {}
+    if meta.get("kind") == "system" or meta.get("readonly", False):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot modify system workflow definition: {workflow_id}",
+        )
+    role = getattr(cred, "role", None) if cred is not None else None
+    user_id = getattr(cred, "user_id", None) if cred is not None else None
+    if can_mutate_user_definition(meta, role=role, user_id=user_id):
+        return
+    raise ApiError(
+        AUTH_ERROR,
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Only the owner or an admin can modify this workflow definition.",
+    )
+
+
 @router.post(
     "",
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_workflow_create_access)],
     tags=["workflow-definition"],
 )
-def create_definition(payload: dict[str, Any]) -> dict[str, Any]:
+def create_definition(
+    payload: dict[str, Any],
+    _write_ok: None = Depends(require_workflow_create_access),
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     """创建用户工作流定义。"""
+    _cred = cred if isinstance(cred, CredentialContext) else None
     try:
-        return wds.create_definition(payload)
+        return wds.create_definition(
+            payload,
+            owner_user_id=_cred.user_id if _cred is not None else None,
+        )
     except WorkflowExistsError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=str(exc)
@@ -323,11 +361,17 @@ def create_definition(payload: dict[str, Any]) -> dict[str, Any]:
 
 @router.put(
     "/{workflow_id}",
-    dependencies=[Depends(require_workflow_create_access)],
     tags=["workflow-definition"],
 )
-def update_definition(workflow_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    """更新用户工作流定义。system 定义不可更新。"""
+def update_definition(
+    workflow_id: str,
+    payload: dict[str, Any],
+    _write_ok: None = Depends(require_workflow_create_access),
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
+    """更新用户工作流定义。system 定义不可更新；非属主非 admin 拒绝。"""
+    _cred = cred if isinstance(cred, CredentialContext) else None
+    _deny_if_cannot_mutate_definition(workflow_id, _cred)
     try:
         return wds.update_definition(workflow_id, payload)
     except WorkflowNotFoundError as exc:
@@ -343,11 +387,16 @@ def update_definition(workflow_id: str, payload: dict[str, Any]) -> dict[str, An
 @router.delete(
     "/{workflow_id}",
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(require_workflow_create_access)],
     tags=["workflow-definition"],
 )
-def delete_definition(workflow_id: str) -> dict[str, Any]:
-    """删除用户工作流定义。system 定义不可删除。"""
+def delete_definition(
+    workflow_id: str,
+    _write_ok: None = Depends(require_workflow_create_access),
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
+    """删除用户工作流定义。system 定义不可删除；非属主非 admin 拒绝。"""
+    _cred = cred if isinstance(cred, CredentialContext) else None
+    _deny_if_cannot_mutate_definition(workflow_id, _cred)
     try:
         wds.delete_definition(workflow_id)
     except WorkflowNotFoundError as exc:
@@ -363,11 +412,17 @@ def delete_definition(workflow_id: str) -> dict[str, Any]:
 
 @router.post(
     "/{workflow_id}/duplicate",
-    dependencies=[Depends(require_workflow_create_access)],
     tags=["workflow-definition"],
 )
-def duplicate_definition(workflow_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+def duplicate_definition(
+    workflow_id: str,
+    payload: dict[str, Any],
+    _write_ok: None = Depends(require_workflow_create_access),
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     """复制现有工作流定义为新的用户工作流。"""
+    _cred = cred if isinstance(cred, CredentialContext) else None
+    check_resource_access(_cred, "workflow", workflow_id)
     new_id = payload.get("new_id")
     new_name = payload.get("new_name")
     if not new_id or not isinstance(new_id, str):
@@ -382,7 +437,12 @@ def duplicate_definition(workflow_id: str, payload: dict[str, Any]) -> dict[str,
             detail="new_name must be a string if provided",
         )
     try:
-        return wds.duplicate_definition(workflow_id, new_id, new_name)
+        return wds.duplicate_definition(
+            workflow_id,
+            new_id,
+            new_name,
+            owner_user_id=_cred.user_id if _cred is not None else None,
+        )
     except WorkflowNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)

@@ -33,7 +33,9 @@ from app.data_io.services.http_files import content_disposition_attachment
 from app.data_io.services.jobs import cancel_job, enqueue_job, get_job, list_jobs
 from app.data_io.services.raster_science import GRIB_SUFFIXES, list_raster_variables
 from app.data_io.services.upload import (
+    UploadAccessDenied,
     append_chunk,
+    assert_upload_access,
     complete_upload,
     discard_upload,
     get_upload_status,
@@ -238,6 +240,8 @@ def _http_err(exc: Exception) -> HTTPException:
     ValueError/RuntimeError→400。未知类型 re-raise 上抛全局处理器。
     QuotaExceededError(RuntimeError) 的 isinstance 检查先于父类，保证 507 先命中。
     """
+    if isinstance(exc, UploadAccessDenied):
+        return HTTPException(status_code=404, detail=str(exc))
     if isinstance(exc, FileNotFoundError):
         return HTTPException(status_code=404, detail=str(exc))
     if isinstance(exc, import_paths.QuotaExceededError):
@@ -245,6 +249,20 @@ def _http_err(exc: Exception) -> HTTPException:
     if isinstance(exc, (ValueError, RuntimeError)):
         return HTTPException(status_code=400, detail=str(exc))
     raise exc
+
+
+def _assert_upload_owner(upload_id: str, cred: CredentialContext | None) -> None:
+    assert_upload_access(
+        upload_id,
+        user_id=cred.user_id if cred is not None else None,
+        role=cred.role if cred is not None else None,
+        source=cred.source if cred is not None else None,
+    )
+
+
+def _resolve_owned_upload(upload_id: str, cred: CredentialContext | None) -> Path:
+    _assert_upload_owner(upload_id, cred)
+    return resolve_upload_path(upload_id)
 
 
 def _resolve_raster_axis_order(body: RasterCommitBody) -> str:
@@ -294,15 +312,19 @@ def _raster_commit_sync(body: RasterCommitBody) -> dict[str, Any]:
 @router.post(
     "/import/upload/init", dependencies=[Depends(require_data_transfer_access)]
 )
-async def upload_init(body: UploadInitBody) -> dict[str, Any]:
+async def upload_init(
+    body: UploadInitBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     try:
         return init_upload(
             filename=body.filename,
             size=body.size,
             content_type=body.content_type,
             resume_upload_id=body.resume_upload_id,
+            owner_user_id=_owner_user_id(cred),
         )
-    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -310,7 +332,10 @@ async def upload_init(body: UploadInitBody) -> dict[str, Any]:
     "/import/upload/resumable/init",
     dependencies=[Depends(require_data_transfer_access)],
 )
-async def upload_resumable_init(body: UploadResumableInitBody) -> dict[str, Any]:
+async def upload_resumable_init(
+    body: UploadResumableInitBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     try:
         return init_resumable(
             filename=body.filename,
@@ -319,6 +344,7 @@ async def upload_resumable_init(body: UploadResumableInitBody) -> dict[str, Any]
             chunk_size=body.chunk_size or RESUMABLE_CHUNK_SIZE,
             total_chunks=body.total_chunks,
             sha256_expected=body.sha256,
+            owner_user_id=_owner_user_id(cred),
         )
     except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
@@ -328,10 +354,14 @@ async def upload_resumable_init(body: UploadResumableInitBody) -> dict[str, Any]
     "/import/upload/{upload_id}/status",
     dependencies=[Depends(require_data_transfer_access)],
 )
-async def upload_status(upload_id: str) -> dict[str, Any]:
+async def upload_status(
+    upload_id: str,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     try:
+        _assert_upload_owner(upload_id, cred)
         return get_upload_status(upload_id)
-    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -343,11 +373,13 @@ async def upload_chunk(
     upload_id: str,
     file: UploadFile = File(...),
     offset: int | None = Form(default=None),
+    cred: CredentialContext | None = Depends(get_request_user),
 ) -> dict[str, Any]:
     try:
+        _assert_upload_owner(upload_id, cred)
         data = await file.read()
         return append_chunk(upload_id, data, offset=offset)
-    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
     finally:
         await file.close()
@@ -361,11 +393,13 @@ async def upload_chunk_indexed(
     upload_id: str,
     chunk_index: int,
     file: UploadFile = File(...),
+    cred: CredentialContext | None = Depends(get_request_user),
 ) -> dict[str, Any]:
     try:
+        _assert_upload_owner(upload_id, cred)
         data = await file.read()
         return upload_chunk_by_index(upload_id, chunk_index, data)
-    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
     finally:
         await file.close()
@@ -374,10 +408,14 @@ async def upload_chunk_indexed(
 @router.post(
     "/import/upload/complete", dependencies=[Depends(require_data_transfer_access)]
 )
-async def upload_complete(body: UploadCompleteBody) -> dict[str, Any]:
+async def upload_complete(
+    body: UploadCompleteBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     try:
+        _assert_upload_owner(body.upload_id, cred)
         return complete_upload(body.upload_id)
-    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -385,18 +423,29 @@ async def upload_complete(body: UploadCompleteBody) -> dict[str, Any]:
     "/import/upload/resumable/complete",
     dependencies=[Depends(require_data_transfer_access)],
 )
-async def upload_resumable_complete(body: UploadCompleteBody) -> dict[str, Any]:
+async def upload_resumable_complete(
+    body: UploadCompleteBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     try:
+        _assert_upload_owner(body.upload_id, cred)
         return complete_resumable(body.upload_id)
-    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
 @router.delete(
     "/import/upload/{upload_id}", dependencies=[Depends(require_data_transfer_access)]
 )
-async def upload_discard(upload_id: str) -> dict[str, Any]:
-    discard_upload(upload_id)
+async def upload_discard(
+    upload_id: str,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
+    try:
+        _assert_upload_owner(upload_id, cred)
+        discard_upload(upload_id)
+    except (UploadAccessDenied, FileNotFoundError) as exc:
+        raise _http_err(exc) from exc
     return {"ok": True, "upload_id": upload_id}
 
 
@@ -524,7 +573,7 @@ async def import_batch(
             kind = group.kind.strip().lower()
             if not group.upload_ids:
                 continue
-            paths = [resolve_upload_path(uid) for uid in group.upload_ids]
+            paths = [_resolve_owned_upload(uid, cred) for uid in group.upload_ids]
             source_name = group.source_name or paths[0].name
             if kind == "vector":
                 job = enqueue_job(
@@ -580,7 +629,7 @@ async def import_vector(
         raise HTTPException(status_code=400, detail="upload_ids 不能为空")
     owner = _owner_user_id(cred)
     try:
-        paths = [resolve_upload_path(uid) for uid in body.upload_ids]
+        paths = [_resolve_owned_upload(uid, cred) for uid in body.upload_ids]
         total = sum(p.stat().st_size for p in paths)
         force_async = body.async_mode or total > import_paths.CHUNK_SYNC_THRESHOLD_BYTES
 
@@ -812,11 +861,14 @@ async def import_quota_reclaim() -> dict[str, Any]:
 @router.post(
     "/import/raster/inspect", dependencies=[Depends(require_data_transfer_access)]
 )
-async def raster_inspect(body: RasterInspectBody) -> dict[str, Any]:
+async def raster_inspect(
+    body: RasterInspectBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     try:
         from app.data_io.services.time_label import guess_time_label_from_filename
 
-        path = resolve_upload_path(body.upload_id)
+        path = _resolve_owned_upload(body.upload_id, cred)
         info = list_raster_variables(path)
         guessed = guess_time_label_from_filename(path.name)
         return {
@@ -825,7 +877,7 @@ async def raster_inspect(body: RasterInspectBody) -> dict[str, Any]:
             "guessed_temporal": guessed,
             **info,
         }
-    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -838,7 +890,7 @@ async def raster_commit(
 ) -> dict[str, Any]:
     owner = _owner_user_id(cred)
     try:
-        path = resolve_upload_path(body.upload_id)
+        path = _resolve_owned_upload(body.upload_id, cred)
         ext = path.suffix.lower()
         # 科学格式默认偏异步，避免大 MAT 同步抽取导致代理 502
         force_async = (
@@ -882,7 +934,7 @@ async def raster_commit(
             )
             return {"async": True, "job_id": job["job_id"], "status": job["status"]}
         return {"async": False, **_raster_commit_sync(body)}
-    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -890,14 +942,17 @@ async def raster_commit(
     "/import/raster/detect-invalid",
     dependencies=[Depends(require_data_transfer_access)],
 )
-async def raster_detect_invalid(body: RasterDetectInvalidBody) -> dict[str, Any]:
+async def raster_detect_invalid(
+    body: RasterDetectInvalidBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     """检测科学栅格变量中的哨兵值 / Inf / FillValue，供 UI 一键填入。"""
     try:
         from app.data_io.services.raster_science import auto_detect_invalid_values
 
-        path = resolve_upload_path(body.upload_id)
+        path = _resolve_owned_upload(body.upload_id, cred)
         return auto_detect_invalid_values(path, body.variable_id)
-    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 
@@ -905,12 +960,15 @@ async def raster_detect_invalid(body: RasterDetectInvalidBody) -> dict[str, Any]
 
 
 @router.post("/import/document", dependencies=[Depends(require_data_transfer_access)])
-async def import_document(body: RasterInspectBody) -> dict[str, Any]:
+async def import_document(
+    body: RasterInspectBody,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
     """复用 upload_id 字段打开文档会话。"""
     try:
-        path = resolve_upload_path(body.upload_id)
+        path = _resolve_owned_upload(body.upload_id, cred)
         return create_document_session(path, source_name=path.name)
-    except (FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
         raise _http_err(exc) from exc
 
 

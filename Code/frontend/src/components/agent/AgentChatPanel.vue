@@ -61,6 +61,8 @@ interface ChatMessage {
     detail?: string | null
   }>
   confirmations?: PendingConfirmation[]
+  /** 结束后是否默认展开「过程」（有工具步骤时） */
+  keepStepsOpen?: boolean
 }
 
 const WELCOME_TEXT = '你好，我是地图助手。试试「打开 CMFD 降水」或「有哪些活动图层」。'
@@ -87,12 +89,44 @@ const inputRef = ref<HTMLTextAreaElement | null>(null)
 const errorText = ref<string | null>(null)
 const nowMs = ref(Date.now())
 const streamingId = ref<string | null>(null)
+/** 发送阶段：让用户区分「连不上 / 在想 / 在调工具 / 在出字 / 回退」 */
+const streamPhase = ref<'idle' | 'connecting' | 'working' | 'streaming' | 'fallback'>('idle')
+const liveStatus = ref('')
+const stepsOpen = ref(false)
+const sendStartedAt = ref(0)
 let tickTimer: ReturnType<typeof setInterval> | null = null
+let sendTickTimer: ReturnType<typeof setInterval> | null = null
 let scrollRaf: number | null = null
 let streamTextRaf: number | null = null
 let pendingStreamText: { id: string; text: string } | null = null
 /** 用户上滚阅读时不强制吸底 */
 let stickToBottom = true
+
+const elapsedWaitLabel = computed(() => {
+  if (!sending.value || !sendStartedAt.value) return ''
+  const s = Math.max(0, Math.floor((nowMs.value - sendStartedAt.value) / 1000))
+  if (s < 2) return ''
+  return `已等待 ${s}s`
+})
+
+const statusLabel = computed(() => {
+  if (!sending.value) return ''
+  const wait = elapsedWaitLabel.value
+  const suffix = wait ? `（${wait}）` : ''
+  if (liveStatus.value) return `${liveStatus.value}${suffix}`
+  switch (streamPhase.value) {
+    case 'connecting':
+      return `正在连接助手…${suffix}`
+    case 'working':
+      return `助手处理中（模型思考或调用工具）…${suffix}`
+    case 'streaming':
+      return `正在生成回复…${suffix}`
+    case 'fallback':
+      return `流式通道失败，改用普通请求…${suffix}`
+    default:
+      return `处理中…${suffix}`
+  }
+})
 
 function startExpiryTick() {
   if (tickTimer != null) return
@@ -101,11 +135,29 @@ function startExpiryTick() {
   }, 1000)
 }
 
+function startSendTick() {
+  sendStartedAt.value = Date.now()
+  nowMs.value = Date.now()
+  if (sendTickTimer != null) return
+  sendTickTimer = setInterval(() => {
+    nowMs.value = Date.now()
+  }, 1000)
+}
+
+function stopSendTick() {
+  sendStartedAt.value = 0
+  if (sendTickTimer != null) {
+    clearInterval(sendTickTimer)
+    sendTickTimer = null
+  }
+}
+
 onUnmounted(() => {
   if (tickTimer != null) {
     clearInterval(tickTimer)
     tickTimer = null
   }
+  stopSendTick()
   if (scrollRaf != null) cancelAnimationFrame(scrollRaf)
   if (streamTextRaf != null) cancelAnimationFrame(streamTextRaf)
 })
@@ -328,21 +380,89 @@ async function applyChatResult(res: AgentChatResponse, assistantId: string) {
     finalizeAssistantHtml(created)
     messages.value.push(created)
   }
+
+  const target = messages.value.find((m) => m.id === assistantId)
   if (res.ui_intents?.length) {
     const results = executeAgentUiIntents(res.ui_intents, {
       fitToLayerExtent: props.fitToLayerExtent,
     })
-    const notes = results
+    const noteBodies = results
       .filter((r) => r.message)
-      .map((r) => (r.ok ? `✓ ${r.message}` : `✗ ${r.message}`))
-    if (notes.length) {
+      .map((r) => ({
+        ok: r.ok,
+        body: r.message,
+        line: r.ok ? `✓ ${r.message}` : `✗ ${r.message}`,
+      }))
+    // 模型只调了 list_active_layers 等意图、正文为空时：把意图结果填进助手气泡，避免「吞回复」
+    if (target && !String(target.text || '').trim() && noteBodies.length) {
+      target.text = noteBodies.map((n) => n.body).join('\n\n')
+      finalizeAssistantHtml(target)
+    } else if (noteBodies.length) {
       messages.value.push({
         id: `s-${Date.now()}`,
         role: 'system',
-        text: notes.join('\n'),
+        text: noteBodies.map((n) => n.line).join('\n'),
       })
     }
   }
+  if (target) {
+    const trimmed = String(target.text || '').trim()
+    if (!trimmed || trimmed === '（模型未返回文本）') {
+      const fromSteps = synthesizeReplyFromSteps(target.steps)
+      if (fromSteps) {
+        target.text = fromSteps
+        finalizeAssistantHtml(target)
+      } else if (!trimmed) {
+        target.text =
+          '（助手未返回可见文本。可展开「过程」查看工具步骤，或换一种问法重试。）'
+        finalizeAssistantHtml(target)
+      }
+    }
+    if (target.steps?.some((s) => s.type === 'tool' || s.type === 'tool_result')) {
+      target.keepStepsOpen = true
+    }
+  }
+}
+
+function synthesizeReplyFromSteps(
+  steps: ChatMessage['steps'],
+): string | null {
+  if (!steps?.length) return null
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    const step = steps[i]
+    if (step.type !== 'tool_result' || !step.detail) continue
+    try {
+      const data = JSON.parse(step.detail) as Record<string, unknown>
+      if (!data || typeof data !== 'object') continue
+      if (!data.ok) {
+        const err = typeof data.error === 'string' ? data.error : ''
+        if (err) return `工具调用未成功：${err}`
+        continue
+      }
+      const layers = data.layers
+      if (Array.isArray(layers)) {
+        const q = typeof data.query === 'string' ? data.query : ''
+        if (!layers.length) {
+          return `未在图层库中找到与「${q || '该关键词'}」匹配的图层。若要查看已添加图层，请说「有哪些活动图层」。`
+        }
+        const lines = layers
+          .filter((x): x is Record<string, unknown> => !!x && typeof x === 'object')
+          .map((item) => {
+            const id = String(item.layer_id || '')
+            const name = String(item.display_name || id)
+            return `- ${name}（\`${id}\`）`
+          })
+        return (
+          (q
+            ? `图层库搜索「${q}」命中 ${lines.length} 条：\n`
+            : `找到 ${lines.length} 个图层：\n`) + lines.join('\n')
+        )
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return null
 }
 
 async function send() {
@@ -366,6 +486,10 @@ async function send() {
   void scrollToBottom()
   sending.value = true
   streamingId.value = assistantId
+  streamPhase.value = 'connecting'
+  liveStatus.value = '正在连接助手…'
+  stepsOpen.value = true
+  startSendTick()
 
   const req = {
     message: text,
@@ -378,9 +502,18 @@ async function send() {
     if (!msg) return
     if (!msg.steps) msg.steps = []
     msg.steps.push(step)
+    streamPhase.value = 'working'
+    liveStatus.value =
+      step.type === 'tool'
+        ? `正在调用工具：${step.summary}`
+        : step.type === 'tool_result'
+          ? `工具已返回：${step.summary}`
+          : step.summary || '助手处理中…'
     scheduleScrollToBottom()
   }
   const onToken = (chunk: string) => {
+    streamPhase.value = 'streaming'
+    liveStatus.value = '正在生成回复…'
     appendStreamChunk(assistantId, chunk)
   }
 
@@ -390,6 +523,12 @@ async function send() {
       res = await streamAgentChat(req, {
         onToken,
         onStep,
+        onConnected: () => {
+          if (streamPhase.value === 'connecting') {
+            streamPhase.value = 'working'
+            liveStatus.value = '已连接，等待模型或工具…'
+          }
+        },
         onIntent: (_intent: AgentUiIntent) => {
           /* applied from done payload */
         },
@@ -400,12 +539,15 @@ async function send() {
         cancelAnimationFrame(streamTextRaf)
         streamTextRaf = null
       }
-      const msg = messages.value.find((m) => m.id === assistantId)
-      if (msg) {
-        msg.text = ''
-        msg.html = undefined
-        msg.steps = []
-      }
+      // 保留已收到的 step / 部分正文，避免「吞掉过程」；仅清空未完成流缓冲
+      streamPhase.value = 'fallback'
+      const reason = _streamErr instanceof Error ? _streamErr.message : String(_streamErr)
+      liveStatus.value = `流式失败（${reason.slice(0, 80)}），改用普通请求…`
+      messages.value.push({
+        id: `fb-${Date.now()}`,
+        role: 'system',
+        text: `流式通道不可用，已自动改用普通请求。\n原因：${reason}`,
+      })
       res = await postAgentChat(req)
     }
     flushStreamText()
@@ -422,8 +564,18 @@ async function send() {
       text: `请求失败：${errorText.value}`,
     })
   } finally {
+    const msg = messages.value.find((m) => m.id === assistantId)
+    const keepStepsOpen = Boolean(
+      msg?.steps?.some((s) => s.type === 'tool' || s.type === 'tool_result') ||
+        msg?.keepStepsOpen,
+    )
+    if (msg) msg.keepStepsOpen = keepStepsOpen
     sending.value = false
     streamingId.value = null
+    streamPhase.value = 'idle'
+    liveStatus.value = ''
+    stepsOpen.value = keepStepsOpen
+    stopSendTick()
     void scrollToBottom()
   }
 }
@@ -471,9 +623,22 @@ function onKeydown(ev: KeyboardEvent) {
           v-html="msg.html"
         />
         <pre v-else class="agent-chat-text agent-scroll">{{
-          msg.text || (sending && msg.role === 'assistant' ? '…' : '')
+          msg.text ||
+          (msg.id === streamingId && sending
+            ? streamPhase === 'connecting'
+              ? '正在连接助手…'
+              : streamPhase === 'fallback'
+                ? '流式失败，改用普通请求…'
+                : streamPhase === 'working'
+                  ? liveStatus || '助手处理中…'
+                  : '…'
+            : '')
         }}</pre>
-        <details v-if="msg.steps?.length" class="agent-chat-steps">
+        <details
+          v-if="msg.steps?.length"
+          class="agent-chat-steps"
+          :open="msg.id === streamingId ? stepsOpen : msg.keepStepsOpen"
+        >
           <summary>过程（{{ msg.steps.length }}）</summary>
           <ul>
             <li v-for="(step, idx) in msg.steps" :key="idx">
@@ -536,6 +701,15 @@ function onKeydown(ev: KeyboardEvent) {
           地图点击选点后可查坐标与图层值
         </span>
       </div>
+      <p
+        v-if="sending && statusLabel"
+        class="agent-chat-status"
+        role="status"
+        aria-live="polite"
+      >
+        <span class="agent-chat-status-dot" aria-hidden="true" />
+        {{ statusLabel }}
+      </p>
       <textarea
         ref="inputRef"
         v-model="input"
@@ -1055,6 +1229,41 @@ function onKeydown(ev: KeyboardEvent) {
   flex-wrap: wrap;
   gap: 0.35rem;
   min-width: 0;
+}
+
+.agent-chat-status {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.28rem 0.45rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-1));
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.agent-chat-status-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--accent);
+  flex: 0 0 auto;
+  animation: agent-status-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes agent-status-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .agent-chat-chip {

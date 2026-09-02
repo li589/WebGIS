@@ -21,7 +21,7 @@ Comprehensive Geographic Data Analysis System（CGDA）是一套面向**地理�
 - **算法插件化**：`Code/algorithms` Python 包经 provider bridge 接入，模块可独立演进
 - **默认同域入口**：Nginx Gateway `:5175` 静态前端 + 反代 FastAPI，便于联调与演示
 
-> 3D 地球（Cesium）依赖已引入，当前默认主链仍为 **2D-first**，Cesium 为实验性能力。
+> 3D：默认 **MapLibre globe**（星空/太阳系/风场主路径）；**Cesium** 为设置可选实验引擎（底图 + overlay XYZ；见 `Docs/02-架构设计/cesium-dual-engine.md`）。
 
 ---
 
@@ -61,7 +61,7 @@ Nginx Gateway :5175 ──► FastAPI :8000
 |------|------|------|
 | 前端 | Vue 3、TypeScript、Vite、Pinia | Node **22**（见 `Code/frontend/package.json`） |
 | 2D 地图 | MapLibre GL JS + Canvas 叠加 | 当前主路径 |
-| 3D | CesiumJS、vue-cesium | 已打包，非默认主链 |
+| 3D | MapLibre globe（默认）/ Cesium（实验可选） | 设置切换；Cesium 未接风场主链 |
 | API | FastAPI | 统一 REST 入口，`/docs` 交互文档 |
 | 任务队列 | Celery + Redis | realtime / standard / heavy / batch / download / gee / weather |
 | 算法 | Python 3.12 + provider bridge | `Code/algorithms/providers/Python/` |

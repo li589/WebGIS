@@ -12,9 +12,11 @@ Admin role always bypasses permission checks (handled in ``deps.py``).
 from __future__ import annotations
 
 import logging
+import sqlite3
 import time
 from dataclasses import dataclass
 from datetime import datetime, UTC
+from pathlib import Path
 from typing import Any, Literal
 
 from app.services._sqlite_pool import SQLiteConnectionPool
@@ -62,9 +64,82 @@ class PermissionInput:
 
 _CACHE_TTL_SECONDS: float = 30.0
 _access_cache: dict[tuple[int, str, str], tuple[bool, float]] = {}
+# Process-local view of shared ``acl_cache_generation`` (SQLite). When another
+# worker bumps the generation, this process clears its in-memory cache.
+_local_cache_generation: int = -1
+
+
+def _acl_generation_conn() -> sqlite3.Connection:
+    path = Path(_users_db_path())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path), timeout=30.0)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _ensure_generation_table(conn: Any) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS acl_cache_generation (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            generation INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO acl_cache_generation (id, generation) VALUES (1, 0)"
+    )
+
+
+def _read_shared_generation() -> int:
+    try:
+        conn = _acl_generation_conn()
+        try:
+            _ensure_generation_table(conn)
+            row = conn.execute(
+                "SELECT generation FROM acl_cache_generation WHERE id=1"
+            ).fetchone()
+            conn.commit()
+            return int(row["generation"]) if row is not None else 0
+        finally:
+            conn.close()
+    except Exception:
+        logger.warning("Failed to read acl_cache_generation", exc_info=True)
+        return 0
+
+
+def _bump_shared_generation() -> int:
+    try:
+        conn = _acl_generation_conn()
+        try:
+            _ensure_generation_table(conn)
+            conn.execute(
+                "UPDATE acl_cache_generation SET generation = generation + 1 "
+                "WHERE id=1"
+            )
+            row = conn.execute(
+                "SELECT generation FROM acl_cache_generation WHERE id=1"
+            ).fetchone()
+            conn.commit()
+            return int(row["generation"]) if row is not None else 0
+        finally:
+            conn.close()
+    except Exception:
+        logger.warning("Failed to bump acl_cache_generation", exc_info=True)
+        return 0
+
+
+def _sync_cache_generation() -> None:
+    """Drop process cache when another worker invalidated ACL."""
+    global _local_cache_generation
+    shared = _read_shared_generation()
+    if shared != _local_cache_generation:
+        _access_cache.clear()
+        _local_cache_generation = shared
 
 
 def _cache_get(key: tuple[int, str, str]) -> bool | None:
+    _sync_cache_generation()
     entry = _access_cache.get(key)
     if entry is None:
         return None
@@ -76,15 +151,18 @@ def _cache_get(key: tuple[int, str, str]) -> bool | None:
 
 
 def _cache_set(key: tuple[int, str, str], value: bool) -> None:
+    _sync_cache_generation()
     _access_cache[key] = (value, time.monotonic() + _CACHE_TTL_SECONDS)
 
 
 def invalidate_access_cache(user_id: int | None = None) -> None:
-    """Invalidate cached access-check results.
+    """Invalidate cached access-check results across workers.
 
-    Call after modifying permissions for *user_id* (or all users when
-    *user_id* is ``None``).
+    Bumps shared ``acl_cache_generation`` so other processes drop stale entries
+    on next check. Also clears this process's cache (optionally scoped).
     """
+    global _local_cache_generation
+    _local_cache_generation = _bump_shared_generation()
     if user_id is None:
         _access_cache.clear()
     else:
@@ -129,6 +207,7 @@ class PermissionRepository:
                 "CREATE INDEX IF NOT EXISTS idx_permissions_user_type "
                 "ON user_resource_permissions(user_id, resource_type)"
             )
+            _ensure_generation_table(conn)
             conn.commit()
 
     def close(self) -> None:
@@ -323,10 +402,14 @@ class PermissionRepository:
         user-over-theme precedence.  Group id comes from the layer group
         repository (assignment override → descriptor category fallback).
         """
-        from app.services.layer_group_repository import get_layer_group_repository
-
         group_id: str | None = None
         try:
+            from app.services.layer_group_repository import (
+                get_layer_group_repository,
+                resolve_catalog_group_scope,
+            )
+            from app.services.user_repository import get_user_repository
+
             descriptor = None
             try:
                 from app.services.layer_catalog import get_layer_descriptor
@@ -334,8 +417,20 @@ class PermissionRepository:
                 descriptor = get_layer_descriptor(layer_id)
             except Exception:
                 descriptor = None
+            role = None
+            try:
+                user = get_user_repository().get_by_id(int(user_id))
+                if user is not None:
+                    role = str(user.get("role") or "")
+            except Exception:
+                role = None
+            scope = resolve_catalog_group_scope(
+                user_id=user_id, role=role, theme_id=theme_id
+            )
             group_id = get_layer_group_repository().resolve_group_id_for_layer(
-                layer_id, getattr(descriptor, "category", None)
+                layer_id,
+                getattr(descriptor, "category", None),
+                scope=scope,
             )
         except Exception:
             logger.debug("layer group resolve failed for %s", layer_id, exc_info=True)
@@ -437,15 +532,31 @@ class PermissionRepository:
         group_theme_map: dict[str, str] = {}
         resolved: dict[str, str] = {}
         if resource_type == "layer":
-            from app.services.layer_group_repository import get_layer_group_repository
+            from app.services.layer_group_repository import (
+                get_layer_group_repository,
+                resolve_catalog_group_scope,
+            )
+            from app.services.user_repository import get_user_repository
 
             group_repo = get_layer_group_repository()
+            role = None
+            try:
+                user = get_user_repository().get_by_id(int(user_id))
+                if user is not None:
+                    role = str(user.get("role") or "")
+            except Exception:
+                role = None
+            scope = resolve_catalog_group_scope(
+                user_id=user_id, role=role, theme_id=theme_id
+            )
             try:
                 from app.services.layer_catalog import get_layer_descriptor
 
                 for lid in resource_ids:
                     gid = group_repo.resolve_group_id_for_layer(
-                        lid, getattr(get_layer_descriptor(lid), "category", None)
+                        lid,
+                        getattr(get_layer_descriptor(lid), "category", None),
+                        scope=scope,
                     )
                     if gid:
                         resolved[lid] = gid

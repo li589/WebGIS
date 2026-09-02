@@ -16,7 +16,13 @@ import {
   MAP_EVENT_RESIZE,
   MIN_VISIBLE_ZOOM,
 } from './types'
-import { computeCanvasLayout, type CanvasLayout } from './canvas-utils'
+import {
+  computeCanvasLayout,
+  getGlobeViewPole,
+  isGlobeProjection,
+  isLngLatOccludedByGlobe,
+  type CanvasLayout,
+} from './canvas-utils'
 import { normalizeLngBounds, resolveVisibleViewportBBox } from './map-viewport-sync'
 import { unwrapLonIntoGridFrame, type LonFrame } from './weather-grid-lattice'
 import {
@@ -404,6 +410,8 @@ export class WindParticleCanvas {
   private lastParticleZoom = 0
   /** 经度 wrap 偏移量（来自 computeCanvasLayout），用于将粒子经度投影到可见世界副本 */
   private lonWrapOffset = 0
+  /** 本帧缓存的 globe 视向极点（背面剔除） */
+  private _globeViewPole: [number, number, number] | null = null
 
   /**
    * 用户当前视口 bbox（来自 map.getBounds()），用于在 grid 未覆盖新区域时
@@ -851,6 +859,7 @@ export class WindParticleCanvas {
     const { fadeAlpha, speedScale, colorStops, lineWidth } = this.options
     const grid = this.grid!
     const project = this.map.project.bind(this.map)
+    this._globeViewPole = isGlobeProjection(this.map) ? getGlobeViewPole(this.map) : null
 
     // 低缩放级别下隐藏粒子流（风场数据仅覆盖局部区域，全球视图下粒子流无意义且视觉混乱）
     // 与 WindBarbLayer / WindContourLayer 的 MIN_VISIBLE_ZOOM 保持一致
@@ -954,6 +963,15 @@ export class WindParticleCanvas {
         }
 
         const wrapped = this.wrapParticle(p)
+
+        // Globe：背面粒子不画、不累加拖尾，避免穿球叠到正面
+        if (
+          this._globeViewPole &&
+          isLngLatOccludedByGlobe(this.map, p.lon, p.lat, this._globeViewPole)
+        ) {
+          p.trail.length = 0
+          continue
+        }
 
         const screen = project([p.lon + this.lonWrapOffset, p.lat])
         const cx = (screen.x - offsetX) * dpr

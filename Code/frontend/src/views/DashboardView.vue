@@ -24,6 +24,8 @@ import TimelinePanel from '../components/TimelinePanel.vue'
 import TimelineScrubber from '../components/TimelineScrubber.vue'
 import DrawSessionExitModal from '../components/map/DrawSessionExitModal.vue'
 import WorkflowStatusPanel from '../components/workflow/WorkflowStatusPanel.vue'
+import { useGlobeRenderEngine } from '../components/map/globe-engine/use-globe-render-engine'
+import { resolveLayerExtentBounds } from '../components/map/globe-engine/layer-extent'
 import type { TileSourceId } from '../services/api-config'
 import {
   is3DViewExperimentalEnabled,
@@ -151,6 +153,11 @@ const overlayTimeStates = ref<OverlayTimeState[]>([])
 const dashboardRef = ref<HTMLElement | null>(null)
 const mapShellRef = ref<HTMLElement | null>(null)
 const mapCanvasRef = ref<InstanceType<typeof MapCanvas> | null>(null)
+const cesiumHostRef = ref<{
+  flyToBounds: (b: [number, number, number, number]) => void
+  getCanvas: () => HTMLCanvasElement | null
+  getHostElement: () => HTMLElement | null
+} | null>(null)
 
 // ── Composable 调用（解构为顶层变量，模板自动解包） ──────────────────────
 
@@ -216,7 +223,7 @@ const selectedLayerLifecycle = computed(() => {
 })
 
 // ── 实验性 3D 视图（外观设置勾选）──
-// 勾选后 3D 模式复用现有 MapCanvas 并切 globe 投影；未勾选时保持「尚未实现」遮罩。
+// 勾选后 3D 模式按「渲染引擎」挂载 MapLibre globe 或 Cesium 空壳；未勾选时保持「尚未实现」遮罩。
 const enable3DView = ref(is3DViewExperimentalEnabled())
 let _unsubscribe3DView: (() => void) | null = null
 {
@@ -224,11 +231,29 @@ let _unsubscribe3DView: (() => void) | null = null
     enable3DView.value = is3DViewExperimentalEnabled()
   })
 }
-/** 3D 模式下是否直接显示真实地图（globe 投影） */
-const showGlobeMap = computed(
-  () => uiStore.viewMode === '2d' || (uiStore.viewMode === '3d' && enable3DView.value),
+const globeRenderEngine = useGlobeRenderEngine()
+
+/** 2D 或 MapLibre 3D：挂 MapCanvas */
+const showMapLibreCanvas = computed(
+  () =>
+    uiStore.viewMode === '2d' ||
+    (uiStore.viewMode === '3d' && enable3DView.value && globeRenderEngine.value === 'maplibre'),
 )
-const globeProjectionOn = computed(() => uiStore.viewMode === '3d' && enable3DView.value)
+/** Cesium 实验 3D：与 MapCanvas 互斥 */
+const showCesiumHost = computed(
+  () =>
+    uiStore.viewMode === '3d' && enable3DView.value && globeRenderEngine.value === 'cesium',
+)
+const globeProjectionOn = computed(
+  () =>
+    uiStore.viewMode === '3d' &&
+    enable3DView.value &&
+    globeRenderEngine.value === 'maplibre',
+)
+
+const CesiumGlobeHost = defineAsyncComponent(() =>
+  importLazyChunk(() => import('../components/map/globe-engine/CesiumGlobeHost.vue')),
+)
 
 const agentCompanionEnabled = ref(isAgentCompanionEnabled())
 let _unsubscribeAgentCompanion: (() => void) | null = null
@@ -419,9 +444,43 @@ function handleLayerSelect(layerId: string) {
   logStore.logOperation('layer-select', `选中图层: ${layerId}`)
 }
 function handleZoomToLayer(instanceId: string): boolean {
+  if (showCesiumHost.value) {
+    const layer = workspace.activeLayers.value.find((l) => l.instanceId === instanceId)
+    const display = workspace.activeLayersDisplay.value.find((l) => l.instanceId === instanceId)
+    if (!layer && !display) return false
+    const bounds = resolveLayerExtentBounds(
+      {
+        instanceId,
+        importedVectorBounds: layer?.importedVector?.bounds,
+        importedRasterBounds: layer?.importedRaster?.bounds ?? display?.importedRasterBounds,
+        importedBounds: display?.importedBounds,
+        overlayLayerId: layer?.importedRaster?.overlayLayerId ?? display?.importedRasterOverlayLayerId,
+        catalogId: layer?.catalogId ?? display?.catalogId,
+      },
+      overlayTimeStates.value.map((s) => ({ layerId: s.layerId, bounds: s.bounds ?? null })),
+    )
+    if (!bounds) return false
+    cesiumHostRef.value?.flyToBounds(bounds)
+    logStore.logOperation('layer-zoom', `缩放到图层(Cesium): ${instanceId}`)
+    return true
+  }
   const ok = Boolean(mapCanvasRef.value?.fitToLayerExtent?.(instanceId))
   if (ok) logStore.logOperation('layer-zoom', `缩放到图层: ${instanceId}`)
   return ok
+}
+
+async function captureActiveMapCanvas(): Promise<string | null> {
+  if (showCesiumHost.value) {
+    try {
+      const canvas = cesiumHostRef.value?.getCanvas()
+      return canvas?.toDataURL('image/png') ?? null
+    } catch {
+      return null
+    }
+  }
+  const fn = mapCanvasRef.value?.captureMapCanvas
+  if (!fn) return null
+  return Promise.resolve(fn())
 }
 function handleToggleLayerVisibility(instanceId: string) {
   workspace.toggleLayerVisibility(instanceId)
@@ -453,7 +512,7 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
       @drop="onMapShellDrop"
     >
       <MapCanvas
-        v-if="showGlobeMap"
+        v-if="showMapLibreCanvas"
         ref="mapCanvasRef"
         :tile-source-id="tileSourceId"
         :current-hour="currentHour"
@@ -464,6 +523,15 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
         @hotspot-select="handleHotspotSelect"
         @map-point-select="handleMapPointSelect"
         @overlay-time-update="handleOverlayTimeUpdate"
+      />
+
+      <CesiumGlobeHost
+        v-else-if="showCesiumHost"
+        ref="cesiumHostRef"
+        :tile-source-id="tileSourceId"
+        :hour="currentHour"
+        :current-date="currentDate"
+        :time-key="onlineTemporal.orchestrator.currentTimeKey.value"
       />
 
       <div
@@ -484,9 +552,6 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
           <div class="placeholder-3d-icon"><Globe :size="30" aria-hidden="true" /></div>
           <h2 class="placeholder-3d-title">3D 地球视图</h2>
           <p class="placeholder-3d-desc">该功能尚未实现</p>
-          <p v-if="has3dCompatibleLayer" class="placeholder-3d-layer-note">
-            已保留当前图层状态，3D 渲染器上线后将继续使用「{{ activeLayer.name }}」
-          </p>
           <p class="placeholder-3d-hint">点击顶栏「2D」按钮可返回平面地图</p>
           <p class="placeholder-3d-hint">
             可在 设置 → 外观 → 地图显示 勾选「启用3D视图（实验测试）」提前体验地球投影
@@ -644,9 +709,15 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
       v-if="screenshotOpen"
       :dashboard-el="dashboardRef"
       :map-shell-el="mapShellRef"
-      :map-stage-el="mapCanvasRef?.getMapStageElement() ?? null"
-      :capture-map-canvas="mapCanvasRef?.captureMapCanvas ?? null"
-      :set-wind-animation-paused="mapCanvasRef?.setWindAnimationPaused ?? null"
+      :map-stage-el="
+        showCesiumHost
+          ? (cesiumHostRef?.getHostElement?.() ?? null)
+          : (mapCanvasRef?.getMapStageElement() ?? null)
+      "
+      :capture-map-canvas="captureActiveMapCanvas"
+      :set-wind-animation-paused="
+        showCesiumHost ? null : (mapCanvasRef?.setWindAnimationPaused ?? null)
+      "
       :active-layer-name="activeLayer.name"
       :hour-label="hourLabel"
       @close="handleCloseScreenshot"

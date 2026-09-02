@@ -460,16 +460,81 @@ export interface paths {
          *
          *     前端运行时消费此端点获取分类样式，消除前后端分类定义双写。
          *     前端 ``LAYER_CATEGORIES`` 静态表仅在 API 不可用时作离线兜底。
-         *     图层平台 P1：返回种子 ⊕ 运行时管理分组（含 position / is_custom）。
+         *     管理员看到个人工作区；绑定主题且主题有分组预设的用户看到主题快照；
+         *     其余为共享种子（+ 遗留共享自建组）。
          */
         get: operations["list_layer_categories_layers_categories_get"];
         put?: never;
         /**
          * Create Layer Group
-         * @description 新建自定义分组（追加到分组序列末尾）。
+         * @description 新建自定义分组（追加到当前管理员个人工作区末尾）。
          */
         post: operations["create_layer_group_layers_categories_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/layers/categories/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder Layer Groups
+         * @description 按给定 id 顺序重排当前管理员工作区中的分组。
+         */
+        put: operations["reorder_layer_groups_layers_categories_order_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/layers/categories/sync-to-theme/{theme_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Layer Groups To Theme
+         * @description 将当前管理员的图层分组工作区快照同步到指定主题预设（可选）。
+         */
+        post: operations["sync_layer_groups_to_theme_layers_categories_sync_to_theme__theme_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/layers/categories/theme-preset/{theme_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Theme Layer Group Preset
+         * @description 读取主题的图层分组预设元数据（无预设时 has_preset=false）。
+         */
+        get: operations["get_theme_layer_group_preset_layers_categories_theme_preset__theme_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Theme Layer Group Preset
+         * @description 清除主题上的图层分组预设（绑定用户回落到共享种子分组）。
+         */
+        delete: operations["delete_theme_layer_group_preset_layers_categories_theme_preset__theme_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -487,36 +552,16 @@ export interface paths {
         post?: never;
         /**
          * Delete Layer Group
-         * @description 删除自定义分组（种子组拒绝）；组内成员关系随之解除，图层回落到种子分类。
+         * @description 删除当前管理员工作区中的自定义分组（种子组拒绝）。
          */
         delete: operations["delete_layer_group_layers_categories__group_id__delete"];
         options?: never;
         head?: never;
         /**
          * Update Layer Group
-         * @description 修改分组名称 / 样式 / 子分类（种子组与自建组均可）。
+         * @description 修改分组名称 / 样式 / 子分类（写入当前管理员工作区；种子组写为个人覆盖）。
          */
         patch: operations["update_layer_group_layers_categories__group_id__patch"];
-        trace?: never;
-    };
-    "/layers/categories/order": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Reorder Layer Groups
-         * @description 按给定 id 顺序重排分组（图层库展示顺序）。
-         */
-        put: operations["reorder_layer_groups_layers_categories_order_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/layers/categories/{group_id}/members": {
@@ -529,7 +574,7 @@ export interface paths {
         get?: never;
         /**
          * Set Layer Group Members
-         * @description 全量替换分组内图层成员（layer_id 列表）；受影响图层的 catalog category 同步更新。
+         * @description 全量替换分组内图层成员（写入当前管理员工作区）。
          */
         put: operations["set_layer_group_members_layers_categories__group_id__members_put"];
         post?: never;
@@ -6801,9 +6846,8 @@ export interface components {
          * LayerCategoryDef
          * @description X1: 图层分类定义 — 后端下发，消除前后端分类双写。
          *
-         *     图层平台 P1：分组支持运行时管理（种子 ⊕ layer_groups 表），
-         *     ``position`` 为全局排序键（种子组按文件序，自定义组追加在后），
-         *     ``is_custom`` 标记管理员自建分组（可删除；种子组仅可改名/样式）。
+         *     图层平台 P1：分组支持运行时管理（种子 ⊕ 管理员个人工作区 / 主题预设），
+         *     ``position`` 为排序键，``is_custom`` 标记自建分组（可删除；种子组仅可改名/样式）。
          */
         LayerCategoryDef: {
             /** Id */
@@ -6948,7 +6992,7 @@ export interface components {
         };
         /**
          * LayerGroupCreateRequest
-         * @description 管理员自建图层分组。
+         * @description 管理员自建图层分组（写入当前管理员个人工作区）。
          */
         LayerGroupCreateRequest: {
             /** Id */
@@ -11550,6 +11594,138 @@ export interface operations {
             };
         };
     };
+    reorder_layer_groups_layers_categories_order_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LayerGroupReorderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayerCategoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_layer_groups_to_theme_layers_categories_sync_to_theme__theme_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                theme_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_theme_layer_group_preset_layers_categories_theme_preset__theme_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                theme_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_theme_layer_group_preset_layers_categories_theme_preset__theme_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                theme_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_layer_group_layers_categories__group_id__delete: {
         parameters: {
             query?: never;
@@ -11603,39 +11779,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LayerCategoryDef"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    reorder_layer_groups_layers_categories_order_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LayerGroupReorderRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LayerCategoryResponse"];
                 };
             };
             /** @description Validation Error */

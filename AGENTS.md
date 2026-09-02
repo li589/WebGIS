@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-CGDA（综合地理数据分析系统）：**面向课题组与大气研究院研究员**的科研数据分析平台（初代定位），统一承载 2D 平面地图（MapLibre 主路径）/ 3D 地球（Cesium，实验性非默认主链）、多源数据接入（本地 / GEE / Open-Meteo / 商业天气源）、动态时空结果展示与回传、多课题组算法模块化接入。已进入工程落地阶段：`workflow-runs` 主链、天气瓦片渲染、Celery/Redis/MinIO 基础设施均可运行。发布边界（单机构/单 API Key/SQLite、demo:// 与占位节点的环境开关、写限流策略）见 README.md「发布边界（初代）」。
+CGDA（综合地理数据分析系统）：**面向课题组与大气研究院研究员**的科研数据分析平台（初代定位），统一承载 2D 平面地图（MapLibre 主路径）/ 3D 地球（默认 MapLibre globe；Cesium 为设置可选的实验引擎，见 `Docs/02-架构设计/cesium-dual-engine.md`）、多源数据接入（本地 / GEE / Open-Meteo / 商业天气源）、动态时空结果展示与回传、多课题组算法模块化接入。已进入工程落地阶段：`workflow-runs` 主链、天气瓦片渲染、Celery/Redis/MinIO 基础设施均可运行。发布边界（单机构/单 API Key/SQLite、demo:// 与占位节点的环境开关、写限流策略）见 README.md「发布边界（初代）」。
 
 ## 目录路由
 

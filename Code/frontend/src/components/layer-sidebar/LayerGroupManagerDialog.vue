@@ -1,31 +1,33 @@
 <script setup lang="ts">
 /**
- * 图层分组管理对话框（管理员，图层平台 P1）。
+ * 图层分组管理对话框（管理员个人工作区）。
  *
- * 分组 = 种子（layer_categories.json，可改名/样式，不可删除）⊕ 运行时管理状态
- * （后端 layer_groups 表：自建组 CRUD、重排、图层归属覆盖）。
- * 所有变更走后端 API 持久化，保存后刷新运行时分组与目录（/layers 下发的
- * descriptor.category 已由后端应用归属覆盖），侧栏 / 分析面板 / 工作流
- * 状态面板经同一 selector 数据源自动同步，无需各处硬置参数。
+ * 分组 = 种子（layer_categories.json，可改名/样式，不可删除）⊕ 当前管理员
+ * 个人工作区（后端 layer_groups：自建组 CRUD、重排、图层归属覆盖，按 user 隔离）。
+ * 可选将当前工作区同步到主题预设，供绑定该主题的非管理员用户只读消费。
  */
 import { computed, ref, watch } from 'vue'
 
 import IconButton from '../ui/IconButton.vue'
+import AppSelect from '../ui/AppSelect.vue'
 import { fetchLayerCategories } from '../../services/runtime-api'
 import {
   createLayerGroup,
   deleteLayerGroup,
   reorderLayerGroups,
   setLayerGroupMembers,
+  syncLayerGroupsToTheme,
   updateLayerGroup,
   type LayerCategoryDef,
 } from '../../services/layer-groups-api'
 import { useLayerWorkspace } from '../../stores/layers/selectors'
+import { useAuthStore } from '../../stores/auth'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
 const workspace = useLayerWorkspace()
+const auth = useAuthStore()
 
 // ── 本地状态 ────────────────────────────────────────────────────────────────
 
@@ -55,6 +57,17 @@ const newId = ref('')
 const newName = ref('')
 const newIcon = ref('')
 const newAccent = ref('')
+
+/** 可选：同步到主题预设 */
+const syncThemeId = ref<string>('')
+const syncingTheme = ref(false)
+
+const themeOptions = computed(() =>
+  (auth.themes ?? []).map((t) => ({
+    label: t.name_zh || t.slug,
+    value: String(t.id),
+  })),
+)
 
 // ── 数据加载 ────────────────────────────────────────────────────────────────
 
@@ -86,6 +99,8 @@ watch(
       error.value = null
       message.value = null
       createOpen.value = false
+      syncThemeId.value = themeOptions.value[0]?.value ?? ''
+      void auth.loadThemes()
       void loadGroups()
     }
   },
@@ -262,8 +277,29 @@ async function submitCreate() {
 }
 
 function close() {
-  if (saving.value) return
+  if (saving.value || syncingTheme.value) return
   emit('close')
+}
+
+async function syncToTheme() {
+  const themeId = Number(syncThemeId.value)
+  if (!Number.isFinite(themeId) || themeId <= 0) {
+    error.value = '请选择要同步的主题'
+    return
+  }
+  syncingTheme.value = true
+  error.value = null
+  message.value = null
+  try {
+    await syncLayerGroupsToTheme(themeId)
+    const label =
+      themeOptions.value.find((t) => t.value === String(themeId))?.label ?? `主题 #${themeId}`
+    message.value = `已将当前分组配置同步到「${label}」预设。若主题使用白名单 ACL，请在主题管理中为新增自建分组补 allow，否则成员图层可能不可见。`
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '同步到主题失败'
+  } finally {
+    syncingTheme.value = false
+  }
 }
 </script>
 
@@ -276,7 +312,8 @@ function close() {
             <p class="lgm-kicker">图层平台</p>
             <h2 id="lgm-title" class="lgm-title">图层分组管理</h2>
             <p class="lgm-hint">
-              种子分组可改名/样式；自建分组可增删与排序。分组成员调整后，侧栏、分析面板与工作流状态将同步更新。
+              此处配置仅影响当前管理员账号的图层库分组；种子组可改名/样式，自建组可增删排序。
+              可选将当前配置同步到主题预设，供绑定该主题的用户使用。
             </p>
           </div>
           <IconButton size="sm" label="关闭" @click="close">
@@ -294,6 +331,23 @@ function close() {
             {{ createOpen ? '收起新建' : '＋ 新建分组' }}
           </button>
           <span v-if="loading" class="lgm-status">加载中…</span>
+        </section>
+
+        <section v-if="themeOptions.length" class="lgm-theme-sync">
+          <span class="lgm-theme-sync-label">同步到主题预设（可选）</span>
+          <AppSelect
+            :model-value="syncThemeId"
+            :options="themeOptions"
+            @change="syncThemeId = $event"
+          />
+          <button
+            type="button"
+            class="lgm-btn lgm-btn--primary"
+            :disabled="saving || syncingTheme || !syncThemeId"
+            @click="syncToTheme"
+          >
+            {{ syncingTheme ? '同步中…' : '同步当前分组' }}
+          </button>
         </section>
 
         <form v-if="createOpen" class="lgm-create" @submit.prevent="submitCreate">
@@ -524,6 +578,21 @@ function close() {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+.lgm-theme-sync {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-1);
+}
+.lgm-theme-sync-label {
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  flex: 1 1 8rem;
 }
 .lgm-btn {
   padding: 0.35rem 0.8rem;

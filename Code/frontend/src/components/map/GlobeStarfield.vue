@@ -12,7 +12,7 @@ import { useThemeStore } from '../../stores/theme'
 import { renderStarfieldCanvas, type StarfieldMode } from './globe-starfield'
 
 const props = defineProps<{
-  mode: 'auto' | 'starfield' | 'minimal'
+  mode: 'auto' | 'starfield' | 'minimal' | 'solar_system'
   /** 是否处于 3D globe 模式（控制显隐） */
   active: boolean
   /**
@@ -26,10 +26,10 @@ const props = defineProps<{
 const themeStore = useThemeStore()
 const bgUrl = ref('')
 
-/** 解析为渲染模式：auto→跟随主题；starfield→始终 full；minimal→无星图 */
+/** 解析为渲染模式：auto→跟随主题；starfield/solar_system→始终 full；minimal→无星图 */
 const effectiveMode = computed<StarfieldMode>(() => {
   if (props.mode === 'minimal') return 'minimal'
-  if (props.mode === 'starfield') return 'full'
+  if (props.mode === 'starfield' || props.mode === 'solar_system') return 'full'
   return themeStore.mode === 'dark' ? 'full' : 'soft'
 })
 

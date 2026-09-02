@@ -1,9 +1,9 @@
 /**
- * 图层平台 P1：图层分组运行时管理 API（管理员）。
+ * 图层平台 P1：图层分组运行时管理 API（管理员个人工作区）。
  *
- * 分组 = 种子（catalog_seeds/layer_categories.json，codegen 兜底）⊕ 运行时管理状态
- * （后端 layer_groups 表）。本服务只封装管理端点；读取走 `fetchLayerCategories`
- * （runtime-api.ts，随目录一起下发）。分组 id 同时是 ACL `layer_group` 资源 id。
+ * 分组 = 种子（catalog_seeds/layer_categories.json，codegen 兜底）⊕ 当前管理员
+ * 个人工作区（后端 layer_groups，按 owner_user_id 隔离）。本服务只封装管理端点；
+ * 读取走 `fetchLayerCategories`（runtime-api.ts）。可选将工作区同步到主题预设。
  */
 import type { components } from '../types/api-contracts'
 import { requestJson } from './_http'
@@ -15,7 +15,14 @@ export type LayerGroupUpdateRequest = components['schemas']['LayerGroupUpdateReq
 export type LayerGroupReorderRequest = components['schemas']['LayerGroupReorderRequest']
 export type LayerGroupMembersRequest = components['schemas']['LayerGroupMembersRequest']
 
-/** 新建自定义分组（追加到分组序列末尾）。 */
+export type ThemeLayerGroupPresetMeta = {
+  theme_id: number
+  has_preset: boolean
+  updated_at: string | null
+  updated_by_user_id: number | null
+}
+
+/** 新建自定义分组（追加到当前管理员个人工作区末尾）。 */
 export function createLayerGroup(payload: LayerGroupCreateRequest): Promise<LayerCategoryDef> {
   return requestJson<LayerCategoryDef>('/layers/categories', {
     method: 'POST',
@@ -23,7 +30,7 @@ export function createLayerGroup(payload: LayerGroupCreateRequest): Promise<Laye
   })
 }
 
-/** 修改分组名称/样式/子分类（种子组与自建组均可）。 */
+/** 修改分组名称/样式/子分类（种子组写入个人覆盖）。 */
 export function updateLayerGroup(
   groupId: string,
   payload: LayerGroupUpdateRequest,
@@ -65,5 +72,33 @@ export function setLayerGroupMembers(
       method: 'PUT',
       body: JSON.stringify(payload),
     },
+  )
+}
+
+/** 将当前管理员分组工作区同步到主题预设。 */
+export function syncLayerGroupsToTheme(themeId: number): Promise<ThemeLayerGroupPresetMeta> {
+  return requestJson<ThemeLayerGroupPresetMeta>(
+    `/layers/categories/sync-to-theme/${encodeURIComponent(String(themeId))}`,
+    { method: 'POST' },
+  )
+}
+
+/** 读取主题图层分组预设元数据。 */
+export function fetchThemeLayerGroupPreset(
+  themeId: number,
+): Promise<ThemeLayerGroupPresetMeta> {
+  return requestJson<ThemeLayerGroupPresetMeta>(
+    `/layers/categories/theme-preset/${encodeURIComponent(String(themeId))}`,
+    { sensitiveGet: true },
+  )
+}
+
+/** 清除主题图层分组预设。 */
+export function deleteThemeLayerGroupPreset(
+  themeId: number,
+): Promise<{ theme_id: number; deleted: boolean }> {
+  return requestJson<{ theme_id: number; deleted: boolean }>(
+    `/layers/categories/theme-preset/${encodeURIComponent(String(themeId))}`,
+    { method: 'DELETE' },
   )
 }

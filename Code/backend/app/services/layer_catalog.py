@@ -335,27 +335,31 @@ def get_layer_categories() -> list[dict[str, Any]]:
         return []
 
 
-def _runtime_layer_groups() -> list[dict[str, Any]]:
-    """Merged seed + admin-managed layer groups (DB-persisted runtime state)."""
+def _runtime_layer_groups(scope: Any | None = None) -> list[dict[str, Any]]:
+    """Merged seed + admin/theme-managed layer groups (DB-persisted runtime state)."""
     try:
-        from app.services.layer_group_repository import get_layer_group_repository
+        from app.services.layer_group_repository import (
+            CatalogGroupScope,
+            get_layer_group_repository,
+        )
 
+        resolved = scope if scope is not None else CatalogGroupScope.shared()
         return [
             record.to_category_def_dict()
-            for record in get_layer_group_repository().list_groups()
+            for record in get_layer_group_repository().list_groups_for_scope(resolved)
         ]
     except Exception:
         logger.exception("Failed to load runtime layer groups; falling back to seeds")
         return get_layer_categories()
 
 
-def get_layer_category_response() -> LayerCategoryResponse:
+def get_layer_category_response(scope: Any | None = None) -> LayerCategoryResponse:
     """X1: 返回 LayerCategoryResponse（Pydantic 模型），供 /layers/categories 端点使用。
 
-    分组 = 种子（layer_categories.json）⊕ 运行时管理状态（layer_groups 表）。
+    分组 = 种子（layer_categories.json）⊕ 管理员个人工作区 / 主题预设。
     """
     items: list[LayerCategoryDef] = []
-    for cat in _runtime_layer_groups():
+    for cat in _runtime_layer_groups(scope):
         try:
             items.append(LayerCategoryDef.model_validate(cat))
         except Exception as exc:
@@ -363,31 +367,40 @@ def get_layer_category_response() -> LayerCategoryResponse:
     return LayerCategoryResponse(items=items)
 
 
-def get_layer_catalog() -> LayerCatalogResponse:
+def get_layer_catalog(scope: Any | None = None) -> LayerCatalogResponse:
     items = _load_seed_descriptors()
     categories: list[LayerCategoryDef] = []
-    for cat in _runtime_layer_groups():
+    for cat in _runtime_layer_groups(scope):
         try:
             categories.append(LayerCategoryDef.model_validate(cat))
         except Exception as exc:
             logger.warning("Skipping invalid category entry %s: %s", cat.get("id"), exc)
     return LayerCatalogResponse(
-        items=_apply_layer_group_assignments(_apply_remote_layer_data_uris(items)),
+        items=_apply_layer_group_assignments(
+            _apply_remote_layer_data_uris(items), scope=scope
+        ),
         categories=categories,
     )
 
 
 def _apply_layer_group_assignments(
     items: list[LayerDescriptor],
+    *,
+    scope: Any | None = None,
 ) -> list[LayerDescriptor]:
-    """Apply admin layer→group assignment overrides to descriptor categories.
+    """Apply layer→group assignment overrides to descriptor categories.
 
-    Seed JSON stays untouched; overrides live in ``layer_group_assignments``.
+    Seed JSON stays untouched; overrides live in ``layer_group_assignments``
+    or a theme preset snapshot.
     """
     try:
-        from app.services.layer_group_repository import get_layer_group_repository
+        from app.services.layer_group_repository import (
+            CatalogGroupScope,
+            get_layer_group_repository,
+        )
 
-        assignments = get_layer_group_repository().list_assignments()
+        resolved = scope if scope is not None else CatalogGroupScope.shared()
+        assignments = get_layer_group_repository().list_assignments_for_scope(resolved)
     except Exception:
         return items
     if not assignments:
@@ -403,8 +416,10 @@ def _apply_layer_group_assignments(
     ]
 
 
-def get_layer_descriptor(layer_id: str) -> LayerDescriptor | None:
-    catalog = get_layer_catalog()
+def get_layer_descriptor(
+    layer_id: str, *, scope: Any | None = None
+) -> LayerDescriptor | None:
+    catalog = get_layer_catalog(scope)
     for item in catalog.items:
         if item.layer_id == layer_id:
             return item

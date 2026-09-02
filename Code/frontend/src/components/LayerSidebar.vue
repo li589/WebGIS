@@ -522,8 +522,10 @@ onMounted(() => {
       :sidebar-view-label="sidebarViewLabel"
       :sidebar-view="sidebarView"
       :active-layer-count="activeLayerCount"
+      :can-manage-groups="authStore.isAdmin"
       @open-library="openLibrary"
       @open-active="openActive"
+      @open-group-manager="groupManagerOpen = true"
     />
 
     <!-- ── EMPTY STATE ────────────────────────────────────────────────── -->
@@ -563,8 +565,6 @@ onMounted(() => {
       :get-catalog-source-summary="getCatalogSourceSummary"
       :get-primary-source-name="getPrimarySourceName"
       :supports-online-temporal="supportsOnlineTemporal"
-      :can-manage-groups="authStore.isAdmin"
-      @open-group-manager="groupManagerOpen = true"
       @update:search-query="search.searchQuery.value = $event"
       @update:selected-sub-category="search.selectedSubCategory.value = $event"
       @ensure-weather-providers="weatherProviders.ensureWeatherProviders"
@@ -630,8 +630,12 @@ onMounted(() => {
       :context-menu-groups="ctxMenu.contextMenuGroups.value"
       @handle-context-action="ctxMenu.handleContextAction"
     />
-    <!-- ── 图层平台 P1：分组管理对话框（管理员） ─────────────────────── -->
-    <LayerGroupManagerDialog :open="groupManagerOpen" @close="groupManagerOpen = false" />
+    <!-- ── 图层平台 P1：分组管理对话框（仅管理员） ─────────────────────── -->
+    <LayerGroupManagerDialog
+      v-if="authStore.isAdmin"
+      :open="groupManagerOpen"
+      @close="groupManagerOpen = false"
+    />
   </aside>
 </template>
 

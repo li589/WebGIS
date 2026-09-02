@@ -7,11 +7,13 @@ import logging
 import shutil
 import threading
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Iterator, Literal
 
-from app.core.config import settings
+from app.core import config as app_config
 from app.core.ssrf import SSRFBlockedError, validate_url_for_storage
+from app.services.agent.file_lock import interprocess_file_lock
 from app.services.agent.presets import get_preset, list_presets
 from app.services.effective_config import secrets_encryption_required
 from app.services.secret_cipher import decrypt_secret, encrypt_secret
@@ -27,8 +29,14 @@ class AgentPermissionError(PermissionError):
     """Raised when caller lacks scope write permission."""
 
 
+def _settings():
+    """Always read the live Settings object (tests monkeypatch ``app.core.config.settings``)."""
+    return app_config.settings
+
+
 def _runtime_root() -> Path:
-    root = Path(settings.data_root or settings.workflow_state_dir or ".")
+    s = _settings()
+    root = Path(s.data_root or s.workflow_state_dir or ".")
     path = root / "_runtime" / "agent"
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -46,17 +54,19 @@ def _personal_profiles_path(user_id: int) -> Path:
 
 def _legacy_flat_profiles_path() -> Path:
     """Pre-isolation single file under _runtime/."""
-    root = Path(settings.data_root or settings.workflow_state_dir or ".")
+    s = _settings()
+    root = Path(s.data_root or s.workflow_state_dir or ".")
     return root / "_runtime" / "agent_profiles.json"
 
 
 def _legacy_config_path() -> Path:
-    root = Path(settings.data_root or settings.workflow_state_dir or ".")
+    s = _settings()
+    root = Path(s.data_root or s.workflow_state_dir or ".")
     return root / "_runtime" / "agent_config.json"
 
 
 def _encryption_key() -> str:
-    return (settings.gee_credentials_encryption_key or "").strip()
+    return (_settings().gee_credentials_encryption_key or "").strip()
 
 
 def _new_id() -> str:
@@ -157,46 +167,148 @@ def _migrate_legacy_single_config() -> dict[str, Any] | None:
     }
 
 
+def _profile_fingerprint(p: dict[str, Any]) -> tuple[str, str, str, str, str]:
+    """Identity used to collapse accidental duplicate preset clones."""
+    return (
+        str(p.get("preset_id") or "").strip().lower(),
+        str(p.get("name") or "").strip(),
+        str(p.get("provider_kind") or "").strip().lower(),
+        str(p.get("base_url") or "").strip().rstrip("/").lower(),
+        str(p.get("model") or "").strip(),
+    )
+
+
+def _prefer_profile(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
+    """Prefer the clone that still has an API key / non-empty model config."""
+    a_key = bool(a.get("api_key_ciphertext"))
+    b_key = bool(b.get("api_key_ciphertext"))
+    if a_key != b_key:
+        return a if a_key else b
+    a_model = bool(str(a.get("model") or "").strip())
+    b_model = bool(str(b.get("model") or "").strip())
+    if a_model != b_model:
+        return a if a_model else b
+    return a
+
+
+def _dedupe_profiles(profiles_in: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], bool]:
+    """Drop id duplicates and collapse identical preset clones (same name/url/model)."""
+    changed = False
+    by_id: dict[str, dict[str, Any]] = {}
+    for p in profiles_in:
+        pid = str(p.get("id") or "").strip()
+        if not pid:
+            changed = True
+            continue
+        if pid in by_id:
+            changed = True
+            by_id[pid] = _prefer_profile(by_id[pid], p)
+            continue
+        by_id[pid] = p
+
+    # Collapse clones that share preset fingerprint (common pollution from
+    # repeated create_profile_from_preset / leaked pytest writes).
+    # Never collapse the stable global ``demo`` id away.
+    kept: list[dict[str, Any]] = []
+    seen_fp: dict[tuple[str, str, str, str, str], int] = {}
+    for p in by_id.values():
+        pid = str(p.get("id") or "")
+        if pid == "demo":
+            kept.append(p)
+            continue
+        fp = _profile_fingerprint(p)
+        # Empty preset_id → treat as unique custom row (no collapse).
+        if not fp[0]:
+            kept.append(p)
+            continue
+        if fp in seen_fp:
+            changed = True
+            idx = seen_fp[fp]
+            kept[idx] = _prefer_profile(kept[idx], p)
+            continue
+        seen_fp[fp] = len(kept)
+        kept.append(p)
+
+    return kept, changed
+
+
 def _normalize_global_store(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """Drop migration leftovers; keep a clean demo slot; dedupe by id.
+    """Drop migration leftovers; keep a clean demo slot; dedupe clones.
 
     Returns (store, changed).
     """
     profiles_in = [p for p in (data.get("profiles") or []) if isinstance(p, dict)]
     changed = False
-    kept: list[dict[str, Any]] = []
-    seen_ids: set[str] = set()
+    filtered: list[dict[str, Any]] = []
     for p in profiles_in:
         name = str(p.get("name") or "")
-        pid = str(p.get("id") or "")
         if name.startswith("迁移自旧配置"):
             changed = True
             continue
-        if not pid or pid in seen_ids:
-            changed = True
-            continue
-        seen_ids.add(pid)
-        if pid == "demo":
-            # Always re-materialize demo from preset (fixes corrupted migrations).
+        filtered.append(p)
+
+    kept, deduped = _dedupe_profiles(filtered)
+    changed = changed or deduped
+
+    # Rematerialize demo from preset (fixes corrupted migrations).
+    rematerialized: list[dict[str, Any]] = []
+    saw_demo = False
+    for p in kept:
+        if str(p.get("id")) == "demo":
             demo = _default_demo_profile()
             if p != demo:
                 changed = True
-            kept.append(demo)
+            rematerialized.append(demo)
+            saw_demo = True
         else:
-            kept.append(p)
+            rematerialized.append(p)
+    kept = rematerialized
 
-    if not any(str(p.get("id")) == "demo" for p in kept):
+    if not saw_demo:
         kept.insert(0, _default_demo_profile())
         changed = True
 
     active = str(data.get("active_profile_id") or "")
     ids = {str(p.get("id")) for p in kept}
     if active not in ids:
-        active = "demo"
+        # If the active row was collapsed as a duplicate, retarget to the survivor.
+        old = next(
+            (p for p in profiles_in if str(p.get("id") or "") == active),
+            None,
+        )
+        retarget = None
+        if old is not None:
+            fp = _profile_fingerprint(old)
+            if fp[0]:
+                retarget = next(
+                    (p for p in kept if _profile_fingerprint(p) == fp),
+                    None,
+                )
+        active = str(retarget.get("id")) if retarget is not None else "demo"
         changed = True
 
     out = {"active_profile_id": active, "profiles": kept}
     return out, changed
+
+
+def _normalize_personal_store(data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Dedupe personal profiles; allow empty store (falls back to global active)."""
+    profiles_in = [p for p in (data.get("profiles") or []) if isinstance(p, dict)]
+    kept, changed = _dedupe_profiles(profiles_in)
+    # Personal must not steal the reserved global demo id.
+    cleaned: list[dict[str, Any]] = []
+    for p in kept:
+        if str(p.get("id")) == "demo":
+            changed = True
+            p = dict(p)
+            p["id"] = _new_id()
+        cleaned.append(p)
+    active = str(data.get("active_profile_id") or "")
+    ids = {str(p.get("id")) for p in cleaned}
+    if active and active not in ids:
+        active = ""
+        changed = True
+    return {"active_profile_id": active, "profiles": cleaned}, changed
 
 
 def _ensure_global_migrated() -> None:
@@ -235,7 +347,10 @@ def _load_store_unlocked(path: Path, *, personal: bool = False) -> dict[str, Any
                     if changed:
                         _save_store_unlocked(path, store)
                     return store
-                return data
+                store, changed = _normalize_personal_store(data)
+                if changed:
+                    _save_store_unlocked(path, store)
+                return store
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning("Failed to load %s: %s", path, exc)
     store = _empty_personal_store() if personal else _empty_store()
@@ -248,6 +363,32 @@ def _save_store_unlocked(path: Path, data: dict[str, Any]) -> None:
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(path)
+
+
+@contextmanager
+def _interprocess_file_lock(path: Path) -> Iterator[None]:
+    """Exclusive lock across FastAPI workers / processes for one store file."""
+    with interprocess_file_lock(path, label="Agent 配置文件"):
+        yield
+
+
+def _persist_store(path: Path, data: dict[str, Any], *, personal: bool) -> dict[str, Any]:
+    """Normalize then atomically write; always return the normalized store."""
+    if personal:
+        store, _ = _normalize_personal_store(data)
+    else:
+        store, _ = _normalize_global_store(data)
+    _save_store_unlocked(path, store)
+    return store
+
+
+def _find_fingerprint_match(
+    profiles: list[dict[str, Any]], fingerprint: tuple[str, str, str, str, str]
+) -> dict[str, Any] | None:
+    for p in profiles:
+        if _profile_fingerprint(p) == fingerprint:
+            return p
+    return None
 
 
 def _public_profile(
@@ -311,12 +452,16 @@ def get_config_bundle(
     """Merged public view: global + personal profiles, effective active."""
     with _lock:
         _ensure_global_migrated()
-        g_store = _load_store_unlocked(_global_profiles_path())
+        g_path = _global_profiles_path()
+        with _interprocess_file_lock(g_path):
+            g_store = _load_store_unlocked(g_path)
         p_store: dict[str, Any] | None = None
         if user_id is not None:
-            p_store = _load_store_unlocked(
-                _personal_profiles_path(user_id), personal=True
-            )
+            p_path = _personal_profiles_path(user_id)
+            # Do not create an empty personal store on read — only load if present.
+            if p_path.exists():
+                with _interprocess_file_lock(p_path):
+                    p_store = _load_store_unlocked(p_path, personal=True)
 
     g_active = str(g_store.get("active_profile_id") or "")
     use_personal = False
@@ -470,6 +615,9 @@ def create_profile_from_preset(
     preset = get_preset(preset_id)
     if preset is None:
         raise ValueError(f"未知预设: {preset_id}")
+    default_name = str(preset.get("name") or preset_id)
+    display_name = (name or "").strip() or default_name
+    personal = scope == "personal"
     pid = "demo" if preset_id == "demo" and scope == "global" else _new_id()
     if preset_id == "demo" and scope == "personal":
         pid = _new_id()
@@ -481,53 +629,100 @@ def create_profile_from_preset(
             if scope == "global"
             else _personal_profiles_path(int(user_id))  # type: ignore[arg-type]
         )
-        store = _load_store_unlocked(path, personal=(scope == "personal"))
-        profiles: list[dict[str, Any]] = [
-            p for p in (store.get("profiles") or []) if isinstance(p, dict)
-        ]
-        if (
-            scope == "global"
-            and preset_id == "demo"
-            and any(str(p.get("id")) == "demo" for p in profiles)
-        ):
-            demo = _default_demo_profile()
-            repaired: list[dict[str, Any]] = []
-            for p in profiles:
-                if str(p.get("id")) == "demo":
-                    repaired.append(demo)
-                else:
-                    repaired.append(p)
-            store["profiles"] = repaired
-            if store.get("active_profile_id") not in {
-                str(x.get("id")) for x in repaired
-            }:
-                store["active_profile_id"] = "demo"
-            _save_store_unlocked(path, store)
-            return _public_profile(
-                demo,
-                active_id=str(store.get("active_profile_id") or "demo"),
-                scope=scope,
-                effective_active=str(store.get("active_profile_id") or "") == "demo",
+        with _interprocess_file_lock(path):
+            store = _load_store_unlocked(path, personal=personal)
+            profiles: list[dict[str, Any]] = [
+                p for p in (store.get("profiles") or []) if isinstance(p, dict)
+            ]
+            if (
+                scope == "global"
+                and preset_id == "demo"
+                and any(str(p.get("id")) == "demo" for p in profiles)
+            ):
+                demo = _default_demo_profile()
+                repaired: list[dict[str, Any]] = []
+                for p in profiles:
+                    if str(p.get("id")) == "demo":
+                        repaired.append(demo)
+                    else:
+                        repaired.append(p)
+                store["profiles"] = repaired
+                if store.get("active_profile_id") not in {
+                    str(x.get("id")) for x in repaired
+                }:
+                    store["active_profile_id"] = "demo"
+                store = _persist_store(path, store, personal=False)
+                return _public_profile(
+                    demo,
+                    active_id=str(store.get("active_profile_id") or "demo"),
+                    scope=scope,
+                    effective_active=str(store.get("active_profile_id") or "")
+                    == "demo",
+                )
+
+            candidate = {
+                "id": pid,
+                "name": display_name,
+                "provider_kind": preset.get("provider_kind") or "custom",
+                "protocol": preset.get("protocol") or "openai",
+                "base_url": str(preset.get("base_url") or ""),
+                "model": str(preset.get("model") or ""),
+                "context_window_input": int(preset.get("context_window_input") or 8192),
+                "context_window_output": int(
+                    preset.get("context_window_output") or 4096
+                ),
+                "preset_id": preset_id,
+                "api_key_ciphertext": None,
+                "api_key_iv": None,
+            }
+            # Idempotent: identical fingerprint → return existing (no new row).
+            existing = _find_fingerprint_match(
+                profiles, _profile_fingerprint(candidate)
             )
-        profile = {
-            "id": pid,
-            "name": (name or "").strip() or str(preset.get("name") or preset_id),
-            "provider_kind": preset.get("provider_kind") or "custom",
-            "protocol": preset.get("protocol") or "openai",
-            "base_url": str(preset.get("base_url") or ""),
-            "model": str(preset.get("model") or ""),
-            "context_window_input": int(preset.get("context_window_input") or 8192),
-            "context_window_output": int(preset.get("context_window_output") or 4096),
-            "preset_id": preset_id,
-            "api_key_ciphertext": None,
-            "api_key_iv": None,
-        }
-        profiles.append(profile)
-        store["profiles"] = profiles
-        _save_store_unlocked(path, store)
-        active = str(store.get("active_profile_id") or "")
+            if existing is not None:
+                store = _persist_store(path, store, personal=personal)
+                survivor = next(
+                    (
+                        p
+                        for p in (store.get("profiles") or [])
+                        if isinstance(p, dict)
+                        and str(p.get("id")) == str(existing.get("id"))
+                    ),
+                    None,
+                )
+                if survivor is None:
+                    survivor = _find_fingerprint_match(
+                        [
+                            p
+                            for p in (store.get("profiles") or [])
+                            if isinstance(p, dict)
+                        ],
+                        _profile_fingerprint(existing),
+                    )
+                if survivor is None:
+                    raise ValueError("配置档去重后丢失，请刷新后重试")
+                return _public_profile(
+                    survivor,
+                    active_id=str(store.get("active_profile_id") or ""),
+                    scope=scope,
+                    effective_active=str(store.get("active_profile_id") or "")
+                    == str(survivor.get("id")),
+                )
+
+            profiles.append(candidate)
+            store["profiles"] = profiles
+            store = _persist_store(path, store, personal=personal)
+            active = str(store.get("active_profile_id") or "")
+            saved = next(
+                (
+                    p
+                    for p in (store.get("profiles") or [])
+                    if isinstance(p, dict) and str(p.get("id")) == pid
+                ),
+                candidate,
+            )
     return _public_profile(
-        profile, active_id=active, scope=scope, effective_active=False
+        saved, active_id=active, scope=scope, effective_active=False
     )
 
 
@@ -554,62 +749,72 @@ def update_profile(
             if scope == "global"
             else _personal_profiles_path(int(user_id))  # type: ignore[arg-type]
         )
-        store = _load_store_unlocked(path, personal=(scope == "personal"))
-        profiles: list[dict[str, Any]] = [
-            p for p in (store.get("profiles") or []) if isinstance(p, dict)
-        ]
-        target: dict[str, Any] | None = None
-        for p in profiles:
-            if str(p.get("id")) == profile_id:
-                target = p
-                break
-        if target is None:
-            raise ValueError(f"配置档不存在: {profile_id}")
+        personal = scope == "personal"
+        with _interprocess_file_lock(path):
+            store = _load_store_unlocked(path, personal=personal)
+            profiles: list[dict[str, Any]] = [
+                p for p in (store.get("profiles") or []) if isinstance(p, dict)
+            ]
+            target: dict[str, Any] | None = None
+            for p in profiles:
+                if str(p.get("id")) == profile_id:
+                    target = p
+                    break
+            if target is None:
+                raise ValueError(f"配置档不存在: {profile_id}")
 
-        if name is not None:
-            target["name"] = name.strip() or target.get("name") or profile_id
-        if protocol is not None:
-            proto = protocol.strip()
-            if proto not in _VALID_PROTOCOLS:
-                raise ValueError(f"无效协议: {protocol}")
-            target["protocol"] = proto
-            # Leaving demo → non-demo must re-validate existing base_url (W-2).
-            if proto != "demo" and base_url is None:
-                target["base_url"] = validate_agent_base_url(
-                    str(target.get("base_url") or ""),
-                    protocol=proto,
+            if name is not None:
+                target["name"] = name.strip() or target.get("name") or profile_id
+            if protocol is not None:
+                proto = protocol.strip()
+                if proto not in _VALID_PROTOCOLS:
+                    raise ValueError(f"无效协议: {protocol}")
+                target["protocol"] = proto
+                # Leaving demo → non-demo must re-validate existing base_url (W-2).
+                if proto != "demo" and base_url is None:
+                    target["base_url"] = validate_agent_base_url(
+                        str(target.get("base_url") or ""),
+                        protocol=proto,
+                    )
+            if base_url is not None:
+                proto = str(target.get("protocol") or "openai")
+                target["base_url"] = validate_agent_base_url(base_url, protocol=proto)
+            if model is not None:
+                target["model"] = model.strip()
+            if context_window_input is not None:
+                if context_window_input < 256 or context_window_input > 2_000_000:
+                    raise ValueError("context_window_input 超出范围")
+                target["context_window_input"] = int(context_window_input)
+            if context_window_output is not None:
+                if context_window_output < 64 or context_window_output > 512_000:
+                    raise ValueError("context_window_output 超出范围")
+                target["context_window_output"] = int(context_window_output)
+            if clear_api_key:
+                target.pop("api_key_ciphertext", None)
+                target.pop("api_key_iv", None)
+            elif api_key is not None and api_key.strip():
+                ct, iv = encrypt_secret(
+                    api_key.strip(),
+                    key=_encryption_key(),
+                    require_encryption=secrets_encryption_required(),
+                    label="agent api key",
                 )
-        if base_url is not None:
-            proto = str(target.get("protocol") or "openai")
-            target["base_url"] = validate_agent_base_url(base_url, protocol=proto)
-        if model is not None:
-            target["model"] = model.strip()
-        if context_window_input is not None:
-            if context_window_input < 256 or context_window_input > 2_000_000:
-                raise ValueError("context_window_input 超出范围")
-            target["context_window_input"] = int(context_window_input)
-        if context_window_output is not None:
-            if context_window_output < 64 or context_window_output > 512_000:
-                raise ValueError("context_window_output 超出范围")
-            target["context_window_output"] = int(context_window_output)
-        if clear_api_key:
-            target.pop("api_key_ciphertext", None)
-            target.pop("api_key_iv", None)
-        elif api_key is not None and api_key.strip():
-            ct, iv = encrypt_secret(
-                api_key.strip(),
-                key=_encryption_key(),
-                require_encryption=secrets_encryption_required(),
-                label="agent api key",
-            )
-            target["api_key_ciphertext"] = ct
-            target["api_key_iv"] = iv
+                target["api_key_ciphertext"] = ct
+                target["api_key_iv"] = iv
 
-        store["profiles"] = profiles
-        _save_store_unlocked(path, store)
-        active = str(store.get("active_profile_id") or "")
+            store["profiles"] = profiles
+            store = _persist_store(path, store, personal=personal)
+            active = str(store.get("active_profile_id") or "")
+            saved = next(
+                (
+                    p
+                    for p in (store.get("profiles") or [])
+                    if isinstance(p, dict) and str(p.get("id")) == profile_id
+                ),
+                target,
+            )
     return _public_profile(
-        target, active_id=active, scope=scope, effective_active=False
+        saved, active_id=active, scope=scope, effective_active=False
     )
 
 
@@ -628,24 +833,27 @@ def set_active_profile(
             if scope == "global"
             else _personal_profiles_path(int(user_id))  # type: ignore[arg-type]
         )
-        store = _load_store_unlocked(path, personal=(scope == "personal"))
-        ids = {
-            str(p.get("id"))
-            for p in (store.get("profiles") or [])
-            if isinstance(p, dict)
-        }
-        if profile_id not in ids:
-            raise ValueError(f"配置档不存在: {profile_id}")
-        store["active_profile_id"] = profile_id
-        _save_store_unlocked(path, store)
+        personal = scope == "personal"
+        with _interprocess_file_lock(path):
+            store = _load_store_unlocked(path, personal=personal)
+            ids = {
+                str(p.get("id"))
+                for p in (store.get("profiles") or [])
+                if isinstance(p, dict)
+            }
+            if profile_id not in ids:
+                raise ValueError(f"配置档不存在: {profile_id}")
+            store["active_profile_id"] = profile_id
+            store = _persist_store(path, store, personal=personal)
         # Admin activating a global profile: clear own personal active so it takes effect for them
         if scope == "global" and user_id is not None:
             p_path = _personal_profiles_path(user_id)
             if p_path.exists():
-                p_store = _load_store_unlocked(p_path, personal=True)
-                if p_store.get("active_profile_id"):
-                    p_store["active_profile_id"] = ""
-                    _save_store_unlocked(p_path, p_store)
+                with _interprocess_file_lock(p_path):
+                    p_store = _load_store_unlocked(p_path, personal=True)
+                    if p_store.get("active_profile_id"):
+                        p_store["active_profile_id"] = ""
+                        _persist_store(p_path, p_store, personal=True)
     return get_config_bundle(user_id=user_id, role=role)
 
 
@@ -654,9 +862,10 @@ def clear_personal_active(*, user_id: int, role: str | None) -> dict[str, Any]:
     _assert_can_write_scope(scope="personal", role=role, user_id=user_id)
     with _lock:
         path = _personal_profiles_path(user_id)
-        store = _load_store_unlocked(path, personal=True)
-        store["active_profile_id"] = ""
-        _save_store_unlocked(path, store)
+        with _interprocess_file_lock(path):
+            store = _load_store_unlocked(path, personal=True)
+            store["active_profile_id"] = ""
+            _persist_store(path, store, personal=True)
     return get_config_bundle(user_id=user_id, role=role)
 
 
@@ -675,21 +884,23 @@ def delete_profile(
             if scope == "global"
             else _personal_profiles_path(int(user_id))  # type: ignore[arg-type]
         )
-        store = _load_store_unlocked(path, personal=(scope == "personal"))
-        profiles: list[dict[str, Any]] = [
-            p for p in (store.get("profiles") or []) if isinstance(p, dict)
-        ]
-        if scope == "global" and len(profiles) <= 1:
-            raise ValueError("不能删除最后一个全局配置档")
-        remaining = [p for p in profiles if str(p.get("id")) != profile_id]
-        if len(remaining) == len(profiles):
-            raise ValueError(f"配置档不存在: {profile_id}")
-        store["profiles"] = remaining
-        if str(store.get("active_profile_id")) == profile_id:
-            store["active_profile_id"] = (
-                str(remaining[0].get("id")) if remaining else ""
-            )
-        _save_store_unlocked(path, store)
+        personal = scope == "personal"
+        with _interprocess_file_lock(path):
+            store = _load_store_unlocked(path, personal=personal)
+            profiles: list[dict[str, Any]] = [
+                p for p in (store.get("profiles") or []) if isinstance(p, dict)
+            ]
+            if scope == "global" and len(profiles) <= 1:
+                raise ValueError("不能删除最后一个全局配置档")
+            remaining = [p for p in profiles if str(p.get("id")) != profile_id]
+            if len(remaining) == len(profiles):
+                raise ValueError(f"配置档不存在: {profile_id}")
+            store["profiles"] = remaining
+            if str(store.get("active_profile_id")) == profile_id:
+                store["active_profile_id"] = (
+                    str(remaining[0].get("id")) if remaining else ""
+                )
+            _persist_store(path, store, personal=personal)
     return get_config_bundle(user_id=user_id, role=role)
 
 

@@ -4,7 +4,8 @@
 
 ## 当前前端定位
 
-- `2D-first`：MapLibre 为当前主地图引擎
+- `2D-first`：MapLibre 为当前主地图引擎；3D 默认 MapLibre `globe`，Cesium 为设置可选实验路径（`src/components/map/globe-engine/`，见仓库 `Docs/02-架构设计/cesium-dual-engine.md`）
+- Cesium 懒加载 + `vite-plugin-cesium`；Gateway `:5175` 需 CSP `'unsafe-eval'` + `'wasm-unsafe-eval'`（直连 Vite 无 CSP 时勿误判）
 - 天气图层：标准 z/x/y 瓦片加载 + Canvas 风场叠加；支持多 Provider 钉源（侧栏与 InfoPanel，偏好存 localStorage；`open-meteo-online` / `open-meteo-local` / 商业源）
 - 图层面板、时间轴、工具栏「数据」工作台（导入/导出/属性表/详情/作业）、截图导出、工作流状态
 - Cesium / vue-cesium 已在依赖中，尚未成为默认主界面模式

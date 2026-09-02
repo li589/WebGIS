@@ -12,7 +12,7 @@
 import type { Map as MaplibreMap } from 'maplibre-gl'
 import type { WindGeoJSON } from './types'
 import { DEFAULT_HEIGHT_SUFFIX, MAP_EVENT_MOVE, MAP_EVENT_MOVEEND, MAP_EVENT_RESIZE } from './types'
-import { computeCanvasLayout, type CanvasLayout } from './canvas-utils'
+import { computeCanvasLayout, isLngLatOccludedByGlobe, type CanvasLayout } from './canvas-utils'
 import { debugLog } from '../../utils/perf-probe'
 
 // ── 渲染参数常量 ─────────────────────────────────────────
@@ -369,6 +369,8 @@ export class WindBarbLayer {
       const screen = this.map.project([d.lon + this.lonWrapOffset, d.lat])
       const cx = screen.x - ox
       const cy = screen.y - oy
+      // Globe：剔除背面点，避免穿球叠到正面圆盘
+      if (isLngLatOccludedByGlobe(this.map, d.lon, d.lat)) continue
       // 视口裁剪
       if (
         cx < -BARB_VIEWPORT_CULLING_MARGIN_PX ||

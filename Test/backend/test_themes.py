@@ -237,3 +237,40 @@ def test_create_theme_via_api(theme_client: TestClient) -> None:
     listed = theme_client.get("/auth/themes")
     assert listed.status_code == 200
     assert any(t["id"] == theme_id for t in listed.json())
+
+
+def test_login_palette_infer_and_update(theme_client: TestClient) -> None:
+    """登录页配色：植被主题默认 green；可经 PATCH 覆盖；公开接口返回字段。"""
+    _admin_login(theme_client)
+    created = theme_client.post(
+        "/auth/themes",
+        json={
+            "slug": "vemp-ecology",
+            "name_zh": "植被与生态监测平台",
+            "full_name_zh": "植被与生态监测数据分析平台",
+            "name_en": "Vegetation and Ecology Monitoring Platform",
+            "abbr": "VEMP",
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["login_palette"] == "green"
+    theme_id = body["id"]
+
+    patched = theme_client.patch(
+        f"/auth/themes/{theme_id}",
+        json={"login_palette": "violet"},
+    )
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["login_palette"] == "violet"
+
+    public = theme_client.get("/auth/themes/public")
+    assert public.status_code == 200
+    match = next(t for t in public.json() if t["id"] == theme_id)
+    assert match["login_palette"] == "violet"
+
+    bad = theme_client.patch(
+        f"/auth/themes/{theme_id}",
+        json={"login_palette": "neon"},
+    )
+    assert bad.status_code == 422

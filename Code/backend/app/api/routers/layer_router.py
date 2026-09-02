@@ -23,6 +23,7 @@ from app.services.layer_catalog import (
 from app.services.layer_group_repository import (
     LayerGroupError,
     get_layer_group_repository,
+    resolve_catalog_group_scope,
 )
 from app.services.overlay_registry import (
     get_overlay_spec,
@@ -94,9 +95,29 @@ def _catalog_items_for_environment(items: list[Any]) -> list[Any]:
     return [item for item in items if getattr(item, "status", None) != "placeholder"]
 
 
+def _scope_for_cred(cred) -> Any:
+    if cred is None:
+        return resolve_catalog_group_scope(user_id=None, role=None)
+    return resolve_catalog_group_scope(
+        user_id=getattr(cred, "user_id", None),
+        role=getattr(cred, "role", None),
+    )
+
+
+def _owner_user_id(admin) -> int:
+    uid = getattr(admin, "user_id", None)
+    if uid is None:
+        raise ApiError(
+            AUTH_ERROR,
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin user id required for layer group management.",
+        )
+    return int(uid)
+
+
 @router.get("/layers", tags=["catalog"], response_model=LayerCatalogResponse)
 def list_layers(cred=Depends(get_request_user)) -> LayerCatalogResponse:
-    catalog = get_layer_catalog()
+    catalog = get_layer_catalog(_scope_for_cred(cred))
     visible_items = _catalog_items_for_environment(catalog.items)
 
     # Phase B: 资源访问控制——鉴权开启时匿名 fail-closed；非 admin 按 ACL 过滤
@@ -171,21 +192,33 @@ def list_layers(cred=Depends(get_request_user)) -> LayerCatalogResponse:
 @router.get(
     "/layers/categories", tags=["catalog"], response_model=LayerCategoryResponse
 )
-def list_layer_categories() -> LayerCategoryResponse:
+def list_layer_categories(
+    cred=Depends(get_request_user),
+) -> LayerCategoryResponse:
     """X1: 后端下发图层分类定义（id / name / icon / accent_color / chip_tone）。
 
     前端运行时消费此端点获取分类样式，消除前后端分类定义双写。
     前端 ``LAYER_CATEGORIES`` 静态表仅在 API 不可用时作离线兜底。
-    图层平台 P1：返回种子 ⊕ 运行时管理分组（含 position / is_custom）。
+    管理员看到个人工作区；绑定主题且主题有分组预设的用户看到主题快照；
+    其余为共享种子（+ 遗留共享自建组）。
+
+    鉴权开启时与 ``GET /layers`` 一致：匿名 fail-closed（401）。
     """
-    return get_layer_category_response()
+    if cred is None and settings.user_auth_enabled:
+        raise ApiError(
+            AUTH_ERROR,
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required.",
+        )
+    return get_layer_category_response(_scope_for_cred(cred))
 
 
-# ── 图层平台 P1：分组运行时管理（管理员） ────────────────────────────────────
+# ── 图层平台 P1：分组运行时管理（管理员个人工作区） ──────────────────────────
 #
 # 种子分组来自 catalog_seeds/layer_categories.json（可改名/样式，不可删除）；
-# 自建分组完全 CRUD。图层→分组归属走 layer_group_assignments 覆盖，
-# 种子 JSON 永不被运行时写操作修改（codegen / drift check 口径不变）。
+# 自建分组完全 CRUD，按管理员 user_id 隔离。图层→分组归属走
+# layer_group_assignments（按 owner 隔离）覆盖，种子 JSON 永不被运行时写操作
+# 修改（codegen / drift check 口径不变）。可选同步到主题预设。
 
 
 def _group_error(exc: LayerGroupError) -> HTTPException:
@@ -194,9 +227,9 @@ def _group_error(exc: LayerGroupError) -> HTTPException:
 
 @router.post("/layers/categories", tags=["catalog"], response_model=LayerCategoryDef)
 def create_layer_group(
-    payload: LayerGroupCreateRequest, _admin=Depends(require_admin)
+    payload: LayerGroupCreateRequest, admin=Depends(require_admin)
 ) -> LayerCategoryDef:
-    """新建自定义分组（追加到分组序列末尾）。"""
+    """新建自定义分组（追加到当前管理员个人工作区末尾）。"""
     try:
         record = get_layer_group_repository().create_group(
             payload.id,
@@ -205,19 +238,97 @@ def create_layer_group(
             accent_color=payload.accent_color,
             chip_tone=payload.chip_tone,
             sub_categories=payload.sub_categories,
+            owner_user_id=_owner_user_id(admin),
         )
     except LayerGroupError as exc:
         raise _group_error(exc) from exc
     return LayerCategoryDef.model_validate(record.to_category_def_dict())
 
 
+@router.put(
+    "/layers/categories/order", tags=["catalog"], response_model=LayerCategoryResponse
+)
+def reorder_layer_groups(
+    payload: LayerGroupReorderRequest, admin=Depends(require_admin)
+) -> LayerCategoryResponse:
+    """按给定 id 顺序重排当前管理员工作区中的分组。"""
+    owner = _owner_user_id(admin)
+    try:
+        get_layer_group_repository().reorder_groups(
+            payload.order, owner_user_id=owner
+        )
+    except LayerGroupError as exc:
+        raise _group_error(exc) from exc
+    return get_layer_category_response(_scope_for_cred(admin))
+
+
+@router.post(
+    "/layers/categories/sync-to-theme/{theme_id}",
+    tags=["catalog"],
+    response_model=dict,
+)
+def sync_layer_groups_to_theme(
+    theme_id: int, admin=Depends(require_admin)
+) -> dict[str, Any]:
+    """将当前管理员的图层分组工作区快照同步到指定主题预设（可选）。"""
+    from app.services.theme_repository import get_theme_repository
+
+    if get_theme_repository().get_by_id(int(theme_id)) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="主题不存在")
+    try:
+        return get_layer_group_repository().sync_workspace_to_theme(
+            _owner_user_id(admin), int(theme_id)
+        )
+    except LayerGroupError as exc:
+        raise _group_error(exc) from exc
+
+
+@router.get(
+    "/layers/categories/theme-preset/{theme_id}",
+    tags=["catalog"],
+    response_model=dict,
+)
+def get_theme_layer_group_preset(
+    theme_id: int, _admin=Depends(require_admin)
+) -> dict[str, Any]:
+    """读取主题的图层分组预设元数据（无预设时 has_preset=false）。"""
+    from app.services.theme_repository import get_theme_repository
+
+    if get_theme_repository().get_by_id(int(theme_id)) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="主题不存在")
+    meta = get_layer_group_repository().theme_preset_meta(int(theme_id))
+    return meta or {
+        "theme_id": int(theme_id),
+        "has_preset": False,
+        "updated_at": None,
+        "updated_by_user_id": None,
+    }
+
+
+@router.delete(
+    "/layers/categories/theme-preset/{theme_id}",
+    tags=["catalog"],
+    response_model=dict,
+)
+def delete_theme_layer_group_preset(
+    theme_id: int, _admin=Depends(require_admin)
+) -> dict[str, Any]:
+    """清除主题上的图层分组预设（绑定用户回落到共享种子分组）。"""
+    from app.services.theme_repository import get_theme_repository
+
+    if get_theme_repository().get_by_id(int(theme_id)) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="主题不存在")
+    deleted = get_layer_group_repository().delete_theme_preset(int(theme_id))
+    return {"theme_id": int(theme_id), "deleted": deleted}
+
+
 @router.patch(
     "/layers/categories/{group_id}", tags=["catalog"], response_model=LayerCategoryDef
 )
 def update_layer_group(
-    group_id: str, payload: LayerGroupUpdateRequest, _admin=Depends(require_admin)
+    group_id: str, payload: LayerGroupUpdateRequest, admin=Depends(require_admin)
 ) -> LayerCategoryDef:
-    """修改分组名称 / 样式 / 子分类（种子组与自建组均可）。"""
+    """修改分组名称 / 样式 / 子分类（写入当前管理员工作区；种子组写为个人覆盖）。"""
     try:
         record = get_layer_group_repository().update_group(
             group_id,
@@ -226,6 +337,7 @@ def update_layer_group(
             accent_color=payload.accent_color,
             chip_tone=payload.chip_tone,
             sub_categories=payload.sub_categories,
+            owner_user_id=_owner_user_id(admin),
         )
     except LayerGroupError as exc:
         raise _group_error(exc) from exc
@@ -238,28 +350,15 @@ def update_layer_group(
     response_model=LayerCategoryResponse,
 )
 def delete_layer_group(
-    group_id: str, _admin=Depends(require_admin)
+    group_id: str, admin=Depends(require_admin)
 ) -> LayerCategoryResponse:
-    """删除自定义分组（种子组拒绝）；组内成员关系随之解除，图层回落到种子分类。"""
+    """删除当前管理员工作区中的自定义分组（种子组拒绝）。"""
+    owner = _owner_user_id(admin)
     try:
-        get_layer_group_repository().delete_group(group_id)
+        get_layer_group_repository().delete_group(group_id, owner_user_id=owner)
     except LayerGroupError as exc:
         raise _group_error(exc) from exc
-    return get_layer_category_response()
-
-
-@router.put(
-    "/layers/categories/order", tags=["catalog"], response_model=LayerCategoryResponse
-)
-def reorder_layer_groups(
-    payload: LayerGroupReorderRequest, _admin=Depends(require_admin)
-) -> LayerCategoryResponse:
-    """按给定 id 顺序重排分组（图层库展示顺序）。"""
-    try:
-        get_layer_group_repository().reorder_groups(payload.order)
-    except LayerGroupError as exc:
-        raise _group_error(exc) from exc
-    return get_layer_category_response()
+    return get_layer_category_response(_scope_for_cred(admin))
 
 
 @router.put(
@@ -268,14 +367,17 @@ def reorder_layer_groups(
     response_model=LayerCategoryResponse,
 )
 def set_layer_group_members(
-    group_id: str, payload: LayerGroupMembersRequest, _admin=Depends(require_admin)
+    group_id: str, payload: LayerGroupMembersRequest, admin=Depends(require_admin)
 ) -> LayerCategoryResponse:
-    """全量替换分组内图层成员（layer_id 列表）；受影响图层的 catalog category 同步更新。"""
+    """全量替换分组内图层成员（写入当前管理员工作区）。"""
+    owner = _owner_user_id(admin)
     try:
-        get_layer_group_repository().set_layer_assignments(group_id, payload.layer_ids)
+        get_layer_group_repository().set_layer_assignments(
+            group_id, payload.layer_ids, owner_user_id=owner
+        )
     except LayerGroupError as exc:
         raise _group_error(exc) from exc
-    return get_layer_category_response()
+    return get_layer_category_response(_scope_for_cred(admin))
 
 
 # ── 图层平台子系统 P0：资产状态与生命周期聚合接口（2026-08-24） ───────────────
@@ -642,8 +744,19 @@ def list_workflow_templates(
     聚合 workflow_seeds/system + workflow_definitions/user 中
     ``is_template=true`` 或 tags 含 "template"/"lab" 的定义；
     前端课题组入口据此渲染「一键运行」面板。
+    鉴权开启时匿名 fail-closed；非 admin 按 workflow ACL 过滤。
     """
+    from app.api.error_codes import AUTH_ERROR, ApiError
+    from app.core import config
     from app.services.workflow_definition_service import list_definitions
+
+    _cred = cred if hasattr(cred, "role") else None
+    if _cred is None and config.settings.user_auth_enabled:
+        raise ApiError(
+            AUTH_ERROR,
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required.",
+        )
 
     items: list[WorkflowTemplateSummary] = []
     for item in list_definitions():
@@ -671,6 +784,24 @@ def list_workflow_templates(
                 updated_at=meta.get("updated_at"),
             )
         )
+
+    if _cred is not None and getattr(_cred, "role", None) != "admin":
+        user_id = getattr(_cred, "user_id", None)
+        source = getattr(_cred, "source", None)
+        if user_id is None:
+            if source not in {"service_key", "dev_bypass"}:
+                items = []
+        else:
+            from app.services.permission_repository import get_permission_repository
+
+            all_ids = [i.workflow_id for i in items if i.workflow_id]
+            accessible = set(
+                get_permission_repository().batch_filter_accessible(
+                    int(user_id), "workflow", all_ids
+                )
+            )
+            items = [i for i in items if i.workflow_id in accessible]
+
     return WorkflowTemplateListResponse(items=items, count=len(items))
 
 

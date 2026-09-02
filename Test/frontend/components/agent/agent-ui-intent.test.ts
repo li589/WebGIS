@@ -111,4 +111,39 @@ describe('executeAgentUiIntent', () => {
     expect(result.ok).toBe(true)
     expect(fit).toHaveBeenCalledWith('i1')
   })
+
+  it('lists active layers with names instead of opaque placeholder', async () => {
+    activeLayers.value = [
+      {
+        instanceId: 'i1',
+        catalogId: 'cmfd-precip-cn',
+        visible: true,
+        opacity: 1,
+        name: 'CMFD 降水',
+      },
+      {
+        instanceId: 'i2',
+        catalogId: 'admin-boundary',
+        visible: true,
+        opacity: 1,
+        isAdminBoundary: true,
+        name: '边界',
+      },
+    ]
+    const { executeAgentUiIntent } = await import('@/components/agent/agent-ui-intent')
+    const result = executeAgentUiIntent({ name: 'list_active_layers', args: {} })
+    expect(result.ok).toBe(true)
+    expect(result.message).toContain('CMFD 降水')
+    expect(result.message).toContain('cmfd-precip-cn')
+    expect(result.message).not.toContain('已使用客户端活动图层上下文')
+    expect(result.message).not.toContain('边界')
+  })
+
+  it('reports empty active layers clearly', async () => {
+    activeLayers.value = []
+    const { executeAgentUiIntent } = await import('@/components/agent/agent-ui-intent')
+    const result = executeAgentUiIntent({ name: 'list_active_layers', args: {} })
+    expect(result.ok).toBe(true)
+    expect(result.message).toContain('没有活动图层')
+  })
 })

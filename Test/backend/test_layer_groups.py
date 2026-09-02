@@ -193,13 +193,62 @@ def test_group_repo_reorder_and_members(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_categories_endpoints_admin_only_then_crud(auth_client):
-    client = auth_client
-    # 匿名/普通用户不可管理分组
-    resp = client.post(
-        "/layers/categories", json={"id": "x-group", "name": "X"}
+def test_group_repo_personal_isolation_and_theme_preset(tmp_path):
+    repo = _repo_factory(tmp_path)
+    from app.services.layer_group_repository import LayerGroupError
+
+    a = repo.create_group("lab-a", "A 组", owner_user_id=1)
+    b = repo.create_group("lab-b", "B 组", owner_user_id=2)
+    assert a.owner_user_id == 1
+    assert b.owner_user_id == 2
+
+    ids_a = {g.group_id for g in repo.list_groups(owner_user_id=1)}
+    ids_b = {g.group_id for g in repo.list_groups(owner_user_id=2)}
+    assert "lab-a" in ids_a and "lab-b" not in ids_a
+    assert "lab-b" in ids_b and "lab-a" not in ids_b
+
+    # 种子改名写入个人覆盖，不污染共享种子
+    repo.update_group("climate", name="气候-A", owner_user_id=1)
+    shared_climate = next(g for g in repo.list_groups(0) if g.group_id == "climate")
+    personal_climate = next(
+        g for g in repo.list_groups(owner_user_id=1) if g.group_id == "climate"
     )
+    assert shared_climate.name != "气候-A"
+    assert personal_climate.name == "气候-A"
+
+    repo.set_layer_assignments("lab-a", ["wind-field"], owner_user_id=1)
+    assert repo.list_assignments(owner_user_id=1)["wind-field"] == "lab-a"
+    assert "wind-field" not in repo.list_assignments(owner_user_id=2)
+
+    meta = repo.sync_workspace_to_theme(1, theme_id=99)
+    assert meta["has_preset"] is True
+    preset = repo.get_theme_preset(99)
+    assert preset is not None
+    assert any(g["id"] == "lab-a" for g in preset["groups"])
+    assert preset["assignments"]["wind-field"] == "lab-a"
+
+    from app.services.layer_group_repository import CatalogGroupScope
+
+    theme_groups = repo.list_groups_for_scope(CatalogGroupScope.theme(99))
+    assert any(g.group_id == "lab-a" for g in theme_groups)
+    assert repo.list_assignments_for_scope(CatalogGroupScope.theme(99))[
+        "wind-field"
+    ] == "lab-a"
+
+    with pytest.raises(LayerGroupError):
+        repo.delete_group("climate", owner_user_id=1)
+
+
+def test_categories_require_auth_when_enabled(auth_client):
+    """鉴权开启时 GET /layers/categories 与 /layers 一致：匿名 401。"""
+    client = auth_client
+    resp = client.get("/layers/categories")
     assert resp.status_code == 401
+    resp = client.get("/layers")
+    assert resp.status_code == 401
+
+    _login(client, "testadmin", "test-pass-123")
+    assert client.get("/layers/categories").status_code == 200
 
     _login(client, "testadmin", "test-pass-123")
 
@@ -390,11 +439,11 @@ def test_layer_group_acl_open_mode_group_deny(auth_client):
 
 
 def test_assignment_move_changes_acl_group(auth_client):
-    """图层移动分组后，组级 ACL 随新组生效。"""
+    """图层移动分组后，经主题预设同步，组级 ACL 随新组生效。"""
     client = auth_client
     _login(client, "testadmin", "test-pass-123")
 
-    # wind-field 属 weather 组；主题 deny 新组 → 移入后不可见
+    # wind-field 属 weather 组；主题 deny vegetation → 同步预设后移入不可见
     client.put(
         "/auth/themes/1/permissions",
         json={
@@ -404,14 +453,61 @@ def test_assignment_move_changes_acl_group(auth_client):
         },
     )
     client.post("/layers/categories", json={"id": "vg-move", "name": "移动测试组"})
-    # 直接把 vegetation 组的一个图层语义复用：把 wind-field 移入 vegetation
     client.put(
         "/layers/categories/vegetation/members",
         json={"layer_ids": ["wind-field"]},
     )
+    # 个人工作区需同步到主题后，绑定用户才消费新归属
+    resp = client.post("/layers/categories/sync-to-theme/1")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["has_preset"] is True
 
     user = _create_user(client, "move-user")
+    # 绑定主题 1（若创建时未绑定）
+    client.patch(f"/auth/users/{user['id']}", json={"theme_id": 1})
     client.post("/auth/logout")
     _login(client, "move-user", "user-pass-123")
     items = client.get("/layers").json()["items"]
     assert all(i["layer_id"] != "wind-field" for i in items)
+
+
+def test_two_admins_have_isolated_custom_groups(auth_client):
+    client = auth_client
+    _login(client, "testadmin", "test-pass-123")
+    admin2 = _create_user(client, "admin-two", role="admin")
+    assert admin2["role"] == "admin"
+
+    client.post("/layers/categories", json={"id": "only-a", "name": "仅管理员一"})
+    ids = {c["id"] for c in client.get("/layers/categories").json()["items"]}
+    assert "only-a" in ids
+
+    client.post("/auth/logout")
+    _login(client, "admin-two", "user-pass-123")
+    ids2 = {c["id"] for c in client.get("/layers/categories").json()["items"]}
+    assert "only-a" not in ids2
+    client.post("/layers/categories", json={"id": "only-b", "name": "仅管理员二"})
+    assert any(
+        c["id"] == "only-b" for c in client.get("/layers/categories").json()["items"]
+    )
+
+
+def test_theme_preset_surfaces_synced_groups(auth_client):
+    """同步到主题后，绑定用户看到管理员工作区中的自定义分组与归属。"""
+    client = auth_client
+    _login(client, "testadmin", "test-pass-123")
+    client.post("/layers/categories", json={"id": "theme-lab", "name": "主题实验组"})
+    client.put(
+        "/layers/categories/theme-lab/members",
+        json={"layer_ids": ["wind-field"]},
+    )
+    assert client.post("/layers/categories/sync-to-theme/1").status_code == 200
+
+    user = _create_user(client, "preset-user")
+    client.patch(f"/auth/users/{user['id']}", json={"theme_id": 1})
+    client.post("/auth/logout")
+    _login(client, "preset-user", "user-pass-123")
+
+    cats = client.get("/layers/categories").json()["items"]
+    assert any(c["id"] == "theme-lab" for c in cats)
+    by_id = {i["layer_id"]: i for i in client.get("/layers").json()["items"]}
+    assert by_id["wind-field"]["category"] == "theme-lab"

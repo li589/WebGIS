@@ -39,7 +39,7 @@
     },
     {
       "name": "list_active_layers",
-      "description": "Ask client to describe active layers (reply uses client_context).",
+      "description": "List currently active map layers from the client. Prefer answering the user in Chinese with the layer names; this tool confirms the client-side list.",
       "args": { "type": "object", "properties": {} }
     }
   ]
