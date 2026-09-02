@@ -57,9 +57,7 @@ const runHint = computed(() => {
     if (!props.selectedMapPoint) return '请先进入选择模式并在地图选点'
     const coord = `(${props.selectedMapPoint.lng.toFixed(3)}, ${props.selectedMapPoint.lat.toFixed(3)})`
     const admin = mapPointAdminLabel.value.adminLine
-    return admin
-      ? `将提取选点 ${coord} 所在行政区 · ${admin}`
-      : `将提取选点 ${coord} 所在行政区`
+    return admin ? `将提取选点 ${coord} 所在行政区 · ${admin}` : `将提取选点 ${coord} 所在行政区`
   }
   return '将提取当前视口范围内的道路（需要外部网络）'
 })

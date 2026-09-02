@@ -22,11 +22,13 @@ from app.services.user_repository import _users_db_path
 
 logger = logging.getLogger(__name__)
 
-ResourceType = Literal["layer", "workflow", "data_source"]
+ResourceType = Literal["layer", "layer_group", "workflow", "data_source"]
 PermissionValue = Literal["allow", "deny"]
 PermissionMode = Literal["open", "whitelist"]
 
-_VALID_RESOURCE_TYPES: frozenset[str] = frozenset({"layer", "workflow", "data_source"})
+_VALID_RESOURCE_TYPES: frozenset[str] = frozenset(
+    {"layer", "layer_group", "workflow", "data_source"}
+)
 _VALID_PERMISSIONS: frozenset[str] = frozenset({"allow", "deny"})
 _VALID_MODES: frozenset[str] = frozenset({"open", "whitelist"})
 
@@ -312,12 +314,58 @@ class PermissionRepository:
         # open: deny only on explicit deny
         return effective != "deny"
 
+    def _layer_group_perm_pair(
+        self, user_id: int, theme_id: int | None, layer_id: str
+    ) -> tuple[str | None, str | None]:
+        """Combine layer-level and group-level permission records for a layer.
+
+        Layer-level records override group-level records, mirroring the
+        user-over-theme precedence.  Group id comes from the layer group
+        repository (assignment override → descriptor category fallback).
+        """
+        from app.services.layer_group_repository import get_layer_group_repository
+
+        group_id: str | None = None
+        try:
+            descriptor = None
+            try:
+                from app.services.layer_catalog import get_layer_descriptor
+
+                descriptor = get_layer_descriptor(layer_id)
+            except Exception:
+                descriptor = None
+            group_id = get_layer_group_repository().resolve_group_id_for_layer(
+                layer_id, getattr(descriptor, "category", None)
+            )
+        except Exception:
+            logger.debug("layer group resolve failed for %s", layer_id, exc_info=True)
+        if not group_id:
+            return None, None
+        with self._pool.connection() as conn:
+            user_row = conn.execute(
+                "SELECT permission FROM user_resource_permissions "
+                "WHERE user_id=? AND resource_type='layer_group' AND resource_id=?",
+                (user_id, group_id),
+            ).fetchone()
+            theme_row = None
+            if theme_id is not None and self._theme_permissions_table_exists(conn):
+                theme_row = conn.execute(
+                    "SELECT permission FROM theme_resource_permissions "
+                    "WHERE theme_id=? AND resource_type='layer_group' AND resource_id=?",
+                    (theme_id, group_id),
+                ).fetchone()
+        user_perm = str(user_row["permission"]) if user_row is not None else None
+        theme_perm = str(theme_row["permission"]) if theme_row is not None else None
+        return user_perm, theme_perm
+
     def check_resource_access(
         self, user_id: int, resource_type: str, resource_id: str
     ) -> bool:
         """Check if *user_id* may access ``resource_type/resource_id``.
 
         Merge: user override > theme default > mode (open/whitelist).
+        For ``layer`` checks, a group-level record (``layer_group``) applies
+        when no layer-level record exists (user first, then theme).
         """
         cache_key = (user_id, resource_type, resource_id)
         cached = _cache_get(cache_key)
@@ -342,6 +390,16 @@ class PermissionRepository:
 
         user_perm = str(user_row["permission"]) if user_row is not None else None
         theme_perm = str(theme_row["permission"]) if theme_row is not None else None
+
+        if resource_type == "layer" and (user_perm is None or theme_perm is None):
+            group_user_perm, group_theme_perm = self._layer_group_perm_pair(
+                user_id, theme_id, resource_id
+            )
+            if user_perm is None:
+                user_perm = group_user_perm
+            if theme_perm is None:
+                theme_perm = group_theme_perm
+
         result = self._merged_permission(user_perm, theme_perm, mode)
 
         _cache_set(cache_key, result)
@@ -357,6 +415,8 @@ class PermissionRepository:
 
         More efficient than calling ``check_resource_access`` per item:
         loads user + theme permission maps for the type in two queries.
+        For ``layer`` checks, group-level records apply per layer when no
+        layer-level record exists.
         """
         if not resource_ids:
             return []
@@ -373,14 +433,57 @@ class PermissionRepository:
         }
         theme_map = self._theme_perm_map(theme_id, resource_type)
 
+        group_user_map: dict[str, str] = {}
+        group_theme_map: dict[str, str] = {}
+        resolved: dict[str, str] = {}
+        if resource_type == "layer":
+            from app.services.layer_group_repository import get_layer_group_repository
+
+            group_repo = get_layer_group_repository()
+            try:
+                from app.services.layer_catalog import get_layer_descriptor
+
+                for lid in resource_ids:
+                    gid = group_repo.resolve_group_id_for_layer(
+                        lid, getattr(get_layer_descriptor(lid), "category", None)
+                    )
+                    if gid:
+                        resolved[lid] = gid
+            except Exception:
+                logger.debug("batch layer group resolve failed", exc_info=True)
+                resolved = {}
+            if resolved:
+                group_ids = set(resolved.values())
+                with self._pool.connection() as conn:
+                    for group_id in group_ids:
+                        urow = conn.execute(
+                            "SELECT permission FROM user_resource_permissions "
+                            "WHERE user_id=? AND resource_type='layer_group' AND resource_id=?",
+                            (user_id, group_id),
+                        ).fetchone()
+                        if urow is not None:
+                            group_user_map[group_id] = str(urow["permission"])
+                theme_group_map_full = self._theme_perm_map(theme_id, "layer_group")
+                group_theme_map = {
+                    gid: perm
+                    for gid, perm in theme_group_map_full.items()
+                    if gid in group_ids
+                }
+
         out: list[str] = []
         for rid in resource_ids:
             user_perm = user_map.get(rid)
             theme_perm = theme_map.get(rid)
-            # .get returns None if missing — distinguish from missing vs present
-            u = user_perm if rid in user_map else None
-            t = theme_perm if rid in theme_map else None
-            if self._merged_permission(u, t, mode):
+            if resource_type == "layer":
+                gid = resolved.get(rid)
+                if gid is not None:
+                    if user_perm is None and gid in group_user_map:
+                        user_perm = group_user_map[gid]
+                    if theme_perm is None and gid in group_theme_map:
+                        theme_perm = group_theme_map[gid]
+            # user_perm/theme_perm are None when neither layer- nor group-level
+            # records exist; otherwise they carry the effective record value.
+            if self._merged_permission(user_perm, theme_perm, mode):
                 out.append(rid)
         return out
 

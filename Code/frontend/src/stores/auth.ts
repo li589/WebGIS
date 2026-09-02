@@ -113,7 +113,8 @@ export const useAuthStore = defineStore('auth', () => {
       const list = await fetchThemesPublic()
       publicThemes.value = Array.isArray(list) ? list : []
       if (!loginPreviewSlug.value && publicThemes.value.length === 1) {
-        loginPreviewSlug.value = publicThemes.value[0]?.slug ?? null
+        const only = publicThemes.value[0]?.slug
+        if (only) setLoginPreviewSlug(only)
       }
     } catch {
       publicThemes.value = []
@@ -146,10 +147,15 @@ export const useAuthStore = defineStore('auth', () => {
     const fromRoute = routeSlug?.trim() || null
     const fromStorage = readStoredLoginThemeSlug()
     const primary = publicThemes.value.find((t) => t.slug === primaryTheme.value?.slug)
-    const fallback = primary?.slug ?? publicThemes.value[0]?.slug ?? primaryTheme.value?.slug ?? null
+    const fallback =
+      primary?.slug ?? publicThemes.value[0]?.slug ?? primaryTheme.value?.slug ?? null
+    if (publicThemes.value.length === 0) {
+      setLoginPreviewSlug(fallback)
+      return
+    }
     const candidate = fromRoute ?? fromStorage ?? fallback
     if (!candidate) return
-    if (publicThemes.value.length > 0 && !publicThemes.value.some((t) => t.slug === candidate)) {
+    if (!publicThemes.value.some((t) => t.slug === candidate)) {
       setLoginPreviewSlug(fallback)
       return
     }

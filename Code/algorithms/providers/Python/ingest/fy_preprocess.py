@@ -1135,7 +1135,14 @@ class FyPreprocessor:
                             else:
                                 _ = ds[tuple(0 for _ in range(ndim))]
                         break
-            except (OSError, ValueError, TypeError, KeyError, AttributeError, IndexError) as exc:
+            except (
+                OSError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                IndexError,
+            ) as exc:
                 logger.warning("跳过不可读 HDF %s: %s", file_name, exc)
                 continue
             all_files.append(file_name)

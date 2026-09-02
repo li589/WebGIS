@@ -241,28 +241,28 @@ describe('resolveLayerContextCapabilities', () => {
     expect(caps.canRunWorkflow).toBe(true)
   })
 
-  it('draw draft marks exports disabled', () => {
+  it('run group member exposes dissolve when group is dissolvable', () => {
     const caps = resolveLayerContextCapabilities({
-      layer: baseDisplay({
-        catalogId: 'draw-draft-abc',
-        isImported: true,
-      }),
+      layer: baseDisplay({ catalogId: 'wf-run-grp-sm' }),
       raw: {
         instanceId: 'inst-1',
-        catalogId: 'draw-draft-abc',
-        name: 'draft',
+        catalogId: 'wf-run-grp-sm',
+        name: 'SM',
         visible: true,
         opacity: 1,
         order: 1,
         isAdminBoundary: false,
+        runGroupId: 'grp-1',
       },
       isWeatherLayer: noopWeather,
-      supportsAnalysisWorkflow: () => false,
+      supportsAnalysisWorkflow: alwaysTrue,
       isOverlayDisplayOnlyLayer: () => false,
       canRunCatalog: alwaysTrue,
+      findRunGroupById: (id) => (id === 'grp-1' ? { dissolvable: true } : null),
     })
-    expect(caps.isDrawDraft).toBe(true)
-    expect(caps.showViewDetailsInViewGroup).toBe(false)
+    expect(caps.canDissolveGroup).toBe(true)
+    const groups = buildLayerContextMenu(caps)
+    expect(flatIds(groups)).toContain('dissolveGroup')
   })
 })
 

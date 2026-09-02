@@ -7,18 +7,13 @@ import { computed, onMounted, ref, watch } from 'vue'
 import {
   createTheme,
   deleteTheme,
-  listThemePermissions,
-  setThemePermissions,
   updateTheme,
   uploadThemeLogo,
-  type PermissionItemInput,
   type PermissionMode,
-  type PermissionValue,
-  type ResourceType,
-  type ThemePermissionRecord,
 } from '../../services/auth-api'
 import { useAuthStore } from '../../stores/auth'
 import AppSelect from '../ui/AppSelect.vue'
+import ResourceAclEditor from './ResourceAclEditor.vue'
 
 const auth = useAuthStore()
 
@@ -35,12 +30,6 @@ const draftAbbr = ref('SGFS')
 const draftDescription = ref('')
 const draftMode = ref<PermissionMode>('open')
 const creating = ref(false)
-
-const themePerms = ref<ThemePermissionRecord[]>([])
-const permsLoading = ref(false)
-const newType = ref<ResourceType>('layer')
-const newId = ref('')
-const newPerm = ref<PermissionValue>('allow')
 
 const selected = computed(() => (auth.themes ?? []).find((t) => t.id === selectedId.value) ?? null)
 
@@ -71,23 +60,6 @@ async function refresh() {
     }
   }
 }
-
-async function loadPerms(themeId: number) {
-  permsLoading.value = true
-  try {
-    themePerms.value = await listThemePermissions(themeId)
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '加载主题权限失败'
-    themePerms.value = []
-  } finally {
-    permsLoading.value = false
-  }
-}
-
-watch(selectedId, (id) => {
-  if (id != null) void loadPerms(id)
-  else themePerms.value = []
-})
 
 onMounted(() => {
   void refresh()
@@ -276,55 +248,6 @@ async function onLogoChange(ev: Event) {
   }
 }
 
-async function addThemePerm() {
-  if (!selected.value) return
-  const rid = newId.value.trim()
-  if (!rid) {
-    error.value = '请填写资源 ID'
-    return
-  }
-  saving.value = true
-  error.value = null
-  try {
-    const next: PermissionItemInput[] = [
-      ...themePerms.value.map((p) => ({
-        resource_type: p.resource_type as ResourceType,
-        resource_id: p.resource_id,
-        permission: p.permission as PermissionValue,
-      })),
-      { resource_type: newType.value, resource_id: rid, permission: newPerm.value },
-    ]
-    themePerms.value = await setThemePermissions(selected.value.id, next)
-    newId.value = ''
-    message.value = '主题默认权限已更新'
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '更新权限失败'
-  } finally {
-    saving.value = false
-  }
-}
-
-async function removeThemePerm(record: ThemePermissionRecord) {
-  if (!selected.value) return
-  saving.value = true
-  error.value = null
-  try {
-    const next: PermissionItemInput[] = themePerms.value
-      .filter((p) => p.id !== record.id)
-      .map((p) => ({
-        resource_type: p.resource_type as ResourceType,
-        resource_id: p.resource_id,
-        permission: p.permission as PermissionValue,
-      }))
-    themePerms.value = await setThemePermissions(selected.value.id, next)
-    message.value = '已移除'
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '移除失败'
-  } finally {
-    saving.value = false
-  }
-}
-
 function onSelectTheme(val: string) {
   creating.value = false
   selectedId.value = Number(val)
@@ -457,57 +380,11 @@ function onSelectTheme(val: string) {
       </div>
 
       <h4 class="sub-title">主题默认资源 ACL</h4>
-      <p class="section-hint">对绑定本主题的用户生效；用户覆盖优先于此处规则。</p>
-      <div v-if="permsLoading" class="loading">加载权限…</div>
-      <table v-else-if="themePerms.length" class="user-table">
-        <thead>
-          <tr>
-            <th>类型</th>
-            <th>资源 ID</th>
-            <th>权限</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="p in themePerms" :key="p.id">
-            <td>{{ p.resource_type }}</td>
-            <td>{{ p.resource_id }}</td>
-            <td>{{ p.permission }}</td>
-            <td>
-              <button
-                type="button"
-                class="danger-btn"
-                :disabled="saving"
-                @click="removeThemePerm(p)"
-              >
-                移除
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-else class="section-hint">暂无主题默认 ACL（开放模式下等同全量可见）。</p>
-      <div class="perm-form">
-        <AppSelect
-          v-model="newType"
-          :options="[
-            { label: '图层', value: 'layer' },
-            { label: '工作流', value: 'workflow' },
-            { label: '数据源', value: 'data_source' },
-          ]"
-        />
-        <input v-model="newId" type="text" placeholder="resource_id" />
-        <AppSelect
-          v-model="newPerm"
-          :options="[
-            { label: '允许', value: 'allow' },
-            { label: '拒绝', value: 'deny' },
-          ]"
-        />
-        <button type="button" class="secondary-btn" :disabled="saving" @click="addThemePerm">
-          添加
-        </button>
-      </div>
+      <p class="section-hint">
+        对绑定本主题的用户生效；用户覆盖优先于此处规则。支持图层 / 图层分组 / 工作流 /
+        数据源——图层分组规则对其成员图层生效（图层级记录优先）。
+      </p>
+      <ResourceAclEditor :mode="{ kind: 'theme', themeId: selected.id }" />
     </div>
   </section>
 </template>
@@ -548,8 +425,7 @@ function onSelectTheme(val: string) {
 
 .toolbar-row,
 .actions-row,
-.logo-row,
-.perm-form {
+.logo-row {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
@@ -642,19 +518,6 @@ function onSelectTheme(val: string) {
   letter-spacing: 0.02em;
 }
 
-.user-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--font-size-caption);
-}
-
-.user-table th,
-.user-table td {
-  text-align: left;
-  padding: 0.4rem 0.45rem;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
 .primary-btn,
 .secondary-btn,
 .danger-btn {
@@ -692,10 +555,5 @@ function onSelectTheme(val: string) {
 .danger-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
-}
-
-.loading {
-  font-size: var(--font-size-caption);
-  color: var(--text-muted);
 }
 </style>

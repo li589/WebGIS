@@ -185,7 +185,8 @@ function onReducedMotionChange(event: Event) {
     <section class="settings-section">
       <h3 class="section-title">动效偏好</h3>
       <p class="section-hint">
-        开启「减少动效」后将缩短按钮、对话框、面板入场与拖拽反馈等过渡；全局加载指示（启动地球 / 顶栏进度条）仍保留轻量运动以免看起来像卡死。适合低性能设备或对动效敏感的用户。未手动设置时跟随系统「减少动画」偏好。
+        开启「减少动效」后将缩短按钮、对话框、面板入场与拖拽反馈等过渡；全局加载指示（启动地球 /
+        顶栏进度条）仍保留轻量运动以免看起来像卡死。适合低性能设备或对动效敏感的用户。未手动设置时跟随系统「减少动画」偏好。
       </p>
       <label class="toggle-row">
         <input type="checkbox" :checked="prefersReducedMotion" @change="onReducedMotionChange" />

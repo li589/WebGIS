@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
-from app.api.deps import check_resource_access, get_request_user
+from app.api.deps import check_resource_access, get_request_user, require_admin
 from app.core.config import settings
 from app.api.error_codes import AUTH_ERROR, ApiError
 from app.services.crs import crs_transformer
@@ -19,6 +19,10 @@ from app.services.layer_catalog import (
     get_layer_catalog,
     get_layer_category_response,
     get_layer_descriptor,
+)
+from app.services.layer_group_repository import (
+    LayerGroupError,
+    get_layer_group_repository,
 )
 from app.services.overlay_registry import (
     get_overlay_spec,
@@ -29,7 +33,12 @@ from app.services.workflow_request_resolver import describe_layer_run_readiness
 from shared.contracts.api_contracts import (
     LayerAssetStateResponse,
     LayerCatalogResponse,
+    LayerCategoryDef,
     LayerCategoryResponse,
+    LayerGroupCreateRequest,
+    LayerGroupMembersRequest,
+    LayerGroupReorderRequest,
+    LayerGroupUpdateRequest,
     LayerLifecycleResponse,
     LayerLifecycleRunSummary,
     LayerOnlineSyncRequest,
@@ -167,7 +176,105 @@ def list_layer_categories() -> LayerCategoryResponse:
 
     前端运行时消费此端点获取分类样式，消除前后端分类定义双写。
     前端 ``LAYER_CATEGORIES`` 静态表仅在 API 不可用时作离线兜底。
+    图层平台 P1：返回种子 ⊕ 运行时管理分组（含 position / is_custom）。
     """
+    return get_layer_category_response()
+
+
+# ── 图层平台 P1：分组运行时管理（管理员） ────────────────────────────────────
+#
+# 种子分组来自 catalog_seeds/layer_categories.json（可改名/样式，不可删除）；
+# 自建分组完全 CRUD。图层→分组归属走 layer_group_assignments 覆盖，
+# 种子 JSON 永不被运行时写操作修改（codegen / drift check 口径不变）。
+
+
+def _group_error(exc: LayerGroupError) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@router.post("/layers/categories", tags=["catalog"], response_model=LayerCategoryDef)
+def create_layer_group(
+    payload: LayerGroupCreateRequest, _admin=Depends(require_admin)
+) -> LayerCategoryDef:
+    """新建自定义分组（追加到分组序列末尾）。"""
+    try:
+        record = get_layer_group_repository().create_group(
+            payload.id,
+            payload.name,
+            icon=payload.icon,
+            accent_color=payload.accent_color,
+            chip_tone=payload.chip_tone,
+            sub_categories=payload.sub_categories,
+        )
+    except LayerGroupError as exc:
+        raise _group_error(exc) from exc
+    return LayerCategoryDef.model_validate(record.to_category_def_dict())
+
+
+@router.patch(
+    "/layers/categories/{group_id}", tags=["catalog"], response_model=LayerCategoryDef
+)
+def update_layer_group(
+    group_id: str, payload: LayerGroupUpdateRequest, _admin=Depends(require_admin)
+) -> LayerCategoryDef:
+    """修改分组名称 / 样式 / 子分类（种子组与自建组均可）。"""
+    try:
+        record = get_layer_group_repository().update_group(
+            group_id,
+            name=payload.name,
+            icon=payload.icon,
+            accent_color=payload.accent_color,
+            chip_tone=payload.chip_tone,
+            sub_categories=payload.sub_categories,
+        )
+    except LayerGroupError as exc:
+        raise _group_error(exc) from exc
+    return LayerCategoryDef.model_validate(record.to_category_def_dict())
+
+
+@router.delete(
+    "/layers/categories/{group_id}",
+    tags=["catalog"],
+    response_model=LayerCategoryResponse,
+)
+def delete_layer_group(
+    group_id: str, _admin=Depends(require_admin)
+) -> LayerCategoryResponse:
+    """删除自定义分组（种子组拒绝）；组内成员关系随之解除，图层回落到种子分类。"""
+    try:
+        get_layer_group_repository().delete_group(group_id)
+    except LayerGroupError as exc:
+        raise _group_error(exc) from exc
+    return get_layer_category_response()
+
+
+@router.put(
+    "/layers/categories/order", tags=["catalog"], response_model=LayerCategoryResponse
+)
+def reorder_layer_groups(
+    payload: LayerGroupReorderRequest, _admin=Depends(require_admin)
+) -> LayerCategoryResponse:
+    """按给定 id 顺序重排分组（图层库展示顺序）。"""
+    try:
+        get_layer_group_repository().reorder_groups(payload.order)
+    except LayerGroupError as exc:
+        raise _group_error(exc) from exc
+    return get_layer_category_response()
+
+
+@router.put(
+    "/layers/categories/{group_id}/members",
+    tags=["catalog"],
+    response_model=LayerCategoryResponse,
+)
+def set_layer_group_members(
+    group_id: str, payload: LayerGroupMembersRequest, _admin=Depends(require_admin)
+) -> LayerCategoryResponse:
+    """全量替换分组内图层成员（layer_id 列表）；受影响图层的 catalog category 同步更新。"""
+    try:
+        get_layer_group_repository().set_layer_assignments(group_id, payload.layer_ids)
+    except LayerGroupError as exc:
+        raise _group_error(exc) from exc
     return get_layer_category_response()
 
 

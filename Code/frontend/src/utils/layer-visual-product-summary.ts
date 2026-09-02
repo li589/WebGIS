@@ -61,18 +61,13 @@ export function buildLayerVisualProductSummary(input: {
     catalogItem?.name ||
     '—'
   const unit =
-    symbologyUnit?.trim() ||
-    catalogItem?.metricUnit?.trim() ||
-    layer.metricLabel?.trim() ||
-    '—'
+    symbologyUnit?.trim() || catalogItem?.metricUnit?.trim() || layer.metricLabel?.trim() || '—'
   const resolution = extractResolutionLabel(
     catalogItem?.description,
     catalogItem?.runReadinessSummary,
     layer.description,
     layer.runReadinessSummary,
-    layer.importedRasterNativeStep
-      ? `步长 ${layer.importedRasterNativeStep}`
-      : undefined,
+    layer.importedRasterNativeStep ? `步长 ${layer.importedRasterNativeStep}` : undefined,
   )
   const dataSourceMode = formatLayerDataSourceMode(sourceRouteKey)
   return { productName, unit, resolution, dataSourceMode }

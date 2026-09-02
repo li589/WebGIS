@@ -280,7 +280,9 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
               catalogId: layer.catalogId,
             }),
         category: layer.isAdminBoundary ? 'boundary' : item.category,
-        description: layer.isAdminBoundary ? '全球省/州级行政区边界叠加层（Natural Earth）。' : item.description,
+        description: layer.isAdminBoundary
+          ? '全球省/州级行政区边界叠加层（Natural Earth）。'
+          : item.description,
         engine: layer.isAdminBoundary ? 'builtin' : item.engine,
         supportsTime: item.supportsTime,
         runReadiness: item.runReadiness,

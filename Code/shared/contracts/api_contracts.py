@@ -120,8 +120,30 @@ class LayerSourceDef(BaseModel):
 
 
 class LayerCategoryDef(BaseModel):
-    """X1: 图层分类定义 — 后端下发，消除前后端分类双写。"""
+    """X1: 图层分类定义 — 后端下发，消除前后端分类双写。
+
+    图层平台 P1：分组支持运行时管理（种子 ⊕ layer_groups 表），
+    ``position`` 为全局排序键（种子组按文件序，自定义组追加在后），
+    ``is_custom`` 标记管理员自建分组（可删除；种子组仅可改名/样式）。
+    """
     id: str
+    name: str
+    icon: str | None = None
+    accent_color: str | None = None
+    chip_tone: str | None = None
+    sub_categories: list[str] = Field(default_factory=list)
+    position: float | None = None
+    is_custom: bool = False
+
+
+class LayerCategoryResponse(BaseModel):
+    items: list[LayerCategoryDef]
+
+
+class LayerGroupCreateRequest(BaseModel):
+    """管理员自建图层分组。"""
+    id: str
+    """分组标识（小写字母/数字/-/_，≤64 字符，全局唯一）。"""
     name: str
     icon: str | None = None
     accent_color: str | None = None
@@ -129,8 +151,23 @@ class LayerCategoryDef(BaseModel):
     sub_categories: list[str] = Field(default_factory=list)
 
 
-class LayerCategoryResponse(BaseModel):
-    items: list[LayerCategoryDef]
+class LayerGroupUpdateRequest(BaseModel):
+    """修改分组（名称/样式/子分类）；种子组与自定义组均可改。"""
+    name: str | None = None
+    icon: str | None = None
+    accent_color: str | None = None
+    chip_tone: str | None = None
+    sub_categories: list[str] | None = None
+
+
+class LayerGroupReorderRequest(BaseModel):
+    """按给定 id 顺序重排分组（未列出的分组保持相对顺序追加在后）。"""
+    order: list[str]
+
+
+class LayerGroupMembersRequest(BaseModel):
+    """设置分组内图层成员（layer_id 全量替换该分组成员关系）。"""
+    layer_ids: list[str]
 
 
 class OnlineTemporalCapability(BaseModel):

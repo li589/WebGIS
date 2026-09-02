@@ -9,6 +9,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { useDrawStore, type DrawFeature } from '@/stores/draw-store'
+import { scopedStorageKey } from '@/services/user-local-isolation'
+
+const DRAFT_KEY = () => scopedStorageKey('geo:draw-draft:v1')
 
 function feature(name: string, lng = 100, lat = 30): DrawFeature {
   return {
@@ -26,6 +29,7 @@ function stubStorage() {
     removeItem: (k: string) => storage.delete(k),
   })
   vi.stubGlobal('window', {
+    location: { origin: 'http://test.local' },
     addEventListener: (name: string, fn: never) => (listeners[name] ??= []).push(fn),
     removeEventListener: () => undefined,
   })
@@ -165,7 +169,7 @@ describe('草稿持久化', () => {
     store.addFeature(feature('a'))
     store.persistDraft()
 
-    const raw = storage.get('geo:draw-draft:v1')
+    const raw = storage.get(DRAFT_KEY())
     expect(raw).toBeTruthy()
     const draft = JSON.parse(raw!) as { version: number; draftLayerName: string }
     expect(draft.version).toBe(1)
@@ -173,7 +177,7 @@ describe('草稿持久化', () => {
 
     store.clearAll()
     store.persistDraft()
-    expect(storage.has('geo:draw-draft:v1')).toBe(false)
+    expect(storage.has(DRAFT_KEY())).toBe(false)
   })
 
   it('编辑图层会话即使无要素也持久化（保留 editingLayerId）', () => {
@@ -181,7 +185,7 @@ describe('草稿持久化', () => {
     const store = useDrawStore()
     store.beginEditLayer('layer-9', [])
     store.persistDraft()
-    const draft = JSON.parse(storage.get('geo:draw-draft:v1')!) as { editingLayerId: string | null }
+    const draft = JSON.parse(storage.get(DRAFT_KEY())!) as { editingLayerId: string | null }
     expect(draft.editingLayerId).toBe('layer-9')
   })
 
@@ -192,9 +196,9 @@ describe('草稿持久化', () => {
     store.beginDrawSession('防抖')
     store.addFeature(feature('a'))
     store.scheduleDraftPersist()
-    expect(storage.has('geo:draw-draft:v1')).toBe(false)
+    expect(storage.has(DRAFT_KEY())).toBe(false)
     vi.advanceTimersByTime(400)
-    expect(storage.has('geo:draw-draft:v1')).toBe(true)
+    expect(storage.has(DRAFT_KEY())).toBe(true)
     vi.useRealTimers()
   })
 
@@ -205,7 +209,7 @@ describe('草稿持久化', () => {
     store.beginDrawSession('监听')
     store.addFeature(feature('a'))
     await vi.advanceTimersByTimeAsync(400)
-    expect(storage.has('geo:draw-draft:v1')).toBe(true)
+    expect(storage.has(DRAFT_KEY())).toBe(true)
     vi.useRealTimers()
   })
 
@@ -224,7 +228,7 @@ describe('草稿持久化', () => {
     expect(store2.draftLayerName).toBe('恢复')
     expect(store2.restoreDraft()).toBe(false)
 
-    storage.set('geo:draw-draft:v1', JSON.stringify({ version: 2 }))
+    storage.set(DRAFT_KEY(), JSON.stringify({ version: 2 }))
     setActivePinia(createPinia())
     const store3 = useDrawStore()
     expect(store3.restoreDraft()).toBe(false)

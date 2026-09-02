@@ -105,9 +105,7 @@ def _hdf_file_readable(path: Path) -> bool:
         return False
 
 
-def _local_download_ok(
-    path: Path, *, expected_bytes: int | None = None
-) -> bool:
+def _local_download_ok(path: Path, *, expected_bytes: int | None = None) -> bool:
     """本地成品是否可跳过重下：非空 +（可选）字节数一致 + HDF 可读。"""
     try:
         if not path.is_file():
@@ -655,7 +653,9 @@ def _fetch_from_nas(
         local_path = target_dir / remote_name
         if _local_download_ok(local_path):
             done_count += 1
-            _progress_cb(done_count, total_files, downloaded_bytes, remote_name, skipped=True)
+            _progress_cb(
+                done_count, total_files, downloaded_bytes, remote_name, skipped=True
+            )
             last_local_path = local_path
             continue
         _unlink_incomplete(local_path)

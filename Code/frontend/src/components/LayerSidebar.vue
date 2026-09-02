@@ -11,6 +11,7 @@ import { computed, nextTick, ref, watch, onMounted } from 'vue'
 import { Diamond } from './ui/icons'
 
 import { useLayerWorkspace, useLayerLifecycle, useWorkflowRun } from '../stores/layers/selectors'
+import { useAuthStore } from '../stores/auth'
 import type { ActiveLayerDisplay } from '../stores/layers/types'
 import { deriveDataStatus, normalizeRunGroupMemberStatus } from '../utils/layer-data-status'
 import { resolveCategoryDisplayName } from '../stores/layers/catalog'
@@ -37,6 +38,7 @@ import { useSidebarContextMenu } from './layer-sidebar/useSidebarContextMenu'
 // ── 子组件 ─────────────────────────────────────────────────────────────────
 import LayerSidebarHeader from './layer-sidebar/LayerSidebarHeader.vue'
 import LayerSidebarLibrary from './layer-sidebar/LayerSidebarLibrary.vue'
+import LayerGroupManagerDialog from './layer-sidebar/LayerGroupManagerDialog.vue'
 import LayerSidebarActive from './layer-sidebar/LayerSidebarActive.vue'
 import LayerSidebarContextMenu from './layer-sidebar/LayerSidebarContextMenu.vue'
 
@@ -74,6 +76,10 @@ const { runLayerGroups } = workflowRun
 const lifecycle = useLayerLifecycle()
 
 const layerCategories = workspace.layerCategories
+
+// ── 图层平台 P1：分组管理入口（管理员） ────────────────────────────────────
+const authStore = useAuthStore()
+const groupManagerOpen = ref(false)
 
 // ── 侧栏 composable 的 layers 窄依赖（P3 收口：不再传递整店实例）──────────
 const sidebarLayersDeps: SidebarLayersDeps = {
@@ -353,7 +359,7 @@ function getCatalogSourceSummary(catalogId: string): string {
 // ── 分类辅助 ─────────────────────────────────────────────────────────────────
 
 function getCategoryMeta(categoryId: string) {
-  return layerCategories.find((c) => c.id === categoryId)
+  return layerCategories.value.find((c) => c.id === categoryId)
 }
 
 function getCategoryName(categoryId: string): string {
@@ -557,6 +563,8 @@ onMounted(() => {
       :get-catalog-source-summary="getCatalogSourceSummary"
       :get-primary-source-name="getPrimarySourceName"
       :supports-online-temporal="supportsOnlineTemporal"
+      :can-manage-groups="authStore.isAdmin"
+      @open-group-manager="groupManagerOpen = true"
       @update:search-query="search.searchQuery.value = $event"
       @update:selected-sub-category="search.selectedSubCategory.value = $event"
       @ensure-weather-providers="weatherProviders.ensureWeatherProviders"
@@ -622,6 +630,8 @@ onMounted(() => {
       :context-menu-groups="ctxMenu.contextMenuGroups.value"
       @handle-context-action="ctxMenu.handleContextAction"
     />
+    <!-- ── 图层平台 P1：分组管理对话框（管理员） ─────────────────────── -->
+    <LayerGroupManagerDialog :open="groupManagerOpen" @close="groupManagerOpen = false" />
   </aside>
 </template>
 

@@ -25,13 +25,10 @@ import {
   messageImpliesTerminalNode,
   extractFailureHints,
 } from '../../utils/workflow-operational-log'
+import { clearAttachRetry, scheduleSucceededAttachRetry } from './workflow-attach-retry'
 import type { JobLayerItem, NodeProgress } from './types'
 
 export const EVENT_POLL_ACTIVE_INTERVAL_MS = 1200
-
-/** 终态 succeeded 但首次 attach 为空时的延迟重试（物化竞态 / 会话瞬断）。 */
-const SUCCEEDED_ATTACH_RETRY_MS = 4_000
-const succeededAttachRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 export const EVENT_POLL_IDLE_INTERVAL_MS = 2600
 export const STATUS_SYNC_INTERVAL_MS = 9000
 /** 无新事件且状态同步后仍非终态时，才判为“事件等待超时”。长批（omega_sf 等）可数小时。 */
@@ -83,29 +80,6 @@ export interface WorkflowPollerDeps {
   ) => Promise<JobLayerItem>
 }
 
-function scheduleSucceededAttachRetry(
-  runId: string,
-  catalogId: string,
-  resultRefs: unknown,
-  deps: WorkflowPollerDeps,
-) {
-  if (succeededAttachRetryTimers.has(runId)) return
-  succeededAttachRetryTimers.set(
-    runId,
-    window.setTimeout(() => {
-      succeededAttachRetryTimers.delete(runId)
-      if (deps.isRunDismissed(runId)) return
-      void deps
-        .attachAlgorithmProductOverlays(resultRefs, catalogId, runId, { forceBind: true })
-        .then((boundCount) => {
-          if (boundCount > 0) {
-            deps.cleanupUnproducedRunLayers(runId, { succeeded: true })
-          }
-        })
-    }, SUCCEEDED_ATTACH_RETRY_MS),
-  )
-}
-
 export function createWorkflowPoller(deps: WorkflowPollerDeps) {
   const workflowPollingHandles = new Map<string, number>()
   const workflowLastStatusSyncAt = new Map<string, number>()
@@ -121,6 +95,7 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
       workflowPollingHandles.delete(jobId)
     }
     workflowLastStatusSyncAt.delete(jobId)
+    clearAttachRetry(jobId)
   }
 
   /** 渐进块提交事件的副作用 + 状态归并（纯转换，依赖经 deps 注入） */
@@ -516,7 +491,14 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
               return
             }
             // 物化/绑定失败或竞态空结果：勿清空占位组（否则侧栏变空）。
-            scheduleSucceededAttachRetry(run.run_id, catalogId, run.result_refs, deps)
+            scheduleSucceededAttachRetry({
+              runId: run.run_id,
+              catalogId,
+              resultRefs: run.result_refs,
+              attach: deps.attachAlgorithmProductOverlays,
+              cleanup: deps.cleanupUnproducedRunLayers,
+              isRunDismissed: deps.isRunDismissed,
+            })
           })
       }
       if (

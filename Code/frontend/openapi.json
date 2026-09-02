@@ -595,6 +595,32 @@
         }
       }
     },
+    "/auth/themes/public": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "List Themes Public",
+        "description": "Unauthenticated branding for all product themes (login page theme picker).",
+        "operationId": "list_themes_public_auth_themes_public_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ThemePublicBrand"
+                  },
+                  "type": "array",
+                  "title": "Response List Themes Public Auth Themes Public Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/themes": {
       "get": {
         "tags": [
@@ -1291,7 +1317,7 @@
           "catalog"
         ],
         "summary": "List Layer Categories",
-        "description": "X1: 后端下发图层分类定义（id / name / icon / accent_color / chip_tone）。\n\n前端运行时消费此端点获取分类样式，消除前后端分类定义双写。\n前端 ``LAYER_CATEGORIES`` 静态表仅在 API 不可用时作离线兜底。",
+        "description": "X1: 后端下发图层分类定义（id / name / icon / accent_color / chip_tone）。\n\n前端运行时消费此端点获取分类样式，消除前后端分类定义双写。\n前端 ``LAYER_CATEGORIES`` 静态表仅在 API 不可用时作离线兜底。\n图层平台 P1：返回种子 ⊕ 运行时管理分组（含 position / is_custom）。",
         "operationId": "list_layer_categories_layers_categories_get",
         "responses": {
           "200": {
@@ -1300,6 +1326,235 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LayerCategoryResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Create Layer Group",
+        "description": "新建自定义分组（追加到分组序列末尾）。",
+        "operationId": "create_layer_group_layers_categories_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LayerGroupCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerCategoryDef"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/layers/categories/{group_id}": {
+      "patch": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Update Layer Group",
+        "description": "修改分组名称 / 样式 / 子分类（种子组与自建组均可）。",
+        "operationId": "update_layer_group_layers_categories__group_id__patch",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LayerGroupUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerCategoryDef"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Delete Layer Group",
+        "description": "删除自定义分组（种子组拒绝）；组内成员关系随之解除，图层回落到种子分类。",
+        "operationId": "delete_layer_group_layers_categories__group_id__delete",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerCategoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/layers/categories/order": {
+      "put": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Reorder Layer Groups",
+        "description": "按给定 id 顺序重排分组（图层库展示顺序）。",
+        "operationId": "reorder_layer_groups_layers_categories_order_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LayerGroupReorderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerCategoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/layers/categories/{group_id}/members": {
+      "put": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Set Layer Group Members",
+        "description": "全量替换分组内图层成员（layer_id 列表）；受影响图层的 catalog category 同步更新。",
+        "operationId": "set_layer_group_members_layers_categories__group_id__members_put",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LayerGroupMembersRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerCategoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -12991,6 +13246,30 @@
               }
             ],
             "title": "Scope"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
           }
         },
         "type": "object",
@@ -14401,7 +14680,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -14415,7 +14694,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -14430,7 +14709,7 @@
           "files": {
             "items": {
               "type": "string",
-              "format": "binary"
+              "contentMediaType": "application/octet-stream"
             },
             "type": "array",
             "title": "Files"
@@ -14446,7 +14725,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           },
           "offset": {
@@ -14471,7 +14750,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -14485,7 +14764,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -14499,7 +14778,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -18168,6 +18447,22 @@
             },
             "type": "array",
             "title": "Sub Categories"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "is_custom": {
+            "type": "boolean",
+            "title": "Is Custom",
+            "default": false
           }
         },
         "type": "object",
@@ -18176,7 +18471,7 @@
           "name"
         ],
         "title": "LayerCategoryDef",
-        "description": "X1: 图层分类定义 — 后端下发，消除前后端分类双写。"
+        "description": "X1: 图层分类定义 — 后端下发，消除前后端分类双写。\n\n图层平台 P1：分组支持运行时管理（种子 ⊕ layer_groups 表），\n``position`` 为全局排序键（种子组按文件序，自定义组追加在后），\n``is_custom`` 标记管理员自建分组（可删除；种子组仅可改名/样式）。"
       },
       "LayerCategoryResponse": {
         "properties": {
@@ -18555,6 +18850,164 @@
           "display_name"
         ],
         "title": "LayerDisplayNameBody"
+      },
+      "LayerGroupCreateRequest": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "accent_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Color"
+          },
+          "chip_tone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chip Tone"
+          },
+          "sub_categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sub Categories"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "LayerGroupCreateRequest",
+        "description": "管理员自建图层分组。"
+      },
+      "LayerGroupMembersRequest": {
+        "properties": {
+          "layer_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Layer Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "layer_ids"
+        ],
+        "title": "LayerGroupMembersRequest",
+        "description": "设置分组内图层成员（layer_id 全量替换该分组成员关系）。"
+      },
+      "LayerGroupReorderRequest": {
+        "properties": {
+          "order": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order"
+        ],
+        "title": "LayerGroupReorderRequest",
+        "description": "按给定 id 顺序重排分组（未列出的分组保持相对顺序追加在后）。"
+      },
+      "LayerGroupUpdateRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "accent_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Color"
+          },
+          "chip_tone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chip Tone"
+          },
+          "sub_categories": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sub Categories"
+          }
+        },
+        "type": "object",
+        "title": "LayerGroupUpdateRequest",
+        "description": "修改分组（名称/样式/子分类）；种子组与自定义组均可改。"
       },
       "LayerLifecycleResponse": {
         "properties": {
@@ -19849,6 +20302,7 @@
             "type": "string",
             "enum": [
               "layer",
+              "layer_group",
               "workflow",
               "data_source"
             ],
@@ -23708,6 +24162,13 @@
           "type": {
             "type": "string",
             "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
           }
         },
         "type": "object",

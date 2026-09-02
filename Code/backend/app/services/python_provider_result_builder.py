@@ -1639,7 +1639,10 @@ class PythonProviderResultBuilder:
                     for sub in path.iterdir():
                         if not sub.is_dir() or not sub.name.startswith("run-"):
                             continue
-                        if any(sub.glob("????????_????????.mat")) and sub not in block_dirs:
+                        if (
+                            any(sub.glob("????????_????????.mat"))
+                            and sub not in block_dirs
+                        ):
                             block_dirs.append(sub)
                 for block_dir in block_dirs:
                     for variable, label, palette in (

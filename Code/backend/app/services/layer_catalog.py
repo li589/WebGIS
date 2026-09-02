@@ -335,11 +335,27 @@ def get_layer_categories() -> list[dict[str, Any]]:
         return []
 
 
+def _runtime_layer_groups() -> list[dict[str, Any]]:
+    """Merged seed + admin-managed layer groups (DB-persisted runtime state)."""
+    try:
+        from app.services.layer_group_repository import get_layer_group_repository
+
+        return [
+            record.to_category_def_dict()
+            for record in get_layer_group_repository().list_groups()
+        ]
+    except Exception:
+        logger.exception("Failed to load runtime layer groups; falling back to seeds")
+        return get_layer_categories()
+
+
 def get_layer_category_response() -> LayerCategoryResponse:
-    """X1: 返回 LayerCategoryResponse（Pydantic 模型），供 /layers/categories 端点使用。"""
-    raw = get_layer_categories()
+    """X1: 返回 LayerCategoryResponse（Pydantic 模型），供 /layers/categories 端点使用。
+
+    分组 = 种子（layer_categories.json）⊕ 运行时管理状态（layer_groups 表）。
+    """
     items: list[LayerCategoryDef] = []
-    for cat in raw:
+    for cat in _runtime_layer_groups():
         try:
             items.append(LayerCategoryDef.model_validate(cat))
         except Exception as exc:
@@ -349,17 +365,42 @@ def get_layer_category_response() -> LayerCategoryResponse:
 
 def get_layer_catalog() -> LayerCatalogResponse:
     items = _load_seed_descriptors()
-    raw_categories = get_layer_categories()
     categories: list[LayerCategoryDef] = []
-    for cat in raw_categories:
+    for cat in _runtime_layer_groups():
         try:
             categories.append(LayerCategoryDef.model_validate(cat))
         except Exception as exc:
             logger.warning("Skipping invalid category entry %s: %s", cat.get("id"), exc)
     return LayerCatalogResponse(
-        items=_apply_remote_layer_data_uris(items),
+        items=_apply_layer_group_assignments(_apply_remote_layer_data_uris(items)),
         categories=categories,
     )
+
+
+def _apply_layer_group_assignments(
+    items: list[LayerDescriptor],
+) -> list[LayerDescriptor]:
+    """Apply admin layer→group assignment overrides to descriptor categories.
+
+    Seed JSON stays untouched; overrides live in ``layer_group_assignments``.
+    """
+    try:
+        from app.services.layer_group_repository import get_layer_group_repository
+
+        assignments = get_layer_group_repository().list_assignments()
+    except Exception:
+        return items
+    if not assignments:
+        return items
+    return [
+        (
+            item.model_copy(update={"category": assignments[item.layer_id]})
+            if item.layer_id in assignments
+            and assignments[item.layer_id] != item.category
+            else item
+        )
+        for item in items
+    ]
 
 
 def get_layer_descriptor(layer_id: str) -> LayerDescriptor | None:

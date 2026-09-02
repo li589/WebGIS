@@ -559,6 +559,44 @@ describe("upsertJobLayer", () => {
     expect(group.dissolvable).toBe(true);
     expect(group.message).toBe("提交失败");
   });
+
+  it("isAnalysisToolRun: 不调用 rememberTrackedWorkflowRun / updateRunGroupForCatalog", () => {
+    const { slice, calls } = setup();
+    activeLayers.push(
+      makeLayer({
+        catalogId: "cat-main",
+        jobLayer: makeJob({ jobId: "run-main", status: "running" }),
+        dataState: "real",
+      }),
+    );
+    slice.upsertJobLayer(
+      "cat-gis",
+      makeJob({
+        jobId: "run-gis",
+        status: "running",
+        isAnalysisToolRun: true,
+      }),
+    );
+    expect(calls.rememberTrackedWorkflowRun).not.toHaveBeenCalled();
+    expect(slice.runLayerGroups.value).toHaveLength(0);
+    const mainLayer = activeLayers.find((l) => l.catalogId === "cat-main");
+    expect(mainLayer?.jobLayer?.jobId).toBe("run-main");
+  });
+
+  it("isAnalysisToolRun: failed 终态不触发 cleanupUnproducedRunLayers", () => {
+    const { slice, calls } = setup();
+    const cleanupSpy = vi.spyOn(slice, "cleanupUnproducedRunLayers");
+    slice.upsertJobLayer(
+      "cat-gis",
+      makeJob({
+        jobId: "run-gis-fail",
+        status: "failed",
+        isAnalysisToolRun: true,
+      }),
+    );
+    expect(cleanupSpy).not.toHaveBeenCalled();
+    expect(calls.removeLayer).not.toHaveBeenCalled();
+  });
 });
 
 // ── buildWorkflowPayloadForCatalog ────────────────────────────────────────────
@@ -960,7 +998,7 @@ describe("attachAlgorithmProductOverlays", () => {
     expect(count).toBe(0);
     // 延迟确认窗口内不写横幅（succeeded 事件先到、产物登记后到的竞态防护）
     expect(slice.workflowError.value).toBeNull();
-    await vi.advanceTimersByTimeAsync(2_500);
+    await vi.advanceTimersByTimeAsync(5_500);
     expect(slice.workflowError.value).toBe(WORKFLOW_COPY.noMapLayers);
     vi.useRealTimers();
   });

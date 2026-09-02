@@ -229,6 +229,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/themes/public": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Themes Public
+         * @description Unauthenticated branding for all product themes (login page theme picker).
+         */
+        get: operations["list_themes_public_auth_themes_public_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/themes": {
         parameters: {
             query?: never;
@@ -440,9 +460,78 @@ export interface paths {
          *
          *     前端运行时消费此端点获取分类样式，消除前后端分类定义双写。
          *     前端 ``LAYER_CATEGORIES`` 静态表仅在 API 不可用时作离线兜底。
+         *     图层平台 P1：返回种子 ⊕ 运行时管理分组（含 position / is_custom）。
          */
         get: operations["list_layer_categories_layers_categories_get"];
         put?: never;
+        /**
+         * Create Layer Group
+         * @description 新建自定义分组（追加到分组序列末尾）。
+         */
+        post: operations["create_layer_group_layers_categories_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/layers/categories/{group_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Layer Group
+         * @description 删除自定义分组（种子组拒绝）；组内成员关系随之解除，图层回落到种子分类。
+         */
+        delete: operations["delete_layer_group_layers_categories__group_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Layer Group
+         * @description 修改分组名称 / 样式 / 子分类（种子组与自建组均可）。
+         */
+        patch: operations["update_layer_group_layers_categories__group_id__patch"];
+        trace?: never;
+    };
+    "/layers/categories/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder Layer Groups
+         * @description 按给定 id 顺序重排分组（图层库展示顺序）。
+         */
+        put: operations["reorder_layer_groups_layers_categories_order_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/layers/categories/{group_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Layer Group Members
+         * @description 全量替换分组内图层成员（layer_id 列表）；受影响图层的 catalog category 同步更新。
+         */
+        put: operations["set_layer_group_members_layers_categories__group_id__members_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -4687,6 +4776,10 @@ export interface components {
             profile_id?: string | null;
             /** Scope */
             scope?: ("global" | "personal") | null;
+            /** Base Url */
+            base_url?: string | null;
+            /** Api Key */
+            api_key?: string | null;
         };
         /** AgentModelsRefreshResponse */
         AgentModelsRefreshResponse: {
@@ -5281,18 +5374,12 @@ export interface components {
         };
         /** Body_import_document_multipart_import_document_multipart_post */
         Body_import_document_multipart_import_document_multipart_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /** Body_import_raster_import_raster_post */
         Body_import_raster_import_raster_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /** Body_import_vector_multipart_import_vector_multipart_post */
@@ -5302,36 +5389,24 @@ export interface components {
         };
         /** Body_upload_chunk_import_upload__upload_id__chunk_post */
         Body_upload_chunk_import_upload__upload_id__chunk_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
             /** Offset */
             offset?: number | null;
         };
         /** Body_upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post */
         Body_upload_chunk_indexed_import_upload__upload_id__chunk__chunk_index__post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /** Body_upload_report_feedback_api_reports_post */
         Body_upload_report_feedback_api_reports_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /** Body_upload_theme_logo_auth_themes__theme_id__logo_post */
         Body_upload_theme_logo_auth_themes__theme_id__logo_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
             file: string;
         };
         /** BoundingBox */
@@ -6725,6 +6800,10 @@ export interface components {
         /**
          * LayerCategoryDef
          * @description X1: 图层分类定义 — 后端下发，消除前后端分类双写。
+         *
+         *     图层平台 P1：分组支持运行时管理（种子 ⊕ layer_groups 表），
+         *     ``position`` 为全局排序键（种子组按文件序，自定义组追加在后），
+         *     ``is_custom`` 标记管理员自建分组（可删除；种子组仅可改名/样式）。
          */
         LayerCategoryDef: {
             /** Id */
@@ -6739,6 +6818,13 @@ export interface components {
             chip_tone?: string | null;
             /** Sub Categories */
             sub_categories?: string[];
+            /** Position */
+            position?: number | null;
+            /**
+             * Is Custom
+             * @default false
+             */
+            is_custom: boolean;
         };
         /** LayerCategoryResponse */
         LayerCategoryResponse: {
@@ -6859,6 +6945,56 @@ export interface components {
         LayerDisplayNameBody: {
             /** Display Name */
             display_name: string;
+        };
+        /**
+         * LayerGroupCreateRequest
+         * @description 管理员自建图层分组。
+         */
+        LayerGroupCreateRequest: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Icon */
+            icon?: string | null;
+            /** Accent Color */
+            accent_color?: string | null;
+            /** Chip Tone */
+            chip_tone?: string | null;
+            /** Sub Categories */
+            sub_categories?: string[];
+        };
+        /**
+         * LayerGroupMembersRequest
+         * @description 设置分组内图层成员（layer_id 全量替换该分组成员关系）。
+         */
+        LayerGroupMembersRequest: {
+            /** Layer Ids */
+            layer_ids: string[];
+        };
+        /**
+         * LayerGroupReorderRequest
+         * @description 按给定 id 顺序重排分组（未列出的分组保持相对顺序追加在后）。
+         */
+        LayerGroupReorderRequest: {
+            /** Order */
+            order: string[];
+        };
+        /**
+         * LayerGroupUpdateRequest
+         * @description 修改分组（名称/样式/子分类）；种子组与自定义组均可改。
+         */
+        LayerGroupUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Icon */
+            icon?: string | null;
+            /** Accent Color */
+            accent_color?: string | null;
+            /** Chip Tone */
+            chip_tone?: string | null;
+            /** Sub Categories */
+            sub_categories?: string[] | null;
         };
         /**
          * LayerLifecycleResponse
@@ -7476,7 +7612,7 @@ export interface components {
              * Resource Type
              * @enum {string}
              */
-            resource_type: "layer" | "workflow" | "data_source";
+            resource_type: "layer" | "layer_group" | "workflow" | "data_source";
             /** Resource Id */
             resource_id: string;
             /**
@@ -9210,6 +9346,10 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
         /** VectorImportBody */
         VectorImportBody: {
@@ -10823,6 +10963,26 @@ export interface operations {
             };
         };
     };
+    list_themes_public_auth_themes_public_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemePublicBrand"][];
+                };
+            };
+        };
+    };
     list_themes_auth_themes_get: {
         parameters: {
             query?: never;
@@ -11353,6 +11513,173 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LayerCategoryResponse"];
+                };
+            };
+        };
+    };
+    create_layer_group_layers_categories_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LayerGroupCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayerCategoryDef"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_layer_group_layers_categories__group_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayerCategoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_layer_group_layers_categories__group_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LayerGroupUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayerCategoryDef"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_layer_groups_layers_categories_order_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LayerGroupReorderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayerCategoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_layer_group_members_layers_categories__group_id__members_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LayerGroupMembersRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayerCategoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

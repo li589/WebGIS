@@ -11,6 +11,10 @@ import { safeLog } from '../log'
 import { extractOverlayImportsFromResultRefs, normalizeProductTag } from './result-adapter'
 import { buildImportedRasterPayload } from './imported-raster'
 import { isOverlayDismissed, isRunDismissed } from './workspace-persist'
+import {
+  EMPTY_OVERLAY_CONFIRM_AFTER_RETRY_MS,
+  hasPendingAttachRetry,
+} from './workflow-attach-retry'
 import { formatProgressShell, pickLatestNodeProgress } from '../../utils/workflow-progress-format'
 import { isTerminalStatus } from './catalog-builders'
 import { WORKFLOW_COPY } from '../../ui-copy/workflow'
@@ -483,11 +487,13 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
    * 产物登记与 succeeded 事件存在传播竞态——直接写横幅会误报（图层稍后到达）。
    */
   function scheduleEmptyOverlayConfirm(runId: string, emptyMsg: string) {
+    if (hasPendingAttachRetry(runId)) return
     if (emptyOverlayConfirmTimers.has(runId)) return
     emptyOverlayConfirmTimers.set(
       runId,
       setTimeout(() => {
         emptyOverlayConfirmTimers.delete(runId)
+        if (hasPendingAttachRetry(runId)) return
         // 重查前若图层已物化（其它路径清了横幅/绑定了图层）则不再写
         if (workflowError.value === WORKFLOW_COPY.noMapLayers) return
         void (async () => {
@@ -499,7 +505,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           }
           setTransientWorkflowError(emptyMsg)
         })()
-      }, 2500),
+      }, EMPTY_OVERLAY_CONFIRM_AFTER_RETRY_MS),
     )
   }
 

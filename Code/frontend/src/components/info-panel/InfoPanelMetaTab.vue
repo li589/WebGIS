@@ -122,7 +122,9 @@ function enterInspectTools() {
             : ANALYSIS_COPY.overviewTitleFull
       }}
     </h3>
-    <p v-if="simplifyMetaForActiveJob">{{ workflowStageCopy || latestEventMessage || analysisSummary }}</p>
+    <p v-if="simplifyMetaForActiveJob">
+      {{ workflowStageCopy || latestEventMessage || analysisSummary }}
+    </p>
     <p v-else>{{ analysisSummary }}</p>
     <div class="overview-quick-actions">
       <AppButton
@@ -329,7 +331,10 @@ function enterInspectTools() {
           <div class="job-node-progress-bar">
             <div class="job-node-progress-fill" :style="{ width: `${np.progress}%` }"></div>
           </div>
-          <p v-if="np.message && !nodeMessageRedundantWithDetail(np)" class="job-node-progress-message">
+          <p
+            v-if="np.message && !nodeMessageRedundantWithDetail(np)"
+            class="job-node-progress-message"
+          >
             {{ np.message }}
           </p>
           <p

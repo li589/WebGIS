@@ -58,9 +58,7 @@ export function formatDownloadProgressDetail(
     const done = detail.downloaded_items ?? total
     if (total != null && done != null) {
       if (phase === 'skipping') {
-        const name = detail.current_item_name
-          ? ` · ${truncateName(detail.current_item_name)}`
-          : ''
+        const name = detail.current_item_name ? ` · ${truncateName(detail.current_item_name)}` : ''
         if (total === 1 || done === total) {
           return `全部跳过 (${done}/${total})`
         }

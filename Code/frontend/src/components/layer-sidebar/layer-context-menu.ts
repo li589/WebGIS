@@ -75,6 +75,8 @@ export interface LayerContextMenuInput {
   isDrawDraft?: boolean
   /** 栅格仅保留「打开导出面板」 */
   rasterExportPanelOnly?: boolean
+  /** 计算组成员且组可拆分时显示「拆分计算组」 */
+  canDissolveGroup?: boolean
 }
 
 const GROUP_LABEL: Record<LayerContextGroupId, string> = {
@@ -250,6 +252,13 @@ export function buildLayerContextMenu(input: LayerContextMenuInput): LayerContex
       id: 'triggerWeatherSync',
       label: LAYERS_COPY.triggerWeatherSync,
       icon: '☁',
+    })
+  }
+  if (input.canDissolveGroup) {
+    workflowItems.push({
+      id: 'dissolveGroup',
+      label: LAYERS_COPY.dissolveGroup,
+      icon: '⧉',
     })
   }
   if (workflowItems.length) {

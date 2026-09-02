@@ -509,7 +509,7 @@ class PermissionRecord(BaseModel):
 
 
 class PermissionItemInput(BaseModel):
-    resource_type: Literal["layer", "workflow", "data_source"]
+    resource_type: Literal["layer", "layer_group", "workflow", "data_source"]
     resource_id: str = Field(min_length=1, max_length=512)
     permission: Literal["allow", "deny"]
 

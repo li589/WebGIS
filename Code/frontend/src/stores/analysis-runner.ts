@@ -24,7 +24,10 @@ import {
   resolveRasterOverlayId,
   resolveVectorBackendId,
 } from '../components/info-panel/tools/tool-layer-capabilities'
-import type { AnalysisChartModel, AnalysisTableModel } from '../components/info-panel/AnalysisResultCharts.vue'
+import type {
+  AnalysisChartModel,
+  AnalysisTableModel,
+} from '../components/info-panel/AnalysisResultCharts.vue'
 
 export type AnalysisRunPhase =
   'idle' | 'queued' | 'submitting' | 'running' | 'succeeded' | 'failed' | 'cancelled'

@@ -27,10 +27,10 @@ const brandAbbr = computed(() => auth.resolvedBrand.abbr || BRAND.abbr)
 const brandShort = computed(() => auth.resolvedBrand.shortName || BRAND.shortName)
 const brandEn = computed(() => auth.resolvedBrand.displayNameEn || BRAND.displayNameEn)
 const brandLogo = computed(() => auth.resolvedBrand.logoUrl)
-const activeLoginThemeSlug = computed(
-  () => auth.loginPreviewSlug || auth.primaryTheme?.slug || 'sgfs',
+const activeLoginThemeSlug = computed(() => auth.loginPreviewSlug || auth.primaryTheme?.slug || '')
+const loginPageStyle = computed(() =>
+  activeLoginThemeSlug.value ? resolveLoginThemeStyle(activeLoginThemeSlug.value) : undefined,
 )
-const loginPageStyle = computed(() => resolveLoginThemeStyle(activeLoginThemeSlug.value))
 const loginThemeSlug = computed({
   get: () => auth.loginPreviewSlug ?? '',
   set: (slug: string) => auth.setLoginPreviewSlug(slug || null),
@@ -44,9 +44,10 @@ const themeSelectOptions = computed(() =>
 )
 
 onMounted(async () => {
-  await Promise.all([auth.loadPrimaryTheme(), auth.loadPublicThemes()])
-  const routeTheme =
-    typeof route.query.theme === 'string' ? route.query.theme : null
+  const loads: Promise<unknown>[] = [auth.loadPublicThemes()]
+  if (!auth.primaryTheme) loads.push(auth.loadPrimaryTheme())
+  await Promise.all(loads)
+  const routeTheme = typeof route.query.theme === 'string' ? route.query.theme : null
   auth.initLoginPreviewSlug(routeTheme)
   if (devHint.value) {
     username.value = devHint.value.username
@@ -80,11 +81,7 @@ async function submit() {
 </script>
 
 <template>
-  <div
-    class="login-page"
-    :data-theme-slug="activeLoginThemeSlug"
-    :style="loginPageStyle"
-  >
+  <div class="login-page" :data-theme-slug="activeLoginThemeSlug" :style="loginPageStyle">
     <div class="login-backdrop" aria-hidden="true">
       <!-- 星点（最底层） -->
       <div class="stars"></div>
@@ -435,7 +432,11 @@ async function submit() {
   height: 360px;
   top: 35%;
   right: 15%;
-  background: radial-gradient(circle, var(--login-glow-warm, rgba(255, 200, 120, 0.08)) 0%, transparent 70%);
+  background: radial-gradient(
+    circle,
+    var(--login-glow-warm, rgba(255, 200, 120, 0.08)) 0%,
+    transparent 70%
+  );
   opacity: 0.5;
 }
 

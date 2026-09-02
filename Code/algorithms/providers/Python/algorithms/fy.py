@@ -248,9 +248,7 @@ def normalize_fy_band_ids(
         for entry in raw:
             if isinstance(entry, str) and ("," in entry or ";" in entry):
                 items.extend(
-                    p.strip()
-                    for p in entry.replace(";", ",").split(",")
-                    if p.strip()
+                    p.strip() for p in entry.replace(";", ",").split(",") if p.strip()
                 )
             else:
                 items.append(entry)

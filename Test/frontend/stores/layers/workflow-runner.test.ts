@@ -104,6 +104,7 @@ function mockBrowserStorage() {
   vi.stubGlobal('localStorage', storage)
   vi.stubGlobal('window', {
     localStorage: storage,
+    location: { origin: 'http://test.local' },
     setTimeout: (fn: () => void, ms?: number) => setTimeout(fn, ms),
     clearTimeout: (id: number) => clearTimeout(id),
     crypto: { randomUUID: () => `uuid-${Math.random().toString(36).slice(2)}` },

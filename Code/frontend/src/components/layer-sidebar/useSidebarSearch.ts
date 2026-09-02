@@ -9,16 +9,24 @@ import type { RuntimeLayerLibraryItem, LayerCategory } from '../../stores/layers
  * providers for visible weather layers whenever the filtered view changes.
  *
  * @param layerLibrary - ComputedRef of the full layer library items
- * @param layerCategories - Static array of layer category definitions
+ * @param layerCategories - 运行时分组列表（Ref：分组改名/自建/重排后实时生效）
  * @param ensureWeatherProviders - Callback to prefetch weather providers for a catalogId
  */
 export function useSidebarSearch(
   layerLibrary: Ref<RuntimeLayerLibraryItem[]>,
-  layerCategories: LayerCategory[],
+  layerCategories: Ref<LayerCategory[]>,
   ensureWeatherProviders: (catalogId: string) => Promise<void>,
 ) {
   const searchQuery = ref('')
-  const expandedCategories = ref<Set<string>>(new Set(layerCategories.map((c) => c.id)))
+  const expandedCategories = ref<Set<string>>(new Set(layerCategories.value.map((c) => c.id)))
+
+  // 图层平台 P1：分组运行时变化——新增分组默认展开，已删除分组收敛
+  watch(layerCategories, (categories) => {
+    const ids = new Set(categories.map((c) => c.id))
+    const next = new Set([...expandedCategories.value].filter((id) => ids.has(id)))
+    for (const id of ids) next.add(id)
+    expandedCategories.value = next
+  })
 
   // ── Filter library items by search ────────────────────────────────────────────
 
@@ -56,7 +64,10 @@ export function useSidebarSearch(
 
   const filteredLibraryByCategory = computed(() => {
     const map = new Map(
-      layerCategories.map((c) => [c.id, { category: c, items: [] as RuntimeLayerLibraryItem[] }]),
+      layerCategories.value.map((c) => [
+        c.id,
+        { category: c, items: [] as RuntimeLayerLibraryItem[] },
+      ]),
     )
     for (const item of filteredLibrary.value) {
       if (map.has(item.category)) {

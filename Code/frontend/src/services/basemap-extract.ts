@@ -9,10 +9,7 @@
  */
 import { importVectorMultipart } from '../data-manager/core/api'
 import { registerImportedVectorLayer } from '../data-manager/adapters/layers'
-import {
-  loadWorldAdmin0Boundaries,
-  loadWorldAdmin1Boundaries,
-} from '../app/admin-boundaries'
+import { loadWorldAdmin0Boundaries, loadWorldAdmin1Boundaries } from '../app/admin-boundaries'
 
 export type RoadClassFilter = 'major' | 'all'
 
@@ -140,11 +137,7 @@ function featureToAdminArea(
     iso_a2?: unknown
     iso_a3?: unknown
   }
-  const adcode =
-    props.adcode ??
-    props.iso_a2 ??
-    props.iso_a3 ??
-    ''
+  const adcode = props.adcode ?? props.iso_a2 ?? props.iso_a3 ?? ''
   return {
     name: typeof props.name === 'string' ? props.name : '未命名行政区',
     adcode: typeof adcode === 'string' || typeof adcode === 'number' ? adcode : '',
@@ -182,10 +175,7 @@ export interface AdminPointLabels {
 }
 
 /** 点查展示用：分别解析省/州与国家名称（国家始终尝试匹配） */
-export async function extractAdminLabelsAt(
-  lng: number,
-  lat: number,
-): Promise<AdminPointLabels> {
+export async function extractAdminLabelsAt(lng: number, lat: number): Promise<AdminPointLabels> {
   const layers = await loadBoundaryLayers()
   let stateName: string | null = null
   let countryName: string | null = null

@@ -6,6 +6,8 @@ import { computed, ref, type ComputedRef, type Ref } from 'vue'
 
 import {
   fetchLayerCatalog,
+  fetchLayerCategories,
+  type LayerCategoryResponse,
   type LayerDescriptor,
   type OnlineTemporalCapability,
 } from '../../services/runtime-api'
@@ -16,11 +18,16 @@ import {
   supportsParticleFlowCapability,
   supportsViewportDrivenRefreshCapability,
 } from '../../services/layer-capabilities'
-import { LAYER_CATEGORIES, LAYER_LIBRARY } from './catalog'
+import {
+  applyResearchGroupCategoryLabel,
+  LAYER_CATEGORIES,
+  LAYER_LIBRARY,
+  setRuntimeCategoryNameOverrides,
+} from './catalog'
 import {
   buildCatalogFallbackItem,
+  buildCategoryIndex,
   buildRuntimeLayerLibraryItem,
-  CATEGORY_INDEX_BY_ID,
   getCatalogDisplayName,
   isBlockedRunReadiness,
 } from './catalog-builders'
@@ -35,6 +42,7 @@ import type {
   ActiveRunLayerGroup,
   JobLayerItem,
   JobStatus,
+  LayerCategory,
   RuntimeLayerLibraryItem,
 } from './types'
 
@@ -49,11 +57,15 @@ export interface CatalogRuntimeSliceDeps {
 export interface CatalogRuntimeSlice {
   runtimeLayerCatalog: Ref<Record<string, LayerDescriptor>>
   runtimeLayerCatalogLoading: Ref<boolean>
+  /** 图层平台 P1：运行时分组（种子⊕管理；空表时回落静态 codegen） */
+  layerCategories: ComputedRef<LayerCategory[]>
   layerLibrary: ComputedRef<RuntimeLayerLibraryItem[]>
   layerLibraryMap: ComputedRef<Map<string, RuntimeLayerLibraryItem>>
   catalogJobStatus: ComputedRef<Map<string, JobStatus>>
   catalogRunReadiness: ComputedRef<Map<string, string>>
   ensureRuntimeLayerCatalog: (force?: boolean) => Promise<void>
+  /** 图层平台 P1：仅刷新分组定义（分组管理对话框保存后调用） */
+  reloadLayerCategories: () => Promise<void>
   getRuntimeLayerDescriptor: (catalogId: string) => LayerDescriptor | null
   resolveBackendLayerId: (catalogId: string) => string
   resolveEffectiveDescriptor: (catalogId: string) => LayerDescriptor | null
@@ -80,9 +92,35 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
   const runtimeLayerCatalogLoading = ref(false)
   let runtimeLayerCatalogRequest: Promise<void> | null = null
 
+  // ── 图层平台 P1：运行时分组（/layers/categories，种子⊕管理状态） ──────────
+  const runtimeLayerCategories = ref<LayerCategory[]>([])
+
+  function applyLayerCategoryResponse(response: LayerCategoryResponse) {
+    const mapped = applyResearchGroupCategoryLabel(
+      response.items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        icon: item.icon ?? '',
+        accentColor: item.accent_color ?? '',
+        chipTone: item.chip_tone ?? '',
+        position: item.position ?? undefined,
+        isCustom: item.is_custom ?? undefined,
+      })),
+    )
+    runtimeLayerCategories.value = mapped
+    setRuntimeCategoryNameOverrides(new Map(mapped.map((c) => [c.id, c.name])))
+  }
+
+  /** 运行时分组（未加载/失败回落静态 codegen 表） */
+  const layerCategories = computed<LayerCategory[]>(() =>
+    runtimeLayerCategories.value.length > 0 ? runtimeLayerCategories.value : LAYER_CATEGORIES,
+  )
+  const categoryIndexById = computed(() => buildCategoryIndex(layerCategories.value))
+
   const layerLibrary = computed<RuntimeLayerLibraryItem[]>(() => {
+    const categories = layerCategories.value
     const allRuntimeItems = Object.values(runtimeLayerCatalog.value).map((descriptor) =>
-      buildRuntimeLayerLibraryItem(descriptor),
+      buildRuntimeLayerLibraryItem(descriptor, categories),
     )
 
     let items: RuntimeLayerLibraryItem[]
@@ -152,7 +190,7 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     }
 
     const outputStore = useWorkflowOutputLayersStore()
-    const researchCategory = LAYER_CATEGORIES.find((c) => c.id === 'research-group')
+    const researchCategory = categories.find((c) => c.id === 'research-group')
     const researchAccent = researchCategory?.accentColor ?? '#ff6f91'
     const researchChip = researchCategory?.chipTone ?? 'rgba(255, 111, 145, 0.16)'
     // 仅滤显示名/localId 污染；sourceWorkflowId 是机器路由键，不进卡片名
@@ -211,8 +249,9 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
           !isEnglishInversionCatalogId(item.catalogId) && !isEnglishInversionCatalogId(item.name),
       )
       .sort((a, b) => {
-        const categoryOrderA = CATEGORY_INDEX_BY_ID.get(a.category) ?? Number.MAX_SAFE_INTEGER
-        const categoryOrderB = CATEGORY_INDEX_BY_ID.get(b.category) ?? Number.MAX_SAFE_INTEGER
+        const categoryIndex = categoryIndexById.value
+        const categoryOrderA = categoryIndex.get(a.category) ?? Number.MAX_SAFE_INTEGER
+        const categoryOrderB = categoryIndex.get(b.category) ?? Number.MAX_SAFE_INTEGER
         if (categoryOrderA !== categoryOrderB) {
           return categoryOrderA - categoryOrderB
         }
@@ -228,7 +267,10 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     // X1: 合并条目的各源 ID 也需可查（addLayer 等通过 source ID 查找 accent 等信息）
     for (const descriptor of Object.values(runtimeLayerCatalog.value)) {
       if (!map.has(descriptor.layer_id) && descriptor.merged_into) {
-        map.set(descriptor.layer_id, buildRuntimeLayerLibraryItem(descriptor))
+        map.set(
+          descriptor.layer_id,
+          buildRuntimeLayerLibraryItem(descriptor, layerCategories.value),
+        )
       }
     }
     // 静态兜底：后端未返回时也需包含被隐藏的独立源条目
@@ -298,6 +340,12 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     }
 
     runtimeLayerCatalogLoading.value = true
+    // 图层平台 P1：分组定义与目录并行加载；分组失败不阻断目录（回落静态表）
+    void fetchLayerCategories()
+      .then(applyLayerCategoryResponse)
+      .catch((error) => {
+        console.warn('[LayersStore] fetchLayerCategories failed, fallback to static:', error)
+      })
     runtimeLayerCatalogRequest = fetchLayerCatalog()
       .catch(async (error) => {
         const message = error instanceof Error ? error.message : String(error)
@@ -430,9 +478,21 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
     runtimeLayerCatalog.value = catalog
   }
 
+  async function reloadLayerCategories() {
+    // 分组管理保存后刷新：失败时保留现值（下一次 ensureRuntimeLayerCatalog 仍会重试）
+    try {
+      applyLayerCategoryResponse(await fetchLayerCategories())
+    } catch (error) {
+      console.warn('[LayersStore] reloadLayerCategories failed:', error)
+      throw error
+    }
+  }
+
   return {
     runtimeLayerCatalog,
     runtimeLayerCatalogLoading,
+    layerCategories,
+    reloadLayerCategories,
     layerLibrary,
     layerLibraryMap,
     catalogJobStatus,

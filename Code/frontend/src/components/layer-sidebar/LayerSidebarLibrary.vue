@@ -30,9 +30,12 @@ const props = defineProps<{
   getCatalogSourceSummary: (catalogId: string) => string
   getPrimarySourceName: (catalogId: string) => string
   supportsOnlineTemporal: (catalogId: string) => boolean
+  /** 图层平台 P1：管理员可见的分组管理入口 */
+  canManageGroups?: boolean
 }>()
 
 const emit = defineEmits<{
+  openGroupManager: []
   'update:searchQuery': [value: string]
   'update:selectedSubCategory': [value: string]
   ensureWeatherProviders: [catalogId: string]
@@ -93,6 +96,15 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
       type="search"
       @input="emit('update:searchQuery', ($event.target as HTMLInputElement).value)"
     />
+    <button
+      v-if="canManageGroups"
+      class="group-manage-btn"
+      type="button"
+      title="管理图层分组（新建/删除/排序/成员）"
+      @click="emit('openGroupManager')"
+    >
+      分组
+    </button>
   </div>
 
   <!-- Category groups -->
@@ -334,4 +346,26 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
   </div>
 </template>
 
-<style scoped src="./LayerSidebar.styles.css"></style>
+<style scoped src="./LayerSidebar.styles.css">
+/* 图层平台 P1：分组管理入口（管理员） */
+.group-manage-btn {
+  flex: 0 0 auto;
+  padding: 0 0.7rem;
+  height: 2.1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease-soft),
+    color var(--motion-fast) var(--ease-soft);
+}
+.group-manage-btn:hover {
+  border-color: var(--border-accent);
+  color: var(--accent);
+}
+</style>

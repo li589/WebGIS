@@ -15,7 +15,10 @@ export interface DrawSessionState {
   hasClosedFeatures: boolean
 }
 
-export function getDrawSessionState(features: DrawFeature[], activeVertices: unknown[]): DrawSessionState {
+export function getDrawSessionState(
+  features: DrawFeature[],
+  activeVertices: unknown[],
+): DrawSessionState {
   const hasClosedFeatures = features.length > 0
   const hasUnclosedSketch = activeVertices.length > 0
   const isEmptySession = !hasClosedFeatures && !hasUnclosedSketch
@@ -52,9 +55,7 @@ function promptExitModal(): Promise<DrawExitChoice | null> {
 let exitModalPromptOverride: (() => Promise<DrawExitChoice | null>) | null = null
 
 /** 单测注入：绕过 UI 弹窗 */
-export function __testSetExitModalPrompt(
-  fn: (() => Promise<DrawExitChoice | null>) | null,
-) {
+export function __testSetExitModalPrompt(fn: (() => Promise<DrawExitChoice | null>) | null) {
   exitModalPromptOverride = fn
 }
 
@@ -146,7 +147,6 @@ export function useDrawSessionTransition() {
     requestInteractionMode,
     discardDraftLayerOnly,
     finalizeEmptySession,
-    getDrawSessionState: () =>
-      getDrawSessionState(drawStore.features, drawStore.activeVertices),
+    getDrawSessionState: () => getDrawSessionState(drawStore.features, drawStore.activeVertices),
   }
 }

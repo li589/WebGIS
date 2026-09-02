@@ -6,6 +6,10 @@ export interface LayerCategory {
   icon: string
   accentColor: string
   chipTone: string
+  /** 图层平台 P1：运行时分组全局排序键（后端 /layers/categories 下发；静态 codegen 兜底无此字段） */
+  position?: number
+  /** 是否管理员自建分组（可删除；种子分组仅可改名/样式） */
+  isCustom?: boolean
 }
 
 export interface LayerSource {

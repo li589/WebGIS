@@ -134,6 +134,7 @@ export function useSidebarContextMenu(
         isOverlayDisplayOnlyLayer: layersDeps.isOverlayDisplayOnlyLayer,
         canRunCatalog: layersDeps.canRunCatalog,
         weatherStatus,
+        findRunGroupById: layersDeps.findRunGroupById,
       }),
     )
   })

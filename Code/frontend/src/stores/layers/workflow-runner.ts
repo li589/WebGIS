@@ -41,6 +41,7 @@ import {
 } from '../../utils/source-route-policy'
 import { buildJobLayer } from './result-adapter'
 import { forgetDismissedLayer, isRunDismissed } from './workspace-persist'
+import { scheduleSucceededAttachRetry } from './workflow-attach-retry'
 import { suppressWorkspaceSyncPush } from './workspace-sync'
 import { getCatalogDisplayName, isTerminalStatus } from './catalog-builders'
 import { resolveJobOverallProgress } from './workflow-progress'
@@ -581,13 +582,15 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     }
 
     const hasProductFor = (g: ActiveRunLayerGroup) =>
-      deps.getActiveLayers().some(
-        (l) =>
-          l.runGroupId === g.groupId &&
-          (Boolean(l.importedRaster?.overlayLayerId) ||
-            Boolean(l.importedVector?.backendLayerId) ||
-            l.dataState === 'real'),
-      )
+      deps
+        .getActiveLayers()
+        .some(
+          (l) =>
+            l.runGroupId === g.groupId &&
+            (Boolean(l.importedRaster?.overlayLayerId) ||
+              Boolean(l.importedVector?.backendLayerId) ||
+              l.dataState === 'real'),
+        )
 
     if (opts?.forceMissing) {
       for (const g of groups) {
@@ -877,7 +880,16 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
               if (boundCount > 0) {
                 deps.cleanupUnproducedRunLayers(run.run_id, { succeeded: true })
                 deps.flushWorkspacePersistNow({ sync: false })
+                return
               }
+              scheduleSucceededAttachRetry({
+                runId: run.run_id,
+                catalogId,
+                resultRefs: run.result_refs,
+                attach: deps.attachAlgorithmProductOverlays,
+                cleanup: deps.cleanupUnproducedRunLayers,
+                isRunDismissed,
+              })
             })
         }
       }
@@ -1013,15 +1025,21 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     // 画布/编辑器在 submit 前已建 computing 组（runId 尚空）——提交路径须接管，
     // 禁止再建第二组导致双 runId / attach 绑错组 / cleanup 清错侧栏。
     if (!existingGroup && options?.source === 'submit') {
-      const probeWorkflowId = String(bridge.workflowId || workflowId || '')
+      const probeWorkflowId = String(bridge.workflowId || existingGroup?.workflowId || '')
       const probeSource = resolveInversionCatalogId(String(bridge.sourceLayerId || catalogId))
-      const pendingGroup = deps.getRunLayerGroups().find(
-        (g) =>
-          !g.runId &&
-          g.status === 'computing' &&
-          ((Boolean(probeWorkflowId) && g.workflowId === probeWorkflowId) ||
-            resolveInversionCatalogId(String(g.sourceLayerId || '')) === probeSource),
-      )
+      const groups = deps.getRunLayerGroups()
+      let pendingGroup: (typeof groups)[number] | undefined
+      for (let i = groups.length - 1; i >= 0; i -= 1) {
+        const g = groups[i]!
+        if (g.runId || g.status !== 'computing') continue
+        const matches =
+          (Boolean(probeWorkflowId) && g.workflowId === probeWorkflowId) ||
+          resolveInversionCatalogId(String(g.sourceLayerId || '')) === probeSource
+        if (matches) {
+          pendingGroup = g
+          break
+        }
+      }
       if (pendingGroup) {
         pendingGroup.runId = runId
         existingGroup = pendingGroup

@@ -9,6 +9,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, mount, setActivePinia } from '@/test-utils'
 import { useSettingsStore } from '@/stores/settings'
+import { scopedStorageKey } from '@/services/user-local-isolation'
 import DataSourceSettings from '@/components/settings/DataSourceSettings.vue'
 import LocalDataSourcePanel from '@/components/settings/data-source/LocalDataSourcePanel.vue'
 import RemoteDataSourcesPanel from '@/components/settings/data-source/RemoteDataSourcesPanel.vue'
@@ -132,7 +133,7 @@ describe('DataSourceSettings 双 tab', () => {
     await wrapper.findAll('.tabs-item')[1].trigger('click')
     expect(wrapper.findComponent(RemoteDataSourcesPanel).exists()).toBe(true)
     expect(wrapper.findComponent(LocalDataSourcePanel).exists()).toBe(false)
-    expect(JSON.parse(localStorage.getItem('cgda.settings_ui') || '{}').dataSourceTab).toBe('remote')
+    expect(JSON.parse(localStorage.getItem(scopedStorageKey('cgda.settings_ui')) || '{}').dataSourceTab).toBe('remote')
   })
 })
 

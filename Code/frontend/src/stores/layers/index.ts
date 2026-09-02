@@ -67,7 +67,6 @@ import { defineStore } from 'pinia'
 
 import type { FeatureCollection } from 'geojson'
 import { useDrawStore, type DrawFeature } from '../draw-store'
-import { LAYER_CATEGORIES } from './catalog'
 import { createCrossDomainBindings } from './bindings'
 import { createWorkspaceDomain } from './workspace-domain'
 import { createViewportDomain } from './viewport-domain'
@@ -190,7 +189,7 @@ export const useLayersStore = defineStore('layers', () => {
     layerLifecycle: lifecycle.layerLifecycle,
     // ── Data ──
     layerLibrary: workspace.layerLibrary,
-    layerCategories: LAYER_CATEGORIES,
+    layerCategories: workspace.layerCategories,
     // ── Actions: lifecycle（图层平台子系统 P0/P1）──
     refreshLayerLifecycle: lifecycle.refreshLayerLifecycle,
     setMapOverlayTimeStates: lifecycle.setMapOverlayTimeStates,
@@ -220,6 +219,7 @@ export const useLayersStore = defineStore('layers', () => {
     // ── Actions: catalog ──
     setJobLayers: workflowRun.setJobLayers,
     ensureRuntimeLayerCatalog: workspace.ensureRuntimeLayerCatalog,
+    reloadLayerCategories: workspace.reloadLayerCategories,
     // ── Actions: run layers ──
     reorderLayers: workflowRun.reorderLayers,
     createRunLayerGroup: workflowRun.createRunLayerGroup,
