@@ -119,6 +119,30 @@ def resolve_block_timeseries_layer_id(
     return layer_id
 
 
+def _count_valid_geotiff_pixels(tif_path: Path) -> int:
+    """Count non-nodata finite pixels in band 1 (0 if unreadable/missing)."""
+    if not tif_path.is_file():
+        return 0
+    try:
+        import numpy as np
+        import rasterio
+
+        with rasterio.open(tif_path) as ds:
+            arr = ds.read(1)
+            nodata = ds.nodata
+        finite = np.isfinite(arr)
+        if nodata is not None and np.isfinite(nodata):
+            finite &= arr != nodata
+            # Same family as extract_variable_to_geotiff write_nodata=-9999
+            if float(nodata) <= -9000.0:
+                finite &= arr > -9000.0
+        else:
+            finite &= arr > -9000.0
+        return int(np.count_nonzero(finite))
+    except Exception:
+        return 0
+
+
 def _is_canonical_viirs8_block(block_start: str, block_end: str) -> bool:
     """Return whether a label is a canonical Jan-1 anchored VIIRS 8-day block.
 
@@ -281,6 +305,7 @@ def _upsert_block_dir_timeseries_locked(
 ) -> dict[str, Any]:
     time_list: list[str] = []
     bounds_by_time: dict[str, list[float]] = {}
+    valid_count_by_time: dict[str, int] = {}
     source_crs = "EPSG:6933"
 
     for time_label, mat_path in mats:
@@ -299,6 +324,7 @@ def _upsert_block_dir_timeseries_locked(
                     bounds_by_time[time_label] = [float(x) for x in b]
             except (OSError, json.JSONDecodeError, TypeError, ValueError):
                 pass
+            valid_count_by_time[time_label] = _count_valid_geotiff_pixels(tif_path)
             continue
 
         tmp_tif = import_paths.IMPORTS_DIR / "_tmp" / f"{layer_id}_{time_label}.tif"
@@ -311,6 +337,7 @@ def _upsert_block_dir_timeseries_locked(
         )
         shutil.copy2(tmp_tif, tif_path)
         tmp_tif.unlink(missing_ok=True)
+        valid_count_by_time[time_label] = _count_valid_geotiff_pixels(tif_path)
 
         # 时间序列必须用全网格框（勿按有效像元裁剪），否则各时刻 bounds 不一致。
         # 预览渲染到 EPSG:3857：MapLibre 底图为 Web Mercator，ImageSource 按 WGS84
@@ -356,7 +383,13 @@ def _upsert_block_dir_timeseries_locked(
     if not time_list:
         raise RuntimeError("未能物化任何时间切片")
 
+    # Prefer last slice that actually has data; trailing all-nodata days
+    # (common at year/window end) must not become the default blank map.
     default_time = time_list[-1]
+    for time_label in reversed(time_list):
+        if valid_count_by_time.get(time_label, 0) > 0:
+            default_time = time_label
+            break
     bounds_wgs84 = bounds_by_time.get(default_time)
     if bounds_wgs84 is None:
         for time_label in reversed(time_list):
@@ -389,9 +422,11 @@ def _upsert_block_dir_timeseries_locked(
         "category": "time-series",
         "native_step": native_step,
         "time_list": time_list,
+        "default_time": default_time,
         "variable_id": variable_id,
         "label": label,
         "run_id": run_id,
+        "palette": palette,
         "vmin": vmin,
         "vmax": vmax,
     }

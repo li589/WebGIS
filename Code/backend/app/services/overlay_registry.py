@@ -245,7 +245,9 @@ class OverlaySpec:
             if np.ma.is_masked(val):
                 return None
             out = float(val)
-            return out if np.isfinite(out) else None
+            if not np.isfinite(out) or out <= -9000.0:
+                return None
+            return out
 
     # EASE-Grid 2.0 9km 标准参数——唯一真源 grid_presets.py（P2 收敛，
     # 原 2026-08 之前此处为独立硬编码副本）

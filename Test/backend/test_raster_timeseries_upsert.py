@@ -214,3 +214,43 @@ def test_layer_key_empty_falls_back_to_run_id(
         grid_preset="ease2-global-9km",
     )
     assert out["layer_id"] == stable_imported_layer_id("run-legacy", "SM", "SM")
+
+
+def test_upsert_default_time_skips_all_nodata_trailing_day(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Trailing empty SM day must not become default_time (blank map / N/A)."""
+    imports = tmp_path / "imports"
+    imports.mkdir()
+    monkeypatch.setattr(
+        "app.data_io.services.raster_timeseries.import_paths.IMPORTS_DIR",
+        imports,
+    )
+
+    block_dir = tmp_path / "blocks"
+    block_dir.mkdir()
+    _write_block_mat(block_dir / "20251230.mat", value=0.25)
+    empty = np.full((8, 8), np.nan, dtype=np.float64)
+    savemat(
+        str(block_dir / "20251231.mat"),
+        {"SM": empty, "VOD": empty, "OMEGA": empty},
+    )
+
+    out = upsert_block_dir_timeseries(
+        block_dir,
+        variable_id="SM",
+        label="SM",
+        run_id="run-default-time",
+        grid_preset="ease2-global-9km",
+        native_step="1d",
+    )
+    assert out["default_time"] == "20251230_20251230"
+    meta = json.loads(
+        (imports / out["layer_id"] / "meta.json").read_text(encoding="utf-8")
+    )
+    assert meta["default_time"] == "20251230_20251230"
+    assert meta.get("palette")
+    bounds = json.loads(
+        (imports / out["layer_id"] / "bounds.json").read_text(encoding="utf-8")
+    )
+    assert bounds["meta"]["default_time"] == "20251230_20251230"
