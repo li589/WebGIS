@@ -118,6 +118,157 @@ def _align_window_to_available(
     return aligned
 
 
+def _block_mat_usable(path: Path) -> bool:
+    """块 mat 可用：存在且含 SM/VOD/OMEGA（对齐 omega_avg Stage D）。"""
+    if not path.is_file() or path.stat().st_size <= 0:
+        return False
+    try:
+        from ingest.mat_bundle import load_mat_file
+
+        payload = load_mat_file(path)
+    except (OSError, ValueError, KeyError):
+        return False
+    for key in ("SM", "VOD", "OMEGA"):
+        if key not in payload:
+            return False
+    return True
+
+
+def _required_block_keys(start_date: str, end_date: str, block_days: int) -> list[str]:
+    """与 make_viirs8_blocks 一致的块日期键列表。"""
+    from datetime import datetime, timedelta
+
+    from algorithms.omega_sf import make_viirs8_blocks
+
+    start = datetime.strptime(start_date[:8], "%Y%m%d")
+    end = datetime.strptime(end_date[:8], "%Y%m%d")
+    tvec = [start + timedelta(days=i) for i in range((end - start).days + 1)]
+    block_struct = make_viirs8_blocks(tvec, block_days=block_days)
+    keys: list[str] = []
+    for i in range(len(block_struct.starts)):
+        d0 = block_struct.starts[i].strftime("%Y%m%d")
+        d1 = block_struct.ends[i].strftime("%Y%m%d")
+        keys.append(f"{d0}_{d1}")
+    return keys
+
+
+def _try_hydrate_blocks_from_sibling_cache(
+    *,
+    output_root: Path,
+    output_dir: Path,
+    start_date: str,
+    end_date: str,
+    block_days: int,
+    tb_source: str,
+    sm_source: str,
+) -> dict[str, str] | None:
+    """跨 run 块缓存：同 output_root 下其它 run 若已有完整可用块，复制到本 run。
+
+    返回 output_paths（含 block_dir）表示命中；None 表示需重新反演。
+    仅当请求窗内**全部**块键均可复用时短路（部分缺口仍走完整反演）。
+    """
+    import shutil
+
+    try:
+        keys = _required_block_keys(start_date, end_date, block_days)
+    except Exception:
+        return None
+    if not keys or not output_root.is_dir():
+        return None
+
+    found: dict[str, Path] = {}
+    # 优先同参数内容键缓存目录
+    cache_key = (
+        f"_cache_{str(tb_source).upper()}_{str(sm_source).upper()}"
+        f"_{start_date[:8]}_{end_date[:8]}"
+    )
+    preferred = [output_root / cache_key]
+    siblings = [
+        p
+        for p in sorted(output_root.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True)
+        if p.is_dir() and p.resolve() != output_dir.resolve() and not p.name.startswith(".")
+    ]
+    search_dirs = preferred + [p for p in siblings if p not in preferred]
+
+    for run_dir in search_dirs:
+        for key in keys:
+            if key in found:
+                continue
+            src = run_dir / f"{key}.mat"
+            if _block_mat_usable(src):
+                found[key] = src
+        if len(found) == len(keys):
+            break
+
+    if len(found) != len(keys):
+        return None
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_paths: dict[str, str] = {"block_dir": str(output_dir)}
+    for idx, key in enumerate(keys):
+        src = found[key]
+        dest = output_dir / f"{key}.mat"
+        if src.resolve() != dest.resolve():
+            shutil.copy2(src, dest)
+        compat = output_dir / f"block_{idx:03d}.mat"
+        if compat.resolve() != dest.resolve():
+            shutil.copy2(dest, compat)
+        output_paths[key] = str(dest)
+        output_paths[f"block_{idx:03d}"] = str(compat)
+
+    # 内容键缓存：下次同窗直接命中
+    cache_dir = output_root / cache_key
+    if cache_dir.resolve() != output_dir.resolve():
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        for key in keys:
+            dest = cache_dir / f"{key}.mat"
+            src = output_dir / f"{key}.mat"
+            if src.is_file() and (
+                not dest.exists() or dest.stat().st_mtime < src.stat().st_mtime
+            ):
+                shutil.copy2(src, dest)
+
+    return output_paths
+
+
+def _publish_blocks_to_content_cache(
+    *,
+    output_root: Path,
+    output_dir: Path,
+    start_date: str,
+    end_date: str,
+    tb_source: str,
+    sm_source: str,
+) -> None:
+    """将本 run 成功块写入内容键缓存目录，供后续同窗短路。"""
+    import shutil
+
+    cache_key = (
+        f"_cache_{str(tb_source).upper()}_{str(sm_source).upper()}"
+        f"_{start_date[:8]}_{end_date[:8]}"
+    )
+    cache_dir = output_root / cache_key
+    if cache_dir.resolve() == output_dir.resolve():
+        return
+    if not output_dir.is_dir():
+        return
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    for mat in output_dir.glob("*_*.mat"):
+        name = mat.name
+        if name.startswith("block_"):
+            continue
+        # YYYYMMDD_YYYYMMDD.mat
+        stem = mat.stem
+        parts = stem.split("_")
+        if len(parts) != 2 or not all(len(p) == 8 and p.isdigit() for p in parts):
+            continue
+        if not _block_mat_usable(mat):
+            continue
+        dest = cache_dir / name
+        if not dest.exists() or dest.stat().st_mtime < mat.stat().st_mtime:
+            shutil.copy2(mat, dest)
+
+
 # omega_sf 专有数据源键映射（daily bundle 键复用 bundles.py 的映射）
 _OMEGA_SF_DATASOURCE_KEY_MAP: dict[str, tuple[str, ...]] = {
     "fy3d_folder": ("fy3d_folder", "fy_daily_mat", "daily_mat_sources"),
@@ -351,6 +502,39 @@ class OmegaSfFenkuaiModule(BaseModule):
                 f"{config.start_date}~{config.end_date}",
             )
 
+        # 跨 run 块缓存：同窗全部块已存在则直接复制，跳过 heavy 反演
+        cached_paths: dict[str, str] | None = None
+        if reuse_block_cache:
+            configured_output_dir = output_spec_extra.get("output_dir")
+            output_root = (
+                Path(str(configured_output_dir))
+                if isinstance(configured_output_dir, str)
+                and configured_output_dir.strip()
+                else ctx.workspace / "products" / "omega_sf_fenkuai"
+            )
+            # output_dir 可能是 reuse_output_dir；仍用标准 root 搜兄弟 run
+            search_root = (
+                output_dir.parent
+                if output_dir.parent.name == "omega_sf_fenkuai"
+                or output_dir.parent.name.startswith("omega_sf")
+                else output_root
+            )
+            cached_paths = _try_hydrate_blocks_from_sibling_cache(
+                output_root=search_root,
+                output_dir=output_dir,
+                start_date=config.start_date,
+                end_date=config.end_date,
+                block_days=int(config.block_days or 8),
+                tb_source=str(config.tb_source),
+                sm_source=str(config.sm_source),
+            )
+            if cached_paths and ctx.logger_adapter is not None:
+                ctx.logger_adapter.emit_stage_start(
+                    "omega_sf_fenkuai",
+                    f"Reused {len(cached_paths) - 1} cached block mats "
+                    f"(skip inversion) → {output_dir}",
+                )
+
         # 进度回调（含 chunk/pixel detail）
         def _progress_callback(
             processed: int, total: int, detail: dict | None = None
@@ -385,24 +569,60 @@ class OmegaSfFenkuaiModule(BaseModule):
             except TypeError:
                 emit("omega_sf_fenkuai", ratio, msg)
 
-        # 执行主反演
-        result = retrieve_omega_sf_daily(
-            config=config,
-            smap_folder=str(datasource_selection["smap_folder"]),
-            anc_root=str(datasource_selection["anc_root"]),
-            ndvi_clim_folder=ndvi_clim_folder,
-            ndvi_folder=ndvi_folder,
-            fy3d_folder=fy3d_folder,
-            fy3b_folder=fy3b_folder,
-            gldas_mat_folder=gldas_mat_folder,
-            gldas_template_mat=gldas_template_mat,
-            ddca_sm_folder=ddca_sm_folder,
-            grid_shape=grid_shape,
-            output_dir=str(output_dir),
-            progress_callback=_progress_callback,
-            cancel_flag_path=cancel_flag_path,
-            reuse_block_cache=bool(reuse_block_cache),
-        )
+        # 执行主反演（或缓存短路）
+        if cached_paths:
+            import numpy as np
+            from algorithms.omega_sf import OmegaSfResult
+
+            n_blocks = sum(1 for k in cached_paths if k.startswith("block_") and k != "block_dir")
+            # 成功像元数用占位（产品已可用）；避免 0 触发 coverage_gap
+            result = OmegaSfResult(
+                omega_pft=np.array([]),
+                omega_pixel_map=np.zeros(grid_shape, dtype=np.float64),
+                omega_pixel_count=np.zeros(grid_shape, dtype=np.int32),
+                sm_maps={i: np.zeros(grid_shape) for i in range(n_blocks)},
+                vod_maps={i: np.zeros(grid_shape) for i in range(n_blocks)},
+                omega_maps={i: np.zeros(grid_shape) for i in range(n_blocks)},
+                n_pixels_total=int(np.prod(grid_shape)),
+                n_pixels_success=max(n_blocks, 1),
+                n_pixels_failed=0,
+                output_paths=cached_paths,
+            )
+        else:
+            result = retrieve_omega_sf_daily(
+                config=config,
+                smap_folder=str(datasource_selection["smap_folder"]),
+                anc_root=str(datasource_selection["anc_root"]),
+                ndvi_clim_folder=ndvi_clim_folder,
+                ndvi_folder=ndvi_folder,
+                fy3d_folder=fy3d_folder,
+                fy3b_folder=fy3b_folder,
+                gldas_mat_folder=gldas_mat_folder,
+                gldas_template_mat=gldas_template_mat,
+                ddca_sm_folder=ddca_sm_folder,
+                grid_shape=grid_shape,
+                output_dir=str(output_dir),
+                progress_callback=_progress_callback,
+                cancel_flag_path=cancel_flag_path,
+                reuse_block_cache=bool(reuse_block_cache),
+            )
+            # 成功后写入内容键缓存，供后续同窗复用
+            if reuse_block_cache and int(result.n_pixels_success or 0) > 0:
+                configured_output_dir = output_spec_extra.get("output_dir")
+                output_root = (
+                    Path(str(configured_output_dir))
+                    if isinstance(configured_output_dir, str)
+                    and configured_output_dir.strip()
+                    else ctx.workspace / "products" / "omega_sf_fenkuai"
+                )
+                _publish_blocks_to_content_cache(
+                    output_root=output_root,
+                    output_dir=output_dir,
+                    start_date=config.start_date,
+                    end_date=config.end_date,
+                    tb_source=str(config.tb_source),
+                    sm_source=str(config.sm_source),
+                )
 
         # Fail-closed：零有效像元仍写全 NaN 块文件时，桥接层会标 success 并
         # 物化「空白」图层 → 用户看到「已完成但地图无显示」。无有效像元视为失败。

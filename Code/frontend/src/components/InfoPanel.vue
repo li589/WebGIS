@@ -145,6 +145,7 @@ const unified = useUnifiedChartData(
   allOverlayTimeSeriesRef,
   overlayTimeStatesRef,
   selectedMapPointRef,
+  inspectHourRef,
 )
 
 const wf = useWorkflowState({

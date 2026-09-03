@@ -42,14 +42,20 @@ export interface SettingsUiLocal {
   enable3DView?: boolean
   /**
    * 3D globe 背景模式（默认 auto）：
-   * auto=跟随主题（暗色=星图 / 浅色=淡化微尘）；starfield=始终完整星图；minimal=极简渐变。
+   * auto=跟随主题（暗色=星图 / 浅色=淡化微尘）；starfield=始终完整星图；
+   * minimal=极简渐变；solar_system=相机联动太阳系深空（太阳盘+星辰）。
    */
-  globeBackground?: 'auto' | 'starfield' | 'minimal'
+  globeBackground?: 'auto' | 'starfield' | 'minimal' | 'solar_system'
   /**
    * 3D globe 昼夜光影档位（默认 natural）：
    * natural=真实夜半球；standard=固定明亮地球；off=关闭。
    */
   globeDaylight?: 'standard' | 'natural' | 'off'
+  /**
+   * 3D 渲染引擎（默认 maplibre）：
+   * maplibre=现有 MapLibre globe；cesium=实验性 Cesium Viewer（天气叠加尚未接入）。
+   */
+  globeRenderEngine?: 'maplibre' | 'cesium'
   /**
    * Agent 伴侣挂件位置（地图舞台像素坐标 + 左右贴边态）。
    */
@@ -248,13 +254,19 @@ export function set3DViewExperimentalEnabled(on: boolean): void {
 
 // ─── 3D globe 场景偏好（背景星图 / 昼夜光影）──────────────────────────────
 
-export type GlobeBackgroundMode = 'auto' | 'starfield' | 'minimal'
+export type GlobeBackgroundMode = 'auto' | 'starfield' | 'minimal' | 'solar_system'
 /** 3D晨昏样式：标准=固定明亮地球（无晨昏线）；自然=真实夜半球；无=不加亮暗。 */
 export type GlobeDaylightMode = 'standard' | 'natural' | 'off'
+/** 3D 渲染引擎：maplibre 默认主链；cesium 实验空壳。 */
+export type GlobeRenderEngine = 'maplibre' | 'cesium'
 
 /** 3D 背景默认 auto（跟随主题：暗色=星图 / 浅色=淡化微尘）。 */
 export function getGlobeBackgroundMode(): GlobeBackgroundMode {
-  return loadSettingsUiLocal().globeBackground ?? 'auto'
+  const value = loadSettingsUiLocal().globeBackground
+  if (value === 'starfield' || value === 'minimal' || value === 'solar_system' || value === 'auto') {
+    return value
+  }
+  return 'auto'
 }
 
 /** 3D 昼夜光影默认 natural（真实夜半球晨昏线）。 */
@@ -267,9 +279,16 @@ export function getGlobeDaylightMode(): GlobeDaylightMode {
   return 'natural'
 }
 
+/** 3D 渲染引擎默认 maplibre；非法值回退。 */
+export function getGlobeRenderEngine(): GlobeRenderEngine {
+  const value = loadSettingsUiLocal().globeRenderEngine
+  if (value === 'cesium' || value === 'maplibre') return value
+  return 'maplibre'
+}
+
 const globeSceneListeners = new Set<() => void>()
 
-/** 订阅 3D 背景与光影偏好变化（返回取消订阅函数）。 */
+/** 订阅 3D 背景 / 光影 / 渲染引擎偏好变化（返回取消订阅函数）。 */
 export function subscribeGlobeScene(listener: () => void): () => void {
   globeSceneListeners.add(listener)
   return () => {
@@ -294,6 +313,11 @@ export function setGlobeBackgroundMode(mode: GlobeBackgroundMode): void {
 
 export function setGlobeDaylightMode(mode: GlobeDaylightMode): void {
   saveSettingsUiLocal({ ...loadSettingsUiLocal(), globeDaylight: mode })
+  notifyGlobeSceneListeners()
+}
+
+export function setGlobeRenderEngine(engine: GlobeRenderEngine): void {
+  saveSettingsUiLocal({ ...loadSettingsUiLocal(), globeRenderEngine: engine })
   notifyGlobeSceneListeners()
 }
 

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Cesium / Gateway 冒烟</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #0b0e14;
+        color: #c8d0dc;
+        font: 13px/1.5 ui-monospace, Consolas, monospace;
+      }
+      #out {
+        padding: 1rem 1.25rem;
+        white-space: pre-wrap;
+        max-width: 52rem;
+      }
+      .ok {
+        color: #7dcea0;
+      }
+      .fail {
+        color: #e07070;
+      }
+      a {
+        color: #7eb8ff;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      const out = document.getElementById('out')
+      const lines = []
+      const log = (s, cls) => {
+        lines.push(cls ? `<span class="${cls}">${s}</span>` : s)
+        out.innerHTML = lines.join('\n')
+      }
+
+      async function headOk(path) {
+        const res = await fetch(path, { method: 'GET', cache: 'no-store' })
+        return { path, status: res.status, type: res.headers.get('content-type') || '' }
+      }
+
+      try {
+        const csp =
+          (await fetch(location.href, { method: 'HEAD', cache: 'no-store' }).catch(() => null)) ||
+          (await fetch('/', { method: 'HEAD', cache: 'no-store' }))
+        const cspHeader = csp.headers.get('content-security-policy') || '(none)'
+        log('CSP: ' + cspHeader)
+        const hasWasm = cspHeader.includes('wasm-unsafe-eval')
+        const hasEval = cspHeader.includes("'unsafe-eval'")
+        log(
+          hasWasm && hasEval
+            ? 'CSP keywords: wasm-unsafe-eval + unsafe-eval OK'
+            : 'CSP keywords: MISSING (need both wasm-unsafe-eval and unsafe-eval for Cesium on :5175)',
+          hasWasm && hasEval ? 'ok' : 'fail',
+        )
+
+        const assets = await Promise.all([
+          headOk('/cesium/Widgets/widgets.css'),
+          headOk('/cesium/Workers/transferTypedArrayTest.js'),
+          headOk('/cesium/ThirdParty/zip-module.wasm'),
+        ])
+        for (const a of assets) {
+          log(
+            `${a.status} ${a.path} (${a.type || 'no-type'})`,
+            a.status === 200 ? 'ok' : 'fail',
+          )
+        }
+
+        const wasmRes = await fetch('/cesium/ThirdParty/zip-module.wasm', { cache: 'no-store' })
+        if (!wasmRes.ok) throw new Error('wasm fetch failed: ' + wasmRes.status)
+        const buf = await wasmRes.arrayBuffer()
+        const mod = await WebAssembly.compile(buf)
+        await WebAssembly.instantiate(mod, {})
+        log('WebAssembly.compile/instantiate: OK', 'ok')
+
+        // 完整 Viewer 在静态 Gateway 下走 SPA vendor-cesium chunk，本页不做 import('cesium')。
+        log('')
+        log('Infrastructure smoke passed. Full Viewer: Dashboard → 设置选 Cesium → 顶栏 3D')
+        log('<a href="/">打开应用</a>')
+      } catch (e) {
+        log('FAIL: ' + (e && e.stack ? e.stack : e), 'fail')
+        console.error(e)
+      }
+    </script>
+  </body>
+</html>

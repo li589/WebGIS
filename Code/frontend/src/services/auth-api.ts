@@ -6,6 +6,9 @@ export type UserRole = 'admin' | 'standard' | 'demo'
 export type AuthToken = components['schemas']['TokenPublic']
 export type AuthTokenCreated = components['schemas']['TokenCreatedResponse']
 
+/** 登录页氛围色（仅 LoginView；与应用内主题无关） */
+export type LoginPalette = 'cyan' | 'green' | 'warm' | 'violet' | 'slate'
+
 /** Product theme branding + default ACL metadata (matches ThemePublic). */
 export type ThemePublic = {
   id: number
@@ -18,6 +21,7 @@ export type ThemePublic = {
   logo_url?: string | null
   default_permission_mode?: string
   is_primary?: boolean
+  login_palette?: LoginPalette | string
 }
 
 export type ThemePublicBrand = {
@@ -29,6 +33,7 @@ export type ThemePublicBrand = {
   abbr: string
   description?: string
   logo_url?: string | null
+  login_palette?: LoginPalette | string
 }
 
 export type AuthUser = {
@@ -92,7 +97,8 @@ export function updateUser(
     password?: string
     role?: UserRole
     enabled?: boolean
-    theme_id?: number | null
+    /** Omit to leave unchanged; never send null (backend 422). */
+    theme_id?: number
   },
 ): Promise<AuthUser> {
   return requestJson<AuthUser>(`/auth/users/${userId}`, {
@@ -196,6 +202,7 @@ export function createTheme(body: {
   description?: string
   default_permission_mode?: PermissionMode
   is_primary?: boolean
+  login_palette?: LoginPalette | null
 }): Promise<ThemePublic> {
   return requestJson<ThemePublic>('/auth/themes', {
     method: 'POST',
@@ -213,6 +220,7 @@ export function updateTheme(
     description?: string
     default_permission_mode?: PermissionMode
     is_primary?: boolean
+    login_palette?: LoginPalette | null
   },
 ): Promise<ThemePublic> {
   return requestJson<ThemePublic>(`/auth/themes/${themeId}`, {

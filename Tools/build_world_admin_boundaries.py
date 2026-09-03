@@ -9,6 +9,9 @@ Outputs (under Code/frontend/public/data/boundaries/):
   - world-admin-0.geojson
   - world-admin-1.geojson
   - ATTRIBUTION.md
+
+Intermediate shapefile trees admin_0/ and admin_1/ are gitignored; only GeoJSON
+and attribution ship in the repo. Rebuild downloads NE zips into *_src/ or temp.
 """
 
 from __future__ import annotations

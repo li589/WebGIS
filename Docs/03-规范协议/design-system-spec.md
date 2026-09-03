@@ -160,7 +160,7 @@
 | `Chip` | 状态/标签（替换散 status-chip） | 圆角 pill；语义色走 `--*-surface/--*-border`；字号 `--fs-caption` |
 | `Card` | 信息容器（右侧分析卡片化） | `--surface-2` + `--border-default` + `--radius-lg` + `--elevation-1`；padding `--sp-4` |
 | `Tabs` / `SegmentedControl` | 底图风格、时间粒度切换 | 容器 `surface-sunken` + pill；active 用 `--accent` 描边 + 微亮 |
-| `Tooltip` | 悬停说明 | 12px，`--surface-3` + `--elevation-2`，延迟 200ms |
+| `Tooltip` | 悬停说明 | Teleport 到 body；`--tooltip-*` 配色 + `--z-tooltip` 顶置；caption / medium；短文案优先，过长省略；延迟 200ms |
 | `TextField` / `Select` | 设置/搜索输入 | 统一聚焦环 `--border-strong` + 微光 |
 | `Skeleton` | 加载占位 | 同色块 + 微光 sweep（`--motion-slow`） |
 | `PanelDock` | 浮层面板壳（演进 `ControlPanel`） | 玻璃 + `--elevation-2`；统一标题栏/折叠/复位/隐藏三件套 |

@@ -143,6 +143,15 @@ def execute_fy_command_steps(
                 raise RuntimeError(f"FY command step failed: {step.name}\n{stderr}")
             continue
 
+        # gdal_translate 不支持 -overwrite；重跑前先清掉已声明输出，避免目标残留导致失败
+        for output in step.outputs:
+            out_path = Path(output)
+            if out_path.is_file():
+                try:
+                    out_path.unlink()
+                except OSError:
+                    pass
+
         process = subprocess.run(
             step.command,
             shell=shell,

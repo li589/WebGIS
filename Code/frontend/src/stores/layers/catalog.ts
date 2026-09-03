@@ -32,9 +32,23 @@ export const LAYER_CATEGORIES: LayerCategory[] = applyResearchGroupCategoryLabel
   generatedData.categories,
 )
 
-/** 分类 id → 侧栏/图层 chip 展示名（含 research-group → 核心资产） */
+// ── 运行时分组名覆盖（图层平台 P1）──────────────────────────────────────────
+// 后端 /layers/categories 返回 种子⊕管理 分组（可改名/自建/重排）；
+// 未加载或失败时回落静态 codegen 表。由 catalog-runtime 在加载成功后写入。
+
+let runtimeCategoryNames: Map<string, string> = new Map()
+
+export function setRuntimeCategoryNameOverrides(overrides: Map<string, string>): void {
+  runtimeCategoryNames = overrides
+}
+
+/** 分类 id → 侧栏/图层 chip 展示名（运行时分组名优先，静态表兜底） */
 export function resolveCategoryDisplayName(categoryId: string): string {
-  return LAYER_CATEGORIES.find((c) => c.id === categoryId)?.name ?? categoryId
+  return (
+    runtimeCategoryNames.get(categoryId) ??
+    LAYER_CATEGORIES.find((c) => c.id === categoryId)?.name ??
+    categoryId
+  )
 }
 
 // ── 图层库（X1: 从后端 JSON codegen 派生）─────────────────────────────────────

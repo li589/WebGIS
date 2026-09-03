@@ -27,6 +27,16 @@ describe('effective-layer-symbology', () => {
     expect(hint?.legend_ticks).toEqual([-10, 0, 10, 20, 30])
   })
 
+  it('applies vmin/vmax overrides into legend_ticks for overlay layers', () => {
+    const { hint, ticksFromViewport } = resolveEffectiveLayerSymbology({
+      overlayMeta: { palette: 'ylgnbu', vmin: 0, vmax: 0.5 },
+      vminOverride: 0.02,
+      vmaxOverride: 0.28,
+    })
+    expect(ticksFromViewport).toBe(false)
+    expect(hint?.legend_ticks).toEqual([0.02, 0.15, 0.28])
+  })
+
   it('samples viewport range when legend_ticks missing', () => {
     const geojson = {
       type: 'FeatureCollection',

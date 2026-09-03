@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onUnmounted, ref, watch } from 'vue'
 import { X } from '../ui/icons'
 import {
   confirmAgentAction,
@@ -20,6 +20,11 @@ import { renderAgentMarkdown } from '../../utils/agent-markdown'
 import { executeAgentUiIntents } from './agent-ui-intent'
 import { agentMapPoint } from '../../stores/agent-map-point'
 import 'katex/dist/katex.min.css'
+
+const PANEL_MIN_W = 320
+const PANEL_MIN_H = 280
+const PANEL_MAX_W = 720
+const PANEL_DEFAULT_H = 420
 
 const props = defineProps<{
   open: boolean
@@ -61,6 +66,8 @@ interface ChatMessage {
     detail?: string | null
   }>
   confirmations?: PendingConfirmation[]
+  /** 结束后是否默认展开「过程」（有工具步骤时） */
+  keepStepsOpen?: boolean
 }
 
 const WELCOME_TEXT = '你好，我是地图助手。试试「打开 CMFD 降水」或「有哪些活动图层」。'
@@ -87,12 +94,44 @@ const inputRef = ref<HTMLTextAreaElement | null>(null)
 const errorText = ref<string | null>(null)
 const nowMs = ref(Date.now())
 const streamingId = ref<string | null>(null)
+/** 发送阶段：让用户区分「连不上 / 在想 / 在调工具 / 在出字 / 回退」 */
+const streamPhase = ref<'idle' | 'connecting' | 'working' | 'streaming' | 'fallback'>('idle')
+const liveStatus = ref('')
+const stepsOpen = ref(false)
+const sendStartedAt = ref(0)
 let tickTimer: ReturnType<typeof setInterval> | null = null
+let sendTickTimer: ReturnType<typeof setInterval> | null = null
 let scrollRaf: number | null = null
 let streamTextRaf: number | null = null
 let pendingStreamText: { id: string; text: string } | null = null
 /** 用户上滚阅读时不强制吸底 */
 let stickToBottom = true
+
+const elapsedWaitLabel = computed(() => {
+  if (!sending.value || !sendStartedAt.value) return ''
+  const s = Math.max(0, Math.floor((nowMs.value - sendStartedAt.value) / 1000))
+  if (s < 2) return ''
+  return `已等待 ${s}s`
+})
+
+const statusLabel = computed(() => {
+  if (!sending.value) return ''
+  const wait = elapsedWaitLabel.value
+  const suffix = wait ? `（${wait}）` : ''
+  if (liveStatus.value) return `${liveStatus.value}${suffix}`
+  switch (streamPhase.value) {
+    case 'connecting':
+      return `正在连接助手…${suffix}`
+    case 'working':
+      return `助手处理中（模型思考或调用工具）…${suffix}`
+    case 'streaming':
+      return `正在生成回复…${suffix}`
+    case 'fallback':
+      return `流式通道失败，改用普通请求…${suffix}`
+    default:
+      return `处理中…${suffix}`
+  }
+})
 
 function startExpiryTick() {
   if (tickTimer != null) return
@@ -101,17 +140,68 @@ function startExpiryTick() {
   }, 1000)
 }
 
+function startSendTick() {
+  sendStartedAt.value = Date.now()
+  nowMs.value = Date.now()
+  if (sendTickTimer != null) return
+  sendTickTimer = setInterval(() => {
+    nowMs.value = Date.now()
+  }, 1000)
+}
+
+function stopSendTick() {
+  sendStartedAt.value = 0
+  if (sendTickTimer != null) {
+    clearInterval(sendTickTimer)
+    sendTickTimer = null
+  }
+}
+
 onUnmounted(() => {
   if (tickTimer != null) {
     clearInterval(tickTimer)
     tickTimer = null
   }
+  stopSendTick()
   if (scrollRaf != null) cancelAnimationFrame(scrollRaf)
   if (streamTextRaf != null) cancelAnimationFrame(streamTextRaf)
 })
 
-const panelStyle = computed(() => {
-  const panelW = AGENT_CHAT_PANEL_WIDTH_PX
+/** 视口绝对位置（打开时由锚点初始化；拖动/缩放只改这些值，避免锚点重算跳动） */
+const absLeft = ref(12)
+const absTop = ref(72)
+const sizeW = ref(AGENT_CHAT_PANEL_WIDTH_PX)
+const sizeH = ref(PANEL_DEFAULT_H)
+const panelDragging = ref(false)
+const panelResizing = ref(false)
+
+let dragPtrId: number | null = null
+let dragStartX = 0
+let dragStartY = 0
+let dragBaseLeft = 0
+let dragBaseTop = 0
+
+let resizePtrId: number | null = null
+let resizeStartX = 0
+let resizeStartY = 0
+let resizeBaseW = 0
+let resizeBaseH = 0
+let resizeRaf: number | null = null
+let pendingResize: { w: number; h: number } | null = null
+
+/** 机器人拖动时同步面板：记录上一帧锚点 */
+let lastAnchorX = 0
+let lastAnchorY = 0
+
+const interacting = computed(
+  () => panelDragging.value || panelResizing.value || Boolean(props.dragging),
+)
+
+function clamp(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n))
+}
+
+function computeAnchorBase(panelW = sizeW.value): { left: number; top: number } {
   const gap = 14
   const companion = COMPANION_SIZE_PX
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1200
@@ -130,13 +220,165 @@ const panelStyle = computed(() => {
   const maxH = Math.min(AGENT_CHAT_PANEL_MAX_HEIGHT_PX, vh - 96)
   let top = Math.max(72, props.anchor.y - 48)
   top = Math.min(top, Math.max(72, vh - maxH - 24))
+  return { left, top }
+}
 
+function placeNearAnchor() {
+  const base = computeAnchorBase()
+  absLeft.value = base.left
+  absTop.value = base.top
+  lastAnchorX = props.anchor.x
+  lastAnchorY = props.anchor.y
+}
+
+function clampPanelIntoViewport() {
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  absLeft.value = clamp(absLeft.value, 8, Math.max(8, vw - sizeW.value - 8))
+  absTop.value = clamp(absTop.value, 8, Math.max(8, vh - sizeH.value - 8))
+}
+
+const panelStyle = computed(() => {
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1200
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 800
+  const maxH = Math.min(AGENT_CHAT_PANEL_MAX_HEIGHT_PX, vh - 72)
+  const h = clamp(sizeH.value, PANEL_MIN_H, maxH)
+  const w = clamp(sizeW.value, PANEL_MIN_W, Math.min(PANEL_MAX_W, vw - 24))
   return {
-    left: `${left}px`,
-    top: `${top}px`,
-    width: `min(${panelW}px, calc(100vw - 24px))`,
-    maxHeight: `${maxH}px`,
+    left: `${absLeft.value}px`,
+    top: `${absTop.value}px`,
+    width: `${w}px`,
+    height: `${h}px`,
   }
+})
+
+function onHeaderPointerDown(ev: PointerEvent) {
+  if (ev.button !== 0) return
+  const t = ev.target as HTMLElement | null
+  if (t?.closest('.agent-chat-close')) return
+  const el = ev.currentTarget as HTMLElement
+  dragPtrId = ev.pointerId
+  dragStartX = ev.clientX
+  dragStartY = ev.clientY
+  dragBaseLeft = absLeft.value
+  dragBaseTop = absTop.value
+  panelDragging.value = true
+  el.setPointerCapture(ev.pointerId)
+  window.addEventListener('pointermove', onHeaderPointerMove)
+  window.addEventListener('pointerup', onHeaderPointerUp)
+  window.addEventListener('pointercancel', onHeaderPointerUp)
+}
+
+function onHeaderPointerMove(ev: PointerEvent) {
+  if (dragPtrId !== ev.pointerId) return
+  absLeft.value = dragBaseLeft + (ev.clientX - dragStartX)
+  absTop.value = dragBaseTop + (ev.clientY - dragStartY)
+}
+
+function onHeaderPointerUp(ev: PointerEvent) {
+  if (dragPtrId !== null && ev.pointerId !== dragPtrId) return
+  panelDragging.value = false
+  dragPtrId = null
+  window.removeEventListener('pointermove', onHeaderPointerMove)
+  window.removeEventListener('pointerup', onHeaderPointerUp)
+  window.removeEventListener('pointercancel', onHeaderPointerUp)
+  clampPanelIntoViewport()
+}
+
+function flushResizeFrame() {
+  resizeRaf = null
+  if (!pendingResize) return
+  sizeW.value = pendingResize.w
+  sizeH.value = pendingResize.h
+  pendingResize = null
+}
+
+function onResizePointerDown(ev: PointerEvent) {
+  if (ev.button !== 0) return
+  ev.preventDefault()
+  ev.stopPropagation()
+  const el = ev.currentTarget as HTMLElement
+  resizePtrId = ev.pointerId
+  resizeStartX = ev.clientX
+  resizeStartY = ev.clientY
+  resizeBaseW = sizeW.value
+  resizeBaseH = sizeH.value
+  panelResizing.value = true
+  el.setPointerCapture(ev.pointerId)
+  window.addEventListener('pointermove', onResizePointerMove)
+  window.addEventListener('pointerup', onResizePointerUp)
+  window.addEventListener('pointercancel', onResizePointerUp)
+}
+
+function onResizePointerMove(ev: PointerEvent) {
+  if (resizePtrId !== ev.pointerId) return
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const maxW = Math.min(PANEL_MAX_W, vw - absLeft.value - 8)
+  const maxH = Math.min(AGENT_CHAT_PANEL_MAX_HEIGHT_PX, vh - absTop.value - 8)
+  pendingResize = {
+    w: clamp(resizeBaseW + (ev.clientX - resizeStartX), PANEL_MIN_W, maxW),
+    h: clamp(resizeBaseH + (ev.clientY - resizeStartY), PANEL_MIN_H, maxH),
+  }
+  if (resizeRaf == null) {
+    resizeRaf = requestAnimationFrame(flushResizeFrame)
+  }
+}
+
+function onResizePointerUp(ev: PointerEvent) {
+  if (resizePtrId !== null && ev.pointerId !== resizePtrId) return
+  if (pendingResize) flushResizeFrame()
+  panelResizing.value = false
+  resizePtrId = null
+  window.removeEventListener('pointermove', onResizePointerMove)
+  window.removeEventListener('pointerup', onResizePointerUp)
+  window.removeEventListener('pointercancel', onResizePointerUp)
+}
+
+onBeforeUnmount(() => {
+  window.removeEventListener('pointermove', onHeaderPointerMove)
+  window.removeEventListener('pointerup', onHeaderPointerUp)
+  window.removeEventListener('pointercancel', onHeaderPointerUp)
+  window.removeEventListener('pointermove', onResizePointerMove)
+  window.removeEventListener('pointerup', onResizePointerUp)
+  window.removeEventListener('pointercancel', onResizePointerUp)
+  if (resizeRaf != null) cancelAnimationFrame(resizeRaf)
+})
+
+watch(
+  () => props.open,
+  (open) => {
+    if (open) {
+      placeNearAnchor()
+      void scrollToBottom()
+      void nextTick(() => {
+        autosizeInput()
+        inputRef.value?.focus()
+      })
+    }
+  },
+)
+
+/** 拖机器人时面板一并平移，保持相对间隙 */
+watch(
+  () => [props.anchor.x, props.anchor.y, props.dragging] as const,
+  ([ax, ay, dragging]) => {
+    if (!props.open) return
+    if (dragging || panelDragging.value) {
+      const dx = ax - lastAnchorX
+      const dy = ay - lastAnchorY
+      if (dx || dy) {
+        absLeft.value += dx
+        absTop.value += dy
+      }
+    }
+    lastAnchorX = ax
+    lastAnchorY = ay
+  },
+)
+
+watch(input, () => {
+  void nextTick(() => autosizeInput())
 })
 
 function buildClientContext() {
@@ -235,23 +477,6 @@ function autosizeInput() {
   el.style.height = `${Math.min(max, Math.max(40, el.scrollHeight))}px`
 }
 
-watch(
-  () => props.open,
-  (open) => {
-    if (open) {
-      void scrollToBottom()
-      void nextTick(() => {
-        autosizeInput()
-        inputRef.value?.focus()
-      })
-    }
-  },
-)
-
-watch(input, () => {
-  void nextTick(() => autosizeInput())
-})
-
 async function resolveConfirmation(
   msgId: string,
   confirmationId: string,
@@ -328,21 +553,89 @@ async function applyChatResult(res: AgentChatResponse, assistantId: string) {
     finalizeAssistantHtml(created)
     messages.value.push(created)
   }
+
+  const target = messages.value.find((m) => m.id === assistantId)
   if (res.ui_intents?.length) {
     const results = executeAgentUiIntents(res.ui_intents, {
       fitToLayerExtent: props.fitToLayerExtent,
     })
-    const notes = results
+    const noteBodies = results
       .filter((r) => r.message)
-      .map((r) => (r.ok ? `✓ ${r.message}` : `✗ ${r.message}`))
-    if (notes.length) {
+      .map((r) => ({
+        ok: r.ok,
+        body: r.message,
+        line: r.ok ? `✓ ${r.message}` : `✗ ${r.message}`,
+      }))
+    // 模型只调了 list_active_layers 等意图、正文为空时：把意图结果填进助手气泡，避免「吞回复」
+    if (target && !String(target.text || '').trim() && noteBodies.length) {
+      target.text = noteBodies.map((n) => n.body).join('\n\n')
+      finalizeAssistantHtml(target)
+    } else if (noteBodies.length) {
       messages.value.push({
         id: `s-${Date.now()}`,
         role: 'system',
-        text: notes.join('\n'),
+        text: noteBodies.map((n) => n.line).join('\n'),
       })
     }
   }
+  if (target) {
+    const trimmed = String(target.text || '').trim()
+    if (!trimmed || trimmed === '（模型未返回文本）') {
+      const fromSteps = synthesizeReplyFromSteps(target.steps)
+      if (fromSteps) {
+        target.text = fromSteps
+        finalizeAssistantHtml(target)
+      } else if (!trimmed) {
+        target.text =
+          '（助手未返回可见文本。可展开「过程」查看工具步骤，或换一种问法重试。）'
+        finalizeAssistantHtml(target)
+      }
+    }
+    if (target.steps?.some((s) => s.type === 'tool' || s.type === 'tool_result')) {
+      target.keepStepsOpen = true
+    }
+  }
+}
+
+function synthesizeReplyFromSteps(
+  steps: ChatMessage['steps'],
+): string | null {
+  if (!steps?.length) return null
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    const step = steps[i]
+    if (step.type !== 'tool_result' || !step.detail) continue
+    try {
+      const data = JSON.parse(step.detail) as Record<string, unknown>
+      if (!data || typeof data !== 'object') continue
+      if (!data.ok) {
+        const err = typeof data.error === 'string' ? data.error : ''
+        if (err) return `工具调用未成功：${err}`
+        continue
+      }
+      const layers = data.layers
+      if (Array.isArray(layers)) {
+        const q = typeof data.query === 'string' ? data.query : ''
+        if (!layers.length) {
+          return `未在图层库中找到与「${q || '该关键词'}」匹配的图层。若要查看已添加图层，请说「有哪些活动图层」。`
+        }
+        const lines = layers
+          .filter((x): x is Record<string, unknown> => !!x && typeof x === 'object')
+          .map((item) => {
+            const id = String(item.layer_id || '')
+            const name = String(item.display_name || id)
+            return `- ${name}（\`${id}\`）`
+          })
+        return (
+          (q
+            ? `图层库搜索「${q}」命中 ${lines.length} 条：\n`
+            : `找到 ${lines.length} 个图层：\n`) + lines.join('\n')
+        )
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return null
 }
 
 async function send() {
@@ -366,6 +659,10 @@ async function send() {
   void scrollToBottom()
   sending.value = true
   streamingId.value = assistantId
+  streamPhase.value = 'connecting'
+  liveStatus.value = '正在连接助手…'
+  stepsOpen.value = true
+  startSendTick()
 
   const req = {
     message: text,
@@ -378,9 +675,18 @@ async function send() {
     if (!msg) return
     if (!msg.steps) msg.steps = []
     msg.steps.push(step)
+    streamPhase.value = 'working'
+    liveStatus.value =
+      step.type === 'tool'
+        ? `正在调用工具：${step.summary}`
+        : step.type === 'tool_result'
+          ? `工具已返回：${step.summary}`
+          : step.summary || '助手处理中…'
     scheduleScrollToBottom()
   }
   const onToken = (chunk: string) => {
+    streamPhase.value = 'streaming'
+    liveStatus.value = '正在生成回复…'
     appendStreamChunk(assistantId, chunk)
   }
 
@@ -390,6 +696,12 @@ async function send() {
       res = await streamAgentChat(req, {
         onToken,
         onStep,
+        onConnected: () => {
+          if (streamPhase.value === 'connecting') {
+            streamPhase.value = 'working'
+            liveStatus.value = '已连接，等待模型或工具…'
+          }
+        },
         onIntent: (_intent: AgentUiIntent) => {
           /* applied from done payload */
         },
@@ -400,12 +712,15 @@ async function send() {
         cancelAnimationFrame(streamTextRaf)
         streamTextRaf = null
       }
-      const msg = messages.value.find((m) => m.id === assistantId)
-      if (msg) {
-        msg.text = ''
-        msg.html = undefined
-        msg.steps = []
-      }
+      // 保留已收到的 step / 部分正文，避免「吞掉过程」；仅清空未完成流缓冲
+      streamPhase.value = 'fallback'
+      const reason = _streamErr instanceof Error ? _streamErr.message : String(_streamErr)
+      liveStatus.value = `流式失败（${reason.slice(0, 80)}），改用普通请求…`
+      messages.value.push({
+        id: `fb-${Date.now()}`,
+        role: 'system',
+        text: `流式通道不可用，已自动改用普通请求。\n原因：${reason}`,
+      })
       res = await postAgentChat(req)
     }
     flushStreamText()
@@ -422,8 +737,18 @@ async function send() {
       text: `请求失败：${errorText.value}`,
     })
   } finally {
+    const msg = messages.value.find((m) => m.id === assistantId)
+    const keepStepsOpen = Boolean(
+      msg?.steps?.some((s) => s.type === 'tool' || s.type === 'tool_result') ||
+        msg?.keepStepsOpen,
+    )
+    if (msg) msg.keepStepsOpen = keepStepsOpen
     sending.value = false
     streamingId.value = null
+    streamPhase.value = 'idle'
+    liveStatus.value = ''
+    stepsOpen.value = keepStepsOpen
+    stopSendTick()
     void scrollToBottom()
   }
 }
@@ -437,126 +762,160 @@ function onKeydown(ev: KeyboardEvent) {
 </script>
 
 <template>
-  <aside
-    v-if="open"
-    class="agent-chat-panel"
-    :class="{ 'agent-chat-panel--dragging': dragging }"
-    :style="panelStyle"
-    role="dialog"
-    aria-label="地图助手对话"
-  >
-    <header class="agent-chat-header">
-      <div class="agent-chat-title">
-        <span class="agent-chat-dot" aria-hidden="true" />
-        <span>地图助手</span>
-      </div>
-      <button type="button" class="agent-chat-close" aria-label="关闭" @click="emit('close')">
-        <X :size="16" />
-      </button>
-    </header>
-
-    <div ref="listRef" class="agent-chat-list" @scroll.passive="onListScroll">
-      <div
-        v-for="msg in messages"
-        :key="msg.id"
-        class="agent-chat-bubble"
-        :class="[
-          `agent-chat-bubble--${msg.role}`,
-          msg.id === streamingId ? 'agent-chat-bubble--streaming' : '',
-        ]"
+  <Transition name="agent-panel">
+    <aside
+      v-if="open"
+      class="agent-chat-panel"
+      :class="{ 'agent-chat-panel--interacting': interacting }"
+      :style="panelStyle"
+      role="dialog"
+      aria-label="地图助手对话"
+    >
+      <header
+        class="agent-chat-header"
+        title="拖动移动对话框"
+        @pointerdown="onHeaderPointerDown"
       >
-        <div
-          v-if="msg.role === 'assistant' && msg.html != null && msg.html !== ''"
-          class="agent-chat-md agent-scroll"
-          v-html="msg.html"
-        />
-        <pre v-else class="agent-chat-text agent-scroll">{{
-          msg.text || (sending && msg.role === 'assistant' ? '…' : '')
-        }}</pre>
-        <details v-if="msg.steps?.length" class="agent-chat-steps">
-          <summary>过程（{{ msg.steps.length }}）</summary>
-          <ul>
-            <li v-for="(step, idx) in msg.steps" :key="idx">
-              <strong>{{ step.type }}</strong> — {{ step.summary }}
-              <pre v-if="step.detail" class="agent-chat-step-detail agent-scroll">{{
-                step.detail
-              }}</pre>
-            </li>
-          </ul>
-        </details>
-        <div
-          v-for="card in msg.confirmations || []"
-          :key="card.confirmation_id"
-          class="agent-confirm-card"
-          :data-status="card.status"
-        >
-          <div class="agent-confirm-title">确认提交工作流</div>
-          <div class="agent-confirm-summary">{{ confirmSummaryLabel(card) }}</div>
-          <p v-if="card.message" class="agent-confirm-msg">{{ card.message }}</p>
-          <div v-if="card.status === 'pending'" class="agent-confirm-meta">
-            <template v-if="remainingSeconds(card.expires_at) != null">
-              剩余 {{ remainingSeconds(card.expires_at) }}s
-            </template>
-            <template v-else>待确认</template>
-          </div>
-          <div v-else class="agent-confirm-meta">
-            {{ card.resultMessage || card.status }}
-          </div>
-          <div v-if="card.status === 'pending'" class="agent-confirm-actions">
-            <button
-              type="button"
-              class="agent-confirm-approve"
-              :disabled="card.busy || remainingSeconds(card.expires_at) === 0"
-              @click="resolveConfirmation(msg.id, card.confirmation_id, 'approve')"
-            >
-              确认提交
-            </button>
-            <button
-              type="button"
-              class="agent-confirm-reject"
-              :disabled="card.busy"
-              @click="resolveConfirmation(msg.id, card.confirmation_id, 'reject')"
-            >
-              取消
-            </button>
-          </div>
+        <div class="agent-chat-title">
+          <span class="agent-chat-dot" aria-hidden="true" />
+          <span>地图助手</span>
         </div>
-        <div v-if="msg.usage" class="agent-chat-usage">
-          tokens: {{ msg.usage.total_tokens }}{{ msg.usage.estimated ? '（估算）' : '' }}
-        </div>
-      </div>
-    </div>
+        <button type="button" class="agent-chat-close" aria-label="关闭" @click="emit('close')">
+          <X :size="16" />
+        </button>
+      </header>
 
-    <footer class="agent-chat-footer">
-      <div class="agent-chat-context" aria-live="polite">
-        <span v-if="mapPointLabel" class="agent-chat-chip" title="地图选点将随对话一并发送">
-          选点 {{ mapPointLabel }}
-        </span>
-        <span v-else class="agent-chat-chip agent-chat-chip--muted">
-          地图点击选点后可查坐标与图层值
-        </span>
+      <div ref="listRef" class="agent-chat-list" @scroll.passive="onListScroll">
+        <div
+          v-for="msg in messages"
+          :key="msg.id"
+          class="agent-chat-bubble"
+          :class="[
+            `agent-chat-bubble--${msg.role}`,
+            msg.id === streamingId ? 'agent-chat-bubble--streaming' : '',
+          ]"
+        >
+          <div
+            v-if="msg.role === 'assistant' && msg.html != null && msg.html !== ''"
+            class="agent-chat-md agent-scroll"
+            v-html="msg.html"
+          />
+          <pre v-else class="agent-chat-text agent-scroll">{{
+            msg.text ||
+            (msg.id === streamingId && sending
+              ? streamPhase === 'connecting'
+                ? '正在连接助手…'
+                : streamPhase === 'fallback'
+                  ? '流式失败，改用普通请求…'
+                  : streamPhase === 'working'
+                    ? liveStatus || '助手处理中…'
+                    : '…'
+              : '')
+          }}</pre>
+          <details
+            v-if="msg.steps?.length"
+            class="agent-chat-steps"
+            :open="msg.id === streamingId ? stepsOpen : msg.keepStepsOpen"
+          >
+            <summary>过程（{{ msg.steps.length }}）</summary>
+            <ul>
+              <li v-for="(step, idx) in msg.steps" :key="idx">
+                <strong>{{ step.type }}</strong> — {{ step.summary }}
+                <pre v-if="step.detail" class="agent-chat-step-detail agent-scroll">{{
+                  step.detail
+                }}</pre>
+              </li>
+            </ul>
+          </details>
+          <div
+            v-for="card in msg.confirmations || []"
+            :key="card.confirmation_id"
+            class="agent-confirm-card"
+            :data-status="card.status"
+          >
+            <div class="agent-confirm-title">确认提交工作流</div>
+            <div class="agent-confirm-summary">{{ confirmSummaryLabel(card) }}</div>
+            <p v-if="card.message" class="agent-confirm-msg">{{ card.message }}</p>
+            <div v-if="card.status === 'pending'" class="agent-confirm-meta">
+              <template v-if="remainingSeconds(card.expires_at) != null">
+                剩余 {{ remainingSeconds(card.expires_at) }}s
+              </template>
+              <template v-else>待确认</template>
+            </div>
+            <div v-else class="agent-confirm-meta">
+              {{ card.resultMessage || card.status }}
+            </div>
+            <div v-if="card.status === 'pending'" class="agent-confirm-actions">
+              <button
+                type="button"
+                class="agent-confirm-approve"
+                :disabled="card.busy || remainingSeconds(card.expires_at) === 0"
+                @click="resolveConfirmation(msg.id, card.confirmation_id, 'approve')"
+              >
+                确认提交
+              </button>
+              <button
+                type="button"
+                class="agent-confirm-reject"
+                :disabled="card.busy"
+                @click="resolveConfirmation(msg.id, card.confirmation_id, 'reject')"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+          <div v-if="msg.usage" class="agent-chat-usage">
+            tokens: {{ msg.usage.total_tokens }}{{ msg.usage.estimated ? '（估算）' : '' }}
+          </div>
+        </div>
       </div>
-      <textarea
-        ref="inputRef"
-        v-model="input"
-        class="agent-chat-input"
-        rows="1"
-        placeholder="输入指令，Enter 发送 · Shift+Enter 换行"
-        :disabled="sending"
-        @keydown="onKeydown"
-        @input="autosizeInput"
-      />
+
+      <footer class="agent-chat-footer">
+        <div class="agent-chat-context" aria-live="polite">
+          <span v-if="mapPointLabel" class="agent-chat-chip" title="地图选点将随对话一并发送">
+            选点 {{ mapPointLabel }}
+          </span>
+          <span v-else class="agent-chat-chip agent-chat-chip--muted">
+            地图点击选点后可查坐标与图层值
+          </span>
+        </div>
+        <p
+          v-if="sending && statusLabel"
+          class="agent-chat-status"
+          role="status"
+          aria-live="polite"
+        >
+          <span class="agent-chat-status-dot" aria-hidden="true" />
+          {{ statusLabel }}
+        </p>
+        <textarea
+          ref="inputRef"
+          v-model="input"
+          class="agent-chat-input"
+          rows="1"
+          placeholder="输入指令，Enter 发送 · Shift+Enter 换行"
+          :disabled="sending"
+          @keydown="onKeydown"
+          @input="autosizeInput"
+        />
+        <button
+          type="button"
+          class="agent-chat-send"
+          :disabled="sending || !input.trim()"
+          @click="send"
+        >
+          {{ sending ? '…' : '发送' }}
+        </button>
+      </footer>
       <button
         type="button"
-        class="agent-chat-send"
-        :disabled="sending || !input.trim()"
-        @click="send"
-      >
-        {{ sending ? '…' : '发送' }}
-      </button>
-    </footer>
-    <span class="agent-chat-resize-hint" aria-hidden="true" title="拖拽右下角调整大小" />
-  </aside>
+        class="agent-chat-resize"
+        aria-label="拖拽调整对话框大小"
+        title="拖拽调整大小"
+        @pointerdown="onResizePointerDown"
+      />
+    </aside>
+  </Transition>
 </template>
 
 <style scoped>
@@ -566,9 +925,6 @@ function onKeydown(ev: KeyboardEvent) {
   pointer-events: auto;
   min-width: 320px;
   min-height: 280px;
-  width: min(440px, calc(100vw - 24px));
-  max-width: min(720px, calc(100vw - 24px));
-  max-height: min(580px, calc(100vh - 96px));
   display: flex;
   flex-direction: column;
   border-radius: 16px;
@@ -579,32 +935,49 @@ function onKeydown(ev: KeyboardEvent) {
     0 18px 48px rgba(0, 0, 0, 0.36),
     0 0 0 1px color-mix(in srgb, var(--accent-surface) 35%, transparent) inset;
   overflow: hidden;
+  isolation: isolate;
   backdrop-filter: blur(12px);
-  resize: both;
-  animation: agent-panel-in 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: bottom right;
+  will-change: transform, opacity;
 }
 
-.agent-chat-panel--dragging {
-  animation: none;
+.agent-chat-panel--interacting {
+  backdrop-filter: none;
+  will-change: left, top, width, height;
+}
+
+/* 开合过渡（Vue Transition） */
+.agent-panel-enter-active,
+.agent-panel-leave-active {
+  transition:
+    opacity 220ms var(--ease-soft, cubic-bezier(0.25, 0.1, 0.25, 1)),
+    transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.agent-panel-enter-from {
+  opacity: 0;
+  transform: translateY(14px) scale(0.92);
+}
+
+.agent-panel-leave-to {
+  opacity: 0;
+  transform: translateY(10px) scale(0.94);
+}
+
+.agent-chat-panel--interacting.agent-panel-enter-active,
+.agent-chat-panel--interacting.agent-panel-leave-active {
   transition: none;
-  /* 拖动跟随：减少重绘毛边 */
-  will-change: left, top;
-}
-
-@keyframes agent-panel-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .agent-chat-panel {
-    animation: none;
+  .agent-panel-enter-active,
+  .agent-panel-leave-active {
+    transition: opacity 120ms ease;
+  }
+
+  .agent-panel-enter-from,
+  .agent-panel-leave-to {
+    transform: none;
   }
 }
 
@@ -617,6 +990,15 @@ function onKeydown(ev: KeyboardEvent) {
   background: var(--surface-3);
   flex-shrink: 0;
   min-height: 2.65rem;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  border-top-left-radius: 15px;
+  border-top-right-radius: 15px;
+}
+
+.agent-chat-panel--interacting .agent-chat-header {
+  cursor: grabbing;
 }
 
 .agent-chat-title {
@@ -669,7 +1051,7 @@ function onKeydown(ev: KeyboardEvent) {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  min-height: 140px;
+  min-height: 0;
   overscroll-behavior: contain;
 }
 
@@ -1047,6 +1429,12 @@ function onKeydown(ev: KeyboardEvent) {
   background: var(--surface-3);
   flex-shrink: 0;
   align-items: end;
+  /* 与面板圆角对齐，避免输入框聚焦描边/白底顶破左下角 */
+  border-bottom-left-radius: 15px;
+  border-bottom-right-radius: 15px;
+  overflow: hidden;
+  position: relative;
+  z-index: 0;
 }
 
 .agent-chat-context {
@@ -1055,6 +1443,41 @@ function onKeydown(ev: KeyboardEvent) {
   flex-wrap: wrap;
   gap: 0.35rem;
   min-width: 0;
+}
+
+.agent-chat-status {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.28rem 0.45rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-1));
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.agent-chat-status-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--accent);
+  flex: 0 0 auto;
+  animation: agent-status-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes agent-status-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .agent-chat-chip {
@@ -1098,8 +1521,9 @@ function onKeydown(ev: KeyboardEvent) {
 }
 
 .agent-chat-input:focus {
-  outline: 2px solid var(--accent-focus-ring);
+  outline: none;
   border-color: var(--accent-border);
+  box-shadow: 0 0 0 2px var(--accent-focus-ring);
 }
 
 .agent-chat-send {
@@ -1134,13 +1558,16 @@ function onKeydown(ev: KeyboardEvent) {
   transform: scale(0.96);
 }
 
-.agent-chat-resize-hint {
+.agent-chat-resize {
   position: absolute;
-  right: 4px;
-  bottom: 4px;
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0 0 14px 0;
   background:
     linear-gradient(
       135deg,
@@ -1156,7 +1583,15 @@ function onKeydown(ev: KeyboardEvent) {
       color-mix(in srgb, var(--text-muted) 55%, transparent) 71%,
       transparent 72%
     );
-  pointer-events: none;
-  opacity: 0.7;
+  background-color: transparent;
+  cursor: nwse-resize;
+  touch-action: none;
+  opacity: 0.75;
+  z-index: 2;
+}
+
+.agent-chat-resize:hover,
+.agent-chat-panel--interacting .agent-chat-resize {
+  opacity: 1;
 }
 </style>

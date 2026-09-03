@@ -193,17 +193,14 @@ export function useWorkflowEditorRun(
           throw error
         }
       }
-      const runId = await workflowRun.runWorkflowForCatalog(catalogId, {
+      await workflowRun.runWorkflowForCatalog(catalogId, {
         algorithmRequest,
         weatherRequest,
         timeRange: topLevelTimeRange,
         commandLabel: `运行画布工作流 ${workflowId}`,
         resourceProfile: /omega_sf|omega_block|omega_avg/i.test(workflowId) ? 'heavy' : undefined,
       })
-      if (typeof runId === 'string' && runId) {
-        // runId 已在 runWorkflowForCatalog → ensureRestoredRunGroup(submit) 写入组
-        workflowRun.bindRunIdToGroup(created.groupId, runId)
-      }
+      // runId 由 runWorkflowForCatalog → ensureRestoredRunGroup(submit) 写入计算组
       workflowEditorRef.value?.notifyRunOutcome?.(true)
     } catch (error) {
       workflowRun.updateRunGroupFromJob('', {

@@ -91,6 +91,8 @@ Code/frontend/.tmp_windy/
 # Natural Earth source zips (rebuilt via Tools/build_world_admin_boundaries.py)
 Code/frontend/public/data/boundaries/ne_*.zip
 Code/frontend/public/data/boundaries/*_src/
+Code/frontend/public/data/boundaries/admin_0/
+Code/frontend/public/data/boundaries/admin_1/
 
 # Test data binaries (large .mat files)
 Tools/test_data/
@@ -202,3 +204,7 @@ Tools/sync_server_data.py
 
 # CodeGraph 本地索引缓存（IDE/工具生成，不入库）
 .codegraph/
+
+# 本地 IDE/插件工作区根指针（不入库）
+.v2c/
+.video_agent/

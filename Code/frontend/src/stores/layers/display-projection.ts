@@ -1,6 +1,7 @@
 import type { LayerDescriptor } from '../../services/runtime-api'
 import { ORG_CATEGORY_NAME } from '../../ui-copy/brand'
 import { buildDefaultWeatherRenderHint } from '../../data/weather-render-hints'
+import { resolveStyleRenderHint } from '../../components/map/layer-symbology'
 import { formatClockHourLabel } from '../../utils/weather-timeline'
 import { resolveWeatherTileReadyKind } from '../../utils/weather-tile-readiness'
 import { buildAvailabilityState, buildCatalogFallbackItem } from './catalog-builders'
@@ -216,10 +217,15 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
       const baseRenderHint = isWeatherLayer
         ? buildDefaultWeatherRenderHint(layer.catalogId, descriptor)
         : (layer.jobLayer?.mapLayerPayload?.renderHint ?? null)
-      const weatherRenderHint =
-        baseRenderHint && layer.paletteOverride
-          ? { ...baseRenderHint, palette: layer.paletteOverride }
-          : baseRenderHint
+      // 色带 + 值域覆盖一并写入 renderHint（图例/COG preview/网格着色同源）
+      const weatherRenderHint = baseRenderHint
+        ? resolveStyleRenderHint({
+            renderHint: baseRenderHint,
+            paletteOverride: layer.paletteOverride,
+            vminOverride: layer.vminOverride,
+            vmaxOverride: layer.vmaxOverride,
+          })
+        : null
       let finalAvailability = availability
       if (isWeatherLayer) {
         const layerStatus = ctx.weatherTileManager.getLayerStatus(layer.catalogId)
@@ -280,7 +286,9 @@ export function projectActiveLayersDisplay(ctx: ActiveLayersDisplayContext): Act
               catalogId: layer.catalogId,
             }),
         category: layer.isAdminBoundary ? 'boundary' : item.category,
-        description: layer.isAdminBoundary ? '全球省/州级行政区边界叠加层（Natural Earth）。' : item.description,
+        description: layer.isAdminBoundary
+          ? '全球省/州级行政区边界叠加层（Natural Earth）。'
+          : item.description,
         engine: layer.isAdminBoundary ? 'builtin' : item.engine,
         supportsTime: item.supportsTime,
         runReadiness: item.runReadiness,

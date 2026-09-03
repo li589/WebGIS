@@ -2,7 +2,7 @@
   "_meta": {
     "kind": "system",
     "engine": "python_provider",
-    "name": "风云 ω 平均反演（在线）",
+    "name": "风云 平均 散射约束产品反演（在线）",
     "description": "目的：NSMC 门户在线拉取 FY3D/FY3B MWRI HDF（多账号轮换）→ fy_daily 转 YYYYMMDD.mat 落盘规范目录 → D2 avg-omega 逐日 DDCA 回代（ORIG_TS 单温度，FY3B→FY3D 时空匹配）。前置：nsmc 凭证（建议多账号）；GDAL CLI；D1 omega_block 已产出（tb_source=FY）；本地 SMAP 逐日 .mat/辅助库/NDVI 就绪。产出：目标年逐日 SM/VOD/OMEGA .mat。配置：tb_source=FY, fy_platform=3D。",
     "author": "system",
     "readonly": true,
@@ -16,7 +16,7 @@
     "category": "inversion"
   },
   "workflow_id": "omega_avg_daily_fy_online",
-  "name": "风云 ω 平均反演（在线）",
+  "name": "风云 平均 散射约束产品反演（在线）",
   "description": "fy_download FY3D+FY3B（NSMC 多账号并行）→ fy_daily（HDF→YYYYMMDD.mat）→ D2 avg-omega 逐日回代（ORIG_TS 单温度，FY3B→FY3D 时空匹配）。语义：平均=ω 固定为多年 DOY 气候态均值，逐日仅做轻量 DDCA 回代。",
   "nodes": [
     {
@@ -224,7 +224,7 @@
       ],
       "properties": {
         "layer_id": "method-fy-omega-doy-avg",
-        "display_name": "风云 ω 平均反演（在线）"
+        "display_name": "风云 平均 散射约束产品反演（在线）"
       }
     }
   ],
@@ -326,7 +326,7 @@
     "has_time_range_node": false,
     "has_bbox_node": false,
     "has_output_node": true,
-    "group_title": "风云 ω 反演产物（平均）",
+    "group_title": "风云 散射约束产品产物（平均）",
     "output_labels": {
       "SM": "土壤水分",
       "VOD": "植被光学厚度",

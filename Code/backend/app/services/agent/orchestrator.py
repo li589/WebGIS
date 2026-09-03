@@ -104,6 +104,115 @@ def _emit_stream_tail(
             _emit_safe(emit, "intent", dict(intent))
 
 
+_EMPTY_REPLY_MARKERS = frozenset({"", "（模型未返回文本）"})
+
+
+def _is_list_active_layers_query(message: str) -> bool:
+    import re
+
+    return bool(
+        re.search(r"哪些.*(图层|层)|活动图层|当前图层|list.*layer", message or "", re.I)
+    )
+
+
+def _is_catalog_search_query(message: str) -> bool:
+    """True when the user asks to search the layer library (not list active layers)."""
+    text = message or ""
+    if _is_list_active_layers_query(text):
+        return False
+    lower = text.casefold()
+    if any(k in text for k in ("搜索图层", "查找图层", "搜图层")):
+        return True
+    if "search layer" in lower or "search layers" in lower:
+        return True
+    if ("搜索" in text or "查找" in text) and ("图层" in text or "图库" in text):
+        return True
+    if "search" in lower and ("layer" in lower or "图层" in text):
+        return True
+    return False
+
+
+def _reply_needs_tool_synthesis(reply: str) -> bool:
+    return (reply or "").strip() in _EMPTY_REPLY_MARKERS
+
+
+def _synthesize_reply_from_tool_steps(steps: list[dict[str, Any]]) -> str | None:
+    """Turn the latest useful tool_result into user-visible Chinese text.
+
+    Models often call search_layers / sample tools and return empty ``content``;
+    without this, the UI only shows a blank bubble or a collapsed「过程」panel.
+    """
+    for step in reversed(steps):
+        if not isinstance(step, dict) or step.get("type") != "tool_result":
+            continue
+        detail = step.get("detail")
+        data: Any = None
+        if isinstance(detail, dict):
+            data = detail
+        elif isinstance(detail, str) and detail.strip().startswith("{"):
+            try:
+                data = json.loads(detail)
+            except json.JSONDecodeError:
+                continue
+        if not isinstance(data, dict):
+            continue
+        if not data.get("ok"):
+            err = str(data.get("error") or "").strip()
+            if err:
+                return f"工具调用未成功：{err}"
+            continue
+        layers = data.get("layers")
+        if isinstance(layers, list):
+            q = str(data.get("query") or "").strip()
+            if not layers:
+                hint = f"「{q}」" if q else "该关键词"
+                return (
+                    f"未在图层库中找到与{hint}匹配的图层。"
+                    "若要查看地图上已添加的图层，请说「有哪些活动图层」。"
+                )
+            lines = [
+                f"- {item.get('display_name') or item.get('layer_id')}（`{item.get('layer_id')}`）"
+                for item in layers
+                if isinstance(item, dict) and item.get("layer_id")
+            ]
+            head = f"图层库搜索「{q}」命中 {len(lines)} 条：" if q else f"找到 {len(lines)} 个图层："
+            return head + "\n" + "\n".join(lines)
+        samples = data.get("samples")
+        if isinstance(samples, list) and samples:
+            lines = []
+            for s in samples[:12]:
+                if not isinstance(s, dict):
+                    continue
+                cid = s.get("catalog_id") or s.get("display_name") or "?"
+                if s.get("ok"):
+                    val = s.get("value")
+                    unit = s.get("unit") or ""
+                    lines.append(f"- {cid}: {val}{(' ' + unit) if unit else ''}")
+                else:
+                    lines.append(f"- {cid}: {s.get('error') or '采样失败'}")
+            if lines:
+                return "点值采样结果：\n" + "\n".join(lines)
+        layer_meta = data.get("layer")
+        if isinstance(layer_meta, dict) and layer_meta.get("layer_id"):
+            return (
+                f"图层 `{layer_meta.get('layer_id')}`："
+                f"{layer_meta.get('display_name') or ''}\n"
+                f"{json.dumps(layer_meta, ensure_ascii=False)[:600]}"
+            )
+    return None
+
+
+def _ensure_visible_reply(
+    reply: str, steps: list[dict[str, Any]], *, fallback: str = "（模型未返回文本）"
+) -> str:
+    if not _reply_needs_tool_synthesis(reply):
+        return reply
+    synthesized = _synthesize_reply_from_tool_steps(steps)
+    if synthesized:
+        return synthesized
+    return reply.strip() or fallback
+
+
 _kits_lock = threading.Lock()
 _prompt_cache: tuple[float | None, str] | None = None
 _ui_intents_cache: tuple[float | None, list[dict[str, Any]]] | None = None
@@ -486,6 +595,13 @@ def run_chat(
 
     history = load_history(user_id=user_id, session_id=sid)
     steps: list[dict[str, Any]] = _EventSteps(on_event)
+    steps.append(
+        {
+            "type": "thought",
+            "summary": "已接受请求，开始处理…",
+            "detail": f"protocol={protocol}",
+        }
+    )
     client_context = sanitize_client_context(client_context)
 
     if protocol == "demo":
@@ -496,14 +612,11 @@ def run_chat(
                 "detail": "使用关键词启发式生成 UI intents",
             }
         )
-        # Optional: search_layers if message looks like catalog search
-        if (
-            any(k in message for k in ("搜索", "查找图层", "有哪些层", "search"))
-            or "图层" in message
-        ):
+        # Optional: search_layers only for explicit catalog search (not「有哪些活动图层」)
+        if _is_catalog_search_query(message):
             q = message
-            for prefix in ("搜索", "查找图层", "查找", "search"):
-                if message.startswith(prefix):
+            for prefix in ("搜索图层", "查找图层", "搜图层", "搜索", "查找", "search"):
+                if message.casefold().startswith(prefix.casefold()):
                     q = message[len(prefix) :].strip() or message
                     break
             steps.append(
@@ -717,6 +830,8 @@ def run_chat(
                 if reply
                 else "已生成工作流确认卡，请点击「确认提交」后才会真正排队。"
             )
+        # Prefer tool synthesis when mock reply is empty but tools returned data
+        reply = _ensure_visible_reply(reply, list(steps), fallback=reply or "（无回复）")
         if history:
             reply = f"（已结合此前 {len(history)//2} 轮对话）\n{reply}"
         usage = {
@@ -769,6 +884,13 @@ def run_chat(
 
     try:
         if protocol == "anthropic":
+            steps.append(
+                {
+                    "type": "thought",
+                    "summary": "正在等待模型响应…",
+                    "detail": f"{provider_kind}/{model}",
+                }
+            )
             messages: list[dict[str, Any]] = [
                 {"role": m["role"], "content": m["content"]} for m in history
             ]
@@ -857,6 +979,7 @@ def run_chat(
 
             if not reply and not intents:
                 reply = "（模型未返回文本）"
+            reply = _ensure_visible_reply(reply, list(steps))
             if not intents:
                 fallback = mock_chat(
                     message, session_id=sid, client_context=client_context
@@ -886,6 +1009,13 @@ def run_chat(
             return out
 
         # OpenAI-compatible
+        steps.append(
+            {
+                "type": "thought",
+                "summary": "正在等待模型响应…",
+                "detail": f"{provider_kind}/{model}",
+            }
+        )
         messages_oai: list[dict[str, Any]] = [{"role": "system", "content": system}]
         for m in history:
             messages_oai.append({"role": m["role"], "content": m["content"]})
@@ -987,6 +1117,7 @@ def run_chat(
 
         if not reply and not intents:
             reply = "（模型未返回文本）"
+        reply = _ensure_visible_reply(reply, list(steps))
         if not intents:
             fallback = mock_chat(message, session_id=sid, client_context=client_context)
             heur = fallback.get("ui_intents") or []

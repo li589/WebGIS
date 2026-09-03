@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  getGlobeBackgroundMode,
+  getGlobeRenderEngine,
   is3DViewExperimentalEnabled,
   set3DViewExperimentalEnabled,
+  setGlobeBackgroundMode,
+  setGlobeRenderEngine,
   subscribe3DViewExperimental,
+  subscribeGlobeScene,
 } from '@/services/settings-local'
 
 function makeMemoryStorage(): Storage {
@@ -81,5 +86,42 @@ describe('3D 实验视图本地偏好', () => {
     expect(is3DViewExperimentalEnabled()).toBe(true)
     bad()
     good()
+  })
+
+  it('持久化太阳系背景模式', () => {
+    expect(getGlobeBackgroundMode()).toBe('auto')
+    setGlobeBackgroundMode('solar_system')
+    expect(getGlobeBackgroundMode()).toBe('solar_system')
+    setGlobeBackgroundMode('starfield')
+    expect(getGlobeBackgroundMode()).toBe('starfield')
+  })
+
+  it('3D 渲染引擎默认 maplibre，可切换并回退非法值', () => {
+    expect(getGlobeRenderEngine()).toBe('maplibre')
+    setGlobeRenderEngine('cesium')
+    expect(getGlobeRenderEngine()).toBe('cesium')
+    setGlobeRenderEngine('maplibre')
+    expect(getGlobeRenderEngine()).toBe('maplibre')
+
+    // 非法值回退
+    const raw = JSON.parse(localStorage.getItem('cgda.settings_ui') || '{}') as Record<
+      string,
+      unknown
+    >
+    raw.globeRenderEngine = 'unity'
+    localStorage.setItem('cgda.settings_ui', JSON.stringify(raw))
+    expect(getGlobeRenderEngine()).toBe('maplibre')
+  })
+
+  it('渲染引擎变更通知 globe scene 订阅者', () => {
+    const seen: string[] = []
+    const unsubscribe = subscribeGlobeScene(() => {
+      seen.push(getGlobeRenderEngine())
+    })
+    setGlobeRenderEngine('cesium')
+    setGlobeRenderEngine('maplibre')
+    unsubscribe()
+    setGlobeRenderEngine('cesium')
+    expect(seen).toEqual(['cesium', 'maplibre'])
   })
 })

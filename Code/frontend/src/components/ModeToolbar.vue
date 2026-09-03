@@ -20,6 +20,7 @@ import AppButton from './ui/AppButton.vue'
 import IconButton from './ui/IconButton.vue'
 import Chip from './ui/Chip.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
+import Tooltip from './ui/Tooltip.vue'
 
 import {
   TILE_SOURCES,
@@ -248,83 +249,99 @@ function sourcePillLabel(source: TileSourceConfig): string {
 
         <!-- 交互模式：移动/选择/测量 -->
         <div class="mode-group">
-          <IconButton
-            size="sm"
-            :active="uiStore.interactionMode === 'move'"
-            label="移动模式（拖动平移地图）"
-            @click="setInteractionMode('move')"
-          >
-            <template #icon><Move :size="14" /></template>
-          </IconButton>
-          <IconButton
-            size="sm"
-            :active="uiStore.interactionMode === 'select'"
-            label="点查模式（点击查询）"
-            @click="setInteractionMode('select')"
-          >
-            <template #icon><Crosshair :size="14" /></template>
-          </IconButton>
-          <IconButton
-            size="sm"
-            :active="uiStore.interactionMode === 'measure'"
-            label="测量模式（点击打点，双击完成）"
-            @click="setInteractionMode('measure')"
-          >
-            <template #icon><Ruler :size="14" /></template>
-          </IconButton>
-          <IconButton
-            size="sm"
-            :active="uiStore.interactionMode === 'draw'"
-            label="绘制模式（点击添加顶点，双击完成多边形）"
-            @click="setInteractionMode('draw')"
-          >
-            <template #icon><Pen :size="14" /></template>
-          </IconButton>
-          <IconButton
+          <Tooltip text="移动" position="bottom">
+            <IconButton
+              size="sm"
+              :active="uiStore.interactionMode === 'move'"
+              label="移动模式（拖动平移地图）"
+              @click="setInteractionMode('move')"
+            >
+              <template #icon><Move :size="14" /></template>
+            </IconButton>
+          </Tooltip>
+          <Tooltip text="点查" position="bottom">
+            <IconButton
+              size="sm"
+              :active="uiStore.interactionMode === 'select'"
+              label="点查模式（点击查询）"
+              @click="setInteractionMode('select')"
+            >
+              <template #icon><Crosshair :size="14" /></template>
+            </IconButton>
+          </Tooltip>
+          <Tooltip text="测量" position="bottom">
+            <IconButton
+              size="sm"
+              :active="uiStore.interactionMode === 'measure'"
+              label="测量模式（点击打点，双击完成）"
+              @click="setInteractionMode('measure')"
+            >
+              <template #icon><Ruler :size="14" /></template>
+            </IconButton>
+          </Tooltip>
+          <Tooltip text="绘制" position="bottom">
+            <IconButton
+              size="sm"
+              :active="uiStore.interactionMode === 'draw'"
+              label="绘制模式（点击添加顶点，双击完成多边形）"
+              @click="setInteractionMode('draw')"
+            >
+              <template #icon><Pen :size="14" /></template>
+            </IconButton>
+          </Tooltip>
+          <Tooltip
             v-if="uiStore.interactionMode === 'measure' && uiStore.measureState.points.length > 0"
-            size="sm"
-            variant="danger"
-            label="清除测量路径"
-            @click="clearMeasure"
+            text="清除测量"
+            position="bottom"
           >
-            <template #icon><Trash2 :size="14" /></template>
-          </IconButton>
+            <IconButton size="sm" variant="danger" label="清除测量路径" @click="clearMeasure">
+              <template #icon><Trash2 :size="14" /></template>
+            </IconButton>
+          </Tooltip>
         </div>
 
         <!-- 截图 -->
-        <AppButton size="sm" variant="secondary" aria-label="导出截图" @click="handleScreenshot">
-          <template #icon><Camera :size="14" /></template>
-          <span v-if="!isMobile">截图</span>
-        </AppButton>
+        <Tooltip text="截图" position="bottom">
+          <AppButton size="sm" variant="secondary" aria-label="导出截图" @click="handleScreenshot">
+            <template #icon><Camera :size="14" /></template>
+            <span v-if="!isMobile">截图</span>
+          </AppButton>
+        </Tooltip>
 
         <!-- 工作流编辑器 -->
-        <AppButton
-          size="sm"
-          variant="secondary"
-          :aria-label="WORKFLOW_COPY.entryTitle"
-          @click="handleWorkflowEditor"
-        >
-          <template #icon><Workflow :size="14" /></template>
-          <span v-if="!isMobile">{{ WORKFLOW_COPY.entry }}</span>
-        </AppButton>
+        <Tooltip :text="WORKFLOW_COPY.entry" position="bottom">
+          <AppButton
+            size="sm"
+            variant="secondary"
+            :aria-label="WORKFLOW_COPY.entryTitle"
+            @click="handleWorkflowEditor"
+          >
+            <template #icon><Workflow :size="14" /></template>
+            <span v-if="!isMobile">{{ WORKFLOW_COPY.entry }}</span>
+          </AppButton>
+        </Tooltip>
 
         <!-- 设置 -->
-        <AppButton
-          size="sm"
-          variant="secondary"
-          :aria-label="SETTINGS_COPY.panelTitle"
-          @click="handleSettings"
-        >
-          <template #icon><Settings :size="14" /></template>
-          <span v-if="!isMobile">{{ SETTINGS_COPY.panelTitle }}</span>
-        </AppButton>
+        <Tooltip :text="SETTINGS_COPY.panelTitle" position="bottom">
+          <AppButton
+            size="sm"
+            variant="secondary"
+            :aria-label="SETTINGS_COPY.panelTitle"
+            @click="handleSettings"
+          >
+            <template #icon><Settings :size="14" /></template>
+            <span v-if="!isMobile">{{ SETTINGS_COPY.panelTitle }}</span>
+          </AppButton>
+        </Tooltip>
 
         <!-- 日志 -->
         <div class="log-btn-wrap">
-          <AppButton size="sm" variant="secondary" aria-label="系统日志" @click="emit('openLog')">
-            <template #icon><ScrollText :size="14" /></template>
-            <span v-if="!isMobile">日志</span>
-          </AppButton>
+          <Tooltip text="日志" position="bottom">
+            <AppButton size="sm" variant="secondary" aria-label="系统日志" @click="emit('openLog')">
+              <template #icon><ScrollText :size="14" /></template>
+              <span v-if="!isMobile">日志</span>
+            </AppButton>
+          </Tooltip>
           <span
             v-if="logStore.errorCount > 0"
             class="log-badge"

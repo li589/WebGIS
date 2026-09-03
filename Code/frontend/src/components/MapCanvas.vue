@@ -7,6 +7,8 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, toRef, watch } f
 import { AlertTriangle } from './ui/icons'
 import DrawToolbar from './map/draw-toolbar.vue'
 import GlobeStarfield from './map/GlobeStarfield.vue'
+import GlobeSolarSystemBackdrop from './map/GlobeSolarSystemBackdrop.vue'
+import type { SolarSystemCamera } from './map/globe-solar-system'
 import ZonalStatsCard from './info-panel/ZonalStatsCard.vue'
 import VectorAttributeTable from './info-panel/VectorAttributeTable.vue'
 import { useLayersStore } from '../stores/layers'
@@ -27,8 +29,15 @@ import type { MapCanvasNonWeatherLayerSyncModule } from './map/map-canvas-non-we
 import { createMapStagePresentationModule } from './map/map-stage-presentation-module'
 import { createMapCanvasState } from './map/map-canvas-state'
 import { createMapCanvasTeardownBinder } from './map/map-canvas-teardown-binder'
+import { installSafeMapStyleAccess, isMapStyleAlive } from './map/map-style-guards'
 import type { OverlayTimeState } from './map/overlay-image-module'
 import { validateOverlayBounds } from './map/overlay-image-module'
+import {
+  consumeGlobeViewSnapshot,
+  heightMetersToZoom,
+  setGlobeViewSnapshot,
+  zoomToHeightMeters,
+} from './map/globe-engine/view-bridge'
 import {
   buildMapStageAppearanceModel,
   buildMapStageDisplayModel,
@@ -118,12 +127,17 @@ const {
   tileFailedProvider,
 } = state
 
+/** 卸载 / 样式重建期间为 true；须在 mapReady 之前声明供 getMapReady 闭包使用 */
+let _isUnmounted = false
+const isMapInteractive = () =>
+  mapReady.value && !_isUnmounted && isMapStyleAlive(state.resources.map)
+
 const teardownBinder = createMapCanvasTeardownBinder({
   getResources: () => state.resources,
   clearResources: state.clearResources,
 })
 const actionBridge = createMapCanvasActionBridge({
-  getMapReady: () => mapReady.value,
+  getMapReady: () => isMapInteractive(),
   getHasAdminBoundary: () => hasAdminBoundary.value,
   getAdminBoundaryOpacity: () => adminBoundaryOpacity.value,
   getAdminBoundaryModule: () => state.resources.adminBoundaryModule,
@@ -305,12 +319,15 @@ const themeStore = useThemeStore()
 /** 按当前投影模式更新 background layer 颜色（globe=球面深空蓝兜底/浅蓝灰；2D=surface-1）。 */
 function applyBackgroundColor(): void {
   const map = state.resources.map
-  if (map && mapReady.value) {
+  if (!map || !isMapInteractive()) return
+  try {
     map.setPaintProperty(
       'background',
       'background-color',
       resolveGlobeBackgroundColor(props.globeProjection === true, themeStore.mode === 'light'),
     )
+  } catch {
+    /* style mid-teardown */
   }
 }
 
@@ -343,14 +360,12 @@ const stageAppearanceModel = computed(() =>
 // 设计变更：关闭「分布淡底 / 氛围遮罩」时，底图应始终可见，不再在低 zoom 抑制。
 // 原逻辑在 zoom≤3.5 + 无数据图层 + 设置关闭时隐藏底图瓦片，导致大洲/世界视口下底图消失。
 // 现改为始终保留底图，氛围效果由 CSS chrome-off 类统一控制（opacity:0）。
-let _isUnmounted = false
-
 const shouldSuppressBasemap = computed(() => false)
 
 function applyBasemapSuppression() {
-  if (_isUnmounted) return
+  if (!isMapInteractive()) return
   const map = state.resources.map
-  if (!map || !mapReady.value) return
+  if (!map) return
   // 空白底图（tileSourceId=none）必须保持隐藏；否则切源后的延时抑制会把旧瓦片重新显示出来
   const blankBasemap = props.tileSourceId === 'none'
   const suppress = shouldSuppressBasemap.value || blankBasemap
@@ -387,18 +402,35 @@ watch(
   ([on, ready]) => {
     if (!ready || _isUnmounted) return
     const map = state.resources.map
-    if (!map) return
+    if (!map || !isMapStyleAlive(map)) return
     const target = on ? 'globe' : 'mercator'
     try {
       const current = map.getProjection?.()
-      if (current?.type === target) return
-      map.setProjection({ type: target })
-      debugLog('MapCanvas', 'setProjection', target)
+      if (current?.type !== target) {
+        map.setProjection({ type: target })
+        debugLog('MapCanvas', 'setProjection', target)
+      }
     } catch (err) {
       console.warn('[MapCanvas] setProjection failed:', err)
     }
-    // 投影切换后同步 background 颜色（globe=深空蓝球面兜底；2D=surface-1）
     applyBackgroundColor()
+    // 从 Cesium 切回 MapLibre globe 时恢复视口
+    if (on) {
+      const snap = consumeGlobeViewSnapshot()
+      if (snap) {
+        try {
+          const zoom = snap.zoom ?? heightMetersToZoom(snap.heightMeters, snap.lat)
+          map.jumpTo({
+            center: [snap.lng, snap.lat],
+            zoom,
+            bearing: snap.bearing ?? map.getBearing(),
+            pitch: snap.pitch ?? map.getPitch(),
+          })
+        } catch (err) {
+          console.warn('[MapCanvas] restore globe view failed:', err)
+        }
+      }
+    }
   },
   { immediate: true },
 )
@@ -408,6 +440,34 @@ watch(
 const globeProjectionOn = computed(() => props.globeProjection === true)
 const globeBackgroundMode = ref<GlobeBackgroundMode>(getGlobeBackgroundMode())
 const globeDaylightMode = ref<GlobeDaylightMode>(getGlobeDaylightMode())
+const solarSystemActive = computed(
+  () => globeProjectionOn.value && globeBackgroundMode.value === 'solar_system',
+)
+const solarCamera = ref<SolarSystemCamera>({
+  lng: 0,
+  lat: 0,
+  bearing: 0,
+  pitch: 0,
+  zoom: 1.5,
+})
+
+function syncSolarCameraFromMap() {
+  const map = state.resources.map
+  if (!map) return
+  try {
+    const c = map.getCenter()
+    solarCamera.value = {
+      lng: c.lng,
+      lat: c.lat,
+      bearing: map.getBearing?.() ?? 0,
+      pitch: map.getPitch?.() ?? 0,
+      zoom: map.getZoom?.() ?? 1.5,
+    }
+  } catch {
+    /* map disposed */
+  }
+}
+
 let _unsubscribeGlobeScene: (() => void) | null = null
 _unsubscribeGlobeScene = subscribeGlobeScene(() => {
   globeBackgroundMode.value = getGlobeBackgroundMode()
@@ -416,7 +476,30 @@ _unsubscribeGlobeScene = subscribeGlobeScene(() => {
 onBeforeUnmount(() => {
   _unsubscribeGlobeScene?.()
   _unsubscribeGlobeScene = null
+  const map = state.resources.map
+  if (map) {
+    map.off('move', syncSolarCameraFromMap)
+    map.off('zoom', syncSolarCameraFromMap)
+  }
 })
+
+// 太阳系背景：跟随地图相机
+watch(
+  [solarSystemActive, mapReady],
+  ([active, ready]) => {
+    const map = state.resources.map
+    if (!map || !ready) return
+    if (active) {
+      syncSolarCameraFromMap()
+      map.on('move', syncSolarCameraFromMap)
+      map.on('zoom', syncSolarCameraFromMap)
+    } else {
+      map.off('move', syncSolarCameraFromMap)
+      map.off('zoom', syncSolarCameraFromMap)
+    }
+  },
+  { immediate: true },
+)
 
 // map 实例在 onMounted 异步创建；watch 先登记，创建后立即 apply，
 // 时间轴 / 底图源 / 光影档位变化时仅更新光照与天空。
@@ -651,6 +734,7 @@ onMounted(async () => {
         container: mapContainer.value,
       }),
     )
+    installSafeMapStyleAccess(mapInstance)
     state.resources.map = mapInstance
     // 调试诊断口：浏览器控制台排查 globe/光照/图层状态用（perf-probe 惯例，只读引用）
     if (typeof window !== 'undefined') {
@@ -661,7 +745,7 @@ onMounted(async () => {
       layersStore,
       weatherTileManager,
       getCurrentHour: () => props.currentHour,
-      getMapReady: () => mapReady.value,
+      getMapReady: () => isMapInteractive(),
       getTileConfig: (sourceId) => TILE_SOURCE_MAP.get(sourceId),
       getCurrentTileSourceId: () => props.tileSourceId,
       setTileLoadFailed: (failed) => {
@@ -834,7 +918,29 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  // 切到 Cesium 前写入视口桥（仅 globe 3D）；须在 map.remove 之前、style 仍可用时
+  if (props.globeProjection) {
+    const map = state.resources.map
+    if (map && isMapStyleAlive(map)) {
+      try {
+        const c = map.getCenter()
+        const zoom = map.getZoom()
+        setGlobeViewSnapshot({
+          lng: c.lng,
+          lat: c.lat,
+          zoom,
+          heightMeters: zoomToHeightMeters(zoom, c.lat),
+          bearing: map.getBearing(),
+          pitch: map.getPitch(),
+        })
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  // 先掐断就绪态，避免 dispose / 异步 watcher 在 style 清空时继续 getLayer
   _isUnmounted = true
+  mapReady.value = false
   cancelPendingNightMask()
   unsubscribeMapChrome()
   teardownBinder.dispose()
@@ -1076,10 +1182,18 @@ async function handleLocateMe() {
     ]"
     :style="stageAppearanceModel.stageStyleVars"
   >
-    <!-- 3D globe 深空星图背景层（2D 时淡出；在地图画布之下）
+    <!-- 3D globe 深空背景：太阳系（相机联动）或静态星图
          suppress-galaxy：「自然/无」档隐藏银河白带（左上亮来源），「标准」档保留 -->
+    <GlobeSolarSystemBackdrop
+      v-if="solarSystemActive"
+      :active="solarSystemActive"
+      :hour="currentHour"
+      :current-date="currentDate"
+      :camera="solarCamera"
+    />
     <GlobeStarfield
-      :mode="globeBackgroundMode"
+      v-else
+      :mode="globeBackgroundMode === 'solar_system' ? 'starfield' : globeBackgroundMode"
       :active="globeProjectionOn"
       :suppress-galaxy="globeDaylightMode !== 'standard'"
     />

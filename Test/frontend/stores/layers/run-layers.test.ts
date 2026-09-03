@@ -559,6 +559,44 @@ describe("upsertJobLayer", () => {
     expect(group.dissolvable).toBe(true);
     expect(group.message).toBe("提交失败");
   });
+
+  it("isAnalysisToolRun: 不调用 rememberTrackedWorkflowRun / updateRunGroupForCatalog", () => {
+    const { slice, calls } = setup();
+    activeLayers.push(
+      makeLayer({
+        catalogId: "cat-main",
+        jobLayer: makeJob({ jobId: "run-main", status: "running" }),
+        dataState: "real",
+      }),
+    );
+    slice.upsertJobLayer(
+      "cat-gis",
+      makeJob({
+        jobId: "run-gis",
+        status: "running",
+        isAnalysisToolRun: true,
+      }),
+    );
+    expect(calls.rememberTrackedWorkflowRun).not.toHaveBeenCalled();
+    expect(slice.runLayerGroups.value).toHaveLength(0);
+    const mainLayer = activeLayers.find((l) => l.catalogId === "cat-main");
+    expect(mainLayer?.jobLayer?.jobId).toBe("run-main");
+  });
+
+  it("isAnalysisToolRun: failed 终态不触发 cleanupUnproducedRunLayers", () => {
+    const { slice, calls } = setup();
+    const cleanupSpy = vi.spyOn(slice, "cleanupUnproducedRunLayers");
+    slice.upsertJobLayer(
+      "cat-gis",
+      makeJob({
+        jobId: "run-gis-fail",
+        status: "failed",
+        isAnalysisToolRun: true,
+      }),
+    );
+    expect(cleanupSpy).not.toHaveBeenCalled();
+    expect(calls.removeLayer).not.toHaveBeenCalled();
+  });
 });
 
 // ── buildWorkflowPayloadForCatalog ────────────────────────────────────────────
@@ -960,9 +998,38 @@ describe("attachAlgorithmProductOverlays", () => {
     expect(count).toBe(0);
     // 延迟确认窗口内不写横幅（succeeded 事件先到、产物登记后到的竞态防护）
     expect(slice.workflowError.value).toBeNull();
-    await vi.advanceTimersByTimeAsync(2_500);
+    await vi.advanceTimersByTimeAsync(5_500);
     expect(slice.workflowError.value).toBe(WORKFLOW_COPY.noMapLayers);
     vi.useRealTimers();
+  });
+
+  it("result_refs 缺 OMEGA 时与 materialize 合并补齐", async () => {
+    const { slice } = setup();
+    const { members } = setupGroup(slice, {
+      runId: "run-merge",
+      tags: ["SM", "VOD", "OMEGA"],
+    });
+    slice.setJobLayers([
+      makeJob({ jobId: "run-merge", catalogId: "cat-1", status: "succeeded" }),
+    ]);
+    vi.mocked(extractOverlayImportsFromResultRefs).mockReturnValue([
+      { overlayLayerId: "ov-sm", title: "SM", productTag: "SM" },
+      { overlayLayerId: "ov-vod", title: "VOD", productTag: "VOD" },
+    ]);
+    mockMaterialize([
+      { overlay_layer_id: "ov-sm", title: "SM", product_tag: "SM" },
+      { overlay_layer_id: "ov-vod", title: "VOD", product_tag: "VOD" },
+      { overlay_layer_id: "ov-omega", title: "OMEGA", product_tag: "OMEGA" },
+    ]);
+    const count = await slice.attachAlgorithmProductOverlays(
+      [{ title: "partial" }] as Parameters<typeof extractOverlayImportsFromResultRefs>[0],
+      "cat-1",
+      "run-merge",
+    );
+    expect(count).toBe(3);
+    expect(members[0]!.importedRaster?.overlayLayerId).toBe("ov-sm");
+    expect(members[1]!.importedRaster?.overlayLayerId).toBe("ov-vod");
+    expect(members[2]!.importedRaster?.overlayLayerId).toBe("ov-omega");
   });
 
   it("running 空产物清除残留空态横幅", async () => {

@@ -46,6 +46,11 @@ import {
 } from './wind-particle-webgl-texture'
 import { resolveParticleResolution } from './wind-particle-gl-profile'
 import { isPerfEnabled, perfMark } from '../../utils/perf-probe'
+import {
+  GLOBE_OCCLUSION_RIM_COSINE,
+  getGlobeViewPole,
+  globeFacingCosine,
+} from './canvas-utils'
 
 /** MapLibre resize 事件名 */
 const MAP_EVENT_RESIZE = 'resize'
@@ -509,6 +514,10 @@ export class WindParticleWebGLLayer {
     // 维度不同（3D 球面 vs 2D mercator），由 uploadParticlePointBuffer /
     // drawWindField 分支处理。
     const isGlobe = this.map?.getProjection?.()?.type === 'globe'
+    if (this.useGlobe !== isGlobe) {
+      // 投影切换：清空 trail，避免 mercator/globe 残留拖尾叠出穿球鬼影
+      this.trailDirty = true
+    }
     this.useGlobe = isGlobe
     const fromTransform = transform?.getProjectionDataForCustomLayer?.(isGlobe)?.mainMatrix
     if (fromTransform && typeof fromTransform[0] === 'number') {
@@ -1130,12 +1139,15 @@ export class WindParticleWebGLLayer {
 
     if (this.useGlobe) {
       // 经纬度 → 单位球坐标 → mainMatrix(true) → 透视除法 → NDC
+      // 另用视向极点点积剔除地平线内侧背面（仅 cw<=0 不够，仍会穿球叠到圆盘）
       const DEG2RAD = Math.PI / 180
+      const viewPole = this.map ? getGlobeViewPole(this.map) : ([0, 0, 1] as [number, number, number])
       for (let i = 0; i < this.particleCount; i++) {
         const p = i * 4
         const [nx, ny] = decodePositionBytes(pixels[p], pixels[p + 1], pixels[p + 2], pixels[p + 3])
         const lon = west + (east - west) * nx
         const lat = north + (south - north) * ny
+        const facing = globeFacingCosine(lon, lat, viewPole)
         const latC = Math.max(-85.051129, Math.min(85.051129, lat))
         const lonR = lon * DEG2RAD
         const latR = latC * DEG2RAD
@@ -1147,12 +1159,12 @@ export class WindParticleWebGLLayer {
         const cx = m[0] * sx + m[4] * sy + m[8] * sz + m[12]
         const cy = m[1] * sx + m[5] * sy + m[9] * sz + m[13]
         const cw = m[3] * sx + m[7] * sy + m[11] * sz + m[15]
-        if (cw <= 0) {
-          // 镜头背面：把 NDC 推到 clip 空间外，gl_PointSize 仍占像素但位置裁掉
+        if (cw <= 0 || facing < GLOBE_OCCLUSION_RIM_COSINE) {
+          // 镜头背面 / 地平线内：推出裁剪空间，z<0 供片元 discard（防 trail 残影）
           const o = write * 3
           out[o] = 2.0
           out[o + 1] = 2.0
-          out[o + 2] = 0
+          out[o + 2] = -1
           write += 1
           continue
         }

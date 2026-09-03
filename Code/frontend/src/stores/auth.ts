@@ -113,7 +113,8 @@ export const useAuthStore = defineStore('auth', () => {
       const list = await fetchThemesPublic()
       publicThemes.value = Array.isArray(list) ? list : []
       if (!loginPreviewSlug.value && publicThemes.value.length === 1) {
-        loginPreviewSlug.value = publicThemes.value[0]?.slug ?? null
+        const only = publicThemes.value[0]?.slug
+        if (only) setLoginPreviewSlug(only)
       }
     } catch {
       publicThemes.value = []
@@ -146,10 +147,15 @@ export const useAuthStore = defineStore('auth', () => {
     const fromRoute = routeSlug?.trim() || null
     const fromStorage = readStoredLoginThemeSlug()
     const primary = publicThemes.value.find((t) => t.slug === primaryTheme.value?.slug)
-    const fallback = primary?.slug ?? publicThemes.value[0]?.slug ?? primaryTheme.value?.slug ?? null
+    const fallback =
+      primary?.slug ?? publicThemes.value[0]?.slug ?? primaryTheme.value?.slug ?? null
+    if (publicThemes.value.length === 0) {
+      setLoginPreviewSlug(fallback)
+      return
+    }
     const candidate = fromRoute ?? fromStorage ?? fallback
     if (!candidate) return
-    if (publicThemes.value.length > 0 && !publicThemes.value.some((t) => t.slug === candidate)) {
+    if (!publicThemes.value.some((t) => t.slug === candidate)) {
       setLoginPreviewSlug(fallback)
       return
     }
@@ -267,9 +273,13 @@ export const useAuthStore = defineStore('auth', () => {
       password?: string
       role?: UserRole
       enabled?: boolean
-      theme_id?: number | null
+      /** 必须绑定主题；禁止传 null 清除。 */
+      theme_id?: number
     },
   ) {
+    if ('theme_id' in patch && (patch.theme_id == null || !(patch.theme_id > 0))) {
+      throw new Error('每个用户必须绑定一个主题，不能清除 theme_id')
+    }
     const updated = await updateUser(userId, patch)
     users.value = users.value.map((u) => (u.id === userId ? updated : u))
     if (user.value?.id === userId) {

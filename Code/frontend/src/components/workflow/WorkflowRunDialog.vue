@@ -147,13 +147,13 @@ watch(outputTags, (tags) => {
 
 <template>
   <Transition name="cgda-modal">
-    <div
-      v-if="visible"
-      class="run-dialog-overlay"
-      role="presentation"
-      @click.self="handleCancel"
-    >
-      <div class="run-dialog cgda-modal-panel" role="dialog" aria-modal="true" aria-label="运行工作流">
+    <div v-if="visible" class="run-dialog-overlay" role="presentation" @click.self="handleCancel">
+      <div
+        class="run-dialog cgda-modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="运行工作流"
+      >
         <header class="dialog-header">
           <h3 class="dialog-title">运行工作流</h3>
           <p class="dialog-subtitle">{{ workflowName }} · 源图层: {{ sourceLayerName }}</p>

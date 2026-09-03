@@ -11,6 +11,10 @@ import { safeLog } from '../log'
 import { extractOverlayImportsFromResultRefs, normalizeProductTag } from './result-adapter'
 import { buildImportedRasterPayload } from './imported-raster'
 import { isOverlayDismissed, isRunDismissed } from './workspace-persist'
+import {
+  EMPTY_OVERLAY_CONFIRM_AFTER_RETRY_MS,
+  hasPendingAttachRetry,
+} from './workflow-attach-retry'
 import { formatProgressShell, pickLatestNodeProgress } from '../../utils/workflow-progress-format'
 import { isTerminalStatus } from './catalog-builders'
 import { WORKFLOW_COPY } from '../../ui-copy/workflow'
@@ -483,11 +487,13 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
    * 产物登记与 succeeded 事件存在传播竞态——直接写横幅会误报（图层稍后到达）。
    */
   function scheduleEmptyOverlayConfirm(runId: string, emptyMsg: string) {
+    if (hasPendingAttachRetry(runId)) return
     if (emptyOverlayConfirmTimers.has(runId)) return
     emptyOverlayConfirmTimers.set(
       runId,
       setTimeout(() => {
         emptyOverlayConfirmTimers.delete(runId)
+        if (hasPendingAttachRetry(runId)) return
         // 重查前若图层已物化（其它路径清了横幅/绑定了图层）则不再写
         if (workflowError.value === WORKFLOW_COPY.noMapLayers) return
         void (async () => {
@@ -499,7 +505,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           }
           setTransientWorkflowError(emptyMsg)
         })()
-      }, 2500),
+      }, EMPTY_OVERLAY_CONFIRM_AFTER_RETRY_MS),
     )
   }
 
@@ -528,35 +534,52 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         try {
           const materialized = await materializeWorkflowMapLayers(runId)
           materializedLayers = materialized.layers ?? []
+          const fromMaterialize = materializedLayers
+            .filter(
+              (layer) => typeof layer.overlay_layer_id === 'string' && layer.overlay_layer_id,
+            )
+            .map((layer) => {
+              const rawBounds = layer.bounds
+              const bounds =
+                Array.isArray(rawBounds) &&
+                rawBounds.length === 4 &&
+                rawBounds.every((v) => typeof v === 'number' && Number.isFinite(v))
+                  ? ([rawBounds[0], rawBounds[1], rawBounds[2], rawBounds[3]] as [
+                      number,
+                      number,
+                      number,
+                      number,
+                    ])
+                  : undefined
+              return {
+                overlayLayerId: layer.overlay_layer_id,
+                title: layer.title || layer.overlay_layer_id,
+                productTag: layer.product_tag || undefined,
+                bounds,
+                sourceCrs: layer.source_crs || undefined,
+                timeList: layer.time_list || undefined,
+                nativeStep: layer.native_step || undefined,
+                defaultTime: layer.default_time || undefined,
+              }
+            })
           if (!imports.length) {
-            imports = materializedLayers
-              .filter(
-                (layer) => typeof layer.overlay_layer_id === 'string' && layer.overlay_layer_id,
-              )
-              .map((layer) => {
-                const rawBounds = layer.bounds
-                const bounds =
-                  Array.isArray(rawBounds) &&
-                  rawBounds.length === 4 &&
-                  rawBounds.every((v) => typeof v === 'number' && Number.isFinite(v))
-                    ? ([rawBounds[0], rawBounds[1], rawBounds[2], rawBounds[3]] as [
-                        number,
-                        number,
-                        number,
-                        number,
-                      ])
-                    : undefined
-                return {
-                  overlayLayerId: layer.overlay_layer_id,
-                  title: layer.title || layer.overlay_layer_id,
-                  productTag: layer.product_tag || undefined,
-                  bounds,
-                  sourceCrs: layer.source_crs || undefined,
-                  timeList: layer.time_list || undefined,
-                  nativeStep: layer.native_step || undefined,
-                  defaultTime: layer.default_time || undefined,
-                }
-              })
+            imports = fromMaterialize
+          } else if (fromMaterialize.length) {
+            // result_refs 可能缺 OMEGA（登记最慢）；与 materialize 按 overlay/tag 并集合并
+            const byOverlay = new Set(imports.map((item) => item.overlayLayerId))
+            const byTag = new Set(
+              imports
+                .map((item) => normalizeProductTag(item.productTag || item.title || ''))
+                .filter(Boolean),
+            )
+            for (const item of fromMaterialize) {
+              if (byOverlay.has(item.overlayLayerId)) continue
+              const tag = normalizeProductTag(item.productTag || item.title || '')
+              if (tag && byTag.has(tag)) continue
+              imports.push(item)
+              byOverlay.add(item.overlayLayerId)
+              if (tag) byTag.add(tag)
+            }
           }
         } catch (error) {
           const errMsg = error instanceof Error ? error.message : String(error)
@@ -1242,6 +1265,17 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     deps.scheduleWorkspacePersist()
   }
 
+  /** 组内仍有未绑定 overlay 的占位（SM/VOD/OMEGA 部分物化） */
+  function hasUnboundRunGroupPlaceholders(runId: string): boolean {
+    if (!runId) return false
+    const g = runLayerGroups.value.find((x) => x.runId === runId)
+    if (!g) return false
+    return g.memberInstanceIds.some((instanceId) => {
+      const layer = deps.getActiveLayers().find((l) => l.instanceId === instanceId)
+      return Boolean(layer && !layer.importedRaster?.overlayLayerId)
+    })
+  }
+
   function refreshRunGroupDissolvable(groupId: string) {
     const g = runLayerGroups.value.find((x) => x.groupId === groupId)
     if (!g) return
@@ -1408,6 +1442,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     createRunLayerGroup,
     bindRunIdToGroup,
     cleanupUnproducedRunLayers,
+    hasUnboundRunGroupPlaceholders,
     refreshRunGroupDissolvable,
     updateRunGroupFromJob,
     dissolveRunGroup,

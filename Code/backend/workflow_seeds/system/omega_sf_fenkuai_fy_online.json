@@ -2,7 +2,7 @@
   "_meta": {
     "kind": "system",
     "engine": "python_provider",
-    "name": "风云 ω 动态反演（在线）",
+    "name": "风云 动态 散射约束产品反演（在线）",
     "description": "目的：NSMC 门户在线拉取 FY3D/FY3B MWRI HDF（多账号轮换）→ fy_daily 转 YYYYMMDD.mat 落盘规范目录 → omega_sf_fenkuai 8-day 分块 SF 倒推（FY3B→FY3D 匹配）→ DDCA SM/VOD 反演。前置：nsmc 凭证（建议多账号）；GDAL CLI（gdal_translate/gdalwarp/gdalbuildvrt）；SMAP 逐日 .mat + 辅助库/NDVI 本地就绪。产出：SM/VOD/OMEGA 三图层。配置：tb_source=FY, fy_platform=3D, sf_mode=INVERTED_DAILY。 FY3F（ORBA）支路已接入，默认 disabled。",
     "author": "system",
     "readonly": true,
@@ -16,7 +16,7 @@
     "category": "inversion"
   },
   "workflow_id": "omega_sf_fenkuai_fy_online",
-  "name": "风云 ω 动态反演（在线）",
+  "name": "风云 动态 散射约束产品反演（在线）",
   "description": "fy_download FY3D+FY3B（NSMC 多账号并行）→ fy_daily（HDF→YYYYMMDD.mat）→ omega_sf_fenkuai 动态反演。语义：动态=8 天块内联合反演逐日 ω（块级 h/α 优化 + λ 平滑），产出逐日动态 SM/VOD/OMEGA。 FY3F 支路（ORBA 升轨，默认关闭）：nsmc 下载 → fy_daily 3D TB 抽通道转 mat，落盘 Soil_Moisture/FY3F。",
   "nodes": [
     {
@@ -234,7 +234,7 @@
       ],
       "properties": {
         "layer_id": "method-fy-omega-doy-dynamic",
-        "display_name": "风云 ω 动态反演（在线）"
+        "display_name": "风云 动态 散射约束产品反演（在线）"
       }
     },
     {
@@ -384,7 +384,7 @@
     "has_time_range_node": true,
     "has_bbox_node": true,
     "has_output_node": true,
-    "group_title": "风云 ω 反演产物（动态）",
+    "group_title": "风云 散射约束产品产物（动态）",
     "output_labels": {
       "SM": "土壤水分",
       "VOD": "植被光学厚度",

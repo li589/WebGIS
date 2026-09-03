@@ -41,6 +41,7 @@ import {
 } from '../../utils/source-route-policy'
 import { buildJobLayer } from './result-adapter'
 import { forgetDismissedLayer, isRunDismissed } from './workspace-persist'
+import { scheduleSucceededAttachRetry } from './workflow-attach-retry'
 import { suppressWorkspaceSyncPush } from './workspace-sync'
 import { getCatalogDisplayName, isTerminalStatus } from './catalog-builders'
 import { resolveJobOverallProgress } from './workflow-progress'
@@ -308,6 +309,7 @@ export interface WorkflowStateWriterDeps {
   /** 立即落盘；restore 路径应传 { sync: false } 避免冲远端 */
   flushWorkspacePersistNow: (opts?: { sync?: boolean }) => void
   cleanupUnproducedRunLayers: (runId: string, opts?: { succeeded?: boolean }) => void
+  hasUnboundRunGroupPlaceholders?: (runId: string) => boolean
   /** 丢弃探测失败的 run 组 UI（不删后端 overlay） */
   discardRunGroupUi?: (runId: string) => void
   createRunLayerGroup: (options: {
@@ -581,13 +583,15 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     }
 
     const hasProductFor = (g: ActiveRunLayerGroup) =>
-      deps.getActiveLayers().some(
-        (l) =>
-          l.runGroupId === g.groupId &&
-          (Boolean(l.importedRaster?.overlayLayerId) ||
-            Boolean(l.importedVector?.backendLayerId) ||
-            l.dataState === 'real'),
-      )
+      deps
+        .getActiveLayers()
+        .some(
+          (l) =>
+            l.runGroupId === g.groupId &&
+            (Boolean(l.importedRaster?.overlayLayerId) ||
+              Boolean(l.importedVector?.backendLayerId) ||
+              l.dataState === 'real'),
+        )
 
     if (opts?.forceMissing) {
       for (const g of groups) {
@@ -875,9 +879,32 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
             })
             .then((boundCount) => {
               if (boundCount > 0) {
-                deps.cleanupUnproducedRunLayers(run.run_id, { succeeded: true })
+                // 部分绑定（如 resume-only 缺 OMEGA）时勿立刻清占位，留给 retry 补齐
+                if (!deps.hasUnboundRunGroupPlaceholders?.(run.run_id)) {
+                  deps.cleanupUnproducedRunLayers(run.run_id, { succeeded: true })
+                } else {
+                  scheduleSucceededAttachRetry({
+                    runId: run.run_id,
+                    catalogId,
+                    resultRefs: run.result_refs,
+                    attach: deps.attachAlgorithmProductOverlays,
+                    cleanup: deps.cleanupUnproducedRunLayers,
+                    isRunDismissed,
+                    hasUnboundPlaceholders: deps.hasUnboundRunGroupPlaceholders,
+                  })
+                }
                 deps.flushWorkspacePersistNow({ sync: false })
+                return
               }
+              scheduleSucceededAttachRetry({
+                runId: run.run_id,
+                catalogId,
+                resultRefs: run.result_refs,
+                attach: deps.attachAlgorithmProductOverlays,
+                cleanup: deps.cleanupUnproducedRunLayers,
+                isRunDismissed,
+                hasUnboundPlaceholders: deps.hasUnboundRunGroupPlaceholders,
+              })
             })
         }
       }
@@ -1013,15 +1040,21 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     // 画布/编辑器在 submit 前已建 computing 组（runId 尚空）——提交路径须接管，
     // 禁止再建第二组导致双 runId / attach 绑错组 / cleanup 清错侧栏。
     if (!existingGroup && options?.source === 'submit') {
-      const probeWorkflowId = String(bridge.workflowId || workflowId || '')
+      const probeWorkflowId = String(bridge.workflowId || existingGroup?.workflowId || '')
       const probeSource = resolveInversionCatalogId(String(bridge.sourceLayerId || catalogId))
-      const pendingGroup = deps.getRunLayerGroups().find(
-        (g) =>
-          !g.runId &&
-          g.status === 'computing' &&
-          ((Boolean(probeWorkflowId) && g.workflowId === probeWorkflowId) ||
-            resolveInversionCatalogId(String(g.sourceLayerId || '')) === probeSource),
-      )
+      const groups = deps.getRunLayerGroups()
+      let pendingGroup: (typeof groups)[number] | undefined
+      for (let i = groups.length - 1; i >= 0; i -= 1) {
+        const g = groups[i]!
+        if (g.runId || g.status !== 'computing') continue
+        const matches =
+          (Boolean(probeWorkflowId) && g.workflowId === probeWorkflowId) ||
+          resolveInversionCatalogId(String(g.sourceLayerId || '')) === probeSource
+        if (matches) {
+          pendingGroup = g
+          break
+        }
+      }
       if (pendingGroup) {
         pendingGroup.runId = runId
         existingGroup = pendingGroup
@@ -1340,7 +1373,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       /** 显式控制是否复用节点/块缓存（缺省不注入，算法默认 reuse_block_cache=True）。
        *  false=全量重算，规避复用旧输出目录带来的时间片污染。 */
       reuseBlockCache?: boolean
-      /** X2 工作流变体（ω 反演在线/本地）：按 descriptor.workflow_variants
+      /** X2 工作流变体（散射约束产品反演在线/本地）：按 descriptor.workflow_variants
        *  解析对应种子并注入 workflow_entry_name；缺省走 descriptor 默认变体。 */
       workflowVariant?: 'online' | 'local'
     } = {},

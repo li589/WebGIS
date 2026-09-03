@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-CGDA（综合地理数据分析系统）：**面向课题组与大气研究院研究员**的科研数据分析平台（初代定位），统一承载 2D 平面地图（MapLibre 主路径）/ 3D 地球（Cesium，实验性非默认主链）、多源数据接入（本地 / GEE / Open-Meteo / 商业天气源）、动态时空结果展示与回传、多课题组算法模块化接入。已进入工程落地阶段：`workflow-runs` 主链、天气瓦片渲染、Celery/Redis/MinIO 基础设施均可运行。发布边界（单机构/单 API Key/SQLite、demo:// 与占位节点的环境开关、写限流策略）见 README.md「发布边界（初代）」。
+CGDA（综合地理数据分析系统）：**面向课题组与大气研究院研究员**的科研数据分析平台（初代定位），统一承载 2D 平面地图（MapLibre 主路径）/ 3D 地球（默认 MapLibre globe；Cesium 为设置可选的实验引擎，见 `Docs/02-架构设计/cesium-dual-engine.md`）、多源数据接入（本地 / GEE / Open-Meteo / 商业天气源）、动态时空结果展示与回传、多课题组算法模块化接入。已进入工程落地阶段：`workflow-runs` 主链、天气瓦片渲染、Celery/Redis/MinIO 基础设施均可运行。发布边界（单机构/单 API Key/SQLite、demo:// 与占位节点的环境开关、写限流策略）见 README.md「发布边界（初代）」。
 
 ## 目录路由
 
@@ -63,7 +63,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | `… launch.py start\|restart` | **默认**按组件矩阵自动 clean；`--no-clean-cache` 跳过；`--clean-cache` 强制全清本地编译缓存 |
 | `… launch.py sync [job]` | 数据面一次性同步（默认 `open-meteo-sync`） |
 
-服务地址：FastAPI `http://127.0.0.1:8000`（docs `/docs`）、前端入口 `http://localhost:5175`（默认 Nginx Gateway 静态；`--vite` 时同域 HMR）、Open-Meteo API `http://127.0.0.1:8080`、Redis `:6379`、MinIO `:9100`（Console `:9101`）。
+服务地址：FastAPI `http://127.0.0.1:8000`（docs `/docs`）、前端入口 `http://localhost:5175`（默认 Nginx Gateway 静态；`--vite` 时同域 HMR）、Open-Meteo API `http://127.0.0.1:8080`、Redis `:16379`（容器内仍 6379；避开 Windows Hyper-V 保留段）、MinIO `:9100`（Console `:9101`）。
 
 联调缓存分层与排障：`Docs/07-工程保障/联调缓存与生效边界.md`。
 

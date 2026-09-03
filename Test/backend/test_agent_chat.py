@@ -48,6 +48,8 @@ def agent_client(tmp_path, monkeypatch):
         api_key_role="standard",
         user_auth_enabled=True,
         data_root=str(tmp_path / "data"),
+        workflow_state_dir=str(tmp_path / "state"),
+        output_root=str(tmp_path / "out"),
     )
     monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
 
@@ -240,6 +242,150 @@ def test_normalize_drops_legacy_migration_and_repairs_demo():
     demo = next(p for p in store["profiles"] if p["id"] == "demo")
     assert demo == _default_demo_profile()
     assert not any(str(p.get("name") or "").startswith("迁移自旧配置") for p in store["profiles"])
+
+
+def test_normalize_collapses_identical_preset_clones():
+    from app.services.agent.config_service import _normalize_global_store
+
+    dirty = {
+        "active_profile_id": "o3",
+        "profiles": [
+            {
+                "id": "demo",
+                "name": "演示（无网）",
+                "provider_kind": "demo",
+                "protocol": "demo",
+                "preset_id": "demo",
+            },
+            {
+                "id": "o1",
+                "name": "OpenAI",
+                "provider_kind": "openai",
+                "protocol": "openai",
+                "base_url": "https://api.openai.com/v1",
+                "model": "gpt-4o-mini",
+                "preset_id": "openai",
+                "api_key_ciphertext": None,
+            },
+            {
+                "id": "o2",
+                "name": "OpenAI",
+                "provider_kind": "openai",
+                "protocol": "openai",
+                "base_url": "https://api.openai.com/v1",
+                "model": "gpt-4o-mini",
+                "preset_id": "openai",
+                "api_key_ciphertext": "sk-keep-me",
+            },
+            {
+                "id": "o3",
+                "name": "OpenAI",
+                "provider_kind": "openai",
+                "protocol": "openai",
+                "base_url": "https://api.openai.com/v1",
+                "model": "gpt-4o-mini",
+                "preset_id": "openai",
+                "api_key_ciphertext": None,
+            },
+            {
+                "id": "o-custom",
+                "name": "OpenAI",
+                "provider_kind": "openai",
+                "protocol": "openai",
+                "base_url": "http://127.0.0.1:9/v1",
+                "model": "gpt-4o-mini",
+                "preset_id": "openai",
+            },
+        ],
+    }
+    store, changed = _normalize_global_store(dirty)
+    assert changed is True
+    openai_rows = [p for p in store["profiles"] if p.get("preset_id") == "openai"]
+    assert len(openai_rows) == 2
+    kept_default = next(
+        p for p in openai_rows if "api.openai.com" in str(p.get("base_url") or "")
+    )
+    assert kept_default.get("api_key_ciphertext") == "sk-keep-me"
+    assert store["active_profile_id"] == "demo" or store["active_profile_id"] in {
+        str(p["id"]) for p in store["profiles"]
+    }
+
+
+def test_create_profile_from_preset_is_idempotent(agent_client, tmp_path):
+    """Repeated「从预设新建」with same defaults must not pile identical rows."""
+    _login(agent_client, "testadmin", "test-pass-123")
+    r1 = agent_client.post(
+        "/agent/config/profiles",
+        json={"preset_id": "openai", "scope": "global"},
+    )
+    assert r1.status_code == 200, r1.text
+    id1 = r1.json()["id"]
+    r2 = agent_client.post(
+        "/agent/config/profiles",
+        json={"preset_id": "openai", "scope": "global"},
+    )
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["id"] == id1
+    store = json.loads(
+        (tmp_path / "data" / "_runtime" / "agent" / "global_profiles.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    openai_rows = [p for p in store["profiles"] if p.get("preset_id") == "openai"]
+    assert len(openai_rows) == 1
+
+
+def test_personal_store_collapses_identical_clones_on_load(tmp_path, monkeypatch):
+    monkeypatch.setenv("BACKEND_DATA_ROOT", str(tmp_path / "data"))
+    from dataclasses import replace
+    import app.core.config as cfg_mod
+    from app.core.config import Settings
+    from app.services.agent import config_service as cs
+
+    cfg_mod.settings = replace(Settings(), data_root=str(tmp_path / "data"), environment="test")
+    monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
+
+    path = tmp_path / "data" / "_runtime" / "agent" / "users" / "9" / "profiles.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    twin = {
+        "id": "a1",
+        "name": "我的 Ollama",
+        "provider_kind": "ollama",
+        "protocol": "openai",
+        "base_url": "http://127.0.0.1:11434/v1",
+        "model": "qwen2.5",
+        "preset_id": "ollama",
+    }
+    twin2 = dict(twin)
+    twin2["id"] = "a2"
+    path.write_text(
+        json.dumps({"active_profile_id": "", "profiles": [twin, twin2]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    store = cs._load_store_unlocked(path, personal=True)
+    assert len(store["profiles"]) == 1
+    disk = json.loads(path.read_text(encoding="utf-8"))
+    assert len(disk["profiles"]) == 1
+
+
+def test_agent_client_does_not_write_outside_tmp(agent_client: TestClient, tmp_path):
+    """Regression: global profile creates must land under the test data_root."""
+    from app.core import config as cfg_mod
+    from app.services.agent import config_service as cs
+
+    assert Path(cfg_mod.settings.data_root) == tmp_path / "data"
+    assert cs._runtime_root() == tmp_path / "data" / "_runtime" / "agent"
+
+    _login(agent_client, "testadmin", "test-pass-123")
+    res = agent_client.post(
+        "/agent/config/profiles",
+        json={"preset_id": "openai", "scope": "global"},
+    )
+    assert res.status_code == 200, res.text
+    store_path = tmp_path / "data" / "_runtime" / "agent" / "global_profiles.json"
+    assert store_path.is_file()
+    store = json.loads(store_path.read_text(encoding="utf-8"))
+    assert any(p.get("preset_id") == "openai" for p in store["profiles"])
 
 
 def test_mock_legacy_migrates_to_demo_only(tmp_path, monkeypatch):
@@ -1125,3 +1271,58 @@ def test_sanitize_client_context_keeps_map_point():
 
     bad = sanitize_client_context({"map_point": {"lng": 999, "lat": 0}})
     assert bad is None or "map_point" not in (bad or {})
+
+
+def test_catalog_search_vs_list_active_heuristics():
+    from app.services.agent.orchestrator import (
+        _is_catalog_search_query,
+        _is_list_active_layers_query,
+        _synthesize_reply_from_tool_steps,
+    )
+
+    assert _is_list_active_layers_query("有哪些活动图层")
+    assert _is_list_active_layers_query("当前图层有哪些")
+    assert not _is_catalog_search_query("有哪些活动图层")
+    assert _is_catalog_search_query("搜索图层 cmfd")
+    assert _is_catalog_search_query("查找图层 降水")
+
+    empty = _synthesize_reply_from_tool_steps(
+        [
+            {
+                "type": "tool_result",
+                "summary": "命中 0 条",
+                "detail": json.dumps(
+                    {"ok": True, "query": "有哪些活动图层", "count": 0, "layers": []},
+                    ensure_ascii=False,
+                ),
+            }
+        ]
+    )
+    assert empty is not None
+    assert "未在图层库中找到" in empty
+    assert "活动图层" in empty
+
+    hits = _synthesize_reply_from_tool_steps(
+        [
+            {
+                "type": "tool_result",
+                "summary": "命中 1 条",
+                "detail": json.dumps(
+                    {
+                        "ok": True,
+                        "query": "cmfd",
+                        "count": 1,
+                        "layers": [
+                            {
+                                "layer_id": "cmfd-precip-cn",
+                                "display_name": "CMFD 降水",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+            }
+        ]
+    )
+    assert hits is not None
+    assert "cmfd-precip-cn" in hits

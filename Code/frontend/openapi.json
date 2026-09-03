@@ -595,6 +595,32 @@
         }
       }
     },
+    "/auth/themes/public": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "List Themes Public",
+        "description": "Unauthenticated branding for all product themes (login page theme picker).",
+        "operationId": "list_themes_public_auth_themes_public_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ThemePublicBrand"
+                  },
+                  "type": "array",
+                  "title": "Response List Themes Public Auth Themes Public Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/themes": {
       "get": {
         "tags": [
@@ -1266,6 +1292,31 @@
         ],
         "summary": "List Layers",
         "operationId": "list_layers_layers_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Admin edit preview: catalog with that theme's group/display overlays.",
+              "title": "Theme Id"
+            },
+            "description": "Admin edit preview: catalog with that theme's group/display overlays."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1276,13 +1327,18 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
-        },
-        "security": [
-          {
-            "APIKeyHeader": []
-          }
-        ]
+        }
       }
     },
     "/layers/categories": {
@@ -1291,8 +1347,33 @@
           "catalog"
         ],
         "summary": "List Layer Categories",
-        "description": "X1: 后端下发图层分类定义（id / name / icon / accent_color / chip_tone）。\n\n前端运行时消费此端点获取分类样式，消除前后端分类定义双写。\n前端 ``LAYER_CATEGORIES`` 静态表仅在 API 不可用时作离线兜底。",
+        "description": "下发图层分类定义。\n\n默认：按调用者绑定主题的预设（无则种子基线）。\n管理员传 ``theme_id`` 时预览该主题预设（无预设则种子），不落库。",
         "operationId": "list_layer_categories_layers_categories_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Admin edit preview: load that theme's preset (or seed baseline).",
+              "title": "Theme Id"
+            },
+            "description": "Admin edit preview: load that theme's preset (or seed baseline)."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1300,6 +1381,564 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LayerCategoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Create Layer Group",
+        "description": "新建自定义分组（默认写入主题预设；省略 theme_id 则写个人工作区）。",
+        "operationId": "create_layer_group_layers_categories_post",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Write into this theme preset when set.",
+              "title": "Theme Id"
+            },
+            "description": "Write into this theme preset when set."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LayerGroupCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerCategoryDef"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/layers/categories/order": {
+      "put": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Reorder Layer Groups",
+        "description": "按给定 id 顺序重排分组。",
+        "operationId": "reorder_layer_groups_layers_categories_order_put",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LayerGroupReorderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerCategoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/layers/categories/sync-to-theme/{theme_id}": {
+      "post": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Sync Layer Groups To Theme",
+        "description": "将当前管理员个人工作区快照导入到指定主题预设（一次性迁移）。",
+        "operationId": "sync_layer_groups_to_theme_layers_categories_sync_to_theme__theme_id__post",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemeLayerGroupPresetMeta"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/layers/categories/theme-preset/{theme_id}": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Get Theme Layer Group Preset",
+        "description": "读取主题图层分组预设详情（无预设时返回种子基线，不落库）。",
+        "operationId": "get_theme_layer_group_preset_layers_categories_theme_preset__theme_id__get",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemeLayerGroupPresetDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Put Theme Layer Group Preset",
+        "description": "全量替换主题分组预设。",
+        "operationId": "put_theme_layer_group_preset_layers_categories_theme_preset__theme_id__put",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThemeLayerGroupPresetPutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemeLayerGroupPresetMeta"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Delete Theme Layer Group Preset",
+        "description": "清除主题上的图层分组预设（绑定用户回落到共享种子分组）。",
+        "operationId": "delete_theme_layer_group_preset_layers_categories_theme_preset__theme_id__delete",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Theme Layer Group Preset Layers Categories Theme Preset  Theme Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/layers/categories/theme-preset/{theme_id}/display-names": {
+      "put": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Put Theme Layer Display Names",
+        "description": "合并写入主题图层显示名覆盖（空字符串清除）。",
+        "operationId": "put_theme_layer_display_names_layers_categories_theme_preset__theme_id__display_names_put",
+        "parameters": [
+          {
+            "name": "theme_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LayerThemeDisplayNamesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemeLayerGroupPresetMeta"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/layers/categories/{group_id}": {
+      "patch": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Update Layer Group",
+        "description": "修改分组名称 / 样式 / 子分类。",
+        "operationId": "update_layer_group_layers_categories__group_id__patch",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "theme_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LayerGroupUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerCategoryDef"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Delete Layer Group",
+        "description": "删除自定义分组（种子组拒绝）。",
+        "operationId": "delete_layer_group_layers_categories__group_id__delete",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "theme_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerCategoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/layers/categories/{group_id}/members": {
+      "put": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Set Layer Group Members",
+        "description": "全量替换分组内图层成员。",
+        "operationId": "set_layer_group_members_layers_categories__group_id__members_put",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Group Id"
+            }
+          },
+          {
+            "name": "theme_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Theme Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LayerGroupMembersRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerCategoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -1586,7 +2225,7 @@
           "layer-platform"
         ],
         "summary": "List Workflow Templates",
-        "description": "课题组工作流模板列表（图层平台子系统 P1）。\n\n聚合 workflow_seeds/system + workflow_definitions/user 中\n``is_template=true`` 或 tags 含 \"template\"/\"lab\" 的定义；\n前端课题组入口据此渲染「一键运行」面板。",
+        "description": "课题组工作流模板列表（图层平台子系统 P1）。\n\n聚合 workflow_seeds/system + workflow_definitions/user 中\n``is_template=true`` 或 tags 含 \"template\"/\"lab\" 的定义；\n前端课题组入口据此渲染「一键运行」面板。\n鉴权开启时匿名 fail-closed；非 admin 按 workflow ACL 过滤。",
         "operationId": "list_workflow_templates_workflows_templates_get",
         "responses": {
           "200": {
@@ -6785,6 +7424,11 @@
         "summary": "Get Weather Tile",
         "description": "获取指定图层的标准 Web Mercator GeoJSON 瓦片。",
         "operationId": "get_weather_tile_weather_tiles__layer_id___z___x___y__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "layer_id",
@@ -10908,7 +11552,7 @@
           "workflow-definition"
         ],
         "summary": "Update Definition",
-        "description": "更新用户工作流定义。system 定义不可更新。",
+        "description": "更新用户工作流定义。system 定义不可更新；非属主非 admin 拒绝。",
         "operationId": "update_definition_workflow_definitions__workflow_id__put",
         "security": [
           {
@@ -10969,7 +11613,7 @@
           "workflow-definition"
         ],
         "summary": "Delete Definition",
-        "description": "删除用户工作流定义。system 定义不可删除。",
+        "description": "删除用户工作流定义。system 定义不可删除；非属主非 admin 拒绝。",
         "operationId": "delete_definition_workflow_definitions__workflow_id__delete",
         "security": [
           {
@@ -11119,12 +11763,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "APIKeyHeader": []
-          }
-        ]
+        }
       }
     },
     "/workflow-timers": {
@@ -11133,13 +11772,8 @@
           "workflow-timer"
         ],
         "summary": "List Timers",
-        "description": "列出定时器（非 admin 登录用户仅见本人创建的）。",
+        "description": "列出全部定时器（仅管理员）。",
         "operationId": "list_timers_workflow_timers_get",
-        "security": [
-          {
-            "APIKeyHeader": []
-          }
-        ],
         "parameters": [
           {
             "name": "workflow_id",
@@ -11188,13 +11822,8 @@
           "workflow-timer"
         ],
         "summary": "Create Timer",
-        "description": "创建定时器（记录归属 owner_user_id）。\n\n请求体字段：\n- workflow_id (str, 必填)\n- name (str, 必填)\n- trigger_type ('cron' | 'interval' | 'event', 必填)\n- trigger_config (dict, 必填, 格式依 trigger_type 而定)\n- payload_overrides (dict, 可选)\n- enabled (bool, 可选, 默认 true)",
+        "description": "创建定时器（仅管理员；记录归属 owner_user_id）。\n\n请求体字段：\n- workflow_id (str, 必填)\n- name (str, 必填)\n- trigger_type ('cron' | 'interval' | 'event', 必填)\n- trigger_config (dict, 必填, 格式依 trigger_type 而定)\n- payload_overrides (dict, 可选)\n- enabled (bool, 可选, 默认 true)",
         "operationId": "create_timer_workflow_timers_post",
-        "security": [
-          {
-            "APIKeyHeader": []
-          }
-        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -11241,11 +11870,6 @@
         "summary": "Get Timer",
         "description": "获取单个定时器详情。",
         "operationId": "get_timer_workflow_timers__timer_id__get",
-        "security": [
-          {
-            "APIKeyHeader": []
-          }
-        ],
         "parameters": [
           {
             "name": "timer_id",
@@ -11289,11 +11913,6 @@
         "summary": "Update Timer",
         "description": "更新定时器。允许字段：name / enabled / trigger_type / trigger_config / payload_overrides。",
         "operationId": "update_timer_workflow_timers__timer_id__put",
-        "security": [
-          {
-            "APIKeyHeader": []
-          }
-        ],
         "parameters": [
           {
             "name": "timer_id",
@@ -11349,11 +11968,6 @@
         "summary": "Delete Timer",
         "description": "删除定时器。",
         "operationId": "delete_timer_workflow_timers__timer_id__delete",
-        "security": [
-          {
-            "APIKeyHeader": []
-          }
-        ],
         "parameters": [
           {
             "name": "timer_id",
@@ -11399,11 +12013,6 @@
         "summary": "Run Timer",
         "description": "手动触发一次定时器对应的工作流（不影响 next_fire_at）。",
         "operationId": "run_timer_workflow_timers__timer_id__run_post",
-        "security": [
-          {
-            "APIKeyHeader": []
-          }
-        ],
         "parameters": [
           {
             "name": "timer_id",
@@ -11484,12 +12093,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "APIKeyHeader": []
-          }
-        ]
+        }
       }
     },
     "/workflow-timers/tick": {
@@ -11513,12 +12117,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "APIKeyHeader": []
-          }
-        ]
+        }
       }
     },
     "/cleanup/workflow-runs": {
@@ -12991,6 +13590,30 @@
               }
             ],
             "title": "Scope"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
           }
         },
         "type": "object",
@@ -14401,7 +15024,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -14415,7 +15038,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -14430,7 +15053,7 @@
           "files": {
             "items": {
               "type": "string",
-              "format": "binary"
+              "contentMediaType": "application/octet-stream"
             },
             "type": "array",
             "title": "Files"
@@ -14446,7 +15069,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           },
           "offset": {
@@ -14471,7 +15094,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -14485,7 +15108,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -14499,7 +15122,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -14912,6 +15535,24 @@
             "type": "boolean",
             "title": "Is Primary",
             "default": false
+          },
+          "login_palette": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "cyan",
+                  "green",
+                  "warm",
+                  "violet",
+                  "slate"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Login Palette"
           }
         },
         "type": "object",
@@ -18168,6 +18809,34 @@
             },
             "type": "array",
             "title": "Sub Categories"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "is_custom": {
+            "type": "boolean",
+            "title": "Is Custom",
+            "default": false
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden",
+            "default": false
+          },
+          "hidden_sub_categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hidden Sub Categories"
           }
         },
         "type": "object",
@@ -18176,7 +18845,7 @@
           "name"
         ],
         "title": "LayerCategoryDef",
-        "description": "X1: 图层分类定义 — 后端下发，消除前后端分类双写。"
+        "description": "X1: 图层分类定义 — 后端下发，消除前后端分类双写。\n\n图层平台 P1：分组支持运行时管理（种子 ⊕ 管理员个人工作区 / 主题预设），\n``position`` 为排序键，``is_custom`` 标记自建分组（可删除；种子组仅可改名/样式）。\n``hidden`` / ``hidden_sub_categories``：主题下可隐藏顶层组与二级组类（默认可见）。"
       },
       "LayerCategoryResponse": {
         "properties": {
@@ -18555,6 +19224,201 @@
           "display_name"
         ],
         "title": "LayerDisplayNameBody"
+      },
+      "LayerGroupCreateRequest": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "accent_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Color"
+          },
+          "chip_tone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chip Tone"
+          },
+          "sub_categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sub Categories"
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden",
+            "default": false
+          },
+          "hidden_sub_categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hidden Sub Categories"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "LayerGroupCreateRequest",
+        "description": "管理员自建图层分组（写入当前管理员个人工作区）。"
+      },
+      "LayerGroupMembersRequest": {
+        "properties": {
+          "layer_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Layer Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "layer_ids"
+        ],
+        "title": "LayerGroupMembersRequest",
+        "description": "设置分组内图层成员（layer_id 全量替换该分组成员关系）。"
+      },
+      "LayerGroupReorderRequest": {
+        "properties": {
+          "order": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order"
+        ],
+        "title": "LayerGroupReorderRequest",
+        "description": "按给定 id 顺序重排分组（未列出的分组保持相对顺序追加在后）。"
+      },
+      "LayerGroupUpdateRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "accent_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Color"
+          },
+          "chip_tone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chip Tone"
+          },
+          "sub_categories": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sub Categories"
+          },
+          "hidden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden"
+          },
+          "hidden_sub_categories": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden Sub Categories"
+          }
+        },
+        "type": "object",
+        "title": "LayerGroupUpdateRequest",
+        "description": "修改分组（名称/样式/子分类/隐藏）；种子组与自定义组均可改。"
       },
       "LayerLifecycleResponse": {
         "properties": {
@@ -18970,6 +19834,20 @@
         },
         "type": "object",
         "title": "LayerStyleHint"
+      },
+      "LayerThemeDisplayNamesRequest": {
+        "properties": {
+          "display_names": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Display Names"
+          }
+        },
+        "type": "object",
+        "title": "LayerThemeDisplayNamesRequest",
+        "description": "主题预设图层显示名覆盖（合并写入；空字符串清除该 layer_id）。"
       },
       "LayerZonalStats": {
         "properties": {
@@ -19849,6 +20727,7 @@
             "type": "string",
             "enum": [
               "layer",
+              "layer_group",
               "workflow",
               "data_source"
             ],
@@ -22933,6 +23812,159 @@
         ],
         "title": "TestResultResponse"
       },
+      "ThemeLayerGroupPresetDetail": {
+        "properties": {
+          "theme_id": {
+            "type": "integer",
+            "title": "Theme Id"
+          },
+          "has_preset": {
+            "type": "boolean",
+            "title": "Has Preset",
+            "default": false
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By User Id"
+          },
+          "display_name_count": {
+            "type": "integer",
+            "title": "Display Name Count",
+            "default": 0
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/LayerCategoryDef"
+            },
+            "type": "array",
+            "title": "Groups"
+          },
+          "assignments": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Assignments"
+          },
+          "display_names": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Display Names",
+            "description": "Theme display_name overlays (layer_id → name)"
+          },
+          "seed_display_names": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Seed Display Names",
+            "description": "Seed layer display_name map for editor placeholders"
+          }
+        },
+        "type": "object",
+        "required": [
+          "theme_id"
+        ],
+        "title": "ThemeLayerGroupPresetDetail",
+        "description": "主题分组预设详情（管理员编辑用；无预设时 groups 为种子基线且不落库）。"
+      },
+      "ThemeLayerGroupPresetMeta": {
+        "properties": {
+          "theme_id": {
+            "type": "integer",
+            "title": "Theme Id"
+          },
+          "has_preset": {
+            "type": "boolean",
+            "title": "Has Preset",
+            "default": false
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By User Id"
+          },
+          "display_name_count": {
+            "type": "integer",
+            "title": "Display Name Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "theme_id"
+        ],
+        "title": "ThemeLayerGroupPresetMeta",
+        "description": "主题图层分组预设元数据。"
+      },
+      "ThemeLayerGroupPresetPutRequest": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/LayerCategoryDef"
+            },
+            "type": "array",
+            "title": "Groups"
+          },
+          "assignments": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Assignments"
+          },
+          "display_names": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Display Names"
+          }
+        },
+        "type": "object",
+        "required": [
+          "groups"
+        ],
+        "title": "ThemeLayerGroupPresetPutRequest",
+        "description": "全量替换主题分组预设（原子保存）。"
+      },
       "ThemePermissionRecord": {
         "properties": {
           "id": {
@@ -23027,6 +24059,11 @@
             "type": "boolean",
             "title": "Is Primary",
             "default": false
+          },
+          "login_palette": {
+            "type": "string",
+            "title": "Login Palette",
+            "default": "cyan"
           }
         },
         "type": "object",
@@ -23081,6 +24118,11 @@
               }
             ],
             "title": "Logo Url"
+          },
+          "login_palette": {
+            "type": "string",
+            "title": "Login Palette",
+            "default": "cyan"
           }
         },
         "type": "object",
@@ -23449,6 +24491,24 @@
               }
             ],
             "title": "Is Primary"
+          },
+          "login_palette": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "cyan",
+                  "green",
+                  "warm",
+                  "violet",
+                  "slate"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Login Palette"
           }
         },
         "type": "object",
@@ -23656,32 +24716,20 @@
             "default": "open"
           },
           "theme_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "integer",
             "title": "Theme Id"
           },
           "theme": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ThemePublic"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ThemePublic"
           }
         },
         "type": "object",
         "required": [
           "id",
           "username",
-          "role"
+          "role",
+          "theme_id",
+          "theme"
         ],
         "title": "UserPublic"
       },
@@ -23708,6 +24756,13 @@
           "type": {
             "type": "string",
             "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
           }
         },
         "type": "object",

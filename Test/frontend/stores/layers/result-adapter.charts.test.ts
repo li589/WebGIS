@@ -66,9 +66,9 @@ describe('result-adapter analysis charts/tables', () => {
         result_dto: { workflow_entry_name: 'omega_sf_fenkuai_smap_online' },
         result_refs: [],
       } as never,
-      'SMAP 动态 ω 反演',
+      'SMAP 动态 散射约束产品',
     )
-    expect(job.name).toBe('SMAP 动态 ω 反演')
+    expect(job.name).toBe('SMAP 动态 散射约束产品')
   })
 
   it('keeps human workflow entry name when it is not technical', async () => {

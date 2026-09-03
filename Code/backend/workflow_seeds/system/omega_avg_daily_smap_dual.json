@@ -2,7 +2,7 @@
   "_meta": {
     "kind": "system",
     "engine": "python_provider",
-    "name": "SMAP ω 平均反演·双温度（本地）",
+    "name": "SMAP 平均 散射约束产品反演·双温度（本地）",
     "description": "目的：D2 avg-omega 逐日反演（SMAP TB + DUAL 双温度方案，含 GLDAS 冠层/土壤温度）。前置：D1 omega_block 已产出；GLDAS .mat 已落盘（含 Ts_gldas/Tsoil1_gldas/Tsoil2_gldas）。产出：目标年逐日 SM/VOD/OMEGA .mat。配置：temp_scheme=DUAL 触发 build_effective_soil_temperature_scheme 计算 Ct/TG。",
     "author": "system",
     "readonly": true,
@@ -15,7 +15,7 @@
     "category": "inversion"
   },
   "workflow_id": "omega_avg_daily_smap_dual",
-  "name": "SMAP ω 平均反演·双温度（本地）",
+  "name": "SMAP 平均 散射约束产品反演·双温度（本地）",
   "description": "D1 omega_block 输出 → D2 DOY 气候态 + 逐日 DDCA 回代（SMAP 本地亮温 + DUAL 双温度）。语义：平均=ω 固定为多年 DOY 气候态均值，逐日仅做轻量 DDCA 回代。双温度=GLDAS 三温度变量（Ts/Tsoil1/Tsoil2）推土壤 TG 与冠层 TC。",
   "nodes": [
     {
@@ -148,7 +148,7 @@
       ],
       "properties": {
         "layer_id": "method-smap-omega-doy-avg",
-        "display_name": "SMAP ω 平均反演·双温度（本地）"
+        "display_name": "SMAP 平均 散射约束产品反演·双温度（本地）"
       }
     }
   ],
@@ -229,7 +229,7 @@
       "OMEGA"
     ],
     "notes": "双温度方案：build_daily_bundle_for_date 内部调用 build_effective_soil_temperature_scheme(sm_ref, tsoil1, tsoil2) → Ct/TG，DDCA 用 ddca_dual_temp(tbv, tbh, tc, tg, ..., omega_value=OMEGA_AVG)。NDVI 用 DOY 气候态。模板缺失时 Python 侧回退到过顶时刻匹配。",
-    "group_title": "SMAP 双源 ω 反演产物（平均）",
+    "group_title": "SMAP 双源 散射约束产品产物（平均）",
     "output_labels": {
       "SM": "土壤水分",
       "VOD": "植被光学厚度",

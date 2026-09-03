@@ -16,6 +16,7 @@ import type {
   JobLayerItem,
   JobStatus,
   LayerCatalogItem,
+  LayerCategory,
   LayerHotspot,
   LayerSource,
   RuntimeLayerLibraryItem,
@@ -160,6 +161,14 @@ export const CATEGORY_INDEX_BY_ID = new Map(
   LAYER_CATEGORIES.map((category, index) => [category.id, index]),
 )
 
+/**
+ * 图层平台 P1：按分组列表（种子⊕运行时管理）构建排序索引。
+ * 运行时分组顺序以列表顺序为准（后端已按 position 排序下发）。
+ */
+export function buildCategoryIndex(categories: readonly { id: string }[]): Map<string, number> {
+  return new Map(categories.map((category, index) => [category.id, index]))
+}
+
 export function getStaticLayerLibraryItem(catalogId: string) {
   return STATIC_LIBRARY_BY_ID.get(catalogId)
 }
@@ -180,11 +189,20 @@ const CATEGORY_ALIASES: Record<string, string> = {
   核心资产: 'research-group',
 }
 
-export function resolveCategory(descriptor: LayerDescriptor, fallbackCategory?: string) {
+export function resolveCategory(
+  descriptor: LayerDescriptor,
+  fallbackCategory?: string,
+  knownCategoryIds?: ReadonlySet<string>,
+) {
   const raw = descriptor.category || fallbackCategory
   const category = raw ? (CATEGORY_ALIASES[raw] ?? raw) : undefined
-  if (category && CATEGORY_INDEX_BY_ID.has(category)) {
-    return category
+  if (category) {
+    // 图层平台 P1：运行时分组（含管理员自建组）不在静态表中，需按传入的有效 id 集校验
+    if (knownCategoryIds) {
+      if (knownCategoryIds.has(category)) return category
+    } else if (CATEGORY_INDEX_BY_ID.has(category)) {
+      return category
+    }
   }
   return fallbackCategory ?? 'research-group'
 }
@@ -241,10 +259,14 @@ function transformBackendSource(src: {
   }
 }
 
-export function buildRuntimeLayerLibraryItem(descriptor: LayerDescriptor): RuntimeLayerLibraryItem {
+export function buildRuntimeLayerLibraryItem(
+  descriptor: LayerDescriptor,
+  categories?: readonly LayerCategory[],
+): RuntimeLayerLibraryItem {
   const fallback = getStaticLayerLibraryItem(descriptor.layer_id)
-  const category = resolveCategory(descriptor, fallback?.category)
-  const categoryMeta = LAYER_CATEGORIES.find((item) => item.id === category)
+  const knownIds = categories ? new Set(categories.map((c) => c.id)) : undefined
+  const category = resolveCategory(descriptor, fallback?.category, knownIds)
+  const categoryMeta = (categories ?? LAYER_CATEGORIES).find((item) => item.id === category)
   const descriptorSub =
     typeof (descriptor as { sub_category?: string | null }).sub_category === 'string'
       ? (descriptor as { sub_category?: string }).sub_category

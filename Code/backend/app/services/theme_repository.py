@@ -35,6 +35,29 @@ _SLUG_RE = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
 _LOGO_MAX_BYTES = 2 * 1024 * 1024
 _LOGO_ALLOWED_EXT = frozenset({".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif"})
 
+# 登录页氛围色方案（仅影响 LoginView，不改应用内主题）
+VALID_LOGIN_PALETTES = frozenset({"cyan", "green", "warm", "violet", "slate"})
+DEFAULT_LOGIN_PALETTE = "cyan"
+
+
+def normalize_login_palette(value: str | None) -> str:
+    key = (value or "").strip().lower()
+    if key in VALID_LOGIN_PALETTES:
+        return key
+    return DEFAULT_LOGIN_PALETTE
+
+
+def infer_login_palette(*, slug: str, name_zh: str, full_name_zh: str = "") -> str:
+    """按品牌文案推断默认登录配色（迁移/新建兜底）。"""
+    blob = f"{slug} {name_zh} {full_name_zh}".lower()
+    if any(tok in blob for tok in ("植被", "生态", "vegetation", "ecology", "vemp", "ndvi")):
+        return "green"
+    if any(tok in blob for tok in ("warm", "soil", "干旱", "土壤")):
+        return "warm"
+    if "sgfs" in blob or "星地" in blob:
+        return "cyan"
+    return DEFAULT_LOGIN_PALETTE
+
 
 @dataclass(frozen=True)
 class ThemeRecord:
@@ -48,6 +71,7 @@ class ThemeRecord:
     logo_path: str | None
     default_permission_mode: str
     is_primary: bool
+    login_palette: str
     created_at: str
     updated_at: str
 
@@ -70,6 +94,12 @@ def _theme_assets_root() -> Path:
 
 
 def _row_to_theme(row: Any) -> ThemeRecord:
+    keys = row.keys() if hasattr(row, "keys") else ()
+    login_palette = (
+        str(row["login_palette"])
+        if "login_palette" in keys and row["login_palette"]
+        else DEFAULT_LOGIN_PALETTE
+    )
     return ThemeRecord(
         id=int(row["id"]),
         slug=str(row["slug"]),
@@ -81,6 +111,7 @@ def _row_to_theme(row: Any) -> ThemeRecord:
         logo_path=str(row["logo_path"]) if row["logo_path"] else None,
         default_permission_mode=str(row["default_permission_mode"] or "open"),
         is_primary=bool(row["is_primary"]),
+        login_palette=normalize_login_palette(login_palette),
         created_at=str(row["created_at"]),
         updated_at=str(row["updated_at"]),
     )
@@ -109,11 +140,37 @@ class ThemeRepository:
                     logo_path TEXT,
                     default_permission_mode TEXT NOT NULL DEFAULT 'open',
                     is_primary INTEGER NOT NULL DEFAULT 0,
+                    login_palette TEXT NOT NULL DEFAULT 'cyan',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
                 """
             )
+            # Additive migration for existing DBs
+            login_palette_added = False
+            try:
+                conn.execute(
+                    "ALTER TABLE themes ADD COLUMN login_palette TEXT NOT NULL DEFAULT 'cyan'"
+                )
+                login_palette_added = True
+            except Exception:
+                pass
+            # Only auto-infer when column is newly added (avoid clobbering admin choices)
+            if login_palette_added:
+                rows = conn.execute(
+                    "SELECT id, slug, name_zh, full_name_zh FROM themes"
+                ).fetchall()
+                for row in rows:
+                    inferred = infer_login_palette(
+                        slug=str(row["slug"]),
+                        name_zh=str(row["name_zh"]),
+                        full_name_zh=str(row["full_name_zh"] or ""),
+                    )
+                    if inferred != DEFAULT_LOGIN_PALETTE:
+                        conn.execute(
+                            "UPDATE themes SET login_palette=? WHERE id=?",
+                            (inferred, int(row["id"])),
+                        )
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS theme_resource_permissions (
@@ -141,6 +198,45 @@ class ThemeRepository:
                 conn.execute("ALTER TABLE users ADD COLUMN theme_id INTEGER")
             except Exception:
                 pass
+
+            # 一次性：按品牌文案把仍为默认 cyan 的主题推断为 green/warm 等
+            # （仅跑一次，之后管理员在主题设置中的选择不受影响）
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS theme_schema_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+                """
+            )
+            infer_done = conn.execute(
+                "SELECT 1 FROM theme_schema_meta WHERE key='login_palette_infer_v1'"
+            ).fetchone()
+            if infer_done is None:
+                rows = conn.execute(
+                    "SELECT id, slug, name_zh, full_name_zh, login_palette FROM themes"
+                ).fetchall()
+                for row in rows:
+                    current = normalize_login_palette(
+                        str(row["login_palette"]) if row["login_palette"] else None
+                    )
+                    if current != DEFAULT_LOGIN_PALETTE:
+                        continue
+                    inferred = infer_login_palette(
+                        slug=str(row["slug"]),
+                        name_zh=str(row["name_zh"]),
+                        full_name_zh=str(row["full_name_zh"] or ""),
+                    )
+                    if inferred != DEFAULT_LOGIN_PALETTE:
+                        conn.execute(
+                            "UPDATE themes SET login_palette=? WHERE id=?",
+                            (inferred, int(row["id"])),
+                        )
+                conn.execute(
+                    "INSERT OR REPLACE INTO theme_schema_meta(key, value) VALUES (?, ?)",
+                    ("login_palette_infer_v1", "1"),
+                )
+
             conn.commit()
 
     def close(self) -> None:
@@ -162,9 +258,9 @@ class ThemeRepository:
                     """
                     INSERT INTO themes (
                         slug, name_zh, full_name_zh, name_en, abbr, description,
-                        logo_path, default_permission_mode, is_primary,
+                        logo_path, default_permission_mode, is_primary, login_palette,
                         created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, NULL, 'open', 1, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, NULL, 'open', 1, ?, ?, ?)
                     """,
                     (
                         SGFS_SLUG,
@@ -173,6 +269,7 @@ class ThemeRepository:
                         SGFS_NAME_EN,
                         SGFS_ABBR,
                         SGFS_DESCRIPTION,
+                        DEFAULT_LOGIN_PALETTE,
                         now,
                         now,
                     ),
@@ -211,8 +308,13 @@ class ThemeRepository:
             if conn.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='users' LIMIT 1"
             ).fetchone():
+                # Mandatory binding: null or orphaned theme_id → primary (sgfs).
                 conn.execute(
-                    "UPDATE users SET theme_id=? WHERE theme_id IS NULL",
+                    """
+                    UPDATE users SET theme_id=?
+                    WHERE theme_id IS NULL
+                       OR theme_id NOT IN (SELECT id FROM themes)
+                    """,
                     (theme_id,),
                 )
             conn.commit()
@@ -263,6 +365,7 @@ class ThemeRepository:
         description: str = "",
         default_permission_mode: str = "open",
         is_primary: bool = False,
+        login_palette: str | None = None,
     ) -> ThemeRecord:
         slug_n = slug.strip().lower()
         if not _SLUG_RE.match(slug_n):
@@ -273,6 +376,13 @@ class ThemeRepository:
             raise ValueError(
                 f"invalid default_permission_mode: {default_permission_mode}"
             )
+        palette = (
+            normalize_login_palette(login_palette)
+            if login_palette is not None and str(login_palette).strip()
+            else infer_login_palette(
+                slug=slug_n, name_zh=name_zh, full_name_zh=full_name_zh
+            )
+        )
         now = datetime.now(UTC).isoformat()
         with self._pool.connection() as conn:
             if is_primary:
@@ -282,9 +392,9 @@ class ThemeRepository:
                     """
                     INSERT INTO themes (
                         slug, name_zh, full_name_zh, name_en, abbr, description,
-                        logo_path, default_permission_mode, is_primary,
+                        logo_path, default_permission_mode, is_primary, login_palette,
                         created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)
                     """,
                     (
                         slug_n,
@@ -295,6 +405,7 @@ class ThemeRepository:
                         description.strip(),
                         default_permission_mode,
                         1 if is_primary else 0,
+                        palette,
                         now,
                         now,
                     ),
@@ -318,6 +429,7 @@ class ThemeRepository:
         description: str | None = None,
         default_permission_mode: str | None = None,
         is_primary: bool | None = None,
+        login_palette: str | None = None,
     ) -> ThemeRecord | None:
         theme = self.get_by_id(theme_id)
         if theme is None:
@@ -329,6 +441,9 @@ class ThemeRepository:
             raise ValueError(
                 f"invalid default_permission_mode: {default_permission_mode}"
             )
+        if login_palette is not None and str(login_palette).strip():
+            if normalize_login_palette(login_palette) not in VALID_LOGIN_PALETTES:
+                raise ValueError(f"invalid login_palette: {login_palette}")
         now = datetime.now(UTC).isoformat()
         fields: list[str] = ["updated_at=?"]
         params: list[Any] = [now]
@@ -350,6 +465,9 @@ class ThemeRepository:
         if default_permission_mode is not None:
             fields.append("default_permission_mode=?")
             params.append(default_permission_mode)
+        if login_palette is not None:
+            fields.append("login_palette=?")
+            params.append(normalize_login_palette(login_palette))
         with self._pool.connection() as conn:
             if is_primary is True:
                 conn.execute(

@@ -13,83 +13,79 @@ const weatherConfig = toRef(settingsStore, 'weatherConfig')
 const geeRuntimeConfig = toRef(settingsStore, 'geeRuntimeConfig')
 const dataSourceConfig = toRef(settingsStore, 'dataSourceConfig')
 
-const selectedNode = ref<string | null>(null)
+const selectedLayerId = ref<string | null>(null)
 
 type NodeStatus = 'enabled' | 'disabled' | 'loading'
 type StatusKey = 'gee' | 'weather' | 'data'
 
-type ArchNode = {
-  name: string
-  level: number
+type ArchItem = {
+  title: string
+  tech?: string
   statusKey?: StatusKey
-  children?: ArchNode[]
 }
 
-// 架构树节点 — 与当前实际部署拓扑一致（AGENTS.md / infra 现状）：
-// Nginx Gateway 为默认同域入口；MapLibre 为 2D 主路径、Cesium 3D 实验链；
-// 后端 FastAPI + Celery（Worker/Beat）；数据面含 Open-Meteo 与 MinIO。
-const archTree = computed((): ArchNode[] => [
+type ArchLayer = {
+  id: string
+  title: string
+  blurb: string
+  statusKey?: StatusKey
+  items: ArchItem[]
+}
+
+/** 运维向分层示意（入口 → 网关 → 服务 → 引擎 → 数据），弱化技术脑图枝杈 */
+const archLayers = computed((): ArchLayer[] => [
   {
-    name: brand.value.fullName,
-    level: 0,
-    children: [
-      {
-        name: '前端层',
-        level: 1,
-        children: [
-          { name: 'Vue 3 + TypeScript', level: 2 },
-          { name: 'Pinia Store', level: 2 },
-          { name: 'MapLibre GL 2D', level: 2 },
-          { name: 'Cesium 3D（实验）', level: 2 },
-          { name: 'ECharts 图表', level: 2 },
-          { name: 'Vite 构建', level: 2 },
-        ],
-      },
-      {
-        name: '网关层',
-        level: 1,
-        children: [{ name: 'Nginx Gateway', level: 2 }],
-      },
-      {
-        name: '后端层',
-        level: 1,
-        children: [
-          { name: 'FastAPI 路由', level: 2 },
-          { name: 'Celery 工作流', level: 2 },
-          { name: 'Celery Beat 定时', level: 2 },
-          { name: 'Redis 缓存', level: 2 },
-          { name: 'SQLite 持久化', level: 2 },
-        ],
-      },
-      {
-        name: '引擎层',
-        level: 1,
-        children: [
-          { name: 'GEE 引擎', level: 2, statusKey: 'gee' },
-          { name: '天气引擎', level: 2, statusKey: 'weather' },
-          { name: '算法引擎', level: 2 },
-        ],
-      },
-      {
-        name: '数据层',
-        level: 1,
-        statusKey: 'data',
-        children: [
-          { name: '本地文件系统', level: 2 },
-          { name: 'MinIO 对象存储', level: 2 },
-          { name: 'Open-Meteo 气象数据', level: 2 },
-          {
-            name: '远程存储',
-            level: 2,
-            children: [{ name: '开放数据站', level: 3 }],
-          },
-        ],
-      },
+    id: 'entry',
+    title: '使用入口',
+    blurb: '浏览器打开同域页面（默认 :5175）',
+    items: [
+      { title: '地图与界面', tech: 'Vue 3' },
+      { title: '二维地图', tech: 'MapLibre' },
+      { title: '三维地球（实验）', tech: 'Cesium' },
+      { title: '统计图表', tech: 'ECharts' },
+    ],
+  },
+  {
+    id: 'gateway',
+    title: '同域网关',
+    blurb: '静态页面与 API 统一入口，转发到后端',
+    items: [{ title: 'Nginx Gateway', tech: '同域反代' }],
+  },
+  {
+    id: 'services',
+    title: '应用服务',
+    blurb: '接口、后台任务与定时调度',
+    items: [
+      { title: '接口服务', tech: 'FastAPI' },
+      { title: '后台任务', tech: 'Celery Worker' },
+      { title: '定时调度', tech: 'Celery Beat' },
+      { title: '缓存队列', tech: 'Redis' },
+      { title: '业务库', tech: 'SQLite' },
+    ],
+  },
+  {
+    id: 'engines',
+    title: '分析引擎',
+    blurb: '天气、遥感与算法计算',
+    items: [
+      { title: '天气引擎', tech: 'Open-Meteo 等', statusKey: 'weather' },
+      { title: 'GEE 引擎', tech: 'Google Earth Engine', statusKey: 'gee' },
+      { title: '算法引擎', tech: 'Python 模块' },
+    ],
+  },
+  {
+    id: 'data',
+    title: '数据与存储',
+    blurb: '本地盘、对象存储与气象同步数据',
+    statusKey: 'data',
+    items: [
+      { title: '本地数据根', tech: '文件系统' },
+      { title: '对象存储', tech: 'MinIO' },
+      { title: '气象本地库', tech: 'Open-Meteo' },
     ],
   },
 ])
 
-// 引擎/数据服务启停状态 — 取代原「引擎状态」卡片区，以架构图节点颜色 + 悬停提示呈现
 const nodeStatuses = computed<Record<StatusKey, NodeStatus>>(() => ({
   gee: geeRuntimeConfig.value
     ? geeRuntimeConfig.value.gee_enabled
@@ -101,22 +97,22 @@ const nodeStatuses = computed<Record<StatusKey, NodeStatus>>(() => ({
 }))
 
 const STATUS_LABEL: Record<NodeStatus, string> = {
-  enabled: '启用',
-  disabled: '关闭',
-  loading: '加载中',
+  enabled: '已就绪',
+  disabled: '已关闭',
+  loading: '读取中',
 }
 
-function statusOf(node: ArchNode): NodeStatus | null {
-  return node.statusKey ? nodeStatuses.value[node.statusKey] : null
+function statusOfKey(key?: StatusKey): NodeStatus | null {
+  return key ? nodeStatuses.value[key] : null
 }
 
-function statusTooltip(node: ArchNode): string {
-  const status = statusOf(node)
-  return status ? `${node.name}：${STATUS_LABEL[status]}` : ''
+function statusTooltip(title: string, key?: StatusKey): string {
+  const status = statusOfKey(key)
+  return status ? `${title}：${STATUS_LABEL[status]}` : title
 }
 
-function selectNode(name: string) {
-  selectedNode.value = selectedNode.value === name ? null : name
+function selectLayer(id: string) {
+  selectedLayerId.value = selectedLayerId.value === id ? null : id
 }
 
 // 浏览器内核识别（About「前端界面」行）：UA 解析浏览器 + 渲染内核
@@ -163,7 +159,7 @@ const browserEngine = detectBrowserEngine()
           <span class="info-value">{{ aboutInfo.project_name }}</span>
         </div>
         <div class="info-row">
-          <span class="info-label">前端界面</span>
+          <span class="info-label">当前浏览器</span>
           <span class="info-value">{{ browserEngine }}</span>
         </div>
       </div>
@@ -180,81 +176,68 @@ const browserEngine = detectBrowserEngine()
       </div>
     </section>
 
-    <!-- 架构思维导图 -->
+    <!-- 运维向分层架构 -->
     <section class="settings-section">
       <h3 class="section-title">系统架构图</h3>
-      <div class="arch-diagram">
-        <div v-for="rootNode in archTree" :key="rootNode.name" class="arch-node-container">
+      <p class="section-hint">
+        从上到下是一次请求怎么走：入口 → 网关 → 服务 → 引擎 → 数据。色点表示相关能力是否已配好（悬停可看说明）。
+      </p>
+      <div class="arch-stack">
+        <template v-for="(layer, idx) in archLayers" :key="layer.id">
           <div
-            class="arch-node root"
-            :class="{ selected: selectedNode === rootNode.name }"
-            role="button"
-            tabindex="0"
-            @click="selectNode(rootNode.name)"
-            @keydown.enter.prevent="selectNode(rootNode.name)"
-            @keydown.space.prevent="selectNode(rootNode.name)"
+            v-if="idx > 0"
+            class="arch-flow"
+            aria-hidden="true"
           >
-            {{ rootNode.name }}
+            ↓
           </div>
-
-          <div class="arch-connector"></div>
-
-          <div class="arch-children">
-            <div v-for="child in rootNode.children" :key="child.name" class="arch-branch">
-              <Tooltip :text="statusTooltip(child)">
-                <div
-                  class="arch-node level-1"
-                  :class="[statusOf(child) ?? '', { selected: selectedNode === child.name }]"
-                  role="button"
-                  tabindex="0"
-                  @click="selectNode(child.name)"
-                  @keydown.enter.prevent="selectNode(child.name)"
-                  @keydown.space.prevent="selectNode(child.name)"
+          <Tooltip :text="statusTooltip(layer.title, layer.statusKey)" block>
+            <div
+              class="arch-layer"
+              :class="[
+                statusOfKey(layer.statusKey) ?? '',
+                { selected: selectedLayerId === layer.id },
+              ]"
+              role="button"
+              tabindex="0"
+              @click="selectLayer(layer.id)"
+              @keydown.enter.prevent="selectLayer(layer.id)"
+              @keydown.space.prevent="selectLayer(layer.id)"
+            >
+              <div class="arch-layer-head">
+                <div class="arch-layer-titles">
+                  <span class="arch-layer-title">{{ layer.title }}</span>
+                  <span class="arch-layer-blurb">{{ layer.blurb }}</span>
+                </div>
+                <span
+                  v-if="statusOfKey(layer.statusKey)"
+                  class="status-dot"
+                  :class="statusOfKey(layer.statusKey)"
+                ></span>
+              </div>
+              <div class="arch-layer-items">
+                <Tooltip
+                  v-for="item in layer.items"
+                  :key="item.title"
+                  :text="statusTooltip(item.title, item.statusKey)"
                 >
-                  {{ child.name }}
-                  <span v-if="statusOf(child)" class="status-dot" :class="statusOf(child)"></span>
-                </div>
-              </Tooltip>
-              <div class="arch-connector sub"></div>
-              <div class="arch-leaves">
-                <div v-for="leaf in child.children" :key="leaf.name" class="arch-leaf-wrap">
-                  <Tooltip :text="statusTooltip(leaf)">
-                    <div
-                      class="arch-node level-2"
-                      :class="[statusOf(leaf) ?? '', { selected: selectedNode === leaf.name }]"
-                      role="button"
-                      tabindex="0"
-                      @click="selectNode(leaf.name)"
-                      @keydown.enter.prevent="selectNode(leaf.name)"
-                      @keydown.space.prevent="selectNode(leaf.name)"
-                    >
-                      {{ leaf.name }}
-                      <span v-if="statusOf(leaf)" class="status-dot" :class="statusOf(leaf)"></span>
-                    </div>
-                  </Tooltip>
-                  <template v-if="leaf.children?.length">
-                    <div class="arch-connector nested"></div>
-                    <div class="arch-nested">
-                      <div
-                        v-for="nested in leaf.children"
-                        :key="nested.name"
-                        class="arch-node level-3"
-                        :class="{ selected: selectedNode === nested.name }"
-                        role="button"
-                        tabindex="0"
-                        @click="selectNode(nested.name)"
-                        @keydown.enter.prevent="selectNode(nested.name)"
-                        @keydown.space.prevent="selectNode(nested.name)"
-                      >
-                        {{ nested.name }}
-                      </div>
-                    </div>
-                  </template>
-                </div>
+                  <div
+                    class="arch-item"
+                    :class="statusOfKey(item.statusKey) ?? ''"
+                  >
+                    <span class="arch-item-title">{{ item.title }}</span>
+                    <span v-if="item.tech" class="arch-item-tech">{{ item.tech }}</span>
+                    <span
+                      v-if="statusOfKey(item.statusKey)"
+                      class="status-dot"
+                      :class="statusOfKey(item.statusKey)"
+                    ></span>
+                  </div>
+                </Tooltip>
               </div>
             </div>
-          </div>
-        </div>
+          </Tooltip>
+        </template>
       </div>
     </section>
 
@@ -295,6 +278,13 @@ const browserEngine = detectBrowserEngine()
   color: var(--text-strong);
   font-size: var(--font-size-caption);
   font-weight: 600;
+}
+
+.section-hint {
+  margin: 0 0 0.45rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
 }
 
 .about-info,
@@ -354,75 +344,133 @@ const browserEngine = detectBrowserEngine()
   font-weight: 500;
 }
 
-/* 架构图 */
-.arch-diagram {
-  padding: 0.62rem;
+/* 运维向分层架构 */
+.arch-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0.55rem;
   border-radius: 0.52rem;
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
-  overflow-x: auto;
 }
 
-.arch-node-container {
+.arch-flow {
+  align-self: center;
+  color: var(--text-faint);
+  font-size: 0.85rem;
+  line-height: 1.2;
+  padding: 0.15rem 0;
+  user-select: none;
+}
+
+.arch-layer {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 0;
-}
-
-.arch-node {
-  padding: 0.32rem 0.72rem;
-  border-radius: 0.4rem;
+  gap: 0.45rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.45rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
   cursor: pointer;
-  font-size: var(--font-size-caption);
-  font-weight: 500;
-  transition: all 0.16s ease;
-  white-space: nowrap;
+  text-align: left;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
-.arch-node.root {
-  background: linear-gradient(135deg, var(--accent-border), var(--surface-violet-tint));
-  border: 1px solid var(--border-strong);
-  color: var(--text-strong);
+.arch-layer:hover {
+  border-color: var(--border-default);
+  background: color-mix(in srgb, var(--surface-2, var(--surface-1)) 90%, transparent);
+}
+
+.arch-layer.selected {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-border) 50%, transparent);
+}
+
+.arch-layer.enabled {
+  border-color: color-mix(in srgb, var(--success-border) 55%, var(--border-subtle));
+}
+
+.arch-layer.disabled {
+  opacity: 0.72;
+}
+
+.arch-layer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.arch-layer-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.arch-layer-title {
   font-size: var(--font-size-caption);
   font-weight: 600;
+  color: var(--text-strong);
+  line-height: 1.35;
 }
 
-.arch-node.level-1 {
-  background: var(--accent-surface);
-  border: 1px solid var(--accent-border);
-  color: var(--accent);
+.arch-layer-blurb {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.4;
 }
 
-.arch-node.level-2 {
-  background: var(--surface-raised);
+.arch-layer-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.arch-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 100%;
+  padding: 0.28rem 0.5rem;
+  border-radius: 0.35rem;
   border: 1px solid var(--border-subtle);
-  color: var(--text-muted);
+  background: var(--surface-sunken, var(--surface-raised));
+  color: var(--text-secondary);
 }
 
-.arch-node.level-3 {
-  background: var(--surface-raised);
-  border: 1px dashed var(--border-default);
-  color: var(--text-muted);
-  font-size: var(--font-size-caption);
-}
-
-/* 引擎/数据服务状态（颜色承载状态，悬停经 Tooltip 显示文字说明） */
-.arch-node.enabled {
+.arch-item.enabled {
   border-color: var(--success-border);
 }
 
-.arch-node.disabled {
+.arch-item.disabled {
   opacity: 0.55;
+}
+
+.arch-item-title {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.arch-item-tech {
+  font-size: 0.65rem;
+  color: var(--text-faint);
+  line-height: 1.3;
 }
 
 .status-dot {
   display: inline-block;
   width: 6px;
   height: 6px;
-  margin-left: 0.45em;
   border-radius: 50%;
-  vertical-align: middle;
   flex: none;
 }
 
@@ -437,63 +485,6 @@ const browserEngine = detectBrowserEngine()
 
 .status-dot.loading {
   background: var(--warning);
-}
-
-.arch-node:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(10, 132, 255, 0.18);
-}
-
-.arch-node.selected {
-  border-color: var(--border-strong);
-  box-shadow: 0 0 0 2px var(--accent-border);
-}
-
-.arch-connector {
-  width: 1px;
-  height: 0.72rem;
-  background: var(--border-strong);
-}
-
-.arch-connector.sub {
-  height: 0.52rem;
-}
-
-.arch-connector.nested {
-  height: 0.36rem;
-}
-
-.arch-children {
-  display: flex;
-  gap: 0.82rem;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
-.arch-branch {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.arch-leaves {
-  display: flex;
-  flex-direction: column;
-  gap: 0.22rem;
-  align-items: center;
-}
-
-.arch-leaf-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.arch-nested {
-  display: flex;
-  flex-direction: column;
-  gap: 0.16rem;
-  align-items: center;
 }
 
 /* 功能模块 */

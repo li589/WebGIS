@@ -13,6 +13,7 @@ export interface ResolveLayerContextCapabilitiesInput {
   isOverlayDisplayOnlyLayer: (catalogId: string) => boolean
   canRunCatalog: (catalogId: string) => boolean
   weatherStatus?: { errorType?: string }
+  findRunGroupById?: (groupId: string) => { dissolvable?: boolean } | null | undefined
 }
 
 function isDrawDraftCatalog(catalogId: string): boolean {
@@ -28,10 +29,10 @@ export function resolveLayerContextCapabilities(
 
   const isExportPending = Boolean(
     raw?.runGroupId &&
-      !raw.importedRaster?.overlayLayerId &&
-      !raw.importedVector?.backendLayerId &&
-      !layer.isImported &&
-      !layer.isImportedRaster,
+    !raw.importedRaster?.overlayLayerId &&
+    !raw.importedVector?.backendLayerId &&
+    !layer.isImported &&
+    !layer.isImportedRaster,
   )
 
   const catalogRunnable =
@@ -45,8 +46,8 @@ export function resolveLayerContextCapabilities(
 
   const canEditGeometry = Boolean(
     layer.isImported &&
-      !layer.isAdminBoundary &&
-      isPolygonEditableLayer(raw?.importedVector?.geometryType),
+    !layer.isAdminBoundary &&
+    isPolygonEditableLayer(raw?.importedVector?.geometryType),
   )
 
   return {
@@ -58,7 +59,9 @@ export function resolveLayerContextCapabilities(
     hasJobReport: Boolean(layer.jobLayer?.reportSummary),
     canRunWorkflow: catalogRunnable,
     canEditGeometry,
-    canDissolveGroup: false,
+    canDissolveGroup: Boolean(
+      raw?.runGroupId && input.findRunGroupById?.(raw.runGroupId)?.dissolvable,
+    ),
     isWeatherLayer: weather,
     canRetryWeatherTiles: weather,
     canTriggerWeatherSync: weather && input.weatherStatus?.errorType === 'data-empty',

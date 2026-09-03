@@ -190,6 +190,30 @@ export function useTimelineActionConfirm(deps: {
       }
     }
 
+    // 有可复用产物：默认直接加载，不再弹确认卡（用户显式「重跑」另走）
+    if (canReuse) {
+      let attachedAny = false
+      for (const catalogId of catalogIds) {
+        try {
+          const n = await deps.workflowRun.autoAttachProductsForNewLayer(catalogId, {
+            preferredTimeKey: timeKey,
+          })
+          if (n > 0) {
+            attachedAny = true
+            deps.uiStore.rememberLayerTime(catalogId, { force: true })
+            deps.logOperation('timeline-reuse', `自动复用产物 ${catalogId} @ ${timeKey}`)
+          }
+        } catch {
+          /* 单层失败继续尝试其它层 */
+        }
+      }
+      if (attachedAny) {
+        banner.dismissConfirm()
+        return
+      }
+      // 轻量 hasReusable 乐观命中但 attach 失败 → 仍弹确认卡供重跑
+    }
+
     const primary = catalogIds[0]
     const descriptor = deps.workspace.resolveEffectiveDescriptor?.(primary) ?? null
     const moduleName =

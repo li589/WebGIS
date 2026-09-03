@@ -37,12 +37,42 @@ from app.data_io.services.upload_validation import (
 import contextlib
 
 
+class UploadAccessDenied(LookupError):
+    """Raised when caller may not touch an upload session (map to 404)."""
+
+
+def assert_upload_access(
+    upload_id: str,
+    *,
+    user_id: int | None,
+    role: str | None,
+    source: str | None = None,
+) -> dict[str, Any]:
+    """Fail closed: non-owner / non-admin → UploadAccessDenied (404).
+
+    Legacy meta without ``owner_user_id``: only admin or infrastructure
+    credentials (``service_key`` / ``dev_bypass``) may proceed.
+    """
+    dest, meta = _load_meta(upload_id)
+    if role == "admin":
+        return meta
+    owner = meta.get("owner_user_id")
+    if owner is None:
+        if source in {"service_key", "dev_bypass"}:
+            return meta
+        raise UploadAccessDenied(f"upload not found: {upload_id}")
+    if user_id is not None and int(user_id) == int(owner):
+        return meta
+    raise UploadAccessDenied(f"upload not found: {upload_id}")
+
+
 def init_upload(
     *,
     filename: str,
     size: int,
     content_type: str | None = None,
     resume_upload_id: str | None = None,
+    owner_user_id: int | None = None,
 ) -> dict[str, Any]:
     ensure_imports_root()
     if size <= 0:
@@ -63,6 +93,14 @@ def init_upload(
             resume_dest = safe_import_child(resume_upload_id, root=STAGING_DIR)
             with _io_meta_lock(resume_dest):
                 meta = _io_load_meta(resume_dest)
+                existing_owner = meta.get("owner_user_id")
+                if existing_owner is not None and owner_user_id is not None:
+                    if int(existing_owner) != int(owner_user_id):
+                        raise UploadAccessDenied(
+                            f"upload not found: {resume_upload_id}"
+                        )
+                elif existing_owner is not None and owner_user_id is None:
+                    raise UploadAccessDenied(f"upload not found: {resume_upload_id}")
                 if (
                     not meta.get("complete")
                     and str(meta.get("filename")) == safe_name
@@ -75,6 +113,8 @@ def init_upload(
                             received = min(received, part.stat().st_size)
                     meta["received"] = received
                     meta["content_type"] = content_type or meta.get("content_type")
+                    if owner_user_id is not None and meta.get("owner_user_id") is None:
+                        meta["owner_user_id"] = int(owner_user_id)
                     _io_save_meta(resume_dest, meta)
                     return {
                         "upload_id": resume_upload_id,
@@ -98,6 +138,7 @@ def init_upload(
         "received": 0,
         "created_at": time.time(),
         "complete": False,
+        "owner_user_id": int(owner_user_id) if owner_user_id is not None else None,
     }
     _io_save_meta(dest, meta)
     (dest / "blob.part").write_bytes(b"")

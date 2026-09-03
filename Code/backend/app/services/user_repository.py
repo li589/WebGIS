@@ -181,26 +181,20 @@ class UserRepository:
             raise ValueError("username is required")
         if role not in VALID_ROLES:
             raise ValueError(f"invalid role: {role}")
-        resolved_theme_id = theme_id
+        from app.services.theme_repository import get_theme_repository
+
+        theme_repo = get_theme_repository()
         permission_mode = "open"
-        if resolved_theme_id is None:
-            try:
-                from app.services.theme_repository import get_theme_repository
-
-                primary = get_theme_repository().get_primary()
-                resolved_theme_id = primary.id
-                permission_mode = primary.default_permission_mode
-            except Exception:
-                resolved_theme_id = None
+        if theme_id is None:
+            primary = theme_repo.get_primary()
+            resolved_theme_id = int(primary.id)
+            permission_mode = primary.default_permission_mode
         else:
-            try:
-                from app.services.theme_repository import get_theme_repository
-
-                theme = get_theme_repository().get_by_id(resolved_theme_id)
-                if theme is not None:
-                    permission_mode = theme.default_permission_mode
-            except Exception:
-                pass
+            theme = theme_repo.get_by_id(int(theme_id))
+            if theme is None:
+                raise ValueError(f"theme not found: {theme_id}")
+            resolved_theme_id = int(theme.id)
+            permission_mode = theme.default_permission_mode
         now = datetime.now(UTC).isoformat()
         pwd_hash = hash_password(password)
         with self._pool.connection() as conn:
@@ -266,8 +260,12 @@ class UserRepository:
             fields.append("permission_mode=?")
             params.append(permission_mode)
         if theme_id is not None:
+            from app.services.theme_repository import get_theme_repository
+
+            if get_theme_repository().get_by_id(int(theme_id)) is None:
+                raise ValueError(f"theme not found: {theme_id}")
             fields.append("theme_id=?")
-            params.append(theme_id)
+            params.append(int(theme_id))
         # 注入防线：拼接的列名必须全部在白名单内（见模块级 _UPDATABLE_COLUMNS），
         # 用显式检查而非 assert，避免 python -O 下失效。
         if not set(fields) <= {f"{c}=?" for c in _UPDATABLE_COLUMNS}:

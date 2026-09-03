@@ -135,26 +135,90 @@ export function lngLatToGlobeSphere(lon: number, latDeg: number): [number, numbe
 }
 
 /**
- * 在 MapLibre 内部 transform 不可见的私有字段时（不鼓励），退化为"以屏幕中心
- * 经纬度为可见半球中心"的近似判断。球面距离 > 90° 的顶点一定在镜头背面。
- *
- * 球面距离公式（haversine，省略 asin 取 cos 取最值以保持 O(1)）：
- *   cos(d/R) = sinφ1·sinφ2 + cosφ1·cosφ2·cos(Δλ)
+ * Globe 视向极点（单位球）：地图中心径向，并按 pitch/bearing 向屏幕上方倾斜。
+ * 用于背面剔除；pitch=0 时退化为 getCenter 对应的单位球点。
+ */
+export function getGlobeViewPole(map: MaplibreMap): [number, number, number] {
+  const c = map.getCenter()
+  let [vx, vy, vz] = lngLatToGlobeSphere(c.lng, c.lat)
+  let pitch = 0
+  let bearing = 0
+  try {
+    pitch = typeof map.getPitch === 'function' ? Number(map.getPitch()) || 0 : 0
+    bearing = typeof map.getBearing === 'function' ? Number(map.getBearing()) || 0 : 0
+  } catch {
+    /* map disposed */
+  }
+  if (pitch > 0.5) {
+    const lat = c.lat * DEG2RAD_GLOBE
+    const lon = c.lng * DEG2RAD_GLOBE
+    const nx = -Math.sin(lat) * Math.sin(lon)
+    const ny = Math.cos(lat)
+    const nz = -Math.sin(lat) * Math.cos(lon)
+    const ex = Math.cos(lon)
+    const ez = -Math.sin(lon)
+    const bearingR = bearing * DEG2RAD_GLOBE
+    const cosB = Math.cos(bearingR)
+    const sinB = Math.sin(bearingR)
+    // 屏幕上方对应的球面切向：bearing=0 为北
+    const ux = cosB * nx + sinB * ex
+    const uy = cosB * ny
+    const uz = cosB * nz + sinB * ez
+    const pitchR = pitch * DEG2RAD_GLOBE
+    const cosP = Math.cos(pitchR)
+    const sinP = Math.sin(pitchR)
+    vx = cosP * vx + sinP * ux
+    vy = cosP * vy + sinP * uy
+    vz = cosP * vz + sinP * uz
+    const len = Math.hypot(vx, vy, vz) || 1
+    vx /= len
+    vy /= len
+    vz /= len
+  }
+  return [vx, vy, vz]
+}
+
+/**
+ * 单位球点相对视向极点的余弦（1=正对镜头，-1=对跖）。
+ * 可传入预计算 pole，避免每粒子重复 getPitch/getCenter。
+ */
+export function globeFacingCosine(
+  lng: number,
+  lat: number,
+  viewPole: readonly [number, number, number],
+): number {
+  const [px, py, pz] = lngLatToGlobeSphere(lng, lat)
+  return px * viewPole[0] + py * viewPole[1] + pz * viewPole[2]
+}
+
+/**
+ * 地平线附近余量：cos ≈ 0.08 ≈ 85°，比旧 haversine 100° 更严，
+ * 减少「背面风场叠到正面圆盘」的透视穿帮。
+ */
+export const GLOBE_OCCLUSION_RIM_COSINE = 0.08
+
+/**
+ * 点是否被地球球体遮挡（在镜头背面或地平线内侧不可见一侧）。
+ * mercator 恒为 false。
+ */
+export function isLngLatOccludedByGlobe(
+  map: MaplibreMap,
+  lng: number,
+  lat: number,
+  viewPole?: readonly [number, number, number],
+): boolean {
+  if (!isGlobeProjection(map)) return false
+  const pole = viewPole ?? getGlobeViewPole(map)
+  return globeFacingCosine(lng, lat, pole) < GLOBE_OCCLUSION_RIM_COSINE
+}
+
+/**
+ * 经纬度是否落在 globe 可见半球（含地平线余量）。
+ * 内部走视向极点 + 球面点积；pitch 较大时比纯 getCenter haversine 更稳。
  */
 export function isLngLatOnGlobeVisibleSide(map: MaplibreMap, lng: number, lat: number): boolean {
   if (!isGlobeProjection(map)) return true
-  // 优先尝试 MapLibre 私有 transform.elevation / cameraPos（极少见公开）。
-  // 失败时退化到 getCenter 近似——center 位于屏幕中央经纬度、pitch=0 时与镜头方向一致；
-  // 偏离球面中央的可见角约 75°，所以阈值取 100°（含边缘余量）。
-  const c = map.getCenter()
-  const sin1 = Math.sin(lat * DEG2RAD_GLOBE)
-  const sin2 = Math.sin(c.lat * DEG2RAD_GLOBE)
-  const cos1 = Math.cos(lat * DEG2RAD_GLOBE)
-  const cos2 = Math.cos(c.lat * DEG2RAD_GLOBE)
-  const dLon = (lng - c.lng) * DEG2RAD_GLOBE
-  const cosD = sin1 * sin2 + cos1 * cos2 * Math.cos(dLon)
-  // cosD ∈ [-1, 1]；-1 = 完全背面（antipode），1 = 完全正面
-  return cosD > -0.18 // 约 100°，给屏幕边缘留余量
+  return !isLngLatOccludedByGlobe(map, lng, lat)
 }
 
 /**

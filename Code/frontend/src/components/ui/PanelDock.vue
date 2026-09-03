@@ -208,82 +208,82 @@ defineExpose({ showPanel, hidePanel, resetPanel, toggleCollapsed })
         :class="dockClass"
         :style="effectivePanelSizeStyle"
       >
-      <!-- 标题栏 -->
-      <header class="panel-dock__head" :class="{ 'panel-dock__head--dragging': dragging }">
-        <button
-          v-if="draggable"
-          class="panel-dock__grip"
-          type="button"
-          title="拖动"
-          aria-label="拖动面板"
-          @pointerdown.prevent="startDragging"
-        >
-          <span></span><span></span><span></span>
-        </button>
-        <span class="panel-dock__label">{{ panelLabel }}</span>
-        <div class="panel-dock__actions">
+        <!-- 标题栏 -->
+        <header class="panel-dock__head" :class="{ 'panel-dock__head--dragging': dragging }">
           <button
-            v-if="collapsible"
-            class="panel-dock__btn"
+            v-if="draggable"
+            class="panel-dock__grip"
             type="button"
-            :title="collapsed ? '展开' : '收起'"
-            :aria-label="collapsed ? '展开面板' : '折叠面板'"
-            :aria-expanded="!collapsed"
-            @click="handleToggleCollapsed"
+            title="拖动"
+            aria-label="拖动面板"
+            @pointerdown.prevent="startDragging"
           >
-            <svg v-if="collapsed" viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M3 8h10M8 3l5 5-5 5" />
-            </svg>
-            <svg v-else viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M3 8h10M8 13 3 8l5-5" />
-            </svg>
+            <span></span><span></span><span></span>
           </button>
-          <button
-            class="panel-dock__btn"
-            type="button"
-            title="复位"
-            aria-label="复位面板位置与尺寸"
-            @click="resetPanel"
-          >
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M3 8a5 5 0 1 0 1.5-3.6M3 3v3.4h3.4" />
-            </svg>
-          </button>
-          <button
-            class="panel-dock__btn"
-            type="button"
-            title="隐藏"
-            aria-label="隐藏面板"
-            @click="hidePanel"
-          >
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path
-                d="m2.4 2.4 11.2 11.2M6.2 6.2A2.6 2.6 0 0 0 10 9.8M3 8s2.2-3.5 5-3.5c.8 0 1.5.1 2.2.4M13 8s-1.1 1.8-3 2.8"
-              />
-            </svg>
-          </button>
+          <span class="panel-dock__label">{{ panelLabel }}</span>
+          <div class="panel-dock__actions">
+            <button
+              v-if="collapsible"
+              class="panel-dock__btn"
+              type="button"
+              :title="collapsed ? '展开' : '收起'"
+              :aria-label="collapsed ? '展开面板' : '折叠面板'"
+              :aria-expanded="!collapsed"
+              @click="handleToggleCollapsed"
+            >
+              <svg v-if="collapsed" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M3 8h10M8 3l5 5-5 5" />
+              </svg>
+              <svg v-else viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M3 8h10M8 13 3 8l5-5" />
+              </svg>
+            </button>
+            <button
+              class="panel-dock__btn"
+              type="button"
+              title="复位"
+              aria-label="复位面板位置与尺寸"
+              @click="resetPanel"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M3 8a5 5 0 1 0 1.5-3.6M3 3v3.4h3.4" />
+              </svg>
+            </button>
+            <button
+              class="panel-dock__btn"
+              type="button"
+              title="隐藏"
+              aria-label="隐藏面板"
+              @click="hidePanel"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="m2.4 2.4 11.2 11.2M6.2 6.2A2.6 2.6 0 0 0 10 9.8M3 8s2.2-3.5 5-3.5c.8 0 1.5.1 2.2.4M13 8s-1.1 1.8-3 2.8"
+                />
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        <!-- 内容区 -->
+        <div v-show="!collapsed" :class="bodyClass">
+          <slot />
         </div>
-      </header>
 
-      <!-- 内容区 -->
-      <div v-show="!collapsed" :class="bodyClass">
-        <slot />
-      </div>
-
-      <!-- 缩放手柄 -->
-      <button
-        v-if="resizeEnabled"
-        :class="resizeHandleClass"
-        type="button"
-        title="拖动调整尺寸 · 双击恢复默认"
-        aria-label="调整面板尺寸"
-        @pointerdown.prevent="startResizing"
-        @dblclick="resetPanel"
-      >
-        <span class="resize-corner resize-corner--one"></span>
-        <span class="resize-corner resize-corner--two"></span>
-      </button>
-    </section>
+        <!-- 缩放手柄 -->
+        <button
+          v-if="resizeEnabled"
+          :class="resizeHandleClass"
+          type="button"
+          title="拖动调整尺寸 · 双击恢复默认"
+          aria-label="调整面板尺寸"
+          @pointerdown.prevent="startResizing"
+          @dblclick="resetPanel"
+        >
+          <span class="resize-corner resize-corner--one"></span>
+          <span class="resize-corner resize-corner--two"></span>
+        </button>
+      </section>
     </Transition>
   </div>
 </template>

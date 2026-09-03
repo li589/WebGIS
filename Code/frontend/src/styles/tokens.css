@@ -170,14 +170,21 @@
   --ease-decelerate: cubic-bezier(0, 0, 0.2, 1); /* 减速 */
   --ease-spring: cubic-bezier(0.34, 1.2, 0.64, 1); /* 轻弹（仅短位移） */
 
+  /* ═══ Tooltip（浅/深统一：深底浅字，避免浅色面板上白 tip 发虚） ═══ */
+  --tooltip-bg: rgba(12, 22, 36, 0.96);
+  --tooltip-fg: #e8f2fc;
+  --tooltip-border: rgba(136, 192, 255, 0.22);
+  --tooltip-shadow: 0 8px 20px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
   /* ═══ z-index 层级 ═══ */
   --z-map: 0; /* 地图基底 */
   --z-overlay: 20; /* 地图浮层 / 信息窗 */
   --z-panel: 24; /* 浮层面板 dock */
-  --z-popover: 60; /* 下拉菜单 / 气泡 / Tooltip */
+  --z-popover: 60; /* 下拉菜单 / 气泡 */
   --z-modal: 80; /* 模态对话框（设计刻度；实际面板可高于此） */
   --z-toast: 100; /* 消息提示 / 通知 */
   --z-loading: 10040; /* 全局加载遮罩（须高于设置/工作流面板 ~998–1300） */
+  --z-tooltip: 10100; /* Tooltip Teleport（高于面板与 loading，避免被遮挡） */
   --z-debug: 12000; /* 调试 / 连通性横幅 */
 
   /* ═══ 响应式断点（约定值，供 JS/组件统一参考） ═══ */
@@ -305,6 +312,8 @@
   /* 阴影色（浅底用蓝灰影） */
   --shadow-ambient: rgba(20, 50, 90, 0.1);
   --shadow-ambient-strong: rgba(20, 50, 90, 0.18);
+
+  /* Tooltip 保持深底浅字（不跟浅色 surface-3 变白，否则浮在白面板上发虚） */
 
   /* 表面层级（浅色：近不透明冷白，避免半透明叠地图/外圈发棕褐） */
   --surface-base: #e8eef5;

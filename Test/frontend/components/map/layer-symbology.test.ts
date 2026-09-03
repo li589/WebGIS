@@ -67,10 +67,20 @@ describe('layer-symbology', () => {
     expect(hint?.palette).toBe('spectral')
   })
 
+  it('resolveStyleRenderHint rebuilds legend_ticks from vmin/vmax overrides', () => {
+    const hint = resolveStyleRenderHint({
+      vminOverride: 0.05,
+      vmaxOverride: 0.35,
+      overlayMeta: { palette: 'ylgnbu', vmin: 0, vmax: 0.5 },
+    })
+    expect(hint?.legend_ticks).toEqual([0.05, 0.2, 0.35])
+  })
+
   it('marks overlay-only palette as not map-linked unless supports_recolor', () => {
     expect(isMapLinkedPalette({ hasRenderHint: false })).toBe(false)
     expect(isMapLinkedPalette({ hasRenderHint: true })).toBe(true)
-    expect(isMapLinkedPalette({ hasRenderHint: true, isImportedRaster: true })).toBe(false)
+    // 反演产物：importedRaster + renderHint（COG preview）须可调色/值域
+    expect(isMapLinkedPalette({ hasRenderHint: true, isImportedRaster: true })).toBe(true)
     expect(
       isMapLinkedPalette({
         hasRenderHint: false,
@@ -78,6 +88,13 @@ describe('layer-symbology', () => {
         supportsRecolor: true,
       }),
     ).toBe(true)
+    expect(
+      isMapLinkedPalette({
+        hasRenderHint: false,
+        isImportedRaster: true,
+        supportsRecolor: false,
+      }),
+    ).toBe(false)
   })
 
   it('buildOverlayStyleQuery encodes palette and nodata', () => {

@@ -2,7 +2,7 @@
   {
     "tool_id": "gis.buffer",
     "title": "缓冲区",
-    "description": "对点/线/面要素做缓冲，产出 GeoJSON 与属性表。",
+    "description": "对点/线/面要素做缓冲，产出 GeoJSON 与属性表。默认缓冲距离 500 m，可在参数中调整。",
     "category": "gis",
     "input_kinds": ["vector", "point"],
     "param_schema": [

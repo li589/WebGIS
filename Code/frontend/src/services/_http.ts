@@ -118,7 +118,9 @@ export function getApiBaseUrl(): string {
 export function getApiStorageScope(): string {
   const base = getApiBaseUrl()
   if (base) return base
-  if (typeof window !== 'undefined') return window.location.origin
+  // Node / 部分 vitest worker 可能有 window 但无 location（或 location 未就绪）
+  const origin = typeof window !== 'undefined' ? window.location?.origin?.trim() || '' : ''
+  if (origin) return origin
   return 'unknown'
 }
 

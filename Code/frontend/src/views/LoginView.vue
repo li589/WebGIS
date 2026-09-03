@@ -27,10 +27,19 @@ const brandAbbr = computed(() => auth.resolvedBrand.abbr || BRAND.abbr)
 const brandShort = computed(() => auth.resolvedBrand.shortName || BRAND.shortName)
 const brandEn = computed(() => auth.resolvedBrand.displayNameEn || BRAND.displayNameEn)
 const brandLogo = computed(() => auth.resolvedBrand.logoUrl)
-const activeLoginThemeSlug = computed(
-  () => auth.loginPreviewSlug || auth.primaryTheme?.slug || 'sgfs',
+const activeLoginThemeSlug = computed(() => auth.loginPreviewSlug || auth.primaryTheme?.slug || '')
+const activeLoginPalette = computed(() => {
+  const preview = auth.loginPreviewTheme
+  if (preview?.login_palette) return preview.login_palette
+  const bySlug = auth.publicThemes.find((t) => t.slug === activeLoginThemeSlug.value)
+  if (bySlug?.login_palette) return bySlug.login_palette
+  return auth.primaryTheme?.login_palette ?? null
+})
+const loginPageStyle = computed(() =>
+  activeLoginThemeSlug.value || activeLoginPalette.value
+    ? resolveLoginThemeStyle(activeLoginThemeSlug.value, activeLoginPalette.value)
+    : undefined,
 )
-const loginPageStyle = computed(() => resolveLoginThemeStyle(activeLoginThemeSlug.value))
 const loginThemeSlug = computed({
   get: () => auth.loginPreviewSlug ?? '',
   set: (slug: string) => auth.setLoginPreviewSlug(slug || null),
@@ -44,9 +53,10 @@ const themeSelectOptions = computed(() =>
 )
 
 onMounted(async () => {
-  await Promise.all([auth.loadPrimaryTheme(), auth.loadPublicThemes()])
-  const routeTheme =
-    typeof route.query.theme === 'string' ? route.query.theme : null
+  const loads: Promise<unknown>[] = [auth.loadPublicThemes()]
+  if (!auth.primaryTheme) loads.push(auth.loadPrimaryTheme())
+  await Promise.all(loads)
+  const routeTheme = typeof route.query.theme === 'string' ? route.query.theme : null
   auth.initLoginPreviewSlug(routeTheme)
   if (devHint.value) {
     username.value = devHint.value.username
@@ -80,11 +90,7 @@ async function submit() {
 </script>
 
 <template>
-  <div
-    class="login-page"
-    :data-theme-slug="activeLoginThemeSlug"
-    :style="loginPageStyle"
-  >
+  <div class="login-page" :data-theme-slug="activeLoginThemeSlug" :style="loginPageStyle">
     <div class="login-backdrop" aria-hidden="true">
       <!-- 星点（最底层） -->
       <div class="stars"></div>
@@ -435,7 +441,11 @@ async function submit() {
   height: 360px;
   top: 35%;
   right: 15%;
-  background: radial-gradient(circle, var(--login-glow-warm, rgba(255, 200, 120, 0.08)) 0%, transparent 70%);
+  background: radial-gradient(
+    circle,
+    var(--login-glow-warm, rgba(255, 200, 120, 0.08)) 0%,
+    transparent 70%
+  );
   opacity: 0.5;
 }
 
@@ -606,43 +616,38 @@ async function submit() {
 }
 
 .brand-abbr {
-  margin: var(--space-3) -0.42em 0 0;
+  margin: var(--space-3) 0 0;
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.42em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--login-accent, var(--accent));
-  text-shadow: 0 0 20px var(--login-accent-border, var(--accent-border));
 }
 
 .brand-names {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-2);
+  gap: 0.35rem;
   margin-top: var(--space-3);
+  /* 与卡片 backdrop-filter 分层，避免子像素发虚 */
+  isolation: isolate;
+  transform: translateZ(0);
 }
 
 .brand-names h1 {
   margin: 0;
-  font-size: 1.08rem;
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.02em;
-  line-height: 1.45;
+  font-family: var(--font-sans);
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.35;
   color: var(--login-title-base, var(--text-strong));
-  text-shadow:
-    0 1px 2px rgba(1, 8, 16, 0.9),
-    0 0 20px rgba(1, 8, 16, 0.35);
-  background: linear-gradient(
-    90deg,
-    var(--login-title-base, var(--text-strong)) 0%,
-    var(--login-title-base, var(--text-strong)) 78%,
-    var(--login-title-accent-stop, var(--login-accent-strong, var(--accent-strong))) 100%
-  );
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  /* 实心字色，避免 background-clip 渐变字在中文下发虚 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
 }
 
 .theme-picker {
@@ -653,10 +658,14 @@ async function submit() {
 }
 
 .brand-name-en {
-  font-size: 0.66rem;
-  letter-spacing: 0.05em;
-  white-space: nowrap;
-  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 450;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  white-space: normal;
+  text-align: center;
+  max-width: 22rem;
+  color: var(--text-secondary);
 }
 
 .brand-divider {

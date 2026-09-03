@@ -11,6 +11,7 @@ import {
   writeScopedItem,
 } from '../../services/user-local-isolation'
 import { getApiStorageScope } from '../../services/_http'
+import { clearAttachRetry } from './workflow-attach-retry'
 
 const STORAGE_KEY = 'geo:active-layers-workspace:v1'
 const DISMISSED_STORAGE_KEY = 'geo:dismissed-layers:v1'
@@ -158,6 +159,9 @@ export function rememberDismissedLayer(entry: {
   pushUnique(reg.vectorBackendLayerIds, entry.vectorBackendLayerId)
   pushUnique(reg.runIds, entry.runId)
   saveDismissedLayers(reg)
+  if (entry.runId) {
+    clearAttachRetry(entry.runId)
+  }
 }
 
 /** 从移除清单中解除指定 run / overlay / catalog / vector 的标记。 */
@@ -384,7 +388,14 @@ export function sanitizeSnapshotForCurrentApi(snapshot: WorkspaceSnapshot): Work
     return { ...reconciled, apiScope: current }
   }
 
-  const stripRunFields = <T extends { runGroupId?: string; runGroupProductTag?: string; runGroupLocked?: boolean; catalogId?: string }>(
+  const stripRunFields = <
+    T extends {
+      runGroupId?: string
+      runGroupProductTag?: string
+      runGroupLocked?: boolean
+      catalogId?: string
+    },
+  >(
     layer: T,
   ): T | null => {
     const catalogId = String(layer.catalogId || '')
@@ -474,7 +485,7 @@ export function loadWorkspaceSnapshot(): WorkspaceSnapshot | null {
  * 一次性迁移：删除英文占位 / 技术 id 游离层。
  * - 裸 workflow id：omega_sf_fenkuai_* / omega_avg_daily_*
  * - 稳定 overlay 派生：imported-omega_sf_fenkuai_*（附加产物未建组时的泄漏）
- * 产物恢复改经 restoreActiveWorkflows 映射到「风云/SMAP ω 反演」合并组。
+ * 产物恢复改经 restoreActiveWorkflows 映射到「风云/SMAP 散射约束产品」合并组。
  */
 const ENGLISH_PLACEHOLDER_CATALOG_PATTERN =
   /(?:^|[/\\-])(?:imported-)?omega[-_](?:sf[-_]fenkuai|avg[-_]daily)/i

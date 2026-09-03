@@ -317,15 +317,13 @@ export function useWorkflowState(options: WorkflowStateOptions) {
     const catalogItem = workspace.layerLibrary.value.find((l) => l.catalogId === cid) ?? null
     const descriptor = cid ? workspace.resolveEffectiveDescriptor(cid) : null
     const variants = descriptor?.workflow_variants as
-      | Record<string, { workflow_id?: string | null } | undefined>
-      | null
-      | undefined
+      Record<string, { workflow_id?: string | null } | undefined> | null | undefined
     const hasLocal = Boolean(variants?.local?.workflow_id)
     const hasOnline = Boolean(variants?.online?.workflow_id)
     const backendId = cid ? workspace.resolveBackendLayerId(cid) : cid
     const pinned = Boolean(
       (backendId && workflowRun.isWorkflowVariantPinned?.(backendId)) ||
-        (cid && workflowRun.isWorkflowVariantPinned?.(cid)),
+      (cid && workflowRun.isWorkflowVariantPinned?.(cid)),
     )
     const preference =
       (backendId && workflowRun.workflowVariantPreference.value[backendId]) ||

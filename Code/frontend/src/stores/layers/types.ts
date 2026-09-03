@@ -6,6 +6,16 @@ export interface LayerCategory {
   icon: string
   accentColor: string
   chipTone: string
+  /** 图层平台 P1：运行时分组全局排序键（后端 /layers/categories 下发；静态 codegen 兜底无此字段） */
+  position?: number
+  /** 是否管理员自建分组（可删除；种子分组仅可改名/样式） */
+  isCustom?: boolean
+  /** 主题预设：顶层分组在侧栏隐藏 */
+  hidden?: boolean
+  /** 分组声明的二级组类（管理端编辑；侧栏 pills 可参考） */
+  subCategories?: string[]
+  /** 主题预设：在侧栏隐藏的二级组类名 */
+  hiddenSubCategories?: string[]
 }
 
 export interface LayerSource {

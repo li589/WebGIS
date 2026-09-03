@@ -84,7 +84,7 @@ const workflowItems = computed(() => {
     .map((job) => {
       const catId = job.catalogId ?? ''
       const meta = catalogMeta.get(catId)
-      const cat = workspace.layerCategories.find((c) => c.id === meta?.category)
+      const cat = workspace.layerCategories.value.find((c) => c.id === meta?.category)
       return {
         catalogId: catId,
         name: workflowStatusDisplayName({
@@ -393,7 +393,7 @@ function formatDuration(createdAt: string, updatedAt: string, status: JobStatus)
 }
 
 function getCategoryName(categoryId: string): string {
-  const cat = workspace.layerCategories.find((c) => c.id === categoryId)
+  const cat = workspace.layerCategories.value.find((c) => c.id === categoryId)
   return cat?.name ?? categoryId
 }
 

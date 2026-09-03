@@ -95,6 +95,10 @@ async function createAccount() {
     error.value = '密码至少需要 8 位'
     return
   }
+  if (newThemeId.value == null || !(newThemeId.value > 0)) {
+    error.value = '请选择绑定主题（默认：星地融合土壤数据平台）'
+    return
+  }
   try {
     await auth.addUser(username, newPassword.value, newRole.value, newThemeId.value)
     message.value = '用户已创建'
@@ -159,7 +163,10 @@ async function changeRole(userId: number, role: UserRole) {
 async function changeTheme(userId: number, themeIdRaw: string) {
   error.value = null
   const themeId = Number(themeIdRaw)
-  if (!Number.isFinite(themeId)) return
+  if (!Number.isFinite(themeId) || themeId <= 0) {
+    error.value = '请选择有效主题（不可清除绑定）'
+    return
+  }
   try {
     await auth.patchUser(userId, { theme_id: themeId })
   } catch (err) {

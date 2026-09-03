@@ -919,7 +919,14 @@ def retrieve_daily_with_avg_omega(
 
 
 def _stage_d_existing_output_usable(day_path: Path) -> bool:
-    """Return True when Stage D daily .mat exists and contains SM/VOD/OMEGA."""
+    """Return True when Stage D daily .mat exists and has usable SM values.
+
+    Structurally present but all-fill SM (common for empty end-of-window days)
+    must not be resumed — otherwise materialize defaults to a blank map and
+    point samples stay N/A.
+    """
+    import numpy as np
+
     if not day_path.exists():
         return False
     try:
@@ -929,7 +936,14 @@ def _stage_d_existing_output_usable(day_path: Path) -> bool:
     for key in ("SM", "VOD", "OMEGA"):
         if _pick_field_local(payload, (key,), required=False) is None:
             return False
-    return True
+    sm = np.asarray(
+        _pick_field_local(payload, ("SM",), required=False), dtype=np.float64
+    )
+    if sm.size == 0:
+        return False
+    # Treat common fill sentinels as empty (same family as GeoTIFF nodata=-9999).
+    valid = np.isfinite(sm) & (sm > -9000.0)
+    return bool(np.any(valid))
 
 
 def _load_mat_payload_local(file_path: Path) -> dict[str, Any]:

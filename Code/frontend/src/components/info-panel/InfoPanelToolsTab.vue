@@ -51,10 +51,7 @@ const { activeLayersDisplay } = useLayerWorkspace()
 const page = ref<ToolPage>({ kind: 'list' })
 const selectedMapPointRef = computed(() => props.selectedMapPoint)
 const extractPageActive = computed(() => page.value.kind === 'extract')
-const { label: mapPointAdminLabel } = useMapPointAdminLookup(
-  selectedMapPointRef,
-  extractPageActive,
-)
+const { label: mapPointAdminLabel } = useMapPointAdminLookup(selectedMapPointRef, extractPageActive)
 const formValues = reactive<Record<string, unknown>>({})
 const formErrors = reactive<Record<string, string>>({})
 
@@ -302,7 +299,8 @@ const activeToolRunHint = computed(() => {
           <h4 class="tool-title">底图要素提取</h4>
           <p class="tool-note">
             从底图提取行政区 / 道路要素并自动创建矢量图层。栅格底图无原生要素，
-            行政区来自内置全球边界数据（Natural Earth 省/州与国家），道路来自 OpenStreetMap（需外部网络）。
+            行政区来自内置全球边界数据（Natural Earth 省/州与国家），道路来自
+            OpenStreetMap（需外部网络）。
           </p>
         </div>
         <BasemapFeatureExtractCard

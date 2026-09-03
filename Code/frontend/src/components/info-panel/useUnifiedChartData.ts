@@ -112,6 +112,7 @@ export function useUnifiedChartData(
   allOverlayTimeSeries: ComputedRef<Record<string, OverlayPointValue[]>>,
   overlayTimeStates: ComputedRef<OverlayTimeState[]>,
   selectedMapPoint: ComputedRef<{ lng: number; lat: number } | null>,
+  inspectHour?: ComputedRef<number>,
 ) {
   const workspace = useLayerWorkspace()
 
@@ -209,7 +210,7 @@ export function useUnifiedChartData(
       const unit = weather.render_hint?.unit_label ?? ''
       const normalizedUnit = unit === 'C' ? '°C' : unit
 
-      // 从 current 或 hourly[0] 提取当前值
+      // 从 current 或 inspectHour 对应 hourly 提取当前值
       let currentValue: number | null = null
       if (weather.current) {
         const record = weather.current as Record<string, unknown>
@@ -217,10 +218,13 @@ export function useUnifiedChartData(
         currentValue = typeof v === 'number' && Number.isFinite(v) ? v : null
       }
       if (currentValue === null && weather.hourly && weather.hourly.length > 0) {
+        const hourIdx = Math.max(
+          0,
+          Math.min(weather.hourly.length - 1, Math.floor(inspectHour?.value ?? 0)),
+        )
+        const entry = weather.hourly[hourIdx] ?? weather.hourly[0]
         currentValue =
-          typeof weather.hourly[0].primary_value === 'number'
-            ? weather.hourly[0].primary_value
-            : null
+          typeof entry?.primary_value === 'number' ? entry.primary_value : null
       }
 
       list.push({

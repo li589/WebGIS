@@ -115,6 +115,8 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
   const {
     runtimeLayerCatalog,
     runtimeLayerCatalogLoading,
+    layerCategories,
+    reloadLayerCategories,
     layerLibrary,
     layerLibraryMap,
     catalogJobStatus,
@@ -185,6 +187,8 @@ export function createWorkspaceDomain(bindings: CrossDomainBindings) {
     genInstanceId,
     runtimeLayerCatalog,
     runtimeLayerCatalogLoading,
+    layerCategories,
+    reloadLayerCategories,
     layerLibrary,
     layerLibraryMap,
     catalogJobStatus,

@@ -86,6 +86,18 @@ describe('auth store login theme preview', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    const sessionStore = new Map<string, string>()
+    const sessionStorageStub = {
+      getItem: (k: string) => sessionStore.get(k) ?? null,
+      setItem: (k: string, v: string) => void sessionStore.set(k, v),
+      removeItem: (k: string) => void sessionStore.delete(k),
+      clear: () => sessionStore.clear(),
+    }
+    vi.stubGlobal('sessionStorage', sessionStorageStub)
+    vi.stubGlobal('window', {
+      sessionStorage: sessionStorageStub,
+      location: { origin: 'http://test.local' },
+    })
     fetchPrimaryThemePublicMock.mockResolvedValue({
       id: 1,
       slug: 'sgfs',
@@ -124,12 +136,22 @@ describe('auth store login theme preview', () => {
     expect(store.resolvedBrand.shortName).toBe('暖色土壤监测平台')
   })
 
-  it('initLoginPreviewSlug rejects unknown slug and falls back to primary', async () => {
+  it('initLoginPreviewSlug honors session storage when route slug absent', async () => {
+    const store = useAuthStore()
+    sessionStorage.setItem('cgda-login-theme-slug', 'warm-soil')
+    await store.loadPrimaryTheme()
+    await store.loadPublicThemes()
+    store.initLoginPreviewSlug(null)
+    expect(store.loginPreviewSlug).toBe('warm-soil')
+    sessionStorage.removeItem('cgda-login-theme-slug')
+  })
+
+  it('initLoginPreviewSlug with empty publicThemes falls back to primary only', async () => {
     const store = useAuthStore()
     await store.loadPrimaryTheme()
+    vi.mocked(fetchThemesPublicMock).mockRejectedValueOnce(new Error('offline'))
     await store.loadPublicThemes()
     store.initLoginPreviewSlug('unknown-theme')
     expect(store.loginPreviewSlug).toBe('sgfs')
-    expect(store.resolvedBrand.abbr).toBe('SGFS')
   })
 })

@@ -37,9 +37,6 @@ describe("map-stage-view-model", () => {
         },
       }),
     ).toEqual({
-      noteTitle: "风场图层",
-      noteSummary: "等待工作流返回结果",
-      noteMeta: "11:45 · 加载中",
       hotspotLayerClass: "hotspot-layer-partial",
     });
   });

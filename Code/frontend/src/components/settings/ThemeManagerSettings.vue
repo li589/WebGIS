@@ -1,24 +1,28 @@
 <script setup lang="ts">
 /**
- * 主题管理（管理员）：品牌字段、默认权限模式、主题默认资源 ACL、logo。
+ * 主题管理（管理员）：品牌字段、默认权限模式、主题默认资源 ACL、logo、
+ * 图层分组预设状态（运行时预设 ≠ 种子 JSON）。
  */
 import { computed, onMounted, ref, watch } from 'vue'
 
 import {
   createTheme,
   deleteTheme,
-  listThemePermissions,
-  setThemePermissions,
   updateTheme,
   uploadThemeLogo,
-  type PermissionItemInput,
+  type LoginPalette,
   type PermissionMode,
-  type PermissionValue,
-  type ResourceType,
-  type ThemePermissionRecord,
 } from '../../services/auth-api'
+import {
+  deleteThemeLayerGroupPreset,
+  fetchThemeLayerGroupPreset,
+  type ThemeLayerGroupPresetMeta,
+} from '../../services/layer-groups-api'
 import { useAuthStore } from '../../stores/auth'
+import { requestOpenLayerGroupManager } from '../../utils/layer-group-manager-bridge'
+import { LOGIN_PALETTE_OPTIONS } from '../../views/login-theme-presets'
 import AppSelect from '../ui/AppSelect.vue'
+import ResourceAclEditor from './ResourceAclEditor.vue'
 
 const auth = useAuthStore()
 
@@ -26,6 +30,8 @@ const message = ref<string | null>(null)
 const error = ref<string | null>(null)
 const saving = ref(false)
 const selectedId = ref<number | null>(null)
+const presetMeta = ref<ThemeLayerGroupPresetMeta | null>(null)
+const presetLoading = ref(false)
 
 const draftSlug = ref('')
 const draftNameZh = ref('')
@@ -34,13 +40,13 @@ const draftNameEn = ref('')
 const draftAbbr = ref('SGFS')
 const draftDescription = ref('')
 const draftMode = ref<PermissionMode>('open')
+const draftLoginPalette = ref<LoginPalette>('cyan')
 const creating = ref(false)
 
-const themePerms = ref<ThemePermissionRecord[]>([])
-const permsLoading = ref(false)
-const newType = ref<ResourceType>('layer')
-const newId = ref('')
-const newPerm = ref<PermissionValue>('allow')
+const loginPaletteOptions = LOGIN_PALETTE_OPTIONS.map((o) => ({
+  label: o.label,
+  value: o.id,
+}))
 
 const selected = computed(() => (auth.themes ?? []).find((t) => t.id === selectedId.value) ?? null)
 
@@ -72,23 +78,6 @@ async function refresh() {
   }
 }
 
-async function loadPerms(themeId: number) {
-  permsLoading.value = true
-  try {
-    themePerms.value = await listThemePermissions(themeId)
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '加载主题权限失败'
-    themePerms.value = []
-  } finally {
-    permsLoading.value = false
-  }
-}
-
-watch(selectedId, (id) => {
-  if (id != null) void loadPerms(id)
-  else themePerms.value = []
-})
-
 onMounted(() => {
   void refresh()
 })
@@ -102,6 +91,7 @@ function fillCreateDefaults() {
   draftAbbr.value = 'SGFS'
   draftDescription.value = ''
   draftMode.value = 'open'
+  draftLoginPalette.value = 'cyan'
 }
 
 /** 生成符合后端 slug 规则的标识：小写字母开头，[a-z0-9_-]，长度 2–64 */
@@ -178,6 +168,7 @@ async function submitCreate() {
       abbr: draftAbbr.value.trim() || 'SGFS',
       description: draftDescription.value.trim(),
       default_permission_mode: draftMode.value,
+      login_palette: draftLoginPalette.value,
     })
     await refresh()
     selectedId.value = created.id
@@ -203,6 +194,7 @@ async function saveSelectedMeta() {
       abbr: draftAbbr.value.trim(),
       description: draftDescription.value.trim(),
       default_permission_mode: draftMode.value,
+      login_palette: draftLoginPalette.value,
     })
     await refresh()
     message.value = '主题信息已保存'
@@ -231,6 +223,7 @@ watch(
     draftAbbr.value = t.abbr
     draftDescription.value = t.description || ''
     draftMode.value = (t.default_permission_mode as PermissionMode) || 'open'
+    draftLoginPalette.value = (t.login_palette as LoginPalette) || 'cyan'
   },
   { immediate: true },
 )
@@ -276,58 +269,67 @@ async function onLogoChange(ev: Event) {
   }
 }
 
-async function addThemePerm() {
-  if (!selected.value) return
-  const rid = newId.value.trim()
-  if (!rid) {
-    error.value = '请填写资源 ID'
+function onSelectTheme(val: string) {
+  creating.value = false
+  selectedId.value = Number(val)
+}
+
+async function loadPresetMeta(themeId: number | null) {
+  presetMeta.value = null
+  if (themeId == null || themeId <= 0) return
+  presetLoading.value = true
+  try {
+    const detail = await fetchThemeLayerGroupPreset(themeId)
+    presetMeta.value = {
+      theme_id: detail.theme_id,
+      has_preset: detail.has_preset,
+      updated_at: detail.updated_at,
+      updated_by_user_id: detail.updated_by_user_id,
+      display_name_count: detail.display_name_count ?? Object.keys(detail.display_names || {}).length,
+    }
+  } catch {
+    presetMeta.value = {
+      theme_id: themeId,
+      has_preset: false,
+      updated_at: null,
+      updated_by_user_id: null,
+      display_name_count: 0,
+    }
+  } finally {
+    presetLoading.value = false
+  }
+}
+
+watch(selectedId, (id) => {
+  if (!creating.value) void loadPresetMeta(id)
+})
+
+function openGroupManagerForSelected() {
+  if (selectedId.value == null) return
+  requestOpenLayerGroupManager(selectedId.value)
+}
+
+async function clearSelectedPreset() {
+  if (selectedId.value == null) return
+  if (
+    !window.confirm(
+      '清除本主题的图层分组预设后，绑定用户将回落到种子分组基线（catalog_seeds）。确定清除？',
+    )
+  ) {
     return
   }
   saving.value = true
   error.value = null
+  message.value = null
   try {
-    const next: PermissionItemInput[] = [
-      ...themePerms.value.map((p) => ({
-        resource_type: p.resource_type as ResourceType,
-        resource_id: p.resource_id,
-        permission: p.permission as PermissionValue,
-      })),
-      { resource_type: newType.value, resource_id: rid, permission: newPerm.value },
-    ]
-    themePerms.value = await setThemePermissions(selected.value.id, next)
-    newId.value = ''
-    message.value = '主题默认权限已更新'
+    await deleteThemeLayerGroupPreset(selectedId.value)
+    await loadPresetMeta(selectedId.value)
+    message.value = '已清除主题分组预设（种子 JSON 未改动）'
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '更新权限失败'
+    error.value = err instanceof Error ? err.message : '清除预设失败'
   } finally {
     saving.value = false
   }
-}
-
-async function removeThemePerm(record: ThemePermissionRecord) {
-  if (!selected.value) return
-  saving.value = true
-  error.value = null
-  try {
-    const next: PermissionItemInput[] = themePerms.value
-      .filter((p) => p.id !== record.id)
-      .map((p) => ({
-        resource_type: p.resource_type as ResourceType,
-        resource_id: p.resource_id,
-        permission: p.permission as PermissionValue,
-      }))
-    themePerms.value = await setThemePermissions(selected.value.id, next)
-    message.value = '已移除'
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '移除失败'
-  } finally {
-    saving.value = false
-  }
-}
-
-function onSelectTheme(val: string) {
-  creating.value = false
-  selectedId.value = Number(val)
 }
 </script>
 
@@ -335,7 +337,9 @@ function onSelectTheme(val: string) {
   <section class="settings-section theme-manager">
     <h3 class="section-title">主题管理（管理员）</h3>
     <p class="section-hint">
-      主题承载品牌与默认资源 ACL；用户绑定主题后继承默认权限，并可在「用户权限覆盖」中微调。
+      每个用户必须绑定一个主题（默认主主题为「星地融合土壤数据平台」/ sgfs）。主题承载品牌与默认资源
+      ACL；用户覆盖优先于主题默认。图层库分组 / 主题显示名在「分组管理」中<strong>直接编辑本主题预设</strong>
+      （运行时 SQLite 快照，<strong>不会</strong>改写 catalog_seeds / gen:catalog）。「登录页配色」只影响未登录页。
     </p>
     <p v-if="message" class="ok">{{ message }}</p>
     <p v-if="error" class="err">{{ error }}</p>
@@ -400,6 +404,10 @@ function onSelectTheme(val: string) {
           { label: '白名单', value: 'whitelist' },
         ]"
       />
+      <label class="field">
+        <span class="field-label">登录页配色（仅登录页）</span>
+        <AppSelect v-model="draftLoginPalette" :options="loginPaletteOptions" />
+      </label>
       <textarea v-model="draftDescription" rows="2" placeholder="描述" />
       <button
         type="button"
@@ -428,6 +436,10 @@ function onSelectTheme(val: string) {
           { label: '白名单', value: 'whitelist' },
         ]"
       />
+      <label class="field">
+        <span class="field-label">登录页配色（仅登录页）</span>
+        <AppSelect v-model="draftLoginPalette" :options="loginPaletteOptions" />
+      </label>
       <textarea v-model="draftDescription" rows="2" placeholder="描述" />
       <div class="logo-row">
         <img
@@ -456,58 +468,47 @@ function onSelectTheme(val: string) {
         </button>
       </div>
 
-      <h4 class="sub-title">主题默认资源 ACL</h4>
-      <p class="section-hint">对绑定本主题的用户生效；用户覆盖优先于此处规则。</p>
-      <div v-if="permsLoading" class="loading">加载权限…</div>
-      <table v-else-if="themePerms.length" class="user-table">
-        <thead>
-          <tr>
-            <th>类型</th>
-            <th>资源 ID</th>
-            <th>权限</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="p in themePerms" :key="p.id">
-            <td>{{ p.resource_type }}</td>
-            <td>{{ p.resource_id }}</td>
-            <td>{{ p.permission }}</td>
-            <td>
-              <button
-                type="button"
-                class="danger-btn"
-                :disabled="saving"
-                @click="removeThemePerm(p)"
-              >
-                移除
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-else class="section-hint">暂无主题默认 ACL（开放模式下等同全量可见）。</p>
-      <div class="perm-form">
-        <AppSelect
-          v-model="newType"
-          :options="[
-            { label: '图层', value: 'layer' },
-            { label: '工作流', value: 'workflow' },
-            { label: '数据源', value: 'data_source' },
-          ]"
-        />
-        <input v-model="newId" type="text" placeholder="resource_id" />
-        <AppSelect
-          v-model="newPerm"
-          :options="[
-            { label: '允许', value: 'allow' },
-            { label: '拒绝', value: 'deny' },
-          ]"
-        />
-        <button type="button" class="secondary-btn" :disabled="saving" @click="addThemePerm">
-          添加
+      <h4 class="sub-title">图层分组预设</h4>
+      <p class="section-hint">
+        绑定本主题的用户消费此预设（组结构、图层归属、主题显示名）。无预设时回落种子基线。
+      </p>
+      <div class="meta-row preset-meta">
+        <span class="meta-label">状态</span>
+        <span v-if="presetLoading">加载中…</span>
+        <template v-else-if="presetMeta?.has_preset">
+          <span class="pill">已配置</span>
+          <span v-if="presetMeta.updated_at" class="meta-label">{{ presetMeta.updated_at }}</span>
+          <span v-if="(presetMeta.display_name_count ?? 0) > 0" class="meta-label">
+            显示名覆盖 {{ presetMeta.display_name_count }} 项
+          </span>
+        </template>
+        <span v-else class="meta-label">尚无预设（种子基线）</span>
+      </div>
+      <div class="actions-row">
+        <button
+          type="button"
+          class="secondary-btn"
+          :disabled="saving"
+          @click="openGroupManagerForSelected"
+        >
+          编辑本主题分组…
+        </button>
+        <button
+          type="button"
+          class="danger-btn"
+          :disabled="saving || !presetMeta?.has_preset"
+          @click="clearSelectedPreset"
+        >
+          清除预设
         </button>
       </div>
+
+      <h4 class="sub-title">主题默认资源 ACL</h4>
+      <p class="section-hint">
+        对绑定本主题的用户生效；用户覆盖优先于此处规则。支持图层 / 图层分组 / 工作流 /
+        数据源——图层分组规则对其成员图层生效（图层级记录优先）。
+      </p>
+      <ResourceAclEditor :mode="{ kind: 'theme', themeId: selected.id }" />
     </div>
   </section>
 </template>
@@ -548,8 +549,7 @@ function onSelectTheme(val: string) {
 
 .toolbar-row,
 .actions-row,
-.logo-row,
-.perm-form {
+.logo-row {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
@@ -642,19 +642,6 @@ function onSelectTheme(val: string) {
   letter-spacing: 0.02em;
 }
 
-.user-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--font-size-caption);
-}
-
-.user-table th,
-.user-table td {
-  text-align: left;
-  padding: 0.4rem 0.45rem;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
 .primary-btn,
 .secondary-btn,
 .danger-btn {
@@ -692,10 +679,5 @@ function onSelectTheme(val: string) {
 .danger-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
-}
-
-.loading {
-  font-size: var(--font-size-caption);
-  color: var(--text-muted);
 }
 </style>

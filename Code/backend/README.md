@@ -207,7 +207,7 @@ backend/
 - **RAR 解压（服务端无界面）**：`app/data_io/services/archive_safe.py` 使用 `Code/backend/vendor/unrar/{win-x64,linux-x64}` 控制台 UnRAR（或系统 `unrar`），**禁止** WinRAR GUI / `unrarw64` 自解压包。Linux 生产可 `apt install unrar`。上传侧拒绝 SFX/PE、路径穿越、符号链接、可执行成员与压缩炸弹；加密 RAR 直接拒绝。详见 `Code/backend/vendor/unrar/README.md`（勿把运行时依赖放进仓库根 `Tools/`）。
 - **SHP/DBF 编码**：`app/data_io/services/dbf_encoding.py` 专责跨 Windows/Linux 的多语言编码（`.cpg`、DBF LDID、locale 提示、utf-8/gb18030/gbk/big5/cp125x 等候选 + 文本质量打分）。导入 meta 会写入 `source_encoding` / `encoding_sources`；属性编辑写回会保留这些字段。
 - **导出编码**：`POST /export/layer` / `/export/batch` 支持 `encoding`（`auto` / `utf-8` / `utf-8-sig` / `gbk` / `gb18030` / …）；SHP zip 附带 `.cpg`；CSV 可按目标编码落盘。选项列表：`GET /export/encodings`。
-- 基础设施：`docker-compose.yml` 提供 Redis `:6379`、MinIO `:9100/:9101`、Open-Meteo API `cgda-open-meteo` `:8080`
+- 基础设施：`docker-compose.yml` 提供 Redis 宿主机 `:16379`（容器内 6379）、MinIO `:9100/:9101`、Open-Meteo API `cgda-open-meteo` `:8080`
 - Open-Meteo：**API 在 backend 运行栈**；**同步在** `Code/infra/data-sync`（`-p data-sync`，`run --rm open-meteo-sync`）。气象库为 named volume `backend_open-meteo-data`（落在 `I:\Docker\DockerDesktop` 的 VHDX 内，勿用 Windows 路径 bind）。图层选源：`open-meteo-online`（公网）与 `open-meteo-local`（`BACKEND_OPEN_METEO_LOCAL_URL`，默认 `http://127.0.0.1:8080/v1/forecast`）。详见 `.env.open-meteo.example` 与 `Code/infra/data-sync/README.md`。
 - Docker Desktop 数据盘建议在 `I:\Docker\DockerDesktop`（镜像/容器与气象库分离）
 - 环境变量参考 `.env.example`

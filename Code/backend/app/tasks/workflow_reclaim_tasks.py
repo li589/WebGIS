@@ -9,6 +9,14 @@ retry 或前端自动重试恢复。
 超时阈值（settings.workflow_stuck_reclaim_seconds，默认 1800s =
 30 分钟）：排队繁忙是正常的（download/heavy 队列长任务），仅在
 「无任何事件推进」超过阈值才判定为派发丢失。
+
+活动时钟 = max(run.updated_at, 最近一条 workflow_events.created_at)，
+与 fail_stuck_running_workflows 一致：中途进度常只写 events、不 bump
+updated_at。
+
+CAS 使用 max_retries=1：禁止在冲突时把 expected 从 queued 刷新为
+running 后再强写 failed（默认 save_run_cas 的 refresh 语义会误杀
+「刚被 worker 接手」的长任务，例如 omega_sf_fenkuai）。
 """
 
 from __future__ import annotations
@@ -18,13 +26,30 @@ from datetime import UTC, datetime
 
 from app.core.celery_app import celery_app
 from app.core.config import settings
-from app.services.workflow_repository import SQLiteWorkflowRepository
+from app.services.workflow_repository import (
+    ConcurrentModificationError,
+    SQLiteWorkflowRepository,
+)
 from shared.contracts.api_contracts import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
 # accepted/queued 期间无事件推进的回收判定状态集
 _STUCK_STATUSES = {"accepted", "queued"}
+
+
+def _last_activity_at(
+    repository: SQLiteWorkflowRepository,
+    run_id: str,
+    updated_at: datetime,
+) -> datetime:
+    """活动时钟：run 行更新与最新事件取较晚者。"""
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=UTC)
+    last_event_at = repository.get_latest_event_created_at(run_id)
+    if last_event_at is not None and last_event_at > updated_at:
+        return last_event_at
+    return updated_at
 
 
 @celery_app.task(name="app.tasks.workflow_reclaim_tasks.reclaim_stuck_workflow_runs")
@@ -39,17 +64,15 @@ def reclaim_stuck_workflow_runs() -> dict[str, object]:
     for run in repository.list_runs():
         if run.status not in _STUCK_STATUSES:
             continue
-        updated_at = run.updated_at
-        if updated_at.tzinfo is None:  # SQLite 无时区 → 视为 UTC
-            updated_at = updated_at.replace(tzinfo=UTC)
-        idle_s = (now - updated_at).total_seconds()
+        last_activity = _last_activity_at(repository, run.run_id, run.updated_at)
+        idle_s = (now - last_activity).total_seconds()
         if idle_s <= timeout_s:
             skipped += 1
             continue
 
-        # CAS：仅当状态仍是读取时的 accepted/queued 才落 failed（与恰好
-        # 恢复消费的 worker 竞争时 CAS 抛 ConcurrentModificationError →
-        # 说明 run 已被推进，跳过本 run）
+        # CAS：仅当状态仍是读取时的 accepted/queued 才落 failed。
+        # max_retries=1：与恰好恢复消费、已推进到 running 的 worker 竞争时
+        # 必须失败并跳过——禁止 refresh expected 后覆盖 running。
         try:
             expected = ExecutionStatus(run.status)
             run.status = ExecutionStatus.failed
@@ -58,7 +81,10 @@ def reclaim_stuck_workflow_runs() -> dict[str, object]:
                 "任务派发丢失（broker 重启或 worker 停机超时），"
                 "已自动回收——请点击重试恢复。"
             )
-            if repository.save_run_cas(run, expected_status=expected):
+            run.updated_at = now
+            if repository.save_run_cas(
+                run, expected_status=expected, max_retries=1
+            ):
                 reclaimed.append(run.run_id)
                 logger.warning(
                     "Reclaimed stuck workflow run %s (idle %.0fs > %ds)",
@@ -68,9 +94,15 @@ def reclaim_stuck_workflow_runs() -> dict[str, object]:
                 )
             else:
                 skipped += 1
+        except ConcurrentModificationError:
+            logger.debug(
+                "Skip reclaim run %s (status advanced past accepted/queued)",
+                run.run_id,
+            )
+            skipped += 1
         except Exception:
-            # 单个 run 回收失败不阻断其余（含 CAS 冲突=状态已被推进）
-            logger.debug("Skip reclaim run %s (advanced or error)", run.run_id)
+            # 单个 run 回收失败不阻断其余
+            logger.debug("Skip reclaim run %s (error)", run.run_id, exc_info=True)
             skipped += 1
 
     if reclaimed:

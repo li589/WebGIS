@@ -224,6 +224,13 @@ class OmegaAvgDailyModule(BaseModule):
 
         # 解析输出目录：显式 reuse_output_dir（失败重试复用）优先，
         # 其次节点属性 output_dir、request output_spec_extra，缺省 run 工作区。
+        # 按 tb_source 分目录，避免 FY 误 resume SMAP 旧日产物（地图空白 / 点查 N/A）。
+        tb_source = str(
+            getattr(daily_bundle_config, "tb_source", None)
+            or algorithm_params.get("tb_source")
+            or "SMAP"
+        ).strip().upper() or "SMAP"
+        product_subdir = f"omega_avg_daily_{tb_source.lower()}"
         reuse_output_dir = algorithm_params.get("reuse_output_dir")
         if isinstance(reuse_output_dir, str) and reuse_output_dir.strip():
             output_dir = Path(reuse_output_dir.strip())
@@ -231,7 +238,7 @@ class OmegaAvgDailyModule(BaseModule):
             output_dir = Path(
                 str(params.get("output_dir") or "").strip()
                 or output_spec_extra.get("output_dir")
-                or (ctx.workspace / "products" / "omega_avg_daily")
+                or (ctx.workspace / "products" / product_subdir)
             )
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -309,8 +316,19 @@ class OmegaAvgDailyModule(BaseModule):
 
         # 构建 manifest
         days_processed = int(stage_d_result.get("days_processed", 0))
+        days_resumed = int(stage_d_result.get("days_resumed", 0))
         products: list[ProductRef] = []
-        if days_processed > 0:
+        # 全量 resume（processed=0, resumed>0）也必须发布三图层，否则前端
+        # materialize 只有 SM/VOD 或缺产物，cleanup 会删掉 OMEGA 占位。
+        has_daily_mats = False
+        try:
+            has_daily_mats = any(
+                path.is_file() and path.suffix.lower() == ".mat" and path.stem.isdigit()
+                for path in Path(output_dir).iterdir()
+            )
+        except OSError:
+            has_daily_mats = False
+        if days_processed > 0 or days_resumed > 0 or has_daily_mats:
             # 目标年逐日 SM/VOD/OMEGA 目录：复用 omega_sf_*_block_dir 类型，
             # 单日 YYYYMMDD.mat 由物化链按一天块发布为时间序列图层。
             for variable, layer in (("SM", "SM"), ("VOD", "VOD"), ("OMEGA", "OMEGA")):

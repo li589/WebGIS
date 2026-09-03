@@ -155,6 +155,11 @@ h2 {
   box-shadow: inset 0 0 0 1px var(--accent-border);
 }
 
+.view-tab--icon :deep(svg) {
+  display: block;
+  flex: 0 0 auto;
+}
+
 /* ── Empty state ────────────────────────────────────────────────────────── */
 .empty-state {
   display: grid;

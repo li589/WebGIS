@@ -96,7 +96,22 @@ export function executeAgentUiIntent(
   }
 
   if (name === 'list_active_layers') {
-    return { ok: true, message: '已使用客户端活动图层上下文' }
+    const layers = workspace.activeLayers.value.filter((l) => !l.isAdminBoundary)
+    if (!layers.length) {
+      return {
+        ok: true,
+        message: '当前没有活动图层。可先在左侧图层库添加图层。',
+      }
+    }
+    const lines = layers.map((l) => {
+      const title = (l.name || l.catalogId || '').trim() || l.catalogId
+      const vis = l.visible === false ? '隐藏' : '显示'
+      return `- ${title}（${l.catalogId}，${vis}）`
+    })
+    return {
+      ok: true,
+      message: `当前活动图层（${layers.length}）：\n${lines.join('\n')}`,
+    }
   }
 
   return { ok: false, message: `未知意图：${name}` }

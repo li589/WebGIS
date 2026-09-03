@@ -141,6 +141,8 @@ export interface AgentStreamHandlers {
   onIntent?: (intent: AgentUiIntent) => void
   onDone?: (res: AgentChatResponse) => void
   onError?: (detail: string) => void
+  /** Fired once the HTTP response is OK and the SSE body is ready to read. */
+  onConnected?: () => void
 }
 
 /**
@@ -210,6 +212,8 @@ export async function streamAgentChat(
     if (!response.body) {
       throw new Error('流式响应无 body')
     }
+
+    handlers.onConnected?.()
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()

@@ -49,6 +49,8 @@ from app.tasks.workflow_tasks import (
     resolve_workflow_channel,
     resolve_workflow_queue,
 )
+from app.services.workflow.celery_dispatch import is_celery_dispatch_uncertain
+from app.core.celery_app import get_celery_runtime_details
 from shared.contracts.api_contracts import (
     EventChannel,
     ExecutionStatus,
@@ -444,7 +446,8 @@ class WorkflowSubmissionService:
                         message="任务层开始调用业务服务。",
                         progress=35,
                         payload={
-                            "executor": "app.tasks.workflow_tasks.execute_workflow_task"
+                            "status": "running",
+                            "executor": "app.tasks.workflow_tasks.execute_workflow_task",
                         },
                         created_at=running_at,
                     )
@@ -557,19 +560,41 @@ class WorkflowSubmissionService:
             try:
                 task_id = dispatch_workflow_task(run_id, payload)
                 current_run = self._repository.get_run(run_id)
+                celery_details = get_celery_runtime_details()
+                workers_online = int(celery_details.get("worker_count") or 0) > 0
+                if workers_online:
+                    user_message = "工作流已成功派发到 Celery，等待 worker 消费。"
+                    event_message = f"派发到队列 {queue_name}，等待 worker 消费。"
+                    diagnostics = (
+                        list(current_run.diagnostics) if current_run and current_run.diagnostics else None
+                    )
+                else:
+                    user_message = (
+                        f"任务已写入队列 {queue_name}，但当前无在线 Celery worker；"
+                        "请执行 launch.py restart backend（或 start worker）后才会被消费。"
+                    )
+                    event_message = (
+                        f"派发到队列 {queue_name}，但无在线 worker（请重启 backend workers）。"
+                    )
+                    diagnostics = [
+                        "error_code=workflow_workers_offline",
+                        f"queue_name={queue_name}",
+                        "Celery broker 可写但 ping 不到 worker；常见原因：Redis 曾闪断导致 worker 退出后未拉起。",
+                        "action=Env\\Python312\\python.exe launch.py restart backend",
+                    ]
                 self._persistence.save_run_status(
                     run_status=self._transitions.build_execution_transition(
                         run_id=run_id,
                         payload=payload,
                         status=ExecutionStatus.queued,
                         progress=18,
-                        message="工作流已成功派发到 Celery，等待 worker 消费。",
+                        message=user_message,
                         created_at=current_run.created_at
                         if current_run
                         else dispatch_at,
                         updated_at=dispatch_at,
                         result_refs=current_run.result_refs if current_run else None,
-                        diagnostics=current_run.diagnostics if current_run else None,
+                        diagnostics=diagnostics,
                         executor_metadata={
                             **(
                                 current_run.executor_metadata
@@ -581,14 +606,19 @@ class WorkflowSubmissionService:
                             "queue_name": queue_name,
                             "task_id": task_id,
                             "dispatched_at": dispatch_at.isoformat(),
+                            "workers_online": workers_online,
                         },
                     )
                 )
-                logger.info("Workflow dispatched to celery")
+                logger.info(
+                    "Workflow dispatched to celery (workers_online=%s)",
+                    workers_online,
+                )
                 self._persistence.record_event(
                     run_id=run_id,
-                    channel=EventChannel.system,
-                    message=f"派发到队列 {queue_name}，等待 worker 消费。",
+                    channel=EventChannel.system if workers_online else EventChannel.log,
+                    level=LogLevel.info if workers_online else LogLevel.warning,
+                    message=event_message,
                     progress=18,
                     payload={
                         "ui_surface": "operational",
@@ -597,24 +627,61 @@ class WorkflowSubmissionService:
                         "queue_name": queue_name,
                         "dispatch_channel": dispatch_channel,
                         "executor": settings.workflow_executor,
+                        "workers_online": workers_online,
+                        **(
+                            {"error_code": "workflow_workers_offline"}
+                            if not workers_online
+                            else {}
+                        ),
                     },
                     created_at=dispatch_at,
                 )
             except Exception as exc:
+                # C4：派发超时可能已投递；broker 连接拒绝则确定未投递。
+                # 二者均保留 queued，便于 broker/worker 恢复后由 queue_dispatch 重派，
+                # 但文案与 diagnostics 必须区分，避免「假排队」误导。
+                uncertain = is_celery_dispatch_uncertain(exc)
                 logger.exception(
-                    "Workflow dispatch failed – marking as queued (message may have been delivered)"
+                    "Workflow dispatch failed – marking as queued (%s)",
+                    "ack uncertain; message may have been delivered"
+                    if uncertain
+                    else "broker unreachable; message not delivered",
                 )
                 current_run = self._repository.get_run(run_id)
-                # C4：派发超时 / 异常时不确定消息是否实际投递（H1 审查）。
-                # 改为 queued 而非 failed：若已投递，worker 消费后正常执行；
-                # 若未投递，watchdog 在 15 min 内标记为 stuck_running_watchdog→failed。
+                if uncertain:
+                    user_message = (
+                        "工作流派发确认异常（消息可能已入队）。"
+                        "若长期排队，请检查 Celery worker 是否在线："
+                        "launch.py restart backend。"
+                    )
+                    diagnostics = [
+                        "派发确认异常：消息可能已投递到队列；无 worker 时会一直排队。",
+                        "error_code=workflow_dispatch_timeout_or_error",
+                        "action=Env\\Python312\\python.exe launch.py restart backend",
+                        f"dispatch_error={exc}",
+                    ]
+                    error_code = "workflow_dispatch_uncertain"
+                    event_message = "Celery 派发确认异常（消息可能已投递；请确认 worker 在线）。"
+                else:
+                    user_message = (
+                        "Celery broker（Redis）暂不可达，任务已保留在排队状态；"
+                        "broker/worker 恢复后将自动重派。若 worker 已退出请执行 launch.py restart backend。"
+                    )
+                    diagnostics = [
+                        "Celery broker 不可达（常见：Redis 未发布到 127.0.0.1:16379，或 Windows 保留端口冲突）。",
+                        "error_code=workflow_broker_unreachable",
+                        "action=Env\\Python312\\python.exe launch.py restart backend",
+                        f"dispatch_error={exc}",
+                    ]
+                    error_code = "workflow_broker_unreachable"
+                    event_message = "Celery broker 不可达，任务保留排队等待重派。"
                 self._persistence.save_run_status(
                     run_status=self._transitions.build_execution_transition(
                         run_id=run_id,
                         payload=payload,
                         status=ExecutionStatus.queued,
                         progress=20,
-                        message="工作流已提交到队列（派发确认异常：消息可能已投递，worker 将在恢复后消费）。",
+                        message=user_message,
                         created_at=current_run.created_at
                         if current_run
                         else dispatch_at,
@@ -630,22 +697,19 @@ class WorkflowSubmissionService:
                             "queue_name": queue_name,
                             "dispatch_failed_at": dispatch_at.isoformat(),
                             "dispatch_error": str(exc),
-                            "dispatch_ack_uncertain": True,
+                            "dispatch_ack_uncertain": uncertain,
+                            "broker_unreachable": not uncertain,
                         },
-                        diagnostics=[
-                            "派发确认异常：消息可能已投递到队列，若 worker 未在 15 min 内消费将被 watchdog 标记为失败。",
-                            "error_code=workflow_dispatch_timeout_or_error",
-                            f"dispatch_error={exc}",
-                        ],
+                        diagnostics=diagnostics,
                     )
                 )
                 self._persistence.record_event(
                     run_id=run_id,
                     channel=EventChannel.log,
                     level=LogLevel.warning,
-                    message="Celery 派发确认异常（消息可能已投递）。",
+                    message=event_message,
                     progress=20,
-                    payload={"error_code": "workflow_dispatch_uncertain"},
+                    payload={"error_code": error_code},
                     created_at=dispatch_at,
                 )
 

@@ -2,16 +2,25 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   clipCoordsForGlobe,
+  getGlobeViewPole,
+  isLngLatOccludedByGlobe,
   isLngLatOnGlobeVisibleSide,
   isGlobeProjection,
   lngLatToGlobeSphere,
   splitCoordsOnAntimeridian,
 } from '@/components/map/canvas-utils'
 
-function makeMap(projection: 'globe' | 'mercator', center = { lng: 0, lat: 0 }) {
+function makeMap(
+  projection: 'globe' | 'mercator',
+  center = { lng: 0, lat: 0 },
+  pitch = 0,
+  bearing = 0,
+) {
   return {
     getProjection: () => ({ type: projection }),
     getCenter: () => center,
+    getPitch: () => pitch,
+    getBearing: () => bearing,
   } as any
 }
 
@@ -36,12 +45,23 @@ describe('globe canvas geometry helpers', () => {
     expect(isGlobeProjection(map)).toBe(true)
     expect(isLngLatOnGlobeVisibleSide(map, 0, 0)).toBe(true)
     expect(isLngLatOnGlobeVisibleSide(map, 180, 0)).toBe(false)
+    expect(isLngLatOccludedByGlobe(map, 180, 0)).toBe(true)
     expect(clipCoordsForGlobe(map, [[0, 0], [180, 0], [10, 0]])).toEqual([[[0, 0], [10, 0]]])
+  })
+
+  it('culls back side under pitched camera toward the horizon', () => {
+    // pitch 60°：视向极点向北倾，南半球更易被判为背面
+    const map = makeMap('globe', { lng: 0, lat: 0 }, 60, 0)
+    const pole = getGlobeViewPole(map)
+    expect(pole[1]).toBeGreaterThan(0.4)
+    expect(isLngLatOccludedByGlobe(map, 0, -70)).toBe(true)
+    expect(isLngLatOnGlobeVisibleSide(map, 0, 40)).toBe(true)
   })
 
   it('is a no-op for mercator projection', () => {
     const map = makeMap('mercator')
     expect(isGlobeProjection(map)).toBe(false)
+    expect(isLngLatOccludedByGlobe(map, 180, 0)).toBe(false)
     const coords = [[170, 10], [-170, 10]] as Array<[number, number]>
     expect(clipCoordsForGlobe(map, coords)).toEqual([coords])
   })

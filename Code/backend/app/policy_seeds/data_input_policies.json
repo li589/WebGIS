@@ -23,7 +23,7 @@
       "scope_id": "method-fy-omega-doy-dynamic",
       "input_key": "time_window_align_on_zero_intersection",
       "mode": "allow_with_confirm",
-      "notes": "风云卫星动态 ω 反演：时间窗对齐需确认。"
+      "notes": "风云卫星动态 散射约束产品：时间窗对齐需确认。"
     },
     {
       "id": "smap-omega-dynamic-time-window-align",
@@ -31,7 +31,7 @@
       "scope_id": "method-smap-omega-doy-dynamic",
       "input_key": "time_window_align_on_zero_intersection",
       "mode": "allow_with_confirm",
-      "notes": "SMAP 动态 ω 反演：时间窗对齐需确认。"
+      "notes": "SMAP 动态 散射约束产品：时间窗对齐需确认。"
     },
     {
       "id": "omega-sf-fenkuai-fy-online-time-window-align",

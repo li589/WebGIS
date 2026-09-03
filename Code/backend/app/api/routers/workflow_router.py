@@ -38,6 +38,23 @@ _EVENTS_POLL_RATE_LIMIT = int(
 _EVENTS_POLL_WINDOW = timedelta(minutes=1)
 
 
+def _extract_submit_workflow_name(payload: WorkflowSubmitRequest) -> str | None:
+    """Named workflow id from submit payload (not inline canvas graphs)."""
+    algo = payload.algorithm_request
+    if isinstance(algo, dict):
+        name = algo.get("workflow_name")
+    else:
+        name = getattr(algo, "workflow_name", None)
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    params = payload.parameters if isinstance(payload.parameters, dict) else {}
+    for key in ("workflow_name", "workflow_id"):
+        value = params.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
 def _deny_if_not_run_owner(run_id: str, cred: CredentialContext | None) -> None:
     """Hide non-owned runs as 404 for non-admin authenticated users.
 
@@ -171,6 +188,9 @@ def submit_workflow(
     # credential was resolved (direct unit calls may pass unresolved Depends).
     if _cred is not None and payload.layer_id:
         check_resource_access(_cred, "layer", payload.layer_id)
+    workflow_name = _extract_submit_workflow_name(payload)
+    if _cred is not None and workflow_name:
+        check_resource_access(_cred, "workflow", workflow_name)
     try:
         accepted = submission_service.submit_workflow(
             payload,

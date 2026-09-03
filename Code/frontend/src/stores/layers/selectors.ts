@@ -54,8 +54,8 @@ export function useLayerWorkspace() {
     catalogJobStatus,
     catalogRunReadiness,
     layerLibrary,
-    // Non-reactive static data
-    layerCategories: store.layerCategories,
+    // 图层平台 P1：运行时分组（种子⊕管理），toRef 保持分组改名/重排后实时生效
+    layerCategories: toRef(store, 'layerCategories'),
     // Actions
     addLayer: store.addLayer,
     addImportedVectorLayer: store.addImportedVectorLayer,
@@ -80,6 +80,7 @@ export function useLayerWorkspace() {
     setSidebarView: store.setSidebarView,
     setCurrentHour: store.setCurrentHour,
     ensureRuntimeLayerCatalog: store.ensureRuntimeLayerCatalog,
+    reloadLayerCategories: store.reloadLayerCategories,
     getCatalogRunBlockReason: store.getCatalogRunBlockReason,
     getCatalogAddBlockReason: store.getCatalogAddBlockReason,
     isOverlayDisplayOnlyLayer: store.isOverlayDisplayOnlyLayer,

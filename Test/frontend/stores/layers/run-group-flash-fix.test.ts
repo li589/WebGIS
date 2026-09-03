@@ -256,6 +256,61 @@ describe('提交路径 ensureRestoredRunGroup（source=submit）', () => {
     const targets = vi.mocked(deps.createRunLayerGroup).mock.calls[0]![0].targets
     expect(targets.map((t) => t.productTag).sort()).toEqual(['LST', 'SM'])
   })
+
+  it('画布预建 computing 组（runId 空）时提交接管：仅 1 组且 bind runId，不再 createRunLayerGroup', async () => {
+    const deps = makeDeps()
+    const catalog = deps.getRuntimeLayerCatalog()
+    catalog['cat-editor'] = {
+      layer_id: 'cat-editor',
+      dataset_key: 'ds-editor',
+      display_name: '编辑器流水线',
+      description: '',
+      category: 'analysis',
+      source_type: 'imported' as never,
+      render_type: 'raster' as never,
+      supported_map_modes: ['2d'] as never,
+      extent: { west: 116, south: 39, east: 117, north: 40 },
+      workflow_id: 'wf-editor',
+      workflow_definition: { extra: { outputs: ['SM', 'VOD', 'OMEGA'] }, nodes: [] },
+    } as LayerDescriptor
+
+    const pendingGroupId = 'grp-pending-editor'
+    const memberLayer: ActiveLayer = {
+      instanceId: 'inst-pending-sm',
+      catalogId: 'wf-run-grp-pending-sm',
+      name: 'SM',
+      visible: true,
+      opacity: 1,
+      order: 0,
+      isAdminBoundary: false,
+      dataState: 'catalog',
+      runGroupId: pendingGroupId,
+      runGroupProductTag: 'SM',
+      runGroupLocked: true,
+    }
+    deps.getActiveLayers().push(memberLayer)
+    deps.getRunLayerGroups().push({
+      groupId: pendingGroupId,
+      runId: '',
+      title: '计算组',
+      status: 'computing',
+      memberInstanceIds: [memberLayer.instanceId],
+      dissolvable: false,
+      sourceLayerId: 'cat-editor',
+      workflowId: 'wf-editor',
+      progress: 0,
+      message: '等待计算…',
+    } as ActiveRunLayerGroup)
+
+    const runner = createWorkflowRunner(deps)
+    await runner.runWorkflowForCatalog('cat-editor')
+
+    expect(deps.createRunLayerGroup).not.toHaveBeenCalled()
+    const groups = deps.getRunLayerGroups()
+    expect(groups).toHaveLength(1)
+    expect(groups[0]!.runId).toBe('run-sub')
+    expect(groups[0]!.groupId).toBe(pendingGroupId)
+  })
 })
 
 // ── ② autoAttachProductsForNewLayer 仅当 supportsMapLayerResult 才执行 ─────

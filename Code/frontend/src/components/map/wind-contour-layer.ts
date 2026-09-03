@@ -13,7 +13,7 @@
 import type { Map as MaplibreMap } from 'maplibre-gl'
 import { DEFAULT_HEIGHT_SUFFIX, MAP_EVENT_MOVE, MAP_EVENT_MOVEEND, MAP_EVENT_RESIZE } from './types'
 import type { WindGeoJSON } from './types'
-import { computeCanvasLayout, type CanvasLayout } from './canvas-utils'
+import { computeCanvasLayout, isLngLatOccludedByGlobe, type CanvasLayout } from './canvas-utils'
 import { debugLog } from '../../utils/perf-probe'
 
 interface GridData {
@@ -365,6 +365,13 @@ export class WindContourLayer {
       ctx.lineJoin = 'round'
 
       for (const seg of segments) {
+        // Globe：两端都在背面则跳过（穿球飞线）
+        if (
+          isLngLatOccludedByGlobe(this.map, seg[0][0], seg[0][1]) &&
+          isLngLatOccludedByGlobe(this.map, seg[1][0], seg[1][1])
+        ) {
+          continue
+        }
         const p1 = this.map.project([seg[0][0] + this.lonWrapOffset, seg[0][1]])
         const p2 = this.map.project([seg[1][0] + this.lonWrapOffset, seg[1][1]])
         // 视口剔除（基于 canvas CSS 像素范围）

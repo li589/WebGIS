@@ -426,12 +426,14 @@ export const PARTICLE_DRAW_VERTEX_SHADER = /* glsl */ `
 
 /**
  * 无 VTF 绘制：顶点已是裁剪空间 xy。
- * 颜色走 uniform（Windy 风格近白），片元用 gl_PointCoord 做软圆点。
+ * z：globe 背面剔除标记（>=0 可见，<0 discard）；mercator 恒为 0。
  */
 export const PARTICLE_DRAW_CLIP_VERTEX_SHADER = /* glsl */ `
-  attribute vec3 a_clipSpeed; // x,y = NDC；z 保留（兼容缓冲布局）
+  attribute vec3 a_clipSpeed; // x,y = NDC；z = globe 可见性（<0 背面）
   uniform float u_pointSize;
+  varying float v_visible;
   void main() {
+    v_visible = a_clipSpeed.z;
     gl_Position = vec4(a_clipSpeed.xy, 0.0, 1.0);
     gl_PointSize = max(u_pointSize, 1.0);
   }
@@ -441,11 +443,14 @@ export const PARTICLE_DRAW_CLIP_VERTEX_SHADER = /* glsl */ `
  * Windy 风格粒子片元：实心点（不用 gl_PointCoord）。
  * 部分 GPU/ANGLE 上 PointCoord 异常会导致全部 discard → 完全看不见。
  * 连续丝状感靠 trailFade≈0.96 的拖尾叠加，与 WindMap.js 一致。
+ * globe：v_visible<0 时 discard，避免背面粒子写入 trail。
  */
 export const PARTICLE_DRAW_SOFT_FRAGMENT_SHADER = /* glsl */ `
   precision mediump float;
   uniform vec4 u_color;
+  varying float v_visible;
   void main() {
+    if (v_visible < 0.0) discard;
     gl_FragColor = u_color;
   }
 `

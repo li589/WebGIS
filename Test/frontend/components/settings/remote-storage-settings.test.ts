@@ -8,6 +8,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, mount, setActivePinia } from '@/test-utils'
 import { useSettingsStore } from '@/stores/settings'
+import { scopedStorageKey } from '@/services/user-local-isolation'
 import RemoteStorageSettings from '@/components/settings/RemoteStorageSettings.vue'
 import RemoteStoragePanel from '@/components/settings/remote-storage/RemoteStoragePanel.vue'
 import ProfileCard from '@/components/settings/remote-storage/ProfileCard.vue'
@@ -95,10 +96,10 @@ describe('RemoteStorageSettings 双 tab', () => {
     await wrapper.findAll('.tabs-item')[1].trigger('click')
     expect(wrapper.findComponent(OpenPortalPanel).exists()).toBe(true)
     expect(wrapper.findComponent(RemoteStoragePanel).exists()).toBe(false)
-    // 二级 tab 持久化到 localStorage
-    expect(JSON.parse(localStorage.getItem('cgda.settings_ui') || '{}').remoteStorageTab).toBe(
-      'portals',
-    )
+    // 二级 tab 持久化到 localStorage（按 API scope 隔离）
+    expect(
+      JSON.parse(localStorage.getItem(scopedStorageKey('cgda.settings_ui')) || '{}').remoteStorageTab,
+    ).toBe('portals')
   })
 })
 

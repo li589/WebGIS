@@ -239,7 +239,10 @@ export function useMapInspect(
 
   // ── Overlay 时间状态更新 ──────────────────────────────────────────────
 
+  let overlayTimeRefetchTimer: ReturnType<typeof setTimeout> | null = null
+
   function handleOverlayTimeUpdate(states: OverlayTimeState[]) {
+    const prevTimes = overlayTimeStates.value.map((s) => `${s.layerId}:${s.currentTime ?? ''}`).join('|')
     overlayTimeStates.value = states
     for (const st of states) {
       if (st.category !== 'time-series' || !st.timeList?.length) continue
@@ -257,6 +260,17 @@ export function useMapInspect(
           : '1d'
       }
     }
+
+    // 点选仍有效时：时间轴变化后重拉当前点值（防抖，避免拖动连发）
+    const nextTimes = states.map((s) => `${s.layerId}:${s.currentTime ?? ''}`).join('|')
+    const point = selectedMapPoint.value
+    if (!point || prevTimes === nextTimes) return
+    if (overlayTimeRefetchTimer) clearTimeout(overlayTimeRefetchTimer)
+    overlayTimeRefetchTimer = setTimeout(() => {
+      overlayTimeRefetchTimer = null
+      if (!selectedMapPoint.value) return
+      void fetchOverlayPointValues(selectedMapPoint.value.lng, selectedMapPoint.value.lat)
+    }, 200)
   }
 
   // ── Watchers ──────────────────────────────────────────────────────────

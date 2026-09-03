@@ -5,21 +5,25 @@
  * 包含主题模式切换（深色/浅色/跟随系统）、地图显示设置（分布淡底/氛围遮罩）、
  * 以及动效偏好。
  */
-import { ref } from 'vue'
+import { onUnmounted, ref } from 'vue'
 import { useThemeStore, type ThemePreference } from '../../stores/theme'
 import {
   getGlobeBackgroundMode,
   getGlobeDaylightMode,
+  getGlobeRenderEngine,
   is3DViewExperimentalEnabled,
   isMapDistributionChromeEnabled,
   isShowAnalysisResultOnMapEnabled,
   set3DViewExperimentalEnabled,
   setGlobeBackgroundMode,
   setGlobeDaylightMode,
+  setGlobeRenderEngine,
   setMapDistributionChromeEnabled,
   setShowAnalysisResultOnMapEnabled,
+  subscribeGlobeScene,
   type GlobeBackgroundMode,
   type GlobeDaylightMode,
+  type GlobeRenderEngine,
 } from '../../services/settings-local'
 import {
   resolveReducedMotionPreference,
@@ -59,11 +63,27 @@ function onEnable3DViewChange(event: Event) {
   set3DViewExperimentalEnabled(checked)
 }
 
+const globeRenderEngine = ref<GlobeRenderEngine>(getGlobeRenderEngine())
+
+const globeRenderEngineOptions = [
+  { value: 'maplibre', label: 'MapLibre（默认）' },
+  { value: 'cesium', label: 'Cesium（实验）' },
+]
+
+const mapLibreSceneOnly = ref(globeRenderEngine.value === 'maplibre')
+
+function onGlobeRenderEngineChange(value: string | number) {
+  globeRenderEngine.value = value as GlobeRenderEngine
+  mapLibreSceneOnly.value = globeRenderEngine.value === 'maplibre'
+  setGlobeRenderEngine(globeRenderEngine.value)
+}
+
 const globeBackground = ref<GlobeBackgroundMode>(getGlobeBackgroundMode())
 
 const globeBackgroundOptions = [
   { value: 'auto', label: '跟随主题' },
   { value: 'starfield', label: '星图' },
+  { value: 'solar_system', label: '太阳系' },
   { value: 'minimal', label: '极简' },
 ]
 
@@ -85,6 +105,16 @@ function onGlobeDaylightChange(value: string | number) {
   setGlobeDaylightMode(globeDaylight.value)
 }
 
+const unsubGlobeScene = subscribeGlobeScene(() => {
+  globeRenderEngine.value = getGlobeRenderEngine()
+  mapLibreSceneOnly.value = globeRenderEngine.value === 'maplibre'
+  globeBackground.value = getGlobeBackgroundMode()
+  globeDaylight.value = getGlobeDaylightMode()
+})
+onUnmounted(() => {
+  unsubGlobeScene()
+})
+
 function onThemeChange(value: string | number) {
   themeStore.setTheme(value as ThemePreference)
 }
@@ -104,9 +134,8 @@ function onReducedMotionChange(event: Event) {
     <section class="settings-section">
       <h3 class="section-title">主题模式</h3>
       <p class="section-hint">
-        切换深色或浅色外观。选择「跟随系统」将根据操作系统的偏好自动切换。系统已内置完整主题；若安装了
-        Dark Reader 等浏览器扩展，请对本站关闭（页面已声明
-        darkreader-lock，避免叠加深色滤镜导致浅色发褐）。
+        切换深色或浅色界面。选「跟随系统」则跟操作系统外观一致。若浏览器装了 Dark
+        Reader 等扩展，请对本站关闭，以免和内置主题叠在一起发灰发褐。
       </p>
       <div class="theme-selector">
         <SegmentedControl
@@ -122,8 +151,7 @@ function onReducedMotionChange(event: Event) {
     <section class="settings-section">
       <h3 class="section-title">地图显示</h3>
       <p class="section-hint">
-        控制底图上方的分布淡底与氛围遮罩。需要有可见数据图层且缩放到较大范围时，
-        才会呈现数据分布观感。无可见数据图层时氛围遮罩始终关闭。
+        控制底图上的淡底与氛围遮罩。需有可见数据图层、且缩放到较大范围时才会呈现；没有可见数据时遮罩会自动关掉。
       </p>
       <label class="toggle-row">
         <input
@@ -139,33 +167,46 @@ function onReducedMotionChange(event: Event) {
           :checked="showAnalysisResultOnMap"
           @change="onShowAnalysisResultOnMapChange"
         />
-        <span>成功后在地图显示分析结果图层（默认开）</span>
+        <span>分析成功后自动在地图上显示结果图层（默认开）</span>
       </label>
       <label class="toggle-row">
         <input type="checkbox" :checked="enable3DView" @change="onEnable3DViewChange" />
-        <span>启用3D视图（实验测试）</span>
+        <span>启用三维地球视图（实验）</span>
       </label>
       <p class="section-hint hint-3d">
-        开启后，顶栏切换到 3D 模式时地图将以地球投影显示全部图层，不再显示「尚未实现」遮罩提示。
-        实验功能：部分叠加层在球面投影下的表现尚未充分验证，遇到异常可关闭本项并切回 2D。
+        开启后，顶栏切到「3D」会把地图画成地球，并显示已有图层。实验功能：个别叠加层在球面上可能异常，可随时关掉本项回到平面 2D。
       </p>
 
       <!-- 3D 场景偏好（仅在启用 3D 视图时展示） -->
       <div v-if="enable3DView" class="globe-scene-options">
         <div class="scene-option">
-          <span class="scene-option-label">3D 背景</span>
+          <span class="scene-option-label">三维渲染引擎</span>
+          <SegmentedControl
+            :model-value="globeRenderEngine"
+            :options="globeRenderEngineOptions"
+            size="xs"
+            @change="onGlobeRenderEngineChange"
+          />
+        </div>
+        <p class="section-hint">
+          「MapLibre」为默认：地球投影 + 现有天气/风场叠加。「Cesium」为实验：已接底图、导入栅格瓦片与日夜光影；风场粒子等尚未接入。
+        </p>
+        <div class="scene-option" :class="{ 'scene-option--disabled': !mapLibreSceneOnly }">
+          <span class="scene-option-label">三维背景</span>
           <SegmentedControl
             :model-value="globeBackground"
             :options="globeBackgroundOptions"
             size="xs"
+            :disabled="!mapLibreSceneOnly"
             @change="onGlobeBackgroundChange"
           />
         </div>
         <p class="section-hint">
-          3D 模式下地球背后的深空背景。「跟随主题」在深色界面显示星图/银河，浅色界面淡化为柔和微尘。
+          地球背后的深空背景。「跟随主题」：深色界面显示星图，浅色界面淡化。「太阳系」：星空随视角转动，并按时间轴显示太阳（昼夜分界仍由下方「光影」控制）。
+          <template v-if="!mapLibreSceneOnly">当前仅 MapLibre 引擎生效。</template>
         </p>
         <div class="scene-option">
-          <span class="scene-option-label">3D 光影</span>
+          <span class="scene-option-label">三维光影</span>
           <SegmentedControl
             :model-value="globeDaylight"
             :options="globeDaylightOptions"
@@ -174,9 +215,8 @@ function onReducedMotionChange(event: Event) {
           />
         </div>
         <p class="section-hint">
-          3D
-          光影：「标准」压亮底图瓦片（左上立体感），不画昼夜遮罩；「自然」按时间轴硬边暗/亮半球（v1
-          无晨昏羽化/动画）；「无」取消一切亮暗效果。
+          「标准」整体压亮底图/地球；「自然」按时间轴画出夜半球；「无」关闭亮暗效果。Cesium
+          下「自然」会跟着时间轴小时联动光照。
         </p>
       </div>
     </section>
@@ -185,7 +225,7 @@ function onReducedMotionChange(event: Event) {
     <section class="settings-section">
       <h3 class="section-title">动效偏好</h3>
       <p class="section-hint">
-        开启「减少动效」后将缩短按钮、对话框、面板入场与拖拽反馈等过渡；全局加载指示（启动地球 / 顶栏进度条）仍保留轻量运动以免看起来像卡死。适合低性能设备或对动效敏感的用户。未手动设置时跟随系统「减少动画」偏好。
+        开启后会缩短按钮、对话框、面板打开与拖拽等过渡动画；顶栏进度与启动动画仍保留一点动效，避免看起来像卡住。适合低性能设备或对动效敏感的用户。未手动设置时跟随系统「减少动画」偏好。
       </p>
       <label class="toggle-row">
         <input type="checkbox" :checked="prefersReducedMotion" @change="onReducedMotionChange" />
@@ -269,5 +309,9 @@ function onReducedMotionChange(event: Event) {
   font-weight: var(--font-weight-medium);
   color: var(--text-primary);
   white-space: nowrap;
+}
+
+.scene-option--disabled {
+  opacity: 0.55;
 }
 </style>

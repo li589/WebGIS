@@ -9,16 +9,24 @@ import type { RuntimeLayerLibraryItem, LayerCategory } from '../../stores/layers
  * providers for visible weather layers whenever the filtered view changes.
  *
  * @param layerLibrary - ComputedRef of the full layer library items
- * @param layerCategories - Static array of layer category definitions
+ * @param layerCategories - 运行时分组列表（Ref：分组改名/自建/重排后实时生效）
  * @param ensureWeatherProviders - Callback to prefetch weather providers for a catalogId
  */
 export function useSidebarSearch(
   layerLibrary: Ref<RuntimeLayerLibraryItem[]>,
-  layerCategories: LayerCategory[],
+  layerCategories: Ref<LayerCategory[]>,
   ensureWeatherProviders: (catalogId: string) => Promise<void>,
 ) {
   const searchQuery = ref('')
-  const expandedCategories = ref<Set<string>>(new Set(layerCategories.map((c) => c.id)))
+  const expandedCategories = ref<Set<string>>(new Set(layerCategories.value.map((c) => c.id)))
+
+  // 图层平台 P1：分组运行时变化——新增分组默认展开，已删除分组收敛
+  watch(layerCategories, (categories) => {
+    const ids = new Set(categories.map((c) => c.id))
+    const next = new Set([...expandedCategories.value].filter((id) => ids.has(id)))
+    for (const id of ids) next.add(id)
+    expandedCategories.value = next
+  })
 
   // ── Filter library items by search ────────────────────────────────────────────
 
@@ -39,10 +47,14 @@ export function useSidebarSearch(
 
   /** 二级分类 pills：从当前可见图层的 subCategory 去重生成（保留「全部」） */
   const researchSubCategoryPills = computed(() => {
+    const research = layerCategories.value.find((c) => c.id === 'research-group')
+    const hiddenSubs = new Set(research?.hiddenSubCategories ?? [])
     const values = new Set<string>()
     for (const item of filteredLibrary.value) {
       if (item.category === 'research-group' && item.subCategory?.trim()) {
-        values.add(item.subCategory.trim())
+        const sub = item.subCategory.trim()
+        if (hiddenSubs.has(sub)) continue
+        values.add(sub)
       }
     }
     return ['all', ...Array.from(values).sort((a, b) => a.localeCompare(b, 'zh-CN'))]
@@ -56,19 +68,25 @@ export function useSidebarSearch(
 
   const filteredLibraryByCategory = computed(() => {
     const map = new Map(
-      layerCategories.map((c) => [c.id, { category: c, items: [] as RuntimeLayerLibraryItem[] }]),
+      layerCategories.value
+        .filter((c) => !c.hidden)
+        .map((c) => [c.id, { category: c, items: [] as RuntimeLayerLibraryItem[] }]),
     )
     for (const item of filteredLibrary.value) {
-      if (map.has(item.category)) {
-        if (
-          item.category === 'research-group' &&
-          selectedSubCategory.value !== 'all' &&
-          item.subCategory !== selectedSubCategory.value
-        ) {
-          continue
-        }
-        map.get(item.category)!.items.push(item)
+      const bucket = map.get(item.category)
+      if (!bucket) continue
+      const hiddenSubs = new Set(bucket.category.hiddenSubCategories ?? [])
+      if (item.subCategory?.trim() && hiddenSubs.has(item.subCategory.trim())) {
+        continue
       }
+      if (
+        item.category === 'research-group' &&
+        selectedSubCategory.value !== 'all' &&
+        item.subCategory !== selectedSubCategory.value
+      ) {
+        continue
+      }
+      bucket.items.push(item)
     }
     return Array.from(map.values()).filter((g) => {
       if (g.category.id === 'research-group') return true

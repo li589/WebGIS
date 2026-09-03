@@ -123,11 +123,17 @@ const overviewCoverageRangeLabel = computed(() => {
 })
 
 const variablesExpanded = ref(false)
-const variablesPreview = computed(() => {
-  const vars = overview.value?.variables ?? []
-  if (!vars.length) return '—'
-  if (variablesExpanded.value || vars.length <= 8) return vars.join(', ')
-  return `${vars.slice(0, 8).join(', ')} …共 ${vars.length} 项`
+const VARIABLES_PREVIEW_LIMIT = 8
+const syncVariables = computed(() => overview.value?.variables ?? [])
+const visibleSyncVariables = computed(() => {
+  const vars = syncVariables.value
+  if (!vars.length) return [] as string[]
+  if (variablesExpanded.value || vars.length <= VARIABLES_PREVIEW_LIMIT) return vars
+  return vars.slice(0, VARIABLES_PREVIEW_LIMIT)
+})
+const hiddenSyncVariableCount = computed(() => {
+  const n = syncVariables.value.length - VARIABLES_PREVIEW_LIMIT
+  return n > 0 && !variablesExpanded.value ? n : 0
 })
 
 const syncStateLabel = computed(() => {
@@ -302,9 +308,8 @@ onBeforeUnmount(() => {
     <header class="section-header">
       <h2>Open-Meteo</h2>
       <p class="section-desc">
-        在此统一管理<strong>全局默认模型</strong>、
-        <strong>本地（Docker）</strong>同步与覆盖探针，以及
-        <strong>Online 公网 API</strong>说明。Provider 启停请到「天气源」。
+        管理<strong>默认天气模型</strong>、本机气象数据<strong>同步</strong>与覆盖情况，以及公网 API
+        说明。要开关天气数据源，请到「天气源」。
       </p>
     </header>
 
@@ -314,7 +319,9 @@ onBeforeUnmount(() => {
         <span class="channel-badge badge-global">全局</span>
         <h3>默认天气模型</h3>
       </div>
-      <p class="channel-desc">写入后端 DB，立即影响时间轴覆盖、瓦片与点预报（全局单模型）。</p>
+      <p class="channel-desc">
+        全站共用一套默认模型：改完立刻影响时间轴可用时段、天气瓦片与点预报。
+      </p>
       <div class="setting-row">
         <label class="row-label">模型</label>
         <AppSelect
@@ -322,7 +329,7 @@ onBeforeUnmount(() => {
           :disabled="modelUpdating"
           :options="
             modelOptions.map((m) => ({
-              label: `${m.label}${syncDomains.includes(m.id) ? ' · 已在 sync 域' : ''}`,
+              label: `${m.label}${syncDomains.includes(m.id) ? ' · 本机可同步' : ''}`,
               value: m.id,
             }))
           "
@@ -333,7 +340,7 @@ onBeforeUnmount(() => {
         <span class="meta-chip">区域: {{ selectedModelMeta.region }}</span>
         <span class="meta-chip">更新间隔: {{ selectedModelMeta.update_interval }}</span>
         <span class="meta-chip" :class="modelInSync ? 'ok' : 'warn'">
-          {{ modelInSync ? '本地 sync 域含此模型' : '不在本地 sync 域' }}
+          {{ modelInSync ? '本机已配置同步此模型' : '本机同步列表不含此模型' }}
         </span>
       </div>
       <div v-if="modelUpdateMessage" class="model-update-hint">{{ modelUpdateMessage }}</div>
@@ -349,13 +356,13 @@ onBeforeUnmount(() => {
     <div class="channel-card">
       <div class="channel-head">
         <span class="channel-badge badge-local">本地 Local</span>
-        <h3>Docker Open-Meteo</h3>
+        <h3>本机 Open-Meteo</h3>
       </div>
       <p class="channel-desc">
-        Provider：<code>open-meteo-local</code>（默认优先）。 需 backend 已启动
-        <code>cgda-open-meteo</code>（<code>docker compose -p backend up -d</code>）； 同步任务在
-        <code>Code/infra/data-sync</code>（设置页或 <code>.\sync.ps1</code>）。 同步域由环境变量
-        <code>OPEN_METEO_SYNC_DOMAINS</code> 决定。
+        优先使用本机容器里的气象库（服务名 <code>open-meteo-local</code>）。需先启动
+        <code>cgda-open-meteo</code> 容器；拉数任务在
+        <code>Code/infra/data-sync</code>（本页「立即同步」或脚本 <code>.\sync.ps1</code>）。要同步哪些模型，由环境变量
+        <code>OPEN_METEO_SYNC_DOMAINS</code> 决定（本页只读）。
       </p>
 
       <div class="setting-block">
@@ -373,9 +380,8 @@ onBeforeUnmount(() => {
             <span class="coverage-value">{{ (overview.domains || []).join(', ') || '—' }}</span>
           </div>
           <p class="sync-domains-hint">
-            持久同步域来自环境变量
-            <code>OPEN_METEO_SYNC_DOMAINS</code>（本页不可改）。改后需重启后端 /
-            Beat，或用下方「本次覆盖」临时指定。
+            长期生效的同步模型列表来自环境变量
+            <code>OPEN_METEO_SYNC_DOMAINS</code>（本页改不了）。改完后需重启后端与定时任务，或用下方「本次覆盖域」临时指定一次。
           </p>
           <div class="coverage-row">
             <span class="coverage-label">Docker CLI</span>
@@ -442,30 +448,45 @@ onBeforeUnmount(() => {
             </span>
           </div>
           <div class="coverage-row coverage-row-wrap">
-            <span class="coverage-label">同步变量</span>
-            <span class="coverage-value">
-              {{ variablesPreview }}
-              <button
-                v-if="(overview.variables?.length ?? 0) > 8"
-                type="button"
-                class="refresh-btn"
-                @click="variablesExpanded = !variablesExpanded"
-              >
-                {{ variablesExpanded ? '收起' : '展开' }}
-              </button>
+            <span class="coverage-label">
+              同步变量
+              <span class="coverage-label-hint">本机 Open-Meteo 已配置拉取的气象量（只读）</span>
+            </span>
+            <span class="coverage-value var-chip-cloud">
+              <template v-if="!syncVariables.length">—</template>
+              <template v-else>
+                <span v-for="v in visibleSyncVariables" :key="v" class="meta-chip var-chip">{{
+                  v
+                }}</span>
+                <button
+                  v-if="hiddenSyncVariableCount > 0"
+                  type="button"
+                  class="meta-chip var-chip var-chip-more"
+                  @click="variablesExpanded = true"
+                >
+                  +{{ hiddenSyncVariableCount }}
+                </button>
+                <button
+                  v-if="variablesExpanded && syncVariables.length > VARIABLES_PREVIEW_LIMIT"
+                  type="button"
+                  class="refresh-btn"
+                  @click="variablesExpanded = false"
+                >
+                  收起
+                </button>
+              </template>
             </span>
           </div>
           <p class="coverage-hint meta-hint">
-            同步可拉取模型原生预报时效，但前端瓦片 hour
-            上限与运行时请求窗口更短；时间轴绿/紫以本地探针有效时次为准。
+            同步会尽量拉满该模型能提供的预报时长；地图时间轴上实际能用的时段，以本机探测结果为准（绿/紫色段）。
           </p>
         </div>
-        <div v-else class="coverage-loading">刷新 overview 后显示</div>
+        <div v-else class="coverage-loading">刷新状态后显示</div>
       </div>
 
       <div class="setting-block">
         <div class="block-title">
-          <span>数据覆盖（本地探针）</span>
+          <span>本机数据覆盖</span>
           <button
             type="button"
             class="refresh-btn"
@@ -477,7 +498,7 @@ onBeforeUnmount(() => {
         </div>
         <div v-if="coverageError" class="coverage-error">
           {{ coverageError }}
-          <span class="coverage-hint">容器未启动、模型未 sync，或选了不在 sync 域的模型。</span>
+          <span class="coverage-hint">常见原因：本机容器未启动、尚未同步，或当前模型不在同步列表里。</span>
         </div>
         <div v-else-if="coverage" class="coverage-info">
           <div class="coverage-row">
@@ -497,9 +518,9 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="overview && !syncServiceAvailable" class="sync-unavailable-callout">
-        同步服务不可用：需要本机 Docker CLI，且
-        <code>Code/infra/data-sync/docker-compose.yml</code> 存在。Celery 仅负责排队；无 Docker
-        时无法拉取本地气象域数据。
+        同步服务不可用：需要本机已安装并可调用 Docker，且存在
+        <code>Code/infra/data-sync/docker-compose.yml</code>。后台任务只负责排队；没有 Docker
+        就拉不到本机气象数据。
       </div>
 
       <div class="setting-block">
@@ -510,7 +531,7 @@ onBeforeUnmount(() => {
             v-model="triggerDomainsOverride"
             class="model-select"
             type="text"
-            placeholder="留空=环境默认；例 ecmwf_ifs025,gfs_global"
+            placeholder="留空=用环境默认；例 ecmwf_ifs025,gfs_global"
             :disabled="isSyncRunning || !syncServiceAvailable"
           />
         </div>
@@ -535,8 +556,8 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <p class="sync-hint">
-          优先 Celery；broker 卡住时自动降级为本进程后台线程。需本机 Docker。 同步约 10–30
-          分钟，期间旧数据仍可用。断网或 Docker 不可用时会显示失败原因。
+          一般走后台任务队列；队列卡住时会改在本进程里跑。需要本机 Docker。整次同步大约 10–30
+          分钟，期间仍可看已有旧数据。断网或 Docker 不可用时会写出失败原因。
         </p>
       </div>
     </div>
@@ -548,14 +569,14 @@ onBeforeUnmount(() => {
         <h3>公网 Open-Meteo API</h3>
       </div>
       <p class="channel-desc">
-        Provider：<code>open-meteo-online</code>（api.open-meteo.com）。
-        <strong>无需 API Key</strong>。启停 / 优先级 / 连通性测试请到「天气源」页。 Online 支持
-        <code>best_match</code>；本地不支持，会自动映射为默认模型。
+        直连官方公网接口（<code>open-meteo-online</code> / api.open-meteo.com），
+        <strong>无需 API Key</strong>。启停、优先级与连通性测试请到「天气源」。公网支持
+        <code>best_match</code>；本机源不支持时会自动改用默认模型。
       </p>
       <ul class="online-list">
-        <li>免费额度约每日 1 万次请求（官方限额，以 open-meteo.com 为准）</li>
-        <li>不依赖 Docker / Celery sync</li>
-        <li>适合本地容器未就绪时的回退</li>
+        <li>免费额度约每日 1 万次请求（以 open-meteo.com 官方限额为准）</li>
+        <li>不依赖本机 Docker 同步</li>
+        <li>适合本机容器未就绪时的临时回退</li>
       </ul>
     </div>
   </section>
@@ -688,6 +709,37 @@ onBeforeUnmount(() => {
 .meta-chip.warn {
   background: var(--warning-surface);
   color: var(--accent-warm);
+}
+
+.coverage-label-hint {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--text-faint);
+  line-height: 1.35;
+}
+
+.var-chip-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.var-chip {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.72rem;
+  background: var(--surface-2, var(--accent-surface));
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+}
+
+.var-chip-more {
+  cursor: pointer;
+  color: var(--accent);
+  background: var(--accent-surface);
+  border-color: var(--accent-border);
 }
 
 .model-update-hint {

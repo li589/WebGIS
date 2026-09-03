@@ -7,10 +7,11 @@
  *
  * 拆分历史：原 2910 行 → CSS 提取(-1357) → composable 提取(-1100) → 子组件提取(-450)
  */
-import { computed, nextTick, ref, watch, onMounted } from 'vue'
+import { computed, nextTick, ref, watch, onMounted, onUnmounted } from 'vue'
 import { Diamond } from './ui/icons'
 
 import { useLayerWorkspace, useLayerLifecycle, useWorkflowRun } from '../stores/layers/selectors'
+import { useAuthStore } from '../stores/auth'
 import type { ActiveLayerDisplay } from '../stores/layers/types'
 import { deriveDataStatus, normalizeRunGroupMemberStatus } from '../utils/layer-data-status'
 import { resolveCategoryDisplayName } from '../stores/layers/catalog'
@@ -37,8 +38,10 @@ import { useSidebarContextMenu } from './layer-sidebar/useSidebarContextMenu'
 // ── 子组件 ─────────────────────────────────────────────────────────────────
 import LayerSidebarHeader from './layer-sidebar/LayerSidebarHeader.vue'
 import LayerSidebarLibrary from './layer-sidebar/LayerSidebarLibrary.vue'
+import LayerGroupManagerDialog from './layer-sidebar/LayerGroupManagerDialog.vue'
 import LayerSidebarActive from './layer-sidebar/LayerSidebarActive.vue'
 import LayerSidebarContextMenu from './layer-sidebar/LayerSidebarContextMenu.vue'
+import { onOpenLayerGroupManager } from '../utils/layer-group-manager-bridge'
 
 const emit = defineEmits<{
   selectLayer: [instanceId: string]
@@ -74,6 +77,29 @@ const { runLayerGroups } = workflowRun
 const lifecycle = useLayerLifecycle()
 
 const layerCategories = workspace.layerCategories
+
+// ── 图层平台 P1：分组管理入口（管理员） ────────────────────────────────────
+const authStore = useAuthStore()
+const groupManagerOpen = ref(false)
+const groupManagerThemeId = ref<number | null>(null)
+
+function closeGroupManager() {
+  groupManagerOpen.value = false
+  groupManagerThemeId.value = null
+}
+
+let stopGroupManagerBridge: (() => void) | null = null
+onMounted(() => {
+  stopGroupManagerBridge = onOpenLayerGroupManager((themeId) => {
+    if (!authStore.isAdmin) return
+    groupManagerThemeId.value = themeId
+    groupManagerOpen.value = true
+  })
+})
+onUnmounted(() => {
+  stopGroupManagerBridge?.()
+  stopGroupManagerBridge = null
+})
 
 // ── 侧栏 composable 的 layers 窄依赖（P3 收口：不再传递整店实例）──────────
 const sidebarLayersDeps: SidebarLayersDeps = {
@@ -353,7 +379,7 @@ function getCatalogSourceSummary(catalogId: string): string {
 // ── 分类辅助 ─────────────────────────────────────────────────────────────────
 
 function getCategoryMeta(categoryId: string) {
-  return layerCategories.find((c) => c.id === categoryId)
+  return layerCategories.value.find((c) => c.id === categoryId)
 }
 
 function getCategoryName(categoryId: string): string {
@@ -516,8 +542,10 @@ onMounted(() => {
       :sidebar-view-label="sidebarViewLabel"
       :sidebar-view="sidebarView"
       :active-layer-count="activeLayerCount"
+      :can-manage-groups="authStore.isAdmin"
       @open-library="openLibrary"
       @open-active="openActive"
+      @open-group-manager="groupManagerOpen = true"
     />
 
     <!-- ── EMPTY STATE ────────────────────────────────────────────────── -->
@@ -621,6 +649,13 @@ onMounted(() => {
       :context-menu="ctxMenu.contextMenu.value"
       :context-menu-groups="ctxMenu.contextMenuGroups.value"
       @handle-context-action="ctxMenu.handleContextAction"
+    />
+    <!-- ── 图层平台 P1：分组管理对话框（仅管理员） ─────────────────────── -->
+    <LayerGroupManagerDialog
+      v-if="authStore.isAdmin"
+      :open="groupManagerOpen"
+      :initial-theme-id="groupManagerThemeId"
+      @close="closeGroupManager"
     />
   </aside>
 </template>

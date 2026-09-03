@@ -441,6 +441,29 @@ def test_retrieve_daily_resumes_existing_mat(tmp_path: Path) -> None:
     mock_bundle.assert_not_called()
 
 
+def test_stage_d_existing_output_rejects_all_fill_sm(tmp_path: Path) -> None:
+    from algorithms.omega_avg import _stage_d_existing_output_usable
+
+    day = tmp_path / "20251231.mat"
+    fill = np.full(_GRID_SHAPE, np.nan, dtype=np.float64)
+    savemat(
+        str(day),
+        {"SM": fill, "VOD": fill, "OMEGA": np.full(_GRID_SHAPE, 0.1)},
+        do_compression=True,
+    )
+    assert _stage_d_existing_output_usable(day) is False
+
+    good = tmp_path / "20251230.mat"
+    sm = np.full(_GRID_SHAPE, np.nan, dtype=np.float64)
+    sm[0, 0] = 0.2
+    savemat(
+        str(good),
+        {"SM": sm, "VOD": sm, "OMEGA": sm},
+        do_compression=True,
+    )
+    assert _stage_d_existing_output_usable(good) is True
+
+
 # ─── Config builder ─────────────────────────────────────────────────────────
 
 

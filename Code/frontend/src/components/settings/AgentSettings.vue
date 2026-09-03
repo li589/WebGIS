@@ -27,6 +27,7 @@ const saving = ref(false)
 const activating = ref(false)
 const refreshingModels = ref(false)
 const error = ref<string | null>(null)
+const infoNotice = ref<string | null>(null)
 const savedFlash = ref(false)
 
 const profiles = ref<AgentProfile[]>([])
@@ -230,7 +231,14 @@ async function onActivate(p: AgentProfile) {
   }
 }
 
-async function onCreateFromPreset(presetId: string) {
+const selectedPresetId = ref('')
+
+async function onCreateFromPreset() {
+  const presetId = selectedPresetId.value
+  if (!presetId) {
+    error.value = '请先选择预设'
+    return
+  }
   const scope = createScope.value
   if (scope === 'global' && !canManageGlobal.value) {
     error.value = '仅管理员可新建全局配置档。'
@@ -242,11 +250,18 @@ async function onCreateFromPreset(presetId: string) {
   }
   saving.value = true
   error.value = null
+  infoNotice.value = null
   try {
+    const beforeIds = new Set(profiles.value.map((p) => `${p.scope}:${p.id}`))
     const created = await createAgentProfile({ preset_id: presetId, scope })
     await loadConfig()
     selectedId.value = created.id
     selectedScope.value = created.scope
+    selectedPresetId.value = ''
+    const key = `${created.scope}:${created.id}`
+    if (beforeIds.has(key)) {
+      infoNotice.value = `已存在相同的「${created.name}」配置档，已选中现有项（未重复创建）。`
+    }
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -390,20 +405,20 @@ onUnmounted(() => {
 <template>
   <div class="agent-settings">
     <section class="settings-section">
-      <h3 class="section-title">地图助手（Web）</h3>
+      <h3 class="section-title">地图助手</h3>
       <p class="section-hint">
-        控制主前端地图上的机器人挂件。仅影响 Web 端；微信小程序不使用本配置。
+        控制地图右下角的助手入口。只影响本网页；微信小程序不走这里。关掉后挂件消失，配置档仍保留。
       </p>
       <label class="toggle-row">
         <input type="checkbox" :checked="companionEnabled" @change="onCompanionChange" />
-        <span>显示 Agent 伴侣挂件</span>
+        <span>在地图上显示助手入口</span>
       </label>
     </section>
 
     <section class="settings-section">
       <h3 class="section-title">模型配置档</h3>
       <p class="section-hint">
-        全局档由管理员维护；个人档仅本人可写。对话优先个人启用档，否则回退全局。
+        选哪套大模型给助手用。管理员管「全局」档；每人可建「个人」档。对话优先用个人启用档，没有再用全局。名称相同但地址/模型不同会分开保存，完全相同的预设不会重复添加。
       </p>
 
       <div v-if="loading" class="status-line">加载配置中…</div>
@@ -422,10 +437,16 @@ onUnmounted(() => {
             }"
             @click="onSelectProfile(p)"
           >
-            <span class="chip-name">{{ p.name }}</span>
-            <span v-if="p.id === activeProfileId && activeScope === 'global'" class="chip-badge"
-              >启用中</span
-            >
+            <span class="chip-main">
+              <span class="chip-name-row">
+                <span class="chip-name">{{ p.name }}</span>
+                <span
+                  v-if="p.id === activeProfileId && activeScope === 'global'"
+                  class="chip-badge"
+                  >启用中</span
+                >
+              </span>
+            </span>
           </button>
 
           <div class="group-label">我的配置</div>
@@ -440,10 +461,16 @@ onUnmounted(() => {
             }"
             @click="onSelectProfile(p)"
           >
-            <span class="chip-name">{{ p.name }}</span>
-            <span v-if="p.id === activeProfileId && activeScope === 'personal'" class="chip-badge"
-              >启用中</span
-            >
+            <span class="chip-main">
+              <span class="chip-name-row">
+                <span class="chip-name">{{ p.name }}</span>
+                <span
+                  v-if="p.id === activeProfileId && activeScope === 'personal'"
+                  class="chip-badge"
+                  >启用中</span
+                >
+              </span>
+            </span>
           </button>
           <p v-if="!personalProfiles.length" class="status-line">暂无个人配置档</p>
 
@@ -459,21 +486,23 @@ onUnmounted(() => {
               <option value="global">全局</option>
             </select>
             <select
+              v-model="selectedPresetId"
               class="field-input"
               :disabled="saving || (!canManageGlobal && !canManagePersonal)"
-              @change="
-                (e) => {
-                  const v = (e.target as HTMLSelectElement).value
-                  if (v) void onCreateFromPreset(v)
-                  ;(e.target as HTMLSelectElement).value = ''
-                }
-              "
             >
               <option value="">选择预设…</option>
               <option v-for="pre in presets" :key="pre.id" :value="pre.id">
                 {{ pre.name }}
               </option>
             </select>
+            <button
+              type="button"
+              class="secondary-btn"
+              :disabled="saving || !selectedPresetId || (!canManageGlobal && !canManagePersonal)"
+              @click="onCreateFromPreset"
+            >
+              添加
+            </button>
           </div>
         </aside>
 
@@ -654,6 +683,7 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
+      <p v-if="infoNotice" class="ok-line">{{ infoNotice }}</p>
       <p v-if="error" class="error-line">{{ error }}</p>
     </section>
   </div>
@@ -707,7 +737,7 @@ onUnmounted(() => {
 
 .profile-layout {
   display: grid;
-  grid-template-columns: minmax(176px, 212px) minmax(0, 1fr);
+  grid-template-columns: minmax(168px, 200px) minmax(0, 1fr);
   gap: 0.85rem 1rem;
   align-items: start;
 }
@@ -721,8 +751,8 @@ onUnmounted(() => {
 .profile-list {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  padding: 0.65rem;
+  gap: 0.32rem;
+  padding: 0.55rem;
   border-radius: var(--radius-lg, 10px);
   border: 1px solid var(--border-subtle);
   background: var(--surface-sunken, var(--surface-1));
@@ -731,7 +761,7 @@ onUnmounted(() => {
 }
 
 .group-label {
-  margin: 0.5rem 0 0.2rem;
+  margin: 0.45rem 0 0.15rem;
   font-size: var(--font-size-caption);
   font-weight: 600;
   color: var(--text-muted);
@@ -745,23 +775,44 @@ onUnmounted(() => {
 .profile-chip {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.4rem;
+  justify-content: flex-start;
+  gap: 0.35rem;
+  box-sizing: border-box;
+  width: 100%;
+  overflow: hidden;
   text-align: left;
   border-radius: 8px;
   border: 1px solid transparent;
   background: var(--surface-1);
   color: var(--text-primary);
-  padding: 0.45rem 0.55rem;
+  padding: 0.4rem 0.55rem;
   font: inherit;
   font-size: var(--font-size-caption);
   line-height: 1.35;
   cursor: pointer;
-  min-height: 2.15rem;
+  min-height: 2rem;
+}
+
+.chip-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  flex: 1;
+  width: 100%;
+}
+
+.chip-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  width: 100%;
 }
 
 .profile-chip:hover {
   border-color: var(--border-default);
+  background: color-mix(in srgb, var(--surface-2, var(--surface-1)) 88%, transparent);
 }
 
 .profile-chip.selected {
@@ -774,16 +825,22 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+  flex: 1;
+  font-weight: var(--font-weight-medium);
+  line-height: 1.35;
+  color: var(--text-primary);
 }
 
 .chip-badge {
   flex-shrink: 0;
-  font-size: 0.65rem;
+  font-size: 0.62rem;
   font-weight: 600;
+  line-height: 1.2;
   color: var(--accent-strong);
-  padding: 0.12rem 0.35rem;
+  padding: 0.1rem 0.3rem;
   border-radius: 4px;
   background: color-mix(in srgb, var(--accent-surface) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-border, var(--accent)) 35%, transparent);
 }
 
 .preset-create {
@@ -1032,6 +1089,13 @@ onUnmounted(() => {
   color: var(--text-muted);
   font-size: var(--font-size-caption);
   margin: 0.1rem 0;
+}
+
+.ok-line {
+  margin: 0.35rem 0 0;
+  color: var(--success, #2f9e44);
+  font-size: var(--font-size-caption);
+  line-height: 1.45;
 }
 
 .error-line {

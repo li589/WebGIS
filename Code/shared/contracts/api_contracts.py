@@ -120,17 +120,95 @@ class LayerSourceDef(BaseModel):
 
 
 class LayerCategoryDef(BaseModel):
-    """X1: 图层分类定义 — 后端下发，消除前后端分类双写。"""
+    """X1: 图层分类定义 — 后端下发，消除前后端分类双写。
+
+    图层平台 P1：分组支持运行时管理（种子 ⊕ 管理员个人工作区 / 主题预设），
+    ``position`` 为排序键，``is_custom`` 标记自建分组（可删除；种子组仅可改名/样式）。
+    ``hidden`` / ``hidden_sub_categories``：主题下可隐藏顶层组与二级组类（默认可见）。
+    """
     id: str
     name: str
     icon: str | None = None
     accent_color: str | None = None
     chip_tone: str | None = None
     sub_categories: list[str] = Field(default_factory=list)
+    position: float | None = None
+    is_custom: bool = False
+    hidden: bool = False
+    hidden_sub_categories: list[str] = Field(default_factory=list)
 
 
 class LayerCategoryResponse(BaseModel):
     items: list[LayerCategoryDef]
+
+
+class LayerGroupCreateRequest(BaseModel):
+    """管理员自建图层分组（写入当前管理员个人工作区）。"""
+    id: str
+    """分组标识（小写字母/数字/-/_，≤64 字符，在个人工作区内唯一且不与种子冲突）。"""
+    name: str
+    icon: str | None = None
+    accent_color: str | None = None
+    chip_tone: str | None = None
+    sub_categories: list[str] = Field(default_factory=list)
+    hidden: bool = False
+    hidden_sub_categories: list[str] = Field(default_factory=list)
+
+
+class LayerGroupUpdateRequest(BaseModel):
+    """修改分组（名称/样式/子分类/隐藏）；种子组与自定义组均可改。"""
+    name: str | None = None
+    icon: str | None = None
+    accent_color: str | None = None
+    chip_tone: str | None = None
+    sub_categories: list[str] | None = None
+    hidden: bool | None = None
+    hidden_sub_categories: list[str] | None = None
+
+
+class LayerGroupReorderRequest(BaseModel):
+    """按给定 id 顺序重排分组（未列出的分组保持相对顺序追加在后）。"""
+    order: list[str]
+
+
+class LayerGroupMembersRequest(BaseModel):
+    """设置分组内图层成员（layer_id 全量替换该分组成员关系）。"""
+    layer_ids: list[str]
+
+
+class LayerThemeDisplayNamesRequest(BaseModel):
+    """主题预设图层显示名覆盖（合并写入；空字符串清除该 layer_id）。"""
+    display_names: dict[str, str] = Field(default_factory=dict)
+
+
+class ThemeLayerGroupPresetMeta(BaseModel):
+    """主题图层分组预设元数据。"""
+    theme_id: int
+    has_preset: bool = False
+    updated_at: str | None = None
+    updated_by_user_id: int | None = None
+    display_name_count: int = 0
+
+
+class ThemeLayerGroupPresetDetail(ThemeLayerGroupPresetMeta):
+    """主题分组预设详情（管理员编辑用；无预设时 groups 为种子基线且不落库）。"""
+    groups: list[LayerCategoryDef] = Field(default_factory=list)
+    assignments: dict[str, str] = Field(default_factory=dict)
+    display_names: dict[str, str] = Field(
+        default_factory=dict,
+        description="Theme display_name overlays (layer_id → name)",
+    )
+    seed_display_names: dict[str, str] = Field(
+        default_factory=dict,
+        description="Seed layer display_name map for editor placeholders",
+    )
+
+
+class ThemeLayerGroupPresetPutRequest(BaseModel):
+    """全量替换主题分组预设（原子保存）。"""
+    groups: list[LayerCategoryDef]
+    assignments: dict[str, str] = Field(default_factory=dict)
+    display_names: dict[str, str] = Field(default_factory=dict)
 
 
 class OnlineTemporalCapability(BaseModel):

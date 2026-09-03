@@ -245,7 +245,9 @@ class OverlaySpec:
             if np.ma.is_masked(val):
                 return None
             out = float(val)
-            return out if np.isfinite(out) else None
+            if not np.isfinite(out) or out <= -9000.0:
+                return None
+            return out
 
     # EASE-Grid 2.0 9km 标准参数——唯一真源 grid_presets.py（P2 收敛，
     # 原 2026-08 之前此处为独立硬编码副本）
@@ -746,6 +748,9 @@ def _try_load_imported_overlay(layer_id: str) -> OverlaySpec | None:
         time_pattern="preview_{time}.png" if category == "time-series" else None,
         bounds_pattern="bounds_{time}.json" if category == "time-series" else None,
         palette=str(meta.get("palette") or "wind-blue"),
+        vmin=float(meta["vmin"]) if isinstance(meta.get("vmin"), (int, float)) else None,
+        vmax=float(meta["vmax"]) if isinstance(meta.get("vmax"), (int, float)) else None,
+        unit=str(meta.get("unit") or meta.get("label") or ""),
         opacity=float(meta.get("opacity") or 0.7),
         crs=str(meta.get("crs") or "EPSG:4326"),
         source_path=source_path if category != "time-series" else None,

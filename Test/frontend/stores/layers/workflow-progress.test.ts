@@ -177,6 +177,19 @@ describe('resolveJobOverallProgress', () => {
     ).toBe(45)
   })
 
+  it('ignores workflow_dispatch 100% bookend while weighted dispatch is mid-run', () => {
+    expect(
+      resolveJobOverallProgress({
+        current: 100,
+        nodeProgress: [
+          { nodeId: 'workflow_dispatch', progress: 100 },
+          { nodeId: 'workflow.dispatch', progress: 42 },
+          { nodeId: 'fy_download', progress: 100 },
+        ],
+      }),
+    ).toBe(42)
+  })
+
   it('does not inflate dispatch with chunk detail', () => {
     expect(
       resolveJobOverallProgress({
@@ -202,5 +215,15 @@ describe('resolveJobOverallProgress', () => {
         ],
       }),
     ).toBe(35)
+  })
+
+  it('prefers max of snapshot and current when dispatch is absent', () => {
+    expect(
+      resolveJobOverallProgress({
+        current: 70,
+        snapshot: 35,
+        nodeProgress: [{ nodeId: 'fy_download', progress: 100 }],
+      }),
+    ).toBe(70)
   })
 })

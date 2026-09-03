@@ -953,7 +953,12 @@ defineExpose({
     <!-- 新建工作流对话框 -->
     <Transition name="cgda-modal">
       <div v-if="showCreateDialog" class="create-dialog-overlay" @click.self="cancelCreateWorkflow">
-        <div class="create-dialog cgda-modal-panel" role="dialog" aria-modal="true" aria-label="新建工作流">
+        <div
+          class="create-dialog cgda-modal-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-label="新建工作流"
+        >
           <h3 class="dialog-title">新建工作流</h3>
           <div class="dialog-form">
             <div class="form-row">
@@ -1024,7 +1029,12 @@ defineExpose({
     <Teleport to="body">
       <Transition name="cgda-modal">
         <div v-if="showPropsDialog" class="props-mask" @click.self="showPropsDialog = false">
-          <div class="props-dialog cgda-modal-panel" role="dialog" aria-modal="true" aria-label="工作流属性">
+          <div
+            class="props-dialog cgda-modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label="工作流属性"
+          >
             <div class="props-header">
               <span class="props-title">工作流属性</span>
               <button

@@ -172,7 +172,11 @@ export function validateFormValues(
     }
   }
 
-  if (tool.tool_id === 'gis.reclassify' && values.remap_table != null && values.remap_table !== '') {
+  if (
+    tool.tool_id === 'gis.reclassify' &&
+    values.remap_table != null &&
+    values.remap_table !== ''
+  ) {
     const remapErr = validateRemapTable(values.remap_table)
     if (remapErr) errors.remap_table = remapErr
   }

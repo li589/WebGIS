@@ -1,6 +1,6 @@
 /**
  * 工作流运行展示名：状态指示器 / 图层计算组标题优先用种子中文名
- * （如「SMAP ω 动态反演（本地）」），禁止 wf-run-* / 英文 workflow id 泄漏。
+ * （如「SMAP 动态 散射约束产品反演（本地）」），禁止 wf-run-* / 英文 workflow id 泄漏。
  */
 import { isEnglishInversionCatalogId } from '@/stores/layers/inversion-catalog'
 
@@ -103,7 +103,7 @@ export function resolveWorkflowRunDisplayName(options: {
 
   const label = String(options.commandLabel || '').trim()
   if (label && !label.startsWith('运行画布工作流') && !isTechnicalRunTitle(label)) {
-    // 「运行 SMAP 平均 ω 反演 分析 · 在线获取」→ 取工作流语义段
+    // 「运行 SMAP 平均 散射约束产品反演 分析 · 在线获取」→ 取工作流语义段
     const stripped = label
       .replace(/^运行\s+/, '')
       .replace(/\s+分析(?:\s*[·•].*)?$/u, '')

@@ -133,7 +133,9 @@ def _make_multi_file_progress_cb(
         if skipped:
             msg = f"文件 {current}/{total} · 已跳过（本地已有）"
         else:
-            msg = f"文件 {current}/{total} · 已下载 {format_size(downloaded)}{speed_txt}"
+            msg = (
+                f"文件 {current}/{total} · 已下载 {format_size(downloaded)}{speed_txt}"
+            )
         _emit_download_progress(
             logger_adapter,
             stage,

@@ -1,6 +1,6 @@
 type MapInstance = import('maplibre-gl').Map
 type GeoJsonSourceSpecification = import('maplibre-gl').GeoJSONSourceSpecification
-	type BoundaryModuleData = typeof import('../../app/admin-boundaries')
+type BoundaryModuleData = typeof import('../../app/admin-boundaries')
 
 export interface AdminBoundaryModule {
   ensureLayers: () => Promise<void>
@@ -20,11 +20,11 @@ export function createAdminBoundaryModule(
 ): AdminBoundaryModule {
   const loadBoundaryModuleImpl =
     options.dependencies?.loadBoundaryModule ??
-	    (() =>
-	      import('../../app/admin-boundaries').catch((error) => {
-	        console.error('[MapCanvas] Failed to load boundary module:', error)
-	        return null
-	      }))
+    (() =>
+      import('../../app/admin-boundaries').catch((error) => {
+        console.error('[MapCanvas] Failed to load boundary module:', error)
+        return null
+      }))
 
   let boundaryModule: BoundaryModuleData | null = null
   let boundaryModulePromise: Promise<BoundaryModuleData | null> | null = null
@@ -43,18 +43,18 @@ export function createAdminBoundaryModule(
     return boundaryModule
   }
 
-	  async function ensureLayers() {
-	    const loadedBoundaryModule = await ensureBoundaryModule()
-	    if (!loadedBoundaryModule) return
+  async function ensureLayers() {
+    const loadedBoundaryModule = await ensureBoundaryModule()
+    if (!loadedBoundaryModule) return
 
-	    const overlay = await loadedBoundaryModule.loadAdminBoundaryOverlay()
+    const overlay = await loadedBoundaryModule.loadAdminBoundaryOverlay()
 
-	    if (!options.map.getSource('admin-boundaries')) {
-	      options.map.addSource('admin-boundaries', {
-	        type: 'geojson',
-	        data: overlay,
-	      } as GeoJsonSourceSpecification)
-	    }
+    if (!options.map.getSource('admin-boundaries')) {
+      options.map.addSource('admin-boundaries', {
+        type: 'geojson',
+        data: overlay,
+      } as GeoJsonSourceSpecification)
+    }
 
     if (!options.map.getLayer('admin-fill')) {
       options.map.addLayer({

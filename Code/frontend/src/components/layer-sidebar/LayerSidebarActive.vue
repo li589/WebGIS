@@ -313,9 +313,7 @@ const emit = defineEmits<{
                 :title="`图层计量单位：${getSymbologyUnit(row.layer)}`"
                 >{{ getSymbologyUnit(row.layer) }}</span
               >
-              <span
-                v-if="!row.layer.runGroupId && !row.layer.runGroupLocked"
-                class="order-hint"
+              <span v-if="!row.layer.runGroupId && !row.layer.runGroupLocked" class="order-hint"
                 >顺序
                 {{
                   activeLayersDisplay.findIndex((l) => l.instanceId === row.layer.instanceId) + 1

@@ -27,6 +27,12 @@ export function buildWeatherOverlayWatchInputs(
         visible: layer.visible,
         opacity: layer.opacity,
         isAdmin: layer.isAdminBoundary,
+        // 样式覆盖变化须触发 COG/网格重绘（此前仅 palette 进 display hint，且 hash 未含值域）
+        palette: layer.paletteOverride ?? null,
+        vmin: layer.vminOverride ?? null,
+        vmax: layer.vmaxOverride ?? null,
+        nodataMode: layer.nodataMode ?? null,
+        nodataColor: layer.nodataColor ?? null,
       })),
     ),
     particleFlowCatalogId,

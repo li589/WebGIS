@@ -46,11 +46,16 @@ logger = logging.getLogger(__name__)
 
 # Product type → GeoTIFF extract config for map_layer publishing.
 _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
+    # vmin/vmax：科学默认拉伸（run-11369247180a 抽样 SM p50~0.08 p98~0.45；
+    # OMEGA p50~0.11 p98~0.28；VOD p50~0.03 p98~0.75）。缺省时 FE 曾强制 0–1
+    # 导致色差被压扁。
     "omega_sf_omega_pixel": {
         "variable": "omega_pix_map",
         "grid_preset": "ease2-global-9km",
         "label": "OMEGA",
         "palette": "cividis",
+        "vmin": 0.0,
+        "vmax": 0.5,
     },
     "omega_sf_sm_block_dir": {
         "variable": "SM",
@@ -58,6 +63,8 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
         "label": "SM",
         "palette": "ylgnbu",
         "from_block_dir": True,
+        "vmin": 0.0,
+        "vmax": 0.5,
     },
     "omega_sf_vod_block_dir": {
         "variable": "VOD",
@@ -65,6 +72,8 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
         "label": "VOD",
         "palette": "viridis",
         "from_block_dir": True,
+        "vmin": 0.0,
+        "vmax": 1.0,
     },
     "omega_sf_omega_block_dir": {
         "variable": "OMEGA",
@@ -72,8 +81,22 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
         "label": "OMEGA",
         "palette": "cividis",
         "from_block_dir": True,
+        "vmin": 0.0,
+        "vmax": 0.5,
     },
 }
+
+
+def _legend_ticks_from_range(
+    vmin: object | None, vmax: object | None
+) -> list[float]:
+    if not isinstance(vmin, (int, float)) or not isinstance(vmax, (int, float)):
+        return []
+    lo = float(vmin)
+    hi = float(vmax)
+    if not (lo < hi):
+        return []
+    return [lo, (lo + hi) / 2.0, hi]
 
 _SINGLE_DAY_MAT_RE = re.compile(r"^\d{8}\.mat$", re.IGNORECASE)
 _FY_DATE_IN_NAME_RE = re.compile(r"(20\d{6})")
@@ -933,6 +956,8 @@ class PythonProviderResultBuilder:
                     layer_key=str(getattr(payload, "layer_id", "") or ""),
                     grid_preset=str(config["grid_preset"]),
                     palette=str(config.get("palette") or "cividis"),
+                    vmin=config.get("vmin"),
+                    vmax=config.get("vmax"),
                     native_step=native_step,
                     time_start=time_start,
                     time_end=time_end,
@@ -966,6 +991,8 @@ class PythonProviderResultBuilder:
             label = str(config["label"])
             tags = as_dict(product.get("tags"))
             layer_tag = str(tags.get("layer") or label)
+            product_vmin = config.get("vmin")
+            product_vmax = config.get("vmax")
             render_hint = WeatherLayerRenderHint(
                 layer_id=payload.layer_id or overlay_id,
                 paint_mode="grid_fill",
@@ -973,6 +1000,7 @@ class PythonProviderResultBuilder:
                 primary_metric=str(product.get("variable") or config["variable"]),
                 unit_label=layer_tag,
                 opacity=0.8,
+                legend_ticks=_legend_ticks_from_range(product_vmin, product_vmax),
                 notes=[
                     f"product={product_type}",
                     f"overlay={overlay_id}",
@@ -997,6 +1025,8 @@ class PythonProviderResultBuilder:
                         "time_list": registered_ts.get("time_list") or [],
                         "default_time": registered_ts.get("default_time"),
                         "native_step": registered_ts.get("native_step") or "8d",
+                        "vmin": product_vmin,
+                        "vmax": product_vmax,
                     },
                 },
                 updated_at=requested_at,
@@ -1024,6 +1054,8 @@ class PythonProviderResultBuilder:
                 auto_confirm=True,
                 # R1：与下方 render_hint.palette 对齐，注册侧不再落 wind-blue
                 palette=str(config.get("palette") or "cividis"),
+                vmin=config.get("vmin"),
+                vmax=config.get("vmax"),
             )
         except Exception:
             logger.exception(
@@ -1055,6 +1087,8 @@ class PythonProviderResultBuilder:
         label = str(config["label"])
         tags = as_dict(product.get("tags"))
         layer_tag = str(tags.get("layer") or label)
+        product_vmin = config.get("vmin")
+        product_vmax = config.get("vmax")
         render_hint = WeatherLayerRenderHint(
             layer_id=payload.layer_id or overlay_id,
             paint_mode="grid_fill",
@@ -1062,6 +1096,7 @@ class PythonProviderResultBuilder:
             primary_metric=variable,
             unit_label=layer_tag,
             opacity=0.8,
+            legend_ticks=_legend_ticks_from_range(product_vmin, product_vmax),
             notes=[f"product={product_type}", f"overlay={overlay_id}"],
         )
 
@@ -1080,6 +1115,8 @@ class PythonProviderResultBuilder:
                     "cog_bbox": cog_bbox,
                     "product_tag": layer_tag,
                     "source_path": str(source_path),
+                    "vmin": product_vmin,
+                    "vmax": product_vmax,
                 },
             },
             updated_at=requested_at,
@@ -1639,7 +1676,10 @@ class PythonProviderResultBuilder:
                     for sub in path.iterdir():
                         if not sub.is_dir() or not sub.name.startswith("run-"):
                             continue
-                        if any(sub.glob("????????_????????.mat")) and sub not in block_dirs:
+                        if (
+                            any(sub.glob("????????_????????.mat"))
+                            and sub not in block_dirs
+                        ):
                             block_dirs.append(sub)
                 for block_dir in block_dirs:
                     for variable, label, palette in (

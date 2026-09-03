@@ -7,7 +7,7 @@
 import type { Map as MaplibreMap } from 'maplibre-gl'
 import type { WindGeoJSON } from './types'
 import { MAP_EVENT_MOVE, MAP_EVENT_MOVEEND, MAP_EVENT_RESIZE, MIN_VISIBLE_ZOOM } from './types'
-import { computeCanvasLayout, type CanvasLayout } from './canvas-utils'
+import { computeCanvasLayout, isLngLatOnGlobeVisibleSide, type CanvasLayout } from './canvas-utils'
 import { unwrapLonIntoGridFrame, type LonFrame } from './weather-grid-lattice'
 import { buildWindGridFromGeoJSON, windToUV, type WindGrid } from './wind-grid'
 import { resolveVisibleViewportBBox } from './map-viewport-sync'
@@ -142,15 +142,23 @@ export function projectStreamlinePathStrokes(
   path: Array<{ lat: number; lon: number; speed: number }>,
   wraps: number[],
   project: (lngLat: [number, number]) => { x: number; y: number },
-  options: { dpr: number; canvasWidth: number; canvasHeight: number; margin: number },
+  options: {
+    dpr: number
+    canvasWidth: number
+    canvasHeight: number
+    margin: number
+    /** Globe 背面剔除；返回 false 的点不参与投影 */
+    isVisible?: (lon: number, lat: number) => boolean
+  },
 ): StreamlineProjectedStroke[] {
   if (path.length < 2) return []
-  const { dpr, canvasWidth: w, canvasHeight: h, margin } = options
+  const { dpr, canvasWidth: w, canvasHeight: h, margin, isVisible } = options
   const strokes: StreamlineProjectedStroke[] = []
   for (const wrap of wraps) {
     const pts: StreamlineProjectedPoint[] = []
     let anyOnScreen = false
     for (const p of path) {
+      if (isVisible && !isVisible(p.lon, p.lat)) continue
       const scr = project([p.lon + wrap, p.lat])
       const x = scr.x * dpr
       const y = scr.y * dpr
@@ -159,7 +167,7 @@ export function projectStreamlinePathStrokes(
       }
       pts.push({ x, y, speed: p.speed })
     }
-    if (!anyOnScreen) continue
+    if (!anyOnScreen || pts.length < 2) continue
     const cum: number[] = [0]
     for (let j = 1; j < pts.length; j++) {
       const dx = pts[j].x - pts[j - 1].x
@@ -478,12 +486,14 @@ export class WindStreamlineLayer {
     const h = this.canvas.height
     const margin = 40 * dpr
     const project = (lngLat: [number, number]) => this.map.project(lngLat)
+    const isVisible = (lon: number, lat: number) => isLngLatOnGlobeVisibleSide(this.map, lon, lat)
     this.projectedStrokesByPath = this.paths.map((path) =>
       projectStreamlinePathStrokes(path, wraps, project, {
         dpr,
         canvasWidth: w,
         canvasHeight: h,
         margin,
+        isVisible,
       }),
     )
     this.projectionDirty = false

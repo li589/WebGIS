@@ -65,6 +65,12 @@ export interface OnlineTemporalOrchestratorDeps {
    * upsertJobLayer + startPolling，终态后由既有 watcher 物化产物）。
    */
   registerExternalWorkflowRun?: (runId: string, catalogIdHint?: string) => Promise<void>
+  /** 已有覆盖 timeKey 的产物时，跳过提交直接附加 */
+  hasReusableProductsForTime?: (catalogId: string, timeKey: string) => Promise<boolean>
+  autoAttachProductsForNewLayer?: (
+    catalogId: string,
+    options?: { preferredTimeKey?: string },
+  ) => Promise<number>
   /** 当前选中的 catalogId */
   selectedCatalogId: ComputedRef<string | null> | Ref<string | null>
   /** 当前时间轴日期 */
@@ -284,6 +290,36 @@ export function useOnlineTemporalOrchestrator(deps: OnlineTemporalOrchestratorDe
     // 已成功 → 跳过（数据已就绪）
     if (existing && existing.status === 'succeeded') {
       return existing.runId
+    }
+
+    // 本地/历史产物已覆盖该 timeKey → 直接附加，不派发（尊重 native_step 覆盖语义）
+    if (deps.hasReusableProductsForTime && deps.autoAttachProductsForNewLayer) {
+      try {
+        const reusable = await deps.hasReusableProductsForTime(catalogId, timeKey)
+        if (reusable) {
+          const n = await deps.autoAttachProductsForNewLayer(catalogId, {
+            preferredTimeKey: timeKey,
+          })
+          if (n > 0) {
+            fetchEntries.value.set(key, {
+              key,
+              catalogId,
+              timeKey,
+              status: 'succeeded',
+              submittedAt: Date.now(),
+              settledAt: Date.now(),
+            })
+            fetchEntries.value = new Map(fetchEntries.value)
+            deps.logOperation?.(
+              'online-temporal',
+              `复用已有产物，跳过提交 ${catalogId} @ ${timeKey}`,
+            )
+            return undefined
+          }
+        }
+      } catch {
+        /* 复用失败则继续提交 */
+      }
     }
 
     // 并发限制：非预获取请求优先；预获取在达到上限时跳过

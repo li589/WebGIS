@@ -328,8 +328,7 @@ export async function syncWorkspaceOnBoot(): Promise<void> {
     const marker = readMarker()
     const currentScope = getApiStorageScope()
     const userSwitched = marker != null && marker.username !== username
-    const envSwitched =
-      marker != null && marker.apiScope !== '' && marker.apiScope !== currentScope
+    const envSwitched = marker != null && marker.apiScope !== '' && marker.apiScope !== currentScope
 
     const remote = await fetchWorkspace()
     remoteRevision = remote.revision
