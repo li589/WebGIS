@@ -152,6 +152,8 @@ def commit_science_raster_variable(
     conflict_policy: ConflictPolicy = "overwrite",
     temporal_meta: dict[str, Any] | None = None,
     palette: str | None = None,
+    vmin: float | None = None,
+    vmax: float | None = None,
     cell_registration: str | None = None,
 ) -> dict[str, Any]:
     tmp_dir = import_paths.IMPORTS_DIR / "_tmp"
@@ -200,6 +202,8 @@ def commit_science_raster_variable(
         replace_existing=replace_existing,
         extra_meta=extra_meta,
         palette=palette or "wind-blue",
+        vmin=vmin,
+        vmax=vmax,
     )
     layer_dir = import_paths.IMPORTS_DIR / result["layer_id"]
     with contextlib.suppress(OSError):

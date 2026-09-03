@@ -206,6 +206,8 @@ def upsert_block_dir_timeseries(
     layer_key: str = "",
     grid_preset: str = "ease2-global-9km",
     palette: str = "cividis",
+    vmin: float | None = None,
+    vmax: float | None = None,
     native_step: str = "8d",
     time_start: str | None = None,
     time_end: str | None = None,
@@ -255,6 +257,8 @@ def upsert_block_dir_timeseries(
             run_id=run_id,
             grid_preset=grid_preset,
             palette=palette,
+            vmin=vmin,
+            vmax=vmax,
             native_step=native_step,
             force=force,
         )
@@ -270,6 +274,8 @@ def _upsert_block_dir_timeseries_locked(
     run_id: str,
     grid_preset: str,
     palette: str,
+    vmin: float | None,
+    vmax: float | None,
     native_step: str,
     force: bool,
 ) -> dict[str, Any]:
@@ -364,6 +370,8 @@ def _upsert_block_dir_timeseries_locked(
             "layer_id": layer_id,
             "category": "time-series",
             "palette": palette,
+            "vmin": vmin,
+            "vmax": vmax,
             "time_list": time_list,
             "default_time": default_time,
             "current_time": default_time,
@@ -384,6 +392,8 @@ def _upsert_block_dir_timeseries_locked(
         "variable_id": variable_id,
         "label": label,
         "run_id": run_id,
+        "vmin": vmin,
+        "vmax": vmax,
     }
     save_json_atomic(dest_dir / "meta.json", meta_payload)
 
@@ -401,6 +411,8 @@ def _upsert_block_dir_timeseries_locked(
             time_list=list(time_list),
             default_time=default_time,
             palette=palette,
+            vmin=vmin,
+            vmax=vmax,
             opacity=0.8,
             crs="EPSG:4326",
             source_pattern=str(dest_dir / "source_{time}.tif"),

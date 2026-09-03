@@ -2,7 +2,7 @@
   "_meta": {
     "kind": "system",
     "engine": "python_provider",
-    "name": "风云 ω 动态反演（本地）",
+    "name": "风云 动态 散射约束产品反演（本地）",
     "description": "目的：omega_sf_fenkuai 完整流水线（FY3D/FY3B 亮温 + SMAP 辅助 → 8-day 分块 → SF 倒推 → 块级 h/alpha/OMEGA 优化 → DDCA SM/VOD 反演）。前置：SMAP 逐日 .mat + FY3D/FY3B 逐日 TB .mat + 辅助库已落盘。产出：SM/VOD/OMEGA 三图层 .mat。配置：tb_source=FY, fy_platform=3D, sf_mode=INVERTED_DAILY。",
     "author": "system",
     "readonly": true,
@@ -15,7 +15,7 @@
     "category": "inversion"
   },
   "workflow_id": "omega_sf_fenkuai_fy_single",
-  "name": "风云 ω 动态反演（本地）",
+  "name": "风云 动态 散射约束产品反演（本地）",
   "description": "FY3D/FY3B 亮温 + SMAP 辅助 → 8 天分块 SF 倒推 → 块级 h/alpha/OMEGA 优化 → DDCA SM/VOD 反演。语义：动态=8 天块内联合反演逐日 ω（块级 h/α 优化 + λ 平滑），产出逐日动态 SM/VOD/OMEGA。",
   "nodes": [
     {
@@ -168,7 +168,7 @@
       ],
       "properties": {
         "layer_id": "method-fy-omega-doy-dynamic",
-        "display_name": "风云 ω 动态反演（本地）"
+        "display_name": "风云 动态 散射约束产品反演（本地）"
       }
     }
   ],
@@ -260,7 +260,7 @@
     "has_time_range_node": true,
     "has_bbox_node": true,
     "has_output_node": true,
-    "group_title": "风云 ω 反演产物（本地）",
+    "group_title": "风云 散射约束产品产物（本地）",
     "output_labels": {
       "SM": "土壤水分",
       "VOD": "植被光学厚度",

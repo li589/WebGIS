@@ -23,8 +23,10 @@ services:
     container_name: cgda-redis
     restart: unless-stopped
     ports:
-      # 发布就绪修复（P0-3）：绑定回环，避免 0.0.0.0 对外暴露
-      - "127.0.0.1:6379:6379"
+      # 宿主机 16379：避开 Windows Hyper-V 动态保留段（本机常见 6326–6425 含 6379，
+      # 绑定会报 “forbidden by its access permissions”，与是否管理员无关）。
+      # 容器内仍为 6379；应用侧默认 BACKEND_REDIS_URL=redis://127.0.0.1:16379/0
+      - "127.0.0.1:16379:6379"
     volumes:
       - redis-data:/data
     command: redis-server --appendonly yes

@@ -1230,7 +1230,7 @@
     },
     {
       "catalogId": "method-smap-omega-doy-dynamic",
-      "name": "SMAP 动态 ω 反演",
+      "name": "SMAP 动态 散射约束产品",
       "category": "research-group",
       "subCategory": "模型输出",
       "metricLabel": "ω",
@@ -1244,7 +1244,7 @@
       "sources": [
         {
           "id": "method-smap-omega-doy-dynamic",
-          "name": "SMAP 动态 ω 反演",
+          "name": "SMAP 动态 散射约束产品",
           "description": "SMAP 亮温与多源辅助数据联合反演：8 天合成产出 SM / VOD / ω 三个图层。",
           "urlTemplate": "",
           "needsAuth": false,
@@ -1260,7 +1260,7 @@
       "dataOwner": "Lab",
       "temporalCoverage": "Depends on SMAP daily mats under DATA_ROOT",
       "workflowExtra": {
-        "group_title": "SMAP ω 反演产物（动态）",
+        "group_title": "SMAP 散射约束产品产物（动态）",
         "output_labels": {
           "SM": "土壤水分",
           "VOD": "植被光学厚度",
@@ -1270,7 +1270,7 @@
     },
     {
       "catalogId": "method-fy-omega-doy-dynamic",
-      "name": "风云卫星 动态 ω 反演",
+      "name": "风云卫星 动态 散射约束产品",
       "category": "research-group",
       "subCategory": "模型输出",
       "metricLabel": "ω",
@@ -1284,7 +1284,7 @@
       "sources": [
         {
           "id": "method-fy-omega-doy-dynamic",
-          "name": "风云卫星 动态 ω 反演",
+          "name": "风云卫星 动态 散射约束产品",
           "description": "风云卫星亮温与 SMAP 辅助数据联合反演：8 天合成产出 SM / VOD / ω 三个图层。",
           "urlTemplate": "",
           "needsAuth": false,
@@ -1300,7 +1300,7 @@
       "dataOwner": "Lab",
       "temporalCoverage": "Depends on FY/SMAP daily mats under DATA_ROOT",
       "workflowExtra": {
-        "group_title": "风云 ω 反演产物（动态）",
+        "group_title": "风云 散射约束产品产物（动态）",
         "output_labels": {
           "SM": "土壤水分",
           "VOD": "植被光学厚度",
@@ -1310,7 +1310,7 @@
     },
     {
       "catalogId": "method-smap-omega-doy-avg",
-      "name": "SMAP 平均 ω 反演",
+      "name": "SMAP 平均 散射约束产品",
       "category": "research-group",
       "subCategory": "模型输出",
       "metricLabel": "ω",
@@ -1324,8 +1324,8 @@
       "sources": [
         {
           "id": "method-smap-omega-doy-avg",
-          "name": "SMAP 平均 ω 反演",
-          "description": "omega_avg_daily / omega_block 经典 D1→D2 链路：SMAP 平均 ω 反演。",
+          "name": "SMAP 平均 散射约束产品",
+          "description": "omega_avg_daily / omega_block 经典 D1→D2 链路：SMAP 平均 散射约束产品。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1340,7 +1340,7 @@
       "dataOwner": "Lab",
       "temporalCoverage": "Depends on omega_block outputs",
       "workflowExtra": {
-        "group_title": "SMAP ω 反演产物（平均）",
+        "group_title": "SMAP 散射约束产品产物（平均）",
         "output_labels": {
           "SM": "土壤水分",
           "VOD": "植被光学厚度",
@@ -1350,7 +1350,7 @@
     },
     {
       "catalogId": "method-fy-omega-doy-avg",
-      "name": "风云卫星 平均 ω 反演",
+      "name": "风云卫星 平均 散射约束产品",
       "category": "research-group",
       "subCategory": "模型输出",
       "metricLabel": "ω",
@@ -1364,8 +1364,8 @@
       "sources": [
         {
           "id": "method-fy-omega-doy-avg",
-          "name": "风云卫星 平均 ω 反演",
-          "description": "omega_avg_daily FY ORIG_TS 链路：经典 D1→D2 平均 ω 反演。",
+          "name": "风云卫星 平均 散射约束产品",
+          "description": "omega_avg_daily FY ORIG_TS 链路：经典 D1→D2 平均 散射约束产品。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1380,7 +1380,7 @@
       "dataOwner": "Lab",
       "temporalCoverage": "Depends on omega_block outputs",
       "workflowExtra": {
-        "group_title": "风云 ω 反演产物（平均）",
+        "group_title": "风云 散射约束产品产物（平均）",
         "output_labels": {
           "SM": "土壤水分",
           "VOD": "植被光学厚度",
@@ -1774,7 +1774,7 @@
     },
     {
       "catalogId": "fy-omega-inversion",
-      "name": "风云 ω 反演",
+      "name": "风云 散射约束产品",
       "category": "research-group",
       "subCategory": "模型输出",
       "metricLabel": "ω",
@@ -1788,8 +1788,8 @@
       "sources": [
         {
           "id": "method-fy-omega-doy-dynamic",
-          "name": "风云卫星 动态 ω 反演",
-          "description": "风云 ω 反演合集：动态反演 / 平均反演等多数据源可选。",
+          "name": "风云卫星 动态 散射约束产品",
+          "description": "风云 散射约束产品合集：动态反演 / 平均反演等多数据源可选。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1798,8 +1798,8 @@
         },
         {
           "id": "method-fy-omega-doy-avg",
-          "name": "风云卫星 平均 ω 反演",
-          "description": "风云 ω 反演合集：动态反演 / 平均反演等多数据源可选。",
+          "name": "风云卫星 平均 散射约束产品",
+          "description": "风云 散射约束产品合集：动态反演 / 平均反演等多数据源可选。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1816,7 +1816,7 @@
     },
     {
       "catalogId": "smap-omega-inversion",
-      "name": "SMAP ω 反演",
+      "name": "SMAP 散射约束产品",
       "category": "research-group",
       "subCategory": "模型输出",
       "metricLabel": "ω",
@@ -1830,8 +1830,8 @@
       "sources": [
         {
           "id": "method-smap-omega-doy-dynamic",
-          "name": "SMAP 动态 ω 反演",
-          "description": "SMAP ω 反演合集：动态反演 / 平均反演等多数据源可选。",
+          "name": "SMAP 动态 散射约束产品",
+          "description": "SMAP 散射约束产品合集：动态反演 / 平均反演等多数据源可选。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,
@@ -1840,8 +1840,8 @@
         },
         {
           "id": "method-smap-omega-doy-avg",
-          "name": "SMAP 平均 ω 反演",
-          "description": "SMAP ω 反演合集：动态反演 / 平均反演等多数据源可选。",
+          "name": "SMAP 平均 散射约束产品",
+          "description": "SMAP 散射约束产品合集：动态反演 / 平均反演等多数据源可选。",
           "urlTemplate": "",
           "needsAuth": false,
           "needsBackendTransform": false,

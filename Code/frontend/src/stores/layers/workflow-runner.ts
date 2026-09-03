@@ -1358,7 +1358,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       /** 显式控制是否复用节点/块缓存（缺省不注入，算法默认 reuse_block_cache=True）。
        *  false=全量重算，规避复用旧输出目录带来的时间片污染。 */
       reuseBlockCache?: boolean
-      /** X2 工作流变体（ω 反演在线/本地）：按 descriptor.workflow_variants
+      /** X2 工作流变体（散射约束产品反演在线/本地）：按 descriptor.workflow_variants
        *  解析对应种子并注入 workflow_entry_name；缺省走 descriptor 默认变体。 */
       workflowVariant?: 'online' | 'local'
     } = {},

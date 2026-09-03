@@ -18825,6 +18825,18 @@
             "type": "boolean",
             "title": "Is Custom",
             "default": false
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden",
+            "default": false
+          },
+          "hidden_sub_categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hidden Sub Categories"
           }
         },
         "type": "object",
@@ -18833,7 +18845,7 @@
           "name"
         ],
         "title": "LayerCategoryDef",
-        "description": "X1: 图层分类定义 — 后端下发，消除前后端分类双写。\n\n图层平台 P1：分组支持运行时管理（种子 ⊕ 管理员个人工作区 / 主题预设），\n``position`` 为排序键，``is_custom`` 标记自建分组（可删除；种子组仅可改名/样式）。"
+        "description": "X1: 图层分类定义 — 后端下发，消除前后端分类双写。\n\n图层平台 P1：分组支持运行时管理（种子 ⊕ 管理员个人工作区 / 主题预设），\n``position`` 为排序键，``is_custom`` 标记自建分组（可删除；种子组仅可改名/样式）。\n``hidden`` / ``hidden_sub_categories``：主题下可隐藏顶层组与二级组类（默认可见）。"
       },
       "LayerCategoryResponse": {
         "properties": {
@@ -19262,6 +19274,18 @@
             },
             "type": "array",
             "title": "Sub Categories"
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden",
+            "default": false
+          },
+          "hidden_sub_categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hidden Sub Categories"
           }
         },
         "type": "object",
@@ -19365,11 +19389,36 @@
               }
             ],
             "title": "Sub Categories"
+          },
+          "hidden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden"
+          },
+          "hidden_sub_categories": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden Sub Categories"
           }
         },
         "type": "object",
         "title": "LayerGroupUpdateRequest",
-        "description": "修改分组（名称/样式/子分类）；种子组与自定义组均可改。"
+        "description": "修改分组（名称/样式/子分类/隐藏）；种子组与自定义组均可改。"
       },
       "LayerLifecycleResponse": {
         "properties": {

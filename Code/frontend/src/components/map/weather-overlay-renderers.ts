@@ -186,8 +186,11 @@ export function syncWeatherCogOverlay(map: MapInstance, overlayState: WeatherOve
   const ticks = (overlayState.renderHint.legend_ticks ?? []).filter(
     (tick: number | string): tick is number => typeof tick === 'number',
   )
-  const minValue = ticks[0] ?? 0
-  const maxValue = ticks[ticks.length - 1] ?? minValue + 1
+  // 有完整 ticks 时用端点；否则不传 min/max，让后端走 meta vmin/vmax 或 p2/p98。
+  // 旧逻辑 ticks 为空时强制 0–1，会把 SM/OMEGA 窄带压成近乎单色。
+  const hasTickRange = ticks.length >= 2
+  const minValue = hasTickRange ? ticks[0] : null
+  const maxValue = hasTickRange ? ticks[ticks.length - 1] : null
   const baseUrl = overlayState.cogPreviewUrl
   const pathOnly = baseUrl.split('?')[0] ?? baseUrl
   let previewUrl: string
@@ -200,7 +203,11 @@ export function syncWeatherCogOverlay(map: MapInstance, overlayState: WeatherOve
     })}`
   } else {
     const join = baseUrl.includes('?') ? '&' : '?'
-    previewUrl = `${baseUrl}${join}palette=${encodeURIComponent(overlayState.renderHint.palette)}&min_value=${minValue}&max_value=${maxValue}&width=768&height=768`
+    const rangeQs =
+      minValue != null && maxValue != null
+        ? `&min_value=${minValue}&max_value=${maxValue}`
+        : ''
+    previewUrl = `${baseUrl}${join}palette=${encodeURIComponent(overlayState.renderHint.palette)}${rangeQs}&width=768&height=768`
   }
   const coordinates = [
     [overlayState.cogBbox.west, overlayState.cogBbox.north],

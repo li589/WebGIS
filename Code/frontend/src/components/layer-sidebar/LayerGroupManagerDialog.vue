@@ -52,6 +52,8 @@ interface GroupRow {
   draftIcon: string
   draftAccent: string
   draftSubCategories: string
+  draftHidden: boolean
+  draftHiddenSubCategories: string[]
   membersOpen: boolean
   memberDraft: string[] | null
 }
@@ -136,6 +138,8 @@ async function loadGroups() {
       draftIcon: def.icon ?? '',
       draftAccent: def.accent_color ?? '',
       draftSubCategories: (def.sub_categories ?? []).join('、'),
+      draftHidden: Boolean(def.hidden),
+      draftHiddenSubCategories: [...(def.hidden_sub_categories ?? [])],
       membersOpen: false,
       memberDraft: null,
     }))
@@ -235,6 +239,7 @@ async function applyEdit(group: GroupRow) {
     .split(/[、,，]/)
     .map((s) => s.trim())
     .filter(Boolean)
+  const hiddenSubs = group.draftHiddenSubCategories.filter((s) => subCategories.includes(s))
   const tid = requireThemeId()
   await run(async () => {
     await updateLayerGroup(
@@ -244,6 +249,8 @@ async function applyEdit(group: GroupRow) {
         icon: group.draftIcon.trim() || null,
         accent_color: group.draftAccent.trim() || null,
         sub_categories: subCategories,
+        hidden: group.draftHidden,
+        hidden_sub_categories: hiddenSubs,
       },
       tid,
     )
@@ -258,6 +265,31 @@ function startEdit(group: GroupRow) {
   group.draftIcon = group.def.icon ?? ''
   group.draftAccent = group.def.accent_color ?? ''
   group.draftSubCategories = (group.def.sub_categories ?? []).join('、')
+  group.draftHidden = Boolean(group.def.hidden)
+  group.draftHiddenSubCategories = [...(group.def.hidden_sub_categories ?? [])]
+}
+
+function parsedDraftSubCategories(group: GroupRow): string[] {
+  return group.draftSubCategories
+    .split(/[、,，]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+function toggleDraftHiddenSub(group: GroupRow, sub: string) {
+  const set = new Set(group.draftHiddenSubCategories)
+  if (set.has(sub)) set.delete(sub)
+  else set.add(sub)
+  group.draftHiddenSubCategories = Array.from(set)
+}
+
+async function toggleGroupHidden(group: GroupRow) {
+  const tid = requireThemeId()
+  const next = !Boolean(group.def.hidden)
+  await run(async () => {
+    await updateLayerGroup(group.def.id, { hidden: next }, tid)
+    await loadGroups()
+  }, next ? '分组已在侧栏隐藏' : '分组已在侧栏显示')
 }
 
 function move(group: GroupRow, offset: -1 | 1) {
@@ -483,6 +515,7 @@ async function importFromPersonalWorkspace() {
                 <code class="lgm-group-id">{{ group.def.id }}</code>
                 <span v-if="!group.def.is_custom" class="lgm-tag lgm-tag--seed">种子</span>
                 <span v-else class="lgm-tag lgm-tag--custom">自建</span>
+                <span v-if="group.def.hidden" class="lgm-tag lgm-tag--hidden">侧栏隐藏</span>
               </div>
               <div class="lgm-group-actions">
                 <button
@@ -502,6 +535,15 @@ async function importFromPersonalWorkspace() {
                   @click="move(group, 1)"
                 >
                   ↓
+                </button>
+                <button
+                  type="button"
+                  class="lgm-btn"
+                  :disabled="saving"
+                  :title="group.def.hidden ? '在侧栏显示该分组' : '在侧栏隐藏该分组'"
+                  @click="toggleGroupHidden(group)"
+                >
+                  {{ group.def.hidden ? '显示' : '隐藏' }}
                 </button>
                 <button type="button" class="lgm-btn" :disabled="saving" @click="startEdit(group)">
                   编辑
@@ -547,6 +589,29 @@ async function importFromPersonalWorkspace() {
                   placeholder="模型输入、模型输出"
                 />
               </label>
+              <label class="lgm-field lgm-field--check">
+                <span>侧栏隐藏整组</span>
+                <input v-model="group.draftHidden" type="checkbox" :disabled="saving" />
+              </label>
+              <div
+                v-if="parsedDraftSubCategories(group).length"
+                class="lgm-hidden-subs"
+              >
+                <span class="lgm-hidden-subs-label">隐藏二级组类</span>
+                <label
+                  v-for="sub in parsedDraftSubCategories(group)"
+                  :key="sub"
+                  class="lgm-hidden-sub"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="group.draftHiddenSubCategories.includes(sub)"
+                    :disabled="saving"
+                    @change="toggleDraftHiddenSub(group, sub)"
+                  />
+                  <span>{{ sub }}</span>
+                </label>
+              </div>
               <div class="lgm-edit-actions">
                 <button type="submit" class="lgm-btn lgm-btn--primary" :disabled="saving">
                   保存
@@ -840,6 +905,38 @@ async function importFromPersonalWorkspace() {
 }
 .lgm-tag--custom {
   color: var(--accent);
+}
+.lgm-tag--hidden {
+  color: var(--danger, #f87171);
+}
+.lgm-field--check {
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+}
+.lgm-field--check > span {
+  white-space: nowrap;
+}
+.lgm-hidden-subs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.75rem;
+  align-items: center;
+  flex: 1 1 100%;
+  padding: 0.15rem 0;
+}
+.lgm-hidden-subs-label {
+  font-size: var(--font-size-caption);
+  color: var(--text-faint);
+}
+.lgm-hidden-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+  cursor: pointer;
 }
 .lgm-group-actions {
   display: flex;

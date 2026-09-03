@@ -187,7 +187,7 @@ Env\Python312\python.exe launch.py sync
 | 前端入口（Gateway） | http://localhost:5175 |
 | FastAPI | http://127.0.0.1:8000（文档 `/docs`） |
 | Open-Meteo API | http://127.0.0.1:8080 |
-| Redis | `127.0.0.1:6379` |
+| Redis | `127.0.0.1:16379` |
 | MinIO | API `:9100`，Console `:9101` |
 
 ---

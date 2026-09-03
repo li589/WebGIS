@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, UTC
 from typing import Any, Literal
 
@@ -75,6 +75,8 @@ class LayerGroupRecord:
     owner_user_id: int
     created_at: str
     updated_at: str
+    hidden: bool = False
+    hidden_sub_categories: list[str] = field(default_factory=list)
 
     def to_category_def_dict(self) -> dict[str, Any]:
         return {
@@ -86,6 +88,8 @@ class LayerGroupRecord:
             "sub_categories": list(self.sub_categories),
             "position": self.position,
             "is_custom": self.source == _GROUP_SOURCE_CUSTOM,
+            "hidden": bool(self.hidden),
+            "hidden_sub_categories": list(self.hidden_sub_categories),
         }
 
 
@@ -124,6 +128,8 @@ class LayerGroupRepository:
                     owner_user_id INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
+                    hidden INTEGER NOT NULL DEFAULT 0,
+                    hidden_sub_categories TEXT NOT NULL DEFAULT '[]',
                     UNIQUE(owner_user_id, group_id)
                 )
                 """
@@ -238,6 +244,20 @@ class LayerGroupRepository:
                 "ALTER TABLE layer_group_assignments__new RENAME TO layer_group_assignments"
             )
 
+        # Visibility flags (theme/group hide). Re-read cols after possible rebuild.
+        group_cols = {
+            str(r["name"]) for r in conn.execute("PRAGMA table_info(layer_groups)").fetchall()
+        }
+        if "hidden" not in group_cols:
+            conn.execute(
+                "ALTER TABLE layer_groups ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0"
+            )
+        if "hidden_sub_categories" not in group_cols:
+            conn.execute(
+                "ALTER TABLE layer_groups "
+                "ADD COLUMN hidden_sub_categories TEXT NOT NULL DEFAULT '[]'"
+            )
+
     def _ensure_seed_groups(self) -> None:
         """Insert missing seed groups (insert-only: admin edits are never clobbered)."""
         if self._seed_synced:
@@ -279,11 +299,21 @@ class LayerGroupRepository:
 
     @staticmethod
     def _row_to_record(row: Any) -> LayerGroupRecord:
+        keys = row.keys()
         try:
             sub_categories = json.loads(str(row["sub_categories"] or "[]"))
         except Exception:
             sub_categories = []
-        owner = row["owner_user_id"] if "owner_user_id" in row.keys() else OWNER_SHARED
+        try:
+            hidden_subs = (
+                json.loads(str(row["hidden_sub_categories"] or "[]"))
+                if "hidden_sub_categories" in keys
+                else []
+            )
+        except Exception:
+            hidden_subs = []
+        owner = row["owner_user_id"] if "owner_user_id" in keys else OWNER_SHARED
+        hidden = bool(int(row["hidden"] or 0)) if "hidden" in keys else False
         return LayerGroupRecord(
             id=int(row["id"]),
             group_id=str(row["group_id"]),
@@ -297,12 +327,15 @@ class LayerGroupRepository:
             owner_user_id=int(owner or OWNER_SHARED),
             created_at=str(row["created_at"]),
             updated_at=str(row["updated_at"]),
+            hidden=hidden,
+            hidden_sub_categories=[str(s) for s in hidden_subs if str(s).strip()],
         )
 
     def _select_sql(self) -> str:
         return (
             "SELECT id, group_id, name, icon, accent_color, chip_tone, "
-            "sub_categories, position, source, owner_user_id, created_at, updated_at "
+            "sub_categories, position, source, owner_user_id, created_at, updated_at, "
+            "hidden, hidden_sub_categories "
             "FROM layer_groups"
         )
 
@@ -501,6 +534,12 @@ class LayerGroupRepository:
                     owner_user_id=OWNER_SHARED,
                     created_at=now,
                     updated_at=now,
+                    hidden=bool(raw.get("hidden")),
+                    hidden_sub_categories=[
+                        str(s)
+                        for s in (raw.get("hidden_sub_categories") or [])
+                        if str(s).strip()
+                    ],
                 )
             )
         records.sort(key=lambda g: (g.position, g.group_id))
@@ -707,6 +746,8 @@ class LayerGroupRepository:
         accent_color: str | None = None,
         chip_tone: str | None = None,
         sub_categories: list[str] | None = None,
+        hidden: bool = False,
+        hidden_sub_categories: list[str] | None = None,
         updated_by_user_id: int | None = None,
     ) -> dict[str, Any]:
         gid = self._validate_group_id(group_id)
@@ -738,6 +779,8 @@ class LayerGroupRepository:
                 "sub_categories": list(sub_categories or []),
                 "position": max_pos + 10.0,
                 "is_custom": True,
+                "hidden": bool(hidden),
+                "hidden_sub_categories": list(hidden_sub_categories or []),
             }
         )
         payload = {**payload, "groups": groups}
@@ -756,6 +799,8 @@ class LayerGroupRepository:
         accent_color: str | None = None,
         chip_tone: str | None = None,
         sub_categories: list[str] | None = None,
+        hidden: bool | None = None,
+        hidden_sub_categories: list[str] | None = None,
         updated_by_user_id: int | None = None,
     ) -> dict[str, Any]:
         gid = str(group_id).strip().lower()
@@ -784,6 +829,10 @@ class LayerGroupRepository:
                 updated["chip_tone"] = chip_tone
             if sub_categories is not None:
                 updated["sub_categories"] = list(sub_categories)
+            if hidden is not None:
+                updated["hidden"] = bool(hidden)
+            if hidden_sub_categories is not None:
+                updated["hidden_sub_categories"] = list(hidden_sub_categories)
             groups[index] = updated
             break
         if not found:
@@ -975,6 +1024,8 @@ class LayerGroupRepository:
         accent_color: str | None = None,
         chip_tone: str | None = None,
         sub_categories: list[str] | None = None,
+        hidden: bool = False,
+        hidden_sub_categories: list[str] | None = None,
         owner_user_id: int = OWNER_SHARED,
     ) -> LayerGroupRecord:
         self._ensure_schema()
@@ -1006,8 +1057,8 @@ class LayerGroupRepository:
                 INSERT INTO layer_groups
                     (group_id, name, icon, accent_color, chip_tone,
                      sub_categories, position, source, owner_user_id,
-                     created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'custom', ?, ?, ?)
+                     created_at, updated_at, hidden, hidden_sub_categories)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'custom', ?, ?, ?, ?, ?)
                 """,
                 (
                     gid,
@@ -1020,6 +1071,8 @@ class LayerGroupRepository:
                     owner,
                     now,
                     now,
+                    1 if hidden else 0,
+                    json.dumps(hidden_sub_categories or [], ensure_ascii=False),
                 ),
             )
             conn.commit()
@@ -1036,6 +1089,8 @@ class LayerGroupRepository:
         accent_color: str | None = None,
         chip_tone: str | None = None,
         sub_categories: list[str] | None = None,
+        hidden: bool | None = None,
+        hidden_sub_categories: list[str] | None = None,
         owner_user_id: int = OWNER_SHARED,
     ) -> LayerGroupRecord:
         owner = int(owner_user_id or OWNER_SHARED)
@@ -1059,6 +1114,8 @@ class LayerGroupRepository:
                 accent_color=accent_color,
                 chip_tone=chip_tone,
                 sub_categories=sub_categories,
+                hidden=hidden,
+                hidden_sub_categories=hidden_sub_categories,
             )
 
         fields: list[str] = []
@@ -1080,6 +1137,12 @@ class LayerGroupRepository:
         if sub_categories is not None:
             fields.append("sub_categories=?")
             values.append(json.dumps(sub_categories, ensure_ascii=False))
+        if hidden is not None:
+            fields.append("hidden=?")
+            values.append(1 if hidden else 0)
+        if hidden_sub_categories is not None:
+            fields.append("hidden_sub_categories=?")
+            values.append(json.dumps(hidden_sub_categories, ensure_ascii=False))
         if fields:
             fields.append("updated_at=?")
             values.append(datetime.now(UTC).isoformat())
@@ -1104,6 +1167,8 @@ class LayerGroupRepository:
         accent_color: str | None = None,
         chip_tone: str | None = None,
         sub_categories: list[str] | None = None,
+        hidden: bool | None = None,
+        hidden_sub_categories: list[str] | None = None,
         position: float | None = None,
     ) -> LayerGroupRecord:
         now = datetime.now(UTC).isoformat()
@@ -1115,6 +1180,12 @@ class LayerGroupRepository:
         new_chip = chip_tone if chip_tone is not None else seed.chip_tone
         new_subs = (
             sub_categories if sub_categories is not None else list(seed.sub_categories)
+        )
+        new_hidden = bool(hidden) if hidden is not None else bool(seed.hidden)
+        new_hidden_subs = (
+            list(hidden_sub_categories)
+            if hidden_sub_categories is not None
+            else list(seed.hidden_sub_categories)
         )
         new_pos = float(position) if position is not None else seed.position
         with self._pool.connection() as conn:
@@ -1128,8 +1199,8 @@ class LayerGroupRepository:
                     INSERT INTO layer_groups
                         (group_id, name, icon, accent_color, chip_tone,
                          sub_categories, position, source, owner_user_id,
-                         created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'override', ?, ?, ?)
+                         created_at, updated_at, hidden, hidden_sub_categories)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'override', ?, ?, ?, ?, ?)
                     """,
                     (
                         seed.group_id,
@@ -1142,6 +1213,8 @@ class LayerGroupRepository:
                         int(owner_user_id),
                         now,
                         now,
+                        1 if new_hidden else 0,
+                        json.dumps(new_hidden_subs, ensure_ascii=False),
                     ),
                 )
             else:
@@ -1150,7 +1223,7 @@ class LayerGroupRepository:
                     UPDATE layer_groups SET
                         name=?, icon=?, accent_color=?, chip_tone=?,
                         sub_categories=?, position=?, source='override',
-                        updated_at=?
+                        updated_at=?, hidden=?, hidden_sub_categories=?
                     WHERE id=?
                     """,
                     (
@@ -1161,6 +1234,8 @@ class LayerGroupRepository:
                         json.dumps(new_subs, ensure_ascii=False),
                         new_pos,
                         now,
+                        1 if new_hidden else 0,
+                        json.dumps(new_hidden_subs, ensure_ascii=False),
                         int(existing["id"]),
                     ),
                 )

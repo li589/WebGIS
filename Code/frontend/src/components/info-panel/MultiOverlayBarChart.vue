@@ -99,6 +99,8 @@ const echartsOption = computed(() => {
           show: true,
           position: 'right' as const,
           fontSize: 10,
+          color: resolveCanvasColor('--text-primary', '#d8e6f5'),
+          fontFamily: 'Segoe UI, system-ui, sans-serif',
           formatter: (params: { dataIndex: number }) => {
             const item = items[params.dataIndex]
             return item?.valueText ?? ''

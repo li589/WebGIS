@@ -457,7 +457,7 @@ describe('workflow variant preference (X2 online/local 反演切换)', () => {
   const VARIANT_CATALOG_ID = 'method-fy-omega-doy-dynamic'
   const VARIANT_DESCRIPTOR = {
     layer_id: VARIANT_CATALOG_ID,
-    display_name: 'FY 动态 ω 反演',
+    display_name: 'FY 动态 散射约束产品',
     workflow_id: 'omega_sf_fenkuai_fy_online',
     workflow_variants: {
       online: { workflow_id: 'omega_sf_fenkuai_fy_online', label: '在线反演' },

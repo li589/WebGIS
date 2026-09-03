@@ -636,3 +636,55 @@ def test_theme_preset_surfaces_synced_groups(auth_client):
     assert any(c["id"] == "theme-lab" for c in cats)
     by_id = {i["layer_id"]: i for i in client.get("/layers").json()["items"]}
     assert by_id["wind-field"]["category"] == "theme-lab"
+
+
+def test_theme_group_hidden_filtered_for_consumers(auth_client):
+    """主题预设 hidden / hidden_sub_categories：消费者侧栏过滤；admin preview 全量。"""
+    client = auth_client
+    _login(client, "testadmin", "test-pass-123")
+
+    assert (
+        client.post(
+            "/layers/categories",
+            params={"theme_id": 1},
+            json={"id": "hidden-lab", "name": "隐藏实验组"},
+        ).status_code
+        == 200
+    )
+    patch_climate = client.patch(
+        "/layers/categories/climate",
+        params={"theme_id": 1},
+        json={"hidden": True},
+    )
+    assert patch_climate.status_code == 200, patch_climate.text
+    assert patch_climate.json()["hidden"] is True
+
+    patch_research = client.patch(
+        "/layers/categories/research-group",
+        params={"theme_id": 1},
+        json={"hidden_sub_categories": ["模型输入"]},
+    )
+    assert patch_research.status_code == 200, patch_research.text
+    assert "模型输入" in patch_research.json()["hidden_sub_categories"]
+
+    # Admin preview with theme_id keeps hidden groups for editing.
+    preview = {
+        c["id"]: c
+        for c in client.get("/layers/categories", params={"theme_id": 1}).json()["items"]
+    }
+    assert preview["climate"]["hidden"] is True
+    assert "hidden-lab" in preview
+    assert "模型输入" in preview["research-group"]["hidden_sub_categories"]
+
+    detail = client.get("/layers/categories/theme-preset/1").json()
+    assert any(g["id"] == "climate" and g.get("hidden") for g in detail["groups"])
+
+    user = _create_user(client, "hide-user")
+    assert user["theme_id"] == 1
+    client.post("/auth/logout")
+    _login(client, "hide-user", "user-pass-123")
+
+    consumer = {c["id"]: c for c in client.get("/layers/categories").json()["items"]}
+    assert "climate" not in consumer
+    assert "hidden-lab" in consumer
+    assert "模型输入" in consumer["research-group"]["hidden_sub_categories"]

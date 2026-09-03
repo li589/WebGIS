@@ -6873,6 +6873,7 @@ export interface components {
          *
          *     图层平台 P1：分组支持运行时管理（种子 ⊕ 管理员个人工作区 / 主题预设），
          *     ``position`` 为排序键，``is_custom`` 标记自建分组（可删除；种子组仅可改名/样式）。
+         *     ``hidden`` / ``hidden_sub_categories``：主题下可隐藏顶层组与二级组类（默认可见）。
          */
         LayerCategoryDef: {
             /** Id */
@@ -6894,6 +6895,13 @@ export interface components {
              * @default false
              */
             is_custom: boolean;
+            /**
+             * Hidden
+             * @default false
+             */
+            hidden: boolean;
+            /** Hidden Sub Categories */
+            hidden_sub_categories?: string[];
         };
         /** LayerCategoryResponse */
         LayerCategoryResponse: {
@@ -7032,6 +7040,13 @@ export interface components {
             chip_tone?: string | null;
             /** Sub Categories */
             sub_categories?: string[];
+            /**
+             * Hidden
+             * @default false
+             */
+            hidden: boolean;
+            /** Hidden Sub Categories */
+            hidden_sub_categories?: string[];
         };
         /**
          * LayerGroupMembersRequest
@@ -7051,7 +7066,7 @@ export interface components {
         };
         /**
          * LayerGroupUpdateRequest
-         * @description 修改分组（名称/样式/子分类）；种子组与自定义组均可改。
+         * @description 修改分组（名称/样式/子分类/隐藏）；种子组与自定义组均可改。
          */
         LayerGroupUpdateRequest: {
             /** Name */
@@ -7064,6 +7079,10 @@ export interface components {
             chip_tone?: string | null;
             /** Sub Categories */
             sub_categories?: string[] | null;
+            /** Hidden */
+            hidden?: boolean | null;
+            /** Hidden Sub Categories */
+            hidden_sub_categories?: string[] | null;
         };
         /**
          * LayerLifecycleResponse

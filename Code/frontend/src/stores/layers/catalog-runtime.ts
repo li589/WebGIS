@@ -105,6 +105,9 @@ export function createCatalogRuntimeSlice(deps: CatalogRuntimeSliceDeps): Catalo
         chipTone: item.chip_tone ?? '',
         position: item.position ?? undefined,
         isCustom: item.is_custom ?? undefined,
+        hidden: item.hidden ?? false,
+        subCategories: item.sub_categories ?? [],
+        hiddenSubCategories: item.hidden_sub_categories ?? [],
       })),
     )
     runtimeLayerCategories.value = mapped

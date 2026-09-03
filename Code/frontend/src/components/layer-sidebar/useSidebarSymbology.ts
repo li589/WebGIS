@@ -14,6 +14,8 @@ export type ActiveLayerDisplayLike = {
   isImported?: boolean
   isImportedRaster?: boolean
   paletteOverride?: string | null
+  vminOverride?: number | null
+  vmaxOverride?: number | null
   renderHint?: {
     palette: string
     unit_label?: string
@@ -53,13 +55,27 @@ export function useSidebarSymbology(
   }
 
   function getSymbologyVmin(layer: ActiveLayerDisplayLike): string {
-    const ticks = layer.renderHint?.legend_ticks
+    const { hint } = resolveEffectiveLayerSymbology({
+      paletteOverride: layer.paletteOverride,
+      vminOverride: layer.vminOverride,
+      vmaxOverride: layer.vmaxOverride,
+      renderHint: (layer.renderHint ?? null) as WeatherLayerRenderHint | null,
+      overlayMeta: overlaySymbologyStore.getMeta(layer.catalogId),
+    })
+    const ticks = hint?.legend_ticks
     if (ticks && ticks.length > 0) return String(ticks[0])
     return ''
   }
 
   function getSymbologyVmax(layer: ActiveLayerDisplayLike): string {
-    const ticks = layer.renderHint?.legend_ticks
+    const { hint } = resolveEffectiveLayerSymbology({
+      paletteOverride: layer.paletteOverride,
+      vminOverride: layer.vminOverride,
+      vmaxOverride: layer.vmaxOverride,
+      renderHint: (layer.renderHint ?? null) as WeatherLayerRenderHint | null,
+      overlayMeta: overlaySymbologyStore.getMeta(layer.catalogId),
+    })
+    const ticks = hint?.legend_ticks
     if (ticks && ticks.length > 1) return String(ticks[ticks.length - 1])
     if (ticks && ticks.length === 1) return String(ticks[0])
     return ''
@@ -70,6 +86,8 @@ export function useSidebarSymbology(
     // 与 InfoPanel 同源：resolveEffectiveLayerSymbology + buildWeatherLegendGradient
     const { hint } = resolveEffectiveLayerSymbology({
       paletteOverride: layer.paletteOverride,
+      vminOverride: layer.vminOverride,
+      vmaxOverride: layer.vmaxOverride,
       renderHint: (layer.renderHint ?? null) as WeatherLayerRenderHint | null,
       overlayMeta: overlaySymbologyStore.getMeta(layer.catalogId),
     })

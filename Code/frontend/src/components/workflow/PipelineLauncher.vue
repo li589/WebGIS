@@ -289,7 +289,7 @@ function handleConfirmLaunch() {
     dateError.value = '开始日期不能晚于结束日期'
     return
   }
-  // SMAP/FY ω 反演：气候态 ω 按 8 天变化，流水线最短窗 8 天（含首尾）
+  // SMAP/FY 散射约束产品反演：气候态 ω 按 8 天变化，流水线最短窗 8 天（含首尾）
   const wfId = selectedPipeline.value.workflowId
   if (/omega_(avg|sf|block)|omega-avg|omega-sf/i.test(wfId)) {
     const y0 = Number(sd.slice(0, 4))
@@ -301,7 +301,7 @@ function handleConfirmLaunch() {
     const spanDays =
       Math.round((Date.UTC(y1, m1 - 1, d1) - Date.UTC(y0, m0 - 1, d0)) / (24 * 3600 * 1000)) + 1
     if (spanDays < 8) {
-      dateError.value = `SMAP/FY ω 流水线至少需要 8 天（当前 ${spanDays} 天）；平均/动态 ω 按 8 天一变`
+      dateError.value = `SMAP/FY 散射约束产品流水线至少需要 8 天（当前 ${spanDays} 天）；平均/动态 ω 按 8 天一变`
       return
     }
   }

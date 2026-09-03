@@ -47,10 +47,14 @@ export function useSidebarSearch(
 
   /** 二级分类 pills：从当前可见图层的 subCategory 去重生成（保留「全部」） */
   const researchSubCategoryPills = computed(() => {
+    const research = layerCategories.value.find((c) => c.id === 'research-group')
+    const hiddenSubs = new Set(research?.hiddenSubCategories ?? [])
     const values = new Set<string>()
     for (const item of filteredLibrary.value) {
       if (item.category === 'research-group' && item.subCategory?.trim()) {
-        values.add(item.subCategory.trim())
+        const sub = item.subCategory.trim()
+        if (hiddenSubs.has(sub)) continue
+        values.add(sub)
       }
     }
     return ['all', ...Array.from(values).sort((a, b) => a.localeCompare(b, 'zh-CN'))]
@@ -64,22 +68,25 @@ export function useSidebarSearch(
 
   const filteredLibraryByCategory = computed(() => {
     const map = new Map(
-      layerCategories.value.map((c) => [
-        c.id,
-        { category: c, items: [] as RuntimeLayerLibraryItem[] },
-      ]),
+      layerCategories.value
+        .filter((c) => !c.hidden)
+        .map((c) => [c.id, { category: c, items: [] as RuntimeLayerLibraryItem[] }]),
     )
     for (const item of filteredLibrary.value) {
-      if (map.has(item.category)) {
-        if (
-          item.category === 'research-group' &&
-          selectedSubCategory.value !== 'all' &&
-          item.subCategory !== selectedSubCategory.value
-        ) {
-          continue
-        }
-        map.get(item.category)!.items.push(item)
+      const bucket = map.get(item.category)
+      if (!bucket) continue
+      const hiddenSubs = new Set(bucket.category.hiddenSubCategories ?? [])
+      if (item.subCategory?.trim() && hiddenSubs.has(item.subCategory.trim())) {
+        continue
       }
+      if (
+        item.category === 'research-group' &&
+        selectedSubCategory.value !== 'all' &&
+        item.subCategory !== selectedSubCategory.value
+      ) {
+        continue
+      }
+      bucket.items.push(item)
     }
     return Array.from(map.values()).filter((g) => {
       if (g.category.id === 'research-group') return true

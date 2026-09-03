@@ -47,6 +47,8 @@ def register_geotiff_as_imported(
     extra_meta: dict[str, Any] | None = None,
     replace_existing: bool = False,
     palette: str = "wind-blue",
+    vmin: float | None = None,
+    vmax: float | None = None,
 ) -> dict[str, Any]:
     ensure_imports_root()
     src_size = src_path.stat().st_size if src_path.exists() else 0
@@ -155,8 +157,8 @@ def register_geotiff_as_imported(
         "layer_id": layer_id,
         "category": "static",
         "palette": palette,
-        "vmin": None,
-        "vmax": None,
+        "vmin": vmin,
+        "vmax": vmax,
         "unit": "",
         "opacity": 0.7,
         "crs": source_crs,
@@ -220,6 +222,8 @@ def register_geotiff_as_imported(
             time_list=time_list,
             default_time=default_time,
             palette=palette,
+            vmin=vmin,
+            vmax=vmax,
             opacity=0.7,
             crs=source_crs,
             source_path=stored,

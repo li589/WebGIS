@@ -63,7 +63,7 @@ CGDA（综合地理数据分析系统）：**面向课题组与大气研究院�
 | `… launch.py start\|restart` | **默认**按组件矩阵自动 clean；`--no-clean-cache` 跳过；`--clean-cache` 强制全清本地编译缓存 |
 | `… launch.py sync [job]` | 数据面一次性同步（默认 `open-meteo-sync`） |
 
-服务地址：FastAPI `http://127.0.0.1:8000`（docs `/docs`）、前端入口 `http://localhost:5175`（默认 Nginx Gateway 静态；`--vite` 时同域 HMR）、Open-Meteo API `http://127.0.0.1:8080`、Redis `:6379`、MinIO `:9100`（Console `:9101`）。
+服务地址：FastAPI `http://127.0.0.1:8000`（docs `/docs`）、前端入口 `http://localhost:5175`（默认 Nginx Gateway 静态；`--vite` 时同域 HMR）、Open-Meteo API `http://127.0.0.1:8080`、Redis `:16379`（容器内仍 6379；避开 Windows Hyper-V 保留段）、MinIO `:9100`（Console `:9101`）。
 
 联调缓存分层与排障：`Docs/07-工程保障/联调缓存与生效边界.md`。
 

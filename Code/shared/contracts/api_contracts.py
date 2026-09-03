@@ -124,6 +124,7 @@ class LayerCategoryDef(BaseModel):
 
     图层平台 P1：分组支持运行时管理（种子 ⊕ 管理员个人工作区 / 主题预设），
     ``position`` 为排序键，``is_custom`` 标记自建分组（可删除；种子组仅可改名/样式）。
+    ``hidden`` / ``hidden_sub_categories``：主题下可隐藏顶层组与二级组类（默认可见）。
     """
     id: str
     name: str
@@ -133,6 +134,8 @@ class LayerCategoryDef(BaseModel):
     sub_categories: list[str] = Field(default_factory=list)
     position: float | None = None
     is_custom: bool = False
+    hidden: bool = False
+    hidden_sub_categories: list[str] = Field(default_factory=list)
 
 
 class LayerCategoryResponse(BaseModel):
@@ -148,15 +151,19 @@ class LayerGroupCreateRequest(BaseModel):
     accent_color: str | None = None
     chip_tone: str | None = None
     sub_categories: list[str] = Field(default_factory=list)
+    hidden: bool = False
+    hidden_sub_categories: list[str] = Field(default_factory=list)
 
 
 class LayerGroupUpdateRequest(BaseModel):
-    """修改分组（名称/样式/子分类）；种子组与自定义组均可改。"""
+    """修改分组（名称/样式/子分类/隐藏）；种子组与自定义组均可改。"""
     name: str | None = None
     icon: str | None = None
     accent_color: str | None = None
     chip_tone: str | None = None
     sub_categories: list[str] | None = None
+    hidden: bool | None = None
+    hidden_sub_categories: list[str] | None = None
 
 
 class LayerGroupReorderRequest(BaseModel):

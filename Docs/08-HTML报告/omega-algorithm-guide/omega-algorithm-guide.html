@@ -611,22 +611,22 @@ footer code{font-size:10.8px}
   </div>
   <div class="var">
     <h4>双温度 · 平均（本地）</h4>
-    <div class="id">omega_avg_daily_smap_dual · SMAP ω 平均反演·双温度（本地）</div>
+    <div class="id">omega_avg_daily_smap_dual · SMAP 平均 散射约束产品反演·双温度（本地）</div>
     <p>D2 + GLDAS 本地 .mat 三温度（temp_scheme=DUAL, dual_tg_mode=PAPER_CT）。</p>
   </div>
   <div class="var">
     <h4>双温度 · 平均（GLDAS 在线）</h4>
-    <div class="id">omega_avg_daily_gldas_online · SMAP ω 平均反演·双温度（GLDAS 在线）</div>
+    <div class="id">omega_avg_daily_gldas_online · SMAP 平均 散射约束产品反演·双温度（GLDAS 在线）</div>
     <p>同上，GLDAS 走在线获取。</p>
   </div>
   <div class="var">
     <h4>双温度 · 动态（SMAP）</h4>
-    <div class="id">omega_sf_fenkuai_smap_dual · SMAP ω 动态反演·双温度（本地）</div>
+    <div class="id">omega_sf_fenkuai_smap_dual · SMAP 动态 散射约束产品反演·双温度（本地）</div>
     <p>SF 流水线三处分支全部切 DUAL（§4.2）；种子含 GLDAS 数据源节点。</p>
   </div>
   <div class="var">
     <h4>双温度 · 动态（风云）</h4>
-    <div class="id">omega_sf_fenkuai_fy_dual · 风云 ω 动态反演·双温度（本地）</div>
+    <div class="id">omega_sf_fenkuai_fy_dual · 风云 动态 散射约束产品反演·双温度（本地）</div>
     <p>同上，FY 平台过境本地时独立配置。</p>
   </div>
 </div>
@@ -634,19 +634,19 @@ footer code{font-size:10.8px}
 <h3>6.4 全量 13 条对照表</h3>
 <table>
 <tr><th style="width:250px">workflow_id（不变契约）</th><th>显示名（_meta.name）</th><th style="width:70px">族</th><th style="width:90px">温度</th><th style="width:70px">获取</th></tr>
-<tr><td><code>omega_avg_daily_smap_single</code></td><td>SMAP ω 平均反演（本地）</td><td>D2</td><td>ORIG_TS</td><td>本地</td></tr>
-<tr><td><code>omega_avg_daily_smap_online</code></td><td>SMAP ω 平均反演（在线）</td><td>D2</td><td>ORIG_TS</td><td>在线</td></tr>
-<tr><td><code>omega_avg_daily_fy_single</code></td><td>风云 ω 平均反演（本地）</td><td>D2</td><td>ORIG_TS</td><td>本地</td></tr>
-<tr><td><code>omega_avg_daily_fy_online</code></td><td>风云 ω 平均反演（在线）</td><td>D2</td><td>ORIG_TS</td><td>在线</td></tr>
-<tr><td><code>omega_sf_fenkuai_smap_single</code></td><td>SMAP ω 动态反演（本地）</td><td>SF</td><td>ORIG_TS</td><td>本地</td></tr>
-<tr><td><code>omega_sf_fenkuai_smap_online</code></td><td>SMAP ω 动态反演（在线）</td><td>SF</td><td>ORIG_TS</td><td>在线</td></tr>
-<tr><td><code>omega_sf_fenkuai_fy_single</code></td><td>风云 ω 动态反演（本地）</td><td>SF</td><td>ORIG_TS</td><td>本地</td></tr>
-<tr><td><code>omega_sf_fenkuai_fy_online</code></td><td>风云 ω 动态反演（在线）</td><td>SF</td><td>ORIG_TS</td><td>在线</td></tr>
+<tr><td><code>omega_avg_daily_smap_single</code></td><td>SMAP 平均 散射约束产品反演（本地）</td><td>D2</td><td>ORIG_TS</td><td>本地</td></tr>
+<tr><td><code>omega_avg_daily_smap_online</code></td><td>SMAP 平均 散射约束产品反演（在线）</td><td>D2</td><td>ORIG_TS</td><td>在线</td></tr>
+<tr><td><code>omega_avg_daily_fy_single</code></td><td>风云 平均 散射约束产品反演（本地）</td><td>D2</td><td>ORIG_TS</td><td>本地</td></tr>
+<tr><td><code>omega_avg_daily_fy_online</code></td><td>风云 平均 散射约束产品反演（在线）</td><td>D2</td><td>ORIG_TS</td><td>在线</td></tr>
+<tr><td><code>omega_sf_fenkuai_smap_single</code></td><td>SMAP 动态 散射约束产品反演（本地）</td><td>SF</td><td>ORIG_TS</td><td>本地</td></tr>
+<tr><td><code>omega_sf_fenkuai_smap_online</code></td><td>SMAP 动态 散射约束产品反演（在线）</td><td>SF</td><td>ORIG_TS</td><td>在线</td></tr>
+<tr><td><code>omega_sf_fenkuai_fy_single</code></td><td>风云 动态 散射约束产品反演（本地）</td><td>SF</td><td>ORIG_TS</td><td>本地</td></tr>
+<tr><td><code>omega_sf_fenkuai_fy_online</code></td><td>风云 动态 散射约束产品反演（在线）</td><td>SF</td><td>ORIG_TS</td><td>在线</td></tr>
 <tr><td><code>omega_block_smap_single</code></td><td>ω 块反演·D1 预处理（SMAP 本地）</td><td>D1</td><td>ORIG_TS</td><td>本地</td></tr>
-<tr><td><code>omega_avg_daily_smap_dual</code></td><td>SMAP ω 平均反演·双温度（本地）</td><td>D2</td><td>DUAL</td><td>本地</td></tr>
-<tr><td><code>omega_avg_daily_gldas_online</code></td><td>SMAP ω 平均反演·双温度（GLDAS 在线）</td><td>D2</td><td>DUAL</td><td>在线</td></tr>
-<tr><td><code>omega_sf_fenkuai_smap_dual</code></td><td>SMAP ω 动态反演·双温度（本地）</td><td>SF</td><td>DUAL</td><td>本地</td></tr>
-<tr><td><code>omega_sf_fenkuai_fy_dual</code></td><td>风云 ω 动态反演·双温度（本地）</td><td>SF</td><td>DUAL</td><td>本地</td></tr>
+<tr><td><code>omega_avg_daily_smap_dual</code></td><td>SMAP 平均 散射约束产品反演·双温度（本地）</td><td>D2</td><td>DUAL</td><td>本地</td></tr>
+<tr><td><code>omega_avg_daily_gldas_online</code></td><td>SMAP 平均 散射约束产品反演·双温度（GLDAS 在线）</td><td>D2</td><td>DUAL</td><td>在线</td></tr>
+<tr><td><code>omega_sf_fenkuai_smap_dual</code></td><td>SMAP 动态 散射约束产品反演·双温度（本地）</td><td>SF</td><td>DUAL</td><td>本地</td></tr>
+<tr><td><code>omega_sf_fenkuai_fy_dual</code></td><td>风云 动态 散射约束产品反演·双温度（本地）</td><td>SF</td><td>DUAL</td><td>本地</td></tr>
 </table>
 <p class="note">图层目录映射：前端 catalog 的 <code>method-smap-omega-doy-avg</code> / <code>method-smap-omega-doy-dynamic</code> / <code>method-fy-omega-doy-avg</code> / <code>method-fy-omega-doy-dynamic</code> 四个方法条目聚合上述入口（<code>workflow_name</code> 字段按全库约定存 id）。种子 <code>workflow_id</code> 为稳定契约，不受显示名重命名影响。</p>
 </section>

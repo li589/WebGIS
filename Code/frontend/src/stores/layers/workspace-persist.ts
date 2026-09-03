@@ -485,7 +485,7 @@ export function loadWorkspaceSnapshot(): WorkspaceSnapshot | null {
  * 一次性迁移：删除英文占位 / 技术 id 游离层。
  * - 裸 workflow id：omega_sf_fenkuai_* / omega_avg_daily_*
  * - 稳定 overlay 派生：imported-omega_sf_fenkuai_*（附加产物未建组时的泄漏）
- * 产物恢复改经 restoreActiveWorkflows 映射到「风云/SMAP ω 反演」合并组。
+ * 产物恢复改经 restoreActiveWorkflows 映射到「风云/SMAP 散射约束产品」合并组。
  */
 const ENGLISH_PLACEHOLDER_CATALOG_PATTERN =
   /(?:^|[/\\-])(?:imported-)?omega[-_](?:sf[-_]fenkuai|avg[-_]daily)/i

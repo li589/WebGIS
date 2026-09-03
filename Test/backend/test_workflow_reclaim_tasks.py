@@ -12,13 +12,15 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.core.celery_app import celery_app, celery_available
-from app.core.config import settings
 from app.services.workflow_repository import SQLiteWorkflowRepository
 from app.tasks.workflow_reclaim_tasks import reclaim_stuck_workflow_runs
 from shared.contracts.api_contracts import (
     ClientIdentity,
+    EventChannel,
     ExecutionStatus,
+    LogLevel,
     WorkflowCommandType,
+    WorkflowEvent,
     WorkflowRunStatusResponse,
 )
 
@@ -97,3 +99,61 @@ def test_running_runs_not_stuck_classified(repo, monkeypatch):
 
     assert result["reclaimed"] == []
     assert repo.get_run("run-long").status == ExecutionStatus.running
+
+
+def test_reclaim_skips_queued_with_recent_events(repo):
+    """queued 但 events 仍在推进 → 不算派发丢失（与 docstring「无事件推进」一致）。"""
+    stuck_at = datetime.now(UTC) - timedelta(seconds=3600)
+    repo.save_run(_make_run("run-events-alive", ExecutionStatus.queued, stuck_at))
+    now = datetime.now(UTC)
+    repo.append_event(
+        WorkflowEvent(
+            event_id="evt-recent-1",
+            run_id="run-events-alive",
+            channel=EventChannel.system,
+            level=LogLevel.info,
+            message="chunk progress",
+            created_at=now - timedelta(seconds=30),
+            progress=28,
+            payload={},
+        )
+    )
+
+    result = reclaim_stuck_workflow_runs()
+
+    assert result["reclaimed"] == []
+    assert repo.get_run("run-events-alive").status == ExecutionStatus.queued
+
+
+def test_reclaim_does_not_overwrite_running_after_race(repo):
+    """TOCTOU：list 时仍是 queued，CAS 前已推进到 running → 不得强写 failed。
+
+    旧实现 save_run_cas(max_retries=3) 会把 expected 刷新为 running 后再覆盖，
+    误杀正在执行的 heavy 长任务（SMAP ω 反演）。
+    """
+    stuck_at = datetime.now(UTC) - timedelta(seconds=3600)
+    repo.save_run(_make_run("run-race-1", ExecutionStatus.queued, stuck_at))
+
+    real_list = repo.list_runs
+
+    def list_then_advance_to_running():
+        runs = real_list()
+        # 模拟 Beat reclaim 读完快照后、CAS 前，worker 已接手
+        for run in runs:
+            if run.run_id == "run-race-1":
+                advanced = run.model_copy(deep=True)
+                advanced.status = ExecutionStatus.running
+                advanced.updated_at = datetime.now(UTC)
+                advanced.message = "任务层开始调用业务服务。"
+                repo.save_run(advanced)
+        return runs
+
+    repo.list_runs = list_then_advance_to_running  # type: ignore[method-assign]
+
+    result = reclaim_stuck_workflow_runs()
+
+    assert result["reclaimed"] == []
+    live = repo.get_run("run-race-1")
+    assert live is not None
+    assert live.status == ExecutionStatus.running
+    assert "任务派发丢失" not in (live.message or "")

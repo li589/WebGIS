@@ -264,7 +264,9 @@ def list_layer_categories(
             )
         tid = _require_theme_id(theme_id)
         return get_layer_category_response(_edit_scope_for_theme(tid))
-    return get_layer_category_response(_scope_for_cred(cred))
+    # Consumer path: hide top-level groups marked hidden (admin edit uses theme_id).
+    response = get_layer_category_response(_scope_for_cred(cred))
+    return LayerCategoryResponse(items=[item for item in response.items if not item.hidden])
 
 
 # ── 图层分组管理（主题预设直写为主；省略 theme_id 时兼容个人工作区） ────────
@@ -297,6 +299,8 @@ def create_layer_group(
                 accent_color=payload.accent_color,
                 chip_tone=payload.chip_tone,
                 sub_categories=payload.sub_categories,
+                hidden=payload.hidden,
+                hidden_sub_categories=payload.hidden_sub_categories,
                 updated_by_user_id=_owner_user_id(admin),
             )
             return LayerCategoryDef.model_validate(raw)
@@ -307,6 +311,8 @@ def create_layer_group(
             accent_color=payload.accent_color,
             chip_tone=payload.chip_tone,
             sub_categories=payload.sub_categories,
+            hidden=payload.hidden,
+            hidden_sub_categories=payload.hidden_sub_categories,
             owner_user_id=_owner_user_id(admin),
         )
     except LayerGroupError as exc:
@@ -520,6 +526,8 @@ def update_layer_group(
                 accent_color=payload.accent_color,
                 chip_tone=payload.chip_tone,
                 sub_categories=payload.sub_categories,
+                hidden=payload.hidden,
+                hidden_sub_categories=payload.hidden_sub_categories,
                 updated_by_user_id=_owner_user_id(admin),
             )
             return LayerCategoryDef.model_validate(raw)
@@ -530,6 +538,8 @@ def update_layer_group(
             accent_color=payload.accent_color,
             chip_tone=payload.chip_tone,
             sub_categories=payload.sub_categories,
+            hidden=payload.hidden,
+            hidden_sub_categories=payload.hidden_sub_categories,
             owner_user_id=_owner_user_id(admin),
         )
     except LayerGroupError as exc:

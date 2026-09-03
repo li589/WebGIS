@@ -56,6 +56,7 @@ const {
   canEditPalette,
   rangeEditVmin,
   rangeEditVmax,
+  rangeInputStep,
   nodataModeValue,
   nodataColorValue,
   handleSelectPalette,
@@ -428,7 +429,7 @@ onBeforeUnmount(() => {
             v-model="rangeEditVmin"
             class="style-range-input"
             type="number"
-            step="any"
+            :step="rangeInputStep"
             title="值域下限"
           />
           <strong v-else>{{ styleRangeMeta.vmin }}</strong>
@@ -440,7 +441,7 @@ onBeforeUnmount(() => {
             v-model="rangeEditVmax"
             class="style-range-input"
             type="number"
-            step="any"
+            :step="rangeInputStep"
             title="值域上限"
           />
           <strong v-else>{{ styleRangeMeta.vmax }}</strong>

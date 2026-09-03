@@ -31,7 +31,7 @@ const FALLBACK_LAYERS: ResourceOption[] = [
   { id: 'humidity', label: '湿度' },
   { id: 'visibility', label: '能见度' },
   { id: 'smap-soil-moisture', label: 'SMAP 土壤水分' },
-  { id: 'smap-omega', label: 'SMAP 反演 ω' },
+  { id: 'smap-omega', label: 'SMAP 散射约束产品' },
   { id: 'modis-ndvi', label: 'MODIS NDVI' },
 ]
 

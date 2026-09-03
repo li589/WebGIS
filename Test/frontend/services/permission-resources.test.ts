@@ -36,7 +36,7 @@ describe('fetchPermissionResourceCatalog：后端目录汇聚', () => {
           return {
             items: [
               { layer_id: 'wind-field', display_name: '风场（10m）', category: 'weather' },
-              { layer_id: 'smap-omega', display_name: 'SMAP 反演 ω', category: 'research-group' },
+              { layer_id: 'smap-omega', display_name: 'SMAP 散射约束产品', category: 'research-group' },
             ],
           }
         case '/layers/categories':
@@ -66,7 +66,7 @@ describe('fetchPermissionResourceCatalog：后端目录汇聚', () => {
 
     expect(catalog.layers).toEqual([
       { id: 'wind-field', label: '风场（10m）', hint: 'weather' },
-      { id: 'smap-omega', label: 'SMAP 反演 ω', hint: 'research-group' },
+      { id: 'smap-omega', label: 'SMAP 散射约束产品', hint: 'research-group' },
     ])
     expect(catalog.layerGroups).toEqual([
       { id: 'weather', label: '在线天气', hint: '种子分组' },

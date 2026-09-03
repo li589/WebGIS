@@ -77,7 +77,7 @@ def start_docker_infra(*, start_open_meteo: bool = True) -> bool:
         return False
 
     log.ok("Docker", "容器已启动")
-    log.info("Docker", "  Redis:  redis://127.0.0.1:6379/0")
+    log.info("Docker", "  Redis:  redis://127.0.0.1:16379/0")
     log.info(
         "Docker", "  MinIO:  API http://127.0.0.1:9100 | Console http://127.0.0.1:9101"
     )

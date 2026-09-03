@@ -15,6 +15,8 @@ const SAMPLED_TICK_COUNT = 5
 
 export interface EffectiveLayerSymbologyInput {
   paletteOverride?: string | null
+  vminOverride?: number | null
+  vmaxOverride?: number | null
   renderHint?: WeatherLayerRenderHint | null
   overlayMeta?: OverlaySymbologyMeta | null
   /** 当前视口合并数据；仅在配置 ticks 不足时用于采样量程 */
@@ -85,6 +87,8 @@ export function resolveEffectiveLayerSymbology(
 ): EffectiveLayerSymbology {
   const base = resolveStyleRenderHint({
     paletteOverride: input.paletteOverride,
+    vminOverride: input.vminOverride,
+    vmaxOverride: input.vmaxOverride,
     renderHint: input.renderHint,
     overlayMeta: input.overlayMeta,
   })

@@ -92,25 +92,63 @@ export function buildLegendHintFromOverlayMeta(
 /** 合并 override 后的样式 hint（图例 / 配色 UI） */
 export function resolveStyleRenderHint(options: {
   paletteOverride?: string | null
+  /** 用户覆盖值域：写入 legend_ticks 两端，驱动图例与地图同源 */
+  vminOverride?: number | null
+  vmaxOverride?: number | null
   renderHint?: WeatherLayerRenderHint | null
   overlayMeta?: OverlaySymbologyMeta | null
 }): WeatherLayerRenderHint | null {
-  const { renderHint, overlayMeta, paletteOverride } = options
+  const { renderHint, overlayMeta, paletteOverride, vminOverride, vmaxOverride } = options
+  let hint: WeatherLayerRenderHint | null = null
   if (renderHint) {
     const palette = resolveEffectivePalette({
       paletteOverride,
       renderHintPalette: renderHint.palette,
     })
-    return palette && palette !== renderHint.palette ? { ...renderHint, palette } : renderHint
+    hint = palette && palette !== renderHint.palette ? { ...renderHint, palette } : renderHint
+  } else if (overlayMeta?.palette) {
+    const base = buildLegendHintFromOverlayMeta(overlayMeta)
+    if (!base) return null
+    const palette = resolveEffectivePalette({
+      paletteOverride,
+      overlayMetaPalette: overlayMeta.palette,
+    })
+    hint = palette && palette !== base.palette ? { ...base, palette } : base
   }
-  if (!overlayMeta?.palette) return null
-  const base = buildLegendHintFromOverlayMeta(overlayMeta)
-  if (!base) return null
-  const palette = resolveEffectivePalette({
-    paletteOverride,
-    overlayMetaPalette: overlayMeta.palette,
-  })
-  return palette && palette !== base.palette ? { ...base, palette } : base
+  if (!hint) return null
+
+  const ticks = (hint.legend_ticks ?? []).filter(
+    (t): t is number => typeof t === 'number' && Number.isFinite(t),
+  )
+  const baseMin =
+    typeof overlayMeta?.vmin === 'number'
+      ? overlayMeta.vmin
+      : ticks.length
+        ? ticks[0]
+        : 0
+  const baseMax =
+    typeof overlayMeta?.vmax === 'number'
+      ? overlayMeta.vmax
+      : ticks.length > 1
+        ? ticks[ticks.length - 1]
+        : ticks.length === 1
+          ? ticks[0]
+          : 1
+  const lo = typeof vminOverride === 'number' && Number.isFinite(vminOverride) ? vminOverride : baseMin
+  const hi = typeof vmaxOverride === 'number' && Number.isFinite(vmaxOverride) ? vmaxOverride : baseMax
+  if (
+    (typeof vminOverride === 'number' && Number.isFinite(vminOverride)) ||
+    (typeof vmaxOverride === 'number' && Number.isFinite(vmaxOverride))
+  ) {
+    const a = Math.min(lo, hi)
+    const b = Math.max(lo, hi)
+    const mid = (a + b) / 2
+    const span = b - a
+    const round = (v: number) =>
+      span >= 10 ? Math.round(v * 10) / 10 : Math.round(v * 100) / 100
+    return { ...hint, legend_ticks: [round(a), round(mid), round(b)] }
+  }
+  return hint
 }
 
 export function hasRenderableSymbology(options: {

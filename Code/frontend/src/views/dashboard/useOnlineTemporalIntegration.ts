@@ -42,6 +42,10 @@ export function useOnlineTemporalIntegration(deps: OnlineTemporalIntegrationDeps
     syncLayerAssetOnline: (catalogId, body) => syncLayerAssetOnline(catalogId, body),
     registerExternalWorkflowRun: (runId, catalogIdHint) =>
       deps.workflowRun.registerExternalWorkflowRun(runId, catalogIdHint),
+    hasReusableProductsForTime: (catalogId, timeKey) =>
+      deps.workflowRun.hasReusableProductsForTime(catalogId, timeKey),
+    autoAttachProductsForNewLayer: (catalogId, options) =>
+      deps.workflowRun.autoAttachProductsForNewLayer(catalogId, options),
     selectedCatalogId: deps.selectedCatalogId,
     currentDate: deps.currentDate,
     currentHour: deps.currentHour,

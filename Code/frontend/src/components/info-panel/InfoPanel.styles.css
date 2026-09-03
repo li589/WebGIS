@@ -1228,6 +1228,16 @@
   padding: 0.15rem 0.3rem;
   font-variant-numeric: tabular-nums;
 }
+/* 窄带（SM 0–1）依赖细步进手输；隐藏原生 spinner，避免默认 ±1 */
+.style-range-input::-webkit-outer-spin-button,
+.style-range-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.style-range-input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
 .style-nodata-row {
   display: flex;
   flex-wrap: wrap;
