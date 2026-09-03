@@ -100,15 +100,25 @@ export function runWorkflowTemplate(
   )
 }
 
-export function fetchLayerCatalog() {
-  return requestJson<LayerCatalogResponse>('/layers', {
+export function fetchLayerCatalog(options?: { themeId?: number | null }) {
+  const themeId = options?.themeId
+  const q =
+    themeId != null && Number.isFinite(themeId) && themeId > 0
+      ? `?theme_id=${encodeURIComponent(String(themeId))}`
+      : ''
+  return requestJson<LayerCatalogResponse>(`/layers${q}`, {
     timeoutMs: 120000,
   })
 }
 
 /** X1: 从后端获取图层分类定义（含 UI 样式 accentColor / chipTone）。 */
-export function fetchLayerCategories() {
-  return requestJson<LayerCategoryResponse>('/layers/categories', {
+export function fetchLayerCategories(options?: { themeId?: number | null }) {
+  const themeId = options?.themeId
+  const q =
+    themeId != null && Number.isFinite(themeId) && themeId > 0
+      ? `?theme_id=${encodeURIComponent(String(themeId))}`
+      : ''
+  return requestJson<LayerCategoryResponse>(`/layers/categories${q}`, {
     timeoutMs: 30000,
   })
 }

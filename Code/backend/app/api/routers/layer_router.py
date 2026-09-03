@@ -44,6 +44,10 @@ from shared.contracts.api_contracts import (
     LayerLifecycleRunSummary,
     LayerOnlineSyncRequest,
     LayerOnlineSyncResponse,
+    LayerThemeDisplayNamesRequest,
+    ThemeLayerGroupPresetDetail,
+    ThemeLayerGroupPresetMeta,
+    ThemeLayerGroupPresetPutRequest,
     WorkflowTemplateListResponse,
     WorkflowTemplateRunRequest,
     WorkflowTemplateRunResponse,
@@ -115,9 +119,50 @@ def _owner_user_id(admin) -> int:
     return int(uid)
 
 
+def _require_theme_id(theme_id: int) -> int:
+    from app.services.theme_repository import get_theme_repository
+
+    tid = int(theme_id)
+    if get_theme_repository().get_by_id(tid) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="主题不存在")
+    return tid
+
+
+def _edit_scope_for_theme(theme_id: int):
+    """Admin edit/preview scope: theme preset if present, else shared seed baseline."""
+    from app.services.layer_group_repository import CatalogGroupScope
+
+    repo = get_layer_group_repository()
+    if repo.get_theme_preset(int(theme_id)) is not None:
+        return CatalogGroupScope.theme(int(theme_id))
+    return CatalogGroupScope.shared()
+
+
+def _category_response_after_write(admin, theme_id: int | None) -> LayerCategoryResponse:
+    if theme_id is not None:
+        return get_layer_category_response(_edit_scope_for_theme(int(theme_id)))
+    return get_layer_category_response(_scope_for_cred(admin))
+
+
 @router.get("/layers", tags=["catalog"], response_model=LayerCatalogResponse)
-def list_layers(cred=Depends(get_request_user)) -> LayerCatalogResponse:
-    catalog = get_layer_catalog(_scope_for_cred(cred))
+def list_layers(
+    cred=Depends(get_request_user),
+    theme_id: int | None = Query(
+        default=None,
+        description="Admin edit preview: catalog with that theme's group/display overlays.",
+    ),
+) -> LayerCatalogResponse:
+    if theme_id is not None:
+        if cred is None or getattr(cred, "role", None) != "admin":
+            raise ApiError(
+                AUTH_ERROR,
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin required to preview theme catalog.",
+            )
+        tid = _require_theme_id(theme_id)
+        catalog = get_layer_catalog(_edit_scope_for_theme(tid))
+    else:
+        catalog = get_layer_catalog(_scope_for_cred(cred))
     visible_items = _catalog_items_for_environment(catalog.items)
 
     # Phase B: 资源访问控制——鉴权开启时匿名 fail-closed；非 admin 按 ACL 过滤
@@ -194,15 +239,15 @@ def list_layers(cred=Depends(get_request_user)) -> LayerCatalogResponse:
 )
 def list_layer_categories(
     cred=Depends(get_request_user),
+    theme_id: int | None = Query(
+        default=None,
+        description="Admin edit preview: load that theme's preset (or seed baseline).",
+    ),
 ) -> LayerCategoryResponse:
-    """X1: 后端下发图层分类定义（id / name / icon / accent_color / chip_tone）。
+    """下发图层分类定义。
 
-    前端运行时消费此端点获取分类样式，消除前后端分类定义双写。
-    前端 ``LAYER_CATEGORIES`` 静态表仅在 API 不可用时作离线兜底。
-    管理员看到个人工作区；绑定主题且主题有分组预设的用户看到主题快照；
-    其余为共享种子（+ 遗留共享自建组）。
-
-    鉴权开启时与 ``GET /layers`` 一致：匿名 fail-closed（401）。
+    默认：按调用者绑定主题的预设（无则种子基线）。
+    管理员传 ``theme_id`` 时预览该主题预设（无预设则种子），不落库。
     """
     if cred is None and settings.user_auth_enabled:
         raise ApiError(
@@ -210,15 +255,21 @@ def list_layer_categories(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required.",
         )
+    if theme_id is not None:
+        if cred is None or getattr(cred, "role", None) != "admin":
+            raise ApiError(
+                AUTH_ERROR,
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin required to preview theme categories.",
+            )
+        tid = _require_theme_id(theme_id)
+        return get_layer_category_response(_edit_scope_for_theme(tid))
     return get_layer_category_response(_scope_for_cred(cred))
 
 
-# ── 图层平台 P1：分组运行时管理（管理员个人工作区） ──────────────────────────
+# ── 图层分组管理（主题预设直写为主；省略 theme_id 时兼容个人工作区） ────────
 #
-# 种子分组来自 catalog_seeds/layer_categories.json（可改名/样式，不可删除）；
-# 自建分组完全 CRUD，按管理员 user_id 隔离。图层→分组归属走
-# layer_group_assignments（按 owner 隔离）覆盖，种子 JSON 永不被运行时写操作
-# 修改（codegen / drift check 口径不变）。可选同步到主题预设。
+# 种子 JSON（catalog_seeds/layer_categories.json）永不被运行时写操作修改。
 
 
 def _group_error(exc: LayerGroupError) -> HTTPException:
@@ -227,11 +278,29 @@ def _group_error(exc: LayerGroupError) -> HTTPException:
 
 @router.post("/layers/categories", tags=["catalog"], response_model=LayerCategoryDef)
 def create_layer_group(
-    payload: LayerGroupCreateRequest, admin=Depends(require_admin)
+    payload: LayerGroupCreateRequest,
+    admin=Depends(require_admin),
+    theme_id: int | None = Query(
+        default=None, description="Write into this theme preset when set."
+    ),
 ) -> LayerCategoryDef:
-    """新建自定义分组（追加到当前管理员个人工作区末尾）。"""
+    """新建自定义分组（默认写入主题预设；省略 theme_id 则写个人工作区）。"""
+    repo = get_layer_group_repository()
     try:
-        record = get_layer_group_repository().create_group(
+        if theme_id is not None:
+            tid = _require_theme_id(theme_id)
+            raw = repo.create_group_in_theme(
+                tid,
+                payload.id,
+                payload.name,
+                icon=payload.icon,
+                accent_color=payload.accent_color,
+                chip_tone=payload.chip_tone,
+                sub_categories=payload.sub_categories,
+                updated_by_user_id=_owner_user_id(admin),
+            )
+            return LayerCategoryDef.model_validate(raw)
+        record = repo.create_group(
             payload.id,
             payload.name,
             icon=payload.icon,
@@ -249,60 +318,170 @@ def create_layer_group(
     "/layers/categories/order", tags=["catalog"], response_model=LayerCategoryResponse
 )
 def reorder_layer_groups(
-    payload: LayerGroupReorderRequest, admin=Depends(require_admin)
+    payload: LayerGroupReorderRequest,
+    admin=Depends(require_admin),
+    theme_id: int | None = Query(default=None),
 ) -> LayerCategoryResponse:
-    """按给定 id 顺序重排当前管理员工作区中的分组。"""
-    owner = _owner_user_id(admin)
+    """按给定 id 顺序重排分组。"""
+    repo = get_layer_group_repository()
     try:
-        get_layer_group_repository().reorder_groups(
-            payload.order, owner_user_id=owner
-        )
+        if theme_id is not None:
+            tid = _require_theme_id(theme_id)
+            repo.reorder_groups_in_theme(
+                tid, payload.order, updated_by_user_id=_owner_user_id(admin)
+            )
+        else:
+            repo.reorder_groups(
+                payload.order, owner_user_id=_owner_user_id(admin)
+            )
     except LayerGroupError as exc:
         raise _group_error(exc) from exc
-    return get_layer_category_response(_scope_for_cred(admin))
+    return _category_response_after_write(admin, theme_id)
 
 
 @router.post(
     "/layers/categories/sync-to-theme/{theme_id}",
     tags=["catalog"],
-    response_model=dict,
+    response_model=ThemeLayerGroupPresetMeta,
 )
 def sync_layer_groups_to_theme(
     theme_id: int, admin=Depends(require_admin)
-) -> dict[str, Any]:
-    """将当前管理员的图层分组工作区快照同步到指定主题预设（可选）。"""
-    from app.services.theme_repository import get_theme_repository
-
-    if get_theme_repository().get_by_id(int(theme_id)) is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="主题不存在")
+) -> ThemeLayerGroupPresetMeta:
+    """将当前管理员个人工作区快照导入到指定主题预设（一次性迁移）。"""
+    tid = _require_theme_id(theme_id)
     try:
-        return get_layer_group_repository().sync_workspace_to_theme(
-            _owner_user_id(admin), int(theme_id)
+        meta = get_layer_group_repository().sync_workspace_to_theme(
+            _owner_user_id(admin), tid
         )
     except LayerGroupError as exc:
         raise _group_error(exc) from exc
+    return ThemeLayerGroupPresetMeta.model_validate(meta)
+
+
+def _seed_display_name_map() -> dict[str, str]:
+    from app.services.layer_catalog import _load_seed_descriptors
+
+    return {
+        d.layer_id: (d.display_name or d.layer_id)
+        for d in _load_seed_descriptors()
+    }
 
 
 @router.get(
     "/layers/categories/theme-preset/{theme_id}",
     tags=["catalog"],
-    response_model=dict,
+    response_model=ThemeLayerGroupPresetDetail,
 )
 def get_theme_layer_group_preset(
     theme_id: int, _admin=Depends(require_admin)
-) -> dict[str, Any]:
-    """读取主题的图层分组预设元数据（无预设时 has_preset=false）。"""
-    from app.services.theme_repository import get_theme_repository
-
-    if get_theme_repository().get_by_id(int(theme_id)) is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="主题不存在")
-    meta = get_layer_group_repository().theme_preset_meta(int(theme_id))
-    return meta or {
-        "theme_id": int(theme_id),
-        "has_preset": False,
+) -> ThemeLayerGroupPresetDetail:
+    """读取主题图层分组预设详情（无预设时返回种子基线，不落库）。"""
+    tid = _require_theme_id(theme_id)
+    repo = get_layer_group_repository()
+    meta = repo.theme_preset_meta(tid)
+    payload = repo.get_theme_preset(tid)
+    seed_names = _seed_display_name_map()
+    if payload is None:
+        payload = repo.materialize_seed_preset()
+        groups_raw = payload.get("groups") or []
+        return ThemeLayerGroupPresetDetail(
+            theme_id=tid,
+            has_preset=False,
+            updated_at=None,
+            updated_by_user_id=None,
+            display_name_count=0,
+            groups=[
+                LayerCategoryDef.model_validate(g)
+                for g in groups_raw
+                if isinstance(g, dict)
+            ],
+            assignments={},
+            display_names={},
+            seed_display_names=seed_names,
+        )
+    groups: list[LayerCategoryDef] = []
+    for raw in payload.get("groups") or []:
+        if not isinstance(raw, dict):
+            continue
+        try:
+            groups.append(LayerCategoryDef.model_validate(raw))
+        except Exception:
+            continue
+    display_names = {
+        str(k): str(v)
+        for k, v in (payload.get("display_names") or {}).items()
+        if str(k).strip() and str(v).strip()
+    }
+    assignments = {
+        str(k): str(v)
+        for k, v in (payload.get("assignments") or {}).items()
+        if str(k).strip() and str(v).strip()
+    }
+    base = meta or {
+        "theme_id": tid,
+        "has_preset": True,
         "updated_at": None,
         "updated_by_user_id": None,
+        "display_name_count": len(display_names),
     }
+    return ThemeLayerGroupPresetDetail.model_validate(
+        {
+            **base,
+            "groups": groups,
+            "assignments": assignments,
+            "display_names": display_names,
+            "seed_display_names": seed_names,
+        }
+    )
+
+
+@router.put(
+    "/layers/categories/theme-preset/{theme_id}",
+    tags=["catalog"],
+    response_model=ThemeLayerGroupPresetMeta,
+)
+def put_theme_layer_group_preset(
+    theme_id: int,
+    payload: ThemeLayerGroupPresetPutRequest,
+    admin=Depends(require_admin),
+) -> ThemeLayerGroupPresetMeta:
+    """全量替换主题分组预设。"""
+    tid = _require_theme_id(theme_id)
+    body = {
+        "groups": [g.model_dump(mode="json") for g in payload.groups],
+        "assignments": dict(payload.assignments),
+        "display_names": dict(payload.display_names),
+    }
+    try:
+        meta = get_layer_group_repository().save_theme_preset(
+            tid, body, updated_by_user_id=_owner_user_id(admin)
+        )
+    except LayerGroupError as exc:
+        raise _group_error(exc) from exc
+    return ThemeLayerGroupPresetMeta.model_validate(meta)
+
+
+@router.put(
+    "/layers/categories/theme-preset/{theme_id}/display-names",
+    tags=["catalog"],
+    response_model=ThemeLayerGroupPresetMeta,
+)
+def put_theme_layer_display_names(
+    theme_id: int,
+    payload: LayerThemeDisplayNamesRequest,
+    admin=Depends(require_admin),
+) -> ThemeLayerGroupPresetMeta:
+    """合并写入主题图层显示名覆盖（空字符串清除）。"""
+    tid = _require_theme_id(theme_id)
+    try:
+        meta = get_layer_group_repository().merge_display_names_in_theme(
+            tid,
+            dict(payload.display_names),
+            updated_by_user_id=_owner_user_id(admin),
+        )
+    except LayerGroupError as exc:
+        raise _group_error(exc) from exc
+    return ThemeLayerGroupPresetMeta.model_validate(meta)
 
 
 @router.delete(
@@ -314,23 +493,37 @@ def delete_theme_layer_group_preset(
     theme_id: int, _admin=Depends(require_admin)
 ) -> dict[str, Any]:
     """清除主题上的图层分组预设（绑定用户回落到共享种子分组）。"""
-    from app.services.theme_repository import get_theme_repository
-
-    if get_theme_repository().get_by_id(int(theme_id)) is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="主题不存在")
-    deleted = get_layer_group_repository().delete_theme_preset(int(theme_id))
-    return {"theme_id": int(theme_id), "deleted": deleted}
+    tid = _require_theme_id(theme_id)
+    deleted = get_layer_group_repository().delete_theme_preset(tid)
+    return {"theme_id": tid, "deleted": deleted}
 
 
 @router.patch(
     "/layers/categories/{group_id}", tags=["catalog"], response_model=LayerCategoryDef
 )
 def update_layer_group(
-    group_id: str, payload: LayerGroupUpdateRequest, admin=Depends(require_admin)
+    group_id: str,
+    payload: LayerGroupUpdateRequest,
+    admin=Depends(require_admin),
+    theme_id: int | None = Query(default=None),
 ) -> LayerCategoryDef:
-    """修改分组名称 / 样式 / 子分类（写入当前管理员工作区；种子组写为个人覆盖）。"""
+    """修改分组名称 / 样式 / 子分类。"""
+    repo = get_layer_group_repository()
     try:
-        record = get_layer_group_repository().update_group(
+        if theme_id is not None:
+            tid = _require_theme_id(theme_id)
+            raw = repo.update_group_in_theme(
+                tid,
+                group_id,
+                name=payload.name,
+                icon=payload.icon,
+                accent_color=payload.accent_color,
+                chip_tone=payload.chip_tone,
+                sub_categories=payload.sub_categories,
+                updated_by_user_id=_owner_user_id(admin),
+            )
+            return LayerCategoryDef.model_validate(raw)
+        record = repo.update_group(
             group_id,
             name=payload.name,
             icon=payload.icon,
@@ -350,15 +543,23 @@ def update_layer_group(
     response_model=LayerCategoryResponse,
 )
 def delete_layer_group(
-    group_id: str, admin=Depends(require_admin)
+    group_id: str,
+    admin=Depends(require_admin),
+    theme_id: int | None = Query(default=None),
 ) -> LayerCategoryResponse:
-    """删除当前管理员工作区中的自定义分组（种子组拒绝）。"""
-    owner = _owner_user_id(admin)
+    """删除自定义分组（种子组拒绝）。"""
+    repo = get_layer_group_repository()
     try:
-        get_layer_group_repository().delete_group(group_id, owner_user_id=owner)
+        if theme_id is not None:
+            tid = _require_theme_id(theme_id)
+            repo.delete_group_in_theme(
+                tid, group_id, updated_by_user_id=_owner_user_id(admin)
+            )
+        else:
+            repo.delete_group(group_id, owner_user_id=_owner_user_id(admin))
     except LayerGroupError as exc:
         raise _group_error(exc) from exc
-    return get_layer_category_response(_scope_for_cred(admin))
+    return _category_response_after_write(admin, theme_id)
 
 
 @router.put(
@@ -367,17 +568,29 @@ def delete_layer_group(
     response_model=LayerCategoryResponse,
 )
 def set_layer_group_members(
-    group_id: str, payload: LayerGroupMembersRequest, admin=Depends(require_admin)
+    group_id: str,
+    payload: LayerGroupMembersRequest,
+    admin=Depends(require_admin),
+    theme_id: int | None = Query(default=None),
 ) -> LayerCategoryResponse:
-    """全量替换分组内图层成员（写入当前管理员工作区）。"""
-    owner = _owner_user_id(admin)
+    """全量替换分组内图层成员。"""
+    repo = get_layer_group_repository()
     try:
-        get_layer_group_repository().set_layer_assignments(
-            group_id, payload.layer_ids, owner_user_id=owner
-        )
+        if theme_id is not None:
+            tid = _require_theme_id(theme_id)
+            repo.set_members_in_theme(
+                tid,
+                group_id,
+                payload.layer_ids,
+                updated_by_user_id=_owner_user_id(admin),
+            )
+        else:
+            repo.set_layer_assignments(
+                group_id, payload.layer_ids, owner_user_id=_owner_user_id(admin)
+            )
     except LayerGroupError as exc:
         raise _group_error(exc) from exc
-    return get_layer_category_response(_scope_for_cred(admin))
+    return _category_response_after_write(admin, theme_id)
 
 
 # ── 图层平台子系统 P0：资产状态与生命周期聚合接口（2026-08-24） ───────────────

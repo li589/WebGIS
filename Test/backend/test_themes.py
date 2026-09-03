@@ -1,4 +1,4 @@
-"""Product themes: branding seed, user binding, ACL merge (theme ⊕ user override)."""
+"""Product themes: branding seed, user binding, ACL merge (theme ? user override)."""
 
 from __future__ import annotations
 
@@ -108,13 +108,22 @@ def _admin_login(client: TestClient) -> None:
 
 
 def test_primary_theme_public_branding(theme_client: TestClient) -> None:
+    from app.services.theme_repository import (
+        SGFS_ABBR,
+        SGFS_FULL_NAME_ZH,
+        SGFS_NAME_EN,
+        SGFS_NAME_ZH,
+        SGFS_SLUG,
+    )
+
     r = theme_client.get("/auth/themes/primary/public")
     assert r.status_code == 200
     body = r.json()
-    assert body["slug"] == "sgfs"
-    assert body["abbr"] == "SGFS"
-    assert body["name_en"] == "Satellite-Ground Fusion Soil Data Platform"
-    assert "数据分析与可视化" in body["full_name_zh"]
+    assert body["slug"] == SGFS_SLUG
+    assert body["abbr"] == SGFS_ABBR
+    assert body["name_en"] == SGFS_NAME_EN
+    assert body["name_zh"] == SGFS_NAME_ZH
+    assert body["full_name_zh"] == SGFS_FULL_NAME_ZH
 
 
 def test_list_themes_public_branding(theme_client: TestClient) -> None:
@@ -193,8 +202,8 @@ def test_theme_whitelist_default(theme_client: TestClient) -> None:
     themes = get_theme_repository()
     demo = themes.create_theme(
         slug="demo-theme",
-        name_zh="演示主题",
-        full_name_zh="演示主题全称",
+        name_zh="????",
+        full_name_zh="??????",
         name_en="Demo Theme",
         abbr="DEMO",
         default_permission_mode="whitelist",
@@ -225,8 +234,8 @@ def test_create_theme_via_api(theme_client: TestClient) -> None:
         "/auth/themes",
         json={
             "slug": "soil-lab",
-            "name_zh": "土壤实验室",
-            "full_name_zh": "土壤实验室主题",
+            "name_zh": "?????",
+            "full_name_zh": "???????",
             "name_en": "Soil Lab Theme",
             "abbr": "SLAB",
             "default_permission_mode": "whitelist",
@@ -240,14 +249,14 @@ def test_create_theme_via_api(theme_client: TestClient) -> None:
 
 
 def test_login_palette_infer_and_update(theme_client: TestClient) -> None:
-    """登录页配色：植被主题默认 green；可经 PATCH 覆盖；公开接口返回字段。"""
+    """???????????? green??? PATCH ????????????"""
     _admin_login(theme_client)
     created = theme_client.post(
         "/auth/themes",
         json={
             "slug": "vemp-ecology",
-            "name_zh": "植被与生态监测平台",
-            "full_name_zh": "植被与生态监测数据分析平台",
+            "name_zh": "?????????",
+            "full_name_zh": "?????????????",
             "name_en": "Vegetation and Ecology Monitoring Platform",
             "abbr": "VEMP",
         },
@@ -274,3 +283,21 @@ def test_login_palette_infer_and_update(theme_client: TestClient) -> None:
         json={"login_palette": "neon"},
     )
     assert bad.status_code == 422
+
+def test_user_theme_id_cannot_be_cleared(theme_client: TestClient) -> None:
+    """Mandatory bind: PATCH theme_id=null is rejected; new users default to primary."""
+    _admin_login(theme_client)
+    created = theme_client.post(
+        "/auth/users",
+        json={"username": "bound-user", "password": "password123", "role": "standard"},
+    )
+    assert created.status_code == 201, created.text
+    user = created.json()
+    assert user["theme_id"] is not None
+    assert user["theme"]["slug"] == "sgfs"
+
+    cleared = theme_client.patch(
+        f"/auth/users/{user['id']}",
+        json={"theme_id": None},
+    )
+    assert cleared.status_code == 422, cleared.text

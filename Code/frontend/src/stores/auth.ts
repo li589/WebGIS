@@ -273,9 +273,13 @@ export const useAuthStore = defineStore('auth', () => {
       password?: string
       role?: UserRole
       enabled?: boolean
-      theme_id?: number | null
+      /** 必须绑定主题；禁止传 null 清除。 */
+      theme_id?: number
     },
   ) {
+    if ('theme_id' in patch && (patch.theme_id == null || !(patch.theme_id > 0))) {
+      throw new Error('每个用户必须绑定一个主题，不能清除 theme_id')
+    }
     const updated = await updateUser(userId, patch)
     users.value = users.value.map((u) => (u.id === userId ? updated : u))
     if (user.value?.id === userId) {

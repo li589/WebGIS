@@ -456,18 +456,16 @@ export interface paths {
         };
         /**
          * List Layer Categories
-         * @description X1: 后端下发图层分类定义（id / name / icon / accent_color / chip_tone）。
+         * @description 下发图层分类定义。
          *
-         *     前端运行时消费此端点获取分类样式，消除前后端分类定义双写。
-         *     前端 ``LAYER_CATEGORIES`` 静态表仅在 API 不可用时作离线兜底。
-         *     管理员看到个人工作区；绑定主题且主题有分组预设的用户看到主题快照；
-         *     其余为共享种子（+ 遗留共享自建组）。
+         *     默认：按调用者绑定主题的预设（无则种子基线）。
+         *     管理员传 ``theme_id`` 时预览该主题预设（无预设则种子），不落库。
          */
         get: operations["list_layer_categories_layers_categories_get"];
         put?: never;
         /**
          * Create Layer Group
-         * @description 新建自定义分组（追加到当前管理员个人工作区末尾）。
+         * @description 新建自定义分组（默认写入主题预设；省略 theme_id 则写个人工作区）。
          */
         post: operations["create_layer_group_layers_categories_post"];
         delete?: never;
@@ -486,7 +484,7 @@ export interface paths {
         get?: never;
         /**
          * Reorder Layer Groups
-         * @description 按给定 id 顺序重排当前管理员工作区中的分组。
+         * @description 按给定 id 顺序重排分组。
          */
         put: operations["reorder_layer_groups_layers_categories_order_put"];
         post?: never;
@@ -507,7 +505,7 @@ export interface paths {
         put?: never;
         /**
          * Sync Layer Groups To Theme
-         * @description 将当前管理员的图层分组工作区快照同步到指定主题预设（可选）。
+         * @description 将当前管理员个人工作区快照导入到指定主题预设（一次性迁移）。
          */
         post: operations["sync_layer_groups_to_theme_layers_categories_sync_to_theme__theme_id__post"];
         delete?: never;
@@ -525,16 +523,40 @@ export interface paths {
         };
         /**
          * Get Theme Layer Group Preset
-         * @description 读取主题的图层分组预设元数据（无预设时 has_preset=false）。
+         * @description 读取主题图层分组预设详情（无预设时返回种子基线，不落库）。
          */
         get: operations["get_theme_layer_group_preset_layers_categories_theme_preset__theme_id__get"];
-        put?: never;
+        /**
+         * Put Theme Layer Group Preset
+         * @description 全量替换主题分组预设。
+         */
+        put: operations["put_theme_layer_group_preset_layers_categories_theme_preset__theme_id__put"];
         post?: never;
         /**
          * Delete Theme Layer Group Preset
          * @description 清除主题上的图层分组预设（绑定用户回落到共享种子分组）。
          */
         delete: operations["delete_theme_layer_group_preset_layers_categories_theme_preset__theme_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/layers/categories/theme-preset/{theme_id}/display-names": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Theme Layer Display Names
+         * @description 合并写入主题图层显示名覆盖（空字符串清除）。
+         */
+        put: operations["put_theme_layer_display_names_layers_categories_theme_preset__theme_id__display_names_put"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -552,14 +574,14 @@ export interface paths {
         post?: never;
         /**
          * Delete Layer Group
-         * @description 删除当前管理员工作区中的自定义分组（种子组拒绝）。
+         * @description 删除自定义分组（种子组拒绝）。
          */
         delete: operations["delete_layer_group_layers_categories__group_id__delete"];
         options?: never;
         head?: never;
         /**
          * Update Layer Group
-         * @description 修改分组名称 / 样式 / 子分类（写入当前管理员工作区；种子组写为个人覆盖）。
+         * @description 修改分组名称 / 样式 / 子分类。
          */
         patch: operations["update_layer_group_layers_categories__group_id__patch"];
         trace?: never;
@@ -574,7 +596,7 @@ export interface paths {
         get?: never;
         /**
          * Set Layer Group Members
-         * @description 全量替换分组内图层成员（写入当前管理员工作区）。
+         * @description 全量替换分组内图层成员。
          */
         put: operations["set_layer_group_members_layers_categories__group_id__members_put"];
         post?: never;
@@ -720,6 +742,7 @@ export interface paths {
          *     聚合 workflow_seeds/system + workflow_definitions/user 中
          *     ``is_template=true`` 或 tags 含 "template"/"lab" 的定义；
          *     前端课题组入口据此渲染「一键运行」面板。
+         *     鉴权开启时匿名 fail-closed；非 admin 按 workflow ACL 过滤。
          */
         get: operations["list_workflow_templates_workflows_templates_get"];
         put?: never;
@@ -4032,13 +4055,13 @@ export interface paths {
         get: operations["get_definition_workflow_definitions__workflow_id__get"];
         /**
          * Update Definition
-         * @description 更新用户工作流定义。system 定义不可更新。
+         * @description 更新用户工作流定义。system 定义不可更新；非属主非 admin 拒绝。
          */
         put: operations["update_definition_workflow_definitions__workflow_id__put"];
         post?: never;
         /**
          * Delete Definition
-         * @description 删除用户工作流定义。system 定义不可删除。
+         * @description 删除用户工作流定义。system 定义不可删除；非属主非 admin 拒绝。
          */
         delete: operations["delete_definition_workflow_definitions__workflow_id__delete"];
         options?: never;
@@ -4099,13 +4122,13 @@ export interface paths {
         };
         /**
          * List Timers
-         * @description 列出定时器（非 admin 登录用户仅见本人创建的）。
+         * @description 列出全部定时器（仅管理员）。
          */
         get: operations["list_timers_workflow_timers_get"];
         put?: never;
         /**
          * Create Timer
-         * @description 创建定时器（记录归属 owner_user_id）。
+         * @description 创建定时器（仅管理员；记录归属 owner_user_id）。
          *
          *     请求体字段：
          *     - workflow_id (str, 必填)
@@ -5628,6 +5651,8 @@ export interface components {
              * @default false
              */
             is_primary: boolean;
+            /** Login Palette */
+            login_palette?: ("cyan" | "green" | "warm" | "violet" | "slate") | null;
         };
         /** CreateTokenRequest */
         CreateTokenRequest: {
@@ -7220,6 +7245,16 @@ export interface components {
              * @default 1
              */
             opacity: number;
+        };
+        /**
+         * LayerThemeDisplayNamesRequest
+         * @description 主题预设图层显示名覆盖（合并写入；空字符串清除该 layer_id）。
+         */
+        LayerThemeDisplayNamesRequest: {
+            /** Display Names */
+            display_names?: {
+                [key: string]: string;
+            };
         };
         /** LayerZonalStats */
         LayerZonalStats: {
@@ -9110,6 +9145,86 @@ export interface components {
             /** Message */
             message: string;
         };
+        /**
+         * ThemeLayerGroupPresetDetail
+         * @description 主题分组预设详情（管理员编辑用；无预设时 groups 为种子基线且不落库）。
+         */
+        ThemeLayerGroupPresetDetail: {
+            /** Theme Id */
+            theme_id: number;
+            /**
+             * Has Preset
+             * @default false
+             */
+            has_preset: boolean;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By User Id */
+            updated_by_user_id?: number | null;
+            /**
+             * Display Name Count
+             * @default 0
+             */
+            display_name_count: number;
+            /** Groups */
+            groups?: components["schemas"]["LayerCategoryDef"][];
+            /** Assignments */
+            assignments?: {
+                [key: string]: string;
+            };
+            /**
+             * Display Names
+             * @description Theme display_name overlays (layer_id → name)
+             */
+            display_names?: {
+                [key: string]: string;
+            };
+            /**
+             * Seed Display Names
+             * @description Seed layer display_name map for editor placeholders
+             */
+            seed_display_names?: {
+                [key: string]: string;
+            };
+        };
+        /**
+         * ThemeLayerGroupPresetMeta
+         * @description 主题图层分组预设元数据。
+         */
+        ThemeLayerGroupPresetMeta: {
+            /** Theme Id */
+            theme_id: number;
+            /**
+             * Has Preset
+             * @default false
+             */
+            has_preset: boolean;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By User Id */
+            updated_by_user_id?: number | null;
+            /**
+             * Display Name Count
+             * @default 0
+             */
+            display_name_count: number;
+        };
+        /**
+         * ThemeLayerGroupPresetPutRequest
+         * @description 全量替换主题分组预设（原子保存）。
+         */
+        ThemeLayerGroupPresetPutRequest: {
+            /** Groups */
+            groups: components["schemas"]["LayerCategoryDef"][];
+            /** Assignments */
+            assignments?: {
+                [key: string]: string;
+            };
+            /** Display Names */
+            display_names?: {
+                [key: string]: string;
+            };
+        };
         /** ThemePermissionRecord */
         ThemePermissionRecord: {
             /** Id */
@@ -9158,6 +9273,11 @@ export interface components {
              * @default false
              */
             is_primary: boolean;
+            /**
+             * Login Palette
+             * @default cyan
+             */
+            login_palette: string;
         };
         /**
          * ThemePublicBrand
@@ -9183,6 +9303,11 @@ export interface components {
             description: string;
             /** Logo Url */
             logo_url?: string | null;
+            /**
+             * Login Palette
+             * @default cyan
+             */
+            login_palette: string;
         };
         /** TileProviderInfo */
         TileProviderInfo: {
@@ -9314,6 +9439,8 @@ export interface components {
             default_permission_mode?: ("open" | "whitelist") | null;
             /** Is Primary */
             is_primary?: boolean | null;
+            /** Login Palette */
+            login_palette?: ("cyan" | "green" | "warm" | "violet" | "slate") | null;
         };
         /** UpdateUserRequest */
         UpdateUserRequest: {
@@ -9379,8 +9506,8 @@ export interface components {
              */
             permission_mode: string;
             /** Theme Id */
-            theme_id?: number | null;
-            theme?: components["schemas"]["ThemePublic"] | null;
+            theme_id: number;
+            theme: components["schemas"]["ThemePublic"];
         };
         /** ValidationError */
         ValidationError: {
@@ -11523,7 +11650,10 @@ export interface operations {
     };
     list_layers_layers_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Admin edit preview: catalog with that theme's group/display overlays. */
+                theme_id?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -11539,11 +11669,23 @@ export interface operations {
                     "application/json": components["schemas"]["LayerCatalogResponse"];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     list_layer_categories_layers_categories_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Admin edit preview: load that theme's preset (or seed baseline). */
+                theme_id?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -11559,11 +11701,23 @@ export interface operations {
                     "application/json": components["schemas"]["LayerCategoryResponse"];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     create_layer_group_layers_categories_post: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Write into this theme preset when set. */
+                theme_id?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -11596,7 +11750,9 @@ export interface operations {
     };
     reorder_layer_groups_layers_categories_order_put: {
         parameters: {
-            query?: never;
+            query?: {
+                theme_id?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -11644,9 +11800,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ThemeLayerGroupPresetMeta"];
                 };
             };
             /** @description Validation Error */
@@ -11677,9 +11831,42 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ThemeLayerGroupPresetDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_theme_layer_group_preset_layers_categories_theme_preset__theme_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                theme_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThemeLayerGroupPresetPutRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemeLayerGroupPresetMeta"];
                 };
             };
             /** @description Validation Error */
@@ -11726,9 +11913,46 @@ export interface operations {
             };
         };
     };
-    delete_layer_group_layers_categories__group_id__delete: {
+    put_theme_layer_display_names_layers_categories_theme_preset__theme_id__display_names_put: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                theme_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LayerThemeDisplayNamesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemeLayerGroupPresetMeta"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_layer_group_layers_categories__group_id__delete: {
+        parameters: {
+            query?: {
+                theme_id?: number | null;
+            };
             header?: never;
             path: {
                 group_id: string;
@@ -11759,7 +11983,9 @@ export interface operations {
     };
     update_layer_group_layers_categories__group_id__patch: {
         parameters: {
-            query?: never;
+            query?: {
+                theme_id?: number | null;
+            };
             header?: never;
             path: {
                 group_id: string;
@@ -11794,7 +12020,9 @@ export interface operations {
     };
     set_layer_group_members_layers_categories__group_id__members_put: {
         parameters: {
-            query?: never;
+            query?: {
+                theme_id?: number | null;
+            };
             header?: never;
             path: {
                 group_id: string;

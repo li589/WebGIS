@@ -114,8 +114,18 @@ export async function createCesiumViewer(
   applyCesiumDaylight(Cesium, viewer, options.daylightMode, options.hour, options.date)
 
   viewer.scene.fog.enabled = false
-  viewer.scene.globe.showGroundAtmosphere = true
   viewer.scene.globe.depthTestAgainstTerrain = false
+  // 无影像处椭球底色：浅蓝偏灰（避免默认深蓝「泳池」感）
+  viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#9aa7b4')
+  viewer.scene.globe.showGroundAtmosphere = true
+  // 略降大气饱和度，减轻整体偏蓝
+  const skyAtm = viewer.scene.skyAtmosphere
+  if (skyAtm) {
+    skyAtm.saturationShift = -0.22
+    skyAtm.brightnessShift = -0.04
+    skyAtm.hueShift = -0.02
+  }
+  viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#1a1e24')
 
   if (options.initialView) {
     viewer.camera.setView({

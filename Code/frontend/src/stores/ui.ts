@@ -126,6 +126,9 @@ function loadLayerMemory(): Record<string, LayerTimeMemory> {
 export const useUiStore = defineStore('ui', () => {
   const tileSourceId = ref<TileSourceId>(getDefaultTileSource())
   const analysisFocusRequest = ref<{ ids: string[]; token: number } | null>(null)
+  /** 打开侧栏「图层分组管理」对话框；themeId 为编辑目标主题（管理员）。 */
+  const layerGroupManagerOpen = ref(false)
+  const layerGroupManagerThemeId = ref<number | null>(null)
 
   // 时间轴：日历日期 + 当日钟点 0–23
   const now = new Date()
@@ -374,9 +377,22 @@ export const useUiStore = defineStore('ui', () => {
     analysisFocusRequest.value = null
   }
 
+  function openLayerGroupManager(themeId?: number | null) {
+    layerGroupManagerThemeId.value =
+      themeId != null && Number.isFinite(themeId) && themeId > 0 ? Number(themeId) : null
+    layerGroupManagerOpen.value = true
+  }
+
+  function closeLayerGroupManager() {
+    layerGroupManagerOpen.value = false
+    layerGroupManagerThemeId.value = null
+  }
+
   return {
     tileSourceId,
     analysisFocusRequest,
+    layerGroupManagerOpen,
+    layerGroupManagerThemeId,
     currentHour,
     hourLabel,
     fullTimeLabel,
@@ -417,5 +433,7 @@ export const useUiStore = defineStore('ui', () => {
     clearMeasure,
     requestAnalysisFocus,
     clearAnalysisFocusRequest,
+    openLayerGroupManager,
+    closeLayerGroupManager,
   }
 })

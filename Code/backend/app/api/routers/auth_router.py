@@ -89,8 +89,9 @@ class UserPublic(BaseModel):
     role: Literal["admin", "standard", "demo"]
     enabled: bool = True
     permission_mode: str = "open"
-    theme_id: int | None = None
-    theme: ThemePublic | None = None
+    # 强制绑定：响应中恒为有效主题（启动 backfill + _public_user 自愈）。
+    theme_id: int
+    theme: ThemePublic
 
 
 class CreateUserRequest(BaseModel):
@@ -104,6 +105,7 @@ class UpdateUserRequest(BaseModel):
     password: str | None = Field(default=None, min_length=8, max_length=256)
     role: Literal["admin", "standard", "demo"] | None = None
     enabled: bool | None = None
+    # 省略 = 不变；显式 null 在路由层拒绝（不可解除绑定）。
     theme_id: int | None = None
 
 
@@ -192,24 +194,32 @@ def _public_theme(theme) -> ThemePublic:
 def _public_user(row: dict) -> UserPublic:
     from app.services.theme_repository import get_theme_repository
 
+    theme_repo = get_theme_repository()
     theme_id = row.get("theme_id")
-    theme_public: ThemePublic | None = None
-    if theme_id is not None:
-        theme = get_theme_repository().get_by_id(int(theme_id))
-        if theme is not None:
-            theme_public = _public_theme(theme)
-    elif row.get("role") == "admin":
-        theme = get_theme_repository().get_primary()
-        theme_public = _public_theme(theme)
-        theme_id = theme.id
+    theme = (
+        theme_repo.get_by_id(int(theme_id)) if theme_id is not None else None
+    )
+    if theme is None:
+        theme = theme_repo.get_primary()
+        # Persist heal so subsequent reads / ACL use a real binding.
+        try:
+            get_user_repository().update_user(
+                int(row["id"]), theme_id=int(theme.id)
+            )
+        except Exception:
+            logger.warning(
+                "Failed to heal missing theme_id for user %s",
+                row.get("id"),
+                exc_info=True,
+            )
     return UserPublic(
         id=int(row["id"]),
         username=str(row["username"]),
         role=str(row["role"]),  # type: ignore[arg-type]
         enabled=bool(row.get("enabled", 1)),
         permission_mode=str(row.get("permission_mode", "open")),
-        theme_id=int(theme_id) if theme_id is not None else None,
-        theme=theme_public,
+        theme_id=int(theme.id),
+        theme=_public_theme(theme),
     )
 
 
@@ -360,6 +370,11 @@ def update_user(
                 detail="Cannot change your own role.",
             )
     _ensure_not_last_admin(user_id, body.role, body.enabled is False)
+    if "theme_id" in body.model_fields_set and body.theme_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="theme_id cannot be cleared; every user must bind a theme.",
+        )
     if body.theme_id is not None:
         from app.services.theme_repository import get_theme_repository
 

@@ -169,6 +169,41 @@ class LayerGroupMembersRequest(BaseModel):
     layer_ids: list[str]
 
 
+class LayerThemeDisplayNamesRequest(BaseModel):
+    """主题预设图层显示名覆盖（合并写入；空字符串清除该 layer_id）。"""
+    display_names: dict[str, str] = Field(default_factory=dict)
+
+
+class ThemeLayerGroupPresetMeta(BaseModel):
+    """主题图层分组预设元数据。"""
+    theme_id: int
+    has_preset: bool = False
+    updated_at: str | None = None
+    updated_by_user_id: int | None = None
+    display_name_count: int = 0
+
+
+class ThemeLayerGroupPresetDetail(ThemeLayerGroupPresetMeta):
+    """主题分组预设详情（管理员编辑用；无预设时 groups 为种子基线且不落库）。"""
+    groups: list[LayerCategoryDef] = Field(default_factory=list)
+    assignments: dict[str, str] = Field(default_factory=dict)
+    display_names: dict[str, str] = Field(
+        default_factory=dict,
+        description="Theme display_name overlays (layer_id → name)",
+    )
+    seed_display_names: dict[str, str] = Field(
+        default_factory=dict,
+        description="Seed layer display_name map for editor placeholders",
+    )
+
+
+class ThemeLayerGroupPresetPutRequest(BaseModel):
+    """全量替换主题分组预设（原子保存）。"""
+    groups: list[LayerCategoryDef]
+    assignments: dict[str, str] = Field(default_factory=dict)
+    display_names: dict[str, str] = Field(default_factory=dict)
+
+
 class OnlineTemporalCapability(BaseModel):
     """在线时间获取能力声明。
 

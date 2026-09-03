@@ -240,7 +240,10 @@ def test_group_repo_personal_isolation_and_theme_preset(tmp_path):
 
 
 def test_categories_require_auth_when_enabled(auth_client):
-    """鉴权开启时 GET /layers/categories 与 /layers 一致：匿名 401。"""
+    """鉴权开启时 GET /layers/categories 与 /layers 一致：匿名 401。
+
+    管理写操作带 theme_id 时直接写入主题预设（1A）。
+    """
     client = auth_client
     resp = client.get("/layers/categories")
     assert resp.status_code == 401
@@ -250,17 +253,16 @@ def test_categories_require_auth_when_enabled(auth_client):
     _login(client, "testadmin", "test-pass-123")
     assert client.get("/layers/categories").status_code == 200
 
-    _login(client, "testadmin", "test-pass-123")
-
-    # GET 公开：返回种子组（含运行时字段）
-    resp = client.get("/layers/categories")
+    # GET 编辑预览（无预设 = 种子基线）
+    resp = client.get("/layers/categories", params={"theme_id": 1})
     assert resp.status_code == 200
     items = resp.json()["items"]
     assert any(c["id"] == "climate" for c in items)
 
-    # 创建自建组
+    # 创建自建组 → 主题预设
     resp = client.post(
         "/layers/categories",
+        params={"theme_id": 1},
         json={
             "id": "lab-custom",
             "name": "课题组专用",
@@ -276,27 +278,33 @@ def test_categories_require_auth_when_enabled(auth_client):
 
     # 改名
     resp = client.patch(
-        "/layers/categories/lab-custom", json={"name": "课题组专用（改）"}
+        "/layers/categories/lab-custom",
+        params={"theme_id": 1},
+        json={"name": "课题组专用（改）"},
     )
     assert resp.status_code == 200
     assert resp.json()["name"] == "课题组专用（改）"
 
     # 种子组改名允许、删除拒绝
     resp = client.patch(
-        "/layers/categories/climate", json={"name": "气候与灾害"}
+        "/layers/categories/climate",
+        params={"theme_id": 1},
+        json={"name": "气候与灾害"},
     )
     assert resp.status_code == 200
-    resp = client.delete("/layers/categories/climate")
+    resp = client.delete("/layers/categories/climate", params={"theme_id": 1})
     assert resp.status_code == 400
 
     # 成员设置 + 排序
     resp = client.put(
         "/layers/categories/lab-custom/members",
+        params={"theme_id": 1},
         json={"layer_ids": ["wind-field", "temperature"]},
     )
     assert resp.status_code == 200
     resp = client.put(
         "/layers/categories/order",
+        params={"theme_id": 1},
         json={"order": ["lab-custom", "climate", "weather"]},
     )
     assert resp.status_code == 200
@@ -304,7 +312,9 @@ def test_categories_require_auth_when_enabled(auth_client):
     assert ids.index("lab-custom") < ids.index("climate") < ids.index("weather")
 
     # 删除自建组
-    resp = client.delete("/layers/categories/lab-custom")
+    resp = client.delete(
+        "/layers/categories/lab-custom", params={"theme_id": 1}
+    )
     assert resp.status_code == 200
     assert all(c["id"] != "lab-custom" for c in resp.json()["items"])
 
@@ -314,10 +324,13 @@ def test_catalog_reflects_group_assignment(auth_client):
     _login(client, "testadmin", "test-pass-123")
 
     client.post(
-        "/layers/categories", json={"id": "lab-custom", "name": "课题组专用"}
+        "/layers/categories",
+        params={"theme_id": 1},
+        json={"id": "lab-custom", "name": "课题组专用"},
     )
     client.put(
         "/layers/categories/lab-custom/members",
+        params={"theme_id": 1},
         json={"layer_ids": ["wind-field"]},
     )
 
@@ -471,30 +484,142 @@ def test_assignment_move_changes_acl_group(auth_client):
     assert all(i["layer_id"] != "wind-field" for i in items)
 
 
-def test_two_admins_have_isolated_custom_groups(auth_client):
+def test_theme_presets_are_isolated_per_theme(auth_client):
+    """不同主题的分组预设彼此隔离（不再按管理员个人工作区隔离）。"""
     client = auth_client
     _login(client, "testadmin", "test-pass-123")
-    admin2 = _create_user(client, "admin-two", role="admin")
-    assert admin2["role"] == "admin"
+    demo = client.post(
+        "/auth/themes",
+        json={
+            "slug": "demo-lab",
+            "name_zh": "演示主题",
+            "full_name_zh": "演示主题全称",
+            "name_en": "Demo Lab Theme",
+            "abbr": "DEMO",
+            "default_permission_mode": "open",
+        },
+    )
+    assert demo.status_code == 201, demo.text
+    theme_b = int(demo.json()["id"])
 
-    client.post("/layers/categories", json={"id": "only-a", "name": "仅管理员一"})
-    ids = {c["id"] for c in client.get("/layers/categories").json()["items"]}
-    assert "only-a" in ids
+    client.post(
+        "/layers/categories",
+        params={"theme_id": 1},
+        json={"id": "only-sgfs", "name": "仅主主题"},
+    )
+    ids_a = {
+        c["id"]
+        for c in client.get("/layers/categories", params={"theme_id": 1}).json()["items"]
+    }
+    assert "only-sgfs" in ids_a
+
+    ids_b = {
+        c["id"]
+        for c in client.get(
+            "/layers/categories", params={"theme_id": theme_b}
+        ).json()["items"]
+    }
+    assert "only-sgfs" not in ids_b
+
+    client.post(
+        "/layers/categories",
+        params={"theme_id": theme_b},
+        json={"id": "only-demo", "name": "仅演示主题"},
+    )
+    ids_b2 = {
+        c["id"]
+        for c in client.get(
+            "/layers/categories", params={"theme_id": theme_b}
+        ).json()["items"]
+    }
+    assert "only-demo" in ids_b2
+    assert "only-demo" not in {
+        c["id"]
+        for c in client.get("/layers/categories", params={"theme_id": 1}).json()["items"]
+    }
+
+
+def test_theme_preset_direct_write_and_display_names(auth_client):
+    """主题直写分组 + 显示名覆盖；清除预设后回落种子；种子 JSON 不变。"""
+    import hashlib
+
+    from app.services.layer_catalog import _SEEDS_DIR
+
+    client = auth_client
+    _login(client, "testadmin", "test-pass-123")
+
+    categories_file = _SEEDS_DIR / "layer_categories.json"
+    descriptors_file = _SEEDS_DIR / "layer_descriptors.json"
+
+    def _digest(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    cat_before = _digest(categories_file)
+    desc_before = _digest(descriptors_file)
+
+    resp = client.post(
+        "/layers/categories",
+        params={"theme_id": 1},
+        json={"id": "theme-lab", "name": "主题实验组"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert (
+        client.put(
+            "/layers/categories/theme-lab/members",
+            params={"theme_id": 1},
+            json={"layer_ids": ["wind-field"]},
+        ).status_code
+        == 200
+    )
+
+    # 显示名覆盖
+    resp = client.put(
+        "/layers/categories/theme-preset/1/display-names",
+        json={"display_names": {"wind-field": "主题风场名"}},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["has_preset"] is True
+    assert resp.json()["display_name_count"] >= 1
+
+    detail = client.get("/layers/categories/theme-preset/1")
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["has_preset"] is True
+    assert body["display_names"]["wind-field"] == "主题风场名"
+    assert any(g["id"] == "theme-lab" for g in body["groups"])
+
+    user = _create_user(client, "preset-user")
+    assert user["theme_id"] == 1
+    client.post("/auth/logout")
+    _login(client, "preset-user", "user-pass-123")
+
+    cats = client.get("/layers/categories").json()["items"]
+    assert any(c["id"] == "theme-lab" for c in cats)
+    by_id = {i["layer_id"]: i for i in client.get("/layers").json()["items"]}
+    assert by_id["wind-field"]["category"] == "theme-lab"
+    assert by_id["wind-field"]["display_name"] == "主题风场名"
 
     client.post("/auth/logout")
-    _login(client, "admin-two", "user-pass-123")
-    ids2 = {c["id"] for c in client.get("/layers/categories").json()["items"]}
-    assert "only-a" not in ids2
-    client.post("/layers/categories", json={"id": "only-b", "name": "仅管理员二"})
-    assert any(
-        c["id"] == "only-b" for c in client.get("/layers/categories").json()["items"]
-    )
+    _login(client, "testadmin", "test-pass-123")
+    assert client.delete("/layers/categories/theme-preset/1").status_code == 200
+
+    # 种子文件未被运行时改写
+    assert _digest(categories_file) == cat_before
+    assert _digest(descriptors_file) == desc_before
+
+    client.post("/auth/logout")
+    _login(client, "preset-user", "user-pass-123")
+    cats2 = {c["id"] for c in client.get("/layers/categories").json()["items"]}
+    assert "theme-lab" not in cats2
+    by_id2 = {i["layer_id"]: i for i in client.get("/layers").json()["items"]}
+    assert by_id2["wind-field"]["display_name"] != "主题风场名"
 
 
 def test_theme_preset_surfaces_synced_groups(auth_client):
-    """同步到主题后，绑定用户看到管理员工作区中的自定义分组与归属。"""
+    """个人工作区 sync-to-theme 仍可作为一次性导入路径。"""
     client = auth_client
     _login(client, "testadmin", "test-pass-123")
+    # 省略 theme_id → 个人工作区（迁移兼容）
     client.post("/layers/categories", json={"id": "theme-lab", "name": "主题实验组"})
     client.put(
         "/layers/categories/theme-lab/members",

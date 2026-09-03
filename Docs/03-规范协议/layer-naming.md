@@ -38,9 +38,10 @@
 
 ### UI 回退链
 
-`ActiveLayer.name` → 持久化显示名 → 目录 `display_name` → **`dataset_key`** → **`layer_id`/`catalogId`** → `未命名图层`。
+`ActiveLayer.name`（实例 TOC 本地改）→ 用户本地持久化显示名（`geo:layer-display-names:v1`）→ **主题预设** `display_names[layer_id]`（经 `GET /layers` 写入目录项）→ 种子目录 `display_name` → **`dataset_key`** → **`layer_id`/`catalogId`** → `未命名图层`。
 
-重命名**只改**显示名，**永不改** `catalogId` / `overlayLayerId` / `instanceId`。运行组 header title 不随成员重命名变化。
+- 主题显示名：管理员在分组管理中按主题写入运行时预设；**不改**种子 JSON / `layer_id`。
+- TOC 重命名只改显示名，**永不改** `catalogId` / `overlayLayerId` / `instanceId`。运行组 header title 不随成员重命名变化。
 
 ## 导出 / 下载文件名（与 UI 解耦）
 

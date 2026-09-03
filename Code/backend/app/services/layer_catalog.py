@@ -376,8 +376,11 @@ def get_layer_catalog(scope: Any | None = None) -> LayerCatalogResponse:
         except Exception as exc:
             logger.warning("Skipping invalid category entry %s: %s", cat.get("id"), exc)
     return LayerCatalogResponse(
-        items=_apply_layer_group_assignments(
-            _apply_remote_layer_data_uris(items), scope=scope
+        items=_apply_theme_display_names(
+            _apply_layer_group_assignments(
+                _apply_remote_layer_data_uris(items), scope=scope
+            ),
+            scope=scope,
         ),
         categories=categories,
     )
@@ -410,6 +413,34 @@ def _apply_layer_group_assignments(
             item.model_copy(update={"category": assignments[item.layer_id]})
             if item.layer_id in assignments
             and assignments[item.layer_id] != item.category
+            else item
+        )
+        for item in items
+    ]
+
+
+def _apply_theme_display_names(
+    items: list[LayerDescriptor],
+    *,
+    scope: Any | None = None,
+) -> list[LayerDescriptor]:
+    """Apply theme preset display_name overlays (runtime only; seeds untouched)."""
+    try:
+        from app.services.layer_group_repository import (
+            CatalogGroupScope,
+            get_layer_group_repository,
+        )
+
+        resolved = scope if scope is not None else CatalogGroupScope.shared()
+        names = get_layer_group_repository().list_display_names_for_scope(resolved)
+    except Exception:
+        return items
+    if not names:
+        return items
+    return [
+        (
+            item.model_copy(update={"display_name": names[item.layer_id]})
+            if item.layer_id in names and names[item.layer_id] != item.display_name
             else item
         )
         for item in items

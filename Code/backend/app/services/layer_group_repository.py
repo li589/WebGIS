@@ -516,6 +516,7 @@ class LayerGroupRepository:
         return {
             "groups": [g.to_category_def_dict() for g in groups],
             "assignments": assignments,
+            "display_names": {},
         }
 
     def get_theme_preset(self, theme_id: int) -> dict[str, Any] | None:
@@ -531,18 +532,31 @@ class LayerGroupRepository:
             payload = json.loads(str(row["payload"]))
         except Exception:
             return None
-        return payload if isinstance(payload, dict) else None
+        if not isinstance(payload, dict):
+            return None
+        if not isinstance(payload.get("display_names"), dict):
+            payload = {**payload, "display_names": {}}
+        return payload
 
     def theme_preset_meta(self, theme_id: int) -> dict[str, Any] | None:
         self._ensure_schema()
         with self._pool.connection() as conn:
             row = conn.execute(
-                "SELECT theme_id, updated_at, updated_by_user_id FROM "
+                "SELECT theme_id, updated_at, updated_by_user_id, payload FROM "
                 "theme_layer_group_presets WHERE theme_id=?",
                 (int(theme_id),),
             ).fetchone()
         if row is None:
             return None
+        display_name_count = 0
+        try:
+            payload = json.loads(str(row["payload"]))
+            if isinstance(payload, dict) and isinstance(payload.get("display_names"), dict):
+                display_name_count = sum(
+                    1 for k, v in payload["display_names"].items() if str(k).strip() and str(v).strip()
+                )
+        except Exception:
+            display_name_count = 0
         return {
             "theme_id": int(row["theme_id"]),
             "updated_at": str(row["updated_at"]),
@@ -552,6 +566,7 @@ class LayerGroupRepository:
                 else None
             ),
             "has_preset": True,
+            "display_name_count": display_name_count,
         }
 
     def save_theme_preset(
@@ -566,6 +581,16 @@ class LayerGroupRepository:
             raise LayerGroupError("主题预设缺少 groups 列表")
         if not isinstance(payload.get("assignments"), dict):
             raise LayerGroupError("主题预设缺少 assignments 映射")
+        display_names = payload.get("display_names")
+        if display_names is None:
+            payload = {**payload, "display_names": {}}
+        elif not isinstance(display_names, dict):
+            raise LayerGroupError("主题预设 display_names 必须为对象")
+        else:
+            payload = {
+                **payload,
+                "display_names": self._normalize_display_names(display_names),
+            }
         now = datetime.now(UTC).isoformat()
         blob = json.dumps(payload, ensure_ascii=False)
         with self._pool.connection() as conn:
@@ -588,7 +613,324 @@ class LayerGroupRepository:
             "updated_at": now,
             "updated_by_user_id": updated_by_user_id,
             "has_preset": True,
+            "display_name_count": len(payload.get("display_names") or {}),
         }
+
+    DISPLAY_NAME_MAX_LEN = 64
+
+    def _normalize_display_names(self, raw: dict[str, Any]) -> dict[str, str]:
+        out: dict[str, str] = {}
+        for key, value in raw.items():
+            lid = str(key).strip()
+            name = str(value).strip() if value is not None else ""
+            if not lid or not name:
+                continue
+            if len(name) > self.DISPLAY_NAME_MAX_LEN:
+                raise LayerGroupError(
+                    f"显示名过长（≤{self.DISPLAY_NAME_MAX_LEN}）: {lid}"
+                )
+            out[lid] = name
+        return out
+
+    def materialize_seed_preset(self) -> dict[str, Any]:
+        """Build a theme-preset-shaped snapshot from shared seed groups."""
+        self._ensure_schema()
+        self._ensure_seed_groups()
+        groups = self.list_groups(owner_user_id=OWNER_SHARED)
+        return {
+            "groups": [g.to_category_def_dict() for g in groups],
+            "assignments": {},
+            "display_names": {},
+        }
+
+    def ensure_theme_preset_payload(
+        self, theme_id: int, *, updated_by_user_id: int | None = None
+    ) -> dict[str, Any]:
+        """Return mutable preset; materialize from seeds on first edit."""
+        preset = self.get_theme_preset(int(theme_id))
+        if preset is None:
+            preset = self.materialize_seed_preset()
+            self.save_theme_preset(
+                int(theme_id), preset, updated_by_user_id=updated_by_user_id
+            )
+            preset = self.get_theme_preset(int(theme_id)) or preset
+        if not isinstance(preset.get("display_names"), dict):
+            preset = {**preset, "display_names": {}}
+        return preset
+
+    def list_display_names_for_scope(self, scope: CatalogGroupScope) -> dict[str, str]:
+        if scope.kind == "theme" and scope.theme_id is not None:
+            preset = self.get_theme_preset(scope.theme_id)
+            if preset is not None:
+                raw = preset.get("display_names") or {}
+                return {
+                    str(k): str(v)
+                    for k, v in raw.items()
+                    if str(k).strip() and str(v).strip()
+                }
+        return {}
+
+    def _seed_group_ids(self) -> set[str]:
+        self._ensure_seed_groups()
+        return {
+            g.group_id
+            for g in self.list_groups(owner_user_id=OWNER_SHARED)
+            if g.source == _GROUP_SOURCE_SEED
+        }
+
+    def _known_catalog_layer_ids(self) -> set[str]:
+        try:
+            from app.services.layer_catalog import _load_seed_descriptors
+
+            return {d.layer_id for d in _load_seed_descriptors()}
+        except Exception:
+            return set()
+
+    def _save_mutated_theme_preset(
+        self,
+        theme_id: int,
+        payload: dict[str, Any],
+        *,
+        updated_by_user_id: int | None,
+    ) -> dict[str, Any]:
+        return self.save_theme_preset(
+            int(theme_id), payload, updated_by_user_id=updated_by_user_id
+        )
+
+    def create_group_in_theme(
+        self,
+        theme_id: int,
+        group_id: str,
+        name: str,
+        *,
+        icon: str | None = None,
+        accent_color: str | None = None,
+        chip_tone: str | None = None,
+        sub_categories: list[str] | None = None,
+        updated_by_user_id: int | None = None,
+    ) -> dict[str, Any]:
+        gid = self._validate_group_id(group_id)
+        name = name.strip()
+        if not name:
+            raise LayerGroupError("分组名称不能为空")
+        if gid in self._seed_group_ids():
+            raise LayerGroupError(f"分组 id 与种子冲突: {gid}")
+        payload = self.ensure_theme_preset_payload(
+            theme_id, updated_by_user_id=updated_by_user_id
+        )
+        groups = list(payload.get("groups") or [])
+        if any(str(g.get("id") or "").strip().lower() == gid for g in groups if isinstance(g, dict)):
+            raise LayerGroupError(f"分组 id 已存在: {gid}")
+        max_pos = 0.0
+        for g in groups:
+            if isinstance(g, dict) and g.get("position") is not None:
+                try:
+                    max_pos = max(max_pos, float(g["position"]))
+                except (TypeError, ValueError):
+                    pass
+        groups.append(
+            {
+                "id": gid,
+                "name": name,
+                "icon": icon,
+                "accent_color": accent_color,
+                "chip_tone": chip_tone,
+                "sub_categories": list(sub_categories or []),
+                "position": max_pos + 10.0,
+                "is_custom": True,
+            }
+        )
+        payload = {**payload, "groups": groups}
+        self._save_mutated_theme_preset(
+            theme_id, payload, updated_by_user_id=updated_by_user_id
+        )
+        return next(g for g in groups if g["id"] == gid)
+
+    def update_group_in_theme(
+        self,
+        theme_id: int,
+        group_id: str,
+        *,
+        name: str | None = None,
+        icon: str | None = None,
+        accent_color: str | None = None,
+        chip_tone: str | None = None,
+        sub_categories: list[str] | None = None,
+        updated_by_user_id: int | None = None,
+    ) -> dict[str, Any]:
+        gid = str(group_id).strip().lower()
+        payload = self.ensure_theme_preset_payload(
+            theme_id, updated_by_user_id=updated_by_user_id
+        )
+        groups = list(payload.get("groups") or [])
+        found = False
+        for index, raw in enumerate(groups):
+            if not isinstance(raw, dict):
+                continue
+            if str(raw.get("id") or "").strip().lower() != gid:
+                continue
+            found = True
+            updated = dict(raw)
+            if name is not None:
+                cleaned = name.strip()
+                if not cleaned:
+                    raise LayerGroupError("分组名称不能为空")
+                updated["name"] = cleaned
+            if icon is not None:
+                updated["icon"] = icon
+            if accent_color is not None:
+                updated["accent_color"] = accent_color
+            if chip_tone is not None:
+                updated["chip_tone"] = chip_tone
+            if sub_categories is not None:
+                updated["sub_categories"] = list(sub_categories)
+            groups[index] = updated
+            break
+        if not found:
+            raise LayerGroupError(f"分组不存在: {group_id}")
+        payload = {**payload, "groups": groups}
+        self._save_mutated_theme_preset(
+            theme_id, payload, updated_by_user_id=updated_by_user_id
+        )
+        return next(
+            g
+            for g in groups
+            if isinstance(g, dict) and str(g.get("id") or "").strip().lower() == gid
+        )
+
+    def delete_group_in_theme(
+        self,
+        theme_id: int,
+        group_id: str,
+        *,
+        updated_by_user_id: int | None = None,
+    ) -> dict[str, Any]:
+        gid = str(group_id).strip().lower()
+        if gid in self._seed_group_ids():
+            raise LayerGroupError("种子分组不可删除")
+        payload = self.ensure_theme_preset_payload(
+            theme_id, updated_by_user_id=updated_by_user_id
+        )
+        groups = [
+            g
+            for g in (payload.get("groups") or [])
+            if isinstance(g, dict) and str(g.get("id") or "").strip().lower() != gid
+        ]
+        if len(groups) == len(payload.get("groups") or []):
+            raise LayerGroupError(f"分组不存在: {group_id}")
+        assignments = {
+            str(k): str(v)
+            for k, v in (payload.get("assignments") or {}).items()
+            if str(v).strip().lower() != gid
+        }
+        payload = {**payload, "groups": groups, "assignments": assignments}
+        return self._save_mutated_theme_preset(
+            theme_id, payload, updated_by_user_id=updated_by_user_id
+        )
+
+    def reorder_groups_in_theme(
+        self,
+        theme_id: int,
+        order: list[str],
+        *,
+        updated_by_user_id: int | None = None,
+    ) -> dict[str, Any]:
+        payload = self.ensure_theme_preset_payload(
+            theme_id, updated_by_user_id=updated_by_user_id
+        )
+        by_id: dict[str, dict[str, Any]] = {}
+        for raw in payload.get("groups") or []:
+            if not isinstance(raw, dict):
+                continue
+            gid = str(raw.get("id") or "").strip().lower()
+            if gid:
+                by_id[gid] = dict(raw)
+        ordered: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for raw_id in order:
+            gid = str(raw_id).strip().lower()
+            if not gid or gid in seen or gid not in by_id:
+                continue
+            seen.add(gid)
+            item = by_id[gid]
+            item["position"] = float(len(ordered) * 10)
+            ordered.append(item)
+        for gid, item in by_id.items():
+            if gid in seen:
+                continue
+            item = dict(item)
+            item["position"] = float(len(ordered) * 10)
+            ordered.append(item)
+        payload = {**payload, "groups": ordered}
+        return self._save_mutated_theme_preset(
+            theme_id, payload, updated_by_user_id=updated_by_user_id
+        )
+
+    def set_members_in_theme(
+        self,
+        theme_id: int,
+        group_id: str,
+        layer_ids: list[str],
+        *,
+        updated_by_user_id: int | None = None,
+    ) -> dict[str, Any]:
+        gid = str(group_id).strip().lower()
+        payload = self.ensure_theme_preset_payload(
+            theme_id, updated_by_user_id=updated_by_user_id
+        )
+        group_ids = {
+            str(g.get("id") or "").strip().lower()
+            for g in (payload.get("groups") or [])
+            if isinstance(g, dict)
+        }
+        if gid not in group_ids:
+            raise LayerGroupError(f"分组不存在: {group_id}")
+        assignments = {
+            str(k): str(v)
+            for k, v in (payload.get("assignments") or {}).items()
+            if str(v).strip().lower() != gid
+        }
+        for lid in layer_ids:
+            cleaned = str(lid).strip()
+            if cleaned:
+                assignments[cleaned] = gid
+        payload = {**payload, "assignments": assignments}
+        return self._save_mutated_theme_preset(
+            theme_id, payload, updated_by_user_id=updated_by_user_id
+        )
+
+    def merge_display_names_in_theme(
+        self,
+        theme_id: int,
+        display_names: dict[str, str],
+        *,
+        updated_by_user_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Merge theme display-name overrides. Empty string clears a key."""
+        payload = self.ensure_theme_preset_payload(
+            theme_id, updated_by_user_id=updated_by_user_id
+        )
+        current = dict(payload.get("display_names") or {})
+        known = self._known_catalog_layer_ids()
+        for key, value in display_names.items():
+            lid = str(key).strip()
+            if not lid:
+                continue
+            if known and lid not in known:
+                raise LayerGroupError(f"未知图层 id: {lid}")
+            name = str(value).strip() if value is not None else ""
+            if not name:
+                current.pop(lid, None)
+                continue
+            if len(name) > self.DISPLAY_NAME_MAX_LEN:
+                raise LayerGroupError(
+                    f"显示名过长（≤{self.DISPLAY_NAME_MAX_LEN}）: {lid}"
+                )
+            current[lid] = name
+        payload = {**payload, "display_names": current}
+        return self._save_mutated_theme_preset(
+            theme_id, payload, updated_by_user_id=updated_by_user_id
+        )
 
     def delete_theme_preset(self, theme_id: int) -> bool:
         self._ensure_schema()
@@ -1005,15 +1347,28 @@ def resolve_catalog_group_scope(
     role: str | None,
     theme_id: int | None = None,
 ) -> CatalogGroupScope:
-    """Pick personal / theme / shared scope for catalog reads."""
-    if role == "admin" and user_id is not None:
-        return CatalogGroupScope.personal(int(user_id))
+    """Pick theme / shared scope for catalog reads.
+
+    Every authenticated user is theme-bound (mandatory). Admin map/catalog
+    reads use their bound theme (same as standard users); editors pass an
+    explicit ``theme_id`` query on write/preview endpoints instead of the
+    legacy personal workspace.
+    """
     tid = theme_id
     if tid is None and user_id is not None:
         try:
-            from app.services.permission_repository import get_permission_repository
+            from app.services.user_repository import get_user_repository
 
-            tid = get_permission_repository()._user_theme_id(int(user_id))
+            user = get_user_repository().get_by_id(int(user_id))
+            if user and user.get("theme_id") is not None:
+                tid = int(user["theme_id"])
+        except Exception:
+            tid = None
+    if tid is None:
+        try:
+            from app.services.theme_repository import get_theme_repository
+
+            tid = int(get_theme_repository().get_primary().id)
         except Exception:
             tid = None
     if tid is not None:

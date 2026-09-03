@@ -7,7 +7,7 @@
 | 引擎 | 何时挂载 | 能力边界 |
 |------|----------|----------|
 | MapLibre globe | `enable3DView` 且 `globeRenderEngine=maplibre`（默认） | 主链：星空/太阳系背景、晨昏线、风场粒子/羽/流线、天气 GeoJSON |
-| Cesium | `enable3DView` 且 `globeRenderEngine=cesium` 且 `viewMode=3d` | 实验：同源底图（`/unified-tiles`）、`/overlay-tiles` XYZ ImageryLayer、日夜光影、截图/缩放到图层、引擎互切视口桥 |
+| Cesium | `enable3DView` 且 `globeRenderEngine=cesium` 且 `viewMode=3d` | 实验：同源底图（`/unified-tiles`）、`/overlay-tiles` XYZ ImageryLayer、日夜光影、截图/缩放到图层、引擎互切视口桥；椭球底色浅蓝灰 `#9aa7b4` |
 
 互斥：Dashboard 上 `showMapLibreCanvas` / `showCesiumHost` 不同时挂载。2D 模式始终 MapLibre。
 

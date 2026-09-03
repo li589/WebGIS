@@ -8,7 +8,7 @@
  *   允许/拒绝徽标，单条移除；
  * - 主题模式：每次变更全量 PUT 替换；用户模式：添加走全量 PUT、移除走单条 DELETE。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import AppSelect from '../ui/AppSelect.vue'
 import ResourcePickerInput from './ResourcePickerInput.vue'
@@ -29,6 +29,7 @@ import {
   type ResourceType,
   type ThemePermissionRecord,
 } from '../../services/auth-api'
+import { onPermissionResourcesStale } from '../../utils/layer-group-manager-bridge'
 
 type AclMode = { kind: 'theme'; themeId: number } | { kind: 'user'; userId: number }
 
@@ -68,6 +69,7 @@ const message = ref<string | null>(null)
 const newType = ref<ResourceType>('layer')
 const newId = ref('')
 const newValue = ref<PermissionValue>('allow')
+let stopStaleBridge: (() => void) | null = null
 
 // ── 加载 ────────────────────────────────────────────────────────────────────
 
@@ -106,6 +108,14 @@ watch(
 onMounted(() => {
   void loadRecords()
   void loadCatalog()
+  stopStaleBridge = onPermissionResourcesStale(() => {
+    void loadCatalog()
+  })
+})
+
+onBeforeUnmount(() => {
+  stopStaleBridge?.()
+  stopStaleBridge = null
 })
 
 // ── 选择器数据 ──────────────────────────────────────────────────────────────

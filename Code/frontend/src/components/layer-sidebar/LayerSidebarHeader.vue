@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { LayoutGrid } from '../ui/icons'
+import Tooltip from '../ui/Tooltip.vue'
 
 defineProps<{
   sidebarViewLabel: string
@@ -26,46 +27,54 @@ const emit = defineEmits<{
         </p>
       </div>
       <div class="header-actions">
-        <button
-          v-if="activeLayerCount > 0"
-          class="badge"
-          type="button"
-          title="查看已添加图层"
-          @click="emit('openActive')"
-        >
-          {{ activeLayerCount }}
-        </button>
-        <div class="view-tabs" role="tablist">
+        <Tooltip v-if="activeLayerCount > 0" text="已添加">
           <button
-            v-if="canManageGroups"
-            class="view-tab view-tab--icon"
+            class="badge"
             type="button"
-            role="tab"
-            title="管理图层分组"
-            aria-label="管理图层分组"
-            @click="emit('openGroupManager')"
-          >
-            <LayoutGrid :size="14" :stroke-width="2" aria-hidden="true" />
-          </button>
-          <button
-            class="view-tab"
-            :class="{ active: sidebarView === 'library' }"
-            role="tab"
-            title="图层库"
-            @click="emit('openLibrary')"
-          >
-            +
-          </button>
-          <button
-            class="view-tab"
-            :class="{ active: sidebarView === 'active' }"
-            role="tab"
-            :aria-selected="sidebarView === 'active'"
-            title="已添加图层"
+            aria-label="查看已添加图层"
             @click="emit('openActive')"
           >
-            ≡
+            {{ activeLayerCount }}
           </button>
+        </Tooltip>
+        <div class="view-tabs" role="tablist">
+          <Tooltip v-if="canManageGroups" text="分组">
+            <button
+              class="view-tab view-tab--icon"
+              type="button"
+              role="tab"
+              aria-label="管理图层分组"
+              @click="emit('openGroupManager')"
+            >
+              <LayoutGrid :size="14" :stroke-width="2" aria-hidden="true" />
+            </button>
+          </Tooltip>
+          <Tooltip text="图层库">
+            <button
+              class="view-tab"
+              :class="{ active: sidebarView === 'library' }"
+              type="button"
+              role="tab"
+              aria-label="图层库"
+              :aria-selected="sidebarView === 'library'"
+              @click="emit('openLibrary')"
+            >
+              +
+            </button>
+          </Tooltip>
+          <Tooltip text="已添加">
+            <button
+              class="view-tab"
+              :class="{ active: sidebarView === 'active' }"
+              type="button"
+              role="tab"
+              aria-label="已添加图层"
+              :aria-selected="sidebarView === 'active'"
+              @click="emit('openActive')"
+            >
+              ≡
+            </button>
+          </Tooltip>
         </div>
       </div>
     </div>

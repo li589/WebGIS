@@ -308,8 +308,13 @@ class ThemeRepository:
             if conn.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='users' LIMIT 1"
             ).fetchone():
+                # Mandatory binding: null or orphaned theme_id → primary (sgfs).
                 conn.execute(
-                    "UPDATE users SET theme_id=? WHERE theme_id IS NULL",
+                    """
+                    UPDATE users SET theme_id=?
+                    WHERE theme_id IS NULL
+                       OR theme_id NOT IN (SELECT id FROM themes)
+                    """,
                     (theme_id,),
                 )
             conn.commit()

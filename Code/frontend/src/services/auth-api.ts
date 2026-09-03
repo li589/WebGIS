@@ -97,7 +97,8 @@ export function updateUser(
     password?: string
     role?: UserRole
     enabled?: boolean
-    theme_id?: number | null
+    /** Omit to leave unchanged; never send null (backend 422). */
+    theme_id?: number
   },
 ): Promise<AuthUser> {
   return requestJson<AuthUser>(`/auth/users/${userId}`, {

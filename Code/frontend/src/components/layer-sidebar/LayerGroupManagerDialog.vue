@@ -1,81 +1,135 @@
 <script setup lang="ts">
 /**
- * 图层分组管理对话框（管理员个人工作区）。
+ * 图层分组管理对话框（主题预设直写）。
  *
- * 分组 = 种子（layer_categories.json，可改名/样式，不可删除）⊕ 当前管理员
- * 个人工作区（后端 layer_groups：自建组 CRUD、重排、图层归属覆盖，按 user 隔离）。
- * 可选将当前工作区同步到主题预设，供绑定该主题的非管理员用户只读消费。
+ * 编辑目标 = 选定主题的分组预设（无预设时以种子为基线，首次写入时 materialize）。
+ * 支持：组增删改名/样式/排序、成员归属、主题级图层显示名覆盖。
+ * 运行时预设永不写入 catalog_seeds JSON。
  */
 import { computed, ref, watch } from 'vue'
 
 import IconButton from '../ui/IconButton.vue'
 import AppSelect from '../ui/AppSelect.vue'
-import { fetchLayerCategories } from '../../services/runtime-api'
+import { fetchLayerCatalog, fetchLayerCategories } from '../../services/runtime-api'
 import {
   createLayerGroup,
   deleteLayerGroup,
+  putThemeLayerDisplayNames,
   reorderLayerGroups,
   setLayerGroupMembers,
   syncLayerGroupsToTheme,
   updateLayerGroup,
+  fetchThemeLayerGroupPreset,
   type LayerCategoryDef,
 } from '../../services/layer-groups-api'
 import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { useAuthStore } from '../../stores/auth'
+import {
+  notifyPermissionResourcesStale,
+} from '../../utils/layer-group-manager-bridge'
 
-const props = defineProps<{ open: boolean }>()
+const props = defineProps<{
+  open: boolean
+  /** 打开时预选主题（来自主题管理「编辑分组」）。 */
+  initialThemeId?: number | null
+}>()
 const emit = defineEmits<{ close: [] }>()
 
 const workspace = useLayerWorkspace()
 const auth = useAuthStore()
 
-// ── 本地状态 ────────────────────────────────────────────────────────────────
+interface LibraryItem {
+  id: string
+  name: string
+  category: string
+  seedName: string
+}
 
 interface GroupRow {
   def: LayerCategoryDef
-  /** 编辑态（重命名/样式） */
   editing: boolean
   draftName: string
   draftIcon: string
   draftAccent: string
   draftSubCategories: string
-  /** 成员编辑态 */
   membersOpen: boolean
   memberDraft: string[] | null
 }
 
 const groups = ref<GroupRow[]>([])
+const libraryItems = ref<LibraryItem[]>([])
+const displayNameDrafts = ref<Record<string, string>>({})
 const loading = ref(false)
 const saving = ref(false)
+const importing = ref(false)
 const error = ref<string | null>(null)
 const message = ref<string | null>(null)
 const memberSearch = ref('')
+const hasPreset = ref(false)
+const presetUpdatedAt = ref<string | null>(null)
 
-// 新建分组表单
 const createOpen = ref(false)
 const newId = ref('')
 const newName = ref('')
 const newIcon = ref('')
 const newAccent = ref('')
 
-/** 可选：同步到主题预设 */
-const syncThemeId = ref<string>('')
-const syncingTheme = ref(false)
+/** 编辑目标主题（必选） */
+const editThemeId = ref<string>('')
 
 const themeOptions = computed(() =>
   (auth.themes ?? []).map((t) => ({
-    label: t.name_zh || t.slug,
+    label: `${t.name_zh || t.slug}${t.is_primary ? '（默认）' : ''}`,
     value: String(t.id),
   })),
 )
 
-// ── 数据加载 ────────────────────────────────────────────────────────────────
+const activeThemeId = computed(() => {
+  const n = Number(editThemeId.value)
+  return Number.isFinite(n) && n > 0 ? n : null
+})
+
+function defaultThemeIdString(): string {
+  if (props.initialThemeId != null && props.initialThemeId > 0) {
+    return String(props.initialThemeId)
+  }
+  const bound = auth.user?.theme_id
+  if (bound != null && bound > 0) return String(bound)
+  const primary = (auth.themes ?? []).find((t) => t.is_primary)
+  if (primary) return String(primary.id)
+  return themeOptions.value[0]?.value ?? ''
+}
 
 async function loadGroups() {
+  const tid = activeThemeId.value
+  if (tid == null) {
+    error.value = '请选择编辑目标主题'
+    groups.value = []
+    return
+  }
   loading.value = true
   try {
-    const response = await fetchLayerCategories()
-    groups.value = response.items.map((def) => ({
+    const [catResp, catalog, preset] = await Promise.all([
+      fetchLayerCategories({ themeId: tid }),
+      fetchLayerCatalog({ themeId: tid }),
+      fetchThemeLayerGroupPreset(tid),
+    ])
+    hasPreset.value = Boolean(preset.has_preset)
+    presetUpdatedAt.value = preset.updated_at
+    displayNameDrafts.value = { ...(preset.display_names || {}) }
+    const assignments = preset.assignments || {}
+    const seedNames = preset.seed_display_names || {}
+    libraryItems.value = (catalog.items ?? []).map((item) => {
+      const seedName = seedNames[item.layer_id] || item.layer_id
+      const override = displayNameDrafts.value[item.layer_id]
+      return {
+        id: item.layer_id,
+        name: (override && override.trim()) || item.display_name || seedName,
+        category: assignments[item.layer_id] || item.category,
+        seedName,
+      }
+    })
+    groups.value = catResp.items.map((def) => ({
       def,
       editing: false,
       draftName: def.name,
@@ -99,36 +153,34 @@ watch(
       error.value = null
       message.value = null
       createOpen.value = false
-      syncThemeId.value = themeOptions.value[0]?.value ?? ''
-      void auth.loadThemes()
-      void loadGroups()
+      void auth.loadThemes().then(() => {
+        editThemeId.value = defaultThemeIdString()
+        void loadGroups()
+      })
     }
   },
 )
 
-/** 保存后刷新：运行时分组（侧栏/面板）+ 目录（descriptor.category 归属覆盖） */
+watch(editThemeId, (next, prev) => {
+  if (!props.open || next === prev || !next) return
+  error.value = null
+  message.value = null
+  void loadGroups()
+})
+
 async function refreshRuntime() {
   try {
     await workspace.reloadLayerCategories()
   } catch {
-    // 分组定义刷新失败不阻断：下一次 ensureRuntimeLayerCatalog 会重试
+    /* retry on next catalog ensure */
   }
   try {
     await workspace.ensureRuntimeLayerCatalog(true)
   } catch {
-    // 目录刷新失败不阻断 UI 提示（网络异常时侧栏下次打开会重拉）
+    /* non-blocking */
   }
+  notifyPermissionResourcesStale()
 }
-
-// ── 图层库（成员选择数据源） ────────────────────────────────────────────────
-
-const libraryItems = computed(() =>
-  workspace.layerLibrary.value.map((item) => ({
-    id: item.catalogId,
-    name: item.name,
-    category: item.category,
-  })),
-)
 
 function memberOptions() {
   const q = memberSearch.value.trim().toLowerCase()
@@ -152,7 +204,11 @@ function toggleMember(group: GroupRow, layerId: string) {
     : [...current, layerId]
 }
 
-// ── 分组操作 ────────────────────────────────────────────────────────────────
+function requireThemeId(): number {
+  const tid = activeThemeId.value
+  if (tid == null) throw new Error('请选择编辑目标主题')
+  return tid
+}
 
 async function run(action: () => Promise<void>, okMessage: string) {
   saving.value = true
@@ -179,16 +235,21 @@ async function applyEdit(group: GroupRow) {
     .split(/[、,，]/)
     .map((s) => s.trim())
     .filter(Boolean)
+  const tid = requireThemeId()
   await run(async () => {
-    await updateLayerGroup(group.def.id, {
-      name,
-      icon: group.draftIcon.trim() || null,
-      accent_color: group.draftAccent.trim() || null,
-      sub_categories: subCategories,
-    })
+    await updateLayerGroup(
+      group.def.id,
+      {
+        name,
+        icon: group.draftIcon.trim() || null,
+        accent_color: group.draftAccent.trim() || null,
+        sub_categories: subCategories,
+      },
+      tid,
+    )
     group.editing = false
     await loadGroups()
-  }, '分组已更新')
+  }, '分组已更新（已写入主题预设）')
 }
 
 function startEdit(group: GroupRow) {
@@ -205,38 +266,47 @@ function move(group: GroupRow, offset: -1 | 1) {
   if (index < 0 || target < 0 || target >= groups.value.length) return
   const next = [...groups.value]
   next.splice(target, 0, next.splice(index, 1)[0])
+  const tid = requireThemeId()
   void run(async () => {
-    await reorderLayerGroups({ order: next.map((g) => g.def.id) })
+    await reorderLayerGroups({ order: next.map((g) => g.def.id) }, tid)
     await loadGroups()
   }, '分组顺序已更新')
 }
 
 async function remove(group: GroupRow) {
   if (group.def.is_custom) {
-    if (!window.confirm(`确定删除分组「${group.def.name}」？组内图层将回落到种子分类。`)) {
+    if (!window.confirm(`确定从本主题预设删除分组「${group.def.name}」？`)) {
       return
     }
   } else {
-    error.value = '种子分组不可删除（来自 layer_categories.json，可改名/样式）'
+    error.value = '种子分组不可删除（可改名/样式；种子 JSON 不变）'
     return
   }
+  const tid = requireThemeId()
   await run(async () => {
-    await deleteLayerGroup(group.def.id)
+    await deleteLayerGroup(group.def.id, tid)
     await loadGroups()
   }, '分组已删除')
 }
 
 async function saveMembers(group: GroupRow) {
   const layerIds = group.memberDraft ?? []
+  const tid = requireThemeId()
   await run(async () => {
-    await setLayerGroupMembers(group.def.id, { layer_ids: layerIds })
+    await setLayerGroupMembers(group.def.id, { layer_ids: layerIds }, tid)
     group.membersOpen = false
     group.memberDraft = null
     await loadGroups()
   }, '分组成员已更新')
 }
 
-// ── 新建分组 ────────────────────────────────────────────────────────────────
+async function saveDisplayNames() {
+  const tid = requireThemeId()
+  await run(async () => {
+    await putThemeLayerDisplayNames(tid, { ...displayNameDrafts.value })
+    await loadGroups()
+  }, '主题图层显示名已保存')
+}
 
 function slugify(raw: string): string {
   return raw
@@ -259,46 +329,58 @@ async function submitCreate() {
     error.value = '分组 id 至少 2 个字符（小写字母开头，仅 a-z/0-9/-/_）'
     return
   }
+  const tid = requireThemeId()
   await run(async () => {
-    await createLayerGroup({
-      id,
-      name: newName.value.trim(),
-      icon: newIcon.value.trim() || null,
-      accent_color: newAccent.value.trim() || null,
-      sub_categories: [],
-    })
+    await createLayerGroup(
+      {
+        id,
+        name: newName.value.trim(),
+        icon: newIcon.value.trim() || null,
+        accent_color: newAccent.value.trim() || null,
+        sub_categories: [],
+      },
+      tid,
+    )
     createOpen.value = false
     newId.value = ''
     newName.value = ''
     newIcon.value = ''
     newAccent.value = ''
     await loadGroups()
-  }, '分组已创建')
+  }, '分组已创建（已写入主题预设；白名单主题请在 ACL 中补 allow）')
 }
 
 function close() {
-  if (saving.value || syncingTheme.value) return
+  if (saving.value || importing.value) return
   emit('close')
 }
 
-async function syncToTheme() {
-  const themeId = Number(syncThemeId.value)
-  if (!Number.isFinite(themeId) || themeId <= 0) {
-    error.value = '请选择要同步的主题'
+/** 次要：将管理员个人工作区一次性导入到当前编辑主题。 */
+async function importFromPersonalWorkspace() {
+  const tid = activeThemeId.value
+  if (tid == null) {
+    error.value = '请选择编辑目标主题'
     return
   }
-  syncingTheme.value = true
+  if (
+    !window.confirm(
+      '将用当前管理员个人工作区覆盖本主题预设（含分组与成员）。显示名覆盖会按导入结果重置为空，是否继续？',
+    )
+  ) {
+    return
+  }
+  importing.value = true
   error.value = null
   message.value = null
   try {
-    await syncLayerGroupsToTheme(themeId)
-    const label =
-      themeOptions.value.find((t) => t.value === String(themeId))?.label ?? `主题 #${themeId}`
-    message.value = `已将当前分组配置同步到「${label}」预设。若主题使用白名单 ACL，请在主题管理中为新增自建分组补 allow，否则成员图层可能不可见。`
+    await syncLayerGroupsToTheme(tid)
+    await refreshRuntime()
+    await loadGroups()
+    message.value = '已从个人工作区导入到本主题预设'
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '同步到主题失败'
+    error.value = err instanceof Error ? err.message : '导入失败'
   } finally {
-    syncingTheme.value = false
+    importing.value = false
   }
 }
 </script>
@@ -312,8 +394,8 @@ async function syncToTheme() {
             <p class="lgm-kicker">图层平台</p>
             <h2 id="lgm-title" class="lgm-title">图层分组管理</h2>
             <p class="lgm-hint">
-              此处配置仅影响当前管理员账号的图层库分组；种子组可改名/样式，自建组可增删排序。
-              可选将当前配置同步到主题预设，供绑定该主题的用户使用。
+              针对选定主题直接编辑分组预设（移动图层、改组名、增删组、主题显示名）。
+              绑定该主题的用户只读消费此预设；运行时变更<strong>不会</strong>改写种子 JSON（gen:catalog / check:catalog 口径不变）。
             </p>
           </div>
           <IconButton size="sm" label="关闭" @click="close">
@@ -321,33 +403,48 @@ async function syncToTheme() {
           </IconButton>
         </header>
 
+        <section v-if="themeOptions.length" class="lgm-theme-sync">
+          <span class="lgm-theme-sync-label">编辑目标主题</span>
+          <AppSelect
+            :model-value="editThemeId"
+            :options="themeOptions"
+            @change="editThemeId = $event"
+          />
+          <span class="lgm-status" style="padding: 0; text-align: left">
+            <template v-if="hasPreset">
+              已有预设{{ presetUpdatedAt ? ` · ${presetUpdatedAt}` : '' }}
+            </template>
+            <template v-else>尚无预设（当前为种子基线；保存任一项后将物化）</template>
+          </span>
+          <button
+            type="button"
+            class="lgm-btn"
+            :disabled="saving || importing || !editThemeId"
+            title="兼容迁移：用个人工作区覆盖本主题预设"
+            @click="importFromPersonalWorkspace"
+          >
+            {{ importing ? '导入中…' : '从个人工作区导入' }}
+          </button>
+        </section>
+
         <section class="lgm-toolbar">
           <button
             type="button"
             class="lgm-btn"
-            :disabled="saving"
+            :disabled="saving || !editThemeId"
             @click="createOpen = !createOpen"
           >
             {{ createOpen ? '收起新建' : '＋ 新建分组' }}
           </button>
-          <span v-if="loading" class="lgm-status">加载中…</span>
-        </section>
-
-        <section v-if="themeOptions.length" class="lgm-theme-sync">
-          <span class="lgm-theme-sync-label">同步到主题预设（可选）</span>
-          <AppSelect
-            :model-value="syncThemeId"
-            :options="themeOptions"
-            @change="syncThemeId = $event"
-          />
           <button
             type="button"
             class="lgm-btn lgm-btn--primary"
-            :disabled="saving || syncingTheme || !syncThemeId"
-            @click="syncToTheme"
+            :disabled="saving || !editThemeId"
+            @click="saveDisplayNames"
           >
-            {{ syncingTheme ? '同步中…' : '同步当前分组' }}
+            保存主题显示名
           </button>
+          <span v-if="loading" class="lgm-status">加载中…</span>
         </section>
 
         <form v-if="createOpen" class="lgm-create" @submit.prevent="submitCreate">
@@ -481,6 +578,17 @@ async function syncToTheme() {
                     @change="toggleMember(group, item.id)"
                   />
                   <span class="lgm-member-name">{{ item.name }}</span>
+                  <input
+                    class="lgm-member-rename"
+                    type="text"
+                    :value="displayNameDrafts[item.id] ?? ''"
+                    :placeholder="item.seedName"
+                    :disabled="saving"
+                    title="主题显示名覆盖（空=清除覆盖）"
+                    @input="
+                      displayNameDrafts[item.id] = ($event.target as HTMLInputElement).value
+                    "
+                  />
                   <code class="lgm-member-id">{{ item.id }}</code>
                 </label>
                 <p v-if="!memberOptions().length" class="lgm-status">无匹配图层</p>
@@ -533,7 +641,7 @@ async function syncToTheme() {
   padding: 2rem;
 }
 .lgm-dialog {
-  width: min(720px, 100%);
+  width: min(780px, 100%);
   max-height: calc(100vh - 4rem);
   display: flex;
   flex-direction: column;
@@ -578,6 +686,7 @@ async function syncToTheme() {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex-wrap: wrap;
 }
 .lgm-theme-sync {
   display: flex;
@@ -592,7 +701,7 @@ async function syncToTheme() {
 .lgm-theme-sync-label {
   font-size: var(--font-size-caption);
   color: var(--text-secondary);
-  flex: 1 1 8rem;
+  flex: 0 0 auto;
 }
 .lgm-btn {
   padding: 0.35rem 0.8rem;
@@ -736,6 +845,7 @@ async function syncToTheme() {
   display: flex;
   gap: 0.35rem;
   align-items: center;
+  flex-wrap: wrap;
 }
 .lgm-icon-btn {
   width: 1.7rem;
@@ -776,10 +886,10 @@ async function syncToTheme() {
   font-size: var(--font-size-caption);
 }
 .lgm-member-list {
-  max-height: 12rem;
+  max-height: 14rem;
   overflow: auto;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: 1fr;
   gap: 0.3rem;
 }
 .lgm-member {
@@ -802,6 +912,20 @@ async function syncToTheme() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 5rem;
+  max-width: 8rem;
+}
+.lgm-member-rename {
+  flex: 1;
+  min-width: 6rem;
+  height: 1.6rem;
+  padding: 0 0.4rem;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.72rem;
 }
 .lgm-member-id {
   margin-left: auto;
