@@ -192,7 +192,7 @@ function onReducedMotionChange(event: Event) {
           />
         </div>
         <p class="section-hint">
-          MapLibre 为默认主链（地球投影 + 现有天气叠加）。Cesium 为实验引擎：底图与「自然」光影已接，天气叠加尚未接入。
+          MapLibre 为默认主链（地球投影 + 现有天气叠加）。Cesium 为实验引擎：底图、overlay 栅格瓦片与「自然」光影已接；天气 GeoJSON / 风场粒子尚未接入。
         </p>
         <div class="scene-option" :class="{ 'scene-option--disabled': !mapLibreSceneOnly }">
           <span class="scene-option-label">3D 背景</span>

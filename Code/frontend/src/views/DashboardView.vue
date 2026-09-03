@@ -156,6 +156,7 @@ const mapCanvasRef = ref<InstanceType<typeof MapCanvas> | null>(null)
 const cesiumHostRef = ref<{
   flyToBounds: (b: [number, number, number, number]) => void
   getCanvas: () => HTMLCanvasElement | null
+  capturePngDataUrl?: () => string | null
   getHostElement: () => HTMLElement | null
 } | null>(null)
 
@@ -472,6 +473,8 @@ function handleZoomToLayer(instanceId: string): boolean {
 async function captureActiveMapCanvas(): Promise<string | null> {
   if (showCesiumHost.value) {
     try {
+      const fromHost = cesiumHostRef.value?.capturePngDataUrl?.()
+      if (fromHost) return fromHost
       const canvas = cesiumHostRef.value?.getCanvas()
       return canvas?.toDataURL('image/png') ?? null
     } catch {

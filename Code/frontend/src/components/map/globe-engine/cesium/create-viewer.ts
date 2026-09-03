@@ -31,6 +31,8 @@ export interface CesiumViewerHandle extends GlobeEngineHost {
   flyTo(lng: number, lat: number, heightMeters?: number): void
   flyToBounds(bounds: LngLatBoundsTuple): void
   captureView(): { lng: number; lat: number; heightMeters: number } | null
+  /** 强制一帧后导出 PNG data URL（截图用） */
+  capturePngDataUrl(): string | null
 }
 
 export async function createCesiumViewer(
@@ -44,6 +46,7 @@ export async function createCesiumViewer(
   // skyAtmosphere 勿传 true：Cesium 会把布尔值赋给 scene.skyAtmosphere，随后 EventHelper
   // 会抛 Expected listener to be typeof function, actual typeof was undefined。
   // 省略该选项即可使用默认 SkyAtmosphere 实例；skyBox:false 关闭星盒但仍保留地球大气。
+  // preserveDrawingBuffer：截图 toDataURL 需要，否则默认 WebGL 双缓冲读到空帧。
   const viewer = new Cesium.Viewer(container, {
     animation: false,
     timeline: false,
@@ -58,6 +61,11 @@ export async function createCesiumViewer(
     baseLayer: false,
     skyBox: false,
     terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+    contextOptions: {
+      webgl: {
+        preserveDrawingBuffer: true,
+      },
+    },
   })
 
   let basemapLayerCount = 0
@@ -182,6 +190,16 @@ export async function createCesiumViewer(
         lng: Cesium.Math.toDegrees(carto.longitude),
         lat: Cesium.Math.toDegrees(carto.latitude),
         heightMeters: carto.height,
+      }
+    },
+    capturePngDataUrl() {
+      if (viewer.isDestroyed()) return null
+      try {
+        viewer.render()
+        const canvas = viewer.scene.canvas as HTMLCanvasElement
+        return canvas.toDataURL('image/png')
+      } catch {
+        return null
       }
     },
   }

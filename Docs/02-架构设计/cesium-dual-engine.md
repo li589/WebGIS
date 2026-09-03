@@ -52,6 +52,22 @@ Vite 直连通常**无** CSP，故本地另开端口冒烟可能「能过」；�
 
 ## 验证
 
+### 自动化
+
 - 单测：`Test/frontend/components/map/globe-engine-*.test.ts`、`globe-solar-system.test.ts`
-- 手测：设置选 Cesium → 3D；截图；缩放到导入栅格；MapLibre↔Cesium 视角大致连续；回 MapLibre 风场仍正常
 - `cd Code/frontend && npm run build`（确认 lazy chunk + `dist/cesium/`）
+- Gateway 基建冒烟：`http://localhost:5175/cesium-smoke.html`（CSP 关键字 + `/cesium/` 资源 + WASM instantiate；**不**在静态入口 `import('cesium')`）
+
+### 手测清单（Dashboard）
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| 1 | 设置 → 外观 → 勾选启用 3D → 引擎选 Cesium → 顶栏 3D | 地球出现；banner 提示实验模式；无 CSP / listener 报错 |
+| 2 | 工具栏「截图」导出 | 非黑屏；含地球与底图（`preserveDrawingBuffer` + render 后 toDataURL） |
+| 3 | 侧栏对导入栅格「缩放到图层」 | Cesium `flyToBounds` 飞到包络 |
+| 4 | 设置切回 MapLibre（仍 3D） | 视角大致连续（view-bridge）；风场粒子仍可用 |
+| 5 | 再切 Cesium | 视角大致连续；overlay 栅格层若已打开应叠上 |
+| 6 | MapLibre + 太阳系背景 | 太阳为柔和日冕，**无**中心橙红实心小圆 |
+| 7 | 回 2D | MapLibre mercator；不强制套用 Cesium 高度跳变 |
+
+说明：Vite 直连无 CSP 时「能过」、`:5175` 失败 → 先查 `security-headers.conf` 是否含 `'unsafe-eval'` + `'wasm-unsafe-eval'`，再 `launch.py reload gateway` 并硬刷新。

@@ -157,6 +157,9 @@ defineExpose({
     const viewer = handle.value?.getViewer()
     return (viewer?.scene?.canvas as HTMLCanvasElement | undefined) ?? null
   },
+  capturePngDataUrl(): string | null {
+    return handle.value?.capturePngDataUrl() ?? null
+  },
   getHostElement(): HTMLElement | null {
     return rootRef.value
   },

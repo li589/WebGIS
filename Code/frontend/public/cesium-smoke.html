@@ -1,70 +1,88 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <title>Cesium smoke</title>
+    <title>Cesium / Gateway 冒烟</title>
     <style>
       html,
-      body,
-      #c {
+      body {
         margin: 0;
-        height: 100%;
-        background: #111;
+        min-height: 100%;
+        background: #0b0e14;
+        color: #c8d0dc;
+        font: 13px/1.5 ui-monospace, Consolas, monospace;
       }
-      #err {
-        color: #f88;
-        position: absolute;
-        left: 8px;
-        top: 8px;
-        z-index: 2;
-        font: 12px/1.4 monospace;
+      #out {
+        padding: 1rem 1.25rem;
         white-space: pre-wrap;
-        max-width: 90%;
+        max-width: 52rem;
+      }
+      .ok {
+        color: #7dcea0;
+      }
+      .fail {
+        color: #e07070;
+      }
+      a {
+        color: #7eb8ff;
       }
     </style>
   </head>
   <body>
-    <div id="err">loading…</div>
-    <div id="c"></div>
+    <pre id="out">running…</pre>
     <script type="module">
-      window.CESIUM_BASE_URL = '/cesium/'
-      const err = document.getElementById('err')
-      try {
-        await import('/cesium/Widgets/widgets.css')
-      } catch (_) {
-        /* css path may differ in gateway static */
+      const out = document.getElementById('out')
+      const lines = []
+      const log = (s, cls) => {
+        lines.push(cls ? `<span class="${cls}">${s}</span>` : s)
+        out.innerHTML = lines.join('\n')
       }
+
+      async function headOk(path) {
+        const res = await fetch(path, { method: 'GET', cache: 'no-store' })
+        return { path, status: res.status, type: res.headers.get('content-type') || '' }
+      }
+
       try {
-        const Cesium = await import('cesium')
-        err.textContent = 'cesium imported, creating Viewer…'
-        const viewer = new Cesium.Viewer(document.getElementById('c'), {
-          animation: false,
-          timeline: false,
-          baseLayerPicker: false,
-          geocoder: false,
-          homeButton: false,
-          sceneModePicker: false,
-          navigationHelpButton: false,
-          fullscreenButton: false,
-          infoBox: false,
-          selectionIndicator: false,
-          baseLayer: false,
-          skyBox: false,
-          skyAtmosphere: true,
-        })
-        viewer.imageryLayers.addImageryProvider(
-          new Cesium.UrlTemplateImageryProvider({
-            url: '/unified-tiles/osm-standard/{z}/{x}/{y}',
-            maximumLevel: 18,
-          }),
+        const csp =
+          (await fetch(location.href, { method: 'HEAD', cache: 'no-store' }).catch(() => null)) ||
+          (await fetch('/', { method: 'HEAD', cache: 'no-store' }))
+        const cspHeader = csp.headers.get('content-security-policy') || '(none)'
+        log('CSP: ' + cspHeader)
+        const hasWasm = cspHeader.includes('wasm-unsafe-eval')
+        const hasEval = cspHeader.includes("'unsafe-eval'")
+        log(
+          hasWasm && hasEval
+            ? 'CSP keywords: wasm-unsafe-eval + unsafe-eval OK'
+            : 'CSP keywords: MISSING (need both wasm-unsafe-eval and unsafe-eval for Cesium on :5175)',
+          hasWasm && hasEval ? 'ok' : 'fail',
         )
-        viewer.camera.setView({
-          destination: Cesium.Cartesian3.fromDegrees(105, 35, 12_000_000),
-        })
-        err.textContent = 'OK: viewer created'
-        window.__viewer = viewer
+
+        const assets = await Promise.all([
+          headOk('/cesium/Widgets/widgets.css'),
+          headOk('/cesium/Workers/transferTypedArrayTest.js'),
+          headOk('/cesium/ThirdParty/zip-module.wasm'),
+        ])
+        for (const a of assets) {
+          log(
+            `${a.status} ${a.path} (${a.type || 'no-type'})`,
+            a.status === 200 ? 'ok' : 'fail',
+          )
+        }
+
+        const wasmRes = await fetch('/cesium/ThirdParty/zip-module.wasm', { cache: 'no-store' })
+        if (!wasmRes.ok) throw new Error('wasm fetch failed: ' + wasmRes.status)
+        const buf = await wasmRes.arrayBuffer()
+        const mod = await WebAssembly.compile(buf)
+        await WebAssembly.instantiate(mod, {})
+        log('WebAssembly.compile/instantiate: OK', 'ok')
+
+        // 完整 Viewer 在静态 Gateway 下走 SPA vendor-cesium chunk，本页不做 import('cesium')。
+        log('')
+        log('Infrastructure smoke passed. Full Viewer: Dashboard → 设置选 Cesium → 顶栏 3D')
+        log('<a href="/">打开应用</a>')
       } catch (e) {
-        err.textContent = String(e && e.stack ? e.stack : e)
+        log('FAIL: ' + (e && e.stack ? e.stack : e), 'fail')
         console.error(e)
       }
     </script>
