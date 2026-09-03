@@ -1265,6 +1265,17 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     deps.scheduleWorkspacePersist()
   }
 
+  /** 组内仍有未绑定 overlay 的占位（SM/VOD/OMEGA 部分物化） */
+  function hasUnboundRunGroupPlaceholders(runId: string): boolean {
+    if (!runId) return false
+    const g = runLayerGroups.value.find((x) => x.runId === runId)
+    if (!g) return false
+    return g.memberInstanceIds.some((instanceId) => {
+      const layer = deps.getActiveLayers().find((l) => l.instanceId === instanceId)
+      return Boolean(layer && !layer.importedRaster?.overlayLayerId)
+    })
+  }
+
   function refreshRunGroupDissolvable(groupId: string) {
     const g = runLayerGroups.value.find((x) => x.groupId === groupId)
     if (!g) return
@@ -1431,6 +1442,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
     createRunLayerGroup,
     bindRunIdToGroup,
     cleanupUnproducedRunLayers,
+    hasUnboundRunGroupPlaceholders,
     refreshRunGroupDissolvable,
     updateRunGroupFromJob,
     dissolveRunGroup,

@@ -20,12 +20,20 @@ export type WorkflowProgressNodeLike = {
 }
 
 /**
- * Backend overall stage: weighted span from ScopedProgressLogger (``workflow.dispatch``)
- * or lifecycle bookends from runner dispatch (``workflow_dispatch``).
+ * Backend overall stage: weighted span from ScopedProgressLogger (``workflow.dispatch``).
+ * ``workflow_dispatch`` is only a bookend (0% start / 100% end) — do not Math.max it
+ * with the weighted stage or a finished bookend will pin the bar at 100% mid-run.
  */
 export function isOverallProgressStage(nodeIdOrStage: string | null | undefined): boolean {
   const id = String(nodeIdOrStage ?? '').trim()
   return id === 'workflow.dispatch' || id === 'workflow_dispatch'
+}
+
+/** Weighted overall bar only — excludes lifecycle bookend ``workflow_dispatch``. */
+export function isWeightedOverallProgressStage(
+  nodeIdOrStage: string | null | undefined,
+): boolean {
+  return String(nodeIdOrStage ?? '').trim() === 'workflow.dispatch'
 }
 
 /** Internal per-node bookkeeping stages — hide from the node-progress list. */
@@ -242,10 +250,15 @@ export function resolveJobOverallProgress(opts: {
   snapshot?: number | null
   nodeProgress?: WorkflowProgressNodeLike[] | null
 }): number {
-  const dispatchNodes = (opts.nodeProgress ?? []).filter((n) => isOverallProgressStage(n.nodeId))
-  if (dispatchNodes.length) {
-    return Math.max(...dispatchNodes.map((n) => normalizeWorkflowProgress(n.progress)))
+  const weighted = (opts.nodeProgress ?? []).filter((n) =>
+    isWeightedOverallProgressStage(n.nodeId),
+  )
+  if (weighted.length) {
+    return Math.max(...weighted.map((n) => normalizeWorkflowProgress(n.progress)))
   }
+  // No weighted dispatch yet: keep monotonic max of snapshot/current.
+  // Mid-run 100% inflation is prevented upstream (ignore naked event.progress /
+  // workflow_dispatch bookend), not by forcing snapshot-only here.
   const candidates: number[] = []
   if (typeof opts.snapshot === 'number' && Number.isFinite(opts.snapshot)) {
     candidates.push(normalizeWorkflowProgress(opts.snapshot))

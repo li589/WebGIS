@@ -309,6 +309,7 @@ export interface WorkflowStateWriterDeps {
   /** 立即落盘；restore 路径应传 { sync: false } 避免冲远端 */
   flushWorkspacePersistNow: (opts?: { sync?: boolean }) => void
   cleanupUnproducedRunLayers: (runId: string, opts?: { succeeded?: boolean }) => void
+  hasUnboundRunGroupPlaceholders?: (runId: string) => boolean
   /** 丢弃探测失败的 run 组 UI（不删后端 overlay） */
   discardRunGroupUi?: (runId: string) => void
   createRunLayerGroup: (options: {
@@ -878,7 +879,20 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
             })
             .then((boundCount) => {
               if (boundCount > 0) {
-                deps.cleanupUnproducedRunLayers(run.run_id, { succeeded: true })
+                // 部分绑定（如 resume-only 缺 OMEGA）时勿立刻清占位，留给 retry 补齐
+                if (!deps.hasUnboundRunGroupPlaceholders?.(run.run_id)) {
+                  deps.cleanupUnproducedRunLayers(run.run_id, { succeeded: true })
+                } else {
+                  scheduleSucceededAttachRetry({
+                    runId: run.run_id,
+                    catalogId,
+                    resultRefs: run.result_refs,
+                    attach: deps.attachAlgorithmProductOverlays,
+                    cleanup: deps.cleanupUnproducedRunLayers,
+                    isRunDismissed,
+                    hasUnboundPlaceholders: deps.hasUnboundRunGroupPlaceholders,
+                  })
+                }
                 deps.flushWorkspacePersistNow({ sync: false })
                 return
               }
@@ -889,6 +903,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
                 attach: deps.attachAlgorithmProductOverlays,
                 cleanup: deps.cleanupUnproducedRunLayers,
                 isRunDismissed,
+                hasUnboundPlaceholders: deps.hasUnboundRunGroupPlaceholders,
               })
             })
         }

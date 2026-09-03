@@ -36,11 +36,32 @@ export interface ScheduleAttachRetryOptions {
   ) => Promise<number>
   cleanup: (runId: string, opts?: { succeeded?: boolean }) => void
   isRunDismissed: (runId: string) => boolean
+  /** 组内仍有未绑定占位（如缺 OMEGA）时，重试后也不要立刻 cleanup */
+  hasUnboundPlaceholders?: (runId: string) => boolean
 }
 
-/** 终态 succeeded 但首次 attach 返回 0 时调度一次 forceBind 重试。 */
+function maybeCleanupAfterAttach(
+  runId: string,
+  boundCount: number,
+  cleanup: ScheduleAttachRetryOptions['cleanup'],
+  hasUnboundPlaceholders?: (runId: string) => boolean,
+): void {
+  if (boundCount <= 0) return
+  if (hasUnboundPlaceholders?.(runId)) return
+  cleanup(runId, { succeeded: true })
+}
+
+/** 终态 succeeded 但首次 attach 返回 0 / 部分绑定时调度 forceBind 重试。 */
 export function scheduleSucceededAttachRetry(opts: ScheduleAttachRetryOptions): void {
-  const { runId, catalogId, resultRefs, attach, cleanup, isRunDismissed } = opts
+  const {
+    runId,
+    catalogId,
+    resultRefs,
+    attach,
+    cleanup,
+    isRunDismissed,
+    hasUnboundPlaceholders,
+  } = opts
   if (!runId || succeededAttachRetryTimers.has(runId)) return
   succeededAttachRetryTimers.set(
     runId,
@@ -48,9 +69,7 @@ export function scheduleSucceededAttachRetry(opts: ScheduleAttachRetryOptions): 
       succeededAttachRetryTimers.delete(runId)
       if (isRunDismissed(runId)) return
       void attach(resultRefs, catalogId, runId, { forceBind: true }).then((boundCount) => {
-        if (boundCount > 0) {
-          cleanup(runId, { succeeded: true })
-        }
+        maybeCleanupAfterAttach(runId, boundCount, cleanup, hasUnboundPlaceholders)
       })
     }, SUCCEEDED_ATTACH_RETRY_MS),
   )

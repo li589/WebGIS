@@ -56,7 +56,6 @@ const {
   canEditPalette,
   rangeEditVmin,
   rangeEditVmax,
-  rangeInputStep,
   nodataModeValue,
   nodataColorValue,
   handleSelectPalette,
@@ -428,9 +427,10 @@ onBeforeUnmount(() => {
             v-if="canEditPalette"
             v-model="rangeEditVmin"
             class="style-range-input"
-            type="number"
-            :step="rangeInputStep"
+            type="text"
             inputmode="decimal"
+            autocomplete="off"
+            spellcheck="false"
             title="值域下限"
             @change="rangeEditVmin = ($event.target as HTMLInputElement).value"
             @keyup.enter="rangeEditVmin = ($event.target as HTMLInputElement).value"
@@ -443,9 +443,10 @@ onBeforeUnmount(() => {
             v-if="canEditPalette"
             v-model="rangeEditVmax"
             class="style-range-input"
-            type="number"
-            :step="rangeInputStep"
+            type="text"
             inputmode="decimal"
+            autocomplete="off"
+            spellcheck="false"
             title="值域上限"
             @change="rangeEditVmax = ($event.target as HTMLInputElement).value"
             @keyup.enter="rangeEditVmax = ($event.target as HTMLInputElement).value"

@@ -148,8 +148,8 @@ describe('applyWorkflowEventsToJobLayer', () => {
   it('进度单调取最大值，不因低进度事件回退', () => {
     const { poller } = setupDeps()
     const result = poller.applyWorkflowEventsToJobLayer(makeJobLayer({ progress: 40 }), [
-      makeEvent({ progress: 5 }),
-      makeEvent({ event_id: 'evt-2', progress: 60 }),
+      makeEvent({ progress: 5, payload: { status: 'running' } }),
+      makeEvent({ event_id: 'evt-2', progress: 60, payload: { status: 'running' } }),
     ])
     expect(result.progress).toBe(60)
   })
@@ -194,6 +194,42 @@ describe('applyWorkflowEventsToJobLayer', () => {
     expect(result.status).toBe('running')
     expect(result.message).toBe('运行中')
     expect(result.nodeProgress).toHaveLength(1)
+  })
+
+  it('running 后忽略 queued 状态回写，且模块 progress=100 不抬升总进度', () => {
+    const { poller } = setupDeps()
+    const result = poller.applyWorkflowEventsToJobLayer(
+      makeJobLayer({ status: 'running', progress: 20, message: '运行中' }),
+      [
+        makeEvent({
+          progress: 100,
+          payload: { status: 'queued' },
+          message: '工作流已成功派发到 Celery，等待 worker 消费。',
+        }),
+        makeEvent({
+          progress: 95,
+          payload: {
+            node_progress: {
+              node_id: 'fy_download',
+              progress: 100,
+              message: 'done',
+            },
+          },
+        }),
+        makeEvent({
+          progress: 42,
+          payload: {
+            node_progress: {
+              node_id: 'workflow.dispatch',
+              progress: 42,
+              message: '整体 42%',
+            },
+          },
+        }),
+      ],
+    )
+    expect(result.status).toBe('running')
+    expect(result.progress).toBe(42)
   })
 
   it('终态保护：failed 后不接受 queued/running 降级', () => {

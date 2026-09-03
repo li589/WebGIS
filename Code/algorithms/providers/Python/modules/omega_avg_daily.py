@@ -309,8 +309,19 @@ class OmegaAvgDailyModule(BaseModule):
 
         # 构建 manifest
         days_processed = int(stage_d_result.get("days_processed", 0))
+        days_resumed = int(stage_d_result.get("days_resumed", 0))
         products: list[ProductRef] = []
-        if days_processed > 0:
+        # 全量 resume（processed=0, resumed>0）也必须发布三图层，否则前端
+        # materialize 只有 SM/VOD 或缺产物，cleanup 会删掉 OMEGA 占位。
+        has_daily_mats = False
+        try:
+            has_daily_mats = any(
+                path.is_file() and path.suffix.lower() == ".mat" and path.stem.isdigit()
+                for path in Path(output_dir).iterdir()
+            )
+        except OSError:
+            has_daily_mats = False
+        if days_processed > 0 or days_resumed > 0 or has_daily_mats:
             # 目标年逐日 SM/VOD/OMEGA 目录：复用 omega_sf_*_block_dir 类型，
             # 单日 YYYYMMDD.mat 由物化链按一天块发布为时间序列图层。
             for variable, layer in (("SM", "SM"), ("VOD", "VOD"), ("OMEGA", "OMEGA")):

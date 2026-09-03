@@ -77,6 +77,7 @@ export function createWorkflowRunDomain(
     createRunLayerGroup,
     bindRunIdToGroup,
     cleanupUnproducedRunLayers,
+    hasUnboundRunGroupPlaceholders,
     discardRunGroupUi,
     refreshRunGroupDissolvable,
     updateRunGroupFromJob,
@@ -121,6 +122,7 @@ export function createWorkflowRunDomain(
     attachAlgorithmProductOverlays: (refs, catalogId, runId, opts) =>
       attachAlgorithmProductOverlays(refs as never, catalogId, runId, opts),
     cleanupUnproducedRunLayers: (runId, opts) => cleanupUnproducedRunLayers(runId, opts),
+    hasUnboundRunGroupPlaceholders: (runId) => hasUnboundRunGroupPlaceholders(runId),
     clearWindForCatalog: (catalogId) => viewport.clearWindForCatalog(catalogId),
     enableParticleIfUnset: (catalogId) => viewport.enableParticleIfUnset(catalogId),
     buildJobLayer: (run, catalogId, opts) => buildJobLayer(run as never, catalogId, opts),
@@ -224,6 +226,7 @@ export function createWorkflowRunDomain(
     scheduleWorkspacePersist: () => bindings.scheduleWorkspacePersist(),
     flushWorkspacePersistNow: (opts) => bindings.flushWorkspacePersistNow(opts),
     cleanupUnproducedRunLayers: (runId, opts) => cleanupUnproducedRunLayers(runId, opts),
+    hasUnboundRunGroupPlaceholders: (runId) => hasUnboundRunGroupPlaceholders(runId),
     discardRunGroupUi: (runId) => discardRunGroupUi(runId),
     createRunLayerGroup: (options) => createRunLayerGroup(options),
     bindRunIdToGroup: (groupId, runId) => bindRunIdToGroup(groupId, runId),

@@ -17,6 +17,7 @@ import {
 import {
   dedupeNodeProgress,
   isOverallProgressStage,
+  isWeightedOverallProgressStage,
   normalizeWorkflowProgress,
   resolveJobOverallProgress,
 } from './workflow-progress'
@@ -70,6 +71,8 @@ export interface WorkflowPollerDeps {
   ) => Promise<number>
   /** 成功终态 attach 后清理组内未产出占位成员（F1） */
   cleanupUnproducedRunLayers: (runId: string, opts?: { succeeded?: boolean }) => void
+  /** 组内仍有未绑定占位时勿急着 cleanup（避免 OMEGA 被误删） */
+  hasUnboundRunGroupPlaceholders?: (runId: string) => boolean
   clearWindForCatalog: (catalogId: string) => void
   enableParticleIfUnset: (catalogId: string) => void
   /** buildJobLayer（result-adapter）注入，避免反向依赖 */
@@ -136,7 +139,12 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
           ? eventNodeProgress.node_id
           : undefined
       if (typeof event.progress === 'number') {
-        if (!eventNodeId || isOverallProgressStage(eventNodeId)) {
+        // 仅加权整体 stage，或带 lifecycle status 的裸事件可抬升作业条。
+        // 桥接层 progress=74/95（无 status、无 node_progress）不得把总进度钉死在近 100%。
+        const lifecycleStatus = isRecognizedJobStatus(eventPayload?.status)
+        if (isWeightedOverallProgressStage(eventNodeId)) {
+          nextProgress = Math.max(nextProgress, normalizeWorkflowProgress(event.progress))
+        } else if (!eventNodeId && lifecycleStatus) {
           nextProgress = Math.max(nextProgress, normalizeWorkflowProgress(event.progress))
         }
       }
@@ -147,6 +155,11 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
         // 终态保护：已处于终态时，不允许事件流里的中间状态（queued/running）将其降级
         if (!isTerminalStatus(event.payload.status) && isTerminalStatus(nextStatus)) {
           // 保留终态，仅继续累积进度/消息
+        } else if (
+          (event.payload.status === 'queued' || event.payload.status === 'accepted') &&
+          nextStatus === 'running'
+        ) {
+          // 已在跑：忽略派发阶段的 queued 回写（否则与 node_progress 升格来回跳）
         } else {
           nextStatus = event.payload.status
         }
@@ -463,9 +476,27 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
     }
     // 终态/非终态统一：事件侧字段优先保留 existing（buildJobLayer 不产出这些）
     const mergedNodeProgress = existingJobLayer?.nodeProgress ?? jobLayer.nodeProgress
+    let mergedStatus = jobLayer.status
+    // 快照若仍为 queued/accepted，但事件侧已升 running：禁止打回排队中
+    if (
+      existingJobLayer &&
+      existingJobLayer.status === 'running' &&
+      (jobLayer.status === 'queued' || jobLayer.status === 'accepted') &&
+      !isTerminalStatus(jobLayer.status)
+    ) {
+      mergedStatus = 'running'
+    }
+    const mergedMessage =
+      mergedStatus === 'running' &&
+      existingJobLayer?.message &&
+      /派发到|等待 worker|Celery/i.test(jobLayer.message || '')
+        ? existingJobLayer.message
+        : jobLayer.message
     const mergedJobLayer = existingJobLayer
       ? {
           ...jobLayer,
+          status: mergedStatus,
+          message: mergedMessage || jobLayer.message,
           progress: resolveJobOverallProgress({
             current: existingJobLayer.progress,
             snapshot: jobLayer.progress,
@@ -501,8 +532,11 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
           .attachAlgorithmProductOverlays(run.result_refs, catalogId, run.run_id)
           .then((boundCount) => {
             if (boundCount > 0) {
-              deps.cleanupUnproducedRunLayers(run.run_id, { succeeded: true })
-              return
+              // 部分绑定（如 resume-only 缺 OMEGA）时勿立刻清占位，留给 retry 补齐
+              if (!deps.hasUnboundRunGroupPlaceholders?.(run.run_id)) {
+                deps.cleanupUnproducedRunLayers(run.run_id, { succeeded: true })
+                return
+              }
             }
             // 物化/绑定失败或竞态空结果：勿清空占位组（否则侧栏变空）。
             scheduleSucceededAttachRetry({
@@ -512,6 +546,7 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
               attach: deps.attachAlgorithmProductOverlays,
               cleanup: deps.cleanupUnproducedRunLayers,
               isRunDismissed: deps.isRunDismissed,
+              hasUnboundPlaceholders: deps.hasUnboundRunGroupPlaceholders,
             })
           })
       }

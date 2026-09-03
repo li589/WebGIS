@@ -186,9 +186,11 @@ export function useLayerSymbology(
       const first = ticks?.[0]
       return typeof first === 'number' ? String(first) : ''
     },
-    set: (raw: string) => {
+    set: (raw: string | number | null | undefined) => {
       if (!displayLayer.value?.instanceId || !canEditPalette.value) return
-      const n = raw.trim() === '' ? null : Number(raw)
+      // type=number / 部分 Vue 绑定会塞 number；小数点中间态也可能非 string
+      const text = raw == null ? '' : String(raw)
+      const n = text.trim() === '' ? null : Number(text)
       workspace.setLayerRangeOverride(displayLayer.value.instanceId, {
         vmin: n != null && Number.isFinite(n) ? n : null,
       })
@@ -204,17 +206,15 @@ export function useLayerSymbology(
       const last = ticks?.length ? ticks[ticks.length - 1] : undefined
       return typeof last === 'number' ? String(last) : ''
     },
-    set: (raw: string) => {
+    set: (raw: string | number | null | undefined) => {
       if (!displayLayer.value?.instanceId || !canEditPalette.value) return
-      const n = raw.trim() === '' ? null : Number(raw)
+      const text = raw == null ? '' : String(raw)
+      const n = text.trim() === '' ? null : Number(text)
       workspace.setLayerRangeOverride(displayLayer.value.instanceId, {
         vmax: n != null && Number.isFinite(n) ? n : null,
       })
     },
   })
-
-  /** 科学量（SM/ω 等）允许任意小数；勿用整数步进，否则像只能调整数 */
-  const rangeInputStep = computed(() => 'any')
 
   const nodataModeValue = computed({
     get: () => displayLayer.value.nodataMode ?? 'transparent',
@@ -335,7 +335,6 @@ export function useLayerSymbology(
     canEditPalette,
     rangeEditVmin,
     rangeEditVmax,
-    rangeInputStep,
     nodataModeValue,
     nodataColorValue,
     handleSelectPalette,
