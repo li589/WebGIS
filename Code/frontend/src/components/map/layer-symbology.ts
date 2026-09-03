@@ -36,10 +36,10 @@ export function resolveEffectivePalette(options: {
 }
 
 /**
- * 地图绘制是否会跟前端 palette 走。
- * - 天气 / 带 renderHint 的矢量作业：是（MapLibre paint）
- * - 有源 overlay / 导入 GeoTIFF（supports_recolor）：是（服务端参数化 PNG）
- * - 仅烘焙 PNG 无源：否
+ * 地图绘制是否会跟前端 palette / 值域走。
+ * - 天气 / 带 renderHint 的作业（含反演 COG）：是
+ * - 有源 overlay / 导入 GeoTIFF（supports_recolor）：是
+ * - 仅烘焙 PNG 无源且无 renderHint：否
  */
 export function isMapLinkedPalette(options: {
   hasRenderHint: boolean
@@ -47,8 +47,8 @@ export function isMapLinkedPalette(options: {
   supportsRecolor?: boolean
 }): boolean {
   if (options.supportsRecolor) return true
-  if (options.isImportedRaster) return false
-  return options.hasRenderHint
+  if (options.hasRenderHint) return true
+  return false
 }
 
 /** 从 renderHint / overlay meta / override 得到色带颜色序列 */

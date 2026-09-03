@@ -219,7 +219,9 @@ class Fy3fCommandStepsTests(unittest.TestCase):
             self.assertTrue(warp_4326, "应有 warp_daily_4326 步骤")
             for step in (*warp_4326, *warp_final):
                 self.assertIn("-overwrite", step.command, step.name)
-            self.assertIn("-overwrite", translate_mb[0].command)
+            # gdal_translate 无 -overwrite；重跑依赖工具默认覆盖目标文件
+            self.assertNotIn("-overwrite", translate_mb[0].command)
+            self.assertIn("gdal_translate", translate_mb[0].command)
 
 
 class Fy3fExtractExecutorTests(unittest.TestCase):

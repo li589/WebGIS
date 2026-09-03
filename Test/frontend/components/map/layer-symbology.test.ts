@@ -79,7 +79,8 @@ describe('layer-symbology', () => {
   it('marks overlay-only palette as not map-linked unless supports_recolor', () => {
     expect(isMapLinkedPalette({ hasRenderHint: false })).toBe(false)
     expect(isMapLinkedPalette({ hasRenderHint: true })).toBe(true)
-    expect(isMapLinkedPalette({ hasRenderHint: true, isImportedRaster: true })).toBe(false)
+    // 反演产物：importedRaster + renderHint（COG preview）须可调色/值域
+    expect(isMapLinkedPalette({ hasRenderHint: true, isImportedRaster: true })).toBe(true)
     expect(
       isMapLinkedPalette({
         hasRenderHint: false,
@@ -87,6 +88,13 @@ describe('layer-symbology', () => {
         supportsRecolor: true,
       }),
     ).toBe(true)
+    expect(
+      isMapLinkedPalette({
+        hasRenderHint: false,
+        isImportedRaster: true,
+        supportsRecolor: false,
+      }),
+    ).toBe(false)
   })
 
   it('buildOverlayStyleQuery encodes palette and nodata', () => {

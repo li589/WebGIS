@@ -541,8 +541,9 @@ def build_fy_daily_command_steps(
     steps.append(
         FyCommandStep(
             name="translate_multiband_tif",
+            # gdal_translate 不支持 -overwrite（那是 gdalwarp 的旗标）；目标存在时会直接覆盖。
             command=(
-                f'"{gdal_bins["gdal_translate"]}" -overwrite -of GTiff -a_nodata {profile.dst_nodata} -ot Float32 '
+                f'"{gdal_bins["gdal_translate"]}" -of GTiff -a_nodata {profile.dst_nodata} -ot Float32 '
                 f'-co "COMPRESS=LZW" -co "PREDICTOR=3" -co "TILED=YES" '
                 f'{metadata_args} "{merged_vrt}" "{merged_tif}"'
             ),

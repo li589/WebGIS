@@ -534,35 +534,52 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         try {
           const materialized = await materializeWorkflowMapLayers(runId)
           materializedLayers = materialized.layers ?? []
+          const fromMaterialize = materializedLayers
+            .filter(
+              (layer) => typeof layer.overlay_layer_id === 'string' && layer.overlay_layer_id,
+            )
+            .map((layer) => {
+              const rawBounds = layer.bounds
+              const bounds =
+                Array.isArray(rawBounds) &&
+                rawBounds.length === 4 &&
+                rawBounds.every((v) => typeof v === 'number' && Number.isFinite(v))
+                  ? ([rawBounds[0], rawBounds[1], rawBounds[2], rawBounds[3]] as [
+                      number,
+                      number,
+                      number,
+                      number,
+                    ])
+                  : undefined
+              return {
+                overlayLayerId: layer.overlay_layer_id,
+                title: layer.title || layer.overlay_layer_id,
+                productTag: layer.product_tag || undefined,
+                bounds,
+                sourceCrs: layer.source_crs || undefined,
+                timeList: layer.time_list || undefined,
+                nativeStep: layer.native_step || undefined,
+                defaultTime: layer.default_time || undefined,
+              }
+            })
           if (!imports.length) {
-            imports = materializedLayers
-              .filter(
-                (layer) => typeof layer.overlay_layer_id === 'string' && layer.overlay_layer_id,
-              )
-              .map((layer) => {
-                const rawBounds = layer.bounds
-                const bounds =
-                  Array.isArray(rawBounds) &&
-                  rawBounds.length === 4 &&
-                  rawBounds.every((v) => typeof v === 'number' && Number.isFinite(v))
-                    ? ([rawBounds[0], rawBounds[1], rawBounds[2], rawBounds[3]] as [
-                        number,
-                        number,
-                        number,
-                        number,
-                      ])
-                    : undefined
-                return {
-                  overlayLayerId: layer.overlay_layer_id,
-                  title: layer.title || layer.overlay_layer_id,
-                  productTag: layer.product_tag || undefined,
-                  bounds,
-                  sourceCrs: layer.source_crs || undefined,
-                  timeList: layer.time_list || undefined,
-                  nativeStep: layer.native_step || undefined,
-                  defaultTime: layer.default_time || undefined,
-                }
-              })
+            imports = fromMaterialize
+          } else if (fromMaterialize.length) {
+            // result_refs 可能缺 OMEGA（登记最慢）；与 materialize 按 overlay/tag 并集合并
+            const byOverlay = new Set(imports.map((item) => item.overlayLayerId))
+            const byTag = new Set(
+              imports
+                .map((item) => normalizeProductTag(item.productTag || item.title || ''))
+                .filter(Boolean),
+            )
+            for (const item of fromMaterialize) {
+              if (byOverlay.has(item.overlayLayerId)) continue
+              const tag = normalizeProductTag(item.productTag || item.title || '')
+              if (tag && byTag.has(tag)) continue
+              imports.push(item)
+              byOverlay.add(item.overlayLayerId)
+              if (tag) byTag.add(tag)
+            }
           }
         } catch (error) {
           const errMsg = error instanceof Error ? error.message : String(error)

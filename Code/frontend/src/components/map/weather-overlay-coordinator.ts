@@ -235,7 +235,7 @@ function buildWorkflowOverlayState(
   layer: ActiveLayerDisplay,
   options: ResolveWeatherOverlayStatesOptions,
 ): WeatherOverlayState | null {
-  // 优先用 display 合并后的 renderHint（含 paletteOverride）
+  // 优先用 display 合并后的 renderHint（含 palette / vmin / vmax → legend_ticks）
   const renderHint = layer.renderHint ?? layer.jobLayer?.mapLayerPayload?.renderHint ?? null
   if (!renderHint) return null
 

@@ -430,7 +430,10 @@ onBeforeUnmount(() => {
             class="style-range-input"
             type="number"
             :step="rangeInputStep"
+            inputmode="decimal"
             title="值域下限"
+            @change="rangeEditVmin = ($event.target as HTMLInputElement).value"
+            @keyup.enter="rangeEditVmin = ($event.target as HTMLInputElement).value"
           />
           <strong v-else>{{ styleRangeMeta.vmin }}</strong>
         </div>
@@ -442,7 +445,10 @@ onBeforeUnmount(() => {
             class="style-range-input"
             type="number"
             :step="rangeInputStep"
+            inputmode="decimal"
             title="值域上限"
+            @change="rangeEditVmax = ($event.target as HTMLInputElement).value"
+            @keyup.enter="rangeEditVmax = ($event.target as HTMLInputElement).value"
           />
           <strong v-else>{{ styleRangeMeta.vmax }}</strong>
         </div>

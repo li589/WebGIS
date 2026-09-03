@@ -155,6 +155,20 @@ export function createWorkflowPoller(deps: WorkflowPollerDeps) {
       const rawNodeProgress = (event.payload as { node_progress?: unknown } | null | undefined)
         ?.node_progress
       if (rawNodeProgress && typeof rawNodeProgress === 'object') {
+        // 已有节点进度却仍显示排队：worker 已在跑，立即升为 running（勿等 9s 快照）
+        if (
+          (nextStatus === 'queued' || nextStatus === 'accepted') &&
+          !isTerminalStatus(nextStatus)
+        ) {
+          nextStatus = 'running'
+          if (
+            !nextMessage ||
+            /派发到|等待 worker|Celery/i.test(nextMessage) ||
+            nextMessage === '工作流已提交，可轮询状态、事件与结果引用。'
+          ) {
+            nextMessage = '运行中'
+          }
+        }
         const np = rawNodeProgress as {
           node_id?: string
           node_label?: string

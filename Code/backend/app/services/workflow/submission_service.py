@@ -446,7 +446,8 @@ class WorkflowSubmissionService:
                         message="任务层开始调用业务服务。",
                         progress=35,
                         payload={
-                            "executor": "app.tasks.workflow_tasks.execute_workflow_task"
+                            "status": "running",
+                            "executor": "app.tasks.workflow_tasks.execute_workflow_task",
                         },
                         created_at=running_at,
                     )

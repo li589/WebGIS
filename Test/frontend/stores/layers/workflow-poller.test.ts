@@ -170,6 +170,32 @@ describe('applyWorkflowEventsToJobLayer', () => {
     expect(result.status).toBe('running')
   })
 
+  it('node_progress 出现时将 queued 升为 running 并替换 Celery 派发文案', () => {
+    const { poller } = setupDeps()
+    const result = poller.applyWorkflowEventsToJobLayer(
+      makeJobLayer({
+        status: 'queued',
+        message: '工作流已成功派发到 Celery，等待 worker 消费。',
+      }),
+      [
+        makeEvent({
+          payload: {
+            node_progress: {
+              node_id: 'fy_download',
+              node_label: 'fy_download',
+              stage: 'ingest',
+              progress: 10,
+              message: 'Downloading…',
+            },
+          },
+        }),
+      ],
+    )
+    expect(result.status).toBe('running')
+    expect(result.message).toBe('运行中')
+    expect(result.nodeProgress).toHaveLength(1)
+  })
+
   it('终态保护：failed 后不接受 queued/running 降级', () => {
     const { poller } = setupDeps()
     const result = poller.applyWorkflowEventsToJobLayer(makeJobLayer({ status: 'failed' }), [

@@ -85,24 +85,16 @@ describe('weather-overlay-watch-adapter', () => {
     expect(next.windDisplayMode).toBe('streamline')
   })
 
-  it('detects smoothRendering changes', () => {
-    const previous = buildWeatherOverlayWatchInputs(
-      [createLayer()],
-      'weather.wind',
-      7,
-      12,
-      'particle',
-      true,
-    )
+  it('detects symbology override changes in layersHash', () => {
+    const previous = buildWeatherOverlayWatchInputs([createLayer()], 'weather.wind', 7, 12)
     const next = buildWeatherOverlayWatchInputs(
-      [createLayer()],
+      [createLayer({ vminOverride: 0.05, vmaxOverride: 0.4, paletteOverride: 'viridis' })],
       'weather.wind',
       7,
       12,
-      'particle',
-      false,
     )
-    expect(diffWeatherOverlayWatchInputs(next, previous).smoothRenderingChanged).toBe(true)
-    expect(next.smoothRendering).toBe(false)
+    expect(diffWeatherOverlayWatchInputs(next, previous).layersHashChanged).toBe(true)
+    expect(next.layersHash).toContain('"vmin":0.05')
+    expect(next.layersHash).toContain('"palette":"viridis"')
   })
 })

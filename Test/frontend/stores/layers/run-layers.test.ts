@@ -1003,6 +1003,35 @@ describe("attachAlgorithmProductOverlays", () => {
     vi.useRealTimers();
   });
 
+  it("result_refs 缺 OMEGA 时与 materialize 合并补齐", async () => {
+    const { slice } = setup();
+    const { members } = setupGroup(slice, {
+      runId: "run-merge",
+      tags: ["SM", "VOD", "OMEGA"],
+    });
+    slice.setJobLayers([
+      makeJob({ jobId: "run-merge", catalogId: "cat-1", status: "succeeded" }),
+    ]);
+    vi.mocked(extractOverlayImportsFromResultRefs).mockReturnValue([
+      { overlayLayerId: "ov-sm", title: "SM", productTag: "SM" },
+      { overlayLayerId: "ov-vod", title: "VOD", productTag: "VOD" },
+    ]);
+    mockMaterialize([
+      { overlay_layer_id: "ov-sm", title: "SM", product_tag: "SM" },
+      { overlay_layer_id: "ov-vod", title: "VOD", product_tag: "VOD" },
+      { overlay_layer_id: "ov-omega", title: "OMEGA", product_tag: "OMEGA" },
+    ]);
+    const count = await slice.attachAlgorithmProductOverlays(
+      [{ title: "partial" }] as Parameters<typeof extractOverlayImportsFromResultRefs>[0],
+      "cat-1",
+      "run-merge",
+    );
+    expect(count).toBe(3);
+    expect(members[0]!.importedRaster?.overlayLayerId).toBe("ov-sm");
+    expect(members[1]!.importedRaster?.overlayLayerId).toBe("ov-vod");
+    expect(members[2]!.importedRaster?.overlayLayerId).toBe("ov-omega");
+  });
+
   it("running 空产物清除残留空态横幅", async () => {
     const { slice } = setup();
     slice.workflowError.value = WORKFLOW_COPY.noMapLayers;

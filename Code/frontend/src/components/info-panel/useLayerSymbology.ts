@@ -213,17 +213,8 @@ export function useLayerSymbology(
     },
   })
 
-  /** SM 0–1 等窄带：spinner 按 span/100，至少 0.001，避免浏览器默认 ±1 */
-  const rangeInputStep = computed(() => {
-    const lo = Number(rangeEditVmin.value)
-    const hi = Number(rangeEditVmax.value)
-    if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) return '0.01'
-    const step = Math.max(0.001, (hi - lo) / 100)
-    if (step >= 1) return String(Math.round(step * 10) / 10)
-    if (step >= 0.1) return step.toFixed(2)
-    if (step >= 0.01) return step.toFixed(3)
-    return step.toFixed(4)
-  })
+  /** 科学量（SM/ω 等）允许任意小数；勿用整数步进，否则像只能调整数 */
+  const rangeInputStep = computed(() => 'any')
 
   const nodataModeValue = computed({
     get: () => displayLayer.value.nodataMode ?? 'transparent',
