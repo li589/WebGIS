@@ -144,6 +144,31 @@ class NdviPipelineTests(unittest.TestCase):
                 ],
             )
 
+    def test_vi_sg_interpolate_graceful_degradation(self) -> None:
+        from algorithms.ndvi import to_day_numbers, vi_sg_interpolate
+
+        # Case 1: 单点观测（如仅有一个 16 天合成颗粒），在覆盖期内应保持常数且不为 NaN
+        obs_dates = [datetime(2026, 6, 26)]
+        out_dates = [datetime(2026, 7, 1), datetime(2026, 7, 10), datetime(2026, 7, 20)]
+        obs_days = to_day_numbers(obs_dates)
+        out_days = to_day_numbers(out_dates)
+        sg_days = out_days
+        data = np.array([0.65])
+        res = vi_sg_interpolate(data, obs_days, sg_days, out_days, composite_days=16)
+        self.assertAlmostEqual(res[0], 0.65)
+        self.assertAlmostEqual(res[1], 0.65)
+        self.assertTrue(np.isnan(res[2]))  # 2026-07-20 超过 16 天覆盖期
+
+        # Case 2: 2 个有效观测点，应平滑降级为线性插值而不是全 NaN
+        obs_dates_2 = [datetime(2026, 7, 1), datetime(2026, 7, 15)]
+        out_dates_2 = [datetime(2026, 7, 5), datetime(2026, 7, 10)]
+        obs_days_2 = to_day_numbers(obs_dates_2)
+        out_days_2 = to_day_numbers(out_dates_2)
+        data_2 = np.array([0.4, 0.8])
+        res_2 = vi_sg_interpolate(data_2, obs_days_2, out_days_2, out_days_2, composite_days=16)
+        self.assertFalse(np.isnan(res_2).any())
+        self.assertTrue(0.4 < res_2[0] < 0.8)
+
 
 if __name__ == "__main__":
     unittest.main()

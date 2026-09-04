@@ -91,15 +91,12 @@ class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
         return new_req
 
 
-def _open_http_request(
-    req: Request, *, timeout: float, ssl_ctx: ssl.SSLContext | None
-):
+def _open_http_request(req: Request, *, timeout: float, ssl_ctx: ssl.SSLContext | None):
     handlers: list[urllib.request.BaseHandler] = [_SafeRedirectHandler()]
     if ssl_ctx is not None:
         handlers.append(urllib.request.HTTPSHandler(context=ssl_ctx))
     opener = urllib.request.build_opener(*handlers)
     return opener.open(req, timeout=timeout)
-
 
 
 # 下载重试（指数退避 2s/4s；.part 半成品保留供 Range 续传）

@@ -1240,7 +1240,11 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         continue
       }
       if (!layer.importedRaster?.overlayLayerId) {
-        removeIds.push(instanceId)
+        if (layer.catalogId.startsWith('wf-run-')) {
+          removeIds.push(instanceId)
+        } else {
+          layer.runGroupLocked = false
+        }
       } else {
         layer.runGroupLocked = false
         if (!opts?.succeeded) {
@@ -1263,6 +1267,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
 
     const left = runLayerGroups.value.find((x) => x.groupId === g.groupId)
     if (left) {
+      left.memberInstanceIds = left.memberInstanceIds.filter((id) => !removeIds.includes(id))
       if (opts?.succeeded) {
         left.status = 'ready'
         refreshRunGroupDissolvable(left.groupId)

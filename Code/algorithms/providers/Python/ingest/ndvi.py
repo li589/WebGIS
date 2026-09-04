@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +37,7 @@ def discover_ndvi_rasters(
     start_time: datetime | str,
     end_time: datetime | str,
     pattern: str = "*.tif",
+    composite_days: int = 16,
 ) -> list[NdviRasterRecord]:
     input_dir = Path(input_dir)
     if not input_dir.exists():
@@ -65,7 +66,10 @@ def discover_ndvi_rasters(
         try:
             date = extract_date_from_ndvi_filename(file_path)
             all_dates.append(date)
-            if start_dt <= date <= end_dt:
+            # 兼容 16 天合成产品：若文件代表合成周期，周期 [date, date + composite_days] 与 [start_dt, end_dt] 存在重叠即可入选
+            if (date <= end_dt) and (
+                date + timedelta(days=max(0, composite_days)) >= start_dt
+            ):
                 records.append(NdviRasterRecord(file_path=file_path, date=date))
         except ValueError:
             continue

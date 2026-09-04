@@ -25,6 +25,15 @@ def test_discover_ndvi_rasters_mat_and_tif(tmp_path: Path) -> None:
     assert "20200102.tif" in names
 
 
+def test_discover_ndvi_rasters_16day_composite_overlap(tmp_path: Path) -> None:
+    # 2026-06-26 颗粒覆盖 2026-06-26 至 2026-07-11
+    (tmp_path / "20260626.tif").touch()
+    # 检索 2026-07-01 至 2026-08-01 时，该颗粒因交集重叠应成功匹配
+    matches = discover_ndvi_rasters(tmp_path, "2026-07-01", "2026-08-01", composite_days=16)
+    assert len(matches) == 1
+    assert matches[0].file_path.name == "20260626.tif"
+
+
 def test_discover_ndvi_rasters_empty_range_reports_existing_bounds(tmp_path: Path) -> None:
     (tmp_path / "20150101.mat").touch()
     (tmp_path / "20231231.mat").touch()

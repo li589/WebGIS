@@ -235,11 +235,13 @@ def _resolve_product_display_label(
                     output_labels = extra.get("output_labels")
                     if isinstance(output_labels, dict):
                         for k in tag_keys:
-                            if k and k in output_labels and str(output_labels[k]).strip():
+                            if (
+                                k
+                                and k in output_labels
+                                and str(output_labels[k]).strip()
+                            ):
                                 return str(output_labels[k]).strip()[:64]
-                display_name = (
-                    getattr(descriptor, "display_name", None)
-                )
+                display_name = getattr(descriptor, "display_name", None)
                 if display_name and str(display_name).strip():
                     return str(display_name).strip()[:64]
         except Exception:
@@ -256,7 +258,11 @@ def _resolve_product_display_label(
                     output_labels = extra.get("output_labels")
                     if isinstance(output_labels, dict):
                         for k in tag_keys:
-                            if k and k in output_labels and str(output_labels[k]).strip():
+                            if (
+                                k
+                                and k in output_labels
+                                and str(output_labels[k]).strip()
+                            ):
                                 return str(output_labels[k]).strip()[:64]
                     group_title = extra.get("group_title")
                     if group_title and str(group_title).strip():
@@ -1376,7 +1382,9 @@ class PythonProviderResultBuilder:
                     "cog_url": f"/overlay-preview/{overlay_id}",
                     "cog_preview_url": f"/overlay-preview/{overlay_id}",
                     "cog_bbox": cog_bbox,
-                    "product_tag": str(tags.get("layer") or product.get("variable") or label),
+                    "product_tag": str(
+                        tags.get("layer") or product.get("variable") or label
+                    ),
                     "source_path": str(local_path),
                     "time_list": registered.get("time_list") or [],
                     "default_time": registered.get("default_time"),
@@ -1506,7 +1514,9 @@ class PythonProviderResultBuilder:
                     "cog_url": f"/overlay-preview/{overlay_id}",
                     "cog_preview_url": f"/overlay-preview/{overlay_id}",
                     "cog_bbox": cog_bbox,
-                    "product_tag": str(tags.get("layer") or product.get("variable") or label),
+                    "product_tag": str(
+                        tags.get("layer") or product.get("variable") or label
+                    ),
                     "source_path": str(local_path),
                     "time_list": registered.get("time_list") or [],
                     "default_time": registered.get("default_time"),

@@ -19,7 +19,12 @@ import {
   saveTrackedWorkflowRuns,
   type WorkflowRunnerDeps,
 } from '@/stores/layers/workflow-runner'
-import type { ActiveLayer, ActiveRunLayerGroup, JobLayerItem } from '@/stores/layers/types'
+import type {
+  ActiveLayer,
+  ActiveRunLayerGroup,
+  JobLayerItem,
+  TrackedWorkflowRunItem,
+} from '@/stores/layers/types'
 import type { BoundingBox, LayerDescriptor, WorkflowEvent } from '@/services/runtime-api'
 
 // ── Mock runtime-api ──────────────────────────────────────────────────────────
@@ -826,6 +831,128 @@ describe('restoreActiveWorkflows / ensureRestoredRunGroup（F2 manifest 成员�
     // 退役决策：旧 run 快照不再回退 SM/VOD/OMEGA 三占位——
     // 61 种子全带 extra 中文配置，无 manifest 一律单产出 'result' 语义
     expect(memberTags.sort()).toEqual(['result'])
+  })
+
+  it('catalogExtra.outputs 优先且过滤兼容 result 槽，消除同名重复图层', async () => {
+    const deps = setupRestore(null)
+    vi.mocked(listActiveWorkflowRuns).mockResolvedValue([
+      { run_id: 'run-f2', layer_id: 'ndvi', command_label: '反演', status: 'running' },
+    ] as never)
+    vi.mocked(getWorkflowRun).mockResolvedValue({
+      run_id: 'run-f2',
+      layer_id: 'ndvi',
+      command_label: '反演',
+      status: 'running',
+      result_refs: [],
+    } as never)
+
+    const catalog = deps.getRuntimeLayerCatalog()
+    catalog['ndvi'] = {
+      layer_id: 'ndvi',
+      dataset_key: 'ds',
+      display_name: '植被指数 NDVI',
+      description: '',
+      category: 'analysis',
+      source_type: 'imported' as never,
+      render_type: 'raster' as never,
+      supported_map_modes: ['2d'] as never,
+      extent: { west: 116, south: 39, east: 117, north: 40 },
+      workflow_id: 'ndvi_online_read',
+      workflow_extra: {
+        outputs: ['NDVI'],
+        output_labels: {
+          NDVI: '植被指数 NDVI',
+          result: '植被指数 NDVI',
+        },
+      },
+    } as LayerDescriptor
+    deps.getRecentActiveWorkflows = () => [
+      {
+        catalogId: 'ndvi',
+        sourceLayerId: 'ndvi',
+        runId: 'run-f2',
+        status: 'running',
+        startTime: Date.now(),
+        lastPollTime: Date.now(),
+      } as TrackedWorkflowRunItem,
+    ]
+
+    const runner = createWorkflowRunner(deps)
+    await runner.restoreActiveWorkflows()
+
+    const group = deps.getRunLayerGroups().find((g) => g.runId === 'run-f2')
+    expect(group).toBeDefined()
+    const memberTags = group!.memberInstanceIds
+      .map((id) => deps.getActiveLayers().find((l) => l.instanceId === id)?.runGroupProductTag)
+      .filter(Boolean)
+    expect(memberTags).toEqual(['NDVI'])
+  })
+
+  it('单产出工作流直接复用已有活跃图层入组并清理未绑定的游离孤儿图层', async () => {
+    const deps = setupRestore(null)
+    vi.mocked(listActiveWorkflowRuns).mockResolvedValue([
+      { run_id: 'run-f2', layer_id: 'ndvi', command_label: '反演', status: 'running' },
+    ] as never)
+    vi.mocked(getWorkflowRun).mockResolvedValue({
+      run_id: 'run-f2',
+      layer_id: 'ndvi',
+      command_label: '反演',
+      status: 'running',
+      result_refs: [],
+    } as never)
+
+    const activeLayers = deps.getActiveLayers()
+    // 模拟用户之前添加在 TOC 的 ndvi 图层
+    const existingNdvi: ActiveLayer = {
+      instanceId: 'inst-user-ndvi',
+      catalogId: 'ndvi',
+      name: '植被指数 NDVI',
+      visible: true,
+      opacity: 1,
+      order: 0,
+      isAdminBoundary: false,
+      dataState: 'catalog',
+    }
+    activeLayers.push(existingNdvi)
+
+    const catalog = deps.getRuntimeLayerCatalog()
+    catalog['ndvi'] = {
+      layer_id: 'ndvi',
+      dataset_key: 'ds',
+      display_name: '植被指数 NDVI',
+      category: 'analysis',
+      source_type: 'imported' as never,
+      render_type: 'raster' as never,
+      supported_map_modes: ['2d'] as never,
+      extent: { west: 116, south: 39, east: 117, north: 40 },
+      workflow_id: 'ndvi_online_read',
+      workflow_extra: {
+        outputs: ['NDVI'],
+        output_labels: { NDVI: '植被指数 NDVI' },
+      },
+    } as LayerDescriptor
+
+    deps.getRecentActiveWorkflows = () => [
+      {
+        catalogId: 'ndvi',
+        sourceLayerId: 'ndvi',
+        runId: 'run-f2',
+        status: 'running',
+        startTime: Date.now(),
+        lastPollTime: Date.now(),
+      } as TrackedWorkflowRunItem,
+    ]
+
+    const runner = createWorkflowRunner(deps)
+    await runner.restoreActiveWorkflows()
+
+    const group = deps.getRunLayerGroups().find((g) => g.runId === 'run-f2')
+    expect(group).toBeDefined()
+    expect(group!.memberInstanceIds).toEqual(['inst-user-ndvi'])
+    expect(existingNdvi.runGroupId).toBe(group!.groupId)
+    expect(existingNdvi.runGroupProductTag).toBe('NDVI')
+    // 组外无孤儿层，活跃图层总数仍为 1
+    expect(deps.getActiveLayers().length).toBe(1)
   })
 
   it('同工作流已有成功产物时仍恢复未跟踪的 running run 到指示器', async () => {
