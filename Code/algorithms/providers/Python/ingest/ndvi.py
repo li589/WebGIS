@@ -119,6 +119,13 @@ def _read_ndvi_array_from_file(file_path: Path) -> tuple[Any, Any, Any]:
 
         arr = data_arr.astype(np.float64)
         height, width = arr.shape
+        if (height, width) == (1624, 3856):
+            from data_access.ease_grid_constants import EASE2_GLOBAL_BOUNDS
+
+            transform = from_bounds(*EASE2_GLOBAL_BOUNDS, width, height)
+            crs = rasterio.crs.CRS.from_epsg(6933)
+            return arr, transform, crs
+
         # 中国区域默认 9km / 0.05° 常用参考边界
         transform = from_bounds(73.0, 18.0, 135.0, 53.0, width, height)
         crs = rasterio.crs.CRS.from_epsg(4326)

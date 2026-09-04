@@ -718,7 +718,10 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           .find(
             (layer) =>
               layer.runGroupId === groupByRun.groupId &&
-              normalizeProductTag(layer.runGroupProductTag) === tag,
+              (normalizeProductTag(layer.runGroupProductTag) === tag ||
+                normalizeProductTag(layer.name) === tag ||
+                (tag === 'NDVI' &&
+                  (layer.catalogId === 'ndvi' || layer.catalogId.includes('ndvi')))),
           )
 
       // 已有同 overlay 的游离层 + 组内占位：并入组并移除游离层
@@ -772,6 +775,27 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           groupMember.name = displayName === 'OMEGA_BLOCK' ? productTagLabel('OMEGA') : displayName
         }
         if (groupMember.runGroupId) refreshRunGroupDissolvable(groupMember.runGroupId)
+
+        // 治理重复/旧失败层：清理组内同 tag 的其它废弃成员（如旧失败残留、冗余未绑定占位）
+        const redundantMembers = deps
+          .getActiveLayers()
+          .filter(
+            (l) =>
+              l.runGroupId === groupByRun.groupId &&
+              l.instanceId !== groupMember.instanceId &&
+              (normalizeProductTag(l.runGroupProductTag) === tag ||
+                normalizeProductTag(l.name) === tag ||
+                (tag === 'NDVI' && (l.catalogId === 'ndvi' || l.catalogId.includes('ndvi')))) &&
+              (!l.importedRaster?.overlayLayerId ||
+                l.jobLayer?.status === 'failed' ||
+                l.jobLayer?.status === 'cancelled'),
+          )
+        for (const red of redundantMembers) {
+          deps.removeLayer(red.instanceId)
+          groupByRun.memberInstanceIds = groupByRun.memberInstanceIds.filter(
+            (id) => id !== red.instanceId,
+          )
+        }
         continue
       }
 
@@ -922,6 +946,26 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         slot.runGroupProductTag = slot.runGroupProductTag || slotTag
         if (!groupByRun.memberInstanceIds.includes(slot.instanceId)) {
           groupByRun.memberInstanceIds.push(slot.instanceId)
+        }
+        // 治理重复/旧失败层：清理组内同 tag 的其它废弃成员
+        const redundantMembers = deps
+          .getActiveLayers()
+          .filter(
+            (l) =>
+              l.runGroupId === groupByRun.groupId &&
+              l.instanceId !== slot.instanceId &&
+              (normalizeProductTag(l.runGroupProductTag) === tag ||
+                normalizeProductTag(l.name) === tag ||
+                (tag === 'NDVI' && (l.catalogId === 'ndvi' || l.catalogId.includes('ndvi')))) &&
+              (!l.importedRaster?.overlayLayerId ||
+                l.jobLayer?.status === 'failed' ||
+                l.jobLayer?.status === 'cancelled'),
+          )
+        for (const red of redundantMembers) {
+          deps.removeLayer(red.instanceId)
+          groupByRun.memberInstanceIds = groupByRun.memberInstanceIds.filter(
+            (id) => id !== red.instanceId,
+          )
         }
         refreshRunGroupDissolvable(groupByRun.groupId)
         deps.scheduleWorkspacePersist()
@@ -1240,7 +1284,12 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         continue
       }
       if (!layer.importedRaster?.overlayLayerId) {
-        if (layer.catalogId.startsWith('wf-run-')) {
+        const hasOtherMaterialized = g.memberInstanceIds.some((id) => {
+          if (id === instanceId) return false
+          const other = deps.getActiveLayers().find((l) => l.instanceId === id)
+          return Boolean(other?.importedRaster?.overlayLayerId)
+        })
+        if (layer.catalogId.startsWith('wf-run-') || (opts?.succeeded && hasOtherMaterialized)) {
           removeIds.push(instanceId)
         } else {
           layer.runGroupLocked = false
@@ -1296,21 +1345,56 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
   function refreshRunGroupDissolvable(groupId: string) {
     const g = runLayerGroups.value.find((x) => x.groupId === groupId)
     if (!g) return
+    const activeLayers = deps.getActiveLayers()
     const members = g.memberInstanceIds
-      .map((id) => deps.getActiveLayers().find((l) => l.instanceId === id))
+      .map((id) => activeLayers.find((l) => l.instanceId === id))
+      .filter((l): l is ActiveLayer => Boolean(l))
+
+    // 自愈：若组内已有水合成功的产物成员，清理同 tag 的旧失败成员或无数据占位
+    const successfulTags = new Set(
+      members
+        .filter((m) => Boolean(m.importedRaster?.overlayLayerId))
+        .map((m) => normalizeProductTag(m.runGroupProductTag || m.name))
+        .filter(Boolean),
+    )
+    if (successfulTags.size > 0) {
+      const deadIds: string[] = []
+      for (const m of members) {
+        const tag = normalizeProductTag(m.runGroupProductTag || m.name)
+        if (
+          tag &&
+          successfulTags.has(tag) &&
+          (!m.importedRaster?.overlayLayerId ||
+            m.jobLayer?.status === 'failed' ||
+            m.jobLayer?.status === 'cancelled')
+        ) {
+          deadIds.push(m.instanceId)
+        }
+      }
+      if (deadIds.length) {
+        for (const id of deadIds) {
+          deps.removeLayer(id)
+        }
+        g.memberInstanceIds = g.memberInstanceIds.filter((id) => !deadIds.includes(id))
+      }
+    }
+
+    const currentMembers = g.memberInstanceIds
+      .map((id) => activeLayers.find((l) => l.instanceId === id))
       .filter((l): l is ActiveLayer => Boolean(l))
     const allDisplayable =
-      members.length > 0 && members.every((m) => Boolean(m.importedRaster?.overlayLayerId))
+      currentMembers.length > 0 &&
+      currentMembers.every((m) => Boolean(m.importedRaster?.overlayLayerId))
     if (g.status === 'failed' || g.status === 'cancelled') {
       g.dissolvable = true
-      members.forEach((m) => {
+      currentMembers.forEach((m) => {
         m.runGroupLocked = false
       })
       return
     }
     if (g.status === 'ready' && allDisplayable) {
       g.dissolvable = true
-      members.forEach((m) => {
+      currentMembers.forEach((m) => {
         m.runGroupLocked = false
       })
     }

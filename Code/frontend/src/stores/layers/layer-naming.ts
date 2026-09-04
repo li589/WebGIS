@@ -47,6 +47,12 @@ export const PRODUCT_TAG_MERGE_RULES: ProductTagMergeRule[] = [
     endsWith: ['_OMEGA', '-OMEGA'],
     includes: ['OMEGA_BLOCK', 'OMEGA_PIXEL', 'OMEGA_PIX'],
   },
+  {
+    canonical: 'NDVI',
+    equals: ['NDVI'],
+    endsWith: ['_NDVI', '-NDVI'],
+    includes: ['NDVI', '植被指数'],
+  },
 ]
 
 /** productTag 归并（查表驱动，规则见 PRODUCT_TAG_MERGE_RULES）。 */

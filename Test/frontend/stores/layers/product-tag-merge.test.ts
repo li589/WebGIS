@@ -22,9 +22,17 @@ describe('productTag 归并规则表（P2-A 表化回归锁，2026-08-24）', ()
     expect(mergeProductTag('FY-VOD')).toBe('FY-VOD')
   })
 
+  it('NDVI 变体全归并（含 植被指数 / DAILY_NDVI 变体）', () => {
+    expect(mergeProductTag('NDVI')).toBe('NDVI')
+    expect(mergeProductTag('植被指数 NDVI')).toBe('NDVI')
+    expect(mergeProductTag('植被指数')).toBe('NDVI')
+    expect(mergeProductTag('DAILY_NDVI')).toBe('NDVI')
+    expect(mergeProductTag('NDVI_16DAY_RASTER')).toBe('NDVI')
+    expect(normalizeProductTag('Algorithm Map Layer: 植被指数 NDVI')).toBe('NDVI')
+  })
+
   it('未知 tag 透传（不误归并）', () => {
     expect(mergeProductTag('RESULT')).toBe('RESULT')
-    expect(mergeProductTag('NDVI')).toBe('NDVI')
     expect(mergeProductTag('SMAP_L3')).toBe('SMAP_L3')
   })
 
@@ -36,7 +44,7 @@ describe('productTag 归并规则表（P2-A 表化回归锁，2026-08-24）', ()
     expect(normalizeProductTag('')).toBe('')
   })
 
-  it('规则表仅含现行归并（OMEGA），无 LEGACY 残留', () => {
-    expect(PRODUCT_TAG_MERGE_RULES.map((r) => r.canonical)).toEqual(['OMEGA'])
+  it('规则表仅含现行归并（OMEGA 与 NDVI），无 LEGACY 残留', () => {
+    expect(PRODUCT_TAG_MERGE_RULES.map((r) => r.canonical)).toEqual(['OMEGA', 'NDVI'])
   })
 })

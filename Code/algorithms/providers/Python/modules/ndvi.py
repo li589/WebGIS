@@ -9,7 +9,7 @@ from algorithms.ndvi import (
 )
 from contracts.product import ProductManifest, ProductRef
 from data_access import resolve_prepared_local_directory
-from ingest.ndvi import load_ndvi_stack
+from ingest.ndvi import load_ndvi_stack_full
 from modules.base import BaseModule
 from modules.registry import register_module_decorator
 from output import OutputCoordinator
@@ -42,13 +42,18 @@ def _extract_region_bounds(
     """
     从 RegionSpec 中提取地理边界（west, south, east, north）。
 
-    无 region 时返回中国区域默认值（73E-135E, 18N-53N）。
+    无 region 时返回中国区域默认值（73E-135E, 18N-53N），全球网格返回全球范围。
     """
     if region is None:
+        if stack_shape[:2] == (1624, 3856):
+            return (-180.0, -90.0, 180.0, 90.0)
         return (73.0, 18.0, 135.0, 53.0)
 
     kind = getattr(region, "kind", None)
     value = getattr(region, "value", None)
+
+    if kind in ("global", "world"):
+        return (-180.0, -90.0, 180.0, 90.0)
 
     if kind == "bbox":
         bbox = value.get("bbox") if value else None
@@ -69,6 +74,8 @@ def _extract_region_bounds(
             coords = geom.get("coordinates", geom) if isinstance(geom, dict) else geom
             return _bounds_from_geojson_coords(coords)
 
+    if stack_shape[:2] == (1624, 3856):
+        return (-180.0, -90.0, 180.0, 90.0)
     return (73.0, 18.0, 135.0, 53.0)
 
 
@@ -237,11 +244,13 @@ class NdviDailyModule(BaseModule):
                 "ndvi_daily", f"Build daily NDVI from {input_dir}"
             )
 
-        ndvi_stack, observation_dates = load_ndvi_stack(
+        stack_info = load_ndvi_stack_full(
             input_dir=input_dir,
             start_time=ctx.request.time_range.start,
             end_time=ctx.request.time_range.end,
         )
+        ndvi_stack = stack_info.stack
+        observation_dates = stack_info.dates
         daily_stack, daily_dates = process_ndvi_stack_to_daily(
             ndvi_stack=ndvi_stack,
             observation_dates=observation_dates,
@@ -254,9 +263,48 @@ class NdviDailyModule(BaseModule):
             sg_window_length=int(algorithm_params.get("sg_window_length", 9)),
         )
 
-        # 从 region 提取地理范围，无 region 时使用中国区域默认值
-        region_bounds = _extract_region_bounds(ctx.request.region, daily_stack.shape)
-        transform, crs = _build_transform_from_bounds(region_bounds, daily_stack.shape)
+        transform = stack_info.transform
+        crs = stack_info.crs
+        is_ease2 = (
+            daily_stack.shape[:2] == (1624, 3856)
+            or (crs is not None and getattr(crs, "to_epsg", lambda: None)() == 6933)
+            or (isinstance(crs, str) and "6933" in crs)
+        )
+
+        if is_ease2:
+            import rasterio
+            from data_access.ease_grid_constants import (
+                EASE2_GLOBAL_BOUNDS,
+                EASE2_RES_9KM,
+            )
+            from rasterio.transform import from_bounds
+
+            height, width = daily_stack.shape[:2]
+            if transform is None:
+                transform = from_bounds(*EASE2_GLOBAL_BOUNDS, width, height)
+            if crs is None:
+                crs = rasterio.crs.CRS.from_epsg(6933)
+            crs_str = "EPSG:6933"
+            region_bounds = (-180.0, -90.0, 180.0, 90.0)
+            pixel_res = EASE2_RES_9KM
+        else:
+            region_bounds = _extract_region_bounds(
+                ctx.request.region, daily_stack.shape
+            )
+            if transform is None or crs is None:
+                calc_transform, calc_crs = _build_transform_from_bounds(
+                    region_bounds, daily_stack.shape
+                )
+                transform = transform or calc_transform
+                crs = crs or calc_crs
+            crs_str = (
+                crs.to_string()
+                if hasattr(crs, "to_string")
+                else str(crs)
+                if crs
+                else "EPSG:4326"
+            )
+            pixel_res = abs(transform.a) if transform else 0.01
 
         # 初始化输出协调器
         coordinator = OutputCoordinator(
@@ -268,9 +316,9 @@ class NdviDailyModule(BaseModule):
                 "start": ctx.request.time_range.start.isoformat(),
                 "end": ctx.request.time_range.end.isoformat(),
             },
-            region={"bounds": region_bounds} if region_bounds else None,
-            crs="EPSG:4326",
-            pixel_resolution=abs(transform.a) if transform else 0.01,
+            region={"bounds": list(region_bounds)} if region_bounds else None,
+            crs=crs_str,
+            pixel_resolution=pixel_res,
             preview_cmap="viridis",
             preview_size=(512, 512),
             compress="deflate",
