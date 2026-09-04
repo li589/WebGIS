@@ -361,7 +361,8 @@ onBeforeUnmount(() => {
       <p class="channel-desc">
         优先使用本机容器里的气象库（服务名 <code>open-meteo-local</code>）。需先启动
         <code>cgda-open-meteo</code> 容器；拉数任务在
-        <code>Code/infra/data-sync</code>（本页「立即同步」或脚本 <code>.\sync.ps1</code>）。要同步哪些模型，由环境变量
+        <code>Code/infra/data-sync</code>（本页「立即同步」或脚本
+        <code>.\sync.ps1</code>）。要同步哪些模型，由环境变量
         <code>OPEN_METEO_SYNC_DOMAINS</code> 决定（本页只读）。
       </p>
 
@@ -381,7 +382,8 @@ onBeforeUnmount(() => {
           </div>
           <p class="sync-domains-hint">
             长期生效的同步模型列表来自环境变量
-            <code>OPEN_METEO_SYNC_DOMAINS</code>（本页改不了）。改完后需重启后端与定时任务，或用下方「本次覆盖域」临时指定一次。
+            <code>OPEN_METEO_SYNC_DOMAINS</code
+            >（本页改不了）。改完后需重启后端与定时任务，或用下方「本次覆盖域」临时指定一次。
           </p>
           <div class="coverage-row">
             <span class="coverage-label">Docker CLI</span>
@@ -498,7 +500,9 @@ onBeforeUnmount(() => {
         </div>
         <div v-if="coverageError" class="coverage-error">
           {{ coverageError }}
-          <span class="coverage-hint">常见原因：本机容器未启动、尚未同步，或当前模型不在同步列表里。</span>
+          <span class="coverage-hint"
+            >常见原因：本机容器未启动、尚未同步，或当前模型不在同步列表里。</span
+          >
         </div>
         <div v-else-if="coverage" class="coverage-info">
           <div class="coverage-row">

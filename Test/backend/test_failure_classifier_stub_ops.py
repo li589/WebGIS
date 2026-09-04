@@ -253,3 +253,19 @@ def test_submit_job_http_500_generic_still_transient_upstream() -> None:
             )
     assert ctx.value.category == FailureCategory.transient_upstream
     assert ctx.value.category.retryable
+
+
+def test_cmr_granule_search_no_data_links_is_coverage_gap() -> None:
+    exc = RuntimeError(
+        "cmr_granule_search: no data links for VNP13C1 [2026-09-01~2026-09-01] (hits=0)"
+    )
+    assert FailureClassifier.classify(exc) == FailureCategory.coverage_gap
+    assert not FailureClassifier.is_retryable(exc)
+
+
+def test_ndvi_daily_no_rasters_found_is_coverage_gap() -> None:
+    exc = RuntimeError(
+        r"No NDVI rasters found in I:\Geograph_DataSet\NDVI for 2026-09-01 to 2026-10-01"
+    )
+    assert FailureClassifier.classify(exc) == FailureCategory.coverage_gap
+    assert not FailureClassifier.is_retryable(exc)

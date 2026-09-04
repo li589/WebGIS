@@ -28,10 +28,7 @@ export function resolveLayerExtentBounds(
   overlayHints: ReadonlyArray<OverlayTimeBoundsHint> = [],
 ): LngLatBoundsTuple | null {
   let bounds: LngLatBoundsTuple | null | undefined =
-    layer.importedVectorBounds ??
-    layer.importedRasterBounds ??
-    layer.importedBounds ??
-    null
+    layer.importedVectorBounds ?? layer.importedRasterBounds ?? layer.importedBounds ?? null
 
   if (!bounds) {
     const overlayId = layer.overlayLayerId ?? layer.catalogId ?? null

@@ -175,7 +175,11 @@ def _synthesize_reply_from_tool_steps(steps: list[dict[str, Any]]) -> str | None
                 for item in layers
                 if isinstance(item, dict) and item.get("layer_id")
             ]
-            head = f"图层库搜索「{q}」命中 {len(lines)} 条：" if q else f"找到 {len(lines)} 个图层："
+            head = (
+                f"图层库搜索「{q}」命中 {len(lines)} 条："
+                if q
+                else f"找到 {len(lines)} 个图层："
+            )
             return head + "\n" + "\n".join(lines)
         samples = data.get("samples")
         if isinstance(samples, list) and samples:
@@ -831,7 +835,9 @@ def run_chat(
                 else "已生成工作流确认卡，请点击「确认提交」后才会真正排队。"
             )
         # Prefer tool synthesis when mock reply is empty but tools returned data
-        reply = _ensure_visible_reply(reply, list(steps), fallback=reply or "（无回复）")
+        reply = _ensure_visible_reply(
+            reply, list(steps), fallback=reply or "（无回复）"
+        )
         if history:
             reply = f"（已结合此前 {len(history)//2} 轮对话）\n{reply}"
         usage = {

@@ -561,7 +561,17 @@
       "isAdminBoundary": false,
       "dataOwner": "NOAA/NESDIS",
       "temporalCoverage": "2000-01 to 2025-06 (Monthly)",
-      "sourceReference": "https://www.star.nesdis.noaa.gov/smcd/emb/vci/VH/vh_browse.php"
+      "sourceReference": "https://www.star.nesdis.noaa.gov/smcd/emb/vci/VH/vh_browse.php",
+      "workflowExtra": {
+        "group_title": "植被指数 NDVI",
+        "outputs": [
+          "NDVI"
+        ],
+        "output_labels": {
+          "NDVI": "植被指数 NDVI",
+          "result": "植被指数 NDVI"
+        }
+      }
     },
     {
       "catalogId": "biomass-cn",

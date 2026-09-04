@@ -14,6 +14,9 @@ import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { useWorkflowDefinitionsStore } from '../../stores/workflow-definitions'
 import {
   defaultProductLayerNames,
+  expectedOutputTargets,
+  groupTitleFromDefinition,
+  outputLabelsFromDefinition,
   productTagDescription,
   productTagLabel,
   resolveExpectedOutputTags,
@@ -75,6 +78,13 @@ const effectiveLayerId = computed(() => props.linkedLayerId || pickedLayerId.val
 
 const outputTags = computed(() => resolveExpectedOutputTags(workflowDefsStore.currentDefinition))
 
+const expectedTargets = computed(() =>
+  expectedOutputTargets(workflowDefsStore.currentDefinition, {
+    fallbackName: props.workflowName || sourceLayerName.value,
+    fallbackTags: outputTags.value,
+  }),
+)
+
 const namePrefix = computed(() =>
   resolveOutputNamePrefix(workflowDefsStore.currentDefinition, props.workflowId || 'output'),
 )
@@ -101,7 +111,7 @@ const canConfirm = computed(() => {
 function buildTargets(): WorkflowRunProductTarget[] {
   return productNames.value.map((name, i) => ({
     name: name.trim(),
-    productTag: outputTags.value[i] || 'result',
+    productTag: expectedTargets.value[i]?.productTag || outputTags.value[i] || 'result',
   }))
 }
 
@@ -128,11 +138,20 @@ watch(
     if (!visible) return
     mode.value = 'default'
     pickedLayerId.value = props.linkedLayerId ?? ''
-    groupTitle.value = props.workflowName
-      ? `${props.workflowName} · 计算中`
-      : `${props.workflowId || '工作流'} · 计算中`
+    const defGroupTitle = groupTitleFromDefinition(workflowDefsStore.currentDefinition)
+    groupTitle.value = defGroupTitle
+      ? `${defGroupTitle} · 计算中`
+      : props.workflowName
+        ? `${props.workflowName} · 计算中`
+        : `${props.workflowId || '工作流'} · 计算中`
 
-    const defaults = defaultProductLayerNames(outputTags.value, namePrefix.value)
+    const labels = outputLabelsFromDefinition(workflowDefsStore.currentDefinition)
+    const defaults = expectedTargets.value.length
+      ? expectedTargets.value
+      : defaultProductLayerNames(outputTags.value, namePrefix.value, {
+          fallbackName: props.workflowName || sourceLayerName.value,
+          labels,
+        })
     productNames.value = defaults.map((d) => d.name)
   },
 )
@@ -140,7 +159,13 @@ watch(
 watch(outputTags, (tags) => {
   if (!props.visible) return
   if (productNames.value.length === tags.length) return
-  const defaults = defaultProductLayerNames(tags, namePrefix.value)
+  const labels = outputLabelsFromDefinition(workflowDefsStore.currentDefinition)
+  const defaults = expectedTargets.value.length
+    ? expectedTargets.value
+    : defaultProductLayerNames(tags, namePrefix.value, {
+        fallbackName: props.workflowName || sourceLayerName.value,
+        labels,
+      })
   productNames.value = defaults.map((d) => d.name)
 })
 </script>
@@ -204,7 +229,7 @@ watch(outputTags, (tags) => {
               <Info :size="14" class="info-icon" aria-hidden="true" />
               <span class="info-text">
                 将创建计算组，含 {{ productNames.length }} 个图层：{{
-                  outputTags.map(productTagLabel).join(' / ')
+                  expectedTargets.map((t) => t.name).join(' / ')
                 }}
               </span>
             </div>
@@ -226,7 +251,7 @@ watch(outputTags, (tags) => {
                   <span
                     class="multi-name-tag"
                     :title="productTagDescription(outputTags[idx] ?? '')"
-                    >{{ productTagLabel(outputTags[idx]) }}</span
+                    >{{ expectedTargets[idx]?.name || productTagLabel(outputTags[idx]) }}</span
                   >
                   <input
                     v-model="productNames[idx]"

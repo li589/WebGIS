@@ -14,9 +14,7 @@ export function requestOpenLayerGroupManager(themeId?: number | null): void {
   window.dispatchEvent(new CustomEvent(EVENT, { detail }))
 }
 
-export function onOpenLayerGroupManager(
-  handler: (themeId: number | null) => void,
-): () => void {
+export function onOpenLayerGroupManager(handler: (themeId: number | null) => void): () => void {
   if (typeof window === 'undefined') return () => undefined
   const listener = (ev: Event) => {
     const detail = (ev as CustomEvent<OpenDetail>).detail

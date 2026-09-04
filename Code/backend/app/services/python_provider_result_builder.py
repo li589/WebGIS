@@ -87,9 +87,7 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
 }
 
 
-def _legend_ticks_from_range(
-    vmin: object | None, vmax: object | None
-) -> list[float]:
+def _legend_ticks_from_range(vmin: object | None, vmax: object | None) -> list[float]:
     if not isinstance(vmin, (int, float)) or not isinstance(vmax, (int, float)):
         return []
     lo = float(vmin)
@@ -97,6 +95,7 @@ def _legend_ticks_from_range(
     if not (lo < hi):
         return []
     return [lo, (lo + hi) / 2.0, hi]
+
 
 _SINGLE_DAY_MAT_RE = re.compile(r"^\d{8}\.mat$", re.IGNORECASE)
 _FY_DATE_IN_NAME_RE = re.compile(r"(20\d{6})")
@@ -214,26 +213,57 @@ def _resolve_product_display_label(
     tags: dict[str, Any],
     product: dict[str, Any],
     local_path: Path,
+    workflow_id: str | None = None,
 ) -> str:
-    """产物图层显示名：目录 descriptor 显示名 > tags.layer > 产物名（剥扩展名）> stem。
+    """产物图层显示名：目录 descriptor/种子 output_labels > descriptor 显示名 > tags.layer > 产物名（剥扩展名）> stem。
 
-    2026-08-24 三联报障（续）：product.name 常为源文件名（如 landcover_025.mat），
-    前端 normalizeProductTag 全串大写 + productTagLabel 未知 tag 透传后，
-    文件名会整体泄漏成图层显示名（「LANDCOVER_025.MAT」）。descriptor
-    显示名优先从根上消除技术文件名；产物名/stem 兜底时一律剥数据扩展名。
+    消除技术文件名及「产出变量」等模糊标签，与前端 layer-naming 规范严格对齐。
     """
+    tag_keys = [
+        str(tags.get("layer") or "").strip(),
+        str(product.get("variable") or "").strip(),
+        "result",
+    ]
     if raw_layer_id:
         try:
             from app.services.layer_catalog import get_layer_descriptor
 
             descriptor = get_layer_descriptor(raw_layer_id)
-            display_name = (
-                getattr(descriptor, "display_name", None) if descriptor else None
-            )
-            if display_name and str(display_name).strip():
-                return str(display_name).strip()[:64]
+            if descriptor:
+                extra = getattr(descriptor, "workflow_extra", None)
+                if isinstance(extra, dict):
+                    output_labels = extra.get("output_labels")
+                    if isinstance(output_labels, dict):
+                        for k in tag_keys:
+                            if k and k in output_labels and str(output_labels[k]).strip():
+                                return str(output_labels[k]).strip()[:64]
+                display_name = (
+                    getattr(descriptor, "display_name", None)
+                )
+                if display_name and str(display_name).strip():
+                    return str(display_name).strip()[:64]
         except Exception:
             logger.debug("layer descriptor lookup failed for %s", raw_layer_id)
+
+    if workflow_id:
+        try:
+            from app.services.workflow_definition_service import get_definition
+
+            wdef = get_definition(workflow_id)
+            if isinstance(wdef, dict):
+                extra = wdef.get("extra")
+                if isinstance(extra, dict):
+                    output_labels = extra.get("output_labels")
+                    if isinstance(output_labels, dict):
+                        for k in tag_keys:
+                            if k and k in output_labels and str(output_labels[k]).strip():
+                                return str(output_labels[k]).strip()[:64]
+                    group_title = extra.get("group_title")
+                    if group_title and str(group_title).strip():
+                        return str(group_title).strip()[:64]
+        except Exception:
+            logger.debug("workflow definition lookup failed for %s", workflow_id)
+
     for candidate in (tags.get("layer"), product.get("name")):
         if candidate and str(candidate).strip():
             name = re.sub(
@@ -1246,7 +1276,10 @@ class PythonProviderResultBuilder:
         tags = as_dict(product.get("tags"))
         variable = str(product.get("variable") or tags.get("variable") or "raster")
         raw_layer_id = str(getattr(payload, "layer_id", "") or "").strip()
-        label = _resolve_product_display_label(raw_layer_id, tags, product, local_path)
+        workflow_id = str(getattr(payload, "workflow_id", "") or "").strip()
+        label = _resolve_product_display_label(
+            raw_layer_id, tags, product, local_path, workflow_id=workflow_id
+        )
         # 2026-08-24 三联报障 A：产物 overlay id 稳定化。此前恒为
         # imported-gis-{run_id[-8:]}-{index}——每次运行生成新 id，前端
         # syncOverlays 视为"旧层移除+新层添加"，两次网络往返之间存在空窗
@@ -1343,7 +1376,7 @@ class PythonProviderResultBuilder:
                     "cog_url": f"/overlay-preview/{overlay_id}",
                     "cog_preview_url": f"/overlay-preview/{overlay_id}",
                     "cog_bbox": cog_bbox,
-                    "product_tag": label,
+                    "product_tag": str(tags.get("layer") or product.get("variable") or label),
                     "source_path": str(local_path),
                     "time_list": registered.get("time_list") or [],
                     "default_time": registered.get("default_time"),
@@ -1376,7 +1409,10 @@ class PythonProviderResultBuilder:
         """
         tags = as_dict(product.get("tags"))
         raw_layer_id = str(getattr(payload, "layer_id", "") or "").strip()
-        label = _resolve_product_display_label(raw_layer_id, tags, product, local_path)
+        workflow_id = str(getattr(payload, "workflow_id", "") or "").strip()
+        label = _resolve_product_display_label(
+            raw_layer_id, tags, product, local_path, workflow_id=workflow_id
+        )
         variable = str(product.get("variable") or tags.get("variable") or "").strip()
         if not variable and local_path.suffix.lower() == ".mat":
             variable = _infer_mat_data_variable(local_path) or local_path.stem
@@ -1470,7 +1506,7 @@ class PythonProviderResultBuilder:
                     "cog_url": f"/overlay-preview/{overlay_id}",
                     "cog_preview_url": f"/overlay-preview/{overlay_id}",
                     "cog_bbox": cog_bbox,
-                    "product_tag": label,
+                    "product_tag": str(tags.get("layer") or product.get("variable") or label),
                     "source_path": str(local_path),
                     "time_list": registered.get("time_list") or [],
                     "default_time": registered.get("default_time"),

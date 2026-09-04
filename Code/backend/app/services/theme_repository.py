@@ -50,7 +50,9 @@ def normalize_login_palette(value: str | None) -> str:
 def infer_login_palette(*, slug: str, name_zh: str, full_name_zh: str = "") -> str:
     """按品牌文案推断默认登录配色（迁移/新建兜底）。"""
     blob = f"{slug} {name_zh} {full_name_zh}".lower()
-    if any(tok in blob for tok in ("植被", "生态", "vegetation", "ecology", "vemp", "ndvi")):
+    if any(
+        tok in blob for tok in ("植被", "生态", "vegetation", "ecology", "vemp", "ndvi")
+    ):
         return "green"
     if any(tok in blob for tok in ("warm", "soil", "干旱", "土壤")):
         return "warm"

@@ -26,7 +26,7 @@
         140
       ],
       "properties": {
-        "path": "{DATA_ROOT}/NDVI",
+        "path": "{DATA_ROOT}/Ecological_Vegetation/NDVI/NDVIday",
         "dataset_key": "NDVI_16DAY_RASTER"
       }
     },
@@ -54,7 +54,9 @@
       "properties": {
         "layer_id": "ndvi",
         "colormap": "ndvi",
-        "rescale": "-1,1"
+        "rescale": "-1,1",
+        "variable": "NDVI",
+        "title": "植被指数 NDVI"
       }
     },
     {
@@ -107,10 +109,14 @@
   ],
   "extra": {
     "purpose": "local_disk_pipeline",
-    "notes": "VIIRS 9km 逐月 NDVI 本地读取与处理链路。",
-    "group_title": "NDVI 植被指数（本地）",
+    "notes": "VIIRS 9km 逐日/逐月 NDVI 本地读取与处理链路。",
+    "group_title": "植被指数 NDVI（本地）",
+    "outputs": [
+      "NDVI"
+    ],
     "output_labels": {
-      "result": "NDVI 植被指数"
+      "NDVI": "植被指数 NDVI",
+      "result": "植被指数 NDVI"
     }
   }
 }

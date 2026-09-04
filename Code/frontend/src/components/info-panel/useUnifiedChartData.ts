@@ -223,8 +223,7 @@ export function useUnifiedChartData(
           Math.min(weather.hourly.length - 1, Math.floor(inspectHour?.value ?? 0)),
         )
         const entry = weather.hourly[hourIdx] ?? weather.hourly[0]
-        currentValue =
-          typeof entry?.primary_value === 'number' ? entry.primary_value : null
+        currentValue = typeof entry?.primary_value === 'number' ? entry.primary_value : null
       }
 
       list.push({

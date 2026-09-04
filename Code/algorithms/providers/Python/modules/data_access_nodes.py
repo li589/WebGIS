@@ -510,10 +510,32 @@ def _resolve_portal_headers(
         except Exception:  # noqa: BLE001
             pass
 
+    # Earthdata / NSIDC 家族（NASA LPDAAC / NSIDC Cumulus 云端直下）：
+    # 有账密则优先 URS 交换 Bearer token（云端 CDN 只认 Bearer，不认 Basic/空头）。
+    # 静态 token（如 BACKEND_EARTHDATA_TOKEN）若有效优先，否则账密换 token。
+    is_ed_family = (
+        profile in _PORTAL_CRED_ALIASES["earthdata"]
+        or profile in _PORTAL_CRED_ALIASES["nsidc"]
+        or wants_earthdata
+        or auth_type == "earthdata"
+    )
+    if is_ed_family and username and password:
+        if auth_type in {"bearer", "token"} and token:
+            value = token if token.lower().startswith("bearer ") else f"Bearer {token}"
+            headers[header_name] = value
+            return headers
+        try:
+            bearer = _earthdata_bearer_token(username, password)
+            if bearer:
+                headers["Authorization"] = f"Bearer {bearer}"
+                return headers
+        except Exception:  # noqa: BLE001
+            pass
+
     if auth_type in {"bearer", "token"} and token:
         value = token if token.lower().startswith("bearer ") else f"Bearer {token}"
         headers[header_name] = value
-    elif auth_type == "basic" and username:
+    elif auth_type in {"basic", "earthdata"} and username:
         # Earthdata 云 CDN 只认 Bearer：先用账密换 URS token，失败回退 Basic
         # （GES DISC 传统端点仍接受 Basic）。
         bearer = ""
@@ -819,6 +841,7 @@ class CmrGranuleSearchModule(BaseModule):
         "bounding_box": "",
         "link_filter": "",
         "max_results": 5,
+        "allow_latest_fallback": False,
         "cmr_base": _CMR_GRANULE_URL,
     }
 
@@ -878,9 +901,41 @@ class CmrGranuleSearchModule(BaseModule):
                 urls.append(entry_links[0])
                 titles.append(str(entry.get("title") or ""))
         if not urls:
+            latest_hint = ""
+            try:
+                latest_q: dict[str, str] = {
+                    "short_name": short_name,
+                    "page_size": "1",
+                    "sort_key": "-start_date",
+                }
+                if version:
+                    latest_q["version"] = version
+                latest_url = f"{base}?{urllib.parse.urlencode(latest_q)}"
+                latest_req = urllib.request.Request(
+                    latest_url,
+                    headers={
+                        "Accept": "application/json",
+                        "User-Agent": "CGDA-Backend/1.0",
+                    },
+                )
+                with urllib.request.urlopen(latest_req, timeout=5) as lresp:
+                    lpayload = json.loads(lresp.read().decode("utf-8", "replace"))
+                    lentries = (lpayload.get("feed") or {}).get("entry") or []
+                    if (
+                        isinstance(lentries, list)
+                        and lentries
+                        and isinstance(lentries[0], dict)
+                    ):
+                        t_start = str(lentries[0].get("time_start") or "")[:10]
+                        t_end = str(lentries[0].get("time_end") or "")[:10]
+                        if t_start:
+                            latest_hint = f"（NASA CMR 最新可用颗粒时间约为 {t_start} 至 {t_end}，遥感合成产品通常存在发布延迟，请调整时间轴至该日期前）"
+            except Exception:  # noqa: BLE001
+                pass
+
             raise ValueError(
-                f"cmr_granule_search: no data links for {short_name} "
-                f"[{start_date}~{end_date}] (hits={len(entries)})"
+                f"cmr_granule_search: error_code=coverage_gap, no data links for {short_name} "
+                f"[{start_date}~{end_date}] (hits={len(entries)})。{latest_hint}"
             )
 
         result = _store_path_manifest(

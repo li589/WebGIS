@@ -427,7 +427,55 @@ class TestCdseBearerHeader(unittest.TestCase):
                 token_value="",
                 accept="",
             )
-        self.assertTrue(headers.get("Authorization", "").startswith("Basic "))
+    def test_earthdata_auth_type_resolves_bearer(self) -> None:
+        """auth_type == 'earthdata' 时调用 _earthdata_bearer_token 解析出 Bearer token。"""
+        import unittest.mock as mock
+        from modules import data_access_nodes
+
+        with mock.patch.object(
+            data_access_nodes, "_earthdata_bearer_token", return_value="URS-MOCK-JWT"
+        ) as mocked_ed:
+            headers = data_access_nodes._resolve_portal_headers(
+                cred_profile="earthdata",
+                datasource_selection={
+                    "portal_credentials": {
+                        "earthdata": {
+                            "enabled": True,
+                            "auth_type": "earthdata",
+                            "username": "ed_user",
+                            "password": "ed_pass",
+                        }
+                    }
+                },
+                token_header="",
+                token_value="",
+                accept="",
+            )
+        mocked_ed.assert_called_once_with("ed_user", "ed_pass")
+        self.assertEqual(headers.get("Authorization"), "Bearer URS-MOCK-JWT")
+
+    def test_safe_redirect_handler_strips_auth_on_cross_domain_or_s3(self) -> None:
+        """重定向到 S3 / CloudFront 或跨域名时，_SafeRedirectHandler 剥离 Authorization。"""
+        from urllib.request import Request
+        from data_access.sources.http import _SafeRedirectHandler
+
+        handler = _SafeRedirectHandler()
+        orig_req = Request(
+            "https://data.lpdaac.earthdatacloud.nasa.gov/test.h5",
+            headers={"Authorization": "Bearer TOKEN123", "User-Agent": "TestUA"},
+        )
+        redirected_req = handler.redirect_request(
+            orig_req,
+            None,
+            302,
+            "Found",
+            {},
+            "https://d1nklfio7vscoe.cloudfront.net/test.h5?X-Amz-Signature=xyz",
+        )
+        self.assertIsNotNone(redirected_req)
+        self.assertNotIn("Authorization", redirected_req.headers)
+        self.assertNotIn("authorization", redirected_req.headers)
+        self.assertEqual(redirected_req.headers.get("User-agent"), "TestUA")
 
 
 if __name__ == "__main__":

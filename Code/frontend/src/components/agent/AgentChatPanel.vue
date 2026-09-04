@@ -586,8 +586,7 @@ async function applyChatResult(res: AgentChatResponse, assistantId: string) {
         target.text = fromSteps
         finalizeAssistantHtml(target)
       } else if (!trimmed) {
-        target.text =
-          '（助手未返回可见文本。可展开「过程」查看工具步骤，或换一种问法重试。）'
+        target.text = '（助手未返回可见文本。可展开「过程」查看工具步骤，或换一种问法重试。）'
         finalizeAssistantHtml(target)
       }
     }
@@ -597,9 +596,7 @@ async function applyChatResult(res: AgentChatResponse, assistantId: string) {
   }
 }
 
-function synthesizeReplyFromSteps(
-  steps: ChatMessage['steps'],
-): string | null {
+function synthesizeReplyFromSteps(steps: ChatMessage['steps']): string | null {
   if (!steps?.length) return null
   for (let i = steps.length - 1; i >= 0; i -= 1) {
     const step = steps[i]
@@ -739,8 +736,7 @@ async function send() {
   } finally {
     const msg = messages.value.find((m) => m.id === assistantId)
     const keepStepsOpen = Boolean(
-      msg?.steps?.some((s) => s.type === 'tool' || s.type === 'tool_result') ||
-        msg?.keepStepsOpen,
+      msg?.steps?.some((s) => s.type === 'tool' || s.type === 'tool_result') || msg?.keepStepsOpen,
     )
     if (msg) msg.keepStepsOpen = keepStepsOpen
     sending.value = false
@@ -771,11 +767,7 @@ function onKeydown(ev: KeyboardEvent) {
       role="dialog"
       aria-label="地图助手对话"
     >
-      <header
-        class="agent-chat-header"
-        title="拖动移动对话框"
-        @pointerdown="onHeaderPointerDown"
-      >
+      <header class="agent-chat-header" title="拖动移动对话框" @pointerdown="onHeaderPointerDown">
         <div class="agent-chat-title">
           <span class="agent-chat-dot" aria-hidden="true" />
           <span>地图助手</span>
@@ -879,12 +871,7 @@ function onKeydown(ev: KeyboardEvent) {
             地图点击选点后可查坐标与图层值
           </span>
         </div>
-        <p
-          v-if="sending && statusLabel"
-          class="agent-chat-status"
-          role="status"
-          aria-live="polite"
-        >
+        <p v-if="sending && statusLabel" class="agent-chat-status" role="status" aria-live="polite">
           <span class="agent-chat-status-dot" aria-hidden="true" />
           {{ statusLabel }}
         </p>

@@ -121,11 +121,7 @@ export function resolveStyleRenderHint(options: {
     (t): t is number => typeof t === 'number' && Number.isFinite(t),
   )
   const baseMin =
-    typeof overlayMeta?.vmin === 'number'
-      ? overlayMeta.vmin
-      : ticks.length
-        ? ticks[0]
-        : 0
+    typeof overlayMeta?.vmin === 'number' ? overlayMeta.vmin : ticks.length ? ticks[0] : 0
   const baseMax =
     typeof overlayMeta?.vmax === 'number'
       ? overlayMeta.vmax
@@ -134,8 +130,10 @@ export function resolveStyleRenderHint(options: {
         : ticks.length === 1
           ? ticks[0]
           : 1
-  const lo = typeof vminOverride === 'number' && Number.isFinite(vminOverride) ? vminOverride : baseMin
-  const hi = typeof vmaxOverride === 'number' && Number.isFinite(vmaxOverride) ? vmaxOverride : baseMax
+  const lo =
+    typeof vminOverride === 'number' && Number.isFinite(vminOverride) ? vminOverride : baseMin
+  const hi =
+    typeof vmaxOverride === 'number' && Number.isFinite(vmaxOverride) ? vmaxOverride : baseMax
   if (
     (typeof vminOverride === 'number' && Number.isFinite(vminOverride)) ||
     (typeof vmaxOverride === 'number' && Number.isFinite(vmaxOverride))
@@ -144,8 +142,7 @@ export function resolveStyleRenderHint(options: {
     const b = Math.max(lo, hi)
     const mid = (a + b) / 2
     const span = b - a
-    const round = (v: number) =>
-      span >= 10 ? Math.round(v * 10) / 10 : Math.round(v * 100) / 100
+    const round = (v: number) => (span >= 10 ? Math.round(v * 10) / 10 : Math.round(v * 100) / 100)
     return { ...hint, legend_ticks: [round(a), round(mid), round(b)] }
   }
   return hint

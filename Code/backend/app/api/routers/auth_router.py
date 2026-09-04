@@ -196,16 +196,12 @@ def _public_user(row: dict) -> UserPublic:
 
     theme_repo = get_theme_repository()
     theme_id = row.get("theme_id")
-    theme = (
-        theme_repo.get_by_id(int(theme_id)) if theme_id is not None else None
-    )
+    theme = theme_repo.get_by_id(int(theme_id)) if theme_id is not None else None
     if theme is None:
         theme = theme_repo.get_primary()
         # Persist heal so subsequent reads / ACL use a real binding.
         try:
-            get_user_repository().update_user(
-                int(row["id"]), theme_id=int(theme.id)
-            )
+            get_user_repository().update_user(int(row["id"]), theme_id=int(theme.id))
         except Exception:
             logger.warning(
                 "Failed to heal missing theme_id for user %s",

@@ -263,7 +263,12 @@ export type GlobeRenderEngine = 'maplibre' | 'cesium'
 /** 3D 背景默认 auto（跟随主题：暗色=星图 / 浅色=淡化微尘）。 */
 export function getGlobeBackgroundMode(): GlobeBackgroundMode {
   const value = loadSettingsUiLocal().globeBackground
-  if (value === 'starfield' || value === 'minimal' || value === 'solar_system' || value === 'auto') {
+  if (
+    value === 'starfield' ||
+    value === 'minimal' ||
+    value === 'solar_system' ||
+    value === 'auto'
+  ) {
     return value
   }
   return 'auto'

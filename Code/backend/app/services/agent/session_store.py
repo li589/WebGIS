@@ -204,7 +204,9 @@ def append_turn(
             if path.exists():
                 try:
                     data = json.loads(path.read_text(encoding="utf-8"))
-                    if isinstance(data, dict) and isinstance(data.get("messages"), list):
+                    if isinstance(data, dict) and isinstance(
+                        data.get("messages"), list
+                    ):
                         updated = _parse_updated_at(data.get("updated_at"))
                         if updated is None:
                             try:

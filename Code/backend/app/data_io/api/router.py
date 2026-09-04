@@ -324,7 +324,13 @@ async def upload_init(
             resume_upload_id=body.resume_upload_id,
             owner_user_id=_owner_user_id(cred),
         )
-    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (
+        UploadAccessDenied,
+        FileNotFoundError,
+        QuotaExceededError,
+        ValueError,
+        RuntimeError,
+    ) as exc:
         raise _http_err(exc) from exc
 
 
@@ -361,7 +367,13 @@ async def upload_status(
     try:
         _assert_upload_owner(upload_id, cred)
         return get_upload_status(upload_id)
-    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (
+        UploadAccessDenied,
+        FileNotFoundError,
+        QuotaExceededError,
+        ValueError,
+        RuntimeError,
+    ) as exc:
         raise _http_err(exc) from exc
 
 
@@ -379,7 +391,13 @@ async def upload_chunk(
         _assert_upload_owner(upload_id, cred)
         data = await file.read()
         return append_chunk(upload_id, data, offset=offset)
-    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (
+        UploadAccessDenied,
+        FileNotFoundError,
+        QuotaExceededError,
+        ValueError,
+        RuntimeError,
+    ) as exc:
         raise _http_err(exc) from exc
     finally:
         await file.close()
@@ -399,7 +417,13 @@ async def upload_chunk_indexed(
         _assert_upload_owner(upload_id, cred)
         data = await file.read()
         return upload_chunk_by_index(upload_id, chunk_index, data)
-    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (
+        UploadAccessDenied,
+        FileNotFoundError,
+        QuotaExceededError,
+        ValueError,
+        RuntimeError,
+    ) as exc:
         raise _http_err(exc) from exc
     finally:
         await file.close()
@@ -415,7 +439,13 @@ async def upload_complete(
     try:
         _assert_upload_owner(body.upload_id, cred)
         return complete_upload(body.upload_id)
-    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (
+        UploadAccessDenied,
+        FileNotFoundError,
+        QuotaExceededError,
+        ValueError,
+        RuntimeError,
+    ) as exc:
         raise _http_err(exc) from exc
 
 
@@ -430,7 +460,13 @@ async def upload_resumable_complete(
     try:
         _assert_upload_owner(body.upload_id, cred)
         return complete_resumable(body.upload_id)
-    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (
+        UploadAccessDenied,
+        FileNotFoundError,
+        QuotaExceededError,
+        ValueError,
+        RuntimeError,
+    ) as exc:
         raise _http_err(exc) from exc
 
 
@@ -877,7 +913,13 @@ async def raster_inspect(
             "guessed_temporal": guessed,
             **info,
         }
-    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (
+        UploadAccessDenied,
+        FileNotFoundError,
+        QuotaExceededError,
+        ValueError,
+        RuntimeError,
+    ) as exc:
         raise _http_err(exc) from exc
 
 
@@ -934,7 +976,13 @@ async def raster_commit(
             )
             return {"async": True, "job_id": job["job_id"], "status": job["status"]}
         return {"async": False, **_raster_commit_sync(body)}
-    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (
+        UploadAccessDenied,
+        FileNotFoundError,
+        QuotaExceededError,
+        ValueError,
+        RuntimeError,
+    ) as exc:
         raise _http_err(exc) from exc
 
 
@@ -952,7 +1000,13 @@ async def raster_detect_invalid(
 
         path = _resolve_owned_upload(body.upload_id, cred)
         return auto_detect_invalid_values(path, body.variable_id)
-    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (
+        UploadAccessDenied,
+        FileNotFoundError,
+        QuotaExceededError,
+        ValueError,
+        RuntimeError,
+    ) as exc:
         raise _http_err(exc) from exc
 
 
@@ -968,7 +1022,13 @@ async def import_document(
     try:
         path = _resolve_owned_upload(body.upload_id, cred)
         return create_document_session(path, source_name=path.name)
-    except (UploadAccessDenied, FileNotFoundError, QuotaExceededError, ValueError, RuntimeError) as exc:
+    except (
+        UploadAccessDenied,
+        FileNotFoundError,
+        QuotaExceededError,
+        ValueError,
+        RuntimeError,
+    ) as exc:
         raise _http_err(exc) from exc
 
 

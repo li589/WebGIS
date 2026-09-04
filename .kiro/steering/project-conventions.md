@@ -1,0 +1,16 @@
+---
+inclusion: always
+---
+
+# CGDA 项目 AI 编程硬约定（指针）
+
+本文件为**指针**。完整、权威的项目硬约定（运行时、launch 命令、改 X 则跑 Y、高风险区、命名与提交规范）已统一维护在 **`.ai/rules/project-conventions.md`**。
+
+改动代码前，请先读：
+
+- `.ai/rules/project-conventions.md` —— 全部硬约定与「改 X 则跑 Y」映射
+- 根目录 `AGENTS.md` —— 架构 / 目录路由总导航
+- 根目录 `README.md` —— 项目说明与本地环境
+- `.ai/` —— 技能（`skills/`）、计划（`plans/`）、进度（`progress/`）、记忆（`memory/`）、文档（`docs/`）
+
+> 本指针与 `.ai/rules/project-conventions.md` 不同步时，以 `.ai/rules/` 为准。

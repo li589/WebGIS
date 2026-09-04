@@ -120,9 +120,7 @@ function withAccentAliases(preset: LoginThemeCssVars): LoginThemeCssVars {
   }
 }
 
-export function normalizeLoginPalette(
-  value: string | null | undefined,
-): LoginPaletteId | null {
+export function normalizeLoginPalette(value: string | null | undefined): LoginPaletteId | null {
   const key = value?.trim().toLowerCase()
   if (key && key in PALETTE_PRESETS) return key as LoginPaletteId
   return null

@@ -24,9 +24,7 @@ import {
 } from '../../services/layer-groups-api'
 import { useLayerWorkspace } from '../../stores/layers/selectors'
 import { useAuthStore } from '../../stores/auth'
-import {
-  notifyPermissionResourcesStale,
-} from '../../utils/layer-group-manager-bridge'
+import { notifyPermissionResourcesStale } from '../../utils/layer-group-manager-bridge'
 
 const props = defineProps<{
   open: boolean
@@ -285,11 +283,14 @@ function toggleDraftHiddenSub(group: GroupRow, sub: string) {
 
 async function toggleGroupHidden(group: GroupRow) {
   const tid = requireThemeId()
-  const next = !Boolean(group.def.hidden)
-  await run(async () => {
-    await updateLayerGroup(group.def.id, { hidden: next }, tid)
-    await loadGroups()
-  }, next ? '分组已在侧栏隐藏' : '分组已在侧栏显示')
+  const next = !group.def.hidden
+  await run(
+    async () => {
+      await updateLayerGroup(group.def.id, { hidden: next }, tid)
+      await loadGroups()
+    },
+    next ? '分组已在侧栏隐藏' : '分组已在侧栏显示',
+  )
 }
 
 function move(group: GroupRow, offset: -1 | 1) {
@@ -427,7 +428,8 @@ async function importFromPersonalWorkspace() {
             <h2 id="lgm-title" class="lgm-title">图层分组管理</h2>
             <p class="lgm-hint">
               针对选定主题直接编辑分组预设（移动图层、改组名、增删组、主题显示名）。
-              绑定该主题的用户只读消费此预设；运行时变更<strong>不会</strong>改写种子 JSON（gen:catalog / check:catalog 口径不变）。
+              绑定该主题的用户只读消费此预设；运行时变更<strong>不会</strong>改写种子
+              JSON（gen:catalog / check:catalog 口径不变）。
             </p>
           </div>
           <IconButton size="sm" label="关闭" @click="close">
@@ -593,10 +595,7 @@ async function importFromPersonalWorkspace() {
                 <span>侧栏隐藏整组</span>
                 <input v-model="group.draftHidden" type="checkbox" :disabled="saving" />
               </label>
-              <div
-                v-if="parsedDraftSubCategories(group).length"
-                class="lgm-hidden-subs"
-              >
+              <div v-if="parsedDraftSubCategories(group).length" class="lgm-hidden-subs">
                 <span class="lgm-hidden-subs-label">隐藏二级组类</span>
                 <label
                   v-for="sub in parsedDraftSubCategories(group)"
@@ -650,9 +649,7 @@ async function importFromPersonalWorkspace() {
                     :placeholder="item.seedName"
                     :disabled="saving"
                     title="主题显示名覆盖（空=清除覆盖）"
-                    @input="
-                      displayNameDrafts[item.id] = ($event.target as HTMLInputElement).value
-                    "
+                    @input="displayNameDrafts[item.id] = ($event.target as HTMLInputElement).value"
                   />
                   <code class="lgm-member-id">{{ item.id }}</code>
                 </label>

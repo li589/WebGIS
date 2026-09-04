@@ -84,8 +84,8 @@ function updatePosition() {
 
   const placement = order.find(fits) ?? props.position
 
-  let top = 0
-  let left = 0
+  let top: number
+  let left: number
   if (placement === 'top') {
     top = rect.top - gap - bh
     left = rect.left + rect.width / 2 - bw / 2

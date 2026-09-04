@@ -101,6 +101,8 @@ export function isDefaultProductDisplayName(
   if (tag === 'RESULT' || tag === 'result') {
     candidates.add('结果')
     candidates.add('结果（部分）')
+    candidates.add('分析结果')
+    candidates.add('分析结果（部分）')
     candidates.add('产出变量')
     candidates.add('产出变量（部分）')
   }

@@ -53,15 +53,8 @@ function maybeCleanupAfterAttach(
 
 /** 终态 succeeded 但首次 attach 返回 0 / 部分绑定时调度 forceBind 重试。 */
 export function scheduleSucceededAttachRetry(opts: ScheduleAttachRetryOptions): void {
-  const {
-    runId,
-    catalogId,
-    resultRefs,
-    attach,
-    cleanup,
-    isRunDismissed,
-    hasUnboundPlaceholders,
-  } = opts
+  const { runId, catalogId, resultRefs, attach, cleanup, isRunDismissed, hasUnboundPlaceholders } =
+    opts
   if (!runId || succeededAttachRetryTimers.has(runId)) return
   succeededAttachRetryTimers.set(
     runId,

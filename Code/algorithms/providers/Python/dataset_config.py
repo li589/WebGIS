@@ -728,8 +728,12 @@ PATH_ALIASES: dict[str, str] = {
     # 数据集重组后目录名（下划线）与历史种子路径（无下划线 / 旧树）对齐
     "InversionResults": "Inversion_Results",
     "Soil_Ecological_Data/Smap_OriginData": "Soil_Moisture/SMAP_Origin_Data",
+    "NDVI": "Ecological_Vegetation/NDVI/NDVIday",
     "NDVI/daily": "Ecological_Vegetation/NDVI/NDVIday",
+    "NDVI/NDVIday": "Ecological_Vegetation/NDVI/NDVIday",
     "NDVI/climatology": "Ecological_Vegetation/NDVI/climatology",
+    "Ecological_Vegetation/NDVI": "Ecological_Vegetation/NDVI/NDVIday",
+    "Ecological_Vegetation/NDVI/VIIRS_9km_tif": "Ecological_Vegetation/NDVI/NDVIday",
     "Ecological/Vegetation/NDVI/VIIRS_9km_tif": "Ecological_Vegetation/NDVI/NDVIday",
     "Ecological/Vegetation/Biomass": "Ecological_Vegetation/Biomass",
     "Ecological/LandCover": "Ecological_Vegetation/LandCover",

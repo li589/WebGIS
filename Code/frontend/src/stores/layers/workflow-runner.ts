@@ -1040,7 +1040,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     // 画布/编辑器在 submit 前已建 computing 组（runId 尚空）——提交路径须接管，
     // 禁止再建第二组导致双 runId / attach 绑错组 / cleanup 清错侧栏。
     if (!existingGroup && options?.source === 'submit') {
-      const probeWorkflowId = String(bridge.workflowId || existingGroup?.workflowId || '')
+      const probeWorkflowId = String(bridge.workflowId || '')
       const probeSource = resolveInversionCatalogId(String(bridge.sourceLayerId || catalogId))
       const groups = deps.getRunLayerGroups()
       let pendingGroup: (typeof groups)[number] | undefined
@@ -1209,10 +1209,14 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           }
           return
         }
+        const candidateName =
+          configuredTargets.find((t) => t.productTag === tag)?.name ||
+          mergedLabelMap[tag] ||
+          (tag === 'result' && extraTitle ? extraTitle : productTagLabel(tag))
         const layer: ActiveLayer = {
           instanceId: crypto.randomUUID(),
           catalogId: cid,
-          name: productTagLabel(tag),
+          name: candidateName,
           visible: true,
           opacity: 1,
           order: maxOrder + tags.length - i + added,
@@ -1313,7 +1317,12 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
       }),
       targets: configuredTargets.length
         ? configuredTargets
-        : tags.map((tag) => ({ name: productTagLabel(tag), productTag: tag })),
+        : tags.map((tag) => ({
+            name:
+              mergedLabelMap[tag] ||
+              (tag === 'result' && extraTitle ? extraTitle : productTagLabel(tag)),
+            productTag: tag,
+          })),
       sourceLayerId,
       workflowId,
       memberCatalogIds,
@@ -2073,6 +2082,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
         jobId: accepted.run_id,
         name: retryDisplayName,
         commandType: 'analysis',
+        commandLabel: prevJob?.commandLabel,
         status: 'queued',
         progress: 12,
         createdAt: accepted.created_at,

@@ -566,16 +566,16 @@ class WorkflowSubmissionService:
                     user_message = "工作流已成功派发到 Celery，等待 worker 消费。"
                     event_message = f"派发到队列 {queue_name}，等待 worker 消费。"
                     diagnostics = (
-                        list(current_run.diagnostics) if current_run and current_run.diagnostics else None
+                        list(current_run.diagnostics)
+                        if current_run and current_run.diagnostics
+                        else None
                     )
                 else:
                     user_message = (
                         f"任务已写入队列 {queue_name}，但当前无在线 Celery worker；"
                         "请执行 launch.py restart backend（或 start worker）后才会被消费。"
                     )
-                    event_message = (
-                        f"派发到队列 {queue_name}，但无在线 worker（请重启 backend workers）。"
-                    )
+                    event_message = f"派发到队列 {queue_name}，但无在线 worker（请重启 backend workers）。"
                     diagnostics = [
                         "error_code=workflow_workers_offline",
                         f"queue_name={queue_name}",
@@ -661,7 +661,9 @@ class WorkflowSubmissionService:
                         f"dispatch_error={exc}",
                     ]
                     error_code = "workflow_dispatch_uncertain"
-                    event_message = "Celery 派发确认异常（消息可能已投递；请确认 worker 在线）。"
+                    event_message = (
+                        "Celery 派发确认异常（消息可能已投递；请确认 worker 在线）。"
+                    )
                 else:
                     user_message = (
                         "Celery broker（Redis）暂不可达，任务已保留在排队状态；"

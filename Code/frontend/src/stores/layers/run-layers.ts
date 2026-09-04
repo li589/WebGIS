@@ -535,9 +535,7 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           const materialized = await materializeWorkflowMapLayers(runId)
           materializedLayers = materialized.layers ?? []
           const fromMaterialize = materializedLayers
-            .filter(
-              (layer) => typeof layer.overlay_layer_id === 'string' && layer.overlay_layer_id,
-            )
+            .filter((layer) => typeof layer.overlay_layer_id === 'string' && layer.overlay_layer_id)
             .map((layer) => {
               const rawBounds = layer.bounds
               const bounds =
@@ -696,15 +694,23 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
       const cleanTitle = cleanProductDisplayName(item.title || '')
       const safeCleanTitle =
         cleanTitle && !isEnglishInversionCatalogId(cleanTitle) ? cleanTitle : ''
+      // Bind only within this run's computing group (never cross-run by tag alone).
+      const groupByRun = runId ? runLayerGroups.value.find((g) => g.runId === runId) : undefined
+      const groupTitleFallback = groupByRun?.title
+        ? groupByRun.title.replace(/\s*·\s*(?:计算中|已完成|部分失败|执行失败)$/u, '').trim()
+        : ''
+      const safeGroupTitle =
+        groupTitleFallback && !isEnglishInversionCatalogId(groupTitleFallback)
+          ? groupTitleFallback
+          : ''
       const displayName =
         matchingOutput?.name ||
         (tag ? productTagLabel(tag) : '') ||
         safeCleanTitle ||
         (item.productTag && !isEnglishInversionCatalogId(item.productTag) ? item.productTag : '') ||
+        safeGroupTitle ||
         productTagLabel(tag || 'result')
 
-      // Bind only within this run's computing group (never cross-run by tag alone).
-      const groupByRun = runId ? runLayerGroups.value.find((g) => g.runId === runId) : undefined
       const groupMember =
         groupByRun &&
         deps
@@ -850,11 +856,17 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
         workflowDisplayName && !isEnglishInversionCatalogId(workflowDisplayName)
           ? workflowDisplayName
           : ''
+      const freeGroupTitle = groupByRun?.title
+        ? groupByRun.title.replace(/\s*·\s*(?:计算中|已完成|部分失败|执行失败)$/u, '').trim()
+        : ''
+      const safeFreeGroupTitle =
+        freeGroupTitle && !isEnglishInversionCatalogId(freeGroupTitle) ? freeGroupTitle : ''
       const freeLayerName =
         matchingOutput?.name ||
         (tag ? productTagLabel(tag) : '') ||
         safeWorkflowName ||
         safeCleanTitle ||
+        safeFreeGroupTitle ||
         productTagLabel(tag || 'result')
 
       // 组存在但 tag 槽缺失（常见：占位仅 result、产物为 SM/VOD/OMEGA）：

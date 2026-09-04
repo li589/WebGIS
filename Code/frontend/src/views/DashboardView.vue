@@ -242,14 +242,10 @@ const showMapLibreCanvas = computed(
 )
 /** Cesium 实验 3D：与 MapCanvas 互斥 */
 const showCesiumHost = computed(
-  () =>
-    uiStore.viewMode === '3d' && enable3DView.value && globeRenderEngine.value === 'cesium',
+  () => uiStore.viewMode === '3d' && enable3DView.value && globeRenderEngine.value === 'cesium',
 )
 const globeProjectionOn = computed(
-  () =>
-    uiStore.viewMode === '3d' &&
-    enable3DView.value &&
-    globeRenderEngine.value === 'maplibre',
+  () => uiStore.viewMode === '3d' && enable3DView.value && globeRenderEngine.value === 'maplibre',
 )
 
 const CesiumGlobeHost = defineAsyncComponent(() =>
@@ -455,7 +451,8 @@ function handleZoomToLayer(instanceId: string): boolean {
         importedVectorBounds: layer?.importedVector?.bounds,
         importedRasterBounds: layer?.importedRaster?.bounds ?? display?.importedRasterBounds,
         importedBounds: display?.importedBounds,
-        overlayLayerId: layer?.importedRaster?.overlayLayerId ?? display?.importedRasterOverlayLayerId,
+        overlayLayerId:
+          layer?.importedRaster?.overlayLayerId ?? display?.importedRasterOverlayLayerId,
         catalogId: layer?.catalogId ?? display?.catalogId,
       },
       overlayTimeStates.value.map((s) => ({ layerId: s.layerId, bounds: s.bounds ?? null })),

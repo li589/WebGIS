@@ -191,7 +191,9 @@ def _prefer_profile(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
     return a
 
 
-def _dedupe_profiles(profiles_in: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], bool]:
+def _dedupe_profiles(
+    profiles_in: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], bool]:
     """Drop id duplicates and collapse identical preset clones (same name/url/model)."""
     changed = False
     by_id: dict[str, dict[str, Any]] = {}
@@ -372,7 +374,9 @@ def _interprocess_file_lock(path: Path) -> Iterator[None]:
         yield
 
 
-def _persist_store(path: Path, data: dict[str, Any], *, personal: bool) -> dict[str, Any]:
+def _persist_store(
+    path: Path, data: dict[str, Any], *, personal: bool
+) -> dict[str, Any]:
     """Normalize then atomically write; always return the normalized store."""
     if personal:
         store, _ = _normalize_personal_store(data)
@@ -721,9 +725,7 @@ def create_profile_from_preset(
                 ),
                 candidate,
             )
-    return _public_profile(
-        saved, active_id=active, scope=scope, effective_active=False
-    )
+    return _public_profile(saved, active_id=active, scope=scope, effective_active=False)
 
 
 def update_profile(
@@ -813,9 +815,7 @@ def update_profile(
                 ),
                 target,
             )
-    return _public_profile(
-        saved, active_id=active, scope=scope, effective_active=False
-    )
+    return _public_profile(saved, active_id=active, scope=scope, effective_active=False)
 
 
 def set_active_profile(

@@ -107,6 +107,16 @@
    "prefetch_depth": 1,
    "queue_tag": "temporal-fetch",
    "priority": "low"
+  },
+  "workflow_extra": {
+   "group_title": "植被指数 NDVI",
+   "outputs": [
+    "NDVI"
+   ],
+   "output_labels": {
+    "NDVI": "植被指数 NDVI",
+    "result": "植被指数 NDVI"
+   }
   }
  },
  {

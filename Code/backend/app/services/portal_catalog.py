@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 _PORTAL_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
 
-VALID_AUTH_TYPES = frozenset({"bearer", "basic", "header", "token", "none"})
+VALID_AUTH_TYPES = frozenset({"bearer", "basic", "header", "token", "earthdata", "none"})
 VALID_SEARCH_CAPABILITIES = frozenset({"cmr", "cdse_odata", "cds", "none"})
 VALID_REGIONS = frozenset({"international", "china"})
 
@@ -741,7 +741,7 @@ def _auth_headers_for_portal(
     if auth_type == "basic" and username and password:
         import base64
 
-        cred = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode(
+        cred = base64.b64encode(f"{username}:{password}".encode()).decode(
             "ascii"
         )
         return {"Authorization": f"Basic {cred}"}

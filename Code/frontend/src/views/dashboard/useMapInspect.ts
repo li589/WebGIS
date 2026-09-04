@@ -242,7 +242,9 @@ export function useMapInspect(
   let overlayTimeRefetchTimer: ReturnType<typeof setTimeout> | null = null
 
   function handleOverlayTimeUpdate(states: OverlayTimeState[]) {
-    const prevTimes = overlayTimeStates.value.map((s) => `${s.layerId}:${s.currentTime ?? ''}`).join('|')
+    const prevTimes = overlayTimeStates.value
+      .map((s) => `${s.layerId}:${s.currentTime ?? ''}`)
+      .join('|')
     overlayTimeStates.value = states
     for (const st of states) {
       if (st.category !== 'time-series' || !st.timeList?.length) continue
