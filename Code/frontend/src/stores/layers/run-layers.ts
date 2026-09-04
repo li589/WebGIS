@@ -741,6 +741,13 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
               followPolicy: timeList?.length ? 'containing' : undefined,
             })
         groupMember.dataState = 'imported'
+        if (
+          groupMember.jobLayer?.status === 'failed' ||
+          groupMember.jobLayer?.status === 'cancelled'
+        ) {
+          groupMember.jobLayer.status = 'succeeded'
+          groupMember.jobLayer.progress = 100
+        }
         groupMember.name = groupMember.name || displayName
         // 去掉游离层但不删后端文件
         const orphanId = existingByOverlay.instanceId
@@ -771,6 +778,13 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
           followPolicy: timeList?.length ? 'containing' : undefined,
         })
         groupMember.dataState = 'imported'
+        if (
+          groupMember.jobLayer?.status === 'failed' ||
+          groupMember.jobLayer?.status === 'cancelled'
+        ) {
+          groupMember.jobLayer.status = 'succeeded'
+          groupMember.jobLayer.progress = 100
+        }
         if (groupMember.name === productTagLabel('OMEGA') || !groupMember.name) {
           groupMember.name = displayName === 'OMEGA_BLOCK' ? productTagLabel('OMEGA') : displayName
         }

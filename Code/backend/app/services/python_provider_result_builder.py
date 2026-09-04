@@ -84,6 +84,15 @@ _MAPPABLE_PRODUCTS: dict[str, dict[str, Any]] = {
         "vmin": 0.0,
         "vmax": 0.5,
     },
+    "ndvi_daily_dir": {
+        "variable": "NDVI",
+        "grid_preset": "ease2-global-9km",
+        "label": "NDVI",
+        "palette": "ndvi-ramp",
+        "from_block_dir": True,
+        "vmin": 0.0,
+        "vmax": 1.0,
+    },
 }
 
 
@@ -877,12 +886,22 @@ class PythonProviderResultBuilder:
             and product.get("type") == "omega_sf_omega_block_dir"
             for product in products
         )
+        has_ndvi_block_series = any(
+            isinstance(product, dict) and product.get("type") == "ndvi_daily_dir"
+            for product in products
+        )
         for idx, product in enumerate(products):
             if not isinstance(product, dict):
                 continue
             # SF workflow 的 omega_pixel 是静态诊断产物；存在块级 OMEGA
             # 时间序列时不可再发布一次同标签地图层，否则一个 run 会变成四层。
             if has_omega_block_series and product.get("type") == "omega_sf_omega_pixel":
+                continue
+            # NDVI 类似：存在 ndvi_daily_dir 块级时序时，跳过 32 个逐日静态 raster 产物
+            if has_ndvi_block_series and (
+                product.get("type") in {"raster", "daily_ndvi_mat"}
+                or str(product.get("name", "")).startswith("ndvi_20")
+            ):
                 continue
             ref = self._build_product_map_layer_ref(
                 run_id=run_id,
@@ -1630,7 +1649,33 @@ class PythonProviderResultBuilder:
             if end_at is not None:
                 time_end = str(end_at).replace("-", "")[:8]
 
-        # Prefer explicit products when present
+        # Prefer explicit products when present; 自愈：若存在 ndvi_daily 块目录但旧 run 产物未登记，自动补全
+        ndvi_dir: Path | None = None
+        data_root = Path(getattr(settings, "data_root", "") or "")
+        workspace = Path(getattr(settings, "python_provider_workspace", "") or "")
+        for base in (workspace, data_root / "_runtime" / "python_provider"):
+            cand = base / "products" / "ndvi_daily"
+            if cand.is_dir() and any(cand.glob("????????.mat")):
+                ndvi_dir = cand
+                break
+        if ndvi_dir is not None and not any(
+            isinstance(p, dict) and p.get("type") == "ndvi_daily_dir"
+            for p in (result_dto.get("products") or [])
+        ):
+            if "products" not in result_dto or not isinstance(
+                result_dto["products"], list
+            ):
+                result_dto["products"] = []
+            result_dto["products"].append(
+                {
+                    "name": "ndvi_daily",
+                    "type": "ndvi_daily_dir",
+                    "uri": str(ndvi_dir),
+                    "variable": "NDVI",
+                    "tags": {"module": "ndvi_daily", "layer": "NDVI"},
+                }
+            )
+
         if result_dto.get("products"):
             payload = WorkflowSubmitRequest(
                 command_type=run_status.command_type,

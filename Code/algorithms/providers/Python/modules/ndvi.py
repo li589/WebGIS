@@ -416,24 +416,38 @@ class NdviDailyModule(BaseModule):
         )
 
         if ctx.logger_adapter is not None:
+            ctx.logger_adapter.emit_artifact(
+                "ndvi_daily", str(output_dir), "ndvi_daily_dir"
+            )
             ctx.logger_adapter.emit_stage_end(
                 "ndvi_daily",
                 f"Generated {len(daily_dates)} daily NDVI + {quality_product_count} quality products"
                 f" → {manifest_dict.get('manifest_path', output_dir / 'manifest.json')}",
             )
 
+        products_list = [
+            ProductRef(
+                name=str(p.get("name", "")),
+                type=str(p.get("type", "mat")),
+                uri=str(p.get("uri", "")),
+                variable=p.get("variable"),
+            )
+            for p in manifest_dict.get("products", [])
+        ]
+        products_list.append(
+            ProductRef(
+                name="ndvi_daily",
+                type="ndvi_daily_dir",
+                uri=str(output_dir),
+                variable="NDVI",
+                tags={"module": self.name, "layer": "NDVI"},
+            )
+        )
+
         manifest = ProductManifest(
             job_id=ctx.request.job_id,
             run_id=ctx.runtime_context.run_id,
-            products=[
-                ProductRef(
-                    name=str(p.get("name", "")),
-                    type=str(p.get("type", "mat")),
-                    uri=str(p.get("uri", "")),
-                    variable=p.get("variable"),
-                )
-                for p in manifest_dict.get("products", [])
-            ],
+            products=products_list,
             main_layers=["NDVI"],
             metadata_uri=manifest_dict.get("manifest_uri"),
             extra={
@@ -445,7 +459,7 @@ class NdviDailyModule(BaseModule):
                 if emit_quality_products
                 else None,
                 "manifest_path": manifest_dict.get("manifest_path", ""),
-                "product_count": len(daily_dates) + quality_product_count,
+                "product_count": len(daily_dates) + quality_product_count + 1,
             },
         )
         return _store_manifest(

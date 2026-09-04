@@ -112,12 +112,27 @@ class OverlaySpec:
 
         与 :meth:`resolve_png` 的既有校验保持一致，阻断把用户可控 ``time``
         直接拼进文件路径的路径穿越（G1-01）。静态图层或空白名单时不拦截。
+        支持单日 YYYYMMDD 与 YYYYMMDD_YYYYMMDD / 8 天块的相互匹配容错。
         """
         if self.category == "time-series" and t is None:
             raise OverlayValidationError(
                 f"Time-series overlay {self.layer_id} requires 'time' parameter",
             )
-        if self.time_list and t not in self.time_list:
+        if self.time_list and t:
+            if t in self.time_list:
+                return t
+            t_compact = t.replace("-", "").strip()
+            if t_compact in self.time_list:
+                return t_compact
+            # 容错匹配：单日 8 位与时序块匹配
+            for item in self.time_list:
+                if "_" in item:
+                    parts = item.split("_")
+                    if len(parts) == 2 and len(t_compact) == 8:
+                        if parts[0] <= t_compact <= parts[1]:
+                            return item
+                elif len(item) == 8 and t_compact.startswith(item):
+                    return item
             raise OverlayNotFoundError(
                 f"Time {t} not available for overlay {self.layer_id}",
             )
@@ -187,7 +202,7 @@ class OverlaySpec:
             if t is None:
                 return None
             # 与 resolve_png 一致的白名单校验，阻断 time=../../ 路径穿越（G1-01）
-            self._assert_time_available(t)
+            t = self._assert_time_available(t)
             pattern = self.source_pattern.format(time=t)
             # 支持 glob 通配符（如 SMAP R 编号）
             if "*" in pattern or "?" in pattern:
