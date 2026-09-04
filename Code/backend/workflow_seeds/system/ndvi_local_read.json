@@ -10,7 +10,9 @@
     "linked_layer_id": "ndvi",
     "tags": [
       "sample",
-      "local"
+      "local",
+      "temporal:range",
+      "temporal:monthly"
     ],
     "category": "data_access"
   },

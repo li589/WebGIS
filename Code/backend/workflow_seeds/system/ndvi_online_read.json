@@ -10,7 +10,9 @@
     "linked_layer_id": "ndvi",
     "tags": [
       "sample",
-      "download"
+      "download",
+      "temporal:range",
+      "temporal:monthly"
     ],
     "category": "data_access"
   },

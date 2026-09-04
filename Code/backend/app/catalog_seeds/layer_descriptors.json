@@ -37,7 +37,9 @@
    "ndvi",
    "vegetation",
    "remote-sensing",
-   "frontend-aligned"
+   "frontend-aligned",
+   "temporal:range",
+   "temporal:monthly"
   ],
   "module_name": "ndvi_daily",
   "engine": "python_provider",
@@ -1812,7 +1814,9 @@
    "sf-fenkuai",
    "smap",
    "block-inversion",
-   "frontend-aligned"
+   "frontend-aligned",
+   "temporal:range",
+   "temporal:8d-block"
   ],
   "module_name": "omega_sf_fenkuai",
   "engine": "python_provider",
@@ -1936,7 +1940,9 @@
    "sf-fenkuai",
    "fy",
    "block-inversion",
-   "frontend-aligned"
+   "frontend-aligned",
+   "temporal:range",
+   "temporal:8d-block"
   ],
   "module_name": "omega_sf_fenkuai",
   "engine": "python_provider",

@@ -11,12 +11,25 @@ export function normalizeTimeToken(value: string): string {
 }
 
 /**
- * 计划会话 timeKey 是否可被 buildTimeRangeFromKey 解析。
- * 接受：YYYY / YYYY-MM / YYYY-MM-DD / YYYY-MM-DDTHH:00:00
+ * 计划会话 timeKey 是否可被 buildTimeRangeFromKey 或 parsePlanTimeRange 解析。
+ * 接受：
+ * - 单点：YYYY / YYYY-MM / YYYY-MM-DD / YYYY-MM-DDTHH:00:00
+ * - 时段：YYYYMMDD_YYYYMMDD / YYYY-MM-DD_YYYY-MM-DD / YYYY-MM-DD ~ YYYY-MM-DD / YYYY-MM-DD to YYYY-MM-DD
  */
 export function isPlausiblePlanTimeKey(raw: string): boolean {
   const key = String(raw || '').trim()
   if (!key) return false
+
+  // 1. 时段格式（Range tokens）
+  const rangeMatch =
+    /^(\d{4}[-_/]?\d{2}[-_/]?\d{2})\s*(?:[_-]|~|to)\s*(\d{4}[-_/]?\d{2}[-_/]?\d{2})$/i.exec(key)
+  if (rangeMatch) {
+    const t1 = normalizeTimeToken(rangeMatch[1])
+    const t2 = normalizeTimeToken(rangeMatch[2])
+    return t1.length === 8 && t2.length === 8 && t1 <= t2
+  }
+
+  // 2. 单点格式
   if (/^\d{4}$/.test(key)) return true
   if (/^\d{4}-\d{2}$/.test(key)) {
     const m = Number(key.slice(5, 7))
@@ -37,6 +50,37 @@ export function isPlausiblePlanTimeKey(raw: string): boolean {
     return !Number.isNaN(d.getTime())
   }
   return false
+}
+
+/**
+ * 解析时段字符串为标准 { start_at, end_at, granularity, timeKey }
+ */
+export function parsePlanTimeRange(
+  raw: string,
+): { start_at: string; end_at: string; granularity: string; timeKey: string } | null {
+  const key = String(raw || '').trim()
+  if (!key) return null
+
+  const rangeMatch =
+    /^(\d{4})[-_/]?(\d{2})[-_/]?(\d{2})\s*(?:[_-]|~|to)\s*(\d{4})[-_/]?(\d{2})[-_/]?(\d{2})$/i.exec(
+      key,
+    )
+  if (rangeMatch) {
+    const [_, y1, m1, d1, y2, m2, d2] = rangeMatch
+    const start = new Date(Date.UTC(Number(y1), Number(m1) - 1, Number(d1), 0, 0, 0))
+    // 结束日期包含当天的全天，故 end_at 为第二天 00:00:00 UTC（标准半开区间 [start, end)）
+    const end = new Date(Date.UTC(Number(y2), Number(m2) - 1, Number(d2) + 1, 0, 0, 0))
+    if (start > end) return null
+    const timeKey = `${y1}${m1}${d1}_${y2}${m2}${d2}`
+    return {
+      start_at: start.toISOString(),
+      end_at: end.toISOString(),
+      granularity: 'day',
+      timeKey,
+    }
+  }
+
+  return null
 }
 
 /** time_list 项（日或块）是否覆盖轴上 timeKey。 */

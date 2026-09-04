@@ -11,7 +11,9 @@
     "tags": [
       "pipeline",
       "sf_inversion",
-      "online"
+      "online",
+      "temporal:range",
+      "temporal:8d-block"
     ],
     "category": "inversion"
   },

@@ -115,12 +115,32 @@ async function resolveDefaultTimeRangeFromTimeline(options: {
   supportsTime: boolean
   nativeStep: string | null | undefined
   granularity?: string | null
+  descriptor?: {
+    tags?: string[] | null
+    time_granularity?: string | null
+    native_step?: string | null
+    online_temporal?: { native_step?: string | null } | null
+  } | null
 }): Promise<{ start_at: string; end_at: string; granularity: string } | null> {
   if (!options.supportsTime) return null
   try {
     const { useUiStore } = await import('../ui')
     const { buildTimeKey, buildTimeRangeFromKey } = await import('./online-temporal-orchestrator')
+    const { resolveLayerTemporalMode, alignDateToTemporalRange } =
+      await import('../../utils/temporal-mode')
     const ui = useUiStore()
+
+    // 标签驱动与时间模式识别：若声明为时段型（如整月或多日块），自动对齐为完整时段
+    const tempMode = resolveLayerTemporalMode(options.descriptor)
+    if (tempMode.mode === 'range') {
+      const aligned = alignDateToTemporalRange(ui.currentDate, tempMode)
+      return {
+        start_at: aligned.start_at,
+        end_at: aligned.end_at,
+        granularity: aligned.granularity,
+      }
+    }
+
     const granRaw = options.granularity || ui.activeTimeGranularity || 'day'
     const gran =
       granRaw === 'hour' ||
@@ -1833,6 +1853,7 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
             nativeStep: catalogNative ?? rt?.native_step ?? rt?.online_temporal?.native_step,
             // 目录条目未投影 timeGranularity；粒度以 runtime descriptor 为准
             granularity: rt?.time_granularity,
+            descriptor: rt as never,
           })
           if (filled) {
             payload.time_range = filled

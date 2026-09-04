@@ -21,6 +21,7 @@ import {
 } from '../utils/online-plan-params'
 import type { TimeGranularity } from '../utils/layer-timeline'
 import { isPlausiblePlanTimeKey } from '../utils/time-key-coverage'
+import { resolveLayerTemporalMode, alignDateToTemporalRange } from '../utils/temporal-mode'
 import { ONLINE_PLAN_COPY } from '../ui-copy'
 import { useTimelineActionBannerStore } from '../stores/timeline-action-banner'
 
@@ -209,6 +210,53 @@ const applyTimeLabel = computed(() =>
   unifiedTimeLock.value ? ONLINE_PLAN_COPY.applyToAll : ONLINE_PLAN_COPY.applyToActive,
 )
 
+const activeTabTemporalMode = computed(() => {
+  const id = activeTab.value?.catalogId
+  if (!id) return resolveLayerTemporalMode(null)
+  const desc =
+    workspace.resolveEffectiveDescriptor?.(id) ??
+    workspace.resolveEffectiveDescriptor?.(workspace.resolveBackendLayerId?.(id) ?? id) ??
+    null
+  return resolveLayerTemporalMode(desc)
+})
+
+const timeKeyPlaceholder = computed(() => {
+  const mode = activeTabTemporalMode.value
+  if (mode.mode === 'range') {
+    if (mode.subtype === 'monthly') return 'YYYY-MM 或 YYYY-MM-DD ~ YYYY-MM-DD'
+    if (mode.subtype === 'multi-day-block') return `YYYYMMDD_YYYYMMDD (${mode.stepDays || 8}天块)`
+    return 'YYYY-MM-DD ~ YYYY-MM-DD (时段)'
+  }
+  return 'YYYY-MM-DD'
+})
+
+const temporalModeLabel = computed(() => {
+  const mode = activeTabTemporalMode.value
+  if (mode.subtype === 'monthly') return '月度'
+  if (mode.subtype === 'multi-day-block') return mode.stepDays ? `${mode.stepDays}天块` : '多日块'
+  return '多日'
+})
+
+const quickAlignBtnLabel = computed(() => {
+  const mode = activeTabTemporalMode.value
+  if (mode.subtype === 'monthly') return '对齐整月'
+  if (mode.subtype === 'multi-day-block') return `对齐${mode.stepDays || 8}天块`
+  return '对齐时段'
+})
+
+function quickAlignDraftRange() {
+  const mode = activeTabTemporalMode.value
+  const raw = draftDate.value.trim()
+  const baseDate =
+    raw.split(/[~_]/)[0]?.trim() ||
+    activeTab.value?.timeRange?.start_at?.slice(0, 10) ||
+    new Date().toISOString().slice(0, 10)
+  const aligned = alignDateToTemporalRange(baseDate, mode)
+  if (aligned) {
+    draftDate.value = aligned.timeKey
+  }
+}
+
 const orbitMode = computed({
   get: () => String(activeTab.value?.paramOverrides?.orbit_mode ?? 'MWRID'),
   set: (v: string) => {
@@ -300,7 +348,15 @@ async function refreshCoverage(catalogId: string) {
 function syncDraftFromTab() {
   const t = activeTab.value
   if (!t) return
-  draftDate.value = t.timeKey || t.timeRange?.start_at?.slice(0, 10) || ''
+  let key = t.timeKey || t.timeRange?.start_at?.slice(0, 10) || ''
+  const mode = activeTabTemporalMode.value
+  if (mode.mode === 'range' && key && !key.includes('~') && !key.includes('_')) {
+    const aligned = alignDateToTemporalRange(key, mode)
+    if (aligned) {
+      key = aligned.timeKey
+    }
+  }
+  draftDate.value = key
   confirmError.value = null
   draftError.value = null
 }
@@ -585,12 +641,32 @@ export default { name: 'OnlinePlanPanel' }
           <p class="ops-summary">{{ failSummary }}</p>
 
           <div class="ops-section">
-            <h3 class="ops-section-title">时段</h3>
+            <h3 class="ops-section-title">
+              时段
+              <span v-if="activeTabTemporalMode.mode === 'range'" class="ops-temporal-badge">
+                时段型 ({{ temporalModeLabel }})
+              </span>
+            </h3>
             <div class="ops-row">
               <label class="ops-label">
                 日期 / timeKey
-                <input v-model="draftDate" class="ops-input" type="text" placeholder="YYYY-MM-DD" />
+                <input
+                  v-model="draftDate"
+                  class="ops-input"
+                  type="text"
+                  :placeholder="timeKeyPlaceholder"
+                />
               </label>
+              <AppButton
+                v-if="activeTabTemporalMode.mode === 'range'"
+                variant="ghost"
+                size="xs"
+                type="button"
+                :title="'按' + temporalModeLabel + '对齐'"
+                @click="quickAlignDraftRange"
+              >
+                {{ quickAlignBtnLabel }}
+              </AppButton>
               <AppButton
                 variant="secondary"
                 size="xs"
@@ -970,6 +1046,18 @@ export default { name: 'OnlinePlanPanel' }
   margin: 0;
   font-size: 0.75rem;
   color: var(--danger);
+}
+
+.ops-temporal-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-sm, 0.25rem);
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--accent-surface, var(--surface-3));
+  color: var(--accent-strong, var(--text-strong));
+  border: 1px solid var(--accent-border, var(--border-subtle));
 }
 
 .ops-footer {
