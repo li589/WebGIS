@@ -392,7 +392,13 @@ watch(
   font: inherit;
   font-size: var(--font-size-caption);
   cursor: pointer;
-  transition: all 0.16s ease;
+  transition:
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease),
+    opacity var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .dialog-btn:hover {

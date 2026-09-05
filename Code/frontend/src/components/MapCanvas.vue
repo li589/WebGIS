@@ -155,6 +155,22 @@ const exposeBridge = createMapCanvasExposeBridge({
   setOverlayTime: (layerId: string, time: string) => {
     void overlayImageModule?.setOverlayTime(layerId, time)
   },
+  flyTo: (options: { center: [number, number]; zoom?: number; duration?: number }) => {
+    state.resources.map?.flyTo(options)
+  },
+  fitBounds: (
+    bounds: [number, number, number, number],
+    options?: { padding?: number; maxZoom?: number; duration?: number },
+  ) => {
+    const [w, s, e, n] = bounds
+    state.resources.map?.fitBounds(
+      [
+        [w, s],
+        [e, n],
+      ],
+      options ?? { padding: 48, duration: 1000 },
+    )
+  },
 })
 
 defineExpose(exposeBridge)

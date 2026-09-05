@@ -202,7 +202,11 @@ const activePoint = computed(() => {
 
 .chart-point {
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    fill var(--motion-interactive-duration) var(--motion-interactive-ease),
+    stroke var(--motion-interactive-duration) var(--motion-interactive-ease),
+    opacity var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .chart-tooltip-badge {

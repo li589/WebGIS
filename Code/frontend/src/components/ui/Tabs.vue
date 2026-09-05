@@ -88,8 +88,8 @@ function select(value: string) {
   font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition:
-    color var(--motion-fast) var(--ease-soft),
-    border-color var(--motion-fast) var(--ease-soft);
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .tabs--tabs .tabs-item--active {
@@ -120,10 +120,10 @@ function select(value: string) {
   cursor: pointer;
   white-space: nowrap;
   transition:
-    background-color var(--motion-fast) var(--ease-soft),
-    border-color var(--motion-fast) var(--ease-soft),
-    color var(--motion-fast) var(--ease-soft),
-    box-shadow var(--motion-fast) var(--ease-soft);
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .tabs--segmented .tabs-item--active {

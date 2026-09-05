@@ -1,10 +1,26 @@
 /**
- * CGDA 共享动效层
+ * CGDA 共享动效层（macOS / Apple HIG 取向）
  *
- * - Vue Transition 名：cgda-modal（对话框）、cgda-drawer（侧滑设置等）、
- *   cgda-fade-scale（面板显隐）、cgda-fade（轻量淡入淡出）、cgda-pop（小浮层）
- * - 性能：仅 transform/opacity；拖拽中禁用 transition；.reduce-motion 压短 token
- * - 加载指示器（.loading-overlay / .loading-compact）不纳入全局掐断
+ * ## 约定（所有前端动画必须遵守）
+ * 1. 时长 / 缓动只引用 tokens.css 的 `--motion-*` / `--ease-*`（或下方语义别名）。
+ * 2. 禁止 `transition: all`、禁止裸 `ease` / `0.2s` / `300ms` 等硬编码。
+ * 3. 优先动画：`transform` / `opacity` / `color` / `background-color` /
+ *    `border-color` / `box-shadow`；避免 width/height/top/left 触发布局。
+ * 4. 拖拽 / 连续指针跟随时加 `.cgda-dragging`（或 `.is-dragging`）关过渡。
+ * 5. 入场/出场用下方 Vue Transition 名，勿再造一套。
+ * 6. `html.reduce-motion` 将时长压为 0；无限旋转加载条可保留但须降速/可关。
+ *
+ * ## Vue Transition 名
+ * - `cgda-modal`      对话框（遮罩淡入 + 面板上浮）
+ * - `cgda-drawer`     侧滑设置等
+ * - `cgda-fade-scale` 面板显隐（淡入 + 轻位移，无 scale）
+ * - `cgda-fade`       toast / 提示条
+ * - `cgda-pop`        tooltip / 小浮层
+ *
+ * ## 语义工具类
+ * - `.cgda-motion-interactive`  按钮 / 芯片 / 可点行（色 + 微位移）
+ * - `.cgda-motion-surface`      卡片 / 边框 / 表面色变（无位移）
+ * - `.cgda-pressable`           原生 button 按压反馈
  */
 
 /* ── reduce-motion：压短 token（组件仍可用 var，自动变「瞬时」）── */
@@ -17,6 +33,30 @@ html.reduce-motion {
   --motion-modal-leave: 0ms;
   --motion-stagger-step: 0ms;
   --motion-enter-delay: 0ms;
+  --motion-interactive-duration: 0ms;
+  --motion-surface-duration: 0ms;
+  --motion-sheet-duration: 0ms;
+}
+
+/* ── 语义工具类：可交互控件 ── */
+.cgda-motion-interactive {
+  transition:
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease),
+    opacity var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-press) var(--motion-interactive-ease);
+}
+
+/* ── 语义工具类：表面色变（无 transform，避免与定位冲突）── */
+.cgda-motion-surface {
+  transition:
+    background-color var(--motion-surface-duration) var(--motion-surface-ease),
+    border-color var(--motion-surface-duration) var(--motion-surface-ease),
+    color var(--motion-surface-duration) var(--motion-surface-ease),
+    box-shadow var(--motion-surface-duration) var(--motion-surface-ease),
+    opacity var(--motion-surface-duration) var(--motion-surface-ease);
 }
 
 /* ── 对话框：遮罩淡入 + 面板轻抬升（不用 scale，避免与布局打架）── */
@@ -67,14 +107,14 @@ html.reduce-motion {
 /* ── 侧滑抽屉（设置面板等）── */
 .cgda-drawer-enter-active,
 .cgda-drawer-leave-active {
-  transition: opacity var(--motion-base) var(--ease-standard);
+  transition: opacity var(--motion-surface-duration) var(--motion-surface-ease);
 }
 
 .cgda-drawer-enter-active .settings-panel,
 .cgda-drawer-leave-active .settings-panel,
 .cgda-drawer-enter-active .cgda-drawer-panel,
 .cgda-drawer-leave-active .cgda-drawer-panel {
-  transition: transform var(--motion-slow) var(--ease-emphasized);
+  transition: transform var(--motion-sheet-duration) var(--motion-sheet-ease);
 }
 
 .cgda-drawer-enter-from,
@@ -100,8 +140,8 @@ html.reduce-motion {
 .cgda-fade-scale-enter-active,
 .cgda-fade-scale-leave-active {
   transition:
-    opacity var(--motion-base) var(--ease-standard),
-    transform var(--motion-base) var(--ease-emphasized);
+    opacity var(--motion-surface-duration) var(--motion-surface-ease),
+    transform var(--motion-surface-duration) var(--ease-emphasized);
 }
 
 .cgda-fade-scale-enter-from,
@@ -113,7 +153,7 @@ html.reduce-motion {
 /* ── 轻量淡入（提示条 / toast 类）── */
 .cgda-fade-enter-active,
 .cgda-fade-leave-active {
-  transition: opacity var(--motion-fast) var(--ease-standard);
+  transition: opacity var(--motion-interactive-duration) var(--motion-surface-ease);
 }
 
 .cgda-fade-enter-from,
@@ -125,8 +165,8 @@ html.reduce-motion {
 .cgda-pop-enter-active,
 .cgda-pop-leave-active {
   transition:
-    opacity var(--motion-fast) var(--ease-standard),
-    transform var(--motion-fast) var(--ease-emphasized);
+    opacity var(--motion-interactive-duration) var(--motion-surface-ease),
+    transform var(--motion-interactive-duration) var(--ease-emphasized);
 }
 
 .cgda-pop-enter-from,
@@ -162,8 +202,8 @@ html.reduce-motion {
   background: var(--accent-surface);
   box-shadow: inset 0 0 0 1px var(--accent-border);
   transition:
-    background-color var(--motion-fast) var(--ease-soft),
-    box-shadow var(--motion-fast) var(--ease-soft);
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 html.reduce-motion .is-dragging.cgda-drag-lift,
@@ -174,11 +214,11 @@ html.reduce-motion .cgda-dragging.cgda-drag-lift {
 /* ── 按压反馈工具类（原生 button 可复用）── */
 .cgda-pressable {
   transition:
-    transform var(--motion-press, var(--motion-fast)) var(--ease-soft),
-    box-shadow var(--motion-press, var(--motion-fast)) var(--ease-soft),
-    background-color var(--motion-fast) var(--ease-soft),
-    border-color var(--motion-fast) var(--ease-soft),
-    color var(--motion-fast) var(--ease-soft);
+    transform var(--motion-press) var(--motion-interactive-ease),
+    box-shadow var(--motion-press) var(--motion-interactive-ease),
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .cgda-pressable:hover:not(:disabled) {
@@ -201,19 +241,19 @@ html.reduce-motion .cgda-pressable:active:not(:disabled) {
 }
 
 .cgda-boot-reveal--1 {
-  --motion-enter-delay: calc(var(--motion-stagger-step, 30ms) * 0);
+  --motion-enter-delay: calc(var(--motion-stagger-step, 28ms) * 0);
 }
 
 .cgda-boot-reveal--2 {
-  --motion-enter-delay: calc(var(--motion-stagger-step, 30ms) * 2);
+  --motion-enter-delay: calc(var(--motion-stagger-step, 28ms) * 2);
 }
 
 .cgda-boot-reveal--3 {
-  --motion-enter-delay: calc(var(--motion-stagger-step, 30ms) * 4);
+  --motion-enter-delay: calc(var(--motion-stagger-step, 28ms) * 4);
 }
 
 .cgda-boot-reveal--4 {
-  --motion-enter-delay: calc(var(--motion-stagger-step, 30ms) * 6);
+  --motion-enter-delay: calc(var(--motion-stagger-step, 28ms) * 6);
 }
 
 @keyframes cgda-boot-reveal {

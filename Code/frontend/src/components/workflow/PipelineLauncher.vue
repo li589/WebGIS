@@ -389,7 +389,7 @@ watch(
 </script>
 
 <template>
-  <Transition name="pipeline-fade">
+  <Transition name="cgda-modal">
     <div v-if="visible" class="pipeline-overlay" @click.self="handleClose">
       <div class="pipeline-dialog">
         <header class="pipeline-header">
@@ -646,7 +646,13 @@ watch(
   cursor: pointer;
   font: inherit;
   font-size: var(--font-size-caption);
-  transition: all 0.16s ease;
+  transition:
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease),
+    opacity var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .close-btn:hover {
@@ -721,7 +727,7 @@ watch(
   font: inherit;
   font-size: var(--font-size-caption);
   outline: none;
-  transition: border-color 0.18s ease;
+  transition: border-color var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .search-input:focus {
@@ -745,8 +751,8 @@ watch(
   border: 1px solid var(--border-default);
   background: var(--surface-1);
   transition:
-    border-color 0.18s ease,
-    background 0.18s ease;
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    background var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .pipeline-card:hover {
@@ -814,9 +820,9 @@ watch(
   font-size: var(--font-size-caption);
   cursor: pointer;
   transition:
-    border-color 0.18s ease,
-    background 0.18s ease,
-    color 0.18s ease;
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    background var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .quick-btn:hover {
@@ -839,9 +845,9 @@ watch(
   font-weight: 500;
   cursor: pointer;
   transition:
-    border-color 0.18s ease,
-    background 0.18s ease,
-    color 0.18s ease;
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    background var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .launch-btn:hover {
@@ -886,8 +892,8 @@ watch(
   font-size: var(--font-size-caption);
   cursor: pointer;
   transition:
-    border-color 0.16s ease,
-    background 0.16s ease;
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    background var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .preset-btn:hover {
@@ -938,7 +944,7 @@ watch(
   font: inherit;
   font-size: var(--font-size-caption);
   outline: none;
-  transition: border-color 0.18s ease;
+  transition: border-color var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .form-input:focus {
@@ -951,6 +957,10 @@ watch(
 
 .date-input {
   color-scheme: dark;
+}
+
+:global(html[data-theme='light']) .date-input {
+  color-scheme: light;
 }
 
 .format-hint {
@@ -984,7 +994,7 @@ watch(
   font: inherit;
   font-size: var(--font-size-caption);
   cursor: pointer;
-  transition: color 0.16s ease;
+  transition: color var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .advanced-toggle:hover {
@@ -1021,9 +1031,9 @@ watch(
   font-size: var(--font-size-caption);
   cursor: pointer;
   transition:
-    border-color 0.18s ease,
-    background 0.18s ease,
-    color 0.18s ease;
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    background var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .action-btn.cancel:hover {
@@ -1059,39 +1069,39 @@ watch(
 }
 
 /* ── 对话框出入场动画 ──────────────────────────────────────── */
-.pipeline-fade-enter-active {
-  transition: opacity 0.2s ease;
+.cgda-modal-enter-active {
+  transition: opacity var(--motion-surface-duration) var(--motion-surface-ease);
 }
-.pipeline-fade-enter-active .pipeline-dialog {
+.cgda-modal-enter-active .pipeline-dialog {
   transition:
-    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 0.2s ease;
+    transform var(--motion-modal) var(--ease-emphasized),
+    opacity var(--motion-surface-duration) var(--motion-surface-ease);
 }
-.pipeline-fade-leave-active {
-  transition: opacity 0.16s ease;
+.cgda-modal-leave-active {
+  transition: opacity var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
-.pipeline-fade-leave-active .pipeline-dialog {
+.cgda-modal-leave-active .pipeline-dialog {
   transition:
-    transform 0.16s ease,
-    opacity 0.16s ease;
+    transform var(--motion-interactive-duration) var(--motion-interactive-ease),
+    opacity var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
-.pipeline-fade-enter-from,
-.pipeline-fade-leave-to {
+.cgda-modal-enter-from,
+.cgda-modal-leave-to {
   opacity: 0;
 }
-.pipeline-fade-enter-from .pipeline-dialog {
+.cgda-modal-enter-from .pipeline-dialog {
   transform: scale(0.96) translateY(8px);
   opacity: 0;
 }
-.pipeline-fade-leave-to .pipeline-dialog {
+.cgda-modal-leave-to .pipeline-dialog {
   transform: scale(0.98);
   opacity: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pipeline-fade-enter-active,
-  .pipeline-fade-leave-active {
-    transition: opacity 0.01s ease;
+  .cgda-modal-enter-active,
+  .cgda-modal-leave-active {
+    transition: opacity 0ms;
   }
 }
 </style>

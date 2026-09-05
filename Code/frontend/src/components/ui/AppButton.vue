@@ -100,11 +100,11 @@ const iconSize = computed(() => {
   position: relative;
   overflow: hidden;
   transition:
-    background-color var(--motion-fast) var(--ease-soft),
-    border-color var(--motion-fast) var(--ease-soft),
-    color var(--motion-fast) var(--ease-soft),
-    box-shadow var(--motion-fast) var(--ease-soft),
-    transform var(--motion-press, var(--motion-fast)) var(--ease-soft);
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-press) var(--motion-interactive-ease);
 }
 
 .app-btn:focus-visible {

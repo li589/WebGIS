@@ -130,9 +130,9 @@ function onKeydown(e: KeyboardEvent) {
   user-select: none;
   white-space: nowrap;
   transition:
-    background-color var(--motion-fast) var(--ease-soft),
-    color var(--motion-fast) var(--ease-soft),
-    transform var(--motion-press, var(--motion-fast)) var(--ease-soft);
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-press) var(--motion-interactive-ease);
   font-family: inherit;
 }
 

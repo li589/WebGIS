@@ -65,8 +65,8 @@ const cls = computed(() => [
   min-width: 0;
   position: relative;
   transition:
-    box-shadow var(--motion-base) var(--ease-standard),
-    transform var(--motion-base) var(--ease-standard);
+    box-shadow var(--motion-surface-duration) var(--motion-surface-ease),
+    transform var(--motion-surface-duration) var(--motion-surface-ease);
 }
 
 .app-card--bordered {

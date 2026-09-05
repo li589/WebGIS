@@ -780,7 +780,7 @@ export default { name: 'OnlinePlanPanel' }
   touch-action: none;
   user-select: none;
   box-shadow: var(--elevation-2, 0 4px 14px var(--shadow-ambient));
-  animation: ops-dock-in 0.28s ease-out;
+  animation: ops-dock-in var(--motion-slow) var(--ease-decelerate);
 }
 
 .ops-dock.is-placed {
@@ -836,7 +836,7 @@ export default { name: 'OnlinePlanPanel' }
   padding: 0.75rem;
   background: color-mix(in srgb, var(--shadow-ambient, #000) 28%, transparent);
   pointer-events: auto;
-  animation: ops-backdrop-in 0.2s ease-out;
+  animation: ops-backdrop-in var(--motion-surface-duration) var(--motion-surface-ease)-out;
 }
 
 .ops-panel {
@@ -849,7 +849,7 @@ export default { name: 'OnlinePlanPanel' }
   border: 1px solid var(--border-strong);
   box-shadow: var(--elevation-3, 0 8px 28px var(--shadow-ambient));
   color: var(--text-strong);
-  animation: ops-slide-in 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: ops-slide-in var(--motion-slow) var(--ease-emphasized);
 }
 
 .ops-panel.is-placed {
@@ -968,10 +968,10 @@ export default { name: 'OnlinePlanPanel' }
   font-size: 0.72rem;
   cursor: pointer;
   transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease,
-    transform 0.12s ease;
+    background var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .ops-chip:hover {

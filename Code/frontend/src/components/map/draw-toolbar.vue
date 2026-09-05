@@ -185,7 +185,7 @@ watch(
 </script>
 
 <template>
-  <Transition name="draw-toolbar">
+  <Transition name="cgda-fade-scale">
     <div
       v-if="visible"
       ref="toolbarRef"
@@ -369,16 +369,16 @@ watch(
   color: #fff;
 }
 
-/* Transition */
-.draw-toolbar-enter-active,
-.draw-toolbar-leave-active {
+/* Transition（scoped 覆盖共享曲线） */
+.cgda-fade-scale-enter-active,
+.cgda-fade-scale-leave-active {
   transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
+    opacity var(--motion-surface-duration) var(--motion-surface-ease),
+    transform var(--motion-surface-duration) var(--motion-surface-ease);
 }
 
-.draw-toolbar-enter-from,
-.draw-toolbar-leave-to {
+.cgda-fade-scale-enter-from,
+.cgda-fade-scale-leave-to {
   opacity: 0;
   transform: translateY(8px);
 }

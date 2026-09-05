@@ -172,13 +172,13 @@ function onBlur(e: FocusEvent) {
   border-radius: var(--radius-md);
   background: var(--surface-1);
   transition:
-    border-color var(--motion-fast) var(--ease-soft),
-    box-shadow var(--motion-fast) var(--ease-soft);
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .app-select-wrap:focus-within {
   border-color: var(--border-strong);
-  box-shadow: 0 0 0 3px rgba(90, 213, 255, 0.1);
+  box-shadow: 0 0 0 3px var(--accent-focus-ring);
 }
 
 .app-select--error .app-select-wrap {
@@ -187,7 +187,7 @@ function onBlur(e: FocusEvent) {
 
 .app-select--error .app-select-wrap:focus-within {
   border-color: var(--danger);
-  box-shadow: 0 0 0 3px rgba(255, 140, 100, 0.1);
+  box-shadow: 0 0 0 3px var(--danger-focus-ring);
 }
 
 .app-select--md .app-select-wrap {
@@ -198,6 +198,14 @@ function onBlur(e: FocusEvent) {
   height: 30px;
 }
 
+.app-select-wrap:hover {
+  border-color: var(--border-strong);
+}
+
+.app-select--error .app-select-wrap:hover {
+  border-color: var(--danger-border);
+}
+
 .app-select-native {
   flex: 1;
   min-width: 0;
@@ -206,7 +214,7 @@ function onBlur(e: FocusEvent) {
   border: none;
   outline: none;
   background: transparent;
-  color: var(--text-primary);
+  color: var(--text-strong);
   font-size: var(--font-size-body);
   font-family: inherit;
   line-height: 1;
@@ -214,10 +222,17 @@ function onBlur(e: FocusEvent) {
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
+  color-scheme: dark !important;
+}
+
+:root[data-theme='light'] .app-select-native,
+[data-theme='light'] .app-select-native {
+  color-scheme: light !important;
 }
 
 .app-select-native--sm {
   font-size: var(--font-size-caption);
+  padding: 0 1.8rem 0 var(--space-3);
 }
 
 .app-select-native:disabled {
@@ -225,15 +240,17 @@ function onBlur(e: FocusEvent) {
   cursor: not-allowed;
 }
 
-/* 下拉弹出面板（原生 option 列表）配色：Chromium 系尊重 option 的
- * background/color——深浅两种主题下均保证面板背景与文字对比度
- * （报障 2026-08-22：选源下拉文字不清晰，白底浅字）。 */
+/* 下拉弹出面板（原生 option 列表）配色：
+ * Windows Chromium 下需显式声明实色 background-color 与 color，
+ * 防止系统浅色窗口与浅色文字叠加导致不可读（接 --select-panel-* token）。 */
 .app-select-native option {
-  /* 原生下拉菜单不可靠地继承 rgba surface / color-scheme；使用主题
-   * 专属不透明背景与文字，避免深色模式下 option 与系统弹层混色不可读。 */
-  background: var(--select-panel-bg);
-  color: var(--select-panel-text);
+  background-color: var(--select-panel-bg) !important;
+  color: var(--select-panel-text) !important;
   font-family: inherit;
+}
+
+.app-select-native option:disabled {
+  color: var(--text-disabled);
 }
 
 .app-select-native::placeholder {
@@ -254,7 +271,7 @@ function onBlur(e: FocusEvent) {
   align-items: center;
   color: var(--text-muted);
   pointer-events: none;
-  transition: color var(--motion-fast) var(--ease-soft);
+  transition: color var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .app-select-wrap:focus-within .app-select-chevron {

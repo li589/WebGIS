@@ -20,6 +20,7 @@ import {
   LGraph,
   LGraphCanvas,
   LiteGraph,
+  getEngineColor,
   registerWorkflowNodeTypes,
   graphDataToWorkflowNodes,
   syncGraphSlotsWithTemplates,
@@ -138,6 +139,25 @@ const {
 // ─── 主题切换：刷新 Canvas 颜色缓存并重绘 ──────────────────────────────────
 const themeStore = useThemeStore()
 
+function updateGraphNodesTheme(theme: 'dark' | 'light') {
+  const graph = graphInstance.value
+  if (!graph) return
+  const nodes = getGraphNodes(graph)
+  for (const node of nodes) {
+    const nodeAny = node as unknown as {
+      type: string
+      color?: string
+      bgcolor?: string
+      boxcolor?: string
+    }
+    const template = props.nodeTemplates.find((t) => t.type === nodeAny.type)
+    const ec = getEngineColor(nodeAny.type, template?.engine, theme)
+    nodeAny.color = ec.nodeBg
+    nodeAny.bgcolor = ec.nodeHeader
+    nodeAny.boxcolor = ec.accent
+  }
+}
+
 function applyLiteGraphThemeColors(canvas?: LGraphCanvasClass | null) {
   invalidateCanvasThemeCache()
   const clearColor = getCanvasClearColor()
@@ -158,7 +178,11 @@ function applyLiteGraphThemeColors(canvas?: LGraphCanvasClass | null) {
     LiteGraph.CONNECTING_LINK_COLOR = c.connectingLink
     LiteGraph.EVENT_LINK_COLOR = c.eventLink
     lg.LINK_HOVER_COLOR = c.linkHover
+    ;(LiteGraph as unknown as Record<string, unknown>).WIDGET_BGCOLOR = c.widgetBg
+    ;(LiteGraph as unknown as Record<string, unknown>).WIDGET_TEXT_COLOR = c.widgetText
+    ;(LiteGraph as unknown as Record<string, unknown>).WIDGET_OUTLINE_COLOR = c.widgetOutline
   }
+  updateGraphNodesTheme(themeStore.mode)
 }
 
 watch(

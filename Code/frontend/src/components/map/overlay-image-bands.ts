@@ -54,10 +54,10 @@ export function isMercatorLinearPng(
   // 旧判据误判为等纬 → 条带化 → 全球降水图空白/错位）。全球范围的
   // 3857 行间距由导出契约保证，直接四角贴图，不得条带化。
   const isGlobalMercatorWindow =
-    Math.abs(bounds[0] + 180) < 0.01 &&
-    Math.abs(bounds[2] - 180) < 0.01 &&
-    Math.abs(Math.abs(bounds[1]) - 85.0511288) < 0.01 &&
-    Math.abs(Math.abs(bounds[3]) - 85.0511288) < 0.01
+    Math.abs(bounds[0] + 180) < 0.05 &&
+    Math.abs(bounds[2] - 180) < 0.05 &&
+    Math.abs(Math.abs(bounds[1]) - 85.0511288) < 0.2 &&
+    Math.abs(Math.abs(bounds[3]) - 85.0511288) < 0.2
   if (isGlobalMercatorWindow && imgW === imgH) return true
   return Math.abs(imgH - eqLatHeight) / imgH > 0.12
 }
@@ -94,7 +94,13 @@ export async function addBandedImageSources(
   spec: BandPaintSpec,
 ): Promise<number> {
   if (!needsBanding(bounds)) return 0
-  const [w, s, e, n] = bounds
+  const [rawW, s, rawE, n] = bounds
+  let w = rawW
+  let e = rawE
+  if (Math.abs(w - -180) < 0.05 && Math.abs(e - 180) < 0.05) {
+    w = -180.0
+    e = 180.0
+  }
   const span = n - s
   const bandCount = Math.ceil(span / BAND_DEG)
   if (bandCount < 2) return 0

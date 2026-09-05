@@ -2,6 +2,7 @@
 @import './tokens.css';
 @import './textures.css';
 @import './motion.css';
+@import './native-controls.css';
 
 html,
 body,
@@ -121,8 +122,8 @@ a {
 /* ── 交互态微光工具类 ─────────────────────────── */
 .hover-lift {
   transition:
-    transform var(--motion-fast) var(--ease-soft),
-    box-shadow var(--motion-fast) var(--ease-soft);
+    transform var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .hover-lift:hover {

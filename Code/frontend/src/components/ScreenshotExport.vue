@@ -613,7 +613,7 @@ async function capture() {
   transition:
     background-color var(--motion-fast) var(--ease-soft),
     color var(--motion-fast) var(--ease-soft),
-    transform var(--motion-fast) ease,
+    transform var(--motion-fast) var(--ease-soft),
     box-shadow var(--motion-fast) var(--ease-soft),
     border-color var(--motion-fast) var(--ease-soft);
 }
@@ -626,7 +626,7 @@ async function capture() {
   width: 100%;
   height: 100%;
   background: linear-gradient(90deg, transparent, var(--surface-hover), transparent);
-  transition: left 0.5s ease;
+  transition: left var(--motion-slow) var(--ease-standard);
 }
 
 .capture-btn:hover:not(:disabled) {
@@ -671,7 +671,7 @@ async function capture() {
 
 .spinning {
   display: inline-block;
-  animation: spin 0.8s linear infinite;
+  animation: spin var(--motion-spin) linear infinite;
 }
 
 @keyframes spin {
@@ -700,8 +700,8 @@ async function capture() {
   text-decoration: none;
   word-break: break-all;
   transition:
-    background-color var(--motion-fast) ease,
-    border-color var(--motion-fast) ease;
+    background-color var(--motion-fast) var(--ease-soft),
+    border-color var(--motion-fast) var(--ease-soft);
 }
 
 .manual-download:hover {

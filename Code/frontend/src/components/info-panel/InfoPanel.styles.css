@@ -504,8 +504,8 @@
   cursor: pointer;
   white-space: nowrap;
   transition:
-    background-color 0.15s ease,
-    color 0.15s ease;
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 .variant-seg-btn:hover {
   color: var(--text-primary);
@@ -677,7 +677,13 @@
   padding: 0.2rem 0.55rem;
   border-radius: 4px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease),
+    opacity var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 .mode-btn.active {
   background: var(--surface-2);

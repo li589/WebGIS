@@ -149,7 +149,7 @@ function formatValue(val: number | null): string {
 </script>
 
 <template>
-  <Transition name="zonal-stats">
+  <Transition name="cgda-fade-scale">
     <div v-if="visible" class="zonal-stats-card">
       <div class="zonal-stats-header">
         <h4 class="zonal-stats-title">自动统计</h4>
@@ -409,16 +409,16 @@ function formatValue(val: number | null): string {
   color: var(--text-secondary);
 }
 
-/* Transition */
-.zonal-stats-enter-active,
-.zonal-stats-leave-active {
+/* Transition（scoped 覆盖：横向滑入） */
+.cgda-fade-scale-enter-active,
+.cgda-fade-scale-leave-active {
   transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
+    opacity var(--motion-surface-duration) var(--motion-surface-ease),
+    transform var(--motion-surface-duration) var(--motion-surface-ease);
 }
 
-.zonal-stats-enter-from,
-.zonal-stats-leave-to {
+.cgda-fade-scale-enter-from,
+.cgda-fade-scale-leave-to {
   opacity: 0;
   transform: translateX(8px);
 }

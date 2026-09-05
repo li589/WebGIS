@@ -160,8 +160,8 @@ function onBlur(e: FocusEvent) {
   border-radius: var(--radius-md);
   background: var(--surface-1);
   transition:
-    border-color var(--motion-fast) var(--ease-soft),
-    box-shadow var(--motion-fast) var(--ease-soft);
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .text-field--md .text-field-input-wrap {
@@ -245,8 +245,8 @@ function onBlur(e: FocusEvent) {
   color: var(--text-secondary);
   cursor: pointer;
   transition:
-    background-color var(--motion-fast) var(--ease-soft),
-    color var(--motion-fast) var(--ease-soft);
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .text-field-clear:hover {

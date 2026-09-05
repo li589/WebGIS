@@ -11,6 +11,7 @@ import type {
 } from '../../../services/workflow-definition-api'
 import {
   LiteGraph,
+  getEngineColor,
   getGraphNodes,
   graphDataToWorkflowNodes,
   syncGraphSlotsWithTemplates,
@@ -159,6 +160,27 @@ export function useNodeOperations(
             }
           }
         }
+      }
+
+      // 同步当前主题色（防止从 JSON 恢复的旧颜色或深色配置覆盖浅色模式）
+      const currentTheme =
+        typeof document !== 'undefined' &&
+        document.documentElement.getAttribute('data-theme') === 'light'
+          ? 'light'
+          : 'dark'
+      const allGraphNodes = getGraphNodes(graph)
+      for (const node of allGraphNodes) {
+        const nodeAny = node as unknown as {
+          type: string
+          color?: string
+          bgcolor?: string
+          boxcolor?: string
+        }
+        const template = nodeTemplates.find((t) => t.type === nodeAny.type)
+        const ec = getEngineColor(nodeAny.type, template?.engine, currentTheme)
+        nodeAny.color = ec.nodeBg
+        nodeAny.bgcolor = ec.nodeHeader
+        nodeAny.boxcolor = ec.accent
       }
 
       // 强制重绘

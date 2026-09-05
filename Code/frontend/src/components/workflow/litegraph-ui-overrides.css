@@ -1,80 +1,204 @@
 /**
  * 流编辑器内 LiteGraph 浮动 UI 覆盖样式：
- * - 缩小 ContextMenu / graphdialog
- * - 提高 z-index，避免被侧栏遮挡
- * - 取消强制 min-height:100
- * - 字号 14px（配合编辑器局部 19px rem 基准提升可读性）
+ * - 深度接入 CGDA Design Tokens（--surface-2, --border-default, --accent 等）
+ * - 紧凑化字号至 12px（--font-size-caption），解决输入框/弹窗偏大与格格不入问题
+ * - 毛玻璃与微阴影质感，全量适配深色模式与浅色模式
+ * - 提升 z-index，避免被其他浮层遮挡
  */
+
+/* ═══ 上下文菜单（右键菜单） ═══ */
 .litegraph.litecontextmenu,
 .litecontextmenu {
   min-height: 0 !important;
-  max-height: min(240px, 45vh) !important;
+  max-height: min(260px, 45vh) !important;
   overflow-y: auto !important;
   z-index: 11000 !important;
-  font-size: 14px !important;
-  font-family: ui-sans-serif, system-ui, sans-serif !important;
-  padding: 2px 0 !important;
-  border-radius: 6px !important;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45) !important;
+  font-size: var(--font-size-caption, 12px) !important;
+  font-family: inherit !important;
+  padding: 4px 0 !important;
+  background: var(--surface-2) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: var(--radius-md, 8px) !important;
+  box-shadow: var(--elevation-3) !important;
+  backdrop-filter: blur(var(--glass-blur, 10px)) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur, 10px)) !important;
 }
 
 .litegraph.litecontextmenu .litemenu-entry,
 .litecontextmenu .litemenu-entry,
 .litemenu-entry {
-  padding: 4px 10px !important;
-  font-size: 14px !important;
-  line-height: 1.35 !important;
+  padding: 5px 12px !important;
+  font-size: var(--font-size-caption, 12px) !important;
+  line-height: 1.4 !important;
   min-height: 0 !important;
+  color: var(--text-primary) !important;
+  transition:
+    background var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease) !important;
+  cursor: pointer !important;
 }
 
+.litegraph.litecontextmenu .litemenu-entry:hover,
+.litecontextmenu .litemenu-entry:hover,
+.litemenu-entry:hover,
+.litemenu-entry.has_submenu:hover {
+  background: var(--surface-hover) !important;
+  color: var(--text-strong) !important;
+}
+
+/* ═══ 属性/参数输入弹窗（graphdialog） ═══ */
 .graphdialog,
 .litegraph.graphdialog,
 .litegraph.dialog {
-  font-size: 14px !important;
-  padding: 6px 8px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  flex-wrap: wrap !important;
+  font-size: var(--font-size-caption, 12px) !important;
+  font-family: inherit !important;
+  padding: 6px 10px !important;
   z-index: 11000 !important;
-  border-radius: 6px !important;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4) !important;
-  max-width: min(280px, 90vw) !important;
+  background: var(--surface-2) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: var(--radius-md, 8px) !important;
+  box-shadow: var(--elevation-3) !important;
+  backdrop-filter: blur(var(--glass-blur, 10px)) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur, 10px)) !important;
+  max-width: min(340px, 92vw) !important;
+  box-sizing: border-box !important;
 }
 
 .graphdialog .name,
 .litegraph.graphdialog .name {
-  font-size: 13px !important;
-  margin-right: 6px !important;
+  font-size: var(--font-size-caption, 12px) !important;
+  font-weight: var(--font-weight-medium, 500) !important;
+  color: var(--text-secondary) !important;
+  margin-right: 2px !important;
+  white-space: nowrap !important;
+  user-select: none !important;
 }
 
 .graphdialog input,
 .graphdialog textarea,
 .litegraph.graphdialog input,
 .litegraph.graphdialog textarea {
-  font-size: 14px !important;
-  padding: 3px 6px !important;
-  min-width: 110px !important;
-  max-width: 200px !important;
+  font-size: var(--font-size-caption, 12px) !important;
+  font-family: inherit !important;
+  padding: 4px 8px !important;
+  height: 28px !important;
+  line-height: 1.4 !important;
+  min-width: 120px !important;
+  max-width: 220px !important;
+  background: var(--surface-1) !important;
+  color: var(--text-strong) !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: var(--radius-sm, 6px) !important;
+  box-sizing: border-box !important;
+  outline: none !important;
+  transition:
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease) !important;
+}
+
+.graphdialog textarea,
+.litegraph.graphdialog textarea {
+  height: 52px !important;
+  resize: vertical !important;
+}
+
+.graphdialog input:focus,
+.graphdialog textarea:focus,
+.litegraph.graphdialog input:focus,
+.litegraph.graphdialog textarea:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-focus-ring, rgba(0, 113, 227, 0.2)) !important;
+}
+
+/* 按钮精致化 */
+.graphdialog button,
+.litegraph.graphdialog button,
+.litegraph.dialog button,
+.graphdialog .rounded,
+.litegraph.graphdialog .rounded {
+  height: 26px !important;
+  padding: 0 10px !important;
+  font-size: var(--font-size-caption, 12px) !important;
+  font-family: inherit !important;
+  font-weight: var(--font-weight-medium, 500) !important;
+  border-radius: var(--radius-sm, 6px) !important;
+  border: 1px solid var(--border-default) !important;
+  background: var(--surface-hover) !important;
+  color: var(--text-primary) !important;
+  cursor: pointer !important;
+  user-select: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition:
+    background var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease) !important;
+}
+
+.graphdialog button:hover,
+.litegraph.graphdialog button:hover,
+.litegraph.dialog button:hover {
+  background: var(--surface-3) !important;
+  border-color: var(--border-strong) !important;
+  color: var(--text-strong) !important;
+}
+
+/* 首个或主按钮使用主题强调色 */
+.graphdialog button:first-of-type,
+.litegraph.graphdialog button:first-of-type {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: #ffffff !important;
+}
+
+.graphdialog button:first-of-type:hover,
+.litegraph.graphdialog button:first-of-type:hover {
+  background: var(--accent-strong, var(--accent)) !important;
+  border-color: var(--accent-strong, var(--accent)) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 45%, transparent) !important;
 }
 
 .litegraph.litesearchbox {
   z-index: 11000 !important;
-  font-size: 14px !important;
+  font-size: var(--font-size-caption, 12px) !important;
+  font-family: inherit !important;
+  background: var(--surface-2) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: var(--radius-md, 8px) !important;
+  box-shadow: var(--elevation-3) !important;
 }
 
-/* ── 入场动画（菜单/对话框动态创建 DOM，无法用 Vue Transition） ── */
+.litegraph.litesearchbox input {
+  font-size: var(--font-size-caption, 12px) !important;
+  background: var(--surface-1) !important;
+  color: var(--text-strong) !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: var(--radius-sm, 6px) !important;
+  padding: 4px 8px !important;
+}
+
+/* ── 入场动画（macOS / 现代微弹出） ── */
 .litegraph.litecontextmenu,
-.litecontextmenu {
-  animation: litegraph-menu-enter var(--motion-fast) var(--ease-decelerate);
-}
-
+.litecontextmenu,
 .graphdialog,
 .litegraph.graphdialog,
 .litegraph.dialog {
-  animation: litegraph-menu-enter var(--motion-fast) var(--ease-decelerate);
+  animation: litegraph-menu-enter var(--motion-interactive-duration) var(--ease-standard) !important;
 }
 
 @keyframes litegraph-menu-enter {
   from {
     opacity: 0;
-    transform: translateY(-4px) scale(0.98);
+    transform: translateY(-4px) scale(0.96);
   }
   to {
     opacity: 1;
@@ -88,6 +212,6 @@
   .graphdialog,
   .litegraph.graphdialog,
   .litegraph.dialog {
-    animation: none;
+    animation: none !important;
   }
 }

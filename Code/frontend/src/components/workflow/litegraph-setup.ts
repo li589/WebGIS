@@ -201,7 +201,6 @@ export function registerWorkflowNodeTypes(
 
   for (const template of templates) {
     const tpl = template
-    const engineColor = getEngineColor(tpl.type, tpl.engine)
 
     // 合并：显式 inputs + 由 params 提升的可选参数端口（同名不重复）
     const existingNames = new Set(tpl.inputs.map((i) => i.name))
@@ -232,9 +231,10 @@ export function registerWorkflowNodeTypes(
         super(title ?? tpl.title)
         this.type = tpl.type
 
-        this.color = engineColor.nodeBg
-        this.bgcolor = engineColor.nodeHeader
-        this.boxcolor = engineColor.accent
+        const currentEngineColor = getEngineColor(tpl.type, tpl.engine)
+        this.color = currentEngineColor.nodeBg
+        this.bgcolor = currentEngineColor.nodeHeader
+        this.boxcolor = currentEngineColor.accent
 
         this.resizable = true
         ;(this.flags as Record<string, unknown>).allow_interaction = true
@@ -355,19 +355,44 @@ export function resolveNodeEngine(nodeType: string, templateEngine?: string | nu
   return 'common'
 }
 
-/** 按引擎返回节点配色 */
-function getEngineColor(nodeType: string, templateEngine?: string | null): EngineColor {
+/** 按引擎返回节点配色，支持浅色/深色主题动态计算 */
+export function getEngineColor(
+  nodeType: string,
+  templateEngine?: string | null,
+  theme?: 'dark' | 'light',
+): EngineColor {
+  const currentTheme =
+    theme ??
+    (typeof document !== 'undefined' &&
+    document.documentElement.getAttribute('data-theme') === 'light'
+      ? 'light'
+      : 'dark')
+
   const engine = resolveNodeEngine(nodeType, templateEngine)
+
+  if (currentTheme === 'light') {
+    if (engine === 'weather') {
+      return { nodeBg: '#f0f7ff', nodeHeader: '#d0e5fb', accent: '#0284c7' }
+    }
+    if (engine === 'python_provider') {
+      return { nodeBg: '#f2fbf5', nodeHeader: '#cceedb', accent: '#16a34a' }
+    }
+    if (engine === 'gee') {
+      return { nodeBg: '#f8f5ff', nodeHeader: '#e4dcfa', accent: '#7c3aed' }
+    }
+    return { nodeBg: '#ffffff', nodeHeader: '#e2e8f0', accent: '#475569' }
+  }
+
   if (engine === 'weather') {
-    return { nodeBg: '#1a2230', nodeHeader: '#2a4a5a', accent: 'var(--warning)' }
+    return { nodeBg: '#121e2c', nodeHeader: '#1e354a', accent: '#e8a020' }
   }
   if (engine === 'python_provider') {
-    return { nodeBg: '#1a2a1e', nodeHeader: '#2a4a38', accent: 'var(--success)' }
+    return { nodeBg: '#102218', nodeHeader: '#183824', accent: '#0a7a4e' }
   }
   if (engine === 'gee') {
-    return { nodeBg: '#1a2030', nodeHeader: '#3a2e5a', accent: 'var(--accent)' }
+    return { nodeBg: '#181428', nodeHeader: '#2a1f44', accent: '#5ad5ff' }
   }
-  return { nodeBg: 'var(--surface-2)', nodeHeader: '#1a2540', accent: 'var(--accent-strong)' }
+  return { nodeBg: '#141e2b', nodeHeader: '#1c2b3e', accent: '#3a9fc4' }
 }
 
 function mapParamTypeToWidget(paramType: string, options?: string[]): string {

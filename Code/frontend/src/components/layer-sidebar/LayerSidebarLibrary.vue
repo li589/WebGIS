@@ -267,6 +267,7 @@ function addCatalogItemWithSource(item: RuntimeLayerLibraryItem) {
                     <span class="src-dot" :style="{ background: item.accentColor }"></span>
                     <AppSelect
                       :model-value="effectiveSourceId(item)"
+                      size="sm"
                       block
                       @change="(val: string) => selectSource(item.catalogId, val)"
                     >

@@ -126,13 +126,18 @@
 
 ### 2.6 动效
 
+> 现行真源：`Code/frontend/src/styles/tokens.css` + `motion.css`（macOS / Apple HIG 取向）。
+> 禁止硬编码 `0.2s ease` / `transition: all`；控件优先 `--motion-interactive-*` / `--motion-surface-*` / `--motion-sheet-*`。
+
 ```css
 :root {
+  --motion-press:  80ms;
   --motion-fast:   120ms;
   --motion-base:   200ms;
-  --motion-slow:   320ms;
-  --ease-standard:  cubic-bezier(.2,.8,.2,1);
-  --ease-emphasized:cubic-bezier(.3,0,.2,1);
+  --motion-slow:   280ms;
+  --ease-standard: cubic-bezier(0.16, 1, 0.3, 1);   /* 减速出场 */
+  --ease-soft:     cubic-bezier(0.25, 0.1, 0.25, 1); /* 微交互 */
+  --ease-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
 }
 ```
 

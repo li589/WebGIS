@@ -157,20 +157,32 @@
   --shadow-ambient: rgba(1, 8, 16, 0.14);
   --shadow-ambient-strong: rgba(0, 0, 0, 0.24);
 
-  /* ═══ 动效（克制 + 物理感） ═══ */
-  --motion-fast: 150ms;
-  --motion-base: 200ms;
-  --motion-slow: 320ms;
-  --motion-press: 90ms; /* 按下回弹 */
-  --motion-modal: 220ms; /* 对话框 / 抽屉 enter */
-  --motion-modal-leave: 160ms; /* 对话框 leave（略快） */
+  /* ═══ 动效（macOS / Apple HIG 取向：短促、减速出场、可打断） ═══
+   * 性能：优先 transition transform / opacity / color / box-shadow；
+   * 禁止 transition: all；拖拽态用 .cgda-dragging 关过渡。
+   * 组件优先用语义别名（interactive / surface / sheet），见 motion.css。
+   */
+  --motion-press: 80ms; /* 按下回弹 */
+  --motion-fast: 120ms; /* hover 色/边框/微位移 */
+  --motion-base: 200ms; /* 控件表面 / 轻量面板 */
+  --motion-slow: 280ms; /* 抽屉 / 大块 reveal */
+  --motion-modal: 240ms; /* 对话框 enter */
+  --motion-modal-leave: 180ms; /* 对话框 leave（略快） */
 
-  /* 缓动函数 */
-  --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1); /* 标准出 */
-  --ease-soft: cubic-bezier(0.25, 0.1, 0.25, 1); /* 柔和 — 按钮hover/微交互 */
-  --ease-emphasized: cubic-bezier(0.3, 0, 0.2, 1); /* 强调 */
-  --ease-decelerate: cubic-bezier(0, 0, 0.2, 1); /* 减速 */
-  --ease-spring: cubic-bezier(0.34, 1.2, 0.64, 1); /* 轻弹（仅短位移） */
+  /* 缓动：标准出场接近系统 sheet；soft 用于微交互；spring 仅短位移 */
+  --ease-standard: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-soft: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.25, 0.64, 1);
+
+  /* 语义时长/缓动（控件应优先引用） */
+  --motion-interactive-duration: var(--motion-fast);
+  --motion-interactive-ease: var(--ease-soft);
+  --motion-surface-duration: var(--motion-base);
+  --motion-surface-ease: var(--ease-standard);
+  --motion-sheet-duration: var(--motion-slow);
+  --motion-sheet-ease: var(--ease-emphasized);
 
   /* ═══ Tooltip（浅/深统一：深底浅字，避免浅色面板上白 tip 发虚） ═══ */
   --tooltip-bg: rgba(12, 22, 36, 0.96);
@@ -203,6 +215,7 @@
 
   /* ═══ 焦点环 / 发光 ═══ */
   --accent-focus-ring: rgba(90, 213, 255, 0.1);
+  --danger-focus-ring: rgba(255, 140, 100, 0.12);
   --accent-glow-sm: 0 0 8px var(--accent-surface);
   --accent-glow-md: 0 0 16px var(--accent-surface);
 
@@ -219,8 +232,10 @@
   --inspect-dot-glow: rgba(255, 184, 77, 0.75);
 
   /* ═══ 动效（扩展：编排延迟） ═══ */
-  --motion-stagger-step: 30ms;
-  --motion-enter-delay: 100ms;
+  --motion-stagger-step: 28ms;
+  --motion-enter-delay: 80ms;
+  /* 加载转圈时长（reduce-motion 不强制掐断，见 motion.css） */
+  --motion-spin: 0.75s;
 
   /* ═══ 触控目标最小值 ═══ */
   --touch-min: 2.25rem;
@@ -234,129 +249,121 @@
  * 设计：冷白面板 + 青蓝外壳雾 + 深蓝灰文字 + 品牌青强调（禁止暖米黄底）
  * ═══════════════════════════════════════════════════════════════════ */
 [data-theme='light'] {
-  /* 文本（深色，保证在浅底上可读） */
+  /* 文本（高对比度深石墨 / 板岩黑，WCAG AAA） */
   --text-strong: #0a1626;
-  --text-primary: #1a2b42;
-  --text-secondary: #4a6076;
-  --text-muted: #6b8094;
-  --text-faint: #8a9db0;
-  --text-disabled: #b0bccc;
+  --text-primary: #1e293b;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --text-faint: #94a3b8;
+  --text-disabled: #cbd5e1;
 
-  /* 品牌 / 强调（加深以保证浅底对比度，WCAG AA ≥ 4.5:1） */
-  --accent: #006f94;
-  --accent-strong: #005a82;
+  /* 品牌 / 强调（Apple System Deep Blue，满足 WCAG AA ≥ 4.5） */
+  --accent: #0066cc;
+  --accent-strong: #004fb0;
   --accent-warm: #a5650f;
-  --accent-blue-deep: #1a5fcc; /* 浅底加深保证对比度 */
-  --accent-blue-deep-glow: rgba(26, 95, 204, 0.22);
-  --accent-warm-surface: rgba(201, 122, 20, 0.1);
-  --accent-warm-border: rgba(201, 122, 20, 0.3);
-  --badge-ring: rgba(200, 210, 220, 0.9);
+  --accent-blue-deep: #1a5fcc;
+  --accent-blue-deep-glow: rgba(0, 102, 204, 0.18);
+  --accent-warm-surface: rgba(165, 101, 15, 0.08);
+  --accent-warm-border: rgba(165, 101, 15, 0.24);
+  --badge-ring: rgba(200, 215, 230, 0.9);
 
-  /* 工作流端口语义色（浅底加深） */
+  /* 工作流端口语义色（浅底适度加深以保障对比度） */
   --port-time: #d4658a;
   --port-numeric: #c97a14;
   --port-text: #9a7b1a;
   --recent-accent: #7c3aed;
 
-  /* 语义三件套（浅底版本：文字色加深，表面更淡） */
+  /* 语义三件套（浅底高对比度：满足 WCAG AA ≥ 4.5） */
   --success: #0a7a4e;
-  --success-surface: rgba(10, 122, 78, 0.1);
-  --success-border: rgba(10, 122, 78, 0.3);
+  --success-surface: rgba(10, 122, 78, 0.09);
+  --success-border: rgba(10, 122, 78, 0.28);
 
   --warning: #9a5205;
-  --warning-surface: rgba(165, 90, 8, 0.1);
-  --warning-border: rgba(165, 90, 8, 0.3);
+  --warning-surface: rgba(154, 82, 5, 0.09);
+  --warning-border: rgba(154, 82, 5, 0.28);
 
   --danger: #b8311a;
-  --danger-surface: rgba(184, 49, 26, 0.1);
-  --danger-border: rgba(184, 49, 26, 0.3);
+  --danger-surface: rgba(184, 49, 26, 0.09);
+  --danger-border: rgba(184, 49, 26, 0.28);
 
   --info: var(--accent);
-  --info-surface: rgba(10, 143, 196, 0.1);
-  --info-border: rgba(10, 143, 196, 0.3);
+  --info-surface: rgba(0, 102, 204, 0.08);
+  --info-border: rgba(0, 102, 204, 0.24);
 
-  --accent-surface: rgba(10, 143, 196, 0.1);
-  --accent-border: rgba(10, 143, 196, 0.3);
+  --accent-surface: rgba(0, 102, 204, 0.08);
+  --accent-border: rgba(0, 102, 204, 0.24);
 
-  /* 数据分类语义色（天气 / 栅格 / 矢量；浅底加深保证 AA） */
+  /* 数据分类语义色（天气 / 栅格 / 矢量；浅底加深保证 AA ≥ 4.5） */
   --category-weather: #0a5f9f;
   --category-weather-surface: rgba(10, 95, 159, 0.1);
   --category-weather-border: rgba(10, 95, 159, 0.26);
   --category-raster: #0a6f46;
   --category-raster-surface: rgba(10, 111, 70, 0.1);
   --category-raster-border: rgba(10, 111, 70, 0.26);
-  --category-vector: #9c5c00;
-  --category-vector-surface: rgba(156, 92, 0, 0.1);
-  --category-vector-border: rgba(156, 92, 0, 0.26);
+  --category-vector: #b45309;
+  --category-vector-surface: rgba(180, 83, 9, 0.09);
+  --category-vector-border: rgba(180, 83, 9, 0.26);
 
-  /* 语义化表面色（浅底加深） */
-  --surface-blue-tint: rgba(30, 100, 180, 0.08);
-  --border-blue-tint: rgba(30, 100, 180, 0.14);
-  --surface-violet-tint: rgba(100, 80, 200, 0.1);
-  --border-violet-tint: rgba(100, 80, 200, 0.16);
+  /* 语义化表面色 */
+  --surface-blue-tint: rgba(0, 113, 227, 0.06);
+  --border-blue-tint: rgba(0, 113, 227, 0.16);
+  --surface-violet-tint: rgba(124, 58, 237, 0.06);
+  --border-violet-tint: rgba(124, 58, 237, 0.16);
 
-  /* 氛围色（浅底减淡） */
-  --ambient-blue-glow: rgba(30, 100, 180, 0.1);
-  --ambient-blue-soft: rgba(30, 100, 180, 0.08);
-  --ambient-warm-glow: rgba(201, 122, 20, 0.08);
+  /* 氛围色 */
+  --ambient-blue-glow: rgba(0, 113, 227, 0.08);
+  --ambient-blue-soft: rgba(0, 113, 227, 0.05);
+  --ambient-warm-glow: rgba(180, 83, 9, 0.06);
 
-  /* 阴影色（浅底用蓝灰影） */
-  --shadow-ambient: rgba(20, 50, 90, 0.1);
-  --shadow-ambient-strong: rgba(20, 50, 90, 0.18);
+  /* 阴影色（蓝灰漫反射柔影） */
+  --shadow-ambient: rgba(15, 23, 42, 0.06);
+  --shadow-ambient-strong: rgba(15, 23, 42, 0.14);
 
-  /* Tooltip 保持深底浅字（不跟浅色 surface-3 变白，否则浮在白面板上发虚） */
-
-  /* 表面层级（浅色：近不透明冷白，避免半透明叠地图/外圈发棕褐） */
-  --surface-base: #e8eef5;
-  --surface-sunken: rgba(255, 255, 255, 0.72);
-  --surface-1: rgba(255, 255, 255, 0.9);
+  /* 表面层级（Apple 层次结构：微凹 sunken + 纯白 card + 晶透 frosted panel） */
+  --surface-base: #f1f5f9;
+  --surface-sunken: rgba(15, 23, 42, 0.04);
+  --surface-1: #ffffff;
   --surface-2: rgba(255, 255, 255, 0.96);
   --surface-3: #ffffff;
-  --surface-hover: rgba(236, 244, 252, 0.98);
-  --surface-panel: rgba(255, 255, 255, 0.96);
-  --surface-raised: rgba(248, 251, 255, 0.88);
+  --surface-hover: rgba(0, 113, 227, 0.05);
+  --surface-panel: rgba(255, 255, 255, 0.92);
+  --surface-raised: rgba(248, 251, 255, 0.92);
 
-  /* 面板专用背景（浅色） */
-  --panel-bg-top: rgba(248, 251, 255, 0.92);
-  --panel-bg-bottom: rgba(240, 246, 252, 0.86);
+  /* 面板专用背景（浅色柔和微渐变） */
+  --panel-bg-top: rgba(255, 255, 255, 0.96);
+  --panel-bg-bottom: rgba(245, 248, 252, 0.92);
 
-  /* 边框（浅色：深蓝灰） */
-  --border-subtle: rgba(30, 60, 100, 0.08);
-  --border-default: rgba(30, 60, 100, 0.16);
-  --border-strong: rgba(10, 143, 196, 0.4);
-  --border-accent: rgba(10, 143, 196, 0.3);
+  /* 晶透内边缘微高光（颜色语义，供 inset 0 1px 0 var(--inner-highlight) 消费） */
+  --inner-highlight: rgba(255, 255, 255, 0.95);
+  --inner-highlight-strong: #ffffff;
 
-  /* Elevation：浅色用淡蓝灰影，不用深色主题那套重黑影（否则面板发脏褐） */
-  --elevation-1: 0 1px 2px rgba(20, 50, 90, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.95);
-  --elevation-2: 0 6px 18px rgba(20, 50, 90, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.95);
-  --elevation-3: 0 16px 40px rgba(20, 50, 90, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.98);
-  --elevation-modal: 0 28px 64px rgba(20, 50, 90, 0.16), inset 0 1px 0 rgba(255, 255, 255, 1);
+  /* 边框（细腻发丝感） */
+  --border-subtle: rgba(15, 23, 42, 0.06);
+  --border-default: rgba(15, 23, 42, 0.12);
+  --border-strong: rgba(0, 113, 227, 0.38);
+  --border-accent: rgba(0, 113, 227, 0.28);
 
-  /* 数据分类语义色（天气 / 栅格 / 矢量；浅底加深保证 AA） */
-  --category-weather: #0a5f9f;
-  --category-weather-surface: rgba(10, 95, 159, 0.1);
-  --category-weather-border: rgba(10, 95, 159, 0.26);
-  --category-raster: #0a6f46;
-  --category-raster-surface: rgba(10, 111, 70, 0.1);
-  --category-raster-border: rgba(10, 111, 70, 0.26);
-  --category-vector: #9c5c00;
-  --category-vector-surface: rgba(156, 92, 0, 0.1);
-  --category-vector-border: rgba(156, 92, 0, 0.26);
+  /* Elevation：Apple 多重漫反射自然轻投影 */
+  --elevation-1: 0 1px 2px rgba(15, 23, 42, 0.04), 0 0 0 1px rgba(15, 23, 42, 0.05);
+  --elevation-2: 0 4px 12px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
+  --elevation-3: 0 12px 32px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
+  --elevation-modal: 0 24px 60px rgba(15, 23, 42, 0.14), 0 4px 16px rgba(15, 23, 42, 0.06);
 
-  /* 应用背景（浅色：冷白青蓝壳层，不发米黄） */
+  /* 应用背景（浅色：通透冷白青蓝壳层） */
   --app-shell-bg:
-    radial-gradient(ellipse 90% 60% at 10% -8%, rgba(80, 160, 235, 0.38), transparent 56%),
-    radial-gradient(ellipse 70% 50% at 94% 108%, rgba(60, 130, 200, 0.26), transparent 52%),
-    radial-gradient(ellipse 55% 45% at 48% 42%, rgba(190, 220, 245, 0.7), transparent 72%),
+    radial-gradient(ellipse 90% 60% at 10% -8%, rgba(80, 160, 235, 0.32), transparent 56%),
+    radial-gradient(ellipse 70% 50% at 94% 108%, rgba(60, 130, 200, 0.22), transparent 52%),
+    radial-gradient(ellipse 55% 45% at 48% 42%, rgba(190, 220, 245, 0.6), transparent 72%),
     linear-gradient(165deg, #b9d0e8 0%, #cfe0f2 46%, #bfd4ea 100%);
 
-  /* 地图检查点标记（浅底深填、亮描边保证可辨） */
+  /* 地图检查点标记 */
   --inspect-dot-fill: #c45a0a;
-  --inspect-dot-ring: #f0faff;
+  --inspect-dot-ring: #ffffff;
   --inspect-dot-glow: rgba(196, 90, 10, 0.55);
   --select-panel-bg: #ffffff;
-  --select-panel-text: #142536;
+  --select-panel-text: #0f172a;
 
-  /* 焦点环（浅色版本） */
-  --accent-focus-ring: rgba(10, 143, 196, 0.12);
+  /* 焦点环（Apple 风格） */
+  --accent-focus-ring: rgba(0, 113, 227, 0.2);
+  --danger-focus-ring: rgba(184, 49, 26, 0.18);
 }

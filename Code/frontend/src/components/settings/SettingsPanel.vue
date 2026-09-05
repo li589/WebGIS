@@ -566,7 +566,11 @@ onUnmounted(() => {
   font: inherit;
   font-size: var(--font-size-caption);
   text-align: left;
-  transition: all 0.16s ease;
+  transition:
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .nav-item:hover {

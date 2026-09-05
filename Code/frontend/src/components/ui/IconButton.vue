@@ -94,11 +94,11 @@ const viewBox = computed(() => `0 0 24 24`)
   user-select: none;
   flex: 0 0 auto;
   transition:
-    background-color var(--motion-fast) var(--ease-soft),
-    border-color var(--motion-fast) var(--ease-soft),
-    color var(--motion-fast) var(--ease-soft),
-    box-shadow var(--motion-fast) var(--ease-soft),
-    transform var(--motion-press, var(--motion-fast)) var(--ease-soft);
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-press) var(--motion-interactive-ease);
 }
 
 .icon-btn:focus-visible {

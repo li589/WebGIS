@@ -1179,7 +1179,7 @@ onUnmounted(() => {
   height: 0.7rem;
   border-radius: 50%;
   background: var(--surface-3);
-  transition: left 0.15s ease;
+  transition: left var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .toggle-switch.on .toggle-knob {
@@ -1384,10 +1384,10 @@ onUnmounted(() => {
 
 /* ── 定时器面板滑入动画（overlay 模式） ──────────────────────── */
 .timer-overlay-anim {
-  animation: timer-overlay-fade 0.2s ease;
+  animation: timer-overlay-fade var(--motion-surface-duration) var(--motion-surface-ease);
 }
 .timer-overlay-anim .timer-panel {
-  animation: timer-panel-slide-in 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: timer-panel-slide-in var(--motion-slow) var(--ease-emphasized);
 }
 @keyframes timer-overlay-fade {
   from {
@@ -1408,10 +1408,10 @@ onUnmounted(() => {
 
 /* ── 确认/事件对话框动画 ────────────────────────────────────── */
 .dialog-overlay {
-  animation: dialog-fade-in 0.18s ease;
+  animation: dialog-fade-in var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 .dialog {
-  animation: dialog-pop-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: dialog-pop-in var(--motion-surface-duration) var(--ease-emphasized);
 }
 @keyframes dialog-fade-in {
   from {
@@ -1438,7 +1438,7 @@ onUnmounted(() => {
   .dialog-overlay,
   .dialog {
     animation: none;
-    transition: opacity 0.01s ease;
+    transition: opacity 0ms;
   }
 }
 </style>

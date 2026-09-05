@@ -193,7 +193,7 @@ function toggleCollapsed() {
   flex-direction: column;
   flex: none;
   position: relative;
-  transition: width 0.22s ease;
+  transition: width var(--motion-surface-duration) var(--motion-surface-ease);
   min-width: 0;
 }
 
@@ -229,13 +229,13 @@ function toggleCollapsed() {
   justify-content: center;
   box-shadow: var(--elevation-1);
   transition:
-    color 0.22s ease,
-    border-color 0.22s ease,
-    background 0.22s ease,
-    box-shadow 0.22s ease,
-    top 0.22s ease,
-    left 0.22s ease,
-    transform 0.22s ease;
+    color var(--motion-surface-duration) var(--motion-surface-ease),
+    border-color var(--motion-surface-duration) var(--motion-surface-ease),
+    background var(--motion-surface-duration) var(--motion-surface-ease),
+    box-shadow var(--motion-surface-duration) var(--motion-surface-ease),
+    top var(--motion-surface-duration) var(--motion-surface-ease),
+    left var(--motion-surface-duration) var(--motion-surface-ease),
+    transform var(--motion-surface-duration) var(--motion-surface-ease);
 }
 
 .sidebar-toggle:hover {
@@ -276,7 +276,7 @@ function toggleCollapsed() {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.16s ease;
+  transition: background var(--motion-interactive-duration) var(--motion-interactive-ease);
   user-select: none;
   position: relative;
 }
@@ -291,7 +291,7 @@ function toggleCollapsed() {
   height: 2px;
   border-radius: 1px;
   background: var(--border-strong);
-  transition: background 0.16s ease;
+  transition: background var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .sidebar-resizer:hover .resizer-handle,

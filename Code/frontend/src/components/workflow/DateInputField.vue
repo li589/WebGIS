@@ -104,13 +104,17 @@ function onInput(event: Event) {
   color-scheme: dark;
 }
 
+:global(html[data-theme='light']) .date-input {
+  color-scheme: light;
+}
+
 .date-input:focus {
   outline: none;
   border-color: var(--border-strong);
 }
 
 .date-input-wrapper.error .date-input {
-  border-color: rgba(255, 120, 120, 0.55);
+  border-color: var(--danger-border);
 }
 
 .date-raw-hint {

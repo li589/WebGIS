@@ -961,7 +961,13 @@ function handleTitleChange() {
   cursor: pointer;
   font-size: var(--font-size-caption);
   flex: none;
-  transition: all 0.16s ease;
+  transition:
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease),
+    opacity var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .reset-btn:hover {
@@ -1187,7 +1193,7 @@ function handleTitleChange() {
   font-size: var(--font-size-caption);
   line-height: 1;
   padding: 0;
-  transition: color 0.12s ease;
+  transition: color var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 .chip-remove:hover {

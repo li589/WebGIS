@@ -122,7 +122,7 @@ onBeforeUnmount(() => {
   flex: none;
   border-right: 1px solid var(--border-subtle);
   position: relative;
-  transition: width 0.22s ease;
+  transition: width var(--motion-surface-duration) var(--motion-surface-ease);
   min-width: 0;
 }
 
@@ -157,13 +157,13 @@ onBeforeUnmount(() => {
   justify-content: center;
   box-shadow: var(--elevation-1);
   transition:
-    color 0.22s ease,
-    border-color 0.22s ease,
-    background 0.22s ease,
-    box-shadow 0.22s ease,
-    top 0.22s ease,
-    right 0.22s ease,
-    transform 0.22s ease;
+    color var(--motion-surface-duration) var(--motion-surface-ease),
+    border-color var(--motion-surface-duration) var(--motion-surface-ease),
+    background var(--motion-surface-duration) var(--motion-surface-ease),
+    box-shadow var(--motion-surface-duration) var(--motion-surface-ease),
+    top var(--motion-surface-duration) var(--motion-surface-ease),
+    right var(--motion-surface-duration) var(--motion-surface-ease),
+    transform var(--motion-surface-duration) var(--motion-surface-ease);
 }
 
 .sidebar-toggle:hover {

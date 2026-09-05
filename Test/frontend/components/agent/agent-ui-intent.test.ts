@@ -146,4 +146,56 @@ describe('executeAgentUiIntent', () => {
     expect(result.ok).toBe(true)
     expect(result.message).toContain('没有活动图层')
   })
+
+  it('handles fit_china and zoom_to_china intent via handler', async () => {
+    const fitChina = vi.fn(() => true)
+    const { executeAgentUiIntent } = await import('@/components/agent/agent-ui-intent')
+    const res1 = executeAgentUiIntent({ name: 'fit_china', args: {} }, { fitChina })
+    expect(res1.ok).toBe(true)
+    expect(fitChina).toHaveBeenCalledTimes(1)
+    expect(res1.message).toContain('中国全境')
+
+    const res2 = executeAgentUiIntent({ name: 'zoom_to_china', args: {} }, { fitChina })
+    expect(res2.ok).toBe(true)
+    expect(fitChina).toHaveBeenCalledTimes(2)
+
+    const resFail = executeAgentUiIntent({ name: 'fit_china', args: {} }, {})
+    expect(resFail.ok).toBe(false)
+  })
+
+  it('handles locate_coordinate intent via handler', async () => {
+    const locate = vi.fn(() => true)
+    const { executeAgentUiIntent } = await import('@/components/agent/agent-ui-intent')
+    const res = executeAgentUiIntent(
+      { name: 'locate_coordinate', args: { lng: 116.4074, lat: 39.9042, zoom: 11 } },
+      { locateCoordinate: locate },
+    )
+    expect(res.ok).toBe(true)
+    expect(locate).toHaveBeenCalledWith(116.4074, 39.9042, 11)
+    expect(res.message).toContain('116.4074')
+
+    const resInvalid = executeAgentUiIntent(
+      { name: 'locate_coordinate', args: { lng: 'abc' } },
+      { locateCoordinate: locate },
+    )
+    expect(resInvalid.ok).toBe(false)
+  })
+
+  it('handles switch_basemap intent via handler', async () => {
+    const setBasemap = vi.fn(() => true)
+    const { executeAgentUiIntent } = await import('@/components/agent/agent-ui-intent')
+    const res = executeAgentUiIntent(
+      { name: 'switch_basemap', args: { basemap_id: 'tianditu-img' } },
+      { setBasemap },
+    )
+    expect(res.ok).toBe(true)
+    expect(setBasemap).toHaveBeenCalledWith('tianditu-img')
+    expect(res.message).toContain('tianditu-img')
+
+    const resEmpty = executeAgentUiIntent(
+      { name: 'switch_basemap', args: {} },
+      { setBasemap },
+    )
+    expect(resEmpty.ok).toBe(false)
+  })
 })

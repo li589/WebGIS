@@ -72,10 +72,10 @@ function handleRemove(e: MouseEvent) {
   white-space: nowrap;
   user-select: none;
   transition:
-    background-color var(--motion-fast) var(--ease-soft),
-    border-color var(--motion-fast) var(--ease-soft),
-    color var(--motion-fast) var(--ease-soft),
-    box-shadow var(--motion-fast) var(--ease-soft);
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease);
 }
 
 /* 变体：default */
@@ -144,7 +144,7 @@ function handleRemove(e: MouseEvent) {
   color: inherit;
   font-size: var(--font-size-caption);
   cursor: pointer;
-  transition: background-color var(--motion-fast);
+  transition: background-color var(--motion-interactive-duration) var(--motion-interactive-ease);
   opacity: 0.7;
 }
 
@@ -153,8 +153,8 @@ function handleRemove(e: MouseEvent) {
   opacity: 1;
   transform: scale(1.08);
   transition:
-    background-color var(--motion-fast) var(--ease-soft),
-    transform var(--motion-press, var(--motion-fast)) var(--ease-soft);
+    background-color var(--motion-interactive-duration) var(--motion-interactive-ease),
+    transform var(--motion-press) var(--ease-spring);
 }
 
 .chip-remove:active {

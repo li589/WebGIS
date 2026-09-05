@@ -131,34 +131,47 @@ export function getMinimapColors() {
   )
 }
 
-/** LiteGraph 节点颜色组 */
+/** LiteGraph 节点与连线颜色组 */
 export function getLiteGraphColors() {
-  return resolveCanvasColors(
-    {
-      nodeBg: '--surface-2',
-      nodeBox: '--accent',
-      nodeTitle: '--text-primary',
-      nodeText: '--text-secondary',
-      selectedTitle: '--warning',
-      boxOutline: '--accent',
-      link: '--accent',
-      connectingLink: '--warning',
-      eventLink: '--success',
-      linkHover: '--accent-warm',
-    },
-    {
-      nodeBg: '#152538',
-      nodeBox: '#5ad5ff',
-      nodeTitle: '#e8f0fa',
-      nodeText: '#a0b8c8',
-      selectedTitle: '#e8a020',
-      boxOutline: '#5ad5ff',
-      link: '#5ad5ff',
-      connectingLink: '#e8a020',
-      eventLink: '#0a7a4e',
-      linkHover: '#c97a14',
-    },
-  )
+  checkThemeInvalidation()
+  const theme =
+    typeof document !== 'undefined'
+      ? document.documentElement.getAttribute('data-theme') || 'dark'
+      : 'dark'
+
+  if (theme === 'light') {
+    return {
+      nodeBg: '#ffffff',
+      nodeBox: '#0071e3',
+      nodeTitle: '#0a1626',
+      nodeText: '#334155',
+      selectedTitle: '#b45309',
+      boxOutline: '#0071e3',
+      link: '#0071e3',
+      connectingLink: '#d97706',
+      eventLink: '#16a34a',
+      linkHover: '#b45309',
+      widgetBg: '#f1f5f9',
+      widgetText: '#0f172a',
+      widgetOutline: 'rgba(15, 23, 42, 0.15)',
+    }
+  }
+
+  return {
+    nodeBg: resolveCanvasColor('--surface-2', '#121e2c'),
+    nodeBox: resolveCanvasColor('--accent', '#5ad5ff'),
+    nodeTitle: resolveCanvasColor('--text-strong', '#f0faff'),
+    nodeText: resolveCanvasColor('--text-secondary', '#cbd5e1'),
+    selectedTitle: resolveCanvasColor('--warning', '#e8a020'),
+    boxOutline: resolveCanvasColor('--accent', '#5ad5ff'),
+    link: resolveCanvasColor('--accent', '#5ad5ff'),
+    connectingLink: resolveCanvasColor('--warning', '#e8a020'),
+    eventLink: resolveCanvasColor('--success', '#0a7a4e'),
+    linkHover: resolveCanvasColor('--accent-warm', '#c97a14'),
+    widgetBg: '#081320',
+    widgetText: '#f0faff',
+    widgetOutline: 'rgba(136, 223, 255, 0.2)',
+  }
 }
 
 /** 端口颜色组（用于 getPortColor） */

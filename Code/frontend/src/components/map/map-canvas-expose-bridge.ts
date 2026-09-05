@@ -11,6 +11,11 @@ export interface MapCanvasExposeBridge {
   fitToLayerExtent?: (instanceId: string) => boolean
   /** 切换导入/科学 TS overlay 当前时刻 */
   setOverlayTime?: (layerId: string, time: string) => void | Promise<void>
+  flyTo?: (options: { center: [number, number]; zoom?: number; duration?: number }) => void
+  fitBounds?: (
+    bounds: [number, number, number, number],
+    options?: { padding?: number; maxZoom?: number; duration?: number },
+  ) => void
 }
 
 interface CreateMapCanvasExposeBridgeOptions {
@@ -20,6 +25,11 @@ interface CreateMapCanvasExposeBridgeOptions {
   setWindAnimationPaused?: (paused: boolean) => void
   fitToLayerExtent?: (instanceId: string) => boolean
   setOverlayTime?: (layerId: string, time: string) => void | Promise<void>
+  flyTo?: (options: { center: [number, number]; zoom?: number; duration?: number }) => void
+  fitBounds?: (
+    bounds: [number, number, number, number],
+    options?: { padding?: number; maxZoom?: number; duration?: number },
+  ) => void
   dependencies?: {
     warn?: (message?: unknown, ...optionalParams: unknown[]) => void
   }
@@ -165,5 +175,7 @@ export function createMapCanvasExposeBridge(
     setWindAnimationPaused: options.setWindAnimationPaused,
     fitToLayerExtent: options.fitToLayerExtent,
     setOverlayTime: options.setOverlayTime,
+    flyTo: options.flyTo,
+    fitBounds: options.fitBounds,
   }
 }

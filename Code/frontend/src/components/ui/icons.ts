@@ -102,4 +102,5 @@ export {
   Gift,
   HelpCircle,
   Bot,
+  Sparkles,
 } from 'lucide-vue-next'

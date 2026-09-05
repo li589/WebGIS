@@ -816,7 +816,7 @@ defineExpose({
       </header>
 
       <!-- 错误提示 -->
-      <Transition name="error-slide">
+      <Transition name="cgda-fade">
         <div v-if="error || saveError" class="editor-error-bar">
           <AlertTriangle :size="14" class="error-icon" aria-hidden="true" />
           <span class="error-text">{{ saveError ?? error }}</span>
@@ -827,7 +827,7 @@ defineExpose({
       </Transition>
 
       <!-- 校验结果面板 -->
-      <Transition name="panel-slide-down">
+      <Transition name="cgda-fade-scale">
         <div v-if="showValidationPanel && validationResult" class="validation-panel">
           <div class="validation-header">
             <span class="validation-title">
@@ -1819,11 +1819,11 @@ defineExpose({
   .validation-action-btn:active {
     transform: none;
   }
-  .error-slide-enter-active,
-  .error-slide-leave-active,
-  .panel-slide-down-enter-active,
-  .panel-slide-down-leave-active {
-    transition: opacity 0.01s ease;
+  .cgda-fade-enter-active,
+  .cgda-fade-leave-active,
+  .cgda-fade-scale-enter-active,
+  .cgda-fade-scale-leave-active {
+    transition: opacity 0ms;
   }
 }
 
@@ -1834,22 +1834,22 @@ defineExpose({
 }
 
 /* ── 动画：错误条滑入 ──────────────────────────────────────── */
-.error-slide-enter-active {
+.cgda-fade-enter-active {
   transition:
     opacity var(--motion-base) var(--ease-standard),
     max-height var(--motion-slow) var(--ease-standard),
     margin var(--motion-slow) var(--ease-standard);
   overflow: hidden;
 }
-.error-slide-leave-active {
+.cgda-fade-leave-active {
   transition:
     opacity var(--motion-fast) var(--ease-soft),
     max-height var(--motion-base) var(--ease-standard),
     margin var(--motion-base) var(--ease-standard);
   overflow: hidden;
 }
-.error-slide-enter-from,
-.error-slide-leave-to {
+.cgda-fade-enter-from,
+.cgda-fade-leave-to {
   opacity: 0;
   max-height: 0;
   margin-top: 0;
@@ -1857,20 +1857,20 @@ defineExpose({
 }
 
 /* ── 动画：校验面板下滑展开 ────────────────────────────────── */
-.panel-slide-down-enter-active {
+.cgda-fade-scale-enter-active {
   transition:
     opacity var(--motion-base) var(--ease-standard),
     max-height var(--motion-slow) var(--ease-emphasized);
   overflow: hidden;
 }
-.panel-slide-down-leave-active {
+.cgda-fade-scale-leave-active {
   transition:
     opacity var(--motion-fast) var(--ease-soft),
     max-height var(--motion-base) var(--ease-standard);
   overflow: hidden;
 }
-.panel-slide-down-enter-from,
-.panel-slide-down-leave-to {
+.cgda-fade-scale-enter-from,
+.cgda-fade-scale-leave-to {
   opacity: 0;
   max-height: 0;
 }

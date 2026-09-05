@@ -136,13 +136,31 @@ class TestSharedReproject:
         )
         assert out.shape == (1440, 1440)
         w, s, e, n = bounds
-        assert (w, e) == pytest.approx((-180.0, 180.0))
-        assert s == pytest.approx(-MERCATOR_MAX_LAT, abs=1e-6)
-        assert n == pytest.approx(MERCATOR_MAX_LAT, abs=1e-6)
+        assert w == -180.0 and e == 180.0
+        assert s == -MERCATOR_MAX_LAT and n == MERCATOR_MAX_LAT
         # 值域传递（nearest 采样不引入新值）
         finite = out[np.isfinite(out)]
         assert finite.min() >= data.min() - 1e-9
         assert finite.max() <= data.max() + 1e-9
+
+    def test_global_mercator_idl_harmonization(self) -> None:
+        """全球全幅网格在 IDL (±180°) 处左右边缘列完成数据协调。"""
+        from rasterio.transform import from_origin
+
+        # 构造一个跨日界线但边缘单侧有值的栅格
+        data = np.full((10, 20), np.nan, dtype=np.float64)
+        data[5, 0] = 42.0  # -180° 端有值
+        # 180° 端为 NaN
+        src_t = from_origin(-180.0, 85.0, 18.0, 17.0)
+        out, bounds = reproject_to_mercator_linear(
+            data, src_t, "EPSG:4326", target_resolution=1.0
+        )
+        assert bounds[0] == -180.0 and bounds[2] == 180.0
+        # 验证协调机制：若某一列有效，对侧边缘列被填补或一致化
+        row5 = out[out.shape[0] // 2]
+        c0, c_last = row5[0], row5[-1]
+        if np.isfinite(c0) or np.isfinite(c_last):
+            assert c0 == pytest.approx(c_last)
 
 
 class TestConsumersUseSharedSource:

@@ -154,6 +154,7 @@ const dashboardRef = ref<HTMLElement | null>(null)
 const mapShellRef = ref<HTMLElement | null>(null)
 const mapCanvasRef = ref<InstanceType<typeof MapCanvas> | null>(null)
 const cesiumHostRef = ref<{
+  flyTo?: (lng: number, lat: number, heightMeters?: number) => void
   flyToBounds: (b: [number, number, number, number]) => void
   getCanvas: () => HTMLCanvasElement | null
   capturePngDataUrl?: () => string | null
@@ -467,6 +468,41 @@ function handleZoomToLayer(instanceId: string): boolean {
   return ok
 }
 
+function handleFitChina(): boolean {
+  const chinaBounds: [number, number, number, number] = [73.5, 18.0, 135.0, 53.5]
+  if (showCesiumHost.value) {
+    cesiumHostRef.value?.flyToBounds(chinaBounds)
+    logStore.logOperation('map-zoom', '缩放到中国全境范围(Cesium)')
+    return true
+  }
+  if (mapCanvasRef.value?.fitBounds) {
+    mapCanvasRef.value.fitBounds(chinaBounds, { padding: 40, duration: 1000 })
+    logStore.logOperation('map-zoom', '缩放到中国全境范围')
+    return true
+  }
+  return false
+}
+
+function handleLocateCoordinate(lng: number, lat: number, zoom = 10): boolean {
+  if (Number.isNaN(lng) || Number.isNaN(lat)) return false
+  if (showCesiumHost.value) {
+    cesiumHostRef.value?.flyTo?.(lng, lat)
+    logStore.logOperation('map-locate', `定位坐标(Cesium): ${lng.toFixed(4)}, ${lat.toFixed(4)}`)
+    return true
+  }
+  if (mapCanvasRef.value?.flyTo) {
+    mapCanvasRef.value.flyTo({ center: [lng, lat], zoom, duration: 1200 })
+    logStore.logOperation('map-locate', `定位坐标: ${lng.toFixed(4)}, ${lat.toFixed(4)}`)
+    return true
+  }
+  return false
+}
+
+function handleSetBasemap(sourceId: string): boolean {
+  handleTileSourceChange(sourceId as TileSourceId)
+  return true
+}
+
 async function captureActiveMapCanvas(): Promise<string | null> {
   if (showCesiumHost.value) {
     try {
@@ -702,7 +738,13 @@ function handleFetchSegment(_segment: { index: number; label: string; state: str
         </TimelinePanel>
       </div>
 
-      <AgentCompanion v-if="agentCompanionEnabled" :fit-to-layer-extent="handleZoomToLayer" />
+      <AgentCompanion
+        v-if="agentCompanionEnabled"
+        :fit-to-layer-extent="handleZoomToLayer"
+        :fit-china="handleFitChina"
+        :locate-coordinate="handleLocateCoordinate"
+        :set-basemap="handleSetBasemap"
+      />
     </section>
 
     <ScreenshotExport

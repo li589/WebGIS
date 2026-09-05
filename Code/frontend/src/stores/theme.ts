@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, watch, onScopeDispose } from 'vue'
+import { ref, watch, onScopeDispose, type Ref } from 'vue'
 
 export type ThemeMode = 'dark' | 'light'
 export type ThemePreference = ThemeMode | 'system'
@@ -23,7 +23,14 @@ function resolveEffectiveTheme(pref: ThemePreference): ThemeMode {
   return pref === 'system' ? resolveSystemTheme() : pref
 }
 
-export const useThemeStore = defineStore('theme', () => {
+export interface ThemeStore {
+  mode: Ref<ThemeMode>
+  preference: Ref<ThemePreference>
+  toggle: () => void
+  setTheme: (next: ThemePreference) => void
+}
+
+export const useThemeStore = defineStore('theme', (): ThemeStore => {
   const preference = ref<ThemePreference>(readInitialPreference())
   const mode = ref<ThemeMode>(resolveEffectiveTheme(preference.value))
 
