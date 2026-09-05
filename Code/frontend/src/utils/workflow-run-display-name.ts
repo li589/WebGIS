@@ -1,6 +1,6 @@
 /**
  * 工作流运行展示名：状态指示器 / 图层计算组标题优先用种子中文名
- * （如「SMAP 动态 散射约束产品反演（本地）」），禁止 wf-run-* / 英文 workflow id 泄漏。
+ * （如「SMAP 动态散射约束产品反演（本地）」），禁止 wf-run-* / 英文 workflow id 泄漏。
  */
 import { getActivePinia } from 'pinia'
 import { isEnglishInversionCatalogId } from '@/stores/layers/inversion-catalog'
@@ -9,13 +9,13 @@ import { useWorkflowDefinitionsStore } from '@/stores/workflow-definitions'
 export type WorkflowSummaryLike = { workflow_id: string; name?: string | null }
 
 /**
- * 判断是否为动作命令/重跑指令标签（如「按时间轴重跑 2026-07」、「切换在线并重跑 2026-09」）。
- * 动作指令只应作为芯片/副标题显示，严禁作为实体卡片或图层组的主标题。
+ * 判断是否为动作命令/重跑指令标签（如「按时间轴重跑 2026-07」、「按时段重跑 20250701_20250708」、
+ * 「切换在线并重跑 2026-09」）。动作指令只应作为芯片/副标题显示，严禁作为实体卡片或图层组的主标题。
  */
 export function isActionCommandLabel(label: string | null | undefined): boolean {
   const raw = String(label || '').trim()
   if (!raw) return false
-  if (/^(?:按时间轴|切换在线并|计划会话在线)?重跑(?:\s|$)/u.test(raw)) return true
+  if (/^(?:按时段|按时间轴|切换在线并|计划会话在线)?重跑(?:\s|$)/u.test(raw)) return true
   if (/^重跑(?:\s|$)/u.test(raw)) return true
   if (/^运行分析(?:\s*[·•]|\s|$)/u.test(raw)) return true
   if (/^运行\s+.*\s+分析(?:\s*[·•]|\s|$)/u.test(raw)) return true
@@ -121,7 +121,7 @@ export function resolveWorkflowRunDisplayName(options: {
 
   const label = String(options.commandLabel || '').trim()
   if (label && !label.startsWith('运行画布工作流')) {
-    // 「运行 SMAP 平均 散射约束产品反演 分析 · 在线获取」→ 取工作流语义段
+    // 「运行 SMAP 平均散射约束产品反演 分析 · 在线获取」→ 取工作流语义段
     const stripped = label
       .replace(/^运行\s+/, '')
       .replace(/\s+分析(?:\s*[·•].*)?$/u, '')

@@ -1059,11 +1059,13 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
     let existingGroup = deps.getRunLayerGroups().find((g) => g.runId === runId)
     // 画布/编辑器在 submit 前已建 computing 组（runId 尚空）——提交路径须接管，
     // 禁止再建第二组导致双 runId / attach 绑错组 / cleanup 清错侧栏。
+    // 时段/计划重跑时上一组常已 ready/failed：同样复用同 source（+workflow）最近一组，避免叠组。
     if (!existingGroup && options?.source === 'submit') {
       const probeWorkflowId = String(bridge.workflowId || '')
       const probeSource = resolveInversionCatalogId(String(bridge.sourceLayerId || catalogId))
       const groups = deps.getRunLayerGroups()
       let pendingGroup: (typeof groups)[number] | undefined
+      // 1) 优先：预建 computing 且 runId 仍空
       for (let i = groups.length - 1; i >= 0; i -= 1) {
         const g = groups[i]!
         if (g.runId || g.status !== 'computing') continue
@@ -1075,8 +1077,22 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps) {
           break
         }
       }
+      // 2) 否则：同 source（优先同 workflow）最近一组，任意终态/计算中均可重绑
+      if (!pendingGroup) {
+        for (let i = groups.length - 1; i >= 0; i -= 1) {
+          const g = groups[i]!
+          const sourceMatches =
+            resolveInversionCatalogId(String(g.sourceLayerId || '')) === probeSource
+          if (!sourceMatches) continue
+          if (probeWorkflowId && g.workflowId && g.workflowId !== probeWorkflowId) continue
+          pendingGroup = g
+          break
+        }
+      }
       if (pendingGroup) {
         pendingGroup.runId = runId
+        pendingGroup.status = 'computing'
+        pendingGroup.dissolvable = false
         existingGroup = pendingGroup
       }
     }

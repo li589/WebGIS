@@ -427,6 +427,12 @@ function park() {
   plan.parkSession()
 }
 
+function dismiss() {
+  confirmGeneration += 1
+  submitting.value = false
+  plan.dismissSession()
+}
+
 function reopen() {
   plan.openSession()
 }
@@ -575,7 +581,7 @@ export default { name: 'OnlinePlanPanel' }
 </script>
 
 <template>
-  <!-- parked 角标（可拖；单击未移动则重新打开） -->
+  <!-- parked 角标（可拖；单击未移动则重新打开；× 关闭会话） -->
   <Teleport to="body">
     <div
       v-if="isParked && pendingCount > 0"
@@ -595,6 +601,16 @@ export default { name: 'OnlinePlanPanel' }
     >
       <span class="ops-dock-grip" aria-hidden="true" />
       {{ ONLINE_PLAN_COPY.parkedDock(pendingCount) }}
+      <button
+        type="button"
+        class="ops-dock-close"
+        :aria-label="ONLINE_PLAN_COPY.closeDockAria"
+        title="关闭"
+        @pointerdown.stop
+        @click.stop.prevent="dismiss"
+      >
+        ×
+      </button>
     </div>
   </Teleport>
 
@@ -617,6 +633,9 @@ export default { name: 'OnlinePlanPanel' }
           <div class="ops-header-actions">
             <AppButton variant="ghost" size="xs" type="button" @click="park">{{
               ONLINE_PLAN_COPY.parkCta
+            }}</AppButton>
+            <AppButton variant="ghost" size="xs" type="button" @click="dismiss">{{
+              ONLINE_PLAN_COPY.closeCta
             }}</AppButton>
           </div>
         </header>
@@ -719,6 +738,9 @@ export default { name: 'OnlinePlanPanel' }
           <p v-if="confirmError" class="ops-error" role="alert">{{ confirmError }}</p>
 
           <footer class="ops-footer">
+            <AppButton variant="ghost" size="sm" type="button" @click="dismiss">{{
+              ONLINE_PLAN_COPY.closeCta
+            }}</AppButton>
             <AppButton variant="secondary" size="sm" type="button" @click="park">{{
               ONLINE_PLAN_COPY.parkCta
             }}</AppButton>
@@ -778,6 +800,26 @@ export default { name: 'OnlinePlanPanel' }
   background: var(--border-strong);
   opacity: 0.85;
   flex-shrink: 0;
+}
+
+.ops-dock-close {
+  margin-left: 0.15rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.1rem 0.25rem;
+  border-radius: var(--radius-sm, 0.25rem);
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.ops-dock-close:hover,
+.ops-dock-close:focus-visible {
+  opacity: 1;
+  background: color-mix(in srgb, var(--text-strong) 12%, transparent);
+  outline: none;
 }
 
 .ops-dock:hover {

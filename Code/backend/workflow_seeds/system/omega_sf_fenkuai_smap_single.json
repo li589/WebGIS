@@ -2,7 +2,7 @@
   "_meta": {
     "kind": "system",
     "engine": "python_provider",
-    "name": "SMAP 动态 散射约束产品反演（本地）",
+    "name": "SMAP 动态散射约束产品反演（本地）",
     "description": "目的：omega_sf_fenkuai 完整流水线（SMAP 亮温 + ORIG_TS 单温度方案 → 8-day 分块 → SF 倒推 → 块级 h/alpha/OMEGA 优化 → DDCA SM/VOD 反演）。前置：SMAP 逐日 .mat + 辅助库已落盘。产出：SM/VOD/OMEGA 三图层 .mat。配置：tb_source=SMAP, freq_ghz=1.4, sf_mode=INVERTED_DAILY。",
     "author": "system",
     "readonly": true,
@@ -15,7 +15,7 @@
     "category": "inversion"
   },
   "workflow_id": "omega_sf_fenkuai_smap_single",
-  "name": "SMAP 动态 散射约束产品反演（本地）",
+  "name": "SMAP 动态散射约束产品反演（本地）",
   "description": "SMAP 亮温 + 辅助数据 → 8 天分块 SF 倒推 → 块级 h/alpha/OMEGA 优化 → DDCA SM/VOD 反演。语义：动态=8 天块内联合反演逐日 ω（块级 h/α 优化 + λ 平滑），产出逐日动态 SM/VOD/OMEGA。",
   "nodes": [
     {
@@ -128,7 +128,7 @@
       ],
       "properties": {
         "layer_id": "method-smap-omega-doy-dynamic",
-        "display_name": "SMAP 动态 散射约束产品反演（本地）"
+        "display_name": "SMAP 动态散射约束产品反演（本地）"
       }
     }
   ],

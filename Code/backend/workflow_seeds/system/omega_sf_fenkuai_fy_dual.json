@@ -2,7 +2,7 @@
   "_meta": {
     "kind": "system",
     "engine": "python_provider",
-    "name": "风云 动态 散射约束产品反演·双温度（本地）",
+    "name": "风云 动态散射约束产品反演·双温度（本地）",
     "description": "目的：omega_sf_fenkuai 双温度方案（FY3D/FY3B 亮温 + GLDAS DUAL 温度 → TG 土壤/TC 冠层分离 → 8-day 分块 → SF 倒推（FY3B→FY3D 匹配）→ 块级 h/alpha/OMEGA 优化 → DDCA SM/VOD 反演）。前置：FY3D/FY3B 逐日 .mat + SMAP 辅助 .mat + GLDAS .mat（YYYYMMDD_HHMM.mat，含 Ts_gldas/Tsoil1_gldas/Tsoil2_gldas）。产出：SM/VOD/OMEGA 三图层 .mat。配置：tb_source=FY, temp_scheme=DUAL, dual_tg_mode=PAPER_CT。",
     "author": "system",
     "readonly": true,
@@ -16,7 +16,7 @@
     "category": "inversion"
   },
   "workflow_id": "omega_sf_fenkuai_fy_dual",
-  "name": "风云 动态 散射约束产品反演·双温度（本地）",
+  "name": "风云 动态散射约束产品反演·双温度（本地）",
   "description": "FY3D/FY3B 亮温 + SMAP 辅助 + GLDAS 双温度 → 8 天分块 SF 倒推 → 块级 h/alpha/OMEGA 优化 → DDCA SM/VOD 反演。语义：动态=8 天块内联合反演逐日 ω（块级 h/α 优化 + λ 平滑），产出逐日动态 SM/VOD/OMEGA。双温度=GLDAS 三温度变量（Ts/Tsoil1/Tsoil2）推土壤 TG 与冠层 TC。",
   "nodes": [
     {
@@ -173,7 +173,7 @@
       ],
       "properties": {
         "layer_id": "method-fy-omega-doy-dynamic",
-        "display_name": "风云 动态 散射约束产品反演·双温度（本地）"
+        "display_name": "风云 动态散射约束产品反演·双温度（本地）"
       }
     }
   ],

@@ -263,6 +263,15 @@ onScopeDispose(() => {
               </template>
             </p>
           </Tooltip>
+          <button
+            type="button"
+            class="tab-dismiss-x"
+            aria-label="关闭"
+            title="关闭"
+            @click="emit('dismissRecovery')"
+          >
+            ×
+          </button>
         </div>
         <div class="tab-actions" role="group" aria-label="缺数恢复">
           <AppButton
@@ -315,6 +324,15 @@ onScopeDispose(() => {
           >
             <p class="tab-msg">{{ noticePreview }}</p>
           </Tooltip>
+          <button
+            type="button"
+            class="tab-dismiss-x"
+            aria-label="关闭"
+            title="关闭"
+            @click="emit('dismissNotice')"
+          >
+            ×
+          </button>
         </div>
         <div class="tab-actions" role="group" aria-label="关闭提示">
           <AppButton
@@ -459,6 +477,27 @@ onScopeDispose(() => {
   min-width: 0;
   flex: 1 1 10rem;
   padding-left: 0.35rem;
+}
+
+.tab-dismiss-x {
+  flex: 0 0 auto;
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, var(--text-strong));
+  font-size: 1.05rem;
+  line-height: 1;
+  padding: 0.1rem 0.3rem;
+  border-radius: var(--radius-sm, 0.25rem);
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.tab-dismiss-x:hover,
+.tab-dismiss-x:focus-visible {
+  opacity: 1;
+  background: color-mix(in srgb, var(--text-strong) 10%, transparent);
+  outline: none;
 }
 
 .tab-badge {
