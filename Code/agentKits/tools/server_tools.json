@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "note": "Read tools execute immediately; run_workflow creates a confirmation ticket. Multi-hop capped by BACKEND_AGENT_MAX_TOOL_HOPS. web_search gated by BACKEND_AGENT_WEB_SEARCH_ENABLED.",
+  "version": 3,
+  "note": "Read tools execute immediately; run_workflow creates a confirmation ticket. Multi-hop capped by BACKEND_AGENT_MAX_TOOL_HOPS. web_search gated by BACKEND_AGENT_WEB_SEARCH_ENABLED. list_workflow_timers is admin-only.",
   "tools": [
     {
       "name": "search_layers",
@@ -82,8 +82,60 @@
       }
     },
     {
+      "name": "list_workflow_runs",
+      "description": "List recent workflow runs for the current user (admin sees all). Filter by status / active_only / limit.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "active_only": {
+            "type": "boolean",
+            "default": false,
+            "description": "If true, only non-terminal runs"
+          },
+          "status": {
+            "type": "string",
+            "description": "Optional status filter e.g. succeeded / failed / running"
+          },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 50, "default": 10 }
+        }
+      }
+    },
+    {
+      "name": "get_workflow_run",
+      "description": "Get status of one workflow run by run_id (owner-scoped).",
+      "args": {
+        "type": "object",
+        "required": ["run_id"],
+        "properties": {
+          "run_id": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "get_layer_coverage",
+      "description": "Get dual-channel data coverage for a catalog layer (online window + local dates).",
+      "args": {
+        "type": "object",
+        "required": ["catalog_id"],
+        "properties": {
+          "catalog_id": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "list_workflow_timers",
+      "description": "List workflow timers (admin only). Optional workflow_id filter.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "workflow_id": { "type": "string" },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 50, "default": 20 }
+        }
+      }
+    },
+    {
       "name": "run_workflow",
-      "description": "Prepare a workflow-run for a catalog layer. Does NOT submit until the user confirms via confirmation card.",
+      "description": "Prepare a workflow-run for a catalog layer. Does NOT submit until the user confirms via confirmation card. Optional time_range (ISO start/end) and workflow_variant=online.",
       "args": {
         "type": "object",
         "required": ["catalog_id"],
@@ -93,7 +145,22 @@
             "type": "string",
             "description": "Optional workflow seed id; defaults to layer descriptor workflow_id"
           },
-          "params": { "type": "object", "description": "Optional algorithm parameters" }
+          "params": { "type": "object", "description": "Optional algorithm parameters" },
+          "time_range": {
+            "type": "object",
+            "description": "Optional ISO time window {start|start_at, end|end_at}",
+            "properties": {
+              "start": { "type": "string" },
+              "end": { "type": "string" },
+              "start_at": { "type": "string" },
+              "end_at": { "type": "string" }
+            }
+          },
+          "workflow_variant": {
+            "type": "string",
+            "enum": ["online", "local"],
+            "description": "Use online variant seed when declared on the layer"
+          }
         }
       }
     }

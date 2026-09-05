@@ -853,13 +853,44 @@ export function createRunLayersSlice(deps: RunLayersSliceDeps) {
 
       // Prefer binding onto an existing wf-out active layer when present.
       const targetCatalogId = matchingOutput?.localId
-      const existingActive = targetCatalogId
+      const candidateActive = targetCatalogId
         ? deps
             .getActiveLayers()
             .find((layer) => layer.catalogId === targetCatalogId && !layer.isAdminBoundary)
         : deps
             .getActiveLayers()
             .find((layer) => layer.catalogId === preferredCatalogId && !layer.isAdminBoundary)
+
+      // 保护校验：产物 tag 与目标图层语义是否兼容，防止算法产物跨品类误并入用户图层
+      // （例如：NDVI 产物严禁并入粗糙度参数 smap-aux-h、gebco 等不兼容图层导致突变）
+      const isTagCompatibleWithTarget = (targetCid: string, productTag: string): boolean => {
+        const normTag = normalizeProductTag(productTag)
+        if (!normTag) return true
+        const cid = targetCid.toLowerCase()
+        if (normTag === 'NDVI') {
+          return cid === 'ndvi' || cid.includes('ndvi')
+        }
+        if (normTag === 'SM' || normTag === 'VOD' || normTag === 'OMEGA') {
+          return (
+            cid.includes('omega') ||
+            cid.includes('soil_moisture') ||
+            cid.includes('soil-moisture') ||
+            cid.includes('vod') ||
+            cid.includes('inversion') ||
+            cid.startsWith('wf-run-')
+          )
+        }
+        // 辅助图层（如 smap-aux-*）或明确不是算法计算的图层不可绑定外部产物
+        if (cid.startsWith('smap-aux-') || cid.startsWith('aux-') || cid === 'gebco-dem-cn') {
+          return false
+        }
+        return true
+      }
+
+      const existingActive =
+        candidateActive && isTagCompatibleWithTarget(candidateActive.catalogId, tag)
+          ? candidateActive
+          : null
 
       if (existingActive && !existingActive.importedRaster) {
         // 2026-08-24 三联报障 B：绑定产物 overlay 到用户层时保留用户已选定的

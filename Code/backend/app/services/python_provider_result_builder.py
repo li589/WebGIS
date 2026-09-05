@@ -1649,15 +1649,32 @@ class PythonProviderResultBuilder:
             if end_at is not None:
                 time_end = str(end_at).replace("-", "")[:8]
 
-        # Prefer explicit products when present; 自愈：若存在 ndvi_daily 块目录但旧 run 产物未登记，自动补全
+        # Prefer explicit products when present; 自愈：若存在 ndvi_daily 块目录且当前 run 确属 NDVI/日均工作流但旧 run 产物未登记，自动补全
+        target_layer = str(run_status.layer_id or "").lower()
+        cmd_label = str(run_status.command_label or "").lower()
+        executor_meta = getattr(run_status, "executor_metadata", None) or {}
+        workflow_kind = str(executor_meta.get("workflow_kind") or "").lower()
+
+        # 保护：资产工作流（asset_bake）或非 NDVI 任务绝对不自愈注入 NDVI 产物
+        is_asset_bake = workflow_kind == "asset_bake"
+        is_ndvi_eligible = (
+            not is_asset_bake
+            and (
+                "ndvi" in target_layer
+                or "ndvi" in cmd_label
+                or "omega_avg_daily" in cmd_label
+            )
+        )
+
         ndvi_dir: Path | None = None
         data_root = Path(getattr(settings, "data_root", "") or "")
         workspace = Path(getattr(settings, "python_provider_workspace", "") or "")
-        for base in (workspace, data_root / "_runtime" / "python_provider"):
-            cand = base / "products" / "ndvi_daily"
-            if cand.is_dir() and any(cand.glob("????????.mat")):
-                ndvi_dir = cand
-                break
+        if is_ndvi_eligible:
+            for base in (workspace, data_root / "_runtime" / "python_provider"):
+                cand = base / "products" / "ndvi_daily"
+                if cand.is_dir() and any(cand.glob("????????.mat")):
+                    ndvi_dir = cand
+                    break
         if ndvi_dir is not None and not any(
             isinstance(p, dict) and p.get("type") == "ndvi_daily_dir"
             for p in (result_dto.get("products") or [])
@@ -1742,16 +1759,45 @@ class PythonProviderResultBuilder:
             data_root = Path(getattr(settings, "data_root", "") or "")
             workspace = Path(getattr(settings, "python_provider_workspace", "") or "")
             runtime_candidates: list[Path] = []
-            if workspace.parts:
-                runtime_candidates.append(workspace / "products" / "omega_sf_fenkuai")
-            if data_root.parts:
-                runtime_candidates.append(
-                    data_root
-                    / "_runtime"
-                    / "python_provider"
-                    / "products"
-                    / "omega_sf_fenkuai"
+            # 保护：仅当图层确属反演类任务时，才允许扫描全局 omega_sf_fenkuai 运行时目录
+            is_inversion_eligible = (
+                not is_asset_bake
+                and (
+                    any(
+                        keyword in target_layer
+                        for keyword in (
+                            "omega",
+                            "soil_moisture",
+                            "soil-moisture",
+                            "vod",
+                            "inversion",
+                            "fenkuai",
+                        )
+                    )
+                    or any(
+                        keyword in cmd_label
+                        for keyword in (
+                            "omega",
+                            "soil_moisture",
+                            "soil-moisture",
+                            "vod",
+                            "inversion",
+                            "fenkuai",
+                        )
+                    )
                 )
+            )
+            if is_inversion_eligible:
+                if workspace.parts:
+                    runtime_candidates.append(workspace / "products" / "omega_sf_fenkuai")
+                if data_root.parts:
+                    runtime_candidates.append(
+                        data_root
+                        / "_runtime"
+                        / "python_provider"
+                        / "products"
+                        / "omega_sf_fenkuai"
+                    )
             for path in [*candidates, *runtime_candidates]:
                 block_dirs: list[Path] = []
                 if path.is_dir():

@@ -11,6 +11,8 @@ import { installClientErrorCapture } from './utils/client-error-capture'
 import { clearChunkReloadFlag } from './utils/lazy-chunk'
 import { installPerfGlobal } from './utils/perf-probe'
 
+import { vSpotlight } from './directives/spotlight'
+
 installPerfGlobal()
 clearChunkReloadFlag()
 bootstrapMotionPreference()
@@ -21,6 +23,7 @@ const app = createApp(App)
 
 app.use(createPinia())
 app.use(router)
+app.directive('spotlight', vSpotlight)
 installClientErrorCapture(app)
 
 app.mount('#app')

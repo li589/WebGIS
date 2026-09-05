@@ -109,13 +109,32 @@ watch(
   },
 )
 
+function handleResize() {
+  paint(performance.now())
+}
+
+function handleVisibilityChange() {
+  if (typeof document === 'undefined') return
+  if (document.visibilityState === 'visible') {
+    if (props.active) {
+      startMs = performance.now()
+      startLoop()
+    }
+  } else {
+    stopLoop()
+  }
+}
+
 onMounted(() => {
   if (props.active) startLoop()
-  window.addEventListener('resize', () => paint(performance.now()))
+  window.addEventListener('resize', handleResize)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
 onUnmounted(() => {
   stopLoop()
+  window.removeEventListener('resize', handleResize)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
 

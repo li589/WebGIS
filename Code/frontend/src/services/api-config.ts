@@ -322,6 +322,18 @@ export function normalizeTileSourceId(sourceId: string): TileSourceId {
   return 'gaode-street'
 }
 
+/**
+ * Agent / 自由文本底图切换：仅接受已知 sourceId（含 tianditu-cva→vec），
+ * 未知 id 返回 null，避免 normalize 静默回退到默认底图却仍报成功。
+ */
+export function resolveKnownTileSourceId(sourceId: string): TileSourceId | null {
+  const id = sourceId.trim()
+  if (!id) return null
+  if (id === 'tianditu-cva') return 'tianditu-vec'
+  if (!TILE_SOURCE_MAP.has(id as TileSourceId)) return null
+  return id as TileSourceId
+}
+
 export function needsBackendProxy(sourceId: TileSourceId): boolean {
   return TILE_SOURCE_MAP.get(sourceId)?.needsBackendTransform ?? false
 }

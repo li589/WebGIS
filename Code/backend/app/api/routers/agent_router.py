@@ -460,6 +460,67 @@ def refresh_agent_models(
     )
 
 
+@router.get("/sessions")
+def agent_list_sessions(
+    request: Request,
+    limit: int = 40,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
+    _require_agent_access(request, cred)
+    uid, _role = _cred_meta(cred)
+    from app.services.agent.session_store import list_sessions
+
+    items = list_sessions(user_id=uid, limit=limit)
+    return {"sessions": items, "count": len(items)}
+
+
+@router.get("/sessions/{session_id}")
+def agent_get_session(
+    session_id: str,
+    request: Request,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
+    _require_agent_access(request, cred)
+    uid, _role = _cred_meta(cred)
+    from app.services.agent.session_store import get_session_messages
+
+    data = get_session_messages(user_id=uid, session_id=session_id)
+    if data is None:
+        raise ApiError(
+            NOT_FOUND_ERROR,
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found.",
+        )
+    return data
+
+
+@router.delete("/sessions/{session_id}")
+def agent_delete_session(
+    session_id: str,
+    request: Request,
+    cred: CredentialContext | None = Depends(get_request_user),
+) -> dict[str, Any]:
+    _require_agent_access(request, cred)
+    uid, _role = _cred_meta(cred)
+    # Fail-closed: anonymous callers cannot list/get/delete sessions
+    if uid is None:
+        raise ApiError(
+            NOT_FOUND_ERROR,
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found.",
+        )
+    from app.services.agent.session_store import delete_session
+
+    ok = delete_session(user_id=uid, session_id=session_id)
+    if not ok:
+        raise ApiError(
+            VALIDATION_ERROR,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid session_id.",
+        )
+    return {"ok": True, "session_id": session_id}
+
+
 @router.post("/chat", response_model=AgentChatResponse)
 def agent_chat(
     payload: AgentChatRequest,

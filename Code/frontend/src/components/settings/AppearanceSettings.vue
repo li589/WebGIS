@@ -227,7 +227,7 @@ function onReducedMotionChange(event: Event) {
     <section class="settings-section">
       <h3 class="section-title">动效偏好</h3>
       <p class="section-hint">
-        开启后会缩短按钮、对话框、面板打开与拖拽等过渡动画；顶栏进度与启动动画仍保留一点动效，避免看起来像卡住。适合低性能设备或对动效敏感的用户。未手动设置时跟随系统「减少动画」偏好。
+        开启后将大跨度地图运镜降为瞬时直达（防眩晕），去除弹窗位移、卡片交错延迟与晃动反馈；保留进度条真实推进与低频加载指示，避免界面假死。适合敏感体质或低功耗设备。未手动设置时跟随系统「减少动画」偏好。
       </p>
       <label class="toggle-row">
         <input type="checkbox" :checked="prefersReducedMotion" @change="onReducedMotionChange" />

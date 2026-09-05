@@ -40,6 +40,17 @@ export interface AgentChatClientContext {
   }>
   /** WGS84 map pick; used by sample_layer_point when lng/lat omitted */
   map_point?: { lng: number; lat: number } | null
+  timeline?: {
+    hour?: number
+    date?: string
+    playing?: boolean
+  }
+  viewport?: {
+    center?: [number, number] | number[]
+    zoom?: number
+    bbox?: [number, number, number, number] | number[]
+  }
+  basemap_id?: string
 }
 
 export interface AgentChatRequest {
@@ -128,10 +139,14 @@ export interface AgentModelsRefreshResult {
   error?: string | null
 }
 
-export function postAgentChat(body: AgentChatRequest): Promise<AgentChatResponse> {
+export function postAgentChat(
+  body: AgentChatRequest,
+  init?: { signal?: AbortSignal },
+): Promise<AgentChatResponse> {
   return requestJson<AgentChatResponse>('/agent/chat', {
     method: 'POST',
     body: JSON.stringify(body),
+    signal: init?.signal,
   })
 }
 
@@ -393,4 +408,42 @@ export function refreshAgentModels(
       api_key: options?.api_key?.trim() || null,
     }),
   })
+}
+
+export interface AgentSessionSummary {
+  session_id: string
+  updated_at: string
+  preview: string
+  message_count: number
+}
+
+export interface AgentSessionDetail {
+  session_id: string
+  updated_at: string
+  messages: Array<{ role: string; content: string }>
+}
+
+export function listAgentSessions(
+  limit = 40,
+): Promise<{ sessions: AgentSessionSummary[]; count: number }> {
+  const q = new URLSearchParams({ limit: String(limit) })
+  return requestJson<{ sessions: AgentSessionSummary[]; count: number }>(
+    `/agent/sessions?${q.toString()}`,
+    { sensitiveGet: true },
+  )
+}
+
+export function getAgentSession(sessionId: string): Promise<AgentSessionDetail> {
+  return requestJson<AgentSessionDetail>(`/agent/sessions/${encodeURIComponent(sessionId)}`, {
+    sensitiveGet: true,
+  })
+}
+
+export function deleteAgentSession(
+  sessionId: string,
+): Promise<{ ok: boolean; session_id: string }> {
+  return requestJson<{ ok: boolean; session_id: string }>(
+    `/agent/sessions/${encodeURIComponent(sessionId)}`,
+    { method: 'DELETE' },
+  )
 }

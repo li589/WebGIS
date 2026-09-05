@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import AnimatedNumber from '../ui/AnimatedNumber.vue'
 import type { WorkflowSummary } from '../../stores/layers/types'
 import { WORKFLOW_COPY } from '../../ui-copy'
 
@@ -50,24 +51,24 @@ const showCancelledBadge = computed(
   >
     <span class="wf-dot" aria-hidden="true"></span>
     <span class="wf-label">{{ label }}</span>
-    <span v-if="showRunningBadge" class="wf-badge badge-running" title="运行中">{{
-      summary.running
-    }}</span>
-    <span v-if="showQueuedBadge" class="wf-badge badge-queued" title="排队中">{{
-      summary.queued
-    }}</span>
-    <span v-if="showRetryBadge" class="wf-badge badge-retry" title="等待重试">{{
-      summary.retryPending
-    }}</span>
-    <span v-if="showFailedBadge" class="wf-badge badge-failed" title="失败">{{
-      summary.failed
-    }}</span>
-    <span v-if="showDoneBadge" class="wf-badge badge-done" :title="WORKFLOW_COPY.statusDone">{{
-      summary.succeeded
-    }}</span>
-    <span v-if="showCancelledBadge" class="wf-badge badge-cancelled" title="已取消">{{
-      summary.cancelled
-    }}</span>
+    <span v-if="showRunningBadge" class="wf-badge badge-running" title="运行中">
+      <AnimatedNumber :value="summary.running" />
+    </span>
+    <span v-if="showQueuedBadge" class="wf-badge badge-queued" title="排队中">
+      <AnimatedNumber :value="summary.queued" />
+    </span>
+    <span v-if="showRetryBadge" class="wf-badge badge-retry" title="等待重试">
+      <AnimatedNumber :value="summary.retryPending" />
+    </span>
+    <span v-if="showFailedBadge" class="wf-badge badge-failed" title="失败">
+      <AnimatedNumber :value="summary.failed" />
+    </span>
+    <span v-if="showDoneBadge" class="wf-badge badge-done" :title="WORKFLOW_COPY.statusDone">
+      <AnimatedNumber :value="summary.succeeded" />
+    </span>
+    <span v-if="showCancelledBadge" class="wf-badge badge-cancelled" title="已取消">
+      <AnimatedNumber :value="summary.cancelled" />
+    </span>
   </button>
 </template>
 

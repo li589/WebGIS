@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onBeforeUnmount, watch, toRef, type Component } from 'vue'
 import { Download, Settings, Microscope, Package, Circle, AlertTriangle, Cloud } from '../ui/icons'
+import AnimatedNumber from '../ui/AnimatedNumber.vue'
 import { useLayerWorkspace, useWorkflowRun } from '../../stores/layers/selectors'
 import { useWeatherTileManager } from '../../stores/weather-tile-manager'
 import { useWeatherSyncStatusStore } from '../../stores/weather-sync-status'
@@ -712,9 +713,15 @@ onBeforeUnmount(() => {
           </div>
           <!-- 天气瓦片合成行 -->
           <div
-            v-for="item in weatherSyntheticItems"
+            v-for="(item, index) in weatherSyntheticItems"
             :key="`weather-${item.catalogId}`"
-            class="wf-item"
+            class="wf-item cgda-stagger-item"
+            :class="{
+              'cgda-node-running': item.status === 'running',
+              'cgda-node-success': item.status === 'succeeded',
+              'cgda-node-error': item.status === 'failed',
+            }"
+            :style="{ '--stagger-i': index }"
           >
             <div class="wf-item-header">
               <div class="wf-item-name">
@@ -730,9 +737,9 @@ onBeforeUnmount(() => {
                 }"
               >
                 {{ weatherStatusMeta[item.status].label }}
-                <template v-if="item.status === 'running' && item.viewportTotal > 0"
-                  >{{ item.fillPercent }}%</template
-                >
+                <template v-if="item.status === 'running' && item.viewportTotal > 0">
+                  <AnimatedNumber :value="item.fillPercent" suffix="%" />
+                </template>
               </span>
             </div>
             <div v-if="item.status === 'running' && item.viewportTotal > 0" class="wf-progress-bar">
@@ -767,7 +774,18 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div v-for="item in workflowItems" :key="item.jobLayer.jobId" class="wf-item">
+          <div
+            v-for="(item, index) in workflowItems"
+            :key="item.jobLayer.jobId"
+            v-spotlight
+            class="wf-item cgda-stagger-item"
+            :class="{
+              'cgda-node-running': item.jobLayer.status === 'running',
+              'cgda-node-success': item.jobLayer.status === 'succeeded',
+              'cgda-node-error': item.jobLayer.status === 'failed',
+            }"
+            :style="{ '--stagger-i': index }"
+          >
             <div class="wf-item-header">
               <div class="wf-item-name">
                 <span class="wf-item-dot" :style="{ background: item.accentColor }"></span>
@@ -797,9 +815,9 @@ onBeforeUnmount(() => {
                 }"
               >
                 {{ statusMeta[item.jobLayer.status].label }}
-                <template v-if="item.jobLayer.status === 'running'"
-                  >{{ item.jobLayer.progress }}%</template
-                >
+                <template v-if="item.jobLayer.status === 'running'">
+                  <AnimatedNumber :value="item.jobLayer.progress" suffix="%" />
+                </template>
               </span>
             </div>
 
@@ -956,7 +974,9 @@ onBeforeUnmount(() => {
                     class="node-done-badge"
                     >已完成</span
                   >
-                  <span class="node-progress-value">{{ np.progress }}%</span>
+                  <span class="node-progress-value">
+                    <AnimatedNumber :value="np.progress" suffix="%" />
+                  </span>
                 </div>
                 <div v-if="np.terminalHint !== 'skipped'" class="node-progress-bar">
                   <div class="node-progress-fill" :style="{ width: np.progress + '%' }"></div>

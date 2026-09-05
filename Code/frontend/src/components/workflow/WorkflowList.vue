@@ -211,9 +211,9 @@ function formatTime(iso: string | null): string {
       </button>
     </div>
 
-    <InlineLoader v-if="loading" label="加载中..." size="sm" />
+    <InlineLoader v-if="loading && summaries.length === 0" label="加载中..." size="sm" />
 
-    <div v-else class="list-content">
+    <div class="list-content" :class="{ 'list-content--refreshing': loading }">
       <!-- 分类过滤栏 -->
       <div v-if="availableCategories.length > 0" class="category-filter">
         <button
@@ -570,6 +570,12 @@ function formatTime(iso: string | null): string {
   padding: 0.42rem 0;
   scrollbar-width: thin;
   scrollbar-color: var(--border-accent) transparent;
+  transition: opacity var(--motion-interactive-duration) var(--motion-interactive-ease);
+}
+
+.list-content--refreshing {
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 /* ── 分类过滤栏 ──────────────────────────────────────────────────── */

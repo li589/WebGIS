@@ -16,6 +16,10 @@ _READ_TOOLS = frozenset(
         "get_workflow_meta",
         "sample_layer_point",
         "web_search",
+        "list_workflow_runs",
+        "get_workflow_run",
+        "get_layer_coverage",
+        "list_workflow_timers",
     }
 )
 _WRITE_TOOLS = frozenset({"run_workflow"})
@@ -46,6 +50,14 @@ def execute_server_tool(
         return _sample_layer_point(args, cred=cred, client_context=client_context)
     if tool == "web_search":
         return _web_search(args)
+    if tool == "list_workflow_runs":
+        return _list_workflow_runs(args, cred=cred)
+    if tool == "get_workflow_run":
+        return _get_workflow_run(args, cred=cred)
+    if tool == "get_layer_coverage":
+        return _get_layer_coverage(args, cred=cred)
+    if tool == "list_workflow_timers":
+        return _list_workflow_timers(args, cred=cred)
     if tool == "run_workflow":
         return _prepare_run_workflow(args, cred=cred)
     return {"ok": False, "error": f"未实现: {tool}"}
@@ -107,6 +119,70 @@ def _prepare_run_workflow(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
         elif isinstance(v, (list, dict)):
             safe_params[key] = v
 
+    variant = (
+        str(args.get("workflow_variant") or args.get("variant") or "").strip().lower()
+    )
+    if variant == "online":
+        online_wf = ""
+        if desc is not None:
+            variants = getattr(desc, "workflow_variants", None) or {}
+            if isinstance(variants, dict):
+                online_def = variants.get("online")
+                if online_def is not None:
+                    online_wf = str(
+                        getattr(online_def, "workflow_id", None)
+                        or (
+                            online_def.get("workflow_id")
+                            if isinstance(online_def, dict)
+                            else ""
+                        )
+                        or ""
+                    ).strip()
+        if not online_wf:
+            return {
+                "ok": False,
+                "error": f"图层 {catalog_id} 无可用 online 工作流变体",
+            }
+        workflow_id = online_wf
+
+    time_range_model = None
+    raw_tr = args.get("time_range")
+    if raw_tr is not None:
+        if not isinstance(raw_tr, dict):
+            return {"ok": False, "error": "time_range 须为对象 {start, end}"}
+        start_raw = raw_tr.get("start_at") or raw_tr.get("start")
+        end_raw = raw_tr.get("end_at") or raw_tr.get("end")
+        if not start_raw or not end_raw:
+            return {
+                "ok": False,
+                "error": "time_range 须同时提供 start/start_at 与 end/end_at",
+            }
+        from datetime import datetime
+
+        from shared.contracts.api_contracts import TimeGranularity, TimeRange
+
+        def _parse_dt(val: Any) -> datetime | None:
+            s = str(val).strip()
+            if not s:
+                return None
+            try:
+                return datetime.fromisoformat(s.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+
+        start_at = _parse_dt(start_raw)
+        end_at = _parse_dt(end_raw)
+        if start_at is None or end_at is None:
+            return {"ok": False, "error": "time_range 日期无法解析（需 ISO 8601）"}
+        try:
+            time_range_model = TimeRange(
+                start_at=start_at,
+                end_at=end_at,
+                granularity=TimeGranularity.hour,
+            )
+        except ValueError as exc:
+            return {"ok": False, "error": f"time_range 无效: {exc}"}
+
     from shared.contracts.api_contracts import (
         AlgorithmWorkflowRequest,
         WorkflowCommandType,
@@ -118,12 +194,14 @@ def _prepare_run_workflow(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
         command_label=f"agent:{catalog_id}",
         layer_id=catalog_id,
         parameters=dict(safe_params),
+        time_range=time_range_model,
         algorithm_request=AlgorithmWorkflowRequest(
             workflow_name=workflow_id,
             algorithm_params=dict(safe_params),
             tags={
                 "source": "agent",
                 "catalog_id": catalog_id[:128],
+                **({"workflow_variant": variant} if variant else {}),
             },
         ),
         requested_outputs=["json", "map_layer"],
@@ -135,6 +213,13 @@ def _prepare_run_workflow(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
         "workflow_id": workflow_id,
         "params": safe_params,
     }
+    if variant:
+        summary["workflow_variant"] = variant
+    if time_range_model is not None:
+        summary["time_range"] = {
+            "start_at": time_range_model.start_at.isoformat(),
+            "end_at": time_range_model.end_at.isoformat(),
+        }
     uid, role = _cred_meta(cred)
     from app.services.agent.agent_confirm import create_confirmation
 
@@ -152,6 +237,11 @@ def _prepare_run_workflow(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
         workflow_id,
         uid,
     )
+    extra = ""
+    if variant == "online":
+        extra += "（在线变体）"
+    if time_range_model is not None:
+        extra += f"（时段 {summary['time_range']['start_at']} → {summary['time_range']['end_at']}）"
     return {
         "ok": True,
         "needs_confirmation": True,
@@ -159,7 +249,7 @@ def _prepare_run_workflow(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
         "expires_at": ticket["expires_at"],
         "summary": summary,
         "message": (
-            f"已准备提交工作流「{workflow_id}」作用于图层「{display}」。"
+            f"已准备提交工作流「{workflow_id}」作用于图层「{display}」{extra}。"
             "请在对话中确认后才会真正排队执行。"
         ),
     }
@@ -664,6 +754,162 @@ def catalog_summary(*, cred: Any = None, limit: int = 40) -> list[dict[str, str]
         if len(out) >= limit:
             break
     return out
+
+
+def _list_workflow_runs(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
+    """List recent workflow runs with owner scoping (mirrors GET /workflow-runs)."""
+    from shared.contracts.api_contracts import ExecutionStatus
+
+    active_only = bool(args.get("active_only", False))
+    status_filter = str(args.get("status") or "").strip() or None
+    try:
+        limit = int(args.get("limit") or 10)
+    except (TypeError, ValueError):
+        limit = 10
+    limit = max(1, min(50, limit))
+
+    from app.services.workflow_repository import SQLiteWorkflowRepository
+
+    repo = SQLiteWorkflowRepository()
+    all_runs = list(repo.list_runs() or [])
+    uid, role = _cred_meta(cred)
+    if role != "admin":
+        if uid is not None:
+            owners = repo.list_run_user_ids()
+            all_runs = [r for r in all_runs if owners.get(r.run_id) == uid]
+        else:
+            all_runs = []
+    if status_filter:
+        all_runs = [r for r in all_runs if r.status.value == status_filter]
+    if active_only:
+        active = {
+            ExecutionStatus.accepted,
+            ExecutionStatus.queued,
+            ExecutionStatus.running,
+            ExecutionStatus.retry_pending,
+        }
+        all_runs = [r for r in all_runs if r.status in active]
+    all_runs = sorted(all_runs, key=lambda r: r.created_at, reverse=True)[:limit]
+    items = []
+    for r in all_runs:
+        items.append(
+            {
+                "run_id": r.run_id,
+                "status": r.status.value,
+                "layer_id": getattr(r, "layer_id", None),
+                "command_label": getattr(r, "command_label", None),
+                "created_at": r.created_at.isoformat()
+                if getattr(r, "created_at", None)
+                else None,
+                "progress": getattr(r, "progress", None),
+            }
+        )
+    return {"ok": True, "count": len(items), "runs": items}
+
+
+def _get_workflow_run(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
+    run_id = str(args.get("run_id") or "").strip()
+    if not run_id:
+        return {"ok": False, "error": "run_id 不能为空"}
+    from app.services.workflow.service_container import submission_service
+    from app.services.workflow_repository import SQLiteWorkflowRepository
+
+    run_status = submission_service.get_workflow_run(run_id)
+    if run_status is None:
+        return {"ok": False, "error": f"未找到 run: {run_id}"}
+    uid, role = _cred_meta(cred)
+    if role != "admin":
+        if uid is None:
+            return {"ok": False, "error": f"未找到 run: {run_id}"}
+        owner = SQLiteWorkflowRepository().get_run_user_id(run_id)
+        if owner is None or owner != uid:
+            return {"ok": False, "error": f"未找到 run: {run_id}"}
+    return {
+        "ok": True,
+        "run": {
+            "run_id": run_status.run_id,
+            "status": run_status.status.value,
+            "layer_id": getattr(run_status, "layer_id", None),
+            "command_label": getattr(run_status, "command_label", None),
+            "progress": getattr(run_status, "progress", None),
+            "message": getattr(run_status, "message", None),
+            "created_at": run_status.created_at.isoformat()
+            if getattr(run_status, "created_at", None)
+            else None,
+            "updated_at": run_status.updated_at.isoformat()
+            if getattr(run_status, "updated_at", None)
+            else None,
+        },
+    }
+
+
+def _get_layer_coverage(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
+    catalog_id = str(args.get("catalog_id") or args.get("layer_id") or "").strip()
+    if not catalog_id:
+        return {"ok": False, "error": "catalog_id 不能为空"}
+    accessible = _filter_ids([catalog_id], cred)
+    if catalog_id not in set(accessible):
+        return {"ok": False, "error": f"无权访问图层: {catalog_id}"}
+    from app.services.layer_catalog import get_layer_descriptor
+
+    descriptor = get_layer_descriptor(catalog_id)
+    cap = descriptor.online_temporal if descriptor else None
+    if cap is None or not getattr(cap, "enabled", False):
+        online: dict[str, Any] = {
+            "available": False,
+            "coverage_start": None,
+            "coverage_end": None,
+            "native_step": None,
+        }
+    else:
+        online = {
+            "available": True,
+            "coverage_start": getattr(cap, "coverage_start", None),
+            "coverage_end": getattr(cap, "coverage_end", None),
+            "native_step": getattr(cap, "native_step", None),
+        }
+    local_dates: list[str] = []
+    try:
+        from app.services.overlay_asset_workflow_service import (
+            overlay_asset_workflow_service,
+        )
+
+        state = overlay_asset_workflow_service.get_overlay_state(catalog_id)
+        raw_dates = (state or {}).get("time_list") if isinstance(state, dict) else None
+        if isinstance(raw_dates, list):
+            local_dates = [str(d) for d in raw_dates[:366] if d is not None]
+    except Exception:
+        logger.debug("overlay time_list unavailable for %s", catalog_id, exc_info=True)
+    return {
+        "ok": True,
+        "catalog_id": catalog_id,
+        "channels": {
+            "online": online,
+            "local": {"dates": local_dates, "count": len(local_dates)},
+        },
+    }
+
+
+def _list_workflow_timers(args: dict[str, Any], *, cred: Any) -> dict[str, Any]:
+    uid, role = _cred_meta(cred)
+    if role != "admin":
+        return {
+            "ok": False,
+            "error": "仅管理员可查看工作流定时器",
+        }
+    workflow_id = str(args.get("workflow_id") or "").strip() or None
+    try:
+        limit = int(args.get("limit") or 20)
+    except (TypeError, ValueError):
+        limit = 20
+    limit = max(1, min(50, limit))
+    try:
+        from app.services import workflow_timer_service as wts
+    except Exception as exc:
+        return {"ok": False, "error": f"无法加载定时器服务: {exc}"}
+    timers = wts.get_timer_store().list_timers(workflow_id=workflow_id) or []
+    items = [wts.timer_to_dict(t) for t in timers[:limit]]
+    return {"ok": True, "count": len(items), "timers": items}
 
 
 def load_server_tools_openai() -> list[dict[str, Any]]:

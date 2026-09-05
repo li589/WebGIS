@@ -1,25 +1,53 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onUnmounted, ref, watch } from 'vue'
-import { Bot, Check, ChevronDown, Copy, RefreshCw, Sparkles, User, Wrench, X } from '../ui/icons'
+import {
+  Bot,
+  Check,
+  ChevronDown,
+  Copy,
+  Download,
+  RefreshCw,
+  Sparkles,
+  Square,
+  User,
+  Wrench,
+  X,
+} from '../ui/icons'
 import {
   confirmAgentAction,
+  deleteAgentSession,
   fetchAgentConfig,
+  getAgentSession,
+  listAgentSessions,
   postAgentChat,
   streamAgentChat,
   type AgentChatResponse,
   type AgentConfirmation,
   type AgentProfile,
+  type AgentSessionSummary,
   type AgentStep,
   type AgentUiIntent,
 } from '../../services/agent-api'
-import { useLayerWorkspace } from '../../stores/layers/selectors'
+import { useLayerWorkspace, useLayerViewport } from '../../stores/layers/selectors'
+import { useUiStore } from '../../stores/ui'
 import {
   AGENT_CHAT_PANEL_MAX_HEIGHT_PX,
   AGENT_CHAT_PANEL_WIDTH_PX,
   COMPANION_SIZE_PX,
 } from '../../composables/useAgentCompanionPosition'
 import { renderAgentMarkdown } from '../../utils/agent-markdown'
-import { executeAgentUiIntents } from './agent-ui-intent'
+import { executeAgentUiIntent, executeAgentUiIntents } from './agent-ui-intent'
+import {
+  buildAgentClientContextPayload,
+  exportChatMarkdown,
+  extractLayerCardsFromSteps,
+  isAbortError,
+  isTimeoutAbortError,
+  isUserInitiatedStop,
+  layerCardsFromActiveLayers,
+  sumSessionTokens,
+  type AgentLayerCard,
+} from './agent-chat-helpers'
 import { agentMapPoint } from '../../stores/agent-map-point'
 import 'katex/dist/katex.min.css'
 
@@ -71,6 +99,8 @@ interface ChatMessage {
     detail?: string | null
   }>
   confirmations?: PendingConfirmation[]
+  /** search_layers / list_active_layers 可点卡片 */
+  layerCards?: AgentLayerCard[]
   /** 结束后是否默认展开「过程」（有工具步骤时） */
   keepStepsOpen?: boolean
 }
@@ -78,6 +108,8 @@ interface ChatMessage {
 const WELCOME_TEXT = '你好，我是地图助手。试试「打开 CMFD 降水」或「有哪些活动图层」。'
 
 const workspace = useLayerWorkspace()
+const viewport = useLayerViewport()
+const uiStore = useUiStore()
 const messages = ref<ChatMessage[]>([
   {
     id: 'welcome',
@@ -104,6 +136,9 @@ const streamPhase = ref<'idle' | 'connecting' | 'working' | 'streaming' | 'fallb
 const liveStatus = ref('')
 const stepsOpen = ref(false)
 const sendStartedAt = ref(0)
+const sessionMenuOpen = ref(false)
+const sessionSummaries = ref<AgentSessionSummary[]>([])
+const sessionsLoading = ref(false)
 let tickTimer: ReturnType<typeof setInterval> | null = null
 let sendTickTimer: ReturnType<typeof setInterval> | null = null
 let scrollRaf: number | null = null
@@ -111,6 +146,10 @@ let streamTextRaf: number | null = null
 let pendingStreamText: { id: string; text: string } | null = null
 /** 用户上滚阅读时不强制吸底 */
 let stickToBottom = true
+/** 当前发送请求的 AbortController（停止生成） */
+let sendAbort: AbortController | null = null
+
+const sessionTokenTotal = computed(() => sumSessionTokens(messages.value))
 
 const elapsedWaitLabel = computed(() => {
   if (!sending.value || !sendStartedAt.value) return ''
@@ -182,6 +221,11 @@ function sendSuggestion(text: string) {
   void send()
 }
 
+function stopGenerating() {
+  if (!sending.value || !sendAbort) return
+  sendAbort.abort(new DOMException('用户停止生成', 'AbortError'))
+}
+
 function resetChat() {
   if (sending.value) return
   messages.value = [
@@ -196,7 +240,122 @@ function resetChat() {
   errorText.value = null
   streamPhase.value = 'idle'
   liveStatus.value = ''
+  sessionMenuOpen.value = false
   stopSendTick()
+  void scrollToBottom()
+}
+
+async function refreshSessionList() {
+  sessionsLoading.value = true
+  try {
+    const res = await listAgentSessions(40)
+    sessionSummaries.value = res.sessions || []
+  } catch {
+    sessionSummaries.value = []
+  } finally {
+    sessionsLoading.value = false
+  }
+}
+
+async function toggleSessionMenu() {
+  if (sending.value) return
+  sessionMenuOpen.value = !sessionMenuOpen.value
+  if (sessionMenuOpen.value) await refreshSessionList()
+}
+
+async function loadSession(sid: string) {
+  if (sending.value || !sid) return
+  sessionMenuOpen.value = false
+  try {
+    const detail = await getAgentSession(sid)
+    sessionId.value = detail.session_id
+    const restored: ChatMessage[] = (detail.messages || [])
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m, idx) => {
+        const msg: ChatMessage = {
+          id: `restored-${sid}-${idx}`,
+          role: m.role as 'user' | 'assistant',
+          text: m.content || '',
+        }
+        if (msg.role === 'assistant') finalizeAssistantHtml(msg)
+        return msg
+      })
+    messages.value = restored.length
+      ? restored
+      : [
+          {
+            id: 'welcome',
+            role: 'assistant',
+            text: WELCOME_TEXT,
+            html: renderAgentMarkdown(WELCOME_TEXT),
+          },
+        ]
+    errorText.value = null
+    void scrollToBottom()
+  } catch (err) {
+    messages.value.push({
+      id: `sess-err-${Date.now()}`,
+      role: 'system',
+      text: `加载会话失败：${err instanceof Error ? err.message : String(err)}`,
+    })
+  }
+}
+
+async function removeSession(sid: string) {
+  if (sending.value || !sid) return
+  try {
+    await deleteAgentSession(sid)
+    if (sessionId.value === sid) resetChat()
+    await refreshSessionList()
+  } catch (err) {
+    messages.value.push({
+      id: `sess-del-err-${Date.now()}`,
+      role: 'system',
+      text: `删除会话失败：${err instanceof Error ? err.message : String(err)}`,
+    })
+  }
+}
+
+function downloadChatExport() {
+  const md = exportChatMarkdown(
+    messages.value.map((m) => ({
+      role: m.role,
+      text: m.text,
+      usage: m.usage,
+    })),
+    { sessionId: sessionId.value, title: 'CGDA 地图助手会话' },
+  )
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `cgda-agent-${sessionId.value || 'draft'}-${Date.now()}.md`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function runLayerCardAction(card: AgentLayerCard, action: 'open' | 'fit') {
+  const intent =
+    action === 'open'
+      ? {
+          name: 'set_layer_visibility' as const,
+          args: { catalog_id: card.catalog_id, visible: true },
+        }
+      : {
+          name: 'fit_layer' as const,
+          args: { catalog_id: card.catalog_id },
+        }
+  const result = executeAgentUiIntent(intent, {
+    fitToLayerExtent: props.fitToLayerExtent,
+    fitChina: props.fitChina,
+    locateCoordinate: props.locateCoordinate,
+    setBasemap: props.setBasemap,
+  })
+  messages.value.push({
+    id: `card-${Date.now()}`,
+    role: 'system',
+    text: result.ok ? `✓ ${result.message}` : `✗ ${result.message}`,
+  })
   void scrollToBottom()
 }
 
@@ -225,6 +384,8 @@ function stopSendTick() {
 }
 
 onUnmounted(() => {
+  sendAbort?.abort()
+  sendAbort = null
   if (tickTimer != null) {
     clearInterval(tickTimer)
     tickTimer = null
@@ -505,24 +666,33 @@ watch(input, () => {
 })
 
 function buildClientContext() {
-  const layers = workspace.activeLayers.value.filter((l) => !l.isAdminBoundary)
-  const ctx: {
-    active_catalog_ids: string[]
-    active_layers: Array<{ catalog_id: string; instance_id?: string; name?: string }>
-    map_point?: { lng: number; lat: number }
-  } = {
-    active_catalog_ids: layers.map((l) => l.catalogId).filter(Boolean),
-    active_layers: layers.map((l) => ({
-      catalog_id: l.catalogId,
-      instance_id: l.instanceId,
+  return buildAgentClientContextPayload({
+    layers: workspace.activeLayers.value.map((l) => ({
+      catalogId: l.catalogId,
+      instanceId: l.instanceId,
       name: l.name || l.catalogId,
+      isAdminBoundary: l.isAdminBoundary,
     })),
-  }
-  const pt = agentMapPoint.value
-  if (pt) {
-    ctx.map_point = { lng: pt.lng, lat: pt.lat }
-  }
-  return ctx
+    mapPoint: agentMapPoint.value,
+    timeline: {
+      hour: uiStore.currentHour,
+      date: uiStore.currentDate,
+      playing: uiStore.isPlaying,
+    },
+    viewport: {
+      center: viewport.currentMapCenter.value,
+      zoom: viewport.currentMapZoom.value,
+      bbox: viewport.currentMapBBox.value
+        ? [
+            viewport.currentMapBBox.value.west,
+            viewport.currentMapBBox.value.south,
+            viewport.currentMapBBox.value.east,
+            viewport.currentMapBBox.value.north,
+          ]
+        : null,
+    },
+    basemapId: uiStore.tileSourceId,
+  })
 }
 
 const mapPointLabel = computed(() => {
@@ -638,7 +808,11 @@ async function resolveConfirmation(
   }
 }
 
-async function applyChatResult(res: AgentChatResponse, assistantId: string) {
+async function applyChatResult(
+  res: AgentChatResponse,
+  assistantId: string,
+  opts?: { skipIntents?: boolean },
+) {
   sessionId.value = res.session_id
   const msg = messages.value.find((m) => m.id === assistantId)
   const pending: PendingConfirmation[] | undefined = res.confirmations?.length
@@ -678,7 +852,7 @@ async function applyChatResult(res: AgentChatResponse, assistantId: string) {
   }
 
   const target = messages.value.find((m) => m.id === assistantId)
-  if (res.ui_intents?.length) {
+  if (!opts?.skipIntents && res.ui_intents?.length) {
     const results = executeAgentUiIntents(res.ui_intents, {
       fitToLayerExtent: props.fitToLayerExtent,
       fitChina: props.fitChina,
@@ -703,7 +877,25 @@ async function applyChatResult(res: AgentChatResponse, assistantId: string) {
         text: noteBodies.map((n) => n.line).join('\n'),
       })
     }
+    const listedActive = res.ui_intents.some((i) => i.name === 'list_active_layers')
+    if (target && listedActive) {
+      const cards = layerCardsFromActiveLayers(
+        workspace.activeLayers.value.filter((l) => !l.isAdminBoundary),
+      )
+      if (cards.length) target.layerCards = cards
+    }
   }
+
+  if (target) {
+    const fromSteps = extractLayerCardsFromSteps(target.steps)
+    if (fromSteps.length) {
+      const merged = new Map<string, AgentLayerCard>()
+      for (const c of target.layerCards || []) merged.set(c.catalog_id, c)
+      for (const c of fromSteps) merged.set(c.catalog_id, c)
+      target.layerCards = [...merged.values()]
+    }
+  }
+
   if (target) {
     const trimmed = String(target.text || '').trim()
     if (!trimmed || trimmed === '（模型未返回文本）') {
@@ -786,6 +978,8 @@ async function send() {
   liveStatus.value = '正在连接助手…'
   stepsOpen.value = true
   startSendTick()
+  sendAbort = new AbortController()
+  const abortSignal = sendAbort.signal
 
   const req = {
     message: text,
@@ -816,50 +1010,100 @@ async function send() {
   try {
     let res: AgentChatResponse
     try {
-      res = await streamAgentChat(req, {
-        onToken,
-        onStep,
-        onConnected: () => {
-          if (streamPhase.value === 'connecting') {
-            streamPhase.value = 'working'
-            liveStatus.value = '已连接，等待模型或工具…'
-          }
+      res = await streamAgentChat(
+        req,
+        {
+          onToken,
+          onStep,
+          onConnected: () => {
+            if (streamPhase.value === 'connecting') {
+              streamPhase.value = 'working'
+              liveStatus.value = '已连接，等待模型或工具…'
+            }
+          },
+          onIntent: (_intent: AgentUiIntent) => {
+            /* applied from done payload */
+          },
         },
-        onIntent: (_intent: AgentUiIntent) => {
-          /* applied from done payload */
-        },
-      })
+        { signal: abortSignal },
+      )
     } catch (_streamErr) {
-      pendingStreamText = null
+      // 先 flush 已缓冲正文，再取消 RAF；禁止先清空 pendingStreamText
+      flushStreamText()
       if (streamTextRaf != null) {
         cancelAnimationFrame(streamTextRaf)
         streamTextRaf = null
       }
-      // 保留已收到的 step / 部分正文，避免「吞掉过程」；仅清空未完成流缓冲
+      pendingStreamText = null
+      // 仅用户主动 abort（sendAbort）算「已停止」；超时走回退/超时提示
+      if (isUserInitiatedStop(abortSignal)) {
+        const msg = messages.value.find((m) => m.id === assistantId)
+        if (msg) finalizeAssistantHtml(msg)
+        messages.value.push({
+          id: `stop-${Date.now()}`,
+          role: 'system',
+          text: '已停止生成。已输出内容保留。',
+        })
+        return
+      }
+      const timedOut = isTimeoutAbortError(_streamErr)
       streamPhase.value = 'fallback'
       const reason = _streamErr instanceof Error ? _streamErr.message : String(_streamErr)
-      liveStatus.value = `流式失败（${reason.slice(0, 80)}），改用普通请求…`
+      liveStatus.value = timedOut
+        ? '请求超时，改用普通请求…'
+        : `流式失败（${reason.slice(0, 80)}），改用普通请求…`
       messages.value.push({
         id: `fb-${Date.now()}`,
         role: 'system',
-        text: `流式通道不可用，已自动改用普通请求。\n原因：${reason}`,
+        text: timedOut
+          ? '请求超时，已自动改用普通请求。'
+          : `流式通道不可用，已自动改用普通请求。\n原因：${reason}`,
       })
-      res = await postAgentChat(req)
+      res = await postAgentChat(req, { signal: abortSignal })
     }
     flushStreamText()
-    await applyChatResult(res, assistantId)
-  } catch (err) {
-    errorText.value = err instanceof Error ? err.message : String(err)
-    const msg = messages.value.find((m) => m.id === assistantId)
-    if (msg && !msg.text) {
-      messages.value = messages.value.filter((m) => m.id !== assistantId)
+    if (isUserInitiatedStop(abortSignal)) {
+      const msg = messages.value.find((m) => m.id === assistantId)
+      if (msg) finalizeAssistantHtml(msg)
+      messages.value.push({
+        id: `stop-${Date.now()}`,
+        role: 'system',
+        text: '已停止生成。已输出内容保留。',
+      })
+      return
     }
-    messages.value.push({
-      id: `e-${Date.now()}`,
-      role: 'system',
-      text: `请求失败：${errorText.value}`,
-    })
+    await applyChatResult(res, assistantId, { skipIntents: abortSignal.aborted })
+  } catch (err) {
+    flushStreamText()
+    if (isUserInitiatedStop(abortSignal)) {
+      const msg = messages.value.find((m) => m.id === assistantId)
+      if (msg) finalizeAssistantHtml(msg)
+      messages.value.push({
+        id: `stop-${Date.now()}`,
+        role: 'system',
+        text: '已停止生成。已输出内容保留。',
+      })
+    } else if (isTimeoutAbortError(err)) {
+      errorText.value = '请求超时'
+      messages.value.push({
+        id: `e-${Date.now()}`,
+        role: 'system',
+        text: '请求超时。已输出内容保留，可重试或换一种问法。',
+      })
+    } else {
+      errorText.value = err instanceof Error ? err.message : String(err)
+      const msg = messages.value.find((m) => m.id === assistantId)
+      if (msg && !msg.text) {
+        messages.value = messages.value.filter((m) => m.id !== assistantId)
+      }
+      messages.value.push({
+        id: `e-${Date.now()}`,
+        role: 'system',
+        text: `请求失败：${errorText.value}`,
+      })
+    }
   } finally {
+    sendAbort = null
     const msg = messages.value.find((m) => m.id === assistantId)
     const keepStepsOpen = Boolean(
       msg?.steps?.some((s) => s.type === 'tool' || s.type === 'tool_result') || msg?.keepStepsOpen,
@@ -910,6 +1154,60 @@ function onKeydown(ev: KeyboardEvent) {
           </span>
         </div>
         <div class="agent-chat-header-actions">
+          <div class="agent-session-wrap">
+            <button
+              type="button"
+              class="agent-chat-header-btn"
+              title="历史会话"
+              aria-label="历史会话"
+              :disabled="sending"
+              @click.stop="toggleSessionMenu"
+            >
+              <ChevronDown :size="13" />
+            </button>
+            <div v-if="sessionMenuOpen" class="agent-session-menu" @click.stop>
+              <div class="agent-session-menu-head">
+                <span>历史会话</span>
+                <button type="button" class="agent-session-link" @click="refreshSessionList">
+                  {{ sessionsLoading ? '…' : '刷新' }}
+                </button>
+              </div>
+              <p v-if="!sessionSummaries.length && !sessionsLoading" class="agent-session-empty">
+                暂无服务端会话
+              </p>
+              <button
+                v-for="s in sessionSummaries"
+                :key="s.session_id"
+                type="button"
+                class="agent-session-item"
+                :class="{ 'agent-session-item--active': s.session_id === sessionId }"
+                @click="loadSession(s.session_id)"
+              >
+                <span class="agent-session-preview">{{
+                  s.preview || s.session_id.slice(0, 8)
+                }}</span>
+                <span class="agent-session-meta">{{ s.message_count }} 条</span>
+                <button
+                  type="button"
+                  class="agent-session-del"
+                  title="删除会话"
+                  @click.stop="removeSession(s.session_id)"
+                >
+                  ×
+                </button>
+              </button>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="agent-chat-header-btn"
+            title="导出当前对话为 Markdown"
+            aria-label="导出对话"
+            :disabled="sending || messages.length <= 1"
+            @click="downloadChatExport"
+          >
+            <Download :size="13" />
+          </button>
           <button
             type="button"
             class="agent-chat-header-btn"
@@ -1055,6 +1353,29 @@ function onKeydown(ev: KeyboardEvent) {
               </div>
             </div>
 
+            <div v-if="msg.layerCards?.length" class="agent-layer-cards">
+              <div v-for="card in msg.layerCards" :key="card.catalog_id" class="agent-layer-card">
+                <div class="agent-layer-card-title">{{ card.display_name }}</div>
+                <div class="agent-layer-card-id">{{ card.catalog_id }}</div>
+                <div class="agent-confirm-actions">
+                  <button
+                    type="button"
+                    class="agent-confirm-approve"
+                    @click="runLayerCardAction(card, 'open')"
+                  >
+                    打开
+                  </button>
+                  <button
+                    type="button"
+                    class="agent-confirm-reject"
+                    @click="runLayerCardAction(card, 'fit')"
+                  >
+                    定位
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <!-- Assistant Actions footer (Copy + tokens) -->
             <div
               v-if="msg.role === 'assistant' && msg.text && msg.id !== streamingId"
@@ -1106,6 +1427,13 @@ function onKeydown(ev: KeyboardEvent) {
           <span v-else class="agent-chat-chip agent-chat-chip--muted">
             地图点击选点后可查坐标与图层值
           </span>
+          <span
+            v-if="sessionTokenTotal > 0"
+            class="agent-chat-chip agent-chat-chip--muted"
+            title="本会话累计 tokens"
+          >
+            Σ tokens {{ sessionTokenTotal }}
+          </span>
         </div>
         <p v-if="sending && statusLabel" class="agent-chat-status" role="status" aria-live="polite">
           <span class="agent-chat-status-dot" aria-hidden="true" />
@@ -1122,12 +1450,23 @@ function onKeydown(ev: KeyboardEvent) {
           @input="autosizeInput"
         />
         <button
+          v-if="sending"
+          type="button"
+          class="agent-chat-send agent-chat-send--stop"
+          title="停止生成"
+          @click="stopGenerating"
+        >
+          <Square :size="12" />
+          停止
+        </button>
+        <button
+          v-else
           type="button"
           class="agent-chat-send"
-          :disabled="sending || !input.trim()"
+          :disabled="!input.trim()"
           @click="send"
         >
-          {{ sending ? '…' : '发送' }}
+          发送
         </button>
       </footer>
       <button
@@ -1161,16 +1500,19 @@ function onKeydown(ev: KeyboardEvent) {
   isolation: isolate;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  will-change: transform, opacity;
 }
 
 .agent-chat-panel--interacting {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-  will-change: left, top, width, height;
 }
 
 /* ═══ 面板开合（覆盖共享 cgda-fade-scale：保留轻 scale + blur）═══ */
+.cgda-fade-scale-enter-active,
+.cgda-fade-scale-leave-active {
+  will-change: transform, opacity;
+}
+
 .cgda-fade-scale-enter-active {
   transition:
     opacity var(--motion-slow) var(--ease-standard),
@@ -1278,6 +1620,117 @@ function onKeydown(ev: KeyboardEvent) {
   display: flex;
   align-items: center;
   gap: 0.35rem;
+}
+
+.agent-chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  position: relative;
+}
+
+.agent-session-wrap {
+  position: relative;
+}
+
+.agent-session-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  width: 240px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 0.4rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-default);
+  background: var(--surface-2);
+  box-shadow: var(--elevation-2, 0 8px 24px rgba(0, 0, 0, 0.35));
+}
+
+.agent-session-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.2rem 0.35rem 0.45rem;
+  font-size: var(--font-size-caption);
+  color: var(--text-secondary);
+}
+
+.agent-session-link {
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.7rem;
+}
+
+.agent-session-empty {
+  margin: 0;
+  padding: 0.5rem 0.35rem;
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+}
+
+.agent-session-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  width: 100%;
+  margin: 0 0 0.25rem;
+  padding: 0.4rem 1.6rem 0.4rem 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.agent-session-item:hover {
+  background: var(--surface-hover, var(--surface-3));
+}
+
+.agent-session-item--active {
+  border-color: var(--accent-border, var(--border-strong));
+  background: var(--accent-surface);
+}
+
+.agent-session-preview {
+  font-size: var(--font-size-caption);
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.agent-session-meta {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.agent-session-del {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  width: 1.2rem;
+  height: 1.2rem;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.agent-session-del:hover {
+  color: var(--danger, #c44);
+  background: color-mix(in srgb, var(--danger, #c44) 12%, transparent);
 }
 
 .agent-chat-header-btn {
@@ -1965,6 +2418,43 @@ function onKeydown(ev: KeyboardEvent) {
 .agent-confirm-reject {
   background: var(--surface-2);
   color: var(--text-secondary);
+}
+
+.agent-layer-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+}
+
+.agent-layer-card {
+  padding: 0.5rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-2);
+}
+
+.agent-layer-card-title {
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.agent-layer-card-id {
+  margin-top: 0.15rem;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
+.agent-chat-send--stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-color: var(--danger-border, var(--border-strong));
+  background: color-mix(in srgb, var(--danger, #c44) 18%, var(--surface-1));
+  color: var(--danger, #c44);
 }
 
 .agent-chat-footer {

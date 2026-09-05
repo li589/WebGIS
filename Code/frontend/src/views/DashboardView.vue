@@ -26,13 +26,14 @@ import DrawSessionExitModal from '../components/map/DrawSessionExitModal.vue'
 import WorkflowStatusPanel from '../components/workflow/WorkflowStatusPanel.vue'
 import { useGlobeRenderEngine } from '../components/map/globe-engine/use-globe-render-engine'
 import { resolveLayerExtentBounds } from '../components/map/globe-engine/layer-extent'
-import type { TileSourceId } from '../services/api-config'
+import { resolveKnownTileSourceId, type TileSourceId } from '../services/api-config'
 import {
   is3DViewExperimentalEnabled,
   isAgentCompanionEnabled,
   subscribe3DViewExperimental,
   subscribeAgentCompanion,
 } from '../services/settings-local'
+import { isReducedMotionActive } from '../services/motion-preference'
 import { importLazyChunk } from '../utils/lazy-chunk'
 import type { OverlayTimeState } from '../components/map/overlay-image-module'
 import { useUiStore } from '../stores/ui'
@@ -476,7 +477,8 @@ function handleFitChina(): boolean {
     return true
   }
   if (mapCanvasRef.value?.fitBounds) {
-    mapCanvasRef.value.fitBounds(chinaBounds, { padding: 40, duration: 1000 })
+    const duration = isReducedMotionActive() ? 0 : 1000
+    mapCanvasRef.value.fitBounds(chinaBounds, { padding: 40, duration })
     logStore.logOperation('map-zoom', '缩放到中国全境范围')
     return true
   }
@@ -485,13 +487,15 @@ function handleFitChina(): boolean {
 
 function handleLocateCoordinate(lng: number, lat: number, zoom = 10): boolean {
   if (Number.isNaN(lng) || Number.isNaN(lat)) return false
+  if (lng < -180 || lng > 180 || lat < -90 || lat > 90) return false
   if (showCesiumHost.value) {
     cesiumHostRef.value?.flyTo?.(lng, lat)
     logStore.logOperation('map-locate', `定位坐标(Cesium): ${lng.toFixed(4)}, ${lat.toFixed(4)}`)
     return true
   }
   if (mapCanvasRef.value?.flyTo) {
-    mapCanvasRef.value.flyTo({ center: [lng, lat], zoom, duration: 1200 })
+    const duration = isReducedMotionActive() ? 0 : 1200
+    mapCanvasRef.value.flyTo({ center: [lng, lat], zoom, duration })
     logStore.logOperation('map-locate', `定位坐标: ${lng.toFixed(4)}, ${lat.toFixed(4)}`)
     return true
   }
@@ -499,7 +503,9 @@ function handleLocateCoordinate(lng: number, lat: number, zoom = 10): boolean {
 }
 
 function handleSetBasemap(sourceId: string): boolean {
-  handleTileSourceChange(sourceId as TileSourceId)
+  const resolved = resolveKnownTileSourceId(sourceId)
+  if (!resolved || resolved === 'none') return false
+  handleTileSourceChange(resolved)
   return true
 }
 

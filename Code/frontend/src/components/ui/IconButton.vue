@@ -98,7 +98,8 @@ const viewBox = computed(() => `0 0 24 24`)
     border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
     color var(--motion-interactive-duration) var(--motion-interactive-ease),
     box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease),
-    transform var(--motion-press) var(--motion-interactive-ease);
+    transform var(--motion-press) var(--ease-spring-snappy),
+    scale var(--motion-press) var(--ease-spring-snappy);
 }
 
 .icon-btn:focus-visible {
@@ -141,6 +142,7 @@ const viewBox = computed(() => `0 0 24 24`)
 
 .icon-btn--default:active:not(:disabled) {
   transform: translateY(1px);
+  scale: 0.96;
   box-shadow: none;
   background: var(--surface-sunken);
 }
@@ -169,10 +171,11 @@ const viewBox = computed(() => `0 0 24 24`)
   color: var(--accent-strong);
 }
 
-/* 设置开关优先：保留背景/边框色变，去掉位移 */
+/* 设置开关优先：保留背景/边框色变，去掉位移与缩放 */
 html.reduce-motion .icon-btn--default:hover:not(:disabled),
 html.reduce-motion .icon-btn--default:active:not(:disabled) {
   transform: none;
+  scale: 1;
   box-shadow: none;
 }
 </style>

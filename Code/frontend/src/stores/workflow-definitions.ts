@@ -28,6 +28,7 @@ export const useWorkflowDefinitionsStore = defineStore('workflow-definitions', (
   const summaries = ref<WorkflowDefinitionSummary[]>([])
   const currentDefinition = ref<WorkflowDefinition | null>(null)
   const loading = ref(false)
+  const definitionLoading = ref(false)
   const error = ref<string | null>(null)
 
   // ─── 计算属性 ─────────────────────────────────────────────────────────────
@@ -81,7 +82,7 @@ export const useWorkflowDefinitionsStore = defineStore('workflow-definitions', (
   }
 
   async function loadDefinition(workflowId: string) {
-    loading.value = true
+    definitionLoading.value = true
     error.value = null
     try {
       currentDefinition.value = await fetchWorkflowDefinition(workflowId)
@@ -96,7 +97,7 @@ export const useWorkflowDefinitionsStore = defineStore('workflow-definitions', (
       error.value = err instanceof Error ? err.message : String(err)
       return null
     } finally {
-      loading.value = false
+      definitionLoading.value = false
     }
   }
 
@@ -163,6 +164,7 @@ export const useWorkflowDefinitionsStore = defineStore('workflow-definitions', (
     summaries,
     currentDefinition,
     loading,
+    definitionLoading,
     error,
     // 计算
     systemWorkflows,

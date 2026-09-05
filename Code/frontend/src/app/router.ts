@@ -64,3 +64,27 @@ router.beforeEach(async (to) => {
   }
   return true
 })
+
+/**
+ * 现代 View Transitions API：在页面级路由切换时实现平滑的 cross-fade / 几何变换。
+ * 条件：浏览器原生支持、非 reduce-motion、且非同一路由路径。
+ */
+router.beforeResolve((to, from) => {
+  if (
+    typeof document !== 'undefined' &&
+    to.path !== from.path &&
+    !document.documentElement.classList.contains('reduce-motion')
+  ) {
+    const docWithTransition = document as unknown as {
+      startViewTransition?: (callback: () => Promise<void> | void) => void
+    }
+    if (typeof docWithTransition.startViewTransition === 'function') {
+      return new Promise<void>((resolve) => {
+        docWithTransition.startViewTransition?.(async () => {
+          resolve()
+        })
+      })
+    }
+  }
+  return true
+})

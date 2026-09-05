@@ -16,6 +16,47 @@ _DEMO_FALLBACKS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"co2|二氧化碳", re.I), "co2-cn"),
 ]
 
+# Well-known city centers (WGS84) for demo locate heuristics
+_CITY_COORDS: list[tuple[re.Pattern[str], float, float, str]] = [
+    (re.compile(r"北京|beijing", re.I), 116.4074, 39.9042, "北京"),
+    (re.compile(r"上海|shanghai", re.I), 121.4737, 31.2304, "上海"),
+    (re.compile(r"广州|guangzhou", re.I), 113.2644, 23.1291, "广州"),
+    (re.compile(r"深圳|shenzhen", re.I), 114.0579, 22.5431, "深圳"),
+    (re.compile(r"成都|chengdu", re.I), 104.0665, 30.5723, "成都"),
+    (re.compile(r"武汉|wuhan", re.I), 114.3055, 30.5928, "武汉"),
+    (re.compile(r"西安|xian|xi'?an", re.I), 108.9398, 34.3416, "西安"),
+    (re.compile(r"杭州|hangzhou", re.I), 120.1551, 30.2741, "杭州"),
+]
+
+_BASEMAP_HINTS: list[tuple[re.Pattern[str], str, str]] = [
+    (
+        re.compile(r"天地图\s*(影像|卫星)|tianditu[-_\s]?img|影像底图", re.I),
+        "tianditu-img",
+        "天地图影像",
+    ),
+    (
+        re.compile(r"天地图\s*(矢量|街道|电子)|tianditu[-_\s]?vec|矢量底图", re.I),
+        "tianditu-vec",
+        "天地图矢量",
+    ),
+    (
+        re.compile(r"高德\s*(影像|卫星)|gaode[-_\s]?sat", re.I),
+        "gaode-satellite",
+        "高德影像",
+    ),
+    (
+        re.compile(r"高德|gaode[-_\s]?street|街道底图", re.I),
+        "gaode-street",
+        "高德街道",
+    ),
+    (
+        re.compile(r"esri\s*(imagery|影像)|esri[-_\s]?imagery", re.I),
+        "esri-imagery",
+        "Esri 影像",
+    ),
+    (re.compile(r"osm|openstreetmap", re.I), "osm-standard", "OSM 标准"),
+]
+
 
 def _normalize_layers(client_context: dict[str, Any] | None) -> list[dict[str, str]]:
     if not client_context:
@@ -73,6 +114,37 @@ def _parse_opacity(message: str) -> float | None:
     return max(0.0, min(1.0, n / 100.0))
 
 
+def _parse_lng_lat(message: str) -> tuple[float, float] | None:
+    """Parse explicit coordinates like 116.4,39.9 or lng=116 lat=40."""
+    m = re.search(
+        r"(?:lng|lon|longitude|经度)\s*[:=]?\s*(-?\d+(?:\.\d+)?)"
+        r"[,\s]+"
+        r"(?:lat|latitude|纬度)\s*[:=]?\s*(-?\d+(?:\.\d+)?)",
+        message,
+        re.I,
+    )
+    if m:
+        lng, lat = float(m.group(1)), float(m.group(2))
+    else:
+        m = re.search(
+            r"(-?\d{1,3}(?:\.\d+)?)\s*[,，]\s*(-?\d{1,2}(?:\.\d+)?)",
+            message,
+        )
+        if not m:
+            return None
+        a, b = float(m.group(1)), float(m.group(2))
+        # Heuristic: prefer (lng,lat) when both in range; swap if first looks like lat-only
+        if abs(a) <= 180 and abs(b) <= 90:
+            lng, lat = a, b
+        elif abs(b) <= 180 and abs(a) <= 90:
+            lng, lat = b, a
+        else:
+            return None
+    if lng < -180 or lng > 180 or lat < -90 or lat > 90:
+        return None
+    return lng, lat
+
+
 def mock_chat(
     message: str,
     *,
@@ -107,6 +179,158 @@ def mock_chat(
             ]
             reply = "当前活动图层：\n" + "\n".join(lines)
         return {"session_id": sid, "reply": reply, "ui_intents": intents}
+
+    # Fit China (before generic fit / city locate)
+    if re.search(
+        r"中国\s*(全境|全图|范围|地图)|全国\s*(范围|全图)|缩放到\s*中国|"
+        r"zoom\s*to\s*china|fit\s*china",
+        text,
+        re.I,
+    ):
+        intents.append({"name": "fit_china", "args": {}})
+        return {
+            "session_id": sid,
+            "reply": "正在缩放到中国全境范围。",
+            "ui_intents": intents,
+        }
+
+    # Switch basemap
+    if re.search(r"底图|basemap|切换.*(图|影像|街道)|换成", text, re.I):
+        for pattern, source_id, label in _BASEMAP_HINTS:
+            if pattern.search(text):
+                intents.append(
+                    {
+                        "name": "switch_basemap",
+                        "args": {"basemap_id": source_id},
+                    }
+                )
+                return {
+                    "session_id": sid,
+                    "reply": f"正在切换底图为{label}（`{source_id}`）。",
+                    "ui_intents": intents,
+                }
+        return {
+            "session_id": sid,
+            "reply": (
+                "请说明要切换的底图，例如「切换为天地图影像」或「高德街道底图」。"
+            ),
+            "ui_intents": [],
+        }
+
+    # Locate by explicit coordinates
+    coords = _parse_lng_lat(text)
+    if coords is not None and re.search(
+        r"定位|飞到|坐标|经纬|locate|fly\s*to", text, re.I
+    ):
+        lng, lat = coords
+        intents.append(
+            {
+                "name": "locate_coordinate",
+                "args": {"lng": lng, "lat": lat, "zoom": 11},
+            }
+        )
+        return {
+            "session_id": sid,
+            "reply": f"正在定位到坐标 ({lng:.4f}, {lat:.4f})。",
+            "ui_intents": intents,
+        }
+
+    # Locate well-known cities
+    if re.search(r"定位|飞到|缩放到|去|locate|fly\s*to", text, re.I):
+        for pattern, lng, lat, label in _CITY_COORDS:
+            if pattern.search(text):
+                intents.append(
+                    {
+                        "name": "locate_coordinate",
+                        "args": {"lng": lng, "lat": lat, "zoom": 11},
+                    }
+                )
+                return {
+                    "session_id": sid,
+                    "reply": f"正在定位到{label}（{lng:.4f}, {lat:.4f}）。",
+                    "ui_intents": intents,
+                }
+
+    # Timeline play / pause
+    if re.search(r"暂停.*(时间|播放|轴)|停止播放|pause", text, re.I):
+        intents.append({"name": "set_timeline_playing", "args": {"playing": False}})
+        return {
+            "session_id": sid,
+            "reply": "已暂停时间轴播放。",
+            "ui_intents": intents,
+        }
+    if re.search(r"播放时间|开始播放|自动播放|play\s*timeline", text, re.I):
+        intents.append({"name": "set_timeline_playing", "args": {"playing": True}})
+        return {
+            "session_id": sid,
+            "reply": "已开始时间轴播放。",
+            "ui_intents": intents,
+        }
+
+    # Set timeline clock
+    hour_m = re.search(r"(?:设为|调到|跳到|时间)\s*(\d{1,2})\s*[点时:：]", text, re.I)
+    date_m = re.search(r"(\d{4}-\d{2}-\d{2})", text)
+    if hour_m or (date_m and re.search(r"时间|日期|时刻|timeline", text, re.I)):
+        args_tl: dict[str, Any] = {}
+        if hour_m:
+            h = int(hour_m.group(1))
+            if 0 <= h <= 23:
+                args_tl["hour"] = h
+        if date_m:
+            args_tl["date"] = date_m.group(1)
+        if args_tl:
+            intents.append({"name": "set_timeline", "args": args_tl})
+            return {
+                "session_id": sid,
+                "reply": "正在更新时间轴。",
+                "ui_intents": intents,
+            }
+
+    # Remove layer
+    if re.search(r"移除图层|删除图层|去掉图层|remove\s*layer", text, re.I):
+        catalog_id = _match_catalog(text, layers)
+        if not catalog_id:
+            return {
+                "session_id": sid,
+                "reply": "请指定要移除的图层名称。",
+                "ui_intents": [],
+            }
+        intents.append({"name": "remove_layer", "args": {"catalog_id": catalog_id}})
+        return {
+            "session_id": sid,
+            "reply": f"正在移除图层 `{catalog_id}`。",
+            "ui_intents": intents,
+        }
+
+    # Reorder
+    if re.search(r"置顶|提到最前|bring\s*to\s*front", text, re.I):
+        catalog_id = _match_catalog(text, layers)
+        if catalog_id:
+            intents.append(
+                {
+                    "name": "reorder_layer",
+                    "args": {"catalog_id": catalog_id, "action": "front"},
+                }
+            )
+            return {
+                "session_id": sid,
+                "reply": f"正在将 `{catalog_id}` 置顶。",
+                "ui_intents": intents,
+            }
+    if re.search(r"置底|沉到最后|send\s*to\s*back", text, re.I):
+        catalog_id = _match_catalog(text, layers)
+        if catalog_id:
+            intents.append(
+                {
+                    "name": "reorder_layer",
+                    "args": {"catalog_id": catalog_id, "action": "back"},
+                }
+            )
+            return {
+                "session_id": sid,
+                "reply": f"正在将 `{catalog_id}` 置底。",
+                "ui_intents": intents,
+            }
 
     # Hide
     if re.search(r"隐藏|关闭显示|hide|关掉", text, re.I) and not re.search(
@@ -176,7 +400,7 @@ def mock_chat(
             "ui_intents": intents,
         }
 
-    # Fit / zoom
+    # Fit / zoom to layer
     if re.search(r"定位|缩放到|飞到|fit|zoom\s*to|居中", text, re.I):
         catalog_id = _match_catalog(text, layers)
         instance_id = ""
@@ -217,8 +441,9 @@ def mock_chat(
     return {
         "session_id": sid,
         "reply": (
-            "我可以帮你：查看活动图层、打开/隐藏图层、调透明度、缩放到图层。"
-            "试试「打开 CMFD 降水」或「有哪些活动图层」。"
+            "我可以帮你：查看活动图层、打开/隐藏/移除图层、调透明度与色带、缩放到图层、"
+            "缩放到中国、定位城市/坐标、切换底图、调整时间轴。"
+            "试试「打开 CMFD 降水」「缩放到中国」或「切换为天地图影像」。"
         ),
         "ui_intents": [],
     }

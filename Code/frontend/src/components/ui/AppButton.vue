@@ -104,7 +104,8 @@ const iconSize = computed(() => {
     border-color var(--motion-interactive-duration) var(--motion-interactive-ease),
     color var(--motion-interactive-duration) var(--motion-interactive-ease),
     box-shadow var(--motion-interactive-duration) var(--motion-interactive-ease),
-    transform var(--motion-press) var(--motion-interactive-ease);
+    transform var(--motion-press) var(--ease-spring-snappy),
+    scale var(--motion-press) var(--ease-spring-snappy);
 }
 
 .app-btn:focus-visible {
@@ -256,10 +257,15 @@ const iconSize = computed(() => {
   }
 }
 
+.app-btn:active:not(:disabled) {
+  scale: 0.985;
+}
+
 /* 设置开关 html.reduce-motion 优先；保留颜色过渡，去掉位移与扫光 */
 html.reduce-motion .app-btn:hover:not(:disabled),
 html.reduce-motion .app-btn:active:not(:disabled) {
   transform: none;
+  scale: 1;
   box-shadow: none;
 }
 
