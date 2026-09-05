@@ -31,7 +31,7 @@
         "data_source": "auto",
         "start_date": "{YYYYMMDD}",
         "end_date": "{YYYYMMDD}",
-        "local_dir": "{DATA_ROOT}/Soil_Moisture/FY3D/raw",
+        "local_dir": "{DATA_ROOT}/Satellite/FY3/FY3D/MWRI/L1",
         "band_ids": "1,2",
         "orbit_mode": "MWRID"
       }

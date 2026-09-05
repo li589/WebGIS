@@ -470,7 +470,7 @@ DATASET_REGISTRY: dict[str, DatasetInfo] = {
     "FY_MWRI_HDF": DatasetInfo(
         name="FY-3 MWRI 亮温产品",
         logical_name="FY_MWRI_HDF",
-        relative_path="Soil_Moisture/FY_MWRI",
+        relative_path="Satellite/FY3/FY3D/MWRI/L1",
         description="风云三号 MWRI 微波成像仪轨道 HDF 数据，用于亮温产品生成。",
         file_format="hdf",
         variables=("10V", "10H", "18V", "18H", "23V", "36V", "36H", "89V", "89H"),
@@ -725,6 +725,10 @@ PATH_ALIASES: dict[str, str] = {
     "Soil_Moisture/FY3B_TB": "Soil_Moisture/FY3B",
     "FY3D_TB": "Soil_Moisture/FY3D",
     "FY3B_TB": "Soil_Moisture/FY3B",
+    # FY MWRI HDF 原始轨道数据已迁移至 Satellite/ 结构
+    "Soil_Moisture/FY_MWRI": "Satellite/FY3/FY3D/MWRI/L1",
+    "Soil_Moisture/FY3D/raw": "Satellite/FY3/FY3D/MWRI/L1",
+    "FY_MWRI_HDF": "Satellite/FY3/FY3D/MWRI/L1",
     # 数据集重组后目录名（下划线）与历史种子路径（无下划线 / 旧树）对齐
     "InversionResults": "Inversion_Results",
     "Soil_Ecological_Data/Smap_OriginData": "Soil_Moisture/SMAP_Origin_Data",

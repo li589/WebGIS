@@ -415,7 +415,7 @@ def test_mock_legacy_migrates_to_demo_only(tmp_path, monkeypatch):
 
     from app.services.agent import config_service as cs
 
-    monkeypatch.setattr(cs, "settings", cfg_mod.settings)
+
     dest = data / "_runtime" / "agent" / "global_profiles.json"
     assert not dest.exists()
     cs._ensure_global_migrated()
@@ -739,7 +739,7 @@ def test_run_workflow_creates_confirmation_ticket(tmp_path, monkeypatch):
     data.mkdir()
     cfg_mod.settings = replace(Settings(), data_root=str(data), environment="test")
     monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
-    monkeypatch.setattr(ac, "settings", cfg_mod.settings)
+
 
     class _Cred:
         role = "admin"
@@ -786,7 +786,7 @@ def test_agent_confirm_approve_reject_and_expire(tmp_path, monkeypatch):
     data.mkdir()
     cfg_mod.settings = replace(Settings(), data_root=str(data), environment="test")
     monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
-    monkeypatch.setattr(ac, "settings", cfg_mod.settings)
+
 
     ticket = ac.create_confirmation(
         action="run_workflow",
@@ -844,9 +844,7 @@ def test_agent_chat_run_workflow_confirmation_and_confirm_api(
     new_settings = replace(cfg_mod.settings, data_root=str(data))
     cfg_mod.settings = new_settings
     monkeypatch.setattr("app.core.config.settings", new_settings)
-    monkeypatch.setattr(cs, "settings", new_settings)
-    monkeypatch.setattr(ac, "settings", new_settings)
-    monkeypatch.setattr(ss, "settings", new_settings)
+
     cs._save_store_unlocked(cs._global_profiles_path(), cs._empty_store())
 
     _login(agent_client, "testadmin", "test-pass-123")
@@ -1028,7 +1026,7 @@ def test_leaving_demo_revalidates_base_url(tmp_path, monkeypatch):
     data.mkdir()
     cfg_mod.settings = replace(Settings(), data_root=str(data), environment="test")
     monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
-    monkeypatch.setattr(cs, "settings", cfg_mod.settings)
+
 
     store = {
         "active_profile_id": "demo",
@@ -1080,7 +1078,7 @@ def test_session_store_ttl_and_cap(tmp_path, monkeypatch):
     data.mkdir()
     cfg_mod.settings = replace(Settings(), data_root=str(data), environment="test")
     monkeypatch.setattr("app.core.config.settings", cfg_mod.settings)
-    monkeypatch.setattr(ss, "settings", cfg_mod.settings)
+
 
     uid = 42
     ss.append_turn(user_id=uid, session_id="s1", user_message="a", assistant_message="a1")

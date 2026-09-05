@@ -880,7 +880,8 @@
    "fy",
    "brightness-temperature",
    "remote-sensing",
-   "frontend-aligned"
+   "frontend-aligned",
+   "temporal:range"
   ],
   "module_name": "fy_daily",
   "engine": "python_provider",
@@ -899,12 +900,14 @@
   "default_task_type": "fy_daily",
   "default_data_access_sources": {
    "FY_MWRI_HDF": [
+    "Satellite/FY3/FY3D/MWRI/L1",
+    "Satellite/FY3/FY3B/MWRI/L1",
+    "Satellite/FY3/FY3F/MWRI/L1",
     "FY_MWRI_HDF",
     "FY3D_DAILY_TB",
-    "FY3B_DAILY_TB",
+    "Soil_Moisture/FY3D/raw",
     "Soil_Moisture/FY3D",
-    "Soil_Moisture/FY3B",
-    "Soil_Moisture/FY_MWRI"
+    "Soil_Moisture/FY3B"
    ]
   },
   "online_temporal": {
